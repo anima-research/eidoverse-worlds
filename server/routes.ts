@@ -12,7 +12,7 @@
 import { existsSync, readFileSync, writeFileSync, renameSync, readdirSync, mkdirSync, appendFileSync } from "node:fs";
 import { addressOf } from "./peer.ts";   // the client's address, from a trusted proxy only (security review 10-18 H2)
 import { sfuDiag } from "./sfuadapter.ts";
-import { join, normalize, dirname, basename } from "node:path";
+import { join, normalize, dirname, basename, sep } from "node:path";
 import { hexOfLibRel } from "../shared/eido.js";
 import { kindOf } from "../shared/protocol/kind.js";
 import { isReservedAnimName } from "../shared/animdefs.js";
@@ -39,7 +39,7 @@ import { resolveLibFile, libraryFile, libraryRel } from "./libfile.ts";
 import { summarizeGlb } from "./geometry.ts";
 import { vrmHeightFor } from "./vrmheight.ts";
 import { checkFile, checkScale, CheckRefused } from "./buildcheck-queue.ts";
-import { worlds, getWorld, type World } from "./world.ts";
+import { worlds, getWorld, worldDirNamed, type World } from "./world.ts";
 import { screenshots } from "./screenshots.ts";
 import { handleUpload, optStatus, rebuildAsset } from "./upload.ts";
 import { serveHeightmapExport, heightRange } from "./heightmap.ts";
@@ -65,27 +65,26 @@ const knownWorld = (name: string) => {
   const relist = () => { try { worldDirs = new Set(readdirSync(WORLDS_DIR)); } catch { worldDirs = new Set(); } worldDirsAt = now; };
   if (now - worldDirsAt > 5000) relist();
   if (!worldDirs.has(name) && now - worldDirsAt > 1000) relist();   // a miss re-lists (at most once a second): a new world is known at once
-  return worldDirs.has(name) && hasWorldLog(name);
+  return worldDirs.has(name) && existsSync(join(WORLDS_DIR, name, "world.jsonl"));   // listed: its own case already
 };
 /** Reads of a world's live state (/geom?world, /snap, /worlds): behind the same door as joining it. On a box with a
- *  JOIN_TOKEN they need a key a join would take (the authority key, an agent token, an aid1 credential) as a Bearer header,
- *  or the session cookie the join takes, never from another site's page (auth.ts sessionOfRequest). An open box is open. */
+ *  JOIN_TOKEN they need the authority key as a Bearer header, or a caller the door takes (access.ts httpCaller: a scoped
+ *  session cookie, an agent's credential); an agent's credential alone suffices here, where its join also sends the key
+ *  (by design, #260 bot 1). An open box is open. */
 function mayRead(req: Request): boolean {
   if (!JOIN_TOKEN) return true;
-  const auth = req.headers.get("authorization") ?? "";
-  const key = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
-  return !!(key && (key === JOIN_TOKEN || agentTokens().byToken.has(key) || aid1JoinIdentity(key)))
-    || !!sessionOfRequest(req);
+  const key = /^Bearer\s+(\S+)$/i.exec(req.headers.get("authorization") ?? "")?.[1] ?? "";
+  return key === JOIN_TOKEN || httpCaller(req) !== null;   // a human's aid1 token signs in at /auth, never reads by Bearer (#260 bot 12)
 }
 const unauthorized = () => new Response("this world's state is behind its door: send a key it takes as a Bearer header", { status: 401 });
 
 /** A world's directory holds its log, world.jsonl. */
-const hasWorldLog = (name: string) => existsSync(join(WORLDS_DIR, name, "world.jsonl"));
+const hasWorldLog = (name: string) => worldDirNamed(name) && existsSync(join(WORLDS_DIR, name, "world.jsonl"));   // in its own case (world.ts)
 const CLIENTLOG_UNKNOWN = "~unknown";   // '~' is outside the world-name alphabet, so no real world can share this file
 try { mkdirSync(CLIENTLOG_DIR, { recursive: true }); } catch (e) { console.warn(`[clientlog] cannot create ${CLIENTLOG_DIR}: ${(e as Error)?.message ?? e}`); }
 import { seatStore, announceProfileUpdate, MAX_PROPOSAL_BYTES } from "./seats.ts";
 import { agentTokens, aid1JoinIdentity } from "./auth.ts";
-import { httpCaller, visibleTo, doorFor, youAt } from "./access.ts";
+import { httpCaller, httpVisitor, hashedAddress, visibleTo, doorFor, youAt } from "./access.ts";
 import { setupPage, setupClaim } from "./setup.ts";
 import { setupOpen } from "./operators.ts";
 
@@ -458,8 +457,7 @@ const ROUTES: Route[] = [
       const session = sessionFromCookie(req.headers.get("cookie"));
       if (session && crossSiteUpgrade(req)) return new Response("a signed-in socket opens only from this server's own page", { status: 403 });   // CSWSH (review full-260 L7)
       // the connection's address, HASHED (never kept raw): what a guest's ban names, since a guest has no account
-      const ip = addressOf(req, srv);
-      const addr = new Bun.CryptoHasher("sha256").update(`eidoverse-addr:${ip}`).digest("hex").slice(0, 24);
+      const addr = hashedAddress(req, srv);
       if (srv.upgrade(req, { data: { session, addr } })) return undefined as unknown as Response;
       return new Response("expected websocket", { status: 400 });
     },
@@ -616,7 +614,7 @@ const ROUTES: Route[] = [
   },
   {
     match: (u) => u.pathname === "/geom",
-    handler: async ({ req, url }) => {
+    handler: async ({ req, url, srv }) => {
       // Geometry as DATA, for beings who perceive by reading. Three tiers:
       //   /geom?lib=<path>           one asset: bbox, flat zones, named parts
       //   /geom?world=W&id=<entity>  that asset + the entity's world transform
@@ -642,7 +640,7 @@ const ROUTES: Route[] = [
         || (!worlds.has(wname) && !hasWorldLog(wname))) {
         return j({ error: "no such world" }, 404);
       }
-      if (!visibleTo(doorFor(wname), httpCaller(req))) return j({ error: "no such world" }, 404);
+      if (!visibleTo(doorFor(wname), httpVisitor(req, srv))) return j({ error: "no such world" }, 404);
       const w = getWorld(wname);
       // the view record (shared/protocol/view.js viewOf) verbatim — scale3, q, every component — never a projection of it
       const record = (eid: string, e: Record<string, unknown>) => ({ id: eid, ...e, model: e.model ?? null, parent: e.parent ?? null });
@@ -720,7 +718,7 @@ const ROUTES: Route[] = [
       srv.timeout?.(req, Math.min(255, Math.ceil(screenshots.maxWaitMs / 1000) + 5));
       const w = worlds.get(url.searchParams.get("world") ?? "commons");
       const follow = url.searchParams.get("follow") ?? "";
-      if (!w || !visibleTo(doorFor(w.name), httpCaller(req))) return new Response("unknown world", { status: 404 });
+      if (!w || !visibleTo(doorFor(w.name), httpVisitor(req, srv))) return new Response("unknown world", { status: 404 });
       const q = url.searchParams;
       const at = (q.get("at") ?? "").slice(0, 200) || undefined;
       const frame = normalizeSnapFrame({ dist: q.get("dist"), height: q.get("height"), pitch: q.get("pitch") });
@@ -749,7 +747,7 @@ const ROUTES: Route[] = [
       const name = url.searchParams.get("world") ?? "commons";
       if (!/^[a-z0-9_-]{1,64}$/i.test(name)) return new Response("bad world name", { status: 400 });
       if (!worlds.has(name) && !hasWorldLog(name)) return new Response("no such world", { status: 404 });
-      { const door = doorFor(name); if (!door || !visibleTo(door, httpCaller(req))) return new Response("no such world", { status: 404 }); }
+      { const door = doorFor(name); if (!door || !visibleTo(door, httpVisitor(req, srv))) return new Response("no such world", { status: 404 }); }
       const t = getWorld(name).state.terrain;
       if (!t) return new Response("this world has no terrain (it is flat)", { status: 404 });
       if (url.searchParams.get("format") === "json") return Response.json({ ...heightRange(t as Record<string, unknown>), world: name });
@@ -776,12 +774,12 @@ const ROUTES: Route[] = [
     // participant declared for themselves at the door (PROTOCOL §6a), if any,
     // as a tag — never a second list sorted by kind.
     match: (u) => u.pathname === "/worlds",
-    handler: ({ req }) => {
+    handler: ({ req, srv }) => {
       if (!mayRead(req)) return unauthorized();
       const names = new Set<string>(worlds.keys());
       try {
         for (const n of readdirSync(WORLDS_DIR)) {
-          if (/^[a-z0-9_-]{1,64}$/i.test(n) && hasWorldLog(n)) names.add(n);
+          if (/^[a-z0-9_-]{1,64}$/i.test(n) && existsSync(join(WORLDS_DIR, n, "world.jsonl"))) names.add(n);   // listed: its own case already
         }
       } catch { /* no worlds dir yet: only loaded worlds */ }
       // PER CALLER: a world closed to whoever is asking is not on their map at
@@ -789,7 +787,7 @@ const ROUTES: Route[] = [
       // caller is the cookie session or an Authorization bearer; anonymous
       // callers see what everyone may see. `access` is the world's door for
       // everyone not named; `you` is what THIS caller may do there.
-      const caller = httpCaller(req);
+      const caller = httpVisitor(req, srv);
       const out = [...names].sort().flatMap((name) => {
         const door = doorFor(name);
         if (!door || !visibleTo(door, caller)) return [];
@@ -869,12 +867,12 @@ const ROUTES: Route[] = [
   {
     // #104 diagnostics: the adapter's live SFU view — legs, gens, consent, incarnation.
     match: (u) => u.pathname === "/relay-diag",
-    handler: ({ req, url }) => new Response(
+    handler: ({ req, url, srv }) => new Response(
       JSON.stringify((() => {
         // a world the caller may not see answers like one with no voice at all
         const name = url.searchParams.get("world") ?? "staging";
         const w = worlds.get(name);
-        return w && !visibleTo(doorFor(name), httpCaller(req)) ? { transport: "sfu", active: false } : sfuDiag(name);
+        return w && !visibleTo(doorFor(name), httpVisitor(req, srv)) ? { transport: "sfu", active: false } : sfuDiag(name);
       })()),
       { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
   },
@@ -1035,7 +1033,7 @@ const ROUTES: Route[] = [
       const walk = (base: string, sub: string, depth: number) => {
         if (depth > 4) return;
         const abs = normalize(join(base, sub));
-        if (!abs.startsWith(base) || !existsSync(abs)) return;
+        if ((abs !== base && !abs.startsWith(base + sep)) || !existsSync(abs)) return;   // inside base, never a sibling sharing its prefix (#260 bot 16)
         for (const e of readdirSync(abs, { withFileTypes: true })) {
           const childRel = sub ? `${sub}/${e.name}` : e.name;
           if (e.isDirectory()) walk(base, childRel, depth + 1);

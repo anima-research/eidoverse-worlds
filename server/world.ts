@@ -8,7 +8,7 @@
 // The registry (getWorld/worldExists/worlds) lives here too; the boot sweep that wakes scripted worlds stays in
 // server.ts — waking scripted worlds with the server is boot policy, not world mechanics.
 
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { WORLDS_DIR } from "./config.ts";
 import { WorldLog, isWorldSaved, resetWorld } from "./worldlog.ts";
@@ -143,7 +143,8 @@ export class World {
   }
   /** Speech is arrival-only (R 10-18): the world's log keeps every say, people receive speech only for the time they were
    *  present, and only an ADMIN reads the master log's speech back: the owner, server operators, and anyone holding readChat (AGENTS.md catch_up). */
-  /** who reads speech back past their own arrival: a server operator, or whoever holds the readChat permission (owners hold every one) */
+  /** who reads speech back past their own arrival: a server operator, or whoever holds the readChat permission (owners hold every one).
+   *  The operator's narrowing is of acting in a world, not of this read (#260 bot 6). */
   isAdmin(c: Client): boolean { return isOperator(c.account) || (!!c.actorId && this.log.may(c.actorId, "readChat")); }
   /** The log seq at or below which this identity may not read a say back: null for an admin (no floor), else the
    *  earliest arrival among its connections here now; nobody here under it = Infinity (every say hidden). */
@@ -238,10 +239,16 @@ export const worlds = new Map<string, World>();
 /** Does this world already exist — in memory or on disk — WITHOUT creating it?
  *  getWorld() founds on miss, which is right for a join by someone entitled to
  *  found and wrong for everyone else (RFC-005 §3.2.7: founding is not joining).
- *  Same test forkWorld uses to refuse an occupied name. */
+ *  Exact case (worldDirNamed); founding and forking refuse an occupied name in any case (worldlog.ts existsSync). */
 export function worldExists(name: string): boolean {
   if (!/^[a-z0-9_-]{1,64}$/i.test(name)) return false;
-  return worlds.has(name) || existsSync(join(WORLDS_DIR, name));
+  return worlds.has(name) || worldDirNamed(name);
+}
+/** Is there a world directory spelled exactly `name`? On a case-insensitive filesystem existsSync finds "commons" for
+ *  "Commons", and a second World over one log is a second authority (#260 bot 17): a name is served in its own case only. */
+export function worldDirNamed(name: string): boolean {
+  if (!existsSync(join(WORLDS_DIR, name))) return false;
+  try { return readdirSync(WORLDS_DIR).includes(name); } catch { return false; }
 }
 
 export function getWorld(name: string): World {

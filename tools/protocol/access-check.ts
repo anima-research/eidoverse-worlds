@@ -26,6 +26,8 @@
 //       only by the actor's id. Pinned: a role under a bare name is refused, and deleting one member's role leaves a co-owner
 //       an owner and the door closed
 //   A17 (review 10-17) a revoke takes effect: accepted, the member is removed now (4010), can't rejoin, and the log holds it
+//   B5, B7, B12, B14, B16, B17 (anima-review[bot] on #260, 11-02): address bans at the reads, a torn door line, a person's aid1
+//       token at the reads, a sweep without custody, /library-list's siblings, a world name's case — each at its block
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -525,5 +527,60 @@ const gonePid = await exitedPid();
     "A17 a revoke takes effect: deleting a present member's role is accepted, removes them now (4010), /access says none, the rejoin is refused, and the log holds the delete",
     { joined: !!jr.snapshot, del: del.refused, closed: r.closed, acc: acc.body, back: [jb.errors, back.closed], logged });
   r.close(); back.close(); ann.close(); try { s4.proc.kill(); } catch {} await sleep(300); }
+// ---- B5, B12, B16 (anima-review[bot] on #260, 11-02): a server with a door key and an aid1 issuer; yard (A15's) is open ----
+//   B5  a guest's address ban holds at the reads: from the banned address /geom, /heightmap and /worlds answer as for no world
+//   B12 a person's aid1 token is no Bearer for the reads (it signs in at /auth); an agent's is
+//   B16 /library-list stays inside its directories: a sibling sharing the opt directory's name as a prefix lists nothing
+{ const pair = crypto.generateKeyPairSync("ed25519"), spki = pair.publicKey.export({ type: "spki", format: "der" });
+  const ISSUER = `ed25519:${spki.subarray(spki.length - 32).toString("base64url")}`;
+  const mint = (over) => { const now = Math.floor(Date.now() / 1000);
+    const seg = Buffer.from(JSON.stringify({ v: 1, iss: "id.test", sub: "agent:quill@home.test", kind: "agent", name: "Quill", aud: "eidoverse", scopes: ["worlds:join"], iat: now, exp: now + 600, jti: crypto.randomUUID(), ...over })).toString("base64url");
+    return `aid1.${seg}.${crypto.sign(null, Buffer.from(`aid1.${seg}`), pair.privateKey).toString("base64url")}`; };
+  const hashed = (ip) => crypto.createHash("sha256").update(`eidoverse-addr:${ip}`).digest("hex").slice(0, 24);
+  fs.writeFileSync(path.join(W, ".bans.json"), JSON.stringify({ [`addr:${hashed("203.0.113.9")}`]: { by: "op", ts: Date.now(), addr: hashed("203.0.113.9"), until: Date.now() + 3600_000, reason: "B5" } }));
+  const OPT = path.join(root, "opt");
+  fs.mkdirSync(path.join(OPT, "inner"), { recursive: true }); fs.writeFileSync(path.join(OPT, "inner", "a.txt"), "a");
+  fs.mkdirSync(path.join(root, "opt-sib"), { recursive: true }); fs.writeFileSync(path.join(root, "opt-sib", "secret.txt"), "s");
+  const s5 = await start({ JOIN_TOKEN: "jt-b", HN_ISSUER_KEY: ISSUER, HN_ISS: "id.test" });
+  const get = (u, h = {}) => fetch(`http://127.0.0.1:${s5.port}${u}`, { headers: h });
+  const as = (ip) => ({ authorization: "Bearer jt-b", "x-real-ip": ip });   // the server's peer is loopback: a trusted proxy, so X-Real-IP stands
+  const st = async (u, h) => (await get(u, h)).status;
+  const onMap = async (h) => ((await (await get("/worlds", h)).json()).worlds ?? []).some((w) => w.name === "yard");
+  const banned = { geom: await st("/geom?world=yard", as("203.0.113.9")), hm: await (await get("/heightmap?world=yard&format=json", as("203.0.113.9"))).text(), map: await onMap(as("203.0.113.9")) };
+  const other = { geom: await st("/geom?world=yard", as("203.0.113.10")), map: await onMap(as("203.0.113.10")) };
+  ok(!s5.dead && banned.geom === 404 && /no such world/.test(banned.hm) && !banned.map && other.geom === 200 && other.map,
+    "B5 a guest's address ban holds at the reads: from the banned address /geom answers 404, /heightmap 'no such world', and /worlds lacks the world; from another address the same key reads it", { banned, other });
+  const human = mint({ kind: "human", sub: "human:test:hal", name: "Hal" }), agent = mint({});
+  const byHuman = await st("/worlds", { authorization: `Bearer ${human}` }), byAgent = await st("/worlds", { authorization: `Bearer ${agent}` }), byNone = await st("/worlds");
+  ok(byHuman === 401 && byAgent === 200 && byNone === 401, "B12 a person's aid1 token is no Bearer for the reads (401: it signs in at /auth); an agent's aid1 credential is (200); nothing is 401", { byHuman, byAgent, byNone });
+  const lib = async (dir) => (await (await get(`/library-list?dir=${encodeURIComponent(dir)}`)).json()).map((f) => f.path);
+  const inside = await lib("inner"), sibling = await lib("../opt-sib");
+  ok(inside.includes("inner/a.txt") && sibling.length === 0, "B16 /library-list lists inside its directory and nothing from a sibling whose name shares its prefix (../opt-sib)", { inside, sibling });
+  try { s5.proc.kill(); } catch {} fs.rmSync(path.join(W, ".bans.json"), { force: true }); }
+// ---- B7, B14, B17 (anima-review[bot] on #260, 11-02; pure, in a process of their own with its own WORLDS_DIR) ----
+//   B7  an unloaded world's door leaves out a torn last line (no newline), as the log's reader does
+//   B14 a timed grant that has ended in a world that can't log the end (no custody) still removes its holder at the sweep
+//   B17 a world is served in its own case only: on a case-insensitive filesystem "KEEP" is not "keep" (a second authority)
+{ const P = fs.mkdtempSync(path.join(root, "pure-")), PW = path.join(P, "worlds");
+  const line = (join) => JSON.stringify({ kind: "change", verb: "set", body: { id: "@world", comp: "access", value: { join } } });
+  fs.mkdirSync(path.join(PW, "torn"), { recursive: true }); fs.writeFileSync(path.join(PW, "torn", "world.jsonl"), `${line("listed")}\n${line("anyone")}`);
+  fs.mkdirSync(path.join(PW, "keep"), { recursive: true });
+  const caseless = fs.existsSync(path.join(PW, "KEEP"));
+  const code = `const A = await import(${JSON.stringify(new URL("../../server/access.ts", import.meta.url).href)});
+    const Wd = await import(${JSON.stringify(new URL("../../server/world.ts", import.meta.url).href)});
+    const now = Date.now(), out = { door: A.doorFor("torn")?.wc?.access?.join, sweep: {}, exists: { lower: Wd.worldExists("keep"), upper: Wd.worldExists("KEEP") } };
+    for (const [k, until] of [["ended", now - 1000], ["live", now + 600_000]]) {
+      const wc = { access: { join: "listed" }, "roles:u-fen0000000000000000000": { role: "member", until } };
+      const c = { id: "Fen", actorId: "u-fen0000000000000000000", account: "agent:token:fen", surface: "world", ws: { send() {} } };
+      const w = { name: "t14", clients: new Set([c]), log: { live: { state: () => ({ entities: { "@world": { c: wc } } }) }, expireRoles: () => [], bannedHere: () => false } };
+      const gone = []; A.sweepAccess([w], (_w, who, why) => gone.push(why), now); out.sweep[k] = gone; }
+    console.log(JSON.stringify(out));`;
+  const r = Bun.spawnSync(["bun", "-e", code], { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: PW, OPT_DIR: path.join(P, "opt"), SERVER_OPERATORS: "", JOIN_TOKEN: "" }, stdout: "pipe", stderr: "pipe" });
+  let o = null; try { o = JSON.parse(r.stdout.toString().trim().split("\n").pop()); } catch {}
+  ok(o?.door === "listed", "B7 an unloaded world's door leaves out a torn last line (complete JSON, no newline): still listed, not anyone", o?.door ?? r.stderr.toString().slice(-300));
+  ok(o?.sweep?.ended?.length === 1 && /access/.test(o.sweep.ended[0]) && o?.sweep?.live?.length === 0,
+    "B14 in a world that can't log a grant's end (expire-roles writes nothing), the sweep still removes whoever's timed grant has passed; a live grant stays", o?.sweep);
+  if (caseless) ok(o?.exists?.lower === true && o?.exists?.upper === false, "B17 on a case-insensitive filesystem a world is served in its own case only: keep exists, KEEP does not", o?.exists);
+  else console.log(`  skip B17: ${PW} is case-sensitive, so "KEEP" can't open keep/ here (run with PROTOCOL_SCRATCH on a case-insensitive filesystem)`); }
 console.log(`[access-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

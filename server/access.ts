@@ -20,7 +20,7 @@
 // spectator` for ONE person (a role is membership here, never a state: a world that admits only people listed lets
 // everyone else watch with access.watch, or no one).
 
-import { readFileSync, statSync } from "node:fs";
+import { statSync } from "node:fs";
 import { join } from "node:path";
 import { WORLDS_DIR, JOIN_TOKEN } from "./config.ts";
 import { globalBans, findBan } from "./moderation.ts";
@@ -32,6 +32,8 @@ import { effectiveOf, isOwner, MOD_POWERS } from "../shared/protocol/roles.js";
 import { opsOf } from "../shared/protocol/fold.js";
 import { isBanned } from "../shared/protocol/authority.js";
 import { modLogAt } from "./custody.ts";
+import { readLogBytes } from "./durable.ts";
+import { addressOf } from "./peer.ts";
 import { entryOf, doorOf as doorOfWc, listedIn, timedGrants, leftWords, ACCESS_WARN_MS } from "../shared/protocol/access.js";
 import type { World, Client } from "./world.ts";
 
@@ -88,7 +90,7 @@ export function doorFor(name: string): Door | null {
   let mod: any[]; try { mod = modLogAt(modFile).mod; } catch { return null; }
   const wc: Record<string, any> = {};
   try {
-    for (const line of readFileSync(file, "utf8").split("\n")) {
+    for (const line of readLogBytes(file, { cut: false }).toString("utf8").split("\n")) {   // a torn last line is not the log's yet (#260 bot 7)
       if (!line || !DOOR_LINE.test(line)) continue;
       let e: any; try { e = JSON.parse(line); } catch { continue; }
       if (e?.kind !== "change") continue;
@@ -153,7 +155,8 @@ export function youAt(door: Door, who: Who | null): { you: "enter" | "watch" | "
 
 /** Who is asking, over HTTP: the session cookie the join takes (auth.ts sessionOfRequest), or an `Authorization: Bearer` credential the
  *  join door takes (an enrolled agent's bearer, an aid1 agent credential). Null = anonymous (a JOIN_TOKEN bearer proves
- *  the door key, not who). Never the URL: credentials in query strings end up in logs. */
+ *  the door key, not who). Never the URL: credentials in query strings end up in logs. The cookie wins here; the join and
+ *  setup take an explicit credential over it — either way one the sender holds (#260 bot 4). */
 export function httpCaller(req: Request): Who | null {
   const s = sessionOfRequest(req);
   if (s && (s.scopes.includes("worlds:join") || s.scopes.includes("worlds:spectate"))) return whoAccount(s.sub);   // one sign-in, every world (main #255: a session's old nativeWorld no longer narrows it)
@@ -166,6 +169,13 @@ export function bearerCaller(req: Request): Who | null | undefined {
   if (!tok || (JOIN_TOKEN && tok === JOIN_TOKEN)) return null;
   const a = accountOf(tok);
   return a && "account" in a ? whoAccount(a.account) : null;
+}
+/** A request's hashed address (never kept raw), as a guest's ban names it: the upgrade and the HTTP reads hash alike. */
+export const hashedAddress = (req: Request, srv?: Parameters<typeof addressOf>[1]) =>
+  new Bun.CryptoHasher("sha256").update(`eidoverse-addr:${addressOf(req, srv)}`).digest("hex").slice(0, 24);
+/** Who a read is for: the caller, else a guest at their hashed address, so a guest's address ban holds at the reads (#260 bot 5). */
+export function httpVisitor(req: Request, srv?: Parameters<typeof addressOf>[1]): Who {
+  return httpCaller(req) ?? { account: null, addr: hashedAddress(req, srv) };
 }
 const whoAccount = (account: string): Who => ({ account, actorId: directoryFor(WORLDS_DIR).idOfSub(account) });
 
@@ -209,7 +219,9 @@ export function sweepAccess(worlds: Iterable<World>, expel: Expel, now = Date.no
         try { c.ws.send(JSON.stringify({ type: "notice", text: `your ${g.role} grant in "${w.name}" ends in ${leftWords(g.until, now).replace(" left", "")}${closes ? ` — this world admits only people listed, so you'll have to leave then` : ""}` })); warned.add(k); } catch { /* gone */ }
     }
     const ended = w.log.expireRoles();
-    if (ended.length) { console.log(`[world:${w.name}] timed grant(s) ended: ${ended.join(", ")}`); settleAccess(w, expel, now); }
+    if (ended.length) console.log(`[world:${w.name}] timed grant(s) ended: ${ended.join(", ")}`);
+    // a world without custody can't log the end, but the door already reads it as over: settle anyway (#260 bot 14)
+    if (ended.length || timedGrants(wc).some((g: { until: number }) => g.until <= now)) settleAccess(w, expel, now);
   }
   if (warned.size > 4096) warned.clear();
 }
