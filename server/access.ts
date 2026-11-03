@@ -128,8 +128,8 @@ export function entryFor(door: Door, who: Who, mode: EntryMode, { now = Date.now
   // authority's sweep writes its end (expire-roles) — so an unloaded world's HTTP reads and a join don't honour it indefinitely
   const listed = !!actorId && listedIn(door.wc, actorId, now);
   const bypass = isOperator(account) || (listed && (isOwner(eff) || MOD_POWERS.some((p: string) => eff?.permissions?.includes(p))));
-  // a ban file the server couldn't read: the door is locked to everyone it doesn't know (moderation.ts unreadableBanFiles)
-  if (unreadableBanFiles().length && !isOperator(account) && !listed) return { code: ACCESS_CLOSE, reason: "locked", why: LOCKED_WHY };
+  // a ban file the server couldn't read: the door is locked to everyone it doesn't know (moderation.ts unreadableBanFiles); the renderer holds the operator's own key and never embodies
+  if (unreadableBanFiles().length && !isOperator(account) && !listed && !who.trustedRenderer) return { code: ACCESS_CLOSE, reason: "locked", why: LOCKED_WHY };
   const e = entryOf(door.wc, { actor: actorId ?? undefined, anon: !account, bypass, trustedRenderer: !!who.trustedRenderer }, door.name, now);
   if (e.may === "none" || (mode === "embody" && e.may === "watch")) return { code: ACCESS_CLOSE, reason: "no-access", why: e.why ?? `"${door.name}" isn't open to you` };
   if (bypass) return null;
