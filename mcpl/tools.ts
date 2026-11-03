@@ -536,7 +536,7 @@ const BODY_VERBS: Record<string, ToolHandler> = {
       const reason = a.reason != null ? String(a.reason) : undefined;
       const t0 = Date.now();
       if (a.global && name !== "kick") {
-        ag.sendMod(name === "ban" ? "global-ban" : "global-unban", { id, ...(reason ? { reason } : {}) });
+        ag.sendMod(name === "ban" ? "global-ban" : "global-unban", { id, ...(reason ? { reason } : {}), ...(name === "ban" && a.days != null ? { days: Number(a.days) } : {}) });
         const answer = await ag.modOutcome(t0);
         // A refusal is the world's no; no echo yet is sent, not refused.
         if (answer?.startsWith("refused: ")) return fail(answer);

@@ -73,7 +73,7 @@ try {
 /** The operator's ban list in words (global-bans): the enforced bans, then the pre-account ones, listed and never enforced. */
 export function globalBansText(map: Record<string, BanRec> = globalBans, pending: Record<string, BanRec & { why: string }> = pendingBans): string {
   const day = (ts: number) => new Date(ts).toISOString().slice(0, 10);
-  const list = Object.entries(map).map(([k, b]) => `${b.name ?? k}${b.account ? ` (${b.account})` : b.addr ? " (a guest's connection)" : ""} — by ${b.by}, ${day(b.ts)}${b.reason ? `: ${b.reason}` : ""}${b.boundFrom ? ` [bound by name from ${b.boundFrom}; check it: ${BOUND_BY_NAME}]` : ""}`);
+  const list = Object.entries(map).map(([k, b]) => `${b.name ?? k}${b.account ? ` (${b.account})` : b.addr ? " (a guest's connection)" : ""} — by ${b.by}, ${day(b.ts)}${b.until && b.account ? `, until ${day(b.until)}` : ""}${b.reason ? `: ${b.reason}` : ""}${b.boundFrom ? ` [bound by name from ${b.boundFrom}; check it: ${BOUND_BY_NAME}]` : ""}`);
   const pre = Object.values(pending).map((b) => `${b.name} — ${PENDING_WORDS} (${b.why}); by ${b.by}, ${day(b.ts)}${b.reason ? `: ${b.reason}` : ""}`);
   return [list.length ? `global bans (${list.length}):\n${list.join("\n")}` : "no global bans", ...(pre.length ? [`pre-account bans, not enforced (${pre.length}):\n${pre.join("\n")}`] : [])].join("\n");
 }
@@ -100,7 +100,7 @@ export function findBan(map: Record<string, BanRec> | undefined, account: string
   if (!map) return null;
   for (const b of Object.values(map)) {
     if (b.world && b.world !== world) continue;   // a guest's ban in one world (the door's world ban can't name a guest)
-    if (banHoldsAgainst(b, account)) return b;
+    if (banHoldsAgainst(b, account) && (b.until == null || b.until > now)) return b;   // a timed global ban ends (bot #260 #41)
     if (!account && addr && b.addr === addr && (b.until ?? 0) > now) return b;
   }
   return null;
