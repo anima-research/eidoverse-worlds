@@ -57,11 +57,11 @@ ok(old.requestSync("olive", "say", { text: "late" })?.refused?.code === "reset",
   const { owner } = foundWorld(path.join(process.env.WORLDS_DIR, "scripted"), "scripted", "olive");
   const sw = new World("scripted"); const sync = WorldScripts.prototype.sync;
   const sent = []; const c = { id: "olive", world: sw, actorId: owner, spectator: false, ws: { send: (d) => sent.push(JSON.parse(d)) } }; sw.clients.add(c);
-  WorldScripts.prototype.sync = () => { throw new Error("injected: the scripts won't start"); };
+  let threw = 0; WorldScripts.prototype.sync = () => { threw++; throw new Error("injected: the scripts won't start"); };   // counted: a stub never reached proves nothing (bot review #260 490)
   try { REQUEST_MESSAGES["world-reset"]({ c, ws: c.ws }, { name: "scripted" }); } finally { WorldScripts.prototype.sync = sync; }
   const fresh = sw.log.live.entries.length, err = sent.find((m) => m.type === "error")?.error;
-  ok(!err && sent.some((m) => m.type === "world-reset") && sw.log.requestSync(owner, "create", { components: { description: "after" } })?.ok === true,
-    "RR6b the fresh log opened but the scripts didn't start: the reset stands, everyone present is told, and the fresh world takes requests", { err, sent: sent.map((m) => m.type), fresh }); }
+  ok(threw === 1 && !err && sent.some((m) => m.type === "world-reset") && sw.log.requestSync(owner, "create", { components: { description: "after" } })?.ok === true,
+    "RR6b the fresh log opened but the scripts didn't start (the injected failure ran once): the reset stands, everyone present is told, and the fresh world takes requests", { threw, err, sent: sent.map((m) => m.type), fresh }); }
 
 // ---- SR: a connection superseded (or closed) while its request awaits never writes (review of PR #260, requestwire.ts:135;
 // Antra's repro: the old tab's request still committed, wrote:true, ok reply). The await is held by a gate in front of the

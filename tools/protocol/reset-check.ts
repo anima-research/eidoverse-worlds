@@ -29,10 +29,11 @@ const button = (W, targets, extra = {}) => call(W, "rowan", "set", { id: "btn", 
 { const W = "bad"; mk(W); const r1 = button(W, ["a", "nope"]), r2 = button(W, []), r3 = button(W, "a");
   ok(code(r1) === "not-found" && code(r2) === "shape" && code(r3) === "shape", "RS2 a reset naming a missing thing, none, or not a list is refused when written", [code(r1), code(r2), code(r3)]); }
 { const W = "use"; mk(W); button(W, ["a", "b", "dom"]);
-  call(W, "vic", "move", { to: [0, 0, -0.8] }); call(W, "vic", "grab", { id: "a" }); call(W, "vic", "move", { to: [2, 0, -2] }); call(W, "vic", "put", { id: "a", at: [2, -2.6] });
+  call(W, "vic", "move", { to: [0, 0, -0.8] }); call(W, "vic", "grab", { id: "a" }); call(W, "vic", "move", { to: [2, 0, -2] }); const put = call(W, "vic", "put", { id: "a", at: [2, -2.6] });
   call(W, "rowan", "set", { id: "b", component: "transform", value: { pos: [9, 0, 9] } });
+  const moved = put.ok && JSON.stringify(pos(W, "a")) !== "[0,0,0]" && JSON.stringify(pos(W, "b")) === "[9,0,9]";   // the setup, asserted: a refused put would pass the reset for free (bot review #260 494)
   call(W, "vic", "move", { to: [0, 0, 3.2] }); const r = call(W, "vic", "use", { id: "btn", action: "reset" });
-  ok(r.ok && JSON.stringify(pos(W, "a")) === "[0,0,0]" && JSON.stringify(pos(W, "b")) === "[3,0,0]", "RS3 a VISITOR presses it: everything moved goes home (one put by a hand, one moved by an edit)", { r: code(r), why: r.refused?.reason, a: pos(W, "a"), b: pos(W, "b") }); }
+  ok(moved && r.ok && JSON.stringify(pos(W, "a")) === "[0,0,0]" && JSON.stringify(pos(W, "b")) === "[3,0,0]", "RS3 a VISITOR presses it: everything moved goes home (one put by a hand, one moved by an edit; both away from home first)", { put: code(put), moved, r: code(r), why: r.refused?.reason, a: pos(W, "a"), b: pos(W, "b") }); }
 { const W = "held"; mk(W); button(W, ["a", "b"]); call(W, "vic", "move", { to: [0, 0, -0.8] }); call(W, "vic", "grab", { id: "a" }); call(W, "vic", "move", { to: [2, 0, 2.5] });
   const r = call(W, "vic", "use", { id: "btn", action: "reset" });
   ok(r.ok && !openWorld(root, W).presence.holds.a && JSON.stringify(pos(W, "a")) === "[0,0,0]", "RS4 a thing in someone's hand leaves the hand and goes home", { r: code(r), why: r.refused?.reason, held: Object.keys(openWorld(root, W).presence.holds), a: pos(W, "a") }); }

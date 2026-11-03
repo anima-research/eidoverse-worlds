@@ -3,7 +3,7 @@
 //   bun tools/protocol/scripts-check.ts                 every case (the server cases start a scratch sequencer)
 //   bun tools/protocol/scripts-check.ts --only B2,B5    just those
 //   bun tools/protocol/scripts-check.ts --tree <dir>    run the authority cases against another checkout's shared/ (a mutant, a base)
-//   bun tools/protocol/scripts-check.ts --control       the base commit (bbc9ac22, before scripts): every server case must FAIL there
+//   bun tools/protocol/scripts-check.ts --control       the base commit (bbc9ac22, before scripts): every authority case must FAIL there (it runs --no-server)
 //   bun tools/protocol/scripts-check.ts --mutants       remove each gate in turn (a copy of shared/): its cases must go red; a
 //                                                 no-op control mutation must stay green
 // Cases:
@@ -914,10 +914,11 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r)); process.exit(0);\n`);   // 
       s.advance(61000); s.call("olive", "look", {}); // fresh minute; the pool is warm
       const t0 = performance.now(); const r = s.call("vic", "say", { text: "hello" }); const ms = performance.now() - t0;
       const t1 = performance.now(); const other = s2.call("olive", "inspect", { id: "cup" }); const otherMs = performance.now() - t1;
-      const st0 = s.call("olive", "scripts", {}).scripts.map((x: any) => `${x.last.at(-1)?.status} ${x.last.at(-1)?.code}`);
+      const sv = s.call("olive", "scripts", {}).scripts, st0 = sv.map((x: any) => `${x.last.at(-1)?.status} ${x.last.at(-1)?.code}`);
+      const busyFails = sv.filter((x: any) => x.last.at(-1)?.status === "refused" && x.last.at(-1)?.code === "busy").map((x: any) => s.w().presence.scripts?.[`${x.id}|${x.script.slice("script:".length)}`]?.fails ?? 0);   // a refusal is not the script's failure (bot review #260 520)
       D.setScriptDuty({ maxMs: 1e9 });
-      return { said: r.ok, ms: Math.round(ms), other: other.ok, otherMs: Math.round(otherMs), killed: st0.filter((x: string) => x === "failed time").length, busy: st0.filter((x: string) => x === "refused busy").length }; },
-    good: (o) => o.said && o.ms < DUTY0.maxMs + 500 + 300 && o.other && o.otherMs < 150 && o.killed >= 1 && o.busy >= 6 },
+      return { said: r.ok, ms: Math.round(ms), other: other.ok, otherMs: Math.round(otherMs), killed: st0.filter((x: string) => x === "failed time").length, busy: st0.filter((x: string) => x === "refused busy").length, busyFails }; },
+    good: (o) => o.said && o.ms < DUTY0.maxMs + 500 + 300 && o.other && o.otherMs < 150 && o.killed >= 1 && o.busy >= 6 && o.busyFails.length === o.busy && o.busyFails.every((n: number) => n === 0) },
   // ---------------- U: use → script ----------------
   { id: "U1", what: "use → script: the visitor's use is their act (with `runs`); the script act's cause is that use, its trigger the visitor, its sponsor bob; the batch's cause is the bhv act; the say too", run(s) { cast(s);
       bell(s, "bob"); const r = s.call("vic", "use", { id: "bell1", action: "ring" }); const L = s.entries();

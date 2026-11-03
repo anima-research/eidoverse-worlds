@@ -246,9 +246,9 @@ const withLab = (extra: any) => { const lab = D.LAB_CATALOGUE; return { get: (n:
 
 type Case = { id: string; what: string; run: (s: any) => any; good: (o: any) => boolean; o?: any };
 const cases: Case[] = [
-  { id: "S1", what: `at 72 things (the Commons' size) every request takes under ${BOUND_MS} ms`, run: scaleCase(72), good: scaleGood },
-  { id: "S2", what: `at 500 things every request takes under ${BOUND_MS} ms`, run: scaleCase(500), good: scaleGood },
-  { id: "S3", what: `at 2 000 things every request takes under ${BOUND_MS} ms`, run: scaleCase(2000), good: scaleGood },
+  { id: "S1", what: `at 72 things (the Commons' size) each of the ten timed requests takes under ${BOUND_MS} ms × this host's load factor (best of 5)`, run: scaleCase(72), good: scaleGood },
+  { id: "S2", what: `at 500 things each of the ten timed requests takes under ${BOUND_MS} ms × this host's load factor (best of 5)`, run: scaleCase(500), good: scaleGood },
+  { id: "S3", what: `at 2 000 things each of the ten timed requests takes under ${BOUND_MS} ms × this host's load factor (best of 5)`, run: scaleCase(2000), good: scaleGood },
 
   // ---------------- Q: the gates in front of the work ----------------
   { id: "Q1", what: "a visitor's place onto a table scaled 1000× is refused (rights) before any search, and still recorded as an attempt", run(s) { cast(s);
