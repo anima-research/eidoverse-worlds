@@ -278,7 +278,8 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
   // BN3 (bot review #260 82): the advice is pasted into a shell; a name with $, a backtick or a quote reaches the tool as written
   const odd = "$HOME `id` it's", r = { final: { translated: { "@world": { "roles:u-odd": { role: "builder" }, "imported-bans:u-odd": true } } } };
   const said = [...peopleOf("hall", r, () => ({ name: odd })), ...bansOf("hall", r, () => ({ name: odd }))].map((p) => p.bind);
-  const heard = said.map((b) => { const arg = b?.match(/ bind hall (.*) <their account>$/)?.[1] ?? ""; return Bun.spawnSync(["sh", "-c", `printf %s ${arg}`]).stdout.toString(); });
+  const heard: string[] = []; for (const b of said) { const arg = b?.match(/ bind hall (.*) <their account>$/)?.[1] ?? "";   // Bun's shell quotes as sh does, on every OS
+    heard.push((await Bun.$`echo -n ${{ raw: arg }}`.nothrow().quiet()).stdout.toString()); }
   row("BN3", () => ok(said.length === 2 && heard.every((h) => h === odd), "BN3 the bind advice quotes the name for a shell: pasted, it reaches the tool as written ($, backtick, quote)", { said, heard }));
 }
 
