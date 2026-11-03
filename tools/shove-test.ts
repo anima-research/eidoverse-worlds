@@ -60,6 +60,9 @@ function walk(st: any, { speed = 1.55, z0 = -1.2, x = 0, frames = 120, sh = crea
 { const st = world({ chair: thing([0, 0, 0]), cart: thing([3, 0, 0]), stool: thing([0, 0.6, 0], { c: { parent: { to: "cart" } } }) });
   check("occupied: a thing someone sits on, and one carrying a seat", occupied(st, "chair", [0, 0, 1], { mounted: new Set(["chair"]) })?.why === "seat" && occupied(st, "cart", [0, 0, 1], { mounted: new Set(["stool"]) })?.why === "seat");
   check("occupied: someone standing on it", occupied(st, "chair", [0, 0, 1], { bodies: [[0.1, 0.6, 0]] })?.why === "standing");
+  // a narrow cart carrying a wide plank (review of #260, #288): a body in the plank's slide but beside the cart's own footprint
+  const st2 = world({ cart: thing([3, 0, 0]), plank: { c: { physics: { kind: "dynamic", shape: [[-2, 0, -0.3], [2, 0.6, 0.3]] }, transform: { pos: [0, 0.6, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, parent: { to: "cart" } } } });
+  check("occupied: someone in a child's overhang's slide, outside the shoved thing's own footprint", footprint(st2, "cart").max[0] + 0.32 < 4.5 && occupied(st2, "cart", [0, 0.2, 1.8], { bodies: [[4.5, 0, 1.2]] })?.why === "in-the-way" && occupied(st2, "cart", [0, 0.2, 1.8], { bodies: [[6, 0, 1.2]] }) === null, occupied(st2, "cart", [0, 0.2, 1.8], { bodies: [[4.5, 0, 1.2]] }));
   check("occupied: someone where it would slide; not when it slides the other way", occupied(st, "chair", [0, 0.2, 1.8], { bodies: [[0, 0, 1.2]] })?.why === "in-the-way" && occupied(st, "chair", [1.8, 0.2, 0], { bodies: [[0, 0, 1.2]] }) === null);
   const { out } = walk(st, { opts: { bodies: [[0, 0, 0.9]] } }); const ok = walk(st, { opts: { bodies: [[0, 0, 1.5]] } }).out;
   check("…and the walker sends none toward someone 0.9 m beyond it (one 1.5 m beyond is clear of the slide)", out.length === 0 && ok.length === 1, { out, ok }); }

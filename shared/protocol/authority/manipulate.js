@@ -30,7 +30,7 @@ const changeEntry = (...a) => UP.changeEntry(...a);
 const guess = (...a) => UP.guess(...a);
 const lastTouch = (...a) => UP.lastTouch(...a);
 
-// The rests of the last minute, at most 8, oldest first: what restsOf(w.entries) gives filtered to that window, read
+// The rests of the last minute, the last 8 rest entries (each one body's rest per transform in it), oldest first: what restsOf(w.entries) gives filtered to that window, read
 // from the act index's rest list backwards (ts never decreases along the log, so the window is a suffix).
 function recentRests(w, now) {
   const X = actIndexOf(w); const E = w.entries; const out = [];

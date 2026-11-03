@@ -106,7 +106,7 @@
    "shape": "its size decides, for each reader: physics collides it as its measured box; walking uses its triangles (mesh) when it is room-scale (footprint ≥ 16 m² and ≥ 2.2 m tall) or floor-shaped and uneven (footprint ≥ 2 m², ≤ 1.0 m tall, its box top > 0.10 m above its surface), else its box (client/lib/supportclass.js)",
    "enabled": "true: it is solid",
    "blocks": "everything: bodies, hulls and things",
-   "layer": "[1] (Godot's default): every mover meets it",
+   "layer": "[1] (Godot's default): every mover that scans the default layer (bodies and things always; a hull by its own mask)",
    "mask": "[1] (Godot's default)"
   },
   "docs": {
@@ -277,7 +277,7 @@
    "angle": "a spot's cone half-angle, radians",
    "inner": "where a spot's edge starts to soften, radians",
    "decay": "how it falls off with distance, an exponent: 2 = inverse square (physical, glTF), 0 = not at all",
-   "important": "always casts: first claim on a light slot, never governor-shed",
+   "important": "first claim on a light slot, never governor-shed (more important lights than slots: the nearest cast)",
    "daytime": "dim (it dims by day, follows the day cycle) | full (it burns at noon too)"
   },
   "units": {

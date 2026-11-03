@@ -1,6 +1,6 @@
 // shared/protocol/authority/bodyconsent.js — body consent: every act on another body is gated here, before delivery, and
 // the BODY_VERBS (consent, body, reach, inbox) answer for it (refactor split, 2026-10-17; moved from authority.js's "body
-// consent" section unchanged). Presence only: nothing here is ever appended. The body's own track (body, dist, gripPoint)
+// consent" section unchanged). Presence only: nothing here is appended to the world log (an auto-cooldown is one moderator-log line: appendMod). The body's own track (body, dist, gripPoint)
 // lives in the physics section above it, reached through UP.
 import * as C from "../consent.js";
 import { REACH, BODY_REACH } from "../physconst.js";

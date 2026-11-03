@@ -3,7 +3,7 @@
 // perception), so the two can never describe different pictures.
 //
 //   picture {src, width?, description?, lit?}   (a quad of its own, facing +Z on the thing's origin)
-//   comp {id, type: "picture", data: null}          # take it down
+//   delete {id, component: "picture"}                # take it down
 //
 // A picture is a standalone image (Godot's Sprite3D, Unity's SpriteRenderer): it owns its quad, `width` metres wide,
 // its height from the image's aspect once the image loads. A texture on a NAMED node of a model is the `material`

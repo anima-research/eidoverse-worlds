@@ -327,6 +327,11 @@ await C("P1", "a refusal for a person: what they tried and why, no refusal code,
   const agent = RF.refusalText("move 3485c78e0a1b", r);
   return [p.includes("“Front door”") && !/3485c78e|\(locked\)|\{|throughLock|§/.test(p) && /ask someone who can/i.test(plainTeach) && plainTeach.includes("“Desk lamp”") && agent.includes("(locked)") && agent.includes("throughLock"), { p, plainTeach, agent }];
 });
+await C("P1c", "a fix whose plain clauses come before its tool syntax keeps them for a person (bot #260 200: the owner-only refusal's 'ask the world's owner' was dropped whole)", () => {
+  const r = { refused: { code: "rights", reason: "changing @world.about needs an owner; you are a builder", fix: "ask the world's owner; help shows your role and permissions; say {text, to: <owner>} reaches them" } };
+  const p = RF.plainRefusal("change about", r);
+  return [/Ask the world's owner; help shows your role and permissions/.test(p) && !/[{}<]/.test(p), { p }];
+});
 await C("P1b", "an ambiguous write (txn ambiguous, or no answer: mayHaveLanded) reads as maybe-happened for a person and an agent, never as a failure or a refusal (bot review #260 57)", () => {
   const amb = { ok: false, txn: "ambiguous", refused: { code: "ambiguous", reason: "the write's result is unknown: the store didn't answer" } };
   const late = { ok: false, refused: { code: "timeout", reason: "the authority didn't answer 'move' in 8 s", fix: "it may still land: look before trying again", mayHaveLanded: true } };

@@ -1,6 +1,6 @@
 // tools/protocol/kernel-check.ts — the kernel is trial-kernel (reviewer item 5, 2026-10-18): a change to the log envelope, the
-// kinds, the fold's operations, the identity grammar, the version, transform, parent, model, roles or access (each as its
-// component shape; the ladder's vocabulary is the registry's since recut C11) is IMPOSSIBLE to land unless the same
+// kinds, the fold's operations, the identity grammar, the version, roles or access (each as its component shape; transform,
+// parent and model are the registry's since recut C11, as is the ladder's vocabulary) is IMPOSSIBLE to land unless the same
 // change carries (a) a translator change, (b) a REGISTRY-CHANGELOG.md line and (c) vectors an old reader refuses and the new
 // reader folds. shared/protocol/kernelspec.js is the pure half; spec/kernel-pin.json the pin.
 //   bun tools/protocol/kernel-check.ts                         the gate's check (CORE lane)
@@ -115,7 +115,7 @@ await C("K1", "the kernel is what the fold reads (house plan #260 10-20, C11: 't
 await C("K2", "the code's kernel is what spec/kernel-pin.json pins (a difference is THE change: red until `kernel-check.ts --pin` with its companions)", () => {
   const d = pin ? KS.kernelDiff(pin.kernel, KS.kernelPinOf()) : ["no pin: bun tools/protocol/kernel-check.ts --pin"]; return [!d.length && pin?.status === "trial-kernel", d.slice(0, 12)]; });
 
-await C("K3", "the pin's recorded companions hold: the changelog line is in REGISTRY-CHANGELOG.md, the translator moved (and is still there), and the vectors still run red on the old reader and green on the new (the initial pin, before any change, records none)", async () => {
+await C("K3", "the pin's recorded companions hold: the changelog line is in REGISTRY-CHANGELOG.md, the translator moved (and is still there), and the vectors still run red on the old reader and green on the new (the latest re-pin's companions only; the initial pin, before any change, records none)", async () => {
   const c = pin?.companions; if (!c) return [pin?.companions === null, "initial pin: no change yet, nothing to verify"];
   const log = read(CHANGELOG); const line = typeof c.changelog === "string" && log.includes(`- ${c.changelog}`);
   // a scope extension recorded (model, roles, access entered 10-18): its names are still the kernel's, in code and in the registry pin

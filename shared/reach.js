@@ -7,7 +7,8 @@
 // different starting poses) and in nondeterminism across clients — and in this
 // world EVERY client solves the same reach independently, so two clients that
 // iterate differently draw two different arms. A closed form is the same
-// arm everywhere, every frame, with no starting-state memory.
+// arm everywhere, every frame, with no iterative state (a kept swivel/elbow is
+// tried first only while still clear: hysteresis, not convergence).
 //
 // Why the limits come from ragdoll.js's tables (moved to shared/joints.js):
 // an arm that can reach where it could never fall is two different bodies. The

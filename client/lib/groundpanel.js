@@ -78,7 +78,7 @@ export function paintGround(body) {
     body.appendChild(btnRow(btn('↻ reshuffle', () => { st.seed = Math.floor(Math.random() * 9999); growTerrain({ seed: st.seed }); })));
     body.appendChild(heightmapRow());
 
-    // 💧 water: one level for the world — every bit of ground below it is under water. The level starts
+    // 💧 water: one level for the world (the `water` component on @world) — every bit of ground below it is under water, dry pockets aside. The level starts
     // a quarter of the way up the ground's current range (a pond in the low places), or where it is now.
     {
       const lvl = document.createElement('input');

@@ -56,6 +56,7 @@ check("never a claim about pixels or sound", !/pixel|sound|audio|video/i.test(de
 const det = captionsDetail(good);
 check("the detail level lists the window oldest first with clocks and speakers", det.length === 2 && det[0] === "[12:32–12:35] we light the first candle" && det[1] === "[12:36–12:39] Ra: for the year that was", JSON.stringify(det));
 check("the detail level can be asked for fewer lines", captionsDetail(good, 1).length === 1 && captionsDetail(good, 1)[0].includes("Ra:"));
+check("…and for none: lines = 0 is no lines, not every line (#258)", captionsDetail(good, 0).length === 0, JSON.stringify(captionsDetail(good, 0)));
 
 console.log("— 1c. the verb —");
 const a1 = normalizeCaptionArgs({ id: "cinema", session: S1, n: 1, t0: 1.004, t1: 2.5, text: "  hello   there ", speaker: "Ra", title: "a film", junk: 1 });

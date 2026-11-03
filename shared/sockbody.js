@@ -3,7 +3,8 @@
 //
 // The alpha registers the station's core only (shared/protocol/componentspec.js station: action, pose, anchor, exit,
 // leaveBy, who). The rest of the researched shape below is RESERVED: the door refuses it (STATION_RESERVED), its names are
-// held, and this reader still reads it generously so it comes back as an addition, not a rewrite. hold is cut.
+// held, and this reader still reads it generously so it comes back as an addition, not a rewrite. hold is cut; input is
+// the one reserved field opened since (the helm: input.move 'drive', componentspec.js station).
 //
 // One shape for every way a body attaches to a thing (research: notes/eidoverse/RESEARCH-socket-body-2026-10-06.md,
 // "The shape we build"): a chair, a swing, a saddle, a car's driver seat, a rocket couch, a bunk, a lectern you stand

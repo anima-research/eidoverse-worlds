@@ -60,8 +60,8 @@ export const KEYS = Object.keys(COMPONENTS.grabbable.fields);
 export const RESERVED_KEYS = COMPONENTS.grabbable.reservedFields;   // fx
 export const GRIP_KEYS = ['pos', 'q', 'hand', 'role', 'grasp', 'part'];
 // Who may carry or punt a thing that doesn't say (grabbable.who, physics.who absent): ONE value, read by the hand here and by
-// the authority's punt (review 10-06 finding 5: the old protocol let visitors punt and carry, rank 0; the grabbable migration chose builder).
-// Flipping it to 'member' is this one line plus the cases that pin builder today: grab-check M2, G6, I1 and phys-check F.
+// the authority's punt (review 10-06 finding 5: the old protocol let visitors punt and carry, rank 0; the grabbable migration chose builder; R 10-07 moved it to member).
+// Flipping it from 'member' is this one line plus the cases that pin builder today: grab-check M2, G6, I1 and phys-check F.
 export const DEFAULT_WHO = materialize('grabbable', {}).value.who;   // 'member' (R 10-07: "I vote for visitors being able to grab and throw"; a world narrows it per thing with who)
 // the written defaults are the registry's (componentspec.js grabbable.defaults: what the authority writes into a bare
 // {grabbable: {}}); the rest is what a reader fills in for a field the authority leaves absent
@@ -99,7 +99,7 @@ export function gripOf(g) {
  * when it can't be held at all. The ONE reader: the authority's gates, the client and the agent all ask this.
  *
  * Migration (research §Decisions 5): a thing with `physics {kind: 'dynamic'}` and no `grabbable` reads as
- * {who: physics.who ?? 'builder'} plus the defaults, which reproduce what the authority did before grabbable existed: the
+ * {who: physics.who ?? 'member'} (DEFAULT_WHO) plus the defaults, which reproduce what the authority did before grabbable existed: the
  * latest grab wins, reach 1.5 m from the hand, held by its centre in the right hand, dropped or thrown on release.
  * `source` says which it was ('grabbable' or 'physics').
  */

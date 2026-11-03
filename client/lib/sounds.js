@@ -1,7 +1,7 @@
 // sounds — the browser realizer for the `sound` component: an audio file
 // playing FROM an entity, positional, through the page's ONE AudioContext.
 //
-//   comp {id, type: "sound", data: {src, playing?, loop?, volume?, pitch?, near?, radius?, spatial?, t0?, description?}}
+//   set {id, component: "sound", value: {src, playing?, loop?, volume?, pitch?, near?, radius?, spatial?, t0?, description?}}
 //
 // Graph per sound: <audio> → MediaElementSource → gain (volume) → panner
 // (position, distance falloff) → destination. The panner follows the entity
@@ -263,7 +263,7 @@ registerEditor(({ id, obj, meta, bag, commit }) => {
       <div style="display:flex;gap:6px">
         <button data-se="play">${cur ? 'apply + play' : 'play'}</button>
         ${cur && cur.playing !== false ? '<button data-se="pause">pause</button>' : ''}
-        ${cur ? '<button data-se="silence" title="comp {type: \\"sound\\", data: null}">silence</button>' : ''}
+        ${cur ? '<button data-se="silence" title="delete {id, component: \\"sound\\"}">silence</button>' : ''}
         <span data-se="msg" style="color:var(--dim);font-size:11px"></span>
       </div>
     </div>`,

@@ -33,7 +33,7 @@ const occupantOn = (...a) => UP.occupantOn(...a);
 const vec3s = (...a) => UP.vec3s(...a);
 
 // ---------- use (interaction) ----------
-// A pendulum's pivot is a view: derived from what it hangs from, every time it's read (L2: never stored).
+// A pendulum's pivot is its stored Pivot (hang writes one: writes.js), else derived from what it hangs from each time it's read.
 function pivotOf(st, id) {
   const pv = st.entities[id]?.c.pivot?.pos; if (Array.isArray(pv) && pv.length === 3) return pv.slice();   // the stored hinge (research 52)
   const t = worldT(st, id); const p = st.entities[id]?.c.parent?.to; const pb = p && aabb(st, p);

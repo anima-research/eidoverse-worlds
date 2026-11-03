@@ -12,10 +12,10 @@
 // `lib`. (The old protocol's `kind: "light"` light entity is gone from the view:
 // the importer rewrites it to comp.light; shared/protocol/kind.js kindOf names
 // what a thing is.) `componentsOf` reads any folded entity as a component list,
-// and `entityOf` writes a component list back to exactly those bytes; an
-// instance's `key` says which comp-bag key it came from. Nothing in an existing
+// and `entityOf` writes a component list back to those bytes (except a motion type in its old spelling, written in
+// today's word: names.js OLD_MOTION_TYPES); an instance's `key` says which comp-bag key it came from. Nothing in an existing
 // world is rewritten (RFC: updates are offered, never applied);
-// tools/components-corpus-test.ts proves the round trip on every local world.
+// tools/components-corpus-test.ts proves the round trip on the conformance fixtures and every dir in COMPONENTS_CORPUS.
 //
 // Pure: no DOM, no three, no I/O. Server, browser, mcpl and tests import it.
 
@@ -31,8 +31,8 @@ import { WEATHERS, CLOUDS } from './forecast.js';
 // ------------------------------------------------------------ canonical bytes
 // RFC 8785 (JCS) for the JSON this module produces: object keys sorted by UTF-16
 // code units, no whitespace, numbers in ECMAScript's shortest round-trip form
-// (which JSON.stringify already emits), strings JSON-escaped. Non-finite numbers
-// and undefined are refused, as JCS requires.
+// (which JSON.stringify already emits), strings JSON-escaped. Non-finite numbers are refused, as JCS requires; so is a
+// bare undefined, while an undefined-valued key inside an object is dropped, as JSON.stringify does.
 export function canon(v) {
   if (v === null || typeof v === 'boolean') return JSON.stringify(v);
   if (typeof v === 'number') {

@@ -522,7 +522,7 @@ export function createWorld({ gravity = [0, -9.81, 0], substeps = 4, friction = 
       }
     }
     // ---- CCD: time of impact by conservative advancement, on Box3D's rules (solver.c:556–611, distance.c:1709). Review
-    // round 2 (10-09): (1) sweep against STATIC bodies only (a dynamic one frozen at its end pose dragged formation flyers);
+    // round 2 (10-09): (1) sweep against static and SLEEPING bodies only, what doesn't move this step (a dynamic one frozen at its end pose dragged formation flyers);
     // (2) never defer to the solver for a fast body: one speculative edge point can't stop a box at 20 m/s (it pivots on
     // the point and passes through), and collide() could even return nothing at 1.4 cm; skip only real overlap; (3) a sphere's target lets it sink one slop, so sliding over flush seams never "hits";
     // a hit at t = 0 is ignored (Box3D's 0 < fraction); (4) rotation is swept too: q interpolated, and the advancement

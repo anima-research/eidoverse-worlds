@@ -209,9 +209,9 @@ export function shapeHeight(base, S, size) {
 }
 
 // ---- water ---------------------------------------------------------------------
-// One level per world, riding the terrain bag: `water: {level, color?, opacity?}`.
-// Every point of ground below `level` is under water, so one number makes every
-// low place a lake. It is presence-free world state like the ground itself:
+// One level per world: the `water` component on @world, {level, color?, opacity?} (terrain.water is the old spelling,
+// translated by shaperepair). Every point of ground below `level` is under water unless a pocket zone keeps the water
+// out (protocol/zone.js), so one number makes every low place a lake. It is presence-free world state like the ground itself:
 // rendered by every client, read by every agent, and (for now) ignored by the sim —
 // a thrown thing still lands on the lakebed.
 //

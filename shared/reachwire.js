@@ -8,7 +8,8 @@
 // travel is a function, which is why the descriptor grammar below exists.
 //
 // It rides the presence plane (spec/PROTOCOL.md §5): per-frame, lossy, never
-// persisted. The server relays the pose bag opaquely; everything in this file
+// persisted. The server relays the bag unchanged except server/reachgate.ts (a refused
+// or malformed limb is removed); everything else in this file
 // runs at the two ends. Because the ends don't trust the middle — or each
 // other's versions — every reader normalizes: a malformed descriptor folds to
 // nothing rather than to a throw in somebody's frame loop.

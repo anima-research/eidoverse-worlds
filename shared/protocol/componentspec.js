@@ -4,7 +4,7 @@
 // Every parameter is written down (PROTOCOL §4; review 10-07 H2, R: "the parameter is the parameter"). The authority writes a
 // component's defaults into the stored value when it's created or set (materialize, below): `defaults` always, and each
 // `when` rule ({if: {field: value}, absent: [fields], set: {…}}) when it holds. So a renderer never supplies a number the
-// log doesn't hold, and changing a default here never changes an old world. A default that lives only in help text or a
+// log doesn't hold for a value written since 10-16 (an older light reads 16 / 1.7 until repair-shapes writes them: components.js), and changing a default here never changes an old world. A default that lives only in help text or a
 // renderer is a bug (pretrans-check D7); a changed default, type or enum is a changed meaning (spec/registry-pin.json, D8).
 //
 // ONE description, derived readers (review 10-14 §3.4, R: "fix"): a field's type (`fields`), default (`defaults`/`when`),
@@ -12,7 +12,7 @@
 // derives the inspector's rows from them (keeping only widget facts: step, decimals, soft maxima, which rows a card shows),
 // shared/components.js derives its records' params, shared/editschema.js and shared/worldentity.js read limits from here, and
 // the agent's `schema` request returns this table. tools/schema-layers-test.ts holds every reader to it. `units` and `docs`
-// are prose about a field, not its meaning: they aren't pinned, and rewording one is not a new version.
+// are prose about a field, pinned with it since #260 10-20: a reworded doc is a meaning break to acknowledge (--ack), not a new version.
 
 // how two touching surfaces' coefficients combine: the modes PhysX, Unity and Rapier name (Jolt and Box2D take any rule as a
 // callback), so every engine can carry them; when two differ, the later in this list wins (PhysX's and Unity's priority)
@@ -66,7 +66,7 @@ export const COMPONENTS = {
       layer: "the collision layers it is IN (Godot's collision_layer): a list of layer numbers 1..32 or names (a lowercase letter, then letters, digits, - or _; ≤ 40), each once. A mover meets it only when the mover's mask scans one of them (Godot: \"Object A can detect a contact with object B only if object B is in any of the layers that object A scans\")",
       mask: "the collision layers it SCANS when it moves (Godot's collision_mask), same items as layer: read for a hull (the authority's hull sweep meets only what is in a layer its mask scans). People and agents walking or swimming, and loose things in the physics engine, scan [1] (eidosim carries no layers between things); a still thing's mask is unread" },
     absentMeans: { shape: "its size decides, for each reader: physics collides it as its measured box; walking uses its triangles (mesh) when it is room-scale (footprint ≥ 16 m² and ≥ 2.2 m tall) or floor-shaped and uneven (footprint ≥ 2 m², ≤ 1.0 m tall, its box top > 0.10 m above its surface), else its box (client/lib/supportclass.js)",
-      enabled: "true: it is solid", blocks: "everything: bodies, hulls and things", layer: "[1] (Godot's default): every mover meets it", mask: "[1] (Godot's default)" },
+      enabled: "true: it is solid", blocks: "everything: bodies, hulls and things", layer: "[1] (Godot's default): every mover that scans the default layer (bodies and things always; a hull by its own mask)", mask: "[1] (Godot's default)" },
     help: "how it collides: {shape: mesh (its triangles: walked on as they are; physics collides it as its box) | box (its bounding box) | sphere (a ball: under an engine that carries spheres it rolls; the authority fits one to its box), enabled? (false: not solid at all, a walk-through thing that still moves; absent true), blocks? [bodies|hulls|things] (what it stops; absent: everything; [\'hulls\'] = a wall only vehicles meet), layer? [1..32 | name] (the layers it is in; absent [1]), mask? (the layers it scans as a hull; absent [1]): a mover meets it when blocks names the mover's kind AND the mover's mask scans its layer (Godot's rule; bodies and things scan [1])}; absent shape, its size decides (a room-scale or uneven floor-shaped thing walks as its mesh, else its box; physics uses its box). enabled: false with physics {kind: 'dynamic'} is refused (it would fall forever). exact, the old word for mesh, is taken and stored as mesh" },
   stage:     { on: "thing", fields: { speaker: "string" }, ranges: { speaker: { maxLen: 80 } }, docs: { speaker: "who is speaking here, a name (≤ 80; the caption bot's mark, WebVTT's <v Name>)" },
     absentMeans: { speaker: "no stage cue: the caption bot uses its own speaker" }, help: "the caption bot's stage mark: {speaker?: who is speaking here, a name ≤ 80}" },
@@ -108,7 +108,7 @@ export const COMPONENTS = {
       intensity: "the default; on a light with no decay (stored before 10-16) 16, the old rig's, written by the same repair",
       daytime: "dim: it follows the day cycle (an older value's day: false meant full)" },
     docs: { kind: "point (shines every way), spot (a cone along its -Z) or directional (a sun: parallel light along its -Z everywhere, KHR_lights_punctual's; range and decay unread; the first by id is the renderer's sun)", color: "its colour, 0xRRGGBB, sRGB", intensity: "how bright it is: candela at decay 2 (KHR_lights_punctual); three.js units under this light's decay otherwise. Default 25.93: main's default light's brightness at 5 m", range: "a hard cutoff, metres: nothing beyond it is lit", angle: "a spot's cone half-angle, radians",
-      inner: "where a spot's edge starts to soften, radians", decay: "how it falls off with distance, an exponent: 2 = inverse square (physical, glTF), 0 = not at all", important: "always casts: first claim on a light slot, never governor-shed", daytime: "dim (it dims by day, follows the day cycle) | full (it burns at noon too)" },
+      inner: "where a spot's edge starts to soften, radians", decay: "how it falls off with distance, an exponent: 2 = inverse square (physical, glTF), 0 = not at all", important: "first claim on a light slot, never governor-shed (more important lights than slots: the nearest cast)", daytime: "dim (it dims by day, follows the day cycle) | full (it burns at noon too)" },
     help: "a light on this thing: {kind: point|spot|directional, color (0xRRGGBB, sRGB), intensity (candela at decay 2), range (m, a hard cutoff), decay (falloff exponent, default 2 = inverse square), important, daytime: dim|full}; a spot shines along the thing's -Z with angle (its cone's half-angle, rad, default π/4) and inner (where the edge starts to soften, rad, default 0); a directional light is a sun shining along the thing's -Z everywhere (intensity in lux, as KHR_lights_punctual; the first by id lights the world, in place of the sky's own sun). day (true/false) is taken and stored as daytime" },
   // a parametric body on a model-less thing (R 10-12: Create ▸ Box/Sphere/…, as Create ▸ Light is an Empty with a light).
   // Base-centred like a measured model (boxOfM): y runs 0..size[1], so a mesh thing stands on its own origin. Registered
@@ -423,7 +423,7 @@ export const COMPONENTS = {
                  gradient: "a painted sky in place of the day's: {top, horizon, bottom?}, each a linear [r, g, b] 0..1 (OMI_environment_sky gradient; absent bottom = horizon). rate: 0 already pins the clock",
                  system: "eidoverse (the detailed sky) | skymesh (the basic sky, for weak GPUs)", colors: "tints {star? (or sun), cloud?, sky?, fog?, shield?}, each [r, g, b] 0..1 (SWEEP-3 S1, main's)",
                  audio: "plays the asset library's weather sounds (rain, thunder) when this server has them; silent otherwise (main's sky.audio; read when the sky is built)" },
-               help: "on @world: the sky and its clock {hours, rate, tz? (present: the wall clock of that zone governs), clouds, weather, weatherK, transition (s), azimuth (rad), fog, exposure, ambient (× this renderer's own curves), forecast?, gradient? {top, horizon, bottom?} (linear [r, g, b] 0..1: a painted sky, OMI_environment_sky; absent bottom = horizon), system? (eidoverse | skymesh: the basic sky), colors? {star, cloud, sky, fog, shield} ([r, g, b] tints), audio? (plays the asset library's weather sounds when this server has them, silent otherwise; absent: off)}. rate: 0 pins the clock. ts, override and forecast.epoch are stamped by the sky and weather acts; the sky act also takes clock: 'real' (stored as tz) and weatherSeconds (stored as transition)" },
+               help: "on @world: the sky and its clock {hours, rate, tz? (present: the wall clock of that zone governs), clouds, weather, weatherK, transition (s), azimuth (rad), fog, exposure, ambient (× this renderer's own curves), forecast?, gradient? {top, horizon, bottom?} (linear [r, g, b] 0..1: a painted sky, OMI_environment_sky; absent bottom = horizon), system? (eidoverse | skymesh: the basic sky), colors? {star, cloud, sky, fog, shield} ([r, g, b] tints), audio? (plays the asset library's weather sounds when this server has them, silent otherwise; absent: off)}. rate: 0 pins the rated clock (a tz overrides it: remove tz to pin). ts, override and forecast.epoch are stamped by the sky and weather acts; the sky act also takes clock: 'real' (stored as tz) and weatherSeconds (stored as transition)" },
   // shape audit 10-16 (render-media-env §14): ONE spelling, the flora one. The first protocol's makeGrass knobs (bladeHeight,
   // spacing, perCell, colorTip, an int colour) are taken at write and stored through the reader's own mapping (flora_args
   // mapGrassArgs), once; a preset is stored by its NAME (R 10-17; Fable #4: expansion is cheap later, un-expansion impossible)
@@ -645,8 +645,8 @@ export const COMPONENTS = {
 // Every registered name has one. trial: admitted and written, but its shape may still change during the alpha (about a
 // year); where it changes we translate or repair stored values where we can. reserved: the name is held (nobody else may
 // take it) but the authority refuses every write of it, with one wording (authority.js, the write door); `instead` says
-// what to use meanwhile. stable: promised, additions only (none yet). A ladder DRAFT (a namespaced name the authority
-// doesn't know) has no status here: it isn't admitted at all. The pin records each status (spec/registry-pin.json); a
+// what to use meanwhile. stable: promised, additions only (none yet). A namespaced DRAFT (a name the authority
+// doesn't know) has no status here: admitted and kept as someone's own (checks.js), never judged. The pin records each status (spec/registry-pin.json); a
 // change to a trial or reserved entry is allowed only with an acknowledgement (pretrans --pin --ack), a stable one never.
 // held names (R 15:16, shape audit 10-16; research reserved-names.md): registered reserved, so no write can squat a name the
 // alpha means to give a settled shape. No fields: each says what it is held for. `joint` (the skeleton node) and

@@ -296,7 +296,7 @@ function buildCreate(ctx, a) {
 }
 
 // a server-written component (componentspec writtenBy) named in a request by hand, below owner
-const serverWritten = (at) => refuse("server-written", `${at} is written by the server (on a copy of a blueprint, a duplicate or a rebase), not by hand`, "create {from: <blueprint hash or a thing's id>} makes a copy that carries it; rebase moves a copy to a newer record");
+const serverWritten = (at) => refuse("server-written", `${at} is written by the server (on a copy of a blueprint, a duplicate or a rebase), not by hand`, "create {from: <blueprint hash or a thing's id>} makes a copy that carries it; update {copy, to} moves a copy to a newer record");
 const handWrite = (ctx, id, comp) => { if (defOf(comp)?.writtenBy === "server" && roleOf(ctx.st, ctx.actor) !== "owner") serverWritten(`${id}.${comp}`); };
 function buildSet(ctx, a) {
   const e = needThing(ctx, a.id); handWrite(ctx, a.id, a.component);
@@ -307,7 +307,7 @@ function buildSet(ctx, a) {
   // here is a direct read of any component of anything, through a lock, by anyone, with no trace. The fix line
   // already sends them to `inspect`, which is rights-checked. `version`/`by` stay: history is READ_ONLY,
   // so who-touched-what-when is public already.
-  if (base !== undefined && lt && lt.seq > base) refuse("stale", `${a.id}.${a.component} changed since version ${base}: ${said(lt.actor)} set it at ${lt.seq}`, a.merge ? `inspect {id: '${a.id}'} for the current value and its new version, then re-send with that base` : `inspect {id: '${a.id}'} for the current value and version, then decide; or merge: true to change only your fields`, { version: lt.seq, by: lt.actor });
+  if (base !== undefined && lt && lt.seq > base) refuse("stale", `${a.id}.${a.component} changed since version ${base}: ${said(lt.actor)} set it at ${lt.seq}`, a.merge ? `inspect {id: '${a.id}'} for the current value and its new version, then re-send with that base` : `inspect {id: '${a.id}'} for the current value and version, then decide; or re-send without base and with merge: true to change only your fields`, { version: lt.seq, by: lt.actor });
   if (a.base === undefined && !a.merge && lt && lt.actor !== ctx.actor && a.component in e.c) ctx.notes.push({ id: a.id, component: a.component, overwrote: { by: lt.actor, seq: lt.seq }, why: "you replaced someone else's value without a base version; send base (from inspect) to be refused instead if it changed" });
   let v = a.merge ? merge7396(e.c[a.component], a.value) : a.value;
   if (a.component === "parent") {

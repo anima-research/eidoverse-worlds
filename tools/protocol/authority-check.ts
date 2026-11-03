@@ -1651,11 +1651,13 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   // each verb the help names, with args it accepts alone, dry: a verb named here without args below fails the row too
   const ARGS = { create: { model: "crate" }, set: { id: "lamp", component: "description", value: "x" }, delete: { id: "shade" }, place: { id: "shade", on: "lamp" },
     turn: { id: "lamp", axis: "y", deg: 10 }, sky: { hours: 7 }, weather: { hours: 7 } };
+  // the list is literal here, not read from BATCH_OPS (review of #260, #523): a verb dropped from the list goes red, not unseen
+  const WANT = ["create", "set", "delete", "place", "turn", "sky", "weather"];
   const named = (VERBSPEC.batch.doc.match(/ of ([a-z-]+(?:, [a-z-]+)*)$/)?.[1] ?? "").split(", ").filter(Boolean);
-  const alone = Object.fromEntries(named.map((v) => [v, ARGS[v] ? call("olive", v, { ...ARGS[v], dry: true }) : null]));
-  const inBatch = Object.fromEntries(named.map((v) => [v, ARGS[v] ? call("olive", "batch", { ops: [{ verb: v, args: ARGS[v] }], dry: true }) : null]));
-  const turnedAway = named.filter((v) => !alone[v]?.ok || !inBatch[v]?.ok);
-  ok(named.length >= 5 && !turnedAway.length, "BT5 every verb batch's help names goes in a batch, dry, as it goes alone", { named, turnedAway: turnedAway.map((v) => [v, alone[v]?.refused ?? alone[v]?.ok, inBatch[v]?.refused ?? inBatch[v]?.ok]) }); }
+  const alone = Object.fromEntries(WANT.map((v) => [v, ARGS[v] ? call("olive", v, { ...ARGS[v], dry: true }) : null]));
+  const inBatch = Object.fromEntries(WANT.map((v) => [v, ARGS[v] ? call("olive", "batch", { ops: [{ verb: v, args: ARGS[v] }], dry: true }) : null]));
+  const turnedAway = WANT.filter((v) => !alone[v]?.ok || !inBatch[v]?.ok);
+  ok(JSON.stringify(named) === JSON.stringify(WANT) && !turnedAway.length, "BT5 batch's help names exactly create, set, delete, place, turn, sky, weather, and each goes in a batch, dry, as it goes alone (a builder for each)", { named, turnedAway: turnedAway.map((v) => [v, alone[v]?.refused ?? alone[v]?.ok, inBatch[v]?.refused ?? inBatch[v]?.ok]) }); }
 
 // ---- RA (review of #260): a log changed outside the purge rule refuses writes, but not the operator's or a read ----
 { const name = "altered"; const file = `${root}worlds/${name}.jsonl`;

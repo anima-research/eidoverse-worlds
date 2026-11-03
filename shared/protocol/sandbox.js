@@ -272,9 +272,10 @@ export function runScript(x) {
   const h = makeHost(x);
   return h.finish(vmRun(x.text, h.input, x.event, h.limits, h.call, x.clock));
 }
-/** Does the source parse? (At upload and install: a refusal that teaches, before anything runs.) null, or {code, why}. */
+/** Does the source parse? (At upload and install: a refusal that teaches, before anything runs.) null (it parses), undefined
+ *  (unchecked: no sandbox here; bot review #260 278), or {code, why}. */
 export function checkSyntax(text) {
-  if (!Q) return null; // no sandbox: install still works; every activation says "unavailable"
+  if (!Q) return undefined; // no sandbox: install still works; every activation says "unavailable"
   let rt = null, ctx = null;
   try { rt = Q.newRuntime(); rt.setMemoryLimit(LIMITS.memory); rt.setMaxStackSize(LIMITS.stack); let n = 0; rt.setInterruptHandler(() => ++n > LIMITS.fuel);
     ctx = rt.newContext(); const r = ctx.evalCode(text, "eval.js", { compileOnly: true });

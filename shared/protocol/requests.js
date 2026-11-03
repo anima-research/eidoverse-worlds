@@ -18,7 +18,7 @@ export const set = (id, component, value, { merge = false } = {}) =>
   ({ verb: "set", args: { id: E(id), component: encName(String(component)), value, ...(merge ? { merge: true } : {}) } });
 /** remove one component. */
 export const unset = (id, component) => ({ verb: "delete", args: { id: E(id), component: encName(String(component)) } });
-/** remove a thing (and let its children go: the authority's rule). */
+/** remove a thing (and its children with it: the authority's rule). */
 export const remove = (id) => ({ verb: "delete", args: { id: E(id) } });
 /** use a thing (its reactions: a swing's push, a door's open). */
 /** use a thing. With no action the authority does the thing's one action, or names what it offers (never 'use' by default:

@@ -10,7 +10,7 @@
 //   B. it PLAYS after the first gesture (the shared unlock queue), and with a
 //      t0 in the past it seeks to the shared playhead, not the top;
 //   C. a replace with the same src adjusts in place (volume), no second graph;
-//   D. playing:false pauses; data:null tears the graph down;
+//   D. playing:false pauses; delete {id, component: "sound"} (data:null to the host) tears the graph down;
 //   E. a URL source realizes nothing;
 //   F. the LISTENER's world volume (the audio panel's slider, voiceconsent
 //      volumeFor('world')) is what a sound is heard at, composed with the

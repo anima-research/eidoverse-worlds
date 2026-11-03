@@ -58,9 +58,10 @@ export function qAxisAngle(axis, angle) {
 
 /** The world pose of a parent chain, root first, each link a local { pos, q, scale: [x, y, z] } in its parent's frame.
  *  The protocol's rule is glTF's (PROTOCOL §9.3): local = T · R · S, world = parent's world × local. This returns a TRS,
- *  not a matrix, so it is exact for the position (parent pos + R·(S·pos)) and exact for q and scale whenever every
- *  ancestor's scale is uniform; under a non-uniformly scaled ancestor a rotated child's true world transform shears (no
- *  TRS holds it), and here its q is the plain product and its scale the component-wise product (Unity's lossyScale).
+ *  not a matrix, so it is exact for the position (parent pos + R·(S·pos)), q and scale whenever every ancestor's scale
+ *  is uniform; under a non-uniformly scaled ancestor a rotated child's true world transform shears (no
+ *  TRS holds it), and here its q is the plain product, its scale the component-wise product (Unity's lossyScale) and
+ *  its position approximate too (a grandchild under a rotated parent).
  *  The stored data had 0 such cases at the shape audit (10-16).
  *  The authority compares this as JSON text with the engine's rests (authority/checks.js) and the engine's conformance
  *  digests start from it, so its float order is pinned: no renormalization between links. */

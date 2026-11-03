@@ -1,5 +1,5 @@
 // editschema — what can be edited on a thing, and how, as a PURE FUNCTION of
-// its folded record. Dependency-free, shared verbatim by three surfaces:
+// its folded record (plus, for a host's sockets, the world it lives in: live.world). Dependency-free, shared verbatim by three surfaces:
 //
 //   desktop inspector   client/lib/editpanels.js renders the fields (panels.js)
 //   VR quad             the same fields painted to a canvas (xrpanels.js)
@@ -15,7 +15,7 @@
 //   fields are panels.js specs: { t, k, label, value, def?, … } with k a plain name (def: the
 //   registry default a reset ↺ writes; an unwritten legacy value draws as the field's `absent` reading, which can differ)
 //   inside the group. Address a field from outside as "<group>.<k>"
-//   (pos.x · light.intensity · motion.amp · sockets.seat.yaw · comp.recipe).
+//   (pos.x · light.intensity · motion.amp · sockets.seat|rot|1 · comp.recipe).
 // editOps(ent, id, edits)       → { ops: [{verb, args}], errors: [] }
 //   edits: { "<group>.<k>": value } — a number, a boolean, a string, or a
 //   relative expression ("+=2", "*=-1", "-=10%") against the current value.
@@ -490,7 +490,7 @@ export function inspectSchema(ent, id, live = {}) {
       L('intensity', { label: 'brightness', t: 'range', min: 0, max: Math.max(64, src.intensity ?? 16), step: 1, dp: 0, ...drawn('intensity') }),
       L('range', { label: 'range', t: 'range', min: 1, max: Math.max(40, src.range ?? 10), step: 1, dp: 0 }),
       L('decay', { label: 'falloff', hint: 'how fast it dims with distance (2 is physical; absent, 1.7)', ...drawn('decay') }),
-      L('important', { label: 'important', hint: 'always casts: first claim on a light slot, never governor-shed' }),
+      L('important', { label: 'important', hint: 'first claim on a light slot, never governor-shed (more such lights than slots: the nearest cast)' }),
       L('daytime', { label: 'burns at noon', hint: 'on: daytime full (opts out of the day cycle); off: daytime dim' }),
     ];
     if (live.casting === false) fields.push({ t: 'info', label: '', value: 'glow-only right now (slot pool spent) — it may still cast for others' });
@@ -1597,7 +1597,8 @@ export function describeSchema(schema, { verbsHint = true } = {}) {
         : f.t === 'text' ? (f.value === '' ? '—' : String(f.value).slice(0, 120))
         : f.t === 'json' ? String(f.value).replace(/\s+/g, ' ').slice(0, 120)
         : f.t === 'ref' ? (f.value == null ? '— (none)' : String(f.value)) : String(f.value);
-      const lim = f.t === 'num' && (f.min != null || f.max != null || f.softMax != null) ? `  (${f.min ?? ''}…${f.max ?? f.softMax ?? ''}${f.max == null && f.softMax != null ? ' soft' : ''})` : '';
+      const lv = (x) => (x == null ? '' : f.deg ? `${Math.round(x * R2D)}°` : x);   // a deg field's limits in the unit its value shows (#473)
+      const lim = f.t === 'num' && (f.min != null || f.max != null || f.softMax != null) ? `  (${lv(f.min)}…${lv(f.max ?? f.softMax)}${f.max == null && f.softMax != null ? ' soft' : ''})` : '';
       const ro = f.disabled ? '  [read-only: ' + (f.hint ?? '') + ']' : f.driven ? `  [rest pose — driven by ${f.driven}]` : '';
       L.push(`  ${g.group}.${f.k} = ${val}${lim}${ro}`);
     }

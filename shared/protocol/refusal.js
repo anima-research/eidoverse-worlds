@@ -33,10 +33,13 @@ export function namedFor(text, nameOf = () => null) {
     const n = nameOf(id); if (!n) return m;
     return path ? `${n}'s ${path.slice(1).split(".").join(" ")}` : n; });
 }
+// the fix's leading plain clauses (split at ". " / "; "), up to the first with tool syntax (bot #260 200: a remedy is kept, not dropped whole)
+const plainFix = (fix) => { if (typeof fix !== "string" || !fix) return ""; const out = [];
+  for (const c of fix.split(/(?<=[.;])\s+/)) { if (TOOLISH.test(c)) break; out.push(c); } return out.join(" ").replace(/[.;]$/, ""); };
 /** "Couldn't move the crate: …" — a refusal as a person reads it. */
 export function plainRefusal(what, reply, nameOf = () => null) {
   const r = reply?.refused ?? {};
-  const fix = typeof r.fix === "string" && r.fix && !TOOLISH.test(r.fix) ? r.fix : "";
+  const fix = plainFix(r.fix);
   const reason = String(r.reason ?? "it wasn't allowed").replace(/\s*\(§[^)]*\)/g, "");
   if (unsure(reply)) return namedFor(`${what.replace(/^./, (c) => c.toUpperCase())} may or may not have happened: ${reason}${fix ? `. ${fix.replace(/^./, (c) => c.toUpperCase())}` : ""}`, nameOf);
   return namedFor(`Couldn't ${what}: ${reason}${fix ? `. ${fix.replace(/^./, (c) => c.toUpperCase())}` : ""}`, nameOf);
@@ -72,7 +75,7 @@ export function lockBody(r, id, nameOf = null) {
 export const lockChoices = (verb) => [
   { v: "through", label: `✓ ${verb} anyway` },
   { v: "cancel", label: "✕ Cancel" },
-  { v: "unlock", label: "🔓 Unlock" },
+  { v: "unlock", label: `🔓 Unlock, then ${verb}` },
 ];
 
 /** An authority warning ({id, kind, …}) as one sentence for a person or an agent (agent lab: "the out-of-bounds warning doesn't

@@ -2,8 +2,8 @@
 // host (client/lib/sounds.js) and the mcpl agent (text-tier perception), so
 // the two can never describe different sounds.
 //
-//   comp {id, type: "sound", data: {src, playing?, loop?, volume?, pitch?, near?, radius?, spatial?, t0?, description?}}
-//   comp {id, type: "sound", data: null}          # silence it
+//   set {id, component: "sound", value: {src, playing?, loop?, volume?, pitch?, near?, radius?, spatial?, t0?, description?}}
+//   delete {id, component: "sound"}               # silence it
 //
 // A sound is an audio file playing FROM an entity: positional, in the world,
 // heard louder the closer you stand. The radio prop is the first carrier —
@@ -21,7 +21,7 @@
 //
 // THE CLOCK. `t0` is the authority's clock, in epoch milliseconds, when
 // playback (re)started, so every listener — and every late joiner — hears the
-// same place in the track: the playhead is (serverNow - t0) mod duration when
+// same place in the track: the playhead is ((serverNow - t0) × pitch) mod duration when
 // looping, serverNow() being each reader's estimate of the authority's clock
 // (client/lib/serverclock.js in a browser, mcpl/agent.ts serverNow() in an
 // agent). The authority stamps it when a sound starts playing; without it each
