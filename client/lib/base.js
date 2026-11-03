@@ -34,13 +34,69 @@ export const bus = {
 // "who am I" from query params. Both are guarded: headless hosts have neither,
 // and get the defaults.
 
+// Which world: the link's ?world= if it names one; otherwise the world THIS
+// TAB was last in (sessionStorage, so a reload keeps the tab where it was
+// whatever other tabs have joined since); otherwise the world this browser
+// was last IN as a person (localStorage), so a bare link (a bookmark, the
+// login's return to '/') goes back where you were; the commons only for a
+// browser that has been nowhere. Both are written by net.js rememberWorld.
+// Spectators, renderers and the thumbnail minter ignore the memory: a link
+// points them, and a renderer must never inherit a person's last stop.
+// index.html's early-socket script makes this same choice before any module
+// loads and publishes it as __ewWorld, which CONFIG takes when present, so
+// the page has one answer (tools/last-world-test.ts holds the two copies
+// in agreement).
+export const LAST_WORLD_KEY = 'ew-world';      // localStorage: the browser's last world
+export const TAB_WORLD_KEY = 'ew-world-tab';   // sessionStorage: this tab's
+/** A name a world can have — the client's copy of server.ts admitJoin's rule
+ *  (index.html's early-socket script carries its own: it runs before modules). */
+export const isWorldName = (w) => typeof w === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(w);
+export function pickWorld(params, last, tab = null) {
+  const asked = params.get('world');
+  if (asked) return { world: asked, remembered: false };
+  const person = !(params.has('spectate') || params.has('renderer') || params.has('mintthumbs'));
+  if (person && isWorldName(tab)) return { world: tab, remembered: true };
+  if (person && isWorldName(last)) return { world: last, remembered: true };
+  return { world: 'commons', remembered: false };
+}
+/** The two memories as pickWorld takes them; storage that throws reads as none. */
+export function rememberedWorlds() {
+  const read = (s, k) => { try { return s?.getItem(k) ?? null; } catch { return null; } };
+  return [read(globalThis.localStorage, LAST_WORLD_KEY), read(globalThis.sessionStorage, TAB_WORLD_KEY)];
+}
+/** What arriving in an empty world says (main.js, on 'hydrated'), by how the page
+ *  got here: the link named it (a non-empty ?world=, as pickWorld reads it); a
+ *  memory chose it (the last world this person was in, found empty now and so
+ *  forgotten: net.js forgetEmptyWorld); or the commons by default. */
+export function emptyWorldNotice({ world, params, worldRemembered }) {
+  if (params.get('world')) return `"${world}" is empty — nothing has ever been built here.`;
+  if (worldRemembered && world !== 'commons') {
+    return `"${world}", the last world you were in, is empty now. Add ?world=<name> to the link to go somewhere else (?world=commons for the commons).`;
+  }
+  return `you are in "${world}", which is empty. Add ?world=<name> to the link to go somewhere else.`;
+}
+
+/** Forget where this person has been (ui.js logOut): the memory is the person's,
+ *  and the browser may be the next person's. */
+export function forgetRememberedWorlds() {
+  try { globalThis.localStorage?.removeItem(LAST_WORLD_KEY); } catch { /* private mode */ }
+  try { globalThis.sessionStorage?.removeItem(TAB_WORLD_KEY); } catch { /* private mode */ }
+}
+
 const params = new URLSearchParams(globalThis.location?.search ?? '');
 const store = globalThis.localStorage ?? null;
+const picked = globalThis.__ewWorld ?? pickWorld(params, ...rememberedWorlds());
 export const CONFIG = {
   params,
-  world: params.get('world') || 'commons',
+  world: picked.world,
+  // true when a memory chose the world, not the link: a refusal at its door
+  // then forgets it and reloads to wherever a bare link leads next — the other
+  // memory, or the commons (net.js forgetRefusedWorld)
+  worldRemembered: picked.remembered,
   spectate: params.has('spectate'),
   renderer: params.has('renderer'),
+  // a roaming renderer: the server may send it to any world a snapshot is asked of (server/snapshots.ts)
+  roam: params.has('renderer') && params.has('roam'),
   follow: params.get('follow'),
   // Door key: ?key=… once, remembered for this origin thereafter.
   token: params.get('key') || store?.getItem('ew-key') || '',
@@ -49,6 +105,17 @@ export const CONFIG = {
 };
 if (params.get('key')) store?.setItem('ew-key', CONFIG.token);
 store?.setItem('ew-name', CONFIG.name);
+
+/** The name a join ack says we have, minus the transport prefix sendJoin put
+ *  on the wire id ("renderer-" / "retina-"). Pure, for net.js onSnapshot.
+ *  A VERIFIED identity (the ack carries yourSub) is the server's own name for
+ *  us — it ignored the requested id — so it is kept whole: a signed-in viewer
+ *  really called "retina-helen" must not be shortened to "helen". */
+export function nameFromJoinAck(you, { renderer = false, spectate = false, verified = false } = {}) {
+  if (!you || verified) return you;
+  const prefix = renderer ? 'renderer-' : spectate ? 'retina-' : '';
+  return prefix && you.startsWith(prefix) ? you.slice(prefix.length) : you;
+}
 
 /** Rename in place (the front-door panel calls this before connecting). */
 export function setName(name) {
@@ -104,6 +171,9 @@ export function tee(line) {
     if (!teeTimer) teeTimer = setTimeout(teeFlush, 1000);
   } catch { /* never */ }
 }
+/** tee, sent NOW: for the line before something that may freeze the page (a GPU-process compile), so it isn't lost
+ *  in the 1 s batch. */
+export function teeNow(line) { tee(line); try { clearTimeout(teeTimer); teeFlush(); } catch { /* never */ } }
 if (typeof window !== 'undefined') {
   window.addEventListener('error', (e) => tee(`[window.error] ${e.message} @ ${(e.filename ?? '').split('/').pop()}:${e.lineno}`));
   window.addEventListener('unhandledrejection', (e) => tee(`[unhandled] ${e.reason?.message ?? e.reason}`));

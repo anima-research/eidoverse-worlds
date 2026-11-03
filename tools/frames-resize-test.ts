@@ -212,5 +212,25 @@ check("width clamps at minW", f.state.w >= 100, `w=${f.state.w} (delta ${tiny})`
   check("...and a frame with a LARGER floor keeps it", (wide.el as HTMLElement).style.minWidth === "320px",
     `minWidth=${(wide.el as HTMLElement).style.minWidth}`); }
 
+// --- a glyph button over the edge band keeps its press (measured in the browser, 10-01: the ∃ menu's Panels flyout
+// hangs over the chat frame's top band, and its emotes pin never pinned — the topmost element under the pointer was
+// the glyph's SVG <path>, which is not an HTMLElement, so the walk up to its <button> never started and the resize
+// took the press). Inside a frame the same: a glyph button within 6px of the frame's edge.
+for (const where of ["over the band, outside the frame", "inside the frame, at its edge"]) {
+  const b = document.createElement("button");
+  b.innerHTML = '<svg viewBox="0 0 10 10"><path d="M0 0h10v10z"/></svg>';
+  (where.startsWith("inside") ? f.el : document.body).appendChild(b);
+  const path = b.querySelector("path")!;
+  (document as any).elementFromPoint = () => path;
+  const w0 = f.state.w;
+  const ev = pd(edgeX(), edgeY());
+  document.dispatchEvent(ev);
+  document.dispatchEvent(pm(edgeX() + 40, edgeY()));
+  document.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 1 }));
+  check(`a glyph button ${where} keeps its press: no resize, default not prevented`, f.state.w === w0 && !ev.defaultPrevented, `w ${w0} → ${f.state.w}, prevented=${ev.defaultPrevented}`);
+  b.remove();
+}
+(document as any).elementFromPoint = () => null;
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

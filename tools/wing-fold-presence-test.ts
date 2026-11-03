@@ -41,20 +41,23 @@ ag.bodyBoneNames = [
 ag.loadBodyBones = async () => ag.bodyBoneNames;
 ag.myRights = { role: 'builder', fly: false };
 const folded = await ag.foldWings(true);
-check('headless body folds without a fly grant', ag.wingsFolded === true && /wings folded/.test(folded), folded);
+check('headless body folds without a fly grant', ag.wingsFolded === true && folded.ok && /wings folded/.test(folded.text), folded.text);
 check('a ground posture does not create a position-owning flight integrator', ag.flight == null);
-check('takeoff remains separately denied', /cannot fly|not granted/.test(await ag.takeOff()));
+const denied = await ag.takeOff();
+check('takeoff remains separately denied', !denied.ok && /cannot fly|not granted/.test(denied.text), denied.text);
 ag.myRights = { role: 'builder', fly: true };
-check('a granted body still cannot take off while folded', /wings folded/.test(await ag.takeOff()));
+const whileFolded = await ag.takeOff();
+check('a granted body still cannot take off while folded', !whileFolded.ok && /wings folded/.test(whileFolded.text), whileFolded.text);
 const opened = await ag.foldWings(false);
-check('and unfolds without granting propulsion', ag.wingsFolded === false && /wings open/.test(opened), opened);
-check('unfold tells the truth when propulsion remains denied', (() => {
-  ag.myRights = { role: 'builder', fly: false };
-  ag.wingsFolded = true; ag.flight = null;
-  return true;
-})() && /still not granted/.test(await ag.foldWings(false)));
+check('and unfolds without granting propulsion', ag.wingsFolded === false && opened.ok && /wings open/.test(opened.text), opened.text);
+ag.myRights = { role: 'builder', fly: false };
+ag.wingsFolded = true; ag.flight = null;
+const deniedUnfold = await ag.foldWings(false);
+check('unfold tells the truth when propulsion remains denied, and is done',
+  deniedUnfold.ok && /still not granted/.test(deniedUnfold.text), deniedUnfold.text);
 ag.myRights = { role: 'builder', fly: true };
-check('after unfold, a granted body can take off', /took off/.test(await ag.takeOff()));
+const tookOff = await ag.takeOff();
+check('after unfold, a granted body can take off', tookOff.ok && /took off/.test(tookOff.text), tookOff.text);
 const sent: any[] = [];
 ag.wingsFolded = true;
 ag.joined = true;
@@ -66,10 +69,12 @@ ag.joined = false;
 const wingless: any = new WorldAgent({ name: 'wingless', world: 'fold-bench' });
 wingless.bodyBoneNames = ['Hip', 'Spine02', 'Head'];
 wingless.loadBodyBones = async () => wingless.bodyBoneNames;
-check('a wingless rig fails honestly', /no animatable wings/.test(await wingless.foldWings(true)));
+const winglessFold = await wingless.foldWings(true);
+check('a wingless rig fails honestly', !winglessFold.ok && /no animatable wings/.test(winglessFold.text), winglessFold.text);
 wingless.wingsFolded = true;
+const released = await wingless.foldWings(false);
 check('a wingless swap can always release a carried folded posture',
-  /posture released/.test(await wingless.foldWings(false)) && wingless.wingsFolded === false);
+  released.ok && /posture released/.test(released.text) && wingless.wingsFolded === false, released.text);
 
 console.log('\nACTUAL WIRE SITES');
 const agentSrc = readFileSync('mcpl/agent.ts', 'utf8');
@@ -95,7 +100,8 @@ check('browser owner path joins controller state to the semantic wire field',
 check('browser toggle asks the current rig for physical wing evidence',
   /inspectBody\(flightBones \?\? \[\]\)\.canAnimateWings/.test(controllerSrc));
 check('settled pose preserves unknown semantic fields for late join',
-  /const \{ emote: _emote, \.\.\.still \} = pose/.test(serverSrc));
+  // live readings (mic/hear) are dropped by name; everything else rides the rest spread
+  /const \{ emote: _emote(?:, \w+: _\w+)*, \.\.\.still \} = pose/.test(serverSrc));
 check('headless reconnect restores its own fold state',
   /this\.wingsFolded = msg\.restore\.wingsFolded === true/.test(agentSrc));
 check('text-tier perception reports the public silhouette',

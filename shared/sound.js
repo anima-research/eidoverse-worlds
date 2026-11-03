@@ -17,9 +17,12 @@
 // stream from the projector appliance is rung 3's business and arrives with
 // the clock plumbing; a file is a placed asset inside the log's trust boundary.
 //
-// THE CLOCK. `t0` is epoch milliseconds when playback (re)started, so every
-// listener — and every late joiner — hears the same place in the track: the
-// playhead is (now - t0) mod duration when looping. Motion params are
+// THE CLOCK. `t0` is the server's clock, in epoch milliseconds, when playback
+// (re)started, so every listener — and every late joiner — hears the same
+// place in the track: the playhead is (serverNow - t0) mod duration when
+// looping. A behavior stamps it with Date.now(), which runs on the server; a
+// browser stamps it with serverNow() (client/lib/remotes.js); an agent's
+// estimate of the server's clock is its own serverNow() (mcpl/agent.ts). Motion params are
 // functions of time for the same reason. Whoever emits `playing: true` should
 // stamp it; without it each client starts from the top and they drift.
 //
@@ -83,7 +86,7 @@ export function normalizeSound(data) {
     const t0 = Number(data.t0);
     if (Number.isFinite(t0) && t0 > 0) sound.t0 = t0;
     else notes.push('t0 is not an epoch-ms number — ignored; listeners will not agree on the playhead');
-  } else if (sound.playing) notes.push('no t0 — every client starts from the top and late joiners drift; stamp Date.now() when you start it');
+  } else if (sound.playing) notes.push('no t0 — every client starts from the top and late joiners drift; stamp the server\'s time when you start it (Date.now() in a behavior)');
   if (data.look != null) {
     const look = String(data.look).replace(/\s+/g, ' ').trim();
     if (look.length > SOUND_LOOK_MAX) { notes.push(`look clipped to ${SOUND_LOOK_MAX} chars`); sound.look = look.slice(0, SOUND_LOOK_MAX); }

@@ -44,8 +44,9 @@ export function pingLine(p: WirePing): string {
  *     `mentioned`); the specific event lives in this world's namespace.
  *   - depart: the closing bracket. AMBIENT and NOT `mentioned` — being left is
  *     not being addressed, and this pair exists to spend fewer interruptions,
- *     not more. The text is the agent's own (who-moved evidence), rendered
- *     verbatim.
+ *     not more. And `chat:system`: nobody said anything, so a departure must
+ *     never become where the agent's plain speech goes. The text is the
+ *     agent's own (who-moved evidence), rendered verbatim.
  *   - reach / touch: a hand aimed at (or resting on) this body — directed like
  *     an approach, worded by the agent. */
 export function pingDelivery(p: WirePing, fromAgent: boolean):
@@ -55,7 +56,7 @@ export function pingDelivery(p: WirePing, fromAgent: boolean):
     case "approach":
       return { text: `* ${p.who} walked up to you`, tags: tags(CHAT.addressed, EIDO.approach, from), mentioned: true };
     case "depart":
-      return { text: `* ${p.who} ${p.text ?? "is no longer nearby"}`, tags: tags(CHAT.ambient, EIDO.depart, from) };
+      return { text: `* ${p.who} ${p.text ?? "is no longer nearby"}`, tags: tags(CHAT.ambient, CHAT.system, EIDO.depart, from) };
     case "reach":
     case "touch":
       return { text: `* ${p.who} ${p.text}`, tags: tags(CHAT.addressed, p.kind === "touch" ? EIDO.touch : EIDO.reach, from), mentioned: true };

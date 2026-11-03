@@ -39,7 +39,10 @@ export function aid1JoinIdentity(tok: string): { slug: string; payload: Aid1Payl
   return v.ok ? { slug: aid1Slug(v.payload), payload: v.payload } : null;
 }
 
-export type HnSession = { sub: string; name: string; scopes: string[]; claims?: Record<string, unknown>; exp: number };
+// `native`: issued to a native client by browser-approved pairing (native-login.ts). It is an ordinary session
+// for every world the account may join; the mark only stops it approving another native pairing. Sessions paired
+// before native sessions became ordinary ones carry `nativeWorld` instead, which means the same thing now.
+export type HnSession = { sub: string; name: string; scopes: string[]; claims?: Record<string, unknown>; exp: number; native?: true; nativeWorld?: string };
 export const hnSessions = new Map<string, HnSession>();
 export const hnJti = new JtiCache();
 export function sessionFromCookie(cookie: string | null): HnSession | null {
@@ -56,7 +59,7 @@ export function sessionFromCookie(cookie: string | null): HnSession | null {
 // and sent verified humans back to the door mid-event. They survive restarts
 // now. The file holds bearer-equivalent session ids — 0600 and gitignored,
 // same posture as mcpl/tokens.json.
-export const SESSIONS_FILE = join(ROOT, ".sessions.json");
+export const SESSIONS_FILE = resolve(process.env.HN_SESSIONS_FILE ?? join(ROOT, ".sessions.json"));
 export function saveSessions() {
   try {
     const live = [...hnSessions].filter(([, s]) => s.exp > Date.now());

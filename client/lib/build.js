@@ -26,6 +26,7 @@ import { heightAt } from './terrain.js';
 import { net, sendVerb, sendDrag } from './net.js';
 import { myState, mouse, setPointerClaim, setEditingProbe } from './controller.js';
 import { flashHint, collapseAll, panelFrame } from './ui.js';
+import { html, escapeHtml as esc } from './markup.js';   // hints are text unless html`` (it escapes what it interpolates); esc for the inspector's innerHTML
 import { sceneSelect } from './scenegraph.js';
 import { claimEscape } from './frames.js';
 import { mayAuthor, placerOf, placerName } from './placer.js';   // one rule for who may author (and one name for them), shared with the scene panel
@@ -100,7 +101,7 @@ export function setEditMode(on, { quiet = false } = {}) {
   if (on) panelFrame().show();
   if (!quiet) {
     flashHint(on
-      ? 'edit mode — click to select · drag to move · <b>build</b> for the catalog · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>Esc</kbd> to leave'
+      ? html`edit mode — click to select · drag to move · <b>build</b> for the catalog · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>Esc</kbd> to leave`
       : 'looking again');
   }
   bus.emit('edit-mode', on);
@@ -153,10 +154,10 @@ function showInspector(id) {
   const who = placerOf(id)?.id ?? meta.actor ?? '?';
   const lastBy = meta.actor && meta.actor !== who ? ` · last change by ${meta.actor}` : '';
   inspector.innerHTML =
-    `<span><b>${label.slice(0, 34)}</b></span>` +
-    `<span style="color:var(--dim)">placed by ${who}${lastBy}</span>` +
+    `<span><b>${esc(label.slice(0, 34))}</b></span>` +
+    `<span style="color:var(--dim)">placed by ${esc(who)}${esc(lastBy)}</span>` +
     (held
-      ? `<span style="color:var(--dim)">🛡 guarded by ${placerName(id)} — only they or the world's owner can change, move or remove it</span>`
+      ? `<span style="color:var(--dim)">🛡 guarded by ${esc(placerName(id))} — only they or the world's owner can change, move or remove it</span>`
       : locked
         ? `<span style="color:var(--dim)">🔒 locked — nothing moves or removes it until unchecked</span>`
         : `<span style="color:var(--dim)">drag move · <kbd>Shift</kbd>+drag or <kbd>R</kbd><kbd>F</kbd> up/down · ` +
@@ -165,20 +166,20 @@ function showInspector(id) {
     `<input type="checkbox" data-bact="lock"${locked ? ' checked' : ''}${held ? ' disabled' : ''}> 🔒 lock</label>` +
     `<label title="${mine
       ? 'make it yours to author: while guarded, only you, the world\'s owner, or an operator can change its components, move it, remove it, or bind scripts to it (server-enforced) — using it and sitting on it stay open for everyone'
-      : `only ${placerName(id)} or the world's owner can set or clear the guard on this`}" style="display:flex;gap:4px;align-items:center;cursor:${mine ? 'pointer' : 'not-allowed'}">` +
+      : `only ${esc(placerName(id))} or the world's owner can set or clear the guard on this`}" style="display:flex;gap:4px;align-items:center;cursor:${mine ? 'pointer' : 'not-allowed'}">` +
     `<input type="checkbox" data-bact="guard"${guarded ? ' checked' : ''}${mine ? '' : ' disabled'}> 🛡 guard</label>` +
     `<button data-bact="seat" title="declare a sit anchor: click the spot where a sitter goes"${held ? ' disabled' : ''}>+ seat</button>`;
   inspector.querySelector('[data-bact="lock"]').onchange = (ev) => {
     const on = ev.target.checked;
     sendVerb('comp', { id, type: 'lock', data: on ? true : null });
-    flashHint(on ? `🔒 <b>${label.slice(0, 34)}</b> locked — nothing moves it until you uncheck` : `🔓 unlocked`);
+    flashHint(on ? html`🔒 <b>${label.slice(0, 34)}</b> locked — nothing moves it until you uncheck` : `🔓 unlocked`);
     // the echo folds the comp; repaint the hint line once it lands
     setTimeout(() => { if (selected?.id === id) showInspector(id); }, 400);
   };
   inspector.querySelector('[data-bact="guard"]').onchange = (ev) => {
     const on = ev.target.checked;
     sendVerb('comp', { id, type: 'guard', data: on ? true : null });
-    flashHint(on ? `🛡 <b>${label.slice(0, 34)}</b> guarded — only you or the world's owner can change it now` : `🛡 guard cleared — any builder can change it again`);
+    flashHint(on ? html`🛡 <b>${label.slice(0, 34)}</b> guarded — only you or the world's owner can change it now` : `🛡 guard cleared — any builder can change it again`);
     setTimeout(() => { if (selected?.id === id) showInspector(id); }, 400);
   };
   inspector.querySelector('[data-bact="seat"]').onclick = () => armSeatPlacement(selected?.id ?? id);
@@ -242,8 +243,8 @@ export async function holdGhost(lib, label) {
     scene.add(obj);
     collapseAll();
     flashHint(lib === '@light'
-      ? 'placing a <b>light</b> — click to place · <kbd>Esc</kbd> cancel'
-      : `placing <b>${label ?? ''}</b> — click to place · <kbd>Q</kbd><kbd>E</kbd> turn · <kbd>,</kbd><kbd>.</kbd> size · <kbd>Esc</kbd> cancel`, 6000);
+      ? html`placing a <b>light</b> — click to place · <kbd>Esc</kbd> cancel`
+      : html`placing <b>${label ?? ''}</b> — click to place · <kbd>Q</kbd><kbd>E</kbd> turn · <kbd>,</kbd><kbd>.</kbd> size · <kbd>Esc</kbd> cancel`, 6000);
   } catch (e) { report('ghost', e); }
 }
 
@@ -377,11 +378,11 @@ function isLocked(id) { return !!comps.get(id)?.lock; }
 function isGuarded(id) { return !!comps.get(id)?.guard; }
 function lockedHint(id) {
   if (isGuarded(id) && !mayAuthor(id)) {
-    flashHint(`🛡 <b>guarded</b> by ${placerName(id)} — only they or the world's owner can move or change it`);
+    flashHint(html`🛡 <b>guarded</b> by ${placerName(id)} — only they or the world's owner can move or change it`);
     return true;
   }
   if (!isLocked(id)) return false;
-  flashHint('🔒 <b>locked</b> — uncheck <b>lock</b> in the inspector to move or remove it');
+  flashHint(html`🔒 <b>locked</b> — uncheck <b>lock</b> in the inspector to move or remove it`);
   return true;
 }
 

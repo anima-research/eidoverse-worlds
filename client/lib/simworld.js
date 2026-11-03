@@ -32,6 +32,7 @@ import { entities } from './world.js';
 import { pushHostHook } from './autohooks.js';
 import { reindexCollider, colliders } from './colliders.js';
 import { heightAt } from './terrain.js';
+import { shapeReady, requestGrid } from '../../shared/terrainshape.js';
 
 const restIndexed = new Set();
 
@@ -77,6 +78,11 @@ let lastAt = 0;
 export function updateSimWorld(wall, frameTime) {
   const sim = state.sim;
   if (!sim?.epoch || sim.epoch.foreign) return;
+  // A heightmap world's ground is the grid: until it has arrived the law would answer with noise, and a
+  // body stepped on that would disagree with the sequencer. Hold the sim (bodies stand at their last
+  // word) and catch up to the clock once the grid lands.
+  const shape = sim.terrain?.shape;
+  if (!shapeReady(shape)) { void requestGrid(shape.heightmap.grid); return; }
   wall ??= Date.now();
   const target = tickOf(sim, wall);
   if (sim.tick !== tickSeen) prev.clear();

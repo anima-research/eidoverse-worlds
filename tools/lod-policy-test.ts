@@ -17,8 +17,10 @@
 //
 // Negative control: on main this file dies at import (no lod_policy.js).
 
-import { MODEL_QUALITY, LOD_FRACTION, LOD_HYST, PRESSURE_EDGE, PRESSURE_AT,
+import { MODEL_QUALITY, LOD_FRACTION, LOD_HYST, PRESSURE_EDGE, PRESSURE_AT, LOD_NEAR_MIN,
   makeModelQuality, chooseTier, tierOf, askFor } from "../client/lib/lod_policy.js";
+import { residencyRadiusFor, lodNearest } from "../shared/lod-distance.js";
+import { LOD_RECIPE } from "../server/store-variants.ts";
 
 let failures = 0;
 const check = (label: string, ok: boolean, detail?: string) => {
@@ -28,7 +30,7 @@ const check = (label: string, ok: boolean, detail?: string) => {
 console.log("\nlod_policy — the tier chooser:\n");
 
 const R = 100;                       // a residency radius; edge = 45m at LOD_FRACTION 0.45
-const REC = "lod1-r25e01-texel1024";
+const REC = LOD_RECIPE;   // the REAL recipe (store-variants.ts derives it) — a literal here went stale when #205 did
 const edge = R * LOD_FRACTION;
 
 // ---- the gate: no recipe, no tier — ever
@@ -65,6 +67,34 @@ check("wearing lod, inside the INNER edge → full", chooseTier({ dist: inner * 
   for (let d = 2 * edge; d >= 0; d -= edge / 50) { const t = chooseTier({ dist: d, radius: R, recipe: REC, current: tier }); if (t !== tier) { flips++; tier = t; } }
   check("a walk out and back flips tier exactly twice (once each way), never chatters", flips === 2 && tier === "full", `${flips} flips, ends ${tier}`);
 }
+
+// ---- SCALE: the server budgets a LOD at the unscaled model's closest switch; a placement at scale s is s× bigger on
+// screen, so its edge moves by exactly s (and never inside LOD_NEAR_MIN, where colliders must exist)
+check("a 3× placement goes reduced at 3× the distance: full at 2× the edge, where a 1× one is already lod",
+  chooseTier({ dist: edge * 2, radius: R, recipe: REC, scale: 3 }) === "full" && chooseTier({ dist: edge * 2, radius: R, recipe: REC }) === "lod"
+  && chooseTier({ dist: edge * 3.2, radius: R, recipe: REC, scale: 3 }) === "lod");
+check("a 0.5× placement goes reduced at half the distance",
+  chooseTier({ dist: edge * 0.6, radius: R, recipe: REC, scale: 0.5 }) === "lod" && chooseTier({ dist: edge * 0.6, radius: R, recipe: REC }) === "full");
+check(`…but nothing is reduced inside ${LOD_NEAR_MIN} m — on any dial, at any scale, wearing either tier`,
+  [["auto", 0.01], ["eco", 0.01], ["auto", 0.001]].every(([q, sc]) => ["full", "lod", null].every((cur) =>
+    chooseTier({ dist: LOD_NEAR_MIN * 0.99, radius: R, recipe: REC, quality: q as string, scale: sc as number, current: cur as any }) === "full"))
+  && chooseTier({ dist: LOD_NEAR_MIN * 0.99, radius: R, recipe: REC, pressure: 9, shed: true, scale: 0.01, current: "lod" }) === "full");
+check("…and a tiny placement past the floor's band IS reduced (the floor is a floor, not a wall)",
+  chooseTier({ dist: LOD_NEAR_MIN / (1 - LOD_HYST) * 1.01, radius: R, recipe: REC, scale: 0.01 }) === "lod");
+check("…and it is STATEFUL: a 3× placement wearing lod upgrades at 3× the inner edge, a 0.5× one holds lod to half of it",
+  chooseTier({ dist: inner * 1.5, radius: R, recipe: REC, scale: 3, current: "lod" }) === "full"
+  && chooseTier({ dist: inner * 3.1, radius: R, recipe: REC, scale: 3, current: "lod" }) === "lod"
+  && chooseTier({ dist: inner * 0.6, radius: R, recipe: REC, scale: 0.5, current: "lod" }) === "lod"
+  && chooseTier({ dist: inner * 0.4, radius: R, recipe: REC, scale: 0.5, current: "lod" }) === "full");
+check("a scale arriving as a string is read as its number, as three.js's setScalar reads it (\"3\" tiers like 3)",
+  chooseTier({ dist: edge * 2, radius: R, recipe: REC, scale: "3" as any }) === "full" && chooseTier({ dist: edge * 3.2, radius: R, recipe: REC, scale: "3" as any }) === "lod");
+check("a bad scale — missing, zero, negative, NaN, Infinity — is 1",
+  [undefined, 0, -2, NaN, Infinity].every((sc) => chooseTier({ dist: edge * 1.1, radius: R, recipe: REC, scale: sc as any }) === "lod"
+    && chooseTier({ dist: edge * 0.9, radius: R, recipe: REC, scale: sc as any }) === "full"));
+check("the client's closest LOD distance IS the server's budget distance (shared/lod-distance.js lodNearest)",
+  [0.5, 2, 20, 66].every((diag) => Math.abs(residencyRadiusFor(diag) * LOD_FRACTION * (1 - LOD_HYST) - lodNearest(diag)) < 1e-9
+    && chooseTier({ dist: lodNearest(diag) * 0.999, radius: residencyRadiusFor(diag), recipe: REC, current: "lod" }) === "full"
+    && chooseTier({ dist: lodNearest(diag) * 1.001, radius: residencyRadiusFor(diag), recipe: REC, current: "lod" }) === "lod"));
 
 // ---- pressure and shed pull the edge inward
 const pressuredEdge = edge * PRESSURE_EDGE;

@@ -29,6 +29,10 @@ fi
 # root deps power server/optimize.ts (the store's GLB diet); the sequencer
 # itself stays dependency-free, so a failed install degrades optimization only
 if ! git diff --quiet "$before" "$after" -- package.json bun.lock 2>/dev/null; then
+  # an in-place install never prunes a nested sharp the new lock no longer
+  # lists, and server/optimize.ts loads ndarray-pixels' own copy whenever one
+  # resolves — a stale one would outlive the upgrade that was meant to retire it
+  rm -rf node_modules/ndarray-pixels/node_modules/sharp
   "$BUN" install
 fi
 # chat bridge (tools/chatbridge) — optional service; deps on manifest change,

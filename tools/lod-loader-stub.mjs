@@ -33,6 +33,8 @@ export const laneBusy = () => false;
 
 // ---- warmqueue.js -----------------------------------------------------------
 export const warm = (label, fn) => Promise.resolve().then(fn);
+export const warmDepth = () => Promise.resolve();
+export const P_GATE = 0, P_MODEL = 1, P_AMBIENT = 2;
 export const warmStats = () => ({ pending: 0, running: false });
 
 // ---- materials.js / draw_batches.js ----------------------------------------

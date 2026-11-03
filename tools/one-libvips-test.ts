@@ -2,7 +2,7 @@
 //
 //   bun tools/one-libvips-test.ts
 //
-// The store's root manifest declares `sharp: ^0.33.5`; @gltf-transform/
+// The store's root manifest once declared `sharp: ^0.33.5` while @gltf-transform/
 // functions reaches sharp through ndarray-pixels, which declares `^0.35.0`.
 // Non-intersecting ranges cannot be deduped, so both copies land on disk and
 // a bare `import("sharp")` inside optimize.ts loads a SECOND native libvips
@@ -171,7 +171,10 @@ try {
 const fnDir = dirname(Bun.resolveSync("@gltf-transform/functions", join(import.meta.dir, "../server")));
 const npDir = dirname(Bun.resolveSync("ndarray-pixels", fnDir));
 let nested: string | null = null;
-try { nested = Bun.resolveSync("sharp", npDir); } catch { /* deduped install */ }
+try { nested = Bun.resolveSync("sharp", npDir); } catch { /* no sharp at all from here */ }
+// On a deduped install the lookup climbs out to the root copy: that is the
+// single-copy state, not a nested one.
+if (nested && !nested.replace(/\\/g, "/").includes("/ndarray-pixels/node_modules/")) nested = null;
 
 if (nested && existsSync(nested)) {
   check("the resolver reaches gltf-transform's OWN sharp, not the root copy",
@@ -184,6 +187,29 @@ if (nested && existsSync(nested)) {
   console.log("  \x1b[36m—\x1b[0m single sharp install; the bare specifier is safe here");
   console.log(`     resolved: ${from}`);
 }
+
+// ----------------------------------- 2b. the copy it loads is a patched one
+// Whether the install is deduped or nested, the requirement is the same: the
+// sharp optimize.ts actually hands to gltf-transform must not be an affected
+// release (GHSA-wq5f-xc86-pv6w, fixed in 0.35.5). An in-place `bun install`
+// can leave a stale nested copy behind, so read the version off the file the
+// resolver returned — not off the root manifest, which proves nothing about it.
+const SHARP_MIN = [0, 35, 5];
+const loadedSharpFile = from.startsWith("sharp (")
+  ? Bun.resolveSync("sharp", join(import.meta.dir, "../server"))
+  : from;
+let loadedSharpVersion = "unreadable";
+for (let d = dirname(loadedSharpFile), i = 0; i < 8 && dirname(d) !== d; d = dirname(d), i++) {
+  try {
+    const pj = JSON.parse(await Bun.file(join(d, "package.json")).text());
+    if (pj?.name === "sharp") { loadedSharpVersion = String(pj.version); break; }
+  } catch { /* keep climbing */ }
+}
+const sv = loadedSharpVersion.split(".").map((n) => parseInt(n, 10));
+const patched = sv.length >= 3 && sv.every((n) => Number.isFinite(n))
+  && (SHARP_MIN.map((m, i) => sv[i]! - m).find((d) => d !== 0) ?? 0) >= 0;
+check(`the sharp optimize.ts loads is >= ${SHARP_MIN.join(".")} (loaded ${loadedSharpVersion})`,
+  patched, `from=${loadedSharpFile}`);
 
 // ------------------------------------------- 3. the process, not the resolver
 // Cases 1 and 2 show that optimize.ts ASKS for the right copy. This shows what

@@ -82,7 +82,7 @@ function makeCtx(name) {
     world: CONFIG.world,
     EW: globalThis.EW,
     ui: {
-      /** A collapsible section in the world panel — removed on disable. */
+      /** A tab in the world panel — removed on disable. */
       section: (title, onOpen) => { const s = makeSection(title, onOpen); inst.sections.push(s); return s; },
       /** A free-floating draggable frame — removed on disable. */
       frame: (id, opts) => { const f = makeFrame(`mod-${name}-${id}`, opts); inst.frames.push(f); return f; },
@@ -115,7 +115,7 @@ function stopMod(name) {
   if (!inst) return;
   running.delete(name);
   for (const fn of inst.disposers) { try { fn(); } catch (e) { report(`mod ${name} dispose`, e); } }
-  for (const s of inst.sections) s.box?.remove();
+  for (const s of inst.sections) s.remove?.();   // the tab, its pane and its lantern action
   for (const f of inst.frames) { try { f.hide?.(); f.el?.remove(); } catch { /* gone */ } }
 }
 
@@ -140,13 +140,20 @@ export function tickMods(dt, now) {
 
 const offers = () => [...behaviors].filter(([, b]) => b.runtime === 'client');
 
+// Once any world-offered code has run in this page, the scriptable install/run/trust surface (modsApi below) stays
+// shut until reload: that code runs in-page as the visitor, and would otherwise be holding the visitor's own click
+// window when it starts — enough to write itself into the local store with {auto: true} and outlive the "run once".
+let worldCodeRan = false;
+
 async function runOffer(id, b) {
   const runName = `world:${id}`;
   if (running.has(runName)) return;
   try {
     const res = await fetch(`/library/${b.src}`);
     if (!res.ok) throw new Error(`fetch ${b.src}: ${res.status}`);
-    await runSource(runName, await res.text());
+    const source = await res.text();
+    worldCodeRan = true; // only once world code is about to run: a failed download leaves the mod API open
+    await runSource(runName, source);
   } catch (e) { report(`world mod ${id}`, e); toast(`world mod "${id}" failed: ${e.message}`, 'err'); }
 }
 
@@ -158,7 +165,7 @@ function reconcileOffers({ live = false } = {}) {
     if (running.has(runName)) continue;
     if (g[scriptKey(id, b.src)] || g[worldKey()]) { runOffer(id, b); continue; }
     if (live) {
-      logChat('*', `this world offers a mod: "${id}" by ${b.author} — open 🧩 mods to run it`);
+      logChat('*', `this world offers a mod: "${id}" by ${b.author} — it would run as you, with your identity; open 🧩 mods to read it or run it`);
     }
   }
   // unbound offers stop running
@@ -188,15 +195,28 @@ export default ({ EW, ui, onTick }) => {
 `;
 
 /** The scriptable face of the mod system — same acts as the panel buttons.
- *  (Also what the e2e drives: UI and API share one implementation.) */
+ *  (Also what the e2e drives: UI and API share one implementation.)
+ *
+ *  put, run and accept install, run or permanently trust code, so they need the user's hand: a click or key press this
+ *  moment (the browser's transient user activation). Code that merely holds EW — a mod running on its own at load, or
+ *  a world-offered mod — must not be able to plant another that outlives it. And once world-offered code has run in
+ *  this page they refuse until reload (see worldCodeRan). The 🧩 panel's own buttons don't go through here.
+ *
+ *  Defence in depth, not a wall: code already running in this page is same-origin and could reach IndexedDB or
+ *  localStorage directly. The offer prompt says so — running a world mod runs it as you. */
+const byHand = (what) => {
+  if (worldCodeRan) throw new Error(`EW.mods.${what} is closed in this page: a world-offered mod has run here (reload to use it)`);
+  if (globalThis.navigator?.userActivation?.isActive !== true) throw new Error(`EW.mods.${what} needs a click or key press from you (installing, running or trusting a mod is your decision)`);
+};
 export const modsApi = {
   list: listScripts,
-  put: putScript,
-  run: (name, source) => runSource(name, source),
+  put: async (rec) => { byHand('put'); return putScript(rec); },
+  run: async (name, source) => { byHand('run'); return runSource(name, source); },
   stop: stopMod,
   running: () => [...running.keys()],
   offers: () => offers().map(([id, b]) => ({ id, src: b.src, author: b.author })),
   accept: async (id, always = false) => {
+    byHand('accept');
     const b = behaviors.get(id);
     if (!b) return false;
     if (always) grant(scriptKey(id, b.src));
@@ -211,46 +231,54 @@ export function initMods() {
     const render = async () => {
       const mine = await listScripts();
       const g = grants();
+      // THE LAYOUT (owner, 09-29: "the mod area was a bit of a hot mess"): every entry is one .mod-row —
+      // its name, a quiet line saying what it is, and its controls on the right (or under it, when a
+      // row carries more than one) — grouped under the pane's captions. No inline button runs in prose,
+      // no rules, no nested scroller.
       const rows = mine.map((s) => {
         const on = running.has(s.name);
-        return `<div class="stack" style="gap:2px">
-          <div><b>${esc(s.name)}</b> ${on ? '· running' : ''}
+        return `<div class="mod-row stacked">
+          <div class="mod-txt"><span class="mod-nm">${esc(s.name)}</span><span class="mod-note">${on ? 'running' : 'stopped'}${s.auto ? ' · runs on arrival' : ''}</span></div>
+          <div class="mod-btns">
             <button data-run="${esc(s.name)}">${on ? 'stop' : 'run'}</button>
-            <button data-auto="${esc(s.name)}">${s.auto ? 'autorun ✓' : 'autorun'}</button>
+            <button data-auto="${esc(s.name)}" title="run it every time you arrive">${s.auto ? 'autorun ✓' : 'autorun'}</button>
             <button data-edit="${esc(s.name)}">edit</button>
             <button data-promote="${esc(s.name)}" title="upload + offer to everyone in this world (owner)">promote</button>
-            <button data-del="${esc(s.name)}">✕</button></div>
+            <button data-del="${esc(s.name)}" title="delete this mod" aria-label="delete">✕</button></div>
         </div>`;
       }).join('');
       const offerRows = offers().map(([id, b]) => {
         const on = running.has(`world:${id}`);
-        const granted = g[scriptKey(id, b.src)] || g[worldKey()];
-        return `<div><b>${esc(id)}</b> <span style="color:var(--dim)">by ${esc(b.author)}</span>
-          ${on ? '· running' : ''}
-          <button data-orun="${esc(id)}">${on ? 'stop' : 'run once'}</button>
-          <button data-oalways="${esc(id)}">${g[scriptKey(id, b.src)] ? 'trusted ✓' : 'always (this script)'}</button>
-          <button data-osrc="${esc(id)}" title="read the code before trusting it">view</button></div>`;
+        return `<div class="mod-row stacked">
+          <div class="mod-txt"><span class="mod-nm">${esc(id)}</span><span class="mod-note">by ${esc(b.author)}${on ? ' · running' : ''}</span></div>
+          <div class="mod-btns">
+            <button data-orun="${esc(id)}" title="runs as you, with your identity — read it first (view)">${on ? 'stop' : 'run once'}</button>
+            <button data-oalways="${esc(id)}">${g[scriptKey(id, b.src)] ? 'trusted ✓' : 'always (this script)'}</button>
+            <button data-osrc="${esc(id)}" title="read the code before trusting it">view</button></div>
+        </div>`;
       }).join('');
-      body.innerHTML = `<div class="stack">
-        <div><b>built-in</b> — the house plugins, dogfooding the same tier</div>
-        <div>⚙ object physics <span style="color:var(--dim)">(balls, boxes, punts — the SIM half; you always SEE others' physics)</span>
+      body.innerHTML = `
+        <div class="sec-cap">built in</div>
+        <div class="mod-row">
+          <div class="mod-txt"><span class="mod-nm">object physics</span><span class="mod-note">balls, boxes, punts — the simulating half; you always see others' physics</span></div>
           <button data-corephys="1">${physicsEnabled() ? 'on ✓' : 'off'}</button></div>
-        <div>⚙ body engine <span style="color:var(--dim)">(how YOUR falls simulate — verlet: particles · ammo: Bullet, the janus rig — click to cycle)</span>
+        <div class="mod-row">
+          <div class="mod-txt"><span class="mod-nm">body engine</span><span class="mod-note">how your falls simulate — verlet: particles · ammo: Bullet, the janus rig. Click to cycle.</span></div>
           <button data-bodyeng="1">${bodyEngine()}</button></div>
-        <hr>
-        <div style="color:var(--dim)">local mods run with FULL access, as you — load only code you trust</div>
-        ${rows || '<div style="color:var(--dim)">no local mods yet</div>'}
-        <div><button data-new="1">+ new mod</button></div>
-        <hr>
-        <div><b>world offers</b> — scripts this world's owner promoted</div>
-        ${offerRows || '<div style="color:var(--dim)">none here</div>'}
-        <div><button data-wworld="1">${g[worldKey()] ? `trusting everything in "${esc(CONFIG.world)}" ✓ (click to revoke)` : `trust ALL scripts in "${esc(CONFIG.world)}", now and future`}</button></div>
-        ${editing != null ? `<hr><div class="stack">
+        <div class="sec-cap">your mods</div>
+        <div class="mod-note warn">local mods run with full access, as you — load only code you trust</div>
+        ${rows || '<div class="mod-note">no local mods yet</div>'}
+        <button data-new="1">+ new mod</button>
+        <div class="sec-cap">this world offers</div>
+        <div class="mod-note">scripts this world's owner promoted</div>
+        ${offerRows ? `<div class="mod-note warn">a world mod runs as you, with your identity: it can do anything you can do
+          here — move, speak and build as you — and could leave code behind in this browser. Read it first (view); run
+          only what you'd run as your own.</div>${offerRows}` : '<div class="mod-note">none here</div>'}
+        <button data-wworld="1">${g[worldKey()] ? `trusting everything in "${esc(CONFIG.world)}" ✓ (click to revoke)` : `trust all scripts in "${esc(CONFIG.world)}", now and future`}</button>
+        ${editing != null ? `<div class="sec-cap">${editing ? `editing ${esc(editing)}` : 'new mod'}</div>
           <input id="mod-name" placeholder="mod name" value="${esc(editing)}" ${editing ? 'disabled' : ''}>
-          <textarea id="mod-src" rows="14" spellcheck="false" style="font-family:ui-monospace,monospace;font-size:11px;width:100%"></textarea>
-          <div><button data-save="1">save</button> <button data-cancel="1">cancel</button></div>
-        </div>` : ''}
-      </div>`;
+          <textarea id="mod-src" rows="14" spellcheck="false"></textarea>
+          <div class="btn-row"><button data-save="1">save</button><button data-cancel="1">cancel</button></div>` : ''}`;
       if (editing != null) {
         const rec = editing ? mine.find((s) => s.name === editing) : null;
         body.querySelector('#mod-src').value = rec?.source ?? TEMPLATE;
@@ -259,6 +287,13 @@ export function initMods() {
         const b = e.target.closest('button');
         if (!b) return;
         const d = b.dataset;
+        // The buttons that plant, publish, trust or delete code are the visitor's own hand, so they skip byHand() — but a world-offered
+        // mod runs in this page and can press them with .click() (review of 4098ff7, Oscar-1808 #1). A scripted click
+        // arrives with isTrusted false; and once world code has run here, these buttons close as EW.mods does.
+        if ((d.new || d.save || d.auto || d.oalways || d.wworld || d.orun || d.promote != null || d.del != null) && (e.isTrusted !== true || worldCodeRan)) {
+          toast(worldCodeRan ? 'a world mod has run in this page: reload before installing or trusting mods' : 'that click did not come from you');
+          return;
+        }
         // The built-in toggles answer BEFORE any await. listScripts() touches
         // storage and the network, and this is an async handler with no catch:
         // one rejection there killed every button in the panel silently,
@@ -341,7 +376,7 @@ export function initMods() {
     };
     paint = render;
     await render();
-  });
+  }, { id: 'mods' });
 
   // autoruns: local mods marked auto, and consented world offers
   bus.on('hydrated', async () => {

@@ -41,6 +41,8 @@ export const logChat = () => {};
 export const logWhisper = () => {};
 export const noteTyping = () => {};
 export const noteHistoryContext = () => {};
+export const resyncCalls = [];   // chat-resync-wire-test reads what net.js asked for
+export const resyncChatAfter = async (seq) => { resyncCalls.push(seq); };
 export const composeFirstPerson = () => {};
 export const markPhase = () => {};
 export const toast = () => {};

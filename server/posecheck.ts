@@ -3,6 +3,8 @@
 // it — each receiver's lerp then held NaN until its own guard caught it. The
 // client guards remain (they fix the cause); this is the fence at the source:
 // a non-finite sample is dropped here, never batched into a frame.
+import { clampBodyScale, clampPlateY } from "../shared/presencewire.js";
+
 const fin = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 const finArr = (a: unknown, n: number) => Array.isArray(a) && a.length === n && a.every(fin);
 
@@ -11,6 +13,19 @@ export function sanePose(pose: unknown): Record<string, unknown> | null {
   const p = pose as Record<string, unknown>;
   if (!finArr(p.p, 3)) return null;
   for (const k of ["yaw", "pitch", "speed"]) if (p[k] !== undefined && !fin(p[k])) return null;
+  // Optional full-body orientation and locomotion metadata for 3D clients.
+  // These describe client-owned presence, never grant movement authority.
+  if (p.q !== undefined) {
+    if (!finArr(p.q, 4)) return null;
+    const length2 = (p.q as number[]).reduce((sum, n) => sum + n * n, 0);
+    if (Math.abs(length2 - 1) > 0.02) return null;
+  }
+  if (p.locomotion !== undefined) {
+    const l = p.locomotion as Record<string, unknown> | null;
+    if (!l || typeof l !== 'object' || Array.isArray(l) || !finiteDeep(l, 0)) return null;
+    for (const k of ['mode', 'body', 'medium'])
+      if (l[k] !== undefined && (typeof l[k] !== 'string' || (l[k] as string).length > 32)) return null;
+  }
   if (p.xr !== undefined) {                       // C18: tracked head/hands (client/lib/xrbody.js)
     const x = p.xr as Record<string, unknown> | null;
     if (!x || typeof x !== "object" || !finArr(x.h, 4)) return null;
@@ -21,6 +36,11 @@ export function sanePose(pose: unknown): Record<string, unknown> | null {
   // held pose (bone quats), body pins and reach descriptors ride the same packet and are lerped by
   // every receiver — a NaN anywhere inside them is the same fault. Deep finite-check, bounded depth.
   for (const k of ["pose", "pins", "reach"]) if (p[k] != null && !finiteDeep(p[k], 0)) return null;
+  // voice and body fields are normalised here, not refused: a bad one costs its field, never the whole pose (the
+  // receivers clamp too, but lastPose is remembered for joiners). Absent = unknown / default, so garbage is deleted.
+  for (const k of ["mic", "hear"]) if (k in p && typeof p[k] !== "boolean") delete p[k];
+  if ("scale" in p) { if (fin(p.scale)) p.scale = clampBodyScale(p.scale); else delete p.scale; }
+  if ("plateY" in p) { if (fin(p.plateY)) p.plateY = clampPlateY(p.plateY); else delete p.plateY; }
   return p;
 }
 

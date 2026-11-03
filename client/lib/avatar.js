@@ -7,6 +7,7 @@ import { THREE, scene, camera, renderer, backendName } from './core.js';
 import { makeCapsuleVrm } from './capsulebody.js';
 import { FADE_PRESS } from './locomotion_clip.js';   // one owner for the jump-press fade (see _setAction)
 import { report, angleDelta, bus, tee } from './base.js';
+import { swimPose } from '../../shared/swimpose.js';
 import { defsRegistry } from './defs.js';
 import { measureChain, solveChain } from './reachbone.js';
 import { REACH_CHAINS } from '../../shared/joints.js';
@@ -30,9 +31,16 @@ import { heightAt } from './terrain.js';
 import { surfaceUnder } from './colliders.js';
 import { DRIVEN_BONES } from './ragdoll.js';
 import { stroke as strokeIcon } from './icons.js';
+import { plateSize, plateClear, ownClearance, reachAbove, plateBox, CLEAR_MIN, PLATE_W } from './platesize.js';
+import { revealLevel } from './namereveal.js';
+import { crownEstimate, plateGap, plateAnchor, plateOffset, plateViewLift, STAND_SLOTS, DEAD as PLATE_DEAD } from './plateanchor.js';
+import { clampBodyScale, clampPlateY, plateLift, clipRate } from './bodyscale.js';
+import { Fn, userData, positionView, cameraNear, cameraFar, min, viewZToPerspectiveDepth, viewZToReversedPerspectiveDepth,
+  viewZToOrthographicDepth } from 'three/tsl';
 import { SEAT_CLIP_FILE } from './seatcore.js';
 import { planReaches } from '../../shared/reachorder.js';
 import { poseChannels } from '../../shared/humanoid.js';
+import { swimTargets, SWIM_CLIPS } from '../../shared/swimpose.js';
 
 // The clip library is ~1.9MB PER SLOT. Waiting for all seven before a body
 // could exist put 13MB between a person and their own legs — the single
@@ -244,6 +252,8 @@ const CLIP_FALLBACK = {
   // A body with no flight clips still flies -- it just glides in its idle
   // pose rather than falling back to a stride, which was the goofy part.
   fly: 'soar', soar: 'idle',
+  // swimming is procedural (Avatar._swimLayer) over the idle clip — no rig ships a swim clip
+  swim: 'idle', tread: 'idle',
 };
 
 // Emote slots are loaded lazily — a body needs locomotion to exist, but it
@@ -266,19 +276,47 @@ export const SEAT_CLIPS = { ground: 'sitting_on_ground', chair: SEAT_CLIP_FILE }
 
 // ---------------------------------------------------------------- sprites
 
-function textSprite(draw, w, h, scaleW) {
+// THE OWN-BODY CLEARANCE (owner, 09-30: labels hidden by scenery and by OTHER avatars — never by their owner's own
+// body). depthTest:false used to be the cure for a head or a crown of hair eating its own plate, and it also drew
+// every plate through every wall. Now the body-attached sprites (plate, typing pill) ARE depth-tested, but
+// write their depth as if they stood `userData.plateClear` metres nearer the eye (platesize.js plateClear: the body's
+// measured reach from the plate's anchor, grown past the eye while names are held). Why this and not the others:
+//   · a per-avatar "everything but me" depth pass is a scene render per body;
+//   · stencil needs every scene material to cooperate, in two backends and in XR;
+//   · MOVING the sprite toward the eye (and shrinking it to match) keeps the flat picture but puts it at the wrong
+//     stereo depth in a headset — the plate would float half a metre in front of the head.
+// A fragment-depth override keeps the sprite exactly where it is (on screen and in stereo) and moves only the test.
+// ONE node graph for every such sprite, reading the per-object value (TSL userData), so they share one pipeline.
+// It costs early-z on sprites, which are a handful of quads. Viewing-camera kinds: perspective (both depth
+// conventions), orthographic as a fallback.
+const PLATE_DEPTH = Fn((builder) => {
+  const z = min(positionView.z.add(userData('plateClear', 'float')), cameraNear.negate().mul(1.0001));   // never past the near plane
+  if (!builder.camera?.isPerspectiveCamera) return viewZToOrthographicDepth(z, cameraNear, cameraFar);
+  return builder.renderer?.reversedDepthBuffer ? viewZToReversedPerspectiveDepth(z, cameraNear, cameraFar)
+    : viewZToPerspectiveDepth(z, cameraNear, cameraFar);
+})();
+/** A body-attached sprite material: depth-tested against the world, cleared of its own body (see above). */
+function clearedSpriteMaterial(map) {
+  const mat = new THREE.SpriteNodeMaterial({ map, transparent: true, depthTest: true, depthWrite: false });
+  mat.depthNode = PLATE_DEPTH;
+  return mat;
+}
+
+// clear: true = a body-attached sprite (depth-tested, own body cleared); false = drawn over everything (speech bubbles)
+function textSprite(draw, w, h, scaleW, clear = false) {
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
   draw(c.getContext('2d'));
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
-  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  const mat = clear ? clearedSpriteMaterial(tex) : new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
   const s = new THREE.Sprite(mat);
+  if (clear) s.userData.plateClear = CLEAR_MIN;
   s.scale.set(scaleW, scaleW * h / w, 1);
   s.renderOrder = 99;
   return s;
 }
-const disposeSprite = (s) => { s.material.map?.dispose(); s.material.dispose(); };
+export const disposeSprite = (s) => { s.material.map?.dispose(); s.material.dispose(); };
 // a token read at paint time — canvas sprites cannot use var(); a 'style' event repaints them
 const tokv = (n, fb) => (getComputedStyle(document.documentElement).getPropertyValue(n) || fb).trim();
 // every live Avatar, so a Style change can repaint the sprites it baked from
@@ -286,19 +324,54 @@ const tokv = (n, fb) => (getComputedStyle(document.documentElement).getPropertyV
 const liveAvatars = new Set();
 bus.on('style', () => { for (const a of liveAvatars) a.repaintLabel?.(); });
 
-const makeLabel = (name) => textSprite((ctx) => {
+// the name's font, and the glyphs that set every plate's height (platesize.js plateBox says why)
+const LABEL_FONT = '600 40px system-ui, "Segoe UI", sans-serif', LABEL_REF = 'Hdlgjpqy';
+const labelFont = (ctx) => { ctx.font = LABEL_FONT; try { ctx.letterSpacing = '1.5px'; } catch {} };
+let _labelCtx = null;
+const makeLabel = (name) => {
+  const text = name.slice(0, 24);
+  const m = (_labelCtx ??= document.createElement('canvas').getContext('2d'));
+  labelFont(m);
+  const ink = m.measureText(text), ref = m.measureText(LABEL_REF);
+  const box = plateBox({ asc: ink.actualBoundingBoxAscent, desc: ink.actualBoundingBoxDescent, width: ink.width },
+    { asc: ref.actualBoundingBoxAscent, desc: ref.actualBoundingBoxDescent });
+  const s = textSprite((ctx) => {
   // humanist, not terminal (R, 08-30: "Matrix vibes, can we do better").
   // system-ui = Segoe on Windows: warm, rounded, no webfont race on a
   // canvas that draws the moment someone arrives.
-  ctx.font = '600 40px system-ui, "Segoe UI", sans-serif';
-  try { ctx.letterSpacing = '1.5px'; } catch {}
+  labelFont(ctx);
   ctx.textAlign = 'center';
-  const w = Math.min(500, ctx.measureText(name.slice(0, 24)).width + 40);
   ctx.fillStyle = tokv('--pill-bg', 'rgba(6,16,22,0.62)');
-  ctx.beginPath(); ctx.roundRect((512 - w) / 2, 6, w, 52, 26); ctx.fill();   // pill (R, 15:12)
+  ctx.beginPath(); ctx.roundRect((box.w - box.pillW) / 2, box.top, box.pillW, box.pillH, box.pillH / 2); ctx.fill();   // pill (owner, 10-01)
   ctx.fillStyle = tokv('--pill-name', '#8fe8c8');
-  ctx.fillText(name.slice(0, 24), 256, 46);
-}, 512, 64, 0.9);
+  ctx.fillText(text, box.w / 2, box.baseline);
+  }, box.w, box.h, PLATE_W, true);
+  s.userData.aspect = box.h / box.w;   // the sprite's height per metre of width: avatar.js sizes it by width each frame
+  s.userData.pillH = box.pillH / box.w;   // the pill's height, as a share of the sprite's width (the hover card's box)
+  s.userData.pill = box.pillW / box.w;   // the pill's share of the sprite's width: the hover card sits beside IT
+  // Whether the viewer can SEE it, for the hover card (platecard.js): a GPU occlusion query on the plate's own draw,
+  // so it is the same depth test the picture passes — walls hide it from the pointer exactly when they hide it from
+  // the eye, its own body never does. The answer is a frame or two old (resolved async), and is read where the
+  // renderer can give it: during the draw.
+  s.occlusionTest = true;
+  s.onBeforeRender = noteOccluded;
+  return s;
+};
+function noteOccluded(r) { this.userData.occluded = r.isOccluded(this); }
+
+// what hangs over the plate, in the body's frame: lifts tuned when the plate sat at a fixed 1.95 (bubble 2.3, pill 2.12,
+// pill over a bubble 2.72) — now they ride wherever the plate hangs (plateanchor.js), sitting and lying included
+const BUBBLE_LIFT = 0.35, TYPING_LIFT = 0.17, TYPING_OVER_BUBBLE = 0.77;
+const _pHips = new THREE.Vector3(), _pHead = new THREE.Vector3(), _pFoot = new THREE.Vector3(), _pScale = new THREE.Vector3();
+const _ownM = new THREE.Matrix4();
+const _pArgs = { hips: [0, 0, 0], head: [0, 0, 0], feetY: 0, rest: null, s: 1, gap: 0, lift: 0 }, _pOut = { p: [0, 0, 0], lie: 0 };
+const FEET = ['leftFoot', 'rightFoot'];
+const _pSmooth = { dead: PLATE_DEAD };
+const _pRest = new THREE.Vector3(), _pTarget = { standing: false, standY: 0, liveY: 0 };
+const plateBone = (h, n) => h?.getRawBoneNode?.(n) ?? h?.getNormalizedBoneNode?.(n) ?? null;
+const _pRoot = new THREE.Vector3();
+const _lvP = new THREE.Vector3(), _lvE = new THREE.Vector3(), _lvU = new THREE.Vector3(), _lvF = new THREE.Vector3(), _lvQ = new THREE.Quaternion();
+const _lvArgs = { eye: [0, 0, 0], up: [0, 0, 0], fwd: [0, 0, 0], plate: [0, 0, 0], drop: 0, headR: 0, halfH: 0 };
 
 function wrap(text, n) {
   const words = String(text).split(/\s+/);
@@ -347,7 +420,8 @@ function makeTypingSprite() {
   c.width = 128; c.height = 56;
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+  const s = new THREE.Sprite(clearedSpriteMaterial(tex));   // body-attached: hidden by walls, never by its own head
+  s.userData.plateClear = CLEAR_MIN;
   s.scale.set(0.5, 0.5 * 56 / 128, 1);
   s.renderOrder = 99;
   s.userData.ctx = c.getContext('2d');
@@ -401,6 +475,7 @@ function drawTypingDots(sprite, t, state) {
 // ---------------------------------------------------------------- Avatar
 
 const _v = new THREE.Vector3();
+const _plateEye = new THREE.Vector3();   // nameplate fade: the camera's world position
 const _pq = new THREE.Quaternion();
 const _rq = new THREE.Quaternion();
 const _rq2 = new THREE.Quaternion();
@@ -429,6 +504,7 @@ const _wr = new THREE.Quaternion();
 const _wax = new THREE.Vector3();
 const _wup = new THREE.Vector3();
 const _wsw = new THREE.Quaternion();
+const _swE = new THREE.Euler(), _swQ = new THREE.Quaternion();   // swim-layer scratch
 const _hq = new THREE.Quaternion();        // raw-pose scratch (_applyRawPose) — per bone, per frame
 const _hv = new THREE.Vector3();
 const _hs = new THREE.Vector3();
@@ -501,6 +577,12 @@ export class Avatar {
     this.root.userData.isBody = true;   // so the sky's scene-diff never claims a person
     this.root.userData.who = id;        // perf attribution: this subtree is a PERSON (perfscope)
     this.root.add(vrm.scene);
+    // THIS BODY's chosen size and plate lift (bodyscale.js; Profile › Avatar). The size lives on vrm.scene, multiplied
+    // with the VR puppet fit, never on the root: the root also carries the plate, the pill and the bubble,
+    // which platesize.js keeps screen-sized. A pooled VRM may come back still wearing its last owner's size, so the
+    // scale is written fresh here, before anything below measures the body.
+    this.userScale = 1; this.plateY = 0; this._puppet = 1;
+    vrm.scene.scale.setScalar(1);
     // A LAMP IN THE BODY. attachLamps walks for emissive meshes and requests a
     // real point light at each one's centre. main already does this for spawned
     // models (realize/models.js, owner `entity:<id>`); avatars are the other
@@ -561,8 +643,10 @@ export class Avatar {
     this._typingUntil = 0;         // typing signals repeat ~2.5s and expire ~4s
     this._typingDrawAt = 0;
     this.label = makeLabel(id);
-    this.label.position.y = 1.95;
+    this.label.position.y = 1.95;   // until the first frame hangs it from the body (_placePlate)
     this.root.add(this.label);
+    this._plateRest = this._measurePlateRest();   // the crown, once, while the body is still at rest
+    this._plateOff = null;                        // smoothed plate height above the root (world m) — see _placePlate
     liveAvatars.add(this);
 
     // ---- gaze: VRM ships a lookAt rig and nothing was ever pointing it, so
@@ -1038,6 +1122,7 @@ export class Avatar {
 
   // ---- locomotion / clips
   setClip(slot, speed = 0, { fade, ease = false } = {}) {
+    this.postureSlot = slot;   // what was ASKED (the wire's clip), before any fallback: the plate reads posture from it
     // Moving cancels an emote. Standing frozen mid-cheer while walking away
     // is worse than cutting the cheer short.
     if (this.emote && speed > 0.05) this.cancelEmote();
@@ -1047,8 +1132,48 @@ export class Avatar {
     this._setAction(this.actions[use], use, fade, ease);
     const a = this.actions[use];
     if (!a) return;
-    const nat = CLIP_SPEED[slot];
-    a.timeScale = nat > 0 && speed > 0 ? THREE.MathUtils.clamp(speed / nat, 0.6, 1.6) : 1;
+    // a bigger stride is a slower cadence at the same speed; the swim layer keeps its own cadence over idle
+    a.timeScale = slot === 'swim' || slot === 'tread' ? 1 : clipRate(speed, CLIP_SPEED[slot], this.userScale);
+  }
+
+  /** Standing height in metres, from the skeleton at rest (the head joint plus a forehead — the stature
+   *  rule the portrait framing uses), at this body's current size. What water depth is measured against. */
+  bodyHeight() {
+    const key = this.userScale ?? 1;
+    if (this._bodyH && this._bodyHKey === key) return this._bodyH;
+    let h = 1.7 * key;
+    try {
+      const r = this.restBonePositions(['head']);
+      if (r?.head) h = Math.min(4, Math.max(0.5, r.head.y - this.root.position.y + 0.13));
+    } catch { /* a body with no humanoid: the default */ }
+    this._bodyH = h; this._bodyHKey = key;
+    return h;
+  }
+
+  /** SWIMMING, drawn: no rig ships a swim clip, so the stroke is procedural, composed over the idle clip on
+   *  the normalized bones (rest = identity: +x the body's left, +z forward). `swim` is a heads-up
+   *  breaststroke — the body leans in, the arms reach and sweep, the legs frog-kick on the off-beat;
+   *  `tread` is upright, the arms sculling, the legs cycling. Eased in and out, and cross-faded between the
+   *  two, by weights, so arriving in deep water or stopping mid-stroke never snaps. Runs BEFORE the held
+   *  pose and animations, which therefore win any bone they name; never the head (the camera pitch's).
+   *  Every client draws it from the clip name alone — nothing new on the wire. */
+  _swimLayer(dt, now) {
+    const slot = this.postureSlot;
+    const want = !this._limp && SWIM_CLIPS.includes(slot) ? 1 : 0;
+    this._swimW = (this._swimW ?? 0) + (want - (this._swimW ?? 0)) * Math.min(1, 4 * dt);
+    if (this._swimW < 0.005) { this._swimW = 0; return; }
+    this._swimMove = (this._swimMove ?? 0) + ((slot === 'swim' ? 1 : 0) - (this._swimMove ?? 0)) * Math.min(1, 3 * dt);
+    const h = this.vrm.humanoid, taken = this._reachOwned();
+    const tg = swimTargets(this._swimMove, now / 1000), w = this._swimW;
+    for (const [name, x, y, z] of tg) {
+      const node = h?.getNormalizedBoneNode?.(name);
+      if (!node || taken?.has(node)) continue;
+      _swE.set(x, y, z, 'YZX');
+      _swQ.setFromEuler(_swE);
+      const r = this._composeBegin(node);
+      node.quaternion.slerp(_swQ, w);
+      this._composeEnd(node, r);
+    }
   }
   _setAction(a, slot, fadeIn, ease = false) {
     if (!a || this.current === a) return;
@@ -1472,21 +1597,55 @@ export class Avatar {
    *  step replaces this pose with a rotations-only one, so a lowered hips
    *  (kneeling) snapped back to standing height while the sim — which had
    *  measured the lowered hips — went on placing the root under them: the body
-   *  rendered a hips-drop above its own physics. A clip-lowered body (sit)
-   *  never showed it because the clip keeps playing under the sim. Baked into
-   *  the root, the skeleton is standard again and the root carries the drop,
-   *  which is also what remotes see. True when something moved. */
-  bakeHipsIntoRoot() {
+   *  rendered a hips-drop above its own physics. Baked into the root, the
+   *  skeleton is standard again and the root carries the drop, which is also
+   *  what remotes see. True when something moved.
+   *
+   *  `clip: true` bakes what a lowering CLIP did to the hips too (sit, lie).
+   *  It used to be left alone on the grounds that the clip keeps playing under
+   *  the sim — true here, but not on anyone else's screen. A body that fell
+   *  from lying published a root measured from the lie clip's hips, while an
+   *  agent (whose sim has no clip) publishes one measured from the rest hips;
+   *  every watcher draws a limp remote over the clip it last saw, so an agent
+   *  seen lying down went 0.74 m under the floor (#282) and a person who fell
+   *  from lying stood 0.74 m over it for anyone who joined later. One
+   *  convention ends both: the root carries every drop, the hips stay at rest
+   *  while limp (_park). */
+  bakeHipsIntoRoot({ clip = false } = {}) {
+    let moved = false;
     const o = this._override;
-    if (o?.kind !== 'pose' || !o.hipsT || !o.hipsNode) return false;
-    o.hipsNode.parent.updateWorldMatrix(true, false);
-    _hv.copy(o.hipsT).multiplyScalar(o.weight)
-      .applyMatrix3(new THREE.Matrix3().setFromMatrix4(o.hipsNode.parent.matrixWorld));
-    this._rawRelease(o.hipsNode);
-    o.hipsT = null; o.hipsNode = null;
-    this.root.position.add(_hv);
-    this.root.updateMatrixWorld(true);
-    return true;
+    if (o?.kind === 'pose' && o.hipsT && o.hipsNode) {
+      o.hipsNode.parent.updateWorldMatrix(true, false);
+      _hv.copy(o.hipsT).multiplyScalar(o.weight)
+        .applyMatrix3(new THREE.Matrix3().setFromMatrix4(o.hipsNode.parent.matrixWorld));
+      this._rawRelease(o.hipsNode);
+      o.hipsT = null; o.hipsNode = null;
+      this.root.position.add(_hv);
+      moved = true;
+    }
+    const hips = clip ? this.vrm.humanoid?.getNormalizedBoneNode('hips') : null;
+    const rest = hips && this._hipsRest();
+    if (rest) {
+      _hv.copy(hips.position).sub(rest);
+      if (_hv.lengthSq() > 1e-8) {
+        hips.parent.updateWorldMatrix(true, false);
+        _hv.applyMatrix3(new THREE.Matrix3().setFromMatrix4(hips.parent.matrixWorld));
+        hips.position.copy(rest);
+        this.root.position.add(_hv);
+        moved = true;
+      }
+    }
+    if (moved) this.root.updateMatrixWorld(true);
+    return moved;
+  }
+
+  /** The normalized hips' rest position in its parent's frame (three-vrm's
+   *  normalizedRestPose): the height every fallen body's root is measured
+   *  from, on every screen and in every agent's sim. */
+  _hipsRest() {
+    if (this.__hipsRest !== undefined) return this.__hipsRest;
+    const p = this.vrm.humanoid?.normalizedRestPose?.hips?.position;
+    return (this.__hipsRest = Array.isArray(p) && p.length === 3 ? new THREE.Vector3().fromArray(p) : null);
   }
 
   /** Go limp, or stand back up.
@@ -1523,10 +1682,21 @@ export class Avatar {
    *      skeleton to its bind pose — a visible T-pose flash, and the Ragdoll
    *      constructor then measures THAT instead of the pose you fell in.
    *  Leaving the mixer running costs one clip evaluation whose driven bones we
-   *  overwrite anyway, and none of the above happens. */
-  setLimp(on) {
+   *  overwrite anyway, and none of the above happens.
+   *
+   *  `bake` is for YOUR OWN body only: the drop a lowering clip put on the hips
+   *  moves onto the root before the hips are parked (bakeHipsIntoRoot). A
+   *  remote's root comes off the wire every frame, already carrying its drop. */
+  setLimp(on, { bake = false } = {}) {
     on = !!on;
     if (on === this._limp) return;
+    // A held pose's hips translation (a kneel) is baked FIRST: that hands the
+    // hips back to the clip's own value, which is what getting up must restore.
+    // Snapshotted before, the kneel came back with nothing left to undo it.
+    if (on && bake) this.bakeHipsIntoRoot();
+    const hipsNode = on ? this.vrm.humanoid?.getNormalizedBoneNode('hips') : null;
+    const clipHips = hipsNode?.position.clone() ?? null;   // what getting up hands back
+    if (on && bake) this.bakeHipsIntoRoot({ clip: true });
     this._limp = on;
     // Eyes close when the body goes slack, and open when it gets up. Only for a
     // rig with eyelid BONES — setEyes says so itself and does nothing otherwise,
@@ -1566,6 +1736,9 @@ export class Avatar {
       // with its hands left open.
       for (const [node, q] of this._parked ?? []) node.quaternion.copy(q);
       this._parked = null;
+      // and the hips where the clip had them, for the same reason
+      if (this._parkedHips) this._parkedHips[0].position.copy(this._parkedHips[1]);
+      this._parkedHips = null;
       return;
     }
     if (this.emote) this.cancelEmote();
@@ -1575,13 +1748,20 @@ export class Avatar {
     this._parked = this._resolveBones(
       this._humanoidBones().filter((n) => !driven.has(n)))
       .map(([, node]) => [node, node.quaternion.clone()]);
+    // The hips POSITION is parked at rest too: whatever drop a clip put on it
+    // belongs to the root (bakeHipsIntoRoot), on every screen alike — a limp
+    // body's root, its own or off the wire, is always measured from rest hips.
+    this._parkedHips = hipsNode && clipHips && this._hipsRest() ? [hipsNode, clipHips] : null;
     // once here as well as per-frame, so the Ragdoll about to be built reads a
     // skeleton that already agrees with what it will be driving
     this._park();
     this.root.updateMatrixWorld(true);
   }
 
-  _park() { for (const [node] of this._parked ?? []) node.quaternion.identity(); }
+  _park() {
+    for (const [node] of this._parked ?? []) node.quaternion.identity();
+    if (this._parkedHips) this._parkedHips[0].position.copy(this._hipsRest());
+  }
 
   // ---- composing on top of the clip, without trusting it to come back
   //
@@ -1820,13 +2000,204 @@ export class Avatar {
     this._labelName = name;
     this.repaintLabel();
   }
+  /** This body's chosen size (bodyscale.js: 0.5–2; the body, its eyes, stride and collider — see the header there).
+   *  → true when it changed. */
+  setUserScale(u) {
+    const v = clampBodyScale(u);
+    if (v === (this.userScale ?? 1)) return false;
+    this.userScale = v; this._applyBodyScale();
+    return true;
+  }
+  /** The VR device fit (xr.js puppetScale, 1/k), composed under the chosen size. xrbody.js is its one writer. */
+  setPuppetScale(p) {
+    const v = p > 0 && Number.isFinite(p) ? p : 1;
+    if (v === (this._puppet ?? 1)) return false;
+    this._puppet = v; this._applyBodyScale();
+    return true;
+  }
+  /** The body's model→root multiplier: chosen size × VR fit. The seat seam (seats.js riderScalar) reads this. */
+  bodyScale() { return (this.userScale ?? 1) * (this._puppet ?? 1); }
+  _applyBodyScale() {
+    const sc = this.vrm?.scene;
+    if (!sc) return;
+    sc.scale.setScalar(this.bodyScale());
+    sc.updateMatrixWorld(true);
+    this._ownClear = null;   // the clearance over the plate is in world units: re-measure at the new size
+    // a held reach's limb lengths are measured in the root frame, which sees this size: re-measure them, or a live
+    // resize (the slider, the VR fit) keeps bending the old arm. Eagerly, so _reachOwned never sees a gap.
+    if (this._chains) for (const key of [...this._chains.keys()]) this._chains.set(key, measureChain(this, key));
+  }
+  /** Metres the nameplate hangs over the measured crown, at the authored size (bodyscale.js plateLift). 0 = auto. */
+  setPlateY(m) {
+    const v = clampPlateY(m);
+    if (v === (this.plateY ?? 0)) return false;
+    this.plateY = v; this._ownClear = null;
+    return true;
+  }
+
+  /** The crown, measured ONCE while the body is at rest (constructor: a fresh or pooled VRM is in its rest pose, no
+   *  clip applied yet) — plateanchor.js crownEstimate over the raw head/hips/eye bones and the SKINNED mesh top (vertex
+   *  positions through the posed bones, ≤4000 a mesh). All in the VRM scene's own frame: model units, so a live
+   *  resize (root scale, the XR puppet scale) multiplies in per frame instead of going stale. null = nothing to measure. */
+  _measurePlateRest() {
+    try {
+      const sc = this.vrm?.scene, h = this.vrm?.humanoid;
+      if (!sc) return null;
+      this.root.updateMatrixWorld(true);
+      const inv = new THREE.Matrix4().copy(sc.matrixWorld).invert(), m = new THREE.Matrix4(), v = new THREE.Vector3();
+      const yOf = (n) => { const b = h?.getRawBoneNode?.(n) ?? h?.getNormalizedBoneNode?.(n);
+        return b ? b.getWorldPosition(v).applyMatrix4(inv).y : null; };
+      const hips = yOf('hips'), head = yOf('head'), le = yOf('leftEye'), re = yOf('rightEye');
+      const eye = le != null && re != null ? (le + re) / 2 : (le ?? re);
+      const lf = yOf('leftFoot'), rf = yOf('rightFoot');
+      const feet = lf != null || rf != null ? Math.min(lf ?? Infinity, rf ?? Infinity) : 0;
+      let top = -Infinity;
+      sc.traverse((o) => {
+        const pos = o.isMesh && o.visible !== false ? o.geometry?.attributes?.position : null;
+        if (!pos) return;
+        m.multiplyMatrices(inv, o.matrixWorld);
+        const step = Math.max(1, Math.ceil(pos.count / 4000));
+        for (let i = 0; i < pos.count; i += step) {
+          o.getVertexPosition(i, v);   // skinned + morphed, in the mesh's own space
+          v.applyMatrix4(m);
+          if (v.y > top) top = v.y;
+        }
+      });
+      const boundsTop = Number.isFinite(top) ? top : null;
+      const c = crownEstimate({ hips, head, eye, boundsTop });
+      const crown = c?.crown ?? boundsTop;
+      return { ...(c ?? {}), boundsTop, eye, feet, restHeadAboveFeet: head != null ? head - feet : null,
+        height: crown != null ? crown - feet : null };
+    } catch { return null; }
+  }
+
+  /** Hang the plate from the body, this frame (plateanchor.js says why). X/Z over the live hips (over the head, when
+   *  lying); Y from the rest crown, chased smoothly. The chase is on the plate's height ABOVE THE ROOT, so moving the
+   *  whole body (walking up stairs, a jump's root arc, a lift) never makes it trail — only posture changes ease.
+   *  Standing (_plateStanding), Y is the rest crown over the root, so a jump clip moving the hips doesn't move it.
+   *  Worked in WORLD (up is up even if the root tilts), then written into the root's frame, which is where the plate,
+   *  the typing pill and the bubble all live. A body with no hips/head hangs it over its rest mesh top;
+   *  with nothing at all, at the old fixed 1.95. */
+  _placePlate(dt) {
+    const r = this._plateRest, sc = this.vrm?.scene, h = this.vrm?.humanoid;
+    if (!sc || !r || (r.hipsToCrown == null && r.boundsTop == null)) { this.label.position.set(0, 1.95, 0); this._plateDrop = null; return; }
+    this.root.updateWorldMatrix(true, false);
+    const s = sc.getWorldScale(_pScale).y || 1;   // model units → world (root scale × puppet scale)
+    const gap = plateGap((r.height ?? 1.7) * s);
+    const lift = plateLift(this.plateY, s);   // the wearer's own lift over the crown (Profile › Avatar), grows with the body
+    this._plateDrop = gap + lift;   // plate → crown, and the head under it as a ball (_liftPlateForView)
+    this._plateHeadR = r.headSpan != null ? r.headSpan * s / 2 : 0.1;
+    const rootY = this.root.getWorldPosition(_pRoot).y;
+    const hipsN = r.hipsToCrown != null ? plateBone(h, 'hips') : null, headN = hipsN ? plateBone(h, 'head') : null;
+    let x, y, z;
+    if (hipsN && headN) {
+      // per body, per frame: the arguments and the answer are module scratch (review 09-30 N2)
+      const a = _pArgs;
+      hipsN.getWorldPosition(_pHips).toArray(a.hips); headN.getWorldPosition(_pHead).toArray(a.head);
+      let feetY = Infinity;
+      for (let i = 0; i < 2; i++) { const f = plateBone(h, FEET[i]); if (f) feetY = Math.min(feetY, f.getWorldPosition(_pFoot).y); }
+      a.feetY = Number.isFinite(feetY) ? feetY : rootY; a.rest = r; a.s = s; a.gap = gap; a.lift = lift;
+      const { p, lie } = plateAnchor(a, _pOut);
+      x = p[0]; y = p[1]; z = p[2];
+      this._plateLie = lie;
+    } else {
+      _pHips.set(0, r.boundsTop, 0); sc.localToWorld(_pHips);
+      x = _pHips.x; y = _pHips.y + gap + lift; z = _pHips.z;
+      this._plateLie = 0;
+    }
+    const standing = hipsN && headN && r.crown != null && this._plateStanding();
+    let standY = 0;
+    if (standing) {
+      x = _pArgs.hips[0]; z = _pArgs.hips[2]; this._plateLie = 0;
+      _pRest.set(0, r.crown, 0); sc.localToWorld(_pRest);
+      standY = _pRest.y + gap + lift - rootY;
+    }
+    _pTarget.standing = !!standing; _pTarget.standY = standY; _pTarget.liveY = y - rootY;
+    this._plateOff = plateOffset(this._plateOff, _pTarget, dt, _pSmooth);
+    this.label.position.copy(this.root.worldToLocal(_pHips.set(x, rootY + this._plateOff, z)));
+  }
+
+  /** Upright in ordinary motion (plateanchor.js STAND_SLOTS), with nothing else owning the body: a gesture, a held
+   *  pose and a ragdoll fall can crouch, bow or tumble it, so they keep the live anchor. */
+  _plateStanding() { return STAND_SLOTS.has(this.postureSlot) && !this.emote && !this._override && !this._limp; }
+
+  /** Slide the hung plate off the head for THIS viewer's camera (plateanchor.js plateViewLift): along the camera's up,
+   *  in world, so each client lifts every plate for its own eye and nothing rides the wire. Runs after _placePlate,
+   *  the own-clearance measure and this frame's size; the pill and the bubble copy the plate after it. */
+  _liftPlateForView(camera) {
+    if (this._plateDrop == null) return;
+    const lab = this.label, a = _lvArgs;
+    this.root.updateWorldMatrix(true, false);
+    this.root.localToWorld(_lvP.copy(lab.position));
+    camera.getWorldPosition(_lvE); camera.getWorldQuaternion(_lvQ);
+    _lvU.set(0, 1, 0).applyQuaternion(_lvQ); _lvF.set(0, 0, -1).applyQuaternion(_lvQ);
+    _lvE.toArray(a.eye); _lvU.toArray(a.up); _lvF.toArray(a.fwd); _lvP.toArray(a.plate);
+    a.drop = this._plateDrop; a.headR = this._plateHeadR ?? 0.1;
+    a.halfH = lab.scale.x * this.root.getWorldScale(_pScale).y * (lab.userData.pillH ?? 52 / 512) / 2;   // the pill as drawn, world m
+    const d = plateViewLift(a);
+    if (d > 0) lab.position.copy(this.root.worldToLocal(_lvP.addScaledVector(_lvU, d)));
+  }
+
+  /** Your own plate is for OTHER eyes: hidden while presenting (hideLabel, xr.js selfFirstPerson) and in desktop first
+   *  person (firstPersonView, controller.js updateFollowCamera) — with the typing pill and the bubble over it. */
+  get ownPlateHidden() { return !!(this.hideLabel || this.firstPersonView); }
+
+  /** How far this body reaches from its plate's anchor, as the clearance its body-attached sprites write
+   *  (platesize.js ownClearance/reachAbove), from where the plate hangs THAT frame (_placePlate runs first). The body is
+   *  sampled ONCE (skinned positions, ≤4000 vertices a mesh, as it stands at first measure) into the VRM scene's own
+   *  frame; a size, lift or VR-fit change only re-projects that sample through the scene's current transform. Skinning
+   *  every vertex again on each slider tick, and on every remote's change, was the cost (review 09-30 S6); re-projecting
+   *  is exact for those changes, since none of them moves a vertex within the scene. A body with nothing measurable
+   *  clears a head (CLEAR_MIN). */
+  _measureOwnClear() {
+    try {
+      const sceneRoot = this.vrm?.scene;
+      if (!sceneRoot) return ownClearance(0);
+      this.root.updateMatrixWorld(true);
+      const pts = this._ownPts ??= this._sampleOwnBody(sceneRoot);
+      const out = this._ownXyz ??= new Float32Array(pts.length);
+      const e = _ownM.copy(this.root.matrixWorld).invert().multiply(sceneRoot.matrixWorld).elements;
+      const ax = this.label.position.x, az = this.label.position.z;
+      for (let i = 0; i < pts.length; i += 3) {
+        const x = pts[i], y = pts[i + 1], z = pts[i + 2];
+        out[i] = e[0] * x + e[4] * y + e[8] * z + e[12] - ax;   // relative to the plate's own column (it hangs over the hips, not the root)
+        out[i + 1] = e[1] * x + e[5] * y + e[9] * z + e[13];
+        out[i + 2] = e[2] * x + e[6] * y + e[10] * z + e[14] - az;
+      }
+      return ownClearance(reachAbove(out, this.label.position.y));
+    } catch { return ownClearance(0); }
+  }
+  _sampleOwnBody(sceneRoot) {
+    const inv = new THREE.Matrix4().copy(sceneRoot.matrixWorld).invert(), m = new THREE.Matrix4(), v = new THREE.Vector3();
+    const meshes = [];
+    let n = 0;
+    sceneRoot.traverse((o) => {
+      const pos = o.isMesh && o.visible !== false ? o.geometry?.attributes?.position : null;
+      if (!pos) return;
+      const step = Math.max(1, Math.ceil(pos.count / 4000));
+      meshes.push([o, pos.count, step]); n += Math.ceil(pos.count / step);
+    });
+    const pts = new Float32Array(n * 3);
+    let k = 0;
+    for (const [o, count, step] of meshes) {
+      m.multiplyMatrices(inv, o.matrixWorld);
+      for (let i = 0; i < count; i += step) {
+        o.getVertexPosition(i, v);   // skinned + morphed, in the mesh's own space
+        v.applyMatrix4(m);
+        pts[k++] = v.x; pts[k++] = v.y; pts[k++] = v.z;
+      }
+    }
+    return pts;
+  }
+
   /** rebuild the nameplate sprite from the current tokens (rename, or a Style change) */
   repaintLabel() {
     const name = this._labelName ?? this.id ?? '';
+    const at = this.label.position.clone();   // where the body hangs it (_placePlate); the new sprite takes the same spot
     this.root.remove(this.label);
     disposeSprite(this.label);
     this.label = makeLabel(this._seatApprox ? `${name} ≈` : name);
-    this.label.position.y = 1.95;
+    this.label.position.copy(at);
     this.root.add(this.label);
   }
 
@@ -1880,7 +2251,7 @@ export class Avatar {
     if (this._typingState !== 'mic') this._typingUntil = 0;
     if (this.bubble) { this.root.remove(this.bubble); disposeSprite(this.bubble); }
     this.bubble = makeBubble(text);
-    this.bubble.position.y = 2.3;
+    this.bubble.position.copy(this.label.position).y += BUBBLE_LIFT;   // it rides the plate (update keeps it there)
     this.root.add(this.bubble);
     // Long speech deserves a longer read — roughly reading speed, clamped.
     const ms = THREE.MathUtils.clamp(2500 + text.length * 45, 5000, 22000);
@@ -1906,6 +2277,21 @@ export class Avatar {
 
     BC('av:mixer');
     this.mixer.update(dt);
+    // Generic humanoid swim overlay; semantic presence, no new clip requirement.
+    // Restore the underlying clip every frame so leaving water releases limbs.
+    for (const node of this._swimNodes ?? []) {
+      const r=this._composed.get(node);
+      if(r?.live && node.quaternion.equals(r.out))node.quaternion.copy(r.base);
+    }
+    this._swimNodes=[];
+    if(this.locomotion?.medium==='water' && this.locomotion?.body!=='submarine' && !SWIM_CLIPS.includes(this.postureSlot) && !this._limp && !this._override && !this.emote){
+      for(const [name,rotation] of Object.entries(swimPose(now/1000,this.locomotion.mode==='surface'))){
+        const node=this.vrm.humanoid?.getNormalizedBoneNode(name);if(!node)continue;
+        const r=this._composeBegin(node);
+        node.quaternion.setFromEuler(new THREE.Euler(...rotation));
+        this._composeEnd(node,r);this._swimNodes.push(node);
+      }
+    }
 
     // While limp the clip keeps running (see setLimp for why stopping it is a
     // trap) — so the bones the sim does not drive have to be re-parked after
@@ -1940,6 +2326,8 @@ export class Avatar {
       }
       this._composeEnd(this.head, r);
     }
+    BC('av:swim');
+    if (this._swimW || this.postureSlot === 'swim' || this.postureSlot === 'tread') this._swimLayer(dt, now);
     BC('av:override');
     if (this._override || this._anims?.length) this._applyOverride(dt, now);
 
@@ -2200,29 +2588,35 @@ export class Avatar {
       this.shadow.position.y = (gy - rp.y) + 0.02;
       // 3 m up the blob is gone; directly underfoot it is full size.
       const k = THREE.MathUtils.clamp(1 - gap / 3, 0, 1);
-      this.shadow.scale.setScalar(0.55 + 0.45 * k);
+      this.shadow.scale.setScalar((0.55 + 0.45 * k) * (this.userScale ?? 1));   // a bigger body throws a bigger blob
       this.shadow.material.opacity = k * k;
       this.shadow.visible = k > 0.02;
     }
 
     BC('av:plates');
 
-    // ---- nameplate: fade with distance and stop screaming across the stage.
-    // depthTest is off (labels must not be eaten by your own shoulder), so
-    // distance is what keeps 24 of them from becoming a wall of text.
-    const d = this.root.position.distanceTo(camera.position);
-    const vis = THREE.MathUtils.clamp(1 - (d - 18) / 14, 0, 1);
+    // ---- nameplate: world-sized up close, held at a readable angle at range, faded out past 20–30 m (platesize.js
+    // says why). Depth-tested — walls and other bodies hide it — but cleared of its OWN body (textSprite says how);
+    // while names are held (namereveal.js) it comes through everything, bigger and farther.
+    const d = this.root.position.distanceTo(camera.getWorldPosition(_plateEye));   // WORLD: in XR camera.position is rig-local (review 10a M4)
+    const rk = revealLevel();
+    const { lw, vis } = plateSize(d, rk);
+    this._placePlate(dt);   // hang it from the body first: the clearance below is measured from where it hangs
+    if (this._ownClear == null) this._ownClear = this._measureOwnClear();
+    this.label.userData.plateClear = plateClear(this._ownClear, d, rk);
     this.label.material.opacity = vis;
-    this.label.visible = vis > 0.02 && !this.hideLabel;   // hideLabel: your own name is for OTHER eyes (set while presenting, xr.js selfFirstPerson)
-    this.label.scale.setScalar(0); // reset then set (scale carries aspect)
-    const lw = 0.9 * (1 + Math.max(0, d - 8) * 0.012); // gentle size hold at range
-    this.label.scale.set(lw, lw * 64 / 512, 1);
+    const ownHidden = this.ownPlateHidden;
+    this.label.visible = vis > 0.02 && !ownHidden;
+    this.label.scale.set(lw, lw * (this.label.userData.aspect ?? 64 / 512), 1);   // scale carries the aspect: the text keeps its size whatever the canvas height
+    this._liftPlateForView(camera);   // after the size (the lift clears the pill as drawn), before what hangs off the plate
 
     if (this.bubble) {
       if (now > this.bubbleUntil) {
         this.root.remove(this.bubble); disposeSprite(this.bubble); this.bubble = null;
       } else {
+        this.bubble.position.copy(this.label.position).y += BUBBLE_LIFT;   // follows the plate down when they sit or lie
         this.bubble.material.opacity = THREE.MathUtils.clamp(1 - (d - 26) / 12, 0, 1);
+        this.bubble.visible = !ownHidden;
       }
     }
 
@@ -2233,9 +2627,11 @@ export class Avatar {
     const micLive = this._typingState === 'mic';
     const typingNow = now < this._typingUntil && (micLive || !this.bubble);
     if (typingNow && !this.typing) { this.typing = makeTypingSprite(); this.root.add(this.typing); }
-    if (this.typing) this.typing.position.y = (micLive && this.bubble) ? 2.72 : 2.12;
+    if (this.typing) this.typing.position.copy(this.label.position).y += (micLive && this.bubble) ? TYPING_OVER_BUBBLE : TYPING_LIFT;
+    // the pill sits above the plate's anchor: its own reach is the plate's plus the lift (triangle inequality); not revealed
+    if (this.typing) this.typing.userData.plateClear = this._ownClear + Math.abs(this.typing.position.y - this.label.position.y);
     if (this.typing) {
-      this.typing.visible = typingNow;
+      this.typing.visible = typingNow && !ownHidden;
       if (typingNow) {
         if (now - this._typingDrawAt > 110) {
           this._typingDrawAt = now;
@@ -2400,9 +2796,31 @@ export async function makeAvatar(id, libPath, { full = false, urgent = false } =
 // from faces instead of filenames. Costs one offscreen frame, once per body,
 // ever.
 
-export async function contributeThumbnail(name, vrm, token = '', { force = false } = {}) {
+// The body's loupe rank rides the same door (POST /thumb, metadata only — no picture): the numbers of the body as
+// LOADED (perfscope.statsOf, which bills MToon's outline groups a GLB parse can't see), once per body VERSION per
+// browser. The server recomputes the rank and shows it only while `v` is the current export (routes.ts avatarRoster).
+// the door key rides a header, never the URL (routes.ts /thumb refuses ?token=)
+const thumbAuth = (token) => (token ? { authorization: `Bearer ${token}` } : {});
+
+async function stampAvatarPerf(name, vrm, token, path) {
+  const v = /[?&]v=(\d+)/.exec(path ?? '')?.[1];
+  if (!v || !vrm?.scene) return;
+  const key = `ew-perf1-${name}-${v}`;
+  if (localStorage.getItem(key)) return;
+  const { statsOf } = await import('./perfscope.js');
+  const s = statsOf(vrm.scene, name);
+  const q = new URLSearchParams({ name, v, perf: JSON.stringify({ tris: s.tris, draws: s.draws, mats: s.mats, alpha: s.alpha, bones: s.bones, texMB: s.texMB }) });
+  const r = await fetch(`/thumb?${q}`, { method: 'POST', headers: thumbAuth(token) });
+  // only a server that SAYS it stored the stamp burns the once-per-version flag: an older server answers 200
+  // {existed} for a body with a portrait and drops `perf` on the floor — the next wear must try again
+  const j = r.ok ? await r.json().catch(() => null) : null;
+  if (j?.perf === true) { localStorage.setItem(key, '1'); bus.emit('avatar-perf', { name }); }   // the avatar cards repaint
+}
+
+export async function contributeThumbnail(name, vrm, token = '', { force = false, path = null } = {}) {
   try {
     if (!name) return;
+    try { await stampAvatarPerf(name, vrm, token, path); } catch (e) { console.warn('avatar perf stamp skipped', e); }
     if (!force && localStorage.getItem(`ew-thumb2-${name}`)) return;   // we already tried
     if (!force) {
       const head = await fetch(`/thumb/${encodeURIComponent(name)}.png`, { method: 'HEAD' });
@@ -2571,8 +2989,7 @@ export async function contributeThumbnail(name, vrm, token = '', { force = false
     if (!blob) return;
     const q = new URLSearchParams({ name, height: height.toFixed(2) });
     if (force) q.set('force', '1'); // a re-mint pass really does replace
-    if (token) q.set('token', token);
-    await fetch(`/thumb?${q}`, { method: 'POST', body: blob });
+    await fetch(`/thumb?${q}`, { method: 'POST', body: blob, headers: thumbAuth(token) });
     localStorage.setItem(`ew-thumb2-${name}`, '1');
   } catch (e) {
     console.warn('thumbnail contribution skipped', e);

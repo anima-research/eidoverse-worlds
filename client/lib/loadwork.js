@@ -20,15 +20,13 @@
 // the chain waits on itself.
 
 import { bus } from './base.js';
+import { nextFrame as budgetFrame, ask, spent, reportPending } from './framebudget.js';
 
 // ---- yields -----------------------------------------------------------------
 
-/** Wait for the next animation frame — or a macrotask when the tab is hidden,
- *  where rAF never fires and an avatar load must still finish. */
-export const nextFrame = () => new Promise((res) => {
-  if (document.hidden) setTimeout(res, 0);
-  else requestAnimationFrame(() => res());
-});
+/** Wait for the next frame (framebudget: window rAF, which xr_frame_clock routes to the session clock in XR; a
+ *  macrotask when the tab is hidden, where an avatar load must still finish; never longer than its watchdog). */
+export const nextFrame = budgetFrame;
 
 /** Wait for browser idle time (bounded — loading must finish even on a busy
  *  frame loop), for background work like clip hydration. */
@@ -38,11 +36,8 @@ export const idleYield = () => new Promise((res) => {
   } else setTimeout(res, 32);
 });
 
-// While the splash still covers the screen nobody sees a dropped frame, so
-// load work may take bigger bites; once someone is walking around, 60fps means
-// ~16ms frames and load work gets a slice of that, not all of it.
-let budgetMs = 14;
-bus.on('booted', () => { budgetMs = 6; });
+// The slice size is framebudget's: one budget per frame shared with the warm conductor and the sky (bigger bites
+// under the splash, a governor-set share of the frame once someone is walking around).
 
 // ---- work records -----------------------------------------------------------
 
@@ -69,6 +64,7 @@ export function beginWork(label) {
   let sliceStart = t0;
   let frames = 0;
   let ended = false;
+  let grant = null;   // this record's current framebudget grant (its hold is released when the slice reports)
 
   const closePhase = () => {
     if (phaseName !== null) phases.push([phaseName, performance.now() - phaseStart]);
@@ -83,19 +79,27 @@ export function beginWork(label) {
       phaseStart = performance.now();
     },
     async tick() {
-      if (performance.now() - sliceStart < budgetMs) return;
-      frames++;
-      await nextFrame();
+      const now = performance.now();
+      spent('load', now - sliceStart, sliceStart, grant);
+      sliceStart = now;
+      if ((grant = ask('load'))) return;
+      let waited = 0;   // aging is per record: one busy record cannot hold the others back
+      do { frames++; waited++; await nextFrame(); } while (!(grant = ask('load', { waited })));
       sliceStart = performance.now();
     },
     async yield() {
-      frames++;
-      await nextFrame();
+      // a whole frame, then the same grant as tick(): the work after a yield is budgeted like any other slice
+      spent('load', performance.now() - sliceStart, sliceStart, grant);
+      grant = null;
+      let waited = 0;
+      do { frames++; waited++; await nextFrame(); } while (!(grant = ask('load', { waited })));
       sliceStart = performance.now();
     },
     end() {
       if (ended) return;
       ended = true;
+      spent('load', performance.now() - sliceStart, sliceStart, grant);   // the last slice, and its hold released
+      grant = null;
       closePhase();
       active.delete(rec);
       const total = performance.now() - t0;
@@ -155,6 +159,7 @@ export function enqueue(fn, { lane = 'cpu', priority = 0 } = {}) {
     const i = l.jobs.findIndex((j) => j.priority < priority);
     if (i === -1) l.jobs.push(job); else l.jobs.splice(i, 0, job);
     pumpLane(l);
+    reportLanes();
   });
 }
 // (holdObjectCompiles lived here — object compiles paused while a sky was
@@ -168,7 +173,7 @@ function pumpLane(l) {
     l.running++;
     (async () => {
       try { job.resolve(await job.fn()); } catch (e) { job.reject(e); }
-      finally { l.running--; pumpLane(l); checkIdle(); }
+      finally { l.running--; pumpLane(l); reportLanes(); checkIdle(); }
     })();
   }
 }
@@ -179,6 +184,8 @@ function pumpLane(l) {
 export const laneBusy = () => Boolean(
   lanes.cpu.running || lanes.gpu.running
   || lanes.cpu.jobs.length || lanes.gpu.jobs.length);
+const reportLanes = () => reportPending('lanes',
+  lanes.cpu.running + lanes.gpu.running + lanes.cpu.jobs.length + lanes.gpu.jobs.length);
 /** Queue depths per lane — the 8e debug shape (EW.lanes). */
 export const laneStats = () => ({
   cpu: { running: lanes.cpu.running, queued: lanes.cpu.jobs.length, max: lanes.cpu.max },

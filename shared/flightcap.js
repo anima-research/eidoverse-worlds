@@ -24,7 +24,10 @@
 // hash belongs in the clip receipt as provenance, and provenance is not
 // permission.
 
-import { inspectBody, describeBody } from './flightbody.js';
+import { inspectBody } from './flightbody.js';
+
+/** A provider's answer when it has no bone list for the body. */
+const BONES_UNKNOWN = "this body's bones aren't known (its model hasn't loaded or couldn't be read, or no bone list was given), so whether it can fly can't be checked";
 
 /** @typedef {{enabled:false, reason:string}} Denied */
 /** @typedef {{enabled:true, profile:RigProfile, source:string}} Granted */
@@ -40,7 +43,7 @@ import { inspectBody, describeBody } from './flightbody.js';
 export const denyAllFlight = {
   name: 'deny-all',
   flightCapability() {
-    return { enabled: false, reason: 'no flight capability provider configured' };
+    return { enabled: false, reason: "flight isn't set up here (no capability provider is configured), so nobody can fly; if you need it, ask whoever runs this host" };
   },
 };
 
@@ -55,7 +58,12 @@ export const denyAllFlight = {
 export function rigProfile(boneNames) {
   const report = inspectBody(boneNames);
   if (!report.canFly) {
-    return { ok: false, reason: `not flight-capable: ${describeBody(report)}`, report };
+    const missing = report.missing.map((b) => ({ hip: 'hips', spine02: 'spine' })[b] ?? b);
+    return {
+      ok: false,
+      reason: `this body can't fly: its skeleton lacks a flier's core bones (missing: ${missing.join(', ')}); wear a body with hips, a spine and a head`,
+      report,
+    };
   }
   // WINGS ARE REQUIRED FOR A CAPABILITY, even though they are not required for
   // the physics. inspectBody says a wingless body can fly -- true, and useful
@@ -65,9 +73,13 @@ export function rigProfile(boneNames) {
   // answers differ because the questions do: "could this body be integrated?"
   // and "may this body take off?"
   if (!report.canAnimateWings) {
+    const chains = Object.keys(report.chains).length;
     return {
       ok: false,
-      reason: `no flight rig: ${describeBody(report)}`,
+      reason: report.wingCount === 0
+        ? 'this body has no wing bones, so it has no wings to fly with; wear a winged body to fly'
+        : `this body's wings have ${report.wingCount} bone(s) in ${chains} chain(s), and flying needs at least ` +
+          'two chains and four bones; wear a body with fully rigged wings to fly',
       report,
     };
   }
@@ -123,9 +135,10 @@ export function devFlightProvider({ allow = [], bones = null, label = 'local-dev
       // avatar hot-swapped to a wingless one -- the action-time gate resolving
       // against a body that was no longer there. The constructor list is only a
       // FALLBACK for a headless caller that has no avatar to inspect, which is
-      // the one case it was meant for.
-      const names = avatar?.boneNames ?? bones ?? null;
-      if (!names) return { enabled: false, reason: 'no bone list available for this avatar' };
+      // the one case it was meant for. An avatar whose bones aren't known is
+      // still an avatar: it gets no list, not the constructor's.
+      const names = (avatar ? avatar.boneNames : bones) ?? null;
+      if (!names) return { enabled: false, reason: BONES_UNKNOWN };
       const r = rigProfile(names);
       if (!r.ok) return { enabled: false, reason: r.reason };
       return { enabled: true, profile: r.profile, source: label };
@@ -165,12 +178,18 @@ export function worldFlightProvider({ rights = null, label = 'world-grant' } = {
       // A MISSING RIGHTS OBJECT IS A NO. Not yet joined, an older server that
       // never heard of `fly`, a dropped snapshot -- every one of those is
       // "nobody has said you may", which is the same answer as "no".
-      if (!r) return { enabled: false, reason: 'no world rights yet — not joined' };
+      if (!r) {
+        return { enabled: false, reason: "your rights in this world haven't arrived, which counts as no: if you're still joining, try again once you've joined; if they never arrive, this server may not send them (an older version), so ask whoever runs it" };
+      }
       if (r.fly !== true) {
-        return { enabled: false, reason: 'this world has not granted you flight (owner: /grant <you> +fly)' };
+        return {
+          enabled: false,
+          reason: "this world hasn't granted you flight; its owner grants it, to themselves too, by sending " +
+            'grant {id: <your id>, fly: true} (in the browser, /grant <your name> +fly)',
+        };
       }
       const names = ctx.avatar?.boneNames ?? null;
-      if (!names) return { enabled: false, reason: 'no bone list available for this avatar' };
+      if (!names) return { enabled: false, reason: BONES_UNKNOWN };
       const p = rigProfile(names);
       if (!p.ok) return { enabled: false, reason: p.reason };
       return { enabled: true, profile: p.profile, source: label };
@@ -187,12 +206,14 @@ export function resolveFlight(provider, ctx) {
   const p = provider ?? denyAllFlight;
   let out;
   try { out = p.flightCapability(ctx ?? {}); }
-  catch (e) { return { enabled: false, reason: `provider threw: ${e?.message ?? e}` }; }
+  catch (e) {
+    return { enabled: false, reason: `the flight check failed on this host (${e?.message ?? e}); if it keeps failing, ask whoever runs this host` };
+  }
   if (!out || out.enabled !== true) {
     return { enabled: false, reason: out?.reason ?? 'provider denied' };
   }
   if (!out.profile || !out.profile.digest) {
-    return { enabled: false, reason: 'provider granted without a rig profile' };
+    return { enabled: false, reason: 'the flight check answered without a rig profile, which counts as no; ask whoever runs this host' };
   }
   return out;
 }

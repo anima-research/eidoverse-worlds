@@ -62,9 +62,10 @@ console.log("\na world-point reach: solve, verdict, wire bag");
   check("an unreachable point says how short and why", /short|not arriving/.test(far.text) && /limited by/.test(far.text), far.text);
   check("...but still streams (the arm extends toward it)", ag.reaches.has("leftHand"));
   const rel = ag.releaseReach("left");
-  check("release with a generous limb name", rel.includes("left hand"), rel);
+  check("release with a generous limb name", rel.ok && rel.text.includes("left hand"), rel.text);
   check("released limb leaves the bag", !ag.reaches.has("leftHand"));
-  check("release of an idle limb says so", ag.releaseReach("leftFoot").includes("wasn't"), "");
+  const idle = ag.releaseReach("leftFoot");
+  check("release of an idle limb says so, and is done", idle.ok && idle.text.includes("wasn't"), idle.text);
 }
 
 console.log("\na landmark on another body, from streamed presence");

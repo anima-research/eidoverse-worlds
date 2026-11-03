@@ -25,6 +25,7 @@ import { report, bus } from './base.js';
 import { renderer, XR_BOOT } from './core.js';
 import { BC } from './bc.js';
 import { perf } from './perf.js';
+import { tick as budgetTick } from './framebudget.js';
 globalThis.__perf = perf;   // harness: xr-lifecycle-probe reads frameNo to prove the desktop loop TICKS after a session ends (the 09-07 22:41 bug), same pattern as __ewEngineUp
 
 const systems = [];
@@ -65,6 +66,7 @@ function frame(now) {
   // emulated headset): dtMs went NaN straight through the guard below, the follow camera lerped by NaN once and
   // stayed NaN forever — R's BLACK DESKTOP AFTER LEAVING VR (09-06 12:46 → 23:43). A frame with no clock is a resume.
   if (!Number.isFinite(now)) now = performance.now();
+  budgetTick(now);   // background work's frame opens here — this loop is the one that keeps ticking in XR
   let dtMs = now - last;
   if (!Number.isFinite(dtMs)) dtMs = 0;
   // A RESUME is not a frame. Under an XR session the loop ticks on the

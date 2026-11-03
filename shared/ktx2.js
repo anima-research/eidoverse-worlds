@@ -27,8 +27,11 @@
 // Generations: 1 — the §20 launch key (2026-08-10), retired 2026-08-24 because
 // provisional fall-throughs had been served immutable under it. 2 — the PR #142
 // rollout key, retired immediately when an already-poisoned nginx cache entry was
-// observed during rollout. 3 — the clean post-rollout generation.
-export const KTX2_KEY = '3';
+// observed during rollout. 3 — the clean post-rollout generation, retired 2026-09-25: built variants were served
+// immutable under it, and a variant can now be rebuilt in place (↻, the transfer-function and texel-cap fixes), so
+// every browser that fetched one under 3 would hold the old bytes for a year. 4 — variants are served short-lived +
+// revalidating from here on (routes.ts VARIANT_CC), so no future rebuild needs another generation.
+export const KTX2_KEY = '4';
 export const KTX2_QUERY = `ktx2=${KTX2_KEY}`;
 
 /** Does this request negotiate KTX2 — the CURRENT key only. A retired key is

@@ -12,6 +12,14 @@ export const PORT = Number(process.env.PORT ?? 8940);
 // Show-night door policy. Empty = open (dev on a tailnet). On a public box you
 // MUST set this — the boot log shouts if you forgot. Checked at join and upload.
 export const JOIN_TOKEN = process.env.JOIN_TOKEN ?? "";
+// The RENDERERS' own credential (docs/DESIGN-world-access.md). A renderer is the
+// vision of the agents in a world — snapshots are how they see — so a renderer
+// presenting this may WATCH any world, members-only ones included (invisible,
+// never authoring, as every renderer). Distinct from JOIN_TOKEN on purpose: the
+// door key rides invite links, and "renderer" is a flag any client can set, so
+// the door key + the flag must never be a key to a private world. Unset = no
+// renderer is trusted beyond what the world allows everyone.
+export const RENDERER_TOKEN = process.env.RENDERER_TOKEN ?? "";
 export const UPLOAD_CAP = Number(process.env.UPLOAD_CAP_MB ?? 20) * 1_000_000;
 // Pictures are textures, not models: a hung image is decoded into GPU memory
 // on every client that sees it, so the door is narrower than the model door.
@@ -52,6 +60,32 @@ export const OPT_MEM_BUDGET_MB = envNumber("OPT_MEM_BUDGET_MB", Math.floor(usabl
 // estimate above: measured 259MB for a 5.4MB store GLB (x48). The KTX2/LOD
 // arms were not measured separately and are assumed the same order.
 export const OPT_COST_FACTOR = envNumber("OPT_COST_FACTOR", 48, (n) => n > 0);
+// How long the snapshot broker (snapshots.ts) waits for a renderer's frame
+// before GET /snap answers 504. 12s suits a GPU renderer; a software-rendered
+// one (SwiftShader, --disable-gpu) running a full world can need 10-20s per
+// frame, and loses most races at 12. A summoned roamer first travels (up to
+// 25s) and then has at least 40s for its first frame, so the broker's longest
+// wait is 25s plus the larger of 40s and this window. /snap sends nothing while
+// it waits, and GET /snap sets its own per-request timeout a little past that
+// longest wait (5s), capped at 255s, the largest idleTimeout Bun.serve
+// accepts. So the most this window can be is 225 (255, less the 25s journey
+// and the 5s): a larger value is refused like any other invalid one, and 12 is
+// used with a warning. Each request also has one deadline (snapshots.ts
+// budgetMs, 55 s by default, or the caller's ?budget=), which the journey, any
+// wait and the frame all come out of. The deadline stretches past 55 s for a
+// longer window, so a frame from a renderer that is free and already there gets
+// all of it; waiting for a busy renderer or a roamer's journey comes out of the
+// same deadline. A proxy in front must allow the longest of these:
+// deploy/nginx-show.conf gives `location = /snap` a 300s proxy_read_timeout,
+// above the 255s cap. nginx's 60s default would cut a /snap once
+// SNAP_TIMEOUT_SEC is past about 56 s.
+export const SNAP_TIMEOUT_MS = envNumber("SNAP_TIMEOUT_SEC", 12, (n) => n > 0 && n <= 225) * 1000;
+// How long after a start the snapshot broker waits before it sweeps parked roamers to agents' worlds
+// (snapshots.ts sweep): renderers reconnecting after a restart rejoin the worlds they were in, and need the moment.
+// Tests set 0.
+export const SNAP_SWEEP_GRACE_MS = envNumber("SNAP_SWEEP_GRACE_SEC", 30, (n) => n >= 0 && n <= 600) * 1000;
+// How often the broker sweeps besides a roamer joining (the backstop for anything else that leaves a world unserved).
+export const SNAP_SWEEP_EVERY_MS = envNumber("SNAP_SWEEP_EVERY_SEC", 15, (n) => n >= 1 && n <= 3600) * 1000;
 export const ROOT = resolve(import.meta.dir, "..");
 // Dev instances point this elsewhere so a scratch sequencer can't append to the
 // live worlds' logs (they are append-only and forever — a stray dev spawn is
@@ -71,7 +105,8 @@ try { mkdirSync(OPT_DIR, { recursive: true }); } catch { /* the first write will
 // retired with the braid (video is an asset library now); the grass engine
 // lives in client/lib/vegetation/ as first-class client code. Only assets
 // belong here, and each one is a candidate for upstreaming to the library.
-export const PATCH_DIR = join(ROOT, "patched");
+// A test instance points it elsewhere, as it does WORLDS_DIR and OPT_DIR.
+export const PATCH_DIR = resolve(process.env.PATCH_DIR ?? join(ROOT, "patched"));
 // Optimized shadows of store uploads (draco+webp@1024, see server/optimize.ts).
 // Originals in store/ are never touched; /library serving prefers a store-min
 // sibling when one exists. `.failed` markers stop hopeless files from being

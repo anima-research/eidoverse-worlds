@@ -20,6 +20,9 @@ import { renderWorld } from './render.js';
  *  as a PNG data URL. Throws on an empty readback (a context that has not
  *  produced a frame yet answers with a blank canvas, silently). */
 export function captureFrame() {
+  // a handled GPU loss: renderWorld draws nothing, so the canvas still holds the LAST frame and a readback would hand
+  // that back as if it were now (#228 review round 3). Say the GPU is gone instead, as the dead device used to by throwing.
+  if (globalThis.__gpuLost?.fired) throw new Error('GPU lost: no frame to capture');
   renderWorld();   // completed frame, then read it
   const url = renderer.domElement.toDataURL('image/png');
   if (url.length < 2000) throw new Error('empty frame readback');

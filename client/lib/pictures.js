@@ -316,7 +316,7 @@ registerEditor(({ id, obj, meta, bag, commit }) => {
         if (!norm.ok) { msg(norm.why, true); return; }   // the rule, here, before any round-trip
         commit('comp', { id, type: 'picture', data: norm.picture });
         msg(norm.notes.length ? norm.notes.join(' · ') : `hung on ${norm.picture.part}`, false, norm.picture);
-        if (norm.notes.length) flashHint(`🖼 ${esc(norm.notes[0])}`);
+        if (norm.notes.length) flashHint(`🖼 ${norm.notes[0]}`);
         ev.target.blur();
       });
       q('down')?.addEventListener('click', (ev) => {

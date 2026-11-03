@@ -21,6 +21,7 @@ import { makeRagdoll } from './bodysim.js';
 import { jointPositions } from './ragdoll.js';
 import { initBodyDrag, beingDragged, revokeDragged } from './bodydrag.js';
 import { toast, flashHint, setAmbientHint } from './ui.js';
+import { html } from './markup.js';   // hint markup is opt-in: html`` escapes what it interpolates
 import { posable, pushable } from './consent.js';
 import { clearMyReach } from './reachnet.js';
 import { getMe } from './mybody.js';
@@ -57,8 +58,10 @@ export function goLimp(lean = null) {
   // Park the undriven bones and stop the clip BEFORE constructing the sim.
   // Both of the sim's reference skeletons are read in here — the neutral rest
   // it measures its limits against, and the live pose the tumble starts from —
-  // and neither may still have the walk cycle in it.
-  me.setLimp(true);
+  // and neither may still have the walk cycle in it. A sit/lie clip's hips drop
+  // moves onto the root as it parks (#282): the root everyone sees is measured
+  // from rest hips, as an agent's is.
+  me.setLimp(true, { bake: true });
   clearMyReach();   // a knocked-over body's reach is gone — descriptor AND arm (mirrors agent.ts knockDown)
   ragdoll = makeRagdoll(me, lean ?? toppleVelocity(), me.restBonePositions());
   myState.clip = 'ragdoll';
@@ -103,9 +106,11 @@ export function updateMountedMe(dt) {
   myState.yaw = Math.atan2(Math.sin(sw.yaw), Math.cos(sw.yaw));   // saved yaw may be unwrapped (owner: 7.62 restored on every reload, 09-05)
   myState.speed = 0;
   myState.clip = sw.pose;
+  myState.q = undefined; myState.locomotion = undefined;
   if (me) {
     me.root.position.copy(_seatP);
-    me.root.rotation.y = sw.yaw;
+    me.root.rotation.set(0,sw.yaw,0);
+    me.locomotion = null;
     me.setClip(sw.pose, 0);
   }
   // The camera lives in updateMe, which we skip while seated — so drive it
@@ -164,8 +169,8 @@ export function updateSeatHint(dt) {
   _hintAcc = 0;
   if (CONFIG.renderer || CONFIG.spectate) return;
   let hint = null;
-  if (avatarMounts.has(CONFIG.name)) hint = '<kbd>X</kbd> get up · <kbd>WASD</kbd> hop off';
-  else if (!downed && nearestSeat(null, 3.5)) hint = '<kbd>X</kbd> — sit';
+  if (avatarMounts.has(CONFIG.name)) hint = html`<kbd>X</kbd> get up · <kbd>WASD</kbd> hop off`;
+  else if (!downed && nearestSeat(null, 3.5)) hint = html`<kbd>X</kbd> — sit`;
   setAmbientHint(hint);
 }
 
@@ -193,7 +198,7 @@ function beginDraggedMode(by) {
   if (!me) return;
   ragdoll?.dispose?.(); ragdoll = null;   // the dragger's sim owns the tumble now
   downed = true;
-  me.setLimp(true);
+  me.setLimp(true, { bake: true });
   myState.clip = 'ragdoll';
   flashHint(`${by} grabs you — move to break free`);
 }

@@ -98,6 +98,20 @@ check("...and it is advisory: the component still folded",
 check("...and still reads as an emitter to a resident",
   /\[hearth\][^\n]*emitting "plasma"/.test(body.look()));
 
+// ---- a second, named emitter on the same entity ------------------------------
+send(author, "comp", { id: "hearth", type: "particles:wisp", data: { preset: "smoke", scale: 0.05, wobble: 99 } });
+await sleep(500);
+author.ws.send(JSON.stringify({ type: "debug", limit: 30 }));
+await sleep(400);
+const named = author.debug.filter((d: any) => d.kind === "particles-lint" && d.component === "particles:wisp");
+check("a named emitter's clamp lands in the recorder, saying WHICH emitter",
+  named.some((d: any) => String(d.why).includes("wobble clamped")), JSON.stringify(author.debug.slice(-3)));
+check("both emitters read on the entity, each under its own key",
+  /\[hearth\][^\n]*emitting "plasma"[^\n]*emitting smoke \(particles:wisp;[^)]*scale 0\.05/.test(body.look()),
+  body.look().split("\n").find((l: string) => l.includes("hearth")));
+send(author, "comp", { id: "hearth", type: "particles:wisp", data: null });
+await sleep(300);
+
 // ---- put it out --------------------------------------------------------------
 // Past the open coalescing window first: the plasma change above is still
 // folding, and an ending inside that window is (correctly) reported when the

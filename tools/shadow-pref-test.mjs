@@ -89,7 +89,7 @@ if (CASE) {
   // request, so what is under test is the casting SLOT's own wiring following
   // the resident's switch. (The contend case below is the one that asks the
   // other question -- whether the lamp actually HOLDS that slot.)
-  const snap = () => { const d = rig.rigDebug(); return { pref: d.shadows.pref, map: renderer.shadowMap.enabled, sun: sun.castShadow, lamp: d.shadows.slotIsCaster }; };
+  const snap = () => { const d = rig.rigDebug(); return { pref: d.shadows.pref, map: renderer.shadowMap.enabled, sun: d.shadows.sunCasting, lamp: d.shadows.slotIsCaster, shapeOn: renderer.shadowMap.enabled && sun.castShadow }; };   // sun/lamp = EFFECTIVE casting: the switch is uniform-level since 09-27
 
   if (CASE === 'boot-on' || CASE === 'boot-off') { out({ boot: snap() }); }
   if (CASE === 'bias') {
@@ -187,14 +187,14 @@ const bootOnChecks = (r, c = check) => {
 };
 const bootOffChecks = (r, c = check) => {
   c('preference OFF is read at boot', r.boot.pref === false);
-  c('shadow map disabled at boot', r.boot.map === false);
+  c('pref off at boot: the sun draws no shadow (uniform-level; the map stays in the pipeline shape)', r.boot.sun === false && r.boot.shapeOn === true);
   // THE DEFECT: a casting lamp with the map off. Agreement is the invariant,
   // not "off" -- a lamp that casts into a disabled map is a lamp pretending.
   c('the lamp slot does NOT cast when the preference is off', r.boot.lamp === false,
     'slot 0 born casting with shadowMap.enabled=false — boot disagrees with the switch');
 };
 const flipChecks = (r, c = check) => {
-  c('setShadows(false) disables the map', r.off.map === false);
+  c('setShadows(false) keeps the pipeline shape (no scene recompile)', r.off.shapeOn === true);
   c('setShadows(false) stops the sun casting', r.off.sun === false);
   c('setShadows(false) stops the LAMP casting', r.off.lamp === false,
     'the lamp kept casting into a disabled shadow map');

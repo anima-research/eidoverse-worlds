@@ -14,10 +14,13 @@ import { sendVerb } from './net.js';
 import { flashHint } from './ui.js';
 import { selectRow } from './rows.js';
 import { previewSky, skyArgs, skyImpl, WEATHERS, CLOUDS, SKY_WORLDS,
-  CLOUD_QUALITY, getCloudQuality, setCloudQuality } from './sky.js';
+  CLOUD_QUALITY, getCloudChoice, setCloudQuality, cloudCap, skyInXR } from './sky.js';
 import { GRASS_QUALITY, getGrassQuality, setGrassQuality,
   getGrassDensity, getGrassShed, getGrassApplied } from './terrain.js';
 import { MODEL_QUALITY } from './lod_policy.js';
+import { loggedSky, skyPreviewing, skyRendering, skyDegraded, getCloudQuality } from './sky.js';
+import { effectiveClock } from '../../shared/forecast.js';
+import { stateLines } from './statelines.js';
 import { modelQuality, dialModelQuality } from './realize/models.js';
 
 const SLIDERS = [
@@ -37,11 +40,59 @@ const SLIDERS = [
 // stores a preset name and logged meaning never depends on the def file.
 
 export function paintSky(body) {
-  if (body.dataset.init) { body._sync?.(); return; }
+  if (body.dataset.init) { body._sync?.(); body._readState?.(); return; }
   body.dataset.init = '1';
   body.innerHTML = '';
   const inputs = {};
   const commit = document.createElement('button');
+
+  // what the log says, and what you're seeing instead (only while those differ)
+  const lines = stateLines();
+  lines.el.classList.add('sky-state');
+  body.appendChild(lines.el);
+  let lastLogged = null;
+  const readState = () => {
+    const L = loggedSky();
+    if (!L) { lines.set('no sky logged yet', skyRendering() ? 'loading…' : null); return; }
+    const a = L.args;
+    if (L !== lastLogged) {
+      // someone (maybe you) logged a sky: follow it, unless you're mid-edit
+      const first = lastLogged === null;
+      lastLogged = L;
+      if (!first && !commit.classList.contains('dirty')) body._sync?.();
+    }
+    const parts = [];
+    if (a.system === 'skymesh') parts.push('basic sky');
+    // what actually drives the sun: no tz follows Los Angeles, and a tz that doesn't resolve leaves the parked clock
+    const ec = effectiveClock({ ...a, ts: L.t0 }, Date.now());
+    if (ec.mode === 'real') parts.push(`real clock (${ec.tz})`);
+    else {
+      const h = ((ec.hour % 24) + 24) % 24;
+      parts.push(`${String(Math.floor(h)).padStart(2, '0')}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')}`
+        + `${ec.mode === 'rated' ? ' (running)' : ''}${ec.requestedTz ? ` (tz ${ec.requestedTz} not recognised)` : ''}`);
+    }
+    if (a.weather) parts.push(a.weather);
+    // the detailed sky builds cumulus for a log with no (or an unknown) clouds value (sky.js makeSky), so say that
+    const basic = a.system === 'skymesh';
+    const clouds = basic ? a.clouds : (CLOUDS.includes(a.clouds) ? a.clouds : 'cumulus');
+    if (clouds) parts.push(`clouds ${clouds}`);
+    if (a.world && a.world !== 'earth') parts.push(a.world);
+    const you = [];
+    if (skyRendering()) you.push('loading…');
+    if (skyPreviewing()) you.push('previewing (not logged)');
+    // Unsaved edits and no preview: a log landed on top of it (applySky ends a preview). Said, not re-previewed: that
+    // would hide the sky someone just shared the moment it arrived. Touching any control previews the edits again.
+    else if (commit.classList.contains('dirty')) you.push("your unsaved edits aren't shown — a new sky was logged");
+    if (!basic && getCloudQuality() === 'off' && clouds !== 'clear') you.push('no clouds (your clouds⚙ is off)');
+    if (skyDegraded() && a.system !== 'skymesh') you.push("the basic sky (this GPU can't run the full one)");
+    lines.set(parts.join(' · '), you.join(' · '));
+  };
+  bus.on('sky-state', readState);
+  bus.on('sky-degraded', readState);
+  // the sun moves. The body stays connected when the panel closes (the frame and its tab only hide it), so ask for a
+  // rendered box: a closed panel's clock line costs nothing, and reopening the tab reads it at once (top of paintSky)
+  setInterval(() => { if (body.getClientRects().length) readState(); }, 30000);
+  body._readState = readState;
 
   const local = {};
   const preview = (patch) => {
@@ -113,10 +164,30 @@ export function paintSky(body) {
   // volumetric march is the most expensive thing the client draws and its cost
   // is per-fragment, so a big high-refresh display pays several times what a
   // small window does for the same sky.
-  const { row: cqRow } = selectRow('clouds⚙', CLOUD_QUALITY, getCloudQuality(),
-    (v) => { setCloudQuality(v); flashHint(`clouds: ${v} (yours only)`); });
+  const { row: cqRow, select: cq } = selectRow('clouds⚙', CLOUD_QUALITY, getCloudChoice(),
+    (v) => { setCloudQuality(v); flashHint(`clouds: ${v} (yours only). The first time a setting is used, your GPU may pause a few seconds to compile it`); });
   cqRow.title = 'local performance setting — not shared with the world';
   body.appendChild(cqRow);
+  // In a headset 'high' (the live march) is unavailable (owner, 09-27): greyed, and when it's YOUR choice, a note says what runs instead
+  // and why. Shown only in VR; it goes away at exit.
+  const cqNote = document.createElement('div');
+  cqNote.className = 'cloud-cap-note';
+  cqNote.style.cssText = 'font-size:10px;color:var(--dim);padding:0 2px 4px;line-height:1.35';
+  cqNote.hidden = true;
+  body.appendChild(cqNote);
+  let inXR = skyInXR();   // the panel may first paint mid-session
+  const syncCap = () => {
+    const live = [...cq.options].find((o) => o.value === 'high');
+    if (live && live.disabled !== inXR) live.disabled = inXR;
+    const cap = cloudCap();
+    const text = inXR && cap ? `In VR your clouds run at medium (baked). High clouds march every pixel for each eye, which halves a headset's frame rate; your high setting comes back when you leave VR.` : '';
+    if (cqNote.textContent !== text) cqNote.textContent = text;
+    if (cqNote.hidden !== !text) cqNote.hidden = !text;
+    cq.value = getCloudChoice();
+  };
+  bus.on('xr:state', (on) => { inXR = !!on; syncCap(); });
+  bus.on('cloud-cap', syncCap);
+  syncCap();
 
   // The meadow budget is likewise YOURS (#60) — a persisted cap on how much
   // of the field this machine draws. Species/seed/extent stay world state;
@@ -194,17 +265,17 @@ export function paintSky(body) {
 
   // Sliders that only the BASIC sky answers. On the real sky the engine owns
   // sun direction and supplies its own bounce fill (sky.js documents the
-  // ownership boundary) — a slider that does nothing must say so, not sit
-  // there lying. sun/ambient/fog work on BOTH paths now: fog density was
+  // ownership boundary), so there they're hidden: a slider that can't do
+  // anything is clutter (owner, 09-27: hide what doesn't apply, don't grey it). sun/ambient/fog work on BOTH paths now: fog density was
   // always ours, and sun/ambient ride as post-update multipliers (§12.6).
   const BASIC_ONLY = new Set(['azimuth', 'fill']);
   const basicRows = [];
   const syncBasicOnly = () => {
     const dead = skyImpl() === 'eidoverse';
     for (const { row, input } of basicRows) {
-      input.disabled = dead;
-      row.style.opacity = dead ? '.45' : '';
-      row.title = dead ? 'the detailed sky drives this itself — basic sky only' : '';
+      if (input.disabled !== dead) input.disabled = dead;
+      const d = dead ? 'none' : '';
+      if (row.style.display !== d) row.style.display = d;   // style, not [hidden]: a .row display rule would beat the attribute
     }
   };
 
@@ -227,6 +298,10 @@ export function paintSky(body) {
     body.appendChild(row);
   }
   syncBasicOnly();
+  // follow the sky that's actually built, while the panel stays open: a logged system switch or the first sky arriving
+  // changes skyImpl() after the repaint that last synced these rows (review 3, M1)
+  bus.on('sky-ready', syncBasicOnly);
+  bus.on('sky-state', syncBasicOnly);
 
   // The sun can follow a REAL clock: `clock: real` makes the world's hour BE
   // the named timezone's wall hour (DST included, hoursAt owns the formula)
@@ -256,7 +331,21 @@ export function paintSky(body) {
   }).catch((e) => report('sky clocks', e));
   fillClocks();
   bus.on('defs-updated', fillClocks);
-  const syncClockUi = () => { inputs.hours.disabled = ck.value !== ''; };
+  // Under a real clock the world's hour IS that city's time, so time and rate do nothing: hidden like the basic-only
+  // rows (owner, 09-27: first 'gray out … inoperable', then 'hide settings that aren't relevant'); the clock row itself
+  // says what's driving the hour. The presets still set weather/clouds/light, but not their hour.
+  const syncClockUi = () => {
+    // the clock the commit will SEND, not what the select shows: while you have unsaved edits a remote clock change
+    // doesn't reach the select (review 3, L4)
+    const real = gather().clock === 'real';
+    for (const k of ['hours', 'rate']) {
+      const input = inputs[k], row = input?.parentNode; if (!input || !row) continue;
+      input.disabled = real;
+      const d = real ? 'none' : '';
+      if (row.style.display !== d) row.style.display = d;
+    }
+    presetWrap.title = real ? 'under a real clock the presets set the look, not the hour' : '';
+  };
   ck.onchange = () => {
     if (ck.value !== '') { local.clock = 'real'; local.tz = ck.value; }
     else {
@@ -289,10 +378,14 @@ export function paintSky(body) {
   body.appendChild(commit);
 
   body._sync = () => {
+    // Nothing unsaved: everything in `local` was committed and the log now speaks for it, so forget it. Kept, it went
+    // on overriding later remote changes (a clock put back to authored left time/rate hidden; ✓ re-sent stale knobs).
+    // With edits pending (a panel re-open) it's the person's work: keep it (review 8, M2).
+    if (!commit.classList.contains('dirty')) for (const k of Object.keys(local)) delete local[k];
     const a = skyArgs();
     for (const [key, , , , , dflt] of SLIDERS) {
-      // under a real clock hours/rate live in dormantRated (#65); show them
-      // (disabled) as what the world would return to
+      // under a real clock hours/rate live in dormantRated (#65): load them (the rows are hidden) as what the world
+      // would return to
       inputs[key].value = a[key] ?? a.dormantRated?.[key] ?? dflt;
       inputs[key].parentNode.querySelector('.v').textContent = inputs[key].value;
     }
@@ -308,4 +401,5 @@ export function paintSky(body) {
     syncGrassRow();
   };
   body._sync();
+  readState();
 }

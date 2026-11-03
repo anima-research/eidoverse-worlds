@@ -108,6 +108,21 @@ check('lie posture',
   selectClip({ posture: 'lie' }).clip === 'lie');
 check('nothing claims the body → idle', selectClip({}).clip === 'idle');
 
+// ---- a sized body (review 09-30 S1): the controller scales the stride (scaledSpeed: walk 1.55·u, run 4.0·u), so the
+//      walk/run split is a speed in BODY lengths — a 200% body walking is not running, a 50% body running is
+check('a 200% body walking (3.1 m/s) → walk, not run',
+  selectClip({ wantMove: true, speed: 3.1, scale: 2 }).clip === 'walk');
+check('a 200% body running (8 m/s) → run',
+  selectClip({ wantMove: true, speed: 8, scale: 2 }).clip === 'run');
+check('a 50% body running (2 m/s) → run (it never ran before)',
+  selectClip({ wantMove: true, speed: 2, scale: 0.5 }).clip === 'run');
+check('a 50% body walking (0.78 m/s) → walk',
+  selectClip({ wantMove: true, speed: 0.78, scale: 0.5 }).clip === 'walk');
+check('no scale (an older caller) reads as 100%', selectClip({ wantMove: true, speed: 3.1 }).clip === 'run'
+  && selectClip({ wantMove: true, speed: 3.1, scale: NaN }).clip === 'run');
+const ctlSrc = readFileSync(join(here, '../client/lib/controller.js'), 'utf8');
+check('controller.js hands selectClip the body\'s size', /selectClip\(\{[^}]*\bscale:\s*me\.userScale/.test(ctlSrc));
+
 // ---- only jump carries options
 check('non-jump clips carry no options (setClip defaults)',
   selectClip({ wantMove: true, speed: 1.2 }).opts === undefined && selectClip({}).opts === undefined);

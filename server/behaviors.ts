@@ -23,6 +23,7 @@
 
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import { lightArgsError } from "./verb-shapes.ts";
 
 // --- what we need from server.ts (structural, to avoid a circular import) ---
 type LogEntry = { seq: number; ts: number; actor: string; verb: string; args: Record<string, unknown> };
@@ -216,9 +217,12 @@ class Instance {
   }
 
   /** Emits are the ONLY way a script touches the world, so this is the whole
-   *  security story: author's live rights, then the capability mask, then
-   *  selfOnly, then rate budgets. Returns "" on success or the refusal —
-   *  which the prelude throws, so a denied emit is LOUD in script land. */
+   *  security story, in the order it runs: the rate budgets (per activation,
+   *  then per minute), the capability mask, the author's live rights,
+   *  selfOnly, then the verb's own shape (light's id). The budgets are
+   *  charged first, so a refused emit has still spent them, and a storm of
+   *  refusals isn't free. Returns "" on success or the refusal — which the
+   *  prelude throws, so a denied emit is LOUD in script land. */
   private hostEmit(json: string): string {
     let verb: string, args: Record<string, unknown>;
     try { [verb, args] = JSON.parse(json); } catch { return "emit: unparseable"; }
@@ -236,6 +240,10 @@ class Instance {
     if ((this.rec.caps?.selfOnly ?? true) && this.rec.attach
       && args && typeof args === "object" && "id" in args && args.id !== this.rec.attach) {
       return `selfOnly: this behavior only touches its own entity ("${this.rec.attach}")`;
+    }
+    if (verb === "light") {
+      const error = lightArgsError(args);
+      if (error) return error; // __emit turns this into a catchable script error.
     }
     try {
       // §24 entry bus: commit publishes (fanout + bhv.onEntry, whose bhv:

@@ -9,6 +9,7 @@ import { bus } from './base.js';
 import { EMOTE_ORDER, EMOTE_ICONS } from './emotedefs.js';   // names + glyphs, no engine
 import { getMe } from './mybody.js';
 import { registerXRPanel } from './xrpanels.js';
+import { register as registerAction } from './actions.js';
 import { myState, setPosture, sitHere, standUp, getPosture } from './controller.js';
 const POSTURES = ['sit', 'stand', 'lie'];
 // through the same flows the ring used: a nearby seat wins for sit, stand dismounts
@@ -78,8 +79,8 @@ export function initEmoteBar() {
     // bottom edge, and _paint alone skips every viewport clamp (#185 review).
     if (f._fit) f._fit(); else f._paint();
   };
-  // a saved size from an older layout (or any drift) refits the moment the menu opens
-  const show = f.show.bind(f);
+  // a saved size from an older layout (or any drift) refits the moment the menu is on screen — onShow, not a
+  // wrapped show(): the viewport auto-restore brings the bar back without show()
   // OPEN AT A SIZE YOU CAN ACTUALLY SEE (R, 2026-09-12: "at least be at a size
   // they can be completely viewed at when open"). show() snapped to _state.w —
   // the DEFAULT 352px — so tapping the bar open on a phone put a 352px bar in a
@@ -122,7 +123,8 @@ export function initEmoteBar() {
     // top became computed: room went negative and the 9-across bar reflowed to a 48x350
     // column on a phone. The card is transient chrome with a dismiss button; the bar is
     // a primary control. The card yields, and it is placed second so it can.
-    for (const sel of ['#dock', '#micbtn', '#earbtn']) {
+    // #hudstatus: the status chips on the ∃'s row (statuschips.js) — placed from the ∃ and its glyphs alone, so no cycle
+    for (const sel of ['#dock', '#micbtn', '#earbtn', '#hudstatus']) {
       const g = document.querySelector(sel)?.getBoundingClientRect();
       if (g && g.width && g.top < 60 && g.bottom > 8) {
         const c = chromeCost(sel, g, innerWidth);
@@ -166,9 +168,8 @@ export function initEmoteBar() {
   // paint the bar beneath #micbtn/#earbtn/#dock. Frames cap at Z_HI=25 and that
   // chrome sits at 27 (#dock), 45 (#micbtn/#earbtn, mictoggle.js) and 60
   // (.capnotice) — the loop measures all four — so a bar left there can never win
-  // by stacking. (#emenu 40 and #trayzone 28 are not in the list at all.)
-  f.show = () => {
-    show();
+  // by stacking. (#emenu 50 and #trayzone 28 are not in the list at all.)
+  f.onShow(() => {
     // RE-DERIVE, DO NOT RATCHET. `Math.min(state.w, room)` can only ever shrink, and
     // state.w is restored from localStorage — so one bad width outlives the condition
     // that caused it, forever. Measured 2026-09-12: while `.capnotice` was still in
@@ -207,15 +208,19 @@ export function initEmoteBar() {
     // deliberate desktop arrangement is never replayed onto a phone at all. R's call,
     // 2026-09-12 18:06; mobile is being picked up by someone else, so this is theirs to
     // design rather than ours to guess at. Disclosed in the PR body under "known".
-    return f;
-  };
+  });
   const grid = document.createElement('div');
   grid.className = 'tiles fixed';
   const tiles = new Map();
+  // a rebuild re-registers from scratch: register() merges and skips undefined fields,
+  // so writing over the old entries would keep a moved emote's old key and a removed one's row
+  let unregs = [];
   // built from the def-hydrated vocabulary (§24l) and rebuilt when a defs
   // push re-hydrates it — icons ride the same table as the names now
   const fill = () => {
     grid.innerHTML = ''; tiles.clear();
+    for (const off of unregs) off();
+    unregs = [];
     // postures lead the row as tiles like the rest — EMOJI, same as the emotes
     // (live, 09-05 16:41: "STILL have phosphor icons instead of emojis"); the same
     // measured fallback: a platform without the glyph gets the word
@@ -242,7 +247,13 @@ export function initEmoteBar() {
       b.onclick = () => { getMe()?.playEmote(name); myState.emote = name; litEmote = name; litUntil = performance.now() + 1500; paint(); };
       grid.appendChild(b);
       tiles.set(name, b);
+      // the tile's own act, findable by name; number keys 1–9 follow EMOTE_ORDER (main.js)
+      unregs.push(registerAction({ id: `emote:${name}`, title: name, group: 'emotes', keywords: ['emote', 'gesture'],
+        icon: emojiRenders(em) ? em : undefined, key: i < 9 ? String(i + 1) : undefined, run: b.onclick }));
     });
+    // sit and lie are keys (X, Z — controller.js registers those); standing up has no key, only this tile
+    unregs.push(registerAction({ id: 'posture:stand', title: 'stand up', group: 'body', keywords: ['posture', 'get up'], icon: 'personStanding',
+      run: () => { posture('stand'); paint(); } }));
     if (f._state) snapTo(f._state.w);
   };
   const paint = () => { const lit = myState.emote ?? (performance.now() < litUntil ? litEmote : null); for (const [n, b] of tiles) b.classList.toggle('on', n.startsWith('posture:') ? (myState.clip === n.slice(8) || (n === 'posture:sit' && myState.clip === 'sitchair')) : lit === n); };

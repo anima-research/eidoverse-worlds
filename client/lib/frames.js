@@ -98,8 +98,12 @@ function _zoneFor(f, e) {
 function _contentClaims(e) {
   // whatever really sits under the pointer: a scrollbar strip, a button, an
   // input — interactive content beats the grab; bare frame chrome does not
-  for (let t = document.elementFromPoint(e.clientX, e.clientY); t instanceof HTMLElement; t = t.parentElement) {
+  // Element, not HTMLElement: the topmost thing over a glyph button is its SVG <path>, and an HTMLElement-only walk
+  // never reached the <button> — so a pin in the ∃ menu's flyout that hung over a frame's edge band lost its press to
+  // the resize (measured 10-01, tools/frames-resize-test.ts)
+  for (let t = document.elementFromPoint(e.clientX, e.clientY); t instanceof Element; t = t.parentElement) {
     if (['BUTTON', 'INPUT', 'TEXTAREA', 'SELECT', 'A'].includes(t.tagName)) return true;
+    if (!(t instanceof HTMLElement)) continue;   // an SVG part has no scrollbars of its own
     if (t.scrollHeight > t.clientHeight + 1) {
       const sbw = t.offsetWidth - t.clientWidth;
       if (sbw > 0 && e.clientX >= t.getBoundingClientRect().right - sbw - 2) return true;
@@ -204,7 +208,10 @@ document.addEventListener('pointerdown', (e) => {
     captureEl?.removeEventListener('lostpointercapture', finish);
     document.body.style.cursor = '';
     _resizing = false;
-    f.markMoved?.(); f.save();             // a resize is deliberate too
+    // only the axes this zone moved, each with its position: the axis's viewport is stamped, so a rest x
+    // left from an older viewport beside a new vw would read as docked where it never was
+    f.markMoved?.((/[ew]/.test(z) ? 'xw' : '') + (/[ns]/.test(z) ? 'yh' : ''));
+    f.save();                              // a resize is deliberate too
 
   };
   // capture keeps the stream coming while the pointer is outside the window;
@@ -247,10 +254,12 @@ document.body.classList.toggle('ui-locked', locked);
  */
 // The newcomer's layout is a hand-arranged one, not the panels' individual guesses: the tester's desktop
 // (a 1904×844 window, 09-06) exported from a live session and anchored to edges so it holds on
-// other screens. World, chat and the emote bar are open; everything else is closed but pinned to the dock.
-// A frame's own saved state (its owner's moves) still wins; resetLayout returns HERE.
+// other screens. Chat and the emote bar are open; everything else is closed but pinned to the dock.
+// World starts CLOSED (the quiet defaults): on arrival it is eight collapsed section names on
+// a third of the screen of glass — nothing to show until you ask, and the rail button or the lantern
+// ("sky", "build") opens it. A frame's own saved state (its owner's moves) still wins; resetLayout returns HERE.
 const DEFAULT_LAYOUT = {
-  world:    { x: -8,  y: 8,   w: 407, h: 363, hidden: false },
+  world:    { x: -8,  y: 8,   w: 407, h: 363, hidden: true },
   chat:     { x: 10,  y: -10, w: 545, h: 307, hidden: false },
   settings: { x: -8,  y: 381, w: 407, h: 443, hidden: true },
   profile:  { x: 48,  y: 46,  w: 505, h: 452, hidden: true },
@@ -367,7 +376,10 @@ export function makeFrame(id, opts = {}) {
     // so toggling any panel once exempted the frame forever. That needs its own
     // signal, persisted with state and written only at the deliberate acts.
     let placed = saved?.placed === true;
-    const markMoved = () => { moved = true; placed = true; state.placed = true; };
+    // `axes`: what the deliberate act chose. A drag chooses a position, never the size
+    // a squeezed window was imposing at the time (review C4); an edge-resize chooses
+    // the axes its zone moved.
+    const markMoved = (axes = 'xywh') => { moved = true; placed = true; state.placed = true; commitRest(axes); };
   // R, 2026-09-11, on the bug this exists for: the emote bar "will always pop
   // sideways to the right regardless if there's room for it" — snapTo calls
   // _fit() 180ms after every drag settles, and fit() re-centred an x:'center'
@@ -410,13 +422,45 @@ export function makeFrame(id, opts = {}) {
     placed: saved?.placed === true,
   };
 
+  // THE REST RECT: where this frame belongs, and the viewport it was authored in. The
+  // displayed rect (`state`) is DERIVED from it on every viewport change and may be
+  // clamped freely; only a deliberate act (drag end, resize end, reset) or a rider that
+  // owns the frame's size writes here. Clamping `state` directly was a ratchet: shrink
+  // the window until panels collide, grow it back, and they stayed collided, because
+  // the small viewport's answer had become the frame's layout (reported 2026-09-24).
+  // save() persists THIS, so a toggle while the window is small can't bake the squeeze
+  // into the next load either.
+  let rest = { x: state.x, y: state.y, w: state.w, h: state.h,
+    vw: saved?.vw ?? innerWidth, vh: saved?.vh ?? innerHeight };
+  // Each viewport dimension is stamped only with its own axis: project() judges x/w against vw and y/h
+  // against vh, so committing a width must not re-date a y the window was squeezing at the time.
+  function commitRest(axes = 'xywh') {
+    for (const k of axes) rest[k] = state[k];
+    if (/[xw]/.test(axes)) rest.vw = innerWidth;
+    if (/[yh]/.test(axes)) rest.vh = innerHeight;
+  }
+  // Rest -> display for the current viewport. A frame that rested against the right
+  // or bottom edge of ITS authoring viewport rides that edge (judged on the rest rect,
+  // never on the clamped one: a mid-air frame squeezed against an edge is not docked
+  // there). Everything is clamped inside afterwards, by the listener and by fit().
+  function project() {
+    const chrome = Math.max(0, (root.offsetHeight || 0) - state.h);
+    let x = rest.x, y = rest.y;
+    if (rest.vw - (rest.x + rest.w) <= 8 + STICKY && !(rest.x <= 8 + STICKY)) x += innerWidth - rest.vw;
+    if (rest.vh - (rest.y + rest.h + chrome) <= 8 + STICKY && !(rest.y <= 8 + STICKY)) y += innerHeight - rest.vh;
+    Object.assign(state, { x, y, w: rest.w, h: rest.h });
+  }
+
+  const showHooks = [];
   const api = {
     id, el: root, body, head,
     // live refs for riders that own their own sizing (the emote bar snaps itself
     // to whole tiles). _fit is here because writing _state and calling _paint
     // alone BYPASSES the viewport clamp: the bar reflowed to three rows and
     // painted itself past the bottom edge (#185 review, 800x700).
-    _state: state, _paint: () => paint(), _fit: () => fit(), _markMoved: markMoved,
+    _state: state, _paint: () => paint(), _markMoved: markMoved, _project: () => project(),
+    // a rider writing _state.w/h is setting the frame's size, so that is the rest size
+    _fit: () => { rest.w = state.w; rest.h = state.h; fit(); },
       // READER for the same flag (#185 B1): the api carried a SETTER only, so the
       // viewport rule below had no way to ask whether the owner placed this frame.
       // `moved` is !!saved at construction and latches on a real drag or resize.
@@ -429,10 +473,17 @@ export function makeFrame(id, opts = {}) {
       paint();
       // A hidden element measures zero, so a frame created hidden never got a
       // real position — it has to be fitted the first time it becomes visible.
-      if (!fitted) { fitted = true; fit(); }
-      save(); raise();
+      // Re-project on EVERY show, not just the first: a hidden frame measures 0 tall,
+      // so edge-docking and fit() were blind to any resize it sat out (Esc, resize,
+      // Esc — review C1). Painted first, so it is measurable now.
+      if (!fitted) { fitted = true; fit(); } else { project(); fit(); }
+      save(); raise(); shown();
       return api;
     },
+    /** run `fn` whenever the frame comes back on screen — by show(), and by the paths that un-hide it without
+     *  show(): the viewport auto-restore and a reset that leaves it open. Wrapping api.show misses those. */
+    onShow(fn) { showHooks.push(fn); return api; },
+    _shown: () => shown(),
     hide() { state.hidden = true; state.autoHidden = false; paint(); save(); return api; },   // deliberate: never auto-restored
     toggle() { state.hidden ? api.show() : api.hide(); return api; },
     get visible() { return !state.hidden; },
@@ -474,6 +525,7 @@ export function makeFrame(id, opts = {}) {
         // reset button. (agent review round 2)
         hidden: hidden || (id !== 'chat' && !fitsDefaults()),
       });
+      commitRest();
       // ...and through fit(), not paint() alone: paint skips every viewport
       // clamp, so reset restored the authoring-viewport widths uncapped —
       // chat right=555 in a 390px viewport, 173px unreachable under
@@ -481,11 +533,12 @@ export function makeFrame(id, opts = {}) {
       // by the reset path.
       fitted = true; fit();
       paint();
-      if (!state.hidden) raise();
+      if (!state.hidden) { raise(); shown(); }
       return api;
     },
   };
 
+  function shown() { for (const fn of showHooks) fn(); }
   function raise() {
     if (zTop >= Z_HI) {
       const order = [...frames.values()].filter((f) => f.el !== root)
@@ -507,7 +560,7 @@ export function makeFrame(id, opts = {}) {
   // persisted"; see the note at the `moved` declaration). This comment used to
   // describe that rejected version and survived the fix. (round 4: comment rot)
   function save() {
-    localStorage.setItem(LS(id), JSON.stringify(state));
+    localStorage.setItem(LS(id), JSON.stringify({ ...state, x: rest.x, y: rest.y, w: rest.w, h: rest.h, vw: rest.vw, vh: rest.vh }));
   }
   function paint() {
     root.style.display = state.hidden ? 'none' : 'flex';
@@ -571,7 +624,7 @@ export function makeFrame(id, opts = {}) {
       // deliberately stuck a window under the dock, there's never a situation we should allow this')
       const d = document.querySelector('#dock')?.getBoundingClientRect(), hh = root.offsetHeight;
       state.underDock = !!(d && d.width && d.left < state.x + state.w && state.x < d.right && d.top < state.y + hh && state.y < d.bottom);
-      markMoved(); save();                 // a drag IS the deliberate act
+      markMoved('xy'); save();             // a drag IS the deliberate act — of position
     };
     head.addEventListener('pointermove', move);
     head.addEventListener('pointerup', up);
@@ -619,6 +672,9 @@ export function makeFrame(id, opts = {}) {
   // back at full width on a narrow one and ran off the edge, unreachable under
   // html,body{overflow:hidden} (#185 review). fit() only ever pulls a frame inside
   // the viewport, so honouring a save and fitting it are not in conflict.
+  // A save carries the viewport it was made in: seat it for THIS one before the first
+  // fit, or a docked frame loads mid-air and jumps on the first resize (review C2).
+  if (saved && !state.hidden) { project(); paint(); }
   if (!state.hidden) { fitted = true; fit(); }
   addEventListener('resize', fit);
 
@@ -706,7 +762,7 @@ export function makeFrame(id, opts = {}) {
         // .capnotice is NOT in this list: the card steps aside for frames (capnotice.js placeTop measures its span and
         // drops below them); a frame yielding to the card as well drove the 1000×700 emote bar to 313 px under the dock
         // (round 3 B1 — its declared right anchor charged a centred card as 671 px of right chrome)
-        for (const sel of (placed ? ['#dock'] : ['#dock', '#micbtn', '#earbtn'])) {   // a placed frame yields to the DOCK only
+        for (const sel of (placed ? ['#dock'] : ['#dock', '#micbtn', '#earbtn', '#hudstatus'])) {   // a placed frame yields to the DOCK only
           const g = document.querySelector(sel)?.getBoundingClientRect();
           if (g && g.width && g.left < state.x + state.w && state.x < g.right
               && g.top < state.y + hh && state.y < g.bottom) {
@@ -760,6 +816,23 @@ export function makeFrame(id, opts = {}) {
           }
           state.x = Math.max(8, Math.min(state.x, innerWidth - state.w - 8));
         }
+        // ...AND WHEN SIDEWAYS CANNOT CLEAR IT, DOWN. A phone is too narrow for a frame to step beside the
+        // top row (the status chips beside the ∃, the lantern's pill in the corner): measured at 390x844 the
+        // world frame's tabs sat under both and could not be pressed. An unplaced frame whose top still meets
+        // top-row chrome starts below it, and gives up height to stay on screen.
+        if (!placed) {
+          let below = 0;
+          for (const sel of ['#hudstatus', '#lantern-pill', '#micbtn', '#earbtn']) {
+            const el = document.querySelector(sel); const g = el?.getBoundingClientRect();
+            if (!g || !g.width || getComputedStyle(el).visibility === 'hidden' || g.top > innerHeight / 3) continue;
+            if (g.left < state.x + state.w && state.x < g.right && g.top < state.y + hh && state.y < g.bottom) below = Math.max(below, g.bottom);
+          }
+          if (below) {
+            state.y = Math.round(below + 8);
+            const room = innerHeight - 8 - state.y - chrome;
+            if (room < state.h) state.h = Math.max(40, room);
+          }
+        }
       }
     paint();
   }
@@ -787,7 +860,8 @@ const CHROME_ANCHOR = {
   '#dock':      (el) => el?.dataset.edge || 'left',    // dynamic: ui.js applyDockEdge
   '#micbtn':    (el) => el?.dataset.edge || 'left',    // hangs off the rail, follows its edge
   '#earbtn':    (el) => el?.dataset.edge || 'left',
-  '.capnotice': (el) => el?.dataset.anchor || 'right', // capnotice.js, from the CSS breakpoint
+  '.capnotice': (el) => el?.dataset.anchor || 'right', // the lite banner (lite.js)
+  '#hudstatus': (el) => (el?.dataset.edge === 'right' ? 'right' : 'left'),   // statuschips.js: beside the ∃, away from its edge
 };
 
 // What a piece of chrome costs a frame, per side of the horizontal axis.
@@ -818,7 +892,15 @@ function resolveAnchor(v, size, extent) {
 }
 
 function readSaved(id) {
-  try { return JSON.parse(localStorage.getItem(LS(id)) ?? 'null'); } catch { return null; }
+  let s;
+  try { s = JSON.parse(localStorage.getItem(LS(id)) ?? 'null'); } catch { return null; }
+  if (!s || typeof s !== 'object') return null;
+  // each unusable number falls back on its own: vw:0 read as a zero-wide authoring viewport docks the frame
+  // bottom-right, and a string x paints nowhere
+  for (const k of ['x', 'y', 'w', 'h', 'vw', 'vh']) {
+    if (k in s && !(Number.isFinite(s[k]) && (k === 'x' || k === 'y' || s[k] > 0))) delete s[k];
+  }
+  return s;
 }
 
 /** Edge snapping, plus snapping to the other frames' edges — it's what makes a
@@ -854,21 +936,15 @@ function stickyEdges(state, height) {
     b: innerHeight - (state.y + height) <= 8 + STICKY,
   };
 }
-let _lastVW = innerWidth, _lastVH = innerHeight;
 let _lastFits = null;   // B1: the fit verdict at the last viewport change
 
 // Ride the edges: frames sticky to right/bottom keep their edge gap when the
 // window resizes; everything is then clamped back inside regardless.
 addEventListener('resize', () => {
-  const dw = innerWidth - _lastVW, dh = innerHeight - _lastVH;
   for (const f of frames.values()) {
     const st = f._state; if (!st) continue;
+    f._project?.();                        // from the rest rect; edge-riding lives there now
     const hgt = f.el.offsetHeight || st.h;
-    // stickiness judged against the OLD viewport (pre-resize geometry)
-    const wasR = _lastVW - (st.x + st.w) <= 8 + STICKY;
-    const wasB = _lastVH - (st.y + hgt) <= 8 + STICKY;
-    if (wasR && !(st.x <= 8 + STICKY)) st.x += dw;
-    if (wasB && !(st.y <= 8 + STICKY)) st.y += dh;
     st.x = clamp(st.x, 8, Math.max(8, innerWidth - st.w - 8));
     st.y = clamp(st.y, 8, Math.max(8, innerHeight - hgt - 8));
     f._paint?.();
@@ -898,15 +974,23 @@ addEventListener('resize', () => {
         f.el.style.display = 'none'; f._paint?.(); f._save?.();
       } else if (fits && f._state.hidden && f._state.autoHidden) {
         f._state.hidden = false; f._state.autoHidden = false;
-        f.el.style.display = ''; f._paint?.(); f._save?.();
+        f.el.style.display = ''; f._paint?.(); f._save?.(); f._shown?.();
       }
     }
     _lastFits = fits;
   }
-  _lastVW = innerWidth; _lastVH = innerHeight;
 });
 
 export function getFrame(id) { return frames.get(id); }
+/** How much label a tab strip (.pf-tabs) can afford, decided by measuring: full labels → the chosen tab
+ *  alone keeps its label (data-fit=compact) → icons only (data-fit=icons) → the strip scrolls. */
+export function fitTabStrip(strip) {
+  if (!strip) return;
+  for (const level of ['', 'compact', 'icons']) {
+    strip.dataset.fit = level;
+    if (strip.scrollWidth <= strip.clientWidth + 1) return;
+  }
+}
 export function allFrames() { return [...frames.values()]; }
 // Esc toggles the whole set of open frames closed ⇄ back (live, 09-05 16:08),
 // but only when nothing more specific wants the key: an open pop, a focused
@@ -923,20 +1007,29 @@ export function claimEscape(fn) { escClaims.push(fn); }
 addEventListener('keydown', (e) => {
   if (e.key !== 'Escape' || e.defaultPrevented) return;
   if (escapeIsClaimed()) return;
-  escapeToggle();
+  const did = escapeToggle();
+  // said, not only done: ui.js flashes "panels hidden · Esc to bring back" on the hint bar (the lantern's resting line
+  // steps aside for it) — frames imports no ui, so the gesture goes out on the bus (escapeHid says what went with it)
+  bus.emit('esc-quiet', did);
 });
+// With no panel open Esc still goes quiet (owner, 10-01: "Basically only the dock should be visible"): an empty stash
+// is a quiet with nothing to reopen, so 'closed' takes the lantern's resting line away and the next Esc brings it back.
 export function escapeToggle() {
   const open = [...frames.values()].filter((f) => f.visible);
   if (open.length) { escStash = open.map((f) => f.id); for (const f of open) f.hide(); return 'closed'; }
-  if (escStash?.length) { for (const id of escStash) frames.get(id)?.show(); escStash = null; return 'restored'; }
-  return 'nothing';
+  if (escStash) { for (const id of escStash) frames.get(id)?.show(); escStash = null; return 'restored'; }
+  escStash = [];
+  return 'closed';
 }
+/** How many panels the standing Esc-quiet put away (0 = only the resting line; also 0 when not quiet). */
+export const escapeHid = () => escStash?.length ?? 0;
 export function escapeIsClaimed() {
   for (const fn of escClaims) { const c = fn(); if (c) return c; }
   const a = document.activeElement;
   if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)) return 'field';
-  if (document.querySelector('.pf-pop, .dd-pop, .chat-gearpop:not([hidden]), #emenu:not([hidden])')) return 'pop';   // the gear pop lives in the DOM hidden; only a SHOWN one claims Esc
+  if (document.querySelector('.pf-pop, .dd-pop, .chat-gearpop:not([hidden]), #emenu:not([hidden]), #stpop:not([hidden])')) return 'pop';   // #stpop: a status chip's popover (statuschips.js)   // the gear pop lives in the DOM hidden; only a SHOWN one claims Esc
   if (document.querySelector('.scrim.open')) return 'overlay';
+  if (document.body.classList.contains('arranging')) return 'layout';   // HUD layout mode: Esc ends the mode (ui.js), not the panels
   if (document.pointerLockElement) return 'pointer-lock';
   return null;
 }

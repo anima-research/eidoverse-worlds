@@ -6,9 +6,10 @@
 // no highlight when one arrived, and no unread state. That asymmetry is the
 // same one build mode fixed, in a different place.
 //
-// The mention pattern here is deliberately IDENTICAL to mcpl/agent.ts's — what
-// a person sees highlighted must be exactly what pings the agent, or the two
-// species are reading different rooms.
+// The mention pattern here is a simpler one than the agent's (mcpl/mention.ts):
+// @name, or the bare name as a whole word. The agent's rule also handles a
+// qualified display name such as `Artie (kube)` and treats a hyphen as part
+// of a name, so a person's highlight and an agent's ping can differ.
 
 import { CONFIG, bus, colorFor, assignColors } from './base.js';
 // NOT importing xrpanels.js: it reaches the engine through domquad -> htmlmesh, and
@@ -16,12 +17,14 @@ import { CONFIG, bus, colorFor, assignColors } from './base.js';
 // EXPORTED instead and main.js registers it — the dependency inverted rather than made
 // conditional, so there is no lite-mode flag buried in a chat file.
 import { lastWhy } from './debuglog.js';
+import { initAttention, attentionWhisper, mountAttentionControls } from './attention.js';
 import { makeFrame } from './frames.js';
 import { fsvg } from './icons.js';
 import { requestHistory } from './net.js';
 // ONLY the registry — never handlers.js, or the cycle chat→handlers→net→chat
 // closes (§14.2). The registry is a pure table with no imports of its own.
 import { COMMANDS, resolveCommand } from './commands/registry.js';
+import { register as registerAction } from './actions.js';
 
 const MAX_LINES = 400;
 const HISTORY = 'ew-chat-history';
@@ -46,7 +49,8 @@ let historyIdx = -1;
 
 // ---------------------------------------------------------------- mentions
 
-/** Same rule as the agent side: @name, or the bare name as a whole word. */
+/** @name, or the bare name as a whole word: simpler than the agent side's
+ *  rule (mcpl/mention.ts), which handles qualified names. */
 export function mentionRx(name) {
   const safe = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(`(@${safe}\\b|\\b${safe}\\b)`, 'i');
@@ -122,20 +126,156 @@ const escapeRx = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // the page before it, so nothing said is actually out of reach; it is just not
 // paid for up front.
 
-let oldestShownSeq = null;
+// The arrival window is NOT a contiguous slice of history: trimRecentChat
+// (shared/fold.js) makes room by dropping the loudest speaker's oldest line,
+// so a quiet visitor's last words from yesterday can sit at the top of the
+// window above hours of conversation that was trimmed out from under it.
+// Paging from the oldest line SHOWN jumps straight over that gap — scrolling
+// up landed on older days and the trimmed talk was never reachable. So the
+// cursor comes only from what paging itself has walked: it starts at the
+// present, lines already on screen are skipped, and the missing ones are
+// slotted into place by seq.
+let pageCursor = null;              // next page is everything below this seq; null = from now
 let loadingOlder = false;
 let noMoreHistory = false;
+let endMarker = null;               // the "beginning of this world" row, while the walk is finished
+let trimmedThrough = -1;            // highest seq the MAX_LINES trim has removed
+// The most pages of 40 a scroll walks past already-shown lines, and the most
+// pages a re-join's catch-up fetches (resyncChatAfter).
+const MAX_SKIP_PAGES = 25;
 
-export function noteSeq(seq) {
-  // synthetic entries from a folded snapshot carry negative seq — they are not
-  // positions in history and must not become the paging cursor
-  if (typeof seq === 'number' && seq >= 0
-      && (oldestShownSeq === null || seq < oldestShownSeq)) oldestShownSeq = seq;
+/** Start the backward walk again, from no lower than `cursor` (null: the
+ *  present). A trim that passed it restarts it, and so do a trim of the end
+ *  marker and a catch-up that stopped short. A restart only ever moves the
+ *  cursor up, so whichever started higher covers the others. Lines still on
+ *  screen are skipped as the walk passes them again, so starting higher costs
+ *  requests, not lines. The walk isn't finished any more, so the end marker
+ *  goes. */
+function restartWalk(cursor) {
+  if (pageCursor !== null && (cursor === null || cursor > pageCursor)) pageCursor = cursor;
+  noMoreHistory = false;
+  endMarker?.remove();
+  endMarker = null;
 }
 
-function prependLine(who, text, ts, seq) {
-  noteSeq(seq);
-  logEl.prepend(buildLine(who, text, { ts, historical: true }));
+/** Keep the log to MAX_LINES rows, dropping from the top. A trimmed row is
+ *  history again, not "already shown": every seq it shows leaves renderedSeqs
+ *  so paging brings it back, and if the backward walk had already passed it,
+ *  the walk starts over from the present (skipping what is still on screen)
+ *  instead of stepping over the new hole. A walk that ended at the present,
+ *  its first page empty, has passed everything. Trimming the end marker
+ *  restarts the walk at its own cursor: when the trim takes the marker alone,
+ *  the next scroll-up asks once more and, finding nothing older, puts the
+ *  marker back. */
+function trimLog() {
+  while (logEl.children.length > MAX_LINES) {
+    const row = logEl.firstElementChild;
+    if (row === endMarker) restartWalk(pageCursor);
+    for (const seq of seqsOf(row)) {
+      renderedSeqs.delete(seq);
+      if (seq > trimmedThrough) trimmedThrough = seq;
+      const passed = pageCursor === null ? noMoreHistory : seq >= pageCursor;
+      if (passed) restartWalk(null);
+    }
+    row.remove();
+  }
+}
+
+/** Every seq a row shows: one, or several when logChat merged the rest of a
+ *  spoken utterance into it (dataset.seqs). */
+function seqsOf(row) {
+  if (row.dataset.seqs) return row.dataset.seqs.split(',').map(Number);
+  return row.dataset.seq !== undefined ? [+row.dataset.seq] : [];
+}
+
+/** Put one paged-in line where it belongs: straight after the last row that
+ *  is older than it. NOT "before the first row that is newer" — a spoken row
+ *  is placed by when its speech began (logChat's t0), so it can sit above
+ *  rows with lower seqs, and anchoring on it would land later talk above
+ *  earlier talk. Spoken rows only ever move EARLIER, so the last older row is
+ *  always a sound left neighbour. Nothing older on screen: it goes on top. */
+function insertHistorical(who, text, ts, seq) {
+  renderedSeqs.add(seq);
+  const line = buildLine(who, text, { ts, historical: true });
+  line.dataset.seq = String(seq);
+  line.dataset.author = who;
+  line.dataset.tsn = String(ts ?? 0);
+  let prev = null;
+  for (const c of logEl.children) {
+    if (c.dataset.seq !== undefined && +c.dataset.seq < seq) prev = c;
+  }
+  if (prev) prev.after(line); else logEl.prepend(line);
+  // a grouped row that now sits under a different speaker must reprint its
+  // name (sys rows pass through a group, as in logChat)
+  let below = line.nextElementSibling;
+  while (below && below.dataset.kind === 'system') below = below.nextElementSibling;
+  if (below && below.dataset.author !== who) below.classList.remove('cont');
+}
+
+/** Hold what the reader is looking at still while rows land around it. A
+ *  fill lands below the top of the view as often as above it, so pin the
+ *  first visible row, not the distance from the bottom — and measure in
+ *  screen coordinates: offsetTop is relative to the offsetParent
+ *  (.chat-main), not to the log that scrolls. Returns the restore step. */
+function pinView() {
+  const top = logEl.getBoundingClientRect().top;
+  let anchor = null;
+  for (const c of logEl.children) {
+    const r = c.getBoundingClientRect();
+    if (r.height && r.bottom > top) { anchor = c; break; }
+  }
+  if (!anchor) return () => {};
+  const was = anchor.getBoundingClientRect().top;
+  return () => {
+    if (anchor.isConnected) logEl.scrollTop += anchor.getBoundingClientRect().top - was;
+  };
+}
+
+/** Slot one page of history into the log; returns how many rows were new. */
+function insertPage(entries) {
+  const fresh = (entries ?? []).filter((e) => typeof e.seq === 'number' && !renderedSeqs.has(e.seq));
+  if (!fresh.length) return 0;
+  // a re-join's fill can land below the pinned row; a reader who was
+  // following the end must still be, not left with the newest lines below
+  // the fold and live-follow stopped
+  const following = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 48;
+  const restore = pinView();
+  for (const e of fresh) insertHistorical(e.actor, e.args?.text ?? '', e.ts, e.seq);
+  restore();
+  if (following) logEl.scrollTop = logEl.scrollHeight;
+  return fresh.length;
+}
+
+/** A reconnect hands over a NEW arrival window, trimmed the same fair way —
+ *  so what was said while the socket was down can be missing from it, near
+ *  the bottom of the log. net.js calls this as a re-join's snapshot lands,
+ *  with the last seq the old socket delivered; what was said after it is
+ *  fetched, newest first, up to MAX_SKIP_PAGES pages of 40, and slotted in.
+ *  A catch-up that stops before it gets back to that seq, at the cap or on a
+ *  page that fails, restarts the backward walk no lower than where it
+ *  stopped, so scrolling up reaches the rest. Without that, a walk whose
+ *  cursor is already below the missed lines, or that ended at the beginning,
+ *  doesn't come back to them until a trim restarts it. A first join (nothing
+ *  on screen yet) has no hole to fill. */
+export async function resyncChatAfter(seq) {
+  if (!logEl || !renderedSeqs.size || typeof seq !== 'number' || seq < 0) return;
+  let before = null;
+  for (let page = 0; page < MAX_SKIP_PAGES; page++) {
+    let r;
+    try {
+      r = await requestHistory({
+        after: seq, ...(before !== null ? { before } : {}), limit: 40, verbs: ['say'],
+      });
+    } catch {
+      restartWalk(before);           // this page and everything below it is still to fetch
+      return;
+    }
+    if (!r.entries?.length) return;
+    insertPage(r.entries);
+    if (r.entries.length < 40) return;
+    before = typeof r.oldestSeq === 'number' ? r.oldestSeq : r.entries[0].seq;
+  }
+  restartWalk(before);               // the cap, with a full last page: older lines may be left
 }
 
 /** Tell an arrival that what they are looking at is a window, not the room's
@@ -167,27 +307,38 @@ async function loadOlder() {
   marker.textContent = '… loading earlier messages';
   logEl.prepend(marker);
   try {
-    const r = await requestHistory({
-      ...(oldestShownSeq !== null ? { before: oldestShownSeq } : {}),
-      limit: 40, verbs: ['say'],
-    });
+    let added = 0;
+    for (let page = 0; !added && !noMoreHistory && page < MAX_SKIP_PAGES; page++) {
+      const from = pageCursor;
+      const r = await requestHistory({
+        ...(from !== null ? { before: from } : {}),
+        limit: 40, verbs: ['say'],
+      });
+      const entries = r.entries ?? [];
+      // A trim that passed the cursor, or a catch-up that stopped short,
+      // while this page was in flight has restarted the walk (restartWalk is
+      // the only other writer of the cursor). The page's lines still slot in,
+      // but where the walk stands, and whether it has reached the beginning,
+      // now come from the restart.
+      if (pageCursor === from) {
+        if (entries.length) pageCursor = typeof r.oldestSeq === 'number' ? r.oldestSeq : entries[0].seq;
+        if (!entries.length || !r.hasMore) noMoreHistory = true;
+      }
+      marker.remove();               // out before pinView measures, or it could be the anchor
+      added = insertPage(entries);
+      if (!added && !noMoreHistory) logEl.prepend(marker);
+    }
     marker.remove();
-    if (!r.entries?.length) {
-      noMoreHistory = true;
-      const end = document.createElement('div');
-      end.className = 'line sys';
-      end.textContent = '— the beginning of this world —';
-      logEl.prepend(end);
-      return;
+    if (noMoreHistory) {
+      endMarker = document.createElement('div');
+      endMarker.className = 'line sys';
+      endMarker.textContent = '— the beginning of this world —';
+      logEl.prepend(endMarker);
     }
-    // grow the top without moving what the reader is looking at
-    const anchorH = logEl.scrollHeight - logEl.scrollTop;
-    for (const e of [...r.entries].reverse()) {
-      prependLine(e.actor, e.args?.text ?? '', e.ts, e.seq);
-    }
-    logEl.scrollTop = logEl.scrollHeight - anchorH;
-    if (!r.hasMore) noMoreHistory = true;
   } catch {
+    // a page that failed (requestHistory rejects: no socket, or no answer)
+    // leaves the walk's cursor as it stands, so the next scroll-up asks
+    // again from there
     marker.remove();
   } finally { loadingOlder = false; }
 }
@@ -205,10 +356,12 @@ const renderedSeqs = new Set();
 
 export function logChat(who, text, kind = '', meta = {}) {
   if (typeof meta.seq === 'number' && meta.seq >= 0) {
-    if (renderedSeqs.has(meta.seq)) return;
+    // ...or trimmed off the top: a re-join's window can replay such a line,
+    // and appending it would put it under hours of newer talk. Paging slots
+    // it back where it belongs.
+    if (renderedSeqs.has(meta.seq) || meta.seq <= trimmedThrough) return;
     renderedSeqs.add(meta.seq);
   }
-  noteSeq(meta.seq);
   // the VR quad reads the tail of the log from here — every line, merged
   // continuations included, twelve deep
   recent.push({ who, text: String(text).slice(0, 140), kind });
@@ -224,6 +377,11 @@ export function logChat(who, text, kind = '', meta = {}) {
       lastLineEl.dataset.author === who && lastLineEl.dataset.utt === String(meta.utt)) {
     const body = lastLineEl.querySelector('.body');
     if (body) {
+      // the row now shows this say too: a trim must release its seq with
+      // the row's own, or paging would treat it as still on screen
+      if (typeof meta.seq === 'number' && meta.seq >= 0) {
+        lastLineEl.dataset.seqs = [...seqsOf(lastLineEl), meta.seq].join(',');
+      }
       const wasAtBottom = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 48;
       body.append(' ', renderBody(text, namesForHighlight()));
       lastAt = Date.now();
@@ -235,6 +393,8 @@ export function logChat(who, text, kind = '', meta = {}) {
     }
   }
   const line = buildLine(who, text, { kind, ...meta });
+  // seq is where paged-in history slots in around this line (insertHistorical)
+  if (typeof meta.seq === 'number' && meta.seq >= 0) line.dataset.seq = String(meta.seq);
   line.dataset.author = who;
   line.dataset.tsn = String(meta.ts ?? Date.now());
   if (meta.spoken && meta.utt != null) line.dataset.utt = String(meta.utt);
@@ -275,7 +435,7 @@ export function logChat(who, text, kind = '', meta = {}) {
       +(line.dataset.tsn ?? 0) - +(prev.dataset.tsn ?? 0) < 90_000;
     line.classList.toggle('cont', near);
   } else logEl.appendChild(line);
-  while (logEl.children.length > MAX_LINES) logEl.removeChild(logEl.firstChild);
+  trimLog();
 
   account(line, { who, text, merged: false,
     newlyPinged: line.dataset.kind === 'mention', wasAtBottom });
@@ -416,7 +576,7 @@ function paintUnread() {
 
 function insertAtCursor(str) {
   const s = inputEl.selectionStart ?? inputEl.value.length;
-  inputEl.value = inputEl.value.slice(0, s) + str + inputEl.value.slice(inputEl.selectionEnd ?? s);
+  setInput(inputEl.value.slice(0, s) + str + inputEl.value.slice(inputEl.selectionEnd ?? s));
   const p = s + str.length;
   inputEl.setSelectionRange(p, p);
   inputEl.focus();
@@ -492,7 +652,7 @@ function acceptAC() {
   if (!it) return;
   const v = inputEl.value;
   const caret = inputEl.selectionStart ?? v.length;
-  inputEl.value = v.slice(0, acStart) + it.value + ' ' + v.slice(caret);
+  setInput(v.slice(0, acStart) + it.value + ' ' + v.slice(caret));
   const p = acStart + it.value.length + 1;
   inputEl.setSelectionRange(p, p);
   closeAC();
@@ -648,6 +808,22 @@ const CHAT_LOCAL = {
   },
 };
 
+/** One line, as if typed into the compose box and Entered: history, then a
+ *  /command or speech — a whisper while a conversation tab is showing. The
+ *  lantern prompt sends through here, so there is ONE send path. */
+function submitLine(v) {
+  sentHistory.push(v);
+  while (sentHistory.length > 50) sentHistory.shift();
+  try { localStorage.setItem(HISTORY, JSON.stringify(sentHistory.slice(-20))); } catch { /* full */ }
+  if (v.startsWith('/')) { runCommand(v); return; }
+  // In a conversation tab, plain typing is a whisper — you should not have
+  // to prefix every line of a private conversation with a command, and you
+  // REALLY should not be able to say something aloud while looking at a
+  // window that reads like a private one.
+  if (filter.startsWith('w:')) onWhisper(filter.slice(2), v.slice(0, 4000));
+  else onSend(v.slice(0, 4000));
+}
+
 function runCommand(raw) {
   const [cmd, ...rest] = raw.slice(1).split(/\s+/);
   const arg = rest.join(' ');
@@ -673,9 +849,12 @@ export const chat = {
     inputEl.focus();
     scrollToEnd();
   },
-  close() { inputEl.value = ''; closeAC(); inputEl.blur(); },
+  close() { setInput(''); closeAC(); inputEl.blur(); },
   get isOpen() { return document.activeElement === inputEl; },
   toggle() { frame.toggle(); },
+  submit: (text) => { const v = String(text ?? '').trim(); if (v) submitLine(v); },
+  /** who a plain line would reach right now: null = the room, else a whisper target */
+  whisperTarget: () => (filter.startsWith('w:') ? filter.slice(2) : null),
   frame: () => frame,
   // unread accounting is observable so tests can pin it (Sol review, PR#7)
   unreadCounts: () => ({ unread, mentions: unreadMentions }),
@@ -712,7 +891,16 @@ function initSidePane() {
   // chat init mid-boot. Unreachable today; inconsistent with the file's own
   // thesis, which is the point. (agent review round 3)
   const tog = sideEl('tog');
-  if (tog) tog.onclick = () => { sideSt.open = !sideSt.open; applySide(); saveSide(); };
+  if (tog) tog.onclick = toggleSide;
+  // the open column's header closes it (the tab-row chip is hidden while it is open)
+  const head = sideEl('head');
+  if (head) {
+    head.setAttribute('role', 'button'); head.tabIndex = 0;
+    head.addEventListener('click', () => { if (sideSt.open) toggleSide(); });
+    head.addEventListener('keydown', (e) => {
+      if ((e.key === 'Enter' || e.key === ' ') && sideSt.open) { e.preventDefault(); e.stopPropagation(); toggleSide(); }
+    });
+  }
 
     // DOUBLE-CLICK A NAME -> ITS DM TAB. R, 2026-09-11: "can you double-click on
     // a name in the People Here pane and have a DM tab show up correctly".
@@ -739,12 +927,36 @@ function initSidePane() {
     const up = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', up); saveSide(); };
     addEventListener('pointermove', move); addEventListener('pointerup', up);
   });
-  bus.on('roster', paintSide);
-  bus.on('presence:me', paintSide);                                   // my own mark flips at once
+  bus.on('roster', () => { paintSide(); paintWho(); });
+  bus.on('presence:me', () => { paintSide(); paintWho(); });                                   // my own mark flips at once
   setInterval(() => { if (frame?.visible && sideSt.open) paintSide(); }, 2000);   // remote presence rides pose packets; a 2 s repaint is plenty. (`side` was out of scope here — the first tick threw and the interval died: marks froze on their first value)
   applySide();
 }
 const saveSide = () => { try { localStorage.setItem(SIDE_LS, JSON.stringify(sideSt)) } catch {} };
+function toggleSide() { sideSt.open = !sideSt.open; applySide(); saveSide(); }
+// THE PRESENCE CHIP in the tab row: who's here at a glance (a dot per person in their name colour, ringed by
+// presence) and the pane's toggle. Collapsed, the pane leaves NO strip in the chat body, so tabs, log and compose sit
+// centred in the panel (R, 09-29: "the Chat and typing surface being off-center in its own panel ... when it's
+// collapsed"). Painted in place on roster/presence; paintTabs rebuilds the row and calls this for its new chip.
+let whoChip = null;   // the chip paintTabs wrote — by handle, never by class (MODDING-UI §3)
+function paintWho() {
+  const chip = whoChip?.isConnected ? whoChip : null;
+  if (!chip) return;
+  const people = getPeople(), others = people.filter((p) => !p.me).length;
+  const dots = [...people.filter((p) => !p.me), ...people.filter((p) => p.me)].slice(0, 3).map((p) =>
+    `<span class="who-dot" data-presence="${esc(p.presence ?? 'present')}" style="background:${colorFor(p.id)}"></span>`).join('');
+  chip.innerHTML = `<span class="who-dots">${dots}</span><span class="who-n">${others === 0 ? 'just you' : `${people.length} here`}</span>`;
+  // on the side the column opens from (Chat ▸ settings): first in the row on the left, last on the right
+  const bar = chip.parentElement, left = sideSt.pos === 'left';
+  if (left && bar.firstElementChild !== chip) bar.prepend(chip);
+  else if (!left && bar.lastElementChild !== chip) bar.appendChild(chip);
+  chip.classList.toggle('at-left', left);
+  // OPEN, the chip steps out: the column's own header says who's here and is the way back (R, 09-29 — "just you"
+  // twice on one line). Closing returns it.
+  chip.hidden = !!sideSt.open;
+  chip.setAttribute('aria-expanded', String(!!sideSt.open));
+  chip.title = 'people here';
+}
 function applySide() {
   const side = sideEl('side');
   if (!side) return;
@@ -752,10 +964,16 @@ function applySide() {
   // the line between log and pane is the pane's grab edge; closed, there is
   // nothing to grab, so the line goes too (live, 09-05: a confusing affordance)
   sideEl('cols')?.classList.toggle('side-closed', !sideSt.open);
+  paintWho();
   side.style.width = sideSt.open ? `${sideSt.w}px` : '';
   // the chevron points the way the pane will move: on the right › closes / ‹ opens; mirrored on the left
   const left = sideSt.pos === 'left';
-  const t = sideEl('tog'); if (t) t.textContent = (sideSt.open !== left) ? '›' : '‹';
+  const chev = (sideSt.open !== left) ? '›' : '‹';
+  const t = sideEl('tog'); if (t) t.textContent = chev;
+  // the open column's header is its close control, its chevron pointing at the edge it collapses to — drawn from
+  // data-chev by CSS, so the header's text stays exactly who's here
+  const head = sideEl('head');
+  if (head) { head.dataset.chev = chev; head.title = 'hide people here'; }
   paintSide();
 }
 function paintSide() {
@@ -795,7 +1013,7 @@ function applyChatPrefs() {
   if (logEl) logEl.style.fontSize = `${chatFs}px`;
   sideEl('cols')?.classList.toggle('side-left', sideSt.pos === 'left');
 }
-let gearToggle = null, gearAnchor = null, gearOpen = () => false;
+let gearToggle = null, gearAnchor = null, placeGear = () => {};
 let chatFs = 14;
 const CMD_LS = 'ew-chat-md';
 let chatMd = true;   // *italic* **bold** `code` in the log — on by default (live, 09-05)
@@ -804,6 +1022,26 @@ export const chatMarkdownOn = () => chatMd;
 try { chatFs = Math.min(20, Math.max(11, parseFloat(localStorage.getItem(CFS_LS)) || 14)) } catch {}
 function initChatGear() {
   const pop = frame.body.querySelector('.chat-gearpop');
+  placeGear = () => {
+    if (pop.hidden || !gearAnchor) return;
+    const a = gearAnchor.getBoundingClientRect(), f = frame.el.getBoundingClientRect();
+    const body = frame.body.getBoundingClientRect();
+    const minTop = Math.max(4, body.top - f.top + 4);
+    const bottom = Math.min(frame.el.clientHeight, body.bottom - f.top) - 4;
+    // Open below the gear when the options fit there, else UPWARD from it, its
+    // bottom edge above the gear: the compose row's gear has the log above and
+    // the frame's edge below. When neither side fits, the side with more room
+    // takes it, and a short frame scrolls the options instead of clipping them.
+    const below = a.bottom - f.top + 6, above = a.top - f.top - 6;
+    pop.style.maxHeight = 'none';
+    const height = pop.offsetHeight;
+    const roomBelow = bottom - below, roomAbove = above - minTop;
+    const down = height <= roomBelow || (height > roomAbove && roomBelow >= roomAbove);
+    const room = Math.max(1, down ? roomBelow : roomAbove);
+    pop.style.maxHeight = `${room}px`;
+    pop.style.top = `${down ? below : Math.max(minTop, above - Math.min(height, room))}px`;
+    pop.style.right = `${Math.max(4, Math.min(f.right - a.right, frame.el.clientWidth - pop.offsetWidth - 4))}px`;
+  };
   const paintPop = () => {
     pop.innerHTML = `
       <div class="gp-row"><span>text size</span>
@@ -814,6 +1052,8 @@ function initChatGear() {
       <div class="gp-row"><span>People Here</span>
         <button data-side="left" class="${sideSt.pos === 'left' ? 'on' : ''}">left</button>
         <button data-side="right" class="${sideSt.pos !== 'left' ? 'on' : ''}">right</button></div>`;
+    mountAttentionControls(pop);
+    placeGear();
   };
   pop.onclick = (e) => {
     const fs = e.target?.dataset?.fs, sd = e.target?.dataset?.side, md = e.target?.dataset?.md;
@@ -828,18 +1068,20 @@ function initChatGear() {
     } else return;
     applyChatPrefs(); applySide(); paintPop();   // applySide repaints the chevron for the new side (live 09-07 23:25: it pointed the old way after a left↔right move)
   };
-  gearOpen = () => !pop.hidden;
   gearToggle = (anchor) => {
     pop.hidden = !pop.hidden;
     anchor.setAttribute('aria-expanded', String(!pop.hidden));
     gearAnchor = anchor;
     if (!pop.hidden) {
       paintPop();
-      const a = anchor.getBoundingClientRect(), f = frame.el.getBoundingClientRect();
-      pop.style.right = `${Math.max(4, f.right - a.right)}px`;
-      pop.style.top = `${a.bottom - f.top + 6}px`;
     }
   };
+  // the gear lives at the right end of the compose box, like a settings affordance in a text field
+  const gear = frame.body.querySelector('.chat-compose > .chat-gear');
+  if (gear) {
+    gear.innerHTML = fsvg('gear-six', 14);
+    gear.onclick = (e) => { e.stopPropagation(); gearToggle(gear); };
+  }
   const closePop = () => { if (!pop.hidden && gearAnchor) gearToggle(gearAnchor); };
   document.addEventListener('pointerdown', (e) => {
     if (!pop.hidden && !pop.contains(e.target) && !gearAnchor?.contains(e.target)) closePop();
@@ -848,7 +1090,27 @@ function initChatGear() {
   applyChatPrefs();
 }
 
+// THE COMPOSE BOX GROWS (owner, 10-01: "it never expands to multiple lines… no matter how much you type"). The
+// convention (Discord, Slack, iMessage): one line at rest, growing with what you type up to a cap, then scrolling.
+// The cap here is six lines or 40% of the chat pane, whichever is less, so the log is never pushed out of sight.
+const INPUT_MAX_LINES = 6, INPUT_MAX_SHARE = 0.4;
+function sizeInput() {
+  if (!inputEl) return;
+  const cs = getComputedStyle(inputEl);
+  const line = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.35;
+  const chrome = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0) + (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0);
+  const pane = inputEl.closest('.fr-body')?.clientHeight || innerHeight;
+  const max = Math.max(line + chrome, Math.min(line * INPUT_MAX_LINES + chrome, pane * INPUT_MAX_SHARE));
+  inputEl.style.height = 'auto';
+  // empty: exactly one line (a long placeholder must not wrap the box taller)
+  const want = inputEl.value ? inputEl.scrollHeight + (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0) : line + chrome;
+  inputEl.style.height = `${Math.min(want, max)}px`;
+  inputEl.style.overflowY = want > max + 1 ? 'auto' : 'hidden';
+}
+function setInput(v) { if (!inputEl) return; inputEl.value = v; sizeInput(); }
+
 export function initChat({ send, whisper, typing, people }) {
+  initAttention({ bus, me: () => CONFIG.name, scope: () => CONFIG.world, mentions: mentionsMe });
   onSend = send;
   onWhisper = whisper ?? (() => {});
   onTyping = typing ?? (() => {});
@@ -866,7 +1128,7 @@ export function initChat({ send, whisper, typing, people }) {
       // tab that's off-screen because the panel is too narrow"). frames.js has
       // called onResize(w, h) all along (frames.js:437); chat simply never
       // passed one. Debounced like emotebar's (emotebar.js:53).
-      onResize: () => { clearTimeout(_arrowT); _arrowT = setTimeout(() => paintTabs(), 120); },
+      onResize: () => { placeGear(); clearTimeout(_arrowT); _arrowT = setTimeout(() => paintTabs(), 120); },
   });
 
   frame.body.innerHTML = `
@@ -878,7 +1140,8 @@ export function initChat({ send, whisper, typing, people }) {
         <div class="chat-typing"></div>
         <div class="chat-compose">
           <div id="chat-ac" class="ac panel"></div>
-          <input id="chatline" placeholder="say something…  @ to mention · / for commands">
+          <textarea id="chatline" rows="1" enterkeyhint="send" placeholder="say something…  @ to mention · / for commands"></textarea>
+          <button type="button" class="chat-gear" title="chat options" aria-expanded="false" aria-haspopup="dialog"></button>
         </div>
       </div>
       <button class="chat-side-tog" title="People Here"></button>
@@ -914,10 +1177,13 @@ export function initChat({ send, whisper, typing, people }) {
   // markup is written at frame.body.innerHTML above, so #chatlog is queryable
   // here. (self-caught, agent review round 3)
   logEl = frame.body.querySelector('#chatlog');
+  tabsEl = frame.body.querySelector(':scope > .chat-cols > .chat-main > .chat-tabs');
   initSidePane();
   initChatGear();
 
   inputEl = frame.body.querySelector('#chatline');
+  inputEl.addEventListener('focus', () => requestAnimationFrame(sizeInput));
+  if (globalThis.ResizeObserver) new ResizeObserver(() => sizeInput()).observe(frame.body);
   acBox = frame.body.querySelector('#chat-ac');
   closeAC();
 
@@ -938,6 +1204,7 @@ export function initChat({ send, whisper, typing, people }) {
   });
 
   inputEl.addEventListener('input', () => {
+    sizeInput();
     updateAC();
     // throttle: presence, not a keystroke log
     const now = performance.now();
@@ -960,40 +1227,46 @@ export function initChat({ send, whisper, typing, people }) {
     if (e.key === 'Escape') { chat.close(); return; }
 
     // shell-style recall of what you last said
-    if (e.key === 'ArrowUp' && !inputEl.value.trim() || (e.key === 'ArrowUp' && historyIdx >= 0)) {
+    if (e.key === 'ArrowUp' && !inputEl.value.trim() || (e.key === 'ArrowUp' && historyIdx >= 0 && !inputEl.value.slice(0, inputEl.selectionStart ?? 0).includes('\n'))) {
       if (sentHistory.length) {
         e.preventDefault();
         historyIdx = Math.min(historyIdx + 1, sentHistory.length - 1);
-        inputEl.value = sentHistory[sentHistory.length - 1 - historyIdx];
+        setInput(sentHistory[sentHistory.length - 1 - historyIdx]);
         inputEl.setSelectionRange(inputEl.value.length, inputEl.value.length);
       }
       return;
     }
-    if (e.key === 'ArrowDown' && historyIdx >= 0) {
+    if (e.key === 'ArrowDown' && historyIdx >= 0 && !inputEl.value.slice(inputEl.selectionEnd ?? inputEl.value.length).includes('\n')) {
       e.preventDefault();
       historyIdx--;
-      inputEl.value = historyIdx < 0 ? '' : sentHistory[sentHistory.length - 1 - historyIdx];
+      setInput(historyIdx < 0 ? '' : sentHistory[sentHistory.length - 1 - historyIdx]);
       return;
     }
 
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+      e.preventDefault();                      // a textarea now: Enter sends, Shift+Enter is a new line
       const v = inputEl.value.trim();
-      inputEl.value = '';
+      setInput('');
       historyIdx = -1;
       closeAC();
       if (!v) { inputEl.blur(); return; }
-      sentHistory.push(v);
-      while (sentHistory.length > 50) sentHistory.shift();
-      try { localStorage.setItem(HISTORY, JSON.stringify(sentHistory.slice(-20))); } catch { /* full */ }
-      if (v.startsWith('/')) { runCommand(v); return; }
-      // In a conversation tab, plain typing is a whisper — you should not have
-      // to prefix every line of a private conversation with a command, and you
-      // REALLY should not be able to say something aloud while looking at a
-      // window that reads like a private one.
-      if (filter.startsWith('w:')) onWhisper(filter.slice(2), v.slice(0, 4000));
-      else onSend(v.slice(0, 4000));
+      submitLine(v);
     }
   });
+
+  // every listed slash command is an action too; one that needs an argument FILLS the prompt instead of running,
+  // and so does one whose first argument is its target ("/push [name]"): run bare, it would pick whoever is nearest
+  for (const row of COMMANDS) {
+    if (row.listed === false) continue;
+    const needsArg = new RegExp(`^/${row.name} (<|\\[(name|thing|person)\\b)`).test(row.help);
+    registerAction({
+      id: `cmd:${row.name}`, title: `/${row.name}`, group: 'commands', detail: row.help,
+      // the name is already a word of the title ('/sit'), so it is not ALSO an exact keyword: an exact keyword
+      // outranked the thing itself ('sit' led with /sit, not the body's own sit / stand)
+      keywords: [...(row.aliases ?? []), row.help.replace(/^\/\S+\s*/, '').replace(/[<>[\]—|"]/g, ' ')],
+      ...(needsArg ? { fill: `/${row.name} ` } : { run: () => submitLine(`/${row.name}`) }),
+    });
+  }
 
   try { sentHistory.push(...(JSON.parse(localStorage.getItem(HISTORY) ?? '[]'))); } catch { /* none */ }
 
@@ -1006,7 +1279,9 @@ export function initChat({ send, whisper, typing, people }) {
 // you never see because you were on another tab is worse than no tabs at all.
 // The tab is for following a thread, not for hiding it.
 
-export function logWhisper({ from, to, text, echo }) {
+export function logWhisper(msg) {
+  const { from, to, text, echo } = msg;
+  attentionWhisper(msg);
   const other = echo ? to : from;
   if (!echo) lastWhisperFrom = from;
   ensureConvo(other);
@@ -1032,7 +1307,7 @@ export function logWhisper({ from, to, text, echo }) {
   applyFilter(line);
   const atBottom = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 48;
   logEl.appendChild(line);
-  while (logEl.children.length > MAX_LINES) logEl.removeChild(logEl.firstChild);
+  trimLog();
 
   if (!echo) {
     const c = convos.get(other);
@@ -1067,7 +1342,7 @@ const drafts = new Map();
 function setFilter(f) {
   if (inputEl) {
     if (inputEl.value) drafts.set(filter, inputEl.value); else drafts.delete(filter);
-    inputEl.value = drafts.get(f) ?? '';
+    setInput(drafts.get(f) ?? '');
   }
   filter = f;
   if (f.startsWith('w:')) { const c = convos.get(f.slice(2)); if (c) c.unread = 0; }
@@ -1079,9 +1354,10 @@ function setFilter(f) {
 }
 
 let _arrowT = null;   // debounce for the resize-driven tab repaint
+let tabsEl = null;    // captured in initChat, like sideEls
 
 function paintTabs() {
-  const bar = frame.body.querySelector('.chat-tabs');
+  const bar = tabsEl;
   if (!bar) return;
   bar.innerHTML = '';
   // The strip carries `all · mentions · system` PLUS one tab per open DM, so
@@ -1150,7 +1426,7 @@ function paintTabs() {
         // called B3 verified — the hand-probe closed the tab it was looking at, so it
         // structurally could not reach this branch. (antra-tess #185 B3)
         drafts.delete(key);
-        if (filter === key && inputEl) inputEl.value = '';
+        if (filter === key && inputEl) setInput('');
         convos.delete(key.slice(2));
         if (filter === key) setFilter('all'); else paintTabs();
       };
@@ -1165,7 +1441,7 @@ function paintTabs() {
       // called B3 verified — the hand-probe closed the tab it was looking at, so it
       // structurally could not reach this branch. (antra-tess #185 B3)
       drafts.delete(key);
-      if (filter === key && inputEl) inputEl.value = '';
+      if (filter === key && inputEl) setInput('');
       convos.delete(key.slice(2));
       if (filter === key) setFilter('all'); else { paintTabs(); }
     };
@@ -1177,16 +1453,12 @@ function paintTabs() {
   mk('mentions', 'mentions');
   mk('system', 'system');
   for (const [name, c] of convos) mk(`w:${name}`, `@${name}`, c.unread, true);
-  const gear = document.createElement('button');
-  gear.className = 'chat-gear';
-  gear.title = 'chat options';
-  gear.innerHTML = fsvg('gear-six', 13);
-  // tabs repaint while the popover may be open: the new gear inherits it
-  const open = gearOpen();
-  gear.setAttribute('aria-expanded', String(open));
-  if (open) gearAnchor = gear;
-  gear.onclick = (e) => { e.stopPropagation(); gearToggle?.(gear); };
-  bar.appendChild(gear);                     // the gear stays OUTSIDE the scroller — always reachable
+  const who = document.createElement('button');
+  who.type = 'button'; who.className = 'chat-who';
+  who.onclick = (e) => { e.stopPropagation(); toggleSide(); };
+  bar.appendChild(who);
+  whoChip = who;
+  paintWho();
   paintArrows();
   // KEEP THE ACTIVE TAB IN VIEW. Overflow was sacrificing the tab you are
   // actually reading: R's screenshot shows `system| @H` — the open whisper

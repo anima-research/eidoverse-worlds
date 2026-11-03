@@ -163,5 +163,44 @@ const SMOKE = { preset: "smoke", origin: [0, 0.25, 0] };
   check("other component types narrate nothing (scope fence)", events.length === 0);
 }
 
+// ---------------------------------------------------------------- C: several emitters per entity
+{
+  // `particles:<name>` — a hearth's fire, smoke and sparks are three emitters,
+  // each read and narrated on its own terms.
+  const { ag, A, events, spawn } = rig();
+  const compK = (id: string, type: string, data: unknown, live = true, ts = T0) =>
+    A.applyEntry({ verb: "comp", args: { id, type, data }, ts, seq: 5, actor: "antra" }, live);
+  spawn("hearth", [2, 0, 0]);
+  compK("hearth", "particles", FIRE, false);
+  compK("hearth", "particles:smoke", { ...SMOKE, origin: [0, 0.8, 0], color: "#555566" }, false);
+  compK("hearth", "particles:candle", { preset: "fire", origin: [0.4, 0.9, 0], scale: 0.025 }, false);
+  const out = ag.look();
+  const line = out.split("\n").find((l) => l.includes("[hearth]")) ?? "";
+  check("look() names every emitter the entity carries, default first",
+    /emitting fire \(particles;[^)]*\)[^\n]*emitting smoke \(particles:smoke;/.test(line), line);
+  check("...a scaled one says how small", line.includes("(particles:candle;") && line.includes("scale 0.025"));
+  check("...a tinted one names its colour", line.includes("tinted #555566"));
+  check("...and none leaks into `components:`", !/components:[^\n]*particles/.test(line));
+
+  compK("hearth", "particles:sparks", { preset: "sparks" });
+  check("lighting a named emitter is heard once, under its own name",
+    events.length === 1 && events[0].text.includes("lights sparks") && events[0].text.endsWith("(particles:sparks)"),
+    events.map((e) => e.text).join(" | "));
+  compK("hearth", "particles", { ...FIRE, size: 0.6 });
+  check("...while a change to ANOTHER emitter on the same entity is its own news, not folded into the first",
+    events.length === 2 && events[1].text.includes("retunes the fire") && events[1].text.endsWith("(particles)"));
+  compK("hearth", "particles:sparks", { preset: "sparks", count: 30 });
+  check("a burst on one emitter folds inside its own window", events.length === 2);
+  await sleep(WINDOW + 80);
+  check("...and closes with one net line for that emitter",
+    events.length === 3 && events[2].text.includes("retunes the sparks") && events[2].text.endsWith("(particles:sparks)"),
+    events.map((e) => e.text).join(" | "));
+
+  compK("hearth", "particles:two words", { preset: "fire" });
+  check("a malformed emitter key is an ordinary component: no event, read as a component",
+    events.length === 3 && ag.look().includes("components: particles:two words"));
+  await sleep(WINDOW + 80);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

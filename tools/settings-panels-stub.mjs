@@ -35,6 +35,9 @@ export const AVATAR_DETAILS = { auto: null, full: 1, half: 2, low: 4 };
 let avatarDetail = 'auto';
 export const getAvatarDetail = () => avatarDetail;
 export const setAvatarDetail = (v) => { calls.push(['setAvatarDetail', v]); avatarDetail = v; };
+let fullDetail = false;
+export const getFullDetail = () => fullDetail;
+export const setFullDetail = (on) => { calls.push(['setFullDetail', on]); fullDetail = !!on; };
 
 // ---- lightrig.js
 let shadows = true, res = 2048;

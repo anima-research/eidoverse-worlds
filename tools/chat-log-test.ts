@@ -160,8 +160,14 @@ const tabLabels = () => [...tabs().querySelectorAll(".tabscroll button")].map((b
 const openPane = () => (frameStub.body!.querySelector(".chat-side-tog") as HTMLElement)?.click();
 
 check("the tab strip starts with the three fixed tabs", tabLabels().join("|") === "all|mentions|system", tabLabels().join("|"));
-check("tabs live INSIDE the scroller, the gear outside it",
-  !!tabs().querySelector(".tabscroll") && !!tabs().querySelector(":scope > .chat-gear") && !tabs().querySelector(".tabscroll .chat-gear"));
+check("tabs live INSIDE the scroller; the tab row holds the tabs and the people chip only (no gear)",
+  !!tabs().querySelector(".tabscroll") && !tabs().querySelector(".chat-gear")
+    && [...tabs().children].every((c: any) => c.matches(".tabscroll, .tabarrow, .chat-who")), [...tabs().children].map((c: any) => c.className).join(","));
+check("the gear sits at the right end of the compose row, after the line", (() => {
+  const compose = frameStub.body!.querySelector(".chat-compose")!;
+  const g = compose.querySelector(":scope > .chat-gear");
+  return !!g && compose.lastElementChild === g && g.previousElementSibling?.id === "chatline";
+})());
 check("both scroll arrows exist", tabs().querySelectorAll(".tabarrow").length === 2);
 
 // an inbound whisper opens a conversation, files the line, and bumps unread
@@ -173,6 +179,19 @@ check("...and it renders as a whisper", !!wline?.classList.contains("whisper"));
 
 // the People Here pane: double-click a name -> that DM tab
 openPane();
+{ // OPEN: the tab-row chip steps out and the column's header is the way back (a chevron toward the edge it collapses to)
+  const chip = tabs().querySelector(":scope > .chat-who") as HTMLElement;
+  const head = frameStub.body!.querySelector(":scope > .chat-cols > .chat-side > .chat-side-head") as HTMLElement;
+  const left = frameStub.body!.querySelector(":scope > .chat-cols")!.classList.contains("side-left");
+  check("open: the people chip is hidden", chip?.hidden === true);
+  check("…and the column's header is a button whose chevron points at its edge", head?.getAttribute("role") === "button"
+    && head.dataset.chev === (left ? "‹" : "›") && !/[‹›]/.test(head.textContent!), JSON.stringify({ role: head?.getAttribute("role"), chev: head?.dataset.chev, text: head?.textContent, left }));
+  head.click();
+  check("clicking the header closes the column and brings the chip back",
+    frameStub.body!.querySelector(".chat-side")!.classList.contains("closed") && chip.hidden === false);
+  (tabs().querySelector(":scope > .chat-who") as HTMLElement).click();
+  check("…and the chip opens it again", !frameStub.body!.querySelector(".chat-side")!.classList.contains("closed"));
+}
 const rows2 = () => [...frameStub.body!.querySelectorAll(".chat-side-list .who-row")];
 check("the People Here pane lists everyone", rows2().length === 3, `${rows2().length} rows`);
 // A BUTTON, not a div — this IS the fix. frames.js:_contentClaims exempts only
@@ -291,6 +310,41 @@ check("...and `all` shows the room again",
     // drafts.delete(key) or the setFilter restore and two checks go red with the
     // canary bytes on the wire.
   }
+
+// ============================================================ commands as lantern actions
+console.log("\nCHAT — a command that acts on whoever is nearest fills the lantern's line; it never runs on a default");
+{
+  const A = await import("../client/lib/actions.js");
+  for (const n of ["push", "touch", "punt"])
+    check(`/${n} fills "/${n} " and has no run`, A.get(`cmd:${n}`)?.fill === `/${n} ` && typeof A.get(`cmd:${n}`)?.run !== "function",
+      JSON.stringify({ fill: A.get(`cmd:${n}`)?.fill, run: typeof A.get(`cmd:${n}`)?.run }));
+  check("/who (no target) still runs", typeof A.get("cmd:who")?.run === "function");
+  check("/boom (acts where you stand) still runs", typeof A.get("cmd:boom")?.run === "function");
+  check("/w (a required name) still fills", A.get("cmd:w")?.fill === "/w ");
+}
+
+// ============================================================ MODDING-UI §3: our own nodes by handle
+console.log("\nCHAT — a mod's markup carrying the public classes is never mistaken for ours");
+{
+  const { bus } = await import("./chat-core-stub.mjs");
+  // the side pane must be closed for the chip to show; paintTabs builds the real chip
+  if (!frameStub.body!.querySelector(".chat-side")!.classList.contains("closed")) (frameStub.body!.querySelector(".chat-side-tog") as HTMLElement).click();
+  const decoy = document.createElement("div");
+  decoy.className = "chat-cols";
+  decoy.innerHTML = '<div class="chat-main"><div class="chat-tabs"><button class="chat-who"></button></div></div>';
+  frameStub.body!.prepend(decoy);
+  const real = [...frameStub.body!.querySelectorAll(".chat-who")].find((c) => !decoy.contains(c)) as HTMLElement;
+  real.innerHTML = "";
+  bus.emit("roster");
+  const dChip = decoy.querySelector(".chat-who") as HTMLElement;
+  check("a roster repaint paints OUR people chip", /here|just you/.test(real.textContent ?? ""), real.textContent ?? "");
+  check("…and leaves a mod's prepended .chat-who alone", dChip.innerHTML === "" && !dChip.hasAttribute("aria-expanded"), dChip.outerHTML);
+  logWhisper({ from: "ostra", to: "me", text: "hi" });   // a new conversation repaints the tab row
+  check("a tab repaint builds into OUR tab row, not a mod's .chat-tabs", !decoy.querySelector(".tabscroll")
+    && [...[...frameStub.body!.querySelectorAll(".chat-tabs")].find((t) => !decoy.contains(t))!.querySelectorAll(".tabscroll button")].some((b) => b.textContent!.startsWith("@ostra")),
+    decoy.innerHTML.slice(0, 120));
+  decoy.remove();
+}
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

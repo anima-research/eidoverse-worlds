@@ -15,6 +15,7 @@
 // It runs the REAL net.js. The wire protocol is not forked — net.js takes its
 // participant registry, asset ledger and snapshot renderer by injection now, so this
 // file supplies renderer-free ones and the protocol has exactly one implementation.
+import { chooseClient } from './lib/litechoice.js';
 import { CONFIG, bus, report, setToken } from './lib/base.js';
 // NOT ui.js. That module is the DESKTOP shell: since #185 it imports videopanel.js and
 // profile.js, which reach the engine through core.js, mybody.js and colliders.js, and it
@@ -49,30 +50,12 @@ globalThis.__ewEngineUp = true;
 // back, is worse than the crash was.
 const WHY = globalThis.__ewLiteWhy ?? 'url';
 const WHY_TEXT = {
-  crash: "last time this device opened the full world it didn't come back \u2014 this is the light version",
-  ram: 'this device reports too little memory for the full world \u2014 this is the light version',
-  'no-gpu': 'this browser has no 3D support \u2014 this is the light version',
-  saved: 'lite mode \u2014 chat, emotes, and who\u2019s here',
-  url: 'lite mode \u2014 chat, emotes, and who\u2019s here',
-  default: 'lite mode \u2014 chat, emotes, and who\u2019s here',
+  // the card (liteBanner) says why for every reason now; this line is only for a reason with no card
+  default: 'lite client \u2014 chat, emotes, and who\u2019s here',
 };
 
-/** The way out. A URL and not a saved preference on purpose: ?lite=0 is rule (1) in the
- *  decision script, so it wins for THIS load only. If the full client dies again, the
- *  tripwire it arms sends the next plain visit straight back here — one attempt, not a
- *  loop, and the escape stays a link the person can keep. */
-export function tryFullWorld() {
-  try { localStorage.removeItem('ew-lite'); } catch { /* nothing to clear */ }
-  const u = new URL(location.href);
-  u.searchParams.set('lite', '0');
-  location.assign(u);
-}
-
-/** Stay here and stop asking. Saved, because this one IS a preference — and a proven
- *  crash still overrides it, which is what keeps a saved 'full' from being a trap. */
-export function stayLite() {
-  try { localStorage.setItem('ew-lite', '1'); } catch { /* best effort */ }
-}
+/** The way into the 3D world: the person's choice, saved, the address left clean (litechoice.js says why). */
+export function tryFullWorld() { chooseClient(false); }
 
 // A lite client still ARRIVES: the server announces it and everyone else builds a body
 // for it, whether or not we ever say where that body is. So the choice was never "appear
@@ -122,20 +105,63 @@ function toast(message, kind = 'info', ttl = 5000) {
   setTimeout(() => t.remove(), ttl);
 }
 
-function liteDock(entries) {
-  const dock = document.createElement('nav');
-  dock.id = 'lite-dock';
-  for (const e of entries) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.dataset.id = e.id;
-    b.title = e.title ?? e.id;
-    b.textContent = e.label;
-    b.addEventListener('click', e.act);
-    dock.appendChild(b);
-  }
-  document.body.appendChild(dock);
-  return dock;
+
+// A DEMOTION says so where it can't scroll away. The chat line above is logged before the
+// join snapshot replays the room's history, so on a busy world it is gone before anyone
+// reads it — and a desktop that lands here after a hung load (the tripwire can't tell a
+// reload-mid-hang from a crash) otherwise looks like it simply booted the wrong client.
+// For every reason, including a link or a saved choice: a choice outlives the memory of making it.
+// a phone taps, a mouse clicks
+const TAP = globalThis.matchMedia?.('(pointer: coarse)').matches ? 'Tap' : 'Click';
+const BANNER_TEXT = {
+  // WHY, plainly, then the one way in (owner, 10-01: "make sure the notice correctly tells them why").
+  phone: `You're on a phone, so you're in the lite client: chat, emotes and who's here. ${TAP} the \u2203 Eidoverse logo (top left) to load the full 3D world.`,
+  crash: `This world didn't finish loading on this device last time, so you're in the lite client: chat, emotes and who's here. ${TAP} the \u2203 Eidoverse logo (top left) to load the full 3D world.`,
+    'no-gpu': "This browser has no 3D support, so you're in the lite client: chat, emotes and who's here.",
+  saved: `You chose the lite client on this device: chat, emotes and who's here. ${TAP} the \u2203 Eidoverse logo (top left) to load the full 3D world.`,
+  url: `This link opens the lite client: chat, emotes and who's here. ${TAP} the \u2203 Eidoverse logo (top left) to load the full 3D world.`,
+};
+const NO_WAY_IN = new Set(['no-gpu']);
+// The same card as the full client's capability notice (capnotice.js: .panel.capnotice >
+// .cn-item > b, p, .cn-btns) so the two reduced paths read as one family. Built here, not
+// imported: capnotice.js pulls core.js, and core.js is the engine lite exists to avoid.
+// THE PHONE LAYOUT, one column (owner, 10-01: "the lite client UI is a bit of a hot mess"): the top bar
+// (emotes, scrolling sideways, and the way into the 3D world at its end), then the card if it's up, then the
+// chat filling everything below it. The chat frame keeps its own machinery (tabs, people, compose); only its
+// box is set here, through --lite-top, which index.html's html.lite rules read.
+export function liteLayout() {
+  if (typeof document === 'undefined') return;
+  const bar = document.getElementById('lite-emote-host');
+  const card = document.getElementById('lite-banner');
+  // flush under the bar; a breath under the card while it's up
+  const below = card ? card.getBoundingClientRect().bottom + 8 : (bar?.getBoundingClientRect().bottom ?? 0);
+  document.documentElement.style.setProperty('--lite-top', `${Math.round(below)}px`);
+}
+
+export function liteBanner(why) {
+  const text = BANNER_TEXT[why];
+  if (!text || document.getElementById('lite-banner')) return null;
+  const card = document.createElement('div');
+  card.id = 'lite-banner';
+  card.className = 'panel capnotice';
+  card.setAttribute('role', 'status');
+  const item = document.createElement('div');
+  item.className = 'cn-item';
+  // one button: dismiss, and the chat takes the room. The way in is the logo, which the text names.
+  item.innerHTML = '<b></b><p></p><div class="cn-btns"><button type="button" class="cn-ok">got it</button></div>';
+  item.querySelector('b').textContent = 'Lite client';
+  item.querySelector('p').textContent = text;
+  let ro = null;
+  item.querySelector('.cn-ok').addEventListener('click', () => { ro?.disconnect(); card.remove(); liteLayout(); });
+  card.appendChild(item);
+  document.body.appendChild(card);
+  // Under the emote row, never over it: that row is fixed to the top and its height
+  // depends on how many emotes wrap, so follow it instead of guessing a number.
+  const host = document.getElementById('lite-emote-host');
+  const place = () => { card.style.top = `${Math.round((host?.getBoundingClientRect().bottom ?? 0) + 8)}px`; liteLayout(); };
+  place();
+  if (host && globalThis.ResizeObserver) (ro = new ResizeObserver(place)).observe(host);
+  return card;
 }
 
 /** The key door, renderer-free.
@@ -256,12 +282,22 @@ async function main() {
   emoteHost.id = 'lite-emote-host';
   document.body.appendChild(emoteHost);
   initLiteEmotes(emoteHost, emote);
-  liteDock([
-    { id: 'full', label: '\u{1F30D}', title: 'try the full world', act: tryFullWorld },
-  ]);
+  // THE LOGO IS THE WAY IN (owner, 10-01): the ∃ leads the top bar and loads the full 3D world. In the full
+  // client it opens the menu; lite has no menu, so here it does the one thing lite can't. Not where the
+  // browser has no 3D at all: there it is just the mark.
+  const mark = document.getElementById('hud');
+  if (mark) {
+    emoteHost.prepend(mark);
+    if (NO_WAY_IN.has(WHY)) { mark.disabled = true; mark.title = 'eidoverse'; }
+    else { mark.title = 'load the full 3D world'; mark.setAttribute('aria-label', 'load the full 3D world'); mark.addEventListener('click', tryFullWorld); }
+  }
+  liteLayout();
+  if (globalThis.ResizeObserver) new ResizeObserver(liteLayout).observe(emoteHost);
+  addEventListener('resize', liteLayout);
   globalThis.__ewTryFullWorld = tryFullWorld;   // also reachable from the console
 
-  logChat('', WHY_TEXT[WHY] ?? WHY_TEXT.default, 'sys');
+  // the card says why now, for every reason; the chat line only where there is no card (it repeated it)
+  if (!liteBanner(WHY)) logChat('', WHY_TEXT[WHY] ?? WHY_TEXT.default, 'sys');
 
   // No door screen: openDoor lives in ui.js, and the door's job (pick a body, see who is
   // here before you commit) is mostly about a world this client does not render, so a

@@ -118,7 +118,8 @@ export class BodyEngineBase {
     root.x = hips.x - (lx * c + lz * s);
     root.z = hips.z - (-lx * s + lz * c);
     const y = hips.y - this.hipsOffset;
-    if (this.pinned && y > this.rootStartY) this.rootStartY = y;
+    // a carried body may be lifted, and a FLOATING one rides up a wave: the root follows it up too
+    if ((this.pinned || this.floating) && y > this.rootStartY) this.rootStartY = y;
     root.y = Math.min(this.rootStartY, y);
   }
 }

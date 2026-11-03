@@ -16,12 +16,15 @@
 //
 // Returns the clip AND the options setClip should receive, so the caller has no policy left to get wrong.
 export const AIRBORNE_GRACE = 0.04;   // s: stair-step tolerance before a fall reads as a jump
-export const RUN_SPEED = 2.6;         // m/s: walk → run
+export const RUN_SPEED = 2.6;         // m/s at 100% size: walk → run
 export const MOVE_EPS = 0.05;         // m/s: below this the body is not travelling
 export const FADE_PRESS = 0.1;        // s: a deliberate jump is snappy
 export const FADE_WALKOFF = 0.5;      // s: walking off an edge eases
 
-export function selectClip({ mantle = false, jumped = false, airborneFor = 0, wantMove = false, speed = 0, posture = null, seat = null } = {}) {
+// `scale` = the body's chosen size: the controller scales the stride with it (bodyscale.js scaledSpeed), so the
+// thresholds are in body lengths — at absolute m/s a 200% body walking read as running and a 50% body never ran.
+export function selectClip({ mantle = false, jumped = false, airborneFor = 0, wantMove = false, speed = 0, posture = null, seat = null, scale = 1 } = {}) {
+  speed /= scale > 0 ? scale : 1;
   const seatedClip = seat?.chair ? 'sitchair' : 'sit';
   const clip = mantle ? 'climb'
     : (jumped || airborneFor > AIRBORNE_GRACE) ? 'jump'

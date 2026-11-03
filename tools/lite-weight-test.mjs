@@ -357,12 +357,22 @@ const RAW = `
   const page = await mkPage();
 
   // 1. A world whose last full boot never finished: lite, and SAYS why.
-  await page.goto(`${world.origin}/?world=alpha&name=trip&key=${world.key}&lite=0`, { waitUntil: 'domcontentloaded' });
+  // Plant the flag from a page that arms NOTHING (another world, lite). Planting it from a full boot of alpha itself
+  // (the old setup) is not a death: leaving that page fires pagehide, the clean-exit signal, which clears the flag
+  // it just planted. A real OOM kill runs no handler, and that's exactly the difference being tested.
+  await page.goto(`${world.origin}/?world=gamma&name=trip&key=${world.key}&lite=1`, { waitUntil: 'domcontentloaded' });
   await page.evaluate(() => localStorage.setItem('ew-boot-attempt:alpha', String(Date.now())));
   await page.goto(`${world.origin}/?world=alpha&name=trip&key=${world.key}`, { waitUntil: 'load' });
   const alpha = await page.evaluate(() => ({ lite: globalThis.__ewLite, why: globalThis.__ewLiteWhy }));
   console.log(`\n  tripwire: world alpha (died) -> lite=${alpha.lite} why=${alpha.why}`);
-  check('a world whose last boot died opens lite', alpha.lite === true && alpha.why === 'crash');
+  // This page is a DESKTOP, and since 2026-10-01 only a phone or tablet is demoted by a died boot (owner: lite is
+  // default only on mobile): a desktop retries the full world and says so. The phone half - died boot -> lite 'crash'
+  // - is lite-banner-probe's, in a real 360 px Android context; lite-choice-test pins the rule itself.
+  check('a desktop whose last boot died RETRIES the full world (why=retry), not lite', alpha.lite === false && alpha.why === 'retry');
+  // The retry boot armed alpha's flag itself and leaving it is a clean exit that clears it, so re-plant the death
+  // (from a page that arms nothing) before checking that surviving ANOTHER world leaves alpha's flag alone.
+  await page.goto(`${world.origin}/?world=gamma&name=trip&key=${world.key}&lite=1`, { waitUntil: 'domcontentloaded' });
+  await page.evaluate(() => localStorage.setItem('ew-boot-attempt:alpha', String(Date.now())));
 
   // 2. A DIFFERENT world on the same device is untouched. This is the one the phone
   //    report forced: an empty instance runs the full client fine on hardware the
@@ -386,9 +396,8 @@ const RAW = `
   // whatever else is loading the server - which is precisely how the previous version of
   // this check passed on a 5s boot and failed on a 12s one, teaching us about the
   // harness instead of the code.
-  // ARRIVE first. The pagehide listener is registered by finishBoot, so leaving before
-  // the client ever got in is correctly no evidence of anything - which is what the first
-  // version of this check accidentally measured.
+  // ARRIVE first, so this check is about a SURVIVING boot. (Leaving mid-load is also a clean exit now: index.html
+  // listens for pagehide from the moment it arms; lite-choice-test covers that case.)
   const betaArrived = await page.waitForFunction(
     () => { const el = document.getElementById('splash'); return !el || el.classList.contains('gone'); },
     { timeout: 60000 },
