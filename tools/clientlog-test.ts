@@ -60,16 +60,16 @@ ok(await st(post("world=known", "same /64", session())) === 429, "R3 IPv6 is buc
 ok(ipBucketKey("2001:db8:1:2:aaaa::1") === "2001:db8:1:2::/64" && ipBucketKey("::ffff:1.2.3.4") === "1.2.3.4" && ipBucketKey("fe80::1%eth0") === "fe80:0:0:0::/64", "R4 ipBucketKey: /64, an IPv4-mapped address, a zone id");
 ip = "10.0.2.2";
 const s2 = session();
-const burst = [await st(post("world=known", "e1", s2)), await st(post("world=known", "e2", s2)), await st(post("world=known", "e3", s2)), await st(post("world=known", "e4", s2))];
-ok(burst.join() === "200,200,200,429", `R5 a sender posts 3 in a row, the 4th → 429 (got ${burst.join()})`);
+const burst = []; for (let i = 0; i < 11; i++) burst.push(await st(post("world=known", `e${i}`, s2)));
+ok(burst.join() === "200,".repeat(10) + "429", `R5 a sender posts 10 in a row, the 11th → 429 (got ${burst.join()})`);
 ip = "10.0.2.3";
-const keyed = [await st(post("world=known", "k1")), await st(post("world=known", "k2")), await st(post("world=known", "k3")), await st(post("world=known", "k4"))];
-ok(keyed.join() === "200,200,200,429", `R5b a door-key caller is a sender by its address: the same 3 (got ${keyed.join()})`);
-ok(LIMITS.ipPer10Min === 30 && LIMITS.senderPer10Min === 10 && LIMITS.senderBurst === 3, "R6 the rate numbers are the research's");
+const keyed = []; for (let i = 0; i < 11; i++) keyed.push(await st(post("world=known", `k${i}`)));
+ok(keyed.join() === "200,".repeat(10) + "429", `R5b a door-key caller is a sender by its address: the same 10 (got ${keyed.join()})`);
+ok(LIMITS.ipPer10Min === 30 && LIMITS.senderPer10Min === 30 && LIMITS.senderBurst === 10, "R6 the rate numbers are the research's");
 const rate = new ClientLogRate(); const t0 = 1_000_000;
-for (let i = 0; i < 3; i++) rate.admit("1.1.1.1", "s", t0);
-ok(rate.admit("1.1.1.1", "s", t0) === 60 && rate.admit("1.1.1.1", "s", t0 + 60_000) === null && rate.admit("1.1.1.1", "s", t0 + 60_000) === 60, "R7 a sender's token returns one a minute (10 per 10 min); Retry-After says 60");
-ok(rate.admit("1.1.1.1", "other", t0) === null && rate.admit("1.1.1.2", "s", t0 + 60_001) !== null, "R8 another sender on the same address is its own bucket; a sender's bucket is the sender's across addresses");
+for (let i = 0; i < 10; i++) rate.admit("1.1.1.1", "s", t0);
+ok(rate.admit("1.1.1.1", "s", t0) === 20 && rate.admit("1.1.1.1", "s", t0 + 20_000) === null && rate.admit("1.1.1.1", "s", t0 + 20_000) === 20, "R7 a sender's token returns one every 20 s (30 per 10 min); Retry-After says 20");
+ok(rate.admit("1.1.1.1", "other", t0) === null && rate.admit("1.1.1.2", "s", t0 + 20_001) !== null, "R8 another sender on the same address is its own bucket; a sender's bucket is the sender's across addresses");
 
 // ---- scrub at ingest; a private key refuses the whole request
 ip = "10.0.3.1";
