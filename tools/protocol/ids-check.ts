@@ -3,7 +3,8 @@
 //   bun tools/protocol/ids-check.ts --only P1,D2  just those
 // Rows:
 //   O   opaque: a minted id is 26 base32 characters and nothing else — no slug that can go stale (health-potion-… become a plant)
-//   W   writers never choose ids: a writer-supplied id on create (and create {from}, a batch's create) is refused, the fix named
+//   W   writers never choose ids: a writer-supplied id on create (and create {from}, a batch's create) is refused, the fix named;
+//       no demo or probe in tools/ sends one (W4)
 //   P   placeholders: '$name' (JSON:API lid) is minted in-request, refs to it in the same request resolve, the reply maps it,
 //       and it never reaches the log
 //   Y   system acts keep ids verbatim (a fork's copy)
@@ -250,6 +251,12 @@ await C("G2", "at runtime, loading the server's and the agent door's own code ne
   const line = out.stdout.toString().split("\n").find((l) => l.startsWith("G2:"));
   const v = line ? JSON.parse(line.slice(3)) : null;
   return [v && v.ok === false && v.code === "shape" && v.minted, line ?? out.stderr.toString().slice(-600)]; });
+
+await C("W4", "no demo or probe in tools/ sends a create with a chosen id (a bare word, not a '$placeholder'): the authority refuses it (bot #260 95)", () => {
+  const files = fs.readdirSync(path.join(T, "tools")).filter((f) => /\.(ts|mjs|js)$/.test(f));
+  const RX = /verb:\s*['"]create['"],\s*args:\s*\{\s*id:\s*['"](?!\$)/;
+  const hits = files.filter((f) => RX.test(read(path.join("tools", f))));
+  return [files.length > 20 && files.includes("structure-demo.ts") && !hits.length, { files: files.length, hits }]; });
 
 console.log(`ids: ${pass} ok, ${fail} failed`);
 process.exit(fail ? 1 : 0);
