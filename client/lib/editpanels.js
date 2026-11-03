@@ -1004,7 +1004,7 @@ async function refreshWatch() {
   } catch { /* a poll that fails keeps the last good tail */ }
 }
 function consoleFields() {
-  const f = [{ t: 'list', k: 'cwatch', empty: 'no scripts in this world — a script is a script:<name> component on a thing (docs/SCRIPTS-replica.md)',
+  const f = [{ t: 'list', k: 'cwatch', empty: 'no scripts in this world — a script is a script:<name> component on a thing (docs/SCRIPTS.md)',
     rows: behaviors.map((b) => ({ id: b.id, label: b.id,   // words, not glyphs: the VR painter has no icon for these (bot #553)
       sub: [running(b) ? 'running' : (b.status ?? 'paused'), b.attach ? `on ${b.attach}` : 'world', b.timers ? `${b.timers} timer${b.timers === 1 ? '' : 's'}` : null].filter(Boolean).join(' · '),
       active: b.id === watching,
@@ -1046,7 +1046,7 @@ function removeMany(ids) {
 //   Blueprints  the starters and the library (catalog.js, /library-models): a raw model is a
 //               blueprint of one Model, and placing one is exactly what placing from the library
 //               always did (build.js holdGhost → spawn). "add light" is a blueprint of one Light.
-//               Saved blueprints arrive with step 6; the group is there, empty, saying so.
+//               Saved blueprints: the world's store (state.blueprints); Save as Blueprint = the authority's publish (editwrites).
 //   Tools       the transform tools (build.js setTool — the same call as Q/G/E/R), the building
 //               tools (structure_ui.js — its TOOLS, its setTool; a building edit is one act, so Ctrl+Z undoes it)
 //               and seat placement (socketedit.js armSocketPlacement, on the selected thing).

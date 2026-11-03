@@ -4,7 +4,7 @@
 import { CONFIG, report, bus, nameFromJoinAck, LAST_WORLD_KEY, TAB_WORLD_KEY, pickWorld, rememberedWorlds, isWorldName } from './base.js';
 import { avatarMounts } from './mounts.js';   // not world.js: that pulls core.js (the renderer) into lite
 // The world as data (TEL0S_NOTES §11.2): every snapshot and live entry
-// folds here — synchronously, through the same shared/fold.js the
+// folds here — synchronously, through the same shared/protocol/fold.js the
 // sequencer runs — and the realizers project it into the scene.
 // EW.foldParity() measures fold-vs-scene drift on demand.
 import { hydrate as shadowHydrate, reset as shadowReset, state as shadowState, applyView } from './state.js';
@@ -143,7 +143,7 @@ export function sayRefusalWords(r, text) {
     case 'banned': return `${q} wasn't sent: you're banned from this world.`;
     case 'too-big': return `${q} is too long to send — ${x.reason ?? 'split it into shorter messages'}.`;
     case 'timeout': return `the world didn't confirm ${q} — it may still arrive; look before sending it again.`;
-    case 'offline': return `${q} wasn't sent: not connected to the world.`;
+    case 'offline': return x.mayHaveLanded ? `the connection dropped before the world confirmed ${q} — it may have landed; look before sending it again.` : `${q} wasn't sent: not connected to the world.`;
     default: return `${q} wasn't sent: ${x.reason ?? x.code ?? 'the world refused it'}${x.fix ? ` (${x.fix})` : ''}.`;
   }
 }
@@ -243,7 +243,7 @@ export function sendWorldReset() {
 }
 
 /** Moderation messages that are not world verbs: 'world-bans' (list this
- *  world's bans — anyone), 'global-ban' / 'global-unban' / 'global-bans'
+ *  world's bans — people holding a moderation power: owner, mute/kick/ban/pauseScripts), 'global-ban' / 'global-unban' / 'global-bans'
  *  (server operator only; the server enforces). Replies arrive as `mod` messages. */
 export function sendMod(type, extra = {}) {
   if (net.joined && net.ws?.readyState === 1) {
@@ -295,7 +295,7 @@ export function sendJoin() {
   // none) claims neither flag. What happens next depends on how it came. On a door key
   // or a login it is admitted as an invisible spectator. On the renderers' own
   // credential, which admits renderers only, it is refused at the door (4003,
-  // tools/access-test.ts 11b). Either way, no snapshot is routed to it. Its id keeps the
+  // server.ts "insufficient scope"; tools/authtest.ts "spectate-only scope"). Either way, no snapshot is routed to it. Its id keeps the
   // renderer- prefix, since that is its name.
   //
   // This reads `capture` when the join is SENT. main.js wires it before start() opens

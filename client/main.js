@@ -182,8 +182,6 @@ initSocialRealizer();
 initStructureRealizer();
 initStructureUI();
 initCauses();
-// the deterministic sim's applier (PROTOCOL_v2 dialect 3): advances the
-// shadow sim fold to now and moves sim-owned bodies — inert pre-epoch
 
 // ---------------------------------------------------------------- boot
 

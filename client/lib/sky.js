@@ -969,7 +969,7 @@ async function buildSky(a, world, wantAudio) {
     // thing in the client — it was authored for offline batch renders, where a
     // slow frame costs nothing. A live world needs a frame budget, so we ask
     // for the tier Skye already provides for this (3 cloud passes instead of
-    // the full march) unless a world explicitly asks for the good one.
+    // the full march) unless the viewer's Video setting (skyQuality) picks high.
     const envKnobs = (globalThis.__ewEnv ??= {});
     envKnobs.TIER = skyQuality() === 'high' ? undefined : 'balanced';
     // GPU caches OFF by default.

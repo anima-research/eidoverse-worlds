@@ -308,7 +308,7 @@ function compBag(inst) {
   return Object.assign(bag, inst.extra?.unknown ?? {});
 }
 
-/** Read a folded entity (shared/fold.js) as { components, stamps }.
+/** Read a folded entity (shared/protocol/fold.js) as { components, stamps }.
  *  Every key of the record lands in exactly one place: a component instance
  *  (`{ type, key?, params, extra? }`, `key` = the comp-bag key it came from),
  *  or `stamps`. `extra` holds a bag's keys the record has no parameter for, so

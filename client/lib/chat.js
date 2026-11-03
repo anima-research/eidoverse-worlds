@@ -129,7 +129,7 @@ const escapeRx = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // paid for up front.
 
 // The arrival window is NOT a contiguous slice of history: trimRecentChat
-// (shared/fold.js) makes room by dropping the loudest speaker's oldest line,
+// (shared/protocol/fold.js) makes room by dropping the loudest speaker's oldest line,
 // so a quiet visitor's last words from yesterday can sit at the top of the
 // window above hours of conversation that was trimmed out from under it.
 // Paging from the oldest line SHOWN jumps straight over that gap — scrolling

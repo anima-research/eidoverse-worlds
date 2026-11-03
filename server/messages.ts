@@ -422,9 +422,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
   "capture-capabilities": ({ c }, msg) => { if (c.world) screenshots.configure(c, msg.capture); },
   "capture-result": ({ c }, msg) => { screenshots.receive(c, msg); },
   "world-bans": ({ c, ws, now, expel }, msg) => {
-    // Who is banned from the world you are standing in. Available to
-    // anyone present — the moderator's record is public in its outline (who,
-    // when, by whom); a list nobody can read is not an audit trail.
+    // Who is banned from the world you are standing in, for people holding a moderation power (the check below).
     if (!c.world) return;
     // the moderation record is read by people holding a moderation power (research roles §7; review 10-07: anyone
     // here could read every ban and its reason), and by the authority's clock (a ban that ended isn't listed)

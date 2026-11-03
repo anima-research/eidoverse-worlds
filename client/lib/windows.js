@@ -848,29 +848,7 @@ export function makeFrame(id, opts = {}) {
           } else if (shifted + state.w <= innerWidth - 8) {
             state.x = shifted;
           } else {
-            // OPEN, NOT FIXED — right-anchored chrome is mis-costed here.
-            //
-            // This branch takes `g.right` of every obstacle as space consumed FROM
-            // THE LEFT. That is true for left-anchored chrome (#dock) and false for
-            // anything welded to the right edge. Consequence, measured at 1280x720
-            // and 1904x844: `.capnotice` (top:389) lands inside settings' default
-            // rect, clearRight becomes the card's right edge, avail comes to -6, and
-            // a declared 407px frame opens at its 210px minW, x=1062.
-            //
-            // 210 IS minW, so a frame sitting at its floor looks like a frame at its
-            // natural size — which is why a single rect reads as healthy. Measure the
-            // declared width, not the rendered one.
-            //
-            // Both available policies are wrong, both measured:
-            //   floor at minW -> 407 becomes 210
-            //   stand down    -> 407 stays, UNDER the card (z 60 vs Z_HI 25)
-            // The repair is a DECLARED anchor the obstacle publishes. Computed style
-            // cannot supply it for a normally-constrained element: CSSOM 9 resolves
-            // left AND right to used values, so `.capnotice` reports cssL=930px and
-            // cssR=10px at once. (An OVER-constrained element does report authored
-            // values — measured — but .capnotice is over-constrained only below
-            // 900px, so detection would work in one of three states. Useless.)
-            // Changing the layout contract is the owner's call, not a patch.
+            // left-anchored chrome costs from the left (shifted); right-anchored chrome is costed by its declared anchor (clearFromRight; CHROME_ANCHOR below)
             const avail = innerWidth - 8 - shifted - clearFromRight;
             state.w = Math.max(Math.min(avail, maxW), Math.min(minW, maxW));
             state.x = shifted;

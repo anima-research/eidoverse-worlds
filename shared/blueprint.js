@@ -28,7 +28,7 @@
 // overridesOf / rebase compare copies against records; placing copies (6b) and
 // offering updates (6c) build on these.
 //
-// Pure: no DOM, no I/O. The door (server/verbs.ts), the fold (shared/fold.js),
+// Pure: no DOM, no I/O. The door (server/verbs.ts), the fold (shared/protocol/fold.js),
 // the agent and the editor all ask the same questions here.
 
 import { canon, sha256hex, entityOf, componentsOf, compRefusal, RECORDS, socketQ } from './components.js';

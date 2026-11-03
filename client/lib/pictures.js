@@ -24,7 +24,7 @@ import { allowUntrusted, RIGHTS_WARNING } from './mediaprefs.js';
 //      extent is held to 50 m whatever the transform's scale.
 //   4. Where the bytes come from (shared/mediasrc.js): a store file always; a trusted host's link always; any other
 //      link only if this viewer turned on "allow untrusted links" — otherwise nothing is fetched (a quad shows its empty
-//      plate). A link is fetched without credentials or a referrer, and decoded at most 2048 px on its long side.
+//      plate). A link is fetched without credentials or a referrer, and stored as a texture at most 2048 px on its long side (the browser decodes the full image first).
 export const QUAD_MAX_EXTENT = 50;
 export const MAX_TEXTURE_PX = 2048;
 const blocked = new Map();   // id → why this browser didn't fetch it (probes)
