@@ -404,7 +404,7 @@ export const COMPONENTS = {
   // meaning so it's fixed (L5). Fields from every old world log on Burrow, translated. A name not here is a world's own
   // invention (heart, inscription…): admitted, unless it's a near-miss of one of these (ligth).
   // shape audit 10-16 (render-media-env §13): 19 fields → 14. clock and dormantRated (fold bookkeeping) are gone: a tz present
-  // means the wall clock governs, and hours/rate/ts stay as the rated fallback; sun, fill and world (never stored) and
+  // means the wall clock governs, and hours/rate/ts stay as the rated fallback; world (never stored) and
   // weatherSeconds (now transition: no unit in a name) are gone; azimuth is radians. ts, override and a forecast's epoch
   // are stamped by the authority's sky and weather acts, never taken from a writer (stamped). The forecast's segment law is
   // forecast@1: shared/forecast.js's draw order (dwell, then state, then intensity) at this commit; a changed law is a new name

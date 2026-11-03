@@ -384,3 +384,4 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
 - 2026-10-31: sky.sun and sky.fill: stored again (multipliers on the renderer's sun and its bounce light, absent = 1), so main's sliders carry over (decision table, R 10-30); translate-v1@39
 - 2026-10-31: sky.sun and sky.fill stored again (decision table, R 10-30)
 - 2026-11-02: reactions help and comment no longer call impulse reserved (it was opened 10-31; text only, the pin is unchanged; bot #260 #25)
+- 2026-11-02: sky's shape-audit comment no longer lists sun and fill as gone (stored again since 10-31); comment only, the pin follows the file (bot #260 #43)

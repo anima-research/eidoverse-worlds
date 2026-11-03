@@ -113,7 +113,7 @@ export function paintSky(body) {
       const v = Number(inputs[key].value);
       if (key === 'hours' || key === 'azimuth' || v !== dflt) a[key] = key === 'azimuth' ? v * Math.PI / 180 : v;
     }
-    delete a.world; delete a.sun; delete a.fill;   // cut from the sky (shape audit 10-16): the door refuses them
+    delete a.world;   // never stored (shape audit 10-16); sun and fill are registered sky fields (bot review #260 43)
     return a;
   };
 
