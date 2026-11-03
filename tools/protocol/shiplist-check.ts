@@ -313,9 +313,10 @@ await C("M5", "the editor: a rate typed on an orbit drops its period (one speed)
 
 // ---- H: help text ----
 await C("H1", "what agents read says physics.who and grabbable.who default to member (3b3ad8e2; visitor until R 10-21), never builder", () => {
-  const texts = [CAT.COMPONENTS.physics.help, CAT.COMPONENTS.grabbable.help, JSON.stringify(TS), fs.readFileSync(path.join(T, "AGENTS.md"), "utf8").split("Humans have T")[1]?.slice(0, 400) ?? ""];
+  const agents = fs.readFileSync(path.join(T, "AGENTS.md"), "utf8"), i = agents.indexOf("`grabbable.who` says who may pick it up");   // the passage itself, not a phrase that may have gone (bot review #260 398)
+  const texts = [CAT.COMPONENTS.physics.help, CAT.COMPONENTS.grabbable.help, JSON.stringify(TS), i < 0 ? "" : agents.slice(i, i + 400)];
   const bad = texts.filter((t) => /default builder/.test(t)).map((t) => t.slice(0, 80));
-  return [!bad.length && /default member/.test(texts[0]) && /default member/.test(texts[1]), bad];
+  return [!bad.length && texts.every((t) => t.length > 0) && texts.every((t) => /default member/.test(t)), { bad, lens: texts.map((t) => t.length), agents: texts[3].slice(0, 120) }];
 }).catch(() => {});
 
 // ---- P: people ----
