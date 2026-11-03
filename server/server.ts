@@ -237,8 +237,7 @@ function describe(w: World): string {
 // generation-bearing event a proposal gets. Late profile arrival is
 // event-driven for every consumer, not wishful polling.
 // World access expiry (access.ts): warn five minutes out, then the authority writes each passed `until` into the log
-// (expire-roles) and whoever lost entry with it is removed. Every second: between `until` and the sweep the grant still
-// stands (it ends when its end is written, so a replay agrees).
+// (expire-roles) and whoever lost entry with it is removed, every second. A grant past its `until` is already absent (M6).
 setLoadedWorlds(() => worlds);
 registerSystem({ name: "access-sweep", everyMs: Math.max(250, Number(process.env.ACCESS_SWEEP_MS ?? 1000)),
   fn: (now) => sweepAccess(worlds.values(), expel as Expel, now) });

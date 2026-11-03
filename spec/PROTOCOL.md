@@ -559,8 +559,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   share this registry); it isn't written yet, since no format for a written
   definition exists. A world is read by this registry and its pin.
 - **Held kinds and closed grammars are in the pin too.** `reservedKinds`
-  holds a kind inside a trial component (`reactions`' handler `impulse`,
-  `terrain`'s `raster`): a write naming it is refused `reserved` in the held
+  holds a kind inside a trial component (`terrain`'s `raster`): a write naming it is refused `reserved` in the held
   kind's own words, and a fork or a lift carries a stored one. `reservedShape`
   holds what a reserved field will mean when it opens (`physics`' damping
   units, friction and restitution limits, the combine enums: spec/PHYSICS.md

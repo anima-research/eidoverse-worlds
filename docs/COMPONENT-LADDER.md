@@ -41,7 +41,6 @@ definition in `shared/protocol/componentspec.js`; `schema` returns it, and the I
     RESEARCH-socket-body-2026-10-06, built in shared/sockbody.js's reader, unused in any stored world; each comes back
     with its `absentMeans`). `hold` (bone overrides over the pose) is cut, not held.
   - `grabbable`: `fx` (presence-only particles while use is held). A grip's `hold` is cut.
-  - `reactions`: the handler kind `impulse` (it returns with its general meaning when an engine carries impulses).
   - `terrain`: the kind `raster` (an imported height raster; no reader draws or walks it yet, so its fields stay
     unregistered).
   - `physics`: `surface` (was `material`), `friction`, `restitution`, `frictionCombine`,
