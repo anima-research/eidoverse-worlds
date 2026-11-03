@@ -100,5 +100,16 @@ q('description').value = 'four metres wide, still'; q('hang').click();
 const kept = committed.at(-1)?.[1];
 check('updating a hung picture keeps its stored width', (kept?.data ?? kept)?.width === 4, JSON.stringify(committed));
 
+console.log('\n7. a quad frees a link\'s texture, never a store file\'s (#565)');
+{
+  Object.assign(stub.THREE, { PlaneGeometry: class { translate() {} dispose() {} }, MeshStandardMaterial: class { dispose() {} } });
+  const texOf = (owned: boolean) => { const t: any = { userData: owned ? { owned: true } : {}, disposed: 0, dispose() { this.disposed++; } }; return t; };
+  const link = texOf(true), store = texOf(false);
+  pics._quadOf({ width: 1 }, 1, link).userData.dispose();
+  pics._quadOf({ width: 1 }, 1, store).userData.dispose();
+  check('a link\'s (owned) texture is disposed with its quad', link.disposed === 1, `disposed=${link.disposed}`);
+  check('a store file\'s (cached) texture is left to the cache', store.disposed === 0, `disposed=${store.disposed}`);
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);
