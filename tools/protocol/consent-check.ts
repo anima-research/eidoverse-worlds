@@ -41,12 +41,13 @@ ok(decide(P, "u-bbbbbbbbbbbbbbbbbbbb", "u-alice", "shove").mode === "deny", "C5 
   const { REQUEST_MESSAGES } = await import("../../server/requestwire.ts"); const { directoryFor } = await import("../../server/directory.ts"); const { WORLDS_DIR } = await import("../../server/config.ts");
   const dir = directoryFor(WORLDS_DIR); const acct = dir.resolve({ sub: "human:kit", name: "Kit" }), here = dir.resolve({ name: "Gus" }), left = dir.resolve({ name: "Ann" });
   const me: any = { id: "me", actorId: dir.resolve({ sub: "human:me", name: "me" }) }, gus: any = { id: "Gus", actorId: here };
-  const w: any = { name: "w", clients: new Set([me, gus]), log: { request: async () => ({ ok: true }) }, debug: () => {} }; me.world = w;
+  let reached = 0;   // requests the gone-check let through to the (fake) authority (bot #497)
+  const w: any = { name: "w", clients: new Set([me, gus]), log: { request: async () => { reached++; return { ok: true }; }, roleOf: () => null, bannedHere: () => false, mutedHere: () => false }, debug: () => {} }; me.world = w;
   const ask = (args: any) => new Promise<any>((res) => { REQUEST_MESSAGES.request({ c: me, ws: { send: (s: string) => res(JSON.parse(s)) }, expel: () => {}, sweep: () => {} } as any, { type: "request", id: 1, verb: "consent", args }); setTimeout(() => res(null), 500); });
-  const code = async (a: any) => (await ask(a))?.reply?.refused?.code ?? "ok";
+  const code = async (a: any) => { const r = await ask(a); return r ? (r.reply?.refused?.code ?? "ok") : "timeout"; };
   const got = { left: await code({ block: left }), past: await code({ allow: "u-zzzzzzzzzzzzzzzzzzzz" }), here: await code({ block: here }), acct: await code({ block: acct }) };
   ok(got.left === "gone" && got.past === "gone", "C10 a guest who left, or an id no one has worn since the restart: refused gone", got);
-  ok(got.here !== "gone" && got.acct !== "gone", "C10b …a guest here now, and an account here or not, are not", got);
+  ok(got.here === "ok" && got.acct === "ok" && reached === 2, "C10b …a guest here now, and an account here or not, reach the authority and are answered ok (those two, no other)", { ...got, reached });
   const why = async (a: any) => String((await ask(a))?.reply?.refused?.reason ?? "");   // review delta-260 L-H: each says what it is
   const said = { left: await why({ block: left }), never: await why({ allow: "u-zzzzzzzzzzzzzzzzzzzz" }) };
   ok(/guest/.test(said.left) && !/guest/.test(said.never) && /knows no one/.test(said.never), "C10c a departed guest is said as one; an id this server never knew is said as that, not as a guest", said); }
