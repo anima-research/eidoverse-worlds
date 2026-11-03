@@ -13,7 +13,7 @@
 //   F52-53  @31: main's 78 m stage a bounds box; its inferred lamps light children
 //   DT8     @34 (decision table row 8): main's ambient motes' count, range and colour in a derived dust document
 //   DT9     @33 (decision table row 9): a seat with no pos sits at main's [0, 0.5, 0]
-//   V5      the translator is @37, and a report reviewed under @36 is refused, naming the earlier translator
+//   V5      the translator is the current TRANSLATOR, and a report reviewed under the previous one is refused, naming the earlier translator
 //   V6      the report's output digest: what would be written changed since the dry run (same counts) → refused, re-run the dry run
 //   V7      a vehicle hull this host measures: the CLI's dry run → --approved applies (review delta-260 #1), walls set off by its box
 //   S3-*    SWEEP-3: collide, seatAnchor, ranges, CSS colours, particle scale, pivot on a scaled thing, grass extras; light parity;
