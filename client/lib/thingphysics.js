@@ -475,6 +475,7 @@ function drawFlights(wall, now) {
   // while one of my releases is still a guess (no entry yet), keep this copy: a fresh copy of the canonical fold stands at
   // the latest entry's tick, which may be past the guess's, and re-folding the guess there would restart it from the hand
   // (full probe 10-11: a 0.6 m forward jump when the truth then landed). Other bodies' news waits one round trip, no more.
+  for (const [id, pd] of pending) if (wall - pd.sentAt > PENDING_MS) unpredict(id);   // a guess nothing confirmed in time ends here, sim update or not (bot #575)
   const guessing = pres && presV !== -1 && pending.size > 0 && ![...pending].some(([id, pd]) => canon.launched[id] || wall - pd.sentAt > PENDING_MS);
   if (presV !== replica.simVersion && !guessing) {
     const was = pres ? Object.keys(pres.bodies) : [];
@@ -575,7 +576,7 @@ const grabbableIds = () => { const st = replica.st; if (gIds.st !== st || gIds.h
 const dynamicIds = () => { const es = replica.st?.entities ?? {}; return Object.keys(es).filter((id) => es[id].c.physics?.kind === 'dynamic'); };
 /** Where the thing is now, as the authority sees it: someone's hand, the air (the engine), or the log. */
 function whereIs(id) {
-  const b = pres?.bodies?.[id]; if (b && !b.resting) return b.p;
+  const b = pres?.bodies?.[id]; if (b && !b.resting && !b.provisional) return b.p;   // a guess is drawn, never read back (Covenant III, bot #574)
   const st = settledTruth(id); if (st) return st.toArray();
   const obj = entities.get(id); if (obj) { obj.updateWorldMatrix(true, false); return obj.getWorldPosition(new THREE.Vector3()).toArray(); }
   return null;
