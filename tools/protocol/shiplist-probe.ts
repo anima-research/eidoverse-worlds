@@ -227,7 +227,7 @@ try {
   const items = await evalJson(`[...document.querySelectorAll('.sp-pop-item')].map((b) => b.textContent)`);
   check("E3 Add Component offers Path and LookAt (what the authority takes: look-at since batch 2), and 'door' finds Openable", all?.some((t: string) => /^Path/.test(t)) && all?.some((t: string) => /^LookAt/.test(t)) && items?.some((t: string) => /Openable/.test(t)), { all, items });
   await evalJson(`[...document.querySelectorAll('.sp-pop-item')].find((b) => /Openable/.test(b.textContent))?.click(), true`);
-  check("E4 …adding it writes its state and its open action: the toy box opens with E", await waitDisk(() => disk().entities[N("box1")]?.c.openable?.open === false && disk().entities[N("box1")]?.c.reactions?.open?.kind === "toggle"), { c: disk().entities[N("box1")]?.c });
+  check("E4 …adding it writes its state (closed) and its open action (toggle)", await waitDisk(() => disk().entities[N("box1")]?.c.openable?.open === false && disk().entities[N("box1")]?.c.reactions?.open?.kind === "toggle"), { c: disk().entities[N("box1")]?.c });
   await evalJson(`import('/lib/build.js').then((m) => (m.setBuildMode(false), true))`);
   });
   // ---- VA: the body's arrival refused (a takeover reconnect: the server still has my body where it was, and the client
@@ -1051,11 +1051,12 @@ try {
   // 15 s timer, so a move in flight at a reconnect held the body track for up to 15 s, then spoke a stale timeout) ----
   await stage("NP", async () => {
   const r = await page(`const n = await import('/lib/net.js'); const ws = n.net.ws, send = ws.send.bind(ws);
-    ws.send = (m) => { if (!/"verb":"look"/.test(m)) send(m); };   // this one request never reaches the authority
+    let went = 0; ws.send = (m) => { if (!/"verb":"look"/.test(m)) send(m); else went++; };   // this one request never reaches the authority
+    const live = n.net.joined && ws.readyState === 1;   // else sendRequest answers offline at once and the row proves nothing (bot review #260 517)
     const t0 = performance.now(); const p = n.sendRequest('look', {}); setTimeout(() => ws.close(), 300);
     const out = await Promise.race([p, new Promise((z) => setTimeout(() => z('still waiting at 2 s'), 2000))]);
-    return { out, ms: Math.round(performance.now() - t0) };`);
-  check("NP1 a request in flight when the socket drops is answered at once (offline), not 15 s later", r?.out?.ok === false && r?.out?.refused?.code === "offline" && r.ms < 1500, r);
+    return { live, went, out, ms: Math.round(performance.now() - t0) };`);
+  check("NP1 a request in flight (sent on a live socket) when the socket drops is answered at the drop (offline), not 15 s later", r?.live && r.went === 1 && r?.out?.ok === false && r?.out?.refused?.code === "offline" && r.ms >= 250 && r.ms < 1500, r);
   check("NP2 …and the client reconnects", await waitFor(`import('/lib/net.js').then((m) => m.net.joined)`, 15000));
   });
   check("errors: no page error", await evalJson(`__errs.length === 0`), await evalJson(`__errs`));
