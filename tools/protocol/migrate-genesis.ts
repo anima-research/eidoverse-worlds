@@ -20,6 +20,7 @@
 // usage: bun tools/protocol/migrate-genesis.ts [--apply] <world dir>…   (dry run without --apply; skips a log already in today's shape)
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import crypto from "node:crypto";
 import { readLog, fold, digest, worldIdOf, parseLine, DIALECT, VERSION } from "../../shared/protocol/fold.js";
 import { custodyAt } from "../../server/custody.ts";
@@ -59,7 +60,9 @@ try {
     const ngLine = JSON.stringify({ ...g, body }); const newId = worldIdOf(parseLine(ngLine));
     const next = ngLine + text.slice(nl).replaceAll(oldId, newId);
     const after = fold(readLog(next)); const dAfter = after.status === "ok" ? digest(after) : null;
-    const py = Bun.spawnSync(["python3", path.join(ENGINE, "spec/conformance/reader.py"), "/dev/stdin", "--json"], { stdin: Buffer.from(next) });
+    const tmp = path.join(os.tmpdir(), `genesis-${process.pid}-${crypto.randomUUID()}.jsonl`);   // a file, not /dev/stdin: Windows has none
+    fs.writeFileSync(tmp, next);
+    const py = (() => { try { return Bun.spawnSync([process.env.PYTHON || "python3", path.join(ENGINE, "spec/conformance/reader.py"), tmp, "--json"]); } finally { fs.rmSync(tmp, { force: true }); } })();
     const dPy = (() => { try { return JSON.parse(py.stdout.toString()).digest; } catch { return null; } })();
     const same = dBefore !== null && dBefore === dAfter && dAfter === dPy;
     const kept = path.join(dir, KEPT);

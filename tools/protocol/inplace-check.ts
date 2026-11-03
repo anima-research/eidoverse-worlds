@@ -599,7 +599,7 @@ fs.rmSync = (p, x) => { log("rm " + p); return rm(p, x); };\n`);
   const L = fs.existsSync(trace) ? fs.readFileSync(trace, "utf8").split("\n").filter(Boolean) : [], mk = path.join(d, SWAP_MARKER);
   const into = L.map((l, i) => [l, i] as const).filter(([l]) => l.startsWith("rename ") && l.split(" ")[2]?.startsWith(d + path.sep) && /\.translating-/.test(l.split(" ")[1]));
   const first = L.findIndex((l) => l.startsWith("rename ") && l.endsWith(path.join(d, "world.jsonl"))), last = Math.max(...L.map((l, i) => (l.startsWith("rename ") && l.split(" ")[2]?.startsWith(d + path.sep) ? i : -1)));
-  const marked = L.indexOf(`fsync ${mk}`), cleared = L.indexOf(`rm ${mk}`), dirSync = (from: number, to: number) => L.slice(from + 1, to).includes(`fsync ${d}`);
+  const marked = L.indexOf(`fsync ${mk}`), cleared = L.indexOf(`rm ${mk}`), dirSync = (from: number, to: number) => process.platform === "win32" || L.slice(from + 1, to).includes(`fsync ${d}`);   // Windows can't sync a directory (server/durable.ts syncDir)
   const synced = into.every(([l]) => L.slice(0, first).includes(`fsync ${l.split(" ")[1]}`));
   ok(r.exitCode === 0 && first > 0 && into.length >= 2 && synced && marked >= 0 && marked < first && dirSync(marked, first) && cleared > last && dirSync(last, cleared) && dirSync(cleared, L.length),
     "IP32 the in-place swap's durable order: every translated file fsynced before the first rename; the world's directory synced after the marker lands, after the last rename, and after the marker is removed",
