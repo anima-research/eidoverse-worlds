@@ -241,7 +241,7 @@ const Z_LO = 10, Z_HI = 25;
 const inWorkspace = () => typeof document !== 'undefined' && document.body?.classList.contains('edit-workspace');
 let zTop = Z_LO;
 let warnedZ = false;
-let locked = localStorage.getItem('ew-ui-locked') === '1';
+let locked = (() => { try { return localStorage.getItem('ew-ui-locked') === '1'; } catch { return false; } })();   // storage may throw (sandboxed frame; bot #578)
 
 const SNAP = 11;            // px — edge and frame-to-frame snapping distance
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -249,7 +249,7 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 export function isLocked() { return locked; }
 export function setLocked(v) {
   locked = v;
-  localStorage.setItem('ew-ui-locked', v ? '1' : '0');
+  try { localStorage.setItem('ew-ui-locked', v ? '1' : '0'); } catch { /* this session only */ }
   document.body.classList.toggle('ui-locked', locked);
   bus.emit('ui-locked', locked);
 }
@@ -636,7 +636,7 @@ export function makeFrame(id, opts = {}) {
     // painted 336px tall while the clipped width could only ever lay out three
     // rows of tiles. Three rounds of fixing snapTo changed nothing she could see
     // because the arithmetic was right and the render was floored.
-    root.style.minWidth = `${minW}px`;
+    root.style.minWidth = `${Math.min(minW, Math.max(80, innerWidth - 16))}px`;   // the floor yields as fit() does (bot #579)
     body.style.height = `${vrSize?.h ?? state.h}px`;
     // arrange-mode affordances: which viewport edges hold this frame (glow),
     // and whether the floating label must sit below (frame hugs the top)
