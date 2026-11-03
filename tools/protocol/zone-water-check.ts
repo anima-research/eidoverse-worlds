@@ -258,6 +258,18 @@ await C("Z15", "a thing's water in a pocket is not @world's (bot #260 124): worl
   const o = { pool: Z.worldLevelAt([0, 1, 0], z, 10), poolMedium: Z.mediumOf([0, 1, 0], z).body, dry: Z.worldLevelAt([3, 1, 3], z, 10), lagoon: Z.worldLevelAt([30, 1, 0], z, 10), sea: Z.worldLevelAt([60, 1, 0], z, 10) };
   return [o.poolMedium === "pool" && o.pool === null && o.dry === null && o.lagoon === 10 && o.sea === 10, o]; });
 
+await C("Z16", "the authority's walk reads the pockets (bot #260 123): under @world's level 5, a dry dome over flat ground; a walk under a beam 5.7 m up inside it is taken (a walker's box), the same walk outside the dome is a swimmer's and meets the beam's twin", () => {
+  const s = session();
+  s.call("set", { id: "@world", component: "terrain", value: { amplitude: 0, size: 80 } });
+  s.call("set", { id: "@world", component: "water", value: { level: 5 } });
+  s.call("create", { id: "dome", components: { transform: tf([-10, 3, 0]), zone: box([12, 8, 12]), "water-exclusion": {} } });
+  const beam = (id: string, x: number) => s.call("create", { id, components: { mesh: { shape: "box", size: [1, 0.4, 6] }, transform: { pos: [x, 5.7, 0] } } });
+  const mk = [beam("beam", -10), beam("twin", 10)];
+  const walk = (x0: number) => { const r = [s.call("move", { to: [x0 - 3, 0, 0], teleport: true })]; for (let x = x0 - 2.5; x <= x0 + 3; x += 0.5) r.push(s.call("move", { to: [x, 0, 0] })); return r; };
+  const dome = walk(-10), sea = walk(10);
+  return [mk.every((r) => r.ok) && dome.every((r) => r.ok) && sea.some((r) => r.refused?.code === "solid" && /twin/.test(r.refused.reason)),
+    { mk: mk.map(show), dome: dome.filter((r) => !r.ok).map(show).slice(0, 2), sea: sea.filter((r) => !r.ok).map(show).slice(0, 2) }]; });
+
 // tools/water/math-test.ts's expectations, on bodies and pockets built through zone.js (a thing's zone, not a hand-made box)
 await C("ZM", "math-test on zone-built bodies: wet/dry boundaries, a pocket, path lengths (nested, overlapping, rotated pockets), ascent to the float, diving, a half-size body, waves", () => {
   const s = session(); const FLOAT = MV.floatDepth(MV.MOVER.body.height); const bad: string[] = [];
