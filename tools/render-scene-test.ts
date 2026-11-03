@@ -165,6 +165,13 @@ test("water, air and environment components reach native renderers as normalized
   expect(Object.keys(fx.emitters)).toEqual(["smoke"]);
   expect(fx.emitters.smoke.gravity).toEqual([0,0.6,0]);expect(fx.emitters.smoke.color).toBe(0x555566);
   expect(fx.emitters.smoke.seed).not.toBe(projectComponentData({particles:{preset:"smoke"}},"hearth").particles.seed);
+  // `__proto__` is a legal name: it must arrive as its own emitter, not as the object's prototype
+  const odd:any=projectComponentData(JSON.parse('{"particles:__proto__":{"preset":"embers"}}'),"x");
+  expect(Object.hasOwn(odd.emitters,"__proto__")).toBe(true);expect(odd.emitters["__proto__"].preset).toBe("embers");
+  expect(JSON.parse(JSON.stringify(odd)).emitters["__proto__"].preset).toBe("embers");
+  // every emitter reaches a native renderer, as every emitter is built in the browser
+  const many:any=projectComponentData(Object.fromEntries(Array.from({length:40},(_,i)=>[`particles:e${i}`,{preset:"dust"}])),"y");
+  expect(Object.keys(many.emitters).length).toBe(40);
   f.write("comp",{id:"ocean",type:"water",data:{center:[0,-40,0],size:[400,100,400]}});
   const next=f.request(2000).upserts.map((e:any)=>e.id);
   expect(next).toEqual(["ocean"]);
