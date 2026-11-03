@@ -247,7 +247,7 @@ export function updateMountedMe(dt) {
  *  I'm on doesn't count. */
 const _sitV = new THREE.Vector3();
 // R 10-11 00:47: X near the crates lifted her ~5 m: a seat declared on a sign 3 m up counted as 'near' (only the ground
-// distance was read). A plain X offers only a seat you could climb onto; naming one (/sit <name>) still reaches any.
+// distance was read). A plain X offers only a seat you could climb onto; naming one (/sit <name>) picks it, within the same reach.
 // (one source with the authority's sit check, shared/sockbody.js OCCUPY_REACH: review r10 M1)
 const SEAT_RISE = { up: OCCUPY_REACH.up, down: OCCUPY_REACH.down };
 function nearestSeat(arg, reach) {
@@ -275,8 +275,8 @@ function nearestSeat(arg, reach) {
   return best;
 }
 
-/** Sit ON something: nearest socket within arm's reach (or a named entity
- *  from anywhere). When nothing is in reach but a seat exists further out,
+/** Sit ON something: nearest socket within arm's reach (naming one picks it,
+ *  within the same reach). When nothing is in reach but a seat exists further out,
  *  SAY so — the silent ground-sit fallback read as "sitting is broken" to
  *  anyone standing four meters from a swing they could name but not see.
  *  In a world the authority is asked first (`use {id, action, args: {slot}}`):
@@ -289,13 +289,13 @@ export function trySitOn(arg, slot = null) {
   if (best && slot && best.slot !== slot) { const o = socketsOn(best.id).find((x) => x.name === slot); const b = bodyOf(o?.station); if (b) Object.assign(best, { sock: o.id, slot, body: b }); }
   if (!best) {
     const far = arg ? null : nearestSeat(null, 30);
-    if (far) logChat('*', `nearest seat is on ${called(far.id)} (${far.slot}), ${far.d.toFixed(0)}m away — walk closer, or /sit ${typeable(far.id)}`);
+    if (far) logChat('*', `nearest seat is on ${called(far.id)} (${far.slot}), ${far.d.toFixed(0)}m away — walk closer`);
     return false;
   }
   if (mine && !best.body.fromSeat) { logChat('*', `get up first — ${called(best.id)} (${best.slot}) doesn't take you straight from another seat`); return true; }
   const ticket = ++sitTicket;
   const take = () => {
-    // only the latest ask may seat me, and only if I haven't sat, moved or stood since asking: a late answer (a slow
+    // only the latest ask may seat me, and only if I haven't sat, stood or asked again since: a late answer (a slow
     // door, X pressed twice) must never put me back on a seat I already left
     if (ticket !== sitTicket || avatarMounts.get(CONFIG.name) !== mine) return;
     if (mine) releaseOccupied(getMe());

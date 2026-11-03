@@ -185,7 +185,7 @@ function applyFrom(id, data) {
   }
 }
 
-/** Per-frame: the distance gain (silent at radius), the 8 loudest heard, panners follow their entities, the listener
+/** Per-frame: the distance gain (silent at radius), the VOICES loudest heard, panners follow their entities, the listener
  *  follows the camera. */
 export function tickSounds() {
   if (!playing.size) return;
@@ -230,7 +230,7 @@ export function clearSounds() { blocked.clear(); for (const id of [...playing.ke
 
 // ---- the editor block: how a HUMAN puts a sound on a thing ------------------
 const SOUND_ACCEPT = 'audio/mpeg,audio/ogg,audio/wav,audio/webm,audio/mp4,.mp3,.ogg,.opus,.wav,.webm,.m4a';
-const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 export async function uploadSound(file) {
   const q = new URLSearchParams({ as: 'audio', name: file.name });

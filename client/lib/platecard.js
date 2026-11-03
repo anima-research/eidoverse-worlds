@@ -305,7 +305,7 @@ export function close() {
   if (xrMesh?.visible) { xrMesh.visible = false; xrMesh.material.map.pause?.(); }
 }
 
-const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 function paint() {
   const r = d.remotes.get(cardFor);

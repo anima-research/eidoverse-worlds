@@ -58,6 +58,8 @@ check('…and a person is on one list at a time (block took Wren off allow)', C.
 check('Default: off both lists, the switches answer them again', C.setListed('u-wren', null) && C.listOf('u-wren') === null && landed('u-wren', 'pose') === 'allow');
 check('/pushable and /posable keep main\'s meaning: the move and touch switches', (C.setPushable(false), !C.gate('move') && !C.pushable()) && (C.setPosable(false), !C.posable()) && (C.setPushable(true), C.gate('move')));
 check('it is remembered under ew-body-consent, lists and names too', (C.setListed('u-kit', 'allow', 'Kit'), JSON.parse(store.get('ew-body-consent') ?? '{}').allow?.['u-kit'] === 'Kit') && JSON.parse(store.get('ew-body-consent') ?? '{}').v === 4);
+// (bot #143) main's keys mirror the gates: a client rolled back to ew-pushable/ew-posable reads the current choice. Mutation (must go red): drop the mirror loop in consent.js save
+check('a gate choice is mirrored to main\'s keys (move off → ew-pushable 0; touch on → ew-posable 1; touch off → 0)', (C.setGate('move', false), store.get('ew-pushable') === '0') && (C.setGate('move', true), store.get('ew-pushable') === '1') && (C.setGate('touch', true), store.get('ew-posable') === '1') && (C.setGate('touch', false), store.get('ew-posable') === '0'), JSON.stringify([store.get('ew-pushable'), store.get('ew-posable')]));
 
 // 1b. an older stored setting (main's two keys, the body switch) is carried into the gates never wider; one that can't carry is told once
 const was = (kv: Record<string, string>) => C.readStored((k: string) => kv[k] ?? null);

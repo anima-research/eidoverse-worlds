@@ -3010,14 +3010,15 @@ async function stampAvatarPerf(name, vrm, token, path) {
   if (j?.perf === true) { localStorage.setItem(key, '1'); bus.emit('avatar-perf', { name }); }   // the avatar cards repaint
 }
 
+/** @returns {Promise<boolean>} true when the server holds a portrait after this call (found, or posted); false when it skipped (#225) */
 export async function contributeThumbnail(name, vrm, token = '', { force = false, path = null } = {}) {
   try {
-    if (!name) return;
+    if (!name) return false;
     try { await stampAvatarPerf(name, vrm, token, path); } catch (e) { console.warn('avatar perf stamp skipped', e); }
-    if (!force && localStorage.getItem(`ew-thumb2-${name}`)) return;   // we already tried
+    if (!force && localStorage.getItem(`ew-thumb2-${name}`)) return false;   // we already tried
     if (!force) {
       const head = await fetch(`/thumb/${encodeURIComponent(name)}.png`, { method: 'HEAD' });
-      if (head.ok) { localStorage.setItem(`ew-thumb2-${name}`, '1'); return; }
+      if (head.ok) { localStorage.setItem(`ew-thumb2-${name}`, '1'); return true; }
     }
 
     const size = 256;
@@ -3153,7 +3154,7 @@ export async function contributeThumbnail(name, vrm, token = '', { force = false
     // say so on the tee, so the next wear tells us whether the readback works.
     { let opaque = 0; for (let i = 3; i < size * size * 4; i += 16) if (buf[i] > 10) opaque++;
       const frac = opaque / (size * size / 4);
-      if (frac < 0.02) { tee(`[thumb] blank readback (${backendName()}) for ${name} — not posted`); rt.dispose(); return; } }
+      if (frac < 0.02) { tee(`[thumb] blank readback (${backendName()}) for ${name} — not posted`); rt.dispose(); return false; } }
     const c = document.createElement('canvas');
     c.width = c.height = size;
     const ctx = c.getContext('2d');
@@ -3179,13 +3180,16 @@ export async function contributeThumbnail(name, vrm, token = '', { force = false
     rt.dispose();
 
     const blob = await new Promise((res) => c.toBlob(res, 'image/png'));
-    if (!blob) return;
+    if (!blob) return false;
     const q = new URLSearchParams({ name, height: height.toFixed(2) });
     if (force) q.set('force', '1'); // a re-mint pass really does replace
-    await fetch(`/thumb?${q}`, { method: 'POST', body: blob, headers: thumbAuth(token) });
+    const res = await fetch(`/thumb?${q}`, { method: 'POST', body: blob, headers: thumbAuth(token) });
     localStorage.setItem(`ew-thumb2-${name}`, '1');
+    if (!res.ok) tee(`[thumb] ${name} refused (${res.status})`);
+    return res.ok;
   } catch (e) {
     console.warn('thumbnail contribution skipped', e);
+    return false;
   }
 }
 

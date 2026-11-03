@@ -125,7 +125,7 @@ export function tickMods(dt, now) {
 // ---------------------------------------------------------------- the panel
 
 let paint = null;
-const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const TEMPLATE = `// an eidoverse mod — full client access, trusted like a browser extension.
 // export default gets { name, world, EW, ui, onTick, onDispose }.

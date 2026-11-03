@@ -1,8 +1,9 @@
 // pictures — the browser host for the `picture` component: a standalone image, a quad of its own (shared/picture.js says
 // what a bag means). An image on a named node of a model is the material component's host (materialcomp.js; R 10-27).
 //
-// NEVER dispose the texture: loadImageTexture caches by bytes and pins the texture for the session (assets.js §16.2.B:
-// `dispose` is a no-op on cached textures); the cache owns it, the picture borrows it. Same rule as emitter sprites.
+// NEVER dispose a STORE file's texture: loadImageTexture caches by bytes and pins the texture for the session (assets.js
+// §16.2.B: `dispose` is a no-op on cached textures); the cache owns it, the picture borrows it. Same rule as emitter
+// sprites. A LINK's texture is decoded here, uncached (linkTexture: userData.owned), and the quad's dispose frees it.
 
 import { THREE } from './core.js';
 import { bus } from './base.js';
@@ -24,11 +25,12 @@ import { allowUntrusted, RIGHTS_WARNING } from './mediaprefs.js';
 //      extent is held to 50 m whatever the transform's scale.
 //   4. Where the bytes come from (shared/mediasrc.js): a store file always; a trusted host's link always; any other
 //      link only if this viewer turned on "allow untrusted links" — otherwise nothing is fetched (a quad shows its empty
-//      plate). A link is fetched without credentials or a referrer, and decoded at most 2048 px on its long side.
+//      plate). A link is fetched without credentials or a referrer, and stored as a texture at most 2048 px on its long side (the browser decodes the full image first).
 export const QUAD_MAX_EXTENT = 50;
 export const MAX_TEXTURE_PX = 2048;
 const blocked = new Map();   // id → why this browser didn't fetch it (probes)
 export const _blocked = blocked;
+export const _quadOf = (...a) => quadOf(...a);   // picture-note-test: the quad's dispose owns a link's texture
 // A link is loaded as an image, not fetched: the page's CSP lets images come from any https host (img-src) but keeps
 // connect-src to this server and its known services, so a script can't post what it reads anywhere (server/csp.ts).
 // crossOrigin 'anonymous' sends no credentials to another origin and needs its CORS answer (a texture must be clean).
@@ -40,7 +42,7 @@ async function linkTexture(url) {
   const k = Math.min(1, MAX_TEXTURE_PX / Math.max(bmp.width, bmp.height));
   const cv = document.createElement('canvas'); cv.width = Math.max(1, Math.round(bmp.width * k)); cv.height = Math.max(1, Math.round(bmp.height * k));
   cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height); bmp.close?.();
-  const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; return tex;
+  const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.userData.owned = true; return tex;   // ours to free (#565)
 }
 function quadOf(picture, aspect, tex) {
   const w = picture.width ?? 1, hgt = w * aspect;
@@ -50,7 +52,7 @@ function quadOf(picture, aspect, tex) {
   const geo = new THREE.PlaneGeometry(w, hgt); geo.translate(0, hgt / 2, 0);
   const front = new THREE.Mesh(geo, mat), back = new THREE.Mesh(geo, mat);
   back.rotation.y = Math.PI; front.position.z = 0.001; back.position.z = -0.001;
-  g.add(front, back); g.userData.dispose = () => { geo.dispose(); mat.dispose(); };
+  g.add(front, back); g.userData.dispose = () => { geo.dispose(); mat.dispose(); if (tex?.userData?.owned) tex.dispose(); };   // a link's texture is the quad's; a store file's is the cache's
   return g;
 }
 function holdExtent(root, g, picture, aspect) {
@@ -112,7 +114,7 @@ async function hang(id, picture, rev) {
   try { tex = await imageTexture(picture.src, true); }
   catch (e) { console.warn(`[pictures] ${id}: ${picture.src} could not be loaded — the plate stays empty`, e); return; }
   // a stale load installs nothing: the intent it served moved while it loaded (a new bag, a removal, a re-realize)
-  if (!current(id, rev) || entities.get(id) !== root || hung.get(id)?.quad !== plate) return;
+  if (!current(id, rev) || entities.get(id) !== root || hung.get(id)?.quad !== plate) { if (tex.userData?.owned) tex.dispose(); return; }
   const img = tex.image; const aspect = img?.width > 0 ? img.height / img.width : 1;   // its height follows the image
   takeDown(id);
   const q = quadOf(picture, aspect, tex); root.add(q); holdExtent(root, q, picture, aspect);
@@ -234,7 +236,7 @@ export { THREE as _THREE };
 // read-only line: the server would refuse the comp, so the block says who may.
 
 const PICTURE_ACCEPT = 'image/png,image/jpeg,image/webp';
-const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 export { namedParts };   // lives in parts.js now: the inspector's `parts` extra reads the same list
 

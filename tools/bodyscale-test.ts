@@ -157,7 +157,9 @@ console.log('the lift (plateanchor.js):');
 console.log('avatar.js:');
 {
   const { THREE } = await import('./core-stub.mjs');
-  const { Avatar } = await import('../client/lib/avatar.js');
+  const { Avatar, contributeThumbnail } = await import('../client/lib/avatar.js');
+  check('contributeThumbnail says when it skipped: false with no name (#225)', await fn({ contributeThumbnail }, 'contributeThumbnail')('', null) === false);
+  check('…and false when the mint throws (no body to render)', await fn({ contributeThumbnail }, 'contributeThumbnail')('nobody', null, '', { force: true }) === false);
   const call = (o: any, m: string, ...a: any[]) => (typeof o[m] === 'function' ? o[m](...a) : undefined);
   const rig = () => {
     const root = new THREE.Group(), scene = new THREE.Group();

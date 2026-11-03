@@ -16,6 +16,8 @@ export const UNTRUSTED_KEY = 'eido.allowUntrustedLinks';
 
 export const allowUntrusted = () => lsGet(UNTRUSTED_KEY) === '1';
 export function setAllowUntrusted(on) { lsSet(UNTRUSTED_KEY, on ? '1' : '0'); bus.emit('media:trust', { allowUntrusted: !!on }); }
+// another tab's change reaches this one (the browser's storage event), so a revoke there stops untrusted fetches here too (bot #141)
+globalThis.addEventListener?.('storage', (e) => { if (e.key === UNTRUSTED_KEY) bus.emit('media:trust', { allowUntrusted: e.newValue === '1' }); });
 
 const muteKey = () => `ew-mymuted-${CONFIG.world ?? ''}`;
 let muted = new Set();
@@ -29,5 +31,5 @@ export const RIGHTS_WARNING = 'Make sure you own the rights to this before you u
 /** The words the Settings row and the editor use for the setting. */
 export const UNTRUSTED_WORDS = {
   label: 'Allow untrusted links',
-  hint: 'Pictures and sounds can link to other websites. Trusted big hosts (YouTube, Twitch, Vimeo, SoundCloud, VRCDN and the like) always play. Any other site sees your address when your browser fetches from it, so links to them play only if this is on. Off by default; only your browser is affected.',
+  hint: 'Pictures and sounds can link to other websites. Media files on trusted big hosts (YouTube, Twitch, Vimeo, SoundCloud, VRCDN and the like) always play (a page link, like a YouTube watch URL, is not playable yet). Any other site sees your address when your browser fetches from it, so links to them play only if this is on. Off by default; only your browser is affected.',
 };

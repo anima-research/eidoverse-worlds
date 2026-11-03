@@ -357,8 +357,8 @@ export function paintSky(body) {
     if (ck.value !== '') { local.clock = 'real'; local.tz = ck.value; }
     else {
       local.clock = undefined; local.tz = undefined;
-      // returning to the authored clock: the fold parked the prior rated
-      // fields under dormantRated (#65) — hand them back to the sliders so
+      // returning to the authored clock: an older value parked the prior rated
+      // fields under dormantRated (#65); a newer one keeps hours/rate (both read) — hand them back to the sliders so
       // commit restores the old day/rate instead of noon-at-rate-0
       const d = skyArgs().dormantRated;
       if (d) for (const k of ['hours', 'rate']) if (d[k] != null && inputs[k]) {
@@ -391,7 +391,8 @@ export function paintSky(body) {
     if (!commit.classList.contains('dirty')) for (const k of Object.keys(local)) delete local[k];
     const a = skyArgs();
     for (const [key, , , , , dflt] of SLIDERS) {
-      // under a real clock hours/rate live in dormantRated (#65): load them (the rows are hidden) as what the world
+      // under a real clock an older value parked hours/rate under dormantRated (#65); a newer one keeps them (both read):
+      // load them (the rows are hidden) as what the world
       // would return to
       inputs[key].value = key === 'azimuth' ? (typeof a.azimuth === 'number' ? +(a.azimuth * 180 / Math.PI).toFixed(1) : dflt) : (a[key] ?? a.dormantRated?.[key] ?? dflt);
       inputs[key].parentNode.querySelector('.v').textContent = inputs[key].value;

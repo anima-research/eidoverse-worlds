@@ -241,7 +241,7 @@ const Z_LO = 10, Z_HI = 25;
 const inWorkspace = () => typeof document !== 'undefined' && document.body?.classList.contains('edit-workspace');
 let zTop = Z_LO;
 let warnedZ = false;
-let locked = localStorage.getItem('ew-ui-locked') === '1';
+let locked = (() => { try { return localStorage.getItem('ew-ui-locked') === '1'; } catch { return false; } })();   // storage may throw (sandboxed frame; bot #578)
 
 const SNAP = 11;            // px — edge and frame-to-frame snapping distance
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -249,7 +249,7 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 export function isLocked() { return locked; }
 export function setLocked(v) {
   locked = v;
-  localStorage.setItem('ew-ui-locked', v ? '1' : '0');
+  try { localStorage.setItem('ew-ui-locked', v ? '1' : '0'); } catch { /* this session only */ }
   document.body.classList.toggle('ui-locked', locked);
   bus.emit('ui-locked', locked);
 }
@@ -636,7 +636,7 @@ export function makeFrame(id, opts = {}) {
     // painted 336px tall while the clipped width could only ever lay out three
     // rows of tiles. Three rounds of fixing snapTo changed nothing she could see
     // because the arithmetic was right and the render was floored.
-    root.style.minWidth = `${minW}px`;
+    root.style.minWidth = `${Math.min(minW, Math.max(80, innerWidth - 16))}px`;   // the floor yields as fit() does (bot #579)
     body.style.height = `${vrSize?.h ?? state.h}px`;
     // arrange-mode affordances: which viewport edges hold this frame (glow),
     // and whether the floating label must sit below (frame hugs the top)
@@ -848,29 +848,7 @@ export function makeFrame(id, opts = {}) {
           } else if (shifted + state.w <= innerWidth - 8) {
             state.x = shifted;
           } else {
-            // OPEN, NOT FIXED — right-anchored chrome is mis-costed here.
-            //
-            // This branch takes `g.right` of every obstacle as space consumed FROM
-            // THE LEFT. That is true for left-anchored chrome (#dock) and false for
-            // anything welded to the right edge. Consequence, measured at 1280x720
-            // and 1904x844: `.capnotice` (top:389) lands inside settings' default
-            // rect, clearRight becomes the card's right edge, avail comes to -6, and
-            // a declared 407px frame opens at its 210px minW, x=1062.
-            //
-            // 210 IS minW, so a frame sitting at its floor looks like a frame at its
-            // natural size — which is why a single rect reads as healthy. Measure the
-            // declared width, not the rendered one.
-            //
-            // Both available policies are wrong, both measured:
-            //   floor at minW -> 407 becomes 210
-            //   stand down    -> 407 stays, UNDER the card (z 60 vs Z_HI 25)
-            // The repair is a DECLARED anchor the obstacle publishes. Computed style
-            // cannot supply it for a normally-constrained element: CSSOM 9 resolves
-            // left AND right to used values, so `.capnotice` reports cssL=930px and
-            // cssR=10px at once. (An OVER-constrained element does report authored
-            // values — measured — but .capnotice is over-constrained only below
-            // 900px, so detection would work in one of three states. Useless.)
-            // Changing the layout contract is the owner's call, not a patch.
+            // left-anchored chrome costs from the left (shifted); right-anchored chrome is costed by its declared anchor (clearFromRight; CHROME_ANCHOR below)
             const avail = innerWidth - 8 - shifted - clearFromRight;
             state.w = Math.max(Math.min(avail, maxW), Math.min(minW, maxW));
             state.x = shifted;

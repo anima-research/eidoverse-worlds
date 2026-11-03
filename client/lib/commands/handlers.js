@@ -82,7 +82,7 @@ register('eyes', (arg) => {
 });
 
 /** Who a typed name is here, through the world's own lookup (the server's directory, scoped to the people this world
- *  has seen): {id, name, declares?, guest?, imported?, role, here, banned}[]. Someone present answers from the roster without asking. */
+ *  has seen): {id, name, declares?, guest?, imported?, role, here, banned}[]. */
 export async function lookupPerson(name) {
   const id = identityOf(name);
   const r = await sendRequest('whois', { name: id ?? name });
@@ -108,7 +108,7 @@ register('role', (arg) => {
   if (!who || who === CONFIG.name) {
     const r = net.myRights;
     if (!r) return logChat('*', 'not in a world yet');
-    if (!worldHasOwner()) return logChat('*', `you: ${r.role} — this world has no owner, so nobody builds here until someone owns it`);
+    if (!worldHasOwner()) return logChat('*', `you: ${r.role}${extras((k) => !!r.permissions?.includes(k))} — this world has no owner, so everyone is capped at member`);
     return logChat('*', `you: ${r.role}${extras((k) => !!r.permissions?.includes(k))}${!r.permissions?.includes('build') ? ' — you can look, talk and use things; an owner can make you a builder' : ''}`);
   }
   lookupPerson(who).then((ppl) => {
@@ -438,7 +438,7 @@ register('letgo', (arg) => {
 register('pushable', (arg) => {
   const v = (arg || '').trim().toLowerCase();
   if (v === 'on' || v === 'off') setPushable(v === 'on');
-  return logChat('*', `“Allow being moved” is ${pushable() ? 'on: people CAN' : 'off: people can NOT'} shove, blast, drag, carry or seat you${v ? '' : ' — /pushable on|off to change'}`);
+  return logChat('*', `“Allow being moved” is ${pushable() ? 'on: people CAN shove, blast, drag, carry or seat you' : 'off: people can NOT shove, blast, drag, carry or seat you (except anyone you always allow)'}${v ? '' : ' — /pushable on|off to change'}`);
 });
 
 register('fork', (arg) => {

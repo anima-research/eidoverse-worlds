@@ -70,8 +70,9 @@ export const skyArgs = () => clock?.args ?? {};
 export const skyImpl = () => impl;
 // the cloud march's tier is THIS viewer's (SWEEP-3 S1: main's sky.quality was world data): balanced, or high; read at the next build
 export const SKY_QUALITY = ['balanced', 'high'];
-export const skyQuality = () => { try { return localStorage.getItem('ew-sky-quality') === 'high' ? 'high' : 'balanced'; } catch { return 'balanced'; } };
-export function setSkyQuality(q) { try { localStorage.setItem('ew-sky-quality', q === 'high' ? 'high' : 'balanced'); } catch { /* this session only */ } }
+let chosenQuality = null;   // this session's choice, kept even where storage refuses (bot #228)
+export const skyQuality = () => { if (chosenQuality) return chosenQuality; try { return localStorage.getItem('ew-sky-quality') === 'high' ? 'high' : 'balanced'; } catch { return 'balanced'; } };
+export function setSkyQuality(q) { chosenQuality = q === 'high' ? 'high' : 'balanced'; try { localStorage.setItem('ew-sky-quality', chosenQuality); } catch { /* this session only */ } }
 /** §22m diag: the sky-owned scene roots, for cost-attribution phases that
  *  hide the sky's DRAW without touching its state. Read-only. */
 export const skyOwnedObjects = () => skyOwned ?? [];
@@ -968,7 +969,7 @@ async function buildSky(a, world, wantAudio) {
     // thing in the client — it was authored for offline batch renders, where a
     // slow frame costs nothing. A live world needs a frame budget, so we ask
     // for the tier Skye already provides for this (3 cloud passes instead of
-    // the full march) unless a world explicitly asks for the good one.
+    // the full march) unless the viewer's Video setting (skyQuality) picks high.
     const envKnobs = (globalThis.__ewEnv ??= {});
     envKnobs.TIER = skyQuality() === 'high' ? undefined : 'balanced';
     // GPU caches OFF by default.

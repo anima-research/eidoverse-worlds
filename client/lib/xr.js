@@ -385,7 +385,7 @@ export function targetKind({ panel = null, plateDist = null, hit = null } = {}) 
     return panel.zone === 'move' || !panel.scroll ? 'move' : 'scroll';
   }
   if (plateDist != null) return 'dot';   // a nameplate: resting there IS the action (the card)
-  return hit?.interactable ? 'click' : 'dot';   // an entity you can use (sit, react); a plain one is only a surface
+  return hit?.interactable ? 'click' : 'dot';   // an entity with a seat or a reaction: the trigger selects it (the card offers sit/use); a plain one is only a surface
 }
 function placeDot(hand, ray, eye, { panel = null, plateDist = null, hit = null } = {}) {
   const dot = hand.dot;

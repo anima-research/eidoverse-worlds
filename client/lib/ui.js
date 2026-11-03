@@ -486,8 +486,7 @@ export function collapseAll() {
 // ============================================================ who's here
 
 // (the roster frame is gone — 'present' lives in Chat's side pane)
-export const escapeHtml = (v) => String(v).replace(/[&<>"]/g, (c) => (
-  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+export const escapeHtml = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // ============================================================ dock
 // A closed frame has to be findable again. One row of toggles, plus the

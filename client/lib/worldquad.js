@@ -28,7 +28,7 @@ function fields() {
       rows: Object.keys(presets).map((name) => ({ id: name, label: name, actions: [{ k: 'sky', label: 'preview' }] })) },
   ];
 }
-/** A model 1.5 m ahead, on the floor, facing the way you face — the hand-free place (a headset has no
+/** A model 1.5 m ahead, at your feet's height, facing the way you face — the hand-free place (a headset has no
  *  cursor to carry a ghost). One undo entry. Also the Create panel's VR body (editpanels.js). */
 export function spawnAhead(lib) {
   const yaw = myState.yaw ?? 0;

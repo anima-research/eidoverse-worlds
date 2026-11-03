@@ -1,6 +1,6 @@
 // world — the authored plane's scene registries and world-scope builders.
 //
-// The log's MEANING lives in shared/fold.js (state.js folds it; the
+// The log's MEANING lives in shared/protocol/fold.js (state.js folds it; the
 // realizers in realize/ project it into the scene). What remains here is
 // what every consumer shares: the entity/comp/mount registries, the
 // world-build queue that gates arrival on ground, the world-scope
@@ -58,7 +58,7 @@ export function* bags() {
   const es = replica.st?.entities; if (!es) return;
   for (const k in es) if (k !== '@world') yield [dec(k) ?? k, es[k].c];
 }
-/** What a thing IS as realized and where from, for the panels: {kind, lib?} — the fold's word (shared/protocol/kind.js),
+/** What a thing IS as realized and where from, for the panels: {kind, model?} — the fold's word (shared/protocol/kind.js),
  *  the realizer keeps no second copy (entityMeta is gone, C7c). */
 export const metaOf = (id) => { const c = bagOf(id); return c ? { kind: kindOf({ c }), ...(typeof c.model === 'string' ? { model: c.model } : {}) } : null; };
 /** The tree's edges as this client's fold indexes them (shared/protocol/replica.js, kept at every ingest): the ids a

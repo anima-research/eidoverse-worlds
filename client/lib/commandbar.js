@@ -27,7 +27,7 @@ let moved = false;    // the person moved the highlight themselves: Enter runs i
 let prevFocus = null; // what had focus when it opened: closing hands it back
 let deps = { submit: () => {} };
 
-const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 export const isLanternOpen = () => !!root && !root.hidden;
 

@@ -11,7 +11,8 @@
 //   expectOf(ids, comps)   §3a: the values a gesture started from, as `expect`. A drag is presence until release; the
 //                          release is one request with expect, refused `changed` if anyone wrote those since.
 //   undo() / redo()        Ctrl+Z is the authority's `undo {act}` of MY last act; redo is `undo {act: <my undo>}`, which the
-//                          authority refuses when someone changed it since (Figma's rule: never back over later work).
+//                          authority refuses when everything it touched changed since; otherwise it redoes what's untouched
+//                          and says what it skipped (undo.js `skipped`; Figma's rule: never back over later work).
 //   del(ids), duplicate(ids), lock(id, on), publish(ids, name), copyBlueprint(hash, at)
 import { bus } from './base.js';
 import { net, sendRequest, replica, replicaActive, sendDrag } from './net.js';

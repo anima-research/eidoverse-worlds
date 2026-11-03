@@ -194,6 +194,11 @@ console.log("\nE. no pictograph in edit chrome's own sources:");
   // C13: the tree widget lives in widgets.js (WIDGETS.tree.dom), one table for every surface; the check keeps its name
   const tree = /\n  tree: \{\n([\s\S]*?)\n    row: ROW,/.exec(src("widgets.js"))?.[1] ?? "";
   check("panels.js tree rows (lock toggle): no pictograph", tree.length > 0 && !PICTO.test(strip(tree)), (strip(tree).match(/\p{Extended_Pictographic}/gu) ?? []).join(" "));
+  // bot #553: the scripts console's rows (editpanels consoleFields) reach the painter too; a glyph PICTO_ICON lacks is fillText'd
+  const cons = /function consoleFields\(\) \{([\s\S]*?)\n\}/.exec(src("editpanels.js"))?.[1] ?? "";
+  const { PICTO_ICON } = await import("../client/lib/edittheme.js");
+  const stray = (strip(cons).match(/\p{Extended_Pictographic}/gu) ?? []).filter((g) => !(g in PICTO_ICON));
+  check("editpanels.js consoleFields rows: no pictograph outside PICTO_ICON", cons.length > 0 && stray.length === 0, stray.join(" "));
 }
 
 console.log("\nE2. every glyph edit chrome names exists (a missing icon paints NOTHING, silently):");

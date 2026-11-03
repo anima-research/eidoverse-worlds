@@ -61,7 +61,8 @@
 //
 // num entry (desktop): drag the number to scrub — Godot's EditorSpinSlider
 // shape (editor_spin_slider.cpp:108-136): the value is ALWAYS start + step ×
-// distance, never accumulated, so a drag that wanders comes back to exactly
+// travel(px), where travel is the scrub feel's curve (scrubTravel, accel by default),
+// never accumulated, so a drag that wanders comes back to exactly
 // where it began (Blender's #37453 drift is the failure this avoids). Shift =
 // 0.1×, Ctrl = snap to whole units, Esc mid-drag restores the start value.
 // Click without travel focuses the box to type; typed entry takes Maya's

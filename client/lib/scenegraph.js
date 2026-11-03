@@ -49,8 +49,7 @@ import { modelWord } from '../../shared/eido.js';
 import { called } from './plainwords.js';
 
 
-const esc = (v) => String(v).replace(/[&<>"]/g, (c) => (
-  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const _wp = new THREE.Vector3();
 
@@ -368,7 +367,7 @@ async function paintScripts() {
         <button data-act="unbind">remove</button>
       </div></div>`;
   }
-  scriptsBody.innerHTML = `<div class="stack">${rows.join('') || '<div style="color:var(--dim)">no scripts here — a script is a script:&lt;name&gt; component on a thing (docs/SCRIPTS-replica.md)</div>'}</div>${consoleHtml}
+  scriptsBody.innerHTML = `<div class="stack">${rows.join('') || '<div style="color:var(--dim)">no scripts here — a script is a script:&lt;name&gt; component on a thing (docs/SCRIPTS.md)</div>'}</div>${consoleHtml}
     <div style="color:var(--dim);font-size:11px;margin-top:4px">/debug [n] = flight recorder · agents: world_debug</div>`;
 
   for (const el of scriptsBody.querySelectorAll('.sg-script')) {

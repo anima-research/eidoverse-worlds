@@ -5,7 +5,8 @@
 // fits the part; Unity puts a canvas at the object's front. Here the sign is its OWN thing, a child of the model, stood
 // just past the model's front (+Z) face, centred on it and sized to it — one create, one undo, and it rides the model
 // wherever it goes. The parent's scale is undone on the child so the sign keeps its own size on a stretched crate.
-// Agents place the same way with create {place: {against: <id>}}; this is the person's one-click version.
+// Agents get a cousin, create {place: {against: <id>}} (a side at floor level, parented only with `height`, writes.js);
+// this is the parented front-face version.
 import { THREE } from './core.js';
 import { entities } from './world.js';
 import { bus } from './base.js';

@@ -388,7 +388,7 @@ function runPromoteTail(id, obj) {
  *  grace (§16.2.D) counts these: fps dips while boulders are still landing
  *  are loading, not a performance regime. */
 export const promoteTailPending = () => promoteTail.size;
-/** What the realizer holds a thing AS ({kind, lib?}): the parity probe's word against the fold's; null for a reservation. */
+/** What the realizer holds a thing AS ({kind, model?}): the parity probe's word against the fold's; null for an id the realizer never reserved. */
 export const realizedAs = (id) => { const t = tracked.get(id); return t ? { kind: t.kind, ...(t.model ? { model: t.model } : {}) } : null; };
 
 /** Drain within ~4ms, at least one item per frame — registered as the

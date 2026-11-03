@@ -109,8 +109,7 @@ async function poll() {
 
 let connected = null;      // null = unknown, false = needs login, object = me
 
-const esc = (v) => String(v ?? '').replace(/[&<>"]/g, (c) => (
-  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const STAGES = ['images', 'compose', 'mesh'];
 function stageOf(j) {

@@ -1,7 +1,7 @@
 // people.js — who someone is here and what you may do to them (research roles 10-06, S6; PLAN decisions 10-06).
 //
 // ONE function decides the menu: personActions(me, them) in shared/protocol/roles.js (pure, tested in tools/protocol/roles-check.ts
-// P1–P3). It shows only what you may do to that one person, so a member sees "Mention" and nothing else, and when rank
+// P1–P3). It shows only what you may do to that one person, so a member sees "Mention" plus the consent rows (always/never allow, default: consentItems), and when rank
 // is the only reason nothing more shows, one dim line says so. This file draws it on three surfaces, and the authority
 // decides every act again (the menu is a courtesy, never the gate):
 //   desktop  right-click a row in Chat › People, or the ⋯ on a nameplate card: the house context menu; an act with

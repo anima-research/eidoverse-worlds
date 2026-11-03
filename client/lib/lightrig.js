@@ -454,13 +454,10 @@ export function attachLamps(root, owner, { shadows = false } = {}) {
       range: 12,                 // tight radius: grass fragments cost
       // SHADOW INTENT IS THE CALLER'S, and it defaults to NO.
       //
-      // This was an unconditional `shadows: true` with a comment about a lamp
-      // inside a body -- but attachLamps is the generic emissive seam, and
-      // realize/models.js calls it for every placed glowing prop. So a lantern
-      // on the ground requested the one casting slot exactly as hard as a body
-      // did, and after the swap landed (4f55321) a closer prop could WIN it:
-      // wanting shadows outranks not wanting them, so a nearer emissive orb
-      // took slot 0 off the body it was standing next to.
+      // attachLamps is the body's seam (avatar.js); placed models get their
+      // lights from the light comp (models.js lightSpec). History: when every
+      // placed glowing prop came through here, a nearer emissive orb could take
+      // slot 0 off the body it stood next to (4f55321).
       //
       // Mica drew the contract: emissive AVATARS may request slot 0 and get
       // body cast/receive; emissive placed models stay ordinary inferred

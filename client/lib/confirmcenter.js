@@ -9,11 +9,11 @@
 // asking again while one is open answers the open one no and replaces it.
 // No imports: the lite client and the boot path may use this without pulling the engine in.
 
-let open = null;   // { root, settle }
+let open = null;   // { root, settle, cancel }
 
 export function confirmCenter({ title, body = '', ok = 'OK', cancel = 'Cancel' } = {}) {
   if (typeof document === 'undefined') return Promise.resolve(false);
-  open?.settle(open.cancel ?? false);
+  open?.settle(open.cancel);
   return new Promise((resolve) => {
     const root = document.createElement('div');
     root.id = 'confirm-center';
@@ -47,7 +47,7 @@ export function confirmCenter({ title, body = '', ok = 'OK', cancel = 'Cancel' }
     root.querySelector('.cc-no').addEventListener('click', () => settle(false));
     addEventListener('keydown', onKey, true);
     document.body.appendChild(root);
-    open = { root, settle };
+    open = { root, settle, cancel: false };   // what an interrupting ask answers it with (bot #213)
     root.querySelector('.cc-ok').focus();
   });
 }
@@ -58,7 +58,7 @@ export const confirmOpen = () => !!open;
  *  trimmed text, or null (Esc, Cancel, the backdrop, or nothing typed). Enter in the field says OK. */
 export function askCenter({ title, body = '', value = '', placeholder = '', ok = 'Save', cancel = 'Cancel', max = 80 } = {}) {
   if (typeof document === 'undefined') return Promise.resolve(null);
-  open?.settle(open.cancel ?? false);
+  open?.settle(open.cancel);
   return new Promise((resolve) => {
     const root = document.createElement('div');
     root.id = 'confirm-center';
@@ -101,7 +101,7 @@ export function askCenter({ title, body = '', value = '', placeholder = '', ok =
  *  rule: asking again answers the open one with its cancel. */
 export function chooseCenter({ title, body = '', choices = [], cancel = null, focus = null } = {}) {
   if (typeof document === 'undefined' || !choices.length) return Promise.resolve(cancel);
-  open?.settle(open.cancel ?? false);
+  open?.settle(open.cancel);
   return new Promise((resolve) => {
     const root = document.createElement('div');
     root.id = 'confirm-center';

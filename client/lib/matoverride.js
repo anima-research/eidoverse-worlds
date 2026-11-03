@@ -2,7 +2,7 @@
 //
 // R, 10-10: Material as the ladder's first test. Absent, a thing shows its model's own materials. Present, the value
 // overrides fields of them: {color?, roughness?, metalness?, emissive?, emissiveStrength?, opacity?} (glTF PBR terms).
-// `hesperus/material` applies to every material slot; `hesperus/material:<slot>` to one (the slot is the model's
+// `hesperus/material` applies to every material slot (an instanced mesh's shared material excepted); `hesperus/material:<slot>` to one (the slot is the model's
 // material name, slotKey'd). A field absent = the model's own value. A malformed value or field is ignored, never thrown.
 // (A `surface` link to physics waits for promotion: a draft can't feed a rule.)
 //

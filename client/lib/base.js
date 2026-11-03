@@ -61,8 +61,8 @@ export function pickWorld(params, last, tab = null) {
 }
 /** The two memories as pickWorld takes them; storage that throws reads as none. */
 export function rememberedWorlds() {
-  const read = (s, k) => { try { return s?.getItem(k) ?? null; } catch { return null; } };
-  return [read(globalThis.localStorage, LAST_WORLD_KEY), read(globalThis.sessionStorage, TAB_WORLD_KEY)];
+  const read = (s, k) => { try { return s()?.getItem(k) ?? null; } catch { return null; } };   // the property itself may throw (bot #578)
+  return [read(() => globalThis.localStorage, LAST_WORLD_KEY), read(() => globalThis.sessionStorage, TAB_WORLD_KEY)];
 }
 /** What arriving in an empty world says (main.js, on 'hydrated'), by how the page
  *  got here: the link named it (a non-empty ?world=, as pickWorld reads it); a
@@ -84,7 +84,7 @@ export function forgetRememberedWorlds() {
 }
 
 const params = new URLSearchParams(globalThis.location?.search ?? '');
-const store = globalThis.localStorage ?? null;
+const store = (() => { try { return globalThis.localStorage ?? null; } catch { return null; } })();   // a sandboxed frame throws on the property (bot #578)
 const picked = globalThis.__ewWorld ?? pickWorld(params, ...rememberedWorlds());
 export const CONFIG = {
   params,
