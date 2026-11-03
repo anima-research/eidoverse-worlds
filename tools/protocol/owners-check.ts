@@ -243,7 +243,7 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
     const lk = q(rue, "set", { id: lever ?? "shed", component: "lock", value: true }), lift = q(pip, "delete", { id: lever ?? "shed", component: "lock" });
     row("CL9", () => ok(lk?.ok && lift?.ok, "CL9 …a lock a regular set (builder strength by its setter) is lifted by another regular: no lockout", { lk: lk?.refused, lift: lift?.refused }));
     const ban = q(rue, "ban", { who: pip, days: 1 }), up = q(rue, "set", { id: "@world", component: `roles:${rue}`, value: { role: "moderator" } });
-    row("CL10", () => ok(ban?.ok === false && up?.ok === false && R.roleIdOf(w.state().entities["@world"].c, rue) === "builder",
+    row("CL10", () => ok(ban?.refused?.code === "rights" && up?.refused?.code === "rights" && R.roleIdOf(w.state().entities["@world"].c, rue) === "builder",
       "CL10 …and moderation stays refused: a regular can't ban, nor make themselves moderator; their role is builder, never above", { ban: ban?.refused?.code, up: up?.refused?.code, role: R.roleIdOf(w.state().entities["@world"].c, rue) })); }
   const w = live(), n0 = w.entries.length, set = operatorRepair(w, rue, "set", { id: "@world", component: `roles:${rue}`, value: { role: "owner" } }), wrote = w.entries.slice(n0);
   const wc = w.state().entities["@world"].c, n = R.effectiveOf(wc, "u-somebodyelse00000000"), again = operatorRepair(w, rue, "set", { id: "@world", component: `roles:${pip}`, value: { role: "owner" } });
