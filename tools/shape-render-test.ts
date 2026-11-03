@@ -1,6 +1,6 @@
 // shape-render-test — the shape audit's wave 2, render-media-env family (notes/eidoverse/shape-audit/render-media-env.md;
 // PLAN.md "Wave 2" + LOCKED). Each row is a behaviour the audit changes, through the real door (a scratch world), the pure
-// reader that carries it, or the load repair (shared/protocol/shaperepair.js). Written red first, against the tree before
+// reader that carries it, or the maintenance repair (shared/protocol/shaperepair.js). Written red first, against the tree before
 // the change (wt/w2-physics, ec535895).
 //   usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/shape-render-test.ts
 // @ts-nocheck
@@ -362,10 +362,10 @@ await tryRow('LD', async () => {
   const { shapeRepairOps } = await repairMod();
   const st = { entities: { '@world': { c: { sky: { azimuth: 180, hours: 6 } } }, l: { c: { light: { kind: 'point', day: true, shadows: false } } } } };
   const ops = shapeRepairOps(st);
-  check('LD1 the load\'s ops reach @world (sky) and things (light)', ops.some((o: any) => o.id === '@world' && o.comp === 'sky' && Math.abs(o.value.azimuth - Math.PI) < 1e-12) && ops.some((o: any) => o.id === 'l' && o.comp === 'light' && o.value.decay === 1.7), ops);
+  check('LD1 the repair\'s ops reach @world (sky) and things (light)', ops.some((o: any) => o.id === '@world' && o.comp === 'sky' && Math.abs(o.value.azimuth - Math.PI) < 1e-12) && ops.some((o: any) => o.id === 'l' && o.comp === 'light' && o.value.decay === 1.7), ops);
   const t = translate(v1({ verb: 'sky', args: { hours: 9, azimuth: 90 } }, { verb: 'terrain', args: { seed: 2, layers: [{ color: '#010203', repeat: 4 }] } }));
   const w = t.final.translated['@world'];
-  check('LD2 translate-v1@12 writes @world as the load repairs it (sky radians and the registry\'s defaults, terrain colours and the sim\'s defaults)', Math.abs((w?.sky?.azimuth ?? 0) - Math.PI / 2) < 1e-12 && w?.sky?.fog === 1 && w?.terrain?.layers?.[0]?.color === 0x010203 && w?.terrain?.octaves === 4 && !t.stats.divergences, [w?.sky, w?.terrain, t.stats.divergences]);
+  check('LD2 translate-v1@12 writes @world as the maintenance repair does (sky radians and the registry\'s defaults, terrain colours and the sim\'s defaults)', Math.abs((w?.sky?.azimuth ?? 0) - Math.PI / 2) < 1e-12 && w?.sky?.fog === 1 && w?.terrain?.layers?.[0]?.color === 0x010203 && w?.terrain?.octaves === 4 && !t.stats.divergences, [w?.sky, w?.terrain, t.stats.divergences]);
 });
 
 console.log(`${pass} passed, ${fail} failed`);

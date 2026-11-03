@@ -103,7 +103,7 @@ await tryRow('MO', async () => {
   check('MO8 …a pendulum that already has its pivot and readings is left alone (a second run finds nothing)', P5.set.length === 0 && P5.del.length === 0, P5);
   const st = { entities: { '@world': { c: {} }, s: { c: { motion: { type: 'pendulum', amp: 0.3, period: 2, damp: 0, maxAmp: 0.9 } } }, t: { c: { motion: { type: 'spin', axis: 'y' } } } } };
   const ops = shapeRepairOps(st);
-  check('MO9 the load\'s ops: a pivot for the pendulum that relied on [0, 2, 0], a vector axis for the spin', ops.some((o: any) => o.id === 's' && o.comp === 'pivot' && JSON.stringify(o.value) === '{"pos":[0,2,0]}') && ops.some((o: any) => o.id === 't' && o.comp === 'motion' && JSON.stringify(o.value.axis) === '[0,1,0]') && ops.length === 2, ops);
+  check('MO9 the repair\'s ops: a pivot for the pendulum that relied on [0, 2, 0], a vector axis for the spin', ops.some((o: any) => o.id === 's' && o.comp === 'pivot' && JSON.stringify(o.value) === '{"pos":[0,2,0]}') && ops.some((o: any) => o.id === 't' && o.comp === 'motion' && JSON.stringify(o.value.axis) === '[0,1,0]') && ops.length === 2, ops);
   const Ld = readAuthority();
   // item 9 (10-18): the repair is the explicit command's (repairShapes), never the load's (liftWorld computes no repair ops)
   const lift = Ld.slice(Ld.indexOf('export function liftWorld'), Ld.indexOf('export function maintain')), cmd = Ld.slice(Ld.indexOf('export function maintain'));
@@ -116,7 +116,7 @@ await tryRow('MO', async () => {
     { seq: 4, ts: 5, actor: 'ann', verb: 'comp', args: { id: 'mill', type: 'motion', data: { type: 'spin', part: 'sails', degPerSec: 20 } } },
     { seq: 5, ts: 6, actor: 'ann', verb: 'comp', args: { id: 'mill', type: 'collider', data: { shape: 'exact' } } }];
   const t = translate(old); const f = t.final.translated;
-  check('MO10 translate-v1@12 repairs as the load does: amp, vector axis, the readings, the pivot', JSON.stringify(f.bell?.motion) === '{"type":"pendulum","axis":[0,0,1],"amp":0.2,"period":3.5,"damp":0,"maxAmp":1.1}' && JSON.stringify(f.bell?.pivot) === '{"pos":[0,2,0]}', f.bell);
+  check('MO10 translate-v1@12 repairs as the maintenance repair does: amp, vector axis, the readings, the pivot', JSON.stringify(f.bell?.motion) === '{"type":"pendulum","axis":[0,0,1],"amp":0.2,"period":3.5,"damp":0,"maxAmp":1.1}' && JSON.stringify(f.bell?.pivot) === '{"pos":[0,2,0]}', f.bell);
   check('MO10 …a part\'s motion under its key, collider mesh; 0 divergences', JSON.stringify(f.mill?.['motion:sails']) === '{"type":"spin","degPerSec":20,"node":"sails"}' && !f.mill?.motion && f.mill?.collider?.shape === 'mesh' && !t.stats.divergences, [f.mill, t.stats.divergences]);
 });
 

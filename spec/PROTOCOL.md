@@ -1257,8 +1257,8 @@ away from it.
   Angles are radians unless the field's name carries its unit (`degPerSec`).
   The shape audit moved the last degrees: `look-at`'s yaw, pitch and
   speed (rad, rad/s) and `sky.azimuth` (where the sun stands round the
-  horizon: default π, within ±2π; a stored degree value is converted at
-  load, §4); `grass.heading` was registered in radians. A particle effect
+  horizon: default π, within ±2π; a stored degree value is converted by
+  the maintenance command, §4); `grass.heading` was registered in radians. A particle effect
   document's angles (`spread`, `cone`, `rotation.angle`, `rotation.velocity`)
   moved to radians on 10-17, before any document was stored.
 - **Rotations** are unit quaternions `[x, y, z, w]` (§9.1). **Axes** are
