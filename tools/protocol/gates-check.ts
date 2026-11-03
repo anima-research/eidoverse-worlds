@@ -75,8 +75,8 @@ const mig = (consent: any) => { const p: any = { consent, consentShape: 3, asks:
 // M7–M9 (review F1, R 10-28 "opt-outs stay no"): allow grants every class, so only a row that already allowed every one becomes it
 { const p = mig({ me: { switch: "refuse", over: { bob: { touch: { mode: "allow" } } } } }); const t = C.tableOf(p, "me");
   check("M7", "a partial allow (touch only) is not allow-listed: under refuse Bob may not shove, drag, pose or touch", !t.allow.includes("bob") && !t.block.includes("bob") && ["shove", "displace", "pose", "intimate", "touch"].every((c) => d(p, c, undefined, "bob") === "deny"), { t, m: ["shove", "displace", "pose", "touch"].map((c) => d(p, c, undefined, "bob")) }); }
-{ const p = mig({ me: { switch: "refuse", over: { bob: { touch: { mode: "allow" }, intimate: { mode: "allow" }, pose: { mode: "allow" }, shove: { mode: "allow" }, displace: { mode: "allow" } } } } }); const t = C.tableOf(p, "me");
-  check("M8", "a full allow (every enforced class, no end) is allow-listed", JSON.stringify(t.allow) === '["bob"]' && ["shove", "displace", "pose"].every((c) => d(p, c, undefined, "bob") === "allow"), t); }
+{ const p = mig({ me: { switch: "refuse", over: { bob: { touch: { mode: "allow" }, intimate: { mode: "allow" }, pose: { mode: "allow" }, shove: { mode: "allow" }, displace: { mode: "allow" }, near: { mode: "allow" }, follow: { mode: "allow" }, voice: { mode: "allow" } } } } }); const t = C.tableOf(p, "me");
+  check("M8", "a full allow (every enforced class, and under refuse near, follow and voice too: M15; no end) is allow-listed", JSON.stringify(t.allow) === '["bob"]' && ["shove", "displace", "pose"].every((c) => d(p, c, undefined, "bob") === "allow"), t); }
 { const full = Object.fromEntries(["near", "follow", "touch", "intimate", "pose", "shove", "displace", "voice"].map((c) => [c, { mode: "allow" }]));
   const paused = mig({ me: { preset: "normal", paused: true, over: { pal: full } } });
   const unpaused = mig({ me: { preset: "normal", paused: false, over: { pal: full } } });
@@ -115,4 +115,10 @@ const load = (consent: any) => { const w: any = S.worldOf({ name: "w", entries: 
     && open.presenceDirty && dw(open, "stan") === "deny" && dw(open, "pal") === "deny" && open.presence.consent.me.move === false && open.presence.consent.me.touch === undefined
     && dw(oneWay, "stan") === "allow" && oneWay.presence.consent.me.move === true,
     { stella: stella.presence.consent.me, open: open.presence.consent.me, oneWay: oneWay.presence.consent.me }); }
+// M15 (bot review #260 47): an allow never opens an ungated class the migration kept closed
+{ const five = Object.fromEntries(["touch", "intimate", "pose", "shove", "displace"].map((c) => [c, { mode: "allow" }]));
+  const p = mig({ me: { preset: "normal", cells: { everyone: { near: "ask" } }, over: { pal: five, kit: { ...five, near: { mode: "allow" }, follow: { mode: "allow" }, voice: { mode: "allow" } } } } });
+  check("M15", "everyone-row near:ask + pal's row allowing the five enforced classes: near stays closed and pal is not allow-listed (near was no for pal before); kit, whose row also allowed near, follow and voice, is",
+    p.consent.me.closed?.near === true && d(p, "near", undefined, "pal") === "deny" && !C.tableOf(p, "me").allow.includes("pal") && C.tableOf(p, "me").allow.includes("kit") && d(p, "near", undefined, "kit") === "allow",
+    { me: p.consent.me, pal: d(p, "near", undefined, "pal") }); }
 console.log(`[gates-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

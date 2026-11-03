@@ -122,7 +122,7 @@ export function setConsent(P, actor, a) {
  *  10-28): refuse or ask → both gates off (ask was no until yes); accept → move on, touch left to the world's default. A table
  *  before the switch (to 10-20: preset, cells, pause, friends) is read as the switch it became then: paused or any enforced
  *  class closed for everyone → refuse, else any ask → ask, else accept. Per-person answers become the lists: any class
- *  denied or asked → block; else every enforced class allowed with no end → allow (fewer, or one with an end, is dropped: the gates answer). A no
+ *  denied or asked → block; else every enforced class, and every ungated one kept in `closed`, allowed with no end → allow (fewer, or one with an end, is dropped: the gates answer). A no
  *  (or ask) to near, follow or voice from the switch, a pause or the everyone row is kept in `closed` (UNGATED); one in the
  *  friends row of a body with a mutual friend closes that class for everyone (its gate off, or `closed`). The
  *  asks, their cool-downs and their rate are dropped, silently (R 10-28 13:03: "we're keeping their gates"). Returns how many
@@ -165,7 +165,7 @@ export function migratePresence(P) {
     for (const [who, row] of Object.entries(t.over ?? {})) { if (!isWho(who) || !row || typeof row !== "object") continue;
       const cells = Object.entries(row).filter(([, c]) => c && typeof c === "object"), yes = new Set(cells.filter(([, c]) => c.mode === "allow" && c.until === undefined).map(([k]) => classOf(k)));
       if (cells.some(([, c]) => c.mode === "deny" || c.mode === "ask")) (t.block ??= bag())[who] = true;   // ask was no until yes (L14, as F3)
-      else if (!t.paused && ENFORCED.every((c) => yes.has(c))) (t.allow ??= bag())[who] = true; }   // allow grants every class: only a row that already did (F1, R 10-28)
+      else if (!t.paused && ENFORCED.every((c) => yes.has(c)) && UNGATED.every((c) => !t.closed?.[c] || yes.has(c))) (t.allow ??= bag())[who] = true; }   // allow grants every class: only a row that already did (F1, R 10-28; a kept-closed ungated one too, bot review #260 47)
     for (const k of old) delete t[k]; n++; }
   for (const k of ["asks", "asked", "askSeq", "cool"]) if (Object.hasOwn(P, k)) { delete P[k]; n++; }
   for (const r of P.ring ?? []) if (r && Object.hasOwn(LEGACY_CLASS, r.cls)) r.cls = classOf(r.cls);
