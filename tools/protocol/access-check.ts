@@ -147,23 +147,26 @@ ok(close.ok && removed && bob.closed === 4010 && bob.msgs.some((m) => m.type ===
   void role; }
 
 // ---- A7: a reset keeps an invite-only world's door and the people it lists ----
-{ const k0 = own.msgs.length; own.raw({ type: "world-reset", name: "keep" });
+{ const first = () => fs.readFileSync(path.join(W, "keep", "world.jsonl"), "utf8").split("\n")[0];   // the genesis: a reset writes a new one
+  const g0 = first(), k0 = own.msgs.length; own.raw({ type: "world-reset", name: "keep" });
   await tryUntil("the reset answers (or the owner's socket closes)", () => own.closed != null || own.msgs.slice(k0).some((m) => m.type === "world-reset" || m.type === "error"), { ms: 6000, step: 50 });
   await sleep(400);
   const log = fs.readFileSync(path.join(W, "keep", "world.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
   const ops = log.filter((e) => e.kind === "change").flatMap((e) => (Array.isArray(e.body?.ops) ? e.body.ops : [e.body]));   // a batch, or one op
   const access = ops.find((o) => o.id === "@world" && o.comp === "access")?.value;
   const rowan = ops.find((o) => o.id === "@world" && o.comp === `roles:${ids.Rowan}`)?.value;
-  ok(access?.join === "listed" && rowan?.role === "member", "A7 a reset keeps an invite-only world's door and the people it lists", [access, rowan, ops.length, own.closed, own.msgs.slice(k0).map((m) => m.type + (m.error ? `: ${m.error}` : "")).slice(0, 6)]);
+  const reset = own.msgs.slice(k0).some((m) => m.type === "world-reset") && first() !== g0;   // the reset happened (bot review #260 115): an error also ends the wait
+  ok(reset && access?.join === "listed" && rowan?.role === "member", "A7 a reset keeps an invite-only world's door and the people it lists", [reset, access, rowan, ops.length, own.closed, own.msgs.slice(k0).map((m) => m.type + (m.error ? `: ${m.error}` : "")).slice(0, 6)]);
   // A7b (review of #260, server I7): a signed-in-only door is kept too (only "listed" was, so the reset opened it to guests)
   const set = await own.req("set", { id: "@world", component: "access", value: { join: "signed-in" } });
-  const k1 = own.msgs.length; own.raw({ type: "world-reset", name: "keep" });
+  const g1 = first(), k1 = own.msgs.length; own.raw({ type: "world-reset", name: "keep" });
   await tryUntil("the second reset answers (or the owner's socket closes)", () => own.closed != null || own.msgs.slice(k1).some((m) => m.type === "world-reset" || m.type === "error"), { ms: 6000, step: 50 });
   await sleep(400);
   const log2 = fs.readFileSync(path.join(W, "keep", "world.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
   const ops2 = log2.filter((e) => e.kind === "change").flatMap((e) => (Array.isArray(e.body?.ops) ? e.body.ops : [e.body]));
   const access2 = ops2.find((o) => o.id === "@world" && o.comp === "access")?.value;
-  ok(set?.ok && access2?.join === "signed-in", "A7b a reset keeps a signed-in-only world's door", [set?.ok, set?.refused, access2, own.msgs.slice(k1).map((m) => m.type + (m.error ? `: ${m.error}` : "")).slice(0, 6)]);
+  const reset2 = own.msgs.slice(k1).some((m) => m.type === "world-reset") && first() !== g1;
+  ok(reset2 && set?.ok && access2?.join === "signed-in", "A7b a reset keeps a signed-in-only world's door", [reset2, set?.ok, set?.refused, access2, own.msgs.slice(k1).map((m) => m.type + (m.error ? `: ${m.error}` : "")).slice(0, 6)]);
   // the rest of this suite reads "keep" as invite-only: its door goes back as A7 left it
   const back = await own.req("set", { id: "@world", component: "access", value: access });
   ok(back?.ok, "(A7b) keep's invite-only door is put back for what follows", back?.refused); }
