@@ -16,8 +16,8 @@ export async function mintThumbnails() {
   for (const a of list) {
     try {
       const vrm = await loadVRM(a.path);
-      await contributeThumbnail(a.name, vrm, CONFIG.token, { force: true, path: a.path });
-      out.push(`ok ${a.name}`);
+      const ok = await contributeThumbnail(a.name, vrm, CONFIG.token, { force: true, path: a.path });
+      out.push(ok ? `ok ${a.name}` : `skip ${a.name}`);   // skip: a blank readback or a refused POST (avatar.js says which on the tee)
     } catch (e) { out.push(`FAIL ${a.name}: ${e.message}`); }
     console.log(`[mint] ${out[out.length - 1]}  (${out.length}/${list.length})`);
   }
