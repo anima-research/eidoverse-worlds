@@ -49,8 +49,8 @@ try {
   if (secs < 4) await die(1, "the page never booted");
   await evalJson(`(() => { const s = document.querySelector('#splash'); if (s) s.style.pointerEvents = 'none'; return true; })()`);
   check("boot: a world", await waitFor(`import('/lib/net.js').then((m) => m.replicaActive())`));
-  // R 10-12: nobody is shove-able by default (3b84e149). The exploit under test is the HTML-rendered NAME, which needs the
-  // knock to land — so the victim opts in explicitly below; the default itself is asserted first.
+  // R 10-20 recut A2: the body accepts by default (it was off, 3b84e149). The exploit under test is the HTML-rendered NAME, which
+  // needs the knock to land — so the victim opts in explicitly below anyway; the default itself is asserted first.
   check("boot: default settings — the body accepts (recut A2, 10-20: permissive default; worlds and people narrow it)", (await evalJson(`import('/lib/consent.js').then((m) => m.pushable())`)));
   await evalJson(`import('/lib/consent.js').then((m) => (m.setPushable?.(true), true)).catch(() => true)`);
   check("boot: the victim opted in to being knocked over", await evalJson(`import('/lib/consent.js').then((m) => m.pushable())`));
