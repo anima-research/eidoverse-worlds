@@ -59,7 +59,8 @@ try {
   await evalJson(`(() => { const s = document.querySelector('#splash'); if (s) s.style.pointerEvents = 'none'; return true; })()`);
   check("boot: a world", await waitFor(`import('/lib/net.js').then((m) => m.replicaActive())`));
 
-  // each stage stands alone: a stage that throws is a FAIL of that stage, and the next still runs (the base: every stage red)
+  // each stage's verdict stands alone: a stage that throws is a FAIL of that stage, and the next still runs (the base: every stage red);
+// later stages read what D (gate) and F (box1) made, so a STAGES= subset includes D,F
   const ONLY = process.env.STAGES ? new Set(process.env.STAGES.split(",")) : null;   // STAGES=HT,HP runs just those (a quick look; the suite runs all)
   const stage = async (id: string, fn: () => Promise<void>) => { if (ONLY && !ONLY.has(id)) return; try { await fn(); } catch (e) { check(`${id} (the stage threw)`, false, String(e?.message ?? e)); } };
   // ---- D: the authority, as a desktop visitor meets it ----
@@ -186,13 +187,13 @@ try {
   check("VP1 in a headset, a refused grab rides the XR quad: 'refused', in the person's words, with OK", await waitFor(`import('/lib/xrask.js').then((m) => { const s = m.xrAskState(); return !!s && /refused/.test(s.title) && /anchor|Anchor/.test(s.body) && s.choices.includes('ok'); })`, 4000),
     await evalJson(`import('/lib/xrask.js').then((m) => m.xrAskState())`));
   await page(grab); await page(grab);
-  check("VP2 the same refusal three times running is said once (a squeeze repeated, a retry): one event, one chat line", (await evalJson(`__phys.length`)) - n0 === 1, await evalJson(`__phys.slice(${n0})`));
+  check("VP2 the same refusal three times running is said once (a squeeze repeated, a retry): one event", (await evalJson(`__phys.length`)) - n0 === 1, await evalJson(`__phys.slice(${n0})`));
   check("VP3 …and the card goes by itself (play isn't a dialog): gone within 6 s, nobody pressed OK", await waitFor(`import('/lib/xrask.js').then((m) => m.xrAskState() === null)`, 6500),
     await evalJson(`import('/lib/xrask.js').then((m) => m.xrAskState())`));
   await page(`const c = await import('/lib/core.js'); delete c.renderer.xr.isPresenting; return true;`);
   await sleep(5200);   // past the repeat window: the desk grab below is a fresh refusal
   const g2 = await page(grab);
-  check("VP4 on the desk, a refusal raises no headset card (the chat line says it there)", g2 && !g2.ok && (await evalJson(`import('/lib/xrask.js').then((m) => m.xrAskState() === null)`)));
+  check("VP4 on the desk, a refusal raises no headset card (the status bar says it there)", g2 && !g2.ok && (await evalJson(`import('/lib/xrask.js').then((m) => m.xrAskState() === null)`)));
   // VP5 (review round 3): two things whose names differ only by a digit are two refusals, both said
   for (const n of ["Crate 2", "Crate 3"]) await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: '${n.replace(" ", "-").toLowerCase()}', model: '${CRATE}', components: { label: '${n}', grabbable: { enabled: false }, transform: { pos: [${at[0]} - 2, 0, ${at[1]} + ${n.endsWith("2") ? 3 : 5}] } } });`);
   await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('crate-2') && !!m.entities.get('crate-3'))`, 'crate-2 and crate-3');
