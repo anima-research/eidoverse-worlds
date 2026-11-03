@@ -1,4 +1,5 @@
-# The protocol gate (tools/protocol/run.ts) on Linux, macOS and Windows, at the exact head of every PR and push to main.
+# The protocol gate (tools/protocol/run.ts) on Linux, macOS and Windows, on every PR (GitHub's merge of its head into the base; the
+# receipt names both) and at the exact head of every push to main.
 # Each OS uploads a JSON receipt: the head it ran, OS, runtimes, the pinned library's head, every suite's result and a hash
 # of the output the verdict rests on (review of PR #260, rereview at 22494b2c: "a durable exact-head gate receipt").
 name: protocol-gate
@@ -71,6 +72,7 @@ jobs:
         env:
           EIDOVERSE_DIR: ${{ runner.temp }}/eidoverse-video
           PROTOCOL_KEEP: "1"   # keep each suite's scratch so a failure's logs can be uploaded
+          GATE_PR_HEAD: ${{ github.event.pull_request.head.sha }}   # empty on a push, where HEAD is the pushed head (bot review #260 28)
           # no EIDO_CHROME_ARGS: each OS's Chrome flags are in tools/protocol/chrome.ts platformArgs (Linux --no-sandbox,
           # macOS --use-mock-keychain). macOS takes the default GL: 10-19 forced SwiftShader here for a hang whose cause was
           # the keychain; SwiftShader then blocked the page's main thread > 60 s and the lane failed 5/10 for days. Default
