@@ -80,17 +80,18 @@ ok(old.requestSync("olive", "say", { text: "late" })?.refused?.code === "reset",
   const hold = () => { gate = new Promise((r) => { release = r; }); };
   // superseded: the old tab's request is waiting when the same account's new tab takes over
   hold(); const oldTab = tab(1); const n0 = tw.log.live.entries.length;
-  let e0 = entered; send(oldTab, "a1", "from-the-old-tab"); await tryUntil("the old tab's request is inside the await", () => entered > e0, { ms: 2000, step: 10 });   // it is inside the await now
+  // the setup is asserted: a wait that expires (tryUntil → undefined) must not read as "the request was inside" (bot review #260 489)
+  let e0 = entered; send(oldTab, "a1", "from-the-old-tab"); const in1 = await tryUntil("the old tab's request is inside the await", () => entered > e0, { ms: 2000, step: 10 });   // it is inside the await now
   oldTab.c.superseded = true; tw.clients.delete(oldTab.c); tab(2);   // the takeover path (server.ts admitJoin)
   release(); await tryUntil("the old tab's request is answered", () => oldTab.replies.length, { ms: 2000, step: 10 });
   const r1 = oldTab.replies[0];
-  ok(r1?.ok === false && r1?.reply?.refused?.code === "superseded" && !described("from-the-old-tab") && tw.log.live.entries.length === n0,
-    "SR1 a request waiting when its connection is superseded is refused (superseded) and writes nothing", { reply: r1, wrote: described("from-the-old-tab"), entries: [n0, tw.log.live.entries.length] });
+  ok(in1 === true && r1?.ok === false && r1?.reply?.refused?.code === "superseded" && !described("from-the-old-tab") && tw.log.live.entries.length === n0,
+    "SR1 a request waiting (inside the await) when its connection is superseded is refused (superseded) and writes nothing", { inside: in1, reply: r1, wrote: described("from-the-old-tab"), entries: [n0, tw.log.live.entries.length] });
   // closed: close takes the connection out of the world's clients but leaves c.world set
   hold(); const closing = tab(3); const n1 = tw.log.live.entries.length;
-  e0 = entered; send(closing, "b1", "from-a-closed-tab"); await tryUntil("the closed tab's request is inside the await", () => entered > e0, { ms: 2000, step: 10 }); tw.clients.delete(closing.c);
+  e0 = entered; send(closing, "b1", "from-a-closed-tab"); const in2 = await tryUntil("the closed tab's request is inside the await", () => entered > e0, { ms: 2000, step: 10 }); tw.clients.delete(closing.c);
   release(); await tryUntil("the closed tab's request is answered", () => closing.replies.length, { ms: 2000, step: 10 });
-  ok(closing.replies[0]?.reply?.refused?.code === "superseded" && !described("from-a-closed-tab") && tw.log.live.entries.length === n1,
+  ok(in2 === true && closing.replies[0]?.reply?.refused?.code === "superseded" && !described("from-a-closed-tab") && tw.log.live.entries.length === n1,
     "SR2 a request waiting when its connection closes writes nothing", { reply: closing.replies[0], wrote: described("from-a-closed-tab") });
   // the control: a connection that stays writes
   hold(); const stays = tab(4); send(stays, "c1", "from-a-live-tab"); release(); await tryUntil("the live tab's request is answered", () => stays.replies.length, { ms: 2000, step: 10 });
