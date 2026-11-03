@@ -135,8 +135,8 @@ await C("K3", "physics {kind: 'none'} is not simulated but still solid: the walk
 await C("K4", "climb's door: 2–16 points [x, y, z] (one, seventeen, a bad point and a straight-up face refused), reach and speed in range; a good route taken", () => {
   const s = session(); const mk = (id: string, climb: any) => s.call("create", { id, components: { transform: tf([0, 0, 0]), climb } });
   const r = { one: mk("a", { points: [[0, 0, 0]] }), many: mk("b", { points: Array.from({ length: 17 }, (_, i) => [0, i, 0]) }), bad: mk("c", { points: [[0, 0, 0], [0, 1]] }),
-    up: mk("d", { points: [[0, 0, 0], [0, 3, 0]], face: [0, 1, 0] }), reach: mk("e", { points: [[0, 0, 0], [0, 3, 0]], reach: 9 }), good: mk("f", { points: [[0, 0, 0.3], [0, 3, 0.3]], reach: 1, speed: 2, face: [0, 0, -1], ends: "start" }) };
-  return [!r.one.ok && !r.many.ok && !r.bad.ok && !r.up.ok && !r.reach.ok && r.good.ok, Object.fromEntries(Object.entries(r).map(([k, v]) => [k, show(v)]))]; });
+    up: mk("d", { points: [[0, 0, 0], [0, 3, 0]], face: [0, 1, 0] }), reach: mk("e", { points: [[0, 0, 0], [0, 3, 0]], reach: 9 }), fast: mk("g", { points: [[0, 0, 0], [0, 3, 0]], speed: 9 }), good: mk("f", { points: [[0, 0, 0.3], [0, 3, 0.3]], reach: 1, speed: 2, face: [0, 0, -1], ends: "start" }) };
+  return [!r.one.ok && !r.many.ok && !r.bad.ok && !r.up.ok && !r.reach.ok && !r.fast.ok && r.good.ok, Object.fromEntries(Object.entries(r).map(([k, v]) => [k, show(v)]))]; });
 
 await C("K5", "progress → pose through a moving parent: the point at a progress is the host's world pose applied to its local point, and moving or turning the carrier moves it with the same progress", () => {
   if (CL.__missing) return [false, CL.__missing];
@@ -289,7 +289,7 @@ await C("K11", "a pose's climb {host, progress} rides the wire as sent (rounded 
   const ok = PC.sanePose({ p: [0, 1, 0], climb: { host: "ladder", progress: 1.23456 } }), bad = PC.sanePose({ p: [0, 1, 0], climb: { host: "", progress: -1 } }), nan = PC.sanePose({ p: [0, 1, 0], climb: { host: "x", progress: "far" } });
   return [JSON.stringify(ok?.climb) === JSON.stringify({ host: "ladder", progress: 1.235 }) && bad && !("climb" in bad) && nan && !("climb" in nan), { ok, bad, nan }]; });
 
-await C("K12", "floor = terrain: @world.terrain {kind: 'flat', height} is the ground (groundOf, supportBelow, the walker's floor) at its height, below 0 too; noise fields, features or a heightmap on it are refused; no terrain stands at 0", () => {
+await C("K12", "floor = terrain: @world.terrain {kind: 'flat', height} is the ground (groundOf, supportBelow) at its height, below 0 too; noise fields, features or a heightmap on it are refused; no terrain stands at 0", () => {
   const TM = imp("shared/terrainmath.js"), SPx = import(TREE + "shared/protocol/authority/spatial.js");
   return Promise.all([TM, SPx]).then(([tm, sp]) => {
     const s = session();
@@ -299,8 +299,9 @@ await C("K12", "floor = terrain: @world.terrain {kind: 'flat', height} is the gr
     const law = tm.makeHeightField?.(tm.terrainParams?.(t));
     const feat = s.call("set", { id: "@world", component: "terrain", value: { kind: "flat", height: 0, features: [{ type: "hill", x: 0, z: 0, radius: 4, height: 2 }] } });
     const noisy = s.call("set", { id: "@world", component: "terrain", value: { kind: "flat", height: 0, amplitude: 3 } });
+    const hm = s.call("set", { id: "@world", component: "terrain", value: { kind: "flat", height: 0, heightmap: "h.png" } });
     return [none === 0 && good.ok && JSON.stringify(t) === JSON.stringify({ kind: "flat", height: -260 }) && G.height(300, -300) === -260 && G.height(-9, 77) === -260 && under.id === "ground" && under.y === -260
-      && law?.(12, -40) === -260 && !feat.ok && !noisy.ok, { none, good: show(good), t, G: G.height(300, -300), under, law: law?.(12, -40), feat: show(feat), noisy: show(noisy) }]; }); });
+      && law?.(12, -40) === -260 && !feat.ok && !noisy.ok && !hm.ok, { none, good: show(good), t, G: G.height(300, -300), under, law: law?.(12, -40), feat: show(feat), noisy: show(noisy), hm: show(hm) }]; }); });
 
 await C("K13", "KillZ is the authority's to judge: a below-bounds respawn from a body whose last known position is above @world.bounds.min.y (beyond a step's slack) is refused, saying so; an unplaced body has no position to have fallen from", () => {
   const s = session();
