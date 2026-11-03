@@ -146,7 +146,7 @@ export function toleranceOf(t) {
 
 // ---------------------------------------------------------------- the track (the authority's bucket)
 /** The metres a tracked body may cover now: its bucket refilled at the track's speed since its last accepted step,
- *  never over the cap. `prev` is the tokens it had (absent = full); `elapsedMs` since then; `factor` a speed area's (× both). */
+ *  never over the cap. `prev` is the tokens it had (absent = full); `elapsedMs` since then; `factor` a speed area's × the body's size (× both; the authority's move). */
 export function tokensAfter(prev, elapsedMs, factor = 1) {
   const t = MOVER.track, k = Math.max(1, areaFactor(factor));   // a speed area that boosts widens the track; one that slows doesn't narrow it
   return Math.min(t.cap * k, (typeof prev === "number" ? prev : t.cap) + t.speed * k * Math.max(0, elapsedMs) / 1000);

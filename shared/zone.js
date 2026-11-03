@@ -53,6 +53,8 @@ export function physicsAreasOf(st, { poseOf = (id) => worldPose(st, id) } = {}) 
   }
   return out.sort(cmp);
 }
+/** physics-area.modes' words (componentspec): the movement modes an area may name */
+export const AREA_MODES = Object.freeze(["walk", "swim", "fly", "climb"]);
 /** × a body's own speed at p (physics-area kind speed) in movement `mode` (absent: any): the highest-priority speed area
  *  holding p that touches that mode decides; none: 1. */
 export function speedFactorAt(areas, p, mode) {
