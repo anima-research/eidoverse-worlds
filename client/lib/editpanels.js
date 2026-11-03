@@ -1005,8 +1005,8 @@ async function refreshWatch() {
 }
 function consoleFields() {
   const f = [{ t: 'list', k: 'cwatch', empty: 'no scripts in this world — a script is a script:<name> component on a thing (docs/SCRIPTS-replica.md)',
-    rows: behaviors.map((b) => ({ id: b.id, label: `${running(b) ? '▶' : '⏸'} ${b.id}`,
-      sub: [b.attach ? `on ${b.attach}` : 'world', b.timers ? `${b.timers}⏲` : null, !running(b) ? (b.status ?? 'paused') : null].filter(Boolean).join(' · '),
+    rows: behaviors.map((b) => ({ id: b.id, label: b.id,   // words, not glyphs: the VR painter has no icon for these (bot #553)
+      sub: [running(b) ? 'running' : (b.status ?? 'paused'), b.attach ? `on ${b.attach}` : 'world', b.timers ? `${b.timers} timer${b.timers === 1 ? '' : 's'}` : null].filter(Boolean).join(' · '),
       active: b.id === watching,
       actions: [...(b.attach ? [{ k: 'cgoto', label: 'select' }] : []), { k: 'unbind', label: 'remove', danger: true }] })) }];
   if (watching) {
