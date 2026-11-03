@@ -21,7 +21,7 @@ import { scratchWorld, flat, foldRecordOf } from "./protocol/scratchworld.ts";
 import { qHeading } from "../shared/rot.js";
 import { registerDraft } from "../shared/drafts.js";
 import { worldSchema, worldEditOps } from "../shared/worldentity.js";
-import { componentsOf } from "../shared/components.js";
+import { componentsOf, LIGHT_DEFAULTS } from "../shared/components.js";
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = "") => {
@@ -71,6 +71,9 @@ console.log("\nschema is a function of the record:");
   check("sockets: a list + per-slot channels", fieldAt(s, "sockets.slots")?.t === "list" && Math.abs(fieldAt(s, "sockets.side|rot|1")?.value - 1) < 1e-6);
   const l = inspectSchema(lamp, "lamp");
   check("a lamp: a light group from the component's values", fieldAt(l, "light.intensity")?.value === 20 && fieldAt(l, "light.important")?.value === true && fieldAt(l, "light.range")?.value === 6);
+  // an older light (no intensity, no decay) draws at 16 / 1.7 (components.js lightOf): the row shows what draws, and still offers the registry default as its reset (#147)
+  const old = inspectSchema({ ...lamp, light: { color: 0xff8800, range: 6 } }, "old");
+  check("an older lamp's rows show the drawn 16 / 1.7, not the registry default", fieldAt(old, "light.intensity")?.value === 16 && fieldAt(old, "light.decay")?.value === 1.7 && fieldAt(old, "light.intensity")?.def === LIGHT_DEFAULTS.intensity, JSON.stringify([fieldAt(old, "light.intensity"), fieldAt(old, "light.decay")]));
   const w = inspectSchema(swing, "s");
   // a pendulum about x (no pivot) swings rotate x: that channel is driven; its position isn't, and shows the rest pose
   const wRot = w.groups.flatMap((g: any) => g.fields).find((f: any) => f.label === "rotate x");

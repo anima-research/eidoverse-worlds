@@ -36,7 +36,7 @@ import { graphemes } from './text.js';
 import { ESSENTIAL_NAMES, instanceOf, effectFor, effectBlobName, modernize, instanceProblem, paramShown, essentialNameOf, angleParam } from './particle_effects.js';
 import { readOut, readLine } from './a11y.js';
 import { COMPONENTS as SPEC, registered, outOfRange, rangeWords, statusOf } from './protocol/componentspec.js';
-import { componentsOf, addable, RECORDS, compRefusal, LIGHT_DEFAULTS, bodyOf, socketQ, MESH_SHAPES } from './components.js';
+import { componentsOf, addable, RECORDS, compRefusal, LIGHT_DEFAULTS, bodyOf, socketQ, MESH_SHAPES, lightOf } from './components.js';
 import { draftsRead, readsDraft, isTrusted, toggleTrusted, TRUSTED, UNPROVEN_HINT } from './drafts.js';
 import { checkSockets, ANCHORS, ACTION_DEFAULTS, socketMapIn, socketsIn } from './sockbody.js';
 import { grabOf, checkGrabbable, DEFAULTS as GRAB_DEFAULTS, WHO as GRAB_WHO, HOLDS as GRAB_HOLDS, HOLD_POSES as GRAB_HOLD_POSES, RELEASES as GRAB_RELEASES } from './grab.js';
@@ -483,13 +483,13 @@ export function inspectSchema(ent, id, live = {}) {
 
   // the `light` group: `light.intensity` is the same address to the panel, the VR quad and the agent's edit tool
   if (compLight(ent)) {
-    const src = c.light; const L = (k, over) => rowOf('Light', k, src, over);
+    const src = c.light, lit = lightOf(ent); const L = (k, over) => rowOf('Light', k, src, over); const drawn = (k) => (lit ? { value: lit[k] } : {});   // a row shows what draws (lightOf): an older light's 16 / 1.7, not the registry default (#147)
     const fields = [
       L('color', { label: 'color' }),
       // sliders that preview while dragged (SWEEP-3 N4, main's lights.js): inspect.js's light handler; the write path stays num's
-      L('intensity', { label: 'brightness', t: 'range', min: 0, max: Math.max(64, src.intensity ?? 16), step: 1, dp: 0 }),
+      L('intensity', { label: 'brightness', t: 'range', min: 0, max: Math.max(64, src.intensity ?? 16), step: 1, dp: 0, ...drawn('intensity') }),
       L('range', { label: 'range', t: 'range', min: 1, max: Math.max(40, src.range ?? 10), step: 1, dp: 0 }),
-      L('decay', { label: 'falloff', hint: 'how fast it dims with distance (2 is physical; absent, 1.7)' }),
+      L('decay', { label: 'falloff', hint: 'how fast it dims with distance (2 is physical; absent, 1.7)', ...drawn('decay') }),
       L('important', { label: 'important', hint: 'always casts: first claim on a light slot, never governor-shed' }),
       L('daytime', { label: 'burns at noon', hint: 'on: daytime full (opts out of the day cycle); off: daytime dim' }),
     ];
