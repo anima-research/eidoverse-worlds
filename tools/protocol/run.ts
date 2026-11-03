@@ -31,7 +31,7 @@ import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs"; import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
-import { ENGINE, controlNote } from "./common.ts";
+import { ENGINE, controlNote, siblingBuiltAt } from "./common.ts";
 import { failLines, setAside, type Lane, SUITES, CORE, BROWSER, browserLauncher, laneOf, localImports, suitePath } from "./suites.ts";
 
 
@@ -120,10 +120,10 @@ if (argv.includes("--siblings")) {
       const c = spawnSync("git", ["-C", at, "checkout", "-q", commit], { stdio: "inherit" });
       if (c.status !== 0) { console.error(`--siblings: ${dir} could not check out ${commit}`); process.exit(1); }
     }
-    if (build && !fs.existsSync(path.join(at, "dist"))) for (const step of [["install"], ["run", "build"]]) {
+    if (build && siblingBuiltAt(at) !== commit) { for (const step of [["install"], ["run", "build"]]) {
       const c = spawnSync(process.execPath, step, { cwd: at, stdio: "inherit" });
       if (c.status !== 0) { console.error(`--siblings: \`bun ${step.join(" ")}\` failed in ${dir}`); process.exit(1); }
-    }
+    } fs.writeFileSync(path.join(at, "dist", ".built-at"), commit + "\n"); }   // a dist/ built at another commit is rebuilt
     console.log(`  ${dir.padEnd(16)} ${commit.slice(0, 12)}${build ? " built" : ""}  ${at}`);
   }
   const m = spawnSync(process.execPath, ["install", "--frozen-lockfile"], { cwd: path.join(ENGINE, "mcpl"), stdio: "inherit" });
@@ -168,7 +168,7 @@ const reachesMcpl = (file: string) => { const f = suitePath(file); if (/[\\/]mcp
   return [...localImports(f)].some((x) => /(?:from|import\(|import)\s*["'`][^"'`]*\bmcpl\//.test(fs.readFileSync(x, "utf8"))); };
 const needSiblings = SUITES.some(([n, file]) => selected(n) && reachesMcpl(file));
 if (needSiblings) for (const [dir, , commit] of SIBLINGS) { const h = siblingHead(dir);
-  if (h === commit && SIBLINGS.find(([d]) => d === dir)![3] && !fs.existsSync(path.join(siblingAt(dir), "dist"))) problems.push(`mcpl's sibling ${dir} is unbuilt (no dist/): run \`bun tools/protocol/run.ts --siblings\``);
+  if (h === commit && SIBLINGS.find(([d]) => d === dir)![3] && siblingBuiltAt(siblingAt(dir)) !== commit) problems.push(`mcpl's sibling ${dir} is unbuilt at the pin (dist/.built-at isn't ${commit.slice(0, 12)}): run \`bun tools/protocol/run.ts --siblings\``);
   if (h !== commit) problems.push(`mcpl's sibling ${dir} ${h ? `is at ${h.slice(0, 12)}, not the pinned ${commit.slice(0, 12)}` : `is missing at ${siblingAt(dir)}`}: run \`bun tools/protocol/run.ts --siblings\`, which also installs mcpl/`); }
 for (const dir of ["", "client/", ...(needSiblings ? ["mcpl/"] : [])]) if (!fs.existsSync(ENGINE + dir + "node_modules")) problems.push(`${dir || "./"}node_modules is missing: run \`bun install --frozen-lockfile\` in ${dir || "the checkout root"}`);
 
