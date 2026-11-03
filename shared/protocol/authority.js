@@ -255,6 +255,7 @@ function logRefusal(w, actor, verb, args, code) {
     // consent write, an inbox or wait. Consent is presence, never appended: "A tried to touch B, was refused, kept trying"
     // written into a signed, forkable log is exactly what consent.js promises never happens
     if (PRESENCE_VERBS.has(verb)) return;
+    if (verb === "grab" && String(args?.id ?? "").startsWith("body:")) return;   // grab {id: "body:X"} is a drag (bodyverbs.js): presence too
     if (code === "rate") { const m = (w.unrecorded ??= new Map()); m.set(actor, (m.get(actor) ?? 0) + 1); return; } // an attempt all the same: counted, not written
     // a refused contact push is a walk that met something, not a request anyone made in words (review 10-12 S2-4): counted,
     // not written (`shove: true` is its old spelling)

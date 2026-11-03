@@ -33,6 +33,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["argument names not filtered to the verb's own", "protocol/authority.js", "const known = spec ? keys.filter((k) => k in spec.args || UNIVERSAL_ARGS.has(k)) : [];", "const known = keys;", ["L2"]],
   ["an invented verb's name is logged", "protocol/authority.js", "const asVerb = Object.hasOwn(VERBS, verb) || Object.hasOwn(RESERVED_VERBS, verb) ? verb : \"unknown-verb\";", "const asVerb = verb;", ["L4"]],
   ["presence verbs' refusals are logged", "protocol/authority.js", "    if (PRESENCE_VERBS.has(verb)) return;", "", ["L5"]],
+  ["a refused grab of a body is logged", "protocol/authority.js", "    if (verb === \"grab\" && String(args?.id ?? \"\").startsWith(\"body:\")) return;", "", ["L5b"]],
   ["the refusal ring", "protocol/authority.js", "  ring.push(rec); if (ring.length > REFUSAL_RING) ring.splice(0, ring.length - REFUSAL_RING);", "", ["L3"]],
   ["look shows everyone's table", "protocol/authority/blueprints.js", "...(id === actor ? { shield: shieldOf(P, id) } : {}),", "shield: shieldOf(P, id),", ["K1"]],
   ["look shows who touches whom", "protocol/authority/blueprints.js", ".filter(([k, r]) => r.to === id && (id === actor || k === actor)).map(([k]) => k) }));", ".filter(([k, r]) => r.to === id).map(([k]) => k) }));", ["K2"]],
@@ -159,6 +160,11 @@ const cases: Case[] = [
       const e = s.call("vic", "set", { id: "lamp", component: "label", value: "x" });
       return { b: show(b), r: show(r), c: show(c), wrote: n1 - n0, edit: code(e), editLogged: s.entries().length - n2 }; },
     good: (o) => /^refused/.test(o.b) && /^refused/.test(o.c) && o.wrote === 0 && o.edit === "rights" && o.editLogged === 1 },
+  { id: "L5b", what: "…and a refused drag sent as grab {id: 'body:X'} (bodyverbs' alias for body {kind: drag}) is presence too: never logged (bot #260 126)", run(s) { cast(s);
+      s.call("bob", "move", { to: [0, 0, 0] }); s.call("vic", "move", { to: [0.5, 0, 0] }); s.call("bob", "consent", { move: false });
+      const n0 = s.entries().length; const g = s.call("vic", "grab", { id: "body:bob" });
+      return { g: show(g), wrote: s.entries().length - n0 }; },
+    good: (o) => /^refused consent/.test(o.g) && o.wrote === 0 },
   // ---------------- K: look ----------------
   { id: "K1", what: "look: vic sees his own consent gates, and nobody else's (bob's closed gates stay bob's)", run(s) { cast(s);
       s.call("bob", "move", { to: [0, 0, 0] }); s.call("vic", "move", { to: [1, 0, 0] }); s.call("bob", "consent", { move: false, touch: false }); s.call("vic", "consent", { touch: true });
