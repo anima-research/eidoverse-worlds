@@ -12,7 +12,8 @@
 //
 // The world must exist (a world is founded by its operator: bun tools/protocol/world.ts found loadtest --owner <you>;
 // joining never founds one). Every connection joins with replica (the world speaks the protocol): chat is read from
-// the snapshot's chat window (state.recentChat) and the log stream's `say` entries, and a say is a door request.
+// the log stream's `say` entries, and a say is a door request. Speech is arrival-only, so a spectator that joined after
+// the burst (the churn's) isn't counted against it (bot review #260 76).
 
 const URL = process.env.URL ?? "ws://127.0.0.1:8940/ws";
 const TOKEN = process.env.TOKEN ?? "";
@@ -45,8 +46,6 @@ function connect(id: string, spectate: boolean, n = 0): Promise<Spec> {
       if (m.type === "snapshot") {
         s.snapAt = performance.now();
         s.joinMs = s.snapAt - s.openAt;
-        // history counts: a late joiner gets earlier chat in the snapshot's chat window, not live
-        for (const c of m.state?.recentChat ?? []) s.says.add(c.text);
         clearTimeout(to);
         resolve(s);
       } else if (m.type === "frame") {
@@ -91,8 +90,10 @@ const tickers = perfs.map((s, i) => setInterval(() => {
 }, 1000 / POSE_HZ));
 
 // chat burst mid-run: 24 messages in one second, all must arrive everywhere
+let burstAt = Infinity;   // when the burst was said: a spectator that joined after it was never sent it
 const burstTexts = Array.from({ length: N_PERF }, (_, i) => `burst-${i}-${Math.floor(t0)}`);
 setTimeout(() => {
+  burstAt = performance.now();
   perfs.forEach((s, i) => { if (s.ws.readyState === 1 && burstTexts[i]) s.ws.send(JSON.stringify({ type: "request", id: `burst-${i}`, verb: "say", args: { text: burstTexts[i] } })); });
 }, DURATION / 2);
 
@@ -120,7 +121,8 @@ const endAt = performance.now();
 const fpsPer = specs.map((s) => s.frames / Math.max(0.001, (endAt - s.snapAt - 500) / 1000));
 const latAll = specs.flatMap((s) => s.lat);
 const gapsTotal = specs.reduce((a, s) => a + s.gaps, 0);
-const burstMisses = specs.filter((s) => burstTexts.filter((t) => t && !s.says.has(t)).length > 0).length;
+const heard = specs.filter((s) => s.snapAt > 0 && s.snapAt < burstAt);   // present when the burst was said
+const burstMisses = heard.filter((s) => burstTexts.filter((t) => t && !s.says.has(t)).length > 0).length;
 const reconnFails = specs.filter((s) => s.joinMs === -2).length;
 
 if (failed > 0) fail.push(`${failed} connections failed to join`);
@@ -136,7 +138,7 @@ results
   spectator frame/s   p50 ${pct(fpsPer, 50).toFixed(1)}  min ${Math.min(...fpsPer).toFixed(1)}
   frame latency ms    p50 ${Math.round(pct(latAll, 50))}  p95 ${Math.round(pct(latAll, 95))}  max ${Math.round(Math.max(...latAll, 0))}
   frame seq gaps      ${gapsTotal} total across ${specs.length} spectators (backpressure drops)
-  chat burst          ${specs.length - burstMisses}/${specs.length} spectators got all ${burstTexts.length}
+  chat burst          ${heard.length - burstMisses}/${heard.length} spectators present for it got all ${burstTexts.length}
   reconnect churn     ${10 - reconnFails}/10 ok
 `);
 console.log(fail.length ? `FAIL:\n  ${fail.join("\n  ")}` : "ALL GATES PASS");
