@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { WORLDS_DIR } from "./config.ts";
 import { ACCOUNT_SHAPE } from "./directory.ts";
 import { mainKnowledge, type Known } from "./mainknew.ts";
+type Any = any;
 
 // ---- global bans ------------------------------------------------------------
 // The door's own list, across all its worlds (each world's own bans are its door's moderator log). There is no global
@@ -30,13 +31,16 @@ export const BOUND_BY_NAME = "the name was typed, so a guest who wore it may hav
 export const PENDING_WORDS = "pre-account ban: bind to a person (global-ban <the name> binds whoever wears it here) or lift (global-unban <the name>)";
 /** A ban or sanction file that couldn't be read at boot: kept as it was, never saved over (bot review #260 17; the ledger's rule). */
 const unreadable = new Set<string>();
-const keptAside = (f: string, what: string) => { if (!unreadable.has(f)) return false; console.log(`[mod] ${what} not saved: ${f} couldn't be read at boot and is kept as it was; fix or move it aside and restart`); return true; };
-export function saveGlobalBans() {
-  if (keptAside(BANS_FILE, "global bans")) return;
+const keptAside = (f: string, what: string) => { if (!unreadable.has(f)) return null; const why = `${f} couldn't be read at boot and is kept as it was; fix or move it aside and restart`; console.log(`[mod] ${what} not saved: ${why}`); return why; };
+/** The words a reply and the moderated line carry when a sanction's file wasn't written (bot #260 #146): it holds in memory only. */
+export const notPersisted = (why: string) => `NOT persisted: ${why} — it ends at restart`;
+/** Writes the file; returns why it wasn't written (the record holds in memory only), else null. */
+export function saveGlobalBans(): string | null {
+  const kept = keptAside(BANS_FILE, "global bans"); if (kept) return kept;
   try {
     const pending = Object.fromEntries(Object.entries(pendingBans).map(([k, { why: _w, ...b }]) => [k, b]));
-    writePrivate(BANS_FILE, JSON.stringify({ ...pending, ...refusedBans, ...globalBans }, null, 2));
-  } catch (e) { console.log(`[mod] global ban save failed: ${e}`); }
+    writePrivate(BANS_FILE, JSON.stringify({ ...pending, ...refusedBans, ...globalBans }, null, 2)); return null;
+  } catch (e) { console.log(`[mod] global ban save failed: ${e}`); return String((e as Any)?.message ?? e); }
 }
 /** The ban list as stored, made current. A record from before accounts carried the principal's bare `sub`: a signed-in
  *  person's account is that sub still, but an aid1 agent's is now `aid1:<iss>:<sub>`, so such a record is kept with
@@ -123,11 +127,12 @@ export const ADDR_SANCTIONS_FILE = join(WORLDS_DIR, ".addr-sanctions.json");
 export const addrSanctions: Record<string, AddrSanction> = {};
 /** One record per issuer (`actor`): two people's mutes are never merged into one (bot review #260 118). */
 export const addrSanctionKey = (kind: string, world: string, addr: string, actor: string) => `world:${world}:addr:${addr}:${kind}:by:${actor}`;
-export function saveAddrSanctions(now = Date.now()) {
-  if (keptAside(ADDR_SANCTIONS_FILE, "address sanctions")) return;
+/** Writes the file; returns why it wasn't written (the sanction holds in memory only), else null. */
+export function saveAddrSanctions(now = Date.now()): string | null {
+  const kept = keptAside(ADDR_SANCTIONS_FILE, "address sanctions"); if (kept) return kept;
   for (const [k, s] of Object.entries(addrSanctions)) if (!(s.until > now)) delete addrSanctions[k];
-  try { writePrivate(ADDR_SANCTIONS_FILE, JSON.stringify(addrSanctions, null, 2)); }
-  catch (e) { console.log(`[mod] address sanction save failed: ${e}`); }
+  try { writePrivate(ADDR_SANCTIONS_FILE, JSON.stringify(addrSanctions, null, 2)); return null; }
+  catch (e) { console.log(`[mod] address sanction save failed: ${e}`); return String((e as Any)?.message ?? e); }
 }
 try {
   if (existsSync(ADDR_SANCTIONS_FILE)) {
@@ -141,12 +146,12 @@ export function addrSanctionsFor(world: string, addr: string | null | undefined,
   return Object.values(addrSanctions).filter((s) => s.kind === "mute" && s.world === world && s.addr === addr && s.until > now);
 }
 /** File (or refresh) a guest's sanction against their address: at most a day, never past the sanction's own end. */
-export function fileAddrSanction(s: Omit<AddrSanction, "ts" | "ids" | "until"> & { until?: number | null; who: string }, now = Date.now()) {
+export function fileAddrSanction(s: Omit<AddrSanction, "ts" | "ids" | "until"> & { until?: number | null; who: string }, now = Date.now()): string | null {
   const until = Math.min(now + ADDR_BAN_MS, s.until ?? Infinity);
   const key = addrSanctionKey(s.kind, s.world, s.addr, s.actor); const prev = addrSanctions[key];
   const { who, ...rest } = s;
   addrSanctions[key] = { ...rest, ts: now, until, ids: [...new Set([...(prev?.ids ?? []), who])] };
-  saveAddrSanctions(now);
+  return saveAddrSanctions(now);
 }
 /** Lifting a mute on an identity lifts the address record it was filed or carried under (by that identity,
  *  or by the address it is joined from now). Returns how many were lifted. */

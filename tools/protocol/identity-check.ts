@@ -216,6 +216,15 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
   ok(demote.refused?.code === "rights" && /longer than you/.test(demote.refused.reason), "H5 the junior owner can't demote the founder", demote.refused);
   ok((await wren.req("ban", { who: you(jo) })).refused?.code === "rights", "H5 an owner can't be banned");
   ok((await own.req("set", { id: "@world", component: `roles:${you(jw)}`, value: { role: "builder" } })).ok, "H5 …but the senior owner can demote the junior one");
+  // H4p (bot #260 #146): a guest's ban whose address record can't be written is still acked, and the reply and the moderated
+  // line SAY it isn't persisted (it ends at restart) — never a silent evaporation. The file is made a symlink (writePrivate refuses one).
+  { const BANS = path.join(W, ".bans.json"); fs.rmSync(BANS, { force: true }); fs.symlinkSync(path.join(root, "nowhere"), BANS);
+    const g4 = await sock(S3.port); const jg4 = await g4.join("meadow", "drifter-p"); const k = wren.msgs.length;
+    const bp = await own.req("ban", { who: you(jg4), reason: "test" }); await sleep(300);
+    const line = wren.msgs.slice(k).find((m) => m.type === "moderated" && m.verb === "ban")?.text ?? "";
+    fs.unlinkSync(BANS); const lift = await own.req("unban", { who: you(jg4) });   // lifted again: H4 below bans exactly one
+    ok(bp.ok && lift.ok && /NOT persisted: .*symlink.*ends at restart/.test(bp.warning ?? "") && /NOT persisted/.test(line) && g4.closed != null,
+      "H4p a guest's ban whose address file can't be written is acked with warning: NOT persisted, and bystanders' moderated line says so", [bp, line]); }
   // H4: a door ban removes the guest now, and the guest's reconnect is refused
   const ban = await own.req("ban", { who: you(jg), reason: "test" }); await sleep(300);
   ok(ban.ok && g.closed != null, "H4 a door ban removes the banned guest at once", [ban, g.closed]);
