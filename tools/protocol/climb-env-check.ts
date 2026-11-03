@@ -30,9 +30,10 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the fall is the client's word", "protocol/authority/bodyverbs.js", "if (fell && B && !(me && me.at[1] < B.min[1] - KILL_MARGIN + TRACK.cap))", "if (false)", ["K13"]],
   ["a fall loses its reason on the record", "protocol/authority/bodyverbs.js", "...(fell ? { reason: FELL } : {})", "", ["K9"]],
   ["no arrival place, nowhere to fall back to", "spawn.js", "spawnOf(st) ?? { id: null, pos: [0, 0, 0], yaw: 0, radius: MOVER.track.spawnR };", "spawnOf(st); if (!sp) return null;", ["K9b"]],
-  ["a place below the kill line given", "spawn.js", "return belowWorld(st, sp.pos) || ", "return ", ["K9c", "K9d"]],
-  ["a place outside the box given", "spawn.js", " || (B && v3(B.min) && v3(B.max) && outsideWorld(B, sp.pos))", "", ["K9c", "K9d"]],
-  ["a place under the floor refused", "spawn.js", "return belowWorld(st, sp.pos) || ", "return sp.pos[1] < B.min[1] || ", ["K9c", "K9d"]],
+  ["a place below the kill line given", "spawn.js", "const fails = (p) => belowWorld(st, p) || ", "const fails = (p) => ", ["K9c", "K9d"]],
+  ["a place outside the box given", "spawn.js", " || (boxed && outsideWorld(B, p))", "", ["K9c", "K9d"]],
+  ["a place under the floor refused", "spawn.js", "const fails = (p) => belowWorld(st, p) || ", "const fails = (p) => p[1] < B.min[1] || ", ["K9c", "K9d"]],
+  ["an unreachable place leaves a fall nowhere to end", "spawn.js", "return mid && !fails(mid) ? { id: null, pos: mid, yaw: 0, radius: MOVER.track.spawnR } : null;", "return null;", ["K9c", "K9d"]],
   ["a flat terrain is noise to the height law", "terrainmath.js", "if (typeof P.flat === 'number') { const h = P.flat; return () => h; }", "", ["K12"]],
   ["a flat terrain takes noise fields", "protocol/authority/checks.js", "if (extra.length) refuse(", "if (false) refuse(", ["K12"]],
   ["the gradient's bottom isn't the horizon", "zone.js", "bottom: rgb(g.bottom) ? [...g.bottom] : [...g.horizon]", "bottom: rgb(g.bottom) ? [...g.bottom] : [0, 0, 0]", ["K10"]],
@@ -248,27 +249,28 @@ await C("K9b", "KillZ with no arrival place: in a bounded world that declares no
   return [none === 0 && home.id === null && JSON.stringify(home.pos) === "[0,0,0]" && home.yaw === 0 && fell && back.ok === true,
     { none, home, fell, back: show(back) }]; });
 
-await C("K9c", "KillZ with no arrival place, the origin: given under a floor above 0, where ground may lie; none below the kill line, or outside the box", () => {
+await C("K9c", "KillZ with no arrival place, the origin: given under a floor above 0, where ground may lie; below the kill line, or outside the box, the box's centre at its floor instead (#215)", () => {
   if (SP.__missing) return [false, SP.__missing];
   if (typeof SP.fallBackOf !== "function") return [false, "shared/spawn.js has no fallBackOf"];
   const s = session();
   s.call("delete", { id: "@world", component: "spawn" });
   const at = (min: number[], max: number[]) => { s.call("set", { id: "@world", component: "bounds", value: { min, max } }); return SP.fallBackOf(s.st())?.pos ?? null; };
   const underFloor = at([-50, 5, -50], [50, 50, 50]), belowLine = at([-50, 60, -50], [50, 100, 50]), outside = at([5, -10, -50], [50, 50, 50]);
-  return [SP.spawnsOf(s.st()).length === 0 && JSON.stringify(underFloor) === "[0,0,0]" && belowLine === null && outside === null,
+  return [SP.spawnsOf(s.st()).length === 0 && JSON.stringify(underFloor) === "[0,0,0]" && JSON.stringify(belowLine) === "[0,60,0]" && JSON.stringify(outside) === "[27.5,-10,0]",
     { underFloor, belowLine, outside }]; });
 
-await C("K9d", "KillZ, a declared @world.spawn: under the floor but above the kill line, and above the floor, fallBackOf gives it; below the kill line, or outside the box, none", () => {
+await C("K9d", "KillZ, a declared @world.spawn: under the floor but above the kill line, and above the floor, fallBackOf gives it; below the kill line, or outside the box, the box's centre at its floor (id null, #215)", () => {
   if (SP.__missing) return [false, SP.__missing];
   if (typeof SP.fallBackOf !== "function") return [false, "shared/spawn.js has no fallBackOf"];
   const s = session();
   s.call("set", { id: "@world", component: "bounds", value: { min: [-50, -10, -50], max: [50, 50, 50] } });
   const kz = -10 - SP.KILL_MARGIN;
-  const at = (pos: number[]) => { s.call("set", { id: "@world", component: "spawn", value: { pos } }); return { declared: SP.spawnOf(s.st())?.pos ?? null, given: SP.fallBackOf(s.st())?.pos ?? null }; };
+  const at = (pos: number[]) => { s.call("set", { id: "@world", component: "spawn", value: { pos } }); const fb = SP.fallBackOf(s.st()); return { declared: SP.spawnOf(s.st())?.pos ?? null, given: fb?.pos ?? null, givenId: fb?.id }; };
   const killed = at([0, kz - 2, 8]), under = at([0, -12, 8]), above = at([0, -8, 8]), outside = at([60, -8, 8]);
   const same = (r: any) => JSON.stringify(r.declared) === JSON.stringify(r.given);
-  return [killed.declared?.[1] === kz - 2 && killed.given === null && same(under) && under.given?.[1] === -12 && same(above) && above.given?.[1] === -8
-    && outside.declared?.[0] === 60 && outside.given === null,
+  const mid = (r: any) => JSON.stringify(r.given) === "[0,-10,0]" && r.givenId === null;
+  return [killed.declared?.[1] === kz - 2 && mid(killed) && same(under) && under.given?.[1] === -12 && same(above) && above.given?.[1] === -8
+    && outside.declared?.[0] === 60 && mid(outside),
     { kz, killed, under, above, outside }]; });
 
 await C("K10", "@world.sky.gradient {top, horizon, bottom?} (linear 0..1) taken, a bad one refused; lookOf reads it (an absent bottom is the horizon) and the first directional light thing by id as the sun, standing along its +Z", () => {

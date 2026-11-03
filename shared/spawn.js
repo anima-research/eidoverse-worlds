@@ -30,12 +30,16 @@ export function spawnOf(st, { team, group } = {}) {
   return spawnsOf(st).find(fits) ?? null;
 }
 
-/** Where a body that fell out of the world goes back to: spawnOf's place, else the origin facing +z. Null where a body
- *  sent there would read as fallen at once (belowWorld) or the authority refuses the place (outsideWorld). */
+/** Where a body that fell out of the world goes back to: spawnOf's place, else the origin facing +z. Where a body sent
+ *  there would read as fallen at once (belowWorld) or the authority refuses the place (outsideWorld), the box's centre
+ *  at its floor instead (id null; a fall must end somewhere, #215); null only when that fails too. */
 export function fallBackOf(st) {
   const sp = spawnOf(st) ?? { id: null, pos: [0, 0, 0], yaw: 0, radius: MOVER.track.spawnR };
-  const B = st?.entities?.["@world"]?.c.bounds;
-  return belowWorld(st, sp.pos) || (B && v3(B.min) && v3(B.max) && outsideWorld(B, sp.pos)) ? null : sp;
+  const B = st?.entities?.["@world"]?.c.bounds, boxed = !!B && v3(B.min) && v3(B.max);
+  const fails = (p) => belowWorld(st, p) || (boxed && outsideWorld(B, p));
+  if (!fails(sp.pos)) return sp;
+  const mid = boxed ? [(B.min[0] + B.max[0]) / 2, B.min[1], (B.min[2] + B.max[2]) / 2] : null;
+  return mid && !fails(mid) ? { id: null, pos: mid, yaw: 0, radius: MOVER.track.spawnR } : null;
 }
 
 // x, z and the sky; the floor is the terrain's (bounds.min[1] sits above the default heightfield)
