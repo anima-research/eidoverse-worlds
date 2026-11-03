@@ -254,9 +254,10 @@ takes the next one). The authority's thread is never held longer than that by on
 world in the process is capped at 500 ms per second (refused as `busy` past it), so one request that wakes many
 scripts can't add their deadlines up. A killed run counts as a failure and against its sponsor's `cpu`.
 
-**Except on Windows**, and wherever the host sets `EIDO_SANDBOX=inprocess`: there scripts run in the authority's own
-process (Windows has no named-pipe transport for the sandbox yet). Fuel and the 300 ms backstop still stop script code,
-but nothing can kill a slow native builtin: one such call holds the authority's thread for as long as it takes.
+**Except on Windows**, which has no named-pipe transport for the sandbox yet: there no script runs (each activation and the
+status view say `unavailable`) unless the operator sets `EIDO_SANDBOX=inprocess`. With that set, on any host, scripts run in
+the authority's own process. Fuel and the 300 ms backstop still stop script code, but nothing can kill a slow native
+builtin: one such call holds the authority's thread for as long as it takes.
 
 A refused or failed activation writes nothing. Its reason goes to the script's console and the status view.
 `@world.script-settings {run: false}` (owner) stops every script; `paused: true` stops one.

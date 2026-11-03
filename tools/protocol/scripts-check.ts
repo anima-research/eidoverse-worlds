@@ -96,7 +96,9 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["upload rate", "authority/scriptrun.js", "if (U.length >= SR.LIMITS.uploads) refuse(\"rate\", `${said(actor)} has uploaded ${U.length} sources", "if (false) refuse(\"rate\", `${said(actor)} has uploaded ${U.length} sources", ["H5"]],
   ["acts point at a say's text, never copy it", "authority/scriptrun.js", "const recorded = (ev) => { const { text, to, args, ...rest } = ev; return ev.seq !== undefined ? rest : ev; };", "const recorded = (ev) => ev;", ["E1"]],
   ["the auditor reads a say's text from the say", "scriptaudit.js", "event.text = trig.body.text;", "", ["E1"]],
-  ["an authority runs activations isolated (in a killable process)", "sandbox.js", "run: (x) => (canIsolate() ? runIsolated(x) : runScript(x))", "run: (x) => runScript(x)", ["I1", "I2"]],
+  ["an authority runs activations isolated (in a killable process)", "sandbox.js", "canIsolate() ? runIsolated(x) : runScript(x))", "runScript(x))", ["I1", "I2"]],
+  ["Windows runs no script unless the operator opts in", "sandbox.js", "winRefuses() ? { fuel: 0, fail: { code: \"unavailable\", why: WINDOWS } } : ", "", ["U2w"]],
+  ["Windows says the sandbox is unavailable", "sandbox.js", "!Q ? unavailable : winRefuses() ? WINDOWS : true", "!Q ? unavailable : true", ["U2w"]],
   ["the kill at the deadline", "sandbox.js", "deadline = sentAt + L.wallMs + GRACE,", "deadline = sentAt + L.wallMs + GRACE + 60000,", ["I1"]],
   ["a pause write adopts nothing (sponsor skips it)", "authority/scripts.js", "if (k === W.length - 1 || !pauseOnly(W[k].value, W[k + 1].value)) {", "if (true) {", ["PA1"]],
   ["the auditor's sponsor skips pause writes too", "scriptaudit.js", "|| jcs(unp(W[k].value)) !== jcs(unp(W[k + 1].value))) return by(L, W[k].seq);", "|| true) return by(L, W[k].seq);", ["PA1"]],
@@ -930,6 +932,18 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r)); process.exit(0);\n`);   // 
       bell(s, "bob"); const v = s.call("olive", "scripts", {}); const one = v.scripts?.find((x: any) => x.id === "bell1");
       return { status: one?.status, why: one?.why, sandbox: v.sandbox }; },
     good: (o) => o.status === "unavailable" && /operator can repair/.test(o.why ?? "") && /asking again won't/.test(o.why ?? "") && !/stand-in/.test(o.why ?? "") && o.sandbox === "unavailable" },
+  { id: "U2w", what: "bot review #260 11: on Windows (platform forced here) no script runs and the sandbox says unavailable, unless the operator sets EIDO_SANDBOX=inprocess; then it runs in-process", run() {
+      if (!SB) return { absent: true };
+      const f = path.join(root, "win-probe.ts");
+      fs.writeFileSync(f, `Object.defineProperty(process, "platform", { value: "win32" });
+const { SANDBOX } = await import(${JSON.stringify(TREE + "shared/protocol/sandbox.js")});
+const r = SANDBOX.run({ self: "b", key: "script:x", now: 1, seed: "ab".repeat(32), st: { entities: { b: { born: 1, c: {} } } }, event: { on: "use" }, text: 'world.on("use", () => { world.set("self", "t/t", 1); })' });
+console.log(JSON.stringify({ platform: process.platform, available: SANDBOX.available(), isolated: SANDBOX.isolated(), fail: r.fail ?? null, ops: r.ops?.length ?? 0 })); process.exit(0);\n`);
+      const out = (sandbox?: string) => { const env: Record<string, string> = { ...process.env as Record<string, string>, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }; delete env.EIDO_SANDBOX; if (sandbox) env.EIDO_SANDBOX = sandbox;
+        const r = Bun.spawnSync(["bun", f], { env, timeout: 30_000 }); try { return JSON.parse(r.stdout.toString()); } catch { return { raw: `${r.stdout}${r.stderr}`.slice(0, 300) }; } };
+      return { plain: out(), opted: out("inprocess") }; },
+    good: (o) => o.plain.platform === "win32" && o.plain.fail?.code === "unavailable" && /EIDO_SANDBOX=inprocess/.test(o.plain.fail?.why ?? "") && /Windows/.test(String(o.plain.available)) && o.plain.ops === 0
+      && o.opted.platform === "win32" && o.opted.available === true && o.opted.fail === null && o.opted.ops === 1 && o.opted.isolated === false },
   // ---------------- W: world.use (a script sets off another thing's reaction) ----------------
   { id: "W1", what: "world.use: a lever's script opens a gate in its scope through the gate's own reaction; the script act records the use, the use is its own act (actor the script, cause the script act), the auditor re-runs it, and a forged use is flagged", run(s) { cast(s);
       gateAndLever(s, { ids: ["self", "gate"], comps: [] });

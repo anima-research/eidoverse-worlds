@@ -537,7 +537,7 @@ function drainScripts(w) {
 /** Whether the sandbox here can run a script: true, or why not (its own available()). One with no available() runs
  *  whatever it's given, as activate runs it, so it counts as available. */
 const sandboxUp = (w) => (typeof w.scripts?.available === "function" ? w.scripts.available() : true);
-const SANDBOX_DOWN = "this server's script sandbox didn't load, so no script runs here; only the server's operator can repair it, and asking again won't change it until then";
+const SANDBOX_DOWN = "this server's script sandbox isn't available (it didn't load, or the host can't isolate scripts), so no script runs here; only the server's operator can repair or enable it, and asking again won't change it until then";
 function scriptStatus(w, st, id, name, v) {
   const key = `script:${name}`, sp = sponsorOf(w, id, key), rt = w.presence.scripts?.[rtKey(id, name)], cfg = scriptsCfg(st);
   let src = null, unreadable = false; try { src = w.getBlob(v.src); } catch (e) { unreadable = e?.code !== "ENOENT"; }

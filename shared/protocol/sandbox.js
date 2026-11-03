@@ -38,8 +38,11 @@ import { isEido, modelWord } from "../eido.js";
 let Q = null, unavailable = null;
 try { const mod = await import("quickjs-emscripten"); Q = await mod.getQuickJS(); }
 catch (e) { unavailable = String(e?.message ?? e).slice(0, 200); console.error(`[sandbox] quickjs-emscripten didn't load, so no script runs here: ${unavailable}`); }
+// Windows can't isolate (fifoOk), so no script runs there unless the operator opts in with EIDO_SANDBOX=inprocess (bot review #260 11)
+const WINDOWS = "this server runs on Windows, where scripts can't be isolated yet, so none runs here unless its operator sets EIDO_SANDBOX=inprocess";
+const winRefuses = () => globalThis.process?.platform === "win32" && globalThis.process?.env?.EIDO_SANDBOX !== "inprocess";
 /** Is the sandbox here? (The authority says "unavailable" for every activation when it isn't.) */
-export const sandboxAvailable = () => (Q ? true : unavailable);
+export const sandboxAvailable = () => (!Q ? unavailable : winRefuses() ? WINDOWS : true);
 
 // The whole script-facing API, in one place (docs: docs/SCRIPTS.md). Runs inside the VM before the source.
 const PRELUDE = String.raw`"use strict";
@@ -298,9 +301,9 @@ let fsm = null, osm = null, pathm = null; // node:fs etc., loaded only where iso
 try { if (globalThis.process?.versions) { fsm = await import("node:fs"); osm = await import("node:os"); pathm = await import("node:path"); } } catch { /* no isolation here */ }
 const canIsolate = () => !!(Q && fsm && typeof Bun !== "undefined" && !env().EIDO_SANDBOX_CHILD && env().EIDO_SANDBOX !== "inprocess" && fifoOk());
 // Windows: never. Git for Windows ships an `mkfifo` that succeeds, but what it makes is an MSYS emulation the OS's own file
-// calls can't open (ENOENT on the child's pipe, every install crashed: CI 10-19). There scripts run in-process — fuel and the
-// wall clock still bind script code, but a native builtin can hold the thread past the deadline (isolation's one extra
-// guarantee). Real isolation there needs Windows named pipes: post-ship.
+// calls can't open (ENOENT on the child's pipe, every install crashed: CI 10-19). There scripts run in-process only if the
+// operator sets EIDO_SANDBOX=inprocess (winRefuses) — fuel and the wall clock still bind script code, but a native builtin can
+// hold the thread past the deadline (isolation's one extra guarantee). Real isolation there needs Windows named pipes: post-ship.
 let FIFO = null; const fifoOk = () => (FIFO ??= globalThis.process?.platform !== "win32" && (() => { try { return Bun.spawnSync(["mkfifo", "--help"]).exitCode !== null; } catch { return false; } })());
 const pool = []; let kills = 0, spawned = 0;
 const SLEEP = new Int32Array(new SharedArrayBuffer(4)); const nap = (ms) => Atomics.wait(SLEEP, 0, 0, ms);
@@ -410,5 +413,6 @@ export function runIsolated(x) {
 if (Q) try { runScript({ text: "", self: "warm", key: "script:warm", event: { on: "warm" }, now: 0, seed: "0".repeat(64), st: { entities: {} } }); } catch { /* the next run says what's wrong */ }
 /** What an authority injects as io.scripts. */
 // an authority runs activations isolated where it can (Bun, not Windows: a pooled sandbox-child.js process over FIFOs; canIsolate); EIDO_SANDBOX=inprocess opts out
-export const SANDBOX = Object.freeze({ run: (x) => (canIsolate() ? runIsolated(x) : runScript(x)), checkSyntax, available: sandboxAvailable, warm, isolated: canIsolate });
+// (and is the only way scripts run on Windows: winRefuses)
+export const SANDBOX = Object.freeze({ run: (x) => (winRefuses() ? { fuel: 0, fail: { code: "unavailable", why: WINDOWS } } : canIsolate() ? runIsolated(x) : runScript(x)), checkSyntax, available: sandboxAvailable, warm, isolated: canIsolate });
 export { jcs };

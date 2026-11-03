@@ -269,6 +269,7 @@ async function run(name: string, file: string): Promise<{ code: number | null; s
   const env: Record<string, string> = { ...process.env as Record<string, string>, PATH, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0",
     HOME: path.join(dir, "home"), TMPDIR: dir, PROTOCOL_SCRATCH: dir, EIDOVERSE_DIR: path.join(dir, "library"), OPT_DIR: path.join(dir, "opt"),
     WORLDS_DIR: path.join(dir, "worlds"), PATCH_DIR: path.join(dir, "patched"), SKIP_OPT_SWEEP: "1" };
+  if (process.platform === "win32") env.EIDO_SANDBOX ??= "inprocess";   // Windows runs scripts only on this opt-in (shared/protocol/sandbox.js winRefuses)
   if (PY) env.PYTHON = PY;
   if (CHROME) env.CHROME = CHROME;
   if (LIBRARY && (laneOf(name) === "browser" || READS_LIBRARY.has(name))) env.EIDOVERSE_DIR = LIBRARY;   // read-only use; every other suite keeps its empty library
