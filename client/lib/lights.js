@@ -22,7 +22,8 @@
 // dayness); the deliberate noon-burning porch light gets its opt-out verb
 // arg with the 5f spec work.
 
-import { THREE, bus } from './core.js';
+import { THREE } from './core.js';
+import { bus } from './base.js';
 import { requestLight, updateRequest, releaseLight, isCasting } from './lightrig.js';
 import { registerEditor } from './inspect.js';
 
@@ -38,6 +39,7 @@ export function makeLightGizmo(color = 0xffd9a0) {
     // the gizmo reads as a glowing bulb and costs no lighting recompute
     new THREE.MeshBasicNodeMaterial({ color: new THREE.Color(color), toneMapped: false }),
   );
+  m.userData.perfscopeIgnore = true; // an editor primitive, not scene content — cost views skip gizmos
   m.userData.noCamCollide = true;   // don't let the camera collide with a bulb
   m.castShadow = m.receiveShadow = false;
   m.userData.noWet = true;          // a glowing bulb does not get rained dark —

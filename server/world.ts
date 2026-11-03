@@ -23,6 +23,19 @@ import { join } from "node:path";
 import { WORLDS_DIR, FOLD_EVERY } from "./config.ts";
 import { BehaviorHost } from "./behaviors.ts";
 import { foldEntry, emptyState, type LogEntry, type WorldState } from "../shared/fold.js";
+import { emptySim, simEntry, simSnapshot } from "../shared/sim.js";
+import { publishEntry } from "./events.ts";
+import { atomicWrite } from "./fsutil.ts";
+
+/** The sim fold's state (shared/sim.js — JSDoc-typed JS; mirrored here
+ *  structurally for the TS side of the house). */
+export type SimState = {
+  epoch: { sim: string; tickMs: number; ts: number; seq: number; foreign?: boolean } | null;
+  tick: number;
+  bodies: Record<string, { p: number[]; v: number[]; yaw: number; ground: number;
+    seq: number; born: number; resting: boolean }>;
+  terrain?: Record<string, number> | null;   // eidosim@0.2.0 — the folded terrain params
+};
 import type { HnSession } from "./auth.ts";
 
 // The settle rule — what a pose looks like TO SOMEONE ELSE — is pinned to
@@ -51,21 +64,30 @@ export type Client = {
   sub?: string;        // durable principal id when authenticated (`human:discord:…`)
   superseded?: boolean; // kicked by identity takeover — don't let its stale pose overwrite the successor's
   tokenVerified?: boolean; // this leg presented the identity's own bearer at join
+  nameReserved?: boolean;  // …and that bearer makes the NAME authoritative (a tokens.json agent, an aid1 agent) — access.ts
+  trustedRenderer?: boolean; // a renderer that presented RENDERER_TOKEN: may watch any world (access.ts)
   auxBound?: boolean;  // this aux leg is bound to the primary's identity authority (token bearer OR matching login sub) — the B1 admission result, reused by the B3 attest gate
   gen?: number;        // surfaceSession (#57 B2): server-issued transport epoch for THIS leg.
+  legGen?: number;     // this leg's WORLD-scoped generation (World.legGen): survives sequencer restarts, rides caption entries
                        // Monotonic, never reused. Every rtc/attestation message is stamped with
                        // it, and a superseded generation's messages are refused structurally —
                        // takeover retires the GENERATION, not just the socket.
+                       // Deferred authored verbs capture it and recheck before committing.
+  presenceSession?: string; // `session` on arrive and snapshot.present: the joining page's id, else a token for this leg (server.ts presenceSession)
   surface?: string;    // (name, surface) session model: "world" = the embodied primary (default);
                        // anything else = an auxiliary media leg (voice, vr-hands, …) — invisible,
                        // poseless, log-mute, rtc-capable, and REAPED when its primary dies.
                        // Per-surface last-writer-wins replaces the flat one-body rule (2026-08-07;
                        // prior art: Discord voice legs keyed to gateway sessions, XMPP resources).
-  renderer?: boolean;  // donates rendering: can answer snap requests for its world
+  renderer?: boolean;  // legacy invisible browser renderer
+  roam?: boolean;      // a renderer the snapshot broker may send to any world that has none (snapshots.ts)
+  capture?: import("./snapshots.ts").CaptureCapability; // opt-in embodied/native donor
   bcRing?: unknown[];  // dev crash forensics (?bc=1): last N breadcrumbs, printed on close
   // rate windows: a griefer or a stuck client gets silence, not fanout
   msgWin: number; msgCount: number;   // all messages, per second
   verbWin: number; verbCount: number; // authored verbs, per 4s
+  /** authored verbs queued behind an in-flight asset read (messages.ts, PR #160 B1) */
+  verbQueue?: Promise<void>;
 };
 
 // ---------------------------------------------------------------- world logs
@@ -78,6 +100,10 @@ export class WorldLog {
   /** The folded world. Kept live: every append updates it, so writing a
    *  snapshot is O(1) rather than a replay. */
   state: WorldState = emptyState();
+  /** The sim fold beside it (dialect 3, PROTOCOL_v2): folded through the
+   *  same entries in the same order, advanced to "now" by the sequencer's
+   *  tick system, carried in the snapshot so boot stays tail-proportional. */
+  sim: SimState = emptySim() as SimState;
   /** How much of the log the snapshot already accounts for. Entries after this
    *  are the tail a joiner still has to be told about. */
   snapSeq = -1;
@@ -113,6 +139,9 @@ export class WorldLog {
           this.state = snap.state;
           this.snapSeq = snap.seq;
           this.snapBytes = snap.bytes ?? 0;
+          // pre-sim snapshots simply lack the field — an empty sim is right
+          // for them, since no epoch entry can predate the sim existing
+          if (snap.sim?.bodies) this.sim = snap.sim;
         }
       } catch { /* a corrupt cache is not a corrupt world — rebuild below */ }
     }
@@ -122,13 +151,17 @@ export class WorldLog {
       // If the offset is not credible (log truncated, forked, or snapshot from
       // another timeline) fall back to reading everything. The log is truth.
       const usable = this.snapSeq >= 0 && this.snapBytes > 0 && this.snapBytes <= buf.length;
-      if (!usable) { this.state = emptyState(); this.snapSeq = -1; this.snapBytes = 0; }
+      // …and the SIM resets at the same boundary: a stale snapshot's epoch and
+      // bodies would otherwise ride under a full replay of the log (PR #160
+      // review, B3). The log is truth for both folds.
+      if (!usable) { this.state = emptyState(); this.sim = emptySim(); this.snapSeq = -1; this.snapBytes = 0; }
       const text = buf.toString("utf8", usable ? this.snapBytes : 0);
       for (const line of text.split("\n")) {
         if (!line.trim()) continue;
         const e = JSON.parse(line) as LogEntry;
         this.entries.push(e);
         foldEntry(this.state, e);
+        simEntry(this.sim, e, this.state);   // conformance order: instant fold first
       }
       this.dirtySinceFold = this.entries.length;
     }
@@ -149,7 +182,10 @@ export class WorldLog {
     const bytes = this.logBytes;
     const seq = this.snapSeq + this.entries.length;
     if (seq < 0) return;
-    const payload = JSON.stringify({ v: 1, seq, bytes, ts: Date.now(), state: this.state });
+    const payload = JSON.stringify({ v: 1, seq, bytes, ts: Date.now(), state: this.state,
+      // the sim fold rides the snapshot (PROTOCOL_v2 §3): advancement is
+      // schedule-independent, so a state cut at ANY tick resumes exactly
+      ...(this.sim.epoch ? { sim: simSnapshot(this.sim) } : {}) });
     try {
       // the snapshot's `bytes` is a promise about the FILE — the batch must
       // land first, or the recorded offset points past bytes that aren't
@@ -157,8 +193,7 @@ export class WorldLog {
       // async-append constraint). A flush failure aborts the fold: state
       // stays unfolded, retried on the next threshold, honestly.
       this.flushLog();
-      writeFileSync(this.snapPath + ".tmp", payload);
-      renameSync(this.snapPath + ".tmp", this.snapPath);
+      atomicWrite(this.snapPath, payload);
       this.snapSeq = seq;
       this.snapBytes = bytes;
       this.entries = [];          // history lives in the file; memory holds the tail
@@ -185,6 +220,7 @@ export class WorldLog {
     }
     this.entries = [];
     this.state = emptyState();
+    this.sim = emptySim() as SimState;
     this.snapSeq = -1;
     this.snapBytes = 0;
     this.logBytes = 0;
@@ -210,9 +246,11 @@ export class WorldLog {
       if (want(e)) { out.push(e); seen.add(e.seq); }
     }
     // older than what is in memory — go to the file (flushed first, so a
-    // page can never miss an entry the memory tail has already dropped)
+    // page can never miss an entry the memory tail has already dropped).
+    // Memory holds every entry after the last fold, so an `after` at or past
+    // it has nothing to find there: a re-join's resync (chat.js) stays O(tail).
     const oldestInMemory = this.entries.length ? this.entries[0].seq : Infinity;
-    if (out.length < limit && before > 0 && oldestInMemory > 0 && existsSync(this.logPath)) {
+    if (out.length < limit && before > 0 && oldestInMemory > 0 && after < this.snapSeq && existsSync(this.logPath)) {
       this.flushLog();
       const lines = readFileSync(this.logPath, "utf8").split("\n");
       for (let i = lines.length - 1; i >= 0 && out.length < limit; i--) {
@@ -220,6 +258,7 @@ export class WorldLog {
         if (!line.trim()) continue;
         let e: LogEntry;
         try { e = JSON.parse(line); } catch { continue; }
+        if (e.seq <= after) break;                   // the log is in seq order: nothing older qualifies
         if (seen.has(e.seq) || !want(e)) continue;
         out.push(e); seen.add(e.seq);
       }
@@ -229,17 +268,21 @@ export class WorldLog {
     return { entries: out, oldestSeq: oldest, hasMore: oldest !== null && oldest > 0 };
   }
 
-  /** What a joiner needs: the world as it is, plus anything since. */
+  /** What a joiner needs: the world as it is, plus anything since. Under a
+   *  sim epoch the sim state rides along: a joiner cannot recompute flights
+   *  whose intents were folded out of the tail, and adoption is exact —
+   *  advancement is schedule-independent, so resuming from the sequencer's
+   *  cut agrees bit-for-bit with having replayed from genesis. */
   joinPayload() {
-    return { state: this.state, tail: this.entries, throughSeq: this.snapSeq };
+    return { state: this.state, tail: this.entries, throughSeq: this.snapSeq,
+      ...(this.sim.epoch ? { sim: simSnapshot(this.sim) } : {}) };
   }
 
   rememberPose(id: string, pose: unknown) {
     if (!pose) return;
     const still = settle(pose)!;
     this.poses[id] = still;
-    writeFileSync(this.posesPath + ".tmp", JSON.stringify(this.poses));
-    renameSync(this.posesPath + ".tmp", this.posesPath);
+    atomicWrite(this.posesPath, JSON.stringify(this.poses));
   }
 
   append(actor: string, verb: string, args: Record<string, unknown>): LogEntry {
@@ -283,6 +326,7 @@ export class WorldLog {
       }, 0);
     }
     foldEntry(this.state, entry);
+    simEntry(this.sim, entry, this.state);   // conformance order: instant fold first
     if (++this.dirtySinceFold >= FOLD_EVERY) this.fold();
     return entry;
   }
@@ -327,7 +371,11 @@ export class WorldSession {
   recPath: string | null = null; // frames archive, created lazily on first recorded frame
   lastRoster = "";               // last written roster line — deltas only
 
-  constructor(private log: WorldLog) {}
+  /** `commit` is the facade's append-and-publish (§24 entry bus) — injected
+   *  so the session's settlements ride the same spine as every other entry
+   *  without the session ever learning the bus (or the facade) exists. */
+  constructor(private log: WorldLog,
+    private commit: (actor: string, verb: string, args: Record<string, unknown>) => LogEntry) {}
 
   /** Commit-and-forget one entity lease (docs/leases.md): the last streamed
    *  transform becomes an ordinary `place` entry — server-authored like a
@@ -340,10 +388,9 @@ export class WorldSession {
     const yaw = final?.yaw ?? L.lastState?.yaw;
     this.leases.delete(id);
     if (p && this.log.state.entities[id]) {
-      const entry = this.log.append("world", "place", {
+      this.commit("world", "place", {
         id, pos: p, ...(yaw != null ? { yaw } : {}), by: L.holder.id, via: "lease",
       });
-      this.broadcast({ type: "log", entry });
     }
     this.broadcast({ type: "lease", op: "released", id });
   }
@@ -379,10 +426,29 @@ export class World {
   private log: WorldLog;
   private session: WorldSession;
 
+  /** The log seq this sequencer opened the world at, and the legs admitted
+   *  since. A leg's GENERATION is `openSeq × 1e6 + count`: server-issued,
+   *  strictly increasing within an opening, and never lower than any
+   *  generation a previous opening issued — every caption entry that carried
+   *  one advanced the seq past the opening that issued it, so a later opening
+   *  reads a higher seq (Mica, #187 round 3: a process-local counter reset on
+   *  restart and stranded the first legitimate captioner behind a bag written
+   *  before the restart). Replay-safe by construction: the generation rides
+   *  the entry, and nothing about it is recomputed from a clock or a process.
+   *  A million admissions per opening is the bound; past it the opening
+   *  refuses further legs a generation rather than issuing an ambiguous one. */
+  readonly openSeq: number;
+  private legCount = 0;
+  legGen(): number {
+    if (this.legCount >= 1_000_000) throw new Error(`world "${this.name}": a million legs admitted since opening — restart the sequencer to open a new generation space`);
+    return this.openSeq * 1_000_000 + (++this.legCount);
+  }
+
   constructor(name: string) {
     this.name = name;
     this.log = new WorldLog(name);
-    this.session = new WorldSession(this.log);
+    this.openSeq = this.log.snapSeq + this.log.entries.length + 1;   // = the next seq this opening will write
+    this.session = new WorldSession(this.log, (a, v, ar) => this.commit(a, v, ar));
     // Runtime scripts wake with the world — a behavior keeps behaving with
     // nobody connected (timers), which is the point of running server-side.
     this.bhv = new BehaviorHost(this);
@@ -396,6 +462,7 @@ export class World {
 
   // the authored plane, read through the log
   get entries() { return this.log.entries; }
+  get sim() { return this.log.sim; }
   get recentSays() { return this.log.recentSays; }
   get state() { return this.log.state; }
   get snapSeq() { return this.log.snapSeq; }
@@ -414,6 +481,14 @@ export class World {
 
   append(actor: string, verb: string, args: Record<string, unknown>): LogEntry {
     return this.log.append(actor, verb, args);
+  }
+  /** Append AND publish (§24 entry bus): birth is publication. Every entry
+   *  that an audience should hear goes through here; bare append() remains
+   *  for the deliberate silences (genesis — see events.ts's rulings). */
+  commit(actor: string, verb: string, args: Record<string, unknown>): LogEntry {
+    const entry = this.log.append(actor, verb, args);
+    publishEntry(this, entry);
+    return entry;
   }
   broadcast(msg: unknown, except?: Client) { this.session.broadcast(msg, except); }
   settleLease(id: string, final?: { p?: number[] | null; yaw?: number | null }) {
@@ -453,6 +528,15 @@ export const worlds = new Map<string, World>();
 // A function DECLARATION on purpose (§15.1): hoisting is load-bearing for
 // module-scope callers — the unsplit boot sweep called it above its
 // definition, and keeping the declaration form keeps that shape legal.
+/** Does this world already exist — in memory or on disk — WITHOUT creating it?
+ *  getWorld() founds on miss, which is right for a join by someone entitled to
+ *  found and wrong for everyone else (RFC-005 §3.2.7: founding is not joining).
+ *  Same test forkWorld uses to refuse an occupied name. */
+export function worldExists(name: string): boolean {
+  if (!/^[a-z0-9_-]{1,64}$/i.test(name)) return false;
+  return worlds.has(name) || existsSync(join(WORLDS_DIR, name));
+}
+
 export function getWorld(name: string): World {
   if (!/^[a-z0-9_-]{1,64}$/i.test(name)) throw new Error(`bad world name: ${name}`);
   let w = worlds.get(name);

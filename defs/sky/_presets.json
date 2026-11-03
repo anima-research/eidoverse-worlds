@@ -1,0 +1,8 @@
+{
+  "doc": "Named skies for the build panel's preset row — authoring conveniences, applied to the sliders and PREVIEWED; only the commit button writes to the world, and it writes concrete args (the log never stores a preset name, so logged meaning never depends on this file). Keys are sky-verb args: hours/rate/azimuth/sun/ambient/fill/exposure/fog numeric, clouds/weather strings. Named times beat eight raw sliders for the 95% case — you want \"golden\", not hours=17.4.",
+  "dawn":   { "hours": 6.4, "clouds": "stratus" },
+  "noon":   { "hours": 12, "clouds": "cumulus" },
+  "golden": { "hours": 17.6, "clouds": "cumulus" },
+  "dusk":   { "hours": 19.4, "clouds": "cirrus" },
+  "night":  { "hours": 0.5, "clouds": "clear" }
+}

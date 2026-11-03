@@ -8,9 +8,12 @@
 // in the world→flora→controller→chat→net→world knot, and this module must
 // not add another edge into it (§14.2).
 
-import { THREE, CONFIG, bus } from './core.js';
+import { THREE } from './core.js';
+import { CONFIG, bus } from './base.js';
+import { radialForce, FORCE_MIN } from '../../shared/force.js';
+import { mergePose } from '../../shared/humanoid.js';
 import {
-  myState, updateFollowCamera, setPosture, keys, setSeatHook,
+  myState, updateFollowCamera, setPosture, keys, setSeatHook, setMountedHook,
 } from './controller.js';
 import { avatarMounts, mountTransform, comps, socketWorldPos } from './world.js';
 import { sendVerb, sendAnim } from './net.js';
@@ -18,7 +21,9 @@ import { makeRagdoll } from './bodysim.js';
 import { jointPositions } from './ragdoll.js';
 import { initBodyDrag, beingDragged, revokeDragged } from './bodydrag.js';
 import { toast, flashHint, setAmbientHint } from './ui.js';
+import { html } from './markup.js';   // hint markup is opt-in: html`` escapes what it interpolates
 import { posable, pushable } from './consent.js';
+import { clearMyReach } from './reachnet.js';
 import { getMe } from './mybody.js';
 
 let logChat = () => {};
@@ -53,8 +58,11 @@ export function goLimp(lean = null) {
   // Park the undriven bones and stop the clip BEFORE constructing the sim.
   // Both of the sim's reference skeletons are read in here — the neutral rest
   // it measures its limits against, and the live pose the tumble starts from —
-  // and neither may still have the walk cycle in it.
-  me.setLimp(true);
+  // and neither may still have the walk cycle in it. A sit/lie clip's hips drop
+  // moves onto the root as it parks (#282): the root everyone sees is measured
+  // from rest hips, as an agent's is.
+  me.setLimp(true, { bake: true });
+  clearMyReach();   // a knocked-over body's reach is gone — descriptor AND arm (mirrors agent.ts knockDown)
   ragdoll = makeRagdoll(me, lean ?? toppleVelocity(), me.restBonePositions());
   myState.clip = 'ragdoll';
   flashHint('limp — move to get up');
@@ -79,7 +87,7 @@ export function getUp() {
 // dismount with my landing spot stamped (the plane-transition invariant),
 // and control returns to the normal ground controller.
 const _seatP = new THREE.Vector3();
-function dismountMe() {
+export function dismountMe() {
   const sw = mountTransform(CONFIG.name, _seatP);
   const yaw = sw?.yaw ?? myState.yaw;
   const off = sw ? _seatP.clone() : myState.pos.clone();
@@ -95,12 +103,14 @@ export function updateMountedMe(dt) {
   if (!sw) return;                       // parent still downloading
   const me = getMe();
   myState.pos.copy(_seatP);
-  myState.yaw = sw.yaw;
+  myState.yaw = Math.atan2(Math.sin(sw.yaw), Math.cos(sw.yaw));   // saved yaw may be unwrapped (owner: 7.62 restored on every reload, 09-05)
   myState.speed = 0;
   myState.clip = sw.pose;
+  myState.q = undefined; myState.locomotion = undefined;
   if (me) {
     me.root.position.copy(_seatP);
-    me.root.rotation.y = sw.yaw;
+    me.root.rotation.set(0,sw.yaw,0);
+    me.locomotion = null;
     me.setClip(sw.pose, 0);
   }
   // The camera lives in updateMe, which we skip while seated — so drive it
@@ -159,8 +169,8 @@ export function updateSeatHint(dt) {
   _hintAcc = 0;
   if (CONFIG.renderer || CONFIG.spectate) return;
   let hint = null;
-  if (avatarMounts.has(CONFIG.name)) hint = '<kbd>X</kbd> get up · <kbd>WASD</kbd> hop off';
-  else if (!downed && nearestSeat(null, 3.5)) hint = '<kbd>X</kbd> — sit';
+  if (avatarMounts.has(CONFIG.name)) hint = html`<kbd>X</kbd> get up · <kbd>WASD</kbd> hop off`;
+  else if (!downed && nearestSeat(null, 3.5)) hint = html`<kbd>X</kbd> — sit`;
   setAmbientHint(hint);
 }
 
@@ -188,7 +198,7 @@ function beginDraggedMode(by) {
   if (!me) return;
   ragdoll?.dispose?.(); ragdoll = null;   // the dragger's sim owns the tumble now
   downed = true;
-  me.setLimp(true);
+  me.setLimp(true, { bake: true });
   myState.clip = 'ragdoll';
   flashHint(`${by} grabs you — move to break free`);
 }
@@ -200,7 +210,7 @@ function applyDraggedSample({ pose, p, yaw }) {
     me.root.position.set(p[0], p[1], p[2]);
     myState.pos.set(p[0], p[1], p[2]);
   }
-  if (Number.isFinite(yaw)) { me.root.rotation.y = yaw; myState.yaw = yaw; }
+  if (Number.isFinite(yaw)) { yaw = Math.atan2(Math.sin(yaw), Math.cos(yaw)); me.root.rotation.y = yaw; myState.yaw = yaw; }
   if (pose && typeof pose === 'object') { me.setPose(pose); myState.pose = pose; }
   me.root.updateMatrixWorld(true);
   noteDraggedMotion();
@@ -259,7 +269,12 @@ function syncPins() {
 }
 function applyMyPins() {
   if (!ragdoll) return;
-  for (const [j, at] of myPins) ragdoll.setPin(j, _pinV.set(at[0], at[1], at[2]));
+  // §24k R0: everything in myPins is a NAIL (placed on release / pulled on
+  // request), so it takes the nail's firm tuning — the dragger's takeover
+  // sim already passed firm=true (bodydrag.js), while the owner's own
+  // re-apply here didn't: the same nail held with different physics
+  // depending on whose machine was simulating.
+  for (const [j, at] of myPins) ragdoll.setPin(j, _pinV.set(at[0], at[1], at[2]), true);
 }
 function addPin(j, at) {
   if (!Array.isArray(at) || at.length !== 3 || !at.every(Number.isFinite)) return;
@@ -331,6 +346,7 @@ export function initLocalBody({ logChat: logChatFn }) {
   // X reaches the socket system through the controller's hook: mounted → get
   // up; a declared seat in reach → mount it; anything else falls through to
   // the controller's own layers (geometry seat pans, then the ground sit).
+  setMountedHook(() => avatarMounts.has(CONFIG.name));
   setSeatHook(() => {
     if (avatarMounts.has(CONFIG.name)) { dismountMe(); return true; }
     if (downed) return false;
@@ -349,7 +365,7 @@ export function initLocalBody({ logChat: logChatFn }) {
     removePin,
   });
 
-  bus.on('puppet', ({ by, pose, anim, ragdoll: rag }) => {
+  bus.on('puppet', ({ by, pose, merge, anim, ragdoll: rag }) => {
     // A ragdoll request runs the sim on MY body — I own it, so I simulate and
     // stream. That is the sync guarantee: the requester never simulates me.
     if (rag) {
@@ -367,8 +383,19 @@ export function initLocalBody({ logChat: logChatFn }) {
       toast(`${by} tried to pose you — enable it in settings to allow`, 'warn', 6000);
       return;
     }
-    if (pose) { myState.pose = pose; flashHint(`${by} posed you`); }
-    if (anim) { getMe()?.playAnimation(anim); sendAnim(anim); }
+    // merge: only the bones they sent (null releases one); otherwise their
+    // pose replaces mine whole — and an EMPTY one is a release. It used to
+    // become an empty held pose, which setPose ignores: `clear_pose target`
+    // never let a human go.
+    if (pose) {
+      myState.pose = merge ? mergePose(myState.pose, pose) : (Object.keys(pose).length ? pose : null);
+      flashHint(myState.pose ? `${by} posed you` : `${by} released your pose`);
+    }
+    if (anim) {
+      const data = { ...anim, replace: anim.replace !== false }; // legacy puppets replace
+      if (data.replace) myState.pose = null;          // a replacing animation ends the held pose too
+      getMe()?.playAnimation(data); sendAnim(data);
+    }
   });
 
   // A force verb reaching us live: an instantaneous radial CAUSE (blast, gust).
@@ -376,17 +403,16 @@ export function initLocalBody({ logChat: logChatFn }) {
   // only effect on my body happens here, gated by the same consent as a push.
   // Linear falloff to the rim; at ground zero direction is meaningless, so you
   // topple the way you were already leaning.
-  bus.on('force', ({ actor, at, radius = 4, power = 3 }) => {
+  bus.on('force', ({ actor, at, radius, power }) => {
     if (!getMe() || !pushable()) return;
-    if (!Array.isArray(at) || at.length !== 3) return;
-    const dx = myState.pos.x - at[0], dz = myState.pos.z - at[2];
-    const d = Math.hypot(dx, dz);
-    if (d > radius) return;
-    const mag = Math.min(MAX_PUSH, power * (1 - d / Math.max(radius, 0.001)));
-    if (mag < 0.3 && !ragdoll) return;             // a breeze, not a blow
-    const lean = d > 0.05
-      ? _shove.set((dx / d) * mag, 0, (dz / d) * mag)
-      : toppleVelocity().setLength(Math.max(mag, 0.5));
+    // §24l R1: the falloff arithmetic is shared/force.js — one truth with
+    // the agent's copy. Consent and the ground-zero direction stay here.
+    const f = radialForce(at, myState.pos.x, myState.pos.z, radius, power);
+    if (!f) return;
+    if (f.mag < FORCE_MIN && !ragdoll) return;     // a breeze, not a blow
+    const lean = f.nx != null
+      ? _shove.set(f.nx * f.mag, 0, f.nz * f.mag)
+      : toppleVelocity().setLength(Math.max(f.mag, 0.5));
     applyShove(lean, actor);
   });
 }

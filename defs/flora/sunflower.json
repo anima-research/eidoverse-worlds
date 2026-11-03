@@ -1,0 +1,9 @@
+{
+  "doc": "The sunflower (sunflower_gen.js): cane stalk, spiral heart-leaves, one nodding head — seed-disc lathe (Skye's highpoly cut + baked), ray-petal card ring, bract star behind — all on the ONE sunflower_ trim sheet. Pair with `rows` for a planted field. Stiffer cane than corn, and the heavy head barely flutters.",
+  "archetype": "sunflower", "maps": "sunflower",
+  "sunflower": { "height": 1.9, "leaves": 11, "leafLen": 0.62, "headR": 0.2, "petals": 26 },
+  "footRadius": 0.3,
+  "baseScale": [0.9, 1.12], "density": 1.2, "clump": 0.8,
+  "wind": { "base": 0.04, "gust": 0.09, "gustFreq": 0.3, "flutter": 0.8 },
+  "sss": 0.5, "rough": 0.8, "pushScale": 0.4
+}

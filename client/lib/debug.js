@@ -14,12 +14,20 @@
 // have shown nothing wrong on the day it mattered most.
 
 import { THREE, scene } from './core.js';
+import { bus } from './base.js';
+import { registerXRPanel, xrPanelOpen } from './xrpanels.js';
+import { gpuLine, shadowPassLine, setGpuTimer, gpuTimerOn, gpuTimerState, measureShadowPass } from './gputime.js';
+import { perf } from './perf.js';
+import { drawStats } from './render.js';
+import { MODES, setMode, activeMode, setSolid, isSolid } from './perfscope.js';
 import { MeshBVHHelper } from 'three-mesh-bvh';
 import { colliders } from './colliders.js';
 import { closestParams, TUNING } from './ragdoll.js';
 import { JOINT_SPECS, HAIR_TUNING, WING_TUNING } from './ammodoll.js';
 import { BLINK, WING_IDLE, LIMP_SPRINGS } from './avatar.js';
 import { makeFrame } from './frames.js';
+import { sliderTable, checkRow, selectRow, btn, sectionHead } from './rows.js';
+import { toast, paintRangesIn } from './ui.js';
 
 // box = an OBB, walkable on top, solid on the sides between min.y and max.y
 // pillar = anything over 2.4m tall, collapsed to a slim centre column so you
@@ -305,38 +313,8 @@ const DIALS = [
   ['GRAVITY', -20, 0, 0.5], ['SETTLE_V', 0, 0.4, 0.01], ['DEADLINE', 1, 30, 1],
 ];
 const DEFAULTS = {};
-
-function switchRow(key, label) {
-  const wrap = document.createElement('label');
-  wrap.className = 'row dbg-row';
-  const cb = document.createElement('input');
-  cb.type = 'checkbox';
-  cb.checked = !!TUNING[key];
-  cb.onchange = () => { TUNING[key] = cb.checked ? 1 : 0; };
-  const nm = document.createElement('span');
-  nm.textContent = label;
-  wrap.append(cb, nm);
-  return wrap;
-}
-
-function dialRow(key, lo, hi, step) {
-  const wrap = document.createElement('div');
-  wrap.className = 'row';
-  const nm = document.createElement('span');
-  nm.className = 'nm';
-  nm.style.width = '92px';
-  nm.textContent = key.toLowerCase().replace(/_/g, ' ');
-  const sl = document.createElement('input');
-  sl.type = 'range'; sl.min = lo; sl.max = hi; sl.step = step; sl.value = TUNING[key];
-  const val = document.createElement('span');
-  val.className = 'v';
-  val.style.width = '46px';
-  const paint = () => { val.textContent = String(TUNING[key]); };
-  sl.oninput = () => { TUNING[key] = Number(sl.value); paint(); };
-  paint();
-  wrap.append(nm, sl, val);
-  return { wrap, reset: () => { TUNING[key] = DEFAULTS[key]; sl.value = DEFAULTS[key]; paint(); } };
-}
+// (the row builders themselves live in rows.js — this panel spelled the
+// slider-table loop six private times before that file existed)
 
 // ---- joint limits ----------------------------------------------------------
 //
@@ -365,86 +343,54 @@ const setF = (S, f, v) => {
   else S[f] = v;
 };
 
-let jointSel = null, jointRows = null, jointDefaults = null;
+/** The retune hook the live-tuning tables share: push the edited table into
+ *  the running doll, if one exists and answers. */
+const retune = (method) => () => { providers.ragdoll?.()?.[method]?.(); };
+
+/** The keep-the-answer button: tuning a number and losing it is the
+ *  difference between a nice afternoon and a number you have to find twice. */
+function copyBtn(label, make) {
+  return btn(label, async () => {
+    const out = make();
+    try { await navigator.clipboard.writeText(out); toastLike(`${label.replace(/^copy /, '')} copied`); }
+    catch { console.log(out); toastLike(`${label.replace(/^copy /, '')} logged to console`); }
+  });
+}
 
 function buildJointPanel(stack) {
   // one snapshot of the shipped table, so "reset" means the defaults and not
   // whatever was on the sliders when the panel was opened
-  jointDefaults = JSON.parse(JSON.stringify(JOINT_SPECS));
+  const jointDefaults = JSON.parse(JSON.stringify(JOINT_SPECS));
+  const apply = retune('retune');
 
-  const pick = document.createElement('select');
-  for (const k of Object.keys(JOINT_SPECS)) {
-    const o = document.createElement('option');
-    o.value = k; o.textContent = k;
-    pick.appendChild(o);
-  }
-  jointSel = pick;
+  const { row: head, select: pick } = selectRow('joint', Object.keys(JOINT_SPECS), null, () => table.repaint());
+  head.querySelector('.nm').style.width = '42px';
 
-  const rows = document.createElement('div');
-  rows.style.cssText = 'display:flex;flex-direction:column;gap:3px';
-  jointRows = rows;
-
-  const apply = () => {
-    const rd = providers.ragdoll?.();
-    if (rd?.retune) rd.retune();
-  };
-
-  const paint = () => {
-    rows.textContent = '';
-    const S = JOINT_SPECS[pick.value];
-    if (!S) return;
-    for (const [f, lo, hi, st] of LIMIT_FIELDS) {
-      if (getF(S, f) === undefined) continue;
-      const wrap = document.createElement('div');
-      wrap.className = 'row';
-      const nm = document.createElement('span');
-      nm.className = 'nm'; nm.style.width = '42px'; nm.textContent = f;
-      const sl = document.createElement('input');
-      sl.type = 'range'; sl.min = lo; sl.max = hi; sl.step = st; sl.value = getF(S, f);
-      const val = document.createElement('span');
-      val.className = 'v'; val.style.width = '34px';
-      const show = () => { val.textContent = `${getF(S, f)}°`; };
-      sl.oninput = () => { setF(S, f, Number(sl.value)); show(); apply(); };
-      show();
-      wrap.append(nm, sl, val);
-      rows.appendChild(wrap);
-    }
-  };
-  pick.onchange = paint;
-  paint();
+  const table = sliderTable(LIMIT_FIELDS, null, {
+    get: (f) => getF(JOINT_SPECS[pick.value], f),
+    set: (f, v) => setF(JOINT_SPECS[pick.value], f, v),
+    fmt: (f, v) => `${v}°`, onSet: apply, nmW: '42px', vW: '34px',
+  });
 
   const btns = document.createElement('div');
-  btns.className = 'row';
-  const mk = (label, fn) => {
-    const b = document.createElement('button');
-    b.textContent = label; b.onclick = fn; btns.appendChild(b); return b;
-  };
-  mk('reset joint', () => {
-    Object.assign(JOINT_SPECS[pick.value], JSON.parse(JSON.stringify(jointDefaults[pick.value])));
-    paint(); apply();
-  });
-  // The point of tuning is to KEEP the answer. Printing the whole table as a
-  // paste-able literal is the difference between a nice afternoon and a number
-  // you have to find twice.
-  mk('copy table', async () => {
-    const txt = Object.entries(JOINT_SPECS).map(([k, S]) => {
-      const parts = [`ref: '${S.ref}'`];
-      if (S.flex != null) parts.push(`flex: ${S.flex}`, `ext: ${S.ext}`, `want: '${S.want}'`);
-      else parts.push(`x: [${S.x[0]}, ${S.x[1]}]`);
-      parts.push(`twist: ${S.twist}`, `z: [${S.z[0]}, ${S.z[1]}]`);
-      return `  ${k}: { ${parts.join(', ')} },`;
-    }).join('\n');
-    const out = `const JOINT_SPECS = {\n${txt}\n};`;
-    try { await navigator.clipboard.writeText(out); toastLike('joint table copied'); }
-    catch { console.log(out); toastLike('joint table logged to console'); }
-  });
-
-  const head = document.createElement('div');
-  head.className = 'row';
-  const hl = document.createElement('span');
-  hl.className = 'nm'; hl.style.width = '42px'; hl.textContent = 'joint';
-  head.append(hl, pick);
-  stack.append(head, rows, btns);
+  btns.className = 'row btn-row';
+  btns.append(
+    btn('reset joint', () => {
+      Object.assign(JOINT_SPECS[pick.value], JSON.parse(JSON.stringify(jointDefaults[pick.value])));
+      table.repaint(); apply(); paintRangesIn(stack);
+    }),
+    copyBtn('copy table', () => {
+      const txt = Object.entries(JOINT_SPECS).map(([k, S]) => {
+        const parts = [`ref: '${S.ref}'`];
+        if (S.flex != null) parts.push(`flex: ${S.flex}`, `ext: ${S.ext}`, `want: '${S.want}'`);
+        else parts.push(`x: [${S.x[0]}, ${S.x[1]}]`);
+        parts.push(`twist: ${S.twist}`, `z: [${S.z[0]}, ${S.z[1]}]`);
+        return `  ${k}: { ${parts.join(', ')} },`;
+      }).join('\n');
+      return `const JOINT_SPECS = {\n${txt}\n};`;
+    }),
+  );
+  stack.append(head, table.el, btns);
 }
 
 // ---- hair -------------------------------------------------------------------
@@ -479,30 +425,12 @@ const HAIR_FIELDS = [
 ];
 
 function buildBlinkPanel(stack) {
-  const rows = document.createElement('div');
-  rows.style.cssText = 'display:flex;flex-direction:column;gap:3px';
-  for (const [f, lo, hi, st] of BLINK_FIELDS) {
-    const wrap = document.createElement('div');
-    wrap.className = 'row';
-    const nm = document.createElement('span');
-    nm.className = 'nm'; nm.style.width = '54px'; nm.textContent = f;
-    const sl = document.createElement('input');
-    sl.type = 'range'; sl.min = lo; sl.max = hi; sl.step = st; sl.value = BLINK[f];
-    const val = document.createElement('span');
-    val.className = 'v'; val.style.width = '44px';
-    const show = () => {
-      val.textContent = (f === 'closed' || f === 'lower')
-        ? `${(BLINK[f] * 180 / Math.PI).toFixed(0)}°`
-        : f === 'dur' ? `${(BLINK[f] * 1000).toFixed(0)}ms`
-          : f === 'eyeMax' ? `${(BLINK[f] * 180 / Math.PI).toFixed(0)}°`
-            : f === 'axis' ? ['x', 'y', 'z'][BLINK[f]] ?? '?' : `${BLINK[f]}x`;
-    };
-    sl.oninput = () => { BLINK[f] = Number(sl.value); show(); };
-    show();
-    wrap.append(nm, sl, val);
-    rows.appendChild(wrap);
-  }
-  stack.appendChild(rows);
+  stack.appendChild(sliderTable(BLINK_FIELDS, BLINK, {
+    fmt: (f, v) => (f === 'closed' || f === 'lower' || f === 'eyeMax'
+      ? `${(v * 180 / Math.PI).toFixed(0)}°`
+      : f === 'dur' ? `${(v * 1000).toFixed(0)}ms`
+        : f === 'axis' ? ['x', 'y', 'z'][v] ?? '?' : `${v}x`),
+  }).el);
 }
 
 // A limp body with no sim of its own falls back to three-vrm, whose springs
@@ -516,73 +444,30 @@ const LIMP_FIELDS = [
 ];
 
 function buildLimpPanel(stack) {
-  const rows = document.createElement('div');
-  rows.style.cssText = 'display:flex;flex-direction:column;gap:3px';
-  for (const [f, lo, hi, st] of LIMP_FIELDS) {
-    const wrap = document.createElement('div');
-    wrap.className = 'row';
-    const nm = document.createElement('span');
-    nm.className = 'nm'; nm.style.width = '54px'; nm.textContent = f;
-    const sl = document.createElement('input');
-    sl.type = 'range'; sl.min = lo; sl.max = hi; sl.step = st; sl.value = LIMP_SPRINGS[f];
-    const val = document.createElement('span');
-    val.className = 'v'; val.style.width = '44px';
-    const show = () => { val.textContent = f === 'stiffness'
-      ? `${LIMP_SPRINGS[f]}x` : String(LIMP_SPRINGS[f]); };
-    sl.oninput = () => { LIMP_SPRINGS[f] = Number(sl.value); show(); };
-    show();
-    wrap.append(nm, sl, val);
-    rows.appendChild(wrap);
-  }
-  stack.appendChild(rows);
+  stack.appendChild(sliderTable(LIMP_FIELDS, LIMP_SPRINGS, {
+    fmt: (f, v) => (f === 'stiffness' ? `${v}x` : String(v)),
+  }).el);
 }
+
+/** The tuning-table literal, ready to paste back into the source. */
+const tableLiteral = (name, o) => `export const ${name} = {\n`
+  + Object.entries(o).map(([k, v]) => `  ${k}: ${v},`).join('\n') + '\n};';
 
 function buildHairPanel(stack) {
   const defaults = { ...HAIR_TUNING };
-  const rows = document.createElement('div');
-  rows.style.cssText = 'display:flex;flex-direction:column;gap:3px';
-  const apply = () => {
-    const rd = providers.ragdoll?.();
-    if (rd?.retuneHair) rd.retuneHair();
-  };
-  const mk = () => {
-    rows.textContent = '';
-    for (const [f, lo, hi, st] of HAIR_FIELDS) {
-      const wrap = document.createElement('div');
-      wrap.className = 'row';
-      const nm = document.createElement('span');
-      nm.className = 'nm'; nm.style.width = '54px'; nm.textContent = f;
-      const sl = document.createElement('input');
-      sl.type = 'range'; sl.min = lo; sl.max = hi; sl.step = st; sl.value = HAIR_TUNING[f];
-      const val = document.createElement('span');
-      val.className = 'v'; val.style.width = '44px';
-      const show = () => {
-        val.textContent = f === 'mass' ? `${(HAIR_TUNING[f] * 1000).toFixed(1)}g`
-          : f === 'limit' ? `${HAIR_TUNING[f]}°` : String(HAIR_TUNING[f]);
-      };
-      sl.oninput = () => { HAIR_TUNING[f] = Number(sl.value); show(); apply(); };
-      show();
-      wrap.append(nm, sl, val);
-      rows.appendChild(wrap);
-    }
-  };
-  mk();
+  const apply = retune('retuneHair');
+  const table = sliderTable(HAIR_FIELDS, HAIR_TUNING, {
+    fmt: (f, v) => (f === 'mass' ? `${(v * 1000).toFixed(1)}g`
+      : f === 'limit' ? `${v}°` : String(v)),
+    onSet: apply,
+  });
   const btns = document.createElement('div');
-  btns.className = 'row';
-  const b1 = document.createElement('button');
-  b1.textContent = 'reset hair';
-  b1.onclick = () => { Object.assign(HAIR_TUNING, defaults); mk(); apply(); };
-  const b2 = document.createElement('button');
-  b2.textContent = 'copy hair';
-  b2.onclick = async () => {
-    const out = 'export const HAIR_TUNING = {\n'
-      + Object.entries(HAIR_TUNING).map(([k, v]) => `  ${k}: ${v},`).join('\n')
-      + '\n};';
-    try { await navigator.clipboard.writeText(out); toastLike('hair tuning copied'); }
-    catch { console.log(out); toastLike('hair tuning logged'); }
-  };
-  btns.append(b1, b2);
-  stack.append(rows, btns);
+  btns.className = 'row btn-row';
+  btns.append(
+    btn('reset hair', () => { Object.assign(HAIR_TUNING, defaults); table.repaint(); apply(); paintRangesIn(stack); }),
+    copyBtn('copy hair', () => tableLiteral('HAIR_TUNING', HAIR_TUNING)),
+  );
+  stack.append(table.el, btns);
 }
 
 // ---- wings ------------------------------------------------------------------
@@ -615,42 +500,20 @@ const WING_SIM_FIELDS = [
 function buildWingPanel(stack) {
   const idleDefaults = { ...WING_IDLE };
   const simDefaults = { ...WING_TUNING };
-  const apply = () => {
-    const rd = providers.ragdoll?.();
-    if (rd?.retuneWings) rd.retuneWings();
-  };
-  const table = (fields, obj, live, fmt) => {
-    const rows = document.createElement('div');
-    rows.style.cssText = 'display:flex;flex-direction:column;gap:3px';
-    const mk = () => {
-      rows.textContent = '';
-      for (const [f, lo, hi, st] of fields) {
-        const wrap = document.createElement('div');
-        wrap.className = 'row';
-        const nm = document.createElement('span');
-        nm.className = 'nm'; nm.style.width = '54px'; nm.textContent = f;
-        const sl = document.createElement('input');
-        sl.type = 'range'; sl.min = lo; sl.max = hi; sl.step = st; sl.value = obj[f];
-        const val = document.createElement('span');
-        val.className = 'v'; val.style.width = '44px';
-        const show = () => { val.textContent = fmt(f); };
-        sl.oninput = () => { obj[f] = Number(sl.value); show(); if (live) apply(); };
-        show();
-        wrap.append(nm, sl, val);
-        rows.appendChild(wrap);
-      }
-    };
-    mk();
-    return { rows, mk };
-  };
-  const idle = table(WING_IDLE_FIELDS, WING_IDLE, false, (f) => (
-    f === 'deg' || f === 'bias' || f === 'sweep' ? `${WING_IDLE[f]}°`
-      : f === 'hz' ? `${WING_IDLE[f]}Hz`
-        : f === 'recover' ? `${(WING_IDLE[f] * 1000).toFixed(0)}ms`
-          : String(WING_IDLE[f])));
-  const sim = table(WING_SIM_FIELDS, WING_TUNING, true, (f) => (
-    f === 'mass' ? `${(WING_TUNING[f] * 1000).toFixed(0)}g`
-      : f === 'limit' ? `${WING_TUNING[f]}°` : String(WING_TUNING[f])));
+  const apply = retune('retuneWings');
+  // WING_IDLE is read fresh every frame by avatar.js, so its table needs no
+  // retune hook; WING_TUNING has to be pushed into constraints that already
+  // exist, which is what `apply` does.
+  const idle = sliderTable(WING_IDLE_FIELDS, WING_IDLE, {
+    fmt: (f, v) => (f === 'deg' || f === 'bias' || f === 'sweep' ? `${v}°`
+      : f === 'hz' ? `${+(+v).toFixed(2)}Hz`   // the default is 1/3.4: unrounded it printed 0.29411764705882354Hz, 157 px in a 44 px readout
+        : f === 'recover' ? `${(v * 1000).toFixed(0)}ms` : String(+(+v).toFixed(3))),
+  });
+  const sim = sliderTable(WING_SIM_FIELDS, WING_TUNING, {
+    fmt: (f, v) => (f === 'mass' ? `${(v * 1000).toFixed(0)}g`
+      : f === 'limit' ? `${v}°` : String(v)),
+    onSet: apply,
+  });
   const sub = (text) => {
     const h = document.createElement('div');
     h.className = 'nm'; h.style.cssText = 'opacity:0.6;margin-top:4px';
@@ -658,150 +521,177 @@ function buildWingPanel(stack) {
     return h;
   };
   const btns = document.createElement('div');
-  btns.className = 'row';
-  const b1 = document.createElement('button');
-  b1.textContent = 'reset wings';
-  b1.onclick = () => {
-    Object.assign(WING_IDLE, idleDefaults);
-    Object.assign(WING_TUNING, simDefaults);
-    idle.mk(); sim.mk(); apply();
-  };
-  const b2 = document.createElement('button');
-  b2.textContent = 'copy wings';
-  b2.onclick = async () => {
-    const one = (name, o) => `export const ${name} = {\n`
-      + Object.entries(o).map(([k, v]) => `  ${k}: ${v},`).join('\n') + '\n};';
-    const out = `${one('WING_IDLE', WING_IDLE)}\n\n${one('WING_TUNING', WING_TUNING)}`;
-    try { await navigator.clipboard.writeText(out); toastLike('wing tuning copied'); }
-    catch { console.log(out); toastLike('wing tuning logged'); }
-  };
-  btns.append(b1, b2);
-  stack.append(sub('flap (live)'), idle.rows, sub('limp (needs a ragdoll)'), sim.rows, btns);
+  btns.className = 'row btn-row';
+  btns.append(
+    btn('reset wings', () => {
+      Object.assign(WING_IDLE, idleDefaults);
+      Object.assign(WING_TUNING, simDefaults);
+      idle.repaint(); sim.repaint(); apply(); paintRangesIn(stack);
+    }),
+    copyBtn('copy wings', () =>
+      `${tableLiteral('WING_IDLE', WING_IDLE)}\n\n${tableLiteral('WING_TUNING', WING_TUNING)}`),
+  );
+  stack.append(sub('flap (live)'), idle.el, sub('limp (needs a ragdoll)'), sim.el, btns);
 }
 
-// the panel has no toast of its own; keep the dependency to one line
-function toastLike(msg) { console.log(`[debug] ${msg}`); }
+const toastLike = (msg) => toast(msg);
 
 // ---- panel -----------------------------------------------------------------
 
-function row(label, key, onChange) {
-  const wrap = document.createElement('label');
-  wrap.className = 'row dbg-row';
-  const cb = document.createElement('input');
-  cb.type = 'checkbox';
-  cb.checked = on[key];
-  cb.onchange = () => { on[key] = cb.checked; onChange?.(cb.checked); };
-  const nm = document.createElement('span');
-  nm.textContent = label;
-  wrap.append(cb, nm);
-  return wrap;
-}
+const viewRow = (label, key, onChange) => checkRow(label,
+  () => on[key], (v) => { on[key] = v; onChange?.(v); }, { className: 'row dbg-row' });
 
 /** @param p { ragdoll(), downed(), fps() } — passed in rather than imported,
  *  so this module stays a leaf and never draws main.js into a cycle. */
 export function initDebug(p = {}) {
   providers = p;
   frame = makeFrame('debug', {
-    title: 'debug', x: -10, y: 300, w: 250, h: 460, minW: 210, hidden: true,
+    // second right column, bottom-anchored ABOVE the emote row: emotes own the corner, world/settings the top
+    title: 'debug', x: -270, y: -165, w: 250, h: 460, minW: 210, hidden: true,
   });
   const stack = document.createElement('div');
   stack.className = 'stack';
-  // The frame block is PINNED above everything (tel0s: the stats pre at the
-  // bottom rendered past the scroller's end) — its own element, flex:none,
+  // The frame block is PINNED above everything (the stats pre at the bottom
+  // used to render past the scroller's end) — its own element, flex:none,
   // so scrolling the settings never hides the one number the panel is
   // usually opened for.
   framePre = document.createElement('pre');
   framePre.className = 'dbg-stats';
   framePre.style.cssText = 'flex:none;margin:0 0 4px';
   stack.appendChild(framePre);
-  stack.append(
-    row('collider volumes', 'colliders', (v) => { if (!v) clearColliders(); }),
-    row('ragdoll skeleton', 'ragdoll', (v) => { if (!v) clearRagdoll(); }),
+  // TEXT TABS BY JOB (owner, 09-29: Debug stays on the dock, its many collapsing sections become tabs):
+  // physics = the ragdoll and its tuning, body = the secondary motion that rides a body (blink, hair,
+  // wings), perf = what the frame costs. The frame numbers above stay put whichever tab is chosen.
+  const tabs = dbgTabs(stack, ['physics', 'body', 'perf'], () => frame.visible);
+  // the remembered tab is chosen at boot with Debug closed: its groups wait until the panel is on screen
+  frame.onShow(tabs.flush);
+  const phys = tabs.pane('physics');
+  phys.append(
+    viewRow('collider volumes', 'colliders', (v) => { if (!v) clearColliders(); }),
+    viewRow('ragdoll skeleton', 'ragdoll', (v) => { if (!v) clearRagdoll(); }),
   );
   for (const [k] of DIALS) DEFAULTS[k] = TUNING[k];
   for (const [k] of SWITCHES) DEFAULTS[k] = TUNING[k];
 
   const btns = document.createElement('div');
-  btns.className = 'row';
+  btns.className = 'row btn-row';   // unified equal-width action-button row
   const mk = (label, fn) => {
     const b = document.createElement('button');
     b.textContent = label; b.onclick = fn;
-    b.style.cssText = 'flex:1;font-size:var(--fs-sm);padding:3px 0';
     return b;
   };
   const pause = mk('pause', () => {
     TUNING.PAUSED = TUNING.PAUSED ? 0 : 1;
     pause.textContent = TUNING.PAUSED ? '▶ resume' : 'pause';
   });
-  const resets = [];
   btns.append(
-    mk('re-drop', () => providers.reLimp?.()),
+    btn('re-drop', () => providers.reLimp?.()),
     pause,
-    mk('reset', () => { for (const r of resets) r(); for (const [k] of SWITCHES) TUNING[k] = DEFAULTS[k]; repaintSwitches(); }),
+    btn('reset', () => {
+      for (const [k] of [...DIALS, ...SWITCHES]) TUNING[k] = DEFAULTS[k];
+      dials.repaint(); repaintSwitches();
+    }),
   );
-  stack.appendChild(btns);
+  phys.appendChild(btns);
 
   const swBox = document.createElement('div');
   // NOT .stack — that is flex:1 with its own scroller, and nested inside the
   // panel's stack it collapses to nothing and the switches vanish.
   swBox.style.cssText = 'display:flex;flex-direction:column;gap:3px';
-  for (const [k, label] of SWITCHES) swBox.appendChild(switchRow(k, label));
+  for (const [k, label] of SWITCHES) {
+    swBox.appendChild(checkRow(label,
+      () => !!TUNING[k], (v) => { TUNING[k] = v ? 1 : 0; }, { className: 'row dbg-row' }));
+  }
   const repaintSwitches = () => {
     [...swBox.querySelectorAll('input')].forEach((cb, i) => { cb.checked = !!TUNING[SWITCHES[i][0]]; });
   };
-  stack.appendChild(swBox);
+  phys.appendChild(swBox);
 
-  for (const [k, lo, hi, st] of DIALS) {
-    const d = dialRow(k, lo, hi, st);
-    resets.push(d.reset);
-    stack.appendChild(d.wrap);
-  }
+  const dials = sliderTable(DIALS, TUNING, {
+    label: (k) => k.toLowerCase().replace(/_/g, ' '),
+    nmW: '92px', vW: '46px',
+  });
+  phys.appendChild(dials.el);
 
-  // blink, live
-  const bhead = document.createElement('div');
-  bhead.className = 'row';
-  bhead.style.cssText = 'margin-top:6px;opacity:.75';
-  bhead.textContent = '— blink (live) —';
-  stack.appendChild(bhead);
-  buildBlinkPanel(stack);
 
-  // hair, live
-  const hhead = document.createElement('div');
-  hhead.className = 'row';
-  hhead.style.cssText = 'margin-top:6px;opacity:.75';
-  hhead.textContent = '— hair (live, while ragdolled) —';
-  stack.appendChild(hhead);
-  buildHairPanel(stack);
+  tabs.group('physics', 'joint limits', (body) => buildJointPanel(body));
+  tabs.group('body', 'blink', (body) => buildBlinkPanel(body));
+  tabs.group('body', 'hair (while ragdolled)', (body) => buildHairPanel(body));
+  tabs.group('body', 'limp hair (no local sim)', (body) => buildLimpPanel(body));
+  tabs.group('body', 'wings', (body) => buildWingPanel(body));
+  // perfscope mounts itself when its module is present; without it this is a silent no-op
+  import('./perfscope.js').then((m) => m.mountPerfPanel(stack, { toast: toastLike, section: (_parent, title, build) => tabs.group('perf', title, build) })).catch(() => {});
 
-  // limp springbones (remotes and post-dispose), live
-  const lhead = document.createElement('div');
-  lhead.className = 'row';
-  lhead.style.cssText = 'margin-top:6px;opacity:.75';
-  lhead.textContent = '— limp hair, no local sim —';
-  stack.appendChild(lhead);
-  buildLimpPanel(stack);
+  // GPU time, measured by the GPU (gputime.js): the number a headless probe cannot give us
+  tabs.group('perf', 'gpu timer', (body) => {
+    const row = document.createElement('label'); row.className = 'row dbg-row';   // the house check row, like every other switch here
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = gpuTimerOn();
+    row.append(cb, document.createTextNode('time the world pass on the GPU'));
+    const btn = document.createElement('button'); btn.textContent = 'measure shadow pass';
+    const out = document.createElement('pre'); out.className = 'dbg-stats'; out.style.whiteSpace = 'pre-wrap';   // sentences, not columns: wrap rather than scroll sideways
+    const paint = () => { out.textContent = [gpuLine(), shadowPassLine()].join('\n'); };
+    cb.onchange = () => { setGpuTimer(cb.checked); paint(); };
+    btn.onclick = () => { measureShadowPass().then((r) => { if (r?.error) toastLike(`gpu timer: ${r.error}`); cb.checked = gpuTimerOn(); paint(); }); paint(); };
+    body.append(row, btn, out);
+    setInterval(() => { let x = false; try { x = xrPanelOpen('debug'); } catch { /* not presenting */ } if (body.isConnected && (body.offsetParent || x)) paint(); }, 1000);
+    if (!gpuTimerState().supported) { cb.disabled = true; btn.disabled = true; }
+    paint();
+  });
 
-  // wings, live
-  const whead = document.createElement('div');
-  whead.className = 'row';
-  whead.style.cssText = 'margin-top:6px;opacity:.75';
-  whead.textContent = '— wings —';
-  stack.appendChild(whead);
-  buildWingPanel(stack);
-
-  // joint limits, live
-  const jhead = document.createElement('div');
-  jhead.className = 'row';
-  jhead.style.cssText = 'margin-top:6px;opacity:.75';
-  jhead.textContent = '— joint limits (live) —';
-  stack.appendChild(jhead);
-  buildJointPanel(stack);
-
+  // the live bone readout: its own group, last in physics
   statsEl = document.createElement('pre');
   statsEl.className = 'dbg-stats';
-  stack.appendChild(statsEl);
+  tabs.group('physics', 'ragdoll readout', (body) => body.appendChild(statsEl));
+  tabs.choose();
   frame.body.appendChild(stack);
   return frame;
+}
+
+// Debug's text tabs: the strip is the profile's .pf-tabs recipe with no glyphs. A group inside a tab is
+// a quiet caption and a body; `build(body)` runs once, lazily, the first time its tab is SEEN (chosen
+// while the panel shows) — so an unvisited tab costs nothing and the panel opens light. A group added to
+// the tab already on screen (perfscope arrives by dynamic import) builds at once.
+function dbgTabs(parent, names, shown) {
+  const LS = 'ew-tab-debug';
+  const strip = document.createElement('div');
+  strip.className = 'pf-tabs dbg-tabs'; strip.setAttribute('role', 'tablist');
+  parent.appendChild(strip);
+  const tabs = new Map();
+  let current = null;
+  const flush = () => { if (current && shown()) for (const g of tabs.get(current).pending.splice(0)) g(); };
+  const show = (name) => {
+    current = name;
+    for (const [n, t] of tabs) {
+      const on = n === name;
+      t.btn.classList.toggle('on', on); t.btn.setAttribute('aria-selected', String(on)); t.pane.classList.toggle('open', on);
+    }
+    flush();
+    try { localStorage.setItem(LS, name); } catch {}
+  };
+  for (const name of names) {
+    const btn = document.createElement('button');
+    btn.className = 'pf-tab'; btn.setAttribute('role', 'tab'); btn.dataset.tab = name; btn.textContent = name;
+    btn.onclick = () => show(name);
+    const pane = document.createElement('div');
+    pane.className = 'dbg-pane'; pane.dataset.tab = name; pane.setAttribute('role', 'tabpanel');
+    strip.appendChild(btn); parent.appendChild(pane);
+    tabs.set(name, { btn, pane, pending: [] });
+  }
+  return {
+    pane: (name) => tabs.get(name).pane,
+    group(name, title, build) {
+      const t = tabs.get(name);
+      const cap = document.createElement('div'); cap.className = 'dbg-group'; cap.textContent = title;
+      const body = document.createElement('div'); body.className = 'dbg-group-body';
+      body.style.cssText = 'display:flex;flex-direction:column;gap:4px';
+      t.pane.append(cap, body);
+      const run = () => build(body);
+      if (current === name && shown()) run(); else t.pending.push(run);
+      return body;
+    },
+    flush,
+    choose() { let want = null; try { want = localStorage.getItem(LS); } catch {} show(tabs.has(want) ? want : names[0]); },
+  };
 }
 
 export function toggleDebug() { frame?.toggle(); }
@@ -823,7 +713,10 @@ export function updateDebug(now = performance.now()) {
   if (!frame) return;
   // F1 hides the UI for screenshots; debug lines are UI, whatever layer they
   // happen to live on
-  const hidden = !frame.visible || document.body.classList.contains('photo');
+  // open in the VR ring counts as shown: the desktop frame isn't 'visible' then, and this early return left the pane's
+  // numbers unpainted, so the quad (it re-rasters on DOM changes) froze (owner, 09-27 20:42: 'locked and never change')
+  let inXR = false; try { inXR = xrPanelOpen('debug'); } catch { /* not presenting */ }
+  const hidden = (!frame.visible && !inXR) || document.body.classList.contains('photo');
   ensureGroups();
   collGroup.visible = !hidden && on.colliders;
   ragGroup.visible = !hidden && on.ragdoll;
@@ -858,6 +751,7 @@ export function updateDebug(now = performance.now()) {
     framePre.textContent = [
       `frame  ${String(p.fps).padStart(4)} fps  ${p.ms.toFixed(1)}ms  worst ${Math.round(p.worst)}ms`,
       ...bill.map((s) => `  ${s.name.padEnd(12)} ${s.ms.toFixed(2).padStart(6)}ms${s.every > 1 ? ` /${s.every}f` : ''}`),
+      ...(gpuTimerOn() ? [gpuLine()] : []),
     ].join('\n');
   }
   const lines = [
@@ -915,3 +809,34 @@ export function updateDebug(now = performance.now()) {
   }
   statsEl.textContent = lines.join('\n');
 }
+
+// ---- the debug frame as a VR quad: YOUR numbers, in-headset -----------------
+// The recorder tees them to the operator; this shows them to the person
+// wearing the headset (live, 09-04: "extremely janky" — a number beats an
+// adjective). Same sources as the desk (perf.js, render.js, perfscope);
+// the perfscope modes are the same setMode the desk's rows call.
+function debugFields() {
+  const r = drawStats().render ?? {};
+  const cur = activeMode();
+  return [
+    { t: 'info', label: 'fps', value: `${perf.fps}` },
+    { t: 'info', label: 'frame', value: `${(+perf.ms).toFixed(1)} ms · worst ${(+perf.worst).toFixed(0)} · spikes ${perf.spikes}` },
+    { t: 'info', label: 'draws', value: `${r.drawCalls ?? '—'} calls · ${((r.triangles ?? 0) / 1000).toFixed(0)}k tris` },
+    { t: 'list', label: 'perfscope', rows: Object.entries(MODES).map(([k, m]) => ({ id: k, label: m.label, active: k === cur, actions: k === cur ? [] : [{ k: 'mode', label: 'use' }] })) },
+    { t: 'check', k: 'solid', label: 'solid tint', value: isSolid() },
+    { t: 'check', k: 'gputimer', label: 'gpu timer', value: gpuTimerOn() },
+    { t: 'info', label: 'gpu', value: gpuLine().replace(/^gpu:? ?/, '') },
+    { t: 'list', label: 'shadow pass', rows: [{ id: 'shadowab', label: shadowPassLine().replace(/^shadow pass:? ?/, ''), actions: [{ k: 'shadowab', label: 'measure' }] }] },
+  ];
+}
+function debugDispatch(k, v) {
+  if (k === 'mode') setMode(v);
+  else if (k === 'solid') setSolid(!!v);
+  else if (k === 'gputimer') setGpuTimer(!!v);
+  else if (k === 'shadowab') measureShadowPass().then(() => bus.emit('xr:repaint'));
+  else return;
+  bus.emit('xr:repaint');
+}
+registerXRPanel({ id: 'debug', title: 'debug', fields: debugFields, dispatch: debugDispatch });
+// live numbers: one repaint a second while the quad is open
+setInterval(() => { try { if (xrPanelOpen('debug')) bus.emit('xr:repaint'); } catch { /* not presenting */ } }, 1000);

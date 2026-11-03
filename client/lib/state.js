@@ -21,10 +21,19 @@
 // filtering arrives with the first realizer, not before.
 
 import { foldEntry, emptyState } from '../../shared/fold.js';
+import { emptySim, simEntry } from '../../shared/sim.js';
+import { rightsIn } from '../../shared/rightsfold.js';
+import { CONFIG, bus } from './base.js';
 
 export const state = {
   /** @type {import('../../shared/fold.js').WorldState} */
   st: emptyState(),
+  /** The sim fold beside the instant one (dialect 3, PROTOCOL_v2): folded
+   *  through the same entries in the same normative order; adopted from
+   *  the join snapshot's cut (a joiner cannot recompute flights whose
+   *  intents were folded out of the tail). simworld.js advances and
+   *  applies it. */
+  sim: emptySim(),
   /** Highest folded seq; -1 before hydration. Synthetic pre-hydration
    *  state (the snapshot) is already folded into what the server sent. */
   lastSeq: -1,
@@ -61,14 +70,18 @@ function emit(ev) {
  *    overlap and are skipped.
  *  The clone makes the shadow OWN its state: live folds here must never
  *  mutate objects the legacy path is still reading out of the join msg. */
-export function hydrate(snapshotState, tail = [], throughSeq = -1) {
+export function hydrate(snapshotState, tail = [], throughSeq = -1, sim = null) {
   // Defensive merge: snapshots from older servers may lack newer maps
   // (bans, mounts, behaviors are optional in the shape already).
   state.st = { ...emptyState(), ...structuredClone(snapshotState ?? {}) };
+  // the sequencer's sim cut, adopted wholesale — advancement is schedule-
+  // independent (PROTOCOL_v2), so resuming from it is exact
+  state.sim = sim?.epoch ? structuredClone(sim) : emptySim();
   state.lastSeq = throughSeq;
   for (const e of tail) {
     if (e.seq <= state.lastSeq) continue;   // the documented overlap
     foldEntry(state.st, e);
+    simEntry(state.sim, e, state.st);
     state.lastSeq = e.seq;
   }
   state.hydrated = true;
@@ -90,13 +103,58 @@ export function foldLive(entry) {
     console.warn(`[state] seq gap: ${state.lastSeq} → ${entry.seq}`);
   }
   foldEntry(state.st, entry);
+  simEntry(state.sim, entry, state.st);   // normative order: instant fold first
   state.lastSeq = entry.seq;
+  // LIVE RIGHTS, RECOMPUTED FROM THE FOLD -- not merged by hand.
+  //
+  // net.myRights only ever changed at join, so a `/grant … -fly` mid-session
+  // was invisible to the client's own capability gate until reload. The first
+  // repair merged grant entries by hand in world.js applyGrantState() -- which
+  // turned out to be exported and CALLED BY NOTHING, so it was dead code that
+  // read like a fix. mica found the same hole on the agent side in production.
+  //
+  // Recomputing beats merging: `rightsIn` is the identical function the
+  // sequencer answers with, so the client cannot invent a precedence rule the
+  // server does not have (a wildcard overriding a name-keyed grant, say --
+  // which is exactly the mistake I made when merging by hand).
+  //
+  // WORLD_ADMIN is deliberately NOT reproducible here: it is an environment
+  // fact the server folds in before sending yourRights, so an admin's grant is
+  // preserved rather than recomputed away.
+  if (entry?.verb === 'grant') refreshMyRights();
   emit({ type: 'entry', entry });
+}
+
+/** Recompute what I may do here from the folded roles.
+ *
+ *  Only ever WIDENS or NARROWS what the server already told me: an admin
+ *  override (WORLD_ADMIN) arrives in the snapshot as fly:true with no matching
+ *  role record, so a recompute would strip it. Kept by taking the max of the
+ *  two -- the snapshot is the authority and the fold is the live delta. */
+// net.js imports THIS module (shadow fold), so the arrow cannot point back --
+// the same reason net keeps the controller at arm's length. main.js wires it.
+let rightsSink = null;
+export function setRightsSink(fn) { rightsSink = typeof fn === 'function' ? fn : null; }
+
+function refreshMyRights() {
+  if (!rightsSink) return;
+  const cur = rightsSink();
+  if (!cur) return;                          // not joined; nothing to refresh
+  const live = rightsIn(state.st, CONFIG.name);
+  // WORLD_ADMIN is an environment fact the fold cannot see, so a recompute
+  // would strip an admin's flight. The snapshot said so; keep it.
+  const admin = cur.admin === true;
+  const next = { ...cur, role: live.role, gen: live.gen,
+                 fly: admin ? cur.fly : live.fly };
+  if (next.role === cur.role && next.gen === cur.gen && next.fly === cur.fly) return;
+  rightsSink(next);
+  bus.emit('your-rights', next);
 }
 
 /** World switch / fork / leave: back to nothing. */
 export function reset() {
   state.st = emptyState();
+  state.sim = emptySim();
   state.lastSeq = -1;
   state.hydrated = false;
   emit({ type: 'reset' });

@@ -1,0 +1,4 @@
+{
+  "doc": "Named real-time clocks for the sky panel's clock row. `clock: real` makes the world's hour BE the named timezone's wall hour (DST included — hoursAt owns the formula) and the time slider yields. Authoring conveniences on the presets law: the row previews live, and only the ✓ commit writes the sky verb — which carries the concrete clock/tz args, never a clock's def name. A world can offer its residents any set of home clocks here.",
+  "los angeles": { "label": "real time — Los Angeles", "tz": "America/Los_Angeles" }
+}

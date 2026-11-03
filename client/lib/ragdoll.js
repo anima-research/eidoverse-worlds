@@ -42,37 +42,22 @@
 // numbers tuned on one body are wrong on the next one.
 
 import { THREE } from './core.js';
+import { BEHIND, CONE, HINGE, TWIST, TWIST_PARENT, RADIUS_FRAC, torsoRadius } from '../../shared/joints.js';
 import { heightAt } from './terrain.js';
 import { resolveColliders } from './colliders.js';
+import { SEGMENTS, JOINTS, DRIVEN_BONES, closestParams, snapshotPacker, seedJoints } from './rigmeasure.js';
+import { BodyEngineBase } from './bodyengine.js';
 
 // ---------------------------------------------------------------------------
 // topology
 // ---------------------------------------------------------------------------
 
-// Which bones the sim drives, each as (bone -> the child joint it points at).
-// A reduced set: enough to read as a body, few enough to stay stable and to
-// keep the streamed pose small. Order matters: parents before children, both
-// for the drive walk and for the feed-forward limit sweep.
-//
-// Driving the PELVIS is what lets a body actually lie down — without it the
-// pelvis keeps its standing orientation forever and every limb folds ~90°
-// around an upright anchor, which reads as a crumple.
-const CHAINS = [
-  ['hips', 'spine'],
-  ['spine', 'chest'], ['chest', 'neck'], ['neck', 'head'],
-  ['leftUpperArm', 'leftLowerArm'], ['leftLowerArm', 'leftHand'],
-  ['rightUpperArm', 'rightLowerArm'], ['rightLowerArm', 'rightHand'],
-  ['leftUpperLeg', 'leftLowerLeg'], ['leftLowerLeg', 'leftFoot'],
-  ['rightUpperLeg', 'rightLowerLeg'], ['rightLowerLeg', 'rightFoot'],
-];
-// Every joint we track as a particle (bones + their leaf children).
-export const JOINTS = [...new Set(CHAINS.flat())];
-// The bones the sim actually writes a rotation for. Everything else in the
-// humanoid — upperChest, the shoulders, hands, feet, toes, every finger — is
-// the locomotion mixer's, and must be parked before a tumble starts or the
-// clip keeps animating a corpse. avatar.setLimp does the parking; this is the
-// list it parks around, exported so the two cannot drift apart.
-export const DRIVEN_BONES = CHAINS.map(([bone]) => bone);
+// The body cut, the joint list and the driven-bone list live in rigmeasure.js
+// now — one table for both engines (it was byte-identical here and in
+// ammodoll). Re-exported so avatar.setLimp and bodydrag keep their historic
+// import site.
+const CHAINS = SEGMENTS;
+export { JOINTS, DRIVEN_BONES, closestParams };
 
 // BONES are the segments that have physical volume — the things that collide
 // and the things a viewer sees. hips->upperLeg and chest->upperArm are real
@@ -223,104 +208,13 @@ const FLEX = [
   ['chest',  'neck',  'head',     45],   // neck: floppier
 ];
 
-// BEHIND — how far a limb may point behind the body's frontal plane.
-//
-// The CONE is circular, so it cannot express the one shape a hip actually has:
-// a long way forward, barely anything backward, and a moderate amount out to
-// the side. Tilting the cone forward far enough to bound the back also walls
-// off abduction, because it moves the whole envelope. A separate one-sided
-// plane says exactly the intended thing and nothing else. Without it the fleet
-// put its thighs 46° behind the body — the pose you would need a chair to hold.
-const BEHIND = [
-  ['leftUpperLeg', 'leftLowerLeg', 30],
-  ['rightUpperLeg', 'rightLowerLeg', 30],
-  ['leftUpperArm', 'leftLowerArm', 65],       // a shoulder does reach back
-  ['rightUpperArm', 'rightLowerArm', 65],
-];
+// The joint envelope — BEHIND, CONE, HINGE, TWIST — now lives in
+// shared/joints.js, because the reach solver clamps to the same numbers and a
+// second copy would be mirrored math. The comments explaining what each value
+// cost to find moved with the values; read them there.
 
-// CONE — the limb's direction relative to the BODY, not to its parent link.
-// A shoulder and a hip are ball joints; what bounds them is where the limb
-// points relative to the torso, and anchoring to the torso is also what makes
-// the limit mean the same thing on a T-pose rig and an A-pose one.
-// `tilt` leans the cone axis forward, because a hip is not symmetric: the
-// thigh swings far forward and barely backward.
-const CONE = [
-  // bone           child            half°  tilt° (toward body forward)
-  ['leftUpperArm',  'leftLowerArm',   85,    0],
-  ['rightUpperArm', 'rightLowerArm',  85,    0],
-  ['leftUpperLeg',  'leftLowerLeg',   55,   25],
-  ['rightUpperLeg', 'rightLowerLeg',  55,   25],
-];
-
-// HINGE — a knee bends backward and an elbow bends forward, and neither bends
-// sideways. That is a SIGNED constraint, so it needs a handedness the particles
-// alone don't carry; _frame derives one from the rig. `dir` is which way the
-// joint is allowed to fold, along the body's forward axis.
-// `sideways` is slop, not a range — a hinge has no sideways travel at all, and
-// every degree given here shows up on screen as a knee bending out of its own
-// plane. It cannot go to zero: this model has no hip or shoulder ROTATION, so
-// a limb that has twisted has nowhere to put it but here. These are the
-// smallest values the fleet stays stable at.
-// TWIST — a bone's roll about its own length, as REAL STATE.
-//
-// The particle sim gives directions, never roll, so roll has to come from
-// somewhere. Deriving it against the WORLD (a fixed rest direction, or a
-// carried reference) drifts: parallel transport has holonomy, so a limb swung
-// around a loop comes back rotated by the solid angle it enclosed, and a
-// tumbling arm encloses a lot of sphere. Measured that way, upper arms ended a
-// tumble 144° rolled and stayed there.
-//
-// Deriving it against the PARENT does not drift, because it is a function of
-// the current state and not of the path taken to reach it. The one place that
-// construction could fail is a bone swung a full 180° from its parent, and the
-// joint limits above already forbid that — the hinges stop at 150°, the cones
-// at 55-85°, the spine at 25°. The limits are what make this well posed.
-//
-// What is left over is genuine twist, and it is a state variable with inertia,
-// damping, a spring back to neutral and a hard stop, like every other joint
-// quantity here. With no driver it sits at zero, which is the right answer for
-// a limp limb in a model that carries no angular momentum about a bone's own
-// axis — and zero is exactly what the parent-relative frame makes reachable.
-// Measured, limb twist at settle: 97° mean and 172° worst before, 0° now, on
-// every driven bone but the pelvis (whose "twist" is the body's own roll and
-// belongs there). `max` is the stop, in degrees: shoulders and forearms turn a
-// lot, spines and shins hardly at all.
-const TWIST = {
-  spine: 25, chest: 25, neck: 45,
-  leftUpperArm: 75, rightUpperArm: 75,
-  leftLowerArm: 80, rightLowerArm: 80,     // pronation/supination
-  leftUpperLeg: 40, rightUpperLeg: 40,
-  leftLowerLeg: 25, rightLowerLeg: 25,
-};
-// Which bone each one twists AGAINST. The drive walks CHAINS parents-first, so
-// a parent's frame is always resolved before its children ask for it.
-const TWIST_PARENT = {
-  spine: 'hips', chest: 'spine', neck: 'chest',
-  leftUpperArm: 'chest', rightUpperArm: 'chest',
-  leftLowerArm: 'leftUpperArm', rightLowerArm: 'rightUpperArm',
-  leftUpperLeg: 'hips', rightUpperLeg: 'hips',
-  leftLowerLeg: 'leftUpperLeg', rightLowerLeg: 'rightUpperLeg',
-};
-
-const HINGE = [
-  // a               b                 c            dir  maxFlex°  sideways°
-  ['leftUpperArm',  'leftLowerArm',  'leftHand',    +1,   145,      12],
-  ['rightUpperArm', 'rightLowerArm', 'rightHand',   +1,   145,      12],
-  ['leftUpperLeg',  'leftLowerLeg',  'leftFoot',    -1,   150,       6],
-  ['rightUpperLeg', 'rightLowerLeg', 'rightFoot',   -1,   150,       6],
-];
-
-// Self-collision radii, as fractions of the torso radius. The torso radius
-// itself is MEASURED from the body (shoulder/hip span) so this scales to any
-// avatar — a bulky one gets fatter colliders than a slim one. Anatomical
-// fractions give limbs their taper: a wrist is thinner than a hip.
-const RADIUS_FRAC = {
-  hips: 1.0, spine: 0.95, chest: 1.0, neck: 0.5, head: 0.75,
-  leftUpperArm: 0.5, rightUpperArm: 0.5, leftLowerArm: 0.35, rightLowerArm: 0.35,
-  leftHand: 0.3, rightHand: 0.3,
-  leftUpperLeg: 0.55, rightUpperLeg: 0.55, leftLowerLeg: 0.4, rightLowerLeg: 0.4,
-  leftFoot: 0.35, rightFoot: 0.35,
-};
+// Self-collision radii moved to shared/joints.js with the joint envelope —
+// the reach solver needs the same idea of how thick a body is.
 
 const D2R = Math.PI / 180;
 
@@ -354,9 +248,6 @@ const _qp = new THREE.Quaternion();
 // closestParams' two outputs, hoisted: it runs once per capsule pair per pass
 const _pr = { s: 0, t: 0 };
 
-/** Closest points between two segments, as parameters along each. The classic
- *  clamped-parametric solve; degenerate (zero-length) segments fall back to an
- *  endpoint rather than dividing by zero. */
 /** An orthonormal basis with X down the bone and its roll pinned by `ref`.
  *  Leaves the orthonormalized reference in `_bz` so the caller can carry it
  *  forward. Returns false only when the bone lies along `ref`, where roll is
@@ -413,27 +304,7 @@ function twistAbout(q, axis) {
   return along < 0 ? -a : a;
 }
 
-export function closestParams(p1, q1, p2, q2, out) {
-  _a.copy(q1).sub(p1); _b.copy(q2).sub(p2); _c.copy(p1).sub(p2);
-  const A = _a.dot(_a), E = _b.dot(_b), F = _b.dot(_c);
-  let s, t;
-  if (A < 1e-9 && E < 1e-9) { out.s = 0; out.t = 0; return; }
-  if (A < 1e-9) { s = 0; t = THREE.MathUtils.clamp(F / E, 0, 1); }
-  else {
-    const C = _a.dot(_c);
-    if (E < 1e-9) { t = 0; s = THREE.MathUtils.clamp(-C / A, 0, 1); }
-    else {
-      const B = _a.dot(_b), den = A * E - B * B;
-      s = den > 1e-9 ? THREE.MathUtils.clamp((B * F - C * E) / den, 0, 1) : 0;
-      t = (B * s + F) / E;
-      if (t < 0) { t = 0; s = THREE.MathUtils.clamp(-C / A, 0, 1); }
-      else if (t > 1) { t = 1; s = THREE.MathUtils.clamp((B - C) / A, 0, 1); }
-    }
-  }
-  out.s = s; out.t = t;
-}
-
-export class Ragdoll {
+export class Ragdoll extends BodyEngineBase {
   /** @param avatar   the OWNER's Avatar.
    *  @param lean     optional topple velocity in m/s — see below.
    *  @param rest     optional map joint -> neutral-rest WORLD position, from
@@ -449,15 +320,10 @@ export class Ragdoll {
    *                  stride's angles as its idea of "rest", or its knees adopt
    *                  the walk cycle's bend as their zero. */
   constructor(avatar, lean = null, rest = null, seedVel = null) {
-    this.avatar = avatar;
-    this.settledFor = 0;
-    this.elapsed = 0;
+    super(avatar);                    // lifecycle fields — see bodyengine.js
     this.acc = 0;
-    this.maxV = Infinity;
     this.steps = 0;                   // step() calls; see the debug panel
     this.frames = 0;                  // ...and substeps actually simulated
-    this.pose = null;
-    this.done = false;
     const h = avatar.vrm.humanoid;
 
     // capture live references in WORLD space, before anything moves
@@ -485,13 +351,11 @@ export class Ragdoll {
     // bones only ever showed where they POINTED. Applied after the bone read
     // above so a caller with no snapshot still works.
     if (seedVel?.j) {
-      const { j: names, p: pos, v: vel, dy = 0 } = seedVel;
-      for (let i = 0; i < names.length; i++) {
-        const n = names[i], k = i * 3;
-        if (!this.p[n]) continue;
-        this.p[n].set(pos[k], pos[k + 1] + dy, pos[k + 2]);
-        this.prev[n].copy(this.p[n]).addScaledVector(
-          _v.set(vel[k], vel[k + 1], vel[k + 2]), -FIXED_DT);
+      for (const s of seedJoints(seedVel)) {
+        if (!this.p[s.name]) continue;
+        this.p[s.name].set(s.px, s.py, s.pz);
+        this.prev[s.name].copy(this.p[s.name]).addScaledVector(
+          _v.set(s.vx, s.vy, s.vz), -FIXED_DT);
       }
     }
 
@@ -542,9 +406,23 @@ export class Ragdoll {
       out.set(world.dot(r0), world.dot(u0), world.dot(f0));
 
     // ---- FLEX: symmetric cones between adjacent links, off the rest angle
+    //
+    // A link only has a DIRECTION if it has a LENGTH. mythos-wings authors its
+    // spine 7.2mm above its hips (the real span is in upperChest), so the
+    // hips→spine link's direction is noise — a millimeter of solver jitter
+    // reads as ~8° of flexion — and this constraint answered the noise by
+    // swinging the real spine→chest link, every substep, in whatever direction
+    // the jitter pointed. Measured: 65 m/s peak particle velocity at ground
+    // impact on a plain topple (claude_suit: 3.8), a six-second thrash that
+    // drowned the shove test's 2.5 m/s signal entirely. A row whose rest link
+    // cannot carry a direction is skipped; the next row's longer links keep
+    // bounding the trunk, and CONE/BEHIND/HINGE never read torso micro-links.
     this.flex = [];
+    const FLEX_MIN_LINK = 0.03;
     for (const [a, b, c, max] of FLEX) {
       if (!this.rest[a] || !this.rest[b] || !this.rest[c]) continue;
+      if (this.rest[b].distanceTo(this.rest[a]) < FLEX_MIN_LINK
+        || this.rest[c].distanceTo(this.rest[b]) < FLEX_MIN_LINK) continue;
       _a.copy(this.rest[b]).sub(this.rest[a]).normalize();
       _b.copy(this.rest[c]).sub(this.rest[b]).normalize();
       const at = Math.acos(THREE.MathUtils.clamp(_a.dot(_b), -1, 1));
@@ -589,6 +467,30 @@ export class Ragdoll {
       this.hinge.push({
         a, b, c, max: maxFlex * D2R, side: Math.sin(side * D2R),
         n: new THREE.Vector3().crossVectors(_a, _c.normalize()).normalize(),
+      });
+    }
+    // A HANDOVER MUST CARRY THE TRANSPORTED AXES. The hinge normal is physical
+    // state: it turns with the limb every step, and a doll rebuilt mid-tumble
+    // from the REST normals measures its elbows and knees against axes the
+    // limbs left forty frames ago — the first step then fires the full
+    // correction into the lightest particles: hands 12–22cm off after ONE
+    // step on 41 of 44 fleet rigs (§24t-8; the old one-rig check happened to
+    // sit on a rig that barely moved its arms). A snapshot carries them (`h`,
+    // in this.hinge order); one that does not (another engine's) gets the
+    // next best thing — normals derived from where the limbs ARE, not where
+    // they rested.
+    if (seedVel?.j) {
+      const h = Array.isArray(seedVel.h) && seedVel.h.length === this.hinge.length * 3 ? seedVel.h : null;
+      this.hinge.forEach((H, i) => {
+        if (h) { H.n.set(h[i * 3], h[i * 3 + 1], h[i * 3 + 2]); if (H.n.lengthSq() > 1e-8) { H.n.normalize(); return; } }
+        _a.copy(this.p[H.b]).sub(this.p[H.a]);
+        if (_a.lengthSq() < 1e-8) return;
+        _a.normalize();
+        // keep the rest normal's fold sense, re-squared against the live limb
+        _c.copy(H.n).cross(_a);                    // the fold direction implied by the rest normal
+        _c.addScaledVector(_a, -_c.dot(_a));
+        if (_c.lengthSq() < 1e-8) return;
+        H.n.crossVectors(_a, _c.normalize()).normalize();
       });
     }
 
@@ -658,6 +560,7 @@ export class Ragdoll {
     this.hipsOffset = this.rest.hips
       ? this.rest.hips.y - avatar.root.position.y
       : 0.82;
+    this._measureHipsLocal(this.rest.hips);   // ...and sideways (bodyengine.js)
   }
 
   /** The body's own frame, from its own particles: right across the pelvis, up
@@ -701,14 +604,15 @@ export class Ragdoll {
    *  constraint, it is a motor that would inflate the torso forever. Measuring
    *  that per rig is the same trick RADIUS_FRAC uses for the radii. */
   _buildCapsules() {
-    const dist = (a, b) => (this.rest[a] && this.rest[b] ? this.rest[a].distanceTo(this.rest[b]) : 0);
-    const shoulderW = dist('leftUpperArm', 'rightUpperArm');
-    const hipW = dist('leftUpperLeg', 'rightUpperLeg');
-    const spineLen = dist('hips', 'head') || 0.5;
-    // half the wider of shoulders/hips is a fair torso half-thickness; fall
-    // back to a fraction of the spine if the arms/legs are missing
-    const torsoR = Math.min(0.25, Math.max(0.05,
-      (Math.max(shoulderW, hipW) * 0.42) || spineLen * 0.26));
+    // shared/joints.js's torsoRadius IS this derivation — its comment has
+    // promised "the same derivation the ragdoll uses" since the reach solver
+    // extracted it, and this call is what makes that structural instead of a
+    // mirror. It takes plain [x,y,z] triples (the reach side's currency).
+    const P = {};
+    for (const j of ['leftUpperArm', 'rightUpperArm', 'leftUpperLeg', 'rightUpperLeg', 'hips', 'head']) {
+      if (this.rest[j]) P[j] = [this.rest[j].x, this.rest[j].y, this.rest[j].z];
+    }
+    const torsoR = torsoRadius(P);
 
     this.radius = {};
     for (const j of Object.keys(this.p)) this.radius[j] = torsoR * (RADIUS_FRAC[j] ?? 0.4);
@@ -891,6 +795,12 @@ export class Ragdoll {
   }
 
   _terrain() {
+    // NOTE (§24t-8): this contact is a pure vertical clamp — a grounded joint
+    // keeps whatever horizontal velocity it has. That is why a body already
+    // down can CREEP while an arm fights its limits (mythos-2 after a shove:
+    // 39cm over 5.5s; ragdoll-test names it). A sleep-regime grip was tried
+    // and made the fleet worse (feline flailing at capture): the fix is a
+    // tuned ground-friction law, swept in rag-tune — colleague territory.
     for (const j of JOINTS) {
       const p = this.p[j]; if (!p) continue;
       const g = heightAt(p.x, p.z) + this._clear(j);
@@ -1132,7 +1042,10 @@ export class Ragdoll {
    *  velocity, so releasing mid-swing throws the body the way it was moving.
    *  setPin(joint, null) releases that joint alone; setPin(null) releases
    *  everything. */
-  setPin(joint, target) {
+  setPin(joint, target, _firm = false) {
+    // `_firm` (nail vs hand — see ammodoll.setPin) is accepted for engine
+    // interface parity and deliberately unused: a Verlet pin zeroes inverse
+    // mass, which IS the rigid nail — there is no softer hand mode to pick.
     this.pins ??= new Map();
     const unpin = (j) => { this.iw[j] = 1 / (MASS[j] ?? 1); this.pins.delete(j); };
     if (!joint) { for (const j of [...this.pins.keys()]) unpin(j); return; }
@@ -1145,28 +1058,9 @@ export class Ragdoll {
     this.iw[joint] = 0;
   }
 
-  /** True while any pin holds this body. */
-  get pinned() { return (this.pins?.size ?? 0) > 0; }
-
-  /** Shove a body whose sim is still running — a second push landing on
-   *  someone already going down, or a blast reaching a body mid-tumble.
-   *  Same application as the constructor's lean. Wire-borne shoves are capped
-   *  at the trust boundary (main.js), and once more here: the sim protects
-   *  its own stability rather than assuming every caller was polite.
-   *  @param v THREE.Vector3, m/s. */
-  impulse(v) {
-    if (this.done) return;
-    _v.copy(v);
-    const cap = 8;
-    if (_v.lengthSq() > cap * cap) _v.setLength(cap);
-    this._topple(_v);
-    // The body is moving again: settle starts over, and so does the deadline —
-    // a shove at 7.9s of an 8s window must not capture a body still in the
-    // air. Restarting elapsed grants the new motion the same full window the
-    // original fall had.
-    this.settledFor = 0;
-    this.elapsed = 0;
-  }
+  // pinned + impulse live on BodyEngineBase — the cap, the topple application
+  // and the clock restarts are the shared law; _topple above is this engine's
+  // half of it.
 
   /** Everything this sim IS, as plain numbers: where every joint is and how
    *  fast it is going, in world coordinates.
@@ -1179,19 +1073,23 @@ export class Ragdoll {
    *  by discarding whatever the body was already doing. A handover carries
    *  this instead, and the receiver continues rather than restarts.
    *
-   *  Rounded on purpose: this rides a presence message, and a millimetre and a
-   *  millimetre-per-second are far below what anyone can see. */
+   *  Format and rounding are rigmeasure.js's (snapshotPacker) — the parse on
+   *  the far side may be the OTHER engine's, so the two halves must be one
+   *  truth. */
   snapshot() {
-    const j = [], p = [], v = [];
+    const pack = snapshotPacker();
     for (const name of JOINTS) {
       const q = this.p[name];
       if (!q) continue;
-      j.push(name);
-      p.push(+q.x.toFixed(4), +q.y.toFixed(4), +q.z.toFixed(4));
       _v.copy(q).sub(this.prev[name]).divideScalar(FIXED_DT);
-      v.push(+_v.x.toFixed(3), +_v.y.toFixed(3), +_v.z.toFixed(3));
+      pack.add(name, q, _v);
     }
-    return { j, p, v };
+    const s = pack.pack();
+    // the transported hinge axes — physical state the particles alone do not
+    // carry (see the constructor's handover note). Optional in the format:
+    // a receiver without hinges (another engine) ignores it.
+    s.h = this.hinge.flatMap((H) => [H.n.x, H.n.y, H.n.z]);   // exact, like p/v
+    return s;
   }
 
   /** Advance the sim and push the result into the avatar as a held pose.
@@ -1224,34 +1122,15 @@ export class Ragdoll {
 
     this.steps++;
     this.frames += n;
-    this.elapsed += dt;
-    // A held body neither settles nor deadlines: a pin is ongoing input,
-    // and capturing would freeze a hung body's constraint enforcement.
-    if (this.pinned) { this.settledFor = 0; this.elapsed = 0; }
-    // settle is measured in SECONDS, not frames, for the same reason
-    if (this.maxV < TUNING.SETTLE_V) this.settledFor += dt;
-    else if (this.maxV > TUNING.SETTLE_V * TUNING.SETTLE_RESET) this.settledFor = 0;
+    // the clock law is the base's; the thresholds (and the hysteresis band —
+    // it takes real motion to restart the countdown, not a flicker) are this
+    // engine's tuned numbers. Settle is measured in SECONDS, not frames.
+    this._settleTick(dt, this.maxV < TUNING.SETTLE_V,
+      this.maxV > TUNING.SETTLE_V * TUNING.SETTLE_RESET);
 
     if (n === 0 && this.pose) return this.pose;   // nothing moved; nothing to resend
 
-    // ---- root follows the hips so the body lies where it fell.
-    //
-    // FALLING, the root only ever descends: Math.min against where it started
-    // guards against a solve-overshoot frame popping the whole mesh above the
-    // ground. But a PINNED body is being CARRIED — the hand may lift it, so
-    // the root must follow the hips upward too, or the sim rises while the
-    // rendered body stays floor-bound (the pose curls into a dangle a few
-    // centimetres up and stops — exactly what that looked like). Once lifted,
-    // the ceiling moves up with the body: releasing from a height starts the
-    // NEXT sim's rootStartY there, and the fall brings it back down.
-    const hips = this.p.hips;
-    if (hips) {
-      this.avatar.root.position.x = hips.x;
-      this.avatar.root.position.z = hips.z;
-      const y = hips.y - this.hipsOffset;
-      if (this.pinned && y > this.rootStartY) this.rootStartY = y;
-      this.avatar.root.position.y = Math.min(this.rootStartY, y);
-    }
+    this._followRoot();   // the body lies where it fell — see bodyengine.js
 
     // ---- map particles back to bone rotations (parent-relative + twist state)
     _mat.makeBasis(this.frame.r, this.frame.u, this.frame.f);
@@ -1261,7 +1140,14 @@ export class Ragdoll {
     const pose = {};
     for (const d of this.drive) {
       const bn = this.nodes[d.bone];
-      const bwp = bn.getWorldPosition(_a);
+      // the bone's direction runs from where the sim says the joint IS —
+      // its particle — to its child's. The bone's world position is the
+      // skeleton's word, and the skeleton is only ever placed by
+      // _followRoot: on a rig whose hips sit off its root origin (tel0s:
+      // 23cm forward) the two disagreed by exactly that, the hips→spine
+      // direction was noise, the spine read antiparallel to rest and held
+      // a stale frame, and the chest inherited 42° of roll (§24t-8).
+      const bwp = this.p[d.bone] ?? bn.getWorldPosition(_a);
       _b.copy(this.p[d.child]).sub(bwp);
       if (_b.lengthSq() < 1e-6) continue;
       _b.normalize();

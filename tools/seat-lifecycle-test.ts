@@ -140,7 +140,15 @@ try {
 
   console.log("write authority (B4) + dangerous keys (#105 B2)");
   const claudeSha = await sha(join(LIB, "eidoverse/assets/vrms/claude.vrm"));
-  const clipSha = await sha(join(LIB, "eidoverse/assets/animations/sitting_normal_chair.vrma"));
+  // The clip sha must be taken from the SAME ladder the store judges against
+  // (patched fork first — seats.ts's clipBases, the order /library serves).
+  // Hashing the library's copy directly was measured wrong the day this repo
+  // grew a patched sitting clip: every verdict read "stale (clip bytes
+  // changed)" against bytes no client animates from.
+  const clipRel = "eidoverse/assets/animations/sitting_normal_chair.vrma";
+  const clipFile = [join(ROOT, "patched"), join(ROOT, "assets", "opt"), LIB]
+    .map((d) => join(d, clipRel)).find((p) => existsSync(p))!;
+  const clipSha = await sha(clipFile);
   const mkProfile = (avatar: string, avatarSha256: string, extra: Record<string, unknown> = {}) => ({
     avatar, avatarSha256, pose: "sitchair", clipSha256: clipSha,
     seatContactY: 0.2055,

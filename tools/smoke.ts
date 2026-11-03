@@ -218,14 +218,18 @@ try {
     bob.of("typing").filter((m) => m.id === "alice").length >= 3 &&
     !bob.of("typing").some((m) => typeof m.state === "string" && m.state.includes("<")));
 
-  // --- rtc: point-to-point signaling, never logged, absent recipient dropped
+  // --- rtc: RETIRED (#104 phase-1 cutover, adopted in the anima merge).
+  // It was the mesh's point-to-point SDP lane, deliberately ungated on
+  // transport — an unauthenticated relay whose only client (voice.js) is
+  // deleted. The cutover's property is the INVERSE of the old check: the
+  // lane must be closed. (Upstream's own smoke still asserts delivery and
+  // is red on their tree — flagged for the upstream merge.) SFU signaling
+  // is separate, credentialed verbs with their own suites.
   alice.send({ type: "rtc", to: "bob", payload: { sdp: "offer-ish" } });
   await sleep(220);
-  check("rtc reaches its recipient", bob.of("rtc").some((m) => m.from === "alice" && m.payload?.sdp === "offer-ish"));
-  check("rtc is never logged", contentLog().length === 3);
-  alice.send({ type: "rtc", to: "nobody-here", payload: { sdp: "x" } });
-  await sleep(220);
-  check("rtc to an absent peer is silently dropped (no error)", !alice.of("error").length);
+  check("the retired rtc lane relays NOTHING", !bob.of("rtc").length);
+  check("...and is never logged", contentLog().length === 3);
+  check("...and answers no error (unknown types fall to silence)", !alice.of("error").length);
 
   // --- refusals
   alice.verb("obliterate", { everything: true });

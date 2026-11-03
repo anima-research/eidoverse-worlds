@@ -1,0 +1,10 @@
+{
+  "doc": "The crop (corn_gen.js): cane stalk, ranked arching leaves, husked ear, silk, tassel — one geometry on the ONE corn_ trim sheet, her baked cob included (peel true stands it up bare on the first ear). Pair with `rows` for a planted field; without rows it volunteers as a wild patch. Crop uniformity: tight baseScale, near-vertical. regionTint: plume art is dark red-brown; a mature field's tassels read tan-straw.",
+  "archetype": "corn", "maps": "corn",
+  "corn": { "height": 2.3, "leaves": 10, "leafLen": 0.95, "ears": 3, "peel": false },
+  "regionTint": { "u0": 0.5, "u1": 1.0, "v0": 0.7, "v1": 1.0, "mul": [1.9, 2.7, 2.2] },
+  "footRadius": 0.32,
+  "baseScale": [0.88, 1.14], "density": 1.4, "clump": 0.85,
+  "wind": { "base": 0.05, "gust": 0.11, "gustFreq": 0.3, "flutter": 1.2 },
+  "sss": 0.55, "rough": 0.75, "pushScale": 0.55
+}

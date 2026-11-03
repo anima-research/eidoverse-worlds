@@ -12,7 +12,7 @@ import type { LogEntry, WorldState } from "../shared/fold.js";
 export type ReactionWorld = {
   name: string;
   state: WorldState;
-  append(actor: string, verb: string, args: Record<string, unknown>): LogEntry;
+  commit(actor: string, verb: string, args: Record<string, unknown>): LogEntry;
   broadcast(msg: unknown): void;
   debug(kind: string, detail: Record<string, unknown>): void;
 };
@@ -55,9 +55,8 @@ export function reactToUse(w: ReactionWorld, cause: LogEntry): void {
         return;
       }
       const next = pendulumImpulse(m, Number(rx.impulse), cause.ts);
-      const entry = w.append("world", "motion",
+      const entry = w.commit("world", "motion",
         { id: a.id, ...next, cause: cause.seq, by: cause.actor });
-      w.broadcast({ type: "log", entry });
       w.debug("reaction", { entity: id, action, by: cause.actor, cause: cause.seq, effect: entry.seq });
       return;
     }

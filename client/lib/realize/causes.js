@@ -15,9 +15,9 @@
 // from a module net imports would add yet another lap around the
 // net → chat → net cycle this rebuild is unwinding.
 
-import { bus } from '../core.js';
+import { bus } from '../base.js';
 import { logChat } from '../chat.js';
-import { PORTED } from './models.js';
+import { PORTED } from './ported.js';   // the Set only — models.js reaches the engine
 
 // #57: performance receipts. voiceCapable = actors with a live voice leg
 // (seeded by snapshot, kept current by surface-transition); pendingSpeech =

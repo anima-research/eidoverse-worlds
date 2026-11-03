@@ -16,7 +16,20 @@
 // SHARED FACTS (preset, state, seed, provenance) come out of one function, and
 // only the sprite count is allowed to differ between machines.
 //
-// Unit-tested in tools/particles-test.ts.
+// An entity may carry SEVERAL emitters: `particles` is its default one, and
+// `particles:<name>` adds more — a hearth's fire, its smoke and its sparks, or
+// a candle's flame and the wisp it leaves when blown out. Each key is its own
+// component (attached, replaced and removed independently, perceived and
+// narrated on its own), the same pattern `motion:<part>` uses for motions.
+//
+// A preset is a starting point, not a cage: its sway, launch velocity,
+// gravity, growth, swirl, twinkle, taper, spin, colour and blending can all be
+// authored (bounded below), and `scale` scales the emitter's whole frame —
+// sprite size, spawn area, velocities, sway and gravity together — so a fire
+// tuned at hearth size can sit on a wick without re-tuning a single number.
+//
+// Unit-tested in tools/particles-test.ts; the browser host in
+// tools/particles-host-test.ts.
 
 /** The presets the upstream engine (`eidoverse/particles.js`) actually ships.
  *  A `preset` outside this list does not render — but it is never erased
@@ -62,19 +75,84 @@ const tierScale = (name) => (Object.hasOwn(QUALITY_TIERS, name) ? QUALITY_TIERS[
  *  nowhere else. */
 const TEXTURE_DIR = 'eidoverse/assets/particle_textures/';
 
+// ---- which components are emitters ------------------------------------------
+
+/** An emitter's name in `particles:<name>`: short, and plain enough to read in
+ *  a look() line and type into a verb. */
+const EMITTER_NAME = /^[A-Za-z0-9_-]{1,32}$/;
+
+/** Is this component key an emitter? `particles` (the entity's default
+ *  emitter) or `particles:<name>` with a well-formed name. A malformed
+ *  `particles:…` key is NOT an emitter — it folds like any invented component
+ *  and the server lint says why it isn't burning (`emitterKeyProblem`). */
+export function isParticlesKey(type) {
+  return type === 'particles'
+    || (typeof type === 'string' && type.startsWith('particles:') && EMITTER_NAME.test(type.slice(10)));
+}
+
+/** Why a `particles…` key is not an emitter, or null when it is one (or when
+ *  it isn't trying to be). */
+export function emitterKeyProblem(type) {
+  if (typeof type !== 'string' || !type.startsWith('particles:') || isParticlesKey(type)) return null;
+  return `"${type}" is not an emitter key — a name after "particles:" must be 1–32 of A–Z a–z 0–9 _ - (it folds as an ordinary component and renders nothing)`;
+}
+
+/** The emitters in a component bag, as [key, data] pairs: the default
+ *  `particles` first, then named ones in a stable order. */
+export function emittersIn(bag) {
+  if (!bag || typeof bag !== 'object') return [];
+  return Object.keys(bag)
+    .filter((k) => isParticlesKey(k) && bag[k] != null)
+    .sort((a, b) => (a === 'particles' ? -1 : b === 'particles' ? 1 : a < b ? -1 : a > b ? 1 : 0))
+    .map((k) => [k, bag[k]]);
+}
+
 /** Every key an authored `particles` bag may carry, with its bound. Anything
  *  outside this table is reported by name rather than quietly dropped — a
  *  parameter the evaluator ignores is exactly the class of bug the motion
- *  lint exists to surface. */
+ *  lint exists to surface.
+ *
+ *  Lengths, speeds and accelerations are in the EMITTER's frame: metres,
+ *  m/s and m/s² at `scale: 1`, and multiplied by `scale` (and by the entity's
+ *  own scale, which the emitter inherits as its child). */
 const NUMERIC_BOUNDS = {
   count:    [1, PARTICLE_MAX_COUNT],
   size:     [0.005, 4],
   opacity:  [0, 1],
-  speed:    [0.05, 8],
+  speed:    [0.05, 8],      // cycles per lifetime, not distance: scale-free
   lifetime: [0.05, 30],
   area:     [0, 8],
+  // the emitter's own frame — every length above and below, together
+  scale:    [0.01, 20],
+  // motion, overriding the preset (each preset's own value is its default)
+  wobble:   [0, 4],         // sideways sway amplitude
+  up:       [-8, 8],        // launch speed along +Y
+  spread:   [0, 8],         // launch speed jitter, all axes
+  grow:     [-4, 8],        // size change over life (−1 shrinks to nothing, +1 doubles)
+  swirl:    [0, 8],         // spiral about the vertical, rad/s
+  twinkle:  [0, 1],         // brightness flicker depth
+  converge: [0, 1],         // taper toward the axis with age (fire's flame shape)
+  rotate:   [0, 8],         // per-sprite spin, rad/s
 };
-const KNOWN_KEYS = new Set(['preset', 'seed', 'texture', 'origin', 'quality', ...Object.keys(NUMERIC_BOUNDS)]);
+/** Gravity: one number (vertical, + is up) or a full [x, y, z]; each axis
+ *  bounded. Smoke rises at +0.45, sparks fall at −4. */
+const GRAVITY_BOUND = [-20, 20];
+const BLENDINGS = new Set(['additive', 'normal']);
+const KNOWN_KEYS = new Set(['preset', 'seed', 'texture', 'origin', 'quality', 'gravity', 'color', 'blending',
+  ...Object.keys(NUMERIC_BOUNDS)]);
+
+/** A colour as the renderer takes it (0xRRGGBB), from `"#rgb"`, `"#rrggbb"`
+ *  or an integer; null when it is neither. A preset's colour multiplies — on
+ *  fire it tints the whole white→yellow→orange→red ramp. */
+export function parseColor(v) {
+  if (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 0xffffff) return v;
+  if (typeof v !== 'string') return null;
+  const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(v.trim());
+  if (!m) return null;
+  const h = m[1].length === 3 ? m[1].replace(/./g, (c) => c + c) : m[1];
+  return parseInt(h, 16);
+}
+const hexOf = (n) => `#${n.toString(16).padStart(6, '0')}`;
 
 // ---- determinism -----------------------------------------------------------
 
@@ -128,10 +206,13 @@ export function hashSeed(str) {
  *  trip. A resident whose BODY is an emitter field needs more than this: the
  *  seed then belongs to the body definition and is #14's problem, not this
  *  file's (#25's scope fence). */
-export function emitterSeed(entityId, data) {
+export function emitterSeed(entityId, data, key = 'particles') {
   const authored = data?.seed;
   if (typeof authored === 'number' && Number.isFinite(authored)) return Math.floor(authored) >>> 0;
-  return hashSeed(`${entityId}:${data?.preset ?? ''}`);
+  // A named emitter folds its name in, so two fires on one entity are two
+  // fires and not one drawn twice. The default emitter keeps the derivation it
+  // always had — changing it would re-roll every hearth already burning.
+  return hashSeed(key === 'particles' ? `${entityId}:${data?.preset ?? ''}` : `${entityId}:${key}:${data?.preset ?? ''}`);
 }
 
 // ---- validation ------------------------------------------------------------
@@ -162,7 +243,7 @@ function normalizeOrigin(origin, problems) {
  * A failure here is never a fold failure: the component still persists and
  * still reads as an emitter (`describeParticles`). It only means no sprites.
  */
-export function normalizeParticles(data, { entityId = '' } = {}) {
+export function normalizeParticles(data, { entityId = '', key = 'particles' } = {}) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
     return { ok: false, why: 'particles data must be an object {preset, …}' };
   }
@@ -179,7 +260,7 @@ export function normalizeParticles(data, { entityId = '' } = {}) {
 
   const emitter = {
     preset,
-    seed: emitterSeed(entityId, data),
+    seed: emitterSeed(entityId, data, key),
     origin: normalizeOrigin(data.origin, notes),
     quality: Object.hasOwn(QUALITY_TIERS, data.quality) ? data.quality : 'auto',
   };
@@ -214,8 +295,41 @@ export function normalizeParticles(data, { entityId = '' } = {}) {
     if (fixed !== v) notes.push(`${key} clamped to [${bound[0]}, ${bound[1]}]`);
     emitter[key] = key === 'count' ? Math.round(fixed) : fixed;
   }
+  if (data.gravity != null) {
+    const g = typeof data.gravity === 'number' ? [0, data.gravity, 0] : data.gravity;
+    if (!Array.isArray(g) || g.length !== 3 || !g.every((n) => typeof n === 'number' && Number.isFinite(n))) {
+      notes.push('gravity must be a number (vertical, + is up) or [x, y, z] numbers — using the preset');
+    } else {
+      const fixed = g.map((n) => clamp(n, GRAVITY_BOUND));
+      if (fixed.some((n, i) => n !== g[i])) notes.push(`gravity clamped to [${GRAVITY_BOUND[0]}, ${GRAVITY_BOUND[1]}] per axis`);
+      emitter.gravity = fixed;
+    }
+  }
+  if (data.color != null) {
+    const c = parseColor(data.color);
+    if (c == null) notes.push('color must be "#rrggbb", "#rgb" or an integer 0xRRGGBB — using the preset\'s');
+    else emitter.color = c;
+  }
+  if (data.blending != null) {
+    if (BLENDINGS.has(data.blending)) emitter.blending = data.blending;
+    else notes.push(`blending must be "additive" or "normal" — using the preset's`);
+  }
   if (emitter.count == null) emitter.count = PARTICLE_PRESETS[preset].count;
   return { ok: true, emitter, notes };
+}
+
+/** The keys of a normalized emitter that reach the upstream builder verbatim,
+ *  as overrides of its preset. (`scale` is the host's — it scales the
+ *  emitter's own mesh — and preset/seed/origin/quality/texture/count are
+ *  handled apart.) */
+const BUILDER_KEYS = ['size', 'opacity', 'speed', 'lifetime', 'area', 'wobble', 'up', 'spread', 'grow',
+  'swirl', 'twinkle', 'converge', 'rotate', 'gravity', 'color', 'blending'];
+
+/** What the host passes `makeParticles` on top of the preset. */
+export function builderOverrides(emitter) {
+  const out = {};
+  for (const k of BUILDER_KEYS) if (emitter?.[k] != null) out[k] = emitter[k];
+  return out;
 }
 
 /** Sprites this machine will actually draw: the authored cap and the local
@@ -237,15 +351,24 @@ export function resolvedCount(emitter, tier = 'auto') {
  * says it is. Names the semantic thing on the owning entity — never a sprite
  * count first, never a bare `components: particles`.
  */
-export function describeParticles(data) {
-  if (!data || typeof data !== 'object' || Array.isArray(data)) return 'emitting something (particles; malformed declaration)';
+export function describeParticles(data, key = 'particles') {
+  const tag = isParticlesKey(key) ? key : 'particles';
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return `emitting something (${tag}; malformed declaration)`;
   const preset = typeof data.preset === 'string' ? data.preset : null;
   const known = preset && Object.hasOwn(PARTICLE_PRESETS, preset);
   const what = known ? PARTICLE_PRESETS[preset].reads : preset ? `"${preset}"` : 'something';
-  const bits = ['particles'];
+  const bits = [tag];
   const o = Array.isArray(data.origin) && data.origin.length === 3 && data.origin.every((n) => typeof n === 'number' && Number.isFinite(n))
     ? data.origin : null;
   bits.push(`local origin [${(o ?? [0, 0, 0]).join(', ')}]`);
+  // Size is a shared fact a resident can act on ("a candle flame", not "a
+  // bonfire"), so a scaled emitter says so; colour likewise. Neither is
+  // claimed when it isn't authored — the preset's own look is the default.
+  if (typeof data.scale === 'number' && Number.isFinite(data.scale) && data.scale !== 1) {
+    bits.push(`scale ${+clamp(data.scale, NUMERIC_BOUNDS.scale).toPrecision(3)}`);
+  }
+  const tint = parseColor(data.color);
+  if (tint != null) bits.push(`tinted ${hexOf(tint)}`);
   if (!known) bits.push('preset unknown to this client');
   // "active" is the honest claim: the component IS the emitter's state, and a
   // present component means it is emitting. Heat, light, sound and contact are
@@ -277,11 +400,12 @@ const readsAs = (preset) => (preset && Object.hasOwn(PARTICLE_PRESETS, preset)
  * everything #25's live-change contract asks for, and nothing per-particle or
  * per-frame. `who` is the line's subject; the caller supplies the tags.
  */
-export function transitionLine(actor, entityId, transition) {
+export function transitionLine(actor, entityId, transition, key = 'particles') {
   if (!transition) return null;
-  if (transition.kind === 'begin') return `${actor} lights ${readsAs(transition.preset)} on [${entityId}] (particles)`;
-  if (transition.kind === 'end') return `${actor} puts out the ${readsAs(transition.preset)} on [${entityId}] (particles)`;
+  const tag = isParticlesKey(key) ? key : 'particles';
+  if (transition.kind === 'begin') return `${actor} lights ${readsAs(transition.preset)} on [${entityId}] (${tag})`;
+  if (transition.kind === 'end') return `${actor} puts out the ${readsAs(transition.preset)} on [${entityId}] (${tag})`;
   return transition.from && transition.from !== transition.preset
-    ? `${actor} changes [${entityId}]'s emitter: ${readsAs(transition.from)} → ${readsAs(transition.preset)} (particles)`
-    : `${actor} retunes the ${readsAs(transition.preset)} on [${entityId}] (particles)`;
+    ? `${actor} changes [${entityId}]'s emitter: ${readsAs(transition.from)} → ${readsAs(transition.preset)} (${tag})`
+    : `${actor} retunes the ${readsAs(transition.preset)} on [${entityId}] (${tag})`;
 }

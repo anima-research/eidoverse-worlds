@@ -4,11 +4,14 @@
 // sites; now there is one owner and everyone else holds the getter. Nothing
 // here may import main.js.
 
-import { CONFIG, bus, report } from './core.js';
+import { CONFIG, bus, report, tee } from './base.js';
+import { releaseBodyGate } from './bodygate.js';
+import { armFlight, folded } from './controller.js';
 import { makeAvatar, contributeThumbnail } from './avatar.js';
-import { setMyAvatarPath, wireAvatarSwitch } from './build.js';
+import { setMyAvatarPath, wireAvatarSwitch } from './palette.js';
 import { toast } from './ui.js';
 import { net } from './net.js';
+import { loadBodyPrefs, saveBodyPrefs } from './bodyscale.js';
 
 // ---------------------------------------------------------------- identity
 
@@ -72,6 +75,9 @@ export async function resolveMyAvatarPath() {
  *  the server resolves names for everyone else's view either way. */
 export function getMyAvatarPath() { return myAvatarPath ?? want; }
 export function getMyAvatarName() { return myAvatarName; }
+// the bodies panel (bodies.js) lists what you have worn; the Avatar object itself carries neither name nor path,
+// so the two sites that know both announce it: the initial body (main.js) and a switch (wireAvatarSwitch below)
+export function announceWorn(name, path) { if (name) bus.emit('avatar-worn', { name, path: path ?? null }); }
 
 /** The door (and the bad-key re-door) hands a choice here. `remember` is the
  *  first-run door's cache write; the bad-key path never persisted, and still
@@ -86,13 +92,72 @@ export function chooseAvatar(path, name, { remember = false } = {}) {
 // ---------------------------------------------------------------- the handle
 
 let me = null;
+let seenFirstBody = false;
 export function getMe() { return me; }
-export function setMe(av) { me = av; }
+// ---------------------------------------------------------------- this body's size / plate lift
+// Per body, per browser (bodyscale.js: ew-body-prefs, keyed by the worn body's NAME, like ew-xr-scale). Applied on
+// every setMe — boot, a switch, a server-side refresh — so wearing a body again restores what you chose for it. The
+// wire (net.js sendPose → bodyWire) reads it off the Avatar; nothing else needs telling.
+let lsRef = null;
+try { lsRef = globalThis.localStorage ?? null; } catch { lsRef = null; }
+export function myBodyPrefs() { return loadBodyPrefs(lsRef, getMyAvatarName()); }
+function applyMyBodyPrefs(av) {
+  if (!av) return;
+  const p = myBodyPrefs();
+  av.setUserScale?.(p.scale);
+  av.setPlateY?.(p.plateY);
+}
+/** Profile › Avatar writes here: { scale?, plateY? } for the body you have on, saved and worn at once. `name` is for a
+ *  write that outlived its body (bodies.js's rest-timer save after a switch): saved under it, worn only if still on. */
+export function setMyBodyPref(patch, name = getMyAvatarName()) {
+  const p = saveBodyPrefs(lsRef, name, patch);
+  if (name !== getMyAvatarName()) return p;
+  if (me) { me.setUserScale?.(p.scale); me.setPlateY?.(p.plateY); }
+  bus.emit('body-prefs', p);
+  return p;
+}
+
+export function setMe(av) {
+  me = av;
+  applyMyBodyPrefs(av);
+  if (me) {
+    releaseBodyGate('body on screen');
+    // ONE '[body] on screen' per page — it is the load metric. Later setMe calls
+    // are body CHANGES (09-05: three swaps in the avatars tab read as +291 s
+    // 'loads' on the tee and corrupted the series).
+    if (!seenFirstBody) { seenFirstBody = true; tee(`[body] on screen +${(performance.now() / 1000).toFixed(1)}s`); }
+    else tee(`[body] changed → ${getMyAvatarName()}`);
+  }
+  bus.emit('avatar-worn', me ? getMyAvatarName() : null);
+  if (me) me.wingsFolded = folded();
+  armFlightFor(av);
+}
+
+/** Arm (or disarm) human flight for whatever body this is now.
+ *
+ *  Re-run on every swap, never cached: the capability binds to the RIG, so
+ *  putting on a winged body grants it and putting on a commons one takes it
+ *  away. That is the same action-time rule the agent side follows, and the
+ *  reason it is a function rather than a flag set once at boot. */
+function armFlightFor(av) {
+  try {
+    if (!av?.vrm?.scene) return;
+    const bones = [];
+    av.vrm.scene.traverse((o) => { if (o.isBone && o.name) bones.push(o.name); });
+    const ok = armFlight(bones, 'me');
+    if (ok) toast?.('flight available on this body — press F');
+  } catch { /* a body that cannot be inspected simply cannot fly */ }
+}
 
 // ---------------------------------------------------------------- avatar swap
 
 wireAvatarSwitch(async (path, name) => {
-  if (path === myAvatarPath) return;
+  // Same path is normally a no-op — but not when the body on screen is the
+  // capsule: `myAvatarPath` records what we INTENDED to wear and survives a
+  // failed load, so this early return was the last link that made a transient
+  // failure permanent (#196 review B1). Wearing the body we already "have" is
+  // exactly the retry a user reaches for.
+  if (path === myAvatarPath && !me?.isCapsule) return;
   toast(`changing into ${name}…`, 'info', 3000);
   try {
     // The switch order is load-bearing (§19b): NEW body fully ready (pool-hit
@@ -101,12 +166,15 @@ wireAvatarSwitch(async (path, name) => {
     // instance pool, so switching BACK is a 0ms pool-hit, not a re-parse.
     const next = await makeAvatar(CONFIG.name, path, { urgent: true }); // build before shedding the old
     me?.dispose();
-    me = next;
+    // name and path FIRST: setMe announces 'avatar-worn' with the current name,
+    // and My Avatars / the profile read it — set after, they heard the old body
     myAvatarPath = path;
     myAvatarName = name;
+    announceWorn(name, path);
     setMyAvatarPath(path);
+    setMe(next);
     localStorage.setItem('ew-avatar-name', name);
-    contributeThumbnail(name, next.vrm, CONFIG.token);
+    contributeThumbnail(name, next.vrm, CONFIG.token, { path });
     if (net.joined) {
       // re-announce: everyone rebuilds my remote with the new body
       const { sendJoin } = await import('./net.js');
@@ -122,6 +190,6 @@ bus.on('avatar-updated', ({ path, name, fresh }) => {
   if (myAvatarPath?.split('?')[0] === path) {
     toast(`your body "${name}" was updated — refreshing`, 'info');
     myAvatarPath = fresh;
-    makeAvatar(CONFIG.name, fresh, { urgent: true }).then((av) => { me?.dispose(); me = av; }).catch((e) => report('reload avatar', e));
+    makeAvatar(CONFIG.name, fresh, { urgent: true }).then((av) => { me?.dispose(); setMe(av); }).catch((e) => report('reload avatar', e));
   }
 });

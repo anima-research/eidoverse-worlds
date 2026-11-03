@@ -6,8 +6,9 @@
 
 import { existsSync, readFileSync, writeFileSync, renameSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { JtiCache } from "./aid1.ts";
+import { JtiCache, verifyToken, aid1Slug, type Aid1Payload } from "./aid1.ts";
 import { ROOT } from "./config.ts";
+import { atomicWrite } from "./fsutil.ts";
 
 // ---- archipelago-home identity (docs/home-node.md §7) ----------------------
 // The second door, alongside JOIN_TOKEN: humans log in with Discord at the
@@ -28,7 +29,20 @@ export const HN_LOGIN_URL = process.env.HN_LOGIN_URL ?? `https://${HN_ISS}/login
 export const HN_REQUIRE_LOGIN = process.env.HN_REQUIRE_LOGIN === "1";
 export const SESSION_TTL_MS = 12 * 60 * 60_000; // event-length; re-login is two clicks
 
-export type HnSession = { sub: string; name: string; scopes: string[]; claims?: Record<string, unknown>; exp: number };
+/** Verify a forwarded aid1 credential at a join-scoped door and hand back
+ *  the identity it vouches for (§24l R1): the ws join and the upload door
+ *  each hand-rolled this verify-then-slug pair; the MCPL door (its own
+ *  process, its own HN_* env) shares aid1Slug and keeps its own verify. */
+export function aid1JoinIdentity(tok: string): { slug: string; payload: Aid1Payload } | null {
+  if (!HN_ISSUER_KEY || !tok.startsWith("aid1.")) return null;
+  const v = verifyToken(tok, { issuerId: HN_ISSUER_KEY, iss: HN_ISS, aud: HN_AUD, requireScopes: ["worlds:join"] });
+  return v.ok ? { slug: aid1Slug(v.payload), payload: v.payload } : null;
+}
+
+// `native`: issued to a native client by browser-approved pairing (native-login.ts). It is an ordinary session
+// for every world the account may join; the mark only stops it approving another native pairing. Sessions paired
+// before native sessions became ordinary ones carry `nativeWorld` instead, which means the same thing now.
+export type HnSession = { sub: string; name: string; scopes: string[]; claims?: Record<string, unknown>; exp: number; native?: true; nativeWorld?: string };
 export const hnSessions = new Map<string, HnSession>();
 export const hnJti = new JtiCache();
 export function sessionFromCookie(cookie: string | null): HnSession | null {
@@ -45,12 +59,15 @@ export function sessionFromCookie(cookie: string | null): HnSession | null {
 // and sent verified humans back to the door mid-event. They survive restarts
 // now. The file holds bearer-equivalent session ids — 0600 and gitignored,
 // same posture as mcpl/tokens.json.
-export const SESSIONS_FILE = join(ROOT, ".sessions.json");
+export const SESSIONS_FILE = resolve(process.env.HN_SESSIONS_FILE ?? join(ROOT, ".sessions.json"));
 export function saveSessions() {
   try {
     const live = [...hnSessions].filter(([, s]) => s.exp > Date.now());
-    writeFileSync(`${SESSIONS_FILE}.tmp`, JSON.stringify(Object.fromEntries(live)), { mode: 0o600 });
-    renameSync(`${SESSIONS_FILE}.tmp`, SESSIONS_FILE); // atomic — a crash mid-write never truncates the live file
+    // atomicWrite IS the write-then-rename: a crash mid-write never truncates
+    // the live file. A second rename of the already-consumed .tmp threw on
+    // every successful save and logged "session save failed" each time,
+    // burying the signal for a real failure (PR #160 review).
+    atomicWrite(SESSIONS_FILE, JSON.stringify(Object.fromEntries(live)), { mode: 0o600 });
   } catch (e) { console.log(`[auth] session save failed: ${e}`); }
 }
 try {

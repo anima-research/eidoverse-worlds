@@ -15,7 +15,7 @@
 // §8 step 2): the reference fold moved out of server/server.ts verbatim,
 // and these fixtures are the proof it stayed itself.
 
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { emptyState, foldEntry, stateToEntries } from "../shared/fold.js";
 
@@ -65,7 +65,7 @@ console.log(`\nfold conformance — spec/fixtures vs shared/fold.js\n`);
 
 for (const dir of readdirSync(FIX).sort()) {
   const base = join(FIX, dir);
-  if (!statSync(base).isDirectory()) continue;
+  if (!statSync(base).isDirectory() || !existsSync(join(base, "folded.json"))) continue;
 
   const st = emptyState();
   const lines = readFileSync(join(base, "log.jsonl"), "utf8").split("\n").filter(Boolean);

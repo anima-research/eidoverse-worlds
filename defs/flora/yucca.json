@@ -1,0 +1,9 @@
+{
+  "doc": "Real geometry rosette — ~30 V-folded spike leaves (crossed cards read as crossed cards; a yucca is structural). Rosette density is what hides the crown bases.",
+  "archetype": "yucca", "maps": "yucca_kit",
+  "rosette": { "r": 0.55, "spikes": 64 },
+  "footRadius": 0.6,
+  "baseScale": [1.0, 1.6], "density": 0.1, "clump": 0.15,
+  "wind": { "base": 0.03, "gust": 0.06, "gustFreq": 0.3, "flutter": 0.5 },
+  "sss": 0.5, "rough": 0.8, "pushScale": 0.12
+}

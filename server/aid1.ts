@@ -42,6 +42,18 @@ function b64urlToBuf(s: string): Buffer | null {
 
 export type VerifyOutcome = { ok: true; payload: Aid1Payload } | { ok: false; reason: string };
 
+/** The mention-handle slug every door derives from an aid1 identity — ONE
+ *  implementation (§24l R1, survey B1): it was copied verbatim at three
+ *  doors (ws join, upload, the MCPL door), each carrying a comment
+ *  asserting they must agree. If they drift, an agent is a different
+ *  person depending on which door it walked through, and nothing detects
+ *  it. World addressing is name-based; name uniqueness was enforced at
+ *  enrollment by the home node; `sub` is the fallback for a name that
+ *  slugs to nothing. */
+export function aid1Slug(payload: Aid1Payload): string {
+  return payload.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || payload.sub;
+}
+
 export interface VerifyOpts {
   /** Issuer public key `ed25519:<b64url raw 32B>`. */
   issuerId: string;

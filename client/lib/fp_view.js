@@ -88,12 +88,16 @@ export function resolveFirstPersonAnchor({ head, bounds, name = "this body" } = 
  *  The body is hidden strictly around synchronous render() and restored in finally — an
  *  exclusion that survived a throw would leave the body invisible to every
  *  OTHER viewer of this renderer's scene. */
-export function composeFirstPerson({ camera, yaw, head, bounds, name, setOwnVisible, render }) {
+export function composeFirstPerson({ camera, yaw, pitch, head, bounds, name, setOwnVisible, render }) {
   const { eye } = resolveFirstPersonAnchor({ head, bounds, name });
   const fx = Math.sin(yaw), fz = Math.cos(yaw);
   const ex = eye[0] + fx * FP_FORWARD, ey = eye[1], ez = eye[2] + fz * FP_FORWARD;
   camera.position.set(ex, ey, ez);
-  camera.lookAt(ex + fx * FP_GAZE_AHEAD, ey - FP_GAZE_DROP, ez + fz * FP_GAZE_AHEAD);
+  if (Number.isFinite(pitch)) {
+    // an asked-for gaze tilt (degrees, + up): same eye, same heading
+    const r = pitch * Math.PI / 180, flat = Math.cos(r) * FP_GAZE_AHEAD;
+    camera.lookAt(ex + fx * flat, ey + Math.sin(r) * FP_GAZE_AHEAD, ez + fz * flat);
+  } else camera.lookAt(ex + fx * FP_GAZE_AHEAD, ey - FP_GAZE_DROP, ez + fz * FP_GAZE_AHEAD);
   setOwnVisible(false);
   try {
     const frame = render();

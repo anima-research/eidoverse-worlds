@@ -1,0 +1,10 @@
+{
+  "doc": "Mojave shrub (shrub_gen.js growth preset 'creosote'). stemColor 0x8a7358. stemTint is a linear lift matching the bark tile to the sheet's own painted stem (tile mean 75/62/53 sRGB vs painted stem 117/99/67 — the wood must read as the same branch the card art continues).",
+  "archetype": "shrub", "gen": "creosote", "maps": "creosote",
+  "stem": "creosote_stem", "stemColor": 9073496,
+  "stemTint": [2.6, 2.7, 1.7],
+  "footRadius": 1.1,
+  "baseScale": [0.7, 1.3], "density": 0.035, "clump": 0.3,
+  "wind": { "base": 0.1, "gust": 0.22, "gustFreq": 0.3, "flutter": 1.3 },
+  "sss": 0.45, "rough": 0.85, "pushScale": 0.7
+}

@@ -24,7 +24,8 @@
 // under takeover the dragger sims and the agent only has to accept-and-
 // rebroadcast — the same thing it already does for puppet poses.
 
-import { THREE, camera, canvas, bus, scene } from './core.js';
+import { THREE, camera, canvas, scene } from './core.js';
+import { bus } from './base.js';
 import { remotes, draggedLocal } from './remotes.js';
 import { JOINTS } from './ragdoll.js';
 import { makeRagdoll } from './bodysim.js';

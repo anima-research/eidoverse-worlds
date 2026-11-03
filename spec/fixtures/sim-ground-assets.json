@@ -1,0 +1,10 @@
+{
+  "model": "eidoverse/assets/models/scifi_barrels_group_of_four.glb",
+  "offsetXZ": [-0.001, -1.953],
+  "bbox": {"min": [-0.604, 0.002, -2.555], "max": [0.602, 1.006, -1.35]},
+  "triangles": 6040,
+  "responses": {
+    "26a0f4ccf4b225a493087552c8459e1078cb7056e421c542e1b6c87009f898ae": "library GLB",
+    "4e90b96afc2ef2ad36505480e24656c3b55cf08ec888064beb9bea68b3993cd3": "KTX2 variant; same measured bounds and center"
+  }
+}

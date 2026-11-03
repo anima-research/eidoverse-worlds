@@ -1,0 +1,14 @@
+{"seq":0,"ts":1760000000000,"actor":"world","verb":"genesis","args":{"v":3,"dialect":"eidoverse-log"}}
+{"seq":1,"ts":1760000000005,"actor":"fixture","verb":"terrain","args":{"seed":7,"size":160,"amplitude":6,"flatRadius":16}}
+{"seq":2,"ts":1760000000010,"actor":"fixture","verb":"spawn","args":{"id":"wall","lib":"wall.glb","pos":[4,0,0],"yaw":0}}
+{"seq":3,"ts":1760000000015,"actor":"fixture","verb":"spawn","args":{"id":"deck","lib":"deck.glb","pos":[5,0,6],"yaw":0}}
+{"seq":4,"ts":1760000000020,"actor":"fixture","verb":"epoch","args":{"sim":"eidosim@0.5.0","tickMs":66,"boxes":{"crate.glb":[[-0.5,0,-0.5],[0.5,1,0.5]],"wall.glb":[[-0.25,0,-2],[0.25,2,2]],"deck.glb":[[-3,0,-1],[3,1,1]]}}}
+{"seq":5,"ts":1760000000030,"actor":"fixture","verb":"spawn","args":{"id":"crate","lib":"crate.glb","pos":[0,0,0],"yaw":0,"box":[[-0.5,0,-0.5],[0.5,1,0.5]]}}
+{"seq":6,"ts":1760000000040,"actor":"fixture","verb":"spawn","args":{"id":"ball","lib":"crate.glb","pos":[0,0,6],"yaw":0,"box":[[-0.5,0,-0.5],[0.5,1,0.5]]}}
+{"seq":7,"ts":1760000000500,"actor":"fixture","verb":"punt","args":{"id":"crate","power":8,"dir":[1,0.3,0]}}
+{"seq":8,"ts":1760000000560,"actor":"fixture","verb":"place","args":{"id":"wall","pos":[2.2,0,0],"yaw":0}}
+{"seq":9,"ts":1760000000600,"actor":"fixture","verb":"punt","args":{"id":"ball","power":8,"dir":[1,1,0]}}
+{"seq":10,"ts":1760000003000,"actor":"fixture","verb":"punt","args":{"id":"crate","power":20,"dir":[1,0.1,0]}}
+{"seq":11,"ts":1760000006000,"actor":"fixture","verb":"terrain","args":{"seed":8,"size":160,"amplitude":6,"flatRadius":16}}
+{"seq":12,"ts":1760000006100,"actor":"fixture","verb":"punt","args":{"id":"ball","power":6,"dir":[-1,0.6,0]}}
+{"seq":13,"ts":1760000006120,"actor":"fixture","verb":"punt","args":{"id":"crate","power":4,"dir":[-1,0.6,0]}}

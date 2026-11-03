@@ -1,3 +1,6 @@
+import { setTraversalObjects } from './lib/traversal.js';
+import { updateVehicle, piloting } from './lib/vehicles.js';
+import { updateWater, updateWaterView, setWaterObjects, setWaterClock, environmentSettings, waterDebug, applyEnvLight } from './lib/watervolumes.js';
 // eidoverse-worlds browser client.
 //
 // Two planes: the world log (verbs, ordered, replayed on join) and presence
@@ -7,73 +10,100 @@
 // handle in mybody.js, my body's physics in localbody.js, consent in
 // consent.js, voice mouths in voicemouths.js, /commands in lib/commands/.
 
-import {
-  THREE, scene, camera, renderer, CONFIG, bus, report,
-} from './lib/core.js';
-import { contributeThumbnail, makeAvatar, EMOTE_ORDER } from './lib/avatar.js';
+import { chooseClient } from './lib/litechoice.js';
+import { THREE, scene, camera, renderer, canvas } from './lib/core.js';
+import { releaseBodyGate, armBodyGate } from './lib/bodygate.js';
+import { CONFIG, bus, report, tee, colorFor, emptyWorldNotice } from './lib/base.js';
+import { contributeThumbnail, makeAvatar, makeCapsuleAvatar, EMOTE_ORDER } from './lib/avatar.js';
 import { updateSky, updateAutoSystems, skyArgs, setCloudQuality } from './lib/sky.js';
-import { setSkyArgsSource, entities, buildsPending, avatarMounts } from './lib/world.js';
+import { setSkyArgsSource, entities, buildsPending, anyBuildsPending, avatarMounts, roleOf, worldHasOwner, currentTerrainArgs, terrainEditBase, noteTerrainSent, terrainPending } from './lib/world.js';
+import { presence } from './lib/presence.js';
+import { initWorldQuad } from './lib/worldquad.js';
 import { foldParity } from './lib/parity.js';
 import { initModelsRealizer, reconcileModels, residencyDebug, setResidencyFocus, drainPromoteTail } from './lib/realize/models.js';
 import { initEnvironmentRealizer } from './lib/realize/environment.js';
 import { initSocialRealizer } from './lib/realize/social.js';
 import { initStructureRealizer } from './lib/realize/structure.js';
+import { initSimWorld, simState } from './lib/simworld.js';
 import { initStructureUI } from './lib/structure_ui.js';
 import { initCauses } from './lib/realize/causes.js';
 // side-effecting: the `particles` component's host wires itself to the comp
 // and entity buses on import (it has no boot step of its own)
 import './lib/emitters.js';
+import './lib/pictures.js';
+import { tickSounds } from './lib/sounds.js';   // the sound comp: positional audio from an entity
 import { tickMotion } from './lib/motion.js';
 import {
-  myState, updateMe, updateSpectator, setCamYaw, setPosture, togglePhotoMode,
+  myState, updateMe, updateSpectator, setCamYaw, setPosture, togglePhotoMode, photoMode,
+  setRightsHook, setMeHook, setFolded,
 } from './lib/controller.js';
-import { remotes, updateRemotes, updateGaze } from './lib/remotes.js';
+import { remotes, updateRemotes, updateGaze, serverNow } from './lib/remotes.js';
+// The whole module as one object: net.js takes the participant registry by injection
+// now (it must carry the protocol for lite.js, which has no bodies to register), and
+// this is the real, body-building implementation of that interface.
+import * as participants from './lib/remotes.js';
+import { setWaveClock } from './lib/water.js';
+import { snapshot, setSnapReadiness } from './lib/net_snap.js';
+import { myReachBag } from './lib/reachnet.js';
 import {
   net, connect, initIdentity, loginUrl, wireNet, sendVerb, sendPose, sendWhisper, sendTyping,
+  setPoseOverride, sendPuppet, sendAnim, builtIn,
 } from './lib/net.js';
-import { initPalette, updateBuild, toggleEditMode, isEditing } from './lib/build.js';
+import { poseCommands } from './lib/posecommands.js';
+import { updateBuild, toggleEditMode, isEditing } from './lib/build.js';
+import { initPalette } from './lib/palette.js';
+import { setRightsSink, state as worldState } from './lib/state.js';
 import { initConjure } from './lib/conjure.js';
-import { initVoice } from './lib/voice.js';
-import './lib/mictoggle.js'; // mic + headphone toggles beside the HUD, both off by default
+import { micLive, earOn } from './lib/mictoggle.js'; // mic + headphone toggles beside the HUD, both off by default
 import { initAudioPanel } from './lib/audiopanel.js';
-import { initSceneGraph } from './lib/scenegraph.js';
+import { initSceneGraph, sceneSelect } from './lib/scenegraph.js';
+import { initXR, updateXR, bindXRSelf, isPresenting } from './lib/xr.js';
+import { tickXRMirror } from './lib/xrmirror.js';
+import { ensureXRBodyHook, bindXRBodySelf, xrAvatarYaw, xrLookPitch, xrWire, xrSimActive } from './lib/xrbody.js';
+import { tickXRVignette } from './lib/xrvignette.js';
+import { initVRPanel } from './lib/vrpanel.js';
+import { trySitOn as xrTrySitOn, dismountMe as xrDismountMe } from './lib/localbody.js';
 import {
-  toast, setHint, flashHint, buildHelp, toggleHelp,
-  openDoor, toggleRoster, initRoster, initDock, panelFrame,
+  toast, flashHint, buildHelp, toggleHelp,
+  openDoor, togglePeopleHere, initDock, paintPresence, panelFrame, settingsFrame, setLoadingItems, setMenuSources,
 } from './lib/ui.js';
+import { registerXRPanel } from './lib/xrpanels.js';
 import { initDebug, updateDebug, toggleDebug } from './lib/debug.js';
 
 // Which build is this world running? One console line at boot, so "what's
-// deployed here" is a glance instead of an inference (the 2026-08-07 audio
-// mystery). Server route: GET /version — same answer, one curl away, for
+// deployed here" is a glance instead of an inference (the audio
+// mystery that turned out to be a stale deploy). Server route: GET /version — same answer, one curl away, for
 // anyone without a browser console.
 fetch('/version').then((r) => r.json())
   .then(({ sha, commitTime, dirty, startedAt }) => console.log(`[eidoverse] server build ${sha}${dirty === true ? ' (DIRTY TREE)' : dirty === false ? '' : ' (dirty: unknown)'} (code from ${commitTime}), up since ${startedAt}`))
   .catch(() => console.log('[eidoverse] server build unknown (/version unavailable)'));
 import { dragSim, updateBodyDrag, dragState } from './lib/bodydrag.js';
-import { initChat, logChat } from './lib/chat.js';
+import { initChat, logChat, chatXRPanel, openConvo } from './lib/chat.js';
+import { initPlates, updatePlates } from './lib/platecard.js';
 import { bodyEngine, setBodyEngine, listBodyEngines } from './lib/bodysim.js';
 import { initPhysObj, tickPhysObj, leaseApi } from './lib/physobj.js';
 import { initMods, tickMods, modsApi } from './lib/mods.js';
-import { initBoot, markPhase, finishBoot, bootDone } from './lib/boot.js';
-import { protoStats } from './lib/assets.js';
-import { grassTiles } from './lib/terrain.js';
+import { initBoot, markPhase, finishBoot, bootDone, setBootAssets } from './lib/boot.js';
+import { protoStats, forgetBytes, loadingItems, bootBytes } from './lib/assets.js';
+import { grassTiles, heightAt, hasTerrain } from './lib/terrain.js';
 import { grassDiag } from './lib/grassdiag.js';
 import { warmStats } from './lib/warmqueue.js';
-import { laneStats as schedLaneStats } from './lib/scheduler.js';
+import { budgetStats } from './lib/framebudget.js';
+import { pending, P, onIdle, laneStats as schedLaneStats } from './lib/scheduler.js';
 import { laneStats as loadLaneStats } from './lib/loadwork.js';
 import { colliderCacheStats } from './lib/colliders.js';
-import { governPerformance, governorDebug, whenCalm } from './lib/governor.js';
+import { statusChip } from './lib/statuschips.js';
+import { governPerformance, governorDebug, whenCalm, applyPendingPixelRatio } from './lib/governor.js';
 import { registerSystem, startFrame, frameDebug } from './lib/frame.js';
 import { perf } from './lib/perf.js';
+import { renderWorld, drawStats, setDrawBatching } from './lib/render.js';
 import { paintHud } from './lib/hud.js';
 import { updateMaterials, materialsDebug } from './lib/materials.js';
-import { updateRig, rigDebug } from './lib/lightrig.js';
+import { updateRig, rigDebug, setLampShadow, lampShadowState } from './lib/lightrig.js';
 import { startPrefetch } from './lib/prefetch.js';
 import {
   getMe, setMe, getMyAvatarPath, getMyAvatarName, resolveMyAvatarPath,
-  rosterLazy, chooseAvatar,
-} from './lib/mybody.js';
+  rosterLazy, chooseAvatar, announceWorn } from './lib/mybody.js';
 import {
   initLocalBody, isDowned, activeRagdoll, goLimp, getUp,
   stepRagdoll, updateMountedMe, updateSeatHint,
@@ -81,7 +111,14 @@ import {
 import { posable, pushable, setPosable, setPushable } from './lib/consent.js';
 import { updateVoiceMouths } from './lib/voicemouths.js';
 import { initEmoteBar } from './lib/emotebar.js';
+import { initXRKeyboard } from './lib/xrkeyboard.js';
 import { initCommands, saveScreenshot } from './lib/commands/handlers.js';
+import { register as registerAction } from './lib/actions.js';
+import { initLantern } from './lib/lantern.js';
+import { deriveLandmarks, debugMarkers, landmarkWorld } from './lib/landmarks.js';
+import { measureChain, solveChain } from './lib/reachbone.js';
+import { canonicalPoint } from '../shared/contact.js';
+import { initReachNet, setMyReach, clearMyReach } from './lib/reachnet.js';
 
 // (Crash breadcrumbs live in lib/bc.js now; the frame loop stamps each
 // system's name as it runs. avatar.js still reads globalThis.__ewBC.)
@@ -101,6 +138,15 @@ const isViewer = CONFIG.spectate || CONFIG.renderer;
 
 setSkyArgsSource(skyArgs);
 setResidencyFocus(() => myState?.pos ?? null);   // the body anchors residency too (§13.3)
+// a renderer takes a snapshot only once the world is realized around the body it follows (net_snap.js settle): the
+// body in the scene, the world's builds done, no model loading or standing in. (Shaders still warming do not block:
+// the renderer compiles any it meets — a stall, never a missing object.)
+setSnapReadiness(async (follow) => {
+  const r = residencyDebug(), warm = warmStats();
+  const body = !!remotes.get(follow)?.avatar, builds = anyBuildsPending();
+  return { ready: body && !builds && !r.loading && !r.standins, body, builds, models: r.real,
+    loading: r.loading + r.standins, compiling: warm.pending + (warm.running ? 1 : 0) };
+});
 // The realizers project folded state into the scene. Wired before connect()
 // so the hydrated event of the very first snapshot finds them listening;
 // causes.js takes the fold-inert live verbs off the 'live-entry' bus.
@@ -113,26 +159,60 @@ initSocialRealizer();
 initStructureRealizer();
 initStructureUI();
 initCauses();
+// the deterministic sim's applier (PROTOCOL_v2 dialect 3): advances the
+// shadow sim fold to now and moves sim-owned bodies — inert pre-epoch
+initSimWorld();
 
 // ---------------------------------------------------------------- boot
 
 initBoot({ world: CONFIG.world, name: CONFIG.name });
 buildHelp();
-initChat({
+const chatApi = initChat({
   send: (text) => sendVerb('say', { text }),
   whisper: sendWhisper,
   typing: (to) => { sendTyping(to); getMe()?.setTyping(); },
   people,
 });
-initRoster(people);
+// the lantern prompt (Ctrl/Cmd+K): actions from lib/actions.js, speech and /commands through chat's own submit
+initLantern({ submit: chatApi.submit, whisperTarget: chatApi.whisperTarget });
 initEmoteBar();
+initXRKeyboard();   // C16: types into the last-focused text input; a quad in VR
+initWorldQuad();
+initVRPanel();
+settingsFrame();               // exists (hidden) so the ∃ menu can open it
 initDock([
   { id: 'chat', label: '💬' },
   { id: 'world', label: '🧱' },
-  { id: 'who', label: '👥' },
   { id: 'emotes', label: '👋' },
   { id: 'debug', label: '🐞' },
+  // The wrench. It was declared here through the lab (edb63df, 27eae14) and
+  // did NOT survive the recut: DEFAULT_PINS still pinned 'edit', but nothing
+  // in the client declared an entry with that id, so it could never appear —
+  // and dock-test could not notice, because it supplies its own 'edit' entry.
+  // R, 2026-09-11: "when did Edit get dropped from the dock?? That's a
+  // regression for sure."
+  //
+  // `last: true` keeps it at the end of the rail: edit is a MODE, not a
+  // window, and it reads as one only when it sits apart (live, 09-05).
+  //
+  // The gate reads the SERVER's answer. c18ee3f moved it there because an
+  // operator is owner everywhere but never appears in the fold's roles map,
+  // so a local role lookup hid the wrench from R while every build verb was
+  // already being accepted (09-04). roleOf/worldHasOwner live further up the
+  // stack than this rung; net.myRights is what rung 3 has, and it is the
+  // authoritative half anyway.
+  { id: 'settings', label: '⚙️', icon: 'gear-six' },
+  {
+    id: 'edit', label: '🔧', icon: 'wrench', last: true,
+    action: toggleEditMode,
+    active: () => isEditing(),
+    gate: () => ['builder', 'owner'].includes(net.myRights?.role),
+  },
 ]);
+// the ∃ menu's Save/Load are offered to builders (the wrench's own gate), and its Log in follows the deployment's login
+setMenuSources({ buildRights: () => ['builder', 'owner'].includes(net.myRights?.role), loginUrl: () => loginUrl() });
+paintPresence(presence());            // the dot needs the button: after initDock
+bus.on('presence:me', paintPresence);
 initDebug({
   // the body in your HAND wins over your own — that is the one being worked on
   ragdoll: () => dragSim() ?? activeRagdoll(),
@@ -144,20 +224,32 @@ initDebug({
   // drop again from where you stand, so a shape can be reproduced back to back
   reLimp: () => { if (isDowned()) getUp(); goLimp(); },
 });
+// The snapshot renderer is wired BEFORE start() opens the socket. sendJoin claims the
+// renderer role only when one is wired (net.js), and a renderer starts at once (start()
+// below, isViewer). Wiring it with the other hooks further down only worked because
+// connect() awaits fetchIdentity() before its first join; nothing enforced it.
+wireNet({ snapshot });   // net_snap.js — the one part of the protocol that needs a renderer
 // Verified identity resolves BEFORE anything reads CONFIG.name — otherwise the
 // door panel and the local nameplate greet a stale localStorage name while the
 // server (correctly) calls this person by their Discord name.
 await initIdentity();
 
+// The splash waits for the body to SETTLE — on screen, or failed — never for a body to exist: a failed
+// avatar load marked the phase done and then checkReady waited on getMe() until the 45 s ceiling
+// (review 2026-09-10 #2: 'stepping in' with no [boot] ready on an owned empty world).
+let bodySettled = false;
+if (isViewer) releaseBodyGate('viewer — no body expected'); else armBodyGate();   // a body is coming: the world's parses wait for it (assets.js)
 if (isViewer) {
   panelFrame().hide();
+  bodySettled = true;
   markPhase('body', 1);
   start();
 } else {
   // The front door: ask once for a name and a body, remember, never ask again.
   // A person handed a bare link used to become `guest-a1b2` in the default body
   // with no way to change either and no idea what the keys were.
-  const firstRun = !CONFIG.params.has('name') && localStorage.getItem('ew-name-set') !== '1';
+  // ?door=1 re-opens it on demand (owner, 09-06 23:14: 'revoke my entry so I hit the step-in panel again')
+  const firstRun = CONFIG.params.has('door') || (!CONFIG.params.has('name') && localStorage.getItem('ew-name-set') !== '1');
   if (firstRun) {
     // the door is already an interactive pause — its roster fetch is lazy,
     // and the choice is cached so the NEXT boot needs no fetch at all
@@ -172,6 +264,32 @@ if (isViewer) {
     }));
   } else start();
 }
+
+
+// ?sendlayout=1 — post this browser's saved panel layout (every ew-frame-* key + the viewport it
+// was arranged in) to the host tee, so a hand-arranged layout can be read off the log and baked in
+// as the default (owner, 09-06 23:16: 'copy my menu layout so we can propagate it as the default').
+if (CONFIG.params.has('sendlayout')) {
+  bus.on('booted', () => setTimeout(() => {
+    const frames = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k?.startsWith('ew-frame-')) { try { frames[k.slice(9)] = JSON.parse(localStorage.getItem(k)); } catch { /* skip a bad row */ } }
+    }
+    tee(`[layout] ${JSON.stringify({ vw: innerWidth, vh: innerHeight, dpr: devicePixelRatio, locked: localStorage.getItem('ew-ui-locked') === '1', frames })}`);
+    toast?.(`layout sent — ${Object.keys(frames).length} panels`, 'info', 4000);
+  }, 1500));
+}
+
+// A desktop whose last full boot never came back is NOT demoted to lite (index.html
+// decideLite, 'retry'): it boots full again and says so, as a pill on the status strip
+// with the light version one press away. Never "type ?lite=1" (owner, 10-01).
+if (globalThis.__ewLiteWhy === 'retry') statusChip({
+  id: 'lite-retry', level: 'attn', label: 'last load stalled',
+  title: "This world didn't finish loading last time",
+  body: "We're trying the full 3D world again. If it keeps stalling or crashing here, the lite client has chat, emotes and who's here, with no 3D.",
+  actions: [{ label: 'switch to the lite client', run: () => chooseClient(true) }, { label: 'stay in 3D', clear: true }],
+});
 
 // A rejected door key re-opens the door with a key field instead of retrying
 // into a wall forever.
@@ -190,13 +308,26 @@ function start() {
   connect();
   initPalette();
   initConjure();   // the orrery panel — prompt → your pick of images → mesh → world
-  initVoice(CONFIG.name);
+  // 🔴 ONE TRANSPORT, EXACTLY ONE PLAYBACK OWNER (#104 amendment 6, the #132
+  // cutover). The P2P mesh is deleted; the in-process SFU is not a flag or a
+  // URL param, it is the only voice path the client has. That is deliberate —
+  // when transports selected by flag coexisted, a dropped ?sfu=1 served the
+  // mesh for an hour while every result was reported as "SFU",
+  // and amendment 6's "exactly one playback owner must be visible at all
+  // times" is only IMPOSSIBLE to violate when a second owner cannot
+  // initialise. The requirement is that the wrong path be impossible, not
+  // discouraged. If cutover acceptance fails, the remedy is deploying the
+  // previous release during the migration window (notes/CUTOVER-ROLLBACK.md),
+  // not a runtime branch back to a transport this bundle no longer contains.
+  window.__voiceTransport = 'pending:sfu';
+  import('./lib/voicesfubridge.js').then((m) => { m.initVoiceSfu(CONFIG.name); window.__voiceTransport = 'sfu'; })
+    .catch((e) => { window.__voiceTransport = 'failed:sfu'; window.__voiceTransportError = String(e); console.error('voice init failed', e); });
   initAudioPanel();   // 🔊 categories: voices / world / TTS + consent rows
   // HEARING YOURSELF IS THE POINT. This hook — your own says going through the
   // selected voice — used to be installed ONLY inside the `?tts=PORT` block, so
   // it existed exclusively for bodies launched with a URL parameter. A human who
   // picked a voice in the panel loaded a 63 MB model, saw "ready", typed, and
-  // heard nothing, because nothing was listening for their says (R, 2026-08-09:
+  // heard nothing, because nothing was listening for their says (live, 2026-08-09:
   // "I don't hear anything when I type into the chat box. Hearing yourself as a
   // human using TTS is half the fun").
   //
@@ -215,31 +346,70 @@ function start() {
     .then((vs) => vs.speakOwnSays(bus, () => net.myId || CONFIG.name))
     .catch((e) => console.warn('[voice] own-say hook not installed:', e));
   initSceneGraph();   // 🌳 the world as a tree + 📜 the scripts that animate it
-  setHint('<kbd>WASD</kbd> move · <kbd>Enter</kbd> chat · <kbd>B</kbd> build · <kbd>?</kbd> help');
+  // the boot hint ('WASD move · Enter chat · B build · ? help') merged into the lantern's resting line
+  // (lib/lantern.js), which owns bottom-centre; the hint bar now only borrows that spot for offers and flashes
 
   if (!isViewer) {
+    // A body is never optional (owner, in-headset 09-04: no avatar at all, on
+    // desktop too, and nothing said why). If the chosen body fails to load,
+    // wear the default and SAY SO; the stale cache is cleared so the next
+    // boot re-resolves instead of failing the same way forever. Only if the
+    // default fails too is there nothing to wear — that one is reported.
+    const DEFAULT_BODY = 'eidoverse/assets/vrms/claude.vrm';
+    // ?capsule=1: refuse every body load so the REAL fallback chain runs end to end (owner, 09-19: 'leave other avatars offline')
+    const wear = (path) => CONFIG.params.has('capsule') ? Promise.reject(new Error('?capsule=1: body loads refused')) : makeAvatar(CONFIG.name, path, { urgent: true });   // your body skips the load queue
     resolveMyAvatarPath()
-      .then((path) => makeAvatar(CONFIG.name, path, { urgent: true })) // your body skips the load queue
-      .then((av) => {
+      .then((path) => wear(path).then((av) => ({ av, path })).catch((e) => {
+        report('avatar', e);
+        // the capsule is the floor: a body that needs no network (09-19: a flapping tunnel took BOTH the
+        // chosen body and the default, and the owner arrived as nothing)
+        const capsule = () => { toast('no body would load — wearing the capsule until one does. Pick another in Profile.', 'warn', 12000); tee('[body] capsule stand-in (chosen + default failed)'); return { av: makeCapsuleAvatar(CONFIG.name), path: 'capsule' }; };
+        if (String(path).startsWith(DEFAULT_BODY)) return capsule();
+        try { localStorage.removeItem('ew-avatar-path'); } catch { /* private mode */ }
+        toast(`your body (${getMyAvatarName()}) failed to load — wearing the default. Pick another in Profile.`, 'warn', 9000);
+        chooseAvatar(DEFAULT_BODY, 'claude');
+        return wear(DEFAULT_BODY).then((av) => ({ av, path: DEFAULT_BODY })).catch((e2) => { report('avatar default', e2); return capsule(); });      }))
+      .then(({ av, path }) => {
         setMe(av);
+        if (!av.isCapsule) announceWorn(path.split('/').pop().replace(/\.vrm.*$/, ''), path);   // the roster's name for this file, not a stale ew-avatar-name
+        bodySettled = true;
         markPhase('body', 1);
         // Contribute a portrait of this body so the next person picks from
         // faces instead of filenames. Deferred behind the governor's calm
         // signal — it costs an offscreen render-target compile burst, and the
         // old t+4s wall clock dropped that into the middle of the boot storm
         // (§16.1g). Calm = 5 smooth seconds with no load work in flight.
-        whenCalm().then(() => contributeThumbnail(getMyAvatarName(), av.vrm, CONFIG.token));
+        if (!av.isCapsule) whenCalm().then(() => contributeThumbnail(getMyAvatarName(), av.vrm, CONFIG.token, { path: getMyAvatarPath() }));
       })
-      .catch((e) => { markPhase('body', 1); report('avatar', e); });
+      .catch((e) => { bodySettled = true; markPhase('body', 1); report('avatar', e); releaseBodyGate('body failed — the world must not wait'); checkReady(); });
   }
 }
 
+// The two things ui.js and chat.js stopped importing so they could be shared with a
+// renderer-less client: this is the client that HAS a renderer, so it supplies them.
+setLoadingItems(loadingItems);
+setBootAssets({ items: loadingItems, bytes: bootBytes });
+registerXRPanel(chatXRPanel);
+
+let restoredPosition = false;
 wireNet({
+  participants,
+  myReachBag,
+  toast,   // remotes.js — real bodies, real poses
+  forgetBytes,    // the asset ledger, which only a client that loads assets has
+  // (snapshot is wired above, before start(): sendJoin reads it)
   myAvatarPath: () => getMyAvatarPath(),   // a bare name: the server resolves
   myState,
   me: () => getMe(),
+  myVoice: () => ({ mic: micLive(), hear: earOn() }),   // rides presence: others' hover card + agents' look
   onRestore: (r) => {
-    myState.pos.set(r.p[0], r.p[1] ?? 0, r.p[2]);
+    // a remembered pose can carry null (JSON has no NaN — tonight's NaN body
+    // was stored as [null,0,null] and every rejoin put the owner back on it): only
+    // finite numbers are a place; anything else is the origin
+    const fin = (v, fb = 0) => (Number.isFinite(v) ? v : fb);
+    restoredPosition = true;
+    myState.q = r.q; myState.locomotion = r.locomotion;
+    myState.pos.set(fin(r.p[0]), fin(r.p[1]), fin(r.p[2]));
     myState.yaw = r.yaw ?? 0;
     setCamYaw(myState.yaw + Math.PI); // camera behind you, facing your way
     if (r.clip === 'sit' || r.clip === 'sitchair' || r.clip === 'lie') {
@@ -251,6 +421,7 @@ wireNet({
     // wreckage, not authorship — wake standing instead of hung mid-tumble.
     if (r.clip === 'ragdoll') { myState.pos.y = 0; return; }
     if (r.pose) myState.pose = r.pose;
+    setFolded(r.wingsFolded === true);
   },
   onSnapshotDone: () => {},
 });
@@ -262,31 +433,71 @@ bus.on('sky-degraded', ({ msg }) => toast(msg, 'warn', 12000));
 // physics of being a body here (ragdoll, seats, drag, pins, shoves) is
 // localbody.js, handed logChat instead of importing chat (§14.2).
 
+// FLIGHT READS THE WORLD'S GRANT, not a provider the client made for itself.
+// Wired here for the same reason initPhysObj and wireNet are: net.js must not
+// import the controller, so main.js is where the two meet. Live, not captured
+// -- `/grant <id> +fly` takes effect on the next resolve, and `-fly` grounds a
+// body that is already in the air the next time it acts.
+setRightsHook(() => net.myRights);
+setMeHook(() => getMe());        // the fold pose is written onto the avatar
+// LIVE RIGHTS: state.js folds every entry and recomputes what I may do with
+// the SAME function the sequencer answers with, but net.js already imports
+// state.js, so state reaches net through this sink rather than an import.
+// Read with no argument, written with one.
+setRightsSink((next) => { if (next !== undefined) net.myRights = next; return net.myRights; });
+
 initPhysObj({ myPos: () => myState.pos });
+// reach descriptors resolve against the same bodies everyone renders; my own
+// id is how "a landmark on me" and "a point in my frame" find this body
+initReachNet({
+  me: () => getMe(),
+  myId: () => CONFIG.name,
+  avatarOf: (id) => (id === CONFIG.name ? getMe() : remotes.get(id)?.avatar ?? null),
+});
 initMods();   // 🧩 runtime client scripts: local trusted mods + world offers
 initLocalBody({ logChat });
 initCommands();   // the /command surface (lib/commands/) + its bus subscriptions
 
 // ---------------------------------------------------------------- keys
 
+// The main keys, as data: the handler below dispatches from this table and the
+// lantern prompt lists it (lib/actions.js), so a key and its row cannot drift.
+// `id` names an existing action to merge into (the dock's debug/edit/chat rows
+// gain their key) or a new one; `guard` gates the KEY only (edit mode rebinds H
+// and R) — from the prompt the act is always the act.
+const MAIN_KEYS = [
+  { code: 'KeyH', key: 'H', id: 'key:help', title: 'help — keys and controls', keywords: ['?', 'keys', 'controls', 'how'], group: 'view',
+    guard: () => !isEditing(), run: () => toggleHelp() },
+  { code: 'Tab', key: 'Tab', id: 'key:people', title: 'people here', keywords: ['who', 'present', 'roster'], group: 'panels', icon: 'users',
+    prevent: true, run: () => togglePeopleHere() },
+  { code: 'KeyB', key: 'B', id: 'panel:edit', run: () => toggleEditMode() },
+  { code: 'KeyP', key: 'P', id: 'key:photo', title: 'photo mode (free camera)', keywords: ['camera', 'picture'], group: 'view', run: () => (piloting() && !photoMode ? flashHint('photo mode needs the controls — leave the helm first (E)', 4000) : togglePhotoMode()) },
+  { code: 'F1', key: 'F1', id: 'key:hidehud', title: 'hide the HUD', keywords: ['interface', 'clean', 'photo'], group: 'view', icon: 'eye-slash',
+    prevent: true, run: () => document.body.classList.toggle('photo') },
+  { code: 'F2', key: 'F2', id: 'key:screenshot', title: 'save a screenshot', keywords: ['picture', 'capture'], group: 'view', prevent: true, run: () => saveScreenshot() },
+  { code: 'F3', key: 'F3', id: 'panel:debug', prevent: true, run: () => toggleDebug() },
+  { code: 'KeyR', key: 'R', id: 'body:limp', title: 'go limp / get up', keywords: ['ragdoll', 'fall', 'flop'], group: 'body',
+    guard: () => !isEditing(), run: () => (isDowned() ? getUp() : goLimp()) },
+];
+// merge-into rows keep the dock's title/run (the same act) and only add the key; new rows register whole
+for (const { code, guard, prevent, ...a } of MAIN_KEYS) registerAction(a.title ? a : { id: a.id, key: a.key });
+registerAction({ id: 'panel:chat', key: 'Enter' });
+
 bus.on('key', (e) => {
   if (e.code === 'Slash' && e.shiftKey) { toggleHelp(); return; }
-  if (e.code === 'KeyH' && !isEditing()) { toggleHelp(); return; }
-  if (e.code === 'Tab') { e.preventDefault(); toggleRoster(); return; }
-  if (e.code === 'KeyB') { toggleEditMode(); return; }
-  if (e.code === 'KeyP') { togglePhotoMode(); return; }
-  if (e.code === 'F1') { e.preventDefault(); document.body.classList.toggle('photo'); return; }
-  if (e.code === 'F2') { e.preventDefault(); saveScreenshot(); return; }
-  if (e.code === 'F3') { e.preventDefault(); toggleDebug(); return; }
-  if (e.code === 'KeyR' && !isEditing()) { isDowned() ? getUp() : goLimp(); return; }
+  const k = MAIN_KEYS.find((m) => m.code === e.code && (!m.guard || m.guard()));
+  if (k) { if (k.prevent) e.preventDefault(); k.run(); return; }
   // any movement stands you back up
   if (isDowned() && ['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) getUp();
   // emotes on the number row — the world is a performance space and there was
   // no way to wave at anyone
-  const n = /^Digit([1-6])$/.exec(e.code);
+  // the range follows the def-hydrated bar order (§24l) — a ninth listed
+  // emote in _emotes.json gets a key with no code change
+  const n = /^Digit([1-9])$/.exec(e.code);
   const me = getMe();
   if (n && me) {
     const name = EMOTE_ORDER[Number(n[1]) - 1];
+    if (!name) return;
     me.playEmote(name);
     myState.emote = name;
     flashHint(name);
@@ -296,10 +507,10 @@ bus.on('key', (e) => {
 // ---------------------------------------------------------------- roster
 
 function people() {
-  const list = [{ id: CONFIG.name, me: true, dist: null }];
+  const list = [{ id: CONFIG.name, me: true, dist: null, presence: presence() }];
   for (const r of remotes.values()) {
     list.push({
-      id: r.id, me: false, agent: !!r.agent,
+      id: r.id, me: false, agent: !!r.agent, presence: r.presence ?? 'present',
       dist: r.avatar ? r.avatar.root.position.distanceTo(myState.pos) : null,
     });
   }
@@ -313,19 +524,24 @@ function people() {
 // into a dark grid the instant the socket opens is how the old boot felt
 // instantaneous and looked broken.
 
-let hydrated = false;
-bus.on('hydrated', () => { hydrated = true; checkReady(); });
+let hydrated = false, propsWait = false;
+bus.on('hydrated', () => {
+  updateWater();
+  const spawn = environmentSettings()?.spawn;
+  if (!restoredPosition && Array.isArray(spawn) && spawn.length === 3 && spawn.every(Number.isFinite)) myState.pos.fromArray(spawn);
+  hydrated = true; checkReady();
+});
+bus.on('world-reset', () => { restoredPosition=false;myState.q=undefined;myState.locomotion=undefined; });
 
 // An empty world is indistinguishable from a broken one: no ground, no sky,
 // no objects, no explanation. That is what a mistyped world name gets you,
 // and it is the worst possible first impression because everything is working
 // exactly as designed.
 bus.on('hydrated', () => {
-  if (entities.size > 0) return;
-  const named = CONFIG.params.has('world');
-  logChat('*', named
-    ? `"${CONFIG.world}" is empty — nothing has ever been built here.`
-    : `you are in "${CONFIG.world}", which is empty. Add ?world=<name> to the link to go somewhere else.`);
+  // the same test net.js uses to keep or forget the remembered world (builtIn: a
+  // thing, ground, grass or sky), so the notice and the memory agree on "empty"
+  if (entities.size > 0 || builtIn(worldState.st)) return;
+  logChat('*', emptyWorldNotice(CONFIG));   // which words depend on how the page got here (base.js)
   logChat('*', 'press B to start building, or ? for the controls.');
   toast(`"${CONFIG.world}" is an empty world — press B to build in it`, 'warn', 14000);
 });
@@ -333,8 +549,11 @@ bus.on('build-queue', checkReady);
 
 function checkReady() {
   if (bootDone()) return;
-  const bodyReady = isViewer || !!getMe();
-  if (!bodyReady || !hydrated || buildsPending() > 0) return;
+  if (!bodySettled || !hydrated || buildsPending() > 0) return;
+  // …and every prop INSIDE residency radius has landed (owner, 09-07 23:18: 'it loads me in when most objects are
+  // still boxes — getting in early is what the go-in-anyway button is for'). Far entities never schedule a
+  // load (realize/models.js), so they cannot hold the door; the skip button (4 s) and the 45 s ceiling remain.
+  if (pending(P.FAR) > 0) { if (!propsWait) { propsWait = true; onIdle(() => { propsWait = false; checkReady(); }, P.FAR); } return; }
   // one frame with everything in place before the curtain lifts
   requestAnimationFrame(() => requestAnimationFrame(() => finishBoot('ready')));
 }
@@ -357,13 +576,19 @@ const readyPoll = setInterval(() => {
 
 registerSystem('autos', (dt, t) => updateAutoSystems(t));       // grass wind, particles
 registerSystem('motion', () => tickMotion());                   // the world's moving parts
-registerSystem('sky', (dt, t, now) => updateSky(now, t));
+registerSystem('sky', (dt, t, now) => { updateSky(now, t); applyEnvLight(); });   // an authored environment's sun wins, before the rig fits shadows
 registerSystem('materials', (dt, t, now) => updateMaterials(now)); // weather → uniforms
 registerSystem('rig', (dt, t, now) => updateRig(now));          // light slots follow requests
+registerSystem('sounds', () => tickSounds(), { every: 2 });      // panners follow entities, the listener the camera
+setWaterObjects(() => entities);
+setWaterClock(serverNow);
+setTraversalObjects(() => entities);
+registerSystem('water', updateWater);
 registerSystem('me-drive', (dt) => {
   if (CONFIG.renderer) { /* camera is driven per snap request */ }
   else if (CONFIG.spectate) updateSpectator(dt, CONFIG.follow ? remotes.get(CONFIG.follow) : null);
-  else if (isDowned()) stepRagdoll(dt);     // the controller yields while limp
+  else if (updateVehicle(dt, getMe())) { if (photoMode) togglePhotoMode(); /* the helm owns the keys and camera: never both */ }
+  else if (isDowned()) { myState.q=undefined;myState.locomotion=undefined;const me=getMe();if(me)me.locomotion=null;stepRagdoll(dt); }     // the controller yields while limp
   else if (avatarMounts.has(CONFIG.name)) updateMountedMe(dt);  // seated: derived, not driven
   else updateMe(dt, getMe());
   updateSeatHint(dt);            // "X — sit" while a declared seat is in reach
@@ -377,6 +602,8 @@ registerSystem('held-pose', () => {
     if (myState.pose) me.setPose(myState.pose); else me.clearPose();
   }
 });
+// XR body BEFORE me-update: humanoid bone writes must precede vrm.update (normalized→raw copy) or they never reach the skeleton — avatar.js's own 'ordering trap' note
+registerSystem('xrbody', () => ensureXRBodyHook());   // the chain itself runs inside Avatar.update(), before vrm.update
 registerSystem('me-update', (dt, t, now) => {
   updateVoiceMouths(now);        // BEFORE the avatar update that consumes it
   getMe()?.update(dt, now);
@@ -387,6 +614,10 @@ registerSystem('physobj', (dt, t, now) => tickPhysObj(dt, now)); // entity lease
 registerSystem('mods', (dt, t, now) => tickMods(dt, now));       // 🧩 runtime scripts
 registerSystem('remotes', (dt, t, now) => updateRemotes(dt, now));
 registerSystem('gaze', (dt, t, now) => updateGaze(myState.pos, getMe(), CONFIG.name, now));
+// the hover card beside a nameplate (desktop pointer, touch tap, VR laser) — after gaze, before render
+initPlates({ camera, canvas, scene, remotes, myPos: () => (getMe() ? myState.pos : null), presenting: () => isPresenting(),
+  openConvo, colorFor });
+registerSystem('plates', (dt, t, now) => updatePlates(now));
 registerSystem('build', () => updateBuild());
 registerSystem('promote-tail', () => drainPromoteTail());        // §16.2.C: promote
                                  // boulders (colliders/lamps/casters/mount
@@ -394,7 +625,19 @@ registerSystem('promote-tail', () => drainPromoteTail());        // §16.2.C: pr
                                  // before 'debug' so F3 sees same-frame colliders
 registerSystem('debug', (dt, t, now) => updateDebug(now));       // F3 wireframes
 registerSystem('send-pose', (dt, t, now) => sendPose(now));
-registerSystem('render', () => renderer.render(scene, camera));
+// XR: read hands → fill intent (updateMe already moved the body) → rig follows
+registerSystem('xr', (dt) => updateXR(dt));
+registerSystem('water-view', () => updateWaterView());   // after the camera's last move this frame (movement, XR): the level's fog and background
+registerSystem('xrvignette', (dt) => tickXRVignette(dt));   // comfort tunnel, on the XR camera (Settings › VR)
+registerSystem('pixel-ratio', () => applyPendingPixelRatio());   // a resize clears the canvas: before the draw, never after
+registerSystem('render', renderWorld);
+registerSystem('xrmirror', () => tickXRMirror());           // desktop view while presenting (Settings › VR)
+// radial-menu actions: the ring speaks through the same flows the keyboard does
+bus.on('xr:sit', () => { if (!xrTrySitOn(null)) setPosture('sit'); });
+bus.on('xr:stand', () => xrDismountMe());
+bus.on('xr:mic', async () => { const { xrMicPress } = await import('./lib/vrmic.js'); await xrMicPress(); });   // in VR an open mic permission gets one bounded try, never a hang (vrmic.js); otherwise exactly toggleMic
+bus.on('xr:select', (id) => sceneSelect(id));
+globalThis.__waterDebug = waterDebug;
 let _pulseAt = 0;
 registerSystem('pulse', (dt, t, now) => {
   if (now - _pulseAt < 1000) return;
@@ -404,6 +647,10 @@ registerSystem('pulse', (dt, t, now) => {
 });
 
 startFrame();   // explicit — the loop starts only after identity resolved
+initXR();               // the VR chip appears only where immersive-vr is supported
+bindXRSelf(() => getMe());   // first-person split + own-label hide need the body
+bindXRBodySelf(() => getMe());
+setPoseOverride(() => ((isPresenting() || xrSimActive()) ? { yaw: xrAvatarYaw() ?? undefined, pitch: xrLookPitch(), xr: xrWire() ?? undefined } : null));
 
 // Idle bandwidth streams the rest of the library into the HTTP cache — fire
 // and forget; it waits out the boot and yields to every real load on its own
@@ -415,12 +662,11 @@ startPrefetch().catch((e) => report('prefetch', e));
 // setVoice(name) — POINT AT A MODEL ON DISK, at any time, same function a human's
 // picker uses.
 //
-// R: "why does it need to be restarted? I don't have to restart my client to use
-// a voice, that's a weird asymmetry." She is right and I built the asymmetry: a
+// Why should an agent need a restart to change voice when a human doesn't?
+// The asymmetry was built in: a
 // URL param is a BOOT-TIME decision, so a human got a live control and an agent
 // got a restart. Restarting a body is also the single most expensive thing in
-// this system — it drops the door, and I have broken her world doing it twice
-// today.
+// this system — it drops the door, and doing it has broken a live world twice.
 //
 // So this is a function, callable whenever, and ?voice= merely calls it once at
 // boot. The picker only produces File objects and a File is constructible from
@@ -468,9 +714,8 @@ if (typeof window !== 'undefined') window.setVoice = setVoice;
         console.log(ok ? `[voice] synthesized voice ready on :${port}`
                        : `[voice] no synthesizer on :${port} — falling back to browser speech`);
         if (!ok) {
-          // R, 2026-08-09: "The TTS endpoint should probably default to the
-          // browser default if it can't resolve your TTS endpoint so you don't
-          // get crazy beeping." An unreachable endpoint used to mean NO voice —
+          // An unreachable TTS endpoint should fall back to the browser's own
+          // voice rather than produce beeping. An unreachable endpoint used to mean NO voice —
           // the body joined, asked to speak, and produced nothing (or, with a
           // tone generator installed, beeped). browservoice.js already existed
           // and was never imported anywhere: the fallback was written and dead.
@@ -505,13 +750,31 @@ if (typeof window !== 'undefined') window.setVoice = setVoice;
         // stalled. Observability must not sit downstream of the risky call.
         globalThis.__voiceProbe = () => ({ ...vs.mouthInfo(), track: vs.genTrackInfo() });
         globalThis.__voiceSpeak = (t) => vs.speak(t);   // the APP's mouth, for probes
-        const { toggleMic, micOn } = await import('./lib/voice.js');
-        if (!micOn()) await toggleMic(me);
+        const { toggleMic, micOn } = await import('./lib/micstate.js');
+        // 🔴 `me` IS NOT IN SCOPE HERE — it was a ReferenceError that threw
+        // before the mouth ever opened, so a body with ?tts= joined, logged
+        // "synthesized voice ready", and was mute. The comment six lines up
+        // already warned that an older copy "passed `me`, the avatar OBJECT";
+        // the fix deleted the definition and left the call. toggleMic wants the
+        // actor NAME, which is CONFIG.name — the same value every other caller
+        // passes.
+        // 🔴 OPEN THE LANE THE TRANSPORT ACTUALLY OWNS. This read
+        // the mesh's own mic-state getter and toggle unconditionally — so a
+        // ?tts= body on an SFU server opened the MESH mic lane, published to a
+        // transport nobody was on, and reported success. Same defect as the
+        // HUD mic button had, on the path a voiced agent body depends on, and
+        // it violates the "EXACTLY ONE PLAYBACK OWNER" invariant asserted at
+        // the top of start(). Ask the bridge first; fall back to the mesh.
+        if (typeof window.__sfuMic === 'function') {
+          if (!window.__sfuMicOn?.()) await window.__sfuMic();
+        } else if (!micOn()) {
+          await toggleMic(CONFIG.name);
+        }
         console.log('[voice] TTS wiring complete');
       })
       // 🔴 NEVER SWALLOW THIS. It was `.catch(() => {})`, so anything after the
       // "voice ready" line could throw and vanish while the log still claimed
-      // success — the exact shape of a check that did not run (2026-08-08).
+      // success — the exact shape of a check that did not run.
       .catch((e) => console.error('[voice] TTS wiring failed:', e?.message || e));
   }
 }
@@ -540,14 +803,14 @@ globalThis.__bodies = () => [
   springbonesRunning: !av.__simHair && !!av.vrm?.springBoneManager,
   avatar: av,
 }));
-// One command R can paste to answer "why is it silent?" from her own console:
+// One command anyone can paste to answer "why is it silent?" from their console:
 // context state, how many sources exist, whether the gesture hook is waiting.
 globalThis.__audioState = () => audioState();
 // THE ISOLATION TEST, INSIDE THE WORLD PAGE. A separate probe page meant a new
 // URL to type, and the URL was its own obstacle course: /audio-probe 404s,
 // /audio-probe.html works, an extensionless copy downloads instead of
-// rendering. None of that is the bug we are chasing. This runs where she
-// already is. Call it from the console; it needs a click first for the
+// rendering. None of that is the bug we are chasing. This runs where the
+// person already is. Call it from the console; it needs a click first for the
 // context, which console interaction does not provide — so it reports the
 // context state rather than pretending.
 globalThis.testAudioLayers = async () => {
@@ -600,10 +863,171 @@ globalThis.whyIsItSilent = () => {
   return { ...s, detail: a };
 };
 
-globalThis.EW = {
+// the water's waves run on the world's synced clock, so the swell a swimmer rises on is the one everyone sees
+setWaveClock(() => participants.serverNow());
+
+const EW = globalThis.EW = {
   me: () => getMe(), remotes, entities, myState, THREE, net, scene, camera, renderer, bus,
   skyArgs, sendVerb, setPosable, get posable() { return posable(); },
+  // POSING from the console — the same verbs an agent's tools have:
+  // EW.pose, EW.clearPose and EW.animate (client/lib/posecommands.js says how).
+  ...poseCommands({ state: myState, sendPuppet, play: (a) => { getMe()?.playAnimation(a); sendAnim(a); } }),
+  // TERRAIN (owner): EW.terrain(patch) edits the world's CURRENT terrain bag rather than replacing it, so
+  //   EW.terrain({ features: [{ type: 'hill', x: 30, z: -20, radius: 18, height: 9 }] })
+  // keeps the seed, size and tint. Feature types (shared/terrainshape.js): hill {x,z,radius,height} (negative
+  // = pit), ridge {x1,z1,x2,z2,radius,height} (negative = valley), flatten {x,z,radius,height,edge?}.
+  // Heightmaps: the 🌿 ground panel's ⬇ export / ⬆ import, or GET /heightmap?world=<name>.
+  terrain: (patch = {}) => {
+    const cur = terrainEditBase() ?? { seed: 7, size: 160, segments: 200, amplitude: 2.6, flatRadius: 16 };
+    const next = noteTerrainSent({ ...cur, ...patch });   // a second quick edit composes with this one
+    sendVerb('terrain', next);
+    return next;
+  },
+  get terrainArgs() { return currentTerrainArgs(); },
+  // the ground as walking reads it, and whether a heightmap terrain is still waiting on its image
+  groundAt: (x, z) => heightAt(x, z), get hasTerrain() { return hasTerrain(); },
+  get terrainPending() { return terrainPending(); },
   setPushable, get pushable() { return pushable(); }, dragState,
+  // reach: aim a hand at a world point, or at anything that moves. Pass a
+  // function and it re-solves every frame; `EW.reach('leftHand', () =>
+  // EW.remotes.get('mythos').avatar.root.position.toArray())` follows a body.
+  // reach: aim a hand at a world point, at a live function, or — simplest —
+  // at a NAMED contact point, in which case the surface normal comes with it
+  // and the palm turns to meet the surface:
+  //     EW.reach('rightHand', 'head_top')                 // your own head
+  //     EW.reach('rightHand', ['mythos', 'shoulder_l'])   // someone else's
+  //     EW.reach('rightHand', () => [x, y, z])            // a bare point
+  //
+  // The name form exists because the point form is a trap: EW.contactAt()
+  // returns a position and nothing else, so a reach built on it has no surface
+  // to face and the palm stays wherever the forearm left it. That is not
+  // visible as a bug — the hand still arrives — until you look at a headpat
+  // and find the palm pointing at the sky.
+  // Serializable targets (a name, [who, name], [x,y,z], or the wire forms
+  // {who, point} / {p, space}) go through reachnet: the descriptor rides the
+  // presence stream and EVERY client re-solves the same relation, so other
+  // people see the arm too. A function target stays local-only — it cannot
+  // travel, and this tab is the only one that can evaluate it.
+  reach: (key, target, opts) => {
+    if (typeof target === 'function') return getMe()?.setReach(key, target, opts);
+    const err = setMyReach(key, target, opts);
+    if (err) { console.warn(`[reach] ${err}`); return false; }
+    return true;
+  },
+  // landmarks: named contact points, derived per body from its own mesh.
+  // EW.landmarks() derives + caches; EW.showLandmarks() draws them to be
+  // LOOKED at, which is the only check the derivation cannot do itself.
+  landmarks: (who) => {
+    const av = who ? remotes.get(who)?.avatar : getMe();
+    if (!av) return null;
+    av.__marks ??= deriveLandmarks(av);
+    return av.__marks;
+  },
+  // Where a named contact point on a body IS, right now, in world space.
+  // `standoff` lifts it off the skin so a hand rests ON it, not inside it.
+  // This is the piece a touch is made of:
+  //   EW.reach('rightHand', () => EW.contactAt('mythos', 'shoulder_l', 0.02))
+  contactAt: (who, name, standoff = 0.02) => {
+    const av = who ? remotes.get(who)?.avatar : getMe();
+    if (!av) return null;
+    av.__marks ??= deriveLandmarks(av);
+    const e = av.__marks.get(canonicalPoint(name) ?? name);
+    const hit = e && landmarkWorld(e, standoff);
+    return hit ? hit.pos.toArray() : null;
+  },
+  // Which contact points can a hand ACTUALLY get to on this body? One solve
+  // per (point, hand) against the real derived landmarks — no frames needed,
+  // because the solve is a pure function of pose and target. Answers the
+  // question a demo cannot: not "does reaching work" but "what is in range".
+  // Bumped whenever the reach solver changes, so a diagnostic can prove which
+  // code produced its numbers. A stale tab is otherwise indistinguishable from
+  // a real disagreement about what the arm is doing.
+  reachVersion: 'reach-6 contact-allowance 2026-08-20',
+  // Which body is being worn — vrm.scene.name is often blank, and "which rig"
+  // is the first question when one person's arm does something another's does
+  // not.
+  get avatarPath() { try { return getMyAvatarPath() || '(unknown)'; } catch { return '(unknown)'; } },
+  reachAudit: (who, standoff = 0.02) => {
+    // Landmarks come from the body being TOUCHED; the chains doing the
+    // reaching are always mine. Using one avatar for both asks "can that body
+    // reach its own shoulder", which is a different and much harder question —
+    // and it returns identical numbers whoever you name, which is how this was
+    // caught.
+    const av = getMe();
+    const subject = who ? remotes.get(who)?.avatar : av;
+    if (!av || !subject) return null;
+    subject.__marks ??= deriveLandmarks(subject);
+    const self = subject === av;
+    const rows = [];
+    for (const [name, e] of subject.__marks) {
+      const hit = landmarkWorld(e, standoff);
+      if (!hit) continue;
+      const t = hit.pos.toArray();
+      const best = { hand: null, gap: Infinity, bound: [] };
+      for (const key of ['leftHand', 'rightHand']) {
+        const ch = measureChain(av, key);
+        if (!ch) continue;
+        // A limb cannot meaningfully touch itself: scoring the left hand
+        // against a point ON the left arm returns a triumphant 0mm that means
+        // nothing. Skip the chain that owns the landmark.
+        if (self && (ch.spec.root === e.bone || ch.spec.mid === e.bone || ch.spec.end === e.bone)) continue;
+        const out = solveChain(ch, av, t, null);
+        if (!out?.ok) continue;
+        if (out.res.gap < best.gap) { best.hand = key === 'leftHand' ? 'L' : 'R'; best.gap = out.res.gap; best.bound = out.res.bound; }
+      }
+      rows.push({ point: name, tier: e.tier, hand: best.hand ?? '-',
+                  mm: Number.isFinite(best.gap) ? Math.round(best.gap * 1000) : null,
+                  bound: best.bound.join(',') || '-' });
+    }
+    rows.sort((a, b) => (a.mm ?? 1e9) - (b.mm ?? 1e9));
+    return rows;
+  },
+  // Position AND the surface normal, so a reach can put the PALM on it.
+  // EW.reach('rightHand', () => EW.contactFrame('mythos', 'shoulder_l'))
+  contactFrame: (who, name, standoff = 0.02) => {
+    const av = who ? remotes.get(who)?.avatar : getMe();
+    if (!av) return null;
+    av.__marks ??= deriveLandmarks(av);
+    const e = av.__marks.get(canonicalPoint(name) ?? name);
+    const hit = e && landmarkWorld(e, standoff);
+    return hit ? { pos: hit.pos.toArray(), normal: hit.normal.toArray() } : null;
+  },
+  // Paint the side of the hand the code believes is the PALM: a green disc
+  // sitting just off the skin, following the bone. If it ends up against
+  // whatever is being touched, the orientation is right and you are simply
+  // seeing the back of a hand from outside — which is what you see when a palm
+  // is on a hip. If it points away, the palm axis is wrong on that rig and I
+  // want to know.
+  showPalm: (on = true, key = 'rightHand') => {
+    const me = getMe(); if (!me) return null;
+    const ch = me._chains?.get(key);
+    if (!ch) return 'reach something first, so the chain is measured';
+    const node = ch.nodes.end;
+    const NAME = '__palmDisc';
+    const old = node.getObjectByName(NAME);
+    if (old) { node.remove(old); old.geometry.dispose(); old.material.dispose(); }
+    if (!on) return 'off';
+    const qH0 = new THREE.Quaternion(...ch.restQ.qH);
+    const aPalm = new THREE.Vector3(...ch.palmRest).applyQuaternion(qH0.clone().invert());
+    const disc = new THREE.Mesh(
+      new THREE.CircleGeometry(0.035, 20),
+      new THREE.MeshBasicMaterial({ color: 0x33ff66, side: THREE.DoubleSide, depthTest: false }));
+    disc.name = NAME;
+    disc.renderOrder = 999;
+    disc.position.copy(aPalm).multiplyScalar(0.03);
+    disc.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), aPalm.clone().normalize());
+    node.add(disc);
+    return 'green disc marks the palm side';
+  },
+  showLandmarks: (on = true, who) => {
+    const av = who ? remotes.get(who)?.avatar : getMe();
+    if (!av) return null;
+    av.__marks ??= deriveLandmarks(av);
+    debugMarkers(av, av.__marks, scene, on);
+    return [...av.__marks].map(([n, e]) => `${n}:${e.how}`).join(' ');
+  },
+  clearReach: (key) => clearMyReach(key ?? null),
+  reachStatus: () => getMe()?.reachStatus(),
   lease: leaseApi,   // the entity-lease surface runtime plugins script against
   mods: modsApi,     // load/run/offer runtime client scripts (🧩)
   bodysim: { engine: bodyEngine, setEngine: setBodyEngine, list: listBodyEngines },  // swappable body physics
@@ -611,14 +1035,24 @@ globalThis.EW = {
   reconcileModels,   // force a full realizer pass (idempotent — §11.4)
   materials: materialsDebug,   // factory counters + live weather uniforms (§12.3)
   lightrig: rigDebug,          // slot pool + request table (§12.4)
+  lampShadow: lampShadowState,   // the chest lamp's shadow map + derived bias
+  setLampShadow,                 // ({map, texels, dist}) — live, bias re-derived
+
   governor: governorDebug,     // the two-way lever ladder (§12.6)
   residency: residencyDebug,   // real/stand-in/loading counts + sweep stats (§13.3)
   gpu: () => ({ ...renderer.info.memory, ...protoStats() }),   // bytes + proto/byte tiers
+  draws: drawStats,
+  foliage: () => import('./lib/foliage.js').then((m) => m.foliageDebug()),
+  overdraw: (opts) => import('./lib/overdraw.js').then((m) => m.overdrawCapture(opts)),   // fragments shaded per pixel, by category
+  setDrawBatching,
   frame: frameDebug,           // per-system rolling ms + strides (§14.2 6b)
   grass: grassTiles,           // tile-level draw truth (§13.2, landed 8e)
+  simFold: simState,           // the deterministic sim's shadow cut (PROTOCOL_v2)
   grassDiag,                   // §22: `await EW.grassDiag()` — the meadow's GPU cost, attributed by difference
   setCloudQuality,             // §22b: the sky pane's tier knob, console-reachable for diagnosis
+  water: waterDebug,
   warm: warmStats,             // the conductor's queue (§16.2.A)
+  budget: budgetStats,         // the shared per-frame background budget: share, debt, per-lane spend/grants/denials
   lanes: () => ({ sched: schedLaneStats(), load: loadLaneStats() }),  // queue depths vs caps
   colliderCache: colliderCacheStats,   // per-lib shared BVH/lie bytes (§16.2.C)
 };

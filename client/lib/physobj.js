@@ -15,14 +15,16 @@
 // final transform as an ordinary `place` (fold-clean, late-joiner-true),
 // and the lease table forgets us.
 
-import { THREE, bus, CONFIG } from './core.js';
+import { THREE } from './core.js';
+import { bus, CONFIG } from './base.js';
 import { entities, comps } from './world.js';
 import { remotes } from './remotes.js';
 import { heightAt } from './terrain.js';
-import { colliders, nearColliders } from './colliders.js';
+import { colliders, nearColliders, entityWorldCenter, reindexCollider } from './colliders.js';
 import { sendLease, sendVerb } from './net.js';
 import { flashHint } from './ui.js';
 import { logChat } from './chat.js';
+import { state } from './state.js';
 
 const GRAVITY = -9.8;
 const STREAM_MS = 66;
@@ -75,14 +77,33 @@ function shapeOf(id) {
   const c = colliders.get(id);
   const obj = entities.get(id);
   if (!c || !obj) return null;
-  const size = c.box.getSize(new THREE.Vector3()).multiplyScalar(obj.scale?.x || 1);
+  // per-axis scale, not scale.x uniformly (§24k R0): a non-uniformly scaled
+  // crate classified by one axis's scale could read as a ball. (Rotation is
+  // deliberately absent — this is INTRINSIC size for shape classification,
+  // not a world-space box; the dolls' world-box math is the other job.)
+  const size = c.box.getSize(new THREE.Vector3());
+  const s = obj.scale ?? null;
+  if (s) size.set(size.x * (s.x || 1), size.y * (s.y || 1), size.z * (s.z || 1));
   const dims = [size.x, size.y, size.z].sort((a, b) => a - b);
-  // round-ish in all three = ball; anything else lands like a crate
-  const ball = dims[0] > 0.01 && dims[2] / dims[0] < 1.35;
+  // Round-ish in all three AND ball-sized = ball; anything else lands like a
+  // crate. The size gate is load-bearing: a bounding box cannot tell a
+  // sphere from a cube from a 2×2 barrel cluster, and the old ratio-only
+  // test rolled the whole barrels GROUP about its origin — the mesh swept
+  // through the ground in a wide arc and slid out on ball friction (tel0s,
+  // playtest 2026-08-31). Real kickable balls are under a metre; furniture-
+  // scale round-ish things tumble and settle like crates, which is what a
+  // barrel actually does.
+  const ball = dims[0] > 0.01 && dims[2] / dims[0] < 1.25 && dims[2] < 0.9;
+  // the mesh's visual center vs the entity origin, horizontal (a rotation
+  // rotates about the ORIGIN — a far-offset model like the barrels group,
+  // cluster 1.95m off origin, would sweep its mesh in a wide arc; §24t-4)
+  const arm = Math.hypot((c.box.min.x + c.box.max.x) / 2 * (s?.x || 1),
+    (c.box.min.z + c.box.max.z) / 2 * (s?.z || 1));
   return {
     kind: ball ? 'ball' : 'box',
     r: ball ? (size.x + size.y + size.z) / 6 : Math.max(0.05, size.y / 2),
     footprint: Math.max(size.x, size.z),
+    arm,
   };
 }
 
@@ -108,6 +129,10 @@ function stopSim(id, commit) {
   if (!s) return;
   if (commit) sendLease('release', id, { p: [s.p.x, s.p.y, s.p.z], yaw: s.baseYaw });
 }
+
+/** Hand an object I am simulating to another of my controllers (a vehicle's helm) without releasing its
+ *  lease: the sim stops where it is and the new controller moves and streams it from there. */
+export function yieldSim(id) { sims.delete(id); pendingKicks.delete(id); }
 
 /** One frame of every sim I hold. Runs in the main frame loop. */
 export function tickPhysObj(dt, now = performance.now()) {
@@ -162,7 +187,9 @@ export function tickPhysObj(dt, now = performance.now()) {
     // spin: a rolling ball turns with its travel; a flying crate tumbles a
     // little. Streamed as q so remotes see it — spheres SLIDING read as bugs.
     const flat = Math.hypot(s.v.x, s.v.z);
-    if (shape.kind === 'ball' && flat > 0.01) {
+    if (shape.arm >= 0.5) {
+      // far-offset mesh: no spin — see shapeOf's arm note
+    } else if (shape.kind === 'ball' && flat > 0.01) {
       _axis.set(s.v.x, 0, s.v.z).normalize().cross(UP).negate();
       _q.setFromAxisAngle(_axis, (flat * dt) / shape.r);
       s.q.premultiply(_q);
@@ -215,15 +242,26 @@ export function kick(arg) {
   if (!enabled) return logChat('*', 'your physics mod is off — flip it in 🧩 mods (someone else present can still simulate your punts)');
   const parts = (arg || '').trim().split(/\s+/).filter(Boolean);
   const named = parts.find((x) => !/^[\d.]+$/.test(x));
-  const power = Math.min(MAX_KICK, Math.max(1, parseFloat(parts.find((x) => /^[\d.]+$/.test(x))) || 5));
+  // default 4, down from 5 (playtest 2026-08-31: "probably smaller") — a
+  // barrel should hop a couple of metres by default, not cross the meadow;
+  // /punt thing 10 still throws hard when thrown hard is meant
+  const power = Math.min(MAX_KICK, Math.max(1, parseFloat(parts.find((x) => /^[\d.]+$/.test(x))) || 4));
   const me = hooks.myPos();
 
   let id = named ?? null;
+  // "Where the thing is" = its collider-box CENTER, never its origin. A
+  // GLB's origin is wherever the author left it — the barrels group ships
+  // its visible cluster 1.95m off origin (§24t-4), so origin-based aim
+  // punted THROUGH a point in empty air two metres from the mesh and every
+  // flight left "the same way" no matter where the kicker stood.
+  const _ec = new THREE.Vector3();
+  const centerOf = (eid, obj) => entityWorldCenter(eid, _ec) ?? obj.position;
   if (!id) {
     let best = KICK_REACH;
     for (const [eid, obj] of entities) {
       if (!obj || !colliders.get(eid) || colliders.get(eid).interior) continue;
-      const d = Math.hypot(obj.position.x - me.x, obj.position.z - me.z);
+      const c = centerOf(eid, obj);
+      const d = Math.hypot(c.x - me.x, c.z - me.z);
       if (d < best) { best = d; id = eid; }
     }
     if (!id) return logChat('*', 'nothing at your feet to kick');
@@ -233,7 +271,7 @@ export function kick(arg) {
   if (comps.get(id)?.motion || obj.userData.lib === '(light)') {
     return logChat('*', `${id} is animated by its motion — it can't be kicked loose (yet)`);
   }
-  const at = sims.get(id)?.p ?? obj.position;
+  const at = sims.get(id)?.p ?? centerOf(id, obj);
   if (Math.hypot(at.x - me.x, at.z - me.z) > KICK_REACH + 0.8) {
     return logChat('*', `${id} is too far away to kick`);
   }
@@ -241,7 +279,15 @@ export function kick(arg) {
   // so history says which way, whoever ends up simulating it
   const dx = at.x - me.x, dz = at.z - me.z;
   const d = Math.hypot(dx, dz) || 1;
-  sendVerb('punt', { id, power, dir: [dx / d, 0, dz / d] });
+  // Dialect 3: under a sim epoch the intent carries its WHOLE vector — the
+  // upward component included, since the sim adds no launch lift of its own
+  // (the volunteer path adds 0.45·power itself; here the ratio rides dir).
+  // 0.9, up from 0.45 (playtest 2026-08-31): the sim normalizes the whole
+  // vector, so at 0.45 a default punt apexed at 6cm — a scoot, not a punt.
+  // Swept against the law: lift 0.9 @ power 4 = a knee-high hop resting
+  // ~3m out. An INPUT ratio, not sim law — tuning it is no epoch bump.
+  const lift = state.sim?.epoch && !state.sim.epoch.foreign ? 0.9 : 0;
+  sendVerb('punt', { id, power, dir: [dx / d, lift, dz / d] });
 }
 
 /** Every punt in the world lands here off the live log — mine, another
@@ -252,6 +298,11 @@ export function kick(arg) {
  *  the lease table settles any remaining race. */
 bus.on('punt', ({ actor, id, dir, power }) => {
   if (!enabled) return;                       // volunteering is the mod's act
+  // Dialect 3 (PROTOCOL_v2): under a sim epoch the SIM owns punt flights —
+  // recomputation, not volunteering. Standing down here is what retires
+  // the lease race for punts without touching any other physics this mod
+  // does (drags, hand-offs, non-punt sims stay exactly as they were).
+  if (state.sim?.epoch && !state.sim.epoch.foreign) return;
   const obj = entities.get(id);
   if (!obj || comps.get(id)?.motion) return;
   const p = Math.min(MAX_KICK, Math.max(0.5, Number(power) || 5));
@@ -288,7 +339,7 @@ bus.on('lease', (msg) => {
     const pk = pendingKicks.get(id);
     pendingKicks.delete(id);
     if (pk) { startSim(id, pk.launch, msg.from ?? null); if (!pk.silent) flashHint(`you kick ${id}`); }
-    else sendLease('release', id);          // a grant nothing wanted anymore
+    else if (!comps.get(id)?.vehicle) sendLease('release', id);          // a grant nothing wanted anymore
     return;
   }
   if (op === 'denied') {
@@ -313,7 +364,8 @@ bus.on('lease', (msg) => {
     if (!obj || !Array.isArray(msg.p)) return;
     obj.position.set(msg.p[0], msg.p[1], msg.p[2]);
     if (Array.isArray(msg.q) && msg.q.length === 4) obj.quaternion.set(msg.q[0], msg.q[1], msg.q[2], msg.q[3]);
-    else if (msg.yaw != null) obj.rotation.y = msg.yaw;
+    else if (msg.yaw != null) obj.rotation.set(0,msg.yaw,0);
+    reindexCollider(id);
     return;
   }
   // 'claimed' / 'released': nothing to do — states carry the motion, and the

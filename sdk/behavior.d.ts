@@ -46,8 +46,12 @@ interface WorldAPI {
    *  a blast, a gust, a trap springing. Bodies in radius that ALLOW being
    *  pushed (their own setting) tumble away from `at`. It has no targets and
    *  no lasting state: emit it at the moment the thing happens.
+   *  `light` requires an `id`: a string with at least one non-whitespace
+   *  character. Reuse an existing light's id to update only the fields you
+   *  supply (for example, `{id, intensity}`).
    *  A refused emit THROWS with the reason — catch it or let the flight
-   *  recorder log it. */
+   *  recorder log it. Uncaught, it ends that activation and counts as one of
+   *  the consecutive errors that pause the script. */
   emit(verb: string, args?: Record<string, unknown>): void;
 
   /** Write to this behavior's private log ring — your console. Read it with
@@ -65,7 +69,19 @@ interface WorldAPI {
   /** Persistent state, private to this behavior. Survives restarts, replays,
    *  and forks (it is event-sourced under the hood: one coalesced `bstate`
    *  entry per activation that changed something). Whole store ≤8KB —
-   *  counters and flags, not archives. */
+   *  counters and flags, not archives.
+   *
+   *  ⚠ A REBIND starts EMPTY, by design: re-issuing the `behavior` verb for
+   *  the same id folds a fresh record, and fresh code gets fresh state
+   *  (shared/fold.js, the binding case: "a rebind keeps nothing") — earlier
+   *  bstate does not carry across. So iterating on a live script loses its
+   *  kv on every upload+rebind cycle; if the state matters across versions,
+   *  read it out before rebinding, or design keys the next version can
+   *  rebuild without.
+   *
+   *  A set() with an EQUAL value still counts as a change: a timer that
+   *  re-sets unchanged state writes a bstate entry into the replay log every
+   *  tick, forever — compare before you set. */
   kv: {
     get(key: string): unknown;
     set(key: string, value: unknown): void;   // undefined/null deletes

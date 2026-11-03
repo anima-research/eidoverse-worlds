@@ -1,0 +1,221 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>flight bench — deterministic</title>
+<!--
+  flight bench — a fixed-step preview whose CLOCK IS THE CAPTURE'S.
+
+  There is no requestAnimationFrame here, and that is the whole design. mica:
+  "Playwright/Chromium advances exactly 1/60s per frame and screenshots the
+  rendered page/canvas after each step... This avoids rAF/MediaRecorder
+  dropped-frame ambiguity." So the page exposes
+
+      window.__flightBench.step(dt)
+
+  and does nothing at all until someone calls it. A dropped frame cannot exist,
+  because a frame is not a thing that happens on time -- it is a thing that
+  happens when the capture says so.
+
+  The overlay is drawn INTO the frame, not composited afterwards, so the
+  numbers a viewer reads are the numbers that state actually held. A telemetry
+  burn-in cannot drift from its footage.
+
+  DEFAULT OFF: nothing here runs until enableFlight() is called with an
+  explicit dev capability provider. Loading this page in a browser by hand
+  gives you a grid and a message saying so.
+-->
+<style>
+  html,body { margin:0; background:#0b0d12; color:#c9ccd6;
+              font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace; }
+  #wrap { position:relative; width:1280px; height:720px; }
+  canvas { display:block; width:1280px; height:720px; }
+  #hud { position:absolute; left:14px; top:12px; white-space:pre;
+         text-shadow:0 1px 2px #000; pointer-events:none; }
+  #cfg { position:absolute; right:14px; bottom:12px; white-space:pre; opacity:.9;
+         text-align:right; text-shadow:0 1px 2px #000; pointer-events:none; }
+  #banner { position:absolute; left:10px; bottom:10px; color:#ffb454; }
+</style>
+<div id="wrap">
+  <canvas id="c" width="1280" height="720"></canvas>
+  <div id="hud"></div>
+  <div id="cfg"></div>
+  <div id="banner">flight disabled — no capability provider (this is the default)</div>
+</div>
+<script type="module">
+import { makeConfig, initialState, step, bodyDown, bodyRecovered,
+         bestGlide, leafLateralSwing, BREATH } from '/shared/flight.js';
+import { devFlightProvider, resolveFlight } from '/shared/flightcap.js';
+import { pilotInput } from '/shared/flightpilot.js';
+
+const cv = document.getElementById('c'), g = cv.getContext('2d');
+let trailSide = [], trailPlan = [];
+const W = cv.width, H = cv.height;
+
+let cfg = makeConfig();
+let st = null, cap = null, frame = 0, t0 = null;
+const events = [];
+const held = new Set();
+
+// --- the capability gate. Nothing below runs without a positive profile, and
+// it is re-resolved on EVERY step, not cached -- an avatar can hot-swap.
+const BONES = window.__benchBones ?? null;
+
+function enableFlight({ identity = 'mythos', bones = BONES, config = {}, startY = 20 } = {}) {
+  cfg = makeConfig(config);
+  const provider = devFlightProvider({ allow: [identity], bones, label: 'bench-dev' });
+  cap = { provider, identity, bones };
+  const r = resolveFlight(provider, { identity, avatar: { boneNames: bones } });
+  if (!r.enabled) { document.getElementById('banner').textContent = 'DENIED: ' + r.reason; return r; }
+  document.getElementById('banner').textContent = '';
+  st = initialState({ phase: 'GLIDE', pos: { x: 0, y: startY, z: 0 },
+                      airspeed: bestGlide(cfg).speed, yaw: 0 }, cfg);
+  frame = 0; t0 = 0; events.length = 0;
+  trailSide = []; trailPlan = [];
+  draw();
+  return r;
+}
+
+function stepBench(dt) {
+  if (!st || !cap) return null;
+  // ACTION-TIME capability: resolved per step, so a swap mid-capture stops it.
+  const r = resolveFlight(cap.provider, { identity: cap.identity, avatar: { boneNames: cap.bones } });
+  if (!r.enabled) { document.getElementById('banner').textContent = 'REVOKED: ' + r.reason; st = null; return null; }
+  const input = pilotInput(held, st, dt);
+  st = step(cfg, st, dt, { groundY: () => 0, input });
+  for (const e of st.events) events.push({ ...e, frame });
+  frame++;
+  draw();
+  return snapshot();
+}
+
+const snapshot = () => st && ({
+  frame, t: st.t, phase: st.phase, wings: st.wings, mode: st.mode,
+  pos: { ...st.pos }, vel: { ...st.vel },
+  yaw: st.yaw, pitch: st.pitch, bank: st.bank,
+  airspeed: st.airspeed, stamina: st.stamina,
+  events: events.slice(-6),
+});
+
+// ---- render. Deliberately schematic: this is an INSTRUMENT, not a viewer.
+// A side elevation plus a plan view shows descent, wander and spiral at once,
+// which is what Mythos needs to measure period, damping and terminal velocity.
+// A pretty render of the avatar would show him less.
+function draw() {
+  g.fillStyle = '#0b0d12'; g.fillRect(0, 0, W, H);
+  if (!st) return;
+  const SIDE = { x: 56, y: 210, w: 700, h: 462 };
+  const PLAN = { x: 830, y: 210, w: 300, h: 300 };
+
+  // --- side elevation: altitude against lateral wander
+  g.strokeStyle = '#232734'; g.lineWidth = 1;
+  const TOP = Math.max(10, Math.ceil((window.__benchTop ?? 25) / 5) * 5);
+  const STEPM = TOP / 6;
+  for (let k = 0; k <= 6; k++) {
+    const m = k * STEPM;
+    const yy = SIDE.y + SIDE.h - (m / TOP) * SIDE.h;
+    g.beginPath(); g.moveTo(SIDE.x, yy); g.lineTo(SIDE.x + SIDE.w, yy); g.stroke();
+    g.fillStyle = '#5a6072'; g.fillText(m.toFixed(0).padStart(3) + ' m', 12, yy + 4);
+  }
+  g.strokeStyle = '#3a4358'; g.lineWidth = 2;
+  const gy = SIDE.y + SIDE.h;
+  g.beginPath(); g.moveTo(SIDE.x, gy); g.lineTo(SIDE.x + SIDE.w, gy); g.stroke();
+  // centreline: wander is only readable against the line it wanders about
+  g.strokeStyle = '#1d2130'; g.lineWidth = 1; g.setLineDash([4, 6]);
+  g.beginPath(); g.moveTo(SIDE.x + SIDE.w / 2, SIDE.y); g.lineTo(SIDE.x + SIDE.w / 2, gy); g.stroke();
+  g.setLineDash([]);
+
+  g.fillStyle = '#5a6072';
+  g.fillText('SIDE ELEVATION  (altitude vs lateral wander)', SIDE.x, SIDE.y - 8);
+  const LAT = 4;                                  // metres of lateral span shown
+  const sx = (z) => SIDE.x + SIDE.w / 2 + (z / LAT) * (SIDE.w / 2);
+  const sy = (y) => SIDE.y + SIDE.h - (y / TOP) * SIDE.h;
+  trailSide.push([sx(st.pos.z), sy(st.pos.y)]);
+  if (trailSide.length > 4000) trailSide.shift();
+  g.save();
+  g.beginPath(); g.rect(SIDE.x, SIDE.y, SIDE.w, SIDE.h); g.clip();
+  g.strokeStyle = '#3d6ea8'; g.lineWidth = 1.5; g.beginPath();
+  trailSide.forEach(([a, b], i) => i ? g.lineTo(a, b) : g.moveTo(a, b)); g.stroke();
+  g.restore();
+
+  // the body, banked
+  const bx = sx(st.pos.z), by = sy(st.pos.y);
+  g.save(); g.translate(bx, by); g.rotate(st.bank);
+  g.strokeStyle = st.wings === 'LIMP' ? '#c8552b' : '#7fd1a0';
+  g.lineWidth = 3; g.beginPath(); g.moveTo(-16, 0); g.lineTo(16, 0); g.stroke();
+  g.fillStyle = st.wings === 'LIMP' ? '#c8552b' : '#e8ecf4';
+  g.beginPath(); g.arc(0, 0, 3.5, 0, 7); g.fill();
+  g.restore();
+
+  // --- plan view: the spiral from above
+  g.strokeStyle = '#232734';
+  g.strokeRect(PLAN.x, PLAN.y, PLAN.w, PLAN.h);
+  const px = (x) => PLAN.x + PLAN.w / 2 + (x / LAT) * (PLAN.w / 2);
+  const pz = (z) => PLAN.y + PLAN.h / 2 + (z / LAT) * (PLAN.h / 2);
+  trailPlan.push([px(st.pos.x), pz(st.pos.z)]);
+  if (trailPlan.length > 4000) trailPlan.shift();
+  g.save();
+  g.beginPath(); g.rect(PLAN.x, PLAN.y, PLAN.w, PLAN.h); g.clip();
+  g.strokeStyle = '#3d6ea8'; g.beginPath();
+  trailPlan.forEach(([a, b], i) => i ? g.lineTo(a, b) : g.moveTo(a, b)); g.stroke();
+  g.restore();
+  g.fillStyle = '#5a6072'; g.fillText('PLAN VIEW  (\u00b1' + LAT + 'm, from above)', PLAN.x, PLAN.y - 8);
+  g.save(); g.translate(px(st.pos.x), pz(st.pos.z)); g.rotate(st.yaw);
+  g.strokeStyle = st.wings === 'LIMP' ? '#c8552b' : '#7fd1a0'; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(0, -10); g.lineTo(0, 10); g.stroke();
+  g.beginPath(); g.moveTo(0, -10); g.lineTo(6, -3); g.stroke();
+  g.restore();
+
+  // --- overlay, burned into the frame
+  const f2 = (n) => (n >= 0 ? ' ' : '') + n.toFixed(2);
+  document.getElementById('hud').textContent = [
+    `frame ${String(frame).padStart(5)}   t ${st.t.toFixed(3)}s`,
+    `phase ${st.phase.padEnd(8)} wings ${st.wings.padEnd(7)} mode ${st.mode}`,
+    ``,
+    `x ${f2(st.pos.x)}  y ${f2(st.pos.y)}  z ${f2(st.pos.z)}`,
+    `vy ${f2(st.vel.y)} m/s   lateral ${f2(Math.hypot(st.vel.x, st.vel.z))} m/s`,
+    `yaw ${f2(st.yaw * 57.2958)}°  pitch ${f2(st.pitch * 57.2958)}°  bank ${f2(st.bank * 57.2958)}°`,
+    `airspeed ${f2(st.airspeed)}   stamina ${st.stamina.toFixed(1)}`,
+    ``,
+    ...events.slice(-5).map(e => `  f${String(e.frame).padStart(5)} ${e.kind}` +
+      (e.eventId ? ` [${e.eventId}]` : '') +
+      (e.impactV != null ? ` impactV ${e.impactV.toFixed(2)}` : '') +
+      (e.altitude != null ? ` alt ${e.altitude.toFixed(2)}` : '')),
+  ].join('\n');
+
+  const L = cfg.leaf;
+  document.getElementById('cfg').textContent = [
+    'CONFIG',
+    `leaf.period            ${L.period}s`,
+    `leaf.bankAmplitudeDeg  ${L.bankAmplitudeDeg}°`,
+    `leaf.lateralAmplitudeM ${L.lateralAmplitudeM}m`,
+    `leaf.dampingPerCycle   ${L.dampingPerCycle}`,
+    `leaf.dampingFloor      ${L.dampingFloor}`,
+    `leaf.terminalV         ${L.terminalV} m/s`,
+    `leaf.yawPerBank        ${L.yawPerBank}`,
+    `leaf.pitchCoupling     ${L.pitchCoupling}`,
+    `recover.reopenTime     ${cfg.recover.reopenTime}s`,
+    `recover.maxTotal       ${cfg.recover.maxTotal}s`,
+    '',
+    `measured swing ${leafLateralSwing(cfg).toFixed(2)}m`,
+    `best glide ${bestGlide(cfg).ratio.toFixed(2)} @ ${bestGlide(cfg).speed.toFixed(1)}m/s`,
+  ].join('\n');
+}
+
+addEventListener('keydown', e => held.add(e.code));
+addEventListener('keyup', e => held.delete(e.code));
+
+window.__flightBench = {
+  enableFlight,
+  setTop: (m) => { window.__benchTop = m; },
+  step: stepBench,
+  snapshot,
+  down: (eventId = 'bench-down') => { if (st) { st = bodyDown(st, { eventId }); for (const e of st.events) events.push({ ...e, frame }); draw(); } },
+  recover: (eventId = 'bench-recover', recoveryGeneration = 'gen-bench') => {
+    if (st) { st = bodyRecovered(st, { eventId, recoveryGeneration }); for (const e of st.events) events.push({ ...e, frame }); draw(); }
+  },
+  setKeys: (codes) => { held.clear(); for (const c of codes) held.add(c); },
+  events: () => events.slice(),
+  config: () => JSON.parse(JSON.stringify(cfg)),
+  BREATH,
+};
+window.__benchReady = true;
+</script>

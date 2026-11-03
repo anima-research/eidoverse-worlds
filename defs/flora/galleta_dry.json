@@ -1,0 +1,10 @@
+{
+  "doc": "Mojave BUNCH grass (big galleta / indian ricegrass): the bunch habit is the realistic one for desert. SAME blade atlas as 'grass' — a species is habit params + colour, not its own texture set.",
+  "archetype": "blades", "maps": "blades_meadow",
+  "leafRecolor": "straw",
+  "blades": { "perBunch": 34, "bunchR": 0.26, "h": 0.44, "w": 0.036, "lean": 0.75 },
+  "colors": { "jitter": 0.26 },
+  "baseScale": [0.7, 1.25], "density": 0.9, "clump": 0.55,
+  "wind": { "base": 0.28, "gust": 0.5, "gustFreq": 0.3, "flutter": 0.7 },
+  "sss": 0.55, "rough": 0.7, "pushScale": 1.0
+}

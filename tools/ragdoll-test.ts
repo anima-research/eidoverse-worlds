@@ -189,31 +189,38 @@ check('every shipped rig loads with a humanoid and hips',
   // rebuilding a sim from a pose invents the velocity, and invents zero. Every
   // seam in the drag protocol did this: grab, release, nail. snapshot() is the
   // sim itself, and a body handed over with it CONTINUES.
-  const rig = FLEET[0];
-  const upto = (n: number, seed: any = undefined, av0?: any) => {
-    const av = av0 ?? makeAvatar(rig.P, { realParent: rig.realParent });
-    const rd: any = new Ragdoll(av, seed === undefined ? toppleLean() : null,
-      av.restBonePositions(), seed);
-    for (let i = 0; i < n; i++) rd.step(1 / 60);
-    return { rd, av };
-  };
-  const straight = upto(40);
-  const snap = straight.rd.snapshot();
-  for (let i = 0; i < 80; i++) straight.rd.step(1 / 60);
-
-  const handed = upto(40);
-  const cont = upto(80, snap, handed.av);
-  const naive = upto(40);
-  const rebuilt = upto(80, null, naive.av);
-
+  // ON EVERY RIG: the one-rig version of this check sat on whichever rig
+  // sorted first, and that rig barely moved its arms — so a handover that
+  // rebuilt the hinge axes from rest (12–22cm of hand drift after ONE step on
+  // 41 of 44 prod rigs, §24t-8) passed for weeks.
   const far = (a: any, b: any) => Math.max(...Object.keys(a.p).map(
     (j: string) => a.p[j].distanceTo(b.p[j])));
-  const withState = far(straight.rd, cont.rd);
-  const fromBones = far(straight.rd, rebuilt.rd);
-  check('a handover carrying sim state continues the same body (≤1cm)',
-    withState <= 0.01, `${(withState * 100).toFixed(1)}cm adrift`);
-  check('...where rebuilding from the bones alone does not', fromBones > 0.1,
-    `bones-only was only ${(fromBones * 100).toFixed(1)}cm adrift, so this proves nothing`);
+  let worstState = 0, worstWho = '', fromBonesMin = Infinity;
+  for (const rig of FLEET) {
+    const upto = (n: number, seed: any = undefined, av0?: any) => {
+      const av = av0 ?? makeAvatar(rig.P, { realParent: rig.realParent });
+      const rd: any = new Ragdoll(av, seed === undefined ? toppleLean() : null,
+        av.restBonePositions(), seed);
+      for (let i = 0; i < n; i++) rd.step(1 / 60);
+      return { rd, av };
+    };
+    const straight = upto(40);
+    const snap = straight.rd.snapshot();
+    for (let i = 0; i < 80; i++) straight.rd.step(1 / 60);
+    const handed = upto(40);
+    const cont = upto(80, snap, handed.av);
+    const withState = far(straight.rd, cont.rd);
+    if (withState > worstState) { worstState = withState; worstWho = rig.name; }
+    if (rig === FLEET[0]) {
+      const naive = upto(40);
+      const rebuilt = upto(80, null, naive.av);
+      fromBonesMin = far(straight.rd, rebuilt.rd);
+    }
+  }
+  check('a handover carrying sim state continues the same body (≤1cm, every rig)',
+    worstState <= 0.01, `${(worstState * 100).toFixed(1)}cm adrift on ${worstWho}`);
+  check('...where rebuilding from the bones alone does not', fromBonesMin > 0.1,
+    `bones-only was only ${(fromBonesMin * 100).toFixed(1)}cm adrift, so this proves nothing`);
 }
 
 // ---- the rest snapshot has to be taken where the root IS
@@ -509,15 +516,17 @@ console.log('\nimpulse (the wire-borne shove):');
   // invariants must hold THROUGH the interruption — everything still comes to
   // rest, keeps its bone lengths, stays above ground, captures finite — and
   // the shove must actually MOVE the body the way it points.
-  const bad: Record<string, string[]> = { rest: [], stretch: [], under: [], finite: [], moved: [] };
+  const bad: Record<string, string[]> = { rest: [], stretch: [], under: [], finite: [], moved: [], creep: [] };
   for (const rig of FLEET) {
     const av = makeAvatar(rig.P);
     const rd: any = new Ragdoll(av, toppleLean(), av.restBonePositions());
     const x0 = rd.p.hips.x;
-    let steps = 0;
+    let steps = 0, x60 = NaN, at3s: any = null;
     while (!rd.done && steps < 1400) {
       if (steps === 30) rd.impulse(new THREE.Vector3(2.5, 0, 0));
       rd.step(1 / 60); steps++;
+      if (steps === 90) x60 = rd.p.hips.x;                 // one second after the shove
+      if (steps === 180) at3s = rd.p.hips.clone();          // lying by now on every rig
     }
     if (!rd.done) { bad.rest.push(`${rig.name}(never captured)`); continue; }
     if (rd.maxV > 0.1) bad.rest.push(`${rig.name}(flailing at capture, v=${rd.maxV.toFixed(3)})`);
@@ -525,14 +534,24 @@ console.log('\nimpulse (the wire-borne shove):');
     if (Object.keys(rd.p).some((j: string) => rd.p[j].y < -0.01)) bad.under.push(rig.name);
     const q = Object.values(rd.finalPose ?? {});
     if (!q.length || !q.every((a: any) => a.length === 4 && a.every(Number.isFinite))) bad.finite.push(rig.name);
-    if (rd.p.hips.x - x0 < 0.05) bad.moved.push(`${rig.name}(Δx=${(rd.p.hips.x - x0).toFixed(2)})`);
+    // the SHOVE is judged a second after it lands — that is what "goes the way
+    // it was shoved" means; where the body creeps to afterwards is the next
+    // check's business, and folding the two into one number hid the creep
+    // behind a shove that had in fact landed (+37cm) — mythos-2, §24t-8
+    const dx = (Number.isFinite(x60) ? x60 : rd.p.hips.x) - x0;
+    if (dx < 0.05) bad.moved.push(`${rig.name}(Δx=${dx.toFixed(2)})`);
+    // a body that is down should stay put: hips travel from 3s to capture
+    if (at3s && at3s.distanceTo(rd.p.hips) > 0.05) {
+      bad.creep.push(`${rig.name}(${(at3s.distanceTo(rd.p.hips) * 100).toFixed(0)}cm over ${((steps - 180) / 60).toFixed(1)}s)`);
+    }
   }
   const none = (k: string) => bad[k].length === 0;
   check('a mid-tumble shove still comes to rest', none('rest'), bad.rest.join(' '));
   check('...bone lengths survive it (≤10%)', none('stretch'), bad.stretch.join(' '));
   check('...nothing driven underground', none('under'), bad.under.join(' '));
   check('...capture stays finite', none('finite'), bad.finite.join(' '));
-  check('...and the body goes the way it was shoved', none('moved'), bad.moved.join(' '));
+  check('...and the body goes the way it was shoved (≥5cm a second after)', none('moved'), bad.moved.join(' '));
+  check('...and a body that is down does not creep (≤5cm from 3s to capture)', none('creep'), bad.creep.join(' '));
 
   // The deadline restarts with the motion: a shove at 7.9s of an 8s window
   // must not capture a body still in the air. impulse() grants the new motion

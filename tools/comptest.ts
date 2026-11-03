@@ -169,6 +169,12 @@ await alice.settle();
 check("owner can author an emitter", alice.errors.length === 2, alice.errors.join("; "));
 check("an emitter is ONE log entry, never one per particle",
   alice.msgs.filter((m) => m.type === "log").length === beforeParticles + 1);
+alice.verb("comp", { id: "swing1", type: "particles:smoke",
+  data: { preset: "smoke", origin: [0, 1.2, 0], scale: 0.5, gravity: 0.3 } });
+await alice.settle();
+check("an entity can carry a second, named emitter — also one entry",
+  alice.errors.length === 2 && alice.msgs.filter((m) => m.type === "log").length === beforeParticles + 2,
+  alice.errors.join("; "));
 bob.verb("comp", { id: "swing1", type: "particles", data: { preset: "smoke" } });
 await bob.settle();
 check("a visitor cannot light a fire on someone's swing",
@@ -182,6 +188,8 @@ const swing = st.entities?.swing1;
 check("fold: swing carries its component bag",
   !!swing?.comp?.sockets && !!swing?.comp?.reactions && swing?.comp?.sparkle?.hue === "amber");
 check("fold: unknown component types survive verbatim", swing?.comp?.sparkle?.hue === "amber");
+check("fold: both emitters survive, each under its own key",
+  (swing?.comp?.particles as any)?.preset === "fire" && (swing?.comp?.["particles:smoke"] as any)?.scale === 0.5);
 check("fold: motion survives with the pushed amplitude",
   (swing?.comp?.motion as any)?.amp === push2.args.amp, JSON.stringify(swing?.comp?.motion));
 check("fold: bob's body is mounted on the seat",

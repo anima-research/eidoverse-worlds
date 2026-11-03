@@ -6,7 +6,7 @@
 // Dynamically imported by main.js — the normal boot never pays for this file,
 // and this file never starts the normal boot.
 
-import { CONFIG } from './core.js';
+import { CONFIG } from './base.js';
 import { contributeThumbnail } from './avatar.js';
 
 export async function mintThumbnails() {
@@ -16,7 +16,7 @@ export async function mintThumbnails() {
   for (const a of list) {
     try {
       const vrm = await loadVRM(a.path);
-      await contributeThumbnail(a.name, vrm, CONFIG.token, { force: true });
+      await contributeThumbnail(a.name, vrm, CONFIG.token, { force: true, path: a.path });
       out.push(`ok ${a.name}`);
     } catch (e) { out.push(`FAIL ${a.name}: ${e.message}`); }
     console.log(`[mint] ${out[out.length - 1]}  (${out.length}/${list.length})`);

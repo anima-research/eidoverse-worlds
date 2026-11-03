@@ -15,14 +15,33 @@
 // it would be strange for a synthetic speaker to be unmutable when a human
 // one is not.
 
-import { bus } from './core.js';
+import { bus } from './base.js';
 
 const KEY = 'eido.audio.prefs';
 // sttConsent is TRI-STATE and must stay so: null = never asked, true =
 // accepted, false = refused. A boolean cannot tell "not asked" from "said no",
 // so a refusal would be re-prompted on the next mic-on — turning a no into a
 // recurring negotiation, which is the opposite of asking once (review catch).
-const DEFAULTS = { recvVoice: false, volVoices: 1, volWorld: 0.6, volTts: 1, sttConsent: null,
+// 🔴 volWorld DEFAULTS TO 1, not 0.6 (R, 2026-08-16: "maybe we should set world
+// volume to 100% by default as well. We don't really have anything to test it
+// against right now but at least it will be starting from a default that makes
+// sense").
+//
+// volumeFor('world') now has exactly one caller: the world bus in
+// client/lib/sounds.js (#192, the `sound` component), which is the
+// component-editing work this slider was held ready for. From 2026-08-16 until
+// then it deliberately had NONE (R: "we shipped some PRs related to this and
+// closed them because it was getting into component-editing territory and we
+// decided to punt on it") — a parked feature with a visible control, which is
+// a different thing from a control that lies. Anything else that plays placed
+// or ambient audio should end in that same bus rather than reading the
+// preference on its own, so the slider stays one control over one thing.
+//
+// 1.0 rather than 0.6 for exactly that reason: 0.6 was a guess about the
+// balance of a mix that does not exist yet. When ambient audio does land, the
+// first person to hear it should hear it as authored, not through a 40% cut
+// nobody chose on purpose.
+const DEFAULTS = { recvVoice: false, volVoices: 1, volWorld: 1, volTts: 1, sttConsent: null,
   // Sensitivity, not an absolute level: it scales the margin a sound must clear
   // ABOVE the measured room noise (see onsetTick). 0.06 is the lowest value that
   // took zero false triggers across 200 simulated room/noise combinations while
@@ -33,7 +52,12 @@ const DEFAULTS = { recvVoice: false, volVoices: 1, volWorld: 0.6, volTts: 1, stt
   // a real mic at a real gain. The slider is honest and 1:1 now, so anyone
   // else's number is a drag away; this is a good place to start, not a claim
   // about everyone's room.
-  micFloor: 0.12 };
+  micFloor: 0.12,
+  // Push-to-talk: the gate opens on a HELD KEY instead of on measured level.
+  // Off by default — voice activation is the mode everything above was tuned
+  // for, and PTT is the deliberate opt-in of someone who knows their room
+  // (an open-plan office, a fan, a housemate) will not survive a level gate.
+  pttMode: false };
 
 let prefs = { ...DEFAULTS };
 try {
@@ -42,6 +66,11 @@ try {
 } catch { /* corrupt prefs must never keep anyone out of the world */ }
 
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(prefs)); } catch { /* private mode */ } };
+
+// How far a voice carries: full within VOICE_FULL_M, silent past VOICE_SILENT_M (voicesfubridge.js's rolloff, the
+// client half of the server's proximity gate). "Near" for anything about being heard is inside
+// VOICE_SILENT_M — past it nobody hears you whatever their settings say.
+export const VOICE_FULL_M = 3, VOICE_SILENT_M = 20;
 
 export const audioPrefs = () => ({ ...prefs });
 export const receivingVoice = () => prefs.recvVoice;
@@ -84,6 +113,23 @@ export function setVolume(cat, v) {
   save();
   bus.emit('audio:volume', { cat, value: n });
   return n;
+}
+
+// ---- push-to-talk ----------------------------------------------------------
+// A MODE, not a momentary state: which regime decides when the gate opens.
+// The held-key itself lives in micstate.js next to the gate decision it feeds;
+// this file only remembers the choice, like every other preference here.
+export const pttMode = () => !!prefs.pttMode;
+export function setPttMode(on) {
+  const next = !!on;
+  if (next === prefs.pttMode) return prefs.pttMode;
+  prefs.pttMode = next; save();
+  // micstate drops a held key on this event (a mode you leave should not
+  // leave a phantom finger on the gate), and the panel dims the sensitivity
+  // row — under PTT the floor drives nothing, and a control that does
+  // nothing must not look like it does. That rule is this file's history.
+  bus.emit('audio:ptt', next);
+  return next;
 }
 
 // mic sensitivity (R, 17:19: typing sounds pinged the ear) — the floor below

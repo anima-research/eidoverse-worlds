@@ -8,14 +8,15 @@
 // semantic (things win the name lookup because they were here first), and
 // it is preserved inside the handler bodies rather than across them.
 
-import { scene, camera, renderer, CONFIG, bus, report } from '../core.js';
+import { CONFIG, bus, report } from '../base.js';
+import { captureFrame } from '../capture.js';
 import { register, dispatch } from './registry.js';
 import { entities, roleOf, worldHasOwner } from '../world.js';
 import {
   net, sendVerb, sendMod, sendPuppet, sendWorldFork, sendWorldReset, requestDebug,
 } from '../net.js';
 import { remotes } from '../remotes.js';
-import { myState, setPosture } from '../controller.js';
+import { myState, setPosture, flightReport } from '../controller.js';
 import { kick } from '../physobj.js';
 import { logChat } from '../chat.js';
 import { toggleHelp, flashHint } from '../ui.js';
@@ -24,8 +25,27 @@ import { EMOTE_ORDER, EMOTES } from '../avatar.js';
 import { setPushable, pushable } from '../consent.js';
 import { trySitOn } from '../localbody.js';
 import { getMe } from '../mybody.js';
+import { setMyReach, clearMyReach } from '../reachnet.js';
+import { SIM_ID } from '../../../shared/sim.js';
+import { canonicalPoint, CONTACT_POINTS } from '../../../shared/contact.js';
+import { TOUCH_GAP } from '../../../shared/reachwire.js';
+import { panelAlpha, setPanelAlpha } from '../stylepanel.js';
 
 register('help', () => toggleHelp());
+// Flight's own diagnostic, in the chat log where a person can read it and
+// paste it back. See controller.js flightReport() for why this is not just
+// the console probe.
+register('flight', () => { for (const line of flightReport().split('\n')) logChat('*', line); });
+
+// Panel opacity — the glass escape hatch. Adaptive translucency fails over
+// bright scenes (Apple shipped "Tinted" after the Liquid Glass backlash);
+// this is our version of that lesson, one number, user-owned, persisted.
+register('panels', (arg) => {
+  const v = parseFloat(arg);
+  if (!(v >= 0.3 && v <= 1)) return logChat('*', `usage: /panels <0.3–1> — desktop panel opacity (current ${panelAlpha().toFixed(2)})`);
+  setPanelAlpha(v);
+  logChat('*', `panels at ${Math.round(v * 100)}% opacity`);
+});
 
 // Eyelids are BONES on rigs that have them (L_/R_Eyelid_Upper) — most VRMs
 // blink with a blendshape instead and have none, so this says so plainly
@@ -53,16 +73,48 @@ register('role', (arg) => {
 });
 
 register('grant', (arg) => {
-  // /grant <name> owner|builder|visitor [+gen|-gen] — server enforces owner-only
+  // /grant <name> owner|builder|visitor|spectator|none [+gen|-gen] [+fly|-fly] [for 2h|forever]
+  // server enforces owner-only. `fly` is orthogonal to the ladder like gen,
+  // and default-off everywhere -- including open worlds, and including for
+  // owners. Somebody says so, in the log, or nobody flies.
+  // `for <duration>` ends the grant (30m, 2h, 1d, 1w); `forever` clears an end.
+  const usage = 'usage: /grant <name> owner|builder|visitor|spectator|none [+gen|-gen] [+fly|-fly] [for 2h|forever]';
   const parts = (arg || '').trim().split(/\s+/).filter(Boolean);
   const id = parts[0];
-  const role = parts.find((p) => ['owner', 'builder', 'visitor'].includes(p.toLowerCase()))?.toLowerCase();
+  const role = parts.slice(1).find((p) => ['owner', 'builder', 'visitor', 'spectator', 'none'].includes(p.toLowerCase()))?.toLowerCase();
   const genFlag = parts.find((p) => p === '+gen' || p === '-gen');
-  if (!id || (!role && !genFlag)) {
-    return logChat('*', 'usage: /grant <name> owner|builder|visitor [+gen|-gen]');
-  }
-  sendVerb('grant', { id, ...(role ? { role } : {}), ...(genFlag ? { gen: genFlag === '+gen' } : {}) });
+  const flyFlag = parts.find((p) => p === '+fly' || p === '-fly');
+  const forAt = parts.findIndex((p, i) => i > 0 && p.toLowerCase() === 'for');
+  const dur = forAt > 0 ? parts.slice(forAt + 1, forAt + 3).join(' ').match(/^\d+\s*[a-z]+/i)?.[0] : undefined;
+  const forever = parts.some((p, i) => i > 0 && /^(forever|permanent|permanently)$/i.test(p));
+  if (forAt > 0 && !dur) return logChat('*', 'for wants a duration: 30m, 2h, 1d or 1w');
+  if (!id || (!role && !genFlag && !flyFlag && !dur && !forever)) return logChat('*', usage);
+  sendVerb('grant', { id, ...(role ? { role } : {}),
+                      ...(genFlag ? { gen: genFlag === '+gen' } : {}),
+                      ...(flyFlag ? { fly: flyFlag === '+fly' } : {}),
+                      ...(dur ? { for: dur } : forever ? { until: null } : {}) });
 });
+
+// /revoke <name> — take back someone's grant: they get this world's default
+// again (in a members-only world, that means they may not come in).
+register('revoke', (arg) => {
+  const id = (arg || '').trim();
+  if (!id) return logChat('*', 'usage: /revoke <name>');
+  sendVerb('grant', { id, revoke: true });
+});
+
+// /access [members|watch|visitors|open] — who may come into this world.
+// No argument: show it (and who is listed). Owner-only to change; the
+// server enforces. Same verb underneath: the wildcard's rung.
+register('access', (arg) => {
+  const a = (arg || '').trim().toLowerCase();
+  if (!a) return sendMod('world-access');
+  const rung = { members: 'none', private: 'none', closed: 'none', watch: 'spectator', spectators: 'spectator',
+                 visitors: 'visitor', visitor: 'visitor', open: 'builder', builders: 'builder' }[a];
+  if (!rung) return logChat('*', 'usage: /access members|watch|visitors|open — or /access to see who can come in');
+  sendVerb('grant', { id: '*', role: rung });
+});
+register('members', () => sendMod('world-access'));
 
 // /kick /ban <name> [reason…] — owner-only, the server enforces (and
 // narrates the act into chat via the log entry it broadcasts back).
@@ -72,16 +124,46 @@ function moderate(cmd, arg) {
   sendVerb(cmd, { id, ...(rest.length ? { reason: rest.join(' ') } : {}) });
 }
 
-register('kick', (arg) => {
-  // one word, two acts (the /push pattern): a THING within the world gets
-  // the physics kick; a PERSON gets moderation. Things win the lookup —
-  // and /punt is always the physics verb, /ban always the moderation one.
-  const first = (arg || '').trim().split(/\s+/)[0];
-  if (!first || entities.has(first) || !remotes.has(first)) { kick(arg); return; }
-  moderate('kick', arg);   // a person's name — the old chain's fallthrough
+// /kick is MODERATION, solidly (tel0s ruling, playtest 2026-08-31). The old
+// one-word-two-acts overload sent a typo'd object name into the moderation
+// path and made "kick the barrel" and "kick the visitor" the same word for
+// two very different acts. /punt owns the physics wholly now — and gained
+// the fun half: punting a PERSON is the consented ragdoll shove (their
+// client owns their body and decides, exactly as /push).
+register('kick', (arg) => moderate('kick', arg));
+register('punt', (arg) => {
+  const parts = (arg || '').trim().split(/\s+/).filter(Boolean);
+  const named = parts.find((x) => !/^[\d.]+$/.test(x));
+  // things win the name lookup (they were here first); a person's name is
+  // the shove. No name at all = the object kick's nearest-thing search.
+  if (named && !entities.has(named) && remotes.has(named)) {
+    const pow = Math.min(4, Math.max(0.5, parseFloat(parts.find((x) => /^[\d.]+$/.test(x))) || 2.6));
+    shovePerson(named, pow, 'punt');
+    return;
+  }
+  kick(arg);
 });
-register('punt', (arg) => { kick(arg); });
 register('ban', (arg) => moderate('ban', arg));
+
+// /epoch [tickMs] — enter the deterministic-sim epoch (PROTOCOL_v2 §3).
+// Owner-ranked: the server refuses below rank 2 and refuses any sim name
+// this sequencer does not carry; the client only makes the door REACHABLE
+// (before this, entering an epoch took a raw world_verb — which is how a
+// playtest "of the new physics" ran the legacy volunteer sim instead).
+register('epoch', (arg) => {
+  const a = (arg || '').trim();
+  // /epoch off — LEAVE the sim epoch (ruling 2026-09-01: explicit, never a
+  // toggle): every flight is released to the fold where it stands, and punts
+  // go back to the volunteer physics. Owners only; the world refuses or announces.
+  if (/^(off|leave|exit|none)$/i.test(a)) {
+    sendVerb('epoch', { sim: null });
+    logChat('*', 'asked the world to LEAVE its sim epoch — every flight comes to rest where it is and punts return to volunteer physics (owners only; the world will refuse or announce)');
+    return;
+  }
+  const tickMs = Math.round(Number(a)) || 66;
+  sendVerb('epoch', { sim: SIM_ID, tickMs });
+  logChat('*', `asked the world to enter ${SIM_ID} at a ${tickMs}ms tick — flights become log-replayable physics (owners only; the world will refuse or announce)`);
+});
 
 register('unban', (arg) => {
   const id = (arg || '').trim();
@@ -124,19 +206,107 @@ register('push', (arg) => {
     }
     if (!target) return logChat('*', 'nobody within reach to push');
   }
+  shovePerson(target, pow, 'push');
+});
+
+/** The person-shove, shared by /push and /punt: a REQUEST to the target's
+ *  client, which owns the body and decides (pushable). Range-gated here out
+ *  of honesty, not security — the receiver caps magnitude anyway. */
+function shovePerson(target, pow, word) {
+  const REACH = 2.5;
   const r = remotes.get(target);
-  if (!r?.avatar) return logChat('*', `${target} isn't here to push`);
+  if (!r?.avatar) return logChat('*', `${target} isn't here to ${word}`);
   const tp = r.avatar.root.position;
   const d = Math.hypot(tp.x - myState.pos.x, tp.z - myState.pos.z);
-  if (d > REACH) return logChat('*', `${target} is too far away to push (${d.toFixed(1)}m)`);
+  if (d > REACH) return logChat('*', `${target} is too far away to ${word} (${d.toFixed(1)}m)`);
   // straight through the target from where I stand; face-to-face at zero
   // distance falls back to the way I'm facing
   const nx = d > 0.05 ? (tp.x - myState.pos.x) / d : Math.sin(myState.yaw);
   const nz = d > 0.05 ? (tp.z - myState.pos.z) / d : Math.cos(myState.yaw);
   sendPuppet(target, { ragdoll: { lean: [nx * pow, 0, nz * pow] } });
-  logChat('*', `you push ${target}`);
+  logChat('*', word === 'punt' ? `you punt ${target} — they go flying (their client willing)` : `you push ${target}`);
+}
+
+// ---- /touch — the human hand on the reach surface (shared/reachwire.js).
+// The same descriptor an agent's `reach` tool streams: every client
+// re-solves it, the arm tracks the person, and THEY hear about it (a
+// "reaches toward you" line, then a "rests on" line when the hand lands).
+const LIMB_WORD = { leftHand: 'left hand', rightHand: 'right hand', leftFoot: 'left foot', rightFoot: 'right foot' };
+const pointOf = (words) => {
+  const joined = words.join(' ');
+  if (!joined) return null;
+  if (/^head$/i.test(joined)) return 'head_top';   // the one name canonicalPoint can't guess
+  return canonicalPoint(joined);
+};
+
+register('touch', (arg) => {
+  const parts = (arg || '').trim().split(/\s+/).filter(Boolean);
+  // a person's name may lead; resolve it among those present (or yourself)
+  let who = null, rest = parts;
+  if (parts.length) {
+    const first = parts[0].toLowerCase();
+    if (first === 'me' || first === 'self' || first === CONFIG.name.toLowerCase()) {
+      who = CONFIG.name; rest = parts.slice(1);
+    } else {
+      const hit = [...remotes.keys()].find((id) => id.toLowerCase() === first);
+      if (hit) { who = hit; rest = parts.slice(1); }
+    }
+  }
+  // your hand rides at the END ("/touch bob shoulder left") — and "left" is
+  // only a hand when the words before it still name a point without it, so
+  // "/touch bob left shoulder" keeps meaning the shoulder
+  let limb = 'rightHand';
+  let words = rest;
+  const last = rest[rest.length - 1]?.toLowerCase();
+  if (last === 'left' || last === 'right') {
+    const before = rest.slice(0, -1);
+    if (before.length === 0 || pointOf(before)) {
+      limb = last === 'left' ? 'leftHand' : 'rightHand';
+      words = before;
+    }
+  }
+  const point = words.length ? pointOf(words) : 'shoulder_l';
+  if (!point) {
+    // an unresolved first word is at least as likely a name as a point —
+    // say both, or an absent person masquerades as a bad landmark
+    if (!who && parts.length) {
+      return logChat('*', `nobody here called "${parts[0]}" (and no contact point by that name) — /who lists people; points: ${Object.keys(CONTACT_POINTS).join(', ')}`);
+    }
+    return logChat('*', `no contact point called "${words.join(' ')}" — try: ${Object.keys(CONTACT_POINTS).join(', ')}`);
+  }
+  if (!who) {
+    // nearest person — the reach tracks, so a few metres is a fine start
+    let bestD = 6;
+    for (const [id, r] of remotes) {
+      if (!r.avatar) continue;
+      const d = Math.hypot(r.avatar.root.position.x - myState.pos.x, r.avatar.root.position.z - myState.pos.z);
+      if (d < bestD) { bestD = d; who = id; }
+    }
+    if (!who) return logChat('*', 'nobody nearby to touch — /touch <name> works from farther away');
+  }
+  if (who !== CONFIG.name && !remotes.get(who)?.avatar) return logChat('*', `${who} isn't here (or still loading)`);
+  const err = setMyReach(limb, { who, point });
+  if (err) return logChat('*', err);
+  const whose = who === CONFIG.name ? 'your own' : `${who}'s`;
+  logChat('*', `you reach for ${whose} ${point} (${LIMB_WORD[limb]})…`);
+  // The solve runs in the frame loop; read after the initial weight blend.
+  setTimeout(() => {
+    const s = getMe()?.reachStatus?.()?.[limb];
+    if (!s || !Number.isFinite(s.gap)) return;
+    if (s.gap <= TOUCH_GAP) {
+      logChat('*', `…your ${LIMB_WORD[limb]} reaches ${whose} ${point} (endpoint gap ${Math.round(s.gap * 1000)}mm) — tracking continues until /letgo`);
+    } else {
+      logChat('*', `…${s.gap.toFixed(2)}m short${s.bound?.length ? ` (${s.bound.join(', ')})` : ''} — the arm stays reaching; step closer and it will land`);
+    }
+  }, 600);
 });
 
+register('letgo', (arg) => {
+  const v = (arg || '').trim().toLowerCase();
+  const limb = v === 'left' ? 'leftHand' : v === 'right' ? 'rightHand' : null;
+  clearMyReach(limb);
+  logChat('*', limb ? `you lower your ${LIMB_WORD[limb]}` : 'you let go');
+});
 register('pushable', (arg) => {
   const v = (arg || '').trim().toLowerCase();
   if (v === 'on' || v === 'off') setPushable(v === 'on');
@@ -251,8 +421,7 @@ function bearingTo(p) {
 
 export async function saveScreenshot() {
   try {
-    renderer.render(scene, camera);
-    const url = renderer.domElement.toDataURL('image/png');
+    const url = captureFrame();
     const a = document.createElement('a');
     a.href = url;
     a.download = `eidoverse-${CONFIG.world}-${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
@@ -272,4 +441,26 @@ export function initCommands() {
   });
 
   bus.on('command', ({ cmd, arg }) => dispatch(cmd, arg));
+
+  // Hands aimed at YOUR body (reachnet's bus edges) become chat lines — the
+  // human ear for the same events an agent hears through its door. Reach and
+  // touch carry a per-(person, hand) quiet window because a hand trembling
+  // across the touch threshold re-fires the edge; a release only happens on
+  // purpose, so it always speaks.
+  const recentReach = new Map();
+  const narrate = (type, { who, limb, point }) => {
+    const lw = LIMB_WORD[limb] ?? limb;
+    if (type !== 'release') {
+      const key = `${type}:${who}:${limb}`;
+      const now = performance.now();
+      if (now - (recentReach.get(key) ?? 0) < 10_000) return;
+      recentReach.set(key, now);
+    }
+    if (type === 'reach') logChat('*', `${who} reaches toward your ${point ?? 'position'} (${lw})`);
+    else if (type === 'touch') logChat('*', `${who}'s ${lw} touches your ${point ?? 'position'}`);
+    else logChat('*', `${who} withdraws their ${lw}`);
+  };
+  bus.on('reach', (e) => narrate('reach', e));
+  bus.on('touch', (e) => narrate('touch', e));
+  bus.on('release', (e) => narrate('release', e));
 }
