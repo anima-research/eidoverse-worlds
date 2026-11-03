@@ -431,23 +431,29 @@ const structureIds = new Map(); // owner entity id -> synthetic collider ids
  *  house tests the few boxes in its 3×3 neighbourhood, not all of them.
  *  `solid: false` (a building whose collision is off for bodies) registers the
  *  grass mask alone: no box a walker meets. */
-export function fitStructureBoxes(ownerId, boxes, { position, yaw = 0, scale = 1, solid = true } = {}) {
+export function fitStructureBoxes(ownerId, boxes, { position, yaw = 0, scale = 1, q = null, scale3 = null, solid = true } = {}) {
   removeStructureBoxes(ownerId);
   if (!Array.isArray(boxes) || !boxes.length) return 0;
   if (!Array.isArray(position) || position.length !== 3 || !position.every(Number.isFinite)) return 0;
   if (!Number.isFinite(yaw) || !Number.isFinite(scale) || !(scale > 0)) return 0;
+  // per-axis scale is folded into the boxes (an axis-aligned box stays one), a whole rotation rides as a quaternion for
+  // frameOf: the boxes match the drawn group's TRS (bot #260 #35)
+  const s3 = Array.isArray(scale3) && scale3.length === 3 && scale3.every((x) => Number.isFinite(x) && x > 0) ? scale3 : [scale, scale, scale];
+  const quat = Array.isArray(q) && q.length === 4 && q.every(Number.isFinite) && Math.hypot(...q) > 1e-6 ? new THREE.Quaternion(...q).normalize() : null;
   const obj = {
     position: new THREE.Vector3(position[0], position[1], position[2]),
-    rotation: { y: yaw },
-    scale: new THREE.Vector3(scale, scale, scale),
+    rotation: quat ? new THREE.Euler().setFromQuaternion(quat) : { y: yaw },
+    ...(quat ? { quaternion: quat } : {}),
+    scale: new THREE.Vector3(1, 1, 1),
   };
   const ids = [];
   let lo = null, hi = null;
   for (const b of boxes) {
     if (![b?.x0, b?.y0, b?.z0, b?.x1, b?.y1, b?.z1].every(Number.isFinite)) continue;
+    const [x0, x1, y0, y1, z0, z1] = [b.x0 * s3[0], b.x1 * s3[0], b.y0 * s3[1], b.y1 * s3[1], b.z0 * s3[2], b.z1 * s3[2]];
     const box = new THREE.Box3(
-      new THREE.Vector3(Math.min(b.x0, b.x1), Math.min(b.y0, b.y1), Math.min(b.z0, b.z1)),
-      new THREE.Vector3(Math.max(b.x0, b.x1), Math.max(b.y0, b.y1), Math.max(b.z0, b.z1)),
+      new THREE.Vector3(Math.min(x0, x1), Math.min(y0, y1), Math.min(z0, z1)),
+      new THREE.Vector3(Math.max(x0, x1), Math.max(y0, y1), Math.max(z0, z1)),
     );
     if (box.isEmpty()) continue;
     lo = lo ? lo.min(box.min) : box.min.clone();

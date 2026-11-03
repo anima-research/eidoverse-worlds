@@ -859,22 +859,21 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   hw("ann", "place", { id: "seat2", hang: "frame", height: 0.45, along: 0.5 });
   ok(JSON.stringify(W().entities.seat2?.c.pivot?.pos) === "[0,9,0]", "HG4 a pivot someone already set is left alone by a hang"); }
 
-// ---- SW: a push (old-vs-new review 10-06 #5) — the impulse kind is reserved since the shape audit (10-16): what remains is
-// the refusal, and the v1 mapping a translated world carries ----
+// ---- SW: a push (old-vs-new review 10-06 #5) — the impulse kind, reserved at the shape audit (10-16) and open again since
+// Mica 10-31 (decision row 19): a builder writes it, use swings the seat, and the v1 mapping a translated world carries ----
 { const sw = callAt("swingpush");
   const { pendulumTheta } = await import("../../client/lib/motioneval.js");
   sw("ann", "create-world", { title: "swingpush" });
   sw("ann", "create", { id: "frame", model: "swing-frame", components: { transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
   sw("ann", "create", { id: "seat", model: "swing-seat", place: { hang: "frame", height: 0.45 } });
-  // shape audit 10-16: `impulse` is a reserved handler kind (a general name with a pendulum-only meaning; it returns with its
-  // general one when an engine carries impulses). A new one is refused; the push rows that wrote one (SW1-SW4) are retired
-  // with it. A stored one (a translated v1 swing) is carried as it was and its use path is unchanged code.
   // Mica 10-31 (matrix 8, decision row 19): main let a builder write the script-free push; the engine runs it (use.js), so it's open again
   const p0 = sw("ann", "set", { id: "seat", component: "reactions", value: { push: { kind: "impulse", strength: 0.5 } } });
   const u0 = p0.ok ? sw("ann", "use", { id: "seat", action: "push" }) : null, mo = openWorld(root, "swingpush").state().entities.seat?.c?.motion;
   ok(p0.ok === true && u0?.ok === true && mo?.type === "pendulum" && (mo.amp ?? 0) > 0, "SW1 a builder writes an impulse handler on a swing (main's script-free push), and using it swings the seat", { p0: p0.refused ?? p0.ok, u0: u0?.refused ?? u0?.ok, mo });
   const p1 = sw("ann", "set", { id: "frame", component: "reactions", value: { push: { kind: "impulse", angular: "fast" } } });
   ok(p1.refused?.code === "shape", "SW1b an impulse handler's strength and angular are numbers", p1.refused);
+  const RH = (await import("../../shared/protocol/componentspec.js")).COMPONENTS.reactions.help;
+  ok(/\bimpulse\b/.test(RH) && !/impulse is reserved/.test(RH), "SW1c the reactions help names impulse as a kind a builder may write, not a reserved one (bot #260 #25)", RH);
   void pendulumTheta;
   const tx = (await import("./import-v1/translate-v1.js")).translate(
     [{ seq: 0, ts: 1, actor: "a", verb: "spawn", args: { id: "s", lib: "swing-seat" } }, { seq: 1, ts: 2, actor: "a", verb: "comp", args: { id: "s", type: "reactions", data: { push: { impulse: 0.35 } } } }], {});
@@ -1187,7 +1186,11 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   { const r1 = call("bob", "set", { id: "mb", component: "model", value: "crate" }); const r2 = call("bob", "set", { id: "mb", component: "light", value: { color: 0xffd9a0, intensity: 16, range: 10 } });
     call("bob", "create", { id: "cr", model: "crate", place: { at: [5, 5] } }); const r3 = call("bob", "set", { id: "cr", component: "mesh", value: { shape: "sphere", size: [1, 1, 1] } });
     call("bob", "create", { id: "lt", components: { light: { color: 0xffd9a0, intensity: 16, range: 10 }, transform: { pos: [7, 1, 7] } } }); const r4 = call("bob", "set", { id: "lt", component: "mesh", value: { shape: "box", size: [1, 1, 1] } });
-    ok([r1, r2, r3, r4].every((r) => code(r) === "one-place"), "MS2 one place per thing: a model or a light on a mesh, a mesh on a model or a light, are all refused", [r1, r2, r3, r4].map((r) => r.refused?.code ?? "ok")); }
+    ok([r1, r2, r3, r4].every((r) => code(r) === "one-place"), "MS2 one place per thing: a model or a light on a mesh, a mesh on a model or a light, are all refused", [r1, r2, r3, r4].map((r) => r.refused?.code ?? "ok"));
+    // bot #260 #28: the refusal's fix, submitted as written (its {…} a real mesh), is a create the door takes, ids not seeded
+    const fx = String(r3.refused?.fix ?? ""), lit = fx.match(/^create (\{.*\}), or /)?.[1]?.replace("{…}", "{shape: 'box', size: [1, 1, 1]}");
+    fixtureIds(false); let r5: any; try { r5 = lit ? call("bob", "create", new Function(`return (${lit})`)()) : null; } finally { fixtureIds(true); }
+    ok(!!lit && r5?.ok === true, "MS2b the one-place fix for a mesh on a model, sent as written, is accepted (no writer-chosen id)", { fx, r5: r5?.refused ?? r5?.ok }); }
   { const r1 = call("bob", "set", { id: "mb", component: "mesh", value: { shape: "box", size: [0.01, 1, 1] } }); const r2 = call("bob", "set", { id: "mb", component: "mesh", value: { shape: "cone", size: [1, 1, 1] } });
     ok(code(r1) === "bounds" && code(r2) === "shape" && /each must be/.test(r1.refused?.reason ?? ""), "MS3 a size outside 0.05..200 (the definition's ranges, per element) and an unknown shape are refused", [r1.refused, r2.refused]); }
   { const r = call("bob", "create", { id: "cup", model: "ball", place: { on: "mb" } }); const y = E("cup")?.transform?.pos?.[1];

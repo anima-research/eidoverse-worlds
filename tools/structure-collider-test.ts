@@ -199,6 +199,28 @@ const WALK = PLAN.levels[0].y;
     structureBoxIds('other').length === PLAN.boxes.length + 1);
 }
 
+// 7b. (bot #260 #35) the boxes take the transform the drawn group takes: per-axis scale and a whole rotation
+{
+  clean();
+  // scale [2, 1, 1] (view.js: scale = its y, scale3 the three): the door spans x 0..2, the solid segment x 2..4
+  fitStructureBoxes('wide', PLAN.boxes, { ...AT, scale: 1, scale3: [2, 1, 1] });
+  const atWall = new THREE.Vector3(3, WALK, 0);
+  resolveColliders(atWall, flat);
+  check('scale3 [2,1,1]: the widened solid segment pushes a body out (x 3)', Math.abs(atWall.z) > 0.01, `z=${atWall.z.toFixed(3)}`);
+  const atDoor = new THREE.Vector3(1.5, WALK, 0);
+  resolveColliders(atDoor, flat);
+  check('scale3 [2,1,1]: the widened doorway lets a body stand in it (x 1.5)', Math.abs(atDoor.z) < 1e-6 && Math.abs(atDoor.x - 1.5) < 1e-6,
+    `(${atDoor.x.toFixed(3)}, ${atDoor.z.toFixed(3)})`);
+  // laid on its back (90° about x): the wall is a slab at grade, not a wall where it stood
+  clean();
+  const h = Math.SQRT1_2;
+  fitStructureBoxes('tilt', PLAN.boxes, { ...AT, q: [h, 0, 0, h] });
+  const atOld = new THREE.Vector3(1.5, WALK, 0);
+  resolveColliders(atOld, flat);
+  check('q tilted 90° about x: no upright wall stands where the untilted one would', Math.abs(atOld.z) < 1e-6 && Math.abs(atOld.x - 1.5) < 1e-6,
+    `(${atOld.x.toFixed(3)}, ${atOld.z.toFixed(3)})`);
+}
+
 // 8. totality — a malformed declaration registers nothing, never throws
 {
   clean();

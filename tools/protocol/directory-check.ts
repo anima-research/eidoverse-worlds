@@ -5,7 +5,7 @@ import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writer
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { directoryAt, directoryFor, isMinted, accountTag } from "../../server/directory.ts";
+import { directoryAt, directoryFor, isMinted, accountTag, foldName } from "../../server/directory.ts";
 import { CUSTODY_FILE, DIRECTORY_FILE, OLD_NAMES, custodyFileIn } from "../../server/keyfiles.ts";
 import { custodyAt } from "../../server/custody.ts";
 import { openLive } from "../../server/livehost.ts";
@@ -46,6 +46,13 @@ const file = path.join(tmp, "worlds", ".directory.json");
   const tag = accountTag("human:discord:555");
   ok(firstFree && free(second) && second !== first && own === "Zed" && first.endsWith(`-${tag}`) && second.endsWith(`-${tag}2`) && !/555/.test(tag),
     "D12 a spectator's name is the typed one unless another account wears it; otherwise a name that keeps its account's tag (a hash: none of the account's digits), fits the limit and no other account wears", { first, second, own, tag }); }
+
+// D13 (bot #260 #40): a Latin letter's accent folds away, as the M3 comment claims; a kana's dakuten or a Devanagari vowel sign stays
+ok(foldName("Marígold") === foldName("marigold") && foldName("JOSÉ") === foldName("jose") && foldName("Ångström") === "angstrom"
+  && foldName("が") !== foldName("か") && foldName("कि") !== foldName("क"),
+  "D13 foldName drops a Latin letter's accents (Marígold is marigold), never a kana's or an Indic vowel sign", ["Marígold", "JOSÉ", "Ångström", "が", "कि"].map(foldName));
+{ const d = directoryAt(path.join(tmp, "d13", ".directory.json")); d.resolve({ sub: "human:discord:913", name: "Marigold" });
+  ok(d.claimedName("Marígold") && d.claimedByOther("Marígold", "human:discord:914"), "D13b an accented spelling of a claimed name is that claim (the door's check, M3)"); }
 
 // ---- I: the authority with directory ids (R2: a role is held by an id, never by a name) ----
 { let T = 1800000000000; const d = directoryAt(file);

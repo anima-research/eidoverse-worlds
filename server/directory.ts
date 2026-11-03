@@ -148,10 +148,11 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
 }
 export type Directory = ReturnType<typeof directoryAt>;
 
-/** A display name folded for comparison: Unicode-compatibility normalized, case-folded, format characters (zero-width,
- *  bidi controls) and separators removed — so "Marígold", "marigold", "Mari​gold" are the same claim (M3). */
+/** A display name folded for comparison: Unicode-compatibility normalized, case-folded, a Latin letter's accents, format
+ *  characters (zero-width, bidi controls) and separators removed — so "Marígold", "marigold", "Mari​gold" are the same
+ *  claim (M3). Only marks on Latin letters go: a kana's dakuten or an Indic vowel sign is a different letter (bot #260 #40). */
 export function foldName(s: string): string {
-  return String(s).normalize("NFKC").toLowerCase().replace(/[\p{Cf}\p{Z}\p{P}\p{S}_]/gu, "");
+  return String(s).normalize("NFKD").replace(/(?<=\p{Script=Latin}\p{M}*)\p{M}/gu, "").normalize("NFKC").toLowerCase().replace(/[\p{Cf}\p{Z}\p{P}\p{S}_]/gu, "");
 }
 
 /** The world ids already standing in a worlds dir (each world's genesis hash, read from its log's second line). */

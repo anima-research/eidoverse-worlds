@@ -8,7 +8,7 @@
 //
 // Every spelling the wire has is an ALIAS here (design §2.4, §6): `lib`,
 // `collide`, `parent`, `comp.motion` with its `type` enum, `comp.sockets`, …,
-// `comp.light` on any entity, `comp.collider`, and the Empty — a spawn with no
+// `comp.light` on a thing of its own, `comp.collider`, and the Empty — a spawn with no
 // `lib`. (The old protocol's `kind: "light"` light entity is gone from the view:
 // the importer rewrites it to comp.light; shared/protocol/kind.js kindOf names
 // what a thing is.) `componentsOf` reads any folded entity as a component list,
@@ -134,7 +134,7 @@ const DEFS = [
   { name: 'Light', category: 'Rendering', summary: 'a point light',
     params: paramsOf('Light'),
     fallback: { visual: 'a glowing gizmo when the slot pool is spent', text: '(light)' },
-    note: 'wire: comp.light {color, intensity, range, important, day} on any entity (an imported lamp is a Model and a Light)' },
+    note: 'wire: comp.light {color, intensity, range, important, day} on a thing of its own (one place per thing: never beside a model or mesh; an imported lamp becomes a Model with a Light child)' },
   // the motions' READS: a whole thing swings and turns about its Pivot component, else its origin (shape audit 10-16; a pendulum
   // was [0, 2, 0]); a part about its own origin; an orbit's part circles at 1 m
   { name: 'Pendulum', category: 'Motion', summary: 'swings back and forth about an axis',
@@ -492,9 +492,10 @@ export function lightOf(ent) {
     decay: decay ?? 1.7,
     daytime: daytime ?? (src.day === false ? 'full' : 'dim'),
     // a spot's cone, glTF's half-angles (rad): angle = outer (default π/4), inner where the edge starts to soften
-    // a point light is the default and says nothing more; a spot adds its kind and cone
+    // a point light is the default and says nothing more; a spot adds its kind and cone; a sun its kind (models.js leaves it to the rig)
     ...(src.kind === 'spot' ? (() => { const angle = finite(src.angle) && src.angle > 0 && src.angle <= Math.PI / 2 ? src.angle : Math.PI / 4;
-      return { kind: 'spot', angle, inner: finite(src.inner) && src.inner >= 0 && src.inner < angle ? src.inner : 0 }; })() : {}),
+      return { kind: 'spot', angle, inner: finite(src.inner) && src.inner >= 0 && src.inner < angle ? src.inner : 0 }; })()
+      : src.kind === 'directional' ? { kind: 'directional' } : {}),
   };
 }
 
@@ -524,7 +525,7 @@ export const ONE_PLACE = {
   reason: (id, has, wants) => (has === 'light' ? `${id} is a light; a ${wants} goes on its own thing${wants === 'model' ? '' : ' under it'}`
     : has === 'mesh' ? `${id} is a mesh; a ${wants} goes on its own thing${wants === 'light' ? ' under it' : ''}` : `${id} has a model; a ${wants} ${wants === 'light' ? 'goes on its own thing under it' : 'is its own thing'}`),
   fix: (id, has, wants) => (wants === 'light' ? `create {components: {light: {…}, parent: {to: '${id}'}, transform: {pos: [0, 1, 0]}}}`
-    : wants === 'mesh' ? (has === 'light' ? 'create the mesh as its own thing and parent this light to it' : `create {id: '${id}-mesh', components: {mesh: {…}, parent: {to: '${id}'}}}, or delete its model first`)
+    : wants === 'mesh' ? (has === 'light' ? 'create the mesh as its own thing and parent this light to it' : `create {components: {mesh: {…}, parent: {to: '${id}'}}}, or delete its model first`)
     : has === 'light' ? 'create the model as its own thing and parent this light to it' : 'create the model as its own thing, or delete the mesh first'),
   socket: {
     reason: (id, comp) => `${id} is a socket (an attachment point); a ${comp} goes on its host, or on its own thing attached to it`,

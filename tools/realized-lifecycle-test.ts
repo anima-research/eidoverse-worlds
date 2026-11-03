@@ -246,6 +246,17 @@ console.log('\nrealized lifecycle — four registries, one id, every seam\n');
   noErrors('disabled light');
 }
 
+// ---- 11. (bot #260 #27) a sun is the rig's: a directional light requests no point light of its own (lightOf kept no kind)
+{
+  door('create', { id: 'sun11', components: { light: { kind: 'directional', color: 0xffffff, intensity: 3 }, transform: { pos: [0, 10, 0] } } }); await settle(); drain();
+  door('create', { id: 'lamp11', components: { light: { color: 0xffcc88, intensity: 4, range: 6 }, transform: { pos: [0, 1, 6] } } }); await settle(); drain();
+  check('(setup) the sun stands in the view as a directional light', S.state.st.entities.sun11?.light?.kind === 'directional', JSON.stringify(S.state.st.entities.sun11?.light));
+  check('(setup) a point light beside it requests its light', stub.lightRequests.has('complight:lamp11'));
+  check('a directional light requests none', !stub.lightRequests.has('complight:sun11'), JSON.stringify(stub.lightRequests.get('complight:sun11')));
+  door('delete', { id: 'sun11' }); door('delete', { id: 'lamp11' });
+  noErrors('directional light');
+}
+
 console.log(`\n${failures ? `\x1b[31m${failures} failed\x1b[0m` : '\x1b[32mall passed\x1b[0m'}\n`);
 W.close?.();
 process.exit(failures ? 1 : 0);
