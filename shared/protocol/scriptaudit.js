@@ -87,6 +87,7 @@ const readShape = (r) => ({ near: (r?.near ?? []).map((x) => [x.r, Array.isArray
 export const ARRIVAL_STAND_IN = "u-" + "a".repeat(20);
 export const ARRIVAL_STAND_IN_2 = "zq-stand-in";
 const whoReads = (r) => (r?.near ?? []).some((x) => !Array.isArray(x.ids) && x.n > 0) || (typeof r?.names === "number" && r.names > 0);
+const WHO_WHY = "its result depends on who was near or what someone is called, which the act doesn't record (only how many): it can't be re-run to the same result";
 export function auditScripts(L, getBlob, { run = null, depth: maxD = 8 } = {}) {
   const flags = [], skipped = []; let acts = 0, maxDepth = 0, reran = 0;
   L.forEach((a, seq) => {
@@ -112,24 +113,27 @@ export function auditScripts(L, getBlob, { run = null, depth: maxD = 8 } = {}) {
     const rerun = (ev) => run({ text: blob.text, self: id, key: b.script, event: ev, knobs: v.knobs ?? {}, now: a.ts, seed: b.seed, api: b.api ?? 1, st, reads: b.reads ?? { near: [], count: [], names: 0 }, limits: { wallMs: 10000 } });
     const res = rerun(event);
     if (!res.ok) { flags.push({ seq, check: "rerun", why: `the re-run failed: ${res.code}: ${res.why}` }); return; }
-    if (jcs(readShape(res.reads)) !== jcs(readShape(b.reads))) { flags.push({ seq, check: "reads", why: "the re-run asked different presence reads than the act records", want: readShape(res.reads), got: readShape(b.reads) }); return; }
+    if (jcs(readShape(res.reads)) !== jcs(readShape(b.reads))) { if (typeof b.reads?.names === "number" && b.reads.names > 0) { skipped.push({ seq, why: WHO_WHY }); return; }   // a name re-runs as null and can steer the shape (bot review #260 52); a near count can't, so a forged one stays flagged
+      flags.push({ seq, check: "reads", why: "the re-run asked different presence reads than the act records", want: readShape(res.reads), got: readShape(b.reads) }); return; }
     const want = elide(st, stampMotions(st, res.ops, a.ts));   // as the authority stamped and elided it (scriptrun)
     const outs = []; for (let i = seq + 1; i < L.length; i++) if (isE(L[i]) && L[i].cause === seq) outs.push(L[i]);
     const state = outs.find((e) => e.kind === "change");
     const got = state ? quiet(state) : [];
     const says = outs.filter((e) => e.kind === "say").map((e) => e.body?.text);
     const sameW = norm(want) === norm(got), sameS = jcs(says) === jcs(res.says), sameU = jcs(res.uses ?? []) === jcs(b.uses ?? []);
-    if (sameW && sameS && sameU) { reran++; return; }
-    if (whoReads(b.reads)) { skipped.push({ seq, why: "its result depends on who was near or what someone is called, which the act doesn't record (only how many): it can't be re-run to the same result" }); return; }
+    const bodiesOf = (r) => jcs((r.bodies ?? []).map((x) => ({ kind: x.kind, to: `body:${x.to}` }))), sameB = bodiesOf(res) === jcs(b.bodies ?? []);   // as scriptrun records them (bot review #260 32)
+    if (sameW && sameS && sameU && sameB) { reran++; return; }
+    if (whoReads(b.reads)) { skipped.push({ seq, why: WHO_WHY }); return; }
     // an arrival's mismatch on a part both stand-ins agree on is named as one (review r10 M3): two stand-ins that agree can't prove
     // it is the same for every identity, so it is never reported as plain `rerun` (a forgery): `rerun-anon` says it differs and the re-run can't know who came
     if (anonWho) { const r2 = rerun({ ...event, by: ARRIVAL_STAND_IN_2 });   // does a part depend on who came? two stand-ins agree → no
       const parts = !r2.ok || jcs(readShape(r2.reads)) !== jcs(readShape(res.reads)) ? [] : [[!sameW, "writes", norm(elide(st, stampMotions(st, r2.ops, a.ts))) === norm(want)], [!sameS, "says", jcs(r2.says) === jcs(res.says)],
-        [!sameU, "world.use calls", jcs(r2.uses ?? []) === jcs(res.uses ?? [])]].filter(([differs, , agree]) => differs && agree).map(([, name]) => name);
+        [!sameU, "world.use calls", jcs(r2.uses ?? []) === jcs(res.uses ?? [])], [!sameB, "body effects", bodiesOf(r2) === bodiesOf(res)]].filter(([differs, , agree]) => differs && agree).map(([, name]) => name);
       if (!parts.length) { skipped.push({ seq, why: "its result depends on who arrived or left, which the act doesn't record: it can't be re-run to the same result" }); return; }
       flags.push({ seq, check: "rerun-anon", why: `the re-run's ${parts.join(" and ")} differ from the log; it can't know who arrived or left (two stand-ins of different shapes agreed on ${parts.length > 1 ? "them" : "it"}), so this is a mismatch to look at, not proof of a forgery`, ...(parts.includes("writes") ? { want: want.length, got: got.length, at: state ? L.indexOf(state) : null } : {}) }); return; }
     // world.use proposals are recorded in the act (each target's outcome is its own act): a re-run must propose the same
     if (!sameU) { flags.push({ seq, check: "rerun-use", why: "the re-run's world.use calls differ from the act's" }); return; }
+    if (!sameB) flags.push({ seq, check: "rerun-body", why: "the re-run's body effects differ from the act's" });
     if (!sameW) flags.push({ seq, check: "rerun", why: "the re-run's writes differ from the logged batch", want: want.length, got: got.length, at: state ? L.indexOf(state) : null });
     if (!sameS) flags.push({ seq, check: "rerun-say", why: "the re-run's says differ from the logged ones" });
   });

@@ -122,6 +122,8 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["world.use stays inside scope.ids", "authority/scriptrun.js", "for (const u of uses) if (!cap.ids.includes(u.id)) return mark(", "for (const u of uses) if (false) return mark(", ["W2"]],
   ["world.use meets the target's who as the sponsor", "authority/use.js", "if (h?.who && !admits(ctx.st, ctx.asker ?? ctx.actor, h.who))", "if (h?.who && !admits(ctx.st, ctx.actor, h.who))", ["W3"]],
   ["the script act records its world.use calls", "authority/scriptrun.js", ", ...(uses.length ? { uses } : {}) } };", " } };", ["W1"]],
+  ["the auditor compares body effects", "scriptaudit.js", "if (!sameB) flags.push(", "if (false) flags.push(", ["C1b"]],
+  ["a name-steered read shape is skipped", "scriptaudit.js", "{ if (typeof b.reads?.names === \"number\" && b.reads.names > 0) { skipped.push(", "{ if (false) { skipped.push(", ["D4b"]],
   ["the auditor compares world.use calls", "scriptaudit.js", "if (!sameU) { flags.push({ seq, check: \"rerun-use\"", "if (false) { flags.push({ seq, check: \"rerun-use\"", ["W1"]],
   ["a who-dependent world.use is flagged, not skipped", "scriptaudit.js", "if (whoReads(b.reads)) { skipped.push(", "if (sameU && whoReads(b.reads)) { skipped.push(", ["W1b"]],
   ["the arrival's stand-ins compare their uses", "scriptaudit.js", "[!sameU, \"world.use calls\", jcs(r2.uses ?? []) === jcs(res.uses ?? [])]", "[!sameU, \"world.use calls\", true]", ["W1c", "W1d"]],
@@ -962,6 +964,15 @@ console.log(JSON.stringify({ platform: process.platform, available: SANDBOX.avai
       return { r: st(s, r), open: comp(s, "gate", "openable")?.open, uses: act?.body?.uses, use: use ? [use.cause === r.script?.act, use.body?.request?.id, use.body?.request?.action, use.body?.sponsor] : null, change: change?.actor ?? null,
         audit: `${A.reran}/${A.acts} ${A.flags.map((f: any) => f.check).join(",")}`, forged: AU.auditScripts(forged, s.w().getBlob, { run: SB.runScript }).flags.map((f: any) => f.check) }; },
     good: (o) => o.r === "ran" && o.open === true && JSON.stringify(o.uses) === '[{"id":"gate","action":"open"}]' && JSON.stringify(o.use) === '[true,"gate","open","bob"]' && o.change === "script:lever" && o.audit === "1/1 " && o.forged.includes("rerun-use") },
+  { id: "D4b", what: "a script whose read SHAPE turns on a name (an unrecorded identity) is skipped as depending on who was near, never flagged `reads` (bot review #260 52)", run(s) { cast(s);
+      s.call("bob", "create", { id: "dial", model: "crate", place: { at: [0, 0] } });
+      install(s, "bob", "dial", "who", onUse(`const near = world.near(5); const n = near.length ? world.name(near[0]) : null;\nif (n) { world.count(); world.set("self", "t/seen", 1); }`), { scope: { ids: "self", comps: ["t/seen"] }, on: ["use"] });
+      s.call("bob", "set", { id: "dial", component: "reactions", value: { look: { kind: "script", script: "who" } } });
+      s.call("vic", "move", { to: [0, 0, 1] }); const r = useSteady(s, "vic", { id: "dial", action: "look" });
+      if (!AU) return { absent: true };
+      const A = AU.auditScripts(s.entries(), s.w().getBlob, { run: SB.runScript });
+      return { r: st(s, r), seen: comp(s, "dial", "t/seen"), flags: A.flags.map((f: any) => f.check), skipped: A.skipped?.length ?? null, why: A.skipped?.[0]?.why ?? null }; },
+    good: (o) => o.r === "ran" && o.seen === 1 && o.flags.length === 0 && o.skipped === 1 && /who was near/.test(o.why) },
   { id: "W1b", what: "world.use whose target turns on who was near (a name read): the auditor SKIPS its act as depending on who was near, as D4 does for a set, and never flags it rerun-use, which reads as a forgery (review of #260)", run(s) { cast(s);
       for (const [id, x] of [["gatea", 10], ["gateb", 14]] as const) { s.call("bob", "create", { id, model: "door", components: { openable: { open: false } }, place: { at: [x, 0] } });
         s.call("bob", "set", { id, component: "reactions", value: { open: { kind: "toggle", component: "openable", field: "open" } } }); }
@@ -1169,6 +1180,16 @@ console.log(JSON.stringify({ platform: process.platform, available: SANDBOX.avai
       const act = s.entries().findLast((e: any) => e.actor === "script:trap" && e.kind === "act");
       return { r1: st(s, r1), scripted1, r2: st(s, r2), recorded: act?.body?.bodies, tumble: !!s.w().presence.bodies.vic?.tumble }; },
     good: (o) => o.r1 === "refused consent" && o.scripted1 === 0 && o.r2 === "ran" && JSON.stringify(o.recorded) === '[{"kind":"shove","to":"body:vic"}]' && o.tumble },
+  { id: "C1b", what: "the auditor compares body effects (bot review #260 32): a shove re-runs to the act's record; a forged target or a dropped effect is flagged rerun-body", run(s) { cast(s);
+      s.call("bob", "create", { id: "trap", model: "crate", place: { at: [0, 0] } });
+      install(s, "bob", "trap", "spring", onUse(`world.shove(e.by);`), { scope: { ids: "self", comps: [], bodies: ["shove"] }, on: ["use"] });
+      s.call("bob", "set", { id: "trap", component: "reactions", value: { step: { kind: "script", script: "spring" } } });
+      s.call("vic", "move", { to: [0, 0, 1] }); s.call("vic", "consent", { move: true }); const r = s.call("vic", "use", { id: "trap", action: "step" });
+      if (!AU) return { absent: true };
+      const L = s.entries(), audit = (f: (b: any) => void) => { const C = F.readLog(Buffer.from(L.map((e: any) => JSON.stringify(e)).join("\n") + "\n")); f(C.find((e: any) => e.actor === "script:trap" && e.verb === "script").body);
+        const A = AU.auditScripts(C, s.w().getBlob, { run: SB.runScript }); return `${A.reran}/${A.acts} ${A.flags.map((x: any) => x.check).join(",")}`; };
+      return { r: st(s, r), plain: audit(() => {}), other: audit((b) => { b.bodies[0].to = "body:ann"; }), none: audit((b) => { delete b.bodies; }) }; },
+    good: (o) => o.r === "ran" && o.plain === "1/1 " && o.other === "0/1 rerun-body" && o.none === "0/1 rerun-body" },
   { id: "C2", what: "bodies need scope.bodies: a script that shoves without declaring it is refused (scope), whatever the target allows", run(s) { cast(s);
       s.call("bob", "create", { id: "trap", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "trap", "spring", onUse(`world.shove(e.by);`), { scope: { ids: "self", comps: [] }, on: ["use"] });
