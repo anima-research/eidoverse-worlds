@@ -37,7 +37,7 @@ GlobalRegistrator.register();
 
 // a 2D context that records what the painter asked of it, tracking the transform so a stroke's
 // width is measured in CANVAS px (icons.js strokes inside a scale)
-type Rec = { texts: { s: string; px: number; color?: string }[]; strokes: number[]; hairlines: number[][]; strokeColors?: string[] };
+type Rec = { texts: { s: string; px: number; color?: string }[]; strokes: number[]; hairlines: number[][]; strokeColors?: string[]; fills?: string[] };
 function recorder(rec: Rec) {
   let sc = 1; const stack: number[] = [];
   const ctx: any = {
@@ -47,7 +47,7 @@ function recorder(rec: Rec) {
     fillRect(_x: number, _y: number, w: number, h: number) { if (Math.min(Math.abs(w), Math.abs(h)) > 0 && Math.min(Math.abs(w), Math.abs(h)) < 2) rec.hairlines.push([_x, _y, w, h]); },
     strokeRect() { rec.strokes.push(ctx.lineWidth * sc); },
     stroke() { rec.strokes.push(ctx.lineWidth * sc); (rec.strokeColors ??= []).push(String(ctx.strokeStyle)); },
-    fill() {}, beginPath() {}, closePath() {}, moveTo() {}, lineTo() {}, arcTo() {}, arc() {}, roundRect() {},
+    fill(p?: any) { if (p?.d) (rec.fills ??= []).push(`${ctx.fillStyle} ${p.d.slice(0, 12)}`); }, beginPath() {}, closePath() {}, moveTo() {}, lineTo() {}, arcTo() {}, arc() {}, roundRect() {},
     fillText(s: string) { rec.texts.push({ s: String(s), px: parseFloat(/(\d+(?:\.\d+)?)px/.exec(ctx.font)?.[1] ?? "0") * sc, color: String(ctx.fillStyle) }); },
     measureText(t: string) { const px = parseFloat(/(\d+(?:\.\d+)?)px/.exec(ctx.font)?.[1] ?? "17"); return { width: String(t).length * px * 0.55 }; },
   };
@@ -209,14 +209,17 @@ console.log("\nE2. every glyph edit chrome names exists (a missing icon paints N
   for (const m of src("editlayout.js").matchAll(/icon: '([A-Za-z0-9]+)'|iconSvg\('([A-Za-z0-9]+)'/g)) names.add(m[1] ?? m[2]);
   for (const m of src("structure_ui.js").matchAll(/'([A-Za-z0-9]+)'\],|, '([A-Za-z0-9]+)'\);/g)) names.add(m[1] ?? m[2]);
   for (const m of src("widgets.js").matchAll(/iconSvg\(r\.locked \? '([A-Za-z]+)' : '([A-Za-z]+)'/g)) { names.add(m[1]); names.add(m[2]); }
-  // the Hierarchy's environment rows (editpanels ENV) are drawn only by the DOM tree, which takes a glyph from any of the
-  // three sets; every other name can reach a canvas painter, which strokes the Lucide set alone
-  const env = /const ENV = \[([\s\S]*?)\];/.exec(src("editpanels.js"))?.[1] ?? "";
-  const domOnly = new Set<string>([...env.matchAll(/icon: '([A-Za-z0-9]+)'/g)].map((m) => m[1]));
-  for (const m of src("editpanels.js").replace(env, "").matchAll(/icon: '([A-Za-z0-9]+)'/g)) names.add(m[1]);   // the Create panel's buttons
-  for (const n of domOnly) names.add(n);
-  const missing = [...names].filter((n) => domOnly.has(n) ? !(icons.has(n) || icons.hasFill(n) || icons.hasLine(n)) : !icons.has(n));
-  check(`all ${names.size} named glyphs are in icons.js (the ${domOnly.size} DOM-only environment rows in any set)`, names.size >= 20 && domOnly.size >= 4 && missing.length === 0, "missing: " + missing.join(", ") + " · seen: " + [...names].join(","));
+  // the Hierarchy's environment rows (editpanels ENV) reach the canvas too (the World card's remove buttons, in VR); the
+  // painter strokes the Lucide set and fills a Phosphor glyph (bot #313), so any of the three sets will do
+  for (const m of src("editpanels.js").matchAll(/icon: '([A-Za-z0-9]+)'/g)) names.add(m[1]);   // the Create panel's buttons and the ENV rows
+  const missing = [...names].filter((n) => !(icons.has(n) || icons.hasFill(n) || icons.hasLine(n)));
+  check(`all ${names.size} named glyphs are in icons.js (any set)`, names.size >= 24 && missing.length === 0, "missing: " + missing.join(", ") + " · seen: " + [...names].join(","));
+  // …and a Phosphor-only glyph on an edit button is PAINTED (filled in the button's colour), not silently skipped (bot #313)
+  const env = [...(/const ENV = \[([\s\S]*?)\];/.exec(src("editpanels.js"))?.[1] ?? "").matchAll(/icon: '([A-Za-z0-9]+)'/g)].map((m) => m[1]).filter((n) => !icons.has(n));
+  REC = { texts: [], strokes: [], hairlines: [] }; const c = document.createElement("canvas");
+  renderCanvas(c, env.map((ic, i) => ({ t: "btn", k: `envdel-${i}`, label: `remove ${ic}`, icon: ic })) as any, { width: 522, title: "world", theme: "edit" });
+  const fills = REC.fills ?? [];
+  check(`the ${env.length} Phosphor-only ENV glyphs each fill a path on the edit painter (${fills.length} fills, in the button's colour)`, env.length >= 4 && fills.length >= env.length && fills.every((f) => f.startsWith(EDIT.dim + " M")), fills.join(" · ") || "no fill recorded");
 }
 
 console.log("\nF. text on its surface meets 4.5:1:");
