@@ -31,6 +31,13 @@ export const BOUND_BY_NAME = "the name was typed, so a guest who wore it may hav
 export const PENDING_WORDS = "pre-account ban: bind to a person (global-ban <the name> binds whoever wears it here) or lift (global-unban <the name>)";
 /** A ban or sanction file that couldn't be read at boot: kept as it was, never saved over (bot review #260 17; the ledger's rule). */
 const unreadable = new Set<string>();
+/** The ban or sanction files that couldn't be read at boot: while any is, the door is LOCKED (access.ts entryFor; R 11-03,
+ *  a fail-safe default like a wiki's maintenance mode): owners, operators and role holders get in, everyone else is refused. */
+export const unreadableBanFiles = (): string[] => [...unreadable];
+/** The refusal a locked door gives, in plain words. */
+export const LOCKED_WHY = "this server can't read its ban list right now, so only its owner, operators and role holders can join until it's fixed";
+/** One line for the boot log and the operator's list while the door is locked, else null. */
+export const lockedLine = (): string | null => unreadable.size ? `LOCKED: ${LOCKED_WHY} (${[...unreadable].join(", ")}; fix or move aside and restart)` : null;
 const keptAside = (f: string, what: string) => { if (!unreadable.has(f)) return null; const why = `${f} couldn't be read at boot and is kept as it was; fix or move it aside and restart`; console.log(`[mod] ${what} not saved: ${why}`); return why; };
 /** The words a reply and the moderated line carry when a sanction's file wasn't written (bot #260 #146): it holds in memory only. */
 export const notPersisted = (why: string) => `NOT persisted: ${why} — it ends at restart`;
@@ -78,12 +85,12 @@ try {
   }
 } catch (e) { unreadable.add(BANS_FILE); console.log(`[mod] WARNING global ban restore failed: ${e}. ${BANS_FILE} is kept as it was and not saved over; its bans aren't enforced until it is fixed and the server restarted`); }
 
-/** The operator's ban list in words (global-bans): the enforced bans, then the pre-account ones, listed and never enforced. */
-export function globalBansText(map: Record<string, BanRec> = globalBans, pending: Record<string, BanRec & { why: string }> = pendingBans): string {
+/** The operator's ban list in words (global-bans): the lock if any, the enforced bans, then the pre-account ones, listed and never enforced. */
+export function globalBansText(map: Record<string, BanRec> = globalBans, pending: Record<string, BanRec & { why: string }> = pendingBans, locked: string | null = lockedLine()): string {
   const day = (ts: number) => new Date(ts).toISOString().slice(0, 10);
   const list = Object.entries(map).map(([k, b]) => `${b.name ?? k}${b.account ? ` (${b.account})` : b.addr ? " (a guest's connection)" : ""} — by ${b.by}, ${day(b.ts)}${b.until && b.account ? `, until ${day(b.until)}` : ""}${b.reason ? `: ${b.reason}` : ""}${b.boundFrom ? ` [bound by name from ${b.boundFrom}; check it: ${BOUND_BY_NAME}]` : ""}`);
   const pre = Object.values(pending).map((b) => `${b.name} — ${PENDING_WORDS} (${b.why}); by ${b.by}, ${day(b.ts)}${b.reason ? `: ${b.reason}` : ""}`);
-  return [list.length ? `global bans (${list.length}):\n${list.join("\n")}` : "no global bans", ...(pre.length ? [`pre-account bans, not enforced (${pre.length}):\n${pre.join("\n")}`] : [])].join("\n");
+  return [...(locked ? [locked] : []), list.length ? `global bans (${list.length}):\n${list.join("\n")}` : "no global bans", ...(pre.length ? [`pre-account bans, not enforced (${pre.length}):\n${pre.join("\n")}`] : [])].join("\n");
 }
 /** The pre-account bans filed under this name (any case, by `fold`), removed: an unban lifts them, a ban that binds replaces them. */
 export function takePending(id: string, fold: (s: string) => string, pending: Record<string, BanRec & { why: string }> = pendingBans): string[] {
@@ -140,6 +147,7 @@ try {
     for (const [k, s] of Object.entries(raw)) if (s && s.kind === "mute" && typeof s.addr === "string" && typeof s.world === "string" && typeof s.actor === "string" && s.until > Date.now()) addrSanctions[k] = { ...s, ids: Array.isArray(s.ids) ? s.ids : [] };
   }
 } catch (e) { unreadable.add(ADDR_SANCTIONS_FILE); console.log(`[mod] WARNING address sanction restore failed: ${e}. ${ADDR_SANCTIONS_FILE} is kept as it was and not saved over; its sanctions aren't enforced until it is fixed and the server restarted`); }
+if (lockedLine()) console.log(`[mod] WARNING ${lockedLine()}`);
 /** The address sanctions in force for a guest joining `world` from `addr`. */
 export function addrSanctionsFor(world: string, addr: string | null | undefined, now = Date.now()): AddrSanction[] {
   if (!addr) return [];

@@ -617,5 +617,37 @@ const gonePid = await exitedPid();
     "B14 in a world that can't log a grant's end (expire-roles writes nothing), the sweep still removes whoever's timed grant has passed; a live grant stays", o?.sweep);
   if (caseless) ok(o?.exists?.lower === true && o?.exists?.upper === false, "B17 on a case-insensitive filesystem a world is served in its own case only: keep exists, KEEP does not", o?.exists);
   else console.log(`  skip B17: ${PW} is case-sensitive, so "KEEP" can't open keep/ here (run with PROTOCOL_SCRATCH on a case-insensitive filesystem)`); }
+// ---- A13n (bot review #260 17, R 11-03 "b"): a ban or sanction file the server can't read LOCKS the door: the owner, an operator
+// and a role holder still join; a stranger and an unlisted account are refused with the plain reason; the operator's list says LOCKED
+{ const BJ = path.join(W, ".bans.json"), SJ = path.join(W, ".addr-sanctions.json"), torn = '{"acct:u-aaaaaaaaaaaaaaaaaaaa": {"by": "op", "ts": 1, "acc';
+  ok(tool(["found", "lockt", "--owner", "Ann"]).code === 0, "(A13n setup) found lockt, Ann owns it, open to anyone");
+  const LOCKED = /can't read its ban list right now/;
+  const run = async (which) => {
+    fs.rmSync(BJ, { force: true }); fs.rmSync(SJ, { force: true }); fs.writeFileSync(which === "bans" ? BJ : SJ, torn);
+    const s = await start({ SERVER_OPERATORS: "agent:token:fen" });
+    const ann = await sock(s.port); const ja = await ann.join("lockt", "Ann");
+    const listed = ja.snapshot ? (await ann.req("set", { id: "@world", component: `roles:${ids.Rowan}`, value: { role: "member" } })).ok : false;
+    const row = await sock(s.port); const jr = await row.join("lockt", "Rowan", { agentToken: "tok-rowan" });
+    const fen = await sock(s.port); const jf = await fen.join("lockt", "Fen", { agentToken: "tok-fen" });
+    const carl = await sock(s.port); const jc = await carl.join("lockt", "Carl");
+    const moss = await sock(s.port); const jm = await moss.join("lockt", "Moss", { agentToken: "tok-moss" });
+    const k = fen.msgs.length; fen.raw({ type: "global-bans" });
+    await tryUntil("the operator's ban list answers", () => fen.msgs.length > k, { ms: 3000, step: 50 });
+    const said = fen.msgs.slice(k).map((m) => m.text ?? m.error ?? "").join("\n");
+    const boot = fs.readFileSync(s.log, "utf8");
+    for (const c of [ann, row, fen, carl, moss]) c.close();
+    try { s.proc.kill(); await s.proc.exited; } catch {}
+    return { owner: !!ja.snapshot, listed, roleHolder: !!jr.snapshot, operator: !!jf.snapshot, stranger: { in: !!jc.snapshot, closed: carl.closed, why: jc.errors }, member: { in: !!jm.snapshot, closed: moss.closed, why: jm.errors },
+      list: /LOCKED/.test(said), boot: /WARNING LOCKED/.test(boot) }; };
+  const refused = (x) => !x.in && x.closed === 4010 && LOCKED.test(x.why.join(" "));
+  const b = await run("bans");
+  ok(b.owner && b.listed && b.roleHolder && b.operator && refused(b.stranger) && refused(b.member) && b.list && b.boot,
+    "A13n an unreadable .bans.json locks the door: the owner, a role holder and an operator join; a guest and an unlisted account are refused (4010) with the plain reason; the boot log and global-bans say LOCKED", b);
+  const a = await run("sanctions");
+  ok(a.owner && a.roleHolder && a.operator && refused(a.stranger) && a.list, "A13n …and an unreadable .addr-sanctions.json alone locks it the same way", a);
+  fs.rmSync(BJ, { force: true }); fs.rmSync(SJ, { force: true });
+  const s = await start(); const carl = await sock(s.port); const jc = await carl.join("lockt", "Carl");
+  ok(!!jc.snapshot, "A13n …and with both files readable (absent) the stranger joins the open world", jc.errors);
+  carl.close(); try { s.proc.kill(); await s.proc.exited; } catch {} }
 console.log(`[access-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
