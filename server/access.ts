@@ -23,7 +23,7 @@
 import { statSync } from "node:fs";
 import { join } from "node:path";
 import { WORLDS_DIR, JOIN_TOKEN } from "./config.ts";
-import { globalBans, findBan } from "./moderation.ts";
+import { globalBans, findBan, unreadableBanFiles, LOCKED_WHY } from "./moderation.ts";
 import { isOperator } from "./operators.ts";
 import { sessionOfRequest, accountOf } from "./auth.ts";
 import { directoryFor } from "./directory.ts";
@@ -51,7 +51,7 @@ export type Who = { account: string | null; actorId?: string | null; trustedRend
 /** `mod`: an unloaded world's moderator log, read from disk with its door (a loaded world's own log is the truth). */
 export type Door = { name: string; wc: Record<string, any>; label: string; world?: World; mod?: any[] };
 export type EntryMode = "embody" | "watch";
-export type Refusal = { code: number; reason: "banned" | "no-access" | "full" | "age"; why: string; until?: number };
+export type Refusal = { code: number; reason: "banned" | "no-access" | "full" | "age" | "locked"; why: string; until?: number };
 
 const wcOfWorld = (w: World): Record<string, any> => (w.log?.live?.state?.().entities?.["@world"]?.c ?? {}) as Record<string, any>;
 
@@ -128,6 +128,8 @@ export function entryFor(door: Door, who: Who, mode: EntryMode, { now = Date.now
   // authority's sweep writes its end (expire-roles) — so an unloaded world's HTTP reads and a join don't honour it indefinitely
   const listed = !!actorId && listedIn(door.wc, actorId, now);
   const bypass = isOperator(account) || (listed && (isOwner(eff) || MOD_POWERS.some((p: string) => eff?.permissions?.includes(p))));
+  // a ban file the server couldn't read: the door is locked to everyone it doesn't know (moderation.ts unreadableBanFiles)
+  if (unreadableBanFiles().length && !isOperator(account) && !listed) return { code: ACCESS_CLOSE, reason: "locked", why: LOCKED_WHY };
   const e = entryOf(door.wc, { actor: actorId ?? undefined, anon: !account, bypass, trustedRenderer: !!who.trustedRenderer }, door.name, now);
   if (e.may === "none" || (mode === "embody" && e.may === "watch")) return { code: ACCESS_CLOSE, reason: "no-access", why: e.why ?? `"${door.name}" isn't open to you` };
   if (bypass) return null;
