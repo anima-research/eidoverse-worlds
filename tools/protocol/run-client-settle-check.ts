@@ -33,4 +33,15 @@ for (const p of fs.readFileSync(pids, "utf8").split("\n").filter(Boolean)) try {
 ok(finished, `run-client finished while both grandchildren still held the pipes (${s.toFixed(1)} s; they live 90 s)`, out.slice(-400));
 ok(/^ok\s+\S*a-holds-pipes-passes-test\.ts/m.test(out), "the file that exited 0 is a pass", out.slice(-400));
 ok(/^SLOW\s+\S*b-holds-pipes-hangs-test\.ts/m.test(out), "the file that hung is a timeout", out.slice(-400));
+// --import-only: a file whose top-level await never resolves is a timeout, not loaded; a missing package is a red under
+// --strict-env (the gate's client-tools row); either fails the run (bot review #260 187)
+const dir2 = path.join(root, "imports"); fs.mkdirSync(dir2);
+fs.writeFileSync(path.join(dir2, "c-hangs-at-import-test.ts"), `await new Promise(() => {});\n`);
+fs.writeFileSync(path.join(dir2, "d-missing-package-test.ts"), `import "no-such-package-zz-${Date.now()}";\n`);
+const rc2 = Bun.spawnSync([process.execPath, path.join(ENGINE, "tools/run-client.ts"), "--dir", dir2, "--jobs", "1", "--timeout", "3", "--import-only", "--strict-env"],
+  { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, timeout: 45_000 });
+const out2 = rc2.stdout.toString() + rc2.stderr.toString();
+ok(/^SLOW\s+\S*c-hangs-at-import-test\.ts/m.test(out2), "--import-only: a hung top-level await is a timeout, not loaded", out2.slice(-400));
+ok(/^RED\s+\S*d-missing-package-test\.ts/m.test(out2), "--strict-env: a missing package is a red, not an env note", out2.slice(-400));
+ok(rc2.exitCode === 1, "…and the import-only run exits 1 on them", { code: rc2.exitCode });
 console.log(`[run-client-settle] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
