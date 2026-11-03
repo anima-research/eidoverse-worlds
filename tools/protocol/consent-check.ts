@@ -83,6 +83,6 @@ ok(decide(P, "u-bbbbbbbbbbbbbbbbbbbb", "u-alice", "shove").mode === "deny", "C5 
     if (shorts === 0 && tmpFds.has(fd) && typeof b !== "string" && len > 1) { shorts++; return o.write.call(fs, fd, b, off, len - 1, ...r); } return o.write.call(fs, fd, b, off, len, ...r); };
   let set: any; try { now += 1000; set = request(w, A, "consent", { block: B }); } finally { Object.assign(fs, { openSync: o.open, fsyncSync: o.sync, writeSync: o.write }); }
   let saved: any = null; try { saved = JSON.parse(fs.readFileSync(path.join(dir, CONSENT_FILE), "utf8")); } catch { /* torn or absent */ }
-  ok(set?.ok && dirSynced >= 1, "C12 a block's consent file: its directory is synced after the rename", { set: set?.ok, dirSynced });
+  ok(set?.ok && (process.platform === "win32" ? dirSynced === 0 : dirSynced >= 1), "C12 a block's consent file: its directory is synced after the rename (Windows can't sync a directory)", { set: set?.ok, dirSynced });
   ok(set?.ok && shorts === 1 && Object.keys(saved?.consent?.[A]?.block ?? {}).includes(B), "C12b …and a short write still lands the whole file (the injected short write is taken)", { shorts, saved }); }
 console.log(`[consent-check] ${fails ? fails + " failed" : "all pass"}`); process.exit(fails ? 1 : 0);

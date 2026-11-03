@@ -454,7 +454,7 @@ try {
     sg.sceneSelect('syb'); await wait(300); const v1 = b.selectionView(); const cb = new T.Box3().setFromObject(w.entities.get('syb')).getCenter(new T.Vector3());
     const inBox = (v, p) => p.x >= v.min[0] - 0.01 && p.x <= v.max[0] + 0.01 && p.z >= v.min[2] - 0.01 && p.z <= v.max[2] + 0.01;
     // SY3: an orbiting thing: its box follows it
-    sg.sceneSelect('syorb'); const follow = []; for (let i = 0; i < 6; i++) { await wait(200); const v = b.selectionView(); const c = new T.Box3().setFromObject(w.entities.get('syorb')).getCenter(new T.Vector3()); follow.push(inBox(v, c) && v.visible); }
+    sg.sceneSelect('syorb'); for (let k = 0; k < 20 && !(b.selectionView().visible && b.selectionView().id === 'syorb'); k++) await wait(100); const follow = []; for (let i = 0; i < 6; i++) { await wait(200); const v = b.selectionView(); const c = new T.Box3().setFromObject(w.entities.get('syorb')).getCenter(new T.Vector3()); follow.push(inBox(v, c) && v.visible); }
     // SY2: an edit, an undo, then a click on empty space deselects everywhere
     sg.sceneSelect('syb'); await wait(200); await n.sendRequest('set', { id: 'syb', component: 'transform', value: { pos: [${at[0]} + 2.3, 0, ${at[1]}], q: [0, 0, 0, 1], scale: [0.25, 0.25, 0.25] } }); await wait(400);
     await b.undo(); await wait(600);
