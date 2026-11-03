@@ -27,7 +27,8 @@ if ! git diff --quiet "$before" "$after" -- mcpl/package.json mcpl/bun.lock mcpl
   (cd mcpl && "$BUN" install)
 fi
 # root deps power server/optimize.ts (the store's GLB diet); the sequencer
-# itself stays dependency-free, so a failed install degrades optimization only
+# itself stays dependency-free. Under set -e a failed install stops this
+# script here, before the chat bridge's install and the restarts.
 if ! git diff --quiet "$before" "$after" -- package.json bun.lock 2>/dev/null; then
   "$BUN" install
 fi
@@ -38,6 +39,17 @@ if ! git diff --quiet "$before" "$after" -- tools/chatbridge/package.json tools/
 fi
 sudo systemctl try-restart eido-chatbridge 2>/dev/null || true
 
+# An in-place install keeps ndarray-pixels' own copy of sharp after the
+# lockfile stops listing it, and optimize.ts loads that copy whenever it
+# exists (getSharp), so the server would keep an old sharp. Whatever deploy
+# left one, it goes here, while eidoverse is stopped: a running optimize pass
+# already holds ndarray-pixels' copy, and resolving sharp after the removal
+# would load a second libvips.
+if [ -d node_modules/ndarray-pixels/node_modules/sharp ] \
+  && ! grep -q '"ndarray-pixels/sharp"' bun.lock; then
+  sudo systemctl stop eidoverse
+  rm -rf node_modules/ndarray-pixels/node_modules/sharp
+fi
 sudo systemctl restart eidoverse eidoverse-mcpl
 sleep 2
 systemctl is-active eidoverse eidoverse-mcpl
