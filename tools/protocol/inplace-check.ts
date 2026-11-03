@@ -272,6 +272,9 @@ const NO_KEY = (out: string) => /nothing can yet bind a key to the old world's o
   ok(threw && /approval is refused: the operator's countersignature doesn't verify/.test(String(threw.message)) && !fs.existsSync(dst), "IP29 translateV1World itself refuses a bad countersignature before writing anything (the writer doesn't trust the CLI's check)", String(threw?.message).slice(0, 300));
   let threwO: any = null; try { translateV1World(src, dst, { name: "sig-dst", approval: signedOwner }); } catch (x) { threwO = x; }
   ok(threwO && /approval is refused: .*carries an owner's signature/.test(String(threwO.message)) && !fs.existsSync(dst), "IP29 translateV1World refuses an approval carrying an owner's signature handed straight to it (no CLI), before writing anything", String(threwO?.message).slice(0, 300));
+  let threwF: any = null; try { translateV1World(src, dst, { name: "sig-dst", approval: good }); } catch (x) { threwF = x; }   // bot review #368
+  ok(threwF && /approval is refused: countersigned by ed25519:.*not this host's operator key/.test(String(threwF.message)) && !/approves report/.test(String(threwF.message)) && !fs.existsSync(dst),
+    "IP29 translateV1World refuses an approval whose countersignature verifies but is by a key other than this host's custody operator key (a library caller can't sign with its own key), before the report hash is compared; nothing written", String(threwF?.message).slice(0, 300));
   let threwK: any = null; try { translateV1World(src, dst, { name: "sig-dst", founderKey: KEY, approval: good }); } catch (x) { threwK = x; }
   ok(threwK && /takes no founder key/.test(String(threwK.message)) && /nothing can yet bind a key to the old world's owner/.test(String(threwK.message)) && !fs.existsSync(dst),
     "IP29 translateV1World refuses a founder key handed straight to it (no CLI), even with a good operator-only approval: nothing written", String(threwK?.message).slice(0, 300));
