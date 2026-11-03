@@ -82,7 +82,7 @@ try {
     r6.scale === 1.5 && r6.levels.some((l: any) => Math.abs(l.y - 0.45) < 0.05) && r6.levels.some((l: any) => Math.abs(l.y - 4.95) < 0.05) && !!room(r6) && Math.abs(room(r6).min[0] - room(r1).min[0]) < 0.2,
     JSON.stringify({ levels: r6.levels, room15: room(r6), room1: room(r1) }).slice(0, 300));
   const saidForced = await tool("measure", { check: true,  id: "forced" });
-  check("...and on one spawned collide: \"box\": solid, for that reason", /SOLID — spawned as a box/.test(saidForced) && /collide: "box"/.test(saidForced), saidForced.slice(0, 300));
+  check("...and on one spawned collider.shape \"box\": solid, for that reason", /SOLID — spawned as a box/.test(saidForced) && /collider.shape "box"/.test(saidForced), saidForced.slice(0, 300));
   const saidBad = await tool("measure", { check: true,  lib: bad.path });
   check("...and the problems, for a library path", /Problems:\n  - .*narrower than a body/.test(saidBad), saidBad.slice(0, 400));
   // review r3 F1: the door is public, so new work is rate-limited per address (a cached answer never is)

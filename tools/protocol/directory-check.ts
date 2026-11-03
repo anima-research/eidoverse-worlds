@@ -5,7 +5,7 @@ import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writer
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { directoryAt, directoryFor, isMinted, accountTag, foldName } from "../../server/directory.ts";
+import { directoryAt, directoryFor, isMinted, accountTag, foldName, lockFor } from "../../server/directory.ts";
 import { CUSTODY_FILE, DIRECTORY_FILE, OLD_NAMES, custodyFileIn } from "../../server/keyfiles.ts";
 import { custodyAt } from "../../server/custody.ts";
 import { openLive } from "../../server/livehost.ts";
@@ -583,6 +583,10 @@ process.stdout.write(directoryAt(${JSON.stringify(f)}, slow).resolve({ sub: "hum
   const onDisk = Object.entries(JSON.parse(fs.readFileSync(f, "utf8")).ids).filter(([, e]: any) => e.subs.includes("human:race")).map(([id]) => id);
   ok(ids.every((id) => isMinted(id)) && new Set(ids).size === 1 && onDisk.length === 1 && onDisk[0] === ids[0] && !fs.existsSync(`${f}.lock`),
     "DW19 four processes that miss on one account at once mint one id between them, the file holds it, and the lock is let go", { ids, onDisk }); }
+// DW19b: a lock file still empty (its holder between create and pid write) is not taken as dead: the next writer waits it out
+{ const f = path.join(tmp, "birth", ".directory.json"); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(`${f}.lock`, "");
+  const t0 = Date.now(); lockFor(f)(() => 0); const waited = Date.now() - t0;
+  ok(waited >= 1000, "DW19b an empty lock file (a holder mid-write) is waited out, not deleted at once", { waited }); }
 // DW20: the file is replaced durably: the temp synced before its rename, the directory after it
 { const f = path.join(tmp, "dur", ".directory.json"); const d = directoryAt(f); d.resolve({ sub: "human:first", name: "First" });
   const o = { open: fs.openSync, sync: fs.fsyncSync }; const what = new Map<number, string>(); const synced: string[] = [];

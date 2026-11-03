@@ -174,7 +174,7 @@ function worldIdsIn(worldsDir: string): string[] {
 
 /** Run `f` holding `<file>.lock` (O_EXCL: another process writing the same directory waits), re-entrant within this process. A lock
  *  whose holder is gone (its pid no longer runs, or older than STALE_MS) is taken over; one held past WAIT_MS throws. */
-const WAIT_MS = 10_000, STALE_MS = 60_000, held = new Map<string, number>();
+const WAIT_MS = 10_000, STALE_MS = 60_000, BIRTH_MS = 1500, held = new Map<string, number>();
 const wait = new Int32Array(new SharedArrayBuffer(4));
 export function lockFor(file: string) {
   const lock = `${file}.lock`;
@@ -183,9 +183,11 @@ export function lockFor(file: string) {
     for (const until = Date.now() + WAIT_MS; ;) {
       try { const fd = fs.openSync(lock, "wx", 0o600); fs.writeSync(fd, String(process.pid)); fs.closeSync(fd); return; }
       catch (e: any) { if (e?.code !== "EEXIST") throw e; }
-      let pid = NaN, age = 0; try { pid = Number(fs.readFileSync(lock, "utf8")); age = Date.now() - fs.statSync(lock).mtimeMs; } catch { continue; }   // gone meanwhile: try again
+      let pid = NaN, age = 0; try { const t = fs.readFileSync(lock, "utf8").trim(); pid = t ? Number(t) : NaN; age = Date.now() - fs.statSync(lock).mtimeMs; } catch { continue; }   // gone meanwhile: try again
       const alive = Number.isSafeInteger(pid) && pid > 0 && pid !== process.pid && (() => { try { process.kill(pid, 0); return true; } catch (x: any) { return x?.code === "EPERM"; } })();
-      if (!alive || age > STALE_MS) { try { fs.unlinkSync(lock); } catch { /* another took it over */ } continue; }
+      // an empty file is a holder between its create and its pid write, not a dead one: it's taken over only once stale
+      const writing = !Number.isSafeInteger(pid) || pid <= 0 ? age < BIRTH_MS : false;
+      if ((!alive && !writing) || age > STALE_MS) { try { fs.unlinkSync(lock); } catch { /* another took it over */ } continue; }
       if (Date.now() > until) throw new Error(`${file}: another process (pid ${pid}) has held ${path.basename(lock)} for ${Math.round(age / 1000)} s; nothing was written`);
       Atomics.wait(wait, 0, 0, 5);
     }

@@ -108,7 +108,10 @@ const LIBRARY_PIN = "9acc1528b2febac11338107645ef500a95985ca5";   // the library
 const SIBLINGS: [dir: string, url: string, commit: string, build: boolean][] = [
   ["agent-framework", "https://github.com/anima-research/agent-framework.git", "2f05c28e1923b7d07c6c6322b871303bd0d2d8d5", false],
   ["mcpl-core-ts", "https://github.com/anima-research/mcpl-core-ts.git", "e17f773a9247c41d5c872d760aac7f243748d134", true],
+  ["voice-kit", "https://github.com/anima-research/voice-kit.git", "b0699db3afd7e78de7d5d49f3ca4f0f5694887b3", true],   // tools/captionbot's STT seam
 ];
+/** Packages in this repo whose own package.json takes a sibling (file:): --siblings installs them once the siblings are built. */
+const SIBLING_USERS = ["tools/captionbot"];
 const siblingAt = (dir: string) => path.resolve(ENGINE, "..", dir);
 const siblingHead = (dir: string) => headOf(siblingAt(dir));
 if (argv.includes("--siblings")) {
@@ -125,6 +128,11 @@ if (argv.includes("--siblings")) {
       if (c.status !== 0) { console.error(`--siblings: \`bun ${step.join(" ")}\` failed in ${dir}`); process.exit(1); }
     } fs.writeFileSync(path.join(at, "dist", ".built-at"), commit + "\n"); }   // a dist/ built at another commit is rebuilt
     console.log(`  ${dir.padEnd(16)} ${commit.slice(0, 12)}${build ? " built" : ""}  ${at}`);
+  }
+  for (const pkg of SIBLING_USERS) {
+    const c = spawnSync(process.execPath, ["install"], { cwd: path.join(ENGINE, pkg), stdio: "inherit" });
+    if (c.status !== 0) { console.error(`--siblings: \`bun install\` failed in ${pkg}`); process.exit(1); }
+    console.log(`  ${pkg.padEnd(16)} installed`);
   }
   const m = spawnSync(process.execPath, ["install", "--frozen-lockfile"], { cwd: path.join(ENGINE, "mcpl"), stdio: "inherit" });
   process.exit(m.status ?? 1);

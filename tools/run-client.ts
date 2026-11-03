@@ -156,4 +156,6 @@ const left = [...untracked()].filter((p) => !before.has(p));
 if (left.length) console.log(`\n  left in the tree by this run (a killed test's debris; check, then delete): ${left.length}\n    ${left.slice(0, 20).join("\n    ")}${left.length > 20 ? "\n    …" : ""}`);
 const unRun = unreached.filter((p) => todo.some((f) => rel(f) === p));
 console.log(`\n${unreached.length} of ${files.length} files are reached by no runner but this one${only.length ? ` (${unRun.length} in this run)` : ""}; --unreached lists them`);
-process.exit(by("dead").length || by("red").length || by("timeout").length ? 1 : 0);
+// import-only RUNS each file, so a long top-level test and a hung await both read "still running": reported SLOW, not a
+// failure (17 real suites take > 15 s); the full run fails on timeouts, and --strict-env's missing package is red in both
+process.exit(by("dead").length || by("red").length || (!importOnly && by("timeout").length) ? 1 : 0);

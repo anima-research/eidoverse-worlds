@@ -599,12 +599,12 @@ try {
   rider.mounts.set("rider", { to: "nowhere", slot: "seat" });
   const unseated = await rider.bodyState("rider");
   check("your seat that can't be placed says detach gets you off it, once this body has rejoined",
-    unseated.error === `nothing of your body was read, since your seat can't be placed: unknown id (not a thing, and not mounted); detach gets you off it once this body has rejoined the world`, unseated.error);
+    unseated.error === `nothing of your body was read, since your seat can't be placed: unknown id (not a thing, and not mounted); detach gets you off it (detach {escape: true} if the seat holds you) once this body has rejoined the world`, unseated.error);
   rider.joined = true;
   const seatedJoined = await rider.bodyState("rider");
   rider.joined = false;
   check("...and while it's joined, that detach gets you off it",
-    seatedJoined.error === `nothing of your body was read, since your seat can't be placed: unknown id (not a thing, and not mounted); detach gets you off it`, seatedJoined.error);
+    seatedJoined.error === `nothing of your body was read, since your seat can't be placed: unknown id (not a thing, and not mounted); detach gets you off it (detach {escape: true} if the seat holds you)`, seatedJoined.error);
   rider.people.set("perch", { id: "perch", avatar: "body.vrm", pose: standing(), agent: false, observedAt: Date.now(), bodyGeneration: 1 });
   rider.mounts.set("perch", { to: "nowhere", slot: "seat" });
   const perched = await rider.bodyState("perch");
