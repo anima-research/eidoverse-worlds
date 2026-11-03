@@ -5,8 +5,8 @@
 // and (5) stand up clean when it decides to move.
 //
 //   bun tools/knockdown-test.ts        (boots its own scratch sequencer, the world founded)
-// or against a door you run, whose world W already exists:
-//   WORLD_URL=ws://localhost:8996/ws WORLD_TOKEN=test-door JOIN_TOKEN=test-door bun run tools/knockdown-test.ts
+// or against a door you run, naming a world it already has (WORLD; nothing founds one for you):
+//   WORLD=<w> WORLD_URL=ws://localhost:8996/ws WORLD_TOKEN=test-door JOIN_TOKEN=test-door bun run tools/knockdown-test.ts
 
 // Bun 1.3.x caches transpiled module graphs globally by content, so a stale
 // plugin-resolved path can bypass onResolve entirely and leave the headless
@@ -31,7 +31,8 @@ if (process.env.__EIDO_TEST_CACHE_OFF !== '1') {
 const { WorldAgent } = await import("../mcpl/agent.ts");
 const { tryUntil, pause } = await import("./protocol/wait.ts");
 
-const W = `kd-${Math.random().toString(36).slice(2, 8)}`;
+const W = process.env.WORLD ?? `kd-${Math.random().toString(36).slice(2, 8)}`;   // WORLD: the door's own world (bot #318)
+console.log(`[knockdown] world ${W}${process.env.WORLD_URL ? ` at ${process.env.WORLD_URL}` : " (scratch sequencer)"}`);
 // its own scratch sequencer (a free port, scratch WORLDS_DIR) with the world founded: joining never founds one
 const { scratchSequencer } = await import("./harness.ts");
 const H = process.env.WORLD_URL ? null : await scratchSequencer("knockdown", { worlds: [W], serverEnv: { SKIP_OPT_SWEEP: "1" } });
@@ -43,6 +44,7 @@ const check = (name: string, ok: boolean, detail = "") => {
   if (ok) { passed++; console.log(`  ✓ ${name}`); }
   else { failed++; console.log(`  ✗ ${name}${detail ? ` — ${detail}` : ""}`); }
 };
+if (process.env.WORLD) check(`WORLD=${process.env.WORLD} names the world this run joins`, W === process.env.WORLD, `joined ${W}`);   // bot #318
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // a "human" — a bare socket that joins, watches, and throws its weight around. The relay forwards a shove or a drag only
