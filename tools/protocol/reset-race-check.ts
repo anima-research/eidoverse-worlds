@@ -94,7 +94,16 @@ ok(old.requestSync("olive", "say", { text: "late" })?.refused?.code === "reset",
     "SR2 a request waiting when its connection closes writes nothing", { reply: closing.replies[0], wrote: described("from-a-closed-tab") });
   // the control: a connection that stays writes
   hold(); const stays = tab(4); send(stays, "c1", "from-a-live-tab"); release(); await tryUntil("the live tab's request is answered", () => stays.replies.length, { ms: 2000, step: 10 });
-  ok(stays.replies[0]?.ok === true && described("from-a-live-tab"), "SR3 (control) a connection that is still in the world writes", stays.replies[0]); }
+  ok(stays.replies[0]?.ok === true && described("from-a-live-tab"), "SR3 (control) a connection that is still in the world writes", stays.replies[0]);
+  // SR4 (bot review #260 43): whois waits its turn too: asked while the same connection's role grant awaits, it answers after it
+  hold(); const asker = tab(5); const bob = (await import("../../server/directory.ts")).directoryFor(process.env.WORLDS_DIR).resolve({ sub: "local:bob", name: "bob" }); const order = []; const sendRaw = asker.c.ws.send;
+  asker.c.ws.send = (d) => { const m = JSON.parse(d); if (m.type === "reply") order.push(`${m.verb}:${m.verb === "whois" ? m.reply?.people?.[0]?.role : m.ok}${m.ok ? "" : ":" + JSON.stringify(m.reply?.refused).slice(0, 200)}`); return sendRaw(d); };
+  e0 = entered; REQUEST_MESSAGES.request({ c: asker.c, ws: asker.c.ws, now: Date.now(), expel: () => {} }, { id: "d1", verb: "set", args: { id: "@world", component: `roles:${bob}`, value: { role: "builder" } } });
+  await tryUntil("the grant is inside the await", () => entered > e0, { ms: 2000, step: 10 });
+  REQUEST_MESSAGES.request({ c: asker.c, ws: asker.c.ws, now: Date.now(), expel: () => {} }, { id: "d2", verb: "whois", args: { id: bob } });
+  const early = [...order];
+  release(); await tryUntil("both are answered", () => order.length >= 2, { ms: 2000, step: 10 });
+  ok(early.length === 0 && order[0] === "set:true" && order[1] === "whois:builder", "SR4 whois runs in the connection's queue: asked while its own role grant awaits, it answers after it, with the new role", { early, order }); }
 // ---- PR (house 6340433633; bot review of #260, #10): a reset that fails at the last step. The old log is linked into the archive and
 // the fresh one renamed OVER it, so a failure (or a crash) there leaves the old world in place and live. A world whose log an older
 // server's failed reset already moved aside (no world.jsonl) takes no writes, and resetting again finishes the erase.

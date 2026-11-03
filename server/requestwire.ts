@@ -146,7 +146,8 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     const metered_no = (no: Any) => { if (recordRefusal(c)) w.debug("refused", { who: c.id, verb: verb.slice(0, 32), code: no.code, line: `${c.id}'s ${verb.slice(0, 32)} was refused (${no.code}): ${no.reason}`.slice(0, 300) }); reply({ ok: false, refused: no }); };
     if (metered) { const no = reads.check(c, Date.now()); if (no) { metered_no(no); return; } }
     const mark = metered ? reads.record(c, Date.now()) : null;
-    if (verb === "whois") { reply(whois(w, args)); return; }   // the server's directory, not the authority's world
+    // the server's directory and the authority's roles, read in this connection's turn (bot review #260 43)
+    if (verb === "whois") { inOrder(c, ws, async () => { reply(whois(w, args)); }, reply); return; }
     if (verb === "consent") { const gone = goneListing(w, args); if (gone) { reply({ ok: false, refused: gone }); return; } }
     // a caption carries the connection's leg generation, stamped here (never the client's word): a captioner that was
     // taken over (a newer leg of the same identity) can't write over its successor (shared/captions.js captionRefusal)
