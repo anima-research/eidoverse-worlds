@@ -294,11 +294,11 @@ row("IM-C1", () => {
     && JSON.stringify(r.stats.unmapped) === JSON.stringify([{ component: "collision", id: "post", fields: ["layer"], as: "post imported:collision" }]),
     "IM-C1 collision {enabled: false} becomes collider {enabled: false} beside its shape; enabled: true is the default; anything else it said rides imported:collision and the report lists it", { rock: T.rock, post: T.post, unmapped: r.stats.unmapped });
 });
-row("IM-U1", () => {   // bot review #260 33: a key any v4 component lacks rides imported:<component>, and the report says so
+row("IM-U1", () => {   // bot review #260 33: a key no component has rides imported:<component>, and the report says so
   const L = seqd([BASIC[0], { actor: "Ann", verb: "spawn", args: { id: "lamp", lib: "l.glb", pos: [0, 0, 0] } }, { actor: "Ann", verb: "comp", args: { id: "lamp", type: "light", data: { color: "#ffaa00", flicker: 1 } } }]);
   const r = TV1.translate(L), T = r.final.translated;
   ok(JSON.stringify(T.lamp?.["imported:light"]) === JSON.stringify({ flicker: 1 }) && JSON.stringify(r.stats.unmapped) === JSON.stringify([{ component: "light", id: "lamp", fields: ["flicker"], as: "lamp imported:light" }]),
-    "IM-U1 a light's flicker (no v4 light field) rides imported:light, and the report's unmapped lists it", { lamp: T.lamp, unmapped: r.stats.unmapped });
+    "IM-U1 a light's flicker (no light field) rides imported:light, and the report's unmapped lists it", { lamp: T.lamp, unmapped: r.stats.unmapped });
 });
 row("IM-C2", () => {
   const routes = [{ name: "hatch ladder", path: [[0, -3, -15], [0, -1.5, -15], [0, -1.7, -16.8]], radius: 1.6, speed: 1.25, grip: "rungs" }, { name: "rope", path: [[0, 0, 0], [0, 9, 0]], radius: 9, speed: 0.1 }, { name: "bad", path: [[0, 0, 0]] }];
