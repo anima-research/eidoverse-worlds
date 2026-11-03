@@ -242,5 +242,25 @@ export function lintParticles(w: LintHost, entry: LogEntry): void {
     if (r.notes.length) {
       w.debug("particles-lint", { entity: id, by: entry.actor, ...which, why: r.notes.join(" · ") });
     }
+    // A named `part` is checked against the nodes a renderer actually draws
+    // (the rendered scene only — orphans and other scenes are not parts).
+    // Detached: geometry is async, and the advisory may land a beat later.
+    const part = r.emitter.part;
+    if (part) {
+      void (async () => {
+        try {
+          const ent = w.state.entities[id];
+          const file = ent?.lib ? resolveLibFile(ent.lib) : null;
+          const sum = file ? await summarizeGlb(file) : null;
+          const names = sum?.nodeNames;
+          if (!names || !names.includes(part)) {
+            w.debug("particles-lint", { entity: id, by: entry.actor, ...which,
+              why: names
+                ? `part "${part}" is not among ${id}'s rendered parts [${names.join(", ")}] — using the entity frame`
+                : `part "${part}" could not be checked because ${id}'s geometry is unavailable — clients use the entity frame if the part is missing` });
+          }
+        } catch { /* lint must never hurt anything */ }
+      })();
+    }
   } catch { /* lint must never hurt anything */ }
 }
