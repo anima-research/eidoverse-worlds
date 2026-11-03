@@ -1,7 +1,7 @@
 // tools/protocol/r10-check.ts — review round 10 (REVIEW-holes-r10, REVIEW-scars-r10, REVIEW-claims-r10, 2026-10-17): the
-// fixes, each row red first (against caab0868) and held by a mutation below.
+// fixes, each row red first (against caab0868) and most held by a mutation below (F4 has none).
 //   bun tools/protocol/r10-check.ts                 every row
-//   bun tools/protocol/r10-check.ts --only M1,A1    just those
+//   bun tools/protocol/r10-check.ts --only S1,A1    just those
 //   bun tools/protocol/r10-check.ts --tree <dir>    against another checkout's shared/ + mcpl/ (a mutant)
 //   bun tools/protocol/r10-check.ts --mutants       remove each fix in turn (a copy of shared/ and mcpl/): its rows must go
 //                                                  red; a no-op control mutation must stay green
