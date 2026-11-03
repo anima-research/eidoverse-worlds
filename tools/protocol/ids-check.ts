@@ -160,7 +160,7 @@ await C("D4", "an undo that takes a thing away (the undo of its create) clears r
   const d = made(W.call("create", { model: "crate", components: { story: { title: "t", text: "x", marks: [c] } } }))[0];
   const bt = W.call("batch", { ops: [{ verb: "delete", args: { id: c } }] });
   const st = W.state().entities;
-  return [(!u.ok || (!st[b] && !st[a].c["look-at"])) && bt.ok && JSON.stringify(st[d].c.story.marks) === "[]", [why(u), st[a]?.c["look-at"], why(bt), st[d]?.c.story]]; });
+  return [u.ok && !st[b] && !st[a].c["look-at"] && bt.ok && JSON.stringify(st[d].c.story.marks) === "[]", [why(u), st[a]?.c["look-at"], why(bt), st[d]?.c.story]]; });
 
 // ---- L: lint ----
 await C("L1", "lint reports a stored reference that names nothing (kind dangling, where, what it names)", () => {
