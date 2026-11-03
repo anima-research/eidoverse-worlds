@@ -91,5 +91,13 @@ console.log("SKY PANEL — every shared select commits what it shows");
       if (!JSON.stringify(S.sent.at(-1)?.[1] ?? {}).includes(JSON.stringify(o))) dead.push(`${name}=${o}`); } }
   check("no select whose choice the commit drops (the world select is gone: earth is the only sky world, and it isn't stored)", dead.length === 0, dead.join(", ")); }
 
+// bot review #260 43: sun and fill are registered sky fields; their sliders commit what they show
+console.log("SKY PANEL — the sun and fill sliders commit");
+{ const got: Record<string, unknown> = {};
+  for (const key of ["sun", "fill"]) { const row = [...body.querySelectorAll(".row")].find((r) => r.querySelector(".nm")?.textContent === key);
+    const inp = row?.querySelector('input[type="range"]') as HTMLInputElement | null; if (!inp) { got[key] = "no slider"; continue; }
+    inp.value = "1.5"; inp.dispatchEvent(new Event("input")); (body.querySelector("button.dirty") as HTMLButtonElement | null)?.click(); got[key] = S.sent.at(-1)?.[1]?.[key]; }
+  check("sun 1.5 and fill 1.5 are in what ✓ sends", got.sun === 1.5 && got.fill === 1.5, JSON.stringify(got)); }
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

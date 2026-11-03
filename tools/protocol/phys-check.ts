@@ -900,6 +900,16 @@ if (RIGID) { const W = playground("rr-group");
   const at = call(W, "rowan", "inspect", { id: "crate-1" }).world?.pos;
   ok(/back at its home/.test(cc?.lost ?? "") && JSON.stringify(at) === "[3,0,-1]", "RR2 …and the lost one, sent to its home, is told it's at its home", { lost: cc?.lost, at }); }
 
+// FL (bot review #260 23): a lift under an engine this reader doesn't carry still holds the thing out of the next carried epoch
+{ const W = playground("pc-fl"); const g = call(W, "rowan", "grab", { id: "ball" }); const L = log(W);
+  const ep = L.findIndex((e) => e?.kind === "change" && e.body?.comp === "physics-engine"), lift = L.findIndex((e) => e?.kind === "sim" && e.verb === "lift" && e.body?.id === "ball");
+  const recut = (C) => { const last = C[C.length - 1]; return copyOf([...C, { ...C[ep], ts: last.ts + 100, body: { ...L[ep].body, value: { ...L[ep].body.value, tickMs: 16 } } }]); };
+  const F = copyOf(L); F[ep].body.value = { ...F[ep].body.value, engine: "eidosim@0.0.1" };   // a version nobody carries
+  const held = (C) => { const v = simFold(C, C[C.length - 1].ts + 200); return { sim: !!v.sim, foreign: v.foreign, body: !!v.sim?.bodies?.ball, rest: !!v.sim?.statics?.ball, lifted: v.lifted.has("ball") }; };
+  const carriedR = held(recut(L)), foreignR = held(recut(F));
+  ok(g.ok && lift > ep && carriedR.sim && !carriedR.body && !carriedR.rest && carriedR.lifted && JSON.stringify(foreignR) === JSON.stringify(carriedR),
+    "FL a lift under a foreign engine is kept through the cut to a carried one: the ball is in the hand, not in the new engine, as a reader carrying the old engine sees it", { carriedR, foreignR }); }
+
 console.log(`${passes} passed, ${fails} failed`);
 fs.rmSync(root, { recursive: true, force: true });
 process.exit(fails ? 1 : 0);

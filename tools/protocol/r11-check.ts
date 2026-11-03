@@ -166,7 +166,7 @@ const cases: Case[] = [
       const g = SR.renameFields("grabbable", { pose: null, grips: { h: { pos: [0, 0, 0], fingers: null } } }), st = SR.renameFields("station", { action: "sit", pose: null });
       return { g: JSON.stringify(g.value), gr: g.renamed.length, st: JSON.stringify(st.value), sr: st.renamed.length }; },
     good: (o) => o.g === '{"grips":{"h":{"pos":[0,0,0]}}}' && o.gr === 2 && o.st === '{"action":"sit"}' && o.sr === 1 },
-  { id: "R2", what: "(stern L3) renames are admitted per thing: a log holding one station whose old pose the door refuses as anim (\"live\", reserved) and one cup whose grabbable.pose is fine: the cup is renamed at load, the station is named in the act's failed and left as it was", run(s) {
+  { id: "R2", what: "(stern L3) renames are admitted per thing: a log holding one station whose old pose the door refuses as anim (\"live\", reserved) and one cup whose grabbable.pose is fine: the cup is renamed by the repair, the station is named in the act's failed and left as it was", run(s) {
       s.call("olive", "create-world", { title: s.name }); s.call("olive", "create", { id: "cup", model: "book", place: { at: [0, 0] } });
       s.call("olive", "create", { id: "bench", model: "crate", place: { at: [4, 0] } });
       s.call("olive", "create", { components: { parent: { to: "bench" }, transform: { pos: [0, 0.5, 0] }, socket: { name: "bunk" }, station: { action: "lie" } } });

@@ -1478,7 +1478,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   const map = R("ann", "set", { id: "w-host", component: "sockets", value: Object.fromEntries(Array.from({ length: 70 }, (_, j) => [`m${j}`, { pos: [0, 1, 0] }])) });
   ok(fill.ok && code(over) === "full" && over.refused?.limit === 64 && code(map) === "full", "SR2d one host holds at most 64 sockets (SOCKETS_PER_HOST), whoever asks and in either spelling", [fill.refused, over.refused, map.refused]);
 }
-// SR2e: the load's lift carries what the log already holds: a pre-cut host with 70 slots keeps all 70 (a carry, not a request)
+// SR2e: the maintenance lift carries what the log already holds: a pre-cut host with 70 slots keeps all 70 (a carry, not a request)
 { const slots = Object.fromEntries(Array.from({ length: 70 }, (_, j) => [`m${j}`, { pos: [0, 1, j * 0.01] }]));
   const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } }, { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } },
     { seq: 2, ts: 3, actor: "ann", verb: "spawn", args: { id: "wall", lib: "crate", pos: [0, 0, 0] } }, { seq: 3, ts: 4, actor: "ann", verb: "comp", args: { id: "wall", type: "sockets", data: slots } }];
@@ -1489,9 +1489,9 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   fs.writeFileSync(root + "worlds/sockcap-lift.jsonl", out.map((e) => JSON.stringify(e)).join("\n") + "\n");
   const lw = openWorld(root, "sockcap-lift"); const cap0 = lw.state().entities["@world"]?.c.capacity?.entities; let threw = null; try { maintain(lw); } catch (x) { threw = String(x?.message ?? x); }
   const st = openWorld(root, "sockcap-lift").state(); const n = Object.values(st.entities).filter((e) => e.c.parent?.to === "wall" && e.c.socket).length;
-  ok(!threw && cap0 === 1 && n === 70 && st.entities.wall.c.sockets === undefined, "SR2e the load's lift is a carry: a pre-cut host of 70 slots lifts whole, past the per-host ceiling and past a spent capacity.entities (1)", { threw, n, cap0 }); }
+  ok(!threw && cap0 === 1 && n === 70 && st.entities.wall.c.sockets === undefined, "SR2e the maintenance lift is a carry: a pre-cut host of 70 slots lifts whole, past the per-host ceiling and past a spent capacity.entities (1)", { threw, n, cap0 }); }
 
-// SRU (review 10-12 S2): undo across the load's lift. A pre-cut world: tbl has sockets {perch}, the bell is mounted on the
+// SRU (review 10-12 S2): undo across the maintenance lift. A pre-cut world: tbl has sockets {perch}, the bell is mounted on the
 // perch. Its writer is the door's own (translate-v1, then acts appended as a pre-cut door stored them); the load lifts it.
 const precut = (name, extra = [], acts = []) => {
   const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
@@ -1532,7 +1532,7 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   const kept = JSON.stringify(Object.keys(st.entities).filter((k) => st.entities[k].c.parent?.to === "tbl").sort().map((k) => [k, st.entities[k].c])) === snap;
   ok(b.ok && kept && (code(u) === "conflict" || (u.notes ?? []).some((n) => n.skipped?.some((x) => x.id === "tbl" && x.component === "sockets" && x.by === "bob"))), `SRU2 ${work === "hook" ? "bob adds a socket" : work === "perch" ? "bob moves the perch" : "bob deletes the seat"} after the cut; ann's undo of her pre-cut sockets edit skips (bob changed it since), and every child of tbl is as bob left it`, { b: b.refused, u: u.ok ? { ok: true, skipped: u.skipped, notes: u.notes } : u.refused, kept }); }
 
-// SRW (S2-3): the load's lift of a host the door would refuse today. Pre-cut: role-defs crew; a-chair's seat has body.who
+// SRW (S2-3): the maintenance lift of a host the door would refuse today. Pre-cut: role-defs crew; a-chair's seat has body.who
 // 'crew'; b-chair has a plain seat; crew is deleted. The lift re-spells what the log holds (a carry: no re-judging
 // historical values), and one host that fails anyway doesn't stop the hosts after it: it's said, per host, to the caller.
 { const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } }, { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } },
@@ -1561,7 +1561,7 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   ok(["a-chair", "b-chair", "c-chair"].every((h) => again.some((x) => x.host === h && x.made) && Object.values(s3.entities).filter((e) => e.c.parent?.to === h && e.c.socket).length === 1), "SRW2 …and the next maintenance run (the disk back) lifts all three", again); }
 
 // LG1 (a grep-pin, as nonumber-check is): past the door nothing reads the old spelling. The authority's state readers name
-// socket children; only authority/sockets.js (the translator and the load's lift) reads a stored `sockets` map, a
+// socket children; only authority/sockets.js (the translator and the maintenance lift) reads a stored `sockets` map, a
 // parent {to, socket} or a home's socket
 { const dir = fileURLToPath(new URL("../../shared/protocol/", import.meta.url));
   const files = ["authority.js", ...fs.readdirSync(dir + "authority").filter((f) => f.endsWith(".js") && f !== "sockets.js").map((f) => `authority/${f}`)];

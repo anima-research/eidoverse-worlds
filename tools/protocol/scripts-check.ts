@@ -50,6 +50,7 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["hygiene at upload", "authority/scriptrun.js", "const dirty = SR.hygiene(a.text); if (dirty) refuse(dirty.code, dirty.reason", "const dirty = null; if (dirty) refuse(dirty.code, dirty.reason", ["H1"]],
   ["scope names checked for typos at install", "authority/scripts.js", "if (near.length) refuse(\"schema\", `${at}.scope.comps:", "if (false) refuse(\"schema\", `${at}.scope.comps:", ["H4"]],
   ["syntax at install", "authority/scripts.js", "const syn = w.scripts?.checkSyntax?.(blob.text); if (syn)", "const syn = null; if (syn)", ["H3"]],
+  ["chat-muted sponsor can't say", "authority/scriptrun.js", "if (res.says.length && muteOf(w, sp.sponsor, \"chat\"))", "if (false)", ["B15b"]],
   ["banned → suspended", "authority/scriptrun.js", "if (isBanned(w, sp.sponsor)) return out(\"suspended\"", "if (false) return out(\"suspended\"", ["B15"]],
   ["adopt base", "authority/scriptrun.js", "if (base !== undefined && lt && lt.seq > base) refuse(\"stale\", `${a.id}.${key}", "if (false) refuse(\"stale\", `${a.id}.${key}", ["B14"]],
   ["always needs an owner", "authority/scripts.js", "if (v.always === true && prev?.always !== true && !Roles.isOwner(role))", "if (false)", ["B17"]],
@@ -121,6 +122,8 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["world.use stays inside scope.ids", "authority/scriptrun.js", "for (const u of uses) if (!cap.ids.includes(u.id)) return mark(", "for (const u of uses) if (false) return mark(", ["W2"]],
   ["world.use meets the target's who as the sponsor", "authority/use.js", "if (h?.who && !admits(ctx.st, ctx.asker ?? ctx.actor, h.who))", "if (h?.who && !admits(ctx.st, ctx.actor, h.who))", ["W3"]],
   ["the script act records its world.use calls", "authority/scriptrun.js", ", ...(uses.length ? { uses } : {}) } };", " } };", ["W1"]],
+  ["the auditor compares body effects", "scriptaudit.js", "if (!sameB) flags.push(", "if (false) flags.push(", ["C1b"]],
+  ["a name-steered read shape is skipped", "scriptaudit.js", "{ if (typeof b.reads?.names === \"number\" && b.reads.names > 0) { skipped.push(", "{ if (false) { skipped.push(", ["D4b"]],
   ["the auditor compares world.use calls", "scriptaudit.js", "if (!sameU) { flags.push({ seq, check: \"rerun-use\"", "if (false) { flags.push({ seq, check: \"rerun-use\"", ["W1"]],
   ["a who-dependent world.use is flagged, not skipped", "scriptaudit.js", "if (whoReads(b.reads)) { skipped.push(", "if (sameU && whoReads(b.reads)) { skipped.push(", ["W1b"]],
   ["the arrival's stand-ins compare their uses", "scriptaudit.js", "[!sameU, \"world.use calls\", jcs(r2.uses ?? []) === jcs(res.uses ?? [])]", "[!sameU, \"world.use calls\", true]", ["W1c", "W1d"]],
@@ -481,6 +484,12 @@ const cases: Case[] = [
       return { ban: show(ban), r: st(s, r), why: sv?.why, status: sv?.status, newKinds: kinds(s.entries().slice(n0)), worldLogHasBan: s.entries().some((e: any) => JSON.stringify(e).includes('"ban"')),
         modLog: s.w().mod.some((m: any) => m.verb === "ban" && m.who === "bob") }; },
     good: (o) => o.r === "suspended" && o.status === "suspended" && /banned/.test(o.why) && JSON.stringify(o.newKinds) === '{"act":1}' && !o.worldLogHasBan && o.modLog },
+  { id: "B15b", what: "a chat-muted sponsor's script can't say (bot review #260 16): the activation is refused as muted, no say and no act is written; a voice-only mute changes nothing", run(s) { cast(s);
+      bell(s, "bob"); const voice = s.call("olive", "mute", { who: "bob", minutes: 30, channels: ["voice"] }); const rv = s.call("vic", "use", { id: "bell1", action: "ring" });
+      const mute = s.call("olive", "mute", { who: "bob", minutes: 30, channels: ["chat"] }); const n0 = s.entries().length;
+      const r = s.call("vic", "use", { id: "bell1", action: "ring" });
+      return { voice: show(voice), rv: st(s, rv), mute: show(mute), r: st(s, r), code: r.script?.code, why: r.script?.why, newKinds: kinds(s.entries().slice(n0)), scriptSays: s.entries().slice(n0).filter((e: any) => e.kind === "say" && e.actor === "script:bell1").length }; },
+    good: (o) => o.voice === "ok" && o.rv === "ran" && o.mute === "ok" && o.r === "refused muted" && o.code === "muted" && /muted/.test(o.why) && JSON.stringify(o.newKinds) === '{"act":1}' && o.scriptSays === 0 },
   { id: "B16", what: "no-op elision (a stated rule for script batches, §3d): a use that re-sets the same value logs the visitor's act and nothing else", run(s) { cast(s);
       s.call("bob", "create", { id: "lamp", components: { label: "lamp", transform: { pos: [0, 0, 0] } } });
       install(s, "bob", "lamp", "on", onUse(`world.set("self", "light", { kind: "point", color: 1, intensity: 1, range: 6, decay: 2 });`), { scope: { ids: "self", comps: ["light"] }, on: ["use"] });
@@ -955,6 +964,15 @@ console.log(JSON.stringify({ platform: process.platform, available: SANDBOX.avai
       return { r: st(s, r), open: comp(s, "gate", "openable")?.open, uses: act?.body?.uses, use: use ? [use.cause === r.script?.act, use.body?.request?.id, use.body?.request?.action, use.body?.sponsor] : null, change: change?.actor ?? null,
         audit: `${A.reran}/${A.acts} ${A.flags.map((f: any) => f.check).join(",")}`, forged: AU.auditScripts(forged, s.w().getBlob, { run: SB.runScript }).flags.map((f: any) => f.check) }; },
     good: (o) => o.r === "ran" && o.open === true && JSON.stringify(o.uses) === '[{"id":"gate","action":"open"}]' && JSON.stringify(o.use) === '[true,"gate","open","bob"]' && o.change === "script:lever" && o.audit === "1/1 " && o.forged.includes("rerun-use") },
+  { id: "D4b", what: "a script whose read SHAPE turns on a name (an unrecorded identity) is skipped as depending on who was near, never flagged `reads` (bot review #260 52)", run(s) { cast(s);
+      s.call("bob", "create", { id: "dial", model: "crate", place: { at: [0, 0] } });
+      install(s, "bob", "dial", "who", onUse(`const near = world.near(5); const n = near.length ? world.name(near[0]) : null;\nif (n) { world.count(); world.set("self", "t/seen", 1); }`), { scope: { ids: "self", comps: ["t/seen"] }, on: ["use"] });
+      s.call("bob", "set", { id: "dial", component: "reactions", value: { look: { kind: "script", script: "who" } } });
+      s.call("vic", "move", { to: [0, 0, 1] }); const r = useSteady(s, "vic", { id: "dial", action: "look" });
+      if (!AU) return { absent: true };
+      const A = AU.auditScripts(s.entries(), s.w().getBlob, { run: SB.runScript });
+      return { r: st(s, r), seen: comp(s, "dial", "t/seen"), flags: A.flags.map((f: any) => f.check), skipped: A.skipped?.length ?? null, why: A.skipped?.[0]?.why ?? null }; },
+    good: (o) => o.r === "ran" && o.seen === 1 && o.flags.length === 0 && o.skipped === 1 && /who was near/.test(o.why) },
   { id: "W1b", what: "world.use whose target turns on who was near (a name read): the auditor SKIPS its act as depending on who was near, as D4 does for a set, and never flags it rerun-use, which reads as a forgery (review of #260)", run(s) { cast(s);
       for (const [id, x] of [["gatea", 10], ["gateb", 14]] as const) { s.call("bob", "create", { id, model: "door", components: { openable: { open: false } }, place: { at: [x, 0] } });
         s.call("bob", "set", { id, component: "reactions", value: { open: { kind: "toggle", component: "openable", field: "open" } } }); }
@@ -1074,6 +1092,14 @@ console.log(JSON.stringify({ platform: process.platform, available: SANDBOX.avai
       return { heard: comp(s, "parrot", "t/heard"), squawks: s.entries().filter((e: any) => e.kind === "say" && e.actor === "script:parrot").map((e: any) => e.body.text),
         copied: JSON.stringify(act?.body?.event ?? {}).includes("!hello"), audit: A ? `${A.reran}/${A.acts} ${A.flags.map((f: any) => f.check).join(",")}` : null }; },
     good: (o) => o.heard?.by === "vic" && o.heard?.text === "!hello" && o.heard?.n === 1 && JSON.stringify(o.squawks) === '["squawk: !hello"]' && o.copied === false && o.audit === "1/1 " },
+  { id: "E1b", what: "a say heard before you arrived stays out of the script's console for you (bot review #260 21): `scripts` shows the activation without its console lines or why; one with no floor (an admin) and a say since you came show them", run(s) { cast(s);
+      s.call("bob", "create", { id: "ear", model: "crate", place: { at: [0, 0] } });
+      install(s, "bob", "ear", "echo", `world.on("say", (e) => { console.log("heard " + e.text); });\n`, { scope: { ids: "self", comps: [] }, on: ["say"] });
+      s.call("vic", "say", { text: "early secret" }); const floor = s.entries().length - 1; s.call("vic", "say", { text: "later line" });
+      s.w().sayFloor = (who: string) => (who === "late" ? floor : null);
+      const lines = (who: string) => JSON.stringify(s.call(who, "scripts", { id: "ear" }).scripts?.[0]?.last ?? []);
+      return { late: lines("late"), olive: lines("olive") }; },
+    good: (o) => !o.late.includes("early secret") && o.late.includes("later line") && /"on":"say"/.test(o.late) && o.olive.includes("early secret") && o.olive.includes("later line") },
   { id: "E2", what: "enter / leave: the host says who arrived or left; scripts that list them hear it, by identity (presence, told by the host)", run(s) { cast(s);
       if (!D.presenceEvent) return { absent: true };
       s.call("bob", "create", { id: "door1", model: "crate", place: { at: [0, 0] } });
@@ -1154,6 +1180,16 @@ console.log(JSON.stringify({ platform: process.platform, available: SANDBOX.avai
       const act = s.entries().findLast((e: any) => e.actor === "script:trap" && e.kind === "act");
       return { r1: st(s, r1), scripted1, r2: st(s, r2), recorded: act?.body?.bodies, tumble: !!s.w().presence.bodies.vic?.tumble }; },
     good: (o) => o.r1 === "refused consent" && o.scripted1 === 0 && o.r2 === "ran" && JSON.stringify(o.recorded) === '[{"kind":"shove","to":"body:vic"}]' && o.tumble },
+  { id: "C1b", what: "the auditor compares body effects (bot review #260 32): a shove re-runs to the act's record; a forged target or a dropped effect is flagged rerun-body", run(s) { cast(s);
+      s.call("bob", "create", { id: "trap", model: "crate", place: { at: [0, 0] } });
+      install(s, "bob", "trap", "spring", onUse(`world.shove(e.by);`), { scope: { ids: "self", comps: [], bodies: ["shove"] }, on: ["use"] });
+      s.call("bob", "set", { id: "trap", component: "reactions", value: { step: { kind: "script", script: "spring" } } });
+      s.call("vic", "move", { to: [0, 0, 1] }); s.call("vic", "consent", { move: true }); const r = s.call("vic", "use", { id: "trap", action: "step" });
+      if (!AU) return { absent: true };
+      const L = s.entries(), audit = (f: (b: any) => void) => { const C = F.readLog(Buffer.from(L.map((e: any) => JSON.stringify(e)).join("\n") + "\n")); f(C.find((e: any) => e.actor === "script:trap" && e.verb === "script").body);
+        const A = AU.auditScripts(C, s.w().getBlob, { run: SB.runScript }); return `${A.reran}/${A.acts} ${A.flags.map((x: any) => x.check).join(",")}`; };
+      return { r: st(s, r), plain: audit(() => {}), other: audit((b) => { b.bodies[0].to = "body:ann"; }), none: audit((b) => { delete b.bodies; }) }; },
+    good: (o) => o.r === "ran" && o.plain === "1/1 " && o.other === "0/1 rerun-body" && o.none === "0/1 rerun-body" },
   { id: "C2", what: "bodies need scope.bodies: a script that shoves without declaring it is refused (scope), whatever the target allows", run(s) { cast(s);
       s.call("bob", "create", { id: "trap", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "trap", "spring", onUse(`world.shove(e.by);`), { scope: { ids: "self", comps: [] }, on: ["use"] });
@@ -1453,6 +1489,35 @@ const serverCases: Case[] = [{ id: "S1", server: true, what: "the server: a worl
   } finally { proc.kill(); }
 }, good: (o) => o.mk && o.inst === "ok" && o.clock === "ok" && o.ring === "ran" && o.rung === 1 && o.tickActs >= 1 && o.beats >= 1 && o.hello && o.sawScript
   && o.roster?.includes("bell1/bell:active") && o.roster?.includes("bell1/clock:active") && !o.v1Host && o.malformed === 0 }];
+
+serverCases.push({ id: "S3", server: true, what: "the server: `debug {script}` keeps a say from before the asker arrived out of the console ring (bot review #260 21); the owner (no floor) still reads it",
+  run: async () => {
+    const W4 = path.join(root, "srv3"); fs.mkdirSync(W4, { recursive: true });
+    const env = { ...process.env, TRUST_NAMES: "1", WORLDS_DIR: W4, OPT_DIR: path.join(root, "opt"), SKIP_OPT_SWEEP: "1", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", SERVER_OPERATORS: "", EIDO_FLIGHT_REHEARSAL: "" };
+    const f = Bun.spawnSync(["bun", "tools/protocol/world.ts", "found", "chimes", "--owner", "Ann"], { cwd: ENGINE, env }); if (f.exitCode !== 0) return { found: f.stderr.toString() };
+    let port = 0; for (let p = 9700; p < 9900; p++) { try { const t = Bun.listen({ hostname: "0.0.0.0", port: p, socket: { data() {} } }); t.stop(true); port = p; break; } catch { /* taken */ } }
+    const logf = path.join(root, "srv3.log");
+    const proc = Bun.spawn(["bun", "server/server.ts"], { cwd: ENGINE, env: { ...env, PORT: String(port) }, stdout: Bun.file(logf), stderr: Bun.file(logf + ".err") });
+    try {
+      if (!(await tryUntil("the server answers /worlds", async () => (await fetch(`http://127.0.0.1:${port}/worlds`, { signal: AbortSignal.timeout(1000) })).ok, { ms: 115_000, step: 150 }))) return { up: false };
+      const client = async (name: string) => { const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`); const msgs: any[] = []; const waiters = new Map(); let n = 0;
+        ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); msgs.push(m); const k = m.type === "reply" ? m.id : m.type === "debug" ? m.reqId : null; const fn = waiters.get(k); if (fn) { waiters.delete(k); fn(m.type === "reply" ? m.reply : m); } };
+        await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
+        ws.send(JSON.stringify({ type: "join", world: "chimes", id: name, avatar: "", replica: true }));
+        await tryUntil(`${name}'s join is answered`, () => msgs.some((m) => m.type === "snapshot" || m.type === "error"), { ms: 3000, step: 50 });
+        const ask = (m: any) => new Promise<any>((res) => { const rid = `${name}-${++n}`; waiters.set(rid, res); ws.send(JSON.stringify(m.type === "request" ? { ...m, id: rid } : { ...m, reqId: rid })); setTimeout(() => { if (waiters.delete(rid)) res({ timeout: true }); }, 8000); });
+        return { ws, req: (verb: string, args: any = {}) => ask({ type: "request", verb, args: IDS.out(verb, args) }).then((r) => IDS.back(r)), debug: (script: string) => ask({ type: "debug", script, limit: 50 }) }; };
+      const ann = await client("Ann");
+      await ann.req("create", { id: "ear" }); const E = IDS.of("ear");
+      const u = await ann.req("upload", { text: `world.on("say", (e) => { console.log("heard " + e.text); });\n` });
+      const inst = await ann.req("set", { id: "ear", component: "script:echo", value: { src: u.src, scope: { ids: "self", comps: [] }, on: ["say"] } });
+      const said = await ann.req("say", { text: "early secret" });
+      await tryUntil("the echo heard it", async () => JSON.stringify((await ann.debug(`${E}/echo`)).events ?? []).includes("early secret"), { ms: 5000, step: 100 });
+      const bob = await client("Bob"); const b = await bob.debug(`${E}/echo`), a = await ann.debug(`${E}/echo`);
+      ann.ws.close(); bob.ws.close();
+      return { inst: show(inst), said: said.ok, bob: JSON.stringify(b.events ?? null), ann: JSON.stringify(a.events ?? null) };
+    } finally { proc.kill(); }
+  }, good: (o) => o.inst === "ok" && o.said && o.ann.includes("early secret") && o.bob !== "null" && /say: nothing/.test(o.bob) && !o.bob.includes("early secret") });
 
 serverCases.push({ id: "S2", server: true, what: "the server: while a hostile script (indexOf on crafted text) runs in one world, another world's requests keep answering within the deadline; each hostile run is stopped and shows as a failure (time) against its script",
   run: async () => {

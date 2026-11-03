@@ -327,6 +327,14 @@ await C("P1", "a refusal for a person: what they tried and why, no refusal code,
   const agent = RF.refusalText("move 3485c78e0a1b", r);
   return [p.includes("“Front door”") && !/3485c78e|\(locked\)|\{|throughLock|§/.test(p) && /ask someone who can/i.test(plainTeach) && plainTeach.includes("“Desk lamp”") && agent.includes("(locked)") && agent.includes("throughLock"), { p, plainTeach, agent }];
 });
+await C("P1b", "an ambiguous write (txn ambiguous, or no answer: mayHaveLanded) reads as maybe-happened for a person and an agent, never as a failure or a refusal (bot review #260 57)", () => {
+  const amb = { ok: false, txn: "ambiguous", refused: { code: "ambiguous", reason: "the write's result is unknown: the store didn't answer" } };
+  const late = { ok: false, refused: { code: "timeout", reason: "the authority didn't answer 'move' in 8 s", fix: "it may still land: look before trying again", mayHaveLanded: true } };
+  const p = [RF.plainRefusal("move the crate", amb), RF.plainRefusal("move the crate", late)], a = [RF.refusalText("move crate", amb), RF.refusalText("move crate", late)];
+  const plainRefused = RF.plainRefusal("move the crate", { refused: { code: "rights", reason: "no" } }), agentRefused = RF.refusalText("move crate", { refused: { code: "rights", reason: "no" } });
+  return [p.every((x: string) => !/^Couldn't/.test(x) && /may or may not have happened/.test(x)) && a.every((x: string) => !/refused by the authority/.test(x) && /may or may not have happened/.test(x))
+    && /^Couldn't move the crate/.test(plainRefused) && /refused by the authority \(rights\)/.test(agentRefused), { p, a }];
+});
 await C("P2", "a warning for a person names things by label (an agent's still by id)", () => {
   const nameOf = (id: string) => ({ "3485c78e0a1b": "“Front door”", lamp: "“Desk lamp”" })[id] ?? null;
   const w = { id: "lamp", kind: "floating", gap: 0.3, above: "3485c78e0a1b" };

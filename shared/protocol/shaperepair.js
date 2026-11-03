@@ -27,8 +27,8 @@
 //   @world (repairWorld):
 //   sky        clock 'real' + dormantRated {hours, rate, ts} → tz, with hours/rate/ts the parked clock (it is the fallback
 //              now); another clock → no tz; azimuth degrees → radians;
-//              weatherSeconds → transition; forecast dwellSec/transitionSec → dwell/transition; sun, fill, world (never
-//              stored on Burrow) dropped
+//              weatherSeconds → transition; forecast dwellSec/transitionSec → dwell/transition; world (never stored on
+//              Burrow) dropped (sun and fill are registered fields: kept)
 //   terrain    layer colours "#rrggbb" → ints; the sim's defaults (terrainmath.js) written where absent; terrain.water →
 //              the water component (its colour an int)
 //   grass      the first protocol's makeGrass knobs → the flora spelling (mapGrassArgs, the reader's own mapping); a preset

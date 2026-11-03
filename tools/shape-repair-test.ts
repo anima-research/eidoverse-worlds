@@ -147,8 +147,8 @@ await tryRow('RP8', () => {
     { seq: 4, ts: 5, actor: 'ann', verb: 'comp', args: { id: 'mill', type: 'motion:tripo_part_fused_0', data: { type: 'spin', degPerSec: 20 } } }];
   const t = translate(old); const f = t.final.translated;
   const ks = `motion:${partSlot('tripo_part_3')}`, km = `motion:${partSlot('tripo_part_fused_0')}`;
-  check('RP8 translate-v1@12 writes the same shape as the load: motion:<slot> {node}, for a bare part and a keyed v1 part alike', f.swing?.[ks]?.node === 'tripo_part_3' && !f.swing?.motion && f.mill?.[km]?.node === 'tripo_part_fused_0' && Object.keys(f.mill ?? {}).every((k) => !k.startsWith('x--')), [f.swing, f.mill]);
-  check('RP8 …and its log is marked (a translated world never runs the load\'s repair)', shapesMarked(t.out), t.out?.slice(0, 2));
+  check('RP8 translate-v1@12 writes the same shape as the maintenance repair: motion:<slot> {node}, for a bare part and a keyed v1 part alike', f.swing?.[ks]?.node === 'tripo_part_3' && !f.swing?.motion && f.mill?.[km]?.node === 'tripo_part_fused_0' && Object.keys(f.mill ?? {}).every((k) => !k.startsWith('x--')), [f.swing, f.mill]);
+  check('RP8 …and its log is marked (a translated world never needs the maintenance repair)', shapesMarked(t.out), t.out?.slice(0, 2));
 });
 
 // ===================================================================== R 10-27: a translated swing swings as it did

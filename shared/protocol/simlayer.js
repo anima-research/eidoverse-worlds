@@ -292,14 +292,14 @@ export function simFolder(entries, { models = MODELS, from = null, purged = null
       if (relock) { const view = engineView(st);
         for (const id of Object.keys(out.sim.statics ?? {})) if (!!out.sim.statics[id].dyn !== (view.entities[id]?.kind === "dynamic"))
           SE(out.sim, { seq, ts: clock, actor: e.actor, verb: view.entities[id] ? "place" : "remove", args: { id } }, view); }
-    } else if (e.kind === "sim" && out.sim) {
+    } else if (e.kind === "sim") {   // under a foreign engine (no sim here) only the hand's bookkeeping runs: a lift outlives the epoch (bot review #260 23)
       // purged whole: the engine can't fly or lift what it can't read, so until the next cut the engine that read it and this
       // one may differ, and what this one computes meanwhile is unknown here: a launch until the next cut (out.unknownEpoch), a
       // lift or catch to the log's end (out.unknownHold). The authority's readback reads such a body as unknown too, for its own
       // question: restampEngine counts a purged launch as a flight its cut ends (endedUnknown), which this needn't follow
-      const a = bodyIn(entries, purged, seq); if (!a) { if (e.verb === "launch") out.unknownEpoch = true; else if (e.verb === "lift" || e.verb === "catch") out.unknownHold = true; return; }
+      const a = bodyIn(entries, purged, seq); if (!a) { if (e.verb === "launch") { if (out.sim) out.unknownEpoch = true; } else if (e.verb === "lift" || e.verb === "catch") out.unknownHold = true; return; }
       if (e.verb === "launch" && st.entities[a.id] && Array.isArray(a.p) && Array.isArray(a.v)) {
-        out.lifted.delete(a.id);   // thrown or dropped: out of the hand, into the engine (before the view, which hides lifted things)
+        out.lifted.delete(a.id); if (!out.sim) return;   // thrown or dropped: out of the hand, into the engine (before the view, which hides lifted things)
         const view = engineView(st); const base = view.entities[a.id]; if (!base) return;
         view.entities[a.id] = { ...base, pos: a.p, yaw: typeof a.yaw === "number" ? a.yaw : base.yaw };
         // the launch's stamped state (p, v, q, w) is the body's exactly: the engine flies it from there
@@ -308,7 +308,7 @@ export function simFolder(entries, { models = MODELS, from = null, purged = null
       } else if ((e.verb === "lift" || e.verb === "catch") && st.entities[a.id]) {
         // picked up (or caught mid-air): it leaves the world's physics — no body, no collider at its old spot — until
         // it's put down (an authored transform reseats it) or thrown (a launch)
-        SE(out.sim, { seq, ts: clock, actor: e.actor, verb: "remove", args: { id: a.id } }, { entities: {} });
+        if (out.sim) SE(out.sim, { seq, ts: clock, actor: e.actor, verb: "remove", args: { id: a.id } }, { entities: {} });
         delete out.launched[a.id];
         out.lifted.add(a.id);
       }

@@ -101,7 +101,7 @@ function newMotion(m0) {
   const rate = (rpm ?? 6) * 6;
   return Number.isFinite(rate) ? { ...rest, degPerSec: rate } : m;
 }
-// @12, wave 2 (the shape audit's physics-motion family): what the server's load repairs in a stored v4 world
+// @12, wave 2 (the shape audit's physics-motion family): what the maintenance command repairs in a stored v4 world (never the load)
 // (shared/protocol/shaperepair.js), the translation writes already: a bare motion naming a part is motion:<part>,
 // amplitude is amp, a letter axis its vector, a pendulum's unwritten period and damp the 3.5 s and 0 the renderer read, a
 // whole pendulum with no pivot component swings about the [0, 2, 0] the renderer used (now its pivot component), a
@@ -155,7 +155,7 @@ export const TRANSLATOR = "eidoverse/translate-v1@42";
 // @23 (R 10-27, audit B2): main's picture {src, part, look?, lit?, flip?} is a material on that node {node, texture,
 // description?, lit?} (materialOf), where @22 made it a quad of its own at the thing's origin; flip: true, which the material
 // can't say, rides imported:material and is listed. A picture with no part (main drew none) is carried as imported:picture.
-// @22 (R 10-27): main's sound look is description (shaperepair renameFields, as the load renames a stored one), where @21 left
+// @22 (R 10-27): main's sound look is description (shaperepair renameFields, as the maintenance repair renames a stored one), where @21 left
 // it in imported:sound. Output differs from @21 on any log with a described sound. Both names.
 /** The version number in a translator name ("eidoverse/translate-v1@20" → 20), or NaN. Compare numbers, never a regex
  *  of version digits: `@(1[4-9])` quietly stopped matching at @20 and broke four suites (10-22). */
@@ -206,8 +206,8 @@ export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(nam
 // v2's look and motion knobs (wobble, up, spread, gravity, grow, swirl, twinkle, converge, rotate, color, blending) are
 // the old builder's table, which an effect document's modules say in full: they ride in imported:particles (carried,
 // not drawn), and v2's `scale` is the instance's scale. Output differs from @14 on any log with a named emitter.
-// @14 (R 10-17 21:40): a motion's type is written in today's spelling: v1's back-and-forth along an axis is oscillate (the load
-// renames a stored one the same way: shaperepair.js renameFields). Output differs from @13 on any log with that motion. Both names.
+// @14 (R 10-17 21:40): a motion's type is written in today's spelling: v1's back-and-forth along an axis is oscillate (the maintenance
+// repair renames a stored one the same way: shaperepair.js renameFields). Output differs from @13 on any log with that motion. Both names.
 // @13 (review r9 claims O3, 2026-10-17): every translation writes the system's repair-shapes act right after `translated`
 // (the shape repair's once-per-world marker, review r8 M3), one entry @12 didn't. Its projection is @12's; its log is one
 // entry longer. Both names move to @13 (the name says which output you got).
@@ -216,7 +216,7 @@ export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(nam
 // identity mapper is given (with one, it becomes the person's id, as before). A dialect-3 epoch her sim refused is carried
 // as imported:epoch (was the imported-epoch component). Both names (with and without her sim) move to @12.
 // @12, wave 2 (the shape audit's physics-motion family): a stored value's old spelling is written in today's (shapeRepaired,
-// below; shared/protocol/shaperepair.js, the same rules the server's first load applies to a stored v4 world), and a
+// below; shared/protocol/shaperepair.js, the same rules the maintenance command applies to a stored v4 world), and a
 // parent carries no order. Output differs on any log with a motion, a collider or a mount.
 // @12, wave 2 (the shape audit's render-media-env family): the same repair's render rules: a light carries decay 1.7 (the
 // rig's old falloff) and daytime (was day), no shadows; @world's sky, terrain
@@ -227,7 +227,7 @@ export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(nam
 // wave-2 render notes above wrote the address and the strokes). Output differs on any log with a model, particles or grass.
 // @12, wave 2 (the shape audit's attach-interact family): a lock is written in its one spelling, {rank: 'builder'} (a v1
 // lock: true, and a guard merged into it, were true). Sockets stay the v1 map with each seat's body block: the server's
-// lift (authority/sockets.js) makes them socket children with a station at first load, as for any older v4 log.
+// lift (authority/sockets.js) makes them socket children with a station when the maintenance command runs, as for any older v4 log.
 // @10 (2026-10-08): a dialect-3 log (one with a physics `epoch`, PROTOCOL_v2 §3) is translated with her sim run beside the
 // v1 fold (what translate-d3 did on its own, now on this one path with its identities, model hashes, founder key and
 // namespace): a punt is a logged launch with its exact stamped state, every rest a logged result the authority's sim layer
@@ -951,7 +951,7 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
     for (const [a, d] of parts.effects ?? []) effects?.set(a, d);   // @34: the motes' derived dust
     if (Object.keys(parts.left).length && out[host]) out[host][keyed("imported", "environment")] = parts.left; }
   { const sb = stageBoundsOf(st); if (sb) w.bounds = sb; }   // @31: main's 78 m stage island as the world's box (stageBoundsOf)
-  // @12, wave 2 (render-media-env): the world's look in today's spelling, as the load repairs a stored one (repairWorld: the sky's
+  // @12, wave 2 (render-media-env): the world's look in today's spelling, as the maintenance repair does a stored one (repairWorld: the sky's
   // clock as tz, radians, transition; the terrain's int colours and the sim's defaults, its water as the water component;
   // grass in the flora spelling, a preset kept by its name)
   out["@world"] = repairWorld(w).c; // @world is live from genesis (§2.3)
@@ -1045,7 +1045,7 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
   const mapAcct = who ? (sub) => who(sub, { sub }) : undefined;
   // the old genesis as it was, but never an account (@19): a genesis role's sub becomes its person's id, as in an old request
   const translatedSeq = push({ kind: "act", actor: "system", verb: "translated", ts: t0.ts ?? 0, body: { from: unNegZero(withoutAccounts({ ...genesis, translator: physics ? TRANSLATOR_SIM : TRANSLATOR, ...(foldBuild ? { fold: foldBuild } : {}) }, mapAcct)) } });
-  // the translation writes the repaired spelling, so its log carries the load's once-per-world marker from the start: the
+  // the translation writes the repaired spelling, so its log carries the repair's once-per-world marker from the start: the
   // system's repair-shapes act, read by verb and actor only (review r8 M3: the translated act's body is purgeable)
   push({ kind: "act", actor: "system", verb: "repair-shapes", ts: t0.ts ?? 0, body: { v: SHAPES_VERSION, ids: [], translated: true } });
   // the operator's approval of this translation (import-v1/world.ts), written here, before any cause is taken

@@ -341,7 +341,7 @@ export class WorldLog {
     try { presenceEvent(this.live, kind, who); } finally { if (this.live.entries.length > from) this.afterWrite(from); }
   }
   /** The authority's status view of every script here (debug panel, world_debug {behaviors}). */
-  scriptsView(id?: string) { return scriptsView(this.live, id); }
+  scriptsView(id?: string, floor: number | null = null) { return scriptsView(this.live, id, floor); }
 
   /** Send what the authority just wrote: the raw entries, to every client (they all fold the log). Chat lines go into the
    *  window; the view goes stale for its next reader; a role change re-sends everyone's rights. */
