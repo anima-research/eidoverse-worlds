@@ -95,8 +95,8 @@ try {
       // its positive control is both untrusted links seen, the picture's and the sound's (house 6340433633: the trusted MP3
       // alone met it, so it could pass with no picture request seen)
       sent.some(({ u }) => u.includes(UNTRUSTED) && u.endsWith(".png")) && sent.some(({ u }) => u.includes(UNTRUSTED) && u.endsWith(".mp3")) && sent.every(({ r }) => r === null), sent); }
-  await page(`(await import('/lib/mediaprefs.js')).setAllowUntrusted(false); return true;`);
-  check("PRIV5 …and opting out again tears the link's audio down", await waitFor(`import('/lib/sounds.js').then((s) => !s._playing.has('linkradio') && s._blocked.get('linkradio') === 'untrusted')`));
+  const unclicked = await waitFor(`(() => { const cb = document.querySelector('#sec-safety input[type=checkbox]'); if (!cb || !cb.checked) return false; cb.click(); return true; })()`, 4000);   // the row again (PRIV4 clicked it on; the setter alone leaves the drawn row checked)
+  check("PRIV5 …and opting out again (the row, clicked off) tears the link's audio down", unclicked && await waitFor(`import('/lib/sounds.js').then((s) => !s._playing.has('linkradio') && s._blocked.get('linkradio') === 'untrusted')`));
   await evalJson(`(() => { document.querySelector('#sec-safety-tab')?.click(); return true; })()`);
   check("PRIV6 the setting is a row in Settings › 🛡 safety (off)", await waitFor(`(() => { const b = document.querySelector('#sec-safety'); const cb = b?.querySelector('input[type=checkbox]'); return !!cb && !cb.checked && /Allow untrusted links/.test(b.textContent); })()`, 4000),
     await evalJson(`({ tab: document.querySelector('#sec-safety-tab')?.title ?? null, body: (document.querySelector('#sec-safety')?.textContent ?? '').slice(0, 120) })`));
