@@ -54,7 +54,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["throw: 0 only drops", "protocol/authority/bodyverbs.js", ": g?.throw === 0 ? `${a.id} can't be thrown", ": false ? `${a.id} can't be thrown", ["R1"]],
   ["stay: a put with no pos stays at the hand", "protocol/authority/bodyverbs.js", "if (pos === undefined && stay) pos = h.pose.pos.map(r3);", "", ["R2"]],
   ["stay: never called floating", "protocol/authority/bodyverbs.js", ".filter((x) => !(stay && (x.kind === \"floating\" || x.kind === \"sunk\")))", ".filter(() => true)", ["R2"]],
-  ["release: return goes home at once", "protocol/authority/bodyverbs.js", "if (g?.release === \"return\" && g.home) {\n      const ret = returnPlan(w, st, a.id, g);", "if (false) {\n      const ret = returnPlan(w, st, a.id, g);", ["R3"]],
+  ["release: return goes home at once", "protocol/authority/bodyverbs.js", "if (g?.release === \"return\" && g.home) {\n      const ret = returnPlan(w, st, a.id, g);", "if (false) {\n      const ret = returnPlan(w, st, a.id, g);", ["R3", "O1"]],
   ["a returning drop doesn't fly", "protocol/authority/bodyverbs.js", "const sets = !fliesIn(st, a.id) || g?.release === \"return\" ||", "const sets = !fliesIn(st, a.id) ||", ["R3"]],
   ["a returning throw doesn't fly", "protocol/authority/bodyverbs.js", ": g?.release === \"return\" ? null : undefined;", ": undefined;", ["R3"]],
   ["home is stamped", "protocol/authority/manipulate.js", "if (!h || (born && !sameHome(after, id, h))) home = homeHere(after, id);", "if (false) home = homeHere(after, id);", ["R3", "R4"]],
@@ -513,12 +513,15 @@ const cases: Case[] = [
       s.call("olive", "create", { id: "ball", model: "ball", components: { grabbable: { who: "member" } }, place: { at: [0, 0] } });
       s.call("olive", "create", { id: "balloon", model: "ball", components: { grabbable: { who: "member", release: "stay" } }, place: { at: [0.3, 0] } });
       s.call("olive", "create", { id: "torch", model: "book", components: { grabbable: { who: "member", release: "return" } }, place: { at: [-0.3, 0] } });
-      s.call("vic", "move", { to: [0, 0, 0.5] }); for (const id of ["ball", "balloon", "torch"]) s.call("vic", "grab", { id }); s.call("vic", "move", { to: [0, 0, 2] }, 1000);
+      // MAX_HELD is 2: vic holds the ball and the torch, ann the balloon; every grab is asserted (bot #260 81)
+      s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("ann", "move", { to: [0.3, 0, 0.5] });
+      const grabs = [s.call("vic", "grab", { id: "ball" }), s.call("vic", "grab", { id: "torch" }), s.call("ann", "grab", { id: "balloon" })].map(show);
+      s.call("vic", "move", { to: [0, 0, 2] }, 1000); const carried = s.w().presence.holds.torch?.pose?.pos;
       const w2 = s.reopen(s.w().presence); const n0 = s.entries().length; clock.advance(100);
       const r = D.settleOrphans?.(w2, []);
-      return { r: r?.length, holds: Object.keys(w2.presence.holds), body: !!w2.presence.bodies.vic, after: since(s, n0), by: s.entries().slice(n0).filter((e: any) => e.kind === "act").map((e: any) => e.actor),
+      return { grabs, carried, r: r?.length, holds: Object.keys(w2.presence.holds), body: !!w2.presence.bodies.vic, after: since(s, n0), by: s.entries().slice(n0).filter((e: any) => e.kind === "act").map((e: any) => e.actor),
         ball: tf(s, "ball").pos, balloon: tf(s, "balloon").pos, torch: tf(s, "torch").pos }; },
-    good: (o) => o.r >= 1 && !o.holds.length && !o.body && o.by.includes("vic") && o.ball[1] === 0 && Math.abs(o.ball[2] - 2) < 1e-6 && o.balloon[1] === 1.1 && JSON.stringify(o.torch) === "[-0.3,0,0]" },
+    good: (o) => o.grabs.every((g: string) => g === "ok") && o.carried?.[2] > 1 && o.r >= 1 && !o.holds.length && !o.body && o.by.includes("vic") && o.ball[1] === 0 && Math.abs(o.ball[2] - 2) < 1e-6 && o.balloon[1] === 1.1 && o.after.includes("act:return-home") && JSON.stringify(o.torch) === "[-0.3,0,0]" },
   { id: "O2", what: "presence kept in memory: in a physics world the log's lift is settled at load (door return-held, cause the lift; a return goes home), once, and a carrier agrees", run(s) { cast(s, true);
       s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 0] } });
       s.call("olive", "create", { id: "torch", model: "book", components: { physics: { kind: "dynamic" }, grabbable: { who: "member", release: "return" } }, place: { at: [0.3, 0] } });

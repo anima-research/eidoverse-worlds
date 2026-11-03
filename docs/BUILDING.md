@@ -16,7 +16,7 @@ authority's answer is the one that holds.
 
 **Format and frame.** GLB, metres, Y up. Put the origin on the ground at the
 middle of the footprint: `create {model, at: [x, z]}` puts that point at x, z,
-with the model's bottom resting on the highest ground under its footprint.
+with the model's bottom resting on the ground at that one point (x, z).
 Face the front (the main door) toward **+Z**, so yaw 0 means what you expect.
 Nothing bends a building to uneven terrain: on a slope the downhill side stands
 above the ground, so give it a base or plinth that reaches down half a metre or

@@ -197,8 +197,8 @@ function cast(s: any, { crew = false } = {}) {
 type Case = { id: string; what: string; run: (s: any) => any; good: (o: any) => boolean };
 const cases: Case[] = [
   // B1 (recut B, house: "new code would check permissions rather than role names, with owner-only powers going through one
-  // function"): no source outside roles.js compares a role to a built-in name; owner goes through R.isOwner.
-  { id: "B1", what: "(recut B1) no role-name comparison outside shared/protocol/roles.js: permissions decide, owner goes through isOwner", run() {
+  // function"): no source outside roles.js compares a `role` variable to a built-in name. roleOf(...) === "owner" isn't matched (bot #260 83).
+  { id: "B1", what: "(recut B1) no `role` variable compared to a built-in role name outside shared/protocol/roles.js (a roleOf(...) === \"owner\" call isn't checked)", run() {
       const hits: string[] = []; const RX = /\brole\s*[!=]==?\s*["'](owner|builder|moderator|member|visitor|none)["']|["'](owner|builder|moderator|member|visitor)["']\s*[!=]==?\s*[\w.?]*role\b|\[[^\]]*["'](builder|owner)["'][^\]]*\]\.includes\([\w.?]*role\)/;
       const walk = (d: string) => { for (const e of fs.readdirSync(TREE + d, { withFileTypes: true })) { const rel = d + "/" + e.name;
         if (e.isDirectory()) { if (!["node_modules", "vendor", "dist"].includes(e.name)) walk(rel); continue; }

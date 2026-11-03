@@ -518,10 +518,11 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   keeps its old spelling and is named in the act's `failed` (written only
   when something else renamed). The door takes a write in the old spelling
   and stores it in the new.
-- **Every parameter is written down.** The authority writes a component's
-  defaults into the stored value when it is created or set, so a reader never
-  supplies a value the log doesn't hold, and a later change to a default
-  never changes an old world. A parameter's meaning (its units, what it
+- **Every defaulted parameter is written down.** The authority writes a
+  component's defaults into the stored value when it is created or set, so a
+  reader never supplies a default the log doesn't hold, and a later change to
+  a default never changes an old world. A field with no default but a pinned
+  meaning of absence (`absentMeans`, below) is read by that meaning. A parameter's meaning (its units, what it
   does) never changes; a new meaning is a new versioned name.
 - **A stamped field is the authority's.** A definition's `stamped` lists the
   fields only the authority writes (a dotted path reaches inside a value):
@@ -740,9 +741,11 @@ copy that was updated and is published again keeps its parts' keys.
   Continuous contact from a body or a held thing gives no unlogged impulse
   **to the engine**: contact under live simulation authority is presence,
   and enters history only as a settlement or a launch (spec/PHYSICS.md §4). A
-  disconnect settles at the last accepted state. (A world whose scripts
-  listen for `enter`/`leave` records who triggered each activation, as every
-  script act does; that is the world's choice, visible in its scripts.)
+  disconnect settles at the last accepted state. (An `enter`/`leave`
+  activation records *that* someone arrived or left, never who: the
+  authority strips the trigger and `event.by` from the act (scriptrun.js
+  ANON_EVENTS). What a script itself writes about the arrival is the world's
+  choice, visible in its scripts.)
 - **One mover.** A body has one mover (shared/mover.js) and the mover has
   modes — `walk` today (wading and swimming are its water stances:
   `MOVER.swim`); `fly` (shared/flight.js's integrator, the same function in
@@ -772,7 +775,8 @@ copy that was updated and is published again keeps its parts' keys.
   top within a step, a swimmer is tested as a swimmer (its box a step below
   the haul-out line), and a ground ledge over a step is refused as solid
   (`blocker: "ground"`). `place {at}`, `create {at: [x, z]}` and the spawn
-  alias seat a model's bottom on the highest ground under its footprint. A
+  alias seat a model's bottom on the support at that one point (x, z): a
+  top there, else the ground (not the whole footprint; docs/BUILDING.md). A
   world with no `terrain` is flat at y 0 and dry; `terrain {kind: 'flat',
   height}` is flat at its height. A heightmap world whose
   grid isn't on the server yet has no ground to judge on, and the authority
@@ -1300,7 +1304,8 @@ away from it.
   contact details. Identity to person lives in the directory (§3.1).
 - **Every id field is a typed reference** (§4 "References are typed"): its
   type in `fields`, or its path in the definition's `refPaths`.
-- **One `who` type**: a role id, meaning "this rank or above".
+- **One `who` grammar** (§7, "What a thing admits"): a role id ("this rank or above"),
+  `{permission}` or `{roles}`; never a per-component spelling.
 - **Curves and falloff laws** are in the value, or named with a version: a
   reader never supplies its own.
 - **Required where absence isn't the default**: a field whose absence would

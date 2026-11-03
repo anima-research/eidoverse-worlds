@@ -32,8 +32,8 @@ const KEEP = new Set(["R7", "O0"]);
 
 // ---------------- the mutation and control drivers (they re-run this file as child processes) ----------------
 const MUTANTS: [string, string, string, string, string[]][] = [
-  ["a named openable toggles open", "shared/protocol/authority/use.js", "field: h.field ?? (comp === \"openable\" ? \"open\" : undefined)", "field: h.field ?? (h.component === undefined ? \"open\" : undefined)", ["R3b"]],
-  ["toggle's default is openable", "shared/protocol/authority/use.js", "const comp = h.component ?? \"openable\";", "const comp = h.component ?? \"door\";", ["O3", "R3"]],
+  ["a named openable toggles open", "shared/protocol/authority/sockets.js", "field: h.field ?? (comp === \"openable\" ? \"open\" : undefined)", "field: h.field ?? (h.component === undefined ? \"open\" : undefined)", ["R3b"]],
+  ["toggle's default is openable", "shared/protocol/authority/sockets.js", "const comp = h.component ?? \"openable\";", "const comp = h.component ?? \"door\";", ["O3"]],
   ["openable: angle or slide", "shared/protocol/authority/checks.js", "if (v.angle !== undefined && v.slide !== undefined) refuse(", "if (false) refuse(", ["O2"]],
   ["openable: slide bounds", "shared/protocol/authority/checks.js", "if (v.slide !== undefined && !nums(v.slide, 3, 10)) refuse(", "if (false) refuse(", ["O2"]],
   ["openable: the catalogue's ranges", "shared/protocol/componentspec.js", "ranges: { angle: { min: -Math.PI, max: Math.PI }, time: { min: 0, max: 10 } },", "", ["O2"]],
