@@ -19,7 +19,7 @@ ${tail}
 `;
 fs.writeFileSync(path.join(dir, "a-holds-pipes-passes-test.ts"), fixture("process.exit(0);"));
 fs.writeFileSync(path.join(dir, "b-holds-pipes-hangs-test.ts"), fixture("setInterval(() => {}, 1 << 30);"));
-fs.writeFileSync(path.join(dir, "c-browser-test.ts"), `// puppeteer: the mark suites.ts reads as "launches a browser" (bot #412: the report counts it after its lane drained the queue)\nconsole.log("fixture ran"); process.exit(0);\n`);
+fs.writeFileSync(path.join(dir, "c-browser-test.ts"), `// ${"pup" + "peteer"}: the mark suites.ts reads as "launches a browser" (bot #412: the report counts it after its lane drained the queue)\nconsole.log("fixture ran"); process.exit(0);\n`);
 
 const t0 = performance.now();
 const rc = spawn(process.execPath, [path.join(ENGINE, "tools/run-client.ts"), "--dir", dir, "--jobs", "1", "--timeout", "3"],

@@ -293,8 +293,8 @@ const cases: Case[] = [
         s.call("olive", "batch", { ops }, 20000); }
       for (let i = 0; i < 400; i++) { holds[`g-${i}`] = { by: `h-${i}`, since: clock.t, pose: { pos: [i % 20, 1.1, Math.floor(i / 20)], q: [0, 0, 0, 1], scale: [1, 1, 1] }, handled: [`h-${i}`] }; bodies[`h-${i}`] = { at: [i % 20, 0, Math.floor(i / 20)], ts: clock.t, tokens: 4 }; }
       s.call("olive", "look", {}, 20000);
-      const w = s.reopen({ presence: { holds, bodies } });
-      const x = timed(() => D.settleOrphans(w, []));
+      let w: any = null;   // best of 3 fresh loads, as best() does for the other rows: one slow scheduler slice isn't the bound
+      const x = best(3, () => { w = s.reopen({ presence: structuredClone({ holds, bodies }) }); return D.settleOrphans(w, []); });
       return { ms: r1(x.ms), bound: r1(8 * bound()), settled: x.r.filter((r: any) => r.holder).length, deferred: x.r.find((r: any) => r.deferred)?.deferred ?? 0, holdsLeft: Object.keys(w.presence.holds).length }; },
     good: (o) => o.ms <= o.bound && o.settled > 0 && o.settled <= 16 && o.deferred === 400 - o.settled && o.holdsLeft === 0 },
 
