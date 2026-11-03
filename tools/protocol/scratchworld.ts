@@ -55,7 +55,8 @@ export function scratchWorld(tag = "edit", { owner = "olive", title = "scratch",
     view: () => viewState(w.state()),
     /** the view record of one thing (ids as the planners use them) */
     rec: (id) => viewState(w.state()).entities[id] ?? null,
-    /** seed things from VIEW-form records ({lib, pos, q|yaw, scale|scale3, parent:{to, socket?, offset?, q?|yaw?}, comp}).
+    /** seed things from flat VIEW-form records ({model?, pos, q|yaw, scale|scale3, parent:{to, socket?, offset?, q?|yaw?}, and every
+     *  other key a component by its name: label, light, … — no `lib`, no `comp` bag; bot review #260 84).
      *  A child's transform is written LOCAL to its parent (localOf reads a v1-style mount the same way the planners do).
      *  Parents first; every create must be accepted or the seed throws. */
     seed: (recs) => {

@@ -17,7 +17,7 @@ const check = (name: string, ok: boolean, detail = "") => {
 };
 const throws = (f: () => void) => { try { f(); return false; } catch { return true; } };
 
-const W = scratchWorld("freeze").seed({ crate: { lib: "crate.glb", pos: [1, 0, 2], yaw: 0, comp: { label: "crate", "example.org/rack": { top: { pos: [0, 1, 0] } } } } });
+const W = scratchWorld("freeze").seed({ crate: { model: "crate.glb", pos: [1, 0, 2], yaw: 0, label: "crate", "example.org/rack": { top: { pos: [0, 1, 0] } } } });   // flat records (scratchworld seed)
 const cutAt = () => JSON.parse(JSON.stringify({ state: wireState(W.state()), head: W.entries().length - 1 }));
 
 console.log("\nfrozen by default (every suite runs with the guard):");
