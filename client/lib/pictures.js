@@ -234,7 +234,7 @@ export { THREE as _THREE };
 // read-only line: the server would refuse the comp, so the block says who may.
 
 const PICTURE_ACCEPT = 'image/png,image/jpeg,image/webp';
-const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 export { namedParts };   // lives in parts.js now: the inspector's `parts` extra reads the same list
 

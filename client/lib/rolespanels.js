@@ -29,7 +29,7 @@ import { COMPONENTS, resolveVersioned, rangeWords, outOfRange } from '../../shar
 import { SIM_ID } from '../../shared/sim.js';
 
 const wc = () => replica.st?.entities?.['@world']?.c ?? {};
-const esc = (v) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const me = () => { const r = net.myRights ?? {}; return { id: net.you, role: r.role ?? 'member', rank: r.rank ?? 0, permissions: r.permissions ?? [] }; };
 const has = (k) => R.isOwner(me()) || me().permissions.includes(k);
 const isOwner = () => R.isOwner(me());

@@ -14,7 +14,7 @@ import { serverNow, serverUntil } from './serverclock.js';
 const ID = /^u-[a-z2-7]{20}$/;
 const SPANS = [['', 'no end'], ['3600000', '1 hour'], ['86400000', '1 day'], ['604800000', '1 week']];
 const wc = () => replica.st?.entities?.['@world']?.c ?? {};
-const esc = (v) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const me = () => { const r = net.myRights ?? {}; return { id: net.you, role: r.role ?? 'member', rank: r.rank ?? 0, permissions: r.permissions ?? [] }; };
 const isOwner = () => R.isOwner(me());
 const mayGrant = () => isOwner() || me().permissions.includes('grantRoles');

@@ -1034,8 +1034,7 @@ function paintSide(force = false) {
   const strip = stripName && listEl.querySelector('.pm-strip');
   if (strip) personUi.stripFor(stripName, strip);
 }
-const esc = (v) => String(v).replace(/[&<>"]/g, (c) => (
-  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // ---- chat gear: text size (the sheet's -a/+A) + which side the people pane
 // sits on. Small popover; both persisted.

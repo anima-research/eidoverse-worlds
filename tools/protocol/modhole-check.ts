@@ -70,5 +70,11 @@ const srv = ["server/messages.ts", "server/server.ts", "server/requestwire.ts"].
 const types = [...srv.matchAll(/type:\s*"([\w-]+)"/g)].map((m) => m[1]).filter((t) => /mod-?offer|client-?mod|^mods$|offer-?mod/i.test(t));   // ("mod" is moderation text, not a mod)
 ok(types.length === 0, "MH5 the server sends no message that carries a client mod", types);
 
+// ---- MH6 (bot #356) every client HTML escaper covers the five: & < > " and ' (a name in a single-quoted attribute) ----
+const escapers = files.filter((p) => p.endsWith(".js")).flatMap((p) => code(p).filter(({ l }) => /replace\(\/\[&<>/.test(l)).map(({ n, l }) => ({ f: path.relative(CLIENT, p), n, l })));
+ok(escapers.length >= 10, "MH6 (setup) the client's escapers are found by their replace(/[&<>…]/ shape", escapers.length);
+const short = escapers.filter(({ l }) => !/replace\(\/\[&<>"'\]\//.test(l));
+ok(short.length === 0, "MH6 every client escaper escapes ' as well as & < > \"", short);
+
 console.log(`[modhole-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

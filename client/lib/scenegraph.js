@@ -49,8 +49,7 @@ import { modelWord } from '../../shared/eido.js';
 import { called } from './plainwords.js';
 
 
-const esc = (v) => String(v).replace(/[&<>"]/g, (c) => (
-  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const _wp = new THREE.Vector3();
 
