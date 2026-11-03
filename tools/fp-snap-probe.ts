@@ -28,7 +28,7 @@
 //      oscillate pass where the camera must ride the moving socket;
 //   6. saves every frame to RECEIPTS and exits non-zero on any violation.
 //
-// Wire facts it leans on (v4): the world is founded before anyone joins; a body joins with replica: true; building is
+// Wire facts it leans on: the world is founded before anyone joins; a body joins with replica: true; building is
 // requests (create/set/delete, placeholders for ids); sitting is the attach tool (a `use` of the socket, then presence);
 // /snap?world&follow&view needs a renderer in-world and the door's key as a Bearer header.
 

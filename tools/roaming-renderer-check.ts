@@ -18,7 +18,7 @@ const live = process.argv[2] ?? null;
 const shot = process.env.SHOT;
 const world = live ? process.env.WORLD : `roam-build-${Date.now().toString(36)}`, lobby = live ? process.env.LOBBY : `roam-lobby-${Date.now().toString(36)}`;
 if (!world || !lobby) { console.error('a running server needs LOBBY and WORLD: two worlds its operator founded'); process.exit(2); }
-// the v4 wire: worlds founded before anyone joins, a replica join, and every write a {type: 'request'} (server.ts admitJoin)
+// the wire: worlds founded before anyone joins, a replica join, and every write a {type: 'request'} (server.ts admitJoin)
 // only an ENROLLED agent's arrival pre-warms (server.ts: c.tokenVerified), so the owned server gets a scratch enrolment
 const tokDir = mkdtempSync(join(tmpdir(), 'roam-tokens-')), agentToken = live ? (process.env.AGENT_TOKEN ?? '') : crypto.randomUUID();
 if (!live) writeFileSync(join(tokDir, 'tokens.json'), JSON.stringify({ [agentToken]: { id: 'builder-agent' } }));

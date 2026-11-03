@@ -14,7 +14,7 @@ const world = await ownedWorld({ worlds: [W], owner: 'agent', env: { TRUST_NAMES
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const AUTH = { headers: { authorization: `Bearer ${world.key}` } };   // /snap is behind the world's door (routes.ts mayRead)
 
-// the v4 join: a world founded before boot, replica: true, writes as {type: 'request'} (server.ts admitJoin; requestwire.ts)
+// the join: a world founded before boot, replica: true, writes as {type: 'request'} (server.ts admitJoin; requestwire.ts)
 const ws = new WebSocket(world.origin.replace('http', 'ws') + '/ws');
 await new Promise((r) => (ws.onopen = r));
 const replies = new Map(); let joined = null;
