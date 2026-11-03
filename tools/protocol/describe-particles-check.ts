@@ -209,7 +209,7 @@ const cases: Case[] = [
   { id: "X8", what: "a held thing's fx is reserved (shape audit 10-16): refused in the older bag's shape and in today's alike", run(s) { cast(s); thing(s, "hose");
       return { old: code(s.call("olive", "set", { id: "hose", component: "grabbable", value: { fx: { particles: { preset: "smoke" } } } })), now: show(s.call("olive", "set", { id: "hose", component: "grabbable", value: { fx: { particles: { effect: "smoke" }, at: [0, 0, 0.5] } } })) }; },
     good: (o) => o.old === "reserved" && /^refused reserved/.test(o.now) },
-  { id: "X9", what: "every Essential is a document that passes its own bounds, and every older bag reads exactly as its modern spelling (instanceOf), param by param", run() {
+  { id: "X9", what: "every Essential is a document that passes its own bounds, and an older fire bag with every knob reads exactly as its modern spelling (instanceOf), param by param", run() {
       const names = Object.keys(PE.ESSENTIALS ?? {}); const bad = names.filter((k) => PE.effectProblem(PE.ESSENTIALS[k]));
       const old = { preset: "fire", seed: 9, origin: [0, 0.18, 0], count: 120, size: 0.4, opacity: 0.8, speed: 1.5, lifetime: 0.7, area: [0.2, 0.1, 0.2], texture: "eidoverse/assets/particle_textures/flame_05.png", quality: "med" };
       const a = PE.resolveParticles(old, { entityId: "h" }), b = PE.resolveParticles(PE.modernize(old), { entityId: "h" });
@@ -258,7 +258,7 @@ const cases: Case[] = [
   // ---------------- G: the simulation (Godot's modules) ----------------
   { id: "G1", what: "preprocess: a steady effect is in flight on its first frame (Godot's pre_process_time)", run() { const s = PS.makeSim(em({ spawn: { amount: 64, lifetime: 1, preprocess: 1 }, velocity: { speed: [1, 1] } }), { seed: 3 }); s.step(0); return { n: alive(s).length }; },
     good: (o) => o.n >= 60 },
-  { id: "G2", what: "explosiveness 1: every particle is born in the same instant (all the same age)", run() { const s = run(em({ spawn: { amount: 32, lifetime: 2, explosiveness: 1 } }), 0.5); const ys = alive(s).map((i) => s.size[i]); return { n: alive(s).length, f: [...new Set(alive(s).map((i) => Math.round(s.color[i * 4 + 3] * 1000)))].length }; },
+  { id: "G2", what: "explosiveness 1: every particle is born in the same instant (all the same age: one alpha on a life-varying ramp)", run() { const s = run(em({ spawn: { amount: 32, lifetime: 2, explosiveness: 1 }, color: { ramp: [[0, 0xffffff, 1], [1, 0xffffff, 0]] } }), 0.5); return { n: alive(s).length, f: [...new Set(alive(s).map((i) => Math.round(s.color[i * 4 + 3] * 1000)))].length }; },
     good: (o) => o.n === 32 && o.f === 1 },
   { id: "G3", what: "oneShot: one cycle, then nothing is born and the living finish", run() { const s = run(em({ spawn: { amount: 16, lifetime: 0.5, oneShot: true } }), 1.5); return { n: alive(s).length, emitting: s.emitting }; },
     good: (o) => o.n === 0 && o.emitting === false },
@@ -319,7 +319,7 @@ const cases: Case[] = [
       const speeds = alive(t).map((i) => Math.hypot(t.vel[i * 3], t.vel[i * 3 + 1], t.vel[i * 3 + 2]));
       return { lg, back: lg && rot(q, lg), world, tang: Math.max(...speeds) }; },
     good: (o) => Array.isArray(o.lg) && Math.abs(o.back[0]) < 1e-9 && Math.abs(o.back[1] + 9.8) < 1e-9 && Math.abs(o.back[2]) < 1e-9 && Math.abs(o.world[0]) < 0.05 && o.world[1] < -4.2 && o.world[1] > -5.6 && o.tang > 1 },
-  { id: "P5", what: "the renderer hands each emitter's sim its gravity in the emitter's frame every frame (the inverse of its world rotation, its world scale), before it steps", run() {
+  { id: "P5", what: "the renderer hands each emitter's sim its gravity in the emitter's frame before it steps (source order in particlefx.js: setGravity precedes step)", run() {
       const src = fs.readFileSync(TREE + "client/lib/particlefx.js", "utf8"); const i = src.indexOf("sim.setGravity(localGravity("), j = src.indexOf("sim.step(dt)");
       return { i, j }; },
     good: (o) => o.i > 0 && o.j > o.i },

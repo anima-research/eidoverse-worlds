@@ -6,7 +6,7 @@ import { resolveLibFile } from "../../../server/libfile.ts";
 
 /** One lamp as main drew it: where (the model's own frame, before its scale), its colour (0xRRGGBB, sRGB), and main's rig numbers. */
 export type Lamp = { at: number[]; color: number; intensity: number; range: number; decay: number };
-const cache = new Map<string, Lamp[]>();
+const cache = new Map<string, Lamp[] | { unmeasured: string }>();   // unmeasured: the file was here but could not be read (said in the report); warmed again next time
 let ioP: Promise<any> | null = null;
 const io = () => (ioP ??= (async () => {
   const { NodeIO } = await import("@gltf-transform/core");
@@ -49,11 +49,11 @@ export function lampsOfDoc(doc: any): Lamp[] {
 /** Measure each library path's lamps once (await before translating): a model this host can't find or read has none, as main drew none. */
 export async function warmLamps(libs: Iterable<unknown>) {
   for (const lib of new Set([...libs].filter((x): x is string => typeof x === "string"))) {
-    if (cache.has(lib)) continue;
-    let lamps: Lamp[] = [];
-    try { const f = resolveLibFile(lib); if (f) lamps = lampsOfDoc(await (await io()).read(f)); } catch { /* unreadable: none */ }
+    if (Array.isArray(cache.get(lib))) continue;
+    let lamps: Lamp[] | { unmeasured: string } = [];
+    try { const f = resolveLibFile(lib); if (f) lamps = lampsOfDoc(await (await io()).read(f)); } catch (e: any) { lamps = { unmeasured: `unreadable here: ${String(e?.message ?? e).slice(0, 120)}` }; }   // bot review 442: never silently none
     cache.set(lib, lamps);
   }
 }
-/** A warmed model's lamps ([] when it has none or was never warmed). */
-export const lampsOf = (lib: unknown): Lamp[] => (typeof lib === "string" ? cache.get(lib) ?? [] : []);
+/** A warmed model's lamps ([] when it has none or was never warmed), or {unmeasured: why} when this host could not read it. */
+export const lampsOf = (lib: unknown): Lamp[] | { unmeasured: string } => (typeof lib === "string" ? cache.get(lib) ?? [] : []);

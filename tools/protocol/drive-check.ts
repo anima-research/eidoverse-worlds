@@ -2,7 +2,7 @@
 // shared/protocol/authority/drive.js): the door, one driver, plausibility, the hull's own collision, the lease's commits and end.
 //   bun tools/protocol/drive-check.ts                 every case
 //   bun tools/protocol/drive-check.ts --only D1,D3    just those
-//   bun tools/protocol/drive-check.ts --tree <dir>    against another checkout's shared/ and server/ (a mutant, or the base)
+//   bun tools/protocol/drive-check.ts --tree <dir>    against another checkout's shared/ (durable and custody are always this checkout's; a mutant, or the base)
 //   bun tools/protocol/drive-check.ts --mutants       remove each rule in turn (a copy of the tree): its cases must go red
 // @ts-nocheck
 import "./fixture-ids.ts";

@@ -1,6 +1,7 @@
 // Four gaps 26 left open (research note 34), as the SAME requests through the authority before this work (c9b4a67,
-// extracted by git into .baseline-gaps/) and through today's. An attack must be accepted there and refused now; a
-// guard (co-building, owner flows) must work in both. usage: bun gaps-check.js
+// extracted by git into .baseline-gaps/) and through today's. Each case must differ from the baseline as its predicates
+// say (most attacks: accepted there, refused now; some are judged on state or order); a guard (co-building, owner flows)
+// must work now (the baseline isn't judged for guards).
 //   G1  creator rights on keyed components (PROTOCOL §5): "the creator of this key, or an owner", a view over the log
 //   G2  presence plausibility (L6, 25d M3): the authority's own track of each body; settlements check against it
 //   G3  rate per actor (L7): every logged word, not only state writes
@@ -117,7 +118,7 @@ const cases = [
       const ok8 = s.call("vic", "move", { to: [0.5, 0, 8] }); const tp = s.call("vic", "move", { to: [0, 0, 0.4], teleport: true });
       const L = s.world().entries; const all = L.filter((e) => e.kind === "act" && e.actor === "vic" && e.verb === "move"); const acts = all.filter((e) => !e.body?.refused);
       // round-2 R7 recorded refused requests, but a body's track is presence: a refused move (arrival and teleport included)
-      // is never recorded (review 10-06 S0-3: a client indoors wrote one every ~3 s). The accepted arrivals are acts.
+      // is never recorded (review 10-06 S0-3: a client indoors wrote one every ~3 s).
       return { arrive, ok8, tp, moveActs: acts.length, refusedActs: all.filter((e) => e.body?.refused).length, recorded: acts[0]?.body?.presence ?? null }; },
     // review 10-07 M3: an arrival is presence, never logged (it was an act with where from and to); only a teleport while present is
     baseBad: (o) => ok(o.arrive), nowGood: (o) => code(o.arrive) === "spawn" && ok(o.ok8) && code(o.tp) === "spawn" && o.moveActs === 0 && o.refusedActs === 0 && !o.recorded },
@@ -137,7 +138,7 @@ const cases = [
     baseBad: (o) => ok(o.put) && o.ball === "[8,0,8]", nowGood: (o) => code(o.tp) === "holding" && refused(o.put) && o.ball !== "[8,0,8]" },
 
   // ---------------- G3: rate ----------------
-  { id: "G3a", guard: true, what: "60 sets inside 10 s are fine; the 61st is refused; the window slides", run(s) { cast(s);
+  { id: "G3a", guard: true, what: "a create and 59 sets inside 10 s are fine (60 acts); the 60th set is refused; the window slides", run(s) { cast(s);
       s.call("bob", "create", { id: "c", model: "crate", place: { at: [0, 0] } });
       const rs = Array.from({ length: 60 }, (_, i) => s.call("bob", "set", { id: "c", component: "label", value: `n${i}` }, 50));
       const r61 = s.call("bob", "set", { id: "c", component: "label", value: "61" }, 50);
@@ -318,7 +319,7 @@ for (const c of cases) {
   const fmt = (o) => Object.entries(o).map(([k, v]) => `${k}=${Array.isArray(v) && v.length && v.every((x) => x && typeof x === "object" && ("ok" in x || "crashed" in x)) ? `[${v.map(show).join(" | ")}]` : v && typeof v === "object" && ("ok" in v || "crashed" in v) ? show(v) : JSON.stringify(v)}`).join("; ");
   console.log(`${bb && ng ? "ok  " : "FAIL"} ${c.id.padEnd(4)} ${c.what}${c.guard ? " (guard: must work)" : ""}\n       before: ${fmt(ob)}${bb ? "" : "   <- attack NOT accepted before"}\n       now:    ${fmt(on)}${ng ? "" : "   <- NOT as required now"}`);
 }
-fs.rmSync(root, { recursive: true, force: true }); if (B) fs.rmSync(B, { recursive: true, force: true });
+if (!process.env.PROTOCOL_KEEP) { fs.rmSync(root, { recursive: true, force: true }); if (B) fs.rmSync(B, { recursive: true, force: true }); } // PROTOCOL_KEEP=1 keeps the scratch (common.ts scratch)
 console.log(controlNote());
-console.log(`${cases.length} cases (${cases.filter((c) => c.guard).length} guards): ${bad ? `${bad} FAILED` : (B ? "every attack was accepted before and is refused now; every guard works" : "every attack is refused now; every guard works (before-door not run)")}`);
+console.log(`${cases.length} cases (${cases.filter((c) => c.guard).length} guards): ${bad ? `${bad} FAILED` : (B ? "every case differs from the baseline as required; every guard works" : "every case is as required now; every guard works (before-door not run)")}`);
 process.exit(bad ? 1 : 0);

@@ -34,7 +34,7 @@ type Any = any;
  *  server/custody.ts signOperator) over approvalText(world, report), with `owner: null` and NO_OWNER recorded verbatim (the
  *  CLI's --operator-only-no-owner). Checked by world.ts before anything is written and AGAIN here, before the log is written
  *  (approvalProblem): an approval carrying an owner's signature, or with the countersignature missing, not verifying, or over
- *  another hash, is refused. */
+ *  another hash, is refused; translateV1World then also refuses a countersignature by any key but this host's operator key. */
 export type Sig = { key: string; sig: string };
 export type Approval = { report: string; owner: null; operator: Sig; noOwner: string };
 export const approvalText = (world: string, report: string) => `eidoverse-approve-translation:${world}:${report}`;
@@ -274,7 +274,7 @@ function reportOf(srcBytes: Buffer, world: string, unparsed: number, deferred: A
   return { report, hash: sha256(JSON.stringify(report)) };
 }
 /** A vehicle hull's measured box (model frame) from this host's catalogue, or null: the translator sets main's minY/maxY walls off by it. */
-const hullBox = (lib: unknown) => (typeof lib === "string" ? ENGINE_CATALOGUE.get(lib)?.box ?? null : null);
+export const hullBox = (lib: unknown) => (typeof lib === "string" ? ENGINE_CATALOGUE.get(lib)?.box ?? null : null);
 /** Measure the models of every thing a v1 world gives a vehicle, so the report and the translation read the same boxes (warm before either). */
 export async function warmHulls(srcDir: string) {
   const { old } = readOld(fs.readFileSync(path.join(srcDir, "log.jsonl")));
@@ -342,6 +342,8 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
   const owner = ownerClaimOf(srcDir, claim);   // the upgrader recognised as its owner: bound to that owner here (planned, so a rollback forgets it)
   const { who, planned, idOfName, describe } = identityMapper(old, dir, { known: mainKnowledge(srcWorlds, { self: path.basename(path.resolve(srcDir)) }), owner });
   const cust = custodyAt(custodyFileIn(path.dirname(destDir)));
+  // the countersignature must be THIS host's operator key, not just a key that verifies (bot review #368; the CLI builds it from custody, a library caller may not)
+  if (approval && approval.operator.key !== cust.operator()) throw new Error(`the approval is refused: countersigned by ${approval.operator.key}, not this host's operator key ${cust.operator()}. Nothing written`);
   // a model's bytes (R 10-17: the path is the reference; this is model-hash beside it): the original bytes on this host, hashed;
   // recorded so this server answers /eido/sha256/<hex> for them
   const addressed = new Map<string, string>();

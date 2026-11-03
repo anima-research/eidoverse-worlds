@@ -10,8 +10,8 @@
 //       still gets the address of what's there, and is reported); a library
 //       file's is its ORIGINAL's (never the optimized mirror); resolveLibFile and the catalogue take the address
 //   U3  GET /eido/sha256/<hex> serves exactly the named bytes, immutable; an unknown digest is a 404
-//   U4  GET /library/eido/sha256/<hex>.glb serves the host's rendition, as /library/<path> does (variants included)
-//   U5  the client loads a model by its address through /library/eido/…; one mapping, shared (shared/eido.js)
+//   U4  GET /library/eido/sha256/<hex>.glb serves the host's rendition, as /library/<path> does
+//   U5  the client's load seam maps an address to /library/eido/… (libRelOf; source grep); one mapping, shared (shared/eido.js)
 //   U6  EIDO-URIS.md: `model`'s media is fixed by its role, so a bare eido: string is complete there
 //   U7  credits by path (review r7 F3); U8 the catalogue's sha256 at measure; U9 a door-written world carries (r7 F4)
 // @ts-nocheck

@@ -6,7 +6,8 @@
 //   FP2 equivalence: for synthetic worlds (chat, undo, roles, deletes; a physics one with checkpoints) and the repo's conformance
 //       logs, two copies booted with and without the cache answer every reader alike (state, chain heads, every view, the act
 //       index, creators, history and modlog pages, chat pages, client cuts, sanctions, maintenance, the sim), then take the same
-//       writes (a set, a create, an undo of an old act, a say) to the same bytes, and answer alike again
+//       writes (a set, a create, an undo of an old act, a say) to the same bytes, and answer alike again (the conformance
+//       fixtures' writes are compared but not required to land: mustWrite false)
 //   FP3 the next write's head comes from the seeded chain: no prefix line read, the head a full chain gives
 //   FP4 the byte offsets are checked: a prefix that grew a byte, or a cache whose offset is off by one, boots the whole log (the
 //       state cache still used), equal to the fold
@@ -168,7 +169,7 @@ async function equivalent(label, dir, { writes = true, wantTail = true, mustWrit
   for (let k = 0; k < 400; k++) { T += 33; settle(w); }
   for (let i = 0; i < 500; i++) { call("set", { id: `cr-${i % 6}`, component: "label", value: `l ${i}` }); if (i % 3 === 0) { const p = w.state().entities[`cr-${i % 6}`].c.transform.pos; call("set", { id: `cr-${i % 6}`, component: "transform", value: { pos: [p[0] + 0.01, p[1], p[2]], q: [0, 0, 0, 1], scale: 1 } }); } T += 33; settle(w); }
   T += 100; checkpointNow(w); w.saveCache(); for (let i = 0; i < 9; i++) { call("set", { id: "cr-1", component: "label", value: `tail ${i}` }); T += 33; settle(w); }
-  const { wa } = await equivalent("a physics world with checkpoints", dir, { writes: false });
+  const { wa } = await equivalent("a physics world with checkpoints", dir, { writes: true });
   ok(wa.bootedFrom != null, "FP2 a physics world: (setup) the engine started from a checkpoint", wa.bootedFrom); }
 { const fx = path.join(ENGINE, "spec/conformance"); let n = 0, seen = 0;
   const files = [...fs.readdirSync(fx).filter((f) => f.endsWith(".jsonl")).map((f) => path.join(fx, f)), ...fs.readdirSync(path.join(fx, "logs")).filter((f) => f.endsWith(".jsonl")).map((f) => path.join(fx, "logs", f))];

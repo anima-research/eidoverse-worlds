@@ -19,10 +19,11 @@ try {
   const entries = readLog(fs.readFileSync(log)); const last = entries.at(-1) as any;
   const e: Record<string, unknown> = { world: last.world, kind: "sequencer", actor: "system", verb: "sequencer", body: { key: "ed25519:" + "A".repeat(43), sigs: [{ key: "ed25519:" + "B".repeat(43), v: "C".repeat(86) }] }, ts: last.ts + 1 };
   e.head = step(last.head, e); fs.appendFileSync(log, JSON.stringify(e) + "\n");
+  const before = { log: fs.readFileSync(log), files: fs.readdirSync(gov).sort().join(",") };   // the bytes and the listing openLive must leave alone
   let err = ""; try { openLive(gov, "gov"); } catch (x) { err = String((x as Error)?.message ?? x); }
   check("G2 a world whose log holds a `sequencer` (governance) entry is refused, not served", !!err, { err });
   check("G3 …and the refusal is truthful: it names the entry's seq, says governance is reserved here, and that nothing was changed",
     /seq \d+/.test(err) && /governance/i.test(err) && /reserved/i.test(err) && /nothing (was|is) (changed|written)/i.test(err), { err });
-  check("G4 …and the world's files are untouched", readLog(fs.readFileSync(log)).length === entries.length + 1);
+  check("G4 …and the world's files are untouched (the log's bytes and the directory listing as they were)", fs.readFileSync(log).equals(before.log) && fs.readdirSync(gov).sort().join(",") === before.files, { files: fs.readdirSync(gov).sort() });
 } finally { fs.rmSync(W, { recursive: true, force: true }); }
 console.log(`[gov-reserved-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

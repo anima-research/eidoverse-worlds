@@ -232,18 +232,18 @@ const cases: { id: string; what: string; run: (s: any) => any; good: (o: any) =>
       if (!NS) return { planner: "absent" };
       s.call("olive", "create", { id: "gate", model: "crate", components: { transform: T0([0, 0, 0]), openable: { open: false }, reactions: { use: { kind: "toggle", component: "openable" } } } });
       const thing = s.w().state().entities.gate.c;
-      const plan = NS.planNewScript({ id: "gate", name: "chime", text: NS.TEMPLATES.use, trigger: "use", comps: ["t/counter"], say: true }, thing);
+      const plan = NS.planNewScript({ id: "gate", name: "chime", text: NS.TEMPLATES.use, trigger: "use", ...NS.TEMPLATE_SCOPE.use }, thing);
       const up = s.call("olive", "upload", plan.upload.args); const inst = s.call("olive", "batch", { ops: plan.install(up.src) });
       const r = s.w().state().entities.gate.c.reactions;
-      const chime = s.call("vic", "use", { id: "gate", action: "chime" });
+      const chime = s.call("vic", "use", { id: "gate", action: "chime" }); const counter = s.w().state().entities.gate.c["local/counter"] ?? null;
       const bad = NS.planNewScript({ id: "gate", name: "tick", text: NS.TEMPLATES.timer, trigger: "timer", every: 2 }, thing);
       const dup = NS.planNewScript({ id: "gate", name: "chime", text: "x", trigger: "use" }, s.w().state().entities.gate.c);
-      return { action: plan.action, inst: show(inst), kept: r?.use?.kind ?? null, chime: show(chime), ran: chime.script?.status ?? null, bad: bad.errors, dup: dup.errors }; },
-    good: (o) => o.action === "chime" && o.inst === "ok" && o.kept === "toggle" && o.chime === "ok" && o.bad?.length === 1 && o.dup?.length === 1 },
+      return { action: plan.action, inst: show(inst), kept: r?.use?.kind ?? null, chime: show(chime), ran: chime.script?.status ?? null, counter, bad: bad.errors, dup: dup.errors }; },
+    good: (o) => o.action === "chime" && o.inst === "ok" && o.kept === "toggle" && o.chime === "ok" && o.ran === "ran" && o.counter?.n === 1 && o.bad?.length === 1 && o.dup?.length === 1 },
   { id: "K2b", what: "…and when the script's name is already one of its actions, the new script takes a free one: neither existing reaction is replaced (review of #260)", run(s) { cast(s);
       if (!NS) return { planner: "absent" };
       s.call("olive", "create", { id: "gate2", model: "crate", components: { transform: T0([2, 0, 0]), openable: { open: false }, reactions: { use: { kind: "toggle", component: "openable" }, chime: { kind: "toggle", component: "openable" } } } });
-      const plan = NS.planNewScript({ id: "gate2", name: "chime", text: NS.TEMPLATES.use, trigger: "use", comps: ["t/counter"], say: true }, s.w().state().entities.gate2.c);
+      const plan = NS.planNewScript({ id: "gate2", name: "chime", text: NS.TEMPLATES.use, trigger: "use", ...NS.TEMPLATE_SCOPE.use }, s.w().state().entities.gate2.c);
       const up = s.call("olive", "upload", plan.upload.args); const inst = s.call("olive", "batch", { ops: plan.install(up.src) });
       const r = s.w().state().entities.gate2.c.reactions;
       return { action: plan.action, inst: show(inst), use: r?.use?.kind ?? null, chime: r?.chime?.kind ?? null, mine: r?.[plan.action] ?? null }; },
@@ -252,7 +252,7 @@ const cases: { id: string; what: string; run: (s: any) => any; good: (o: any) =>
       if (!NS) return { planner: "absent" };
       s.call("olive", "create", { id: "bell", model: "crate", components: { transform: T0([0, 0, 0]), openable: { open: false } } });
       const thing = s.w().state().entities.bell.c;
-      const plan = NS.planNewScript({ id: "bell", name: "chime", text: NS.TEMPLATES.use, trigger: "use", comps: ["t/counter"], say: true }, thing);
+      const plan = NS.planNewScript({ id: "bell", name: "chime", text: NS.TEMPLATES.use, trigger: "use", ...NS.TEMPLATE_SCOPE.use }, thing);
       const up = s.call("olive", "upload", plan.upload.args);
       const theirs = s.call("bob", "set", { id: "bell", component: "reactions", value: { use: { kind: "toggle", component: "openable" } } });   // meanwhile
       const ops = plan.install(up.src);
@@ -323,8 +323,9 @@ const cases: { id: string; what: string; run: (s: any) => any; good: (o: any) =>
       s.call("bob", "set", { id: partOf("a", "bulb"), component: "transform", value: T0([0, 0.9, 0]) }); const v3 = s.call("bob", "publish", { from: "a", name: "lamp" }).notes?.find((n: any) => n.record)?.record;
       s.call("bob", "set", { id: partOf("b", "bulb"), component: "transform", value: T0([0, 0.3, 0]) });
       const two = s.call("bob", "update", { copy: "b", to: v3 }); const k0 = two.refused?.conflicts?.find((c: any) => c.component === "label"); const part = s.call("bob", "update", { copy: "b", to: v3, resolve: k0 ? { [`${k0.id}.label`]: "yours" } : {} });
-      return { code: up.refused?.code, fix: up.refused?.fix ?? null, n: up.refused?.conflicts?.length ?? null, dry: dry.refused?.code ?? (dry.ok ? "ok" : null), n2: two.refused?.conflicts?.length ?? null, part: part.refused ?? (part.ok ? "ok" : null) }; },
-    good: (o) => o.code === "conflicts" && !/dry/.test(o.fix ?? "") && o.n === 1 && o.dry === "conflicts" && o.n2 === 2 && /leaves out/.test(o.part?.reason ?? "") && !/dry/.test(o.part?.fix ?? "") },
+      const c0 = up.refused?.conflicts?.[0] ?? null;
+      return { code: up.refused?.code, fix: up.refused?.fix ?? null, n: up.refused?.conflicts?.length ?? null, c0, dry: dry.refused?.code ?? (dry.ok ? "ok" : null), n2: two.refused?.conflicts?.length ?? null, part: part.refused ?? (part.ok ? "ok" : null) }; },
+    good: (o) => o.code === "conflicts" && !/dry/.test(o.fix ?? "") && o.n === 1 && o.c0?.component === "label" && o.c0?.yours === "mine" && o.c0?.theirs === "upstream" && o.dry === "conflicts" && o.n2 === 2 && /leaves out/.test(o.part?.reason ?? "") && !/dry/.test(o.part?.fix ?? "") },
   { id: "U5", what: "publish {from: [one id]} is publish {from: that id}: the same root key and the same parts, descendants included", run(s) { cast(s);
       s.call("bob", "create", { id: "lamp", model: "crate", components: { transform: T0([0, 0, 0]) } });
       s.call("bob", "create", { id: "bulb", model: "book", components: { transform: T0([0, 0.6, 0]), parent: { to: "lamp" } } });

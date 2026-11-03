@@ -5,10 +5,10 @@
 // Every first-protocol world directory holds, beside its log.jsonl, a snapshot.json = the old server's own folded state
 // ({v: 1, seq, bytes, ts, state: {entities, terrain, grass, sky, assets, roles, bans, …}}). When snapshot.seq is the log's
 // last seq AND snapshot.bytes is log.jsonl's size, the snapshot is the old engine's answer to "what does this whole log
-// mean". A snapshot that isn't complete is SKIPPED (with its reason), never compared.
+// mean". A snapshot that isn't complete is SKIPPED (with its reason), never compared; so is a physics-era (epoch) log, said.
 //
 // Per world:
-//   1. translate log.jsonl with the real path (translateV1World, as `world.ts translate --no-founder-key`) into a scratch
+//   1. translate log.jsonl with the real path (warmHulls, then translateV1World, as `world.ts translate --no-founder-key`) into a scratch
 //      worlds dir (its own custody, directory and model index; the source directory is only read);
 //   A. the translated world.jsonl, read by the strict reader and folded by the real fold (shared/protocol/fold.js), against
 //      the snapshot put through the translator's own mapping table (translate-v1 `project`: lib→model, comp→flat
@@ -57,7 +57,8 @@ process.env.WORLDS_DIR = path.join(SCRATCH, "worlds");
 const { project, DROPPED, namespaceOf, hasEpoch, canon } = await import("./translate-v1.js");
 const { encRaw: enc } = await import("../../../shared/protocol/names.js");   // the translator's encoder (old names are never ids)
 const { readLog, fold, emptyState, applyInPlace } = await import("../../../shared/protocol/fold.js");
-const { translateV1World } = await import("./world.ts");
+const { translateV1World, warmHulls, hullBox } = await import("./world.ts");
+const { lampsOf } = await import("./lamps.ts");
 const { contentAddressOf } = await import("../../../server/eidoindex.ts");
 const { openLive } = await import("../../../server/livehost.ts");
 const { ENGINE_CATALOGUE } = await import("../../../server/modelcatalogue.ts");
@@ -116,7 +117,7 @@ function fixtureWorlds() {
 function findWorlds(roots) {
   const dirs = [];
   const walk = (d, depth) => { if (depth > 5) return; let ents = []; try { ents = fs.readdirSync(d); } catch { return; }
-    if (ents.includes("log.jsonl")) { dirs.push(d); return; }
+    if (ents.includes("log.jsonl") || ents.includes("log.original.jsonl")) { dirs.push(d); return; }   // a world translated in place too (bot review 366)
     for (const n of ents) { if (n === "node_modules" || n === ".git" || n.startsWith("oracle-")) continue; const p = path.join(d, n);
       try { if (fs.statSync(p).isDirectory()) walk(p, depth + 1); } catch { /* gone */ } } };
   for (const r of roots) walk(path.resolve(r), 0);
@@ -259,7 +260,7 @@ function originalsOf(dir) {
  *  (liftWorld's repairNeeded: a translation runs the maintenance itself, so a fresh one never needs any). */
 export const liftFailures = (lifted) => lifted.filter((x) => x.failed || x.skipped || x.repairNeeded);
 
-export function oracleWorld(given) {
+export async function oracleWorld(given) {
   const dir = originalsOf(given);
   const name = path.basename(dir);
   const c = completeSnapshot(dir);
@@ -272,6 +273,7 @@ export function oracleWorld(given) {
   const worldsDir = path.join(SCRATCH, name.replace(/[^A-Za-z0-9_-]/g, "_") + "-" + crypto.randomBytes(3).toString("hex"), "worlds");
   fs.mkdirSync(worldsDir, { recursive: true });
   const dest = path.join(worldsDir, name);
+  await warmHulls(dir);   // as world.ts translate does: the hull boxes and lamps both sides read (bot review 365)
   const r = translateV1World(dir, dest);
   const tTranslate = performance.now();
   // A. the strict reader and the real fold over what was written
@@ -289,7 +291,7 @@ export function oracleWorld(given) {
   const { who, unresolved, people } = whoFrom(worldsDir);
   const content = (p) => { const h = contentAddressOf(p); return h ? `sha256:${h}` : null; };
   const snapState = jclone(c.snap.state);
-  const oldA = project(snapState, null, who, namespaceOf(name), content);
+  const oldA = project(snapState, null, who, namespaceOf(name), content, { boxOf: hullBox, lampsOf });
   const A = compareWorlds(oldA, newA);
   const C = coreCheck(snapState, newA, content);
   const tA = performance.now();
@@ -359,7 +361,7 @@ if (import.meta.main) {
     const c = completeSnapshot(d);
     if (c.ok && !args.length) { const k = `${c.snap.seq}:${c.snap.bytes}:${crypto.createHash("sha256").update(fs.readFileSync(path.join(d, "snapshot.json"))).digest("hex")}`;
       if (seen.has(k)) { results.push({ name: path.basename(d), dir: d, skipped: `the same log and snapshot as ${seen.get(k)}` }); continue; } seen.set(k, d); }
-    let w; try { w = { ...oracleWorld(d), dir: d }; } catch (x) { w = { name: path.basename(d), dir: d, error: `threw: ${x?.stack ?? x}` }; }
+    let w; try { w = { ...(await oracleWorld(d)), dir: d }; } catch (x) { w = { name: path.basename(d), dir: d, error: `threw: ${x?.stack ?? x}` }; }
     results.push(w); printWorld(w);
   }
   const compared = results.filter((w) => !w.skipped), bad = compared.filter((w) => unexplained(w));

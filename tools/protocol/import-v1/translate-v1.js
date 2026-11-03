@@ -4,7 +4,7 @@
 //   - at most one change entry with the plain results that bring v4 to the same place (cause = that act).
 // The output is in the PROTOCOL-v4 §2.4 wire format, and every name and id follows §2.3: an old id or name the
 // grammar refuses is mapped by `enc`, here names.js's encRaw (deterministic and injective: a name in the hashed form is
-// escaped like any other, and a log holding a lone surrogate, the one pair it maps alike, isn't imported at all). After
+// escaped like any other, and a log holding a lone surrogate, the one pair it maps alike, is refused by translate itself: loneSurrogateIn). After
 // every entry it folds the v4 entry with the v4 fold and checks the projections agree. The original log is never written (R9); the output is a regenerable cache.
 // Ported from the v4 lab (code/v4-lab/translate-v1.js @ 11db981). Engine changes: the v1 fold is the engine's own
 // ../fold.js (the lab carried an older anima/main copy in legacy/), hashing and hex come from ./hash.js (no node:
@@ -123,7 +123,8 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@42";
+export const TRANSLATOR = "eidoverse/translate-v1@43";
+// @43 (bot review 440, 441): a valid exit with no helm child rides imported:vehicle; a model with its own light still gets main's inferred lamps. Output differs there.
 // @42 (bot review 58): where any water writes a speed area, every other water gets physics-area {factor: 1, modes: [swim]}, so the water a body is in sets its stroke (main read the selected volume's own speed). Output differs there.
 // @41 (bot review 59): what main's air held beyond its boxes' centre, size and q (another key, a box's other keys, an entry that is no box) rides imported:air, listed. Output differs there.
 // @40 (bot review 60, R 10-30): main's ambient motes take main's defaults where unset or 0 (1,200 motes, not the effect limit) and main's 0.08 size cap. Output differs there.
@@ -240,7 +241,7 @@ export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(nam
 // came to rest; but a punt stays its imported act (no v4 launch), each rest is a plain change by `sim` caused by that act
 // (no digest), the world's engine is today's eidosim from the epoch on, and (R 2026-10-08) a thing v1 ever punted is a
 // `dynamic` collider, every other one `static`. Nothing in the new log asks a reader to fly her engine.
-export const TRANSLATOR_SIM = "eidoverse/translate-v1@42";
+export const TRANSLATOR_SIM = "eidoverse/translate-v1@43";
 // @9 (2026-10-07, R's particles ruling): a v1 `particles` bag is today's instance: its preset is the effect, its origin is
 // `at`, its seed stays, and its count, size, opacity, speed, lifetime, area, texture and quality are the params of the
 // same names every Essential declares (shared/particle_effects.js modernize; instanceOf reads it back exactly). A key
@@ -309,6 +310,7 @@ export const DROPPED = {
   "motion.rpm": "becomes degPerSec = rpm × 6 (@5): the rate the renderer drew, under the authority's one name for it",
   "motion.type": "the back-and-forth along an axis is written oscillate (@14, R 10-17 21:40; shared/protocol/names.js OLD_MOTION_TYPES holds the old word): the same motion under today's name",
   "motion.part": "a bare motion naming a part becomes motion:<slot> {node: <the part's name>} (@12; the slot is shared/protocol/names.js partSlot of the name: the name itself when it is a §2.3 tag, else a sanitized form with 8 hex of its sha256): when the thing already has a motion on that node, that one wins and the bare one is dropped (the renderer drew both on one node, the keyed one last). A keyed motion carries node (its key's tag, the old reading)",
+  "physics.layers / physics.mask / physics.ccd": "cut (shared/protocol/shaperepair.js, the shape audit): main's sim never read them, so they reach neither physics nor imported:physics",
   "a mounted thing's own pos/yaw/q": "v1 keeps a riding thing's pre-mount pose, unused until a dismount; v4's transform IS the pose it rides at (local to its parent: v1's offset, or its socket's pos, and q/yaw). The parent's offset/yaw/q are that transform, not a second copy (L2)",
 };
 // DEFERRED (review of PR #260, Mica, item 7): features main's merges gave v1 worlds that THIS protocol does not carry yet.
@@ -351,7 +353,8 @@ export function vehiclePartsOf(host, d, hull = null) {
   const drive = { maxSpeed: s, turnRate: clampN(turnRate, 0.1, 2, 0.45), climbRate: s };   // main normalised (0, ½·rise, thrust) × speed: straight up ran at speed
   const kid = v3(helm) ? [helmChildId(host), { transform: ID_POSE([...helm]), parent: { to: host }, socket: { name: "helm" }, label: "helm",
     station: { action: "drive", input: { move: "drive" }, leaveBy: "menu", ...(v3(exit) ? { exit: [...exit] } : {}) } }] : null;   // main left the helm by its E alone: Space rises
-  const left = { ...rest, ...(kid ? {} : { helm }), ...(exit !== undefined && !v3(exit) ? { exit } : {}), ...(minY !== undefined && !Number.isFinite(minY) ? { minY } : {}), ...(maxY !== undefined && !Number.isFinite(maxY) ? { maxY } : {}) };
+  // no helm child: the exit has no station to ride, so it rides imported:vehicle with the helm (R10: carried, never dropped; bot review 440)
+  const left = { ...rest, ...(kid ? {} : { helm, ...(exit !== undefined ? { exit } : {}) }), ...(kid && exit !== undefined && !v3(exit) ? { exit } : {}), ...(minY !== undefined && !Number.isFinite(minY) ? { minY } : {}), ...(maxY !== undefined && !Number.isFinite(maxY) ? { maxY } : {}) };
   return { drive, helm: kid, walls, mask: walls.length ? [1, bandLayerOf(host)] : null, left };
 }
 /** the collision layer a banded vehicle's walls are in: its own, so no other hull's mask scans it (componentspec collider.layer) */
@@ -388,7 +391,7 @@ function qZTo(d) { const n = Math.hypot(...d); if (!(n > 0)) return [0, 0, 0, 1]
  *  imported:environment), fields (what went where, for the report)}. `has`: what @world already holds (spawn, bounds, terrain). Main's own
  *  readings (watervolumes.js) are the defaults: a sky lights a sun at [0.4, 0.8, 0.2], #fff4df, 3. */
 export function environmentPartsOf(host, env, has = {}) {
-  const world = {}, things = [], left = {}, fields = [], effects = [];
+  const world = {}, things = [], left = {}, fields = [], effects = [], clamped = [];
   const v3 = (a) => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
   const { floor, spawn, bounds, sky, particles, ...rest } = env && typeof env === "object" && !Array.isArray(env) ? env : {};
   const B = bounds && v3(bounds.min) && v3(bounds.max) && [0, 1, 2].every((i) => bounds.min[i] < bounds.max[i]) ? bounds : null;
@@ -397,7 +400,8 @@ export function environmentPartsOf(host, env, has = {}) {
   else if (v3(spawn)) { const id = envChildId(host, "spawn"); things.push([id, { transform: ID_POSE([...spawn]), label: "arrival", "spawn-point": {} }]); fields.push(["spawn", id]); }
   else if (spawn !== undefined) { left.spawn = spawn; fields.push(["spawn", null]); }
   // the floor is the ground: a flat terrain at its height; a world that already has a terrain keeps it, the floor listed as the conflict
-  if (Number.isFinite(floor) && !has.terrain) { world.terrain = { kind: "flat", height: Math.min(1e4, Math.max(-1e4, floor)) }; fields.push(["floor", "@world.terrain"]); }
+  if (Number.isFinite(floor) && !has.terrain) { const h = Math.min(1e4, Math.max(-1e4, floor)); world.terrain = { kind: "flat", height: h }; fields.push(["floor", "@world.terrain"]);
+    if (h !== floor) clamped.push({ field: "floor", was: floor, now: h, why: "a terrain height is within ±1e4 m" }); }   // said in the report (bot review 446)
   else if (floor !== undefined) { left.floor = floor; fields.push([Number.isFinite(floor) ? "floor (the world already has a terrain)" : "floor", null]); }
   if (sky && typeof sky === "object" && !Array.isArray(sky)) { const { horizon, zenith, sunColor, sunIntensity, sunDirection, ...skyRest } = sky;
     world.sky = { gradient: { top: srgbLin(zenith, 0x3686b8), horizon: srgbLin(horizon, 0xb8d4e0) } }; fields.push(["sky.horizon, sky.zenith", "@world.sky.gradient"]);
@@ -417,7 +421,7 @@ export function environmentPartsOf(host, env, has = {}) {
     if (Object.keys(lost).length) { left.particles = lost; fields.push([Object.keys(lost).map((k) => `particles.${k}`).join(", "), null]); } }
   else if (particles !== undefined) { left.particles = particles; fields.push(["particles", null]); }
   if (Object.keys(rest).length) { Object.assign(left, rest); fields.push([Object.keys(rest).join(", "), null]); }
-  return { world, things, left, fields, effects };
+  return { world, things, left, fields, effects, clamped };
 }
 /** Every environment in a v1 state, as project() places it: [{id (as written), host, parts}]. Main drew only the first, by id in
  *  localeCompare order (watervolumes.js environmentSettings): it is mapped; any other rides whole as imported:environment, listed. */
@@ -450,13 +454,13 @@ export function waterOfOld(d) {
   const { center, size, absorption, scatter, speed, ...rest } = d;
   const water = { ...rest };
   // main's stroke in the volume, as × the one a body swims at here (waterParams' default): a physics-area (@35)
-  const f = speed === undefined ? 1 : clampN(waterParams({ speed }).speed / waterParams({}).speed, 0.05, 10, 1);
+  const raw = speed === undefined ? 1 : waterParams({ speed }).speed / waterParams({}).speed, f = clampN(raw, 0.05, 10, 1);   // physics-area factor's range (componentspec.js)
   const area = speed !== undefined && Math.abs(f - 1) > SPEED_NEAR ? { kind: "speed", factor: f, modes: ["swim"] } : null;   // main slowed the stroke only (@37)
   if (Array.isArray(absorption)) { water.attenuationColor = vec3(absorption, [0.16, 0.055, 0.025]).map((x) => Math.exp(-Math.max(0, x))); water.attenuationDistance = 1; }
   if (Array.isArray(scatter)) water.scatterColor = vec3(scatter, [0.015, 0.12, 0.18]).map((x) => Math.max(0, x));
   const sz = vec3(size, [200, 200, 200]), zone = { shape: "box", size: sz.map((x) => Math.max(0.01, Math.min(ZONE_MAX, Math.abs(x)))) };
   return { center: vec3(center, [0, 0, 0]), zone, water, ...(area ? { area } : {}), ...clampNote(sz, zone.size),
-    ...(speed !== undefined ? { speed: area ? { "physics-area": area } : { dropped: `× ${f.toFixed(3)} of the stroke here, within ${SPEED_NEAR * 100}%` } } : {}) };
+    ...(speed !== undefined ? { speed: area ? { "physics-area": area, ...(f !== raw ? { clamped: { factorWas: +raw.toFixed(4), to: f, why: "a speed area's factor is 0.05..10 (componentspec.js)" } } : {}) } : { dropped: `× ${f.toFixed(3)} of the stroke here, within ${SPEED_NEAR * 100}%` } } : {}) };   // the clamp said (bot review 445)
 }
 /** zone.size's bound per axis (componentspec.js zone); a main size past it is clamped and the report says so (bot review #260 33) */
 export const ZONE_MAX = 1e4;
@@ -553,8 +557,9 @@ export function carriedMappings(st) {
 export function lampMappings(st, lampsOf) {
   const out = [];
   for (const id of Object.keys(st?.entities ?? {}).sort()) { const e = st.entities[id], L = e?.kind === "light" ? [] : lampsOf?.(e?.lib) ?? [];
+    if (!Array.isArray(L)) { if (typeof L?.unmeasured === "string") out.push({ component: "lamp", id, into: [], lamps: 0, unmeasured: L.unmeasured, feature: "main may have lit this model with inferred lamps; this host could not read it, so none is written" }); continue; }   // bot review 442
     if (L.length) out.push({ component: "lamp", id, into: lampPartsOf(enc(id), L).map(([cid]) => cid), lamps: L.length,
-      feature: "main lit a glowing model with up to two lamps it inferred from its emissive surfaces; this protocol infers none (an emissive material glows, a light is a light component, as in Godot, Unity and Unreal), so each is a light child at its spot with main's colour, range 12 m and brightness at half that range (decay 2)" }); }
+      feature: "main lit a glowing model with up to two lamps it inferred from its emissive surfaces; this protocol infers none (an emissive material glows, a light is a light component, as in Godot, Unity and Unreal), so each is a light child at its spot (fixed there; main's followed its node) with main's colour, range 12 m and brightness at half that range (decay 2)" }); }
   return out;
 }
 /** What becomes of a carried field this protocol retires (R 10-28, item 50): plain words for the report, never a silent carry. */
@@ -889,7 +894,7 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
     const ownDecay = c.light && typeof c.light === "object" && c.light.decay !== undefined;
     out[enc(id)] = shapeRepaired(c); if (!ownDecay) lightParity(enc(id), out[enc(id)], adjust);
     for (const [cid, cc] of [...vol.children, ...climbs.children, ...(veh?.helm ? [veh.helm] : []), ...(veh?.walls ?? [])]) out[cid] = shapeRepaired(cc);
-    if (!c.light) for (const [cid, cc] of lampPartsOf(enc(id), col?.lampsOf?.(e.lib))) out[cid] = shapeRepaired(cc);   // @31: main's inferred lamps
+    if (e.kind !== "light") for (const [cid, cc] of lampPartsOf(enc(id), col?.lampsOf?.(e.lib))) out[cid] = shapeRepaired(cc);   // @31: main's inferred lamps, on a model with its own light too (main's attachLamps ran on every placed model; bot review 441)
     for (const [name, v] of emitters) {
       const seeded = v && typeof v === "object" && !Array.isArray(v) && !Number.isFinite(v.seed) ? { ...v, seed: hashSeed(`${id}:particles:${name}:${v.preset ?? ""}`) } : v;
       const p = particlesOf(seeded, ""); if (p.doc) effects?.set(p.effect, p.doc); for (const a of p.adjusted) adjust(emitterChildId(enc(id), name), "particles", a.field, a.was, a.now, a.why);
@@ -953,6 +958,7 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
     if (parts.world.sky) w.sky = { ...(w.sky && typeof w.sky === "object" ? w.sky : {}), ...parts.world.sky };
     for (const [cid, cc] of parts.things) out[cid] = shapeRepaired(cc);
     for (const [a, d] of parts.effects ?? []) effects?.set(a, d);   // @34: the motes' derived dust
+    for (const a of parts.clamped ?? []) adjust(host, "environment", a.field, a.was, a.now, a.why);   // the floor's clamp, listed under adjusted (bot review 446)
     if (Object.keys(parts.left).length && out[host]) out[host][keyed("imported", "environment")] = parts.left; }
   { const sb = stageBoundsOf(st); if (sb) w.bounds = sb; }   // @31: main's 78 m stage island as the world's box (stageBoundsOf)
   // @12, wave 2 (render-media-env): the world's look in today's spelling, as the maintenance repair does a stored one (repairWorld: the sky's
@@ -1025,8 +1031,18 @@ export const changeBody = (ops) => (ops.length === 1 ? (({ verb, ...body }) => (
 // I-JSON has no -0; an old log may hold one (the same number, written as 0)
 export { unNegZero };
 
+/** The first lone UTF-16 surrogate in any string (key or value) of the old entries: {at, seq, path, code}, or null (names.js: enc writes every lone surrogate as U+FFFD, so two names differing only there would merge). */
+export function loneSurrogateIn(oldEntries) {
+  const LONE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+  const walk = (v, path) => { if (typeof v === "string") { const m = LONE.exec(v); return m ? { path, code: m[0].charCodeAt(0).toString(16) } : null; }
+    if (v && typeof v === "object") for (const [k, x] of Array.isArray(v) ? v.map((x, i) => [i, x]) : Object.entries(v)) { const m = LONE.exec(String(k)); if (m) return { path: `${path}.${k}`, code: m[0].charCodeAt(0).toString(16) }; const r = walk(x, `${path}.${k}`); if (r) return r; }
+    return null; };
+  for (let at = 0; at < oldEntries.length; at++) { const r = walk(oldEntries[at], "entry"); if (r) return { at, seq: oldEntries[at]?.seq, ...r }; }
+  return null;
+}
 export function translate(oldEntries, { onDivergence, foldBuild, key, operator, nonce, who, founder, namespace, content, approved, boxOf, lampsOf } = {}) {
   if (founder !== undefined) throw new Error("a translation names no founder: nothing can yet bind a key to the old world's owner (v1 logs record accounts, not keys); tier 0 stays empty");
+  const lone = loneSurrogateIn(oldEntries); if (lone) throw new Error(`entry ${lone.at}${lone.seq !== undefined ? ` (seq ${lone.seq})` : ""}, ${lone.path}: a lone surrogate (U+${lone.code}); enc maps every lone surrogate alike, so this log isn't imported`);   // bot review #367
   const ns = namespace === undefined ? NAMESPACE : namespaceOf(namespace);
   const seenModels = new Map();   // path → its hash (or null): each path hashed once, and counted
   const addr = content ? (p) => { if (!seenModels.has(p)) seenModels.set(p, content(p) ?? null); return seenModels.get(p); } : null;

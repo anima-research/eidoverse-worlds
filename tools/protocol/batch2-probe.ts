@@ -9,8 +9,8 @@
 //         (Settings › 🛡 safety): that's the gate's own mutant, run live.
 //   MAT   a material's link worn while the viewer allowed untrusted links comes off when they turn it off (materialcomp.js)
 //   PIC   a picture with no part is a quad of its own: its aspect is the image's (a 2:1 moon), width as written
-//   SND   a store sound: the limiter is in the graph; silent past its radius (gain exactly 0), heard inside; of 10 loops,
-//         at most 8 are heard
+//   SND   a store sound: the limiter is in the graph; silent past its radius (gain exactly 0), heard inside; of 35 sounds in
+//         reach, 32 are heard (the voice cap)
 //   TXT   a sign: drawn (flat = two planes, readable from behind; yaw = one plane that turns to face you)
 //   LA    look-at @viewer: the thing turns to face the camera
 //   STO   a story's card is in the Inspector (Inspect shows it)
@@ -84,17 +84,19 @@ try {
     !sawHost(UNTRUSTED) && !st1.audio && st1.sb === "untrusted" && st1.pb === "untrusted" && st1.plate && st1.els === 0, { since: outside.slice(n0), st1 });
   const s2 = await empty("hostradio", [0, 0, -6], { sound: { src: `https://${TRUSTED}/live/party.mp3` } });
   check("PRIV3 control: a trusted host's link IS requested (the detector would have seen one)", s2?.ok && await waitFor(`Promise.resolve(true)`) && await (async () => { for (let i = 0; i < 40 && !sawHost(TRUSTED); i++) await sleep(100); return sawHost(TRUSTED); })(), outside.slice(n0));
-  await page(`(await import('/lib/mediaprefs.js')).setAllowUntrusted(true); return true;`);
+  await evalJson(`(() => { document.querySelector('#sec-safety-tab')?.click(); return true; })()`);   // the row itself, not the pref's setter (videopanel.js 🛡 safety)
+  const clicked = await waitFor(`(() => { const cb = document.querySelector('#sec-safety input[type=checkbox]'); if (!cb || cb.checked) return false; cb.click(); return true; })()`, 4000);
+  const pref = await page(`return (await import('/lib/mediaprefs.js')).allowUntrusted();`);
   const both = () => [".png", ".mp3"].every((x) => outside.some((u) => u.includes(UNTRUSTED) && u.endsWith(x)));
   for (let i = 0; i < 50 && !both(); i++) await sleep(100);   // both links, so PRIV4b's control isn't a race
-  check("PRIV4 the viewer opts in (Settings › 🛡 safety): now the same links are requested (the gate, removed live, is seen)", sawHost(UNTRUSTED), outside.filter((u) => u.includes(UNTRUSTED)));
+  check("PRIV4 the viewer opts in (Settings › 🛡 safety's row, clicked): the pref is on and now the same links are requested (the gate, removed live, is seen)", clicked && pref === true && sawHost(UNTRUSTED), { clicked, pref, seen: outside.filter((u) => u.includes(UNTRUSTED)) });
   { const sent = sentWith.filter(({ u }) => u.includes(UNTRUSTED) || u.includes(TRUSTED));   // Origin is recorded, not judged: a CORS fetch names the page's origin (sounds.js §9)
     check("PRIV4b …and no link, a sound's or a picture's, is sent with a Referer (sounds.js §9; a CORS fetch's Origin, the page's origin, is recorded beside it)",
       // its positive control is both untrusted links seen, the picture's and the sound's (house 6340433633: the trusted MP3
       // alone met it, so it could pass with no picture request seen)
       sent.some(({ u }) => u.includes(UNTRUSTED) && u.endsWith(".png")) && sent.some(({ u }) => u.includes(UNTRUSTED) && u.endsWith(".mp3")) && sent.every(({ r }) => r === null), sent); }
-  await page(`(await import('/lib/mediaprefs.js')).setAllowUntrusted(false); return true;`);
-  check("PRIV5 …and opting out again tears the link's audio down", await waitFor(`import('/lib/sounds.js').then((s) => !s._playing.has('linkradio') && s._blocked.get('linkradio') === 'untrusted')`));
+  const unclicked = await waitFor(`(() => { const cb = document.querySelector('#sec-safety input[type=checkbox]'); if (!cb || !cb.checked) return false; cb.click(); return true; })()`, 4000);   // the row again (PRIV4 clicked it on; the setter alone leaves the drawn row checked)
+  check("PRIV5 …and opting out again (the row, clicked off) tears the link's audio down", unclicked && await waitFor(`import('/lib/sounds.js').then((s) => !s._playing.has('linkradio') && s._blocked.get('linkradio') === 'untrusted')`));
   await evalJson(`(() => { document.querySelector('#sec-safety-tab')?.click(); return true; })()`);
   check("PRIV6 the setting is a row in Settings › 🛡 safety (off)", await waitFor(`(() => { const b = document.querySelector('#sec-safety'); const cb = b?.querySelector('input[type=checkbox]'); return !!cb && !cb.checked && /Allow untrusted links/.test(b.textContent); })()`, 4000),
     await evalJson(`({ tab: document.querySelector('#sec-safety-tab')?.title ?? null, body: (document.querySelector('#sec-safety')?.textContent ?? '').slice(0, 120) })`));

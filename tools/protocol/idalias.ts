@@ -1,6 +1,6 @@
 // tools/protocol/idalias.ts — a test client's names for the things it makes (R 10-17 ID HARDENING: a writer never chooses an
-// id). A suite written as `create {id: "tbl"}` then `place {on: "tbl"}` keeps its words: the client sends the create's id as
-// a placeholder ('$tbl'), keeps the id the authority minted (the reply's ids map), and writes that id wherever a later
+// id). A suite written as `create {id: "tbl"}` then `place {on: "tbl"}` keeps its words: the client sends the create's id (a
+// lower-case name of `[a-z0-9-]`; anything else goes out literal) as a placeholder ('$tbl'), keeps the id the authority minted (the reply's ids map), and writes that id wherever a later
 // request names "tbl" in a reference position. The wire only ever carries placeholders and minted ids — what a real client
 // sends. ids.of(name) reads a name as its id for the suite's own checks.
 // @ts-nocheck
@@ -34,8 +34,8 @@ export function idAliases() {
 
 /** The same names, inside a browser page (the headless probes): source to evaluate once in the page, after which every
  *  request any page code sends (net.js sendRequest, editwrites.send, a raw socket) goes out with its create ids as
- *  placeholders and its names as minted ids, every reply's ids map is kept before the reply is handled, and
- *  globalThis.__id(name) reads a name as its id for the probe's own page code. Installed once per page (a second
+ *  placeholders and its names as minted ids, every reply's ids map is kept before the reply is handled (sockets read through onmessage;
+ *  addEventListener('message') isn't wrapped), and globalThis.__id(name) reads a name as its id for the probe's own page code. Installed once per page (a second
  *  evaluation is a no-op); sockets opened before or after the install are both covered. */
 export function pageIds(): string {
   return `(() => { if (globalThis.__eidoIds) return true;

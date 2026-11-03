@@ -13,7 +13,8 @@
 // `pinned` (`pinnedC = c?.pinned === true || c?.lock === true`). So every suite sends the same `lock` request to both
 // arms and it locks the thing in both. Only the refusal CODE differs, and no baseline predicate reads a code: they
 // ask whether the attack was accepted (`ok`) or refused at all; the `now` predicates ask for `locked`. One case
-// changed meaning on purpose: attack H1c (motion on a lock) is a guard now, since v1's matrix keeps motion open.
+// changed meaning twice: H1c (motion on a lock) was a guard under v1's matrix and is an attack again since 10-11
+// (a lock covers every component; attack-check.ts).
 import { fileURLToPath } from "node:url";
 import fs from "node:fs";
 import os from "node:os";
@@ -50,8 +51,8 @@ export function labAt(commit: string, files: string[], tag: string) {
 // an OPTIONAL line (the gate counts and lists these: an optional extension that did not run, never a skip of the gate)
 export const controlNote = () => (LAB ? `control arm: lab ${LAB}` : "OPTIONAL control-arm: not run (set PROTOCOL_LAB=<protocol lab checkout> to run the pre-fix control arm)");
 
-/** Copy a source dir into a scratch tree without its node_modules (thousands of files: minutes per copy on Windows),
- *  then link each copied dir's own node_modules back to the original, so packages resolve exactly as in the real tree.
+/** Copy a source dir into a scratch tree without any node_modules (thousands of files: minutes per copy on Windows),
+ *  then link the root's node_modules back to the original (nested ones are dropped), so packages resolve as in the real tree.
  *  "junction" lets Windows link a directory without admin rights; POSIX ignores the type. */
 export function copyTree(src: string, dst: string) {
   fs.cpSync(src, dst, { recursive: true, filter: (p) => !p.split(/[\\/]/).includes("node_modules") });

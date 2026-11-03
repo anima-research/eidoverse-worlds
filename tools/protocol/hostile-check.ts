@@ -1,6 +1,6 @@
 // The hostile-log suite (PROTOCOL §6 proof 1): every fold probe from 25d and 25e, run against the baseline fold
 // (lab commit 4f62913, the control arm: only with PROTOCOL_LAB, see common.ts) and the strict fold. Each probe must be BAD
-// on the baseline and GOOD now. Ported from the protocol lab's hostile-check.js @ 11db981; only paths changed.
+// on the baseline and GOOD now, or be marked `held`: a regression guard where the baseline already held. Ported from the protocol lab's hostile-check.js @ 11db981; only paths changed.
 // usage: bun tools/protocol/hostile-check.ts [--verbose]
 // @ts-nocheck — lab code, kept as written
 import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
@@ -158,7 +158,7 @@ const probes = [
   { id: "H3j", src: "25d H3, 25e §0", what: "a VALUE holding a `__proto__` key: kept as plain data, never a prototype",
     base: () => run(() => { const s = baseText([bGen, bst(1, "create", { id: "a", components: {} })].map(L).join("\n") + '\n{"kind":"change","actor":"olive","cause":1,"verb":"set","args":{"id":"a","component":"x","value":{"__proto__":{"pinned":true}}},"seq":2}');
       const v = s.entities.a.c.x; return { own: Object.keys(v), inherited: v.pinned }; }),
-    baseBad: () => false, // JSON.parse keeps it as an own key; the baseline holds here (25d "tried, held")
+    // JSON.parse keeps it as an own key; the baseline holds here (25d "tried, held"), so this probe is `held`, not judged there
     now: () => now(logOf(st("create", { id: "a" })) + `{"world":"${WID}","kind":"change","ts":1,"actor":"olive","cause":1,"verb":"set","body":{"id":"a","comp":"x","value":{"__proto__":{"pinned":true}}}}\n`),
     nowGood: (s) => JSON.stringify(s.entities.a.c.x) === '{"__proto__":{"pinned":true}}' && s.entities.a.c.x.pinned === undefined, held: true },
   { id: "S23", src: "PROTOCOL §2.3", what: "a state op on `body:<identity>` (bodies are presence)",
@@ -236,7 +236,7 @@ for (const p of probes) {
   console.log(`${baseIsBad && nowIsGood ? "ok  " : "FAIL"} ${p.id.padEnd(4)} ${p.what}\n       baseline: ${b.ok === false ? b.err : JSON.stringify(b.v)}${baseIsBad ? "" : "   <- NOT bad on baseline"}\n       now:      ${shownNow.slice(0, 200)}${nowIsGood ? "" : "   <- NOT good now"}`);
   if (verbose && n?.entities) console.log("       digest", digest(n));
 }
-fs.rmSync(root, { recursive: true, force: true });
+if (!process.env.PROTOCOL_KEEP) fs.rmSync(root, { recursive: true, force: true }); // PROTOCOL_KEEP=1 keeps the scratch (common.ts scratch)
 console.log(controlNote());
 console.log(`${probes.length} probes (${probes.filter((p) => p.held).length} a regression guard where the baseline already held): ${probes.length - bad} pass, ${bad} fail`);
 process.exit(bad ? 1 : 0);

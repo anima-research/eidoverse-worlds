@@ -11,12 +11,12 @@
 //   AT5  look points at a real tool where one exists (lock and hidden are edit fields), not at the act hatch
 //   AT6  the surface after the fold (REPOINT-PLAN 10-14 §4; R's standard 09:47: a name intuitive to everyone AND useful in
 //        general situations, or it is an alias): ~30 tools; the flight nine are move {mode: "fly"} + act land; the body
-//        sugar is pose {posture|wings|clear} / reach {release} / act shove; three library tools are one; moderation is
+//        sugar is anim {name|joints|ragdoll|stop} (pose is refused, teaching anim) / reach {release} / act shove; three library tools are one; moderation is
 //        act {kick|ban|unban|bans}; light/remove/blueprint_place are create / act delete / create {from}; a folded name
 //        still answers, teaching where it went
 //   AT8  a dropped agent dials again on shared/redial.js's schedule (reset by the join), not a fixed 1.5 s (review r5 F4)
 //   AT7  an agent is a body under the same consent as a person (its table on join; no `pushable`; say takes `to`)
-//   AT9  an alias runs the new tool with the OLD argument shape (walk_to, spawn, snapshot); world_verb and main's old verbs
+//   AT9  an old name runs nothing and teaches the new tool (walk_to, spawn, snapshot); world_verb and main's old verbs
 //        are refused as removed, naming the call that does it now (R 10-27); renumbered from a second AT7 (claims r10 O4)
 //   AT10 catch_up says speech is arrival-only (decision table row 11)
 //   AT12 /worlds lists agents apart again; the worlds tool counts humans and agents (decision table row 21)
@@ -60,6 +60,10 @@ const { HANDLERS, TOOLS, TOOL_RENAMED, toolList, handleTool: handleToolDoor } = 
   ok(writes.every((n) => by[n]?.readOnlyHint === false), "AT4 everything that changes the world or a body is not read-only", writes.filter((n) => by[n]?.readOnlyHint !== false));
   ok(["act", "edit"].every((n) => by[n]?.destructiveHint === true) && ["create", "say", "move"].every((n) => by[n]?.destructiveHint === false), "AT4 act (delete, kick, ban…) and editing in place are destructive; making, saying and walking are not",
     Object.fromEntries(["act", "edit", "create", "say", "move"].map((n) => [n, by[n]?.destructiveHint])));
+  ok(["create", "say", "act", "edit"].every((n) => by[n]?.idempotentHint === false) && ["place", "set_avatar", "travel", "move"].every((n) => by[n]?.idempotentHint === true),
+    "AT4 making, saying, act and an edit (relative math) are not idempotent; placing, a body change, travel and a walk are", Object.fromEntries(["create", "say", "act", "edit", "place", "set_avatar", "travel", "move"].map((n) => [n, by[n]?.idempotentHint])));
+  ok(["act", "say"].every((n) => by[n]?.openWorldHint === true) && ["edit", "look", "create"].every((n) => by[n]?.openWorldHint === false), "AT4 act and say reach beyond the world record (open world); an edit, a look and a create don't",
+    Object.fromEntries(["act", "say", "edit", "look", "create"].map((n) => [n, by[n]?.openWorldHint])));
   ok(["say", "act", "anim"].every((n) => by[n]?.openWorldHint === true) && !by.whisper && ["look", "inspect", "move"].every((n) => by[n]?.openWorldHint === false), "AT4 what reaches other people is open-world; reading the world and walking in it are not");
   // the stdio host adds one tool of its own (mcpl/server.ts can't be imported here: it connects at load)
   const src = fs.readFileSync(path.join(ENGINE, "mcpl/server.ts"), "utf8");
@@ -227,7 +231,8 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   const d2 = await call("create", { from: ag.handle(ID.mug) });   // by its handle
   await tryUntil("the second copy is in the agent's fold", () => { const id = (T(d2).match(/ id ([a-z2-7]{26})/) ?? [])[1]; return id && ag.foldRecord(id); }, { ms: 2000 });
   const made2 = (T(d2).match(/ id ([a-z2-7]{26})/) ?? [])[1];
-  ok(!d2.isError && made2 && made2 !== made && ag.foldRecord(made2), "AT2b create {from: <handle>} with no at puts the copy beside its source", T(d2));
+  const p2 = made2 ? ag.foldRecord(made2)?.pos : null, p0 = ag.foldRecord(ID.mug)?.pos, gap = p2 && p0 ? Math.hypot(p2[0] - p0[0], p2[2] - p0[2]) : NaN;
+  ok(!d2.isError && made2 && made2 !== made && gap > 0 && gap < 2, "AT2b create {from: <handle>} with no at puts the copy beside its source (within 2 m, not on it)", [T(d2), p0, p2, gap]);
   const d3 = await call("create", { from: ID.mug.slice(0, 9), at: { pos: [9, 0, 2] } });   // by a longer prefix of its id
   ok(!d3.isError, "AT2c …and the authority's own {pos, yaw|q} still passes through (a unique id prefix names the source)", T(d3));
   const chosen = await call("create", { id: "my-mug", model: "test/cup.glb" });

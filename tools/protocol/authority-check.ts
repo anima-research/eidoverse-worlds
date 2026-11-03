@@ -141,7 +141,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(code(call("olive", "set", { id: "tbl", component: "lock", value: 1 })) === "shape", "P26 the authority writes a lock only as true (to unlock, delete it)");
   { call("bob", "set", { id: "cup2", component: "lock", value: true });
     ok(code(call("bob", "set", { id: "cup2", component: "transform", value: { pos: [0.3, 0.75, 0] } })) === "locked", "P27 a builder's own lock binds that builder (the locker, not an owner)"); }
-  ok(call("bob", "delete", { id: "tbl", component: "lock" }).ok, "P28 any builder may unlock someone else's lock (olive's)");
+  ok(call("bob", "delete", { id: "tbl", component: "lock" }).ok, "P28 any builder may unlock another builder's lock (bea's)");
   ok(call("bob", "set", { id: "cup", component: "transform", value: { pos: [0.1, 0.75, 0] } }).ok, "P29 …and then the crate moves");
   call("olive", "set", { id: "cup", component: "lock", value: true });
   ok(code(call("bob", "set", { id: "bell", component: "transform", value: { pos: [0, 0.6, 0] } })) === "locked" && call("bob", "set", { id: "tbl", component: "transform", value: { pos: [0, 0, 3.2] } }).ok,
@@ -224,8 +224,8 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     ok(g.ok && put.ok, "P43 …but a lock set on the table while the cup is in a hand doesn't bind it there: the put settles it (§5: holding suspends parent constraints)", [g.refused, put.refused]);
     hc("bob", "grab", { id: "cup" }); hc("olive", "set", { id: "cup", component: "lock", value: true });
     ok(code(hc("bob", "put", { id: "cup" })) === "locked", "P44 …and its OWN lock, set while held, still binds it (attack H1h3)"); }
-  { // lock levels (R, 10-07): lock {rank} — only that rank and above may change or remove it, or act through it; whoever set
-    // it may always lift it. A plain `true` is a builder-level lock (what every existing lock already meant).
+  { // lock levels (R 10-07; recut B2 10-20): a lock is true, and its strength is its setter's rank NOW — only that rank and
+    // above may change or remove it, or act through it; {rank} is refused (PL8).
     const lc = callAt("levels");
     const LW = () => openWorld(root, "levels").state();
     lc("olive", "create-world", { title: "levels" });
@@ -359,7 +359,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   // v1's mount names its socket `slot`; shared/hierarchy.js (the renderer's reading) speaks the protocol's `socket`
   const drawn = viewState(openWorld(root, "tr-mounts").state()).entities;   // what the renderer draws: the door's fold, as the view says it (10-14: one vocabulary)
   for (const id of ["box", "bell", "stray", "jar"]) { const i = tc("inspect", { id }); const want = worldPose(drawn, id);
-    ok(near(i.world?.pos, want.pos) && near(i.world?.q, want.q), `M3 the authority sees ${id} where v1 draws it (world pose)`, [i.world, want]); }
+    ok(near(i.world?.pos, want.pos) && near(i.world?.q, want.q), `M3 the authority sees ${id} where the renderer's fold draws it (world pose)`, [i.world, want]); }
   const p = tc("create", { id: "ball2", model: "ball", place: { on: "tbl" } }); const at = p.notes?.find((n) => n.placed)?.placed;
   const loc = openWorld(root, "tr-mounts").state().entities.ball2?.c.transform.pos; // local to tbl (it rides the table)
   ok(p.ok && loc && Math.max(Math.abs(loc[0]), Math.abs(loc[2])) > 0.4, "M4 place on the table avoids the riding crate at its centre (with @1's shape the authority saw the crate 9 m away and the centre free)", [at, loc]);
@@ -369,7 +369,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 // ---- L: live world vs whole-log re-read ----
 { const dir = root + "live/"; clock.t += 1000; let now = clock.t;
   const w = openLive(dir, "live", { kindOf: LABKIND, now: () => now, simModels: MODELS });
-  const call = (actor, verb, args = {}, step = 100) => { now += step; return request(w, actor, verb, args); };
+  const call = (actor, verb, args = {}, step = 100) => { now += step; const r = request(w, actor, verb, args); same(`after ${verb}`); return r; };   // every request (the header's claim)
   const same = (what) => {
     const L = readLog(fs.readFileSync(dir + "world.jsonl")); const whole = fold(L);
     ok(digest(w.state()) === digest(whole), `L ${what}: incremental state = a whole-log fold`, [digest(w.state()), digest(whole)]);
@@ -1652,7 +1652,7 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   const turnedAway = named.filter((v) => !alone[v]?.ok || !inBatch[v]?.ok);
   ok(named.length >= 5 && !turnedAway.length, "BT5 every verb batch's help names goes in a batch, dry, as it goes alone", { named, turnedAway: turnedAway.map((v) => [v, alone[v]?.refused ?? alone[v]?.ok, inBatch[v]?.refused ?? inBatch[v]?.ok]) }); }
 
-// ---- RA (review of #260): a log changed outside the purge rule refuses writes, but not the operator's or a read ----
+// ---- RA (review of #260): a log changed outside the purge rule reads as unknown and the fold names the line (commit-unpurged); writes, reads and the operator's repair go on ----
 { const name = "altered"; const file = `${root}worlds/${name}.jsonl`;
   const call = callAt(name);
   const opr = (actor, verb, args = {}) => { clock.advance(100); return operatorRepair(openWorld(root, name), actor, verb, args); };

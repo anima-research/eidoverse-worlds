@@ -48,7 +48,7 @@
   "bare-wait": 7
  },
  "tools/protocol/access-check.ts": {
-  "bare-wait": 11
+  "bare-wait": 7
  },
  "tools/protocol/agentshove-check.ts": {
   "bare-wait": 39
@@ -87,7 +87,7 @@
   "raw-symlink": 1
  },
  "tools/protocol/identity-check.ts": {
-  "bare-wait": 49
+  "bare-wait": 47
  },
  "tools/protocol/import-v1/snapshot-oracle.ts": {
   "raw-symlink": 2

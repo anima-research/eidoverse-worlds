@@ -27,6 +27,7 @@
 //   role-words    WORLD_ADMIN / "world admin" / "world operator" for the server's operator (R 10-27): say "server operator".
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import { ENGINE } from "./common.ts";
 import { SUITES, localImports, suitePath } from "./suites.ts";
 
@@ -62,18 +63,19 @@ export const roleWords = (text: string) => [...text.matchAll(ROLE_WORDS)].length
 // where the legacy name stays (R 10-27): its reader, its compatibility test, the migration notes; and dated records kept verbatim
 const ROLE_WORDS_OK = new Set([SELF, "server/operators.ts", "tools/protocol/identity-check.ts", "docs/TRANSLATING-OLD-WORLDS.md", "deploy/SHOW_RUNBOOK.md", "docs/INCIDENTS.md", "TEL0S_NOTES.md"]);
 /** "file:line" for each role-word hit in the repo's text outside ROLE_WORDS_OK (frozen/ is history, never edited). */
-export function roleWordHits(): string[] {
+export function roleWordHits(root = ENGINE): string[] {
   const out: string[] = [];
   const go = (dir: string) => { for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
     if (e.name === "node_modules" || e.name.startsWith(".") || e.name === "frozen") continue;
     const p = path.join(dir, e.name);
     if (e.isDirectory()) go(p);
-    else if (/\.(ts|js|mjs|md|sh|conf|service|html)$/.test(e.name) && !ROLE_WORDS_OK.has(rel(p)))
-      fs.readFileSync(p, "utf8").split("\n").forEach((l, n) => { if (roleWords(l)) out.push(`${rel(p)}:${n + 1}`); });
+    else if (/\.(ts|js|mjs|md|sh|conf|service|html|json|jsonl|yml|yaml|toml|txt|py|ps1|env|example|patch|css)$/.test(e.name) && !ROLE_WORDS_OK.has(relTo(root, p)))   // every text kind in the tree (bot #677)
+      fs.readFileSync(p, "utf8").split("\n").forEach((l, n) => { if (roleWords(l)) out.push(`${relTo(root, p)}:${n + 1}`); });
   } };
-  go(ENGINE); return out;
+  go(root); return out;
 }
-const rel = (p: string) => path.relative(ENGINE, p).split(path.sep).join("/");
+const relTo = (root: string, p: string) => path.relative(root, p).split(path.sep).join("/");
+const rel = (p: string) => relTo(ENGINE, p);
 /** A spawn of the mcpl server with no MCPL_STATE writes mcpl/state.json in the checkout (CI 40956937323: client-tools imports
  *  every test, so a top-level spawn runs). True when the text spawns net-server.ts without naming MCPL_STATE. */
 export const spawnsMcplStateless = (text: string) => /spawn\([^)]*mcpl\/net-server\.ts/.test(text) && !/MCPL_STATE/.test(text);
@@ -150,6 +152,10 @@ if (import.meta.main) {
   const bareWords = ["only a world admin can ban", "remove them from WORLD_ADMIN", "a world operator", "(WORLD_ADMIN)"].join(" ");
   const fineWords = "SERVER_OPERATORS=human:discord:1; a server operator; the world's owner";
   check(`H${i++} role-words: caught in its known-bad form (4), and not in the right way`, roleWords(bareWords) === 4 && roleWords(fineWords) === 0, [roleWords(bareWords), roleWords(fineWords)]);
+  // the scan reads every text kind, not only code and prose (bot #677): a planted .json and .yml are found, a .png is not
+  { const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "hyg-677-")); for (const f of ["a.json", "b.yml", "c.png"]) fs.writeFileSync(path.join(tmp, f), '{"who": "WORLD_ADMIN"}\n');
+    const hits = roleWordHits(tmp); fs.rmSync(tmp, { recursive: true, force: true });
+    check(`H${i++} role-words: a .json and a .yml saying WORLD_ADMIN are found by the tree scan (a binary kind is not)`, JSON.stringify(hits) === '["a.json:1","b.yml:1"]', hits); }
   const wordHits = roleWordHits();
   check(`H${i++} role-words: no file outside the legacy reader, its test and the migration notes says WORLD_ADMIN, world admin or world operator`, wordHits.length === 0, wordHits.join("\n      "));
   // mcpl state (10-29): a test that spawns the mcpl server names MCPL_STATE, or it writes the repository's state file

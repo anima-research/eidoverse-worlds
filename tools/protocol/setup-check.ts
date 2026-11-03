@@ -11,6 +11,7 @@
 //   SU9 the operators file is written safely: a planted .operators.json.tmp symlink is never followed, and a symlinked .operators.json is refused, unchanged
 //   SU8 the page reads the token from the fragment only: a ?token= link posts nothing and says so (it would sit in proxy logs and history)
 //   SU11 an authenticated valid-token claim accepts 1024 body bytes and refuses 1025, declared or chunked, including before an unfinished sender ends
+//   SU12 the shared port picker (harness freePort) never hands out a live sequencer's port, 8968 or 8970
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -246,6 +247,9 @@ else {
   for (let i = 0; i < 7; i++) codes.push((await post(r.port, { token: "nope" + i }, cookie(ANN))).status);
   ok(JSON.stringify(codes.slice(0, 5)) === JSON.stringify([403, 403, 403, 403, 403]) && codes[5] === 429 && codes[6] === 429 && stored(W7) === null, "SU7 a sixth try in a minute from one address is refused (429)", codes);
   await r.stop(); }
+
+// SU12 (bot #342): the shared picker never hands out a live sequencer's port (8968/8970), even from a window that starts on one
+{ const p = freePort(8968, 5, 8968); ok(p !== 8968 && p !== 8970 && p > 8968, "SU12 freePort skips the live sequencers' ports 8968 and 8970", p); }
 
 console.log(`[setup-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

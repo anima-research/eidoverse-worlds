@@ -11,6 +11,7 @@
 //   F50c    the vehicle walls are locked (builder strength), and the report says so
 //   F51     @37: main's slow water is physics-area {kind: speed, modes: [swim]} on the water's zone; no drag field anywhere
 //   F52-53  @31: main's 78 m stage a bounds box; its inferred lamps light children
+//   F51d, F53c-e  @43: a clamped speed factor said; lamps beside an own light; an unreadable model said; a clamped floor said
 //   DT8     @34 (decision table row 8): main's ambient motes' count, range and colour in a derived dust document
 //   DT9     @33 (decision table row 9): a seat with no pos sits at main's [0, 0.5, 0]
 //   V5      the translator is @37, and a report reviewed under @36 is refused, naming the earlier translator
@@ -279,6 +280,27 @@ row("F53b", () => { const { Document } = require("@gltf-transform/core");   // m
   ok(L.length === 2 && JSON.stringify(L[0].at) === "[2,1.2,0]" && L[0].color === 0xffd9a0 && Math.abs(L[0].intensity - 8.6) < 1e-9 && near(L[1].at, [0.1, 3.1, 0.1]) && L[1].color === 0x0000ff && L.every((x: any) => x.range === 12 && x.decay === 1.7),
     "F53b the lamps main inferred, measured from a GLB as its rig did: an emitter is a flat emissive over 0.5 (a map only above strength 1), at most two in scene order, at each one's box centre in the model's frame; a saturated one keeps its colour, a whitish one is main's warm bulb; 6 + 2.6 × glow", L); });
 
+// ================= @43 (bot review 440/441/442/445/446): nothing dropped or clamped quietly =================
+row("F51d", () => { const slow = tr([OWNER, ["olga", "spawn", { id: "pool", lib: "p.glb" }], ["olga", "comp", { id: "pool", type: "water", data: { center: [0, 0, 0], size: [4, 2, 4], speed: 0.1 } }]]);
+  const kid = Object.values<any>(slow.E).find((c) => c.water && c.zone), f = kid?.["physics-area"]?.factor;
+  const sp = slow.r.stats.mapped?.find((m) => m.component === "water")?.speed;
+  ok(f === 0.05 && sp?.clamped?.to === 0.05 && Math.abs(sp.clamped.factorWas - 0.0417) < 1e-9 && /0\.05\.\.10/.test(sp.clamped.why),
+    "F51d main's slowest water (0.1 m/s ≈ × 0.042) is the speed area's least factor, 0.05, and the report says so with main's (bot review 445)", { f, sp }); });
+row("F53c", () => { const L = [{ at: [0, 0.39, 0], color: 0xffe8c4, intensity: 11.2, range: 12, decay: 1.7 }], lampsOf = (lib: string) => (lib === "glow.glb" ? L : []);
+  const r = TV1.translate(log([OWNER, ["olga", "spawn", { id: "lantern", lib: "glow.glb", pos: [3, 0, 4] }], ["olga", "comp", { id: "lantern", type: "light", data: { color: 0xff0000, intensity: 5 } }]]), { lampsOf }), E = r.final.translated;
+  const kid = E[TV1.lampChildId("lantern", 0)], m = r.stats.mapped?.find((x) => x.component === "lamp" && x.id === "lantern");
+  ok(E.lantern?.light?.color === 0xff0000 && kid?.parent?.to === "lantern" && kid.light?.kind === "point" && m?.into?.[0] === TV1.lampChildId("lantern", 0),
+    "F53c a model with its own light component still gets main's inferred lamp as a child (main's attachLamps ran on every placed model, its light beside): the report's lamp row names what is written (bot review 441)", { lantern: E.lantern, kid, m }); });
+row("F53d", () => { const lampsOf = (lib: string) => (lib === "torn.glb" ? { unmeasured: "unreadable here: bad glb" } : []);
+  const r = TV1.translate(log([OWNER, ["olga", "spawn", { id: "torch", lib: "torn.glb" }], ["olga", "spawn", { id: "dull", lib: "x.glb" }]]), { lampsOf }), E = r.final.translated;
+  const m = r.stats.mapped?.filter((x) => x.component === "lamp");
+  ok(!E[TV1.lampChildId("torch", 0)] && m?.length === 1 && m[0].id === "torch" && m[0].lamps === 0 && /bad glb/.test(m[0].unmeasured) && m[0].into.length === 0,
+    "F53d a model this host could not read (a decoder throw) writes no lamp and the report says so, unmeasured with why, instead of listing nothing (bot review 442)", { m, torch: E.torch }); });
+row("F53e", () => { const { r, W } = tr([OWNER, ["olga", "spawn", { id: "land", lib: "l.glb" }], ["olga", "comp", { id: "land", type: "environment", data: { floor: -20000 } }]]);
+  const a = r.stats.adjusted?.find((x) => x.component === "environment" && x.field === "floor");
+  ok(W.terrain?.height === -1e4 && a?.id === "land" && a.was === -20000 && a.now === -1e4 && /1e4|10000/.test(a.why),
+    "F53e a floor past ±1e4 m is clamped to a terrain height, and the report's adjusted lists it with main's value (bot review 446)", { terrain: W.terrain, a }); });
+
 // ================= V5: the version, and a stale review refused =================
 row("V5", () => { const root = scratch("translate-v5"), W = path.join(root, "worlds"), d = path.join(W, "den"); fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(d, "log.jsonl"), log([OWNER]).map((e) => JSON.stringify(e)).join("\n") + "\n");
@@ -287,8 +309,8 @@ row("V5", () => { const root = scratch("translate-v5"), W = path.join(root, "wor
   const old = /H ([0-9a-f]{64})/.exec(rep.stdout.toString())?.[1];
   const up = Bun.spawnSync(["bun", "tools/protocol/world.ts", "translate", "--no-founder-key", "--operator-only-no-owner", "--approved", old ?? "x", "--", "den"], { cwd: ENGINE, env });
   const said = up.stdout.toString() + up.stderr.toString();
-  ok(TV1.translatorVersion(TV1.TRANSLATOR) === 42 && TV1.translatorVersion(TV1.TRANSLATOR_SIM) === 42 && old && up.exitCode !== 0 && /is not the one that was approved/.test(said) && /earlier translator than eidoverse\/translate-v1@42/.test(said) && fs.existsSync(path.join(d, "log.jsonl")) && !fs.existsSync(path.join(d, "world.jsonl")),
-    "V5 the translator is @42; a report reviewed under @41 is refused, saying an earlier translator's review never approves this one, and nothing moves", { v: TV1.TRANSLATOR, said: said.slice(-500) }); });
+  ok(TV1.translatorVersion(TV1.TRANSLATOR) === 43 && TV1.translatorVersion(TV1.TRANSLATOR_SIM) === 43 && old && up.exitCode !== 0 && /is not the one that was approved/.test(said) && /earlier translator than eidoverse\/translate-v1@43/.test(said) && fs.existsSync(path.join(d, "log.jsonl")) && !fs.existsSync(path.join(d, "world.jsonl")),
+    "V5 the translator is @43; a report reviewed under @42 is refused, saying an earlier translator's review never approves this one, and nothing moves", { v: TV1.TRANSLATOR, said: said.slice(-500) }); });
 
 row("V6", () => { const root = scratch("translate-v6"), W = path.join(root, "worlds"), d = path.join(W, "den"), opt = path.join(root, "opt"); fs.mkdirSync(d, { recursive: true }); fs.mkdirSync(path.join(opt, "store"), { recursive: true });
   fs.writeFileSync(path.join(d, "log.jsonl"), log([OWNER, ["olga", "spawn", { id: "boat", lib: "store/boat.glb" }]]).map((e) => JSON.stringify(e)).join("\n") + "\n");
