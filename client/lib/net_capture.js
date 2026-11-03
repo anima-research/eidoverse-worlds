@@ -18,7 +18,8 @@ const _snapBox = new THREE.Box3();
 // capture the renderer moves its camera to the followed body — residency loads what is near the camera — and waits
 // until the world is REALIZED there: the body in the scene, the world's builds (terrain, water, grass) done, no model
 // loading or standing in — steady for a second. Not ready in time → an explicit error with
-// the counts, never a partial image. A settled renderer passes straight through.
+// the counts. A settled renderer already looking there passes straight through. (Residency's unscheduled `waiting` models
+// aren't counted: one the aim hasn't reached in the steady second can still be missing. bot #260 59)
 //
 // "In time" is the server's to say: each snap carries `wait`, how long the asker will still wait for this frame less
 // a margin for the capture and the send (server/screenshots.ts dispatch). The renderer used to stop at a fixed 20 s
@@ -32,15 +33,19 @@ export const settleBudget = (msg) => (typeof msg?.wait === 'number' && Number.is
 // keeps its browser boundary narrow — a client or test without it treats the world as ready, exactly as before.
 let readiness = async () => ({ ready: true });
 export function setSnapReadiness(fn) { readiness = fn; }
+/** Aim the camera at p; true when that moved it more than a metre (residency, which reads the camera, has new ground). */
 function aimAt(p) {
-  if (!p || !camera?.position) return;
+  if (!p || !camera?.position) return false;
+  const c = camera.position, moved = Math.hypot(c.x - p.x, c.y - (p.y + 2), c.z - (p.z + 3)) > 1;
   camera.position.set(p.x, p.y + 2, p.z + 3); camera.lookAt(p); camera.updateMatrixWorld();
+  return moved;
 }
 async function settle(follow, budget = SETTLE_MS) {
-  let last = await readiness(follow);
-  if (last.ready) return;                     // a settled renderer: no wait at all
+  // aim FIRST: a readiness taken before the camera reaches the body judged the old view (bot #260 59)
   const near = remotes.get(follow)?.avatar?.root?.position;
-  aimAt(near);
+  const moved = aimAt(near);
+  let last = await readiness(follow);
+  if (last.ready && !moved) return;           // a settled renderer already looking there: no wait at all
   const t0 = performance.now();
   let steady = 0;
   while (performance.now() - t0 < budget) {

@@ -199,10 +199,10 @@ function showInspector(id) {
   inspector.innerHTML =
     `<span><b>${escapeHtml(label.slice(0, 34))}</b></span>` +   // a thing's label or model path: world content, text
     (locked
-        ? `<span style="color:var(--dim)">locked — nothing moves or removes it until unchecked</span>`
+        ? `<span style="color:var(--dim)">locked — nobody's edits change it until unchecked</span>`
         : `<span style="color:var(--dim)">drag move · <kbd>Shift</kbd>+drag up/down · ` +
           `<kbd>G</kbd> move · <kbd>E</kbd> rotate · <kbd>R</kbd> scale · <kbd>F</kbd> find · <kbd>X</kbd> remove · <kbd>Esc</kbd> done</span>`) +
-    `<label title="nail it down: while locked, nobody's drags, verbs or scripts can move, replace or remove it (server-enforced) — sitting on it and content edits stay open" style="display:flex;gap:4px;align-items:center;cursor:pointer">` +
+    `<label title="nail it down: while locked, nobody's drags, edits or scripts change it (server-enforced) — sitting on it and using it (doors, handlers) stay open; a builder who may lift the lock edits through it" style="display:flex;gap:4px;align-items:center;cursor:pointer">` +
     // an icon, never an emoji (R, 10-10: emoji only in the Chat pane and on the action bar — "illegal pretty much everywhere else")
     `<input type="checkbox" data-bact="lock"${locked ? ' checked' : ''}><span class="sp-ico" aria-hidden="true">${iconSvg(locked ? 'lock' : 'lockOpen', 14)}</span> lock</label>`;
   // '+ seat' lived here (R 10-10 23:56: "Very curious why there's a 'seat' button here in the helper dialog?"); one stray

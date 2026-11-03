@@ -761,7 +761,7 @@ function inspectorFields() {
         { t: 'btn', k: 'myhide', icon: mine ? 'eyeOff' : 'eye', label: '', on: mine, bar: true, deskOnly: true, cls: 'sp-iconbtn sp-mine',
           hint: mine ? 'Only you: hidden in YOUR view (not drawn, not clickable, still solid). Everyone else still sees it. Click to show it again.' : 'Only you: hide it in YOUR view. Nobody else is affected (the eye in the Hierarchy is the same switch).' },
         { t: 'btn', k: 'hlock', icon: lk ? 'lock' : 'lockOpen', label: '', on: !!lk, bar: true, deskOnly: true, cls: 'sp-iconbtn',
-          hint: lk ? 'Locked: nobody moves, replaces or removes it until it is unlocked. Click to unlock.' : 'Lock it: nobody moves, replaces or removes it until it is unlocked (sitting on it and content edits stay open).' },
+          hint: lk ? 'Locked: nobody\'s drags, edits or scripts change it until it is unlocked. Click to unlock.' : 'Lock it: nobody\'s drags, edits or scripts change it until it is unlocked (sitting on it and using it stay open; a builder who may lift the lock edits through it).' },
       ];
       f.unshift(...line); }   // parenting is the Hierarchy's job (R, 10-04); agents keep parent.* in edit
     if (pendingAsk?.id === id) {

@@ -557,17 +557,18 @@ function dropCompLight(id) {
 /** Make the realized light match the fold for this id: create, update, move
  *  to the current realized object, or release. Idempotent; called whenever
  *  the comp changes or the entity's realized object is replaced. */
-const lightSpec = (ent, L, host) => ({
+// no realized host yet: the fold's world pose (a child's own pos is its parent's frame; bot #260 112), and its q for a spot
+export const lightSpec = (id, ent, L, host) => { const w = host ? null : worldPose(state.st.entities, id); return {
   color: L.color, intensity: L.intensity, range: L.range, decay: L.decay, keep: L.important, dayAware: L.daytime !== 'full',   // the rig's `keep` tier is light.important; decay is the value's (shape audit 10-16)
   spot: L.kind === 'spot' ? { angle: L.angle, inner: L.inner } : null,
-  obj: host, pos: host ? null : [...(ent.pos ?? [0, 0, 0])],
-});
+  obj: host, pos: host ? null : [...(w?.pos ?? ent.pos ?? [0, 0, 0])], q: host ? null : (w?.q ?? null),
+}; };
 /** A light card's drag, before release (SWEEP-3 N4): the realized light takes the dragged brightness or range; the fold's
  *  value comes back with the commit (syncCompLight) or the card's restore. */
 export function previewLight(id, patch) {
   const cl = compLights.get(id), ent = state.st.entities[id], L = ent ? lightOf(ent) : null;
   if (!cl || !L) return false;
-  updateRequest(cl.key, { ...lightSpec(ent, L, entities.get(id) ?? null), ...patch }); return true;
+  updateRequest(cl.key, { ...lightSpec(id, ent, L, entities.get(id) ?? null), ...patch }); return true;
 }
 function syncCompLight(id) {
   const ent = state.st.entities[id];
@@ -575,7 +576,7 @@ function syncCompLight(id) {
   if (!L || offIn(state.st.entities, id)) { dropCompLight(id); return; }   // a switched-off thing casts nothing (I34)
   if (L.kind === 'directional') { dropCompLight(id); return; }   // a sun: the rig's own sun draws it (watervolumes.js sunOf)
   const host = entities.get(id) ?? null;
-  const spec = lightSpec(ent, L, host);
+  const spec = lightSpec(id, ent, L, host);
   let cl = compLights.get(id);
   if (!cl) {
     cl = { key: `complight:${id}` };

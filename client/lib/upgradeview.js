@@ -16,6 +16,11 @@ function ask(type, body, ms = 10 * 60_000) {
   });
 }
 const refusedWords = (r) => `${r?.refused?.reason ?? 'refused'}${r?.refused?.fix ? ` — ${r.refused.fix}` : ''}`;
+/** An upgrade that didn't say ok: "nothing was changed" only when the CLI itself refused; no answer, a closed socket or a
+ *  stopped CLI leaves the outcome unknown (bot #260 29). */
+export const upgradeFailedWords = (u) => (['refused', 'stale'].includes(u?.refused?.code)
+  ? `The upgrade was refused, and nothing was changed: ${refusedWords(u)}`
+  : `The upgrade's outcome is unknown (${refusedWords(u)}). Reload to see whether the world opens; if the server says it is mid-upgrade, run the rollback it names.`);
 
 /** A section of the report: a title with its count, and one line per item ("nothing" when empty). */
 function section(title, items) {
@@ -75,7 +80,7 @@ export function showOldFormat(root, refused, world) {
         go.disabled = true; go.textContent = 'backing up and upgrading…';
         const u = await ask('world-upgrade', { world, approved: r.hash });
         area.textContent = '';
-        if (!u.ok) { area.append(el('p', 'sp-up-err', `The upgrade was refused, and nothing was changed: ${refusedWords(u)}`)); return; }
+        if (!u.ok) { area.append(el('p', 'sp-up-err', upgradeFailedWords(u))); return; }
         // success replaces the problem: the headline, the doc link and the report go; Enter first; the backup and the undo fold away
         const phase = root.querySelector('.sp-phase'); if (phase) { phase.textContent = 'Upgraded. The world is ready.'; phase.removeAttribute('role'); }
         const sub = root.querySelector('.sp-sub'); if (sub) sub.textContent = 'upgrade complete';

@@ -114,7 +114,7 @@ import { redialer, REDIAL } from "../shared/redial.js";
 import { createShover, shoveable, footprint, obbOf, aabbOfObb, contactOf, massOf, budges, SHOVE_FEEL } from "../shared/shove.js";
 import { SHOVE } from "../shared/protocol/physconst.js";
 import { worldPose, solidOff } from "../shared/protocol/simlayer.js";
-import { physicsAreasOf, speedFactorAt, foldOfView } from "../shared/zone.js";
+import { physicsAreasOf, speedFactorAt, foldOfView, zonesOf, waterVolumes, worldLevelAt } from "../shared/zone.js";
 import { fallBackOf, belowWorld, FELL } from "../shared/spawn.js";
 /** A record (components flat, view.js) a body doesn't meet: componentspec collider.enabled or .blocks, the authority's own reading. */
 const solidOffRecord = (e: any) => solidOff(e, "bodies");
@@ -1704,6 +1704,13 @@ export class WorldAgent {
   /** × my speed at p: a physics-area {kind: speed} (shared/zone.js, the client's and the authority's reading), once per view */
   private areas: { st: unknown; a: any[] } | null = null;
   speedAt = (p: number[], mode?: string): number => { if (this.areas?.st !== this.st) this.areas = { st: this.st, a: physicsAreasOf(foldOfView(this.st)) }; return speedFactorAt(this.areas.a, p, mode); };
+  /** The world's level where my feet are: none in a dry pocket below it (zone.js worldLevelAt, the client's levelHere; bot #260 123) */
+  private pockets: { st: unknown; z: any; v: any } | null = null;
+  levelHere(): number | null {
+    const level = this.water?.level; if (level == null) return null;
+    if (this.pockets?.st !== this.st) { const z = zonesOf(foldOfView(this.st)); this.pockets = { st: this.st, z, v: waterVolumes(z) }; }
+    return worldLevelAt([this.pos.x, this.pos.y, this.pos.z], this.pockets.z, level, { volumes: this.pockets.v });
+  }
   /** The world's half of the fold — state.sky / terrain / grass — which
    *  shared/worldentity.js reads as the world entity `@world`. */
   worldFold(): { sky: unknown; terrain: unknown; grass: unknown } {
@@ -2705,15 +2712,15 @@ export class WorldAgent {
       const floorAt = colliding0 ? (x: number, z: number, y?: number) => this.feetAt(x, z, y ?? this.pos.y, walkFloor) : walkFloor;
       // WATER (upstream #242) is the mover's too: handed the world's level (env.waterAt) and this body's measured stature,
       // the stride wades (dragged) or swims (a stroke's pace, afloat at the chest) — no water arithmetic here.
-      const water = this.water;
+      const wl = this.levelHere();
       // feet on the live ground BEFORE the stride: terrain that loads late or changes under the walker lifts the body here, so
       // the mover judges a ledge AHEAD against where the feet now stand — not against a y the ground has since left (the
       // lifecycle test's mid-walk terrain swap; before 10-15 one refused stride, then the feet clamp, then on)
       // (colliding, the feet below do this themselves, falling to a lower floor rather than jumping to it)
-      if (!colliding0 && !this.flight && !this.draggedBy && this.pins.size === 0) { const g0 = floorAt(this.pos.x, this.pos.z); if (Number.isFinite(g0) && (!water || g0 >= water.level)) this.pos.y = g0; }
+      if (!colliding0 && !this.flight && !this.draggedBy && this.pins.size === 0) { const g0 = floorAt(this.pos.x, this.pos.z); if (Number.isFinite(g0) && (wl == null || g0 >= wl)) this.pos.y = g0; }
       const r = walkToward({ pos: [this.pos.x, this.pos.y, this.pos.z], target: [T.x, T.z], dt, run: T.run, tolerance: T.tolerance ?? MOVER.arrive.tolerance, room,
-        ...(water ? { height: this.stature() } : {}) },
-        water ? { floorAt, waterAt: () => water.level, speedAt: this.speedAt } : { floorAt, speedAt: this.speedAt });
+        ...(wl != null ? { height: this.stature() } : {}) },
+        wl != null ? { floorAt, waterAt: () => wl, speedAt: this.speedAt } : { floorAt, speedAt: this.speedAt });
       if (r.arrived) {
         // A route through a building arrives in legs. Only the LAST one
         // finishes the walk; the rest hand off to the next waypoint, so a body
@@ -2767,15 +2774,16 @@ export class WorldAgent {
       if (feetFree) groundY = terrainG(this.pos.x, this.pos.z);
     }
     if (groundY != null) {
-      if (this.water) {
+      const wl = this.levelHere();
+      if (wl != null) {
         // feet on the bed, or floating with the chest at the surface; a body standing still out of its
         // depth treads water
-        const st = waterStance(this.water.level, groundY, this.stature());
+        const st = waterStance(wl, groundY, this.stature());
         if (st.swimming) {
           // float on the moving surface, the browser's law and clock (controller.js does the same)
           if (!this.float.on) { this.float = { on: true, y: colliding ? yBefore : this.pos.y, vy: 0 }; }
           if (colliding) this.vy = 0;   // afloat, the feet's own fall is not running
-          const t = waveClock(this.serverNow()), level = this.water.level, A = this.waterKinds;
+          const t = waveClock(this.serverNow()), level = wl, A = this.waterKinds;
           const surf = footprintSurface((x, z) => level + surfaceOffset(A?.sample(x, z) ?? null, x, z, t), this.pos.x, this.pos.z);
           floatStep(this.float, surf, this.stature(), dt, groundY);
           this.pos.y = this.float.y;

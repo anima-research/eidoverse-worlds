@@ -1,5 +1,5 @@
 // bun tools/water/preview.ts BUNDLE_DIR [PORT] — isolated loopback server: founds a scratch world and sends the manifest's
-// `requests` (prepare.ts writes them) as its owner, the way import.ts --apply does (the GLBs pre-copied to OPT_DIR).
+// `uploads` and `requests` (prepare.ts writes them) as its owner, the way import.ts --apply does (the GLBs pre-copied to OPT_DIR).
 import {mkdtempSync,mkdirSync,readFileSync,copyFileSync} from 'node:fs';
 import {join,resolve,dirname} from 'node:path';
 import {tmpdir} from 'node:os';
@@ -26,7 +26,9 @@ const reply:any=await new Promise((res,rej)=>{
  ws.onerror=()=>rej(Error('cannot connect'));
  ws.onmessage=(e)=>{const m=JSON.parse(String(e.data));
   if(m.type==='error'){clearTimeout(timer);rej(Error(m.error??'refused'));}
-  if(m.type==='snapshot')ws.send(JSON.stringify({type:'request',id:'water-preview',...manifest.requests[0]}));
+  // the effect documents the batch names go first, as import.ts sends them (bot #260 99)
+  if(m.type==='snapshot'){(manifest.uploads??[]).forEach((u:any,i:number)=>ws.send(JSON.stringify({type:'request',id:`water-effect-${i}`,...u})));ws.send(JSON.stringify({type:'request',id:'water-preview',...manifest.requests[0]}));}
+  if(m.type==='reply'&&/^water-effect-/.test(m.id)&&!m.ok){clearTimeout(timer);rej(Error(`effect upload refused: ${JSON.stringify(m.reply?.refused??m).slice(0,600)}`));}
   if(m.type==='reply'&&m.id==='water-preview'){clearTimeout(timer);res(m);}};
 }).catch((e)=>{server.kill();throw e;});
 ws.close();

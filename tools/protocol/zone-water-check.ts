@@ -32,7 +32,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["ties by id", "zone.js", "|| (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)", "", ["Z3t"]],
   ["attenuation as σ", "zone.js", "return c.map((x) => -Math.log(Math.max(1e-6, Math.min(1, x))) / d);", "return c.map((x) => 1 - x);", ["Z8"]],
   ["the fog's mask is the law", "zone.js", "(excludes(a, w) ? m | (1 << i) : m)", "(m | (1 << i))", ["Z10"]],
-  ["the level asks the pockets", "zone.js", "return m.medium === \"air\" ? null : level;", "return level;", ["Z11"]],
+  ["the level asks the pockets", "zone.js", "return volumes.airs.some((a) => inBox(q, a) && excludes(a, AT_WORLD)) ? null : level;", "return level;", ["Z11"]],
   ["a body world-axis-aligned (mediumAt)", "water.js", "const l = w.toLocal ? w.toLocal(p) : p.map", "const l = p.map", ["Z12", "Z13"]],
   ["a body world-axis-aligned (waterPath)", "zone.js", "return { ...p, toLocal, id: b.id,", "return { ...p, id: b.id,", ["Z12", "Z13"]],
   ["CONTROL (no-op: must stay green)", "zone.js", "// the components and change kinds", "//  the components and change kinds", []],
@@ -247,6 +247,28 @@ await C("Z11", "the client's level asks mediumOf: worldLevelAt is null in a pock
   const z = Z.zonesOf(s.st()), L = (p: number[], zz = z) => Z.worldLevelAt(p, zz, 0);
   const o = { room: L([0, -7.5, 0]), beside: L([6, -7.5, 0]), above: L([0, 3, 0]), picky: L([20, -7.5, 0]), none: [L([0, -7.5, 0], none), L([0, 3, 0], none)], noLevel: Z.worldLevelAt([0, -7.5, 0], z, null) };
   return [o.room === null && o.beside === 0 && o.above === 0 && o.picky === 0 && o.none.join() === "0,0" && o.noLevel === null, o]; });
+
+await C("Z15", "a thing's water in a pocket is not @world's (bot #260 124): worldLevelAt is null where a pocket keeps @world out, even with a lower thing body inside it; a thing body over the open sea leaves the level as it is", () => {
+  const s = session();
+  s.call("set", { id: "@world", component: "water", value: { level: 10 } });
+  s.call("create", { id: "dome", components: { transform: tf([0, 5, 0]), zone: box([10, 10, 10]), "water-exclusion": {} } });
+  s.call("create", { id: "pool", components: { transform: tf([0, 1, 0]), zone: box([4, 2, 4], { priority: 5 }), water: {} } });
+  s.call("create", { id: "lagoon", components: { transform: tf([30, 1, 0]), zone: box([4, 2, 4], { priority: 5 }), water: {} } });
+  const z = Z.zonesOf(s.st());
+  const o = { pool: Z.worldLevelAt([0, 1, 0], z, 10), poolMedium: Z.mediumOf([0, 1, 0], z).body, dry: Z.worldLevelAt([3, 1, 3], z, 10), lagoon: Z.worldLevelAt([30, 1, 0], z, 10), sea: Z.worldLevelAt([60, 1, 0], z, 10) };
+  return [o.poolMedium === "pool" && o.pool === null && o.dry === null && o.lagoon === 10 && o.sea === 10, o]; });
+
+await C("Z16", "the authority's walk reads the pockets (bot #260 123): under @world's level 5, a dry dome over flat ground; a walk under a beam 5.7 m up inside it is taken (a walker's box), the same walk outside the dome is a swimmer's and meets the beam's twin", () => {
+  const s = session();
+  s.call("set", { id: "@world", component: "terrain", value: { amplitude: 0, size: 80 } });
+  s.call("set", { id: "@world", component: "water", value: { level: 5 } });
+  s.call("create", { id: "dome", components: { transform: tf([-10, 3, 0]), zone: box([12, 8, 12]), "water-exclusion": {} } });
+  const beam = (id: string, x: number) => s.call("create", { id, components: { mesh: { shape: "box", size: [1, 0.4, 6] }, transform: { pos: [x, 5.7, 0] } } });
+  const mk = [beam("beam", -10), beam("twin", 10)];
+  const walk = (x0: number) => { const r = [s.call("move", { to: [x0 - 3, 0, 0], teleport: true })]; for (let x = x0 - 2.5; x <= x0 + 3; x += 0.5) r.push(s.call("move", { to: [x, 0, 0] })); return r; };
+  const dome = walk(-10), sea = walk(10);
+  return [mk.every((r) => r.ok) && dome.every((r) => r.ok) && sea.some((r) => r.refused?.code === "solid" && /twin/.test(r.refused.reason)),
+    { mk: mk.map(show), dome: dome.filter((r) => !r.ok).map(show).slice(0, 2), sea: sea.filter((r) => !r.ok).map(show).slice(0, 2) }]; });
 
 // tools/water/math-test.ts's expectations, on bodies and pockets built through zone.js (a thing's zone, not a hand-made box)
 await C("ZM", "math-test on zone-built bodies: wet/dry boundaries, a pocket, path lengths (nested, overlapping, rotated pockets), ascent to the float, diving, a half-size body, waves", () => {

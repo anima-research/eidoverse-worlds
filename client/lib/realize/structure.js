@@ -42,7 +42,7 @@ import { colliderOf } from '../../../shared/components.js';
 import { solidOff } from '../../../shared/protocol/simlayer.js';
 import { defsRegistry } from '../defs.js';
 import { applyHidden } from './models.js';
-import { collisionOwnedElsewhere } from './models_field.js';
+import { collisionOwnedElsewhere, offIn } from './models_field.js';
 
 // PROCEDURAL, NOT TEXTURED. Surface detail is computed in the shader from
 // grid-local position, which buys three things this stack specifically needs:
@@ -341,7 +341,8 @@ function retire(id) {
 /** Create or rebuild one building. Idempotent: same state in, same scene out. */
 function realize(id, ent) {
   const data = structOf(ent);
-  if (!data) { retire(id); return; }
+  // switched off, itself or up its chain: not drawn, no boxes (models_field offIn; bot #260 60)
+  if (!data || offIn(state.st.entities ?? {}, id)) { retire(id); return; }
   // collision off for bodies (collider.enabled false, or blocks without bodies): no box a walker meets
   const tf = { ...transformOf(ent), solid: !solidOff(ent, 'bodies') };
   const sig = JSON.stringify(data);
@@ -391,7 +392,9 @@ function onChange({ id, what, comp }) {
   try {
     switch (what) {
       // a `structure` comp arriving on a thing we don't track yet is exactly how a building is born
-      case 'comp': if (comp === 'structure' || (comp === 'collider' && tracked.has(id))) realize(id, state.st.entities[id]); break;
+      case 'comp': if (comp === 'structure' || (comp === 'collider' && tracked.has(id))) realize(id, state.st.entities[id]);
+        else if (comp === 'disabled' || comp === 'parent') reconcileStructures();   // a switch or a move under one reaches the buildings below it
+        break;
       // re-derive from state rather than assume (a re-born thing may have dropped its structure)
       case 'born': realize(id, state.st.entities[id]); break;
       case 'pose': if (tracked.has(id)) realize(id, state.st.entities[id]); break;

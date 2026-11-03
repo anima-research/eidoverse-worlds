@@ -21,30 +21,33 @@ const ROOT = join(import.meta.dir, "..");
 
 /** Ask the real capture() for a frame: the world is ready after `readyAt` ms (never, if null); `wait` is the
  *  server's budget (absent, if undefined). Returns what it answered and how long it took. */
-function snapCase(readyAt: number | null, wait: number | undefined) {
+function snapCase(readyAt: number | null, wait: number | undefined, far = false) {
   const L = join(ROOT, "client/lib") + "/";
   const code = `
     const { mock } = await import("bun:test");
     const L = ${JSON.stringify(L)};
     const THREE = await import(${JSON.stringify(join(ROOT, "client/node_modules/three/build/three.module.js"))});
-    const camera = { position: { set() {} }, lookAt() {}, updateMatrixWorld() {} };
+    const camera = { position: new THREE.Vector3(), lookAt() {}, updateMatrixWorld() {} };
     mock.module(L + "core.js", () => ({ THREE, camera }));
-    const root = { position: new THREE.Vector3(), rotation: { y: 0 }, visible: true };
+    const root = { position: new THREE.Vector3(...(${far} ? [60, 0, 60] : [0, -2, -3])), rotation: { y: 0 }, visible: true };
     mock.module(L + "remotes.js", () => ({ remotes: new Map([["agent", { avatar: { root, headWorldPosition: () => null, visualBounds: (b) => b } }]]) }));
     mock.module(L + "fp_view.js", () => ({ composeFirstPerson: () => "data:image/png;base64,FIRST" }));
     mock.module(L + "capture.js", () => ({ captureFrame: () => "data:image/png;base64,FRAME", captureFrom: () => "data:image/png;base64,FROM" }));
     mock.module(L + "world.js", () => ({ entities: new Map() }));   // net_capture frames a placed thing (at=) from world.js
     const snap = await import(L + "net_capture.js");
     const t0 = performance.now(), readyAt = ${JSON.stringify(readyAt)};
+    let firstAt = null;
     snap.setSnapReadiness(async () => {
+      firstAt ??= camera.position.toArray();
+      // far: the view near the body is ready only once the camera has been there readyAt ms (residency's new ground)
       const ready = readyAt !== null && performance.now() - t0 >= readyAt;
       return { ready, body: true, builds: false, models: ready ? 1 : 0, loading: ready ? 0 : 1, compiling: 0 };
     });
     const msg = { follow: "agent", view: "third" ${wait === undefined ? "" : `, wait: ${wait}`} };
     const r = await snap.capture(msg);
-    console.log(JSON.stringify({ r, ms: Math.round(performance.now() - t0), budget: snap.settleBudget(msg) }));`;
+    console.log(JSON.stringify({ r, ms: Math.round(performance.now() - t0), budget: snap.settleBudget(msg), firstAt }));`;
   const out = Bun.spawnSync([process.execPath, "-e", code], { stdout: "pipe", stderr: "pipe" });
-  try { return JSON.parse(out.stdout.toString().trim().split("\n").pop()!) as { r: any; ms: number; budget: number }; }
+  try { return JSON.parse(out.stdout.toString().trim().split("\n").pop()!) as { r: any; ms: number; budget: number; firstAt?: number[] }; }
   catch { return { r: { error: `ERROR ${out.stderr.toString().slice(0, 300)}` }, ms: -1, budget: -1 }; }
 }
 
@@ -62,6 +65,15 @@ console.log("the server's budget");
   check("a wait of 0 refuses at once if the world is not ready", !!zero.r?.error && zero.ms < 600, `${zero.ms} ms`);
   const ready = snapCase(0, 0);
   check("…and a world already ready is captured at once, whatever the wait", ready.r?.dataUrl === "data:image/png;base64,FROM" && ready.ms < 600, JSON.stringify(ready));
+}
+
+console.log("aim first (bot #260 59)");
+{
+  // the body stands 60 m away and the world there is "ready" from the first look (its models not yet scheduled): the
+  // camera is aimed before readiness is asked, and a renderer that had to move waits the steady second
+  const far = snapCase(0, 4000, true);
+  check("a body far from the camera: readiness is first asked with the camera already on it", JSON.stringify(far.firstAt) === "[60,2,63]", JSON.stringify(far));
+  check("…and the capture waits the steady checks (it moved), then frames", far.r?.dataUrl === "data:image/png;base64,FROM" && far.ms >= 700, JSON.stringify(far));
 }
 
 console.log("settleBudget");

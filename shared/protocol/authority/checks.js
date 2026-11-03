@@ -16,6 +16,7 @@ import { instanceProblem, ESSENTIAL_NAMES, LEGACY_FIELDS } from "../../particle_
 import { LAYER_DEFAULT, scans, worldPose } from "../simlayer.js";
 import { trustRefusal } from "../../drafts.js";
 import { shapeError } from "../shapes.js";
+import { AREA_MODES } from "../../zone.js";
 import { CTX, UP } from "./ctx.js";
 import { Refusal, refuse } from "./refuse.js";
 import { modelOf } from "./catalogue.js";
@@ -23,7 +24,6 @@ import { ancestors } from "./math.js";
 import { toggleOf } from "./use.js";
 import { scriptCeiling } from "./scripts.js";
 import { CAPACITY_CEILING } from "./capacity.js";
-const AREA_MODES = ["walk", "swim", "fly", "climb"];   // physics-area.modes (componentspec)
 // the layers above this one (a leaf may not import them: authority-layers-check), reached through UP (ctx.js), which
 // authority.js binds at load
 const guess = (...a) => UP.guess(...a);

@@ -32,7 +32,7 @@ import { busy as loadingBusy } from './framebudget.js';
 import { bootDone } from './boot.js';
 import { setDayness, releaseForeignLights } from './lightrig.js';
 import { warm, P_AMBIENT } from './warmqueue.js';
-import { WEATHERS, CLOUDS, effectiveSky, hoursAt } from '../../shared/forecast.js';
+import { WEATHERS, CLOUDS, effectiveSky, hoursAt, skyTicks } from '../../shared/forecast.js';
 // Who owns which per-frame hook. The sky claims by diffing a GLOBAL array
 // around its own async build; anything another subsystem marks as its own is
 // off limits, whenever it appeared.
@@ -1501,7 +1501,7 @@ export function updateSky(nowMs, t) {
   // same heartbeat to notice its segment boundaries. ~1Hz is plenty — even at
   // rate 24 the sun moves 0.1°/s, and the forecast's cursor makes each check
   // O(1) (never a re-walk from the policy epoch).
-  if (((clock?.args.rate ?? 0) !== 0 || clock?.args.clock === 'real' || clock?.args.forecast) && nowMs - lastClockTick > 1000) {
+  if (skyTicks(clock?.args) && nowMs - lastClockTick > 1000) {   // a tz alone is the wall clock too (bot #260 54)
     lastClockTick = nowMs;
     render().catch((e) => report('sky clock', e));
   }

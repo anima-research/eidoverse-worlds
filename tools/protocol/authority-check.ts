@@ -1334,6 +1334,19 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   ok(!openWorld(root, "tr-lift").entries.slice(r.out.length).some((e) => e.kind === "change" && opsOf(e).some((o) => o.comp === "sockets" && o.verb === "set" || (o.comp === "parent" && o.value?.socket !== undefined))), "LS2 …and nothing written after the cut holds the old spelling");
 }
 
+// LK122 (bot #260 122): a lock refusal says whether the asker may lift it (the padlock's buttons ride on mayLift: true): a
+// builder without editOthers, at the locker's rank, may not delete another's lock; the owner may
+{ clock.advance(100); const W = () => openWorld(root, "lk122");
+  const R = (actor, verb, args) => { clock.advance(2000); return request(W(), actor, verb, args); };
+  R("ann", "create-world", { title: "lk122" });
+  R("ann", "set", { id: "@world", component: "role-defs", value: { builder: { can: { editOthers: false } } } });
+  R("ann", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } }); R("ann", "set", { id: "@world", component: "roles:eve", value: { role: "builder" } });
+  const mk = [R("eve", "create", { id: "evebox", model: "crate" }), R("bob", "create", { id: "bobcup", model: "crate", components: { parent: { to: "evebox" }, transform: { pos: [0, 1, 0] } } }), R("eve", "set", { id: "evebox", component: "lock", value: true })];
+  const mv = (who) => R(who, "set", { id: "bobcup", component: "transform", value: { pos: [0.3, 1, 0] } });
+  const b = mv("bob"), a = mv("ann");
+  ok(mk.every((r) => r.ok) && code(b) === "locked" && b.refused?.mayLift === false && code(a) === "locked" && a.refused?.mayLift === true,
+    "LK122 a locked refusal carries mayLift: false for a same-rank builder who may not delete the lock, true for the owner", [mk.map((r) => r.refused), b.refused, a.refused]); }
+
 // SR1 (review 10-12 S1-1): a socket child is part of its host. Creating one, re-parenting one, or setting its socket or
 // transform is an edit of the host's seats: the host's rights (a builder without editOthers can't seat ann's car) and the
 // locks over the host's chain, in either spelling (the legacy map lifts to creates, and those are judged the same).

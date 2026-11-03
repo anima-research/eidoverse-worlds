@@ -909,7 +909,7 @@ function writeSpots() {
     const sl = spotSlots[i], r = lit[i];
     if (!r) { sl.intensity = 0; continue; }
     worldPosOf(r, sl.position);
-    if (r.obj) r.obj.getWorldQuaternion(_sq); else _sq.identity();
+    if (r.obj) r.obj.getWorldQuaternion(_sq); else if (r.q) _sq.set(r.q[0], r.q[1], r.q[2], r.q[3]); else _sq.identity();   // r.q: an unrealized host's world q (models.js lightSpec)
     _sfwd.set(0, 0, -1).applyQuaternion(_sq);   // glTF/Godot: a spot shines down its local -Z
     sl.target.position.copy(sl.position).add(_sfwd);
     sl.target.updateMatrixWorld();

@@ -14,6 +14,7 @@ import { Refusal, refuse, said } from "./refuse.js";
 import { readback, delOp, holdsCustody, isE, opsQuiet, scratch, setOp } from "./storage.js";
 import { aabb, descendants, localFrom, worldT } from "./math.js";
 import { groundOf, groundReady, hitsIx, near, spatial, spend, supportBelow, supportUnder } from "./spatial.js";
+import { zonesOf, waterVolumes, worldLevelAt } from "../../zone.js";
 // the layers above this one (a leaf may not import them: authority-layers-check), reached through UP (ctx.js), which
 // authority.js binds at load
 const actEntry = (...a) => UP.actEntry(...a);
@@ -261,6 +262,13 @@ const openNow = (st, id) => { const o = st.entities[id]?.c.openable; return !!o 
 // The sub-strides are at least MOVER.track.sweep (5 cm) apart in the ground plane (the sweep's own points are closer
 // where y changes: its spacing is 3-D): the floor law is a stride's law, and a chain of millimetre steps would walk up
 // any wall the ground draws as steep-but-continuous (the terrain law's flatten edge is 1 cm wide, not 0).
+// @world's level at p as the browser's walk reads it: none in a pocket that keeps it out (zone.js worldLevelAt; bot #260 123)
+const ZONES = new WeakMap();
+function levelAt(st, lv, p) {
+  if (lv == null) return null;
+  let z = ZONES.get(st.entities); if (!z) { const zs = zonesOf(st); ZONES.set(st.entities, (z = { zs, volumes: waterVolumes(zs) })); }
+  return z.zs.exclusions.length ? worldLevelAt(p, z.zs, lv, { volumes: z.volumes }) : lv;
+}
 function bodyAt(st, p) {   // where a body claimed at p stands: {y (feet), ground}
   const g = supportBelow(st, p[0], p[2], p[1]).y; return { y: Math.max(p[1], g), ground: g };
 }
@@ -284,33 +292,33 @@ function sizeOf(a, prev) {
 const lawOf = (size) => ({ height: size?.height, scale: bodyScale(size?.scale) });
 function groundSteps(st, from, pts, size) {
   const G = groundOf(st); if (!G.terrain && G.level == null) return null;   // water without terrain: the mover's water rule over flat ground (bot review #260 46)
-  const { height, scale: s } = lawOf(size), lv = G.level, reachW = lv != null ? lv + MOVER.swim.climb * s : -Infinity;
+  const { height, scale: s } = lawOf(size), L = (p) => levelAt(st, G.level, p), reachW = (lv) => (lv != null ? lv + MOVER.swim.climb * s : -Infinity);
   const step = (o) => floorStep({ ...o, height, scale: s });
-  const b0 = bodyAt(st, from); const r0 = step({ y: b0.y, ground0: b0.ground, level0: lv, f: b0.ground, level1: lv });
-  let cur = { y: b0.y, ground: b0.ground }, lastSwim = r0.stance?.swimming ? cur : null;
+  const b0 = bodyAt(st, from), lv = L(from); const r0 = step({ y: b0.y, ground0: b0.ground, level0: lv, f: b0.ground, level1: lv });
+  let cur = { y: b0.y, ground: b0.ground, lv }, lastSwim = r0.stance?.swimming ? cur : null;
   const out = [{ p: from, box: bodyBox([from[0], Math.max(from[1], r0.swim ? from[1] : b0.y), from[2]], s, r0.swim ? lv : null) }];
   let judged = from, swimNow = r0.swim;
   for (let k = 0; k < pts.length; k++) { const p = pts[k];
     if (k < pts.length - 1 && Math.hypot(p[0] - judged[0], p[2] - judged[2]) < MOVER.track.sweep - 1e-9) {   // within this sub-stride: as judged
-      out.push({ p, box: bodyBox([p[0], Math.max(p[1], cur.y), p[2]], s, swimNow ? lv : null) }); continue; }
-    judged = p;
-    const reach = Math.max(cur.y + MOVER.body.step * s, lastSwim ? reachW : -Infinity);
+      out.push({ p, box: bodyBox([p[0], Math.max(p[1], cur.y), p[2]], s, swimNow ? cur.lv : null) }); continue; }
+    judged = p; const lv1 = L(p);
+    const reach = Math.max(cur.y + MOVER.body.step * s, lastSwim ? reachW(lastSwim.lv) : -Infinity);
     const f = supportBelow(st, p[0], p[2], reach).y;
-    let r = step({ y: cur.y, ground0: cur.ground, level0: lv, f, level1: lv });
-    if (r.blocked && lastSwim) { const r2 = step({ y: lastSwim.y, ground0: lastSwim.ground, level0: lv, f, level1: lv }); if (!r2.blocked) r = r2; }
-    if (r.blocked) return { blocked: { at: p, top: r.blocked.top, from: cur.y, swim: !!lastSwim && r.swim }, out };
+    let r = step({ y: cur.y, ground0: cur.ground, level0: cur.lv, f, level1: lv1 });
+    if (r.blocked && lastSwim) { const r2 = step({ y: lastSwim.y, ground0: lastSwim.ground, level0: lastSwim.lv, f, level1: lv1 }); if (!r2.blocked) r = r2; }
+    if (r.blocked) return { blocked: { at: p, top: r.blocked.top, from: cur.y, swim: !!lastSwim && r.swim, lv: lastSwim?.lv ?? lv1 }, out };
     // the box: the swimmer's while the water's rule holds; else the body's own, at its claim (an upstairs the law can't see)
     // or the floor the law put it on, whichever is higher (a claim below the floor is inside it: the agent's permit sends
     // the bed's height for a body that hauled out onto a dock)
-    out.push({ p, box: bodyBox([p[0], Math.max(p[1], r.y), p[2]], s, r.swim ? lv : null) });
-    cur = { y: r.y, ground: f }; swimNow = r.swim; if (r.stance?.swimming) lastSwim = cur;
+    out.push({ p, box: bodyBox([p[0], Math.max(p[1], r.y), p[2]], s, r.swim ? lv1 : null) });
+    cur = { y: r.y, ground: f, lv: lv1 }; swimNow = r.swim; if (r.stance?.swimming) lastSwim = cur;
   }
   return { blocked: null, out };
 }
 function pathBlocked(w, st, from, to, size) {
   const pts = sweep(from, to); const law = groundSteps(st, from, pts, size), s = lawOf(size).scale;
   if (law?.blocked) { const L = law.blocked;
-    return { ground: true, reason: L.swim ? `the bank at [${L.at.map(r3).join(", ")}] stands ${r3(L.top - groundOf(st).level)} m above the water: higher than a swimmer can haul out (${r3(MOVER.swim.climb * s)} m)`
+    return { ground: true, reason: L.swim ? `the bank at [${L.at.map(r3).join(", ")}] stands ${r3(L.top - L.lv)} m above the water: higher than a swimmer can haul out (${r3(MOVER.swim.climb * s)} m)`
       : `the ground at [${L.at.map(r3).join(", ")}] rises ${r3(L.top - L.from)} m from where you stand: a ledge higher than a step (${r3(MOVER.body.step * s)} m)` }; }
   const boxes = law ? law.out.map((x) => x.box) : [bodyBox(from, s), ...pts.map((p) => bodyBox(p, s))];
   const already = new Set(); const b0 = boxes[0]; // a body already inside something may walk out of it
@@ -322,8 +330,8 @@ function pathBlocked(w, st, from, to, size) {
 }
 // the box of a body arriving at p (a teleport): the swimmer's when the water's rule holds there
 function arrivalBox(st, p, size) {
-  const { height, scale } = lawOf(size), G = groundOf(st); if (G.level == null) return bodyBox(p, scale);
-  const b = bodyAt(st, p); const r = floorStep({ y: b.y, ground0: b.ground, level0: G.level, f: b.ground, level1: G.level, height, scale });
-  return bodyBox(p, scale, r.swim ? G.level : null);
+  const { height, scale } = lawOf(size), G = groundOf(st), lv = levelAt(st, G.level, p); if (lv == null) return bodyBox(p, scale);
+  const b = bodyAt(st, p); const r = floorStep({ y: b.y, ground0: b.ground, level0: lv, f: b.ground, level1: lv, height, scale });
+  return bodyBox(p, scale, r.swim ? lv : null);
 }
 export { arrivalBox, body, buildEpoch, dist, facingOf, gripPoint, gripOf, heldQ, lawOf, pathBlocked, restampEngine, settleSim, shearFree, sizeOf, solidAt };

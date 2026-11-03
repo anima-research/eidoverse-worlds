@@ -160,4 +160,18 @@ await C("A7", "the door: modes is a non-empty list of walk | swim | fly | climb"
   const r: any = { ok: mk("a", ["swim"]), two: mk("b", ["walk", "swim"]), empty: mk("c", []), bad: mk("d", ["dance"]), str: mk("e", "swim") };
   return [r.ok.ok && r.two.ok && !r.empty.ok && !r.bad.ok && !r.str.ok, Object.fromEntries(Object.entries(r).map(([k, v]) => [k, show(v)]))]; });
 
+await C("A8", "the track grows with the body (bot #260 22): a size-2 body's run (the mover's, 8 m/s) at 10 Hz for 3 s is every stride taken; the same strides at size 1 are refused once the track runs dry", () => {
+  const strides = (scale?: number) => { const s = session(), sz = scale ? { scale } : {}; s.call("move", { to: [-15, 0, 0], ...sz }, "vic", 2000);
+    return Array.from({ length: 30 }, (_, i) => s.call("move", { to: [-15 + (i + 1) * 0.8, 0, 0], ...sz }, "vic", 100)); };
+  const big = strides(2), small = strides();
+  return [M.walkSpeed({ run: true, scale: 2 }) === 8 && big.every((x) => x.ok) && small.some((x) => x.refused?.code === "too-fast"),
+    { big: big.filter((x) => !x.ok).map(show).slice(0, 2), small: small.filter((x) => !x.ok).length }]; });
+
+await C("A9", "the track reads every mode (bot #260 125): a walk-only ×3 area under a higher-priority fly-only ×1 area still widens a walker's track (a 12 m step after a rest is taken)", () => {
+  const s = session();
+  s.call("create", { id: "walkpad", components: { ...AREA(3), "physics-area": { kind: "speed", factor: 3, modes: ["walk"] } } });
+  s.call("create", { id: "flypad", components: { ...AREA(1, { shape: "box", size: [40, 4, 40], priority: 5 }), "physics-area": { kind: "speed", factor: 1, modes: ["fly"] } } });
+  const r: any = { first: s.call("move", { to: [-6, 0, 0] }, "vic") }; r.twelve = s.call("move", { to: [6, 0, 0] }, "vic", 5000);
+  return [r.first.ok && r.twelve.ok, Object.fromEntries(Object.entries(r).map(([k, v]) => [k, show(v)]))]; });
+
 console.log(`[physics-area-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

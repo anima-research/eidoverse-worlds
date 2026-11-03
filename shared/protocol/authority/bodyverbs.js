@@ -1,8 +1,8 @@
 // shared/protocol/authority/bodyverbs.js — the verbs a body performs (move, grab, put, throw, drop, punt, leave, wait) as
 // EMBODIED_VERBS, which authority.js spreads into VERBS first (refactor split, 2026-10-17; moved from authority.js's
 // "physics" section unchanged). They stand on physics.js, occupants.js and manipulate.js; the gate is above them, through UP.
-import { TRACK, areaFactor, tokensAfter } from "../../mover.js";
-import { physicsAreasOf, speedFactorAt } from "../../zone.js";
+import { TRACK, areaFactor, bodyScale, tokensAfter } from "../../mover.js";
+import { AREA_MODES, physicsAreasOf, speedFactorAt } from "../../zone.js";
 import { atASpawn, spawnsOf, FELL } from "../../spawn.js";
 import { DEFAULT_WHO, grabOf, offsetOk } from "../../grab.js";
 import { livePoses, ENGINES, carried } from "../simlayer.js";
@@ -100,8 +100,10 @@ const EMBODIED_VERBS = {
     // a driver's first step off the helm ends their lease: its last accepted pose commits first, so the track restarts at the helm where it is
     { if (occupantOf(w, st, actor)) { endDrivesBy(w, st, actor); st = w.state(); } }
     { const sat = occupantOf(w, st, actor); if (sat && vacateAt(w, st, actor, sat.to)) me = w.presence.bodies[actor]; if (w.presence.occupants?.[actor]) clearOccupant(w, actor); }
-    // a speed area that boosts (physics-area {kind: speed}) where the step starts or ends widens the track (mover tokensAfter)
-    const k = Math.max(areaFactor(speedFactorAt(areasOf(st), me.at)), areaFactor(speedFactorAt(areasOf(st), to)));
+    // a speed area that boosts (physics-area {kind: speed}) where the step starts or ends, in any mode the body may be in, and the
+    // body's size (the stride grows with it: mover walkSpeed) widen the track (mover tokensAfter)
+    const fac = (p) => Math.max(...AREA_MODES.map((m) => areaFactor(speedFactorAt(areasOf(st), p, m))));
+    const k = Math.max(fac(me.at), fac(to)) * bodyScale(size?.scale);
     const d = dist(me.at, to); const tokens = tokensAfter(me.tokens, now - (me.ts ?? now), k);
     if (d > tokens + 1e-9) refuse("too-fast", `that's ${r3(d)} m; right now your body can cover ${r3(tokens)} m (${r3(TRACK.speed * Math.max(1, k))} m/s, ${r3(TRACK.cap * Math.max(1, k))} m at most in one go)`, "walk there in steps, or move {to, teleport: true} (an act on the record; not while holding anything)", { at: me.at });
     const block = pathBlocked(w, st, me.at, to, size);

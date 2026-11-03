@@ -53,6 +53,8 @@ export function physicsAreasOf(st, { poseOf = (id) => worldPose(st, id) } = {}) 
   }
   return out.sort(cmp);
 }
+/** physics-area.modes' words (componentspec): the movement modes an area may name */
+export const AREA_MODES = Object.freeze(["walk", "swim", "fly", "climb"]);
 /** × a body's own speed at p (physics-area kind speed) in movement `mode` (absent: any): the highest-priority speed area
  *  holding p that touches that mode decides; none: 1. */
 export function speedFactorAt(areas, p, mode) {
@@ -107,9 +109,8 @@ export function mediumOf(p, zones, { time = 0, volumes = waterVolumes(zones) } =
  *  surface) is dry: a pocket that keeps @world's water out. No pockets, no change. */
 export function worldLevelAt(p, zones, level, { volumes = waterVolumes(zones) } = {}) {
   if (!fin(level)) return null;
-  const g = { id: "@world", global: true, priority: -Infinity, water: { level }, top: level };
-  const m = mediumOf([p[0], Math.min(p[1], level), p[2]], { bodies: [g, ...(zones?.bodies ?? []).filter((b) => !b.global)], exclusions: zones?.exclusions ?? [] }, { volumes });
-  return m.medium === "air" ? null : level;
+  const q = [p[0], Math.min(p[1], level), p[2]];   // only a pocket keeping @world out decides: a thing's water there is its own reader's (bot #260 124)
+  return volumes.airs.some((a) => inBox(q, a) && excludes(a, AT_WORLD)) ? null : level;
 }
 
 /** What the GPU fog reads (client/lib/watervolumes.js): the highest `maxWater` bodies (slots 1.., slot 0 @world's level), the

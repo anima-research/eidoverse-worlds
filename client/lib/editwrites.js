@@ -108,10 +108,10 @@ async function sendNow(req, { what = req.verb, revert = null, record = true } = 
   //   🔓 unlock: delete the lock, then the request as it was: two acts on my stack, so Ctrl+Z undoes the edit first.
   //     Undo and redo aren't offered it: their act isn't mine to stack under an unlock (Ctrl+Z would then undo the unlock).
   // A member (who may not lift locks) gets the refusal as a toast, no buttons. Another lock further up asks again.
-  let cancelled = false;
-  // a lock above your level (lock {rank}, R 10-07: refused with mayLift: false) isn't yours to go through or lift: its
-  // refusal shows as words, no buttons
-  for (let round = 0; round < 8 && !r.ok && r.refused?.code === 'locked' && r.refused?.mayLift !== false && req.args?.throughLock !== true && mayLift(); round++) {
+  let cancelled = false, lifted = 0;   // lifted: the unlocks already written when a later lock's question is cancelled (bot #260 121)
+  // a lock you may not lift (above your level, R 10-07, or no right to delete it: refused with mayLift: false) isn't yours to
+  // go through or lift: its refusal shows as words, no buttons
+  for (let round = 0; round < 8 && !r.ok && r.refused?.code === 'locked' && r.refused?.mayLift === true && req.args?.throughLock !== true && mayLift(); round++) {
     const verb = lockVerb(req);
     // a delete or a replace through a lock is the destructive answer: styled so, and NOT the one Enter gives (S1)
     const destructive = verb === 'Delete' || verb === 'Replace';
@@ -124,7 +124,7 @@ async function sendNow(req, { what = req.verb, revert = null, record = true } = 
     const k = r.refused.lock;
     const u = await sendRequest('delete', { id: k, component: 'lock' });
     if (!u.ok) { r = u; what = `unlock ${idOut(k)}`; break; }
-    if (Number.isInteger(u.act)) remember(u.act);
+    if (Number.isInteger(u.act)) remember(u.act); lifted++;
     bus.emit('edit-done', { what: `unlock ${idOut(k)}`, req: { verb: 'delete', args: { id: k, component: 'lock' } }, reply: u });
     r = await sendRequest(req.verb, req.args);
   }
@@ -134,7 +134,7 @@ async function sendNow(req, { what = req.verb, revert = null, record = true } = 
     showWarnings(what, r);
   } else {
     try { revert?.(); } catch (e) { console.warn('[editwrites] revert', e); }
-    if (cancelled) { flashHint('cancelled — nothing written'); bus.emit('edit-cancelled', { what, refused: r.refused }); }
+    if (cancelled) { flashHint(lifted ? `cancelled — ${lifted === 1 ? 'a lock was' : `${lifted} locks were`} lifted, the ${what} not written` : 'cancelled — nothing written'); bus.emit('edit-cancelled', { what, refused: r.refused }); }
     else showRefusal(what, r);
   }
   return r;

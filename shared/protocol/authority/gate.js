@@ -198,7 +198,7 @@ function lockCheck(w, st, who, role, k, op, at) {
     : below ? `this lock is ${lockWord(strength, wcOf(st))} (its setter's rank); you are ${role}`
     : mayUnlock ? `send the same request with throughLock: true, or unlock it first: delete {id: '${k}', component: 'lock'}. A lock stops accidents; history shows who lifted it`
     : `someone who may build here at its setter's rank can unlock it (delete {id: '${k}', component: 'lock'}); you are ${role}`;
-  refuse("locked", what, fix, { lock: k, rank: strength, ...(by && !by.deleted ? { by: by.by } : {}), ...(below ? { mayLift: false } : {}) });
+  refuse("locked", what, fix, { lock: k, rank: strength, ...(by && !by.deleted ? { by: by.by } : {}), mayLift: mayUnlock });   // the padlock's question offers its buttons on true only (bot #260 122)
 }
 // A write to a lock itself: setting, re-setting or removing a lock on a locked thing is lifting it, so it needs the
 // lock's strength (a re-set by someone lower would otherwise move its setter down: recut B2). A capability is judged by
