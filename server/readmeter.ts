@@ -15,7 +15,11 @@ export const READ = { n: 300, ms: 1500 * METER_SCALE, window: 10_000 };
 export const authorityTime = new WeakMap<object, number>();
 
 type Mark = { t: number; ms: number };
-export function readMeter(limits = READ) {
+/** A read's mark: counted at arrival (t); setting .ms when the authority answers moves t to then, so a read that ran
+ *  past the window is charged at completion, never expired before its cost lands (bot review #260 465). */
+class ReadMark implements Mark { t: number; #ms = 0; constructor(t: number, private readonly clock: () => number) { this.t = t; }
+  get ms() { return this.#ms; } set ms(v: number) { this.#ms = v; this.t = this.clock(); } }
+export function readMeter(limits = READ, clock: () => number = Date.now) {
   const seen = new WeakMap<object, Mark[]>();
   const recent = (who: object, now: number) => { const a = (seen.get(who) ?? []).filter((m) => now - m.t < limits.window); seen.set(who, a); return a; };
   return {
@@ -27,6 +31,6 @@ export function readMeter(limits = READ) {
       return null;
     },
     /** count one read as it arrives (a burst is counted before any of it runs); set .ms on the mark when the authority answers */
-    record(who: object, now: number): Mark { const m = { t: now, ms: 0 }; recent(who, now).push(m); return m; },
+    record(who: object, now: number): Mark { const m = new ReadMark(now, clock); recent(who, now).push(m); return m; },
   };
 }

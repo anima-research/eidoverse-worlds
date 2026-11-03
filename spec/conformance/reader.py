@@ -84,7 +84,7 @@ def _parse_float(s):
 def _parse_int(s):
     if s.startswith("-") and int(s) == 0:
         raise Malformed("ijson-negzero", s)
-    # PROTOCOL §1 L1: an integer literal of magnitude above 2^53 is malformed (not rounded)
+    # PROTOCOL §1 L1: an integer literal not exactly representable as a binary64 is malformed (1e20 is; 2^53+1 is not)
     n = int(s)
     try:
         f = float(n)
@@ -414,8 +414,8 @@ class Reader:
         if extra:
             raise Malformed("unknown-field", ",".join(sorted(extra)))  # GUESS-14
         kind = e.get("kind")
-        if kind not in KINDS:
-            raise Malformed("kind", repr(kind))
+        if not isinstance(kind, str) or kind not in KINDS:   # a non-string kind is malformed, not a crash (fold.js checkEntry)
+            raise Malformed("kind", repr(kind)[:40])
         for f in ("kind", "actor", "verb"):
             if not isinstance(e.get(f), str):
                 raise Malformed("envelope", f + " missing or not a string")
@@ -455,7 +455,7 @@ class Reader:
                     continue
                 s, k = t.get("seq"), t.get("op", None)
                 if not (type(s) is float and s.is_integer()) or (
-                        k is not None and not (type(k) is float and k.is_integer() and k >= 0)):
+                        "op" in t and not (type(k) is float and k.is_integer() and k >= 0)):   # op: null is bad, not omitted (fold.js purgesOf)
                     self.d(pseq, "purge-target-bad", jcs(t)[:60])
                     continue
                 s = int(s)
@@ -544,7 +544,7 @@ class Reader:
     def shape_one(self, verb, b, purge_seq, inner, where):
         allowed = {"create": {"id"}, "delete": {"id", "comp"},
                    "set": {"id", "comp", "value", "salt", "commit"}}
-        if verb not in allowed:
+        if not isinstance(verb, str) or verb not in allowed:   # a non-string op verb is malformed, not a crash (fold.js shapeOne)
             raise Malformed("verb", "%s %r" % (where, verb))
         keys = set(b) - ({"verb"} if inner else set())
         if keys - allowed[verb]:

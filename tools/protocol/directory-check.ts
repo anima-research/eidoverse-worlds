@@ -600,6 +600,13 @@ process.stdout.write(directoryAt(${JSON.stringify(f)}, slow).resolve({ sub: "hum
     "DW21 an account bound or minted by another writer since the server read the file: idOfSub finds it, and its name reads as claimed",
     { moe: srv.idOfSub("human:moe"), lark: srv.idOfSub("human:lark"), claimed: srv.claimedName("Lark"), other: srv.claimedByOther("Lark", "human:other") }); }
 
+// DW22 (bot review #260 529): a rename another writer made since this process read the file survives this process's save
+{ const f = path.join(tmp, "ren", ".directory.json"); const srv = directoryAt(f); const id = srv.resolve({ sub: "human:ren", name: "Ren" });
+  const other = directoryAt(f); other.resolve({ sub: "human:ren", name: "Wren" }); other.markRenamed(id);   // the other writer renames
+  srv.resolve({ sub: "human:new", name: "New" });   // this process saves for a reason of its own
+  const disk = directoryAt(f).entry(id);
+  ok(disk?.name === "Wren" && !!disk?.renamedAt && srv.nameOf(id) === "Wren", "DW22 a save merges the newer rename from disk instead of writing the stale name over it", disk); }
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(`[directory-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -32,7 +32,7 @@ smaller is one solid box — a hut you cannot enter — unless it carries
 | | rule | why |
 |---|---|---|
 | a step up (threshold, raised floor, stair riser) | **≤ 0.8 m** | the body steps up at most that (the mover's step, `shared/mover.js`); anything higher is a wall |
-| a doorway or passage | clear width **> 0.4 m** (1 m is comfortable) | a body needs its radius (0.2 m) on each side |
+| a doorway or passage | clear width **> 0.4 m** (1 m is comfortable) | a body needs its radius (0.2 m) on each side, at body scale 1; a 2× body needs 0.8 m width and 3.4 m head room (scale 0.5–2 is allowed, `scaleOf`/`bodyBox` in `shared/mover.js`) |
 | what stops a body | anything **about 0.41–1.29 m above its feet** within 0.2 m | walls, railings, chair backs |
 | what a body steps onto | anything **≤ 0.8 m** above its feet | chair seats, footstools, benches, low tables |
 | head room | **≥ 1.7 m** clear above any floor a body walks | the authority tests the whole body, from a step above the feet to the top of the head (`bodyBox`, `shared/mover.js`), so a beam or ceiling lower than 1.7 m is a wall to it, and the planner routes round it. The walking feet in the browser and the agent judge overhead edges differently (a known mismatch, listed to fix after this release), so build the head room rather than testing how low you can go |

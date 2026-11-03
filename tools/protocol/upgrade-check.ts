@@ -106,6 +106,11 @@ const backupsOf = (name: string) => (fs.existsSync(B) ? fs.readdirSync(B).filter
   const missing = [...files, ...dirs].filter((f) => !synced.has(path.resolve(f)));
   ok(files.length === 4 && !missing.length, "UB10 a backup is fsynced before it's returned: every copied file and SHA256SUMS, each of its directories and BACKUPS_DIR's entry for it (none of the directories on win32)", { missing, files: files.length }); }
 
+// bot review #260 437: when the failed backup's partial directory can't be removed, the error says so (never "was removed")
+{ oldWorld("stuck"); const BB = path.join(root, "backups-stuck"), rm = fs.rmSync; let err = "";
+  (fs as any).rmSync = function (p: any, ...a: any[]) { if (String(p).startsWith(BB)) throw new Error("EBUSY"); return (rm as any).call(fs, p, ...a); };
+  try { backupWorld(W, "stuck", { backupsDir: BB, afterCopy: () => { throw new Error("injected"); } }); } catch (x) { err = (x as Error).message; } finally { fs.rmSync = rm; }
+  ok(/could NOT be removed/.test(err) && !/was removed/.test(err) && /injected/.test(err), "UB10b a backup that fails and whose partial directory can't be removed says so, and where", err); }
 const rafters = oldWorld("rafters"); { const to = path.join(root, "elsewhere-link"); fs.mkdirSync(to, { recursive: true }); linkInto(to, path.join(rafters, "extra", "shared")); }
 { const before = tree(rafters), n = bootNotice(W).split(/\n(?=\[boot\] )/).find((b) => /"rafters"/.test(b)) ?? "", r = xlate("rafters");
   const words = /rafters\/extra\/shared is a link .*the upgrade refuses until it is replaced by the file it points to, or moved out of the world's folder/;

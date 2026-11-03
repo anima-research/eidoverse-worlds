@@ -276,5 +276,20 @@ check("retirement clears the leg", (sfuDiag(W) as any).moderatorMuted.length ===
     voiceServiceState().state === "live" && /negotiation completed/.test(voiceServiceState().reason));
 }
 
+// ── bot #260 #468: a leg revoked while its offer was being made gets no offer ─
+// revokeSfuLeg lands between createOffer's await and the send: the retired leg's
+// socket must not receive an offer (and no resolver is left for its successor).
+{
+  const WR = "revoke-mid-offer"; const sent: any[] = [];
+  mintSfuCredential(WR, "spk", 1, 2); mintSfuCredential(WR, "lis", 1, 2);
+  const pcR: any = sfuState(WR).sfu.getLeg("lis")!.pc; const sld = pcR.setLocalDescription.bind(pcR);
+  pcR.setLocalDescription = async (d: any) => { await sld(d); revokeSfuLeg(WR, "lis"); };   // the revoke lands after the last await, before the send
+  registerSfuSender(WR, "lis", (p: any) => sent.push(p));
+  setSfuConsent(WR, "lis", 2, true);                 // negotiation fires: sfu-route, then the awaits, then sfu-offer
+  await new Promise((r) => setTimeout(r, 600));
+  check("a leg revoked mid-negotiation is sent no offer (the route was sent, the offer was not)",
+    sent.some((p) => p.type === "sfu-route") && !sent.some((p) => p.type === "sfu-offer"), `sent=${JSON.stringify(sent.map((p) => p.type))}`);
+}
+
 console.log(fail === 0 ? `\n\x1b[32m✅ sfu-adapter: ${pass} passed\x1b[0m` : `\n\x1b[31m❌ ${fail} failed\x1b[0m`);
 process.exit(fail ? 1 : 0);

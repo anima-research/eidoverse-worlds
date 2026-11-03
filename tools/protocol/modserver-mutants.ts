@@ -36,7 +36,7 @@ const M: [string, string, string, string, string[]][] = [
   ["forks meet the server's gap", "server/requestwire.ts", "if (FORK_GAP_SEC > 0 && last !== undefined && now - last < FORK_GAP_SEC * 1000) return err(", "if (false) return err(", ["RS7"]],
   // a guest's mute by address; minimum account age (R 10-07)
   ["a guest's sanction is carried to the next guest at join", "server/server.ts", "for (const s of addrSanctionsFor(w.name, c.addr)) {", "for (const s of [] as any[]) {", ["GG1", "GG5"]],
-  ["a guest's mute is filed against the address", "server/requestwire.ts", "for (const addr of addrs) fileAddrSanction(", "for (const addr of [] as string[]) fileAddrSanction(", ["GG1", "GG5"]],
+  ["a guest's mute is filed against the address", "server/requestwire.ts", "for (const addr of addrs) unsaved ??= fileAddrSanction(", "for (const addr of [] as string[]) unsaved ??= fileAddrSanction(", ["GG1", "GG5"]],
   ["the voice control's mute files it too", "server/server.ts", "guestSanctionByAddress(w, actorIdOf(c), c.id, muted ?", "void (w, actorIdOf(c), c.id, muted ?", ["GG5"]],
   ["unmute lifts the address record", "server/requestwire.ts", "if (verb.startsWith(\"un\")) { liftAddrSanction(kind, w.name, who, addrs[0]); return; }", "if (verb.startsWith(\"un\")) { return; }", ["GG2", "GG5"]],
   ["access: minimum account age", "server/server.ts", "accountAgeRefusal({ world: w.name, minDays: acc.minAccountDays,", "accountAgeRefusal({ world: w.name, minDays: 0 && acc.minAccountDays,", ["AG3", "AG4"]],

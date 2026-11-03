@@ -281,6 +281,12 @@ const cases: Case[] = [
       const k = m.record(b, t); k.ms = RM.READ.ms + 100; out.slow = m.check(b, t + 1)?.code ?? "ok"; out.other = m.check({}, t)?.code ?? "ok";
       return out; },
     good: (o) => o.sixtyFirst === "rate" && o.later === "ok" && o.slow === "rate" && o.other === "ok" },
+  { id: "Q4b", what: "a read's time is charged when the authority answers (bot review #260 465): a read that ran past the window is still on the meter then, not expired before its cost landed", run() {
+      if (!RM) return { missing: true };
+      let clock = 1000; const m = RM.readMeter(RM.READ, () => clock); const a = {};
+      const k = m.record(a, clock); clock += RM.READ.window + 1000; k.ms = RM.READ.ms + 100;   // answered 11 s after it arrived
+      return { then: m.check(a, clock + 1)?.code ?? "ok", gone: m.check(a, clock + RM.READ.window + 1)?.code ?? "ok" }; },
+    good: (o) => o.then === "rate" && o.gone === "ok" },
   { id: "Q5", what: "settling orphaned holds at load is bounded: 400 holders left by a crash end quickly, the first ones settled as leave settles them, the rest said to wait", run(s) { cast(s);
       const holds: any = {}, bodies: any = {};
       for (let made = 0; made < 400;) { const ops = []; for (let k = 0; k < 50; k++, made++) ops.push({ verb: "create", args: { id: `g-${made}`, model: "book", components: { transform: T0([made % 20, 0, Math.floor(made / 20)]), grabbable: { who: "member" } } } });

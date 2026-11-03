@@ -455,6 +455,9 @@ export async function sfuNegotiate(world: string, legId: string,
     // Stating useinbandfec=1 in the fmtp makes it an agreed parameter rather
     // than a hope, and the client already measures fecPacketsReceived so the
     // claim has an instrument at the other end.
+    // a leg retired while the offer was being made (revokeSfuLeg cleared its resolver before this await returned):
+    // no offer to a dead leg, no resolver left behind for its successor (bot #260 #468)
+    if (s.sfu.getLeg(legId)?.closed !== false) throw new Error(`leg ${legId} retired mid-negotiation`);
     send({ type: "sfu-offer", sdp: withOpusFec(pc.localDescription!.sdp) });
     const sdp = await new Promise<string>((resolve, reject) => {
       const k = wkey(world, legId);

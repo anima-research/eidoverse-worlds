@@ -15,7 +15,7 @@ ws.onmessage = (ev) => {
   if (msg.type === "error") { console.error(msg.error); process.exit(1); }
   if (msg.type === "snapshot") { reqs.forEach((r, i) => ws.send(JSON.stringify({ type: "request", id: i, verb: r.verb, args: r.args ?? {} }))); if (!reqs.length) process.exit(0); }
   if (msg.type === "reply") {
-    console.log(`${msg.verb}: ${msg.ok ? "ok" : `refused (${msg.reply?.refused?.code}: ${msg.reply?.refused?.reason})`}`);
+    console.log(`${msg.verb}: ${msg.ok ? `ok ${JSON.stringify(msg.reply)}` : `refused (${msg.reply?.refused?.code}: ${msg.reply?.refused?.reason})`}`);
     if (!msg.ok) failed++;
     if (++answered === reqs.length) { ws.close(); process.exit(failed ? 1 : 0); }
   }

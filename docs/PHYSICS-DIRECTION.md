@@ -110,9 +110,9 @@ must be able to carry every field.
 `density` stay open fields: the contact push reads them (`shared/shove.js`
 `massOf`: the authority's contact gate (`punt {contact: true}`), the walker and
 the agent cap a push by mass), though eidosim's flight doesn't yet. Nothing reads the other eight, so
-they are `physics`' *reserved fields*: their names, units, limits and
-meanings of absence below are held (in the registry's `reservedFields`,
-`reservedShape` and `absentMeans`, all pinned), and every write of one is
+they are `physics`' *reserved fields*: their names (the registry's `reservedFields`) and
+meanings of absence below (`absentMeans`) are pinned; their units and limits are written in
+the registry's `docs` and are not yet a pinned shape. Every write of one is
 refused (code `reserved`) until an engine declares that it reads it. A number
 a builder can type that nothing honours is a number tuned for nothing. Absence
 keeps the behaviour before the field existed: the engine's own law. None will

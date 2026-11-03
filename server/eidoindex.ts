@@ -1,5 +1,5 @@
 // server/eidoindex.ts — which file on this host holds the bytes an eido:sha256/<hex> address names (spec/EIDO-URIS.md §2:
-// the origin host is a resolver). Review 2026-10-07 H3: a translated world's models are addresses, never this host's paths.
+// the origin host is a resolver). Review 2026-10-07 H3: a translated model keeps its path; its hash rides in `model-hash` when known (translate-v1.js).
 //   - a store blob is named by the first 16 hex of its upload's sha256 (server/upload.ts), so an address is found by that
 //     prefix and checked against the whole digest of the bytes. Some blobs on a long-lived host no longer hash to their
 //     name (rewritten in place after upload): their address is the digest of the bytes this host actually has, recorded

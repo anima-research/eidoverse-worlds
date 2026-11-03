@@ -62,6 +62,8 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
   // an account another writer bound to an id this process holds (tools/operator-bind.ts, the server running): a bind only
   // adds, so it is taken, never written over; an account this process already gives another id stays that id's
   const takeBinds = (id: string, e: Entry) => { const mine = d.ids[id]; if (!mine || !Array.isArray(e?.subs)) return;
+    // a rename another writer made since (newer renamedAt): its name is taken, not written over (bot review #260 529)
+    if ((e.renamedAt ?? 0) > (mine.renamedAt ?? 0)) { mine.name = e.name; mine.renamedAt = e.renamedAt; }
     for (const s of e.subs) { const k = mine.world ? `${s}|${mine.world}` : s;
       if (mine.subs.includes(s) || !ACCOUNT_SHAPE.test(s) || (byKey.has(k) && byKey.get(k) !== id)) continue;
       mine.subs.push(s); if (mine.kind === "imported") mine.kind = "account"; byKey.set(k, id); } };

@@ -25,10 +25,10 @@ review.
 - A session is one **leg** of an identity: `(id, surface)`. `surface:
   "world"` (default) is the embodied primary; anything else (`voice`,
   `vr-hands`, …) is an **aux leg** — invisible, poseless, log-mute,
-  rtc-capable, reaped when its primary leaves. One live leg per (id,
+  reaped when its primary leaves. One live leg per (id,
   surface): a fresh join **takes over** the stale one (close 4002); plain
   spectators never duel. Every accepted leg gets a server-issued
-  monotonic **generation** (`gen`) — rtc/attest are stamped and gated by it.
+  monotonic **generation** (`gen`) — sfu-*/attest are stamped and gated by it.
 - Flags on join: `spectate` (see everything, appear as nothing, cannot
   author), `declares` (a status the participant declares, one short
   lowercase word of its own choosing such as `"agent"` or `"ai"`: PROTOCOL §6a; optional,
@@ -66,7 +66,7 @@ Any other drop (an outage, a server restart) is redialled on the same `shared/re
 Every message belongs to exactly one plane:
 
 - **Authored** — becomes a log entry, folds, replays, is public forever:
-  only the `request` message (one request to the world's authority) writes here. The requester gets
+  only the `request` message (one request to the world's authority) writes here, counting the two server-side wrappers that become one (`voice-moderate` → mute/unmute, `operator-repair`). The requester gets
   `reply`; every client gets the raw entries the authority appended as
   `{type:"log", from, entries}` and folds them itself with
   `shared/protocol/fold.js`. The stream is authoritative; clients must not
@@ -102,7 +102,7 @@ Every message belongs to exactly one plane:
 | `puppet` | presence | embodied | `{target, pose?, anim?, ragdoll?}` | ROUTED to target, who decides; ragdoll = `true` or `{lean:[x,y,z]}`. |
 | `bodydrag` | presence | embodied | `{target, grab?/end?/pose?/p?/yaw?/sim?/pinAt?/unpin?/pins?}` | ragdoll takeover stream, routed to the body's owner; `sim` = ≤24 joints × {j,p,v}. |
 | `whisper` | removed | — | — | removed 2026-10-18: answered `error {about: "whisper", refused: {code: "removed", reason, fix}}`; the text goes nowhere (not delivered, held or logged). |
-| `rtc` | presence | embodied or aux leg | `{to, toSurface?, payload≤20KB}` | signaling, addressed per (id, surface); server stamps `fromGen`/`fromSurface`. |
+| `rtc` | removed | — | — | removed 2026-10 with voice.js (§4 "retired"): the SFU signaling verbs replaced it. |
 | `attest` | presence | bound voice leg only | `{seq, digest, gen}` | per-utterance performance receipt; verified against `recentSays` (≤300s, sha256 of text, current gen) then broadcast as `performed`. |
 | `bc` | dev | anyone | `{tag}` | crash breadcrumbs, printed on disconnect. |
 | `capture-result` | service | renderer legs | `{id, dataUrl?/error?}` | answers a server `capture` request (backs HTTP `/snap`). |
@@ -163,12 +163,12 @@ Every message belongs to exactly one plane:
   id, else a token for the leg. A reconnect of the same page keeps it, so
   clients can scope a sender's utterance counter by it. It grants nothing.
   `surface-transition` — `{id, surface, gen, retired}`: aux-leg
-  join/takeover visibility (rtc re-keying, TTS hold capability).
+  join/takeover visibility (sfu-* re-keying, TTS hold capability).
 - `error` — `{error}`: every refusal, human-readable. `mod` — `{text}`:
   moderation query/act summaries.
 - `history`, `debug` — request answers (echo `reqId`).
 - `anim`, `puppet`,
-  `bodydrag`, `caption`, `typing`, `drag`, `rtc`, `performed` — presence
+  `bodydrag`, `caption`, `typing`, `drag`, `performed` — presence
   relays, shapes as sent (see §3) plus attribution stamps.
 - `capture` — `{id, follow?, view?, at?, width?, height?, frame?}`: server asks a renderer leg (or an opt-in native donor, `capture-capabilities`) for a PNG; answered by `capture-result {id, dataUrl? | error?}` (server/screenshots.ts, the broker: roaming renderers, PNG validation, generations). `at` frames a placed thing instead of a body. `width` and `height` are the image size (960 × 540). `frame` is the optional framing, `{dist?, height?, pitch?}`, normalised by `shared/snapframe.js` on both ends and sent only when a field is given; absent = the fixed default framing. It is nested so that no field of the message itself, such as the image's `height`, is read as framing. Its fields:
   - `dist`: `third`/`selfie` only. Flat distance from the body in metres, clamped to [0.5, 30]. The camera sits behind the body for `third` and in front for `selfie`. Defaults: 3.4 for `third`, 2.6 for `selfie`.
@@ -185,7 +185,7 @@ Every message belongs to exactly one plane:
 The wire carries requests; rights are the authority's, keyed on the components a
 request would change, never on the request's name (PROTOCOL.md §7). In
 short: any component on an entity needs **builder**; anything on `@world`
-needs **owner**, except `blueprints:*` (publishing a blueprint, builder) and `assets:*` (generate);
+needs **owner** (or the `editWorld` permission for sky, terrain and weather, `grantRoles` for a `roles:<id>` below your rank), except `blueprints:*` (publishing a blueprint, builder) and `assets:*` (generate);
 `use`, `say`, sitting and carrying what a thing's `grabbable.who` allows are
 open to **visitors**. Roles live on `@world` as `roles:<identity>`.
 `snapshot.yourRights` (and a fresh one whenever roles change) is the

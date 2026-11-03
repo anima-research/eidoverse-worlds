@@ -35,6 +35,18 @@ console.log("places.ts (pure):");
   const e = { id: "t", pos: [10, 1, -5], yaw: Math.PI / 2, scale: 2 };
   const w = P.toWorld(e, [1, 2, 3]), back = P.toLocal(e, w);
   check("model frame ↔ world round-trips through position, yaw and scale", back.every((v, i) => Math.abs(v - [1, 2, 3][i]) < 1e-9), JSON.stringify(back));
+  // bot #463: a raised room on a frame tilted about X: `inside` is judged at the room's own floor height, so its middle is in it
+  const tilt = Math.PI / 6, tilted = { id: "t", pos: [0, 5, 0], q: [Math.sin(tilt / 2), 0, 0, Math.cos(tilt / 2)], scale: 1 };
+  const room: any = { name: "loft", kind: "region", min: [-2, 0, -2], max: [2, 3, 2] };
+  const d = P.destinationOf(tilted, room);
+  check("a tilted, raised room's `inside` holds at its own middle (judged at the floor's height, not y=0)", d.inside!(d.x, d.z) === true, JSON.stringify([d.x, d.y, d.z]));
+  // bot #455: placesNear/placesInSight measure from the point handed in (look's seat-resolved `me`), not the raw body
+  const { WorldAgent: WA } = await import("../mcpl/agent.ts");
+  const ag: any = new WA({ name: "P", world: "w" });
+  ag.replica = { st: { entities: { "@world": { c: { places: { bench: { at: [10, 0, 0] } } } } } } };
+  ag.pos = { x: 0, y: 0, z: 0 };
+  const dRaw = ag.placesNear()[0]?.d, dFrom = ag.placesNear([9, 0, 0])[0]?.d, sight = ag.placesInSight([9, 0, 0]);
+  check("placesNear(from) measures from `from`; placesInSight(from) lists from there too", Math.abs(dRaw - 10) < 1e-9 && Math.abs(dFrom - 1) < 1e-9 && /\(1\.0 m/.test(sight.lines[0] ?? ""), JSON.stringify({ dRaw, dFrom, sight }));
 }
 
 console.log("a model's own places survive the server's compressed copy:");

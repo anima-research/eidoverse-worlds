@@ -150,7 +150,7 @@ export function sayRefusalWords(r, text) {
 function sendSay(args) {
   return sendRequest('say', args).then((r) => { if (!r?.ok) logChat('*', sayRefusalWords(r, args.text)); return r; });
 }
-/** extra: to (a whisper); spoken/utt/t0 (the words were voice-performed: the authority logs the trio, display only);
+/** extra: to (addressed, still public); spoken/utt/t0 (the words were voice-performed: the authority logs the trio, display only);
  *  live: true for a transcript of speech (stt.js), which is never queued for a reconnect: sent later it would publish
  *  after the mic went off, with nothing to check it again, so offline it is dropped. */
 export function say(text, extra = {}) {

@@ -106,7 +106,7 @@ const TOOL_ROWS = [
   { name: "say", description: "Say something in world chat (bubble over your head, persisted). Equivalent to publishing on the world channel. Optional spoken-say trio (spoken+utt, t0 optional): display/continuation metadata marking this say as voice-performed by your live voice leg — it does NOT prove performance (the authenticated attest/performed receipt path is the only performance truth). The trio travels together or the server refuses loudly.", inputSchema: { type: "object", properties: { text: { type: "string" }, to: { type: "string", description: "a participant id or name: the say is addressed to them (the client sends this too; it is logged)" }, spoken: { type: "boolean", description: "true = a live voice leg is performing this say (display metadata only)" }, utt: { type: "integer", minimum: 0, description: "utterance counter: author-controlled display/continuation metadata (does NOT prove performance)" }, t0: { type: "number", description: "performance start, epoch ms (optional, finite)" } }, required: ["text"] } },
   { name: "catch_up", description: "What was said here while you were not thinking. Speech is arrival-only: it returns chat said since you arrived (a `since` earlier than your arrival gives nothing older; only the owner, operators and readChat holders read further back); omit `since` to continue from where you last caught up. Use when a conversation refers to something said while you were here that you have no memory of.", inputSchema: { type: "object", properties: { since: { type: "number" }, limit: { type: "number" } } } },
   { name: "activity", description: "Your ambient-activity sense — and the dial for it. While something is happening within radius_m of you (speech, movement, gestures, arrivals, building), you receive one digest per pulse_sec window on the world channel, tagged \"activity\" with metadata {activity: true} — never as a mention. If your host lets you configure wake rules, match that tag/metadata to be woken regularly exactly as long as there is life nearby; the stream stops by itself when the area goes quiet, so it costs nothing in an empty room. Call with no arguments to see your current settings. pulse_sec (10–3600 seconds, 0 = off) and radius_m (1–200) are your own to set and persist across sessions. If your host has no push channel (plain MCP), digests are held instead and handed over each time you call this tool — poll it when you want to know what has been happening around you.", inputSchema: { type: "object", properties: { pulse_sec: { type: "number" }, radius_m: { type: "number" } } } },
-  { name: "anim", description: "Play an anim on your body — a pose (one frame, only the bones it names) or a clip (more than one key): you never need to know which. By NAME: anim {name, mode?} — the built-in names are the action bar's (wave, cheer, clap, point, salute, flail, talk play once; dance, sit, sitchair, lie, stand loop) and the pose wings-folded (the folded-wing silhouette, which grounds you; it holds); a name your body doesn't know plays its default, never an error. LIVE, for ad-lib: anim {joints} sets bones now (a sparse map of bone name to [x,y,z,w] or {q, t, s}: humanoid bones by VRM name, any other bone your rig has by its own; replace:true makes it the whole pose; hold:true keeps it through walking; call anim with joints: {} to list your rig's bones), or anim {tracks, dur} plays keys (bone → [{t, q}], dur seconds; replace:true ends your held pose first). mode (default: the anim's own): once (plays, then you're back to normal) | loop (until something else happens) | hold (freezes on a frame — at seconds in, default its last — and holds until something else happens). The reply says {playing: name or \"live\", mode}. Anims are layers: a clip (a named loop or hold), a pose you strike (joints, or wings-folded) and a tracks loop play at once, and a new one replaces only the one in its own layer (a pose struck over a sit leaves the sit playing). A loop or a hold ends when another in its layer starts, you move, anim {stop} or you're knocked over — and you're told: stopped {name, why} (a once anim ends silently). anim {stop: true} stops every one of them, each layer, and rests in your body-mode's own anim (stand: idle, sit: the sit loop, lie: lie, swim: tread, fly: soar) — never the bind pose; the body-mode is unchanged (to stand up, declare bodyMode stand, or walk; on a seat, detach: a declaration never takes you off it). stop: \"<name>\" stops only that layer, the rest going on (stop: \"wings-folded\" opens your wings; a name that isn't playing is a note, not an error); stop: \"live\" stops only the ad-libbed ones (joints, tracks), which replies call \"live\" — a reserved name no anim may have. ragdoll: true goes limp (walking, or anim {stop: true}, stands you back up). target plays it on SOMEONE ELSE (joints, tracks, stop or ragdoll; their consent decides). Presence only — never written to the world log. bodyMode declares your body-mode (stand | sit | lie | swim | fly | fall), for looks — e.g. fly plays the hover set while you walk; the mover sets it itself on real transitions (water, a take-off, a fall, a landing), and a declaration holds until the next one; it grants nothing (a take-off still needs the fly permission). (its old tool names say so and run nothing.)", inputSchema: { type: "object", properties: { name: { type: "string", description: "an anim by name (a pose or a clip)" }, bodyMode: { type: "string", enum: ["stand", "sit", "lie", "swim", "fly", "fall"], description: "declare your body-mode, for looks (it grants nothing)" }, mode: { type: "string", enum: ["once", "loop", "hold"], description: "default: the anim's own" }, at: { type: "number", description: "mode hold: seconds into the anim to freeze at (default its last frame)" }, joints: { type: "object", description: "live: bone → [x,y,z,w] or {q, t, s}" }, tracks: { type: "object", description: "live: bone → [{t, q}]" }, dur: { type: "number", description: "with tracks: seconds" }, replace: { type: "boolean" }, hold: { type: "boolean", description: "with joints: keep them through walking" }, target: { type: "string" }, stop: { description: "true: stop every anim, each layer, and rest in your body-mode's own anim (never the bind pose; the body-mode is unchanged); a name: stop only that layer; \"live\": only the ad-libbed ones" }, ragdoll: { type: "boolean" } } } },
+  { name: "anim", description: "Play an anim on your body — a pose (one frame, only the bones it names) or a clip (more than one key): you never need to know which. By NAME: anim {name, mode?} — the built-in names are the action bar's (wave, cheer, clap, point, salute, flail, talk play once; dance, sit, sitchair, lie, stand loop) and the pose wings-folded (the folded-wing silhouette, which grounds you; it holds); a name your body doesn't know plays its default, never an error. LIVE, for ad-lib: anim {joints} sets bones now (a sparse map of bone name to [x,y,z,w] or {q, t, s}: humanoid bones by VRM name, any other bone your rig has by its own; replace:true makes it the whole pose; hold:true keeps it through walking; call anim with joints: {} to list your rig's bones), or anim {tracks, dur} plays keys (bone → [{t, q}], dur seconds; replace:true ends your held pose first). mode (default: the anim's own): once (plays, then you're back to normal) | loop (until something else happens) | hold (freezes on a frame — at seconds in, default its last — and holds until something else happens). The reply says {playing: name or \"live\", mode}. Anims are layers: a clip (a named loop or hold), a live pose (joints), the folded wings and a tracks loop each play at once, and a new one replaces only the one in its own layer (a pose struck over a sit leaves the sit playing). A loop or a hold ends when another in its layer starts, you move (a held joints pose is the exception), anim {stop} or you're knocked over — and you're told: stopped {name, why} (a once anim ends silently). anim {stop: true} stops every one of them, each layer, and rests in your body-mode's own anim (stand: idle, sit: the sit loop, lie: lie, swim: tread, fly: soar) — never the bind pose; the body-mode is unchanged (to stand up, declare bodyMode stand, or walk; on a seat, detach: a declaration never takes you off it). stop: \"<name>\" stops only that layer, the rest going on (stop: \"wings-folded\" opens your wings; a name that isn't playing is a note, not an error); stop: \"live\" stops only the ad-libbed ones (joints, tracks), which replies call \"live\" — a reserved name no anim may have. ragdoll: true goes limp (walking, or anim {stop: true}, stands you back up). target plays it on SOMEONE ELSE (joints, tracks, stop or ragdoll; their consent decides). Presence only — never written to the world log. bodyMode declares your body-mode (stand | sit | lie | swim | fly | fall), for looks — e.g. fly plays the hover set while you walk; the mover sets it itself on real transitions (water, a take-off, a fall, a landing), and a declaration holds until the next one; it grants nothing (a take-off still needs the fly permission). (its old tool names say so and run nothing.)", inputSchema: { type: "object", properties: { name: { type: "string", description: "an anim by name (a pose or a clip)" }, bodyMode: { type: "string", enum: ["stand", "sit", "lie", "swim", "fly", "fall"], description: "declare your body-mode, for looks (it grants nothing)" }, mode: { type: "string", enum: ["once", "loop", "hold"], description: "default: the anim's own" }, at: { type: "number", description: "mode hold: seconds into the anim to freeze at (default its last frame)" }, joints: { type: "object", description: "live: bone → [x,y,z,w] or {q, t, s}" }, tracks: { type: "object", description: "live: bone → [{t, q}]" }, dur: { type: "number", description: "with tracks: seconds" }, replace: { type: "boolean" }, hold: { type: "boolean", description: "with joints: keep them through walking" }, target: { type: "string" }, stop: { description: "true: stop every anim, each layer, and rest in your body-mode's own anim (never the bind pose; the body-mode is unchanged); a name: stop only that layer; \"live\": only the ad-libbed ones" }, ragdoll: { type: "boolean" } } } },
   { name: "reach", description: `Reach out with a hand (or foot) — real IK: everyone sees your arm extend toward the target and TRACK it (your walking, their moving) until you release it, and the palm turns to rest on the surface it meets. Two ways to aim it: (1) a contact point on a body — \`who\` (participant id; omit to touch your own body) + \`point\`, one of: ${Object.keys(CONTACT_POINTS).join(", ")}; the person you touch hears about it (they get a 'reaches toward you' event, then a 'touches' event when your hand arrives — you hear the same when someone touches you). A hand on SOMEONE ELSE is shown only if their consent allows it (class touch; intimate for chest_front, waist and hips — both behind their touch gate, which is off unless they turned it on or allow you by name): otherwise the world strips it from your pose, nobody sees it, and the reply says it was refused (never why: that is theirs). Nothing asks: if they want you to, they open it. (2) a bare point — x, y, z with \`space\`: 'world' (default, fixed), 'self' (your own root frame — moves with you), or a participant id (their root frame — tracks them). READ THE REPLY, it is your only feedback: it says whether the hand actually arrives, what limited it (joints, body, distance), and how far to walk if it fell short. A reach composes over walking, sitting and held poses. If YOU (the reacher) are knocked over, your outgoing reaches are cleared. The target walking, changing posture or falling does not revoke your tracking relation. The target ends someone's reach toward them by closing their consent to it (act {verb: "consent", args: {block: <who>}} for that person, or {touch: false} for everyone not allowed by name): the reach ends then, and its reacher hears body-revoked. Presence-only, never logged. release: true lets go — one limb, or all of YOUR reaching limbs when no limb is named — easing back to normal animation; anyone you were touching sees the hand withdraw (it clears your outgoing reaches, never someone's reach toward you).`, inputSchema: { type: "object", properties: { release: { type: "boolean", description: "let go (of `limb`, or every limb)" }, limb: { type: "string", enum: ["rightHand", "leftHand", "rightFoot", "leftFoot"], description: "default rightHand" }, who: { type: "string" }, point: { type: "string" }, x: { type: "number" }, y: { type: "number" }, z: { type: "number" }, space: { type: "string" }, standoff: { type: "number", description: "metres to hover off the surface (default 0.02 — resting on it)" }, palm: { type: "boolean", description: "false = don't orient the palm to the surface" } } } },
   { name: "attach", description: "Get on a thing at one of its sockets (look says what each does: sit, ride, drive, stand at…): your body occupies it — swings with the swing, holds the station's anim — until you detach (or walk; a socket may only let you go a certain way, which look and the reply say). to is the thing; pick the socket by `socket` or by `action`. The seat must be within reach (3.5 m across the ground, 1.6 m up, 1 m down: walk up first; farther is refused out-of-reach), free (one occupant each) and yours to take (its station.who); detach first to change seats. Presence only: nothing is logged, exactly like a person's /sit.", inputSchema: { type: "object", properties: { to: { type: "string" }, socket: { type: "string" }, action: { type: "string" } }, required: ["to"] } },
   { name: "detach", description: "Get off the thing you're attached to (the reverse of attach). A socket may hold you until the world lets you go (its leaveBy); the reply says so. escape: true gets you off any seat whatever it says (the one exit no seat can take away, like a person holding X).", inputSchema: { type: "object", properties: { escape: { type: "boolean" } } } },
@@ -417,9 +417,11 @@ export function historyLine(e: any): string {
 }
 /** A presence message (puppet) has no reply when it's forwarded; a refusal comes back as the server's `error` at once.
  *  Wait briefly for one sent after t0 and return its words, or null. */
-async function presenceRefusal(ag: ToolAgent, t0: number, ms = 700): Promise<string | null> {
+async function presenceRefusal(ag: ToolAgent, t0: number, target: string, ms = 700): Promise<string | null> {
   const end = Date.now() + ms;
-  while (Date.now() < end) { const r = ag.lastRefusal; if (r && r.ts >= t0) return r.text; await new Promise((res) => setTimeout(res, 25)); }
+  // only a refusal that names the target: every bodyRefusal does, and an unrelated error meanwhile isn't this one's (bot #462)
+  const names = (t: string) => t.startsWith(`${target} `) || t.startsWith(`${target}'s `) || t.includes(` ${target} `);
+  while (Date.now() < end) { const r = ag.lastRefusal; if (r && r.ts >= t0 && names(r.text)) return r.text; await new Promise((res) => setTimeout(res, 25)); }
   return null;
 }
 // a script activation's statuses that mean it ran (or, dry, would run): authority/scriptrun.js activate's out(); anything else
@@ -497,7 +499,8 @@ async function resolveWho(ag: any, raw: unknown, verb: string): Promise<{ who: s
 
 const BODY_VERBS: Record<string, ToolHandler> = {
   land: async (ag, a) => {
-    const to = Array.isArray(a.to) ? a.to.map(Number) : [Number(a.x), Number(a.z)];
+    const num = (v: unknown) => (typeof v === "number" ? v : NaN);   // Number(null) is 0 (bot #458)
+    const to = Array.isArray(a.to) ? a.to.map(num) : [num(a.x), num(a.z)];
     const x = to[0], z = to.length === 3 ? to[2] : to[1];
     if (![x, z].every(Number.isFinite)) return { content: [{ type: "text", text: "land needs to: [x, z] (or [x, y, z]) — where to come down" }], isError: true };
     if (!airborne(ag)) return { content: [{ type: "text", text: `land: ${ag.flight ? "already on the ground" : "you are on the ground"} — move {mode: "fly"} gets you up` }], isError: true };
@@ -523,7 +526,7 @@ const BODY_VERBS: Record<string, ToolHandler> = {
       ag.puppet(to, { ragdoll: lean ? { lean } : true });
       // the server checks the target's consent (class shove) and range before it forwards a shove, and answers a refusal
       // with an error (server/messages.ts bodyRefusal); silence is the only yes it gives (parity audit 10-07 F2)
-      const no = await presenceRefusal(ag, t0);
+      const no = await presenceRefusal(ag, t0, to);
       if (no) return { content: [{ type: "text", text: `shove refused (consent class: shove): ${no}` }], isError: true };
       return text(`you shove ${to}${lean ? " — they go down the way you pushed" : " — asked them to go limp"} (the server passed it on; their body has the last word)`);
 
@@ -619,7 +622,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (!pick) {
         const why = !all.length ? "declares no seat" : !fits.length ? `has no ${a.action != null ? `'${a.action}' ` : ""}seat${a.socket != null ? ` called "${a.socket}"` : ""}` : "has every such seat taken";
         // the remedy is a whole call, id and set
-        return { content: [{ type: "text", text: `attach: ${on} ${why} (its seats: ${all.map((x: any) => `${x.slot} (${x.body.action})`).join(", ") || "none"})${all.length ? "" : ` — a builder can add one: edit {id: "${ag.handle(on)}", set: {"sockets.seat|pos|1": 0.5}} (a new socket is a seat)`}` }], isError: true };
+        return { content: [{ type: "text", text: `attach: ${on} ${why} (its seats: ${all.map((x: any) => `${x.slot} (${x.body.action})`).join(", ") || "none"})${all.length ? "" : ` — a builder can add one: edit {id: "${ag.handle(on)}", set: {"sockets.seat|body": true}} (the body makes a slot a seat)`}` }], isError: true };
       }
       const { id: sid, slot, body } = pick;
       if (mine && mine.to !== sid) {
@@ -713,6 +716,8 @@ export const HANDLERS: Record<string, ToolHandler> = {
 
   },
   move: async (ag, a, ctx, name) => {
+      // to: "?" is a listing, no move: it answers from a seat that holds you too (bot #454)
+      if (typeof a.to === "string" && a.to.trim().startsWith("?")) return text(ag.placeList(a.to.trim().slice(1)));
       if (ag.myOccupancy && !ag.mayVacate("menu")) return { content: [{ type: "text", text: `you're held on ${ag.socketName(ag.myOccupancy.to)}: it lets you go when the world does (detach {escape: true} gets you up anyway)` }], isError: true };
       const mode = a.mode == null ? "walk" : String(a.mode);
       if (mode !== "walk" && mode !== "fly") return { content: [{ type: "text", text: `move: mode is "walk" (default) or "fly"` }], isError: true };
@@ -724,7 +729,6 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const tolerance = a.tolerance ?? 0.01;
       if (typeof a.to === "string") {
         const q = a.to.trim();
-        if (q.startsWith("?")) return text(ag.placeList(q.slice(1)));   // the named places here, seen or not (owner 22:40), nearest 200; "?<text>" narrows: no move
         // a named place (it carries its own floor and reach), a thing (its entrance, else up to it and beside it), a
         // person (stopping short): destination() alone; only a place in the older upstream shape is read here besides
         const d = ag.destination(q);
@@ -905,7 +909,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // the presets: clear (the old clear_pose), posture (the old posture tool), wings (fold_wings / unfold_wings)
       if (a.clear === true) {
         if (a.target) { const t0 = Date.now(); ag.puppet(String(a.target), puppetPose(null));
-          const no = await presenceRefusal(ag, t0);
+          const no = await presenceRefusal(ag, t0, String(a.target));
           if (no) return { content: [{ type: "text", text: `anim {stop} refused (consent class: pose): ${no}` }], isError: true };
           return text(`asked ${a.target} to release their pose. They decide whether to.`); }
         ag.setPose(null);
@@ -915,7 +919,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         if (a.target) {
           const to = String(a.target); const t0 = Date.now();
           ag.puppet(to, { ragdoll: true });   // undirected: their body goes limp where it stands (a push is act shove)
-          const no = await presenceRefusal(ag, t0);
+          const no = await presenceRefusal(ag, t0, to);
           if (no) return { content: [{ type: "text", text: `anim {ragdoll} refused (consent class: shove): ${no}` }], isError: true };
           return text(`asked ${to} to go limp (the server passed it on; their body has the last word)`);
         }
@@ -976,7 +980,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (target) {
         const t0 = Date.now();
         ag.puppet(target, puppetPose(v.pose, replace));
-        const no = await presenceRefusal(ag, t0);   // consent class pose and range, at the server (F2)
+        const no = await presenceRefusal(ag, t0, target);   // consent class pose and range, at the server (F2)
         if (no) return { content: [{ type: "text", text: `anim refused (consent class: pose): ${no}` }], isError: true };
         return text(`asked ${target} to ${replace ? "hold a pose (replacing theirs)" : "pose"} ${what}`
           + `${note ? ` — ${note}` : ""}. They decide whether to take it.`);
@@ -1050,7 +1054,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (a.target) {
         const t0 = Date.now();
         ag.puppet(String(a.target), { anim: spec });
-        const no = await presenceRefusal(ag, t0);
+        const no = await presenceRefusal(ag, t0, String(a.target));
         if (no) return { content: [{ type: "text", text: `anim refused (consent class: pose): ${no}` }], isError: true };
         return text(`sent a ${dur}s animation over ${v.accepted.length} bone(s) to ${a.target}`
           + `${note ? ` — ${note}` : ""}${cut}. They decide whether to play it.`);
@@ -1217,7 +1221,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         const who = (w.people ?? []).map((p) => (typeof p === "string" ? p : p.declares ? `${p.id} (${p.declares})` : p.id));   // one list; a declared word, if any, as a tag
         const nA = Array.isArray(w.agents) ? w.agents.length : 0, n = (k: number, one: string) => `${k} ${one}${k === 1 ? "" : "s"}`;
         const occupancy = who.length ? `${n(who.length - nA, "human")}, ${n(nA, "agent")}: ${who.join(", ")}` : (w.loaded ? "empty" : "empty, not loaded");   // counted apart (decision table row 21)
-        const door = w.access === "invite-only" ? "invite-only" : w.access === "watch" ? "watch only" : "";
+        const door = w.access === "invite-only" ? "invite-only" : w.access === "watch" ? "watch only" : w.access === "signed-in" ? "signed-in only" : w.access === "open" ? "open to guests" : "";
         const may = here ? "you are here"
           : pol && !pol.canJoin(w.name) ? "outside the worlds your credential is limited to"
             : w.you === "watch" ? "you may watch, not travel in"
@@ -1266,7 +1270,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const s = g.bbox.size;
       // /geom?lib= answers with no model, so a library model is named by the path asked for
       L.push(`${a.id ? `[${ag.refName(String(d.id))}] ${d.model ?? ""}` : d.model ?? a.lib} — ${s[0]}×${s[1]}×${s[2]}m, ${g.tris} tris${g.sampled ? " (sampled)" : ""}`);
-      if (a.id) L.push(`placed at (${d.pos.map((n: number) => n.toFixed(2)).join(", ")}) yaw ${d.yaw.toFixed(2)}${d.scale !== 1 ? ` scale ${d.scale}` : ""}${d.parent ? ` — mounted on ${d.parent.to}` : ""}`);
+      if (a.id) L.push(`placed at (${d.pos.map((n: number) => n.toFixed(2)).join(", ")})${d.parent ? ` in ${d.parent.to}'s frame` : ""} yaw ${d.yaw.toFixed(2)}${d.scale !== 1 ? ` scale ${d.scale}` : ""}${d.parent ? ` — mounted on ${d.parent.to}` : ""}`);
       if (g.topSurfaces?.length) {
         L.push(`flat zones (local frame, biggest first) — a center is a socket pos verbatim:`);
         for (const f of g.topSurfaces.slice(0, 5)) {
@@ -1511,6 +1515,10 @@ HANDLERS.anim = async (ag, a, ctx, name) => {
   if (mode0 != null && !MODES.includes(mode0)) return { content: [{ type: "text", text: `anim: mode is once, loop or hold (got ${JSON.stringify(a.mode)})` }], isError: true };
   const at = a.at == null ? null : Number(a.at);
   if (at != null && !(Number.isFinite(at) && at >= 0)) return { content: [{ type: "text", text: "anim: at is seconds into the anim (0 or more)" }], isError: true };
+  // the call's shape first: a bad shape declares no body-mode (bot #459)
+  const forms = ["name", "joints", "tracks", "stop", "ragdoll"].filter((k) => a[k] != null && a[k] !== false);
+  if (a.name != null && (a.joints != null || a.tracks != null)) return { content: [{ type: "text", text: "anim: a name OR live keys (joints, or tracks), not both — a named anim plays as it is; nothing was guessed and nothing played" }], isError: true };
+  if (forms.length > 1) return { content: [{ type: "text", text: `anim: one of name, joints, tracks, stop or ragdoll at a time (got ${forms.join(", ")})` }], isError: true };
   // a body-mode declaration (R 15:45): any of the six, for looks; it holds until the mover's next real transition or the
   // next declaration, and grants nothing. Alone, or beside a name (the anim then plays in that mode)
   if (a.bodyMode != null) { if (!isBodyMode(a.bodyMode)) return { content: [{ type: "text", text: `anim: bodyMode is ${BODY_MODES.join(" | ")} (got ${JSON.stringify(a.bodyMode)})` }], isError: true };
@@ -1523,9 +1531,6 @@ HANDLERS.anim = async (ag, a, ctx, name) => {
     const seated = ag.myOccupancy ? `; you're still attached to ${ag.socketName?.(ag.myOccupancy.to) ?? "your seat"}, and rest in its anim — detach to get off` : "";
     // with stop or ragdoll beside it, that runs too, in the mode just declared (the declaration returned first)
     if (a.name == null && a.joints == null && a.tracks == null && (a.stop == null || a.stop === false) && a.ragdoll !== true) return text(`${JSON.stringify({ bodyMode: String(a.bodyMode) })} — declared, for looks: it holds until a real transition (water, a take-off, a fall, a landing) or your next declaration, and grants nothing${seated}`); }
-  const forms = ["name", "joints", "tracks", "stop", "ragdoll"].filter((k) => a[k] != null && a[k] !== false);
-  if (a.name != null && (a.joints != null || a.tracks != null)) return { content: [{ type: "text", text: "anim: a name OR live keys (joints, or tracks), not both — a named anim plays as it is; nothing was guessed and nothing played" }], isError: true };
-  if (forms.length > 1) return { content: [{ type: "text", text: `anim: one of name, joints, tracks, stop or ragdoll at a time (got ${forms.join(", ")})` }], isError: true };
   // stop (R 10-17 16:26/16:27): true stops every anim this body plays or holds, each layer, and rests in the CURRENT
   // body-mode's own anim (never the bind pose; the body-mode is unchanged); a name stops only that layer ("live": every
   // ad-libbed one). With target: their held pose
@@ -1606,7 +1611,7 @@ function describeCheck(what: string, r: any, named: number, id?: string, collide
   // spawned with collide: the world fits it that way whatever its size
   if (collide === "exact" || collide === "box") {
     r = { ...r, walkIn: { ...r.walkIn, roomScale: collide === "exact" }, warnings: (r.warnings ?? []).filter((w: any) => w.kind !== "solid") };
-    if (collide === "box") r.warnings.unshift({ kind: "solid", message: `it was spawned with collide: "box", so it is one solid box: nobody can go inside — what follows is what it would be with collide: "exact"` });
+    if (collide === "box") r.warnings.unshift({ kind: "solid", message: `it was spawned with collider.shape "box", so it is one solid box: nobody can go inside — what follows is what it would be with collider.shape "exact" (edit {id, set: {"collider.shape": "exact"}})` });
   }
   const floors = (r.levels ?? []).map((l: any) => `${l.y}m (${l.reachable}m² of ${l.area}m² reachable)`).join(", ");
   L.push(`${what}: ${r.walkIn?.roomScale ? "walk-in" : collide === "box" ? "SOLID — spawned as a box" : "SOLID — under the walk-in size"}; ${(r.levels ?? []).length} floor${(r.levels ?? []).length === 1 ? "" : "s"}${floors ? `: ${floors}` : ""}`
@@ -1641,7 +1646,7 @@ export const TOOL_FOLDS: Record<string, string> = {
   fold_wings: 'anim {name: "wings-folded"}', unfold_wings: 'anim {stop: "wings-folded"}', flight_status: "body_state (its flight field)",
   clear_pose: "anim {stop: true, target?}", clear_reach: "reach {release: true, limb?}",
   ragdoll: 'anim {ragdoll: true, target?} (a body going limp); to push someone: act {verb: "shove", args: {target, strength?}}', library_sheet: "library {kind, page?}", library_preview: "library {preview}", list_library: "library {query}",
-  light: 'create {components: {light: {…}}, at?} (edit {id, set: {"light.intensity": …}} updates one; main\'s keep: true is light {important: true})', remove: 'act {verb: "delete", args: {id}}',
+  light: 'create {components: {light: {…}}, at?} (edit {id, set: {"light.intensity": …}} updates one; main\'s keep: true is the light component\'s important: true (create {components: {light: {important: true}}} or edit {id, set: {"light.important": true}}))', remove: 'act {verb: "delete", args: {id}}',
   blueprint_place: 'create {from: "sha256:<hash>", at?}', kick: 'act {verb: "kick", args: {who, reason?}}', ban: 'act {verb: "ban", args: {who, days?, reason?, global?}}',
   unban: 'act {verb: "unban", args: {who, global?}}', list_bans: 'act {verb: "bans", args: {global?}}',
   // main's world_access left without a pointer

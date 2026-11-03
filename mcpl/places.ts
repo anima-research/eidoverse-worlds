@@ -11,7 +11,7 @@
 //   2. the entity's `places` component — anyone with builder rank can add,
 //      rename or retire places at any time, long after the thing was built:
 //
-//        comp {id, type: "places", data: {
+//        set {id, component: "places", value: {
 //          balcony:  {at: [0, 3.15, 2.9], label: "the balcony"},
 //          upstairs: {min: [-2.2, 3.15, -2.2], max: [2.2, 5.8, 2.2], label: "the lookout room"},
 //          porch_bench: null,          // hides a place the model declares
@@ -173,7 +173,7 @@ export function destinationOf(e: PlaceHolder, p: Place): Destination {
     const half = Math.hypot((p.max![0] - p.min![0]) * s[0], (p.max![2] - p.min![2]) * s[2]) / 2;
     const room = { ...p, min: [p.min![0], -Infinity, p.min![2]] as Vec3, max: [p.max![0], Infinity, p.max![2]] as Vec3 };
     return { x: mid[0], y: mid[1], z: mid[2], reach: Math.max(0.6, half), label, above: ROOM_FLOOR_EPS, below: ROOM_FLOOR_EPS,
-      inside: (x, z) => inRegion(e, room, [x, 0, z]) };
+      inside: (x, z) => inRegion(e, room, [x, mid[1], z]) };   // at the room's own floor height: a tilted frame turns y into local x/z (bot #463)
   }
   const w = toWorld(e, p.at!);
   // a seat's point is where hips rest, at or a little above the seat's

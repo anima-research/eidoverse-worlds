@@ -15,7 +15,7 @@
 import { forkWorld, foundOwnedWorld, recheckFix } from "./worldlog.ts";
 import { worldExists, worlds } from "./world.ts";
 import type { Client, World } from "./world.ts";
-import { globalBans, saveGlobalBans, banKey, ADDR_BAN_MS, fileAddrSanction, liftAddrSanction } from "./moderation.ts";
+import { globalBans, saveGlobalBans, banKey, ADDR_BAN_MS, fileAddrSanction, liftAddrSanction, notPersisted } from "./moderation.ts";
 import { directoryFor, foldName } from "./directory.ts";
 import { WORLDS_DIR, FORK_GAP_SEC, FORK_PER_HOUR } from "./config.ts";
 import { isBanned, inForceOf } from "../shared/protocol/authority.js";
@@ -99,17 +99,19 @@ export function gagged(c: Client, type: string): boolean {
  *  connection's hashed address in this world (moderation.ts: at most a day, never past its own end), and server.ts gives
  *  it to every new guest from that address at join. Lifting one (unmute) lifts that record. A signed-in
  *  person's identity already carries; nothing is filed for them. `verb` is the authority's act; `actor` the identity that did it. */
-export function guestSanctionByAddress(w: World, actor: string, by: string, verb: string, who: string, reason?: string) {
+export function guestSanctionByAddress(w: World, actor: string, by: string, verb: string, who: string, reason?: string): string | null {
   const kind = verb === "mute" || verb === "unmute" ? "mute" : null;
-  if (!kind || !w.log) return;
+  if (!kind || !w.log) return null;
   const addrs = [...new Set([...w.clients].filter((t) => t.actorId === who && t.anonymous && t.addr).map((t) => t.addr as string))];
-  if (verb.startsWith("un")) { liftAddrSanction(kind, w.name, who, addrs[0]); return; }
+  if (verb.startsWith("un")) { liftAddrSanction(kind, w.name, who, addrs[0]); return null; }
   // this actor's own mutes in force on `who`, never the union with another's: each issuer's is filed apart (bot review #260 118)
   const mine = inForceOf(w.log.live, who, "mute").filter((m: Any) => m.actor === actor);
-  if (!mine.length) return;
+  if (!mine.length) return null;
   const channels = [...new Set(mine.flatMap((m: Any) => m.channels ?? ["voice", "chat"]))] as string[];
   const until = mine.some((m: Any) => m.until === undefined) ? null : Math.max(...mine.map((m: Any) => m.until));
-  for (const addr of addrs) fileAddrSanction({ kind, world: w.name, addr, actor, by, who, until, channels, ...(reason ? { reason: reason.slice(0, 280) } : {}) });
+  let unsaved: string | null = null;   // why the file wasn't written (the sanction holds in memory only), said in the reply (bot #260 #146)
+  for (const addr of addrs) unsaved ??= fileAddrSanction({ kind, world: w.name, addr, actor, by, who, until, channels, ...(reason ? { reason: reason.slice(0, 280) } : {}) });
+  return unsaved;
 }
 /** An unban's lift of the address entry a guest's ban left in this world (the request path and operator-repair alike). */
 function liftGuestAddressBan(w: World, who: string) {
@@ -181,6 +183,20 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
       const wasBanned = (verb === "ban" || verb === "unban") && typeof args.who === "string" ? isBanned(w.log.live, String(args.who)) : false;
       const r = await w.log.request(cap.actorId, verb, args, still);
       const ms = (r && typeof r === "object" && authorityTime.get(r)) || 0; if (mark) mark.ms = ms; spent.ms = ms;
+      // a guest's sanction is also filed by address, BEFORE the reply: a file that couldn't be written is said in the
+      // reply (`warning`) and the moderated line, never swallowed after the ack (bot #260 #146)
+      let unsaved: string | null = null;
+      // a guest has no account: a fresh connection is a fresh identity, so its ban (at most a day) also names its
+      // connection's address in this world, or reconnecting would shed it (review 10-07)
+      if (r?.ok && verb === "ban" && typeof args.who === "string") for (const t of w.clients) if (t.actorId === args.who && t.anonymous && t.addr) {
+        const until = Math.min(Date.now() + ADDR_BAN_MS, r.until ?? Infinity);
+        globalBans[banKey(null, t.addr, w.name)] = { by: c.id, ts: Date.now(), name: t.id, addr: t.addr, until, world: w.name, who: String(args.who), ...(args.reason ? { reason: String(args.reason) } : {}) };
+        unsaved ??= saveGlobalBans();
+      }
+      // a guest's mute also names their address here, and its lift lifts that (R 10-07)
+      if (r?.ok && ["mute", "unmute"].includes(verb) && typeof args.who === "string" && args.who !== cap.actorId)
+        unsaved ??= guestSanctionByAddress(w, cap.actorId, c.id, verb, String(args.who), typeof args.reason === "string" ? args.reason : undefined);
+      if (unsaved && r && typeof r === "object") r.warning = notPersisted(unsaved);
       reply(r);
       // the flight recorder hears every refusal (world_debug, /debug): the authority logs refused WRITES as attempt acts, but
       // a read's, a rate limit's or a ban's refusal went nowhere a person debugging could see (Commons audit, agents #5)
@@ -198,13 +214,10 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
         const who = String(args.who ?? ""); const notice = verb === "warn" ? { type: "warned", by: c.id, reason: String(args.reason ?? "") }
           : verb === "mute" ? { type: "moderated", verb: "mute", by: c.id, you: true, channels: r.channels, until: r.until, ...(args.reason ? { reason: String(args.reason) } : {}) } : null;
         if (notice) for (const t of w.clients) if (t.actorId === who) { try { t.ws.send(JSON.stringify(notice)); } catch { /* gone */ } } }
-      // a guest's mute also names their address here, and its lift lifts that (R 10-07)
-      if (r?.ok && ["mute", "unmute"].includes(verb) && typeof args.who === "string" && args.who !== cap.actorId)
-        guestSanctionByAddress(w, cap.actorId, c.id, verb, String(args.who), typeof args.reason === "string" ? args.reason : undefined);
       if (r?.ok && (verb === "ban" || verb === "kick" || verb === "unban" || verb === "mute" || verb === "unmute") && typeof args.who === "string") {
         const who = String(args.who);
         const happened = verb === "kick" || verb === "mute" || verb === "unmute" ? [...w.clients].some((t) => t.actorId === who && !t.spectator) : wasBanned !== isBanned(w.log.live, who);
-        if (happened) { const text = modLine(w, c.id, verb, who);
+        if (happened) { const text = modLine(w, c.id, verb, who) + (unsaved ? ` (${notPersisted(unsaved)})` : "");
           for (const t of w.clients) if (t.actorId !== who) { try { t.ws.send(JSON.stringify({ type: "moderated", verb, by: c.id, text })); } catch { /* gone */ } } }
       }
       // an unban also lifts the address entry a guest's ban left
@@ -215,13 +228,6 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
       if (r?.ok && (verb === "ban" || verb === "kick")) {
         const who = String(args.who);
         for (const t of [...w.clients]) if (t.actorId === who) {
-          // a guest has no account: a fresh connection is a fresh identity, so its ban (at most a day) also names its
-          // connection's address in this world, or reconnecting would shed it (review 10-07)
-          if (verb === "ban" && t.anonymous && t.addr) {
-            const until = Math.min(Date.now() + ADDR_BAN_MS, r.until ?? Infinity);
-            globalBans[banKey(null, t.addr, w.name)] = { by: c.id, ts: Date.now(), name: t.id, addr: t.addr, until, world: w.name, who, ...(args.reason ? { reason: String(args.reason) } : {}) };
-            saveGlobalBans();
-          }
           const back = verb === "kick" ? " — you may come back" : r.until ? ` — you may come back on ${new Date(r.until).toISOString().slice(0, 16).replace("T", " ")} UTC` : "";
           expel(w, t, `you were ${verb === "ban" ? "banned from" : "removed from"} "${w.name}"${args.reason ? ` — ${String(args.reason)}` : ""}${back}`, r.until ?? null);
         }

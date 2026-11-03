@@ -15,10 +15,10 @@ main, so this proposal argues with the real system and not a remembered one:
   people with distance, bearing, pose, seats; things sorted by distance with
   **affordances read out loud** (sockets/reactions/motion/components); plus a
   "Since you last looked" drain of the recent inbox (capped at 25).
-- **Push: the inbox events** (`say | arrive | leave | whisper | act`) through
+- **Push: the inbox events** (`say | arrive | leave | act`; whisper removed 2026-10-18) through
   the NoiseGate: arrive-hold 12s and leave-hold 45s collapse flaps; per-identity
   presence charge (τ = 600s, limit 1.5) cools chatty comers-and-goers; per-act
-  refractory 180s. Mentions, whispers, and says are never gated — being
+  refractory 180s. Mentions and says are never gated — being
   addressed is always a knock.
 - **Push: approach** — first crossing within 2.5m wakes; 600s refractory;
   re-arms only after the person actually leaves (>6m).
@@ -28,7 +28,7 @@ main, so this proposal argues with the real system and not a remembered one:
   dials (`setActivity`: cadence 10–3600s or off, radius 1–200m, persisted).
 - **At the MCPL door: tags already exist.** (`declaration.ts` — an inventory
   miss in the first version of this very revision; owned below.) Events on the
-  MCPL wire carry §16 tag sets — the `eidoverse:` namespace names whisper,
+  MCPL wire carry §16 tag sets — the `eidoverse:` namespace names (whisper removed 2026-10-18)
   approach, act, presence, activity-digest, catchup — under the doctrine that
   tags describe, never authorize, and with a producer-side
   `suggestedTreatment` ontology (presence → mute, catchup → mute,

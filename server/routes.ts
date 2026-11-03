@@ -493,7 +493,9 @@ const ROUTES: Route[] = [
       if (url.searchParams.has("key")) return new Response("key belongs in the Authorization header", { status: 400 });
       const auth = req.headers.get("authorization") ?? "";
       const key = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
-      if (JOIN_TOKEN && key !== JOIN_TOKEN) return new Response("no", { status: 401 });   // the door is the first gate: no lookup for a stranger
+      // the door is the first gate: no lookup for a stranger. A signed-in session (same-origin cookie) is a key here too:
+      // a home-node human has no JOIN_TOKEN, and a 401 muted the page's tee (base.js; bot review #260 188)
+      if (JOIN_TOKEN && key !== JOIN_TOKEN && !sessionOfRequest(req)) return new Response("no", { status: 401 });
       const world = label && knownWorld(label) ? label : CLIENTLOG_UNKNOWN;
       const cl = req.headers.get("content-length");
       if (cl === null) return new Response("length required", { status: 411 });   // a chunked body would be buffered whole before the slice
@@ -772,7 +774,7 @@ const ROUTES: Route[] = [
     // exactly as they do in-world. ONE list of people (R 10-17 14:41:
     // "people" means everyone): each entry is {id, declares?}, the word a
     // participant declared for themselves at the door (PROTOCOL §6a), if any,
-    // as a tag — never a second list sorted by kind.
+    // as a tag; `agents` is main's field, by declaration, carried beside it (decision table row 21).
     match: (u) => u.pathname === "/worlds",
     handler: ({ req, srv }) => {
       if (!mayRead(req)) return unauthorized();

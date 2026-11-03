@@ -3,7 +3,8 @@
 // Every world this server serves speaks the current protocol (its directory holds world.jsonl, line 0 a genesis saying
 // {dialect, v: 4}: isWorldDir); World
 // (server/world.ts) holds one WorldLog. Writes: every write is a REQUEST through the authority (shared/protocol/authority.js: one
-// `admit`, act + change entries, the ts from this server's clock); request() is the only way in.
+// `admit`, act + change entries, the ts from this server's clock); request() is the one door for a person's write; the
+// authority's own clocks (tick, settle, expire-roles) enter through their methods below (authorityTick…).
 //
 // What clients see: every client folds the log itself. A joiner adopts the authority's cut (clientCut) and folds the raw entries
 // it is sent as {type: "log"}. `state` is the VIEW of the fold (shared/protocol/view.js viewState) plus the chat window,
@@ -369,7 +370,7 @@ export class WorldLog {
   }
 
   // ---- what the World and server.ts read ----
-  /** A page of chat history, newest first by `before` (the whole log is in memory: every line ever said here). `floor`:
+  /** A page of chat history, paged back from `before` (each page in sequence order, oldest first; the whole log is in memory). `floor`:
    *  speech is arrival-only (R 10-18), so a say at or below this log seq isn't read back (null = an admin: every say). */
   readHistory({ before = Infinity, after = -Infinity, limit = 50, verbs = null as Set<string> | null, floor = Infinity as number | null }) {
     // the whole log is in memory (live.entries): page back through every chat line ever said, not the ones heard since

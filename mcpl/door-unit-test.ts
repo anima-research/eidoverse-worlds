@@ -15,7 +15,7 @@ const ok = (c: boolean, what: string, got?: unknown) => { if (!c) { fails++; con
 for (const refused of [true, false]) {
   const ended: string[] = []; let asked: unknown = null;
   const ag: any = { name: "me", lastRefusal: null as any, animEnded: (why: string) => ended.push(why), knockDown: () => ended.push("(fell)"),
-    puppet: (to: string, p: unknown) => { asked = { to, p }; if (refused) ag.lastRefusal = { ts: Date.now(), text: "they said no" }; } };
+    puppet: (to: string, p: unknown) => { asked = { to, p }; if (refused) ag.lastRefusal = { ts: Date.now(), text: "u-other said no" }; } };
   const out: any = await handleTool({ agent: ag } as any, "anim", { ragdoll: true, target: "u-other" });
   ok(JSON.stringify(asked) === JSON.stringify({ to: "u-other", p: { ragdoll: true } }) && ended.length === 0 && !!out.isError === refused,
     `anim {ragdoll, target} ${refused ? "refused" : "passed on"}: your own anims go on`, { ended, out });
@@ -116,7 +116,7 @@ for (const kind of ["track", "clip"]) {
 { const ag: any = { socketRec: () => null, thingRef: () => ({ id: "crate-0a1b2c3d" }), foldRecord: () => ({}), socketsOf: () => [], mounts: new Map(),
     myOccupancy: null, name: "me", handle: (id: string) => id.slice(0, 10) };
   const out: any = await handleTool({ agent: ag } as any, "attach", { to: "crate" });
-  ok(out.isError && out.content[0].text.includes(`edit {id: "crate-0a1b", set: {"sockets.seat|pos|1": 0.5}}`), "attach's no-seat refusal gives the whole edit call", out.content[0].text); }
+  ok(out.isError && out.content[0].text.includes(`edit {id: "crate-0a1b", set: {"sockets.seat|body": true}}`), "attach's no-seat refusal gives the whole edit call", out.content[0].text); }
 
 // the door's seat lines name the door's way off, not a person's X, get up or jump
 { const { describeBody, bodyOf } = await import("../shared/sockbody.js");

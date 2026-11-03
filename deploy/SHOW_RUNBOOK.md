@@ -18,7 +18,7 @@ JOIN_TOKEN=<door-key> RECORD_FRAMES=1 UPLOAD_CAP_MB=30 PORT=8940 \
 | `RECORD_FRAMES` | `1` = append stage frames + roster deltas to `worlds/<w>/frames-<ts>.jsonl`. Clients see a ⏺ notice at join. | `1` |
 | `UPLOAD_CAP_MB` | Per-upload size cap (default 20). Orrery's `EIDOVERSE_MAX_MB` and nginx `client_max_body_size` must move with it. | 30 |
 | `EIDOVERSE_DIR` | eidoverse-video checkout (asset library). | box path |
-| `CSP_CONNECT_EXTRA` | Extra origins the page may connect to (space-separated `https://`/`wss://` origins: an external voice or TTS endpoint). Absent: the server's own origin and loopback only (server/csp.ts). | unset unless voice runs off-box |
+| `CSP_CONNECT_EXTRA` | Extra origins the page may connect to (space-separated `https://`/`wss://` origins: an external voice or TTS endpoint). Absent: the server's own origin, loopback, the orrery origin (`ORRERY_ORIGIN`) and, for captions, the portal (server/csp.ts). | unset unless voice runs off-box |
 | `SERVER_OPERATORS` | The server operators, by account (`human:discord:<id>`; `/whoami` shows yours), comma-separated. A bare name is refused loudly at boot (the server still starts with the rest, or with the setup link if none is left). Replaces `WORLD_ADMIN`, still read for one release with a boot warning: docs/TRANSLATING-OLD-WORLDS.md "Upgrading a main-era server". | the show's operators |
 
 ## URLs
@@ -83,6 +83,6 @@ One instance per world (PORT=9224 etc. for a second). Keep the Mac awake
 ## After
 
 - Archive: the world's directory `worlds/<world>/` (its signed log `world.jsonl`, the moderator log `world.mod.jsonl`,
-  `frames-<ts>.jsonl`) + the server's custody key (it signs the log) + `assets/opt/store/` = the complete performance. Copy all three off-box same night.
+  `frames-<ts>.jsonl`) + the server's custody key (it signs the log) + `assets/opt/store/` = the complete record on this box (poses, never audio); the spoken performance lives in the Discord voice channel, so record the stage separately. Copy all three off-box same night.
 - Replay/machinima: frames file is `{roster|frame}` JSONL at ~15Hz — feed to
   the eidoverse batch renderer (retroactive filming, DESIGN.md).

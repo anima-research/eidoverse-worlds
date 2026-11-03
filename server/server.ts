@@ -17,7 +17,7 @@ import { TRUST_NAMES } from "./config.ts";
 const RENAME_COOLDOWN_MS = Math.max(0, Number(process.env.RENAME_COOLDOWN_DAYS ?? 7)) * 86400000;
 import { PORT, HOST, JOIN_TOKEN, RENDERER_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, MSG_RATE, FRAME_MS, FRAME_SKIP_BUFFERED, SNAP_TIMEOUT_MS, SNAP_SWEEP_GRACE_MS, SNAP_SWEEP_EVERY_MS } from "./config.ts";
 import { type HnSession, agentTokens, accountOf } from "./auth.ts";
-import { addrSanctionsFor, saveAddrSanctions } from "./moderation.ts";
+import { addrSanctionsFor, saveAddrSanctions, notPersisted } from "./moderation.ts";
 import { entryFor, doorOfWorld, whoOf, settleAccess, sweepAccess, setLoadedWorlds, NOT_YET_CLOSE, type Expel } from "./access.ts";
 import { isOperator, mintSetupToken } from "./operators.ts";
 import { setupLine } from "./setup.ts";
@@ -252,8 +252,8 @@ registerSystem({ name: "seat-store-poll", everyMs: 5000, fn: () => {
   }
 } });
 
-// The engine's heartbeat: every world's sim advances and its rests log on this cadence, not inside whoever's request
-// comes next (DESIGN-physics-responsiveness §1). FRAME_MS is the finest beat the scheduler has; the pass is bounded by
+// The engine's heartbeat: every world's sim advances and its rests log on this cadence, not only inside whoever's request
+// comes next (a request still settles what is due before it writes: authority.js settleSim/returnDue) (DESIGN-physics-responsiveness §1). FRAME_MS is the finest beat the scheduler has; the pass is bounded by
 // engine ticks, so a stall catches up over several beats.
 registerSystem({ name: "physics", everyMs: FRAME_MS, fn: () => {
   for (const w of worlds.values()) { try { w.log?.settle(); } catch (err) { console.error(`[world:${w.name}] physics settle`, err); } }
@@ -1046,8 +1046,8 @@ const server = Bun.serve({
           break;
         }
         // ── SFU signaling (VOICE_TRANSPORT=sfu) ──────────────────────────
-        // Deliberately SEPARATE verbs from `rtc`: rtc is client↔client and
-        // routes by `to`, whereas here one end IS the sequencer, so there is no
+        // Deliberately SEPARATE verbs from the old client↔client `rtc` (gone): that
+        // routed by `to`, whereas here one end IS the sequencer, so there is no
         // recipient to address and no fanout to get wrong. Same properties
         // though — never logged, SDP-sized cap, dropped if the leg is gone.
         case "sfu-answer": {
@@ -1239,7 +1239,8 @@ const server = Bun.serve({
             .then((r: any) => {
               if (!r?.ok) { ws.send(JSON.stringify({ type: "error", error: r?.refused?.reason ?? "that mute was refused" })); return; }
               sanctionSweep(w);
-              guestSanctionByAddress(w, actorIdOf(c), c.id, muted ? "mute" : "unmute", target, typeof msg.reason === "string" ? msg.reason : undefined);   // R 10-07
+              const unsaved = guestSanctionByAddress(w, actorIdOf(c), c.id, muted ? "mute" : "unmute", target, typeof msg.reason === "string" ? msg.reason : undefined);   // R 10-07
+              if (unsaved) ws.send(JSON.stringify({ type: "mod", text: `that mute's address record is ${notPersisted(unsaved)}` }));   // bot #260 #146
               if (muted) for (const t of w.clients) if (t.actorId === target) { try { t.ws.send(JSON.stringify({ type: "moderated", verb: "mute", by: c.id, you: true, channels: ["voice"], until: r.until })); } catch { /* gone */ } }
               // moderation is world-visible by design: a silence nobody can see the cause of is indistinguishable from a bug
               const name = [...w.clients].find((t) => t.actorId === target)?.id ?? target;

@@ -51,7 +51,7 @@ function bodyGate(w, from, to, kind, extra = {}) { syncDefault(w);
   const d = decideAs(P, from, extra.sponsor, to, cls);
   // allow = yes regardless, a cool-down too: it was earned from people who said no, and this one said always yes (L15)
   if (!d.listed && P.throttle?.[`${from}:${cls}`] > now) { ringPush(P, { ts: now, from, to, cls, verdict: "refused" }); w.presenceDirty = true;
-    return { ok: false, code: "cool-down", class: cls, reason: `${from} is on a cool-down for ${cls} after repeated refusals (moderator log)`, fix: COOL_FIX }; }
+    return { ok: false, code: "cool-down", class: cls, reason: `${from} is on a cool-down for ${cls} (${Math.ceil((P.throttle[`${from}:${cls}`] - now) / 60000)} min left) after repeated refusals`, fix: COOL_FIX }; }
   if (d.mode === "deny") { if (!extra.uncounted) noteRefusal(w, from, to, cls, now); tellTarget(w, from, to, cls, d); ringPush(P, { ts: now, from, to, cls, verdict: "refused", why: d.why }); w.presenceDirty = true;
     return { ok: false, code: "consent", class: cls, reason: C.refusalWords(to, cls), fix: C.REFUSAL_FIX }; }   // the why is the target's (ring) only
   return { ok: true, consent: "allowed", deliver: () => { ringPush(P, { ts: now, from, to, cls, verdict: "allowed" }); deliver(w, from, to, kind, cls, extra); } };
@@ -68,7 +68,7 @@ export function reachAdmits(w, from, to, cls, { point = null, limb = null, quiet
   if (cls !== "touch" && cls !== "intimate") return { ok: false, code: "shape", class: cls, reason: `a reach is touch or intimate, not '${cls}'` };
   const held = P.reaches?.[from];
   let r, toldTarget = false;
-  if (!C.decide(P, from, to, cls).listed && P.throttle?.[`${from}:${cls}`] > now) r = { code: "cool-down", reason: `${from} is on a cool-down for ${cls} after repeated refusals (moderator log)`, fix: COOL_FIX };
+  if (!C.decide(P, from, to, cls).listed && P.throttle?.[`${from}:${cls}`] > now) r = { code: "cool-down", reason: `${from} is on a cool-down for ${cls} (${Math.ceil((P.throttle[`${from}:${cls}`] - now) / 60000)} min left) after repeated refusals`, fix: COOL_FIX };
   else { const d = C.decide(P, from, to, cls);
     if (d.mode === "allow") { if (held?.to === to) held.seen = true;   // landed: a hand let go of ends the record (reachLetGo)
       return { ok: true, consent: "allowed" }; }

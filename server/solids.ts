@@ -4,7 +4,7 @@
 // The authority already reads a catalogue entry's `solids` (boxes in the model's frame; shared/protocol/authority.js obbs): the lab's
 // shelf and swing frame are hand-written that way. This measures them for a library model, from the same triangles the
 // client renders:
-//   1. surface voxels: every triangle is sampled densely enough that no cell it crosses is missed; each cell keeps the
+//   1. surface voxels: every triangle is sampled (3 vertices + centroid of sub-step pieces) to within a corner sliver smaller than half a cell; each cell keeps the
 //      tight bounds of the geometry inside it (a floor slab's cell ends at the floor's top, not the cell's);
 //   2. the outside: empty cells reachable from the box's boundary (6-connected) are outside. Empty cells NOT reachable
 //      are enclosed (a crate's inside, a closed hut's) and count as solid: an authority can't take a body into a closed box.

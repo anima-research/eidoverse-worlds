@@ -28,7 +28,7 @@ import { worlds, type World, type Client, authorityNow } from "./world.ts";
 import { stateSampleError } from "../shared/presencewire.js";
 import { screenshots } from "./screenshots.ts";
 import { REMOVED_VERBS } from "../shared/protocol/verbspec.js";
-import { globalBans, saveGlobalBans, banKey, ADDR_BAN_MS, bansLiftedBy, globalBansText, takePending } from "./moderation.ts";
+import { globalBans, saveGlobalBans, banKey, ADDR_BAN_MS, bansLiftedBy, globalBansText, takePending, notPersisted } from "./moderation.ts";
 import { isOwner } from "../shared/protocol/roles.js";
 
 /** Who a presence message (puppet, bodydrag, typing) is FOR (security pass 3, H2). A sender that knows the
@@ -95,8 +95,9 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
   "debug": ({ c, ws, now, expel }, msg) => {
     // The flight recorder (World.debugLog): why things bounced —
     // denials, rejections, rate limits, reaction outcomes. Open to
-    // spectators for the same reason history is: the log is public,
-    // so the reasons things failed to reach it are public too.
+    // spectators for the same reason history is: the log's acts are public
+    // (speech is arrival-only; the recorder holds no say text), so the
+    // reasons things failed to reach it are public too.
     if (!c.world) return;
     const limit = pageLimit(msg.limit);
     if (msg.script != null) {
@@ -323,7 +324,10 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       ws.send(JSON.stringify({ type: "error", error: "attest names no recent say of yours" }));
       return;
     }
-    if (Date.now() - (e.ts ?? 0) > LIMITS.ATTEST_FRESH_MS) return;   // stale receipt: refuse
+    if (Date.now() - (e.ts ?? 0) > LIMITS.ATTEST_FRESH_MS) {   // stale receipt: refused, and said (bot review #260 469)
+      ws.send(JSON.stringify({ type: "error", error: "attest is stale (too long after the say)" }));
+      return;
+    }
     const text = String((e.args as Record<string, unknown>)?.text ?? "");
     const want = new Bun.CryptoHasher("sha256").update(text).digest("hex");
     if (digest !== want) {
@@ -464,9 +468,9 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       const gone = bansLiftedBy(globalBans, id, accts, fold);
       for (const k of gone) delete globalBans[k];
       gone.push(...takePending(id, fold));
-      saveGlobalBans();
+      const unsaved = saveGlobalBans();   // the lift holds in memory only when the file wasn't written: said (bot #260 #146)
       console.log(`[mod] ${c.id} lifted global ban on ${id}${gone.length ? ` (${gone.length} record(s))` : " (was not banned)"}`);
-      ws.send(JSON.stringify({ type: "mod", text: gone.length ? `${id} is no longer banned globally` : `${id} was not globally banned` }));
+      ws.send(JSON.stringify({ type: "mod", text: (gone.length ? `${id} is no longer banned globally` : `${id} was not globally banned`) + (unsaved ? ` (${notPersisted(unsaved)})` : "") }));
       return;
     }
     // global-ban (security review 10-18 H1): a ban is filed against what the DOOR checks — the target's proven account, or a
@@ -497,7 +501,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     for (const account of accounts) globalBans[banKey(account)] = { by: c.id, ts, name: id, account, ...(until ? { until } : {}), ...(reason ? { reason } : {}) };
     if (accounts.size) takePending(id, fold);   // a pre-account ban under this name is bound to a person now
     for (const addr of guestAddrs) globalBans[banKey(null, addr)] = { by: c.id, ts, name: id, addr, until: Math.min(ts + ADDR_BAN_MS, until ?? Infinity), ...(reason ? { reason } : {}) };
-    saveGlobalBans();
+    const unsaved = saveGlobalBans();   // the ban holds in memory only when the file wasn't written: said in the reply (bot #260 #146)
     let expelled = 0;
     for (const w2 of worlds.values()) {
       for (const other of [...w2.clients]) {
@@ -508,7 +512,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       }
     }
     console.log(`[mod] ${c.id} banned ${id} globally (${accounts.size} account(s), ${guestAddrs.size} guest address(es))${reason ? ` (${reason})` : ""}${expelled ? ` — ${expelled} session(s) disconnected` : ""}`);
-    ws.send(JSON.stringify({ type: "mod", text: `${id} is banned from all worlds${until ? ` until ${new Date(until).toISOString().slice(0, 10)}` : ""}${reason ? ` — ${reason}` : ""}${expelled ? ` (${expelled} live session${expelled === 1 ? "" : "s"} disconnected)` : ""}` }));
+    ws.send(JSON.stringify({ type: "mod", text: `${id} is banned from all worlds${until ? ` until ${new Date(until).toISOString().slice(0, 10)}` : ""}${reason ? ` — ${reason}` : ""}${expelled ? ` (${expelled} live session${expelled === 1 ? "" : "s"} disconnected)` : ""}${unsaved ? ` (${notPersisted(unsaved)})` : ""}` }));
     return;
   }
 };
