@@ -67,7 +67,7 @@ tp.calls.length = 0; click(0); await new Promise((r) => setTimeout(r, 0));
 const put = tp.calls.find((c: any[]) => c[0] === 'put');
 check('holding the crate, left-clicking the desk puts it down there, on its top', !!put && put[1] === 'crate' && Math.abs(put[2][0]) < 0.8 && Math.abs(put[2][1] + 3) < 0.4, JSON.stringify(tp.calls));
 
-// ---- holding the crate, a left-click on another thing to pick up still picks it up (its own first use); the menu offers both
+// ---- holding the crate, a left-click on another thing to pick up still picks it up (its own first use); the menu offers put-on (pick up is the left click's first use, never a menu item while a thing is held)
 thing('ball', [0.3, 0.3, 0.3], [0, 0.8, -2], { label: 'ball' });   // in the line of the click, in front of the desk
 tp.calls.length = 0; click(0); await new Promise((r) => setTimeout(r, 0));
 check('holding the crate, left-clicking a ball picks the ball up (its own first use)', JSON.stringify(tp.calls) === '[["grab","ball"]]', JSON.stringify(tp.calls));

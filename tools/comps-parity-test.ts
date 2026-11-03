@@ -6,8 +6,10 @@
 // very state-change event that folds the rename — synchronously, inside the subscriber, before any paint — the label the
 // Hierarchy row reads (editPanelsDebug().hierFields() tree rows → crate.rename) must equal the label the Inspector reads
 // (inspFields() path flags.label). Before C7c the row read world.js's `comps` Map (synced by the realizer) and the Inspector
-// read the fold: two caches, updated at different moments. Mutation that MUST go red: delay models.js's syncComps by a
-// tick (`setTimeout(() => syncComps(id))` in onComp) — the row then reads the old label while the Inspector reads the new.
+// read the fold: two caches, updated at different moments (that Map is gone: world.js bagOf is the one record). Mutation that
+// MUST go red: give the row a cache beside the fold — in editpanels.js hierarchyFields, `const lab = bagOf(r.id)?.label;` →
+// `const lab = ((globalThis.__lab ??= {})[r.id] ??= bagOf(r.id)?.label);` — the row then reads the old label while the
+// Inspector reads the new (verified red 2026-11-02).
 // Hygiene (memory reference_browser_probe_hygiene.md): wait on conditions, every gate prints its stage, teardown in finally.
 import { scratchBench, mkCheck } from './harness.ts';
 import { tryUntil } from './protocol/wait.ts';

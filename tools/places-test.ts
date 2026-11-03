@@ -5,7 +5,7 @@
 // description of itself (a `building` object in its glTF extras — rooms,
 // doors, seats, arrivals) and its `places` component, which overrides it
 // name by name and which anyone with builder rank can change at any time.
-// Here, through the real MCP tools (walk_to {to}, name_place, look), a real
+// Here, through the real MCP tools (move {to}, name_place, look), a real
 // agent on an isolated sequencer:
 //   - reads the model's places, and is told which room it stands in;
 //   - walks to a room, a door, a thing's entrance, and a place by label;
@@ -91,9 +91,9 @@ try {
   check("...move's to: \"?\" too (walk_to's words)", /tower\/upstairs/.test(await tool("move", walkWords({ to: "?" }))));
 
   let r = await tool("move", walkWords({ to: "tower", run: true }));
-  check("walk_to a thing goes to its entrance", /arrived at tower\/entrance/.test(r) && near(a.pos.z, 5, 0.6), `${r} ${at()}`);
+  check("move {to} a thing goes to its entrance", /arrived at tower\/entrance/.test(r) && near(a.pos.z, 5, 0.6), `${r} ${at()}`);
   r = await tool("move", walkWords({ to: "tower/upstairs", run: true }));
-  check("walk_to thing/room reaches the room, on its own floor — up the stair",
+  check("move {to} thing/room reaches the room, on its own floor — up the stair",
     /arrived at tower\/upstairs/.test(r) && near(a.pos.y, gy + UPPER) && a.pos.x < 1.55, `${r} ${at()}`);
   const look1 = await tool("look", {});
   check("...and look says which room the body is in", /You are in the upper room \(tower\/upstairs\)/.test(look1),
@@ -129,7 +129,7 @@ try {
     JSON.stringify(a.entities.get(sceneId(a, "tower"))?.places));   // "tower" is its label: the authority minted its id (R 10-17)
   await tool("move", walkWords({ to: "entrance", run: true }));
   r = await tool("move", walkWords({ to: "the top of the stair", run: true }));
-  check("...and walk_to reaches it by its label, from outside, up the stair", /arrived at tower\/landing/.test(r) && near(a.pos.y, gy + UPPER) && near(a.pos.x, 2.2, 0.15), `${r} ${at()}`);
+  check("...and move {to} reaches it by its label, from outside, up the stair", /arrived at tower\/landing/.test(r) && near(a.pos.y, gy + UPPER) && near(a.pos.x, 2.2, 0.15), `${r} ${at()}`);
 
   // a raw comp edit: re-point the name, retire a model place
   const cur = { ...a.entities.get(sceneId(a, "tower")).places, landing: { at: [-2, FLOOR, -2], label: "the corner" }, upstairs: null };
@@ -157,7 +157,7 @@ try {
   await friend.walkTo(-1.5, -1.5, true);
   r = await tool("move", walkWords({ to: "friend", run: true }));
   const d = Math.hypot(a.pos.x - friend.pos.x, a.pos.z - friend.pos.z);
-  check("walk_to a person stops short of them, beside them", /arrived at friend/.test(r) && d > 0.5 && d < 1.3, `${r} — ${d.toFixed(2)}m apart`);
+  check("move {to} a person stops short of them, beside them", /arrived at friend/.test(r) && d > 0.5 && d < 1.3, `${r} — ${d.toFixed(2)}m apart`);
 
   // review r3 F4: a person whose name is a thing's doesn't capture the walk — things and places come first
   {

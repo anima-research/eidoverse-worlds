@@ -1,6 +1,6 @@
 // bun tools/ground-now-probe.mjs — World › ground shows what the world HAS ("world: …") above the composer dials
 // (which default to meadow and read like a report — the owner and I misread galleta_dry as meadow, 09-24). Grows two
-// different plantings through the real grass verb, then mows, and reads the line after each.
+// different plantings through a real `set @world grass`, then mows, and reads the line after each.
 import { launchBrowser, ownedWorld, checker } from './probe-harness.mjs';
 const { check, done } = checker();
 const world = await ownedWorld({ owner: 'groundnow', env: { TRUST_NAMES: '1' } });   // the page owns staging, so its @world writes are admitted

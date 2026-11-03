@@ -1,4 +1,4 @@
-// snap-at-probe — `snapshot {at: <thing>}` frames a placed thing from where the asker stands.
+// snap-at-probe — `screenshot {at: <thing>}` frames a placed thing from where the asker stands.
 //
 //   bun tools/snap-at-probe.mjs          (owns its scratch sequencer; one headless renderer)
 //
@@ -70,7 +70,7 @@ try {
   const missing = await fetch(`${world.origin}/snap?world=${W}&follow=agent&at=nope`, AUTH);
   clearInterval(keep);
   check('control: the first-person snap does not see the crate behind the agent', first >= 0 && first < 0.02, `red=${first}`);
-  check('snapshot at: the crate puts the red crate in the middle third of the frame', at > 0.25, `red=${at}`);
+  check('screenshot at: the crate puts the red crate in the middle third of the frame', at > 0.25, `red=${at}`);
   const said = missing.ok ? '' : await missing.text();
   check('an unknown thing is a clear refusal, not a picture of nothing', !missing.ok && /not a placed thing/.test(said), `${missing.status} ${said.slice(0, 120)}`);
 } finally {

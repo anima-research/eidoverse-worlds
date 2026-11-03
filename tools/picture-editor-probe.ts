@@ -17,10 +17,12 @@
 //      message kept and the control gone, depending on when the echo landed);
 //   E. `take down` commits null: the quad is gone — and its line
 //      survives the echo's repaint too (the echo AGREES with what was said);
-//   F. the line is about ONE entity: remove the console, spawn another under
-//      the same id, reopen — the replacement has no line (Mica, round 2:
-//      the note map was keyed by id alone and the successor opened with its
-//      predecessor's "taken down");
+//   F. the line is about ONE entity: remove the console, spawn a replacement
+//      (its own minted id), reopen — it opens with no inherited line (Mica,
+//      round 2: the note map was keyed by id alone and a successor under the
+//      SAME id opened with its predecessor's "taken down"; ids are minted by
+//      the authority now, so that regression is unreachable — F keeps the
+//      replacement's clean line on record);
 //   G. the line is about ONE bag: a refusal is left in the block, then
 //      someone ELSE hangs a picture through the verb — the echo disagrees
 //      with what the line was about, so the line retires rather than reading
@@ -146,7 +148,7 @@ try {
   s = await until(pg, (x) => x.part, 90_000);
   await pg.evaluate((id: string) => import('/lib/scenegraph.js').then((m: any) => m.sceneSelect(id)), ID);
   s = await until(pg, (x) => x.block);
-  check('F. a new console under the same id opens with no inherited line', s.block && (s.msg ?? '') === '' && !s.down && !s.hung, JSON.stringify({ msg: s.msg, down: s.down, hung: s.hung }));
+  check('F. a replacement console (its own minted id) opens with no inherited line', s.block && (s.msg ?? '') === '' && !s.down && !s.hung, JSON.stringify({ msg: s.msg, down: s.down, hung: s.hung }));
 
   // G. a line about one bag retires when someone else changes the bag
   await pg.fill('[data-pe="src"]', 'http://example.com/trollface.png');

@@ -6,8 +6,8 @@
 // promises: a frame can never leave the viewport (the -8 margins, on drag AND on resize), the edge/corner
 // hit-tester tells edges from corners and reaches 6px outside a frame (resizeZoneAt is ui.js's arrange-exit
 // guard), a frame resting on an edge rides that edge through a window resize, z-indexes stay inside the
-// [10..25] band under the dock, a LAYOUT_VERSION bump purges every stale ew-frame-* save ONCE, and Esc
-// closes/restores the open set only when nothing else owns Esc (a focused field, a pop, claimEscape).
+// [10..25] band under the dock, a LAYOUT_VERSION bump purges every stale ew-frame-* save ONCE, and Tab
+// closes/restores the open set only when nothing else owns the key (a focused field, a pop, claimEscape); Esc never does.
 //
 // The persisted-layout purge runs at module scope, so localStorage is seeded BEFORE the import; every
 // assertion about it is therefore a statement about what the import did.

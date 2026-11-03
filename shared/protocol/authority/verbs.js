@@ -96,7 +96,7 @@ const SAY_VERBS = {
   // `captioners {ids}` names who may caption it (anyone who may edit the screen may too); nobody else, and no `set` by
   // hand, writes `captions`. The rules are shared/captions.js's: a session, a strictly rising n within it, a leg
   // generation (the server stamps `gen` from the connection: a superseded captioner can't write over its successor),
-  // and `end` to clear the screen. The bag keeps the newest lines (CAPTIONS_MAX_LINES). ----
+  // and `end` to clear the screen. The bag holds the current line (history is the log). ----
   caption: (w, actor, a) => commit(w, actor, "caption", a, (ctx) => {
     const n = normalizeCaptionArgs(a); if (!n.ok) refuse("shape", n.why, "caption {id, session, n, t0, t1, text, speaker?, title?} | {id, session, end: true}");
     const id = n.args.id; const e = ctx.st.entities[id]; if (!e) refuse("not-found", `nothing here called ${id}`, "look lists what's here");

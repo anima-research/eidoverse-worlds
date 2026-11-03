@@ -6,9 +6,9 @@
 // 1. the hash      key order and prose (note) never move it; meaning does
 // 2. the shape     blueprintRefusal's rules, each refused by name
 // 3. the link      expand / overridesOf / rebase, a conflict included
-// 6. the door's publish (@world library:<hash>) and create {from: <hash>, at} on a scratch world
+// 6. the door's publish (@world blueprints:<hash>) and create {from: <hash>, at} on a scratch world
 //    (tools/protocol/scratchworld.ts): the record, the copy's tree, its local poses, one act, the door's undo
-// 7. the agent's blueprints / blueprint_place / look() over the library, its door the scratch door
+// 7. the agent's blueprints / create {from} / look() over the library, its door the scratch door
 //
 // Sections 1–3 are pure functions of shared/blueprint.js and stay as they were (NOTE: expand/overridesOf/rebase have
 // no runtime caller today). The v1 sections went with the v1 runtime (protocol v1 removed, 2026-10-07): 4 (the v1
@@ -309,7 +309,7 @@ let HV = '';   // the record's hash, "sha256:<hex>"
 }
 
 // ---- 7. the agent's tools over the library ------------------------------------------------
-console.log('\n7. the text tier — blueprints, blueprint_place, look() (mcpl), the agent\'s door the scratch door');
+console.log('\n7. the text tier — blueprints, create {from}, look() (mcpl), the agent\'s door the scratch door');
 {
   const { WorldAgent } = await import('../mcpl/agent.ts');
   const { HANDLERS } = await import('../mcpl/tools.ts');

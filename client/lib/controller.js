@@ -354,7 +354,7 @@ addEventListener('keydown', (e) => {
   if (e.key === 'Enter') { chat.open(); e.preventDefault(); return; }
   if (e.code === 'Space') e.preventDefault();      // space scrolls the page otherwise
   // keys: toolKeys — a chord (Ctrl+D duplicates, Ctrl+Z undoes) never walks the body; Ctrl itself is held (dive: I97)
-  if (!(e.ctrlKey || e.metaKey) || e.code === 'ControlLeft' || e.code === 'ControlRight') keys.add(e.code);
+  if (!(e.ctrlKey || e.metaKey) || e.code === 'ControlLeft' || e.code === 'ControlRight') keys.add(e.code);   // keys: toolKeys
   bus.emit('key', e);
 });
 addEventListener('keyup', (e) => keys.delete(e.code));
@@ -377,9 +377,9 @@ bus.on('key', (e) => {
   // the body's toggles yield while editing: X/F/G are the editor's there
   // (remove / find / move tool) and a chorded Z is undo, never 'lie'
   if (buildingNow?.()) return;
-  if (e.ctrlKey || e.metaKey) return;
+  if (e.ctrlKey || e.metaKey) return;   // keys: none — the walk's keys, outside build mode (a chord is the browser's)
   // E boards the nearest climb route's end, or lets go (upstream main #248); the use prompt then stands aside (worldHandled)
-  if (e.code === 'KeyE' && !e.altKey && !CONFIG.spectate && !photoMode && !myState.seat && myState.locomotion?.mode !== 'pilot') {
+  if (e.code === 'KeyE' && !e.altKey && !CONFIG.spectate && !photoMode && !myState.seat && myState.locomotion?.mode !== 'pilot') {   // keys: none — outside build mode
     if (climbing()) { cancelClimb(); e.worldHandled = true; }
     else if (startClimb(myState.pos)) { e.worldHandled = true; flashHint('climbing — E to let go'); }
   }
@@ -436,7 +436,7 @@ canvas.addEventListener('mousedown', (e) => {
   //   left on bare space  orbit (build.js says so: 'edit-bare-press')       wheel  dolly      F  frame the selection
   if (buildingNow()) {
     if (e.button === 1) { e.preventDefault(); dragging = true; dragMode = 'pan'; }
-    else if (e.altKey) { e.preventDefault(); dragging = true; dragMode = e.button === 2 ? 'dolly' : 'orbit'; }
+    else if (e.altKey) { e.preventDefault(); dragging = true; dragMode = e.button === 2 ? 'dolly' : 'orbit'; }   // keys: editCamera
     else if (e.button === 2) { dragging = true; dragMode = 'orbit'; }
     if (dragging) dragBtn = e.button;
     return;
@@ -444,7 +444,7 @@ canvas.addEventListener('mousedown', (e) => {
   if (e.button === 2 || e.button === 0) { dragging = true; dragBtn = e.button; dragMode = 'orbit'; }
 });
 bus.on('edit-bare-press', () => { dragging = true; dragBtn = 0; dragMode = 'orbit'; });   // a left press on nothing, in build mode
-addEventListener('keyup', (e) => { if (e.key === 'Alt' && buildingNow()) e.preventDefault(); });   // a bare Alt release would focus the browser's menu bar mid-edit
+addEventListener('keyup', (e) => { if (e.key === 'Alt' && buildingNow()) e.preventDefault(); });   // keys: editCamera — a bare Alt release would focus the browser's menu bar mid-edit
 canvas.addEventListener('auxclick', (e) => { if (e.button === 1) e.preventDefault(); });   // no autoscroll / paste on a middle press
 // set by build.js so the controller doesn't have to import it (build imports us)
 let buildingNow = () => false;
@@ -508,7 +508,7 @@ export function frameOn(point, radius = 1) {
 addEventListener('keydown', (e) => {
   if (e.code !== 'KeyM' || e.repeat) return;
   // bare M only: modified presses belong to the browser and the OS
-  if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+  if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;   // keys: none — bare M, outside build mode
   if (buildingNow() || isOverlayOpen() || chat.isOpen) return;
   if (locked) document.exitPointerLock();
   else relock();

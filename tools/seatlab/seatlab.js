@@ -3,9 +3,9 @@
 // it lives here and the client never imports it).
 //
 // Browser-loaded: import specifiers are ABSOLUTE (/lib/...), so the module
-// works served from anywhere — in practice POST /upload?as=script and
-// `await import('/library/eidoverse/assets/opt/store/scripts/<hash>.js')`,
-// the same receipts pipeline Phase A used. Pure math lives in
+// works served from anywhere — in practice an `upload {text}` request (act {verb: "upload", args: {text}}),
+// bound as script:<name> (docs/SCRIPTS.md), then `await import('/library/store/scripts/<hash>.js')`
+// from the browser console. Pure math lives in
 // /lib/seatcore.js where bun tests pin it; this file only observes scenes
 // and lab instances.
 //

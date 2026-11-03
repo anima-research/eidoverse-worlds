@@ -4,7 +4,7 @@
 //
 //   1. a typed say while the socket is down is queued for the reconnect (unchanged); a LIVE one (a transcript) is
 //      dropped and answered offline at once: queued, it would publish after the mic went off, with no mic check
-//   2. the spoken trio (spoken, utt, t0) rides the request, so the authority logs the say as voice-performed and the
+//   2. the spoken pair (spoken, utt) — and t0 when the caller has one — rides the request, so the authority logs the say as voice-performed and the
 //      attention policy keys on it; a say without it carries none
 // Same stub set as chat-resync-wire-test.
 import { GlobalRegistrator } from "@happy-dom/global-registrator";

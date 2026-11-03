@@ -44,6 +44,8 @@ const { makeFrame, getFrame, isLocked } = await import("../client/lib/windows.js
 const OLD = /export const ACTIONBAR_OLD_ID = '(\w+)';/.exec(await Bun.file(here("../client/lib/ui.js")).text())![1];
 const RENAMED_FRAME = JSON.stringify({ x: 336, y: 10, w: 352, h: 32 });
 localStorage.setItem("ew-dock-pins", JSON.stringify(["search", "profile", "world", "chat", OLD, "debug", "settings", "edit"]));
+// the pin list a FRESH install gets (ui.js), read from the source like OLD: the seed above is what a saved install reads instead
+const DEFAULT_PINS: string[] = JSON.parse(/const DEFAULT_PINS = (\[[^\]]*\]);/.exec(await Bun.file(here("../client/lib/ui.js")).text())![1].replace(/'/g, '"'));
 localStorage.setItem(`ew-frame-${OLD}`, RENAMED_FRAME);
 const ui = await import("../client/lib/ui.js");
 const { initDock, registerPanel, dockPins, toggleEMenu, makeSection, settingsFrame, paintPresence } = ui;
@@ -96,7 +98,7 @@ initDock([
   { id: "edit", label: "🔧", icon: "wrench", last: true, action: () => { editFired++; editOn = !editOn; }, active: () => editOn, gate: () => editGate },
 ]);
 await tick();   // initPanels' dynamic imports land and repaint
-// DEFAULT_LAYOUT opens world/chat/gestures at birth; every rail assertion below starts from CLOSED
+// DEFAULT_LAYOUT opens chat and the action bar (world starts closed; windows.js); every rail assertion below starts from CLOSED
 for (const id of ["chat", "world", "actions", "debug"]) getFrame(id)!.hide();
 bus.emit("frames");
 check("∃ leads the rail", dock().firstElementChild?.id === "hud");
@@ -105,7 +107,7 @@ check("profile leads the buttons (right under the ∃); the wrench closes the li
 // search sits between gestures and debug (owner, 10-01: "Search almost feels like a less-standard feature, so maybe
 // should be docked by default between gestures and debug"), pinned by default
 check("dock order follows the entry list, search between actions and debug", order().join() === "profile,chat,world,nofrx,actions,search,debug,edit", order().join());
-check("…and search is pinned by default (shown while the lantern is closed)", btn("search")!.hidden === false && JSON.parse(localStorage.getItem("ew-dock-pins") ?? '["search"]').includes("search"));
+check("…and search is pinned (seeded here; in DEFAULT_PINS for a fresh install), shown while the lantern is closed", btn("search")!.hidden === false && savedPins().includes("search") && DEFAULT_PINS.includes("search"));
 { // the search entry: the lantern prompt's way in, wearing the magnifying glass, its chord in the tooltip
   const { get: getAction, register: registerAction } = await import("../client/lib/actions.js");
   const s = btn("search")!;
@@ -122,8 +124,8 @@ check("…and search is pinned by default (shown while the lantern is closed)", 
     titles.chat === "Chat · Enter" && titles.debug === "Debug · F3" && titles.world === "World" && titles.actions === "Actions", JSON.stringify(titles));
   check("…the gated wrench: 'Builder mode · B — needs build rights in this world'", titles.edit === "Builder mode · B — needs build rights in this world", String(titles.edit));
 }
-check("built-ins are pinned by default: chat's button shows while its frame is closed",
-  !getFrame("chat")!.visible && btn("chat")!.hidden === false);
+check("built-ins are pinned (seeded here; chat is in DEFAULT_PINS for a fresh install): chat's button shows while its frame is closed",
+  !getFrame("chat")!.visible && btn("chat")!.hidden === false && DEFAULT_PINS.includes("chat"));
 check("an entry with no frame and no pin is hidden", btn("nofrx")!.hidden === true);
 // GREY, NOT GONE (R, 2026-09-11). A hidden affordance teaches nobody it
 // exists — which is how the wrench went missing from the rail for days.
@@ -373,8 +375,8 @@ check("the wrench has a row while gated open", !!row("edit"));
   // NEVER `on` AND `dead`. .on's brand ink and 2px edge-bar come later in the
   // sheet at equal specificity, so a dead+on button rendered as "active but
   // broken": 42% opacity in full brand colour. Reachable in the product —
-  // setBuildMode has no rights check and KeyB is ungated, so a builder can
-  // enter build mode and then lose rights mid-session. (round 5)
+  // a builder enters build mode and then loses rights mid-session (build.js
+  // setBuildMode gates only the `on` direction). (round 5)
   editOn = true; bus.emit("frames");
   check("a dead action button never also paints as active",
     btn("edit")!.classList.contains("dead") && !btn("edit")!.classList.contains("on"),

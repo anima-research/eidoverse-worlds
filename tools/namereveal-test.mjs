@@ -3,7 +3,7 @@
 //   bun tools/namereveal-test.mjs
 //
 // What must hold: N (bare, not autorepeat, not while typing in a field) starts the reveal, its keyup ends it; sources
-// are independent (the desktop key and a VR button — releasing one keeps the other's hold); the level ramps from where
+// are independent (the key and a second source, `xr`, which no controller binds today — releasing one keeps the other's hold); the level ramps from where
 // it is, reaching 1 and 0 in REVEAL_EASE_MS; the action is registered where every binding list reads (actions.js) with
 // its key; and N is bound NOWHERE else in the client (the reason it was chosen), nor are the VR reveal's buttons.
 import { fileURLToPath } from "node:url";
@@ -46,7 +46,7 @@ if (!R.err) {
   check('held: half-way (eased ½) at E/2, full at E', Math.abs(R.revealLevel(t + E / 2) - 0.5) < 1e-9 && R.revealLevel(t + E) === 1, `${R.revealLevel(t + E / 2)}`);
   R.setReveal('xr', true, t + 200);
   R.setReveal('key', false, t + 300);
-  check('two sources: releasing the key keeps the VR button’s hold', R.revealHeld() && R.revealLevel(t + 400) === 1, JSON.stringify(R.revealSources()));
+  check('two sources: releasing the key keeps a second source’s hold', R.revealHeld() && R.revealLevel(t + 400) === 1, JSON.stringify(R.revealSources()));
   R.setReveal('xr', false, t + 500);
   check('last source released: eases out, gone at E', !R.revealHeld() && R.revealLevel(t + 500 + E / 2) > 0 && R.revealLevel(t + 500 + E) === 0);
   R.setReveal('key', true, t + 1000); R.setReveal('key', false, t + 1000 + E / 4);

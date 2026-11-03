@@ -6,7 +6,7 @@ export const bus = {
   emit(t, p) { for (const f of handlers.get(t) ?? []) f(p); },
 };
 export const report = (what, e) => { throw new Error(`${what}: ${e}`); };
-export const defsRegistry = async () => ({ skyPresets: {}, skyClocks: {} });
+export const defsRegistry = async () => ({ skyPresets: {}, skyClocks: { paris: { tz: 'Europe/Paris', label: 'Paris' } } });   // one clock, so the clock select has a real option to try
 // editwrites.js: the panel's commit is ONE request (sendOps([{verb: 'sky', args}])), recorded as [verb, args]
 export const sendOps = async (ops) => { for (const o of [].concat(ops)) S.sent.push([o.verb, o.args]); return { ok: true }; };
 export const flashHint = () => {};

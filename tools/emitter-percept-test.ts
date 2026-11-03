@@ -65,8 +65,9 @@ const SMOKE = { effect: "smoke", at: [0, 0.25, 0] };
   check("...and claims no heat, light, sound or contact",
     !/(warm|heat\b|crackl|glow|smell)/i.test(out));
 
-  // an effect nobody has is refused at the door (effects are documents: an Essential's name or a stored address),
-  // so nothing unrenderable ever reaches a reader
+  // an effect nobody has is refused at the door (effects are documents: an Essential's name or a stored address), so
+  // nothing the door can refuse reaches a reader; an older `preset` or an unloaded document is the reader's fallback
+  // (particle_effects.js resolveParticles → ok: false, why)
   const plasma = await door.act("set", { id: "hearth", component: "particles", value: { effect: "plasma" } }, { who: "antra", at: T0, live: false });
   check("an effect that is no Essential and no address is refused at the door, naming the Essentials",
     !plasma.ok && plasma.refused?.code === "shape" && /isn't an Essentials effect/.test(plasma.refused.reason) && /\[hearth\][^\n]*emitting fire/.test(ag.look()), JSON.stringify(plasma.refused));

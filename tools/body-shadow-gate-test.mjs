@@ -132,14 +132,15 @@ console.log("ROUND 2 — the LIT warm (receiveShadow IS in the cache key) and th
   // S2-1: ON → (warm pending) → OFF → the warm lands: the body must END with the pref off
   const race = fakeAv();
   let release; const gate = new Promise((res) => { release = res; });
-  const on = mats.applyOwnBodyShadow(race, { pref: () => mats.myShadowPref(), lit: async (_l, get) => { get(); await gate; } });
-  mats.setMyShadowPref(true);
+  mats.setMyShadowPref(true);   // ON before the call, or read() is false and no warm ever pends (bot #298)
+  let pended = false;
+  const on = mats.applyOwnBodyShadow(race, { pref: () => mats.myShadowPref(), lit: async (_l, get) => { get(); pended = true; await gate; } });
   await Promise.resolve();
   mats.setMyShadowPref(false);
   const off = await mats.applyOwnBodyShadow(race, { pref: () => mats.myShadowPref() });
   release(); const first = await on;
-  check('pref ON then OFF while the warm was pending: the body does NOT cast afterwards', off === false && first === false && body(race).every((m) => !m.castShadow && !m.receiveShadow),
-    `first=${first} off=${off} casting=${body(race).filter((m) => m.castShadow).map((m) => m.name).join(',')}`);
+  check('pref ON then OFF while the warm was pending: the warm did pend, and the body does NOT cast afterwards', pended && off === false && first === false && body(race).every((m) => !m.castShadow && !m.receiveShadow),
+    `pended=${pended} first=${first} off=${off} casting=${body(race).filter((m) => m.castShadow).map((m) => m.name).join(',')}`);
 
   // the pref re-read AFTER the warm: ON at call time, OFF when the warm lands — no newer call in between
   const late = fakeAv();

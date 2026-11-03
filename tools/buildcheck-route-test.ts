@@ -1,7 +1,7 @@
 // bun tools/buildcheck-route-test.ts — the build check as a server and an
 // agent meet it: an upload answers at once with where its check will be (and
 // is never refused for what the check finds), GET /check serves the report
-// (cached after the first run), and the check_model tool reads it out.
+// (cached after the first run), and `measure {check: true}` reads it out.
 process.env.AGENT_BODY_ENGINE = "verlet";
 process.env.WORLD_TOKEN = "";
 const { boxes, buildGlb } = await import("./two-storey-fixture.ts");
@@ -45,7 +45,7 @@ try {
   await legacyVerb(a, "spawn", { id: "tower", lib: up.path, pos: [0, a.heightAt(0, 0), 0], yaw: 0 });
   await tryUntil("the agent holds the tower", () => a.entities.get(sceneId(a, "tower")), { ms: 2000, step: 50 });
   const said = await tool("measure", { check: true,  id: "tower" });
-  check("check_model reads it out for a placed thing: walk-in, floors, no problems, suggestions and the comp to name them",
+  check("measure {check: true} reads it out for a placed thing: walk-in, floors, no problems, suggestions and the comp to name them",
     /\[tower\].*walk-in; 2 floors/.test(said) && /No problems found/.test(said) && /Suggested places/.test(said)
     // the header names it as people do (its label); the act to paste names it by the id the authority minted (R 10-17: never
     // chosen by a writer, never renamed, and an exact id is the first thing every tool resolves)
@@ -66,7 +66,7 @@ try {
   const plain = await tool("measure", { check: true,  lib: wide.path });
   check("(the 0.45m-doored hall at its own size: no problems)", /No problems found/.test(plain), plain.slice(0, 300));
   const saidSmall = await tool("measure", { check: true,  id: "small" });
-  check("check_model on that hall placed at 0.6× checks it at 0.6×: its doorway is now narrower than a body",
+  check("measure {check: true} on that hall placed at 0.6× checks it at 0.6×: its doorway is now narrower than a body",
     /\[small\] .* at scale 0.6: walk-in/.test(saidSmall) && /narrower than a body/.test(saidSmall) && !/No problems found/.test(saidSmall), saidSmall.slice(0, 500));
   const slimPlain = await tool("measure", { check: true,  lib: slim.path });
   check("(the 0.25m-doored hall at its own size: too narrow)", /narrower than a body/.test(slimPlain), slimPlain.slice(0, 300));
@@ -74,7 +74,7 @@ try {
   check("...and the 0.25m-doored hall placed at 1.6× gets in: no narrow passage, every floor reachable",
     /at scale 1.6: walk-in/.test(saidBig) && !/narrower than a body/.test(saidBig) && /No problems found/.test(saidBig), saidBig.slice(0, 500));
   const viaLib = await tool("measure", { check: true,  lib: wide.path, scale: 0.6 });
-  check("check_model {lib, scale} is the same check before placing", /at scale 0.6/.test(viaLib) && /narrower than a body/.test(viaLib), viaLib.slice(0, 300));
+  check("measure {check: true, lib, scale} is the same check before placing", /at scale 0.6/.test(viaLib) && /narrower than a body/.test(viaLib), viaLib.slice(0, 300));
   const r6 = await (await fetch(`${h.BASE}${up.check}&scale=1.5`)).json() as any;
   const r1 = await (await fetch(`${h.BASE}${up.check}`)).json() as any;
   const room = (r: any) => Object.values(r.suggested.places).find((p: any) => p.min) as any;

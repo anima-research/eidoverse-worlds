@@ -36,7 +36,10 @@ for (const field of ["forward", "up"]) {
 const named = (text: string) => [...new Set((text.match(/(?<![\w-])-?[xyz](?=\s*\||\s*$|\s*,|\s*\)|\s+or\b)/g) ?? []).map((s) => s.trim()))];
 const help = COMPONENTS["look-at"].help as string;
 const fwd = /forward\?\s*\(([^)]*)\)/.exec(help)?.[1] ?? "";
+const up = /up\?\s*\(([^)]*)\)/.exec(help)?.[1] ?? "";
+check("the registry's help has a forward? clause and an up? clause", fwd !== "" && up !== "", help);   // (bot #652: an absent clause would make its loop below vacuous)
 for (const letter of named(fwd)) check(`the registry's help names forward '${letter}', and the door takes it`, verdict("forward", letter).ok, fwd);
+for (const letter of named(up)) check(`the registry's help names up '${letter}', and the door takes it`, verdict("up", letter).ok, up);
 const inRefusals = new Map<string, string>();
 for (const w of said) for (const letter of named(w)) if (!inRefusals.has(letter)) inRefusals.set(letter, w.trim().slice(0, 120));
 for (const [letter, w] of inRefusals) check(`a refusal names '${letter}', and the door takes it`, verdict("forward", letter).ok, w);

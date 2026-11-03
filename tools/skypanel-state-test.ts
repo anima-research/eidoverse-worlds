@@ -8,6 +8,7 @@
 // doesn't resolve, and a new log landing on top of your unsaved preview.
 
 import { fileURLToPath } from "node:url";
+import { tryUntil } from "./protocol/wait.ts";
 import { plugin } from "bun";
 const stub = fileURLToPath(new URL("./skypanel-stub.mjs", import.meta.url));
 plugin({
@@ -83,12 +84,18 @@ check("with nothing unsaved a new log is simply followed", you() === "" && slide
 // world control in the panel must commit what it shows: each option chosen, then ✓, is in what is sent. Local ones are exempt.
 console.log("SKY PANEL — every shared select commits what it shows");
 { const local = (sel: Element) => /local/.test(sel.getAttribute("aria-label") ?? "") || /local/.test((sel.closest(".row") as HTMLElement | null)?.title ?? "");
-  const dead: string[] = [];
+  // fillClocks fills the clock select from defsRegistry() (async): wait for the stub's clock to land
+  await tryUntil("the clock select filled", () => [...body.querySelectorAll("option")].some((o) => (o as HTMLOptionElement).value === "Europe/Paris"), { ms: 3000 });
+  const dead: string[] = []; const tried: string[] = [];
   for (const sel of [...body.querySelectorAll("select")] as HTMLSelectElement[]) { if (local(sel)) continue;
     const name = sel.closest(".row")?.querySelector(".nm")?.textContent ?? "?";
-    for (const o of [...sel.options].map((x) => x.value).filter(Boolean)) {
+    for (const o of [...sel.options].map((x) => x.value)) {
       sel.value = o; sel.dispatchEvent(new Event("change")); (body.querySelector("button.dirty") as HTMLButtonElement | null)?.click();
-      if (!JSON.stringify(S.sent.at(-1)?.[1] ?? {}).includes(JSON.stringify(o))) dead.push(`${name}=${o}`); } }
+      const sent = S.sent.at(-1)?.[1] ?? {}; tried.push(`${name}=${o}`);
+      // the clock's '' is "authored (slider)": the commit carries no clock and no tz (skypanel.js ck.onchange)
+      const ok = o === "" ? sent.clock === undefined && sent.tz === undefined : JSON.stringify(sent).includes(JSON.stringify(o));
+      if (!ok) dead.push(`${name}=${o}`); } }
+  check("(setup) the clock select offers the stub's clock and the authored option, among ≥ 6 options tried", tried.includes("clock=Europe/Paris") && tried.includes("clock=") && tried.length >= 6, tried.join(", "));
   check("no select whose choice the commit drops (the world select is gone: earth is the only sky world, and it isn't stored)", dead.length === 0, dead.join(", ")); }
 
 // bot review #260 43: sun and fill are registered sky fields; their sliders commit what they show

@@ -423,10 +423,11 @@ console.log("\ntrusted drafts (the ladder's second rung):");
 {
   const { DESCRIPTORS, materializedOf } = await import("../shared/protocol/descriptors.js");
   const BAD: Record<string, string> = { num: "zz", color: "zz", enum: "no-such-option" };
-  const tried: string[] = [], rowless: string[] = [], wrong: string[] = [];
+  const tried: string[] = [], rowless: string[] = [], wrong: string[] = [], skipped: string[] = [];
   for (const [card, d] of Object.entries<any>(DESCRIPTORS)) {
     for (const fd of d.fields) {
-      const ui = fd.ui; if (fd.path == null || !ui || ui.own || !BAD[ui.t] || (ui.t === "enum" && !ui.closed)) continue;
+      const ui = fd.ui; if (fd.path == null || !ui || !BAD[ui.t]) continue;
+      if (ui.own || (ui.t === "enum" && !ui.closed)) { skipped.push(`${card}.${fd.k}`); continue; }   // the row's own widget, or an open enum: nothing to refuse
       const v = materializedOf(card); if (card === "Path") v.points = [[0, 0, 0], [0, 0, 4]];
       const ent = { model: "crate.glb", pos: [0, 0, 0], yaw: 0, actor: "r", ts: 1, [d.key]: v };
       const g = inspectSchema(ent, "x").groups.find((gr: any) => gr.group !== "pos" && gr.fields.some((x: any) => x.k === fd.k && x.t === ui.t));
@@ -436,7 +437,7 @@ console.log("\ntrusted drafts (the ladder's second rung):");
       if (r.ops.length || !r.errors.length) wrong.push(`${card}.${fd.k}: ${JSON.stringify(r)}`);
     }
   }
-  check(`F2a every descriptor field refuses a bad value with an error and NO op (${tried.length} fields; no row on a bare seed: ${rowless.join(", ") || "none"})`,
+  check(`F2a every typed, non-own descriptor field refuses a bad value with an error and NO op (${tried.length} tried; ${skipped.length} skipped as own/open: ${skipped.join(", ") || "none"}; no row on a bare seed: ${rowless.join(", ") || "none"})`,
     tried.length >= 30 && !wrong.length, wrong.join("\n      "));
   const both = editOps(lamp, "l", { "light.color": "zz", "light.intensity": 5 });
   check("F2b a refused field drops alone: the valid field in the same edit still commits, the old colour untouched",

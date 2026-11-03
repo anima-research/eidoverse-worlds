@@ -9,7 +9,8 @@
 // done when the door answers ok. Until then it is PENDING: kept in memory,
 // kept on disk in the spool, and resent after a disconnect or a silent
 // timeout. The door refuses a duplicate n before anything is written
-// (shared/captions.js captionRefusal), so a resend can never write twice —
+// (shared/captions.js captionRefusal), so a resend can never write twice within
+// the session it was sent in (after an end or a takeover the line may land again) —
 // that refusal is read here as the receipt it is.
 //
 // ORDER. One line in flight at a time, FIFO, paced under the door's rate
@@ -47,7 +48,8 @@
 // before it is confirmed loses it.
 //
 // Captions are durable world testimony like `say`; `end` clears current
-// perception, not history. This client keeps nothing the world does not.
+// perception, not history. This client keeps the spool (every line it tried, with its
+// receipt) until it is acknowledged or overflowed.
 import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 import { normalizeCaptionArgs, mintSession } from '../../shared/captions.js';
 import { makeReplica } from '../../shared/protocol/replica.js';
@@ -157,7 +159,7 @@ export class WorldClient {
         const ent = this.screen();
         this.stageSpeaker = ent?.stage?.speaker;
         const me = msg.cut?.you; this.you = me ?? null; const listed = Array.isArray(ent?.captioners?.ids) && ent.captioners.ids.includes(me);
-        this.log(`joined "${this.opts.world}" as ${this.opts.actor} (${me ?? '?'}, ${msg.yourRights?.role ?? '?'}${listed ? `, a captioner of ${this.opts.screenId}` : `, NOT one of ${this.opts.screenId}'s captioners — ask whoever may edit it: set {id: "${this.opts.screenId}", component: "captioners", value: {ids: ["${me}"]}}`}); screen ${this.opts.screenId} ${ent ? 'present' : 'NOT PRESENT — place it first'}`);
+        this.log(`joined "${this.opts.world}" as ${this.opts.actor} (${me ?? '?'}, ${msg.yourRights?.role ?? '?'}${listed ? `, a captioner of ${this.opts.screenId}` : `, NOT one of ${this.opts.screenId}'s captioners — ask whoever may edit it: set {id: "${this.opts.screenId}", component: "captioners", value: {ids: [${[...(ent?.captioners?.ids ?? []), me].map((x: any) => JSON.stringify(x)).join(', ')}]}}`}); screen ${this.opts.screenId} ${ent ? 'present' : 'NOT PRESENT — place it first'}`);
         this.schedule();
       } else if (msg.type === 'error') {
         this.onError(String(msg.error ?? ''));

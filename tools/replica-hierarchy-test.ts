@@ -20,10 +20,10 @@ const check = (name: string, ok: boolean, detail = "") => {
 };
 
 const W = scratchWorld("hier").seed({
-  truck: { lib: "truck.glb", pos: [0, 0, 0], yaw: 0, comp: { sockets: { bed: { pos: [0, 1, 0] } } } },
-  crate: { lib: "crate.glb", pos: [0, 0, 0], yaw: 0, parent: { to: "truck", socket: "bed" } },
-  lantern: { lib: "lantern.glb", pos: [0, 0, 0], yaw: 0, parent: { to: "crate" } },
-  rock: { lib: "rock.glb", pos: [5, 0, 5], yaw: 0 },
+  truck: { model: "truck.glb", pos: [0, 0, 0], yaw: 0, sockets: { bed: { pos: [0, 1, 0] } } },
+  crate: { model: "crate.glb", pos: [0, 0, 0], yaw: 0, parent: { to: "truck", socket: "bed" } },
+  lantern: { model: "lantern.glb", pos: [0, 0, 0], yaw: 0, parent: { to: "crate" } },
+  rock: { model: "rock.glb", pos: [5, 0, 5], yaw: 0 },
 });
 // the truck's bed is a socket child (PLAN-sockets-entities: the seed's old `sockets` map is lifted at load), so the crate
 // rides it: truck › bed › crate › lantern
@@ -85,6 +85,15 @@ console.log("\nthe index is the fold's, not a view's:");
   r2.reset();
   check("reset empties it", r2.childrenOf("truck").length === 0 && r2.parentOf("rock") === null);
 }
+
+console.log("\na carrier that is gone while something still names it:");
+// the authority cascades a delete (the log never holds a bare one), so the entry is fed to the replica by hand
+{ const ing = r.ingest([{ kind: "change", verb: "delete", body: { id: "truck" }, ts: 0, actor: "u-hier" }], head); head++;
+  if (ing.resync) throw new Error(`resync: ${ing.why}`); }
+agree("the index answers the dangling edge exactly as the scan does");
+check("…the gone carrier still lists its child, the child still names it, and the grandchild's ancestors stop at the gap",
+  !r.st.entities.truck && r.childrenOf("truck").includes("box") && r.parentOf("box") === "truck" && r.ancestors("rock").join() === "box",
+  JSON.stringify([r.childrenOf("truck"), r.parentOf("box"), r.ancestors("rock")]));
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

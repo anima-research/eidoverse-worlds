@@ -358,6 +358,21 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
     "OR11 under a genesis with an unsupported minor (the fold reads no world) nobody's entry counts; the same log with its own genesis binds Late", { r11, k11 }));
 }
 
+// OR12 (bot #192): the bind lands in the directory before the audit line; an append that fails is SAID (the record to add by hand), never undone
+{ const root = scratch("owners-or12"), W = path.join(root, "worlds"); fs.mkdirSync(path.join(root, "opt"), { recursive: true });
+  v1(W, "shed", [["world", "grant", { id: "fable", role: "owner" }]]);
+  const u = upgrade(root, "shed"); const file = directoryFileIn(W), modf = path.join(W, "shed", "world.mod.jsonl");
+  if (!fs.existsSync(modf)) fs.writeFileSync(modf, ""); fs.chmodSync(modf, 0o444);
+  let sealed = false; try { fs.accessSync(modf, fs.constants.W_OK); } catch { sealed = true; }   // the setup, asserted: a root shell writes through 0444
+  const r = Bun.spawnSync(["bun", "tools/operator-repair.ts", "bind", "shed", "fable", "human:test:fable"], { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(root, "opt"), BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, timeout: 30_000 });
+  const out = r.stdout.toString(), err = r.stderr.toString(), fableId = u.roles.fable?.[0], e = directoryAt(file).entry(fableId) ?? {};
+  fs.chmodSync(modf, 0o644);
+  const said = /^warning: bound, but world\.mod\.jsonl took no record \(.*add this line by hand: (\{.*\})$/m.exec(err), line = (() => { try { return JSON.parse(said?.[1] ?? ""); } catch { return null; } })();
+  row("OR12", () => ok(u.up.code === 0 && sealed && r.exitCode === 0 && /^bound fable/m.test(out) && /NOT recorded/.test(out) && same(e.subs, ["human:test:fable"]) && e.kind === "account"
+    && line?.verb === "bind" && line?.who === fableId && line?.operator === true && !/human:test:fable/.test(err) && fs.readFileSync(modf, "utf8") === "",
+    "OR12 world.mod.jsonl unwritable: the bind stands in the directory and the CLI exits 0 saying NOT recorded, with the audit line to add by hand (no account in it); nothing was written", { sealed, code: r.exitCode, out: out.slice(0, 200), err: err.slice(0, 300), e }));
+}
+
 // UW (bot #260 29): the splash says "nothing was changed" only for the CLI's own refusal; no answer or a stopped CLI is unknown
 row("UW1", () => { const W = (code: string) => (typeof (UV as any).upgradeFailedWords === "function" ? (UV as any).upgradeFailedWords({ ok: false, refused: { code, reason: "x" } }) : "The upgrade was refused, and nothing was changed: x");
   const w = { refused: W("refused"), stale: W("stale"), timeout: W("timeout"), offline: W("offline"), interrupted: W("interrupted"), failed: W("failed") };

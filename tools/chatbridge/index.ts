@@ -8,7 +8,8 @@
 // doesn't is refused), chat arrives as `say` entries in the `log` stream
 // (actors are opaque ids; the stream's `names` and the snapshot's cut.names say
 // who they are), and a say is a door request {type: "request", id, verb: "say",
-// args: {text}} answered by `reply` (a refusal is logged, not retried).
+// args: {text}} answered by `reply` (a refusal is logged, not retried — except `rate`,
+// which waits and resends in place).
 //
 // The bridge joins EMBODIED, not as a spectator, because authoring (even
 // `say`, rank 0) needs a body — and that is honest UX anyway: the world

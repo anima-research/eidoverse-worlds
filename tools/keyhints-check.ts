@@ -1,7 +1,8 @@
 // tools/keyhints-check.ts — no hidden keys in build mode (R 10-04: "SOOOO much hidden knowledge… needs to be tooltipped
 // somewhere for it to matter"). Fails when:
 //   1. build-mode code reads a modifier (e.shiftKey / ctrlKey / altKey / metaKey, key === 'Control'…) on a line without a
-//      `// keys: <id>` tag naming an entry in client/lib/keyhints.js;
+//      `// keys: <id>` tag naming an entry in client/lib/keyhints.js (a read that is NOT build mode's, in a file that mixes
+//      the two, says so: `// keys: none — <why>`);
 //   2. an entry has no words to show (`before` empty);
 //   3. an entry is never shown: no engage('<id>'), withKeys(…, '<id>') or KEYHINTS.<id> outside keyhints.js and outside
 //      the `// keys:` tags themselves (a tag names the key; it doesn't show it to anyone).
@@ -11,7 +12,7 @@ import path from "node:path";
 import { KEYHINTS } from "../client/lib/keyhints.js";
 
 const ROOT = path.resolve(import.meta.dir, "..");
-const FILES = ["build", "gizmo", "panels", "editpanels", "editlayout", "socketedit", "structure_ui", "edittabs", "editpaint", "widgets"]
+const FILES = ["build", "gizmo", "panels", "editpanels", "editlayout", "socketedit", "structure_ui", "edittabs", "editpaint", "widgets", "controller"]   // controller: build mode's camera (bot #319)
   .map((f) => `client/lib/${f}.js`).filter((f) => fs.existsSync(path.join(ROOT, f)));
 const MOD = /\be\.(shiftKey|ctrlKey|altKey|metaKey)\b|\bkey\s*===\s*['"](Control|Shift|Alt|Meta)['"]/;
 let pass = 0, fail = 0;
@@ -22,7 +23,7 @@ for (const f of FILES) {
   const lines = fs.readFileSync(path.join(ROOT, f), "utf8").split("\n");
   lines.forEach((line, i) => {
     const tag = /\/\/\s*keys:\s*([A-Za-z]+)/.exec(line)?.[1];
-    if (MOD.test(line)) { if (!tag) untagged.push(`${f}:${i + 1}: ${line.trim().slice(0, 100)}`); else if (!(tag in KEYHINTS)) badIds.push(`${f}:${i + 1}: ${tag}`); }
+    if (MOD.test(line)) { if (!tag) untagged.push(`${f}:${i + 1}: ${line.trim().slice(0, 100)}`); else if (tag === "none" ? !/keys:\s*none\s+—\s*\S/.test(line) : !(tag in KEYHINTS)) badIds.push(`${f}:${i + 1}: ${tag}`); }
     const code = line.replace(/\/\/\s*keys:.*$/, "");
     for (const m of code.matchAll(/engage\(\s*['"](\w+)['"]|withKeys\([^)]*['"](\w+)['"]\s*\)|KEYHINTS\.(\w+)/g)) shownIds.add(m[1] ?? m[2] ?? m[3]);
     // a map of tool → id feeding withKeys (editlayout's rail): every quoted id inside it counts

@@ -2,12 +2,12 @@
 //
 //   bun tools/chat-scrollback-test.ts
 //
-// The join window is what trimRecentChat (shared/chatwindow.js) left, and it is
-// fair rather than contiguous: the loudest voice loses its oldest lines
-// first, so a quiet visitor's last line from yesterday can sit above hours of
-// trimmed conversation. Scrollback used to page from the oldest line SHOWN —
-// i.e. from below that visitor's line — so it jumped straight over the hole
-// and the trimmed talk was never reachable from the browser. The contract
+// The join window is empty (speech is arrival-only, R 10-18; server.ts sends
+// `recentChat: []`): scrollback pages the master log for admins and the
+// since-arrival lines for everyone else (messages.ts). The holes below are the
+// client's: lines it was never sent. Scrollback used to page from the oldest line SHOWN —
+// so it jumped straight over a hole and the lines in it were never reachable
+// from the browser. The contract
 // now: scrolling up walks history from the present, fills the holes in seq
 // order, never renders a line twice, and reaches the beginning with every
 // say on screen exactly once. Also pinned (review of #243): a spoken row that

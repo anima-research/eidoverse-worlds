@@ -41,9 +41,16 @@ check('builder: permitted', build.mayEdit() === true);
 asRole('owner');
 check('owner: permitted', build.mayEdit() === true);
 asRole('member');
-check('visitor: REFUSED', build.mayEdit() === false);
+check('member: refused', build.mayEdit() === false);
 asRole('spectator');
-check('any other known role: refused', build.mayEdit() === false);
+check('spectator: refused', build.mayEdit() === false);
+asRole('moderator');
+check('moderator (its permissions carry build): permitted', build.mayEdit() === true, JSON.stringify((stub.net as any).myRights));
+// the permission decides, never the role name (build.js mayEdit)
+(stub.net as any).myRights = { role: 'custom', permissions: ['build'] };
+check('an unknown role with the build permission: permitted', build.mayEdit() === true);
+(stub.net as any).myRights = { role: 'moderator', permissions: ['kick'] };
+check('a moderator whose permissions lack build: refused', build.mayEdit() === false);
 
 console.log('\nBUILD GATE — the gate is applied at the chokepoint, not the keybind');
 

@@ -1,5 +1,5 @@
-// msgrate-test — the per-connection message cap (server/msgrate.ts), on a hand clock: a backlog the server caused is not
-// charged to the client; a sustained flood is refused as before; legal steady traffic never is.
+// msgrate-test — the per-connection message cap (server/msgrate.ts), on a hand clock: a backlog of up to the burst (two
+// seconds' worth) is not charged to the client — a longer stall is; a sustained flood is refused as before; legal steady traffic never is.
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/msgrate-test.ts
 import { newBucket, admitMessage } from "../server/msgrate.ts";
 

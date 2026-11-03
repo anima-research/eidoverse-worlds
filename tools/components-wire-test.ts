@@ -273,9 +273,6 @@ console.log('\n5. the inspector (shared/editschema.js: reads either spelling, wr
   const odd = { ...lamp, light: { ...lamp.light, flicker: 1 } };
   const oe = ed(odd, { 'light.intensity': 24 });
   check('…unknown keys in the bag are kept by the planner (flicker rides along)', JSON.parse(opsOf(oe))[0]?.args.value.flicker === 1, opsOf(oe));
-  // KNOWN BUG (reported 2026-10-06; door/translator, not the planner): …but the door's light schema is closed, so it
-  // refuses that edit whole ("x.light: unknown key 'flicker'"): a translated lamp with an unknown light key can't be
-  // edited at all now. Translation keeps such keys (shown first), so these lamps exist.
   { const { translate } = await import('./protocol/import-v1/translate-v1.js'); const { v1FoldBuild } = await import('./protocol/import-v1/build.ts');
     const tr = translate([{ seq: 0, ts: 1, actor: 'world', verb: 'genesis', args: { v: 2, dialect: 'eidoverse-log' } }, { seq: 1, ts: 2, actor: 'r', verb: 'spawn', args: { id: 'x', lib: LAMP } },
       { seq: 2, ts: 3, actor: 'r', verb: 'comp', args: { id: 'x', type: 'light', data: odd.light } }], { foldBuild: v1FoldBuild() });

@@ -525,11 +525,16 @@ const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
   // put it beside the negative check twenty lines earlier and asserted the
   // directory existed before anything had created it. The control was itself
   // wrong in the direction that would have looked like a product bug.
-  await sleep(400);              // the sequencer writes the log dir on join
-  check("…and the CONTROL: a world that WAS founded IS on disk at that path",
-    existsSync(join(worldsDir, "annex")), `worldsDir=${worldsDir}`);
+  // The control reads something the SERVER wrote (bot #320): `existsSync(annex)` was true before the server ran (the
+  // harness founds it), so a line said in annex must land in THIS path's log — a server writing worlds elsewhere fails it.
+  const annexLog = join(worldsDir, "annex", "world.jsonl");
+  const annexBefore = statSync(annexLog).size;
   // (ported) the first transition is a travel to an existing world, the second back
   await founder.request("tools/call", { name: "travel", arguments: { world: "annex" } });
+  const said = await founder.request("tools/call", { name: "act", arguments: { verb: "say", args: { text: "control line" } } });
+  await sleep(400);              // appended durably before it is published
+  check("…and the CONTROL: a line said in a world lands in its log at that path (a server-side write)",
+    !said.result?.isError && statSync(annexLog).size > annexBefore, `${annexLog} ${annexBefore}→${statSync(annexLog).size} ${txt(said).slice(0, 200)}`);
   // ── 4c. §3.2.3d epoch across transitions ─────────────────────────────────
   // The epoch is read from the channels/changed descriptor the server pushes
   // to the HOST — which is where §3.2.3d says a client learns it, and the only

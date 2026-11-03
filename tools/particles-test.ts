@@ -8,8 +8,8 @@
 //      fail LEGIBLY, and a seed that is deterministic, persistent and shared.
 //   2. LIFECYCLE    — attach → replace → remove → late join, with no duplicate
 //      per-frame hooks and no leaked GPU resources, driven against a stand-in
-//      for the upstream builder that behaves exactly as it does today
-//      (pushes its update into the global array, hands back no dispose).
+//      with the real builder's shape (particlefx.js buildEmitter: a handle
+//      with update and dispose(); the stub counts the disposes).
 //   3. PERCEPTION   — what look() says, and what a live change narrates as.
 //
 // Every check here fails against the old behavior by construction: none of
@@ -87,9 +87,9 @@ check("instanceOf keeps every key an older value said (nothing dropped)", JSON.s
 // ---- 2. lifecycle ----------------------------------------------------------
 console.log("\nlifecycle — attach, replace, remove, late join, no hook growth\n");
 
-// Stand-in for eidoverse/particles.js AS IT IS TODAY: it makes a thing, pushes
-// its update into the global hook array, and offers no way back out. If
-// upstream grows a dispose(), this stub is what has to change first.
+// Stand-in for particlefx.js buildEmitter (emitters.js imports it): a handle with update and dispose(), the stub's
+// dispose counting so the registry's retire can be seen; the push into the hook array stands in for what the registry
+// does with the handle. A browserless run can't load the real one (THREE, core.js's scene).
 type Sys = { update: () => void; disposed: number; count: number; inScene: boolean };
 function makeUpstreamStub(autos: (() => void)[]) {
   const built: Sys[] = [];

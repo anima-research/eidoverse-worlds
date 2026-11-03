@@ -18,7 +18,7 @@
 // (tools/edittheme-test.ts holds the two to the same action set). Non-edit quads never come here.
 
 import { EDIT as T, EDIT_VR as V, pictoRuns } from './edittheme.js';
-import { stroke as strokeIcon, has as hasIcon } from './icons.js';
+import { stroke as strokeIcon, has as hasIcon, fillPath } from './icons.js';
 import { paintFields, FACTS, R2D } from './widgets.js';
 
 const FONT = 'system-ui, sans-serif';
@@ -113,8 +113,10 @@ function pathRound(g, x, y, w, h, r) {
   g.arcTo(x, y + h, x, y + h - r, r); g.lineTo(x, y + r); g.arcTo(x, y, x + r, y, r); g.closePath();
 }
 function icon(g, name, cx, cy, size, color, lw = V.minLine) {
-  if (!hasIcon(name)) return;
-  g.save(); g.translate(cx, cy); g.strokeStyle = color; strokeIcon(g, name, size, lw); g.restore();
+  g.save(); g.translate(cx, cy);
+  if (hasIcon(name)) { g.strokeStyle = color; strokeIcon(g, name, size, lw); }
+  else { g.fillStyle = color; fillPath(g, name, size); }   // a Phosphor glyph (the ENV rows' sun/sparkle/mountains/plant) is filled, not dropped (bot #313)
+  g.restore();
 }
 /** Text through the pictograph filter: a mapped emoji becomes its icon; the rest is fillText, ellipsised to maxW.
  *  Returns the drawn width. `align` 'left' | 'right' | 'center' about x. */

@@ -3,7 +3,8 @@
 //   bun tools/captions-test.ts
 //
 // Legs:
-//   1. DECLARATION — the bag a reader sees: the bounded window, malformed
+//   1. DECLARATION — the bag a reader sees: the current line (history is the log; an older
+//      value's window still reads), malformed
 //      lines dropped with a note, times rounded, the look line that says what
 //      the captioner wrote and nothing about pixels or sound, the detail level.
 //   1c. THE VERB — args shape; the refusals that happen BEFORE append (dup /
