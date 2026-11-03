@@ -156,6 +156,9 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   const ckptSt = useCk ? (resumed?.snap ?? atCover ?? (lazy?.prefix.loadAll(), fold(entries, { until: useCk.seq }))) : null;
   const ckptAtBoot = ckptSt && cloneState(ckptSt);   // the sim folds onto ckptSt
   const simFrom = useCk ? { ...useCk.cut, st: ckptSt } : simCover ? simFromCut(V, atCover, entries[hit!.coversIndex].ts) : null;
+  // the clock starts no earlier than the cut the engine resumes from, or the last checkpoint's: a folder never runs back (bot review #260 18)
+  for (let s = entries.length - 1; s >= from0; s--) { const e = entries[s]; if (isE(e) && e.kind === "sim" && e.verb === "checkpoint") { if (Number.isFinite(e.body?.clock)) lastNow = Math.max(lastNow, Math.floor(e.body.clock)); break; } }
+  if (Number.isFinite(simFrom?.clock)) lastNow = Math.max(lastNow, Math.floor(simFrom!.clock));
   let sim = simFolder(entries, { models: opts.simModels ?? {}, purged: lazy ? new Map() : purgesIn(entries), ...(simFrom ? { from: simFrom } : {}) });
   const fedFrom = useCk ? useCk.seq : simCover ? hit!.coversIndex : -1;
   if (V) seedViews(w, X, V, st);

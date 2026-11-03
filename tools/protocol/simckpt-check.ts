@@ -162,6 +162,16 @@ const sameAsGenesis = (b) => digestOf(b.sim().sim) === digestOf(simFold(b.entrie
   labels(x, 3); const b = reopen(x.dir);
   ok(b.bootedFrom === s && sameAsGenesis(b), "PC8 a checkpoint whose blob holds its own clock and tick (written before 10-28) still boots", { from: b.bootedFrom, s }); }
 
+// ---- PC10 (bot review #260 18): a boot's clock starts at the checkpoint's, so nothing is written behind the engine's clock ----
+{ const x = world("q", 6, 0); labels(x, 2); x.beat();
+  const sf = x.w.sim(), ahead = T + 1000, cut = simCutOf(sf, x.w.entries); cut.clock = ahead;   // a cut whose clock is ahead of every ts
+  const state = x.w.putBlob({ cutJson: JSON.stringify(cut) });
+  const s = x.w.append({ kind: "sim", actor: "sim", verb: "checkpoint", body: { at: x.w.entries.length - 1, engine: { engine: sf.spec.engine }, tick: sf.sim.tick, clock: ahead, sim: digestOf(sf.sim), state } });
+  const T0 = T; T -= 900;   // the wall stepped back across the restart
+  const b = reopen(x.dir); const r = request(b, "rowan", "set", { id: "cr-0", component: "label", value: "after" }); const ts = b.entries[r.seq]?.ts;
+  T = T0 + 2000;
+  ok(b.bootedFrom === s && r.ok && ts >= ahead, "PC10 a boot from a checkpoint whose clock is ahead of the wall (stepped back) writes no ts behind that clock", { from: b.bootedFrom, s, ts, ahead, wall: T0 - 900, refused: r.refused }); }
+
 // ---- PC9: log-size cost on a busy world, and boot before/after on a generated large log ----
 { const x = world("busy", 40, 1000); const n0 = x.w.entries.length; const K = Number(process.env.PC_BUSY ?? 3000);
   for (let i = 0; i < K; i++) { const id = `cr-${i % 40}`; const p = x.w.state().entities[id].c.transform.pos;
