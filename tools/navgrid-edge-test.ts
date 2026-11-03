@@ -80,5 +80,37 @@ function walks(from: any, points: any[]) {
   const ms = performance.now() - t0;
   check("a destination 100km away is refused for its size, quickly", "refusal" in r && /too far to plan/.test((r as any).refusal) && ms < 5000, `${ms.toFixed(0)}ms ${JSON.stringify(r).slice(0, 120)}`);
 }
+{
+  // floors finished with a thin layer: a slab 3.1–3.28 under a 2cm skin to
+  // 3.3, and the same at 6.1–6.3 — a hidden face 2cm below each floor. The
+  // floor scan steps 2cm under every surface it finds, onto that hidden face.
+  const g = world([[-4, 3.1, -4, 4, 3.28, 4], [-4, 3.28, -4, 4, 3.3, 4], [-4, 6.1, -4, 4, 6.28, 4], [-4, 6.28, -4, 4, 6.3, 4]]);
+  const ls = g.layers(g.cell(0.5), g.cell(0.5)).map((y: number) => +y.toFixed(2));
+  check("floors finished with a thin layer are all floors: the roof, the storey under it, the ground",
+    [6.3, 3.3, 0].every((y) => ls.some((v: number) => Math.abs(v - y) < 0.02)), JSON.stringify(ls));
+  const under = C.surfaceUnder(0.5, 0.5, flat, 6.28).y;
+  check("...because a surface just above the limit no longer hides the rest of the thing below it",
+    under < 6.2 && under > 3, `surfaceUnder(maxY 6.28) = ${under.toFixed(3)}`);
+}
+{
+  // the same at 20× scale: the model's own frame is small, the world's large.
+  // A structural slab topped at 6.20m (world) under ten 2cm underlay/finish
+  // layers from 6.28 to 6.48m — eleven faces in the 20cm a model-unit "1cm"
+  // head start would span at this scale, more than the ray will cast on past.
+  // surfaceUnder from 6.28 must find the slab: the head start is a WORLD cm.
+  const S = 20, layers: number[][] = [[-4, 6.0, -4, 4, 6.2, 4]];
+  for (let k = 0; k < 10; k++) layers.push([-4, 6.28 + 0.02 * k, -4, 4, 6.30 + 0.02 * k, 4]);
+  C.clearColliders();
+  const geom = mergeGeometries(layers.map(([x0, y0, z0, x1, y1, z1]) => {
+    const b = new THREE.BoxGeometry((x1 - x0) / S, (y1 - y0) / S, (z1 - z0) / S);
+    b.translate((x0 + x1) / 2 / S, (y0 + y1) / 2 / S, (z0 + z1) / 2 / S);
+    return b.index ? b.toNonIndexed() : b;
+  }), false);
+  const m = new THREE.Mesh(geom, undefined); m.scale.setScalar(S); m.updateMatrixWorld(true);
+  C.fitCollider("scaled", m, { collide: "exact" });
+  const r = C.surfaceUnder(0.5, 0.5, flat, 6.28);
+  check("at 20× scale, a stack of thin layers above the limit doesn't hide the slab beneath them",
+    r.onto === "scaled" && r.y > 6.1 && r.y <= 6.28 + 1e-6, JSON.stringify(r));
+}
 console.log(`\n${tally.passed} passed, ${tally.failed} failed`);
 process.exit(tally.failed ? 1 : 0);
