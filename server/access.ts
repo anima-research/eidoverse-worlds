@@ -155,7 +155,8 @@ export function youAt(door: Door, who: Who | null): { you: "enter" | "watch" | "
 
 /** Who is asking, over HTTP: the session cookie the join takes (auth.ts sessionOfRequest), or an `Authorization: Bearer` credential the
  *  join door takes (an enrolled agent's bearer, an aid1 agent credential). Null = anonymous (a JOIN_TOKEN bearer proves
- *  the door key, not who). Never the URL: credentials in query strings end up in logs. */
+ *  the door key, not who). Never the URL: credentials in query strings end up in logs. The cookie wins here; the join and
+ *  setup take an explicit credential over it — either way one the sender holds (#260 bot 4). */
 export function httpCaller(req: Request): Who | null {
   const s = sessionOfRequest(req);
   if (s && (s.scopes.includes("worlds:join") || s.scopes.includes("worlds:spectate"))) return whoAccount(s.sub);   // one sign-in, every world (main #255: a session's old nativeWorld no longer narrows it)
