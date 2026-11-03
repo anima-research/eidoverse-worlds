@@ -8,7 +8,7 @@
 > requests. Not carried over: a founding cap (joining never founds a world here), the directory search of everyone who
 > has signed in, a per-person `spectator` rung, and the `world_access` tool. An idle world's door (`doorFor`) is read
 > without loading it: `@world`'s access, default-role, role-defs and roles:* from `world.jsonl`, and the moderator log
-> `world.mod.jsonl` (ban / kick / unban), cached until either file changes, so a ban or kick refuses every HTTP read
+> `world.mod.jsonl` (ban / kick / unban), cached until either file changes, so a ban (a kick removes now and is never in force) refuses every HTTP read
 > (`/worlds`, `/geom`, `/heightmap`, `/access`) of an unloaded world exactly as of a loaded one. What follows is upstream's
 > design as written.
 
@@ -148,7 +148,7 @@ recovery of last resort.
 *On this server:* upstream's `FOUND_DAILY_CAP` (per identity per rolling 24 h, its ledger
 `WORLDS_DIR/.founding.json`) is not carried over, and nothing reads it: joining never founds a world.
 A signed-in person founds one with the `world-found` request, whose limits are
-`server/worldlog.ts` `foundRefusal`: a name of 3 to 32 lowercase letters, digits and '-' that no world
+`server/worldlog.ts` `foundRefusal`: a name of 3 to 32 lowercase letters, digits and '-', beginning with a letter or digit, that no world
 has. Any signed-in account founds, person or agent; the engine sets no quotas (how many and how often is
 the server runner's policy). `tools/protocol/world.ts found` is the operator's own door.
 Watching a world that doesn't exist founds nothing: it closes with 4011,

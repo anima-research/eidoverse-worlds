@@ -56,13 +56,14 @@ TOOL_ALIAS_ARGS.walk_to = (a) => ({ to: a.to !== undefined ? a.to : a.y !== unde
   ...(a.run !== undefined ? { run: a.run } : {}), ...(a.tolerance !== undefined ? { tolerance: a.tolerance } : {}) });
 ```
 
-`agenttools-check` AT7 calls `walk_to {x, z, tolerance}` on a live agent and checks the body MOVED. Before the
+`agenttools-check` AT7 once called `walk_to {x, z, tolerance}` on a live agent and checked the body MOVED. Before the
 translation landed, that row was red with "move needs to: [x, y, z]…" — the alias ran the right tool with the wrong
 words, and nothing had tested it. `spawn {query}` is the other case: no one-step new form exists, so the translation
 refuses and names the two calls (`library {query}` then `create {model}`).
 
-(The pathfinding stack, merged 10-15, gave walk_to a named `to` and a floor-picking `y`: both reach `move` intact, and
-`alias-test` holds each shape. Its `check_model` became `measure {check: true}` the same way: an alias whose
+(The pathfinding stack, merged 10-15, gave walk_to a named `to` and a floor-picking `y`. Since 10-28 `walk_to` is
+refused with the new call and runs nothing (`mcpl/alias-test.ts`, AT9); `move {to: [x, z], tolerance}` is covered by
+AT9, places-test and mover-check. Its `check_model` became `measure {check: true}` the same way: an alias whose
 translation adds the mode.)
 
 ## What this is for

@@ -163,8 +163,9 @@ fixed before any engine writes a shape that isn't a box
 (`shared/protocol/shapes.js`; the authority refuses anything else):
 
 - **A bare `[[minX, minY, minZ], [maxX, maxY, maxZ]]` is a box, forever**: the
-  authority's measured box in the thing's own frame, finite, min ≤ max. Every
-  shape stamped so far is one.
+  authority's measured box in the thing's own frame, finite, min ≤ max. A
+  thing's measured shape is a bare box; `collider.shape: "sphere"` stamps a
+  tagged sphere (`shared/protocol/authority/catalogue.js`).
 - **Any other shape is a tagged object** in the thing's own frame, in metres,
   placed by optional `pos` [x, y, z] and `q` (a unit quaternion):
   `{type: "box", half: [x, y, z]}`, `{type: "sphere", radius}`,
@@ -405,8 +406,9 @@ the log stays exact for everyone.
 - **Rests**: every rest in a log MUST equal the carried engine's result for
   its launch (the sim layer's `checks.disagree` is empty).
 - **Cross-engine**: results MUST be bit-identical across JavaScript
-  engines (tools/simmath-test.ts for the kernel; the `browser` suite runs
-  the shared core in headless Chromium byte for byte against bun).
+  engines (tools/simmath-test.ts for the kernel, bun only; the `browser` suite
+  runs the fold/authority core in headless Chromium byte for byte against bun,
+  not the kernel).
 - `bun tools/protocol/run.ts phys physlive physseeds` runs the physics suites:
   launches, rests by cause, carriers, the running server and a client's fold,
   and the reserved seeds (the shape grammar, physical properties, releases

@@ -302,8 +302,9 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   {shape, size}; world-wide water goes on `@world` (a global zone with water is
   refused). The combine law: the highest-priority body containing a point decides
   the medium, `@world`'s level lowest of all, a tie by entity id (the later
-  wins); a pocket keeps out every body at or below its priority, `@world`'s level
-  included; `blend` and `weight` are look only; a body inherits nothing from
+  wins); a pocket with no `bodies` keeps out every body at or below its priority,
+  `@world`'s level included; one naming `bodies` keeps out only those (name
+  `@world` to dry the sea there); `blend` and `weight` are look only; a body inherits nothing from
   `@world`'s water. shared/zone.js (`zonesOf`, `mediumOf`) is the one reader:
   `{medium, level, flow, body, priority}` at a point. glTF has no water: the
   medium does not survive export. For now `water` and `water-exclusion` read
@@ -1471,7 +1472,8 @@ them, and the suite holds them to it), not part of conformance.
 The first protocol (an untyped verb log) is retired. An old world's log can be translated once, one way, into a world of
 this protocol. A translated log is an ordinary log of this protocol, and these hold for it:
 
-- **Every old entry is kept.** Each appears in the new log as an `act` with verb `imported` (`body {verb, args, from}`)
+- **Every old entry but its genesis is kept** (the old genesis is not re-played: the `translated` act right after the new
+  genesis carries its copy, `translatedFrom`). Each other entry appears in the new log as an `act` with verb `imported` (`body {verb, args, from}`)
   or as a `say`, followed by the change it produced. Fields with no component in this protocol ride along as
   `imported:<name>`; a person's grant this protocol has no rung for (v1's `spectator` or `none`) rides as
   `imported-roles:<id>`. Nothing of a world is dropped quietly: what a translation drops or renames by design is listed

@@ -340,7 +340,7 @@ backup (the refusal names it): each try makes another, so delete the ones
 you don't need.
 
 To restore one by hand (stop the server first): check it with
-`cd <backup> && sha256sum -c SHA256SUMS`, move the world's directory
+`(cd <backup> && sha256sum -c SHA256SUMS)`, move the world's directory
 aside, then copy the backup back under the world's name without its
 `SHA256SUMS`:
 

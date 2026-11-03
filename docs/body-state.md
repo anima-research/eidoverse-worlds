@@ -110,8 +110,8 @@ These commands clear **your outgoing reaches**. Your own knockdown also
 clears your outgoing reaches. Walking, changing posture or falling does not
 revoke somebody else's incoming tracking relation; moving out of reach can
 make contact fail while the relation remains. The target ends an incoming
-reach by closing their consent to it: `consent {block: <who>}` for that
-person, or `consent {touch: false}` for everyone they haven't allowed by
+reach by closing their consent to it: `act {verb: "consent", args: {block: <who>}}` for that
+person, or `act {verb: "consent", args: {touch: false}}` for everyone they haven't allowed by
 name. The reach ends then, and its reacher hears `body-revoked`.
 
 Examples (`reach` arguments):
@@ -194,14 +194,14 @@ are local fixture receipts, not a claim that every checkout has those files.
 
 ## Moving close enough
 
-`walk_to` now defaults to 1cm destination accuracy. It previously stopped up
+`move` (once `walk_to`) now defaults to 1cm destination accuracy. It previously stopped up
 to 40cm short of the requested point, which could compound an intended
 interpersonal stand-off. `tolerance` (0–0.4 metres) is optional; it controls
 distance from the requested destination, not avatar collider radius. Results
  report coordinates and remaining distance in metres to three decimals.
 
 ```json
-{"x":2.15,"z":-1.2,"tolerance":0.01}
+{"to":[2.15,-1.2],"tolerance":0.01}
 ```
 
 Face the other participant before reaching if your current heading points

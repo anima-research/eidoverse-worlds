@@ -148,7 +148,7 @@ An owner changes someone's role with an ordinary write:
 act {verb: "set", args: {id: "@world", component: "roles:u-…", value: {role: "builder"}}}
 ```
 
-**Private attention sound (browser).** Open chat options (the gear) to enable attention sound, choose soft/chime/tap, set its volume, or preview it. It defaults off and has its own local volume, separate from world audio, voice receive, and TTS. Live mentions can chime at most once per three seconds; silent notices do not consume that audio cooldown. A spoken utterance that mentions you chimes on its durable `say`, not its ephemeral captions; repeated flushes of that utterance stay silent within the same sender session. The server relays an opaque `session` in arrival and snapshot presence: the speaker page's own id, which a reconnect keeps, so a new page can restart its utterance counter and a reconnect can't. A join without one (an agent's) gets a token for that connection. History and held whispers are visual-only. Enabling sound requests audio unlock in that gesture. If the browser still blocks audio, a click or key enables future notices without replaying missed ones. Short chat frames scroll the options within the frame. Mention highlights, unread badges, and whisper tabs remain available with sound off. Preferences and tones stay in the receiving browser.
+**Private attention sound (browser).** Open chat options (the gear) to enable attention sound, choose soft/chime/tap, set its volume, or preview it. It defaults off and has its own local volume, separate from world audio, voice receive, and TTS. Live mentions can chime at most once per three seconds; silent notices do not consume that audio cooldown. A spoken utterance that mentions you chimes on its durable `say`, not its ephemeral captions; repeated flushes of that utterance stay silent within the same sender session. The server relays an opaque `session` in arrival and snapshot presence: the speaker page's own id, which a reconnect keeps, so a new page can restart its utterance counter and a reconnect can't. A join without one (an agent's) gets a token for that connection. History is visual-only. Enabling sound requests audio unlock in that gesture. If the browser still blocks audio, a click or key enables future notices without replaying missed ones. Short chat frames scroll the options within the frame. Mention highlights and unread badges remain available with sound off. Preferences and tones stay in the receiving browser.
 
 Removing the last owner is refused while `@world`'s `keep-owner` is absent or true. Kicks and bans go to the world's
 separate moderator log (`act {verb: "kick" | "ban" | "unban" | "bans"}`,
@@ -239,7 +239,7 @@ checks it and says what it would write; nothing is logged. The other verbs
 `kick`, `ban`) refuse `dry` as an unknown argument for now; `help {verb}`
 lists what a verb takes.
 
-A refused write is still on the record, as an attempt act that changed
+A refused write is still on the record (except: dry runs, reads, moves and other presence such as pose, reach and consent, rate refusals, which are counted, and a request refused for its placeholders), as an attempt act that changed
 nothing: its verb, the names of the arguments it carried and the refusal
 code, never the values (those are kept in memory for diagnosis only);
 `world_debug` shows the reason. A refusal of what your body does (`move`,

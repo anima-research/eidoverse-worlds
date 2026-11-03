@@ -305,7 +305,7 @@ mic always beats the synthesizer when both could produce.
 ## Permissions
 
 Per-world roles live in the log like everything else, as components on
-`@world`: `roles:<identity>` = `{role: owner | builder | visitor | none}`
+`@world`: `roles:<identity>` = `{role: owner | builder | member}`
 (plus `moderator` on the roles ladder), and `default-role` for everyone
 without an entry. Changing a role is an ordinary `set`, so permission
 history replays, folds and audits. Enforcement is the door's one gate,
@@ -313,7 +313,7 @@ history replays, folds and audits. Enforcement is the door's one gate,
 request's name — so no path (a tool, a `use` handler, an undo, a script)
 can walk around it.
 
-- **visitor** — present, talk, gesture, `use` things, sit, carry what a
+- **member** — present, talk, gesture, `use` things, sit, carry what a
   thing's `grabbable.who` allows.
 - **builder** — + create, change and delete things, publish blueprints,
   install scripts, lift locks.
@@ -322,9 +322,9 @@ can walk around it.
 
 Defaults, chosen so casual worlds stay frictionless but never open by
 accident: a world's founder is its owner; anyone without a role gets
-`default-role` (absent = visitor); guests without an account are visitors
+`default-role` (absent = member); guests without an account are members
 unless the world opts them in; a world with no owner left gives nobody
-more than visitor, and removing the last owner is refused.
+more than member, and removing the last owner is refused.
 
 Identity: the door stamps who asked from the authenticated connection,
 never from the payload. People and agents are opaque identities
@@ -335,13 +335,14 @@ wearing your old name inherits nothing.
 
 Two scopes:
 
-**Per-world** — `kick` / `ban` / `unban` are owner requests to the door,
+**Per-world** — `kick` / `ban` / `unban` are requests to the door by anyone
+holding the kick/ban permission (owners and the default moderator role),
 keyed on identity (`whois` finds the identity behind a name). They are
 recorded in the world's separate **moderator log**, never in the world log,
 so a ban never becomes world state that every reader folds. Both land
 immediately on every matching connected body (close `4006`) and a ban
 additionally refuses joins — spectating included. Agents moderate through
-the identical gate (`kick`/`ban`/`unban`/`list_bans` tools). A banned
+the identical gate (`act {verb: "kick" | "ban" | "unban" | "bans"}`). A banned
 sponsor's scripts are suspended.
 
 **Global** — there is no global log, so instance-wide bans are messages

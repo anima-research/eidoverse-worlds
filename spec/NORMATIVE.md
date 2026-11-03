@@ -24,7 +24,7 @@ These files, at a given commit, are the eidoverse world protocol. Nothing else i
 | `spec/conformance/physics/` | Throw scenarios (each a log holding a throw's inputs and no rest) and `digests.json` (rests to the millimetre) with `digests-exact.json` (rests bit for bit, with the engine's final state): what each must come to rest as, per engine version. A server carries a version when it reproduces both of that version's digests. Machine-checked. |
 
 **Informative, never normative:** all code (including `shared/protocol/*`, the reference implementation, even where the
-prose names a file as the place to look: a file named in the spec or in a pin's `when` is a pointer to the reference, never the rule), `spec/history/`, `spec/fixtures/`, `spec/EIDO-URIS.md` (informative until a world needs portable blobs: no reader resolves an `eido:` URI today), and every `docs/` file. Where the
+prose names a file as the place to look: a file named in the spec or in a pin's `when` is a pointer to the reference, never the rule), `spec/history/`, `spec/fixtures/`, `spec/EIDO-URIS.md` (informative until a world needs portable blobs: no reader fetches an `eido:` URI from elsewhere today; a host serves its own `eido:sha256/<hex>` bytes, server/libfile.ts), and every `docs/` file. Where the
 reference implementation and this set disagree, the implementation is wrong, with one exception: the pins are generated from the
 reference registry, so for them a change to the code is a change to the pin, and it lands only with an acknowledged re-pin
 (`spec/REGISTRY-CHANGELOG.md`).
