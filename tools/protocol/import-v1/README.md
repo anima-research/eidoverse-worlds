@@ -9,14 +9,14 @@ it and nothing at runtime can load it; `tools/protocol/nov1-check.ts` (in `bun r
 | file | what it is |
 | --- | --- |
 | `fold.js` | the old fold (how a v1 entry changed the world), trimmed to what the translators read |
-| `translate-v1.js` | v1/v2 log → v4 log: each old entry becomes an `imported` act (`body {verb, args, from}`: its verb and args, kept as provenance) or a `say`, and one change entry that brings the v4 fold to the same place, checked after every entry. `DEFERRED` + `deferredFeatures(log)`: the features v4 does not carry yet (water volumes, air boxes, climb routes, vehicles, collision toggles) and every use of one in a log; `translateV1World` refuses on any |
+| `translate-v1.js` | v1/v2 log → v4 log: each old entry becomes an `imported` act (`body {verb, args, from}`: its verb and args, kept as provenance) or a `say`, and one change entry that brings the v4 fold to the same place, checked after every entry. `DEFERRED` is empty: main's water volumes, air boxes, climb routes, vehicles and collision toggles are carried (listed under `mapped`); `deferredFeatures(log)` finds the one refusal left, a water or air volume on `@world` (it has no frame to hold one), and `translateV1World` refuses on it |
 | `translate-d3.js` | the name her four dialect-3 goldens are checked under (sweep §3): a thin wrapper over `translate-v1.js`, which runs her sim (the first eidosim, `eidosim-v1.js` here) beside the v1 fold whenever a log enters a physics `epoch`. Since @11 a punt stays its `imported` act and each rest is a plain change by `sim` caused by it: no launch, no digest, nothing that asks a reader to fly her engine. The epoch becomes `@world physics-engine` (today's eidosim from then on), and each collider's stamped box its `physics.shape`, `dynamic` for a thing v1 ever punted and `static` otherwise. A log with no epoch translates as one without her sim would |
 | `eidosim-v1.js` | the first eidosim (dialect 3), kept here so the translator, the sweep and the directory check can read what a physics-era v1 log's punts did; nothing at runtime loads it (the server runs `eidosim@1.0.0`) |
 | `eidosim-v1-test.ts` | its covenant tests (self-agreement, schedule independence, quantization), run on the copy kept here (suite `eidosim-v1`) |
-| `frozen/` | every module the old fold reads (forecast, captions, rot, blueprint, chatwindow, and what they import: components, euler, hierarchy, scale3, simmath), byte for byte as they stood at 6dab22f5 (2026-10-04, the commit where the server stopped reading v1 worlds), so a change to the live `shared/` modules never changes what an old log means. Its import closure stays inside this directory (importer-check IM-I3b) |
+| `frozen/` | every module the old fold reads (forecast, captions, rot, blueprint, chatwindow, and what they import: components, euler, hierarchy, scale3, simmath), byte for byte as they stood at 6dab22f5 (2026-10-04, the commit where the server stopped reading v1 worlds), so a change to the live `shared/` modules never changes what an old log's *fold* means (her sim, `eidosim-v1.js`, still reads the live `terrainmath.js` and `simmath.js`). Its import closure stays inside this directory (importer-check IM-I3b) |
 | `build.ts` | the old fold's build hash, stamped into a translated world's `translated` act |
 | `world.ts` | `reportV1World(src, {name})`: the dry-run report and its hash (nothing written). `translateV1World(src, dest, {name, approval})`: refuses a founder key (a translation names none), reads `src/log.jsonl` (never writes it), refuses a log using a `DEFERRED` feature, translates, re-reads the result with the strict reader (and, for a physics-era log, the live host's sim layer, which must read the whole history without a disagreement and find nothing to fly: each rest is already a plain change), maps every old name to a door identity, then writes `dest/world.jsonl`; a failure after that removes what it made again |
-| `snapshot-oracle.ts` | the translator against the OLD ENGINE (suite `oracle`): every old world whose `snapshot.json` is a complete fold of its log (seq and bytes match) is translated for real, and its fold (and the server's lifted load) compared with the snapshot, through the translator's mapping and also field by field off the snapshot. Incomplete snapshots are skipped, never compared. Given a world translated in place, it reads the kept originals (`log.original.jsonl`, `snapshot.original.json`). `OPT_DIR=<serving checkout>/assets/opt` gives store models their real addresses |
+| `snapshot-oracle.ts` | the translator against the OLD ENGINE (suite `oracle`): every old world whose `snapshot.json` is a complete fold of its log (seq and bytes match), except a physics-era (epoch) log, which is skipped and said, is translated for real, and its fold (and the server's lifted load) compared with the snapshot, through the translator's mapping and also field by field off the snapshot. Incomplete snapshots are skipped, never compared. Given a world translated in place, it reads the kept originals (`log.original.jsonl`, `snapshot.original.json`). `OPT_DIR=<serving checkout>/assets/opt` gives store models their real addresses |
 
 The operator runs it, in place, in two steps (review of PR #260, item 6: the approval is bound to the exact dry-run
 report before anything moves). **A translation names no founder and carries no owner's signature** (#260 rereview,
@@ -27,11 +27,13 @@ home-node attestation, later), the one path is `--no-founder-key --operator-only
 record says no owner was attested.
 
 1. **The dry run.** `WORLDS_DIR=<dir> bun tools/protocol/world.ts translate <world> --dry-run --no-founder-key`. It writes
-   nothing and prints the report (`reportV1World` in `world.ts` here): the old log's size and sha256, the translator and
+   nothing and prints the report (`reportV1World` in `world.ts` here; a world none of whose owners has an account yet is refused
+   before it: `EIDO_UPGRADER_ACCOUNT=<yours> … --claim` on this step and the next makes you its owner): the old log's size and sha256, the translator and
    fold build, `founderKey: null`, the counts, the `DROPPED` table (what every translation drops or renames by design, from
-   `translate-v1.js`), `deferred` (uses of features v4 doesn't carry yet: `DEFERRED` — water volumes, air boxes, climb
-   routes, vehicles, collision toggles; any means the translation is refused, naming each use) and `report-hash <sha256>`.
-   Nothing in it varies between runs, so the same log and tool always hash the same.
+   `translate-v1.js`), `mapped` (main's water volumes, air boxes, climb routes, vehicles, collision toggles, environments and inferred lamps,
+   each with where it went), `deferred` (`DEFERRED` is empty; the one use still refused is a water or air volume on
+   `@world`, named with its use) and `report-hash <sha256>`.
+   Nothing in it varies between runs, so the same log, tool, host library bytes, identity directory and `poses.json` always hash the same.
 2. **The translation, bound to that hash.** `translate <world> --no-founder-key --approved <hash> --operator-only-no-owner`.
    The report is recomputed from `log.jsonl` as it stands: a different hash (the log grew, the tool changed) is refused with
    both hashes named. Without `--operator-only-no-owner` it is REFUSED: no owner can sign, and the operator says so,
@@ -58,7 +60,7 @@ directory only once the swap has succeeded (kept until then in the temporary dir
 recovery of an interrupted swap writes): a failed attempt leaves none behind, so retries don't pile up unused ones. On any failure, before or during the swap, whatever moved is
 put back, the temporary directory is removed, and it says why. A directory whose `world.jsonl` is a world is served as one, so the
 kept `log.original.jsonl` never makes it look old; translating it again refuses. `translate <old world> <new name>`
-still translates into a new name instead, leaving the old directory exactly as it was (the same dry run and approval).
+still translates into a new name instead, leaving the old directory exactly as it was (its own dry run naming both: `translate <old> <new> --dry-run …`; the in-place hash does not approve it, the world's name is in the hash).
 
 **Rollback.** The swap moves these: `world.jsonl` in; `log.jsonl` → `log.original.jsonl`, `snapshot.json` →
 `snapshot.original.json`, `poses.json` → `poses.original.json`; then the new `poses.json` (keyed by identity),
