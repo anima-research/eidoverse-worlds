@@ -94,8 +94,8 @@ export class World {
    *  requests the authority refused, rate limits, script events. In-memory only,
    *  capped, never persisted — it is diagnosis, not history. Readable by
    *  anyone in the world (ws `debug`, `/debug` in the client, `world_debug`
-   *  over MCPL): the log is public, so the reasons things bounced off it are
-   *  public too. */
+   *  over MCPL): the log's acts are public (speech is arrival-only, and the recorder
+   *  holds no say text), so the reasons things bounced off it are public too. */
   debugLog: Record<string, unknown>[] = [];
   debug(kind: string, detail: Record<string, unknown>): void {
     this.debugLog.push({ ts: Date.now(), kind, ...detail });
