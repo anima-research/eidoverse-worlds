@@ -260,6 +260,26 @@ r = run("18-ts", [GEN_LINE, ACT, st("create", {"id": "a"}),
 check("18 decreasing / fractional ts malformed; equal ts fine",
       (5, "malformed:ts-decreasing") in codes(r) and (6, "malformed:ts") in codes(r)
       and r.view()["a"] == {"x": {"v": 2}}, (codes(r), r.view()))
+NO_TS = json.dumps({"kind": "change", "world": WID, "actor": "system", "cause": 1, "verb": "set",
+                    "body": {"id": "a", "comp": "x", "value": 9}})   # starts with "kind" so _with_ts leaves it alone
+r = run("18b-ts-missing", [GEN_LINE, ACT, st("create", {"id": "a"}), NO_TS])
+check("18b missing ts malformed", (3, "malformed:ts") in codes(r) and r.view()["a"] == {}, (codes(r), r.view()))
+
+# 21 non-string kind / op verb: malformed, not a TypeError (parity with fold.js checkEntry / shapeOne; bot #477)
+r = run("21-nonstring-kind-verb", [GEN_LINE, ACT, st("create", {"id": "a"}),
+    json.dumps({"world": WID, "kind": [], "ts": 1, "actor": "system", "verb": "set", "body": {}}),
+    st("batch", {"ops": [{"verb": [], "id": "a"}]}),
+    st("set", {"id": "a", "comp": "x", "value": 1})])
+check("21 kind=[] and op verb=[] are malformed, the log still folds",
+      (3, "malformed:kind") in codes(r) and (4, "malformed:verb") in codes(r) and r.view()["a"] == {"x": {"v": 1}}, (codes(r), r.view()))
+
+# 22 purge target {seq, op: null}: purge-target-bad, not "the whole set" (parity with fold.js purgesOf; bot #478)
+r = run("22-purge-op-null", [GEN_LINE, ACT, st("create", {"id": "a"}),
+    st("set", {"id": "a", "comp": "x", "value": 1}),                                                       # 3
+    json.dumps({"world": WID, "kind": "purge", "actor": "system", "verb": "purge",
+                "body": {"values": [{"seq": 3, "op": None}]}})])                                           # 4
+check("22 purge op:null is a bad target; the value stays",
+      (4, "purge-target-bad") in codes(r) and (4, "purge") not in codes(r) and r.view()["a"] == {"x": {"v": 1}}, (codes(r), r.view()))
 
 check("15 JCS key order by UTF-16 units", R.jcs({"\U0001f600": 1, "\ufb33": 2}) == '{"\U0001f600":1,"\ufb33":2}')
 
