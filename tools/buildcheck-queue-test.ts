@@ -155,6 +155,16 @@ setInterval(() => {}, 1000);`);
     const onDisk = readdirSync(join(dir, "opt", "checks")).filter((n) => n.endsWith(".json")).length;
     check("the report cache stays under its bound: in memory and on disk", Q.checkStats().memo <= 5 && onDisk <= 8, JSON.stringify({ ...Q.checkStats(), onDisk }));
     Q.checkConfig.memoMax = memoMax; Q.checkConfig.diskMax = diskMax;
+    // bot review #260 253: queueBytes is the cap even for an idle queue (a single over-cap snapshot is refused)
+    { const queueBytes = Q.checkConfig.queueBytes; Q.checkConfig.queueBytes = 1 << 10; Q.resetCheckBudget();
+      const r = await outcome(Q.checkFile(big, 19.99));
+      check("an idle queue refuses one snapshot over queueBytes (503, the queue is full)", !r.ok && (r as any).e.includes("queue is full"), JSON.stringify(r));
+      Q.checkConfig.queueBytes = queueBytes; }
+    // bot review #260 466: the per-path digest memo is bounded
+    { const digestMax = Q.checkConfig.digestMax; Q.checkConfig.digestMax = 3;
+      for (let i = 0; i < 6; i++) { const p = join(dir, `many-${i}.glb`); writeFileSync(p, "same bytes"); await outcome(Q.checkFile(p, 1)); }
+      check("the per-path digest memo stays under digestMax", Q.checkStats().digests <= 3, JSON.stringify(Q.checkStats()));
+      Q.checkConfig.digestMax = digestMax; }
     Q.checkConfig.runner = real;
   }
 

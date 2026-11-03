@@ -21,7 +21,7 @@
 //   · snapshots are written at enqueue (a queued check runs on exactly the bytes that were asked about,
 //     never on the source reopened later) but ONE per distinct model — named by its digest and shared by
 //     every scale and job of it, deleted when the last of them is done. Scales are parameters, not files;
-//   · reports are kept LRU, memoMax in memory and diskMax files on disk.
+//   · reports are kept LRU in memory (memoMax); on disk the oldest-written past diskMax are pruned.
 // Scale is NOT bucketed coarser than 0.01: the check's verdicts are thresholds on scaled geometry (a
 // doorway against the body's width, a riser against its step), so a bucket would answer for a scale the
 // thing isn't placed at, and flip a verdict near its edge. The gate above bounds the cost instead.
@@ -53,6 +53,8 @@ export const checkConfig = {
   /** reports kept: in memory, and files in OPT_DIR/checks */
   memoMax: 512,
   diskMax: 4096,
+  /** paths whose digest is remembered against their stat (the oldest forgotten past this; bot review #260 466) */
+  digestMax: 4096,
 };
 /** New checks a minute: per asking address, and for the whole process (a cached answer costs nothing). */
 export const CHECK_PER_ADDRESS = 10;
@@ -74,7 +76,7 @@ let waiting = 0, heldBytes = 0;
 /** One snapshot per distinct model in the queue: digest -> its jobs still to finish and its size. */
 const snaps = new Map<string, { refs: number; bytes: number; written: Promise<unknown> }>();
 /** Tests: what the queue and the cache hold now; and a clean rate budget. */
-export const checkStats = () => ({ waiting, heldBytes, snapshots: snaps.size, memo: memo.size, running: running.size });
+export const checkStats = () => ({ waiting, heldBytes, snapshots: snaps.size, memo: memo.size, running: running.size, digests: digests.size });
 export const resetCheckBudget = () => checkGate.reset();
 
 /** Keep a report, most recent last; the oldest go past memoMax. */
@@ -130,7 +132,8 @@ export async function checkFile(file: string, scale = 1, bytes?: Uint8Array, opt
     if (!rd) { rd = (async () => { const b = new Uint8Array(await Bun.file(file).arrayBuffer()); return { data: b, digest: sha256(b) }; })();
       reading.set(rk, rd); void rd.finally(() => reading.delete(rk)).catch(() => {}); }
     ({ data, digest } = await rd); }
-  digests.set(file, { id, digest });   // the id from before the read: a change during it shows next time
+  digests.delete(file); digests.set(file, { id, digest });   // the id from before the read: a change during it shows next time
+  while (digests.size > checkConfig.digestMax) digests.delete(digests.keys().next().value!);
   const key = `${CHECK_VERSION}|${digest}|${s}`;
   const hit = cached(key);
   if (hit !== undefined) return hit;
@@ -138,7 +141,7 @@ export async function checkFile(file: string, scale = 1, bytes?: Uint8Array, opt
   if (inflight) return inflight;
   // new work: the queue's room first (a refusal there spends no one's budget), then the asker's grant
   const newBytes = snaps.has(digest) ? 0 : data.length;
-  if (waiting >= checkConfig.queueMax || (heldBytes > 0 && heldBytes + newBytes > checkConfig.queueBytes))
+  if (waiting >= checkConfig.queueMax || heldBytes + newBytes > checkConfig.queueBytes)   // one over-cap snapshot is refused too (bot review #260 253)
     throw new CheckRefused(`the build check's queue is full (${waiting} waiting) — ask again in a minute`, 503, 60);
   if (opts.address !== undefined) {
     const g = checkGate.grant(opts.address);

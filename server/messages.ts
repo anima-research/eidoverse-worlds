@@ -95,8 +95,9 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
   "debug": ({ c, ws, now, expel }, msg) => {
     // The flight recorder (World.debugLog): why things bounced —
     // denials, rejections, rate limits, reaction outcomes. Open to
-    // spectators for the same reason history is: the log is public,
-    // so the reasons things failed to reach it are public too.
+    // spectators for the same reason history is: the log's acts are public
+    // (speech is arrival-only; the recorder holds no say text), so the
+    // reasons things failed to reach it are public too.
     if (!c.world) return;
     const limit = pageLimit(msg.limit);
     if (msg.script != null) {

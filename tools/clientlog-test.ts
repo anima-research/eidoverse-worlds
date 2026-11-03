@@ -9,6 +9,7 @@ process.env.WORLDS_DIR = wd; process.env.CLIENTLOG_DIR = ld; process.env.JOIN_TO
 const { foundWorlds } = await import("./harness.ts");
 foundWorlds(wd, ["known"]);   // a world with a log (world.jsonl) = known
 const { route } = await import("../server/routes.ts");
+const { hnSessions } = await import("../server/auth.ts");
 const ok = (v: unknown, why: string) => { if (!v) { console.error("FAIL", why); process.exit(1); } };
 const srv: any = { requestIP: () => ({ address: "127.0.0.1" }), upgrade: () => false };
 const post = (q: string, body = "hello", headers: Record<string, string> = { authorization: "Bearer test-door" }) =>
@@ -16,6 +17,10 @@ const post = (q: string, body = "hello", headers: Record<string, string> = { aut
 const st = async (r: Response | Promise<Response>) => (await r).status;
 ok(await st(post("world=known", "hello", {})) === 401, "no Authorization → 401");
 ok(await st(post("world=known", "hello", { authorization: "Bearer wrong" })) === 401, "wrong key → 401");
+// bot review #260 188: a signed-in human (home node: no JOIN_TOKEN in the page) is a door key here too, same-origin only
+const sid = "b".repeat(64); hnSessions.set(sid, { sub: "human:u_test", name: "tester", scopes: ["worlds:join"], exp: Date.now() + 60_000 });
+ok(await st(post("world=known", "from a session", { cookie: `ew_sess=${sid}`, "sec-fetch-site": "same-origin" })) === 200, "a signed-in session with no door key → 200");
+ok(await st(post("world=known", "cross-site", { cookie: `ew_sess=${sid}`, "sec-fetch-site": "same-site" })) === 401, "a session cookie from another origin → 401");
 ok(await st(post("world=known&key=test-door")) === 400, "a key in the URL is refused (400) even when correct — the record path never carries the door");
 const streamed = new Request("http://x/clientlog?world=known", { method: "POST", body: new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode("x")); c.close(); } }), duplex: "half", headers: { authorization: "Bearer test-door" } } as RequestInit);
 ok(streamed.headers.get("content-length") === null && await st(route(streamed, srv)) === 411, "a streamed body (no content-length) → 411");
@@ -39,5 +44,5 @@ if (process.getuid?.() !== 0) {
   try { ok(await st(post("world=fresh", "into a wall")) === 500, "unwritable log dir → 500, not a false ok"); }
   finally { chmodSync(ld, 0o700); }   // a failure here once left the dir read-only, and the gate's cleanup crashed on it
 } else console.log("(root: skipping the unwritable-dir case)");
-console.log("clientlog: 15 ok");
+console.log("clientlog: 17 ok");
 import("node:fs").then((fs) => { try { fs.rmSync(process.env.WORLDS_DIR!, { recursive: true, force: true }); } catch {} });
