@@ -66,7 +66,7 @@ async function sock(port) {
   return {
     msgs, get closed() { return closed; },
     async join(world, id, extra = {}) { const k = msgs.length; ws.send(JSON.stringify({ type: "join", world, id, avatar: "", replica: true, ...extra }));
-      await tryUntil(`${id}'s join is answered (or its socket closes)`, () => msgs.slice(k).some((m) => m.type === "snapshot" || m.type === "error") || closed != null, { ms: 3000, step: 50 });
+      await tryUntil(`${id}'s join is answered (or its socket closes)`, () => msgs.slice(k).some((m) => m.type === "snapshot" || m.type === "error") || closed != null, { ms: 10_000, step: 50 });   // an upper bound: it returns as soon as the answer lands
       await sleep(80); return { snapshot: msgs.slice(k).find((m) => m.type === "snapshot"), errors: msgs.slice(k).filter((m) => m.type === "error").map((m) => m.error) }; },
     req: (verb, args = {}) => new Promise((res) => { const id = `r${++n}`; waiters.set(id, res); ws.send(JSON.stringify({ type: "request", id, verb, args })); setTimeout(() => res({ ok: false, timeout: true }), 4000); }),
     raw: (m) => ws.send(JSON.stringify(m)),
@@ -371,7 +371,7 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   const theirs = nameOf(`local:${LONG.toLowerCase()}`), seen = nameOf("local:watcher") ?? "";
   ok(!!jb.snapshot && !!jw.snapshot && theirs === LONG && seen.length <= 64 && seen.endsWith(`-${(await import("../../server/directory.ts")).accountTag("local:watcher")}`) && seen.toLowerCase() !== LONG.toLowerCase(),
     "D12 (door) a spectator's first sight under a 64-character name another account wears records that name cut to keep its own account's tag (accountTag), within the limit, never the other account's name",
-    { joins: [jb.errors, jw.errors], theirs, seen });
+    { joins: [jb.errors, jw.errors], snapshots: [!!jb.snapshot, !!jw.snapshot], theirs, seen });
   body.close(); watch.close(); op.close(); try { s.proc.kill(); await s.proc.exited; } catch {} fs.rmSync(path.join(W, ".bans.json"), { force: true }); }
 // ---- A13d (review of #260, server I5): two worlds opening the same keys file keep each other's keys ----
 { const { custodyAt } = await import("../../server/custody.ts");

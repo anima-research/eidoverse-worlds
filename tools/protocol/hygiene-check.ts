@@ -154,8 +154,8 @@ if (import.meta.main) {
   check(`H${i++} role-words: caught in its known-bad form (4), and not in the right way`, roleWords(bareWords) === 4 && roleWords(fineWords) === 0, [roleWords(bareWords), roleWords(fineWords)]);
   // the scan reads every text kind, not only code and prose (bot #677): a planted .json and .yml are found, a .png is not
   { const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "hyg-677-")); for (const f of ["a.json", "b.yml", "c.png"]) fs.writeFileSync(path.join(tmp, f), '{"who": "WORLD_ADMIN"}\n');
-    const hits = roleWordHits(tmp); fs.rmSync(tmp, { recursive: true, force: true });
-    check(`H${i++} role-words: a .json and a .yml saying WORLD_ADMIN are found by the tree scan (a binary kind is not)`, JSON.stringify(hits) === '["a.json:1","b.yml:1"]', hits); }
+    const hits = roleWordHits(tmp); fs.rmSync(tmp, { recursive: true, force: true });   // hits come in the filesystem's order (ext4 isn't sorted)
+    check(`H${i++} role-words: a .json and a .yml saying WORLD_ADMIN are found by the tree scan (a binary kind is not)`, JSON.stringify([...hits].sort()) === '["a.json:1","b.yml:1"]', hits); }
   const wordHits = roleWordHits();
   check(`H${i++} role-words: no file outside the legacy reader, its test and the migration notes says WORLD_ADMIN, world admin or world operator`, wordHits.length === 0, wordHits.join("\n      "));
   // mcpl state (10-29): a test that spawns the mcpl server names MCPL_STATE, or it writes the repository's state file
