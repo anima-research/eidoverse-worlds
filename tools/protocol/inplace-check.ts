@@ -52,6 +52,7 @@
 //        countersignature, an absent owner without NO_OWNER's exact text → refused by name; makeApproval makes the one form
 //   IP31 FOUNDING a brand-new world is a different path: create-world still takes the founder's own ownerKey for tier 0, and
 //        `world.ts found` still founds
+//   IP33 the two-name form's advice (no approval; the dry run's to-translate line) names old and new, and the command works as printed
 //   IP31b `world.ts found` stopped after genesis leaves no world under the name (built aside, renamed into place); a rerun founds it
 //   IP24c a fold cache the server left (server/statecache.ts: derived) neither blocks a rollback nor is left behind
 //   IP24b rollback keeps an identity another world's log names (the second world reused the first one's id)
@@ -582,5 +583,12 @@ const actorsOf = (d: string) => [...new Set(fs.readFileSync(path.join(d, "world.
   const r = tool(["translate", name, "--no-founder-key", "--operator-only-no-owner", "--approved", rep?.hash ?? "x"]);
   ok(rep?.report?.source?.poses?.sha256 === crypto.createHash("sha256").update(was).digest("hex") && r.code !== 0 && /is not the one that was approved/.test(r.out) && !fs.existsSync(path.join(d, "world.jsonl")),
     "IP21c the dry run's report pins poses.json (size, sha256); a poses.json rewritten after it refuses the approval, and nothing moves", { pin: rep?.report?.source?.poses, code: r.code, out: r.out.slice(-300) }); }
+// IP33 (bot review #260 87) the two-name form's advice names both worlds: the printed command, run as printed, translates old into new
+{ const src = "advised", dest = "advised-new"; oldWorld(src);
+  const bare = tool(["translate", src, dest, "--no-founder-key"]), dr = tool(["translate", src, dest, "--dry-run", "--no-founder-key"]);
+  const said = /^to translate: approve exactly this report\. translate (.+?) (--no-founder-key --approved [0-9a-f]{64} --operator-only-no-owner)/m.exec(dr.out);
+  const r = said ? tool(["translate", ...said[1].split(" "), ...said[2].split(" ")]) : { code: -1, out: "no advice line" };
+  ok(/translate advised advised-new --dry-run/.test(bare.out) && said?.[1] === `${src} ${dest}` && r.code === 0 && isWorldDir(path.join(W, dest)) && !isWorldDir(path.join(W, src)),
+    "IP33 `translate old new`: the approval refusal and the dry run's 'to translate' line both name old and new, and the advised command translates old into new", { advice: said?.[0], code: r.code, out: r.out.slice(-300), bare: bare.out.slice(0, 200) }); }
 console.log(`inplace: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
