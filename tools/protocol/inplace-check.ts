@@ -53,6 +53,7 @@
 //   IP31 FOUNDING a brand-new world is a different path: create-world still takes the founder's own ownerKey for tier 0, and
 //        `world.ts found` still founds
 //   IP33 the two-name form's advice (no approval; the dry run's to-translate line) names old and new, and the command works as printed
+//   IP32 the in-place swap is durably ordered: translated files fsynced before the first rename, the directory synced after the marker, the last rename, the marker's removal
 //   IP31b `world.ts found` stopped after genesis leaves no world under the name (built aside, renamed into place); a rerun founds it
 //   IP24c a fold cache the server left (server/statecache.ts: derived) neither blocks a rollback nor is left behind
 //   IP24b rollback keeps an identity another world's log names (the second world reused the first one's id)
@@ -583,6 +584,26 @@ const actorsOf = (d: string) => [...new Set(fs.readFileSync(path.join(d, "world.
   const r = tool(["translate", name, "--no-founder-key", "--operator-only-no-owner", "--approved", rep?.hash ?? "x"]);
   ok(rep?.report?.source?.poses?.sha256 === crypto.createHash("sha256").update(was).digest("hex") && r.code !== 0 && /is not the one that was approved/.test(r.out) && !fs.existsSync(path.join(d, "world.jsonl")),
     "IP21c the dry run's report pins poses.json (size, sha256); a poses.json rewritten after it refuses the approval, and nothing moves", { pin: rep?.report?.source?.poses, code: r.code, out: r.out.slice(-300) }); }
+// IP32 (bot review #260 9) the in-place swap is durably ordered: the translated files are on disk before the first rename,
+// and the directory D is synced after the marker lands, after the last rename, and after the marker goes (a spy preload logs it)
+{ const name = "durable"; const d = oldWorld(name); const trace = path.join(root, "fsync-trace.log"), spy = path.join(root, "fsync-spy.ts");
+  fs.writeFileSync(spy, `import fs from "node:fs"; const out = process.env.FSYNC_TRACE, fds = new Map(), o = fs.openSync, f = fs.fsyncSync, rn = fs.renameSync, rm = fs.rmSync, put = fs.writeFileSync;
+const log = (x) => put(out, x + "\\n", { flag: "a" });
+fs.openSync = (p, ...a) => { const fd = o(p, ...a); fds.set(fd, String(p)); return fd; };
+fs.fsyncSync = (fd) => { log("fsync " + fds.get(fd)); return f(fd); };
+fs.renameSync = (a, b) => { log("rename " + a + " " + b); return rn(a, b); };
+fs.rmSync = (p, x) => { log("rm " + p); return rm(p, x); };\n`);
+  const h = dryHash([name]); fs.rmSync(trace, { force: true });
+  const r = Bun.spawnSync(["bun", "--preload", spy, "tools/protocol/world.ts", "translate", name, "--no-founder-key", "--operator-only-no-owner", "--approved", h], { cwd: ENGINE,
+    env: { ...process.env, TRUST_NAMES: "1", WORLDS_DIR: W, OPT_DIR: OPT, PROTOCOL_SCRATCH: root, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", FSYNC_TRACE: trace }, timeout: 45_000 });
+  const L = fs.existsSync(trace) ? fs.readFileSync(trace, "utf8").split("\n").filter(Boolean) : [], mk = path.join(d, SWAP_MARKER);
+  const into = L.map((l, i) => [l, i] as const).filter(([l]) => l.startsWith("rename ") && l.split(" ")[2]?.startsWith(d + path.sep) && /\.translating-/.test(l.split(" ")[1]));
+  const first = L.findIndex((l) => l.startsWith("rename ") && l.endsWith(path.join(d, "world.jsonl"))), last = Math.max(...L.map((l, i) => (l.startsWith("rename ") && l.split(" ")[2]?.startsWith(d + path.sep) ? i : -1)));
+  const marked = L.indexOf(`fsync ${mk}`), cleared = L.indexOf(`rm ${mk}`), dirSync = (from: number, to: number) => L.slice(from + 1, to).includes(`fsync ${d}`);
+  const synced = into.every(([l]) => L.slice(0, first).includes(`fsync ${l.split(" ")[1]}`));
+  ok(r.exitCode === 0 && first > 0 && into.length >= 2 && synced && marked >= 0 && marked < first && dirSync(marked, first) && cleared > last && dirSync(last, cleared) && dirSync(cleared, L.length),
+    "IP32 the in-place swap's durable order: every translated file fsynced before the first rename; the world's directory synced after the marker lands, after the last rename, and after the marker is removed",
+    { code: r.exitCode, out: (r.stdout.toString() + r.stderr.toString()).slice(-300), first, last, marked, cleared, synced, renamedIn: into.length, dSyncs: L.map((l, i) => (l === `fsync ${d}` ? i : -1)).filter((i) => i >= 0) }); }
 // IP33 (bot review #260 87) the two-name form's advice names both worlds: the printed command, run as printed, translates old into new
 { const src = "advised", dest = "advised-new"; oldWorld(src);
   const bare = tool(["translate", src, dest, "--no-founder-key"]), dr = tool(["translate", src, dest, "--dry-run", "--no-founder-key"]);

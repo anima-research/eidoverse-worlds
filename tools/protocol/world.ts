@@ -33,7 +33,7 @@ import path from "node:path";
 import { WORLDS_DIR } from "../../server/config.ts";
 import { directoryFor } from "../../server/directory.ts";
 import { foundWorld, isWorldSaved } from "../../server/worldlog.ts";
-import { syncDir } from "../../server/durable.ts";
+import { syncDir, syncTree } from "../../server/durable.ts";
 import { translateV1World, reportV1World, warmHulls, approvalProblem, makeApproval, ownerWarning, ownerRecognised, ownerlessRefusal, NO_FOUNDER, type Approval } from "./import-v1/world.ts";
 import { contentAddressOf } from "../../server/eidoindex.ts";
 import { custodyAt } from "../../server/custody.ts";
@@ -221,7 +221,9 @@ function translateInPlace(name: string, approval: Approval, approvedSource: { si
   for (const f of fs.readdirSync(T)) if (f !== "world.jsonl" && !TEMP_ONLY.has(f)) steps.push([path.join(T, f), path.join(D, f)]);
   // the in-progress marker, before the first rename and gone only once the identities are in: the server never serves a
   // directory holding it (server/livehost.ts SWAP_MARKER; R 10-27), and a recovery clears it
+  syncTree(T);   // the translated files on disk before any of them is renamed in (bot review #260 9)
   { const fd = fs.openSync(path.join(D, SWAP_MARKER), "wx"); fs.writeSync(fd, JSON.stringify({ temp: T, at: Date.now() })); fs.fsyncSync(fd); fs.closeSync(fd); }
+  syncDir(D);   // the marker's name, before the first rename
   const done: [string, string][] = [];
   const fault = Number(process.env.WORLD_TS_FAULT_AT_STEP ?? NaN);   // tests only: fail as if step k's rename had (tools/protocol/inplace-check.ts)
   const death = Number(process.env.WORLD_TS_DIE_AT_STEP ?? NaN);      // tests only: the process dies after k renames, no rollback (IP13)
@@ -229,12 +231,13 @@ function translateInPlace(name: string, approval: Approval, approvedSource: { si
   try { for (const [a, b] of steps) { if (done.length === death) process.exit(9); if (done.length === fault) throw new Error(`(injected) step ${done.length} failed`);
       if (done.length === touch) fs.appendFileSync(fs.existsSync(log) ? log : path.join(D, ORIGINAL.log), '{"seq":999,"ts":1,"actor":"late","verb":"say","args":{"text":"written during the swap"}}\n');
       if (fs.existsSync(b)) throw new Error(`${b} appeared during the swap`); fs.renameSync(a, b); done.push([a, b]); }
+    syncDir(D);   // every rename durable before the marker can go
     // …and once more after the last rename (the same file, renamed beside the world): a write that slipped in mid-swap undoes it
     { const now = sourceChanged(path.join(D, ORIGINAL.log), r!.source); if (now) throw new Error(stillWriting(path.join(D, ORIGINAL.log), r!.source, now)); }
     // the swap has succeeded: only now do its identities join the shared directory (a refusal here, an account taken since,
     // undoes the swap like any other failure)
     if (Number(process.env.WORLD_TS_FAULT_AT_STEP ?? NaN) === steps.length) throw new Error(`(injected) step ${steps.length} failed`);
-    putIdentities(r!.planned); fs.rmSync(path.join(D, SWAP_MARKER)); }
+    putIdentities(r!.planned); fs.rmSync(path.join(D, SWAP_MARKER)); syncDir(D); }
   catch (x) {
     const stuck: string[] = [];
     for (const [a, b] of done.reverse()) { try { fs.renameSync(b, a); } catch (y) { stuck.push(`${b} (should be ${a}: ${(y as Error).message})`); } }
