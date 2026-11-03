@@ -13,7 +13,7 @@ await new Promise((r) => (ws.onopen = r));
 ws.send(JSON.stringify({ type: 'join', world: W, id: 'seeder', token: world.key, replica: true }));
 await sleep(800);
 const replies = []; ws.onmessage = (m) => { const d = JSON.parse(String(m.data)); if (d.type === 'reply') replies.push(d.reply); };
-for (let i = 0; i < 6; i++) ws.send(JSON.stringify({ type: 'request', id: `c${i}`, verb: 'create', args: { id: `crate${i}`, model: `eidoverse/assets/models/crate_large_${i % 2 ? 'red' : 'blue'}.glb`, components: { transform: { pos: [(i - 2.5) * 2.5, 0, -5 - (i % 3) * 2] } } } }));
+for (let i = 0; i < 6; i++) ws.send(JSON.stringify({ type: 'request', id: `c${i}`, verb: 'create', args: { id: `$crate${i}`, model: `eidoverse/assets/models/crate_large_${i % 2 ? 'red' : 'blue'}.glb`, components: { transform: { pos: [(i - 2.5) * 2.5, 0, -5 - (i % 3) * 2] } } } }));
 await sleep(1500);
 console.log('    seeded:', replies.filter((r) => r?.ok).length, 'of 6', replies.find((r) => !r?.ok) ? JSON.stringify(replies.find((r) => !r?.ok)).slice(0, 200) : '');
 const { browser, page } = await launchBrowser(); const pg = await page();
@@ -25,6 +25,7 @@ try {
   await pg.evaluate(() => { localStorage.setItem('ew-cloud-quality', 'off'); localStorage.setItem('ew-shadows', 'on'); localStorage.setItem('ew-my-shadow', '1'); });   // the own-body pref: its lit+depth warms run through the real renderer
   await pg.goto(`${world.origin}/?world=${W}&name=shadowfade&key=${world.key}&lite=0&webgpu=1`, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await pg.waitForFunction(() => globalThis.__ewEngineUp, null, { timeout: 120000 });
+  const upErrs = shader.length;   // from engine-up: the first fade-in's depth-pass compile is watched too (bot review #260 91)
   await pg.evaluate(async () => { globalThis.__rig = await import('./lib/lightrig.js'); });
   const up = await poll(() => { const l = globalThis.__rig.rigDebug().casterList; return l.some((c) => c.casting && c.fade === 1) ? l.filter((c) => c.casting).length : 0; }, 90000);
   console.log('    casters faded in through the depth pass:', up, 'of', await pg.evaluate(() => globalThis.__rig.casterCount()), 'backend:', await pg.evaluate(async () => (await import('./lib/core.js')).backendName()));
@@ -40,6 +41,8 @@ try {
   check('restoring the budget fades back in', back === true);
   await pg.waitForTimeout(1500);
   check('no shader / pipeline / console errors while casters faded', shader.length === beforeErrs, shader.slice(beforeErrs, beforeErrs + 3).join(' | '));
+  const compiled = shader.slice(upErrs).filter((t) => /WGSL|shader|ShadowNode|maskShadow|compilation|pipeline/i.test(t));
+  check('no shader / pipeline error from engine-up on, the first fade-in included', compiled.length === 0, compiled.slice(0, 3).join(' | '));
   const me = await poll(async () => { const mb = await import('./lib/mybody.js'); const root = mb.getMe()?.vrm?.scene; if (!root) return null; const ms = []; root.traverse((o) => { if (o.isMesh) ms.push(o); }); const cast = ms.filter((m) => m.castShadow).length; return cast ? { meshes: ms.length, cast, receive: ms.filter((m) => m.receiveShadow).length } : null; }, 60000, 500);
   check("'my body casts a real shadow' on at boot: the own body casts and receives after its lit+depth warms", !!me && me.cast > 0 && me.receive === me.meshes, JSON.stringify(me));
   check('no page errors', errs.length === 0, errs.slice(0, 3).join(' | '));
