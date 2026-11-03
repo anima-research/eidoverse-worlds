@@ -74,5 +74,15 @@ console.log("\nlight readers — a lit Empty is found by what it is\n");
   check("an unlit thing has no casting", liveFor("box").casting === undefined, String(liveFor("box").casting));
 }
 
+{ // bot #260 112: a light whose host isn't realized is placed at the fold's WORLD pose and aimed by its world q
+  const M: any = await import("../client/lib/realize/models.js"), S: any = (await import("../client/lib/state.js")).state;
+  const was = S.st, qy = [0, Math.SQRT1_2, 0, Math.SQRT1_2];   // a quarter turn about +Y
+  S.st = { ...was, entities: { pole: { pos: [10, 0, 0], q: qy }, spot: { pos: [0, 2, 1], q: [0, 0, 0, 1], parent: { to: "pole", offset: [0, 2, 1], q: [0, 0, 0, 1] }, light: { kind: "spot", angle: 0.5 } } } };
+  const spec = M.lightSpec?.("spot", S.st.entities.spot, { kind: "spot", angle: 0.5, intensity: 1 }, null);
+  S.st = was;
+  const near = (a: number[], b: number[]) => !!a && a.every((v, i) => Math.abs(v - b[i]) < 1e-6);
+  check("an unrealized child's light sits at its world pos (the pole's turn applied: [11, 2, 0]) and carries the world q", !!spec && near(spec.pos, [11, 2, 0]) && near(spec.q, qy), JSON.stringify(spec));
+}
+
 console.log(failures ? `\n\x1b[31m${failures} failed\x1b[0m` : "\nall passed");
 process.exit(failures ? 1 : 0);
