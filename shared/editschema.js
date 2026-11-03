@@ -425,7 +425,7 @@ export function inspectSchema(ent, id, live = {}) {
 
   const flags = [];
   groups.push({ group: 'flags', label: 'Flags', fields: [...flags,
-    { t: 'check', k: 'lock', label: 'locked in place', value: locked, hint: 'nail it down: nobody\'s drags, edits or scripts can move, replace or remove it (server-enforced); sitting on it and content edits stay open. Not a door\'s lock (that is Openable\'s "door locked")' },
+    { t: 'check', k: 'lock', label: 'locked in place', value: locked, hint: 'nail it down: nobody\'s drags, edits or scripts change it (server-enforced); sitting on it and using it (doors, handlers) stay open, and a builder who may lift the lock edits through it. Not a door\'s lock (that is Openable\'s "door locked")' },
     { t: 'check', k: 'hidden', label: 'hidden', value: c.hidden === true, hint: 'not drawn, still there — a comp every client honours' },
     { t: 'check', k: 'clickthrough', label: 'clicks go through', value: c.clickthrough === true, hint: 'a pointer click passes through it to what is behind; it is still drawn, collides, and a hand or a tool can still take it (R 10-11)' },
     { t: 'check', k: 'disabled', label: 'switched off', value: c.disabled === true, hint: 'switched off: kept in the record and the Hierarchy, but nobody downloads, sees or touches it, and it has no physics; what hangs under it goes with it. Switch it on again to bring it back' },
