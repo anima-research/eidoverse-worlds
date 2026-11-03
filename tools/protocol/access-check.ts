@@ -237,6 +237,9 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   // authority: Fen, an operator not listed in the invite-only world, gets in (the bypass) but an ordinary write is still the
   // world's to judge; operator-repair lifts Moss's ban and lists Fen, each the operator's own act / record marked operator;
   // a non-operator's operator-repair is refused
+  // A11b (bot review #260 119): the address entry a guest's ban of Moss left in keep, which operator-repair's unban must lift too
+  const BJ = path.join(W, ".bans.json"), was = fs.existsSync(BJ) ? JSON.parse(fs.readFileSync(BJ, "utf8")) : {};
+  fs.writeFileSync(BJ, JSON.stringify({ ...was, "world:keep:addr:a11b": { by: "Rowan", ts: Date.now(), name: "drifter", addr: "a11b", until: Date.now() + 3600_000, world: "keep", who: ids.Moss } }));
   const s3 = await start({ SERVER_OPERATORS: "agent:token:fen" });
   const fen = await sock(s3.port); const jf = await fen.join("keep", "Fen", { agentToken: "tok-fen" }); const fenId = you(jf);
   let k = 0; const repair = async (s, verb, args) => { const id = `op${++k}`; s.raw({ type: "operator-repair", id, verb, args });
@@ -255,6 +258,8 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   ok(!!jf.snapshot && !plain.ok && plain.refused?.code === "rights" && unban?.reply?.ok && list?.reply?.ok && wide?.reply?.refused?.code === "rights" && !!jr.snapshot && notOp?.reply?.refused?.code === "rights" && mossGeom === 200 && !!act && !!rec,
     "A11 an operator repairs through the authority, narrowly and on the record: ordinary write refused, operator-repair unbans and lists (act / mod record marked operator), another component refused, a non-operator refused",
     { join: jf.errors, plain: plain.refused, unban: unban?.reply, list: list?.reply, wide: wide?.reply?.refused, notOp: notOp?.reply?.refused, mossGeom, act: !!act, rec: !!rec });
+  const left = Object.keys(JSON.parse(fs.readFileSync(BJ, "utf8")));
+  ok(unban?.reply?.ok && !left.includes("world:keep:addr:a11b"), "A11b operator-repair's unban lifts the address entry the guest's ban left, as the request path's unban does", left);
   // A12 (security review 10-18 H1): a GLOBAL ban binds to the account now. Rowan is present: removed, and refused on reconnect;
   // Moss is absent: the directory knows the account wearing that name, and the join is refused; the record names the account
   const modMsgs = () => fen.msgs.filter((m) => m.type === "mod" || m.type === "error").map((m) => m.text ?? m.error);

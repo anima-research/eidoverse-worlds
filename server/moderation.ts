@@ -121,7 +121,8 @@ export const banKey = (account: string | null | undefined, addr?: string | null,
 export type AddrSanction = { kind: "mute"; world: string; addr: string; actor: string; by: string; ts: number; until: number; channels?: string[]; reason?: string; ids: string[] };
 export const ADDR_SANCTIONS_FILE = join(WORLDS_DIR, ".addr-sanctions.json");
 export const addrSanctions: Record<string, AddrSanction> = {};
-export const addrSanctionKey = (kind: string, world: string, addr: string) => `world:${world}:addr:${addr}:${kind}`;
+/** One record per issuer (`actor`): two people's mutes are never merged into one (bot review #260 118). */
+export const addrSanctionKey = (kind: string, world: string, addr: string, actor: string) => `world:${world}:addr:${addr}:${kind}:by:${actor}`;
 export function saveAddrSanctions(now = Date.now()) {
   if (keptAside(ADDR_SANCTIONS_FILE, "address sanctions")) return;
   for (const [k, s] of Object.entries(addrSanctions)) if (!(s.until > now)) delete addrSanctions[k];
@@ -137,12 +138,12 @@ try {
 /** The address sanctions in force for a guest joining `world` from `addr`. */
 export function addrSanctionsFor(world: string, addr: string | null | undefined, now = Date.now()): AddrSanction[] {
   if (!addr) return [];
-  return (["mute"] as const).map((k) => addrSanctions[addrSanctionKey(k, world, addr)]).filter((s): s is AddrSanction => !!s && s.until > now);
+  return Object.values(addrSanctions).filter((s) => s.kind === "mute" && s.world === world && s.addr === addr && s.until > now);
 }
 /** File (or refresh) a guest's sanction against their address: at most a day, never past the sanction's own end. */
 export function fileAddrSanction(s: Omit<AddrSanction, "ts" | "ids" | "until"> & { until?: number | null; who: string }, now = Date.now()) {
   const until = Math.min(now + ADDR_BAN_MS, s.until ?? Infinity);
-  const key = addrSanctionKey(s.kind, s.world, s.addr); const prev = addrSanctions[key];
+  const key = addrSanctionKey(s.kind, s.world, s.addr, s.actor); const prev = addrSanctions[key];
   const { who, ...rest } = s;
   addrSanctions[key] = { ...rest, ts: now, until, ids: [...new Set([...(prev?.ids ?? []), who])] };
   saveAddrSanctions(now);
