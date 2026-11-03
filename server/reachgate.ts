@@ -32,13 +32,22 @@ function frameToWorld(pose: any, local: number[]): number[] | null {
   const yaw = Number(pose.yaw) || 0, c = Math.cos(yaw), sn = Math.sin(yaw);
   return [p[0] + l[0] * c + l[2] * sn, p[1] + l[1], p[2] - l[0] * sn + l[2] * c];
 }
+/** `v` turned by the inverse of `q` (frameToWorld's turn, undone); a pose without `q` is turned by yaw only, and the capsule is round */
+function unturn(q: unknown, v: number[]): number[] {
+  if (!(Array.isArray(q) && q.length === 4 && q.every((n: unknown) => typeof n === "number" && Number.isFinite(n)))) return v;
+  const n = Math.hypot(q[0], q[1], q[2], q[3]) || 1, x = -q[0] / n, y = -q[1] / n, z = -q[2] / n, w = q[3] / n;
+  const cx = y * v[2] - z * v[1], cy = z * v[0] - x * v[2], cz = x * v[1] - y * v[0];
+  const dx = y * cz - z * cy, dy = z * cx - x * cz, dz = x * cy - y * cx;
+  return [v[0] + 2 * (w * cx + dx), v[1] + 2 * (w * cy + dy), v[2] + 2 * (w * cz + dz)];
+}
 /** which other bodies a world point is in (their capsule, scaled to their size), and how */
 function bodiesAt(c: Client, pt: number[]): Hit[] {
   const out: Hit[] = [];
   for (const o of c.world?.clients ?? []) {
     if (!bodyLeg(o) || sameBody(c, o) || !fin3(o.lastPose?.p)) continue;
     const at = o.lastPose!.p!, s = scaleOf(o.lastPose);
-    const cls = pointClass([0, 0, 0], [(pt[0] - at[0]) / s, (pt[1] - at[1]) / s, (pt[2] - at[2]) / s]) as Cls | null;
+    const d = unturn(o.lastPose!.q, [pt[0] - at[0], pt[1] - at[1], pt[2] - at[2]]);   // into their frame: a turned body's capsule turns with it (bot review #260 13)
+    const cls = pointClass([0, 0, 0], [d[0] / s, d[1] / s, d[2] / s]) as Cls | null;
     if (cls) out.push({ tc: o, cls, point: null });
   }
   return out;
