@@ -92,28 +92,29 @@ const ann = await client(port, "yard", "Ann");
 const made = await ann.req("create", { id: "crate", model: "test/crate.glb", components: { transform: { pos: [1, 0, 2], q: [0, 0, 0, 1], scale: [1, 2, 1] }, label: "tall crate", sockets: { top: { pos: [0, 1, 0] } } } });
 check("the owner makes a crate scaled [1,2,1]", made.ok === true, J(made.refused));
 await new Promise((r) => setTimeout(r, 300));
-const c = ann.rep.st?.entities?.crate?.c;
+const cid = IDS.of("crate");   // the authority mints the id; "crate" rode as a placeholder
+const c = ann.rep.st?.entities?.[cid]?.c;
 check("…and this client's own fold has it", !!c && J(c.transform?.scale) === "[1,2,1]", J(c));
 
 console.log("\n— A/B. one thing —");
 {
-  const r = await fetch(`http://127.0.0.1:${port}/geom?world=yard&id=crate`);
+  const r = await fetch(`http://127.0.0.1:${port}/geom?world=yard&id=${encodeURIComponent(cid)}`);
   const body = await r.json();
   check("200 json", r.status === 200 && typeof body === "object", String(r.status));
   check("A the body carries scale3 [1,2,1] (a stretched thing stays stretched over the route)", J(body.scale3) === "[1,2,1]", J({ scale: body.scale, scale3: body.scale3 }));
-  const want = viewOf("crate", c);
+  const want = viewOf(cid, c);
   const diffs = Object.keys(want).filter((k) => J(want[k]) !== J(body[k]));
   check("B every field of viewOf(c) is in the body, equal (the route IS the view)", diffs.length === 0, J(Object.fromEntries(diffs.map((k) => [k, { view: want[k], route: body[k] }]))));
-  check("…id, geometry and the note ride beside it", body.id === "crate" && "geometry" in body && typeof body.note === "string", J(Object.keys(body)));
+  check("…id, geometry and the note ride beside it", body.id === cid && "geometry" in body && typeof body.note === "string", J(Object.keys(body)));
 }
 
 console.log("\n— C. the whole scene —");
 {
   const r = await fetch(`http://127.0.0.1:${port}/geom?world=yard&boxes=0`);
   const body = await r.json();
-  const row = (body.entities ?? []).find((e: any) => e.id === "crate");
+  const row = (body.entities ?? []).find((e: any) => e.id === cid);
   check("the crate's row", !!row, J(body).slice(0, 200));
-  const want = viewOf("crate", c);
+  const want = viewOf(cid, c);
   const diffs = row ? Object.keys(want).filter((k) => J(want[k]) !== J(row[k])) : ["(no row)"];
   check("C the row is the same record (scale3 included), plus kind", diffs.length === 0 && row?.kind === "model", J(diffs));
 }

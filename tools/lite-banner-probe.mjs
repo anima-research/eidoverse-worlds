@@ -7,7 +7,7 @@
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { launchBrowser, ownedWorld } from './probe-harness.mjs';
-const world = await ownedWorld({ live: process.argv[2] || null });
+const world = await ownedWorld({ live: process.argv[2] || null, worlds: ['busy'] });   // the server founds nothing on join (H3)
 const O = world.origin, K = encodeURIComponent(world.key);
 const SHOT = process.env.SHOT ?? join(tmpdir(), 'lite-banner.png');
 let fail = 0; const ok = (n, c, d = '') => { if (!c) fail++; console.log(`  ${c ? '✓' : '✗'} ${n}${d ? ' — ' + d : ''}`); };
@@ -17,9 +17,9 @@ try {
   const ws = new WebSocket(O.replace('http', 'ws') + '/ws?name=talker');
   await new Promise((r, j) => { const t = setTimeout(() => j(new Error(`no snapshot from ${O} in 20 s`)), 20000);
     ws.onerror = () => { clearTimeout(t); j(new Error(`websocket to ${O} failed`)); };
-    ws.onopen = () => ws.send(JSON.stringify({ type: 'join', world: 'busy', id: 'talker', token: world.key }));
+    ws.onopen = () => ws.send(JSON.stringify({ type: 'join', world: 'busy', id: 'talker', token: world.key, replica: true }));
     ws.onmessage = e => { if (JSON.parse(e.data).type === 'snapshot') { clearTimeout(t); r(); } }; });
-  for (let i = 0; i < 40; i++) ws.send(JSON.stringify({ type: 'verb', verb: 'say', args: { text: `chatter line ${i}` } }));
+  for (let i = 0; i < 40; i++) ws.send(JSON.stringify({ type: 'request', id: `s${i}`, verb: 'say', args: { text: `chatter line ${i}` } }));
   await new Promise(r => setTimeout(r, 800)); ws.close();
   const PHONE = { viewport: { width: 360, height: 700 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2,
     userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 4a) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36' };

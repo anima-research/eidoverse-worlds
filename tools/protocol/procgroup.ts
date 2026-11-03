@@ -75,18 +75,22 @@ function outputOf(cmd: string, args: string[], ms: number): Promise<string | nul
 const WIN_QUERY = ["-NoProfile", "-Command", "Get-CimInstance Win32_Process | ForEach-Object { \"$($_.ProcessId) $($_.ParentProcessId)\" }"];
 
 /** processTable, without blocking. `query` and `ms` are for tests (a query that never answers). */
-export async function processTableAsync(platform: NodeJS.Platform = process.platform, { ms = 30_000, query }: { ms?: number; query?: () => Promise<string | null> } = {}): Promise<Row[]> {
+export async function processTableAsync(platform: NodeJS.Platform = process.platform, o: { ms?: number; query?: () => Promise<string | null> } = {}): Promise<Row[]> {
+  return (await tableOrNull(platform, o)) ?? [];
+}
+/** The table, or null when it didn't answer in `ms` (killSuiteAsync then falls back to the root's tree). */
+async function tableOrNull(platform: NodeJS.Platform, { ms = 30_000, query }: { ms?: number; query?: () => Promise<string | null> } = {}): Promise<Row[] | null> {
   if (platform === "linux" && !query) return processTable("linux");   // /proc reads are local files: they don't hang
   const ask = query ?? (() => platform === "win32" ? outputOf("powershell.exe", WIN_QUERY, ms) : outputOf("ps", ["-A", "-o", "pid=,pgid=,ppid=,stat="], ms));
   const out = await Promise.race([ask(), new Promise<null>((r) => setTimeout(() => r(null), ms))]);
-  if (out === null) { if (platform === "win32") console.error("[procgroup] the Windows process table didn't answer in time; killing by tree only"); return []; }
+  if (out === null) { if (platform === "win32") console.error("[procgroup] the Windows process table didn't answer in time; killing by tree only"); return null; }
   return platform === "win32" ? parseWinTable(out) : parsePsTable(out);
 }
 export async function suiteMembersAsync(root: number, platform: NodeJS.Platform = process.platform): Promise<number[]> {
   return suiteMembers(root, await processTableAsync(platform), platform);
 }
-/** killSuite, without blocking: POSIX signals the group (a signal never blocks); Windows kills the tree it can find, children
- *  first, then the root's own tree with taskkill /T, each call bounded. */
+/** killSuite, without blocking: POSIX signals the group (a signal never blocks); Windows kills what winKillPlan finds,
+ *  children first, each by its own id; only when the table doesn't answer, the still-running root's tree with taskkill /T. */
 /** Which Windows processes to kill for a suite started as `root`, deepest first, each one by its own id (never `/T`).
  *  Windows reuses process ids (CI 10-22: the runner "lost communication" mid-gate, with a tree kill aimed at an exited
  *  suite's id on every suite): once the suite has `exited`, an id that is in the table again belongs to someone else, so
@@ -104,10 +108,12 @@ export function winKillPlan(root: number, table: Row[], exited: boolean, self: n
   const out = [...depth.entries()].sort((x, y) => y[1] - x[1]).map(([p]) => p);
   return exited || !table.some((r) => r.pid === root) ? out : [...out, root];
 }
-export async function killSuiteAsync(root: number, sig: NodeJS.Signals, platform: NodeJS.Platform = process.platform, { exited = false, query }: { exited?: boolean | (() => boolean); query?: () => Promise<string | null> } = {}): Promise<void> {
+export async function killSuiteAsync(root: number, sig: NodeJS.Signals, platform: NodeJS.Platform = process.platform, { exited = false, query, ms, taskkill = (a: string[]) => outputOf("taskkill", a, 15_000) }: { exited?: boolean | (() => boolean); query?: () => Promise<string | null>; ms?: number; taskkill?: (args: string[]) => Promise<unknown> } = {}): Promise<void> {
   if (platform !== "win32") { try { process.kill(-root, sig); } catch { /* gone */ } return; }
-  const table = await processTableAsync("win32", { query });
-  for (const pid of winKillPlan(root, table, typeof exited === "function" ? exited() : exited)) await outputOf("taskkill", ["/PID", String(pid), "/F"], 15_000);
+  const table = await tableOrNull("win32", { query, ms }), gone = () => (typeof exited === "function" ? exited() : exited);
+  // no table: the root's own tree, while the root still runs (its id is still its own; an exited root's may be someone's now)
+  if (table === null) { if (!gone()) await taskkill(["/PID", String(root), "/T", "/F"]); return; }
+  for (const pid of winKillPlan(root, table, gone())) await taskkill(["/PID", String(pid), "/F"]);
 }
 /** At exit, where nothing can be awaited: signal the group (POSIX), or start a kill of the still-running root and leave it
  *  running (Windows). The caller passes only a root it knows is still running; its children go with the next sweep. */

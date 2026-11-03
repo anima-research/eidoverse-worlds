@@ -54,6 +54,7 @@ import { ENGINE_CATALOGUE } from "../../server/modelcatalogue.ts";
 import { request, operatorRepair } from "../../shared/protocol/authority.js";
 import { banOf } from "../../shared/protocol/authority/rights.js";
 import { claimWords } from "../../client/lib/upgradeview.js";
+import { peopleOf, bansOf } from "./import-v1/world.ts";
 
 let pass = 0, fail = 0;
 const ok = (cond: any, what: string, detail?: any) => { if (cond) { pass++; console.log(`  ok  ${what}`); } else { fail++; console.log(`  FAIL ${what}${detail !== undefined ? ` — ${JSON.stringify(detail)?.slice(0, 700)}` : ""}`); } };
@@ -120,7 +121,7 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
     { code: u.up.code, out: u.up.code ? u.up.out.slice(-600) : undefined, roles: Object.keys(u.roles), antra: at("antra"), P: P.antra }));
   row("OB2", () => ok(at("fable").kind === "imported" && same(at("fable").subs, []) && at("mica").kind === "imported" && at("Digi_Rat").kind === "imported"
     && P.fable?.account === null && /no account/.test(P.fable?.why) && /2 accounts/.test(P.mica?.why) && P.Digi_Rat?.role === "builder"
-    && /^owner fable has no account yet \(main recorded no account for this name\): bind with bun tools\/operator-repair\.ts bind commons "fable" <their account>$/m.test(u.dry.out)
+    && /^owner fable has no account yet \(main recorded no account for this name\): bind with bun tools\/operator-repair\.ts bind commons 'fable' <their account>$/m.test(u.dry.out)
     && /^owner mica has no account yet \(main recorded 2 accounts/m.test(u.dry.out) && /isn't one here \(service:…\)/.test(P.svc?.why) && at("svc").kind === "imported" && !/human:test:[a-z]/.test(u.dry.out),
     "OB2 an unknown name (fable, Digi_Rat), an ambiguous one (mica: two accounts) and one main paired with no account shape (svc) stay imported; the dry run lists each with why and the bind command, and prints no account", { P, fable: at("fable"), dry: u.dry.out.split("\n").filter((l) => /account/.test(l)) }));
   row("OB3", () => ok(same(u.result?.people, u.report?.people) && u.report.people.length === 7 && u.report.people[0].role === "owner",
@@ -243,7 +244,7 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
     const lk = q(rue, "set", { id: lever ?? "shed", component: "lock", value: true }), lift = q(pip, "delete", { id: lever ?? "shed", component: "lock" });
     row("CL9", () => ok(lk?.ok && lift?.ok, "CL9 …a lock a regular set (builder strength by its setter) is lifted by another regular: no lockout", { lk: lk?.refused, lift: lift?.refused }));
     const ban = q(rue, "ban", { who: pip, days: 1 }), up = q(rue, "set", { id: "@world", component: `roles:${rue}`, value: { role: "moderator" } });
-    row("CL10", () => ok(ban?.ok === false && up?.ok === false && R.roleIdOf(w.state().entities["@world"].c, rue) === "builder",
+    row("CL10", () => ok(ban?.refused?.code === "rights" && up?.refused?.code === "rights" && R.roleIdOf(w.state().entities["@world"].c, rue) === "builder",
       "CL10 …and moderation stays refused: a regular can't ban, nor make themselves moderator; their role is builder, never above", { ban: ban?.refused?.code, up: up?.refused?.code, role: R.roleIdOf(w.state().entities["@world"].c, rue) })); }
   const w = live(), n0 = w.entries.length, set = operatorRepair(w, rue, "set", { id: "@world", component: `roles:${rue}`, value: { role: "owner" } }), wrote = w.entries.slice(n0);
   const wc = w.state().entities["@world"].c, n = R.effectiveOf(wc, "u-somebodyelse00000000"), again = operatorRepair(w, rue, "set", { id: "@world", component: `roles:${pip}`, value: { role: "owner" } });
@@ -272,8 +273,14 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
   const live = openLive(path.join(W, "hall"), "hall", { catalogue: ENGINE_CATALOGUE, scripts: null }); const B = Object.fromEntries((u.report?.bans ?? []).map((b) => [b.name, b]));
   row("BN1", () => ok(u.up.code === 0 && banOf(live, zed)?.reason === "griefing" && B.Zed?.account === "human:test" && /principals/.test(B.Zed?.from) && /check|someone else/.test(B.Zed?.check ?? "") && /^banned Zed: holds against their account/m.test(u.dry.out),
     "BN1 banned in main (a name nothing else in the log names) → after the upgrade that account is still banned (the authority's check, as at join); the approved report and the dry run list it, saying to check a by-name binding", { code: u.up.code, ban: banOf(live, zed), B, out: u.up.code ? u.up.out.slice(-400) : undefined }));
-  row("BN2", () => ok(B.Nemo?.account === null && /no account/.test(B.Nemo?.why ?? "") && /operator-repair\.ts bind hall "Nemo"/.test(B.Nemo?.bind ?? ""),
+  row("BN2", () => ok(B.Nemo?.account === null && /no account/.test(B.Nemo?.why ?? "") && /operator-repair\.ts bind hall 'Nemo'/.test(B.Nemo?.bind ?? ""),
     "BN2 a ban-only name main recorded no account for is listed unbound, with why and the bind command", B.Nemo));
+  // BN3 (bot review #260 82): the advice is pasted into a shell; a name with $, a backtick or a quote reaches the tool as written
+  const odd = "$HOME `id` it's", r = { final: { translated: { "@world": { "roles:u-odd": { role: "builder" }, "imported-bans:u-odd": true } } } };
+  const said = [...peopleOf("hall", r, () => ({ name: odd })), ...bansOf("hall", r, () => ({ name: odd }))].map((p) => p.bind);
+  const heard: string[] = []; for (const b of said) { const arg = b?.match(/ bind hall (.*) <their account>$/)?.[1] ?? "";   // Bun's shell quotes as sh does, on every OS
+    heard.push((await Bun.$`echo -n ${{ raw: arg }}`.nothrow().quiet()).stdout.toString()); }
+  row("BN3", () => ok(said.length === 2 && heard.every((h) => h === odd), "BN3 the bind advice quotes the name for a shell: pasted, it reaches the tool as written ($, backtick, quote)", { said, heard }));
 }
 
 // ================= OR: the operator binds an imported identity to an account =================

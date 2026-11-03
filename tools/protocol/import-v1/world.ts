@@ -202,12 +202,14 @@ const hostContent = (p: string) => { const h = contentAddressOf(p); return h ? `
  *  report from its own run and refuses an approval of any other hash. */
 /** Everyone the translated world gives a role, and whether an account is bound to them (R 10-28): {name, role, account,
  *  from} or {name, role, account: null, why, bind}; owners first. What the operator approves, and the upgrade's result. */
+/** A word a POSIX shell passes through as written ($, backticks, quotes and all): the bind advice is pasted into one (bot review #260 82). */
+const shellQuote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 export function peopleOf(world: string, r: Any, describe: (id: string) => Any) {
   const rank = (x: string) => ["owner", "moderator", "builder", "member"].indexOf(x) >>> 0;
   const out = Object.entries<Any>(r.final?.translated?.["@world"] ?? {}).filter(([k]) => k.startsWith("roles:")).map(([k, v]) => {
     const d = describe(k.slice(6)); const name = d?.name ?? k.slice(6), role = String(v?.role ?? "?");
     return d?.account ? { name, role, account: d.account, from: d.from }
-      : { name, role, account: null, why: d?.why ?? "not in the directory", bind: `bun tools/operator-repair.ts bind ${world} ${JSON.stringify(name)} <their account>` }; });
+      : { name, role, account: null, why: d?.why ?? "not in the directory", bind: `bun tools/operator-repair.ts bind ${world} ${shellQuote(name)} <their account>` }; });
   return out.sort((a, b) => rank(a.role) - rank(b.role) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
 /** Who the translated world bans (its imported-bans, filed in world.mod.jsonl), as peopleOf says who holds a role: bound
@@ -216,7 +218,7 @@ export function bansOf(world: string, r: Any, describe: (id: string) => Any) {
   return Object.keys(r.final?.translated?.["@world"] ?? {}).filter((k) => k.startsWith("imported-bans:")).map((k) => {
     const d = describe(k.slice("imported-bans:".length)); const name = d?.name ?? k.slice(14);
     return d?.account ? { name, account: d.account, from: d.from, ...(/^main's /.test(d.from ?? "") ? { check: `bound by name through ${d.from}: if the one banned was a guest wearing the name, this is someone else (lift it: operator-repair unban)` } : {}) }
-      : { name, account: null, why: d?.why ?? "not in the directory", bind: `bun tools/operator-repair.ts bind ${world} ${JSON.stringify(name)} <their account>` }; })
+      : { name, account: null, why: d?.why ?? "not in the directory", bind: `bun tools/operator-repair.ts bind ${world} ${shellQuote(name)} <their account>` }; })
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
 /** The upgrade's safety net (R 10-27 "don't lock anyone out of their worlds"): words when no owner of the translated world is

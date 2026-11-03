@@ -210,6 +210,8 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["consent-scripts-list", "../consent-scripts-list-test.ts", 1], // consent {allow|block} naming a script or a sponsor's scripts reaches the authority through the server; an allow naming nobody says how to name someone
   ["custody-save", "../custody-save-test.ts", 1], // a governance key is handed out only once the keys file holds it: a failed save hands out nothing
   ["client-tools", "../run-client.ts --import-only --skip-suites", 14], // refactor plan 2 D5: every tools/*-{test,check} loads (a stub missing an export, a moved module); the full run is `bun tools/run-client.ts`
+  ["migrate-genesis", "migrate-genesis-check.ts", 1],   // bot review #260 10: migrate-genesis keeps the whole old log, fsynced, before it replaces it; the dry run writes nothing
+  ["replica-freeze", "../replica-freeze-test.ts", 1],   // C7a: the client's fold is frozen in dev, and still folds every later entry (bot review #260 84: it sat outside the gate and couldn't start)
 ];
 
 // ---- lanes ----

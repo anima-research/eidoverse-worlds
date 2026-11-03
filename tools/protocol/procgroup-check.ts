@@ -103,6 +103,22 @@ check("PG5 a zombie in the group is not counted as left running", suiteMembers(7
     /killGroup\(child\.pid, "SIGKILL", \{ exited: \(\) => !stuck \|\| gone\(\) \}\)/.test(rs) && !/killSuite\(/.test(kcBody) && /exitCode/.test(kcBody), kcBody);
 }
 
+{ // bot review #260 49: a table that never answers falls back to the running root's tree (taskkill /T), and to nothing once it exited
+  const calls: string[][] = [], never = () => new Promise<string | null>(() => {}), rec = async (a: string[]) => { calls.push(a); };
+  await (PG as any).killSuiteAsync(100, "SIGKILL", "win32", { exited: false, ms: 300, query: never, taskkill: rec }); const live = calls.splice(0);
+  await (PG as any).killSuiteAsync(100, "SIGKILL", "win32", { exited: true, ms: 300, query: never, taskkill: rec }); const dead = calls.splice(0);
+  check("PG17 the Windows table timing out kills the still-running root's tree (taskkill /PID root /T /F); an exited root's id is left alone",
+    JSON.stringify(live) === JSON.stringify([["/PID", "100", "/T", "/F"]]) && dead.length === 0, { live, dead });
+}
+{ // bot review #260 50: --siblings rebuilds a dist/ made at another commit, and preflight reads the build's own commit, not dist/'s presence
+  const siblingBuiltAt = (await import("./common.ts") as any).siblingBuiltAt ?? (() => "no helper"); const at = fs.mkdtempSync(path.join(os.tmpdir(), "pg14-")), pin = "e17f773a9247c41d5c872d760aac7f243748d134";
+  fs.mkdirSync(path.join(at, "dist")); const bare = siblingBuiltAt(at);
+  fs.writeFileSync(path.join(at, "dist", ".built-at"), "0000000000000000000000000000000000000000\n"); const other = siblingBuiltAt(at);
+  fs.writeFileSync(path.join(at, "dist", ".built-at"), pin + "\n"); const same = siblingBuiltAt(at); fs.rmSync(at, { recursive: true, force: true });
+  const rs = fs.readFileSync(new URL("./run.ts", import.meta.url), "utf8");
+  check("PG18 a sibling's dist/ counts as built only at the pin (dist/.built-at): none or another commit's is rebuilt by --siblings and refused by preflight",
+    bare === null && other !== pin && same === pin && /if \(build && siblingBuiltAt\(at\) !== commit\)/.test(rs) && /\.built-at"\), commit/.test(rs) && /siblingBuiltAt\(siblingAt\(dir\)\) !== commit\) problems\.push/.test(rs), { bare, other, same });
+}
 { let answered = false, readAfter: boolean | null = null;
   await (PG as any).killSuiteAsync(100, "SIGKILL", "win32", { exited: () => { readAfter = answered; return true; }, query: async () => { answered = true; return "4 0\r\n50 4\r\n100 50\r\n777 100\r\n"; } });
   const src = (f: string) => fs.readFileSync(new URL(f, import.meta.url), "utf8");

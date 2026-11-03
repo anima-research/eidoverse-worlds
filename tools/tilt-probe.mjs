@@ -6,6 +6,10 @@
 //
 //   WORLDS_DIR=$(mktemp -d) PORT=8998 SKIP_OPT_SWEEP=1 bun run server/server.ts &
 //   node tools/tilt-probe.mjs [ws://localhost:8998]
+//
+// NOT RUNNABLE on this protocol (bot review #260 97): it speaks the old wire — joins without replica: true into a world
+// nothing founded, and authors with v1 `verb` spawn/place and chosen ids. It needs a port (world.ts found; create/set
+// requests with $placeholders) before it shows anything; until then it times out at the join snapshot.
 import { chromium } from 'playwright-core';
 
 const BASE = (process.argv[2] ?? 'ws://localhost:8998').replace(/\/$/, '');

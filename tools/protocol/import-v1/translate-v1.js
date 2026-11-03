@@ -41,7 +41,7 @@ import { ENGINES, DEFAULT_ENGINE } from "../../../shared/protocol/simlayer.js";
 export const hexColor = (x) => { if (typeof x !== "string") return x; const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(x.trim());
   if (!m) return Object.hasOwn(CSS_NAMES, x.trim().toLowerCase()) ? CSS_NAMES[x.trim().toLowerCase()] : x;   // @24: a CSS name, as three.js read it
   const h = m[1].length === 3 ? [...m[1]].map((d) => d + d).join("") : m[1]; return parseInt(h, 16); };
-function splitUnknown(c) {
+function splitUnknown(c, said = null) {   // said: (component, fields) for each split, the report's unmapped (bot review #260 33)
   if (c.light && typeof c.light === "object" && "color" in c.light) c.light = { ...c.light, color: hexColor(c.light.color) };
   if (c.light && typeof c.light === "object" && !Array.isArray(c.light) && "keep" in c.light) { const { keep, ...l } = c.light; c.light = { ...l, important: keep }; } // @7: v1's keep is light.important
   for (const [k, v] of Object.entries(c)) {
@@ -54,6 +54,7 @@ function splitUnknown(c) {
     const keep = { ...v }, left = {};
     for (const f of extra) { left[f] = v[f]; delete keep[f]; }
     c[k] = keep; c[lk] = left;
+    said?.(dec(k), extra);
   }
 }
 // every v1 socket was a seat: {pos, yaw?, pose?, part?} → {pos, q?, part?, body: {pose?}} (a person attaches by
@@ -957,7 +958,7 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
   out["@world"] = repairWorld(w).c; // @world is live from genesis (§2.3)
   // no account subject in any value, wherever the v1 fold kept it (@16: a binding's authorSub, or anything carried as it was)
   for (const c of Object.values(out)) for (const [k, v] of Object.entries(c)) { const x = withoutAccounts(v); if (x !== v) c[k] = x; }
-  for (const c of Object.values(out)) { splitUnknown(c); namespaceUnknown(c, ns); }
+  for (const [id, c] of Object.entries(out)) { splitUnknown(c, col?.unknown && ((k, fields) => col.unknown.push({ component: k, id: dec(id) ?? id, fields, as: `${id} ${keyed("imported", k)}` }))); namespaceUnknown(c, ns); }
   for (const [id, c] of Object.entries(out)) { unscalePivot(id, c, adjust); toSpec(id, c, adjust); }   // @24: main's unscaled pivot; the registry's ranges
   return clone(out); // a copy: the old fold mutates some records in place (bstate), and aliasing would hide the change
 }
@@ -1154,9 +1155,10 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
   stats.out = out.length;
   if (addr) { stats.modelsHashed = [...seenModels.values()].filter(Boolean).length; stats.modelsUnhashed = [...seenModels].filter(([, a]) => !a).map(([p]) => p); }
   const mapped = [...volumeMappings(v1), ...carriedMappings(v1), ...lampMappings(v1, lampsOf)]; if (mapped.length) stats.mapped = mapped;   // main's volumes, climb routes, collision, environment (VOLUMES, CARRIED)
-  const unmapped = unmappedOf(v1); if (unmapped.length) stats.unmapped = unmapped;   // …and what of them has no home (imported:<component>), never silent
+  const unknown = [], finalV1 = physical(v1, sim, recorded, project(v1, null, who, ns, addr, { boxOf, lampsOf, unknown }), dynamic);   // the last state's keys a v4 component lacks
+  const unmapped = [...unmappedOf(v1), ...unknown]; if (unmapped.length) stats.unmapped = unmapped;   // …and what of them has no home (imported:<component>), never silent
   stats.rights = mainRights(v1).report; if (effects.size) stats.effects = [...effects.keys()].sort();
   if (adjusted.size) stats.adjusted = [...adjusted.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : `${a.component}.${a.field}` < `${b.component}.${b.field}` ? -1 : 1));
   stats.guards = seen.guards.size; stats.guardsLive = Object.values(v1.entities ?? {}).filter((e) => e?.comp?.guard && !e.comp.lock).length;
-  return { out, stats, effects, final: { v1: physical(v1, sim, recorded, project(v1, null, who, ns, addr, { boxOf, lampsOf }), dynamic), translated: v4project(v4) }, ...(physics ? { theirs: sim } : {}) };
+  return { out, stats, effects, final: { v1: finalV1, translated: v4project(v4) }, ...(physics ? { theirs: sim } : {}) };
 }

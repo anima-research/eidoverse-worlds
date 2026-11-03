@@ -52,6 +52,8 @@
 //        countersignature, an absent owner without NO_OWNER's exact text → refused by name; makeApproval makes the one form
 //   IP31 FOUNDING a brand-new world is a different path: create-world still takes the founder's own ownerKey for tier 0, and
 //        `world.ts found` still founds
+//   IP33 the two-name form's advice (no approval; the dry run's to-translate line) names old and new, and the command works as printed
+//   IP32 the in-place swap is durably ordered: translated files fsynced before the first rename, the directory synced after the marker, the last rename, the marker's removal
 //   IP31b `world.ts found` stopped after genesis leaves no world under the name (built aside, renamed into place); a rerun founds it
 //   IP24c a fold cache the server left (server/statecache.ts: derived) neither blocks a rollback nor is left behind
 //   IP24b rollback keeps an identity another world's log names (the second world reused the first one's id)
@@ -313,7 +315,7 @@ const NO_KEY = (out: string) => /nothing can yet bind a key to the old world's o
   ok(again.code === 0 && isWorldDir(d), "IP24 …and it translates again after the rollback", again.out.slice(-300));
   // IP25: the server has written to the translated world since
   fs.appendFileSync(path.join(d, "world.jsonl"), "\n");
-  const r2 = tool(["rollback", name]); const keep = fingerprint(d);
+  const keep = fingerprint(d); const r2 = tool(["rollback", name]);
   ok(r2.code !== 0 && /without losing history: world\.jsonl changed since/.test(r2.out) && /--discard-changes/.test(r2.out) && same(fingerprint(d), keep) && isWorldDir(d), "IP25 a rollback that would lose history refuses, names the file, and offers --discard-changes; nothing changed", r2.out.slice(-500));
   const r3 = tool(["rollback", name, "--discard-changes"]);
   ok(r3.code === 0 && same(fingerprint(d), fp) && /changes since the translation discarded/.test(r3.out), "IP25 --discard-changes rolls back anyway, saying what was discarded; the directory is byte-identical to the original again", r3.out.slice(-400));
@@ -333,7 +335,7 @@ const NO_KEY = (out: string) => /nothing can yet bind a key to the old world's o
 { const name = "modlater"; const d = oldWorld(name); const fp = fingerprint(d); const r = xlate([name]);
   ok(r.code === 0 && isWorldDir(d) && !fs.existsSync(path.join(d, "world.mod.jsonl")), "IP30 setup: translated in place, no moderator log yet (this old world had no bans)", r.out.slice(-200));
   fs.writeFileSync(path.join(d, "world.mod.jsonl"), JSON.stringify({ ts: 1, actor: "u-x", verb: "ban", who: "u-y" }) + "\n");   // what the server's first ban writes
-  const r2 = tool(["rollback", name]); const keep = fingerprint(d);
+  const keep = fingerprint(d); const r2 = tool(["rollback", name]);
   ok(r2.code !== 0 && /without losing history: world\.mod\.jsonl was made since the translation/.test(r2.out) && /bans, mutes, kicks were filed/.test(r2.out) && /--discard-changes/.test(r2.out) && same(fingerprint(d), keep) && isWorldDir(d),
     "IP30 rollback refuses: the moderator log the server made since is named as history with nowhere to go; nothing changed", r2.out.slice(-500));
   const r3 = tool(["rollback", name, "--discard-changes"]);
@@ -365,8 +367,9 @@ const NO_KEY = (out: string) => /nothing can yet bind a key to the old world's o
   const forced = tool(["translate", "sunk", "--no-founder-key", "--operator-only-no-owner", "--approved", h!]);
   ok(forced.code !== 0 && /can't translate "sunk"/.test(forced.out) && /can't override this/.test(forced.out) && same(fingerprint(d), fp) && !temps().length && !isWorldDir(d) && fs.readFileSync(dirf, "utf8") === dirBefore,
     "IP26 approving the refused report doesn't override it: refused again, nothing written, no identities added", forced.out.slice(-400));
-  const named = oldWorld("sunk-src", { extra: uses.slice(6, 7) }); const two = tool(["translate", "sunk-src", "sunk-new", "--no-founder-key", "--operator-only-no-owner", "--approved", dryHash(["sunk-src", "sunk-new"])]);
-  ok(two.code !== 0 && /can't translate "sunk-new"|can't translate "sunk-src"/.test(two.out) && /air box on @world/.test(two.out) && !fs.existsSync(path.join(W, "sunk-new")) && same(fingerprint(named), fingerprint(named)),
+  const named = oldWorld("sunk-src", { extra: uses.slice(6, 7) }); const hN = dryHash(["sunk-src", "sunk-new"]); const fpN = fingerprint(named);
+  const two = tool(["translate", "sunk-src", "sunk-new", "--no-founder-key", "--operator-only-no-owner", "--approved", hN]);
+  ok(two.code !== 0 && /can't translate "sunk-new"|can't translate "sunk-src"/.test(two.out) && /air box on @world/.test(two.out) && !fs.existsSync(path.join(W, "sunk-new")) && same(fingerprint(named), fpN),
     "IP26 the two-name form refuses the same way, and makes no new directory", two.out.slice(-300)); }
 
 // ================= IP1: in place, the happy path (continued) =================
@@ -581,5 +584,32 @@ const actorsOf = (d: string) => [...new Set(fs.readFileSync(path.join(d, "world.
   const r = tool(["translate", name, "--no-founder-key", "--operator-only-no-owner", "--approved", rep?.hash ?? "x"]);
   ok(rep?.report?.source?.poses?.sha256 === crypto.createHash("sha256").update(was).digest("hex") && r.code !== 0 && /is not the one that was approved/.test(r.out) && !fs.existsSync(path.join(d, "world.jsonl")),
     "IP21c the dry run's report pins poses.json (size, sha256); a poses.json rewritten after it refuses the approval, and nothing moves", { pin: rep?.report?.source?.poses, code: r.code, out: r.out.slice(-300) }); }
+// IP32 (bot review #260 9) the in-place swap is durably ordered: the translated files are on disk before the first rename,
+// and the directory D is synced after the marker lands, after the last rename, and after the marker goes (a spy preload logs it)
+{ const name = "durable"; const d = oldWorld(name); const trace = path.join(root, "fsync-trace.log"), spy = path.join(root, "fsync-spy.ts");
+  fs.writeFileSync(spy, `import fs from "node:fs"; const out = process.env.FSYNC_TRACE, fds = new Map(), o = fs.openSync, f = fs.fsyncSync, rn = fs.renameSync, rm = fs.rmSync, put = fs.writeFileSync;
+const log = (x) => put(out, x + "\\n", { flag: "a" });
+fs.openSync = (p, ...a) => { const fd = o(p, ...a); fds.set(fd, String(p)); return fd; };
+fs.fsyncSync = (fd) => { log("fsync " + fds.get(fd)); return f(fd); };
+fs.renameSync = (a, b) => { log("rename " + a + " " + b); return rn(a, b); };
+fs.rmSync = (p, x) => { log("rm " + p); return rm(p, x); };\n`);
+  const h = dryHash([name]); fs.rmSync(trace, { force: true });
+  const r = Bun.spawnSync(["bun", "--preload", spy, "tools/protocol/world.ts", "translate", name, "--no-founder-key", "--operator-only-no-owner", "--approved", h], { cwd: ENGINE,
+    env: { ...process.env, TRUST_NAMES: "1", WORLDS_DIR: W, OPT_DIR: OPT, PROTOCOL_SCRATCH: root, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", FSYNC_TRACE: trace }, timeout: 45_000 });
+  const L = fs.existsSync(trace) ? fs.readFileSync(trace, "utf8").split("\n").filter(Boolean) : [], mk = path.join(d, SWAP_MARKER);
+  const into = L.map((l, i) => [l, i] as const).filter(([l]) => l.startsWith("rename ") && l.split(" ")[2]?.startsWith(d + path.sep) && /\.translating-/.test(l.split(" ")[1]));
+  const first = L.findIndex((l) => l.startsWith("rename ") && l.endsWith(path.join(d, "world.jsonl"))), last = Math.max(...L.map((l, i) => (l.startsWith("rename ") && l.split(" ")[2]?.startsWith(d + path.sep) ? i : -1)));
+  const marked = L.indexOf(`fsync ${mk}`), cleared = L.indexOf(`rm ${mk}`), dirSync = (from: number, to: number) => L.slice(from + 1, to).includes(`fsync ${d}`);
+  const synced = into.every(([l]) => L.slice(0, first).includes(`fsync ${l.split(" ")[1]}`));
+  ok(r.exitCode === 0 && first > 0 && into.length >= 2 && synced && marked >= 0 && marked < first && dirSync(marked, first) && cleared > last && dirSync(last, cleared) && dirSync(cleared, L.length),
+    "IP32 the in-place swap's durable order: every translated file fsynced before the first rename; the world's directory synced after the marker lands, after the last rename, and after the marker is removed",
+    { code: r.exitCode, out: (r.stdout.toString() + r.stderr.toString()).slice(-300), first, last, marked, cleared, synced, renamedIn: into.length, dSyncs: L.map((l, i) => (l === `fsync ${d}` ? i : -1)).filter((i) => i >= 0) }); }
+// IP33 (bot review #260 87) the two-name form's advice names both worlds: the printed command, run as printed, translates old into new
+{ const src = "advised", dest = "advised-new"; oldWorld(src);
+  const bare = tool(["translate", src, dest, "--no-founder-key"]), dr = tool(["translate", src, dest, "--dry-run", "--no-founder-key"]);
+  const said = /^to translate: approve exactly this report\. translate (.+?) (--no-founder-key --approved [0-9a-f]{64} --operator-only-no-owner)/m.exec(dr.out);
+  const r = said ? tool(["translate", ...said[1].split(" "), ...said[2].split(" ")]) : { code: -1, out: "no advice line" };
+  ok(/translate advised advised-new --dry-run/.test(bare.out) && said?.[1] === `${src} ${dest}` && r.code === 0 && isWorldDir(path.join(W, dest)) && !isWorldDir(path.join(W, src)),
+    "IP33 `translate old new`: the approval refusal and the dry run's 'to translate' line both name old and new, and the advised command translates old into new", { advice: said?.[0], code: r.code, out: r.out.slice(-300), bare: bare.out.slice(0, 200) }); }
 console.log(`inplace: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

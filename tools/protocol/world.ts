@@ -33,7 +33,7 @@ import path from "node:path";
 import { WORLDS_DIR } from "../../server/config.ts";
 import { directoryFor } from "../../server/directory.ts";
 import { foundWorld, isWorldSaved } from "../../server/worldlog.ts";
-import { syncDir } from "../../server/durable.ts";
+import { syncDir, syncTree } from "../../server/durable.ts";
 import { translateV1World, reportV1World, warmHulls, approvalProblem, makeApproval, ownerWarning, ownerRecognised, ownerlessRefusal, NO_FOUNDER, type Approval } from "./import-v1/world.ts";
 import { contentAddressOf } from "../../server/eidoindex.ts";
 import { custodyAt } from "../../server/custody.ts";
@@ -87,12 +87,12 @@ const reportNow = (D: string, name: string) => reportV1World(D, { name, content:
  *  whoever runs this tool on the host IS the operator), and only when --operator-only-no-owner says so, knowingly; the
  *  translation-approved act and translation.json record that no owner was attested. A report that refuses (deferred features)
  *  can't be approved at all. */
-function approvalFor(D: string, name: string): { approval: Approval; source: { size: number; sha256: string } } {
+function approvalFor(D: string, name: string, words = name): { approval: Approval; source: { size: number; sha256: string } } {
   const approved = flag("approved"), noOwner = rest.includes("--operator-only-no-owner");
   if (!approved) die(`translating "${name}" needs the operator's approval of its dry-run report first:
-  1. bun tools/protocol/world.ts translate ${name} --dry-run --no-founder-key   (writes nothing; prints the report and its hash)
+  1. bun tools/protocol/world.ts translate ${words} --dry-run --no-founder-key   (writes nothing; prints the report and its hash)
   2. read it: what is dropped by design, what would be refused, how many entries, guards, models
-  3. translate ${name} --no-founder-key --approved <hash> --operator-only-no-owner   (no owner can sign: ${NO_FOUNDER}; this host's custody operator key countersigns, and the act records that no owner was attested)
+  3. translate ${words} --no-founder-key --approved <hash> --operator-only-no-owner   (no owner can sign: ${NO_FOUNDER}; this host's custody operator key countersigns, and the act records that no owner was attested)
 Nothing was changed.`);
   if (!/^[0-9a-f]{64}$/.test(approved!)) die(`--approved ${approved}: not a report hash (64 hex, as --dry-run prints it). Nothing was changed.`);
   const { report, hash } = reportNow(D, name);
@@ -124,7 +124,7 @@ function sayPeople(people: any[] = []) {
     : `${p.role} ${p.name} has no account yet (${p.why}): bind with ${p.bind}`);
 }
 /** `--dry-run`: the report and its hash, printed; nothing written. Exit 1 when the translation would be refused. */
-function dryRun(D: string, name: string) {
+function dryRun(D: string, name: string, words = name) {   // words: the command's own world name(s), `old new` in the two-name form (bot review #260 87)
   const { report, hash } = reportNow(D, name);
   console.log(`dry-run report of "${name}" (nothing was written):`); console.log(JSON.stringify(report, null, 1));
   console.log(`trial period: ${report.trial}`);
@@ -134,7 +134,7 @@ function dryRun(D: string, name: string) {
   console.log(`report-hash ${hash}`);
   if (rest.includes("--json")) console.log(`report-json ${JSON.stringify({ report, hash })}`);   // one line for a program (the server's world-upgrade-review)
   if (report.refused) { console.error(report.refused); process.exit(1); }
-  console.log(`to translate: approve exactly this report. translate ${name} --no-founder-key --approved ${hash} --operator-only-no-owner${CLAIM ? " --claim" : ""}   (no owner can sign: ${NO_FOUNDER}; this host's operator key countersigns, the act records that no owner was attested, and tier 0 stays empty)`);
+  console.log(`to translate: approve exactly this report. translate ${words} --no-founder-key --approved ${hash} --operator-only-no-owner${CLAIM ? " --claim" : ""}   (no owner can sign: ${NO_FOUNDER}; this host's operator key countersigns, the act records that no owner was attested, and tier 0 stays empty)`);
 }
 const sourceOf = (f: string) => { const b = fs.readFileSync(f); return { size: b.length, sha256: crypto.createHash("sha256").update(b).digest("hex") }; };
 const sourceChanged = (f: string, was: { size: number; sha256: string }) => { const now = sourceOf(f); return now.size !== was.size || now.sha256 !== was.sha256 ? now : null; };
@@ -221,7 +221,9 @@ function translateInPlace(name: string, approval: Approval, approvedSource: { si
   for (const f of fs.readdirSync(T)) if (f !== "world.jsonl" && !TEMP_ONLY.has(f)) steps.push([path.join(T, f), path.join(D, f)]);
   // the in-progress marker, before the first rename and gone only once the identities are in: the server never serves a
   // directory holding it (server/livehost.ts SWAP_MARKER; R 10-27), and a recovery clears it
+  syncTree(T);   // the translated files on disk before any of them is renamed in (bot review #260 9)
   { const fd = fs.openSync(path.join(D, SWAP_MARKER), "wx"); fs.writeSync(fd, JSON.stringify({ temp: T, at: Date.now() })); fs.fsyncSync(fd); fs.closeSync(fd); }
+  syncDir(D);   // the marker's name, before the first rename
   const done: [string, string][] = [];
   const fault = Number(process.env.WORLD_TS_FAULT_AT_STEP ?? NaN);   // tests only: fail as if step k's rename had (tools/protocol/inplace-check.ts)
   const death = Number(process.env.WORLD_TS_DIE_AT_STEP ?? NaN);      // tests only: the process dies after k renames, no rollback (IP13)
@@ -229,12 +231,13 @@ function translateInPlace(name: string, approval: Approval, approvedSource: { si
   try { for (const [a, b] of steps) { if (done.length === death) process.exit(9); if (done.length === fault) throw new Error(`(injected) step ${done.length} failed`);
       if (done.length === touch) fs.appendFileSync(fs.existsSync(log) ? log : path.join(D, ORIGINAL.log), '{"seq":999,"ts":1,"actor":"late","verb":"say","args":{"text":"written during the swap"}}\n');
       if (fs.existsSync(b)) throw new Error(`${b} appeared during the swap`); fs.renameSync(a, b); done.push([a, b]); }
+    syncDir(D);   // every rename durable before the marker can go
     // …and once more after the last rename (the same file, renamed beside the world): a write that slipped in mid-swap undoes it
     { const now = sourceChanged(path.join(D, ORIGINAL.log), r!.source); if (now) throw new Error(stillWriting(path.join(D, ORIGINAL.log), r!.source, now)); }
     // the swap has succeeded: only now do its identities join the shared directory (a refusal here, an account taken since,
     // undoes the swap like any other failure)
     if (Number(process.env.WORLD_TS_FAULT_AT_STEP ?? NaN) === steps.length) throw new Error(`(injected) step ${steps.length} failed`);
-    putIdentities(r!.planned); fs.rmSync(path.join(D, SWAP_MARKER)); }
+    putIdentities(r!.planned); fs.rmSync(path.join(D, SWAP_MARKER)); syncDir(D); }
   catch (x) {
     const stuck: string[] = [];
     for (const [a, b] of done.reverse()) { try { fs.renameSync(b, a); } catch (y) { stuck.push(`${b} (should be ${a}: ${(y as Error).message})`); } }
@@ -412,8 +415,8 @@ if (cmd === "found") {
   if (!fs.existsSync(path.join(srcDir, "log.jsonl"))) die(`"${src}" holds no old log (${path.join(srcDir, "log.jsonl")}): there's nothing to translate here. Nothing was changed.`);
   await warmHulls(srcDir);   // the vehicle hulls' boxes, measured once: the report and the translation read the same walls
   { const no = ownerlessRefusal(dest ?? src, reportNow(srcDir, dest ?? src).report.people, CLAIM); if (no) die(no); }   // every translation ends with an owner
-  if (rest.includes("--dry-run")) { dryRun(srcDir, dest ?? src); process.exit(0); }
-  const { approval, source: approvedSource } = approvalFor(srcDir, dest ?? src);
+  if (rest.includes("--dry-run")) { dryRun(srcDir, dest ?? src, words.join(" ")); process.exit(0); }
+  const { approval, source: approvedSource } = approvalFor(srcDir, dest ?? src, words.join(" "));
   if (process.env.WORLD_TS_TOUCH_SOURCE_AFTER_APPROVAL)   // tests only: a writer appends between the approval's read and the importer's (inplace-check IP21b)
     fs.appendFileSync(path.join(srcDir, "log.jsonl"), '{"seq":999,"ts":1,"actor":"late","verb":"say","args":{"text":"written after the approval"}}\n');
   if (dest === undefined) translateInPlace(src, approval, approvedSource);
