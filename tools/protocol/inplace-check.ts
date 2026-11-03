@@ -64,7 +64,7 @@
 //   IP25 a rollback that would lose history (the server wrote to world.jsonl since) refuses unless --discard-changes; a
 //        directory with no manifest refuses with that reason
 //   —— item 7: truthful refusals ——
-//   IP26 a world using a feature this protocol doesn't carry yet (a vehicle) is REFUSED, naming each feature and where it was used (seq, entity, actor); the dry run lists them under
+//   IP26 a world using a feature this protocol doesn't carry yet (an air box on @world: no frame to hold it) is REFUSED, naming each feature and where it was used (seq, entity, actor); the dry run lists them under
 //        `deferred`, and an approval of that report can't override the refusal; nothing is written. The world's water
 //        level (water on @world) is not a volume and does not refuse (control); main's water volume and air box on the same
 //        world translate (listed under `mapped`, absent from the refusal)
