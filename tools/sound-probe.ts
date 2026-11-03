@@ -81,8 +81,12 @@ try {
   let s = await until(pg, (x) => x.entity, 90_000);
   check('the model spawned', s.entity, JSON.stringify(s));
   const t0 = Date.now() - 10_000;   // started ten seconds ago
+  // a first write is stamped t0 = now; a same-src rewrite while it plays keeps the t0 it names (followups.js stampMedia; bot #260 96)
+  await sound(pg, { src, description: 'a probe tone', volume: 0.5, radius: 20 });
   await sound(pg, { src, t0, description: 'a probe tone', volume: 0.5, radius: 20 });
   s = await until(pg, (x) => x.has && x.dur > 0);
+  const heldT0 = await pg.evaluate((id: string) => import('/lib/world.js').then((w: any) => w.bagOf(id)?.sound?.t0), ID);
+  check('B. (setup) the world holds the ten-second-old t0 the probe measures from', heldT0 === t0, `held ${heldT0}, sent ${t0}`);
   check('A. one graph on the shared context, sourced from the store path', s.has && s.graphs === 1 && String(s.src).includes(src.split('/').pop()!) && s.ctx !== 'none', JSON.stringify(s));
   check('A. the gain carries the volume', s.gain === 0.5, JSON.stringify(s.gain));
   check('F. …and with the listener\'s world volume at 0 it is heard at 0, the authored 0.5 preserved', s.world === 0 && s.eff === 0 && s.gain === 0.5, JSON.stringify({ gain: s.gain, world: s.world, eff: s.eff }));
