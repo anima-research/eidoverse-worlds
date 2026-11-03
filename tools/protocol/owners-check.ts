@@ -122,7 +122,7 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
     { code: u.up.code, out: u.up.code ? u.up.out.slice(-600) : undefined, roles: Object.keys(u.roles), antra: at("antra"), P: P.antra }));
   row("OB2", () => ok(at("fable").kind === "imported" && same(at("fable").subs, []) && at("mica").kind === "imported" && at("Digi_Rat").kind === "imported"
     && P.fable?.account === null && /no account/.test(P.fable?.why) && /2 accounts/.test(P.mica?.why) && P.Digi_Rat?.role === "builder"
-    && /^owner fable has no account yet \(main recorded no account for this name\): bind with bun tools\/operator-repair\.ts bind commons 'fable' <their account>$/m.test(u.dry.out)
+    && /^owner fable has no account yet \(main recorded no account for this name\): bind with bun tools\/operator-repair\.ts bind commons u-[a-z2-7]{20} <their account>$/m.test(u.dry.out) && new RegExp(`bind commons ${u.roles.fable?.[0]} <their account>`).test(u.dry.out)
     && /^owner mica has no account yet \(main recorded 2 accounts/m.test(u.dry.out) && /isn't one here \(service:…\)/.test(P.svc?.why) && at("svc").kind === "imported" && !/human:test:[a-z]/.test(u.dry.out),
     "OB2 an unknown name (fable, Digi_Rat), an ambiguous one (mica: two accounts) and one main paired with no account shape (svc) stay imported; the dry run lists each with why and the bind command, and prints no account", { P, fable: at("fable"), dry: u.dry.out.split("\n").filter((l) => /account/.test(l)) }));
   row("OB3", () => ok(same(u.result?.people, u.report?.people) && u.report.people.length === 7 && u.report.people[0].role === "owner",
@@ -274,14 +274,12 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
   const live = openLive(path.join(W, "hall"), "hall", { catalogue: ENGINE_CATALOGUE, scripts: null }); const B = Object.fromEntries((u.report?.bans ?? []).map((b) => [b.name, b]));
   row("BN1", () => ok(u.up.code === 0 && banOf(live, zed)?.reason === "griefing" && B.Zed?.account === "human:test" && /principals/.test(B.Zed?.from) && /check|someone else/.test(B.Zed?.check ?? "") && /^banned Zed: holds against their account/m.test(u.dry.out),
     "BN1 banned in main (a name nothing else in the log names) → after the upgrade that account is still banned (the authority's check, as at join); the approved report and the dry run list it, saying to check a by-name binding", { code: u.up.code, ban: banOf(live, zed), B, out: u.up.code ? u.up.out.slice(-400) : undefined }));
-  row("BN2", () => ok(B.Nemo?.account === null && /no account/.test(B.Nemo?.why ?? "") && /operator-repair\.ts bind hall 'Nemo'/.test(B.Nemo?.bind ?? ""),
+  row("BN2", () => ok(B.Nemo?.account === null && /no account/.test(B.Nemo?.why ?? "") && new RegExp(`operator-repair\\.ts bind hall ${B.Nemo?.id} <their account>$`).test(B.Nemo?.bind ?? ""),
     "BN2 a ban-only name main recorded no account for is listed unbound, with why and the bind command", B.Nemo));
-  // BN3 (bot review #260 82): the advice is pasted into a shell; a name with $, a backtick or a quote reaches the tool as written
+  // BN3 (bot review #260 82, #369): the advice is pasted into a shell and names ONE person: it carries the id, never the name (Ann and ann are two)
   const odd = "$HOME `id` it's", r = { final: { translated: { "@world": { "roles:u-odd": { role: "builder" }, "imported-bans:u-odd": true } } } };
   const said = [...peopleOf("hall", r, () => ({ name: odd })), ...bansOf("hall", r, () => ({ name: odd }))].map((p) => p.bind);
-  const heard: string[] = []; for (const b of said) { const arg = b?.match(/ bind hall (.*) <their account>$/)?.[1] ?? "";   // Bun's shell quotes as sh does, on every OS
-    heard.push((await Bun.$`echo -n ${{ raw: arg }}`.nothrow().quiet()).stdout.toString()); }
-  row("BN3", () => ok(said.length === 2 && heard.every((h) => h === odd), "BN3 the bind advice quotes the name for a shell: pasted, it reaches the tool as written ($, backtick, quote)", { said, heard }));
+  row("BN3", () => ok(said.length === 2 && said.every((b) => b === "bun tools/operator-repair.ts bind hall u-odd <their account>"), "BN3 the bind advice names the identity by id (shell-safe, and one person even when the name is two people's)", { said }));
 }
 
 // ================= OR: the operator binds an imported identity to an account =================

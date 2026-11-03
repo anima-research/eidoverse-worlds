@@ -264,7 +264,7 @@ A name main recorded no account for, or several, comes over as an
 run lists every role holder, bound or not (`people` in the report), and says
 for each unbound one why and how to bind it:
 
-    owner fable has no account yet (main recorded no account for this name): bind with bun tools/operator-repair.ts bind commons 'fable' <their account>
+    owner fable has no account yet (main recorded no account for this name): bind with bun tools/operator-repair.ts bind commons u-dk5m2x7qz3hwbna4rvpc <their account>
 
 Bans come over the same way: a banned name is bound to main's one account for
 it, so that account stays banned, and the report lists every ban (`bans`,

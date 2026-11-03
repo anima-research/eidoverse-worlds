@@ -55,6 +55,7 @@ const { readLog, fold } = await import("../../shared/protocol/fold.js");
 const { custodyAt } = await import("../../server/custody.ts");
 const { custodyFileIn } = await import("../../server/keyfiles.ts");
 const { isMinted } = await import("../../server/directory.ts");
+const { bindIdentity } = await import("../operator-bind.ts");
 const { HN_ISS } = await import("../../server/auth.ts");
 const { emptyState: v1Empty, foldEntry: v1Fold } = await import("./import-v1/fold.js");
 
@@ -510,6 +511,16 @@ row("IM-I44", () => {
   const why = threw(() => W1.translateV1World(w.src, elsewhere, { name: "new", approval: approvalFor(w, rep.hash) }));
   ok(why && /approval is refused/.test(why) && /worlds dir/.test(why) && /Nothing written/.test(why) && !fs.existsSync(elsewhere),
     "IM-I44 an approved translation into another worlds dir (another custody: other ids than the dry run's) is refused, nothing written", why);
+});
+
+row("IM-I45", () => {
+  const L = [BASIC[0], { actor: "world", verb: "grant", args: { id: "Ann", role: "owner" } }, { actor: "world", verb: "grant", args: { id: "ann", role: "builder" } }];
+  const w = oldWorld(L); const rep = W1.reportV1World(w.src, { name: "new" });
+  W1.translateV1World(w.src, w.dest, { approval: approvalFor(w, rep.hash) });
+  const advice = (rep.report.people ?? []).map((p: any) => ({ name: p.name, arg: /bind new (\S+) <their account>$/.exec(p.bind ?? "")?.[1] ?? null }));
+  const bound = advice.map((a: any, i: number) => bindIdentity(w.worlds, "new", a.arg ?? "", `human:test:a${i}`));
+  ok(advice.length === 2 && bound.every((b: any) => b.ok) && new Set(bound.map((b: any) => b.id)).size === 2,
+    "IM-I45 (#369) Ann and ann, two unbound role holders: the report's bind advice for each, pasted as written, binds that one person (by id; by name it would be refused as ambiguous)", { advice, bound });
 });
 
 console.log(`[importer-check] ${pass} passed, ${fail} failed`);
