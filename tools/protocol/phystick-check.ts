@@ -1,7 +1,7 @@
 // tools/protocol/phystick-check.ts — the engine's heartbeat (DESIGN-physics-responsiveness §1; STRIKES PH-S1-2).
 // Before: the sim advanced and rests were logged INSIDE whoever's request came next (503 ms for the first `wait` after a
 // 40-crate knock, then 145–341 ms each), and rests never logged without a request. Now server.ts calls settle(w) on its
-// own beat. usage: bun tools/protocol/phystick-check.ts   (NO_TICK=1 runs the old shape: every check below goes red)
+// own beat. usage: bun tools/protocol/phystick-check.ts   (NO_TICK=1 runs the old shape: T1, T2 and T3's bounded-pass row go red)
 //   T1  rests log with nobody asking: after the throw only settle() passes run; every launched body rests on the record
 //   T2  a request during the cascade is cheap: max `wait` under the beat is a fraction of the request-path figure
 //   T3  bounded passes: one pass advances at most maxTicks engine ticks, a stall catches up over later passes, and the
