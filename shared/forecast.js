@@ -52,6 +52,8 @@ function tzFormatter(tz) {
 // stay put as the rated fallback). An older value said so with clock: 'real' (tz absent = Los Angeles), and parked its
 // rated clock under dormantRated: both still read.
 export const isRealClock = (sky) => !!sky && (typeof sky.tz === 'string' || sky.clock === 'real');
+/** Whether a sky moves by itself (a rate, the wall clock, a forecast): the client re-renders it ~1 Hz (sky.js updateSky). */
+export const skyTicks = (sky) => !!sky && ((sky.rate ?? 0) !== 0 || isRealClock(sky) || !!sky.forecast);
 /** The rated clock's hour at tMs: hours + rate × elapsed since ts (an older value's parked clock when it has one). */
 export function ratedHoursAt(sky, tMs) {
   if (!sky) return 12;
