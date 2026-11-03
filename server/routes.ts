@@ -47,15 +47,10 @@ import { defsPayload, avatarDefs, animationDefs } from "./defs.ts";
 import { tickStats } from "./tick.ts";
 import { atomicWrite } from "./fsutil.ts";
 import { cspFor, cspForFile } from "./csp.ts";
-// client console tee (see the /clientlog route): a per-world bucket for every world this server KNOWS (loaded in
-// memory, or with a data dir on disk) plus one shared bucket for any other label, plus one global bucket — so a
-// busy world cannot starve the rest, a made-up label cannot buy quota or a file of its own, and the map is
-// bounded by the worlds that exist (review of #172: 64 invented labels once denied a real new world until restart).
-const clientLogRate = new Map<string, { at: number; n: number }>();
+// client console tee (the /clientlog route): one file per KNOWN world (loaded in memory, or with a data dir on disk) and
+// sender under $CLIENTLOG_DIR; any other label shares the '~unknown' directory, so a made-up label buys no file of its own.
 const rebuildWin = new Map<string, { t: number; n: number }>();   // POST /rebuild per-IP windows (4/min, as /upload)
-const clientLogGlobal = { at: 0, n: 0 };
 const CLIENTLOG_DIR = process.env.CLIENTLOG_DIR ?? join(WORLDS_DIR, ".clientlogs");   // beside the worlds, like .perflogs — never a shared temp dir
-const CLIENTLOG_MAX_BODY = 4096, CLIENTLOG_MAX_FILE = 5_000_000, CLIENTLOG_PER_WORLD_MIN = 600, CLIENTLOG_GLOBAL_MIN = 2000;
 // EXACT-case match against the world directory listing (existsSync would say yes to every case variant on a
 // case-insensitive filesystem — each a fresh bucket and file); listed once per few seconds, never per request.
 let worldDirs: Set<string> = new Set(), worldDirsAt = 0;
@@ -81,12 +76,15 @@ const unauthorized = () => new Response("this world's state is behind its door: 
 /** A world's directory holds its log, world.jsonl. */
 const hasWorldLog = (name: string) => worldDirNamed(name) && existsSync(join(WORLDS_DIR, name, "world.jsonl"));   // in its own case (world.ts)
 const CLIENTLOG_UNKNOWN = "~unknown";   // '~' is outside the world-name alphabet, so no real world can share this file
-try { mkdirSync(CLIENTLOG_DIR, { recursive: true }); } catch (e) { console.warn(`[clientlog] cannot create ${CLIENTLOG_DIR}: ${(e as Error)?.message ?? e}`); }
+const clientLogRate = new ClientLogRate();
+let clientLogStore: ClientLogStore | null = null;
+try { clientLogStore = new ClientLogStore(CLIENTLOG_DIR); } catch (e) { console.warn(`[clientlog] cannot open ${CLIENTLOG_DIR}: ${(e as Error)?.message ?? e}`); }
 import { seatStore, announceProfileUpdate, MAX_PROPOSAL_BYTES } from "./seats.ts";
 import { agentTokens, aid1JoinIdentity } from "./auth.ts";
 import { httpCaller, httpVisitor, hashedAddress, visibleTo, doorFor, youAt } from "./access.ts";
 import { setupPage, setupClaim } from "./setup.ts";
 import { setupOpen } from "./operators.ts";
+import { ClientLogRate, ClientLogStore, LIMITS as CLIENTLOG_LIMITS, readCapped, scrub, holdsPrivateKey, boundLines } from "./clientlog.ts";
 
 import { recordComponents } from "../shared/protocol/view.js";
 /** What the routes need from Bun's server object, structurally: the WS
@@ -471,52 +469,41 @@ const ROUTES: Route[] = [
     ),
   },
   {
-    // client console tee — a visitor's errors and [xr] lines land in a file
-    // the operator can tail, because a headset shows an error for three
-    // seconds and a desk shows nothing. Diagnosis data, not surveillance: the
-    // line carries a timestamp and the client's text, no address. Bounded: 4 KB
-    // per body (refused above that by content-length), 600 lines/min/world and
-    // 2000/min overall, one file per KNOWN world plus one shared '~unknown' file
-    // for any other label, 5 MB per file, door-keyed by `Authorization: Bearer` (never the URL) — which means
-    // an OPEN door (JOIN_TOKEN empty, the tailnet dev posture) accepts these
-    // writes from anyone who can reach the port: do not run it open on a public
-    // box. A failed append answers 500, never a false 'ok'. Lands in
-    // $CLIENTLOG_DIR (default: WORLDS_DIR/.clientlogs).
+    // client console tee: a visitor's errors and [xr] lines land in a file the operator tails on the box (a headset shows an
+    // error for three seconds). Any signed-in session or the door key may post, so a refused client can still say why; the
+    // budget that holds against a flood (rate, size, scrub, disk) is server/clientlog.ts. No address is written. An OPEN door
+    // (JOIN_TOKEN empty) takes these writes from anyone who can reach the port: do not run it open on a public box.
     match: (u, req) => u.pathname === "/clientlog" && req.method === "POST",
-    handler: async ({ req, url }) => {
+    handler: async ({ req, url, srv }) => {
       const label = (url.searchParams.get("world") ?? "").replace(/[^a-z0-9_-]/gi, "").slice(0, 64);   // 64: the world-name limit (world.ts)
-      // a label the server does not know shares one bucket and one file. A brand-new world has no dir until its first
-      // join, so its pre-join boot lines land there too — a window, not a hole: nothing is lost, only shared.
-      // The authority key rides in an Authorization header, NEVER the URL: query-carried join tokens have shown up in
-      // proxy/access diagnostics before (review of #172), and this route is called from every browser console.
-      // A key in the query is refused outright so the old client shape cannot ship by accident.
+      // A key in the query is refused outright so the old client shape cannot ship by accident (review of #172).
       if (url.searchParams.has("key")) return new Response("key belongs in the Authorization header", { status: 400 });
       const auth = req.headers.get("authorization") ?? "";
       const key = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
-      // the door is the first gate: no lookup for a stranger. A signed-in session (same-origin cookie) is a key here too:
-      // a home-node human has no JOIN_TOKEN, and a 401 muted the page's tee (base.js; bot review #260 188)
-      if (JOIN_TOKEN && key !== JOIN_TOKEN && !sessionOfRequest(req)) return new Response("no", { status: 401 });
-      const world = label && knownWorld(label) ? label : CLIENTLOG_UNKNOWN;
+      const session = sessionOfRequest(req);
+      // the door is the first gate: no lookup for a stranger (a home-node human has no JOIN_TOKEN; bot review #260 188)
+      if (JOIN_TOKEN && key !== JOIN_TOKEN && !session) return new Response("no", { status: 401 });
+      // the sender: the account, else the hashed address (never the address itself)
+      const sender = session ? session.sub.replace(/[^a-z0-9_-]/gi, "-").slice(0, 80) : `addr-${hashedAddress(req, srv)}`;
+      const wait = clientLogRate.admit(addressOf(req, srv), sender);
+      if (wait !== null) return new Response("slow down", { status: 429, headers: { "retry-after": String(wait), "cache-control": "no-store" } });
       const cl = req.headers.get("content-length");
-      if (cl === null) return new Response("length required", { status: 411 });   // a chunked body would be buffered whole before the slice
+      if (cl === null) return new Response("length required", { status: 411 });
       const len = Number(cl);
-      if (!Number.isFinite(len) || len > CLIENTLOG_MAX_BODY) return new Response("too big", { status: 413 });
-      const now = Date.now();
-      if (now - clientLogGlobal.at > 60_000) { clientLogGlobal.at = now; clientLogGlobal.n = 0; }
-      if (++clientLogGlobal.n > CLIENTLOG_GLOBAL_MIN) return new Response("slow down", { status: 429 });
-      let bucket = clientLogRate.get(world);
-      if (!bucket) { bucket = { at: now, n: 0 }; clientLogRate.set(world, bucket); }   // bounded by the worlds that exist + 'unknown'
-      if (now - bucket.at > 60_000) { bucket.at = now; bucket.n = 0; }
-      if (++bucket.n > CLIENTLOG_PER_WORLD_MIN) return new Response("slow down", { status: 429 });
-      let body = "";
-      try { body = (await req.text()).slice(0, CLIENTLOG_MAX_BODY); } catch { return new Response("bad", { status: 400 }); }
-      const line = JSON.stringify({ t: new Date(now).toISOString(), line: body }) + "\n";
-      const dest = join(CLIENTLOG_DIR, `clientlog-${world}.log`);
-      try {
-        if (existsSync(dest) && Bun.file(dest).size > CLIENTLOG_MAX_FILE) return new Response("full", { status: 507 });
-        // appendFileSync, not Bun.write: Bun.write has no append and silently overwrote the file per line
-        appendFileSync(dest, line);
-      } catch (e) { console.warn(`[clientlog] append failed: ${(e as Error)?.message ?? e}`); return new Response("tee failed", { status: 500 }); }
+      if (!Number.isFinite(len) || len > CLIENTLOG_LIMITS.bodyBytes) return new Response("too big", { status: 413 });
+      let body: string | null = null;
+      try { body = await readCapped(req, CLIENTLOG_LIMITS.bodyBytes); } catch { return new Response("bad", { status: 400 }); }
+      if (body === null) return new Response("too big", { status: 413 });
+      if (holdsPrivateKey(body)) return new Response("this body holds a private key: not stored", { status: 400 });
+      const { text, scrubbed } = scrub(body);
+      const { lines, cut } = boundLines(text);
+      const world = label && knownWorld(label) ? label : CLIENTLOG_UNKNOWN;
+      // a brand-new world has no dir until its first join, so its pre-join boot lines land in '~unknown' too: shared, not lost
+      const t = new Date().toISOString();
+      let chunk = lines.map((line) => JSON.stringify({ t, line }) + "\n").join("");
+      if (scrubbed || cut) chunk += JSON.stringify({ t, note: `${scrubbed} values scrubbed, ${cut} lines cut` }) + "\n";
+      try { if (!clientLogStore) throw new Error(`${CLIENTLOG_DIR} did not open at boot`); if (chunk) clientLogStore.append(world, sender, chunk); }
+      catch (e) { console.warn(`[clientlog] append failed: ${(e as Error)?.message ?? e}`); return new Response("tee failed", { status: 500 }); }
       return new Response("ok", { headers: { "cache-control": "no-store" } });
     },
   },
