@@ -157,6 +157,7 @@ if (argv.includes("--control")) {
   if (r0.exitCode !== 0) { console.log(`FAIL can't extract ${BASE}: ${r0.stderr}`); process.exit(1); }
   const r = await runSelf(d, null, ["--expect-absent"]);
   const lines = r.out.split("\n").filter((l) => /^(ok|FAIL) /.test(l));
+  if (!lines.length) { console.log(`FAIL [grab-check --control] no case ran at ${BASE} (exit ${r.code}): ${r.out.trim().split("\n").slice(-3).join(" | ").slice(0, 300)}`); process.exit(1); }   // an empty control is not a green one (bot review #355)
   const wrong = lines.filter((l) => { const id = l.slice(5).trim().split(/\s/)[0]; const mig = id.startsWith("M"); return mig ? l.startsWith("FAIL") : l.startsWith("ok "); });
   console.log(lines.map((l) => { const id = l.slice(5).trim().split(/\s/)[0]; const mig = id.startsWith("M");
     return `${(mig ? l.startsWith("ok ") : l.startsWith("FAIL")) ? (mig ? "kept at base:  " : "red at base:   ") : "WRONG AT BASE: "}${l.slice(0, 130)}`; }).join("\n"));
@@ -417,7 +418,7 @@ const cases: Case[] = [
       s.advance(60000); const n3 = s.entries().length; s.call("vic", "look", {});
       return { early, back, first, again, whileHeld, home2, afterEdit: since(s, n3), at: tf(s, "ball").pos }; },
     good: (o) => o.early[2] > 2 && JSON.stringify(o.back) === "[0,0,0]" && JSON.stringify(o.first) === '["act:return-home","change:set"]' && !o.again.length && !o.whileHeld.length && JSON.stringify(o.home2) === "[2,0,2]" && !o.afterEdit.length && JSON.stringify(o.at) === "[2,0,2]" },
-  { id: "R5", what: "fits + sockets.accepts: let go within the socket's radius, it snaps in (parent {to, socket}, the socket's pose); undo takes it back out", run(s) { cast(s);
+  { id: "R5", what: "fits + sockets.accepts: let go within the socket's radius, it snaps in (parent {to: <the lifted socket child>}, the socket's pose); undo takes it back out", run(s) { cast(s);
       s.call("olive", "create", { id: "rack", model: "crate", components: { sockets: { hook: { pos: [0, 0.8, 0], accepts: ["key"], radius: 0.3 } } }, place: { at: [0, 0] } });
       s.call("olive", "create", { id: "key", model: "book", components: { grabbable: { who: "member", fits: ["key"] } }, place: { at: [1, 0] } });
       s.call("bob", "move", { to: [0.8, 0, 0.6] }); s.call("bob", "grab", { id: "key" });
@@ -437,7 +438,7 @@ const cases: Case[] = [
       return { far: show(far), farPar, d: show(d), settled: d.settled, par: comp(s, "key", "parent"), t: tf(s, "key"), at: wp?.pos, snapped: d.notes?.find((n: any) => n.snapped)?.snapped }; },
     good: (o) => o.far === "ok" && o.farPar === null && o.d === "ok" && o.par?.to === "rack-hook" && !("socket" in (o.par ?? {})) && JSON.stringify(o.t.pos) === "[0,0,0]" && JSON.stringify(o.t.q) === "[0,0,0,1]" && o.settled?.in === "rack-hook" && !("socket" in (o.settled ?? {}))
       && o.snapped?.to === "rack-hook" && Math.abs(o.at[1] - 0.8) < 1e-9 && Math.abs(o.at[0]) < 1e-9 },
-  { id: "R6", what: "…an occupied socket, one on a locked thing and a key that doesn't fit are passed over (it's set down, and the reply says why)", run(s) { cast(s);
+  { id: "R6", what: "…an occupied socket and one on a locked thing are passed over (it's set down, and the reply says why); a key that doesn't fit is simply not a candidate (no note)", run(s) { cast(s);
       s.call("olive", "create", { id: "rack", model: "crate", components: { sockets: { hook: { pos: [0, 0.8, 0], accepts: ["key"], radius: 0.3 } } }, place: { at: [0, 0] } });
       s.call("olive", "create", { id: "safe", model: "crate", components: { lock: true, sockets: { slot: { pos: [0, 0.8, 0], accepts: ["key"], radius: 0.3 } } }, place: { at: [3, 0] } });
       for (const [id, x, fits] of [["k1", 1, ["key"]], ["k2", 1.2, ["key"]], ["coin", 1.4, ["coin"]], ["k3", 2.2, ["key"]]]) s.call("olive", "create", { id, model: "book", components: { grabbable: { who: "member", fits } }, place: { at: [x, 0] } });
