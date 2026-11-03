@@ -63,13 +63,13 @@ const attacks = [
     nowGood: (o) => ok(o.direct) === ok(o.viaUse) && o.madeBy === "bob" }, // same answer either way; "who made it" is a view nobody can write
   { id: "H1e", what: "door DoS: a handler writes transform {pos:'stuck'}; then every look crashes", run(s) { cast(s);
       s.call("bob", "create", { id: "jam", model: "crate", place: { at: [3, 3] } });
-      s.call("bob", "set", { id: "jam", component: "reactions", value: { jam: { kind: "set", component: "transform", value: { pos: "stuck" } } } });
+      const install = s.call("bob", "set", { id: "jam", component: "reactions", value: { jam: { kind: "set", component: "transform", value: { pos: "stuck" } } } });
       const attack = s.call("vic", "use", { id: "jam", action: "jam" });
-      return { attack, lookAfter: s.call("zed", "look", {}), createAfter: s.call("bob", "create", { model: "crate", place: { at: [5, 5] } }) }; },
+      return { install, attack, lookAfter: s.call("zed", "look", {}), createAfter: s.call("bob", "create", { model: "crate", place: { at: [5, 5] } }) }; },
     baseBad: (o) => crashed(o.attack) && crashed(o.lookAfter) && crashed(o.createAfter),
-    // the handler itself is refused when written now (shiplist R2: a handler's effect is checked at write), so the use
-    // finds no 'jam' to do; either way nothing is written and every later read stands
-    nowGood: (o) => ["shape", "no-action"].includes(o.attack.refused?.code) && ok(o.lookAfter) && ok(o.createAfter) },
+    // the handler itself is refused as `shape` when written now (shiplist R2: a handler's effect is checked at write), so
+    // the use finds no 'jam' to do; nothing is written and every later read stands (bot #514: the install's code is asserted)
+    nowGood: (o) => o.install.refused?.code === "shape" && o.attack.refused?.code === "no-action" && ok(o.lookAfter) && ok(o.createAfter) },
   { id: "H1f", what: "a handler outlives its author's rights (bob demoted, vic still uses bob's handler on a thing bob can't touch now)", run(s) { cast(s);
       s.call("bob", "create", { id: "lever", model: "crate", place: { at: [4, 0] } });
       s.call("bob", "set", { id: "lever", component: "reactions", value: { yank: { kind: "set", component: "label", value: "yanked" } } });
@@ -81,7 +81,7 @@ const attacks = [
       s.call("olive", "set", { id: "crate-1", component: "lock", value: true }); s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "member" } });
       const set = s.call("bob", "set", { id: "crate-1", component: "transform", value: { pos: [0, 0, 0] } });
       return { set, attack: s.call("bob", "undo", {}), pos: look(s, "crate-1").components?.transform?.pos }; },
-    baseBad: (o) => refused(o.set) && ok(o.attack), nowGood: (o) => refused(o.set) && refused(o.attack) && JSON.stringify(o.pos) === "[3,0,3]" },
+    baseBad: (o) => refused(o.set) && ok(o.attack), nowGood: (o) => refused(o.set) && ["rights", "locked"].includes(o.attack.refused?.code) && JSON.stringify(o.pos) === "[3,0,3]" },
   { id: "H1h", what: "put checks rank and locks only at grab (time-of-check/time-of-use)", run(s) { cast(s);
       s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); const grab = s.call("vic", "grab", { id: "ball" });
@@ -107,9 +107,9 @@ const attacks = [
     baseBad: (o) => ok(o.attack) && o.wrote > 0, nowGood: (o) => o.attack.refused?.code === "shape" && ok(o.dry) && o.wrote === 0 },
   { id: "L1low", what: "put of a thing that was deleted while held (an unhandled 500)", run(s) { cast(s);
       s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 0] } });
-      s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "ball" }); s.call("olive", "delete", { id: "ball" });
-      return { attack: s.call("vic", "put", { id: "ball" }) }; },
-    baseBad: (o) => crashed(o.attack), nowGood: (o) => o.attack.refused?.code === "gone" },
+      s.call("vic", "move", { to: [0, 0, 0.5] }); const grab = s.call("vic", "grab", { id: "ball" }); s.call("olive", "delete", { id: "ball" });
+      return { grab, attack: s.call("vic", "put", { id: "ball" }) }; },
+    baseBad: (o) => crashed(o.attack), nowGood: (o) => ok(o.grab) && o.attack.refused?.code === "gone" }, // the hold is asserted: gripOf says gone with or without one
   // ---- H4 (§2.3) ----
   { id: "H4a", what: "brick by undo: the owner undoes back past her cast (three grants and the newcomer gate); the next one would delete @world", run(s) { cast(s);
       const u = [1, 2, 3, 4].map(() => s.call("olive", "undo", {}));
@@ -150,7 +150,7 @@ const attacks = [
       const use = s.call("vic", "use", { id: "lever", action: "yank" });
       const raise = s.call("bob", "set", { id: "lever", component: "reactions", value: { yank: { kind: "set", component: "label", value: "yanked", who: "builder" } } });
       return { use, raise, attack: s.call("vic", "undo", {}) }; },
-    baseBad: () => true, nowGood: (o) => ok(o.use) && ok(o.raise) && refused(o.attack) },
+    baseBad: () => true, nowGood: (o) => ok(o.use) && ok(o.raise) && o.attack.refused?.code === "rights" },
 ];
 
 // A world whose log names no owner (an import, a hand-edited log): nobody is above visitor, whatever roles say.
@@ -210,7 +210,8 @@ const oracles = [
       const probe = s.call("zed", "set", { id: "diary", component: "text", value: { text: "guess" }, dry: true, expect: [{ id: "diary", component: "text", value: { text: "guess" } }] });
       return { made, locked, probe, leaked: JSON.stringify(probe?.refused ?? {}).includes("Kittycat") }; },
     // the setup is asserted: a probe of a thing that was never made leaks nothing and proves nothing
-    baseBad: (o) => o.leaked === true, nowGood: (o) => ok(o.made) && ok(o.locked) && refused(o.probe) && o.leaked === false },
+    // and the refusal is expect's own (`changed`), not a rights/shape refusal ahead of it (bot #511)
+    baseBad: (o) => o.leaked === true, nowGood: (o) => ok(o.made) && ok(o.locked) && o.probe.refused?.code === "changed" && o.leaked === false },
   { id: "H5c", what: "read oracle: the same, through set's `base` (a direct read, not even a guess)", run(s) { cast(s);
       const made = s.call("olive", "create", { id: "diary", model: "crate", place: { at: [3, 3] }, components: { text: { text: "Janus's Kept Kittycat" } } });
       // The base a stale refusal needs is free: inspect returns `versions` for every component, and history is
@@ -224,7 +225,8 @@ const oracles = [
       const probe = s.call("zed", "set", { id: "diary", component: "text", value: { text: "x" }, base, dry: true });
       return { made, locked, changed, stale: !!base, probe, leaked: JSON.stringify(probe?.refused ?? {}).includes("Kittycat") }; },
     // asserted: a probe with a CURRENT base never reaches the stale branch and proves nothing
-    baseBad: (o) => o.leaked === true, nowGood: (o) => ok(o.made) && ok(o.locked) && ok(o.changed) && o.stale && refused(o.probe) && o.leaked === false },
+    // and the refusal is the stale branch itself (`stale`, carrying version and by, no text), not one ahead of it (bot #511)
+    baseBad: (o) => o.leaked === true, nowGood: (o) => ok(o.made) && ok(o.locked) && ok(o.changed) && o.stale && o.probe.refused?.code === "stale" && typeof o.probe.refused?.version === "number" && !!o.probe.refused?.by && o.leaked === false },
   { id: "H5d", what: "a 32-deep parent chain refuses as a LIMIT, not as a loop (a guard: the message must tell the truth)", guard: true, run(s) { cast(s);
       // one batch: 40 creates, then 39 parentings. The engine's own walk (`ancestors`) stops at 32, so the 33rd
       // link is refused — it is a depth limit and nothing is a cycle, which "loop" used to claim.
@@ -257,9 +259,9 @@ for (const a of [...attacks, ...oracles]) {
     const good = k === "P4" ? !on[k] : on[k];
     if (k !== "P1a" && !baseBad) bad++; if (!good) bad++;
     console.log(`${(k === "P1a" || baseBad) && good ? "ok  " : "FAIL"} H2-${k.padEnd(3)} ${{ P1a: "forged rest, both copies edited (test M's forger)", P1b: "forged position as a plain set caused by the launch", P1c: "forged position as the thrower's own result of the throw act", P1d: "only the applied value edited, the annotation left honest", P4: "only the annotation edited: the wait view and the world disagree" }[k]}
-       baseline: ${k === "P4" ? (ob[k] ? "view says one thing, world another" : "agree") : ob[k] ? "caught" : "NOT caught (carriers agree with a forged world)"}
+       baseline: ${!B ? "not run" : k === "P4" ? (ob[k] ? "view says one thing, world another" : "agree") : ob[k] ? "caught" : "NOT caught (carriers agree with a forged world)"}
        now:      ${k === "P4" ? (on[k] ? "view and world disagree" : "one value: view and world agree") : on[k] ? "caught" : "NOT caught"}`); } }
-fs.rmSync(root, { recursive: true, force: true }); if (B) fs.rmSync(B, { recursive: true, force: true });
+if (!process.env.PROTOCOL_KEEP) { fs.rmSync(root, { recursive: true, force: true }); if (B) fs.rmSync(B, { recursive: true, force: true }); } // PROTOCOL_KEEP=1 keeps the scratch (common.ts scratch)
 console.log(controlNote());
 const G = [...attacks, ...oracles].filter((a) => a.guard).length;
 console.log(`${attacks.length + oracles.length + 5} attacks (${G} of them guards that must still work): ${bad ? `${bad} FAILED` : (B ? "every attack worked on the baseline (P1a: already caught there) and is refused or caught now; every guard works" : "every attack is refused or caught now (baseline not run); every guard works")}`);
