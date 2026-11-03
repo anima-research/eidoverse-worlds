@@ -174,6 +174,11 @@ bun tools/water/controller-check.ts
 bun tools/water/regression-check.ts
 ```
 
+browser-check, controller-check and regression-check don't complete today: they look things up by main's chosen
+ids (`water-habitat`, `water-terrain`, …), but the import now sends each as a `$` placeholder and the authority mints
+the ids, so their waits spin to timeout. They need the import's `ids` reply kept beside the manifest and read back
+(bot review #260 98).
+
 Set `WATER_PREVIEW_URL` to an isolated preview when changing the port or world;
 set `WATER_SCREENSHOT` to select the browser-check PNG output. Controller checks
 use the legacy reference frame. GPU checks read back rendered pixels for wet,

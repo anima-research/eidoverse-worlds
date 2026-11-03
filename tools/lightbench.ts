@@ -7,6 +7,10 @@
 //                                              #   grass world: compile + fps
 //   bun tools/lightbench.ts --headed --console # watch it happen
 //
+// NOT RUNNABLE on this protocol (bot review #260 75): it speaks the old wire — a join without replica: true into a world
+// nothing founded (the server founds none on join), then v1 verbs (light, terrain, sky, spawn, mount) with chosen ids. It needs
+// a port to `world.ts found` + requests before it measures anything.
+//
 // It proves what a fold-parity check cannot see: EW.materials() wetness rising under a rain verb, the cloud
 // field waking, slot assignment honoring keep > authored, the day cycle
 // leaving only the day:false porch light burning at noon, the weather
