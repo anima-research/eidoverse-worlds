@@ -43,6 +43,7 @@ const {
   fitSupportBox, removeCollider, resolveColliders, surfaceUnder,
 } = await import('../client/lib/colliders.js');
 const { planStructure } = await import('../shared/structure.js');
+const { transformOf: structureTf } = await import('../client/lib/realize/structuretf.js');
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = '') => {
@@ -237,5 +238,8 @@ const WALK = PLAN.levels[0].y;
   check('and none of them registered anything', structureBoxIds('bad').length === 0);
 }
 
+// review of #260, #474: a negative scale mirrors (componentspec.js), so a mirrored building must draw mirrored, not snap to 1
+{ const u = structureTf({ scale: -1 }), p = structureTf({ scale3: [-1, 1, 1] }), z = structureTf({ scale: 0, scale3: [0, 1, 1] });
+  check('a building keeps a negative (mirroring) scale and scale3; a zero one falls back', u.scale === -1 && JSON.stringify(p.scale3) === '[-1,1,1]' && z.scale === 1 && z.scale3 === null, JSON.stringify({ u: u.scale, p: p.scale3, z: [z.scale, z.scale3] })); }
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
