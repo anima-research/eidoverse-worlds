@@ -592,6 +592,14 @@ process.stdout.write(directoryAt(${JSON.stringify(f)}, slow).resolve({ sub: "hum
   const dirSynced = synced.includes(path.resolve(path.dirname(f))), tmpSynced = synced.some((p) => p.startsWith(path.resolve(f) + ".") && p.endsWith(".tmp"));
   ok(tmpSynced && (process.platform === "win32" || dirSynced), "DW20 a directory write syncs its temp file, then (POSIX) the directory holding the new name", synced); }
 
+// DW21 (bot review #260 120): the running server's directory sees what another writer (the bind / translate tools) wrote since
+{ const f = path.join(tmp, "live", ".directory.json"); const cli = directoryAt(f); const moe = cli.imported("Moe");
+  const srv = directoryAt(f);   // the server's copy, read before the tools below write
+  directoryAt(f).bind(moe, "human:moe"); const lark = directoryAt(f).resolve({ sub: "human:lark", name: "Lark" });
+  ok(srv.idOfSub("human:moe") === moe && srv.idOfSub("human:lark") === lark && srv.claimedName("Lark") && srv.claimedByOther("Lark", "human:other") && !srv.claimedByOther("Lark", "human:lark"),
+    "DW21 an account bound or minted by another writer since the server read the file: idOfSub finds it, and its name reads as claimed",
+    { moe: srv.idOfSub("human:moe"), lark: srv.idOfSub("human:lark"), claimed: srv.claimedName("Lark"), other: srv.claimedByOther("Lark", "human:other") }); }
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(`[directory-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

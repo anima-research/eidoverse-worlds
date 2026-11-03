@@ -78,11 +78,13 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
   const refresh = () => { if (!fs.existsSync(file)) return;
     const disk = JSON.parse(fs.readFileSync(file, "utf8")) as File;
     for (const [id, e] of Object.entries(disk.ids ?? {})) if (!d.ids[id]) { d.ids[id] = unkind(e); index(id, e); } else takeBinds(id, e); };
+  // another writer's change since this process last looked (the file's mtime moved): re-read, for the reads that don't mint (bot review #260 120)
+  let seen = -1; const fresh = () => { try { const m = fs.statSync(file).mtimeMs; if (m !== seen) { seen = m; refresh(); } } catch { /* no file yet */ } };
   const add = (e: Entry) => { let id = mintId(); while (d.ids[id] || anon.has(id)) id = mintId(); d.ids[id] = e; index(id, e); save(); return id; };
   const get = (id: string) => d.ids[id] ?? anon.get(id) ?? null;
   /** …claimed by an account OTHER than `sub` (security pass 3, H2: an account-holder may not appear under a name another
    *  account wears in this directory, present or not — the presence plane is read by people, who read names) */
-  const claimedByOther = (name: string, sub: string): boolean => { const k = foldName(name); for (const e of Object.values(d.ids)) if (e.subs.length && !e.subs.includes(sub) && foldName(e.name) === k) return true; return false; };
+  const claimedByOther = (name: string, sub: string): boolean => { fresh(); const k = foldName(name); for (const e of Object.values(d.ids)) if (e.subs.length && !e.subs.includes(sub) && foldName(e.name) === k) return true; return false; };
   return {
     /** The id for a connection in a world: its account's id there (minted on first sight; the display name kept
      *  current), or, with no account, a fresh anonymous id held in memory only. `world` is the world's id (its
@@ -105,7 +107,7 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
       const prev = byKey.get(k); if (prev && prev !== id) throw new Error(`${sub} already wears ${prev}${e.world ? " in that world" : ""}`);
       if (!e.subs.includes(sub)) e.subs.push(sub); if (e.kind === "imported") e.kind = "account"; byKey.set(k, id); save(); },
     /** the id an account already wears in a world, if any (read-only: the translator plans before it writes) */
-    idOfSub: (sub: string, world: string | null = null): string | null => byKey.get(keyOf(sub, world)) ?? null,
+    idOfSub: (sub: string, world: string | null = null): string | null => byKey.get(keyOf(sub, world)) ?? (fresh(), byKey.get(keyOf(sub, world)) ?? null),
     /** add identities planned elsewhere (the translator's, once its log is written); never overwrites one */
     put(entries: Record<string, Entry>) { for (const [id, e] of Object.entries(entries)) { if (d.ids[id]) throw new Error(`identity ${id} exists`);
         for (const s of e.subs) { const k = e.world ? `${s}|${e.world}` : s; if (byKey.has(k)) throw new Error(`${s} already wears ${byKey.get(k)}`); } }
@@ -124,7 +126,7 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
     nameOf: (id: string): string | null => get(id)?.name ?? null,
     entry: (id: string): Entry | null => get(id),
     /** the display names an account-holding identity has claimed here (an anonymous joiner may not take one: H1/M3) */
-    claimedName(name: string): boolean { const k = foldName(name); for (const e of Object.values(d.ids)) if (e.subs.length && foldName(e.name) === k) return true; return false; },
+    claimedName(name: string): boolean { fresh(); const k = foldName(name); for (const e of Object.values(d.ids)) if (e.subs.length && foldName(e.name) === k) return true; return false; },
     claimedByOther,
     /** The name a spectator's account takes on first sight: the typed name, unless another account wears it; then the
      *  typed name with the account's tag (`-` and accountTag), the name cut so the tag always
