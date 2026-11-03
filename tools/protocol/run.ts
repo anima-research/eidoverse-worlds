@@ -12,7 +12,7 @@
 // no-v1, one vocabulary) runs first and stops the gate on any failure; MAIN is every other non-browser suite; BROWSER is
 // every suite that drives a headless Chromium (no Chromium = the gate FAILS and names CHROME; it never skips).
 // Each suite runs in its own process GROUP with its own timeout, HOME, TMPDIR and scratch (the gate's temp dir, removed
-// after each suite); on exit, timeout or Ctrl-C the gate kills the whole group, so no server or Chromium outlives it.
+// after each suite); on exit, timeout or Ctrl-C the gate kills the whole group, so nothing a suite leaves in its group outlives it (a fixture that detaches kills its own).
 // Runtimes are pinned in package.json "engines" and checked before anything runs. The end prints passed / failed /
 // skipped (with reasons) / optional-not-run, and exits nonzero on any failure or any skip.
 // Suites mark: a failed check `FAIL …` or `✗ …`; a skipped check `SKIP <name>: <why>` (fails the gate: every lane is
