@@ -274,7 +274,7 @@ function reportOf(srcBytes: Buffer, world: string, unparsed: number, deferred: A
   return { report, hash: sha256(JSON.stringify(report)) };
 }
 /** A vehicle hull's measured box (model frame) from this host's catalogue, or null: the translator sets main's minY/maxY walls off by it. */
-const hullBox = (lib: unknown) => (typeof lib === "string" ? ENGINE_CATALOGUE.get(lib)?.box ?? null : null);
+export const hullBox = (lib: unknown) => (typeof lib === "string" ? ENGINE_CATALOGUE.get(lib)?.box ?? null : null);
 /** Measure the models of every thing a v1 world gives a vehicle, so the report and the translation read the same boxes (warm before either). */
 export async function warmHulls(srcDir: string) {
   const { old } = readOld(fs.readFileSync(path.join(srcDir, "log.jsonl")));

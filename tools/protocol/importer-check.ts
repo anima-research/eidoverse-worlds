@@ -24,6 +24,7 @@
 //   IM-E3   (#248) a floor below @world.bounds.min.y lowers it to 2 m under the floor, listed under mapped
 //   IM-E5   two environments: only main's first (localeCompare id order) is drawn; the other rides imported, listed
 //   IM-V1   main #248's vehicle → drive on its host + a helm child (station {action: 'drive', input: {move: 'drive'}, exit}); the rest imported, listed
+//   IM-V1b  a valid exit with no helm child rides imported:vehicle, listed (bot review 440)
 //   IM-I36  a spin's rpm is read as the renderer read it ((rpm ?? 6) × 6, coerced); a rate that isn't a number is carried
 //   IM-I37  a seat's yaw is read as the renderer read it (coerced); a yaw that can't turn is carried
 //   IM-I13  a caption deed is a place in its screen's captioners; a stale or timed one stays carried
@@ -283,6 +284,12 @@ row("IM-V1", () => {
     && JSON.stringify(r.stats.unmapped?.find((u: any) => u.component === "vehicle" && u.id === "sub")?.fields) === JSON.stringify(["probes"]),
     "IM-V1 a vehicle becomes drive on its host (speed → maxSpeed, turnRate, climbRate = speed, main's clamps) + a helm child (a socket at helm, station {action: 'drive', input: {move: 'drive'}, leaveBy: 'menu' (Space rises, as main's), exit}); minY/maxY two hidden hull-only walls at the band (@29: the floor's top at minY, 10 m thick) in the sub's own layer, which only its mask scans (@32), probes ride imported:vehicle, listed under unmapped",
     { sub: T.sub, h, raft: T.raft, h2, mapped: r.stats.mapped, unmapped: r.stats.unmapped });
+});
+row("IM-V1b", () => {   // bot review 440: a valid exit with no helm has no station to ride: it rides imported:vehicle with the helm, listed
+  const L = seqd([BASIC[0], { actor: "Ann", verb: "spawn", args: { id: "cart", lib: "c.glb", pos: [0, 0, 0] } }, { actor: "Ann", verb: "comp", args: { id: "cart", type: "vehicle", data: { helm: "front", exit: [0, 0, -2], speed: 3 } } }]);
+  const r = TV1.translate(L), T = r.final.translated, u = r.stats.unmapped?.find((x: any) => x.component === "vehicle" && x.id === "cart");
+  ok(r.stats.divergences === 0 && !T[TV1.helmChildId?.("cart")] && JSON.stringify(T.cart?.["imported:vehicle"]) === JSON.stringify({ helm: "front", exit: [0, 0, -2] }) && JSON.stringify(u?.fields) === JSON.stringify(["helm", "exit"]),
+    "IM-V1b a vehicle whose helm isn't a point gets no helm child, and its exit (a point, with no station to ride) rides imported:vehicle beside the helm and is listed: nothing is dropped (R10)", { cart: T.cart, u });
 });
 // ---- IM-C / IM-E: main #248's collision toggle, climb routes and environment, each to its home ----
 row("IM-C1", () => {
