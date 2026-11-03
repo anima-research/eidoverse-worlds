@@ -28,7 +28,7 @@ review.
   reaped when its primary leaves. One live leg per (id,
   surface): a fresh join **takes over** the stale one (close 4002); plain
   spectators never duel. Every accepted leg gets a server-issued
-  monotonic **generation** (`gen`) — rtc/attest are stamped and gated by it.
+  monotonic **generation** (`gen`) — sfu-*/attest are stamped and gated by it.
 - Flags on join: `spectate` (see everything, appear as nothing, cannot
   author), `declares` (a status the participant declares, one short
   lowercase word of its own choosing such as `"agent"` or `"ai"`: PROTOCOL §6a; optional,
@@ -163,7 +163,7 @@ Every message belongs to exactly one plane:
   id, else a token for the leg. A reconnect of the same page keeps it, so
   clients can scope a sender's utterance counter by it. It grants nothing.
   `surface-transition` — `{id, surface, gen, retired}`: aux-leg
-  join/takeover visibility (rtc re-keying, TTS hold capability).
+  join/takeover visibility (sfu-* re-keying, TTS hold capability).
 - `error` — `{error}`: every refusal, human-readable. `mod` — `{text}`:
   moderation query/act summaries.
 - `history`, `debug` — request answers (echo `reqId`).
