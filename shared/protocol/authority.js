@@ -14,7 +14,7 @@ import { DEFAULT_WHO, grabOf, homeOf, checkGrabbable, wantsHome, fitsSocket, soc
 import { fold, opsOf, applyOps, cowState, applyCow, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, PURGED, DIALECT, VERSION, keyOk } from "./fold.js";
 import { mintId, PERSON_ID, isPlaceholder } from "./ids.js";
 import { COMPONENTS, PENDULUM, defOf, registered, baseOf, isNamespaced, materialize, mapRefs, refsOf, refFields, outOfRange, rangeWords, resolveVersioned, statusOf, canonicalName, STATUSES } from "./componentspec.js";
-import { validate, verbHelp, VERBSPEC, RESERVED_VERBS, REMOVED_VERBS } from "./verbspec.js";
+import { validate, verbHelp, ownArg, VERBSPEC, RESERVED_VERBS, REMOVED_VERBS } from "./verbspec.js";
 import { dec, partSlot } from "./names.js";
 import { READ_ONLY } from "./verbclasses.js";
 import { isRefusalCode } from "./refusalcodes.js";
@@ -230,7 +230,7 @@ const REFUSAL_RING = 200, RING_VALUE_BYTES = 2048;
 function argNames(verb, args) {
   const keys = args && typeof args === "object" && !Array.isArray(args) ? Object.keys(args) : [];
   const spec = Object.hasOwn(VERBSPEC, verb) ? VERBSPEC[verb] : null;
-  const known = spec ? keys.filter((k) => k in spec.args || UNIVERSAL_ARGS.has(k)) : [];
+  const known = spec ? keys.filter((k) => ownArg(spec.args, k) || UNIVERSAL_ARGS.has(k)) : [];
   return { known: known.sort(), unknown: keys.length - known.length };
 }
 /** The authority's in-memory ring of refused requests WITH their values (what someone typed): diagnosis, never history.

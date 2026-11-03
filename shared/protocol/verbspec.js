@@ -181,10 +181,12 @@ const okType = (spec, v) => {
     case "enum": return spec.values.includes(v); default: return true;
   }
 };
+/** Is k one of a verb's OWN argument names? (`k in args` finds `toString`/`constructor` too: review of #260, #522/#538.) */
+export const ownArg = (args, k) => Object.hasOwn(args, k);
 export function validate(verb, a) {
   const T = Object.hasOwn(VERBSPEC, verb) ? VERBSPEC[verb] : null; if (!T) return null;
   const ex = (k) => T.args[k]?.example ?? T.example;
-  for (const k of Object.keys(a)) if (!(k in T.args)) return { code: "unknown-arg", reason: `${verb} has no argument '${k}'`, fix: `${T.was?.[k] ? `'${k}' is now ${T.was[k]}. ` : ""}${verb} takes: ${Object.keys(T.args).join(", ")}`, example: ex(k) };
+  for (const k of Object.keys(a)) if (!ownArg(T.args, k)) return { code: "unknown-arg", reason: `${verb} has no argument '${k}'`, fix: `${T.was?.[k] ? `'${k}' is now ${T.was[k]}. ` : ""}${verb} takes: ${Object.keys(T.args).join(", ")}`, example: ex(k) };
   for (const k of T.required ?? []) if (a[k] === undefined) return { code: "missing-arg", reason: `${verb} needs '${k}'`, fix: T.args[k]?.doc ? `${k}: ${T.args[k].doc}` : T.doc, example: T.example };
   if (T.oneOf) { const m = T.oneOf.filter((k) => a[k] !== undefined);
     if (m.length !== 1) return { code: "shape", reason: m.length ? `say one of ${m.join(" / ")}, not several` : `${verb} needs one of: ${T.oneOf.join(", ")}`, fix: T.oneOf.map((k) => `${k}: ${T.args[k].doc}`).join("; "), example: T.args[m[0] ?? "on"].example };

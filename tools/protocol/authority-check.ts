@@ -1643,6 +1643,11 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   const ct = call("olive", "batch", { ops: [{ verb: "create", args: { id: "crate-bt", model: "crate", components: { transform: { pos: [3, 0, 3] } } } }, { verb: "turn", args: { id: "crate-bt", axis: "y", deg: 90 } }] });
   const cq = ents()["crate-bt"]?.c?.transform?.q;
   ok(ct.ok && Math.abs(Math.abs(cq?.[1] ?? 0) - Math.SQRT1_2) < 1e-6, "BT4b a batch's turn finds a thing made earlier in the same batch and turns it", { ct: ct.refused ?? ct.ok, q: cq });
+  // an inherited name is no argument (review of #260, #522/#538): `toString` is `in` every object; the attempt act doesn't list it as known
+  const n2 = openWorld(root, name).entries.length;
+  const ih = call("olive", "delete", { id: "lamp", toString: 1 });
+  const att = openWorld(root, name).entries.slice(n2).map((e) => e.body).find((b) => b?.refused);
+  ok(!ih.ok && code(ih) === "unknown-arg" && !!ents().lamp && att && !att.args.includes("toString") && att.unknownArgs === 1, "BT6 delete {id, toString} is refused unknown-arg; its attempt act counts toString as unknown, never as a known name", [ih.refused ?? ih, att]);
   // each verb the help names, with args it accepts alone, dry: a verb named here without args below fails the row too
   const ARGS = { create: { model: "crate" }, set: { id: "lamp", component: "description", value: "x" }, delete: { id: "shade" }, place: { id: "shade", on: "lamp" },
     turn: { id: "lamp", axis: "y", deg: 10 }, sky: { hours: 7 }, weather: { hours: 7 } };
