@@ -150,23 +150,34 @@ export function setErrorSink(fn) { errorSink = fn; }
 // hundredth actively hides everything else.
 const seenErrors = new Map(); // key -> { n, nextAt }
 // ---- console tee: what a visitor's page says, where the operator can read it.
-// Every report() plus window errors post to /clientlog (key-gated, bounded
-// server-side). Off the hot path (queued, one flush per second), never throws,
-// and never carries the key in the payload or the URL — it rides the Authorization header
-// (Bearer), below. `tee(line)` is for lines worth keeping ([xr] etc).
-let teeQ = [], teeTimer = 0, teeMuted = false;
+// Every report() plus window errors post to /clientlog. Off the hot path (queued, one POST per flush with the lines
+// joined), never throws, and never carries the key in the payload or the URL — it rides the Authorization header
+// (Bearer), below. `tee(line)` is for lines worth keeping ([xr] etc). The server's budget (server/clientlog.ts) is
+// honoured here: a 429 waits its Retry-After (60 s when unsaid) with the lines kept, a 413 keeps the newer half.
+let teeQ = [], teeTimer = 0, teeMuted = false, teePausedUntil = 0;
+const TEE_LINES = 2000, TEE_BYTES = 60 * 1024, TEE_DEBOUNCE_MS = 2000;   // 60 KB: under keepalive's 64 KB in-flight cap
 function teeFlush() {
   teeTimer = 0;
   if (!teeQ.length || teeMuted) return;
-  const batch = teeQ.splice(0, 20);
+  if (Date.now() < teePausedUntil) { teeTimer = setTimeout(teeFlush, teePausedUntil - Date.now()); return; }
+  let body = teeQ[0], i = 1;
+  for (; i < teeQ.length && body.length + 1 + teeQ[i].length <= TEE_BYTES; i++) body += `\n${teeQ[i]}`;
+  const batch = teeQ.splice(0, i);
   const url = `/clientlog?world=${encodeURIComponent(CONFIG.world ?? '')}`;
   const headers = { authorization: `Bearer ${CONFIG.token ?? ''}` };   // the door key never rides in a URL
-  for (const line of batch) {
-    try { fetch(url, { method: 'POST', body: line, headers, keepalive: true }).then((r) => { if (r.status === 401 || r.status === 404) teeMuted = true; }).catch(() => {}); }
-    catch { /* the tee must never break the page */ }
-  }
-  if (teeQ.length) teeTimer = setTimeout(teeFlush, 1000);
+  try {
+    fetch(url, { method: 'POST', body, headers, keepalive: true }).then((r) => {
+      if (r.status === 401 || r.status === 404) teeMuted = true;
+      else if (r.status === 429) { teePausedUntil = Date.now() + 1000 * (Number(r.headers.get('retry-after')) || 60); teeQ.unshift(...batch); }
+      else if (r.status === 413) teeQ.unshift(...batch.slice(batch.length >> 1));
+      if (teeQ.length > TEE_LINES) teeQ.splice(0, teeQ.length - TEE_LINES);
+      if (teeQ.length && !teeTimer) teeTimer = setTimeout(teeFlush, TEE_DEBOUNCE_MS);
+    }).catch(() => {});
+  } catch { /* the tee must never break the page */ }
+  if (teeQ.length && !teeTimer) teeTimer = setTimeout(teeFlush, TEE_DEBOUNCE_MS);
 }
+/** For tests: what the tee holds and until when it waits. */
+export const teeState = () => ({ queued: teeQ.length, pausedUntil: teePausedUntil });
 const teeSeen = new Map();   // repeats cost one line, then one per 20
 export function tee(line) {
   try {
@@ -178,12 +189,12 @@ export function tee(line) {
       if (n > 1) line = `${line} ×${n}`;
     }
     teeQ.push(`${who} ${String(line).slice(0, 3000)}`);
-    if (teeQ.length > 200) teeQ.splice(0, teeQ.length - 200);
-    if (!teeTimer) teeTimer = setTimeout(teeFlush, 1000);
+    if (teeQ.length > TEE_LINES) teeQ.splice(0, teeQ.length - TEE_LINES);
+    if (!teeTimer) teeTimer = setTimeout(teeFlush, TEE_DEBOUNCE_MS);
   } catch { /* never */ }
 }
 /** tee, sent NOW: for the line before something that may freeze the page (a GPU-process compile), so it isn't lost
- *  in the 1 s batch. */
+ *  in the batch. A 429's wait still holds. */
 export function teeNow(line) { tee(line); try { clearTimeout(teeTimer); teeFlush(); } catch { /* never */ } }
 if (typeof window !== 'undefined') {
   window.addEventListener('error', (e) => tee(`[window.error] ${e.message} @ ${(e.filename ?? '').split('/').pop()}:${e.lineno}`));
