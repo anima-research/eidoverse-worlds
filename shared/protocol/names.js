@@ -17,9 +17,9 @@
 // (HASHED, below); and a lone surrogate (half of a UTF-16 pair, with no other half) is written in UTF-8 as U+FFFD's
 // bytes, so names that differ only in which lone surrogate they hold escape alike. Import (translate-v1.js) maps an old
 // log's names with encRaw and encNameRaw (below), which escape a name in the hashed form like any other, so the first
-// case can't arise there. Nor can the second: a log holding a lone surrogate anywhere doesn't import at all, since the
-// translated log would carry it in an act's request, which the strict reader refuses (not I-JSON), so nothing is
-// written.
+// case can't arise there. Nor can the second: a log holding a lone surrogate anywhere (an actor, an id, a key, any text)
+// is refused by translate itself before anything is mapped (translate-v1.js loneSurrogateIn, naming the entry), so
+// nothing is written.
 //
 // The engine fix (research 35, "a real enc collision"): the lab's encName escaped a name like "0abc" (valid as an
 // identity, not as a component, which must start with a letter) by prefixing "n", giving "n0abc" — which is also

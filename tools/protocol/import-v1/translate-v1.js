@@ -4,7 +4,7 @@
 //   - at most one change entry with the plain results that bring v4 to the same place (cause = that act).
 // The output is in the PROTOCOL-v4 §2.4 wire format, and every name and id follows §2.3: an old id or name the
 // grammar refuses is mapped by `enc`, here names.js's encRaw (deterministic and injective: a name in the hashed form is
-// escaped like any other, and a log holding a lone surrogate, the one pair it maps alike, isn't imported at all). After
+// escaped like any other, and a log holding a lone surrogate, the one pair it maps alike, is refused by translate itself: loneSurrogateIn). After
 // every entry it folds the v4 entry with the v4 fold and checks the projections agree. The original log is never written (R9); the output is a regenerable cache.
 // Ported from the v4 lab (code/v4-lab/translate-v1.js @ 11db981). Engine changes: the v1 fold is the engine's own
 // ../fold.js (the lab carried an older anima/main copy in legacy/), hashing and hex come from ./hash.js (no node:
@@ -1025,8 +1025,18 @@ export const changeBody = (ops) => (ops.length === 1 ? (({ verb, ...body }) => (
 // I-JSON has no -0; an old log may hold one (the same number, written as 0)
 export { unNegZero };
 
+/** The first lone UTF-16 surrogate in any string (key or value) of the old entries: {at, seq, path, code}, or null (names.js: enc writes every lone surrogate as U+FFFD, so two names differing only there would merge). */
+export function loneSurrogateIn(oldEntries) {
+  const LONE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+  const walk = (v, path) => { if (typeof v === "string") { const m = LONE.exec(v); return m ? { path, code: m[0].charCodeAt(0).toString(16) } : null; }
+    if (v && typeof v === "object") for (const [k, x] of Array.isArray(v) ? v.map((x, i) => [i, x]) : Object.entries(v)) { const m = LONE.exec(String(k)); if (m) return { path: `${path}.${k}`, code: m[0].charCodeAt(0).toString(16) }; const r = walk(x, `${path}.${k}`); if (r) return r; }
+    return null; };
+  for (let at = 0; at < oldEntries.length; at++) { const r = walk(oldEntries[at], "entry"); if (r) return { at, seq: oldEntries[at]?.seq, ...r }; }
+  return null;
+}
 export function translate(oldEntries, { onDivergence, foldBuild, key, operator, nonce, who, founder, namespace, content, approved, boxOf, lampsOf } = {}) {
   if (founder !== undefined) throw new Error("a translation names no founder: nothing can yet bind a key to the old world's owner (v1 logs record accounts, not keys); tier 0 stays empty");
+  const lone = loneSurrogateIn(oldEntries); if (lone) throw new Error(`entry ${lone.at}${lone.seq !== undefined ? ` (seq ${lone.seq})` : ""}, ${lone.path}: a lone surrogate (U+${lone.code}); enc maps every lone surrogate alike, so this log isn't imported`);   // bot review #367
   const ns = namespace === undefined ? NAMESPACE : namespaceOf(namespace);
   const seenModels = new Map();   // path → its hash (or null): each path hashed once, and counted
   const addr = content ? (p) => { if (!seenModels.has(p)) seenModels.set(p, content(p) ?? null); return seenModels.get(p); } : null;
