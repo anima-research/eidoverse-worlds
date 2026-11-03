@@ -339,6 +339,15 @@ if (M) {
     const rim = agree("pool", "ann", [14, 12], [19.5, 12], envP, { claim, h: hP });
     ok(rim.accepted && rim.seen.swim && rim.at[0] > 19.4 && near(rim.seen.maxY, 0, 1e-3), `G5 [${claim}] out of a dug pit over a vertical rim AT the waterline (2 m of terrain wall): accepted by both`, rim);
   }
+  // G8 (bot review #260 46): water with no terrain (flat ground at y 0): hauling out onto a quay 0.4 m above the surface
+  const QUAY = { id: "quay", p: [6, 0, 0], s: [4, 2.4, 6] };
+  for (const claim of ["mover", "bed"]) { const W = `flatwater-${claim}`;
+    call(W, "olive", "create-world", { title: W });
+    ok(call(W, "olive", "set", { id: "@world", component: "water", value: { level: 2 } }).ok, `G8 [${claim}] the flat world's water, no terrain`);
+    ok(call(W, "olive", "create", { id: "quay", components: { mesh: { shape: "box", size: QUAY.s }, transform: { pos: QUAY.p } } }).ok, `G8 [${claim}] a quay, its top 0.4 m above the water`);
+    ok(call(W, "ann", "move", { to: [0, 0, 0] }).ok, `G8 [${claim}] ann arrives in the water`);
+    const haul = agree(W, "ann", [0, 0], [7, 0], envOf(() => 0, 2, [{ id: "quay", box: meshBox(QUAY.p, QUAY.s) }]), { claim, h: () => 0 });
+    ok(haul.accepted && haul.seen.swim && near(haul.seen.maxY, 2.4, 1e-6) && haul.at[0] > 6.9, `G8 [${claim}] water with no terrain: swimming, then hauling out onto a quay 0.4 m above the surface, accepted by both`, haul); }
   // a pond whose terrain bank stands 0.6 m above its water: a wall from the water, to the mover AND the authority
   const POND = { amplitude: 0, size: 80, features: [{ type: "flatten", x: 0, z: 0, radius: 4, height: -2.6, edge: 0.01 }], water: { level: -0.6 } };
   call("pond", "olive", "create-world", { title: "pond" });

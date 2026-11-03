@@ -283,7 +283,7 @@ function sizeOf(a, prev) {
 // the walker's own arguments for this body: floorStep's {height, scale}, bodyBox's scale
 const lawOf = (size) => ({ height: size?.height, scale: bodyScale(size?.scale) });
 function groundSteps(st, from, pts, size) {
-  const G = groundOf(st); if (!G.terrain) return null;
+  const G = groundOf(st); if (!G.terrain && G.level == null) return null;   // water without terrain: the mover's water rule over flat ground (bot review #260 46)
   const { height, scale: s } = lawOf(size), lv = G.level, reachW = lv != null ? lv + MOVER.swim.climb * s : -Infinity;
   const step = (o) => floorStep({ ...o, height, scale: s });
   const b0 = bodyAt(st, from); const r0 = step({ y: b0.y, ground0: b0.ground, level0: lv, f: b0.ground, level1: lv });
@@ -322,7 +322,7 @@ function pathBlocked(w, st, from, to, size) {
 }
 // the box of a body arriving at p (a teleport): the swimmer's when the water's rule holds there
 function arrivalBox(st, p, size) {
-  const { height, scale } = lawOf(size), G = groundOf(st); if (!G.terrain || G.level == null) return bodyBox(p, scale);
+  const { height, scale } = lawOf(size), G = groundOf(st); if (G.level == null) return bodyBox(p, scale);
   const b = bodyAt(st, p); const r = floorStep({ y: b.y, ground0: b.ground, level0: G.level, f: b.ground, level1: G.level, height, scale });
   return bodyBox(p, scale, r.swim ? G.level : null);
 }
