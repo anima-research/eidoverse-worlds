@@ -62,6 +62,7 @@ try {
     const st = await page(`const process = { env: { DBG: ${JSON.stringify(process.env.DBG ?? '')} } }; const m = await import('/lib/emitters.js'), w = await import('/lib/world.js'); const h = m._registry.get('${IDS.of(`fx-${p}`)}');
       return { live: m.emitterCount(), comp: JSON.stringify(w.bagOf('${IDS.of(`fx-${p}`)}')?.particles ?? null), drawn: h ? h.parts.map((x) => x.mesh.count) : null, alive: h ? h.parts.map((x) => x.sim.liveCount()) : null, vis: h ? h.parts.map((x) => x.mesh.visible) : null, dbg: process.env.DBG ? (() => { const m = h.parts[0].mesh; const g = m.geometry; return { pos: [...g.attributes.iPos.array.slice(0, 6)], col: [...g.attributes.iCol.array.slice(0, 8)], sa: [...g.attributes.iSa.array.slice(0, 6)], mw: [...m.matrixWorld.elements.slice(12, 15)], parent: m.parent?.name, gp: m.parent?.parent?.type, inScene: (() => { let o = m; while (o.parent) o = o.parent; return o.type; })(), layers: m.layers.mask, ro: m.renderOrder }; })() : null };`).catch((e) => String(e));
     console.log(`  ${p}: ${JSON.stringify(st)}`);
+    check(`${p}: drew`, Array.isArray(st?.drawn) && st.drawn.some((n: number) => n > 0), st);   // a blank frame is a FAIL (bot review #260 381)
     console.log(`  ${p}: ${f} (${fs.statSync(f).size} bytes)`);
     await req("delete", { id: `fx-${p}` });
     await sleep(600);

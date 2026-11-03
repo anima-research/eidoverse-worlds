@@ -121,8 +121,8 @@ await C("K3", "the pin's recorded companions hold: the changelog line is in REGI
   // a scope extension recorded (model, roles, access entered 10-18): its names are still the kernel's, in code and in the registry pin
   const rp = JSON.parse(read("spec/registry-pin.json")); const now = KS.kernelPinOf();
   const scope = !c.scope || (Array.isArray(c.scope.names) && c.scope.names.length >= 1 && c.scope.names.every((n: string) => KS.KERNEL_COMPONENTS.includes(n) && now[n]?.status === "trial-kernel" && rp[n]?.status === "trial-kernel" && CAT.statusOf(n) === "trial-kernel"));
-  // a kernel CHANGE recorded (translator + vectors): the translator moved at re-pin time, AND is still at least there now (a bump
-  // reverted after the re-pin is red); a step names a file that exists; the vectors still run old-red/new-green. A pin whose only
+  // a kernel CHANGE recorded (translator + vectors): the translator moved at re-pin time AND is still at least there now (a bump
+  // reverted after the re-pin is red), OR the recorded step file still exists (kernelspec --translator <step>); the vectors still run old-red/new-green. A pin whose only
   // recorded change is a scope extension carries none of these (null) and is verified by `scope` alone
   const changed = !!(c.translator || c.vectors);
   const tr = !changed || (KS.translatorN(c.translator?.to) > KS.translatorN(c.translator?.from) && KS.translatorN(TV1.TRANSLATOR) >= KS.translatorN(c.translator?.to)) || (typeof c.translator?.step === "string" && fs.existsSync(path.join(T, c.translator.step)));

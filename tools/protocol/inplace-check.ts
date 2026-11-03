@@ -449,7 +449,7 @@ const waiting = oldWorld("waiting");
   // steps: world.jsonl in, log.jsonl → log.original.jsonl, snapshot.json → …, poses.json → …, poses.json in (the new one), translation.json in
   const results: any[] = [];
   for (let k = 0; k < 6; k++) { const r = xlate(["swapper"], { WORLD_TS_FAULT_AT_STEP: String(k) });
-    results.push({ k, code: r.code, restored: same(fingerprint(d), fp), temps: temps().length, said: /the swap failed: \(injected\) step \d+ failed; everything that had moved was put back/.test(r.out) }); }
+    results.push({ k, code: r.code, restored: same(fingerprint(d), fp), temps: temps().length, said: new RegExp(`the swap failed: \\(injected\\) step ${k} failed; everything that had moved was put back`).test(r.out) }); }   // step k itself (bot review #260 485)
   ok(results.every((x) => x.code !== 0 && x.restored && x.temps === 0 && x.said), "IP6 a failure at any step of the swap (0..5) puts every moved file back, removes the temporary directory and says so", results);
   const r = xlate(["swapper"]);
   ok(r.code === 0 && isWorldDir(d) && same(fingerprint(d)["log.original.jsonl"], fp["log.jsonl"]), "IP6 …and a clean run afterwards translates it in place", r.out.slice(-600)); }
@@ -558,11 +558,11 @@ for (const k of [1, 3]) { const name = `halfway${k}`; const d = oldWorld(name); 
 const actorsOf = (d: string) => [...new Set(fs.readFileSync(path.join(d, "world.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l).actor).filter((a: string) => /^u-/.test(a)))];
 { const name = "nameless"; const d = oldWorld(name); const before = fs.readFileSync(dirf, "utf8");
   const runs = [0, 2, 6].map((k) => { const r = xlate([name], { TRUST_NAMES: "", WORLD_TS_FAULT_AT_STEP: String(k) });
-    return { k, code: r.code, dirSame: fs.readFileSync(dirf, "utf8") === before, temps: temps().filter((t) => t.includes(name)).length }; });
+    return { k, code: r.code, dirSame: fs.readFileSync(dirf, "utf8") === before, temps: temps().filter((t) => t.includes(name)).length, said: new RegExp(`\\(injected\\) step ${k} failed`).test(r.out) }; });   // the injected step was reached (bot review #260 486)
   const ok1 = xlate([name], { TRUST_NAMES: "" });
   const ids = JSON.parse(fs.readFileSync(dirf, "utf8")).ids ?? {}; const was = JSON.parse(before).ids ?? {};
   const added = Object.keys(ids).filter((k) => !was[k]); const actors = actorsOf(d);
-  ok(runs.every((x) => x.code !== 0 && x.dirSame && x.temps === 0), "IP17 a failed in-place translation (before, during or after the renames) adds no identity to the shared directory", runs);
+  ok(runs.every((x) => x.code !== 0 && x.said && x.dirSame && x.temps === 0), "IP17 a failed in-place translation (before, during or after the renames: the injected step reached) adds no identity to the shared directory", runs);
   ok(ok1.code === 0 && actors.length >= 2 && actors.every((a) => ids[a]) && added.length === actors.filter((a) => !was[a]).length,
     "IP17 …and the clean run adds exactly the identities its world names, once (no leftovers from the failed attempts)", { code: ok1.code, out: ok1.out.slice(-300), added: added.length, actors: actors.length }); }
 // IP18 the recovery of an interrupted swap writes the identities the interrupted run planned (it died before writing them)

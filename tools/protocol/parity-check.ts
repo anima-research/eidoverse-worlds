@@ -1,6 +1,6 @@
 // tools/protocol/parity-check.ts — one kind of participant (research agent/human parity, Part B; R 10-17 12:42: no
-// different identities by kind; a status is declared, never inferred). Each row red first (against dfd5107c) and held by
-// a mutation below.
+// different identities by kind; a status is declared, never inferred). Each row red first (against dfd5107c); every D/M/V/X/W
+// row held by a mutation below (the P rows pin main's words: no mutant).
 //   bun tools/protocol/parity-check.ts                 every row
 //   bun tools/protocol/parity-check.ts --only D1,M1    just those
 //   bun tools/protocol/parity-check.ts --tree <dir>    against another checkout (a mutant, or the base)
