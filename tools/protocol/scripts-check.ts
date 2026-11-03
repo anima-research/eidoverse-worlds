@@ -1565,7 +1565,7 @@ serverCases.push({ id: "S2", server: true, what: "the server: while a hostile sc
 let pass = 0, fail = 0, na = 0;
 // The I rows test isolation itself (a killed process, the deadline held against a native builtin). A host without it
 // (Windows: shared/protocol/sandbox.js fifoOk) runs scripts in-process, where those guarantees are the documented gap, so
-// they print n/a with the reason. I0 keeps that from hiding a regression: isolation must be on everywhere else.
+// they print OPTIONAL with the reason (the gate receipt shows them). I0 keeps that from hiding a regression: isolation must be on everywhere else.
 const { SANDBOX: SBX } = await import("../../shared/protocol/sandbox.js");
 const isolating = !!SBX.isolated(), mustIsolate = process.platform !== "win32" && process.env.EIDO_SANDBOX !== "inprocess";
 { const good = isolating || !mustIsolate; if (good) pass++; else fail++;
@@ -1573,7 +1573,8 @@ const isolating = !!SBX.isolated(), mustIsolate = process.platform !== "win32" &
 const all = [...cases, ...(argv.includes("--no-server") ? [] : serverCases)];
 for (const c of all) {
   if (ONLY && !ONLY.includes(c.id)) continue;
-  if (!isolating && (/^I\d/.test(c.id) || c.id === "S2")) { na++; console.log(`n/a  ${c.id.padEnd(4)} ${c.what}\n       not applicable: this host runs scripts in-process (no isolation on ${process.platform})`); continue; }
+  // printed as OPTIONAL, which the gate's receipt records (run.ts `optional`), never as a silent n/a (bot review #260 145)
+  if (!isolating && (/^I\d/.test(c.id) || c.id === "S2")) { na++; console.log(`OPTIONAL ${c.id}: not run, no isolation on ${process.platform}${process.env.EIDO_SANDBOX === "inprocess" ? " (EIDO_SANDBOX=inprocess)" : ""} — ${c.what}`); continue; }
   let o: any, good = false;
   try { o = c.server ? await c.run(null) : c.run(session(c.opts)); good = !!c.good(o) && !o?.absent; } catch (e: any) { o = { threw: `${e?.constructor?.name}: ${e?.message}`.slice(0, 300) }; }
   if (good) pass++; else fail++;
