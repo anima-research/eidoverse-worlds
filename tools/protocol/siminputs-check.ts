@@ -1,11 +1,9 @@
-// tools/protocol/ground-late-check.ts — a joiner whose heightmap grid arrives late (#260 review #144).
-// The authority reads its grid from disk; a client fetches it, so for the first moments its sim stands on the noise fallback.
-// When the grid lands the client's sim is rebuilt from its join cut and its entries since, so it agrees with the authority.
-//   G1  the late joiner's canonical fold raises no disagreement with the authority's digest and rest
-//   G2  …and its presentation flight rests bit for bit where the authority logs the rest
-//   G3  a client that had the grid from the start agrees too (control)
-//   G4  a terrain changed mid-session to a heightmap this client hasn't fetched yet: the same, from the change on
-// usage: bun tools/protocol/ground-late-check.ts
+// tools/protocol/siminputs-check.ts — what the sim reads that isn't in the log (shared/protocol/siminputs.js, #260 review #144).
+//   I   the guard: the sim's import closure is pinned here, and only a module SIM_INPUTS names may read outside data, so a new
+//       outside input (a mesh collider from a GLB, say) can't enter the sim without joining the list the replica waits on
+//   G   a client that lacks an input refolds once it lands: the authority reads its heightmap from disk, a client fetches it
+//       G1/G2 late at join, G3 control (held from the start), G4 a terrain changed mid-session to one not yet fetched
+// usage: bun tools/protocol/siminputs-check.ts
 // @ts-nocheck
 import "./fixture-ids.ts";
 import fs from "node:fs";
@@ -16,11 +14,41 @@ import { restsOf } from "../../shared/protocol/simlayer.js";
 import { makeReplica, clientCutOf } from "../../shared/protocol/replica.js";
 import { openLive } from "../../server/livehost.ts";
 import { registerGrid, setGridLoader, shapeReady, shapeParams } from "../../shared/terrainshape.js";
+import { SIM_INPUTS } from "../../shared/protocol/siminputs.js";
+import { ENGINE } from "./common.ts";
+import path from "node:path";
 
-const root = scratch("groundlate");
+const root = scratch("siminputs");
 let pass = 0, fail = 0;
 const ok = (cond: any, what: string, detail?: any) => { if (cond) pass++; else { fail++; console.log(`  FAIL ${what}${detail !== undefined ? ` — ${JSON.stringify(detail).slice(0, 500)}` : ""}`); } };
 
+// ---- I: the guard ----
+// every module the sim imports, from its two entries (the engine adapter and the layer beside the fold)
+const ENTRIES = ["shared/sim.js", "shared/protocol/simlayer.js"];
+const CLOSURE = [
+  "shared/eidosim.js", "shared/mover.js", "shared/protocol/fold.js", "shared/protocol/hash.js", "shared/protocol/labmodels.js",
+  "shared/protocol/round.js", "shared/protocol/shapes.js", "shared/protocol/simlayer.js", "shared/rot.js", "shared/scale3.js",
+  "shared/sha256.js", "shared/sim.js", "shared/simmath.js", "shared/terrainmath.js", "shared/terrainshape.js",
+];
+const OUTSIDE = /export function set\w*(?:Loader|Fetcher|Source)\b|\bfetch\s*\(|readFileSync|readFile\s*\(|XMLHttpRequest|localStorage|indexedDB|\bimport\s*\(/;
+const importsOf = (src) => [...src.matchAll(/^\s*(?:import|export)\s[^;]*?\sfrom\s*["']([^"']+)["']|^\s*import\s*["']([^"']+)["']/gm)].map((m) => m[1] ?? m[2]);
+function closureOf(entries) {
+  const seen = new Set(), todo = [...entries];
+  while (todo.length) { const f = todo.pop(); if (seen.has(f)) continue; seen.add(f);
+    for (const sp of importsOf(fs.readFileSync(ENGINE + f, "utf8"))) seen.has(sp) || todo.push(sp.startsWith(".") ? path.posix.normalize(path.posix.join(path.posix.dirname(f), sp)) : `bare:${sp}`); }
+  return [...seen].sort();
+}
+{
+  const got = closureOf(ENTRIES), want = [...CLOSURE].sort();
+  ok(JSON.stringify(got) === JSON.stringify(want), "I1 the sim's import closure is the pinned one (a new module joins it here, after asking whether it reads outside the log)",
+    { added: got.filter((f) => !want.includes(f)), gone: want.filter((f) => !got.includes(f)) });
+  const inputs = new Set(Object.values(SIM_INPUTS).map((i) => i.module));
+  const readers = got.filter((f) => !f.startsWith("bare:") && !inputs.has(f) && OUTSIDE.test(fs.readFileSync(ENGINE + f, "utf8")));
+  ok(!readers.length, "I2 only a module SIM_INPUTS names reads outside data", readers);
+  ok([...inputs].every((m) => got.includes(m)), "I3 every SIM_INPUTS module is one the sim imports", [...inputs]);
+}
+
+// ---- G: a late input ----
 // a flat grid 3 m below the noise fallback (amplitude 0 → y = 0), so standing on the wrong ground is plain
 const REF = "store/heightmaps/00000000000000c1.json";
 const GRID = { w: 2, h: 2, data: new Uint16Array([0, 0, 0, 0]) };

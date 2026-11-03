@@ -196,7 +196,7 @@ time.
 | 24 | gaps | main | `tools/protocol/gaps-check.ts` | bun | 5.6 s | 180 s |
 | 25 | phys | main | `tools/protocol/phys-check.ts` | bun | 3.9 s | 180 s |
 | 26 | physlive | main | `tools/protocol/physlive-check.ts` | bun | 1.2 s | 180 s |
-| 27 | groundlate | main | `tools/protocol/ground-late-check.ts` | bun | ? | 300 s |
+| 27 | siminputs | main | `tools/protocol/siminputs-check.ts` | bun | ? | 300 s |
 | 28 | phystick | main | `tools/protocol/phystick-check.ts` | bun | 5.7 s | 180 s |
 | 29 | sclock | main | `tools/protocol/sclock-check.ts` | bun | 2.8 s | 180 s |
 | 30 | physseeds | main | `tools/protocol/physseeds-check.ts` | bun | 2.1 s | 180 s |
