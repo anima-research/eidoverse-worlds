@@ -643,6 +643,10 @@ const cases: Case[] = [
       return { doors: Object.keys(A.DOORS ?? {}).sort(), open: A.doorWrites?.("open")?.find((x: any) => x.component === "default-role")?.value?.role, pub: A.doorWrites?.("public")?.find((x: any) => x.component === "default-role")?.value?.role,
         inv: A.doorWrites?.("invite-only")?.[0]?.value?.join, doorOpen: A.doorOf?.({ "default-role": { role: "builder" } }), doorPub: A.doorOf?.({}) }; },
     good: (o) => JSON.stringify(o.doors) === '["invite-only","open","public","watch"]' && o.open === "builder" && o.pub === "member" && o.inv === "listed" && o.doorOpen === "open" && o.doorPub === "public" },
+  { id: "PL9", what: "entryOf: the renderers' credential watches at every door, never embodies, even where anyone may come in (review of #260, #610)", async run() {
+      const A = await import(TREE + "shared/protocol/access.js");
+      return { open: A.entryOf?.({}, { trustedRenderer: true })?.may, listed: A.entryOf?.({ access: { join: "listed" } }, { trustedRenderer: true })?.may, person: A.entryOf?.({}, { actor: "bob" })?.may }; },
+    good: (o) => o.open === "watch" && o.listed === "watch" && o.person === "embody" },
 ];
 
 // ---------------- run ----------------
