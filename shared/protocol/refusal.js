@@ -12,8 +12,11 @@ import { dec, actorName, ACTOR_ID } from "./names.js";
 const readable0 = (s) => String(s).replace(ACTOR_ID, (m) => actorName(m)).replace(/\bx--(?:[0-9a-f]{2})+\b/g, (m) => dec(m) ?? m);
 const readable = readable0;
 
+// a write whose outcome nobody knows (a store's ambiguous transaction, or no answer: mayHaveLanded) is neither done nor refused (bot review #260 57)
+const unsure = (reply) => reply?.txn === "ambiguous" || reply?.refused?.code === "ambiguous" || reply?.refused?.mayHaveLanded === true;
 export function refusalText(what, reply) {
   const r = reply?.refused ?? {};
+  if (unsure(reply)) return readable(`${what} may or may not have happened (${r.code ?? "ambiguous"}): ${r.reason ?? ""}${r.fix ? ` — ${r.fix}` : ""}`);
   return readable(`${what} refused by the authority (${r.code ?? "refused"}): ${r.reason ?? ""}${r.fix ? ` — ${r.fix}` : ""}`);
 }
 
@@ -34,6 +37,7 @@ export function plainRefusal(what, reply, nameOf = () => null) {
   const r = reply?.refused ?? {};
   const fix = typeof r.fix === "string" && r.fix && !TOOLISH.test(r.fix) ? r.fix : "";
   const reason = String(r.reason ?? "it wasn't allowed").replace(/\s*\(§[^)]*\)/g, "");
+  if (unsure(reply)) return namedFor(`${what.replace(/^./, (c) => c.toUpperCase())} may or may not have happened: ${reason}${fix ? `. ${fix.replace(/^./, (c) => c.toUpperCase())}` : ""}`, nameOf);
   return namedFor(`Couldn't ${what}: ${reason}${fix ? `. ${fix.replace(/^./, (c) => c.toUpperCase())}` : ""}`, nameOf);
 }
 
