@@ -577,27 +577,29 @@ export class WorldAgent {
     for (const m of Array.isArray(messages) ? messages : []) {
       if (!m || typeof m !== "object") continue;
       const ts = Date.now(); let text: string | null = null;
+      // a row reads `* <who> <text>` (look, net-server): who is the actor's name, text the rest (bot #260 #104)
+      const actor = m.from ?? m.by, subj = typeof actor === "string" ? this.nameOfActor(actor) ?? actor : "world";
       // what the authority did: it let the act reach this body, and recorded it
       if (m.type === "body" && m.kind === "shove") {   // a shove the authority delivered (a blast's): applied as the relay's is
         const lean = Array.isArray(m.spec?.lean) && m.spec.lean.length === 3 && m.spec.lean.every(Number.isFinite) ? m.spec.lean : null;
         const by = this.nameOfActor(String(m.from ?? "")) ?? String(m.from ?? "someone"); this.knockDown(by, lean, `(${by} knocks you over)`); }
-      else if (m.type === "body") text = `the world let ${m.from}'s ${m.kind}${m.spec?.point ? ` (${m.spec.point})` : ""} reach your body (consent: ${m.consent})`;
+      else if (m.type === "body") text = `reached your body (${m.kind}${m.spec?.point ? `, ${m.spec.point}` : ""}): the world let it (consent: ${m.consent})`;
       else if (m.type === "vacated") {   // review r9 M3: an edit by someone else moved the seat I sat on, and the authority let me go
         if (vacatedFromMine(m, this.myOccupancy)) { const on = this.socketName(m.socket); this.setOccupant(null);
           // stand where the authority let me go (its track of my body starts again there, r9 M2)
           const at = vacatedAt(m); if (at) { this.pos.x = at[0]; this.pos.y = at[1]; this.pos.z = at[2]; }
-          text = `${typeof m.by === "string" ? this.nameOfActor(m.by) ?? m.by : "someone"} moved ${on}, the seat you were on, so you are standing where it was${typeof m.why === "string" ? ` (${m.why})` : ""}`; } }
-      else if (m.type === "body-revoked") text = `${m.by} withdrew consent for ${m.class}: what you were doing to their body has ended`;
+          text = `moved ${on}, the seat you were on, so you are standing where it was${typeof m.why === "string" ? ` (${m.why})` : ""}`; } }
+      else if (m.type === "body-revoked") text = `withdrew consent for ${m.class}: what you were doing to their body has ended`;
       // someone's act on MY body was refused (said once per asker per minute): who, and what of mine turned it away
-      else if (m.type === "body-refused") { const who = this.nameOfActor(String(m.from)) ?? String(m.from);
-        text = `${who} tried to ${m.class === "shove" || m.class === "displace" ? "move" : "touch"} you (${m.class}); it was refused: ${m.gate ? `your ${m.gate} gate is off` : "they are on your block list"}`; }
+      else if (m.type === "body-refused") {
+        text = `tried to ${m.class === "shove" || m.class === "displace" ? "move" : "touch"} you (${m.class}); it was refused: ${m.gate ? `your ${m.gate} gate is off` : "they are on your block list"}`; }
       else if (m.type === "reach-refused") {   // the relay took a hand of mine out of my pose: nobody saw it (server/reachgate.ts)
         const to = String(m.to ?? ""), who = this.nameOfActor(to) ?? to;
         this.reachRefusals.push({ to, cls: String(m.class ?? "touch"), why: String(m.why ?? "their consent refused it"), ...(m.fix ? { fix: String(m.fix) } : {}), ...(typeof m.limb === "string" ? { limb: m.limb } : {}), ts });
         if (this.reachRefusals.length > 20) this.reachRefusals.shift();
         const dropped = this.dropReachesAt(to, typeof m.limb === "string" ? m.limb : undefined, String(m.class ?? "touch"));
         text = `your hand toward ${who}${m.point ? `'s ${m.point}` : ""} was not shown to anyone (consent class ${m.class}): ${m.why}${m.fix ? ` — ${m.fix}` : ""}${dropped.length ? `. Withdrawn: ${dropped.join(", ")}` : ""}`; }
-      if (text) { const who = String(m.from ?? m.by ?? "world"); this.inbox.push({ ts, kind: "act", who, text }); this.onEvent?.({ ts, kind: "act", who, text }); }
+      if (text) { const who = subj; this.inbox.push({ ts, kind: "act", who, text }); this.onEvent?.({ ts, kind: "act", who, text }); }
     }
   }
   /** sit on a thing's seat socket (presence: my frames carry {to: <socket id>}), or stand (null) */
@@ -812,6 +814,8 @@ export class WorldAgent {
   private pendingDebug = new Map<string, (m: any) => void>();
   private histId = 0;
 
+  /** Is `who` this body: its name here, or its own actor id (a say's `to` arrives as the name, or the id the replica can't name)? */
+  isMe(who: unknown): boolean { return typeof who === "string" && !!who && (who === this.name || who === this.actorIds.get(this.name)); }
   /** Does `text` mention this body: its name, or the display name its credential gave it (#184)? */
   mentionsMe(text: string): boolean {
     return !!mentionRegexFor([this.name, this.displayName], { dropQualifiers: this.dropMentionQualifiers })?.test(text);
@@ -1897,7 +1901,7 @@ export class WorldAgent {
       // A null regex means this body has no usable name (a malformed tokens
       // entry). Not being mentionable is degraded, not fatal — the body still
       // hears the room; it just cannot be addressed by name.
-      const mention = this.mentionsMe(String(args.text));   // the name, or the credential's display name (#184)
+      const mention = this.mentionsMe(String(args.text)) || this.isMe(args.to);   // the name, the credential's display name (#184), or a say addressed to me (bot #260 #106)
       if (mention) this.ping({ ts, kind: "mention", who: actor, text: args.text });
       this.onEvent?.({ ts, kind: "say", who: actor, text: args.text, mention });
     }
@@ -2527,7 +2531,7 @@ export class WorldAgent {
     const sp = this.replica?.st ? fallBackOf(this.replica.st) : null; if (!sp) return;
     this.respawning = true;
     try {
-      this.target = null; this.flight = null; this.endFloat(); this.vy = 0;
+      this.abandonWalk(); this.flight = null; this.endFloat(); this.vy = 0;   // the walk's promise ends now, not at its timeout (bot #260 #105)
       if (this.clip === "ragdoll" || (this.heldPose && !this.heldPoseAuthored)) {
         ++this.bodyEpoch; this.body?.stop(); this.stopSim(); this.pins.clear();
         if (!this.heldPoseAuthored) this.heldPose = null;
@@ -4067,9 +4071,9 @@ export class WorldAgent {
   private placeHolder(e: Entity, nowMs = Date.now()): PlaceHolder | null {
     const f = this.eff(e.id, nowMs);
     // its per-axis scale, so a place on a stretched thing is stretched with it, as the thing is drawn. places.ts frames
-    // only positive axes, so a mirrored thing keeps its one-number scale, as before
+    // any non-zero axis, a mirrored one too (bot #260 #40)
     const s3 = f.ok ? f.scale3 : undefined;
-    const scale = Array.isArray(s3) && s3.every((v) => v > 0) ? s3 : f.ok ? f.scale : undefined;
+    const scale = Array.isArray(s3) && s3.every((v) => Number.isFinite(v) && v !== 0) ? s3 : f.ok ? f.scale : undefined;
     return f.ok ? { id: e.id, name: this.refName(e.id), pos: f.pos, yaw: f.yaw, q: f.quat, scale } : null;
   }
 
@@ -4747,7 +4751,7 @@ export class WorldAgent {
     if (verb === "move" && this.water && args.height === undefined) args = { ...args, height: this.stature() };
     const id = `v${++this.histId}`;
     return new Promise((resolve) => {
-      const t = setTimeout(() => { this.pendingRequests.delete(id); resolve({ ok: false, refused: { code: "timeout", reason: "the authority did not answer within 8 s" } }); }, 8000);
+      const t = setTimeout(() => { this.pendingRequests.delete(id); resolve({ ok: false, refused: { code: "timeout", reason: "the authority did not answer within 8 s", fix: "it may still land: look before trying again", mayHaveLanded: true } }); }, 8000);   // as net.js (bot #260 #53)
       this.pendingRequests.set(id, (m) => { clearTimeout(t);
         if (verb === "consent" && m.reply?.ok) this.noteConsent(args);
         resolve(m.reply ?? { ok: false, refused: { code: "no-reply", reason: "the authority's answer had no reply" } }); });
@@ -5359,6 +5363,15 @@ export class WorldAgent {
     const { entries } = await this.history({ after: seq, limit, verbs: ["say"] });
     return entries.map((e) => ({ ts: e.ts, who: e.actor, text: e.args?.text ?? "", seq: e.seq }));
   }
+  /** The OLDEST `limit` says after `seq`, and whether more follow: the log pages newest-first, so page back to `seq` (bot #260 #63). */
+  async firstSaidSince(seq: number, limit: number): Promise<{ said: { ts: number; who: string; text: string; seq: number }[]; more: boolean }> {
+    let all: any[] = [], before: number | undefined;
+    for (let n = 0; n < 100; n++) {
+      const r = await this.history({ after: seq, ...(before != null ? { before } : {}), limit: 200, verbs: ["say"] });
+      all = [...r.entries, ...all]; if (!r.hasMore || !r.entries.length || r.oldestSeq == null) break; before = r.oldestSeq;
+    }
+    return { said: all.slice(0, limit).map((e) => ({ ts: e.ts, who: e.actor, text: e.args?.text ?? "", seq: e.seq })), more: all.length > limit };
+  }
 
   // ---- perception (text tier) ----
 
@@ -5455,7 +5468,7 @@ export class WorldAgent {
     if (meKnown) {
       L.push(`You are "${this.name}" in world "${this.world}" at (${me.x.toFixed(1)}, ${me.z.toFixed(1)}), ground height ${(this.float.on ? this.heightAt(me.x, me.z) : me.y).toFixed(2)}m${this.waterHere(me.x, me.z, me.y)}, facing ${this.bearing(Math.sin(this.yaw), Math.cos(this.yaw))}${seated}.`);
     } else {
-      L.push(`You are "${this.name}" in world "${this.world}", position unknown (${selfEff && !selfEff.ok ? selfEff.why : "seat unresolved"}), facing ${this.bearing(Math.sin(this.yaw), Math.cos(this.yaw))}${seated}. Distances are withheld until your seat resolves — sit with no \`on\` (or walking) gets you up, back to a stamped position.`);
+      L.push(`You are "${this.name}" in world "${this.world}", position unknown (${selfEff && !selfEff.ok ? selfEff.why : "seat unresolved"}), facing ${this.bearing(Math.sin(this.yaw), Math.cos(this.yaw))}${seated}. Distances are withheld until your seat resolves — detach gets you up, back to a stamped position (detach {escape: true} if the seat holds you; walking, where the seat allows it).`);
     }
     { const ws = this.waterSummary(); if (ws) L.push(ws); }
     if (this.pendingTerrain) L.push(`The world's ground is a heightmap that has not loaded yet: heights here are the last ground you had${this.terrain ? "" : " (flat)"}, until it does.`);
@@ -5569,7 +5582,8 @@ export class WorldAgent {
       if (lit) aff.push(`light: #${lit.color.toString(16).padStart(6, "0")}, brightness ${+lit.intensity.toFixed(2)}, reaches ${+lit.range.toFixed(2)}m${lit.important ? ", important (always casts)" : ""}${lit.daytime === "full" ? ", burns at noon" : ""}`);
       // a declared collider (the collider component)
       const col = c.collider && typeof c.collider === "object" && !Array.isArray(c.collider) ? c.collider.shape : undefined;
-      if (col === "mesh" || col === "exact" || col === "box") aff.push(col === "box" ? "collides as a box" : "collides as its mesh (its triangles)");
+      if ((col === "mesh" || col === "exact" || col === "box") && solidOffRecord(c)) aff.push("collider off: walk-through");   // enabled/blocks, as the walker reads it (bot #260 #62)
+      else if (col === "mesh" || col === "exact" || col === "box") aff.push(col === "box" ? "collides as a box" : "collides as its mesh (its triangles)");
       const socks = this.socketsOf(e.id);
       if (socks.length) {
         // each socket a person can use says what the body does there (shared/sockbody.js describeBody), and who's on it;

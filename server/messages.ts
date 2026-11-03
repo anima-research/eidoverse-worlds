@@ -20,7 +20,7 @@ import { gateReach } from "./reachgate.ts";
 import { bodyRangeOf } from "../shared/protocol/physconst.js";
 import { currentIncarnation } from "./transport.ts";
 import { isOperator } from "./operators.ts";
-import { directoryFor, foldName } from "./directory.ts";
+import { directoryFor, foldName, isMinted } from "./directory.ts";
 import { actorOf as actorIdOf } from "./requestwire.ts";
 import { qNorm } from "../shared/rot.js";
 import { decide as consentDecide, refusalWords } from "../shared/protocol/consent.js";
@@ -462,7 +462,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     const dir = directoryFor(WORLDS_DIR);
     if (msg.type === "global-unban") {
       // by the name it was filed under, by the account named, or by an account wearing that name here
-      const accts = new Set([id, ...dir.accountsNamed(id)]);
+      const accts = new Set([id, ...dir.accountsNamed(id), ...(isMinted(id) ? dir.entry(id)?.subs ?? [] : [])]);
       const gone = bansLiftedBy(globalBans, id, accts, fold);
       for (const k of gone) delete globalBans[k];
       gone.push(...takePending(id, fold));
@@ -475,7 +475,8 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // guest's hashed address — never a display name alone (findBan matches account/addr; a name-keyed record bound nothing until
     // a restart rewrote it). Present anywhere: their account (or, a guest, their address); absent: every account the directory
     // knows under that name. Nothing to bind → refused, said plainly.
-    const present = [...worlds.values()].flatMap((w) => [...w.clients]).filter((o) => fold(o.id) === fold(id) || (typeof msg.id === "string" && o.account === msg.id));
+    const byIdentity = isMinted(id) ? dir.entry(id)?.subs ?? [] : [];   // a u- identity (whois) binds its accounts (bot #260 #42)
+    const present = [...worlds.values()].flatMap((w) => [...w.clients]).filter((o) => fold(o.id) === fold(id) || (typeof msg.id === "string" && o.account === msg.id) || (isMinted(id) && o.actorId === id));
     if (present.some((o) => isOperator(o.account))) {
       ws.send(JSON.stringify({ type: "error", error: `${id} is a server operator — remove them from SERVER_OPERATORS first` }));
       return;
@@ -485,17 +486,19 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       return;
     }
     const reason = msg.reason != null ? String(msg.reason).slice(0, LIMITS.BAN_REASON_LEN) : undefined;
-    const accounts = new Set<string>([...present.map((o) => o.account).filter((a): a is string => !!a), ...dir.accountsNamed(id), ...(/^(human|agent|aid1|local):/.test(id) ? [id] : [])]);
+    // days, as a world's ban takes it (authority/moderation.js): absent = until lifted (bot #260 #41)
+    if (msg.days !== undefined && !(typeof msg.days === "number" && msg.days > 0 && msg.days <= 3650)) { ws.send(JSON.stringify({ type: "error", error: "global-ban days is a number of days (more than 0, at most 3650); leave it out for a ban until lifted" })); return; }
+    const accounts = new Set<string>([...present.map((o) => o.account).filter((a): a is string => !!a), ...dir.accountsNamed(id), ...byIdentity, ...(/^(human|agent|aid1|local):/.test(id) ? [id] : [])]);
     if ([...accounts].some((a) => isOperator(a))) { ws.send(JSON.stringify({ type: "error", error: `${id} is a server operator — remove them from SERVER_OPERATORS first` })); return; }
     const guestAddrs = new Set<string>(present.filter((o) => !o.account && o.addr).map((o) => o.addr as string));
     if (!accounts.size && !guestAddrs.size) {
       ws.send(JSON.stringify({ type: "error", error: `can't ban "${id}" globally: nobody by that name is here, and no account wears it in the directory, so there is nothing a ban could bind to (bans bind to accounts, or a present guest's connection)` }));
       return;
     }
-    const ts = Date.now();
-    for (const account of accounts) globalBans[banKey(account)] = { by: c.id, ts, name: id, account, ...(reason ? { reason } : {}) };
+    const ts = Date.now(), until = msg.days !== undefined ? Math.floor(ts + msg.days * 86400000) : undefined;
+    for (const account of accounts) globalBans[banKey(account)] = { by: c.id, ts, name: id, account, ...(until ? { until } : {}), ...(reason ? { reason } : {}) };
     if (accounts.size) takePending(id, fold);   // a pre-account ban under this name is bound to a person now
-    for (const addr of guestAddrs) globalBans[banKey(null, addr)] = { by: c.id, ts, name: id, addr, until: ts + ADDR_BAN_MS, ...(reason ? { reason } : {}) };
+    for (const addr of guestAddrs) globalBans[banKey(null, addr)] = { by: c.id, ts, name: id, addr, until: Math.min(ts + ADDR_BAN_MS, until ?? Infinity), ...(reason ? { reason } : {}) };
     saveGlobalBans();
     let expelled = 0;
     for (const w2 of worlds.values()) {
@@ -507,7 +510,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       }
     }
     console.log(`[mod] ${c.id} banned ${id} globally (${accounts.size} account(s), ${guestAddrs.size} guest address(es))${reason ? ` (${reason})` : ""}${expelled ? ` — ${expelled} session(s) disconnected` : ""}`);
-    ws.send(JSON.stringify({ type: "mod", text: `${id} is banned from all worlds${reason ? ` — ${reason}` : ""}${expelled ? ` (${expelled} live session${expelled === 1 ? "" : "s"} disconnected)` : ""}` }));
+    ws.send(JSON.stringify({ type: "mod", text: `${id} is banned from all worlds${until ? ` until ${new Date(until).toISOString().slice(0, 10)}` : ""}${reason ? ` — ${reason}` : ""}${expelled ? ` (${expelled} live session${expelled === 1 ? "" : "s"} disconnected)` : ""}` }));
     return;
   }
 };

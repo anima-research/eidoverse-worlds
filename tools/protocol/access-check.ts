@@ -16,6 +16,7 @@
 //       none — the refusal never loads the world (Antra's review of f91840e5 P1: /geom was 200); a kick closes no door
 //   A12 (security review 10-18 H1) an operator's GLOBAL ban binds to the target's account NOW: a present target is removed and
 //       can't reconnect (4006, "these worlds"), an absent one can't join; the record carries the account; unban lifts it
+//   A12b (bot #260 #41, #42) a global ban by u- identity binds the absent account; days gives it an end; unban by identity lifts it
 //   A13 (10-18 H2) the client's address: X-Real-IP / X-Forwarded-For honoured only from a trusted proxy (loopback, TRUSTED_PROXIES);
 //       from any other peer the socket's own address is used (a guest can't pick or frame an address)
 //   A14 (10-18 M6) a timed grant whose until has passed is ABSENT on every read, loaded or not: an unloaded world's /access and
@@ -273,6 +274,18 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   const row3 = await sock(s3.port); const jr3 = await row3.join("keep", "Rowan", { agentToken: "tok-rowan" }); const moss2 = await sock(s3.port); const jm2 = await moss2.join("keep", "Moss", { agentToken: "tok-moss" });
   ok(!!jr3.snapshot && !!jm2.snapshot && Object.keys(JSON.parse(fs.readFileSync(path.join(W, ".bans.json"), "utf8"))).length === 0, "A12 global-unban by name or by account lifts it: both join again, the list is empty", [jr3.errors, jm2.errors]);
   row2.close(); row3.close(); moss.close(); moss2.close();
+  // A12b (bot #260 #41, #42): a global ban by u- identity binds the absent person's account, and days gives it an end; unban by identity lifts it
+  await sleep(200); const k2 = fen.msgs.length; fen.raw({ type: "global-ban", id: ids.Moss, days: 2, reason: "A12b" }); await tryUntil("Fen hears back on the identity ban", () => fen.msgs.length > k2, { ms: 2000, step: 50 });
+  const recI: any = Object.values(JSON.parse(fs.readFileSync(path.join(W, ".bans.json"), "utf8"))).find((b: any) => b.account === "agent:token:moss");
+  const moss3 = await sock(s3.port); const jm3 = await moss3.join("keep", "Moss", { agentToken: "tok-moss" });
+  const k3 = fen.msgs.length; fen.raw({ type: "global-unban", id: ids.Moss }); await tryUntil("Fen hears back on the identity unban", () => fen.msgs.length > k3, { ms: 2000, step: 50 });
+  const moss4 = await sock(s3.port); const jm4 = await moss4.join("keep", "Moss", { agentToken: "tok-moss" });
+  const { findBan: fb } = await import("../../server/moderation.ts");
+  const lapsed = fb({ k: { by: "op", ts: 1, account: "agent:token:x", until: Date.now() - 1 } }, "agent:token:x"), held = fb({ k: { by: "op", ts: 1, account: "agent:token:x", until: Date.now() + 9e6 } }, "agent:token:x");
+  ok(!!recI && typeof recI.until === "number" && Math.abs(recI.until - Date.now() - 2 * 86400000) < 60000 && !jm3.snapshot && !!jm4.snapshot && !lapsed && !!held,
+    "A12b a global ban by u- identity binds the absent person's account (join refused), days sets until (and findBan lets a lapsed one go), unban by identity lifts it",
+    { rec: recI, said: fen.msgs.slice(k2).map((m) => m.text ?? m.error), refused: jm3.errors, again: jm4.errors, lapsed: !!lapsed, held: !!held });
+  moss3.close(); moss4.close();
   fen.close(); row.close(); try { s3.proc.kill(); } catch {} await sleep(300); }
 // ---- A13 (security review 10-18 H2): the client's address, from a trusted proxy only (pure) ----
 { const { clientAddress } = await import("../../server/peer.ts");
