@@ -9,7 +9,8 @@
 //   - the old protocol on the wire or in code, sending OR receiving: v1 verb / lease messages, world_verb, the v1
 //     fold's, rights' and log bus's entry points (in comments too);
 //   - the word "v1" (any case, and as a name prefix: v1View) in code or comments, outside the few lines where it names
-//     something else, listed in UNRELATED below with why.
+//     something else, listed in UNRELATED below with why. This word rule is for the runtime dirs only (a bot may name a
+//     vendor's /v1/ URL path); the importer, GONE and wire rules hold for the bots too.
 // Tests in the runtime directories are scanned too, except for the word rule.
 // usage: bun tools/protocol/nov1-check.ts        (prints each offence as file:line; exit 1 if any)
 // @ts-nocheck
@@ -71,14 +72,13 @@ const scan = (p, { runtime }) => {
   const rel = path.relative(ROOT, p).split(path.sep).join("/");
   fs.readFileSync(p, "utf8").split("\n").forEach((line, i) => {
     const at = `${rel}:${i + 1}`;
-    if (runtime) {
-      for (const re of IMPORTS) for (const m of line.matchAll(re)) {
-        const to = m[1].startsWith("/") ? m[1].slice(1) : path.relative(ROOT, path.resolve(path.dirname(p), m[1])).split(path.sep).join("/");
-        if (to.startsWith("tools/protocol/import-v1")) offences.push(`${at}  loads the old-world importer (${to}): only tools may`);
-        if (GONE.some((g) => to === g || to.startsWith(g + "/"))) offences.push(`${at}  imports a deleted v1 module (${to})`);
-      }
-      if (/import-v1/.test(line) && !/^\s*(\/\/|\*|\/\*)/.test(line)) offences.push(`${at}  names the old-world importer in code`);
+    // the importer and GONE rules hold for the deployed bots too (bot review #260 376); only the word rule is runtime-only
+    for (const re of IMPORTS) for (const m of line.matchAll(re)) {
+      const to = m[1].startsWith("/") ? m[1].slice(1) : path.relative(ROOT, path.resolve(path.dirname(p), m[1])).split(path.sep).join("/");
+      if (to.startsWith("tools/protocol/import-v1")) offences.push(`${at}  loads the old-world importer (${to}): only tools may`);
+      if (GONE.some((g) => to === g || to.startsWith(g + "/"))) offences.push(`${at}  imports a deleted v1 module (${to})`);
     }
+    if (/import-v1/.test(line) && !/^\s*(\/\/|\*|\/\*)/.test(line)) offences.push(`${at}  names the old-world importer in code`);
     if (!RULES_EXEMPT.some(([f, re]) => rel === f && re.test(line))) for (const [re, what] of RULES) if (re.test(line)) offences.push(`${at}  ${what}`);
     if (runtime && !isTest(rel) && /\bv1\b|\bv1[A-Z_]|\bV1[A-Z_a-z]*\b/i.test(line.replaceAll("import-v1", "").replaceAll("translate-v1", "")) && !unrelated(rel, line))
       offences.push(`${at}  says "v1": ${line.trim().slice(0, 110)}`);
