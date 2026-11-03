@@ -284,7 +284,9 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     if (w.log.seniorOwner() !== actorOf(c)) return err("erasing a world is for its most senior owner (its founder) — ask them");
     if (String(msg.name ?? "") !== w.name) return err(`confirmation mismatch — reset must name "${w.name}"`);
     let arch: string; try { arch = w.resetWorld(); } catch (e: Any) {
-      if (e?.movedTo) console.error(`[world:${w.name}] reset failed partway: old log in ${e.movedTo}, new one in ${e.freshAt}:`, e);
+      // where the logs are now, as worldlog.ts resetWorld left them (lane a's note on bot review #260 10)
+      if (e?.movedTo) console.error(`[world:${w.name}] reset failed partway: ${e.swapped ? `old log archived in ${e.movedTo}, the fresh one in place`
+        : e.logMoved ? `no world.jsonl here (moved aside before this reset); the fresh log is in ${e.freshAt}` : "nothing moved: the old log is where it was"}:`, e);
       if (e?.resetDone && e.opened) {   // the fresh world is open: the reset stands, and its scripts (it has none yet) are the operator's to look at
         console.error(`[world:${w.name}] reset by ${c.id}: the fresh world is open, but its scripts didn't start:`, e.cause ?? e); arch = e.resetDone; }
       else if (e?.resetDone) { console.error(`[world:${w.name}] reset by ${c.id}: erased (history archived in ${e.resetDone}), but the fresh log didn't open:`, e.cause ?? e);

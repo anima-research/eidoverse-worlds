@@ -114,8 +114,9 @@ ok(old.requestSync("olive", "say", { text: "late" })?.refused?.code === "reset",
   const errs = []; const c = { id: "olive", world: hw, actorId: owner, gen: 0, legGen: 0, ws: { send: (d) => { const m = JSON.parse(d); if (m.type === "error") errs.push(m.error); } } };
   const reset = () => REQUEST_MESSAGES["world-reset"]({ c, ws: c.ws, now: Date.now(), expel: () => {} }, { name: "half" });
   const rename = fs.renameSync; let injected = 0;
+  const logged = [], cerr = console.error; console.error = (...a) => { logged.push(String(a[0])); };   // the operator's line (PR0b)
   fs.renameSync = function (a, b) { if (String(a).includes(".refound-")) { injected++; throw new Error("EIO: injected (the fresh log into place)"); } return rename.call(fs, a, b); };
-  try { reset(); } finally { fs.renameSync = rename; }
+  try { reset(); } finally { fs.renameSync = rename; console.error = cerr; }
   const still = fs.existsSync(path.join(dir, "world.jsonl")) && fs.readFileSync(path.join(dir, "world.jsonl"), "utf8") === before;
   const archived = fs.readdirSync(dir).filter((f) => f.startsWith("reset-") && fs.existsSync(path.join(dir, f, "world.jsonl")));
   const w0 = hw.log.requestSync(owner, "say", { text: "the reset failed; the world goes on" });
@@ -123,8 +124,11 @@ ok(old.requestSync("olive", "say", { text: "late" })?.refused?.code === "reset",
     "PR0 a reset that fails at the last rename leaves the old log (and poses) in place and live, says so, and no archive holds a copy", { injected, still, w0: w0?.ok ?? w0?.refused, errs, archived });
   // the log already gone from its place (what an older server's failed reset left): the same failure retires the world
   if (fs.existsSync(path.join(dir, "world.jsonl"))) fs.renameSync(path.join(dir, "world.jsonl"), path.join(dir, "aside.jsonl")); const n0 = hw.log.live.entries.length;
+  console.error = (...a) => { logged.push(String(a[0])); };
   fs.renameSync = function (a, b) { if (String(a).includes(".refound-")) throw new Error("EIO: injected (the fresh log into place)"); return rename.call(fs, a, b); };
-  try { reset(); } finally { fs.renameSync = rename; }
+  try { reset(); } finally { fs.renameSync = rename; console.error = cerr; }
+  ok(logged.length === 2 && /nothing moved: the old log is where it was/.test(logged[0]) && !/old log in|archived in/.test(logged[0]) && /no world\.jsonl here/.test(logged[1]) && /\.refound-/.test(logged[1]),
+    "PR0b the server's log line says where the logs are: nothing moved when the swap failed; no world.jsonl (the fresh one in scratch) when it was already gone", logged);
   const said = errs[1] ?? "";
   const w1 = hw.log.requestSync(owner, "say", { text: "after the failed reset" });
   const file = fs.existsSync(path.join(dir, "world.jsonl"));

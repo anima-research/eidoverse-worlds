@@ -624,7 +624,7 @@ export function resetWorld(log: WorldLog): string {
     // not swapped: the old log is where it was, and the archive's copies of it go (the world stays live); logMoved also
     // covers an earlier failed reset that left no world.jsonl
     if (!swapped) { for (const f of linked) try { fs.unlinkSync(path.join(arch, f)); } catch { /* gone */ } try { fs.rmdirSync(arch); } catch { /* not empty */ } }
-    err.logMoved = swapped || !fs.existsSync(path.join(dir, "world.jsonl")); throw err; }
+    err.swapped = swapped; err.logMoved = swapped || !fs.existsSync(path.join(dir, "world.jsonl")); throw err; }
   // the fresh log is in place, and nothing left in the scratch directory is used again: failing to remove it, whole or in
   // part, leaves litter for the operator, not a failed reset
   try { fs.rmSync(fresh, { recursive: true, force: true }); } catch (e) { console.warn(`[world] reset left its scratch directory ${fresh}: ${e}`); }
