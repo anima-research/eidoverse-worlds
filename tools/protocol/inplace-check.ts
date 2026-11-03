@@ -313,7 +313,7 @@ const NO_KEY = (out: string) => /nothing can yet bind a key to the old world's o
   ok(again.code === 0 && isWorldDir(d), "IP24 …and it translates again after the rollback", again.out.slice(-300));
   // IP25: the server has written to the translated world since
   fs.appendFileSync(path.join(d, "world.jsonl"), "\n");
-  const r2 = tool(["rollback", name]); const keep = fingerprint(d);
+  const keep = fingerprint(d); const r2 = tool(["rollback", name]);
   ok(r2.code !== 0 && /without losing history: world\.jsonl changed since/.test(r2.out) && /--discard-changes/.test(r2.out) && same(fingerprint(d), keep) && isWorldDir(d), "IP25 a rollback that would lose history refuses, names the file, and offers --discard-changes; nothing changed", r2.out.slice(-500));
   const r3 = tool(["rollback", name, "--discard-changes"]);
   ok(r3.code === 0 && same(fingerprint(d), fp) && /changes since the translation discarded/.test(r3.out), "IP25 --discard-changes rolls back anyway, saying what was discarded; the directory is byte-identical to the original again", r3.out.slice(-400));
@@ -333,7 +333,7 @@ const NO_KEY = (out: string) => /nothing can yet bind a key to the old world's o
 { const name = "modlater"; const d = oldWorld(name); const fp = fingerprint(d); const r = xlate([name]);
   ok(r.code === 0 && isWorldDir(d) && !fs.existsSync(path.join(d, "world.mod.jsonl")), "IP30 setup: translated in place, no moderator log yet (this old world had no bans)", r.out.slice(-200));
   fs.writeFileSync(path.join(d, "world.mod.jsonl"), JSON.stringify({ ts: 1, actor: "u-x", verb: "ban", who: "u-y" }) + "\n");   // what the server's first ban writes
-  const r2 = tool(["rollback", name]); const keep = fingerprint(d);
+  const keep = fingerprint(d); const r2 = tool(["rollback", name]);
   ok(r2.code !== 0 && /without losing history: world\.mod\.jsonl was made since the translation/.test(r2.out) && /bans, mutes, kicks were filed/.test(r2.out) && /--discard-changes/.test(r2.out) && same(fingerprint(d), keep) && isWorldDir(d),
     "IP30 rollback refuses: the moderator log the server made since is named as history with nowhere to go; nothing changed", r2.out.slice(-500));
   const r3 = tool(["rollback", name, "--discard-changes"]);
@@ -365,8 +365,9 @@ const NO_KEY = (out: string) => /nothing can yet bind a key to the old world's o
   const forced = tool(["translate", "sunk", "--no-founder-key", "--operator-only-no-owner", "--approved", h!]);
   ok(forced.code !== 0 && /can't translate "sunk"/.test(forced.out) && /can't override this/.test(forced.out) && same(fingerprint(d), fp) && !temps().length && !isWorldDir(d) && fs.readFileSync(dirf, "utf8") === dirBefore,
     "IP26 approving the refused report doesn't override it: refused again, nothing written, no identities added", forced.out.slice(-400));
-  const named = oldWorld("sunk-src", { extra: uses.slice(6, 7) }); const two = tool(["translate", "sunk-src", "sunk-new", "--no-founder-key", "--operator-only-no-owner", "--approved", dryHash(["sunk-src", "sunk-new"])]);
-  ok(two.code !== 0 && /can't translate "sunk-new"|can't translate "sunk-src"/.test(two.out) && /air box on @world/.test(two.out) && !fs.existsSync(path.join(W, "sunk-new")) && same(fingerprint(named), fingerprint(named)),
+  const named = oldWorld("sunk-src", { extra: uses.slice(6, 7) }); const hN = dryHash(["sunk-src", "sunk-new"]); const fpN = fingerprint(named);
+  const two = tool(["translate", "sunk-src", "sunk-new", "--no-founder-key", "--operator-only-no-owner", "--approved", hN]);
+  ok(two.code !== 0 && /can't translate "sunk-new"|can't translate "sunk-src"/.test(two.out) && /air box on @world/.test(two.out) && !fs.existsSync(path.join(W, "sunk-new")) && same(fingerprint(named), fpN),
     "IP26 the two-name form refuses the same way, and makes no new directory", two.out.slice(-300)); }
 
 // ================= IP1: in place, the happy path (continued) =================
