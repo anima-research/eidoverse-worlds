@@ -63,6 +63,10 @@ for (const s of scenarios) {
   const v: any = simFold(readLog(fs.readFileSync(`${DIR}${s}.jsonl`, "utf8")), 1e15);
   check(`EN3 ${s} has a rest to hold the engine to`, (v.rested?.length ?? 0) > 0, v.rested);
 }
+// EN6 (bot review #260 72): the knock wakes the sleeper — crate-1 is never thrown, yet comes to rest beside the ball
+{ const s = "knock-a-sleeper-2", f = `${DIR}${s}.jsonl`; const v: any = fs.existsSync(f) ? simFold(readLog(fs.readFileSync(f, "utf8")), 1e15) : null;
+  const ids = (v?.rested ?? []).map((r: any) => r.id);
+  check(`EN6 ${s}: the thrown ball knocks crate-1 awake (both come to rest; the crate was never thrown)`, ids.includes("ball") && ids.includes("crate-1"), ids); }
 // EN4: a version's digests never change under its name, against the record (a --write that rewrote them by hand, or an edit of
 // the file, would otherwise pass EN2 against the changed engine)
 { const F = "spec/conformance/physics/digests.json"; const ROOT = fileURLToPath(new URL("../../", import.meta.url));

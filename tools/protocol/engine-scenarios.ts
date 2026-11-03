@@ -27,7 +27,10 @@ const SCEN: Record<string, (w: string) => void> = {
   "arc-onto-table": (w) => { call(w, "rowan", "grab", { id: "ball" }); call(w, "rowan", "throw", { id: "ball", v: [0, 2, 3] }); },
   "straight-up": (w) => { call(w, "rowan", "grab", { id: "ball" }); call(w, "rowan", "throw", { id: "ball", v: [0, 6, 0] }); },
   "crate-tumble": (w) => { call(w, "rowan", "move", { to: [2, 0, -0.5] }); call(w, "rowan", "grab", { id: "crate-1" }); call(w, "rowan", "throw", { id: "crate-1", v: [0, 5, 0], w: [0, 0, 6] }); },
+  // knock-a-sleeper's ball passes 0.09 m wide of crate-1 (it never wakes); its digest is pinned, so it stays as a plain throw.
+  // knock-a-sleeper-2 is the knock: rowan steps into the crate's line first (bot review #260 72; engine-check EN6)
   "knock-a-sleeper": (w) => { call(w, "rowan", "grab", { id: "ball" }); call(w, "rowan", "throw", { id: "ball", v: [4, 1.5, 0] }); },
+  "knock-a-sleeper-2": (w) => { call(w, "rowan", "move", { to: [0, 0, -0.2] }); call(w, "rowan", "grab", { id: "ball" }); call(w, "rowan", "throw", { id: "ball", v: [4, 1.5, 0] }); },
   // the ground law (terrainmath.js) is part of the engine's result: a throw onto hilly ground holds it to its version too
   "onto-hills": (w) => { call(w, "rowan", "set", { id: "@world", component: "terrain", value: { amplitude: 3, seed: 7 } }); call(w, "rowan", "grab", { id: "ball" }); call(w, "rowan", "throw", { id: "ball", v: [3, 3, 3] }); },
   "crate-slide": (w) => { call(w, "rowan", "move", { to: [2, 0, -0.5] }); call(w, "rowan", "grab", { id: "crate-1" }); call(w, "rowan", "throw", { id: "crate-1", v: [4, 0.5, 0] }); },
