@@ -268,6 +268,19 @@ export function setAside(root: string, files: string[], base: string, prefix: st
 /** The lines the gate keeps from a failed suite's output: every FAIL / ✗ line, plus the indented lines right under it
  *  (where checks print what they saw), at most `per` each. The evidence used to be dropped: a FAIL said WHICH row failed
  *  and never WHAT it saw (scripts I2, 10-22: two gate failures, no values to compare with a passing run). */
+/** The gate's record of a suite's output: the last `keep` chars once it passes `limit`, plus every verdict line (FAIL, SKIP,
+ *  OPTIONAL, ✗) the cut dropped, so an early red can't fall off the tail (bot review #260 483). */
+export function outputKeeper(limit = 4e6, keep = 2e6) {
+  let out = ""; const dropped: string[] = []; const MARK = /^\s*(FAIL|SKIP|OPTIONAL)\b|✗/;
+  return {
+    add(s: string) { out += s; if (out.length <= limit) return;
+      let cut = out.length - keep; const nl = out.indexOf("\n", cut); if (nl >= 0) cut = nl + 1;   // on a line boundary: a kept half-line can't read as a verdict
+      for (const l of out.slice(0, cut).split("\n")) if (MARK.test(l)) dropped.push(l);
+      out = out.slice(cut); },
+    get out() { return out; }, get dropped() { return dropped; },
+    lines() { return [...dropped, ...out.trimEnd().split("\n")]; },
+  };
+}
 export function failLines(lines: string[], per = 3): string[] {
   const out: string[] = [];
   for (let i = 0; i < lines.length; i++) {
