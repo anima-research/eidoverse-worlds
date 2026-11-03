@@ -8,8 +8,8 @@
 //   H1  typing someone's name doesn't kick them, take over their session, or show as them; a guest is named a guest
 //   GN  guests typing one name back to back are each their own identity; a guest can't set @world (from the retired security-check)
 //   H3  a world name nobody founded is refused, and nothing appears on disk
-//   H4  a guest is never given the world's default role; a door ban removes the person now; a guest's ban names the
-//       connection, so reconnecting as a fresh guest is refused
+//   H4  a guest is never given the world's default role unless the owner opts guests in (H4g: `guests`, never above the
+//       default); a door ban removes the person now; a guest's ban names the connection, so reconnecting as a fresh guest is refused
 //   H5  an owner can't demote the founder; default-role can't be owner; an owner can't be banned
 //   ID  one account is the same identity in every world on the authority (per-world ids, review M6, withdrawn: R 10-06)
 //   TV  a tokens.json enrolment id must be ^[a-z0-9][a-z0-9_-]{0,31}$, and no other id may differ from it only in case (one id
@@ -23,13 +23,13 @@
 //   MA  a pose past the size cap isn't relayed or remembered; one websocket message past the cap closes the socket
 //   LC  on a box with a JOIN_TOKEN, /worlds, /snap and /geom?world need a key a join would take
 //   RS  roles and moderation at the server (research roles S4): your-rights from the authority, voice-moderate as the authority's
-//       identity-keyed logged mute (surviving a reconnect), a kick that lets them straight back (R 10-28), ghost hidden server-side, warn and
+//       identity-keyed logged mute (surviving a reconnect), a kick that lets them straight back (R 10-28), warn and
 //       mute notices, access (listed / max with the moderator bypass); RS7 reset is the most senior owner's, forks meet the server's default gap;
-//       RS8 whisper is removed (R 10-18: refused `removed`, delivered to nobody); RS9 ghost history/presence, the ban list,
+//       RS8 whisper is removed (R 10-18: refused `removed`, delivered to nobody); RS9 the ban list,
 //       a guest's ban by address (a kick bars no address); RS10 speech is arrival-only: no say before you arrived reaches a non-admin by either
 //       history route or the join, a moderator included; an owner who joins later reads the master log
-//   GG  a guest's mute and ghost carry by hashed address to the next guest from it (R 10-07: reconnecting sheds nothing);
-//       lifting them lifts the address record; a signed-in person is untouched
+//   GG  a guest's mute carries by hashed address to the next guest from it (R 10-07: reconnecting sheds nothing);
+//       lifting it lifts the address record; a signed-in person is untouched
 //   AG  @world.access.minAccountDays: a Discord account's age from its snowflake (pure), and the join gate (young human
 //       refused with when they qualify, a guest refused, an enrolled agent exempt, a moderator's bypass, the range)
 // @ts-nocheck
@@ -254,7 +254,7 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
   ok(!!je.snapshot, "H4 …in that world only", je.errors);
   for (const s of [own, wren, again, elsewhere]) s.close(); S3.proc.kill(); }
 
-// ---- RS: roles and moderation at the server (research roles S4; PLAN ghost) ----
+// ---- RS: roles and moderation at the server (research roles S4) ----
 { ok(tool(["found", "heath", "--owner", "agent:token:rowan"]).code === 0, "(RS setup) found heath owned by the Rowan enrolment");
   const S4 = await start({ TRUST_NAMES: "", VOICE_TRANSPORT: "sfu", SERVER_OPERATORS: "agent:token:opal" });
   const own = await sock(S4.port); const jo = await own.join("heath", "Rowan", { agentToken: "tok-rowan" });
@@ -399,7 +399,7 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     "AG2 the policy: a young Discord account is told when it qualifies; an old one passes; a guest is refused; agents are exempt; 0 is off; an account whose age can't be read is refused",
     [young, R({ anonymous: true }), R({ account: "human:github:5" })]); }
 
-// ---- GG / AG (server): a guest's mute and ghost carry by address; minimum account age ----
+// ---- GG / AG (server): a guest's mute carries by address; minimum account age ----
 { ok(tool(["found", "moor", "--owner", "agent:token:rowan"]).code === 0, "(GG setup) found moor owned by the Rowan enrolment");
   const S5 = await start({ TRUST_NAMES: "", VOICE_TRANSPORT: "sfu" });
   const own = await sock(S5.port); const jo = await own.join("moor", "Rowan", { agentToken: "tok-rowan" });

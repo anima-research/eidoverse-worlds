@@ -1,5 +1,5 @@
 // tools/protocol/roles-check.ts — roles, permissions and moderation through the real authority (RESEARCH-roles-moderation-2026-10-06;
-// PLAN decisions 10-06: the Sanctioned Society — ranked membership only, banned and ghost as states outside it).
+// PLAN decisions 10-06: the Sanctioned Society — ranked membership only, banned as the state outside it).
 //   bun tools/protocol/roles-check.ts                 every case
 //   bun tools/protocol/roles-check.ts --only R1,S2    just those
 //   bun tools/protocol/roles-check.ts --tree <dir>    against another checkout's shared/ (a mutant, a base)
@@ -12,7 +12,7 @@
 //   R   S1 ranks, definitions, the effective set
 //   S   S2 thing and world writes go through permissions
 //   M   S3 moderation tools: warn, mute, unmute, kick, ban, unban, the grant rule, script pauses, modlog/bans
-//   G   ghost: the unranked state outside society (a sanction, or chosen)
+//   G   RETIRED (R 10-20: ghost removed)
 //   T   S5 translation: v1 gen/fly → can
 //   P   S6 the person menu (personActions, pure)
 // @ts-nocheck
