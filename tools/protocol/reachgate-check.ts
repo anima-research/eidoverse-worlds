@@ -301,7 +301,7 @@ let skipped = null; const SKIP = Symbol("skip");
 // ---- AG: an agent's reach through a real server (a real mcpl/agent.ts WorldAgent): the reply says what the world showed ----
 //   AG1  a stranger agent's hand on a person's chest_front: no frame the person receives carries it, and the reach reply
 //        says it wasn't shown and why (it used to say the hand was reaching)
-//   AG2  once the person opens touch, a hand on their shoulder relays and the reply doesn't claim a refusal
+//   AG2  once the person puts the agent on her allow list (touch gate still off), a hand on their shoulder relays and the reply doesn't claim a refusal
 { const { ENGINE } = await import("./common.ts");
   const W = path.join(root, "ag"), OPT = path.join(root, "agopt"); fs.mkdirSync(W, { recursive: true }); fs.mkdirSync(OPT, { recursive: true });
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

@@ -1,13 +1,13 @@
 // tools/protocol/r11-check.ts — review round 11 (REVIEW-stern-r11, REVIEW-claims-r11 repo items, 2026-10-17): the
-// fixes, each row red first (against 00a5e276) and held by a mutation below.
+// fixes, each row red first (against 00a5e276) and most held by a mutation below (C5 has none).
 //   bun tools/protocol/r11-check.ts                 every row
-//   bun tools/protocol/r11-check.ts --only C1,X1    just those
+//   bun tools/protocol/r11-check.ts --only C4,X1    just those
 //   bun tools/protocol/r11-check.ts --tree <dir>    against another checkout's shared/ + mcpl/ + client/ (a mutant)
 //   bun tools/protocol/r11-check.ts --mutants       remove each fix in turn (a copy of the tree): its rows must go red;
 //                                                  a no-op control mutation must stay green
 // Rows:
-//   C   a friend and a delegate can be removed (stern M1): consent {unfriend} / {undelegate}, by the owner only; an unfriend
-//       breaks the mutual tier at once (a touch it allowed ends); a migrated delegate (a pre-10-17 friend) is removable
+//   C   consent after recut A2: a stored table narrows to two gates (C4); the verb's doc names them and a retired argument
+//       (friend, delegate…) is refused with a pointer (C5). C1/C2/C3/C6 retired with the tier they tested
 //   X   the spec says it (stern M2): §7's table lists rename-components; §4 says a rename runs at every load, unmarked
 //   B   the agent's body (stern L1, L2): declaring stand on a seat says to detach (it never moves you off); a declaration
 //       is passed on as sent, never read as a kind

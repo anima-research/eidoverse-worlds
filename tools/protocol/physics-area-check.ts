@@ -144,7 +144,7 @@ await C("A5", "the mover and the authority agree: a run's strides in a ×2.5 are
   return [first.ok && near(span, 20, 1e-6) && inside.every((x) => x.ok) && outside.some((x) => x.refused?.code === "too-fast"),
     { span, inside: inside.filter((x) => !x.ok).map(show).slice(0, 3), outside: outside.filter((x) => !x.ok).length }]; });
 
-await C("A6", "modes: an area with modes ['swim'] slows a swim but not a walk or a wade (main's slow water: Mica 10-31, decision row 27); with no modes it slows every mode", () => {
+await C("A6", "modes: an area with modes ['swim'] slows a swim but not a walk or a wade (main's slow water: Mica 10-31, decision row 27); with no modes it answers every mode (walk and swim read it; climb and fly don't ask)", () => {
   const mk = (modes?: string[]) => Z.physicsAreasOf({ entities: { p: { c: { ...AREA(0.5, { shape: "box", size: [1, 1, 1], global: true }), "physics-area": { kind: "speed", factor: 0.5, ...(modes ? { modes } : {}) } } } } });
   const swimOnly = mk(["swim"]), all = mk();
   const at = (A: any) => (p: number[], mode?: string) => Z.speedFactorAt(A, p, mode);

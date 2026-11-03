@@ -5,7 +5,7 @@
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/surface-parity.ts [--check] --commons <dir> --gym <dir> [flags]
 //
-//   --check              assert every prerequisite and stop before the first frame (what to run first on a new box)
+//   --check              assert every prerequisite up to the browser launch (binary found, not run) and stop before the first frame (what to run first on a new box)
 //   --old-ref <ref>      the git ref the OLD tree is checked out from (default main; env SURFACE_OLD_REF)
 //   --old <tree>         the OLD checkout to serve (default: a detached worktree of --old-ref, made if missing at
 //                        $SURFACE_OLD_TREE or <tmpdir>/eido-surface-old-<commit>)
@@ -191,7 +191,7 @@ for (const w of SELECTED) {
   if (!g || g.body?.dialect !== "eidoverse-log" || g.body?.v !== 4) {
     const others = (existsSync(dir) ? readdirSync(dir) : []).filter((f) => f.endsWith(".jsonl"));
     const hint = others.length
-      ? `it holds ${others.join(", ")}, which isn't a current-format world log (neither tree opens it: server.ts:351 refuses the join). A v1 log.jsonl translates once, in place, with: bun tools/protocol/world.ts translate <its name>`
+      ? `it holds ${others.join(", ")}, which isn't a current-format world log (neither tree opens it: server.ts:351 refuses the join). A v1 log.jsonl translates once, in place, in two steps (tools/protocol/import-v1/README.md): WORLDS_DIR=<dir> bun tools/protocol/world.ts translate <its name> --dry-run --no-founder-key, then … --approved <report-hash> --operator-only-no-owner`
       : `no world.jsonl with a current {dialect:"eidoverse-log", v} genesis, and no other *.jsonl either`;
     await missing(`world copy: ${w}`, `${dir} is not a world this protocol serves —`, hint);
   }

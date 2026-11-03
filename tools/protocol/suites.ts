@@ -24,10 +24,10 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["attack", "attack-check.ts", 2],     // §6 proofs 2–3: 25d H1/H2/H4 attacks through the authority (admit, L7)
   ["libfile", "libfile-check.ts", 2],  // #213 port: the resolver walks /library's own ladder and answers what the route serves
   ["gaps", "gaps-check.ts", 2],         // research 34: creator rights, presence track, rate, two hands
-  ["phys", "phys-check.ts", 1],         // design 20: launches, rests by cause, carriers
+  ["phys", "phys-check.ts", 1],         // design 20: launches, rests by cause, carriers; as the running server holds it (shapes, punt, release pose, one clock) and as a client folds it
   ["physlive", "physlive-check.ts", 1],
-  ["phystick", "phystick-check.ts", 1],
-  ["sclock", "sclock-check.ts", 1],     // the client's server clock slews toward a new estimate instead of stepping  // the engine's heartbeat: rests log on the server beat, requests stay cheap, passes are bounded // design 20 as the running server holds it (shapes, punt, release pose, one clock) and as a client folds it
+  ["phystick", "phystick-check.ts", 1], // the engine's heartbeat: rests log on the server beat, requests stay cheap, passes are bounded
+  ["sclock", "sclock-check.ts", 1],     // the client's server clock slews toward a new estimate instead of stepping
   ["physseeds", "physseeds-check.ts", 1], // research physics-seeds 10-07: shape grammar, physical properties, spin on release, the state sample, one clock (a real server whose log is ahead of wall time)
   ["eidosim", "eidosim-check.ts", 1], // eidosim's adapter: any schedule reaching tick T gives the same bits; spin capped like v; a mirror is the same box
   ["eidosim-live", "eidosim-live-check.ts", 1], // eidosim at the authority: locks (own, ancestor, descendant) hold against knocks; knocked children rest on the record; spheres on the live host
@@ -47,8 +47,8 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["lying-support", "../lying-support-test.ts", 1], // an agent's support for a thing lying down: its true top, no phantom deck at its origin (review of b398d7e3 #1)
   ["support-swap", "../support-swap-test.ts", 1], // #260 I81: a model changed while its geometry is in flight registers nothing from the old fetch (syncSupport's re-check)
   ["knockdown", "../knockdown-test.ts", 1], // #260 I8/I147/I148: a headless body takes a shove from a body beside it, refuses one with its move gate off (the relay answers), hangs from a nail
-  ["sockets", "../sockets-test.ts", 1],
-  ["msgrate", "../msgrate-test.ts", 1], // server/msgrate.ts: the message cap is a token bucket (a server stall is not the client's flood) // #260 I454: sockets as entities (resolveSeat, the seat views); ran only as an import before
+  ["sockets", "../sockets-test.ts", 1], // #260 I454: sockets as entities (resolveSeat, the seat views); ran only as an import before
+  ["msgrate", "../msgrate-test.ts", 1], // server/msgrate.ts: the message cap is a token bucket (a server stall is not the client's flood)
   ["shape-render", "../shape-render-test.ts", 1], // #260 I515: the shape audit's render rows and the maintenance repair's; ran only as an import before
   ["originof", "../originof-test.ts", 1], // #260 I98: the ?orrery= guard (generate.js originOf) takes only an http(s) base, never markup or javascript:
   ["renderer-cred", "../renderer-cred-test.ts", 1], // #260 I143/I144: the renderers' credential (flag + key) watches an invite-only world; a stranger's /snap and /heightmap of it are 404
@@ -104,7 +104,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["identity", "identity-check.ts", 1], // who a joiner is: C1-C3, H1, H3-H5 (security review 10-06), one identity per account
   ["fork-reset", "fork-reset-check.ts", 1],
   ["simckpt", "simckpt-check.ts", 1],   // periodic sim checkpoints (SIM_CHECKPOINT_EVERY): a physics world without launches still bounds its boot's engine replay; purges and audits as before
-  ["statecache", "statecache-check.ts", 1], // the derived fold cache (server/statecache.ts): a boot folds only the tail, any doubt folds from genesis, a background re-derive checks it
+  ["statecache", "statecache-check.ts", 1], // the derived fold cache (server/statecache.ts): a boot folds only the tail, any doubt at boot folds from genesis, a background re-derive checks it (one that can't run keeps the cache and says so)
   ["foldparity", "foldparity-check.ts", 1], // the fold cache's views (server/foldviews.ts): a boot reads only genesis and the tail, and every reader answers as a whole-log boot
   ["reset-race", "reset-race-check.ts", 1], // review 10-14 C1: a request awaiting warm() across a reset refuses instead of writing the old log's line into the new file // world fork (a new world naming its source) and reset (archived, re-founded by its owners)
   ["txn", "txn-check.ts", 1],           // reviewer items 1–2 (10-18): every request ends committed | rolled-back | ambiguous (persist before publish, publish in a finally, ambiguous never ok); one immutable request capability rechecked at both await→commit seams (liveness, identity, operator, the door, role)
@@ -148,11 +148,11 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["modhole", "modhole-check.ts", 1],   // security pass 3: nothing a world sends runs as code in a visitor's browser; EW.mods.put/run need your hand
   ["xss-probe", "xss-probe.ts", 1],     // security pass 3 H1 in headless Chromium: a hostile display name is text everywhere; the page's CSP refuses inline script and lets the client run
   ["pretrans", "pretrans-check.ts", 1], // review 10-07 "protocol shape": the edges the Commons translation makes permanent (names, defaults, ids, refs, governance, models, privacy)
-  ["soundclock", "soundclock-check.ts", 1],
+  ["soundclock", "soundclock-check.ts", 1], // a sound's shared playhead is on the server's clock (serverNow), never Date.now
   ["sound", "../sound-test.ts", 1],     // the sound component's meaning and look() line; R 10-28 item 18: 200 m, still silent at radius
   ["sound-editor", "../sound-guard-test.ts", 1], // the sound editor block; R 10-28 item 18: 32 world sounds at once, the radius field to 200 m
   ["skypanel", "../skypanel-state-test.ts", 1], // the sky panel's state lines; R 10-28: every shared select commits what it shows (the world select saved nothing)
-  ["physics-off", "../physics-off-test.ts", 1], // R 10-28 item 33: the per-client object-physics switch: off, no flights folded or drawn, committed poses // a sound's shared playhead is on the server's clock (serverNow), never Date.now
+  ["physics-off", "../physics-off-test.ts", 1], // R 10-28 item 33: the per-client object-physics switch: off, no flights folded or drawn, committed poses
   ["eidomodel", "eidomodel-check.ts", 1], // review 10-07 H3: a translated world's models are eido:sha256 addresses; the index, /eido/, /library/eido/, the client's mapping
   ["party-probe", "party-probe.ts", 1], // the editor's party blockers (review 10-07 B1–B5, S1/S4/S5/S7, lock levels, moderation commands) with real mouse and keys
   ["colour-picker", "../colour-picker-bench.ts", 1], // the Inspector's colour field is a picker of solid cells a headset quad can click (R 10-12), in headless Chromium (one browser, guarded)

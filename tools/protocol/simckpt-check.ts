@@ -1,5 +1,5 @@
 // tools/protocol/simckpt-check.ts — periodic sim checkpoints (authority checkpointSim's tail bound; server policy SIM_CHECKPOINT_EVERY):
-// a physics world that builds for a long time without launches still checkpoints, so a boot replays at most N entries into the engine.
+// a physics world that builds for a long time without launches still checkpoints once something has moved, so a boot replays at most N entries into the engine; a live flight defers the checkpoint (PC3).
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/simckpt-check.ts   (PC_ENTRIES=205000 for the full bench; PC_FROM=<world dir>
 //        derives the bench from that world's log instead of a generated one, as the 10-28 gym measurement did)
 //   PC1 a physics world with no launches gets a checkpoint once N entries follow the last one, and again after N more

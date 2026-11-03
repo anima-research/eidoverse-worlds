@@ -13,8 +13,8 @@
 //   WORLDS_DIR=<dir> bun tools/protocol/world.ts repair <name> --rollback [--force]               the pre-repair log put back, byte-identical
 //
 // The server never makes a world by itself (it serves only worlds in this protocol, and refuses a directory holding only an old log). A directory is a world because it holds world.jsonl
-// whose line 0 is a genesis saying {dialect, v: 4}, and only this tool writes one (shell access to the host, like every other operator
-// act on world files). `found` runs the authority's own `new` request, so genesis names the owner and the founding act
+// whose line 0 is a genesis saying {dialect, v: 4}, written by this tool (`found`, `translate`) or by the server's `new` request for an
+// authorized account (server/worldlog.ts foundOwnedWorld). `found` runs the authority's own `new` request, so genesis names the owner and the founding act
 // writes @world (about, bounds, roles:<owner>) through admit. --owner is the name you join with; it is stamped through
 // names.js exactly as the live authority stamps you, so you are the owner when you arrive.
 // `translate` reads <v1 world>/log.jsonl, never writes it (R9: the original is kept), runs the importer
@@ -24,7 +24,8 @@
 // verified (the importer's checks, the result opened as the server opens it, and, where the old server left a
 // snapshot.json, the snapshot oracle's agreement with the old engine), and only then swapped in under the original name,
 // with the old log kept beside it as log.original.jsonl (snapshot.json → snapshot.original.json): renamed, never
-// rewritten. On any failure the original is left as it was, the temporary directory is removed, and it says why. If the
+// rewritten. On any failure the originals are put back, the temporary directory is removed, and it says why (a reverse
+// rename that itself fails is named for hand repair and the marker stays). If the
 // process itself dies mid-swap (no rollback runs), the next `translate <world>` sees the half-swapped directory and finishes
 // the swap (renames and moves only), saying so; until then translation.lock marks it and the server won't serve it.
 import fs from "node:fs";
