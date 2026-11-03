@@ -1003,8 +1003,8 @@ Routes use the structures known when the walk begins, where they are then. A flo
   Speech is **arrival-only**: the world's log keeps every say, but you are
   sent and can read back only what was said while you were present (a
   reconnect is a new arrival). Read-back follows effective permission: the
-  owner, server operators, and anyone currently holding `readChat` read the
-  master log's speech from before they came. The owner grants it to a
+  owner and anyone currently holding `readChat` read the master log's
+  speech from before they came (a server operator only by a role there). The owner grants it to a
   whole role with the Roles panel's `readChat` toggle
   (client/lib/rolespanels.js; only the owner changes these). A `grantRoles`
   holder grants it to one person at a time in People

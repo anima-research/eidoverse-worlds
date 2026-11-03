@@ -14,7 +14,6 @@ import { WORLDS_DIR } from "./config.ts";
 import { WorldLog, isWorldSaved, resetWorld } from "./worldlog.ts";
 import { WorldScripts, type ScriptHost } from "./scripts.ts";
 import type { HnSession } from "./auth.ts";
-import { isOperator } from "./operators.ts";
 import { gateReach } from "./reachgate.ts";
 
 // The settle rule — what a pose looks like TO SOMEONE ELSE — is pinned to
@@ -142,10 +141,9 @@ export class World {
     }
   }
   /** Speech is arrival-only (R 10-18): the world's log keeps every say, people receive speech only for the time they were
-   *  present, and only an ADMIN reads the master log's speech back: the owner, server operators, and anyone holding readChat (AGENTS.md catch_up). */
-  /** who reads speech back past their own arrival: a server operator, or whoever holds the readChat permission (owners hold every one).
-   *  The operator's narrowing is of acting in a world, not of this read (#260 bot 6). */
-  isAdmin(c: Client): boolean { return isOperator(c.account) || (!!c.actorId && this.log.may(c.actorId, "readChat")); }
+   *  present, and only an ADMIN reads the master log's speech back: the owner and anyone holding readChat (AGENTS.md catch_up); a server operator only by a role here. */
+  /** who reads speech back past their own arrival: whoever holds the readChat permission (owners hold every one) */
+  isAdmin(c: Client): boolean { return !!c.actorId && this.log.may(c.actorId, "readChat"); }
   /** The log seq at or below which this identity may not read a say back: null for an admin (no floor), else the
    *  earliest arrival among its connections here now; nobody here under it = Infinity (every say hidden). */
   sayFloor(actor: string): number | null {

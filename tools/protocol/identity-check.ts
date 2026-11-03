@@ -58,7 +58,7 @@ const mint = (over = {}) => { const now = Math.floor(Date.now() / 1000);
 
 const W = path.join(root, "w"); fs.mkdirSync(W, { recursive: true });
 const TOK = path.join(root, "tokens.json");
-fs.writeFileSync(TOK, JSON.stringify({ "tok-rowan": { id: "Rowan" }, "tok-wren": { id: "Wren", subs: ["agent:wren@home.test"] }, "tok-moss": { id: "Moss" }, "tok-fern": { id: "Fern" }, "tok-sage-old": { id: "Sage" }, "tok-sage-new": { id: "Sage" } }));
+fs.writeFileSync(TOK, JSON.stringify({ "tok-rowan": { id: "Rowan" }, "tok-wren": { id: "Wren", subs: ["agent:wren@home.test"] }, "tok-moss": { id: "Moss" }, "tok-fern": { id: "Fern" }, "tok-sage-old": { id: "Sage" }, "tok-sage-new": { id: "Sage" }, "tok-opal": { id: "Opal" } }));
 const env = (extra = {}) => ({ ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(root, "opt"), SKIP_OPT_SWEEP: "1", HOST: "127.0.0.1",
   BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", SERVER_OPERATORS: "", WORLD_ADMIN: "", AGENT_TOKENS_PATH: TOK, SESSIONS_PATH: path.join(root, "sessions.json"), HN_ISSUER_KEY: ISSUER, HN_ISS: "id.test", TRUST_NAMES: "1", ...extra });
 const tool = (args) => { const r = Bun.spawnSync(["bun", "tools/protocol/world.ts", ...args], { cwd: ENGINE, env: env() }); return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; };
@@ -256,7 +256,7 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
 
 // ---- RS: roles and moderation at the server (research roles S4; PLAN ghost) ----
 { ok(tool(["found", "heath", "--owner", "agent:token:rowan"]).code === 0, "(RS setup) found heath owned by the Rowan enrolment");
-  const S4 = await start({ TRUST_NAMES: "", VOICE_TRANSPORT: "sfu" });
+  const S4 = await start({ TRUST_NAMES: "", VOICE_TRANSPORT: "sfu", SERVER_OPERATORS: "agent:token:opal" });
   const own = await sock(S4.port); const jo = await own.join("heath", "Rowan", { agentToken: "tok-rowan" });
   const fern = await sock(S4.port); const jf = await fern.join("heath", "Fern", { agentToken: "tok-fern" });
   const wren = await sock(S4.port); const jw = await wren.join("heath", "Wren", { agentToken: "tok-wren" });
@@ -373,6 +373,12 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     const seen10b = { granted: gr.ok ?? gr, ws: heron(await hist2(nt2)), req: heron(await nt2.req("history", { verbs: ["say"], limit: 200 })), total: jn2.snapshot?.state?.chatTotal };
     ok(seen10b.granted === true && seen10b.ws && seen10b.req && seen10b.total > 0,
       "RS10b reading speech back is a permission (readChat), not a role: a member granted it reads the master log on its next arrival", seen10b);
+    // RS10c (bot review #260 finding 6; R 11-02): a server operator holding no role here reads speech from its arrival, like anyone
+    const op = await sock(S4.port); const jop = await op.join("heath", "Opal", { agentToken: "tok-opal" });
+    const seen10c = { joinErr: jop.errors, joined: !!jop.snapshot, ws: heron(await hist2(op)), req: heron(await op.req("history", { verbs: ["say"], limit: 200 })), total: jop.snapshot?.state?.chatTotal };
+    ok(seen10c.joined && !seen10c.ws && !seen10c.req && seen10c.total === 0,
+      "RS10c a server operator with no role in a world reads none of its speech from before arriving (history, the authority's history, the join)", seen10c);
+    op.close();
     for (const x of [vy, mo, gv, g2, nt, w2, nt2]) x.close(); }
   for (const x of [own, fern, wren]) x.close(); S4.proc.kill(); }
 
