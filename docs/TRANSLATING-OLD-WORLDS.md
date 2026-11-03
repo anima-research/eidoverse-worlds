@@ -85,8 +85,8 @@ report lists each one):
   (builder strength, as every translated lock: a builder may lift it knowingly). Water `speed` is
   `physics-area {kind: 'speed', factor: speed / 2.4, modes: ['swim']}` (main slowed only the swim) on the water's zone
   (translate-v1@35; 2.4 m/s is the stroke a volume swims at here), so a
-  swimmer there strokes at main's pace; it scales walking and wading on that
-  floor too, where main changed only the swim. A speed within 5% of 2.4 m/s
+  swimmer there strokes at main's pace; walking and wading on that floor are
+  not slowed (translate-v1@37), as in main. A speed within 5% of 2.4 m/s
   is dropped, and the report says which.
 - *The stage edge* (translate-v1@31): where main had neither bounds nor a
   terrain it kept walkers and swimmers within 78 m of the origin and fliers

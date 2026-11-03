@@ -239,13 +239,15 @@ export function ownerlessRefusal(world: string, people: Any[], claim: unknown): 
 /** What the translation writes, hashed: its final state under the dry run's stable ids (identityMapper mint false), so the
  *  approved report pins the output itself, not only its counts (review full-260 #4: the approved thing is the applied thing). */
 const outputOf = (r: Any) => `sha256:${sha256(jcs(r.final.translated))}`;
-function reportOf(srcBytes: Buffer, world: string, unparsed: number, deferred: Any[], r: Any, outLength = r.out.length, people: Any[] = [], claim = false, owner: OwnerClaim | null = null, bans: Any[] = [], output = outputOf(r), watch: string[] = []) {
+/** The old poses.json's bytes ({size, sha256}, or null: none), pinned by the report: the apply carries that file (carryPoses; bot review 29). */
+const posesPin = (srcDir: string) => { const f = path.join(srcDir, "poses.json"); if (!fs.existsSync(f)) return null; const b = fs.readFileSync(f); return { size: b.length, sha256: crypto.createHash("sha256").update(b).digest("hex") }; };
+function reportOf(srcBytes: Buffer, world: string, unparsed: number, deferred: Any[], r: Any, outLength = r.out.length, people: Any[] = [], claim = false, owner: OwnerClaim | null = null, bans: Any[] = [], output = outputOf(r), watch: string[] = [], poses: Any = null) {
   const report = {
     v: 1, world,
     // Mica, #260 (10-17): "Worlds using alpha should know they accepted translation churn." In the report, so the hash that is
     // approved covers it (PROTOCOL.md, the trial-period paragraph).
     trial: "This protocol is in a trial period (about a year): later versions may translate this world again, and stored data may change shape between them (PROTOCOL.md, start). Approving this report accepts that.",
-    source: { file: "log.jsonl", size: srcBytes.length, sha256: crypto.createHash("sha256").update(srcBytes).digest("hex"), unparsedLines: unparsed },
+    source: { file: "log.jsonl", size: srcBytes.length, sha256: crypto.createHash("sha256").update(srcBytes).digest("hex"), unparsedLines: unparsed, poses },   // poses: posesPin
     translator: TRANSLATOR, fold: v1FoldBuild(), founderKey: null,   // a translation names no founder (NO_FOUNDER): tier 0 empty
     entries: { old: r.stats.in, new: outLength, change: r.stats.change, divergences: r.stats.divergences },
     output,                      // the translated state's digest (outputOf): a pull or new model bytes between review and apply changes it
@@ -297,7 +299,7 @@ export function reportV1World(srcDir: string, { name, content, claim }: { name?:
   const owner = typeof claim === "object" ? ownerClaimOf(srcDir, claim) : null;
   const { m, r } = dryTranslation(old, srcDir, world, owner, content);
   const people = peopleOf(world, r, m.describe);
-  return reportOf(srcBytes, world, unparsed, deferredFeatures(old), r, r.out.length, people, claims(claim, people), owner, bansOf(world, r, m.describe), outputOf(r), watchOf(old));
+  return reportOf(srcBytes, world, unparsed, deferredFeatures(old), r, r.out.length, people, claims(claim, people), owner, bansOf(world, r, m.describe), outputOf(r), watchOf(old), posesPin(srcDir));
 }
 
 /** Translate a v1 world's log (srcDir/log.jsonl, never written: R9) into a NEW v4 world in destDir, with tier 0 of its
@@ -354,7 +356,7 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
   const people = peopleOf(world, r, describe), claiming = claims(claim, people);
   if (claim && !ACCOUNT_SHAPE.test(claim.account)) throw new Error(`the claim's account "${String(claim.account).slice(0, 40)}" isn't an account here. Nothing written`);
   if (approval) { const output = outputOf(dryTranslation(old, srcDir, world, owner).r);   // the dry run's own translation: its output digest
-    const now = reportOf(srcBytes, world, unparsed, deferred, r, r.out.length - 1, people, claiming, owner, bansOf(world, r, describe), output).hash;
+    const now = reportOf(srcBytes, world, unparsed, deferred, r, r.out.length - 1, people, claiming, owner, bansOf(world, r, describe), output, [], posesPin(srcDir)).hash;
     if (now !== approval.report) throw new Error(`the approval is refused: it approves report ${approval.report}, but the report of the log being translated hashes to ${now}: the old log, the tool or the model bytes changed since the dry run, so what would be written isn't what was approved. Run the dry run again, read it, and approve its new hash. Nothing written`); }
   // salted and signed like every line the authority writes (§2.4; round-2 review R3): a translated world is a chained log
   const text = seal(r.out, { sign: (m: string) => cust.sign(m) }).map((e: Any) => JSON.stringify(e)).join("\n") + "\n";

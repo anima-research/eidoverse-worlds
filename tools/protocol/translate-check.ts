@@ -207,7 +207,7 @@ row("F50", () => { const { r } = tr([OWNER, ["olga", "spawn", { id: "boat", lib:
   const v = r.stats.unmapped?.find((x) => x.component === "vehicle"), w = r.stats.unmapped?.find((x) => x.component === "water"), s = r.stats.unmapped?.find((x) => x.component === "sky");
   const json = JSON.stringify(r.out), walls = (json.match(/"blocks":\["hulls"\]/g) ?? []).length;
   ok(JSON.stringify(v?.fields) === '["probes"]' && /retired: the authority's hull sweep/.test(v?.becomes?.probes) && v?.becomes?.minY === undefined && w === undefined && !("vehicle.minY" in TV1.FATES) && !("water.speed" in TV1.FATES)
-    && walls === 2 && (json.match(/"layer":\["band-[0-9a-f]{26}"\]/g) ?? []).length === 2 && (json.match(/"mask":\[1,"band-[0-9a-f]{26}"\]/g) ?? []).length === 1 && /only this vehicle meets/.test(TV1.CARRIED.vehicle.to) && /physics-area \{kind: 'speed', factor: speed \/ 2\.4\}/.test(TV1.VOLUMES.water.to) && /set off by the hull's measured box/.test(TV1.CARRIED.vehicle.to) && !json.includes("physics-area") && !json.includes('"drag"')
+    && walls === 2 && (json.match(/"layer":\["band-[0-9a-f]{26}"\]/g) ?? []).length === 2 && (json.match(/"mask":\[1,"band-[0-9a-f]{26}"\]/g) ?? []).length === 1 && /only this vehicle meets/.test(TV1.CARRIED.vehicle.to) && /physics-area \{kind: 'speed', factor: speed \/ 2\.4, modes: \['swim'\]\}[^;]*slows the swim only/.test(TV1.VOLUMES.water.to) && /set off by the hull's measured box/.test(TV1.CARRIED.vehicle.to) && !json.includes("physics-area") && !json.includes('"drag"')
     && r.stats.mapped?.find((m) => m.component === "water")?.speed?.dropped !== undefined && s === undefined && !("sky.audio" in TV1.FATES),
     "F50 the report says, in words, what becomes of vehicle probes; minY/maxY are two hull-only walls in the vehicle's own layer, which its mask scans (@32); main's 2.4 water speed is today's stroke, so it is dropped and said (@31); sky audio is mapped, not carried (@25)", { v, w, s, walls }); });
 
@@ -228,6 +228,23 @@ row("F51", () => { const pond = (speed: number) => tr([OWNER, ["olga", "spawn", 
   ok(JSON.stringify(kid(slow)?.["physics-area"]) === JSON.stringify({ kind: "speed", factor: 0.5, modes: ["swim"] }) && JSON.stringify(M(slow)?.speed?.["physics-area"]) === JSON.stringify({ kind: "speed", factor: 0.5, modes: ["swim"] })
     && kid(near) && kid(near)["physics-area"] === undefined && /within 5%/.test(M(near)?.speed?.dropped ?? "") && !json.includes('"drag"'),
     "F51 main's slow water (speed 1.2, half the 2.4 stroke a volume swims at here) is physics-area {kind: speed, factor: 0.5, modes: [swim]} on the water's zone (a swim only, as main: walking on the pond floor is not slowed), said in the report; 2.45 (within 5%) writes nothing and says so; no translated world carries a drag field", { slow: kid(slow), mapped: M(slow), near: M(near) }); });
+// bot review 59 (@41): main read only boxes[i].{center, size, q}; anything else main's air held is carried and listed, never silent
+row("F51a", () => { const { r, E } = tr([OWNER, ["olga", "spawn", { id: "hab", lib: "h.glb" }], ["olga", "comp", { id: "hab", type: "air", data: { custom: "keep", boxes: [{ center: [0, 1, 0], size: [2, 2, 2], custom: "also keep" }, null] } }]]);
+  const plain = tr([OWNER, ["olga", "spawn", { id: "hab", lib: "h.glb" }], ["olga", "comp", { id: "hab", type: "air", data: { boxes: [{ center: [0, 1, 0], size: [2, 2, 2] }] } }]]);
+  const u = r.stats.unmapped?.find((x) => x.component === "air"), pockets = Object.values<any>(E).filter((c) => c["water-exclusion"]);
+  ok(JSON.stringify(E.hab["imported:air"]) === JSON.stringify({ custom: "keep", boxes: { 0: { custom: "also keep" }, 1: null } }) && pockets.length === 1
+    && JSON.stringify(u?.fields) === JSON.stringify(["air.custom", "air.boxes[0].custom", "air.boxes[1] (not a box)"]) && u?.as === "hab imported:air"
+    && plain.E.hab["imported:air"] === undefined && !plain.r.stats.unmapped?.some((x) => x.component === "air") && /imported:air, listed/.test(TV1.VOLUMES.air.to),
+    "F51a main's air: a key beside boxes, a box's own extra key and an entry that is no box ride imported:air on the host, listed under unmapped; the box still becomes its pocket; a plain air carries nothing", { imp: E.hab["imported:air"], u, pockets: pockets.length, plain: plain.E.hab["imported:air"] }); });
+// bot review 58 (@42): where a slow water overlaps a default one, the water a body is in sets its stroke (main read the selected volume's speed)
+row("F51b", () => { const Z = require("../../shared/zone.js"), WJ = require("../../shared/water.js"), P = [0, 0, 0];
+  const both = (first: any, second: any) => { const { r, E } = tr([OWNER, ["olga", "spawn", { id: "a", lib: "p.glb" }], ["olga", "comp", { id: "a", type: "water", data: { center: [0, 0, 0], size: [8, 4, 8], ...first } }],
+      ["olga", "spawn", { id: "z", lib: "p.glb" }], ["olga", "comp", { id: "z", type: "water", data: { center: [0, 0, 0], size: [8, 4, 8], ...second } }]]);
+    const st = { entities: Object.fromEntries(Object.entries<any>(E).map(([k, c]) => [k, { c }])) }, V = Z.waterVolumes(Z.zonesOf(st)), w = WJ.mediumAt(P, V.waters, V.airs);
+    const own = E[w?.id]?.["physics-area"]?.factor ?? 1; return { inSlow: own !== 1, own, swim: Z.speedFactorAt(Z.physicsAreasOf(st), P, "swim"), mapped: r.stats.mapped?.filter((m: any) => m.component === "water").map((m: any) => m.speed ?? null) }; };
+  const runs = [both({ speed: 1.2 }, {}), both({}, { speed: 1.2 }), both({ speed: 1.2 }, { speed: 2.45 })], lone = tr([OWNER, ["olga", "spawn", { id: "a", lib: "p.glb" }], ["olga", "comp", { id: "a", type: "water", data: { size: [8, 4, 8] } }]]);
+  ok(runs.every((x) => x.swim === x.own) && runs.some((x) => !x.inSlow) && runs.every((x) => x.mapped?.length === 2 && x.mapped.every(Boolean)) && !JSON.stringify(lone.r.out).includes("physics-area"),
+    "F51b two overlapping waters, one slow (1.2) and one at the stroke here (unset or 2.45): a swimmer's speed factor is the one of the water mediumAt puts them in, either way round (the other gets factor 1, said in the report); a lone default water writes no area", { runs, lone: JSON.stringify(lone.r.out).includes("physics-area") }); });
 row("F52", () => { const bare = tr([OWNER, ["olga", "spawn", { id: "far", lib: "x.glb", pos: [120, 70, 0] }]]), terr = tr([OWNER, ["olga", "terrain", { seed: 3, size: 300 }]]);
   const B = bare.W.bounds, M = bare.r.stats.mapped?.find((m) => m.component === "stage");
   ok(JSON.stringify(B) === JSON.stringify({ min: [-78, -2, -78], max: [122, 72, 78] }) && /78 m of the origin/.test(M?.feature ?? "") && terr.W.bounds === undefined && !terr.r.stats.mapped?.some((m) => m.component === "stage"),
@@ -261,8 +278,8 @@ row("V5", () => { const root = scratch("translate-v5"), W = path.join(root, "wor
   const old = /H ([0-9a-f]{64})/.exec(rep.stdout.toString())?.[1];
   const up = Bun.spawnSync(["bun", "tools/protocol/world.ts", "translate", "--no-founder-key", "--operator-only-no-owner", "--approved", old ?? "x", "--", "den"], { cwd: ENGINE, env });
   const said = up.stdout.toString() + up.stderr.toString();
-  ok(TV1.translatorVersion(TV1.TRANSLATOR) === 39 && TV1.translatorVersion(TV1.TRANSLATOR_SIM) === 39 && old && up.exitCode !== 0 && /is not the one that was approved/.test(said) && /earlier translator than eidoverse\/translate-v1@39/.test(said) && fs.existsSync(path.join(d, "log.jsonl")) && !fs.existsSync(path.join(d, "world.jsonl")),
-    "V5 the translator is @39; a report reviewed under @38 is refused, saying an earlier translator's review never approves this one, and nothing moves", { v: TV1.TRANSLATOR, said: said.slice(-500) }); });
+  ok(TV1.translatorVersion(TV1.TRANSLATOR) === 42 && TV1.translatorVersion(TV1.TRANSLATOR_SIM) === 42 && old && up.exitCode !== 0 && /is not the one that was approved/.test(said) && /earlier translator than eidoverse\/translate-v1@42/.test(said) && fs.existsSync(path.join(d, "log.jsonl")) && !fs.existsSync(path.join(d, "world.jsonl")),
+    "V5 the translator is @42; a report reviewed under @41 is refused, saying an earlier translator's review never approves this one, and nothing moves", { v: TV1.TRANSLATOR, said: said.slice(-500) }); });
 
 row("V6", () => { const root = scratch("translate-v6"), W = path.join(root, "worlds"), d = path.join(W, "den"), opt = path.join(root, "opt"); fs.mkdirSync(d, { recursive: true }); fs.mkdirSync(path.join(opt, "store"), { recursive: true });
   fs.writeFileSync(path.join(d, "log.jsonl"), log([OWNER, ["olga", "spawn", { id: "boat", lib: "store/boat.glb" }]]).map((e) => JSON.stringify(e)).join("\n") + "\n");
@@ -299,6 +316,13 @@ row("DT8", () => { const env = (particles: any) => tr([OWNER, ["olga", "spawn", 
     && em(d)?.spawn?.amount === PE.EFFECT_LIMITS.amount && em(d).shape.extents[0] === PE.EFFECT_LIMITS.extent && JSON.stringify(d.E.land["imported:environment"]) === JSON.stringify({ particles: { count: 9000, range: 90 } })
     && em(c)?.shape?.extents?.[0] === 16 && em(c).color.base === 0xaec8b4 && !PE.effectProblem(a.r.effects.get(fx(a).effect)),
     "DT8 main's motes: count, range and colour ride in a derived dust document (main's 16 m and #aec8b4 where unset); main's largest (3,000, 60 m) fit unclamped; past the effect limits they're clamped and carried", { a: em(a), b: [em(b)?.spawn, b.E.land["imported:environment"]], d: em(d)?.spawn }); });
+// bot review 60 (@40): an unset or 0 count is main's 1,200 (never the effect limit), a size past main's 0.08 cap is 0.08 and carried
+row("DT8b", () => { const env = (particles: any) => tr([OWNER, ["olga", "spawn", { id: "land", lib: "t.glb" }], ["olga", "comp", { id: "land", type: "environment", data: { particles } }]]);
+  const em = (o: any) => o.r.effects.get(o.E[TV1.envChildId("land", "particles")]?.particles?.effect)?.emitters?.[0];
+  const c = env({}), z = env({ count: 0 }), s = env({ size: 0.5 }), q = env({ size: 0.03 });
+  ok(em(c)?.spawn?.amount === 1200 && em(z)?.spawn?.amount === 1200 && JSON.stringify(z.E.land["imported:environment"]) === JSON.stringify({ particles: { count: 0 } })
+    && em(s)?.size?.base === 0.08 && JSON.stringify(s.E.land["imported:environment"]) === JSON.stringify({ particles: { size: 0.5 } }) && em(q)?.size?.base === 0.03 && q.E.land["imported:environment"] === undefined,
+    "DT8b main's motes with no count (or 0) are main's 1,200, not the 4,000 limit; a size past main's 0.08 cap is 0.08, the old value carried; 0.03 arrives as it was", { c: em(c)?.spawn, z: [em(z)?.spawn, z.E.land["imported:environment"]], s: [em(s)?.size, s.E.land["imported:environment"]], q: em(q)?.size }); });
 // decision table row 9 (@33): main sat a socket with no pos at [0, 0.5, 0] (client/lib/world.js); the translation writes it
 row("DT9", () => { const { E } = tr([OWNER, ["olga", "spawn", { id: "s", lib: "x.glb" }], ["olga", "comp", { id: "s", type: "sockets", data: { bare: { pose: "sit" }, nul: { pos: null }, set: { pos: [1, 0.2, 0] } } }]]);
   const S = E.s?.sockets ?? {};
