@@ -11,7 +11,7 @@ import { readLog, fold, acceptedEntries } from "../shared/protocol/fold.js";
 /** An account as a join wears it (ACCOUNT_SHAPE, with something after the prefix, no spaces). */
 const WELL_FORMED = /^(human:[a-z0-9_-]+:|agent:token:|aid1:\S+:|local:)\S+$/i;
 const NAME = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
-type Out = { ok: true; id: string; name: string; account: string; logged: string } | { ok: false; refused: string };
+type Out = { ok: true; id: string; name: string; account: string; logged: string | null; warn?: string } | { ok: false; refused: string };
 
 /** The identities with a record of their own in world `dir`: an entry they wrote, a role they hold, a ban or mute on them.
  *  A third party's mention (a recipient of someone else's speech) is not theirs (#260 Stella q3). */
@@ -42,8 +42,11 @@ export function bindIdentity(worldsDir: string, world: string, who: string, acco
   const worn = dir.idOfSub(account);
   if (worn && worn !== id) return no(`that account already wears ${dir.nameOf(worn) ?? "an identity"} (${worn}) on this server: it can't be two people. To give them ${name}'s roles instead, operator-repair set/delete (docs/TRANSLATING-OLD-WORLDS.md)`);
   dir.bind(id, account);
-  modLogAt(path.join(wd, "world.mod.jsonl")).appendMod({ ts: Date.now(), actor: "system", verb: "bind", who: id, by: String(by).slice(0, 64), operator: true });
-  return { ok: true, id, name, account: `${account.split(":").slice(0, 2).join(":")}:… (tag ${accountTag(account)})`, logged: "world.mod.jsonl" };
+  const out: Out = { ok: true, id, name, account: `${account.split(":").slice(0, 2).join(":")}:… (tag ${accountTag(account)})`, logged: "world.mod.jsonl" };
+  const rec = { ts: Date.now(), actor: "system", verb: "bind", who: id, by: String(by).slice(0, 64), operator: true };
+  // the bind is in the directory already: a failed append is said, never undone (a retry would refuse: bound = not imported; bot #192)
+  try { modLogAt(path.join(wd, "world.mod.jsonl")).appendMod(rec); } catch (e) { out.logged = null; out.warn = `bound, but world.mod.jsonl took no record (${(e as Error)?.message ?? e}): add this line by hand: ${JSON.stringify(rec)}`; }
+  return out;
 }
 
 /** the CLI: bind <world> <identity-or-name> <account> [--by <who>] → exit 0 when bound */
@@ -53,6 +56,7 @@ export function bindCli(argv: string[], worldsDir: string): number {
   if (!world || !who || !account || words.length !== 3) { console.error("usage: WORLDS_DIR=<dir> bun tools/operator-repair.ts bind <world> <identity-or-name> <account> [--by <who asked>]"); return 2; }
   const r = bindIdentity(worldsDir, world, who, account, by ? { by } : {});
   if (!r.ok) { console.error(`refused: ${r.refused}. Nothing was changed.`); return 1; }
-  console.log(`bound ${r.name} (${r.id}) in "${world}" to ${r.account}: whoever signs in with that account is ${r.name} now, with their roles. Recorded in ${r.logged} as an operator repair.`);
+  console.log(`bound ${r.name} (${r.id}) in "${world}" to ${r.account}: whoever signs in with that account is ${r.name} now, with their roles. ${r.logged ? `Recorded in ${r.logged} as an operator repair.` : "NOT recorded."}`);
+  if (r.warn) console.error(`warning: ${r.warn}`);
   return 0;
 }
