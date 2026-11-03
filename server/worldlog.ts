@@ -465,8 +465,10 @@ export function foundWorld(dir: string, name: string, owner: string, title?: str
 // .founders.json records who founded what (name → {account, actor, ts}); a dot-name is never a world.
 export const FOUND_NAME = /^[a-z0-9][a-z0-9-]{2,31}$/;
 const foundersPath = () => path.join(WORLDS_DIR, ".founders.json");
+/** The ledger; {} only when there is none yet. An unreadable one throws, so a founding never replaces it (bot review #260 31). */
 export function foundersLedger(): Record<string, { account: string; actor: string; ts: number }> {
-  try { const v = JSON.parse(fs.readFileSync(foundersPath(), "utf8")); return v && typeof v === "object" && !Array.isArray(v) ? v : {}; } catch { return {}; }
+  let text: string; try { text = fs.readFileSync(foundersPath(), "utf8"); } catch (e: Any) { if (e?.code === "ENOENT") return {}; throw e; }
+  const v = JSON.parse(text); if (!v || typeof v !== "object" || Array.isArray(v)) throw new Error("not a JSON object"); return v;
 }
 /** Why `name` can't be founded (a sentence for the person), or null when it can. */
 export function foundRefusal(name: string, exists: (n: string) => boolean): string | null {
@@ -478,20 +480,28 @@ export function foundRefusal(name: string, exists: (n: string) => boolean): stri
 export function foundOwnedWorld(name: string, actor: string, account: string, title?: string, exists: (n: string) => boolean = (n) => fs.existsSync(path.join(WORLDS_DIR, n)), now = Date.now()):
   { ok: true; worldId: string } | { ok: false; err: string } {
   const why = foundRefusal(name, exists); if (why) return { ok: false, err: why };
+  let L: ReturnType<typeof foundersLedger>;
+  try { L = foundersLedger(); } catch (e: Any) {
+    console.error(`[found] ${foundersPath()} can't be read (${e?.message ?? e}): no world is founded until it's repaired`);
+    return { ok: false, err: "this server's record of who founded which world can't be read, so no world can be founded until its operator repairs it" };
+  }
   const dest = path.join(WORLDS_DIR, name);
   const tmp = path.join(WORLDS_DIR, `.founding-${name}-${crypto.randomBytes(4).toString("hex")}`);
+  let rowWritten = false;
   try {
     fs.mkdirSync(tmp, { recursive: true });
     const w = openLive(tmp, name, { catalogue: ENGINE_CATALOGUE });
     const r = authorityRequest(w, actor, "create-world", { title: String(title || name).slice(0, 80) });
     if (!r.ok) throw new Error(`the authority refused the founding: ${r.refused?.reason}`);
     if (fs.existsSync(dest)) throw new Error(`there's already a world called "${name}"`);   // taken while this one was built
-    // answered only once durable: the world's new name synced in the worlds directory, the ledger replaced durably (house 6344940039)
+    // answered only once durable (house 6344940039). The ledger row first: a crash between leaves a row for no world, which a
+    // retry overwrites, never a world with no row (bot review #260 31)
+    replaceDurable(foundersPath(), JSON.stringify({ ...L, [name]: { account, actor, ts: now } }, null, 1)); rowWritten = true;
     fs.renameSync(tmp, dest); syncDir(WORLDS_DIR);
-    const L = foundersLedger(); L[name] = { account, actor, ts: now }; replaceDurable(foundersPath(), JSON.stringify(L, null, 1));
     return { ok: true, worldId: w.worldId };
   } catch (e: Any) {
     fs.rmSync(tmp, { recursive: true, force: true });
+    if (rowWritten && !fs.existsSync(dest)) try { replaceDurable(foundersPath(), JSON.stringify(L, null, 1)); } catch { /* a row for no world: harmless */ }
     return { ok: false, err: String(e?.message ?? e) };
   }
 }

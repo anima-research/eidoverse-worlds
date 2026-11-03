@@ -46,7 +46,9 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a non-operator sent to the world's owners", "server/requestwire.ts", 'fix: "ask whoever runs this server" } }); return; }   // an owner', 'fix: "repair through the world\'s own roles: ask an owner" } }); return; }   // an owner', ["T9f"]],
   ["a false refusal: operator-repair compares the world role", "server/requestwire.ts", "recheck(cap, Date.now(), { role: false })", "recheck(cap, Date.now())", ["T9c"]],
   ["a false refusal: the account compared un-normalised (undefined vs null)", "server/reqcap.ts", "(c.account ?? null) !== cap.account", "c.account !== cap.account", ["T10"]],
-  ["a person's founding as it was: no sync after the rename, the ledger written unsynced", "server/worldlog.ts", "    fs.renameSync(tmp, dest); syncDir(WORLDS_DIR);\n    const L = foundersLedger(); L[name] = { account, actor, ts: now }; replaceDurable(foundersPath(), JSON.stringify(L, null, 1));", "    fs.renameSync(tmp, dest);\n    const L = foundersLedger(); L[name] = { account, actor, ts: now }; fs.writeFileSync(foundersPath(), JSON.stringify(L, null, 1));", ["T8f"]],
+  ["a person's founding as it was: no sync after the rename, the ledger written unsynced", "server/worldlog.ts", "    replaceDurable(foundersPath(), JSON.stringify({ ...L, [name]: { account, actor, ts: now } }, null, 1)); rowWritten = true;\n    fs.renameSync(tmp, dest); syncDir(WORLDS_DIR);", "    fs.writeFileSync(foundersPath(), JSON.stringify({ ...L, [name]: { account, actor, ts: now } }, null, 1)); rowWritten = true;\n    fs.renameSync(tmp, dest);", ["T8f"]],
+  ["founding renames the world in before its ledger row (bot #31)", "server/worldlog.ts", "    replaceDurable(foundersPath(), JSON.stringify({ ...L, [name]: { account, actor, ts: now } }, null, 1)); rowWritten = true;\n    fs.renameSync(tmp, dest); syncDir(WORLDS_DIR);", "    fs.renameSync(tmp, dest); syncDir(WORLDS_DIR);\n    replaceDurable(foundersPath(), JSON.stringify({ ...L, [name]: { account, actor, ts: now } }, null, 1)); rowWritten = true;", ["T8g"]],
+  ["an unreadable ledger reads as empty (bot #31)", "server/worldlog.ts", "const v = JSON.parse(text); if (!v", "let v = {}; try { v = JSON.parse(text); } catch {} if (!v", ["T8h"]],
   ["a fork's copied blobs left unsynced", "server/worldlog.ts", " syncTree(path.join(tmp, \"blobs\")); }", " }", ["T8f"]],
   ["a reset's fresh log renamed in unsynced", "server/worldlog.ts", "    syncDir(dir);\n  } catch (e: Any) { const err", "  } catch (e: Any) { const err", ["T8f"]],
   ["CONTROL (no-op: must stay green)", "server/reqcap.ts", "// the door: the same decision", "// the door:  the same decision", []],
@@ -297,6 +299,25 @@ const described = (W_, label) => Object.values(W_.w.log.live.state().entities).s
   const resetOk = !!arch && (none || (syncedAfter(path.join(arch, "world.jsonl"), arch) && syncedAfter(path.join(dir, "world.jsonl"), dir)));
   ok(foundOk && forkOk && resetOk, "T8f a person's founding, a fork (its copied blobs too) and a reset each sync the directory a new name lands in, after the rename (none on win32)",
     { foundOk, forkOk, blobSynced, resetOk, tmp }); }
+// ---------------- T8g (bot review #260 31) ----------------
+// founding writes the ledger row before the world lands: a failed ledger write leaves no world (a retry founds it); an
+// unreadable ledger refuses the founding and is left as it was (it used to be replaced by a one-row ledger)
+{ const WL = await import("../../server/worldlog.ts"); const lp = path.join(W, ".founders.json"); const fay = idOf("local:fay", "fay");
+  const before = nodefs.existsSync(lp) ? nodefs.readFileSync(lp, "utf8") : null;
+  const jam = `${lp}.${process.pid}.tmp`; nodefs.mkdirSync(jam);   // replaceDurable's temp name, taken by a directory: its write fails
+  let f1; try { f1 = WL.foundOwnedWorld("t8g-crash", fay, "local:fay"); } finally { nodefs.rmdirSync(jam); }
+  const crash = { ok: f1?.ok, world: nodefs.existsSync(path.join(W, "t8g-crash")), row: !!WL.foundersLedger()["t8g-crash"] };
+  const f2 = WL.foundOwnedWorld("t8g-crash", fay, "local:fay");
+  const retry = { ok: f2?.ok, world: nodefs.existsSync(path.join(W, "t8g-crash")), row: !!WL.foundersLedger()["t8g-crash"] };
+  ok(crash.ok === false && !crash.world && !crash.row && retry.ok === true && retry.world && retry.row && before !== null,
+    "T8g founding: the ledger row is written before the world is renamed into place, so a failed ledger write leaves no world and a retry founds it", { crash, retry, hadLedger: before !== null });
+  const garbage = '{"keep-a": {"account": "local:a"}, "keep-b": {"account": "lo';
+  nodefs.writeFileSync(lp, garbage);
+  const f3 = WL.foundOwnedWorld("t8g-garbled", fay, "local:fay");
+  const garbled = { ok: f3?.ok, err: (f3 as any)?.err, world: nodefs.existsSync(path.join(W, "t8g-garbled")), same: nodefs.readFileSync(lp, "utf8") === garbage };
+  nodefs.writeFileSync(lp, before ?? "{}");
+  ok(garbled.ok === false && /can't be read/.test(garbled.err ?? "") && !garbled.world && garbled.same,
+    "T8h an unreadable founders ledger refuses the founding and is left byte-for-byte (never replaced by a one-row ledger)", garbled); }
 
 // ---------------- T8d, T8e ----------------
 // a key a mint hands out must survive a crash, or the genesis it signed (synced) names a key no one holds: the keys file is
