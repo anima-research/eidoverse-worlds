@@ -84,6 +84,9 @@ console.log("mounted things");
     sh.ok && sh.sheared === true && near3(sh.pos, [2, 0, 0]), show(sh));
   const kid = at("k", view({ p: { pos: [0, 0, 0], yaw: 0, scale: 1, scale3: [2, 1, 1] }, c: { pos: [0, 0, 0], yaw: 0, scale: 1 }, k: { pos: [0, 0, 0], yaw: 0, scale: 1 } }, { c: { to: "p", offset: [1, 0, 0], yaw: Math.PI / 4 }, k: { to: "c", offset: [0, 0, 0], yaw: 0 } }));
   check("…and a thing mounted on that sheared one carries the flag down the chain", kid.ok && kid.sheared === true, show(kid));
+  // bot #260 #39: the grandchild's offset goes through the whole sheared map diag(2,1,1)·R45: (1,0,0) → (√2, 0, −√2/2)
+  const g = at("k", view({ p: { pos: [0, 0, 0], yaw: 0, scale: 1, scale3: [2, 1, 1] }, c: { pos: [0, 0, 0], yaw: 0, scale: 1 }, k: { pos: [0, 0, 0], yaw: 0, scale: 1 } }, { c: { to: "p", offset: [0, 0, 0], yaw: Math.PI / 4 }, k: { to: "c", offset: [1, 0, 0] } }));
+  check("…and a thing mounted under a sheared link is placed through the whole shear, not its diagonal", g.ok && near3(g.pos, [Math.SQRT2, 0, -Math.SQRT1_2], 1e-9), show(g));
   const even = at("c", view({ p: { pos: [0, 0, 0], yaw: 0, scale: 1, scale3: [2, 1, 2] }, c: { pos: [0, 0, 0], yaw: 0, scale: 1 } }, { c: { to: "p", offset: [1, 0, 0], yaw: Math.PI / 4 } }));
   check("…and one turned within equally stretched axes is not", even.ok && !even.sheared && near3(even.scale3, [2, 1, 2]) && near3(even.pos, [2, 0, 0]), show(even));
   // a body there has no extent of its own: its position is exact, so it's answered
