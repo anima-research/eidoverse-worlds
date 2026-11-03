@@ -53,8 +53,8 @@ prerequisite is missing (nothing was compared) · **3** over the threshold but i
   presence-only regions; this makes that blindness explicit and checked rather than papered over.
 - **DOM chrome hidden.** `body > *:not(canvas)` is hidden (as `particles-shots.ts:185` does): panels carry names and
   clocks, and a panel regression is a UI diff, not a surface one. `--keep-ui` puts it back.
-- **Clock pinned.** `Date.now()` inside the page is pinned to the old tree's commit time (override with
-  `--pin-clock <ms>`). `sky.js:385/:416` derive the sun's hour and the forecast's weather from `Date.now()`, so two runs
+- **Clock pinned.** `Date.now()` inside the page is pinned to the old tree's commit time at page start and advances
+  from there (load-time differences are seconds, well under the sun's motion per tolerance; override with `--pin-clock <ms>`). `sky.js:385/:416` derive the sun's hour and the forecast's weather from `Date.now()`, so two runs
   minutes apart would light the world differently — a false red. `serverclock.js` reads `performance.timeOrigin`, so
   motion phases and clock sync are untouched. `--no-pin-clock` turns it off.
 - **Fixed cameras**, two per world by default (`wide` at 0,7,14 → 0,1,0; `eye` at 6,1.6,6 → 0,1.2,−2). Add more with
@@ -81,7 +81,8 @@ Three things can turn a camera red, and the frames tell them apart:
 1. **A real regression.** The diff PNG shows a *shape*: a model missing or moved, a lamp dark, a material flat, the
    floor a different colour, a motion component frozen. Open `old.png` and `new.png` side by side; the red in
    `diff.png` outlines the thing. This is what the harness exists for. Before calling it, check the noise frame
-   (below) — if `noise.png` shows the same region red, it is not a regression.
+   (below) — if `noise.png` shows the same region red, the red there may be noise: compare `old.png`/`new.png` in that
+   region by eye before deciding either way.
 2. **Lighting / time nondeterminism.** The whole frame is lightly speckled or a broad gradient differs (sky, shadows,
    fog). With the clock pinned this should not happen; if it does, `--no-pin-clock` was passed, or the world has a
    motion/particle/grass system animating on `serverNow()`. Look at `max |Δ|` — a lighting drift is many pixels at a
@@ -92,8 +93,9 @@ Three things can turn a camera red, and the frames tell them apart:
 **The noise floor is the guard against lying.** After shooting both trees the script boots the *old* tree a second
 time and shoots the first camera again: `old` vs `old2` is what two runs of the *same* code disagree by (asset arrival
 order, dither, anything still animating). That percentage is printed as `noise`, and an old-vs-new difference that is
-within 2× the noise is reported **NOISY** (exit 3), not FAIL — because the harness has just measured that it cannot
-tell. A FAIL is a difference the harness has shown it *can* see. `--no-control` skips the second boot (faster, and then
+within 2× the noise plus 0.05 points (so a zero floor still absorbs dither) is reported **NOISY** (exit 3), not FAIL — because the harness has just measured that it cannot
+tell. A FAIL is a difference the harness has shown it *can* see for the first camera; other cameras are judged against the
+first camera's floor, so a FAIL on them is still yours to check against `old.png`/`new.png`. `--no-control` skips the second boot (faster, and then
 every over-threshold camera is a FAIL you must judge by eye).
 
 A **green over an empty world is two blank frames agreeing**, so the entity count from each tree's snapshot is printed
