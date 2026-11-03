@@ -49,7 +49,7 @@ const creator = (reply: any = { ok: true, after: {} }) => { const sent: any[] = 
 
 // #63: catch_up pages from the oldest unread; a full page moves the cursor only past what it showed
 { const ag: any = new WorldAgent({ name: "me", world: "w" });
-  const all = Array.from({ length: 70 }, (_, i) => ({ seq: (i + 1) * 1000, ts: i, actor: "Bob", verb: "say", args: { text: `line ${i + 1}` } }));
+  const all = Array.from({ length: 70 }, (_, i) => ({ seq: (i + 1) * 1000, ts: i, actor: "Bea", verb: "say", args: { text: `line ${i + 1}` } }));
   ag.lastSeq = 70000;
   // the server's paging (worldlog.ts readHistory): the newest `limit` after `after`, before `before`, hasMore when older remain
   ag.history = async ({ after = -Infinity, before = Infinity, limit = 50 }: any) => { const m = all.filter((e) => e.seq > after && e.seq < before);
@@ -66,8 +66,8 @@ const creator = (reply: any = { ok: true, after: {} }) => { const sent: any[] = 
 
 // #106: a say addressed to me (to) is a mention, so a closed channel still lets it through
 { const ag: any = new WorldAgent({ name: "me", world: "w" }); const ev: any[] = []; ag.onEvent = (e: any) => ev.push(e);
-  ag.hearSay({ seq: 5000, ts: 1, actor: "Bob", args: { text: "Hello there", to: "me" } }, true);
-  ag.hearSay({ seq: 6000, ts: 2, actor: "Bob", args: { text: "Hello there", to: "Ann" } }, true);
+  ag.hearSay({ seq: 5000, ts: 1, actor: "Bea", args: { text: "Hello there", to: "me" } }, true);
+  ag.hearSay({ seq: 6000, ts: 2, actor: "Bea", args: { text: "Hello there", to: "Ann" } }, true);
   const says = ev.filter((e) => e.kind === "say");
   ok(says.length === 2 && says[0].mention === true && says[1].mention === false, "106 say {to: me} is a mention; say {to: someone else} is not", says); }
 
