@@ -4,8 +4,9 @@
 //
 //   SHOTS=<dir> MODE=before|after bun tools/protocol/particles-shots.ts      (under the house guards: flock + perf-guard)
 //
-// MODE=before writes the first protocol's spelling ({preset, seed}); after writes {effect, seed}. Same seed, same place,
-// same camera, same clock offset, so the two photographs differ only by the renderer.
+// Every shot writes {effect, seed} (the registry has no `preset`: componentspec.js particles). MODE labels the output dir only;
+// a baseline photographs an older checkout (serve it with --tree). Same seed, same place, same camera, same clock offset,
+// so the two photographs differ only by the renderer.
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -51,7 +52,7 @@ try {
   console.log(`  backend: ${backend}`);
   const aim = () => page(`const { camera } = await import('/lib/core.js'); camera.position.set(4, 1.4, 1.2); camera.lookAt(4, 1.25, -3.2); camera.updateMatrixWorld(); return true;`);
   for (const p of PRESETS) {
-    const value = MODE === "before" ? { preset: p, seed: 7 } : { effect: p, seed: 7 };
+    const value = { effect: p, seed: 7 };
     const r = await req("create", { id: `fx-${p}`, components: { transform: { pos: [4, 0.6, -3.2] }, particles: value } });
     check(`${p}: created`, r?.ok, r); if (!r?.ok) console.log(`  ${p}: refused ${JSON.stringify(r)}`);
     await waitFor(`import('/lib/world.js').then((m) => m.entities.has('${IDS.of(`fx-${p}`)}'))`);
