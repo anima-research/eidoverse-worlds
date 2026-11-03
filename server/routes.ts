@@ -958,8 +958,9 @@ const ROUTES: Route[] = [
         const auth = req.headers.get("authorization") ?? "";
         const key = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
         const ok = (key && (key === JOIN_TOKEN || agentTokens().byToken.has(key) || !!aid1JoinIdentity(key)))
-          // a cookie rides requests from sibling subdomains (SameSite=Lax is per-SITE): never from another site's page
-          || !!sessionOfRequest(req);
+          // a cookie rides requests from sibling subdomains (SameSite=Lax is per-SITE): never from another site's page.
+          // Embodied sign-ins only (worlds:join), as /upload asks: a spectate-only session can't rebuild (#260 bot 12's twin)
+          || !!sessionOfRequest(req)?.scopes.includes("worlds:join");
         if (!ok) return new Response("sign in or send the authority key as a Bearer header", { status: 401 });
       }
       // a forced rebuild skips the freshness check, so a POST loop could keep the one serial pump busy and starve uploads
