@@ -71,7 +71,7 @@ function readOld(srcBytes: Buffer) {
 /** The identity mapper a translation runs with: who(name, {sub, lowered}) → the v4 identity. A person with an account is
  *  that account; a person without one is their EXACT name, as v1 kept roles and acts. `lowered`: the name is one the v1
  *  fold lowercased (a ban's key), so it stands for the one name in this log that lowercases to it, when exactly one does.
- *  Reads what `dir` already knows and derives the rest from `salt` (identitySalt: this host's secret, this world, this old
+ *  Reads what `dir` already knows and derives the rest from `salt` (identitySalt: this host's secret and this old
  *  log), writing nothing, so the dry run and the real run name the same people by the same ids (bot #369). */
 function identityMapper(old: Any[], dir: ReturnType<typeof directoryFor> | null, { salt, known = null, owner = null }: { salt: Buffer; known?: ((name: string) => Known | null) | null; owner?: OwnerClaim | null }) {
   const planned: Record<string, Entry> = {}; const memo = new Map<string, string>();
@@ -146,9 +146,10 @@ function identityMapper(old: Any[], dir: ReturnType<typeof directoryFor> | null,
   return { who, planned, stable, idOfName: (n: string) => memo.get(nameKey(n)), describe, accountOf };
 }
 /** What the ids of a translation are derived from: this host's custody secret (the one the approval is countersigned with, so
- *  the dry run and the apply agree), the world's name and the old log's bytes (two worlds' namesakes are two people). */
-function identitySalt(worldsDir: string, world: string, sourceSha256: string): Buffer {
-  return crypto.createHmac("sha256", custodyAt(custodyFileIn(worldsDir)).secret("import-v1 identity")).update(`${world}\0${sourceSha256}`).digest();
+ *  the dry run and the apply agree) and the old log's bytes. Never the destination name: an id is a person, not a world, so
+ *  the same log translated twice names the same people (two logs' namesakes stay two people). */
+function identitySalt(worldsDir: string, _world: string, sourceSha256: string): Buffer {
+  return crypto.createHmac("sha256", custodyAt(custodyFileIn(worldsDir)).secret("import-v1 identity")).update(sourceSha256).digest();
 }
 const sha256Hex = (b: Buffer) => crypto.createHash("sha256").update(b).digest("hex");
 

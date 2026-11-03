@@ -484,11 +484,20 @@ row("IM-I40", () => {
 row("IM-I41", () => {
   const L = [BASIC[0], { actor: "world", verb: "grant", args: { id: "mica", role: "owner" } }, { actor: "mica", verb: "say", args: { text: "hi" } }];
   const a = oldWorld(L), b = { src: path.join(a.worlds, "other"), dest: path.join(a.worlds, "other-new"), worlds: a.worlds };
-  fs.mkdirSync(b.src, { recursive: true }); fs.writeFileSync(path.join(b.src, "log.jsonl"), seqd(L).map((e) => JSON.stringify(e)).join("\n") + "\n");
+  fs.mkdirSync(b.src, { recursive: true }); fs.writeFileSync(path.join(b.src, "log.jsonl"), seqd([...L, { actor: "mica", verb: "say", args: { text: "a different world" } }]).map((e) => JSON.stringify(e)).join("\n") + "\n");
   const ra = W1.translateV1World(a.src, a.dest), rb = threw(() => W1.translateV1World(b.src, b.dest, { name: "other-new" }));
   const ia = rolesIn(a.dest), ib = rb ? [] : rolesIn(b.dest);
   ok(rb === null && ia.length === 1 && ib.length === 1 && ia[0] !== ib[0] && ra.identities === 1,
-    "IM-I41 two old worlds on one server, each with an unbound owner \"mica\" (the same log bytes): both translate, as two imported people with two ids (a namesake in another world is not known to be the same person)", { ia, ib, rb });
+    "IM-I41 two different old worlds on one server, each with an unbound owner \"mica\": both translate, as two imported people with two ids (a namesake in another world is not known to be the same person)", { ia, ib, rb });
+});
+row("IM-I41b", () => {
+  const L = [BASIC[0], { actor: "world", verb: "grant", args: { id: "mica", role: "owner" } }, { actor: "mica", verb: "say", args: { text: "hi" } }];
+  const a = oldWorld(L), b = { src: path.join(a.worlds, "again"), dest: path.join(a.worlds, "again-new"), worlds: a.worlds };
+  fs.mkdirSync(b.src, { recursive: true }); fs.writeFileSync(path.join(b.src, "log.jsonl"), seqd(L).map((e) => JSON.stringify(e)).join("\n") + "\n");
+  W1.translateV1World(a.src, a.dest); const rb = threw(() => W1.translateV1World(b.src, b.dest, { name: "again-new" }));
+  const ia = rolesIn(a.dest), ib = rb ? [] : rolesIn(b.dest);
+  ok(rb === null && ia.length === 1 && ib.length === 1 && ia[0] === ib[0],
+    "IM-I41b the same old log translated under two names names the same people: one id, the directory entry reused, no \"identity exists\" (an id is a person, not a world)", { ia, ib, rb });
 });
 row("IM-I42", () => {
   const w = oldWorld(BASIC); W1.translateV1World(w.src, w.dest);
