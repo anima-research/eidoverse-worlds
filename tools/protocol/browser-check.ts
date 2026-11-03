@@ -3,7 +3,7 @@
 // One static server (this process, /shared only), one page, no world server, no WebGL. (The old-world importer,
 // tools/protocol/import-v1/, runs once at the operator's command, never in a browser: it isn't loaded here.)
 // Checks, each computed in the page AND here, then compared:
-//   1. every shared/protocol module a client runs imports (fold, hash, catalogue, toolspec, simlayer, door, names, record, …);
+//   1. every shared/protocol module a client runs imports: the core (CORE) plus whatever client/ imports (a grep);
 //   2. the page hashes with the portable sync sha256 (no Bun there), and agrees with bun's native hasher;
 //   3. the lab cottage folds to its pinned digest;
 //   4. the authority, over in-memory storage at a pinned clock, writes a byte-identical log for the same requests.
@@ -16,14 +16,18 @@ import { sha256 } from "../../shared/protocol/hash.js";
 // the cottage's pinned digest (replay-check.ts says why it moved from the lab's 22a27ab0… in the names pass, and how it
 // was confirmed independently)
 const PINNED_DIGEST = "b17bf98f909347df1024b39ad4cc044b5f08a713f2d4765fb0d3c767253971b8";
-const MODS = ["fold", "hash", "componentspec", "labmodels", "verbspec", "simlayer", "authority", "names", "view", "replica", "requests", "refusal"];
+const CORE = ["fold", "hash", "componentspec", "labmodels", "verbspec", "simlayer", "authority", "names", "view", "replica", "requests", "refusal"];
+// …plus every shared/protocol module the client imports (a grep of client/, so a new import is covered without a list edit)
+const clientImports = (dir: string): string[] => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? clientImports(`${dir}/${e.name}`)
+  : /\.(js|html)$/.test(e.name) ? [...fs.readFileSync(`${dir}/${e.name}`, "utf8").matchAll(/shared\/protocol\/([A-Za-z0-9_\-/]+)\.js/g)].map((m) => m[1]) : []);
+const MODS = [...new Set([...CORE, ...clientImports(ENGINE + "client")])].sort();
 
 // the work, as one function that runs unchanged in bun and in the page (only the import base differs)
-const work = async (base: string, texts: { cottage: string }) => {
+const work = async (base: string, texts: { cottage: string; mods: string[] }) => {
   const imp = (m: string) => import(`${base}/shared/protocol/${m}.js`);
   const loaded: Record<string, boolean> = {};
   const M: Record<string, any> = {};
-  for (const m of ["fold", "hash", "componentspec", "labmodels", "verbspec", "simlayer", "authority", "names", "view", "replica", "requests", "refusal"]) {
+  for (const m of texts.mods) {
     try { M[m] = await imp(m); loaded[m] = true; } catch (e) { loaded[m] = false; M[m] = String(e); }
   }
   const { readLog, fold, digest } = M.fold;
@@ -52,6 +56,7 @@ const work = async (base: string, texts: { cottage: string }) => {
 
 const texts = {
   cottage: fs.readFileSync(ENGINE + "spec/conformance/lab-cottage.jsonl", "utf8"),
+  mods: MODS,
 };
 const here = await work("file://" + ENGINE.replace(/\/$/, ""), texts);
 
