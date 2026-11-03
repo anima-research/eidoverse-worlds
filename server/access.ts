@@ -20,7 +20,7 @@
 // spectator` for ONE person (a role is membership here, never a state: a world that admits only people listed lets
 // everyone else watch with access.watch, or no one).
 
-import { readFileSync, statSync } from "node:fs";
+import { statSync } from "node:fs";
 import { join } from "node:path";
 import { WORLDS_DIR, JOIN_TOKEN } from "./config.ts";
 import { globalBans, findBan } from "./moderation.ts";
@@ -32,6 +32,8 @@ import { effectiveOf, isOwner, MOD_POWERS } from "../shared/protocol/roles.js";
 import { opsOf } from "../shared/protocol/fold.js";
 import { isBanned } from "../shared/protocol/authority.js";
 import { modLogAt } from "./custody.ts";
+import { readLogBytes } from "./durable.ts";
+import { addressOf } from "./peer.ts";
 import { entryOf, doorOf as doorOfWc, listedIn, timedGrants, leftWords, ACCESS_WARN_MS } from "../shared/protocol/access.js";
 import type { World, Client } from "./world.ts";
 
@@ -88,7 +90,7 @@ export function doorFor(name: string): Door | null {
   let mod: any[]; try { mod = modLogAt(modFile).mod; } catch { return null; }
   const wc: Record<string, any> = {};
   try {
-    for (const line of readFileSync(file, "utf8").split("\n")) {
+    for (const line of readLogBytes(file, { cut: false }).toString("utf8").split("\n")) {   // a torn last line is not the log's yet (#260 bot 7)
       if (!line || !DOOR_LINE.test(line)) continue;
       let e: any; try { e = JSON.parse(line); } catch { continue; }
       if (e?.kind !== "change") continue;
@@ -209,7 +211,9 @@ export function sweepAccess(worlds: Iterable<World>, expel: Expel, now = Date.no
         try { c.ws.send(JSON.stringify({ type: "notice", text: `your ${g.role} grant in "${w.name}" ends in ${leftWords(g.until, now).replace(" left", "")}${closes ? ` — this world admits only people listed, so you'll have to leave then` : ""}` })); warned.add(k); } catch { /* gone */ }
     }
     const ended = w.log.expireRoles();
-    if (ended.length) { console.log(`[world:${w.name}] timed grant(s) ended: ${ended.join(", ")}`); settleAccess(w, expel, now); }
+    if (ended.length) console.log(`[world:${w.name}] timed grant(s) ended: ${ended.join(", ")}`);
+    // a world without custody can't log the end, but the door already reads it as over: settle anyway (#260 bot 14)
+    if (ended.length || timedGrants(wc).some((g: { until: number }) => g.until <= now)) settleAccess(w, expel, now);
   }
   if (warned.size > 4096) warned.clear();
 }

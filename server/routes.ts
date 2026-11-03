@@ -39,7 +39,7 @@ import { resolveLibFile, libraryFile, libraryRel } from "./libfile.ts";
 import { summarizeGlb } from "./geometry.ts";
 import { vrmHeightFor } from "./vrmheight.ts";
 import { checkFile, checkScale, CheckRefused } from "./buildcheck-queue.ts";
-import { worlds, getWorld, type World } from "./world.ts";
+import { worlds, getWorld, worldDirNamed, type World } from "./world.ts";
 import { screenshots } from "./screenshots.ts";
 import { handleUpload, optStatus, rebuildAsset } from "./upload.ts";
 import { serveHeightmapExport, heightRange } from "./heightmap.ts";
@@ -65,7 +65,7 @@ const knownWorld = (name: string) => {
   const relist = () => { try { worldDirs = new Set(readdirSync(WORLDS_DIR)); } catch { worldDirs = new Set(); } worldDirsAt = now; };
   if (now - worldDirsAt > 5000) relist();
   if (!worldDirs.has(name) && now - worldDirsAt > 1000) relist();   // a miss re-lists (at most once a second): a new world is known at once
-  return worldDirs.has(name) && hasWorldLog(name);
+  return worldDirs.has(name) && existsSync(join(WORLDS_DIR, name, "world.jsonl"));   // listed: its own case already
 };
 /** Reads of a world's live state (/geom?world, /snap, /worlds): behind the same door as joining it. On a box with a
  *  JOIN_TOKEN they need a key a join would take (the authority key, an agent token, an aid1 credential) as a Bearer header,
@@ -80,7 +80,7 @@ function mayRead(req: Request): boolean {
 const unauthorized = () => new Response("this world's state is behind its door: send a key it takes as a Bearer header", { status: 401 });
 
 /** A world's directory holds its log, world.jsonl. */
-const hasWorldLog = (name: string) => existsSync(join(WORLDS_DIR, name, "world.jsonl"));
+const hasWorldLog = (name: string) => worldDirNamed(name) && existsSync(join(WORLDS_DIR, name, "world.jsonl"));   // in its own case (world.ts)
 const CLIENTLOG_UNKNOWN = "~unknown";   // '~' is outside the world-name alphabet, so no real world can share this file
 try { mkdirSync(CLIENTLOG_DIR, { recursive: true }); } catch (e) { console.warn(`[clientlog] cannot create ${CLIENTLOG_DIR}: ${(e as Error)?.message ?? e}`); }
 import { seatStore, announceProfileUpdate, MAX_PROPOSAL_BYTES } from "./seats.ts";
@@ -781,7 +781,7 @@ const ROUTES: Route[] = [
       const names = new Set<string>(worlds.keys());
       try {
         for (const n of readdirSync(WORLDS_DIR)) {
-          if (/^[a-z0-9_-]{1,64}$/i.test(n) && hasWorldLog(n)) names.add(n);
+          if (/^[a-z0-9_-]{1,64}$/i.test(n) && existsSync(join(WORLDS_DIR, n, "world.jsonl"))) names.add(n);   // listed: its own case already
         }
       } catch { /* no worlds dir yet: only loaded worlds */ }
       // PER CALLER: a world closed to whoever is asking is not on their map at

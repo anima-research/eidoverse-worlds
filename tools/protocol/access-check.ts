@@ -26,6 +26,7 @@
 //       only by the actor's id. Pinned: a role under a bare name is refused, and deleting one member's role leaves a co-owner
 //       an owner and the door closed
 //   A17 (review 10-17) a revoke takes effect: accepted, the member is removed now (4010), can't rejoin, and the log holds it
+//   B7, B14, B17 (anima-review[bot] on #260, 11-02): a torn door line, a sweep without custody, a world name's case — at their block
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -525,5 +526,30 @@ const gonePid = await exitedPid();
     "A17 a revoke takes effect: deleting a present member's role is accepted, removes them now (4010), /access says none, the rejoin is refused, and the log holds the delete",
     { joined: !!jr.snapshot, del: del.refused, closed: r.closed, acc: acc.body, back: [jb.errors, back.closed], logged });
   r.close(); back.close(); ann.close(); try { s4.proc.kill(); } catch {} await sleep(300); }
+// ---- B7, B14, B17 (anima-review[bot] on #260, 11-02; pure, in a process of their own with its own WORLDS_DIR) ----
+//   B7  an unloaded world's door leaves out a torn last line (no newline), as the log's reader does
+//   B14 a timed grant that has ended in a world that can't log the end (no custody) still removes its holder at the sweep
+//   B17 a world is served in its own case only: on a case-insensitive filesystem "KEEP" is not "keep" (a second authority)
+{ const P = fs.mkdtempSync(path.join(root, "pure-")), PW = path.join(P, "worlds");
+  const line = (join) => JSON.stringify({ kind: "change", verb: "set", body: { id: "@world", comp: "access", value: { join } } });
+  fs.mkdirSync(path.join(PW, "torn"), { recursive: true }); fs.writeFileSync(path.join(PW, "torn", "world.jsonl"), `${line("listed")}\n${line("anyone")}`);
+  fs.mkdirSync(path.join(PW, "keep"), { recursive: true });
+  const caseless = fs.existsSync(path.join(PW, "KEEP"));
+  const code = `const A = await import(${JSON.stringify(new URL("../../server/access.ts", import.meta.url).href)});
+    const Wd = await import(${JSON.stringify(new URL("../../server/world.ts", import.meta.url).href)});
+    const now = Date.now(), out = { door: A.doorFor("torn")?.wc?.access?.join, sweep: {}, exists: { lower: Wd.worldExists("keep"), upper: Wd.worldExists("KEEP") } };
+    for (const [k, until] of [["ended", now - 1000], ["live", now + 600_000]]) {
+      const wc = { access: { join: "listed" }, "roles:u-fen0000000000000000000": { role: "member", until } };
+      const c = { id: "Fen", actorId: "u-fen0000000000000000000", account: "agent:token:fen", surface: "world", ws: { send() {} } };
+      const w = { name: "t14", clients: new Set([c]), log: { live: { state: () => ({ entities: { "@world": { c: wc } } }) }, expireRoles: () => [], bannedHere: () => false } };
+      const gone = []; A.sweepAccess([w], (_w, who, why) => gone.push(why), now); out.sweep[k] = gone; }
+    console.log(JSON.stringify(out));`;
+  const r = Bun.spawnSync(["bun", "-e", code], { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: PW, OPT_DIR: path.join(P, "opt"), SERVER_OPERATORS: "", JOIN_TOKEN: "" }, stdout: "pipe", stderr: "pipe" });
+  let o = null; try { o = JSON.parse(r.stdout.toString().trim().split("\n").pop()); } catch {}
+  ok(o?.door === "listed", "B7 an unloaded world's door leaves out a torn last line (complete JSON, no newline): still listed, not anyone", o?.door ?? r.stderr.toString().slice(-300));
+  ok(o?.sweep?.ended?.length === 1 && /access/.test(o.sweep.ended[0]) && o?.sweep?.live?.length === 0,
+    "B14 in a world that can't log a grant's end (expire-roles writes nothing), the sweep still removes whoever's timed grant has passed; a live grant stays", o?.sweep);
+  if (caseless) ok(o?.exists?.lower === true && o?.exists?.upper === false, "B17 on a case-insensitive filesystem a world is served in its own case only: keep exists, KEEP does not", o?.exists);
+  else console.log(`  skip B17: ${PW} is case-sensitive, so "KEEP" can't open keep/ here (run with PROTOCOL_SCRATCH on a case-insensitive filesystem)`); }
 console.log(`[access-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
