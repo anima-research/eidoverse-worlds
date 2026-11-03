@@ -21,7 +21,7 @@
 //        round it and arrives (the stall branch's row; review r5 F5)
 //   AS11 a stall blames only a thing the stride presses into, not one it grazes (pure; review r5 F5)
 //   AS12 a cup on a table: move {to: "cup"} is accepted and ends beside the table on the floor (review r6 L1)
-//   AS13 a child thing with no physics shape: walked to at its world position; labels' nearest by world position (r6 L2)
+//   AS13 a child thing with no physics shape: its destination is its world position; a label two things share is refused with both (r6 L2; R 10-17)
 //   AS14 a misjudged crate rescaled in place is judged afresh (pure; review r6 L3)
 // @ts-nocheck
 import fs from "node:fs";
