@@ -844,7 +844,7 @@ await C("R3", "duplicate rebinds references inside the copy to their twins, keep
   const kept = (d.notes ?? []).flatMap((n: any) => n.keptLinks ?? []);
   return [r1.ok && r2.ok && d.ok && !!lamp2 && st[lamp2].c["look-at"].target === sw2 && JSON.stringify(st.rig2.c.story.marks) === JSON.stringify([sw2, "far"])
     && kept.some((k: any) => k.to === "far" && /story\.marks/.test(k.from)) && st.lamp.c["look-at"].target === "switch", [why(r1), lamp2 && st[lamp2].c["look-at"], st.rig2?.c.story, kept]]; });
-await C("R4", "a script's scope.ids are rebound on duplicate (the copy drives its own twin, never the original)", async () => {
+await C("R4", "a script's scope.ids are rebound on duplicate (the copy's scope names its own twin, not the original)", async () => {
   const W = world(); W.call("create", { id: "bell", model: "crate" }); W.call("create", { id: "bulb", model: "crate", components: { parent: { to: "bell" } } });
   const src = W.call("upload", { text: 'world.on("use", () => world.set("bulb", "t/lit", true));\n' }).src;
   const i = W.call("set", { id: "bell", component: "script:ring", value: { src, scope: { ids: ["bell", "bulb"], comps: ["t/lit"] }, on: ["use"] } });
@@ -857,7 +857,7 @@ await C("R5", "publish refuses a link to a thing outside what's published (outsi
   const rec = b.ok ? W.getBlob(Object.keys(W.state().entities["@world"].c).find((k) => k.startsWith("blueprints:"))!.replace("blueprints:", "sha256:")) : null;
   return [!a.ok && a.refused.code === "outside-link" && JSON.stringify(a.refused).includes("lamp") && b.ok && (b.notes ?? []).some((n: any) => n.unwired?.length)
     && rec && !JSON.stringify(rec).includes('"lamp"'), [a.refused, why(b), rec?.parts?.[0]?.components?.story]]; });
-await C("R6", "a blueprint's inside links become the copy's own ids (parts' keys → fresh ids); a raw id from another world is unbound and said", () => {
+await C("R6", "a blueprint's inside links become the copy's own ids (parts' keys → fresh ids)", () => {
   const W = world(); W.call("create", { id: "rig", model: "crate" }); W.call("create", { id: "lamp", model: "crate", components: { parent: { to: "rig" } } });
   W.call("create", { id: "switch", model: "crate", components: { parent: { to: "rig" } } }); W.call("set", { id: "lamp", component: "look-at", value: { target: "switch" } });
   const p = W.call("publish", { from: "rig", name: "rig" }); const h = Object.keys(W.state().entities["@world"].c).find((k) => k.startsWith("blueprints:"))!.replace("blueprints:", "sha256:");
@@ -881,9 +881,10 @@ await C("P3", "grab, put, throw and punt acts record the request about the thing
   W.call("create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic" } }, place: { at: [0, 0] } });
   W.call("move", { to: [0, 0, 0.5] }, "vic"); const g = W.call("grab", { id: "ball" }, "vic"); const p = W.call("put", { id: "ball" }, "vic");
   W.call("grab", { id: "ball" }, "vic"); const t = W.call("throw", { id: "ball", v: [0, 1, 1] }, "vic");
+  W.call("create", { id: "ball2", model: "ball", components: { physics: { kind: "dynamic" } }, place: { at: [0, 0.3] } }); const k = W.call("punt", { id: "ball2", power: 4 }, "vic");
   const acts = actsBy(W, "vic").filter((e: any) => ["grab", "put", "throw", "punt", "drop"].includes(e.verb));
-  const bad = acts.filter((e: any) => JSON.stringify(e.body).match(/"presence"|"hand"|"held"|"trackTs"/));
-  return [g.ok && p.ok && t.ok && acts.length >= 3 && !bad.length, [why(g), why(p), why(t), bad.map((e: any) => e.body)]]; });
+  const bad = acts.filter((e: any) => POSKEYS.test(JSON.stringify(e.body)));   // the same keys P2 refuses (bot review #260 389)
+  return [g.ok && p.ok && t.ok && k.ok && acts.length >= 4 && acts.some((e: any) => e.verb === "punt") && !bad.length, [why(g), why(p), why(t), why(k), bad.map((e: any) => e.body)]]; });
 await C("P4", "§5 says what touches the log and what doesn't: arrivals don't; a teleport does, with no position; hands never", () => {
   const g = SPEC.slice(SPEC.indexOf("## 5."), SPEC.indexOf("## 6.")); const need = ["Arriving is presence", "never logged", "client"];
   return [need.every((n) => g.includes(n)) && !/Arriving,\s+teleporting, putting something down/.test(g), need.filter((n) => !g.includes(n))]; });
