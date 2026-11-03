@@ -500,7 +500,18 @@ export function sniffAudio(b: Uint8Array): "mp3" | "ogg" | "wav" | "webm" | "m4a
 /** The 415 for main's `/upload?as=script`: a script is the world authority's `upload {text}` request now. */
 export const SCRIPT_MOVED = "not stored: /upload?as=script went with the old protocol. Send the source as the world's upload {text} request (an agent: act {verb: \"upload\", args: {text}}); its reply's src goes in set {id, component: \"script:<name>\", value: {src, …}} (docs/SCRIPTS.md)";
 
+// ?token= is deprecated (tokens in URLs land in access logs; RFC 9745 Deprecation header). Removal waits on Orrery moving to the header (Mica, #22)
+const warnedQuery = new Set<string>();
 export async function handleUpload(req: Request, url: URL, srv: UploadSrv): Promise<Response> {
+  const r = await uploadBy(req, url, srv);
+  if (url.searchParams.has("token") && !/^Bearer\s/i.test(req.headers.get("authorization") ?? "")) {
+    const ip = srv.requestIP?.(req)?.address ?? "?";
+    if (!warnedQuery.has(ip) && warnedQuery.size < 1024) { warnedQuery.add(ip); console.warn(`[upload] ?token= is deprecated; send Authorization: Bearer (from ${ip})`); }
+    try { r.headers.set("Deprecation", "@1793664000"); } catch { /* an immutable response keeps its headers */ }
+  }
+  return r;
+}
+async function uploadBy(req: Request, url: URL, srv: UploadSrv): Promise<Response> {
   // the key by Authorization: Bearer (RFC 6750, as the read door takes it); ?token= still works for older clients (bot review #260 51)
   const upTok = /^Bearer\s+(\S+)$/i.exec(req.headers.get("authorization") ?? "")?.[1] ?? url.searchParams.get("token") ?? "";
   let upAgent = agentTokens().byToken.get(upTok);

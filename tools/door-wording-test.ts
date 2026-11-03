@@ -810,5 +810,14 @@ try {
   const p = spawnSync(process.execPath, ["-e", src], { env: { ...process.env, JOIN_TOKEN: "up-door", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, encoding: "utf8" });
   let s: any = null; try { s = JSON.parse(p.stdout.trim().split("\n").at(-1) ?? ""); } catch { /* shown below */ }
   check("/upload on a JOIN_TOKEN server takes the door key as an Authorization Bearer header (and still by ?token=); a wrong or absent key is 401", s?.bearer === 415 && s.query === 415 && s.wrong === 401 && s.none === 401, s ? JSON.stringify(s) : `${p.status} ${p.stderr.slice(0, 300)}`); }
+// ?token= is deprecated (Mica 11-03: Orrery moves to the header first): a query key is warned once per address, never logged
+{ const { spawnSync } = await import("node:child_process");
+  const src = `const { handleUpload } = await import(${JSON.stringify(new URL("../server/upload.ts", import.meta.url).href)});
+    const go = async (q, h, ip) => { const u = new URL("http://127.0.0.1/upload?as=script" + q); const r = await handleUpload(new Request(u, { method: "POST", body: "x", headers: h }), u, { requestIP: () => ({ address: ip }) }); return r.headers.get("deprecation"); };
+    console.log(JSON.stringify({ q1: await go("&token=up-door", {}, "10.0.1.1"), q2: await go("&token=up-door", {}, "10.0.1.1"), bearer: await go("", { authorization: "Bearer up-door" }, "10.0.1.2") }));`;
+  const p = spawnSync(process.execPath, ["-e", src], { env: { ...process.env, JOIN_TOKEN: "up-door", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, encoding: "utf8" });
+  let s: any = null; try { s = JSON.parse(p.stdout.trim().split("\n").at(-1) ?? ""); } catch { /* shown below */ }
+  const warns = p.stderr.split("\n").filter((l) => /\?token= is deprecated/.test(l));
+  check("/upload by ?token= answers a Deprecation header and warns once per address without the key; Bearer gets neither", !!s?.q1 && !!s.q2 && s.bearer === null && warns.length === 1 && !/up-door/.test(p.stderr), `${JSON.stringify(s)} warns=${warns.length} ${p.stderr.slice(0, 300)}`); }
 console.log(`${tally.passed} passed; ${tally.failed} failed`);
 process.exit(tally.failed ? 1 : 0);
