@@ -1081,6 +1081,14 @@ console.log(JSON.stringify({ platform: process.platform, available: SANDBOX.avai
       return { heard: comp(s, "parrot", "t/heard"), squawks: s.entries().filter((e: any) => e.kind === "say" && e.actor === "script:parrot").map((e: any) => e.body.text),
         copied: JSON.stringify(act?.body?.event ?? {}).includes("!hello"), audit: A ? `${A.reran}/${A.acts} ${A.flags.map((f: any) => f.check).join(",")}` : null }; },
     good: (o) => o.heard?.by === "vic" && o.heard?.text === "!hello" && o.heard?.n === 1 && JSON.stringify(o.squawks) === '["squawk: !hello"]' && o.copied === false && o.audit === "1/1 " },
+  { id: "E1b", what: "a say heard before you arrived stays out of the script's console for you (bot review #260 21): `scripts` shows the activation without its console lines or why; one with no floor (an admin) and a say since you came show them", run(s) { cast(s);
+      s.call("bob", "create", { id: "ear", model: "crate", place: { at: [0, 0] } });
+      install(s, "bob", "ear", "echo", `world.on("say", (e) => { console.log("heard " + e.text); });\n`, { scope: { ids: "self", comps: [] }, on: ["say"] });
+      s.call("vic", "say", { text: "early secret" }); const floor = s.entries().length - 1; s.call("vic", "say", { text: "later line" });
+      s.w().sayFloor = (who: string) => (who === "late" ? floor : null);
+      const lines = (who: string) => JSON.stringify(s.call(who, "scripts", { id: "ear" }).scripts?.[0]?.last ?? []);
+      return { late: lines("late"), olive: lines("olive") }; },
+    good: (o) => !o.late.includes("early secret") && o.late.includes("later line") && /"on":"say"/.test(o.late) && o.olive.includes("early secret") && o.olive.includes("later line") },
   { id: "E2", what: "enter / leave: the host says who arrived or left; scripts that list them hear it, by identity (presence, told by the host)", run(s) { cast(s);
       if (!D.presenceEvent) return { absent: true };
       s.call("bob", "create", { id: "door1", model: "crate", place: { at: [0, 0] } });
@@ -1460,6 +1468,35 @@ const serverCases: Case[] = [{ id: "S1", server: true, what: "the server: a worl
   } finally { proc.kill(); }
 }, good: (o) => o.mk && o.inst === "ok" && o.clock === "ok" && o.ring === "ran" && o.rung === 1 && o.tickActs >= 1 && o.beats >= 1 && o.hello && o.sawScript
   && o.roster?.includes("bell1/bell:active") && o.roster?.includes("bell1/clock:active") && !o.v1Host && o.malformed === 0 }];
+
+serverCases.push({ id: "S3", server: true, what: "the server: `debug {script}` keeps a say from before the asker arrived out of the console ring (bot review #260 21); the owner (no floor) still reads it",
+  run: async () => {
+    const W4 = path.join(root, "srv3"); fs.mkdirSync(W4, { recursive: true });
+    const env = { ...process.env, TRUST_NAMES: "1", WORLDS_DIR: W4, OPT_DIR: path.join(root, "opt"), SKIP_OPT_SWEEP: "1", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", SERVER_OPERATORS: "", EIDO_FLIGHT_REHEARSAL: "" };
+    const f = Bun.spawnSync(["bun", "tools/protocol/world.ts", "found", "chimes", "--owner", "Ann"], { cwd: ENGINE, env }); if (f.exitCode !== 0) return { found: f.stderr.toString() };
+    let port = 0; for (let p = 9700; p < 9900; p++) { try { const t = Bun.listen({ hostname: "0.0.0.0", port: p, socket: { data() {} } }); t.stop(true); port = p; break; } catch { /* taken */ } }
+    const logf = path.join(root, "srv3.log");
+    const proc = Bun.spawn(["bun", "server/server.ts"], { cwd: ENGINE, env: { ...env, PORT: String(port) }, stdout: Bun.file(logf), stderr: Bun.file(logf + ".err") });
+    try {
+      if (!(await tryUntil("the server answers /worlds", async () => (await fetch(`http://127.0.0.1:${port}/worlds`, { signal: AbortSignal.timeout(1000) })).ok, { ms: 115_000, step: 150 }))) return { up: false };
+      const client = async (name: string) => { const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`); const msgs: any[] = []; const waiters = new Map(); let n = 0;
+        ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); msgs.push(m); const k = m.type === "reply" ? m.id : m.type === "debug" ? m.reqId : null; const fn = waiters.get(k); if (fn) { waiters.delete(k); fn(m.type === "reply" ? m.reply : m); } };
+        await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
+        ws.send(JSON.stringify({ type: "join", world: "chimes", id: name, avatar: "", replica: true }));
+        await tryUntil(`${name}'s join is answered`, () => msgs.some((m) => m.type === "snapshot" || m.type === "error"), { ms: 3000, step: 50 });
+        const ask = (m: any) => new Promise<any>((res) => { const rid = `${name}-${++n}`; waiters.set(rid, res); ws.send(JSON.stringify(m.type === "request" ? { ...m, id: rid } : { ...m, reqId: rid })); setTimeout(() => { if (waiters.delete(rid)) res({ timeout: true }); }, 8000); });
+        return { ws, req: (verb: string, args: any = {}) => ask({ type: "request", verb, args: IDS.out(verb, args) }).then((r) => IDS.back(r)), debug: (script: string) => ask({ type: "debug", script, limit: 50 }) }; };
+      const ann = await client("Ann");
+      await ann.req("create", { id: "ear" }); const E = IDS.of("ear");
+      const u = await ann.req("upload", { text: `world.on("say", (e) => { console.log("heard " + e.text); });\n` });
+      const inst = await ann.req("set", { id: "ear", component: "script:echo", value: { src: u.src, scope: { ids: "self", comps: [] }, on: ["say"] } });
+      const said = await ann.req("say", { text: "early secret" });
+      await tryUntil("the echo heard it", async () => JSON.stringify((await ann.debug(`${E}/echo`)).events ?? []).includes("early secret"), { ms: 5000, step: 100 });
+      const bob = await client("Bob"); const b = await bob.debug(`${E}/echo`), a = await ann.debug(`${E}/echo`);
+      ann.ws.close(); bob.ws.close();
+      return { inst: show(inst), said: said.ok, bob: JSON.stringify(b.events ?? null), ann: JSON.stringify(a.events ?? null) };
+    } finally { proc.kill(); }
+  }, good: (o) => o.inst === "ok" && o.said && o.ann.includes("early secret") && o.bob !== "null" && /say: nothing/.test(o.bob) && !o.bob.includes("early secret") });
 
 serverCases.push({ id: "S2", server: true, what: "the server: while a hostile script (indexOf on crafted text) runs in one world, another world's requests keep answering within the deadline; each hostile run is stopped and shows as a failure (time) against its script",
   run: async () => {

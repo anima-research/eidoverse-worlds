@@ -69,7 +69,7 @@ function activate(w, id, name, ev) {
   const st = w.state(), key = `script:${name}`, v = st.entities[id]?.c[key], cfg = scriptsCfg(st);
   const { cause, dry, requester, ...event } = ev;   // requester: who asked for a dry run (the event's `by` may be one it simulates)
   const rt = dry ? { console: [] } : rtOf(w, id, name);
-  const out = (status, extra = {}) => { if (!dry) { const { logs, ...line } = extra; logRt(w, rt, { on: ev.on, status, ...line, ...(logs ? { logs } : {}) }); rt.status = status; }
+  const out = (status, extra = {}) => { if (!dry) { const { logs, ...line } = extra; logRt(w, rt, { on: ev.on, status, ...line, ...(logs ? { logs } : {}), ...(ev.on === "say" && Number.isInteger(ev.seq) ? { sayAt: ev.seq } : {}) }); rt.status = status; }
     return { script: key, id, status, ...extra }; };
   if (!v || typeof v !== "object" || v === PURGED) return out("not-installed");
   if (v.paused === true) { const pb = pausedBy(w, id, key); return out("paused", { why: pb ? `paused by ${said(pb.by)} at seq ${pb.at}` : "paused: true" }); }
@@ -539,11 +539,13 @@ function drainScripts(w) {
  *  whatever it's given, as activate runs it, so it counts as available. */
 const sandboxUp = (w) => (typeof w.scripts?.available === "function" ? w.scripts.available() : true);
 const SANDBOX_DOWN = "this server's script sandbox isn't available (it didn't load, or the host can't isolate scripts), so no script runs here; only the server's operator can repair or enable it, and asking again won't change it until then";
-function scriptStatus(w, st, id, name, v) {
+// a say heard at or below the reader's floor (storage.js sayFloor) keeps its console lines and why to itself, as history does (bot review #260 21)
+const ringFor = (lines, floor) => lines.map(({ sayAt, ...l }) => (floor != null && sayAt !== undefined && sayAt <= floor ? { ts: l.ts, on: l.on, status: l.status, hidden: "a say from before you arrived" } : l));
+function scriptStatus(w, st, id, name, v, floor = null) {
   const key = `script:${name}`, sp = sponsorOf(w, id, key), rt = w.presence.scripts?.[rtKey(id, name)], cfg = scriptsCfg(st);
   let src = null, unreadable = false; try { src = w.getBlob(v.src); } catch (e) { unreadable = e?.code !== "ENOENT"; }
   const base = { id, script: key, src: v.src, sponsor: sp?.sponsor ?? null, sponsorAt: sp?.sponsorAt ?? null, on: v.on ?? [], ...(v.every ? { every: v.every, always: !!v.always } : {}), scope: v.scope,
-    ...(src?.text && SR.looksMinified(src.text) ? { note: "the source looks minified: hard to review" } : {}), last: rt?.console?.slice(-3) ?? [] };
+    ...(src?.text && SR.looksMinified(src.text) ? { note: "the source looks minified: hard to review" } : {}), last: ringFor(rt?.console?.slice(-3) ?? [], floor) };
   if (!sp) return { ...base, status: "not-installed", why: UNSPONSORED };
   if (sp && isBanned(w, sp.sponsor)) return { ...base, status: "suspended", why: `sponsor ${said(sp.sponsor)} is banned` };
   if (v.paused === true) { const pb = pausedBy(w, id, key);
@@ -563,12 +565,12 @@ function scriptStatus(w, st, id, name, v) {
     return { ...base, status: "dormant", why: `dormant: sponsor ${said(sp.sponsor)} (${role} now${since ? `, since seq ${since.seq}` : ""}) can no longer change ${lost.join(", ")}`, adopt: `an owner may: adopt {id: '${id}', script: '${name}'}` }; }
   return { ...base, status: rt?.status === "asleep" ? "asleep" : "active" };
 }
-function scriptsOf(w, st, id) {
-  return { scripts: allScripts(st).filter((x) => !id || x.id === id).map((x) => scriptStatus(w, st, x.id, x.name, x.v)),
+function scriptsOf(w, st, id, floor = null) {
+  return { scripts: allScripts(st).filter((x) => !id || x.id === id).map((x) => scriptStatus(w, st, x.id, x.name, x.v, floor)),
     ...(id && id !== "@world" ? {} : { imported: importedBehaviours(w, st) }), config: scriptsCfg(st), sandbox: w.scripts ? (sandboxUp(w) === true ? SR.ENGINE : "unavailable") : "none" };
 }
 /** The status view for a host's own readers (a server's debug panel): what `scripts {id?}` answers, without a request. */
-export function scriptsView(w, id) { if (!w.exists || w.state().status !== "ok") return { scripts: [], imported: [] }; return withAuthority(w, () => scriptsOf(w, w.state(), id)); }
+export function scriptsView(w, id, floor = null) { if (!w.exists || w.state().status !== "ok") return { scripts: [], imported: [] }; return withAuthority(w, () => scriptsOf(w, w.state(), id, floor)); }
 // an imported world carries its old bindings as @world imported-behavior:<name> (their old shape, kept as a record). The authority never runs them.
 const IMPORTED_WHY = "an imported behaviour, carried by translation from the world's old log. It doesn't run here: it was written for the old script API (world.emit, world.kv) with its author's rights and no declared scope. Re-install it as script:<name> on the thing it belongs to: rewrite the source for today's script API (docs/SCRIPTS.md), upload {text}, then set script:<name> {src, scope, on}";
 function importedBehaviours(w, st) {
@@ -617,6 +619,6 @@ const SCRIPT_VERBS = {
       if (!st.entities[a.id]?.c[`script:${a.script}`]) refuse("not-found", `${a.id} has no script:${a.script}`, "scripts lists them");
       const { cause: _c, dry: _d, ...ev } = a.test; // a test event is the event's own fields; never a cause (depth) of its own
       return { ok: true, dry: true, test: activate(w, a.id, a.script, { by: actor, ...ev, dry: true, requester: actor }) }; }
-    return { ok: true, ...scriptsOf(w, st, a.id) }; },
+    return { ok: true, ...scriptsOf(w, st, a.id, typeof w.sayFloor === "function" ? w.sayFloor(actor) : null) }; },
 };
 export { SCRIPT_VERBS, activate, drainAll, drainHeld, drainScripts, heldEvent, withAuthority };

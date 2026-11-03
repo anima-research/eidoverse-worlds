@@ -101,7 +101,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     const limit = pageLimit(msg.limit);
     if (msg.script != null) {
       // one script's own log ring + status — the author's console
-      const b = c.world.scripts.inspect(String(msg.script));
+      const b = c.world.scripts.inspect(String(msg.script), c.world.sayFloorFor(c));   // a say from before the asker came stays out (bot review #260 21)
       ws.send(JSON.stringify({ type: "debug", reqId: msg.reqId ?? null,
         script: String(msg.script),
         status: b?.status ?? "no such script",
