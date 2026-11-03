@@ -103,6 +103,13 @@ check("PG5 a zombie in the group is not counted as left running", suiteMembers(7
     /killGroup\(child\.pid, "SIGKILL", \{ exited: \(\) => !stuck \|\| gone\(\) \}\)/.test(rs) && !/killSuite\(/.test(kcBody) && /exitCode/.test(kcBody), kcBody);
 }
 
+{ // bot review #260 49: a table that never answers falls back to the running root's tree (taskkill /T), and to nothing once it exited
+  const calls: string[][] = [], never = () => new Promise<string | null>(() => {}), rec = async (a: string[]) => { calls.push(a); };
+  await (PG as any).killSuiteAsync(100, "SIGKILL", "win32", { exited: false, ms: 300, query: never, taskkill: rec }); const live = calls.splice(0);
+  await (PG as any).killSuiteAsync(100, "SIGKILL", "win32", { exited: true, ms: 300, query: never, taskkill: rec }); const dead = calls.splice(0);
+  check("PG17 the Windows table timing out kills the still-running root's tree (taskkill /PID root /T /F); an exited root's id is left alone",
+    JSON.stringify(live) === JSON.stringify([["/PID", "100", "/T", "/F"]]) && dead.length === 0, { live, dead });
+}
 { let answered = false, readAfter: boolean | null = null;
   await (PG as any).killSuiteAsync(100, "SIGKILL", "win32", { exited: () => { readAfter = answered; return true; }, query: async () => { answered = true; return "4 0\r\n50 4\r\n100 50\r\n777 100\r\n"; } });
   const src = (f: string) => fs.readFileSync(new URL(f, import.meta.url), "utf8");
