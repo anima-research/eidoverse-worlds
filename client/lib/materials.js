@@ -419,7 +419,8 @@ export const BODY_NO_CAST = /^(GOLD|wings)/;
 
 // TURN A BODY INTO A SHADOW CASTER, opt-in per body.
 //
-// Called by avatar.js for a body that has a lamp in it, and by nothing else --
+// Called by avatar.js for a body that has a lamp in it, and for the viewer's own
+// body when they opt in (videopanel 'my body casts a real shadow', applyOwnBodyShadow) --
 // so today it is Mythos and anyone else wearing an emissive chest. The rest of
 // the fleet keeps its blob shadow, which is what the world shipped with and
 // what the perf budget was written around.
@@ -496,9 +497,9 @@ export function prepareObject(root, { kind = 'model', foliage = true } = {}) {
   // in-frame on the first shadow render, and bodies bypass the distance-ranked
   // caster budget entirely. In a crowded room that is N bodies compiling.
   //
-  // So the decision moved to setBodyShadows(), which avatar.js calls only for
-  // a body that actually has a lamp inside it -- the case that motivated any
-  // of this. Janus: "set the change for now to only shadowed body by default
+  // So the decision moved to setBodyShadows(), which avatar.js calls for a lamp
+  // body and applyOwnBodyShadow for the viewer's own opted-in body -- the lamp
+  // case motivated any of this. Janus: "set the change for now to only shadowed body by default
   // if you have the lamp like mythos... we can test the performance of having
   // more on the shared server later."
   //

@@ -161,13 +161,13 @@ export function initVideoPanel() {
       (v) => { setShadowRes(+v); flashHint(`shadow resolution: ${v}²`); });
     resRow.hidden = !shadowsOn();
     const castRow = selectRow('shadow casters',
-      'How many things near you cast shadows at once (the nearest win; the rest still receive them). More looks richer and costs a shadow draw each. Under load the engine sheds some and brings them back after.',
+      'About how many things near you cast shadows at once (the nearest win; a few on the edge linger while they fade; your own body and lamp-wearers are extra; the rest still receive them). More looks richer and costs a shadow draw each. Under load the engine sheds some and brings them back after.',
       CASTER_CHOICES.map((v) => [v, `${v} nearest`]), getCasterCeiling(),
       (v) => { setCasterCeiling(+v); flashHint(`shadows from the ${v} nearest things`); });
     castRow.hidden = !shadowsOn();
     const meRow = checkRow('my body casts a real shadow',
       'Your own body throws a real shadow from the sun and lamps, instead of only the soft blob under your feet (the blob stays as the contact cue). Only your body — other people keep theirs unless they wear a lamp. Costs a few shadow draws; the first switch-on compiles its lit and depth shaders off the frame, so the shadow appears a moment after the tick.',
-      myShadowPref(), (on) => { setMyShadowPref(on); flashHint(`my shadow: ${on ? 'real' : 'blob only'}`); });
+      myShadowPref(), (on) => { setMyShadowPref(on); flashHint(`my shadow: ${on ? 'real' : 'blob only (a lamp keeps its real one)'}`); });
     meRow.hidden = !shadowsOn();
     body.appendChild(checkRow('shadows',
       'All cast shadows — the sun’s and the lamp shadow. Off is the cheapest single change on a weak GPU; flipping it recompiles nothing.',

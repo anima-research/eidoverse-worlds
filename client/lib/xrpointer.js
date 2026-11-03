@@ -39,8 +39,8 @@ export function dotVisible(mode, { target = false, surface = false } = {}) {
  *  button is held, or when the beam is always drawn: an idle hand in contextual or never mode must not reach out to
  *  every wall it hangs toward. An INTERACTABLE entity (below) is a target like a panel, button or not. */
 export const looksAtWorld = (mode, { grip = false, trig = false } = {}) => pointerVisibilityMode(mode) === 'always' || !!(grip || trig);
-/** INTERACTABLE: an entity that does something when you use it (owner, 10-02: "it does something when you trigger-click
- *  it"). The affordances look() reads out to agents (mcpl/agent.ts): its sockets (socket children: sit / mount; `sockets`
+/** INTERACTABLE: an entity with a seat or a reaction; the trigger selects it and the card offers sit/use (owner, 10-02:
+ *  "it does something when you trigger-click it"). The affordances look() reads out to agents (mcpl/agent.ts): its sockets (socket children: sit / mount; `sockets`
  *  is how many it has, world.js socketsOn) and reactions (use). The
  *  trigger on any entity also SELECTS it for editing (xr:select → the scene graph); that is an editor's act, not an
  *  affordance, so a plain wall is not a target. `comp`: the entity's component bag (world.js comps). */

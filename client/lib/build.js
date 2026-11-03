@@ -567,9 +567,8 @@ function selectWhenHere(id, ms = 3000) {
 
 // ---- lock: `comp {id, type: "lock", data: true}` nails a thing down. The
 // SERVER is the enforcement (it refuses place/remove/punt/mount/spawn/light
-// on a locked id for everyone, locker included); these guards keep the local
-// gesture honest — no preview that would have to snap back on refusal, and a
-// hint that teaches the unlock instead of a silent dead hand.
+// on a locked id for everyone, locker included). The drag previews; the release
+// asks the door (the lock question, editwrites.js); the inspector's hint teaches the unlock.
 function isLocked(id) { return !!bagOf(id)?.lock; }
 function commitPlace(before) {
   if (!selected) return;

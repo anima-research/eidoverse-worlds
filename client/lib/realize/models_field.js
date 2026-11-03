@@ -15,8 +15,8 @@ import { kindOf, isMeshBag } from '../../../shared/protocol/kind.js';
 export { kindOf, isMeshBag };
 
 /** What the realizer needs to know about a realized id to detect identity
- *  drift. kind: kindOf's word; lib only meaningful for models.
- *  @typedef {{ kind: 'model'|'mesh'|'light'|'empty', lib?: string }} RealizedView */
+ *  drift. kind: kindOf's word; model only meaningful for models.
+ *  @typedef {{ kind: 'model'|'mesh'|'light'|'empty', model?: string }} RealizedView */
 
 /** Diff folded entities against the realized view.
  *
@@ -26,10 +26,10 @@ export { kindOf, isMeshBag };
  *  - realized as one kind, folded as another (a light component landing on an
  *    Empty's id, or a model replacing a light — the id namespace is flat) →
  *    rebuild (retire + create)
- *  - a model whose `lib` changed → rebuild. The fold OVERWRITES a same-id
- *    spawn (that is what the reference fold does; the realizer projects
- *    state, so it follows — note: PROTOCOL.md §3 says "no-op if id exists",
- *    which the reference implementation contradicts; flagged upstream, and
+ *  - a model whose `model` changed → rebuild. The fold leaves a same-id create
+ *    as a no-op (fold.js create-live); a changed model arrives as a set (the
+ *    realizer projects state, so it follows — PROTOCOL.md §3 "no-op if id
+ *    exists" holds; and
  *    whichever way that lands, this planner keeps projecting the fold).
  *  - everything else (transform, params, comps) is a cheap in-place refresh
  *    the hosted half applies directly; not this planner's business.

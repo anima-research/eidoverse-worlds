@@ -1,7 +1,7 @@
 // xrask — the centre card's questions, inside a headset. confirmcenter.js is a DOM card, and a DOM card isn't drawn in
 // an immersive session: an edit to a locked thing waited on a question nobody could see, and editwrites's settled() then
 // made every later undo wait behind it (top-down review 10-06, S1-3). In VR the same question rides a quad: by default
-// a hidden xr-flagged DOM frame that domquad.js mirrors (as the VR keyboard does), or on the canvas path (?domquads=0) a
+// a hidden xr-flagged DOM frame that domquad.js mirrors (as the VR keyboard does), or on the canvas path (?canvasquads=1) a
 // schema panel in xrpanels.js; showXRPanel picks whichever is live, and either's buttons answer it. Refusals, which are toasts
 // on the desk and therefore silent in a headset, show here too, with an OK.
 // R, 10-06 23:39: VR build mode comes later, but nothing should be broken in principle there.
@@ -37,7 +37,7 @@ function settle(v) {
   pending = null; showXRPanel('ask', false); repaint(); p.resolve(v);
 }
 function dispatch(action) { if (typeof action === 'string' && action.startsWith('c:')) settle(action.slice(2)); }
-registerXRPanel({ id: 'ask', title: 'question', fields, dispatch });   // the canvas-quad path (?domquads=0)
+registerXRPanel({ id: 'ask', title: 'question', fields, dispatch });   // the canvas-quad path (?canvasquads=1)
 // leaving the headset answers the open question with its cancel: nobody can see it now, and an unsettled ask holds every
 // later undo behind it (editwrites settled(); house review I19)
 bus.on('xr:state', (on) => { if (!on && pending) settle(pending.cancel); });
@@ -76,7 +76,7 @@ const PLAY_CARD_MS = 4000;
 bus.on('thingphysics-refused', ({ text, refused: x }) => {
   if (!xrActive() || pending || !text) return;
   const lost = x?.code === 'timeout' || x?.code === 'offline';
-  chooseXR({ title: lost ? "didn't go through" : 'refused — nothing changed', body: text, choices: [{ v: 'ok', label: 'OK' }], cancel: 'ok' });
+  chooseXR({ title: x?.mayHaveLanded ? 'no answer — it may still have landed' : lost ? "didn't go through" : 'refused — nothing changed', body: text, choices: [{ v: 'ok', label: 'OK' }], cancel: 'ok' });
   const mine = pending; setTimeout(() => { if (pending === mine) settle('ok'); }, PLAY_CARD_MS);
 });
 

@@ -31,7 +31,7 @@ export const COMMANDS = [
   { name: 'pushable', help: '/pushable on|off — your “Allow being moved” switch: whether people may shove, blast, drag, carry or seat you (on by default; Settings ▸ body has Allow being posed and touched and your allow/block lists)' },
   { name: 'kick', help: '/kick <name> [reason] — moderation: remove someone from this world (owner). Objects fly with /punt' },
   { name: 'punt', aliases: ['boot'], help: '/punt [thing|person] [power] — kick a thing at your feet into flight (Q); a person\'s name is the ragdoll shove (their consent decides)' },
-  { name: 'boom', aliases: ['blast'], help: '/boom [power] [radius] — a blast at your feet (builders): knocks over everyone who lets it and sends loose things flying (power 0.2–12 m/s, default 3; radius 0.5–30 m, default 4)' },
+  { name: 'boom', aliases: ['blast'], help: '/boom [power] [radius] — a blast at your feet (builders): knocks over everyone who lets it and sends loose things flying where the world has physics on (power 0.2–12 m/s, default 3; radius 0.5–30 m, default 4)' },
   { name: 'grab', aliases: ['pickup', 'take'], help: '/grab [thing] — pick up the nearest thing you can carry, or the one named (T)' },
   { name: 'put', help: '/put — set down what you hold, straight down from your hand (T)' },
   { name: 'drop', help: '/drop — let go of what you hold: it falls' },

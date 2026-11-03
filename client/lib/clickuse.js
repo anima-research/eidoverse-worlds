@@ -1,6 +1,6 @@
 // clickuse — the mouse on things (R, 2026-10-10, first minute of the desktop test: "there's a label over the balls that
 // says 'grab one', but left-clicking on them doesn't do anything"). Her rule: LEFT-CLICK is the thing's primary use
-// (grab a ball, open a door, sit on a seat); RIGHT-CLICK opens a menu of everything it offers. The keys stay (T, C, E, X):
+// (grab a ball, open a door, sit on a seat); RIGHT-CLICK opens a menu of everything it offers. The keys stay (T, Q, E, X):
 // the mouse sends the same requests they do, so the authority's refusals read the same.
 //   A click is a press and release that didn't travel (a drag is the camera's orbit, either button). Not in build mode
 // (a click selects there), not in a headset, not over a person (bodydrag's capture listener takes that press first).
@@ -35,7 +35,7 @@ export function offersOf(id, { spot = null } = {}) {
   // every offer that needs me near it carries `reach`: the click walks me there first (R 10-11 23:32: "the walk-to rule
   // should probably apply to any use action"); without one the offer runs where I stand
   const near = () => physicsApi.inReach(id), out = [], add = (k, pre, post, run, reach = null) => out.push({ k, label: `${pre}${name}${post}`, parts: [pre, name, post], run, ...(reach ? { reach } : {}) });
-  // from the menu a put or a throw is the plain one: at my feet, the way I face (the cursor's spot is the click and the C key)
+  // from the menu a put or a throw is the plain one: at my feet, the way I face (the cursor's spot is the click and the Q key)
   if (held) { add('put', 'put ', ' down', () => physicsApi.put(id)); add('throw', 'throw ', '', () => physicsApi.throw()); }
   // holding something else, on another thing: set it down on that thing where the click landed (R, 10-10: "you can't click
   // to place it down on another grabbable object ... 'Put down [held item] on [clicked-on item]' at the place that was clicked")

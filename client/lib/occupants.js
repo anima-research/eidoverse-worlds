@@ -37,6 +37,7 @@ export function initOccupants() {
   // pending immediately — the order is the whole guarantee
   bus.on('avatar-updated', ({ name }) => cache.note(name, NaN));
   bus.on('avatar-profile-updated', ({ name, rev }) => cache.note(name, Number(rev)));
+  // not re-fetched on reconnect: a profile change while offline waits for its event
   cache.init();
 }
 

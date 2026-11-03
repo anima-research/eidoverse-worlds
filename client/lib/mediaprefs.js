@@ -31,5 +31,5 @@ export const RIGHTS_WARNING = 'Make sure you own the rights to this before you u
 /** The words the Settings row and the editor use for the setting. */
 export const UNTRUSTED_WORDS = {
   label: 'Allow untrusted links',
-  hint: 'Pictures and sounds can link to other websites. Trusted big hosts (YouTube, Twitch, Vimeo, SoundCloud, VRCDN and the like) always play. Any other site sees your address when your browser fetches from it, so links to them play only if this is on. Off by default; only your browser is affected.',
+  hint: 'Pictures and sounds can link to other websites. Media files on trusted big hosts (YouTube, Twitch, Vimeo, SoundCloud, VRCDN and the like) always play (a page link, like a YouTube watch URL, isn't playable yet). Any other site sees your address when your browser fetches from it, so links to them play only if this is on. Off by default; only your browser is affected.',
 };

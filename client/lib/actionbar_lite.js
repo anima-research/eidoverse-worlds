@@ -7,9 +7,9 @@
 // scene — there is no body to pose and no VR to register into.
 //
 // So this is the same VOCABULARY (animnames.js, the shared data the split bought) with
-// a phone's interaction model: a wrapping row of buttons that send the verb. Everyone
-// with a renderer sees the animation; the sender sees it in chat, like they do for
-// anything else they say.
+// a phone's interaction model: a wrapping row of buttons that put ONE gesture on the
+// presence pose (playOnce, lite.js). Everyone with a renderer sees the animation;
+// nothing is said in chat.
 import { ANIM_ORDER, ANIM_ICONS } from './animnames.js';
 import { bus } from './base.js';
 

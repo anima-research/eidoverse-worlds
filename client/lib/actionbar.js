@@ -91,25 +91,7 @@ export function initActionBar() {
   // ONLY AT DEFAULT: _placed is true once the owner has dragged or resized the bar
   // (persisted in state), so a hand-sized bar keeps its size and this clamp does
   // nothing. A saved configuration is honoured.
-  // CHROME CLEARANCE, and the trap in it (antra-tess #185 B2).
-  //
-  // This loop takes g.right of every obstacle as "space consumed from the left",
-  // which is only true of LEFT-anchored chrome. Every obstacle currently in the band
-  // is left-anchored — measured #dock cssL=0 at left 0, #micbtn cssL=44, #earbtn
-  // cssL=76 — so the arithmetic is correct for all of them today.
-  //
-  // `.capnotice` is KEPT in the list but is inert at every shipped width: the card
-  // sits at top:389 (>=1068), top:64 (901-1067), top:102 (<=900), all of which fail
-  // `g.top < 60`. That entry is NOT future-proofing. If the card ever returns to the
-  // band this bare-g.right arithmetic is precisely what breaks — clearRight becomes
-  // ~innerWidth and room goes negative (measured -6, which fed snapTo a negative
-  // width and reflowed the 9-across bar to a 48x350 column).
-  //
-  // THE ANCHOR IS NOT RECOVERABLE from computed style, so do not try to detect it
-  // here: CSSOM 9 resolves left AND right to used values for a positioned element,
-  // so `.capnotice` reports cssL=930px and cssR=10px simultaneously and satisfies
-  // both an `!== 'auto'` test and an edge-identity test. Re-raising the card requires
-  // an anchor the obstacle DECLARES, not a test against its rendered geometry.
+  // CHROME CLEARANCE (antra-tess #185 B2): anchor-aware, see roomFor below.
   const roomFor = () => {
     // the chrome that shares the bar's y-band: the rail plus the mic/ear pair.
     // ANCHOR-AWARE: chromeCost() (windows.js) reads each obstacle's DECLARED side and
@@ -167,9 +149,9 @@ export function initActionBar() {
   // were reachable: "Make sure the action bar isn't under the mic or headphones."
   // Both hold if the clamp keeps its hands off a saved WIDTH and still refuses to
   // paint the bar beneath #micbtn/#earbtn/#dock. Frames cap at Z_HI=25 and that
-  // chrome sits at 27 (#dock), 45 (#micbtn/#earbtn, mictoggle.js) and 60
-  // (.capnotice) — the loop measures all four — so a bar left there can never win
-  // by stacking. (#emenu 50 and #trayzone 28 are not in the list at all.)
+  // chrome sits at 27 (#dock), 45 (#micbtn/#earbtn, mictoggle.js) and #hudstatus
+  // (statuschips.js) — the loop measures those four — so a bar left there can never win
+  // by stacking. (#emenu 50, #trayzone 28 and .capnotice are not in the list at all.)
   f.onShow(() => {
     // RE-DERIVE, DO NOT RATCHET. `Math.min(state.w, room)` can only ever shrink, and
     // state.w is restored from localStorage — so one bad width outlives the condition

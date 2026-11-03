@@ -4,13 +4,13 @@
 // (grab anywhere on the mesh). The gizmo is the precise version of the same
 // three gestures: axis handles you can see. It never replaces their drag —
 // build.js vetoes its mesh-grab while a handle is hot (setPointerVeto), and
-// both commit the same way: ONE `place` carrying the full pose on release,
+// both commit the same way: ONE request on release (editOps' set transform, expecting where the drag began),
 // an inverse from the fold on the undo stack, others watching the drag at
 // pose cadence. Rotate turns about any axis and commits the full orientation
 // q (design §5; a pure turn about up on a yaw-only thing stays a yaw); scale
-// is uniform (the log has one number).
-// Locked or mounted things get no gizmo — the schema says their transform is
-// read-only, and a handle you can't drag is a lie.
+// commits one number (the Y handle's; the others follow — editschema.js scale3).
+// A locked thing's release asks the door; a thing riding a moving part gets no
+// gizmo — the schema says its transform is read-only, and a handle you can't drag is a lie.
 
 import { THREE, scene, camera, canvas } from './core.js';
 import { bus } from './base.js';

@@ -133,7 +133,7 @@ export function profileStatus(profile, currentAvatarSha256, currentClipSha256) {
 
 /** Legacy sockets were authored under root-at-socket and may encode either a
  *  physical plane or an empirically-placed root target — nothing infers which.
- *  Only a body block that says so — `body.anchor: 'surface'` (D14: one enum,
+ *  Only an anchor that says so — the station's top-level `anchor: 'surface'`, or the older `body.anchor` — (D14: one enum,
  *  shared/sockbody.js ANCHORS, so a socket can't say "surface" and "hips" at
  *  once) — consumes a profile; everything else (absent, another anchor, typos,
  *  numbers) is legacy by construction. `sock` is the socket component

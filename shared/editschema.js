@@ -999,7 +999,7 @@ const NEEDS = {
     plan: (ent, id, name) => ({ choice: { need: 'Model', options: [],
       prompt: `${article(name)} ${name.toLowerCase()} needs a model to act on (${id} has none) — place a model from the Library and add the ${name} to it, or put ${id} under one` } }),
   },
-  // reactions push the WHOLE entity's pendulum (server/reactions.ts): a part's
+  // reactions push the WHOLE entity's pendulum (shared/protocol/authority/use.js, the pendulum push): a part's
   // pendulum does not count, and a whole-entity spin is in the way
   Pendulum: {
     met: (ent) => ent?.motion?.type === 'pendulum',
