@@ -11,7 +11,7 @@ export function requestsOf(records, ns = 'water') {
   for (const v of records) if (!RECORD_VERBS.includes(v.verb)) throw Error(`unsupported record: ${v.verb}`);
   const entries = records.map((v, seq) => ({ seq, ts: 0, actor: 'import', ...structuredClone(v) }));
   const st = emptyState(); for (const e of entries) foldEntry(st, e);
-  const effects = new Map(), deferred = deferredFeatures(entries), out = project(st, null, null, namespaceOf(ns), null, { effects }), blank = project(emptyState(), null, null, namespaceOf(ns))['@world'];
+  const effects = new Map(), deferred = deferredFeatures(entries), unknown = [], out = project(st, null, null, namespaceOf(ns), null, { effects, unknown }), blank = project(emptyState(), null, null, namespaceOf(ns))['@world'];
   const held = new Set(deferred.map((u) => `${u.id}\0${u.component}`));
   const base = (k) => k.split('/').pop().split(':')[0];
   const ph = (id) => `$${id}`, depth = (id) => { let n = 0; for (let p = out[id]?.parent?.to; p && n < 64; p = out[p]?.parent?.to) n++; return n; };
@@ -24,5 +24,5 @@ export function requestsOf(records, ns = 'water') {
   for (const [k, v] of Object.entries(out['@world'])) if (JSON.stringify(v) !== JSON.stringify(blank[k])) ops.push({ verb: 'set', args: { id: '@world', component: k, value: v } });
   // the derived particle effects the batch names (translate-v1 @24/@34), each an upload {effect} sent before it
   const uploads = [...effects.values()].map((effect) => ({ verb: 'upload', args: { effect } }));
-  return { batch: { verb: 'batch', args: { ops } }, uploads, deferred: deferred.map(({ component, feature, id }) => ({ component, feature, id })), mapped: [...volumeMappings(st), ...carriedMappings(st)], unmapped: unmappedOf(st) };
+  return { batch: { verb: 'batch', args: { ops } }, uploads, deferred: deferred.map(({ component, feature, id }) => ({ component, feature, id })), mapped: [...volumeMappings(st), ...carriedMappings(st)], unmapped: [...unmappedOf(st), ...unknown] };   // unknown: keys a v4 component lacks, carried as imported:<component>
 }
