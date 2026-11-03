@@ -15,6 +15,7 @@ export const GATE_WORDS = {
 export const KEY = 'ew-body-consent';
 const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } };
+const lsDel = (k) => { try { localStorage.removeItem(k); } catch { /* private mode */ } };
 const plainList = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).filter(([id, n]) => typeof id === 'string' && typeof n === 'string')) : {});
 
 /** What is stored: {move?, touch?, allow: {id: name}, block: {id: name}, queue: [{op, id, name, at, world, acked}]}; a gate
@@ -58,9 +59,11 @@ export function readStored(get = lsGet, now = Date.now()) {
 let current = readStored();
 // a guest's id is minted per connection, so their entries last for the visit: in memory only, never stored (review full-260 #2)
 const guests = new Set();
-const save = () => lsSet(KEY, JSON.stringify({ v: CONSENT_SHAPE, move: current.move, touch: current.touch, ...(current.notice ? { notice: true } : {}), ...(Object.keys(current.opened ?? {}).length ? { opened: current.opened } : {}),
+const save = () => { lsSet(KEY, JSON.stringify({ v: CONSENT_SHAPE, move: current.move, touch: current.touch, ...(current.notice ? { notice: true } : {}), ...(Object.keys(current.opened ?? {}).length ? { opened: current.opened } : {}),
   allow: Object.fromEntries(Object.entries(current.allow).filter(([id]) => !guests.has(id))), block: Object.fromEntries(Object.entries(current.block).filter(([id]) => !guests.has(id))),
   queue: current.queue.filter((q) => !guests.has(q.id)) }));
+  // main's keys mirror the gates so a client rolled back to them reads the current choice, never a stale one (bot #143); posable '1' was posing only, within touch
+  for (const [g, k] of [['move', 'ew-pushable'], ['touch', 'ew-posable']]) { if (typeof current[g] === 'boolean') lsSet(k, current[g] ? '1' : '0'); else lsDel(k); } };
 save();
 const listeners = new Set();
 const changed = () => { save(); for (const fn of listeners) fn(current); };
