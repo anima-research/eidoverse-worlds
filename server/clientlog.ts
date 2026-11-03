@@ -6,7 +6,7 @@ import { newBucket, admitMessage, type MsgBucket } from "./msgrate.ts";
 
 export const LIMITS = {
   ipPer10Min: 30,                        // posts per address (IPv6 by /64) per 10 min, the burst the same
-  senderPer10Min: 10, senderBurst: 3,    // posts per signed-in account (else per address) per 10 min, 3 in a row
+  senderPer10Min: 30, senderBurst: 10,   // posts per signed-in account (else per address) per 10 min, 10 in a row: several tabs and an agent fit (RESEARCH-bf4-questions)
   bodyBytes: 256 * 1024,                 // a request above this is 413, by Content-Length and again while reading
   lineChars: 2000, lines: 2000,          // inside a request: cut, never refused
   senderBytes: 2 * 1024 * 1024,          // a sender's file keeps its newest 2 MB
