@@ -17,6 +17,7 @@ import { opsOf, applyInPlace, emptyState, PURGED, Malformed } from "./fold.js";
 import { simFolder, simCutOf, advanceSim, tickOf, carried } from "./simlayer.js";
 import { viewState } from "./view.js";
 import { dec, learnNames, actorName } from "./names.js";
+import { shapeReady, shapeParams } from "../terrainshape.js";
 
 const idOut = (s) => dec(s) ?? s;
 /** A say's spoken trio (the authority validated it at admission; this is a reader's own guard): display metadata only. */
@@ -82,6 +83,19 @@ export function makeReplica({ freeze = true } = {}) {
   // engine's flight, and it rests bit for bit where the authority will log the rest.
   let E = [], folder = null;
   v.sim = null; v.simVersion = 0;
+  // A heightmap's grid can land after the join (the client fetches it; the authority reads its disk), and until then the
+  // sim stands on the noise fallback. While it's missing, keep the cut and every entry fed since; when it lands, refold
+  // from them (#260 review #144). Bounded: a grid that never comes stops the replay rather than growing it.
+  let waitGround = null; const WAIT_MAX = 5000;
+  const groundMissing = () => { const t = v.st?.entities?.["@world"]?.c?.terrain; return !!t && typeof t === "object" && !shapeReady(shapeParams(t)); };
+  const holdGround = (snap) => { waitGround = groundMissing() ? { snap: JSON.parse(JSON.stringify(snap)), fed: [] } : null; };
+  const groundLanded = () => {
+    if (!waitGround || groundMissing()) return;
+    const { snap, fed } = waitGround; waitGround = null;
+    startSim(snap);
+    for (const [seq, e] of fed) { E[seq] = e; folder.feed(seq); if (!(e.kind === "sim" && e.verb === "launch")) delete E[seq]; }
+    v.sim = folder.view(); v.simVersion++;
+  };
   const startSim = (snap) => {
     E = []; const cut = snap.sim ?? null;
     for (const [q, e] of Object.entries(cut?.launches ?? {})) E[Number(q)] = e;
@@ -97,14 +111,16 @@ export function makeReplica({ freeze = true } = {}) {
     v.you = typeof snap.you === "string" ? snap.you : null; learn(snap.names);
     freezeAll();
     rebuildIndex();
+    holdGround(snap);
     startSim(snap);
   };
-  v.reset = () => { v.active = false; v.st = null; v.head = -1; v.worldId = null; E = []; folder = null; v.sim = null; v.simVersion++; kids.clear(); par.clear(); };
+  v.reset = () => { waitGround = null; v.active = false; v.st = null; v.head = -1; v.worldId = null; E = []; folder = null; v.sim = null; v.simVersion++; kids.clear(); par.clear(); };
   /** A copy of the canonical sim (null when the world runs no carried engine), to advance for display. */
   v.simClone = () => (v.sim?.sim ? JSON.parse(JSON.stringify(v.sim.sim)) : null);
   /** The engine's state at display time t (ms, the authority's clock): a cached copy, advanced forward only. */
   let pres = null, presV = -1;
   v.simAt = (t) => {
+    groundLanded();
     if (!v.sim?.sim) return null;
     if (presV !== v.simVersion || !pres || tickOf(pres, t) < pres.tick) { pres = v.simClone(); presV = v.simVersion; }
     const k = tickOf(pres, t); if (k > pres.tick) advanceSim(pres, k);
@@ -116,6 +132,7 @@ export function makeReplica({ freeze = true } = {}) {
   v.ingest = (entries, from, names) => {
     learn(names);
     if (!v.active) return { changed: false, says: [], resync: false };
+    groundLanded();
     const says = []; let changed = false, ts = null, actor = null, lastAct = null, sky = null;
     for (let i = 0; i < (entries?.length ?? 0); i++) {
       const seq = from + i; const e = entries[i];
@@ -134,7 +151,10 @@ export function makeReplica({ freeze = true } = {}) {
         } catch (x) { if (!(x instanceof Malformed)) throw x; ok = false; }
       }
       // (only launches are kept: a later rest names its launch as its cause; nothing else is read back)
-      if (ok && folder) { const rev = v.sim?.rev; E[seq] = e; folder.feed(seq); if (!(e.kind === "sim" && e.verb === "launch")) delete E[seq]; if (v.sim?.rev !== rev) v.simVersion++; }   // the engine moved: the screen re-copies; a say or a label didn't: it keeps its copy
+      if (ok && folder) { const rev = v.sim?.rev; E[seq] = e; folder.feed(seq);
+        if (waitGround) { if (waitGround.fed.push([seq, e]) > WAIT_MAX) waitGround = null; }
+        else if (e.kind === "change" && groundMissing() && opsOf(e).some((o) => o?.id === "@world" && o?.comp === "terrain"))   // a new heightmap mid-session: wait from here
+          holdGround({ state: wireState(v.sim.st), sim: simCutOf(v.sim, E) }); if (!(e.kind === "sim" && e.verb === "launch")) delete E[seq]; if (v.sim?.rev !== rev) v.simVersion++; }   // the engine moved: the screen re-copies; a say or a label didn't: it keeps its copy
       if (e?.kind === "say" && typeof e.body?.text === "string") says.push({ seq, ts: e.ts, actor: v.nameOf(e.actor), by: String(e.actor), text: String(e.body?.text ?? ""), ...(e.body?.to ? { to: v.nameOf(e.body.to) } : {}), ...spokenOf(e.body) });
       if (e?.kind === "act") { lastAct = v.nameOf(e.actor); if (actor === null) actor = lastAct; }
       if (Number.isInteger(e?.ts)) ts = e.ts;

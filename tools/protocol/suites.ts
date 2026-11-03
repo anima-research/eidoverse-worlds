@@ -26,6 +26,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["gaps", "gaps-check.ts", 2],         // research 34: creator rights, presence track, rate, two hands
   ["phys", "phys-check.ts", 1],         // design 20: launches, rests by cause, carriers; as the running server holds it (shapes, punt, release pose, one clock) and as a client folds it
   ["physlive", "physlive-check.ts", 1],
+  ["groundlate", "ground-late-check.ts", 1], // #144: a joiner whose heightmap grid lands late refolds from its cut and agrees with the authority
   ["phystick", "phystick-check.ts", 1], // the engine's heartbeat: rests log on the server beat, requests stay cheap, passes are bounded
   ["sclock", "sclock-check.ts", 1],     // the client's server clock slews toward a new estimate instead of stepping
   ["physseeds", "physseeds-check.ts", 1], // research physics-seeds 10-07: shape grammar, physical properties, spin on release, the state sample, one clock (a real server whose log is ahead of wall time)
