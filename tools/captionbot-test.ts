@@ -294,5 +294,20 @@ console.log('— L. a vanished screen holds the line (the authority says not-fou
   (w as any).halted = 'x';   // keep its retry timer from rescheduling into a socket that isn't there
 }
 
+console.log('— M. the join line: the captioners hint keeps the screen\'s existing list (set replaces it; bot #303) —');
+{
+  const logs: string[] = [];
+  const w = new WorldClient({ url: 'ws://127.0.0.1:1/ws', token: 't', world: 'w', actor: 'cap', screenId: 'cinema', log: (m) => logs.push(m), agent: false });
+  const RealWS = globalThis.WebSocket;
+  (globalThis as any).WebSocket = class { onopen: any; onclose: any; onmessage: any; send() {} close() {} };   // no socket: the snapshot is handed in
+  try {
+    w.connect();
+    (w as any).ws.onmessage({ data: JSON.stringify({ type: 'snapshot', cut: { you: 'cap-1', head: 0, state: { cinema: { born: 0, c: { captioners: { v: { ids: ['keeper'] } } } } } }, yourRights: { role: 'member' } }) });
+  } finally { (globalThis as any).WebSocket = RealWS; }
+  const joined = logs.find((l) => /^joined/.test(l)) ?? '';
+  check('not a captioner yet: the hint lists the existing captioner AND me, so the set keeps the first', /value: \{ids: \["keeper", "cap-1"\]\}/.test(joined) && /NOT one of cinema's captioners/.test(joined) && /screen cinema present/.test(joined), joined);
+  (w as any).halted = 'x';
+}
+
 console.log(`\n${pass} ok, ${fail} failed`);
 process.exit(fail ? 1 : 0);

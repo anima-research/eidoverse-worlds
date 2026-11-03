@@ -9,8 +9,9 @@
 // verb → speech bus → speakOwnSays → engine → generator → sender). It mutates nothing: own spawned
 // server, throwaway world dir, models fetched from disk.
 //
-//   Requirements: playwright + chromium (run from a dir that has them, e.g.
-//   `cd ~/lab && node <repo>/tools/tts-acceptance.mjs`), a piper voice pair:
+//   Requirements: playwright + chromium installed in the repo (or NODE_PATH
+//   pointing at a dir that has them — bare imports resolve from this file, not
+//   the cwd), a piper voice pair:
 //     VOICE_ONNX=/path/voice.onnx VOICE_CFG=/path/voice.onnx.json
 //
 // Emits a provenance-bound receipt (JSON) on stdout: model/config sha256,

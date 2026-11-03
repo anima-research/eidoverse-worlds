@@ -59,9 +59,8 @@ check('postures lead, in sit/stand/lie order', tiles().slice(0, 3).map((t) => t.
 check('gestures follow in ANIM_ORDER with their number key', tiles().slice(3).every((t, i) => t.dataset.anim === ANIM_ORDER[i] && t.title === `${ANIM_ORDER[i]} — key ${i + 1}`));
 // minW is widthFor(1), NOT widthFor(3). A real resize clamps at f.minW
 // (windows.js:155), so a 124px floor made ONE column unreachable by drag however
-// snapTo computed — R: "Action bar still can't go 1x wide, 9x tall." The 3-column
-// floor still applies on the WIDTH-ONLY path inside snapTo (see below); it just
-// no longer blocks the frame itself.
+// snapTo computed — R: "Action bar still can't go 1x wide, 9x tall." snapTo floors
+// cols at 1 (actionbar.js `Math.max(1, …)`), on every path.
 check('default frame is 9×1: w=widthFor(9)=352, h=ROW_H, minW=widthFor(1) so 1 column is draggable', f.opts.w === 352 && f.opts.w === widthFor(9) && f.opts.h === ROW_H && f.opts.minW === widthFor(1), JSON.stringify(f.opts));
 check('an XR panel registers with 3 postures + 6 gestures', xrPanels.length === 1 && xrPanels[0].fields().map((x: any) => x.k).join() === 'sit,stand,lie,' + ANIM_ORDER.join());
 
@@ -132,14 +131,11 @@ console.log('ACTIONBAR — B2: a clamp that cannot help stands down (antra-tess 
   // the guard is unreachable today and asserting it would be writing a test for a
   // state the product cannot enter.
   //
-  // TWO MORE UNBOUND LINES, named rather than left looking tested (round 4):
-  //   `g && g.width &&` in the obstacle loop — dropping the width guard leaves 36/0,
-  //     because no fixture supplies a zero-width rect.
-  //   any change to `clearRight` that only INCREASES consumption — e.g. +400 leaves
-  //     36/0, because the narrow-room assertion is a `<=` bound and over-clamping
-  //     satisfies it. Only under-clamping is caught.
-  // Both measured at this head. They are cheap to bind and are not bound; a reader
-  // should not infer coverage from this block's green.
+  // ONE MORE UNBOUND LINE, named rather than left looking tested (round 4):
+  //   `g && g.width &&` in the obstacle loop — dropping the width guard leaves the
+  //     suite green, because no fixture supplies a zero-width rect.
+  // Cheap to bind and not bound; a reader should not infer coverage from this block's
+  // green. (Over-clamping IS caught since the 640px rail fixture below asserts `=== 352`.)
 
   // THE WINDOW THE STAND-DOWN ABANDONED. Room 123 is too small for the 352px
   // default but large enough for a real bar; standing down left 352 and painted
@@ -239,15 +235,16 @@ console.log('ACTIONBAR — B2: a clamp that cannot help stands down (antra-tess 
   // ANCHOR-AWARENESS ITSELF, bound. The two fixtures above cannot see it: a LEFT-anchored
   // rail and a STRETCHED card both charge `g.right` to the left under either the old
   // arithmetic or the new one, so they agree by coincidence. Only a RIGHT-anchored
-  // obstacle IN the bar's row separates them — and that is exactly antra-tess #185 B2:
+  // obstacle IN the bar's row separates them — the antra-tess #185 B2 geometry, on
+  // #hudstatus (`.capnotice` is not in roomFor's list, actionbar.js, so a card never binds):
   //   old (g.right as left-consumption): clearRight=1270, room=-6  -> bar floors to 48
   //   new (anchor-aware):                costL=0, costR=330, room=934 -> bar keeps 352
   document.body.innerHTML = '';
-  const rightCard = mk('.capnotice', 950, 1270, 10, 45, { anchor: 'right' });
+  const rightChips = mk('#hudstatus', 950, 1270, 10, 45, { edge: 'right' });
   f._state.w = 352; f._state.h = ROW_H; (f as any)._placed = false; f.show();
-  check('a RIGHT-anchored card in the row does not eat the bar from the left',
+  check('RIGHT-anchored chips in the row do not eat the bar from the left',
     f._state.w === 352, `w=${f._state.w} — charging its g.right to the left gives room -6 and floors the bar to 48`);
-  rightCard.remove();
+  rightChips.remove();
   // Remove only what this block added. NOTE, corrected after round 4 measured it:
   // an earlier version of this comment claimed the `el !== f.el` guard prevents
   // orphaning the stub's frame element. It does not — `f.el` is ALREADY detached
@@ -308,8 +305,7 @@ check('a 10px drag floors at ONE column, wrapping to 9 rows', f._state.w === wid
 // make it stack 1 wide 9 tall, for example." snapTo derived BOTH w and h from
 // the column count, so the bar could only ever be as tall as its width implied.
 // windows.js:427 already passes (state.w, state.h); this self-sizer was discarding the
-// second argument. The 1-column floor applies only when a height was asked for,
-// so the width-only path below still clamps at 3.
+// second argument. snapTo floors cols at 1 on every path (`onResize(10)` above).
 // VERTICAL, BY WRAPPING. R, 2026-09-11: "1 wide 9 tall". Columns come from the
 // dragged WIDTH and the rows follow — height is a consequence, never an input.
 // An earlier version took rows from a dragged height and, because windows.js:427
@@ -364,12 +360,13 @@ check('the tile plays the gesture on my body and sets myState.anim', played[0] =
 check('the fired tile is lit', tile('[data-anim=wave]').classList.contains('on'));
 myState.anim = null;   // net.js clears it on the first pose send
 paint();
-check('fired tile stays lit after net.js clears myState.anim (t+0)', tile('[data-anim=wave]').classList.contains('on'));
+const litCount = () => tiles().filter((t) => t.classList.contains('on')).length;
+check('fired tile stays lit after net.js clears myState.anim (t+0), and it is the only lit tile', tile('[data-anim=wave]').classList.contains('on') && litCount() === 1, `lit=${litCount()}`);
 nowMs += 1400; paint();
-check('still lit at t+1.4 s', tile('[data-anim=wave]').classList.contains('on'));
+check('still lit at t+1.4 s, still the only one', tile('[data-anim=wave]').classList.contains('on') && litCount() === 1, `lit=${litCount()}`);
 nowMs += 200; paint();
 check('dark at t+1.6 s', !tile('[data-anim=wave]').classList.contains('on'));
-check('no other tile was ever lit by it', tiles().every((t) => !t.classList.contains('on')));
+check('no other tile was ever lit by it', litCount() === 0);
 myState.anim = 'clap'; paint();   // a number key set it elsewhere
 check('a number-key gesture (myState.anim) lights its tile', tile('[data-anim=clap]').classList.contains('on') && !tile('[data-anim=wave]').classList.contains('on'));
 myState.anim = null; paint();

@@ -73,7 +73,9 @@ const openPanels = async (pg) => {
   await openMenu(pg);
   const b = await box(pg, '#emenu .mrow[data-item="panels"]');
   await pg.mouse.move(b.cx - 4, b.cy); await pg.mouse.move(b.cx, b.cy); await sleep(300);
-  if (!(await state(pg)).sub) { console.log('  · Panels ▸: the hover did not open it; clicking'); await pg.mouse.click(b.cx, b.cy); await sleep(200); }
+  const hovered = !!(await state(pg)).sub;
+  if (!hovered) { console.log('  · Panels ▸: the hover did not open it; clicking'); await pg.mouse.click(b.cx, b.cy); await sleep(200); }
+  return hovered;
 };
 const away = async (pg) => { await pg.mouse.move(900, 420); await sleep(700); };
 
@@ -99,10 +101,10 @@ try {
   await pg.evaluate(() => document.getElementById('toasts')?.replaceChildren());
 
   // PANELS ▸
-  await openPanels(pg);
+  const hovered = await openPanels(pg);
   const sub = await box(pg, '#emenu-sub'), prow = await box(pg, '#emenu .mrow[data-item="panels"]'), m2 = await box(pg, '#emenu');
   check('hovering Panels opens its flyout beside the menu, level with its row, inside the viewport',
-    sub && Math.abs(sub.l - (m2.r + 2)) <= 1 && Math.abs(sub.t - (prow.t - 6)) <= 1 && sub.b <= 720 && sub.r <= 1280, JSON.stringify({ sub, prow, m2 }));
+    hovered === true && sub && Math.abs(sub.l - (m2.r + 2)) <= 1 && Math.abs(sub.t - (prow.t - 6)) <= 1 && sub.b <= 720 && sub.r <= 1280, JSON.stringify({ sub, prow, m2 }));
   await shot(pg, '03-panels-1280x720.png');
 
   // EVERY PIN, on → off → on, under a real mouse

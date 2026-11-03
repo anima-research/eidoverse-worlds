@@ -9,8 +9,8 @@
 //    canon-identical; Sky and Weather partition state.sky; each component at most once
 // 2. picking a sky REPLACES the Sky (no leftovers from the old one) and keeps
 //    the Weather; a ground/grass pick changes only its own dial
-// 3. edits: every card field resolves, commits as the door requests (the sky
-//    and weather tools, set/delete @world terrain|grass), reads back as typed;
+// 3. edits: every card field address resolves; a representative edit per card commits as the door
+//    requests (the sky and weather tools, set/delete @world terrain|grass) and reads back as typed;
 //    the door's undo puts the world back; the owner gate
 // 4. the tab memory: Build the first time (and for a pre-Build layout), then
 //    whatever was used last
@@ -80,17 +80,13 @@ console.log('1. the alias both ways, through the real door:');
   step(...grassReq({ preset: 'mojave', width: 90, depth: 80, center: [0, 0], density: 1.4 }));
   step('weather', { weather: 'clear', keepSky: false });                         // discards the standing sky
   step('sky', {});
-  // KNOWN BUG (reported 2026-10-06, a door/catalogue mismatch, not fixed here): a weather pick under a forecast is a
-  // manual override; the door's own skyValue (shared/forecast.js foldSkyEntry) writes sky.override, and the door's sky
-  // schema (shared/protocol/componentspec.js) has no `override` key, so the door refuses its own value: "unknown key 'override'".
-  // The Build tab's weather tile and weather.state are refused in any world with a forecast.
-  check('the door takes every request of the synthetic world (KNOWN BUG: a weather under a forecast is refused)', refusals.length === 0, refusals.join(' | '));
+  check('the door takes every request of the synthetic world', refusals.length === 0, refusals.join(' | '));
   check(`the alias round-trips exactly after every request of a synthetic world (${n} states)`, bad.length === 0, bad.join(' | '));
   const W2 = scratchWorld('worldentity');
   W2.call('sky', { hours: 8, rate: 24, clouds: 'cirrus', forecast: { seed: 3, states: ['clear', 'rain'], dwellSec: [600, 900], transitionSec: 30 } });
-  const ov = W2.call('weather', { weather: 'storm' });   // the override (the KNOWN BUG above refuses it)
+  const ov = W2.call('weather', { weather: 'storm' });   // the override
   const types = worldComponents(W2.view()).components.map((c: any) => `${c.type}:${Object.keys(c.params).sort().join(',')}`);
-  check('…and reads as Sky (the day, the clouds) + Weather (weather, forecast, override) — not one opaque bag (KNOWN BUG above: the override is refused)',
+  check('…and reads as Sky (the day, the clouds) + Weather (weather, forecast, override) — not one opaque bag',
     canon(types) === canon(['Sky:ambient,azimuth,clouds,exposure,fog,hours,rate', 'Weather:forecast,override,weather']), /* the registry's defaults are written (shape audit 10-16) */ `${types.join(' | ')} ${ov.ok ? '' : `(weather refused: ${ov.refused?.reason})`}`);
   check('the world records are components (one engine record each), never addable to a thing',
     ['Sky', 'Weather', 'Terrain', 'Grass'].every((t) => /^[0-9a-f]{64}$/.test((RECORDS as any)[t]?.hash ?? '') && (RECORDS as any)[t].category === 'World')
@@ -200,10 +196,7 @@ console.log('\n3. the cards: every field commits as door requests and reads back
   check('…and read back as typed (hours 17 now, on a turning day)', Math.abs(readBack('sky.hours') - 17) < 0.05 && readBack('sky.clouds') === 'cirrus' && readBack('sky.exposure') === 1.25, `${readBack('sky.hours')} ${readBack('sky.clouds')} ${readBack('sky.exposure')}`);
   const e2 = edit({ 'terrain.amplitude': '*=2', 'terrain.color': '#112233', 'grass.density': 1.4, 'weather.state': 'rain' });
   check('ground, grass and weather edits: one set terrain, one set grass, one weather request', canon(e2.ops.map((o: any) => o.verb === 'set' ? `set ${o.args.component}` : o.verb).sort()) === canon(['set grass', 'set terrain', 'weather']), JSON.stringify(e2.ops));
-  // KNOWN BUG (reported 2026-10-06, not fixed here): a multi-field world edit is ONE batch, and the door's batch takes
-  // only create/set/delete/place — the `weather` (and `sky`) tool can't ride in it, so the whole edit is refused.
-  // inspect.js commits one field per gesture (unaffected); the agent's `edit @world` with two groups is (section 5).
-  check('…and the door takes the edit as ONE request (one act, one undo) (KNOWN BUG: weather can\'t go in a batch)', e2.one.ok, JSON.stringify(e2.one.refused));
+  check('…and the door takes the edit as ONE request (one act, one undo)', e2.one.ok, JSON.stringify(e2.one.refused));
   check('…read back as typed', readBack('terrain.amplitude') === PAL.shapes.hills * 2 && readBack('terrain.color') === 0x112233 && readBack('grass.density') === 1.4 && readBack('weather.state') === 'rain'
     && st().terrain.size === 160 && st().terrain.layers[0].repeat === 16, canon(st().terrain));
   const undo = (e: any) => { let ok = true; for (let i = 0; i < e.acts; i++) ok = W.call('undo', {}).ok && ok; return ok; };

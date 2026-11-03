@@ -162,7 +162,7 @@ test("rotation: a parked roamer goes before one an agent is using; pre-warm neve
   // with only the in-use roamer left: a pre-warm does NOT take it…
   leave(free.c); join(fresh2, "agentFresh2", { tokenVerified: true }); broker.prewarm(fresh2);
   expect(inUse.messages.some((m) => m.type === "renderer-travel")).toBe(false);
-  // …but a screenshot actually asked does (never refused while a roamer exists)
+  // …but a screenshot actually asked does (never refused while a roamer is in a world and not mid-shot)
   await Bun.sleep(450);   // the unanswered pre-warm summons for fresh expires
   void broker.request(fresh2, "agentFresh2"); await Bun.sleep(30);
   expect(inUse.messages.at(-1)).toEqual({ type: "renderer-travel", world: "fresh2" });

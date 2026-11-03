@@ -36,7 +36,8 @@
  * finer than a millisecond reads a clock, it reads it with performance.now()
  * held still or brackets each read with reads just before and after, so a
  * stalled process can't fail it. It checks that remote bodies are drawn on the
- * one time base, serverNow() less INTERP_MS (spec/PHYSICS.md §5.1: the clock
+ * one time base, serverNow() less its interpolation delay (INTERP_MS when samples arrive on time, more
+ * when they are late; spec/PHYSICS.md §5.1: the clock
  * flights are drawn on too), and that a pose with no t is stamped on it.
  *
  * Run: bun run tools/server-clock-test.ts

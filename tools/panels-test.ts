@@ -152,7 +152,7 @@ console.log("\nshift = fine, ctrl = snap (the header claimed these; now they are
   inp.dispatchEvent(pe("pointerup", 213, { ctrlKey: true }));
 }
 
-console.log("\nshift = fine, ctrl = snap, soft limit bounds the drag, hard bounds typing:");
+console.log("\nshift = fine, ctrl = snap, soft limit bounds the drag, typing passes both bounds (the door refuses):");
 {
   const host = document.createElement("div");
   const calls: any[] = [];

@@ -146,7 +146,7 @@ try {
   await sleep(600);
   const added = logLines().slice(n0).map((l) => JSON.parse(l));
   const acts = added.filter((e) => e.kind === 'act');
-  check('E5 hiding wrote nothing to the log: the rename is the only new act', acts.length === 1 && /box two/.test(JSON.stringify(acts[0])) && added.every((e) => e.kind !== 'act' || e === acts[0]),
+  check('E5 hiding wrote nothing to the log: every new entry is the rename act or its result row', acts.length === 1 && added.length >= 1 && added.every((e) => /box two/.test(JSON.stringify(e))),
     `${added.length} entries, ${acts.length} acts: ${added.map((e) => JSON.stringify(e).slice(0, 200)).join(' | ')}`);
 
   // collision: my body put inside the hidden crate is pushed out, and the bump mark comes up

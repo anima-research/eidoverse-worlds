@@ -1,6 +1,6 @@
 // components-inspector-test — the inspector's component cards (schema.sections) over the real corpus.
 //
-// For every entity in every world the corpus test reads: one card per component,
+// For every entity in spec/fixtures' log.jsonl worlds and COMPONENTS_CORPUS: one card per component,
 // every address a card names resolves to a real schema field, no field is owned by
 // two cards, and every editable field of the old groups is reachable from some card
 // (a field nobody can reach is a field only a model can edit). Then add/remove
@@ -149,7 +149,7 @@ const crate = { model: 'store/x.glb', pos: [0, 1, 0], motion: { type: 'pendulum'
 const v = (set: Record<string, unknown>, e: any = crate) => editOps(e, 'c1', set);
 // a lock covers everything on the thing (b1d9c7dd, R 10-11): motion and light edits go to an UNLOCKED copy; the lock checks keep the locked one
 const open = { ...crate, lock: undefined };   // the same crate, unlocked (its components sit flat on the record)
-const through = (set: Record<string, unknown>, e: any = crate) => { const W = scratchWorld('compinspector').seed({ c1: e }); const r = v(set); const res = W.sendAll(r.ops); return { r, res, after: W.rec('c1') }; };
+const through = (set: Record<string, unknown>, e: any = crate) => { const W = scratchWorld('compinspector').seed({ c1: e }); const r = v(set); const res = W.sendAll(r.ops); return { r, res, after: W.rec('c1'), W }; };
 {
   const a = through({ 'add.Spin': 'arm' }, open);
   check('add.Spin on a part → set motion:arm {spin 36°/s, node: arm} (the node is data in the value; review r7)', JSON.stringify(a.r.ops) === JSON.stringify([{ verb: 'set', args: { id: 'c1', component: 'motion:arm', value: { type: 'spin', degPerSec: 36, node: 'arm' } } }]), JSON.stringify(a.r.ops));
@@ -165,13 +165,11 @@ check('add.Spin with a whole motion present → refused, says why', v({ 'add.Spi
   const L = through({ 'add.Light': null }, open);
   { const o: any = L.r.ops[0]; const cc = o?.args?.components ?? {};
     check('add.Light on a model → ONE create: a child light a metre up, under c1, with its fields spelled out (write-new-on-edit)', L.r.ops.length === 1 && o.verb === 'create' && o.args.id === '$light' && cc.parent?.to === 'c1' && JSON.stringify(cc.transform?.pos) === '[0,1,0]' && JSON.stringify(cc.light) === JSON.stringify({ color: 0xffd9a0, intensity: 25.93, range: 10 }), JSON.stringify(L.r.ops)); }
-  check('…through the door the child is lit with exactly those values, under c1', L.res.ok && L.after?.light === undefined, JSON.stringify(L.res));
+  { const kid: any = Object.values(L.W.view().entities).find((e: any) => e?.parent?.to === 'c1' && e.light != null);   // the created child, in the door's view (the door fills the rest of light)
+    check('…through the door the child is lit with exactly those values, under c1 (c1 itself unlit)', L.res.ok && L.after?.light === undefined && !!kid && kid.parent.to === 'c1' && JSON.stringify(kid.pos) === '[0,1,0]' && Object.entries({ color: 0xffd9a0, intensity: 25.93, range: 10 }).every(([k, v]) => kid.light[k] === v), JSON.stringify([L.res.refused, kid])); }
 }
 check('Add Component lists blocked entries with a reason; Light and Collider are no longer among them', (() => { const s = inspectSchema(crate, 'c1'); const st = s.sections.add.find((a: any) => a.name === 'Structure'); const ok = (n: string) => s.sections.add.some((a: any) => a.name === n && !a.blocked); return !!st?.blocked && ok('Particles') && ok('Light') && ok('Collider'); })());
-// KNOWN BUG (reported 2026-10-06, not fixed here): guard is merged into lock, but shared/components.js RECORDS
-// still has Guard, so Add Component offers it UNBLOCKED; choosing it then fails ("Guard: added by a gesture, not a
-// value (see its card)") — a menu entry that can only error. Either drop it from the list or block it saying "use Lock".
-check('Add Component does not offer Guard as addable (merged into Lock) (KNOWN BUG)', (() => { const g = inspectSchema(crate, 'c1').sections.add.find((a: any) => a.name === 'Guard'); return !g || (!!g.blocked && /lock/i.test(g.blocked)); })(),
+check('Add Component does not offer Guard as addable (merged into Lock)', (() => { const g = inspectSchema(crate, 'c1').sections.add.find((a: any) => a.name === 'Guard'); return !g || (!!g.blocked && /lock/i.test(g.blocked)); })(),
   JSON.stringify([inspectSchema(crate, 'c1').sections.add.find((a: any) => a.name === 'Guard'), editOps(crate, 'c1', { 'add.Guard': null }).errors]));
 
 // the trusted rung end to end (R 10-12 10:09): the owner's button plans one @world.trusted-components write; through the real door

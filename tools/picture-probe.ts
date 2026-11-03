@@ -30,6 +30,10 @@ async function joinAs(name: string) {
   pg.on('pageerror', (e) => errs.push(e.message));
   pg.on('console', (m) => { const t = m.text(); if (/\[pictures\]/.test(t)) console.log('   console:', t.slice(0, 160)); });
   pg.on('dialog', (d) => d.dismiss().catch(() => {}));
+  // the order the bus saw for a picture comp vs. the thing's spawn (E reads it; base.js imports nothing, so an early import is safe)
+  await pg.addInitScript(() => { (globalThis as any).__picOrder = []; import('/lib/base.js').then(({ bus }: any) => {
+    bus.on('comp', ({ id, type }: any) => { if (type === 'picture') (globalThis as any).__picOrder.push(`comp:${id}`); });
+    bus.on('entity', ({ id, kind }: any) => { if (kind === 'spawn') (globalThis as any).__picOrder.push(`spawn:${id}`); }); }); });
   await pg.goto(`${world.origin}/?world=picprobe&key=${world.key}&name=${name}`, { waitUntil: 'domcontentloaded' });
   await pg.fill('#d-name', name).catch(() => {});
   await pg.click('#d-go').catch(() => {});
@@ -51,6 +55,7 @@ const state = (pg: any) => pg.evaluate(async (id: string) => {
   return {
     entity: !!root, hung: !!h, quads, mapW: mat?.map?.image?.width ?? 0, basic: mat?.type === 'MeshBasicMaterial',
     white: mat?.color ? mat.color.getHex() === 0xffffff : null, blocked: _blocked.get(id) ?? null,
+    order: ((globalThis as any).__picOrder ?? []).filter((e: string) => e.endsWith(`:${id}`)).map((e: string) => e.split(':')[0]),
   };
 }, ID);
 const until = async (pg: any, pred: (s: any) => boolean, ms = 20000) => { const t0 = Date.now(); let s; while (Date.now() - t0 < ms) { s = await state(pg); if (pred(s)) return s; await new Promise((r) => setTimeout(r, 200)); } return s; };
@@ -74,18 +79,25 @@ try {
   // loaded host that takes longer than the 20 s default (the original
   // realizer missed it too, 2026-09-14). The property is order, not speed.
   const s2 = await until(pg2, (x) => x.hung && x.mapW > 0, 90_000);
-  check('E. a late joiner hangs the picture (pending path)', s2.hung && s2.quads === 1 && s2.mapW > 0, JSON.stringify(s2));
+  // the setup, asserted (bot #326): the comp reached the bus before the thing's spawn did, so the hang went through `pending`
+  check('E. the late joiner got the comp before the GLB landed (the pending path was taken)', s2.order.indexOf('comp') >= 0 && s2.order.indexOf('spawn') > s2.order.indexOf('comp'), JSON.stringify(s2.order));
+  check('E. …and hangs the picture', s2.hung && s2.quads === 1 && s2.mapW > 0, JSON.stringify(s2));
   await pg2.close();
   // C. take it down
   await req(pg, OP.unset(ID, 'picture'));
   s = await until(pg, (x) => !x.hung);
   check('C. taking it down removes the quad', !s.hung && s.quads === 0, JSON.stringify(s));
   // D. an https link this viewer hasn't allowed: kept by the authority, never fetched here — the empty plate stands
+  const fetched: string[] = [];   // the network, watched (bot #327): "never fetched" is a request count, not a texture width
+  const onReq = (r: any) => { if (/example\.com/.test(r.url())) fetched.push(r.url()); };
+  pg.on('request', onReq);
   await req(pg, OP.set(ID, 'picture', { src: 'https://example.com/x.png', description: 'a link' }));
   s = await until(pg, (x) => x.hung);
   await new Promise((r) => setTimeout(r, 1500));
   s = await state(pg);
+  pg.off('request', onReq);
   check('D. an unallowed link is never fetched: the plate stands, marked untrusted', s.hung && s.quads === 1 && s.mapW === 0 && s.blocked === 'untrusted', JSON.stringify(s));
+  check('D. …and the browser made no request to its host', fetched.length === 0, fetched.join(' '));
   check('no page errors across the cycle', errs.length === 0, errs.join(' | '));
 } finally {
   await close(); await world.close();

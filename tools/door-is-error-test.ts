@@ -639,7 +639,7 @@ check('a glide whose flight has ended by the time its wait answers is failed, sa
 r = await landing(arrived, 'down', { x: 12, z: 6 });
 check('a landing whose glide arrived and whose flare came down is done, saying how far from the point',
   ok(r) && / — landed at \(12\.0, 6\.0\), 7\.1m from \(5\.0, 5\.0\)$/.test(said(r)), said(r));
-// The rehearsal seam, switched on for this run, refuses a body that isn't flying.
+// The flight body's down/recover methods (called directly by acts() above, no flight), refuse a body that isn't flying.
 r = await call('rehearse_down', {});
 check('rehearse_down with no flight is failed', failed(r) && said(r) === 'not airborne — move {mode: "fly"} first', said(r));
 r = await call('rehearse_recover', {});

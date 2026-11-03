@@ -73,6 +73,7 @@ const fold = (a: WorldAgent, entry: { verb: string; args: any; actor?: string },
   for (const id of Object.keys(st.entities)) A.trackSupport?.(A.syncSupport?.(id));
   // a change seen live: the agent's own change handler (what a door write it watched would run)
   if (live && entry.verb === "comp") A.onThingChange({ id: entry.args.id, what: "comp", comp: entry.args.type }, was, true, entry.actor ?? "t", T0);
+  if (live && (entry.verb === "mount" || entry.verb === "dismount")) A.onThingChange({ id: entry.args.id, what: "parent" }, was, true, entry.actor ?? "t", T0);
 };
 
 // A fake view for the pure module — plain data, no agent.

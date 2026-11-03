@@ -1,4 +1,5 @@
-// components-corpus-test — the component view is lossless on every world we have.
+// components-corpus-test — the component view is lossless on the conformance fixtures (world.jsonl, lab-cottage.jsonl)
+// and every COMPONENTS_CORPUS dir.
 //
 // The primitives (sha256, canon), the step-2 spellings (synthetic entity records), and then the corpus: for every
 // world log, fold it (shared/protocol/fold.js), take the view a client reads (shared/protocol/view.js viewState), and read every
@@ -6,7 +7,7 @@
 // (canonical JSON), and every key must land in a component parameter, a declared stamp, or `extra` (which is counted
 // and printed, never silently dropped). One differing entity anywhere = red.
 //
-// Corpus: spec/conformance (always), plus any dirs in COMPONENTS_CORPUS (colon-separated; each is searched for
+// Corpus: spec/conformance (always), plus any dirs in COMPONENTS_CORPUS (separated like PATH: `:` on POSIX, `;` on Windows; each is searched for
 // <world>/world.jsonl).
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/components-corpus-test.ts
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';

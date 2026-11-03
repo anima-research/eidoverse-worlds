@@ -3,7 +3,7 @@
 //   world WS (spectator "voice") ── `say` entries (log) by configured speakers ──▶
 //   ElevenLabs streaming TTS ──▶ Discord voice channel (@discordjs/voice)
 //
-// Humans in the channel just talk; this bot only voices the models.
+// Humans in the channel just talk; this bot voices the speakers SPEAKERS names (`*` = everyone who says, humans included).
 // Captions need nothing extra — every say is already in-world chat + log.
 //
 // The world speaks the protocol: the join says `replica: true` (a client that
@@ -16,8 +16,8 @@
 //   WORLD_URL      ws(s)://host/ws          (default ws://127.0.0.1:8940/ws)
 //   WORLD_TOKEN    door key                  (if the sequencer has one)
 //   WORLD_NAME     world to watch            (default commons)
-//   SPEAKERS       comma list of actor ids to voice, or "*" for all agents
-//   VOICES_FILE    actor→voiceId map         (default ./voices.json)
+//   SPEAKERS       comma list of display names (the stream's `names`, not identity ids) to voice, or "*" for everyone who says
+//   VOICES_FILE    display name→voiceId map  (default ./voices.json)
 //   ELEVEN_KEY     ElevenLabs API key
 //   ELEVEN_MODEL   default eleven_turbo_v2_5
 //   DISCORD_TOKEN  bot token                 (omit with DRY_RUN=1)
@@ -55,7 +55,7 @@ const log = (m: string) => console.log(`[voicebot ${new Date().toISOString().sli
 
 async function synth(actor: string, text: string): Promise<ArrayBuffer | null> {
   const voice = voices[actor] ?? voices["*"];
-  if (!voice || voice.startsWith("REPLACE")) { log(`no voice for "${actor}" — skipped`); return null; }
+  if (!voice || voice.startsWith("REPLACE")) { log(`no voice for "${actor}" — skipped${DRY_RUN ? `: ${text.slice(0, 60)}` : ""}`); return null; }   // DRY_RUN names the line (voicebot-test greps it)
   const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice}?output_format=mp3_44100_128`, {
     method: "POST",
     headers: { "xi-api-key": ELEVEN_KEY, "content-type": "application/json" },

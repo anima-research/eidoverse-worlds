@@ -49,7 +49,9 @@ await sleep(400);
 console.log("\nvoicebot — hearing a world (DRY_RUN)\n");
 check("the bot joins as a spectator that folds the log", /watching world "commons" as spectator/.test(out), out.slice(-300));
 check("a configured speaker's live line reaches the synth step, by display name", (out.match(/no voice for "alice"/g) ?? []).length === 1, out.slice(-400));
-check("history from before the join is not voiced", !/history/.test(out));
+// the skip line names the text under DRY_RUN, so a pre-join line reaching synth WOULD print "(history)" — alice's live text proves the detector
+check("the snapshot carries no recent lines (speech is arrival-only)", /\(0 recent lines skipped/.test(out), out.slice(-300));
+check("history from before the join never reaches the synth step", /no voice for "alice" — skipped: alice is/.test(out) && !/\(history\)/.test(out), out.slice(-400));
 check("a speaker not in SPEAKERS is not voiced", !/"bob"/.test(out));
 console.log(`\n${pass} passed, ${fail} failed`);
 done(fail ? 1 : 0);

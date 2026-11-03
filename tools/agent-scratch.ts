@@ -4,7 +4,7 @@
 // (A.applyEntry({verb, args}) of hand-written log entries), which went with the v1 reader.
 //
 //   const { act, seed } = agentOnDoor(agent, "tag");
-//   await seed({ console: { lib, pos: [1, 0, 1], ... } });      // the world as it stood at join (not live)
+//   await seed({ console: { model: 'crate.glb', pos: [1, 0, 1], ... } });      // the world as it stood at join (not live)
 //   await act("set", { id: "console", component: "picture", value }, { who: "antra" });   // a live write, by antra
 //   await act("sky", { hours: 12 }, { at: T0 + 20 * 60e3 });            // …at a chosen door time
 //

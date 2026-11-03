@@ -1,5 +1,5 @@
 // Roaming renderers, end to end, in a real browser.
-//   bun tools/roaming-renderer-check.ts [SHOT=path.png]          (owns a scratch server with both worlds founded)
+//   SHOT=path.png bun tools/roaming-renderer-check.ts          (owns a scratch server with both worlds founded)
 //   LOBBY=<w> WORLD=<w> JOIN_KEY=<k> AGENT_TOKEN=<t> bun tools/roaming-renderer-check.ts http://host:port   (a running server:
 //   both worlds founded by its operator, WORLD owned by the agent the token enrols; joining never founds one)
 // A roaming renderer page waits in a lobby world; an "agent" then joins another world alone and builds there (several

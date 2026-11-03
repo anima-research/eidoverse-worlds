@@ -3,7 +3,8 @@
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/editor-range-test.ts
 //
 // Binds, for every descriptor num row (shared/protocol/descriptors.js) the Inspector writes: a value the DOOR takes is
-// written as typed, though it is outside the row's slider bounds; a value the door refuses is refused here with nothing
+// written as typed, though it is outside the row's slider bounds (its hard min/max, and past a softMin/softMax stop:
+// the midpoint between the soft stop and the door's own bound); a value the door refuses is refused here with nothing
 // sent. The door's verdict is the authority's own (schemaRefusal), never a restated range. Also: an enum row is closed
 // exactly where the registry names its enum.
 
@@ -32,14 +33,14 @@ const FIXTURE: Record<string, [string, any][]> = {
   Picture: [["picture", { picture: { src: "https://example.org/a.png", width: 1 } }]],
   Sound: [["sound", { sound: { src: "https://example.org/a.ogg", playing: true, loop: true, volume: 0.8, radius: 12 } }]],
   Text: [["text", { text: { text: "hi" } }]],
-  LookAt: [["look-at", { "look-at": { target: "other", speed: 240, range: 12 } }]],
+  LookAt: [["look-at", { "look-at": { target: "other", speed: 240 * Math.PI / 180, range: 12 } }]],   // speed is rad/s on the wire (componentspec max 20π): 240 made the door refuse every LookAt bag
 };
 FIXTURE.Path.push(["motion", { motion: { type: "path", points: [[0, 0, 0], [1, 0, 0]], duration: 4, loop: "loop" } }]);
 
 const lowOf = (r: any) => r.gt ?? r.min;
 const doorTakes = (comp: string, bag: any, path: string, x: number) => schemaRefusal(comp, { ...bag, [path]: x }) === null;
 
-let rows = 0; const typedRed = new Set<string>();
+let rows = 0; const typedRed = new Set<string>(); const softRows = new Set<string>();
 for (const [card, d] of Object.entries(DESCRIPTORS) as [string, any][]) {
   for (const fd of d.fields) {
     const ui = fd.ui; if (!ui || ui.t !== "num" || ui.own || fd.path == null) continue;
@@ -61,6 +62,13 @@ for (const [card, d] of Object.entries(DESCRIPTORS) as [string, any][]) {
     const dp = ui.wdp ?? d.writeDp; const q = (v: number) => (dp == null ? v : Math.round(v * 10 ** dp) / 10 ** dp);
     const rowUnit = (e: number) => (ui.deg ? e : q(e));
     const wireOf = (e: number) => (fd.wire ? fd.wire.to(rowUnit(e)) : rowUnit(e));
+    // past the slider's SOFT stop (f.softMin/softMax, a cap the door never enforces): a step past it, and the midpoint between
+    // it and the door's own bound (in row units) — the accepted in-between value the hard bounds never reach
+    { const rr = COMPONENTS[d.key]?.ranges?.[fd.path]; const soft: number[] = [];
+      const mid = (s: number, w: number | null | undefined, past: boolean) => { if (w == null) return; const b = typed(w); if (typeof b === "number" && Number.isFinite(b) && (past ? b > s : b < s)) soft.push((s + b) / 2); };
+      if (f.softMin != null) { softRows.add(`${card}.${fd.k}`); soft.push(f.softMin - 0.5); mid(f.softMin, rr ? lowOf(rr) : null, false); }
+      if (f.softMax != null) { softRows.add(`${card}.${fd.k}`); soft.push(f.softMax + 0.5); mid(f.softMax, rr?.max, true); }
+      for (const e of soft) { const x = wireOf(e); if (typeof x !== "number" || !Number.isFinite(x)) continue; (doorTakes(d.key, bag, fd.path, x) ? inside : outside).push(x); } }
     for (const e of probe) {
       const x = wireOf(e); if (typeof x !== "number") continue;
       const back = rowUnit(e);
@@ -82,6 +90,7 @@ for (const [card, d] of Object.entries(DESCRIPTORS) as [string, any][]) {
   }
 }
 
+check(`≥1 num row has a soft stop, probed past it (${softRows.size}: ${[...softRows].join(", ")})`, softRows.size >= 1);
 console.log(`  ${rows} num rows; ${typedRed.size} write something other than a value the door takes${typedRed.size ? `: ${[...typedRed].join(", ")}` : ""}`);
 
 // the "no row yet" writes (a component being made): the same door, the same rule

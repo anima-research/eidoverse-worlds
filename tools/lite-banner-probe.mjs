@@ -1,5 +1,5 @@
 // lite-banner-probe — on a PHONE a died boot demotes to lite and says so in a pinned card (under the gesture
-// row, surviving the history replay) whose first button enters the 3D world; someone who asked for lite gets
+// row, above the chat: its one button is `got it`) and the ∃ in the top bar enters the 3D world; someone who asked for lite gets
 // the card too (a way back, never "type ?lite=0"); a DESKTOP whose boot died is not demoted at all, and gets
 // a status-strip pill offering the light version instead (owner, 10-01: lite is default only on mobile).
 //   bun tools/lite-banner-probe.mjs [origin]   (no origin: an owned scratch world, probe-harness)
@@ -13,7 +13,7 @@ const SHOT = process.env.SHOT ?? join(tmpdir(), 'lite-banner.png');
 let fail = 0; const ok = (n, c, d = '') => { if (!c) fail++; console.log(`  ${c ? '✓' : '✗'} ${n}${d ? ' — ' + d : ''}`); };
 const { browser: b } = await launchBrowser();
 try {
-  // seed chat so history replay would bury a chat line
+  // chat lines sent before the phone joins: the server replays none (server.ts recentChat: []), so the card's place is a layout fact, not a replay survivor
   const ws = new WebSocket(O.replace('http', 'ws') + '/ws?name=talker');
   await new Promise((r, j) => { const t = setTimeout(() => j(new Error(`no snapshot from ${O} in 20 s`)), 20000);
     ws.onerror = () => { clearTimeout(t); j(new Error(`websocket to ${O} failed`)); };
@@ -47,7 +47,7 @@ try {
   let { p, ctx, r, errs } = await run('crashed', '', true);
   console.log('phone crash:', JSON.stringify(r));
   ok('a phone whose last boot died is lite (why=crash)', r.lite === true && r.why === 'crash');
-  ok('…and SAYS so in a pinned card, on screen after the history replay', !!r.banner && /didn't finish loading/.test(r.banner) && r.onScreen, r.chatTail);
+  ok('…and SAYS so in a pinned card, on screen (pinned above the chat, not a #chatlog line)', !!r.banner && /didn't finish loading/.test(r.banner) && r.onScreen, r.chatTail);
   ok('…below the action row, not over it (360 px wide, the row wraps)', r.clearOfActions === true);
   ok('…it names the way in (the ∃ logo), and its one button is got it', /Tap the \u2203 Eidoverse logo/.test(r.banner) /* a touch phone taps */ && await p.evaluate(() => { const c = document.getElementById('lite-banner'); return c.classList.contains('capnotice') && [...c.querySelectorAll('button')].map(b => b.textContent).join('|') === 'got it'; }));
   ok('…the ∃ mark is centred in its tile (within 1 px)', await p.evaluate(() => { const b = document.getElementById('hud').getBoundingClientRect(), g = document.querySelector('#hud svg').getBoundingClientRect(); return Math.abs((b.left + b.right) / 2 - (g.left + g.right) / 2) <= 1 && Math.abs((b.top + b.bottom) / 2 - (g.top + g.bottom) / 2) <= 1; }));

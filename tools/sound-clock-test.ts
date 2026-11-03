@@ -12,9 +12,10 @@
 // 2026-09-23). This loads the real sounds.js under stubs, skews Date.now()
 // from the server clock by a known amount, and checks that the seek reads the
 // server clock (mutating it back to Date.now() turns that case red), and that
-// the editor's play sends no `t0` of its own: the authority stamps it when the
-// sound starts playing (shared/sound.js THE CLOCK), so no machine's clock is
-// ever the playhead's origin. (tools/protocol/soundclock-check.ts holds the
+// the editor's play sends no `t0` of its own: the authority stamps t0 when a
+// sound starts (shared/sound.js THE CLOCK); a same-src rewrite while it plays
+// keeps the t0 it names, a seek (shared/protocol/authority/followups.js, and
+// sound-probe.ts check B). (tools/protocol/soundclock-check.ts holds the
 // playhead arithmetic itself.)
 import { plugin } from 'bun';
 import { fileURLToPath } from 'node:url';

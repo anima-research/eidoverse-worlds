@@ -34,4 +34,4 @@ const water = { center: [0, 0, 0], size: [10, 4, 6], absorption: [0.2, 0.1, 0.05
   assert.deepEqual(kid.d.traversal.routes, [{ path: route.path, radius: 1, speed: 1.1, name: "ladder A" }], "R1 climb → traversal's route, in its thing's frame (identity under the host)"); }
 assert.deepEqual((m.projectComponentData({ collider: { enabled: false } }) as any).collision, { enabled: false }, "R1 collider {enabled: false} → collision {enabled: false}");
 assert.equal(m.projectComponentData({ collider: { shape: "box" } }), null, "R1 a collider that's on projects no collision toggle");
-console.log("render-scene-import-test: 19 passed");
+console.log("render-scene-import-test: all assertions passed");

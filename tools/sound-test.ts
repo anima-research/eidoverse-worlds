@@ -3,8 +3,9 @@
 //   bun tools/sound-test.ts
 //
 // Two legs, the picture-test shape:
-//   1. DECLARATION — the source allow-list (library-relative audio under
-//      eidoverse/assets/ or store/audio/, never a URL, never a path escape),
+//   1. DECLARATION — the source rule (allowedSoundSrc: library-relative audio under
+//      eidoverse/assets/ or store/audio/, never a path escape; normalizeSound also
+//      takes an https link, whose tier decides who fetches it — shared/mediasrc.js),
 //      defaults and bounds, the clock note, the description and its bound, and
 //      a `describe` that says what the author said and whether it plays.
 //   2. PERCEPTION — what look() carries for a resident who reads.

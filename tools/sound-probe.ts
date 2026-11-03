@@ -11,7 +11,7 @@
 //      t0 in the past it seeks to the shared playhead, not the top;
 //   C. a replace with the same src adjusts in place (volume), no second graph;
 //   D. playing:false pauses; data:null tears the graph down;
-//   E. a URL source realizes nothing;
+//   E. an un-opted-in link (tier `link`, shared/mediasrc.js) realizes nothing;
 //   F. the LISTENER's world volume (the audio panel's slider, voiceconsent
 //      volumeFor('world')) is what a sound is heard at, composed with the
 //      authored volume and never replacing it: the page boots with the
@@ -136,7 +136,7 @@ try {
   await sound(pg, { src: 'https://example.com/x.mp3', description: 'a link' });   // kept by the authority; this viewer hasn't allowed links
   await new Promise((r) => setTimeout(r, 1200));
   s = await state(pg);
-  check('E. a URL source realizes nothing', !s.has && s.graphs === 0, JSON.stringify(s));
+  check('E. an un-opted-in link realizes nothing', !s.has && s.graphs === 0, JSON.stringify(s));
   check('no page errors across the cycle', errs.length === 0, errs.join(' | '));
 } catch (e: any) {
   console.log('probe aborted:', e?.message ?? e); if (errs.length) console.log('page errors:', errs.join(' | '));

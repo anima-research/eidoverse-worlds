@@ -58,7 +58,7 @@ dive (watervolumes `levelAt`).
 - At a moonpool, hatch, or platform ladder, E climbs up or down; a proximity hint
   identifies the route. Paths are authored data and follow moving carriers.
 - A nearby authored helm is entered with E. W/S gives thrust, A/D turns, Space/C
-  changes depth, and E exits. Existing leases arbitrate exclusive control.
+  changes depth, and X leaves the helm. Existing leases arbitrate exclusive control.
 - Presence carries optional full orientation and locomotion metadata. Remote
   divers interpolate orientation; VRM avatars receive a procedural swimming pose.
 - Mixed land/water worlds use the same controller. Author finite water regions,
@@ -69,8 +69,10 @@ dive (watervolumes `levelAt`).
 Source: Unreal `/Game/Underwater/SpectralPrototype/L_SpectralOcean_Prototype` in
 `Test1`. Five content-addressed GLBs contain terrain, habitat, submarine, platform,
 and scenery. `world-data/water/manifest.json` (upstream's) has twenty records and
-fifteen dry volumes; they become twenty-one `create`s (five models, one water body,
-fifteen pockets) and five `@world` asset entries. `prepare.ts` writes a bundle whose
+fifteen dry volumes; they become twenty-nine `create`s (five models, one water body,
+fifteen pockets, three climb routes, the submarine's helm, its two vehicle-band walls, a
+sun and a dust effect) and nine `@world` sets (five asset entries, spawn, bounds, terrain,
+sky) — `import-golden-check.ts` counts them. `prepare.ts` writes a bundle whose
 manifest already carries those requests. Repeated ecology meshes use GPU instancing.
 Binaries are provided in the companion bundle, not embedded in client source or
 committed here.
