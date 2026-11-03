@@ -87,6 +87,17 @@ console.log("\nrefusals, gestures, and the door's undo of the other edits:");
   await H.flush();
   check("a locked pose: the door refuses `locked`, I'm asked first, and cancel writes nothing", rl.ok && H.asked.length === asked + 1 && c("c1").transform.pos[0] === 1 && H.hints.some((t: string) => /cancelled/.test(t)), JSON.stringify({ rl, asked: H.asked.length, pos: c("c1").transform.pos }));
   H.W.call("delete", { id: "c1", component: "lock" }); H.sync();
+  // two locks (bot #260 121): unlock the first, cancel the second's question: the hint says a lock was lifted
+  H.W.call("create", { id: "tbl", model: "crate", components: { transform: { pos: [5, 0, 5] } } });
+  H.W.call("create", { id: "cup", model: "crate", components: { parent: { to: "tbl" }, transform: { pos: [0, 1, 0] } } });
+  for (const id of ["cup", "tbl"]) H.W.call("set", { id, component: "lock", value: true }); H.sync();
+  H.entities.set("cup", realized());
+  const answers = ["unlock", "cancel"], asked2 = H.asked.length, hints0 = H.hints.length;
+  Object.defineProperty(H, "choose", { get: () => answers.shift() ?? "cancel", set: () => {}, configurable: true });
+  commitEdit("cup", "pos.x", 0.3); await H.flush(); await H.flush();
+  Object.defineProperty(H, "choose", { value: "cancel", writable: true, configurable: true });
+  const hint2 = H.hints.slice(hints0).join(" | ");
+  check("a later lock's question cancelled after an unlock says the lock was lifted, not 'nothing written'", H.asked.length === asked2 + 2 && [c("cup").lock, c("tbl").lock].filter((l) => l !== undefined).length === 1 && c("cup").transform.pos[0] === 0 && /lifted/.test(hint2) && !/nothing written/.test(hint2), JSON.stringify({ asked: H.asked.length - asked2, cup: c("cup"), hint2 }));
   const rz = commitEdit("zz", "pos.x", 1);
   check("an id not in the fold refuses", !rz.ok && /not in the fold/.test(rz.errors[0]));
   // a component of my own carries a namespace (PROTOCOL §4): a bare name is refused at the door
