@@ -217,7 +217,7 @@ const USE_VERBS = {
     // use while held (grabbable.use; research grab §3): the holder's use with no action fires the thing's own: its down,
     // or its up with args.phase 'up' (a hose turns on, then off: each one act). The request is logged as sent; the act
     // and the script's event say it was held, in which hand, and which phase. Rapid or continuous effects while pressed
-    // (a muzzle flash, a spray) are presence, never a stream of acts: grabbable.fx, drawn by every client.
+    // (a muzzle flash, a spray) are presence, never a stream of acts: grabbable.fx, reserved today (componentspec.js).
     const hold = w.presence.holds[a.id]; let held = null; const sent = a;
     // review 10-06: the up of a press is taken from whoever pressed down, even when the thing has left their hand since
     // (taken by someone, dropped with the button still down): a hose that was turned on gets turned off. Once.

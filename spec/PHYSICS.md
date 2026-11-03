@@ -287,8 +287,9 @@ updates; VRChat splits them the same way):
 
 - **Body authority** is the person's own: never transferred, never
   sim-owned, never shared. Contact between people is each receiver's machine
-  applying another's puppet force to its own body, so consent is enforced
-  where it lands. It is never logged. **Bodies are not sim inputs because
+  applying another's puppet force to its own body, after the authority's
+  consent gate let it through (NORMATIVE.md, body consent); the receiver
+  never decides a second time. It is never logged. **Bodies are not sim inputs because
   the log is results, never processes; a body in the engine is a process.**
   A body has no `physics` component and the engine never sees it: a flight
   passes through a body. The body's client may `catch` (existing) or,

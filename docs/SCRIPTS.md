@@ -70,7 +70,8 @@ checked there) and `examples/` (greeter, bellkeeper with `world.use`, lighthouse
 
 A script on `@world` is world-level: with `on: ["use"]` it hears every logged use in the world (a visitor's, a
 reaction's, a script's `world.use`), after the thing's own reaction, with `id` naming the thing. It never hears a dry
-or refused use, a seat (presence), or its own `world.use`. Installing on `@world` is the owner's (every `@world` key
+or refused use, a seat (presence), or a `world.use` made by any `@world` script, its own or another's (they share one
+actor, `script:@world`). Installing on `@world` is the owner's (every `@world` key
 but the look, roles, blueprints and assets is), and its scope still bounds what it writes.
 
 ## Whose rights
@@ -177,8 +178,8 @@ A `grabbable` thing's use button (desktop left click, the phone's action button,
 That is for **discrete state changes**: a hose turns on, then off; a lamp lights; a gun's magazine empties by one.
 **Continuous or rapid cosmetic effects while held and pressed** (a muzzle flash, a hose's spray, a beam) are never a
 stream of logged acts. They are presence: the holder's pose carries `use {id, hand}` while the button is down (unlogged,
-broadcast like a gesture), and every client draws the thing's own `grabbable.fx` from its component data for as long as
-it rides. A script that counts shots counts presses (`use.down`), within the rate above; it never sees a frame.
+broadcast like a gesture). The effect itself is meant to be the thing's own `grabbable.fx`, drawn by every client for as
+long as it rides; that field is reserved today (a write is refused), so no held effect is drawn yet. A script that counts shots counts presses (`use.down`), within the rate above; it never sees a frame.
 
 ## What an activation is, in the log
 
