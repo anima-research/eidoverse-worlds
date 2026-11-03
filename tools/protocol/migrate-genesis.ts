@@ -14,7 +14,8 @@
 //     verbatim, in <world dir>/world.genesis-before.jsonl with both world ids; the whole old log is kept, fsynced, as
 //     <world dir>/world.pre-genesis-migration.jsonl before the new one replaces it (durably: temp, fsync, rename, directory sync). (A newly translated world carries it as the
 //     `translated` act after genesis instead; an existing log can't gain an entry in the middle.)
-//   - every later line's `world` is rewritten from the old id to the new one (a text replace: number spellings kept).
+//   - every later line's `world` field is rewritten from the old id to the new one (that field's text only: number
+//     spellings kept, and a say or title quoting the old id keeps its words).
 // SAFETY: a log is rewritten only if the state digest is the same before (the previous fold, from git --old-fold, default d4e0677a~1) and after
 // (today's fold AND the Python reference reader). Stop the world's server first: it holds the old world id in memory.
 // usage: bun tools/protocol/migrate-genesis.ts [--apply] <world dir>…   (dry run without --apply; skips a log already in today's shape)
@@ -57,7 +58,7 @@ try {
     const body = shape === "B" ? { dialect: DIALECT, v: VERSION, ...rest }
       : { dialect: DIALECT, v: VERSION, minor: 0, nonce: crypto.createHash("sha256").update(raw).digest().subarray(0, 16).toString("base64url"), owners, sequencer: cu.sequencer() };
     const ngLine = JSON.stringify({ ...g, body }); const newId = worldIdOf(parseLine(ngLine));
-    const next = ngLine + text.slice(nl).replaceAll(oldId, newId);
+    const next = ngLine + text.slice(nl).replaceAll(`"world":${JSON.stringify(oldId)}`, `"world":${JSON.stringify(newId)}`);   // the field only: a say quoting the id keeps it (#260 436)
     const after = fold(readLog(next)); const dAfter = after.status === "ok" ? digest(after) : null;
     const py = Bun.spawnSync(["python3", path.join(ENGINE, "spec/conformance/reader.py"), "/dev/stdin", "--json"], { stdin: Buffer.from(next) });
     const dPy = (() => { try { return JSON.parse(py.stdout.toString()).digest; } catch { return null; } })();

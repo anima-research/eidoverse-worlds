@@ -43,5 +43,13 @@ const run = (W: string, args: string[]) => { const r = Bun.spawnSync(["bun", TOO
   ok(r.code === 0 && fs.readFileSync(f).equals(before) && JSON.stringify(fs.readdirSync(dir).sort()) === JSON.stringify(files) && /"written":false/.test(r.out),
     "MG2 the dry run (no --apply) writes nothing", { code: r.code, files: fs.readdirSync(dir), out: r.out.slice(-300) }); }
 
+{ const { W, dir, f } = shapeB("mg3"); const lines = fs.readFileSync(f, "utf8").split("\n").filter(Boolean);
+  const oldId = worldIdOf(parseLine(lines[0])); const last = JSON.parse(lines.at(-1)!);
+  // a say quoting the old id (unsealed, as migrate-identities-check writes its rows): only the `world` field may change
+  fs.writeFileSync(f, [...lines, JSON.stringify({ world: oldId, kind: "say", actor: last.actor, verb: "say", body: { text: `our id was ${oldId}` }, ts: (last.ts ?? 0) + 1000 })].join("\n") + "\n");
+  const r = run(W, ["--apply", dir]); const now = fs.readFileSync(f, "utf8").split("\n").filter(Boolean); const say = JSON.parse(now.at(-1)!);
+  ok(r.code === 0 && say.body?.text === `our id was ${oldId}` && say.world !== oldId && !now.slice(1).some((l) => JSON.parse(l).world === oldId),
+    "MG3 --apply rewrites only the `world` field: a say quoting the old id keeps its words (bot review #260 436)", { code: r.code, say, out: r.out.slice(-300) }); }
+
 console.log(`[migrate-genesis-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
