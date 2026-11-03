@@ -102,7 +102,7 @@ bun tools/screenshots-wire-test.ts            # the real route and sockets, a th
 bun tools/snap-settle-test.ts               # the renderer waits for the world as long as `wait` says
 bun tools/snap-timeout-test.ts              # SNAP_TIMEOUT_SEC against the HTTP and broker timeouts
 bun tools/door-wording-test.ts              # the MCPL screenshot tool: its words and its retries
-bun tools/roaming-renderer-check.ts http://127.0.0.1:<port>   # end to end in a real browser
+bun tools/roaming-renderer-check.ts       # end to end in a real browser, its own scratch server
 ```
 
 Settings (world server's service): `SNAP_TIMEOUT_SEC` (frame window, 12), `SNAP_SWEEP_GRACE_SEC` (no sweep for
@@ -181,6 +181,6 @@ A renderer is normally pinned to one world, so an agent building alone in its ow
   a fixed 20 s while the server would wait 40, which failed first screenshots of worlds that took a little longer.)
 - Refusals stay explicit: no roamer free → 503 naming the world; a renderer still loading → its own words.
 
-`tools/roaming-renderer-check.ts http://host:port` exercises it end to end (pre-warm, a screenshot asked the instant
+`tools/roaming-renderer-check.ts` (its own server; or `LOBBY=… WORLD=… http://host:port`, two worlds the operator founded) exercises it end to end (pre-warm, a screenshot asked the instant
 the agent arrives, the renderer's realized model count at capture, the watchdog's check, and a roamer restarted into
 its lobby being swept back before the next screenshot). `GRACE_MS=0` asks at once.

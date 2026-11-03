@@ -13,7 +13,7 @@
 //
 // inspectSchema(ent, id)          → { groups: [{ group, verb, fields }] }
 //   fields are panels.js specs: { t, k, label, value, def?, … } with k a plain name (def: the
-//   value the evaluator uses when the key is absent — the inspector offers ↺ back to it)
+//   registry default a reset ↺ writes; an unwritten legacy value draws as the field's `absent` reading, which can differ)
 //   inside the group. Address a field from outside as "<group>.<k>"
 //   (pos.x · light.intensity · motion.amp · sockets.seat.yaw · comp.recipe).
 // editOps(ent, id, edits)       → { ops: [{verb, args}], errors: [] }
