@@ -127,6 +127,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["consent", "consent-check.ts", 1],   // the consent tool never writes through a prototype (security pass 2, H-0); a refused change changes nothing
   ["gates", "gates-check.ts", 1],       // R 10-28: body consent is two gates (move, touch) and two lists (allow, block): the order, the world default, a stored switch or table migrated never wider
   ["consent-client", "../consent-client-test.ts", 1], // R 10-28: the browser's gates and lists land at the authority, old localStorage keys migrate never wider, a failed sync is heard and retried
+  ["media-trust-tabs", "../media-trust-tabs-test.ts", 1], // bot #141: an untrusted-links revoke in one tab reaches the others (storage event → media:trust)
   ["history-rows", "history-rows-check.ts", 1],   // the editor History never shows a refused attempt as done (Commons parity audit)
   ["scale", "scale-check.ts", 1],       // the authority at scale: every request under 50 ms at 72/500/2 000 things; gates before work; capacity; indoors (review 10-06)
   ["roles", "roles-check.ts", 1],       // roles + moderation (research roles 10-06): ranks, permissions, the grant rule, sanctions, ghost
