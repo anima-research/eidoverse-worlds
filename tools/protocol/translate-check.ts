@@ -245,6 +245,15 @@ row("F51b", () => { const Z = require("../../shared/zone.js"), WJ = require("../
   const runs = [both({ speed: 1.2 }, {}), both({}, { speed: 1.2 }), both({ speed: 1.2 }, { speed: 2.45 })], lone = tr([OWNER, ["olga", "spawn", { id: "a", lib: "p.glb" }], ["olga", "comp", { id: "a", type: "water", data: { size: [8, 4, 8] } }]]);
   ok(runs.every((x) => x.swim === x.own) && runs.some((x) => !x.inSlow) && runs.every((x) => x.mapped?.length === 2 && x.mapped.every(Boolean)) && !JSON.stringify(lone.r.out).includes("physics-area"),
     "F51b two overlapping waters, one slow (1.2) and one at the stroke here (unset or 2.45): a swimmer's speed factor is the one of the water mediumAt puts them in, either way round (the other gets factor 1, said in the report); a lone default water writes no area", { runs, lone: JSON.stringify(lone.r.out).includes("physics-area") }); });
+// bot review #260 33: a main size past zone.size's 1e4 is clamped, and the report keeps main's size beside it, as speed's dropped note
+row("F51c", () => { const { r, E } = tr([OWNER, ["olga", "spawn", { id: "sea", lib: "s.glb" }], ["olga", "comp", { id: "sea", type: "water", data: { center: [0, 0, 0], size: [20000, 200, 200] } }],
+    ["olga", "spawn", { id: "pond", lib: "p.glb" }], ["olga", "comp", { id: "pond", type: "water", data: { size: [8, 4, 8] } }],
+    ["olga", "spawn", { id: "hab", lib: "h.glb" }], ["olga", "comp", { id: "hab", type: "air", data: { boxes: [null, { size: [2, 2, 2] }, { size: [30000, 1, 1] }] } }]]);
+  const M = (id: string) => r.stats.mapped?.find((m: any) => m.id === id), zone = Object.values<any>(E).find((c) => c.water && c.zone?.size?.[0] > 100)?.zone;
+  ok(JSON.stringify(M("sea")?.clamped?.size) === JSON.stringify([20000, 200, 200]) && JSON.stringify(M("sea")?.clamped?.to) === JSON.stringify([10000, 200, 200]) && /at most 10000 m/.test(M("sea")?.clamped?.why ?? "")
+    && JSON.stringify(zone?.size) === JSON.stringify([10000, 200, 200]) && M("pond") && M("pond").clamped === undefined
+    && JSON.stringify(M("hab")?.clamped?.map((x: any) => [x.box, x.size])) === JSON.stringify([[2, [30000, 1, 1]]]),
+    "F51c a water (and an air box) larger than a zone may be is clamped to 1e4 m per axis, and the report says so with main's size (only the clamped box, by its index); a water within it says nothing", { sea: M("sea"), pond: M("pond"), hab: M("hab"), zone }); });
 row("F52", () => { const bare = tr([OWNER, ["olga", "spawn", { id: "far", lib: "x.glb", pos: [120, 70, 0] }]]), terr = tr([OWNER, ["olga", "terrain", { seed: 3, size: 300 }]]);
   const B = bare.W.bounds, M = bare.r.stats.mapped?.find((m) => m.component === "stage");
   ok(JSON.stringify(B) === JSON.stringify({ min: [-78, -2, -78], max: [122, 72, 78] }) && /78 m of the origin/.test(M?.feature ?? "") && terr.W.bounds === undefined && !terr.r.stats.mapped?.some((m) => m.component === "stage"),

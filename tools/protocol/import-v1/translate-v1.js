@@ -453,9 +453,13 @@ export function waterOfOld(d) {
   const area = speed !== undefined && Math.abs(f - 1) > SPEED_NEAR ? { kind: "speed", factor: f, modes: ["swim"] } : null;   // main slowed the stroke only (@37)
   if (Array.isArray(absorption)) { water.attenuationColor = vec3(absorption, [0.16, 0.055, 0.025]).map((x) => Math.exp(-Math.max(0, x))); water.attenuationDistance = 1; }
   if (Array.isArray(scatter)) water.scatterColor = vec3(scatter, [0.015, 0.12, 0.18]).map((x) => Math.max(0, x));
-  return { center: vec3(center, [0, 0, 0]), zone: { shape: "box", size: vec3(size, [200, 200, 200]).map((x) => Math.max(0.01, Math.min(1e4, Math.abs(x)))) }, water, ...(area ? { area } : {}),
+  const sz = vec3(size, [200, 200, 200]), zone = { shape: "box", size: sz.map((x) => Math.max(0.01, Math.min(ZONE_MAX, Math.abs(x)))) };
+  return { center: vec3(center, [0, 0, 0]), zone, water, ...(area ? { area } : {}), ...clampNote(sz, zone.size),
     ...(speed !== undefined ? { speed: area ? { "physics-area": area } : { dropped: `× ${f.toFixed(3)} of the stroke here, within ${SPEED_NEAR * 100}%` } } : {}) };
 }
+/** zone.size's bound per axis (componentspec.js zone); a main size past it is clamped and the report says so (bot review #260 33) */
+export const ZONE_MAX = 1e4;
+const clampNote = (was, to) => (was.some((x) => Math.abs(x) > ZONE_MAX) ? { clamped: { size: was, to, why: `a zone is at most ${ZONE_MAX} m along each axis` } } : {});
 /** A main water speed this close (as × the stroke) to the one a body swims at here is dropped, not written as a physics-area. */
 export const SPEED_NEAR = 0.05;
 /** @42: the area every other water gets where one water's speed is written, so the speed areas overlap as the waters do (the
@@ -475,7 +479,7 @@ export function volumePartsOf(host, comp, c, { pin = false } = {}) {
   const boxes = Array.isArray(comp?.air?.boxes) ? comp.air.boxes : [];
   boxes.forEach((b, i) => { if (!b || typeof b !== "object" || Array.isArray(b)) return;
     children.push([airChildId(host, i), { transform: ID_POSE(vec3(b.center, [0, 0, 0]), qNorm(b.q) ?? [0, 0, 0, 1]), parent: { to: host }, label: `dry box ${i + 1}`,
-      zone: { shape: "box", size: vec3(b.size, [1, 1, 1]).map((x) => Math.max(0.001, Math.min(1e4, Math.abs(x)))), priority: AIR_PRIORITY }, "water-exclusion": {} }]); });
+      zone: { shape: "box", size: vec3(b.size, [1, 1, 1]).map((x) => Math.max(0.001, Math.min(ZONE_MAX, Math.abs(x)))), priority: AIR_PRIORITY }, "water-exclusion": {} }]); });
   return { own, children };
 }
 /** What of main's air {boxes} no box child holds (@41): {left (imported:air), fields (for the report)}, or null. Main read only boxes[i].{center, size, q}. */
@@ -517,7 +521,11 @@ export function volumeMappings(st) {
     const { own, children } = volumePartsOf(enc(id), { [k]: e.comp[k] }, c);
     const m = k === "water" && e.comp.water && typeof e.comp.water === "object" && !Array.isArray(e.comp.water) ? waterOfOld(e.comp.water) : null;   // @35: what main's speed became
     const sp = m && !m.area && pin ? { "physics-area": { ...SPEED_PIN, modes: ["swim"] }, why: "another water here has a speed area: factor 1 keeps this one's own stroke where they overlap (@42)" } : m?.speed;
-    out.push({ component: k, feature: VOLUMES[k].feature, id, into: [...(Object.keys(own).length ? [enc(id)] : []), ...children.map(([cid]) => cid)], ...(sp ? { speed: sp } : {}) });
+    // what main's size was where the zone had to be smaller (bot review #260 33)
+    const boxes = k === "air" && Array.isArray(e.comp.air?.boxes) ? e.comp.air.boxes : [];
+    const clamped = m ? m.clamped : boxes.flatMap((b, i) => { const ch = children.find(([cid]) => cid === airChildId(enc(id), i)); const n = ch && clampNote(vec3(b.size, [1, 1, 1]), ch[1].zone.size).clamped; return n ? [{ box: i, ...n }] : []; });
+    out.push({ component: k, feature: VOLUMES[k].feature, id, into: [...(Object.keys(own).length ? [enc(id)] : []), ...children.map(([cid]) => cid)], ...(sp ? { speed: sp } : {}),
+      ...(clamped && (!Array.isArray(clamped) || clamped.length) ? { clamped } : {}) });
   }
   return out;
 }
