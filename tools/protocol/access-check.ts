@@ -624,25 +624,26 @@ const gonePid = await exitedPid();
   const LOCKED = /can't read its ban list right now/;
   const run = async (which) => {
     fs.rmSync(BJ, { force: true }); fs.rmSync(SJ, { force: true }); fs.writeFileSync(which === "bans" ? BJ : SJ, torn);
-    const s = await start({ SERVER_OPERATORS: "agent:token:fen" });
+    const s = await start({ SERVER_OPERATORS: "agent:token:fen", RENDERER_TOKEN: "rend-key" });
     const ann = await sock(s.port); const ja = await ann.join("lockt", "Ann");
     const listed = ja.snapshot ? (await ann.req("set", { id: "@world", component: `roles:${ids.Rowan}`, value: { role: "member" } })).ok : false;
     const row = await sock(s.port); const jr = await row.join("lockt", "Rowan", { agentToken: "tok-rowan" });
     const fen = await sock(s.port); const jf = await fen.join("lockt", "Fen", { agentToken: "tok-fen" });
     const carl = await sock(s.port); const jc = await carl.join("lockt", "Carl");
     const moss = await sock(s.port); const jm = await moss.join("lockt", "Moss", { agentToken: "tok-moss" });
+    const rend = await sock(s.port); const jrn = await rend.join("lockt", "renderer", { renderer: true, token: "rend-key" });
     const k = fen.msgs.length; fen.raw({ type: "global-bans" });
     await tryUntil("the operator's ban list answers", () => fen.msgs.length > k, { ms: 3000, step: 50 });
     const said = fen.msgs.slice(k).map((m) => m.text ?? m.error ?? "").join("\n");
     const boot = fs.readFileSync(s.log, "utf8");
-    for (const c of [ann, row, fen, carl, moss]) c.close();
+    for (const c of [ann, row, fen, carl, moss, rend]) c.close();
     try { s.proc.kill(); await s.proc.exited; } catch {}
-    return { owner: !!ja.snapshot, listed, roleHolder: !!jr.snapshot, operator: !!jf.snapshot, stranger: { in: !!jc.snapshot, closed: carl.closed, why: jc.errors }, member: { in: !!jm.snapshot, closed: moss.closed, why: jm.errors },
+    return { owner: !!ja.snapshot, listed, roleHolder: !!jr.snapshot, operator: !!jf.snapshot, renderer: !!jrn.snapshot, stranger: { in: !!jc.snapshot, closed: carl.closed, why: jc.errors }, member: { in: !!jm.snapshot, closed: moss.closed, why: jm.errors },
       list: /LOCKED/.test(said), boot: /WARNING LOCKED/.test(boot) }; };
   const refused = (x) => !x.in && x.closed === 4010 && LOCKED.test(x.why.join(" "));
   const b = await run("bans");
-  ok(b.owner && b.listed && b.roleHolder && b.operator && refused(b.stranger) && refused(b.member) && b.list && b.boot,
-    "A13n an unreadable .bans.json locks the door: the owner, a role holder and an operator join; a guest and an unlisted account are refused (4010) with the plain reason; the boot log and global-bans say LOCKED", b);
+  ok(b.owner && b.listed && b.roleHolder && b.operator && b.renderer && refused(b.stranger) && refused(b.member) && b.list && b.boot,
+    "A13n an unreadable .bans.json locks the door: the owner, a role holder, an operator and the trusted renderer join; a guest and an unlisted account are refused (4010) with the plain reason; the boot log and global-bans say LOCKED", b);
   const a = await run("sanctions");
   ok(a.owner && a.roleHolder && a.operator && refused(a.stranger) && a.list, "A13n …and an unreadable .addr-sanctions.json alone locks it the same way", a);
   fs.rmSync(BJ, { force: true }); fs.rmSync(SJ, { force: true });
