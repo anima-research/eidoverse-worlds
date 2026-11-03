@@ -257,7 +257,8 @@ function playground(name) {
   ok(r && Math.abs(r.at[1]) < ON, "H it fell to the ground and that's logged", r);
 }
 
-// I — determinism of the whole pipeline: the same requests at the same times give the same log, byte for byte.
+// I — determinism of the whole pipeline: the same requests at the same times give the same log but for the random salts
+// (so heads and sigs), the genesis nonce and the world id.
 {
   const run = (name) => { clock.t = 1800000000000; const W = playground(name);
     call(W, "rowan", "grab", { id: "ball" }); call(W, "rowan", "throw", { id: "ball", v: [1.3, 2.7, 3.1] });
@@ -400,7 +401,8 @@ function playground(name) {
 // R — a deploy changes the engine's build (REVIEW-design-2026-10-15 "Deploying switches physics off"). A world the old
 // server stamped names the old build, so the new server holds it foreign and nothing flies. The authority restamps it
 // itself, as system, once: when the engine is one it carries, the build was stamped by an authority (not named by the
-// owner), and nothing is in flight (P6: the cut is then free). A "deploy" here is ENGINES' build swapped under the world.
+// owner); bodies at rest are restamped free (P6), and a launch with no rest on record is ended by the cut (R2). A "deploy"
+// here is ENGINES' build swapped under the world.
 {
   // a deploy is the carried set changing: the old server carried eidosim@0.9.0, this one carries eidosim@1.0.0
   const OLD = "eidosim@0.9.0", NEW = "eidosim@1.0.0", E = ENGINES[NEW];
