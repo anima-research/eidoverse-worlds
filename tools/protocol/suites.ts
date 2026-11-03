@@ -129,6 +129,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["consent", "consent-check.ts", 1],   // the consent tool never writes through a prototype (security pass 2, H-0); a refused change changes nothing
   ["gates", "gates-check.ts", 1],       // R 10-28: body consent is two gates (move, touch) and two lists (allow, block): the order, the world default, a stored switch or table migrated never wider
   ["consent-client", "../consent-client-test.ts", 1], // R 10-28: the browser's gates and lists land at the authority, old localStorage keys migrate never wider, a failed sync is heard and retried
+  ["structure-collider", "../structure-collider-test.ts", 1], // a building declares its own boxes; a mirrored one draws mirrored (#260 review 474)
   ["media-trust-tabs", "../media-trust-tabs-test.ts", 1], // bot #141: an untrusted-links revoke in one tab reaches the others (storage event → media:trust)
   ["confirmcenter", "../confirmcenter-test.ts", 1], // bot #213: an interrupting ask answers the open centre card with ITS cancel (false / null / its own)
   ["windows-guard", "../windows-guard-test.ts", 1], // bot #578/#579: windows.js loads where storage throws; the painted min-width yields to a narrow viewport
