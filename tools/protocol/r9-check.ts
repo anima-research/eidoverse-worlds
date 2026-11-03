@@ -236,7 +236,7 @@ const cases: Case[] = [
       const ag = new WorldAgent({ url: "ws://127.0.0.1:1/ws", name: "Hep", world: "x", avatar: "" });
       ag.setOccupant({ to: "s2" }); ag.bodyInbox([{ type: "vacated", socket: "s1", by: "bob", why: "w" }]); const other = ag.myOccupancy?.to ?? null;
       ag.setOccupant({ to: "s1" }); ag.bodyInbox([{ type: "vacated", socket: "s1", by: "bob", why: "chair.transform was changed by someone else", at: [3, 0.45, 7] }]);
-      const said = ag.inbox.map((x: any) => x.text).join(" | ");
+      const said = ag.inbox.map((x: any) => `${x.who} ${x.text}`).join(" | ");   // a row reads `* who text` (look)
       return { other, seat: ag.myOccupancy, mount: ag.mounts.has("Hep"), pos: [ag.pos.x, ag.pos.y, ag.pos.z], said }; },
     good: (o) => o.other === "s2" && o.seat === null && !o.mount && JSON.stringify(o.pos) === "[3,0.45,7]" && /bob moved/.test(o.said) && /standing where it was/.test(o.said) },
   { id: "U2", what: "(holes L4) the client's and agent's one predicate: a `vacated` stands you up only from the socket it names", run() {

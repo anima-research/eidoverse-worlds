@@ -577,27 +577,29 @@ export class WorldAgent {
     for (const m of Array.isArray(messages) ? messages : []) {
       if (!m || typeof m !== "object") continue;
       const ts = Date.now(); let text: string | null = null;
+      // a row reads `* <who> <text>` (look, net-server): who is the actor's name, text the rest (bot #260 #104)
+      const actor = m.from ?? m.by, subj = typeof actor === "string" ? this.nameOfActor(actor) ?? actor : "world";
       // what the authority did: it let the act reach this body, and recorded it
       if (m.type === "body" && m.kind === "shove") {   // a shove the authority delivered (a blast's): applied as the relay's is
         const lean = Array.isArray(m.spec?.lean) && m.spec.lean.length === 3 && m.spec.lean.every(Number.isFinite) ? m.spec.lean : null;
         const by = this.nameOfActor(String(m.from ?? "")) ?? String(m.from ?? "someone"); this.knockDown(by, lean, `(${by} knocks you over)`); }
-      else if (m.type === "body") text = `the world let ${m.from}'s ${m.kind}${m.spec?.point ? ` (${m.spec.point})` : ""} reach your body (consent: ${m.consent})`;
+      else if (m.type === "body") text = `reached your body (${m.kind}${m.spec?.point ? `, ${m.spec.point}` : ""}): the world let it (consent: ${m.consent})`;
       else if (m.type === "vacated") {   // review r9 M3: an edit by someone else moved the seat I sat on, and the authority let me go
         if (vacatedFromMine(m, this.myOccupancy)) { const on = this.socketName(m.socket); this.setOccupant(null);
           // stand where the authority let me go (its track of my body starts again there, r9 M2)
           const at = vacatedAt(m); if (at) { this.pos.x = at[0]; this.pos.y = at[1]; this.pos.z = at[2]; }
-          text = `${typeof m.by === "string" ? this.nameOfActor(m.by) ?? m.by : "someone"} moved ${on}, the seat you were on, so you are standing where it was${typeof m.why === "string" ? ` (${m.why})` : ""}`; } }
-      else if (m.type === "body-revoked") text = `${m.by} withdrew consent for ${m.class}: what you were doing to their body has ended`;
+          text = `moved ${on}, the seat you were on, so you are standing where it was${typeof m.why === "string" ? ` (${m.why})` : ""}`; } }
+      else if (m.type === "body-revoked") text = `withdrew consent for ${m.class}: what you were doing to their body has ended`;
       // someone's act on MY body was refused (said once per asker per minute): who, and what of mine turned it away
-      else if (m.type === "body-refused") { const who = this.nameOfActor(String(m.from)) ?? String(m.from);
-        text = `${who} tried to ${m.class === "shove" || m.class === "displace" ? "move" : "touch"} you (${m.class}); it was refused: ${m.gate ? `your ${m.gate} gate is off` : "they are on your block list"}`; }
+      else if (m.type === "body-refused") {
+        text = `tried to ${m.class === "shove" || m.class === "displace" ? "move" : "touch"} you (${m.class}); it was refused: ${m.gate ? `your ${m.gate} gate is off` : "they are on your block list"}`; }
       else if (m.type === "reach-refused") {   // the relay took a hand of mine out of my pose: nobody saw it (server/reachgate.ts)
         const to = String(m.to ?? ""), who = this.nameOfActor(to) ?? to;
         this.reachRefusals.push({ to, cls: String(m.class ?? "touch"), why: String(m.why ?? "their consent refused it"), ...(m.fix ? { fix: String(m.fix) } : {}), ...(typeof m.limb === "string" ? { limb: m.limb } : {}), ts });
         if (this.reachRefusals.length > 20) this.reachRefusals.shift();
         const dropped = this.dropReachesAt(to, typeof m.limb === "string" ? m.limb : undefined, String(m.class ?? "touch"));
         text = `your hand toward ${who}${m.point ? `'s ${m.point}` : ""} was not shown to anyone (consent class ${m.class}): ${m.why}${m.fix ? ` — ${m.fix}` : ""}${dropped.length ? `. Withdrawn: ${dropped.join(", ")}` : ""}`; }
-      if (text) { const who = String(m.from ?? m.by ?? "world"); this.inbox.push({ ts, kind: "act", who, text }); this.onEvent?.({ ts, kind: "act", who, text }); }
+      if (text) { const who = subj; this.inbox.push({ ts, kind: "act", who, text }); this.onEvent?.({ ts, kind: "act", who, text }); }
     }
   }
   /** sit on a thing's seat socket (presence: my frames carry {to: <socket id>}), or stand (null) */
