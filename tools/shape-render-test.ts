@@ -59,7 +59,7 @@ await tryRow('LI', async () => {
   check('LI9 …a second run finds nothing', repairComps(R).set.length === 0, '');
   const Ld = L.defaults.intensity, at5 = (I: number, d: number) => I / 5 ** d;
   check('LI11 a new default light (decay 2) is as bright as main\'s default (16 cd, decay 1.7) at half the default range, 5 m: 16 × 5^0.3; every new-light path writes it', Ld === +(16 * (L.defaults.range / 2) ** 0.3).toPrecision(4) && Math.abs(at5(Ld, 2) / at5(16, 1.7) - 1) < 1e-3
-    && lightOf({ light: { decay: 2 } })?.intensity === Ld && !/intensity: 16/.test(read('client/lib/build.js')), [Ld, at5(Ld, 2), at5(16, 1.7)]);
+    && lightOf({ light: { decay: 2 } })?.intensity === Ld && !/intensity: 16/.test(read('client/lib/build.js')) && !/intensity: 16/.test(read('mcpl/tools.ts')), [Ld, at5(Ld, 2), at5(16, 1.7)]);
   const Ro = repairComps({ light: { color: 1 } }).c.light, Rn = repairComps({ light: { color: 1, decay: 2, daytime: 'dim' } });
   check('LI12 an older light (no decay) wrote no intensity and read 16: lightOf reads it so, and the repair writes 16 beside decay 1.7; a light with its decay is left at the default', lightOf({ light: {} })?.intensity === 16 && Ro?.intensity === 16 && Ro?.decay === 1.7 && Rn.set.length === 0, [lightOf({ light: {} }), Ro, Rn.set]);
   const t = translate(v1({ verb: 'light', args: { id: 'l1', pos: [0, 2, 0], color: '#ffeedd', intensity: 8, range: 6, day: false } }));

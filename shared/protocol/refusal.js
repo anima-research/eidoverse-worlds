@@ -14,6 +14,7 @@ const readable = readable0;
 
 export function refusalText(what, reply) {
   const r = reply?.refused ?? {};
+  if (r.mayHaveLanded) return readable(`${what}: no answer from the authority (${r.code ?? "timeout"}), so it may or may not have happened: ${r.reason ?? ""}${r.fix ? ` — ${r.fix}` : ""}`);   // bot #260 #53
   return readable(`${what} refused by the authority (${r.code ?? "refused"}): ${r.reason ?? ""}${r.fix ? ` — ${r.fix}` : ""}`);
 }
 
