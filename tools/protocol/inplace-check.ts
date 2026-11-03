@@ -119,6 +119,7 @@ const L = [
   { actor: "Ann", verb: "comp", args: { id: "table_1", type: "heart", data: { beats: 3 } } },   // an invention: namespaced (IP9)
   { actor: "Ann", verb: "spawn", args: { id: "cup_1", lib: "test/cup.glb", pos: [4, 0, 2] } },
   { actor: "Bob", verb: "say", args: { text: "hello from the old days" } }];
+// (worlds with the same log bytes name the same people: a row about identities being added needs its own log, as `extra` gives)
 function oldWorld(name: string, { tamper = false, extra = [] as any[] } = {}) {
   const d = path.join(W, name); fs.mkdirSync(d, { recursive: true });
   const text = [...L, ...extra].map((e, k) => JSON.stringify({ seq: k, ts: T0 + k * 1000, ...e })).join("\n") + "\n";
@@ -569,7 +570,7 @@ const actorsOf = (d: string) => [...new Set(fs.readFileSync(path.join(d, "world.
   ok(ok1.code === 0 && actors.length >= 2 && actors.every((a) => ids[a]) && added.length === actors.filter((a) => !was[a]).length,
     "IP17 …and the clean run adds exactly the identities its world names, once (no leftovers from the failed attempts)", { code: ok1.code, out: ok1.out.slice(-300), added: added.length, actors: actors.length }); }
 // IP18 the recovery of an interrupted swap writes the identities the interrupted run planned (it died before writing them)
-{ const name = "nameless2"; const d = oldWorld(name);
+{ const name = "nameless2"; const d = oldWorld(name, { extra: [{ actor: "Bob", verb: "say", args: { text: "nameless2 is its own world" } }] });
   const died = xlate([name], { TRUST_NAMES: "", WORLD_TS_DIE_AT_STEP: "1" });
   const mid = JSON.parse(fs.readFileSync(dirf, "utf8")).ids ?? {}; const actors = actorsOf(d);
   const r = tool(["translate", name, "--no-founder-key"], { TRUST_NAMES: "" }); const ids = JSON.parse(fs.readFileSync(dirf, "utf8")).ids ?? {};
@@ -602,7 +603,7 @@ const actorsOf = (d: string) => [...new Set(fs.readFileSync(path.join(d, "world.
   ok(died.code !== 0 && r.code === 0 && !!mid["poses.original.json"] && !mid["poses.json"] && back.code === 0 && same(after, fp),
     "IP37 the recovery renames the old poses.json as the swap recorded even when the translation wrote no new one; the rollback then puts everything back", { died: died.code, code: r.code, mid: Object.keys(mid), back: back.code, out: back.out.slice(-300) }); }
 // IP8b (bot review 21) the two-name form, stopped once its world landed: the next run writes the identities it planned
-{ const name = "nameless3", dest = "nameless3-new"; oldWorld(name); const D = path.join(W, dest);
+{ const name = "nameless3", dest = "nameless3-new"; oldWorld(name, { extra: [{ actor: "Bob", verb: "say", args: { text: "nameless3 is its own world" } }] }); const D = path.join(W, dest);
   const died = xlate([name, dest], { TRUST_NAMES: "", WORLD_TS_DIE_BEFORE_IDENTITIES: "1" }), landed = isWorldDir(D);
   const mid = JSON.parse(fs.readFileSync(dirf, "utf8")).ids ?? {}; const actors = landed ? actorsOf(D) : [];
   const r = tool(["translate", name, dest, "--no-founder-key"], { TRUST_NAMES: "" }); const ids = JSON.parse(fs.readFileSync(dirf, "utf8")).ids ?? {};
