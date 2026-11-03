@@ -430,7 +430,20 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     own.raw({ type: "voice-moderate", actorId: you(j6), muted: false }); await sleep(400); g6.close(); await sleep(300);
     const [g7, j7] = await guest("drifter7");
     ok(JSON.stringify(rights(j6).muted?.channels) === '["voice"]' && !rights(j7).muted, "GG5 a voice-control mute carries by address (voice only), and its unmute lifts it", [rights(j6).muted, rights(j7).muted]);
-    for (const x of [moss, g7]) x.close(); }
+    // GG6 (bot review #260 118): two people's mutes on one guest are filed apart: each carries as its issuer's own, never merged
+    g7.close(); await sleep(300);
+    const gm = await own.req("set", { id: "@world", component: `roles:${you(jm)}`, value: { role: "moderator" } });
+    const [g8, j8] = await guest("drifter8");
+    const mo = await own.req("mute", { who: you(j8), minutes: 5, channels: ["chat"] }), mm = await moss.req("mute", { who: you(j8), minutes: 60, channels: ["voice"] });
+    await sleep(200); g8.close(); await sleep(300);
+    const [g9, j9] = await guest("drifter9");
+    const recs = ((await own.req("modlog", { who: you(j9) })).records ?? []).filter((r) => r.verb === "mute");
+    const byOwn = recs.find((r) => r.actor === you(jo)), byMoss = recs.find((r) => r.actor === you(jm));
+    ok(gm.ok && mo.ok && mm.ok && recs.length === 2 && JSON.stringify(byOwn?.channels) === '["chat"]' && byOwn.until <= Date.now() + 5 * 60_000
+      && JSON.stringify(byMoss?.channels) === '["voice"]',
+      "GG6 an owner's 5-min chat mute and a moderator's 1-h voice mute on one guest carry to the next guest as two records, each its issuer's, channels and end kept", [gm.ok, mo.ok, mm.ok, recs]);
+    await own.req("unmute", { who: you(j9) }); g9.close(); await sleep(300);
+    for (const x of [moss]) x.close(); }
   // AG3-5: minAccountDays at the join
   { const DAY = 86400000; const flake = (ms) => (BigInt(ms - 1420070400000) << 22n).toString();
     const login = async (sub, name) => { const r = await fetch(`http://127.0.0.1:${S5.port}/auth`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token: mint({ kind: "human", sub, name }) }) });

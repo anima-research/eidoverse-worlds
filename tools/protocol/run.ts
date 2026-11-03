@@ -353,7 +353,9 @@ if (receiptAt) {
   const git = (a: string[]) => spawnSync("git", ["-C", ENGINE, ...a], { encoding: "utf8" }).stdout?.trim() ?? "";
   const suites = results.map(({ name, lane, status, why, ms, leftovers, outSha256 }) => ({ name, lane, status, why, ms: Math.round(ms), leftovers, outSha256 }));
   const receipt = {
-    v: 1, verdict: bad ? "FAILED" : partial ? "PARTIAL" : "PASS", head: git(["rev-parse", "HEAD"]), dirty: git(["status", "--porcelain"]) !== "",
+    v: 1, verdict: bad ? "FAILED" : partial ? "PARTIAL" : "PASS", head: git(["rev-parse", "HEAD"]),
+    // a pull_request run checks out GitHub's merge commit: `head` is that, `prHead` the PR's own head, `mergeOf` HEAD's parents (bot review #260 28)
+    prHead: process.env.GATE_PR_HEAD || null, mergeOf: process.env.GATE_PR_HEAD ? git(["rev-list", "--parents", "-n", "1", "HEAD"]).split(" ").slice(1) : null, dirty: git(["status", "--porcelain"]) !== "",
     os: { platform: process.platform, release: os.release(), arch: process.arch }, runtimes: { ...RUNTIMES, bun: { ...RUNTIMES.bun, found: Bun.version } },
     library: LIBRARY ? { head: LIBRARY_HEAD, pinned: LIBRARY_PIN } : null, scratch: { dir: SCRATCH_ROOT, kept: !!process.env.PROTOCOL_KEEP }, seconds: Math.round((performance.now() - t0) / 1000),
     tally: Object.fromEntries((["core", "main", "browser"] as Lane[]).map((l) => [l, { pass: count(l, "pass"), fail: count(l, "fail"), skip: count(l, "skip") }])),

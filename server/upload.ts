@@ -431,7 +431,7 @@ setTimeout(sweepLibrary, 15_000).unref?.();
  *   - ?as=avatar&name=foo: named into the overlay vrms dir, because the
  *     roster is name-keyed and people re-export their bodies (mtime
  *     versioning handles the cache).
- *  Trust model: the door token, any per-agent bearer from
+ *  Trust model (an Authorization Bearer header, or ?token=): the door token, any per-agent bearer from
  *  mcpl/tokens.json, OR an aid1 credential the home node vouches for
  *  (so Orrery and agents can push generated GLBs here directly — the
  *  store is content-addressed and inert; what enters a WORLD is still
@@ -501,7 +501,8 @@ export function sniffAudio(b: Uint8Array): "mp3" | "ogg" | "wav" | "webm" | "m4a
 export const SCRIPT_MOVED = "not stored: /upload?as=script went with the old protocol. Send the source as the world's upload {text} request (an agent: act {verb: \"upload\", args: {text}}); its reply's src goes in set {id, component: \"script:<name>\", value: {src, …}} (docs/SCRIPTS.md)";
 
 export async function handleUpload(req: Request, url: URL, srv: UploadSrv): Promise<Response> {
-  const upTok = url.searchParams.get("token") ?? "";
+  // the key by Authorization: Bearer (RFC 6750, as the read door takes it); ?token= still works for older clients (bot review #260 51)
+  const upTok = /^Bearer\s+(\S+)$/i.exec(req.headers.get("authorization") ?? "")?.[1] ?? url.searchParams.get("token") ?? "";
   let upAgent = agentTokens().byToken.get(upTok);
   // The aid1 leg the join door has: guests enrolled via archipelago-home
   // carry no tokens.json entry, but may build in a world that lets them —

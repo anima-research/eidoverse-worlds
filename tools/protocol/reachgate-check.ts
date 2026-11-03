@@ -124,6 +124,15 @@ const head0 = w.log.head;
   const out3 = reachTo(sly, { p: [-0.62, 1.2, 0.05], space: "self" });   // Sly stands at x 0.6, yaw 0: that is Vic's middle
   ok(out3 && !out3.reach, "RG6 …and a point in Sly's own frame that lands inside Vic is stripped", out3); }
 
+// RG6b (bot review #260 13): a body turned by q (a swimmer lying flat) is held to its own turned capsule
+{ const s = Math.SQRT1_2; pose(ann, { p: [5, 0, 0], q: [s, 0, 0, s] });   // 90° about +x: her local +y (head) points to world +z
+  ok(Array.isArray(ann.lastPose?.q), "(RG6b setup) Ann's relayed pose keeps its q", ann.lastPose);
+  const out = reachTo(bob, { p: [5, 0, 1.6] });
+  ok(out && !out.reach, "RG6b a bare world point on lying Ann's head (outside the upright capsule) is stripped", out);
+  const out2 = reachTo(bob, { p: [5, 1.6, 0] });
+  ok(Array.isArray(out2?.reach?.rightHand?.t?.p), "RG6b …and where her head would be upright is open air, and relays", out2);
+  pose(ann, { p: [5, 0, 0], yaw: 0 }); }
+
 // RG7
 { const out = reachTo(sly, { p: [0, 1.2, 0.05], space: "Vic" });
   ok(out && !out.reach, "RG7 a point in Vic's own frame, inside her, is stripped", out);

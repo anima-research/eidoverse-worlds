@@ -255,6 +255,32 @@ await tryRow('RP12', async () => {
   check('RP12 …--force restores it anyway, byte-identical', rb3.status === 0 && sha(file) === before, [rb3.status, rb3.stderr.slice(0, 200)]);
 });
 
+// RP12b/RP12c (bot review #260 4, 8): an unsealed backup refuses a rollback; backup, seal and rollback fsync what they write
+await tryRow('RP12b', async () => {
+  const RF = await import('../server/repairfiles.ts');
+  const root = fs.mkdtempSync(path.join(process.env.PROTOCOL_SCRATCH ?? process.env.TMPDIR ?? '/tmp', 'rp12b-')); const file = path.join(root, 'world.jsonl');
+  fs.writeFileSync(file, 'line-1\nline-2\n'); const before = sha(file);
+  const b = RF.backupBeforeRepair(root); fs.appendFileSync(file, 'repair\n'); fs.appendFileSync(file, 'later-1\nlater-2\n');   // died before sealBackup
+  const m = JSON.parse(fs.readFileSync(path.join(b, 'manifest.json'), 'utf8'));
+  const r = RF.rollbackRepair(root);
+  check('RP12b a rollback of a backup never sealed (no `after`) refuses and leaves the later writes', !('after' in m) && r.ok === false && /never sealed/.test((r as any).why) && /later-2/.test(fs.readFileSync(file, 'utf8')), [m, r]);
+  const f = RF.rollbackRepair(root, { force: true });
+  check('RP12b …--force restores it anyway, byte-identical', f.ok === true && sha(file) === before, f);
+});
+await tryRow('RP12c', async () => {
+  const RF = await import('../server/repairfiles.ts');
+  const root = fs.mkdtempSync(path.join(process.env.PROTOCOL_SCRATCH ?? process.env.TMPDIR ?? '/tmp', 'rp12c-')); const file = path.join(root, 'world.jsonl');
+  fs.writeFileSync(file, 'line-1\n');
+  const o = fs.fsyncSync, oo = fs.openSync; const synced: string[] = []; const names = new Map<number, string>();
+  fs.openSync = function (p: any, ...a: any[]) { const fd = oo.call(fs, p, ...a); names.set(fd, String(p)); return fd; } as any;
+  fs.fsyncSync = function (fd: number) { synced.push(names.get(fd) ?? '?'); return o.call(fs, fd); } as any;
+  let b = ''; try { b = RF.backupBeforeRepair(root); fs.appendFileSync(file, 'repair\n'); RF.sealBackup(b); RF.rollbackRepair(root); }
+  finally { fs.fsyncSync = o; fs.openSync = oo; }
+  const has = (re: RegExp) => synced.some((p) => re.test(p.replace(/\\/g, '/')));
+  const win = process.platform === 'win32';   // Windows skips directory syncs (durable.ts syncDir)
+  check('RP12c backup, seal and rollback fsync the copy, the manifest, the rollback temp and (POSIX) the directories they land in', has(/repair-backups\/[^/]+\/world\.jsonl$/) && has(/manifest\.json\.\d+\.tmp$/) && has(/rollback-tmp$/) && (win || (synced.includes(b) && synced.includes(root))), synced);
+});
+
 await tryRow('RP13', async () => {
   const { operatorRepair } = await import('../shared/protocol/authority.js') as any;
   const w = legacyWorld({ lamp: { light: { kind: 'point', color: 1, intensity: 16, range: 10 } } });

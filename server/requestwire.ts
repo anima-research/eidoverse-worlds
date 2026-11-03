@@ -18,7 +18,7 @@ import type { Client, World } from "./world.ts";
 import { globalBans, saveGlobalBans, banKey, ADDR_BAN_MS, fileAddrSanction, liftAddrSanction } from "./moderation.ts";
 import { directoryFor, foldName } from "./directory.ts";
 import { WORLDS_DIR, FORK_GAP_SEC, FORK_PER_HOUR } from "./config.ts";
-import { isBanned } from "../shared/protocol/authority.js";
+import { isBanned, inForceOf } from "../shared/protocol/authority.js";
 import { txnRefusal } from "../shared/protocol/authority/storage.js";
 import { WIRE_READS, PERSON_ACTS } from "../shared/protocol/verbclasses.js";
 import { METER_SCALE, readMeter, authorityTime } from "./readmeter.ts";
@@ -104,10 +104,18 @@ export function guestSanctionByAddress(w: World, actor: string, by: string, verb
   if (!kind || !w.log) return;
   const addrs = [...new Set([...w.clients].filter((t) => t.actorId === who && t.anonymous && t.addr).map((t) => t.addr as string))];
   if (verb.startsWith("un")) { liftAddrSanction(kind, w.name, who, addrs[0]); return; }
-  const now = w.log.mutedHere(who);   // in force now (every channel muted)
-  if (!now) return;
-  for (const addr of addrs) fileAddrSanction({ kind, world: w.name, addr, actor, by, who, until: now.until ?? null,
-    ...(kind === "mute" ? { channels: now.channels } : {}), ...(reason ? { reason: reason.slice(0, 280) } : {}) });
+  // this actor's own mutes in force on `who`, never the union with another's: each issuer's is filed apart (bot review #260 118)
+  const mine = inForceOf(w.log.live, who, "mute").filter((m: Any) => m.actor === actor);
+  if (!mine.length) return;
+  const channels = [...new Set(mine.flatMap((m: Any) => m.channels ?? ["voice", "chat"]))] as string[];
+  const until = mine.some((m: Any) => m.until === undefined) ? null : Math.max(...mine.map((m: Any) => m.until));
+  for (const addr of addrs) fileAddrSanction({ kind, world: w.name, addr, actor, by, who, until, channels, ...(reason ? { reason: reason.slice(0, 280) } : {}) });
+}
+/** An unban's lift of the address entry a guest's ban left in this world (the request path and operator-repair alike). */
+function liftGuestAddressBan(w: World, who: string) {
+  let n = 0;
+  for (const [k, e] of Object.entries(globalBans)) if ((e as Any)?.who === who && (e as Any)?.world === w.name) { delete globalBans[k]; n++; }
+  if (n) saveGlobalBans();
 }
 export const actorOf = (c: Client) => { if (!c.actorId) throw new Error(`request from ${c.id} with no directory id (join didn't resolve one)`); return c.actorId; };
 
@@ -115,14 +123,21 @@ export const actorOf = (c: Client) => { if (!c.actorId) throw new Error(`request
  *  escapes before the request was answered is answered with the request's own id (`unanswered`), never an id-less error:
  *  a client never leaves a request pending. WorldLog.request never throws (its outcome rides its reply), so such a throw
  *  happened before the authority was reached: nothing was written (rolled back, code server-error). */
+const QUEUE_MAX = 256;   // requests one connection may have waiting behind a slow one (a stalled warm): past it, refused at arrival (bot review #260 110)
+const queued = new WeakMap<Client, number>();
 function inOrder(c: Client, ws: Ctx["ws"], fn: () => Promise<void>, unanswered?: (r: Any) => void) {
+  const n = queued.get(c) ?? 0;
+  if (n >= QUEUE_MAX) { const no = { code: "busy", reason: `${n} of your requests are still waiting their turn`, fix: "wait for their replies, then ask again" };
+    try { if (unanswered) unanswered({ ok: false, txn: "rolled-back", refused: no }); else ws.send(JSON.stringify({ type: "error", error: `${no.reason}: ${no.fix}` })); } catch { /* gone */ }
+    return; }
+  queued.set(c, n + 1);
   const tail = (c.verbQueue ?? Promise.resolve()).then(fn).catch((err) => {
     console.error(`[ws] request from ${c.id} failed server-side:`, err);
     try { if (unanswered) unanswered(txnRefusal({ outcome: "rolled-back" }));
       else ws.send(JSON.stringify({ type: "error", error: "that request failed server-side — it has been logged" })); } catch { /* gone */ }
   });
   c.verbQueue = tail;
-  void tail.then(() => { if (c.verbQueue === tail) c.verbQueue = undefined; });
+  void tail.then(() => { queued.set(c, (queued.get(c) ?? 1) - 1); if (c.verbQueue === tail) c.verbQueue = undefined; });
 }
 
 const forkAt = new Map<string, number>(), forksBy = new Map<string, number[]>();   // the fork limits' memory (config.ts FORK_*)
@@ -193,9 +208,7 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
           for (const t of w.clients) if (t.actorId !== who) { try { t.ws.send(JSON.stringify({ type: "moderated", verb, by: c.id, text })); } catch { /* gone */ } } }
       }
       // an unban also lifts the address entry a guest's ban left
-      if (r?.ok && verb === "unban" && typeof args.who === "string") { let n = 0;
-        for (const [k, e] of Object.entries(globalBans)) if ((e as Any)?.who === args.who && (e as Any)?.world === w.name) { delete globalBans[k]; n++; }
-        if (n) saveGlobalBans(); }
+      if (r?.ok && verb === "unban" && typeof args.who === "string") liftGuestAddressBan(w, args.who);
       // a ban or kick the authority accepted takes the person out NOW (H4b: a ban used to leave the banned person present,
       // talking until they chose to leave); a kicked person may come straight back (R 10-28). A guest has no account to ban,
       // so their ban also names their connection's address in this world for a day (moderation.ts), or they'd reconnect as a fresh guest.
@@ -239,6 +252,7 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
       const r = w.log.operatorRepair(cap.actorId, verb, args);
       console.log(`[world:${w.name}] operator repair by ${c.account} (${c.id}): ${verb.slice(0, 32)} ${String((args as Any).component ?? (args as Any).who ?? "").slice(0, 64)} → ${r?.ok ? "ok" : r?.refused?.code}`);
       reply(r);
+      if (r?.ok && verb === "unban" && typeof (args as Any).who === "string") liftGuestAddressBan(w, (args as Any).who);   // as request's unban does (bot review #260 119)
       if (r?.ok) sweep?.(w);   // an unban or a role change applies now (the sanctions sweep; the role change re-sends rights itself)
     }, (r) => { if (!answered) reply(r); });
   },

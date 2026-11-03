@@ -148,23 +148,26 @@ ok(close.ok && removed && bob.closed === 4010 && bob.msgs.some((m) => m.type ===
   void role; }
 
 // ---- A7: a reset keeps an invite-only world's door and the people it lists ----
-{ const k0 = own.msgs.length; own.raw({ type: "world-reset", name: "keep" });
+{ const first = () => fs.readFileSync(path.join(W, "keep", "world.jsonl"), "utf8").split("\n")[0];   // the genesis: a reset writes a new one
+  const g0 = first(), k0 = own.msgs.length; own.raw({ type: "world-reset", name: "keep" });
   await tryUntil("the reset answers (or the owner's socket closes)", () => own.closed != null || own.msgs.slice(k0).some((m) => m.type === "world-reset" || m.type === "error"), { ms: 6000, step: 50 });
   await sleep(400);
   const log = fs.readFileSync(path.join(W, "keep", "world.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
   const ops = log.filter((e) => e.kind === "change").flatMap((e) => (Array.isArray(e.body?.ops) ? e.body.ops : [e.body]));   // a batch, or one op
   const access = ops.find((o) => o.id === "@world" && o.comp === "access")?.value;
   const rowan = ops.find((o) => o.id === "@world" && o.comp === `roles:${ids.Rowan}`)?.value;
-  ok(access?.join === "listed" && rowan?.role === "member", "A7 a reset keeps an invite-only world's door and the people it lists", [access, rowan, ops.length, own.closed, own.msgs.slice(k0).map((m) => m.type + (m.error ? `: ${m.error}` : "")).slice(0, 6)]);
+  const reset = own.msgs.slice(k0).some((m) => m.type === "world-reset") && first() !== g0;   // the reset happened (bot review #260 115): an error also ends the wait
+  ok(reset && access?.join === "listed" && rowan?.role === "member", "A7 a reset keeps an invite-only world's door and the people it lists", [reset, access, rowan, ops.length, own.closed, own.msgs.slice(k0).map((m) => m.type + (m.error ? `: ${m.error}` : "")).slice(0, 6)]);
   // A7b (review of #260, server I7): a signed-in-only door is kept too (only "listed" was, so the reset opened it to guests)
   const set = await own.req("set", { id: "@world", component: "access", value: { join: "signed-in" } });
-  const k1 = own.msgs.length; own.raw({ type: "world-reset", name: "keep" });
+  const g1 = first(), k1 = own.msgs.length; own.raw({ type: "world-reset", name: "keep" });
   await tryUntil("the second reset answers (or the owner's socket closes)", () => own.closed != null || own.msgs.slice(k1).some((m) => m.type === "world-reset" || m.type === "error"), { ms: 6000, step: 50 });
   await sleep(400);
   const log2 = fs.readFileSync(path.join(W, "keep", "world.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
   const ops2 = log2.filter((e) => e.kind === "change").flatMap((e) => (Array.isArray(e.body?.ops) ? e.body.ops : [e.body]));
   const access2 = ops2.find((o) => o.id === "@world" && o.comp === "access")?.value;
-  ok(set?.ok && access2?.join === "signed-in", "A7b a reset keeps a signed-in-only world's door", [set?.ok, set?.refused, access2, own.msgs.slice(k1).map((m) => m.type + (m.error ? `: ${m.error}` : "")).slice(0, 6)]);
+  const reset2 = own.msgs.slice(k1).some((m) => m.type === "world-reset") && first() !== g1;
+  ok(reset2 && set?.ok && access2?.join === "signed-in", "A7b a reset keeps a signed-in-only world's door", [reset2, set?.ok, set?.refused, access2, own.msgs.slice(k1).map((m) => m.type + (m.error ? `: ${m.error}` : "")).slice(0, 6)]);
   // the rest of this suite reads "keep" as invite-only: its door goes back as A7 left it
   const back = await own.req("set", { id: "@world", component: "access", value: access });
   ok(back?.ok, "(A7b) keep's invite-only door is put back for what follows", back?.refused); }
@@ -238,6 +241,9 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   // authority: Fen, an operator not listed in the invite-only world, gets in (the bypass) but an ordinary write is still the
   // world's to judge; operator-repair lifts Moss's ban and lists Fen, each the operator's own act / record marked operator;
   // a non-operator's operator-repair is refused
+  // A11b (bot review #260 119): the address entry a guest's ban of Moss left in keep, which operator-repair's unban must lift too
+  const BJ = path.join(W, ".bans.json"), was = fs.existsSync(BJ) ? JSON.parse(fs.readFileSync(BJ, "utf8")) : {};
+  fs.writeFileSync(BJ, JSON.stringify({ ...was, "world:keep:addr:a11b": { by: "Rowan", ts: Date.now(), name: "drifter", addr: "a11b", until: Date.now() + 3600_000, world: "keep", who: ids.Moss } }));
   const s3 = await start({ SERVER_OPERATORS: "agent:token:fen" });
   const fen = await sock(s3.port); const jf = await fen.join("keep", "Fen", { agentToken: "tok-fen" }); const fenId = you(jf);
   let k = 0; const repair = async (s, verb, args) => { const id = `op${++k}`; s.raw({ type: "operator-repair", id, verb, args });
@@ -256,6 +262,8 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   ok(!!jf.snapshot && !plain.ok && plain.refused?.code === "rights" && unban?.reply?.ok && list?.reply?.ok && wide?.reply?.refused?.code === "rights" && !!jr.snapshot && notOp?.reply?.refused?.code === "rights" && mossGeom === 200 && !!act && !!rec,
     "A11 an operator repairs through the authority, narrowly and on the record: ordinary write refused, operator-repair unbans and lists (act / mod record marked operator), another component refused, a non-operator refused",
     { join: jf.errors, plain: plain.refused, unban: unban?.reply, list: list?.reply, wide: wide?.reply?.refused, notOp: notOp?.reply?.refused, mossGeom, act: !!act, rec: !!rec });
+  const left = Object.keys(JSON.parse(fs.readFileSync(BJ, "utf8")));
+  ok(unban?.reply?.ok && !left.includes("world:keep:addr:a11b"), "A11b operator-repair's unban lifts the address entry the guest's ban left, as the request path's unban does", left);
   // A12 (security review 10-18 H1): a GLOBAL ban binds to the account now. Rowan is present: removed, and refused on reconnect;
   // Moss is absent: the directory knows the account wearing that name, and the join is refused; the record names the account
   const modMsgs = () => fen.msgs.filter((m) => m.type === "mod" || m.type === "error").map((m) => m.text ?? m.error);
@@ -315,6 +323,17 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   const unset = probe({}), xff = probe({ PROXY_ADDRESS_HEADER: "X-Forwarded-For" }), real = probe({ PROXY_ADDRESS_HEADER: "x-real-ip" });
   ok(unset === "203.0.113.7" && xff === "203.0.113.8" && real === "203.0.113.7",
     "A13e the setting picks the header the routes read: unset or x-real-ip reads X-Real-IP, X-Forwarded-For (any case) reads its rightmost untrusted hop", { unset, xff, real }); }
+// ---- A13m (bot review #260 17): a damaged ban or sanction file is kept as it was: a later ban or mute never saves over it ----
+{ const modTs = new URL("../../server/moderation.ts", import.meta.url).href, D = fs.mkdtempSync(path.join(scratch("a13m"), "w-"));
+  const bans = path.join(D, ".bans.json"), sanc = path.join(D, ".addr-sanctions.json"), torn = '{"acct:u-aaaaaaaaaaaaaaaaaaaa": {"by": "op", "ts": 1, "acc';
+  fs.writeFileSync(bans, torn); fs.writeFileSync(sanc, torn);
+  const code = `const M = await import(${JSON.stringify(modTs)});
+    M.globalBans["acct:u-bbbbbbbbbbbbbbbbbbbb"] = { by: "op", ts: 2, account: "u-bbbbbbbbbbbbbbbbbbbb" }; M.saveGlobalBans();
+    M.fileAddrSanction({ kind: "mute", world: "w", addr: "h", actor: "u-cccccccccccccccccccc", by: "op", who: "g-1" });`;
+  const r = Bun.spawnSync(["bun", "-e", code], { env: { ...process.env, WORLDS_DIR: D, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, stdout: "pipe", stderr: "pipe" });
+  const out = r.stdout.toString() + r.stderr.toString(), b = fs.readFileSync(bans, "utf8"), s = fs.readFileSync(sanc, "utf8");
+  ok(r.exitCode === 0 && /restore failed/.test(out) && b === torn && s === torn && /not saved/.test(out),
+    "A13m an unreadable .bans.json and .addr-sanctions.json are kept byte-identical: a later ban and mute are not saved over them, and the log says so", { exit: r.exitCode, bansKept: b === torn, sancKept: s === torn, out: out.slice(0, 400) }); }
 // ---- A13c (review of #260): a global ban made before accounts, on an aid1 agent's bare sub, still holds (pure) ----
 { const { restoreBans, findBan } = await import("../../server/moderation.ts");
   const was = { "old-agent": { by: "op", ts: 1, sub: "agent-7f3a" }, "old-person": { by: "op", ts: 1, sub: "discord|123" }, "namesake": { by: "op", ts: 1, name: "bob" } };

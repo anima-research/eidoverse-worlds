@@ -151,8 +151,9 @@ OS (`tools/protocol/procgroup.ts`: `/proc` on Linux, `ps` on macOS, the process 
 with the OS's own separator. The script sandbox tells a starved process from a stuck script with `/proc` CPU time on
 Linux and, where there is no `/proc`, by whether the process ever took the job (scripts-check I8 and I8n).
 
-`.github/workflows/protocol-gate.yml` runs the whole gate on all three OSes at the exact head of every PR, and each run
-uploads a receipt (`--receipt <file>`): the head, whether the tree was dirty, OS, runtimes, the asset library's head,
+`.github/workflows/protocol-gate.yml` runs the whole gate on all three OSes on every PR and push, and each run
+uploads a receipt (`--receipt <file>`): the head (on a pull_request run, GitHub's merge of the PR into its base, with the
+PR's own head as `prHead` and the merge's parents as `mergeOf`), whether the tree was dirty, OS, runtimes, the asset library's head,
 every suite's result and a hash of its output, and one hash over all of them. That receipt, not a sentence in a PR
 comment, is the evidence of a pass.
 

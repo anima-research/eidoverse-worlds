@@ -64,5 +64,6 @@ export function eidoRel(hex: string): string | null {
   for (const rel of cands) if (contentAddressOf(rel) === hex) { checked.set(hex, rel); return rel; }
   return null;   // not cached: a blob uploaded later may answer it
 }
-/** The file holding exactly the bytes `hex` names, or null. */
+/** The file holding the bytes `hex` names, or null: verified once per process (a file replaced in place under the same
+ *  name is served until restart; the store is content-addressed and only an operator writes over it) (bot review #260 65). */
 export const eidoFile = (hex: string): string | null => { const rel = eidoRel(hex); return rel ? originalOf(rel) : null; };

@@ -68,6 +68,7 @@ export const CHECK_SCALE = { min: 0.05, max: 20 };
 const memo = new Map<string, unknown>();
 const running = new Map<string, Promise<unknown>>();
 const digests = new Map<string, { id: string; digest: string }>();
+const reading = new Map<string, Promise<{ data: Uint8Array; digest: string }>>();   // file|stat id → its one read+hash, shared by concurrent asks (bot review #260 15)
 let queue: Promise<unknown> = Promise.resolve();
 let waiting = 0, heldBytes = 0;
 /** One snapshot per distinct model in the queue: digest -> its jobs still to finish and its size. */
@@ -123,8 +124,12 @@ export async function checkFile(file: string, scale = 1, bytes?: Uint8Array, opt
     if (hit !== undefined) return hit;
   }
   // otherwise its bytes, read once (asynchronously), name the check
-  const data = bytes ?? new Uint8Array(await Bun.file(file).arrayBuffer());
-  const digest = sha256(data);
+  let data: Uint8Array, digest: string;
+  if (bytes) { data = bytes; digest = sha256(data); }
+  else { const rk = `${file}|${id}`; let rd = reading.get(rk);
+    if (!rd) { rd = (async () => { const b = new Uint8Array(await Bun.file(file).arrayBuffer()); return { data: b, digest: sha256(b) }; })();
+      reading.set(rk, rd); void rd.finally(() => reading.delete(rk)).catch(() => {}); }
+    ({ data, digest } = await rd); }
   digests.set(file, { id, digest });   // the id from before the read: a change during it shows next time
   const key = `${CHECK_VERSION}|${digest}|${s}`;
   const hit = cached(key);
