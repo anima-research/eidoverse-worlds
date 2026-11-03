@@ -13,10 +13,8 @@
 //   N   names: bare names belong to the registry; anyone else's carry a namespace; a registered alias works (H1, M7)
 //   D   defaults: every parameter is written into the stored value at create/add time (H2); meanings are pinned
 //   I   ids: minted ids are ≥ 128 random bits, everywhere (H5)
-//   F   forks: genesis.parent {world, seq, head}; copied acts are marked (H5)
 //   R   references: typed ref/refs/person fields; duplicate and publish rebind them (H5)
 //   P   privacy: arrivals and grabs log what correctness needs, not where people stood or what they are (M3)
-//   U   model values are content addresses after translation; the server and the client resolve them (H3)
 // @ts-nocheck
 import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
