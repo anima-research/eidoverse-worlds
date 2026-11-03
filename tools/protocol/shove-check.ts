@@ -4,7 +4,7 @@
 //   bun tools/protocol/shove-check.ts                 every case
 //   bun tools/protocol/shove-check.ts --only S1,S3    just those
 //   bun tools/protocol/shove-check.ts --tree <dir>    against another checkout's shared/ (a mutant, a base)
-//   bun tools/protocol/shove-check.ts --control       the base commit (e2238c07, before shove): every case must be red there
+//   bun tools/protocol/shove-check.ts --control       the base commit (e2238c07, before shove): every shove case must be red there (S0, the kick, stays green; no cases at all is a FAIL)
 //   bun tools/protocol/shove-check.ts --mutants       remove each gate in turn (a copy of the tree): its cases must go red; a
 //                                                    no-op control mutation must stay green
 // S7 (rights) and S8 (locks) are the punt's own gates, held twice (at the punt and again where its rest is admitted), so no
@@ -81,6 +81,7 @@ if (argv.includes("--control")) {
   fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
   const r = await runSelf(d, null);
   const lines = r.out.split("\n").filter((l) => /^(ok|FAIL) /.test(l));
+  if (!lines.length) { console.log(`FAIL [shove-check --control] no case ran at ${BASE} (exit ${r.code}): ${r.out.slice(-400)}`); process.exit(1); }   // empty output is not "all red" (bot review #260 402)
   const wrong = lines.filter((l) => l.startsWith("ok ") && !/^ok\s+S0\b/.test(l));
   console.log(lines.map((l) => `${l.startsWith("FAIL") || /^ok\s+S0\b/.test(l) ? "as expected at base: " : "WRONG AT BASE:       "}${l.slice(0, 140)}`).join("\n"));
   console.log(`[shove-check --control] at ${BASE}: ${lines.length} cases, ${wrong.length} wrong (S0 is the kick, kept; every shove case must be red there)`);

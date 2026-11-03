@@ -11,11 +11,11 @@
 //   O   openable (R 10-07: the behaviour, not the asset; it was `door`): the authority's shape and ranges, toggle's default,
 //       what look says, the importer's rename, the pose and the tween every client draws, the editor's card and Add
 //   R   reactions: Add Component offers only what the authority takes; handlers are checked when WRITTEN (a value the authority
-//       would refuse, a field in a component the thing hasn't got, a toggle of a number, a push on a spinner); a use
-//       whose component was removed since says so and writes nothing
+//       would refuse, a field in a component the thing hasn't got, a toggle of a number); a push written on a spinning thing
+//       is taken, using it is refused not-pushable (R6); a use whose component was removed since says so and writes nothing
 //   M   motion: the authority takes spin/orbit/path's conventional fields; the evaluator honours an orbit's period; the
 //       importer translates rpm and keeps center/face/period/points instead of parking them in imported:motion
-//   H   help text: physics.who and grabbable.who default to visitor (3b3ad8e2), and every place an agent reads says so
+//   H   help text: physics.who and grabbable.who default to member (visitor until R 10-21), and every place an agent reads says so
 //   P   people: a refusal in a person's words (no code, no tool syntax, things by label); warnings by label
 // @ts-nocheck
 import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
@@ -313,9 +313,10 @@ await C("M5", "the editor: a rate typed on an orbit drops its period (one speed)
 
 // ---- H: help text ----
 await C("H1", "what agents read says physics.who and grabbable.who default to member (3b3ad8e2; visitor until R 10-21), never builder", () => {
-  const texts = [CAT.COMPONENTS.physics.help, CAT.COMPONENTS.grabbable.help, JSON.stringify(TS), fs.readFileSync(path.join(T, "AGENTS.md"), "utf8").split("Humans have T")[1]?.slice(0, 400) ?? ""];
+  const agents = fs.readFileSync(path.join(T, "AGENTS.md"), "utf8"), i = agents.indexOf("`grabbable.who` says who may pick it up");   // the passage itself, not a phrase that may have gone (bot review #260 398)
+  const texts = [CAT.COMPONENTS.physics.help, CAT.COMPONENTS.grabbable.help, JSON.stringify(TS), i < 0 ? "" : agents.slice(i, i + 400)];
   const bad = texts.filter((t) => /default builder/.test(t)).map((t) => t.slice(0, 80));
-  return [!bad.length && /default member/.test(texts[0]) && /default member/.test(texts[1]), bad];
+  return [!bad.length && texts.every((t) => t.length > 0) && texts.every((t) => /default member/.test(t)), { bad, lens: texts.map((t) => t.length), agents: texts[3].slice(0, 120) }];
 }).catch(() => {});
 
 // ---- P: people ----

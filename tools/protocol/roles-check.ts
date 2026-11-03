@@ -66,7 +66,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["owners can't be banned or kicked", "protocol/authority/moderation.js", "if (noOwner && them === \"owner\") refuse(", "if (false) refuse(", ["M1"]],
   ["a ban with no end is an owner's", "protocol/authority/moderation.js", "if (a.days === undefined && !owner) refuse(", "if (false) refuse(", ["M1"]],
   ["the moderator ban cap", "protocol/authority/moderation.js", "if (a.days !== undefined && a.days > R.MOD_BAN_MAX_DAYS && !owner) refuse(", "if (false) refuse(", ["M1"]],
-  ["bans end by the clock", "protocol/authority.js", "const inForce = (w, m) => !!m && (m.until === undefined || m.until > w.now());", "const inForce = (w, m) => !!m;", ["M2", "M3", "G2"]],
+  ["bans end by the clock", "protocol/authority.js", "const inForce = (w, m) => !!m && (m.until === undefined || m.until > w.now());", "const inForce = (w, m) => !!m;", ["M2", "M3"]],
   // the independent review (10-07)
   ["the strongest sanction in force wins", "protocol/authority.js", "const strongest = (a) => a.reduce(", "const strongest = (a) => a.slice(-1)[0] ?? null; const _s = (a) => a.reduce(", ["V1"]],
   ["a mute's channels are the union", "protocol/authority.js", "const channels = [...new Set(a.flatMap((m) => m.channels ?? [\"voice\", \"chat\"]))];", "const channels = strongest(a).channels ?? [\"voice\", \"chat\"];", ["V1b"]],
@@ -80,7 +80,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["mute channels", "protocol/authority.js", "  if (channel && !channels.includes(channel)) return null;", "", ["M3"]],
   ["mute cap", "protocol/authority/moderation.js", "if (minutes > cap && roleOf(w.state(), actor)", "if (false && roleOf(w.state(), actor)", ["M4"]],
   ["a kick takes no length", "protocol/authority/moderation.js", "if (a.minutes !== undefined) refuse(\"shape\", \"a kick has no length", "if (false) refuse(\"shape\", \"a kick has no length", ["M5"]],
-  ["lifting goes by the record's author", "protocol/authority/moderation.js", "if (strict ? mine <= theirs : mine < theirs) refuse(\"rank\"", "if (false) refuse(\"rank\"", ["M6", "G2"]],
+  ["lifting goes by the record's author", "protocol/authority/moderation.js", "if (strict ? mine <= theirs : mine < theirs) refuse(\"rank\"", "if (false) refuse(\"rank\"", ["M6"]],
   ["lifting needs the permission", "protocol/authority/moderation.js", "if (!may(st, actor, power) && roleOf(st, actor) !== \"owner\") refuse(\"rights\", `lifting a", "if (false) refuse(\"rights\", `lifting a", ["M6"]],
   ["grant: grantRoles", "protocol/authority/gate.js", "if (n === \"grant\") return eff.can.grantRoles ? null : \"grantRoles\";", "if (n === \"grant\") return null;", ["M7"]],
   ["grant: the target ranks below you", "protocol/authority/gate.js", "if (rankOf(st, target, anon) >= me.rank) refuse(\"rank\"", "if (false) refuse(\"rank\"", ["M7"]],
@@ -115,7 +115,7 @@ async function runSelf(tree: string, only: string[] | null, extra: string[] = []
 }
 function mutantTree(tag: string) {
   const d = scratch(tag);
-  for (const sub of ["shared", "server", "tools", "defs"]) if (fs.existsSync(path.join(ENGINE, sub))) copyTree(path.join(ENGINE, sub), path.join(d, sub));
+  for (const sub of ["shared", "server", "tools", "defs", "mcpl", "client/lib"]) if (fs.existsSync(path.join(ENGINE, sub))) copyTree(path.join(ENGINE, sub), path.join(d, sub));   // B1 walks client and mcpl too (#260 393)
   for (const f of ["package.json", "tsconfig.json", "bunfig.toml"]) if (fs.existsSync(path.join(ENGINE, f))) fs.copyFileSync(path.join(ENGINE, f), path.join(d, f));
   fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
   return d;

@@ -26,6 +26,7 @@ const args = process.argv.slice(2);
 const flag = (f: string) => args.includes(f);
 const opt = (f: string, d: number) => { const i = args.indexOf(f); return i >= 0 ? Number(args[i + 1]) : d; };
 const importOnly = flag("--import-only");
+const strictEnv = flag("--strict-env");   // a dependency missing here is a red, not an env note (the gate's client-tools; bot review #260 187)
 // a load failure comes before a test does any work (a stub plugin, then its import); one later than this is the full run's
 const JOBS = opt("--jobs", importOnly ? 6 : 2);
 const TIMEOUT_S = opt("--timeout", importOnly ? 15 : 90);
@@ -110,10 +111,10 @@ const run = (file: string): Promise<Res> => new Promise((done) => {
     clearTimeout(timer); if (process.platform !== "win32") kill(true); live.delete(ch.pid!); inFlight.delete(ch.pid!);
     const ms = performance.now() - t0; const tail = out.trim().split("\n").slice(-3).join("\n");
     const dead = linkError(out);
-    if (dead && /^error: Cannot find (?:module|package) '[^./]/.test(dead)) return done({ file, kind: "env", why: `a dependency isn't installed here: ${dead.slice(7)}`, ms, tail });
+    if (dead && /^error: Cannot find (?:module|package) '[^./]/.test(dead)) return done({ file, kind: strictEnv ? "red" : "env", why: `a dependency isn't installed here: ${dead.slice(7)}`, ms, tail });
     if (dead) return done({ file, kind: "dead", why: `${dead} (at ${(ms / 1000).toFixed(1)} s)`, ms, tail });
+    if (timedOut) return done({ file, kind: "timeout", why: `still running at ${TIMEOUT_S} s`, ms, tail });   // before loaded: a hung top-level await never loaded (#260 187)
     if (importOnly) return done({ file, kind: "loaded", ms });
-    if (timedOut) return done({ file, kind: "timeout", why: `still running at ${TIMEOUT_S} s`, ms, tail });
     if (code === 0) return done({ file, kind: "pass", ms });
     if (code === 2 && /no browser|no chrome|chromium|no gpu|webgpu/i.test(out)) return done({ file, kind: "env", why: tail.split("\n").pop(), ms, tail });
     // the avatar corpus is gitignored (assets/opt/eidoverse/assets/vrms): a worktree has none until it is linked, and no
@@ -154,4 +155,4 @@ const left = [...untracked()].filter((p) => !before.has(p));
 if (left.length) console.log(`\n  left in the tree by this run (a killed test's debris; check, then delete): ${left.length}\n    ${left.slice(0, 20).join("\n    ")}${left.length > 20 ? "\n    …" : ""}`);
 const unRun = unreached.filter((p) => todo.some((f) => rel(f) === p));
 console.log(`\n${unreached.length} of ${files.length} files are reached by no runner but this one${only.length ? ` (${unRun.length} in this run)` : ""}; --unreached lists them`);
-process.exit(by("dead").length || (!importOnly && (by("red").length || by("timeout").length)) ? 1 : 0);
+process.exit(by("dead").length || by("red").length || by("timeout").length ? 1 : 0);

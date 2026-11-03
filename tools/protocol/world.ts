@@ -13,8 +13,8 @@
 //   WORLDS_DIR=<dir> bun tools/protocol/world.ts repair <name> --rollback [--force]               the pre-repair log put back, byte-identical
 //
 // The server never makes a world by itself (it serves only worlds in this protocol, and refuses a directory holding only an old log). A directory is a world because it holds world.jsonl
-// whose line 0 is a genesis saying {dialect, v: 4}, and only this tool writes one (shell access to the host, like every other operator
-// act on world files). `found` runs the authority's own `new` request, so genesis names the owner and the founding act
+// whose line 0 is a genesis saying {dialect, v: 4}, written by this tool (`found`, `translate`) or by the server's `new` request for an
+// authorized account (server/worldlog.ts foundOwnedWorld). `found` runs the authority's own `new` request, so genesis names the owner and the founding act
 // writes @world (about, bounds, roles:<owner>) through admit. --owner is the name you join with; it is stamped through
 // names.js exactly as the live authority stamps you, so you are the owner when you arrive.
 // `translate` reads <v1 world>/log.jsonl, never writes it (R9: the original is kept), runs the importer
@@ -24,7 +24,8 @@
 // verified (the importer's checks, the result opened as the server opens it, and, where the old server left a
 // snapshot.json, the snapshot oracle's agreement with the old engine), and only then swapped in under the original name,
 // with the old log kept beside it as log.original.jsonl (snapshot.json → snapshot.original.json): renamed, never
-// rewritten. On any failure the original is left as it was, the temporary directory is removed, and it says why. If the
+// rewritten. On any failure the originals are put back, the temporary directory is removed, and it says why (a reverse
+// rename that itself fails is named for hand repair and the marker stays). If the
 // process itself dies mid-swap (no rollback runs), the next `translate <world>` sees the half-swapped directory and finishes
 // the swap (renames and moves only), saying so; until then translation.lock marks it and the server won't serve it.
 import fs from "node:fs";
@@ -224,7 +225,7 @@ function translateInPlace(name: string, approval: Approval, approvedSource: { si
   syncTree(T);   // the translated files on disk before any of them is renamed in (bot review #260 9)
   { const fd = fs.openSync(path.join(D, SWAP_MARKER), "wx"); fs.writeSync(fd, JSON.stringify({ temp: T, at: Date.now() })); fs.fsyncSync(fd); fs.closeSync(fd); }
   syncDir(D);   // the marker's name, before the first rename
-  const done: [string, string][] = [];
+  const done: [string, string][] = []; let minted = false;
   const fault = Number(process.env.WORLD_TS_FAULT_AT_STEP ?? NaN);   // tests only: fail as if step k's rename had (tools/protocol/inplace-check.ts)
   const death = Number(process.env.WORLD_TS_DIE_AT_STEP ?? NaN);      // tests only: the process dies after k renames, no rollback (IP13)
   const touch = Number(process.env.WORLD_TS_TOUCH_SOURCE_AT_STEP ?? NaN);   // tests only: a writer appends to the old log after k renames (inplace-check IP14)
@@ -237,9 +238,12 @@ function translateInPlace(name: string, approval: Approval, approvedSource: { si
     // the swap has succeeded: only now do its identities join the shared directory (a refusal here, an account taken since,
     // undoes the swap like any other failure)
     if (Number(process.env.WORLD_TS_FAULT_AT_STEP ?? NaN) === steps.length) throw new Error(`(injected) step ${steps.length} failed`);
-    putIdentities(r!.planned); fs.rmSync(path.join(D, SWAP_MARKER)); syncDir(D); }
+    putIdentities(r!.planned); minted = true;
+    if (Number(process.env.WORLD_TS_FAULT_AT_STEP ?? NaN) === steps.length + 1) throw new Error(`(injected) step ${steps.length + 1} failed`);   // tests only: after the identities (IP35)
+    fs.rmSync(path.join(D, SWAP_MARKER)); syncDir(D); }
   catch (x) {
     const stuck: string[] = [];
+    if (minted) directoryFor(WORLDS_DIR).forgetPlanned(r!.planned);   // a swap undone takes its identities with it (bot review #260 435)
     for (const [a, b] of done.reverse()) { try { fs.renameSync(b, a); } catch (y) { stuck.push(`${b} (should be ${a}: ${(y as Error).message})`); } }
     if (!stuck.length) fs.rmSync(path.join(D, SWAP_MARKER), { force: true });   // all put back: an old world again; else it stays marked
     if (stuck.length) die(`the swap failed (${(x as Error).message}) and these couldn't be put back; move them by hand:\n  ${stuck.join("\n  ")}\nThe translated files are in ${T}.`);
@@ -271,12 +275,14 @@ function rollback(name: string) {
   let m: any; try { m = JSON.parse(fs.readFileSync(mf, "utf8")); } catch (x) { die(`${mf} doesn't parse: ${(x as Error).message}. Nothing was changed.`); }
   const discard = rest.includes("--discard-changes");
   // every renamed original must still be there, exactly as recorded for the log; every made file either as made or discarded knowingly
-  const missing = m.renamed.filter(([, b]: string[]) => !fs.existsSync(path.join(D, b))).map(([, b]: string[]) => b);
+  // an original already under its old name with the kept one gone is an interrupted rollback's work: left as restored (bot review #260 138)
+  const restored = new Set<string>(m.renamed.filter(([a, b]: string[]) => !fs.existsSync(path.join(D, b)) && fs.existsSync(path.join(D, a))).map(([, b]: string[]) => b));
+  const missing = m.renamed.filter(([a, b]: string[]) => !fs.existsSync(path.join(D, b)) && !fs.existsSync(path.join(D, a))).map(([, b]: string[]) => b);
   if (missing.length) die(`can't roll back "${name}": the kept original(s) ${missing.join(", ")} are gone from ${D}. Nothing was changed.`);
   // a name the original goes back to must be free, unless it's one the translation made (removed first, below: the new poses.json)
-  const back = m.renamed.filter(([a]: string[]) => fs.existsSync(path.join(D, a)) && !(a in m.made)).map(([a]: string[]) => a);
+  const back = m.renamed.filter(([a, b]: string[]) => fs.existsSync(path.join(D, a)) && !restored.has(b) && !(a in m.made)).map(([a]: string[]) => a);
   if (back.length) die(`can't roll back "${name}": ${back.join(", ")} already exist(s) in ${D}, where the original(s) would go back. Nothing was changed.`);
-  const origNow = sourceChanged(path.join(D, ORIGINAL.log), m.source);
+  const origNow = restored.has(ORIGINAL.log) ? sourceChanged(path.join(D, "log.jsonl"), m.source) : sourceChanged(path.join(D, ORIGINAL.log), m.source);
   if (origNow) die(`can't roll back "${name}": ${ORIGINAL.log} no longer holds the bytes that were translated (${m.source.size} bytes then, ${origNow.size} now): it was written to, and the original is lost. Nothing was changed.`);
   const changed = Object.entries<string | null>(m.made).filter(([f, h]) => h && fs.existsSync(path.join(D, f)) && sha(path.join(D, f)) !== h).map(([f]) => f);
   // files the server made since the translation (r14 M3): not made by it, not renamed by it, not there before it. The moderator
@@ -289,7 +295,7 @@ function rollback(name: string) {
   for (const f of Object.keys(m.made)) if (f !== MANIFEST && fs.existsSync(path.join(D, f))) { fs.rmSync(path.join(D, f), { recursive: true }); did.push(`removed ${f}${changed.includes(f) ? " (its changes since the translation discarded)" : ""}`); }
   for (const f of since) { fs.rmSync(path.join(D, f), { recursive: true, force: true }); did.push(`removed ${f} (made by the server since the translation; discarded)`); }
   for (const f of fs.readdirSync(D)) if (isCacheFile(f)) fs.rmSync(path.join(D, f));   // the translated log's derived fold goes with it
-  for (const [a, b] of m.renamed) { fs.renameSync(path.join(D, b), path.join(D, a)); did.push(`${b} → ${a}`); }
+  for (const [a, b] of m.renamed) { if (restored.has(b)) { did.push(`${a} was already back`); continue; } fs.renameSync(path.join(D, b), path.join(D, a)); did.push(`${b} → ${a}`); }
   // an identity this translation minted that another world's files name (a later translation reused it through the same
   // account, or the person has been there since) is that world's too: forgetting it would hand them a fresh, roleless id
   const elsewhere = namedElsewhere(name, Object.keys(m.identities ?? {}));
@@ -342,13 +348,20 @@ function finishSwap(name: string, at: { D: string; temps: string[]; oldLog: bool
   const did: string[] = [], stuck: string[] = [];
   const mv = (a: string, b: string) => { if (!fs.existsSync(a)) return; if (fs.existsSync(b)) { stuck.push(`${a} (${b} is already there)`); return; } fs.renameSync(a, b); did.push(`${path.relative(WORLDS_DIR, a).split(path.sep).join("/")} → ${path.relative(WORLDS_DIR, b).split(path.sep).join("/")}`); };
   mv(path.join(D, "log.jsonl"), path.join(D, ORIGINAL.log));
-  // the old snapshot and poses go only while the swap is visibly unfinished (a temporary directory left): once it's done,
-  // a poses.json beside the world is the world's own
-  if (temps.length || at.oldLog) { mv(path.join(D, "snapshot.json"), path.join(D, ORIGINAL.snapshot));
+  // the other renames are the swap's own list (its manifest, still in the temporary sibling or already moved in): the swap
+  // recorded poses.json → poses.original.json whether or not the translation wrote a new poses.json (bot review #260 432)
+  const mfAt = [...(temps[0] ? [temps[0]] : []), D].map((d) => path.join(d, MANIFEST)).find((f) => fs.existsSync(f));
+  const renamed: [string, string][] = mfAt ? (() => { try { return JSON.parse(fs.readFileSync(mfAt, "utf8")).renamed ?? []; } catch { return []; } })() : [];
+  // without a manifest, the old snapshot and poses go only while the swap is visibly unfinished (a temporary directory left):
+  // once it's done, a poses.json beside the world is the world's own
+  if (renamed.length) { for (const [a, b] of renamed) if (a !== "log.jsonl" && !fs.existsSync(path.join(D, b))) mv(path.join(D, a), path.join(D, b)); }
+  else if (temps.length || at.oldLog) { mv(path.join(D, "snapshot.json"), path.join(D, ORIGINAL.snapshot));
     if (fs.existsSync(path.join(D, "poses.json")) && !fs.existsSync(path.join(D, ORIGINAL.poses)) && (!temps.length || fs.existsSync(path.join(temps[0], "poses.json")))) mv(path.join(D, "poses.json"), path.join(D, ORIGINAL.poses)); }
-  for (const T of temps) { fs.rmSync(path.join(T, SOURCE), { force: true });
+  for (const T of temps) {
+    if (process.env.WORLD_TS_DIE_IN_RECOVERY === "1") process.exit(9);   // tests only: the recovery dies after the first rename, before the moves (IP36)
     if (fs.existsSync(path.join(T, IDENTITIES))) { const n = putIdentities(JSON.parse(fs.readFileSync(path.join(T, IDENTITIES), "utf8"))); fs.rmSync(path.join(T, IDENTITIES)); if (n) did.push(`${n} identit${n === 1 ? "y" : "ies"} added to the directory`); }
-    for (const f of fs.readdirSync(T)) mv(path.join(T, f), path.join(D, f));
+    for (const f of fs.readdirSync(T)) if (!TEMP_ONLY.has(f)) mv(path.join(T, f), path.join(D, f));
+    fs.rmSync(path.join(T, SOURCE), { force: true });   // last: a recovery interrupted before this still checks the old log next time (bot review #260 139)
     if (!fs.readdirSync(T).length) { fs.rmSync(T, { recursive: true, force: true }); did.push(`removed ${path.relative(WORLDS_DIR, T).split(path.sep).join("/")}`); } }
   if (!stuck.length && isSwapUnfinished(D)) { fs.rmSync(path.join(D, SWAP_MARKER)); did.push(`removed ${SWAP_MARKER}`); }
   if (stuck.length) die(`the in-place translation of "${name}" was interrupted; finishing it moved ${did.length ? did.join(", ") : "nothing"}, but these are in the way; move them by hand:\n  ${stuck.join("\n  ")}\n`

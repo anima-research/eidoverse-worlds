@@ -236,7 +236,7 @@ row("IM-I15", () => {
     "IM-I15 an air box on @world removed later (comp null, or removed) no longer refuses; one still standing does, naming the use that stands", d.map((x) => x.map((u) => u.seq)));
 });
 
-// ---- IM-W: main #248's water volume and air boxes translate (zone + water / water-exclusion); traversal, vehicle, collision still refuse ----
+// ---- IM-W: main #248's water volume and air boxes translate (zone + water / water-exclusion); only a volume on @world (no frame) still refuses ----
 row("IM-W1", () => {
   const water = { center: [0, -2, 0], size: [10, 4, 10], absorption: [0.1, 0.036, 0.018], scatter: [0.014, 0.11, 0.17], speed: 2.4, waves: [{ amplitude: 0.3, wavelength: 12, direction: [1, 0], phase: 0 }] };
   const L = seqd([BASIC[0], { actor: "Ann", verb: "spawn", args: { id: "pool", lib: "p.glb", pos: [5, 0, 0], yaw: 0.5 } }, { actor: "Ann", verb: "comp", args: { id: "pool", type: "water", data: water } },

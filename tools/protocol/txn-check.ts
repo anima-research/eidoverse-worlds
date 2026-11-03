@@ -83,7 +83,7 @@ process.env.WORLDS_DIR = path.join(root, "w"); process.env.OPT_DIR = path.join(r
 process.env.SERVER_OPERATORS = "local:opie";
 fs.mkdirSync(process.env.WORLDS_DIR, { recursive: true });
 const ENGINE = path.resolve(import.meta.dir, "../..");
-const { foundWorld, WorldLog } = await import("../../server/worldlog.ts");
+const { foundWorld, WorldLog, wireEntry } = await import("../../server/worldlog.ts");
 const { World } = await import("../../server/world.ts");
 const { REQUEST_MESSAGES } = await import("../../server/requestwire.ts");
 const { directoryFor } = await import("../../server/directory.ts");
@@ -115,7 +115,9 @@ function tab(W_, actorId, { account = undefined, spectator = false } = {}) {
   const c = { id: `p${gens}`, world: W_.w, actorId, account, spectator, gen: gens++, legGen: 0,
     ws: { send: (d) => { const m = JSON.parse(d);
       if (m.type === "reply") replies.push(m);
-      if (m.type === "log") { logs.push(m); const n = lines(W_.name).length; if (n < m.from + m.entries.length) publishedNotOnDisk.push({ world: W_.name, from: m.from, n: m.entries.length, onDisk: n }); } } } };
+      if (m.type === "log") { logs.push(m); const L = lines(W_.name), n = L.length; if (n < m.from + m.entries.length) publishedNotOnDisk.push({ world: W_.name, from: m.from, n: m.entries.length, onDisk: n });
+        else { const differ = m.entries.findIndex((e, i) => JSON.stringify(wireEntry(JSON.parse(L[m.from + i]))) !== JSON.stringify(e));   // the same entries, not just enough lines (bot review #260 405)
+          if (differ >= 0) publishedNotOnDisk.push({ world: W_.name, from: m.from, differsAt: m.from + differ, sent: JSON.stringify(m.entries[differ]).slice(0, 200), onDisk: L[m.from + differ].slice(0, 200) }); } } } } };
   W_.w.clients.add(c); return { c, replies, logs };
 }
 const send = (t, verb, args, type = "request") => REQUEST_MESSAGES[type]({ c: t.c, ws: t.c.ws, now: Date.now(), expel: () => {}, sweep: () => {} }, { id: `r${Math.random().toString(36).slice(2, 8)}`, verb, args });
@@ -395,7 +397,7 @@ const described = (W_, label) => Object.values(W_.w.log.live.state().entities).s
   ok(early === 300 - 255 && t.replies.length === 301 && t.c.verbQueue === undefined,
     "T12 behind a stalled request, a connection's queue holds 256: the rest are refused busy at once, and after the stall all are answered and the queue drains", { early, n: t.replies.length, queue: !!t.c.verbQueue }); }
 
-ok(!publishedNotOnDisk.length, "T3d every line any client was sent was on disk when it was sent", publishedNotOnDisk);
+ok(!publishedNotOnDisk.length, "T3d every line any client was sent was on disk when it was sent, as the bytes sent (the wire's view of the line on disk)", publishedNotOnDisk);
 // ---------------- T11 (review r14 M1, 10-18) ----------------
 // every write a socket sends goes through requestwire (one capability, the queue, the meters, both recheck seams): server.ts
 // itself calls w.log.request nowhere; voice-moderate goes through requestAs. A static row: the wire has no other door to a write.

@@ -18,7 +18,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { scratch } from "./common.ts";
-import { tryUntil, pause } from "./wait.ts";
+import { tryUntil } from "./wait.ts";
 const root = scratch("reachgate");
 process.env.WORLDS_DIR = path.join(root, "w"); process.env.OPT_DIR = path.join(root, "opt"); process.env.SKIP_OPT_SWEEP = "1";
 process.env.JOIN_TOKEN ??= "test-door";
@@ -301,7 +301,7 @@ let skipped = null; const SKIP = Symbol("skip");
 // ---- AG: an agent's reach through a real server (a real mcpl/agent.ts WorldAgent): the reply says what the world showed ----
 //   AG1  a stranger agent's hand on a person's chest_front: no frame the person receives carries it, and the reach reply
 //        says it wasn't shown and why (it used to say the hand was reaching)
-//   AG2  once the person opens touch, a hand on their shoulder relays and the reply doesn't claim a refusal
+//   AG2  once the person puts the agent on her allow list (touch gate still off), a hand on their shoulder relays and the reply doesn't claim a refusal
 { const { ENGINE } = await import("./common.ts");
   const W = path.join(root, "ag"), OPT = path.join(root, "agopt"); fs.mkdirSync(W, { recursive: true }); fs.mkdirSync(OPT, { recursive: true });
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -339,15 +339,19 @@ let skipped = null; const SKIP = Symbol("skip");
     const call = (name, a = {}) => HANDLERS[name](ag, a, { agent: ag, canPush: () => false, heldActivity: [], cursor: { caughtUpTo: null } }, name);
     const T = (r) => r?.content?.[0]?.text ?? "";
     const seenReach = (k, point) => msgs.slice(k).some((m) => m.type === "frame" && m.poses?.Hep?.reach && JSON.stringify(m.poses.Hep.reach).includes(point));
+    const hepId = () => { for (const m of msgs) { if (m.id === "Hep" && typeof m.actorId === "string") return m.actorId;
+      for (const p of m.present ?? []) if (p.id === "Hep" && typeof p.actorId === "string") return p.actorId; } return null; };
     // AG1 (Vic's touch gate off; the agent alone is let in by her allow list in AG2)
     const sw = await vreq("consent", { touch: false }); ok(sw?.ok, "(AG1 setup) Vic turns her touch gate off", sw);
     let k = msgs.length;
-    const r1 = await call("reach", { who: "Vic", point: "chest_front" }); await pause("a relayed hand on Vic's chest has had its time to arrive (none must)", 600);
+    const r1 = await call("reach", { who: "Vic", point: "chest_front" });
+    // the delivery barrier: the refusal in r1 came from the relay, which had the pose by then; a reply to Vic's own request lands
+    // on her ordered socket after anything that pose sent her, so the absence below is judged, not waited on (bot review #260 498)
+    const barrier = await vreq("whois", { id: hepId() }); ok(barrier && !barrier.timeout, "(AG1 barrier) Vic's own request is answered after the relay handled the reach", barrier);
     ok(!seenReach(k, "chest_front"), "AG1 Vic receives no frame carrying the agent's hand on her chest_front", msgs.slice(k).filter((m) => m.type === "frame" && m.poses?.Hep).map((m) => m.poses.Hep.reach).slice(-3));
     ok(/not shown/.test(T(r1)) && /intimate/.test(T(r1)) && !ag.reaches.has("rightHand"), "AG1 the reach reply says the hand was not shown and why, and the agent stops streaming it", { text: T(r1), reaches: [...ag.reaches.keys()] });
     // AG2
-    const hep = (() => { for (const m of msgs) { if (m.id === "Hep" && typeof m.actorId === "string") return m.actorId;
-      for (const p of m.present ?? []) if (p.id === "Hep" && typeof p.actorId === "string") return p.actorId; } return null; })();
+    const hep = hepId();
     const op = await vreq("consent", { allow: hep });
     ok(op?.ok, "(AG2 setup) Vic puts the agent on her allow list", { op, hep });
     k = msgs.length;

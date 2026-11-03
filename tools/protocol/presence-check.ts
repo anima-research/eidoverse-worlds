@@ -6,7 +6,8 @@
 //       collision already was; the claimant themself still arrives as themself
 //   BC  body consent at the server (tools audit 10-07 "Body consent"): a puppet (ragdoll → shove, pose/anim → pose) and a
 //       bodydrag grab (→ displace) are checked against the TARGET's consent (shared/protocol/consent.js: their lists, then
-//       their move gate for shove and displace, their touch gate for pose) and a sane range BEFORE they're forwarded; the
+//       their move gate for shove and displace, their touch gate for pose) and a range when the world sets one (body-default.range;
+//       none by default) BEFORE they're forwarded; the
 //       authority's body inbox (acts delivered, revocations) is pushed to its person's socket
 //   PR  puppet / bodydrag / typing reach the IDENTITY the sender named (targetActor / toActor, the opaque u-… id every
 //       arrive carries), not whoever wears a name: the actor wins over the name; an actor who isn't here is refused; a

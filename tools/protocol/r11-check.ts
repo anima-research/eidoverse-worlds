@@ -1,13 +1,13 @@
 // tools/protocol/r11-check.ts — review round 11 (REVIEW-stern-r11, REVIEW-claims-r11 repo items, 2026-10-17): the
-// fixes, each row red first (against 00a5e276) and held by a mutation below.
+// fixes, each row red first (against 00a5e276) and most held by a mutation below (C5 has none).
 //   bun tools/protocol/r11-check.ts                 every row
-//   bun tools/protocol/r11-check.ts --only C1,X1    just those
+//   bun tools/protocol/r11-check.ts --only C4,X1    just those
 //   bun tools/protocol/r11-check.ts --tree <dir>    against another checkout's shared/ + mcpl/ + client/ (a mutant)
 //   bun tools/protocol/r11-check.ts --mutants       remove each fix in turn (a copy of the tree): its rows must go red;
 //                                                  a no-op control mutation must stay green
 // Rows:
-//   C   a friend and a delegate can be removed (stern M1): consent {unfriend} / {undelegate}, by the owner only; an unfriend
-//       breaks the mutual tier at once (a touch it allowed ends); a migrated delegate (a pre-10-17 friend) is removable
+//   C   consent after recut A2: a stored table narrows to two gates (C4); the verb's doc names them and a retired argument
+//       (friend, delegate…) is refused with a pointer (C5). C1/C2/C3/C6 retired with the tier they tested
 //   X   the spec says it (stern M2): §7's table lists rename-components; §4 says a rename runs at every load, unmarked
 //   B   the agent's body (stern L1, L2): declaring stand on a seat says to detach (it never moves you off); a declaration
 //       is passed on as sent, never read as a kind
@@ -29,12 +29,8 @@ const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? a
 
 // [name, file under the tree, find, replace, rows]
 const MUTANTS: [string, string, string, string, string[]][] = [
-  ["undelegate removes nobody", "shared/protocol/consent.js", "if (a.undelegate !== undefined) t.delegates = (t.delegates ?? []).filter((x) => x !== a.undelegate);", "", ["C1", "C4"]],
-  ["unfriend removes nobody", "shared/protocol/consent.js", "if (a.unfriend !== undefined) t.friends = (t.friends ?? []).filter((x) => x !== a.unfriend);", "", ["C2", "C4"]],
-  ["a delegate may remove", "shared/protocol/consent.js", "if (!self && lists) return", "if (false && lists) return", ["C3"]],
-  ["an unfriend re-checks only the unfriender", "shared/protocol/authority/bodyconsent.js", ", ...(ex ? revokeAfter(w, ex, beforeEx) : [])]", "]", ["C6"]],
-  ["the door doesn't take the words", "shared/protocol/verbspec.js", "unfriend: { type: \"any\"", "unfriendX: { type: \"any\"", ["C2", "C3"]],
-  ["the verb reads a removal as a read", "shared/protocol/authority/bodyconsent.js", "\"delegate\", \"unfriend\", \"undelegate\"].some", "\"delegate\"].some", ["C1", "C2"]],
+  // C1–C3, C6's mutants RETIRED with their rows (recut A2; #260 390); C4 is held by this one
+  ["a stored pause doesn't close the gates", "shared/protocol/consent.js", "if (sw === \"refuse\" || sw === \"ask\") { t.move = false; t.touch = false; }", "if (sw === \"refuse\" || sw === \"ask\") { t.move = true; t.touch = true; }", ["C4"]],
   ["§7 forgets rename-components", "spec/PROTOCOL.md", "\n| components and fields renamed before release (§4), by the explicit `repair` command (never at load) | its own act `rename-components {renamed, why, failed?}` and its change | `system` | the system's capability, per thing | the actor |", "", ["X1"]],
   ["§4 forgets the rename", "spec/PROTOCOL.md", "**A pure rename is the command's second step, idempotent.**", "**A pure rename runs.**", ["X1"]],
   ["a seated declaration says nothing", "mcpl/tools.ts", "and grants nothing${seated}`); }", "and grants nothing`); }", ["B1"]],

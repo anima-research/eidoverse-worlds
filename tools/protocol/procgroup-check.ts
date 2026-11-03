@@ -10,6 +10,7 @@ import { tryUntil } from "./wait.ts";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 let pass = 0, fail = 0;
 const check = (name: string, ok: unknown, info?: unknown) => { if (ok) { pass++; console.log(`ok   ${name}`); } else { fail++; console.log(`FAIL ${name}`); if (info !== undefined) console.log("     ", JSON.stringify(info)); } };
 const win = process.platform === "win32";
@@ -155,5 +156,18 @@ check("PG5 a zombie in the group is not counted as left running", suiteMembers(7
       && !!r2 && r2.moved.length === 0 && JSON.stringify(r2.failed) === '["client/c.txt"]' && read(root, "client/c.txt") === "three",
     { r, r2, a });
   fs.rmSync(tmp, { recursive: true, force: true }); }
+
+{ // bot review #260 483: a suite's early FAIL / SKIP survives the output cut; the gate reads them from the kept lines
+  const { outputKeeper, failLines } = (await import("./suites.ts")) as any; const k = typeof outputKeeper === "function" ? outputKeeper(4000, 2000) : null;
+  k?.add("ok   A1 fine\nFAIL B2 early red\n       {\"saw\":1}\nSKIP C3 not here\n"); for (let i = 0; i < 400; i++) k?.add("ok   filler row ".padEnd(40, "x") + "\n");
+  const lines: string[] = k?.lines() ?? [];
+  check("PG19 the gate's output keeper drops the middle, never a FAIL or SKIP line: an early red is still in the lines the gate greps and in its evidence",
+    !!k && k.out.length <= 4000 && !k.out.includes("B2 early red") && lines.some((l) => /^FAIL B2/.test(l)) && lines.some((l) => /^SKIP C3/.test(l)) && failLines(lines).some((l) => /^FAIL B2/.test(l)) && !lines.some((l) => /^xx/.test(l)),
+    { tail: k?.out.length, dropped: k?.dropped }); }
+{ // bot review #260 145: an isolation row a host can't run is OPTIONAL on the receipt (run.ts `optional`), never a silent n/a
+  const r = spawnSync(process.execPath, [path.join(path.dirname(fileURLToPath(import.meta.url)), "scripts-check.ts"), "--only", "I1", "--no-server"], { encoding: "utf8", env: { ...process.env, EIDO_SANDBOX: "inprocess", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, timeout: 120_000 });
+  const out = (r.stdout ?? "") + (r.stderr ?? ""), optional = out.split("\n").filter((l) => /^\s*OPTIONAL\b/.test(l));
+  check("PG20 scripts-check without isolation (EIDO_SANDBOX=inprocess) prints its I rows as OPTIONAL lines the gate's receipt keeps, not n/a",
+    r.status === 0 && optional.some((l) => /OPTIONAL I1\b/.test(l)) && !/^n\/a/m.test(out), { status: r.status, optional, tail: out.slice(-300) }); }
 
 console.log(`[procgroup-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

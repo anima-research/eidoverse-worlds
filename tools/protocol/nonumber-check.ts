@@ -31,6 +31,9 @@ const EXEMPT = [["tools/protocol/import-v1/", "the old-world importer names the 
 // a word-start v/V + N not followed by another digit; or a camelCase part (lowercase, then V + N)
 // (a dotted number after it, `vN.4` or `vN.4.2`, is some tool's release, not the protocol)
 const NAME = new RegExp(`(?<![A-Za-z0-9])[vV]${N}(?![0-9]|\\.[0-9])|(?<=[a-z])V${N}(?![0-9])`);
+// the camelCase part again on the RAW line (a long identifier like useVNProtocolMode is blanked as opaque below: bot review
+// #260 377); it must be followed by a Word or end the identifier, which a base64 run (`…hVNBA/…`) isn't
+const CAMEL = new RegExp(`(?<=[a-z])V${N}(?![0-9])(?=[A-Z][a-z]|[^A-Za-z0-9]|$)`);
 // signatures, keys and integrity hashes: one unbroken run of 20+ base64/hex characters with no word separator in it
 const OPAQUE = /[A-Za-z0-9+/=]{20,}/g;
 const files = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], { cwd: ROOT, encoding: "utf8" })
@@ -46,7 +49,7 @@ for (const rel of files) {
   if (buf.subarray(0, 8192).includes(0)) continue;   // binary
   buf.toString("utf8").split("\n").forEach((line, i) => {
     const bare = line.replace(OPAQUE, (m) => (/[0-9]/.test(m) && /[A-Z]/.test(m) && /[a-z]/.test(m) ? " " : m));
-    if (NAME.test(bare) && !UNRELATED.some(([f, re]) => rel === f && re.test(line))) offences.push(`${rel}:${i + 1}  ${line.trim().slice(0, 120)}`);
+    if ((NAME.test(bare) || CAMEL.test(line)) && !UNRELATED.some(([f, re]) => rel === f && re.test(line))) offences.push(`${rel}:${i + 1}  ${line.trim().slice(0, 120)}`);
   });
 }
 for (const o of offences) console.log("  " + o);

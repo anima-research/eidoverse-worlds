@@ -4,8 +4,9 @@
 //
 //   SHOTS=<dir> MODE=before|after bun tools/protocol/particles-shots.ts      (under the house guards: flock + perf-guard)
 //
-// MODE=before writes the first protocol's spelling ({preset, seed}); after writes {effect, seed}. Same seed, same place,
-// same camera, same clock offset, so the two photographs differ only by the renderer.
+// Every shot writes {effect, seed} (the registry has no `preset`: componentspec.js particles). MODE labels the output dir only;
+// a baseline photographs an older checkout (serve it with --tree). Same seed, same place, same camera, same clock offset,
+// so the two photographs differ only by the renderer.
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -51,7 +52,7 @@ try {
   console.log(`  backend: ${backend}`);
   const aim = () => page(`const { camera } = await import('/lib/core.js'); camera.position.set(4, 1.4, 1.2); camera.lookAt(4, 1.25, -3.2); camera.updateMatrixWorld(); return true;`);
   for (const p of PRESETS) {
-    const value = MODE === "before" ? { preset: p, seed: 7 } : { effect: p, seed: 7 };
+    const value = { effect: p, seed: 7 };
     const r = await req("create", { id: `fx-${p}`, components: { transform: { pos: [4, 0.6, -3.2] }, particles: value } });
     check(`${p}: created`, r?.ok, r); if (!r?.ok) console.log(`  ${p}: refused ${JSON.stringify(r)}`);
     await waitFor(`import('/lib/world.js').then((m) => m.entities.has('${IDS.of(`fx-${p}`)}'))`);
@@ -61,6 +62,7 @@ try {
     const st = await page(`const process = { env: { DBG: ${JSON.stringify(process.env.DBG ?? '')} } }; const m = await import('/lib/emitters.js'), w = await import('/lib/world.js'); const h = m._registry.get('${IDS.of(`fx-${p}`)}');
       return { live: m.emitterCount(), comp: JSON.stringify(w.bagOf('${IDS.of(`fx-${p}`)}')?.particles ?? null), drawn: h ? h.parts.map((x) => x.mesh.count) : null, alive: h ? h.parts.map((x) => x.sim.liveCount()) : null, vis: h ? h.parts.map((x) => x.mesh.visible) : null, dbg: process.env.DBG ? (() => { const m = h.parts[0].mesh; const g = m.geometry; return { pos: [...g.attributes.iPos.array.slice(0, 6)], col: [...g.attributes.iCol.array.slice(0, 8)], sa: [...g.attributes.iSa.array.slice(0, 6)], mw: [...m.matrixWorld.elements.slice(12, 15)], parent: m.parent?.name, gp: m.parent?.parent?.type, inScene: (() => { let o = m; while (o.parent) o = o.parent; return o.type; })(), layers: m.layers.mask, ro: m.renderOrder }; })() : null };`).catch((e) => String(e));
     console.log(`  ${p}: ${JSON.stringify(st)}`);
+    check(`${p}: drew`, Array.isArray(st?.drawn) && st.drawn.some((n: number) => n > 0), st);   // a blank frame is a FAIL (bot review #260 381)
     console.log(`  ${p}: ${f} (${fs.statSync(f).size} bytes)`);
     await req("delete", { id: `fx-${p}` });
     await sleep(600);

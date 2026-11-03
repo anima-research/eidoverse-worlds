@@ -4,6 +4,7 @@
 //   bun tools/protocol/soundclock-check.ts
 // @ts-nocheck
 import { plugin } from "bun";
+import fs from "node:fs";
 import path from "node:path";
 import { ENGINE } from "./common.ts";
 
@@ -27,8 +28,8 @@ if (CLK && S.playheadOf) {
   ok("K1", Math.abs(at - 5) < 0.5, "a looping sound started 5 s ago (server clock) plays at 5 s on a client 60 s behind", at);
   const once = S.playheadOf({ t0: CLK.serverNow() - 3_000, loop: false }, 10);
   ok("K2", once !== null && Math.abs(once - 3) < 0.5, "a one-shot started 3 s ago is 3 s in, not finished", once);
-  const remotes = await import(path.join(ENGINE, "client/lib/serverclock.js"));
-  ok("K3", remotes.serverNow === CLK.serverNow, "one clock: the module everyone imports is the one sounds reads");
+  const src = fs.readFileSync(path.join(ENGINE, "client/lib/sounds.js"), "utf8");   // a module compared to itself proved nothing (bot review #260 701)
+  ok("K3", /from '\.\/serverclock\.js'/.test(src) && !/Date\.now\(/.test(src), "one clock: sounds.js reads the server clock module and never Date.now()", { imports: /from '\.\/serverclock\.js'/.test(src), dateNow: (src.match(/Date\.now\(/g) ?? []).length });
 }
 console.log(`\nsoundclock: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

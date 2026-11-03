@@ -7,7 +7,7 @@
 //   S5  an agent's building tools (mcpl/tools.ts HANDLERS) wait for the authority: accepted, and refused with the reason
 //   S6  the importer translates an old world once into a new world: the old log's bytes are untouched, the copy is
 //       visitable, and the old directory itself is not served
-//   S8  clients fold the log: the cut and stream, no `log` entries; a client that doesn't fold it is refused (3c)
+//   S8  clients fold the log: the cut, then `log` messages of entries only (never v1 `args`); a client that doesn't fold it is refused (3c)
 //   SP  physics: holds to everyone, a joiner's cut carries holds and the sim, leaving while holding drops it
 //   S7  joining never founds a world (H3)
 //   CB  the captioner bot through the authority's caption tool (the screen's captioners; the server-stamped generation)

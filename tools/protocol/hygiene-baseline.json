@@ -151,7 +151,7 @@
   "raw-symlink": 1
  },
  "tools/protocol/xss-probe.ts": {
-  "bare-wait": 10
+  "bare-wait": 8
  },
  "tools/reach-order-test.ts": {
   "bare-wait": 1

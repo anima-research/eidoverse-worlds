@@ -1,6 +1,6 @@
 // tools/protocol/parity-check.ts — one kind of participant (research agent/human parity, Part B; R 10-17 12:42: no
-// different identities by kind; a status is declared, never inferred). Each row red first (against dfd5107c) and held by
-// a mutation below.
+// different identities by kind; a status is declared, never inferred). Each row red first (against dfd5107c); every D/M/V/X/W
+// row held by a mutation below (the P rows pin main's words: no mutant).
 //   bun tools/protocol/parity-check.ts                 every row
 //   bun tools/protocol/parity-check.ts --only D1,M1    just those
 //   bun tools/protocol/parity-check.ts --tree <dir>    against another checkout (a mutant, or the base)
@@ -43,7 +43,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the browser sends client", "client/lib/thingphysics.js", "sendRequest('move', { to: to.map(r3) });", "sendRequest('move', { to: to.map(r3), client: 'human' });", ["M2"]],
   ["a say's trio by kind (doc)", "shared/protocol/verbspec.js", "spoken: { type: \"any\", doc: \"true: the words were voice-performed", "spoken: { type: \"any\", doc: \"true: a voice leg performs it (an agent)", ["V1"]],
   ["§6a gone", "spec/PROTOCOL.md", "## 6a. One kind of participant", "## 6a. Participants", ["X1"]],
-  ["§8 agent-shaped again", "spec/PROTOCOL.md", "one minted-shaped (`u-` and 20 lowercase) and one of another valid shape", "one person-shaped (`u-` and 20 lowercase) and one agent-shaped", ["X2"]],
+  ["§8 agent-shaped again", "docs/SCRIPTS.md", "one minted-shaped (`u-` and 20 lowercase) and one of another valid shape", "one person-shaped (`u-` and 20 lowercase) and one agent-shaped", ["X2"]],
   ["verbspec: arrival on the record", "shared/protocol/verbspec.js", "Arriving is presence (nothing is logged); teleport: true is an act on the record, and can't carry things", "Your first move (arriving) and teleport: true are acts on the record, and can't carry things", ["X3"]],
   ["the stale consent comment", "client/lib/consent.js", "// staging a scene is welcome; a stranger yanking your limbs is not): the", "// staging a scene is welcome; agents accept by default): the", ["X4"]],
   ["WIRE: the agent flag", "docs/WIRE.md", "`{world, id?, token?, avatar?, surface?, spectate?, declares?, renderer?", "`{world, id?, token?, avatar?, surface?, spectate?, agent?, renderer?", ["X5"]],

@@ -10,14 +10,15 @@
 //     tier 0 empty, this server's key in tier 1). Keys come from the custody file every world in that worlds dir shares
 //     (<worlds dir>/.custody.json, server/custody.ts), so a running server reads the same keys.
 //   - nonce: the first 16 bytes of sha256(the old log's bytes): unique per log, and reproducible.
-//   - translatedFrom can't stay in a known minor's genesis (its fields are exact). The old genesis line is kept,
-//     verbatim, in <world dir>/world.genesis-before.jsonl with both world ids; the whole old log is kept, fsynced, as
+//   - translatedFrom can't stay in a known minor's genesis (its fields are exact). The old genesis line is kept
+//     (parsed, as JSON) in <world dir>/world.genesis-before.jsonl with both world ids; the whole old log is kept byte-exact, fsynced, as
 //     <world dir>/world.pre-genesis-migration.jsonl before the new one replaces it (durably: temp, fsync, rename, directory sync). (A newly translated world carries it as the
 //     `translated` act after genesis instead; an existing log can't gain an entry in the middle.)
-//   - every later line's `world` is rewritten from the old id to the new one (a text replace: number spellings kept).
+//   - every later line's `world` field is rewritten from the old id to the new one (that field's text only: number
+//     spellings kept, and a say or title quoting the old id keeps its words).
 // SAFETY: a log is rewritten only if the state digest is the same before (the previous fold, from git --old-fold, default d4e0677a~1) and after
 // (today's fold AND the Python reference reader). Stop the world's server first: it holds the old world id in memory.
-// usage: bun tools/protocol/migrate-genesis.ts [--apply] <world dir>…   (dry run without --apply; skips a log already in today's shape)
+// usage: bun tools/protocol/migrate-genesis.ts [--apply] <world dir>…   (dry run without --apply: writes nothing, mints no key; skips a log already in today's shape)
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -53,12 +54,16 @@ try {
     const before = old.fold(old.readLog(raw)); const dBefore = before.status === "ok" ? old.digest(before) : null;
     const cu = custodyAt(custodyFileIn(path.dirname(path.resolve(dir))));
     const oldId = worldIdOf(parseLine(gline));
-    const owners = shape === "B" ? g.body.owners : (g.body.owners ?? []).length ? [g.body.owners.map((who: string) => cu.keyOf(who, true))] : [[], [cu.sequencer()]];
+    // keys are minted (and .custody.json written) only under --apply; a dry run reads what's there and names what it would mint (bot review #260 370)
+    const peek = (() => { try { return JSON.parse(fs.readFileSync(custodyFileIn(path.dirname(path.resolve(dir))), "utf8")); } catch { return {}; } })();
+    // a stand-in key, made in memory and never saved, keeps the dry run's fold (and so its digest check) real
+    const WOULD = "ed25519:" + (crypto.generateKeyPairSync("ed25519").publicKey.export({ format: "jwk" }) as { x: string }).x, seqKey = () => apply ? cu.sequencer() : peek.sequencer?.pub ?? WOULD, holderKey = (who: string) => apply ? cu.keyOf(who, true)! : cu.keyOf(who, false) ?? WOULD;
+    const owners = shape === "B" ? g.body.owners : (g.body.owners ?? []).length ? [g.body.owners.map(holderKey)] : [[], [seqKey()]];
     const { version: _number, ...rest } = g.body;
     const body = shape === "B" ? { dialect: DIALECT, v: VERSION, ...rest }
-      : { dialect: DIALECT, v: VERSION, minor: 0, nonce: crypto.createHash("sha256").update(raw).digest().subarray(0, 16).toString("base64url"), owners, sequencer: cu.sequencer() };
+      : { dialect: DIALECT, v: VERSION, minor: 0, nonce: crypto.createHash("sha256").update(raw).digest().subarray(0, 16).toString("base64url"), owners, sequencer: seqKey() };
     const ngLine = JSON.stringify({ ...g, body }); const newId = worldIdOf(parseLine(ngLine));
-    const next = ngLine + text.slice(nl).replaceAll(oldId, newId);
+    const next = ngLine + text.slice(nl).replaceAll(`"world":${JSON.stringify(oldId)}`, `"world":${JSON.stringify(newId)}`);   // the field only: a say quoting the id keeps it (#260 436)
     const after = fold(readLog(next)); const dAfter = after.status === "ok" ? digest(after) : null;
     const tmp = path.join(os.tmpdir(), `genesis-${process.pid}-${crypto.randomUUID()}.jsonl`);   // a file, not /dev/stdin: Windows has none
     fs.writeFileSync(tmp, next);
@@ -72,7 +77,7 @@ try {
       appendDurable(path.join(dir, "world.genesis-before.jsonl"), JSON.stringify({ oldId, newId, genesis: g, at: new Date().toISOString() }));
       replaceDurable(f, next);
     }
-    out.push({ dir, shape, status: [before.status, after.status], digest: dBefore?.slice(0, 16), same, written: same && apply, owners: owners.map((t) => t.length),
+    out.push({ dir, shape, status: [before.status, after.status], digest: dBefore?.slice(0, 16), same, written: same && apply, owners: owners.map((t) => t.length), ...(JSON.stringify(body).includes(WOULD) ? { wouldMint: true } : {}),
       ...(same ? {} : { dAfter: dAfter?.slice(0, 16), dPy: dPy?.slice(0, 16), py: py.stderr.toString().slice(0, 200) }) });
   }
 } finally { for (const p of foldPaths) fs.rmSync(p, { force: true }); }

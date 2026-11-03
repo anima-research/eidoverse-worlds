@@ -12,7 +12,7 @@
 // no-v1, one vocabulary) runs first and stops the gate on any failure; MAIN is every other non-browser suite; BROWSER is
 // every suite that drives a headless Chromium (no Chromium = the gate FAILS and names CHROME; it never skips).
 // Each suite runs in its own process GROUP with its own timeout, HOME, TMPDIR and scratch (the gate's temp dir, removed
-// after each suite); on exit, timeout or Ctrl-C the gate kills the whole group, so no server or Chromium outlives it.
+// after each suite); on exit, timeout or Ctrl-C the gate kills the whole group, so nothing a suite leaves in its group outlives it (a fixture that detaches kills its own).
 // Runtimes are pinned in package.json "engines" and checked before anything runs. The end prints passed / failed /
 // skipped (with reasons) / optional-not-run, and exits nonzero on any failure or any skip.
 // Suites mark: a failed check `FAIL …` or `✗ …`; a skipped check `SKIP <name>: <why>` (fails the gate: every lane is
@@ -32,7 +32,7 @@ import fs from "node:fs"; import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { ENGINE, controlNote, siblingBuiltAt } from "./common.ts";
-import { failLines, setAside, type Lane, SUITES, CORE, BROWSER, browserLauncher, laneOf, localImports, suitePath } from "./suites.ts";
+import { failLines, outputKeeper, setAside, type Lane, SUITES, CORE, BROWSER, browserLauncher, laneOf, localImports, suitePath } from "./suites.ts";
 
 
 // what a suite needs beyond bun and this checkout (a scratch dir, loopback ports: every suite may use those)
@@ -259,7 +259,7 @@ const OPT_TRACKED = (spawnSync("git", ["-C", ENGINE, "ls-files", "-z", "assets/o
 const PATH = `${path.dirname(process.execPath)}${path.delimiter}${process.env.PATH ?? process.env.Path ?? "/usr/bin:/bin"}`;   // a nested `bun` is this bun
 // files a suite leaves in the checkout fail it (a killed child skips its own cleanup on Windows: #260 review)
 const untracked = () => new Set((spawnSync("git", ["-C", ENGINE, "ls-files", "--others", "--exclude-standard", "-z"], { encoding: "utf8" }).stdout ?? "").split("\0").filter(Boolean));
-async function run(name: string, file: string): Promise<{ code: number | null; signal: string | null; out: string; timedOut: boolean; leftovers: number; stuck?: boolean }> {
+async function run(name: string, file: string): Promise<{ code: number | null; signal: string | null; out: string; lines: string[]; timedOut: boolean; leftovers: number; stuck?: boolean }> {
   const dir = fs.mkdtempSync(path.join(GATE_TMP, `${name}-`));
   for (const d of ["home", "library", "opt", "worlds", "patched"]) fs.mkdirSync(path.join(dir, d));
   // the asset cache starts empty EXCEPT for what the repo itself commits there (props/ball.glb, a fixture since 08-03):
@@ -279,13 +279,13 @@ async function run(name: string, file: string): Promise<{ code: number | null; s
   if (laneOf(name) === "browser" && lock && guard) cmd = ["flock", lock, "bash", guard, "-t", String(timeoutOf(name)), "--", ...cmd];
   const child = spawn(cmd[0], cmd.slice(1), { cwd: ENGINE, env, detached: true, stdio: ["ignore", "pipe", "pipe"] });
   current = child as unknown as { pid: number; exitCode: number | null; signalCode: string | null };
-  let out = "", timedOut = false; const keep = (b: Buffer) => { out += b.toString(); if (out.length > 4e6) out = out.slice(-2e6); };
+  let timedOut = false; const kept = outputKeeper(); const keep = (b: Buffer) => kept.add(b.toString());   // the tail, and every verdict line the cut dropped (suites.ts outputKeeper)
   child.stdout!.on("data", keep); child.stderr!.on("data", keep);
   const gone = () => child.exitCode != null || child.signalCode != null;
   const timer = setTimeout(() => { timedOut = true; void killGroup(child.pid!, "SIGTERM", { exited: gone }); setTimeout(() => void killGroup(child.pid!, "SIGKILL", { exited: gone }), 5000).unref(); }, timeoutOf(name) * 1000);
   // the watchdog: a suite still alive a minute past its timeout (its kill didn't land) is left behind and named, never waited on
   let stuck = false; let watchdog: ReturnType<typeof setTimeout> | undefined;
-  const [code, signal] = await new Promise<[number | null, string | null]>((res) => { child.on("exit", (c, s) => res([c, s])); child.on("error", (e) => { out += `\nspawn failed: ${e.message}`; res([null, null]); });
+  const [code, signal] = await new Promise<[number | null, string | null]>((res) => { child.on("exit", (c, s) => res([c, s])); child.on("error", (e) => { kept.add(`\nspawn failed: ${e.message}`); res([null, null]); });
     watchdog = setTimeout(() => { stuck = true; timedOut = true; res([null, null]); }, (timeoutOf(name) + 60) * 1000); });
   clearTimeout(timer); clearTimeout(watchdog);
   const leftovers = child.pid ? await groupMembers(child.pid) : 0;   // anything the suite started and left running
@@ -293,7 +293,7 @@ async function run(name: string, file: string): Promise<{ code: number | null; s
   await new Promise((r) => { if (child.stdout!.readableEnded) return r(null); child.stdout!.once("end", r); setTimeout(r, 3000); });   // the last output, once the group is gone
   current = null;
   if (!process.env.PROTOCOL_KEEP) fs.rmSync(dir, { recursive: true, force: true });
-  return { code, signal, out, timedOut, leftovers, stuck };
+  return { code, signal, out: kept.out, lines: kept.lines(), timedOut, leftovers, stuck };
 }
 
 // ---- the gate ----
@@ -310,7 +310,7 @@ for (const name of order) {
   const r = await run(name, file);
   const residue = [...untracked()].filter((f) => !before.has(f));
   const set = residue.length ? setAside(ENGINE, residue, path.resolve(ENGINE, spawnSync("git", ["-C", ENGINE, "rev-parse", "--git-path", "gate-residue"], { encoding: "utf8" }).stdout.trim()), `${name}-`) : { dir: "", moved: [], failed: [] };
-  const lines = r.out.trimEnd().split("\n");
+  const lines = r.lines;
   const fails = lines.filter((l) => /^\s*FAIL\b|✗/.test(l));   // the browser probes mark a failed check with ✗, not FAIL
   const rowSkips = lines.filter((l) => /^\s*SKIP\b/.test(l)).map((l) => l.trim());
   const optional = lines.filter((l) => /^\s*OPTIONAL\b/.test(l)).map((l) => l.trim());

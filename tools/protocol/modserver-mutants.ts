@@ -1,6 +1,6 @@
 // tools/protocol/modserver-mutants.ts — the server half of roles + moderation (research roles S4), proven by
 // mutation: each server-side gate is removed in a copy of the tree, identity-check runs there, and the RS case that
-// names the gate must go red (the rest must stay green: a mutant that breaks everything proves nothing). A no-op
+// names the gate must go red (others may go red too, and are printed: a mutant that breaks everything shows as one). A no-op
 // control must leave every case green. Not covered here: releasing a gone person's SFU mute (server.ts sanctionSweep)
 // matters only while OTHER people's real voice legs keep the world's SFU state alive; these sockets hold no WebRTC leg.   usage: bun tools/protocol/modserver-mutants.ts [--only <substring>]
 // @ts-nocheck

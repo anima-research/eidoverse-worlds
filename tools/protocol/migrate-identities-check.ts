@@ -95,9 +95,21 @@ process.exit(Bun.spawnSync([${JSON.stringify(process.env.PYTHON || "python3")}, 
     "MI5 a rewritten log the reader says ok to but reports malformed is not written (I307)", r.o ?? r.out.slice(-300)); }
 
 // ================= MI6: the directory before the logs =================
-{ const root = scratch("migcrash"); const d = oldWorld(root, "shed"); const before = fs.readFileSync(path.join(d, "world.jsonl"));
+{ const root = scratch("migcrash"); const d = oldWorld(root, "shed"); const before = fs.readFileSync(path.join(d, "world.jsonl")), modBefore = fs.readFileSync(path.join(d, "world.mod.jsonl"));
   const r = tool(["--apply", d], { MIGRATE_IDENTITIES_DIE_BEFORE_LOGS: "1" });
-  ok(r.code === 9 && fs.readFileSync(path.join(d, "world.jsonl")).equals(before) && minted(idWithSub(root, "aid1:example.org:bob")),
-    "MI6 a crash between the directory and the logs: the logs are as they were and the directory already holds the ids (I91)", { code: r.code, bob: idWithSub(root, "aid1:example.org:bob"), out: r.out.slice(-300) }); }
+  // every planned id, not just bob's (directory.put(planned) writes all: bot review #260 682); the imported names by name
+  const idNamed = (name: string) => Object.entries<any>(entriesOf(dirOf(root))).find(([, e]) => e?.name === name && e?.kind === "imported")?.[0] ?? null;
+  const ids = { bob: idWithSub(root, "aid1:example.org:bob"), ann: idNamed("ann"), carl: idNamed("carl"), dave: idNamed("dave") };
+  ok(r.code === 9 && fs.readFileSync(path.join(d, "world.jsonl")).equals(before) && fs.readFileSync(path.join(d, "world.mod.jsonl")).equals(modBefore) && Object.values(ids).every(minted),
+    "MI6 a crash between the directory and the logs: both logs are byte for byte as they were and the directory already holds every id (bob, ann, carl, dave) (I91)", { code: r.code, ids, out: r.out.slice(-300) }); }
+
+// ================= MI7: an interrupted run finishes on the next --apply =================
+{ const root = scratch("migresume"); const d = oldWorld(root, "barn"); const before = fs.readFileSync(path.join(d, "world.jsonl"));
+  const r0 = tool(["--apply", d], { MIGRATE_IDENTITIES_DIE_BEFORE_LOGS: "1" });
+  const r = tool(["--apply", d]); const L = logOf(d);
+  const bob = idWithSub(root, "aid1:example.org:bob"), say = L.find((e: any) => e.kind === "say" && e.body?.text === "hello");
+  ok(r0.code === 9 && r.code === 0 && r.o?.written === true && r.o?.interrupted === true && say?.actor === bob && minted(say?.body?.to)
+    && fs.readFileSync(path.join(d, "world.jsonl.before-identities")).equals(before) && modOf(d).find((m: any) => m.verb === "mute")?.who === bob,
+    "MI7 a run killed after the backup (before the renames) is finished by the next --apply from the backup, which stays the original (bot review #260 133)", { first: r0.code, again: r.o ?? r.out.slice(-300) }); }
 
 console.log(`[migrate-identities-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

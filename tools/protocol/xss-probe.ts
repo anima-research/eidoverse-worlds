@@ -6,8 +6,9 @@
 //   A   end to end over a raw socket: the hostile name either never gets in (the door refuses it, in words) or, if a
 //       name with markup ever reaches the page, nothing it carries runs
 //   S   the client's own sinks, independent of the door (the input emulated at its seam, the bus): every presence
-//       message that names its sender (knock-over, grab, pose, release, refused drag, broke-free) and the chat
-//       lines show a hostile name as TEXT — the literal characters on screen, no element made from them, no script run
+//       message that names its sender (knock-over, grab, pose, release) and the chat lines (sender and words) show a
+//       hostile name as TEXT — the literal characters on screen, no element made from them, no script run. (A refused
+//       drag raises no client hint since 10-20; "broke free" shows only to a dragger, which the bus can't make us.)
 //   C   the page runs under a Content-Security-Policy that refuses inline script: an injected inline handler and an
 //       injected <script> do not run, and the browser reports the violation
 // Every stage asserts its trigger FIRED (the hint/line actually shows the name) before it asserts nothing ran — a check
@@ -49,8 +50,8 @@ try {
   if (secs < 4) await die(1, "the page never booted");
   await evalJson(`(() => { const s = document.querySelector('#splash'); if (s) s.style.pointerEvents = 'none'; return true; })()`);
   check("boot: a world", await waitFor(`import('/lib/net.js').then((m) => m.replicaActive())`));
-  // R 10-12: nobody is shove-able by default (3b84e149). The exploit under test is the HTML-rendered NAME, which needs the
-  // knock to land — so the victim opts in explicitly below; the default itself is asserted first.
+  // R 10-20 recut A2: the body accepts by default (it was off, 3b84e149). The exploit under test is the HTML-rendered NAME, which
+  // needs the knock to land — so the victim opts in explicitly below anyway; the default itself is asserted first.
   check("boot: default settings — the body accepts (recut A2, 10-20: permissive default; worlds and people narrow it)", (await evalJson(`import('/lib/consent.js').then((m) => m.pushable())`)));
   await evalJson(`import('/lib/consent.js').then((m) => (m.setPushable?.(true), true)).catch(() => true)`);
   check("boot: the victim opted in to being knocked over", await evalJson(`import('/lib/consent.js').then((m) => m.pushable())`));
@@ -100,12 +101,15 @@ try {
     // (#260 recut A1), so with my switch off an arriving grab raises no client refusal at all (S1/S2 already pin the names
     // the remaining hints show as text).
     await evalJson(`import('/lib/consent.js').then((m) => (m.setPushable?.(false), true)).catch(() => true)`);
-    await emit("bodydrag", { by: SVG, grab: { joint: "hips" } }); await sleep(800);
-    check("S5 no client-side refusal toast: the authority decided before it arrived", !(await evalJson(`[...document.querySelectorAll('.toast')].some((t) => t.textContent.includes('tried to drag you'))`)) && await evalJson(clean));
+    await emit("bodydrag", { by: SVG, grab: { joint: "hips" } });
+    await emit("puppet", { by: SVG, pose: { head: [0, 0, 0, 1] } });   // a later event on the same bus, seen: the drag before it has been handled (bot review #260 515)
+    const after = await waitFor(`${hint}.includes("posed you")`, 3000);
+    check("S5 no client-side refusal toast: the authority decided before it arrived (a later bus event was handled first)", after && !(await evalJson(`[...document.querySelectorAll('.toast')].some((t) => t.textContent.includes('tried to drag you'))`)) && await evalJson(clean), { after });
     await evalJson(`import('/lib/consent.js').then((m) => (m.setPushable?.(true), true)).catch(() => true)`);
     // the chat log (a whisper line too, until whisper was removed, R 10-18)
     await evalJson(`import('/lib/chat.js').then((m) => (m.logChat(${JSON.stringify(SVG)}, 'hello ' + ${JSON.stringify(SVG)}), true))`);
-    check("S6 a chat line shows the name and words as text", await waitFor(`(document.getElementById('chatlog')?.textContent ?? '').includes('hello ' + ${JSON.stringify(SVG)})`, 3000));
+    check("S6 a chat line shows the name and words as text", await waitFor(`(document.getElementById('chatlog')?.textContent ?? '').includes('hello ' + ${JSON.stringify(SVG)})`, 3000)
+      && await evalJson(`(() => { const l = [...document.querySelectorAll('#chatlog [data-author]')].at(-1); return !!l && l.dataset.author === ${JSON.stringify(SVG)} && l.textContent.includes(${JSON.stringify(SVG)}) && !l.querySelector('svg,[onload]'); })()`), await evalJson(`[...document.querySelectorAll('#chatlog [data-author]')].at(-1)?.outerHTML.slice(0, 300)`));
     await sleep(300);
     check("S7 after all of it, nothing ran", await evalJson(clean), await evalJson(`({ xss: window.__xss, tags: [...document.querySelectorAll('[onerror],[onload]')].map((e) => e.outerHTML.slice(0, 120)) })`));
   });
@@ -182,7 +186,8 @@ try {
     check("P1 puppet and bodydrag name the identity (targetActor) beside the name", by("puppet")?.targetActor === wrenActor && by("bodydrag")?.targetActor === wrenActor, sent);
     check("P2 typing names it too (toActor)", by("typing")?.toActor === wrenActor, sent);
     await sleep(500);
-    check("P3 …and the server delivered them to that identity", wren.msgs.some((m) => m.type === "puppet" && m.by === me), wren.msgs.map((m) => m.type).slice(-12));
+    const got = (t: string, f: (m: any) => boolean) => wren.msgs.some((m) => m.type === t && f(m));   // each of the three, from me (bot review #260 409)
+    check("P3 …and the server delivered all three to that identity (puppet, the drag's end, typing), each from me", got("puppet", (m) => m.by === me) && got("bodydrag", (m) => m.by === me && m.end != null) && got("typing", (m) => m.id === me), wren.msgs.filter((m) => ["puppet", "bodydrag", "typing"].includes(m.type)).map((m) => ({ type: m.type, by: m.by ?? m.id, end: m.end })).slice(-6));
     wren.ws.close();
   });
 
@@ -246,10 +251,11 @@ try {
     const before = (await evalJson(`__csp`)).length;
     await evalJson(`(() => { const d = document.createElement('div'); d.innerHTML = ${JSON.stringify(`<img src="data:," onerror="window.__inline=1">`)}; document.body.append(d);
       const s = document.createElement('script'); s.textContent = 'window.__inline2 = 1'; document.body.append(s); return true; })()`);
-    await sleep(600);
-    check("C1 an injected inline handler does not run", await evalJson(`window.__inline === undefined`));
+    // the handler's own violation first: the policy has judged it by then (bot review #260 153); a <script> element's is the other
+    const attr = await waitFor(`__csp.slice(${before}).some((v) => /script-src-attr|^script-src$/.test(v.dir) && /inline/.test(v.blocked))`, 3000);
+    check("C1 an injected inline handler does not run (its violation reported first)", attr && await evalJson(`window.__inline === undefined`), await evalJson(`__csp`));
     check("C2 an injected inline <script> does not run", await evalJson(`window.__inline2 === undefined`));
-    check("C3 the browser reports the violations (script-src)", await waitFor(`__csp.length > ${before} && __csp.slice(${before}).some((v) => /script-src/.test(v.dir))`, 2000), await evalJson(`__csp`));
+    check("C3 the browser reports both violations (script-src)", await waitFor(`__csp.slice(${before}).filter((v) => /script-src/.test(v.dir)).length >= 2`, 2000), await evalJson(`__csp`));
     const h = await (await fetch(`${BASE}/?world=${WORLD}`)).headers.get("content-security-policy");
     check("C4 the page is served with a Content-Security-Policy header", !!h && /script-src/.test(h) && !/unsafe-inline'[^;]*script|script-src[^;]*'unsafe-inline'/.test(h), h);
   });
