@@ -1,11 +1,11 @@
 // tools/protocol/blockers-mutants.ts — the RED side of every blocker's row, run (review of PR #260, 2026-10-18: "red mutations").
-// For each of the reviewer's ten blockers (B1–B10), the architecture note's items that have code (M1–M9) and review r14's four
+// For each of the reviewer's blockers (B1–B10 but B3, whose per-world fence main's #255 removed: 7d3050686), the architecture note's items that have code (M1–M9) and review r14's four
 // (H1, M1–M3), ONE mutation of the fix's code — a text find/replace applied to a scratch copy of the tree, the mechanism
 // txn-check --mutants and r10/r11-check MUTANTS use — and the ONE suite whose named row(s) it must turn red. Plus a no-op control
 // that must stay green. Each find text must occur exactly once at HEAD (a fix that moved is a FAIL here, not a silent skip).
 // This suite's output is the PR's red/green table: `id → mutant → row turned red`.
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/blockers-mutants.ts            every mutant (the gate's MAIN lane)
-//   … --only B3,M5                                                                        a subset
+//   … --only B4,M5                                                                        a subset (an id with no row is refused)
 // Bounded: each mutant runs only the one suite it names; the scratch tree links node_modules and copies server/, shared/,
 // client/lib, mcpl/, tools/, spec/, docs/ (the suites read spec and docs as text). No browser.
 // @ts-nocheck
@@ -100,6 +100,8 @@ const M: Mutant[] = [
 const argv = process.argv.slice(2);
 const onlyI = argv.indexOf("--only"); const only = onlyI >= 0 ? new Set(argv[onlyI + 1].split(",")) : null;
 const todo = only ? M.filter((m) => only.has(m.id)) : M;
+const unknown = only ? [...only].filter((id) => !M.some((m) => m.id === id)) : [];
+if (unknown.length) { console.error(`[blockers-mutants] no mutant ${unknown.join(", ")} (the ids: ${M.map((m) => m.id).join(", ")})`); process.exit(2); }
 
 /** A scratch copy of the tree: what the suites read (code and text), node_modules linked. client/ is linked except lib/ (copied: B7 edits it). */
 function copyTree(tag: string) {
@@ -132,6 +134,11 @@ for (const m of todo) {
   if (!good) console.log(out.split("\n").filter(Boolean).slice(-12).map((l) => `      ${l.slice(0, 240)}`).join("\n"));   // the suite's tail, so a wrong mutant says why
   table.push(`| ${m.id} | ${m.file} — ${m.what} | ${m.suite} | ${m.rows.join(", ") || "(control)"} | ${good ? (m.rows.length ? `red: ${red.filter((x) => m.rows.includes(x)).join(", ")}` : "green") : `WRONG (exit ${r.exitCode}, red ${red.join(",") || "none"})`} |`);
   fs.rmSync(d, { recursive: true, force: true });
+}
+if (!only) {   // --only refuses an id with no row (bot review #260 78: B3 ran nothing and exited 0)
+  const r = Bun.spawnSync(["bun", import.meta.path, "--only", "B3"], { env: process.env }); const out = r.stdout.toString() + r.stderr.toString();
+  const good = r.exitCode !== 0 && /no mutant B3/.test(out); if (!good) bad++;
+  console.log(`${good ? "ok  " : "FAIL"} ONLY '--only B3 (no such row) is refused, not run as nothing': exit ${r.exitCode}`);
 }
 console.log(`\n| id | mutant | suite | row(s) it must turn red | seen |\n|---|---|---|---|---|\n${table.join("\n")}`);
 console.log(`\n[blockers-mutants] ${todo.length} run, ${bad} wrong (each mutant must turn its row(s) red; the control must stay green)`);
