@@ -10,8 +10,8 @@
 //     tier 0 empty, this server's key in tier 1). Keys come from the custody file every world in that worlds dir shares
 //     (<worlds dir>/.custody.json, server/custody.ts), so a running server reads the same keys.
 //   - nonce: the first 16 bytes of sha256(the old log's bytes): unique per log, and reproducible.
-//   - translatedFrom can't stay in a known minor's genesis (its fields are exact). The old genesis line is kept,
-//     verbatim, in <world dir>/world.genesis-before.jsonl with both world ids; the whole old log is kept, fsynced, as
+//   - translatedFrom can't stay in a known minor's genesis (its fields are exact). The old genesis line is kept
+//     (parsed, as JSON) in <world dir>/world.genesis-before.jsonl with both world ids; the whole old log is kept byte-exact, fsynced, as
 //     <world dir>/world.pre-genesis-migration.jsonl before the new one replaces it (durably: temp, fsync, rename, directory sync). (A newly translated world carries it as the
 //     `translated` act after genesis instead; an existing log can't gain an entry in the middle.)
 //   - every later line's `world` is rewritten from the old id to the new one (a text replace: number spellings kept).
