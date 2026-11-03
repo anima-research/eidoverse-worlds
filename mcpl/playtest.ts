@@ -110,7 +110,7 @@ const pinged = async (list: any[], kind: string, ms = 4000) => {
   }
   return false;
 };
-// every body starts at Normal, where everyone's touch is ask: open touch on both sides first, as two people who had
+// every body starts at Normal, where the touch gate is off: open it on both sides first, as two people who had
 // agreed to it would, so the reaches below are shown rather than refused
 const OPEN_TOUCH = { touch: true };
 check("the bystander opens its touch", (await bystander.request("consent", OPEN_TOUCH))?.ok === true);

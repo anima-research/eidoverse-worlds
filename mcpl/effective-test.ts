@@ -78,7 +78,7 @@ console.log("mounted things");
   // and its +Z to +X, so the child's own axes are stretched (4,3,2), not (2,3,4)
   const r = at("c", view({ p: { pos: [0, 0, 0], yaw: 0, scale: 1, scale3: [2, 3, 4] }, c: { pos: [0, 0, 0], yaw: 0, scale: 1 } }, { c: { to: "p", offset: [0, 0, 0], yaw: Math.PI / 2 } }));
   check("a quarter-turned mount on a stretched parent swaps the stretched axes", r.ok && near3(r.scale3, [4, 3, 2]), show(r));
-  // 45° on (2,1,1) mixes x and z, stretched unequally: a shear, refused for a thing; on (2,1,2) the turn sees one stretch
+  // 45° on (2,1,1) mixes x and z, stretched unequally: a shear, answered with its exact position and flagged `sheared`, not refused; on (2,1,2) the turn sees one stretch
   const sh = at("c", view({ p: { pos: [0, 0, 0], yaw: 0, scale: 1, scale3: [2, 1, 1] }, c: { pos: [0, 0, 0], yaw: 0, scale: 1 } }, { c: { to: "p", offset: [1, 0, 0], yaw: Math.PI / 4 } }));
   check("a turned mount on an unequally stretched parent is answered with its exact position, flagged sheared (scale3 is the shear's diagonal), not refused",
     sh.ok && sh.sheared === true && near3(sh.pos, [2, 0, 0]), show(sh));

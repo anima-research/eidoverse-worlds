@@ -156,7 +156,7 @@ const BONES_NOT_KNOWN = "this body's bones aren't known (its model hasn't loaded
  *  has those acts by those names; here they are other tools' presets, so the reply names the call that does it. */
 const flightFixInOurTools = (reason: string) => String(reason)
   .replace(/unfold them first/, 'open them first (anim {stop: "wings-folded"})')
-  .replace(/land first/, 'land first (act {verb: "land", args: {to}})');
+  .replace(/land first/, 'land first (act {verb: "land", args: {to: [x, z]}})');
 /** Quiet window for world-change narration, per (entity, component). Tuning a
  *  live emitter is a burst of `comp` entries; this is how long they fold into
  *  one line. Long enough to swallow a slider drag, short enough that "puts the
@@ -182,7 +182,7 @@ const MESH_CACHE_BYTES = 256 * 1024 * 1024, MESH_FETCH_MS = 8000;
  *  refused (see walkTo). Covers a fetch's own timeout plus some queueing. */
 const WALK_READY_MS = 15_000;
 /** The world entity (places that belong to no thing live on it), and how far and how many places look lists (owner
- *  22:40/22:43: only what you can see, nearest first; move {to: "?"} lists every one). */
+ *  22:40/22:43: only what you can see, nearest first; move {to: "?"} lists them all, nearest 200; "?<text>" narrows). */
 const WORLD_ENTITY = "@world", PLACE_SIGHT_M = 30, PLACE_LOOK_MAX = 12, PLACE_LIST_MAX = 200;
 /** A thing with no entrance is walked up to: stopped this far short of its origin (its footprint unknown) / out from its
  *  footprint's nearest point (metres; the body's own, not the thing's). */
@@ -753,7 +753,7 @@ export class WorldAgent {
     this.onEvent?.(ev);
   });
   /** The activity sense is the agent's own to tune (persisted per-agent by
-   *  the authority; see net-server's `activity` tool). Instance values start at
+   *  net-server's state file, `rememberActivity`; see its `activity` tool). Instance values start at
    *  the world defaults. */
   activityRadiusM = ACTIVITY_RADIUS_M;
   private activityPulseMs = ACTIVITY_PULSE_MS;
@@ -1439,7 +1439,7 @@ export class WorldAgent {
     const effective = this.eff(observation.who, this.serverNow());
     // Getting off the seat (detach, setOccupant) is the one way out a reader has, once joined.
     if (!effective.ok) return { ...observation, error: observation.self
-      ? `nothing of your body was read, since your seat can't be placed: ${effective.why}; detach gets you off it${this.joined ? "" : " once this body has rejoined the world"}`
+      ? `nothing of your body was read, since your seat can't be placed: ${effective.why}; detach gets you off it (detach {escape: true} if the seat holds you)${this.joined ? "" : " once this body has rejoined the world"}`
       : `nothing of ${observation.who}'s body was read, since their seat can't be placed: ${effective.why}` };
     const clip = bodyOf(this.socketRec(mount.to)?.station)?.clip ?? "sitchair";
     return { ...observation, frame: { source: "mount", to: mount.to, seat: effective.seat ?? null },
@@ -4047,10 +4047,20 @@ export class WorldAgent {
   /** Ask the authority where this body stands, and open the walk's gate on its answer: a walk's start, and a rejoin. */
   private syncWalkGate(gate: WalkGate) {
     gate.mode = "sync"; gate.permit = null;
+    const from = { x: this.pos.x, z: this.pos.z };
     void this.trackHere().then((t) => {
       if (this.walkGate !== gate) return;
       if ("open" in t) { gate.mode = "open"; return; }
       if (!t.ok) { this.refuseWalk(t.refused); return; }
+      // the track moved the body (a visitor arrives at the spawn): the legs were planned from where it stood, so plan again from here (bot #453)
+      const plan = this.walkPlan;
+      if (plan && this.walkDone && Math.hypot(this.pos.x - from.x, this.pos.z - from.z) > 1) {
+        const done = this.walkDone; this.walkDone = null; this.abandonWalk(); this.clip = "idle";
+        void this.walkNow(plan.x, plan.z, plan.run, plan.timeoutMs, plan.tolerance, plan.y, plan.near, plan.replanned).then((arrived) => {
+          if (!arrived && this.walkRefusal && !this.lastWalkRefusal && !this.walkStopReason) this.walkStopReason = `you arrived at the spawn, and from there: ${this.walkRefusal}`;
+          done(arrived); });
+        return;
+      }
       gate.mode = "tracked"; gate.permit = this.trackAt;
     });
   }
@@ -4096,11 +4106,11 @@ export class WorldAgent {
   }
 
   /** Every named place here, nearest first: where a walk to it aims (its floor), how far, which floor. */
-  placesNear(): { ref: string; place: Place; dest: Destination; d: number }[] {
+  placesNear(from: number[] = [this.pos.x, this.pos.y, this.pos.z]): { ref: string; place: Place; dest: Destination; d: number }[] {
     const out: { ref: string; place: Place; dest: Destination; d: number }[] = [];
     for (const { id, h, ps } of this.placeHolders()) {
       if (!h) continue;
-      for (const p of ps) { const dest = destinationOf(h, p); out.push({ ref: `${id === WORLD_ENTITY ? id : this.refName(id)}/${p.name}`, place: p, dest, d: Math.hypot(dest.x - this.pos.x, dest.z - this.pos.z) }); }
+      for (const p of ps) { const dest = destinationOf(h, p); out.push({ ref: `${id === WORLD_ENTITY ? id : this.refName(id)}/${p.name}`, place: p, dest, d: Math.hypot(dest.x - from[0], dest.z - from[2]) }); }
     }
     return out.sort((a, b) => a.d - b.d);
   }
@@ -4123,10 +4133,10 @@ export class WorldAgent {
    *  middle a metre over its floor) unblocked by the placed models' fitted colliders (the same ones the feet use, #235)
    *  and the terrain — within PLACE_SIGHT_M, nearest first, at most PLACE_LOOK_MAX. Before the collision modules have
    *  loaded, distance alone decides (and the line says so). */
-  placesInSight(): { lines: string[]; more: number; byDistance: boolean } {
-    const eye = [this.pos.x, this.pos.y + this.stature() * 0.93, this.pos.z];
+  placesInSight(from: number[] = [this.pos.x, this.pos.y, this.pos.z]): { lines: string[]; more: number; byDistance: boolean } {
+    const eye = [from[0], from[1] + this.stature() * 0.93, from[2]];   // from where look has the body (a seat's resolution; bot #455)
     const seen: string[] = []; let byDistance = false, total = 0;
-    for (const x of this.placesNear()) {
+    for (const x of this.placesNear(from)) {
       total++;
       if (x.d > PLACE_SIGHT_M || seen.length >= PLACE_LOOK_MAX) continue;
       const tip = [x.dest.x, x.dest.y + (x.place.kind === "region" ? 1 : 0.3), x.dest.z];
@@ -4227,7 +4237,7 @@ export class WorldAgent {
         above: RAGDOLL_ROOT_DROP + 0.05, bodyAt: { x, z } };
     }
     const known = this.placesNear().map((x) => x.ref);
-    return { refusal: `nothing here is called "${q}"${known.length ? ` — named places: ${known.slice(0, 16).join(", ")}${known.length > 16 ? ` and ${known.length - 16} more (move {to: "?"} lists them all)` : ""}` : ""}` };
+    return { refusal: `nothing here is called "${q}"${known.length ? ` — named places: ${known.slice(0, 16).join(", ")}${known.length > 16 ? ` and ${known.length - 16} more (move {to: "?"} lists them all, nearest 200; "?<text>" narrows)` : ""}` : ""}` };
   }
 
   /** A thing with no entrance or door, as a walk aims at it: up to it and beside it, on this body's side — THING_STANDOFF
@@ -5139,9 +5149,9 @@ export class WorldAgent {
       if (refused) {
         if (this.reaches.get(limb) === entry) this.reaches.delete(limb);
         const { r } = refused, ago = Math.round((Date.now() - r.ts) / 1000);
-        return { ok: false, text: `${limbW} toward ${what}: not shown to anyone — ${refused.by}'s consent refused it (class ${r.cls}): ${r.why}${r.fix ? ` — ${r.fix}` : ""}. `
+        return { ok: false, text: `${limbW} toward ${what}: not shown to anyone — ${refused.by}'s consent refused it (class ${r.cls}): ${String(r.why).replace(String(r.to), refused.by)}${r.fix ? ` — ${r.fix}` : ""}. `
           + (refused.fresh ? "The reach is withdrawn; nobody saw your hand there."
-            : `That was said ${ago}s ago, and the world says it once per ${REACH_NOTE_MS / 1000}s, so the reach is withdrawn without streaming it again; if they have changed their table since, reach again in ${Math.max(1, Math.ceil((REACH_NOTE_MS - (Date.now() - r.ts)) / 1000))}s.`) };
+            : `That was said ${ago}s ago, and the world says it once per ${REACH_NOTE_MS / 1000}s, so the reach is withdrawn; it may have shown for a moment while this was checked. If they have changed their table since, reach again in ${Math.max(1, Math.ceil((REACH_NOTE_MS - (Date.now() - r.ts)) / 1000))}s.`) };
       }
     }
     if (res.state !== "ok") {
@@ -5495,8 +5505,8 @@ export class WorldAgent {
     if (meKnown) {
       const here = this.placesAt([me.x, me.y, me.z]);
       if (here.length) L.push(`You are in ${here.map(({ entity, place }) => `${place.label ?? place.name} (${this.refName(entity.id)}/${place.name})`).join(", within ")}.`);
-      const sight = this.placesInSight();
-      if (sight.lines.length || sight.more) L.push(`Places ${sight.byDistance ? `within ${PLACE_SIGHT_M} m (line of sight not checked yet: the collision modules are still loading)` : "you can see"}, nearest first: ${sight.lines.length ? sight.lines.join("; ") : "none"}${sight.more ? ` — and ${sight.more} more: move {to: "?"} lists every place` : ""}.`);
+      const sight = this.placesInSight([me.x, me.y, me.z]);
+      if (sight.lines.length || sight.more) L.push(`Places ${sight.byDistance ? `within ${PLACE_SIGHT_M} m (line of sight not checked yet: the collision modules are still loading)` : "you can see"}, nearest first: ${sight.lines.length ? sight.lines.join("; ") : "none"}${sight.more ? ` — and ${sight.more} more out of sight or farther: move {to: "?"} lists them all, nearest 200 ("?<text>" narrows)` : ""}.`);
     }
     // Structured object, NEVER a bare string: consumers of look() were
     // reading {hours, azimuth, clouds, ts, …} long before the forecast
@@ -5659,7 +5669,7 @@ export class WorldAgent {
       }
     }
     if (ents.some((e) => e?.reactions) || [...this.entities.values()].some((e) => e.kind === "socket")) {
-      L.push(`  (use a thing: act {verb: "use", args: {id, action?}} · sit or ride: attach {to: id, socket?} — both open to everyone; detach, or walking, gets you off)`);
+      L.push(`  (use a thing: act {verb: "use", args: {id, action?}} · sit or ride: attach {to: id, socket?} — a thing's \`who\` may limit either, and the reply says; detach gets you off, escape: true if it holds you)`);
     }
 
     const unread = this.inbox.slice(this.inboxCursor);

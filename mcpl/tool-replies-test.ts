@@ -1,8 +1,9 @@
 // mcpl/tool-replies-test.ts — what the agent's tools and body say and send, pure (no server): one row per bot review #260
-// finding (38, 41, 53, 62, 63, 92, 105, 106, 107), each red on aeaf71de5.
+// finding (38, 41, 53, 62, 63, 92, 105, 106, 107), each red on aeaf71de5; bot-review rows 453/454/458/459/462, each red on 884ae7cef.
 // run: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun mcpl/tool-replies-test.ts
 import { WorldAgent } from "./agent.ts";
 import { handleTool } from "./tools.ts";
+import { tryUntil } from "../tools/protocol/wait.ts";
 let fails = 0; const ok = (c: boolean, what: string, d?: unknown) => { if (c) console.log("  ok", what); else { fails++; console.log("  FAIL", what, d === undefined ? "" : JSON.stringify(d).slice(0, 600)); } };
 const textOf = (r: any) => String(r?.content?.[0]?.text ?? "");
 const ctxOf = (agent: any): any => ({ agent, canPush: () => false, heldActivity: [], cursor: { caughtUpTo: null } });
@@ -70,5 +71,42 @@ const creator = (reply: any = { ok: true, after: {} }) => { const sent: any[] = 
   ag.hearSay({ seq: 6000, ts: 2, actor: "Bea", args: { text: "Hello there", to: "Ann" } }, true);
   const says = ev.filter((e) => e.kind === "say");
   ok(says.length === 2 && says[0].mention === true && says[1].mention === false, "106 say {to: me} is a mention; say {to: someone else} is not", says); }
+
+
+// bot #458: land {to: [null, 2]} is refused (Number(null) is 0, which used to pass)
+{ const ag: any = { flight: null }; const r = await handleTool(ctxOf(ag), "act", { verb: "land", args: { to: [null, 2] } });
+  ok(r?.isError === true && /land needs to/.test(textOf(r)), "458 land {to: [null, 2]} is refused, not landed at x=0", textOf(r)); }
+
+// bot #454: move {to: "?"} is a listing, so a seat that holds you still answers it
+{ const ag: any = { myOccupancy: { to: "swing" }, mayVacate: () => false, socketName: () => "the swing", placeList: (f: string) => `named places here${f}: none` };
+  const r = await handleTool(ctxOf(ag), "move", { to: "?" });
+  ok(!r?.isError && /^named places here/.test(textOf(r)), "454 move {to: \"?\"} lists places from a seat that holds you", textOf(r)); }
+
+// bot #459: a malformed anim call (name AND joints) declares no body-mode
+{ const ag: any = { bodyMode: "stand", anims: [], target: null, clip: "idle" };
+  const r = await handleTool(ctxOf(ag), "anim", { bodyMode: "sit", name: "wave", joints: {} });
+  ok(r?.isError === true && ag.bodyMode === "stand", "459 anim {bodyMode, name, joints} is refused and leaves the body-mode as it was", { text: textOf(r), bodyMode: ag.bodyMode }); }
+
+// bot #462: a shove's refusal is the one naming its target; an unrelated error meanwhile is not read as the shove's
+{ const mk = (err: string) => { const ag: any = { joined: false, people: new Map(), pos: { x: 0, y: 0, z: 0 }, lastRefusal: null, puppet() { ag.lastRefusal = { ts: Date.now(), text: err }; } }; return ag; };
+  const other = await handleTool(ctxOf(mk("insufficient rank for that")), "act", { verb: "shove", args: { target: "Moss" } });
+  const mine = await handleTool(ctxOf(mk("Moss isn't taking shove right now")), "act", { verb: "shove", args: { target: "Moss" } });
+  ok(!other?.isError && /you shove Moss/.test(textOf(other)) && mine?.isError === true && /shove refused/.test(textOf(mine)),
+    "462 shove reads only a refusal that names its target", { other: textOf(other), mine: textOf(mine) }); }
+
+// bot #453: the track moved the body to the spawn before the first step: the legs are planned again from there
+{ const ag: any = new WorldAgent({ name: "me", world: "w" }); ag.joined = true; ag.ws = { readyState: 1, send() {} };
+  ag.replica = { st: { entities: { "@world": { c: { spawn: { pos: [20, 0, 20] } } } } } };
+  let asked = 0; ag.request = async (verb: string, args: any) => (verb !== "move" ? { ok: true } : ++asked === 1 ? { refused: { code: "spawn" } } : { ok: true, at: args.to });
+  const plannedFrom: number[] = []; const plan0 = ag.planWalk.bind(ag); ag.planWalk = (...a: any[]) => { plannedFrom.push(ag.pos.x); return plan0(...a); };
+  const walk = ag.walkTo(2, 2); await tryUntil("the walk replanned from the spawn", () => plannedFrom.length >= 2, { ms: 3000 });
+  const still = !!ag.walkDone; ag.stop(); await walk;
+  ok(still && JSON.stringify(plannedFrom) === "[0,20]" && /spawn/.test(ag.lastWalkNote ?? ""), "453 a walk arriving at the spawn is planned again from the spawn", { plannedFrom, note: ag.lastWalkNote, still }); }
+
+// bot #462: every targeted presence call (pose {clear}, a ragdoll, a tracks anim) still reports its target's refusal
+{ const mk = () => { const ag: any = { name: "me", lastRefusal: null, animEnded() {}, puppet(to: string) { ag.lastRefusal = { ts: Date.now(), text: `${to} isn't taking pose right now` }; } }; return ag; };
+  const outs = [await handleTool(ctxOf(mk()), "anim", { stop: true, target: "Moss" }), await handleTool(ctxOf(mk()), "anim", { ragdoll: true, target: "Moss" }),
+    await handleTool(ctxOf(mk()), "anim", { tracks: { hips: [{ t: 0, q: [0, 0, 0, 1] }] }, dur: 1, target: "Moss" })];
+  ok(outs.every((r) => r?.isError === true && /refused/.test(textOf(r))), "462 stop, ragdoll and tracks on a target each report its refusal", outs.map(textOf)); }
 
 console.log(`tool-replies-test: ${fails ? `${fails} failed` : "all ok"}`); process.exit(fails ? 1 : 0);

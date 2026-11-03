@@ -5,8 +5,9 @@
 // colliders.resolveColliders: it stands where that function lets it stand,
 // steps up at most STEP, and is pushed off anything solid within its radius
 // of its hips. So the planner asks the same two questions of the same code,
-// column by column on a fine lattice, and never holds an opinion of its own
-// about what is walkable:
+// with a wider radius and a head band so the authority's box agrees
+// (physics.ts `stand`), column by column on a fine lattice, and never holds
+// an opinion of its own about what is walkable:
 //
 //   - which heights in this column can a body STAND at? Every up-facing
 //     surface (colliders.surfaceUnder, repeated downward) where
