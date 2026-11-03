@@ -103,6 +103,16 @@ setInterval(() => {}, 1000);`);
     const r = await outcome(Q.checkFile(f2));
     check("the next ordinary check runs and answers", r.ok && Array.isArray((r as any).r.levels), JSON.stringify(r).slice(0, 160));
   }
+  {
+    // bot review #260 15: twenty concurrent asks for one uncached model read and hash its bytes once, not twenty times
+    Q.checkConfig.runner = worker("quick15", `console.log(JSON.stringify({ levels: [] }));`);
+    const f15 = join(dir, "once.glb"); writeFileSync(f15, new Uint8Array(1 << 20).fill(9));
+    const o = Bun.file; let reads = 0;
+    (Bun as any).file = (p: any, ...a: any[]) => { if (String(p) === f15) reads++; return (o as any)(p, ...a); };
+    try { await Promise.all(Array.from({ length: 20 }, () => outcome(Q.checkFile(f15, 2)))); } finally { (Bun as any).file = o; }
+    Q.checkConfig.runner = real;
+    check("twenty concurrent asks for one uncached model read it once", reads === 1, `${reads} reads`);
+  }
   console.log("\nbounded (review r3 F1): a public door can't fill the disk or the queue:");
   {
     const { readdirSync } = await import("node:fs");
