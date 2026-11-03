@@ -296,6 +296,11 @@ const described = (W_, label) => Object.values(W_.w.log.live.state().entities).s
   const before = into ? ev.slice(0, ev.indexOf(into)) : [];
   const blobSynced = before.some((e) => e[0] === "fsync" && e[1] === path.join(tmp, "blobs", "ab", "cafe.txt")) && before.some((e) => e[0] === "fsync" && e[1] === path.join(tmp, "blobs"));
   const forkOk = k?.ok && (none || (syncedAfter(path.join(W, "t8f-fork"), W) && blobSynced));
+  // a fork says how many roles it copied that imported identities (names with no account yet) hold: a later bind reaches the copy too (bot #369)
+  const src2 = world("t8f-src2"), ghost = directoryFor(W).imported("Ghost");
+  ownerDo(src2, "set", { id: "@world", component: `roles:${ghost}`, value: { role: "builder" } });
+  const k2 = WL.forkWorld(src2.w.log, "t8f-fork2", src2.owner);
+  ok(k?.ok && k.importedRoles === 0 && k2?.ok && k2.importedRoles === 1, "T8g a fork counts the roles it copied that imported identities hold (0 for a world of accounts, 1 with Ghost's)", { k, k2 });
   // reset
   const rs = world("t8f-reset"); watch(); let arch = null; try { arch = WL.resetWorld(rs.w.log); } finally { unwatch(); }
   const dir = path.join(W, "t8f-reset");

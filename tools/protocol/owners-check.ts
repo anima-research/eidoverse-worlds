@@ -308,7 +308,8 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
   const still = fs.readFileSync(file, "utf8") === before && modOf() === mod0;
   row("OR2", () => ok(r2.code === 1 && /isn't an imported identity/.test(r2.out) && still, "OR2 bind refuses a target that isn't imported (janus's identity wears an account), nothing changed", r2));
   row("OR3", () => ok(r3.every((r) => r.code === 1 && /isn't an account/.test(r.out)) && still, "OR3 bind refuses a malformed account (no provider, empty, main's agent:<name>, a space, a shape that isn't one here), nothing changed", r3.map((r) => r.out.slice(0, 120))));
-  row("OR4", () => ok(r4.code === 1 && /already wears janus/.test(r4.out) && still, "OR4 bind refuses an account that already wears another identity here (it can't be two people), nothing changed", r4));
+  row("OR4", () => ok(r4.code === 1 && /already wears janus/.test(r4.out) && /alias merge/.test(r4.out) && /portable identity/.test(r4.out) && /operator-repair set\/delete/.test(r4.out) && still,
+    "OR4 bind refuses an account that already wears another identity here (it can't be two people), naming the coming path (an alias merge, with portable identity) and today's (set/delete), nothing changed", r4));
   row("OR5", () => ok(r5[0].code === 1 && /2 imported identities/.test(r5[0].out) && twins.every((id) => r5[0].out.includes(id)) && r5[1].code === 1 && /nobody called "nobody"/.test(r5[1].out) && still,
     "OR5 bind refuses an ambiguous name (Twin and twin: two imported people), naming their ids, and an unknown one, nothing changed", r5));
   const b6 = bind("porch", twins[0], "human:test:twin"); held.markRenamed(digiId);   // the held directory writes after the bind

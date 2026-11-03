@@ -6,7 +6,7 @@ import fs from "node:fs";
 import crypto from "node:crypto";
 import path from "node:path";
 import { TRUST_NAMES } from "../../../server/config.ts";
-import { directoryFor, mintId, foldName, ACCOUNT_SHAPE, type Entry } from "../../../server/directory.ts";
+import { directoryFor, foldName, ACCOUNT_SHAPE, type Entry } from "../../../server/directory.ts";
 import { mainKnowledge, type Known } from "../../../server/mainknew.ts";
 import { agentTokens, HN_ISS } from "../../../server/auth.ts";
 import { custodyAt, modLogAt } from "../../../server/custody.ts";
@@ -71,9 +71,9 @@ function readOld(srcBytes: Buffer) {
 /** The identity mapper a translation runs with: who(name, {sub, lowered}) → the v4 identity. A person with an account is
  *  that account; a person without one is their EXACT name, as v1 kept roles and acts. `lowered`: the name is one the v1
  *  fold lowercased (a ban's key), so it stands for the one name in this log that lowercases to it, when exactly one does.
- *  `mint` false (the dry run): reads what `dir` already knows and derives a stable id for the rest, writing nothing, so
- *  the report counts exactly what the real run renames and nothing in it varies. */
-function identityMapper(old: Any[], dir: ReturnType<typeof directoryFor> | null, { mint = true, known = null, owner = null }: { mint?: boolean; known?: ((name: string) => Known | null) | null; owner?: OwnerClaim | null } = {}) {
+ *  Reads what `dir` already knows and derives the rest from `salt` (identitySalt: this host's secret, this world, this old
+ *  log), writing nothing, so the dry run and the real run name the same people by the same ids (bot #369). */
+function identityMapper(old: Any[], dir: ReturnType<typeof directoryFor> | null, { salt, known = null, owner = null }: { salt: Buffer; known?: ((name: string) => Known | null) | null; owner?: OwnerClaim | null }) {
   const planned: Record<string, Entry> = {}; const memo = new Map<string, string>();
   const fromOf = new Map<string, string>();   // account → where this translation learned it (the report says, per role)
   const unbound = new Map<string, string>();  // name → why main's records bind it to no one account
@@ -98,7 +98,9 @@ function identityMapper(old: Any[], dir: ReturnType<typeof directoryFor> | null,
   // a v1 agent's sub is its home-node subject (agent:<name>@<domain>); a live join from this host's home node wears the
   // enrolment that lists it, else aid1:<iss>:<sub> (server.ts join), so its grants and bans land on that same account
   const liveAccount = (sub: string) => (/^agent:/.test(sub) && !/^agent:token:/.test(sub) ? (agents.bySub.has(sub) ? `agent:token:${agents.bySub.get(sub)!.toLowerCase()}` : `aid1:${HN_ISS}:${sub}`) : sub);
-  const stable = (key: string) => "u-" + [...crypto.createHash("sha256").update(`eido-dry-run\0${key}`).digest()].slice(0, 20).map((b) => "abcdefghijklmnopqrstuvwxyz234567"[b & 31]).join("");
+  // the id a key (an account, or name:<name>) gets here, in the one id shape (directory.ts isMinted): keyed by the salt, so a public
+  // log confirms no account and two worlds' namesakes are two ids; a later rename edits the name label only, the id is this once
+  const stable = (key: string) => "u-" + [...crypto.createHmac("sha256", salt).update(key).digest()].slice(0, 20).map((b) => "abcdefghijklmnopqrstuvwxyz234567"[b & 31]).join("");
   const who = (name0: string, { sub, lowered = false, from = "this world's log" }: { sub?: string; lowered?: boolean; from?: string } = {}) => {
     const name = lowered && sub === undefined ? unlowered(name0) : name0;
     // no account in the log: an agent's reserved name is its account; on a TRUST_NAMES (private) server a bare name is
@@ -109,7 +111,8 @@ function identityMapper(old: Any[], dir: ReturnType<typeof directoryFor> | null,
     if (acct && !fromOf.has(acct)) fromOf.set(acct, sub !== undefined || isAccountName(name) ? from : agents.names.has(name.toLowerCase()) ? "tokens.json (an enrolled agent's name)" : "TRUST_NAMES (a private server: a name is its local account)");
     // named without an account: whoever this log already knows by exactly that name (a grant's sub, the pre-index below) first
     let id = (sub === undefined && display !== null ? memo.get(nameKey(display)) : undefined) ?? memo.get(key) ?? (acct && dir ? dir.idOfSub(acct) : null) ?? null;
-    if (!id) { id = mint ? mintId() : stable(key); planned[id] = { name: display || "someone", subs: acct ? [acct] : [], kind: acct ? "account" : "imported", since: Date.now() }; }
+    // (an id this derivation already wrote here, a retried translation of the same old log, is that same person: kept, not planned twice)
+    if (!id) { id = stable(key); if (!dir?.entry(id)) planned[id] = { name: display || "someone", subs: acct ? [acct] : [], kind: acct ? "account" : "imported", since: Date.now() }; }
     if (display && planned[id]?.name === "someone") planned[id].name = display;   // a later mention brings the name
     memo.set(key, id); if (display !== null) memo.set(nameKey(display), id); return id; };
   // every name that ever had an account in this log (a grant with a sub, genesis roles), first: a person's acts may come
@@ -140,16 +143,22 @@ function identityMapper(old: Any[], dir: ReturnType<typeof directoryFor> | null,
   /** id → its one account (planned or in the directory), how it was learned, and why none: for oldOwners only, never printed */
   const accountOf = (id: string) => { const e = planned[id] ?? dir?.entry(id) ?? null; const acct = e?.subs[0] ?? null;
     return { name: e?.name ?? id, account: acct, from: acct ? (fromOf.get(acct) ?? "this server's directory") : null, unbound: acct ? null : (unboundCode.get(e?.name ?? "") ?? "none") }; };
-  return { who, planned, idOfName: (n: string) => memo.get(nameKey(n)), describe, accountOf };
+  return { who, planned, stable, idOfName: (n: string) => memo.get(nameKey(n)), describe, accountOf };
 }
+/** What the ids of a translation are derived from: this host's custody secret (the one the approval is countersigned with, so
+ *  the dry run and the apply agree), the world's name and the old log's bytes (two worlds' namesakes are two people). */
+function identitySalt(worldsDir: string, world: string, sourceSha256: string): Buffer {
+  return crypto.createHmac("sha256", custodyAt(custodyFileIn(worldsDir)).secret("import-v1 identity")).update(`${world}\0${sourceSha256}`).digest();
+}
+const sha256Hex = (b: Buffer) => crypto.createHash("sha256").update(b).digest("hex");
 
 /** The old world's owners as an upgrade checks them (server/upgrade.ts, through world.ts owner-of): the v1 fold's final owner
  *  roles, each through the translation's own identity mapper (mint nothing, write nothing). Accounts stay in this process. */
 export function oldOwners(srcDir: string) {
-  const { old } = readOld(fs.readFileSync(path.join(srcDir, "log.jsonl")));
+  const srcBytes = fs.readFileSync(path.join(srcDir, "log.jsonl")), { old } = readOld(srcBytes);
   const st: Any = v1Empty(); for (const e of old) if (e?.verb !== "genesis") foldEntry(st, e);   // as translate folds it
-  const worlds = path.dirname(path.resolve(srcDir));
-  const m = identityMapper(old, directoryFor(worlds), { mint: false, known: mainKnowledge(worlds, { self: path.basename(path.resolve(srcDir)) }) });
+  const worlds = path.dirname(path.resolve(srcDir)), self = path.basename(path.resolve(srcDir));
+  const m = identityMapper(old, directoryFor(worlds), { salt: identitySalt(worlds, self, sha256Hex(srcBytes)), known: mainKnowledge(worlds, { self }) });
   return Object.entries<Any>(st.roles ?? {}).filter(([k, v]) => k !== "*" && v?.role === "owner").sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([k, v]) => {
     const a = m.accountOf(m.who(k, { sub: (v && typeof v.sub === "string" ? v.sub : undefined) ?? (isAccountName(k) ? k : undefined) }));
     // on a TRUST_NAMES server a name IS its local account: that binding is the name's, so it is recognised by name
@@ -197,19 +206,20 @@ export const CLAIM = "this world has no owner: whoever performs this upgrade bec
 const watchOf = (old: Any[]) => { const st: Any = v1Empty(); for (const e of old) if (e?.verb !== "genesis") foldEntry(st, e); return watchGrants(st, Date.now()); };
 const hostContent = (p: string) => { const h = contentAddressOf(p); return h ? `sha256:${h}` : null; };
 /** The dry-run report: everything the translation would do that an owner should see before it does, and nothing that varies
- *  between runs (no minted identities, no nonce, no signatures), so its hash is the same for the same old log and the same tool
- *  build. `deferred` (features v4 doesn't carry yet) non-empty means the translation is REFUSED. The writer builds the same
+ *  between runs (no nonce, no signatures; the ids are derived from this host's secret, so its hash is the same for the same old
+ *  log, tool build and host). `deferred` (features v4 doesn't carry yet) non-empty means the translation is REFUSED. The writer builds the same
  *  report from its own run and refuses an approval of any other hash. */
 /** Everyone the translated world gives a role, and whether an account is bound to them (R 10-28): {name, role, account,
- *  from} or {name, role, account: null, why, bind}; owners first. What the operator approves, and the upgrade's result. */
+ *  from} or {name, role, account: null, why, bind}, each with its `id` (the one the written world holds: bot #369); owners first.
+ *  What the operator approves, and the upgrade's result. */
 /** A word a POSIX shell passes through as written ($, backticks, quotes and all): the bind advice is pasted into one (bot review #260 82). */
 const shellQuote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 export function peopleOf(world: string, r: Any, describe: (id: string) => Any) {
   const rank = (x: string) => ["owner", "moderator", "builder", "member"].indexOf(x) >>> 0;
   const out = Object.entries<Any>(r.final?.translated?.["@world"] ?? {}).filter(([k]) => k.startsWith("roles:")).map(([k, v]) => {
-    const d = describe(k.slice(6)); const name = d?.name ?? k.slice(6), role = String(v?.role ?? "?");
-    return d?.account ? { name, role, account: d.account, from: d.from }
-      : { name, role, account: null, why: d?.why ?? "not in the directory", bind: `bun tools/operator-repair.ts bind ${world} ${shellQuote(name)} <their account>` }; });
+    const id = k.slice(6), d = describe(id); const name = d?.name ?? id, role = String(v?.role ?? "?");
+    return d?.account ? { name, role, id, account: d.account, from: d.from }
+      : { name, role, id, account: null, why: d?.why ?? "not in the directory", bind: `bun tools/operator-repair.ts bind ${world} ${shellQuote(name)} <their account>` }; });
   return out.sort((a, b) => rank(a.role) - rank(b.role) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
 /** Who the translated world bans (its imported-bans, filed in world.mod.jsonl), as peopleOf says who holds a role: bound
@@ -238,7 +248,7 @@ export function ownerlessRefusal(world: string, people: Any[], claim: unknown): 
   if (claim || people.some((p) => p.role === "owner")) return null;
   return `"${world}" has no owner, and every translation ends with one: translate it with --claim and EIDO_UPGRADER_ACCOUNT=<the account that will own it> (yours, as SERVER_OPERATORS lists it), as the browser's upgrade does; everyone else keeps what main gave them (build and generate). Nothing was changed.`;
 }
-/** What the translation writes, hashed: its final state under the dry run's stable ids (identityMapper mint false), so the
+/** What the translation writes, hashed: its final state under the dry run's stable ids (identityMapper), so the
  *  approved report pins the output itself, not only its counts (review full-260 #4: the approved thing is the applied thing). */
 const outputOf = (r: Any) => `sha256:${sha256(jcs(r.final.translated))}`;
 /** The old poses.json's bytes ({size, sha256}, or null: none), pinned by the report: the apply carries that file (carryPoses; bot review 29). */
@@ -282,10 +292,10 @@ export async function warmHulls(srcDir: string) {
   await warm(old.filter((e: Any) => e?.verb === "spawn" && veh.has(String(e.args?.id))).map((e: Any) => e.args.lib));
   await warmLamps(old.filter((e: Any) => e?.verb === "spawn").map((e: Any) => e.args?.lib));   // main's inferred lamps (lamps.ts), measured once too
 }
-/** The dry run's translation (ids minted by nothing, this host's bytes and hull boxes): the ONE call the report and the apply's digest check share (review delta-260 #1). */
-function dryTranslation(old: Any[], srcDir: string, world: string, owner: OwnerClaim | null, content: (p: string) => string | null = hostContent) {
+/** The dry run's translation (ids derived, nothing written; this host's bytes and hull boxes): the ONE call the report and the apply's digest check share (review delta-260 #1). */
+function dryTranslation(old: Any[], srcDir: string, world: string, owner: OwnerClaim | null, sourceSha256: string, content: (p: string) => string | null = hostContent) {
   const worlds = path.dirname(path.resolve(srcDir));
-  const m = identityMapper(old, directoryFor(worlds), { mint: false, known: mainKnowledge(worlds, { self: path.basename(path.resolve(srcDir)) }), owner });
+  const m = identityMapper(old, directoryFor(worlds), { salt: identitySalt(worlds, world, sourceSha256), known: mainKnowledge(worlds, { self: path.basename(path.resolve(srcDir)) }), owner });
   return { m, r: translateOld(old, world, { who: m.who, content }) };
 }
 /** Every translation of a v1 log here, dry or applied: one set of options (fold build, namespace, hull boxes), so the digest can't drift from the write. */
@@ -299,7 +309,7 @@ export function reportV1World(srcDir: string, { name, content, claim }: { name?:
   // the pure translation (no directory, no custody key: the conformance key, no nonce), with the real run's identity
   // mapping minting nothing and its model hashes (this host's bytes, recording nothing): the same stats the real one has
   const owner = typeof claim === "object" ? ownerClaimOf(srcDir, claim) : null;
-  const { m, r } = dryTranslation(old, srcDir, world, owner, content);
+  const { m, r } = dryTranslation(old, srcDir, world, owner, sha256Hex(srcBytes), content);
   const people = peopleOf(world, r, m.describe);
   return reportOf(srcBytes, world, unparsed, deferredFeatures(old), r, r.out.length, people, claims(claim, people), owner, bansOf(world, r, m.describe), outputOf(r), watchOf(old), posesPin(srcDir));
 }
@@ -340,8 +350,11 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
   const dir = directoryFor(path.dirname(destDir));
   const srcWorlds = path.dirname(path.resolve(srcDir));
   const owner = ownerClaimOf(srcDir, claim);   // the upgrader recognised as its owner: bound to that owner here (planned, so a rollback forgets it)
-  const { who, planned, idOfName, describe } = identityMapper(old, dir, { known: mainKnowledge(srcWorlds, { self: path.basename(path.resolve(srcDir)) }), owner });
   const cust = custodyAt(custodyFileIn(path.dirname(destDir)));
+  // the ids are the dry run's (identitySalt, from the custody the approval is countersigned with): an apply whose custody isn't the
+  // dry run's would write ids nobody reviewed, so it is refused (the CLI keeps the old and the new world under one worlds dir)
+  if (approval && path.resolve(path.dirname(destDir)) !== path.resolve(srcWorlds)) throw new Error(`the approval is refused: "${destDir}" is not under the old world's worlds dir ${srcWorlds}, whose custody the dry run derived its identities from. Nothing written`);
+  const { who, planned, stable, idOfName, describe } = identityMapper(old, dir, { salt: identitySalt(path.dirname(destDir), world, source.sha256), known: mainKnowledge(srcWorlds, { self: path.basename(path.resolve(srcDir)) }), owner });
   // the countersignature must be THIS host's operator key, not just a key that verifies (bot review #368; the CLI builds it from custody, a library caller may not)
   if (approval && approval.operator.key !== cust.operator()) throw new Error(`the approval is refused: countersigned by ${approval.operator.key}, not this host's operator key ${cust.operator()}. Nothing written`);
   // a model's bytes (R 10-17: the path is the reference; this is model-hash beside it): the original bytes on this host, hashed;
@@ -359,7 +372,7 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
   // the approval is of the report of THESE bytes, translated as this run translated them (the dry run's numbers are this run's)
   const people = peopleOf(world, r, describe), claiming = claims(claim, people);
   if (claim && !ACCOUNT_SHAPE.test(claim.account)) throw new Error(`the claim's account "${String(claim.account).slice(0, 40)}" isn't an account here. Nothing written`);
-  if (approval) { const output = outputOf(dryTranslation(old, srcDir, world, owner).r);   // the dry run's own translation: its output digest
+  if (approval) { const output = outputOf(dryTranslation(old, srcDir, world, owner, source.sha256).r);   // the dry run's own translation: its output digest
     const now = reportOf(srcBytes, world, unparsed, deferred, r, r.out.length - 1, people, claiming, owner, bansOf(world, r, describe), output, [], posesPin(srcDir)).hash;
     if (now !== approval.report) throw new Error(`the approval is refused: it approves report ${approval.report}, but the report of the log being translated hashes to ${now}: the old log, the tool or the model bytes changed since the dry run, so what would be written isn't what was approved. Run the dry run again, read it, and approve its new hash. Nothing written`); }
   // salted and signed like every line the authority writes (§2.4; round-2 review R3): a translated world is a chained log
@@ -418,12 +431,12 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
     let claimed: Any = null;
     if (claiming) { const acct = claim!.account;
       let id = dir.idOfSub(acct) ?? Object.entries(planned).find(([, e]) => e.subs.includes(acct))?.[0] ?? null;
-      if (!id) { id = mintId(); planned[id] = { name: String(claim!.name || "someone").slice(0, 64), subs: [acct], kind: "account", since: Date.now() }; }
+      if (!id) { id = stable(acct); planned[id] = { name: String(claim!.name || "someone").slice(0, 64), subs: [acct], kind: "account", since: Date.now() }; }
       // operatorRepair: the first owner's builder keeps generate (roles.js firstOwnerRoleDefs)
       const x: Any = operatorRepair(live, id!, "set", { id: "@world", component: `roles:${id}`, value: { role: "owner" } });
       if (!x?.ok) throw new Error(`the claim was refused: ${x?.refused?.code}: ${x?.refused?.reason}`);
       claimed = { id, name: planned[id]?.name ?? dir.nameOf(id) ?? "someone", account: acct.split(":").slice(0, 2).join(":") };
-      people.unshift({ name: claimed.name, role: "owner", account: claimed.account, from: "claimed: they upgraded it (it had no owner)", claimed: true }); }
+      people.unshift({ name: claimed.name, role: "owner", id, account: claimed.account, from: "claimed: they upgraded it (it had no owner)", claimed: true }); }
     for (const [h, p] of addressed) recordEido(h, p);
     if (!deferIdentities) dir.put(planned);
     // the approval act (translation-approved, bound to the dry-run report) sits right after the translation's marker, BEFORE the

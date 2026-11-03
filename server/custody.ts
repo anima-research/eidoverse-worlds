@@ -109,6 +109,12 @@ function openCustody(file: string) {
       const key = crypto.createPrivateKey({ key: Buffer.from(c.operator!.priv, "base64"), format: "der", type: "pkcs8" });
       return crypto.sign(null, Buffer.from(msg, "utf8"), key).toString("base64url");
     },
+    /** This host's secret for `purpose` (HMAC-SHA256 keyed by the sequencer's private bytes): the same on every run here, never
+     *  the key itself, and nothing another host can derive (import-v1/world.ts identitySalt). */
+    secret(purpose: string): Buffer {
+      minting(() => !c.sequencer, () => { c.sequencer = mk(); });
+      return crypto.createHmac("sha256", Buffer.from(c.sequencer!.priv, "base64")).update(`eidoverse-secret:${purpose}`).digest();
+    },
     keyOf(who: string, make = false): string | null { if (make) minting(() => !c.holders[who], () => { c.holders[who] = mk(); }); return c.holders[who]?.pub ?? null; },
     /** §2.4 chain point: base64url Ed25519 over msg ("eidoverse-head:<world id>:<seq>:<head hex>") by the sequencer key. */
     sign(msg: string): string {

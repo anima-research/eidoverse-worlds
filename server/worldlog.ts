@@ -542,7 +542,7 @@ const canonOf = (st: Any, skipWorld: (k: string) => boolean) => JSON.stringify(O
  *  ({world, name, head}), holding a copy of the source's current state. Built in a hidden directory and renamed into
  *  place only once its state equals the source's, so a failed fork leaves nothing. Chat history isn't copied: the
  *  source's log stays the record, and the fork links to it. */
-export function forkWorld(src: WorldLog, to: string, forker: string): { ok: true; worldId: string; things: number; acts: number } | { ok: false; err: string } {
+export function forkWorld(src: WorldLog, to: string, forker: string): { ok: true; worldId: string; things: number; acts: number; importedRoles: number } | { ok: false; err: string } {
   if (!WORLD_NAME.test(to)) return { ok: false, err: `bad world name "${to}" — letters, digits, - and _ only` };
   if (to === src.name) return { ok: false, err: "a world can't be copied onto itself" };
   const dest = path.join(WORLDS_DIR, to);
@@ -564,7 +564,10 @@ export function forkWorld(src: WorldLog, to: string, forker: string): { ok: true
     const back = w.state();
     if (canonOf(back, skip) !== canonOf(st, skip)) throw new Error("the copy doesn't match the source (nothing was kept)");
     fs.renameSync(tmp, dest); syncDir(WORLDS_DIR);   // the fork's name, durable before it is answered (house 6344940039)
-    return { ok: true, worldId: w.worldId, things: Object.keys(st.entities).length - 1, acts };
+    // roles held by names with no account yet travel too: a later bind (operator-bind) reaches this copy as well, so it is counted and said
+    const dir = directoryFor(WORLDS_DIR);
+    const importedRoles = Object.keys(st.entities["@world"]?.c ?? {}).filter((k) => k.startsWith("roles:") && !skip(k) && dir.entry(k.slice(6))?.kind === "imported").length;
+    return { ok: true, worldId: w.worldId, things: Object.keys(st.entities).length - 1, acts, importedRoles };
   } catch (e: Any) {
     fs.rmSync(tmp, { recursive: true, force: true });
     return { ok: false, err: String(e?.message ?? e) };

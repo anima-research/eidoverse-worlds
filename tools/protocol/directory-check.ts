@@ -30,8 +30,8 @@ const file = path.join(tmp, "worlds", ".directory.json");
   ok(d.entry(bot)?.kind === "account", "D6 an enrolled account is an account like any other (no kind of participant: §6a rule 3)");
   const leg = d.imported("Bea"); d.bind(leg, "human:discord:333");
   ok(d.resolve({ sub: "human:discord:333", name: "Bea" }) === leg, "D7 binding an account to a legacy identity lets that account wear it");
-  let threw = false; try { d.bind(leg, "human:discord:111"); } catch { threw = true; }
-  ok(threw, "D8 an account can't wear two identities");
+  let threw: string | null = null; try { d.bind(leg, "human:discord:111"); } catch (e) { threw = String((e as Error)?.message ?? e); }
+  ok(threw && /alias/.test(threw) && /portable identity/.test(threw), "D8 an account can't wear two identities; the refusal names the path that joins two (an alias merge, with portable identity), not a bind", threw);
   // Windows has no POSIX modes (stat reports 666 for any writable file; access is the profile's ACL), so this row is POSIX-only
   if (process.platform !== "win32") ok((fs.statSync(file).mode & 0o777) === 0o600, "D9 the directory file is 0600", (fs.statSync(file).mode & 0o777).toString(8));
   const again = directoryAt(file);
@@ -612,5 +612,21 @@ process.stdout.write(directoryAt(${JSON.stringify(f)}, slow).resolve({ sub: "hum
   ok(disk?.name === "Wren" && !!disk?.renamedAt && srv.nameOf(id) === "Wren", "DW22 a save merges the newer rename from disk instead of writing the stale name over it", disk); }
 
 fs.rmSync(tmp, { recursive: true, force: true });
+// D40 (bot #369; R 11-03: an id is a person, never a world, a name or a kind): the ONE id shape, and the places that may make one.
+// A stand-in for an imported name is a directory row with kind "imported", made by directory.imported and the old-world translator
+// only; mintId (random) belongs to the directory, the translator derives its ids (identityMapper stable). Any other site is red.
+{ const ROOT = path.resolve(import.meta.dir, "../.."), SKIP = new Set(["node_modules", "vendor", "dist", ".git"]), EXT = /\.(m?js|cjs|ts|mts)$/;
+  const files: string[] = []; const walk = (d: string) => { for (const f of fs.readdirSync(d, { withFileTypes: true })) { if (SKIP.has(f.name)) continue; const p = path.join(d, f.name); if (f.isDirectory()) walk(p); else if (EXT.test(f.name) && !/[-.](check|test|probe|mutants)\.[mc]?[jt]s$/.test(f.name)) files.push(p); } };
+  walk(ROOT);
+  const hits = (re: RegExp) => files.flatMap((f) => fs.readFileSync(f, "utf8").split("\n").flatMap((l, i) => (re.test(l) ? [`${path.relative(ROOT, f).replace(/\\/g, "/")}:${i + 1}`] : [])));
+  const standIns = hits(/kind: [^;,]*?"imported"/).map((h) => h.replace(/:\d+$/, "")), mints = hits(/\bmintId\(/).map((h) => h.replace(/:\d+$/, ""));
+  const STAND_IN = ["server/directory.ts", "tools/protocol/import-v1/world.ts", "tools/protocol/migrate-identities.ts"];
+  // shared/protocol's mintId is the entity-id minter (ids.js), another function with the same name
+  const MINT = ["server/directory.ts", "shared/protocol/ids.js", "shared/protocol/authority.js", "shared/protocol/authority/writes.js", "tools/protocol/migrate-identities.ts"];
+  ok(standIns.length > 0 && standIns.every((f) => STAND_IN.includes(f)) && mints.length > 0 && mints.every((f) => MINT.includes(f)),
+    "D40 a stand-in (kind \"imported\") is made only by the directory, the old-world translator and the legacy migration; mintId is called only by the directory (and the entity minter): the translator derives its ids, so the dry run and the apply agree", { standIns: [...new Set(standIns)], mints: [...new Set(mints)] });
+  ok(isMinted("u-" + "a".repeat(20)) && !isMinted("w-" + "a".repeat(20)) && !isMinted("u-imported-" + "a".repeat(11)) && !isMinted("u-" + "a".repeat(21)),
+    "D40b one id shape, u- and 20 base32 characters: nothing in it says a world, a name or a kind"); }
+
 console.log(`[directory-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

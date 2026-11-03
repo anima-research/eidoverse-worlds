@@ -30,6 +30,8 @@ type File = { v: 1 | 2; ids: Record<string, Entry> };
 const B32 = "abcdefghijklmnopqrstuvwxyz234567";
 export const mintId = () => "u-" + Array.from(crypto.randomBytes(20), (b) => B32[b & 31]).join("");
 export const isMinted = (s: string) => /^u-[a-z2-7]{20}$/.test(s);
+// the ONE shape of an id: an id is a person, never a world, a name or a kind (PROTOCOL §6a rule 2); a portable identity binds to
+// an id (bind; later an alias merge, with portable identity), it does not replace it. Minted here, and by import-v1/world.ts for an old log.
 /** The account prefixes above (only the prefix is checked); a stored account with none of them is refused at boot (named, kept on disk), never worn. */
 export const ACCOUNT_SHAPE = /^(human|agent:token|aid1|local):/;
 /** The tag a display name takes when another account wears it: stable per account, and carries none of it (a hash, not its digits). */
@@ -102,11 +104,12 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
       return id;
     },
     /** An identity with no account yet (a name from an imported world's log): holds its roles until an operator binds an account. */
-    imported(name: string, world: string | null = null): string { return add({ name, subs: [], kind: "imported", since: now(),  }); },
+    imported(name: string): string { return add({ name, subs: [], kind: "imported", since: now() }); },
     /** Operator: let an account wear an existing id (e.g. a legacy owner proving who they are) — in that id's world. */
     bind(id: string, sub: string) { const e = d.ids[id]; if (!e) throw new Error(`no identity ${id}`);
       const k = e.world ? `${sub}|${e.world}` : sub;
-      const prev = byKey.get(k); if (prev && prev !== id) throw new Error(`${sub} already wears ${prev}${e.world ? " in that world" : ""}`);
+      // one account, one id: joining two ids into one person is an alias merge, coming with portable identity
+      const prev = byKey.get(k); if (prev && prev !== id) throw new Error(`${sub} already wears ${prev}${e.world ? " in that world" : ""}: merging two identities into one person is an alias (coming with portable identity), not a bind`);
       if (!e.subs.includes(sub)) e.subs.push(sub); if (e.kind === "imported") e.kind = "account"; byKey.set(k, id); save(); },
     /** the id an account already wears in a world, if any (read-only: the translator plans before it writes) */
     idOfSub: (sub: string, world: string | null = null): string | null => byKey.get(keyOf(sub, world)) ?? (fresh(), byKey.get(keyOf(sub, world)) ?? null),

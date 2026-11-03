@@ -37,6 +37,7 @@
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import { scratch } from "./common.ts";
 
 const argv = process.argv.slice(2);
@@ -53,6 +54,7 @@ const TV1 = await import("./import-v1/translate-v1.js");
 const { readLog, fold } = await import("../../shared/protocol/fold.js");
 const { custodyAt } = await import("../../server/custody.ts");
 const { custodyFileIn } = await import("../../server/keyfiles.ts");
+const { isMinted } = await import("../../server/directory.ts");
 const { HN_ISS } = await import("../../server/auth.ts");
 const { emptyState: v1Empty, foldEntry: v1Fold } = await import("./import-v1/fold.js");
 
@@ -468,6 +470,47 @@ row("IM-I14", () => {
 { const { liftFailures } = await import("./import-v1/snapshot-oracle.ts");
   const got = liftFailures([{ repairNeeded: { steps: ["repair-shapes"], blocking: [], optional: [] } }, { host: "h", made: [] }]);
   ok(got.length === 1 && got[0].repairNeeded, "IM-I17 the oracle counts a lifted world that still needs maintenance (liftWorld's repairNeeded) as a lift failure", got); }
+
+// ---- IM-I40–I44 (bot #369): the ids the dry run reports are the ids the real run writes; salted, so a public log confirms no account ----
+const rolesIn = (dest: string) => Object.keys(fold(linesOf(dest)).entities?.["@world"]?.c ?? {}).filter((k) => k.startsWith("roles:")).map((k) => k.slice(6));
+row("IM-I40", () => {
+  const w = oldWorld(BASIC); const rep = W1.reportV1World(w.src, { name: "new" });
+  W1.translateV1World(w.src, w.dest, { approval: approvalFor(w, rep.hash) });
+  const written = rolesIn(w.dest), dry = (rep.report.people ?? []).map((p: any) => p.id);
+  ok(dry.length === 1 && dry.every((id: string) => isMinted(id) && written.includes(id)) && written.length === dry.length,
+    "IM-I40 the dry run's report names each role holder's id, and the written world holds its roles under exactly those ids (the reviewed ids are the applied ids)", { dry, written });
+});
+row("IM-I41", () => {
+  const L = [BASIC[0], { actor: "world", verb: "grant", args: { id: "mica", role: "owner" } }, { actor: "mica", verb: "say", args: { text: "hi" } }];
+  const a = oldWorld(L), b = { src: path.join(a.worlds, "other"), dest: path.join(a.worlds, "other-new"), worlds: a.worlds };
+  fs.mkdirSync(b.src, { recursive: true }); fs.writeFileSync(path.join(b.src, "log.jsonl"), seqd(L).map((e) => JSON.stringify(e)).join("\n") + "\n");
+  const ra = W1.translateV1World(a.src, a.dest), rb = threw(() => W1.translateV1World(b.src, b.dest, { name: "other-new" }));
+  const ia = rolesIn(a.dest), ib = rb ? [] : rolesIn(b.dest);
+  ok(rb === null && ia.length === 1 && ib.length === 1 && ia[0] !== ib[0] && ra.identities === 1,
+    "IM-I41 two old worlds on one server, each with an unbound owner \"mica\" (the same log bytes): both translate, as two imported people with two ids (a namesake in another world is not known to be the same person)", { ia, ib, rb });
+});
+row("IM-I42", () => {
+  const w = oldWorld(BASIC); W1.translateV1World(w.src, w.dest);
+  const b32 = "abcdefghijklmnopqrstuvwxyz234567";
+  const dictionary = (key: string) => "u-" + [...crypto.createHash("sha256").update(`eido-dry-run\0${key}`).digest()].slice(0, 20).map((b) => b32[b & 31]).join("");
+  const written = rolesIn(w.dest), guesses = ["human:discord:111", "name:Ann", "name:Bob", "Ann"].map(dictionary);
+  ok(written.length === 1 && !guesses.some((g) => written.includes(g)),
+    "IM-I42 an id in the written log is not the hash of its account or name under a public prefix: a list of accounts confirms nobody (the derivation is keyed by this host's custody secret)", { written, guesses });
+});
+row("IM-I43", () => {
+  const a = oldWorld(BASIC), b = oldWorld(BASIC);   // the same log on two hosts (two worlds dirs, two custodies)
+  const ra = W1.reportV1World(a.src, { name: "new" }), rb = W1.reportV1World(b.src, { name: "new" }), again = W1.reportV1World(a.src, { name: "new" });
+  const ia = ra.report.people.map((p: any) => p.id), ib = rb.report.people.map((p: any) => p.id);
+  ok(ia.length === 1 && ib.length === 1 && ia[0] !== ib[0] && again.hash === ra.hash && ra.hash !== rb.hash,
+    "IM-I43 the same old log on another host derives other ids (and another report hash); on this host the report is the same twice", { ia, ib });
+});
+row("IM-I44", () => {
+  const w = oldWorld(BASIC), elsewhere = path.join(root, `w${++n}`, "worlds", "new");
+  const rep = W1.reportV1World(w.src, { name: "new" });
+  const why = threw(() => W1.translateV1World(w.src, elsewhere, { name: "new", approval: approvalFor(w, rep.hash) }));
+  ok(why && /approval is refused/.test(why) && /worlds dir/.test(why) && /Nothing written/.test(why) && !fs.existsSync(elsewhere),
+    "IM-I44 an approved translation into another worlds dir (another custody: other ids than the dry run's) is refused, nothing written", why);
+});
 
 console.log(`[importer-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

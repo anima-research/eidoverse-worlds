@@ -40,7 +40,7 @@ export function bindIdentity(worldsDir: string, world: string, who: string, acco
   if (imported.length > 1) return no(`${imported.length} imported identities in "${world}" are called "${who}" (${imported.join(", ")}): name one by its id`);
   const id = imported[0], name = dir.nameOf(id) ?? id;
   const worn = dir.idOfSub(account);
-  if (worn && worn !== id) return no(`that account already wears ${dir.nameOf(worn) ?? "an identity"} (${worn}) on this server: it can't be two people. To give them ${name}'s roles instead, operator-repair set/delete (docs/TRANSLATING-OLD-WORLDS.md)`);
+  if (worn && worn !== id) return no(`that account already wears ${dir.nameOf(worn) ?? "an identity"} (${worn}) on this server: it can't be two people. Joining the two into one person is an alias merge, coming with portable identity; until then, to give them ${name}'s roles, operator-repair set/delete (docs/TRANSLATING-OLD-WORLDS.md)`);
   dir.bind(id, account);
   const out: Out = { ok: true, id, name, account: `${account.split(":").slice(0, 2).join(":")}:… (tag ${accountTag(account)})`, logged: "world.mod.jsonl" };
   const rec = { ts: Date.now(), actor: "system", verb: "bind", who: id, by: String(by).slice(0, 64), operator: true };

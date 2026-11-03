@@ -277,7 +277,7 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     const r = forkWorld(w.log, to, actorOf(c));
     if (!r.ok) return err(r.err);
     forkAt.set(w.name, now); forksBy.set(actorOf(c), [...mine, now]);   // only a fork that happened counts
-    console.log(`[world:${w.name}] copied → "${to}" by ${c.id} (${r.things} things, ${r.acts} acts)`);
+    console.log(`[world:${w.name}] copied → "${to}" by ${c.id} (${r.things} things, ${r.acts} acts${r.importedRoles ? `, ${r.importedRoles} role(s) held by imported identities an operator may still bind` : ""})`);
     ws.send(JSON.stringify({ type: "world-forked", from: w.name, to }));
   },
   // Found a new, empty world that you own. Any signed-in account, person or agent: a guest has no account to own it.
