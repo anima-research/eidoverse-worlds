@@ -1523,6 +1523,13 @@ HANDLERS.anim = async (ag, a, ctx, name) => {
   const forms = ["name", "joints", "tracks", "stop", "ragdoll"].filter((k) => a[k] != null && a[k] !== false);
   if (a.name != null && (a.joints != null || a.tracks != null)) return { content: [{ type: "text", text: "anim: a name OR live keys (joints, or tracks), not both — a named anim plays as it is; nothing was guessed and nothing played" }], isError: true };
   if (forms.length > 1) return { content: [{ type: "text", text: `anim: one of name, joints, tracks, stop or ragdoll at a time (got ${forms.join(", ")})` }], isError: true };
+  // a name is checked before a body-mode beside it is declared: a refused call changes nothing
+  if (a.name != null) {
+    const n = String(a.name);
+    if (!/^[A-Za-z][A-Za-z0-9_-]{0,47}$/.test(n)) return { content: [{ type: "text", text: `anim: "${n}" isn't an anim name (letters, digits, - and _)` }], isError: true };
+    if (isReservedAnimName(n)) return { content: [{ type: "text", text: `anim: "${n}" is reserved — it names every ad-libbed anim (joints, tracks), so no anim can be called it; stop: "${n}" stops those` }], isError: true };
+    if (a.target) return { content: [{ type: "text", text: "anim {name} plays on your own body; to animate someone else, send joints or tracks (they decide)" }], isError: true };
+  }
   // a body-mode declaration (R 15:45): any of the six, for looks; it holds until the mover's next real transition or the
   // next declaration, and grants nothing. Alone, or beside a name (the anim then plays in that mode)
   if (a.bodyMode != null) { if (!isBodyMode(a.bodyMode)) return { content: [{ type: "text", text: `anim: bodyMode is ${BODY_MODES.join(" | ")} (got ${JSON.stringify(a.bodyMode)})` }], isError: true };
@@ -1581,9 +1588,6 @@ HANDLERS.anim = async (ag, a, ctx, name) => {
   // by name: a pose or a clip, the anim's own mode unless the call says one
   if (a.name != null) {
     const n = String(a.name);
-    if (!/^[A-Za-z][A-Za-z0-9_-]{0,47}$/.test(n)) return { content: [{ type: "text", text: `anim: "${n}" isn't an anim name (letters, digits, - and _)` }], isError: true };
-    if (isReservedAnimName(n)) return { content: [{ type: "text", text: `anim: "${n}" is reserved — it names every ad-libbed anim (joints, tracks), so no anim can be called it; stop: "${n}" stops those` }], isError: true };
-    if (a.target) return { content: [{ type: "text", text: "anim {name} plays on your own body; to animate someone else, send joints or tracks (they decide)" }], isError: true };
     const from = animFrom(ag, n);
     if (ANIM_POSES.has(n)) { const t = await ag.foldWings(true); if (!t.ok) return fail(t.text); if (ag.wingsFolded) ag.animBegan({ name: n, mode: "hold", kind: "pose" }); return playing(n, "hold", t.text, from); }
     const mode = (mode0 ?? ANIM_MODES[n] ?? "once") as "once" | "loop" | "hold";

@@ -90,6 +90,20 @@ const creator = (reply: any = { ok: true, after: {} }) => { const sent: any[] = 
   const ctx = ctxOf(ag); const out = textOf(await handleTool(ctx, "catch_up", { limit: 1 }));
   ok(pages === 100 && /not read/.test(out) && /world_history/.test(out) && /more remain/.test(out), "65 a run longer than 100 pages is named as unread older speech, with the way to read it", out.slice(-240)); }
 
+// #28 (bot2): move {to: "?"} measures from where the body IS — its seat's composed position, as look() does
+{ const ag: any = new WorldAgent({ name: "me", world: "w" }); ag.pos = { x: 0, y: 0, z: 0 };
+  const thing = (id: string, pos: number[]) => ag.entities.set(id, { id, model: `zz/${id}.glb`, kind: "thing", pos, yaw: 0, actor: "x", scale: 1, places: { spot: { at: [0, 0, 0] } } });
+  thing("near", [1, 0, 1]); thing("far", [99, 0, 99]);
+  const standing = ag.placeList().split("\n")[1] ?? "";
+  ag.mounts.set("me", { to: "ferry.seat" }); const eff0 = ag.eff.bind(ag); ag.eff = (id: string, t: number) => (id === "me" ? { ok: true, pos: [100, 0, 100], moving: null, seat: { state: "profiled" } } : eff0(id, t));
+  const seated = ag.placeList().split("\n")[1] ?? "";
+  ok(/near\/spot/.test(standing) && /far\/spot/.test(seated) && /\(1\.4 m/.test(seated), "28 seated far from where it boarded, the body's nearest place is the one by its seat", { standing, seated }); }
+
+// #106 (bot2): anim {bodyMode, name} with a bad name changes nothing — the name is checked before the mode is declared
+{ const ag: any = new WorldAgent({ name: "me", world: "w" }); const before = ag.bodyMode;
+  const r = await handleTool(ctxOf(ag), "anim", { bodyMode: "fly", name: "bad name" });
+  ok(r?.isError === true && ag.bodyMode === before, "106 a refused anim name leaves the body-mode as it was", { before, after: ag.bodyMode, r: textOf(r) }); }
+
 // #105: a fall below the world ends the walk's promise now (false), not at its timeout
 { const ag: any = new WorldAgent({ name: "me", world: "w" }); ag.replica = { st: { entities: { "@world": { c: {} } } } };
   let done: boolean | null = null; ag.target = { x: 5, z: 5 }; ag.walkDone = (v: boolean) => { done = v; };
