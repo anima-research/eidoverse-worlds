@@ -164,8 +164,9 @@ function teeFlush() {
   teeTimer = 0;
   if (!teeQ.length || teeMuted) return;
   if (Date.now() < teePausedUntil) { teeTimer = setTimeout(teeFlush, teePausedUntil - Date.now()); return; }
-  let body = teeQ[0], i = 1;
-  for (; i < teeQ.length && body.length + 1 + teeQ[i].length <= TEE_BYTES; i++) body += `\n${teeQ[i]}`;
+  const bytes = (s) => new TextEncoder().encode(s).length;   // the cap is in bytes on the wire, not UTF-16 units
+  let body = teeQ[0], i = 1, size = bytes(body);
+  for (; i < teeQ.length && size + 1 + bytes(teeQ[i]) <= TEE_BYTES; i++) { body += `\n${teeQ[i]}`; size += 1 + bytes(teeQ[i]); }
   const batch = teeQ.splice(0, i);
   const url = `/clientlog?world=${encodeURIComponent(CONFIG.world ?? '')}`;
   const headers = { authorization: `Bearer ${CONFIG.token ?? ''}` };   // the door key never rides in a URL
