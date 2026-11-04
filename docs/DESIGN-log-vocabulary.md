@@ -412,4 +412,4 @@ Portable identity (one person, one identity across worlds and servers) is the ne
 
 **Q6 (for the reviewer):** do P1–P7 hold up? P3 and P4 are the two that change kernel shape checks in this PR.
 
-**Q3 lean (inbox `kind:"act"`):** rename it, to `"notice"` (6 sites, one file, no migration), so the retired log word has no surviving homonym. The keep-it call in review 1 stands unless the reviewer agrees.
+**Q3 resolved: keep the inbox `kind:"act"`** as review 1 said, documented as a volatile agent event. Once the log retires `act`, the word has one meaning in live code. The only other place it appears is the migration tool, which reads old minor-0 logs, and that is clearly labelled as old.
