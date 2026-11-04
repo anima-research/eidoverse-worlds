@@ -23,7 +23,7 @@
 import { statSync } from "node:fs";
 import { join } from "node:path";
 import { WORLDS_DIR, JOIN_TOKEN } from "./config.ts";
-import { globalBans, findBan, doorLocked, LOCKED_WHY } from "./moderation.ts";
+import { serverBans, findBan, doorLocked, LOCKED_WHY } from "./moderation.ts";
 import { isOperator } from "./operators.ts";
 import { sessionOfRequest, accountOf } from "./auth.ts";
 import { directoryFor } from "./directory.ts";
@@ -110,14 +110,14 @@ export function doorFor(name: string): Door | null {
  *  `here` (embodied joins only): how many bodies are in the world now, for access.max. */
 export function entryFor(door: Door, who: Who, mode: EntryMode, { now = Date.now(), here = null as number | null } = {}): Refusal | null {
   const { account, actorId, addr } = who;
-  // exclusion outranks everything but the operator: a global ban closes every door, a world's ban this one. Watching
+  // exclusion outranks everything but the operator: a server ban closes every door, a world's ban this one. Watching
   // counts — a ban is exclusion, not just silencing
   if (!isOperator(account)) {
     // the world's own moderator log: the loaded world's, else the one read from disk with its door (same views, at `now`)
     const off = !door.world && door.mod ? { mod: door.mod, now: () => now } : null;
     const bannedHere = (id: string) => door.world ? !!door.world.log?.bannedHere(id) : !!off && isBanned(off, id);
-    const gb = findBan(globalBans, account, addr);
-    const ban = gb ?? findBan(globalBans, account, addr, now, door.name) ?? (actorId && bannedHere(actorId) ? { by: "a moderator" } as any : null);
+    const gb = findBan(serverBans, account, addr);
+    const ban = gb ?? findBan(serverBans, account, addr, now, door.name) ?? (actorId && bannedHere(actorId) ? { by: "a moderator" } as any : null);
     if (ban) return { code: 4006, reason: "banned", why: `you are banned from ${gb ? "these worlds" : `"${door.name}"`}${ban.reason ? ` — ${ban.reason}` : ""}` };
   }
   // operators, owners and holders of a moderation power always get in (what @world.access always said)

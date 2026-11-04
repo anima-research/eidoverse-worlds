@@ -15,7 +15,7 @@
 import { forkWorld, foundOwnedWorld, recheckFix } from "./worldlog.ts";
 import { worldExists, worlds } from "./world.ts";
 import type { Client, World } from "./world.ts";
-import { globalBans, saveGlobalBans, banKey, ADDR_BAN_MS, fileAddrSanction, liftAddrSanction, notPersisted } from "./moderation.ts";
+import { serverBans, saveServerBans, banKey, ADDR_BAN_MS, fileAddrSanction, liftAddrSanction, notPersisted } from "./moderation.ts";
 import { directoryFor, foldName } from "./directory.ts";
 import { WORLDS_DIR, FORK_GAP_SEC, FORK_PER_HOUR } from "./config.ts";
 import { isBanned, inForceOf } from "../shared/protocol/authority.js";
@@ -116,8 +116,8 @@ export function guestSanctionByAddress(w: World, actor: string, by: string, verb
 /** An unban's lift of the address entry a guest's ban left in this world (the request path and operator-repair alike). */
 function liftGuestAddressBan(w: World, who: string) {
   let n = 0;
-  for (const [k, e] of Object.entries(globalBans)) if ((e as Any)?.who === who && (e as Any)?.world === w.name) { delete globalBans[k]; n++; }
-  if (n) saveGlobalBans();
+  for (const [k, e] of Object.entries(serverBans)) if ((e as Any)?.who === who && (e as Any)?.world === w.name) { delete serverBans[k]; n++; }
+  if (n) saveServerBans();
 }
 export const actorOf = (c: Client) => { if (!c.actorId) throw new Error(`request from ${c.id} with no directory id (join didn't resolve one)`); return c.actorId; };
 
@@ -189,8 +189,8 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
       // connection's address in this world, or reconnecting would shed it (review 10-07)
       if (r?.ok && verb === "ban" && typeof args.who === "string") for (const t of w.clients) if (t.actorId === args.who && t.anonymous && t.addr) {
         const until = Math.min(Date.now() + ADDR_BAN_MS, r.until ?? Infinity);
-        globalBans[banKey(null, t.addr, w.name)] = { by: c.id, ts: Date.now(), name: t.id, addr: t.addr, until, world: w.name, who: String(args.who), ...(args.reason ? { reason: String(args.reason) } : {}) };
-        unsaved ??= saveGlobalBans();
+        serverBans[banKey(null, t.addr, w.name)] = { by: c.id, ts: Date.now(), name: t.id, addr: t.addr, until, world: w.name, who: String(args.who), ...(args.reason ? { reason: String(args.reason) } : {}) };
+        unsaved ??= saveServerBans();
       }
       // a guest's mute also names their address here, and its lift lifts that (R 10-07)
       if (r?.ok && ["mute", "unmute"].includes(verb) && typeof args.who === "string" && args.who !== cap.actorId)

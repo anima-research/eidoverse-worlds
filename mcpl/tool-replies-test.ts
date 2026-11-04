@@ -20,10 +20,10 @@ const ctxOf = (agent: any): any => ({ agent, canPush: () => false, heldActivity:
   const L = ag.look(0).split("\n"), off = L.find((l: string) => l.includes("[off]")) ?? "", on = L.find((l: string) => l.includes("[on]")) ?? "";
   ok(/walk-through/.test(off) && !/collides as/.test(off) && /collides as a box/.test(on), "62 look: a collider with enabled: false reads walk-through; an enabled one collides", { off, on }); }
 
-// #41 (tool side): ban {global: true, days} sends the days with the global ban
+// #41 (tool side): ban {global: true, days} sends the days with the server ban
 { const sent: any[] = []; const ag: any = { sendMod: (type: string, args: any) => sent.push({ type, ...args }), modOutcome: async () => "u-x is banned from all worlds" };
   await handleTool(ctxOf(ag), "act", { verb: "ban", args: { who: "Moss", days: 2, global: true } });
-  ok(sent.length === 1 && sent[0].type === "global-ban" && sent[0].days === 2, "41 ban {global, days} sends days to the server", sent); }
+  ok(sent.length === 1 && sent[0].type === "server-ban" && sent[0].days === 2, "41 ban {global, days} sends days to the server", sent); }
 
 // fake agent for create: things by label, requests captured
 const creator = (reply: any = { ok: true, after: {} }) => { const sent: any[] = [];

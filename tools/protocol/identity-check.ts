@@ -538,12 +538,12 @@ const postAuth = (port, token) => fetch(`http://127.0.0.1:${port}/auth`, { metho
   fs.writeFileSync(path.join(D, ".directory.json"), JSON.stringify({ v: 2, ids: { "u-aaaaaaaaaaaaaaaaaaaa": { name: "Fine", subs: ["local:fine"], kind: "account", since: 1 },
     "u-bbbbbbbbbbbbbbbbbbbb": { name: "Oddone", subs: ["agent:odd@x"], kind: "account", since: 1 } } }));
   const code = `const m = await import("./server/moderation.ts"); const { directoryFor } = await import("./server/directory.ts");
-    const d = directoryFor(process.env.WORLDS_DIR); m.saveGlobalBans(); d.resolve({ sub: "local:new", name: "New" });
-    console.log("RESULT " + JSON.stringify({ bans: Object.keys(m.globalBans).sort(), odd: d.idOfSub("agent:odd@x"), fine: d.idOfSub("local:fine") }));`;
+    const d = directoryFor(process.env.WORLDS_DIR); m.saveServerBans(); d.resolve({ sub: "local:new", name: "New" });
+    console.log("RESULT " + JSON.stringify({ bans: Object.keys(m.serverBans).sort(), odd: d.idOfSub("agent:odd@x"), fine: d.idOfSub("local:fine") }));`;
   const r = Bun.spawnSync(["bun", "-e", code], { cwd: ENGINE, env: env({ WORLDS_DIR: D }) }); const out = r.stdout.toString() + r.stderr.toString();
   let res = {}; try { res = JSON.parse(out.split("\n").find((l) => l.startsWith("RESULT ")).slice(7)); } catch {}
   const disk = (f) => JSON.parse(fs.readFileSync(path.join(D, f), "utf8"));
-  ok(JSON.stringify(res.bans) === JSON.stringify(["acct:human:discord:9", "old"]) && /1 global ban\(s\) refused/.test(out) && /Oddban/.test(out) && !!disk(".bans.json")["acct:agent:odd@x"],
+  ok(JSON.stringify(res.bans) === JSON.stringify(["acct:human:discord:9", "old"]) && /1 server ban\(s\) refused/.test(out) && /Oddban/.test(out) && !!disk(".bans.json")["acct:agent:odd@x"],
     "SA1 a stored ban whose account isn't one of the shapes is refused and named at boot, and kept on disk (a legacy sub record is its own rule)", { res, out: out.slice(-400) });
   ok(res.fine && !res.odd && /1 stored account\(s\) refused/.test(out) && /Oddone/.test(out) && disk(".directory.json").ids["u-bbbbbbbbbbbbbbbbbbbb"]?.subs?.[0] === "agent:odd@x",
     "SA2 a directory account outside the shapes is refused (nobody wears it) and named at boot, and kept on disk", { res, out: out.slice(-400) }); }

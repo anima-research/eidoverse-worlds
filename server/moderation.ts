@@ -13,7 +13,7 @@ import { ACCOUNT_SHAPE } from "./directory.ts";
 import { mainKnowledge, type Known } from "./mainknew.ts";
 type Any = any;
 
-// ---- global bans ------------------------------------------------------------
+// ---- server bans ------------------------------------------------------------
 // The door's own list, across all its worlds (each world's own bans are its door's moderator log). There is no global
 // log, so it is a JSON file INSIDE WORLDS_DIR (bans are world data: a scratch WORLDS_DIR gets a scratch list).
 // Keyed by ACCOUNT (security review 10-06 H4/L4): a display name is typed, not proven, so banning a name hit every
@@ -22,13 +22,13 @@ type Any = any;
 export type BanRec = { by: string; ts: number; reason?: string; name?: string; account?: string; addr?: string; until?: number; world?: string; legacySub?: boolean; boundFrom?: string };
 export const ADDR_BAN_MS = 24 * 3600 * 1000;
 export const BANS_FILE = join(WORLDS_DIR, ".bans.json");
-export const globalBans: Record<string, BanRec> = {};
+export const serverBans: Record<string, BanRec> = {};
 const refusedBans: Record<string, BanRec> = {};   // refused at boot (restoreBans): never enforced, written back as they were
 /** Pre-account bans (a name alone) main's records bind to no one account: kept on disk, never enforced, listed for operators. */
 export const pendingBans: Record<string, BanRec & { why: string }> = {};
 /** Why a ban bound by name alone is worth a look (review full-260 L11): the name was typed, so its wearer may not be that account. */
-export const BOUND_BY_NAME = "the name was typed, so a guest who wore it may have been someone else; global-unban <the name> lifts it";
-export const PENDING_WORDS = "pre-account ban: bind to a person (global-ban <the name> binds whoever wears it here) or lift (global-unban <the name>)";
+export const BOUND_BY_NAME = "the name was typed, so a guest who wore it may have been someone else; server-unban <the name> lifts it";
+export const PENDING_WORDS = "pre-account ban: bind to a person (server-ban <the name> binds whoever wears it here) or lift (server-unban <the name>)";
 /** A ban or sanction file that couldn't be read at boot: kept as it was, never saved over (the ledger's rule). */
 const unreadable = new Set<string>();
 /** The ban or sanction files that couldn't be read at boot: while any is, the door is LOCKED (access.ts entryFor; R 11-03,
@@ -42,12 +42,12 @@ const keptAside = (f: string, what: string) => { if (!unreadable.has(f)) return 
 /** The words a reply and the moderated line carry when a sanction's file wasn't written: it holds in memory only. */
 export const notPersisted = (why: string) => `NOT persisted: ${why} — it ends at restart`;
 /** Writes the file; returns why it wasn't written (the record holds in memory only), else null. */
-export function saveGlobalBans(): string | null {
-  const kept = keptAside(BANS_FILE, "global bans"); if (kept) return kept;
+export function saveServerBans(): string | null {
+  const kept = keptAside(BANS_FILE, "server bans"); if (kept) return kept;
   try {
     const pending = Object.fromEntries(Object.entries(pendingBans).map(([k, { why: _w, ...b }]) => [k, b]));
-    writePrivate(BANS_FILE, JSON.stringify({ ...pending, ...refusedBans, ...globalBans }, null, 2)); return null;
-  } catch (e) { console.log(`[mod] global ban save failed: ${e}`); return String((e as Any)?.message ?? e); }
+    writePrivate(BANS_FILE, JSON.stringify({ ...pending, ...refusedBans, ...serverBans }, null, 2)); return null;
+  } catch (e) { console.log(`[mod] server ban save failed: ${e}`); return String((e as Any)?.message ?? e); }
 }
 /** The ban list as stored, made current. A record from before accounts carried the principal's bare `sub`: a signed-in
  *  person's account is that sub still, but an aid1 agent's is now `aid1:<iss>:<sub>`, so such a record is kept with
@@ -68,10 +68,10 @@ export function restoreBans(raw: Record<string, BanRec>, refused: Record<string,
         out[`acct:${subs[0]}`] ??= { ...b, name, account: subs[0], ...(legacy(subs[0]) ? { legacySub: true } : {}), boundFrom: `main's ${m!.from.join(" and ")}` }; bound.push(name); }
       else { pending[k] = { ...b, name, why: subs.length > 1 ? `main recorded ${subs.length} accounts under this name` : subs.length ? "main recorded an account that isn't one here" : "main recorded no account for this name" }; dropped.push(name); } }
   }
-  if (bound.length) console.log(`[mod] WARNING ${bound.length} pre-account global ban(s) bound to the one account main recorded for the name — check it: ${BOUND_BY_NAME}: ${bound.join(", ")}`);
-  if (dropped.length) console.log(`[mod] ${dropped.length} ${PENDING_WORDS.replace(/^pre-account ban/, "pre-account global ban(s)")}; kept on disk, not enforced (they would hit namesakes): ${Object.values(pending).map((b) => `${b.name} (${b.why})`).join(", ")}`);
+  if (bound.length) console.log(`[mod] WARNING ${bound.length} pre-account server ban(s) bound to the one account main recorded for the name — check it: ${BOUND_BY_NAME}: ${bound.join(", ")}`);
+  if (dropped.length) console.log(`[mod] ${dropped.length} ${PENDING_WORDS.replace(/^pre-account ban/, "pre-account server ban(s)")}; kept on disk, not enforced (they would hit namesakes): ${Object.values(pending).map((b) => `${b.name} (${b.why})`).join(", ")}`);
   const no = Object.entries(refused);
-  if (no.length) console.log(`[mod] ${no.length} global ban(s) refused (malformed, or not an account shape; kept on disk, not enforced): ${no.map(([k, b]) => (b as any)?.name ?? k).join(", ")}`);
+  if (no.length) console.log(`[mod] ${no.length} server ban(s) refused (malformed, or not an account shape; kept on disk, not enforced): ${no.map(([k, b]) => (b as any)?.name ?? k).join(", ")}`);
   return out;
 }
 try {
@@ -79,18 +79,18 @@ try {
     const raw = JSON.parse(readFileSync(BANS_FILE, "utf8")) as Record<string, BanRec>;
     // a name-keyed record from before accounts: bound through main's records, else kept pending (restoreBans)
     const nameOnly = Object.values(raw ?? {}).some((b) => b && !b.account && !b.addr && !(b as any).sub);   // the logs are read only when needed
-    Object.assign(globalBans, restoreBans(raw, refusedBans, { pending: pendingBans, ...(nameOnly ? { known: mainKnowledge(WORLDS_DIR) } : {}) }));
-    if (Object.entries(globalBans).some(([k, b]) => b.boundFrom && !(k in raw))) saveGlobalBans();   // the binding, kept
-    if (Object.keys(globalBans).length) console.log(`[mod] ${Object.keys(globalBans).length} global ban(s) loaded`);
+    Object.assign(serverBans, restoreBans(raw, refusedBans, { pending: pendingBans, ...(nameOnly ? { known: mainKnowledge(WORLDS_DIR) } : {}) }));
+    if (Object.entries(serverBans).some(([k, b]) => b.boundFrom && !(k in raw))) saveServerBans();   // the binding, kept
+    if (Object.keys(serverBans).length) console.log(`[mod] ${Object.keys(serverBans).length} server ban(s) loaded`);
   }
-} catch (e) { unreadable.add(BANS_FILE); console.log(`[mod] WARNING global ban restore failed: ${e}. ${BANS_FILE} is kept as it was and not saved over; its bans aren't enforced until it is fixed and the server restarted`); }
+} catch (e) { unreadable.add(BANS_FILE); console.log(`[mod] WARNING server ban restore failed: ${e}. ${BANS_FILE} is kept as it was and not saved over; its bans aren't enforced until it is fixed and the server restarted`); }
 
-/** The operator's ban list in words (global-bans): the lock if any, the enforced bans, then the pre-account ones, listed and never enforced. */
-export function globalBansText(map: Record<string, BanRec> = globalBans, pending: Record<string, BanRec & { why: string }> = pendingBans, locked: string | null = lockedLine()): string {
+/** The operator's ban list in words (server-bans): the lock if any, the enforced bans, then the pre-account ones, listed and never enforced. */
+export function serverBansText(map: Record<string, BanRec> = serverBans, pending: Record<string, BanRec & { why: string }> = pendingBans, locked: string | null = lockedLine()): string {
   const day = (ts: number) => new Date(ts).toISOString().slice(0, 10);
   const list = Object.entries(map).map(([k, b]) => `${b.name ?? k}${b.account ? ` (${b.account})` : b.addr ? " (a guest's connection)" : ""} — by ${b.by}, ${day(b.ts)}${b.until && b.account ? `, until ${day(b.until)}` : ""}${b.reason ? `: ${b.reason}` : ""}${b.boundFrom ? ` [bound by name from ${b.boundFrom}; check it: ${BOUND_BY_NAME}]` : ""}`);
   const pre = Object.values(pending).map((b) => `${b.name} — ${PENDING_WORDS} (${b.why}); by ${b.by}, ${day(b.ts)}${b.reason ? `: ${b.reason}` : ""}`);
-  return [...(locked ? [locked] : []), list.length ? `global bans (${list.length}):\n${list.join("\n")}` : "no global bans", ...(pre.length ? [`pre-account bans, not enforced (${pre.length}):\n${pre.join("\n")}`] : [])].join("\n");
+  return [...(locked ? [locked] : []), list.length ? `server bans (${list.length}):\n${list.join("\n")}` : "no server bans", ...(pre.length ? [`pre-account bans, not enforced (${pre.length}):\n${pre.join("\n")}`] : [])].join("\n");
 }
 /** The pre-account bans filed under this name (any case, by `fold`), removed: an unban lifts them, a ban that binds replaces them. */
 export function takePending(id: string, fold: (s: string) => string, pending: Record<string, BanRec & { why: string }> = pendingBans): string[] {
@@ -104,7 +104,7 @@ export function banHoldsAgainst(b: BanRec, account: string | null | undefined): 
   if (!account || !b.account) return false;
   return b.account === account || (!!b.legacySub && account.startsWith("aid1:") && account.endsWith(`:${b.account}`));
 }
-/** The keys of the global bans an unban of `id` lifts: the one filed under it, any filed under that name, and any that
+/** The keys of the server bans an unban of `id` lifts: the one filed under it, any filed under that name, and any that
  *  holds against one of `accounts` (the account `id` names, or those wearing that name), by the rule a door checks. */
 export function bansLiftedBy(map: Record<string, BanRec>, id: string, accounts: Iterable<string>, fold: (s: string) => string): string[] {
   const accts = [...accounts];
@@ -115,7 +115,7 @@ export function findBan(map: Record<string, BanRec> | undefined, account: string
   if (!map) return null;
   for (const b of Object.values(map)) {
     if (b.world && b.world !== world) continue;   // a guest's ban in one world (the door's world ban can't name a guest)
-    if (banHoldsAgainst(b, account) && (b.until == null || b.until > now)) return b;   // a timed global ban ends
+    if (banHoldsAgainst(b, account) && (b.until == null || b.until > now)) return b;   // a timed server ban ends
     if (!account && addr && b.addr === addr && (b.until ?? 0) > now) return b;
   }
   return null;

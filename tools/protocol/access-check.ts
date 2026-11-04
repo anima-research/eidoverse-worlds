@@ -14,9 +14,9 @@
 //   A8  a ban in the moderator log closes the door after a restart too, before the world is loaded: a banned caller
 //       still listed in an invite-only world gets 404 from /geom and /heightmap, finds it on no map, and /access says
 //       none — the refusal never loads the world (Antra's review of f91840e5 P1: /geom was 200); a kick closes no door
-//   A12 (security review 10-18 H1) an operator's GLOBAL ban binds to the target's account NOW: a present target is removed and
+//   A12 (security review 10-18 H1) an operator's SERVER ban binds to the target's account NOW: a present target is removed and
 //       can't reconnect (4006, "these worlds"), an absent one can't join; the record carries the account; unban lifts it
-//   A12b a global ban by u- identity binds the absent account; days gives it an end; unban by identity lifts it
+//   A12b a server ban by u- identity binds the absent account; days gives it an end; unban by identity lifts it
 //   A13 (10-18 H2) the client's address: X-Real-IP / X-Forwarded-For honoured only from a trusted proxy (loopback, TRUSTED_PROXIES);
 //       from any other peer the socket's own address is used (a guest can't pick or frame an address)
 //   A14 (10-18 M6) a timed grant whose until has passed is ABSENT on every read, loaded or not: an unloaded world's /access and
@@ -263,36 +263,46 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
     { join: jf.errors, plain: plain.refused, unban: unban?.reply, list: list?.reply, wide: wide?.reply?.refused, notOp: notOp?.reply?.refused, mossGeom, act: !!act, rec: !!rec });
   const left = Object.keys(JSON.parse(fs.readFileSync(BJ, "utf8")));
   ok(unban?.reply?.ok && !left.includes("world:keep:addr:a11b"), "A11b operator-repair's unban lifts the address entry the guest's ban left, as the request path's unban does", left);
-  // A12 (security review 10-18 H1): a GLOBAL ban binds to the account now. Rowan is present: removed, and refused on reconnect;
+  // A12 (security review 10-18 H1): a SERVER ban binds to the account now. Rowan is present: removed, and refused on reconnect;
   // Moss is absent: the directory knows the account wearing that name, and the join is refused; the record names the account
   const modMsgs = () => fen.msgs.filter((m) => m.type === "mod" || m.type === "error").map((m) => m.text ?? m.error);
-  const k0 = fen.msgs.length; fen.raw({ type: "global-ban", id: "Rowan", reason: "A12" }); await tryUntil("Rowan is removed by the global ban", () => row.closed != null, { ms: 3000, step: 50 });
+  const k0 = fen.msgs.length; fen.raw({ type: "server-ban", id: "Rowan", reason: "A12" }); await tryUntil("Rowan is removed by the server ban", () => row.closed != null, { ms: 3000, step: 50 });
   const row2 = await sock(s3.port); const jr2 = await row2.join("keep", "Rowan", { agentToken: "tok-rowan" });
-  fen.raw({ type: "global-ban", id: "Moss", reason: "A12" }); await tryUntil("Fen hears back on both global bans", () => fen.msgs.length > k0 + 1, { ms: 2000, step: 50 });
+  fen.raw({ type: "server-ban", id: "Moss", reason: "A12" }); await tryUntil("Fen hears back on both server bans", () => fen.msgs.length > k0 + 1, { ms: 2000, step: 50 });
   const moss = await sock(s3.port); const jm = await moss.join("keep", "Moss", { agentToken: "tok-moss" });
-  fen.raw({ type: "global-ban", id: "Nobody-Here-At-All" }); await tryUntil("a ban on a name nothing wears is refused", () => modMsgs().some((t) => /nothing a ban could bind to/.test(t)), { ms: 2000, step: 50 });
+  fen.raw({ type: "server-ban", id: "Nobody-Here-At-All" }); await tryUntil("a ban on a name nothing wears is refused", () => modMsgs().some((t) => /nothing a ban could bind to/.test(t)), { ms: 2000, step: 50 });
   const bans = JSON.parse(fs.readFileSync(path.join(W, ".bans.json"), "utf8"));
   const recR = Object.values(bans).find((b) => b.account === "agent:token:rowan"), recM = Object.values(bans).find((b) => b.account === "agent:token:moss");
   ok(row.closed === 4006 && !jr2.snapshot && row2.closed === 4006 && /banned from these worlds/.test(jr2.errors.join(" ")) && !jm.snapshot && moss.closed === 4006 && /these worlds/.test(jm.errors.join(" "))
     && !!recR && recR.name === "Rowan" && !!recM && Object.values(bans).every((b) => b.account || b.addr) && modMsgs().some((t) => /nothing a ban could bind to/.test(t)),
-    "A12 a global ban binds now: the present target is removed (4006) and refused on reconnect, the absent target's join is refused, each record names the account (never a bare name), and a name nothing wears is refused",
+    "A12 a server ban binds now: the present target is removed (4006) and refused on reconnect, the absent target's join is refused, each record names the account (never a bare name), and a name nothing wears is refused",
     { rowClosed: row.closed, reconnect: [jr2.errors, row2.closed], moss: [jm.errors, moss.closed], bans, said: modMsgs().slice(-3) });
-  const k1 = fen.msgs.length; fen.raw({ type: "global-unban", id: "Rowan" }); fen.raw({ type: "global-unban", id: "agent:token:moss" }); await tryUntil("Fen hears back on both global unbans", () => fen.msgs.length >= k1 + 2, { ms: 2000, step: 50 });
+  const k1 = fen.msgs.length; fen.raw({ type: "server-unban", id: "Rowan" }); fen.raw({ type: "server-unban", id: "agent:token:moss" }); await tryUntil("Fen hears back on both server unbans", () => fen.msgs.length >= k1 + 2, { ms: 2000, step: 50 });
   const row3 = await sock(s3.port); const jr3 = await row3.join("keep", "Rowan", { agentToken: "tok-rowan" }); const moss2 = await sock(s3.port); const jm2 = await moss2.join("keep", "Moss", { agentToken: "tok-moss" });
-  ok(!!jr3.snapshot && !!jm2.snapshot && Object.keys(JSON.parse(fs.readFileSync(path.join(W, ".bans.json"), "utf8"))).length === 0, "A12 global-unban by name or by account lifts it: both join again, the list is empty", [jr3.errors, jm2.errors]);
+  ok(!!jr3.snapshot && !!jm2.snapshot && Object.keys(JSON.parse(fs.readFileSync(path.join(W, ".bans.json"), "utf8"))).length === 0, "A12 server-unban by name or by account lifts it: both join again, the list is empty", [jr3.errors, jm2.errors]);
   row2.close(); row3.close(); moss.close(); moss2.close();
-  // A12b: a global ban by u- identity binds the absent person's account, and days gives it an end; unban by identity lifts it
-  const k2 = fen.msgs.length; fen.raw({ type: "global-ban", id: ids.Moss, days: 2, reason: "A12b" }); await tryUntil("Fen hears back on the identity ban", () => fen.msgs.slice(k2).some((m: any) => /ban/i.test(JSON.stringify(m))), { ms: 2000, step: 50 });
+  // A12b: a server ban by u- identity binds the absent person's account, and days gives it an end; unban by identity lifts it
+  const k2 = fen.msgs.length; fen.raw({ type: "server-ban", id: ids.Moss, days: 2, reason: "A12b" }); await tryUntil("Fen hears back on the identity ban", () => fen.msgs.slice(k2).some((m: any) => /ban/i.test(JSON.stringify(m))), { ms: 2000, step: 50 });
   const recI: any = Object.values(JSON.parse(fs.readFileSync(path.join(W, ".bans.json"), "utf8"))).find((b: any) => b.account === "agent:token:moss");
   const moss3 = await sock(s3.port); const jm3 = await moss3.join("keep", "Moss", { agentToken: "tok-moss" });
-  const k3 = fen.msgs.length; fen.raw({ type: "global-unban", id: ids.Moss }); await tryUntil("Fen hears back on the identity unban", () => fen.msgs.length > k3, { ms: 2000, step: 50 });
+  const k3 = fen.msgs.length; fen.raw({ type: "server-unban", id: ids.Moss }); await tryUntil("Fen hears back on the identity unban", () => fen.msgs.length > k3, { ms: 2000, step: 50 });
   const moss4 = await sock(s3.port); const jm4 = await moss4.join("keep", "Moss", { agentToken: "tok-moss" });
   const { findBan: fb } = await import("../../server/moderation.ts");
   const lapsed = fb({ k: { by: "op", ts: 1, account: "agent:token:x", until: Date.now() - 1 } }, "agent:token:x"), held = fb({ k: { by: "op", ts: 1, account: "agent:token:x", until: Date.now() + 9e6 } }, "agent:token:x");
   ok(!!recI && typeof recI.until === "number" && Math.abs(recI.until - Date.now() - 2 * 86400000) < 60000 && !jm3.snapshot && !!jm4.snapshot && !lapsed && !!held,
-    "A12b a global ban by u- identity binds the absent person's account (join refused), days sets until (and findBan lets a lapsed one go), unban by identity lifts it",
+    "A12b a server ban by u- identity binds the absent person's account (join refused), days sets until (and findBan lets a lapsed one go), unban by identity lifts it",
     { rec: recI, said: fen.msgs.slice(k2).map((m) => m.text ?? m.error), refused: jm3.errors, again: jm4.errors, lapsed: !!lapsed, held: !!held });
   moss3.close(); moss4.close();
+  // A12c (owner 11-03, the house rename shape): the old names run nothing; each is refused naming the new one, until a date
+  const before = fs.readFileSync(path.join(W, ".bans.json"), "utf8"); const k4 = fen.msgs.length;
+  for (const type of ["global-ban", "global-unban", "global-bans"]) fen.raw({ type, id: ids.Moss, reason: "A12c" });
+  const errs = () => fen.msgs.slice(k4).filter((m: any) => m.type === "error");
+  await tryUntil("Fen hears back on the three old names", () => errs().length >= 3, { ms: 2000, step: 50 });
+  const olds = errs(); const { MESSAGE_RENAMED, MESSAGE_RENAMED_UNTIL } = await import("../../server/messages.ts");
+  ok(olds.length === 3 && olds.every((m: any, i: number) => m.error.includes(`"${["global-ban", "global-unban", "global-bans"][i]}" is now "${["server-ban", "server-unban", "server-bans"][i]}"`))
+    && fs.readFileSync(path.join(W, ".bans.json"), "utf8") === before && Object.values(MESSAGE_RENAMED ?? {}).every((v: any) => v.until === MESSAGE_RENAMED_UNTIL) && MESSAGE_RENAMED_UNTIL >= new Date().toISOString().slice(0, 10),
+    "A12c global-ban / global-unban / global-bans run nothing: each is refused naming its server-* name, the ban file is untouched, and the teaching has a date not yet past (then delete MESSAGE_RENAMED)",
+    { said: olds.map((m: any) => m.error ?? m.text), until: MESSAGE_RENAMED_UNTIL });
   fen.close(); row.close(); try { s3.proc.kill(); await s3.proc.exited; } catch {} }
 // ---- A13 (security review 10-18 H2): the client's address, from a trusted proxy only (pure) ----
 { const { clientAddress } = await import("../../server/peer.ts");
@@ -327,13 +337,13 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   const bans = path.join(D, ".bans.json"), sanc = path.join(D, ".addr-sanctions.json"), torn = '{"acct:u-aaaaaaaaaaaaaaaaaaaa": {"by": "op", "ts": 1, "acc';
   fs.writeFileSync(bans, torn); fs.writeFileSync(sanc, torn);
   const code = `const M = await import(${JSON.stringify(modTs)});
-    M.globalBans["acct:u-bbbbbbbbbbbbbbbbbbbb"] = { by: "op", ts: 2, account: "u-bbbbbbbbbbbbbbbbbbbb" }; M.saveGlobalBans();
+    M.serverBans["acct:u-bbbbbbbbbbbbbbbbbbbb"] = { by: "op", ts: 2, account: "u-bbbbbbbbbbbbbbbbbbbb" }; M.saveServerBans();
     M.fileAddrSanction({ kind: "mute", world: "w", addr: "h", actor: "u-cccccccccccccccccccc", by: "op", who: "g-1" });`;
   const r = Bun.spawnSync(["bun", "-e", code], { env: { ...process.env, WORLDS_DIR: D, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, stdout: "pipe", stderr: "pipe" });
   const out = r.stdout.toString() + r.stderr.toString(), b = fs.readFileSync(bans, "utf8"), s = fs.readFileSync(sanc, "utf8");
   ok(r.exitCode === 0 && /restore failed/.test(out) && b === torn && s === torn && /not saved/.test(out),
     "A13m an unreadable .bans.json and .addr-sanctions.json are kept byte-identical: a later ban and mute are not saved over them, and the log says so", { exit: r.exitCode, bansKept: b === torn, sancKept: s === torn, out: out.slice(0, 400) }); }
-// ---- A13c (review of #260): a global ban made before accounts, on an aid1 agent's bare sub, still holds (pure) ----
+// ---- A13c (review of #260): a server ban made before accounts, on an aid1 agent's bare sub, still holds (pure) ----
 { const { restoreBans, findBan } = await import("../../server/moderation.ts");
   const was = { "old-agent": { by: "op", ts: 1, sub: "agent-7f3a" }, "old-person": { by: "op", ts: 1, sub: "discord|123" }, "namesake": { by: "op", ts: 1, name: "bob" } };
   const R = restoreBans ? restoreBans(was) : Object.fromEntries(Object.entries(was).filter(([, b]) => b.sub).map(([k, b]) => [k, { ...b, account: b.sub }]));
@@ -357,8 +367,8 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   ok(tool(["found", "d12", "--owner", "Ann"]).code === 0, "(D12 setup) found d12");
   const s = await start({ SERVER_OPERATORS: "agent:token:fen" });
   const op = await sock(s.port); const jo = await op.join("keep", "Fen", { agentToken: "tok-fen" });
-  const k = op.msgs.length; op.raw({ type: "global-unban", id: "aid1:https://id.example.org:agent-7f3a" }); op.raw({ type: "global-unban", id: "Nine" });
-  await tryUntil("the operator hears back on both global unbans", () => op.msgs.length >= k + 2, { ms: 3000, step: 50 });
+  const k = op.msgs.length; op.raw({ type: "server-unban", id: "aid1:https://id.example.org:agent-7f3a" }); op.raw({ type: "server-unban", id: "Nine" });
+  await tryUntil("the operator hears back on both server unbans", () => op.msgs.length >= k + 2, { ms: 3000, step: 50 });
   const left = Object.keys(JSON.parse(fs.readFileSync(path.join(W, ".bans.json"), "utf8")));
   ok(!!jo.snapshot && left.length === 1 && left[0] === "old-c",
     "A13c (door) the global unban lifts a ban from before accounts by the aid1 account it holds against, and by a name that account wears here; another stays",
@@ -632,7 +642,7 @@ const gonePid = await exitedPid();
     const carl = await sock(s.port); const jc = await carl.join("lockt", "Carl");
     const moss = await sock(s.port); const jm = await moss.join("lockt", "Moss", { agentToken: "tok-moss" });
     const rend = await sock(s.port); const jrn = await rend.join("lockt", "renderer", { renderer: true, token: "rend-key" });
-    const k = fen.msgs.length; fen.raw({ type: "global-bans" });
+    const k = fen.msgs.length; fen.raw({ type: "server-bans" });
     await tryUntil("the operator's ban list answers", () => fen.msgs.length > k, { ms: 3000, step: 50 });
     const said = fen.msgs.slice(k).map((m) => m.text ?? m.error ?? "").join("\n");
     const boot = fs.readFileSync(s.log, "utf8");
@@ -643,7 +653,7 @@ const gonePid = await exitedPid();
   const refused = (x) => !x.in && x.closed === 4010 && LOCKED.test(x.why.join(" "));
   const b = await run("bans");
   ok(b.owner && b.listed && b.roleHolder && b.operator && b.renderer && refused(b.stranger) && refused(b.member) && b.list && b.boot,
-    "A13n an unreadable .bans.json locks the door: the owner, a role holder, an operator and the trusted renderer join; a guest and an unlisted account are refused (4010) with the plain reason; the boot log and global-bans say LOCKED", b);
+    "A13n an unreadable .bans.json locks the door: the owner, a role holder, an operator and the trusted renderer join; a guest and an unlisted account are refused (4010) with the plain reason; the boot log and server-bans say LOCKED", b);
   const a = await run("sanctions");
   ok(a.owner && a.roleHolder && a.operator && refused(a.stranger) && a.list, "A13n …and an unreadable .addr-sanctions.json alone locks it the same way", a);
   fs.rmSync(BJ, { force: true }); fs.rmSync(SJ, { force: true });

@@ -84,8 +84,8 @@ const M: Mutant[] = [
   { id: "r14-M3", what: "rollback ignores files the server made since the translation (world.mod.jsonl is neither refused nor removed)", file: "tools/protocol/world.ts",
     find: "  const since = fs.readdirSync(D).filter((f) => !known.has(f) && !isCacheFile(f));", repl: "  const since: string[] = [];", suite: "inplace", rows: ["IP30"], expect: 20 },
   // ---- security review (10-18) ----
-  { id: "sec-H1", what: "a global ban is filed without the account (a bare name): findBan binds nothing until a restart", file: "server/messages.ts",
-    find: "    for (const account of accounts) globalBans[banKey(account)] = { by: c.id, ts, name: id, account, ...(until ? { until } : {}), ...(reason ? { reason } : {}) };", repl: "    for (const account of accounts) globalBans[banKey(account)] = { by: c.id, ts, name: id, ...(until ? { until } : {}), ...(reason ? { reason } : {}) };", suite: "access", rows: ["A12"], expect: 12 },
+  { id: "sec-H1", what: "a server ban is filed without the account (a bare name): findBan binds nothing until a restart", file: "server/messages.ts",
+    find: "    for (const account of accounts) serverBans[banKey(account)] = { by: c.id, ts, name: id, account, ...(until ? { until } : {}), ...(reason ? { reason } : {}) };", repl: "    for (const account of accounts) serverBans[banKey(account)] = { by: c.id, ts, name: id, ...(until ? { until } : {}), ...(reason ? { reason } : {}) };", suite: "access", rows: ["A12"], expect: 12 },
   { id: "sec-H2", what: "X-Real-IP trusted from any peer (a direct guest picks or frames an address)", file: "server/peer.ts",
     find: "  if (isTrustedProxy(peer, trusted)) {", repl: "  if (true) {", suite: "access", rows: ["A13"], expect: 12 },
   { id: "sec-M6", what: "an ended timed grant still lists its holder on read (until ignored until the sweep)", file: "shared/protocol/access.js",

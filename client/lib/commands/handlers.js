@@ -293,15 +293,15 @@ register('bans', async () => {
   for (const l of lines) logChat('*', l);
 });
 
-// global moderation — server operators only, the server enforces
-function moderateGlobal(cmd, arg) {
+// server moderation — server operators only, the server enforces
+function moderateServer(cmd, arg) {
   const [id, ...rest] = (arg || '').trim().split(/\s+/).filter(Boolean);
   if (!id) return logChat('*', `usage: /${cmd} <name>${cmd === 'gban' ? ' [reason] — bans from every world on this server' : ''}`);
-  sendMod(cmd === 'gban' ? 'global-ban' : 'global-unban', { id, ...(rest.length ? { reason: rest.join(' ') } : {}) });
+  sendMod(cmd === 'gban' ? 'server-ban' : 'server-unban', { id, ...(rest.length ? { reason: rest.join(' ') } : {}) });
 }
-register('gban', (arg) => moderateGlobal('gban', arg));
-register('gunban', (arg) => moderateGlobal('gunban', arg));
-register('gbans', () => sendMod('global-bans'));
+register('gban', (arg) => moderateServer('gban', arg));
+register('gunban', (arg) => moderateServer('gunban', arg));
+register('gbans', () => sendMod('server-bans'));
 
 // /boom [power] [radius] (/blast) — a blast at my feet (R 10-28): the authority shoves each body by its own consent and punts each
 // loose thing; builders and up. shared/protocol/authority/bodyverbs.js force

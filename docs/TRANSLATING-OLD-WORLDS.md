@@ -111,13 +111,13 @@ report lists each one):
 A report reviewed under an earlier translator is never approvable: each
 version translates differently, so its hash differs, and the refusal says so.
 
-**Global bans from before accounts.** A main-era `.bans.json` entry that names
+**Server bans from before accounts.** A main-era `.bans.json` entry that names
 only a name is bound at boot to the one account main recorded for it
 (`.principals.json`, or a pair another world's log stamped). One main's records
 bind to no one account, or to several, is kept on disk, never enforced (it would
 hit namesakes), said in the boot log and listed in the operators' `/gbans` as
-"pre-account ban: bind to a person or lift": `global-ban <the name>` binds it to
-whoever wears that name here, `global-unban <the name>` lifts it.
+"pre-account ban: bind to a person or lift": `server-ban <the name>` binds it to
+whoever wears that name here, `server-unban <the name>` lifts it.
 
 It is translated in place: the world keeps its name, and the old log stays
 beside the new one as `log.original.jsonl`, renamed, never written (the swap

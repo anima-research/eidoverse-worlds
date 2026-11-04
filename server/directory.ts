@@ -144,7 +144,7 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
       for (let k = 1; ; k++) { const suffix = k === 1 ? tag : `${tag}${k}`; const n = `${name.slice(0, Math.max(0, max - suffix.length - 1))}-${suffix}`;
         if (!claimedByOther(n, sub)) return n; }
     },
-    /** the accounts of every identity wearing this (folded) display name here: what a GLOBAL ban by name binds to (security
+    /** the accounts of every identity wearing this (folded) display name here: what a SERVER ban by name binds to (security
      *  review 10-18 H1; an identity with no account is nobody to ban by account). */
     accountsNamed(name: string): string[] { const k = foldName(name); const out: string[] = []; for (const e of Object.values(d.ids)) if (foldName(e.name) === k) out.push(...e.subs); return [...new Set(out)]; },
     /** id → display name for the ids given (what a client is sent; never subs). */

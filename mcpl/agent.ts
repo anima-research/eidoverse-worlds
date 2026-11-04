@@ -1075,7 +1075,7 @@ export class WorldAgent {
             }
             break;
           case "mod":
-            // Moderation replies (ban lists, global-ban confirmations).
+            // Moderation replies (ban lists, server-ban confirmations).
             this.lastMod = { ts: Date.now(), text: String(msg.text ?? "") };
             // …kept briefly as a short list too: one change can answer in more
             // than one line (a grant's "bound to <subject>" echo, then the
@@ -4901,9 +4901,9 @@ export class WorldAgent {
   recentMods: { ts: number; text: string }[] = [];
 
   /** Moderation messages that aren't requests: 'world-bans' (list this
-   *  world's bans — anyone present), 'global-ban' / 'global-unban' /
-   *  'global-bans' (server: server operators only). Answers arrive as `mod`. */
-  sendMod(type: "world-bans" | "global-ban" | "global-unban" | "global-bans", extra: Record<string, unknown> = {}) {
+   *  world's bans — anyone present), 'server-ban' / 'server-unban' /
+   *  'server-bans' (server: server operators only). Answers arrive as `mod`. */
+  sendMod(type: "world-bans" | "server-ban" | "server-unban" | "server-bans", extra: Record<string, unknown> = {}) {
     if (!this.joined || this.ws?.readyState !== 1) throw this.notJoined();
     this.ws.send(JSON.stringify({ type, ...extra }));
   }

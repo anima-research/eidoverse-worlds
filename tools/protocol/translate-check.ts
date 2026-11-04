@@ -4,7 +4,7 @@
 //   W1a-c   #260 item 1: a person's own watch grant (closed or open old world) is refused by name, never dropped or widened
 //   W1d     @36: a person's own role none in an owned world is a ban (its end kept) in the moderator log: still kept out
 //   P17a-f  main's particle knobs → a derived effect document stored in the world; what has no reading carried and listed
-//   B24a-f  name-only global bans: bound to main's one account at boot (warned: check it), else kept pending, listed, never
+//   B24a-f  name-only server bans: bound to main's one account at boot (warned: check it), else kept pending, listed, never
 //           enforced, liftable; a malformed record is refused and kept on disk
 //   F50     the report says what becomes of vehicle minY/maxY/probes and water speed; sky audio is carried as sky.audio
 //   F50b    the vehicle walls are pinned at [0, y, 0], spanning every legal x/z: a v1 move re-places nothing
@@ -164,7 +164,7 @@ row("P17h", () => { const root = scratch("translate-p17h"), W = path.join(root, 
   ok(up.code === 0 && blobs.length === 1 && typeof made.blobs === "string" && back.code === 0 && JSON.stringify(fs.readdirSync(d).sort()) === JSON.stringify(before),
     "P17h in place: the derived effect lands in the world's blobs/, the manifest records it, and a rollback removes it", { up: up.out.slice(-300), blobs, made, back: back.out.slice(-300), now: fs.readdirSync(d) }); });
 
-// ================= B24: name-only global bans, the Minecraft migration =================
+// ================= B24: name-only server bans, the Minecraft migration =================
 const MOD = path.join(ENGINE, "server", "moderation.ts");
 row("B24a", () => { const M = require(MOD); const known = (n: string) => (n.toLowerCase() === "griefer" ? { subs: ["human:test:g1"], from: [".principals.json"] } : n === "twin" ? { subs: ["human:test:t1", "human:test:t2"], from: [".principals.json", "garden's log"] } : null);
   const pending: any = {}; const out = M.restoreBans({ griefer: { by: "op", ts: T0, name: "Griefer" }, twin: { by: "op", ts: T0, name: "twin" }, ghost: { by: "op", ts: T0, name: "ghost" } }, {}, { known, pending });
@@ -172,7 +172,7 @@ row("B24a", () => { const M = require(MOD); const known = (n: string) => (n.toLo
   ok(hit?.boundFrom === "main's .principals.json" && !namesake && !t && pending.twin && /2 accounts/.test(pending.twin.why) && pending.ghost && /no account/.test(pending.ghost.why),
     "B24a a name-only ban binds to the one account main recorded for the name (and no namesake); two accounts, or none, keep it pending, why said", { out, pending }); });
 row("B24b", () => { const M = require(MOD); const pending: any = { twin: { by: "op", ts: T0, name: "Twin", why: "main recorded 2 accounts under this name" } };
-  const text = M.globalBansText({}, pending); const lifted = M.takePending("twin", (s: string) => s.toLowerCase(), pending);
+  const text = M.serverBansText({}, pending); const lifted = M.takePending("twin", (s: string) => s.toLowerCase(), pending);
   ok(/pre-account bans, not enforced \(1\)/.test(text) && text.includes("pre-account ban: bind to a person") && text.includes("Twin") && lifted.length === 1 && !Object.keys(pending).length,
     "B24b the operators' ban list shows a pending one ('pre-account ban: bind to a person or lift'), and an unban by its name lifts it", { text, lifted }); });
 row("B24c", () => { const root = scratch("translate-b24"), W = path.join(root, "worlds"); fs.mkdirSync(path.join(W, "garden"), { recursive: true });
@@ -180,27 +180,27 @@ row("B24c", () => { const root = scratch("translate-b24"), W = path.join(root, "
   fs.writeFileSync(path.join(W, "garden", "log.jsonl"), log([["world", "grant", { id: "twin", role: "builder", sub: "human:test:t1" }]]).map((e) => JSON.stringify(e)).join("\n") + "\n");
   fs.writeFileSync(path.join(W, ".principals.json"), JSON.stringify({ "human:test:g1": { name: "Griefer", kind: "human", first: T0, last: T0 }, "human:test:t2": { name: "twin", kind: "human", first: T0, last: T0 } }));
   fs.writeFileSync(path.join(W, ".bans.json"), JSON.stringify({ griefer: { by: "op", ts: T0, name: "griefer", reason: "spam" }, twin: { by: "op", ts: T0, name: "twin" } }));
-  const r = Bun.spawnSync(["bun", "-e", `const M = await import(${JSON.stringify(MOD)}); console.log("G " + JSON.stringify(Object.keys(M.globalBans)) + " P " + JSON.stringify(Object.keys(M.pendingBans)));`],
+  const r = Bun.spawnSync(["bun", "-e", `const M = await import(${JSON.stringify(MOD)}); console.log("G " + JSON.stringify(Object.keys(M.serverBans)) + " P " + JSON.stringify(Object.keys(M.pendingBans)));`],
     { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: W, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
   const said = r.stdout.toString() + r.stderr.toString(), disk = JSON.parse(fs.readFileSync(path.join(W, ".bans.json"), "utf8"));
-  ok(/G \["acct:human:test:g1"\] P \["twin"\]/.test(said) && /1 pre-account global ban\(s\) bound/.test(said) && /pre-account global ban\(s\): bind to a person/.test(said)
+  ok(/G \["acct:human:test:g1"\] P \["twin"\]/.test(said) && /1 pre-account server ban\(s\) bound/.test(said) && /pre-account server ban\(s\): bind to a person/.test(said)
     && disk["acct:human:test:g1"]?.reason === "spam" && disk.twin && !disk.griefer,
     "B24c at boot: main's .principals.json and another world's log bind 'griefer' to its account (written back, reason kept); 'twin' (two accounts) stays on disk, pending, said in the boot log", { said: said.slice(-700), disk }); });
 row("B24e", () => { const root = scratch("translate-b24e"), W = path.join(root, "worlds"); fs.mkdirSync(W, { recursive: true });
   fs.writeFileSync(path.join(W, ".bans.json"), JSON.stringify({ odd: { by: 7, ts: T0, name: "Odd" }, junk: "x", "acct:human:test:z": { by: "op", ts: T0, account: "human:test:z" } }));
-  const r = Bun.spawnSync(["bun", "-e", `const M = await import(${JSON.stringify(MOD)}); M.saveGlobalBans(); console.log("G " + JSON.stringify(Object.keys(M.globalBans)));`],
+  const r = Bun.spawnSync(["bun", "-e", `const M = await import(${JSON.stringify(MOD)}); M.saveServerBans(); console.log("G " + JSON.stringify(Object.keys(M.serverBans)));`],
     { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: W, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
   const said = r.stdout.toString() + r.stderr.toString(), disk = JSON.parse(fs.readFileSync(path.join(W, ".bans.json"), "utf8"));
-  ok(/G \["acct:human:test:z"\]/.test(said) && disk.odd?.by === 7 && disk.junk === "x" && /2 global ban\(s\) refused \(malformed/.test(said),
+  ok(/G \["acct:human:test:z"\]/.test(said) && disk.odd?.by === 7 && disk.junk === "x" && /2 server ban\(s\) refused \(malformed/.test(said),
     "B24e a malformed ban record (no string by, not an object) is refused, said at boot, and still on disk after a save (never dropped)", { said: said.slice(-400), disk }); });
 row("B24f", () => { const M = require(MOD); const known = (n: string) => (n === "griefer" ? { subs: ["human:test:g1"], from: [".principals.json"] } : null);
   const log0 = console.log; const lines: string[] = []; console.log = (...a: any[]) => lines.push(a.join(" "));
   let out: any; try { out = M.restoreBans({ griefer: { by: "op", ts: T0, name: "griefer" } }, {}, { known, pending: {} }); } finally { console.log = log0; }
-  const text = M.globalBansText(out, {});
-  ok(lines.some((l) => /WARNING 1 pre-account global ban\(s\) bound .*check it: the name was typed, so a guest who wore it may have been someone else/.test(l)) && /griefer \(human:test:g1\).*check it/.test(text),
+  const text = M.serverBansText(out, {});
+  ok(lines.some((l) => /WARNING 1 pre-account server ban\(s\) bound .*check it: the name was typed, so a guest who wore it may have been someone else/.test(l)) && /griefer \(human:test:g1\).*check it/.test(text),
     "B24f a ban bound by name alone is never silent: the boot line is a WARNING saying check it (a guest namesake was someone else), and the operators' list marks it", { lines, text }); });
 row("B24d", () => { const src = fs.readFileSync(MOD, "utf8");
-  ok(!/name-only global ban\(s\) from before accounts dropped/.test(src), "B24d no name-only ban is dropped at boot any more"); });
+  ok(!/name-only server ban\(s\) from before accounts dropped/.test(src), "B24d no name-only ban is dropped at boot any more"); });
 
 // ================= F50: the report says what becomes of carried fields =================
 row("F50", () => { const { r } = tr([OWNER, ["olga", "spawn", { id: "boat", lib: "b.glb" }], ["olga", "comp", { id: "boat", type: "vehicle", data: { helm: [0, 1, 0], speed: 3, minY: 0, maxY: 9, probes: 4 } }],

@@ -28,7 +28,7 @@ import { worlds, type World, type Client, authorityNow } from "./world.ts";
 import { stateSampleError } from "../shared/presencewire.js";
 import { screenshots } from "./screenshots.ts";
 import { REMOVED_VERBS } from "../shared/protocol/verbspec.js";
-import { globalBans, saveGlobalBans, banKey, ADDR_BAN_MS, bansLiftedBy, globalBansText, takePending, notPersisted } from "./moderation.ts";
+import { serverBans, saveServerBans, banKey, ADDR_BAN_MS, bansLiftedBy, serverBansText, takePending, notPersisted } from "./moderation.ts";
 import { isOwner } from "../shared/protocol/roles.js";
 
 /** Who a presence message (puppet, bodydrag, typing) is FOR (security pass 3, H2). A sender that knows the
@@ -440,17 +440,17 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       ? `banned from "${c.world.name}" (${list.length}):\n${list.join("\n")}`
       : `nobody is banned from "${c.world.name}"` }));
   },
-  "global-mod": ({ c, ws, now, expel }, msg) => {
-    // Instance-wide moderation. Not world verbs — there is no global log
+  "server-mod": ({ c, ws, now, expel }, msg) => {
+    // Server-wide moderation. Not world verbs — there is no server-wide log
     // — so these are messages, gated on SERVER_OPERATORS and persisted in
     // .bans.json (same posture as .sessions.json). Replies come back as
     // `mod` messages; refusals as `error`, like everything else.
     if (!isOperator(c.account)) {   // SERVER_OPERATORS names ACCOUNTS (security review C3), never a typed name
-      ws.send(JSON.stringify({ type: "error", error: "global moderation is for this server's operators (SERVER_OPERATORS) — per-world /ban is the world owner's tool" }));
+      ws.send(JSON.stringify({ type: "error", error: "server moderation is for this server's operators (SERVER_OPERATORS) — per-world /ban is the world owner's tool" }));
       return;
     }
-    if (msg.type === "global-bans") {
-      ws.send(JSON.stringify({ type: "mod", text: globalBansText() }));   // pre-account bans listed too (R 10-28: moderation.ts restoreBans)
+    if (msg.type === "server-bans") {
+      ws.send(JSON.stringify({ type: "mod", text: serverBansText() }));   // pre-account bans listed too (R 10-28: moderation.ts restoreBans)
       return;
     }
     // an account selector keeps its whole length (an aid1 account carries its issuer's URL): cut to a display name's 64
@@ -462,18 +462,18 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     }
     const fold = (x: string) => foldName(x);
     const dir = directoryFor(WORLDS_DIR);
-    if (msg.type === "global-unban") {
+    if (msg.type === "server-unban") {
       // by the name it was filed under, by the account named, or by an account wearing that name here
       const accts = new Set([id, ...dir.accountsNamed(id), ...(isMinted(id) ? dir.entry(id)?.subs ?? [] : [])]);
-      const gone = bansLiftedBy(globalBans, id, accts, fold);
-      for (const k of gone) delete globalBans[k];
+      const gone = bansLiftedBy(serverBans, id, accts, fold);
+      for (const k of gone) delete serverBans[k];
       gone.push(...takePending(id, fold));
-      const unsaved = saveGlobalBans();   // the lift holds in memory only when the file wasn't written: said
-      console.log(`[mod] ${c.id} lifted global ban on ${id}${gone.length ? ` (${gone.length} record(s))` : " (was not banned)"}`);
-      ws.send(JSON.stringify({ type: "mod", text: (gone.length ? `${id} is no longer banned globally` : `${id} was not globally banned`) + (unsaved ? ` (${notPersisted(unsaved)})` : "") }));
+      const unsaved = saveServerBans();   // the lift holds in memory only when the file wasn't written: said
+      console.log(`[mod] ${c.id} lifted server ban on ${id}${gone.length ? ` (${gone.length} record(s))` : " (was not banned)"}`);
+      ws.send(JSON.stringify({ type: "mod", text: (gone.length ? `${id} is no longer banned server-wide` : `${id} was not banned server-wide`) + (unsaved ? ` (${notPersisted(unsaved)})` : "") }));
       return;
     }
-    // global-ban (security review 10-18 H1): a ban is filed against what the DOOR checks — the target's proven account, or a
+    // server-ban (security review 10-18 H1): a ban is filed against what the DOOR checks — the target's proven account, or a
     // guest's hashed address — never a display name alone (findBan matches account/addr; a name-keyed record bound nothing until
     // a restart rewrote it). Present anywhere: their account (or, a guest, their address); absent: every account the directory
     // knows under that name. Nothing to bind → refused, said plainly.
@@ -489,19 +489,19 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     }
     const reason = msg.reason != null ? String(msg.reason).slice(0, LIMITS.BAN_REASON_LEN) : undefined;
     // days, as a world's ban takes it (authority/moderation.js): absent = until lifted
-    if (msg.days !== undefined && !(typeof msg.days === "number" && msg.days > 0 && msg.days <= 3650)) { ws.send(JSON.stringify({ type: "error", error: "global-ban days is a number of days (more than 0, at most 3650); leave it out for a ban until lifted" })); return; }
+    if (msg.days !== undefined && !(typeof msg.days === "number" && msg.days > 0 && msg.days <= 3650)) { ws.send(JSON.stringify({ type: "error", error: "server-ban days is a number of days (more than 0, at most 3650); leave it out for a ban until lifted" })); return; }
     const accounts = new Set<string>([...present.map((o) => o.account).filter((a): a is string => !!a), ...dir.accountsNamed(id), ...byIdentity, ...(/^(human|agent|aid1|local):/.test(id) ? [id] : [])]);
     if ([...accounts].some((a) => isOperator(a))) { ws.send(JSON.stringify({ type: "error", error: `${id} is a server operator — remove them from SERVER_OPERATORS first` })); return; }
     const guestAddrs = new Set<string>(present.filter((o) => !o.account && o.addr).map((o) => o.addr as string));
     if (!accounts.size && !guestAddrs.size) {
-      ws.send(JSON.stringify({ type: "error", error: `can't ban "${id}" globally: nobody by that name is here, and no account wears it in the directory, so there is nothing a ban could bind to (bans bind to accounts, or a present guest's connection)` }));
+      ws.send(JSON.stringify({ type: "error", error: `can't server-ban "${id}": nobody by that name is here, and no account wears it in the directory, so there is nothing a ban could bind to (bans bind to accounts, or a present guest's connection)` }));
       return;
     }
     const ts = Date.now(), until = msg.days !== undefined ? Math.floor(ts + msg.days * 86400000) : undefined;
-    for (const account of accounts) globalBans[banKey(account)] = { by: c.id, ts, name: id, account, ...(until ? { until } : {}), ...(reason ? { reason } : {}) };
+    for (const account of accounts) serverBans[banKey(account)] = { by: c.id, ts, name: id, account, ...(until ? { until } : {}), ...(reason ? { reason } : {}) };
     if (accounts.size) takePending(id, fold);   // a pre-account ban under this name is bound to a person now
-    for (const addr of guestAddrs) globalBans[banKey(null, addr)] = { by: c.id, ts, name: id, addr, until: Math.min(ts + ADDR_BAN_MS, until ?? Infinity), ...(reason ? { reason } : {}) };
-    const unsaved = saveGlobalBans();   // the ban holds in memory only when the file wasn't written: said in the reply
+    for (const addr of guestAddrs) serverBans[banKey(null, addr)] = { by: c.id, ts, name: id, addr, until: Math.min(ts + ADDR_BAN_MS, until ?? Infinity), ...(reason ? { reason } : {}) };
+    const unsaved = saveServerBans();   // the ban holds in memory only when the file wasn't written: said in the reply
     let expelled = 0;
     for (const w2 of worlds.values()) {
       for (const other of [...w2.clients]) {
@@ -511,14 +511,18 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
         expelled++;
       }
     }
-    console.log(`[mod] ${c.id} banned ${id} globally (${accounts.size} account(s), ${guestAddrs.size} guest address(es))${reason ? ` (${reason})` : ""}${expelled ? ` — ${expelled} session(s) disconnected` : ""}`);
+    console.log(`[mod] ${c.id} server-banned ${id} (${accounts.size} account(s), ${guestAddrs.size} guest address(es))${reason ? ` (${reason})` : ""}${expelled ? ` — ${expelled} session(s) disconnected` : ""}`);
     ws.send(JSON.stringify({ type: "mod", text: `${id} is banned from all worlds${until ? ` until ${new Date(until).toISOString().slice(0, 10)}` : ""}${reason ? ` — ${reason}` : ""}${expelled ? ` (${expelled} live session${expelled === 1 ? "" : "s"} disconnected)` : ""}${unsaved ? ` (${notPersisted(unsaved)})` : ""}` }));
     return;
   }
 };
 
-// the three global-moderation labels share one body that branches on msg.type
-MESSAGES["global-ban"] = MESSAGES["global-mod"];
-MESSAGES["global-unban"] = MESSAGES["global-mod"];
-MESSAGES["global-bans"] = MESSAGES["global-mod"];
-delete (MESSAGES as Record<string, unknown>)["global-mod"];
+// the three server-moderation labels share one body that branches on msg.type
+MESSAGES["server-ban"] = MESSAGES["server-mod"];
+MESSAGES["server-unban"] = MESSAGES["server-mod"];
+MESSAGES["server-bans"] = MESSAGES["server-mod"];
+delete (MESSAGES as Record<string, unknown>)["server-mod"];
+// the old names run nothing: each is refused naming the new one until the date, then its entry goes (mcpl/tools.ts TOOL_RENAMED)
+export const MESSAGE_RENAMED_UNTIL = "2026-12-01";
+export const MESSAGE_RENAMED: Record<string, { to: string; until: string }> = Object.fromEntries(["ban", "unban", "bans"].map((k) => [`global-${k}`, { to: `server-${k}`, until: MESSAGE_RENAMED_UNTIL }]));
+for (const [old, { to }] of Object.entries(MESSAGE_RENAMED)) MESSAGES[old] = ({ ws }) => { ws.send(JSON.stringify({ type: "error", error: `"${old}" is now "${to}" — nothing ran` })); };

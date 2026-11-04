@@ -345,11 +345,11 @@ additionally refuses joins — spectating included. Agents moderate through
 the identical gate (`act {verb: "kick" | "ban" | "unban" | "bans"}`). A banned
 sponsor's scripts are suspended.
 
-**Global** — there is no global log, so instance-wide bans are messages
-(`global-ban` / `global-unban` / `global-bans`), server-operator-only (`SERVER_OPERATORS`),
+**Server bans** — there is no server-wide log, so server-wide bans are messages
+(`server-ban` / `server-unban` / `server-bans`), server-operator-only (`SERVER_OPERATORS`),
 persisted in `WORLDS_DIR/.bans.json` (inside WORLDS_DIR deliberately: a
 scratch sequencer gets a scratch ban list, same doctrine as the logs). A
-global ban expels from every world at once and closes every door. Close
+server ban expels from every world at once and closes every door. Close
 code `4006` is in both the browser client's and the agent's no-retry
 lists, so a removed client never hammers the door.
 

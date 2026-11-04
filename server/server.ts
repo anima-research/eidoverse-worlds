@@ -575,7 +575,7 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     if (c.renamed && c.actorId) directoryFor(WORLDS_DIR).markRenamed(c.actorId);
     // ENTRY — checked once identity is SETTLED (account, actor id, reserved names all resolved above), before the body
     // enters. One decision, server/access.ts entryFor, the same one every other door asks (a listing, an HTTP read, the
-    // settle after a role change): bans first (a global ban closes every door, a world's ban this one; watching counts —
+    // settle after a role change): bans first (a server ban closes every door, a world's ban this one; watching counts —
     // a ban is exclusion, not just silencing), then the world's own @world.access (who may come in
     // with a body; watch: anyone lets the rest spectate), account age, and capacity for a body. Operators, owners and
     // holders of a moderation power always get in — an operator can never be locked out, which is also the unban path

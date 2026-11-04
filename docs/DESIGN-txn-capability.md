@@ -28,7 +28,7 @@ Rights *inside* the authority are therefore never stale: they are read in the sa
 | X4 | `durable.ts:26` | `fs.writeSync` return value ignored: a short write is treated as a full write (torn line in `entries`, trimmed only at next reopen). |
 | X5 | `requestwire.ts:142,163-164` | `actorOf(c)` is read **after** both awaits, from the mutable `c.actorId` (reset at `server.ts:414`, reassigned at :563 on a re-join over the same socket). `gen` catches a *completed* re-join; a re-join in flight yields `undefined` → throw → X3's path. The identity should be captured once. |
 | X6 | `requestwire.ts:119`, `:206-210` | `c.spectator`, `c.account`/`isOperator` are checked before the queue only; the post-await recheck (:210) doesn't repeat them. |
-| X7 | `requestwire.ts:135` vs `server/access.ts:109-140` | Door entry (members mode, account age, global bans) is decided at join only; a later `@world.access` change is enforced by `sweepAccess` (1 s cadence). A queued request from a now-unentitled connection can commit in that window: the authority checks role, not the door. |
+| X7 | `requestwire.ts:135` vs `server/access.ts:109-140` | Door entry (members mode, account age, server bans) is decided at join only; a later `@world.access` change is enforced by `sweepAccess` (1 s cadence). A queued request from a now-unentitled connection can commit in that window: the authority checks role, not the door. |
 
 ## 3. Design (smallest honest change)
 

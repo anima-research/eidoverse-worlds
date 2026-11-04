@@ -243,7 +243,7 @@ export function sendWorldReset() {
 }
 
 /** Moderation messages that are not world verbs: 'world-bans' (list this
- *  world's bans — people holding a moderation power: owner, mute/kick/ban/pauseScripts), 'global-ban' / 'global-unban' / 'global-bans'
+ *  world's bans — people holding a moderation power: owner, mute/kick/ban/pauseScripts), 'server-ban' / 'server-unban' / 'server-bans'
  *  (server operator only; the server enforces). Replies arrive as `mod` messages. */
 export function sendMod(type, extra = {}) {
   if (net.joined && net.ws?.readyState === 1) {
@@ -1126,7 +1126,7 @@ async function handle(msg, at) {
     }
 
     case 'mod':
-      // Moderation replies (ban lists, global-ban confirmations) — chat is
+      // Moderation replies (ban lists, server-ban confirmations) — chat is
       // where the person is looking when they issue the command.
       for (const line of String(msg.text ?? '').split('\n')) logChat('*', line);
       break;
