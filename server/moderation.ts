@@ -39,8 +39,9 @@ export const LOCKED_WHY = "this server can't read its ban list right now, so onl
 /** One line for the boot log and the operator's list while the door is locked, else null. */
 export const lockedLine = (): string | null => unreadable.size ? `LOCKED: ${LOCKED_WHY} (${[...unreadable].join(", ")}; fix or move aside and restart)` : null;
 const keptAside = (f: string, what: string) => { if (!unreadable.has(f)) return null; const why = `${f} couldn't be read at boot and is kept as it was; fix or move it aside and restart`; console.log(`[mod] ${what} not saved: ${why}`); return why; };
-/** The words a reply and the moderated line carry when a sanction's file wasn't written: it holds in memory only. */
-export const notPersisted = (why: string) => `NOT persisted: ${why} — it ends at restart`;
+/** The words a reply and the moderated line carry when a sanction's file wasn't written: it holds in memory only
+ *  (`lifted`: the file still holds the sanction, so a restart brings it back). */
+export const notPersisted = (why: string, lifted = false) => `NOT persisted: ${why} — ${lifted ? "it comes back at restart" : "it ends at restart"}`;
 /** Writes the file; returns why it wasn't written (the record holds in memory only), else null. */
 export function saveServerBans(): string | null {
   const kept = keptAside(BANS_FILE, "server bans"); if (kept) return kept;
@@ -164,10 +165,9 @@ export function fileAddrSanction(s: Omit<AddrSanction, "ts" | "ids" | "until"> &
   return saveAddrSanctions(now);
 }
 /** Lifting a mute on an identity lifts the address record it was filed or carried under (by that identity,
- *  or by the address it is joined from now). Returns how many were lifted. */
-export function liftAddrSanction(kind: "mute", world: string, who: string, addr?: string | null): number {
+ *  or by the address it is joined from now). Returns why the file wasn't written (the lift holds in memory only), else null. */
+export function liftAddrSanction(kind: "mute", world: string, who: string, addr?: string | null): string | null {
   let n = 0;
   for (const [k, s] of Object.entries(addrSanctions)) if (s.kind === kind && s.world === world && (s.ids.includes(who) || (addr && s.addr === addr))) { delete addrSanctions[k]; n++; }
-  if (n) saveAddrSanctions();
-  return n;
+  return n ? saveAddrSanctions() : null;
 }

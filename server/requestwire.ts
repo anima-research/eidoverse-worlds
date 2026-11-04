@@ -103,7 +103,7 @@ export function guestSanctionByAddress(w: World, actor: string, by: string, verb
   const kind = verb === "mute" || verb === "unmute" ? "mute" : null;
   if (!kind || !w.log) return null;
   const addrs = [...new Set([...w.clients].filter((t) => t.actorId === who && t.anonymous && t.addr).map((t) => t.addr as string))];
-  if (verb.startsWith("un")) { liftAddrSanction(kind, w.name, who, addrs[0]); return null; }
+  if (verb.startsWith("un")) return liftAddrSanction(kind, w.name, who, addrs[0]);
   // this actor's own mutes in force on `who`, never the union with another's: each issuer's is filed apart
   const mine = inForceOf(w.log.live, who, "mute").filter((m: Any) => m.actor === actor);
   if (!mine.length) return null;
@@ -113,11 +113,12 @@ export function guestSanctionByAddress(w: World, actor: string, by: string, verb
   for (const addr of addrs) unsaved ??= fileAddrSanction({ kind, world: w.name, addr, actor, by, who, until, channels, ...(reason ? { reason: reason.slice(0, 280) } : {}) });
   return unsaved;
 }
-/** An unban's lift of the address entry a guest's ban left in this world (the request path and operator-repair alike). */
-function liftGuestAddressBan(w: World, who: string) {
+/** An unban's lift of the address entry a guest's ban left in this world (the request path and operator-repair alike).
+ *  Returns why the file wasn't written (the lift holds in memory only), else null. */
+function liftGuestAddressBan(w: World, who: string): string | null {
   let n = 0;
   for (const [k, e] of Object.entries(serverBans)) if ((e as Any)?.who === who && (e as Any)?.world === w.name) { delete serverBans[k]; n++; }
-  if (n) saveServerBans();
+  return n ? saveServerBans() : null;
 }
 export const actorOf = (c: Client) => { if (!c.actorId) throw new Error(`request from ${c.id} with no directory id (join didn't resolve one)`); return c.actorId; };
 
@@ -195,7 +196,10 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
       // a guest's mute also names their address here, and its lift lifts that (R 10-07)
       if (r?.ok && ["mute", "unmute"].includes(verb) && typeof args.who === "string" && args.who !== cap.actorId)
         unsaved ??= guestSanctionByAddress(w, cap.actorId, c.id, verb, String(args.who), typeof args.reason === "string" ? args.reason : undefined);
-      if (unsaved && r && typeof r === "object") r.warning = notPersisted(unsaved);
+      // an unban also lifts the address entry a guest's ban left
+      if (r?.ok && verb === "unban" && typeof args.who === "string") unsaved ??= liftGuestAddressBan(w, args.who);
+      const lifted = verb.startsWith("un");
+      if (unsaved && r && typeof r === "object") r.warning = notPersisted(unsaved, lifted);
       reply(r);
       // the flight recorder hears every refusal (world_debug, /debug): the authority logs refused WRITES as attempt acts, but
       // a read's, a rate limit's or a ban's refusal went nowhere a person debugging could see (Commons audit, agents #5)
@@ -216,11 +220,9 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
       if (r?.ok && (verb === "ban" || verb === "kick" || verb === "unban" || verb === "mute" || verb === "unmute") && typeof args.who === "string") {
         const who = String(args.who);
         const happened = verb === "kick" || verb === "mute" || verb === "unmute" ? [...w.clients].some((t) => t.actorId === who && !t.spectator) : wasBanned !== isBanned(w.log.live, who);
-        if (happened) { const text = modLine(w, c.id, verb, who) + (unsaved ? ` (${notPersisted(unsaved)})` : "");
+        if (happened) { const text = modLine(w, c.id, verb, who) + (unsaved ? ` (${notPersisted(unsaved, lifted)})` : "");
           for (const t of w.clients) if (t.actorId !== who) { try { t.ws.send(JSON.stringify({ type: "moderated", verb, by: c.id, text })); } catch { /* gone */ } } }
       }
-      // an unban also lifts the address entry a guest's ban left
-      if (r?.ok && verb === "unban" && typeof args.who === "string") liftGuestAddressBan(w, args.who);
       // a ban or kick the authority accepted takes the person out NOW (H4b: a ban used to leave the banned person present,
       // talking until they chose to leave); a kicked person may come straight back (R 10-28). A guest has no account to ban,
       // so their ban also names their connection's address in this world for a day (moderation.ts), or they'd reconnect as a fresh guest.
@@ -256,8 +258,10 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
       if (gone) { reply({ ok: false, txn: "rolled-back", refused: { code: "superseded", reason: gone, fix: recheckFix(gone) } }); return; }
       const r = w.log.operatorRepair(cap.actorId, verb, args);
       console.log(`[world:${w.name}] operator repair by ${c.account} (${c.id}): ${verb.slice(0, 32)} ${String((args as Any).component ?? (args as Any).who ?? "").slice(0, 64)} → ${r?.ok ? "ok" : r?.refused?.code}`);
+      // as request's unban does: the lift's file failure is said in the reply, before it
+      const unsaved = r?.ok && verb === "unban" && typeof (args as Any).who === "string" ? liftGuestAddressBan(w, (args as Any).who) : null;
+      if (unsaved && r && typeof r === "object") r.warning = notPersisted(unsaved, true);
       reply(r);
-      if (r?.ok && verb === "unban" && typeof (args as Any).who === "string") liftGuestAddressBan(w, (args as Any).who);   // as request's unban does
       if (r?.ok) sweep?.(w);   // an unban or a role change applies now (the sanctions sweep; the role change re-sends rights itself)
     }, (r) => { if (!answered) reply(r); });
   },

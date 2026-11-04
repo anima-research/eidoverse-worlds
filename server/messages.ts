@@ -470,7 +470,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       gone.push(...takePending(id, fold));
       const unsaved = saveServerBans();   // the lift holds in memory only when the file wasn't written: said
       console.log(`[mod] ${c.id} lifted server ban on ${id}${gone.length ? ` (${gone.length} record(s))` : " (was not banned)"}`);
-      ws.send(JSON.stringify({ type: "mod", text: (gone.length ? `${id} is no longer banned server-wide` : `${id} was not banned server-wide`) + (unsaved ? ` (${notPersisted(unsaved)})` : "") }));
+      ws.send(JSON.stringify({ type: "mod", text: (gone.length ? `${id} is no longer banned server-wide` : `${id} was not banned server-wide`) + (unsaved ? ` (${notPersisted(unsaved, true)})` : "") }));
       return;
     }
     // server-ban (security review 10-18 H1): a ban is filed against what the DOOR checks — the target's proven account, or a
