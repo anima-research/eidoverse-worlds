@@ -155,7 +155,7 @@ const seenErrors = new Map(); // key -> { n, nextAt }
 // (Bearer), below. `tee(line)` is for lines worth keeping ([xr] etc). The server's budget (server/clientlog.ts) is
 // honoured here: a 429 waits its Retry-After (60 s when unsaid) with the lines kept; a batch (60 KB) is under its 256 KB.
 let teeQ = [], teeTimer = 0, teeMuted = false, teePausedUntil = 0;
-// Batched every 10 s and flushed as the page hides (Element 30 s, Sentry's buffer the same shape): fewer posts, no lost tail.
+// Batched every 10 s; as the page hides one batch goes at once (keepalive's cap) and the rest waits for the timer (Element 30 s, Sentry's buffer the same shape).
 const TEE_LINES = 2000, TEE_BYTES = 60 * 1024, TEE_DEBOUNCE_MS = 10000;   // 60 KB: under keepalive's 64 KB in-flight cap
 function teeFlush() {
   teeTimer = 0;
