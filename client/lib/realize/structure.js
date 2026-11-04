@@ -44,6 +44,8 @@ import { defsRegistry } from '../defs.js';
 import { applyHidden } from './models.js';
 import { collisionOwnedElsewhere, offIn } from './models_field.js';
 import { transformOf } from './structuretf.js';
+import { worldPose, ancestors } from '../../../shared/hierarchy.js';
+import { scale3 } from '../../../shared/scale3.js';
 
 // PROCEDURAL, NOT TEXTURED. Surface detail is computed in the shader from
 // grid-local position, which buys three things this stack specifically needs:
@@ -335,8 +337,10 @@ function realize(id, ent) {
   const data = structOf(ent);
   // switched off, itself or up its chain: not drawn, no boxes (models_field offIn)
   if (!data || offIn(state.st.entities ?? {}, id)) { retire(id); return; }
+  // under a carrier the fold's pos is the carrier's frame: the group and its boxes take the composed world pose
+  const w = ent.parent?.to ? worldPose(state.st.entities, id) : null;
   // collision off for bodies (collider.enabled false, or blocks without bodies): no box a walker meets
-  const tf = { ...transformOf(ent), solid: !solidOff(ent, 'bodies') };
+  const tf = { ...transformOf(w ? { ...ent, pos: w.pos, q: w.q, scale3: scale3(w.scale) } : ent), solid: !solidOff(ent, 'bodies') };
   const sig = JSON.stringify(data);
   const prev = tracked.get(id);
 
@@ -380,16 +384,20 @@ export function reconcileStructures() {
   for (const id of [...tracked.keys()]) if (!seen.has(id)) retire(id);
 }
 
+const carries = (id) => [...tracked.keys()].some((t) => ancestors(state.st.entities, t).includes(id));
 function onChange({ id, what, comp }) {
   try {
     switch (what) {
       // a `structure` comp arriving on a thing we don't track yet is exactly how a building is born
       case 'comp': if (comp === 'structure' || (comp === 'collider' && tracked.has(id))) realize(id, state.st.entities[id]);
-        else if (comp === 'disabled' || comp === 'parent') reconcileStructures();   // a switch or a move under one reaches the buildings below it
+        else if (comp === 'disabled') reconcileStructures();   // a switch reaches the buildings below it
         break;
+      case 'parent': reconcileStructures(); break;   // a move under one reaches the buildings below it (viewdiff.js: its own event)
       // re-derive from state rather than assume (a re-born thing may have dropped its structure)
       case 'born': realize(id, state.st.entities[id]); break;
-      case 'pose': if (tracked.has(id)) realize(id, state.st.entities[id]); break;
+      case 'pose': if (tracked.has(id)) realize(id, state.st.entities[id]);
+        else if (carries(id)) reconcileStructures();   // a carrier moved: the buildings under it move with it
+        break;
       case 'gone': retire(id); break;
     }
   } catch (e) { report(`realize structure ${what}`, e); }

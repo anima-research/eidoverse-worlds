@@ -175,6 +175,20 @@ live('delete', { id: 'houseexact', component: 'structure' });
 check('a building with collider {shape: "mesh"}: its structure removed, its anchor\'s collider keeps that preference',
   C.colliders.get('houseexact')?.pref === 'exact', JSON.stringify(C.colliders.get('houseexact')?.pref ?? null));
 
+console.log('\na building under a carrier (structure.js: the composed world pose; the parent and carrier-pose events)');
+// the porch stands at [-30, 0, -20] and the shed 5 m south of it in the porch's frame: its wall centre is at (-29, -15)
+const shedWall0 = wallCentre('shed');
+check('a building under a carrier stands where the carrier\'s frame puts it', !!shedWall0 && Math.abs(shedWall0[0] + 29) < 1e-6 && Math.abs(shedWall0[1] + 15) < 1e-6, JSON.stringify(shedWall0));
+live('set', { id: 'porch', component: 'transform', value: { pos: [-30, 0, -10] } });
+const shedWall1 = wallCentre('shed');
+check('the carrier moved 10 m south: the building\'s boxes move with it', !!shedWall1 && Math.abs(shedWall1[0] + 29) < 1e-6 && Math.abs(shedWall1[1] + 5) < 1e-6, JSON.stringify(shedWall1));
+// reparented, the authority re-expresses the shed's transform so it stays where it is: the boxes stay too
+live('set', { id: 'shed', component: 'parent', value: { to: 'cart' } });
+const shedWall2 = wallCentre('shed');
+check('reparented to the cart (its pose re-expressed in the new frame): the boxes stay where the building stands', !!shedWall2 && Math.abs(shedWall2[0] + 29) < 1e-6 && Math.abs(shedWall2[1] + 5) < 1e-6, JSON.stringify(shedWall2));
+live('set', { id: 'shed', component: 'parent', value: { to: 'porch' } });
+live('set', { id: 'porch', component: 'transform', value: { pos: [-30, 0, -20] } });
+
 console.log('\na switched-off building (structure.js ignored disabled)');
 check('control: an enabled building and one under an enabled thing have their boxes', boxes('housedis').length === 3 && boxes('shed').length === 3, JSON.stringify([C.structureBoxIds('housedis'), C.structureBoxIds('shed')]));
 live('set', { id: 'housedis', component: 'disabled', value: true }); live('set', { id: 'porch', component: 'disabled', value: true });
