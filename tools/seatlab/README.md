@@ -20,9 +20,10 @@ Loading into a running client (import specifiers are absolute `/lib/...`, so
 the module works served from anywhere):
 
 ```
-# a script is an `upload {text}` request (act {verb: "upload", args: {text}}); bind it as script:<name> (docs/SCRIPTS.md)
 # browser console:
-const lab = await import('/library/store/scripts/<hash>.js');
+// upload answers src: 'sha256:<64 hex>', a world-script blob the authority runs — not a URL a browser can import
+// to use seatlab from the console, serve this file as a static module (e.g. copy it under client/lib/) and:
+const lab = await import('/lib/seatlab.js');
 ```
 
 The pure math this instrument leans on (seat claim, gates, patch thresholds,
