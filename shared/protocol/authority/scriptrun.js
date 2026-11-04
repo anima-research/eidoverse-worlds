@@ -85,7 +85,8 @@ function activate(w, id, name, ev) {
   if (depth > cfg.depth) return out("refused", { code: "depth", why: `cascade depth ${depth} > ${cfg.depth}` });
   if (!w.scripts) return out("unavailable", { why: "this server has no script sandbox" });
   let blob = null, unreadable = false; try { blob = w.getBlob(v.src); } catch (e) { unreadable = e?.code !== "ENOENT"; }
-  const fail = (code, why, logs) => { if (!dry && code !== "unavailable") { rt.fails = (rt.fails ?? 0) + 1; rt.lastFail = { code, why }; } return out(code === "unavailable" ? "unavailable" : "failed", { code, why, ...(logs?.length ? { logs } : {}), ...(dry ? {} : { fails: rt.fails }) }); };
+  // a say handler's error text may echo the say, so the paused status keeps its code only; the ring (floor-gated) has the words
+  const fail = (code, why, logs) => { if (!dry && code !== "unavailable") { rt.fails = (rt.fails ?? 0) + 1; rt.lastFail = { code, why: ev.on === "say" ? "a say handler failed; its console ring has the error" : why }; } return out(code === "unavailable" ? "unavailable" : "failed", { code, why, ...(logs?.length ? { logs } : {}), ...(dry ? {} : { fails: rt.fails }) }); };
   if (!blob || blob.lang !== SR.LANG || typeof blob.text !== "string") return fail("source", sourceWhy(blob, unreadable, v.src));
   const actSeq = w.entries.length, seed = SR.seedOf(w.worldId, actSeq, `${id}/${key}`), now = w.nextTs(); // the clock is frozen at the act's own ts
   if (!dry) { const why = overCpu(w, now, id, key, sp.sponsor, cfg); if (why) return out("refused", { code: "budget", why, sponsor: sp.sponsor }); }

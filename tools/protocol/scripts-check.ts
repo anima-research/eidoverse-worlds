@@ -1127,6 +1127,14 @@ console.log(JSON.stringify({ platform: process.platform, available: SANDBOX.avai
       const lines = (who: string) => JSON.stringify(s.call(who, "scripts", { id: "ear" }).scripts?.[0]?.last ?? []);
       return { late: lines("late"), olive: lines("olive") }; },
     good: (o) => !o.late.includes("early secret") && o.late.includes("later line") && /"on":"say"/.test(o.late) && o.olive.includes("early secret") && o.olive.includes("later line") },
+  { id: "E1c", what: "a say handler that throws the say's text: once paused, the roster's why (read with no floor) carries the code and no words; the floor-gated ring keeps the message", run(s) { cast(s);
+      s.call("bob", "create", { id: "ear", model: "crate", place: { at: [0, 0] } });
+      install(s, "bob", "ear", "echo", `world.on("say", (e) => { throw new Error("bad input: " + e.text); });\n`, { scope: { ids: "self", comps: [] }, on: ["say"] });
+      for (let i = 0; i < 6; i++) s.call("vic", "say", { text: "early secret" });
+      s.w().sayFloor = (who: string) => (who === "late" ? s.entries().length - 1 : null);
+      const late = s.call("late", "scripts", {}).scripts?.[0], olive = s.call("olive", "scripts", { id: "ear" }).scripts?.[0];
+      return { status: late?.status, why: String(late?.why ?? ""), ring: JSON.stringify(olive?.last ?? []) }; },
+    good: (o) => o.status === "paused" && /\(the last: \w+: a say handler failed/.test(o.why) && !o.why.includes("early secret") && o.ring.includes("early secret") },
   { id: "E2", what: "enter / leave: the host says who arrived or left; scripts that list them hear it, by identity (presence, told by the host)", run(s) { cast(s);
       if (!D.presenceEvent) return { absent: true };
       s.call("bob", "create", { id: "door1", model: "crate", place: { at: [0, 0] } });
