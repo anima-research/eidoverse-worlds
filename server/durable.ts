@@ -136,10 +136,10 @@ function clearIfGone(lock: string, f: string): boolean {
 /** Run `f` holding the lock file `lock` (its directory must exist): another process waits up to `waitMs` for it, removes one
  *  whose holder has exited, and throws past `waitMs`. Only this process removes its own lock. Not re-entrant. */
 export function withFileLock<T>(lock: string, waitMs: number, f: () => T): T {
-  const wait = new Int32Array(new SharedArrayBuffer(4)); const until = Date.now() + waitMs;
+  const wait = new Int32Array(new SharedArrayBuffer(4)); const until = performance.now() + waitMs;
   while (!take(lock)) {
     if (clearIfGone(lock, lock)) continue;
-    if (Date.now() > until) { const h = holderOf(lock);
+    if (performance.now() > until) { const h = holderOf(lock);
       throw new Error(`${lock} has been held${h ? ` by process ${h.pid}` : ""} for ${waitMs / 1000} s; if no process is using it, remove it`); }
     Atomics.wait(wait, 0, 0, 10);
   }
