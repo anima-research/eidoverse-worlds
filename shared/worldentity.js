@@ -140,7 +140,7 @@ const grassOp = (args) => (args == null ? OP.unset(WORLD_ID, 'grass') : OP.set(W
 
 const SKY_NUMS = [   // the sky panel's sliders (client/lib/skypanel.js SLIDERS): key, label, min, softMax, step, default, unit
   ['hours', 'time of day', 0, 24, 0.1, 12, 'h'], ['rate', 'rate', 0, 48, 0.5, 0, '×'],
-  // azimuth is stored in radians (shape audit 10-16) and shown in degrees; sun and fill were cut (knobs on the renderer's own rig)
+  // azimuth is stored in radians (shape audit 10-16) and shown in degrees; sun and fill are sky fields again (10-31), with sliders in the sky panel, not here
   ['azimuth', 'sun azimuth', 0, 360, 5, 180, '°'], ['ambient', 'ambient', 0, 2.5, 0.05, 1],
   ['exposure', 'exposure', 0.3, 1.8, 0.05, 1], ['fog', 'fog', 0, 3, 0.05, 1],
 ];
