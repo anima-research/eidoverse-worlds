@@ -104,6 +104,11 @@ const creator = (reply: any = { ok: true, after: {} }) => { const sent: any[] = 
   const r = await handleTool(ctxOf(ag), "anim", { bodyMode: "fly", name: "bad name" });
   ok(r?.isError === true && ag.bodyMode === before, "106 a refused anim name leaves the body-mode as it was", { before, after: ag.bodyMode, r: textOf(r) }); }
 
+// #83 (bot2): a moderation reply's persistence warning reaches the agent's result
+{ const ag: any = { request: async () => ({ ok: true, logged: "the moderator log", warning: "NOT persisted: .bans.json unwritable" }) };
+  const out = textOf(await handleTool(ctxOf(ag), "act", { verb: "ban", args: { who: "u-aaaaaaaaaaaaaaaaaaaa" } }));
+  ok(/done/.test(out) && /NOT persisted/.test(out), "83 ban: done, and the world's 'NOT persisted' warning with it", out); }
+
 // #105: a fall below the world ends the walk's promise now (false), not at its timeout
 { const ag: any = new WorldAgent({ name: "me", world: "w" }); ag.replica = { st: { entities: { "@world": { c: {} } } } };
   let done: boolean | null = null; ag.target = { x: 5, z: 5 }; ag.walkDone = (v: boolean) => { done = v; };
