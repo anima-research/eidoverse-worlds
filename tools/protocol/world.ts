@@ -155,6 +155,7 @@ const stillWriting = (f: string, was: { size: number }, now: { size: number }) =
 function report(src: string, dest: string, r: ReturnType<typeof translateV1World>) {
   console.log(`translated "${src}" (${r.stats.in} old entries) → world "${dest}" (${r.entries} entries, ${r.stats.change} change, `
     + `0 divergences, ${r.stats.renamed} actor names escaped, ${r.stats.tsClamped ?? 0} ts clamped); digest ${r.digest}`);
+  if (r.posesUnread) console.log(`NOTE: no remembered place was carried over: ${r.posesUnread}`);
   if (r.renamedBlobs?.length) console.log(`NOTE: ${r.renamedBlobs.length} store blob(s) no longer hash to their names (rewritten after upload); their addresses are of the bytes this host has: ${r.renamedBlobs.join(", ")}`);
   if (r.stats.modelsHashed !== undefined) console.log(`models: kept as library paths; ${r.stats.modelsHashed} with model-hash (sha256:…) beside them${r.stats.modelsUnhashed.length ? `; ${r.stats.modelsUnhashed.length} without (no bytes on this host): ${r.stats.modelsUnhashed.join(", ")}` : ""}`);
   if (r.sim) console.log(`physics: ${r.sim.engine?.engine ?? "the epoch was left"} — ${r.sim.launches} punt(s) set a body flying (each kept as its imported act; no launch is written), ${r.sim.rests} rest(s) logged where her sim rests them; the authority's sim layer re-checked ${r.sim.agree}/${r.sim.rests}`);
