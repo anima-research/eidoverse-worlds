@@ -112,8 +112,10 @@ export function auditScripts(L, getBlob, { run = null, depth: maxD = 8 } = {}) {
     // no wall clock on a re-run: fuel (deterministic) is the limit; the auditor's machine may be slower than the authority's
     const rerun = (ev) => run({ text: blob.text, self: id, key: b.script, event: ev, knobs: v.knobs ?? {}, now: a.ts, seed: b.seed, api: b.api ?? 1, st, reads: b.reads ?? { near: [], count: [], names: 0 }, limits: { wallMs: 10000 } });
     const res = rerun(event);
-    if (!res.ok) { flags.push({ seq, check: "rerun", why: `the re-run failed: ${res.code}: ${res.why}` }); return; }
-    if (jcs(readShape(res.reads)) !== jcs(readShape(b.reads))) { if (typeof b.reads?.names === "number" && b.reads.names > 0) { skipped.push({ seq, why: WHO_WHY }); return; }   // a name re-runs as null and can steer the shape; a near count can't, so a forged one stays flagged
+    // a name re-runs as null: it can throw the handler or steer its reads, so such an act is listed, not flagged; a near count can't, so a forged one stays flagged
+    const named = typeof b.reads?.names === "number" && b.reads.names > 0;
+    if (!res.ok) { if (named) skipped.push({ seq, why: WHO_WHY }); else flags.push({ seq, check: "rerun", why: `the re-run failed: ${res.code}: ${res.why}` }); return; }
+    if (jcs(readShape(res.reads)) !== jcs(readShape(b.reads))) { if (named && readShape(res.reads).names > 0) { skipped.push({ seq, why: WHO_WHY }); return; }   // a re-run that never asked a name was steered by nothing: its recorded names are forged
       flags.push({ seq, check: "reads", why: "the re-run asked different presence reads than the act records", want: readShape(res.reads), got: readShape(b.reads) }); return; }
     const want = elide(st, stampMotions(st, res.ops, a.ts));   // as the authority stamped and elided it (scriptrun)
     const outs = []; for (let i = seq + 1; i < L.length; i++) if (isE(L[i]) && L[i].cause === seq) outs.push(L[i]);

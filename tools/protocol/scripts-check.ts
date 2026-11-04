@@ -123,7 +123,9 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["world.use meets the target's who as the sponsor", "authority/use.js", "if (h?.who && !admits(ctx.st, ctx.asker ?? ctx.actor, h.who))", "if (h?.who && !admits(ctx.st, ctx.actor, h.who))", ["W3"]],
   ["the script act records its world.use calls", "authority/scriptrun.js", ", ...(uses.length ? { uses } : {}) } };", " } };", ["W1"]],
   ["the auditor compares body effects", "scriptaudit.js", "if (!sameB) flags.push(", "if (false) flags.push(", ["C1b"]],
-  ["a name-steered read shape is skipped", "scriptaudit.js", "{ if (typeof b.reads?.names === \"number\" && b.reads.names > 0) { skipped.push(", "{ if (false) { skipped.push(", ["D4b"]],
+  ["a name-steered read shape is skipped", "scriptaudit.js", "{ if (named && readShape(res.reads).names > 0) { skipped.push(", "{ if (false) { skipped.push(", ["D4b"]],
+  ["a name-dependent re-run that throws is skipped, not flagged", "scriptaudit.js", "if (named) skipped.push(", "if (false) skipped.push(", ["D4c"]],
+  ["a recorded name count hides a forged near read", "scriptaudit.js", "if (named && readShape(res.reads).names > 0) { skipped.push(", "if (named) { skipped.push(", ["D4d"]],
   ["the auditor compares world.use calls", "scriptaudit.js", "if (!sameU) { flags.push({ seq, check: \"rerun-use\"", "if (false) { flags.push({ seq, check: \"rerun-use\"", ["W1"]],
   ["a who-dependent world.use is flagged, not skipped", "scriptaudit.js", "if (whoReads(b.reads)) { skipped.push(", "if (sameU && whoReads(b.reads)) { skipped.push(", ["W1b"]],
   ["the arrival's stand-ins compare their uses", "scriptaudit.js", "[!sameU, \"world.use calls\", jcs(r2.uses ?? []) === jcs(res.uses ?? [])]", "[!sameU, \"world.use calls\", true]", ["W1c", "W1d"]],
@@ -976,6 +978,28 @@ console.log(JSON.stringify({ platform: process.platform, available: SANDBOX.avai
       const A = AU.auditScripts(s.entries(), s.w().getBlob, { run: SB.runScript });
       return { r: st(s, r), seen: comp(s, "dial", "t/seen"), flags: A.flags.map((f: any) => f.check), skipped: A.skipped?.length ?? null, why: A.skipped?.[0]?.why ?? null }; },
     good: (o) => o.r === "ran" && o.seen === 1 && o.flags.length === 0 && o.skipped === 1 && /who was near/.test(o.why) },
+  { id: "D4c", what: "a handler that calls a method on a name (null on a re-run: it throws there, not live) is skipped as depending on who was near, never flagged rerun", run(s) { cast(s);
+      s.call("bob", "create", { id: "dial", model: "crate", place: { at: [0, 0] } });
+      install(s, "bob", "dial", "who", onUse(`if (world.name(e.by).startsWith("V")) world.set("self", "t/seen", 1);`), { scope: { ids: "self", comps: ["t/seen"] }, on: ["use"] });
+      s.call("bob", "set", { id: "dial", component: "reactions", value: { look: { kind: "script", script: "who" } } });
+      s.call("vic", "move", { to: [0, 0, 1] }); const r = useSteady(s, "vic", { id: "dial", action: "look" });
+      if (!AU) return { absent: true };
+      const A = AU.auditScripts(s.entries(), s.w().getBlob, { run: SB.runScript });
+      return { r: st(s, r), seen: comp(s, "dial", "t/seen"), flags: A.flags.map((f: any) => f.check), skipped: A.skipped?.length ?? null, why: A.skipped?.[0]?.why ?? null }; },
+    opts: { nameOf: (id: string) => NAMES[id] ?? null },
+    good: (o) => o.r === "ran" && o.seen === 1 && o.flags.length === 0 && o.skipped === 1 && /who was near/.test(o.why) },
+  { id: "D4d", what: "a forged near read under a forged name count (the script never asks a name, so nothing steered the re-run's reads) is flagged `reads`, not hidden as name-dependent", run(s) { cast(s);
+      s.call("bob", "create", { id: "sign", model: "crate", place: { at: [0, 0] } });
+      install(s, "bob", "sign", "count", onUse(`world.set("self", "t/count", { n: world.near(3).length });`), { scope: { ids: "self", comps: ["t/count"] }, on: ["use"] });
+      s.call("bob", "set", { id: "sign", component: "reactions", value: { count: { kind: "script", script: "count" } } });
+      s.call("vic", "move", { to: [0, 0, 1] }); const r = s.call("vic", "use", { id: "sign", action: "count" });
+      if (!AU) return { absent: true };
+      const L0 = s.entries(), get = s.w().getBlob, run = SB.runScript;
+      const forged = F.readLog(Buffer.from(L0.map((e: any) => JSON.stringify(e)).join("\n") + "\n")); const k = forged.findLastIndex((e: any) => isScriptActor(e.actor) && e.kind === "act");
+      forged[k].body.reads.near[0].r = 9; forged[k].body.reads.names = 1;
+      const A = AU.auditScripts(forged, get, { run });
+      return { r: st(s, r), flags: A.flags.map((f: any) => f.check), skipped: A.skipped?.length ?? 0 }; },
+    good: (o) => o.r === "ran" && o.flags.includes("reads") && o.skipped === 0 },
   { id: "W1b", what: "world.use whose target turns on who was near (a name read): the auditor SKIPS its act as depending on who was near, as D4 does for a set, and never flags it rerun-use, which reads as a forgery (review of #260)", run(s) { cast(s);
       for (const [id, x] of [["gatea", 10], ["gateb", 14]] as const) { s.call("bob", "create", { id, model: "door", components: { openable: { open: false } }, place: { at: [x, 0] } });
         s.call("bob", "set", { id, component: "reactions", value: { open: { kind: "toggle", component: "openable", field: "open" } } }); }
