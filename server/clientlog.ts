@@ -20,6 +20,8 @@ export function ipBucketKey(addr: string): string {
   const a = addr.replace(/%.*$/, "").toLowerCase();
   if (!a.includes(":")) return a;
   const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(a); if (mapped) return mapped[1]!;
+  const hex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(a);   // the same address in hex groups (::ffff:102:304)
+  if (hex) { const n = (parseInt(hex[1]!, 16) << 16 | parseInt(hex[2]!, 16)) >>> 0; return [n >>> 24, n >> 16 & 255, n >> 8 & 255, n & 255].join("."); }
   const [head = "", tail = ""] = a.split("::"), h = head ? head.split(":") : [], t = tail ? tail.split(":") : [];
   const groups = [...h, ...Array<string>(Math.max(0, 8 - h.length - t.length)).fill("0"), ...t];
   return groups.slice(0, 4).map((g) => g.replace(/^0+(?=.)/, "")).join(":") + "::/64";

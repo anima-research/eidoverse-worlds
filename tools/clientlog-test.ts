@@ -58,6 +58,7 @@ ip = "2001:db8:1:2:aaaa::1"; for (let i = 0; i < 30; i++) await post("world=know
 ip = "2001:db8:1:2:ffff::9";
 ok(await st(post("world=known", "same /64", session())) === 429, "R3 IPv6 is bucketed by /64: a second host address in the /64 shares the 30");
 ok(ipBucketKey("2001:db8:1:2:aaaa::1") === "2001:db8:1:2::/64" && ipBucketKey("::ffff:1.2.3.4") === "1.2.3.4" && ipBucketKey("fe80::1%eth0") === "fe80:0:0:0::/64", "R4 ipBucketKey: /64, an IPv4-mapped address, a zone id");
+ok(ipBucketKey("::ffff:102:304") === "1.2.3.4" && ipBucketKey("::FFFF:C0A8:1") === "192.168.0.1", "R4b a hex-form mapped IPv4 is that IPv4's own bucket, not every v4 client in 0:0:0:0::/64");
 ip = "10.0.2.2";
 const s2 = session();
 const burst = []; for (let i = 0; i < 11; i++) burst.push(await st(post("world=known", `e${i}`, s2)));
