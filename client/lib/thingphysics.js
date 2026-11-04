@@ -471,6 +471,7 @@ function unpredict(id) {
 }
 const pendingNow = () => Object.fromEntries([...pending].map(([id, p]) => [id, { ts: p.ts, sentAt: p.sentAt }]));
 function drawFlights(wall, now) {
+  replica.settleInputs();   // a late input (a heightmap's grid) landed: the canonical fold refolds before this frame copies it
   const canon = replica.sim;
   if (!canon?.sim || canon.foreign) { if (pres) { for (const id of Object.keys(pres.bodies)) suspendCollider(id, false); } pres = null; prev.clear(); return; }
   // while one of my releases is still a guess (no entry yet), keep this copy: a fresh copy of the canonical fold stands at

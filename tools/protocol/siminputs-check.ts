@@ -94,11 +94,13 @@ function run(late) {
   ok(!restsOf(x.L()).length, "(setup) the ball is still flying when the client has folded this far");
   c.ingest(x.L().slice(from), from); from = x.L().length;
   if (late) { clientHas.add(REF); clientHas.add(REF2); asClient(); }   // the fetch lands
+  // the browser's drawFlights clones c.sim itself and never calls simAt: settleInputs alone must refold once the grid is here
+  const v0 = c.simVersion, settled = late ? (typeof c.settleInputs === "function" && (c.settleInputs(), c.simVersion > v0 && !!c.sim?.sim)) : null;
   const t0 = x.at(); let jl = null; for (let t = 0; t < 200; t++) { const b = c.simAt(t0 + t * 33)?.bodies?.ball; if (b) jl = b; }   // frames, once the grid is here
   x.call("rowan", "wait", {}, 6000);
   c.ingest(x.L().slice(from), from);
   const rest = restsOf(x.L()).at(-1);
-  return { c, rest, jl };
+  return { c, rest, jl, settled };
 }
 
 {
@@ -107,7 +109,8 @@ function run(late) {
   ok(jl?.resting && JSON.stringify(jl.p) === JSON.stringify(rest?.at), "G3 …and rests where the authority does", [jl?.p, rest?.at]);
 }
 {
-  const { c, rest, jl } = run(true);
+  const { c, rest, jl, settled } = run(true);
+  ok(settled === true, "G1a settleInputs alone (no simAt: the browser's path) refolds the canonical sim once the grid lands", { settled });
   ok(rest && c.sim?.checks && !c.sim.checks.disagree.length, "G1 a client whose grid arrived late raises no disagreement once it lands", { rest: rest?.at, checks: c.sim?.checks });
   ok(jl?.resting && JSON.stringify(jl.p) === JSON.stringify(rest?.at), "G2 …and its flight rests bit for bit where the authority's does", [jl?.p, rest?.at]);
 }
