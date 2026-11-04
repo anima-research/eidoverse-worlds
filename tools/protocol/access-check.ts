@@ -342,7 +342,13 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   const r = Bun.spawnSync(["bun", "-e", code], { env: { ...process.env, WORLDS_DIR: D, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, stdout: "pipe", stderr: "pipe" });
   const out = r.stdout.toString() + r.stderr.toString(), b = fs.readFileSync(bans, "utf8"), s = fs.readFileSync(sanc, "utf8");
   ok(r.exitCode === 0 && /restore failed/.test(out) && b === torn && s === torn && /not saved/.test(out),
-    "A13m an unreadable .bans.json and .addr-sanctions.json are kept byte-identical: a later ban and mute are not saved over them, and the log says so", { exit: r.exitCode, bansKept: b === torn, sancKept: s === torn, out: out.slice(0, 400) }); }
+    "A13m an unreadable .bans.json and .addr-sanctions.json are kept byte-identical: a later ban and mute are not saved over them, and the log says so", { exit: r.exitCode, bansKept: b === torn, sancKept: s === torn, out: out.slice(0, 400) });
+  // A13m2: a file that parses but isn't an object of records (hand-made) is unreadable the same way: LOCKED, never saved over
+  fs.writeFileSync(bans, "[]"); fs.writeFileSync(sanc, "false");
+  const r2 = Bun.spawnSync(["bun", "-e", code + `\nconsole.log(M.lockedLine() ?? "not locked");`], { env: { ...process.env, WORLDS_DIR: D, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, stdout: "pipe", stderr: "pipe" });
+  const out2 = r2.stdout.toString() + r2.stderr.toString();
+  ok(r2.exitCode === 0 && /^LOCKED/m.test(out2) && fs.readFileSync(bans, "utf8") === "[]" && fs.readFileSync(sanc, "utf8") === "false",
+    "A13m2 a ban or sanction file of the wrong shape (an array, a boolean) locks the door like a torn one and is kept as it was", { exit: r2.exitCode, out: out2.slice(0, 400) }); }
 // ---- A13c (review of #260): a server ban made before accounts, on an aid1 agent's bare sub, still holds (pure) ----
 { const { restoreBans, findBan } = await import("../../server/moderation.ts");
   const was = { "old-agent": { by: "op", ts: 1, sub: "agent-7f3a" }, "old-person": { by: "op", ts: 1, sub: "discord|123" }, "namesake": { by: "op", ts: 1, name: "bob" } };

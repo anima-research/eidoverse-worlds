@@ -77,6 +77,7 @@ export function restoreBans(raw: Record<string, BanRec>, refused: Record<string,
 try {
   if (existsSync(BANS_FILE)) {
     const raw = JSON.parse(readFileSync(BANS_FILE, "utf8")) as Record<string, BanRec>;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("not an object of ban records");
     // a name-keyed record from before accounts: bound through main's records, else kept pending (restoreBans)
     const nameOnly = Object.values(raw ?? {}).some((b) => b && !b.account && !b.addr && !(b as any).sub);   // the logs are read only when needed
     Object.assign(serverBans, restoreBans(raw, refusedBans, { pending: pendingBans, ...(nameOnly ? { known: mainKnowledge(WORLDS_DIR) } : {}) }));
@@ -144,6 +145,7 @@ export function saveAddrSanctions(now = Date.now()): string | null {
 try {
   if (existsSync(ADDR_SANCTIONS_FILE)) {
     const raw = JSON.parse(readFileSync(ADDR_SANCTIONS_FILE, "utf8")) as Record<string, AddrSanction>;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("not an object of sanction records");
     for (const [k, s] of Object.entries(raw)) if (s && s.kind === "mute" && typeof s.addr === "string" && typeof s.world === "string" && typeof s.actor === "string" && s.until > Date.now()) addrSanctions[k] = { ...s, ids: Array.isArray(s.ids) ? s.ids : [] };
   }
 } catch (e) { unreadable.add(ADDR_SANCTIONS_FILE); console.log(`[mod] WARNING address sanction restore failed: ${e}. ${ADDR_SANCTIONS_FILE} is kept as it was and not saved over; its sanctions aren't enforced until it is fixed and the server restarted`); }
