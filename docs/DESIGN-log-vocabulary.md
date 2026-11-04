@@ -453,8 +453,40 @@ Portable identity (one person, one identity across worlds and servers) is the ne
 
 ## §F Freeze questions (round 3, answered in review)
 
-- **F-1 Feature declarations (kernel reservation).** Reserve a monotonic `requires` list in genesis, extended only by governance/system entries. A reader that meets an unknown required feature treats the whole world as unsupported *before its first use*. Future ops and kinds land without a minor-2 re-id; minor bumps stay for meaning changes that can't be predeclared.
-- **F-2 Registry epoch.** Founding and repair request bodies stamp the registry hash (`sha256(registry-pin.json)`) and writer provenance (code commit, translator version). This is fold-neutral. The translator writes it into every migrated world's founding request.
-- **F-3 Join order.** Auth first, then the client's hello `{dialect, v, minor, features}`, then the snapshot. A server refuses with "update" before it sends any world data.
+- **F-1 Feature declarations (kernel reservation).** Contract:
+  ```text
+  genesis.body.requires?: sorted, unique feature ids (absent = [])
+  later activation: governance.body.requiresAdd only — signed/authorized
+                    exactly like every other governance decision; no
+                    system actor and no change/request may activate law
+  semantics: monotonic union; never removed; must precede first use
+  unknown id → the whole world is unsupported-feature at the declaring
+               seq; no later entry is applied (no partial fold)
+  feature id grammar (v1, known to the minor-1 reader from day one):
+    ^[a-z][a-z0-9-]{0,31}:[a-z][a-z0-9-]{0,47}@[1-9][0-9]{0,3}$
+    i.e. namespace:name@major, ≤ 88 chars; ≤ 64 ids per world
+    a new major is a new id; no ranges, no wildcards
+  ```
+  Fixtures: unknown id in genesis refuses before entry 1; an unknown `requiresAdd` refuses at that seq with nothing after it applied; a use of a feature before its declaration is refused by the authority; a `requiresAdd` that removes or reorders is invalid.
+- **F-2 Registry epoch / writer provenance.** Exact object:
+  ```json
+  "provenance": {
+    "registry": {"id": "registry-pin", "sha256": "<64 hex>"},
+    "writer":   {"name": "eidoverse-server" | "translate-v1", "version": "<semver>",
+                 "sourceCommit": "<40 hex>", "dirty": false}
+  }
+  ```
+  **Carrier (proposed, decide in review):** a world's *founding* provenance lives in `genesis.body.provenance`. Genesis is hashed into the world id and never redactable, so it is durably readable; the translator writes it there for every migrated world. A *repair* request carries the same object in its request body, which is purgeable, so we say plainly: after a redaction only the commitment remains, and a later reader knows which rules governed that stretch only if the body or an external receipt survives. The migration receipt repeats the founding provenance externally.
+- **F-3 Join contract.**
+  ```text
+  1. authenticate first
+  2. client hello {dialect, v, minor, features}
+  3. unknown dialect/v/minor → {type:"refused", code:"update-required", need:{dialect,v,minor}}
+     unknown required feature → {type:"refused", code:"unsupported-feature", need:[ids]}
+  4. nothing about the world (existence, name, state, presence) before acceptance
+  5. the snapshot repeats the authoritative {dialect, v, minor, requires}
+  6. a missing hello fails loudly after the v4 deploy; there is no legacy default
+  7. the same contract for browser, native, MCPL and agent joins
+  ```
 - **F-4 Self-minted identity.** A key-only identity may be an owner, including tier 0. Identity is not admission: quota, rate and create-standing attach to a *host-issued admission capability*, never to the cheap key or id. A key proves continuity and authorship, not entitlement to resources.
 - **F-5 Custody.** The migration receipt comes before the first governance entry. Custody recovery is encrypted. On key loss a world goes read-only; a replacement key is never minted silently.
