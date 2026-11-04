@@ -849,7 +849,7 @@ Speech in a world is public and **arrival-only**:
   `history` read, or a door built on them (an agent's catch-up). A connection's arrival is the log head at its join;
   an identity with several connections here counts from the earliest one present. A reconnect is a new arrival.
 - Reading the master log's speech back past your own arrival is a permission, `readChat` (§7: a role holds it; owners
-  hold every permission), or a server operator's (`SERVER_OPERATORS`). Their join says how many lines the log holds
+  hold every permission); a server operator (`SERVER_OPERATORS`) reads back only by a role here. Their join says how many lines the log holds
   (`state.chatTotal`); everyone else's says 0. No built-in role below owner holds it, and a grant whose end has passed
   holds nothing. A world that turns it on through the newcomer role (`default-role.can`) hands every past line to anyone
   who joins: an owner's choice, made in the open.

@@ -7,8 +7,8 @@
 // their order, presence batching, the NON-logged channels (drag, typing),
 // identity takeover, and speech's rule (R 10-18): the world's log keeps every
 // say, people receive speech only for the time they were present (no backscroll
-// on join), and only the owner, server operators, and anyone holding readChat
-// read the master log back. There is no private channel: whisper was removed (a whisper is
+// on join), and only the owner and anyone holding readChat read the master log
+// back (a server operator only by a role there). There is no private channel: whisper was removed (a whisper is
 // refused as `removed`, reaches nobody and never the log).
 //
 // The world speaks the protocol (shared/protocol/authority.js): a join says `replica: true`,
