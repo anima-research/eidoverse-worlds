@@ -205,5 +205,18 @@ console.log("a walk carried across a rejoin");
   world.stop(true);
 }
 
+console.log("water at every point of a stride (#101)");
+{
+  // From a dry pocket under the level, a ledge too high to step onto is deep water a swimmer floats over: the world's
+  // level is asked where the stride lands (the mover's and the authority's law), not once where it started.
+  const ag: any = new WorldAgent({ name: "me", world: "w" });
+  ag.joined = true; ag.water = { level: 2 }; ag.bodyH = 0.8;
+  ag.st = { entities: { dome: { pos: [0, -1, 0], zone: { shape: "box", size: [4, 4, 4] }, "water-exclusion": {} } } };
+  ag.heightAt = (x: number) => (x > 2 ? 1.2 : 0);
+  ag.pos = { x: 0, y: 0, z: 0 }; ag.target = { x: 5, z: 0, run: false, tolerance: 0.1 };
+  for (let i = 0; i < 400 && ag.target; i++) ag.tick();
+  check("a walk out of a dry pocket swims onto the submerged ledge ahead instead of stopping at it", ag.pos.x > 2.5 && ag.clip !== "walk", JSON.stringify({ pos: ag.pos, clip: ag.clip, target: ag.target }));
+}
+
 console.log(failures ? `\x1b[31m${failures} failed\x1b[0m` : "\x1b[32mall checks passed\x1b[0m");
 process.exit(failures ? 1 : 0);

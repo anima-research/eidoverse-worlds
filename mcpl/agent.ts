@@ -1710,10 +1710,12 @@ export class WorldAgent {
   speedAt = (p: number[], mode?: string): number => { if (this.areas?.st !== this.st) this.areas = { st: this.st, a: physicsAreasOf(foldOfView(this.st)) }; return speedFactorAt(this.areas.a, p, mode); };
   /** The world's level where my feet are: none in a dry pocket below it (zone.js worldLevelAt, the client's levelHere) */
   private pockets: { st: unknown; z: any; v: any } | null = null;
-  levelHere(): number | null {
+  levelHere(): number | null { return this.levelAt(this.pos.x, this.pos.z); }
+  /** The world's level at (x, z), at my feet's height: none in a dry pocket there */
+  levelAt(x: number, z: number): number | null {
     const level = this.water?.level; if (level == null) return null;
-    if (this.pockets?.st !== this.st) { const z = zonesOf(foldOfView(this.st)); this.pockets = { st: this.st, z, v: waterVolumes(z) }; }
-    return worldLevelAt([this.pos.x, this.pos.y, this.pos.z], this.pockets.z, level, { volumes: this.pockets.v });
+    if (this.pockets?.st !== this.st) { const zs = zonesOf(foldOfView(this.st)); this.pockets = { st: this.st, z: zs, v: waterVolumes(zs) }; }
+    return worldLevelAt([x, this.pos.y, z], this.pockets.z, level, { volumes: this.pockets.v });
   }
   /** The world's half of the fold — state.sky / terrain / grass — which
    *  shared/worldentity.js reads as the world entity `@world`. */
@@ -2714,17 +2716,17 @@ export class WorldAgent {
       // stairs within the mover's step, else the walk's floor) — the same answer the collider pass below gives the stride
       const colliding0 = collidersReady() && !this.myOccupancy && !this.feetSettling;
       const floorAt = colliding0 ? (x: number, z: number, y?: number) => this.feetAt(x, z, y ?? this.pos.y, walkFloor) : walkFloor;
-      // WATER (upstream #242) is the mover's too: handed the world's level (env.waterAt) and this body's measured stature,
-      // the stride wades (dragged) or swims (a stroke's pace, afloat at the chest) — no water arithmetic here.
-      const wl = this.levelHere();
+      // WATER (upstream #242) is the mover's too: handed the world's level (env.waterAt, asked per point: a dry pocket's
+      // edge) and this body's measured stature, the stride wades (dragged) or swims (afloat at the chest) — no water arithmetic here.
+      const wl = this.levelHere(), wet = this.water?.level != null;
       // feet on the live ground BEFORE the stride: terrain that loads late or changes under the walker lifts the body here, so
       // the mover judges a ledge AHEAD against where the feet now stand — not against a y the ground has since left (the
       // lifecycle test's mid-walk terrain swap; before 10-15 one refused stride, then the feet clamp, then on)
       // (colliding, the feet below do this themselves, falling to a lower floor rather than jumping to it)
       if (!colliding0 && !this.flight && !this.draggedBy && this.pins.size === 0) { const g0 = floorAt(this.pos.x, this.pos.z); if (Number.isFinite(g0) && (wl == null || g0 >= wl)) this.pos.y = g0; }
       const r = walkToward({ pos: [this.pos.x, this.pos.y, this.pos.z], target: [T.x, T.z], dt, run: T.run, tolerance: T.tolerance ?? MOVER.arrive.tolerance, room,
-        ...(wl != null ? { height: this.stature() } : {}) },
-        wl != null ? { floorAt, waterAt: () => wl, speedAt: this.speedAt } : { floorAt, speedAt: this.speedAt });
+        ...(wet ? { height: this.stature() } : {}) },
+        wet ? { floorAt, waterAt: (x: number, z: number) => this.levelAt(x, z), speedAt: this.speedAt } : { floorAt, speedAt: this.speedAt });
       if (r.arrived) {
         // A route through a building arrives in legs. Only the LAST one
         // finishes the walk; the rest hand off to the next waypoint, so a body
