@@ -186,6 +186,7 @@ export function tee(line) {
     const who = CONFIG.name ?? '?';
     const key = String(line).slice(0, 160);
     if (!key.startsWith('[xr:rec]')) {
+      if (teeSeen.size >= 4096) teeSeen.clear();   // bounded: a long session forgets its repeat counts rather than growing
       const n = (teeSeen.get(key) ?? 0) + 1; teeSeen.set(key, n);
       if (n > 1 && n % 20 !== 0) return;
       if (n > 1) line = `${line} ×${n}`;
