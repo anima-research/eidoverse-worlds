@@ -100,9 +100,9 @@ const reportNow = (D: string, name: string) => reportV1World(D, { name, content:
 function approvalFor(D: string, name: string, words = name): { approval: Approval; source: { size: number; sha256: string } } {
   const approved = flag("approved"), noOwner = rest.includes("--operator-only-no-owner");
   if (!approved) die(`translating "${name}" needs the operator's approval of its dry-run report first:
-  1. bun tools/protocol/world.ts translate ${words} --dry-run --no-founder-key   (writes nothing; prints the report and its hash)
+  1. bun tools/protocol/world.ts translate ${words} --dry-run --no-founder-key${CLAIM ? " --claim" : ""}   (writes nothing; prints the report and its hash)
   2. read it: what is dropped by design, what would be refused, how many entries, guards, models
-  3. translate ${words} --no-founder-key --approved <hash> --operator-only-no-owner   (no owner can sign: ${NO_FOUNDER}; this host's custody operator key countersigns, and the act records that no owner was attested)
+  3. translate ${words} --no-founder-key --approved <hash> --operator-only-no-owner${CLAIM ? " --claim" : ""}   (no owner can sign: ${NO_FOUNDER}; this host's custody operator key countersigns, and the act records that no owner was attested)
 Nothing was changed.`);
   if (!/^[0-9a-f]{64}$/.test(approved!)) die(`--approved ${approved}: not a report hash (64 hex, as --dry-run prints it). Nothing was changed.`);
   const { report, hash } = reportNow(D, name);
@@ -112,7 +112,7 @@ Nothing was changed.`);
     + `(${report.source.size} bytes, sha256 ${report.source.sha256.slice(0, 16)}…; translator ${report.translator}, fold ${report.fold}). `
     + `The old log, the tool or the model bytes changed since it was read, so what would be written (the report's output digest) isn't what was approved: a report reviewed under an earlier translator than ${report.translator} is never approvable (each version translates differently). Run --dry-run again, read the new report, and approve THAT hash. If log.jsonl is still being written to (an old server running), stop it first. Nothing was changed.`);
   if (!noOwner) die(`"${name}": ${NO_FOUNDER}, so no owner can sign this approval. A translation runs on the operator's countersignature alone, and only when you say so: `
-    + `translate ${name} --no-founder-key --approved ${approved} --operator-only-no-owner. The act will record that no owner was attested. Nothing was changed.`);
+    + `translate ${words} --no-founder-key --approved ${approved} --operator-only-no-owner${CLAIM ? " --claim" : ""}. The act will record that no owner was attested. Nothing was changed.`);
   // the operator's countersignature: this host's custody operator key signs the approval text (never the sequencer key)
   const cust = custodyAt(custodyFileIn(WORLDS_DIR));
   const approval = makeApproval(name, approved!, { operator: { key: cust.operator(), sign: (m) => cust.signOperator(m) } });
