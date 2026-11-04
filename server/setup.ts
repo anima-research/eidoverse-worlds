@@ -1,6 +1,7 @@
 // server/setup.ts — the first-run setup link (R 10-28): with no operator, GET /setup is a page that posts the link's token back;
 // POST /setup from a proven account (an agent's Bearer if sent, else a person's session) makes it the operator (server/operators.ts claimSetup).
 import { httpCaller, bearerCaller } from "./access.ts";
+import { readCapped } from "./reqbody.ts";
 import { claimSetup, setupOpen } from "./operators.ts";
 import { addressOf } from "./peer.ts";
 import { windowLimiter } from "./ratewindow.ts";
@@ -48,25 +49,9 @@ export async function setupClaim(req: Request, srv: { requestIP?(req: Request): 
   if (Number(req.headers.get("content-length") ?? 0) > SETUP_BODY_LIMIT) return json({ error: "refused" }, 413);
   let token = "";
   try {
-    // Content-Length can be absent for chunked bodies: bound the bytes actually read.
-    const reader = req.body?.getReader();
-    if (reader) {
-      const bytes = new Uint8Array(SETUP_BODY_LIMIT);
-      let length = 0;
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          if (value.byteLength > bytes.length - length) {
-            await reader.cancel().catch(() => {});
-            return json({ error: "refused" }, 413);
-          }
-          bytes.set(value, length);
-          length += value.byteLength;
-        }
-      } finally { reader.releaseLock(); }
-      token = String((JSON.parse(new TextDecoder().decode(bytes.subarray(0, length))) as { token?: unknown })?.token ?? "");
-    }
+    const text = await readCapped(req, SETUP_BODY_LIMIT);   // Content-Length can be absent for chunked bodies: bound the bytes read
+    if (text === null) return json({ error: "refused" }, 413);
+    token = String((JSON.parse(text) as { token?: unknown })?.token ?? "");
   } catch { /* refused below */ }
   if (!setupOpen()) return json({ error: "refused" }, 403);
   const r = claimSetup(token, who.account);

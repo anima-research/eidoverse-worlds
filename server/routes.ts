@@ -84,7 +84,8 @@ import { agentTokens, aid1JoinIdentity } from "./auth.ts";
 import { httpCaller, httpVisitor, hashedAddress, visibleTo, doorFor, youAt } from "./access.ts";
 import { setupPage, setupClaim } from "./setup.ts";
 import { setupOpen } from "./operators.ts";
-import { ClientLogRate, ClientLogStore, LIMITS as CLIENTLOG_LIMITS, readCapped, scrub, holdsPrivateKey, boundLines } from "./clientlog.ts";
+import { ClientLogRate, ClientLogStore, LIMITS as CLIENTLOG_LIMITS, scrub, holdsPrivateKey, boundLines } from "./clientlog.ts";
+import { readCapped } from "./reqbody.ts";
 
 import { recordComponents } from "../shared/protocol/view.js";
 /** What the routes need from Bun's server object, structurally: the WS

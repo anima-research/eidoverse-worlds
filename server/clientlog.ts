@@ -42,18 +42,6 @@ export class ClientLogRate {
   }
 }
 
-/** The body as text, or null once it passes `cap` bytes (the rest is cancelled, never buffered). */
-export async function readCapped(req: Request, cap: number): Promise<string | null> {
-  const r = req.body?.getReader(); if (!r) return "";
-  const parts: Uint8Array[] = []; let n = 0;
-  for (;;) {
-    const { done, value } = await r.read(); if (done) break;
-    n += value.byteLength; if (n > cap) { await r.cancel().catch(() => {}); return null; }
-    parts.push(value);
-  }
-  return new TextDecoder().decode(Buffer.concat(parts));
-}
-
 const KEYS = String.raw`(?:password|passwd|secret|token|bearer|auth|authorization|cookie|set-cookie|api[_-]?key|credentials?|private[_-]?key)`;
 const RULES: [RegExp, string][] = [
   [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "[Filtered]"],
