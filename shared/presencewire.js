@@ -96,7 +96,7 @@ export function stateSampleError(x) {
   for (const k of Object.keys(x)) if (!STATE_SAMPLE_KEYS.includes(k)) return `a state sample has no '${k}' (it is {${STATE_SAMPLE_KEYS.join(', ')}})`;
   for (const k of STATE_SAMPLE_KEYS) if (x[k] === undefined) return `a state sample needs ${k} (every sample is absolute and self-contained)`;
   if (typeof x.id !== 'string' || !x.id || x.id.length > 64) return 'id is the thing\'s id';
-  if (typeof x.by !== 'string' || !/^u-[a-z2-7]{20}$/.test(x.by)) return 'by is the identity simulating it (u- + 20 letters)';
+  if (typeof x.by !== 'string' || !/^u-[a-z2-7]{20}(?:[a-z2-7]{4})?$/.test(x.by)) return 'by is the identity simulating it (u- + 20 or 24 letters)';
   if (!counter(x.aseq) || !counter(x.oseq)) return 'aseq and oseq are whole numbers ≥ 0 (32-bit, wrapping)';
   if (!finN(x.t)) return 't is the capture time on the authority\'s clock (ms)';
   if (!vecN(x.p, 3) || !vecN(x.v, 3) || !vecN(x.w, 3)) return 'p, v and w are [x, y, z]: m, m/s and rad/s in the world frame';

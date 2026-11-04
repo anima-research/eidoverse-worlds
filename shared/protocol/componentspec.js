@@ -723,7 +723,7 @@ export function resolveVersioned(c, base) {
 // one a fields map can't name is listed in the definition's refPaths ("home.parent.to": "ref"). People are never copied,
 // so only thing references are ever rebound.
 export const REF_TYPES = new Set(["ref", "refs", "person", "people", "target", "scope"]);
-const PERSON_SHAPE = /^u-[a-z2-7]{20}$/;   // shared/protocol/ids.js PERSON_ID: an entity may never wear it
+const PERSON_SHAPE = /^u-[a-z2-7]{20}(?:[a-z2-7]{4})?$/;   // shared/protocol/ids.js PERSON_ID: an entity may never wear it
 /** [{path: ["field", …], type}] for every reference-bearing field of a name (its scope's ids included). */
 export function refFields(comp) {
   const d = defOf(comp); if (!d) return [];

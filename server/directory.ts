@@ -31,7 +31,7 @@ const B32 = "abcdefghijklmnopqrstuvwxyz234567";
 /** The one id shape from 20 (or more) bytes: random here (mintId), keyed in import-v1/world.ts (stable). */
 export const idOfBytes = (bytes: Uint8Array) => "u-" + Array.from(bytes.subarray(0, 20), (b) => B32[b & 31]).join("");
 export const mintId = () => idOfBytes(crypto.randomBytes(20));
-export const isMinted = (s: string) => /^u-[a-z2-7]{20}$/.test(s);
+export const isMinted = (s: string) => /^u-[a-z2-7]{20}(?:[a-z2-7]{4})?$/.test(s);
 // the ONE shape of an id: an id is a person, never a world, a name or a kind (PROTOCOL §6a rule 2); a portable identity binds to
 // an id (bind; later an alias merge, with portable identity), it does not replace it. Minted here, and by import-v1/world.ts for an old log.
 /** The account prefixes above (only the prefix is checked); a stored account with none of them is refused at boot (named, kept on disk), never worn. */

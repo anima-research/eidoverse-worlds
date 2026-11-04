@@ -406,7 +406,7 @@ export class WorldLog {
     const out = new Set<string>([...this.actors, ...Object.keys(this.poses)]);
     for (const k of Object.keys(this.live.state().entities?.["@world"]?.c ?? {})) if (k.startsWith("roles:")) out.add(k.slice(6));
     for (const m of this.live.mod ?? []) if (typeof m?.who === "string") out.add(m.who);
-    for (const id of [...out]) if (!/^u-[a-z2-7]{20}$/.test(id)) out.delete(id);   // the system's own (system, world, script:…) aren't people
+    for (const id of [...out]) if (!/^u-[a-z2-7]{20}(?:[a-z2-7]{4})?$/.test(id)) out.delete(id);   // the system's own (system, world, script:…) aren't people
     return out;
   }
   /** The authority's moderator log says this identity is banned here (authority.js isBanned): join must refuse it too. */

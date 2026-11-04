@@ -22,6 +22,7 @@ import { worldOf, posAt } from "../shared/protocol/authority.js";
 import { simFolder, carried, digestOf } from "../shared/protocol/simlayer.js";
 import { readLogBytes, appendDurable, putBlobFile } from "./durable.ts";
 import { custodyAt, modLogAt } from "./custody.ts";
+import { custodyVerdict, readOnlyCustody } from "./custodycheck.ts";
 import { directoryFor } from "./directory.ts";
 import { SANDBOX } from "../shared/protocol/sandbox.js";
 import { readCache, readCacheFile, checkCache, resumeFold, writeCache, dropCache, CACHE_FILE } from "./statecache.ts";
@@ -108,12 +109,17 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   // allowance would refill nothing meanwhile. A host that brings its own clock (a lab pinning time) is paced by it.
   const pace = opts.pace ?? (opts.now ? now : () => performance.now());
 
+  // F-5 (docs/DESIGN-log-vocabulary.md §F): the live sequencer key is checked against the log before any write; a missing or
+  // other key serves the world read-only, and no replacement is ever minted
+  const custodyFile = opts.custodyFile ?? custodyFileIn(path.dirname(dir));
+  const cv = custodyVerdict(custodyFile, entries, from0);
+  if (!cv.ok) console.warn(`[world:${name}] read-only: ${cv.why} (expected ${cv.expected}, held ${cv.held ?? "none"}); no key is minted`);
   const w: Any = worldOf({
     name, entries, getBlob, putBlob, now, pace, catalogue: opts.catalogue, rate: opts.rate,
     scripts: opts.scripts === undefined ? SANDBOX : opts.scripts, present: opts.present, sayFloor: opts.sayFloor,
     writeLine: (line: string) => appendDurable(logPath, line),
     presence: { bodies: {}, holds: {}, ...loadConsent(dir) }, savePresence: saveConsent(dir),
-    custody: custodyAt(opts.custodyFile ?? custodyFileIn(path.dirname(dir))),
+    custody: cv.ok ? custodyAt(custodyFile) : readOnlyCustody(custodyFile, cv.why),
     nameOf: opts.nameOf ?? directoryFor(path.dirname(dir)).nameOf,
     kindOf: opts.kindOf ?? ((id: string) => directoryFor(path.dirname(dir)).entry(id)?.kind ?? null),
     ...modLogAt(path.join(dir, "world.mod.jsonl")),

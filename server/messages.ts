@@ -37,7 +37,7 @@ import { isOwner } from "../shared/protocol/roles.js";
  *  beside it is NOT a fallback: that would hand the message to whoever wears the name). A sender with no actor id (an
  *  agent, an older client) still reaches by name — names are unique among the people here and, for accounts, across
  *  the directory (server.ts join). A display name can't be shaped like an actor id (refused at join). */
-const ACTOR_ID = /^u-[a-z2-7]{20}$/;
+const ACTOR_ID = /^u-[a-z2-7]{20}(?:[a-z2-7]{4})?$/;
 /** The world's body-default as it stands now ({} when unset): the relay never reads the authority's synced copy (review full-260 #1). */
 const liveBodyDefault = (live: any) => live.state?.()?.entities?.["@world"]?.c?.["body-default"] ?? {};
 

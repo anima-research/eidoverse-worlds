@@ -12,7 +12,9 @@ import { join } from "node:path";
 // config FIRST — it carries the WORLDS_DIR mkdir, and auth.ts/moderation.ts
 // carry their restore-at-boot blocks, so this import order IS the unsplit
 // file's boot order: mkdir → session restore → ban restore (§15, step 7a).
-import { TRUST_NAMES } from "./config.ts";
+import { TRUST_NAMES, HELLO_REQUIRED } from "./config.ts";
+import { checkHello, missingFeatures, versionLine } from "../shared/protocol/hello.js";
+import { featureDecision, KNOWN_FEATURES } from "../shared/protocol/features.js";
 // how often a person may change the name they show (moderation: a name is how people recognise who did what)
 const RENAME_COOLDOWN_MS = Math.max(0, Number(process.env.RENAME_COOLDOWN_DAYS ?? 7)) * 86400000;
 import { PORT, HOST, JOIN_TOKEN, RENDERER_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, MSG_RATE, FRAME_MS, FRAME_SKIP_BUFFERED, SNAP_TIMEOUT_MS, SNAP_SWEEP_GRACE_MS, SNAP_SWEEP_EVERY_MS } from "./config.ts";
@@ -447,7 +449,7 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
       c.id = n.name;
     }
     // H2: an identity is never a name — a name shaped like one (u-…) would pass for the person who wears it
-    if (!c.id || /^(world|\*|system|sim)$/i.test(c.id) || /^script:/i.test(c.id) || /^u-[a-z2-7]{20}$/i.test(c.id)) {
+    if (!c.id || /^(world|\*|system|sim)$/i.test(c.id) || /^script:/i.test(c.id) || /^u-[a-z2-7]{20}(?:[a-z2-7]{4})?$/i.test(c.id)) {
       ws.send(JSON.stringify({ type: "error", error: `that name is reserved for the world itself` }));
       ws.close(4004, "reserved name");
       return null;
@@ -827,6 +829,7 @@ function buildSnapshot(w: World, c: Client) {
       // the world: the authority's cut (its fold, head, your undoable acts, names, holds), which the joiner folds and then
       // advances with the `log` stream. A joiner's cost is the size of the WORLD, not the length of its history.
       cut: { ...w.log.info(), ...w.log.clientCut(actorIdOf(c)) },
+      ...versionLine(featureDecision(w.log.live?.entries ?? [], KNOWN_FEATURES).requires),   // F-3 step 5: the authoritative {dialect, v, minor, requires}
       // chat isn't world state, and speech is arrival-only (R 10-18): a joiner is sent no line said before it came, so the
       // window is always empty. chatTotal is how many lines a history page could still show this joiner: for an admin
       // (owner, operator) every line the master log holds; for everyone else none
@@ -993,6 +996,11 @@ const server = Bun.serve({
               return;
             }
           }
+          // F-3 step 2 (docs/DESIGN-log-vocabulary.md §F): the global hello, before any world lookup; the refusal names no world
+          if (msg.hello !== undefined || HELLO_REQUIRED) {
+            const r = checkHello(msg.hello);
+            if (r) { ws.send(JSON.stringify(r)); c.ws.close?.(4005, "update-required"); return; }
+          }
           // leave previous world (travel is: leave A, join B). Review finding
           // 6: travel never runs the ws-close handler, so without the reap a
           // traveling primary left a live, credentialed orphan mic behind —
@@ -1018,6 +1026,11 @@ const server = Bun.serve({
             ws.close(4005, "this client doesn't fold the log");
             clients.delete(ws);
             return;
+          }
+          // F-3 step 4: only after access is granted, the world's required features against the client's (step 5 repeats them)
+          if (msg.hello !== undefined) {
+            const r = missingFeatures(featureDecision(w.log?.live?.entries ?? [], KNOWN_FEATURES).requires, msg.hello.features);
+            if (r) { ws.send(JSON.stringify(r)); ws.close(4005, "unsupported-feature"); clients.delete(ws); return; }
           }
           c.replica = msg.replica === true;
           installJoin(c, w);
