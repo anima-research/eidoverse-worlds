@@ -124,7 +124,7 @@ const DRIVE_VERBS = {
     if (!e) refuse("not-found", `no '${a.id}'`, "look lists what's here");
     const spec = driveOf(e.c); if (!spec) refuse("doesnt-apply", `${a.id} has no drive: it isn't something to drive`, `a builder gives it one: set {id: '${a.id}', component: 'drive', value: {maxSpeed, turnRate}}`);
     const helm = helmOf(st, a.id);
-    if (!helm || occupantOf(w, st, actor)?.to !== helm) refuse("rights", helm ? `you aren't at ${a.id}'s helm (${helm})` : `${a.id} has no helm: a socket child with station {action: 'drive', input: {move: 'drive'}}`, helm ? `use {id: '${a.id}', action: 'drive', args: {socket: '${helm}'}} first` : "a builder adds one");
+    if (!helm || occupantOf(w, st, actor)?.to !== helm) refuse("rights", helm ? `you aren't at ${a.id}'s helm (${helm})` : `${a.id} has no helm: a socket child with station {action: 'drive', input: {move: 'drive'}}`, helm ? `use {id: '${a.id}', action: 'drive', args: {socket: '${st.entities[helm].c.socket.name}'}} first` : "a builder adds one");
     const lock = [a.id, ...ancestors(st, a.id)].find((k) => lockedC(st.entities[k]?.c));
     if (lock) refuse("locked", `${lock === a.id ? a.id : `${a.id} hangs from ${lock}, which`} is locked: it can't be driven`, "someone who may lift the lock lifts it");
     const now = paceOf(w); let L = liveLease(w, st, a.id);

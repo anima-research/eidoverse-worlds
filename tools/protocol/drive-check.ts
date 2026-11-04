@@ -143,6 +143,13 @@ await C("D2", "one driver: vic takes the helm (use … drive); pat's use of it i
   const theirs = s.call("drive", { id: "hull", pos: [0, 1, 1], q: [0, 0, 0, 1] }, "pat"), mine = s.call("drive", { id: "hull", pos: [0, 1, 1], q: [0, 0, 0, 1] }, "vic");
   return [took.ok && took.attach?.to === "helm" && other.refused?.code === "occupied" && theirs.refused?.code === "rights" && mine.ok, { took: show(took), other: show(other), theirs: show(theirs), mine: show(mine) }]; });
 
+await C("D2b", "the not-at-the-helm refusal's fix names the helm's socket NAME (what use matches), not its entity id: a helm whose id differs from its name; following the fix takes the helm", () => {
+  const s = session({ seats: false }); s.call("create", { id: "wheel", components: helm() });
+  const r = s.call("drive", { id: "hull", pos: [0, 1, 1], q: [0, 0, 0, 1] }, "vic");
+  const m = /args: \{socket: '([^']+)'\}/.exec(r.refused?.fix ?? ""); const socket = m?.[1] ?? null;
+  s.call("move", { to: [1.5, 0, 0] }, "vic"); const took = socket ? s.call("use", { id: "hull", action: "drive", args: { socket } }, "vic") : null;
+  return [r.refused?.code === "rights" && socket === "helm" && took?.ok === true && took.attach?.to === "wheel", { r: show(r), fix: r.refused?.fix, socket, took: show(took) }]; });
+
 await C("D3", "plausibility (per step, with slack): maxSpeed's 4 m in 1 s taken; 20 m refused too-fast with the pose that stands; a 2 rad turn refused; a climb past climbRate refused; the client's own steps (stepDrive at 15 Hz, full throttle and steer) all pass", () => {
   if (DR.__missing) return [false, DR.__missing];
   const s = session(); s.board("vic");
