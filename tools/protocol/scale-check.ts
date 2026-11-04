@@ -10,7 +10,7 @@
 //   bun tools/protocol/scale-check.ts --mutants       remove each new gate in turn (a copy of the tree): its cases must go red;
 //                                               a no-op control mutation must stay green
 // Cases (worlds open as the server opens them: server/livehost.ts):
-//   S   scale: every request under BOUND_MS at 72 (the Commons' size), 500 and 2 000 things: delete (with what rested on
+//   S   scale: ten requests timed, each the best of up to 5 tries, under BOUND_MS at 72 (the Commons' size), 500 and 2 000 things: delete (with what rested on
 //       it set down), a 3.5 m step of a tracked body, check {}, place on a table scaled 20× (a builder; a visitor is
 //       refused), look, create, set, a batch of 50 creates, grab (with what rests on it set down)
 //   Q   the gates in front of the work: a visitor's place on a 1000× table is refused at once; a search that can't end
