@@ -118,11 +118,12 @@ Every message belongs to exactly one plane:
 ## 4. Server → client messages
 
 - `snapshot` — the join answer, flat: `{type: "snapshot", dialect, v, minor,
-  world: <world id>, name: <directory name>, you, gen, seq, state, physics,
-  names, holds, mine, verbs, chat: {recentChat, chatTotal}, yourSurfaces,
+  world: <world id>, name: <directory name>, you, actor, gen, seq, state,
+  physics, names, holds, mine, verbs, chat: {recentChat, chatTotal}, yourSurfaces,
   recording, avatars (roster), yourRights, restore, present[{id, avatar, pose,
   declares?, surfaces, session}]}`. `world` is the world id, as in the log; the
-  directory name is `name`. `state` is the fold at `seq` (each component
+  directory name is `name`; `you` is this connection's id and `actor` the id
+  the log knows you by. `state` is the fold at `seq` (each component
   wrapped `{v}` or `{redacted: true}`, as in the digest); `physics` is the
   sim layer's snapshot (what flies, from which launch); `chat` is always
   `recentChat: []`, since speech is arrival-only, and `chatTotal` the master
