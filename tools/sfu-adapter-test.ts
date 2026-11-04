@@ -291,5 +291,18 @@ check("retirement clears the leg", (sfuDiag(W) as any).moderatorMuted.length ===
     sent.some((p) => p.type === "sfu-route") && !sent.some((p) => p.type === "sfu-offer"), `sent=${JSON.stringify(sent.map((p) => p.type))}`);
 }
 
+// ── a leg re-minted (same id) while its offer was being made: the old offer is not sent to the new leg ─
+{
+  const WR = "remint-mid-offer"; const sent: any[] = [];
+  mintSfuCredential(WR, "spk", 1, 2); mintSfuCredential(WR, "lis", 1, 2);
+  const pcR: any = sfuState(WR).sfu.getLeg("lis")!.pc; const sld = pcR.setLocalDescription.bind(pcR);
+  pcR.setLocalDescription = async (d: any) => { await sld(d); mintSfuCredential(WR, "lis", 1, 4); };   // retired and re-minted after the last await
+  registerSfuSender(WR, "lis", (p: any) => sent.push(p));
+  setSfuConsent(WR, "lis", 2, true);
+  await new Promise((r) => setTimeout(r, 600));
+  check("a leg re-minted mid-negotiation is sent no offer from its predecessor's negotiation",
+    sent.some((p) => p.type === "sfu-route") && !sent.some((p) => p.type === "sfu-offer"), `sent=${JSON.stringify(sent.map((p) => p.type))}`);
+}
+
 console.log(fail === 0 ? `\n\x1b[32m✅ sfu-adapter: ${pass} passed\x1b[0m` : `\n\x1b[31m❌ ${fail} failed\x1b[0m`);
 process.exit(fail ? 1 : 0);
