@@ -45,6 +45,8 @@ const check = (name: string, ok: boolean, detail = "") => {
   else { fail++; console.log(`  \x1b[31m✗\x1b[0m ${name}${detail ? ` — ${detail}` : ""}`); }
 };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+// a check that reads world.jsonl off this disk: against an external server it is a SKIP, never a pass
+const local = (name: string, ok: () => boolean, detail = "") => EXTERNAL ? console.log(`  SKIP ${name} (an external server's log isn't here)`) : check(name, ok(), detail);
 
 // ---- a minimal client ------------------------------------------------------
 
@@ -187,7 +189,7 @@ try {
     echoed.every((e, i) => e.seq === head0 + 1 + i), echoed.map((e) => e.seq).join(","));
   check("entries carry their actor (the author's identity)", echoed.every((e) => e.actor === alice.me), JSON.stringify([...new Set(echoed.map((e) => e.actor))]));
   const disk0 = logLines();
-  check("the log is on disk, entry for entry", EXTERNAL ? true : disk0.length === head0 + 1 + echoed.length, `${disk0.length} lines`);
+  local("the log is on disk, entry for entry", () => disk0.length === head0 + 1 + echoed.length, `${disk0.length} lines`);
 
   // --- a second body sees the world by its cut
   const bob = await joined("bob", WORLD, { agent: true });
@@ -208,14 +210,14 @@ try {
   const frames = alice.of("frame");
   check("poses arrive as batched stage frames", frames.length > 0);
   check("frames carry a server timestamp", frames.every((f) => typeof f.t === "number"));
-  check("poses are never written to the log", EXTERNAL ? true : quiet() === n0);
+  local("poses are never written to the log", () => quiet() === n0);
 
   // --- whisper was removed (R 10-18): refused as `removed`, delivered to nobody, held for nobody, never logged
   bob.send({ type: "whisper", to: "alice", text: "a private thing" });
   await sleep(300);
   check("a whisper is refused as removed, in words", bob.of("error").some((m) => m.refused?.code === "removed" && /removed/.test(String(m.error))), JSON.stringify(bob.of("error")));
   check("…and reaches nobody", !alice.of("whisper").length && !JSON.stringify(alice.msgs).includes("a private thing"));
-  check("…and never the world log", EXTERNAL ? true : !logText().includes("a private thing"));
+  local("…and never the world log", () => !logText().includes("a private thing"));
   bob.send({ type: "whisper", to: "carol", text: "held for later" });
   await sleep(200);
   const carol = await joined("carol");
@@ -264,8 +266,8 @@ try {
   check("a visitor's create is refused (the door's roles: strangers read, builders build)", bobSees.ok === false && bobSees.reply?.refused?.code === "rights", JSON.stringify(bobSees.reply));
   await sleep(200);
   const refusedActs = logLines().slice(nR);
-  check("a refused write changes no state: the log gained only the door's records of refused acts (and at least one)",
-    EXTERNAL ? true : refusedActs.length > 0 && refusedActs.every((e: any) => e.kind === "act" && e.body?.refused), JSON.stringify(refusedActs).slice(0, 300));
+  local("a refused write changes no state: the log gained only the door's records of refused acts (and at least one)",
+    () => refusedActs.length > 0 && refusedActs.every((e: any) => e.kind === "act" && e.body?.refused), JSON.stringify(refusedActs).slice(0, 300));
   const n1 = quiet();
 
   // --- one body per identity
@@ -294,7 +296,7 @@ try {
     check("the cut holds the LATEST transforms", f31?.[2] === 5, JSON.stringify(f31));
     check("a joiner is not handed the history (no entries; the cut's head says where it stands)",
       !("entries" in late.snapshot) && late.snapshot.cut.head >= 4, `head ${late.snapshot.cut.head}`);
-    check("the full history stays on disk", EXTERNAL ? true : logLines(fw).length === late.snapshot.cut.head + 1, `${logLines(fw).length} lines, head ${late.snapshot.cut.head}`);
+    local("the full history stays on disk", () => logLines(fw).length === late.snapshot.cut.head + 1, `${logLines(fw).length} lines, head ${late.snapshot.cut.head}`);
     builder.close(); late.close();
   }
 
@@ -453,7 +455,7 @@ try {
     check("a typing signal reaches other clients", watcher.of("typing").some((m) => m.id === "poser"));
     check("a typing signal is not echoed to the sender", poser.of("typing").every((m) => m.id !== "poser"));
 
-    check("no pose, animation or puppet is ever written to the log", EXTERNAL ? true : logLines(pw).length === before, `${before} → ${logLines(pw).length}`);
+    local("no pose, animation or puppet is ever written to the log", () => logLines(pw).length === before, `${before} → ${logLines(pw).length}`);
     poser.close(); watcher.close();
   }
 
@@ -499,8 +501,8 @@ try {
   await sleep(200);
   const cap = alice2.of("caption").at(-1);
   check("caption utt is bounded to a safe non-negative integer", cap === undefined || cap.utt === 0, JSON.stringify(cap?.utt));
-  check("none of the main world's presence traffic reached its log (only the door's entries did)",
-    EXTERNAL ? true : logLines().length >= n1 && !logText().includes("a private thing") && !logText().includes("offer-ish"));
+  local("none of the main world's presence traffic reached its log (only the door's entries did)",
+    () => logLines().length >= n1 && !logText().includes("a private thing") && !logText().includes("offer-ish"));
 
   sp.close();
   for (const c of [alice, alice2, carol, bob2]) c.close();
