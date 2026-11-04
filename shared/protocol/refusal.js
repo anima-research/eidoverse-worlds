@@ -16,7 +16,6 @@ const readable = readable0;
 const unsure = (reply) => reply?.txn === "ambiguous" || reply?.refused?.code === "ambiguous" || reply?.refused?.mayHaveLanded === true;
 export function refusalText(what, reply) {
   const r = reply?.refused ?? {};
-  if (r.mayHaveLanded) return readable(`${what}: no answer from the authority (${r.code ?? "timeout"}), so it may or may not have happened: ${r.reason ?? ""}${r.fix ? ` — ${r.fix}` : ""}`);   // bot #260 #53
   if (unsure(reply)) return readable(`${what} may or may not have happened (${r.code ?? "ambiguous"}): ${r.reason ?? ""}${r.fix ? ` — ${r.fix}` : ""}`);
   return readable(`${what} refused by the authority (${r.code ?? "refused"}): ${r.reason ?? ""}${r.fix ? ` — ${r.fix}` : ""}`);
 }

@@ -83,10 +83,8 @@ export function makeReplica({ freeze = true } = {}) {
   // engine's flight, and it rests bit for bit where the authority will log the rest.
   let E = [], folder = null;
   v.sim = null; v.simVersion = 0;
-  // The sim can read inputs the log only names (siminputs.js: a heightmap's grid), and a client may not hold them yet.
-  // While any is missing, keep the cut from before it was needed and every entry fed since; once all are here, refold
-  // from them, so the fold agrees with the authority's (#260 review #144). Bounded: an input that never comes stops the
-  // replay rather than growing it.
+  // An input the log only names (siminputs.js: a heightmap's grid) may land after the entries that read it: keep the cut
+  // from before the first such entry and refold from it when it lands (#144); WAIT_MAX bounds an input that never comes.
   let waiting = null; const WAIT_MAX = 5000;
   const feedOne = (seq, e) => { E[seq] = e; folder.feed(seq); if (!(e.kind === "sim" && e.verb === "launch")) delete E[seq]; };
   const cutNow = () => { const f = folder.view(); return JSON.parse(JSON.stringify({ state: wireState(f.st), sim: simCutOf(f, E) })); };
@@ -111,8 +109,8 @@ export function makeReplica({ freeze = true } = {}) {
     v.you = typeof snap.you === "string" ? snap.you : null; learn(snap.names);
     freezeAll();
     rebuildIndex();
-    waiting = simInputsMissing(v.st).length ? { snap: JSON.parse(JSON.stringify(snap)), fed: [] } : null;
     startSim(snap);
+    waiting = simInputsMissing(v.st).length ? { snap: cutNow(), fed: [] } : null;   // the cut is the folder's, as mid-session
   };
   v.reset = () => { waiting = null; v.active = false; v.st = null; v.head = -1; v.worldId = null; E = []; folder = null; v.sim = null; v.simVersion++; kids.clear(); par.clear(); };
   /** A copy of the canonical sim (null when the world runs no carried engine), to advance for display. */

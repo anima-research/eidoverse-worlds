@@ -42,16 +42,17 @@ function tellTarget(w, from, to, cls, d) { const P = w.presence, now = w.now(), 
 /** The relay refused `from`'s act on `to` itself (server/messages.ts bodyRefusal: a puppet or a grab): the target is told as
  *  above. Decided again here, so the notice names the gate that answered. Returns whether it was said now. */
 export function noteRefused(w, from, to, cls) { syncDefault(w); const d = C.decide(w.presence, from, to, cls); return d.mode === "deny" && tellTarget(w, from, to, cls, d); }
+// A cool-down (repeated refusals) refuses `from`'s acts of this class, unless the target listed them: allow = yes regardless (L15)
+const coolDown = (P, d, from, cls, now) => (!d.listed && P.throttle?.[`${from}:${cls}`] > now
+  ? { code: "cool-down", class: cls, reason: `${from} is on a cool-down for ${cls} (${Math.ceil((P.throttle[`${from}:${cls}`] - now) / 60000)} min left) after repeated refusals`, fix: COOL_FIX } : null);
 // The gate for every act on another body. extra: { cls?, spec?, script?, sponsor?, uncounted? (the caller counts: a blast) }.
 function bodyGate(w, from, to, kind, extra = {}) { syncDefault(w);
   const P = w.presence, now = w.now(); to = bodyRef(to); const cls = extra.cls ?? C.KIND_CLASS[kind];
   if (!cls) return { ok: false, code: "shape", reason: `no body kind '${kind}'`, fix: Object.keys(C.KIND_CLASS).join(", ") };
   if (!P.bodies[to]) return { ok: false, code: "not-here", reason: `${to} isn't here` };
   if (from === to) return { ok: true, consent: "self", deliver: () => deliver(w, from, to, kind, cls, extra) };
-  const d = decideAs(P, from, extra.sponsor, to, cls);
-  // allow = yes regardless, a cool-down too: it was earned from people who said no, and this one said always yes (L15)
-  if (!d.listed && P.throttle?.[`${from}:${cls}`] > now) { ringPush(P, { ts: now, from, to, cls, verdict: "refused" }); w.presenceDirty = true;
-    return { ok: false, code: "cool-down", class: cls, reason: `${from} is on a cool-down for ${cls} (${Math.ceil((P.throttle[`${from}:${cls}`] - now) / 60000)} min left) after repeated refusals`, fix: COOL_FIX }; }
+  const d = decideAs(P, from, extra.sponsor, to, cls), cd = coolDown(P, d, from, cls, now);
+  if (cd) { ringPush(P, { ts: now, from, to, cls, verdict: "refused" }); w.presenceDirty = true; return { ok: false, ...cd }; }
   if (d.mode === "deny") { if (!extra.uncounted) noteRefusal(w, from, to, cls, now); tellTarget(w, from, to, cls, d); ringPush(P, { ts: now, from, to, cls, verdict: "refused", why: d.why }); w.presenceDirty = true;
     return { ok: false, code: "consent", class: cls, reason: C.refusalWords(to, cls), fix: C.REFUSAL_FIX }; }   // the why is the target's (ring) only
   return { ok: true, consent: "allowed", deliver: () => { ringPush(P, { ts: now, from, to, cls, verdict: "allowed" }); deliver(w, from, to, kind, cls, extra); } };
@@ -66,10 +67,9 @@ export function reachAdmits(w, from, to, cls, { point = null, limb = null, quiet
   const P = w.presence, now = w.now();
   if (from === to) return { ok: true, consent: "self" };
   if (cls !== "touch" && cls !== "intimate") return { ok: false, code: "shape", class: cls, reason: `a reach is touch or intimate, not '${cls}'` };
-  const held = P.reaches?.[from];
-  let r, toldTarget = false;
-  if (!C.decide(P, from, to, cls).listed && P.throttle?.[`${from}:${cls}`] > now) r = { code: "cool-down", reason: `${from} is on a cool-down for ${cls} (${Math.ceil((P.throttle[`${from}:${cls}`] - now) / 60000)} min left) after repeated refusals`, fix: COOL_FIX };
-  else { const d = C.decide(P, from, to, cls);
+  const held = P.reaches?.[from], d = C.decide(P, from, to, cls);
+  let r = coolDown(P, d, from, cls, now), toldTarget = false;
+  if (!r) {
     if (d.mode === "allow") { if (held?.to === to) held.seen = true;   // landed: a hand let go of ends the record (reachLetGo)
       return { ok: true, consent: "allowed" }; }
     if (held?.to === to) delete P.reaches[from];   // recorded under a table that no longer admits it: not under way

@@ -1093,7 +1093,8 @@ export const HANDLERS: Record<string, ToolHandler> = {
   },
   catch_up: async (ag, a, ctx, name) => {
       const from = typeof a.since === "number" ? a.since : (ctx.cursor.caughtUpTo ?? -1);
-      const { said, more } = await ag.firstSaidSince(from, Math.min(200, Number(a.limit ?? 60)));
+      const n = Number(a.limit ?? 60), limit = Number.isFinite(n) ? Math.min(200, Math.max(1, Math.floor(n))) : 60;   // 1–200; a non-number is the default
+      const { said, more } = await ag.firstSaidSince(from, limit);
       ctx.cursor.caughtUpTo = more ? said[said.length - 1].seq : ag.lastSeq;   // a full page moves the cursor only past what it showed (bot #260 #63)
       if (!said.length) return text(`nothing said since seq ${from}. You are up to seq ${ag.lastSeq}.`);
       const lines = said.map((m) => `[${m.seq}] ${m.who}: ${m.text}`);
