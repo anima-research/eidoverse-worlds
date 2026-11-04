@@ -450,3 +450,11 @@ Portable identity (one person, one identity across worlds and servers) is the ne
 **Q6 — do P1–P7 hold up?** **Answered: yes, with three narrowed** (P1 alias by default, P3 exactly 20|24, P6 offline-stable) and P7 reworded, all above. Kept as proposed: no identity/proof fields in the envelope; claims as request verbs plus system changes, not a new kind; delegation/proofs in purgeable request bodies later; owner tiers may contain portable identities; actor ids never redacted; identity documents/op logs remain additive later. P3 and P4 are the two that change kernel shape checks in this PR.
 
 **Q3 resolved: keep the inbox `kind:"act"`** as review 1 said, documented as a volatile agent event. Once the log retires `act`, the word has one meaning in live code. The only other place it appears is the migration tool, which reads old minor-0 logs, and that is clearly labelled as old.
+
+## §F Freeze questions (round 3, answered in review)
+
+- **F-1 Feature declarations (kernel reservation).** Reserve a monotonic `requires` list in genesis, extended only by governance/system entries. A reader that meets an unknown required feature treats the whole world as unsupported *before its first use*. Future ops and kinds land without a minor-2 re-id; minor bumps stay for meaning changes that can't be predeclared.
+- **F-2 Registry epoch.** Founding and repair request bodies stamp the registry hash (`sha256(registry-pin.json)`) and writer provenance (code commit, translator version). This is fold-neutral. The translator writes it into every migrated world's founding request.
+- **F-3 Join order.** Auth first, then the client's hello `{dialect, v, minor, features}`, then the snapshot. A server refuses with "update" before it sends any world data.
+- **F-4 Self-minted identity.** A key-only identity may be an owner, including tier 0. Identity is not admission: quota, rate and create-standing attach to a *host-issued admission capability*, never to the cheap key or id. A key proves continuity and authorship, not entitlement to resources.
+- **F-5 Custody.** The migration receipt comes before the first governance entry. Custody recovery is encrypted. On key loss a world goes read-only; a replacement key is never minted silently.
