@@ -137,7 +137,7 @@ function sayPeople(people: any[] = []) {
 /** `--dry-run`: the report and its hash, printed; nothing written. Exit 1 when the translation would be refused. */
 function dryRun(D: string, name: string, words = name) {   // words: the command's own world name(s), `old new` in the two-name form
   const { report, hash } = reportNow(D, name);
-  console.log(`dry-run report of "${name}" (nothing was written):`); console.log(JSON.stringify(report, null, 1));
+  console.log(`dry-run report of "${name}" (nothing written to the world; this host's custody key is minted on first use, and a key file still under its pre-2026-10-07 name is renamed once):`); console.log(JSON.stringify(report, null, 1));
   console.log(`trial period: ${report.trial}`);
   sayPeople(report.people);
   for (const b of report.bans ?? []) console.log(b.account ? `banned ${b.name}: holds against their account (${b.account}:…, from ${b.from})${b.check ? `; check it: ${b.check}` : ""}` : `banned ${b.name} has no account yet (${b.why}), so the ban holds against no one who signs in: bind with ${b.bind}`);
