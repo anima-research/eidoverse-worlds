@@ -115,7 +115,8 @@ export const UPGRADE_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
       const got = r.code === 0 ? tagged(r.out, "result-json") : null;
       const said = `${r.err}\n${r.out}`.trim();
       // a CLI the timer stopped may have been mid-swap: its outcome is unknown, never "refused"
-      if (!got && r.stopped) { a.refuse("interrupted", `the upgrade ran past ${CLI_MS / 60_000} min and was stopped; it may be half done: ${said.slice(-1200)}`); console.log(`[upgrade] ${a.world}: upgrade by ${a.account} stopped (timeout)`); return; }
+      // …and so may one that exited any way but a refusal (exit 1): a crash, a signal, or files it couldn't put back (exit 2)
+      if (!got && (r.stopped || r.code !== 1)) { a.refuse("interrupted", `the upgrade ${r.stopped ? `ran past ${CLI_MS / 60_000} min and was stopped` : `stopped (exit ${r.code})`}; it may be half done: ${said.slice(-1200)}`); console.log(`[upgrade] ${a.world}: upgrade by ${a.account} stopped (${r.stopped ? "timeout" : `exit ${r.code}`})`); return; }
       if (!got) { a.refuse(/is not the one that was approved/.test(said) ? "stale" : "refused", said.slice(-1500)); console.log(`[upgrade] ${a.world}: upgrade by ${a.account} refused`); return; }
       // the world is on disk in this protocol now: the next join opens it (nothing of it was ever loaded while it was old)
       console.log(`[upgrade] ${a.world}: upgraded by ${a.account} as ${a.as} (report ${got.report}); backup ${got.backup}${got.claimed ? `; it had no owner: ${a.account} claimed it` : ""}`);

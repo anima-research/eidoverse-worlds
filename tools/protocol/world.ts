@@ -55,6 +55,8 @@ const DD = argv0.indexOf("--"), rest = DD < 0 ? argv0 : argv0.slice(0, DD), AFTE
 const flag = (k: string) => { const i = rest.indexOf(`--${k}`); return i >= 0 ? rest[i + 1] : undefined; };
 const NAME = /^[a-z0-9][a-z0-9_-]{0,63}$/i;   // a letter or digit first (server/oldworlds.ts)
 const die = (m: string) => { console.error(m); process.exit(1); };
+const dieStuck = (m: string) => { console.error(m); process.exit(2); };   // files left half-moved: exit 2, which server/upgrade.ts never reads as "refused"
+
 
 /** An in-place translation keeps the old world's files beside the new one under these names (never written, never deleted). */
 const ORIGINAL = { log: "log.original.jsonl", snapshot: "snapshot.original.json", poses: "poses.original.json" } as const;
@@ -250,10 +252,10 @@ function translateInPlace(name: string, approval: Approval, approvedSource: { si
     fs.rmSync(path.join(D, SWAP_MARKER)); syncDir(D); }
   catch (x) {
     const stuck: string[] = [];
-    if (minted) directoryFor(WORLDS_DIR).forgetPlanned(r!.planned);   // a swap undone takes its identities with it
+    if (minted) try { directoryFor(WORLDS_DIR).forgetPlanned(r!.planned); } catch (y) { stuck.push(`the identities it minted (${Object.keys(r!.planned).join(", ")}; forget them by hand: ${(y as Error).message})`); }   // a swap undone takes its identities with it
     for (const [a, b] of done.reverse()) { try { fs.renameSync(b, a); } catch (y) { stuck.push(`${b} (should be ${a}: ${(y as Error).message})`); } }
     if (!stuck.length) fs.rmSync(path.join(D, SWAP_MARKER), { force: true });   // all put back: an old world again; else it stays marked
-    if (stuck.length) die(`the swap failed (${(x as Error).message}) and these couldn't be put back; move them by hand:\n  ${stuck.join("\n  ")}\nThe translated files are in ${T}.`);
+    if (stuck.length) dieStuck(`the swap failed (${(x as Error).message}) and these couldn't be put back; move them by hand:\n  ${stuck.join("\n  ")}\nThe translated files are in ${T}.`);
     fail(`the swap failed: ${(x as Error).message}; everything that had moved was put back.`, T);
   }
   fs.rmSync(T, { recursive: true, force: true });
@@ -369,10 +371,10 @@ function finishSwap(name: string, at: { D: string; temps: string[]; oldLog: bool
     if (process.env.WORLD_TS_DIE_IN_RECOVERY === "1") process.exit(9);   // tests only: the recovery dies after the first rename, before the moves (IP36)
     if (fs.existsSync(path.join(T, IDENTITIES))) { const n = putIdentities(JSON.parse(fs.readFileSync(path.join(T, IDENTITIES), "utf8"))); fs.rmSync(path.join(T, IDENTITIES)); if (n) did.push(`${n} identit${n === 1 ? "y" : "ies"} added to the directory`); }
     for (const f of fs.readdirSync(T)) if (!TEMP_ONLY.has(f)) mv(path.join(T, f), path.join(D, f));
-    fs.rmSync(path.join(T, SOURCE), { force: true });   // last: a recovery interrupted before this still checks the old log next time
+    if (!stuck.length) fs.rmSync(path.join(T, SOURCE), { force: true });   // last: a recovery interrupted or stuck before this still checks the old log next time
     if (!fs.readdirSync(T).length) { fs.rmSync(T, { recursive: true, force: true }); did.push(`removed ${path.relative(WORLDS_DIR, T).split(path.sep).join("/")}`); } }
   if (!stuck.length && isSwapUnfinished(D)) { fs.rmSync(path.join(D, SWAP_MARKER)); did.push(`removed ${SWAP_MARKER}`); }
-  if (stuck.length) die(`the in-place translation of "${name}" was interrupted; finishing it moved ${did.length ? did.join(", ") : "nothing"}, but these are in the way; move them by hand:\n  ${stuck.join("\n  ")}\n`
+  if (stuck.length) dieStuck(`the in-place translation of "${name}" was interrupted; finishing it moved ${did.length ? did.join(", ") : "nothing"}, but these are in the way; move them by hand:\n  ${stuck.join("\n  ")}\n`
     + `${ORIGINAL.log} (or log.jsonl) is the untouched original either way.`);
   console.log(`the in-place translation of "${name}" was interrupted after world.jsonl landed (the process stopped mid-swap); finished it now: ${did.join(", ") || "nothing left to move"}. `
     + `${ORIGINAL.log} is the untouched original log, renamed, never written. "${name}" is a translated world.`);
