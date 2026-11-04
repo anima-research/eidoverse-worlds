@@ -612,6 +612,14 @@ process.stdout.write(directoryAt(${JSON.stringify(f)}, slow).resolve({ sub: "hum
   const disk = directoryAt(f).entry(id);
   ok(disk?.name === "Wren" && !!disk?.renamedAt && srv.nameOf(id) === "Wren", "DW22 a save merges the newer rename from disk instead of writing the stale name over it", disk); }
 
+// DW13: a bind or a put re-reads under the lock: an account another writer bound since is seen, never bound twice
+{ const f = path.join(tmp, "bind2", ".directory.json"); const srv = directoryAt(f); const a = srv.imported("Ava"), b = srv.imported("Bea");
+  directoryAt(f).bind(a, "human:ava");   // another writer binds the account to Ava
+  let threw = ""; try { srv.bind(b, "human:ava"); } catch (e) { threw = String((e as Error)?.message ?? e); }
+  const wearers = Object.entries(JSON.parse(fs.readFileSync(f, "utf8")).ids).filter(([, e]: any) => e.subs.includes("human:ava")).map(([id]) => id);
+  ok(/already wears/.test(threw) && wearers.length === 1 && wearers[0] === a, "DW13 a bind of an account another writer bound since this process read the file is refused: one account, one id", { threw, wearers });
+  let threw2 = ""; try { srv.put({ ["u-" + "b".repeat(20)]: { name: "Cat", subs: ["human:ava"], kind: "account", since: 1 } }); } catch (e) { threw2 = String((e as Error)?.message ?? e); }
+  ok(/already wears/.test(threw2), "DW13b …and a put of one is refused the same way", threw2); }
 fs.rmSync(tmp, { recursive: true, force: true });
 // D40 (bot #369; R 11-03: an id is a person, never a world, a name or a kind): the ONE id shape, and the places that may make one.
 // A stand-in for an imported name is a directory row with kind "imported", made by directory.imported and the old-world translator

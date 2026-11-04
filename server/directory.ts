@@ -108,17 +108,17 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
     /** An identity with no account yet (a name from an imported world's log): holds its roles until an operator binds an account. */
     imported(name: string): string { return add({ name, subs: [], kind: "imported", since: now() }); },
     /** Operator: let an account wear an existing id (e.g. a legacy owner proving who they are) — in that id's world. */
-    bind(id: string, sub: string) { const e = d.ids[id]; if (!e) throw new Error(`no identity ${id}`);
+    bind(id: string, sub: string) { locked(() => { refresh(); const e = d.ids[id]; if (!e) throw new Error(`no identity ${id}`);
       const k = e.world ? `${sub}|${e.world}` : sub;
       // one account, one id: joining two ids into one person is an alias merge, coming with portable identity
       const prev = byKey.get(k); if (prev && prev !== id) throw new Error(`${sub} already wears ${prev}${e.world ? " in that world" : ""}: merging two identities into one person is an alias (coming with portable identity), not a bind`);
-      if (!e.subs.includes(sub)) e.subs.push(sub); if (e.kind === "imported") e.kind = "account"; byKey.set(k, id); save(); },
+      if (!e.subs.includes(sub)) e.subs.push(sub); if (e.kind === "imported") e.kind = "account"; byKey.set(k, id); save(); }); },
     /** the id an account already wears in a world, if any (read-only: the translator plans before it writes) */
     idOfSub: (sub: string, world: string | null = null): string | null => byKey.get(keyOf(sub, world)) ?? (fresh(), byKey.get(keyOf(sub, world)) ?? null),
     /** add identities planned elsewhere (the translator's, once its log is written); never overwrites one */
-    put(entries: Record<string, Entry>) { for (const [id, e] of Object.entries(entries)) { if (d.ids[id]) throw new Error(`identity ${id} exists`);
+    put(entries: Record<string, Entry>) { locked(() => { refresh(); for (const [id, e] of Object.entries(entries)) { if (d.ids[id]) throw new Error(`identity ${id} exists`);
         for (const s of e.subs) { const k = e.world ? `${s}|${e.world}` : s; if (byKey.has(k)) throw new Error(`${s} already wears ${byKey.get(k)}`); } }
-      for (const [id, e] of Object.entries(entries)) { d.ids[id] = e; index(id, e); } save(); },
+      for (const [id, e] of Object.entries(entries)) { d.ids[id] = e; index(id, e); } save(); }); },
     /** a person changed the name they type (not a collision suffix, not a sign-in's name): starts the rename cooldown */
     markRenamed(id: string) { const e = d.ids[id]; if (e) { e.renamedAt = now(); save(); } },
     /** Forget identities a translation minted, when it is rolled back (tools/protocol/world.ts rollback): only those still
