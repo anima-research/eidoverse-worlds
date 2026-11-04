@@ -126,7 +126,7 @@ export const actorOf = (c: Client) => { if (!c.actorId) throw new Error(`request
  *  escapes before the request was answered is answered with the request's own id (`unanswered`), never an id-less error:
  *  a client never leaves a request pending. WorldLog.request never throws (its outcome rides its reply), so such a throw
  *  happened before the authority was reached: nothing was written (rolled back, code server-error). */
-const QUEUE_MAX = 256;   // requests one connection may have waiting behind a slow one (a stalled warm): past it, refused at arrival
+const QUEUE_MAX = 256;   // requests one connection may have queued, the one in flight counted (255 behind a stalled one): past it, refused at arrival
 function inOrder(c: Client, ws: Ctx["ws"], fn: () => Promise<void>, unanswered?: (r: Any) => void) {
   const n = c.queued ?? 0;
   if (n >= QUEUE_MAX) { const no = { code: "busy", reason: `${n} of your requests are still waiting their turn`, fix: "wait for their replies, then ask again" };
