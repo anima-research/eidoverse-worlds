@@ -477,6 +477,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // guest's hashed address — never a display name alone (findBan matches account/addr; a name-keyed record bound nothing until
     // a restart rewrote it). Present anywhere: their account (or, a guest, their address); absent: every account the directory
     // knows under that name. Nothing to bind → refused, said plainly.
+    const named = dir.accountsNamed(id);   // reads the directory fresh: a bind another writer made since is seen
     const byIdentity = isMinted(id) ? dir.entry(id)?.subs ?? [] : [];   // a u- identity (whois) binds its accounts
     const present = [...worlds.values()].flatMap((w) => [...w.clients]).filter((o) => fold(o.id) === fold(id) || (typeof msg.id === "string" && o.account === msg.id) || (isMinted(id) && o.actorId === id));
     if (present.some((o) => isOperator(o.account))) {
@@ -490,7 +491,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     const reason = msg.reason != null ? String(msg.reason).slice(0, LIMITS.BAN_REASON_LEN) : undefined;
     // days, as a world's ban takes it (authority/moderation.js): absent = until lifted
     if (msg.days !== undefined && !(typeof msg.days === "number" && msg.days > 0 && msg.days <= 3650)) { ws.send(JSON.stringify({ type: "error", error: "server-ban days is a number of days (more than 0, at most 3650); leave it out for a ban until lifted" })); return; }
-    const accounts = new Set<string>([...present.map((o) => o.account).filter((a): a is string => !!a), ...dir.accountsNamed(id), ...byIdentity, ...(/^(human|agent|aid1|local):/.test(id) ? [id] : [])]);
+    const accounts = new Set<string>([...present.map((o) => o.account).filter((a): a is string => !!a), ...named, ...byIdentity, ...(/^(human|agent|aid1|local):/.test(id) ? [id] : [])]);
     if ([...accounts].some((a) => isOperator(a))) { ws.send(JSON.stringify({ type: "error", error: `${id} is a server operator — remove them from SERVER_OPERATORS first` })); return; }
     const guestAddrs = new Set<string>(present.filter((o) => !o.account && o.addr).map((o) => o.addr as string));
     if (!accounts.size && !guestAddrs.size) {

@@ -633,6 +633,11 @@ process.stdout.write(directoryAt(${JSON.stringify(f)}, slow).resolve({ sub: "hum
   fs.writeFileSync(f, "{"); fs.utimesSync(f, mtime, mtime); srv.claimedName("Two");   // seen half-written, at this mtime
   fs.writeFileSync(f, withTwo); fs.utimesSync(f, mtime, mtime);   // the write completes; the mtime it was seen at
   ok(srv.claimedName("Two") && srv.idOfSub("human:two") !== null, "DW95 a read that failed is retried at the same mtime: the other writer's account is seen once the file is whole", { good: good.length }); }
+// DW129: a server ban by name binds the accounts another writer bound since (messages.ts server-ban reads accountsNamed)
+{ const f = path.join(tmp, "named", ".directory.json"); const cli = directoryAt(f); const moe = cli.imported("Moe"); const srv = directoryAt(f);
+  directoryAt(f).bind(moe, "human:moe");
+  ok(srv.accountsNamed("Moe").includes("human:moe"), "DW129 accountsNamed reads the file fresh: an account bound by another writer since is what a ban by that name binds to", srv.accountsNamed("Moe")); }
+
 fs.rmSync(tmp, { recursive: true, force: true });
 // D40 (bot #369; R 11-03: an id is a person, never a world, a name or a kind): the ONE id shape, and the places that may make one.
 // A stand-in for an imported name is a directory row with kind "imported", made by directory.imported and the old-world translator

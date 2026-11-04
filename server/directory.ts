@@ -148,7 +148,7 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
     },
     /** the accounts of every identity wearing this (folded) display name here: what a SERVER ban by name binds to (security
      *  review 10-18 H1; an identity with no account is nobody to ban by account). */
-    accountsNamed(name: string): string[] { const k = foldName(name); const out: string[] = []; for (const e of Object.values(d.ids)) if (foldName(e.name) === k) out.push(...e.subs); return [...new Set(out)]; },
+    accountsNamed(name: string): string[] { fresh(); const k = foldName(name); const out: string[] = []; for (const e of Object.values(d.ids)) if (foldName(e.name) === k) out.push(...e.subs); return [...new Set(out)]; },
     /** id → display name for the ids given (what a client is sent; never subs). */
     names(ids: Iterable<string>): Record<string, string> { const o: Record<string, string> = {};
       for (const id of ids) { const n = get(id)?.name; if (n) o[id] = n; } return o; },
