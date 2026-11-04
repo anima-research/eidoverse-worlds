@@ -78,6 +78,8 @@ export type Client = {
   msgs: import("./msgrate.ts").MsgBucket;   // all messages: a token bucket (server/msgrate.ts)
   /** this connection's requests, one at a time in the order sent (server/requestwire.ts) */
   verbQueue?: Promise<void>;
+  /** how many of them are still waiting their turn (requestwire.ts QUEUE_MAX) */
+  queued?: number;
   /** the log head when this connection arrived in its world (server.ts join, beside the snapshot's cut). Speech is
    *  arrival-only (R 10-18): a say at or below it is never sent back to this connection unless it is an admin's. */
   arrivedSeq?: number;
