@@ -66,7 +66,7 @@ const ROLE_WORDS_OK = new Set([SELF, "server/operators.ts", "tools/protocol/iden
 export function roleWordHits(root = ENGINE): string[] {
   const out: string[] = [];
   const go = (dir: string) => { for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (e.name === "node_modules" || e.name.startsWith(".") || e.name === "frozen") continue;
+    if (e.name === "node_modules" || e.name === ".git" || e.name === "frozen") continue;
     const p = path.join(dir, e.name);
     if (e.isDirectory()) go(p);
     else if (/\.(ts|js|mjs|md|sh|conf|service|html|json|jsonl|yml|yaml|toml|txt|py|ps1|env|example|patch|css)$/.test(e.name) && !ROLE_WORDS_OK.has(relTo(root, p)))   // every text kind in the tree (bot #677)
@@ -153,9 +153,9 @@ if (import.meta.main) {
   const fineWords = "SERVER_OPERATORS=human:discord:1; a server operator; the world's owner";
   check(`H${i++} role-words: caught in its known-bad form (4), and not in the right way`, roleWords(bareWords) === 4 && roleWords(fineWords) === 0, [roleWords(bareWords), roleWords(fineWords)]);
   // the scan reads every text kind, not only code and prose (bot #677): a planted .json and .yml are found, a .png is not
-  { const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "hyg-677-")); for (const f of ["a.json", "b.yml", "c.png"]) fs.writeFileSync(path.join(tmp, f), '{"who": "WORLD_ADMIN"}\n');
+  { const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "hyg-677-")); fs.mkdirSync(path.join(tmp, ".github")); for (const f of ["a.json", "b.yml", "c.png", ".github/d.yml"]) fs.writeFileSync(path.join(tmp, f), '{"who": "WORLD_ADMIN"}\n');
     const hits = roleWordHits(tmp); fs.rmSync(tmp, { recursive: true, force: true });   // hits come in the filesystem's order (ext4 isn't sorted)
-    check(`H${i++} role-words: a .json and a .yml saying WORLD_ADMIN are found by the tree scan (a binary kind is not)`, JSON.stringify([...hits].sort()) === '["a.json:1","b.yml:1"]', hits); }
+    check(`H${i++} role-words: a .json, a .yml and a .github/ file saying WORLD_ADMIN are found by the tree scan (a binary kind is not)`, JSON.stringify([...hits].sort()) === '[".github/d.yml:1","a.json:1","b.yml:1"]', hits); }
   const wordHits = roleWordHits();
   check(`H${i++} role-words: no file outside the legacy reader, its test and the migration notes says WORLD_ADMIN, world admin or world operator`, wordHits.length === 0, wordHits.join("\n      "));
   // mcpl state (10-29): a test that spawns the mcpl server names MCPL_STATE, or it writes the repository's state file
