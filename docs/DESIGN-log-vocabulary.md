@@ -453,6 +453,17 @@ Portable identity (one person, one identity across worlds and servers) is the ne
 
 ## §F Freeze questions (round 3, answered in review)
 
+Fixtures for §F (implementation gate, beside F1–F21):
+| id | row |
+|---|---|
+| F22 | hello: an unknown v/minor gets `update-required` before any world lookup; no world name/existence in the reply |
+| F23 | hello: `unsupported-feature` only after access is granted; a refused principal can't tell a missing world from a closed one |
+| F24 | genesis provenance present, schema-valid, non-redactable; `dirty:true` without `sourceTreeSha256` is invalid |
+| F25 | repair provenance: after a redaction only the commitment remains, and the reader reports "provenance unavailable", not a guess |
+| F26 | a self-minted (key-only) identity may be a tier-0 owner, yet gets no create quota or admission without a host-issued capability |
+| F27 | custody: a missing/mismatched sequencer key → read-only at startup; no key is minted; a backup manifest without fingerprints + custody hash fails the server check |
+| F28–F31 | the four F-1 feature fixtures (unknown in genesis; unknown `requiresAdd`; use-before-declare; remove/reorder invalid) |
+
 - **F-1 Feature declarations (kernel reservation).** Contract:
   ```text
   genesis.body.requires?: sorted, unique feature ids (absent = [])
@@ -472,21 +483,32 @@ Portable identity (one person, one identity across worlds and servers) is the ne
   ```json
   "provenance": {
     "registry": {"id": "registry-pin", "sha256": "<64 hex>"},
-    "writer":   {"name": "eidoverse-server" | "translate-v1", "version": "<semver>",
-                 "sourceCommit": "<40 hex>", "dirty": false}
+    "writer":   {"name": "<id: ^[a-z][a-z0-9-]{0,47}$>", "version": "<semver>",
+                 "sourceRevision": "git:sha1:<40 hex>" | "git:sha256:<64 hex>",
+                 "sourceTreeSha256": "<64 hex: the exact built/source tree>",
+                 "dirty": false}
   }
   ```
-  **Carrier (proposed, decide in review):** a world's *founding* provenance lives in `genesis.body.provenance`. Genesis is hashed into the world id and never redactable, so it is durably readable; the translator writes it there for every migrated world. A *repair* request carries the same object in its request body, which is purgeable, so we say plainly: after a redaction only the commitment remains, and a later reader knows which rules governed that stretch only if the body or an external receipt survives. The migration receipt repeats the founding provenance externally.
-- **F-3 Join contract.**
+  **Carrier (decided in review):** `sourceTreeSha256` is mandatory when `dirty` is true and written always. `name` is a bounded identifier, so a future repair writer needs no protocol change. A world's *founding* provenance lives in `genesis.body.provenance`. Genesis is hashed into the world id and never redactable, so it is durably readable; the translator writes it there for every migrated world. A *repair* request carries the same object in its request body, which is purgeable, so we say plainly: after a redaction only the commitment remains, and a later reader knows which rules governed that stretch only if the body or an external receipt survives. The migration receipt repeats the founding provenance externally.
+- **F-3 Join contract.** Internal order:
   ```text
-  1. authenticate first
-  2. client hello {dialect, v, minor, features}
-  3. unknown dialect/v/minor → {type:"refused", code:"update-required", need:{dialect,v,minor}}
-     unknown required feature → {type:"refused", code:"unsupported-feature", need:[ids]}
-  4. nothing about the world (existence, name, state, presence) before acceptance
-  5. the snapshot repeats the authoritative {dialect, v, minor, requires}
-  6. a missing hello fails loudly after the v4 deploy; there is no legacy default
-  7. the same contract for browser, native, MCPL and agent joins
+  1. authenticate the principal
+  2. validate the global hello {dialect, v, minor, features}; no world lookup
+     unknown dialect/v/minor → {type:"refused", code:"update-required", need:{dialect,v,minor}}
+  3. authorize the requested world with no existence oracle (refusal is the same
+     whether the world is missing or closed to you)
+  4. only after access is granted, compare world.requires to client.features
+     missing → {type:"refused", code:"unsupported-feature", need:[ids]}
+  5. else the snapshot, repeating the authoritative {dialect, v, minor, requires}
   ```
+  `update-required` may precede world authorization; the world-specific `unsupported-feature` never may. A missing hello fails loudly after the v4 deploy, with no legacy default. The same contract holds for browser, native, MCPL and agent joins.
 - **F-4 Self-minted identity.** A key-only identity may be an owner, including tier 0. Identity is not admission: quota, rate and create-standing attach to a *host-issued admission capability*, never to the cheap key or id. A key proves continuity and authorship, not entitlement to resources.
-- **F-5 Custody.** The migration receipt comes before the first governance entry. Custody recovery is encrypted. On key loss a world goes read-only; a replacement key is never minted silently.
+- **F-5 Custody.** Invariant:
+  ```text
+  the migration receipt precedes the first governance entry
+  each backup manifest records the sequencer/operator public fingerprints + the custody-file hash
+  an encrypted, offline custody backup exists and is restore-tested
+  startup verifies the live custody keys against genesis / the latest governance
+  missing or mismatched authority → read-only, never a replacement mint
+  the migration receipt and the old and new logs travel together
+  ```
