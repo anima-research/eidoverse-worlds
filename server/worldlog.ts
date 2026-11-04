@@ -488,7 +488,7 @@ export function foundOwnedWorld(name: string, actor: string, account: string, ti
   }
   const dest = path.join(WORLDS_DIR, name);
   const tmp = path.join(WORLDS_DIR, `.founding-${name}-${crypto.randomBytes(4).toString("hex")}`);
-  let rowWritten = false;
+  let rowWritten = false, renamed = false;
   try {
     fs.mkdirSync(tmp, { recursive: true });
     const w = openLive(tmp, name, { catalogue: ENGINE_CATALOGUE });
@@ -498,11 +498,14 @@ export function foundOwnedWorld(name: string, actor: string, account: string, ti
     // answered only once durable (house 6344940039). The ledger row first: a crash between leaves a row for no world, which a
     // retry overwrites, never a world with no row
     replaceDurable(foundersPath(), JSON.stringify({ ...L, [name]: { account, actor, ts: now } }, null, 1)); rowWritten = true;
-    fs.renameSync(tmp, dest); syncDir(WORLDS_DIR);
+    fs.renameSync(tmp, dest); renamed = true;
+    // the world is there; its name not yet synced is said, not a failed founding
+    try { syncDir(WORLDS_DIR); } catch (e) { console.warn(`[world] "${name}" founded, but ${WORLDS_DIR} wasn't synced (its name may not survive a crash just now): ${e}`); }
     return { ok: true, worldId: w.worldId };
   } catch (e: Any) {
     fs.rmSync(tmp, { recursive: true, force: true });
-    if (rowWritten && !fs.existsSync(dest)) try { replaceDurable(foundersPath(), JSON.stringify(L, null, 1)); } catch { /* a row for no world: harmless */ }
+    // a row for a world this founding didn't make (a name taken meanwhile is someone else's world, never this row's)
+    if (rowWritten && !renamed) try { replaceDurable(foundersPath(), JSON.stringify(L, null, 1)); } catch { /* a row for no world: harmless */ }
     return { ok: false, err: String(e?.message ?? e) };
   }
 }
