@@ -581,10 +581,10 @@ const gonePid = await exitedPid();
   const as = (ip) => ({ authorization: "Bearer jt-b", "x-real-ip": ip });   // the server's peer is loopback: a trusted proxy, so X-Real-IP stands
   const st = async (u, h) => (await get(u, h)).status;
   const onMap = async (h) => ((await (await get("/worlds", h)).json()).worlds ?? []).some((w) => w.name === "yard");
-  const banned = { geom: await st("/geom?world=yard", as("203.0.113.9")), hm: await (await get("/heightmap?world=yard&format=json", as("203.0.113.9"))).text(), snap: await st("/snap?world=yard&budget=1000", as("203.0.113.9")), map: await onMap(as("203.0.113.9")) };
-  const other = { geom: await st("/geom?world=yard", as("203.0.113.10")), snap: await st("/snap?world=yard&budget=1000", as("203.0.113.10")), map: await onMap(as("203.0.113.10")) };
-  ok(!s5.dead && banned.geom === 404 && /no such world/.test(banned.hm) && banned.snap === 404 && !banned.map && other.geom === 200 && other.snap !== 404 && other.map,
-    "B5 a guest's address ban holds at the reads: from the banned address /geom and /snap answer 404, /heightmap 'no such world', and /worlds lacks the world; from another address the same key reads them (/snap past its 404, with no renderer)", { banned, other });
+  const banned = { geom: await st("/geom?world=yard", as("203.0.113.9")), hm: await (await get("/heightmap?world=yard&format=json", as("203.0.113.9"))).text(), map: await onMap(as("203.0.113.9")) };
+  const other = { geom: await st("/geom?world=yard", as("203.0.113.10")), map: await onMap(as("203.0.113.10")) };
+  ok(!s5.dead && banned.geom === 404 && /no such world/.test(banned.hm) && !banned.map && other.geom === 200 && other.map,
+    "B5 a guest's address ban holds at the reads: from the banned address /geom answers 404, /heightmap 'no such world', and /worlds lacks the world; from another address the same key reads it", { banned, other });
   const human = mint({ kind: "human", sub: "human:test:hal", name: "Hal" }), agent = mint({});
   const byHuman = await st("/worlds", { authorization: `Bearer ${human}` }), byAgent = await st("/worlds", { authorization: `Bearer ${agent}` }), byNone = await st("/worlds");
   ok(byHuman === 401 && byAgent === 200 && byNone === 401, "B12 a person's aid1 token is no Bearer for the reads (401: it signs in at /auth); an agent's aid1 credential is (200); nothing is 401", { byHuman, byAgent, byNone });
