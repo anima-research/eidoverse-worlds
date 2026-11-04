@@ -128,7 +128,8 @@ export function setConsent(P, actor, a) {
  *  asks, their cool-downs and their rate are dropped, silently (R 10-28 13:03: "we're keeping their gates"). Returns how many
  *  tables changed. In place; idempotent. */
 export const CONSENT_SHAPE = 4;
-/** The classes no gate covers (near, follow, voice): an old no to one is kept in the table's `closed`, which decide reads (#260, Stella item 2). */
+/** The classes no gate covers (near, follow, voice): an old no to one is kept in the table's `closed`, which decide reads (#260, Stella item 2).
+ *  The day a class gets its own setting, its `closed` entry moves into that setting, so no old no outlives the switch that can reopen it. */
 export const UNGATED = Object.freeze(CLASSES.filter((c) => !GATE_OF[c]));
 function closedOf(t, sw) {
   if (sw === "refuse" || sw === "ask") return UNGATED;   // the switch answered every class; ask was no until yes (F3)
