@@ -1024,8 +1024,8 @@ async function handle(msg, at) {
 
     case 'puppet':
       // Someone wants to pose US. A puppet is an INPUT to our own body, not a
-      // pose asserted onto it — main.js decides whether to honour it and then
-      // drives our avatar through the normal presence path.
+      // pose asserted onto it: localbody.js applyPuppet drives our avatar
+      // through the normal presence path (the authority already gated it).
       bus.emit('puppet', msg);
       break;
 
