@@ -6,6 +6,7 @@
 //  - a blob is written to a temp file and renamed, and one whose bytes don't match its name is rewritten, never kept.
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import { sha256 } from "../shared/protocol/hash.js";
 
 /** Does the file at `p` hold `needle`'s bytes? Read in 1 MiB chunks, never whole (the boot sweep's peek, review L18). */
@@ -96,6 +97,55 @@ export function replaceDurable(file: string, data: string | Uint8Array, mode = 0
   fs.renameSync(tmp, file);
   syncDir(path.dirname(file));   // the new name, in its directory
 }
+// ---- the one cross-process file lock (was custody.ts's): pid + nonce written to a file of its own and synced, then linked to the
+// lock name, so the lock never exists without its holder; a dead holder (its pid exited) is removed, never one merely old ----
+/** Who holds a lock file: the pid and the nonce its taker wrote (`<pid> <nonce>`), or null when it can't be read. */
+function holderOf(f: string): { pid: number; nonce: string } | null {
+  let s: string; try { s = fs.readFileSync(f, "utf8"); } catch { return null; }
+  const [p, nonce] = s.split(" "); const pid = Number(p);
+  return Number.isInteger(pid) && pid > 0 && /^[0-9a-f]{16}$/.test(nonce ?? "") ? { pid, nonce } : null;
+}
+/** Whether the holder `pid` named in a lock is gone: its process exited (same host: the file is local), or it is this
+ *  process. A lock is held only inside one synchronous call, and only the main thread takes one, so a lock naming this
+ *  process that the call doesn't hold was left by an earlier process with the same pid: a restart can get its old pid
+ *  back. A worker thread that took one would share this pid and could clear a live sibling's lock: one that does needs the
+ *  thread in the lock's holder. */
+function gone(pid: number): boolean {
+  if (pid === process.pid) return true;
+  try { process.kill(pid, 0); return false; } catch (e) { return (e as NodeJS.ErrnoException).code === "ESRCH"; }
+}
+/** Takes the lock file `name` for this process, or returns null when another holds it. Returns the nonce. */
+function take(name: string): string | null {
+  const nonce = crypto.randomBytes(8).toString("hex"), tmp = `${name}.${nonce}.tmp`;
+  const fd = fs.openSync(tmp, "wx", 0o600);
+  try { fs.writeSync(fd, `${process.pid} ${nonce}`); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+  try { fs.linkSync(tmp, name); return nonce; }
+  catch (e) { if ((e as NodeJS.ErrnoException).code === "EEXIST") return null; throw e; }
+  finally { fs.rmSync(tmp, { force: true }); }
+}
+/** Removes the lock file `f` if its holder is gone (above), as one step. Two waiters can both see the same dead holder, so the
+ *  one that removes it first takes `<lock>.<its nonce>`, the right to remove that one lock, and removes `f` only if `f`
+ *  still holds that nonce. A nonce is never reused, so a lock that has since replaced it is never removed. A right whose
+ *  holder is gone before giving it back is removed the same way. Whether it removed `f`. */
+function clearIfGone(lock: string, f: string): boolean {
+  const h = holderOf(f); if (!h || !gone(h.pid)) return false;
+  const right = `${lock}.${h.nonce}`;
+  if (!take(right)) { clearIfGone(lock, right); return false; }
+  try { if (holderOf(f)?.nonce !== h.nonce) return false; fs.unlinkSync(f); return true; } finally { fs.rmSync(right, { force: true }); }
+}
+/** Run `f` holding the lock file `lock` (its directory must exist): another process waits up to `waitMs` for it, removes one
+ *  whose holder has exited, and throws past `waitMs`. Only this process removes its own lock. Not re-entrant. */
+export function withFileLock<T>(lock: string, waitMs: number, f: () => T): T {
+  const wait = new Int32Array(new SharedArrayBuffer(4)); const until = Date.now() + waitMs;
+  while (!take(lock)) {
+    if (clearIfGone(lock, lock)) continue;
+    if (Date.now() > until) { const h = holderOf(lock);
+      throw new Error(`${lock} has been held${h ? ` by process ${h.pid}` : ""} for ${waitMs / 1000} s; if no process is using it, remove it`); }
+    Atomics.wait(wait, 0, 0, 10);
+  }
+  try { return f(); } finally { fs.rmSync(lock, { force: true }); }
+}
+
 /** Store blob text `s` under its hash `h` at `file`: atomically, and replacing a copy that doesn't verify. */
 export function putBlobFile(file: string, s: string, h: string) {
   if (fs.existsSync(file)) { try { if (`sha256:${sha256(fs.readFileSync(file, "utf8"))}` === h) return; } catch {} }

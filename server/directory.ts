@@ -20,7 +20,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { readLog, worldIdOf } from "../shared/protocol/fold.js";
 import { directoryFileIn } from "./keyfiles.ts";
-import { replaceDurable } from "./durable.ts";
+import { replaceDurable, withFileLock } from "./durable.ts";
 
 // kind is about the ACCOUNT, never what holds it (PROTOCOL §6a rule 3): "account" (one is bound), "anon" (none: a guest),
 // "imported" (a name from an imported log, no account yet). Files written before 10-17 said "human"/"agent": read as "account".
@@ -175,29 +175,15 @@ function worldIdsIn(worldsDir: string): string[] {
   return out;
 }
 
-/** Run `f` holding `<file>.lock` (O_EXCL: another process writing the same directory waits), re-entrant within this process. A lock
- *  whose holder is gone (its pid no longer runs, or older than STALE_MS) is taken over; one held past WAIT_MS throws. */
-const WAIT_MS = 10_000, STALE_MS = 60_000, BIRTH_MS = 1500, held = new Map<string, number>();
-const wait = new Int32Array(new SharedArrayBuffer(4));
+/** Run `f` holding `<file>.lock` (durable.ts withFileLock: another process writing the same directory waits, a dead holder's
+ *  lock is removed, one held past WAIT_MS throws), re-entrant within this process. */
+const WAIT_MS = 10_000, held = new Map<string, number>();
 export function lockFor(file: string) {
   const lock = `${file}.lock`;
-  const take = () => {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    for (const until = Date.now() + WAIT_MS; ;) {
-      try { const fd = fs.openSync(lock, "wx", 0o600); fs.writeSync(fd, String(process.pid)); fs.closeSync(fd); return; }
-      catch (e: any) { if (e?.code !== "EEXIST") throw e; }
-      let pid = NaN, age = 0; try { const t = fs.readFileSync(lock, "utf8").trim(); pid = t ? Number(t) : NaN; age = Date.now() - fs.statSync(lock).mtimeMs; } catch { continue; }   // gone meanwhile: try again
-      const alive = Number.isSafeInteger(pid) && pid > 0 && pid !== process.pid && (() => { try { process.kill(pid, 0); return true; } catch (x: any) { return x?.code === "EPERM"; } })();
-      // an empty file is a holder between its create and its pid write, not a dead one: it's taken over only once stale
-      const writing = !Number.isSafeInteger(pid) || pid <= 0 ? age < BIRTH_MS : false;
-      if ((!alive && !writing) || age > STALE_MS) { try { fs.unlinkSync(lock); } catch { /* another took it over */ } continue; }
-      if (Date.now() > until) throw new Error(`${file}: another process (pid ${pid}) has held ${path.basename(lock)} for ${Math.round(age / 1000)} s; nothing was written`);
-      Atomics.wait(wait, 0, 0, 5);
-    }
-  };
   return <T>(f: () => T): T => {
-    const n = held.get(lock) ?? 0; if (n === 0) take(); held.set(lock, n + 1);
-    try { return f(); } finally { const m = held.get(lock)! - 1; held.set(lock, m); if (m === 0) { held.delete(lock); try { fs.unlinkSync(lock); } catch { /* gone */ } } }
+    const n = held.get(lock) ?? 0; held.set(lock, n + 1);
+    try { if (n > 0) return f(); fs.mkdirSync(path.dirname(file), { recursive: true }); return withFileLock(lock, WAIT_MS, f); }
+    finally { if (n === 0) held.delete(lock); else held.set(lock, n); }
   };
 }
 
