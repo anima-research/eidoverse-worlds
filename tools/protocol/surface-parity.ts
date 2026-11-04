@@ -54,7 +54,7 @@
 // to every page. Run one headless browser at a time: the script checks memory but takes no lock.
 import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, cpSync, copyFileSync, mkdtempSync, rmSync, symlinkSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve, basename } from "node:path";
+import { join, resolve, basename, dirname } from "node:path";
 import { PNG } from "pngjs";
 import { cdpOn, freePort, sleep, bold, dim } from "../harness.ts";
 import { chromeArgs, chromeCandidates, isBrowser } from "./chrome.ts";
@@ -191,7 +191,7 @@ for (const w of SELECTED) {
   if (!g || g.body?.dialect !== "eidoverse-log" || g.body?.v !== 4) {
     const others = (existsSync(dir) ? readdirSync(dir) : []).filter((f) => f.endsWith(".jsonl"));
     const hint = others.length
-      ? `it holds ${others.join(", ")}, which isn't a current-format world log (neither tree opens it: server.ts:351 refuses the join). A v1 log.jsonl translates once, in place, in two steps (tools/protocol/import-v1/README.md): WORLDS_DIR=<dir> bun tools/protocol/world.ts translate <its name> --dry-run --no-founder-key, then … --approved <report-hash> --operator-only-no-owner`
+      ? `it holds ${others.join(", ")}, which isn't a current-format world log (neither tree opens it: server.ts:351 refuses the join). A v1 log.jsonl translates once, in place, in two steps (tools/protocol/import-v1/README.md): WORLDS_DIR=${dirname(resolve(dir))} bun tools/protocol/world.ts translate ${basename(resolve(dir))} --dry-run --no-founder-key, then … --approved <report-hash> --operator-only-no-owner`
       : `no world.jsonl with a current {dialect:"eidoverse-log", v} genesis, and no other *.jsonl either`;
     await missing(`world copy: ${w}`, `${dir} is not a world this protocol serves —`, hint);
   }
