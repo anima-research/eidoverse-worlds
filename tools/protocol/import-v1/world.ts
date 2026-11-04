@@ -148,7 +148,7 @@ function identityMapper(old: Any[], dir: ReturnType<typeof directoryFor> | null,
 /** What the ids of a translation are derived from: this host's custody secret (the one the approval is countersigned with, so
  *  the dry run and the apply agree) and the old log's bytes. Never the destination name: an id is a person, not a world, so
  *  the same log translated twice names the same people (two logs' namesakes stay two people). */
-function identitySalt(worldsDir: string, _world: string, sourceSha256: string): Buffer {
+function identitySalt(worldsDir: string, sourceSha256: string): Buffer {
   return crypto.createHmac("sha256", custodyAt(custodyFileIn(worldsDir)).secret("import-v1 identity")).update(sourceSha256).digest();
 }
 const sha256Hex = (b: Buffer) => crypto.createHash("sha256").update(b).digest("hex");
@@ -159,7 +159,7 @@ export function oldOwners(srcDir: string) {
   const srcBytes = fs.readFileSync(path.join(srcDir, "log.jsonl")), { old } = readOld(srcBytes);
   const st: Any = v1Empty(); for (const e of old) if (e?.verb !== "genesis") foldEntry(st, e);   // as translate folds it
   const worlds = path.dirname(path.resolve(srcDir)), self = path.basename(path.resolve(srcDir));
-  const m = identityMapper(old, directoryFor(worlds), { salt: identitySalt(worlds, self, sha256Hex(srcBytes)), known: mainKnowledge(worlds, { self }) });
+  const m = identityMapper(old, directoryFor(worlds), { salt: identitySalt(worlds, sha256Hex(srcBytes)), known: mainKnowledge(worlds, { self }) });
   return Object.entries<Any>(st.roles ?? {}).filter(([k, v]) => k !== "*" && v?.role === "owner").sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([k, v]) => {
     const a = m.accountOf(m.who(k, { sub: (v && typeof v.sub === "string" ? v.sub : undefined) ?? (isAccountName(k) ? k : undefined) }));
     // on a TRUST_NAMES server a name IS its local account: that binding is the name's, so it is recognised by name
@@ -253,14 +253,14 @@ export function ownerlessRefusal(world: string, people: Any[], claim: unknown): 
  *  approved report pins the output itself, not only its counts (review full-260 #4: the approved thing is the applied thing). */
 const outputOf = (r: Any) => `sha256:${sha256(jcs(r.final.translated))}`;
 /** The old poses.json's bytes ({size, sha256}, or null: none), pinned by the report: the apply carries that file (carryPoses; bot review 29). */
-const posesPin = (srcDir: string) => { const f = path.join(srcDir, "poses.json"); if (!fs.existsSync(f)) return null; const b = fs.readFileSync(f); return { size: b.length, sha256: crypto.createHash("sha256").update(b).digest("hex") }; };
+const posesPin = (srcDir: string) => { const f = path.join(srcDir, "poses.json"); if (!fs.existsSync(f)) return null; const b = fs.readFileSync(f); return { size: b.length, sha256: sha256Hex(b) }; };
 function reportOf(srcBytes: Buffer, world: string, unparsed: number, deferred: Any[], r: Any, outLength = r.out.length, people: Any[] = [], claim = false, owner: OwnerClaim | null = null, bans: Any[] = [], output = outputOf(r), watch: string[] = [], poses: Any = null) {
   const report = {
     v: 1, world,
     // Mica, #260 (10-17): "Worlds using alpha should know they accepted translation churn." In the report, so the hash that is
     // approved covers it (PROTOCOL.md, the trial-period paragraph).
     trial: "This protocol is in a trial period (about a year): later versions may translate this world again, and stored data may change shape between them (PROTOCOL.md, start). Approving this report accepts that.",
-    source: { file: "log.jsonl", size: srcBytes.length, sha256: crypto.createHash("sha256").update(srcBytes).digest("hex"), unparsedLines: unparsed, poses },   // poses: posesPin
+    source: { file: "log.jsonl", size: srcBytes.length, sha256: sha256Hex(srcBytes), unparsedLines: unparsed, poses },   // poses: posesPin
     translator: TRANSLATOR, fold: v1FoldBuild(), founderKey: null,   // a translation names no founder (NO_FOUNDER): tier 0 empty
     entries: { old: r.stats.in, new: outLength, change: r.stats.change, divergences: r.stats.divergences },
     output,                      // the translated state's digest (outputOf): a pull or new model bytes between review and apply changes it
@@ -296,7 +296,7 @@ export async function warmHulls(srcDir: string) {
 /** The dry run's translation (ids derived, nothing written; this host's bytes and hull boxes): the ONE call the report and the apply's digest check share (review delta-260 #1). */
 function dryTranslation(old: Any[], srcDir: string, world: string, owner: OwnerClaim | null, sourceSha256: string, content: (p: string) => string | null = hostContent) {
   const worlds = path.dirname(path.resolve(srcDir));
-  const m = identityMapper(old, directoryFor(worlds), { salt: identitySalt(worlds, world, sourceSha256), known: mainKnowledge(worlds, { self: path.basename(path.resolve(srcDir)) }), owner });
+  const m = identityMapper(old, directoryFor(worlds), { salt: identitySalt(worlds, sourceSha256), known: mainKnowledge(worlds, { self: path.basename(path.resolve(srcDir)) }), owner });
   return { m, r: translateOld(old, world, { who: m.who, content }) };
 }
 /** Every translation of a v1 log here, dry or applied: one set of options (fold build, namespace, hull boxes), so the digest can't drift from the write. */
@@ -338,7 +338,7 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
     if (bad) throw new Error(`the approval is refused: ${bad}. Nothing written`); }
   // the bytes this translation is OF: an in-place translation checks the old log still holds exactly these before it swaps
   // (world.ts translateInPlace; review of PR #260, world.ts:99 — a server still writing to it would lose those edits)
-  const source = { size: srcBytes.length, sha256: crypto.createHash("sha256").update(srcBytes).digest("hex"), unparsedLines: unparsed };
+  const source = { size: srcBytes.length, sha256: sha256Hex(srcBytes), unparsedLines: unparsed };
   // A dialect-3 log (one with a physics `epoch`, PROTOCOL_v2 §3) gets its outcomes from her sim: translate-v1@11 runs it
   // beside the v1 fold and writes each rest as a plain change by `sim` (no launch, no digest: nothing asks a reader to fly
   // her engine), and below, the sealed text is read by the live host's sim layer before anything is written. (Until 2026-10-08 such a log was
@@ -355,7 +355,7 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
   // the ids are the dry run's (identitySalt, from the custody the approval is countersigned with): an apply whose custody isn't the
   // dry run's would write ids nobody reviewed, so it is refused (the CLI keeps the old and the new world under one worlds dir)
   if (approval && path.resolve(path.dirname(destDir)) !== path.resolve(srcWorlds)) throw new Error(`the approval is refused: "${destDir}" is not under the old world's worlds dir ${srcWorlds}, whose custody the dry run derived its identities from. Nothing written`);
-  const { who, planned, stable, idOfName, describe } = identityMapper(old, dir, { salt: identitySalt(path.dirname(destDir), world, source.sha256), known: mainKnowledge(srcWorlds, { self: path.basename(path.resolve(srcDir)) }), owner });
+  const { who, planned, stable, idOfName, describe } = identityMapper(old, dir, { salt: identitySalt(path.dirname(destDir), source.sha256), known: mainKnowledge(srcWorlds, { self: path.basename(path.resolve(srcDir)) }), owner });
   // the countersignature must be THIS host's operator key, not just a key that verifies (bot review #368; the CLI builds it from custody, a library caller may not)
   if (approval && approval.operator.key !== cust.operator()) throw new Error(`the approval is refused: countersigned by ${approval.operator.key}, not this host's operator key ${cust.operator()}. Nothing written`);
   // a model's bytes (R 10-17: the path is the reference; this is model-hash beside it): the original bytes on this host, hashed;
