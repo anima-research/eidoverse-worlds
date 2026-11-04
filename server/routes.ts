@@ -57,8 +57,7 @@ const CLIENTLOG_DIR = process.env.CLIENTLOG_DIR ?? join(WORLDS_DIR, ".clientlogs
  *  (by design, #260 bot 1). An open box is open. */
 function mayRead(req: Request): boolean {
   if (!JOIN_TOKEN) return true;
-  const key = /^Bearer\s+(\S+)$/i.exec(req.headers.get("authorization") ?? "")?.[1] ?? "";
-  return key === JOIN_TOKEN || httpCaller(req) !== null;   // a human's aid1 token signs in at /auth, never reads by Bearer (#260 bot 12)
+  return bearerOf(req) === JOIN_TOKEN || httpCaller(req) !== null;   // a human's aid1 token signs in at /auth, never reads by Bearer (#260 bot 12)
 }
 const unauthorized = () => new Response("this world's state is behind its door: send a key it takes as a Bearer header", { status: 401 });
 
@@ -71,7 +70,7 @@ let clientLogStore: ClientLogStore | null = null;
 try { clientLogStore = new ClientLogStore(CLIENTLOG_DIR); } catch (e) { console.warn(`[clientlog] cannot open ${CLIENTLOG_DIR}: ${(e as Error)?.message ?? e}`); }
 import { seatStore, announceProfileUpdate, MAX_PROPOSAL_BYTES } from "./seats.ts";
 import { agentTokens, aid1JoinIdentity } from "./auth.ts";
-import { httpCaller, httpVisitor, hashedAddress, visibleTo, doorFor, youAt } from "./access.ts";
+import { httpCaller, httpVisitor, hashedAddress, visibleTo, doorFor, youAt, bearerOf } from "./access.ts";
 import { setupPage, setupClaim } from "./setup.ts";
 import { setupOpen } from "./operators.ts";
 import { ClientLogRate, ClientLogStore, LIMITS as CLIENTLOG_LIMITS, scrub, holdsPrivateKey, boundLines } from "./clientlog.ts";
@@ -469,8 +468,7 @@ const ROUTES: Route[] = [
       const label = (url.searchParams.get("world") ?? "").replace(/[^a-z0-9_-]/gi, "").slice(0, 64);   // 64: the world-name limit (world.ts)
       // A key in the query is refused outright so the old client shape cannot ship by accident (review of #172).
       if (url.searchParams.has("key")) return new Response("key belongs in the Authorization header", { status: 400 });
-      const auth = req.headers.get("authorization") ?? "";
-      const key = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+      const key = bearerOf(req);
       const session = sessionOfRequest(req);
       // the door is the first gate: no lookup for a stranger (a home-node human has no JOIN_TOKEN; bot review #260 188)
       if (JOIN_TOKEN && key !== JOIN_TOKEN && !session) return new Response("no", { status: 401 });
@@ -935,8 +933,7 @@ const ROUTES: Route[] = [
       // session cookie — a person who came in through the home node carries no door key and got 401 here. The key rides
       // `Authorization: Bearer`, never the URL (base.js: it would land in access logs). A key in ?token= is refused.
       if (JOIN_TOKEN) {
-        const auth = req.headers.get("authorization") ?? "";
-        const key = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+        const key = bearerOf(req);
         const ok = (key && (key === JOIN_TOKEN || agentTokens().byToken.has(key) || !!aid1JoinIdentity(key)))
           // a cookie rides requests from sibling subdomains (SameSite=Lax is per-SITE): never from another site's page.
           // Embodied sign-ins only (worlds:join), as /upload asks: a spectate-only session can't rebuild (#260 bot 12's twin)
@@ -962,8 +959,7 @@ const ROUTES: Route[] = [
       // The authority key rides `Authorization: Bearer`, never the URL (access logs; see /clientlog). The old ?token= shape
       // is refused outright so a stale client cannot keep leaking it.
       if (url.searchParams.has("token")) return new Response("key belongs in the Authorization header", { status: 400 });
-      const auth = req.headers.get("authorization") ?? "";
-      if (JOIN_TOKEN && (auth.startsWith("Bearer ") ? auth.slice(7).trim() : "") !== JOIN_TOKEN)
+      if (JOIN_TOKEN && bearerOf(req) !== JOIN_TOKEN)
         return new Response("token required", { status: 401 });
       const safe = (url.searchParams.get("name") ?? "").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 48);
       if (!safe) return new Response("name required", { status: 400 });

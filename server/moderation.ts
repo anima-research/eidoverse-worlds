@@ -33,7 +33,7 @@ export const PENDING_WORDS = "pre-account ban: bind to a person (global-ban <the
 const unreadable = new Set<string>();
 /** The ban or sanction files that couldn't be read at boot: while any is, the door is LOCKED (access.ts entryFor; R 11-03,
  *  a fail-safe default like a wiki's maintenance mode): owners, operators and role holders get in, everyone else is refused. */
-export const unreadableBanFiles = (): string[] => [...unreadable];
+export const doorLocked = (): boolean => unreadable.size > 0;
 /** The refusal a locked door gives, in plain words. */
 export const LOCKED_WHY = "this server can't read its ban list right now, so only its owner, operators and role holders can join until it's fixed";
 /** One line for the boot log and the operator's list while the door is locked, else null. */

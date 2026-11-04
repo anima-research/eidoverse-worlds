@@ -8,6 +8,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, readdirSync, statSync, rmSync } from "node:fs";
 import { addressOf } from "./peer.ts";
+import { bearerOf } from "./access.ts";
 import { join, basename, dirname, relative } from "node:path";
 import { JOIN_TOKEN, UPLOAD_CAP, IMAGE_CAP, ROOT, OPT_DIR, STORE_MIN, LIBRARY_DIR, SKIP_OPT_SWEEP, OPT_MEM_BUDGET_MB, OPT_COST_FACTOR } from "./config.ts";
 // merge 2026-09-01 (anima a468cba, geometry LOD): upstream's LOD names ride
@@ -513,7 +514,7 @@ export async function handleUpload(req: Request, url: URL, srv: UploadSrv): Prom
 }
 async function uploadBy(req: Request, url: URL, srv: UploadSrv): Promise<Response> {
   // the key by Authorization: Bearer (RFC 6750, as the read door takes it); ?token= still works for older clients (bot review #260 51)
-  const upTok = /^Bearer\s+(\S+)$/i.exec(req.headers.get("authorization") ?? "")?.[1] ?? url.searchParams.get("token") ?? "";
+  const upTok = bearerOf(req) || (url.searchParams.get("token") ?? "");
   let upAgent = agentTokens().byToken.get(upTok);
   // The aid1 leg the join door has: guests enrolled via archipelago-home
   // carry no tokens.json entry, but may build in a world that lets them —
