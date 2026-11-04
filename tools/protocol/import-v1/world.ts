@@ -145,8 +145,8 @@ function identityMapper(old: Any[], dir: ReturnType<typeof directoryFor> | null,
     return { name: e?.name ?? id, account: acct, from: acct ? (fromOf.get(acct) ?? "this server's directory") : null, unbound: acct ? null : (unboundCode.get(e?.name ?? "") ?? "none") }; };
   return { who, planned, stable, idOfName: (n: string) => memo.get(nameKey(n)), describe, accountOf };
 }
-/** What the ids of a translation are derived from: this host's custody secret (the one the approval is countersigned with, so
- *  the dry run and the apply agree) and the old log's bytes. Never the destination name: an id is a person, not a world, so
+/** What the ids of a translation are derived from: this host's custody secret (custody.ts secret: keyed by the sequencer key,
+ *  minted on first use, never the operator key the approval is countersigned with; the same on the dry run and the apply) and the old log's bytes. Never the destination name: an id is a person, not a world, so
  *  the same log translated twice names the same people (two logs' namesakes stay two people). */
 function identitySalt(worldsDir: string, sourceSha256: string): Buffer {
   return crypto.createHmac("sha256", custodyAt(custodyFileIn(worldsDir)).secret("import-v1 identity")).update(sourceSha256).digest();
@@ -154,7 +154,7 @@ function identitySalt(worldsDir: string, sourceSha256: string): Buffer {
 const sha256Hex = (b: Buffer) => crypto.createHash("sha256").update(b).digest("hex");
 
 /** The old world's owners as an upgrade checks them (server/upgrade.ts, through world.ts owner-of): the v1 fold's final owner
- *  roles, each through the translation's own identity mapper (mint nothing, write nothing). Accounts stay in this process. */
+ *  roles, each through the translation's own identity mapper (mints no identity, writes none; the host's custody key, if none yet, is minted). Accounts stay in this process. */
 export function oldOwners(srcDir: string) {
   const srcBytes = fs.readFileSync(path.join(srcDir, "log.jsonl")), { old } = readOld(srcBytes);
   const st: Any = v1Empty(); for (const e of old) if (e?.verb !== "genesis") foldEntry(st, e);   // as translate folds it

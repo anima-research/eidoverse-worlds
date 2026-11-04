@@ -30,7 +30,7 @@
 //   IP16 finishing an interrupted swap refuses when the old log changed since the translation read it
 //   IP17 a failed in-place translation adds no identity to the shared directory; the clean run adds them once
 //   IP18 the recovery of an interrupted swap writes the identities the interrupted run planned
-//   IP34–IP37 an interrupted rollback finishes; a swap failing after its identities forgets them;
+//   IP34–IP37 an interrupted rollback finishes (IP34b: one that had put the old poses.json back); a swap failing after its identities forgets them;
 //        a recovery dying after its first rename keeps the source record; the recovery renames poses.json as the swap recorded
 //   IP11 a snapshot.json the oracle can't compare (a fold of part of the log) doesn't block the translation: it says,
 //        in its output, that the snapshot was NOT compared and why, and keeps it as snapshot.original.json
@@ -55,7 +55,15 @@
 //   IP31 FOUNDING a brand-new world is a different path: create-world still takes the founder's own ownerKey for tier 0, and
 //        `world.ts found` still founds
 //   IP33 the two-name form's advice (no approval; the dry run's to-translate line) names old and new, and the command works as printed
+//   IP33b …and so does the refusal for a missing --operator-only-no-owner
+//   IP38 a log the translator can't import (a lone surrogate) is refused by the dry run in words, never as a stack trace
+//   IP39 a poses.json that can't be read is said in the translation's report (no place carried over)
+//   IP40 a recovery with a file in its way exits 2 (never "refused") and keeps the source record; cleared, the next run finishes
+//   IP41 `translate old new` into a directory that already holds a file the translation would write refuses, the file untouched
+//   IP42 a planned identity whose account already wears another id here is left (said), never merged; the rest are added
+//   IP43 `found` under another spelling of an existing name's case refuses (where the file system folds case)
 //   IP32 the in-place swap is durably ordered: translated files fsynced before the first rename, the directory synced after the marker, the last rename, the marker's removal
+//   IP32b the two-name form too: every translated file (the identities file included) fsynced before the move into the new name
 //   IP31b `world.ts found` stopped after genesis leaves no world under the name (built aside, renamed into place); a rerun founds it
 //   IP24c a fold cache the server left (server/statecache.ts: derived) neither blocks a rollback nor is left behind
 //   IP24b rollback keeps an identity another world's log names (the second world reused the first one's id)
@@ -84,6 +92,7 @@ import { TRANSLATOR } from "./import-v1/translate-v1.js";
 import { oldWorldAt, oldWorldsIn, bootNotice, shellWord } from "../../server/oldworlds.ts";
 import { isWorldDir, isPreNamesDir } from "../../server/livehost.ts";
 import { CACHE_FILE } from "../../server/statecache.ts";
+import { directoryFor, mintId } from "../../server/directory.ts";
 const SWAP_MARKER = "translation.lock";   // the in-progress marker of an in-place swap (tools/protocol/world.ts)
 import { noFoldRefusal } from "../../server/oldworlds.ts";
 import { approvalText, approvalProblem, makeApproval, translateV1World, NO_OWNER } from "./import-v1/world.ts";
@@ -588,6 +597,13 @@ const actorsOf = (d: string) => [...new Set(fs.readFileSync(path.join(d, "world.
   const r = tool(["rollback", name]); const after = fingerprint(d);
   ok(t.code === 0 && r.code === 0 && /already back/.test(r.out) && same(after, fp) && !fs.existsSync(path.join(d, MANIFEST)),
     "IP34 a rollback interrupted after the log went back is finished by the next: nothing is reported gone, every file is as before", { t: t.code, code: r.code, out: r.out.slice(-400), keys: Object.keys(after) }); }
+// IP34b a rollback interrupted after the old poses.json went back (the made one removed, poses.original.json → poses.json, the
+// manifest still there): the next run neither calls the restored original a changed made file nor removes it
+{ const name = "halfposes"; const d = oldWorld(name); const fp = fingerprint(d);
+  const t = xlate([name]); fs.rmSync(path.join(d, "poses.json")); fs.renameSync(path.join(d, "poses.original.json"), path.join(d, "poses.json"));
+  const r = tool(["rollback", name]); const after = fingerprint(d);
+  ok(t.code === 0 && r.code === 0 && /poses\.json was already back/.test(r.out) && same(after, fp) && !fs.existsSync(path.join(d, MANIFEST)),
+    "IP34b a rollback interrupted after the old poses.json went back finishes without refusing it as changed or deleting it: every file is as before", { t: t.code, code: r.code, out: r.out.slice(-400), keys: Object.keys(after), same: same(after, fp) }); }
 // IP36 (139) a recovery that dies after its first rename (WORLD_TS_DIE_IN_RECOVERY) still holds the source record: a write to the old log since is refused next time
 { const name = "recov"; const d = oldWorld(name);
   const died = xlate([name], { WORLD_TS_DIE_AT_STEP: "1" }); const half = tool(["translate", name, "--no-founder-key"], { WORLD_TS_DIE_IN_RECOVERY: "1" });
@@ -636,6 +652,17 @@ fs.rmSync = (p, x) => { log("rm " + p); return rm(p, x); };\n`);
   ok(r.exitCode === 0 && first > 0 && into.length >= 2 && synced && marked >= 0 && marked < first && dirSync(marked, first) && cleared > last && dirSync(last, cleared) && dirSync(cleared, L.length),
     "IP32 the in-place swap's durable order: every translated file fsynced before the first rename; the world's directory synced after the marker lands, after the last rename, and after the marker is removed",
     { code: r.exitCode, out: (r.stdout.toString() + r.stderr.toString()).slice(-300), first, last, marked, cleared, synced, renamedIn: into.length, dSyncs: L.map((l, i) => (l === `fsync ${d}` ? i : -1)).filter((i) => i >= 0) }); }
+// IP32b the two-name form: the translated files (and .identities.json, which the next run reads if this one stops) are on disk before the move into the new name
+{ const src = "durable2", dest = "durable2-new"; oldWorld(src); const trace = path.join(root, "fsync-trace2.log"), spy = path.join(root, "fsync-spy.ts");
+  const h = dryHash([src, dest]); fs.rmSync(trace, { force: true });
+  const r = Bun.spawnSync(["bun", "--preload", spy, "tools/protocol/world.ts", "translate", src, dest, "--no-founder-key", "--operator-only-no-owner", "--approved", h], { cwd: ENGINE,
+    env: { ...process.env, TRUST_NAMES: "1", WORLDS_DIR: W, OPT_DIR: OPT, PROTOCOL_SCRATCH: root, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", FSYNC_TRACE: trace }, timeout: 45_000 });
+  const L = fs.existsSync(trace) ? fs.readFileSync(trace, "utf8").split("\n").filter(Boolean) : [];
+  const move = L.findIndex((l) => l.startsWith("rename ") && /\.translating-/.test(l.split(" ")[1]) && l.split(" ")[2]?.startsWith(path.join(W, dest)));
+  const T = move >= 0 ? L[move].split(" ")[1].split(path.sep).find((p) => p.startsWith(".translating-")) : null;
+  const synced = T ? ["world.jsonl", ".identities.json"].map((f) => L.slice(0, move).includes(`fsync ${path.join(W, T, f)}`)) : [];
+  ok(r.exitCode === 0 && move > 0 && synced.length === 2 && synced.every(Boolean) && isWorldDir(path.join(W, dest)),
+    "IP32b `translate old new`: world.jsonl and .identities.json are fsynced in the temporary sibling before the move into the new name", { code: r.exitCode, out: (r.stdout.toString() + r.stderr.toString()).slice(-300), move, T, synced, head: L.slice(0, 12) }); }
 // IP33 the two-name form's advice names both worlds: the printed command, run as printed, translates old into new
 { const src = "advised", dest = "advised-new"; oldWorld(src);
   const bare = tool(["translate", src, dest, "--no-founder-key"]), dr = tool(["translate", src, dest, "--dry-run", "--no-founder-key"]);
@@ -643,5 +670,46 @@ fs.rmSync = (p, x) => { log("rm " + p); return rm(p, x); };\n`);
   const r = said ? tool(["translate", ...said[1].split(" "), ...said[2].split(" ")]) : { code: -1, out: "no advice line" };
   ok(/translate advised advised-new --dry-run/.test(bare.out) && said?.[1] === `${src} ${dest}` && r.code === 0 && isWorldDir(path.join(W, dest)) && !isWorldDir(path.join(W, src)),
     "IP33 `translate old new`: the approval refusal and the dry run's 'to translate' line both name old and new, and the advised command translates old into new", { advice: said?.[0], code: r.code, out: r.out.slice(-300), bare: bare.out.slice(0, 200) }); }
+// IP33b the missing --operator-only-no-owner refusal names both worlds too
+{ const src = "advised2", dest = "advised2-new"; oldWorld(src); const h = dryHash([src, dest]);
+  const r = tool(["translate", src, dest, "--no-founder-key", "--approved", h]);
+  ok(r.code !== 0 && r.out.includes(`translate ${src} ${dest} --no-founder-key --approved ${h} --operator-only-no-owner`) && !isWorldDir(path.join(W, dest)),
+    "IP33b `translate old new --approved` without --operator-only-no-owner: the refusal's command names old and new", r.out.slice(-300)); }
+// IP38 a lone surrogate in the old log: the translator refuses it, and the CLI says so in its own words
+{ const name = "lone"; oldWorld(name, { extra: [{ actor: "Bob", verb: "say", args: { text: "half a pair \ud800 here" } }] });
+  const r = tool(["translate", name, "--dry-run", "--no-founder-key"]);
+  ok(r.code === 1 && /refused: the report of "lone" can't be made: .*lone surrogate/.test(r.out) && /Nothing was changed/.test(r.out) && !/\n\s+at /.test(r.out),
+    "IP38 a log with a lone surrogate: the dry run exits 1 with a refusal in words (the translator's reason), no stack trace", { code: r.code, out: r.out.slice(-400) }); }
+// IP39 an unreadable poses.json: the translation lands and says no place was carried over, and why
+{ const name = "badposes"; const d = oldWorld(name); fs.writeFileSync(path.join(d, "poses.json"), "{not json");
+  const r = xlate([name]);
+  ok(r.code === 0 && isWorldDir(d) && /NOTE: no remembered place was carried over: poses\.json couldn't be read/.test(r.out) && /0 remembered place/.test(r.out),
+    "IP39 a poses.json that doesn't parse: the translation says no place was carried over and why; nothing else changes", { code: r.code, out: r.out.slice(-500) }); }
+// IP40 a recovery stuck on a file in its way: exit 2 (files half-moved, never a refusal), the source record kept; cleared, it finishes
+{ const name = "stuckrec"; const d = oldWorld(name);
+  const died = xlate([name], { WORLD_TS_DIE_AT_STEP: "1" }); fs.writeFileSync(path.join(d, MANIFEST), "in the way");
+  const r = tool(["translate", name, "--no-founder-key"]); const T = temps().filter((t) => t.includes(name));
+  const src = T.length === 1 && fs.existsSync(path.join(W, T[0], ".source.json"));
+  fs.rmSync(path.join(d, MANIFEST)); const again = tool(["translate", name, "--no-founder-key"]);
+  ok(died.code === 9 && r.code === 2 && /in the way/.test(r.out) && src && again.code === 0 && /finished it now/.test(again.out) && !temps().some((t) => t.includes(name)) && isWorldDir(d),
+    "IP40 a recovery with a stray translation.json in its way exits 2 and keeps .source.json in the temporary directory; with the stray file gone the next run finishes the swap", { died: died.code, code: r.code, src, again: again.code, out: r.out.slice(-300) }); }
+// IP41 the two-name form into a directory that already holds a file the translation writes: refused, the file as it was
+{ const src = "collide", dest = "collide-new"; oldWorld(src); const D = path.join(W, dest); fs.mkdirSync(D); fs.writeFileSync(path.join(D, "poses.json"), "keep me");
+  const r = xlate([src, dest]);
+  ok(r.code !== 0 && /already holds poses\.json/.test(r.out) && fs.readFileSync(path.join(D, "poses.json"), "utf8") === "keep me" && !fs.existsSync(path.join(D, "world.jsonl")) && !temps().some((t) => t.includes(dest)),
+    "IP41 `translate old new` where new/ already holds poses.json refuses by name; the file is untouched, no world lands, no temporary directory is left", { code: r.code, out: r.out.slice(-300) }); }
+// IP42 a planned identity whose account took another id while the world was half landed is left as it is, said; the rest are added
+{ const name = "worn", dest = "worn-new"; oldWorld(name, { extra: [{ actor: "Wren", verb: "say", args: { text: "worn is its own world" } }] }); const D = path.join(W, dest);
+  const died = xlate([name, dest], { WORLD_TS_DIE_BEFORE_IDENTITIES: "1" }); const planned = JSON.parse(fs.readFileSync(path.join(D, ".identities.json"), "utf8"));
+  const bob = Object.entries<any>(planned).find(([, e]) => e.subs?.includes("local:wren"));
+  const other = mintId(); directoryFor(W).put({ [other]: { name: "Wren", subs: ["local:wren"], kind: "account", since: Date.now() } });   // the server minted one for the same account meanwhile
+  const r = tool(["translate", name, dest, "--no-founder-key"]); const ids = JSON.parse(fs.readFileSync(dirf, "utf8")).ids ?? {};
+  ok(died.code === 9 && !!bob && r.code === 0 && /NOTE: 1 planned identity not added: the account already wears another id here/.test(r.out) && !ids[bob![0]] && !!ids[other]
+    && Object.keys(planned).filter((id) => id !== bob![0]).every((id) => ids[id]) && !fs.existsSync(path.join(D, ".identities.json")),
+    "IP42 the next run adds every planned identity but the one whose account already wears another id, and says so (the ids are never merged)", { died: died.code, code: r.code, bob: bob?.[0], out: r.out.slice(-400) }); }
+// IP43 `found` under another spelling of an existing name's case: refused where the file system folds case (else a second world, the control)
+{ const a = tool(["found", "casefold", "--owner", "Ann"]); const folds = fs.existsSync(path.join(W, "CASEFOLD")); const b = tool(["found", "CASEFOLD", "--owner", "Ann"]);
+  ok(a.code === 0 && (folds ? b.code !== 0 && /another spelling of its case/.test(b.out) && same(fs.readdirSync(path.join(W, "casefold")), ["world.jsonl"]) : b.code === 0 && isWorldDir(path.join(W, "CASEFOLD"))),
+    `IP43 found CASEFOLD after casefold: ${folds ? "refused, casefold/ untouched (this file system folds case)" : "a second world (this file system keeps case: the control)"}`, { a: a.code, b: b.code, out: b.out.slice(-200) }); }
 console.log(`inplace: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

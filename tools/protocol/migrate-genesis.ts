@@ -18,7 +18,8 @@
 //     spellings kept, and a say or title quoting the old id keeps its words).
 // SAFETY: a log is rewritten only if the state digest is the same before (the previous fold, from git --old-fold, default d4e0677a~1) and after
 // (today's fold AND the Python reference reader). Stop the world's server first: it holds the old world id in memory.
-// usage: bun tools/protocol/migrate-genesis.ts [--apply] <world dir>…   (dry run without --apply: writes nothing, mints no key; skips a log already in today's shape)
+// usage: bun tools/protocol/migrate-genesis.ts [--apply] <world dir>…   (dry run without --apply: writes nothing to the world or custody, mints no key; skips a log
+//        already in today's shape. Either run keeps a copy of the previous fold beside shared/protocol/fold.js and a temp file for the reference reader, both removed after)
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";

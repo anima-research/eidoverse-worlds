@@ -29,6 +29,7 @@ import { directoryFor, mintId, type Entry } from "../../server/directory.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
 import { custodyFileIn } from "../../server/keyfiles.ts";
 import { agentTokens } from "../../server/auth.ts";
+import { syncDir, syncFile } from "../../server/durable.ts";
 import { ENGINE } from "./common.ts";
 
 const apply = process.argv.includes("--apply"), trust = process.argv.includes("--trust-names");
@@ -47,14 +48,16 @@ for (const dir of dirs) {
   // a backup beside a world.jsonl still byte-equal to it: a run killed between the backup and the renames (#260 133); it
   // finishes from the backups (fresh ids for a name the directory can't look up; a mod log already renamed is read from its backup)
   const interrupted = fs.existsSync(backups[0]) && fs.readFileSync(f).equals(fs.readFileSync(backups[0]));
-  if (backups.some((b) => fs.existsSync(b)) && !interrupted) { out.push({ dir, skipped: `a migration's backup is already here (${backups.filter((b) => fs.existsSync(b)).map((b) => path.basename(b)).join(", ")}): this world was migrated. A second run would overwrite the only way back; to run it again, restore the backup by hand first` }); continue; }
+  if (backups.some((b) => fs.existsSync(b)) && !interrupted) { out.push({ dir, skipped: `a migration's backup is already here (${backups.filter((b) => fs.existsSync(b)).map((b) => path.basename(b)).join(", ")}): this world was migrated. A second run would overwrite the only way back; to run it again, move the backup aside by hand first (a run killed while copying leaves a short one: compare it with world.jsonl before you trust either)` }); continue; }
   const raw = fs.readFileSync(f);
   const old = readLog(raw); const oldSt = fold(old);
   if (oldSt.status !== "ok") { out.push({ dir, skipped: `folds to ${oldSt.status}` }); continue; }
   const oldMod: any[] = modLogAt(interrupted && fs.existsSync(backups[1]) ? backups[1] : mf).mod;
   const worlds = path.dirname(path.resolve(dir));
   const directory = directoryFor(worlds); const cust = custodyAt(custodyFileIn(worlds));
-  if (cust.sequencer() !== old[0].body.sequencer) { out.push({ dir, skipped: "this worlds dir's custody doesn't hold the world's sequencer key" }); continue; }
+  // the dry run reads the custody file as it is (never mints): a worlds dir without one holds no world's sequencer key
+  const seqKey = apply ? cust.sequencer() : (() => { try { return JSON.parse(fs.readFileSync(custodyFileIn(worlds), "utf8")).sequencer?.pub; } catch { return undefined; } })();
+  if (seqKey !== old[0].body.sequencer) { out.push({ dir, skipped: "this worlds dir's custody doesn't hold the world's sequencer key" }); continue; }
   // the accounts a role value names, by the person's NAME (a later value wins; the world's final roles last)
   const acctOf = new Map<string, string>();
   const noteSub = (comp: unknown, v: any) => { const m = /^roles:(.+)$/.exec(typeof comp === "string" ? comp : ""); if (m && typeof v?.sub === "string") acctOf.set(dec(m[1]) ?? m[1], v.sub); };
@@ -119,12 +122,15 @@ for (const dir of dirs) {
   const good = same && rd.status === "ok" && !malformed && ch.status === "ok" && ch.unsigned_tail === 0;
   if (good && apply) {
     // the backups first (never over an existing one), then the directory: the ids exist before any log names them
-    if (!interrupted) fs.copyFileSync(f, backups[0], fs.constants.COPYFILE_EXCL);
-    if (nextMod.length && !fs.existsSync(backups[1])) fs.copyFileSync(mf, backups[1], fs.constants.COPYFILE_EXCL);
+    if (!interrupted) { fs.copyFileSync(f, backups[0], fs.constants.COPYFILE_EXCL); syncFile(backups[0]); }
+    if (nextMod.length && !fs.existsSync(backups[1])) { fs.copyFileSync(mf, backups[1], fs.constants.COPYFILE_EXCL); syncFile(backups[1]); }
+    syncDir(dir);
     directory.put(planned);
     if (process.env.MIGRATE_IDENTITIES_DIE_BEFORE_LOGS) process.exit(9);   // tests only: a crash between the directory and the logs (migrate-identities-check MI6)
+    if (nextMod.length) syncFile(mtmp);
+    syncFile(tmp);   // both replacement logs on disk before either rename publishes one
     if (nextMod.length) fs.renameSync(mtmp, mf);
-    fs.renameSync(tmp, f);
+    fs.renameSync(tmp, f); syncDir(dir);
   } else { fs.rmSync(tmp, { force: true }); fs.rmSync(mtmp, { force: true }); }
   out.push({ dir, ...(interrupted ? { interrupted: true } : {}), entries: old.length, moderation: oldMod.length, identities: Object.keys(planned).length, same, problems: problems.slice(0, 8), reader: rd.status, malformed, chain: ch.status, written: good && apply,
     people: Object.values(planned).map((p) => `${p.name}${p.subs.length ? ` (${p.subs[0].split(":")[0]})` : " (legacy)"}`) });

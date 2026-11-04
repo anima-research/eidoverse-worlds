@@ -10,6 +10,7 @@
 //   F50b    the vehicle walls are pinned at [0, y, 0], spanning every legal x/z: a v1 move re-places nothing
 //   F50c    the vehicle walls are locked (builder strength), and the report says so
 //   F51     @37: main's slow water is physics-area {kind: speed, modes: [swim]} on the water's zone; no drag field anywhere
+//   F51t    the report's `into` for a turned model-less host names the water child the translation writes, not the host
 //   F52-53  @31: main's 78 m stage a bounds box; its inferred lamps light children
 //   F51d, F53c-e  @43: a clamped speed factor said; lamps beside an own light; an unreadable model said; a clamped floor said
 //   DT8     @34 (decision table row 8): main's ambient motes' count, range and colour in a derived dust document
@@ -229,6 +230,10 @@ row("F51", () => { const pond = (speed: number) => tr([OWNER, ["olga", "spawn", 
   ok(JSON.stringify(kid(slow)?.["physics-area"]) === JSON.stringify({ kind: "speed", factor: 0.5, modes: ["swim"] }) && JSON.stringify(M(slow)?.speed?.["physics-area"]) === JSON.stringify({ kind: "speed", factor: 0.5, modes: ["swim"] })
     && kid(near) && kid(near)["physics-area"] === undefined && /within 5%/.test(M(near)?.speed?.dropped ?? "") && !json.includes('"drag"'),
     "F51 main's slow water (speed 1.2, half the 2.4 stroke a volume swims at here) is physics-area {kind: speed, factor: 0.5, modes: [swim]} on the water's zone (a swim only, as main: walking on the pond floor is not slowed), said in the report; 2.45 (within 5%) writes nothing and says so; no translated world carries a drag field", { slow: kid(slow), mapped: M(slow), near: M(near) }); });
+row("F51t", () => { const { r, E } = tr([OWNER, ["olga", "spawn", { id: "pool", yaw: 1.2 }], ["olga", "comp", { id: "pool", type: "water", data: { center: [0, 0, 0], size: [4, 2, 4] } }]]);
+  const kid = Object.entries<any>(E).find(([, c]) => c.water && c.zone && c.parent?.to === "pool")?.[0], m = r.stats.mapped?.find((x) => x.component === "water");
+  ok(!!kid && E.pool?.water === undefined && JSON.stringify(m?.into) === JSON.stringify([kid]),
+    "F51t a turned host with no model: the translation writes the water as a child turned back, and the report's `into` names that child, not the host", { kid, into: m?.into, host: E.pool }); });
 // bot review 59 (@41): main read only boxes[i].{center, size, q}; anything else main's air held is carried and listed, never silent
 row("F51a", () => { const { r, E } = tr([OWNER, ["olga", "spawn", { id: "hab", lib: "h.glb" }], ["olga", "comp", { id: "hab", type: "air", data: { custom: "keep", boxes: [{ center: [0, 1, 0], size: [2, 2, 2], custom: "also keep" }, null] } }]]);
   const plain = tr([OWNER, ["olga", "spawn", { id: "hab", lib: "h.glb" }], ["olga", "comp", { id: "hab", type: "air", data: { boxes: [{ center: [0, 1, 0], size: [2, 2, 2] }] } }]]);

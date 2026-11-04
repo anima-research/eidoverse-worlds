@@ -27,13 +27,19 @@ home-node attestation, later), the one path is `--no-founder-key --operator-only
 record says no owner was attested.
 
 1. **The dry run.** `WORLDS_DIR=<dir> bun tools/protocol/world.ts translate <world> --dry-run --no-founder-key`. It writes
-   nothing and prints the report (`reportV1World` in `world.ts` here; a world none of whose owners has an account yet is refused
-   before it: `EIDO_UPGRADER_ACCOUNT=<yours> … --claim` on this step and the next makes you its owner): the old log's size and sha256, the translator and
+   nothing to the world and prints the report (`reportV1World` in `world.ts` here; a world with no owner at all is refused
+   before it unless `EIDO_UPGRADER_ACCOUNT=<yours> … --claim`, on this step and the next, makes you its owner; an owner main
+   recorded no account for is a warning, bound later with `operator-repair bind`). The one thing a dry run can write is this
+   host's custody key (`.custody.json`), minted on first use: the ids and the countersignature derive from it, so the dry
+   run and the apply agree. The report: the old log's size and sha256, the translator and
    fold build, `founderKey: null`, the counts, the `DROPPED` table (what every translation drops or renames by design, from
    `translate-v1.js`), `mapped` (main's water volumes, air boxes, climb routes, vehicles, collision toggles, environments and inferred lamps,
    each with where it went), `deferred` (`DEFERRED` is empty; the one use still refused is a water or air volume on
    `@world`, named with its use) and `report-hash <sha256>`.
-   Nothing in it varies between runs, so the same log, tool, host library bytes, identity directory and `poses.json` always hash the same.
+   Nothing in it varies between runs, so the same log, tool, host library bytes, host custody secret (the ids derive from it),
+   identity directory and `poses.json` always hash the same; a watch grant that lapses between runs changes the report, and so its hash.
+   A `translate <world>` on a directory whose earlier approved run was interrupted mid-swap finishes that swap first, whatever
+   flags it was given (`--dry-run` included): the recovery moves files, the dry run itself writes none.
 2. **The translation, bound to that hash.** `translate <world> --no-founder-key --approved <hash> --operator-only-no-owner`.
    The report is recomputed from `log.jsonl` as it stands: a different hash (the log grew, the tool changed) is refused with
    both hashes named. Without `--operator-only-no-owner` it is REFUSED: no owner can sign, and the operator says so,

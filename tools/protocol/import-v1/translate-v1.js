@@ -525,7 +525,7 @@ export function volumeMappings(st) {
   const out = [], pin = pinsSpeed(st);
   for (const [id, e] of Object.entries(st?.entities ?? {})) for (const k of ["water", "air"]) {
     if (e?.comp?.[k] == null) continue;
-    const c = { ...(e.lib !== undefined ? { model: e.lib } : {}), ...(e.kind === "light" ? { light: {} } : {}) };
+    const c = { transform: transformOf(st, e), ...(e.lib !== undefined ? { model: e.lib } : {}), ...(e.kind === "light" ? { light: {} } : {}) };   // the host's turn decides own vs child, as the translation does
     const { own, children } = volumePartsOf(enc(id), { [k]: e.comp[k] }, c);
     const m = k === "water" && e.comp.water && typeof e.comp.water === "object" && !Array.isArray(e.comp.water) ? waterOfOld(e.comp.water) : null;   // @35: what main's speed became
     const sp = m && !m.area && pin ? { "physics-area": speedPin(), why: "another water here has a speed area: factor 1 keeps this one's own stroke where they overlap (@42)" } : m?.speed;
@@ -631,6 +631,12 @@ export function deferredRefusal(uses, world = "this world") {
 // parent.yaw, else the socket's yaw. Only while its carrier exists: a thing whose carrier is gone stays where its own
 // pose puts it (as v1 draws it), and the authority reads a parent that names nothing the same way (worldT).
 const fin = (n) => { n = Number(n); return Number.isFinite(n) ? n : 0; };
+/** A v1 thing's transform as the translation writes it: its pos, q (or yaw) and scale; a rider's, where it sits. */
+function transformOf(st, e) {
+  const t = { pos: e.pos ?? [0, 0, 0], q: Array.isArray(e.q) ? e.q : yawQ(e.yaw ?? 0), scale: typeof e.scale === "number" ? [e.scale, e.scale, e.scale] : (e.scale ?? [1, 1, 1]) };
+  const ride = rideOf(st, e); if (ride) { t.pos = ride.pos; t.q = ride.q; }
+  return t;
+}
 function rideOf(st, e) {
   const rel = e.parent; if (!rel || typeof rel !== "object" || typeof rel.to !== "string" || !Object.hasOwn(st.entities ?? {}, rel.to)) return null;
   const socks = st.entities[rel.to]?.comp?.sockets; const s0 = rel.slot && socks && typeof socks === "object" && Object.hasOwn(socks, rel.slot) ? socks[rel.slot] : null;
@@ -849,10 +855,7 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
   const person = (k, v, lowered = false) => (who && !SYSTEM.has(k) ? who(k, { sub: (v && typeof v === "object" && typeof v.sub === "string" ? v.sub : undefined) ?? (lowered ? undefined : asSub(k)), ...(lowered ? { lowered } : {}) }) : enc(k));
   const unsub = (v) => { if (!v || typeof v !== "object" || Array.isArray(v) || !("sub" in v)) return v; const { sub, ...rest } = v; return rest; };   // @12: always
   for (const [id, e] of Object.entries(st.entities ?? {})) {
-    const c = {};
-    const t = { pos: e.pos ?? [0, 0, 0], q: Array.isArray(e.q) ? e.q : yawQ(e.yaw ?? 0), scale: typeof e.scale === "number" ? [e.scale, e.scale, e.scale] : (e.scale ?? [1, 1, 1]) };
-    const ride = rideOf(st, e); if (ride) { t.pos = ride.pos; t.q = ride.q; }
-    c.transform = t;
+    const t = transformOf(st, e), c = { transform: t };
     if (e.lib !== undefined) { c.model = e.lib; const h = content && typeof e.lib === "string" ? hashOf(content(e.lib)) : null; if (h) c["model-hash"] = h; }
     if (e.kind === "light") c.light = Object.fromEntries(["color", "intensity", "range", "keep", "day"].filter((k) => e[k] !== undefined).map((k) => [k, e[k]]));
     const emitters = [];   // v1 particles:<name> (upstream #256): each becomes a child thing (@15)

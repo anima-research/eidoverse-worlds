@@ -20,9 +20,10 @@ is the one reader (`mediumOf` → `{medium, level, flow, body, priority}`).
 
 Upstream's components map as follows (translate-v1 `VOLUMES`): `water {center, size,
 absorption, scatter, speed?, waves}` → a body (on its own thing when that has no model
-or light and the box is centred on it, else a child at the centre; σ → `attenuationColor`
+or light, is not turned, and the box is centred on it, else a child at the centre, turned back by a turned host; σ → `attenuationColor`
 e^−σ over 1 m; `speed` → a sibling `physics-area {kind: 'speed', factor: speed / 2.4, modes: ['swim']}`
-on the zone, or nothing within 5% of 2.4, listed in the report); `air {boxes}` → one child per box,
+on the zone, the factor clamped to 0.05..10, or nothing within 5% of 2.4 — unless another water in the world has a speed
+area, when factor 1 is written so the areas overlap as the waters do; each listed in the report); `air {boxes}` → one child per box,
 `zone {box, size, priority: 1}` + `water-exclusion {}`, its centre and `q` its transform;
 anything else in `air` rides `imported:air`, listed under `unmapped`.
 Each `traversal` route is a child with `climb {points, reach, speed}` and its name as
