@@ -141,7 +141,7 @@ ok(old.requestSync("olive", "say", { text: "late" })?.refused?.code === "reset",
   const w2 = hw.log.requestSync(owner, "say", { text: "in the fresh world" });
   ok(errs.length === 2 && fs.existsSync(path.join(dir, "world.jsonl")) && w2?.ok === true,
     "PR3 resetting again finishes the erase (a fresh world that takes writes)", { errs, w2: w2?.ok ?? w2?.refused }); }
-// PR4: a reset that succeeds archives the old log and poses (the fresh world has none) and is durable: both directories synced
+// PR4: a reset that succeeds archives the old log and poses (the fresh world has none)
 { const dir = path.join(process.env.WORLDS_DIR, "whole"); const { owner } = foundWorld(dir, "whole", "olive");
   fs.writeFileSync(path.join(dir, "poses.json"), '{"x":1}'); const hw = new World("whole"); hw.log.requestSync(owner, "say", { text: "old" });
   const before = fs.readFileSync(path.join(dir, "world.jsonl"), "utf8");
