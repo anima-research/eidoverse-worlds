@@ -155,7 +155,8 @@ const seenErrors = new Map(); // key -> { n, nextAt }
 // (Bearer), below. `tee(line)` is for lines worth keeping ([xr] etc). The server's budget (server/clientlog.ts) is
 // honoured here: a 429 waits its Retry-After (60 s when unsaid) with the lines kept, a 413 keeps the newer half.
 let teeQ = [], teeTimer = 0, teeMuted = false, teePausedUntil = 0;
-const TEE_LINES = 2000, TEE_BYTES = 60 * 1024, TEE_DEBOUNCE_MS = 2000;   // 60 KB: under keepalive's 64 KB in-flight cap
+// Batched every 10 s and flushed as the page hides (Element 30 s, Sentry's buffer the same shape): fewer posts, no lost tail.
+const TEE_LINES = 2000, TEE_BYTES = 60 * 1024, TEE_DEBOUNCE_MS = 10000;   // 60 KB: under keepalive's 64 KB in-flight cap
 function teeFlush() {
   teeTimer = 0;
   if (!teeQ.length || teeMuted) return;
@@ -196,7 +197,11 @@ export function tee(line) {
 /** tee, sent NOW: for the line before something that may freeze the page (a GPU-process compile), so it isn't lost
  *  in the batch. A 429's wait still holds. */
 export function teeNow(line) { tee(line); try { clearTimeout(teeTimer); teeFlush(); } catch { /* never */ } }
+/** The page is going away (pagehide, or hidden, which is the last event a mobile tab reliably gets): send what's queued. */
+export function teeOnHide() { try { if (teeQ.length) { clearTimeout(teeTimer); teeFlush(); } } catch { /* never */ } }
 if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide', teeOnHide);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') teeOnHide(); });
   window.addEventListener('error', (e) => tee(`[window.error] ${e.message} @ ${(e.filename ?? '').split('/').pop()}:${e.lineno}`));
   window.addEventListener('unhandledrejection', (e) => tee(`[unhandled] ${e.reason?.message ?? e.reason}`));
   // wake CAUSE, not just the URL (cribbed from agent-framework #141's turn
