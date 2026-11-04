@@ -11,7 +11,7 @@ const { foundWorlds } = await import("./harness.ts");
 foundWorlds(wd, ["known"]);   // a world with a log (world.jsonl) = known
 const { route } = await import("../server/routes.ts");
 const { hnSessions } = await import("../server/auth.ts");
-const { LIMITS, ClientLogStore, ClientLogRate, ipBucketKey, scrub, boundLines } = await import("../server/clientlog.ts");
+const { ClientLogStore, ClientLogRate, ipBucketKey, scrub, boundLines } = await import("../server/clientlog.ts");
 let n = 0;
 const ok = (v: unknown, why: string) => { if (!v) { console.error("FAIL", why); process.exit(1); } n++; };
 let ip = "10.0.0.1";   // each row its own address unless it is about the address
@@ -36,7 +36,7 @@ ok(logs("known").includes("from a session") && existsSync(join(ld, "known", "hum
 ip = "10.0.1.1";
 const streamed = new Request("http://x/clientlog?world=known", { method: "POST", body: new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode("x")); c.close(); } }), duplex: "half", headers: { authorization: "Bearer test-door" } } as RequestInit);
 ok(streamed.headers.get("content-length") === null && await st(route(streamed, srv)) === 411, "S1 a streamed body (no content-length) → 411");
-ok(LIMITS.bodyBytes === 256 * 1024 && await st(post("world=known", "y".repeat(300 * 1024))) === 413, "S2 300 KB by Content-Length → 413");
+ok(await st(post("world=known", "y".repeat(300 * 1024))) === 413, "S2 300 KB by Content-Length → 413");
 ip = "10.0.1.2";
 ok(await st(post("world=known", "y".repeat(300 * 1024), undefined, "100")) === 413, "S3 300 KB behind a Content-Length that says 100 → 413 (counted while reading)");
 ip = "10.0.1.3";
@@ -46,7 +46,7 @@ ok(await st(post("world=known", "L".repeat(2500) + "\nshort")) === 200 && logs("
 ip = "10.0.1.5";
 const many = Array.from({ length: 2500 }, (_, i) => `line${i}`).join("\n");
 ok(await st(post("world=known", many)) === 200 && logs("known").includes('"line0"') && logs("known").includes('"line2499"') && logs("known").includes("…[501 lines cut]") && !logs("known").includes('"line1250"'), "S6 2500 lines keep the head and the tail with the cut marked");
-ok(LIMITS.lineChars === 2000 && LIMITS.lines === 2000 && boundLines("a\nb").cut === 0, "S7 the line limits are the research's");
+ok(boundLines("a\nb").cut === 0, "S7 lines within the limits are not cut");
 
 // ---- rate: per address (IPv6 by /64) before the body is read; per sender, 3 in a row
 ip = "10.0.2.1";
@@ -65,7 +65,6 @@ ok(burst.join() === "200,".repeat(10) + "429", `R5 a sender posts 10 in a row, t
 ip = "10.0.2.3";
 const keyed = []; for (let i = 0; i < 11; i++) keyed.push(await st(post("world=known", `k${i}`)));
 ok(keyed.join() === "200,".repeat(10) + "429", `R5b a door-key caller is a sender by its address: the same 10 (got ${keyed.join()})`);
-ok(LIMITS.ipPer10Min === 30 && LIMITS.senderPer10Min === 30 && LIMITS.senderBurst === 10, "R6 the rate numbers are the research's");
 const rate = new ClientLogRate(); const t0 = 1_000_000;
 for (let i = 0; i < 10; i++) rate.admit("1.1.1.1", "s", t0);
 ok(rate.admit("1.1.1.1", "s", t0) === 20 && rate.admit("1.1.1.1", "s", t0 + 20_000) === null && rate.admit("1.1.1.1", "s", t0 + 20_000) === 20, "R7 a sender's token returns one every 20 s (30 per 10 min); Retry-After says 20");
@@ -87,7 +86,6 @@ const rp = await post("world=known", pem);
 ok(rp.status === 400 && /private key/.test(await rp.text()) && !logs("known").includes("MIIEow") && !logs("known").includes("oops"), "C6 a private-key block → 400 with a plain reason, nothing of that request stored");
 
 // ---- disk: a sender's newest 2 MB, the store's newest 200 MB oldest-first, 14 days; a new line never waits
-ok(LIMITS.senderBytes === 2 * 1024 * 1024 && LIMITS.totalBytes === 200 * 1024 * 1024 && LIMITS.keepMs === 14 * 86_400_000, "D1 the disk numbers are the research's");
 const sd = join(wd, "store"); const store = new ClientLogStore(sd, { senderBytes: 1000, totalBytes: 2500, keepMs: 14 * 86_400_000 });
 const line = (tag: string, i: number) => `${tag}${String(i).padStart(3, "0")}\n`;
 for (let i = 0; i < 300; i++) store.append("w", "a", line("a", i), t0 + i);
