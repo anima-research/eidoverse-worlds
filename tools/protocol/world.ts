@@ -247,7 +247,7 @@ function translateInPlace(name: string, approval: Approval, approvedSource: { si
     // the swap has succeeded: only now do its identities join the shared directory (a refusal here, an account taken since,
     // undoes the swap like any other failure)
     if (Number(process.env.WORLD_TS_FAULT_AT_STEP ?? NaN) === steps.length) throw new Error(`(injected) step ${steps.length} failed`);
-    putIdentities(r!.planned); minted = true;
+    minted = true; putIdentities(r!.planned);   // before the call: a throw inside it, after the file changed, still forgets them below
     if (Number(process.env.WORLD_TS_FAULT_AT_STEP ?? NaN) === steps.length + 1) throw new Error(`(injected) step ${steps.length + 1} failed`);   // tests only: after the identities (IP35)
     fs.rmSync(path.join(D, SWAP_MARKER)); syncDir(D); }
   catch (x) {
