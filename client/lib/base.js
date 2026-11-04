@@ -84,7 +84,10 @@ export function forgetRememberedWorlds() {
 }
 
 const params = new URLSearchParams(globalThis.location?.search ?? '');
-const store = (() => { try { return globalThis.localStorage ?? null; } catch { return null; } })();   // a sandboxed frame throws on the property (bot #578)
+// a sandboxed frame throws on the property, a blocked one on every call: either way the page runs without a memory
+const store = (() => { try { return globalThis.localStorage ?? null; } catch { return null; } })();
+const remembered = (k) => { try { return store?.getItem(k) ?? null; } catch { return null; } };
+const remember = (k, v) => { try { store?.setItem(k, v); } catch { /* no memory here */ } };
 const picked = globalThis.__ewWorld ?? pickWorld(params, ...rememberedWorlds());
 export const CONFIG = {
   params,
@@ -99,14 +102,14 @@ export const CONFIG = {
   roam: params.has('renderer') && params.has('roam'),
   follow: params.get('follow'),
   // Door key: ?key=… once, remembered for this origin thereafter.
-  token: params.get('key') || store?.getItem('ew-key') || '',
-  name: params.get('name') || store?.getItem('ew-name') ||
+  token: params.get('key') || remembered('ew-key') || '',
+  name: params.get('name') || remembered('ew-name') ||
     `guest-${Math.random().toString(36).slice(2, 6)}`,
   // a dev host (the probes, a local server, ?dev): the guards that throw loudly instead of letting drift pass
   dev: params.has('dev') || /^(localhost|127\.0\.0\.1|\[::1\])$/.test(globalThis.location?.hostname ?? ''),
 };
-if (params.get('key')) store?.setItem('ew-key', CONFIG.token);
-store?.setItem('ew-name', CONFIG.name);
+if (params.get('key')) remember('ew-key', CONFIG.token);
+remember('ew-name', CONFIG.name);
 // the ACCOUNT a private (TRUST_NAMES) server knows you by, kept apart from the name you show (R 10-11: renaming herself
 // "Rab" made her a stranger with no role in her own world). Fixed at the first real name this browser used; ?account=
 // overrides. A server with sign-in ignores it: the session is the account there.
