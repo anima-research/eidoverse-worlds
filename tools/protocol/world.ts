@@ -277,6 +277,7 @@ function rollback(name: string) {
   // every renamed original must still be there, exactly as recorded for the log; every made file either as made or discarded knowingly
   // an original already under its old name with the kept one gone is an interrupted rollback's work: left as restored
   const restored = new Set<string>(m.renamed.filter(([a, b]: string[]) => !fs.existsSync(path.join(D, b)) && fs.existsSync(path.join(D, a))).map(([, b]: string[]) => b));
+  const isBack = (f: string) => m.renamed.some(([a, b]: string[]) => a === f && restored.has(b));   // the original under its old name again: never a made file to check or remove
   const missing = m.renamed.filter(([a, b]: string[]) => !fs.existsSync(path.join(D, b)) && !fs.existsSync(path.join(D, a))).map(([, b]: string[]) => b);
   if (missing.length) die(`can't roll back "${name}": the kept original(s) ${missing.join(", ")} are gone from ${D}. Nothing was changed.`);
   // a name the original goes back to must be free, unless it's one the translation made (removed first, below: the new poses.json)
@@ -284,7 +285,7 @@ function rollback(name: string) {
   if (back.length) die(`can't roll back "${name}": ${back.join(", ")} already exist(s) in ${D}, where the original(s) would go back. Nothing was changed.`);
   const origNow = restored.has(ORIGINAL.log) ? sourceChanged(path.join(D, "log.jsonl"), m.source) : sourceChanged(path.join(D, ORIGINAL.log), m.source);
   if (origNow) die(`can't roll back "${name}": ${ORIGINAL.log} no longer holds the bytes that were translated (${m.source.size} bytes then, ${origNow.size} now): it was written to, and the original is lost. Nothing was changed.`);
-  const changed = Object.entries<string | null>(m.made).filter(([f, h]) => h && fs.existsSync(path.join(D, f)) && sha(path.join(D, f)) !== h).map(([f]) => f);
+  const changed = Object.entries<string | null>(m.made).filter(([f, h]) => h && !isBack(f) && fs.existsSync(path.join(D, f)) && sha(path.join(D, f)) !== h).map(([f]) => f);
   // files the server made since the translation (r14 M3): not made by it, not renamed by it, not there before it. The moderator
   // log (bans, mutes, kicks: PROTOCOL §2.1) is the usual one; a repair's backups another. They are history too.
   const known = new Set([...Object.keys(m.made), ...m.renamed.flat(), ...(m.present ?? []), MANIFEST]);
@@ -292,7 +293,7 @@ function rollback(name: string) {
   if ((changed.length || since.length) && !discard) die(`can't roll back "${name}" without losing history: ${[...changed.map((f) => `${f} changed since the translation made it`), ...since.map((f) => `${f} was made since the translation${f === "world.mod.jsonl" ? " (the moderator log: bans, mutes, kicks were filed)" : ""}`)].join("; ")} `
     + `(the server has written to the translated world: acts, places, bans). Rolling back deletes that; if that is what you want, say so: rollback ${name} --discard-changes. Nothing was changed.`);
   const did: string[] = [];
-  for (const f of Object.keys(m.made)) if (f !== MANIFEST && fs.existsSync(path.join(D, f))) { fs.rmSync(path.join(D, f), { recursive: true }); did.push(`removed ${f}${changed.includes(f) ? " (its changes since the translation discarded)" : ""}`); }
+  for (const f of Object.keys(m.made)) if (f !== MANIFEST && !isBack(f) && fs.existsSync(path.join(D, f))) { fs.rmSync(path.join(D, f), { recursive: true }); did.push(`removed ${f}${changed.includes(f) ? " (its changes since the translation discarded)" : ""}`); }
   for (const f of since) { fs.rmSync(path.join(D, f), { recursive: true, force: true }); did.push(`removed ${f} (made by the server since the translation; discarded)`); }
   for (const f of fs.readdirSync(D)) if (isCacheFile(f)) fs.rmSync(path.join(D, f));   // the translated log's derived fold goes with it
   for (const [a, b] of m.renamed) { if (restored.has(b)) { did.push(`${a} was already back`); continue; } fs.renameSync(path.join(D, b), path.join(D, a)); did.push(`${b} → ${a}`); }

@@ -30,7 +30,7 @@
 //   IP16 finishing an interrupted swap refuses when the old log changed since the translation read it
 //   IP17 a failed in-place translation adds no identity to the shared directory; the clean run adds them once
 //   IP18 the recovery of an interrupted swap writes the identities the interrupted run planned
-//   IP34–IP37 an interrupted rollback finishes; a swap failing after its identities forgets them;
+//   IP34–IP37 an interrupted rollback finishes (IP34b: one that had put the old poses.json back); a swap failing after its identities forgets them;
 //        a recovery dying after its first rename keeps the source record; the recovery renames poses.json as the swap recorded
 //   IP11 a snapshot.json the oracle can't compare (a fold of part of the log) doesn't block the translation: it says,
 //        in its output, that the snapshot was NOT compared and why, and keeps it as snapshot.original.json
@@ -588,6 +588,13 @@ const actorsOf = (d: string) => [...new Set(fs.readFileSync(path.join(d, "world.
   const r = tool(["rollback", name]); const after = fingerprint(d);
   ok(t.code === 0 && r.code === 0 && /already back/.test(r.out) && same(after, fp) && !fs.existsSync(path.join(d, MANIFEST)),
     "IP34 a rollback interrupted after the log went back is finished by the next: nothing is reported gone, every file is as before", { t: t.code, code: r.code, out: r.out.slice(-400), keys: Object.keys(after) }); }
+// IP34b a rollback interrupted after the old poses.json went back (the made one removed, poses.original.json → poses.json, the
+// manifest still there): the next run neither calls the restored original a changed made file nor removes it
+{ const name = "halfposes"; const d = oldWorld(name); const fp = fingerprint(d);
+  const t = xlate([name]); fs.rmSync(path.join(d, "poses.json")); fs.renameSync(path.join(d, "poses.original.json"), path.join(d, "poses.json"));
+  const r = tool(["rollback", name]); const after = fingerprint(d);
+  ok(t.code === 0 && r.code === 0 && /poses\.json was already back/.test(r.out) && same(after, fp) && !fs.existsSync(path.join(d, MANIFEST)),
+    "IP34b a rollback interrupted after the old poses.json went back finishes without refusing it as changed or deleting it: every file is as before", { t: t.code, code: r.code, out: r.out.slice(-400), keys: Object.keys(after), same: same(after, fp) }); }
 // IP36 (139) a recovery that dies after its first rename (WORLD_TS_DIE_IN_RECOVERY) still holds the source record: a write to the old log since is refused next time
 { const name = "recov"; const d = oldWorld(name);
   const died = xlate([name], { WORLD_TS_DIE_AT_STEP: "1" }); const half = tool(["translate", name, "--no-founder-key"], { WORLD_TS_DIE_IN_RECOVERY: "1" });
