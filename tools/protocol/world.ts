@@ -387,6 +387,7 @@ if (cmd === "found") {
   const tmp = path.join(WORLDS_DIR, `.founding-${name}-${crypto.randomBytes(4).toString("hex")}`);
   if (process.env.WORLD_TS_DIE_WHILE_FOUNDING) { const open = fs.openSync;   // tests only: the process dies at the append after genesis (inplace-check IP31b)
     (fs as any).openSync = (p: any, f: any, ...m: any[]) => { if (f === "a" && String(p).endsWith("world.jsonl") && (fs.statSync(p, { throwIfNoEntry: false })?.size ?? 0) > 0) process.exit(9); return open(p, f, ...m); }; }
+  if (fs.existsSync(dest) && !fs.readdirSync(WORLDS_DIR).includes(name)) die(`${dest} exists under another spelling of its case: a world is one name. Nothing was changed.`);
   let r; try { r = foundWorld(tmp, name, owner!, flag("title")); } catch (e: any) { fs.rmSync(tmp, { recursive: true, force: true }); die(String(e?.message ?? e)); }
   { const w = inTheWay(tmp, dest); if (w.length) { fs.rmSync(tmp, { recursive: true, force: true }); die(`${dest} already holds ${w.join(", ")}, where the new world's files would go. Nothing was changed.`); } }
   if (!fs.existsSync(dest)) fs.renameSync(tmp, dest);
