@@ -44,7 +44,7 @@ function closureOf(entries) {
     { added: got.filter((f) => !want.includes(f)), gone: want.filter((f) => !got.includes(f)) });
   const inputs = new Set(Object.values(SIM_INPUTS).map((i) => i.module));
   const readers = got.filter((f) => !f.startsWith("bare:") && !inputs.has(f) && OUTSIDE.test(fs.readFileSync(ENGINE + f, "utf8")));
-  ok(!readers.length, "I2 only a module SIM_INPUTS names reads outside data", readers);
+  ok(!readers.length, "I2 only a module SIM_INPUTS names reads outside data", readers);   // a named module is exempt whole, not per read site
   ok([...inputs].every((m) => got.includes(m)), "I3 every SIM_INPUTS module is one the sim imports", [...inputs]);
 }
 
