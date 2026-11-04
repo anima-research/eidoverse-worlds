@@ -267,7 +267,7 @@ try {
   await sleep(200);
   const refusedActs = logLines().slice(nR);
   local("a refused write changes no state: the log gained only the door's records of refused acts (and at least one)",
-    () => refusedActs.length > 0 && refusedActs.every((e: any) => e.kind === "act" && e.body?.refused), JSON.stringify(refusedActs).slice(0, 300));
+    () => refusedActs.length > 0 && refusedActs.every((e: any) => e.kind === "request" && e.body?.refused), JSON.stringify(refusedActs).slice(0, 300));
   const n1 = quiet();
 
   // --- one body per identity

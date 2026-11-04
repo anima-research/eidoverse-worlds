@@ -100,7 +100,7 @@ function session() {
 }
 const code = (r: any) => r?.refused?.code;
 const show = (r: any) => (r?.crashed ? `CRASH ${r.crashed}` : r?.ok ? "ok" : `refused ${r?.refused?.code}: ${String(r?.refused?.reason).slice(0, 120)}`);
-const launchesOf = (s: any) => s.entries().filter((e: any) => e.kind === "sim" && e.verb === "launch");
+const launchesOf = (s: any) => s.entries().filter((e: any) => e.kind === "physics" && e.verb === "launch");
 const shovesIn = (s: any, who: string) => (s.call(who, "inbox").messages ?? []).filter((m: any) => m.type === "body" && m.kind === "shove");
 // owner olive, builder bob, member vic; a world running eidosim; a crate (0.6 m) at the origin anyone may punt
 function cast(s: any, { physics = true } = {}) {
@@ -114,7 +114,7 @@ type Case = { id: string; what: string; run: (s: any) => any; good: (o: any) => 
 const cases: Case[] = [
   { id: "F1", what: "a builder's blast 1 m off the crate's -x side punts it outward (+x, lifted) as one force act, the launch caused by it", run(s) { cast(s);
       const n0 = s.entries().length; const r = s.call("bob", "force", { at: [-1, 0, 0] });
-      const acts = s.entries().slice(n0).filter((e: any) => e.kind === "act"); const l = launchesOf(s)[0];
+      const acts = s.entries().slice(n0).filter((e: any) => e.kind === "request"); const l = launchesOf(s)[0];
       return { r: show(r), punted: r.punted, acts: acts.map((e: any) => e.body?.verb ?? e.verb), act: r.act, cause: l?.cause, v: l?.body?.v }; },
     good: (o) => o.r === "ok" && o.punted?.length === 1 && o.acts.length === 1 && o.cause === o.act && o.v?.[0] > 1 && o.v?.[1] > 0.5 && Math.abs(o.v?.[2]) < 1e-6 },
   { id: "F2", what: "a member's blast is refused rights, and nothing flies", run(s) { cast(s);

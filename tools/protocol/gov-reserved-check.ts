@@ -17,7 +17,7 @@ try {
 
   const gov = found("gov"); const log = path.join(gov, "world.jsonl");
   const entries = readLog(fs.readFileSync(log)); const last = entries.at(-1) as any;
-  const e: Record<string, unknown> = { world: last.world, kind: "sequencer", actor: "system", verb: "sequencer", body: { key: "ed25519:" + "A".repeat(43), sigs: [{ key: "ed25519:" + "B".repeat(43), v: "C".repeat(86) }] }, ts: last.ts + 1 };
+  const e: Record<string, unknown> = { world: last.world, kind: "governance", actor: "system", body: { key: "ed25519:" + "A".repeat(43), sigs: [{ key: "ed25519:" + "B".repeat(43), v: "C".repeat(86) }] }, ts: last.ts + 1 };
   e.head = step(last.head, e); fs.appendFileSync(log, JSON.stringify(e) + "\n");
   const before = { log: fs.readFileSync(log), files: fs.readdirSync(gov).sort().join(",") };   // the bytes and the listing openLive must leave alone
   let err = ""; try { openLive(gov, "gov"); } catch (x) { err = String((x as Error)?.message ?? x); }

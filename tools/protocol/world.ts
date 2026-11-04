@@ -241,7 +241,7 @@ function translateInPlace(name: string, approval: Approval, approvedSource: { si
   const death = Number(process.env.WORLD_TS_DIE_AT_STEP ?? NaN);      // tests only: the process dies after k renames, no rollback (IP13)
   const touch = Number(process.env.WORLD_TS_TOUCH_SOURCE_AT_STEP ?? NaN);   // tests only: a writer appends to the old log after k renames (inplace-check IP14)
   try { for (const [a, b] of steps) { if (done.length === death) process.exit(9); if (done.length === fault) throw new Error(`(injected) step ${done.length} failed`);
-      if (done.length === touch) fs.appendFileSync(fs.existsSync(log) ? log : path.join(D, ORIGINAL.log), '{"seq":999,"ts":1,"actor":"late","verb":"say","args":{"text":"written during the swap"}}\n');
+      if (done.length === touch) fs.appendFileSync(fs.existsSync(log) ? log : path.join(D, ORIGINAL.log), '{"seq":999,"ts":1,"actor":"late","args":{"text":"written during the swap"}}\n');
       if (fs.existsSync(b)) throw new Error(`${b} appeared during the swap`); fs.renameSync(a, b); done.push([a, b]); }
     syncDir(D);   // every rename durable before the marker can go
     // …and once more after the last rename (the same file, renamed beside the world): a write that slipped in mid-swap undoes it
@@ -446,7 +446,7 @@ if (cmd === "found") {
   if (rest.includes("--dry-run")) { dryRun(srcDir, dest ?? src, words.join(" ")); process.exit(0); }
   const { approval, source: approvedSource } = approvalFor(srcDir, dest ?? src, words.join(" "));
   if (process.env.WORLD_TS_TOUCH_SOURCE_AFTER_APPROVAL)   // tests only: a writer appends between the approval's read and the importer's (inplace-check IP21b)
-    fs.appendFileSync(path.join(srcDir, "log.jsonl"), '{"seq":999,"ts":1,"actor":"late","verb":"say","args":{"text":"written after the approval"}}\n');
+    fs.appendFileSync(path.join(srcDir, "log.jsonl"), '{"seq":999,"ts":1,"actor":"late","args":{"text":"written after the approval"}}\n');
   if (dest === undefined) translateInPlace(src, approval, approvedSource);
   else {
     const before = fs.statSync(path.join(WORLDS_DIR, src, "log.jsonl"));

@@ -786,7 +786,7 @@ class Session {
         this.deliver(ev.text!, authorOf(ev.who), ev.mention
           ? { tags: eventTags("say", { declares, mention: true }), mentioned: true, ...md }
           : { tags: eventTags("say", { declares }), ...md });
-      } else if (ev.kind === "act") {
+      } else if (ev.kind === "request") {
         // embodied transitions — a gesture, a pose struck or released, someone
         // sitting down. Ambient by nature: a closed door mutes them.
         if (this.channelOpen) this.deliver(`* ${ev.who} ${ev.text}`, { id: "world", name: this.agent.world },

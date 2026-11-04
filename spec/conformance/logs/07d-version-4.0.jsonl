@@ -1,2 +1,2 @@
-{"kind": "genesis", "actor": "system", "verb": "genesis", "body": {"dialect": "eidoverse-log", "v": 4.0, "minor": 0, "nonce": "XWVu1u7BpaZTDFSETYiphg", "owners": [["ed25519:BP7aKo17f474DD1aBSLG0a3Pb29Qs3yqQ6Ve0wSRVD0"]], "sequencer": "ed25519:rRoIPhqlc8rDxC1GZlfHOe1IBJYWQ8MDNg9QuZzMsic"}}
-{"world": "sha256:f39d7e442c2b3ef3be1cd02b04550c07f584bc903ade4afa1ea8d19389907ce1", "kind": "act", "ts": 1, "actor": "alice", "verb": "spawn", "body": {}}
+{"kind": "genesis", "actor": "system", "body": {"dialect": "eidoverse-log", "v": 4.0, "minor": 1, "nonce": "XWVu1u7BpaZTDFSETYiphg", "owners": [["ed25519:BP7aKo17f474DD1aBSLG0a3Pb29Qs3yqQ6Ve0wSRVD0"]], "sequencer": "ed25519:rRoIPhqlc8rDxC1GZlfHOe1IBJYWQ8MDNg9QuZzMsic"}}
+{"world": "sha256:61f58404bbd3acafd901ec8eb8a26427a1eeeb9d92a8f67c2cd81ea91a2ce0b8", "kind": "request", "ts": 1, "actor": "alice", "verb": "spawn", "body": {"args": {}}}

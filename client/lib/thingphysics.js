@@ -573,8 +573,8 @@ const refused = (what, r, id = '') => { const x = r?.refused, now = performance.
   bus.emit('thingphysics-refused', { verb: what, refused: x, text }); return r; };   // a person's words (plainwords.js)
 // what a hand may pick up: grabbable (shared/grab.js grabOf: the authority's own reader, so a dynamic thing with no grabbable
 // counts, as at the authority); what a foot may punt: physics {kind: 'dynamic'}
-let gIds = { st: null, head: -2, ids: [] };   // per fold (the fold is applied in place: keyed by its object and its head)
-const grabbableIds = () => { const st = replica.st; if (gIds.st !== st || gIds.head !== replica.head) { const es = st?.entities ?? {}; gIds = { st, head: replica.head, ids: Object.keys(es).filter((id) => grabOf(es[id].c)?.enabled) }; } return gIds.ids; };
+let gIds = { st: null, seq: -2, ids: [] };   // per fold (the fold is applied in place: keyed by its object and its head)
+const grabbableIds = () => { const st = replica.st; if (gIds.st !== st || gIds.seq !== replica.seq) { const es = st?.entities ?? {}; gIds = { st, seq: replica.seq, ids: Object.keys(es).filter((id) => grabOf(es[id].c)?.enabled) }; } return gIds.ids; };
 const dynamicIds = () => { const es = replica.st?.entities ?? {}; return Object.keys(es).filter((id) => es[id].c.physics?.kind === 'dynamic'); };
 /** Where the thing is now, as the authority sees it: someone's hand, the air (the engine), or the log. */
 function whereIs(id) {
@@ -720,8 +720,8 @@ let shoveOn = true;          // lab knob (physicsApi.shove.on(false)); off for t
 const shoveLog = [];         // the last shoves sent and how they were answered (probe surface)
 const headV = smoother();    // VR room-scale: the head's smoothed walking speed (shared/shove.js)
 const _hw = new THREE.Vector3();
-let dynIds = { st: null, head: -2, ids: [] };   // per fold, as grabbableIds
-const dynamicCached = () => { const st = replica.st; if (dynIds.st !== st || dynIds.head !== replica.head) dynIds = { st, head: replica.head, ids: dynamicIds() }; return dynIds.ids; };
+let dynIds = { st: null, seq: -2, ids: [] };   // per fold, as grabbableIds
+const dynamicCached = () => { const st = replica.st; if (dynIds.st !== st || dynIds.seq !== replica.seq) dynIds = { st, seq: replica.seq, ids: dynamicIds() }; return dynIds.ids; };
 function tickShove(now) {
   if (!shoveOn || !replica.active || !net.joined || !arrived) return;
   const canon = replica.sim; if (!canon?.sim || canon.foreign) return;

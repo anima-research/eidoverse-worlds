@@ -10,7 +10,7 @@
 // `collide`, `parent`, `comp.motion` with its `type` enum, `comp.sockets`, …,
 // `comp.light` on a thing of its own, `comp.collider`, and the Empty — a spawn with no
 // `lib`. (The old protocol's `kind: "light"` light entity is gone from the view:
-// the importer rewrites it to comp.light; shared/protocol/kind.js kindOf names
+// the importer rewrites it to comp.light; shared/protocol/kind.js formOf names
 // what a thing is.) `componentsOf` reads any folded entity as a component list,
 // and `entityOf` writes a component list back to those bytes (except a motion type in its old spelling, written in
 // today's word: names.js OLD_MOTION_TYPES); an instance's `key` says which comp-bag key it came from. Nothing in an existing
@@ -19,7 +19,7 @@
 //
 // Pure: no DOM, no three, no I/O. Server, browser, mcpl and tests import it.
 
-import { kindOf } from './protocol/kind.js';
+import { formOf } from './protocol/kind.js';
 import { recordOf, recordComponents } from './protocol/view.js';
 import { materialize, COMPONENTS } from './protocol/componentspec.js';
 import { DESCRIPTORS, editorDefault, AXES } from './protocol/descriptors.js';
@@ -512,7 +512,7 @@ export function colliderOf(ent) {
 
 /** An Empty: an entity with nothing but a Transform (and whatever comps it
  *  carries) — no model, no light, no mesh. A pivot, a group parent, a target. */
-export const isEmpty = (ent) => !!ent && typeof ent === 'object' && kindOf(ent) === 'empty';
+export const isEmpty = (ent) => !!ent && typeof ent === 'object' && formOf(ent) === 'empty';
 
 /** Why a `comp` of type light/collider would be refused, or null. The authority
  *  (server/verbs.ts vComp) and the inspector ask the same question, so a

@@ -12,14 +12,19 @@ import { sha256 } from "./hash.js";
 // "Version history"). The number lives there and nowhere else.
 export const DIALECT = "eidoverse-log";
 export const VERSION = 4;
-export const MINORS = new Set([0]); // §3d H6: a reader that doesn't know the minor refuses the world (L1: no world)
+export const MINOR = 1;   // what this writer founds (D1)
+export const MINORS = new Set([MINOR]); // §3d H6: a reader that doesn't know the minor refuses the world (L1: no world); minor 0 is read only by the migration tool (docs/DESIGN-log-vocabulary.md D1)
 const MAX_LINE = 1 << 20, MAX_DEPTH = 64, BIG = 2 ** 53;
 // §2.1 + §2.4: `ts` is the authority's admission time; `head`/`sig` mark chain points (§2.1 still says `prev`; §2.4 and the reference reader say `head`)
 // The KERNEL (trial-kernel, PROTOCOL §4; shared/protocol/kernelspec.js pins these): the envelope, the kinds, the identity
 // grammar, the ops, genesis. A change to any of them is refused by the gate unless the same commit carries a translator,
 // a changelog line and old-reader/new-reader vectors (tools/protocol/kernel-check.ts)
-export const ENVELOPE = new Set(["world", "kind", "ts", "actor", "for", "grant", "by", "cause", "verb", "body", "head", "sig"]);
-export const KINDS = new Set(["genesis", "change", "act", "sim", "say", "purge", "sequencer"]);
+export const ENVELOPE = new Set(["world", "kind", "ts", "actor", "cause", "op", "verb", "body", "head", "sig"]);
+export const KINDS = new Set(["genesis", "change", "request", "physics", "say", "redaction", "governance"]);
+// `op` on a change (the storage operation), `verb` on a request or physics entry (what was asked / the engine event), neither elsewhere (D3)
+export const WORD_OF = Object.freeze({ change: "op", request: "verb", physics: "verb" });
+/** The kinds whose whole body is purgeable (hashed as {commitment} in the chain skeleton, §12). */
+export const BODY_KINDS = Object.freeze(["request", "say", "physics"]);
 export const IDENT = "[a-z0-9-]{1,64}";
 // §2.3: entity ids are minted opaque ids or @world. `body:<identity>` is a reference, never an entity.
 export const ENTITY = /^(?:[a-z0-9-]{1,64}|@world)$/;
@@ -165,14 +170,14 @@ export function utf8Len(s) {
 }
 export { sha256 };
 export const worldIdOf = (genesis) => "sha256:" + sha256(jcs(genesis));
-export const PURGED = Object.freeze({ purged: true });
-/** A purged value, whichever way it reached the reader: the fold's own sentinel, or its JSON form `{purged: true}` in a
+export const REDACTED = Object.freeze({ redacted: true });
+/** A redacted value, whichever way it reached the reader: the fold's own sentinel, or its JSON form `{redacted: true}` in a
  *  snapshot or view (which loses the identity). */
-export const isPurged = (v) => v === PURGED || (!!v && typeof v === "object" && v.purged === true && Object.keys(v).length === 1);
+export const isRedacted = (v) => v === REDACTED || (!!v && typeof v === "object" && v.redacted === true && Object.keys(v).length === 1);
 export function canonicalView(st) {
   const out = Object.create(null);
   for (const id of Object.keys(st.entities)) { const c = st.entities[id].c, v = Object.create(null);
-    for (const k of Object.keys(c)) v[k] = c[k] === PURGED ? { purged: true } : { v: c[k] }; out[id] = v; }
+    for (const k of Object.keys(c)) v[k] = c[k] === REDACTED ? { redacted: true } : { v: c[k] }; out[id] = v; }
   return out;
 }
 export const digest = (st) => sha256(jcs(canonicalView(st)));
@@ -183,61 +188,61 @@ export function checkEntry(e, seq) {
   if (Object.prototype.propertyIsEnumerable.call(e, "seq")) bad("seq-field"); // L1: the position is the seq (a reader may attach it, unenumerable, in memory)
   const extra = Object.keys(e).filter((k) => !ENVELOPE.has(k)); if (extra.length) bad("unknown-field", extra.sort().join(","));
   if (!KINDS.has(e.kind)) bad("kind", JSON.stringify(e.kind));
-  for (const f of ["kind", "actor", "verb"]) if (typeof e[f] !== "string") bad("envelope", `${f} missing or not a string`);
+  for (const f of ["kind", "actor"]) if (typeof e[f] !== "string") bad("envelope", `${f} missing or not a string`);
+  const word = WORD_OF[e.kind]; for (const f of ["op", "verb"]) { if (f === word) { if (typeof e[f] !== "string") bad("envelope", `${f} missing or not a string`); } else if (f in e) bad("envelope", `${f} not allowed on ${e.kind}`); }
   if (e.kind !== "genesis" && typeof e.world !== "string") bad("envelope", "world");
   if (e.body === null || typeof e.body !== "object" || Array.isArray(e.body)) bad("envelope", "body not an object");
-  if ("for" in e) bad("for-before-keys"); // L4: until identities have keys, `for` is not written at all
   if (e.kind === "change" || "cause" in e) { const c = e.cause; if (!(Number.isInteger(c) && c >= 0 && c < seq)) bad("cause", JSON.stringify(c)); }
   if (!PARSED.has(e)) for (const k of Object.keys(e)) checkValue(e[k], 1);
 }
-export const OP_FIELDS = { create: ["id"], delete: ["id", "comp"], set: ["id", "comp", "value", "salt", "commit"] };
-export const BATCH_FIELDS = ["ops", "followUps"]; // `commit` replaces value+salt once purged
+export const OP_FIELDS = { create: ["id"], delete: ["id", "comp"], set: ["id", "comp", "value", "salt", "commitment"] };
+export const BATCH_FIELDS = ["ops", "cascade"]; // `commitment` replaces value+salt once redacted
 // A change entry as a flat list of ops. Any shape or grammar error anywhere makes the whole entry malformed.
 export function opsOf(e) {
-  const { verb, body } = e;
+  const { op: verb, body } = e;
   if (verb === "batch") {
     const extra = Object.keys(body).filter((k) => !BATCH_FIELDS.includes(k)); if (extra.length) bad("batch-field", extra.join(","));
     if (!Array.isArray(body.ops)) bad("batch-ops");
-    if ("followUps" in body) followUpsCheck(body.followUps, body.ops.length);
+    if ("cascade" in body) cascadeCheck(body.cascade, body.ops.length);
     return body.ops.map((o, i) => {
       if (o === null || typeof o !== "object" || Array.isArray(o)) bad("batch-op", String(i));
-      if (o.verb === "batch") bad("nested-batch", `op ${i}`); // L1: a batch never contains a batch
-      return shapeOne(o.verb, o, true, `op ${i}`);
+      if (o.op === "batch") bad("nested-batch", `op ${i}`); // L1: a batch never contains a batch
+      return shapeOne(o.op, o, true, `op ${i}`);
     });
   }
   return [shapeOne(verb, body, false, "")];
 }
-// `followUps` (review r9 H1 / scars M3): the indices of the ops in this batch that the AUTHORITY wrote as a consequence of the
+// `cascade` (review r9 H1 / scars M3): the indices of the ops in this batch that the AUTHORITY wrote as a consequence of the
 // asker's own ops (clearing the references to a thing the batch deleted; an undo putting such a reference back). The fold
 // applies them like any op; readers that derive authorship from the log (who set up a handler, who created a key) skip
 // them, so a follow-up never makes the asker the author of someone else's value. Strictly ascending, in range, non-empty.
-function followUpsCheck(f, n) {
-  if (!Array.isArray(f) || !f.length) bad("batch-followups", "not a non-empty array");
-  f.forEach((k, i) => { if (!Number.isInteger(k) || k < 0 || k >= n || (i > 0 && k <= f[i - 1])) bad("batch-followups", JSON.stringify(k)); });
+function cascadeCheck(f, n) {
+  if (!Array.isArray(f) || !f.length) bad("batch-cascade", "not a non-empty array");
+  f.forEach((k, i) => { if (!Number.isInteger(k) || k < 0 || k >= n || (i > 0 && k <= f[i - 1])) bad("batch-cascade", JSON.stringify(k)); });
 }
-/** The set of op indices a change entry marks as the authority's follow-ups (empty for anything else). */
-export function followUpsOf(e) {
-  const f = e?.kind === "change" && e.verb === "batch" ? e.body?.followUps : undefined;
+/** The set of op indices a change entry marks as the authority's cascade (empty for anything else). */
+export function cascadeOf(e) {
+  const f = e?.kind === "change" && e.op === "batch" ? e.body?.cascade : undefined;
   return new Set(Array.isArray(f) ? f.filter(Number.isInteger) : []);
 }
 export function shapeOne(verb, b, inner, where) {
-  const allowed = Object.hasOwn(OP_FIELDS, verb) ? OP_FIELDS[verb] : null; if (!allowed) bad("verb", `${where} ${JSON.stringify(verb)}`);   // never an inherited name (`constructor`): review of #260, I118
-  const extra = Object.keys(b).filter((k) => !(inner && k === "verb") && !allowed.includes(k));
+  const allowed = Object.hasOwn(OP_FIELDS, verb) ? OP_FIELDS[verb] : null; if (!allowed) bad("op", `${where} ${JSON.stringify(verb)}`);   // never an inherited name (`constructor`): review of #260, I118
+  const extra = Object.keys(b).filter((k) => !(inner && k === "op") && !allowed.includes(k));
   if (extra.length) bad("op-field", `${where} ${extra.sort().join(",")}`);
   if (!isEntityId(b.id)) bad("entity-id", `${where} ${JSON.stringify(b.id)}`);
   if ((verb === "set" || "comp" in b) && !isComponent(b.comp)) bad("comp-name", `${where} ${JSON.stringify(b.comp)}`);
-  const op = { verb, id: b.id }; if (b.comp !== undefined) op.comp = b.comp;
+  const op = { op: verb, id: b.id }; if (b.comp !== undefined) op.comp = b.comp;
   if (verb === "set" && "value" in b) op.value = b.value; // only an ABSENT value is "no value"; null is a value
-  // a value stripped to its commit (§12: a purge's work): marked, out of sight of JSON and spreads, for unnamedStubs and applyInPlace
-  else if (verb === "set" && "commit" in b) Object.defineProperty(op, "stripped", { value: true });
+  // a value stripped to its commitment (§12: a redaction's work): marked, out of sight of JSON and spreads, for unnamedStubs and applyInPlace
+  else if (verb === "set" && "commitment" in b) Object.defineProperty(op, "stripped", { value: true });
   return op;
 }
 
 // ---------- genesis (§2.4; §3d C1, H5, H6) ----------
-// body {dialect: "eidoverse-log", v: 4, minor, nonce, rewind_window?, parent?, owners: [[<key>…], …], quorum?, sequencer}. A malformed
+// body {dialect: "eidoverse-log", v: 4, minor, nonce, rewindWindow?, parent?, owners: [[<key>…], …], quorum?, sequencer}. A malformed
 // genesis means "no world"; an unknown minor means "unknown version". The minor is read before the shape, so a later
 // minor may add fields; within a known minor the fields are exact (a typo such as `rewind_n` is not a default).
-export const GENESIS_FIELDS = new Set(["dialect", "v", "minor", "nonce", "rewind_window", "parent", "owners", "quorum", "sequencer"]);
+export const GENESIS_FIELDS = new Set(["dialect", "v", "minor", "nonce", "rewindWindow", "parent", "owners", "quorum", "sequencer"]);
 // canonical unpadded base64url (one spelling per byte string), or null
 export function b64uDecode(s) {
   if (typeof s !== "string" || !/^[A-Za-z0-9_-]*$/.test(s) || s.length % 4 === 1) return null;
@@ -272,7 +277,7 @@ export function checkGenesis(b) {
   if (!("sequencer" in b)) bad("genesis-sequencer", "missing");
   if (!keyOk(b.sequencer)) bad("genesis-key", JSON.stringify(b.sequencer));
   if ("quorum" in b && !(Array.isArray(b.quorum) && b.quorum.length === b.owners.length && b.quorum.every((x) => nat(x, 1)))) bad("genesis-quorum", JSON.stringify(b.quorum));
-  if ("rewind_window" in b && !nat(b.rewind_window)) bad("genesis-window", JSON.stringify(b.rewind_window));
+  if ("rewindWindow" in b && !nat(b.rewindWindow)) bad("genesis-window", JSON.stringify(b.rewindWindow));
   if ("parent" in b) { const p = b.parent, hex = (x) => typeof x === "string" && /^[0-9a-f]{64}$/.test(x);
     if (!(p && typeof p === "object" && !Array.isArray(p) && Object.keys(p).sort().join() === "head,seq,world" && typeof p.world === "string" && p.world.startsWith("sha256:") && hex(p.world.slice(7)) && nat(p.seq) && hex(p.head)))
       bad("genesis-parent", JSON.stringify(p)); }
@@ -284,8 +289,8 @@ export function emptyState() {
   const entities = Object.create(null); entities["@world"] = { born: 0, c: Object.create(null) }; // live from genesis
   return { status: "ok", v: VERSION, worldId: null, entities, diagnostics: [] };
 }
-// entries: what readLog returned, or entry objects. `until`: fold only change entries with seq <= until (purges from
-// the whole log still apply: a purged value is absent at every point in time).
+// entries: what readLog returned, or entry objects. `until`: fold only change entries with seq <= until (redactions from
+// the whole log still apply: a redacted value is absent at every point in time).
 export function fold(entries, { until = Infinity } = {}) {
   const st = emptyState(); const d = (seq, code, detail = "") => st.diagnostics.push([seq, code, detail]);
   const ok = checkedEntries(entries, d);
@@ -296,24 +301,24 @@ export function fold(entries, { until = Infinity } = {}) {
   catch (x) { if (!(x instanceof Malformed)) throw x; d(0, "malformed:" + x.code, x.detail); return { ...st, status: "no-world", entities: null }; }
   st.worldId = worldIdOf(g);
   settledEntries(ok, st.worldId, d);
-  const purged = unnamedStubs(ok, purgesOf(ok, d), d);
+  const redacted = unnamedStubs(ok, redactionsOf(ok, d), d);
   for (let seq = 1; seq < ok.length && seq <= until; seq++) {
     const e = ok[seq]; if (!e || e.kind !== "change") continue;
     let ops; try { ops = opsOf(e); } catch (x) { if (x instanceof Malformed) { d(seq, "malformed:" + x.code, x.detail); continue; } throw x; }
-    ops.forEach((op, i) => applyOp(st, seq, op, purged.get(`${seq}:${e.verb === "batch" ? i : "-"}`), d));
+    ops.forEach((op, i) => applyOp(st, seq, op, redacted.get(`${seq}:${e.op === "batch" ? i : "-"}`), d));
   }
   return st;
 }
-// the set op a purge target names, if it sets a roles: value (§3d M11). A target that isn't a set stays the fold's
-// ordinary "purge-target-not-a-value" diagnostic.
+// the set op a redaction target names, if it sets a roles: value (§3d M11). A target that isn't a set stays the fold's
+// ordinary "redaction-target-not-a-value" diagnostic.
 function governanceTarget(e, op) {
   if (!e || e.kind !== "change" || !e.body || typeof e.body !== "object") return false;
-  const o = e.verb === "batch" ? (Array.isArray(e.body.ops) && Number.isInteger(op) ? e.body.ops[op] : null) : op === undefined ? { verb: e.verb, ...e.body } : null;
-  return !!o && typeof o === "object" && o.verb === "set" && typeof o.comp === "string" && o.comp.startsWith("roles:");
+  const o = e.op === "batch" ? (Array.isArray(e.body.ops) && Number.isInteger(op) ? e.body.ops[op] : null) : op === undefined ? { op: e.op, ...e.body } : null;
+  return !!o && typeof o === "object" && o.op === "set" && typeof o.comp === "string" && o.comp.startsWith("roles:");
 }
 // The entries the fold reads, in two steps either side of its genesis checks (so its diagnostics keep their order): each line
-// checked alone, then, after genesis, a later genesis and a bad ts nulled. acceptedEntries (purgesIn, operator-bind) reads a
-// log through the same two, so the purges a replay applies and the authors a bind counts are exactly the fold's.
+// checked alone, then, after genesis, a later genesis and a bad ts nulled. acceptedEntries (redactionsIn, operator-bind) reads a
+// log through the same two, so the redactions a replay applies and the authors a bind counts are exactly the fold's.
 function checkedEntries(entries, d) {
   return entries.map((e, seq) => {
     if (e instanceof Malformed) { d(seq, "malformed:" + e.code, e.detail); return null; }
@@ -333,45 +338,45 @@ function settledEntries(ok, worldId, d) {
     lastTs = t; }
   return ok;
 }
-// §12: a set written as {commit} with no value is a purge's work. One no purge names (none does, or the purge naming it is
-// one the fold refuses, as any aimed at a roles: value) was changed outside the one rule that changes the record. It folds
-// as absent(purged), unknown as every reader takes a purged value (§1), never as the value before it, and the diagnostic
-// says so (commit-unpurged: the line still shapes, so not malformed:). Said, not enforced: writes go on (house markup, #260 10-20).
-function unnamedStubs(ok, purged, d) {
+// §12: a set written as {commitment} with no value is a redaction's work. One no redaction names (none does, or the one naming it
+// is one the fold refuses, as any aimed at a roles: value) was changed outside the one rule that changes the record. It folds
+// as absent(redacted), unknown as every reader takes a redacted value (§1), never as the value before it, and the diagnostic
+// says so (commitment-unredacted: the line still shapes, so not malformed:). Said, not enforced: writes go on (house markup, #260 10-20).
+function unnamedStubs(ok, redacted, d) {
   ok.forEach((e, seq) => { if (!e || e.kind !== "change") return;
     let ops; try { ops = opsOf(e); } catch (x) { if (x instanceof Malformed) return; throw x; }
     ops.forEach((op, i) => { if (!op.stripped) return;
-      const k = `${seq}:${e.verb === "batch" ? i : "-"}`; if (purged.has(k)) return;
-      purged.set(k, 0); d(seq, "commit-unpurged", `${op.id}.${op.comp}`); }); });
-  return purged;
+      const k = `${seq}:${e.op === "batch" ? i : "-"}`; if (redacted.has(k)) return;
+      redacted.set(k, 0); d(seq, "commitment-unredacted", `${op.id}.${op.comp}`); }); });
+  return redacted;
 }
-function purgesOf(ok, d) {
+function redactionsOf(ok, d) {
   const out = new Map();
   ok.forEach((e, pseq) => {
-    if (!e || e.kind !== "purge") return;
-    const vals = e.body.values; if (!Array.isArray(vals)) { d(pseq, "purge-ignored", "body.values not a list"); return; }
+    if (!e || e.kind !== "redaction") return;
+    const vals = e.body.values; if (!Array.isArray(vals)) { d(pseq, "redaction-ignored", "body.values not a list"); return; }
     for (const t of vals) {
-      const okT = t && typeof t === "object" && !Array.isArray(t) && Object.keys(t).every((k) => k === "seq" || k === "op")
-        && Number.isInteger(t.seq) && (t.op === undefined || (Number.isInteger(t.op) && t.op >= 0));
-      if (!okT) { d(pseq, "purge-target-bad", jcs(t).slice(0, 60)); continue; }
-      if (t.seq >= pseq || t.seq <= 0) { d(pseq, "purge-target-range", String(t.seq)); continue; }
-      if (ok[t.seq]?.kind === "purge") { d(pseq, "purge-of-purge-refused", String(t.seq)); continue; }
-      // §3d M11: purge never targets roles: (governance values are reversed by acts, never erased)
-      if (governanceTarget(ok[t.seq], t.op)) { d(pseq, "purge-target-governance", `seq ${t.seq}${t.op === undefined ? "" : ` op ${t.op}`}`); continue; }
-      out.set(`${t.seq}:${t.op ?? "-"}`, pseq); d(pseq, "purge", `seq ${t.seq}${t.op === undefined ? "" : ` op ${t.op}`}`);
+      const okT = t && typeof t === "object" && !Array.isArray(t) && Object.keys(t).every((k) => k === "seq" || k === "index")
+        && Number.isInteger(t.seq) && (t.index === undefined || (Number.isInteger(t.index) && t.index >= 0));
+      if (!okT) { d(pseq, "redaction-target-bad", jcs(t).slice(0, 60)); continue; }
+      if (t.seq >= pseq || t.seq <= 0) { d(pseq, "redaction-target-range", String(t.seq)); continue; }
+      if (ok[t.seq]?.kind === "redaction") { d(pseq, "redaction-of-redaction-refused", String(t.seq)); continue; }
+      // §3d M11: a redaction never targets roles: (governance values are reversed by requests, never erased)
+      if (governanceTarget(ok[t.seq], t.index)) { d(pseq, "redaction-target-governance", `seq ${t.seq}${t.index === undefined ? "" : ` index ${t.index}`}`); continue; }
+      out.set(`${t.seq}:${t.index ?? "-"}`, pseq); d(pseq, "redaction", `seq ${t.seq}${t.index === undefined ? "" : ` index ${t.index}`}`);
     }
   });
   return out;
 }
-// PURGED is kept as itself: wireState and the digest tell a purged value from a value by identity (review of #260, I117)
-const clone = (v) => (v === null || typeof v !== "object" || v === PURGED ? v : JSON.parse(JSON.stringify(v)));
-function applyOp(st, seq, op, purgedBy, d) {
-  const w = st.entities, { verb, id, comp } = op;
-  if (purgedBy !== undefined && verb !== "set") d(seq, "purge-target-not-a-value", id);
+// REDACTED is kept as itself: wireState and the digest tell a redacted value from a value by identity (review of #260, I117)
+const clone = (v) => (v === null || typeof v !== "object" || v === REDACTED ? v : JSON.parse(JSON.stringify(v)));
+function applyOp(st, seq, op, redactedBy, d) {
+  const w = st.entities, { op: verb, id, comp } = op;
+  if (redactedBy !== undefined && verb !== "set") d(seq, "redaction-target-not-a-value", id);
   if (verb === "create") { if (w[id]) d(seq, "noop:create-live", id); else w[id] = { born: seq, c: Object.create(null) }; return; }
   const ent = w[id]; if (!ent) { d(seq, `noop:${verb}-missing-entity`, id); return; }
   if (verb === "set") {
-    if (purgedBy !== undefined) { ent.c[comp] = PURGED; return; }
+    if (redactedBy !== undefined) { ent.c[comp] = REDACTED; return; }
     if (!("value" in op)) { d(seq, "noop:set-no-value", `${id}.${comp}`); return; }
     ent.c[comp] = clone(op.value); return;
   }
@@ -387,8 +392,8 @@ export function cloneState(st) {
   return { ...st, entities, diagnostics: [...st.diagnostics] };
 }
 // Apply ops to a state copy, as a fold of one more change entry would (the authority's preview of a write). A replay of a
-// logged entry passes its seq, the log's purges and whether it is a batch, as applyInPlace takes them
-export const applyOps = (st, ops, seq = Infinity, purged = null, batch = false) => applyInPlace(cloneState(st), ops, seq, purged, batch);
+// logged entry passes its seq, the log's redactions and whether it is a batch, as applyInPlace takes them
+export const applyOps = (st, ops, seq = Infinity, redacted = null, batch = false) => applyInPlace(cloneState(st), ops, seq, redacted, batch);
 // A working copy for applying ops one at a time (the authority's admit, script elision): it shares every entity with `st`
 // until an op touches it, then copies that one entity (its component map; values are never mutated in place, a set
 // replaces one). The same states as applyOps op by op, without a deep copy of the whole world per op.
@@ -401,26 +406,26 @@ export function applyCow(s, ops, seq = Infinity) {
     applyInPlace(s, [o], seq); }
   return s;
 }
-// purged (optional): the log's purges, as purgesIn gives them, and batch: whether the entry is a batch (a purge names a batch's
-// op by index): a reader replaying a log a purge has touched writes PURGED where the strict fold does
-export function applyInPlace(s, ops, seq = Infinity, purged = null, batch = false) {
+// redacted (optional): the log's redactions, as redactionsIn gives them, and batch: whether the entry is a batch (a redaction names a
+// batch's op by index): a reader replaying a log a redaction has touched writes REDACTED where the strict fold does
+export function applyInPlace(s, ops, seq = Infinity, redacted = null, batch = false) {
   const d = (q, code, detail = "") => s.diagnostics.push([q, code, detail]);
-  // a value stripped to its commit is a purge's work, and a caller with no purge map naming it (the authority's own
+  // a value stripped to its commitment is a redaction's work, and a caller with no redaction map naming it (the authority's own
   // appends, a live replica) can't read it: the line throws Malformed before any of its ops is applied, and the whole
   // log is read instead (the authority's state re-folds it, whose unnamedStubs reads the line as unknown; a replica's
-  // purge resyncs it)
-  const shaped = ops.map((o, i) => { const op = shapeOne(o.verb, o, true, "system"), by = purged?.get(`${seq}:${batch ? i : "-"}`);
-    if ((o?.stripped || op.stripped) && by === undefined) bad("commit-unpurged", `${op.id}.${op.comp}`);
+  // redaction resyncs it)
+  const shaped = ops.map((o, i) => { const op = shapeOne(o.op, o, true, "system"), by = redacted?.get(`${seq}:${batch ? i : "-"}`);
+    if ((o?.stripped || op.stripped) && by === undefined) bad("commitment-unredacted", `${op.id}.${op.comp}`);
     return [op, by]; });
   for (const [op, by] of shaped) applyOp(s, seq, op, by, d);
   return s;
 }
-/** every purge in a log, as the strict fold reads them: `${seq}:${op index, or - for a whole entry}` → the purge's seq */
-export function purgesIn(entries) {
-  const none = () => {}, settled = acceptedEntries(entries); return unnamedStubs(settled, purgesOf(settled, none), none);
+/** every redaction in a log, as the strict fold reads them: `${seq}:${op index, or - for a whole entry}` → the redaction's seq */
+export function redactionsIn(entries) {
+  const none = () => {}, settled = acceptedEntries(entries); return unnamedStubs(settled, redactionsOf(settled, none), none);
 }
 /** the entries the strict fold accepts, by seq (null where it rejects one); none where it reads no world (#260 Stella 10-30).
- *  `ops`: also null a change whose ops the fold skips as malformed (a bind's authors; purgesIn keeps the fold's own input). */
+ *  `ops`: also null a change whose ops the fold skips as malformed (a bind's authors; redactionsIn keeps the fold's own input). */
 export function acceptedEntries(entries, { ops = false } = {}) {
   const none = () => {}; const ok = checkedEntries(entries, none); const g = ok[0];
   if (!g || g.kind !== "genesis" || g.body.dialect !== DIALECT || g.body.v !== VERSION) return [];   // the fold reads no world here

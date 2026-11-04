@@ -19,7 +19,7 @@ import { report, bus, CONFIG } from './base.js';
 // via world.js"), so this direction closes no cycle.
 import { net, replica } from './net.js';
 import { enc, dec } from '../../shared/protocol/names.js';
-import { kindOf } from '../../shared/protocol/kind.js';
+import { formOf } from '../../shared/protocol/kind.js';
 import { loadEidoModule, noiseTexture, loadTrack, loadDone, libLabels } from './assets.js';
 import { prepareObject } from './materials.js';
 import { beginWork } from './loadwork.js';
@@ -60,7 +60,7 @@ export function* bags() {
 }
 /** What a thing IS as realized and where from, for the panels: {kind, model?} — the fold's word (shared/protocol/kind.js),
  *  the realizer keeps no second copy (entityMeta is gone, C7c). */
-export const metaOf = (id) => { const c = bagOf(id); return c ? { kind: kindOf({ c }), ...(typeof c.model === 'string' ? { model: c.model } : {}) } : null; };
+export const metaOf = (id) => { const c = bagOf(id); return c ? { kind: formOf({ c }), ...(typeof c.model === 'string' ? { model: c.model } : {}) } : null; };
 /** The tree's edges as this client's fold indexes them (shared/protocol/replica.js, kept at every ingest): the ids a
  *  carrier holds (id order), a thing's carrier, the ids above it nearest first — ids as the page spells them. One
  *  index for the realizer's carrier checks, the panels and the seats; no map is kept beside the fold (C12b). */

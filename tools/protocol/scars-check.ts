@@ -100,7 +100,7 @@ function session() {
 }
 const code = (r: any) => r?.refused?.code;
 const show = (r: any) => (r?.crashed ? `CRASH ${r.crashed}` : r?.ok ? "ok" : `refused ${r?.refused?.code}: ${String(r?.refused?.reason).slice(0, 140)}`);
-const lastAct = (s: any) => s.entries().findLast((e: any) => e.kind === "act");
+const lastAct = (s: any) => s.entries().findLast((e: any) => e.kind === "request");
 // owner olive, builder bob, visitor vic
 function cast(s: any) {
   s.call("olive", "create-world", { title: s.name });
@@ -117,7 +117,7 @@ const cases: Case[] = [
       const r = s.call("vic", "set", { id: "lamp", component: "label", value: "my phone is 555-0100" });
       const a = lastAct(s);
       return { r: code(r), verb: a?.verb, body: a?.body, log: JSON.stringify(s.entries()).includes("555-0100") }; },
-    good: (o) => o.r === "rights" && o.verb === "set" && JSON.stringify(o.body?.args) === '["component","id","value"]' && o.body?.refused?.code === "rights" && !("request" in (o.body ?? {})) && !o.log },
+    good: (o) => o.r === "rights" && o.op === "set" && JSON.stringify(o.body?.args) === '["component","id","value"]' && o.body?.refused?.code === "rights" && !("request" in (o.body ?? {})) && !o.log },
   { id: "L2", what: "…argument names are the verb's own (VERBSPEC): a name the verb doesn't take is counted, never written (a key is text too)", run(s) { cast(s);
       const r = s.call("vic", "set", { id: "nothing", component: "label", value: 1, "call me on 555-0100": true });
       const a = lastAct(s);
@@ -129,7 +129,7 @@ const cases: Case[] = [
       const ring = D.refusalRing ? D.refusalRing(s.w()) : [];
       const big = s.call("vic", "set", { id: "lamp", component: "label", value: "x".repeat(5000) }); const ring2 = D.refusalRing ? D.refusalRing(s.w()) : [];
       return { last: ring.at(-1), bigLen: JSON.stringify(ring2.at(-1) ?? {}).length, reopened: D.refusalRing ? D.refusalRing(s.reopen()).length : -1, big: code(big) }; },
-    good: (o) => o.last?.verb === "set" && o.last?.actor === "vic" && o.last?.code === "rights" && /hello there/.test(o.last?.args ?? "") && o.bigLen < 2600 && o.reopened === 0 },
+    good: (o) => o.last?.op === "set" && o.last?.actor === "vic" && o.last?.code === "rights" && /hello there/.test(o.last?.args ?? "") && o.bigLen < 2600 && o.reopened === 0 },
   { id: "L4", what: "…an invented verb is recorded as `unknown-verb` with no arguments at all: its name is the visitor's text, so it goes to the ring only (scars r8 M3)", run(s) { cast(s);
       const r = s.call("vic", "call-me-on-5550100", { secret: "555-0100" }); const a = lastAct(s);
       const ring = D.refusalRing ? D.refusalRing(s.w()) : [];
@@ -247,8 +247,8 @@ const cases: Case[] = [
   { id: "Q1", what: "an owner named the engine's version; its cause act's body is purged (in memory, and as the stored {commit} stub): the server never restamps it", run(s) { cast(s);
       const OLD = "eidosim@0.9.0";   // a version this server doesn't carry, of an engine it does: restampable unless the owner chose it
       const set = s.call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: OLD } });
-      const actSeq = s.entries().findLastIndex((e: any) => e.kind === "act" && e.verb === "set");
-      const w = s.w(); clock.advance(100); w.append({ kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: actSeq }] } });
+      const actSeq = s.entries().findLastIndex((e: any) => e.kind === "request" && e.op === "set");
+      const w = s.w(); clock.advance(100); w.append({ kind: "redaction", actor: "system", body: { values: [{ seq: actSeq }] } });
       s.reopen(); s.call("olive", "look", {});
       const restamp1 = s.entries().filter((e: any) => e.verb === "restamp-engine").length;
       const w2 = s.reopen(); w2.entries[actSeq].body = { commit: "0".repeat(64) }; s.call("olive", "look", {});
@@ -260,18 +260,18 @@ const cases: Case[] = [
       s.call("bob", "create", { id: "lamp", model: "crate", components: { reactions: { on: { kind: "set", component: "t/lit", value: { on: true } } } }, place: { at: [0, 0] } });
       const u = s.call("vic", "use", { id: "lamp", action: "on" });
       const before = D.creatorOf(s.w(), "lamp", "t/lit")?.rights;
-      const useSeq = s.entries().findLastIndex((e: any) => e.kind === "act" && e.verb === "use");
+      const useSeq = s.entries().findLastIndex((e: any) => e.kind === "request" && e.verb === "use");
       const w = s.reopen(); w.entries[useSeq].body = { commit: "0".repeat(64) };
       const stub = D.creatorOf(w, "lamp", "t/lit");
-      const w2 = s.reopen(); clock.advance(100); w2.append({ kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: useSeq }] } });
+      const w2 = s.reopen(); clock.advance(100); w2.append({ kind: "redaction", actor: "system", body: { values: [{ seq: useSeq }] } });
       const idx = D.creatorOf(s.w(), "lamp", "t/lit");
       return { u: show(u), before, stub: stub ? stub.rights : "none", idx: idx ? idx.rights : "none" }; },
     good: (o) => o.u === "ok" && o.before === "bob" && o.stub === null && o.idx === null },
   { id: "Q3", what: "undo after an undo's body is purged: no crash, and the chain reads the purged undo as unknown, the same way the index does", run(s) { cast(s);
       s.call("bob", "create", { id: "lamp", model: "crate", place: { at: [0, 0] } });
       s.call("bob", "set", { id: "lamp", component: "label", value: "one" });
-      const u1 = s.call("bob", "undo", {}); const uSeq = s.entries().findLastIndex((e: any) => e.kind === "act" && e.verb === "undo");
-      const w = s.w(); clock.advance(100); w.append({ kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: uSeq }] } });
+      const u1 = s.call("bob", "undo", {}); const uSeq = s.entries().findLastIndex((e: any) => e.kind === "request" && e.verb === "undo");
+      const w = s.w(); clock.advance(100); w.append({ kind: "redaction", actor: "system", body: { values: [{ seq: uSeq }] } });
       const mem = s.call("bob", "undo", {}); const after1 = s.w().state().entities.lamp?.c.label ?? null;
       const w2 = s.reopen(); w2.entries[uSeq].body = { commit: "0".repeat(64) };
       const stub = s.call("bob", "undo", {});

@@ -5,11 +5,11 @@
 // "behaviours" section and the VERBS table unchanged; the standing half is authority/scripts.js). The gate, the engine's
 // settle and the returns home are above it, through UP.
 import { grabOf } from "../../grab.js";
-import { isIdentity, PURGED } from "../fold.js";
+import { isIdentity, REDACTED } from "../fold.js";
 import { dec } from "../names.js";
 import * as SR from "../scriptrules.js";
 import { effectFor, effectBlobName, EFFECT_KIND, ESSENTIAL_NAMES } from "../../particle_effects.js";
-import { livePoses, digestOf, simCutOf, lostPlace, ends, endsUnder } from "../simlayer.js";
+import { livePoses, digestOf, simSnapshotOf, lostPlace, ends, endsUnder } from "../simlayer.js";
 import { RENAMED_COMPONENTS, renameOps, shapeRepairOps, shapesMarked, shapesScan, SHAPES_VERSION } from "../shaperepair.js";
 import { CTX, UP } from "./ctx.js";
 import { Refusal, refuse, said } from "./refuse.js";
@@ -71,7 +71,7 @@ function activate(w, id, name, ev) {
   const rt = dry ? { console: [] } : rtOf(w, id, name);
   const out = (status, extra = {}) => { if (!dry) { const { logs, ...line } = extra; logRt(w, rt, { on: ev.on, status, ...line, ...(logs ? { logs } : {}), ...(ev.on === "say" && Number.isInteger(ev.seq) ? { sayAt: ev.seq } : {}) }); rt.status = status; }
     return { script: key, id, status, ...extra }; };
-  if (!v || typeof v !== "object" || v === PURGED) return out("not-installed");
+  if (!v || typeof v !== "object" || v === REDACTED) return out("not-installed");
   if (v.paused === true) { const pb = pausedBy(w, id, key); return out("paused", { why: pb ? `paused by ${said(pb.by)} at seq ${pb.at}` : "paused: true" }); }
   if (cfg.run === false) return out("stopped", { why: "@world.script-settings.run is false (the owner's kill permission)" });
   // an activation the host sets off (a timer, an arrival, a grab) is a write too, so it meets the gate every request's write
@@ -126,13 +126,13 @@ function activate(w, id, name, ev) {
   // event with an act of its own (a grab the sim had to be told of, a release's settlement) already names its actor there,
   // so its activation keeps `trigger` (and the auditor its `by`)
   const anon = ANON_EVENTS.has(ev.on) || (GRIP_EVENTS.has(ev.on) && ev.seq === undefined);
-  const actE = { kind: "act", actor: `script:${id}`, verb: "script", ...(cause !== undefined ? { cause } : {}),
+  const actE = { kind: "request", actor: `script:${id}`, verb: "script", ...(cause !== undefined ? { cause } : {}),
     body: { script: key, src: v.src, sponsor: sp.sponsor, sponsorAt: sp.sponsorAt, on: ev.on, ...(ev.by && !anon ? { trigger: { actor: ev.by, ...(ev.seq !== undefined ? { seq: ev.seq } : {}) } } : {}),
       event: anon ? anonEvent(recorded(event)) : recorded(event), head: actSeq - 1, seed, depth, engine: SR.ENGINE, api: SR.API, ...(res.reads ? { reads: res.reads } : {}),
       // a body effect is recorded as WHAT and ON WHOM, never which consent let it through: an allow list vs an open gate is a
       // relationship fact, and consent is presence, never appended (consent gaps 6c, R 10-17 02:45)
       ...(gates.length ? { bodies: gates.map((g) => ({ kind: g.kind, to: `body:${g.to}` })) } : {}), ...(uses.length ? { uses } : {}) } };
-  const sayE = (t, c) => ({ kind: "say", actor: `script:${id}`, cause: c, verb: "say", body: { text: t } });
+  const sayE = (t, c) => ({ kind: "say", actor: `script:${id}`, cause: c, body: { text: t } });
   let act, state = null;
   w.pinTs = now;
   try {
@@ -177,7 +177,7 @@ export function settle(w, { maxTicks = 8 } = {}) {
 // A checkpoint is a persisted joiner cut (DESIGN-physics-responsiveness §2; STRIKES PH-S1-1: boot re-simulated every flight
 // the world ever had, 6.5 s for the gym's 94 launches and growing). At a quiet moment (nothing in flight, nothing waiting to
 // be logged) after launches have happened, the authority writes one `sim:checkpoint` entry whose body names a blob holding
-// the sim cut exactly as a joiner gets it (simCutOf), with the cut's engine and digest beside it. A host that carries the
+// the sim cut exactly as a joiner gets it (simSnapshotOf), with the cut's engine and digest beside it. A host that carries the
 // engine opens the world from the last valid checkpoint and feeds only the entries after it; any other reader folds past
 // an unknown sim verb unchanged. The fold itself is never checkpointed: it is cheap and always exact from genesis.
 // A host may also bound the tail its boot replays (w.simCheckpointEvery, server policy: config SIM_CHECKPOINT_EVERY): one is
@@ -189,9 +189,9 @@ const CHECKPOINT_QUIET_MS = 20000;
 export function ckptScanOf(w, k = (w.ckptScan ??= { to: -1, launches: 0, newest: -Infinity, base: -1, moved: false })) {
   const E = w.entries;
   for (let s = k.to + 1; s < E.length; s++) { const e = E[s]; k.to = s; if (!e || typeof e !== "object") continue;
-    if (e.kind === "purge") { k.base = -1; k.moved = true; continue; }   // a boot replays from genesis after a purge (livehost)
+    if (e.kind === "redaction") { k.base = -1; k.moved = true; continue; }   // a boot replays from genesis after a purge (livehost)
     if (e.kind === "change") { k.moved = true; continue; }
-    if (e.kind !== "sim") continue;
+    if (e.kind !== "physics") continue;
     if (e.verb === "checkpoint") { k.launches = 0; k.newest = -Infinity; k.base = s; k.moved = false; }
     else if (e.verb !== "digest") { k.moved = true; if (e.verb === "launch") { k.launches++; if (e.ts > k.newest) k.newest = e.ts; } } }
   return k;
@@ -207,9 +207,9 @@ function checkpointSim(w, { every = w.simCheckpointEvery ?? 0 } = {}) {
   // the cut rides as a JSON string: the blob store canonicalises objects (sorted keys), and the engine's object order is the
   // law's (statics and bodies tie by insertion order), so a re-keyed cut would be a different sim. Its clock and tick ride in
   // the entry (null in the blob, in place): at rest they are all that time moves, so an unchanged engine is the same blob
-  const cut = simCutOf(sf, E); cut.clock = null; cut.sim.tick = null;
-  const state = w.putBlob({ cutJson: JSON.stringify(cut) });
-  w.append({ kind: "sim", actor: "sim", verb: "checkpoint", body: { at: E.length - 1, engine: { engine: sf.spec.engine }, tick: sf.sim.tick, clock: sf.clock, sim: digestOf(sf.sim), state } });
+  const cut = simSnapshotOf(sf, E); cut.clock = null; cut.sim.tick = null;
+  const state = w.putBlob({ snapshotJson: JSON.stringify(cut) });   // D5: new blobs write snapshotJson; readers take snapshotJson ?? cutJson
+  w.append({ kind: "physics", actor: "sim", verb: "checkpoint", body: { seq: E.length - 1, engine: { engine: sf.spec.engine }, tick: sf.sim.tick, clock: sf.clock, sim: digestOf(sf.sim), state } });
 }
 /** A checkpoint now if the tail is at least `every` (a host's clean shutdown). Returns how many entries it wrote (0 or 1). */
 export function checkpointNow(w, { every = 1 } = {}) {
@@ -249,7 +249,7 @@ export function expireRoles(w) {
     const ops = ids.map((id) => delOp("@world", `roles:${id}`));
     let plan; try { plan = admit(w, w.state(), { actor: "system", cap: { kind: "system", ids: ["@world"], comps: ids.map((id) => `roles:${id}`) } }, ops); }
     catch (x) { if (!(x instanceof Refusal)) throw x; return []; }   // e.g. it would leave the world with no owner: never (owners don't expire)
-    changeEntry(w, plan, w.append({ kind: "act", actor: "system", verb: "expire-roles", body: { ids, why: "timed grants whose until has passed" } }));
+    changeEntry(w, plan, w.append({ kind: "request", actor: "system", verb: "expire-roles", body: { ids, why: "timed grants whose until has passed" } }));
     return ids;
   });
 }
@@ -300,7 +300,7 @@ function orphanReturns(w, out) {
     if (g?.release === "return" && g.home) { const { plan } = returnPlan(w, w.state(), id, g); if (plan) { const back = returnHome(w, id, plan, lift.seq); heldEvent(w, "release", id, { by: lift.by, how: "return", seq: back.act }); out.push({ id, returned: "home" }); continue; } }
     const t = w.state().entities[id].c.transform; if (!t) continue;
     let plan; try { plan = admit(w, w.state(), { actor: "system", cap: { kind: "system", ids: [id], comps: ["transform"] } }, [setOp(id, "transform", t)]); } catch (x) { if (!(x instanceof Refusal)) throw x; continue; }
-    const act = w.append({ kind: "act", actor: "system", verb: "return-held", cause: lift.seq, body: { id, holder: lift.by, why: "orphaned: its holder's hold ended without a settlement (the host stopped)" } });
+    const act = w.append({ kind: "request", actor: "system", verb: "return-held", cause: lift.seq, body: { id, holder: lift.by, why: "orphaned: its holder's hold ended without a settlement (the host stopped)" } });
     changeEntry(w, plan, act); heldEvent(w, "release", id, { by: lift.by, how: "return", seq: act });
     out.push({ id, returned: "where the log had it" });
   }
@@ -328,7 +328,7 @@ const SERVED_RENAMES = (op) => !(UNSERVED_RENAMES.has(op.comp) || op.comp.starts
 /** Why the record itself stops a write now, or null: its old shapes wait for the maintenance command (lead's ruling 10-18:
  *  a load never writes; a world whose old shapes no reader serves refuses every write until the command runs). Reads work
  *  either way. A log changed outside the purge rule does NOT stop writes (house markup, #260 10-20): the fold names each such
- *  line (commit-unpurged) and reads its value as unknown, which is §12's rule; refusing everyone's writes until an operator
+ *  line (commitment-unredacted) and reads its value as unknown, which is §12's rule; refusing everyone's writes until an operator
  *  restores it was a policy no world asked for. One function, so a request (authority.js) and a script the host sets off
  *  (activate) meet the same gates. The system's own sweeps (settle's rests and returns, expireRoles, settleOrphans) don't:
  *  what they write is derived from the clock and the engine, not anyone's act, and gating them would keep a timed grant open
@@ -361,7 +361,7 @@ export function maintenanceNeeds(w) {
   // model gained sockets since (modelSeatsDue) is a library update: optional, never blocking (lead 10-18). The new seats
   // simply aren't seatable until the command runs
   const stored = new Set(storedLegacyHosts(st)); const liftStored = lift.filter((h) => stored.has(h)), liftOptional = lift.filter((h) => !stored.has(h));
-  const rename = renameOps(st, PURGED);
+  const rename = renameOps(st, REDACTED);
   const repair = !shapesOf(w);   // READBACK act:create-world / act:translated: a purged one is marked
   const steps = [...(lift.length ? ["lift-sockets"] : []), ...(rename.length ? ["rename-components"] : []), ...(repair ? ["repair-shapes"] : [])];
   const optional = !liftStored.length && liftOptional.length ? ["lift-sockets"] : [];
@@ -399,24 +399,24 @@ export function maintain(w, { by = null, operator = false, dryRun = false } = {}
         const author = (lastSetterOf(w, h, "sockets") ?? lastSetterOf(w, h, "model") ?? creatorOf(w, h))?.rights ?? null;
         const ids = [...new Set(ops.map((o) => o.id))], comps = [...new Set(ops.map((o) => o.comp))];
         const plan = admit(w, st, { actor: "system", cap: { kind: "system", ids, comps }, lifting: true }, ops);
-        if (!dryRun) changeEntry(w, plan, w.append({ kind: "act", actor: "system", verb: "lift-sockets", body: { id: h, made, moved, ...(author ? { capability: { author } } : {}), ...prov } }));
+        if (!dryRun) changeEntry(w, plan, w.append({ kind: "request", actor: "system", verb: "lift-sockets", body: { id: h, made, moved, ...(author ? { capability: { author } } : {}), ...prov } }));
         lift.made.push({ host: h, made, moved });
       } catch (x) { if (!(x instanceof Refusal)) throw x;   // r14 H1 (10-18): a durable-write throw is the caller's ambiguous outcome, never a "refused" host
         lift.failed.push({ host: h, code: x.code, reason: String(x.reason ?? "").slice(0, 300) }); } }
     steps.lift = lift;
     // 2. rename-components: one system act, admitted PER THING (review r11 L3)
     const rename = { renamed: [], failed: [] };
-    try { const all = renameOps(w.state(), PURGED);
+    try { const all = renameOps(w.state(), REDACTED);
       if (all.length) { const st = w.state(); const byId = new Map(); for (const o of all) { if (!byId.has(o.id)) byId.set(o.id, []); byId.get(o.id).push(o); }
         const kept = [];
         for (const [id, ops] of byId) {
           try { admit(w, st, { actor: "system", cap: { kind: "system", ids: [id], comps: [...new Set(ops.map((o) => o.comp))] }, lifting: true }, ops.map(({ renamed: _r, ...o }) => o)); kept.push(...ops); }
           catch (x) { if (!(x instanceof Refusal)) throw x; rename.failed.push({ id, code: x.code, reason: String(x.reason ?? "").slice(0, 300) }); } }
-        rename.renamed = [...kept.filter((o) => o.verb === "delete").map((o) => ({ id: o.id, from: o.comp, to: RENAMED_TO(o.id, o.comp) })),
+        rename.renamed = [...kept.filter((o) => o.op === "delete").map((o) => ({ id: o.id, from: o.comp, to: RENAMED_TO(o.id, o.comp) })),
           ...kept.filter((o) => o.renamed).flatMap((o) => o.renamed.map((r) => ({ id: o.id, component: o.comp, ...r })))];
         if (kept.length && !dryRun) { const ids = [...new Set(kept.map((o) => o.id))], comps = [...new Set(kept.map((o) => o.comp))];
           const plan = admit(w, w.state(), { actor: "system", cap: { kind: "system", ids, comps }, lifting: true }, kept.map(({ renamed: _r, ...o }) => o));
-          changeEntry(w, plan, w.append({ kind: "act", actor: "system", verb: "rename-components", body: { renamed: rename.renamed, ...(rename.failed.length ? { failed: rename.failed } : {}), ...prov, why: "component names renamed before release (protocol minor 0): the value kept, under its new name" } })); } } }
+          changeEntry(w, plan, w.append({ kind: "request", actor: "system", verb: "rename-components", body: { renamed: rename.renamed, ...(rename.failed.length ? { failed: rename.failed } : {}), ...prov, why: "component names renamed before release (protocol minor 0): the value kept, under its new name" } })); } } }
     catch (x) { if (!(x instanceof Refusal)) throw x;   // r14 H1: as above (repairShapesStep already rethrows)
       rename.failed.push({ id: null, code: x.code, reason: String(x.reason ?? "").slice(0, 300) }); }
     steps.rename = rename;
@@ -428,15 +428,15 @@ export function maintain(w, { by = null, operator = false, dryRun = false } = {}
 }
 function repairShapesStep(w, prov, dryRun) {
   if (shapesMarked(w.entries, (q) => readback(w, q))) return { marked: true, repaired: [], failed: [] };
-  const st = w.state(); const all = shapeRepairOps(st, PURGED, { pathOf: (m) => { try { return CTX.cat.pathOf?.(m) ?? null; } catch { return null; } } });
+  const st = w.state(); const all = shapeRepairOps(st, REDACTED, { pathOf: (m) => { try { return CTX.cat.pathOf?.(m) ?? null; } catch { return null; } } });
   const byId = new Map(); for (const o of all) { if (!byId.has(o.id)) byId.set(o.id, []); byId.get(o.id).push(o); }
   const kept = [], failed = [];
   for (const [id, ops] of byId) {
     try { admit(w, st, { actor: "system", cap: { kind: "system", ids: [id], comps: [...new Set(ops.map((o) => o.comp))] }, lifting: true }, ops); kept.push(...ops); }
     catch (x) { if (!(x instanceof Refusal)) throw x; failed.push({ id, code: x.code, reason: String(x.reason ?? "").slice(0, 300) }); } }
   const ids = [...new Set(kept.map((o) => o.id))];
-  if (dryRun) return { dryRun: true, repaired: ids, failed, ops: kept.map(({ verb, id, comp }) => ({ verb, id, comp })) };
-  const act = { kind: "act", actor: "system", verb: "repair-shapes", body: { v: SHAPES_VERSION, ids, ...(failed.length ? { failed } : {}), ...prov,
+  if (dryRun) return { dryRun: true, repaired: ids, failed, ops: kept.map(({ op, id, comp }) => ({ op, id, comp })) };
+  const act = { kind: "request", actor: "system", verb: "repair-shapes", body: { v: SHAPES_VERSION, ids, ...(failed.length ? { failed } : {}), ...prov,
     why: "values stored before the shape audit (10-16), in today's spelling with the meaning their readers gave them; once per world; run as a maintenance command, never by a load" } };
   let seq;
   if (kept.length) { const plan = admit(w, w.state(), { actor: "system", cap: { kind: "system", ids, comps: [...new Set(kept.map((o) => o.comp))] }, lifting: true }, kept); seq = w.append(act); changeEntry(w, plan, seq); }
@@ -465,17 +465,17 @@ export function orphanScan(w, sc) {
   const under = (k, id) => { for (let p = parentOf.get(k), n = 0; p && n < 33; p = parentOf.get(p), n++) if (p === id) return true; return false; };
   for (; sc.n < w.entries.length; sc.n++) { const seq = sc.n, e = w.entries[seq];
     if (!isE(e)) continue;
-    if (e.kind === "sim" && (e.verb === "lift" || e.verb === "catch") && readback(w, seq)?.id) lifted.set(readback(w, seq).id, { seq, by: e.actor });   // READBACK: a purged lift names nothing to return
-    else if (e.kind === "sim" && e.verb === "launch") lifted.delete(readback(w, seq)?.id);
+    if (e.kind === "physics" && (e.verb === "lift" || e.verb === "catch") && readback(w, seq)?.id) lifted.set(readback(w, seq).id, { seq, by: e.actor });   // READBACK: a purged lift names nothing to return
+    else if (e.kind === "physics" && e.verb === "launch") lifted.delete(readback(w, seq)?.id);
     else if (e.kind === "change") { const ops = opsQuiet(e);
-      for (const o of ops) if (o.comp === "parent") parentOf.set(o.id, o.verb === "set" && typeof o.value?.to === "string" ? o.value.to : null);
+      for (const o of ops) if (o.comp === "parent") parentOf.set(o.id, o.op === "set" && typeof o.value?.to === "string" ? o.value.to : null);
       // the same lifecycle as the engine's (simlayer ends() and endsUnder(), read after the whole entry as the replay reads
       // them): what ends a hold is a write that moves it, re-parents it, switches it off or removes it, or switches off or
       // removes a thing it hangs from; an engine change or an edit to its physics or model leaves it in the hand (review of
       // 64d26822: the two disagreed, and a held thing came back into the engine as a ghost collider)
-      for (const o of ops) { if (o.verb === "create" || ends(o)) lifted.delete(o.id);
+      for (const o of ops) { if (o.op === "create" || ends(o)) lifted.delete(o.id);
         if (endsUnder(o)) for (const k of [...lifted.keys()]) if (under(k, o.id)) lifted.delete(k); }
-      for (const o of ops) if (o.verb === "delete" && o.comp === undefined) parentOf.delete(o.id); }
+      for (const o of ops) if (o.op === "delete" && o.comp === undefined) parentOf.delete(o.id); }
   }
   return sc;
 }
@@ -567,7 +567,7 @@ function scriptStatus(w, st, id, name, v, floor = null) {
   if (sandboxUp(w) !== true) return { ...base, status: "unavailable", why: SANDBOX_DOWN };
   if (rt?.fails >= cfg.fails && rt.ver === lastTouch(w, id, key)?.seq) return { ...base, status: "paused", why: pausedWhy(rt) };
   const role = roleOf(st, sp?.sponsor); const lost = [];
-  for (const x of scopeIds(st, id, v.scope?.ids)) for (const c of v.scope?.comps ?? []) { if (sp?.sponsor && lacks(w, st, sp.sponsor, { verb: "set", id: x, comp: sampleOf(c) }, null, { viaCap: true })) lost.push(`${x}.${c}`); }
+  for (const x of scopeIds(st, id, v.scope?.ids)) for (const c of v.scope?.comps ?? []) { if (sp?.sponsor && lacks(w, st, sp.sponsor, { op: "set", id: x, comp: sampleOf(c) }, null, { viaCap: true })) lost.push(`${x}.${c}`); }
   if (lost.length) { const since = lastSetterOf(w, "@world", `roles:${sp.sponsor}`);
     return { ...base, status: "dormant", why: `dormant: sponsor ${said(sp.sponsor)} (${role} now${since ? `, since seq ${since.seq}` : ""}) can no longer change ${lost.join(", ")}`, adopt: `an owner may: adopt {id: '${id}', script: '${name}'}` }; }
   return { ...base, status: rt?.status === "asleep" ? "asleep" : "active" };

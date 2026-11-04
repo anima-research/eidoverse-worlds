@@ -7,8 +7,7 @@
 // The world speaks the protocol: the join says `replica: true` (a client that
 // doesn't is refused), chat arrives as `say` entries in the `log` stream
 // (actors are opaque ids; the stream's `names` and the snapshot's cut.names say
-// who they are), and a say is a door request {type: "request", id, verb: "say",
-// args: {text}} answered by `reply` (a refusal is logged, not retried — except `rate`,
+// who they are), and a say is a door request {type: "request", id, // args: {text}} answered by `reply` (a refusal is logged, not retried — except `rate`,
 // which waits and resends in place).
 //
 // The bridge joins EMBODIED, not as a spectator, because authoring (even
@@ -165,7 +164,7 @@ async function pumpWorld() {
     if (text.length > MAX_LINE_CHARS) text = `${text.slice(0, MAX_LINE_CHARS)}…`;
     const id = `chatbridge-${++reqN}`;
     inFlight.set(id, m);
-    worldWs.send(JSON.stringify({ type: "request", id, verb: "say", args: { text } }));
+    worldWs.send(JSON.stringify({ type: "request", id, args: { text } }));
     await new Promise((r) => setTimeout(r, SEND_GAP_MS));
   }
   speaking = false;

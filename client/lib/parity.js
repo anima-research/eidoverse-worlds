@@ -8,7 +8,7 @@
 import { state } from './state.js';
 import { entities, childrenOf, ancestorsOf } from './world.js';
 import { realizedAs } from './realize/models.js';
-import { kindOf } from '../../shared/protocol/kind.js';
+import { formOf } from '../../shared/protocol/kind.js';
 import { childrenOf as scanChildren, ancestors as scanAncestors } from '../../shared/hierarchy.js';
 
 
@@ -33,7 +33,7 @@ export function foldParity() {
     if (meta) {
       const ent = shadow.entities[id];
       const sceneKind = meta.kind;
-      const foldKind = kindOf(ent);
+      const foldKind = formOf(ent);
       if (sceneKind !== foldKind || (foldKind === 'model' && meta.model !== ent.model)) {
         out.identityDiffs.push({ id, legacy: { kind: sceneKind, model: meta.model },
           shadow: { kind: foldKind, model: ent.model } });

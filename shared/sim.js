@@ -8,7 +8,7 @@
 // inside a flight: rigid boxes and spheres with full rotation (q, w), oriented-box statics, a height-field ground,
 // contacts solved with Box3D's soft step, swept against what rests (CCD).
 //
-// STATE IS PLAIN JSON and is the truth. Readers clone it (restEta), hand it to joiners (simCutOf) and digest it; an
+// STATE IS PLAIN JSON and is the truth. Readers clone it (restEta), hand it to joiners (simSnapshotOf) and digest it; an
 // engine world is built from it for each advance and written back. Per body the truth is the CENTRE pose (c, q, v, w)
 // plus the engine's sleep record; `p` (the entity origin, what readers compare a rest against) is derived from it and never
 // read back, so any advance schedule reaching tick T gives the same bits (Covenant IV). No yaw is stored: readers

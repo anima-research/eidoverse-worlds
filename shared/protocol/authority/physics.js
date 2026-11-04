@@ -68,7 +68,7 @@ function settleSim(w) {
       group = [batch[0]];
       try { plan = admit(w, st, { actor: "sim", cap: { kind: "rest", ids: [batch[0].id], comps: ["transform", "parent"], launch: batch[0].seq } }, opsFor(batch[0])); }
       catch (e2) { if (!(e2 instanceof Refusal)) throw e2; w.unsettled.push({ id: batch[0].id, launch: batch[0].seq, refused: e2.code, reason: e2.reason }); skip.add(`${batch[0].id}@${batch[0].seq}`); continue; } }
-    if (!digested) { w.append({ kind: "sim", actor: "sim", cause: group[0].seq, verb: "digest", body: { digest: digestOf(sf.sim) } }); digested = true; }
+    if (!digested) { w.append({ kind: "physics", actor: "sim", cause: group[0].seq, verb: "digest", body: { digest: digestOf(sf.sim) } }); digested = true; }
     const rest = changeEntry(w, plan, group[0].seq);
     for (const r of group) {
       const st2 = w.state(); const B = boundsOf(st2);
@@ -141,9 +141,9 @@ function restampEngine(w) {
   // READBACK: the cause act's request is read back; a purged one (readback null) is an UNKNOWN chooser, and unknown means
   // the owner may have chosen it: never restamped (engine-scars 4/6c: a purge made an owner's choice look stamped)
   // → "named" (the owner's word), "stamped" (an authority's), or "skip" (this change didn't touch the engine: look further back)
-  const chose = (e) => { const c = E[e.cause]; if (!(isE(c) && c.kind === "act") || c.actor === "system" || c.verb === "fork-copy") return "stamped";
+  const chose = (e) => { const c = E[e.cause]; if (!(isE(c) && c.kind === "request") || c.actor === "system" || c.verb === "fork-copy") return "stamped";
     const b = readback(w, e.cause); if (b === null) return "named";
-    const t = word(b.request); return t === undefined ? "skip" : t.includes("@") ? "named" : "stamped"; };
+    const t = word(b.args); return t === undefined ? "skip" : t.includes("@") ? "named" : "stamped"; };
   // Walking back from the newest physics-engine change, the first whose act typed an engine decides: a version typed is the
   // owner's, the engine alone is stamped (10-21: compared VALUES ended the walk when a stamp equalled an earlier named
   // version — R7c — and the stamp read as the owner's). A delete ends it: the epoch before is another world's physics.
@@ -151,7 +151,7 @@ function restampEngine(w) {
   for (let s = E.length - 1; s >= 0; s--) { const e = E[s]; if (!(isE(e) && e.kind === "change")) continue;
     const o = opsQuiet(e).filter((x) => x.id === "@world" && x.comp === "physics-engine").at(-1); if (!o) continue;
     if (from < 0) from = s;
-    if (o.verb !== "set") break;
+    if (o.op !== "set") break;
     const c = chose(e); if (c === "named") return; if (c === "stamped") break; }
   if (from < 0) return;
   // what the cut ends (house answer, #260 10-21): this server can't compute the old version's flights, so a cut that waited
@@ -161,13 +161,13 @@ function restampEngine(w) {
   const out = new Map();   // id → the launch seq it flies under, or "held"
   let unknownFlights = 0;
   for (let s = from + 1; s < E.length; s++) { const e = E[s]; if (!isE(e)) continue;
-    if (e.kind === "sim") { const b = readback(w, s); if (b === null && ["launch", "lift", "catch"].includes(e.verb)) { if (e.verb === "launch") unknownFlights++; continue; }   // READBACK: a purged flight names no body: unknown, so counted as ended by the cut
+    if (e.kind === "physics") { const b = readback(w, s); if (b === null && ["launch", "lift", "catch"].includes(e.verb)) { if (e.verb === "launch") unknownFlights++; continue; }   // READBACK: a purged flight names no body: unknown, so counted as ended by the cut
       if (b?.id) { if (e.verb === "launch") out.set(b.id, s); else if (e.verb === "lift" || e.verb === "catch") out.set(b.id, "held"); } continue; }
     if (e.kind !== "change") continue;
-    const c = E[e.cause]; const rest = isE(c) && c.kind === "sim" && c.verb === "launch";
+    const c = E[e.cause]; const rest = isE(c) && c.kind === "physics" && c.verb === "launch";
     for (const o of opsQuiet(e)) { const f = out.get(o.id); if (f === undefined) continue;
-      if (rest ? f === e.cause : (f === "held" && (o.verb === "create" || ["transform", "parent"].includes(o.comp) || (o.comp === "disabled" && o.verb === "set" && o.value === true)))) out.delete(o.id);
-      else if (o.verb === "delete" && o.comp === undefined) out.delete(o.id); } }
+      if (rest ? f === e.cause : (f === "held" && (o.op === "create" || ["transform", "parent"].includes(o.comp) || (o.comp === "disabled" && o.op === "set" && o.value === true)))) out.delete(o.id);
+      else if (o.op === "delete" && o.comp === undefined) out.delete(o.id); } }
   const ended = [...out].filter(([, f]) => f !== "held").map(([id]) => id).sort();
   const next = { engine: today, ...(spec.tickMs !== undefined ? { tickMs: spec.tickMs } : {}) };   // declared fields only: an older value's build goes
   let plan; try { plan = admit(w, st, { actor: "system", cap: { kind: "system", ids: ["@world"], comps: ["physics-engine"] } }, [setOp("@world", "physics-engine", next)]); }

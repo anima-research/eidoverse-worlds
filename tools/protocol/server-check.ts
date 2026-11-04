@@ -170,8 +170,8 @@ await sleep(200);
 const L = readLog(fs.readFileSync(path.join(W4, "garden", "world.jsonl")));
 const st = fold(L);
 ok(st.status === "ok" && !st.diagnostics.some(([, k]) => String(k).startsWith("malformed")), "S4 the log on disk reads back strictly", st.diagnostics.slice(0, 3));
-ok(L.every((e, i) => i === 0 || e.ts >= L[i - 1].ts) && L.filter((e) => e.kind === "act").length >= 6, "S4 ts never decreases; every write is an act + its result");
-ok(L.filter((e) => e.kind === "act").every((e) => [ANN, BOB].includes(e.actor) || (e.actor === VIC && e.body?.refused) || (e.actor === "system" && e.verb === "repair-shapes")), "S4 acts are stamped with the connection's identity, never the payload's (Vic's are his refused attempts, recorded: round-2 R7; the founding's repair-shapes marker is the system's, review r8 M3)", [...new Set(L.map((e) => e.actor))]);
+ok(L.every((e, i) => i === 0 || e.ts >= L[i - 1].ts) && L.filter((e) => e.kind === "request").length >= 6, "S4 ts never decreases; every write is an act + its result");
+ok(L.filter((e) => e.kind === "request").every((e) => [ANN, BOB].includes(e.actor) || (e.actor === VIC && e.body?.refused) || (e.actor === "system" && e.verb === "repair-shapes")), "S4 acts are stamped with the connection's identity, never the payload's (Vic's are his refused attempts, recorded: round-2 R7; the founding's repair-shapes marker is the system's, review r8 M3)", [...new Set(L.map((e) => e.actor))]);
 for (const c of [ann, bob, vic, spec]) ok(digest(heldBy(c).st) === digest(st), `S4 what ${c.id} holds (its own fold of what it was sent) = the log on disk (digest)`);
 ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync was needed (one snapshot each)", [ann, bob, vic].map((c) => c.of("snapshot").length));
 { // the sky (which the v1 projection could only resync for) is just another entry in the stream now
@@ -372,7 +372,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   // SWEEP-3 G1a: body_state still says posture (main's name for the clip), beside bodyMode and clip
   const bst = JSON.parse(T(await HANDLERS.body_state(oz, {}, {} as any, "body_state")));
   ok("posture" in bst && bst.posture === bst.clip && "bodyMode" in bst, "CM6p body_state carries posture, a twin of clip", JSON.stringify({ posture: bst.posture, clip: bst.clip, bodyMode: bst.bodyMode }));
-  ok(typeof historyLine === "function" && historyLine({ seq: 9, ts: 0, actor: "ann", kind: "act", verb: "imported", body: { verb: "comp", args: { id: "x", type: "label", data: "old" }, from: 4 } }) === `#9 ann: comp {"id":"x","type":"label","data":"old"} (imported from the old log, #4)`, "CM6 an imported entry prints the verb and args it was written with, not `legacy {}`");
+  ok(typeof historyLine === "function" && historyLine({ seq: 9, ts: 0, actor: "ann", kind: "request", verb: "imported", body: { verb: "comp", args: { id: "x", type: "label", data: "old" }, from: 4 } }) === `#9 ann: comp {"id":"x","type":"label","data":"old"} (imported from the old log, #4)`, "CM6 an imported entry prints the verb and args it was written with, not `legacy {}`");
   // CM7 look speaks door terms: no world_verb, no comp {…}, no dismount
   ok((await ann.req("create", { id: "bell", model: "test/cup.glb", components: { reactions: { ring: { kind: "set", component: "label", value: "rung" } }, lock: true }, place: { at: [3, 3] } })).ok, "CM7 (Ann makes a bell that rings, locked)");
   await tryUntil("Oz holds the bell", () => oz.entities.has(IDS.of("bell")), { ms: 3000, step: 50 });
@@ -407,7 +407,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
     { actor: "Ann", verb: "comp", args: { id: "lamp_1", type: "sockets", data: { seat: { pos: [0.3, 0.75, 0.1], yaw: 1 } } } },
     { actor: "Ann", verb: "spawn", args: { id: "mug_1", lib: "test/cup.glb", pos: [7, 0, 7] } },
     { actor: "Ann", verb: "mount", args: { id: "mug_1", to: "lamp_1", slot: "seat" } },
-    { actor: "Ann", verb: "say", args: { text: "hello from v1" } }];
+    { actor: "Ann", args: { text: "hello from v1" } }];
   fs.mkdirSync(path.join(W4, "oldtown"), { recursive: true });
   fs.writeFileSync(path.join(W4, "oldtown", "log.jsonl"), L.map((e, k) => JSON.stringify({ seq: k, ts: T0 + k * 1000, ...e })).join("\n") + "\n");
   const v1log = path.join(W4, "oldtown", "log.jsonl"); const before = fs.readFileSync(v1log);
@@ -515,8 +515,8 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok((await b.req("grab", { id: "ball", hand: "left" })).ok, "SP5 Bob moves it to his left hand (presence: nothing logged)"); await tryUntil("Ann is told the ball is in Bob's left hand", () => a.of("holds").at(-1)?.holds?.[IDS.of("ball")]?.hand === "left", { ms: 2000 });
   ok(a.of("holds").at(-1)?.holds?.[IDS.of("ball")]?.hand === "left" && a.of("holds").at(-1)?.holds?.[IDS.of("ball")]?.by === B, "SP5 …and everyone is told which hand holds it", a.of("holds").at(-1));
   const n = a.of("log").length; b.close();
-  await tryUntil("Bob's leaving drops the ball (a launch, and nobody holds it)", () => a.of("log").slice(n).flatMap((m) => m.entries).some((e) => e?.kind === "sim" && e.verb === "launch" && e.body?.id === IDS.of("ball")) && a.of("holds").at(-1)?.holds?.[IDS.of("ball")] === undefined, { ms: 2000 });
-  await pause("a second copy would arrive within the old window", 400); const launched = a.of("log").slice(n).flatMap((m) => m.entries).filter((e) => e?.kind === "sim" && e.verb === "launch" && e.body?.id === IDS.of("ball"));
+  await tryUntil("Bob's leaving drops the ball (a launch, and nobody holds it)", () => a.of("log").slice(n).flatMap((m) => m.entries).some((e) => e?.kind === "physics" && e.verb === "launch" && e.body?.id === IDS.of("ball")) && a.of("holds").at(-1)?.holds?.[IDS.of("ball")] === undefined, { ms: 2000 });
+  await pause("a second copy would arrive within the old window", 400); const launched = a.of("log").slice(n).flatMap((m) => m.entries).filter((e) => e?.kind === "physics" && e.verb === "launch" && e.body?.id === IDS.of("ball"));
   ok(launched.length === 1 && a.of("holds").at(-1)?.holds?.[IDS.of("ball")] === undefined, "SP3 Bob leaves holding it: it's dropped into the world (a launch), and nobody holds it", [launched.length, a.of("holds").at(-1)]);
   // wait until the authority has it at rest: the authority's clock is the wall clock made monotonic, and this host's wall clock
   // has been seen to step BACK 1.4 s under load (WSL), which stalls physics time for as long (never reorders it)
@@ -644,7 +644,7 @@ const W = process.env.WORLDS_DIR, E = process.env.ENGINE;
 const { custodyAt } = await import(E + "/server/custody.ts"); const { custodyFileIn } = await import(E + "/server/keyfiles.ts");
 const { translate } = await import(E + "/tools/protocol/import-v1/translate-v1.js");
 const cu = custodyAt(custodyFileIn(W)); const keys = { key: cu.sequencer(), operator: cu.operator() };
-const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } }, { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } },
+const old = [{ seq: 0, ts: 1, actor: "world", args: { v: 2, dialect: "eidoverse-log" } }, { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } },
   { seq: 2, ts: 3, actor: "ann", verb: "spawn", args: { id: "a-cart", lib: "crate", pos: [0, 0, 0] } }, { seq: 3, ts: 4, actor: "ann", verb: "spawn", args: { id: "b-bench", lib: "crate", pos: [3, 0, 0] } },
   { seq: 4, ts: 5, actor: "ann", verb: "comp", args: { id: "a-cart", type: "sockets", data: { "front seat": { pos: [0, 0.5, 0], body: { action: "sit" } } } } },
   { seq: 5, ts: 6, actor: "ann", verb: "comp", args: { id: "b-bench", type: "sockets", data: { seat: { pos: [0, 0.5, 0], body: { action: "sit" } } } } }];

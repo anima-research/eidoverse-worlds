@@ -88,7 +88,7 @@ console.log("\nthe index is the fold's, not a view's:");
 
 console.log("\na carrier that is gone while something still names it:");
 // the authority cascades a delete (the log never holds a bare one), so the entry is fed to the replica by hand
-{ const ing = r.ingest([{ kind: "change", verb: "delete", body: { id: "truck" }, ts: 0, actor: "u-hier" }], head); head++;
+{ const ing = r.ingest([{ kind: "change", op: "delete", body: { id: "truck" }, ts: 0, actor: "u-hier" }], head); head++;
   if (ing.resync) throw new Error(`resync: ${ing.why}`); }
 agree("the index answers the dangling edge exactly as the scan does");
 check("…the gone carrier still lists its child, the child still names it, and the grandchild's ancestors stop at the gap",

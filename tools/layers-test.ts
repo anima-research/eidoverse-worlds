@@ -26,5 +26,5 @@ const s = inspectSchema({ ...W.crate, id: "crate" }, "crate", {}); const f = s.g
 check("the layer row offers auto (its default) and every layer", f?.value === "auto" && f.options[0].label === "auto (props)" && f.options.length === 8, JSON.stringify(f?.options));
 const e = editOps({ ...W.crate, id: "crate" }, "crate", { "flags.layer": "environment" }, {});
 check("choosing a layer writes hesperus/layer; auto removes it", e.ops.length === 1 && e.ops[0].args?.component === "hesperus/layer" && e.ops[0].args?.value === "environment"
-  && editOps({ ...W.told, id: "told" }, "told", { "flags.layer": "auto" }, {}).ops[0]?.verb === "delete", JSON.stringify(e));
+  && editOps({ ...W.told, id: "told" }, "told", { "flags.layer": "auto" }, {}).ops[0]?.op === "delete", JSON.stringify(e));
 console.log(`${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

@@ -65,8 +65,8 @@ export const seedOf = (worldId, actSeq, key) => sha256(`${worldId}|${actSeq}|${k
 export function elide(st, ops) {
   const s = cowState(st); const out = [];
   for (const o of ops) { const e = s.entities[o.id];
-    if (o.verb === "set" && "value" in o && e && o.comp in e.c && jcs(e.c[o.comp]) === jcs(o.value)) continue;   // a set without value is the fold's no-op, judged by the gate, never compared
-    if (o.verb === "delete" && (!e || (o.comp !== undefined && !(o.comp in e.c)))) continue;
+    if (o.op === "set" && "value" in o && e && o.comp in e.c && jcs(e.c[o.comp]) === jcs(o.value)) continue;   // a set without value is the fold's no-op, judged by the gate, never compared
+    if (o.op === "delete" && (!e || (o.comp !== undefined && !(o.comp in e.c)))) continue;
     out.push(o); try { applyCow(s, [o]); } catch { /* the gate names the shape problem */ } }
   return out;
 }
@@ -80,7 +80,7 @@ const plain = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 export function stampMotions(st, ops, now) {
   const s = cowState(st); const out = [];
   for (const o of ops) { let op = o;
-    if (o.verb === "set" && isMotion(o.comp) && plain(o.value) && o.value.t0 === undefined) {
+    if (o.op === "set" && isMotion(o.comp) && plain(o.value) && o.value.t0 === undefined) {
       const cur = s.entities[o.id]?.c[o.comp]; let t0 = now;
       if (plain(cur) && typeof cur.t0 === "number") { const { t0: was, ...rest } = cur; if (jcs(rest) === jcs(o.value)) t0 = was; }
       op = { ...o, value: { ...o.value, t0 } }; }

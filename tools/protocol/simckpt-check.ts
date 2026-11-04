@@ -26,7 +26,7 @@ const A = await import("../../shared/protocol/authority.js"); const { request, s
 const checkpointNow = A.checkpointNow ?? (() => 0);   // absent before 10-28: its rows go red, the rest still run
 const { readLog, fold, worldIdOf, digest } = await import("../../shared/protocol/fold.js");
 const { seal } = await import("../../shared/protocol/authority/storage.js");
-const { simFold, simCutOf, digestOf } = await import("../../shared/protocol/simlayer.js");
+const { simFold, simSnapshotOf, digestOf } = await import("../../shared/protocol/simlayer.js");
 const { openLive } = await import("../../server/livehost.ts");
 const { custodyAt } = await import("../../server/custody.ts");
 const SC = await import("../../server/statecache.ts");
@@ -34,7 +34,7 @@ const SC = await import("../../server/statecache.ts");
 let pass = 0, fail = 0;
 const ok = (cond, what, detail?) => { if (cond) pass++; else { fail++; console.log(`  FAIL ${what}${detail !== undefined ? ` — ${JSON.stringify(detail).slice(0, 500)}` : ""}`); } };
 const N = 40, TICK = 33;
-const isCk = (e) => e?.kind === "sim" && e.verb === "checkpoint";
+const isCk = (e) => e?.kind === "physics" && e.verb === "checkpoint";
 const cks = (w) => w.entries.map((e, s) => (isCk(e) ? s : -1)).filter((s) => s >= 0);
 const blobFile = (dir, h) => path.join(dir, "blobs", `${String(h).replace(/[^a-z0-9]/g, "-")}.json`);
 let T = 1800000000000;
@@ -91,8 +91,8 @@ const sameAsGenesis = (b) => digestOf(b.sim().sim) === digestOf(simFold(b.entrie
 { const x = world("p"); x.call("set", { id: "cr-0", component: "label", value: "secret" }); labels(x, 2 * N + 3);
   const C = cks(x.w); const files = C.map((s) => blobFile(x.dir, x.w.entries[s].body.state));
   ok(C.length >= 2 && files.every((f) => fs.existsSync(f)), "PC4 (setup) checkpoints with their blobs on disk", { C });
-  const target = x.w.entries.findIndex((e) => e.kind === "change" && e.verb === "set" && e.body?.value === "secret");
-  T += 100; const pseq = x.w.append({ kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: target }] } });
+  const target = x.w.entries.findIndex((e) => e.kind === "change" && e.op === "set" && e.body?.value === "secret");
+  T += 100; const pseq = x.w.append({ kind: "redaction", actor: "system", body: { values: [{ seq: target }] } });
   ok(files.every((f) => !fs.existsSync(f)), "PC4 the purge deleted every checkpoint's blob", files.filter((f) => fs.existsSync(f)));
   const b = reopen(x.dir);
   ok(b.bootedFrom === null && replayed(b) === b.entries.length && sameAsGenesis(b), "PC4 a boot right after the purge replays the engine from genesis", { from: b.bootedFrom });
@@ -106,10 +106,10 @@ const sameAsGenesis = (b) => digestOf(b.sim().sim) === digestOf(simFold(b.entrie
 { const x = world("p2", 6, N, { stateCache: { every: 5 } }); x.call("set", { id: "cr-5", component: "label", value: "secret" }); labels(x, N + 3);   // labels() leaves cr-5 alone
   const C = cks(x.w); const files = C.map((s) => blobFile(x.dir, x.w.entries[s].body.state)); x.w.saveCache();
   const cacheFile = path.join(x.dir, SC.CACHE_FILE), holds = () => fs.existsSync(cacheFile) && fs.readFileSync(cacheFile, "utf8").includes("secret");
-  const target = x.w.entries.findIndex((e) => e.kind === "change" && e.verb === "set" && e.body?.value === "secret");
+  const target = x.w.entries.findIndex((e) => e.kind === "change" && e.op === "set" && e.body?.value === "secret");
   const before = fs.readFileSync(cacheFile);   // a crash right after the line also stops the host's own cache rewrite: the old one is what's left
   const unlink = fs.unlinkSync; let refusedUnlinks = 0; fs.unlinkSync = function () { refusedUnlinks++; throw new Error("EIO: injected (the crash after the purge line)"); };
-  try { T += 100; x.w.append({ kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: target }] } }); } finally { fs.unlinkSync = unlink; }
+  try { T += 100; x.w.append({ kind: "redaction", actor: "system", body: { values: [{ seq: target }] } }); } finally { fs.unlinkSync = unlink; }
   fs.writeFileSync(cacheFile, before);
   const left = files.filter((f) => fs.existsSync(f)).length, cacheLeft = holds();
   ok(C.length >= 1 && refusedUnlinks > 0 && left === files.length && cacheLeft, "PC4b (setup) the purge's unlinks failed: its blobs and the cache holding the value are still on disk", { C, refusedUnlinks, left, cacheLeft });
@@ -157,16 +157,16 @@ const sameAsGenesis = (b) => digestOf(b.sim().sim) === digestOf(simFold(b.entrie
 
 // ---- PC8 ----
 { const x = world("o", 6, 0); labels(x, 4); T += 25000; x.beat();
-  const sf = x.w.sim(); const cut = simCutOf(sf, x.w.entries); const state = x.w.putBlob({ cutJson: JSON.stringify(cut) });   // the shape before 10-28: time inside
-  const s = x.w.append({ kind: "sim", actor: "sim", verb: "checkpoint", body: { at: x.w.entries.length - 1, engine: { engine: sf.spec.engine }, tick: sf.sim.tick, clock: sf.clock, sim: digestOf(sf.sim), state } });
+  const sf = x.w.sim(); const cut = simSnapshotOf(sf, x.w.entries); const state = x.w.putBlob({ cutJson: JSON.stringify(cut) });   // the shape before 10-28: time inside
+  const s = x.w.append({ kind: "physics", actor: "sim", verb: "checkpoint", body: { at: x.w.entries.length - 1, engine: { engine: sf.spec.engine }, tick: sf.sim.tick, clock: sf.clock, sim: digestOf(sf.sim), state } });
   labels(x, 3); const b = reopen(x.dir);
   ok(b.bootedFrom === s && sameAsGenesis(b), "PC8 a checkpoint whose blob holds its own clock and tick (written before 10-28) still boots", { from: b.bootedFrom, s }); }
 
 // ---- PC10: a boot's clock starts at the checkpoint's, so nothing is written behind the engine's clock ----
 { const x = world("q", 6, 0); labels(x, 2); x.beat();
-  const sf = x.w.sim(), ahead = T + 1000, cut = simCutOf(sf, x.w.entries); cut.clock = ahead;   // a cut whose clock is ahead of every ts
+  const sf = x.w.sim(), ahead = T + 1000, cut = simSnapshotOf(sf, x.w.entries); cut.clock = ahead;   // a cut whose clock is ahead of every ts
   const state = x.w.putBlob({ cutJson: JSON.stringify(cut) });
-  const s = x.w.append({ kind: "sim", actor: "sim", verb: "checkpoint", body: { at: x.w.entries.length - 1, engine: { engine: sf.spec.engine }, tick: sf.sim.tick, clock: ahead, sim: digestOf(sf.sim), state } });
+  const s = x.w.append({ kind: "physics", actor: "sim", verb: "checkpoint", body: { at: x.w.entries.length - 1, engine: { engine: sf.spec.engine }, tick: sf.sim.tick, clock: ahead, sim: digestOf(sf.sim), state } });
   const T0 = T; T -= 900;   // the wall stepped back across the restart
   const b = reopen(x.dir); const r = request(b, "rowan", "set", { id: "cr-0", component: "label", value: "after" }); const ts = b.entries[r.seq]?.ts;
   T = T0 + 2000;
@@ -189,9 +189,9 @@ const sameAsGenesis = (b) => digestOf(b.sim().sim) === digestOf(simFold(b.entrie
   // re-founded under this run's custody key (the source's key isn't ours), then K transform sets on its bodies, signed
   const cu = custodyAt(path.join(W, ".custody.json")); E[0].body.sequencer = cu.sequencer(); const wid = worldIdOf(E[0]); for (let i = 1; i < E.length; i++) E[i].world = wid;
   const st0 = fold(E); const ids = Object.keys(st0.entities).filter((id) => st0.entities[id].c.physics && st0.entities[id].c.transform);
-  const actor = E[1].actor, cause = E.findLastIndex((e) => e.kind === "act"); let ts = E.at(-1).ts;
+  const actor = E[1].actor, cause = E.findLastIndex((e) => e.kind === "request"); let ts = E.at(-1).ts;
   for (let i = 0; i < K; i++) { const id = ids[i % ids.length], tf = st0.entities[id].c.transform;
-    E.push({ world: wid, kind: "change", actor, cause, verb: "set", body: { id, comp: "transform", value: { ...tf, pos: tf.pos.map((v, j) => (j === 1 ? v : v + ((i % 7) - 3) * 1e-3)) } }, ts: ++ts }); }
+    E.push({ world: wid, kind: "change", actor, cause, op: "set", body: { id, comp: "transform", value: { ...tf, pos: tf.pos.map((v, j) => (j === 1 ? v : v + ((i % 7) - 3) * 1e-3)) } }, ts: ++ts }); }
   fs.writeFileSync(path.join(dir, "world.jsonl"), seal(E, { sign: (m) => cu.sign(m) }).map((e) => JSON.stringify(e)).join("\n") + "\n");
   T = Math.max(T, ts + 1000);
   const boot = () => { const a = performance.now(); const b = reopen(dir, { stateCache: { every: 1000 }, simCheckpoint: { every: 1000 } }); return [performance.now() - a, b]; };

@@ -24,7 +24,7 @@ const root = scratch("statecache");
 const W = path.join(root, "worlds");
 Object.assign(process.env, { WORLDS_DIR: W, BACKUPS_DIR: path.join(root, "backups"), OPT_DIR: path.join(root, "opt"), SKIP_OPT_SWEEP: "1" });
 const { request } = await import("../../shared/protocol/authority.js");
-const { readLog, fold, jcs, PURGED } = await import("../../shared/protocol/fold.js");
+const { readLog, fold, jcs, REDACTED } = await import("../../shared/protocol/fold.js");
 const { chainStep } = await import("../../shared/protocol/authority/storage.js");
 const { openLive } = await import("../../server/livehost.ts");
 const SC = await import("../../server/statecache.ts");
@@ -119,13 +119,13 @@ async function said(f) { const lines = [], ow = console.warn, oe = console.error
 { const { dir, w, call } = world("e", 2, 5);
   call("set", { id: "t-0", component: "label", value: "a secret" }); const seq = w.entries.length - 1;
   w.saveCache(); ok(fs.readFileSync(cacheP(dir), "utf8").includes("a secret"), "SC5 (setup) the cache holds the value");
-  w.append({ kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq }] } });
+  w.append({ kind: "redaction", actor: "system", body: { values: [{ seq }] } });
   ok(!fs.existsSync(cacheP(dir)) || !fs.readFileSync(cacheP(dir), "utf8").includes("a secret"), "SC5 a purge takes the purged value off the disk's cache at once (§12)");
   const p = world("e2", 2, 1000); p.call("set", { id: "t-1", component: "label", value: "purge me" }); const s2 = p.w.entries.length - 1;
   p.call("create", { id: "t-8", components: { label: "more" } }); p.w.saveCache();
-  const q = reopen(p.dir, 0); q.append({ kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: s2 }] } });
+  const q = reopen(p.dir, 0); q.append({ kind: "redaction", actor: "system", body: { values: [{ seq: s2 }] } });
   const b = reopen(p.dir);
-  ok(b.bootedFromCache == null && b.state().entities["t-1"].c.label === PURGED && canon(b.state()) === truth(p.dir),
+  ok(b.bootedFromCache == null && b.state().entities["t-1"].c.label === REDACTED && canon(b.state()) === truth(p.dir),
     "SC5 a purge after the cache (written by a host without it): not read; the purged value is purged", { from: b.bootedFromCache, label: b.state().entities["t-1"].c.label }); }
 
 // ---- SC6 / SC7 / SC8 ----
@@ -165,8 +165,8 @@ async function said(f) { const lines = [], ow = console.warn, oe = console.error
 // ---- SC10 / SC11: a generated large log ----
 { const K = Number(process.env.SC_ENTRIES ?? 60000);
   const { dir, w } = world("big", 50, 0); const lines = [];
-  let head = w.headAt(w.entries.length - 1); const cause = w.entries.findIndex((e) => e.kind === "act" && e.verb === "create");
-  for (let i = 0; i < K; i++) { const e = { world: w.worldId, kind: "change", actor: "rowan", cause, verb: "set", body: { id: `t-${i % 50}`, comp: "label", value: `label ${i}`, salt: "AAAAAAAAAAAAAAAAAAAAAA" }, ts: ++now };
+  let head = w.headAt(w.entries.length - 1); const cause = w.entries.findIndex((e) => e.kind === "request" && e.op === "create");
+  for (let i = 0; i < K; i++) { const e = { world: w.worldId, kind: "change", actor: "rowan", cause, op: "set", body: { id: `t-${i % 50}`, comp: "label", value: `label ${i}`, salt: "AAAAAAAAAAAAAAAAAAAAAA" }, ts: ++now };
     head = chainStep(head, e); lines.push(JSON.stringify({ ...e, head })); }
   fs.appendFileSync(path.join(dir, "world.jsonl"), lines.join("\n") + "\n");
   const time = (f) => { const a = performance.now(); const r = f(); return [performance.now() - a, r]; };

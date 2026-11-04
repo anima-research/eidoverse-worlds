@@ -70,7 +70,7 @@ const scrollUp = async (logEl: HTMLElement) => { logEl.dispatchEvent(new Event("
 const scrollToTop = async (logEl: HTMLElement) => {
   for (let i = 0; i < 30 && !logEl.textContent!.includes("beginning of this world"); i++) await scrollUp(logEl);
 };
-const say = (seq: number, actor: string, ts: number) => ({ seq, ts, actor, verb: "say", args: { text: `#${seq}` } });
+const say = (seq: number, actor: string, ts: number) => ({ seq, ts, actor, args: { text: `#${seq}` } });
 const windowOf = (entries: any[]) => {
   const st: any = {};
   for (const e of entries) hear(st, { actor: e.actor, text: e.args.text, ts: e.ts, seq: e.seq });

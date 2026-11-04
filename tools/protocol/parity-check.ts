@@ -300,7 +300,7 @@ const cases: Case[] = [
     good: (o) => o.clip === "sit" && o.posture === "sit" },
   { id: "P7", what: "world_history (matrix G2): act + say by default; kinds picks others; before + after is a window read forward from after and cut at before", async run() {
       const T = await import(TREE + "mcpl/tools.ts"); const asked: any[] = [];
-      const E = [{ seq: 5, kind: "act", verb: "create", by: "ann" }, { seq: 6, kind: "change", by: "ann" }, { seq: 7, kind: "say", by: "bob", text: "hi" }, { seq: 9, kind: "act", verb: "delete", by: "ann" }];
+      const E = [{ seq: 5, kind: "request", verb: "create", by: "ann" }, { seq: 6, kind: "change", by: "ann" }, { seq: 7, kind: "say", by: "bob", text: "hi" }, { seq: 9, kind: "request", verb: "delete", by: "ann" }];
       const ag: any = { request: async (_v: string, args: any) => { asked.push(args); return { ok: true, entries: E, next: null }; } };
       const t = async (a: any) => (await T.HANDLERS.world_history(ag, a, {}, "world_history"))?.content?.[0]?.text ?? "";
       const def = await t({}), ch = await t({ kinds: ["change"] }), win = await t({ after: 4, before: 8 });

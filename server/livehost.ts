@@ -17,7 +17,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { custodyFileIn } from "./keyfiles.ts";
 import { writePrivate } from "./fsutil.ts";
-import { readLog, fold, opsOf, applyInPlace, purgesIn, jcs, sha256, Malformed, DIALECT, VERSION } from "../shared/protocol/fold.js";
+import { readLog, fold, opsOf, applyInPlace, redactionsIn, jcs, sha256, Malformed, DIALECT, VERSION } from "../shared/protocol/fold.js";
 import { worldOf, posAt } from "../shared/protocol/authority.js";
 import { simFolder, carried, digestOf } from "../shared/protocol/simlayer.js";
 import { readLogBytes, appendDurable, putBlobFile } from "./durable.ts";
@@ -84,8 +84,8 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   // governance is RESERVED (§13): this server neither writes nor validates `sequencer` entries, and one may have moved the
   // writer role somewhere it can't check, so it refuses to serve the world rather than fold past the entry and write on
   // (a cache with views is never written over one: openLive refused it, so a tail boot looks at the tail)
-  { let g = -1; for (let s = from0; s < entries.length; s++) if (isE(entries[s]) && entries[s].kind === "sequencer") { g = s; break; }
-    if (g >= 0) throw new Error(`"${name}" can't be served: its log holds a governance (sequencer) entry at seq ${g}, and governance is reserved in this server (PROTOCOL §13): it can't check who that entry made the writer, so it won't write after it. Nothing was changed.`); }
+  { let g = -1; for (let s = from0; s < entries.length; s++) if (isE(entries[s]) && entries[s].kind === "governance") { g = s; break; }
+    if (g >= 0) throw new Error(`"${name}" can't be served: its log holds a governance entry at seq ${g}, and governance is reserved in this server (PROTOCOL §13): it can't check who that entry made the writer, so it won't write after it. Nothing was changed.`); }
   const blobPath = (h: string) => path.join(blobDir, `${String(h).replace(/[^a-z0-9]/g, "-")}.json`);
   const getBlob = (h: string) => {
     if (!/^sha256:[0-9a-f]{64}$/.test(String(h))) throw new Error(`not a blob name: ${h}`);
@@ -130,12 +130,12 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   // engine this host carries, and the cut's sim hashing to the digest the entry recorded. Anything else: from genesis, as before.
   // (a tail boot: the prefix holds no purge, and its checkpoints are the views' list)
   const ckpt = (() => {
-    let lastPurge = -1; for (let s = entries.length - 1; s >= from0; s--) if (isE(entries[s]) && entries[s].kind === "purge") { lastPurge = s; break; }
+    let lastPurge = -1; for (let s = entries.length - 1; s >= from0; s--) if (isE(entries[s]) && entries[s].kind === "redaction") { lastPurge = s; break; }
     const cands = function* () { for (let s = entries.length - 1; s > Math.max(lastPurge, from0 - 1); s--) yield s; if (V && lastPurge < 0) for (let k = V.ckpts.length - 1; k >= 0; k--) if (V.ckpts[k] < from0) yield V.ckpts[k]; };
-    for (const s of cands()) { const e = entries[s]; if (!isE(e) || e.kind !== "sim" || e.verb !== "checkpoint") continue;
-      const b = e.body ?? {}; if (b.at !== s - 1 || typeof b.state !== "string") { w.log?.(`checkpoint at ${s} malformed; skipped`); continue; }
+    for (const s of cands()) { const e = entries[s]; if (!isE(e) || e.kind !== "physics" || e.verb !== "checkpoint") continue;
+      const b = e.body ?? {}; if (b.seq !== s - 1 || typeof b.state !== "string") { w.log?.(`checkpoint at ${s} malformed; skipped`); continue; }
       let blob: Any; try { blob = getBlob(b.state); } catch (err) { console.warn(`[world:${name}] checkpoint ${s}: ${(err as Error).message}; skipped`); continue; }
-      let cut: Any = null; try { cut = typeof blob?.cutJson === "string" ? JSON.parse(blob.cutJson) : null; } catch { cut = null; }
+      let cut: Any = null; try { const j = blob?.snapshotJson ?? blob?.cutJson; cut = typeof j === "string" ? JSON.parse(j) : null; } catch { cut = null; }   // cutJson: a historical blob's key (D5)
       if (cut?.clock === null && cut.sim?.tick === null) { cut.clock = b.clock; cut.sim.tick = b.tick; }   // a blob shared by checkpoints: the time is the entry's (checkpointSim)
       if (!cut?.spec || !carried(cut.spec) || !cut.sim || digestOf(cut.sim) !== b.sim) { console.warn(`[world:${name}] checkpoint ${s}: ${!cut ? "no cut in the blob" : !carried(cut.spec) ? `engine ${cut.spec?.engine}@${cut.spec?.build} not carried` : "digest mismatch"}; skipped`); continue; }
       return { seq: s, cut }; }
@@ -158,9 +158,9 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   const ckptAtBoot = ckptSt && cloneState(ckptSt);   // the sim folds onto ckptSt
   const simFrom = useCk ? { ...useCk.cut, st: ckptSt } : simCover ? simFromCut(V, atCover, entries[hit!.coversIndex].ts) : null;
   // the clock starts no earlier than the cut the engine resumes from, or the last checkpoint's: a folder never runs back
-  for (let s = entries.length - 1; s >= from0; s--) { const e = entries[s]; if (isE(e) && e.kind === "sim" && e.verb === "checkpoint") { if (Number.isFinite(e.body?.clock)) lastNow = Math.max(lastNow, Math.floor(e.body.clock)); break; } }
+  for (let s = entries.length - 1; s >= from0; s--) { const e = entries[s]; if (isE(e) && e.kind === "physics" && e.verb === "checkpoint") { if (Number.isFinite(e.body?.clock)) lastNow = Math.max(lastNow, Math.floor(e.body.clock)); break; } }
   if (Number.isFinite(simFrom?.clock)) lastNow = Math.max(lastNow, Math.floor(simFrom!.clock));
-  let sim = simFolder(entries, { models: opts.simModels ?? {}, purged: lazy ? new Map() : purgesIn(entries), ...(simFrom ? { from: simFrom } : {}) });
+  let sim = simFolder(entries, { models: opts.simModels ?? {}, purged: lazy ? new Map() : redactionsIn(entries), ...(simFrom ? { from: simFrom } : {}) });
   const fedFrom = useCk ? useCk.seq : simCover ? hit!.coversIndex : -1;
   if (V) seedViews(w, X, V, st);
   const bad = new Set(st.diagnostics.filter(([, c]: Any) => String(c).startsWith("malformed")).map(([q]: Any) => q));
@@ -183,7 +183,7 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   w.simPeek = () => sim.view();   // where the engine stands, without advancing it (checks)
   w.touching = (id: string) => X.touching.get(id) ?? [];
   const resim = () => { loadPrefix(); const bad = new Set(st.diagnostics.filter(([, c]: Any) => String(c).startsWith("malformed")).map(([q]: Any) => q));
-    sim = simFolder(entries, { models: opts.simModels ?? {}, purged: purgesIn(entries) });
+    sim = simFolder(entries, { models: opts.simModels ?? {}, purged: redactionsIn(entries) });
     if (st.status === "ok") for (let s = 0; s < entries.length; s++) if (isE(entries[s]) && !bad.has(s)) sim.feed(s); };
   // the fold at the last sim checkpoint (saveCache): written here, or the one a cache covering it booted from, so the next save
   // keeps covering it while it is near the head
@@ -192,19 +192,19 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   w.append = (e: Any, token: Any) => {
     const seq = baseAppend(e, token); const x = entries[seq];
     lastStart = logEnd; logEnd += x.bytes + 1; if (seq === 0) genEnd = logEnd;
-    if (x.kind === "purge") { loadPrefix(); viewsAfterPurge(w); }
-    if (x.kind === "genesis" || x.kind === "purge") st = fold(entries); // genesis starts the world; a purge is retroactive (L1)
+    if (x.kind === "redaction") { loadPrefix(); viewsAfterPurge(w); }
+    if (x.kind === "genesis" || x.kind === "redaction") st = fold(entries); // genesis starts the world; a purge is retroactive (L1)
     else if (x.kind === "change") st = applyShared(st, opsOf(x), seq);
-    if (x.kind === "purge") for (const e of entries) if (isE(e) && e.kind === "sim" && e.verb === "checkpoint" && typeof e.body?.state === "string") {   // the purged bytes may sit in a cut: gone (§12)
+    if (x.kind === "redaction") for (const e of entries) if (isE(e) && e.kind === "physics" && e.verb === "checkpoint" && typeof e.body?.state === "string") {   // the purged bytes may sit in a cut: gone (§12)
       try { fs.unlinkSync(blobPath(e.body.state)); } catch { /* already gone */ } }
     X.add(seq, x);
     // a purge is retroactive, so the engine's world is rebuilt from the whole log with it, as a fresh reader would fold it
     // (the sim fold reads a purged physical value as no body); a checkpoint can't stand in, since it may hold the purged bytes
-    if (x.kind === "purge") resim();
+    if (x.kind === "redaction") resim();
     else if (st.status === "ok") sim.feed(seq);
-    if (x.kind === "purge") atCk = null;
-    else if (x.kind === "sim" && x.verb === "checkpoint") atCk = { seq, st };   // a held state never changes (applyShared)
-    if (cache) { if (x.kind === "purge") { dropCache(dir); cachedAt = -1; }   // the cache may hold the purged bytes (§12)
+    if (x.kind === "redaction") atCk = null;
+    else if (x.kind === "physics" && x.verb === "checkpoint") atCk = { seq, st };   // a held state never changes (applyShared)
+    if (cache) { if (x.kind === "redaction") { dropCache(dir); cachedAt = -1; }   // the cache may hold the purged bytes (§12)
       if (seq - cachedAt >= cache.every || seq === atCk?.seq) saveCache(); }   // synchronous on purpose: ~17 ms per 1000 entries at 205k (review L22)
     opts.onAppend?.(seq, x);
     return seq;
@@ -240,9 +240,9 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
 /** What a crash between a purge's line and its unlinks left (bot review of #260, #15): every checkpoint blob from before the last
  *  purge (unless a later checkpoint shares it) and a fold cache not read as covering it. Done at each whole-log boot. */
 function dropPurgedLeftovers(dir: string, entries: Any[], blobPath: (h: string) => string, cfile: Any) {
-  let last = -1; for (let s = entries.length - 1; s >= 0; s--) if (isE(entries[s]) && entries[s].kind === "purge") { last = s; break; }
+  let last = -1; for (let s = entries.length - 1; s >= 0; s--) if (isE(entries[s]) && entries[s].kind === "redaction") { last = s; break; }
   if (last < 0) return;
-  const ck = (e: Any) => isE(e) && e.kind === "sim" && e.verb === "checkpoint" && typeof e.body?.state === "string";
+  const ck = (e: Any) => isE(e) && e.kind === "physics" && e.verb === "checkpoint" && typeof e.body?.state === "string";
   const after = new Set<string>(); for (let s = last + 1; s < entries.length; s++) if (ck(entries[s])) after.add(entries[s].body.state);
   for (let s = 0; s < last; s++) if (ck(entries[s]) && !after.has(entries[s].body.state)) try { fs.unlinkSync(blobPath(entries[s].body.state)); } catch { /* gone */ }
   if (!(Number.isInteger(cfile?.coversIndex) && cfile.coversIndex >= last)) dropCache(dir);   // one this boot didn't read is derived: it goes too

@@ -23,8 +23,8 @@ export function logIndex() {
     add(seq: number, e: Any) { X.n = seq + 1; if (e && typeof e.actor === "string") X.actors.add(e.actor);
       if (!isE(e)) return;
       if (e.kind === "say") X.says.push(seq);
-      else if (e.kind === "purge") X.purges++;
-      else if (e.kind === "sim" && e.verb === "checkpoint") X.ckpts.push(seq);
+      else if (e.kind === "redaction") X.purges++;
+      else if (e.kind === "physics" && e.verb === "checkpoint") X.ckpts.push(seq);
       else if (e.kind === "change") { X.lastChange = seq;
         for (const id of new Set(opsQuiet(e).map((o: Any) => o.id))) { let a = X.touching.get(id as string); if (!a) X.touching.set(id as string, (a = [])); a.push(seq); } } } };
   return X;

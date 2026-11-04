@@ -281,12 +281,12 @@ export async function oracleWorld(given) {
   // the translate command runs the maintenance command on its output (lead 10-18: a load never writes; the lift is the
   // translation's own act, by: "translate"). A compares the PROJECTION, so it folds the log up to that lift; B compares the
   // served state (lifted) with the snapshot put through the same lift
-  const all = readLog(text); const liftAt = all.findIndex((e: any) => e?.kind === "act" && e.verb === "lift-sockets" && e.actor === "system" && e.body?.by === "translate");
+  const all = readLog(text); const liftAt = all.findIndex((e: any) => e?.kind === "request" && e.verb === "lift-sockets" && e.actor === "system" && e.body?.by === "translate");
   const preLift = liftAt >= 0 ? all.slice(0, liftAt) : all;
   const st = fold(preLift);
   if (st.status !== "ok") return { name, dir, error: `the translated world folds to ${st.status}` };
   const newA = v4comps(st);
-  const everPre = new Set(Object.keys(st.entities)); for (const e of preLift) if ((e as any)?.kind === "change") for (const o of opsQuiet(e)) if (o.verb === "create") everPre.add(o.id);
+  const everPre = new Set(Object.keys(st.entities)); for (const e of preLift) if ((e as any)?.kind === "change") for (const o of opsQuiet(e)) if (o.op === "create") everPre.add(o.id);
   // the snapshot through the translator's own mapping, with the translated world's people and model addresses
   const { who, unresolved, people } = whoFrom(worldsDir);
   const content = (p) => { const h = contentAddressOf(p); return h ? `sha256:${h}` : null; };

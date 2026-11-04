@@ -144,10 +144,10 @@ export function makeHost(x) {
   const entOf = (id) => (ov.has(id) ? ov.get(id) : base[id] ?? null);
   const writable = (id) => { if (ov.has(id)) return ov.get(id); const b = base[id]; if (!b) return null; const e = { born: b.born, c: Object.assign(Object.create(null), b.c) }; ov.set(id, e); return e; };
   const apply = (o) => {
-    if (o.verb === "create") { if (!entOf(o.id)) { ov.set(o.id, { born: -1, c: Object.create(null) }); idsAll = null; } return; }
-    if (o.verb === "delete" && o.comp === undefined) { ov.set(o.id, null); idsAll = null; return; }
+    if (o.op === "create") { if (!entOf(o.id)) { ov.set(o.id, { born: -1, c: Object.create(null) }); idsAll = null; } return; }
+    if (o.op === "delete" && o.comp === undefined) { ov.set(o.id, null); idsAll = null; return; }
     const e = writable(o.id); if (!e) return;
-    if (o.verb === "set") e.c[o.comp] = o.value; else delete e.c[o.comp];
+    if (o.op === "set") e.c[o.comp] = o.value; else delete e.c[o.comp];
   };
   const parentOf = (e) => (e?.c?.parent && typeof e.c.parent.to === "string" ? e.c.parent.to : null);
   // the merged id list, kept until the activation creates or deletes a thing (a script calling world.ids() 64 times on a
@@ -182,14 +182,14 @@ export function makeHost(x) {
       case "count": { read(); const n = x.reads ? x.reads.count?.[countAt] ?? 0 : (x.count ? x.count() : 0); countAt++; reads.count.push(n); return n; }
       // every parameter written down (PROTOCOL §4): a script's value gets its definition's defaults here, in the host, so the
       // logged batch is what an auditor's re-run makes too (and a re-asserted value equal to the stored one is elided)
-      case "set": { write(); const id = wantId(self(a[0]), "world.set"), comp = wantComp(a[1], "world.set"); const op = { verb: "set", id, comp, value: materialize(comp, a[2]).value }; ops.push(op); apply(op); return null; }
+      case "set": { write(); const id = wantId(self(a[0]), "world.set"), comp = wantComp(a[1], "world.set"); const op = { op: "set", id, comp, value: materialize(comp, a[2]).value }; ops.push(op); apply(op); return null; }
       // a signal into the thing's params (the one store: a seat pose blends by param.<name>); merged into what's there
       case "param": { write(); const id = wantId(self(a[0]), "world.param"), name = a[1];
         if (!isParamName(name)) throw new HostError(`world.param: '${name}' isn't a parameter name (a lowercase letter, then letters, digits, _ or -, up to 32)`);
         if (typeof a[2] !== "number") throw new HostError(`world.param: ${name} is a number (a signal), got ${JSON.stringify(a[2])}`);
         const was = entOf(id)?.c.params; const prev = was && typeof was === "object" && !Array.isArray(was) ? copy(was) : {};
-        const op = { verb: "set", id, comp: "params", value: { ...prev, [name]: a[2] } }; ops.push(op); apply(op); return null; }
-      case "delete": { write(); const id = wantId(self(a[0]), "world.delete"); const op = a[1] === null ? { verb: "delete", id } : { verb: "delete", id, comp: wantComp(a[1], "world.delete") }; ops.push(op); apply(op); return null; }
+        const op = { op: "set", id, comp: "params", value: { ...prev, [name]: a[2] } }; ops.push(op); apply(op); return null; }
+      case "delete": { write(); const id = wantId(self(a[0]), "world.delete"); const op = a[1] === null ? { op: "delete", id } : { op: "delete", id, comp: wantComp(a[1], "world.delete") }; ops.push(op); apply(op); return null; }
       case "create": { const comps = a[0]; if (!comps || typeof comps !== "object" || Array.isArray(comps)) throw new HostError("world.create(components, id?): components is an object");
         // a minted id carries 128 bits of the activation's seed (review 10-07 H5: 32 bits collided across forks), so a re-run mints it
         // again. API 2 (R 10-17, ID HARDENING): opaque (no slug: a word in an id goes stale) and never the script's choice: the
@@ -198,8 +198,8 @@ export function makeHost(x) {
         if (v2 && a[1] !== null) throw new HostError("world.create(components): a script never chooses an id; the id is minted and returned (const id = world.create({...}))");
         const id = a[1] !== null ? wantId(a[1], "world.create") : v2 ? `${x.seed.slice(0, 32)}${minted ? `-${minted}` : ""}` : `${slug(isEido(comps.model) ? comps.label ?? modelWord(comps.model, null) : comps.model ?? comps.label ?? "thing")}-${x.seed.slice(0, 32)}${minted ? `-${minted}` : ""}`; minted++;
         for (const c of Object.keys(comps)) wantComp(c, "world.create");
-        write(); const mk = { verb: "create", id }; ops.push(mk); apply(mk);
-        for (const [c, v] of Object.entries(comps)) { write(); const op = { verb: "set", id, comp: c, value: materialize(c, v).value }; ops.push(op); apply(op); }
+        write(); const mk = { op: "create", id }; ops.push(mk); apply(mk);
+        for (const [c, v] of Object.entries(comps)) { write(); const op = { op: "set", id, comp: c, value: materialize(c, v).value }; ops.push(op); apply(op); }
         return id; }
       case "say": { if (says.length >= L.says) { stop = { code: "too-big", why: `more than ${L.says} says in one activation` }; throw new HostError(stop.why); } says.push(String(a[0]).slice(0, 8192)); return null; }
       case "body": { if (bodies.length >= L.bodies) { stop = { code: "too-big", why: `more than ${L.bodies} body effects in one activation` }; throw new HostError(stop.why); }

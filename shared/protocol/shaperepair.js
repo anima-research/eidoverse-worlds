@@ -177,7 +177,7 @@ export function shapesMarked(entries, bodyOf = (i) => entries?.[i]?.body ?? null
 export function shapesScan(entries, bodyOf = (i) => entries?.[i]?.body ?? null, s = { n: 0, founded: false, marked: false }) {
   const L = entries ?? [];
   for (; !s.marked && s.n < L.length; s.n++) { const i = s.n, e = L[i];
-    if (!e || e.kind !== "act") continue;
+    if (!e || e.kind !== "request") continue;
     if (e.verb === "repair-shapes" && e.actor === "system") { s.marked = true; break; }
     // only the founding counts (review r9 L5): the first create-world act. A later one is a refused attempt the log keeps (a
     // visitor's create-world on a world that exists), whose purge must never read as "marked"
@@ -227,10 +227,10 @@ export function renameOps(st, purged = null) {
   const ops = [];
   for (const [id, map] of Object.entries(RENAMED_COMPONENTS)) { const c = st?.entities?.[id]?.c; if (!bag(c)) continue;
     for (const [from, to] of Object.entries(map)) { if (!(from in c) || c[from] === purged) continue;
-      ops.push({ verb: "delete", id, comp: from }); if (!(to in c)) ops.push({ verb: "set", id, comp: to, value: c[from] }); } }
+      ops.push({ op: "delete", id, comp: from }); if (!(to in c)) ops.push({ op: "set", id, comp: to, value: c[from] }); } }
   for (const id of Object.keys(st?.entities ?? {}).sort()) { const c = st.entities[id].c; if (!bag(c)) continue;
     for (const comp of Object.keys(c).filter((k) => Object.hasOwn(RENAMED_FIELDS, renamedFieldsKey(k))).sort()) { if (!bag(c[comp]) || c[comp] === purged) continue;
-      const r = renameFields(comp, c[comp]); if (r.renamed.length) ops.push({ verb: "set", id, comp, value: r.value, renamed: r.renamed }); } }
+      const r = renameFields(comp, c[comp]); if (r.renamed.length) ops.push({ op: "set", id, comp, value: r.value, renamed: r.renamed }); } }
   return ops;
 }
 
@@ -245,7 +245,7 @@ export function shapeRepairOps(st, purged = null, { pathOf = null } = {}) {
     const c0 = gone.size ? Object.fromEntries(Object.entries(all).filter(([k]) => !gone.has(k))) : all;
     const { c, set, del } = id === "@world" ? repairWorld(c0) : repairComps(c0, { pathOf });
     if ([...set, ...del].some((k) => gone.has(k))) continue;
-    for (const k of del) ops.push({ verb: "delete", id, comp: k });
-    for (const k of set) ops.push({ verb: "set", id, comp: k, value: c[k] }); }
+    for (const k of del) ops.push({ op: "delete", id, comp: k });
+    for (const k of set) ops.push({ op: "set", id, comp: k, value: c[k] }); }
   return ops;
 }

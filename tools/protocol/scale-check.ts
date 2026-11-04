@@ -256,7 +256,7 @@ const cases: Case[] = [
       s.call("olive", "create", { id: "lid", model: "crate", components: { transform: T0([0, 0.75, 0], [1000, 1, 1000]) } });   // nothing on it is free
       s.call("olive", "create", { id: "mug", model: "crate", components: { transform: T0([2, 0, 600]) } });
       const n0 = s.w().entries.length; const x = timed(() => s.call("vic", "place", { id: "mug", on: "big" }));
-      return { code: code(x.r), ms: r1(x.ms), bound: r1(bound()), logged: s.w().entries.slice(n0).filter((e: any) => e.kind === "act" && e.body?.refused?.code === "rights").length }; },
+      return { code: code(x.r), ms: r1(x.ms), bound: r1(bound()), logged: s.w().entries.slice(n0).filter((e: any) => e.kind === "request" && e.body?.refused?.code === "rights").length }; },
     good: (o) => o.code === "rights" && o.ms <= o.bound && o.logged === 1 },
   { id: "Q2", what: "a builder's place onto a 1000× table with nothing free on it ends inside the work budget: refused too-costly, saying why", run(s) { cast(s);
       s.call("olive", "create", { id: "big", model: "table", components: { transform: T0([0, 0, 0], [1000, 1, 1000]) } });

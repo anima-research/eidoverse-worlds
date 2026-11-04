@@ -72,8 +72,8 @@ function world(name, N) {
   const n0 = w.entries.length; ok(call("rowan", "throw", { id: "ball", v: [0, 1, 12] }).ok, "T4 throw");
   const flying = () => Object.values(w.simPeek().sim?.bodies ?? {}).some((b) => !b.resting);
   for (let k = 0; k < 1800; k++) { beat(TICK); if (k > 2 && !flying() && w.simPeek().rested.length === 0) break; }
-  const L = w.entries.slice(n0); const digests = L.filter((e) => e.kind === "sim" && e.verb === "digest").length;
-  const rested = restsOf(w.entries).length; const changes = L.filter((e) => e.kind === "change" && w.entries[e.cause]?.kind === "sim").length;
+  const L = w.entries.slice(n0); const digests = L.filter((e) => e.kind === "physics" && e.verb === "digest").length;
+  const rested = restsOf(w.entries).length; const changes = L.filter((e) => e.kind === "change" && w.entries[e.cause]?.kind === "physics").length;
   console.log("T4 counts", JSON.stringify({ rested, digests, changes, entries: L.length }));
   ok(rested >= 30 && digests <= rested / 3 && changes <= rested / 3, "T4 a 40-crate knock logs far fewer digests and rest changes than bodies", { rested, digests, changes, entries: L.length });
 }
@@ -86,7 +86,7 @@ function world(name, N) {
   ok(call("rowan", "throw", { id: "ball", v: [14, 2, 0] }).ok, "T5 throw it out of the world");
   const flying = () => Object.values(w.simPeek().sim?.bodies ?? {}).some((b) => !b.resting);
   for (let k = 0; k < 1800; k++) { beat(TICK); if (k > 2 && !flying() && w.simPeek().rested.length === 0) break; }
-  const lost = w.entries.find((e) => e.kind === "act" && e.verb === "return-lost"); const at = w.state().entities.ball.c.transform.pos;
+  const lost = w.entries.find((e) => e.kind === "request" && e.verb === "return-lost"); const at = w.state().entities.ball.c.transform.pos;
   ok(!!lost && lost.body.home === true && Math.hypot(at[0], at[1], at[2] - 2) < 1e-6, "T5 it rested outside and was sent home, not back to the hand", { lost: lost?.body, at });
 }
 // T6: a checkpoint. After a knock has rested and 20 s of quiet, the beat writes sim:checkpoint naming a blob with the cut;
@@ -97,7 +97,7 @@ function world(name, N) {
   const flying = () => Object.values(w.simPeek().sim?.bodies ?? {}).some((b) => !b.resting);
   for (let k = 0; k < 1800; k++) { beat(TICK); if (k > 2 && !flying() && w.simPeek().rested.length === 0) break; }
   const n1 = w.entries.length; for (let k = 0; k < 40; k++) beat(1000);   // 40 s of quiet beats
-  const ck = w.entries.slice(n1).filter((e) => e.kind === "sim" && e.verb === "checkpoint");
+  const ck = w.entries.slice(n1).filter((e) => e.kind === "physics" && e.verb === "checkpoint");
   ok(ck.length === 1 && ck[0].body.at === w.entries.indexOf(ck[0]) - 1 && typeof ck[0].body.state === "string", "T6 one checkpoint, right after the entry it names, with a blob", ck.map((e) => e.body));
   const fromGenesis = w.sim(); const dA = digestOf(fromGenesis.sim);   // both views at the same clock
   // w2 starts on the same clock as w (the comparison below), then r.tick moves its own
@@ -130,10 +130,10 @@ function world(name, N) {
   const flying = () => Object.values(w.simPeek().sim?.bodies ?? {}).some((b) => !b.resting);
   for (let k = 0; k < 1800; k++) { beat(TICK); if (k > 2 && !flying() && w.simPeek().rested.length === 0) break; }
   for (let k = 0; k < 40; k++) beat(1000);
-  const ck = w.entries.filter((e) => e.kind === "sim" && e.verb === "checkpoint"); const blobFile = `${root}t7/blobs/${String(ck[0]?.body.state).replace(/[^a-z0-9]/g, "-")}.json`;
+  const ck = w.entries.filter((e) => e.kind === "physics" && e.verb === "checkpoint"); const blobFile = `${root}t7/blobs/${String(ck[0]?.body.state).replace(/[^a-z0-9]/g, "-")}.json`;
   ok(ck.length === 1 && fs.existsSync(blobFile), "T7 a checkpoint with its blob on disk", { ck: ck.length, blobFile: fs.existsSync(blobFile) });
-  const target = w.entries.findIndex((e) => e.kind === "change" && e.verb === "set" && e.body?.comp === "label");
-  w.append({ kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: target }] } });
+  const target = w.entries.findIndex((e) => e.kind === "change" && e.op === "set" && e.body?.comp === "label");
+  w.append({ kind: "redaction", actor: "system", body: { values: [{ seq: target }] } });
   ok(!fs.existsSync(blobFile), "T7 the purge deleted the checkpoint's blob", { blobFile });
   const w2 = openLive(`${root}t7`, "t7", { now });
   ok(w2.bootedFrom === null && digestOf(w2.sim().sim) === digestOf(w.sim().sim), "T7 reopened from genesis (no checkpoint after the purge), same bits", { bootedFrom: w2.bootedFrom });
@@ -146,8 +146,8 @@ function world(name, N) {
     call("rowan", "set", { id: "@world", component: "bounds", value: { min: [-6, -1, -6], max: [6, 20, 6] } });
     call("rowan", "set", { id: "ball", component: "home", value: { pos: [0, 0, 2], q: [0, 0, 0, 1] } });
     ok(call("rowan", "throw", { id: "ball", v }).ok, `${name} throw`);
-    let k = 0; for (; k < 60; k++) { beat(TICK); if (w.entries.some((e) => e.kind === "act" && e.verb === "return-lost")) break; }
-    const lost = w.entries.find((e) => e.kind === "act" && e.verb === "return-lost"); const at = w.state().entities.ball.c.transform.pos;
+    let k = 0; for (; k < 60; k++) { beat(TICK); if (w.entries.some((e) => e.kind === "request" && e.verb === "return-lost")) break; }
+    const lost = w.entries.find((e) => e.kind === "request" && e.verb === "return-lost"); const at = w.state().entities.ball.c.transform.pos;
     const b = w.simPeek().sim?.bodies?.ball;
     ok(!!lost && lost.body.home === true && k < 60, `${name} crossing the edge sends it home within 2 s (${k} ticks)`, { lost: lost?.body, k });
     ok(Math.hypot(at[0], at[1], at[2] - 2) < 1e-6 && (!b || b.resting), `${name} it is at home and the engine no longer flies it`, { at, flying: b && !b.resting });

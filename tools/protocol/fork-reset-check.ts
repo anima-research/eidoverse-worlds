@@ -45,7 +45,7 @@ async function sock(port) {
     close: () => ws.close() };
 }
 const logOf = (name) => (fs.existsSync(path.join(W, name, "world.jsonl")) ? readLog(fs.readFileSync(path.join(W, name, "world.jsonl"))) : []);
-const founding = (name) => logOf(name).find((e) => e.kind === "act" && e.verb === "create-world");
+const founding = (name) => logOf(name).find((e) => e.kind === "request" && e.verb === "create-world");
 const canon = (v) => JSON.stringify(v, (k, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((q) => [q, x[q]])) : x));   // key order is not content
 const thingsOf = (st) => Object.fromEntries(Object.entries(st.entities).map(([id, e]) => [id, e.c]));
 
@@ -99,7 +99,7 @@ ok(fk?.type === "world-forked" && fk.to === "copy", "FK3 the owner copies it", f
   const gp = logOf("copy")[0]?.body?.parent, sl = logOf("src");
   ok(gp && gp.world === fold(sl).worldId && Number.isInteger(gp.seq) && gp.seq < sl.length && /^[0-9a-f]{64}$/.test(gp.head) && (sl[gp.seq]?.head === undefined || sl[gp.seq].head === gp.head)
     && f?.body?.request?.from?.seq === gp.seq, "FK10 the fork's genesis names its parent {world, seq, head}; the head is the parent's chain head at that seq", { gp, at: sl[gp?.seq]?.head });
-  const copyActs = logOf("copy").filter((e) => e.kind === "act" && e.verb !== "create-world" && !(e.actor === "system" && e.verb === "repair-shapes"));   // the founding's shape marker (review r8 M3) copies nothing
+  const copyActs = logOf("copy").filter((e) => e.kind === "request" && e.verb !== "create-world" && !(e.actor === "system" && e.verb === "repair-shapes"));   // the founding's shape marker (review r8 M3) copies nothing
   ok(copyActs.length > 0 && copyActs.every((e) => e.verb === "fork-copy") && !logOf("src").slice(-1)[0]?.body?.parent, "FK11 every act that copied the parent is a fork-copy (inherited, not born)", copyActs.map((e) => e.verb));
   const after = fs.readdirSync(W).filter((d) => d.startsWith("."));
   ok(after.length === before.length, "FK7 no temporary directory is left behind", after); }

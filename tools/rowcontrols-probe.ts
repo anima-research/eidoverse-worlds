@@ -145,7 +145,7 @@ try {
   await ev(`(async () => { ${D}.hierDo?.('myhide', 'box2'); ${D}.hierDo?.('myhide', 'box2'); return true; })()`);
   await sleep(600);
   const added = logLines().slice(n0).map((l) => JSON.parse(l));
-  const acts = added.filter((e) => e.kind === 'act');
+  const acts = added.filter((e) => e.kind === 'request');
   check('E5 hiding wrote nothing to the log: every new entry is the rename act or its result row', acts.length === 1 && added.length >= 1 && added.every((e) => /box two/.test(JSON.stringify(e))),
     `${added.length} entries, ${acts.length} acts: ${added.map((e) => JSON.stringify(e).slice(0, 200)).join(' | ')}`);
 

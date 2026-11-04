@@ -101,8 +101,8 @@ try {
   ok(["low", "tall", "still", "locked"].every((id) => Array.isArray(ag.replica?.st?.entities?.[N(id)]?.c?.physics?.shape)), "(setup) the authority measured each crate's shape (the agent folds it)");
   const call = (name, a = {}) => HANDLERS[name](ag, a, { agent: ag, canPush: () => false, heldActivity: [], cursor: { caughtUpTo: null } }, name);
   const entries = () => readLog(fs.readFileSync(path.join(W, "yard", "world.jsonl")));
-  const shoves = (id) => entries().filter((e) => e.kind === "act" && e.verb === "punt" && e.actor === HEP && !e.body?.refused && e.body?.request?.id === N(id) && e.body?.request?.contact === true);
-  const anyPunt = (id) => entries().filter((e) => e.kind === "act" && e.verb === "punt" && e.actor === HEP && JSON.stringify(e.body ?? {}).includes(`"${N(id)}"`));
+  const shoves = (id) => entries().filter((e) => e.kind === "request" && e.verb === "punt" && e.actor === HEP && !e.body?.refused && e.body?.request?.id === N(id) && e.body?.request?.contact === true);
+  const anyPunt = (id) => entries().filter((e) => e.kind === "request" && e.verb === "punt" && e.actor === HEP && JSON.stringify(e.body ?? {}).includes(`"${N(id)}"`));
   const posOf = (id) => ag.replica?.st?.entities?.[N(id)]?.c?.transform?.pos ?? null;
   const settle = async (id) => { for (let i = 0; i < 100; i++) { await sleep(100); if (!ag.replica?.sim?.sim?.bodies?.[N(id)]) { await ann.req("wait", {}); return; } } };
 

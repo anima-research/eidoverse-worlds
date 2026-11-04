@@ -116,7 +116,7 @@ const cases = [
       s.call("vic", "move", { to: [0, 0, 8] }); s.call("vic", "leave", {});
       const arrive = s.call("vic", "move", { to: [0, 0, 0.4] });
       const ok8 = s.call("vic", "move", { to: [0.5, 0, 8] }); const tp = s.call("vic", "move", { to: [0, 0, 0.4], teleport: true });
-      const L = s.world().entries; const all = L.filter((e) => e.kind === "act" && e.actor === "vic" && e.verb === "move"); const acts = all.filter((e) => !e.body?.refused);
+      const L = s.world().entries; const all = L.filter((e) => e.kind === "request" && e.actor === "vic" && e.verb === "move"); const acts = all.filter((e) => !e.body?.refused);
       // round-2 R7 recorded refused requests, but a body's track is presence: a refused move (arrival and teleport included)
       // is never recorded (review 10-06 S0-3: a client indoors wrote one every ~3 s).
       return { arrive, ok8, tp, moveActs: acts.length, refusedActs: all.filter((e) => e.body?.refused).length, recorded: acts[0]?.body?.presence ?? null }; },
@@ -157,7 +157,7 @@ const cases = [
       let thrown = 0, stopped = null;
       for (let i = 0; i < 40 && !stopped; i++) { const g = s.call("vic", "grab", { id: "ball" }); const t = s.call("vic", "throw", { id: "ball", v: [0, 0.5, 0] });
         if (ok(t)) thrown++; else stopped = refused(g) ? g : t; }
-      const L = s.world().entries; return { thrown, stopped: stopped ? show(stopped) : null, code: code(stopped), vicActs: L.filter((e) => e.kind === "act" && e.actor === "vic").length }; },
+      const L = s.world().entries; return { thrown, stopped: stopped ? show(stopped) : null, code: code(stopped), vicActs: L.filter((e) => e.kind === "request" && e.actor === "vic").length }; },
     baseBad: (o) => o.thrown === 40, nowGood: (o) => o.thrown < 40 && o.code === "rate" && o.vicActs <= 60 },
   { id: "G3d", guard: true, what: "a visitor's `use` counts against the visitor, not the handler's author", run(s) { cast(s);
       s.call("bob", "create", { id: "door", model: "door", components: { openable: { open: false } }, place: { at: [0, 0] } }); s.call("bob", "set", { id: "door", component: "reactions", value: { open: { kind: "toggle", component: "openable", field: "open" } } });
@@ -188,13 +188,13 @@ const cases = [
       s.call("ann", "move", { to: [-0.6, 0, 0] }); s.call("bob", "move", { to: [0.6, 0, 0] });
       const push = [["ann", [-0.1, 0, 0]], ["bob", [0.1, 0, 0]], ["ann", [0.2, 0, 0]], ["bob", [-0.2, 0, 0]]].map(([w, to]) => s.call(w, "move", { to }, 300));
       s.call("ann", "wait", {}, 3000);
-      const L = s.world().entries.slice(n0); return { push, newSimOrChange: L.filter((e) => e.kind === "sim" || e.kind === "change").length, moved: posOf(s, "cart") !== p0 }; },
+      const L = s.world().entries.slice(n0); return { push, newSimOrChange: L.filter((e) => e.kind === "physics" || e.kind === "change").length, moved: posOf(s, "cart") !== p0 }; },
     nowGood: (o) => o.newSimOrChange === 0 && !o.moved },
   { id: "G4c", guard: true, what: "co-building by turns: ann carries the crate 1 m, bob carries it 1 m more; both are on the record", run(s) { cast(s);
       s.call("olive", "create", { id: "cart", model: "crate", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 0] } });
       s.call("ann", "move", { to: [0, 0, 0.8] }); const a1 = s.call("ann", "grab", { id: "cart" }); s.call("ann", "move", { to: [0, 0, 1.8] }, 500); const a2 = s.call("ann", "put", { id: "cart" });
       s.call("bob", "move", { to: [0, 0, 2.6] }); const b1 = s.call("bob", "grab", { id: "cart" }); s.call("bob", "move", { to: [0, 0, 3.6] }, 500); const b2 = s.call("bob", "put", { id: "cart" });
-      const puts = s.world().entries.filter((e) => e.kind === "act" && e.verb === "put").map((e) => e.actor);
+      const puts = s.world().entries.filter((e) => e.kind === "request" && e.verb === "put").map((e) => e.actor);
       return { a1, a2, b1, b2, cart: posOf(s, "cart"), puts }; },
     nowGood: (o) => [o.a1, o.a2, o.b1, o.b2].every(ok) && o.cart === "[0,0,3.6]" && JSON.stringify(o.puts) === '["ann","bob"]' },
   { id: "G4d", guard: true, what: "a shared carry: bob takes hold while ann holds (what the lab does: the latest grab wins, one hand only)", run(s) { cast(s);
@@ -248,7 +248,7 @@ const cases = [
       s.call("olive", "set", { id: "ball-2", component: "physics", value: { kind: "dynamic", who: "builder" } });
       s.call("bob", "move", { to: [0, 0, 0.3] }); s.call("bob", "grab", { id: "ball-2" }); s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "member" } });
       const left = s.call("bob", "leave", {}); s.call("olive", "wait", {}, 3000);
-      const w = s.world(); const ret = w.entries.filter((e) => e.kind === "act" && e.actor === "system" && e.verb === "return-held").length;
+      const w = s.world(); const ret = w.entries.filter((e) => e.kind === "request" && e.actor === "system" && e.verb === "return-held").length;
       return { left: show(left), stillHeld: !!w.presence.holds["ball-2"], returnActs: ret, ball: posOf(s, "ball-2"), carriers: doors.now.sim.simFold(w.entries, w.now()).checks.disagree.length }; },
     nowGood: (o) => o.left === "ok" && !o.stillHeld && o.returnActs === 1 && o.ball === "[0,0,0]" && o.carriers === 0 },
   { id: "R4", what: "33 F4: the authority's clock steps back (NTP slew, VM restore): it writes a decreasing ts", run(s) { cast(s);
@@ -268,8 +268,8 @@ const cases = [
       const h = s.call("bob", "publish", { from: "fat", name: "fat" }).notes?.find((n) => n.record)?.record;
       const n0 = s.world().entries.length;
       const r = s.call("bob", "batch", { ops: Array.from({ length: 20 }, (_, i) => ({ verb: "create", args: { from: h, id: `fat-${i}` } })) });
-      const L = s.world().entries.slice(n0); return { r: show(r), newActs: L.filter((e) => e.kind === "act").length, newChanges: L.filter((e) => e.kind === "change").length,
-        refusedAct: L.filter((e) => e.kind === "act" && e.body?.refused?.code === "too-big").length }; },
+      const L = s.world().entries.slice(n0); return { r: show(r), newActs: L.filter((e) => e.kind === "request").length, newChanges: L.filter((e) => e.kind === "change").length,
+        refusedAct: L.filter((e) => e.kind === "request" && e.body?.refused?.code === "too-big").length }; },
     // never an act that claims success with no result (33 C2); since round-2 R7 the refusal itself IS recorded, as an act
     // that says it was refused (its request cut to 2 KiB), with no state
     baseBad: (o) => o.newActs === 1 && o.newChanges === 0, nowGood: (o) => /refused too-big/.test(o.r) && o.newActs === 1 && o.refusedAct === 1 && o.newChanges === 0 },

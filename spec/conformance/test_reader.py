@@ -8,26 +8,26 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 LOGS = os.path.join(HERE, "logs")
 os.makedirs(LOGS, exist_ok=True)
 
-# PROTOCOL §2.4 + §3d (C1, H5, H6): genesis body {dialect: "eidoverse-log", v: 4, minor, nonce, rewind_window?, parent?,
+# PROTOCOL §2.4 + §3d (C1, H5, H6): genesis body {dialect: "eidoverse-log", v: 4, minor, nonce, rewindWindow?, parent?,
 # owners: [[<key>…], …], quorum?, sequencer}. Keys are fixed test keys (ed25519 from sha256 seeds), nonce fixed.
 K_OWNER = "ed25519:BP7aKo17f474DD1aBSLG0a3Pb29Qs3yqQ6Ve0wSRVD0"
 K_SEQ = "ed25519:rRoIPhqlc8rDxC1GZlfHOe1IBJYWQ8MDNg9QuZzMsic"
 K_TIER1 = "ed25519:iUs8tlcXt9q0Zq1OuuCX-llZgf5YdLA9vJ5aoaEFpkg"
 NONCE, NONCE2 = "XWVu1u7BpaZTDFSETYiphg", "dLedD3Y4zEayxxDNGOBM6w"
-GBODY = {"dialect": "eidoverse-log", "v": 4, "minor": 0, "nonce": NONCE, "owners": [[K_OWNER]], "sequencer": K_SEQ}
-GEN = {"kind": "genesis", "actor": "system", "verb": "genesis", "body": GBODY}
+GBODY = {"dialect": "eidoverse-log", "v": 4, "minor": 1, "nonce": NONCE, "owners": [[K_OWNER]], "sequencer": K_SEQ}
+GEN = {"kind": "genesis", "actor": "system", "body": GBODY}
 GEN_LINE = json.dumps(GEN)
 WID = "sha256:" + hashlib.sha256(R.jcs(R.parse_ijson(GEN_LINE.encode())).encode()).hexdigest()
 
 
-def st(verb, body, cause=1, **kw):
+def st(op, body, cause=1, **kw):
     e = {"world": WID, "kind": "change", "ts": 1, "actor": "system", "cause": cause,
-         "verb": verb, "body": body}
+         "op": op, "body": body}
     e.update(kw)
     return json.dumps(e)
 
 
-ACT = json.dumps({"world": WID, "kind": "act", "ts": 1, "actor": "alice", "verb": "spawn", "body": {}})
+ACT = json.dumps({"world": WID, "kind": "request", "ts": 1, "actor": "alice", "verb": "spawn", "body": {"args": {}}})
 
 
 def _with_ts(line):
@@ -64,9 +64,9 @@ def check(name, cond, info=""):
 r = run("01-baseline", [GEN_LINE, ACT,
     st("create", {"id": "lamp-1"}),
     st("set", {"id": "lamp-1", "comp": "light", "value": {"i": 2.5, "c": "#fff"}}),
-    st("batch", {"ops": [{"verb": "create", "id": "chair"},
-                         {"verb": "set", "id": "chair", "comp": "example.com/seat@2", "value": [1, 2]},
-                         {"verb": "set", "id": "@world", "comp": "roles:alice", "value": "owner"}]})])
+    st("batch", {"ops": [{"op": "create", "id": "chair"},
+                         {"op": "set", "id": "chair", "comp": "example.com/seat@2", "value": [1, 2]},
+                         {"op": "set", "id": "@world", "comp": "roles:alice", "value": "owner"}]})])
 exp = {"@world": {"roles:alice": {"v": "owner"}}, "chair": {"example.com/seat@2": {"v": [1, 2]}},
        "lamp-1": {"light": {"v": {"c": "#fff", "i": 2.5}}}}
 check("01 baseline folds", r.status == "ok" and r.digest() == digest_of(exp) and not r.diag, r.diag)
@@ -75,17 +75,17 @@ BASE = r.digest()
 # 2 key order / whitespace / number spelling must not change the digest
 r2 = run("02-spelling", [GEN_LINE, ACT,
     st("create", {"id": "lamp-1"}),
-    '{"body":{"value":{"c":"#fff","i":25e-1},"comp":"light","id":"lamp-1"},"verb":"set","cause":1.0,"ts":1e0,"actor":"system","kind":"change","world":"%s"}' % WID,
-    st("batch", {"ops": [{"verb": "create", "id": "chair"},
-                         {"verb": "set", "id": "chair", "comp": "example.com/seat@2", "value": [1.0, 2e0]},
-                         {"verb": "set", "id": "@world", "comp": "roles:alice", "value": "own\u0065r"}]})])
+    '{"body":{"value":{"c":"#fff","i":25e-1},"comp":"light","id":"lamp-1"},"op":"set","cause":1.0,"ts":1e0,"actor":"system","kind":"change","world":"%s"}' % WID,
+    st("batch", {"ops": [{"op": "create", "id": "chair"},
+                         {"op": "set", "id": "chair", "comp": "example.com/seat@2", "value": [1.0, 2e0]},
+                         {"op": "set", "id": "@world", "comp": "roles:alice", "value": "own\u0065r"}]})])
 check("02 spelling-invariant digest", r2.digest() == BASE, r2.diag)
 
 # 3 duplicate keys (top-level and nested, and escaped-equal)
 r = run("03-dupkeys", [GEN_LINE, ACT,
     st("create", {"id": "a"}),
-    '{"world":"%s","kind":"change","actor":"system","cause":1,"verb":"set","body":{"id":"a","comp":"x","value":1},"verb":"delete"}' % WID,
-    '{"world":"%s","kind":"change","actor":"system","cause":1,"verb":"set","body":{"id":"a","comp":"x","value":{"k":1,"\\u006b":2}}}' % WID])
+    '{"world":"%s","kind":"change","actor":"system","cause":1,"op":"set","body":{"id":"a","comp":"x","value":1},"op":"delete"}' % WID,
+    '{"world":"%s","kind":"change","actor":"system","cause":1,"op":"set","body":{"id":"a","comp":"x","value":{"k":1,"\\u006b":2}}}' % WID])
 check("03 dup keys malformed, shape nothing", codes(r) == [(3, "malformed:ijson-dupkey"), (4, "malformed:ijson-dupkey")]
       and r.view() == {"@world": {}, "a": {}}, codes(r))
 
@@ -93,9 +93,9 @@ check("03 dup keys malformed, shape nothing", codes(r) == [(3, "malformed:ijson-
 bad = ["-0", "-0.0", "-0e3", "NaN", "Infinity", "-Infinity", "1e400", "-1e-400", "1" + "0" * 400]
 lines = [GEN_LINE, ACT, st("create", {"id": "a"})]
 for b in bad:
-    lines.append('{"world":"%s","kind":"change","actor":"system","cause":1,"verb":"set","body":{"id":"a","comp":"x","value":%s}}' % (WID, b))
+    lines.append('{"world":"%s","kind":"change","actor":"system","cause":1,"op":"set","body":{"id":"a","comp":"x","value":%s}}' % (WID, b))
 lines.append(st("set", {"id": "a", "comp": "y", "value": 0}))
-lines.append('{"world":"%s","kind":"change","actor":"system","cause":1,"verb":"set","body":{"id":"a","comp":"z","value":9007199254740993}}' % WID)
+lines.append('{"world":"%s","kind":"change","actor":"system","cause":1,"op":"set","body":{"id":"a","comp":"z","value":9007199254740993}}' % WID)
 r = run("04-numbers", lines)
 mal = [c for s, c in codes(r) if c.startswith("malformed")]
 check("04 all nine bad numbers + 2^53+1 malformed (PROTOCOL L1: big ints refused, not rounded)",
@@ -131,18 +131,18 @@ check("05 'constructor' comp with __proto__ inside the value is kept as data",
 
 # 6 nested batch
 r = run("06-nested-batch", [GEN_LINE, ACT,
-    st("batch", {"ops": [{"verb": "create", "id": "a"},
-                         {"verb": "batch", "ops": [{"verb": "create", "id": "b"}]}]})])
+    st("batch", {"ops": [{"op": "create", "id": "a"},
+                         {"op": "batch", "ops": [{"op": "create", "id": "b"}]}]})])
 check("06 nested batch: whole entry shapes nothing", r.view() == {"@world": {}} and codes(r) == [(2, "malformed:nested-batch")], codes(r))
 
-# 6b a batch's followUps (review r9 H1): the indices of the authority's follow-up ops, applied like any op; well formed or
+# 6b a batch's cascade (review r9 H1): the indices of the ops the authority derived from the asker's own, applied like any op; well formed or
 # the whole entry is malformed (non-empty, strictly ascending integers, in range)
-r = run("06b-followups", [GEN_LINE, ACT,
-    st("batch", {"ops": [{"verb": "create", "id": "a"}, {"verb": "set", "id": "a", "comp": "label", "value": "x"}], "followUps": [1]})])
-check("06b followUps: a well-formed list folds like any batch", r.view() == {"@world": {}, "a": {"label": {"v": "x"}}} and not r.diag, codes(r))
-for nm, f in [("06c-followups-empty", []), ("06d-followups-desc", [1, 0]), ("06e-followups-range", [2]), ("06f-followups-frac", [0.5]), ("06g-followups-str", "1")]:
-    r = run(nm, [GEN_LINE, ACT, st("batch", {"ops": [{"verb": "create", "id": "a"}, {"verb": "create", "id": "b"}], "followUps": f})])
-    check("%s: malformed, the whole entry shapes nothing" % nm[:3], r.view() == {"@world": {}} and codes(r) == [(2, "malformed:batch-followups")], codes(r))
+r = run("06b-cascade", [GEN_LINE, ACT,
+    st("batch", {"ops": [{"op": "create", "id": "a"}, {"op": "set", "id": "a", "comp": "label", "value": "x"}], "cascade": [1]})])
+check("06b cascade: a well-formed list folds like any batch", r.view() == {"@world": {}, "a": {"label": {"v": "x"}}} and not r.diag, codes(r))
+for nm, f in [("06c-cascade-empty", []), ("06d-cascade-desc", [1, 0]), ("06e-cascade-range", [2]), ("06f-cascade-frac", [0.5]), ("06g-cascade-str", "1")]:
+    r = run(nm, [GEN_LINE, ACT, st("batch", {"ops": [{"op": "create", "id": "a"}, {"op": "create", "id": "b"}], "cascade": f})])
+    check("%s: malformed, the whole entry shapes nothing" % nm[:3], r.view() == {"@world": {}} and codes(r) == [(2, "malformed:batch-cascade")], codes(r))
 
 # 7 unknown / wrong-typed version (genesis {dialect, v}), and another log's dialect
 for nm, field, v in [("07a-version-5", "v", 5), ("07b-version-str", "v", "4"), ("07c-version-missing", "v", None), ("07d-version-4.0", "v", 4.0),
@@ -173,26 +173,26 @@ check("08 edge no-ops and recreate-empty", r.view() == {"@world": {}, "a": {}} a
       [c for s, c in codes(r)] == ["noop:set-missing-entity", "noop:delete-missing-entity", "noop:delete-missing-entity",
                                    "noop:create-live", "noop:set-no-value", "noop:delete-@world", "noop:delete-missing-comp"], codes(r))
 
-# 9 purge: whole set, batch op, value bytes physically removed, purge-of-purge, forward ref, later overwrite
-r = run("09-purge", [GEN_LINE, ACT,
+# 9 redaction: whole set, batch op, value bytes physically removed, redaction-of-redaction, forward ref, later overwrite
+r = run("09-redaction", [GEN_LINE, ACT,
     st("create", {"id": "a"}),                                                   # 2
     st("set", {"id": "a", "comp": "note", "value": "my phone is 555"}),          # 3
-    st("batch", {"ops": [{"verb": "set", "id": "a", "comp": "x", "value": 1},
-                         {"verb": "set", "id": "a", "comp": "y", "value": "secret"}]}),  # 4
+    st("batch", {"ops": [{"op": "set", "id": "a", "comp": "x", "value": 1},
+                         {"op": "set", "id": "a", "comp": "y", "value": "secret"}]}),  # 4
     st("set", {"id": "a", "comp": "z"}),                                         # 5: value bytes already gone
     st("set", {"id": "a", "comp": "w", "value": "old"}),                         # 6
     st("set", {"id": "a", "comp": "w", "value": "new"}),                         # 7
-    json.dumps({"world": WID, "kind": "purge", "actor": "system", "verb": "purge",
-                "body": {"values": [{"seq": 3}, {"seq": 4, "op": 1}, {"seq": 5}, {"seq": 6}, {"seq": 2}]}}),  # 8
-    json.dumps({"world": WID, "kind": "purge", "actor": "system", "verb": "purge",
+    json.dumps({"world": WID, "kind": "redaction", "actor": "system",
+                "body": {"values": [{"seq": 3}, {"seq": 4, "index": 1}, {"seq": 5}, {"seq": 6}, {"seq": 2}]}}),  # 8
+    json.dumps({"world": WID, "kind": "redaction", "actor": "system",
                 "body": {"values": [{"seq": 8}, {"seq": 99}]}}),                 # 9
 ])
 v = r.view()["a"]
-check("09 purge -> absent(purged), distinct from deleted",
-      v == {"note": {"purged": True}, "x": {"v": 1}, "y": {"purged": True}, "z": {"purged": True}, "w": {"v": "new"}}, v)
-check("09 purge-of-purge and forward target refused; purge of a create diagnosed",
-      (9, "purge-of-purge-refused") in codes(r) and (9, "purge-target-range") in codes(r)
-      and (2, "purge-target-not-a-value") in codes(r), codes(r))
+check("09 redaction -> absent(redacted), distinct from deleted",
+      v == {"note": {"redacted": True}, "x": {"v": 1}, "y": {"redacted": True}, "z": {"redacted": True}, "w": {"v": "new"}}, v)
+check("09 redaction-of-redaction and forward target refused; redaction of a create diagnosed",
+      (9, "redaction-of-redaction-refused") in codes(r) and (9, "redaction-target-range") in codes(r)
+      and (2, "redaction-target-not-a-value") in codes(r), codes(r))
 
 # 10 genesis not first / second genesis / empty log / garbage line 0
 r = run("10a-genesis-late", [ACT, GEN_LINE])
@@ -202,18 +202,22 @@ check("10b second genesis malformed", (2, "malformed:genesis-not-first") in code
 r = run("10c-empty", [], raw=b"")
 check("10c empty log -> no-world", r.status == "no-world")
 
-# 11 envelope strictness: seq field, unknown field, missing cause, cause forward, unknown kind, `for`
+# 11 envelope strictness: seq field, unknown field, missing cause, cause forward, unknown kind, `for` (D4: an unknown field), a change carrying `verb`, a request carrying `op`
 r = run("11-envelope", [GEN_LINE, ACT,
     st("create", {"id": "a"}, seq=2),
     st("create", {"id": "b"}, extra=1),
-    json.dumps({"world": WID, "kind": "change", "actor": "system", "verb": "create", "body": {"id": "c"}}),
+    json.dumps({"world": WID, "kind": "change", "actor": "system", "op": "create", "body": {"id": "c"}}),
     st("create", {"id": "d"}, cause=99),
     json.dumps({"world": WID, "kind": "teleport", "actor": "system", "verb": "x", "body": {}}),
     st("create", {"id": "e"}, **{"for": "bob"}),
     st("create", {"id": "f"}, cause=1.5),
     st("create", {"id": "g"}, cause=0),       # cause = genesis: allowed by this reader
+    st("create", {"id": "h"}, verb="create"),  # a change carrying the old `verb` beside `op` (D3)
+    json.dumps({"world": WID, "kind": "request", "actor": "alice", "op": "spawn", "body": {"args": {}}}),  # a request carrying `op`
+    json.dumps({"world": WID, "kind": "change", "actor": "system", "cause": 1, "verb": "create", "body": {"id": "i"}}),  # a change with `verb` and no `op`
 ])
 check("11 only g survives", set(r.view()) == {"@world", "g"}, codes(r))
+check("11 the old spellings are refused by name", (7, "malformed:unknown-field") in codes(r) and (10, "malformed:envelope") in codes(r) and (11, "malformed:envelope") in codes(r) and (12, "malformed:envelope") in codes(r), codes(r))
 
 # 12 blank line occupies a seq; CRLF; BOM; invalid utf-8; lone surrogate; noncharacter
 raw = (GEN_LINE + "\n" + ACT + "\n\n" + st("create", {"id": "a"}, cause=1) + "\r\n").encode()
@@ -224,23 +228,23 @@ r = run("12b-bom", None, raw=b"\xef\xbb\xbf" + GEN_LINE.encode() + b"\n")
 check("12b BOM on genesis -> no-world", r.status == "no-world", codes(r))
 r = run("12c-text", [GEN_LINE, ACT, st("create", {"id": "a"})], raw=None)
 data = (GEN_LINE + "\n" + ACT + "\n" + st("create", {"id": "a"}) + "\n").encode()
-data += b'{"ts":1,"world":"' + WID.encode() + b'","kind":"change","actor":"\xff","cause":1,"verb":"create","body":{"id":"b"}}\n'
-data += ('{"ts":1,"world":"%s","kind":"change","actor":"system","cause":1,"verb":"set","body":{"id":"a","comp":"s","value":"\\ud800"}}\n' % WID).encode()
-data += ('{"ts":1,"world":"%s","kind":"change","actor":"system","cause":1,"verb":"set","body":{"id":"a","comp":"s","value":"\\ufdd0"}}\n' % WID).encode()
+data += b'{"ts":1,"world":"' + WID.encode() + b'","kind":"change","actor":"\xff","cause":1,"op":"create","body":{"id":"b"}}\n'
+data += ('{"ts":1,"world":"%s","kind":"change","actor":"system","cause":1,"op":"set","body":{"id":"a","comp":"s","value":"\\ud800"}}\n' % WID).encode()
+data += ('{"ts":1,"world":"%s","kind":"change","actor":"system","cause":1,"op":"set","body":{"id":"a","comp":"s","value":"\\ufdd0"}}\n' % WID).encode()
 r = run("12c-strings", None, raw=data)
 check("12c bad utf-8 / lone surrogate / noncharacter malformed",
       [c for s, c in codes(r)] == ["malformed:ijson-utf8", "malformed:ijson-surrogate", "malformed:ijson-noncharacter"], codes(r))
 
 # 13 depth cap and deep nesting that would blow a recursive parser
 r = run("13-depth", [GEN_LINE, ACT, st("create", {"id": "a"}),
-    '{"world":"%s","kind":"change","actor":"system","cause":1,"verb":"set","body":{"id":"a","comp":"d","value":%s}}' % (WID, "[" * 100000 + "]" * 100000)])
+    '{"world":"%s","kind":"change","actor":"system","cause":1,"op":"set","body":{"id":"a","comp":"d","value":%s}}' % (WID, "[" * 100000 + "]" * 100000)])
 check("13 100k-deep array malformed, not a crash", (3, "malformed:cap-depth") in codes(r), codes(r))
 
 # 14 batch with one bad name: whole batch shapes nothing; batch with semantic no-op: rest applies
 r = run("14-batch-partial", [GEN_LINE, ACT,
-    st("batch", {"ops": [{"verb": "create", "id": "a"}, {"verb": "set", "id": "a", "comp": "BAD", "value": 1}]}),
-    st("batch", {"ops": [{"verb": "create", "id": "b"}, {"verb": "set", "id": "ghost", "comp": "x", "value": 1},
-                         {"verb": "set", "id": "b", "comp": "x", "value": 2}]})])
+    st("batch", {"ops": [{"op": "create", "id": "a"}, {"op": "set", "id": "a", "comp": "BAD", "value": 1}]}),
+    st("batch", {"ops": [{"op": "create", "id": "b"}, {"op": "set", "id": "ghost", "comp": "x", "value": 1},
+                         {"op": "set", "id": "b", "comp": "x", "value": 2}]})])
 check("14 grammar error kills the batch; semantic no-op does not", r.view() == {"@world": {}, "b": {"x": {"v": 2}}}, codes(r))
 
 # 15 JCS number formatting vs RFC 8785 Appendix B samples
@@ -260,26 +264,26 @@ r = run("18-ts", [GEN_LINE, ACT, st("create", {"id": "a"}),
 check("18 decreasing / fractional ts malformed; equal ts fine",
       (5, "malformed:ts-decreasing") in codes(r) and (6, "malformed:ts") in codes(r)
       and r.view()["a"] == {"x": {"v": 2}}, (codes(r), r.view()))
-NO_TS = json.dumps({"kind": "change", "world": WID, "actor": "system", "cause": 1, "verb": "set",
+NO_TS = json.dumps({"kind": "change", "world": WID, "actor": "system", "cause": 1, "op": "set",
                     "body": {"id": "a", "comp": "x", "value": 9}})   # starts with "kind" so _with_ts leaves it alone
 r = run("18b-ts-missing", [GEN_LINE, ACT, st("create", {"id": "a"}), NO_TS])
 check("18b missing ts malformed", (3, "malformed:ts") in codes(r) and r.view()["a"] == {}, (codes(r), r.view()))
 
-# 21 non-string kind / op verb: malformed, not a TypeError (parity with fold.js checkEntry / shapeOne; bot #477)
-r = run("21-nonstring-kind-verb", [GEN_LINE, ACT, st("create", {"id": "a"}),
-    json.dumps({"world": WID, "kind": [], "ts": 1, "actor": "system", "verb": "set", "body": {}}),
-    st("batch", {"ops": [{"verb": [], "id": "a"}]}),
+# 21 non-string kind / op word: malformed, not a TypeError (parity with fold.js checkEntry / shapeOne; bot #477)
+r = run("21-nonstring-kind-op", [GEN_LINE, ACT, st("create", {"id": "a"}),
+    json.dumps({"world": WID, "kind": [], "ts": 1, "actor": "system", "op": "set", "body": {}}),
+    st("batch", {"ops": [{"op": [], "id": "a"}]}),
     st("set", {"id": "a", "comp": "x", "value": 1})])
-check("21 kind=[] and op verb=[] are malformed, the log still folds",
-      (3, "malformed:kind") in codes(r) and (4, "malformed:verb") in codes(r) and r.view()["a"] == {"x": {"v": 1}}, (codes(r), r.view()))
+check("21 kind=[] and op=[] are malformed, the log still folds",
+      (3, "malformed:kind") in codes(r) and (4, "malformed:op") in codes(r) and r.view()["a"] == {"x": {"v": 1}}, (codes(r), r.view()))
 
-# 22 purge target {seq, op: null}: purge-target-bad, not "the whole set" (parity with fold.js purgesOf; bot #478)
-r = run("22-purge-op-null", [GEN_LINE, ACT, st("create", {"id": "a"}),
+# 22 redaction target {seq, index: null}: redaction-target-bad, not "the whole set" (parity with fold.js redactionsOf; bot #478)
+r = run("22-redaction-index-null", [GEN_LINE, ACT, st("create", {"id": "a"}),
     st("set", {"id": "a", "comp": "x", "value": 1}),                                                       # 3
-    json.dumps({"world": WID, "kind": "purge", "actor": "system", "verb": "purge",
-                "body": {"values": [{"seq": 3, "op": None}]}})])                                           # 4
-check("22 purge op:null is a bad target; the value stays",
-      (4, "purge-target-bad") in codes(r) and (4, "purge") not in codes(r) and r.view()["a"] == {"x": {"v": 1}}, (codes(r), r.view()))
+    json.dumps({"world": WID, "kind": "redaction", "actor": "system",
+                "body": {"values": [{"seq": 3, "index": None}]}})])                                       # 4
+check("22 redaction index:null is a bad target; the value stays",
+      (4, "redaction-target-bad") in codes(r) and (4, "redaction") not in codes(r) and r.view()["a"] == {"x": {"v": 1}}, (codes(r), r.view()))
 
 check("15 JCS key order by UTF-16 units", R.jcs({"\U0001f600": 1, "\ufb33": 2}) == '{"\U0001f600":1,"\ufb33":2}')
 
@@ -295,14 +299,14 @@ def gen_with(**kw):
     for k, v in kw.items():
         if v is _DEL: b.pop(k, None)
         else: b[k] = v
-    return json.dumps({"kind": "genesis", "actor": "system", "verb": "genesis", "body": b})
+    return json.dumps({"kind": "genesis", "actor": "system", "body": b})
 _DEL = object()
 def wid_of(line):
     return "sha256:" + hashlib.sha256(R.jcs(R.parse_ijson(line.encode())).encode()).hexdigest()
 def gen_log(name, gline):
     w = wid_of(gline)
-    return run(name, [gline, json.dumps({"world": w, "kind": "act", "ts": 1, "actor": "alice", "verb": "spawn", "body": {}}),
-                      json.dumps({"world": w, "kind": "change", "ts": 1, "actor": "system", "cause": 1, "verb": "create", "body": {"id": "a"}})])
+    return run(name, [gline, json.dumps({"world": w, "kind": "request", "ts": 1, "actor": "alice", "verb": "spawn", "body": {"args": {}}}),
+                      json.dumps({"world": w, "kind": "change", "ts": 1, "actor": "system", "cause": 1, "op": "create", "body": {"id": "a"}})])
 SMALL_NEG = "ed25519:" + "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIA"  # same y, sign bit set ("-0")
 import base64 as _b
 _b64 = lambda raw: _b.urlsafe_b64encode(raw).rstrip(b"=").decode()
@@ -312,7 +316,8 @@ bad19 = {
     "19b-genesis-short-nonce": (gen_with(nonce=_b64(b"\x01" * 15)), "no-world", "malformed:genesis-nonce"),
     "19c-genesis-nonce-not-b64url": (gen_with(nonce="XWVu1u7BpaZTDFSETYiphg=="), "no-world", "malformed:genesis-nonce"),
     "19d-genesis-no-minor": (gen_with(minor=_DEL), "no-world", "malformed:genesis-minor"),
-    "19e-genesis-minor-1": (gen_with(minor=1, future=True), "unknown-version", "unknown-minor"),
+    "19e-genesis-minor-0": (gen_with(minor=0), "unknown-version", "unknown-minor"),   # minor 0 is the migration tool's to read (D1)
+    "19e2-genesis-minor-2": (gen_with(minor=2, future=True), "unknown-version", "unknown-minor"),
     "19f-genesis-flat-owners": (gen_with(owners=[K_OWNER]), "no-world", "malformed:genesis-owners"),
     "19g-genesis-small-order-key": (gen_with(owners=[[SMALL_NEG]]), "no-world", "malformed:genesis-key"),
     "19h-genesis-key-y-ge-p": (gen_with(sequencer=BIG_Y), "no-world", "malformed:genesis-key"),
@@ -320,28 +325,29 @@ bad19 = {
     "19j-genesis-unknown-field": (gen_with(rewind_n=5), "no-world", "malformed:genesis-field"),
     "19k-genesis-key-twice": (gen_with(owners=[[K_OWNER], [K_OWNER]]), "no-world", "malformed:genesis-owners"),
     "19l-genesis-bad-quorum": (gen_with(quorum=[0]), "no-world", "malformed:genesis-quorum"),
-    "19m-genesis-bad-window": (gen_with(rewind_window=-1), "no-world", "malformed:genesis-window"),
+    "19m-genesis-bad-window": (gen_with(rewindWindow=-1), "no-world", "malformed:genesis-window"),
+    "19m2-genesis-old-window": (gen_with(rewind_window=5), "no-world", "malformed:genesis-field"),
     "19n-genesis-bad-parent": (gen_with(parent={"world": "sha256:00", "seq": 3, "head": "00" * 32}), "no-world", "malformed:genesis-parent"),
 }
 for nm, (gl, want, code) in bad19.items():
     r = gen_log(nm, gl)
     check("19 %s -> %s (%s)" % (nm, want, code), r.status == want and r.world is None and (0, code) in codes(r), (r.status, codes(r)))
-r = gen_log("19o-genesis-full", gen_with(owners=[[], [K_TIER1, K_OWNER]], quorum=[1, 2], rewind_window=500,
+r = gen_log("19o-genesis-full", gen_with(owners=[[], [K_TIER1, K_OWNER]], quorum=[1, 2], rewindWindow=500,
                                          parent={"world": "sha256:" + "ab" * 32, "seq": 12, "head": "cd" * 32}))
 check("19o full genesis (empty tier 0, quorum, window, parent) folds", r.status == "ok" and "a" in r.view() and not r.diag, codes(r))
 g1, g2 = gen_with(), gen_with(nonce=NONCE2)
 check("19p same keys, different nonce -> different world ids (C1)", wid_of(g1) != wid_of(g2) and R.parse_ijson(g1.encode())["body"]["owners"] == R.parse_ijson(g2.encode())["body"]["owners"])
 
-# 20 purge never targets roles: (PROTOCOL §3d M11): diagnosed and ignored; other targets in the same purge still apply
-r = run("20-purge-roles", [GEN_LINE, ACT,
-    st("batch", {"ops": [{"verb": "set", "id": "@world", "comp": "roles:alice", "value": {"role": "owner"}},
-                         {"verb": "set", "id": "@world", "comp": "note", "value": "a phone number"}]}),          # 2
+# 20 a redaction never targets roles: (PROTOCOL §3d M11): diagnosed and ignored; other targets in the same redaction still apply
+r = run("20-redaction-roles", [GEN_LINE, ACT,
+    st("batch", {"ops": [{"op": "set", "id": "@world", "comp": "roles:alice", "value": {"role": "owner"}},
+                         {"op": "set", "id": "@world", "comp": "note", "value": "a phone number"}]}),          # 2
     st("set", {"id": "@world", "comp": "roles:bob", "value": {"role": "builder"}}),                               # 3
-    json.dumps({"world": WID, "kind": "purge", "actor": "system", "verb": "purge",
-                "body": {"values": [{"seq": 2, "op": 0}, {"seq": 2, "op": 1}, {"seq": 3}]}})])                    # 4
-check("20 purge of roles: ignored (diagnosed), the note purged",
-      r.view()["@world"] == {"roles:alice": {"v": {"role": "owner"}}, "note": {"purged": True}, "roles:bob": {"v": {"role": "builder"}}}
-      and [c for s_, c in codes(r)].count("purge-target-governance") == 2, (r.view(), codes(r)))
+    json.dumps({"world": WID, "kind": "redaction", "actor": "system",
+                "body": {"values": [{"seq": 2, "index": 0}, {"seq": 2, "index": 1}, {"seq": 3}]}})])              # 4
+check("20 redaction of roles: ignored (diagnosed), the note redacted",
+      r.view()["@world"] == {"roles:alice": {"v": {"role": "owner"}}, "note": {"redacted": True}, "roles:bob": {"v": {"role": "builder"}}}
+      and [c for s_, c in codes(r)].count("redaction-target-governance") == 2, (r.view(), codes(r)))
 
 fails = 0
 for n, ok, info in results:

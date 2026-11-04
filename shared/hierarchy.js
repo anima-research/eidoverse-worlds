@@ -21,7 +21,7 @@ import { enc } from './protocol/names.js';
 import { scale3, scaleWire, entScale } from './scale3.js';
 import { qNorm, qMul, qRotate, qFromYaw, qHeading, qConj as conj, composePose } from './rot.js';
 import { socketQ, lightOf } from './components.js';
-import { kindOf } from './protocol/kind.js';
+import { formOf } from './protocol/kind.js';
 import { socketRole } from './sockbody.js';
 import { r9 } from './protocol/round.js';
 import { modelWord } from './eido.js';
@@ -115,10 +115,10 @@ export function childrenOf(world, id) {
   return Object.keys(world ?? {}).filter((k) => world[k]?.parent?.to === id).sort();
 }
 
-/** What a row says a thing IS, in a word or two: kindOf's word, or a model's file stem (+ light for an imported lamp). */
+/** What a row says a thing IS, in a word or two: formOf's word, or a model's file stem (+ light for an imported lamp). */
 export function kindHint(ent) {
   if (!ent) return '?';
-  const kind = kindOf(ent);
+  const kind = formOf(ent);
   if (kind === 'socket') return socketRole(ent.c ?? ent);   // what it is for: station, snap or attach (never stored)
   const plus = lightOf(ent) ? ' + light' : '';
   if (kind === 'mesh') return `${(ent.c ?? ent).mesh.shape}${plus}`;

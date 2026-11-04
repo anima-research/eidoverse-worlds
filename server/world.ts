@@ -183,7 +183,7 @@ export class World {
     // server-side.
     this.scripts = new WorldScripts(this.log);
     this.scripts.sync();
-    console.log(`[world:${name}] loaded — ${Object.keys(this.state.entities).length} things, head ${this.log.head}, `
+    console.log(`[world:${name}] loaded — ${Object.keys(this.state.entities).length} things, seq ${this.log.seq}, `
       + `${Object.keys(this.poses).length} remembered poses`);
   }
   private openLog(): WorldLog {

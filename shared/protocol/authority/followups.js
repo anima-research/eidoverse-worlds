@@ -4,7 +4,7 @@
 // reads follow-ups as no author's), touchedOf, historyDiff, and the physical warnings and dangling references a write or
 // lint reports (refactor split, 2026-10-17; moved from authority.js's gate section unchanged). admit, changeEntry and
 // the world's bounds are above it, reached through UP.
-import { PURGED } from "../fold.js";
+import { REDACTED } from "../fold.js";
 import { baseOf, mapRefs, refsOf, refFields } from "../componentspec.js";
 import { mediaTier, tierWords } from "../../mediasrc.js";
 import { ENGINES, carried } from "../simlayer.js";
@@ -14,7 +14,7 @@ import { r3 } from "../round.js";
 import { CTX, UP } from "./ctx.js";
 import { Refusal, said } from "./refuse.js";
 import { geomOf, boxOfM, geomE, meshShape } from "./catalogue.js";
-import { delOp, followUp, followUpsOf, isE, lockedC, opsQuiet, qr3, scratch, setOp } from "./storage.js";
+import { delOp, followUp, cascadeOf, isE, lockedC, opsQuiet, qr3, scratch, setOp } from "./storage.js";
 import { aabb, ancestors, descendants, localFrom, qYaw, satCost, satDepth, worldT } from "./math.js";
 import { familyOf, groundOf, groundReady, near, spatial, spend, supportBelow, supportUnder } from "./spatial.js";
 import { backward, entryBy } from "./rights.js";
@@ -42,7 +42,7 @@ function planResettle(w, asker, ops, before, after0) { let after = after0; const
   // leaves these as they were (the same value re-asserted, a move, a turn) re-drops nothing (review r2 S2.1); a delete of the
   // geometry is a change like any other (r2 S2.3)
   const geomKey = (st, id) => { const e = st.entities[id]; const m = e ? geomE(e) : null; return JSON.stringify([m ? boxOfM(m) : null, e?.c.transform?.scale ?? [1, 1, 1]]); };
-  const hosts = new Set(ops.filter((o) => (o.verb === "set" || o.verb === "delete") && before.entities[o.id] && after.entities[o.id] && (o.comp === "mesh" || o.comp === "model" || o.comp === "transform") && geomKey(before, o.id) !== geomKey(after, o.id)).map((o) => o.id));
+  const hosts = new Set(ops.filter((o) => (o.op === "set" || o.op === "delete") && before.entities[o.id] && after.entities[o.id] && (o.comp === "mesh" || o.comp === "model" || o.comp === "transform") && geomKey(before, o.id) !== geomKey(after, o.id)).map((o) => o.id));
   if (!hosts.size) return null;
   // a child on a SOCKET is the socket's child, which has no top: never an occupant (r2 S2.2: a cup on its perch was torn off and dropped)
   const occupants = Object.keys(after.entities).filter((k) => { const c = after.entities[k].c;
@@ -88,16 +88,16 @@ function planResettle(w, asker, ops, before, after0) { let after = after0; const
 function resettleEntries(w, plan, askerAct) {
   if (!plan || (!plan.admitted && !plan.launches.length)) return [];
   const own = askerAct + 2;
-  const act = { kind: "act", actor: plan.actor, verb: "resettle", cause: askerAct, body: { hosts: [...plan.hosts], occupants: plan.occupants, asked: plan.asker } };
-  return [act, ...(plan.admitted ? [UP.changeShape(plan.admitted, own, w)] : []), ...plan.launches.map((b) => ({ kind: "sim", actor: plan.actor, cause: own, verb: "launch", body: b }))];
+  const act = { kind: "request", actor: plan.actor, verb: "resettle", cause: askerAct, body: { hosts: [...plan.hosts], occupants: plan.occupants, asked: plan.asker } };
+  return [act, ...(plan.admitted ? [UP.changeShape(plan.admitted, own, w)] : []), ...plan.launches.map((b) => ({ kind: "physics", actor: plan.actor, cause: own, verb: "launch", body: b }))];
 }
 // …and after it: append exactly what was planned and admitted (no check here can refuse)
 function applyResettle(w, plan, cause, notes) {
   if (!plan) return;
   if (plan.admitted || plan.launches.length) {
-    const act = w.append({ kind: "act", actor: plan.actor, verb: "resettle", cause, body: { hosts: [...plan.hosts], occupants: plan.occupants, asked: plan.asker } });
+    const act = w.append({ kind: "request", actor: plan.actor, verb: "resettle", cause, body: { hosts: [...plan.hosts], occupants: plan.occupants, asked: plan.asker } });
     if (plan.admitted) changeEntry(w, plan.admitted, act);
-    for (const b of plan.launches) w.append({ kind: "sim", actor: plan.actor, cause: act, verb: "launch", body: b });
+    for (const b of plan.launches) w.append({ kind: "physics", actor: plan.actor, cause: act, verb: "launch", body: b });
   }
   notes.push(plan.note);
 }
@@ -121,14 +121,14 @@ function stampShapes(ctx, ops) {
   if (ctx.cap || !ops.length) return ops;
   const after = scratch(ctx.st, ops); const simOn = !!after.entities["@world"]?.c["physics-engine"];
   const ids = new Set();
-  for (const o of ops) if ((o.verb === "set" || o.verb === "delete") && o.comp && (o.comp === "physics" || o.comp === "model" || o.comp === "collider" || o.comp === "mesh")) ids.add(o.id);
+  for (const o of ops) if ((o.op === "set" || o.op === "delete") && o.comp && (o.comp === "physics" || o.comp === "model" || o.comp === "collider" || o.comp === "mesh")) ids.add(o.id);
   // a thing that moves by its motion or opens is a KINEMATIC collider (PHYSICS §3.3; shape audit 10-16): the stamp says so
   // (eidosim carries kinematic as static, so behaviour is unchanged; the record no longer says "never moves")
-  for (const o of ops) if (o.verb === "set" && o.comp && (o.comp === "motion" || o.comp.startsWith("motion:") || o.comp === "openable")) ids.add(o.id);
+  for (const o of ops) if (o.op === "set" && o.comp && (o.comp === "motion" || o.comp.startsWith("motion:") || o.comp === "openable")) ids.add(o.id);
   const moves = (id) => { for (let k = id, n = 0; k && n < 33; k = after.entities[k]?.c.parent?.to, n++) { const c = after.entities[k]?.c; if (!c) break;
     if (c.openable !== undefined || Object.keys(c).some((x) => x === "motion" || x.startsWith("motion:"))) return true; } return false; };
-  if (simOn) for (const o of ops) if (o.verb === "create") ids.add(o.id);
-  if (ops.some((o) => o.id === "@world" && o.comp === "physics-engine" && o.verb === "set") && simOn) for (const id of Object.keys(after.entities)) ids.add(id);
+  if (simOn) for (const o of ops) if (o.op === "create") ids.add(o.id);
+  if (ops.some((o) => o.id === "@world" && o.comp === "physics-engine" && o.op === "set") && simOn) for (const id of Object.keys(after.entities)) ids.add(id);
   ids.delete("@world");
   const out = ops.slice(); const stamped = [], unstamped = [], rounded = [];
   for (const id of ids) {
@@ -137,22 +137,22 @@ function stampShapes(ctx, ops) {
     let next;
     if (ph === undefined || ph === null) { if (!simOn || !want) continue; next = { kind: moves(id) ? "kinematic" : "static", shape: want }; }
     else if (typeof ph !== "object" || Array.isArray(ph)) continue; // valueCheck refuses it
-    else if (ph.kind === "static" && moves(id) && !ops.some((o) => o.verb === "set" && o.comp === "physics" && o.id === id)) next = { ...ph, kind: "kinematic", ...(want ? { shape: want } : {}) };   // it started moving
+    else if (ph.kind === "static" && moves(id) && !ops.some((o) => o.op === "set" && o.comp === "physics" && o.id === id)) next = { ...ph, kind: "kinematic", ...(want ? { shape: want } : {}) };   // it started moving
     else {
       // a model this server can't measure right now (not in its catalogue, or named but unmeasured) keeps the shape stamped
       // before, even through a whole-value write of physics: only a changed model or mesh, or a body that's gone, takes it
       // away (the never-stamped branch above skips such a thing too)
       const kept = !want && typeof e.c.model === "string" && !ops.some((o) => o.id === id && (o.comp === "model" || o.comp === "mesh")) ? ctx.st.entities[id]?.c.physics?.shape : undefined;
       if (kept !== undefined) { if (JSON.stringify(ph.shape ?? null) === JSON.stringify(kept)) continue; next = { ...ph, shape: kept };
-        if (ops.some((o) => o.verb === "set" && o.comp === "physics" && o.id === id && o.value?.shape !== undefined))
+        if (ops.some((o) => o.op === "set" && o.comp === "physics" && o.id === id && o.value?.shape !== undefined))
           ctx.notes.push({ id, component: "physics", field: "shape", why: "stamped by the authority: a shape is its measurement of the model (Covenant III), never the asker's" }); }
       else { if (JSON.stringify(ph.shape ?? null) === JSON.stringify(want)) continue;
       next = { ...ph }; if (want) next.shape = want; else delete next.shape;
-      if (ph.shape !== undefined && ops.some((o) => o.verb === "set" && o.comp === "physics" && o.id === id && o.value?.shape !== undefined))
+      if (ph.shape !== undefined && ops.some((o) => o.op === "set" && o.comp === "physics" && o.id === id && o.value?.shape !== undefined))
         ctx.notes.push({ id, component: "physics", field: "shape", why: "stamped by the authority: a shape is its measurement of the model (Covenant III), never the asker's" }); } }
     // every physics set for it in the batch gets the measured value: the last is the one the fold keeps, and an earlier one
     // replaced alone left a later set's shape (the asker's) standing
-    let found = false; out.forEach((o, k) => { if (o.verb === "set" && o.comp === "physics" && o.id === id) { out[k] = setOp(id, "physics", next); found = true; } });
+    let found = false; out.forEach((o, k) => { if (o.op === "set" && o.comp === "physics" && o.id === id) { out[k] = setOp(id, "physics", next); found = true; } });
     if (!found) { out.push(setOp(id, "physics", next)); if (next.shape) stamped.push(id); else unstamped.push(id); }
     if (want && (e.c.mesh?.shape === "cylinder" || e.c.mesh?.shape === "capsule")) rounded.push(id);
   }
@@ -167,9 +167,9 @@ function stampShapes(ctx, ops) {
 // And a link's reach is said once, when it's written: who will hear or see it (shared/mediasrc.js).
 const MEDIA = { sound: ["src", "audio"], picture: ["src", "image"], material: ["texture", "image"] };   // component → [its source field, kind]
 function stampMedia(ctx, ops) {
-  if (!ops.some((o) => o.verb === "set" && Object.hasOwn(MEDIA, o.comp))) return ops;
+  if (!ops.some((o) => o.op === "set" && Object.hasOwn(MEDIA, o.comp))) return ops;
   return ops.map((o) => {
-    if (o.verb !== "set" || !Object.hasOwn(MEDIA, o.comp) || !o.value || typeof o.value !== "object" || Array.isArray(o.value)) return o;
+    if (o.op !== "set" || !Object.hasOwn(MEDIA, o.comp) || !o.value || typeof o.value !== "object" || Array.isArray(o.value)) return o;
     const v = o.value; const prev = ctx.st.entities[o.id]?.c[o.comp]; const [f, kind] = MEDIA[o.comp];
     if (typeof v[f] === "string" && /^https:/i.test(v[f]) && (!prev || prev[f] !== v[f])) { const t = mediaTier(v[f], kind);
       if (t.tier === "host" || t.tier === "link") ctx.notes.push({ id: o.id, component: o.comp, field: f, reach: t.tier === "host" ? "everyone" : "opted-in", why: tierWords(t, kind) }); }
@@ -188,7 +188,7 @@ function stampMedia(ctx, ops) {
 const hashOfModel = (m) => { if (typeof m !== "string") return null; const a = eidoHex(m); if (a) return `sha256:${a}`;
   let h = null; try { h = CTX.cat.get(m)?.sha256; } catch { h = null; } return typeof h === "string" && /^[0-9a-f]{64}$/.test(h) ? `sha256:${h}` : null; };
 function stampModelHash(ctx, ops) {
-  const ids = new Set(); for (const o of ops) if ((o.verb === "set" || o.verb === "delete") && o.comp === "model") ids.add(o.id);
+  const ids = new Set(); for (const o of ops) if ((o.op === "set" || o.op === "delete") && o.comp === "model") ids.add(o.id);
   // a fork's copy carries what its parent holds (review r8 H2): a hash measured since, or none, is the parent's to stamp
   if (!ids.size || CTX.forking) return ops;
   const after = scratch(ctx.st, ops); const out = ops.slice();
@@ -196,7 +196,7 @@ function stampModelHash(ctx, ops) {
     const e = after.entities[id]; if (!e) continue;   // the thing itself is gone
     const was = ctx.st.entities[id]?.c.model, now = e.c.model; if (now === was) continue;
     const want = ctx.cap ? null : hashOfModel(now), have = e.c["model-hash"];
-    if (want) { if (have !== want) { const k = out.findIndex((o) => o.verb === "set" && o.comp === "model-hash" && o.id === id); if (k >= 0) out[k] = setOp(id, "model-hash", want); else out.push(setOp(id, "model-hash", want)); } }
+    if (want) { if (have !== want) { const k = out.findIndex((o) => o.op === "set" && o.comp === "model-hash" && o.id === id); if (k >= 0) out[k] = setOp(id, "model-hash", want); else out.push(setOp(id, "model-hash", want)); } }
     else if (have !== undefined && !ops.some((o) => o.id === id && o.comp === "model-hash")) out.push(delOp(id, "model-hash"));
   }
   return out;
@@ -205,7 +205,7 @@ function touched(ops, st) {
   const out = {};
   for (const o of ops) { const e = st.entities[o.id]; out[o.id] ??= {};
     if (!e) { out[o.id] = null; continue; }
-    if (o.verb === "create") Object.assign(out[o.id], e.c);
+    if (o.op === "create") Object.assign(out[o.id], e.c);
     else if (o.comp !== undefined) out[o.id][o.comp] = e.c[o.comp] ?? null; else out[o.id] = null; }
   return out;
 }
@@ -213,18 +213,18 @@ const stripDry = ({ dry, ...rest }) => rest;
 const warnOrNot = (ws) => (ws.length ? { warnings: ws } : {});
 
 // authored: who AUTHORED its current value (a handler's author, review r9 H1): the authority's follow-ups (a reference cleared
-// because what it named was deleted, or put back by that delete's undo; the entry's own `followUps`) are skipped, so an owner's
+// because what it named was deleted, or put back by that delete's undo; the entry's own `cascade`) are skipped, so an owner's
 // cleanup never re-authors a demoted builder's handlers with the owner's rights, nor a visitor's delete an owner's. A follow-up
 // that removed the component leaves no author (null). Without it: the last write of any kind (a version, a conflict check).
 function lastTouch(w, id, comp, { editsOnly = false, authored = false } = {}) {
   let restored = false;
   for (const i of backward(w, id)) { const e = w.entries[i]; if (!isE(e) || e.kind !== "change") continue;
     if (editsOnly && w.entries[e.cause]?.body?.capability) continue;   // a use's own write (a toggle flipped it): not an author
-    const ops = opsQuiet(e), fu = authored ? followUpsOf(e) : null;
+    const ops = opsQuiet(e), fu = authored ? cascadeOf(e) : null;
     for (let k = ops.length - 1; k >= 0; k--) { const o = ops[k]; if (o.id !== id) continue;
-      if (o.verb === "create" || o.comp === comp || (o.verb === "delete" && o.comp === undefined)) {
+      if (o.op === "create" || o.comp === comp || (o.op === "delete" && o.comp === undefined)) {
         // a follow-up set put a value back (an undo's restore, review r10 M2): it also steps over the follow-up delete it reverses
-        if (fu?.has(k)) { if (o.verb === "set") { restored = true; continue; } if (o.verb === "delete" && restored) { restored = false; continue; } return null; }
+        if (fu?.has(k)) { if (o.op === "set") { restored = true; continue; } if (o.op === "delete" && restored) { restored = false; continue; } return null; }
         // authored: whose rights wrote it (a handler's author, a script's sponsor), not who invoked it: a handler that writes
         // its own thing's reactions installs its author's handler, never the invoker's (null when a purge erased whose)
         return { seq: i, actor: authored ? entryBy(w, e).rights : e.actor }; } } }
@@ -236,11 +236,11 @@ export const TOUCH_HORIZON = 200;
 function touchedOf(w, id, comps, horizon = TOUCH_HORIZON) {
   const out = {}; const want = new Set(comps); let seen = 0, oldest = null;
   for (const i of backward(w, id)) { if (!want.size || seen >= horizon) break; const e = w.entries[i]; if (!isE(e) || e.kind !== "change") continue;
-    seen++; oldest = i; const fu = followUpsOf(e);
+    seen++; oldest = i; const fu = cascadeOf(e);
     opsQuiet(e).forEach((o, k) => { if (o.id !== id) return;
-      const hit = o.verb === "create" ? [...want] : want.has(o.comp) ? [o.comp] : [];
+      const hit = o.op === "create" ? [...want] : want.has(o.comp) ? [o.comp] : [];
       // a follow-up (a reference cleared by a delete, review r9 H1) says so: `by` caused it, but didn't author the value
-      for (const c of hit) { out[c] = { seq: i, by: e.actor, who: said(e.actor), ts: e.ts, ...(o.verb === "create" ? { created: true } : {}), ...(fu.has(k) ? { followUp: true } : {}) }; want.delete(c); } }); }
+      for (const c of hit) { out[c] = { seq: i, by: e.actor, who: said(e.actor), ts: e.ts, ...(o.op === "create" ? { created: true } : {}), ...(fu.has(k) ? { followUp: true } : {}) }; want.delete(c); } }); }
   for (const c of want) out[c] = { beyond: oldest ?? 0 };   // not found in the window: "unchanged since before #N"
   return out;
 }
@@ -251,13 +251,13 @@ const opsTouching = (e, id) => opsQuiet(e).filter((o) => o.id === id);
 function historyDiff(w, id, at, ops) {
   const out = {};
   const prevOf = (comp) => { for (const j of backward(w, id)) { if (j >= at) continue; const e = w.entries[j]; if (!isE(e) || e.kind !== "change") continue;
-    const os = opsTouching(e, id); for (let k = os.length - 1; k >= 0; k--) { const o = os[k]; if (o.verb === "set" && o.comp === comp) return o.value; if (o.verb === "delete" && (o.comp === comp || o.comp === undefined)) return undefined; if (o.verb === "create") return undefined; } }
+    const os = opsTouching(e, id); for (let k = os.length - 1; k >= 0; k--) { const o = os[k]; if (o.op === "set" && o.comp === comp) return o.value; if (o.op === "delete" && (o.comp === comp || o.comp === undefined)) return undefined; if (o.op === "create") return undefined; } }
     return undefined; };
   const word = (v) => v === undefined ? "none" : v === true ? "on" : v === false ? "off" : typeof v === "number" ? String(+v.toPrecision(4)) : typeof v === "string" ? JSON.stringify(v.length > 24 ? v.slice(0, 23) + "…" : v)
     : Array.isArray(v) && v.length <= 4 && v.every((n) => typeof n === "number") ? `(${v.map((n) => +n.toPrecision(3)).join(", ")})` : Array.isArray(v) ? `[${v.length}]` : "{…}";
   for (const o of ops) {
-    if (!o.comp || (o.verb !== "set" && o.verb !== "delete")) continue;
-    const was = prevOf(o.comp), now = o.verb === "delete" ? undefined : o.value; const bits = [];
+    if (!o.comp || (o.op !== "set" && o.op !== "delete")) continue;
+    const was = prevOf(o.comp), now = o.op === "delete" ? undefined : o.value; const bits = [];
     if (was && now && typeof was === "object" && typeof now === "object" && !Array.isArray(was) && !Array.isArray(now)) {
       for (const k of new Set([...Object.keys(was), ...Object.keys(now)])) if (JSON.stringify(was[k]) !== JSON.stringify(now[k])) bits.push(`${k} ${word(was[k])} → ${word(now[k])}`);
     } else if (JSON.stringify(was) !== JSON.stringify(now)) bits.push(was === undefined ? `set ${word(now)}` : now === undefined ? `removed (was ${word(was)})` : `${word(was)} → ${word(now)}`);
@@ -287,7 +287,7 @@ function clearRefsTo(ctx, gone) {
   for (const [id, e] of Object.entries(ctx.st.entities)) { if (gone.has(id)) continue;
     // a script's scope is left alone (review r8 H1): a scope id that names nothing reaches nothing (scopeIds), an id is never
     // reused (§3d H7), and a write to script:<name> would re-sponsor it to the deleter (sponsorOf: the latest non-pause write)
-    for (const [k, v] of Object.entries(e.c)) { if (k === "parent" || baseOf(k) === "script" || baseOf(k) === "parent" || !holdsRefs(k) || v === PURGED) continue;
+    for (const [k, v] of Object.entries(e.c)) { if (k === "parent" || baseOf(k) === "script" || baseOf(k) === "parent" || !holdsRefs(k) || v === REDACTED) continue;
       if (!refsOf(k, v).some((r) => gone.has(r.id))) continue;
       const nv = withoutRefs(id, k, v, gone, cleared, dropped);
       if (nv === undefined) ops.push(followUp(delOp(id, k)));
@@ -305,7 +305,7 @@ function clearRefsTo(ctx, gone) {
 function danglingRefs(st, ids) {
   const out = [];
   for (const id of ids) { const e = st.entities[id]; if (!e) continue;
-    for (const [k, v] of Object.entries(e.c)) { if (v === PURGED || !holdsRefs(k)) continue;
+    for (const [k, v] of Object.entries(e.c)) { if (v === REDACTED || !holdsRefs(k)) continue;
       for (const r of refsOf(k, v)) if (!st.entities[r.id]) out.push({ id, kind: "dangling", at: `${id}.${r.path.replace(/^[^.[]*/, k)}`, names: r.id, fix: `nothing here is called '${r.id}': point it at something that is, or clear it` }); } }
   return out;
 }

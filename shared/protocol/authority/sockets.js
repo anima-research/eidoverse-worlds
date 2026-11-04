@@ -6,7 +6,7 @@
 import { ONE_PLACE, socketQ } from "../../components.js";
 import { checkSockets } from "../../sockbody.js";
 import { COMPONENTS, materialize } from "../componentspec.js";
-import { PURGED, cowState, applyCow } from "../fold.js";
+import { REDACTED, cowState, applyCow } from "../fold.js";
 import { sha256, hexBytes } from "../hash.js";
 import { kidsMap } from "./spatial.js";
 import { modelOf } from "./catalogue.js";
@@ -14,7 +14,7 @@ import { worldT, qrot, qinv, qmul } from "./math.js";
 import { setOp, delOp } from "./storage.js";
 import { refuse } from "./refuse.js";
 
-const bag = (v) => !!v && typeof v === "object" && !Array.isArray(v) && v !== PURGED;
+const bag = (v) => !!v && typeof v === "object" && !Array.isArray(v) && v !== REDACTED;
 export const isSocketC = (c) => bag(c?.socket);
 export { socketRole } from "../../sockbody.js";
 // what a socket may carry besides its pose and its name: what reads it (label, description), what switches or freezes it
@@ -145,7 +145,7 @@ const legacyHome = (v) => bag(v) && legacyParent(v.parent);
 
 /** Does this write carry the old spelling anywhere? (The common write doesn't, and costs one pass.) */
 export function carriesLegacy(ops) {
-  return ops.some((o) => o.comp === "sockets" || (o.verb === "set" && ((o.comp === "parent" && legacyParent(o.value)) || (o.comp === "home" && legacyHome(o.value))
+  return ops.some((o) => o.comp === "sockets" || (o.op === "set" && ((o.comp === "parent" && legacyParent(o.value)) || (o.comp === "home" && legacyHome(o.value))
     || (o.comp === "socket" && bag(o.value) && o.value.body !== undefined) || (o.comp === "model" && typeof o.value === "string" && bag(modelOf(o.value)?.sockets)))));
 }
 
@@ -158,7 +158,7 @@ function lifter(st, ever) {
   const kidsOf = (h) => Object.keys(s.entities).filter((k) => s.entities[k].c.parent?.to === h);
   const childNamed = (h, name) => kidsOf(h).find((k) => isSocketC(s.entities[k].c) && s.entities[k].c.socket.name === name) ?? null;
   const make = (h, name, sk) => { const id = fresh(h, name);
-    emit({ verb: "create", id }); emit(setOp(id, "parent", { to: h }));
+    emit({ op: "create", id }); emit(setOp(id, "parent", { to: h }));
     emit(setOp(id, "transform", { pos: Array.isArray(sk.pos) ? sk.pos.slice() : [0, 0, 0], q: socketQ(sk), scale: [1, 1, 1] }));
     emit(setOp(id, "socket", socketOfSlot(name, sk)));
     if (bag(sk.body)) emit(setOp(id, "station", stationOfBody(sk.body, { stored: storedBodies })));
@@ -197,11 +197,11 @@ export function liftOps(st, ops, ever = new Set()) {
   for (const o of ops) {
     const e = s.entities[o.id];
     if (o.comp === "sockets" && e) {
-      if (o.verb === "set" && checkSockets(o.value)) { emit(o); continue; }   // malformed: the door refuses it in its own words
+      if (o.op === "set" && checkSockets(o.value)) { emit(o); continue; }   // malformed: the door refuses it in its own words
       const before = liftStored(o.id);
-      const want = o.verb === "set" ? o.value : {};
+      const want = o.op === "set" ? o.value : {};
       const socks = kidsOf(o.id).filter((k) => isSocketC(s.entities[k].c));
-      if (o.verb === "delete" && !socks.length && !Object.keys(before).length) { emit(o); continue; }   // nothing there: refused as not-found
+      if (o.op === "delete" && !socks.length && !Object.keys(before).length) { emit(o); continue; }   // nothing there: refused as not-found
       const wrote = {};
       for (const k of socks) if (!Object.hasOwn(want, s.entities[k].c.socket.name)) retire(o.id, k);
       for (const [name, sk] of Object.entries(want)) { const id = childNamed(o.id, name);
@@ -216,7 +216,7 @@ export function liftOps(st, ops, ever = new Set()) {
       notes.push({ legacy: "sockets", id: o.id, wrote, why: "sockets are child entities now: each slot is a socket child (parent {to: <its id>} attaches to it)" });
       continue;
     }
-    if (o.verb === "set" && o.comp === "parent" && e && legacyParent(o.value)) {
+    if (o.op === "set" && o.comp === "parent" && e && legacyParent(o.value)) {
       const h = o.value.to; liftStored(h);
       const id = childNamed(h, o.value.socket);
       if (!id) refuse("not-found", `${h} has no socket called '${o.value.socket}'`, `its sockets: ${kidsOf(h).filter((k) => isSocketC(s.entities[k].c)).map((k) => s.entities[k].c.socket.name).join(", ") || "none"}`);
@@ -227,15 +227,15 @@ export function liftOps(st, ops, ever = new Set()) {
       notes.push({ legacy: "parent.socket", id: o.id, wrote: { parent: { to: id } }, why: `${h}'s '${socket}' socket is the entity ${id}` });
       continue;
     }
-    if (o.verb === "set" && o.comp === "transform" && via.has(o.id) && bag(o.value) && Array.isArray(o.value.pos)) { const { h, id } = via.get(o.id);
+    if (o.op === "set" && o.comp === "transform" && via.has(o.id) && bag(o.value) && Array.isArray(o.value.pos)) { const { h, id } = via.get(o.id);
       emit(setOp(o.id, "transform", underSocket(s, h, tfOf(s.entities[id].c), o.value))); continue; }
     if (o.comp === "parent") via.delete(o.id);
-    if (o.verb === "set" && o.comp === "home" && legacyHome(o.value)) { liftStored(o.value.parent.to); emit(setOp(o.id, "home", homeLifted(o.value))); continue; }
+    if (o.op === "set" && o.comp === "home" && legacyHome(o.value)) { liftStored(o.value.parent.to); emit(setOp(o.id, "home", homeLifted(o.value))); continue; }
     // a socket written with the old body block: the socket without it, and the block as the station beside it
-    if (o.verb === "set" && o.comp === "socket" && bag(o.value) && bag(o.value.body)) { const { body, ...rest } = o.value;
+    if (o.op === "set" && o.comp === "socket" && bag(o.value) && bag(o.value.body)) { const { body, ...rest } = o.value;
       emit(setOp(o.id, "socket", rest)); emit(setOp(o.id, "station", stationOfBody(body)));
       notes.push({ legacy: "socket.body", id: o.id, wrote: { station: true }, why: "what a person's body does at a socket is its station now" }); continue; }
-    if (o.verb === "set" && o.comp === "model") models.add(o.id);
+    if (o.op === "set" && o.comp === "model") models.add(o.id);
     emit(o);
   }
   // a catalogue model that declares seats: they are made as children ("the log holds every number"), once

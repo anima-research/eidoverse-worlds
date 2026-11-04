@@ -72,7 +72,7 @@ try {
   await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('gate') && !!m.entities.get('gate').userData.base)`, 'gate and gate');
   check("D1 the hint bar offers it: E open “Gate”", await waitFor(`/E\\s*open\\s*“Gate”/.test(${hint})`, 6000), await evalJson(hint));
   const q0 = await evalJson(`import('/lib/world.js').then((m) => m.entities.get('gate').quaternion.toArray())`);
-  const uses0 = entries().filter((e: any) => e.kind === "act" && e.verb === "use").length;
+  const uses0 = entries().filter((e: any) => e.kind === "request" && e.verb === "use").length;
   // an in-page sampler (CDP round trips are too slow to time a 1.2 s swing): how open the tween says, and the angle the
   // gate is DRAWN at, once per animation frame for 4 s from just before E. Per frame, not per 40 ms: the gate is only drawn
   // on frames (tickOpenables), and a starved CI runner once drew none for ~3 s while a timer kept sampling the shut gate
@@ -89,7 +89,7 @@ try {
     while (performance.now() - t0 < 5000) { const s = o.openableState('gate'); const q = w.entities.get('gate').quaternion; out.push([Math.round(performance.now() - t0), s?.f ?? null, s?.to ?? null, 2 * Math.acos(Math.min(1, Math.abs(q.w)))]); await new Promise((r) => { requestAnimationFrame(() => r()); setTimeout(r, 5500 - (performance.now() - t0)); }); }
     return out; })(), true)`);
     await key("KeyE");
-    if (tries === 1) check("D2 E opens it through the authority: one use act, openable.open = true", await waitDisk(() => disk().entities[N("gate")]?.c.openable?.open === true && entries().filter((e: any) => e.kind === "act" && e.verb === "use").length === uses0 + 1),
+    if (tries === 1) check("D2 E opens it through the authority: one use act, openable.open = true", await waitDisk(() => disk().entities[N("gate")]?.c.openable?.open === true && entries().filter((e: any) => e.kind === "request" && e.verb === "use").length === uses0 + 1),
         { open: disk().entities[N("gate")]?.c.openable, refused: await evalJson(`__refused.map((r) => r.text)`) });
     else await waitDisk(() => disk().entities[N("gate")]?.c.openable?.open === true);   // a retry's own open (D2 counted the first)
     samp = await evalJson(`window.__samp`);

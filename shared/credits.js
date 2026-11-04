@@ -17,8 +17,8 @@ const BUILDING = new Set(['create', 'set', 'delete', 'place', 'turn', 'batch', '
 const SYSTEM = new Set(['sim', 'system', 'world']);
 /** The phrase for one change, from one table (the client and the authority read the same words). */
 export function phraseOf(op) {
-  if (op.verb === 'create') return 'made it';
-  if (op.verb === 'delete' && op.comp === undefined) return 'took it away';
+  if (op.op === 'create') return 'made it';
+  if (op.op === 'delete' && op.comp === undefined) return 'took it away';
   const c = String(op.comp ?? '');
   if (c === 'transform' || c === 'parent') return 'moved it';
   if (c === 'model') return 'gave it its shape';
@@ -46,13 +46,13 @@ export function creditsOf(entries, id, { nameOf = (x) => x } = {}) {
     const k = e.cause; caused.set(k, [...(caused.get(k) ?? []), ...ops]); }
   const people = new Map(); let last = null;
   for (const e of entries) {
-    if (!e || e.kind !== 'act') continue;
+    if (!e || e.kind !== 'request') continue;
     const ops = caused.get(e.seq); if (!ops) continue;
     const verb = e.verb === 'imported' ? e.body?.verb : e.verb;
     if (!BUILDING.has(verb)) continue;
     if (SYSTEM.has(e.actor)) continue;
     const by = e.actor, ts = e.ts ?? at(e.seq)?.ts ?? 0;
-    const made = ops.some((o) => o.verb === 'create');
+    const made = ops.some((o) => o.op === 'create');
     const whats = made ? ['made it'] : [...new Set(ops.map(phraseOf))];
     let p = people.get(by); if (!p) { p = { by, who: nameOf(by), did: [], first: ts, last: ts }; people.set(by, p); }
     p.last = ts;

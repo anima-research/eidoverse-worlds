@@ -74,7 +74,7 @@ console.log("\nthe other restated defaults:");
   // (Add Reactions seeded one too while its default was a push; that kind, impulse, is reserved since the shape audit
   // 10-16, and Reactions is added empty)
   for (const [name, ent] of [["Pendulum", { model: "store/x.glb", pos: [0, 0, 0], yaw: 0 }]] as const) {
-    const ops = (addOps(ent as any, "x", name, "") as any).ops.flat(9).filter((o: any) => o?.verb === "set" && o.args?.component === "motion");
+    const ops = (addOps(ent as any, "x", name, "") as any).ops.flat(9).filter((o: any) => o?.op === "set" && o.args?.component === "motion");
     const seed = ops[0]?.args?.value;
     check(`Add ${name} seeds a pendulum whose period/damp/maxAmp, where stated, are the registry's`, !!seed && ["period", "damp", "maxAmp"].every((k) => seed[k] === undefined || seed[k] === P[k]), j(seed));
   }

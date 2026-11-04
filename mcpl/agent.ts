@@ -6,7 +6,7 @@
 
 import { bodyOf } from "../shared/components.js";
 import { CLASSES, REACH_NOTE_MS, namedPointClass, pointClass } from "../shared/protocol/consent.js";
-import { kindOf } from "../shared/protocol/kind.js";
+import { formOf } from "../shared/protocol/kind.js";
 import { describeBody, mayLeave, resolveSeat, socketsUnder, vacatedFromMine, vacatedAt } from "../shared/sockbody.js";
 import { grabOf, describeGrab } from "../shared/grab.js";
 import { r3 } from "../shared/protocol/round.js";
@@ -93,7 +93,7 @@ import { isFiniteVec3 } from "./shape.ts";
 import { foldSkyEntry, describeSky, effectiveSky, effectiveClock, dayPhase, hoursAt } from "../shared/forecast.js";
 // the world: this process folds the authority's own stream and reads the VIEW of that fold, like the browser
 import { makeReplica } from "../shared/protocol/replica.js";
-import { PURGED } from "../shared/protocol/fold.js";
+import { REDACTED } from "../shared/protocol/fold.js";
 import { diffView } from "../shared/protocol/viewdiff.js";
 import { emptyView, idOut } from "../shared/protocol/view.js";
 import { hear } from "../shared/chatwindow.js";
@@ -230,7 +230,7 @@ function trimMeshCache(key: string, m: CollisionMesh) {
   }
 }
 type Pose = PublicPose;
-type Kind = ReturnType<typeof kindOf>;
+type Kind = ReturnType<typeof formOf>;
 type Entity = { id: string; model: string; kind: Kind; pos: number[]; yaw: number; actor: string; scale?: number;
   /** a stretched thing's per-axis scale, and a tilted one's whole rotation (the fold keeps both beside scale and yaw) */
   scale3?: number[]; q?: number[];
@@ -799,7 +799,8 @@ export class WorldAgent {
   private pendingHistory = new Map<string, (m: any) => void>();
   /** The world's protocol facts, from the snapshot ({dialect, v} from genesis, its head and world id). Building tools route through
    *  request()/sendOps() and WAIT for the authority's reply, so a refusal reaches the agent (PARITY (d)1). null until joined. */
-  cut: { dialect: string; v: number; head: number; worldId: string } | null = null;
+  /** the join snapshot's protocol line (D5): {dialect, v, minor, world: the id, name: the directory, seq} */
+  snapshot: { dialect: string; v: number; minor: number; world: string; name: string; seq: number } | null = null;
   /** The world's own fold, from the join cut and the authority's `log` stream (shared/protocol/replica.js). */
   private replica: any = null;
   /** The last building verb's turn: each is spelled after the one before it is answered. */
@@ -1135,7 +1136,7 @@ export class WorldAgent {
             if (msg.rights) this.acceptEffectiveRights(msg.rights, "world");
             break;
           case "snapshot":
-            this.cut = msg.cut ?? null;
+            this.snapshot = msg.state ? { dialect: msg.dialect, v: msg.v, minor: msg.minor, world: msg.world, name: msg.name, seq: msg.seq } : null;
             // Our surface generation, issued by the server on acceptance —
             // every attest must echo it or the receipt is refused (PR #103 B2).
             if (typeof msg.gen === "number") this.surfaceGen = msg.gen;
@@ -1149,7 +1150,7 @@ export class WorldAgent {
             // a seat rides a body's pose (notePose), so the bodies' seats come back with their next poses
             this.entities.clear(); this.people.clear(); this.mounts.clear(); this.bodySeats.clear();
             // who holds what as of this cut: the holds broadcast comes only when they change, so a join reads them here
-            { const h = (msg as any).cut?.holds; this.holdsNow = h && typeof h === "object" ? h : {}; }
+            { const h = (msg as any).holds; this.holdsNow = h && typeof h === "object" ? h : {}; }
             this.bodyReader?.forget();
             this.selfBodyGeneration = ++this.bodyGenerationCounter;
             this.selfObservedAt = Date.now();
@@ -1180,11 +1181,12 @@ export class WorldAgent {
             for (const p of msg.present) { this.rememberBody(p.id, p.avatar, p.pose, p.declares); if (typeof p.actorId === "string") this.actorIds.set(p.id, p.actorId); }
             // adopt the authority's cut and read the view of this body's own fold of it; the snapshot's `state` is the
             // chat window (chat isn't world state): its lines land in the inbox once, as history
-            if (!(msg as any).cut?.state) { this.closed = true; clearTimeout(timeout); reject(new Error("the server sent no world cut (an old server?)")); break; }
-            this.replica = makeReplica(); this.replica.adopt((msg as any).cut);
-            this.st.recentChat = structuredClone(msg.state?.recentChat ?? []);
-            this.st.chatTotal = msg.state?.chatTotal ?? 0;
-            for (const m of this.st.recentChat) this.hearSay({ seq: m.seq ?? -1, ts: m.ts, actor: m.actor, verb: "say", args: { text: m.text } }, false);
+            if (!(msg as any).state) { this.closed = true; clearTimeout(timeout); reject(new Error("the server sent no world snapshot (an old server?)")); break; }
+            this.replica = makeReplica();
+            if (!this.replica.adopt(msg)) { this.closed = true; clearTimeout(timeout); reject(new Error(`unknown-version: the world speaks ${msg.dialect} v${msg.v} minor ${msg.minor}; this agent reads another (D5)`)); break; }
+            this.st.recentChat = structuredClone(msg.chat?.recentChat ?? []);
+            this.st.chatTotal = msg.chat?.chatTotal ?? 0;
+            for (const m of this.st.recentChat) this.hearSay({ seq: m.seq ?? -1, ts: m.ts, actor: m.actor, args: { text: m.text } }, false);
             // the feet hold their height until the floors this join is about to learn about have been fitted (#235) —
             // before that, the only ground a body could find is the terrain under the building it is in
             this.feetSettling = true;
@@ -1318,7 +1320,7 @@ export class WorldAgent {
             // a gap, a purge or a new genesis: this cut can't continue; ask for a fresh snapshot on the same connection
             if (r.resync) { if (this.ws?.readyState === 1) this.ws.send(JSON.stringify(this.joinMsg())); break; }
             for (const x of r.says) {
-              const e = { seq: x.seq * 1000, ts: x.ts, actor: x.actor, verb: "say", args: { text: x.text, ...(x.to ? { to: x.to } : {}), ...(x.spoken ? { spoken: true, utt: x.utt, ...(x.t0 !== undefined ? { t0: x.t0 } : {}) } : {}) } };
+              const e = { seq: x.seq * 1000, ts: x.ts, actor: x.actor, args: { text: x.text, ...(x.to ? { to: x.to } : {}), ...(x.spoken ? { spoken: true, utt: x.utt, ...(x.t0 !== undefined ? { t0: x.t0 } : {}) } : {}) } };
               this.lastSeq = Math.max(this.lastSeq, e.seq);
               this.noteOwnSay(e);
               hear(this.st, { actor: e.actor, text: x.text, ts: e.ts, seq: e.seq });   // the chat window
@@ -1751,11 +1753,11 @@ export class WorldAgent {
   }
   /** A thing's components as this body's replica folds them now (a copy), or null: what a write planned from them pins
    *  with expect, as a person's edit does (client/lib/editwrites.js compsOf). id and the component
-   *  names are the authority's own, as requests.js encodes them. A purged component is the fold's PURGED itself, not a
+   *  names are the authority's own, as requests.js encodes them. A purged component is the fold's REDACTED itself, not a
    *  copy: the authority's expect counts a purged value equal to nothing, so a pin has to tell one apart and leave it out. */
   componentsOf(id: string): Record<string, unknown> | null {
     const c = this.replica?.st?.entities?.[id]?.c;
-    return c ? Object.fromEntries(Object.entries(c).map(([k, v]) => [k, v === PURGED ? PURGED : structuredClone(v)])) : null;
+    return c ? Object.fromEntries(Object.entries(c).map(([k, v]) => [k, v === REDACTED ? REDACTED : structuredClone(v)])) : null;
   }
   /** A host's socket children as the replica folds them now: each one's id, as the authority has it, and its components
    *  (componentsOf). A write of the host's sockets map changes the children it names and retires the rest
@@ -1763,7 +1765,7 @@ export class WorldAgent {
   socketChildrenOf(id: string): Record<string, Record<string, unknown>> {
     const out: Record<string, Record<string, unknown>> = {};
     for (const [k, e] of Object.entries((this.replica?.st?.entities ?? {}) as Record<string, any>))
-      if (e?.c?.parent?.to === id && e.c.socket && typeof e.c.socket === "object" && !Array.isArray(e.c.socket) && e.c.socket !== PURGED)
+      if (e?.c?.parent?.to === id && e.c.socket && typeof e.c.socket === "object" && !Array.isArray(e.c.socket) && e.c.socket !== REDACTED)
         out[k] = this.componentsOf(k)!;   // a socket child as liftOps counts one (isSocketC)
     return out;
   }
@@ -1774,7 +1776,7 @@ export class WorldAgent {
       seen.add(id);
       this.entities.set(id, {
         id,
-        model: String((e as any).model ?? ""), kind: kindOf(e),
+        model: String((e as any).model ?? ""), kind: formOf(e),
         pos: (e as any).pos, yaw: (e as any).yaw ?? 0,
         ...((e as any).scale != null ? { scale: (e as any).scale } : {}),
         ...(Array.isArray((e as any).scale3) ? { scale3: (e as any).scale3 } : {}),   // a stretched thing stays stretched
@@ -5690,7 +5692,7 @@ export class WorldAgent {
       L.push(`\nSince you last looked:`);
       for (const m of unread.slice(-25)) {
         L.push(m.kind === "say" ? `  ${m.who}: ${m.text}`
-          : m.kind === "act" ? `  * ${m.who} ${m.text}`
+          : m.kind === "request" ? `  * ${m.who} ${m.text}`
           : `  * ${m.who} ${m.kind === "arrive" ? "arrived" : "left"}`);
       }
     }

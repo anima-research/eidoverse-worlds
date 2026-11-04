@@ -28,7 +28,7 @@ const at = (ms) => { clock.advance(ms); };
 const wire = (x) => JSON.parse(JSON.stringify(x));   // what the authority sees: a request after the socket (I-JSON has no −0)
 function call(world, actor, verb, args = {}, step = 100) { at(step); return request(openWorld(root, world), actor, verb, wire(args)); }
 const bytes = (x) => JSON.stringify(x, (_k, v) => (Object.is(v, -0) ? "-0" : v));   // −0 visible, so the compare is bit-for-bit
-const launches = (world) => openWorld(root, world).entries.filter((e) => e.kind === "sim" && e.verb === "launch");
+const launches = (world) => openWorld(root, world).entries.filter((e) => e.kind === "physics" && e.verb === "launch");
 
 // the client's prediction, as client/lib/thingphysics.js planRelease builds it from the numbers it has locally (its pos
 // and v already rounded to 3 dp, its q from THREE's normalize — any of them may carry a −0 that the wire drops)

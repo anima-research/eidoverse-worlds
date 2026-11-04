@@ -32,7 +32,7 @@ const rnd = (() => { let s = 4242; return () => ((s = (s * 1664525 + 1013904223)
 const LIB = 'eidoverse/assets/models/crate.glb';
 
 // the one transform an edit writes (a set transform's value), or undefined
-const tfOf = (r: any) => flat(r.ops).find((o: any) => o.verb === 'set' && o.args.component === 'transform')?.args.value;
+const tfOf = (r: any) => flat(r.ops).find((o: any) => o.op === 'set' && o.args.component === 'transform')?.args.value;
 const upright = (q: number[]) => Math.abs(q[0]) < 1e-12 && Math.abs(q[2]) < 1e-12;
 // through the real door: seed the record as a fresh thing, send what the edit planned, read the view back
 const W = scratchWorld('channelbox');

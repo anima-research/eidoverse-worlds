@@ -5,7 +5,7 @@
 import { ONE_PLACE } from "../../components.js";
 import { checkSockets, checkSocket, checkStation } from "../../sockbody.js";
 import { checkGrabbable } from "../../grab.js";
-import { isEntityId, isComponent, isIdentity, PURGED } from "../fold.js";
+import { isEntityId, isComponent, isIdentity, REDACTED } from "../fold.js";
 import { COMPONENTS, defOf, registered, baseOf, isNamespaced, outOfRange, rangeWords } from "../componentspec.js";
 import { partSlot } from "../names.js";
 import * as TR from "../sculpt.js";
@@ -402,7 +402,7 @@ function schemaCheck(at, comp, v, { carry = false } = {}) {
 // number"); a field it changes must be inside a component the thing has (a toggle on a plain crate wrote an invisible
 // openable); toggle flips true/false fields; an impulse swings a pendulum. Rights stay a use-time question (reactionCap).
 function effectCheck(s, id, act, h) {
-  const c = s.entities[id]?.c ?? {}; const isObj = (x) => x && typeof x === "object" && !Array.isArray(x) && x !== PURGED;
+  const c = s.entities[id]?.c ?? {}; const isObj = (x) => x && typeof x === "object" && !Array.isArray(x) && x !== REDACTED;
   const where = `reactions.${act}`;
   const would = (comp, value) => { try { valueCheck(s, { id, comp, value }); }
     catch (e) { if (!(e instanceof Refusal)) throw e; refuse(e.code, `${where} would set ${id}.${comp} to something the authority refuses: ${e.reason}`, e.fix, e.didYouMean ? { didYouMean: e.didYouMean } : undefined); } };

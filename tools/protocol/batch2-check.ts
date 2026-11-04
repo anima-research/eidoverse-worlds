@@ -237,7 +237,7 @@ const cases: Case[] = [
 
   // ---------------- T: the translator ----------------
   { id: "T1", what: "translate-v1: Mica's v1 story becomes {title, text + her practice as a paragraph, marks: [the fire]}; plantedBy and assetAuthor ride in imported:story; the authority then takes an edit of it", run(s) {
-      const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
+      const old = [{ seq: 0, ts: 1, actor: "world", args: { v: 2, dialect: "eidoverse-log" } },
         { seq: 1, ts: 2, actor: "mica", verb: "spawn", args: { id: "fire", lib: "crate", pos: [3, 0, 0] } },
         { seq: 2, ts: 3, actor: "mica", verb: "spawn", args: { id: "tree", lib: "crate", pos: [0, 0, 0] } },
         { seq: 3, ts: 4, actor: "mica", verb: "comp", args: { id: "tree", type: "story", data: { title: "The first marker tree", text: "Mica's fire — already burning when FC arrived.", assetAuthor: "SkyeShark", plantedBy: "mica", practice: "One tree, renewing, not accumulating. The next event belongs to the next planter.", markedEntity: "fire" } } }];
@@ -436,10 +436,10 @@ const cases: Case[] = [
       const f = HR.historyView; if (!f) return { none: true };
       const nameOf = (id: string) => ({ "u-a": "Ann", "u-b": "Bob" } as any)[id] ?? id;
       const E = [
-        { seq: 1, kind: "act", actor: "u-b", verb: "create", ts: 1000, body: { request: { id: "lamp" } } }, { seq: 2, kind: "change", actor: "u-b", verb: "batch", ts: 1000, cause: 1, body: {} },
-        { seq: 3, kind: "act", actor: "u-a", verb: "set", ts: 2000, body: { request: { id: "lamp", component: "light" } } }, { seq: 4, kind: "change", actor: "u-a", verb: "set", ts: 2000, cause: 3, body: {} },
-        { seq: 5, kind: "act", actor: "u-a", verb: "set", ts: 3000, body: { request: { id: "chair", component: "label" } } }, { seq: 6, kind: "change", actor: "u-a", verb: "set", ts: 3000, cause: 5, body: {} },
-        { seq: 7, kind: "act", actor: "u-b", verb: "delete", ts: 4000, body: { request: { id: "lamp" }, refused: { code: "rights" } } },
+        { seq: 1, kind: "request", actor: "u-b", verb: "create", ts: 1000, body: { request: { id: "lamp" } } }, { seq: 2, kind: "change", actor: "u-b", verb: "batch", ts: 1000, cause: 1, body: {} },
+        { seq: 3, kind: "request", actor: "u-a", verb: "set", ts: 2000, body: { request: { id: "lamp", component: "light" } } }, { seq: 4, kind: "change", actor: "u-a", verb: "set", ts: 2000, cause: 3, body: {} },
+        { seq: 5, kind: "request", actor: "u-a", verb: "set", ts: 3000, body: { request: { id: "chair", component: "label" } } }, { seq: 6, kind: "change", actor: "u-a", verb: "set", ts: 3000, cause: 5, body: {} },
+        { seq: 7, kind: "request", actor: "u-b", verb: "delete", ts: 4000, body: { request: { id: "lamp" }, refused: { code: "rights" } } },
       ];
       const ann = f(E, nameOf, { mode: "person", who: "u-a" });
       const top = f(E, nameOf, { mode: "top" });
@@ -478,11 +478,11 @@ const cases: Case[] = [
   // review of #260: whether a request fits is judged on the lines as append writes them, chain fields included, so a write
   // within a head and signature of the 1 MiB cap is refused whole: never an act written and its change then thrown
   { id: "A10", what: "the largest entry fits() accepts in a signed log is one append writes: fits judges the line with its chain fields", run(s) { cast(s);
-      const w = s.w(); const e = (n: number) => ({ kind: "act", actor: "system", verb: "probe", body: { blob: "x".repeat(n) } });
+      const w = s.w(); const e = (n: number) => ({ kind: "request", actor: "system", verb: "probe", body: { blob: "x".repeat(n) } });
       const fits = (n: number) => { try { w.fits(e(n)); return true; } catch { return false; } };
       let lo = 1000000, hi = 1048576; while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (fits(mid)) lo = mid; else hi = mid; }   // lo: the largest that fits
       let wrote: string; try { w.append(e(lo)); wrote = "ok"; } catch (x: any) { wrote = String(x?.message).slice(0, 120); }
-      return { signed: !!s.entries().findLast((x: any) => x.kind === "act")?.sig, lo, wrote }; },
+      return { signed: !!s.entries().findLast((x: any) => x.kind === "request")?.sig, lo, wrote }; },
     good: (o) => o.signed && o.wrote === "ok" }
 ];
 

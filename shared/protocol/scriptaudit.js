@@ -27,7 +27,7 @@
 //             two read differently (they took different paths through the script), or when the second re-run fails. An unlogged
 //             grab or release is the same.
 // Replay of the WORLD never runs code (L1); this re-run is an optional audit view.
-import { fold, opsOf, followUpsOf, jcs } from "./fold.js";
+import { fold, opsOf, cascadeOf, jcs } from "./fold.js";
 import { elide, seedOf, stampMotions } from "./scriptrules.js";
 
 const isE = (e) => e && typeof e === "object" && typeof e.kind === "string";
@@ -35,23 +35,23 @@ const isScriptActor = (a) => typeof a === "string" && a.startsWith("script:");
 const quiet = (e) => { try { return opsOf(e); } catch { return []; } };
 // a purged cause act (§12: its body is the {commit} stub, or a purge entry names it) says nothing about whose rights admitted
 // it: unknown (null), as the authority's entryBy reads it (READBACK) — never its actor, which would be the visitor's
-const purgedIn = (L) => { const p = new Set(); L.forEach((e, i) => { if (isE(e) && e.kind === "purge" && Array.isArray(e.body?.values)) for (const t of e.body.values) if (t && Number.isInteger(t.seq) && t.seq < i && t.op === undefined) p.add(t.seq); }); return p; };
+const purgedIn = (L) => { const p = new Set(); L.forEach((e, i) => { if (isE(e) && e.kind === "redaction" && Array.isArray(e.body?.values)) for (const t of e.body.values) if (t && Number.isInteger(t.seq) && t.seq < i && t.op === undefined) p.add(t.seq); }); return p; };
 const stub = (b) => !!b && typeof b === "object" && Object.keys(b).length > 0 && Object.keys(b).every((k) => k === "commit" || k === "salt");
 const PURGED_OF = new WeakMap();
 function by(L, seq) { const e = L[seq], c = L[e.cause];
-  if (isE(c) && c.kind === "act") { let P = PURGED_OF.get(L); if (!P) PURGED_OF.set(L, (P = purgedIn(L)));
+  if (isE(c) && c.kind === "request") { let P = PURGED_OF.get(L); if (!P) PURGED_OF.set(L, (P = purgedIn(L)));
     if (P.has(e.cause) || stub(c.body)) return { seq, rights: null }; }
-  const rights = isE(c) && c.kind === "act" ? (c.body?.capability?.author || (isScriptActor(c.actor) && c.body?.sponsor) || c.actor) : e.actor;
+  const rights = isE(c) && c.kind === "request" ? (c.body?.capability?.author || (isScriptActor(c.actor) && c.body?.sponsor) || c.actor) : e.actor;
   return { seq, rights }; }
 /** creator of (id, comp) as of seq `upto` (inclusive): { seq, rights } or null */
 export function creatorAt(L, id, comp, upto) {
   let found = null, restored = false;
-  for (let i = upto; i >= 0; i--) { const e = L[i]; if (!isE(e) || e.kind !== "change") continue; const ops = quiet(e); const fu = followUpsOf(e);
+  for (let i = upto; i >= 0; i--) { const e = L[i]; if (!isE(e) || e.kind !== "change") continue; const ops = quiet(e); const fu = cascadeOf(e);
     for (let k = ops.length - 1; k >= 0; k--) { const o = ops[k]; if (o.id !== id) continue;
-      if (o.verb === "set" && fu.has(k)) { if (o.comp === comp) restored = true; continue; }   // the authority's follow-up authors nothing (the entry's followUps, review r9 H1)
-      if (o.verb === "delete" && fu.has(k) && restored && (o.comp === comp || o.comp === undefined)) { restored = false; continue; }   // reversed by a follow-up restore (r10 M2)
-      if (o.verb === "set" && o.comp === comp) { found = i; restored = false; }
-      else if ((o.verb === "delete" && (o.comp === comp || o.comp === undefined)) || o.verb === "create") return found === null ? null : by(L, found); } }
+      if (o.op === "set" && fu.has(k)) { if (o.comp === comp) restored = true; continue; }   // the authority's follow-up authors nothing (the entry's cascade, review r9 H1)
+      if (o.op === "delete" && fu.has(k) && restored && (o.comp === comp || o.comp === undefined)) { restored = false; continue; }   // reversed by a follow-up restore (r10 M2)
+      if (o.op === "set" && o.comp === comp) { found = i; restored = false; }
+      else if ((o.op === "delete" && (o.comp === comp || o.comp === undefined)) || o.op === "create") return found === null ? null : by(L, found); } }
   return found === null ? null : by(L, found);
 }
 /** sponsor of script key (id, comp) as of seq `upto`: the latest write to it in its current life that changed more than
@@ -60,18 +60,18 @@ export function sponsorAt(L, id, comp, upto) {
   if (!creatorAt(L, id, comp, upto)) return null;
   const W = []; // newest first, current life only
   let restored = false;
-  scan: for (let i = upto; i >= 0; i--) { const e = L[i]; if (!isE(e) || e.kind !== "change") continue; const ops = quiet(e); const fu = followUpsOf(e);
+  scan: for (let i = upto; i >= 0; i--) { const e = L[i]; if (!isE(e) || e.kind !== "change") continue; const ops = quiet(e); const fu = cascadeOf(e);
     for (let k = ops.length - 1; k >= 0; k--) { const o = ops[k]; if (o.id !== id) continue;
-      if (o.verb === "set" && fu.has(k)) { if (o.comp === comp) restored = true; continue; }
-      if (o.verb === "delete" && fu.has(k) && restored && (o.comp === comp || o.comp === undefined)) { restored = false; continue; }   // r10 M2
-      if (o.verb === "set" && o.comp === comp) { restored = false; W.push({ seq: i, value: o.value }); }
-      else if (o.verb === "create" || (o.verb === "delete" && (o.comp === comp || o.comp === undefined))) break scan; } }
+      if (o.op === "set" && fu.has(k)) { if (o.comp === comp) restored = true; continue; }
+      if (o.op === "delete" && fu.has(k) && restored && (o.comp === comp || o.comp === undefined)) { restored = false; continue; }   // r10 M2
+      if (o.op === "set" && o.comp === comp) { restored = false; W.push({ seq: i, value: o.value }); }
+      else if (o.op === "create" || (o.op === "delete" && (o.comp === comp || o.comp === undefined))) break scan; } }
   const unp = (v) => { if (!v || typeof v !== "object" || Array.isArray(v)) return v; const { paused, ...rest } = v; return rest; };
   for (let k = 0; k < W.length; k++) if (k === W.length - 1 || W[k].value === undefined || W[k + 1].value === undefined || jcs(unp(W[k].value)) !== jcs(unp(W[k + 1].value))) return by(L, W[k].seq);
   return null;
 }
-export function depthOf(L, seq) { let n = 0, e = L[seq], g = 0; while (isE(e) && isScriptActor(e.actor) && g++ < 10000) { if (e.kind === "act" && e.verb === "script") n++; e = L[e.cause]; } return n; }
-const norm = (ops) => jcs(ops.map(({ verb, id, comp, value }) => ({ verb, id, ...(comp !== undefined ? { comp } : {}), ...(value !== undefined ? { value } : {}) })));
+export function depthOf(L, seq) { let n = 0, e = L[seq], g = 0; while (isE(e) && isScriptActor(e.actor) && g++ < 10000) { if (e.kind === "request" && e.verb === "script") n++; e = L[e.cause]; } return n; }
+const norm = (ops) => jcs(ops.map(({ op, id, comp, value }) => ({ op, id, ...(comp !== undefined ? { comp } : {}), ...(value !== undefined ? { value } : {}) })));
 
 /**
  * @param {any[]} L the log (readLog's entries)
@@ -91,7 +91,7 @@ const WHO_WHY = "its result depends on who was near or what someone is called, w
 export function auditScripts(L, getBlob, { run = null, depth: maxD = 8 } = {}) {
   const flags = [], skipped = []; let acts = 0, maxDepth = 0, reran = 0;
   L.forEach((a, seq) => {
-    if (!isE(a) || a.kind !== "act" || !isScriptActor(a.actor) || a.verb !== "script") return; acts++;
+    if (!isE(a) || a.kind !== "request" || !isScriptActor(a.actor) || a.verb !== "script") return; acts++;
     const id = a.actor.slice("script:".length), b = a.body ?? {};
     const c = sponsorAt(L, id, b.script, seq - 1);
     if (!c || c.rights !== b.sponsor || c.seq !== b.sponsorAt) flags.push({ seq, check: "sponsor", claimed: { sponsor: b.sponsor, sponsorAt: b.sponsorAt }, view: c });
@@ -107,7 +107,7 @@ export function auditScripts(L, getBlob, { run = null, depth: maxD = 8 } = {}) {
     const trig = Number.isInteger(b.trigger?.seq) ? L[b.trigger.seq] : null; const event = { ...b.event };
     if (b.on === "say") { if (!isE(trig) || typeof trig.body?.text !== "string") { flags.push({ seq, check: "input", why: "the say it heard is gone (purged?): it can't be re-run" }); return; }
       event.text = trig.body.text; if (trig.body.to !== undefined) event.to = trig.body.to; }
-    if (b.on === "use" && isE(trig) && trig.body?.request?.args !== undefined) event.args = trig.body.request.args;
+    if (b.on === "use" && isE(trig) && trig.body?.args?.args !== undefined) event.args = trig.body.args.args;
     const anonWho = ["enter", "leave", "grab", "release"].includes(b.on) && event.by === undefined; if (anonWho) event.by = ARRIVAL_STAND_IN;   // an unlogged grab records no identity either (r9 O2)
     // no wall clock on a re-run: fuel (deterministic) is the limit; the auditor's machine may be slower than the authority's
     const rerun = (ev) => run({ text: blob.text, self: id, key: b.script, event: ev, knobs: v.knobs ?? {}, now: a.ts, seed: b.seed, api: b.api ?? 1, st, reads: b.reads ?? { near: [], count: [], names: 0 }, limits: { wallMs: 10000 } });

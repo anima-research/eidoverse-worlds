@@ -135,7 +135,7 @@ let H = "";
   const r = USE(W, "copy-a", "increment", "bld-a");
   if (red("C5")) USE(W, "copy-a", "increment", "bld-a");
   const E = W.entries().slice(n0).map((e: any, i: number) => ({ seq: n0 + i, kind: e.kind, actor: e.actor, verb: e.verb, cause: e.cause, body: e.body }));
-  const use = E.filter((e) => e.kind === "act" && e.verb === "use"), scr = E.filter((e) => e.kind === "act" && e.verb === "script"), ch = E.filter((e) => e.kind === "change");
+  const use = E.filter((e) => e.kind === "request" && e.verb === "use"), scr = E.filter((e) => e.kind === "request" && e.verb === "script"), ch = E.filter((e) => e.kind === "change");
   // §8: the visitor's use is ITS act; the activation is one act (actor script:<entity>, cause = the use, naming the sponsor and
   // the trigger) plus ONE change caused by it. Three entries, each once; every cause chain ends at the person.
   check("C5 a builder's use lands as one use act (actor), one script act caused by it (sponsor + trigger named), and ONE change caused by that: three entries, nothing else",
@@ -156,10 +156,10 @@ let H = "";
 }
 
 // ---- C7 server restart does not rerun old actions ----
-{ const n0 = W.entries().length; const t0 = textOf(W, "copy-a"); const scripts0 = W.entries().filter((e: any) => e.kind === "act" && e.verb === "script").length;
+{ const n0 = W.entries().length; const t0 = textOf(W, "copy-a"); const scripts0 = W.entries().filter((e: any) => e.kind === "request" && e.verb === "script").length;
   W.reopen();
   if (red("C7")) USE(W, "copy-a", "increment", "bld-a");
-  const scripts1 = W.entries().filter((e: any) => e.kind === "act" && e.verb === "script").length;
+  const scripts1 = W.entries().filter((e: any) => e.kind === "request" && e.verb === "script").length;
   check("C7 the world dir closed and reopened: the count equals the logged value and the entry count is unchanged — nothing re-executed",
     W.entries().length === n0 && textOf(W, "copy-a") === t0 && t0 === "2" && scripts1 === scripts0, J({ n0, n1: W.entries().length, t0, t1: textOf(W, "copy-a"), scripts0, scripts1 }));
 }
@@ -221,7 +221,7 @@ let H = "";
   // …but their use of `reset` (open to all) runs the script with the SPONSOR's rights: the act names sponsor bld-b, trigger vis
   const invoker = red("C12") ? "bld-b" : "vis";
   const r = USE(W, "copy-b", "reset", invoker);
-  const scr = W.entries().slice(n0).find((e: any) => e.kind === "act" && e.verb === "script"); const ch = W.entries().slice(n0).find((e: any) => e.kind === "change");
+  const scr = W.entries().slice(n0).find((e: any) => e.kind === "request" && e.verb === "script"); const ch = W.entries().slice(n0).find((e: any) => e.kind === "change");
   const notMine = W.call("delete", { id: "copy-a" }, "bld-b");      // bld-b didn't make copy-a
   const mine = W.call("delete", { id: "copy-b" }, "bld-b");         // bld-b made copy-b
   check("C12 a non-owner builder may not delete another's copy; its owner may; a visitor's use runs with the SPONSOR's rights (act names sponsor ≠ trigger) where the visitor's own set is refused",

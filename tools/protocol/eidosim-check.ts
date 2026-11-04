@@ -109,16 +109,16 @@ const schedules = (mkf: () => any, T: number) => {
 }
 { // S6 (audit FIX-1, PHYSICS §1): a launch's rest covers every body its flight set moving: restsOf reads each transform
   const L: any[] = [
-    { kind: "sim", actor: "ann", verb: "launch", body: { id: "a", p: [0, 1, 0], v: [1, 0, 0], handled: ["ann"] } },
-    { kind: "change", actor: "sim", cause: 0, verb: "batch", body: { ops: [
-      { verb: "set", id: "a", comp: "transform", value: { pos: [1, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } },
-      { verb: "set", id: "b", comp: "transform", value: { pos: [2, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } }] } },
-    { kind: "act", actor: "system", verb: "settle", body: { id: "b", onto: "deck", rest: 1 } },
+    { kind: "physics", actor: "ann", verb: "launch", body: { id: "a", p: [0, 1, 0], v: [1, 0, 0], handled: ["ann"] } },
+    { kind: "change", actor: "sim", cause: 0, op: "batch", body: { ops: [
+      { op: "set", id: "a", comp: "transform", value: { pos: [1, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } },
+      { op: "set", id: "b", comp: "transform", value: { pos: [2, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } }] } },
+    { kind: "request", actor: "system", verb: "settle", body: { id: "b", onto: "deck", rest: 1 } },
   ];
   const r = restsOf(L);
   ok(r.length === 2 && r[0].id === "a" && r[1].id === "b" && J(r[1].at) === J([2, 0, 0]) && r[1].onto === "deck" && !r[0].onto,
     "S6 a rest that moved two bodies is two rests, each with its own settle", r);
-  const one = restsOf([L[0], { kind: "change", actor: "sim", cause: 0, verb: "set", body: { id: "a", comp: "transform", value: { pos: [1, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } }]);
+  const one = restsOf([L[0], { kind: "change", actor: "sim", cause: 0, op: "set", body: { id: "a", comp: "transform", value: { pos: [1, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } }]);
   ok(one.length === 1 && one[0].id === "a" && J(one[0].at) === J([1, 0, 0]), "S6 …and the one-body rest every older log holds reads as before", one);
 }
 { // S7 (audit FIX-2): a joiner decides for itself whether it carries the cut's engine build

@@ -51,8 +51,8 @@ export function expectOf(ids, comps, base = null) {
 
 /** The (id, component) pairs a request sets: what a gesture's expect covers. */
 export function writesOf(req) {
-  const ops = req.verb === 'batch' ? req.args.ops : [req];
-  return ops.filter((o) => o.verb === 'set').map((o) => [idOut(o.args.id), o.args.component]);
+  const ops = req.op === 'batch' ? req.args.ops : [req];
+  return ops.filter((o) => o.op === 'set').map((o) => [idOut(o.args.id), o.args.component]);
 }
 
 /** May this viewer lift a lock (§5: builders and owners)? The lock question and the Hierarchy's lock icons ask this. */
@@ -219,7 +219,7 @@ export function blueprints() {
 /** Is this thing (or anything it rides) locked, as the authority reads it (truthy, a purged value isn't)? */
 export function lockedBy(id) {
   const st = replica.st; let x = idIn(id), n = 0;
-  while (x && n++ < 33) { const v = st?.entities?.[x]?.c.lock; if (v !== undefined && !(v && v.purged === true) && !!v) return idOut(x); x = st?.entities?.[x]?.c.parent?.to; }
+  while (x && n++ < 33) { const v = st?.entities?.[x]?.c.lock; if (v !== undefined && !(v && v.redacted === true) && !!v) return idOut(x); x = st?.entities?.[x]?.c.parent?.to; }
   return null;
 }
 

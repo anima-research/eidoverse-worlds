@@ -1,0 +1,270 @@
+{
+ "what": "minor 1: the log vocabulary (docs/DESIGN-log-vocabulary.md D1, D3): a minor-0 reader refuses every minor-1 world whole (unknown-version, no state); the minor-1 reader folds it. These are the kernel-check's vectors (old-fold.js = the minor-0 reader at 62d4a8c7f) and the gate's M2.",
+ "vectors": [
+  {
+   "name": "request-change",
+   "entries": [
+    {
+     "kind": "genesis",
+     "actor": "system",
+     "body": {
+      "dialect": "eidoverse-log",
+      "v": 4,
+      "minor": 1,
+      "nonce": "XWVu1u7BpaZTDFSETYiphg",
+      "owners": [
+       [
+        "ed25519:BP7aKo17f474DD1aBSLG0a3Pb29Qs3yqQ6Ve0wSRVD0"
+       ]
+      ],
+      "sequencer": "ed25519:rRoIPhqlc8rDxC1GZlfHOe1IBJYWQ8MDNg9QuZzMsic"
+     }
+    },
+    {
+     "world": "sha256:61f58404bbd3acafd901ec8eb8a26427a1eeeb9d92a8f67c2cd81ea91a2ce0b8",
+     "kind": "request",
+     "ts": 1001,
+     "actor": "alice",
+     "verb": "create",
+     "body": {
+      "args": {
+       "id": "lamp"
+      },
+      "salt": "UUPZ_XwQSbZtpmdmt87bSQ"
+     }
+    },
+    {
+     "world": "sha256:61f58404bbd3acafd901ec8eb8a26427a1eeeb9d92a8f67c2cd81ea91a2ce0b8",
+     "kind": "change",
+     "ts": 1001,
+     "actor": "alice",
+     "cause": 1,
+     "op": "create",
+     "body": {
+      "id": "lamp"
+     }
+    },
+    {
+     "world": "sha256:61f58404bbd3acafd901ec8eb8a26427a1eeeb9d92a8f67c2cd81ea91a2ce0b8",
+     "kind": "change",
+     "ts": 1001,
+     "actor": "alice",
+     "cause": 1,
+     "op": "set",
+     "body": {
+      "id": "lamp",
+      "comp": "label",
+      "value": "a lamp",
+      "salt": "5hGJikDRuwCGCS7slx6mug"
+     }
+    }
+   ]
+  },
+  {
+   "name": "refused-request-argNames",
+   "entries": [
+    {
+     "kind": "genesis",
+     "actor": "system",
+     "body": {
+      "dialect": "eidoverse-log",
+      "v": 4,
+      "minor": 1,
+      "nonce": "XWVu1u7BpaZTDFSETYiphg",
+      "owners": [
+       [
+        "ed25519:BP7aKo17f474DD1aBSLG0a3Pb29Qs3yqQ6Ve0wSRVD0"
+       ]
+      ],
+      "sequencer": "ed25519:rRoIPhqlc8rDxC1GZlfHOe1IBJYWQ8MDNg9QuZzMsic"
+     }
+    },
+    {
+     "world": "sha256:61f58404bbd3acafd901ec8eb8a26427a1eeeb9d92a8f67c2cd81ea91a2ce0b8",
+     "kind": "request",
+     "ts": 1001,
+     "actor": "bob",
+     "verb": "delete",
+     "body": {
+      "argNames": [
+       "id"
+      ],
+      "refused": {
+       "code": "locked"
+      },
+      "salt": "UWGy2eg11rNn2Sl6urvUTg"
+     }
+    }
+   ]
+  },
+  {
+   "name": "batch-cascade-physics",
+   "entries": [
+    {
+     "kind": "genesis",
+     "actor": "system",
+     "body": {
+      "dialect": "eidoverse-log",
+      "v": 4,
+      "minor": 1,
+      "nonce": "XWVu1u7BpaZTDFSETYiphg",
+      "owners": [
+       [
+        "ed25519:BP7aKo17f474DD1aBSLG0a3Pb29Qs3yqQ6Ve0wSRVD0"
+       ]
+      ],
+      "sequencer": "ed25519:rRoIPhqlc8rDxC1GZlfHOe1IBJYWQ8MDNg9QuZzMsic"
+     }
+    },
+    {
+     "world": "sha256:61f58404bbd3acafd901ec8eb8a26427a1eeeb9d92a8f67c2cd81ea91a2ce0b8",
+     "kind": "request",
+     "ts": 1002,
+     "actor": "alice",
+     "verb": "delete",
+     "body": {
+      "args": {
+       "id": "shelf"
+      },
+      "salt": "UUPZ_XwQSbZtpmdmt87bSQ"
+     }
+    },
+    {
+     "world": "sha256:61f58404bbd3acafd901ec8eb8a26427a1eeeb9d92a8f67c2cd81ea91a2ce0b8",
+     "kind": "change",
+     "ts": 1002,
+     "actor": "alice",
+     "cause": 1,
+     "op": "batch",
+     "body": {
+      "ops": [
+       {
+        "op": "create",
+        "id": "vase"
+       },
+       {
+        "op": "set",
+        "id": "vase",
+        "comp": "transform",
+        "value": {
+         "pos": [
+          0,
+          0.9,
+          0
+         ]
+        },
+        "salt": "5hGJikDRuwCGCS7slx6mug"
+       }
+      ],
+      "cascade": [
+       1
+      ]
+     }
+    },
+    {
+     "world": "sha256:61f58404bbd3acafd901ec8eb8a26427a1eeeb9d92a8f67c2cd81ea91a2ce0b8",
+     "kind": "physics",
+     "ts": 1002,
+     "actor": "alice",
+     "cause": 1,
+     "verb": "launch",
+     "body": {
+      "id": "vase",
+      "p": [
+       0,
+       0.9,
+       0
+      ],
+      "yaw": 0,
+      "q": [
+       0,
+       0,
+       0,
+       1
+      ],
+      "v": [
+       0,
+       0,
+       0
+      ],
+      "handled": [
+       "alice"
+      ],
+      "salt": "Gz4fypccq-7GOARwIgA8Vw"
+     }
+    }
+   ]
+  },
+  {
+   "name": "say-governance-no-verb",
+   "entries": [
+    {
+     "kind": "genesis",
+     "actor": "system",
+     "body": {
+      "dialect": "eidoverse-log",
+      "v": 4,
+      "minor": 1,
+      "nonce": "XWVu1u7BpaZTDFSETYiphg",
+      "owners": [
+       [
+        "ed25519:BP7aKo17f474DD1aBSLG0a3Pb29Qs3yqQ6Ve0wSRVD0"
+       ]
+      ],
+      "sequencer": "ed25519:rRoIPhqlc8rDxC1GZlfHOe1IBJYWQ8MDNg9QuZzMsic"
+     }
+    },
+    {
+     "world": "sha256:61f58404bbd3acafd901ec8eb8a26427a1eeeb9d92a8f67c2cd81ea91a2ce0b8",
+     "kind": "say",
+     "ts": 1003,
+     "actor": "alice",
+     "body": {
+      "text": "hi",
+      "salt": "Gz4fypccq-7GOARwIgA8Vw"
+     }
+    },
+    {
+     "world": "sha256:61f58404bbd3acafd901ec8eb8a26427a1eeeb9d92a8f67c2cd81ea91a2ce0b8",
+     "kind": "governance",
+     "ts": 1004,
+     "actor": "system",
+     "body": {
+      "key": "ed25519:iUs8tlcXt9q0Zq1OuuCX-llZgf5YdLA9vJ5aoaEFpkg",
+      "sigs": [
+       {
+        "key": "ed25519:rRoIPhqlc8rDxC1GZlfHOe1IBJYWQ8MDNg9QuZzMsic",
+        "v": "AA"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "genesis-rewindWindow",
+   "entries": [
+    {
+     "kind": "genesis",
+     "actor": "system",
+     "body": {
+      "dialect": "eidoverse-log",
+      "v": 4,
+      "minor": 1,
+      "nonce": "XWVu1u7BpaZTDFSETYiphg",
+      "owners": [
+       [
+        "ed25519:BP7aKo17f474DD1aBSLG0a3Pb29Qs3yqQ6Ve0wSRVD0"
+       ]
+      ],
+      "quorum": [
+       1
+      ],
+      "rewindWindow": 500,
+      "sequencer": "ed25519:rRoIPhqlc8rDxC1GZlfHOe1IBJYWQ8MDNg9QuZzMsic"
+     }
+    }
+   ]
+  }
+ ]
+}

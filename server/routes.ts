@@ -14,7 +14,7 @@ import { addressOf } from "./peer.ts";   // the client's address, from a trusted
 import { sfuDiag } from "./sfuadapter.ts";
 import { join, normalize, dirname, basename, sep } from "node:path";
 import { hexOfLibRel } from "../shared/eido.js";
-import { kindOf } from "../shared/protocol/kind.js";
+import { formOf } from "../shared/protocol/kind.js";
 import { isReservedAnimName } from "../shared/animdefs.js";
 import { eidoFile, eidoRel } from "./eidoindex.ts";
 import { randomBytes } from "node:crypto";
@@ -639,7 +639,7 @@ const ROUTES: Route[] = [
       for (const [eid, e] of Object.entries(w.state.entities)) {
         const file = withBoxes && e.model ? resolveLibFile(e.model) : null;
         const sum = file ? await summarizeGlb(file) : null;
-        out.push({ ...record(eid, e), kind: kindOf(e), ...(sum ? { bbox: sum.bbox, tris: sum.tris } : {}) });
+        out.push({ ...record(eid, e), kind: formOf(e), ...(sum ? { bbox: sum.bbox, tris: sum.tris } : {}) });
       }
       return j({ world: wname, entities: out });
     },

@@ -3,7 +3,7 @@
 // rollbacks never carry it (the destination derives its own). The later signed in-log checkpoint (§2) is a different thing.
 import fs from "node:fs";
 import path from "node:path";
-import { PURGED, checkEntry, opsOf, applyInPlace, cloneState, worldIdOf, jcs, sha256, Malformed } from "../shared/protocol/fold.js";
+import { REDACTED, checkEntry, opsOf, applyInPlace, cloneState, worldIdOf, jcs, sha256, Malformed } from "../shared/protocol/fold.js";
 import { replaceDurable } from "./durable.ts";
 import { VIEW_FILES } from "./foldviews.ts";
 
@@ -31,14 +31,14 @@ export function foldKey(): string {
 export function encodeState(st: Any) {
   const entities: Any = {};
   for (const id of Object.keys(st.entities)) { const e = st.entities[id], c: Any = {};
-    for (const k of Object.keys(e.c)) c[k] = e.c[k] === PURGED ? { purged: true } : { v: e.c[k] };
+    for (const k of Object.keys(e.c)) c[k] = e.c[k] === REDACTED ? { redacted: true } : { v: e.c[k] };
     entities[id] = { born: e.born, c }; }
   return { status: st.status, v: st.v, worldId: st.worldId, diagnostics: st.diagnostics, entities };
 }
 function decodeState(o: Any) {
   const entities = Object.create(null);
   for (const id of Object.keys(o.entities)) { const e = o.entities[id], c = Object.create(null);
-    for (const k of Object.keys(e.c)) { const x = e.c[k]; if (x?.purged === true) c[k] = PURGED; else if (x && "v" in x) c[k] = x.v; else throw new Error(`entity ${id}.${k} is neither a value nor purged`); }
+    for (const k of Object.keys(e.c)) { const x = e.c[k]; if (x?.redacted === true) c[k] = REDACTED; else if (x && "v" in x) c[k] = x.v; else throw new Error(`entity ${id}.${k} is neither a value nor purged`); }
     entities[id] = { born: e.born, c }; }
   return { status: o.status, v: o.v, worldId: o.worldId, entities, diagnostics: o.diagnostics };
 }
@@ -93,7 +93,7 @@ export function resumeFold(hit: Hit, entries: Any[], why: (s: string) => void, s
     const e = entries[s];
     if (!isE(e)) { why(`line ${s} is malformed`); return null; }
     try { checkEntry(e, s); } catch { why(`line ${s} is malformed`); return null; }
-    if (!["change", "act", "sim", "say"].includes(e.kind)) { why(`line ${s} is a ${e.kind}`); return null; }
+    if (!["change", "request", "physics", "say"].includes(e.kind)) { why(`line ${s} is a ${e.kind}`); return null; }
     if (e.world !== st.worldId || !Number.isInteger(e.ts) || e.ts < lastTs) { why(`line ${s} is another world's or goes back in time`); return null; }
     lastTs = e.ts;
     if (e.kind === "change") try { applyInPlace(st, opsOf(e), s); } catch { why(`line ${s} needs the whole log's purges`); return null; }

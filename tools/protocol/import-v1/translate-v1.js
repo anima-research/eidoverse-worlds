@@ -123,7 +123,7 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@43";
+export const TRANSLATOR = "eidoverse/translate-v1@44";   // @44: minor 1, the log vocabulary (docs/DESIGN-log-vocabulary.md)
 // @43 (bot review 440, 441): a valid exit with no helm child rides imported:vehicle; a model with its own light still gets main's inferred lamps. Output differs there.
 // @42 (bot review 58): where any water writes a speed area, every other water gets physics-area {factor: 1, modes: [swim]}, so the water a body is in sets its stroke (main read the selected volume's own speed). Output differs there.
 // @41 (bot review 59): what main's air held beyond its boxes' centre, size and q (another key, a box's other keys, an entry that is no box) rides imported:air, listed. Output differs there.
@@ -278,7 +278,7 @@ const b64url = (bytes) => { let s = ""; for (const x of bytes) s += String.fromC
 // attestation) can vouch that a key is the v1 owner's. A world FOUNDED new (create-world ownerKey) is a different path.
 export function translatedGenesis(oldEntries, { key = LAB_DOOR_KEY, operator = key, nonce } = {}) {
   if (!nonce) { const h = sha256(oldEntries.map((e) => JSON.stringify(e)).join("\n")); nonce = b64url(Uint8Array.from(h.slice(0, 32).match(/../g), (x) => parseInt(x, 16))); }
-  return { dialect: DIALECT, v: VERSION, minor: 0, nonce, owners: [[], [operator]], sequencer: key };
+  return { dialect: DIALECT, v: VERSION, minor: 1, nonce, owners: [[], [operator]], sequencer: key };
 }
 export { enc, encName, dec };
 const yawQ = (y) => [0, Math.sin(y / 2), 0, Math.cos(y / 2)];
@@ -1019,18 +1019,18 @@ export const hasEpoch = (oldEntries) => oldEntries.some((e) => e?.verb === "epoc
 const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 export function diff(prev, now) {
   const ops = [];
-  for (const id of Object.keys(prev)) if (!(id in now)) ops.push({ verb: "delete", id });
+  for (const id of Object.keys(prev)) if (!(id in now)) ops.push({ op: "delete", id });
   for (const [id, comps] of Object.entries(now)) {
-    if (!(id in prev)) { ops.push({ verb: "create", id }); for (const [k, v] of Object.entries(comps)) ops.push({ verb: "set", id, comp: k, value: clone(v) }); continue; }
-    for (const k of Object.keys(prev[id])) if (!(k in comps)) ops.push({ verb: "delete", id, comp: k });
-    for (const [k, v] of Object.entries(comps)) if (!eq(prev[id][k], v)) ops.push({ verb: "set", id, comp: k, value: clone(v) });
+    if (!(id in prev)) { ops.push({ op: "create", id }); for (const [k, v] of Object.entries(comps)) ops.push({ op: "set", id, comp: k, value: clone(v) }); continue; }
+    for (const k of Object.keys(prev[id])) if (!(k in comps)) ops.push({ op: "delete", id, comp: k });
+    for (const [k, v] of Object.entries(comps)) if (!eq(prev[id][k], v)) ops.push({ op: "set", id, comp: k, value: clone(v) });
   }
   return ops;
 }
 export const v4project = (s) => Object.fromEntries(Object.keys(s.entities).map((id) => [id, { ...s.entities[id].c }]));
 export const canon = (o) => JSON.stringify(o, (k, v) => (v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map((x) => [x, v[x]])) : v));
 // one entry in the §2.4 envelope; the authority's re-read discipline applies: what we emit must parse back unchanged
-export const changeBody = (ops) => (ops.length === 1 ? (({ verb, ...body }) => ({ verb, body }))(ops[0]) : { verb: "batch", body: { ops } });
+export const changeBody = (ops) => (ops.length === 1 ? (({ op, ...body }) => ({ op, body }))(ops[0]) : { op: "batch", body: { ops } });
 // I-JSON has no -0; an old log may hold one (the same number, written as 0)
 export { unNegZero };
 
@@ -1061,18 +1061,18 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
     if (e.kind === "genesis") world = worldIdOf(e); if (e.kind === "change") applyInPlace(v4, opsOf(e), seq); return seq; };
   const genesis = oldEntries[0]?.verb === "genesis" ? oldEntries[0].args : { v: 1, dialect: "eidoverse-log", implicit: true };
   const t0 = Number.isInteger(oldEntries[0]?.ts) ? { ts: oldEntries[0].ts } : {};
-  push({ kind: "genesis", actor: "system", verb: "genesis", ...t0, body: translatedGenesis(oldEntries, { ...(key ? { key } : {}), ...(operator ? { operator } : {}), ...(nonce ? { nonce } : {}) }) });
+  push({ kind: "genesis", actor: "system", ...t0, body: translatedGenesis(oldEntries, { ...(key ? { key } : {}), ...(operator ? { operator } : {}), ...(nonce ? { nonce } : {}) }) });
   const physics = hasEpoch(oldEntries);
   // @19: the name beside an account is joined to it only where v1's server wrote both (a grant's or ban's id and sub, a
   // spawn's or light's placer, a behaviour's bySub with the act's actor); any other account is its own person's alone
   const mapAcct = who ? (sub) => who(sub, { sub }) : undefined;
   // the old genesis as it was, but never an account (@19): a genesis role's sub becomes its person's id, as in an old request
-  const translatedSeq = push({ kind: "act", actor: "system", verb: "translated", ts: t0.ts ?? 0, body: { from: unNegZero(withoutAccounts({ ...genesis, translator: physics ? TRANSLATOR_SIM : TRANSLATOR, ...(foldBuild ? { fold: foldBuild } : {}) }, mapAcct)) } });
+  const translatedSeq = push({ kind: "request", actor: "system", verb: "translated", ts: t0.ts ?? 0, body: { from: unNegZero(withoutAccounts({ ...genesis, translator: physics ? TRANSLATOR_SIM : TRANSLATOR, ...(foldBuild ? { fold: foldBuild } : {}) }, mapAcct)) } });
   // the translation writes the repaired spelling, so its log carries the repair's once-per-world marker from the start: the
   // system's repair-shapes act, read by verb and actor only (review r8 M3: the translated act's body is purgeable)
-  push({ kind: "act", actor: "system", verb: "repair-shapes", ts: t0.ts ?? 0, body: { v: SHAPES_VERSION, ids: [], translated: true } });
+  push({ kind: "request", actor: "system", verb: "repair-shapes", ts: t0.ts ?? 0, body: { v: SHAPES_VERSION, ids: [], translated: true } });
   // the operator's approval of this translation (import-v1/world.ts), written here, before any cause is taken
-  if (approved) push({ kind: "act", actor: "system", verb: "translation-approved", ts: t0.ts ?? 0, body: approved });
+  if (approved) push({ kind: "request", actor: "system", verb: "translation-approved", ts: t0.ts ?? 0, body: approved });
   // an old request as sent keeps its words, but never an account: a grant's or a ban's top-level sub, whatever its shape, as
   // @12 had it (main's server wrote it, always an account); another request's top-level sub, and below the top level any
   // sub or *Sub, when it is account-shaped (@16: a placer's, a binding's bySub). With a mapper it becomes the person's id
@@ -1154,8 +1154,8 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
     foldEntry(v1, e); eidosim.simEntry(sim, e, v1);
     lifeNow.step(e);
     const actor = actorFor(e.actor); if (actor !== e.actor) stats.renamed++;
-    const tl = push({ ...(e.verb === "say" ? { kind: "say", actor, verb: "say", body: unNegZero(((b) => (who && typeof b.to === "string" && !SYSTEM.has(b.to) ? { ...b, to: who(b.to, {}) } : b))(clone(e.args) ?? {})) }
-      : { kind: "act", actor, verb: "imported", body: unNegZero({ verb: e.verb, args: noAcct(e, clone(e.args) ?? null), from: e.seq ?? null }) }), ...(ts !== undefined ? { ts } : {}) });
+    const tl = push({ ...(e.verb === "say" ? { kind: "say", actor, body: unNegZero(((b) => (who && typeof b.to === "string" && !SYSTEM.has(b.to) ? { ...b, to: who(b.to, {}) } : b))(clone(e.args) ?? {})) }
+      : { kind: "request", actor, verb: "imported", body: unNegZero({ verb: e.verb, args: noAcct(e, clone(e.args) ?? null), from: e.seq ?? null }) }), ...(ts !== undefined ? { ts } : {}) });
     const b = sim.bodies[e.args?.id];
     if (e.verb === "punt" && b && b.seq === e.seq) { // her punt started (or kicked) a body: its rest will be caused by this act
       launchSeq[e.args.id] = tl;

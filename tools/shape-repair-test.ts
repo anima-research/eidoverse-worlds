@@ -35,11 +35,11 @@ function legacyWorld(things: Record<string, Record<string, any>>, world: Record<
   const io = { name: 'legacy', entries, getBlob: () => { throw new Error('no blobs'); }, putBlob: () => { throw new Error('no blobs'); }, writeLine: () => {}, now: () => (T += 1000), catalogue };
   const w = worldOf(io);
   w.append({ kind: 'genesis', actor: 'system', verb: 'genesis', body: { dialect: 'eidoverse-log', v: 4, minor: 0, nonce: 'j1783lQSA7cL_W-K6NwvNw', owners: [[], [KEY]], sequencer: KEY } });
-  const a = w.append({ kind: 'act', actor: 'olive', verb: 'create-world', body: { request: { title: 'old' } } });
-  const ops: any[] = [{ verb: 'set', id: '@world', comp: 'roles:olive', value: { role: 'owner' } }];
-  for (const [k, v] of Object.entries(world)) ops.push({ verb: 'set', id: '@world', comp: k, value: v });
-  for (const [id, c] of Object.entries(things)) { ops.push({ verb: 'create', id }); for (const [k, v] of Object.entries({ transform: TF, ...c })) ops.push({ verb: 'set', id, comp: k, value: v }); }
-  w.append({ kind: 'change', actor: 'olive', cause: a, verb: 'batch', body: { ops } }, CHANGE);
+  const a = w.append({ kind: 'request', actor: 'olive', verb: 'create-world', body: { request: { title: 'old' } } });
+  const ops: any[] = [{ op: 'set', id: '@world', comp: 'roles:olive', value: { role: 'owner' } }];
+  for (const [k, v] of Object.entries(world)) ops.push({ op: 'set', id: '@world', comp: k, value: v });
+  for (const [id, c] of Object.entries(things)) { ops.push({ op: 'create', id }); for (const [k, v] of Object.entries({ transform: TF, ...c })) ops.push({ op: 'set', id, comp: k, value: v }); }
+  w.append({ kind: 'change', actor: 'olive', cause: a, op: 'batch', body: { ops } }, CHANGE);
   return w;
 }
 const C = (w, id) => w.state().entities[id]?.c ?? {};
@@ -103,7 +103,7 @@ await tryRow('RP5', () => {
   const out = repairOut(w); const rep = repairOf(out);
   check('RP5 one thing the door refuses (a light with range 0) doesn\'t block the rest: the good light is repaired (decay 1.7)', C(w, 'good').light?.decay === 1.7 && rep?.repaired.includes('good'), [out, C(w, 'good')]);
   check('RP5 …the refused thing keeps its old spelling and is named', C(w, 'bad').light?.decay === undefined && rep?.failed.some((f) => f.id === 'bad' && f.reason), rep);
-  const act = w.entries.filter((e) => e?.kind === 'act' && e.verb === 'repair-shapes');
+  const act = w.entries.filter((e) => e?.kind === 'request' && e.verb === 'repair-shapes');
   check('RP5 …in the act too ({v, ids, failed}), which marks the world', act.length === 1 && act[0].body.v === SHAPES_VERSION && act[0].body.failed?.[0]?.id === 'bad' && shapesMarked(w.entries), act.map((e) => e.body));
   check('RP5 …and the server\'s outcome isn\'t a socket host\'s (no top-level failed/host for the lift\'s line to misread)', out.every((x) => !(x.repair && ('failed' in x || 'host' in x))), out);
 });
@@ -306,7 +306,7 @@ await tryRow('RP15', () => {
   // renames whose old spelling today's readers serve (trusted → drafts.trustedOf; bob → motionType; a station's pose → bodyOf): the world works as it is
   const a = legacyWorld({ buoy: { model: 'crate', motion: { type: 'bob', amp: 0.2, period: 3, axis: [0, 1, 0], phase: 0 } } }, { trusted: { components: ['hesperus/material'] } });
   // …a stored world that is otherwise in today's spelling (marked): only the renames are needed
-  a.append({ kind: 'act', actor: 'system', verb: 'repair-shapes', body: { v: SHAPES_VERSION, ids: [], founding: true } });
+  a.append({ kind: 'request', actor: 'system', verb: 'repair-shapes', body: { v: SHAPES_VERSION, ids: [], founding: true } });
   const outA = liftWorld(a); const needA = outA.find((x) => x.repairNeeded)?.repairNeeded;
   const wA = request(a, 'olive', 'set', { id: 'buoy', component: 'label', value: 'buoy' });
   check('RP15 a world needing only served renames loads, is said to need rename-components (not blocking), and takes writes', JSON.stringify(needA?.steps) === '["rename-components"]' && needA.blocking.length === 0 && wA.ok && C(a, '@world').trusted && C(a, 'buoy').motion?.type === 'bob', [outA, wA.refused]);
@@ -314,12 +314,12 @@ await tryRow('RP15', () => {
   check('RP15 …the command renames them in one act with provenance; nothing is renamed at load', rA.steps.rename.renamed.length === 2 && actA?.body.command === 'repair' && actA.body.by === 'olive' && C(a, '@world')['trusted-components'] && !C(a, '@world').trusted && C(a, 'buoy').motion?.type === 'oscillate', [rA.steps.rename, C(a, '@world')]);
   // a rename no reader serves (a grabbable's pose: grab.js reads anim only): fail closed
   const b = legacyWorld({ cup: { model: 'crate', grabbable: { pose: 'pistol' } } });
-  b.append({ kind: 'act', actor: 'system', verb: 'repair-shapes', body: { v: SHAPES_VERSION, ids: [], founding: true } });
+  b.append({ kind: 'request', actor: 'system', verb: 'repair-shapes', body: { v: SHAPES_VERSION, ids: [], founding: true } });
   const outB = liftWorld(b); const needB = outB.find((x) => x.repairNeeded)?.repairNeeded; const wB = request(b, 'olive', 'set', { id: 'cup', component: 'label', value: 'cup' });
   check('RP15 a stored grabbable.pose blocks writes (repair-needed names rename-components) until the command renames it to anim', needB?.blocking.includes('rename-components') && !wB.ok && wB.refused.code === 'repair-needed' && maintain(b).steps.rename.renamed.length === 1 && C(b, 'cup').grabbable?.anim === 'pistol' && request(b, 'olive', 'set', { id: 'cup', component: 'label', value: 'cup' }).ok, [outB, wB.refused, C(b, 'cup')]);
   for (const [id, comp, value] of [['frame', 'picture', { src: 'store/images/0123456789abcdef.png', alt: 'a red door' }], ['radio', 'sound', { src: 'store/audio/0123456789abcdef.ogg', look: 'rain' }]] as const) {
     const c = legacyWorld({ [id]: { model: 'crate', [comp]: value } });
-    c.append({ kind: 'act', actor: 'system', verb: 'repair-shapes', body: { v: SHAPES_VERSION, ids: [], founding: true } });
+    c.append({ kind: 'request', actor: 'system', verb: 'repair-shapes', body: { v: SHAPES_VERSION, ids: [], founding: true } });
     const outC = liftWorld(c); const needC = outC.find((x) => x.repairNeeded)?.repairNeeded; const wC = request(c, 'olive', 'set', { id, component: 'label', value: id });
     check(`RP15 a stored ${comp} ${'alt' in value ? 'alt' : 'look'} blocks writes (${comp}.js reads description only), and the load doesn't say its readers serve it`, needC?.blocking.includes('rename-components') && !/serve the old spelling/.test(needC?.why ?? '') && !wC.ok && wC.refused?.code === 'repair-needed', [needC, wC.refused]);
     const rC = maintain(c); const v = C(c, id)[comp] ?? {};
@@ -351,7 +351,7 @@ await tryRow('RP16', async () => {
 await tryRow('RP17', () => {
   const CAT = { ...ANY, get: (n) => (n === 'chair' ? { label: 'chair', surfaces: [], sockets: { seat: { pos: [0, 0.5, 0], body: { action: 'sit' } } } } : ANY.get(n)) };
   const w = legacyWorld({ ch: { model: 'chair' } }, {}, CAT);
-  w.append({ kind: 'act', actor: 'system', verb: 'repair-shapes', body: { v: SHAPES_VERSION, ids: [], founding: true } });   // otherwise in today's spelling
+  w.append({ kind: 'request', actor: 'system', verb: 'repair-shapes', body: { v: SHAPES_VERSION, ids: [], founding: true } });   // otherwise in today's spelling
   const out = liftWorld(w); const need = out.find((x) => x.repairNeeded)?.repairNeeded;
   const wr = request(w, 'olive', 'set', { id: 'ch', component: 'label', value: 'a chair' });
   check('RP17 a world whose only need is a model that gained sockets stays writable: the load lists lift-sockets as OPTIONAL (not blocking), the write is accepted, and the seat is not there yet', wr.ok && need?.optional?.includes('lift-sockets') && need.blocking.length === 0 && /optional/.test(need.why) && !Object.values(w.state().entities).some((e) => e.c.socket), [out, wr.refused]);
@@ -366,7 +366,7 @@ await tryRow('RP18', () => {
   const w = legacyWorld({ coatrack: { model: 'crate', sockets: { peg: { pos: [0, 1.5, 0] } } } });
   // the lift-sockets act's durable write throws (as a full disk would); every other write is fine, so a swallowed throw would let
   // maintain run on to repair-shapes and return "ok" with the host merely listed as failed
-  const real = w.append.bind(w); w.append = (e: any, ...more: any[]) => { if (e.kind === 'act' && e.verb === 'lift-sockets') throw new Error('EIO: disk gone'); return real(e, ...more); };
+  const real = w.append.bind(w); w.append = (e: any, ...more: any[]) => { if (e.kind === 'request' && e.verb === 'lift-sockets') throw new Error('EIO: disk gone'); return real(e, ...more); };
   let threw: any = null, r: any = null; try { r = maintain(w, { by: 'olive' }); } catch (x) { threw = x; }
   check('RP18 a durable-write throw inside lift-sockets propagates out of maintain (not swallowed into steps.lift.failed as code "error" while the rest runs on)', !!threw && /EIO/.test(String(threw?.message)) && r === null, [String(threw?.message).slice(0, 200), r?.steps?.lift]);
 });
@@ -379,10 +379,10 @@ await tryRow('RP18', () => {
   check('RP19 a numeric-string amplitude is kept as amp, null and empty are 0; a non-number one goes, as the old reader read none', r('0.4').amp === 0.4 && r(0.3).amp === 0.3 && r('wide').amp === undefined && r(null).amp === 0 && r('').amp === 0 && !('amplitude' in r('0.4')) && !('amplitude' in r(null)) && repairMotion({ amp: 0.2, amplitude: '0.9' }).amp === 0.2 && repairMotion({ amp: null, amplitude: '0.9' }).amp === 0.9,
     [r('0.4'), r('wide'), r(null), r(''), repairMotion({ amp: null, amplitude: '0.9' })]); }
 // RP20 (review of #260): a thing with one purged component still has its other components repaired
-{ const { shapeRepairOps } = await import('../shared/protocol/shaperepair.js'); const { PURGED } = await import('../shared/protocol/fold.js');
-  const st = { entities: { bob: { c: { label: PURGED, motion: { type: 'pendulum', amplitude: 0.3, period: 2 } } } } };
-  const ops = shapeRepairOps(st, PURGED);
+{ const { shapeRepairOps } = await import('../shared/protocol/shaperepair.js'); const { REDACTED } = await import('../shared/protocol/fold.js');
+  const st = { entities: { bob: { c: { label: REDACTED, motion: { type: 'pendulum', amplitude: 0.3, period: 2 } } } } };
+  const ops = shapeRepairOps(st, REDACTED);
   check('RP20 a purged component is left alone, and the thing\'s other components are still repaired (its motion\'s amplitude becomes amp)', ops.some((o: any) => o.id === 'bob' && o.comp === 'motion' && o.value?.amp === 0.3) && !ops.some((o: any) => o.comp === 'label'), ops);
-  const hinge = shapeRepairOps({ entities: { door: { c: { pivot: PURGED, motion: { type: 'pendulum', pivot: [0, 1, 0], amp: 0.3, period: 2 } } } } }, PURGED);
+  const hinge = shapeRepairOps({ entities: { door: { c: { pivot: REDACTED, motion: { type: 'pendulum', pivot: [0, 1, 0], amp: 0.3, period: 2 } } } } }, REDACTED);
   check('RP21 …but a thing whose repair would move data into a purged sibling (a motion\'s pivot array, its pivot purged) is left alone', hinge.length === 0, hinge); }
 process.exit(fail ? 1 : 0);

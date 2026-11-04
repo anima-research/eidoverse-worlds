@@ -4,7 +4,7 @@
 // "blueprints" and "reads" sections and the VERBS table unchanged). schema stays in VERBS beside the capacity it reports.
 // The write path's resolve/mint and the history readers are above it, reached through UP.
 import { grabOf, describeGrab } from "../../grab.js";
-import { isEntityId, PURGED } from "../fold.js";
+import { isEntityId, REDACTED } from "../fold.js";
 import { COMPONENTS, mapRefs } from "../componentspec.js";
 import { verbHelp, VERBSPEC, REMOVED_VERBS } from "../verbspec.js";
 import { graphemes } from "../../text.js";
@@ -230,7 +230,7 @@ function buildDuplicate(ctx, a) {
   const ops = []; let locks = 0; const keptLinks = [];
   for (const sid of all) { const orig = st.entities[sid].c; const c = clone(orig);
     if ("lock" in c) { delete c.lock; locks++; }
-    for (const k of Object.keys(orig)) if (orig[k] === PURGED) delete c[k]; // a purged value can't be copied
+    for (const k of Object.keys(orig)) if (orig[k] === REDACTED) delete c[k]; // a purged value can't be copied
     if (c.parent && typeof c.parent.to === "string") c.parent = { ...c.parent, to: ids.get(c.parent.to) ?? c.parent.to };
     // every typed reference to something copied now points at its twin (a lamp that looks at its own switch looks at the
     // copy's switch; a script's scope drives the copy, never the original); one to something else is kept, and listed
@@ -339,8 +339,8 @@ const READ_VERBS = {
         if (out.length === lim) { next = out.at(-1).seq; break; }
         const act = Number.isInteger(e.cause) ? w.entries[e.cause] : null;
         // an imported act reads as what it was (spawn, place, comp), never "imported" (batch 2: Credits in History)
-        out.push({ seq: i, by: e.actor, who: said(e.actor), ts: e.ts, verb: (isE(act) && act.kind === "act" ? (act.verb === "imported" && typeof act.body?.verb === "string" ? act.body.verb : act.verb) : null) ?? ops[0].verb,
-          changed: [...new Set(ops.map((o) => o.verb === "create" ? "(created)" : o.verb === "delete" && o.comp === undefined ? "(deleted)" : o.comp))],
+        out.push({ seq: i, by: e.actor, who: said(e.actor), ts: e.ts, verb: (isE(act) && act.kind === "request" ? (act.verb === "imported" && typeof act.body?.verb === "string" ? act.body.verb : act.verb) : null) ?? ops[0].verb,
+          changed: [...new Set(ops.map((o) => o.op === "create" ? "(created)" : o.op === "delete" && o.comp === undefined ? "(deleted)" : o.comp))],
           ...(() => { const d = historyDiff(w, id, i, ops); return d ? { diff: d } : {}; })(),
           ...(isE(act) && readback(w, e.cause)?.undoes !== undefined ? { undoes: readback(w, e.cause).undoes } : {}), ...(Number.isInteger(e.cause) ? { act: e.cause } : {}) }); }
       return { ok: true, id, entries: out, ...(next !== null ? { next, more: "send the same with before: next for older" } : {}) };
@@ -355,7 +355,7 @@ const READ_VERBS = {
     const floor = typeof w.sayFloor === "function" ? w.sayFloor(actor) : null;
     const match0 = (e) => !vs || !isE(e) ? !vs : vs.has(e.verb) || vs.has(e.kind) || (e.verb === "imported" && vs.has(e.body?.verb));
     const match = (e, seq) => match0(e) && !(isE(e) && e.kind === "say" && floor !== null && !(seq > floor));
-    const row = (e, seq) => isE(e) ? { seq, actor: e.actor, ts: e.ts, kind: e.kind, verb: e.verb, ...(e.cause !== undefined ? { cause: e.cause } : {}), body: e.kind === "act" || e.kind === "say" ? e.body : JSON.stringify(e.body).slice(0, 160) } : { seq, malformed: e.code };
+    const row = (e, seq) => isE(e) ? { seq, actor: e.actor, ts: e.ts, kind: e.kind, verb: e.verb, ...(e.cause !== undefined ? { cause: e.cause } : {}), body: e.kind === "request" || e.kind === "say" ? e.body : JSON.stringify(e.body).slice(0, 160) } : { seq, malformed: e.code };
     const out = []; let more = false;
     if (a.after !== undefined) { for (let i = Math.max(0, a.after + 1); i < w.entries.length; i++) { if (!match(w.entries[i], i)) continue; if (out.length === lim) { more = true; break; } out.push(row(w.entries[i], i)); } }
     else { for (let i = Math.min(w.entries.length, a.before ?? Infinity) - 1; i >= 0; i--) { if (!match(w.entries[i], i)) continue; if (out.length === lim) { more = true; break; } out.push(row(w.entries[i], i)); } out.reverse(); }

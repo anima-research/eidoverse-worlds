@@ -61,7 +61,7 @@ for (const dir of dirs) {
   // the accounts a role value names, by the person's NAME (a later value wins; the world's final roles last)
   const acctOf = new Map<string, string>();
   const noteSub = (comp: unknown, v: any) => { const m = /^roles:(.+)$/.exec(typeof comp === "string" ? comp : ""); if (m && typeof v?.sub === "string") acctOf.set(dec(m[1]) ?? m[1], v.sub); };
-  for (const e of old.slice(1) as any[]) if (e?.kind === "change") for (const o of e.verb === "batch" ? e.body?.ops ?? [] : [{ ...e.body }]) if (o?.id === "@world") noteSub(o.comp, o.value);
+  for (const e of old.slice(1) as any[]) if (e?.kind === "change") for (const o of e.op === "batch" ? e.body?.ops ?? [] : [{ ...e.body }]) if (o?.id === "@world") noteSub(o.comp, o.value);
   for (const [c, v] of Object.entries<any>(oldSt.entities["@world"]?.c ?? {})) noteSub(c, v);
   const planned: Record<string, Entry> = {}; const memo = new Map<string, string>(); let renamed = 0;
   const who = (k: string): string => {
@@ -77,11 +77,11 @@ for (const dir of dirs) {
   const op = (o: any) => ({ ...o, ...(o.comp !== undefined ? { comp: keyOf(o.comp) } : {}), ...("value" in o ? { value: valOf(o.comp, o.value) } : {}) });
   const next = old.map((e0: any, i: number) => { const e = JSON.parse(JSON.stringify(e0)); if (i === 0) return e; delete e.head; delete e.sig;
     if (typeof e.actor === "string") e.actor = who(e.actor);
-    if (e.kind === "change") e.body = e.verb === "batch" ? { ...e.body, ops: e.body.ops.map(op) } : (({ verb, ...b }) => b)(op({ verb: e.verb, ...e.body }));
+    if (e.kind === "change") e.body = e.op === "batch" ? { ...e.body, ops: e.body.ops.map(op) } : (({ verb, ...b }) => b)(op({ verb: e.verb, ...e.body }));
     if (e.kind === "say" && typeof e.body?.to === "string") e.body.to = who(e.body.to);
-    if (e.kind === "act" && typeof e.body?.capability?.author === "string") e.body.capability.author = who(e.body.capability.author);
-    if (e.kind === "act" && typeof e.body?.sponsor === "string") e.body.sponsor = who(e.body.sponsor);
-    if (e.kind === "act" || e.kind === "say" || e.kind === "sim") delete e.body?.salt;   // re-salted by seal
+    if (e.kind === "request" && typeof e.body?.capability?.author === "string") e.body.capability.author = who(e.body.capability.author);
+    if (e.kind === "request" && typeof e.body?.sponsor === "string") e.body.sponsor = who(e.body.sponsor);
+    if (e.kind === "request" || e.kind === "say" || e.kind === "physics") delete e.body?.salt;   // re-salted by seal
     return e; });
   const nextMod = oldMod.map((m) => ({ ...m, ...(typeof m.who === "string" ? { who: who(m.who) } : {}), ...(typeof m.actor === "string" ? { actor: who(m.actor) } : {}) }));
   if (!renamed) { out.push({ dir, skipped: "nobody here is named by a legacy identity: already in directory ids, nothing to migrate" }); continue; }
@@ -93,11 +93,11 @@ for (const dir of dirs) {
   const pairs = new Map<string, string>(); const problems: string[] = [];
   const pair = (a: unknown, b: unknown, where: string) => { if (typeof a !== "string") return; if (typeof b !== "string") { problems.push(`${where}: ${a} became ${JSON.stringify(b)}`); return; }
     const was = pairs.get(a); if (was !== undefined && was !== b) problems.push(`${a} became two ids (${was}, ${b}) (${where})`); else pairs.set(a, b); };
-  const opsOf = (e: any) => (e?.kind !== "change" ? [] : e.verb === "batch" ? e.body?.ops ?? [] : [e.body]);
+  const opsOf = (e: any) => (e?.kind !== "change" ? [] : e.op === "batch" ? e.body?.ops ?? [] : [e.body]);
   for (let i = 1; i < old.length; i++) { const a: any = old[i], b: any = sealed[i];
     pair(a.actor, b.actor, `entry ${i} actor`);
     if (a.kind === "say") pair(a.body?.to, b.body?.to, `entry ${i} say.to`);
-    if (a.kind === "act") { pair(a.body?.capability?.author, b.body?.capability?.author, `entry ${i} capability.author`); pair(a.body?.sponsor, b.body?.sponsor, `entry ${i} sponsor`); }
+    if (a.kind === "request") { pair(a.body?.capability?.author, b.body?.capability?.author, `entry ${i} capability.author`); pair(a.body?.sponsor, b.body?.sponsor, `entry ${i} sponsor`); }
     const ao = opsOf(a), bo = opsOf(b);
     ao.forEach((o: any, j: number) => { const ma = PERSON_KEY.exec(o?.comp ?? ""); if (!ma) return; const mb = PERSON_KEY.exec(bo[j]?.comp ?? "");
       if (!mb || mb[1] !== ma[1]) problems.push(`entry ${i} op ${j}: ${o.comp} became ${bo[j]?.comp}`); else pair(ma[2], mb[2], `entry ${i} ${ma[1]}: key`); }); }
@@ -116,8 +116,8 @@ for (const dir of dirs) {
   const py = (args: string[]) => { try { return JSON.parse(Bun.spawnSync([PY, "-B", ...args]).stdout.toString()); } catch { return {}; } };
   const rd = py([path.join(ENGINE, "spec/conformance/reader.py"), tmp, "--json"]), ch = py([path.join(ENGINE, "spec/conformance/chain.py"), "verify", tmp]);
   const malformed = (rd.diagnostics ?? []).filter((d: any) => String(d?.[1] ?? "").startsWith("malformed")).length;
-  // (a JSON copy loses the fold's PURGED sentinel, so a world with purges is refused here rather than misjudged)
-  const purged = old.some((e: any) => e?.kind === "purge");
+  // (a JSON copy loses the fold's REDACTED sentinel, so a world with purges is refused here rather than misjudged)
+  const purged = old.some((e: any) => e?.kind === "redaction");
   const same = !purged && !problems.length && newSt.status === "ok" && digest(newSt) === digest(want);
   const good = same && rd.status === "ok" && !malformed && ch.status === "ok" && ch.unsigned_tail === 0;
   if (good && apply) {

@@ -34,7 +34,7 @@ const H = (o: Partial<Held> = {}): Held => ({ move: null, touch: null, allow: []
 // R7 (parity with main): a refused act on the agent's body is said to it as an act event, naming who and the gate
 { const ag = new WorldAgent({ name: "told" }) as any; const ev: any[] = []; ag.onEvent = (e: any) => ev.push(e); ag.actorIds.set("Wren", "u-wren");
   ag.bodyInbox([{ type: "body-refused", from: "u-wren", gate: "move", class: "shove" }, { type: "body-refused", from: "u-kit", gate: null, class: "pose" }]);
-  ok(ev.length === 2 && ev[0].kind === "act" && ev[0].who === "Wren" && /^tried to move you/.test(ev[0].text) && /move gate is off/.test(ev[0].text) && /block list/.test(ev[1].text) && ag.inbox.length === 2,
+  ok(ev.length === 2 && ev[0].kind === "request" && ev[0].who === "Wren" && /^tried to move you/.test(ev[0].text) && /move gate is off/.test(ev[0].text) && /block list/.test(ev[1].text) && ag.inbox.length === 2,
     "R7 a refused act on the agent's body is an event in its inbox: who tried (by name), and its move gate (or its block list) turned it away", ev); }
 // R8: every body-inbox row reads `* <name> <rest>` (look, net-server): the actor's name once, never its id
 { const ag = new WorldAgent({ name: "told" }) as any; ag.actorIds.set("Mira", "u-mira");

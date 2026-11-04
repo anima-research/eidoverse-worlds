@@ -141,7 +141,7 @@ try {
   typingFor("world:commons", "start");
   check("the dots are up again before the raw say", await waitUntil(() => typingSeen() >= 1, 3000));
   rpc({ jsonrpc: "2.0", id: nextId++, method: "tools/call",
-    params: { name: "act", arguments: { verb: "say", args: { text: "a raw say from the typing test" } } } });   // (ported: the general request tool; there is no raw world_verb)
+    params: { name: "act", arguments: { args: { text: "a raw say from the typing test" } } } });   // (ported: the general request tool; there is no raw world_verb)
   check("the raw say reaches the world", await waitUntil(() => saidSeen("a raw say from the typing test"), 5000));
   await sleep(500);
   seen.length = 0;

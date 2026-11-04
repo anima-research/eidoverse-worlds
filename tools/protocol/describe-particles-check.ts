@@ -217,14 +217,14 @@ const cases: Case[] = [
       return { names, bad, same: JSON.stringify(a) === JSON.stringify(b), knobs: e && [e.spawn.amount, e.size.base, e.color.alpha, e.spawn.speedScale, e.spawn.lifetime, e.shape.extents.join(), e.render.texture, e.spawn.ratio] }; },
     good: (o) => o.names.length === 9 && !o.bad.length && o.same && JSON.stringify(o.knobs) === JSON.stringify([120, 0.4, 0.8, 1.5, 0.7, "0.2,0.06,0.2", "eidoverse/assets/particle_textures/flame_05.png", 0.5]) },
   { id: "X10", what: "the translator writes a v1 particles bag in today's shape, losslessly: preset → effect, origin → at, knobs → params, an unknown key → imported:particles", run() {
-      const L = [{ seq: 0, ts: 1, actor: "door", verb: "genesis", args: {} }, { seq: 1, ts: 2, actor: "mica", verb: "spawn", args: { id: "f78c7ab8", lib: "x.glb", pos: [0, 0, 0] } },
+      const L = [{ seq: 0, ts: 1, actor: "door", args: {} }, { seq: 1, ts: 2, actor: "mica", verb: "spawn", args: { id: "f78c7ab8", lib: "x.glb", pos: [0, 0, 0] } },
         { seq: 2, ts: 3, actor: "mica", verb: "comp", args: { id: "f78c7ab8", type: "particles", data: { preset: "fire", seed: 781526, origin: [0, 0.18, 0], count: 150, quality: "auto", glow: true } } }];
       const r = TV1.translate(L); const ents = r.final?.translated ?? {}; const c = Object.values<any>(ents).find((x) => x.particles) ?? {};
       return { tr: TV1.TRANSLATOR, p: c.particles, imp: c["imported:particles"], back: PE.instanceOf?.({ preset: "fire", seed: 781526, origin: [0, 0.18, 0], count: 150, quality: "auto" }) }; },
     // @12 (R 10-17): an Essential keeps its name, as the door and the load keep it
     good: (o) => translatorVersion(o.tr) >= 14 && JSON.stringify(o.p) === JSON.stringify({ effect: "fire", seed: 781526, at: [0, 0.18, 0], params: { count: 150, quality: "auto" } }) && o.imp?.glow === true && JSON.stringify(o.back) === JSON.stringify(o.p) },
   { id: "X13", what: "upstream #256: a v1 thing's named emitter (particles:<name>) is translated as a child thing carrying it (one particles per thing), lit and put out on its own; v2's scale is the instance's, its look knobs a derived effect (@24: translate-check P17)", run(s) {
-      const L = [{ seq: 0, ts: 1, actor: "door", verb: "genesis", args: {} }, { seq: 1, ts: 2, actor: "mica", verb: "spawn", args: { id: "hearth", lib: "x.glb", pos: [0, 0, 0] } },
+      const L = [{ seq: 0, ts: 1, actor: "door", args: {} }, { seq: 1, ts: 2, actor: "mica", verb: "spawn", args: { id: "hearth", lib: "x.glb", pos: [0, 0, 0] } },
         { seq: 2, ts: 3, actor: "mica", verb: "comp", args: { id: "hearth", type: "particles", data: { preset: "fire", origin: [0, 0.25, 0], scale: 0.5, wobble: 0.1 } } },
         { seq: 3, ts: 4, actor: "mica", verb: "comp", args: { id: "hearth", type: "particles:smoke", data: { preset: "smoke", origin: [0, 0.9, 0], color: "#3a3a44", gravity: 0.7 } } },
         { seq: 4, ts: 5, actor: "mica", verb: "comp", args: { id: "hearth", type: "particles:sparks", data: { preset: "embers", seed: 7 } } },
@@ -348,7 +348,7 @@ const cases: Case[] = [
         const live = { effects: (b: string) => (b === h ? d : null) }; const ent = { model: "lamp.glb", pos: [0, 0, 0], yaw: 0, actor: "r", ts: 1, particles: { effect: h } };
         const rows = E.inspectSchema(ent, "l", live).groups.flatMap((g: any) => g.fields ?? []);
         const row = rows.find((f: any) => f.k === "param|cone"), glow = rows.find((f: any) => f.k === "param|glow");
-        const r = E.editOps(ent, "l", { "particles.param|cone": "30" }, live); const v = r.ops.flatMap((o: any) => o.verb === "batch" ? o.args.ops : [o]).find((o: any) => o.args?.component === "particles")?.args?.value;
+        const r = E.editOps(ent, "l", { "particles.param|cone": "30" }, live); const v = r.ops.flatMap((o: any) => o.op === "batch" ? o.args.ops : [o]).find((o: any) => o.args?.component === "particles")?.args?.value;
         return { deg: row?.deg, glowDeg: glow?.deg, stored: v?.params?.cone, errors: r.errors }; }); },
     good: (o) => o.deg === true && !o.glowDeg && Math.abs(o.stored - Math.PI / 6) < 1e-3 },
   { id: "P10", what: "fire's former address (stored for a day before its angles became radians) still reads as fire; its pinned address is its new document's hash", run() {

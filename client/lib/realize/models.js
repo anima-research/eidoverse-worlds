@@ -39,7 +39,7 @@ import { compKeys } from '../../../shared/protocol/view.js';
 import { encName } from '../../../shared/protocol/names.js';
 import { state, onWorldChange } from '../state.js';
 import { schedule, cancelOwner } from '../scheduler.js';
-import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere, kindOf, offIn, readMesh, meshKeyOf } from './models_field.js';
+import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere, formOf, offIn, readMesh, meshKeyOf } from './models_field.js';
 import { prepareMaterial } from '../materials.js';
 import { tracked, reserve, regen, untrack, release } from './lifecycle.js';
 
@@ -215,7 +215,7 @@ function scheduleLoad(id, ent, gen, tier = null) {
       // by a light, re-spawned with a different lib (its own job follows),
       // demoted-then-reset, or this whole realizer generation was reset
       if (signal.aborted || t?.gen !== gen) return;
-      if (!cur || kindOf(cur) !== 'model' || cur.model !== ent.model) {
+      if (!cur || formOf(cur) !== 'model' || cur.model !== ent.model) {
         clearReservation(id);
         if (tracked.get(id)?.gen === gen) untrack(id);
         return;
@@ -410,7 +410,7 @@ export function drainPromoteTail() {
  *  entity; it owns no collider, no lamps, no caster slot and no load. It
  *  announces itself as a 'spawn' because that is the event the comp
  *  evaluators (emitters, pictures) rebuild on. A light component on it
- *  brings its gizmo (syncCompLight), which is how a bare bulb is seen. `kind` is the fold's word for it (kindOf). */
+ *  brings its gizmo (syncCompLight), which is how a bare bulb is seen. `kind` is the fold's word for it (formOf). */
 function createHost(id, ent, kind) {
   reserve(id, { kind });
   const g = new THREE.Group();
@@ -440,7 +440,7 @@ const createEmpty = (id, ent) => createHost(id, ent, 'empty');
 function relabelHost(id) {
   const t = tracked.get(id), ent = state.st.entities[id];
   if (!t || !ent || t.kind === 'model' || t.kind === 'mesh') return;
-  const kind = kindOf(ent);
+  const kind = formOf(ent);
   if (kind === 'model' || kind === 'mesh' || kind === t.kind) return;
   t.kind = kind;
 }
@@ -701,7 +701,7 @@ function onComp(id, type) {
   if (type === 'light') syncCompLight(id);
   if (type === 'light') relabelHost(id);
   // a mesh's own geometry follows its component in place; a mesh arriving on (or leaving) a host is a rebuild
-  if (type === 'mesh') { if (kindOf(state.st.entities[id]) === 'mesh' && tracked.get(id)?.kind === 'mesh') rebuildMesh(id); else reconcileId(id); }
+  if (type === 'mesh') { if (formOf(state.st.entities[id]) === 'mesh' && tracked.get(id)?.kind === 'mesh') rebuildMesh(id); else reconcileId(id); }
   if (type === 'collider') applyColliderPref(id);
   // a socket that starts (or stops) riding a part re-attaches: into the part's node at rest, or back onto its host
   if (type === 'socket') execMount(id);
@@ -946,7 +946,7 @@ function entDist(ent) {
 /** The audit's three impossibles plus the edit hold — things whose demote
  *  has no clean undo. All are cheap fold-truth predicates. */
 function canDemote(id, ent) {
-  if (!ent || kindOf(ent) !== 'model' || ent.parent) return false;   // only a model has a stand-in (a mesh has no bytes to shed); mounted children ride carriers
+  if (!ent || formOf(ent) !== 'model' || ent.parent) return false;   // only a model has a stand-in (a mesh has no bytes to shed); mounted children ride carriers
   const obj = entities.get(id);
   if (!obj || isPlaceholder(obj) || editHolds.has(id)) return false;
   if (!libGeom.get(ent.model)?.bbox) return false;    // nothing honest to stand in
@@ -1073,7 +1073,7 @@ function reconcileId(id) {
   const ent = state.st.entities[id];
   const t = tracked.get(id);
   if (!ent || offIn(state.st.entities, id)) { if (t || entities.has(id)) retire(id); return; }
-  const kind = kindOf(ent);
+  const kind = formOf(ent);
   if (!t) { CREATE[kind](id, ent); return; }
   if (t.kind !== kind || (kind === 'model' && t.model !== ent.model)) {
     retire(id);
@@ -1092,7 +1092,7 @@ export function reconcileModels() {
   const { create, retire: dead } = planReconcile(state.st.entities, view);
   for (const id of dead) retire(id);
   const created = new Set(create.map((c) => c.id));
-  for (const { id, ent } of create) CREATE[kindOf(ent)](id, ent);
+  for (const { id, ent } of create) CREATE[formOf(ent)](id, ent);
   // survivors refresh in place — a reconnect may have moved anything
   for (const [id, t] of tracked) {
     if (created.has(id) || !state.st.entities[id]) continue;

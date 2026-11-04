@@ -26,7 +26,7 @@ function rig() {
   const ag = new WorldAgent({ name: "seedtest" }) as any;
   ag.pos = { x: 0, y: 0, z: 0 };
   const acts: any[] = [];
-  ag.onEvent = (ev: any) => { if (ev.kind === "act") acts.push(ev); };
+  ag.onEvent = (ev: any) => { if (ev.kind === "request") acts.push(ev); };
   // Offset from a REAL epoch: `cooled` measures against a last-approach time
   // that defaults to 0, so a clock starting near zero reads as "approached a
   // moment ago" and refuses the first knock.

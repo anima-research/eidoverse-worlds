@@ -114,7 +114,7 @@ await C("P7", "a refused request with a placeholder leaves no '$name' in the log
 await C("P8", "a chosen id refused beside a placeholder in one batch: the attempt isn't recorded with its '$name' in it", () => {
   const W = world(); const r = W.call("batch", { ops: [{ verb: "create", args: { id: "$keep", model: "crate" } }, { verb: "create", args: { id: "chair", model: "crate" } }] });
   const plain = W.call("create", { id: "table", model: "crate" });   // a chosen id alone is an attempt like any other: recorded, as names and a code (engine-scars 6a, R 10-17 02:45: never its values)
-  const att = W.entries().findLast((e: any) => e.kind === "act" && e.verb === "create");
+  const att = W.entries().findLast((e: any) => e.kind === "request" && e.op === "create");
   return [!r.ok && /op 1/.test(r.refused.reason) && !logText(W).includes("$keep") && !plain.ok && JSON.stringify(att?.body?.args) === '["id","model"]' && att?.body?.refused?.code === "shape" && !logText(W).includes('"table"'), [why(r), att?.body]]; });
 
 // ---- Y: system acts keep ids ----
@@ -183,14 +183,14 @@ await C("S1", "the script API is 2: world.create mints an opaque id from the act
   const text = "world.on('use', () => { world.create({ model: 'crate', label: 'health potion' }); });";
   const seed = "ab".repeat(32); const base = { text, self: "bell", key: "script:s", event: { on: "use", who: "u-abcdefghijklmnopqrst" }, knobs: {}, now: 1, seed, st, reads: { near: [], count: [], names: [] }, limits: { wallMs: 10000 } };
   const r2 = await SB.runScript({ ...base, api: SR.API }); const r1 = await SB.runScript({ ...base, api: 1 });
-  const id2 = r2.ops?.find((o) => o.verb === "create")?.id, id1 = r1.ops?.find((o) => o.verb === "create")?.id;
+  const id2 = r2.ops?.find((o) => o.op === "create")?.id, id1 = r1.ops?.find((o) => o.op === "create")?.id;
   return [SR.API === 2 && /^[a-z0-9-]+$/.test(id2 ?? "") && !/potion|crate/.test(id2) && /^crate-/.test(id1 ?? ""), [SR.API, id2, id1, r2.why, r1.why]]; });
 await C("S2", "world.create(components, id) is refused at api 2: a script never chooses an id (it gets the minted one back)", async () => {
   const SR = await imp("shared/protocol/scriptrules.js"); const SB = await imp("shared/protocol/sandbox.js");
   const st = { entities: { "@world": { born: 0, c: {} }, bell: { born: 1, c: {} } } };
   const text = "world.on('use', () => { world.create({ model: 'crate' }, 'my-id'); });";
   const r = await SB.runScript({ text, self: "bell", key: "script:s", event: { on: "use" }, knobs: {}, now: 1, seed: "cd".repeat(32), st, reads: { near: [], count: [], names: [] }, limits: { wallMs: 10000 }, api: SR.API });
-  return [SR.API === 2 && !(r.ops ?? []).some((o) => o.verb === "create") && /never chooses|mints/.test(JSON.stringify(r)), JSON.stringify(r).slice(0, 400)]; });
+  return [SR.API === 2 && !(r.ops ?? []).some((o) => o.op === "create") && /never chooses|mints/.test(JSON.stringify(r)), JSON.stringify(r).slice(0, 400)]; });
 
 // ---- H: handles and names (R 10-17 (5); duplicate labels stay allowed, ambiguity is surfaced) ----
 await C("H1", "resolveThing: an exact id, else a label (case and outer spaces ignored), else a unique id prefix of 4+", async () => {

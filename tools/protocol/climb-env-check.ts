@@ -195,7 +195,7 @@ await C("K9", "KillZ: below the kill line, KILL_MARGIN under @world.bounds.min.y
   const away = s.call("move", { to: [30, 0, 30], teleport: true, reason: "below-bounds" }, "vic");
   const before = s.log().length;
   const back = s.call("move", { to: [0, 0, 8], teleport: true, reason: "below-bounds" }, "vic");
-  const acts = s.log().slice(before).filter((e: any) => e.kind === "act" && e.verb === "move");
+  const acts = s.log().slice(before).filter((e: any) => e.kind === "request" && e.verb === "move");
   const bare = s.call("move", { to: [0, 0, 8], reason: "below-bounds" }, "vic");
   return [fell && !riding && !above && back.ok && acts.length === 1 && acts[0].body?.request?.reason === "below-bounds" && acts[0].body?.request?.teleport === true
     && early?.refused?.code === "doesnt-apply" && noBounds.refused?.code === "out-of-bounds" && away.refused?.code === "spawn" && bare.refused?.code === "shape",
@@ -231,7 +231,7 @@ await C("K9p", "KillZ while holding, in a world running physics (review of #260)
   const back = s.call("move", { to: [0, 0, 8], teleport: true, reason: "below-bounds" }, "vic");
   const put = s.call("put", { id: "ball" }, "vic");
   const at1 = s.st().entities.ball?.c.transform?.pos;
-  const acts = s.log().filter((e: any) => e.kind === "act" && e.actor === "system" && e.verb === "return-held").map((e: any) => e.body);
+  const acts = s.log().filter((e: any) => e.kind === "request" && e.actor === "system" && e.verb === "return-held").map((e: any) => e.body);
   return [grab.ok && steps.every((x) => x === "ok") && back.ok && put.refused?.code === "not-holding" && near(at1, at0) && acts.length === 1 && acts[0].why === "below-bounds" && acts[0].holder === "vic",
     { eng, grab: show(grab), steps, back: show(back), put: show(put), at0, at1, acts }]; });
 

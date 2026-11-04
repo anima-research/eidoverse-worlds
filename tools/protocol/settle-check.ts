@@ -62,7 +62,7 @@ for (const verb of ["throw", "drop"]) { const W = `ride-${verb}`; call(W, "rowan
   const on = ["a", "b"].every((k) => st(W).entities[k].c.parent?.to === "tray");
   call(W, "vic", "move", { to: [0, 0, -0.9] }); const g = call(W, "vic", "grab", { id: "tray" });
   const n0 = openWorld(root, W).entries.length; const th = call(W, "vic", "throw", { id: "tray", v: [0, 3, 4], w: [3.2, 0, 0] });
-  const L = openWorld(root, W).entries.slice(n0).filter((e) => e.kind === "sim" && e.verb === "launch"); const vOf = (id) => L.find((e) => e.body.id === id)?.body.v;
+  const L = openWorld(root, W).entries.slice(n0).filter((e) => e.kind === "physics" && e.verb === "launch"); const vOf = (id) => L.find((e) => e.body.id === id)?.body.v;
   const d = (x, y) => x && y ? Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]) : 0;
   ok(on && g.ok && th.ok && d(vOf("a"), vOf("tray")) > 0.05 && d(vOf("b"), vOf("tray")) > 0.05 && d(vOf("a"), vOf("b")) > 0.05,
     "SE7 thrown with spin, each occupant leaves with its own velocity (the tray's at its spot, and a flick), so the load fans out from the hand", { on, grab: g.ok ?? g.refused, throw: th.ok ?? th.refused, v: { tray: vOf("tray"), a: vOf("a"), b: vOf("b") } });

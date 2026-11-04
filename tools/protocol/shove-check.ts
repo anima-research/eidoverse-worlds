@@ -117,7 +117,7 @@ function session() {
 }
 const code = (r: any) => r?.refused?.code;
 const show = (r: any) => (r?.crashed ? `CRASH ${r.crashed}` : r?.ok ? "ok" : `refused ${r?.refused?.code}: ${String(r?.refused?.reason).slice(0, 120)}`);
-const launches = (s: any) => s.entries().filter((e: any) => e.kind === "sim" && e.verb === "launch").length;
+const launches = (s: any) => s.entries().filter((e: any) => e.kind === "physics" && e.verb === "launch").length;
 // owner olive, builder bob, visitor vic; a world running eidosim; a crate (0.6 m) at the origin anyone may punt
 function cast(s: any, phys: any = { kind: "dynamic", who: "member" }) {
   s.call("olive", "create-world", { title: s.name });
@@ -137,7 +137,7 @@ const cases: Case[] = [
   { id: "S1", what: "a body against the crate shoves it away at a walk's speed: one punt, one launch, the act says shove", run(s) { cast(s);
       s.call("vic", "move", { to: AGAINST }); const n0 = s.entries().length;
       const r = s.call("vic", "punt", { id: "crate", v: [0, 0.2, 1.8], contact: true });
-      const act = s.entries().slice(n0).find((e: any) => e.kind === "act" && e.verb === "punt");
+      const act = s.entries().slice(n0).find((e: any) => e.kind === "request" && e.verb === "punt");
       s.call("vic", "wait", {}, 6000); const at = s.w().state().entities.crate.c.transform.pos;
       return { r: show(r), v: r.v, launches: launches(s), shove: act?.body?.request?.contact ?? act?.body?.contact ?? JSON.stringify(act?.body ?? null), at }; },
     good: (o) => o.r === "ok" && o.launches === 1 && JSON.stringify(o.v) === "[0,0.2,1.8]" && (o.shove === true || /"contact":true/.test(String(o.shove))) && o.at[2] > 0.05 },

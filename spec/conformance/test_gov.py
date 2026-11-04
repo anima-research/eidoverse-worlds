@@ -20,14 +20,14 @@ def mk():
     return k, "ed25519:" + b64u(k.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw))
 
 def world(owners, seq_key, steps):
-    """genesis with these owner tiers, then each step (body, [signers]) as a sequencer entry; gov.py's events"""
-    g = {"kind": "genesis", "actor": "system", "verb": "genesis", "body": {"dialect": "eidoverse-log", "v": 4, "minor": 0,
+    """genesis with these owner tiers, then each step (body, [signers]) as a governance entry; gov.py's events"""
+    g = {"kind": "genesis", "actor": "system", "body": {"dialect": "eidoverse-log", "v": 4, "minor": 1,
          "nonce": b64u(b"0123456789abcdef"), "owners": owners, "sequencer": seq_key}}
     wid = "sha256:" + hashlib.sha256(jcs(g).encode()).hexdigest()
     lines = [g]
     for body, signers in steps:
         seq = len(lines); msg = gov_message(wid, seq, body)
-        lines.append({"world": wid, "kind": "sequencer", "ts": seq, "actor": "system", "verb": "sequencer",
+        lines.append({"world": wid, "kind": "governance", "ts": seq, "actor": "system",
                       "body": dict(body, sigs=[{"key": pk, "v": b64u(sk.sign(msg))} for sk, pk in signers])})
     return governance(("\n".join(json.dumps(l) for l in lines) + "\n").encode())["events"]
 

@@ -247,7 +247,7 @@ function pageLoad(search: string, stored: string | null, steps: Step[], tab: str
     const yes = (wire) => net._dispatch({ type: "snapshot", you: "helen", present: [], state: null, entries: [], throughSeq: 0,
       cut: { state: wire, head: 0, worldId: "w", you: "helen" } });
     // a live entry, the next one after what this client has folded
-    const live = (e) => net._dispatch({ type: "log", from: net.replica.head + 1, entries: [{ ts: Date.now(), actor: "helen", ...e }] });
+    const live = (e) => net._dispatch({ type: "log", from: net.replica.seq + 1, entries: [{ ts: Date.now(), actor: "helen", ...e }] });
     let boxes = 0;
     net.wireNet({ toast: (m) => toasts.push(m) });
     net.net.ws = { send() {}, readyState: 1 };
@@ -257,7 +257,7 @@ function pageLoad(search: string, stored: string | null, steps: Step[], tab: str
       else if (s === "ground") await yes({ "@world": { born: 0, c: { terrain: { v: { seed: 7, size: 200 } } } } });
       else if (s === "authed") CONFIG.authed = true;
       else if (s === "spawn") { const id = "box" + ++boxes;
-        await live({ kind: "change", verb: "batch", body: { ops: [{ verb: "create", id }, { verb: "set", id, comp: "lib", value: "box" }] } }); }
+        await live({ kind: "change", op: "batch", body: { ops: [{ op: "create", id }, { op: "set", id, comp: "lib", value: "box" }] } }); }
       else if (s === "say") await live({ kind: "say", body: { text: "hello?" } });
       else if (s.early) {
         const ws = new globalThis.WebSocket(); ws.readyState = 1;

@@ -464,8 +464,8 @@ if (M) {
       ["a punt", "punt", { id: "hk", power: 2 }], ["a walk's shove", "punt", { id: "hk", v: [0, 0.1, -1], contact: true }]] as any) {
       const r = call("hm", "olive", verb, args);
       ok(loading(r), `GH4 ${what} with the grid missing: refused ground-loading, with the same words`, r.refused ?? r); }
-    ok(call("hm", "olive", "drop", { id: "hb" }).refused?.code === "ground-loading" && openWorld(root, "hm").entries.slice(n4).every((e) => !(e.kind === "sim" && e.verb === "launch")),
-      "GH4 …and nothing was launched (no sim launch logged), the ball still in the hand", openWorld(root, "hm").entries.slice(n4).filter((e) => e.kind === "sim").map((e) => e.verb));
+    ok(call("hm", "olive", "drop", { id: "hb" }).refused?.code === "ground-loading" && openWorld(root, "hm").entries.slice(n4).every((e) => !(e.kind === "physics" && e.verb === "launch")),
+      "GH4 …and nothing was launched (no sim launch logged), the ball still in the hand", openWorld(root, "hm").entries.slice(n4).filter((e) => e.kind === "physics").map((e) => e.verb));
     ok(call("hm", "olive", "grab", { id: "hp" }).ok, "(GH4 setup) olive holds a crate that doesn't fly");
     const pf = call("hm", "olive", "put", { id: "hp", pos: [0.5, 1.4, 2.4] });
     ok(loading(pf) && near(openWorld(root, "hm").state().entities.hp.c.transform.pos[1], 0), "GH4 put {pos} 1.4 m up with the grid missing: refused ground-loading (no ground to judge floating on), nothing logged", { refused: pf.refused, pos: openWorld(root, "hm").state().entities.hp.c.transform.pos });
@@ -475,7 +475,7 @@ if (M) {
     ok(call("hm", "olive", "create", { id: "pk", model: "ball", components: { transform: { pos: [0, 0.6, 0] }, parent: { to: "pt" }, physics: { kind: "dynamic", who: "member" } } }).ok, "(GH4 setup) a ball rests on it");
     { const n5 = openWorld(root, "hm").entries.length;
       const g = call("hm", "ann", "grab", { id: "pt" });
-      const sims = openWorld(root, "hm").entries.slice(n5).filter((e) => e.kind === "sim").map((e) => `${e.verb}:${e.body?.id}`);
+      const sims = openWorld(root, "hm").entries.slice(n5).filter((e) => e.kind === "physics").map((e) => `${e.verb}:${e.body?.id}`);
       ok(loading(g) && !sims.length && openWorld(root, "hm").state().entities.pk?.c.parent?.to === "pt",
         "GH4 a grab whose occupant would fall, with the grid missing: refused ground-loading, nothing lifted or launched, the ball still on the crate", { refused: g.refused ?? g.notes, sims }); }
     // GH5 (review r5 F6): a host's shape changes with the grid missing: its occupants are kept (no launch, nothing written for
@@ -485,7 +485,7 @@ if (M) {
     { const n6 = openWorld(root, "hm").entries.length;
       const sc = call("hm", "olive", "set", { id: "pu", component: "transform", value: { pos: [-2, 0, -2], scale: [1.5, 1.5, 1.5] } });
       const kept = (sc.notes ?? []).find((n) => Array.isArray(n.kept));
-      const sims = openWorld(root, "hm").entries.slice(n6).filter((e) => e.kind === "sim").map((e) => `${e.verb}:${e.body?.id}`);
+      const sims = openWorld(root, "hm").entries.slice(n6).filter((e) => e.kind === "physics").map((e) => `${e.verb}:${e.body?.id}`);
       const pk = openWorld(root, "hm").state().entities.pv;
       ok(sc.ok && kept?.kept?.includes("pv") && !sims.length && pk?.c.parent?.to === "pu" && JSON.stringify(pk.c.transform.pos) === "[0,0.6,0]",
         "GH5 a host rescaled with the grid missing: its occupant is kept, nothing launched, its pose on the host as it was", { ok: sc.ok, refused: sc.refused, notes: sc.notes, sims, pk: pk?.c });

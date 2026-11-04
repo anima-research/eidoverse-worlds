@@ -77,13 +77,13 @@ export const unparent = (ent, id, worldPatch) => batch([unset(id, "parent"), set
 
 /** one request for one gesture: a single op as itself, several as one batch (nested batches flattened). */
 export function batch(ops) {
-  const flat = ops.filter(Boolean).flatMap((o) => (o.verb === "batch" ? o.args.ops : [o]));
+  const flat = ops.filter(Boolean).flatMap((o) => (o.op === "batch" ? o.args.ops : [o]));
   if (!flat.length) return null;
   return flat.length === 1 ? flat[0] : { verb: "batch", args: { ops: flat } };
 }
 /** the (id, component) pairs a request sets — what a gesture's `expect` covers (ids as the authority has them). */
 export function writesOf(req) {
   if (!req) return [];
-  const ops = req.verb === "batch" ? req.args.ops : [req];
-  return ops.filter((o) => o.verb === "set").map((o) => [o.args.id, o.args.component]);
+  const ops = req.op === "batch" ? req.args.ops : [req];
+  return ops.filter((o) => o.op === "set").map((o) => [o.args.id, o.args.component]);
 }

@@ -16,7 +16,7 @@ import fs from "node:fs";
 import { scratch } from "./common.ts";
 import { request, isBanned, worldOf, creatorOf, liftWorld, maintain, LAB_CATALOGUE, actIndexOf, actIndexFresh, entityBefore, fixtureIds } from "../../shared/protocol/authority.js";
 fixtureIds(true);   // the fixtures below seed the ids they read (R 10-17: a writer never chooses one; ids-check covers the refusal)
-import { fold, readLog, digest, opsOf, PURGED } from "../../shared/protocol/fold.js";
+import { fold, readLog, digest, opsOf, REDACTED } from "../../shared/protocol/fold.js";
 import * as AUTH from "../../shared/protocol/authority.js";
 // the operator's repair path; before it existed an operator had only the ordinary request (OP rows are red there, not a crash)
 const operatorRepair = AUTH.operatorRepair ?? ((w, a, v, x) => request(w, a, v, x));
@@ -68,7 +68,7 @@ ok(enc("anon-3") === "anon-3" && enc("Marigold").startsWith("x--"), "N5 identiti
 
 // ---- T: the translator's name and stamp ----
 ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the engine translator has its own name (not the lab's)", TRANSLATOR);
-{ const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log", roles: { Marigold: { role: "owner" } } } },
+{ const old = [{ seq: 0, ts: 1, actor: "world", args: { v: 2, dialect: "eidoverse-log", roles: { Marigold: { role: "owner" } } } },
     { seq: 1, ts: 2, actor: "Marigold", verb: "spawn", args: { id: "lamp_1", lib: "a.glb", pos: [1, 0, 1] } },
     { seq: 2, ts: 3, actor: "Marigold", verb: "comp", args: { id: "lamp_1", type: "0abc", data: 1 } },
     { seq: 3, ts: 4, actor: "Marigold", verb: "comp", args: { id: "lamp_1", type: "n0abc", data: 2 } }];
@@ -127,7 +127,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     const E = W().entries.slice(n); const st = E.filter((e) => e.kind === "change"); const ops = st.flatMap((e) => e.body.ops ?? [e.body]);
     ok(r.ok, "P16 throughLock: true lets a builder (who may remove the lock) act through it", r.refused);
     ok(E.length === 2 && ops.length && ops.every((o) => o.comp !== "lock") && W().state().entities.tbl.c.lock === true, "P17 …and the log records only the edit: one act, one change entry, no unlock or relock; the lock is still on (stored true: recut B2)", E.map((e) => [e.kind, e.verb, e.body?.comp]));
-    ok(E[0].kind === "act" && E[0].body.request.throughLock === true, "P18 …the act carries the request as sent, flag and all (history shows who went through)", E[0].body); }
+    ok(E[0].kind === "request" && E[0].body.request.throughLock === true, "P18 …the act carries the request as sent, flag and all (history shows who went through)", E[0].body); }
   ok(call("olive", "set", { id: "tbl", component: "transform", value: { pos: [0, 0, 3.1] }, throughLock: true }).ok, "P19 the owner acts through it the same way");
   ok(code(call("bob", "set", { id: "cup", component: "transform", value: { pos: [0, 0.75, 0] }, throughLock: "yes" })) === "shape", "P20 throughLock is a boolean");
   ok(call("bob", "set", { id: "cup2", component: "label", value: "x", throughLock: true }).ok, "P21 throughLock on an edit no lock guards is harmless");
@@ -278,7 +278,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     ok(tc("olive", "delete", { id: "@world", component: "trusted-components" }).ok && TW().entities["@world"].c["trusted-components"] === undefined, "TR7 the owner removes the list (stop trusting the last one)");
   }
   { // translation: v1 lock is the identity; v1 guard becomes a lock, and is counted
-    const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log", roles: { ann: { role: "owner" } } } },
+    const old = [{ seq: 0, ts: 1, actor: "world", args: { v: 2, dialect: "eidoverse-log", roles: { ann: { role: "owner" } } } },
       { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } },
       { seq: 1, ts: 2, actor: "ann", verb: "spawn", args: { id: "statue", lib: "crate", pos: [1, 0, 1] } },
       { seq: 2, ts: 3, actor: "ann", verb: "comp", args: { id: "statue", type: "lock", data: true } },
@@ -335,7 +335,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 // ---- M: translated mounts in the authority's shape (research 37, slice 3 #3) ----
 // translate-v1@1 carried v1's parent record and v1's own pos; the authority reads transform as LOCAL to parent, so it saw a
 // riding crate wherever its unused pre-mount pos pointed. Now the authority must see it where v1 draws it.
-{ const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
+{ const old = [{ seq: 0, ts: 1, actor: "world", args: { v: 2, dialect: "eidoverse-log" } },
     { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } },
     { seq: 2, ts: 3, actor: "ann", verb: "spawn", args: { id: "tbl", lib: "table", pos: [2, 0, 3] } },
     { seq: 2, ts: 3, actor: "ann", verb: "spawn", args: { id: "rack", lib: "table", pos: [-3, 0, 2], yaw: 0.5 } },
@@ -404,7 +404,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const same = (what) => { steps++; const inc = flat(actIndexOf(w)), fresh = flat(actIndexFresh(readLog(fs.readFileSync(dir + "world.jsonl"))));
     if (inc !== fresh && !firstBad) firstBad = [what, inc.slice(0, 300), fresh.slice(0, 300)]; };
   const step = (actor, verb, args = {}) => { const r = call(actor, verb, args); same(`${actor} ${verb}`); return r; };
-  const purge = (values) => { now += 100; w.append({ kind: "purge", actor: "system", verb: "purge", body: { values } }); same("purge"); };
+  const purge = (values) => { now += 100; w.append({ kind: "redaction", actor: "system", body: { values } }); same("purge"); };
   const label = () => w.state().entities.crate?.c.label;
   step("rowan", "create-world", { title: "undo" }); step("rowan", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
   step("bob", "create", { id: "crate", model: "crate", place: { at: [0, 0] } });
@@ -458,7 +458,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const before = n();
   const e2 = call("ann", "set", { id: "tbl", component: "transform", value: { ...moved, pos: [5, t0.pos[1], 5] }, expect: [{ id: "tbl", component: "transform", value: moved }] });
   const rec = w.entries.slice(before);
-  ok(code(e2) === "changed" && e2.refused.by === "bob" && rec.length === 1 && rec[0].kind === "act" && rec[0].body?.refused?.code === "changed" && w.state().entities.tbl.c.transform.pos[0] === 2,
+  ok(code(e2) === "changed" && e2.refused.by === "bob" && rec.length === 1 && rec[0].kind === "request" && rec[0].body?.refused?.code === "changed" && w.state().entities.tbl.c.transform.pos[0] === 2,
     "E2 someone changed it since: refused `changed`, naming them; no change is written, only the attempt (an act carrying its refusal, round-2 R7)", [e2.refused, rec.map((e) => [e.kind, e.body?.refused])]);
   ok(code(call("ann", "set", { id: "tbl", component: "label", value: "x", expect: [{ id: "tbl", component: "label", value: "y" }] })) === "changed", "E3 expecting a value that isn't there");
   ok(call("ann", "set", { id: "tbl", component: "label", value: "x", expect: [{ id: "tbl", component: "label" }] }).ok, "E4 value left out = expect it absent");
@@ -471,7 +471,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const st = w.state(); const copy = d1.after && Object.keys(d1.after).find((k) => st.entities[k]?.c.model === "table" && k !== "tbl");
   const kid = copy && Object.keys(st.entities).find((k) => st.entities[k].c.parent?.to === copy);
   ok(d1.ok && copy && kid && !("lock" in st.entities[copy].c) && st.entities[kid].c.model === "crate", "D1 duplicate copies the thing and what's attached to it, as one act (the lock isn't copied)", [d1.refused, copy, kid]);
-  ok(d1.ok && Math.abs(st.entities[copy].c.transform.pos[0] - (st.entities.tbl.c.transform.pos[0] + 0.5)) < 1e-9 && opsOf(w.entries[d1.seq]).filter((o) => o.verb === "create").length === 2, "D2 …0.5 m along x, in ONE change entry (two creates)", st.entities[copy]?.c.transform);
+  ok(d1.ok && Math.abs(st.entities[copy].c.transform.pos[0] - (st.entities.tbl.c.transform.pos[0] + 0.5)) < 1e-9 && opsOf(w.entries[d1.seq]).filter((o) => o.op === "create").length === 2, "D2 …0.5 m along x, in ONE change entry (two creates)", st.entities[copy]?.c.transform);
   ok(d1.ok && w.entries[d1.seq].actor === "bob" && w.entries[d1.act].body.request.from === "tbl", "D3 the copy is bob's (the act says what it copied)");
   const d4 = call("bob", "undo", { act: d1.act });
   ok(d4.ok && !w.state().entities[copy] && !w.state().entities[kid], "D4 undoing the duplicate removes both parts", d4.refused);
@@ -541,10 +541,10 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   call("ann", "set", { id: "gap-1", component: "label", value: "x" }); const from = w.entries.length; ok(call("ann", "set", { id: "gap-1", component: "label", value: "y" }).ok, "K4 (precondition) the edit after the missed one is written");
   ok(c.ingest(JSON.parse(JSON.stringify(w.entries.slice(from))), from).resync, "K4 a gap (a missed entry) asks for a fresh snapshot, never folds past it");
   const c2 = makeReplica(); c2.adopt(JSON.parse(JSON.stringify({ state: wireState(w.state()), head: w.entries.length - 1 })));
-  now += 100; w.append({ kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: from + 1 }] } });
+  now += 100; w.append({ kind: "redaction", actor: "system", body: { values: [{ seq: from + 1 }] } });
   ok(c2.ingest(JSON.parse(JSON.stringify(w.entries.slice(-1))), w.entries.length - 1).resync, "K5 a purge (retroactive, L1) asks for a fresh snapshot");
   const sv = stateFromWire(JSON.parse(JSON.stringify(wireState(w.state()))));
-  ok(digest(sv) === digest(w.state()) && sv.entities["gap-1"]?.c.label === PURGED, "K6 wireState survives the wire both ways, a purged value still purged (not a value)", sv.entities["gap-1"]?.c); }
+  ok(digest(sv) === digest(w.state()) && sv.entities["gap-1"]?.c.label === REDACTED, "K6 wireState survives the wire both ways, a purged value still purged (not a value)", sv.entities["gap-1"]?.c); }
 
 // ---- E: a handler whose author a purge erased acts for nobody (house 6340433633 Q2) ----
 { let now = clock.t + 7000; const w = openLive(root + "erased/", "erased", { kindOf: LABKIND, now: () => now });
@@ -553,8 +553,8 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   call("bob", "create", { id: "box", model: "crate", place: { at: [3, 3] } });
   call("bob", "set", { id: "box", component: "reactions", value: { evolve: { kind: "set", component: "reactions", value: { tag: { kind: "set", component: "label", value: "tagged" } } } } });
   ok(call("vic", "use", { id: "box", action: "evolve" }).ok, "E1 (setup) vic's use of bob's evolve installs bob's tag handler");
-  const useSeq = [...w.entries].reverse().find((e) => e?.kind === "act" && e.verb === "use" && e.actor === "vic")?.seq;
-  now += 100; w.append({ kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: useSeq }] } });
+  const useSeq = [...w.entries].reverse().find((e) => e?.kind === "request" && e.verb === "use" && e.actor === "vic")?.seq;
+  now += 100; w.append({ kind: "redaction", actor: "system", body: { values: [{ seq: useSeq }] } });
   ok(call("ann", "set", { id: "@world", component: "roles:bob", value: { role: "member" } }).ok, "E1 (setup) bob is made a member");
   const r = call("vic", "use", { id: "box", action: "tag" });
   ok(!r.ok && r.refused?.code === "rights" && /erased/.test(r.refused?.reason ?? "") && w.state().entities.box.c.label !== "tagged",
@@ -749,7 +749,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 // ---- P: the pivot component (research 52: Roblox's PivotOffset; where it turns and scales from, never moves it) ----
 { const { editOps, inspectSchema, addOps } = await import("../../shared/editschema.js");
   // the planner's ops: a set's value / a delete of the component
-  const val = (r) => r.ops[0]?.verb === "set" ? r.ops[0].args.value : r.ops[0]?.verb === "delete" ? null : undefined;
+  const val = (r) => r.ops[0]?.op === "set" ? r.ops[0].args.value : r.ops[0]?.op === "delete" ? null : undefined;
   const { componentsOf, entityOf } = await import("../../shared/components.js");
   const pw = callAt("pivots");
   pw("ann", "create-world", { title: "pivots" });
@@ -767,7 +767,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const c2 = val(editOps(ent, "g", { "pivot.base": true }, live));
   ok(JSON.stringify(c2) === JSON.stringify({ pos: [2.6, 0, 0] }), "P6 'base' snaps it to the middle of the bottom face", c2);
   const c3 = editOps(ent, "g", { "pivot.reset": true }, live).ops[0];
-  ok(c3?.verb === "delete" && c3.args.component === "pivot", "P7 'origin' removes it (turn about the origin again)", c3);
+  ok(c3?.op === "delete" && c3.args.component === "pivot", "P7 'origin' removes it (turn about the origin again)", c3);
   const sc = inspectSchema(ent, "g", live);
   ok(sc.sections.list.some((c) => c.type === "Pivot" && c.fields.includes("pivot.x")), "P8 the Inspector draws a Pivot card with its channels");
   const a = addOps({ model: "x.glb", pos: [0, 0, 0] }, "g", "Pivot");
@@ -779,7 +779,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(!c5.errors.length && JSON.stringify(val(c5)) === JSON.stringify({ pos: [0, 1.5, 0] }), "P11 …as does pivot.y", c5);
   // the channel edits honour the pivot too (Maya's channel box; agent lab round 2, Rowan: 'edit rot.y +=90' swung the gate about its origin)
   const gate = { model: "x.glb", pos: [10, 0, 10], yaw: 0, pivot: { pos: [1, 0, 0] } };
-  const placeOf = (r) => r.ops.find((o) => o.verb === "set" && o.args.component === "transform")?.args.value;   // the whole transform
+  const placeOf = (r) => r.ops.find((o) => o.op === "set" && o.args.component === "transform")?.args.value;   // the whole transform
   const r1 = placeOf(editOps(gate, "g", { "rot.y": 90 }, live));
   ok(r1 && Math.abs(r1.pos[0] - 11) < 1e-6 && Math.abs(r1.pos[2] - 11) < 1e-6, "P12 rot.y = 90 on a pivoted thing turns it ABOUT the pivot: its origin goes to (11, 0, 11)", r1);
   const r2 = placeOf(editOps(gate, "g", { "pos.scale": 2 }, live));
@@ -1092,7 +1092,7 @@ const w0 = () => openWorld(root, "tier0");
   const h1 = R("ann", "history", { verbs: ["say"], limit: 5 });
   ok(h1.ok && h1.entries.length === 1 && h1.entries[0].kind === "say" && h1.entries[0].body?.text === "hello", "CP4 history {verbs} filters the whole log (it reached nobody: only limit was read)", h1);
   const p1 = R("ann", "history", { verbs: ["set"], limit: 3 }); const p2 = R("ann", "history", { verbs: ["set"], limit: 3, before: p1.next });
-  ok(p1.entries.length === 3 && p1.next === p1.entries[0].seq && p2.entries.length === 3 && p2.entries.at(-1).seq < p1.entries[0].seq && p2.entries.every((e) => e.verb === "set"),
+  ok(p1.entries.length === 3 && p1.next === p1.entries[0].seq && p2.entries.length === 3 && p2.entries.at(-1).seq < p1.entries[0].seq && p2.entries.every((e) => e.op === "set"),
     "CP5 history {before} pages back through the whole log, oldest first within a page, with next", [p1.entries.map((e) => e.seq), p1.next, p2.entries.map((e) => e.seq)]);
   const a1 = R("ann", "history", { after: all[0].seq, limit: 2 });
   ok(a1.entries.length === 2 && a1.entries[0].seq > all[0].seq && a1.next === a1.entries[1].seq, "CP5 …and {after} forward", a1);
@@ -1101,10 +1101,10 @@ const w0 = () => openWorld(root, "tier0");
   const ref = R("ann", "history", { verbs: ["create"], limit: 10 }).entries.find((e) => e.actor === "vic");
   ok(ref?.body?.refused?.code === "rights", "CP6 a refused attempt reads as refused in history (its body says so)", ref);
   // a translated world: a v1 entry is an act `legacy` naming its v1 verb; verbs: ['comp'] finds it
-  { const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log", roles: { ann: { role: "owner" } } } },
+  { const old = [{ seq: 0, ts: 1, actor: "world", args: { v: 2, dialect: "eidoverse-log", roles: { ann: { role: "owner" } } } },
       { seq: 1, ts: 2, actor: "ann", verb: "spawn", args: { id: "lamp_1", lib: "crate", pos: [1, 0, 1] } },
       { seq: 2, ts: 3, actor: "ann", verb: "comp", args: { id: "lamp_1", type: "label", data: "old" } },
-      { seq: 3, ts: 4, actor: "ann", verb: "say", args: { text: "from v1" } }];
+      { seq: 3, ts: 4, actor: "ann", args: { text: "from v1" } }];
     const r = translate(old, { foldBuild: v1FoldBuild(), ...DOORKEYS() });
     fs.writeFileSync(root + "worlds/cp-tr.jsonl", r.out.map((e) => JSON.stringify(e)).join("\n") + "\n");
     const hv = request(openWorld(root, "cp-tr"), "ann", "history", { verbs: ["comp"] });
@@ -1295,7 +1295,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
 // LS2: a world written before the cut (translate-v1 still writes the old spelling): undoing its last sockets edit lands
 // on socket children. The door lifts the host first (its stored map to children, the bell on its perch into the perch's
 // child, where it was), then the old value is a diff against them.
-{ const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
+{ const old = [{ seq: 0, ts: 1, actor: "world", args: { v: 2, dialect: "eidoverse-log" } },
     { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } },
     { seq: 1, ts: 2, actor: "ann", verb: "spawn", args: { id: "tbl", lib: "table", pos: [2, 0, 3], yaw: 0.7 } },
     { seq: 2, ts: 3, actor: "ann", verb: "comp", args: { id: "tbl", type: "sockets", data: { perch: { pos: [0.45, 0.75, 0.25], yaw: 1.2 } } } },
@@ -1310,7 +1310,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   // (before the last sockets edit, which stays the latest act: the one the undo below takes back)
   const home = { pos: [0.1, 0, 0], q: [0, 0, 0, 1], parent: { to: "tbl", socket: "perch" } }; const wid = r.out[1].world; const n = r.out.length - 2;
   const last = r.out.splice(n, 2); last[1] = { ...last[1], cause: last[1].cause + 2 };
-  r.out.push({ world: wid, kind: "act", actor: "ann", verb: "set", body: { request: { id: "coin", component: "home", value: home } }, ts: last[0].ts }, { world: wid, kind: "change", actor: "ann", cause: n, verb: "batch", body: { ops: [{ verb: "set", id: "coin", comp: "home", value: home }, { verb: "set", id: "coin", comp: "grabbable", value: { who: "member", home } }] }, ts: last[0].ts }, ...last);
+  r.out.push({ world: wid, kind: "request", actor: "ann", op: "set", body: { request: { id: "coin", component: "home", value: home } }, ts: last[0].ts }, { world: wid, kind: "change", actor: "ann", cause: n, op: "batch", body: { ops: [{ op: "set", id: "coin", comp: "home", value: home }, { op: "set", id: "coin", comp: "grabbable", value: { who: "member", home } }] }, ts: last[0].ts }, ...last);
   fs.writeFileSync(root + "worlds/tr-lift.jsonl", r.out.map((e) => JSON.stringify(e)).join("\n") + "\n");
   const tc = (verb, args) => { clock.advance(100); return request(openWorld(root, "tr-lift"), "ann", verb, args); };
   const homeAt = (st, h) => worldT({ entities: { ...st.entities, x: { c: { parent: { to: h.parent.to }, transform: { pos: h.pos, q: h.q } } } } }, "x").pos;
@@ -1331,7 +1331,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   const coin0 = worldT(S(), "coin"); const pc = tc("set", { id: "coin", component: "parent", value: { to: "rack", socket: "hook" } }); const s2 = S();
   const hook = Object.keys(s2.entities).find((k) => s2.entities[k].c.parent?.to === "rack" && s2.entities[k].c.socket?.name === "hook");
   ok(pc.ok && s2.entities.rack.c.sockets === undefined && !!hook && s2.entities.coin.c.parent?.to === hook && near(worldT(s2, "coin").pos, coin0.pos), "LS2 a parent {to, socket} on a host still holding its map lifts that host first: rack's hook is a child, and the coin rides it where it was", [pc.refused, s2.entities.rack.c.sockets, s2.entities.coin.c.parent]);
-  ok(!openWorld(root, "tr-lift").entries.slice(r.out.length).some((e) => e.kind === "change" && opsOf(e).some((o) => o.comp === "sockets" && o.verb === "set" || (o.comp === "parent" && o.value?.socket !== undefined))), "LS2 …and nothing written after the cut holds the old spelling");
+  ok(!openWorld(root, "tr-lift").entries.slice(r.out.length).some((e) => e.kind === "change" && opsOf(e).some((o) => o.comp === "sockets" && o.op === "set" || (o.comp === "parent" && o.value?.socket !== undefined))), "LS2 …and nothing written after the cut holds the old spelling");
 }
 
 // LK122: a lock refusal says whether the asker may lift it (the padlock's buttons ride on mayLift: true): a
@@ -1493,12 +1493,12 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
 }
 // SR2e: the maintenance lift carries what the log already holds: a pre-cut host with 70 slots keeps all 70 (a carry, not a request)
 { const slots = Object.fromEntries(Array.from({ length: 70 }, (_, j) => [`m${j}`, { pos: [0, 1, j * 0.01] }]));
-  const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } }, { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } },
+  const old = [{ seq: 0, ts: 1, actor: "world", args: { v: 2, dialect: "eidoverse-log" } }, { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } },
     { seq: 2, ts: 3, actor: "ann", verb: "spawn", args: { id: "wall", lib: "crate", pos: [0, 0, 0] } }, { seq: 3, ts: 4, actor: "ann", verb: "comp", args: { id: "wall", type: "sockets", data: slots } }];
   const out = translate(old, DOORKEYS()).out; const n0 = out.length;   // and the world's entity budget is already spent: 1 (the wall)
   const capv = { entities: 1, guestEntities: 0, avatar: 2000 }, ts = out[n0 - 1].ts + 1;   // an act and its change, as the precut helper below writes them
-  out.push({ world: out[1].world, kind: "act", actor: "ann", verb: "set", body: { request: { id: "@world", component: "capacity", value: capv } }, ts },
-    { world: out[1].world, kind: "change", actor: "ann", cause: n0, verb: "batch", body: { ops: [{ verb: "set", id: "@world", comp: "capacity", value: capv }] }, ts });
+  out.push({ world: out[1].world, kind: "request", actor: "ann", op: "set", body: { request: { id: "@world", component: "capacity", value: capv } }, ts },
+    { world: out[1].world, kind: "change", actor: "ann", cause: n0, op: "batch", body: { ops: [{ op: "set", id: "@world", comp: "capacity", value: capv }] }, ts });
   fs.writeFileSync(root + "worlds/sockcap-lift.jsonl", out.map((e) => JSON.stringify(e)).join("\n") + "\n");
   const lw = openWorld(root, "sockcap-lift"); const cap0 = lw.state().entities["@world"]?.c.capacity?.entities; let threw = null; try { maintain(lw); } catch (x) { threw = String(x?.message ?? x); }
   const st = openWorld(root, "sockcap-lift").state(); const n = Object.values(st.entities).filter((e) => e.c.parent?.to === "wall" && e.c.socket).length;
@@ -1507,7 +1507,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
 // SRU (review 10-12 S2): undo across the maintenance lift. A pre-cut world: tbl has sockets {perch}, the bell is mounted on the
 // perch. Its writer is the door's own (translate-v1, then acts appended as a pre-cut door stored them); maintenance at open (AU.maintain) lifts it.
 const precut = (name, extra = [], acts = []) => {
-  const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
+  const old = [{ seq: 0, ts: 1, actor: "world", args: { v: 2, dialect: "eidoverse-log" } },
     { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } }, { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "bob", role: "owner" } },
     { seq: 2, ts: 2, actor: "ann", verb: "spawn", args: { id: "tbl", lib: "table", pos: [2, 0, 3], yaw: 0.7 } },
     { seq: 3, ts: 3, actor: "ann", verb: "comp", args: { id: "tbl", type: "sockets", data: { perch: { pos: [0.45, 0.75, 0.25], yaw: 1.2 } } } },
@@ -1515,8 +1515,8 @@ const precut = (name, extra = [], acts = []) => {
     { seq: 5, ts: 5, actor: "ann", verb: "mount", args: { id: "bell", to: "tbl", slot: "perch" } }, ...extra];
   const out = translate(old, DOORKEYS()).out; const wid = out[1].world;
   for (const [actor, ops] of acts) { const n = out.length; const ts = out[n - 1].ts + 1;   // an act and its change, as a pre-cut door wrote them
-    out.push({ world: wid, kind: "act", actor, verb: ops.length > 1 ? "batch" : "set", body: { request: ops.length > 1 ? { ops } : { id: ops[0].id, component: ops[0].comp, value: ops[0].value } }, ts },
-      { world: wid, kind: "change", actor, cause: n, verb: "batch", body: { ops: ops.map((o) => ({ verb: "set", ...o })) }, ts }); }
+    out.push({ world: wid, kind: "request", actor, verb: ops.length > 1 ? "batch" : "set", body: { request: ops.length > 1 ? { ops } : { id: ops[0].id, component: ops[0].comp, value: ops[0].value } }, ts },
+      { world: wid, kind: "change", actor, cause: n, op: "batch", body: { ops: ops.map((o) => ({ verb: "set", ...o })) }, ts }); }
   fs.writeFileSync(root + `worlds/${name}.jsonl`, out.map((e) => JSON.stringify(e)).join("\n") + "\n"); return out; };
 const nearly = (a, b, e = 1e-8) => !!a && !!b && a.every((v, i) => Math.abs(v - b[i]) < e);
 // SRU1 (S2-1): a pre-cut act moved the bell up 0.2 m on its perch (the transform in the HOST's frame, as stored then)
@@ -1548,16 +1548,16 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
 // SRW (S2-3): the maintenance lift of a host the door would refuse today. Pre-cut: role-defs crew; a-chair's seat has body.who
 // 'crew'; b-chair has a plain seat; crew is deleted. The lift re-spells what the log holds (a carry: no re-judging
 // historical values), and one host that fails anyway doesn't stop the hosts after it: it's said, per host, to the caller.
-{ const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } }, { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } },
+{ const old = [{ seq: 0, ts: 1, actor: "world", args: { v: 2, dialect: "eidoverse-log" } }, { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } },
     { seq: 2, ts: 3, actor: "ann", verb: "spawn", args: { id: "a-chair", lib: "crate", pos: [0, 0, 0] } }, { seq: 3, ts: 4, actor: "ann", verb: "spawn", args: { id: "b-chair", lib: "crate", pos: [3, 0, 0] } },
     { seq: 4, ts: 5, actor: "ann", verb: "spawn", args: { id: "c-chair", lib: "crate", pos: [6, 0, 0] } }];
   const write = (name, ops) => { const out = translate(old, DOORKEYS()).out; const wid = out[1].world;
-    for (const o of ops) { const n = out.length; const ts = out[n - 1].ts + 1; const req = o.verb === "delete" ? { id: o.id, component: o.comp } : { id: o.id, component: o.comp, value: o.value };
-      out.push({ world: wid, kind: "act", actor: "ann", verb: o.verb, body: { request: req }, ts }, { world: wid, kind: "change", actor: "ann", cause: n, verb: o.verb, body: { id: o.id, comp: o.comp, ...(o.verb === "set" ? { value: o.value } : {}) }, ts }); }
+    for (const o of ops) { const n = out.length; const ts = out[n - 1].ts + 1; const req = o.op === "delete" ? { id: o.id, component: o.comp } : { id: o.id, component: o.comp, value: o.value };
+      out.push({ world: wid, kind: "request", actor: "ann", verb: o.verb, body: { request: req }, ts }, { world: wid, kind: "change", actor: "ann", cause: n, verb: o.verb, body: { id: o.id, comp: o.comp, ...(o.op === "set" ? { value: o.value } : {}) }, ts }); }
     fs.writeFileSync(root + `worlds/${name}.jsonl`, out.map((e) => JSON.stringify(e)).join("\n") + "\n"); };
   const seat = (extra = {}) => ({ seat: { pos: [0, 0.5, 0], body: { action: "sit", ...extra } } });
-  write("srw1", [{ verb: "set", id: "@world", comp: "role-defs", value: { crew: { name: "Crew", rank: 150, can: { build: true } } } },
-    { verb: "set", id: "a-chair", comp: "sockets", value: seat({ who: "crew" }) }, { verb: "set", id: "b-chair", comp: "sockets", value: seat() }, { verb: "delete", id: "@world", comp: "role-defs" }]);
+  write("srw1", [{ op: "set", id: "@world", comp: "role-defs", value: { crew: { name: "Crew", rank: 150, can: { build: true } } } },
+    { op: "set", id: "a-chair", comp: "sockets", value: seat({ who: "crew" }) }, { op: "set", id: "b-chair", comp: "sockets", value: seat() }, { op: "delete", id: "@world", comp: "role-defs" }]);
   let threw = null, out = null; try { out = maintain(openWorld(root, "srw1")).steps.lift; } catch (x) { threw = String(x?.message ?? x).slice(0, 200); }
   const st = openWorld(root, "srw1").state(); const kids = (h) => Object.values(st.entities).filter((e) => e.c.parent?.to === h && e.c.socket).length;
   clock.advance(100); const sit = request(openWorld(root, "srw1"), "ann", "use", { id: "b-chair", action: "sit" });
@@ -1565,8 +1565,8 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   // a host the lift can't WRITE (here: the first append for it throws, as a full disk would) is not a refused host: the line's
   // disk state is unknown, so the throw PROPAGATES out of maintain (review r14 H1, 10-18; the caller reports ambiguous) and
   // nothing is lifted in that run. A refusal (the door's) is still per host: SRW1 above.
-  write("srw2", [{ verb: "set", id: "a-chair", comp: "sockets", value: seat() }, { verb: "set", id: "b-chair", comp: "sockets", value: seat() }, { verb: "set", id: "c-chair", comp: "sockets", value: seat() }]);
-  const w2 = openWorld(root, "srw2"); const real = w2.append.bind(w2); let n = 0; w2.append = (e, ...more) => { if (e.kind === "act" && e.verb === "lift-sockets" && e.body?.id === "a-chair" && !n++) throw new Error("disk full"); return real(e, ...more); };
+  write("srw2", [{ op: "set", id: "a-chair", comp: "sockets", value: seat() }, { op: "set", id: "b-chair", comp: "sockets", value: seat() }, { op: "set", id: "c-chair", comp: "sockets", value: seat() }]);
+  const w2 = openWorld(root, "srw2"); const real = w2.append.bind(w2); let n = 0; w2.append = (e, ...more) => { if (e.kind === "request" && e.verb === "lift-sockets" && e.body?.id === "a-chair" && !n++) throw new Error("disk full"); return real(e, ...more); };
   let t2 = null, o2 = null; try { const m2 = maintain(w2).steps.lift; o2 = [...m2.made, ...m2.failed]; } catch (x) { t2 = String(x?.message ?? x); }
   const s2 = openWorld(root, "srw2").state(); const k2 = (h) => Object.values(s2.entities).filter((e) => e.c.parent?.to === h && e.c.socket).length;
   ok(/disk full/.test(t2 ?? "") && o2 === null && k2("a-chair") === 0 && k2("b-chair") === 0 && k2("c-chair") === 0 && !!s2.entities["a-chair"].c.sockets, "SRW2 a host whose lift's WRITE throws (disk full) is not reported as a refused host: the throw propagates out of maintain (ambiguous to the caller, r14 H1), and nothing was written in that run", { t2, o2, a: k2("a-chair"), b: k2("b-chair"), c: k2("c-chair") });
@@ -1659,7 +1659,7 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   const turnedAway = WANT.filter((v) => !alone[v]?.ok || !inBatch[v]?.ok);
   ok(JSON.stringify(named) === JSON.stringify(WANT) && !turnedAway.length, "BT5 batch's help names exactly create, set, delete, place, turn, sky, weather, and each goes in a batch, dry, as it goes alone (a builder for each)", { named, turnedAway: turnedAway.map((v) => [v, alone[v]?.refused ?? alone[v]?.ok, inBatch[v]?.refused ?? inBatch[v]?.ok]) }); }
 
-// ---- RA (review of #260): a log changed outside the purge rule reads as unknown and the fold names the line (commit-unpurged); writes, reads and the operator's repair go on ----
+// ---- RA (review of #260): a log changed outside the purge rule reads as unknown and the fold names the line (commitment-unredacted); writes, reads and the operator's repair go on ----
 { const name = "altered"; const file = `${root}worlds/${name}.jsonl`;
   const call = callAt(name);
   const opr = (actor, verb, args = {}) => { clock.advance(100); return operatorRepair(openWorld(root, name), actor, verb, args); };
@@ -1674,8 +1674,8 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   const op = opr("opal", "set", { id: "@world", component: "access", value: { join: "anyone" } });
   // the house's markup (#260 10-20), accepted: detecting the stripped value is §12's bone; refusing everyone's writes on that
   // record until it's restored was a policy no world asked for, so it came out with the recut
-  ok(role === PURGED && before === PURGED && write.ok && read.ok && op.ok && w.state().diagnostics.some(([q, c]) => q === k && c === "commit-unpurged"),
-    "RA1 a value stripped to its commit with no purge reads as unknown and the fold names the line (commit-unpurged); writes and reads go on, and so does the operator's repair", { role, before, write: write.refused, read: read.ok, op: op.ok ?? op.refused, k }); }
+  ok(role === REDACTED && before === REDACTED && write.ok && read.ok && op.ok && w.state().diagnostics.some(([q, c]) => q === k && c === "commitment-unredacted"),
+    "RA1 a value stripped to its commit with no purge reads as unknown and the fold names the line (commitment-unredacted); writes and reads go on, and so does the operator's repair", { role, before, write: write.refused, read: read.ok, op: op.ok ?? op.refused, k }); }
 // ---- RA2 (review of #260): a state view that already folded the log meets a new line holding a value stripped to its
 // commit: it reads the whole log again, as the fold reads such a line, rather than throwing out of the state getter ----
 { const name = "altered-live";
@@ -1684,12 +1684,12 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   const w = openWorld(root, name); w.state();   // folded once: the next new plain lines are applied incrementally
   const L = w.entries, last = L[L.length - 1], at = L.length;
   const line = (e) => { const x = readLog(JSON.stringify(e) + "\n")[0]; Object.defineProperty(x, "seq", { value: L.length, enumerable: false, configurable: true }); L.push(x); };
-  line({ world: last.world, kind: "change", ts: last.ts + 1, actor: "olive", cause: at - 1, verb: "set", body: { id: "sign", comp: "label", commit: "0".repeat(64) } });
+  line({ world: last.world, kind: "change", ts: last.ts + 1, actor: "olive", cause: at - 1, op: "set", body: { id: "sign", comp: "label", commit: "0".repeat(64) } });
   let st1 = null, err = null; try { st1 = w.state(); } catch (x) { err = `${x?.constructor?.name}: ${x?.message}`.slice(0, 120); }
-  line({ world: last.world, kind: "purge", ts: last.ts + 2, actor: "system", verb: "purge", body: { values: [{ seq: at }] } });
+  line({ world: last.world, kind: "redaction", ts: last.ts + 2, actor: "system", body: { values: [{ seq: at }] } });
   const st2 = err ? null : w.state();
-  ok(!err && st1?.entities.sign.c.label === PURGED && st1.diagnostics.some(([q, c]) => q === at && c === "commit-unpurged") && st2?.entities.sign.c.label === PURGED && !st2.diagnostics.some(([, c]) => c === "commit-unpurged"),
-    "RA2 a new line with a value stripped to its commit, after the state was folded, reads as unknown (commit-unpurged until a purge names it), not a throw from the state view", { err, label: st1?.entities?.sign?.c?.label, d1: st1?.diagnostics?.slice(-2), d2: st2?.diagnostics?.slice(-2) }); }
+  ok(!err && st1?.entities.sign.c.label === REDACTED && st1.diagnostics.some(([q, c]) => q === at && c === "commitment-unredacted") && st2?.entities.sign.c.label === REDACTED && !st2.diagnostics.some(([, c]) => c === "commitment-unredacted"),
+    "RA2 a new line with a value stripped to its commit, after the state was folded, reads as unknown (commitment-unredacted until a purge names it), not a throw from the state view", { err, label: st1?.entities?.sign?.c?.label, d1: st1?.diagnostics?.slice(-2), d2: st2?.diagnostics?.slice(-2) }); }
 // ---- OP: a server operator's recorded repair (review of PR #260, server.ts:742: a server operator entered but could mend nothing).
 // operatorRepair is NARROW (@world's roles/access/default-role/role-defs, unban) and RECORDED (the operator's act, body
 // operator: true; the moderator-log record likewise); the operator's ordinary requests stay what their role here allows.
@@ -1708,7 +1708,7 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   const grant = opr("opal", "set", { id: "@world", component: "roles:bob", value: { role: "owner" } });
   const lift = opr("opal", "unban", { who: "opal" });
   const door = opr("opal", "set", { id: "@world", component: "access", value: { join: "anyone" } });
-  const w2 = openWorld(root, name); const acts = w2.entries.filter((e) => e.kind === "act" && e.actor === "opal" && e.body?.operator === true);
+  const w2 = openWorld(root, name); const acts = w2.entries.filter((e) => e.kind === "request" && e.actor === "opal" && e.body?.operator === true);
   const modRec = w2.mod.find((m) => m.verb === "unban" && m.who === "opal");
   ok(grant.ok && lift.ok && door.ok && wc()["roles:bob"]?.role === "owner" && wc().access?.join === "anyone" && !isBanned(w2, "opal"),
     "OP2 operatorRepair mends roles (grants an owner), lifts a ban (their own, too) and repairs access", [grant.refused, lift.refused, door.refused, wc()["roles:bob"], wc().access]);

@@ -3,7 +3,7 @@
 // rotation a log takes; scratch is the preview the index files). Two lines ride along from elsewhere because this is where
 // they are read: VOLATILE (the spatial section's "indexed whole" mark, which scratch propagates) and opsQuiet (the rights
 // section's quiet opsOf, which worldOf's presence fold uses).
-import { readLog, fold, opsOf, followUpsOf, applyInPlace, cloneState, cowState, applyCow, checkEntry, jcs, sha256, utf8Len, worldIdOf, Malformed, PURGED } from "../fold.js";
+import { readLog, fold, opsOf, cascadeOf, applyInPlace, cloneState, cowState, applyCow, checkEntry, jcs, sha256, utf8Len, worldIdOf, Malformed, REDACTED } from "../fold.js";
 import { sha256Bytes, hexBytes } from "../hash.js";
 import * as R from "../roles.js";
 import { simFold } from "../simlayer.js";
@@ -78,7 +78,7 @@ export function worldOf(io) {
   // commit, which only the whole log's purges can read) re-folds from scratch
   w.state = () => { if (cache?.n === entries.length) return cache.st;
     const fresh = entries.slice(cache?.n ?? 0);
-    if (cache && cache.st.status === "ok" && fresh.every((e) => isE(e) && ["change", "act", "sim", "say"].includes(e.kind))) {
+    if (cache && cache.st.status === "ok" && fresh.every((e) => isE(e) && ["change", "request", "physics", "say"].includes(e.kind))) {
       const st = cloneState(cache.st);
       try { fresh.forEach((e, k) => { if (e.kind === "change") applyInPlace(st, opsOf(e), cache.n + k); });
         return (cache = { n: entries.length, st }).st; } catch (x) { if (!(x instanceof Malformed)) throw x; } }
@@ -95,7 +95,7 @@ export function worldOf(io) {
   w.seedHead = (seq, head) => { low = null; heads.length = 0; if (seq < 0) hb = 0; else { hb = seq; heads.push(head); } };   // seq < 0: unseeded
   // §3d H7: every id this world has ever created (a log view, kept incrementally): an id is never reused
   const ever = { n: 0, ids: new Set() }; w.__ever = ever;   // a host seeds it from its fold cache (server/foldviews.ts)
-  w.everIds = () => { for (; ever.n < entries.length; ever.n++) { const e = entries[ever.n]; if (isE(e) && e.kind === "change") for (const o of opsQuiet(e)) if (o.verb === "create") ever.ids.add(o.id); } return ever.ids; };
+  w.everIds = () => { for (; ever.n < entries.length; ever.n++) { const e = entries[ever.n]; if (isE(e) && e.kind === "change") for (const o of opsQuiet(e)) if (o.op === "create") ever.ids.add(o.id); } return ever.ids; };
   w.sim = () => simFold(entries, w.now());
   w.stateAt = (seq) => fold(entries, { until: seq });
   // The authority re-reads every line it writes with the strict reader: it can never write what a reader would refuse.
@@ -111,7 +111,7 @@ export function worldOf(io) {
     // §2.4: the chain commits an act/say/sim body as sha256(body.salt ‖ JCS(rest)). Unsalted, a purged chat line (most of
     // the personal data a world holds) can be recovered by guessing it against the commit. So in a chained log every such
     // body carries 16 random bytes (round-2 review R3). Readers take bodies by field, so the salt is invisible to them.
-    if (io.custody?.sign && ["act", "say", "sim"].includes(e.kind) && obj.body && typeof obj.body === "object" && !Array.isArray(obj.body) && !("salt" in obj.body))
+    if (io.custody?.sign && ["request", "say", "physics"].includes(e.kind) && obj.body && typeof obj.body === "object" && !Array.isArray(obj.body) && !("salt" in obj.body))
       obj.body = { ...obj.body, salt: nonce16(w) };
     if (chained && e.kind !== "genesis" && io.custody?.sign && w.worldId) {
       // "size": the line as it will be written, for fits(): a later entry's head can't be known before the earlier ones are
@@ -198,14 +198,14 @@ export const seedPurgedSeqs = (w, n) => { purgeIx.set(w.entries, { n, seqs: new 
 export function purgedSeqs(w) {
   const E = w.entries; let c = purgeIx.get(E); if (!c) purgeIx.set(E, (c = { n: 0, seqs: new Set() }));
   for (; c.n < E.length; c.n++) { const e = E[c.n];
-    if (isE(e) && e.kind === "purge" && Array.isArray(e.body?.values)) for (const t of e.body.values) if (t && typeof t === "object" && Number.isInteger(t.seq) && t.seq < c.n && t.op === undefined) c.seqs.add(t.seq); }
+    if (isE(e) && e.kind === "redaction" && Array.isArray(e.body?.values)) for (const t of e.body.values) if (t && typeof t === "object" && Number.isInteger(t.seq) && t.seq < c.n && t.op === undefined) c.seqs.add(t.seq); }
   return c.seqs;
 }
-const isCommitStub = (b) => !!b && typeof b === "object" && !Array.isArray(b) && Object.keys(b).length > 0 && Object.keys(b).every((k) => k === "commit" || k === "salt");
+const isCommitStub = (b) => !!b && typeof b === "object" && !Array.isArray(b) && Object.keys(b).length === 1 && "commitment" in b;   // {commitment} exactly (N4)
 /** An old entry's body as the authority may read it back, or null when it is purged (unknown). */
 export function readback(w, seq) {
   const e = w.entries[seq]; if (!isE(e) || !e.body || typeof e.body !== "object") return null;
-  if (!["act", "say", "sim"].includes(e.kind)) return e.body;   // a change's ops and genesis are never purged whole
+  if (!["request", "say", "physics"].includes(e.kind)) return e.body;   // a change's ops and genesis are never purged whole
   if (purgedSeqs(w).has(seq)) return null;
   return isCommitStub(e.body) ? null : e.body;
 }
@@ -215,13 +215,13 @@ const nonce16 = (w) => { const b = w?.random ? w.random(16) : globalThis.crypto.
 const isE = (e) => e && !(e instanceof Malformed) && typeof e === "object";
 // §2.4 "The chain": the skeleton keeps each set's value and salt only as commit = sha256(salt ‖ JCS(value)), and an
 // act/say/sim body only as {commit}; a body or op already {commit} is purged and stays as it is.
-const opCommit = (o) => ("commit" in o && !("value" in o) ? o.commit : sha256((o.salt ?? "") + jcs(o.value)));
-const skelOp = (o) => { const { value, salt, commit, ...rest } = o; return "value" in o || "commit" in o ? { ...rest, commit: opCommit(o) } : rest; };
-const bodyCommit = (b) => { const ks = Object.keys(b); if (ks.length === 1 && ks[0] === "commit") return b.commit; const { salt, ...rest } = b; return sha256((salt ?? "") + jcs(rest)); };
+const opCommit = (o) => ("commitment" in o && !("value" in o) ? o.commitment : sha256((o.salt ?? "") + jcs(o.value)));
+const skelOp = (o) => { const { value, salt, commitment, ...rest } = o; return "value" in o || "commitment" in o ? { ...rest, commitment: opCommit(o) } : rest; };
+const bodyCommit = (b) => { const ks = Object.keys(b); if (ks.length === 1 && ks[0] === "commitment") return b.commitment; const { salt, ...rest } = b; return sha256((salt ?? "") + jcs(rest)); };
 function skeleton(e) {
   const { head, sig, ...s } = e;
-  if (["act", "say", "sim"].includes(e.kind)) s.body = { commit: bodyCommit(e.body) };
-  else if (e.kind === "change") s.body = e.verb === "batch" ? { ...e.body, ops: (e.body.ops ?? []).map((o) => (o?.verb === "set" ? skelOp(o) : o)) } : e.verb === "set" ? skelOp(e.body) : e.body;
+  if (["request", "say", "physics"].includes(e.kind)) s.body = { commitment: bodyCommit(e.body) };
+  else if (e.kind === "change") s.body = e.op === "batch" ? { ...e.body, ops: (e.body.ops ?? []).map((o) => (o?.op === "set" ? skelOp(o) : o)) } : e.op === "set" ? skelOp(e.body) : e.body;
   return s;
 }
 const chainStep = (prevHex, e) => { const b = new Uint8Array(64); b.set(hexBytes(prevHex), 0); b.set(hexBytes(sha256(jcs(skeleton(e)))), 32); return sha256Bytes(b); };
@@ -235,10 +235,10 @@ export function seal(entries, { sign, random } = {}) {
   for (let i = 0; i < entries.length; i++) {
     let e = JSON.parse(JSON.stringify(entries[i])); delete e.head; delete e.sig;
     if (i > 0) {
-      if (e.kind === "change") { const salt = (o) => (o?.verb === "set" && "value" in o && o.salt === undefined ? { ...o, salt: nonce16(w) } : o);
-        e.body = e.verb === "batch" ? { ...e.body, ops: (e.body.ops ?? []).map(salt) } : e.verb === "set" ? salt({ verb: "set", ...e.body }) : e.body;
-        if (e.verb === "set") { const { verb: _v, ...b } = e.body; e.body = b; } }
-      else if (["act", "say", "sim"].includes(e.kind) && e.body && typeof e.body === "object" && !Array.isArray(e.body) && !("salt" in e.body)) e.body = { ...e.body, salt: nonce16(w) };
+      if (e.kind === "change") { const salt = (o) => (o?.op === "set" && "value" in o && o.salt === undefined ? { ...o, salt: nonce16(w) } : o);
+        e.body = e.op === "batch" ? { ...e.body, ops: (e.body.ops ?? []).map(salt) } : e.op === "set" ? salt({ op: "set", ...e.body }) : e.body;
+        if (e.op === "set") { const { op: _v, ...b } = e.body; e.body = b; } }
+      else if (["request", "say", "physics"].includes(e.kind) && e.body && typeof e.body === "object" && !Array.isArray(e.body) && !("salt" in e.body)) e.body = { ...e.body, salt: nonce16(w) };
     }
     prev = chainStep(prev, e);
     if (i > 0) { e.head = prev; e.sig = sign(`eidoverse-head:${wid}:${i}:${prev}`); }
@@ -261,14 +261,14 @@ const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)
 // untranslated. A lock is on when its value is truthy; the authority stores `true` (recut B2: an old log's {rank} still
 // reads as on, its rank ignored: strength is the setter's rank, gate.js).
 // A purged value is absent(purged), not a lock. The lab's `pinned` and top-level `locked` are retired.
-const lockedC = (c) => { const v = c?.lock; return v !== undefined && v !== PURGED && !!v; };
+const lockedC = (c) => { const v = c?.lock; return v !== undefined && v !== REDACTED && !!v; };
 // a rotation written to the log: rounded like a position, then made unit again (0.707 per axis is not a unit quaternion,
 // and a reader composing it through a parent drifts off unit: review of b398d7e3 #1)
 const qr3 = (q) => { const r = q.map(r3); const n = Math.hypot(r[0], r[1], r[2], r[3]); return n > 0 ? r.map((v) => v / n) : [0, 0, 0, 1]; };
-const setOp = (id, comp, value) => ({ verb: "set", id, comp, value });
+const setOp = (id, comp, value) => ({ op: "set", id, comp, value });
 const IMPORTED_ONLY = (comp) => typeof comp === "string" && /^imported(?:-(?:behavior|bans))?(?::|$)/.test(comp);   // imported-epoch is imported:epoch (10-16); imported-guard was never registered
-const delOp = (id, comp) => (comp === undefined ? { verb: "delete", id } : { verb: "delete", id, comp });
-const createOps = (id, comps) => [{ verb: "create", id }, ...Object.entries(comps).map(([k, v]) => setOp(id, k, v))];
+const delOp = (id, comp) => (comp === undefined ? { op: "delete", id } : { op: "delete", id, comp });
+const createOps = (id, comps) => [{ op: "create", id }, ...Object.entries(comps).map(([k, v]) => setOp(id, k, v))];
 // a preview of ops on st: copy-on-write (the same state applyOps gives, sharing every entity the ops don't touch; values
 // are never mutated in place, as a live world's states already share them). A deep copy per preview made a batch of 50
 // creates copy a 2 000-thing world 100 times (review 10-06 S0-2).
@@ -287,5 +287,5 @@ const opsQuiet = (e) => { try { return opsOf(e); } catch { return []; } };
 // written eagerly (ids are never reused, so it is tidiness, never a resurrection guard).
 const FOLLOW_UP = Symbol("follow-up");
 const followUp = (o) => { o[FOLLOW_UP] = true; return o; };
-export { followUpsOf };
+export { cascadeOf };
 export { CHANGE, FOLLOW_UP, IMPORTED_ONLY, VOLATILE, bodyCommit, chainStep, clone, createOps, delOp, followUp, isE, lockedC, nonce16, opCommit, opsQuiet, qr3, scratch, setOp, skelOp, skeleton, slug, versionOf, versionSeq };

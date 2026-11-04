@@ -10,7 +10,7 @@
 // every linkage a completed spawn could unblock); distance bands promote
 // what is in front of you.
 
-import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere, kindOf, readMesh, meshKeyOf } from "../client/lib/realize/models_field.js";
+import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere, formOf, readMesh, meshKeyOf } from "../client/lib/realize/models_field.js";
 import { P } from "../client/lib/scheduler.js";
 
 let passed = 0, failed = 0;
@@ -109,8 +109,8 @@ const light = () => ({ pos: [0, 1, 0], light: { color: 0xffd9a0, intensity: 16, 
 // 9. a mesh thing (componentspec `mesh`, R 10-12): its own kind; a changed shape or size is a rebuild, a malformed value an Empty
 {
   const mesh = (m: any) => ({ pos: [0, 0, 0], actor: "t", ts: 1, mesh: m });
-  check("kind 'mesh' for a thing with a mesh bag and no lib", kindOf(mesh({ shape: "box", size: [1, 1, 1] })) === "mesh");
-  check("a malformed mesh (unknown shape) reads as absent: an Empty, never a throw", kindOf(mesh({ shape: "cone", size: [1, 1, 1] })) === "empty" && readMesh({ shape: "cone" }) === null && readMesh("box") === null);
+  check("kind 'mesh' for a thing with a mesh bag and no lib", formOf(mesh({ shape: "box", size: [1, 1, 1] })) === "mesh");
+  check("a malformed mesh (unknown shape) reads as absent: an Empty, never a throw", formOf(mesh({ shape: "cone", size: [1, 1, 1] })) === "empty" && readMesh({ shape: "cone" }) === null && readMesh("box") === null);
   check("readMesh clamps a size to 0.05..200 and fills a missing size with 1", JSON.stringify(readMesh({ shape: "sphere", size: [0.001, 999, 2] })?.size) === "[0.05,200,2]" && JSON.stringify(readMesh({ shape: "box" })?.size) === "[1,1,1]");
   const st = { a: mesh({ shape: "box", size: [1, 1, 1] }) };
   const same = planReconcile(st, new Map([["a", { kind: "mesh", mesh: meshKeyOf(st.a) }]] as any));
@@ -122,7 +122,7 @@ const light = () => ({ pos: [0, 1, 0], light: { color: 0xffd9a0, intensity: 16, 
   // review round 2: S2.3 a capsule is at least its diameter tall (the authority's meshSize agrees); S3 a carried thing with
   // both a lib and a mesh is its model, as the hierarchy and the Inspector read it
   check("readMesh: a capsule [1, 0.2, 1] is 1 m tall", JSON.stringify(readMesh({ shape: "capsule", size: [1, 0.2, 1] })?.size) === "[1,1,1]");
-  check("kind 'model' when a carried thing has both a lib and a mesh", kindOf({ model: "x.glb", pos: [0, 0, 0], actor: "t", ts: 1, mesh: { shape: "box", size: [1, 1, 1] } }) === "model");
+  check("kind 'model' when a carried thing has both a lib and a mesh", formOf({ model: "x.glb", pos: [0, 0, 0], actor: "t", ts: 1, mesh: { shape: "box", size: [1, 1, 1] } }) === "model");
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

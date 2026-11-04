@@ -82,11 +82,11 @@ const linesOf = (dest: string) => readLog(fs.readFileSync(path.join(dest, "world
 const threw = (f: () => any) => { try { f(); return null; } catch (x) { return String(x?.message ?? x); } };
 
 const BASIC = [
-  { actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
+  { actor: "world", args: { v: 2, dialect: "eidoverse-log" } },
   { actor: "world", verb: "grant", args: { id: "Ann", role: "owner", sub: "human:discord:111" } },
   { actor: "Ann", verb: "spawn", args: { id: "table", lib: "a.glb", pos: [1, 0, 1] } },
   { actor: "Ann", verb: "comp", args: { id: "table", type: "label", data: "the old table" } },
-  { actor: "Bob", verb: "say", args: { text: "hello" } },
+  { actor: "Bob", args: { text: "hello" } },
   { actor: "Ann", verb: "place", args: { id: "table", pos: [2, 0, 2] } }];
 
 // ---- IM-I1, IM-I25, IM-I34: the approval and the report it binds ----
@@ -95,7 +95,7 @@ row("IM-I1", () => {
   W1.translateV1World(w.src, w.dest, { approval: approvalFor(w, hash) });
   const L = linesOf(w.dest); const at = L.findIndex((e: any) => e.verb === "translation-approved");
   const bad = L.map((e: any, i: number) => [e, i]).filter(([e]: any) => e.kind === "change" && Number.isInteger(e.cause))
-    .filter(([e]: any) => { const c = L[e.cause]; return !c || !(c.kind === "act" || c.kind === "say") || c.actor !== e.actor || c.verb === "translation-approved" || (c.ts ?? 0) !== (e.ts ?? 0); })
+    .filter(([e]: any) => { const c = L[e.cause]; return !c || !(c.kind === "request" || c.kind === "say") || c.actor !== e.actor || c.verb === "translation-approved" || (c.ts ?? 0) !== (e.ts ?? 0); })
     .map(([e, i]: any) => ({ at: i, cause: e.cause, causeIs: L[e.cause]?.verb, actor: e.actor }));
   ok(at === 3 && L[2].verb === "repair-shapes" && L.some((e: any) => e.kind === "change") && !bad.length,
     "IM-I1 with an approval, translation-approved sits right after repair-shapes and every change's cause is the act it answers (its actor and time)", { at, bad });
@@ -110,7 +110,7 @@ row("IM-I25", () => {
   ok(!threw(() => W1.translateV1World(w.src, w.dest, { approval: approvalFor(w, good) })), "IM-I25 …and the approval of this log's report translates (control)");
 });
 row("IM-I34", () => {
-  const L = [BASIC[0], { actor: "world", verb: "grant", args: { id: "ann", role: "owner" } }, { actor: "ann", verb: "spawn", args: { id: "cup", lib: "c.glb", pos: [0, 0, 0] } }, { actor: "bob", verb: "say", args: { text: "hi" } }];
+  const L = [BASIC[0], { actor: "world", verb: "grant", args: { id: "ann", role: "owner" } }, { actor: "ann", verb: "spawn", args: { id: "cup", lib: "c.glb", pos: [0, 0, 0] } }, { actor: "bob", args: { text: "hi" } }];
   const w = oldWorld(L); const rep = W1.reportV1World(w.src, { name: "new" });
   const r = W1.translateV1World(w.src, w.dest, { approval: approvalFor(w, rep.hash) });
   ok(rep.report.actorsRenamed === r.stats.renamed && r.stats.renamed === 2 && W1.reportV1World(w.src, { name: "new" }).hash === rep.hash,
@@ -455,13 +455,13 @@ row("IM-I38", () => {
 // ---- IM-I14: an earlier epoch's rest tick never dates a later epoch's rest ----
 row("IM-I14", () => {
   const box = [[-0.5, 0, -0.5], [0.5, 1, 0.5]]; const E = (ts: number) => ({ verb: "epoch", actor: "fixture", ts, args: { sim: "eidosim@0.5.0", tickMs: 66, boxes: { "crate.glb": box } } });
-  const head = [{ seq: 0, ts: T0, actor: "world", verb: "genesis", args: { v: 3, dialect: "eidoverse-log" } },
+  const head = [{ seq: 0, ts: T0, actor: "world", args: { v: 3, dialect: "eidoverse-log" } },
     { seq: 1, ts: T0 + 10, actor: "fixture", verb: "spawn", args: { id: "far", lib: "crate.glb", pos: [0, 0, 0], yaw: 0, box } },
     { seq: 2, ts: T0 + 20, actor: "fixture", verb: "spawn", args: { id: "near", lib: "crate.glb", pos: [0, 0, 20], yaw: 0, box } }];
   const tail = (s: number) => [{ seq: s, ...E(T0 + 60_000) }, { seq: s + 1, ts: T0 + 60_100, actor: "fixture", verb: "punt", args: { id: "near", power: 2, dir: [1, 0.2, 0] } }];
   const withFar = [...head, { seq: 3, ...E(T0 + 30) }, { seq: 4, ts: T0 + 100, actor: "fixture", verb: "punt", args: { id: "far", power: 25, dir: [1, 1, 0] } },
-    { seq: 5, ts: T0 + 30_000, actor: "fixture", verb: "say", args: { text: "later" } }, ...tail(6)];
-  const without = [...head, { seq: 3, ...E(T0 + 30) }, { seq: 4, ts: T0 + 30_000, actor: "fixture", verb: "say", args: { text: "later" } }, ...tail(5)];
+    { seq: 5, ts: T0 + 30_000, actor: "fixture", args: { text: "later" } }, ...tail(6)];
+  const without = [...head, { seq: 3, ...E(T0 + 30) }, { seq: 4, ts: T0 + 30_000, actor: "fixture", args: { text: "later" } }, ...tail(5)];
   const restOf = (L: any[]) => { const r = TV1.translate(L); return r.out.filter((e: any) => e.kind === "change" && e.actor === "sim").map((e: any) => e.ts); };
   const a = restOf(withFar), b = restOf(without);
   ok(a.length === 2 && b.length === 1 && a[1] === b[0] && a[0] <= T0 + 30_000, "IM-I14 the later epoch's rest is dated by its own tick, whatever an earlier epoch's body left behind", { withFar: a, without: b });
@@ -482,16 +482,16 @@ row("IM-I40", () => {
     "IM-I40 the dry run's report names each role holder's id, and the written world holds its roles under exactly those ids (the reviewed ids are the applied ids)", { dry, written });
 });
 row("IM-I41", () => {
-  const L = [BASIC[0], { actor: "world", verb: "grant", args: { id: "mica", role: "owner" } }, { actor: "mica", verb: "say", args: { text: "hi" } }];
+  const L = [BASIC[0], { actor: "world", verb: "grant", args: { id: "mica", role: "owner" } }, { actor: "mica", args: { text: "hi" } }];
   const a = oldWorld(L), b = { src: path.join(a.worlds, "other"), dest: path.join(a.worlds, "other-new"), worlds: a.worlds };
-  fs.mkdirSync(b.src, { recursive: true }); fs.writeFileSync(path.join(b.src, "log.jsonl"), seqd([...L, { actor: "mica", verb: "say", args: { text: "a different world" } }]).map((e) => JSON.stringify(e)).join("\n") + "\n");
+  fs.mkdirSync(b.src, { recursive: true }); fs.writeFileSync(path.join(b.src, "log.jsonl"), seqd([...L, { actor: "mica", args: { text: "a different world" } }]).map((e) => JSON.stringify(e)).join("\n") + "\n");
   const ra = W1.translateV1World(a.src, a.dest), rb = threw(() => W1.translateV1World(b.src, b.dest, { name: "other-new" }));
   const ia = rolesIn(a.dest), ib = rb ? [] : rolesIn(b.dest);
   ok(rb === null && ia.length === 1 && ib.length === 1 && ia[0] !== ib[0] && ra.identities === 1,
     "IM-I41 two different old worlds on one server, each with an unbound owner \"mica\": both translate, as two imported people with two ids (a namesake in another world is not known to be the same person)", { ia, ib, rb });
 });
 row("IM-I41b", () => {
-  const L = [BASIC[0], { actor: "world", verb: "grant", args: { id: "mica", role: "owner" } }, { actor: "mica", verb: "say", args: { text: "hi" } }];
+  const L = [BASIC[0], { actor: "world", verb: "grant", args: { id: "mica", role: "owner" } }, { actor: "mica", args: { text: "hi" } }];
   const a = oldWorld(L), b = { src: path.join(a.worlds, "again"), dest: path.join(a.worlds, "again-new"), worlds: a.worlds };
   fs.mkdirSync(b.src, { recursive: true }); fs.writeFileSync(path.join(b.src, "log.jsonl"), seqd(L).map((e) => JSON.stringify(e)).join("\n") + "\n");
   W1.translateV1World(a.src, a.dest); const rb = threw(() => W1.translateV1World(b.src, b.dest, { name: "again-new" }));

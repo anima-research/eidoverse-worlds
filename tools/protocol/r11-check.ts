@@ -169,13 +169,13 @@ const cases: Case[] = [
       const L = s.entries(); const wid = L[1]?.world ?? L[0]?.world; const ts = L.at(-1).ts; const n = L.length;
       const E0 = s.w().state().entities; const kid = Object.keys(E0).find((k) => E0[k].c.socket?.name === "bunk");
       const gv = { who: "member", pose: "pistol" }, sv = { action: "lie", pose: "live" };
-      s.append([{ world: wid, kind: "act", actor: "olive", verb: "set", body: { request: { id: "cup", component: "grabbable", value: gv } }, ts: ts + 1 },
-        { world: wid, kind: "change", actor: "olive", cause: n, verb: "set", body: { id: "cup", comp: "grabbable", value: gv }, ts: ts + 1 },
-        { world: wid, kind: "act", actor: "olive", verb: "set", body: { request: { id: kid, component: "station", value: sv } }, ts: ts + 2 },
-        { world: wid, kind: "change", actor: "olive", cause: n + 2, verb: "set", body: { id: kid, comp: "station", value: sv }, ts: ts + 2 }]);
+      s.append([{ world: wid, kind: "request", actor: "olive", op: "set", body: { request: { id: "cup", component: "grabbable", value: gv } }, ts: ts + 1 },
+        { world: wid, kind: "change", actor: "olive", cause: n, op: "set", body: { id: "cup", comp: "grabbable", value: gv }, ts: ts + 1 },
+        { world: wid, kind: "request", actor: "olive", op: "set", body: { request: { id: kid, component: "station", value: sv } }, ts: ts + 2 },
+        { world: wid, kind: "change", actor: "olive", cause: n + 2, op: "set", body: { id: kid, comp: "station", value: sv }, ts: ts + 2 }]);
       clock.advance(1000);
       const w1 = s.reopen(); const out = D.maintain(w1); const w2 = s.reopen(); const E = w2.state().entities;
-      const act = w2.entries.findLast((e: any) => e.kind === "act" && e.verb === "rename-components");
+      const act = w2.entries.findLast((e: any) => e.kind === "request" && e.verb === "rename-components");
       return { g: E.cup?.c.grabbable ?? null, st: E[kid]?.c.station ?? null, failed: act?.body?.failed ?? null, renamed: act?.body?.renamed ?? null, out: JSON.stringify(out).slice(0, 300), status: w2.state().status, kid }; },
     good: (o) => o.status === "ok" && o.g?.anim === "pistol" && !("pose" in o.g) && o.st?.pose === "live" && Array.isArray(o.failed) && o.failed.some((f: any) => f.id === o.kid) && o.renamed?.some((r: any) => r.id === "cup") },
   // ---------------- D: repo items and the docs pass ----------------

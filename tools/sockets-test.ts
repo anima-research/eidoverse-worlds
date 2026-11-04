@@ -297,8 +297,8 @@ check('…and a default: leaveBy any leaves the key out; the anchor is written d
 // a purged station is no station, to the client and the authority alike, in the fold's form and in a view's JSON form
 // (audit 10-22: the client's socketRole read isObj and called a purged station a station; the authority's said attach)
 { const { socketRole: viewRole } = await import('../shared/sockbody.js'); const { socketRole: authRole } = await import('../shared/protocol/authority/sockets.js');
-  const { PURGED } = await import('../shared/protocol/fold.js');
-  const cases = [{ socket: { name: 's' }, station: PURGED }, { socket: { name: 's' }, station: { purged: true } }, { socket: { name: 's', accepts: ['x'] }, station: PURGED }];
+  const { REDACTED } = await import('../shared/protocol/fold.js');
+  const cases = [{ socket: { name: 's' }, station: REDACTED }, { socket: { name: 's' }, station: { redacted: true } }, { socket: { name: 's', accepts: ['x'] }, station: REDACTED }];
   const got = cases.map((c) => [viewRole(c), authRole(c)]);
   check('SR1 a purged station reads as no station, the same at the client and the authority, from the fold or from JSON', JSON.stringify(got) === JSON.stringify([['attach', 'attach'], ['attach', 'attach'], ['snap', 'snap']]), got); }
 

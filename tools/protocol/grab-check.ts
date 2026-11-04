@@ -229,7 +229,7 @@ const tail = (s: any, n: number) => s.entries().slice(-n).map((e: any) => `${e.k
 const stripLast = (s: any, id: string, comp: string) => {
   const file = path.join(root, "worlds", `${s.name}.jsonl`); const lines = fs.readFileSync(file, "utf8").split("\n");
   for (let k = lines.length - 1; k > 0; k--) { if (!lines[k]) continue; const e = JSON.parse(lines[k]); if (e.kind !== "change") continue;
-    const ops = e.verb === "batch" ? e.body.ops : [e.body]; const o = ops.find((x: any) => x.verb !== "delete" && x.id === id && x.comp === comp && "value" in x) ?? (e.verb === "set" && e.body.id === id && e.body.comp === comp && "value" in e.body ? e.body : null);
+    const ops = e.op === "batch" ? e.body.ops : [e.body]; const o = ops.find((x: any) => x.op !== "delete" && x.id === id && x.comp === comp && "value" in x) ?? (e.op === "set" && e.body.id === id && e.body.comp === comp && "value" in e.body ? e.body : null);
     if (!o) continue; const c = ST.opCommit(o); delete o.value; delete o.salt; o.commit = c; lines[k] = JSON.stringify(e); fs.writeFileSync(file, lines.join("\n")); return k; }
   return -1; };
 const since = (s: any, n0: number) => s.entries().slice(n0).map((e: any) => `${e.kind}:${e.verb}`);
@@ -287,7 +287,7 @@ const cases: Case[] = [
       let face = 0; s.w().present = () => [{ id: "vic", at: null, yaw: face }];
       s.call("vic", "move", { to: [0, 0, 0.5] }); const y0 = (() => { const q = tf(s, "ball").q; return 2 * Math.atan2(q[1], q[3]); })();
       const g = s.call("vic", "grab", { id: "ball" }); face = -1; const n0 = s.entries().length;
-      const d = s.call("vic", "drop", { id: "ball" }); const L = s.entries().slice(n0).find((e: any) => e.kind === "sim" && e.verb === "launch")?.body;
+      const d = s.call("vic", "drop", { id: "ball" }); const L = s.entries().slice(n0).find((e: any) => e.kind === "physics" && e.verb === "launch")?.body;
       return { g: show(g), d: show(d), y0: +y0.toFixed(4), yaw: L ? +L.yaw.toFixed(4) : null }; },
     good: (o) => o.g === "ok" && o.d === "ok" && o.yaw !== null && Math.abs(o.yaw - (o.y0 - 1)) < 1e-3 },
   { id: "Y3", what: "…and taken from one hand into another, it starts as the first hand had turned it (the taker's put turns by the taker's turn only)", run(s) { cast(s);
@@ -321,7 +321,7 @@ const cases: Case[] = [
       const g = s.call("vic", "grab", { id: "lantern" }); const lift = since(s, n0);
       s.call("vic", "move", { to: [0, 0, 2] }, 1000); const n1 = s.entries().length;
       const d = s.call("vic", "drop", { id: "lantern" }); const after = since(s, n1);
-      return { g: show(g), lift, d: show(d), after, at: tf(s, "lantern")?.pos, launches: s.entries().filter((e: any) => e.kind === "sim" && e.verb === "launch").length, carrier: carrier(s) }; },
+      return { g: show(g), lift, d: show(d), after, at: tf(s, "lantern")?.pos, launches: s.entries().filter((e: any) => e.kind === "physics" && e.verb === "launch").length, carrier: carrier(s) }; },
     good: (o) => o.g === "ok" && o.lift.includes("sim:lift") && o.d === "ok" && JSON.stringify(o.after) === '["act:put","change:set"]' && o.at[1] === 0 && o.launches === 0 && !o.carrier.disagree },
   { id: "G4", what: "a throw in a world with no physics is a drop that says so (a VR hand lets go with its velocity; it was refused and stuck in the hand)", run(s) { cast(s);
       s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 0] } });
@@ -373,8 +373,8 @@ const cases: Case[] = [
       s.call("olive", "create", { id: "dart", model: "ball", components: { physics: { kind: "dynamic" }, grabbable: { who: "member", throw: 2 } }, place: { at: [0, 0] } });
       s.call("olive", "create", { id: "anvil", model: "ball", components: { physics: { kind: "dynamic" }, grabbable: { who: "member", throw: 0 } }, place: { at: [0.4, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "dart" });
-      const t = s.call("vic", "throw", { id: "dart", v: [0, 1, 1.5] }); const L = s.entries().filter((e: any) => e.kind === "sim" && e.verb === "launch").at(-1);
-      const act = s.entries().filter((e: any) => e.kind === "act" && e.verb === "throw").at(-1);
+      const t = s.call("vic", "throw", { id: "dart", v: [0, 1, 1.5] }); const L = s.entries().filter((e: any) => e.kind === "physics" && e.verb === "launch").at(-1);
+      const act = s.entries().filter((e: any) => e.kind === "request" && e.verb === "throw").at(-1);
       s.call("vic", "wait", {}, 8000); s.call("vic", "grab", { id: "anvil" }); const n0 = s.entries().length;
       const t0 = s.call("vic", "throw", { id: "anvil", v: [0, 1, 3] });
       return { t: show(t), v: L?.body?.v, sent: act?.body?.request?.v, note: t.notes?.some((n: any) => /grabbable\.throw/.test(n.why)), t0: show(t0), after: since(s, n0), v0: s.entries().at(-1)?.body?.v, why: t0.notes?.find((n: any) => n.thrown)?.why, carrier: carrier(s) }; },
@@ -393,7 +393,7 @@ const cases: Case[] = [
       const home = comp(s, "torch", "home");   // the one home (shape audit 10-16: grabbable.home is gone)
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "torch" }); s.call("vic", "move", { to: [0, 0, 3] }, 1000);
       const n0 = s.entries().length; const d = s.call("vic", "drop", { id: "torch" }); const L = s.entries(); const after = since(s, n0);
-      const ret = L.slice(n0).find((e: any) => e.kind === "act" && e.verb === "return-home");
+      const ret = L.slice(n0).find((e: any) => e.kind === "request" && e.verb === "return-home");
       const at = tf(s, "torch").pos; s.call("vic", "move", { to: [0, 0, 0.5] }, 1000); s.call("vic", "grab", { id: "torch" }); const n1 = s.entries().length;
       const t = s.call("vic", "throw", { id: "torch", v: [0, 2, 3] });
       return { home, stampNote: c.notes?.some((n: any) => n.component === "home"), d: show(d), after, cause: ret ? L[ret.cause]?.verb : null, at, held: held(s, "torch"), t: show(t), thrown: since(s, n1), carrier: carrier(s) }; },
@@ -476,7 +476,7 @@ const cases: Case[] = [
       s.call("olive", "create", { id: "mug", model: "book", components: { grabbable: { who: "member" } }, place: { at: [0.3, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] });
       const a = s.call("vic", "grab", { id: "cup" }); const b = s.call("vic", "grab", { id: "mug", hand: "left" }); const bad = s.call("vic", "grab", { id: "cup", hand: "up" });
-      return { a: a.hand, b: b.hand, rec: G.holdWire?.(held(s, "mug")), bad: code(bad), logged: s.entries().filter((e: any) => e.kind === "act" && e.verb === "grab" && !e.body?.refused).length }; },
+      return { a: a.hand, b: b.hand, rec: G.holdWire?.(held(s, "mug")), bad: code(bad), logged: s.entries().filter((e: any) => e.kind === "request" && e.verb === "grab" && !e.body?.refused).length }; },
     good: (o) => o.a === "right" && o.b === "left" && JSON.stringify(o.rec) === '{"by":"vic","hand":"left"}' && o.bad === "shape" && o.logged === 0 },
   { id: "H2", what: "grips: a hand takes the first grip that suits it; a named grip must exist (did you mean) and suit the hand; a thing with none has no grip to name", run(s) { cast(s);
       s.call("olive", "create", { id: "sword", model: "book", components: { grabbable: { who: "member", grips: { hilt: { pos: [0, 0.05, 0], hand: "right", grasp: "fist" }, offhand: { pos: [0, 0.15, 0], hand: "left" } } } }, place: { at: [0, 0] } });
@@ -520,7 +520,7 @@ const cases: Case[] = [
       s.call("vic", "move", { to: [0, 0, 2] }, 1000); const carried = s.w().presence.holds.torch?.pose?.pos;
       const w2 = s.reopen(s.w().presence); const n0 = s.entries().length; clock.advance(100);
       const r = D.settleOrphans?.(w2, []);
-      return { grabs, carried, r: r?.length, holds: Object.keys(w2.presence.holds), body: !!w2.presence.bodies.vic, after: since(s, n0), by: s.entries().slice(n0).filter((e: any) => e.kind === "act").map((e: any) => e.actor),
+      return { grabs, carried, r: r?.length, holds: Object.keys(w2.presence.holds), body: !!w2.presence.bodies.vic, after: since(s, n0), by: s.entries().slice(n0).filter((e: any) => e.kind === "request").map((e: any) => e.actor),
         ball: tf(s, "ball").pos, balloon: tf(s, "balloon").pos, torch: tf(s, "torch").pos }; },
     good: (o) => o.grabs.every((g: string) => g === "ok") && o.carried?.[2] > 1 && o.r >= 1 && !o.holds.length && !o.body && o.by.includes("vic") && o.ball[1] === 0 && Math.abs(o.ball[2] - 2) < 1e-6 && o.balloon[1] === 1.1 && o.after.includes("act:return-home") && JSON.stringify(o.torch) === "[-0.3,0,0]" },
   { id: "O2", what: "presence kept in memory: in a physics world the log's lift is settled at load (door return-held, cause the lift; a return goes home), once, and a carrier agrees", run(s) { cast(s, true);
@@ -531,7 +531,7 @@ const cases: Case[] = [
       s.call("vic", "grab", { id: "ball" }); s.call("vic", "grab", { id: "torch" }); s.call("ann", "grab", { id: "kept" }); s.call("vic", "move", { to: [0, 0, 2] }, 1000);
       const annHold = s.w().presence.holds.kept;
       const w2 = s.reopen({ bodies: {}, holds: { kept: annHold } }); const n0 = s.entries().length; clock.advance(100);
-      D.settleOrphans?.(w2, ["ann"]); const L = s.entries(); const acts = L.slice(n0).filter((e: any) => e.kind === "act").map((e: any) => `${e.actor}:${e.verb}:${e.body?.id}:${L[e.cause]?.verb ?? "-"}`);
+      D.settleOrphans?.(w2, ["ann"]); const L = s.entries(); const acts = L.slice(n0).filter((e: any) => e.kind === "request").map((e: any) => `${e.actor}:${e.verb}:${e.body?.id}:${L[e.cause]?.verb ?? "-"}`);
       const n1 = s.entries().length; D.settleOrphans?.(w2, ["ann"]);
       return { acts, again: s.entries().length - n1, kept: !!w2.presence.holds.kept, ball: tf(s, "ball").pos, carrier: carrier(s) }; },
     good: (o) => JSON.stringify(o.acts.sort()) === JSON.stringify(["system:return-held:ball:lift", "system:return-home:torch:lift"]) && o.again === 0 && o.kept && JSON.stringify(o.ball) === "[0,0,0]" && !o.carrier.disagree },
@@ -542,7 +542,7 @@ const cases: Case[] = [
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "ball" }); s.call("vic", "move", { to: [0, 0, 3] }, 1000); s.call("vic", "put", { id: "ball" });
       const k = stripLast(s, "ball", "transform"); const w2 = s.reopen(s.w().presence);
       s.advance(40000); const n0 = s.entries().length; D.settle?.(w2); const look = s.call("vic", "look", {});
-      return { k, lost: tf(s, "ball") === F.PURGED, after: since(s, n0), look: show(look), diag: w2.state().diagnostics.some((d: any) => d[0] === k && d[1] === "commit-unpurged") }; },
+      return { k, lost: tf(s, "ball") === F.REDACTED, after: since(s, n0), look: show(look), diag: w2.state().diagnostics.some((d: any) => d[0] === k && d[1] === "commitment-unredacted") }; },
     good: (o) => o.k > 0 && o.diag && o.lost && !o.after.includes("act:return-home") && o.look === "ok" },
   { id: "RA3", what: "a stripped transform: settling an orphaned lift at load leaves the thing where the record lost it", run(s) { cast(s, true);
       s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 0] } });
@@ -550,8 +550,8 @@ const cases: Case[] = [
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "ball" }); s.call("vic", "grab", { id: "torch" }); s.call("vic", "move", { to: [0, 0, 2] }, 1000);
       const kb = stripLast(s, "ball", "transform"), kt = stripLast(s, "torch", "transform");
       const w2 = s.reopen({ bodies: {}, holds: {} }); const n0 = s.entries().length; clock.advance(100);
-      D.settleOrphans?.(w2, []); const L = s.entries(); const acts = L.slice(n0).filter((e: any) => e.kind === "act").map((e: any) => `${e.verb}:${e.body?.id}`);
-      return { kb, kt, acts, ball: tf(s, "ball") === F.PURGED, torch: tf(s, "torch") === F.PURGED }; },
+      D.settleOrphans?.(w2, []); const L = s.entries(); const acts = L.slice(n0).filter((e: any) => e.kind === "request").map((e: any) => `${e.verb}:${e.body?.id}`);
+      return { kb, kt, acts, ball: tf(s, "ball") === F.REDACTED, torch: tf(s, "torch") === F.REDACTED }; },
     good: (o) => o.kb > 0 && o.kt > 0 && !o.acts.length && o.ball && o.torch },
   { id: "RA4", what: "a stripped transform on a parent: the engine gives its child no body (its world pose would compose from nothing)", run(s) { cast(s, true);
       s.call("olive", "create", { id: "shelf", model: "table", place: { at: [2, 2] } });
@@ -568,8 +568,8 @@ const cases: Case[] = [
       const off = s.call("olive", "set", { id: "tray", component: "disabled", value: true }); const ended = !s.w().presence.holds.cup;
       const on = s.call("olive", "set", { id: "tray", component: "disabled", value: false });
       const w2 = s.reopen({ bodies: {}, holds: {} }); const n0 = s.entries().length; clock.advance(100);
-      const lift = s.entries().some((e: any) => e.kind === "sim" && e.verb === "lift" && e.body?.id === "cup");
-      D.settleOrphans(w2, []); const acts = s.entries().slice(n0).filter((e: any) => e.kind === "act").map((e: any) => `${e.verb}:${e.body?.id}`);
+      const lift = s.entries().some((e: any) => e.kind === "physics" && e.verb === "lift" && e.body?.id === "cup");
+      D.settleOrphans(w2, []); const acts = s.entries().slice(n0).filter((e: any) => e.kind === "request").map((e: any) => `${e.verb}:${e.body?.id}`);
       return { g: show(g), off: show(off), on: show(on), ended, lift, acts }; },
     good: (o) => o.g === "ok" && o.off === "ok" && o.on === "ok" && o.ended && o.lift && !o.acts.length },
   { id: "O3b", what: "…and so does one ended when a thing it came to hang from later, through a batch that re-hangs its holder's tray, was switched off", run(s) { cast(s, true);
@@ -581,8 +581,8 @@ const cases: Case[] = [
       const b = s.call("olive", "batch", { ops: [{ verb: "set", args: { id: "tray", component: "parent", value: { to: "shelf" } } }, { verb: "set", args: { id: "shelf", component: "disabled", value: true } }] });
       const ended = !s.w().presence.holds.cup; const on = s.call("olive", "set", { id: "shelf", component: "disabled", value: false });
       const w2 = s.reopen({ bodies: {}, holds: {} }); const n0 = s.entries().length; clock.advance(100);
-      const lift = s.entries().some((e: any) => e.kind === "sim" && e.verb === "lift" && e.body?.id === "cup");
-      D.settleOrphans(w2, []); const acts = s.entries().slice(n0).filter((e: any) => e.kind === "act").map((e: any) => `${e.verb}:${e.body?.id}`);
+      const lift = s.entries().some((e: any) => e.kind === "physics" && e.verb === "lift" && e.body?.id === "cup");
+      D.settleOrphans(w2, []); const acts = s.entries().slice(n0).filter((e: any) => e.kind === "request").map((e: any) => `${e.verb}:${e.body?.id}`);
       return { g: show(g), b: show(b), on: show(on), ended, lift, acts }; },
     good: (o) => o.g === "ok" && o.b === "ok" && o.on === "ok" && o.ended && o.lift && !o.acts.length },
   { id: "O3c", what: "…whichever order the batch writes them in: the shelf switched off first, then the tray re-hung under it", run(s) { cast(s, true);
@@ -593,8 +593,8 @@ const cases: Case[] = [
       const b = s.call("olive", "batch", { ops: [{ verb: "set", args: { id: "shelf", component: "disabled", value: true } }, { verb: "set", args: { id: "tray", component: "parent", value: { to: "shelf" } } }] });
       const ended = !s.w().presence.holds.cup; const on = s.call("olive", "set", { id: "shelf", component: "disabled", value: false });
       const w2 = s.reopen({ bodies: {}, holds: {} }); const n0 = s.entries().length; clock.advance(100);
-      const lift = s.entries().some((e: any) => e.kind === "sim" && e.verb === "lift" && e.body?.id === "cup");
-      D.settleOrphans(w2, []); const acts = s.entries().slice(n0).filter((e: any) => e.kind === "act").map((e: any) => `${e.verb}:${e.body?.id}`);
+      const lift = s.entries().some((e: any) => e.kind === "physics" && e.verb === "lift" && e.body?.id === "cup");
+      D.settleOrphans(w2, []); const acts = s.entries().slice(n0).filter((e: any) => e.kind === "request").map((e: any) => `${e.verb}:${e.body?.id}`);
       return { g: show(g), b: show(b), on: show(on), ended, lift, acts }; },
     good: (o) => o.g === "ok" && o.b === "ok" && o.on === "ok" && o.ended && o.lift && !o.acts.length },
   { id: "O3d", what: "…while a hold the log hasn't ended is settled at load: the returning cup goes home, and its change ends the lift, so the next load settles nothing", run(s) { cast(s, true);
@@ -602,12 +602,12 @@ const cases: Case[] = [
       s.call("olive", "create", { id: "cup", model: "book", components: { parent: { to: "tray" }, physics: { kind: "dynamic" }, grabbable: { who: "member", release: "return" } }, place: { on: "tray" } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); const g = s.call("vic", "grab", { id: "cup" });
       const w2 = s.reopen({ bodies: {}, holds: {} }); const n0 = s.entries().length; clock.advance(100);
-      const lift = s.entries().some((e: any) => e.kind === "sim" && e.verb === "lift" && e.body?.id === "cup");
-      D.settleOrphans(w2, []); const after = s.entries().slice(n0), acts = after.filter((e: any) => e.kind === "act").map((e: any) => `${e.verb}:${e.body?.id}`);
+      const lift = s.entries().some((e: any) => e.kind === "physics" && e.verb === "lift" && e.body?.id === "cup");
+      D.settleOrphans(w2, []); const after = s.entries().slice(n0), acts = after.filter((e: any) => e.kind === "request").map((e: any) => `${e.verb}:${e.body?.id}`);
       // the settlement's change ends the lift on the record: it writes where the cup is, so a second load settles nothing
-      const ends = after.some((e: any) => e.kind === "change" && (e.verb === "batch" ? e.body?.ops ?? [] : [e.body]).some((o: any) => o?.id === "cup" && (o.comp === "transform" || o.comp === "parent")));
+      const ends = after.some((e: any) => e.kind === "change" && (e.op === "batch" ? e.body?.ops ?? [] : [e.body]).some((o: any) => o?.id === "cup" && (o.comp === "transform" || o.comp === "parent")));
       const w3 = s.reopen({ bodies: {}, holds: {} }); const n1 = s.entries().length; clock.advance(100);
-      D.settleOrphans(w3, []); const again = s.entries().slice(n1).filter((e: any) => e.kind === "act").map((e: any) => `${e.verb}:${e.body?.id}`);
+      D.settleOrphans(w3, []); const again = s.entries().slice(n1).filter((e: any) => e.kind === "request").map((e: any) => `${e.verb}:${e.body?.id}`);
       return { g: show(g), lift, acts, ends, again }; },
     good: (o) => o.g === "ok" && o.lift && o.acts.includes("return-home:cup") && o.ends && !o.again.length },
   { id: "O5", what: "a hold a world's load settles is a release its watching scripts hear (review 1.10): the orphan's return-held says how: return, caused by that act", run(s) { cast(s, true);
@@ -615,7 +615,7 @@ const cases: Case[] = [
       const h = install(s, "olive", "flag", "hear", `world.on("release", (e) => world.set("self", "t/how", e.how));\n`, { scope: { ids: "self", comps: ["t/how"] }, on: ["release"] });
       s.call("vic", "move", { to: [0.8, 0, 0.6] }); const g = s.call("vic", "grab", { id: "flag" });
       const w2 = s.reopen({ bodies: {}, holds: {} }); clock.advance(100); D.settleOrphans(w2, []);
-      const ran = s.entries().filter((e: any) => e.kind === "act" && e.verb === "script" && e.body?.on === "release"), back = s.entries().findLastIndex((e: any) => e.kind === "act" && e.verb === "return-held");
+      const ran = s.entries().filter((e: any) => e.kind === "request" && e.verb === "script" && e.body?.on === "release"), back = s.entries().findLastIndex((e: any) => e.kind === "request" && e.verb === "return-held");
       return { h: show(h), g: show(g), how: comp(s, "flag", "t/how") ?? null, cause: ran.at(-1)?.cause ?? null, back }; },
     good: (o) => o.h === "ok" && o.g === "ok" && o.how === "return" && o.back > 0 && o.cause === o.back },
   { id: "O5b", what: "…and a hold that just ends at load (past the holders' cap) is heard as how: drop", run(s) { cast(s);
@@ -636,7 +636,7 @@ const cases: Case[] = [
       s.call("olive", "set", { id: "torch", component: "t/burning", value: false });
       s.call("vic", "grab", { id: "torch" }); const n0 = s.entries().length;
       const d = s.call("vic", "use", { id: "torch", args: { phase: "down" } }); const lit1 = comp(s, "torch", "t/burning");
-      const actD = s.entries().slice(n0).find((e: any) => e.kind === "act" && e.verb === "use");
+      const actD = s.entries().slice(n0).find((e: any) => e.kind === "request" && e.verb === "use");
       const u = s.call("vic", "use", { id: "torch", args: { phase: "up" } }); const lit2 = comp(s, "torch", "t/burning");
       const named = s.call("vic", "use", { id: "torch", action: "poke" });
       const thief = s.call("ann", "use", { id: "torch", args: { held: true } });
@@ -650,7 +650,7 @@ const cases: Case[] = [
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "hose", hand: "left" });
       const d = s.call("vic", "use", { id: "hose", args: { phase: "down" } }); const f1 = comp(s, "hose", "t/flow");
       const u = s.call("vic", "use", { id: "hose", args: { phase: "up" } }); const f2 = comp(s, "hose", "t/flow");
-      const sact = s.entries().filter((e: any) => e.kind === "act" && e.verb === "script").at(-1);
+      const sact = s.entries().filter((e: any) => e.kind === "request" && e.verb === "script").at(-1);
       return { r: show(r), d: d.script?.status, f1, u: u.script?.status, f2, ev: sact?.body?.event }; },
     good: (o) => o.r === "ok" && o.d === "ran" && JSON.stringify(o.f1) === '{"on":true,"hand":"left","held":true}' && o.u === "ran" && o.f2?.on === false && o.ev?.phase === "up" && o.ev?.hand === "left" },
   { id: "U3", what: "grab and release are script events: a script whose scope covers the thing hears who took it (hand) and how it was let go (drop, snap with its socket); a script that doesn't cover it hears nothing", run(s) { cast(s);
@@ -663,7 +663,7 @@ const cases: Case[] = [
       s.call("vic", "move", { to: [0.8, 0, 0.6] });
       s.call("vic", "grab", { id: "flag" }); s.call("vic", "drop", { id: "flag", pos: [0.9, 1, 0.6] });
       s.call("vic", "grab", { id: "flag", hand: "left" }); s.call("vic", "drop", { id: "flag", pos: [0.05, 0.8, 0.05] });
-      const acts = s.entries().filter((e: any) => e.kind === "act" && e.actor === "script:flag").map((e: any) => [e.body.on, s.entries()[e.cause]?.verb ?? s.entries()[e.cause]?.kind]);
+      const acts = s.entries().filter((e: any) => e.kind === "request" && e.actor === "script:flag").map((e: any) => [e.body.on, s.entries()[e.cause]?.verb ?? s.entries()[e.cause]?.kind]);
       return { r: [show(r1), show(r2)], log: comp(s, "flag", "t/log"), bystander: comp(s, "bystander", "t/log") ?? null, acts }; },
     good: (o) => o.r.every((x: string) => x === "ok") && JSON.stringify(o.log) === '["grab vic right","release drop","grab vic left","release snap rack/hook"]' && o.bystander === null
       && JSON.stringify(o.acts.map((x: any) => x[0])) === '["grab","release","grab","release"]' && o.acts[1][1] === "put" && o.acts[0][1] !== "put" },
@@ -673,7 +673,7 @@ const cases: Case[] = [
       install(s, "olive", "ball", "watch", `world.on("release", (e) => world.set("board", "t/how", e.how));\n`, { scope: { ids: ["self", "board"], comps: ["t/how"] }, on: ["release"] });
       const bad = install(s, "olive", "ball", "bad", `world.on("grabbed", () => {});\n`, { scope: { ids: "self", comps: ["t/x"] }, on: ["grabbed"] });
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "ball" }); s.call("vic", "throw", { id: "ball", v: [0, 2, 2] });
-      const sact = s.entries().filter((e: any) => e.kind === "act" && e.actor === "script:ball").at(-1);
+      const sact = s.entries().filter((e: any) => e.kind === "request" && e.actor === "script:ball").at(-1);
       return { how: comp(s, "board", "t/how"), cause: s.entries()[sact?.cause]?.verb, bad: code(bad) }; },
     good: (o) => o.how === "throw" && o.cause === "throw" && o.bad === "shape" },
   { id: "U3b", what: "a hold that ends with no settlement of the holder's is a release too (review of #260): a fall out of the world says fell, caused by the fall's act, with or without physics; a leave whose drop is refused, with no engine, says left and, like a departure, records no identity", run(s) {
@@ -688,7 +688,7 @@ const cases: Case[] = [
         t.call("olive", "set", { id: "@world", component: "terrain", value: { kind: "flat", height: kz - 10 } });
         for (let y = -3.5; y > kz - 4; y -= 3.5) t.call("vic", "move", { to: [0, y, 8] }, 1000);
         const back = t.call("vic", "move", { to: [0, 0, 8], teleport: true, reason: "below-bounds" }, 1000);
-        const sact = t.entries().filter((e: any) => e.kind === "act" && e.actor === "script:ball").at(-1);
+        const sact = t.entries().filter((e: any) => e.kind === "request" && e.actor === "script:ball").at(-1);
         return { grab: show(grab), back: show(back), how: comp(t, "board", "t/how") ?? null, cause: sact ? t.entries()[sact.cause]?.verb ?? t.entries()[sact.cause]?.kind : null, trigger: sact?.body?.trigger?.actor ?? null }; };
       const plain = fall(false), sim = fall(true);
       cast(s);
@@ -698,7 +698,7 @@ const cases: Case[] = [
       s.call("vic", "move", { to: [0, 0, 0.5] }); const grab = s.call("vic", "grab", { id: "ball" });
       const lock = s.call("olive", "set", { id: "ball", component: "lock", value: true });
       const left = s.call("vic", "leave", {});
-      const lact = s.entries().filter((e: any) => e.kind === "act" && e.actor === "script:ball").at(-1);
+      const lact = s.entries().filter((e: any) => e.kind === "request" && e.actor === "script:ball").at(-1);
       return { plain, sim, left: { grab: show(grab), lock: show(lock), leave: show(left), holds: Object.keys(s.w().presence.holds), how: comp(s, "board", "t/how") ?? null,
         trigger: lact?.body?.trigger ?? null, by: lact?.body?.event?.by ?? null } }; },
     good: (o) => o.plain.grab === "ok" && o.plain.back === "ok" && o.plain.how === "fell" && o.plain.cause === "move" && o.plain.trigger === "vic"
@@ -711,8 +711,8 @@ const cases: Case[] = [
       s.call("vic", "move", { to: [0, 0, 0.5] }); const grab = s.call("vic", "grab", { id: "ball" });
       const lock = s.call("olive", "set", { id: "ball", component: "lock", value: true });
       const left = s.call("vic", "leave", {});
-      const lact = s.entries().filter((e: any) => e.kind === "act" && e.actor === "script:ball").at(-1);
-      const ret = s.entries().filter((e: any) => e.kind === "act" && e.verb === "return-held").map((e: any) => e.body);
+      const lact = s.entries().filter((e: any) => e.kind === "request" && e.actor === "script:ball").at(-1);
+      const ret = s.entries().filter((e: any) => e.kind === "request" && e.verb === "return-held").map((e: any) => e.body);
       return { grab: show(grab), lock: show(lock), leave: show(left), holds: Object.keys(s.w().presence.holds), how: comp(s, "board", "t/how") ?? null,
         cause: lact ? s.entries()[lact.cause]?.verb ?? null : null, trigger: lact?.body?.trigger?.actor ?? null, by: lact?.body?.event?.by ?? null, ret }; },
     good: (o) => o.grab === "ok" && o.lock === "ok" && o.leave === "ok" && !o.holds.length && o.how === "left" && o.cause === "return-held" && o.trigger === "vic" && o.by === "vic"
@@ -725,7 +725,7 @@ const cases: Case[] = [
       w.append = (e: any) => { if (e?.verb === "return-held" && !thrown++) throw new Error("disk full (a stand-in)"); return A.call(w, e); };
       const first = s.call("vic", "leave", {}); const kept = Object.keys(w.presence.holds);
       w.append = A; const again = s.call("vic", "leave", {});
-      const ret = s.entries().filter((e: any) => e.kind === "act" && e.verb === "return-held").length;
+      const ret = s.entries().filter((e: any) => e.kind === "request" && e.verb === "return-held").length;
       return { grab: show(grab), lock: show(lock), first: show(first), thrown, kept, again: show(again), holds: Object.keys(w.presence.holds), ret, ball: tf(s, "ball")?.pos ?? null }; },
     good: (o) => o.grab === "ok" && o.lock === "ok" && /CRASH/.test(o.first) && o.thrown === 1 && JSON.stringify(o.kept) === JSON.stringify(["ball"]) && o.again === "ok" && !o.holds.length && o.ret === 1 },
   { id: "U6", what: "a refused throw leaves the hold where it was: its release point isn't written before the throw is admitted", run(s) { cast(s, true);
@@ -777,7 +777,7 @@ const cases: Case[] = [
       s.call("vic", "move", { to: [0.3, 0, 0.6] }); const g = s.call("vic", "grab", { id: "torch" });
       const lock = s.call("olive", "set", { id: "torch", component: "lock", value: true });
       const n0 = s.entries().length; const p = s.call("vic", "put", { id: "torch" });
-      const home = s.entries().slice(n0).some((e: any) => e.kind === "act" && e.verb === "return-home");
+      const home = s.entries().slice(n0).some((e: any) => e.kind === "request" && e.verb === "return-home");
       // …as a plain put of a thing locked while held is (the control)
       s.call("olive", "create", { id: "book2", model: "book", components: { grabbable: { who: "member" } }, place: { at: [-0.3, 0] } });
       s.call("vic", "grab", { id: "book2", hand: "left" }); s.call("olive", "set", { id: "book2", component: "lock", value: true });
@@ -888,7 +888,7 @@ const cases: Case[] = [
       s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "ball" }); s.call("olive", "ban", { who: "vic" });
       const w2 = s.reopen(s.w().presence); clock.advance(100); D.settleOrphans?.(w2, []);
-      const acts = s.entries().filter((e: any) => e.kind === "act" && e.actor === "system").map((e: any) => e.verb);
+      const acts = s.entries().filter((e: any) => e.kind === "request" && e.actor === "system").map((e: any) => e.verb);
       return { holds: Object.keys(w2.presence.holds), acts, carrier: carrier(s) }; },
     good: (o) => !o.holds.length && o.acts.includes("return-held") && !o.carrier.disagree },
   // F5 (10-12): leave passes a banned holder (request() lets leave through), so F2 never reaches the refused-leave branch.
@@ -917,7 +917,7 @@ const cases: Case[] = [
       s.call("olive", "create", { id: "cup9", model: "book", components: { physics: { kind: "dynamic", who: "member" }, transform: { pos: [4, y, 4], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
       const before = comp(s, "cup9", "parent")?.to ?? null;
       s.call("vic", "move", { to: [4, 0, 4.6] }); const g = s.call("vic", "grab", { id: "tray9" });
-      const launched = s.w().entries.filter((e) => e.kind === "sim" && e.verb === "launch" && e.body?.id === "cup9").length;
+      const launched = s.w().entries.filter((e) => e.kind === "physics" && e.verb === "launch" && e.body?.id === "cup9").length;
       return { before, g: show(g), carried: g.notes?.find((n) => n.carried)?.carried ?? null, parent: comp(s, "cup9", "parent")?.to ?? null, launched }; },
     good: (o) => o.before === null && o.g === "ok" && Array.isArray(o.carried) && o.carried.includes("cup9") && o.parent === "tray9" && o.launched === 0 },
   { id: "F10", what: "reach is to the nearest point of a thing's box, not its origin: standing against a big crate is in reach (R 10-11 23:27, a barrel)", run(s) { cast(s);

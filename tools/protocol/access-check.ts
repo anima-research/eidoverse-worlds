@@ -147,7 +147,7 @@ ok(close.ok && removed && bob.closed === 4010 && bob.msgs.some((m) => m.type ===
   const told = !!(await tryUntil("Pip is told the grant ends", () => p.msgs.some((m) => m.type === "notice" && /ends in/.test(m.text)), { ms: 2000, step: 50 }));
   const gone = !!(await tryUntil("Pip is removed when the grant ends", () => p.closed != null, { ms: 6000, step: 50 }));
   const log = fs.readFileSync(path.join(W, "keep", "world.jsonl"), "utf8");
-  const ended = log.split("\n").filter(Boolean).map((l) => JSON.parse(l)).find((e) => e.kind === "act" && e.verb === "expire-roles");
+  const ended = log.split("\n").filter(Boolean).map((l) => JSON.parse(l)).find((e) => e.kind === "request" && e.verb === "expire-roles");
   const role = (await own.req("look", {})) && null;
   ok(set.ok && !!jp.snapshot && told && gone && p.closed === 4010 && ended?.actor === "system" && ended?.body?.ids?.includes(ids.Pip),
     "A5 a timed grant: its holder is told before it ends; the authority writes its end (expire-roles, the system's act) and the door removes them (4010)",
@@ -263,7 +263,7 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   const mossGeom = await geomAs(s3.port, "keep", "tok-moss");
   const log = fs.readFileSync(path.join(W, "keep", "world.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
   const mod = fs.readFileSync(path.join(W, "keep", "world.mod.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
-  const act = log.find((e) => e.kind === "act" && e.actor === fenId && e.body?.operator === true && e.body?.request?.component === `roles:${fenId}`);
+  const act = log.find((e) => e.kind === "request" && e.actor === fenId && e.body?.operator === true && e.body?.request?.component === `roles:${fenId}`);
   const rec = mod.find((m) => m.verb === "unban" && m.who === ids.Moss && m.actor === fenId && m.operator === true);
   ok(!!jf.snapshot && !plain.ok && plain.refused?.code === "rights" && unban?.reply?.ok && list?.reply?.ok && wide?.reply?.refused?.code === "rights" && !!jr.snapshot && notOp?.reply?.refused?.code === "rights" && mossGeom === 200 && !!act && !!rec,
     "A11 an operator repairs through the authority, narrowly and on the record: ordinary write refused, operator-repair unbans and lists (act / mod record marked operator), another component refused, a non-operator refused",
@@ -620,7 +620,7 @@ const gonePid = await exitedPid();
 //   B14 a timed grant that has ended in a world that can't log the end (no custody) still removes its holder at the sweep
 //   B17 a world is served in its own case only: on a case-insensitive filesystem "KEEP" is not "keep" (a second authority)
 { const P = fs.mkdtempSync(path.join(root, "pure-")), PW = path.join(P, "worlds");
-  const line = (join) => JSON.stringify({ kind: "change", verb: "set", body: { id: "@world", comp: "access", value: { join } } });
+  const line = (join) => JSON.stringify({ kind: "change", op: "set", body: { id: "@world", comp: "access", value: { join } } });
   fs.mkdirSync(path.join(PW, "torn"), { recursive: true }); fs.writeFileSync(path.join(PW, "torn", "world.jsonl"), `${line("listed")}\n${line("anyone")}`);
   fs.mkdirSync(path.join(PW, "keep"), { recursive: true });
   const caseless = fs.existsSync(path.join(PW, "KEEP"));

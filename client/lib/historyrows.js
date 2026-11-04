@@ -3,10 +3,10 @@
 // an attempt, never as a deed (Commons parity audit, 10-06: "refused acts print as done").
 import { phraseOf } from '../../shared/credits.js';
 export function worldHistoryRows(entries, nameOf) {
-  return entries.filter((e) => e.kind === 'act').reverse().map((e) => {
+  return entries.filter((e) => e.kind === 'request').reverse().map((e) => {
     const refused = e.body?.refused?.code ?? null, who = nameOf(e.actor);
     const verb = e.verb === 'imported' && typeof e.body?.verb === 'string' ? e.body.verb : e.verb;   // an imported act, as what it was
-    const changed = [e.body?.request?.component].filter(Boolean), target = e.body?.request?.id ?? null;
+    const changed = [e.body?.args?.component].filter(Boolean), target = e.body?.args?.id ?? null;
     const what = `${verb}${target ? ` ${target}` : ''}${changed.length ? ` · ${changed.join(', ')}` : ''}`;
     return { seq: e.seq, by: e.actor, who, verb, changed, target, ts: e.ts ?? null, refused,
       text: refused ? `${who} tried ${what} — refused (${refused}); nothing changed` : `${who} · ${what}` };
@@ -28,7 +28,7 @@ export function historyView(list, nameOf, { mode = 'time', who = null } = {}) {
     const people = new Map();
     for (const r of rows) { const p = people.get(r.by) ?? { by: r.by, who: r.who ?? nameOf(r.by), deeds: 0, tried: 0, last: r.ts ?? null, did: [] };
       if (r.refused) p.tried++; else { p.deeds++;   // what they did, in the Credits words (shared/credits.js)
-        for (const c of r.changed?.length ? r.changed : [null]) { const what = c === '(created)' ? 'made it' : c === '(deleted)' ? 'took it away' : c ? phraseOf({ verb: 'set', comp: c }) : r.verb;
+        for (const c of r.changed?.length ? r.changed : [null]) { const what = c === '(created)' ? 'made it' : c === '(deleted)' ? 'took it away' : c ? phraseOf({ op: 'set', comp: c }) : r.verb;
           if (!p.did.includes(what)) p.did.push(what); } }
       people.set(r.by, p); }
     return { mode, rows, people: [...people.values()].sort((a, b) => b.deeds - a.deeds || String(a.who).localeCompare(String(b.who))) };

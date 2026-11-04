@@ -35,13 +35,13 @@ function oldWorld(root: string, name: string) {
   const r = request(w, "ann", "create-world", { title: name }); if (!r.ok) throw new Error(JSON.stringify(r));
   const f = path.join(W, name, "world.jsonl"); const L = readLog(fs.readFileSync(f, "utf8")); const world = L[1].world; let ts = T;
   const add = (e: any) => { L.push({ world, ts: (ts += 1000), ...e }); return L.length - 1; };
-  const a1 = add({ kind: "act", actor: "ann", verb: "set", body: { request: { id: "@world", component: "roles:bob", value: { role: "builder" } } } });
-  add({ kind: "change", actor: "ann", cause: a1, verb: "set", body: { id: "@world", comp: "roles:bob", value: { role: "builder", sub: "aid1:example.org:bob" } } });
-  add({ kind: "say", actor: "bob", verb: "say", body: { text: "hello", to: "ann" } });
-  const a2 = add({ kind: "act", actor: "bob", verb: "set", body: { request: { id: "@world", component: "about", value: { name, text: "bob's" } } } });
-  add({ kind: "change", actor: "bob", cause: a2, verb: "set", body: { id: "@world", comp: "about", value: { name, text: "bob's" } } });
-  add({ kind: "act", actor: "carl", verb: "use", body: { request: { id: "bell", action: "ring" }, capability: { reaction: "ring", author: "ann", grantedAt: 2 } } });
-  add({ kind: "act", actor: "script:bell1", verb: "script", body: { script: "bell", sponsor: "bob", sponsorAt: a2 } });
+  const a1 = add({ kind: "request", actor: "ann", op: "set", body: { request: { id: "@world", component: "roles:bob", value: { role: "builder" } } } });
+  add({ kind: "change", actor: "ann", cause: a1, op: "set", body: { id: "@world", comp: "roles:bob", value: { role: "builder", sub: "aid1:example.org:bob" } } });
+  add({ kind: "say", actor: "bob", body: { text: "hello", to: "ann" } });
+  const a2 = add({ kind: "request", actor: "bob", op: "set", body: { request: { id: "@world", component: "about", value: { name, text: "bob's" } } } });
+  add({ kind: "change", actor: "bob", cause: a2, op: "set", body: { id: "@world", comp: "about", value: { name, text: "bob's" } } });
+  add({ kind: "request", actor: "carl", verb: "use", body: { request: { id: "bell", action: "ring" }, capability: { reaction: "ring", author: "ann", grantedAt: 2 } } });
+  add({ kind: "request", actor: "script:bell1", verb: "script", body: { script: "bell", sponsor: "bob", sponsorAt: a2 } });
   fs.writeFileSync(f, L.map((e: any) => JSON.stringify(e)).join("\n") + "\n");
   fs.writeFileSync(path.join(W, name, "world.mod.jsonl"), [{ ts: ts + 1, actor: "ann", verb: "ban", who: "dave" }, { ts: ts + 2, actor: "ann", verb: "mute", who: "bob", until: ts + 1e9 },
     { ts: ts + 3, actor: "system", verb: "ban", who: "addr:0f0f" }].map((m) => JSON.stringify(m)).join("\n") + "\n");
@@ -63,10 +63,10 @@ const idWithSub = (root: string, sub: string) => Object.entries<any>(entriesOf(d
   ok(r.code === 0 && r.o?.written === true, "MI0 the migration of an old world is applied (dry run first, then --apply)", { dry: dry.o, applied: r.o, tail: r.out.slice(-400) });
   const bobAcct = idWithSub(root, "aid1:example.org:bob");
   const ann = L[1].actor; const roleKeys = new Set<string>();
-  for (const e of L as any[]) if (e.kind === "change") for (const o of e.verb === "batch" ? e.body.ops : [e.body]) if (String(o?.comp).startsWith("roles:")) roleKeys.add(o.comp);
+  for (const e of L as any[]) if (e.kind === "change") for (const o of e.op === "batch" ? e.body.ops : [e.body]) if (String(o?.comp).startsWith("roles:")) roleKeys.add(o.comp);
   const roleKey = [...roleKeys].find((k) => k !== `roles:${ann}`) ?? null;
-  const say = L.find((e: any) => e.kind === "say" && e.body?.text === "hello"), bobSet = L.find((e: any) => e.kind === "act" && e.body?.request?.component === "about");
-  const use = L.find((e: any) => e.kind === "act" && e.verb === "use"), scr = L.find((e: any) => e.kind === "act" && e.verb === "script");
+  const say = L.find((e: any) => e.kind === "say" && e.body?.text === "hello"), bobSet = L.find((e: any) => e.kind === "request" && e.body?.request?.component === "about");
+  const use = L.find((e: any) => e.kind === "request" && e.verb === "use"), scr = L.find((e: any) => e.kind === "request" && e.verb === "script");
   ok(minted(bobAcct) && roleKey === `roles:${bobAcct}` && say?.actor === bobAcct && bobSet?.actor === bobAcct && scr?.body?.sponsor === bobAcct,
     "MI1 bob is one id everywhere: the id holding his account holds his role, his say, his act and his script's sponsorship (I3, I9)", { bobAcct, roleKey, say: say?.actor, act: bobSet?.actor, sponsor: scr?.body?.sponsor });
   ok(minted(ann) && say?.body?.to === ann && use?.body?.capability?.author === ann, "MI1 ann is one id: the founder's actor, the say's to and the use's capability.author (I9)", { ann, to: say?.body?.to, author: use?.body?.capability?.author });

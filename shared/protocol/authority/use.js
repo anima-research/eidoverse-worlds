@@ -5,7 +5,7 @@
 import { bodyOf } from "../../components.js";
 import { inOccupyReach, OCCUPY_REACH } from "../../sockbody.js";
 import { grabOf } from "../../grab.js";
-import { PURGED } from "../fold.js";
+import { REDACTED } from "../fold.js";
 import { COMPONENTS, PENDULUM, unitTransform } from "../componentspec.js";
 import { r3 } from "../round.js";
 import { UP } from "./ctx.js";
@@ -167,7 +167,7 @@ function buildUse(ctx, a) {
   }
   refuse("no-handler", `${a.id} declares '${action}' but its handler kind isn't one this engine runs`, `handler kinds: ${Object.keys(COMPONENTS.reactions.handlers).join(", ")} (schema {component: 'reactions'})`);
 }
-const objOf = (v) => (v && typeof v === "object" && !Array.isArray(v) && v !== PURGED ? v : {});
+const objOf = (v) => (v && typeof v === "object" && !Array.isArray(v) && v !== REDACTED ? v : {});
 // toggle's defaults: an openable's `open` (component `openable`, field `open`); a named component with no field toggles
 // the whole value (a plain boolean component). `unless` names a field of the same component that, when true, bars it.
 const barredBy = (e, h) => !!h?.unless && objOf(e.c[toggleOf(h).comp])[h.unless] === true;
@@ -246,7 +246,7 @@ const USE_VERBS = {
         // (a binding there, or the handler itself written by the translation: its cause is an `imported` act)
         const old = Object.entries(wc).find(([k, b]) => k.startsWith("imported-behavior:") && (k === `imported-behavior:${probe.script}` || b?.attach === a.id));
         const lt = lastTouch(w, a.id, "reactions", { authored: true }); const ce = lt ? w.entries[w.entries[lt.seq]?.cause] : null;
-        if (old || (isE(ce) && ce.kind === "act" && ce.verb === "imported"))
+        if (old || (isE(ce) && ce.kind === "request" && ce.verb === "imported"))
           refuse("no-runtime", `${a.id}'s '${probe.action}' runs the imported behaviour '${old ? old[0].slice("imported-behavior:".length) : probe.script}', carried by translation; the authority doesn't run the old script API`, `re-install it as script:${probe.script} on ${a.id} (docs/SCRIPTS.md); scripts lists imported behaviours as needs-reinstall`);
         refuse("no-handler", `${a.id}'s '${probe.action}' runs ${key}, which isn't installed on it`, "scripts {id} lists what runs here"); }
       const ev = { on: "use", action: probe.action, ...(a.args !== undefined ? { args: a.args } : {}), ...(held ?? {}) };
@@ -267,7 +267,7 @@ const USE_VERBS = {
 function worldHears(w, id, action, by, act, args, held, ran) {
   const wc = w.state().entities["@world"]?.c ?? {}, out = [];
   for (const [k, v] of Object.entries(wc)) { const name = k.slice(7);
-    if (!k.startsWith("script:") || !v || typeof v !== "object" || Array.isArray(v) || v === PURGED || !(Array.isArray(v.on) && v.on.includes("use"))) continue;
+    if (!k.startsWith("script:") || !v || typeof v !== "object" || Array.isArray(v) || v === REDACTED || !(Array.isArray(v.on) && v.on.includes("use"))) continue;
     if (by === "script:@world" || (id === "@world" && name === ran)) continue;
     out.push(activate(w, "@world", name, { on: "use", id, action, ...(args !== undefined ? { args } : {}), ...(held ?? {}), by, seq: act, cause: act })); }
   return out;

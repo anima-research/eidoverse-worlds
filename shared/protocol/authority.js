@@ -11,7 +11,7 @@ import { bodyOf, socketQ, ONE_PLACE } from "../components.js";
 import { MOVER, TRACK, bodyBox, bodyScale, floorStep, sweep, tokensAfter } from "../mover.js";
 import { checkSockets, checkSocket, checkStation, inOccupyReach, OCCUPY_REACH } from "../sockbody.js";
 import { DEFAULT_WHO, grabOf, homeOf, checkGrabbable, wantsHome, fitsSocket, socketRadius, pickGrip, offsetOk, describeGrab } from "../grab.js";
-import { fold, opsOf, applyOps, cowState, applyCow, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, PURGED, DIALECT, VERSION, keyOk } from "./fold.js";
+import { fold, opsOf, applyOps, cowState, applyCow, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, REDACTED, DIALECT, VERSION, keyOk } from "./fold.js";
 import { mintId, PERSON_ID, isPlaceholder } from "./ids.js";
 import { COMPONENTS, PENDULUM, defOf, registered, baseOf, isNamespaced, materialize, mapRefs, refsOf, refFields, outOfRange, rangeWords, resolveVersioned, statusOf, canonicalName, STATUSES } from "./componentspec.js";
 import { validate, verbHelp, ownArg, VERBSPEC, RESERVED_VERBS, REMOVED_VERBS } from "./verbspec.js";
@@ -29,7 +29,7 @@ import { mediaTier, tierWords } from "../mediasrc.js";
 import { saysOf } from "../says.js";
 import { readOut } from "../a11y.js";
 import { instanceProblem, effectFor, effectBlobName, effectProblem, EFFECT_KIND, ESSENTIAL_NAMES, isEssential, LEGACY_FIELDS } from "../particle_effects.js";
-import { livePoses, digestOf, restEta, ENGINES, carried, worldPose, TICK_MS, offChain, simCutOf } from "./simlayer.js";
+import { livePoses, digestOf, restEta, ENGINES, carried, worldPose, TICK_MS, offChain, simSnapshotOf } from "./simlayer.js";
 import { shapeRepairOps, shapesMarked, SHAPES_VERSION } from "./shaperepair.js";
 import { atWrite } from "./assetref.js";
 import { eidoHex } from "../eido.js";
@@ -45,7 +45,7 @@ import { Refusal, refuse, said } from "./authority/refuse.js";
 import { LAB_CATALOGUE, modelOf, geomOf, boxOfM, geomE, withCatalogue, meshShape } from "./authority/catalogue.js";
 export { LAB_CATALOGUE, withCatalogue, MESH_SIZE, meshSize, meshGeom, meshShape } from "./authority/catalogue.js";
 import { readback } from "./authority/storage.js";
-import { CHANGE, FOLLOW_UP, IMPORTED_ONLY, VOLATILE, clone, createOps, delOp, followUp, followUpsOf, isE, lockedC, nonce16, opsQuiet, qr3, scratch, setOp, versionOf, versionSeq } from "./authority/storage.js";
+import { CHANGE, FOLLOW_UP, IMPORTED_ONLY, VOLATILE, clone, createOps, delOp, followUp, cascadeOf, isE, lockedC, nonce16, opsQuiet, qr3, scratch, setOp, versionOf, versionSeq } from "./authority/storage.js";
 export { posAt, worldOf, seal, readback } from "./authority/storage.js";
 import { NONE, aabb, ancestors, descendants, hits, localFrom, obbs, qYaw, qinv, qmul, qrot, satCost, satDepth, surfacesOf, worldT, yawQ } from "./authority/math.js";
 import { SPATIAL, WORK_BUDGET, clockMs, familyOf, groundOf, groundReady, hitsIx, kidsMap, near, spatial, spend, supportBelow, supportUnder } from "./authority/spatial.js";
@@ -190,7 +190,7 @@ const REF_KEYS = new Set(["id", "to", "on", "beside", "hang", "against", "near",
 const REF_LISTS = new Set(["targets", "marks", "ids", "refs"]);
 function placeholders(w, verb, args) {
   const creates = verb === "create" ? [[null, args]]
-    : (verb === "batch" || verb === "fork-copy") && Array.isArray(args?.ops) ? args.ops.map((o, i) => [i, o && o.verb === "create" && o.args && typeof o.args === "object" ? o.args : null]).filter(([, a]) => a) : [];
+    : (verb === "batch" || verb === "fork-copy") && Array.isArray(args?.ops) ? args.ops.map((o, i) => [i, o && o.op === "create" && o.args && typeof o.args === "object" ? o.args : null]).filter(([, a]) => a) : [];
   const at = (i) => (i === null ? "" : `batch op ${i}: `);
   const no = (reason, fix) => { try { refuse("shape", reason, fix); } catch (e) { UNLOGGED_REFUSALS.add(e); throw e; } };
   const keep = CTX.forking || FIXTURE_IDS; const ids = {};
@@ -262,7 +262,7 @@ function logRefusal(w, actor, verb, args, code) {
     if (verb === "punt" && (args?.contact === true || args?.shove === true)) { const m = (w.unrecorded ??= new Map()); m.set(actor, (m.get(actor) ?? 0) + 1); return; }
     if (UNLOGGED.has(code)) return;
     const names = argNames(verb, args);
-    const body = { args: names.known, refused: { code } }; if (names.unknown) body.unknownArgs = names.unknown;
+    const body = { argNames: names.known, refused: { code } }; if (names.unknown) body.unknownArgs = names.unknown;
     // a verb the authority doesn't have is recorded as `unknown-verb`: its name is the visitor's text (32 characters of it,
     // in a permanent, forkable record), so it goes to the ring only, as argument values do (scars r8 M3)
     const asVerb = Object.hasOwn(VERBS, verb) || Object.hasOwn(RESERVED_VERBS, verb) || Object.hasOwn(REMOVED_VERBS, verb) ? verb : "unknown-verb";
@@ -283,7 +283,7 @@ function expectCheck(w, list) {
     if (!x || typeof x !== "object" || Array.isArray(x) || typeof x.id !== "string" || typeof x.component !== "string" || Object.keys(x).some((k) => !["id", "component", "value"].includes(k)))
       refuse("shape", `expect entries are {id, component, value?}, got ${JSON.stringify(x)?.slice(0, 80)}`, "leave value out to expect the component to be absent");
     const e = st.entities[x.id]; const has = !!e && x.component in e.c; const cur = has ? e.c[x.component] : undefined;
-    const same = "value" in x ? has && cur !== PURGED && jcs(cur) === jcs(x.value) : !has;
+    const same = "value" in x ? has && cur !== REDACTED && jcs(cur) === jcs(x.value) : !has;
     if (same) continue;
     const lt = lastTouch(w, x.id, x.component);
     const why = !e ? `${x.id} is gone` : lt ? `${said(lt.actor)} changed it at ${lt.seq}` : "it isn't what you started from";

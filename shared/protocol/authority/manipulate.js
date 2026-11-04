@@ -142,7 +142,7 @@ function returnPlan(w, st, id, g) {
   catch (x) { if (!(x instanceof Refusal)) throw x; return { plan: null, why: x.reason }; }
 }
 function returnHome(w, id, plan, cause) {
-  const act = w.append({ kind: "act", actor: "system", verb: "return-home", ...(cause !== undefined ? { cause } : {}), body: { id } });
+  const act = w.append({ kind: "request", actor: "system", verb: "return-home", ...(cause !== undefined ? { cause } : {}), body: { id } });
   return { act, seq: changeEntry(w, plan, act) };
 }
 // What moved a thing last, when it was a hand or physics (a settlement, a punt, a rest, the authority's follow-up to one):
@@ -151,8 +151,8 @@ const MANIPULATE_VERBS = new Set(["put", "drop", "throw", "punt", "leave"]), SYS
 function lastRelease(w, id) {
   const lt = lastTouch(w, id, "transform"); if (!lt) return null;
   const se = w.entries[lt.seq]; const c = w.entries[se?.cause]; if (!isE(c)) return null;
-  const byManipulation = (c.kind === "act" && (MANIPULATE_VERBS.has(c.verb) && !RESERVED.has(c.actor) || (c.actor === "system" && SYSTEM_AFTER.has(c.verb)))) || (c.kind === "sim" && c.verb === "launch");
-  return byManipulation ? { seq: lt.seq, ts: se.ts, release: c.kind === "sim" ? c.cause : se.cause } : null;
+  const byManipulation = (c.kind === "request" && (MANIPULATE_VERBS.has(c.verb) && !RESERVED.has(c.actor) || (c.actor === "system" && SYSTEM_AFTER.has(c.verb)))) || (c.kind === "physics" && c.verb === "launch");
+  return byManipulation ? { seq: lt.seq, ts: se.ts, release: c.kind === "physics" ? c.cause : se.cause } : null;
 }
 const sameHome = (st, id, home) => { const e = st.entities[id]; const t = e?.c.transform; if (!t || !home) return false;
   const near = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => Math.abs(x - b[i]) < 1e-3);
@@ -197,7 +197,7 @@ const homeHere = (st, id) => { const c = st.entities[id]?.c ?? {}; const t = { .
 // "set home here", i.e. a write of home). Not under a capability: a script or reaction writes only what it names.
 function stampResetHomes(ctx, ops) {
   if (ctx.cap || !ops.length) return ops;
-  const resets = ops.filter((o) => o.verb === "set" && o.comp === "reactions" && o.value && typeof o.value === "object").flatMap((o) => Object.values(o.value).filter((h) => h?.kind === "reset"));
+  const resets = ops.filter((o) => o.op === "set" && o.comp === "reactions" && o.value && typeof o.value === "object").flatMap((o) => Object.values(o.value).filter((h) => h?.kind === "reset"));
   if (!resets.length) return ops;
   const after = scratch(ctx.st, ops); const out = ops.slice(); const done = new Set();
   for (const t of resets.flatMap((h) => h.targets ?? [])) { const c = after.entities[t]?.c; if (!c || done.has(t)) continue; done.add(t);
@@ -209,17 +209,17 @@ function stampResetHomes(ctx, ops) {
 function stampHomes(ctx, ops) {
   if (ctx.cap || !ops.length) return ops;
   const after = scratch(ctx.st, ops); const out = ops.slice();
-  const ids = new Set(ops.filter((o) => o.verb === "create" || (o.verb === "set" && ["grabbable", "transform", "parent"].includes(o.comp)) || (o.verb === "delete" && o.comp === "parent")).map((o) => o.id));
+  const ids = new Set(ops.filter((o) => o.op === "create" || (o.op === "set" && ["grabbable", "transform", "parent"].includes(o.comp)) || (o.op === "delete" && o.comp === "parent")).map((o) => o.id));
   for (const id of ids) {
     const v = after.entities[id]?.c.grabbable; if (!wantsHome(v)) continue;
     const setsH = ops.some((o) => o.comp === "home" && o.id === id);
     const h = homeOf(after.entities[id].c.home), was = homeOf(ctx.st.entities[id]?.c.home);
     let home = null;
-    const born = ops.some((o) => o.verb === "create" && o.id === id);   // a copy or an instance goes home to where it was made, not to its source's home (review 10-06)
+    const born = ops.some((o) => o.op === "create" && o.id === id);   // a copy or an instance goes home to where it was made, not to its source's home (review 10-06)
     if (!h || (born && !sameHome(after, id, h))) home = homeHere(after, id);
     else if (!setsH && was && sameHome(ctx.st, id, was) && !sameHome(after, id, was)) home = homeHere(after, id);
     if (!home) continue;
-    const k = out.findIndex((o) => o.verb === "set" && o.comp === "home" && o.id === id);
+    const k = out.findIndex((o) => o.op === "set" && o.comp === "home" && o.id === id);
     if (k >= 0) out[k] = setOp(id, "home", home); else out.push(setOp(id, "home", home));
     ctx.notes.push({ id, component: "home", kept: home, why: !h ? "stamped: where it goes home to (its transform now)" : "moved with it: its home was where it stood" });
   }
@@ -278,7 +278,7 @@ function launch(w, actor, a, verb, g = null) {
   const L = planLaunch({ id: a.id, p: relPos, q: h.pose.q, v: a.v, ...(a.w !== undefined ? { w: a.w } : {}) }, g, ENGINES[spec.engine].maxSpeed, verb); const { v, notes } = L;
   h.pose.pos = relPos;   // admitted and planned: the hold now releases from here
   const act = w.append(actOf(w, actor, verb, a, { handled: h.handled }));
-  const seq = w.append({ kind: "sim", actor, cause: act, verb: "launch", body: { id: a.id, p: L.p, yaw: qYaw(h.pose.q), ...(ENGINES[spec.engine].rotates ? { q: L.q } : {}), v, ...(a.w !== undefined ? { w: L.w } : {}), handled: h.handled } });
+  const seq = w.append({ kind: "physics", actor, cause: act, verb: "launch", body: { id: a.id, p: L.p, yaw: qYaw(h.pose.q), ...(ENGINES[spec.engine].rotates ? { q: L.q } : {}), v, ...(a.w !== undefined ? { w: L.w } : {}), handled: h.handled } });
   // R 10-10 evening: what rests on it (a tray's load, or a stack settled onto it) flies too, from where the hand has it,
   // with the same velocity. Left as children they were carried rigidly by the thrown crate and sank with it into the ground.
   const occupants = []; { const st = w.state(); const t = worldT(st, a.id);
@@ -293,7 +293,7 @@ function launch(w, actor, a, verb, g = null) {
       const r = [0, 1, 2].map((i) => tk.pos[i] - o[i]); const wr = [wv[1] * r[2] - wv[2] * r[1], wv[2] * r[0] - wv[0] * r[2], wv[0] * r[1] - wv[1] * r[0]];
       let vk = [0, 1, 2].map((i) => v[i] + wr[i] + jit(k, i) * 0.06 * sp); const sk = Math.hypot(...vk), max = ENGINES[spec.engine].maxSpeed;
       if (sk > max) vk = vk.map((n) => n * max / sk); vk = vk.map((n) => noNeg0(r3(n)));
-      w.append({ kind: "sim", actor, cause: act, verb: "launch", body: { id: k, p: tk.pos.map(noNeg0), yaw: qYaw(tk.q), ...(ENGINES[spec.engine].rotates ? { q: tk.q.slice() } : {}), v: vk, ...(a.w !== undefined ? { w: a.w.slice() } : {}), handled: h.handled } });
+      w.append({ kind: "physics", actor, cause: act, verb: "launch", body: { id: k, p: tk.pos.map(noNeg0), yaw: qYaw(tk.q), ...(ENGINES[spec.engine].rotates ? { q: tk.q.slice() } : {}), v: vk, ...(a.w !== undefined ? { w: a.w.slice() } : {}), handled: h.handled } });
       occupants.push(k); } }
   if (occupants.length) notes.push({ flying: occupants, why: `they were resting on ${a.id}; they fly with it` });
   delete w.presence.holds[a.id]; w.savePresence(); heldEvent(w, "release", a.id, { by: actor, how: verb, seq: act });

@@ -3,13 +3,13 @@
 // runtime console ring, sponsors and pauses, the per-state script memo, and the budgets (rate, duty, CPU) an activation is
 // held to (refactor split, 2026-10-17; moved from authority.js's "behaviours" section unchanged; the running half is
 // authority/scriptrun.js). The gate's rights words (lacks, needWords, nearMiss) are above it, reached through UP.
-import { isEntityId, isComponent, jcs, utf8Len, PURGED } from "../fold.js";
+import { isEntityId, isComponent, jcs, utf8Len, REDACTED } from "../fold.js";
 import { COMPONENTS, registered, baseOf } from "../componentspec.js";
 import * as SR from "../scriptrules.js";
 import { instanceProblem, effectFor, effectBlobName, effectProblem, EFFECT_KIND, ESSENTIAL_NAMES, isEssential } from "../../particle_effects.js";
 import { UP } from "./ctx.js";
 import { refuse, said } from "./refuse.js";
-import { VOLATILE, followUpsOf, isE, opsQuiet } from "./storage.js";
+import { VOLATILE, cascadeOf, isE, opsQuiet } from "./storage.js";
 import { descendants } from "./math.js";
 import { backward, creatorOf, entryBy, isScriptActor, may, roleOf } from "./rights.js";
 import * as Roles from "../roles.js";
@@ -42,7 +42,7 @@ export const scriptCeiling = () => ({ max: 64, budget: SCRIPTS.budget, cpu: SCRI
 /** An operator's (and a test's) script configuration; returns what it was, to restore. Never a world's. */
 export function setScriptConfig(over = {}) { const was = { ...SCRIPTS }; Object.assign(SCRIPTS, over); return was; }
 // what the owner wrote in @world.script-settings ({} when nothing, or not an object)
-const ownScriptSettings = (st) => { const c = st.entities["@world"]?.c["script-settings"]; return c && typeof c === "object" && !Array.isArray(c) && c !== PURGED ? c : {}; };
+const ownScriptSettings = (st) => { const c = st.entities["@world"]?.c["script-settings"]; return c && typeof c === "object" && !Array.isArray(c) && c !== REDACTED ? c : {}; };
 const scriptsCfg = (st) => { const own = ownScriptSettings(st);
   const out = { ...SCRIPTS }; for (const k of OWNER_SCRIPT_FIELDS) if (own[k] !== undefined) out[k] = own[k];
   // a value above this server's ceiling is lowered to it; when it was the owner's, `capped` keeps what they asked for, so a
@@ -63,7 +63,7 @@ const scopeIds = (st, id, ids) => (ids === "self" ? [id] : ids === "subtree" ? [
 const inComps = (comps, c) => typeof c === "string" && comps.some((p) => p === c || (p.endsWith(":*") && c.startsWith(p.slice(0, -1))));
 const sampleOf = (p) => (p.endsWith(":*") ? p.slice(0, -1) + "x" : p);
 function scriptRights(w, st, cap, op, at, made) {
-  if (op.verb === "create") { if (!cap.create) refuse("scope", `${cap.key} doesn't declare create: true`, "its scope is data: what it may touch is fixed at install"); (cap.made ??= new Set()).add(op.id); }
+  if (op.op === "create") { if (!cap.create) refuse("scope", `${cap.key} doesn't declare create: true`, "its scope is data: what it may touch is fixed at install"); (cap.made ??= new Set()).add(op.id); }
   else { const mine = cap.ids.includes(op.id) || cap.made?.has(op.id);
     if (!mine || (op.comp !== undefined && !inComps(cap.comps, op.comp)) || (op.comp === undefined && !cap.made?.has(op.id)))
       refuse("scope", `${cap.key} on ${cap.id} may change only ${cap.comps.join("/") || "nothing"} of ${cap.ids.join(", ") || "nothing"}, not ${op.verb} ${at}`, "a script acts only inside the scope it declared at install"); }
@@ -127,7 +127,7 @@ function installCheck(w, st, s, who, op) {
     // PROTOCOL §4: a script may only ever write what the authority takes, so a bare name nobody registered is refused here,
     // at install, rather than at every activation
     if (!registered(n) && !n.includes("/")) refuse("schema", `${at}.scope.comps: '${n}' isn't a registered component; bare names belong to the registry (PROTOCOL §4)`, `a component of your own carries a namespace: 'example.org/${n}'`, { didYouMean: [`example.org/${n}`] }); }
-  for (const id of scopeIds(s, op.id, sc.ids)) for (const c of sc.comps) { const need = lacks(w, st, installer, { verb: "set", id, comp: sampleOf(c) }, new Set(s.entities[id] && !st.entities[id] ? [id] : []), { viaCap: true });
+  for (const id of scopeIds(s, op.id, sc.ids)) for (const c of sc.comps) { const need = lacks(w, st, installer, { op: "set", id, comp: sampleOf(c) }, new Set(s.entities[id] && !st.entities[id] ? [id] : []), { viaCap: true });
     if (need) refuse("rights", `${at}'s scope reaches ${id}.${c}, which needs ${needWords(need)}; ${said(installer)} is ${role}`, "a script can never do more than its installer could do directly: narrow the scope, or ask an owner to install or adopt it"); }
   const on = v.on ?? [];
   if (!Array.isArray(on) || on.some((e) => typeof e !== "string" || !(SCRIPT_EVENTS.includes(e) || (e.startsWith("changed:") && isComponent(e.slice(8))))))
@@ -136,7 +136,7 @@ function installCheck(w, st, s, who, op) {
   if (v.knobs !== undefined && utf8Len(jcs(v.knobs)) > 4096) refuse("too-big", `${at}.knobs is ${utf8Len(jcs(v.knobs))} bytes; at most 4 KiB`, "big data goes in a blob");
   const prev = st.entities[op.id]?.c[op.comp];
   if (v.always === true && prev?.always !== true && !Roles.isOwner(role)) refuse("rights", `${at}.always (run with nobody present) needs an owner`, "it costs the host while nobody benefits");
-  if (prev === undefined || prev === PURGED) { const n = allScripts(s).length;   // a purged slot holds no live script, so filling it is a new one
+  if (prev === undefined || prev === REDACTED) { const n = allScripts(s).length;   // a purged slot holds no live script, so filling it is a new one
     if (n > cfg.max) refuse("too-many", `this world would have ${n} scripts; it allows ${cfg.max}, ${limitWhose(st, cfg, "max")}`, tooManyFix(st, s, n, cfg.max)); }
 }
 function tooManyFix(st, s, n, max) {
@@ -154,15 +154,15 @@ const rtOf = (w, id, name) => ((w.presence.scripts ??= {})[rtKey(id, name)] ??= 
 const logRt = (w, rt, line) => { rt.console.push({ ts: Math.floor(w.now()), ...line }); if (rt.console.length > 20) rt.console.shift(); w.presenceDirty = true; };
 // how many behaviour acts (verb script; a world.use act is a link, not a level) sit in the cause chain behind entry `seq` (41 §3.9: a reader computes it from the log)
 function scriptDepth(w, seq) { let n = 0, e = w.entries[seq], guard = 0;
-  while (isE(e) && isScriptActor(e.actor) && guard++ < 1000) { if (e.kind === "act" && e.verb === "script") n++; e = w.entries[e.cause]; } return n; }
+  while (isE(e) && isScriptActor(e.actor) && guard++ < 1000) { if (e.kind === "request" && e.verb === "script") n++; e = w.entries[e.cause]; } return n; }
 // The writes to a script: key in its current life, newest first: [{e, value}] (value undefined if purged)
 function scriptWrites(w, id, key) {
   const out = []; let restored = false;
-  for (const i of backward(w, id)) { const e = w.entries[i]; if (!isE(e) || e.kind !== "change") continue; const ops = opsQuiet(e); const fu = followUpsOf(e);
+  for (const i of backward(w, id)) { const e = w.entries[i]; if (!isE(e) || e.kind !== "change") continue; const ops = opsQuiet(e); const fu = cascadeOf(e);
     for (let k = ops.length - 1; k >= 0; k--) { const o = ops[k]; if (o.id !== id) continue;
-      if (o.verb === "set" && o.comp === key) { if (fu.has(k)) restored = true; else { restored = false; out.push({ e, value: o.value }); } }   // a follow-up never sponsors (review r9 H1)
-      else if (o.verb === "delete" && fu.has(k) && restored && (o.comp === key || o.comp === undefined)) { restored = false; continue; }   // reversed by a follow-up restore (r10 M2)
-      else if (o.verb === "create" || (o.verb === "delete" && (o.comp === key || o.comp === undefined))) return out; } }
+      if (o.op === "set" && o.comp === key) { if (fu.has(k)) restored = true; else { restored = false; out.push({ e, value: o.value }); } }   // a follow-up never sponsors (review r9 H1)
+      else if (o.op === "delete" && fu.has(k) && restored && (o.comp === key || o.comp === undefined)) { restored = false; continue; }   // reversed by a follow-up restore (r10 M2)
+      else if (o.op === "create" || (o.op === "delete" && (o.comp === key || o.comp === undefined))) return out; } }
   return out;
 }
 // `paused` is a permission, not the script: a write that changes only it (pause, resume) is a "pause write"
@@ -181,7 +181,7 @@ function sponsorOf(w, id, key) {
 function pausedBy(w, id, key) {
   const W = scriptWrites(w, id, key); let at = null;
   for (const x of W) { if (x.value?.paused !== true) break; at = x; }
-  if (!at) return null; const c = w.entries[at.e.cause]; const by = isE(c) && c.kind === "act" ? c.actor : at.e.actor;
+  if (!at) return null; const c = w.entries[at.e.cause]; const by = isE(c) && c.kind === "request" ? c.actor : at.e.actor;
   return { by, at: at.e.seq, ts: at.e.ts };
 }
 // who is here: the authority's own bodies plus whoever the host says is connected (a server's people), id → position | null
@@ -195,7 +195,7 @@ const scriptMemo = new WeakMap();
 const scriptsOfEnt = new WeakMap();
 function allScripts(st) { let out = scriptMemo.get(st); if (out) return out; out = []; const vol = VOLATILE.has(st.entities);
   for (const id of Object.keys(st.entities)) { const e = st.entities[id]; let mine = vol ? null : scriptsOfEnt.get(e);
-    if (!mine || mine.id !== id) { mine = { id, list: [] }; for (const k of Object.keys(e.c)) { const v = e.c[k]; if (k.startsWith("script:") && v && typeof v === "object" && !Array.isArray(v) && v !== PURGED) mine.list.push({ id, name: k.slice(7), v }); } if (!vol) scriptsOfEnt.set(e, mine); }
+    if (!mine || mine.id !== id) { mine = { id, list: [] }; for (const k of Object.keys(e.c)) { const v = e.c[k]; if (k.startsWith("script:") && v && typeof v === "object" && !Array.isArray(v) && v !== REDACTED) mine.list.push({ id, name: k.slice(7), v }); } if (!vol) scriptsOfEnt.set(e, mine); }
     for (const x of mine.list) out.push(x); }
   scriptMemo.set(st, out); return out; }
 // budgets (authority practice, stated in @world.script-settings; §3d M3): per script per minute; per world per hour; each sponsor a fair
@@ -206,9 +206,9 @@ function budgetOf(w, st, now, id, key, sponsor, cfg) {
   const sponsors = new Set(allScripts(st).map((x) => sponsorOf(w, x.id, `script:${x.name}`)?.sponsor).filter(Boolean));
   for (let i = w.entries.length - 1; i >= 0; i--) { const e = w.entries[i]; if (!isE(e)) continue; if (Number.isInteger(e.ts) && now - e.ts > 3600000) break;
     if (!isScriptActor(e.actor)) continue; all++;
-    const a = e.kind === "act" ? e : w.entries[e.cause];
-    if (isE(a) && a.kind === "act" && a.body?.sponsor === sponsor) bySp++;
-    if (e.kind === "act" && e.actor === `script:${id}` && e.body?.script === key && now - e.ts <= 60000) mine++; }
+    const a = e.kind === "request" ? e : w.entries[e.cause];
+    if (isE(a) && a.kind === "request" && a.body?.sponsor === sponsor) bySp++;
+    if (e.kind === "request" && e.actor === `script:${id}` && e.body?.script === key && now - e.ts <= 60000) mine++; }
   return { mine, all, bySponsor: bySp, sponsors: sponsors.size, share: Math.floor(cfg.budget / Math.max(1, sponsors.size)) };
 }
 // The authority's thread is shared by every world in this process, so script time is capped for the PROCESS, not only per

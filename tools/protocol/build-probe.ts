@@ -38,8 +38,8 @@ const evalJson = (expr: string) => evalRaw(inPage(expr, NAMES, NODE));
 const { check: check0, tally } = mkCheck();
 const check = (name: string, ok: any, detail?: any) => check0(name, !!ok, detail === undefined ? "" : typeof detail === "string" ? detail.slice(0, 600) : (JSON.stringify(detail) ?? "").slice(0, 600));
 const entries = () => readLog(fs.readFileSync(path.join(worldsDir, WORLD, "world.jsonl")));
-const MY = () => entries().find((e: any) => e?.kind === "act" && e.verb === "create-world")?.actor;
-const myActs = () => entries().map((e, seq) => ({ e, seq })).filter(({ e }) => e?.kind === "act" && e.actor === MY() && !e.body?.refused);
+const MY = () => entries().find((e: any) => e?.kind === "request" && e.verb === "create-world")?.actor;
+const myActs = () => entries().map((e, seq) => ({ e, seq })).filter(({ e }) => e?.kind === "request" && e.actor === MY() && !e.body?.refused);
 const disk = () => fold(entries());
 const waitFor = pageWaiter(evalJson);
 const waitDisk = async (pred: () => boolean, ms = 8000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { try { if (pred()) return true; } catch { /* mid-write */ } await sleep(100); } return false; };
@@ -130,7 +130,7 @@ try {
     const n0 = myActs().length;
     await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: SX - 120, y: SY + 40 }); await sleep(200);
     await evalJson(`import('/lib/core.js').then((m) => (m.canvas.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: ${SX - 120}, clientY: ${SY + 40} })), true))`);
-    const placed = await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.verb === "create");
+    const placed = await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.op === "create");
     const t = myActs().at(-1)?.e.body?.request?.components?.transform;
     const yaw = t ? 2 * Math.atan2(t.q[1], t.q[3]) : null;
     check("GH4 the click places it turned and sized: ONE create, yaw −30°, scale 1.1", placed && Math.abs(yaw + Math.PI / 6) < 1e-3 && t.scale.every((v: number) => Math.abs(v - 1.1) < 1e-6), { t, acts: myActs().slice(n0).map((x) => x.e.verb) });
@@ -148,7 +148,7 @@ try {
     await evalJson(`(() => { const n = document.querySelector('#script-new .sn-name'); if (!n) return false; n.value = 'Greeter'; document.querySelector('#script-new .sn-ok').click(); return true; })()`);
     const made = await waitDisk(() => myActs().length === n0 + 1);
     const b = myActs().at(-1)?.e; const ops = b?.body?.request?.ops ?? [];
-    check("SC3 Create: ONE act, script:greeter + its use reaction (the upload isn't an act)", made && b.verb === "batch" && ops.some((o: any) => o.args?.component === "script:greeter") && ops.some((o: any) => o.args?.component === "reactions"),
+    check("SC3 Create: ONE act, script:greeter + its use reaction (the upload isn't an act)", made && b.op === "batch" && ops.some((o: any) => o.args?.component === "script:greeter") && ops.some((o: any) => o.args?.component === "reactions"),
       { acts: myActs().slice(n0).map((x) => x.e.verb), refused: await evalJson(`__refused.map((r) => r.text)`), card: await evalJson(`document.querySelector('#script-new .sn-err')?.textContent ?? null`) });
     check("SC4 …and the card closes", await waitFor(`!document.querySelector('#script-new')`));
     const used = await bobReq("use", { id: thing });

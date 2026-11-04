@@ -37,12 +37,12 @@ const guess = (...a) => UP.guess(...a);
 function changeShape(plan, cause, w) {
   // §2.4: in a chained log every set carries a salt (base64url, 16 random bytes), so a purged value's commit can't be
   // brute-forced from a guess. Added here, before fits() measures the entry. The fold ignores it.
-  // the authority's follow-ups are named in the entry itself (review r9 H1 / scars M3): `followUps` lists their indices, so any
+  // the authority's follow-ups are named in the entry itself (review r9 H1 / scars M3): `cascade` lists their indices, so any
   // reader of the log alone (purged values or not, this code version or another) can tell them from the asker's own ops,
   // and authorship (lastTouch {authored}, creatorOf, lastSetterOf, a script's sponsor) skips them. Always a batch then.
-  const ops = plan.ops.map((o) => (o.verb === "set" && "value" in o && o.salt === undefined ? { ...o, salt: nonce16(w) } : o));
-  const fu = plan.followUps ?? [];
-  const one = ops.length === 1 && !fu.length ? (({ verb, ...body }) => ({ verb, body }))(ops[0]) : { verb: "batch", body: { ops, ...(fu.length ? { followUps: [...fu] } : {}) } };
+  const ops = plan.ops.map((o) => (o.op === "set" && "value" in o && o.salt === undefined ? { ...o, salt: nonce16(w) } : o));
+  const fu = plan.cascade ?? [];
+  const one = ops.length === 1 && !fu.length ? (({ op, ...body }) => ({ op, body }))(ops[0]) : { op: "batch", body: { ops, ...(fu.length ? { cascade: [...fu] } : {}) } };
   return { kind: "change", actor: plan.who.actor, cause, ...one };
 }
 function changeEntry(w, plan, cause) {
@@ -56,8 +56,8 @@ function changeEntry(w, plan, cause) {
   (w.changedQ ??= []).push(seq); // `changed:<comp>` events, drained after the request (scripts, below)
   return seq;
 }
-const actEntry = (w, actor, verb, body) => ({ kind: "act", actor, verb, body });
-const actOf = (w, actor, verb, args, extra) => actEntry(w, actor, verb, { request: stripDry(args), ...(extra ?? {}) });
+const actEntry = (w, actor, verb, body) => ({ kind: "request", actor, verb, body });
+const actOf = (w, actor, verb, args, extra) => actEntry(w, actor, verb, { args: stripDry(args), ...(extra ?? {}) });
 
 // house 6340433633 (the lead's decision): what an imported world's translation carried for the world's sky, terrain, grass
 // or water (imported:<it>) fills that slot in the view while it's empty (view.js). A request that sets or deletes the world's
@@ -69,14 +69,14 @@ function dropImportedShadows(ctx, ops, verb) {
   const add = []; const wc = ctx.st.entities["@world"]?.c;
   if (wc) for (const k of NATIVE_WORLD) { const imp = `imported:${k}`;
     if (!(imp in wc) || ops.some((o) => o.id === "@world" && o.comp === imp)) continue;
-    if (!ops.some((o) => o.id === "@world" && o.comp === k && (o.verb === "set" || o.verb === "delete"))) continue;
+    if (!ops.some((o) => o.id === "@world" && o.comp === k && (o.op === "set" || o.op === "delete"))) continue;
     add.push(delOp("@world", imp)); ctx.notes.push({ id: "@world", component: imp, why: `the imported world's leftover ${k} goes with the world's own ${k}` }); }
   if (verb === "undo") return add.length ? [...ops, ...add] : ops;
   const out = [];
   ops.forEach((o, i) => { out.push(o);
-    if (o.verb !== "delete" || o.id === "@world" || o.comp === undefined) return;
+    if (o.op !== "delete" || o.id === "@world" || o.comp === undefined) return;
     const n = idOut(o.comp);
-    if (!fillsFromImported(n) || !(o.comp in (ctx.st.entities[o.id]?.c ?? {})) || ops.slice(i + 1).some((x) => x.id === o.id && ((x.comp === o.comp && x.verb === "set") || (x.comp === undefined && x.verb === "delete")))) return;
+    if (!fillsFromImported(n) || !(o.comp in (ctx.st.entities[o.id]?.c ?? {})) || ops.slice(i + 1).some((x) => x.id === o.id && ((x.comp === o.comp && x.op === "set") || (x.comp === undefined && x.op === "delete")))) return;
     for (const k of Object.keys(ctx.st.entities[o.id]?.c ?? {})) {
       if (!k.startsWith("imported:") || idOut(k.slice(9)) !== n || ops.some((x) => x.id === o.id && x.comp === k)) continue;
       out.push(followUp(delOp(o.id, k))); ctx.notes.push({ id: o.id, component: k, why: `the imported thing's leftover ${n} goes with its own ${n}` }); } });
@@ -93,7 +93,7 @@ function commit(w, actor, verb, args, build) {
   const pre = liftOps(st, stampModelHash(ctx, stampMedia(ctx, stampResetHomes(ctx, stampHomes(ctx, stampShapes(ctx, dropImportedShadows(ctx, build(ctx), verb)))))), w.everIds());
   const ops = pre.ops;
   // whatever removes a thing (delete, a batch's delete, an undo of its create) clears the references to it in the same act
-  if (ops.some((o) => o.verb === "delete" && o.comp === undefined)) { const after = scratch(st, ops); const gone = new Set(ops.filter((o) => o.verb === "delete" && o.comp === undefined && !after.entities[o.id]).map((o) => o.id));
+  if (ops.some((o) => o.op === "delete" && o.comp === undefined)) { const after = scratch(st, ops); const gone = new Set(ops.filter((o) => o.op === "delete" && o.comp === undefined && !after.entities[o.id]).map((o) => o.id));
     if (gone.size) ops.push(...clearRefsTo({ ...ctx, st: after }, gone)); }
   const plan = admit(w, st, { actor, cap: ctx.cap, restores: ctx.restores, preLifted: pre.notes }, ops); ctx.notes.push(...plan.notes);
   // the write's consequences (occupants re-dropped off a host whose shape changed) are planned and admitted HERE, against the
@@ -111,7 +111,7 @@ function commit(w, actor, verb, args, build) {
   const changeE = changeShape(plan, w.entries.length, w);
   // what a delete woke (buildDelete: things resting on what it removed as well as on their parent) falls from rest after the
   // change, caused by the act; only things the write leaves standing (a later batch op may have removed one)
-  const wakes = (ctx.launches ?? []).filter((b) => plan.after.entities[b.id]).map((b) => ({ kind: "sim", actor, cause: w.entries.length, verb: "launch", body: b }));
+  const wakes = (ctx.launches ?? []).filter((b) => plan.after.entities[b.id]).map((b) => ({ kind: "physics", actor, cause: w.entries.length, verb: "launch", body: b }));
   // what an engine's start finds in a hand (buildEpoch): lifted out of its world, caused by the act. Each names its holder as
   // actor, as a grab's own lift does, since orphanLifts reads the holder from it
   const lifts = liftsOf(w, ctx, plan);
@@ -134,7 +134,7 @@ function commit(w, actor, verb, args, build) {
 // and the replay seats it in the new engine's world, so a lift logged after the change would take it out again
 const liftsOf = (w, ctx, plan) => { const released = new Set(handsLetGo(w, plan, plan.after).map((g) => g.id));
   return (ctx.lifts ?? []).filter((id) => plan.after.entities[id] && w.presence.holds?.[id] && !released.has(id))
-    .map((id) => ({ kind: "sim", actor: w.presence.holds[id].by, cause: w.entries.length, verb: "lift", body: { id } })); };
+    .map((id) => ({ kind: "physics", actor: w.presence.holds[id].by, cause: w.entries.length, verb: "lift", body: { id } })); };
 
 // The hands a write's ops empty, by the rule the replay ends a lift by (simlayer's ends() and endsUnder()), so the two
 // agree on what is in a hand: a held thing it moves, re-parents or removes is where the edit put it now. (R, 10-10:
@@ -292,7 +292,7 @@ function buildCreate(ctx, a) {
   if (!place) return made;
   admit(ctx.w, ctx.st, { actor: ctx.actor }, made);   // the one gate before place solves (security pass 2 H-A); again on the whole write after
   const placed = buildPlace({ ...ctx, st: scratch(ctx.st, made) }, { ...place, id, __made: true });
-  return [...made.filter((o) => !(o.verb === "set" && (o.comp === "transform" || o.comp === "parent"))), ...placed.filter((o) => o.verb === "set")];
+  return [...made.filter((o) => !(o.op === "set" && (o.comp === "transform" || o.comp === "parent"))), ...placed.filter((o) => o.op === "set")];
 }
 
 // a server-written component (componentspec writtenBy) named in a request by hand, below owner

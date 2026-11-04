@@ -392,7 +392,7 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
   if (r.stats.launches !== undefined) {
     const lines = readLog(text); const end = lines.reduce((m: number, e: Any) => (Number.isFinite(e?.ts) && e.ts > m ? e.ts : m), 0);
     const sf = simFold(lines, end, { models: {} });
-    const flown = lines.filter((e: Any) => e?.kind === "sim").length;
+    const flown = lines.filter((e: Any) => e?.kind === "physics").length;
     if (flown || sf.checks.disagree.length) throw new Error(`the translated world asks a reader to fly (${flown} sim entries) or its sim layer disagrees (${JSON.stringify(sf.checks.disagree.slice(0, 3))}): nothing written`);
     sim = { launches: r.stats.launches, rests: r.stats.rests, agree: sf.checks.agree, engine: back.entities?.["@world"]?.c?.["physics-engine"] ?? null };
   }

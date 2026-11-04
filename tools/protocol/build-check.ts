@@ -220,7 +220,7 @@ const cases: { id: string; what: string; run: (s: any) => any; good: (o: any) =>
       if (plan.errors.length) return { errors: plan.errors };
       const up = s.call("olive", plan.upload.verb, plan.upload.args);
       const ops = plan.install(up.src); const inst = s.call("olive", "batch", { ops });
-      const acts = s.w().entries.filter((e: any) => e.kind === "act" && e.verb === "batch").length;
+      const acts = s.w().entries.filter((e: any) => e.kind === "request" && e.op === "batch").length;
       const use = s.call("vic", "use", { id: "bell" });
       const st = s.w().state().entities.bell.c;
       const view = s.call("vic", "scripts", { id: "bell" });

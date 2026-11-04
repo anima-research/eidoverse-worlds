@@ -11,11 +11,11 @@
 import { P } from '../scheduler.js';
 import { COMPONENTS } from '../../../shared/protocol/componentspec.js';
 import { solidOff } from '../../../shared/protocol/simlayer.js';
-import { kindOf, isMeshBag } from '../../../shared/protocol/kind.js';
-export { kindOf, isMeshBag };
+import { formOf, isMeshBag } from '../../../shared/protocol/kind.js';
+export { formOf, isMeshBag };
 
 /** What the realizer needs to know about a realized id to detect identity
- *  drift. kind: kindOf's word; model only meaningful for models.
+ *  drift. kind: formOf's word; model only meaningful for models.
  *  @typedef {{ kind: 'model'|'mesh'|'light'|'empty', model?: string }} RealizedView */
 
 /** Diff folded entities against the realized view.
@@ -37,7 +37,7 @@ export { kindOf, isMeshBag };
  *  @param {Record<string, any>} stEntities  state.st.entities
  *  @param {Map<string, RealizedView>} realized
  *  @returns {{ create: {id: string, ent: any}[], retire: string[] }} */
-/** (kindOf — what the realizer builds for a folded entity — is shared/protocol/kind.js's, one answer for every reader;
+/** (formOf — what the realizer builds for a folded entity — is shared/protocol/kind.js's, one answer for every reader;
  *  a thing with both a model and a mesh exists only by carry and is its model, review S3.)
  *  The registered `mesh` component (shared/protocol/componentspec.js), read as a client reads it: a malformed value is
  *  absent (the thing is an Empty), never a throw. A field outside its range is clamped to it; a capsule is at least its
@@ -64,7 +64,7 @@ export function planReconcile(stEntities, realized) {
   for (const [id, view] of realized) {
     const ent = stEntities[id];
     if (!ent || offIn(stEntities, id)) { retire.push(id); continue; }
-    const foldedKind = kindOf(ent);
+    const foldedKind = formOf(ent);
     if (view.kind !== foldedKind || (foldedKind === 'model' && view.model !== ent.model) || (foldedKind === 'mesh' && view.mesh !== meshKeyOf(ent))) {
       retire.push(id);
       create.push({ id, ent });

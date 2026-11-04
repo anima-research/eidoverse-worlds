@@ -95,7 +95,7 @@ async function voice(world: string, id: string) {
         const rid = `${id}-${++n}`;
         const answer = new Promise<any>((done) => waiting.set(rid, done));
         sent.push(performance.now());
-        ws.send(JSON.stringify({ type: "request", id: rid, verb: "say", args: { text } }));
+        ws.send(JSON.stringify({ type: "request", id: rid, args: { text } }));
         const r = await Promise.race([answer, sleep(15_000).then(() => undefined)]);
         if (r === undefined) throw new Error(`no reply to ${id}'s say of ${text} in 15 s`);
         if (r === null) throw new Error(`${id}'s socket closed (${closed?.code} ${closed?.reason}) before the world answered its say of ${text}`);

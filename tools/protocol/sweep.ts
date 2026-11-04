@@ -71,7 +71,7 @@ for (const name of Object.keys(golden)) {
   // @11: nothing asks a reader to fly her engine (no launch, no digest), the world runs today's eidosim, and the live
   // host's sim layer (server/livehost.ts: no catalogue of its own) reads the whole history without a disagreement
   const sf = simFold(readLog(text(r.out)), Math.max(...r.out.map((e: any) => e.ts ?? 0)), { models: {} });
-  const flown = r.out.filter((e: any) => e.kind === "sim");
+  const flown = r.out.filter((e: any) => e.kind === "physics");
   check(`${name}: no launch or digest; the world runs ${DEFAULT_ENGINE}; its sim layer reads the history clean`,
     !flown.length && back.entities?.["@world"]?.c["physics-engine"]?.engine === DEFAULT_ENGINE && !sf.checks.disagree.length && !!sf.sim,
     JSON.stringify({ flown: flown.length, engine: back.entities?.["@world"]?.c["physics-engine"], checks: sf.checks }).slice(0, 240));
@@ -331,7 +331,7 @@ for (const p of logs.sort()) {
     for (const id of Object.keys(phys.restAt)) if (!phys.sim.bodies[id]) delete phys.restAt[id]; };
   const compareAt = (i: number) => { if (loss || i < 0) return; if (i % every && i !== body.length - 1) return; const x = lossAt(v1, now, phys); if (x) loss = { oldSeq: body[i].seq, ...x }; };
   for (let s = 1; s < r.out.length && !loss; s++) { const e = r.out[s];
-    if ((e.kind === "act" && e.verb !== "translated" && !(e.verb === "repair-shapes" && e.actor === "system")) || e.kind === "say") { // `translated` (genesis's companion, translate-v1@3) and the repair marker beside it have no old entry
+    if ((e.kind === "request" && e.verb !== "translated" && !(e.verb === "repair-shapes" && e.actor === "system")) || e.kind === "say") { // `translated` (genesis's companion, translate-v1@3) and the repair marker beside it have no old entry
       if (phys && Number.isInteger(body[k + 1]?.ts)) settle(eidosim.tickOf(phys.sim, body[k + 1].ts));   // her rests up to the next act are logged before it
       compareAt(k); k++; alive.step(body[k]); foldEntry(v1, body[k]);
       if (phys) { eidosim.simEntry(phys.sim, body[k], v1); settle(phys.sim.tick); } }

@@ -2,7 +2,7 @@
 // authority.js's "the model catalogue" section unchanged). A leaf: math and the spatial index read a thing's box through
 // geomE; nothing here reaches the gate. The load-time `CTX.cat = LAB_CATALOGUE` rides along: authority.js imports this
 // file, so an out-of-call reader (a test reading the index) still finds the lab's catalogue in force.
-import { PURGED } from "../fold.js";
+import { REDACTED } from "../fold.js";
 import { MODELS } from "../labmodels.js";
 import { COMPONENTS } from "../componentspec.js";
 import { collisionBoxes } from "../../structure.js";
@@ -32,7 +32,7 @@ const boxOfM = (m) => m.box ?? [[-m.size[0] / 2, 0, -m.size[2] / 2], [m.size[0] 
 // server/solids.ts does past its limit).
 const STRUCT_MAX = 512; const STRUCTGEO = new WeakMap();
 function structGeom(v) {
-  if (!v || typeof v !== "object" || Array.isArray(v) || v === PURGED) return undefined;
+  if (!v || typeof v !== "object" || Array.isArray(v) || v === REDACTED) return undefined;
   if (STRUCTGEO.has(v)) return STRUCTGEO.get(v);
   // a building whose boxes can't be derived has no solid geometry here (walked and placed through), so the operator is told,
   // once per structure value (the result is cached per value just below)
@@ -60,7 +60,7 @@ const r4 = (n) => Math.round(n * 1e4) / 1e4;
 const isNum = (x) => typeof x === "number" && Number.isFinite(x);
 export const MESH_SIZE = COMPONENTS.mesh.ranges.size;
 const MESHGEO = new WeakMap();
-const meshOk = (v) => v && typeof v === "object" && !Array.isArray(v) && v !== PURGED && COMPONENTS.mesh.enums.shape.includes(v.shape)
+const meshOk = (v) => v && typeof v === "object" && !Array.isArray(v) && v !== REDACTED && COMPONENTS.mesh.enums.shape.includes(v.shape)
   && Array.isArray(v.size) && v.size.length === 3 && v.size.every((x) => isNum(x) && x >= MESH_SIZE.min && x <= MESH_SIZE.max);
 /** What a mesh value measures, by shape (the client's readMesh reads the same): a sphere is x³; a cylinder is x wide and y tall;
  *  a capsule is at least its diameter tall; a plane is 0.05 thick. */

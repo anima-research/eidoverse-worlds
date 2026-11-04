@@ -161,8 +161,8 @@ const cases: Case[] = [
     good: (o) => o.d === "ok" && o.u === "ok" && o.door && o.look === "door2" },
   // ---------------- M ----------------
   { id: "M1", what: "a founding writes the system's repair-shapes act beside it (the marker is that act: verb + actor), and READBACK lists the founding's marker", run(s) { cast(s);
-      const L = s.entries(); const i = L.findIndex((e: any) => e.kind === "act" && e.verb === "create-world");
-      const j = L.findIndex((e: any) => e.kind === "act" && e.verb === "repair-shapes" && e.actor === "system");
+      const L = s.entries(); const i = L.findIndex((e: any) => e.kind === "request" && e.verb === "create-world");
+      const j = L.findIndex((e: any) => e.kind === "request" && e.verb === "repair-shapes" && e.actor === "system");
       return { i, j, row: !!VC.READBACK?.["act:create-world"] }; },
     good: (o) => o.i > 0 && o.j > o.i && o.row },
   { id: "M2", what: "a world founded today with a pendulum (no pivot) and a sky azimuth; its founding act's body purged (the stored stub): a reload's lift writes nothing, the values stay as they were", run(s) { cast(s);
@@ -170,10 +170,10 @@ const cases: Case[] = [
       const m = s.call("olive", "set", { id: "swing", component: "motion", value: { type: "pendulum", amp: 0.3 } });
       const k = s.call("olive", "sky", { azimuth: Math.PI / 2 });
       const az0 = comp(s, "@world", "sky")?.azimuth, mo0 = JSON.stringify(comp(s, "swing", "motion"));
-      const w = s.reopen(); const i = w.entries.findIndex((e: any) => e.kind === "act" && e.verb === "create-world"); w.entries[i].body = { ...STUB };
+      const w = s.reopen(); const i = w.entries.findIndex((e: any) => e.kind === "request" && e.verb === "create-world"); w.entries[i].body = { ...STUB };
       // a log whose marker is ONLY the founding (one founded before the marker act existed): its marker act read as some other
       // act (in memory), so the stub alone decides, and a purged founding is unknown, which is marked
-      const j = w.entries.findIndex((e: any) => e.kind === "act" && e.verb === "repair-shapes"); if (j >= 0) w.entries[j] = { ...w.entries[j], verb: "x-not-a-marker" };
+      const j = w.entries.findIndex((e: any) => e.kind === "request" && e.verb === "repair-shapes"); if (j >= 0) w.entries[j] = { ...w.entries[j], verb: "x-not-a-marker" };
       const old = w.entries;
       const n = w.entries.length; s.step(); D.liftWorld(w); const out = D.repairShapes(w);   // item 9 (10-18): the load never repairs; the command reads the marker through readback
       return { m: show(m), k: show(k), n, after: w.entries.length, az: comp(s, "@world", "sky")?.azimuth, az0, mo: JSON.stringify(comp(s, "swing", "motion")), mo0, out,
@@ -181,7 +181,7 @@ const cases: Case[] = [
     good: (o) => o.m === "ok" && o.k === "ok" && o.after === o.n && o.az === o.az0 && o.mo === o.mo0 && o.markedOld === true },
   { id: "M3", what: "a translation carries the marker from its start: the system's repair-shapes act beside `translated`; with the translated act's body purged (unknown) the log still reads marked", async run() {
       const TV = await import(ENGINE + "tools/protocol/import-v1/translate-v1.js");
-      const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log", roles: { Marigold: { role: "owner" } } } },
+      const old = [{ seq: 0, ts: 1, actor: "world", args: { v: 2, dialect: "eidoverse-log", roles: { Marigold: { role: "owner" } } } },
         { seq: 1, ts: 2, actor: "Marigold", verb: "spawn", args: { id: "lamp_1", lib: "a.glb", pos: [1, 0, 1] } }];
       const r = TV.translate(old, {}); const L = r.out;
       const t = L.findIndex((e: any) => e.verb === "translated"), m = L.findIndex((e: any) => e.verb === "repair-shapes" && e.actor === "system");
@@ -204,7 +204,7 @@ const cases: Case[] = [
       const u = s.call("olive", "upload", { text: 'world.on("enter", (e) => { world.set("self", "t/last", { who: e.by }); });' });
       const ins = s.call("olive", "set", { id: "door", component: "script:guest", value: { src: u.src, scope: { ids: "self", comps: ["t/last"] }, on: ["enter"] } });
       s.step(); const ran = D.presenceEvent(s.w(), "enter", WHO);
-      const act = s.entries().findLast((e: any) => e.kind === "act" && e.verb === "script");
+      const act = s.entries().findLast((e: any) => e.kind === "request" && e.verb === "script");
       const A = AU.auditScripts(s.entries(), s.w().getBlob, { run: SB.runScript });
       return { ins: show(ins), ran: ran?.[0]?.status, actNames: JSON.stringify(act?.body ?? {}).includes(WHO), flags: A.flags, skipped: A.skipped.map((x: any) => x.why) }; },
     good: (o) => o.ins === "ok" && o.ran === "ran" && !o.actNames && !o.flags.length && o.skipped.length === 1 && /who arrived/.test(o.skipped[0]) },

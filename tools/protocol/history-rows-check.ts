@@ -4,10 +4,10 @@ import { worldHistoryRows, mergeHistory } from "../../client/lib/historyrows.js"
 let fails = 0; const ok = (c: boolean, n: string, d: any = "") => { console.log((c ? "ok   " : "FAIL ") + n + (c ? "" : "  " + JSON.stringify(d))); if (!c) fails++; };
 const nameOf = (id: string) => ({ "u-a": "Ann", "u-b": "Bob" } as any)[id] ?? id;
 const entries = [
-  { seq: 7, kind: "act", actor: "u-a", verb: "set", ts: 1, body: { request: { id: "lamp", component: "light" } } },
+  { seq: 7, kind: "request", actor: "u-a", verb: "set", ts: 1, body: { request: { id: "lamp", component: "light" } } },
   { seq: 8, kind: "change", actor: "u-a", verb: "set", ts: 1, cause: 7, body: {} },
-  { seq: 9, kind: "act", actor: "u-b", verb: "delete", ts: 2, body: { request: { id: "lamp" }, refused: { code: "rights" } } },
-  { seq: 10, kind: "say", actor: "u-b", verb: "say", ts: 3, body: { text: "hi" } },
+  { seq: 9, kind: "request", actor: "u-b", verb: "delete", ts: 2, body: { request: { id: "lamp" }, refused: { code: "rights" } } },
+  { seq: 10, kind: "say", actor: "u-b", ts: 3, body: { text: "hi" } },
 ];
 const rows = worldHistoryRows(entries, nameOf);
 ok(rows.length === 2, "H1 only acts are rows (state/say are not)", rows.map((r: any) => r.seq));

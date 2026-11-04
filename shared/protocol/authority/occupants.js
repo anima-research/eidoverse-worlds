@@ -93,7 +93,7 @@ function vacatesFor(w, st, who, norm) {
     (lastTouch(w, id, "parent", { authored: true })?.seq ?? -1) < since && (k > 0 || (lastTouch(w, from, key, { authored: true })?.seq ?? Infinity) < since));
   const out = new Map();
   for (const op of norm) {
-    if (op.verb === "create" || op.comp === undefined || !MOVES_BODIES(op.comp) || !st.entities[op.id]) continue;
+    if (op.op === "create" || op.comp === undefined || !MOVES_BODIES(op.comp) || !st.entities[op.id]) continue;
     const fam = new Set([op.id, ...descendants(st, op.id)]);
     for (const r of occupants) { if (out.has(r)) continue; const s = occupantOf(w, st, r); if (!s || !fam.has(s.to)) continue;
       if (own && rootOf(s.to) === own && unchangedSinceSat(s.since)) continue;   // the seat's own assembly moving it, as it was when they sat: the occupant exemption
@@ -122,7 +122,7 @@ function occupyRights(w, st, s, who, role, norm, made) {
     for (const h of [h0, h1]) if (h && !hosts.has(h)) hosts.set(h, op);
     if (h1 && h1 !== h0) joins.add(h1); }
   for (const [h, op] of hosts) { if (made.has(h) || !st.entities[h]) continue;
-    const at = h + "'s sockets (" + op.verb + " " + op.id + (op.comp !== undefined ? "." + op.comp : "") + ")"; const as = { verb: "set", id: h, comp: "sockets" };
+    const at = h + "'s sockets (" + op.op + " " + op.id + (op.comp !== undefined ? "." + op.comp : "") + ")"; const as = { op: "set", id: h, comp: "sockets" };
     // a socket joining h (made, re-parented onto it, or a thing made one) needs h's rights; an edit of a socket already
     // on h is judged on the socket's own rights in rights() (its creator, or the builder the command's lift names: RL4)
     const n = joins.has(h) ? lacks(w, st, holder, as, made, { viaCap: !!cap }) : null;

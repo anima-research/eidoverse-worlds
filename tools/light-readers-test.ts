@@ -1,4 +1,4 @@
-// light-readers-test — the readers of a placed light find it by what it IS (kindOf, the light rig's own key), never by a
+// light-readers-test — the readers of a placed light find it by what it IS (formOf, the light rig's own key), never by a
 // userData flag nothing writes (DEBT-SURVEY-2 §2.5, refactor D2).
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/light-readers-test.ts

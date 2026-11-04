@@ -6,7 +6,7 @@
 // `admit`, act + change entries, the ts from this server's clock); request() is the one door for a person's write; the
 // authority's own clocks (tick, settle, expire-roles) enter through their methods below (authorityTick…).
 //
-// What clients see: every client folds the log itself. A joiner adopts the authority's cut (clientCut) and folds the raw entries
+// What clients see: every client folds the log itself. A joiner adopts the authority's snapshot (clientSnapshot) and folds the raw entries
 // it is sent as {type: "log"}. `state` is the VIEW of the fold (shared/protocol/view.js viewState) plus the chat window,
 // for this server's own readers (/geom, model warm-up, the chat window); it is rebuilt by its next reader after a
 // write. Chat lines (say entries) are numbered seq × 1000 in the window and in readHistory.
@@ -19,7 +19,7 @@ import { mkdirDurable, replaceDurable, syncDir, syncFile, syncTree } from "./dur
 import { forkCopy, operatorRepair as authorityOperatorRepair, request as authorityRequest, actIndexOf, roleIn, isBanned, muteOf, sanctionsNow, effectiveIn, seniorOwnerOf, tick as authorityTick, settle as authoritySettle, checkpointNow as authorityCheckpointNow, presenceEvent, scriptsView, settleOrphans, liftWorld, reachAdmits, reachLetGo, noteRefused, expireRoles as authorityExpireRoles, drives as authorityDrives } from "../shared/protocol/authority.js";
 import { authorityTime } from "./readmeter.ts";
 import { txnOutcome, txnRefusal, wedgedOf } from "../shared/protocol/authority/storage.js";
-import { clientCutOf, spokenOf } from "../shared/protocol/replica.js";
+import { clientSnapshotOf, spokenOf } from "../shared/protocol/replica.js";
 import { viewState } from "../shared/protocol/view.js";
 import { holdWire } from "../shared/grab.js";
 import { hear } from "../shared/chatwindow.js";
@@ -43,7 +43,7 @@ const idOut = (s: string) => dec(s) ?? s;
 export function wireEntry(e: Any) {
   if (!e || typeof e !== "object") return e;
   const { world: _w, head: _h, sig: _s, ...rest } = e;
-  if ((rest.kind === "say" || rest.kind === "act") && rest.body && typeof rest.body === "object" && !Array.isArray(rest.body) && "salt" in rest.body) { const { salt: _t, ...b } = rest.body; rest.body = b; }
+  if ((rest.kind === "say" || rest.kind === "request") && rest.body && typeof rest.body === "object" && !Array.isArray(rest.body) && "salt" in rest.body) { const { salt: _t, ...b } = rest.body; rest.body = b; }
   return rest;
 }
 /** Does this world's directory hold a log? (Decided once, when the world is first opened.) */
@@ -142,7 +142,7 @@ export class WorldLog {
     if (st.status !== "ok") console.warn(`[world:${name}] log folds to '${st.status}': the authority will refuse writes`);
     // §12: a value stripped to its commit that no purge names: the log was changed outside the purge rule. Said, not enforced:
     // the value reads as unknown, and writes go on (house markup, #260 10-20)
-    const altered = (st.diagnostics ?? []).filter(([, c]: Any) => c === "commit-unpurged");
+    const altered = (st.diagnostics ?? []).filter(([, c]: Any) => c === "commitment-unredacted");
     if (altered.length) console.warn(`[world:${name}] log was changed outside its purge rule at line(s) ${altered.map(([q]: Any) => q).join(", ")} (a value stripped to its commit, no purge naming it): it reads as unknown. The operator can, with the world closed, restore those lines from a backup of the log and reopen it (each restored whole keeps its commit, so later lines still verify)`);
     this._state = this.view();
     // chat: the last 40 says, through the window's own rule; chatTotal counts every line ever said here
@@ -162,10 +162,10 @@ export class WorldLog {
   private view(): WorldView {
     return viewState(this.live.state(), { recentChat: this._state?.recentChat ?? [], chatTotal: this._state?.chatTotal ?? 0 }) as WorldView;
   }
-  /** One say entry: into the chat window and readHistory, as {seq: seq × 1000, verb: "say", …}. */
+  /** One say entry: into the chat window and readHistory, as {seq: seq × 1000, …}. */
   private sayLine(e: Any): ChatLine {
     const who = (x: string) => directoryFor(WORLDS_DIR).nameOf(x) ?? idOut(x);
-    return { seq: e.seq * 1000, ts: e.ts, actor: who(String(e.actor)), verb: "say", args: { text: String(e.body?.text ?? ""), ...(e.body?.to ? { to: who(String(e.body.to)) } : {}), ...spokenOf(e.body) } } as ChatLine;
+    return { seq: e.seq * 1000, ts: e.ts, actor: who(String(e.actor)), args: { text: String(e.body?.text ?? ""), ...(e.body?.to ? { to: who(String(e.body.to)) } : {}), ...spokenOf(e.body) } } as ChatLine;
   }
   private hearSay(e: Any) {
     const line = this.sayLine(e);
@@ -181,9 +181,10 @@ export class WorldLog {
     try { authorityCheckpointNow(this.live, { every: Math.ceil(SIM_CHECKPOINT_EVERY / 10) }); } catch (x) { console.warn(`[world:${this.name}] sim checkpoint at shutdown not written: ${(x as Error).message}`); }
   }
   /** The last seq. */
-  get head(): number { return this.live.entries.length - 1; }
+  /** the position of the last entry (a `seq`; the chain hash is `headAt`) */
+  get seq(): number { return this.live.entries.length - 1; }
   /** The last chat number this world could have issued (seq × 1000 + 999): legs opened after it number above it. */
-  get snapSeq(): number { return this.head * 1000 + 999; }
+  get snapSeq(): number { return this.seq * 1000 + 999; }
 
   /** One request, as `actor` (an identity the caller has already encoded). Warms any model it names first, so
    *  the authority can measure it; the authority call itself is synchronous. */
@@ -377,7 +378,7 @@ export class WorldLog {
     // load (Commons audit #2: scrollback stopped at 40 and told people it was "the beginning of this world")
     if (verbs && !verbs.has("say")) return { entries: [], oldestSeq: null, hasMore: false };
     const out: ChatLine[] = []; let more = false; const E = this.live.entries, S: number[] = this.live.saySeqs();   // every say's seq (livehost.ts)
-    for (let k = S.length - 1; k >= 0; k--) { const e = E[S[k]]; if (!e || e.kind !== "say" || e.body?.commit !== undefined) continue;
+    for (let k = S.length - 1; k >= 0; k--) { const e = E[S[k]]; if (!e || e.kind !== "say" || e.body?.commitment !== undefined) continue;
       if (floor !== null && !(e.seq > floor)) break;   // before the asker arrived: older lines are older still
       const seq = e.seq * 1000; if (seq >= before) continue; if (seq <= after) break;
       if (out.length === limit) { more = true; break; } out.push(this.sayLine(e)); }
@@ -426,12 +427,12 @@ export class WorldLog {
   listedHere(actor: string): boolean { return !!this.live.state().entities?.["@world"]?.c?.[`roles:${actor}`]; }
   /** Slice 3b: what a client that folds the log adopts at join: the fold itself (shared/protocol/replica.js wireState), its head,
    *  and the asker's own acts that undo could still take back (newest last), so Ctrl+Z survives a reload. */
-  clientCut(actor: string) {
+  clientSnapshot(actor: string) {
     const X = actIndexOf(this.live); const E = this.live.entries;
     const acts: number[] = X.actsOf.get(actor) ?? [], mine: number[] = [];   // newest first, so only the last 40 are read
     for (let k = acts.length - 1; k >= 0 && mine.length < 40; k--) { const q = acts[k]; if (!["undo", "create-world", "throw", "drop", "leave", "move", "grab"].includes(E[q].verb) && !X.undone.has(q) && X.resultOf.has(q)) mine.push(q); }
     mine.reverse();
-    return { ...clientCutOf(this.live), head: this.head, mine, you: actor, names: this.names([...this.actors, actor]), holds: this.holds() };
+    return { ...clientSnapshotOf(this.live), mine, you: actor, names: this.names([...this.actors, actor]), holds: this.holds() };
   }
   rememberPose(id: string, pose: unknown, settle: (p: unknown) => unknown) {
     if (!pose) return;
@@ -439,11 +440,12 @@ export class WorldLog {
     try { replaceDurable(this.posesPath, JSON.stringify(this.poses)); } catch (err) { console.error(`[world:${this.name}] poses`, err); }
   }
   /** What the snapshot says about this world's protocol (agents read it to route their tools). */
-  info() { return { dialect: DIALECT, v: VERSION, head: this.head, worldId: this.live.worldId, verbs: "send {type: 'request', id, verb, args}; reply {type: 'reply', id, …}" }; }
+  /** What the snapshot says about this world's protocol (D5: {dialect, v, minor} gate a joiner; `world` is the id, `name` the directory). */
+  info() { return { dialect: DIALECT, v: VERSION, minor: MINOR, world: this.live.worldId, name: this.name, seq: this.seq, verbs: "send {type: 'request', id, verb, args}; reply {type: 'reply', id, …}" }; }
 }
 
 // ---- founding and translating (tools/protocol/world.ts is the command line) ----
-import { opsOf, DIALECT, VERSION } from "../shared/protocol/fold.js";
+import { opsOf, DIALECT, VERSION, MINOR } from "../shared/protocol/fold.js";
 import { isOwner } from "../shared/protocol/roles.js";
 
 /** Found a new world in `dir` (which must not hold a world): genesis + the founding act, through the authority. */

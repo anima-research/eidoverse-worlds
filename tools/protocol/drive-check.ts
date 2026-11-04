@@ -115,7 +115,7 @@ function session({ hull = HULL, seats = true }: any = {}) {
   return { call, board, sweep, w: Wd, st: () => Wd().state(), log: () => Wd().entries };
 }
 const show = (r: any) => (r?.crashed ? `CRASH ${r.crashed}` : r?.ok ? "ok" : `${r?.refused?.code}: ${String(r?.refused?.reason).slice(0, 160)}`);
-const commits = (s: any) => s.log().filter((e: any) => e.kind === "act" && e.verb === "drive-commit");
+const commits = (s: any) => s.log().filter((e: any) => e.kind === "request" && e.verb === "drive-commit");
 const posOf = (s: any, id = "hull") => s.st().entities[id]?.c.transform?.pos;
 
 let pass = 0, fail = 0;
@@ -265,7 +265,7 @@ await C("D23", "a builder's move of a driven hull stands: it lets the driver go,
   const s = session(); s.board("vic"); s.call("drive", { id: "hull", pos: [0, 1, 3], q: [0, 0, 0, 1] }, "vic");
   const moved = s.call("set", { id: "hull", component: "transform", value: tf([8, 1, 0]) }, "olive"), at = s.log().length;
   s.sweep(3100); s.sweep(3100);
-  const later = s.log().slice(at).filter((e: any) => e.kind === "act" && e.verb === "drive-commit");
+  const later = s.log().slice(at).filter((e: any) => e.kind === "request" && e.verb === "drive-commit");
   return [moved.ok && JSON.stringify(posOf(s)) === "[8,1,0]" && later.length === 0 && !s.w().presence.drives?.hull, { moved: show(moved), pos: posOf(s), later: later.map((e: any) => e.body), lease: s.w().presence.drives?.hull }]; });
 
 await C("D24", "a move that leaves the driver at the helm (their own edit) stands too: the lease goes on from the edited pose, so their next step is judged from there and the periodic commit writes the stream that went on from it", () => {

@@ -2,7 +2,7 @@
 // asked of someone else, move's fallback after a stopped walk
 import { handleTool } from "./tools.ts";
 import { WorldAgent } from "./agent.ts";
-import { PURGED } from "../shared/protocol/fold.js";
+import { REDACTED } from "../shared/protocol/fold.js";
 let fails = 0;
 const ok = (c: boolean, what: string, got?: unknown) => { if (!c) { fails++; console.log(`  FAIL ${what}`, got ?? ""); } else console.log(`  ok   ${what}`); };
 
@@ -52,7 +52,7 @@ for (const why of ["superseded by a newer walk or a stop", "no route: the way th
 // act's say {to} and body {to} name a person, so a thing sharing their name isn't sent in their place
 { const sent: any[] = [];
   const ag: any = { thingRef: (v: string) => v === "Mira" ? { id: "lamp-7f3a" } : {}, request: async (verb: string, args: any) => { sent.push([verb, args]); return { ok: true }; } };
-  await handleTool({ agent: ag } as any, "act", { verb: "say", args: { text: "hi", to: "Mira" } });
+  await handleTool({ agent: ag } as any, "act", { args: { text: "hi", to: "Mira" } });
   await handleTool({ agent: ag } as any, "act", { verb: "body", args: { to: "Mira", kind: "pose" } });
   await handleTool({ agent: ag } as any, "act", { verb: "delete", args: { id: "Mira" } });
   ok(sent[0][1].to === "Mira" && sent[1][1].to === "Mira", "act say {to} and body {to} keep the person's name", sent);
@@ -155,7 +155,7 @@ for (const kind of ["track", "clip"]) {
 // never a purged one, which the authority counts equal to nothing (replacing a purged label could never go through)
 for (const [what, set, comps, want] of [
   ["an unset", { "remove.motion": true }, { motion: { type: "spin", speed: 1 } }, [{ id: "lamp-1", component: "motion", value: { type: "spin", speed: 1 } }]],
-  ["a purged component", { "flags.label": "new" }, { label: PURGED }, null],
+  ["a purged component", { "flags.label": "new" }, { label: REDACTED }, null],
 ] as const) {
   const sent: any[] = [];
   const ag: any = { thingRef: () => ({ id: "lamp-1" }), foldRecord: () => ({ id: "lamp-1", ...(comps as any) }), foldedIds: () => ["lamp-1"],
@@ -216,18 +216,18 @@ async function socketsEdit(children: number, set: Record<string, unknown>) {
   const past = await socketsEdit(64, four);
   ok(!past.sent.length && /\(260 pins; a request carries at most 256\)/.test(past.out.content?.[0]?.text ?? ""), "one child more is refused", { sent: past.sent.length, out: past.out.content?.[0]?.text }); }
 
-// the body's read for a pin keeps a purged component as the fold's PURGED, so a pin can leave it out, and copies the rest;
+// the body's read for a pin keeps a purged component as the fold's REDACTED, so a pin can leave it out, and copies the rest;
 // a host's socket children are the things parented to it with a socket, as the door's liftOps counts them (isSocketC)
 { const fake: any = Object.create(WorldAgent.prototype);
   const tf = { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] };
   fake.replica = { st: { entities: {
-    "bus-1": { c: { label: PURGED, transform: tf } },
+    "bus-1": { c: { label: REDACTED, transform: tf } },
     "seat-1": { c: { parent: { to: "bus-1" }, socket: { name: "front" } } },
-    "seat-2": { c: { parent: { to: "bus-1" }, socket: PURGED } },
+    "seat-2": { c: { parent: { to: "bus-1" }, socket: REDACTED } },
     "cup-1": { c: { parent: { to: "bus-1" }, transform: tf } },
     "seat-9": { c: { parent: { to: "car-1" }, socket: { name: "back" } } } } } };
   const c = fake.componentsOf("bus-1");
-  ok(c.label === PURGED && c.transform !== tf && JSON.stringify(c.transform) === JSON.stringify(tf), "componentsOf keeps a purged component as PURGED and copies the rest", c);
+  ok(c.label === REDACTED && c.transform !== tf && JSON.stringify(c.transform) === JSON.stringify(tf), "componentsOf keeps a purged component as REDACTED and copies the rest", c);
   const kids = fake.socketChildrenOf("bus-1");
   ok(JSON.stringify(Object.keys(kids)) === '["seat-1"]', "socketChildrenOf counts a child parented with a socket, not a purged socket, a plain child or another host's", kids);
   ok(JSON.stringify(kids["seat-1"]) === JSON.stringify({ parent: { to: "bus-1" }, socket: { name: "front" } }) && kids["seat-1"].socket !== fake.replica.st.entities["seat-1"].c.socket,

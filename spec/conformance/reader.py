@@ -18,8 +18,8 @@ DIGEST (this reader's definition):
     over every LIVE entity (including live entities with no components, and
     the implicit @world), where CELL is
       {"v": <the I-JSON value>}    for a present component
-      {"purged": true}             for a component whose current value is
-                                   absent(purged)
+      {"redacted": true}           for a component whose current value is
+                                   absent(redacted)
   digest = lowercase hex sha256 of the UTF-8 bytes of RFC 8785 (JCS)
            serialization of world-view. Keys sort by UTF-16 code units.
   No version, world id or seq is mixed in (GUESS-20).
@@ -33,12 +33,13 @@ from decimal import Decimal
 
 DIALECT = "eidoverse-log"      # spec 2.4: genesis says {dialect: "eidoverse-log", v: 4} (upstream's shape)
 FOLD_VERSIONS = {4}            # GUESS-03: v is the integer 4
-KNOWN_MINORS = {0}             # §3d H6: a reader that doesn't know the minor refuses the world
+KNOWN_MINORS = {1}             # §3d H6: a reader that doesn't know the minor refuses the world (minor 0: the migration tool only, D1)
 MAX_LINE_BYTES = 1 << 20       # GUESS-12: spec says "size caps", gives none
 MAX_DEPTH = 64                 # GUESS-12
-KINDS = {"genesis", "change", "act", "sim", "say", "purge", "sequencer"}
-ENVELOPE = {"world", "kind", "ts", "actor", "for", "grant", "by", "cause",
-            "verb", "body", "head", "sig"}   # head/sig: chain points (spec 2.4, chain.py)
+KINDS = {"genesis", "change", "request", "physics", "say", "redaction", "governance"}
+ENVELOPE = {"world", "kind", "ts", "actor", "cause", "op", "verb", "body", "head", "sig"}   # head/sig: chain points (spec 2.4, chain.py)
+WORD_OF = {"change": "op", "request": "verb", "physics": "verb"}   # D3: op on a change, verb on a request/physics entry, neither elsewhere
+BODY_KINDS = ("request", "say", "physics")   # the kinds whose whole body is purgeable (chain skeleton {commitment})
 OPS = {"create", "set", "delete", "batch"}
 
 # ---- names and ids (spec 2.3) ----------------------------------------------
@@ -212,7 +213,7 @@ def jcs(v):
 
 
 # ---- genesis (spec 2.4, 3d C1/H5/H6) -----------------------------------------
-GENESIS_FIELDS = {"dialect", "v", "minor", "nonce", "rewind_window", "parent", "owners", "quorum", "sequencer"}
+GENESIS_FIELDS = {"dialect", "v", "minor", "nonce", "rewindWindow", "parent", "owners", "quorum", "sequencer"}
 _B64U = re.compile(r"\A[A-Za-z0-9_-]*\Z")
 _HEX64 = re.compile(r"\A[0-9a-f]{64}\Z")
 # the 8 small-order points' y (sign bit cleared): conformance/ed25519/test_vectors.py, spec 2.4 "Keys"
@@ -282,8 +283,8 @@ def check_genesis(b):
         q = b["quorum"]
         if not isinstance(q, list) or len(q) != len(tiers) or not all(_int(x, 1) for x in q):
             raise Malformed("genesis-quorum", repr(q)[:60])
-    if "rewind_window" in b and not _int(b["rewind_window"]):
-        raise Malformed("genesis-window", repr(b["rewind_window"])[:40])
+    if "rewindWindow" in b and not _int(b["rewindWindow"]):
+        raise Malformed("genesis-window", repr(b["rewindWindow"])[:40])
     if "parent" in b:
         p = b["parent"]
         if not (isinstance(p, dict) and set(p) == {"world", "seq", "head"} and isinstance(p["world"], str)
@@ -294,13 +295,13 @@ def check_genesis(b):
 
 
 # ---- the fold --------------------------------------------------------------
-PURGED = object()   # absent(purged): a defined value, distinct from "deleted"
+REDACTED = object()   # absent(redacted): a defined value, distinct from "deleted"
 
 
 class Reader:
     def __init__(self):
         self.diag = []          # (seq, code, detail)
-        self.world = None       # dict: id -> dict(comp -> value | PURGED)
+        self.world = None       # dict: id -> dict(comp -> value | REDACTED)
         self.status = None
         self.world_id = None
 
@@ -385,10 +386,10 @@ class Reader:
                 self.d(seq, "malformed:ts-decreasing", "%d < %d" % (t, last_ts)); entries[seq] = None; continue
             last_ts = t
 
-        # -- purge first (L1 Purge: "applied before anything else") --
-        purged = self.collect_purges(entries)
-        self.unnamed_stubs(entries, purged)
-        self.purges, self.entries = purged, entries   # for chain.verify: which stubs a purge the fold accepts names
+        # -- redactions first (L1: "applied before anything else") --
+        redacted = self.collect_redactions(entries)
+        self.unnamed_stubs(entries, redacted)
+        self.redactions, self.entries = redacted, entries   # for chain.verify: which stubs a redaction the fold accepts names
 
         # -- fold change entries in seq order --
         self.world = {"@world": {}}       # GUESS-07: @world live from genesis
@@ -396,7 +397,7 @@ class Reader:
             if e is None or e.get("kind") != "change":
                 continue
             try:
-                ops = self.shape_ops(seq, e, purged)
+                ops = self.shape_ops(seq, e, redacted)
             except Malformed as m:      # whole entry shapes nothing (GUESS-13)
                 self.d(seq, "malformed:" + m.code, m.detail)
                 continue
@@ -416,16 +417,20 @@ class Reader:
         kind = e.get("kind")
         if not isinstance(kind, str) or kind not in KINDS:   # a non-string kind is malformed, not a crash (fold.js checkEntry)
             raise Malformed("kind", repr(kind)[:40])
-        for f in ("kind", "actor", "verb"):
+        for f in ("kind", "actor"):
             if not isinstance(e.get(f), str):
                 raise Malformed("envelope", f + " missing or not a string")
+        word = WORD_OF.get(kind)
+        for f in ("op", "verb"):
+            if f == word:
+                if not isinstance(e.get(f), str):
+                    raise Malformed("envelope", f + " missing or not a string")
+            elif f in e:
+                raise Malformed("envelope", "%s not allowed on %s" % (f, kind))
         if kind != "genesis" and not isinstance(e.get("world"), str):
             raise Malformed("envelope", "world")  # GUESS-21: genesis may omit
         if not isinstance(e.get("body"), dict):
             raise Malformed("envelope", "body not an object")   # GUESS-15
-        if "for" in e:
-            # L4 / 5: "until identities have keys, for is not written at all"
-            raise Malformed("for-before-keys")   # GUESS-16
         if kind == "change":
             c = e.get("cause")
             # L3: every change entry has a cause; GUESS-17: integer, earlier seq
@@ -436,50 +441,50 @@ class Reader:
             if not (type(c) is float and c.is_integer() and 0 <= c < seq):
                 raise Malformed("cause", repr(c))
 
-    # -- purge --
-    def collect_purges(self, entries):
-        """Returns {(seq, op_index): purge_seq}. GUESS-18 for the body shape:
-        body = {"values": [{"seq": N}, {"seq": N, "op": k}, ...]}
-        `op` indexes into a batch; absent means the entry's own single op."""
-        purged = {}
+    # -- redaction --
+    def collect_redactions(self, entries):
+        """Returns {(seq, op_index): redaction_seq}. GUESS-18 for the body shape:
+        body = {"values": [{"seq": N}, {"seq": N, "index": k}, ...]}
+        `index` indexes into a batch; absent means the entry's own single op."""
+        redacted = {}
         for pseq, e in enumerate(entries):
-            if e is None or e.get("kind") != "purge":
+            if e is None or e.get("kind") != "redaction":
                 continue
             vals = e["body"].get("values")
             if not isinstance(vals, list):
-                self.d(pseq, "purge-ignored", "body.values not a list")
+                self.d(pseq, "redaction-ignored", "body.values not a list")
                 continue
             for t in vals:
-                if not isinstance(t, dict) or set(t) - {"seq", "op"}:
-                    self.d(pseq, "purge-target-bad", jcs(t)[:60])
+                if not isinstance(t, dict) or set(t) - {"seq", "index"}:
+                    self.d(pseq, "redaction-target-bad", jcs(t)[:60])
                     continue
-                s, k = t.get("seq"), t.get("op", None)
+                s, k = t.get("seq"), t.get("index", None)
                 if not (type(s) is float and s.is_integer()) or (
-                        "op" in t and not (type(k) is float and k.is_integer() and k >= 0)):   # op: null is bad, not omitted (fold.js purgesOf)
-                    self.d(pseq, "purge-target-bad", jcs(t)[:60])
+                        "index" in t and not (type(k) is float and k.is_integer() and k >= 0)):   # index: null is bad, not omitted (fold.js redactionsOf)
+                    self.d(pseq, "redaction-target-bad", jcs(t)[:60])
                     continue
                 s = int(s)
                 k = None if k is None else int(k)
                 if s >= pseq or s <= 0:          # GUESS-19: only earlier entries
-                    self.d(pseq, "purge-target-range", str(s))
+                    self.d(pseq, "redaction-target-range", str(s))
                     continue
                 tgt = entries[s]
-                if tgt is not None and tgt.get("kind") == "purge":
-                    self.d(pseq, "purge-of-purge-refused", str(s))  # L1
+                if tgt is not None and tgt.get("kind") == "redaction":
+                    self.d(pseq, "redaction-of-redaction-refused", str(s))  # L1
                     continue
-                if self.governance_target(tgt, k):   # 3d M11: purge never targets roles: (reversed by acts)
-                    self.d(pseq, "purge-target-governance", "seq %d%s" % (s, "" if k is None else " op %d" % k))
+                if self.governance_target(tgt, k):   # 3d M11: a redaction never targets roles: (reversed by requests)
+                    self.d(pseq, "redaction-target-governance", "seq %d%s" % (s, "" if k is None else " index %d" % k))
                     continue
-                purged[(s, k)] = pseq
-                self.d(pseq, "purge", "seq %d%s" % (s, "" if k is None else " op %d" % k))
-        return purged
+                redacted[(s, k)] = pseq
+                self.d(pseq, "redaction", "seq %d%s" % (s, "" if k is None else " index %d" % k))
+        return redacted
 
-    def unnamed_stubs(self, entries, purged):
-        """PROTOCOL 12: a purge is the one rule that changes the record. A set whose value is stripped to its
-        commit (`commit`, no `value`) is a purge's work; one that no purge the fold accepts names (none does, or
-        only a refused one, as any aimed at a roles: value) was changed outside that rule. It folds as
-        absent(purged), unknown as every purged value is (PROTOCOL 1), never as the value before it, and is
-        diagnosed `commit-unpurged`. The line still shapes, so the code has no `malformed:` prefix."""
+    def unnamed_stubs(self, entries, redacted):
+        """PROTOCOL 12: a redaction is the one rule that changes the record. A set whose value is stripped to its
+        commitment (`commitment`, no `value`) is a redaction's work; one that no redaction the fold accepts names (none does,
+        or only a refused one, as any aimed at a roles: value) was changed outside that rule. It folds as
+        absent(redacted), unknown as every redacted value is (PROTOCOL 1), never as the value before it, and is
+        diagnosed `commitment-unredacted`. The line still shapes, so the code has no `malformed:` prefix."""
         for seq, e in enumerate(entries):
             if e is None or e.get("kind") != "change":
                 continue
@@ -487,66 +492,66 @@ class Reader:
                 self.shape_ops(seq, e, {})      # an entry that shapes nothing is diagnosed by the fold, not here
             except Malformed:
                 continue
-            batch = e["verb"] == "batch"
-            ops = e["body"]["ops"] if batch else [e["body"]] if e["verb"] == "set" else []
+            batch = e["op"] == "batch"
+            ops = e["body"]["ops"] if batch else [e["body"]] if e["op"] == "set" else []
             for i, op in enumerate(ops):
-                if (batch and op.get("verb") != "set") or "value" in op or "commit" not in op:
+                if (batch and op.get("op") != "set") or "value" in op or "commitment" not in op:
                     continue
                 k = (seq, i if batch else None)
-                if k not in purged:
-                    purged[k] = 0
-                    self.d(seq, "commit-unpurged", "%s.%s" % (op.get("id"), op.get("comp")))
+                if k not in redacted:
+                    redacted[k] = 0
+                    self.d(seq, "commitment-unredacted", "%s.%s" % (op.get("id"), op.get("comp")))
 
     @staticmethod
     def governance_target(e, k):
         if e is None or e.get("kind") != "change" or not isinstance(e.get("body"), dict):
             return False
         b = e["body"]
-        if e.get("verb") == "batch":
+        if e.get("op") == "batch":
             ops = b.get("ops")
             o = ops[k] if isinstance(ops, list) and k is not None and 0 <= k < len(ops) else None
         else:
-            o = dict(b, verb=e.get("verb")) if k is None else None
-        return isinstance(o, dict) and o.get("verb") == "set" and isinstance(o.get("comp"), str) and o["comp"].startswith("roles:")
+            o = dict(b, op=e.get("op")) if k is None else None
+        return isinstance(o, dict) and o.get("op") == "set" and isinstance(o.get("comp"), str) and o["comp"].startswith("roles:")
 
     # -- turning a change entry into a flat op list --
-    def shape_ops(self, seq, e, purged):
-        verb, body = e["verb"], e["body"]
+    def shape_ops(self, seq, e, redacted):
+        verb, body = e["op"], e["body"]
         if verb not in OPS:
-            raise Malformed("verb", verb)
+            raise Malformed("op", verb)
         if verb == "batch":
-            # GUESS-06: body = {"ops": [ {verb, id, comp?, value?}, ... ]}
-            if set(body) - {"ops", "followUps"}:
-                raise Malformed("batch-field", ",".join(sorted(set(body) - {"ops", "followUps"})))
+            # GUESS-06: body = {"ops": [ {op, id, comp?, value?}, ... ]}
+            if set(body) - {"ops", "cascade"}:
+                raise Malformed("batch-field", ",".join(sorted(set(body) - {"ops", "cascade"})))
             ops = body.get("ops")
             if not isinstance(ops, list):
                 raise Malformed("batch-ops")
-            if "followUps" in body:
-                # the authority's follow-up ops in this batch (strictly ascending indices, in range): applied like any op
-                f = body["followUps"]
+            if "cascade" in body:
+                # the authority's cascaded ops in this batch (strictly ascending indices, in range): applied like any op
+                f = body["cascade"]
                 if not isinstance(f, list) or not f:
-                    raise Malformed("batch-followups", "not a non-empty array")
+                    raise Malformed("batch-cascade", "not a non-empty array")
                 for i, k in enumerate(f):
                     if not _int(k) or k >= len(ops) or (i > 0 and k <= f[i - 1]):
-                        raise Malformed("batch-followups", repr(k))
+                        raise Malformed("batch-cascade", repr(k))
             out = []
             for i, op in enumerate(ops):
                 if not isinstance(op, dict):
                     raise Malformed("batch-op", str(i))
-                if op.get("verb") == "batch":
+                if op.get("op") == "batch":
                     raise Malformed("nested-batch", "op %d" % i)
-                out.append(self.shape_one(op.get("verb"), op, purged.get((seq, i)),
+                out.append(self.shape_one(op.get("op"), op, redacted.get((seq, i)),
                                           inner=True, where="op %d" % i))
             return out
-        return [self.shape_one(verb, body, purged.get((seq, None)), inner=False,
+        return [self.shape_one(verb, body, redacted.get((seq, None)), inner=False,
                                where="")]
 
-    def shape_one(self, verb, b, purge_seq, inner, where):
+    def shape_one(self, verb, b, redaction_seq, inner, where):
         allowed = {"create": {"id"}, "delete": {"id", "comp"},
-                   "set": {"id", "comp", "value", "salt", "commit"}}
-        if not isinstance(verb, str) or verb not in allowed:   # a non-string op verb is malformed, not a crash (fold.js shapeOne)
-            raise Malformed("verb", "%s %r" % (where, verb))
-        keys = set(b) - ({"verb"} if inner else set())
+                   "set": {"id", "comp", "value", "salt", "commitment"}}
+        if not isinstance(verb, str) or verb not in allowed:   # a non-string op word is malformed, not a crash (fold.js shapeOne)
+            raise Malformed("op", "%s %r" % (where, verb))
+        keys = set(b) - ({"op"} if inner else set())
         if keys - allowed[verb]:
             raise Malformed("op-field", "%s %s" % (where, ",".join(sorted(keys - allowed[verb]))))
         eid = b.get("id")
@@ -556,22 +561,22 @@ class Reader:
         if verb == "set" or "comp" in b:
             if not isinstance(comp, str) or not COMP_RE.match(comp):
                 raise Malformed("comp-name", "%s %r" % (where, comp))
-        op = {"verb": verb, "id": eid, "comp": comp}
+        op = {"op": verb, "id": eid, "comp": comp}
         if verb == "set":
-            if purge_seq is not None:
-                op["value"] = PURGED       # purge wins even if bytes are gone
+            if redaction_seq is not None:
+                op["value"] = REDACTED     # the redaction wins even if bytes are gone
             elif "value" in b:
                 op["value"] = b["value"]   # GUESS-22: null is a value
             # else: no value -> no-op (L1)
-        elif purge_seq is not None:
-            op["purge_on_valueless"] = purge_seq
+        elif redaction_seq is not None:
+            op["redaction_on_valueless"] = redaction_seq
         return op
 
     def apply(self, seq, i, op):
-        w, eid, comp, verb = self.world, op["id"], op["comp"], op["verb"]
+        w, eid, comp, verb = self.world, op["id"], op["comp"], op["op"]
         at = "seq %d op %d" % (seq, i)
-        if "purge_on_valueless" in op:
-            self.d(seq, "purge-target-not-a-value", at)
+        if "redaction_on_valueless" in op:
+            self.d(seq, "redaction-target-not-a-value", at)
         if verb == "create":
             if eid in w:
                 self.d(seq, "noop:create-live", eid)
@@ -600,7 +605,7 @@ class Reader:
 
     # -- digest --
     def view(self):
-        return {eid: {c: ({"purged": True} if v is PURGED else {"v": v})
+        return {eid: {c: ({"redacted": True} if v is REDACTED else {"v": v})
                       for c, v in comps.items()}
                 for eid, comps in self.world.items()}
 

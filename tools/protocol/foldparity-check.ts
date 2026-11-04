@@ -117,7 +117,7 @@ async function equivalent(label, dir, { writes = true, wantTail = true, mustWrit
   else ok(onDisk(wa) === 0, `FP2 ${label}: a log whose views aren't carried boots whole`, { onDisk: onDisk(wa) });
   const d = first(readers(wa), readers(wb)); ok(!d, `FP2 ${label}: every reader answers as the whole-log boot`, d);
   if (writes && wa.state().status === "ok") {
-    const old = actIndexOf(wb).actsOf.get("rowan")?.find((q) => wb.entries[q].verb === "set" && actIndexOf(wb).resultOf.has(q) && !actIndexOf(wb).undone.has(q));
+    const old = actIndexOf(wb).actsOf.get("rowan")?.find((q) => wb.entries[q].op === "set" && actIndexOf(wb).resultOf.has(q) && !actIndexOf(wb).undone.has(q));
     const id = Object.keys(wb.state().entities).find((k) => k !== "@world");
     const steps = [["set", { id, component: "label", value: "after the boot" }], ["create", { id: "fp-new", components: { label: "new" } }], ...(old !== undefined ? [["undo", { act: old }]] : []), ["say", { text: "after the boot" }]];
     const replies = steps.map(([v, x]) => { T += 900; return [request(wa, "rowan", v, x), request(wb, "rowan", v, x)]; });
@@ -174,7 +174,7 @@ async function equivalent(label, dir, { writes = true, wantTail = true, mustWrit
 { const fx = path.join(ENGINE, "spec/conformance"); let n = 0, seen = 0;
   const files = [...fs.readdirSync(fx).filter((f) => f.endsWith(".jsonl")).map((f) => path.join(fx, f)), ...fs.readdirSync(path.join(fx, "logs")).filter((f) => f.endsWith(".jsonl")).map((f) => path.join(fx, "logs", f))];
   for (const f of files) { let E; try { E = readLog(fs.readFileSync(f)); } catch { continue; }
-    if (!E.length || E.some((e) => !e || e.constructor?.name === "Malformed") || fold(E).status !== "ok" || E.some((e) => e.kind === "sequencer")) continue;
+    if (!E.length || E.some((e) => !e || e.constructor?.name === "Malformed") || fold(E).status !== "ok" || E.some((e) => e.kind === "governance")) continue;
     seen++; const name = `fx-${path.basename(f, ".jsonl").replace(/[^a-z0-9-]/gi, "-").toLowerCase()}`, dir = path.join(W, name); fs.mkdirSync(dir, { recursive: true });
     try { fs.writeFileSync(logP(dir), resealed(E)); } catch { continue; }
     const { r: w } = await said(() => open(dir)); if (w.state().status !== "ok") continue;
@@ -183,8 +183,8 @@ async function equivalent(label, dir, { writes = true, wantTail = true, mustWrit
   ok(n >= 2, "FP2 (setup) the repo's conformance logs that fold cleanly were each re-signed, grown and compared", { n, seen }); }
 { const src = path.join(W, "noopc-src"); fs.mkdirSync(src, { recursive: true }); const w = open(src); grow(w, 120, "nc");   // a hand-made line: a create of a thing already live (noop:create-live), by ash
   const E = w.entries.map((e) => JSON.parse(JSON.stringify(e))), id = Object.keys(w.state().entities).find((k) => k !== "@world" && creatorOf(w, k)?.by === "rowan");   // rowan made it; the no-op create is ash's
-  const ashAct = E.findLastIndex((e) => e.kind === "act" && e.actor === "ash"); T += 700;
-  E.push({ world: w.worldId, kind: "change", actor: "ash", cause: ashAct, verb: "create", body: { id }, ts: T });
+  const ashAct = E.findLastIndex((e) => e.kind === "request" && e.actor === "ash"); T += 700;
+  E.push({ world: w.worldId, kind: "change", actor: "ash", cause: ashAct, op: "create", body: { id }, ts: T });
   const dir = path.join(W, "noopc"); fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(logP(dir), resealed(E));
   const { r: x } = await said(() => open(dir)); ok(x.state().diagnostics.some(([, c, d]) => c === "noop:create-live" && d === id), "FP10 (setup) a log whose fold holds a no-op create of a live thing", id);
   ok(creatorOf({ entries: x.entries, touching: x.touching }, id)?.by === "ash", "FP10 (setup) …whose walk names the no-op create's author (the born line names another)");
@@ -234,8 +234,8 @@ if (process.env.FP_FROM) { const dir = path.join(W, "from"); fs.mkdirSync(dir, {
 { const dir = path.join(W, "fp6"); fs.mkdirSync(dir, { recursive: true }); const w = open(dir); grow(w, 300, "fp6"); w.saveCache(); grow(w, 10, "fp6");
   const ref = copyDir(dir, path.join(W, "fp6-ref")); SC.dropCache(ref); const r = open(ref);
   const b = open(dir); ok(onDisk(b) > 0, "FP6 (setup) a tail boot");
-  const target = r.entries.findIndex((e, s) => s > 20 && e.kind === "change" && e.verb === "set");
-  const purge = { kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: target }] } };
+  const target = r.entries.findIndex((e, s) => s > 20 && e.kind === "change" && e.op === "set");
+  const purge = { kind: "redaction", actor: "system", body: { values: [{ seq: target }] } };
   T += 900; const p1 = { ok: Number.isInteger(b.append(purge)) }, p2 = { ok: Number.isInteger(r.append(purge)) };
   ok(p1.ok && p2.ok && onDisk(b) === 0 && canon(b.state()) === canon(r.state()) && !b.__guests?.seeded, "FP6 a purge after a tail boot reads the prefix in and folds as the whole-log boot", { p1: p1.refused ?? p1.ok, p2: p2.refused ?? p2.ok, onDisk: onDisk(b) });
   const d = first(readers(b), readers(r)); ok(!d, "FP6 …every reader answers alike after it", d);
@@ -258,9 +258,9 @@ if (process.env.FP_FROM) { const dir = path.join(W, "from"); fs.mkdirSync(dir, {
 // ---- FP9 ----
 { const K = Number(process.env.FP_ENTRIES ?? 30000);
   const dir = path.join(W, "big"); fs.mkdirSync(dir, { recursive: true }); const w = open(dir); grow(w, 60, "big");
-  const cause = w.entries.findLastIndex((e) => e.kind === "act"), E = w.entries.map((e) => JSON.parse(JSON.stringify(e)));
+  const cause = w.entries.findLastIndex((e) => e.kind === "request"), E = w.entries.map((e) => JSON.parse(JSON.stringify(e)));
   const ids = Object.keys(w.state().entities).filter((k) => k !== "@world");
-  for (let i = 0; i < K; i++) E.push({ world: w.worldId, kind: "change", actor: "rowan", cause, verb: "set", body: { id: ids[i % ids.length], comp: "label", value: `label ${i}` }, ts: T += 1000 });
+  for (let i = 0; i < K; i++) E.push({ world: w.worldId, kind: "change", actor: "rowan", cause, op: "set", body: { id: ids[i % ids.length], comp: "label", value: `label ${i}` }, ts: T += 1000 });
   fs.writeFileSync(logP(dir), resealed(E)); T += 1000;
   const boot = (every) => { Bun.gc(true); const r0 = process.memoryUsage().rss, t0 = performance.now(); const b = open(dir, every); const ms = performance.now() - t0; Bun.gc(true); return { ms, rss: (process.memoryUsage().rss - r0) / 1e6, b }; };
   boot(1000).b.saveCache();

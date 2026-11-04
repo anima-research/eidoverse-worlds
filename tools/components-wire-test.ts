@@ -84,7 +84,7 @@ const settle = async () => { for (let i = 0; i < 6; i++) { M.residencySweep?.();
   const piv = stub.entities.get('pivot');
   check('an Empty realizes at once as an invisible Group at its folded transform', !!piv && piv.isGroup && piv.userData.empty === true
     && jeq(piv.position.toArray().map((x: number) => +x.toFixed(9)), [1, 2, 3]) && Math.abs(piv.rotation.y - 0.5) < 1e-9, `${piv?.type} ${JSON.stringify(piv?.position)}`);
-  check('…loads nothing (no asset request names it) and is listed with kind "light" (one kindOf: an Empty carrying a light IS a light)',
+  check('…loads nothing (no asset request names it) and is listed with kind "light" (one formOf: an Empty carrying a light IS a light)',
     !stub.loads.some((l: any) => l.lib == null || l.lib === 'undefined') && stub.metaOf('pivot')?.kind === 'light', JSON.stringify([stub.loads.map((l: any) => l.lib), stub.metaOf('pivot')]));   // loads: the loader's own record (its lib path, as userData.lib), not a view record
   check('…and owns no collider', !stub.colliderLog.some((e: any) => e[1] === 'pivot'), JSON.stringify(stub.colliderLog));
   const cup = stub.entities.get('cup');
@@ -153,13 +153,13 @@ const settle = async () => { for (let i = 0; i < 6; i++) { M.residencySweep?.();
   live('delete', { id: 'e2' });
   check('live: removing an Empty retires its Group and releases its light', !stub.entities.has('e2') && !e2.parent && !rq('e2'));
   const spy: any = await import('./unknown-comp-report-spy.mjs');
-  const { planReconcile, kindOf } = await import('../client/lib/realize/models_field.js');
+  const { planReconcile, formOf } = await import('../client/lib/realize/models_field.js');
   const plan = planReconcile({ a: { pos: [0, 0, 0] }, b: { model: LAMP, pos: [0, 0, 0] }, c: { pos: [0, 1, 0], light: {} } },
     new Map([['a', { kind: 'empty' }], ['b', { kind: 'model', model: LAMP }], ['c', { kind: 'light' }]]));
   check('reconcile (rejoin) leaves a standing Empty alone — no retire-and-rebuild churn', plan.create.length === 0 && plan.retire.length === 0, JSON.stringify(plan));
   const plan2 = planReconcile({ a: { model: LAMP, pos: [0, 0, 0] } }, new Map([['a', { kind: 'empty' }]]));
   check('…but an Empty whose id now folds as a model is rebuilt', plan2.retire[0] === 'a' && plan2.create[0]?.id === 'a', JSON.stringify(plan2));
-  check('kindOf: light / empty / model / mesh', kindOf({ pos: [0, 1, 0], light: {} }) === 'light' && kindOf({ pos: [0, 0, 0] }) === 'empty' && kindOf({ model: LAMP }) === 'model' && kindOf({ mesh: { shape: 'box', size: [1, 1, 1] } }) === 'mesh' && kindOf({ mesh: {} }) === 'empty');
+  check('formOf: light / empty / model / mesh', formOf({ pos: [0, 1, 0], light: {} }) === 'light' && formOf({ pos: [0, 0, 0] }) === 'empty' && formOf({ model: LAMP }) === 'model' && formOf({ mesh: { shape: 'box', size: [1, 1, 1] } }) === 'mesh' && formOf({ mesh: {} }) === 'empty');
   const { bus } = await import('../client/lib/base.js');
   const marker = (g: any) => !!g?.children.some((c: any) => c.userData?.emptyMarker);
   check('outside build mode an Empty carries no marker (nothing to hit that nobody can see)', !marker(piv));

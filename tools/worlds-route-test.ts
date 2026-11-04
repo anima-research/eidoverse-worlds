@@ -46,7 +46,7 @@ mkdirSync(join(worldsDir, "logless"), { recursive: true });
 // an OLD world: a v1 log and no new one. The server serves only the protocol, so it isn't listed (it's translated by the
 // operator: a dry run, then `translate <name> --approved <hash> --operator-only-no-owner` — docs/TRANSLATING-OLD-WORLDS.md)
 mkdirSync(join(worldsDir, "oldv1"), { recursive: true });
-writeFileSync(join(worldsDir, "oldv1", "log.jsonl"), JSON.stringify({ seq: 0, ts: 0, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } }) + "\n");
+writeFileSync(join(worldsDir, "oldv1", "log.jsonl"), JSON.stringify({ seq: 0, ts: 0, actor: "world", args: { v: 2, dialect: "eidoverse-log" } }) + "\n");
 mkdirSync(join(worldsDir, ".clientlogs"), { recursive: true });
 
 async function spawnServer(): Promise<{ port: number }> {

@@ -66,7 +66,7 @@ for (const [name, raw] of logs) {
 // RL3: two forks lifting apart agree (deterministic ids): the same children, the same state
 { const big = logs.find(([n]) => /commons/.test(n)) ?? null;
   // a fixture of our own when no copy was given: a translated world with seats on two hosts
-  const v1 = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
+  const v1 = [{ seq: 0, ts: 1, actor: "world", args: { v: 2, dialect: "eidoverse-log" } },
     { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } }, { seq: 2, ts: 2, actor: "ann", verb: "grant", args: { id: "bob", role: "builder" } },
     { seq: 3, ts: 3, actor: "ann", verb: "spawn", args: { id: "bench", lib: "crate", pos: [1, 0, 1] } },
     { seq: 4, ts: 4, actor: "bob", verb: "comp", args: { id: "bench", type: "sockets", data: { seat: { pos: [0, 0.5, 0], body: { action: "sit" } }, hook: { pos: [0.4, 0.9, 0], yaw: 0.5 } } } },
@@ -78,7 +78,7 @@ for (const [name, raw] of logs) {
   // RL4: the lift is the builder's, by rights: bob authored the bench's sockets, so he still edits his seat; vic can't
   const L = loadLift(tr); const W = L.w; let T = L.T;
   const R = (who: string, verb: string, args: any) => { W.now = () => (T += 100); return request(W, who, verb, args); };
-  const act = readLog(L.all).find((e: any) => e.kind === "act" && e.verb === "lift-sockets");
+  const act = readLog(L.all).find((e: any) => e.kind === "request" && e.verb === "lift-sockets");
   R("ann", "set", { id: "@world", component: "roles:bob", value: { role: "builder", can: { editOthers: false } } }); R("ann", "set", { id: "@world", component: "roles:vic", value: { role: "builder", can: { editOthers: false } } });
   const seat = act?.body?.made?.seat; const v = { name: "seat", body: { action: "sit", pose: "sitchair" } };
   const byBob = R("bob", "set", { id: seat, component: "socket", value: v }), byVic = R("vic", "set", { id: seat, component: "socket", value: v });
@@ -93,7 +93,7 @@ for (const [name, raw] of logs) {
 }
 // RL7-8: a catalogue model that declares seats (the lab chair) stored before the cut gets them from the maintenance command, once: a seat someone
 // then deletes stays deleted, and undoing the chair's creation takes its lift-made seat with it
-{ const v1 = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
+{ const v1 = [{ seq: 0, ts: 1, actor: "world", args: { v: 2, dialect: "eidoverse-log" } },
     { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } }, { seq: 2, ts: 3, actor: "ann", verb: "spawn", args: { id: "chair1", lib: "chair", pos: [2, 0, 2] } },
     { seq: 3, ts: 4, actor: "ann", verb: "spawn", args: { id: "chair2", lib: "chair", pos: [4, 0, 2] } }];
   const tr = Buffer.from(translate(v1, {}).out.map((e: any) => JSON.stringify(e)).join("\n") + "\n");

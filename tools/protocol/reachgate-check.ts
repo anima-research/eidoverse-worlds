@@ -51,7 +51,7 @@ const req = (c, verb, args) => w.log.requestSync(c.actorId, verb, args);
 const vic = person("Vic", "v", [0, 0, 0]), sly = person("Sly", "s", [0.6, 0, 0]);
 const tom = person("Tom", "t", [-0.6, 0, 0]);
 const ann = person("Ann", "a", [5, 0, 0]), bob = person("Bob", "b", [5.6, 0, 0]);
-const head0 = w.log.head;
+const head0 = w.log.seq;
 
 // RG1 (Vic's gates set, never by leaning on a default)
 { const sw = req(vic, "consent", { move: false, touch: false }); ok(sw?.ok, "(RG1 setup) Vic turns both gates off", sw);
@@ -157,7 +157,7 @@ const head0 = w.log.head;
   pose(sly, { p: [0.6, 0, 0], yaw: 0 }); }
 
 // RG10 (everything above went through the relay only)
-ok(w.log.head === head0, "RG10 nothing about a reach is appended to the log", w.log.live.entries.slice(head0 + 1).map((e) => e.verb));
+ok(w.log.seq === head0, "RG10 nothing about a reach is appended to the log", w.log.live.entries.slice(head0 + 1).map((e) => e.verb));
 
 
 // RG9 (Tom: a stranger neither of Vic's lists names)

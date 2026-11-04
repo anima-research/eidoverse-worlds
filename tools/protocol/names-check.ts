@@ -70,7 +70,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the plate says agent", "client/lib/platecard.js", "const where = [typeof r.declares === 'string' && r.declares ? r.declares : null,", "const where = [r.agent ? 'agent' : null,", ["W3"]],
   ["the description note sets agents against people", "shared/sound.js", "anyone who can\\'t hear it (or reads the world as text)", "agents and people who can\\'t hear it", ["W4"]],
   ["the agent's seat again", "mcpl/agent.ts", "mayVacate(kind: \"move\"", "mayLeaveSeat(kind: \"move\"", ["O1"]],
-  ["socketRole says seat", "shared/sockbody.js", "!isPurged(c.station) ? 'station' :", "!isPurged(c.station) ? 'seat' :", ["O2"]],
+  ["socketRole says seat", "shared/sockbody.js", "!isRedacted(c.station) ? 'station' :", "!isRedacted(c.station) ? 'seat' :", ["O2"]],
   ["the toast says seat", "client/lib/localbody.js", "moved what you were occupying, so you stood up", "moved the seat you were on, so you stood up", ["O3"]],
   ["light.noon again", "shared/protocol/descriptors.js", "daytime: { k: 'daytime', param: 'burnsAtNoon'", "daytime: { k: 'noon', param: 'burnsAtNoon'", ["S1"]],
   ["sky.clock again", "shared/worldentity.js", "    { t: 'text', k: 'tz', label: 'timezone', value: real ? (s.tz ?? DEFAULT_TZ) : '', ...ro,", "    { t: 'enum', k: 'clock', label: 'clock', value: real ? 'real' : 'authored', def: 'authored', options: [{ v: 'authored', label: 'authored' }, { v: 'real', label: 'real time' }] },\n    { t: 'text', k: 'tz', label: 'timezone', value: real ? (s.tz ?? DEFAULT_TZ) : '', ...ro,", ["S2"]],
@@ -245,7 +245,7 @@ function cast(s: any) {
   for (const [id, x] of [["crate", 0], ["b", 3], ["c", 1.5]]) s.call("olive", "create", { id, model: "crate", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [x, 0] } });
 }
 const AGAINST = [0, 0, -0.62];   // vic against the crate's -z face (0.3 m half-width + a 0.32 m body)
-const lastAct = (s: any, verb: string, actor: string) => s.entries().findLast((e: any) => e.kind === "act" && e.verb === verb && e.actor === actor) ?? null;
+const lastAct = (s: any, verb: string, actor: string) => s.entries().findLast((e: any) => e.kind === "request" && e.verb === verb && e.actor === actor) ?? null;
 const authoritySrc = () => [readText("shared/protocol/authority.js"), ...fs.readdirSync(TREE + "shared/protocol/authority").map((f: string) => readText(`shared/protocol/authority/${f}`))].join("\n");
 
 
@@ -282,7 +282,7 @@ const cases: Case[] = [
     good: (o) => JSON.stringify(o.c) === '["hold-limit","beneath","not-pushable","not-found","rights"]' },
   { id: "G1", what: "(guard) the fold reads a log whose refused act carries an old code: status ok, the act kept as written", run(s) {
       s.call("olive", "create-world", { title: s.name }); const L = s.entries(); const wid = L[1]?.world ?? L[0]?.world;
-      fs.appendFileSync(path.join(root, "worlds", `${s.name}.jsonl`), JSON.stringify({ world: wid, kind: "act", actor: "olive", verb: "grab", body: { args: ["id"], refused: { code: "hands-full" } }, ts: L.at(-1).ts + 1 }) + "\n");
+      fs.appendFileSync(path.join(root, "worlds", `${s.name}.jsonl`), JSON.stringify({ world: wid, kind: "request", actor: "olive", verb: "grab", body: { args: ["id"], refused: { code: "hands-full" } }, ts: L.at(-1).ts + 1 }) + "\n");
       const w = s.reopen(); const st = w.state(); return { status: st.status, kept: w.entries.at(-1)?.body?.refused?.code ?? null }; },
     good: (o) => o.status === "ok" && o.kept === "hands-full" },
   // ---------------- P: punt {contact} ----------------
@@ -316,11 +316,11 @@ const cases: Case[] = [
   { id: "T2", what: "…a world whose log holds @world trusted is renamed at load (the system's rename-components act, the value kept, the old key gone); the next load writes nothing", run(s) {
       s.call("olive", "create-world", { title: s.name }); const L = s.entries(); const wid = L[1]?.world ?? L[0]?.world; const ts = L.at(-1).ts; const n = L.length;
       const v = { components: ["hesperus/material"] };
-      fs.appendFileSync(path.join(root, "worlds", `${s.name}.jsonl`), [{ world: wid, kind: "act", actor: "olive", verb: "set", body: { request: { id: "@world", component: "trusted", value: v } }, ts: ts + 1 },
-        { world: wid, kind: "change", actor: "olive", cause: n, verb: "set", body: { id: "@world", comp: "trusted", value: v }, ts: ts + 1 }].map((e) => JSON.stringify(e)).join("\n") + "\n");
+      fs.appendFileSync(path.join(root, "worlds", `${s.name}.jsonl`), [{ world: wid, kind: "request", actor: "olive", op: "set", body: { request: { id: "@world", component: "trusted", value: v } }, ts: ts + 1 },
+        { world: wid, kind: "change", actor: "olive", cause: n, op: "set", body: { id: "@world", comp: "trusted", value: v }, ts: ts + 1 }].map((e) => JSON.stringify(e)).join("\n") + "\n");
       clock.advance(1000);
       const w1 = s.reopen(); const before = Object.keys(w1.state().entities["@world"].c); const out = D.maintain(w1);
-      const w2 = s.reopen(); const c = w2.state().entities["@world"].c; const acts = w2.entries.filter((e: any) => e.kind === "act" && e.verb === "rename-components" && e.actor === "system");
+      const w2 = s.reopen(); const c = w2.state().entities["@world"].c; const acts = w2.entries.filter((e: any) => e.kind === "request" && e.verb === "rename-components" && e.actor === "system");
       const k = w2.entries.length; D.maintain(w2); const again = s.reopen().entries.length - k;
       return { before, out: JSON.stringify(out).slice(0, 300), keys: Object.keys(c), val: c["trusted-components"] ?? null, acts: acts.length, body: acts[0]?.body ?? null, again, status: w2.state().status }; },
     good: (o) => o.before.includes("trusted") && !o.keys.includes("trusted") && JSON.stringify(o.val) === '{"components":["hesperus/material"]}' && o.acts === 1 && o.body?.renamed?.[0]?.to === "trusted-components" && o.again === 0 && o.status === "ok" },
@@ -379,7 +379,7 @@ const cases: Case[] = [
       const lamp = { model: "lamp", pos: [0, 0, 0], light: { color: 1, intensity: 16 } };
       const sch = ES.inspectSchema?.(lamp, "lamp", { materials: [] }); const g = (sch?.groups ?? []).find((x: any) => x.group === "light");
       const e = ES.editOps?.(lamp, "lamp", { "light.daytime": true }); const old = ES.editOps?.(lamp, "lamp", { "light.noon": true });
-      const flat = (ops: any[]) => ops.flatMap((o: any) => (o.verb === "batch" ? o.args.ops : [o]));
+      const flat = (ops: any[]) => ops.flatMap((o: any) => (o.op === "batch" ? o.args.ops : [o]));
       return { keys: (g?.fields ?? []).map((f: any) => f.k), w: JSON.stringify(flat(e?.ops ?? [])), oldErr: old?.errors ?? [] }; },
     good: (o) => o.keys.includes("daytime") && !o.keys.includes("noon") && /"daytime":"full"/.test(o.w) && o.oldErr.length > 0 },
   { id: "S2", what: "…the world's Sky card has sky.tz (empty: the authored clock) and no sky.clock; an edit of sky.clock is no field", async run() {
@@ -422,14 +422,14 @@ const cases: Case[] = [
       const E0 = s.w().state().entities; const kid = Object.keys(E0).find((k) => E0[k].c.socket?.name === "bunk");
       const gv = { who: "member", pose: "pistol", grips: { h: { pos: [0, 0.1, 0], fingers: "point" } } }, sv = { action: "lie", anchor: "root", pose: "lie" };
       fs.appendFileSync(path.join(root, "worlds", `${s.name}.jsonl`), [
-        { world: wid, kind: "act", actor: "olive", verb: "set", body: { request: { id: "cup", component: "grabbable", value: gv } }, ts: ts + 1 },
-        { world: wid, kind: "change", actor: "olive", cause: n, verb: "set", body: { id: "cup", comp: "grabbable", value: gv }, ts: ts + 1 },
-        { world: wid, kind: "act", actor: "olive", verb: "set", body: { request: { id: kid, component: "station", value: sv } }, ts: ts + 2 },
-        { world: wid, kind: "change", actor: "olive", cause: n + 2, verb: "set", body: { id: kid, comp: "station", value: sv }, ts: ts + 2 }].map((e) => JSON.stringify(e)).join("\n") + "\n");
+        { world: wid, kind: "request", actor: "olive", op: "set", body: { request: { id: "cup", component: "grabbable", value: gv } }, ts: ts + 1 },
+        { world: wid, kind: "change", actor: "olive", cause: n, op: "set", body: { id: "cup", comp: "grabbable", value: gv }, ts: ts + 1 },
+        { world: wid, kind: "request", actor: "olive", op: "set", body: { request: { id: kid, component: "station", value: sv } }, ts: ts + 2 },
+        { world: wid, kind: "change", actor: "olive", cause: n + 2, op: "set", body: { id: kid, comp: "station", value: sv }, ts: ts + 2 }].map((e) => JSON.stringify(e)).join("\n") + "\n");
       clock.advance(1000);
       const w1 = s.reopen(); D.maintain(w1); const w2 = s.reopen(); const E = w2.state().entities;
       const k = w2.entries.length; D.maintain(w2); const again = s.reopen().entries.length - k;
-      const act = w2.entries.findLast((e: any) => e.kind === "act" && e.verb === "rename-components");
+      const act = w2.entries.findLast((e: any) => e.kind === "request" && e.verb === "rename-components");
       return { g: E.cup?.c.grabbable ?? null, st: E[kid]?.c.station ?? null, again, renamed: act?.body?.renamed ?? null, status: w2.state().status }; },
     good: (o) => o.status === "ok" && o.g?.anim === "pistol" && !("pose" in o.g) && o.g?.grips?.h?.grasp === "point" && !("fingers" in o.g.grips.h) && o.st?.anim === "lie" && !("pose" in o.st) && o.again === 0 && Array.isArray(o.renamed) && o.renamed.some((r: any) => r.component === "station") },
   { id: "A5", what: "…the legacy sockets map's body block keeps pose: the lift makes it station.anim, and the map's readers get body.pose back (slotOf)", async run(s) {
@@ -643,14 +643,14 @@ const cases: Case[] = [
       const L = s.entries(); const wid = L[1]?.world ?? L[0]?.world; const ts = L.at(-1).ts; const n = L.length;
       const mv = { type: "bob", axis: [0, 1, 0], amp: 0.4, period: 3, phase: 0, t0: 1700000000000 }, pv = { type: "bob", node: "Piston", axis: [1, 0, 0], amp: 0.2, period: 2, phase: 0, t0: 1700000000000 };
       fs.appendFileSync(path.join(root, "worlds", `${s.name}.jsonl`), [
-        { world: wid, kind: "act", actor: "olive", verb: "set", body: { request: { id: "drone", component: "motion", value: mv } }, ts: ts + 1 },
-        { world: wid, kind: "change", actor: "olive", cause: n, verb: "set", body: { id: "drone", comp: "motion", value: mv }, ts: ts + 1 },
-        { world: wid, kind: "act", actor: "olive", verb: "set", body: { request: { id: "arm", component: "motion:piston", value: pv } }, ts: ts + 2 },
-        { world: wid, kind: "change", actor: "olive", cause: n + 2, verb: "set", body: { id: "arm", comp: "motion:piston", value: pv }, ts: ts + 2 }].map((e) => JSON.stringify(e)).join("\n") + "\n");
+        { world: wid, kind: "request", actor: "olive", op: "set", body: { request: { id: "drone", component: "motion", value: mv } }, ts: ts + 1 },
+        { world: wid, kind: "change", actor: "olive", cause: n, op: "set", body: { id: "drone", comp: "motion", value: mv }, ts: ts + 1 },
+        { world: wid, kind: "request", actor: "olive", op: "set", body: { request: { id: "arm", component: "motion:piston", value: pv } }, ts: ts + 2 },
+        { world: wid, kind: "change", actor: "olive", cause: n + 2, op: "set", body: { id: "arm", comp: "motion:piston", value: pv }, ts: ts + 2 }].map((e) => JSON.stringify(e)).join("\n") + "\n");
       clock.advance(1000);
       const w1 = s.reopen(); const before = w1.state().entities.drone?.c.motion?.type; D.maintain(w1); const w2 = s.reopen(); const E = w2.state().entities;
       const k = w2.entries.length; D.maintain(w2); const again = s.reopen().entries.length - k;
-      const act = w2.entries.findLast((e: any) => e.kind === "act" && e.verb === "rename-components");
+      const act = w2.entries.findLast((e: any) => e.kind === "request" && e.verb === "rename-components");
       return { before, drone: E.drone?.c.motion ?? null, arm: E.arm?.c["motion:piston"] ?? null, again, renamed: act?.body?.renamed ?? null, actor: act?.actor ?? null, status: w2.state().status }; },
     good: (o) => o.status === "ok" && o.before === "bob" && o.drone?.type === "oscillate" && o.drone?.amp === 0.4 && o.drone?.t0 === 1700000000000 && o.arm?.type === "oscillate" && o.arm?.node === "Piston" && o.again === 0 && o.actor === "system"
       && Array.isArray(o.renamed) && ["motion", "motion:piston"].every((c) => o.renamed.some((r: any) => r.component === c && r.field === "type" && r.from === "bob" && r.to === "oscillate")) },

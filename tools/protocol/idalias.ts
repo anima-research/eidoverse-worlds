@@ -23,7 +23,7 @@ export function idAliases() {
       // known name is replaced, so it never resolves to an older thing that had the same name
       const mark = (o) => { const n = named(o); return n === o ? sub(o, null) : { ...sub({ ...o, id: undefined }, null), id: n.id }; };
       if (verb === "create") return mark(args);
-      if (verb === "batch" && Array.isArray(args?.ops)) return { ...sub({ ...args, ops: undefined }, null), ops: args.ops.map((o) => (o?.verb === "create" ? { ...o, args: mark(o.args) } : sub(o, null))) };
+      if (verb === "batch" && Array.isArray(args?.ops)) return { ...sub({ ...args, ops: undefined }, null), ops: args.ops.map((o) => (o?.op === "create" ? { ...o, args: mark(o.args) } : sub(o, null))) };
       return sub(args, null); },
     /** keep what the reply minted */
     back(reply) { for (const [k, v] of Object.entries(reply?.ids ?? {})) if (k.startsWith("$")) map.set(k.slice(1), v); return reply; },

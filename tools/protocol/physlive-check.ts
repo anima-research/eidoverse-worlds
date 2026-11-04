@@ -13,7 +13,7 @@ import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writer
 import fs from "node:fs";
 import { scratch } from "./common.ts";
 import { request } from "../../shared/protocol/authority.js";
-import { readLog, fold, opsOf, PURGED } from "../../shared/protocol/fold.js";
+import { readLog, fold, opsOf, REDACTED } from "../../shared/protocol/fold.js";
 import { simFold, restsOf, digestOf } from "../../shared/protocol/simlayer.js";
 import { makeReplica } from "../../shared/protocol/replica.js";
 import { openLive } from "../../server/livehost.ts";
@@ -101,9 +101,9 @@ function playground(clock = "pinned") {
   ok(code(call("vic", "punt", { id: "ball" })) === "out-of-reach", "K2 punting needs the thing at your feet");
   const p = call("rowan", "punt", { id: "ball", power: 4 });
   ok(p.ok && p.flying === "ball", "K3 a punt launches the thing", p);
-  const launch = L().filter((e) => e?.kind === "sim" && e.verb === "launch").at(-1);
+  const launch = L().filter((e) => e?.kind === "physics" && e.verb === "launch").at(-1);
   ok(launch && launch.body.v[2] > 0 && launch.body.v[1] > 0 && Math.abs(Math.hypot(...launch.body.v) - 4) < 1e-9, "K4 …through the thing from where you stand, with lift, at the power asked", launch?.body);
-  ok(L().some((e) => e?.kind === "act" && e.verb === "punt"), "K5 the punt is an act on the record");
+  ok(L().some((e) => e?.kind === "request" && e.verb === "punt"), "K5 the punt is an act on the record");
   const mid = call("rowan", "look", {}, 200).things?.find((t) => t.id === "ball");
   ok(mid?.moving, "K6 it flies", mid);
   // a volley: punting it again in the air re-launches from where it is now (the catch is logged)
@@ -160,13 +160,13 @@ function playground(clock = "pinned") {
   call("rowan", "grab", { id: "ball" });
   ok(code(call("rowan", "throw", { id: "ball", v: [0, 1, 1], pos: [0, 1.1, 5] })) === "out-of-reach", "R1 a release pose beyond your reach is refused");
   const t = call("rowan", "throw", { id: "ball", v: [0, 1, 1], pos: [0.3, 1.3, -0.2] });
-  const launch = L().filter((e) => e?.kind === "sim" && e.verb === "launch").at(-1);
+  const launch = L().filter((e) => e?.kind === "physics" && e.verb === "launch").at(-1);
   ok(t.ok && JSON.stringify(launch.body.p) === JSON.stringify([0.3, 1.3, -0.2]), "R2 a throw launches from the hand's pos as sent", [t, launch?.body.p]);
   call("rowan", "wait", {}, 6000);
   call("rowan", "move", { to: restsOf(L()).at(-1).at.map((n, i) => (i === 1 ? 0 : i === 2 ? n - 0.5 : n)) }, 2000);
   call("rowan", "grab", { id: "ball" });
   const d = call("rowan", "drop", { id: "ball", pos: [0.2, 1.0, restsOf(L()).at(-1).at[2] - 0.3] });
-  const l2 = L().filter((e) => e?.kind === "sim" && e.verb === "launch").at(-1);
+  const l2 = L().filter((e) => e?.kind === "physics" && e.verb === "launch").at(-1);
   ok(d.ok && l2.body.p[1] === 1.0 && l2.body.v.every((n) => n === 0), "R3 drop takes a pos too", [d, l2?.body]);
 }
 
@@ -190,7 +190,7 @@ function playground(clock = "pinned") {
   for (let i = 0; i < 40; i++) call("rowan", "look", {}, 97);
   const v = simFold(L(), Date.now() + 1e9, { models: {} });
   ok(restsOf(L()).length === 1 && !v.checks.disagree.length && v.checks.agree === 1, "Q1 with a wall clock that moves during a request, a carrier re-folding the log agrees with the authority's digest and rest", v.checks);
-  const LL = L(); const one = LL.map((e, i) => [e, i]).filter(([e]) => e?.kind === "sim" && e.verb === "digest").map(([e, i]) => [e.ts, LL[i + 1]?.ts]);
+  const LL = L(); const one = LL.map((e, i) => [e, i]).filter(([e]) => e?.kind === "physics" && e.verb === "digest").map(([e, i]) => [e.ts, LL[i + 1]?.ts]);
   ok(one.every(([a, b]) => a === b), "Q2 a digest and its rest carry one timestamp (the request's)", one);
 }
 
@@ -249,11 +249,11 @@ function playground(clock = "pinned") {
   call("rowan", "create", { id: "crate-p", model: "crate", place: { at: [2, 0] } });
   const t = w.state().entities["crate-p"].c.transform;
   const set = call("rowan", "set", { id: "crate-p", component: "transform", value: { ...t, pos: [3, 0, 0] } });
-  const seq = L().findLastIndex((e) => e?.kind === "change" && e.verb === "set" && e.body?.id === "crate-p" && e.body?.comp === "transform");
+  const seq = L().findLastIndex((e) => e?.kind === "change" && e.op === "set" && e.body?.id === "crate-p" && e.body?.comp === "transform");
   const inBefore = !!w.sim().sim?.statics?.["crate-p"];
-  w.append({ kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq }] } });
+  w.append({ kind: "redaction", actor: "system", body: { values: [{ seq }] } });
   const live = w.sim(), fresh = simFold(L(), w.now(), { models: {} });   // the live host's catalogue: none
-  const purged = w.state().entities["crate-p"].c.transform === PURGED;
+  const purged = w.state().entities["crate-p"].c.transform === REDACTED;
   ok(set.ok && inBefore && purged && !live.sim?.statics?.["crate-p"] && !fresh.sim?.statics?.["crate-p"],
     "U1 a purged transform is no collider, in the live host's engine as in a fresh replay of the log", { set: set.ok, inBefore, purged, live: !!live.sim?.statics?.["crate-p"], fresh: !!fresh.sim?.statics?.["crate-p"] });
   ok(digestOf(live.sim) === digestOf(fresh.sim), "U2 …and the two engines' digests agree after the purge", { live: digestOf(live.sim), fresh: digestOf(fresh.sim) });

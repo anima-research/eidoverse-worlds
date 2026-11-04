@@ -1,26 +1,22 @@
 {
  "status": "trial-kernel",
- "translator": "eidoverse/translate-v1@43",
+ "translator": "eidoverse/translate-v1@44",
  "companions": {
-  "changelog": "2026-10-22: kernel: C11b, the house's plan (#260 2026-10-20: 'trim the kernel pin to what the fold reads; roles/access keep at most their component shape'): transform, parent and model leave the kernel (the fold never reads them); roles and access keep their field shape only, their ranges, enums and meanings held by the registry pin",
-  "trim": {
-   "held": {},
-   "heldPaths": [
-    "transform",
-    "parent",
-    "model",
-    "roles.absentMeans",
-    "roles.keyed",
-    "roles.on",
-    "access.enums",
-    "access.ranges",
-    "access.absentMeans",
-    "access.on"
-   ],
-   "dropped": {}
+  "changelog": "2026-11-04: kernel: minor 1, the log vocabulary (docs/DESIGN-log-vocabulary.md D1-D5): kinds request/physics/redaction/governance; op on a change, verb on a request or physics entry, neither elsewhere; cascade, commitment, rewindWindow; for/grant/by leave the envelope; MINORS = {1}",
+  "translator": {
+   "from": "eidoverse/translate-v1@43",
+   "to": "eidoverse/translate-v1@44"
   },
-  "translator": null,
-  "vectors": null
+  "vectors": {
+   "dir": "minor-1",
+   "names": [
+    "request-change",
+    "refused-request-argNames",
+    "batch-cascade-physics",
+    "say-governance-no-verb",
+    "genesis-rewindWindow"
+   ]
+  }
  },
  "kernel": {
   "envelope": {
@@ -28,25 +24,23 @@
    "fields": [
     "actor",
     "body",
-    "by",
     "cause",
-    "for",
-    "grant",
     "head",
     "kind",
+    "op",
     "sig",
     "ts",
     "verb",
     "world"
    ],
    "kinds": [
-    "act",
     "change",
     "genesis",
-    "purge",
-    "say",
-    "sequencer",
-    "sim"
+    "governance",
+    "physics",
+    "redaction",
+    "request",
+    "say"
    ]
   },
   "fold": {
@@ -64,12 +58,12 @@
      "comp",
      "value",
      "salt",
-     "commit"
+     "commitment"
     ]
    },
    "batch": [
     "ops",
-    "followUps"
+    "cascade"
    ]
   },
   "identity": {
@@ -83,7 +77,7 @@
    "dialect": "eidoverse-log",
    "v": 4,
    "minors": [
-    0
+    1
    ],
    "genesis": [
     "dialect",
@@ -92,7 +86,7 @@
     "owners",
     "parent",
     "quorum",
-    "rewind_window",
+    "rewindWindow",
     "sequencer",
     "v"
    ]

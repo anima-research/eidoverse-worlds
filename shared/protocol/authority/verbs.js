@@ -36,7 +36,7 @@ const FOUNDING_VERBS = {
     // {dialect, v, minor, nonce (16 random bytes), owners: tiers of keys, sequencer}. Tier 0 is the founder's OWN key when
     // they bring one (ownerKey: made on their machine; this server never holds its private half); the operator's custody
     // key is tier 1. Without one tier 0 stays empty, and under §13's add-key rule (GOV-5) it can never be filled later:
-    // the operator is then the world's top governance key. rewind_window is left at its default (1000 change entries).
+    // the operator is then the world's top governance key. rewindWindow is left at its default (1000 change entries).
     if (a.ownerKey !== undefined && !keyOk(a.ownerKey)) refuse("shape", "ownerKey is your own governance key: ed25519:<base64url of 32 bytes> (PROTOCOL §13)", "make one on your own machine (openssl genpkey -algorithm ed25519; PROTOCOL §13, \"Whose key is tier 0\"); or leave ownerKey out");
     const cu = w.custody(); if (!cu) throw new Error("authority bug: founding needs io.custody (the sequencer and founder keys, §13)");
     if (a.ownerKey !== undefined && (a.ownerKey === cu.operator() || a.ownerKey === cu.sequencer())) refuse("shape", "ownerKey must be your own key, not this server's", "");
@@ -48,7 +48,7 @@ const FOUNDING_VERBS = {
     // the founding writes' values are checked before anything is appended, against the state genesis folds to: a refusal
     // after genesis would leave a world that exists and that nobody owns
     for (const op of ops) valueCheck(emptyState(), op, { now: w.now() });
-    w.append({ kind: "genesis", actor: "system", verb: "genesis", body: { dialect: DIALECT, v: VERSION, minor: 0, nonce: nonce16(w), owners: [a.ownerKey ? [a.ownerKey] : [], [cu.operator()]], sequencer: cu.sequencer(),
+    w.append({ kind: "genesis", actor: "system", body: { dialect: DIALECT, v: VERSION, minor: 1, nonce: nonce16(w), owners: [a.ownerKey ? [a.ownerKey] : [], [cu.operator()]], sequencer: cu.sequencer(),
       ...(a.from?.seq !== undefined ? { parent: { world: a.from.world, seq: a.from.seq, head: a.from.head } } : {}) } });
     const plan = admit(w, w.state(), { actor, cap: { kind: "founding", ids: ["@world"], comps: ops.map((o) => o.comp) } }, ops);
     // born in today's spelling (shapes: the shape repair's version): the maintenance command's repair never runs on this world (shapesMarked)
@@ -90,7 +90,7 @@ const SAY_VERBS = {
     if (typeof a.text !== "string" || a.text.length > SAY_MAX) refuse("too-big", `a say is at most ${SAY_MAX} characters (this one is ${String(a.text).length})`, "split it, or put a long text in a blob");
     if (a.to !== undefined && (typeof a.to !== "string" || a.to.length > 64)) refuse("shape", "say.to names one person: a string of at most 64 characters", "say {text, to: '<identity>'}");
     const body = { text: a.text, ...(a.to ? { to: a.to } : {}), ...spokenOf(a, w.now()) };
-    rateCheck(w, actor, "say", utf8Len(JSON.stringify(body))); const seq = w.append({ kind: "say", actor, verb: "say", body }); (w.sayQ ??= []).push(seq); return { ok: true, seq }; }, // w.append refuses too-big before writing
+    rateCheck(w, actor, "say", utf8Len(JSON.stringify(body))); const seq = w.append({ kind: "say", actor, body }); (w.sayQ ??= []).push(seq); return { ok: true, seq }; }, // w.append refuses too-big before writing
   undo: (w, actor, a) => commit(w, actor, "undo", a, (ctx) => buildUndo(ctx, a, w)),
   // ---- captions: one line of what a screen said (a captioner bot, live subtitles). Rights live on the SCREEN: its
   // `captioners {ids}` names who may caption it (anyone who may edit the screen may too); nobody else, and no `set` by

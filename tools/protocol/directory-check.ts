@@ -145,7 +145,7 @@ ok(foldName("Marígold") === foldName("marigold") && foldName("JOSÉ") === foldN
   ok(r1.ok && w.entries.length > n1, "K4d …the rest was due: the server that holds the key logs it at its next read", { r1: r1.ok ?? r1.refused, logged: w.entries.slice(n1).map((e: any) => e?.verb) }); }
 { const { translateV1World } = await import("./import-v1/world.ts");
   const W = path.join(tmp, "tw"); fs.mkdirSync(path.join(W, "old"), { recursive: true });
-  fs.writeFileSync(path.join(W, "old", "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
+  fs.writeFileSync(path.join(W, "old", "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", args: { v: 2, dialect: "eidoverse-log" } },
     { seq: 1, ts: 2, actor: "Ann", verb: "spawn", args: { id: "lamp_1", lib: "a.glb", pos: [1, 0, 1] } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
   const a = translateV1World(path.join(W, "old"), path.join(W, "a")), b = translateV1World(path.join(W, "old"), path.join(W, "b"));
   const ga = JSON.parse(fs.readFileSync(path.join(W, "a", "world.jsonl"), "utf8").split("\n")[0]).body;
@@ -180,7 +180,7 @@ ok(foldName("Marígold") === foldName("marigold") && foldName("JOSÉ") === foldN
   const m0 = w.entries.length;
   const ref: any = request(w, anon, "delete", { id: "@world" });
   const rec = w.entries.slice(m0);
-  ok(!ref.ok && rec.length === 1 && rec[0].kind === "act" && rec[0].actor === anon && rec[0].body?.refused?.code === ref.refused?.code && JSON.stringify(rec[0].body?.args) === '["id"]' && !("request" in rec[0].body),
+  ok(!ref.ok && rec.length === 1 && rec[0].kind === "request" && rec[0].actor === anon && rec[0].body?.refused?.code === ref.refused?.code && JSON.stringify(rec[0].body?.args) === '["id"]' && !("request" in rec[0].body),
     "B4 a refused write is recorded: an act with its argument names and {refused: {code}}, never the values (engine-scars 6a), no state", rec.map((e: any) => [e.kind, e.body]));
   const m1 = w.entries.length;
   request(w, anon, "delete", { id: "@world", dry: true }); request(w, anon, "inspect", { id: "nope" }); request(w, anon, "frobnicate", {});
@@ -245,7 +245,7 @@ ok(foldName("Marígold") === foldName("marigold") && foldName("JOSÉ") === foldN
   const war: any[] = [];
   for (const v of ["a", "b", "c"]) { const s1 = q(bob, "set", { id: "post", component: "label", value: v }); war.push(q(cy, "undo", { act: actOf(s1) })); }
   ok(war[0].ok && war[1].ok && war[2].refused?.code === "revert-war", "U8 the third revert across people on one thing within the hour is refused below owner (a dispute)", war.map((r) => r.ok || r.refused?.code));
-  const last = [...w.entries.keys()].reverse().find((i) => w.entries[i].kind === "act" && w.entries[i].actor === bob && w.entries[i].verb === "set");
+  const last = [...w.entries.keys()].reverse().find((i) => w.entries[i].kind === "request" && w.entries[i].actor === bob && w.entries[i].op === "set");
   ok(q(ann, "undo", { act: last }).ok, "U9 …an owner still can (owners settle it)");
   ok(q(bob, "undo", { acts: 3 }).refused?.code === "unknown-arg", "U10 a typo'd undo argument is refused, not a silent undo of your latest act (R10)"); }
 
@@ -293,7 +293,7 @@ ok(foldName("Marígold") === foldName("marigold") && foldName("JOSÉ") === foldN
 // ---- X: a translated thing whose reaction runs a v1 script (round-2 R14: this path threw a ReferenceError) ----
 { const { translateV1World } = await import("./import-v1/world.ts");
   const W = path.join(tmp, "xs"); fs.mkdirSync(path.join(W, "old"), { recursive: true });
-  fs.writeFileSync(path.join(W, "old", "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
+  fs.writeFileSync(path.join(W, "old", "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", args: { v: 2, dialect: "eidoverse-log" } },
     { seq: 1, ts: 2, actor: "Ann", verb: "spawn", args: { id: "bell", lib: "a.glb", pos: [1, 0, 1] } },
     { seq: 2, ts: 3, actor: "Ann", verb: "comp", args: { id: "bell", type: "reactions", data: { ring: { kind: "script", script: "bell" } } } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
   translateV1World(path.join(W, "old"), path.join(W, "new"));
@@ -305,7 +305,7 @@ ok(foldName("Marígold") === foldName("marigold") && foldName("JOSÉ") === foldN
 // state key the authority never reads, so a translated world quietly unbanned everyone) ----
 { const { translateV1World } = await import("./import-v1/world.ts");
   const W = path.join(tmp, "xb"); fs.mkdirSync(path.join(W, "old"), { recursive: true });
-  fs.writeFileSync(path.join(W, "old", "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log", roles: { Ann: { role: "owner" } } } },
+  fs.writeFileSync(path.join(W, "old", "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", args: { v: 2, dialect: "eidoverse-log", roles: { Ann: { role: "owner" } } } },
     { seq: 1, ts: 2, actor: "Ann", verb: "ban", args: { id: "Mallory", reason: "spam" } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
   translateV1World(path.join(W, "old"), path.join(W, "new"));
   const w: any = openLive(path.join(W, "new"), "new", { now: () => 1800000000000 });
@@ -388,7 +388,7 @@ ok(foldName("Marígold") === foldName("marigold") && foldName("JOSÉ") === foldN
     out.others = [!off.length, off.slice(0, 5)];
     // @11: her flights are plain logged writes: no launch, no digest; every flight of hers rests on the record; the world
     // runs today's eidosim from her epoch on; the sim layer reads the history without a disagreement
-    const flown = t.lines.filter((e: any) => e.kind === "sim").length;
+    const flown = t.lines.filter((e: any) => e.kind === "physics").length;
     const sf = simFold(t.lines, endOf(t.lines), { models: {} });
     out.carrier = [t.r.sim && !flown && !sf.checks.disagree.length && t.r.sim.rests === t.r.sim.launches && (launches < 0 || t.r.sim.launches === launches)
       && (!t.r.sim.engine || t.r.sim.engine.engine === DEFAULT_ENGINE), { flown, checks: sf.checks, sim: t.r.sim }];
@@ -396,10 +396,10 @@ ok(foldName("Marígold") === foldName("marigold") && foldName("JOSÉ") === foldN
     out.tier0 = [Array.isArray(t.lines[0].body.owners[0]) && t.lines[0].body.owners[0].length === 0, t.lines[0].body.owners];   // #260 rereview blocker 1: no founder
     out.stamp = [t.lines[1].body.from.translator === TV1.TRANSLATOR_SIM, t.lines[1].body.from.translator];
     // identities: every old actor's act (and the launch it caused) is an opaque directory id, never the old name
-    const people = t.lines.filter((e: any) => (e.kind === "act" && e.verb === "imported") || (e.kind === "sim" && e.verb === "launch"));
+    const people = t.lines.filter((e: any) => (e.kind === "request" && e.verb === "imported") || (e.kind === "physics" && e.verb === "launch"));
     // (v1's own system actors keep their v1 spelling on this path, as before: "world" stays "world", "door" is "system")
     const named = people.filter((e: any) => !["system", "world", "sim"].includes(e.actor) && !isMinted(e.actor)).map((e: any) => e.actor);
-    const launchBy = t.lines.filter((e: any) => e.kind === "sim" && e.verb === "launch").every((e: any) => e.actor === t.lines[e.cause]?.actor);
+    const launchBy = t.lines.filter((e: any) => e.kind === "physics" && e.verb === "launch").every((e: any) => e.actor === t.lines[e.cause]?.actor);
     out.identities = [!named.length && launchBy && people.some((e: any) => isMinted(e.actor) && t.dir.entry(e.actor)), { named: [...new Set(named)].slice(0, 5), launchBy }];
     // R 10-17: every model is its library path, with model-hash sha256:<its bytes> beside it where this host has them; a
     // collider's box rides as physics.shape
@@ -508,7 +508,7 @@ ok(foldName("Marígold") === foldName("marigold") && foldName("JOSÉ") === foldN
         // the thousands before it: the pure translator over the copy alone and over the copy + epoch agree entry for entry
         // up to the epoch's act (the second entry, the translator's stamp, differs by design: @10 says the sim ran)
         const nonce = "ZXAzLXNhbWUtbm9uY2UtMDAw";   // one world id for both (the default nonce hashes the whole source)
-        const a = TV1.translate(C, { nonce }).out, b = TV1.translate(X, { nonce }).out; const k = b.findIndex((e: any) => e.kind === "act" && e.body?.verb === "epoch");
+        const a = TV1.translate(C, { nonce }).out, b = TV1.translate(X, { nonce }).out; const k = b.findIndex((e: any) => e.kind === "request" && e.body?.verb === "epoch");
         const same = k > 2 && b.slice(2, k).every((e: any, i: number) => JSON.stringify(e) === JSON.stringify(a[i + 2])) && JSON.stringify(a[0]) !== undefined;
         ok(same && a[1].body.from.translator === TV1.TRANSLATOR && b[1].body.from.translator === TV1.TRANSLATOR_SIM, `EP3 …and the ${k - 2} entries before the epoch are byte-for-byte what the copy alone translates to`, { k }); }
 
@@ -518,7 +518,7 @@ ok(foldName("Marígold") === foldName("marigold") && foldName("JOSÉ") === foldN
   // carry (nothing flew) → that name with no build (nothing flies here either); an epoch she refused (tickMs 5: it never
   // started) → no physics at all, the epoch kept as a record
   { const B = [[-0.5, 0, -0.5], [0.5, 1, 0.5]];
-    const log = (sim: string, tickMs: number) => [{ seq: 0, ts: 1000, actor: "world", verb: "genesis", args: { v: 3, dialect: "eidoverse-log" } },
+    const log = (sim: string, tickMs: number) => [{ seq: 0, ts: 1000, actor: "world", args: { v: 3, dialect: "eidoverse-log" } },
       { seq: 1, ts: 1020, actor: "fx", verb: "epoch", args: { sim, tickMs, boxes: { "crate.glb": B } } },
       { seq: 2, ts: 1030, actor: "fx", verb: "spawn", args: { id: "crate", lib: "crate.glb", pos: [0, 0, 0], yaw: 0, box: B } },
       { seq: 3, ts: 1500, actor: "fx", verb: "punt", args: { id: "crate", power: 8, dir: [1, 0.3, 0] } }];
@@ -564,7 +564,7 @@ ok(foldName("Marígold") === foldName("marigold") && foldName("JOSÉ") === foldN
     const G = [F[0], { seq: 0.5, ts: F[0].ts + 1, actor: "world", verb: "grant", args: { id: "fixture", role: "owner" } }, ...F.slice(1)];
     const u = importer("undo", G, { lib });
     const live: any = u.ok ? openLive(u.at, "new", { now: () => endOf(u.lines) + 1000, custodyFile: path.join(path.dirname(u.at), CUSTODY_FILE) }) : null;
-    const punts = u.ok ? u.lines.map((e: any, i: number) => [e, i]).filter(([e]: any) => e.kind === "act" && e.body?.verb === "punt") : [];
+    const punts = u.ok ? u.lines.map((e: any, i: number) => [e, i]).filter(([e]: any) => e.kind === "request" && e.body?.verb === "punt") : [];
     const { request } = await import("../../shared/protocol/authority.js");
     const answers = punts.map(([e, i]: any) => request(live, e.actor, "undo", { act: i, dry: true }));
     ok(punts.length === 4 && answers.every((r: any) => r.refused?.code === "nothing"),

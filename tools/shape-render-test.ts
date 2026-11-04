@@ -146,7 +146,7 @@ await tryRow('AD', async () => {
     const CA = `eido:sha256/${'5'.repeat(64)}`;
     const cat = { get: (n: string) => LAB_CATALOGUE.get(n === CA ? 'crate' : n), list: (q: string) => LAB_CATALOGUE.list(q) };
     const dir = `${scratch('w2r-addr-fly')}w/`; fs.mkdirSync(dir, { recursive: true }); let now = 1800000000000;
-    const lw = openLive(dir, 'w', { now: () => ++now, catalogue: cat, custodyFile: `${dir}../custody.json`, nameOf: () => null, kindOf: () => 'human' });
+    const lw = openLive(dir, 'w', { now: () => ++now, catalogue: cat, custodyFile: `${dir}../custody.json`, nameOf: () => null, formOf: () => 'human' });
     const lc = (a: string, v: string, x: any = {}, st = 100) => { now += st; return request(lw, a, v, x); };
     const LL = () => readLog(fs.readFileSync(dir + 'world.jsonl'));
     lc('rowan', 'create-world', { title: 'fly' });

@@ -388,3 +388,10 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
 - 2026-11-03: light.important's doc says what lightrig does (first claim on a slot; more important lights than slots: the nearest cast); collider.layer's absentMeans names who scans it; sky help: a tz overrides rate: 0; header comments; prose only (bot #260 #265 #282 #281 #280 #622 #623)
   - collider.layer: its meaning of absence "[1] (Godot's default): every mover meets it" → "[1] (Godot's default): every mover that scans the default layer (bodies and things always; a hull by its own mask)"
   - light.important: its meaning "always casts: first claim on a light slot, never governor-shed" → "first claim on a light slot, never governor-shed (more important lights than slots: the nearest cast)"
+- 2026-11-04: kernel: minor 1, the log vocabulary (docs/DESIGN-log-vocabulary.md D1-D5): kinds request/physics/redaction/governance; op on a change, verb on a request or physics entry, neither elsewhere; cascade, commitment, rewindWindow; for/grant/by leave the envelope; MINORS = {1}
+  - envelope.fields: ["actor","body","by","cause","for","grant","head","kind","sig","ts","verb","world"] → ["actor","body","cause","head","kind","op","sig","ts","verb","world"]
+  - envelope.kinds: ["act","change","genesis","purge","say","sequencer","sim"] → ["change","genesis","governance","physics","redaction","request","say"]
+  - fold.ops.set: ["id","comp","value","salt","commit"] → ["id","comp","value","salt","commitment"]
+  - fold.batch: ["ops","followUps"] → ["ops","cascade"]
+  - version.minors: [0] → [1]
+  - version.genesis: ["dialect","minor","nonce","owners","parent","quorum","rewind_window","sequencer","v"] → ["dialect","minor","nonce","owners","parent","quorum","rewindWindow","sequencer","v"]

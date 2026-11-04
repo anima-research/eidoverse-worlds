@@ -1,4 +1,4 @@
-// kind-test — "is this a light / an Empty / a model" is decided ONCE (shared/protocol/kind.js kindOf), and every surface that
+// kind-test — "is this a light / an Empty / a model" is decided ONCE (shared/protocol/kind.js formOf), and every surface that
 // says a thing's kind agrees with it: the realizer's planner (models_field), the hierarchy row hint, GET /geom?world's `kind`,
 // and the mcpl inspect head. Five fixtures: a native light (comp.light, no model), a bare Empty, a model, a model with a
 // child light, and a thing carrying a `mesh` component (a sibling branch's kind; not built here, only named).
@@ -11,7 +11,7 @@
 // on `ent.kind === 'light'` is dead.
 process.env.WORLD_TOKEN = "";
 import "./protocol/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
-import { kindOf as plannerKindOf } from "../client/lib/realize/models_field.js";
+import { formOf as plannerKindOf } from "../client/lib/realize/models_field.js";
 import { kindHint } from "../shared/hierarchy.js";
 import { viewOf, viewState } from "../shared/protocol/view.js";
 import { project as projectV1 } from "./protocol/import-v1/translate-v1.js";
@@ -22,8 +22,8 @@ const { handleTool } = await import("../mcpl/tools.ts");
 const { check, tally } = mkCheck();
 
 const shared: any = await import("../shared/protocol/kind.js").catch(() => null);
-const kindOf: (x: any) => string = shared?.kindOf ?? plannerKindOf;
-check("shared/protocol/kind.js exports kindOf (until it does, the planner's rule stands in)", !!shared?.kindOf);
+const formOf: (x: any) => string = shared?.formOf ?? plannerKindOf;
+check("shared/protocol/kind.js exports formOf (until it does, the planner's rule stands in)", !!shared?.formOf);
 
 const TABLE = "eidoverse/assets/models/table_oak_round.glb";
 const LIGHT = { color: 0xffd9a0, intensity: 8, range: 4 };
@@ -48,20 +48,20 @@ console.log("1. one answer per fixture, headless");
   const S = D.state().entities;
   for (const [id, want] of Object.entries(WANT)) {
     const rec = S[id], v = W[id];
-    check(`kindOf({c}) ${id} = ${want}`, kindOf(rec) === want, kindOf(rec));
-    check(`kindOf(view) ${id} = ${want}`, kindOf(v) === want, kindOf(v));
-    check(`planner kindOf ${id} = ${want}`, plannerKindOf(v) === want, plannerKindOf(v));
+    check(`formOf({c}) ${id} = ${want}`, formOf(rec) === want, formOf(rec));
+    check(`formOf(view) ${id} = ${want}`, formOf(v) === want, formOf(v));
+    check(`planner formOf ${id} = ${want}`, plannerKindOf(v) === want, plannerKindOf(v));
     const hint = kindHint(v);
     check(`kindHint ${id} says ${want}`, want === "model" ? hint === "table oak round" : hint === want, hint);
   }
-  check("a model with a light component (an imported lamp) is a model; the view-side rule agrees", kindOf({ c: { model: TABLE, light: LIGHT } }) === "model" && kindOf({ lib: TABLE, comp: { light: LIGHT } }) === "model");
-  check("kindOf({c}) mesh = mesh", kindOf(MESH_REC) === "mesh", kindOf(MESH_REC));
-  check("kindOf(view) mesh = mesh", kindOf(MESH_VIEW) === "mesh", kindOf(MESH_VIEW));
+  check("a model with a light component (an imported lamp) is a model; the view-side rule agrees", formOf({ c: { model: TABLE, light: LIGHT } }) === "model" && formOf({ lib: TABLE, comp: { light: LIGHT } }) === "model");
+  check("formOf({c}) mesh = mesh", formOf(MESH_REC) === "mesh", formOf(MESH_REC));
+  check("formOf(view) mesh = mesh", formOf(MESH_VIEW) === "mesh", formOf(MESH_VIEW));
   check("kindHint mesh says its shape", kindHint(MESH_VIEW) === "box", kindHint(MESH_VIEW));
-  check("a light that is not an object is not a light", kindOf({ c: { light: true } }) === "empty" && kindOf({ comp: { light: 3 } }) === "empty");
-  check("a socket is decided first: kindOf({c}) and kindOf(view) say socket, whatever else it carries", kindOf({ c: { socket: { name: "seat" }, model: TABLE, light: LIGHT } }) === "socket" && kindOf({ lib: TABLE, comp: { socket: { name: "seat" } } }) === "socket" && kindOf({ c: { socket: "seat" } }) === "empty");
-  check("nothing is an Empty", kindOf(null) === "empty" && kindOf({}) === "empty" && kindOf({ c: {} }) === "empty");
-  check("viewOf of each fixture's record is the same kind as the record", Object.keys(WANT).every((id) => kindOf(viewOf(id, S[id].c)) === kindOf(S[id])));
+  check("a light that is not an object is not a light", formOf({ c: { light: true } }) === "empty" && formOf({ comp: { light: 3 } }) === "empty");
+  check("a socket is decided first: formOf({c}) and formOf(view) say socket, whatever else it carries", formOf({ c: { socket: { name: "seat" }, model: TABLE, light: LIGHT } }) === "socket" && formOf({ lib: TABLE, comp: { socket: { name: "seat" } } }) === "socket" && formOf({ c: { socket: "seat" } }) === "empty");
+  check("nothing is an Empty", formOf(null) === "empty" && formOf({}) === "empty" && formOf({ c: {} }) === "empty");
+  check("viewOf of each fixture's record is the same kind as the record", Object.keys(WANT).every((id) => formOf(viewOf(id, S[id].c)) === formOf(S[id])));
 }
 
 console.log("2. the route and the inspect head, over an owned sequencer");
@@ -83,7 +83,7 @@ console.log("2. the route and the inspect head, over an owned sequencer");
     const body = await (await fetch(`${h.BASE}/geom?world=kind&boxes=0`)).json() as any;
     const byId = Object.fromEntries((body.entities ?? []).map((e: any) => [e.id, e]));
     for (const [id, want] of Object.entries(WANT)) check(`GET /geom?world kind ${id} = ${want}`, routeKind(byId[IDS.of(id)]?.kind) === want, String(byId[IDS.of(id)]?.kind));
-    check("the route's kind is kindOf of the route's own record", Object.keys(WANT).every((id) => byId[IDS.of(id)] && kindOf(byId[IDS.of(id)]) === byId[IDS.of(id)].kind));
+    check("the route's kind is formOf of the route's own record", Object.keys(WANT).every((id) => byId[IDS.of(id)] && formOf(byId[IDS.of(id)]) === byId[IDS.of(id)].kind));
     const ctx = { agent: ag, canPush: () => false, heldActivity: [], cursor: { caughtUpTo: null } };
     for (const [id, want] of Object.entries(WANT)) {
       const r = await handleTool(ctx, "inspect", { id: IDS.of(id) });
@@ -102,7 +102,7 @@ console.log("3. the premise: no native or translated record carries `kind`");
   const v1 = { entities: { lamp: { kind: "light", pos: [0, 1, 0], color: 1, intensity: 2, range: 3, keep: true, actor: "a", ts: 1 } } };
   const c = projectV1(v1 as any).lamp;
   check("translate-v1 rewrites a v1 kind:'light' entity to c.light (keep → important) and carries no imported:kind", !!c.light && c.light.color === 1 && c.light.important === true && !("imported:kind" in c) && !("kind" in c), JSON.stringify(c));
-  check("…so its view is a light to kindOf and carries no `kind`", kindOf(viewOf("lamp", c)) === "light" && !("kind" in viewOf("lamp", c)));
+  check("…so its view is a light to formOf and carries no `kind`", formOf(viewOf("lamp", c)) === "light" && !("kind" in viewOf("lamp", c)));
 }
 
 console.log(`\n${tally.passed} passed, ${tally.failed} failed`);

@@ -56,7 +56,7 @@ const run = (W: string, args: string[]) => { const r = Bun.spawnSync([process.ex
 { const { W, dir, f } = shapeB("mg3"); const lines = fs.readFileSync(f, "utf8").split("\n").filter(Boolean);
   const oldId = worldIdOf(parseLine(lines[0])); const last = JSON.parse(lines.at(-1)!);
   // a say quoting the old id (unsealed, as migrate-identities-check writes its rows): only the `world` field may change
-  fs.writeFileSync(f, [...lines, JSON.stringify({ world: oldId, kind: "say", actor: last.actor, verb: "say", body: { text: `our id was ${oldId}` }, ts: (last.ts ?? 0) + 1000 })].join("\n") + "\n");
+  fs.writeFileSync(f, [...lines, JSON.stringify({ world: oldId, kind: "say", actor: last.actor, body: { text: `our id was ${oldId}` }, ts: (last.ts ?? 0) + 1000 })].join("\n") + "\n");
   const r = run(W, ["--apply", dir]); const now = fs.readFileSync(f, "utf8").split("\n").filter(Boolean); const say = JSON.parse(now.at(-1)!);
   ok(r.code === 0 && say.body?.text === `our id was ${oldId}` && say.world !== oldId && !now.slice(1).some((l) => JSON.parse(l).world === oldId),
     "MG4 --apply rewrites only the `world` field: a say quoting the old id keeps its words", { code: r.code, say, out: r.out.slice(-300) }); }

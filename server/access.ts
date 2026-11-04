@@ -97,8 +97,8 @@ export function doorFor(name: string): Door | null {
       let ops: any[] = []; try { ops = opsOf(e); } catch { continue; }   // a batch's ops, or a single set/delete's own body
       for (const o of ops) {
         if (o?.id !== "@world" || !isDoorComp(o.comp)) continue;
-        if (o.verb === "set" && o.value && typeof o.value === "object") wc[o.comp] = o.value;
-        else if (o.verb === "delete") delete wc[o.comp];
+        if (o.op === "set" && o.value && typeof o.value === "object") wc[o.comp] = o.value;
+        else if (o.op === "delete") delete wc[o.comp];
       }
     }
   } catch { return null; }

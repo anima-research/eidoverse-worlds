@@ -809,7 +809,6 @@ function buildSnapshot(w: World, c: Client) {
       type: "snapshot",
       // (no renderSceneVersion: upstream #248's render-scene projection isn't served here — server/render-scene.ts reads the
       // first protocol's fold — so a native client isn't told to ask for it)
-      world: w.name,
       you: c.id,
       // when this account may next change its name (and the name it just tried, if that was too soon)
       ...(c.account && !c.tokenVerified ? { renameAfter: (directoryFor(WORLDS_DIR).entry(c.actorId ?? "")?.renamedAt ?? 0) + RENAME_COOLDOWN_MS, renameCooldownDays: RENAME_COOLDOWN_MS / 86400000 } : {}),
@@ -826,11 +825,11 @@ function buildSnapshot(w: World, c: Client) {
       recording: RECORD,
       // the world: the authority's cut (its fold, head, your undoable acts, names, holds), which the joiner folds and then
       // advances with the `log` stream. A joiner's cost is the size of the WORLD, not the length of its history.
-      cut: { ...w.log.info(), ...w.log.clientCut(actorIdOf(c)) },
+      ...w.log.info(), ...w.log.clientSnapshot(actorIdOf(c)),   // flat (D5): {dialect, v, minor, world, name, seq, state, physics, names, holds, mine, you}
       // chat isn't world state, and speech is arrival-only (R 10-18): a joiner is sent no line said before it came, so the
       // window is always empty. chatTotal is how many lines a history page could still show this joiner: for an admin
       // (owner, operator) every line the master log holds; for everyone else none
-      state: { recentChat: [], chatTotal: w.isAdmin(c) ? (w.state.chatTotal ?? 0) : 0 },
+      chat: { recentChat: [], chatTotal: w.isAdmin(c) ? (w.state.chatTotal ?? 0) : 0 },
       throughSeq: w.log.snapSeq,
       // the body roster rides along — a joiner resolves names with no
       // extra round-trip (bbox geometry follows as its own message)
@@ -1023,7 +1022,7 @@ const server = Bun.serve({
           installJoin(c, w);
           // speech is arrival-only (R 10-18): this connection hears says after the cut it is about to adopt, and reads back
           // none at or below it (history, the authority's history) unless it is an admin's (world.ts sayFloor)
-          c.arrivedSeq = w.log.head;
+          c.arrivedSeq = w.log.seq;
           // The server's clock, just before the snapshot, for a join that asks
           // (`clock: true`): the world's authority clock, the one frames and
           // clock replies carry (spec/PHYSICS.md §5.1). A browser seeks shared

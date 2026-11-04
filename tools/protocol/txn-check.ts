@@ -144,7 +144,7 @@ const described = (W_, label) => Object.values(W_.w.log.live.state().entities).s
   const restore = fault("t1", 2, "before");
   send(t, "create", { components: { description: "half" } }); await tryUntil('the reply to "half"', () => t.replies.length > 1, { ms: 3000, step: 10 }); restore();
   const r = t.replies[1];
-  const actPublished = t.logs.slice(logs0).some((m) => m.from === n0 && m.entries.length === 1 && m.entries[0].kind === "act");
+  const actPublished = t.logs.slice(logs0).some((m) => m.from === n0 && m.entries.length === 1 && m.entries[0].kind === "request");
   ok(r?.ok === false && r?.txn === "ambiguous" && r?.reply?.refused?.code === "ambiguous" && r?.reply?.from === n0 + 1 && actPublished
     && lines("t1").length === n0 + 1 && X.w.log.live.entries.length === n0 + 1,
     "T1 the 2nd line's write throws: ambiguous (never ok), from = that line; the act (1st line) is durable and published", { r, logs: t.logs.map((m) => [m.from, m.entries.length]), disk: lines("t1").length, n0 });
@@ -152,7 +152,7 @@ const described = (W_, label) => Object.values(W_.w.log.live.state().entities).s
   const re = openLive(path.join(W, "t1"), "t1-reopened");
   const { request: authorityRequest } = await import("../../shared/protocol/authority.js");
   const whole = (st) => Object.values(st.entities).some((e) => e.c?.description === "whole");
-  const stood = whole(re.state()) && re.state().status === "ok" && re.entries.length === n0 + 1 && re.entries[n0].kind === "act" && !Object.values(re.state().entities).some((e) => e.c?.description === "half");
+  const stood = whole(re.state()) && re.state().status === "ok" && re.entries.length === n0 + 1 && re.entries[n0].kind === "request" && !Object.values(re.state().entities).some((e) => e.c?.description === "half");
   const undo = authorityRequest(re, X.owner, "undo", {});
   ok(stood && undo?.ok === true && !whole(re.state()),
     "T1b reopened: the orphan act folds, nothing it asked for exists, and undo passes over it to the last act with a result (PROTOCOL §7)", { status: re.state().status, n: re.entries.length, undo }); }

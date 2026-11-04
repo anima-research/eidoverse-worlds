@@ -3,7 +3,7 @@
 // A leaf over storage (isE, opsQuiet) and the ladder in roles.js.
 import * as R from "../roles.js";
 import { CTX } from "./ctx.js";
-import { followUpsOf, isE, opsQuiet, readback } from "./storage.js";
+import { cascadeOf, isE, opsQuiet, readback } from "./storage.js";
 // The ladder, the closed permission list and the effective set live in shared/protocol/roles.js (the Sanctioned Society: ranked
 // membership only; banned is a state outside it). Every rank comparison in the authority goes through rankOf /
 // whoRank below, so a custom role (any id an owner defined in @world.role-defs) stands where its rank says.
@@ -87,12 +87,12 @@ export function sanctionsNow(w) {
 // records that author (capability.author). Entries with no act for a cause (rests, genesis-era) are their own actor's.
 function entryBy(w, e) {
   const c = w.entries[e.cause];
-  const by = isE(c) && c.kind === "act" ? c.actor : e.actor;
+  const by = isE(c) && c.kind === "request" ? c.actor : e.actor;
   // a behaviour's results were admitted with its SPONSOR's rights (L4), which its act names (checkable from sponsorAt)
   // READBACK: a purged cause act no longer says whose rights admitted it (a handler's author? a script's sponsor?), so the
   // rights are unknown: null, which matches nobody. Never `by`: that would hand the visitor who pulled the lever the
   // handler author's thing (engine-scars 4, consent gaps G1 d)
-  if (isE(c) && c.kind === "act") { const b = readback(w, e.cause);
+  if (isE(c) && c.kind === "request") { const b = readback(w, e.cause);
     if (b === null) return { seq: e.seq, by, rights: null };
     return { seq: e.seq, by, rights: b.capability?.author || (isScriptActor(c.actor) && b.sponsor) || by }; }
   return { seq: e.seq, by, rights: by };
@@ -119,24 +119,24 @@ export function creatorOf(w, id, comp) {
     if (plain && !plain.has(id) && Number.isInteger(ent.born)) { const e = w.entries[ent.born]; if (isE(e) && e.kind === "change") return entryBy(w, e); } }
   let found = null, restored = false;
   for (const i of backward(w, id)) { const e = w.entries[i]; if (!isE(e) || e.kind !== "change") continue;
-    const ops = opsQuiet(e); const fu = followUpsOf(e);
+    const ops = opsQuiet(e); const fu = cascadeOf(e);
     for (let k = ops.length - 1; k >= 0; k--) { const o = ops[k]; if (o.id !== id) continue;
-      if (o.verb === "set" && fu.has(k)) { if (o.comp === comp) restored = true; continue; }   // the authority's follow-up (a reference cleared or put back) authors nothing (review r9 H1)
-      if (o.verb === "delete" && fu.has(k) && restored && comp !== undefined && (o.comp === comp || o.comp === undefined)) { restored = false; continue; }
-      if (o.verb === "set" && o.comp === comp) restored = false;
-      if (comp === undefined) { if (o.verb === "create") return entryBy(w, e); if (o.verb === "delete" && o.comp === undefined) return null; continue; }
-      if (o.verb === "set" && o.comp === comp) found = e;
-      else if ((o.verb === "delete" && (o.comp === comp || o.comp === undefined)) || o.verb === "create") return found && entryBy(w, found); } }
+      if (o.op === "set" && fu.has(k)) { if (o.comp === comp) restored = true; continue; }   // the authority's follow-up (a reference cleared or put back) authors nothing (review r9 H1)
+      if (o.op === "delete" && fu.has(k) && restored && comp !== undefined && (o.comp === comp || o.comp === undefined)) { restored = false; continue; }
+      if (o.op === "set" && o.comp === comp) restored = false;
+      if (comp === undefined) { if (o.op === "create") return entryBy(w, e); if (o.op === "delete" && o.comp === undefined) return null; continue; }
+      if (o.op === "set" && o.comp === comp) found = e;
+      else if ((o.op === "delete" && (o.comp === comp || o.comp === undefined)) || o.op === "create") return found && entryBy(w, found); } }
   return found && entryBy(w, found);
 }
 // Who last set (or deleted) component `comp` on a thing: { seq, by, rights, deleted } or null if nobody ever has.
 export function lastSetterOf(w, id, comp) {
   let restored = false;
   for (const i of backward(w, id)) { const e = w.entries[i]; if (!isE(e) || e.kind !== "change") continue;
-    const ops = opsQuiet(e); const fu = followUpsOf(e);
-    for (let k = ops.length - 1; k >= 0; k--) { const o = ops[k]; if (o.id !== id || o.comp !== comp || o.verb === "create") continue;
-      if (fu.has(k)) { if (o.verb === "set") { restored = true; continue; } if (restored) { restored = false; continue; } }   // r9 H1, r10 M2
-      return { ...entryBy(w, e), deleted: o.verb === "delete" }; } }
+    const ops = opsQuiet(e); const fu = cascadeOf(e);
+    for (let k = ops.length - 1; k >= 0; k--) { const o = ops[k]; if (o.id !== id || o.comp !== comp || o.op === "create") continue;
+      if (fu.has(k)) { if (o.op === "set") { restored = true; continue; } if (restored) { restored = false; continue; } }   // r9 H1, r10 M2
+      return { ...entryBy(w, e), deleted: o.op === "delete" }; } }
   return null;
 }
 /** A lock's strength (recut B2): the rank its setter holds NOW; a lock nobody set by hand (translated, or its setter

@@ -42,7 +42,7 @@ let pass = 0, fail = 0;
 const ok = (cond: any, what: string, detail?: any) => { if (cond) { pass++; console.log(`  ok  ${what}`); } else { fail++; console.log(`  FAIL ${what}${detail !== undefined ? ` — ${JSON.stringify(detail)?.slice(0, 900)}` : ""}`); } };
 const row = (what: string, fn: () => any) => { try { return fn(); } catch (e) { ok(false, what, `threw: ${e?.stack ?? e}`); } };
 const T0 = 1790000000000;
-const log = (L: [string, string, any][]) => [{ seq: 0, ts: T0, actor: "world", verb: "genesis", args: { v: 1, dialect: "eidoverse-log" } },
+const log = (L: [string, string, any][]) => [{ seq: 0, ts: T0, actor: "world", args: { v: 1, dialect: "eidoverse-log" } },
   ...L.map(([actor, verb, args], k) => ({ seq: k + 1, ts: T0 + (k + 1) * 1000, actor, verb, args }))];
 const tr = (L: [string, string, any][]) => { const r = TV1.translate(log(L)); return { r, W: r.final.translated["@world"] ?? {}, E: r.final.translated }; };
 const eff = (W: any, id: string, anon = false) => R.effectiveOf(W, id, { anon, owners: Object.keys(W).some((k) => k.startsWith("roles:") && W[k]?.role === "owner") });

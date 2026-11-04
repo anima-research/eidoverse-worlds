@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """gov.py -- governance as a reader check, the Python twin of the protocol lab's governance.js (PROTOCOL §2.4 "Governance",
-§3d C2 and H4). For each `kind: "sequencer"` entry: valid or not, its rank, and what a rewind would orphan.
+§3d C2 and H4). For each `kind: "governance"` entry: valid or not, its rank, and what a rewind would orphan.
 
 The spec's hazard (review 47 C2) is language-level: all([]) is True in Python and [].every() is true in JS, so a reader
 written straight from "every tier-0 key" lets anyone rewind past the window in a world whose tier 0 is empty. Here an
@@ -94,7 +94,7 @@ def governance(data):
 
     events = []
     for seq, e in enumerate(entries):
-        if seq == 0 or not isinstance(e, dict) or e.get("kind") != "sequencer":
+        if seq == 0 or not isinstance(e, dict) or e.get("kind") != "governance":
             continue
         ev = {"seq": seq, "valid": False, "rank": None}
         events.append(ev)

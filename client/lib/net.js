@@ -1174,9 +1174,9 @@ async function handle(msg, at) {
 }
 
 async function onSnapshot(msg) {
-  // no cut, no join: refused before any joined state is published (the voice bridge arms on it)
-  if (!msg.cut?.state) {
-    replica.reset(); report('snapshot', new Error('the server sent no world cut (an old server?)'));
+  // no fold, no join: refused before any joined state is published (the voice bridge arms on it)
+  if (!msg.state) {
+    replica.reset(); report('snapshot', new Error('the server sent no world snapshot (an old server?)'));
     // an older server: not "live" with nothing loaded — say so, fail the queued says, hang up without a redial (#470)
     net.joined = false; net.status = 'rejected'; bus.emit('net', net); failSays();
     toast('this server is older than the page: nothing will load — reload once it is updated', 'warn', 60000);
@@ -1259,7 +1259,7 @@ async function onSnapshot(msg) {
 
   // remote avatars build in parallel and never block log replay — the
   // roster is an AUTHORITY: a same-id record here is a fresh generation
-  identities.clear(); guests.clear(); if (msg.cut?.you) net.you = msg.cut.you;
+  identities.clear(); guests.clear(); if (msg.you) net.you = msg.you;
   for (const p of msg.present) {
     if (p.actorId) identities.set(p.id, p.actorId);
     if (p.guest) guests.add(p.id);
@@ -1268,10 +1268,17 @@ async function onSnapshot(msg) {
       .catch((e) => report(`present ${p.id}`, e));
   }
 
-  // State adopts the snapshot FIRST, synchronously: the authority's own cut, drawn as the view of THIS client's fold of it
-  // (the snapshot's `state` is the chat window: chat isn't world state).
-  replica.adopt(msg.cut); bus.emit('my-acts', msg.cut.mine ?? []); bus.emit('cut-adopted'); bus.emit('holds', msg.cut.holds ?? {});
-  shadowHydrate(replica.view(msg.state), typeof msg.throughSeq === 'number' ? msg.throughSeq : -1);
+  // State adopts the snapshot FIRST, synchronously: the authority's own fold, drawn as the view of THIS client's fold of it
+  // (the snapshot's `chat` is the chat window: chat isn't world state). A {dialect, v, minor} this page doesn't read is refused
+  // whole (D5): nothing is folded, and the page says so instead of half-reading the world.
+  if (!replica.adopt(msg)) {
+    report('snapshot', new Error(`unknown-version: the world speaks ${msg.dialect} v${msg.v} minor ${msg.minor}; this page reads another`));
+    net.joined = false; net.status = 'rejected'; bus.emit('net', net); failSays();
+    toast(`this world's log is a version this page doesn't read (${msg.dialect} v${msg.v} minor ${msg.minor}): nothing will load — reload once the page is updated`, 'warn', 60000);
+    return;
+  }
+  bus.emit('my-acts', msg.mine ?? []); bus.emit('snapshot-adopted'); bus.emit('holds', msg.holds ?? {});
+  shadowHydrate(replica.view(msg.chat), typeof msg.throughSeq === 'number' ? msg.throughSeq : -1);
   rememberWorld();   // the door said yes, and the shadow now holds what is here
   forgetEmptyWorld();   // …or holds nothing, and a bare link should stop leading here
 
@@ -1285,9 +1292,9 @@ async function onSnapshot(msg) {
     bus.emit('live-entry', e);
   }
 
-  const rc = msg.state?.recentChat ?? [];
+  const rc = msg.chat?.recentChat ?? [];
   noteHistoryContext({
-    total: msg.state?.chatTotal ?? null,
+    total: msg.chat?.chatTotal ?? null,
     // what was ACTUALLY rendered: the window is exactly state.recentChat
     // (tail says beyond its 40-line cap are not re-played — they are
     // fetchable by paging, and this count is what makes the "showing N of

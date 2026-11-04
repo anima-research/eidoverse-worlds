@@ -37,7 +37,7 @@ const guestKind = (w, id) => { if (typeof id !== "string" || !w.kindOf || RESERV
  *  (pending). A host seeds {n, made} from its fold cache (server/foldviews.ts), every id pending, as a scan from genesis has it. */
 export function guestScan(w, G = (w.__guests ??= { n: 0, made: new Map(), pending: new Map(), ids: new Map() })) {
   for (; G.n < w.entries.length; G.n++) { const e = w.entries[G.n]; if (!isE(e) || e.kind !== "change") continue; let rights;
-    for (const o of opsQuiet(e)) { if (o.verb === "create") { if (rights === undefined) rights = entryBy(w, e).rights; G.made.set(o.id, rights); G.pending.set(o.id, rights); } else if (o.verb === "delete" && o.comp === undefined) { G.made.delete(o.id); G.pending.delete(o.id); G.ids.delete(o.id); } } }
+    for (const o of opsQuiet(e)) { if (o.op === "create") { if (rights === undefined) rights = entryBy(w, e).rights; G.made.set(o.id, rights); G.pending.set(o.id, rights); } else if (o.op === "delete" && o.comp === undefined) { G.made.delete(o.id); G.pending.delete(o.id); G.ids.delete(o.id); } } }
   return G;
 }
 function guestMade(w, st, s = st) {
@@ -49,7 +49,7 @@ function guestMade(w, st, s = st) {
 const entityCount = (st) => Object.keys(st.entities).length - (st.entities["@world"] ? 1 : 0);
 function capacityCheck(w, st, s, who, norm) {
   if (who.lifting) return;   // the maintenance command's lift carries what the log already holds (sockets in the old spelling): never refused
-  const made = norm.filter((o) => o.verb === "create" && s.entities[o.id]).length;
+  const made = norm.filter((o) => o.op === "create" && s.entities[o.id]).length;
   // the hosts that sockets join in this write (made, re-parented onto one, or a thing made one): one holds at most SOCKETS_PER_HOST
   const joined = new Set();
   for (const id of new Set(norm.map((o) => o.id))) { const now = s.entities[id]?.c, was = st.entities[id]?.c;

@@ -7,8 +7,8 @@
 //                                                 red; a no-op control mutation must stay green
 // Rows:
 //   H   authorship never comes from a follow-up: a reference clear (or its undo) is named in its change entry
-//       (`followUps`), and who set up a handler skips it, live and read back from disk; only a recorded follow-up is
-//       restored as one by undo (holes L2); the fold takes `followUps` only well formed
+//       (`cascade`), and who set up a handler skips it, live and read back from disk; only a recorded follow-up is
+//       restored as one by undo (holes L2); the fold takes `cascade` only well formed
 //   M   the occupant exemption is the seat's assembly as it was when the occupant sat (a handler added since unseats them)
 //   E   a station's leaveBy "script" keeps the occupant's escape (sockbody, the agent's detach {escape})
 //   A   the auditor re-runs an arrival with two stand-ins: agreeing re-runs are compared with the log (a forgery is flagged)
@@ -30,10 +30,10 @@ const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? a
 
 // [name, file under the tree, find, replace, rows]
 const MUTANTS: [string, string, string, string, string[]][] = [
-  ["follow-ups not recorded in the entry", "shared/protocol/authority/writes.js", "body: { ops, ...(fu.length ? { followUps: [...fu] } : {}) }", "body: { ops }", ["H1", "H2", "H3", "H4"]],
+  ["follow-ups not recorded in the entry", "shared/protocol/authority/writes.js", "body: { ops, ...(fu.length ? { cascade: [...fu] } : {}) }", "body: { ops }", ["H1", "H2", "H3", "H4"]],
   ["lastTouch {authored} reads follow-ups as authors", "shared/protocol/authority/followups.js", "if (fu?.has(k)) { if (o.verb === \"set\") { restored = true; continue; } if (o.verb === \"delete\" && restored) { restored = false; continue; } return null; }", "", ["H1", "H2", "H3"]],
   ["undo marks any ref restore as a follow-up", "shared/protocol/authority/undo.js", "if (!goneHere.size || !fuHere.has(o) ||", "if (!goneHere.size ||", ["H5"]],
-  ["the fold takes any followUps", "shared/protocol/fold.js", "if (\"followUps\" in body) followUpsCheck(body.followUps, body.ops.length);", "", ["H6"]],
+  ["the fold takes any cascade", "shared/protocol/fold.js", "if (\"cascade\" in body) followUpsCheck(body.cascade, body.ops.length);", "", ["H6"]],
   ["the exemption ignores when the occupant sat", "shared/protocol/authority/occupants.js", "if (own && rootOf(s.to) === own && unchangedSinceSat(s.since)) continue;", "if (own && rootOf(s.to) === own) continue;", ["M1", "M2"]],
   ["no escape from a script seat", "shared/sockbody.js", "if (kind === 'script' || kind === 'escape') return true;", "if (kind === 'script') return true;", ["E1", "E2"]],
   ["the auditor skips every arrival mismatch", "shared/protocol/scriptaudit.js", "if (!parts.length) { skipped.push(", "if (true) { skipped.push(", ["A1"]],
@@ -113,7 +113,7 @@ function session() {
 const show = (r: any) => (r?.crashed ? `CRASH ${r.crashed}` : r?.ok ? "ok" : `refused ${r?.refused?.code}: ${String(r?.refused?.reason).slice(0, 160)}`);
 const comp = (s: any, id: string, c: string) => s.w().state().entities[id]?.c[c];
 const roles = (s: any, m: Record<string, string>) => { for (const [who, role] of Object.entries(m)) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } }); };
-const lastUse = (s: any) => s.entries().findLast((e: any) => e.kind === "act" && e.verb === "use");
+const lastUse = (s: any) => s.entries().findLast((e: any) => e.kind === "request" && e.verb === "use");
 const SEAT = (extra: any = {}) => ({ sockets: { a: { pos: [0, 0.45, 0], body: { action: "sit", ...extra } } } });
 const seated = (s: any, who: string) => !!s.w().presence.occupants?.[who];
 const inboxOf = (s: any, who: string) => JSON.stringify(s.w().presence.inbox?.[who] ?? s.w().presence.inboxes?.[who] ?? null);
@@ -136,17 +136,17 @@ const cases: Case[] = [
       const c = lever(s);
       const d = s.call("olive", "delete", { id: "x" });
       const g = s.call("vic", "use", { id: "lever", action: "go" }), l = s.call("vic", "use", { id: "lever", action: "lit" });
-      const uses = s.entries().filter((e: any) => e.kind === "act" && e.verb === "use");
+      const uses = s.entries().filter((e: any) => e.kind === "request" && e.verb === "use");
       return { c: show(c), d: show(d), cleared: JSON.stringify(d.notes ?? []).includes("lever.reactions.go.targets"), g: show(g), l: show(l), statue: comp(s, "statue", "transform")?.pos,
         olive: uses.some((e: any) => e.body?.capability?.author === "olive") }; },
     good: (o) => o.c === "ok" && o.d === "ok" && o.cleared && /set up by bob/.test(o.g) && /set up by bob/.test(o.l) && JSON.stringify(o.statue) === "[9,0,0]" && !o.olive },
-  { id: "H2", what: "…read back from disk (no symbol survives JSON): the delete's change entry names its follow-up (`followUps`), and after a reload vic's use is still bob's", run(s) {
+  { id: "H2", what: "…read back from disk (no symbol survives JSON): the delete's change entry names its follow-up (`cascade`), and after a reload vic's use is still bob's", run(s) {
       lever(s); const d = s.call("olive", "delete", { id: "x" });
       const ch = s.entries()[d.seq]; s.reopen();
       const g = s.call("vic", "use", { id: "lever", action: "go" });
-      const ops = ch?.body?.ops ?? []; const fu = ch?.body?.followUps ?? [];
+      const ops = ch?.body?.ops ?? []; const fu = ch?.body?.cascade ?? [];
       return { d: show(d), verb: ch?.verb, fu, marked: fu.map((k: number) => `${ops[k]?.id}.${ops[k]?.comp}`), own: ops.filter((_: any, k: number) => !fu.includes(k)).map((o: any) => `${o.verb} ${o.id}`), g: show(g) }; },
-    good: (o) => o.d === "ok" && o.verb === "batch" && JSON.stringify(o.marked) === '["lever.reactions"]' && o.own.includes("delete x") && /set up by bob/.test(o.g) },
+    good: (o) => o.d === "ok" && o.op === "batch" && JSON.stringify(o.marked) === '["lever.reactions"]' && o.own.includes("delete x") && /set up by bob/.test(o.g) },
   { id: "H3", what: "the other way: owner olive's door {open: toggle, sweep: reset [builder vic's ball, her statue]}; vic deletes his ball, then is demoted; the door's handlers stay olive's (a visitor still opens it), inspect says the clear was a follow-up", run(s) {
       s.call("olive", "create-world", { title: s.name }); roles(s, { vic: "builder", wes: "member" });
       const b = s.call("vic", "create", { id: "ball", model: "crate", place: { at: [5, 0] } });
@@ -163,7 +163,7 @@ const cases: Case[] = [
       const u = s.call("olive", "undo", {}); const ch = s.entries()[u.seq];
       const g = s.call("vic", "use", { id: "lever", action: "go" });
       const ops = ch?.body?.ops ?? [];
-      return { u: show(u), targets: comp(s, "lever", "reactions")?.go?.targets, marked: (ch?.body?.followUps ?? []).map((k: number) => `${ops[k]?.id}.${ops[k]?.comp}`), g: show(g) }; },
+      return { u: show(u), targets: comp(s, "lever", "reactions")?.go?.targets, marked: (ch?.body?.cascade ?? []).map((k: number) => `${ops[k]?.id}.${ops[k]?.comp}`), g: show(g) }; },
     good: (o) => o.u === "ok" && JSON.stringify(o.targets) === '["statue","x"]' && JSON.stringify(o.marked) === '["lever.reactions"]' && /set up by bob/.test(o.g) },
   { id: "H5", what: "(q4, holes L2) vic's batch [set rr.look-at {target: z}, delete x] (rr looked at x); the owner locks rr; vic's undo would put x's reference back through the lock: refused (his own write was never a follow-up)", run(s) {
       s.call("olive", "create-world", { title: s.name }); roles(s, { vic: "builder" });
@@ -174,12 +174,12 @@ const cases: Case[] = [
       const u = s.call("vic", "undo", {});
       return { b: show(b), lk: show(lk), u: show(u), target: comp(s, "rr", "look-at")?.target, x: !!s.w().state().entities.x }; },
     good: (o) => o.b === "ok" && o.lk === "ok" && /locked/.test(o.u) && o.target === "z" && !o.x },
-  { id: "H6", what: "the fold takes `followUps` only well formed (non-empty, ascending, in range): anything else makes the entry malformed", run() {
-      const ops = [{ verb: "delete", id: "x" }, { verb: "set", id: "y", comp: "label", value: "a" }, { verb: "set", id: "z", comp: "label", value: "b" }];
-      const t = (f: any) => { try { F.opsOf({ kind: "change", verb: "batch", body: { ops, ...(f === undefined ? {} : { followUps: f }) } }); return "ok"; } catch (e) { return e?.code ?? String(e); } };
+  { id: "H6", what: "the fold takes `cascade` only well formed (non-empty, ascending, in range): anything else makes the entry malformed", run() {
+      const ops = [{ op: "delete", id: "x" }, { op: "set", id: "y", comp: "label", value: "a" }, { op: "set", id: "z", comp: "label", value: "b" }];
+      const t = (f: any) => { try { F.opsOf({ kind: "change", op: "batch", body: { ops, ...(f === undefined ? {} : { cascade: f }) } }); return "ok"; } catch (e) { return e?.code ?? String(e); } };
       return { none: t(undefined), good: t([1, 2]), empty: t([]), desc: t([2, 1]), dup: t([1, 1]), out: t([3]), neg: t([-1]), frac: t([1.5]), str: t("1"),
-        set: [...F.followUpsOf({ kind: "change", verb: "batch", body: { ops, followUps: [1, 2] } })] }; },
-    good: (o) => o.none === "ok" && o.good === "ok" && ["empty", "desc", "dup", "out", "neg", "frac", "str"].every((k) => o[k] === "batch-followups") && JSON.stringify(o.set) === "[1,2]" },
+        set: [...F.cascadeOf({ kind: "change", op: "batch", body: { ops, cascade: [1, 2] } })] }; },
+    good: (o) => o.none === "ok" && o.good === "ok" && ["empty", "desc", "dup", "out", "neg", "frac", "str"].every((k) => o[k] === "batch-cascade") && JSON.stringify(o.set) === "[1,2]" },
   // ---------------- M: the seat's own motion, as it was when you sat ----------------
   { id: "M1", what: "(q1) vic sits on olive's chair; builder bob adds a `fly` reaction to it, then uses it: it flies, and vic is unseated (told), not carried", run(s) {
       s.call("olive", "create-world", { title: s.name }); roles(s, { bob: "builder", vic: "member" });
@@ -225,7 +225,7 @@ const cases: Case[] = [
       const ins = s.call("olive", "set", { id: "door", component: "script:greet", value: { src: u.src, scope: { ids: "self", comps: ["t/n"] }, on: ["enter"] } });
       s.step(); const ran = D.presenceEvent(s.w(), "enter", "u-vicvicvicvicvicvicvi");
       const E = s.entries(); const A0 = AU.auditScripts(E, s.w().getBlob, { run: SB.runScript });
-      const L = JSON.parse(JSON.stringify(E)); const ai = L.findLastIndex((e: any) => e.kind === "act" && e.verb === "script");
+      const L = JSON.parse(JSON.stringify(E)); const ai = L.findLastIndex((e: any) => e.kind === "request" && e.verb === "script");
       const ci = L.findIndex((e: any, i: number) => i > ai && e.kind === "change" && e.cause === ai); L[ci] = JSON.parse(JSON.stringify(L[ci]).replace('"n":1', '"n":999'));
       const A1 = AU.auditScripts(L, s.w().getBlob, { run: SB.runScript });
       return { ins: show(ins), ran: ran?.[0]?.status, honest: { f: A0.flags.length, s: A0.skipped.length, r: A0.reran }, forged: { checks: A1.flags.map((f: any) => f.check), s: A1.skipped.length } }; },
@@ -270,7 +270,7 @@ const cases: Case[] = [
       const out: any = {}; for (const v of ["constructor", "toString", "__proto__", "hasOwnProperty", "valueOf"]) out[v] = show(s.call("olive", v, { x: 1 })); return out; },
     good: (o) => Object.values(o).every((x: any) => /^refused unknown-verb/.test(x)) },
   { id: "L2", what: "(holes L5) only the founding is the founding: a later create-world act (a refused attempt the log keeps) whose body is purged doesn't mark the log", run() {
-      const L = [{ kind: "genesis", body: {} }, { kind: "act", actor: "olive", verb: "create-world", body: { title: "t" } }, { kind: "act", actor: "vic", verb: "create-world", body: { commit: "0".repeat(64) } }];
+      const L = [{ kind: "genesis", body: {} }, { kind: "request", actor: "olive", verb: "create-world", body: { title: "t" } }, { kind: "request", actor: "vic", verb: "create-world", body: { commit: "0".repeat(64) } }];
       return { marked: SR.shapesMarked(L, (i: number) => (i === 2 ? null : L[i]?.body)), founding: SR.shapesMarked(L.slice(0, 2), (i: number) => (i === 1 ? null : L[i]?.body)) }; },
     good: (o) => o.marked === false && o.founding === true },
   { id: "L3", what: "(claims O2) an unlogged grab's activation records no identity (no trigger, no event.by; the script still hears `by`)", run(s) {
@@ -280,7 +280,7 @@ const cases: Case[] = [
       const u = s.call("olive", "upload", { text: 'world.on("grab", (e) => { world.set("self", "t/g", { heard: typeof e.by === "string" && e.by.length > 0 }); });' });
       const ins = s.call("olive", "set", { id: "cup", component: "script:watch", value: { src: u.src, scope: { ids: "self", comps: ["t/g"] }, on: ["grab"] } });
       s.call(WHO, "move", { to: [0, 0, 0.6] }); const g = s.call(WHO, "grab", { id: "cup" });
-      const act = s.entries().findLast((e: any) => e.kind === "act" && e.verb === "script");
+      const act = s.entries().findLast((e: any) => e.kind === "request" && e.verb === "script");
       return { ins: show(ins), g: show(g), heard: comp(s, "cup", "t/g")?.heard, logged: !!g.act || !!g.recorded, trigger: act?.body?.trigger ?? null, by: act?.body?.event?.by ?? null }; },
     good: (o) => o.ins === "ok" && o.g === "ok" && o.heard === true && (o.logged || (o.trigger === null && o.by === null)) },
   { id: "L4", what: "(claims O3) the translator that writes the repair-shapes marker is named @13 or later (both names; @14 renamed a motion type)", async run() {
