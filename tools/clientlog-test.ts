@@ -69,6 +69,8 @@ ok(keyed.join() === "200,".repeat(10) + "429", `R5b a door-key caller is a sende
 const rate = new ClientLogRate(); const t0 = 1_000_000;
 for (let i = 0; i < 10; i++) rate.admit("1.1.1.1", "s", t0);
 ok(rate.admit("1.1.1.1", "s", t0) === 20 && rate.admit("1.1.1.1", "s", t0 + 20_000) === null && rate.admit("1.1.1.1", "s", t0 + 20_000) === 20, "R7 a sender's token returns one every 20 s (30 per 10 min); Retry-After says 20");
+{ const r2 = new ClientLogRate(); for (let i = 0; i < 30; i++) r2.admit("2.2.2.2", "flood", t0);
+  ok(r2.admit("2.2.2.2", "quiet", t0) === null, "R8b a sender refused by its own bucket spends nothing from the address: a neighbour behind the same address still posts"); }
 ok(rate.admit("1.1.1.1", "other", t0) === null && rate.admit("1.1.1.2", "s", t0 + 20_001) !== null, "R8 another sender on the same address is its own bucket; a sender's bucket is the sender's across addresses");
 
 // ---- scrub at ingest; a private key refuses the whole request

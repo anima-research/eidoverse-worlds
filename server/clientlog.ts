@@ -27,14 +27,15 @@ export function ipBucketKey(addr: string): string {
   return groups.slice(0, 4).map((g) => g.replace(/^0+(?=.)/, "")).join(":") + "::/64";
 }
 
-/** Two token buckets a post spends from, the address's then the sender's (server/msgrate.ts: the house's bucket). */
+/** Two token buckets a post spends from, the sender's then the address's (server/msgrate.ts: the house's bucket): a sender
+ *  refused by its own bucket spends nothing from the address its neighbours share. */
 export class ClientLogRate {
   private ip = new Map<string, MsgBucket>(); private sender = new Map<string, MsgBucket>(); private sweptAt = 0;
   /** null when admitted, else the whole seconds until a token returns (Retry-After). */
   admit(addr: string, sender: string, now = Date.now()): number | null {
     if (now - this.sweptAt > 60_000) { this.sweptAt = now; for (const m of [this.ip, this.sender]) for (const [k, b] of m) if (now - b.at > WINDOW_MS) m.delete(k); }
-    return this.take(this.ip, ipBucketKey(addr), now, LIMITS.ipPer10Min, LIMITS.ipPer10Min)
-      ?? this.take(this.sender, sender, now, LIMITS.senderPer10Min, LIMITS.senderBurst);
+    return this.take(this.sender, sender, now, LIMITS.senderPer10Min, LIMITS.senderBurst)
+      ?? this.take(this.ip, ipBucketKey(addr), now, LIMITS.ipPer10Min, LIMITS.ipPer10Min);
   }
   private take(m: Map<string, MsgBucket>, key: string, now: number, per10Min: number, burst: number): number | null {
     let b = m.get(key); if (!b) { b = newBucket(burst); m.set(key, b); }
