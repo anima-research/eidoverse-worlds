@@ -1505,7 +1505,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   ok(!threw && cap0 === 1 && n === 70 && st.entities.wall.c.sockets === undefined, "SR2e the maintenance lift is a carry: a pre-cut host of 70 slots lifts whole, past the per-host ceiling and past a spent capacity.entities (1)", { threw, n, cap0 }); }
 
 // SRU (review 10-12 S2): undo across the maintenance lift. A pre-cut world: tbl has sockets {perch}, the bell is mounted on the
-// perch. Its writer is the door's own (translate-v1, then acts appended as a pre-cut door stored them); the load lifts it.
+// perch. Its writer is the door's own (translate-v1, then acts appended as a pre-cut door stored them); maintenance at open (AU.maintain) lifts it.
 const precut = (name, extra = [], acts = []) => {
   const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
     { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } }, { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "bob", role: "owner" } },

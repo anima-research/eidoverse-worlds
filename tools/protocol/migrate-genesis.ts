@@ -14,8 +14,10 @@
 //     (parsed, as JSON) in <world dir>/world.genesis-before.jsonl with both world ids; the whole old log is kept byte-exact, fsynced, as
 //     <world dir>/world.pre-genesis-migration.jsonl before the new one replaces it (durably: temp, fsync, rename, directory sync). (A newly translated world carries it as the
 //     `translated` act after genesis instead; an existing log can't gain an entry in the middle.)
-//   - every later line's `world` field is rewritten from the old id to the new one (that field's text only: number
-//     spellings kept, and a say or title quoting the old id keeps its words).
+//   - every later line's `"world":"<old id>"` is rewritten to the new id, in that exact spelling (JSON.stringify's, no
+//     space), anywhere in the line: a body carrying the same spelling is rewritten too; a say or title quoting the bare id
+//     keeps its words, and a line spelling the field with a space is not rewritten (the fold then drops it as world-mismatch,
+//     which the digest check below refuses).
 // SAFETY: a log is rewritten only if the state digest is the same before (the previous fold, from git --old-fold, default d4e0677a~1) and after
 // (today's fold AND the Python reference reader). Stop the world's server first: it holds the old world id in memory.
 // usage: bun tools/protocol/migrate-genesis.ts [--apply] <world dir>…   (dry run without --apply: writes nothing to the world or custody, mints no key; skips a log

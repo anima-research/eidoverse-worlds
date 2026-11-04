@@ -9,7 +9,7 @@ disagree, so the table can't drift.
 
 ```sh
 bun install --frozen-lockfile                 # in the checkout root, in client/, and in mcpl/
-bun tools/protocol/run.ts --siblings          # clones/pins ../agent-framework and ../mcpl-core-ts, installs mcpl/ (the preflight refuses without them)
+bun tools/protocol/run.ts --siblings          # clones/pins ../agent-framework, ../mcpl-core-ts and ../voice-kit (an existing checkout is moved to the pinned commit), installs mcpl/ (the preflight refuses without them)
 CHROME=/path/to/chrome EIDOVERSE_DIR=/path/to/eidoverse-video bun tools/protocol/run.ts    # or: bun run test:protocol
 ```
 

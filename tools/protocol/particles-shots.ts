@@ -5,7 +5,7 @@
 //   SHOTS=<dir> MODE=before|after bun tools/protocol/particles-shots.ts      (under the house guards: flock + perf-guard)
 //
 // Every shot writes {effect, seed} (the registry has no `preset`: componentspec.js particles). MODE labels the output dir only;
-// a baseline photographs an older checkout (serve it with --tree). Same seed, same place, same camera, same clock offset,
+// a baseline photographs an older checkout: run this script from that checkout (it serves its own tree; there is no --tree). Same seed, same place, same camera, same clock offset,
 // so the two photographs differ only by the renderer.
 // @ts-nocheck
 import fs from "node:fs";

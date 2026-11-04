@@ -3,9 +3,9 @@
 // it lives here and the client never imports it).
 //
 // Browser-loaded: import specifiers are ABSOLUTE (/lib/...), so the module
-// works served from anywhere — in practice an `upload {text}` request (act {verb: "upload", args: {text}}),
-// bound as script:<name> (docs/SCRIPTS.md), then `await import('/library/store/scripts/<hash>.js')`
-// from the browser console. Pure math lives in
+// works served from anywhere: serve it as a static module (copy it under client/lib/) and `await import('/lib/seatlab.js')`
+// from the browser console. (An `upload {text}` request stores a world-script blob, sha256:<hex>, for the
+// authority's scripts, not an importable URL.) Pure math lives in
 // /lib/seatcore.js where bun tests pin it; this file only observes scenes
 // and lab instances.
 //
