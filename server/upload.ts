@@ -505,8 +505,8 @@ export const SCRIPT_MOVED = "not stored: /upload?as=script went with the old pro
 const warnedQuery = new Set<string>();
 export async function handleUpload(req: Request, url: URL, srv: UploadSrv): Promise<Response> {
   const r = await uploadBy(req, url, srv);
-  if (url.searchParams.has("token") && !/^Bearer\s/i.test(req.headers.get("authorization") ?? "")) {
-    const ip = srv.requestIP?.(req)?.address ?? "?";
+  if (url.searchParams.has("token") && !bearerOf(req)) {
+    const ip = addressOf(req, srv);
     if (!warnedQuery.has(ip) && warnedQuery.size < 1024) { warnedQuery.add(ip); console.warn(`[upload] ?token= is deprecated; send Authorization: Bearer (from ${ip})`); }
     try { r.headers.set("Deprecation", "@1793664000"); } catch { /* an immutable response keeps its headers */ }
   }
