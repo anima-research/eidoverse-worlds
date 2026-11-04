@@ -76,7 +76,7 @@ does, and no role overrides it).
 | Q2: owners fly | yes by default (v1 had flight off even for owners) | **open** · never ruled |
 | Q3: guests | can't be set above the world's default role | **open** · never ruled |
 | Q4: `editWorld` | a permission (sky, weather, ground, the card, spawn, bounds); false = owner-only | **open** · never ruled |
-| Q5: bans below owner | at most 30 days; owners any length | **open** · never ruled |
+| Q5: bans below owner | any length, or until lifted, the same as an owner's (the ban power is the trust) | default · owner 11-03 |
 
 ### Known gap
 

@@ -72,10 +72,7 @@ const MOD_VERBS = {
     if (a.minutes !== undefined) refuse("shape", "a kick has no length: it removes them now and they may come back at once", "to keep them out for a while, ban {who, days, reason}");
     w.appendMod({ actor, verb: "kick", who: a.who, ...reasonOf(a) }); return { ok: true, kicked: a.who, ...t, logged: "moderator log" }; },
   ban: (w, actor, a) => { const t = personAct(w, actor, a, "ban", ["ban"], { noOwner: "banned" });
-    const owner = roleOf(w.state(), actor) === "owner";
-    if (a.days === undefined && !owner) refuse("rights", `a ban with no end needs an owner; you may ban for up to ${R.MOD_BAN_MAX_DAYS} days`, `ban {who, days: 1|7|${R.MOD_BAN_MAX_DAYS}, reason}`, { needs: "owner" });
-    if (a.days !== undefined && !(typeof a.days === "number" && a.days > 0 && a.days <= 3650)) refuse("shape", "ban.days is a number of days (more than 0)", "leave it out (owners) for a ban until lifted");
-    if (a.days !== undefined && a.days > R.MOD_BAN_MAX_DAYS && !owner) refuse("rights", `a ban longer than ${R.MOD_BAN_MAX_DAYS} days needs an owner`, `ban for ${R.MOD_BAN_MAX_DAYS} days or less, or ask an owner`, { needs: "owner" });
+    if (a.days !== undefined && !(typeof a.days === "number" && a.days > 0 && a.days <= 3650)) refuse("shape", "ban.days is a number of days (more than 0)", "leave it out for a ban until lifted");
     const until = a.days === undefined ? undefined : Math.floor(w.now() + a.days * 86400000);
     w.appendMod({ actor, verb: "ban", who: a.who, ...(until !== undefined ? { until } : {}), ...reasonOf(a) }); return { ok: true, banned: a.who, ...(until !== undefined ? { until } : { until: null }), ...t, logged: "moderator log" }; },
   unban: (w, actor, a) => { if (!isIdentity(a.who)) refuse("shape", "unban {who}", "");

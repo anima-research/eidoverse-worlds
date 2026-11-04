@@ -1142,8 +1142,8 @@ you made; publish blueprints), `editOthers` (change or delete what others
 made), `editWorld` (sky, weather, ground, the card, spawn, bounds), `generate`
 (add models or pictures: the world's credit), `fly`, `scripts` (install and
 edit scripts: they act with your rights), `pauseScripts` (pause scripts whose
-sponsor ranks below you), `mute`, `kick`, `ban` (keep someone out, up to the ban limit; owners any
-length), `grantRoles` (give or take roles below yours, with only permissions
+sponsor ranks below you), `mute`, `kick`, `ban` (keep someone out, for days or until
+lifted), `grantRoles` (give or take roles below yours, with only permissions
 you hold), `readChat` (read back what was said before you arrived, §5). Captions are granted per screen (`captioners`), not by role. An owner holds all
 of them. A guest (no account) starts as `member`, even where newcomers build; a world may raise all guests to at most its newcomer role (`default-role.guests`), and an owner may give one guest any role.
 

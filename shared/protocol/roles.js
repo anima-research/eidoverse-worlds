@@ -24,8 +24,6 @@ export const OWNERS_FLY = true;
 export const GUESTS_AT_MOST_DEFAULT = true;
 /** Q4: editWorld (sky, weather, ground, the card, spawn, bounds, fall) is a permission; false = those stay owner-only. */
 export const EDIT_WORLD_PERMISSION = true;
-/** Q5: a ban by anyone below owner is at most this many days; owners may ban for longer, or with no end. */
-export const MOD_BAN_MAX_DAYS = 30;
 
 // ---------------- the other caps (research §5) ----------------
 export const MUTE_MAX_MIN = 7 * 24 * 60;        // a mute lasts at most 7 days
@@ -58,7 +56,7 @@ const LIST = [
   ["pauseScripts", "pause or resume scripts whose sponsor ranks below you", []],
   ["mute", "mute someone's voice or chat for everyone, for a while (up to 7 days); warn them", []],
   ["kick", "remove someone now (they may come back at once); warn them", []],
-  ["ban", `keep someone out for up to ${MOD_BAN_MAX_DAYS} days (owners: any length); lift bans you may; warn them`, ["kick"]],
+  ["ban", "keep someone out, for days or until lifted; lift bans you may; warn them", ["kick"]],
   ["grantRoles", "give or take roles ranked below yours, with only permissions you hold", []],
   ["readChat", "read back what was said here before you arrived (the world's chat history)", []],
   ...(CAPTION_ON_SCREENS ? [] : [["caption", "caption a screen", []]]),

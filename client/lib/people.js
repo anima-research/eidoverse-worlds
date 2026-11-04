@@ -169,7 +169,7 @@ function closeCard() { card?.remove(); card = null; }
 /** The form: who (name + identity, small: homoglyphs), how long (preset chips), channels (mute), why (chips + text),
  *  confirm. In a strip (VR), kick/ban confirm with a second press on a confirm row. */
 export function openForm(verb, display, surface = 'card') {
-  const them = personOf(display), me = myself(); const owner = R.isOwner(me);
+  const them = personOf(display), me = myself();
   const st = { len: (PRESETS[verb] ?? [])[0]?.[0], forever: false, ch: new Set(['voice', 'chat']), reason: '', why: '' };
   const host = document.createElement('div'); host.className = 'pm-form'; host.dataset.verb = verb;
   const row = (cls, label) => { const r = document.createElement('div'); r.className = `pm-field ${cls}`; if (label) { const l = document.createElement('div'); l.className = 'pm-label'; l.textContent = label; r.append(l); } host.append(r); return r; };
@@ -180,7 +180,7 @@ export function openForm(verb, display, surface = 'card') {
   { const r = row('pm-who'); const n = document.createElement('b'); n.textContent = `${VERB[verb]} ${display}`; const i = document.createElement('code'); i.textContent = them.id ?? ''; i.title = 'their identity: the authority acts on this, never on a name';
     const p = document.createElement('p'); p.textContent = SAY[verb]; r.append(n, i, p); }
   if (PRESETS[verb]) {
-    const opts = [...PRESETS[verb], ...(verb === 'ban' && owner ? [['forever', 'until lifted']] : [])];
+    const opts = [...PRESETS[verb], ...(verb === 'ban' ? [['forever', 'until lifted']] : [])];
     chips(row('pm-len', 'for how long'), opts, (v) => (v === 'forever' ? st.forever : !st.forever && st.len === v), (v) => { if (v === 'forever') st.forever = true; else { st.forever = false; st.len = v; } });
   }
   if (verb === 'mute') chips(row('pm-ch', 'channels'), [['voice', 'voice'], ['chat', 'chat']], (v) => st.ch.has(v), (v) => { if (st.ch.has(v) && st.ch.size > 1) st.ch.delete(v); else st.ch.add(v); });

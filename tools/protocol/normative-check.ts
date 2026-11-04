@@ -84,8 +84,8 @@ const builtOk = can("member").length === 0 && /member: none/.test(built) && /bui
   && can("owner").length === R.PERMISSION_NAMES.length && /owner: all/.test(built);
 const caps = R.MUTE_MAX_MIN === 7 * 1440 && !("KICK_MAX_MIN" in R) && R.REASON_MAX === 500 && /mute ≤ 7 days · a kick has no length .* · reason ≤ 500/.test(roles);
 const qs = [["Q1", R.CAPTION_ON_SCREENS], ["Q2", R.OWNERS_FLY], ["Q3", R.GUESTS_AT_MOST_DEFAULT], ["Q4", R.EDIT_WORLD_PERMISSION]].every(([q, v]) => v === true && new RegExp(`^\\| ${q}[^\\n]*\\*\\*open\\*\\*`, "m").test(roles))
-  && R.MOD_BAN_MAX_DAYS === 30 && /^\| Q5[^\n]*at most 30 days[^\n]*\*\*open\*\*/m.test(roles);
-check("N4", "the roles ladder, permissions, built-in roles, caps and the five open defaults equal roles.js",
+  && !("MOD_BAN_MAX_DAYS" in R) && /^\| Q5[^\n]*any length[^\n]*owner 11-03/m.test(roles);
+check("N4", "the roles ladder, permissions, built-in roles, caps, the four open defaults and Q5 (ruled 11-03: no ban cap below owner) equal roles.js",
   want.every((w) => ladder.includes(w)) && perms.join() === R.PERMISSION_NAMES.join() && builtOk && caps && qs,
   { ladder: want.every((w) => ladder.includes(w)), perms: perms.join() === R.PERMISSION_NAMES.join() || `${perms} vs ${R.PERMISSION_NAMES}`, builtOk, caps, qs });
 

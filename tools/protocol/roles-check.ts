@@ -64,8 +64,6 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["person acts need their permission", "protocol/authority/moderation.js", "if (!powers.some((k) => me.can[k])) refuse(\"rights\"", "if (false) refuse(\"rights\"", ["M1", "M4", "M5", "M9"]],
   ["person acts only below you", "protocol/authority/moderation.js", "if (tr >= me.rank) refuse(\"rank\"", "if (false) refuse(\"rank\"", ["M1"]],
   ["owners can't be banned or kicked", "protocol/authority/moderation.js", "if (noOwner && them === \"owner\") refuse(", "if (false) refuse(", ["M1"]],
-  ["a ban with no end is an owner's", "protocol/authority/moderation.js", "if (a.days === undefined && !owner) refuse(", "if (false) refuse(", ["M1"]],
-  ["the moderator ban cap", "protocol/authority/moderation.js", "if (a.days !== undefined && a.days > R.MOD_BAN_MAX_DAYS && !owner) refuse(", "if (false) refuse(", ["M1"]],
   ["bans end by the clock", "protocol/authority.js", "const inForce = (w, m) => !!m && (m.until === undefined || m.until > w.now());", "const inForce = (w, m) => !!m;", ["M2", "M3"]],
   // the independent review (10-07)
   ["the strongest sanction in force wins", "protocol/authority.js", "const strongest = (a) => a.reduce(", "const strongest = (a) => a.slice(-1)[0] ?? null; const _s = (a) => a.reduce(", ["V1"]],
@@ -362,12 +360,12 @@ const cases: Case[] = [
     good: (o) => o.k === "ok" && o.r === "ok" && o.owners === 0 },
 
   // ---------------- M: S3 moderation tools ----------------
-  { id: "M1", what: "ban: a moderator bans a visitor for 7 days; banning a moderator, an owner, themself, or a visitor for 31 days is refused", run(s) { cast(s);
+  { id: "M1", what: "ban: a moderator bans a visitor for 7 days, for 31 days, or until lifted (owner 11-03: no cap below owner); banning a moderator, an owner or themself is refused", run(s) { cast(s);
       role(s, "mo2", { role: "moderator" });
       return { vic: show(s.call("mo", "ban", { who: "vic", days: 7, reason: "spam" })), self: code(s.call("mo", "ban", { who: "mo", days: 1 })), mo2: code(s.call("mo", "ban", { who: "mo2", days: 1 })),
-        own: code(s.call("mo", "ban", { who: "olive", days: 1 })), long: code(s.call("mo", "ban", { who: "ann", days: 31 })), forever: code(s.call("mo", "ban", { who: "ann" })),
+        own: code(s.call("mo", "ban", { who: "olive", days: 1 })), long: show(s.call("mo", "ban", { who: "ann", days: 31 })), forever: show(s.call("mo", "ban", { who: "bea" })),
         bob: code(s.call("bob", "ban", { who: "vic", days: 1 })) }; },
-    good: (o) => o.vic === "ok" && o.self === "rank" && o.mo2 === "rank" && o.own === "rights" && o.long === "rights" && o.forever === "rights" && o.bob === "rights" },
+    good: (o) => o.vic === "ok" && o.self === "rank" && o.mo2 === "rank" && o.own === "rights" && o.long === "ok" && o.forever === "ok" && o.bob === "rights" },
   { id: "M2", what: "ban: an owner bans with no end; a timed ban ends by the authority's clock (no record written when it ends)", run(s) { cast(s);
       const a = s.call("olive", "ban", { who: "ann" }); const b = s.call("mo", "ban", { who: "vic", days: 1 }); const n = s.w().mod.length;
       const during = { ann: D.isBanned(s.w(), "ann"), vic: D.isBanned(s.w(), "vic"), vicCall: code(s.call("vic", "look")) };
