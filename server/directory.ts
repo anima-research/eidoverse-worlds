@@ -86,7 +86,9 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
     for (const [id, e] of Object.entries(disk.ids ?? {})) if (!d.ids[id]) { d.ids[id] = unkind(e); index(id, e); } else takeBinds(id, e); };
   // another writer's change since this process last looked (the file's mtime moved): re-read, for the reads that don't mint
   let seen = -1; const fresh = () => { try { const m = fs.statSync(file).mtimeMs; if (m !== seen) { seen = m; refresh(); } } catch { /* no file yet */ } };
-  const add = (e: Entry) => { let id = mintId(); while (d.ids[id] || anon.has(id)) id = mintId(); d.ids[id] = e; index(id, e); save(); return id; };
+  const add = (e: Entry) => { let id = mintId(); while (d.ids[id] || anon.has(id)) id = mintId(); d.ids[id] = e; index(id, e);
+    try { save(); } catch (err) { delete d.ids[id]; for (const s of e.subs) byKey.delete(e.world ? `${s}|${e.world}` : s); throw err; }   // not written: not held either
+    return id; };
   const get = (id: string) => d.ids[id] ?? anon.get(id) ?? null;
   /** …claimed by an account OTHER than `sub` (security pass 3, H2: an account-holder may not appear under a name another
    *  account wears in this directory, present or not — the presence plane is read by people, who read names) */

@@ -620,6 +620,12 @@ process.stdout.write(directoryAt(${JSON.stringify(f)}, slow).resolve({ sub: "hum
   ok(/already wears/.test(threw) && wearers.length === 1 && wearers[0] === a, "DW13 a bind of an account another writer bound since this process read the file is refused: one account, one id", { threw, wearers });
   let threw2 = ""; try { srv.put({ ["u-" + "b".repeat(20)]: { name: "Cat", subs: ["human:ava"], kind: "account", since: 1 } }); } catch (e) { threw2 = String((e as Error)?.message ?? e); }
   ok(/already wears/.test(threw2), "DW13b …and a put of one is refused the same way", threw2); }
+// DW54: an id whose save failed is not held in memory: the next sight of the account mints again
+{ const f = path.join(tmp, "nosave", ".directory.json"); const d = directoryAt(f); const o = fs.renameSync;
+  (fs as any).renameSync = () => { throw new Error("disk full"); };
+  let threw = ""; try { d.resolve({ sub: "human:lost", name: "Lost" }); } catch (e) { threw = String((e as Error)?.message ?? e); } finally { (fs as any).renameSync = o; }
+  ok(/disk full/.test(threw) && d.idOfSub("human:lost") === null && isMinted(d.resolve({ sub: "human:lost", name: "Lost" })) && d.idOfSub("human:lost") !== null,
+    "DW54 a save that throws leaves no id behind for the account: the throw reaches the caller, the next resolve mints and writes", { threw, held: d.idOfSub("human:lost") }); }
 fs.rmSync(tmp, { recursive: true, force: true });
 // D40 (bot #369; R 11-03: an id is a person, never a world, a name or a kind): the ONE id shape, and the places that may make one.
 // A stand-in for an imported name is a directory row with kind "imported", made by directory.imported and the old-world translator
