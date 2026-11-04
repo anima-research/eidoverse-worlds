@@ -212,6 +212,17 @@ const WALK = PLAN.levels[0].y;
   resolveColliders(atDoor, flat);
   check('scale3 [2,1,1]: the widened doorway lets a body stand in it (x 1.5)', Math.abs(atDoor.z) < 1e-6 && Math.abs(atDoor.x - 1.5) < 1e-6,
     `(${atDoor.x.toFixed(3)}, ${atDoor.z.toFixed(3)})`);
+  // mirrored (a negative scale, as the drawn group takes it): every box registers, flipped through the origin on all three axes
+  clean();
+  const nm = fitStructureBoxes('mirror', PLAN.boxes, { ...AT, scale: -1 });
+  const mirrored = structureBoxIds('mirror').map((i) => colliders.get(i) as any);
+  check('scale -1: a mirrored building registers every box, below and left of the origin', nm === PLAN.boxes.length + 1 && mirrored.length === nm && mirrored.every((e) => e.box.max.x <= 1e-9 && e.box.max.y <= 1e-9),
+    JSON.stringify({ n: nm, boxes: mirrored.map((e) => [e.box.min.toArray(), e.box.max.toArray()]) }));
+  clean();
+  fitStructureBoxes('mirror3', PLAN.boxes, { ...AT, scale: 1, scale3: [-2, 1, 1] });
+  const atMirror3 = new THREE.Vector3(-3, WALK, 0);
+  resolveColliders(atMirror3, flat);
+  check('scale3 [-2,1,1]: the mirrored, widened solid segment pushes a body out (x -3)', Math.abs(atMirror3.z) > 0.01, `z=${atMirror3.z.toFixed(3)}`);
   // laid on its back (90° about x): the wall is a slab at grade, not a wall where it stood
   clean();
   const h = Math.SQRT1_2;
