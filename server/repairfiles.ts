@@ -13,12 +13,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { replaceDurable, syncDir, mkdirDurable } from "./durable.ts";
+import { replaceDurable, syncDir, syncFile, mkdirDurable } from "./durable.ts";
 
 export const BACKUPS = "repair-backups";
 const LOG = "world.jsonl";
 const sha256 = (b: Buffer) => crypto.createHash("sha256").update(b).digest("hex");
-const fsyncFile = (f: string) => { const fd = fs.openSync(f, "r+"); try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); } };
 const measure = (f: string) => { const b = fs.readFileSync(f); return { size: b.length, sha256: sha256(b) }; };
 
 export type Manifest = { stamp: string; command: string; by?: string | null; before: { size: number; sha256: string }; after?: { size: number; sha256: string } };
@@ -29,7 +28,7 @@ export function backupBeforeRepair(dir: string, { by = null as string | null, co
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const out = path.join(dir, BACKUPS, stamp);
   mkdirDurable(out);   // copyFileSync syncs nothing: the copy, its manifest and their names are synced (bot review #260 8)
-  fs.copyFileSync(log, path.join(out, LOG)); fsyncFile(path.join(out, LOG));
+  fs.copyFileSync(log, path.join(out, LOG)); syncFile(path.join(out, LOG));
   const before = measure(path.join(out, LOG));
   if (before.sha256 !== measure(log).sha256) throw new Error(`the backup of ${log} doesn't match the file (it changed while being copied)`);
   const m: Manifest = { stamp, command, by, before };
@@ -65,7 +64,7 @@ export function rollbackRepair(dir: string, { force = false } = {}): Rollback {
   if (!m.after && !force) return { ok: false, backup: b, why: `this backup was never sealed (the repair may have died mid-write): what the repair wrote and what came after it can't be told apart, so later writes could be lost. --force restores anyway` };   // bot review #260 4
   if (m.after && now.length > m.after.size && !force) return { ok: false, backup: b, why: `the log has grown since the repair (${now.length} bytes, ${m.after.size} right after it): ${now.length - m.after.size} bytes of later writes would be lost. --force restores anyway` };
   if (m.after && now.length === m.after.size && sha256(now) !== m.after.sha256 && !force) return { ok: false, backup: b, why: `the log was rewritten since the repair (same size, different bytes): refusing; --force restores anyway` };
-  const tmp = log + ".rollback-tmp"; fs.copyFileSync(path.join(b, LOG), tmp); fsyncFile(tmp); fs.renameSync(tmp, log); syncDir(dir);
+  const tmp = log + ".rollback-tmp"; fs.copyFileSync(path.join(b, LOG), tmp); syncFile(tmp); fs.renameSync(tmp, log); syncDir(dir);
   const got = measure(log);
   if (got.sha256 !== m.before.sha256 || got.size !== m.before.size) throw new Error(`rollback wrote ${log} but it doesn't match the backup (${got.sha256} vs ${m.before.sha256})`);
   return { ok: true, restored: got, backup: b, dropped: now.length - saved.length };

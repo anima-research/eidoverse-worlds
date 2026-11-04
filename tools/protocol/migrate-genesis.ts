@@ -27,7 +27,7 @@ import { readLog, fold, digest, worldIdOf, parseLine, DIALECT, VERSION } from ".
 import { custodyAt } from "../../server/custody.ts";
 import { custodyFileIn } from "../../server/keyfiles.ts";
 import { ENGINE } from "./common.ts";
-import { appendDurable, replaceDurable, syncDir, writeAll } from "../../server/durable.ts";
+import { appendDurable, replaceDurable } from "../../server/durable.ts";
 
 const apply = process.argv.includes("--apply");
 const KEPT = "world.pre-genesis-migration.jsonl";   // the old log, whole, kept beside the migrated one
@@ -73,7 +73,7 @@ try {
     const kept = path.join(dir, KEPT);
     if (same && apply && fs.existsSync(kept) && !fs.readFileSync(kept).equals(raw)) { out.push({ dir, shape, refused: `${kept} already holds other bytes: move it aside first. Nothing was changed.` }); continue; }
     if (same && apply) {
-      if (!fs.existsSync(kept)) { const t = `${kept}.tmp`, fd = fs.openSync(t, "w"); try { writeAll(fd, raw); fs.fsyncSync(fd); } finally { fs.closeSync(fd); } fs.renameSync(t, kept); syncDir(dir); }   // the whole old log, durable, before it is replaced (bot review #260 10)
+      if (!fs.existsSync(kept)) replaceDurable(kept, raw);   // the whole old log, durable, before it is replaced (bot review #260 10)
       appendDurable(path.join(dir, "world.genesis-before.jsonl"), JSON.stringify({ oldId, newId, genesis: g, at: new Date().toISOString() }));
       replaceDurable(f, next);
     }

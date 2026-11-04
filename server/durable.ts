@@ -58,14 +58,19 @@ export function syncDir(dir: string) {
   try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
 }
 
+/** fsync one file's bytes (a copy just made: copyFileSync syncs nothing). Windows flushes a file only through a handle
+ *  opened for writing (FlushFileBuffers); POSIX blobs may be read-only. */
+export function syncFile(p: string) {
+  const fd = fs.openSync(p, process.platform === "win32" ? "r+" : "r");
+  try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+}
 /** fsync every file and directory under `dir`, deepest first, `dir` included: a tree copied with cpSync (a fork's blobs)
  *  is written but not durable until each file's bytes and each directory's entries are synced. */
 export function syncTree(dir: string) {
   for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, ent.name);
     if (ent.isDirectory()) syncTree(p);
-    // Windows flushes a file only through a handle opened for writing (FlushFileBuffers); POSIX blobs may be read-only
-    else if (ent.isFile()) { const fd = fs.openSync(p, process.platform === "win32" ? "r+" : "r"); try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); } }
+    else if (ent.isFile()) syncFile(p);
   }
   syncDir(dir);
 }
@@ -83,11 +88,11 @@ export function mkdirDurable(dir: string) {
 
 /** Replace `file` with `data`, atomically and durably: written whole to a temp file (`mode`, set before the data goes in)
  *  and synced, renamed over `file`, and the directory that holds the new name synced. */
-export function replaceDurable(file: string, data: string, mode = 0o644) {
+export function replaceDurable(file: string, data: string | Uint8Array, mode = 0o644) {
   mkdirDurable(path.dirname(file));
   const tmp = `${file}.${process.pid}.tmp`;
   const fd = fs.openSync(tmp, "w", mode);
-  try { fs.fchmodSync(fd, mode); writeAll(fd, Buffer.from(data, "utf8")); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+  try { fs.fchmodSync(fd, mode); writeAll(fd, typeof data === "string" ? Buffer.from(data, "utf8") : data); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
   fs.renameSync(tmp, file);
   syncDir(path.dirname(file));   // the new name, in its directory
 }

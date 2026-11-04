@@ -15,7 +15,7 @@ import crypto from "node:crypto";
 import path from "node:path";
 import { WORLDS_DIR, STATE_CACHE_EVERY, SIM_CHECKPOINT_EVERY, RATE_POLICY } from "./config.ts";
 import { directoryFor } from "./directory.ts";
-import { mkdirDurable, replaceDurable, syncDir, syncTree } from "./durable.ts";
+import { mkdirDurable, replaceDurable, syncDir, syncFile, syncTree } from "./durable.ts";
 import { forkCopy, operatorRepair as authorityOperatorRepair, request as authorityRequest, actIndexOf, roleIn, isBanned, muteOf, sanctionsNow, effectiveIn, seniorOwnerOf, tick as authorityTick, settle as authoritySettle, checkpointNow as authorityCheckpointNow, presenceEvent, scriptsView, settleOrphans, liftWorld, reachAdmits, reachLetGo, noteRefused, expireRoles as authorityExpireRoles, drives as authorityDrives } from "../shared/protocol/authority.js";
 import { authorityTime } from "./readmeter.ts";
 import { txnOutcome, txnRefusal, wedgedOf } from "../shared/protocol/authority/storage.js";
@@ -576,7 +576,7 @@ export function forkWorld(src: WorldLog, to: string, forker: string): { ok: true
 /** `to` gets `from`'s bytes as a second name (a hard link), or as a synced copy where links aren't supported. */
 function keepCopy(from: string, to: string) {
   try { fs.linkSync(from, to); return; } catch (e: Any) { if (!["EPERM", "ENOTSUP", "EXDEV", "EOPNOTSUPP", "ENOSYS"].includes(e?.code)) throw e; }
-  fs.copyFileSync(from, to); const fd = fs.openSync(to, process.platform === "win32" ? "r+" : "r"); try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+  fs.copyFileSync(from, to); syncFile(to);
 }
 /** Reset: the world's log and remembered poses move into reset-<time>/ beside it (archived, never deleted; blobs
  *  stay: they're content), and a fresh genesis is founded by the same owners, its founding act naming the world it
