@@ -153,7 +153,7 @@ const seenErrors = new Map(); // key -> { n, nextAt }
 // Every report() plus window errors post to /clientlog. Off the hot path (queued, one POST per flush with the lines
 // joined), never throws, and never carries the key in the payload or the URL — it rides the Authorization header
 // (Bearer), below. `tee(line)` is for lines worth keeping ([xr] etc). The server's budget (server/clientlog.ts) is
-// honoured here: a 429 waits its Retry-After (60 s when unsaid) with the lines kept, a 413 keeps the newer half.
+// honoured here: a 429 waits its Retry-After (60 s when unsaid) with the lines kept; a batch (60 KB) is under its 256 KB.
 let teeQ = [], teeTimer = 0, teeMuted = false, teePausedUntil = 0;
 // Batched every 10 s and flushed as the page hides (Element 30 s, Sentry's buffer the same shape): fewer posts, no lost tail.
 const TEE_LINES = 2000, TEE_BYTES = 60 * 1024, TEE_DEBOUNCE_MS = 10000;   // 60 KB: under keepalive's 64 KB in-flight cap
@@ -170,15 +170,12 @@ function teeFlush() {
     fetch(url, { method: 'POST', body, headers, keepalive: true }).then((r) => {
       if (r.status === 401 || r.status === 404) teeMuted = true;
       else if (r.status === 429) { teePausedUntil = Date.now() + 1000 * (Number(r.headers.get('retry-after')) || 60); teeQ.unshift(...batch); }
-      else if (r.status === 413) teeQ.unshift(...batch.slice(batch.length >> 1));
       if (teeQ.length > TEE_LINES) teeQ.splice(0, teeQ.length - TEE_LINES);
       if (teeQ.length && !teeTimer) teeTimer = setTimeout(teeFlush, TEE_DEBOUNCE_MS);
     }).catch(() => {});
   } catch { /* the tee must never break the page */ }
   if (teeQ.length && !teeTimer) teeTimer = setTimeout(teeFlush, TEE_DEBOUNCE_MS);
 }
-/** For tests: what the tee holds and until when it waits. */
-export const teeState = () => ({ queued: teeQ.length, pausedUntil: teePausedUntil });
 const teeSeen = new Map();   // repeats cost one line, then one per 20
 export function tee(line) {
   try {
