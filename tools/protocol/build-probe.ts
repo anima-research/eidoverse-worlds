@@ -130,7 +130,7 @@ try {
     const n0 = myActs().length;
     await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: SX - 120, y: SY + 40 }); await sleep(200);
     await evalJson(`import('/lib/core.js').then((m) => (m.canvas.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: ${SX - 120}, clientY: ${SY + 40} })), true))`);
-    const placed = await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.op === "create");
+    const placed = await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.verb === "create");
     const t = myActs().at(-1)?.e.body?.request?.components?.transform;
     const yaw = t ? 2 * Math.atan2(t.q[1], t.q[3]) : null;
     check("GH4 the click places it turned and sized: ONE create, yaw −30°, scale 1.1", placed && Math.abs(yaw + Math.PI / 6) < 1e-3 && t.scale.every((v: number) => Math.abs(v - 1.1) < 1e-6), { t, acts: myActs().slice(n0).map((x) => x.e.verb) });
@@ -148,7 +148,7 @@ try {
     await evalJson(`(() => { const n = document.querySelector('#script-new .sn-name'); if (!n) return false; n.value = 'Greeter'; document.querySelector('#script-new .sn-ok').click(); return true; })()`);
     const made = await waitDisk(() => myActs().length === n0 + 1);
     const b = myActs().at(-1)?.e; const ops = b?.body?.request?.ops ?? [];
-    check("SC3 Create: ONE act, script:greeter + its use reaction (the upload isn't an act)", made && b.op === "batch" && ops.some((o: any) => o.args?.component === "script:greeter") && ops.some((o: any) => o.args?.component === "reactions"),
+    check("SC3 Create: ONE act, script:greeter + its use reaction (the upload isn't an act)", made && b.verb === "batch" && ops.some((o: any) => o.args?.component === "script:greeter") && ops.some((o: any) => o.args?.component === "reactions"),
       { acts: myActs().slice(n0).map((x) => x.e.verb), refused: await evalJson(`__refused.map((r) => r.text)`), card: await evalJson(`document.querySelector('#script-new .sn-err')?.textContent ?? null`) });
     check("SC4 …and the card closes", await waitFor(`!document.querySelector('#script-new')`));
     const used = await bobReq("use", { id: thing });

@@ -68,4 +68,4 @@ for(const name of Object.keys(meta.groups)){
 const {batch,uploads,deferred,mapped,unmapped}=requestsOf(records);
 const manifest={version:2,source:meta.world,coordinateSystem:corrected?'metres / Y-up / right-handed (-UE.Y,UE.Z,UE.X)':'metres / Y-up / legacy presence (UE.Y,UE.Z,UE.X)',files,requests:[batch],uploads,mapped,unmapped,deferred};
 writeFileSync(join(output,'manifest.json'),JSON.stringify(manifest,null,2)+'\n');
-console.log(JSON.stringify({manifest:join(output,'manifest.json'),files:files.length,ops:batch.args.ops.length,deferred:deferred.length,bytes:files.reduce((n,f)=>n+f.bytes,0)}));
+console.log(JSON.stringify({manifest:join(output,'manifest.json'),files:files.length,ops:batch.args.requests.length,deferred:deferred.length,bytes:files.reduce((n,f)=>n+f.bytes,0)}));

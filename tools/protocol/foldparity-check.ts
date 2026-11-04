@@ -117,7 +117,7 @@ async function equivalent(label, dir, { writes = true, wantTail = true, mustWrit
   else ok(onDisk(wa) === 0, `FP2 ${label}: a log whose views aren't carried boots whole`, { onDisk: onDisk(wa) });
   const d = first(readers(wa), readers(wb)); ok(!d, `FP2 ${label}: every reader answers as the whole-log boot`, d);
   if (writes && wa.state().status === "ok") {
-    const old = actIndexOf(wb).actsOf.get("rowan")?.find((q) => wb.entries[q].op === "set" && actIndexOf(wb).resultOf.has(q) && !actIndexOf(wb).undone.has(q));
+    const old = actIndexOf(wb).actsOf.get("rowan")?.find((q) => wb.entries[q].verb === "set" && actIndexOf(wb).resultOf.has(q) && !actIndexOf(wb).undone.has(q));
     const id = Object.keys(wb.state().entities).find((k) => k !== "@world");
     const steps = [["set", { id, component: "label", value: "after the boot" }], ["create", { id: "fp-new", components: { label: "new" } }], ...(old !== undefined ? [["undo", { act: old }]] : []), ["say", { text: "after the boot" }]];
     const replies = steps.map(([v, x]) => { T += 900; return [request(wa, "rowan", v, x), request(wb, "rowan", v, x)]; });

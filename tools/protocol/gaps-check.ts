@@ -267,7 +267,7 @@ const cases = [
       s.call("bob", "create", { id: "fat", model: "crate", components: { "lab/blob": "x".repeat(60000) }, place: { at: [0, 0] } });
       const h = s.call("bob", "publish", { from: "fat", name: "fat" }).notes?.find((n) => n.record)?.record;
       const n0 = s.world().entries.length;
-      const r = s.call("bob", "batch", { ops: Array.from({ length: 20 }, (_, i) => ({ verb: "create", args: { from: h, id: `fat-${i}` } })) });
+      const r = s.call("bob", "batch", { requests: Array.from({ length: 20 }, (_, i) => ({ verb: "create", args: { from: h, id: `fat-${i}` } })) });
       const L = s.world().entries.slice(n0); return { r: show(r), newActs: L.filter((e) => e.kind === "request").length, newChanges: L.filter((e) => e.kind === "change").length,
         refusedAct: L.filter((e) => e.kind === "request" && e.body?.refused?.code === "too-big").length }; },
     // never an act that claims success with no result (33 C2); since round-2 R7 the refusal itself IS recorded, as an act
@@ -283,7 +283,7 @@ const cases = [
   { id: "G3g", guard: true, what: "one 300 KiB batch in an empty window is over the 256 KiB budget: refused, not written", run(s) { cast(s);
       s.call("bob", "create", { id: "c", model: "crate", place: { at: [0, 0] } });
       const before = s.world().entries.length;
-      const r = s.call("bob", "batch", { ops: Array.from({ length: 600 }, (_, i) => ({ verb: "set", args: { id: "c", component: "description", value: `${i} ` + "d".repeat(490) } })) }, 10000);
+      const r = s.call("bob", "batch", { requests: Array.from({ length: 600 }, (_, i) => ({ verb: "set", args: { id: "c", component: "description", value: `${i} ` + "d".repeat(490) } })) }, 10000);
       return { r: show(r), code: code(r), written: s.world().entries.length - before }; },
     nowGood: (o) => o.code === "rate" && o.written === 0 },
   // H1 (holes review 10-15): the cap above kept the authority's array at 200, and forwardInbox forwarded by array LENGTH,

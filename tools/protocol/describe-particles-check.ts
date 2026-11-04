@@ -348,7 +348,7 @@ const cases: Case[] = [
         const live = { effects: (b: string) => (b === h ? d : null) }; const ent = { model: "lamp.glb", pos: [0, 0, 0], yaw: 0, actor: "r", ts: 1, particles: { effect: h } };
         const rows = E.inspectSchema(ent, "l", live).groups.flatMap((g: any) => g.fields ?? []);
         const row = rows.find((f: any) => f.k === "param|cone"), glow = rows.find((f: any) => f.k === "param|glow");
-        const r = E.editOps(ent, "l", { "particles.param|cone": "30" }, live); const v = r.ops.flatMap((o: any) => o.op === "batch" ? o.args.ops : [o]).find((o: any) => o.args?.component === "particles")?.args?.value;
+        const r = E.editOps(ent, "l", { "particles.param|cone": "30" }, live); const v = r.ops.flatMap((o: any) => o.verb === "batch" ? o.args.requests : [o]).find((o: any) => o.args?.component === "particles")?.args?.value;
         return { deg: row?.deg, glowDeg: glow?.deg, stored: v?.params?.cone, errors: r.errors }; }); },
     good: (o) => o.deg === true && !o.glowDeg && Math.abs(o.stored - Math.PI / 6) < 1e-3 },
   { id: "P10", what: "fire's former address (stored for a day before its angles became radians) still reads as fire; its pinned address is its new document's hash", run() {

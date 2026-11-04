@@ -117,7 +117,7 @@ const cases: Case[] = [
       const r = s.call("vic", "set", { id: "lamp", component: "label", value: "my phone is 555-0100" });
       const a = lastAct(s);
       return { r: code(r), verb: a?.verb, body: a?.body, log: JSON.stringify(s.entries()).includes("555-0100") }; },
-    good: (o) => o.r === "rights" && o.op === "set" && JSON.stringify(o.body?.args) === '["component","id","value"]' && o.body?.refused?.code === "rights" && !("request" in (o.body ?? {})) && !o.log },
+    good: (o) => o.r === "rights" && o.verb === "set" && JSON.stringify(o.body?.args) === '["component","id","value"]' && o.body?.refused?.code === "rights" && !("request" in (o.body ?? {})) && !o.log },
   { id: "L2", what: "…argument names are the verb's own (VERBSPEC): a name the verb doesn't take is counted, never written (a key is text too)", run(s) { cast(s);
       const r = s.call("vic", "set", { id: "nothing", component: "label", value: 1, "call me on 555-0100": true });
       const a = lastAct(s);
@@ -129,7 +129,7 @@ const cases: Case[] = [
       const ring = D.refusalRing ? D.refusalRing(s.w()) : [];
       const big = s.call("vic", "set", { id: "lamp", component: "label", value: "x".repeat(5000) }); const ring2 = D.refusalRing ? D.refusalRing(s.w()) : [];
       return { last: ring.at(-1), bigLen: JSON.stringify(ring2.at(-1) ?? {}).length, reopened: D.refusalRing ? D.refusalRing(s.reopen()).length : -1, big: code(big) }; },
-    good: (o) => o.last?.op === "set" && o.last?.actor === "vic" && o.last?.code === "rights" && /hello there/.test(o.last?.args ?? "") && o.bigLen < 2600 && o.reopened === 0 },
+    good: (o) => o.last?.verb === "set" && o.last?.actor === "vic" && o.last?.code === "rights" && /hello there/.test(o.last?.args ?? "") && o.bigLen < 2600 && o.reopened === 0 },
   { id: "L4", what: "…an invented verb is recorded as `unknown-verb` with no arguments at all: its name is the visitor's text, so it goes to the ring only (scars r8 M3)", run(s) { cast(s);
       const r = s.call("vic", "call-me-on-5550100", { secret: "555-0100" }); const a = lastAct(s);
       const ring = D.refusalRing ? D.refusalRing(s.w()) : [];
@@ -247,7 +247,7 @@ const cases: Case[] = [
   { id: "Q1", what: "an owner named the engine's version; its cause act's body is purged (in memory, and as the stored {commit} stub): the server never restamps it", run(s) { cast(s);
       const OLD = "eidosim@0.9.0";   // a version this server doesn't carry, of an engine it does: restampable unless the owner chose it
       const set = s.call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: OLD } });
-      const actSeq = s.entries().findLastIndex((e: any) => e.kind === "request" && e.op === "set");
+      const actSeq = s.entries().findLastIndex((e: any) => e.kind === "request" && e.verb === "set");
       const w = s.w(); clock.advance(100); w.append({ kind: "redaction", actor: "system", body: { values: [{ seq: actSeq }] } });
       s.reopen(); s.call("olive", "look", {});
       const restamp1 = s.entries().filter((e: any) => e.verb === "restamp-engine").length;

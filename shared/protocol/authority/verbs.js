@@ -131,20 +131,22 @@ function buildBatch(ctx, a, w) { {
       const forget = (x) => { SPATIAL.delete(x); scriptMemo.delete(x); };
       // every child request is checked against its verb's arguments BEFORE any is built, exactly as it would be outside a
       // batch (review of PR #260, verbs.js:127): unchecked, {verb: "delete", args: {id, componnent}} built a whole-entity delete
-      (a.ops ?? []).forEach((o, i) => {
-        if (!o || typeof o !== "object" || Array.isArray(o)) refuse("shape", `batch op ${i} is {verb, args}, got ${JSON.stringify(o)}`, "batch takes ops [{verb, args}, …]", { op: i });
-        if (o.args !== undefined && (!o.args || typeof o.args !== "object" || Array.isArray(o.args))) refuse("shape", `batch op ${i}: args is an object, got ${JSON.stringify(o.args)}`, "batch takes ops [{verb, args}, …]", { op: i });
+      // `requests` (D3, §1.15): a batch's children are requests {verb, args}; `ops` is the log's word for a change's operations
+      if ("ops" in a) refuse("shape", "batch {ops} is now batch {requests}: nothing ran", "send {verb: 'batch', args: {requests: [{verb, args}, …]}}");
+      (a.requests ?? []).forEach((o, i) => {
+        if (!o || typeof o !== "object" || Array.isArray(o)) refuse("shape", `batch request ${i} is {verb, args}, got ${JSON.stringify(o)}`, "batch takes requests [{verb, args}, …]", { index: i });
+        if (o.args !== undefined && (!o.args || typeof o.args !== "object" || Array.isArray(o.args))) refuse("shape", `batch request ${i}: args is an object, got ${JSON.stringify(o.args)}`, "batch takes requests [{verb, args}, …]", { index: i });
         const bad = validate(o.verb, o.args ?? {}) ?? (o.verb === "create" && o.args?.place ? validate("place", { ...o.args.place, id: "x" }) : null);
-        if (bad) { const { code, reason, fix, ...rest } = bad; refuse(code, `batch op ${i}${o.verb === "create" && o.args?.place && !validate(o.verb, o.args ?? {}) ? " place" : ""}: ${reason}`, fix, { ...rest, op: i }); }
+        if (bad) { const { code, reason, fix, ...rest } = bad; refuse(code, `batch request ${i}${o.verb === "create" && o.args?.place && !validate(o.verb, o.args ?? {}) ? " place" : ""}: ${reason}`, fix, { ...rest, index: i }); }
       });
-      (a.ops ?? []).forEach((o, i) => {
-        if (clockMs() > CTX.work.until) spend(Infinity, `a batch of ${a.ops.length} ops`, "split it into smaller batches");   // the clock backstop
+      (a.requests ?? []).forEach((o, i) => {
+        if (clockMs() > CTX.work.until) spend(Infinity, `a batch of ${a.requests.length} requests`, "split it into smaller batches");   // the clock backstop
         // sky/weather are sets on @world.sky with the old merge meaning, so they batch like any set (one act, one undo)
         const B = { create: buildCreate, set: buildSet, delete: buildDelete, place: buildPlace, turn: buildTurn,
           sky: (c, x) => buildSky(c, x, w), weather: (c, x) => buildWeather(c, x, w) }[o.verb];
-        if (!B) refuse("shape", `batch op ${i}: '${o.verb}' can't go in a batch`, `batch takes ${BATCH_OPS.join(", ")}`);
+        if (!B) refuse("shape", `batch request ${i}: '${o.verb}' can't go in a batch`, `batch takes ${BATCH_OPS.join(", ")}`);
         const sub = { ...ctx, st, launches: undefined, lifts: undefined };
-        let ops; try { ops = B(sub, o.args ?? {}); } catch (e) { if (e instanceof Refusal) { e.op = i; } throw e; }
+        let ops; try { ops = B(sub, o.args ?? {}); } catch (e) { if (e instanceof Refusal) { e.index = i; } throw e; }
         if (!work) { work = cowState(ctx.st); VOLATILE.add(work.entities); }
         all.push(...ops); st = applyCow(work, ops); forget(st); sub.refs.forEach((r) => ctx.refs.add(r));
         if (sub.cap) ctx.cap = sub.cap;

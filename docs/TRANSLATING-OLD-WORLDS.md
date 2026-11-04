@@ -34,7 +34,7 @@ given only when the operator says `--operator-only-no-owner`, knowingly. The
 writer checks it itself (`approvalProblem`) before the log is written: a
 countersignature missing, not verifying, or over another hash or world, an
 approval carrying an owner's signature, or a founder key is refused by name.
-The approval rides in the new log as the system's `translation-approved` act
+The approval rides in the new log as the system's `translation-approved` request
 right after `repair-shapes` (`body {report, approval: {over, owner: null,
 operator: {key, sig}, noOwner}}`, `noOwner` saying in words that no owner was
 attested): provenance a reader checks against `log.original.jsonl`. The fold
@@ -136,7 +136,7 @@ renamed since), the manifest removed — the world directory byte-identical to
 before, and the shared directory rewritten without those identities (a
 directory file the translation itself created stays, holding none of them). A made file the server has written to
 since refuses the rollback unless `--discard-changes`, so no history is lost
-unknowingly. Each old entry appears in the new log as an `act` with verb
+unknowingly. Each old entry appears in the new log as a `request` with verb
 `imported` (`body {verb, args, from}`) or as a `say`, followed by the change it
 produced; fields with no component in this protocol ride along as `imported:<name>`. A
 translated world is an ordinary world from then on.

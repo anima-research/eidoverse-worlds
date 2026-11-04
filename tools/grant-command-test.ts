@@ -67,7 +67,7 @@ check('a role with exceptions for someone new is one whole grant', r?.args?.valu
 
 // the help teaches only what runs (sweep-2 C2/C3, R 10-27): the base role is member, and +gen, +fly and /epoch still work
 sent.length = 0; dispatch('epoch', ''); await settle();
-check('/epoch still sends the physics-engine set the help teaches', sent.at(-1)?.op === 'set' && sent.at(-1)?.args?.component === 'physics-engine', JSON.stringify(sent.at(-1)));
+check('/epoch still sends the physics-engine set the help teaches', sent.at(-1)?.verb === 'set' && sent.at(-1)?.args?.component === 'physics-engine', JSON.stringify(sent.at(-1)));
 { const fs = await import('node:fs'); const help = fs.readFileSync(fileURLToPath(new URL('../defs/ui/_help.json', import.meta.url)), 'utf8');
   const { COMMANDS } = await import('../client/lib/commands/registry.js'); const g = (COMMANDS as any[]).find((c) => c.name === 'grant')?.help ?? '';
   check('the help sheet teaches no visitor role (it is member)', !/\bvisitors?\b/i.test(help) && /\/grant \* member/.test(help), help.match(/[^.]*visitor[^.]*/i)?.[0]);

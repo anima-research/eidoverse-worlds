@@ -53,7 +53,7 @@ const take = (W, id, x) => { call(W, "vic", "move", { to: [x, 0, -0.8] }); retur
     "H6c a dry switch-off of what a held thing hangs under says it would leave the hand, once, and leaves it there", { g: code(g), e: code(e), notes: e.notes, held: held(W) }); }
 // H6d: an edit that writes a held thing's parent and its transform together takes it out of the hand once
 { const W = "edit-twice"; mk(W); take(W, "a", 0);
-  const e = call(W, "rowan", "batch", { ops: [{ verb: "set", args: { id: "a", component: "parent", value: { to: "b" } } },
+  const e = call(W, "rowan", "batch", { requests: [{ verb: "set", args: { id: "a", component: "parent", value: { to: "b" } } },
     { verb: "set", args: { id: "a", component: "transform", value: { pos: [0, 0.6, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } }] });
   ok(e.ok && held(W).length === 0 && (e.notes ?? []).filter((n) => n.id === "a" && n.tookFromHand).length === 1,
     "H6d an edit writing a held thing's parent and transform together takes it from the hand once, with one note", { e: code(e), notes: e.notes, held: held(W) }); }

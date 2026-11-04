@@ -130,6 +130,38 @@ const oscWalk = (dir: string) => {
 };
 for (const d of [...RUNTIME, ...DEPLOYED]) oscWalk(path.join(ROOT, d));
 for (const rel of OSC_DOCS) { const p = path.join(ROOT, rel); if (fs.existsSync(p)) oscScan(rel, fs.readFileSync(p, "utf8"), OSC_DOC); else offences.push(`${rel}: missing (OSC_DOCS lists it)`); }
+// The log's vocabulary is minor 1's (docs/DESIGN-log-vocabulary.md D3, 2026-11-04): kinds request/physics/redaction/governance,
+// `op` on a change, `cascade`, `commitment`, `rewindWindow`, the view marker `redacted`, the snapshot blob key `snapshotJson`. A retired
+// spelling (act, sim, purge, sequencer as a kind; followUps; rewind_window; commit-unpurged; purged: true; verb on genesis/say; cutJson
+// written) may not come back into runtime code; the reads that still meet an old spelling on purpose are listed in LOG_OK, each with why.
+const LOG_RETIRED: [RegExp, string][] = [
+  [/\bkind\s*[!=]==?\s*['"](act|sim|purge|sequencer)['"]|\bkind:\s*['"](act|sim|purge|sequencer)['"]|"kind":\s*"(act|sim|purge|sequencer)"/, "a retired log kind (request, physics, redaction, governance)"],
+  [/\bfollowUps\b|batch-followups/, "`followUps` is `cascade`"],
+  [/\brewind_window\b/, "`rewind_window` is `rewindWindow`"],
+  [/commit-unpurged|\bpurged:\s*true\b|\{\s*"?purged"?\s*:/, "the redaction marker is `redacted` (commitment-unredacted)"],
+  [/\bverb:\s*['"](genesis|purge|sequencer)['"]|"verb":\s*"(genesis|purge|sequencer)"/, "genesis, redaction and governance carry no verb (a say entry neither; a chat line's verb is the client's own shape)"],
+  [/\bcutJson:/, "a checkpoint blob is written as snapshotJson (cutJson is read only from historical blobs)"],
+  [/\bMINORS = new Set\(\[0/, "minor 0 is read only by the migration tool (D1)"],
+];
+const LOG_OK: [string, RegExp, string][] = [
+  ["mcpl/agent.ts", /kind: "act"/, "the agent's in-memory inbox event, never a log entry (D6)"],
+  ["mcpl/denoise.ts", /kind: "act"/, "the agent's inbox event (D6)"],
+  ["shared/protocol/names.js", /./, "the old world's spellings, read by the translator's renames only"],
+];
+const logScan = (rel: string, text: string) => text.split("\n").forEach((line, i) => {
+  if (/^\s*(\/\/|\*|\/\*)/.test(line) || LOG_OK.some(([f, re]) => (rel === f || rel.startsWith(f)) && re.test(line))) return;
+  for (const [re, what] of LOG_RETIRED) if (re.test(line.replace(/\s\/\/\s.*$/, ""))) offences.push(`${rel}:${i + 1}  retired log spelling (${what}): ${line.trim().slice(0, 100)}`);
+});
+const logWalk = (dir: string) => {
+  if (!fs.existsSync(dir)) return;
+  for (const name of fs.readdirSync(dir)) {
+    if (SKIP_DIR.has(name)) continue;
+    const p = path.join(dir, name);
+    if (fs.statSync(p).isDirectory()) { logWalk(p); continue; }
+    if (EXT.test(name)) logScan(path.relative(ROOT, p).split(path.sep).join("/"), fs.readFileSync(p, "utf8"));
+  }
+};
+for (const d of [...RUNTIME, ...DEPLOYED, "tools/protocol/import-v1"]) logWalk(path.join(ROOT, d));
 for (const o of offences) console.log("  " + o);
 console.log(`[vocab-check] ${offences.length ? `${offences.length} old-spelling read(s)` : "one vocabulary: every runtime reader speaks the record in the protocol's names"}`);
 process.exit(offences.length ? 1 : 0);

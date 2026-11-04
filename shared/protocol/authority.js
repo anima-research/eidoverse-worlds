@@ -190,7 +190,7 @@ const REF_KEYS = new Set(["id", "to", "on", "beside", "hang", "against", "near",
 const REF_LISTS = new Set(["targets", "marks", "ids", "refs"]);
 function placeholders(w, verb, args) {
   const creates = verb === "create" ? [[null, args]]
-    : (verb === "batch" || verb === "fork-copy") && Array.isArray(args?.ops) ? args.ops.map((o, i) => [i, o && o.op === "create" && o.args && typeof o.args === "object" ? o.args : null]).filter(([, a]) => a) : [];
+    : (verb === "batch" || verb === "fork-copy") && Array.isArray(args?.requests) ? args.requests.map((o, i) => [i, o && o.verb === "create" && o.args && typeof o.args === "object" ? o.args : null]).filter(([, a]) => a) : [];
   const at = (i) => (i === null ? "" : `batch op ${i}: `);
   const no = (reason, fix) => { try { refuse("shape", reason, fix); } catch (e) { UNLOGGED_REFUSALS.add(e); throw e; } };
   const keep = CTX.forking || FIXTURE_IDS; const ids = {};

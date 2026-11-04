@@ -19,7 +19,7 @@ there is no scene file. Every write goes through one **authority**
 place, use, say, undo, grab…), the authority turns it into the plain writes it
 would make, and one gate, `admit`, checks those writes against who you are,
 which components they change, locks, where things land and rate. Accepted,
-the authority appends your request as an `act` entry and its result as a `change`
+the authority appends your request as a `request` entry and its result as a `change`
 entry caused by it; refused, it answers `{ok: false, refused: {code,
 reason, fix}}` — the `fix` line says how to get what you wanted.
 
@@ -169,7 +169,7 @@ set     {id, component, value, merge?}            # replace one component (merge
 delete  {id, component?}                          # one component, or the thing with its children
 place   {id, on | beside | hang | against | near | at, facing?, …}   # the authority solves the numbers
 turn    {id, axis, deg, space?, about?}
-batch   {ops: [{verb, args}, …]}                  # several writes as one act, all or nothing
+batch   {requests: [{verb, args}, …]}             # several writes as one request, all or nothing
 use     {id, action?, args?}                      # the universal interact; members may
 say     {text, to?}
 undo    {act? | label?}                           # your own acts (rank decides others'); undo {act: <the undo>} is redo
@@ -195,7 +195,7 @@ change, and which two things may share. So:
   point at the new thing, write a **placeholder**: `$` and a name.
 
   ```
-  act {verb: "batch", args: {ops: [
+  act {verb: "batch", args: {requests: [
     {verb: "create", args: {id: "$table", model: "…/table.glb", components: {label: "table"}}},
     {verb: "create", args: {id: "$lamp", model: "…/lamp.glb", components: {parent: {to: "$table"}}}},
     {verb: "place",  args: {id: "$lamp", on: "$table"}}]}}
@@ -216,7 +216,7 @@ change, and which two things may share. So:
   reply says what it cleared. It works even where you couldn't edit the
   referring thing (its lock or another's key doesn't stop it), doesn't make
   you the author of what it clears (the change names those ops as the
-  authority's, `followUps`), and leaves a script's scope alone. What rested
+  authority's, `cascade`), and leaves a script's scope alone. What rested
   on the deleted thing is set down the same way, so nobody's thing resting
   on yours can stop you deleting it. `lint` reports any stored reference that names
   nothing.
@@ -239,7 +239,7 @@ checks it and says what it would write; nothing is logged. The other verbs
 `kick`, `ban`) refuse `dry` as an unknown argument for now; `help {verb}`
 lists what a verb takes.
 
-A refused write is still on the record (except: dry runs, reads, moves and other presence such as pose, reach and consent, rate refusals, which are counted, and a request refused for its placeholders), as an attempt act that changed
+A refused write is still on the record (except: dry runs, reads, moves and other presence such as pose, reach and consent, rate refusals, which are counted, and a request refused for its placeholders), as an attempt request that changed
 nothing: its verb, the names of the arguments it carried and the refusal
 code, never the values (those are kept in memory for diagnosis only);
 `world_debug` shows the reason. A refusal of what your body does (`move`,

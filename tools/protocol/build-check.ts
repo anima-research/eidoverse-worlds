@@ -219,8 +219,8 @@ const cases: { id: string; what: string; run: (s: any) => any; good: (o: any) =>
       const plan = NS.planNewScript({ id: "bell", name: "Ring Me!", text: NS.TEMPLATES.use, trigger: "use", comps: NS.TEMPLATE_SCOPE.use.comps, say: NS.TEMPLATE_SCOPE.use.say }, thing);
       if (plan.errors.length) return { errors: plan.errors };
       const up = s.call("olive", plan.upload.verb, plan.upload.args);
-      const ops = plan.install(up.src); const inst = s.call("olive", "batch", { ops });
-      const acts = s.w().entries.filter((e: any) => e.kind === "request" && e.op === "batch").length;
+      const ops = plan.install(up.src); const inst = s.call("olive", "batch", { requests });
+      const acts = s.w().entries.filter((e: any) => e.kind === "request" && e.verb === "batch").length;
       const use = s.call("vic", "use", { id: "bell" });
       const st = s.w().state().entities.bell.c;
       const view = s.call("vic", "scripts", { id: "bell" });
@@ -233,7 +233,7 @@ const cases: { id: string; what: string; run: (s: any) => any; good: (o: any) =>
       s.call("olive", "create", { id: "gate", model: "crate", components: { transform: T0([0, 0, 0]), openable: { open: false }, reactions: { use: { kind: "toggle", component: "openable" } } } });
       const thing = s.w().state().entities.gate.c;
       const plan = NS.planNewScript({ id: "gate", name: "chime", text: NS.TEMPLATES.use, trigger: "use", ...NS.TEMPLATE_SCOPE.use }, thing);
-      const up = s.call("olive", "upload", plan.upload.args); const inst = s.call("olive", "batch", { ops: plan.install(up.src) });
+      const up = s.call("olive", "upload", plan.upload.args); const inst = s.call("olive", "batch", { requests: plan.install(up.src) });
       const r = s.w().state().entities.gate.c.reactions;
       const chime = s.call("vic", "use", { id: "gate", action: "chime" }); const counter = s.w().state().entities.gate.c["local/counter"] ?? null;
       const bad = NS.planNewScript({ id: "gate", name: "tick", text: NS.TEMPLATES.timer, trigger: "timer", every: 2 }, thing);
@@ -244,7 +244,7 @@ const cases: { id: string; what: string; run: (s: any) => any; good: (o: any) =>
       if (!NS) return { planner: "absent" };
       s.call("olive", "create", { id: "gate2", model: "crate", components: { transform: T0([2, 0, 0]), openable: { open: false }, reactions: { use: { kind: "toggle", component: "openable" }, chime: { kind: "toggle", component: "openable" } } } });
       const plan = NS.planNewScript({ id: "gate2", name: "chime", text: NS.TEMPLATES.use, trigger: "use", ...NS.TEMPLATE_SCOPE.use }, s.w().state().entities.gate2.c);
-      const up = s.call("olive", "upload", plan.upload.args); const inst = s.call("olive", "batch", { ops: plan.install(up.src) });
+      const up = s.call("olive", "upload", plan.upload.args); const inst = s.call("olive", "batch", { requests: plan.install(up.src) });
       const r = s.w().state().entities.gate2.c.reactions;
       return { action: plan.action, inst: show(inst), use: r?.use?.kind ?? null, chime: r?.chime?.kind ?? null, mine: r?.[plan.action] ?? null }; },
     good: (o) => o.action === "chime-2" && o.inst === "ok" && o.use === "toggle" && o.chime === "toggle" && o.mine?.kind === "script" && o.mine?.script === "chime" },
@@ -258,7 +258,7 @@ const cases: { id: string; what: string; run: (s: any) => any; good: (o: any) =>
       const ops = plan.install(up.src);
       // editwrites.js expectOf over what the batch sets, read from base: a component the thing lacked is expected absent
       const expect = [...new Set(ops.map((o: any) => o.args.component))].map((k) => (k in thing ? { id: "bell", component: k, value: thing[k] } : { id: "bell", component: k }));
-      const inst = s.call("olive", "batch", { ops, expect });
+      const inst = s.call("olive", "batch", { requests, expect });
       return { action: plan.action, theirs: show(theirs), inst: inst.refused?.code ?? show(inst), use: s.w().state().entities.bell.c.reactions?.use?.kind ?? null }; },
     good: (o) => o.action === "use" && o.theirs === "ok" && o.inst === "changed" && o.use === "toggle" },
   { id: "U1", what: "update {copy, to} carries a reparent: a part moved under another part upstream lands under it here (not 3 m off, under its old parent)", run(s) { cast(s);

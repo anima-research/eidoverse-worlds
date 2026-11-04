@@ -267,7 +267,7 @@ const byOwner = async (sid: string, world: string, id: string) => { const j = aw
     const r = Bun.spawnSync(["bun", "tools/operator-repair.ts", `http://127.0.0.1:${port}`, "den", verb, a], { cwd: ENGINE, env: { ...process.env, EIDO_SESSION: OP, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, timeout: 30_000 });
     let reply: any = {}; try { reply = JSON.parse(r.stdout.toString()); } catch { reply = { raw: r.stdout.toString() + r.stderr.toString() }; } return { code: r.exitCode, reply }; };
   const shown = ann.msgs.find((m) => m.type === "snapshot")?.you ?? "?";   // her nameplate: the plain name is the imported record's
-  const looks = calls.filter((c) => c.verb === "whois").map((c) => run(c.verb, c.args, { "Ann-tann": shown })), give = calls.find((c) => c.op === "set"), drop = calls.find((c) => c.op === "delete");
+  const looks = calls.filter((c) => c.verb === "whois").map((c) => run(c.verb, c.args, { "Ann-tann": shown })), give = calls.find((c) => c.verb === "set"), drop = calls.find((c) => c.verb === "delete");
   const people = looks.flatMap((l) => l.reply.people ?? []);
   const real = people.find((x: any) => !x.imported && x.here)?.id ?? "?", old = people.find((x: any) => x.imported && x.role === "owner")?.id ?? "?";
   const found = { code: looks.length === 2 && looks.every((l) => l.code === 0) ? 0 : 1, reply: looks.map((l) => l.reply) };

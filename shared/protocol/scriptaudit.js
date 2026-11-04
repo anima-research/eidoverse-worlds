@@ -100,7 +100,7 @@ export function auditScripts(L, getBlob, { run = null, depth: maxD = 8 } = {}) {
     if (d > maxD) flags.push({ seq, check: "depth-limit", view: d });
     if (seedOf(a.world, seq, `${id}/${b.script}`) !== b.seed) flags.push({ seq, check: "seed", why: "seed isn't H(world, act seq, script key)" });
     if (!run) return;
-    const st = fold(L, { until: b.head }); const v = st.entities[id]?.c[b.script];
+    const st = fold(L, { until: b.seq }); const v = st.entities[id]?.c[b.script];
     if (!v || v.src !== b.src) { flags.push({ seq, check: "src", claimed: b.src, view: v?.src ?? null }); return; }
     let blob; try { blob = getBlob(b.src); } catch { flags.push({ seq, check: "src", why: "the source blob is missing" }); return; }
     // the event as recorded, plus what the act points at instead of copying (a say's text, a use's args: purgeable there)

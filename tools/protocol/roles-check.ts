@@ -254,7 +254,7 @@ const cases: Case[] = [
     good: (o) => o.up === "ok" && o.vic?.includes("fly") && o.down === "ok" && !o.mo?.includes("ban") && o.mo?.includes("kick") && o.typo === "schema" && o.dym?.[0] === "fly" && o.dep === "needs" },
   { id: "R8", what: "a custom role somebody holds can't be deleted (refused with the count); moving them off and deleting it in one batch lands", run(s) { cast(s, { crew: true });
       const del = set(s, "olive", "role-defs", {});
-      const mv = s.call("olive", "batch", { ops: [{ verb: "set", args: { id: "@world", component: "roles:cy", value: { role: "builder" } } }, { verb: "set", args: { id: "@world", component: "role-defs", value: {} } }] });
+      const mv = s.call("olive", "batch", { requests: [{ verb: "set", args: { id: "@world", component: "roles:cy", value: { role: "builder" } } }, { verb: "set", args: { id: "@world", component: "role-defs", value: {} } }] });
       return { del: code(del), why: del.refused?.reason, mv: show(mv), cy: eff(s, "cy")?.role }; },
     good: (o) => o.del === "held" && /1 person holds crew/.test(o.why) && o.mv === "ok" && o.cy === "builder" },
   { id: "R9", what: "role-defs edits a built-in's permissions: builders lose editOthers world-wide; renaming keeps the rank", run(s) { cast(s);
@@ -421,7 +421,7 @@ const cases: Case[] = [
     good: (o) => o.w0 === "rights" && o.w1 === "ok" && (o.w2 === "missing-arg" || o.w2 === "shape") && o.first === "ban" && o.verbs?.includes("warn") && o.verbs?.includes("role") && o.bob === "rights"
       && JSON.stringify(o.now) === JSON.stringify([["ann", ["mute"]], ["vic", ["ban"]]]) },
   { id: "M9b", what: "modlog's pages lose nothing where many records share one time: five role changes in one batch and one newer change, paged three at a time, all arrive, once each, the first page stopping before the group", run(s) { cast(s);
-      const b = s.call("olive", "batch", { ops: ["p1", "p2", "p3", "p4", "p5"].map((who) => ({ verb: "set", args: { id: "@world", component: `roles:${who}`, value: { role: "member" } } })) });
+      const b = s.call("olive", "batch", { requests: ["p1", "p2", "p3", "p4", "p5"].map((who) => ({ verb: "set", args: { id: "@world", component: `roles:${who}`, value: { role: "member" } } })) });
       // and one newer change on its own: the first page stops before the group, and next carries on into it
       const b6 = s.call("olive", "set", { id: "@world", component: "roles:p6", value: { role: "member" } });
       const seen: string[] = []; let before: any = undefined, pages = 0;

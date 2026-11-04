@@ -123,7 +123,7 @@ try {
   // the click the canvas listens for (build.js commitSpawn); dispatched on the canvas itself, since headless leaves the
   // boot splash and frames over the viewport
   await evalJson(`import('/lib/core.js').then((m) => (m.canvas.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 760, clientY: 470 })), true))`);
-  check("P1 a click places it: ONE create act, stamped with me", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.op === "create"),
+  check("P1 a click places it: ONE create act, stamped with me", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.verb === "create"),
     { acts: myActs().slice(n0).map((a) => a.e.verb), refused: await evalJson(`__refused.map((r) => r.text)`), errs: await evalJson(`__errs`), ghost: await evalJson(`import('/lib/build.js').then((m) => m.hasGhost())`), under });
   const crate = (() => { const a = myActs().at(-1); return a?.e.body?.request?.id; })();
   check("P2 the thing is in the page (its own fold drew it)", !!crate && await waitFor(`import('/lib/world.js').then((m) => m.entities.has('${crate}'))`), crate);
@@ -189,7 +189,7 @@ try {
         dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyZ', key: 'KeyZ', ctrlKey: true, bubbles: true })); return true; }); })()`);
     const ok2 = await waitDisk(() => myActs().length === n0 + 2);
     const [rel, und] = myActs().slice(n0);
-    check("Q1 release + Ctrl+Z in the same tick: the undo names the release, not the act before it", await waitDisk(() => ok2 && rel.e.op === "set" && und.e.verb === "undo" && und.e.body.request.act === rel.seq && JSON.stringify(disk().entities[crate].c.transform) === before), myActs().slice(n0).map((a) => [a.seq, a.e.verb, a.e.body.request])); }
+    check("Q1 release + Ctrl+Z in the same tick: the undo names the release, not the act before it", await waitDisk(() => ok2 && rel.e.verb === "set" && und.e.verb === "undo" && und.e.body.request.act === rel.seq && JSON.stringify(disk().entities[crate].c.transform) === before), myActs().slice(n0).map((a) => [a.seq, a.e.verb, a.e.body.request])); }
 
   check("N0 by now (a create, a dozen moves, undos and redos) no '[state] seq gap' warning (N1 checks again at the end)", await evalJson(`__gaps.length === 0`), await evalJson(`__gaps.slice(0, 4)`));
 
@@ -236,7 +236,7 @@ try {
   await page(`(await import('/lib/scenegraph.js')).sceneSelect('${crate}'); return true;`);
   await waitFor(`import('/lib/scenegraph.js').then((m) => m.sceneSelected() === '${crate}')`);
   await key("KeyD", { altKey: true });
-  check("D1 Alt+D = create {from: <the thing>}: ONE act", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.op === "create" && myActs().at(-1).e.body.request.from === crate), myActs().slice(n0).map((a) => a.e.body.request));
+  check("D1 Alt+D = create {from: <the thing>}: ONE act", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.verb === "create" && myActs().at(-1).e.body.request.from === crate), myActs().slice(n0).map((a) => a.e.body.request));
   const dupOf = (st) => Object.keys(st.entities).find((k) => k !== crate && k !== IDS.of("cup") && st.entities[k].c.model === st.entities[crate].c.model);
   await waitDisk(() => !!dupOf(disk()));   // the request entry lands before the change that makes the copy (slow CI, 10-29)
   const st1 = disk(); const dup = dupOf(st1);   // the stored model: the door keeps CRATE as its content address
@@ -262,7 +262,7 @@ try {
   await page(`(await import('/lib/scenegraph.js')).sceneSelect('${crate}'); (await import('/lib/base.js')).bus.emit('edit-extend', '${dup}'); return true;`);
   check("M0 two things selected", await waitFor(`import('/lib/editpanels.js').then((m) => m.selection().length === 2)`), await evalJson(`import('/lib/editpanels.js').then((m) => m.selection())`));
   await key("Delete");
-  check("M1 Delete on both = ONE act, a batch of two deletes", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.op === "batch" && myActs().at(-1).e.body.request.ops.length === 2), myActs().slice(n0).map((a) => a.e.body.request));
+  check("M1 Delete on both = ONE act, a batch of two deletes", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.verb === "batch" && myActs().at(-1).e.body.request.ops.length === 2), myActs().slice(n0).map((a) => a.e.body.request));
   // the act and its change are two appends (writes.js changeEntry): M1 waits for the act, so the change may not be on disk
   // yet — wait for it too (anima 40115466089 ubuntu read the log between the two)
   check("M2 …both are gone, on disk and in the page", await waitDisk(() => !disk().entities[crate] && !disk().entities[dup]) && await waitFor(`import('/lib/world.js').then((m) => !m.entities.has('${crate}') && !m.entities.has('${dup}'))`),
@@ -289,7 +289,7 @@ try {
   check("S3 …and its tile shows in 'saved here'", await waitFor(`[...${bf}.querySelectorAll('.sp-tile')].some((t) => t.textContent.trim() === 'tbl')`));
   n0 = myActs().length;
   await evalJson(`[...${bf}.querySelectorAll('.sp-tile')].find((t) => t.textContent.trim() === 'tbl').click(), true`);
-  check("S4 the tile places a copy: create {from: <hash>}, ONE act", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.op === "create" && /^sha256:/.test(myActs().at(-1).e.body.request.from)), myActs().slice(n0).map((a) => a.e.body.request));
+  check("S4 the tile places a copy: create {from: <hash>}, ONE act", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.verb === "create" && /^sha256:/.test(myActs().at(-1).e.body.request.from)), myActs().slice(n0).map((a) => a.e.body.request));
 
   // ==== research 44: polish for R's first test ====
 
@@ -337,7 +337,7 @@ try {
   check("K9 Delete on a locked thing asks 'This is locked. Delete anyway?'", await waitFor(`${dlgTitle} === 'This is locked. Delete anyway?'`), await evalJson(dlgTitle));
   check("K10 …its first choice says so", (await evalJson(dlgBtns))?.[0] === "✓ Delete anyway", await evalJson(dlgBtns));
   await dlgClick("Delete anyway");
-  check("K11 ✓ Delete anyway: ONE act, the delete with throughLock", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.op === "delete" && myActs().at(-1).e.body.request.throughLock === true && !disk().entities[crate]), myActs().slice(n0).map((a) => a.e.body.request));
+  check("K11 ✓ Delete anyway: ONE act, the delete with throughLock", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.verb === "delete" && myActs().at(-1).e.body.request.throughLock === true && !disk().entities[crate]), myActs().slice(n0).map((a) => a.e.body.request));
   await waitFor(`globalThis.__editWrites().undo.at(-1) === ${myActs().at(-1).seq}`);
   await key("KeyZ", { ctrlKey: true });
   check("K12 Ctrl+Z brings it back, still locked", await waitDisk(() => !!disk().entities[crate] && disk().entities[crate].c.lock === true) && await waitFor(`import('/lib/world.js').then((m) => m.entities.has('${crate}'))`, 12000));
@@ -363,7 +363,7 @@ try {
   // on the plinth's top. The old code added a world point to a local offset and set it as the local position (so the
   // pebble moved by R·0.6·that, the wrong way), and its ray could hit the pebble itself (it is drawn inside the plinth).
   { const roots = Object.keys(disk().entities).filter((k) => k !== "@world" && !disk().entities[k].c.parent);
-    check("(setup) the owner clears the field (everything placed so far, through its locks: some are the owner's, owners-only since recut B2), so only the plinth is under the pointer", await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('batch', { ops: ${JSON.stringify(roots)}.map((id) => ({ verb: 'delete', args: { id } })), throughLock: true })).ok;`), roots);
+    check("(setup) the owner clears the field (everything placed so far, through its locks: some are the owner's, owners-only since recut B2), so only the plinth is under the pointer", await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('batch', { requests: ${JSON.stringify(roots)}.map((id) => ({ verb: 'delete', args: { id } })), throughLock: true })).ok;`), roots);
     // the view must hold still while the test aims (the body may still be settling, and the camera chases it)
     const camNow = () => evalJson(`import('/lib/core.js').then((c) => { c.camera.updateMatrixWorld(); return c.camera.matrixWorld.elements.map((v) => +v.toFixed(4)).join(); })`);
     const settle = async () => { let last = await camNow(), same = 0; for (let i = 0; i < 60 && same < 5; i++) { await sleep(200); const now = await camNow(); same = now === last ? same + 1 : 0; last = now; } return same >= 5; };
@@ -424,7 +424,7 @@ try {
     check("F3 …and the drag doesn't jump when it starts: the pebble keeps its offset from the point under the pointer (the old ray found the pebble itself)", !!A0 && !!press && Math.hypot(...d(d(p0, A0), d(press.P, press.A))) < 0.02, { p0, A0, press });
     n0 = myActs().length;
     await evalJson(`(dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: ${m1?.[0]}, clientY: ${m1?.[1]} })), true)`);
-    check("F4 release = ONE act: set the pebble's transform (local to the plinth), expecting where it was", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.op === "set" && myActs().at(-1).e.body.request.id === IDS.of("pebble") && !!myActs().at(-1).e.body.request.expect), myActs().slice(n0).map((a) => a.e.body.request));
+    check("F4 release = ONE act: set the pebble's transform (local to the plinth), expecting where it was", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.verb === "set" && myActs().at(-1).e.body.request.id === IDS.of("pebble") && !!myActs().at(-1).e.body.request.expect), myActs().slice(n0).map((a) => a.e.body.request));
     const setT = disk().entities[IDS.of("pebble")]?.c.transform;   // the echo: the page's replica holds the authority's transform, then a frame draws it
     const echoed = await waitFor(`import('/lib/world.js').then((m) => JSON.stringify(m.bagOf('pebble')?.transform) === ${JSON.stringify(JSON.stringify(setT ?? null))})`); await frames(2);
     const pAfter = (await geo(0, 0)).P;
@@ -684,7 +684,7 @@ try {
   check("KH3 …and gives the bar back when the drag ends", await evalJson(`!/Shift finer/.test(document.getElementById('hintbar')?.textContent ?? '') || document.getElementById('hintbar').classList.contains('gone')`), await evalJson(`document.getElementById('hintbar')?.textContent`));
   // the scrub's release commits a set; on a slow host it reached the record after CD1 had counted the log, and CD1 saw it as
   // its own extra act (anima 40104935973, macOS: a transform set on pebble, x -0.007 -> 0.597). Wait for it here.
-  check("KH (setup) the scrub's release is on the record before the next case counts", await waitDisk(() => myActs().slice(nK).some((a) => a.e.op === "set" && a.e.body?.request?.id === IDS.of("pebble"))),
+  check("KH (setup) the scrub's release is on the record before the next case counts", await waitDisk(() => myActs().slice(nK).some((a) => a.e.verb === "set" && a.e.body?.request?.id === IDS.of("pebble"))),
     myActs().slice(nK).map((a) => [a.e.verb, a.e.body?.request?.id]));
 
   // Ctrl+D duplicates (R 10-04: "isn't it usually ctrl+d?"), the held D never strafes, and copy #2 nudges toward blueprints
@@ -822,7 +822,7 @@ try {
     check("GR0 (setup) the ground panel paints, with its palette (async: wait for the button)", await waitFor(`!!window.__gbtn?.(/reshuffle/)`), await evalJson(`window.__gp?.textContent?.slice(0, 200)`));
     const t0 = JSON.stringify(st4().entities["@world"]?.c?.terrain ?? null); let n0 = myActs().length;
     await evalJson(`(window.__gbtn(/reshuffle/).click(), true)`);
-    check("GR1 reshuffle is ONE act, set @world terrain, and the ground changed", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.op === "set" && JSON.stringify(st4().entities["@world"]?.c?.terrain ?? null) !== t0),
+    check("GR1 reshuffle is ONE act, set @world terrain, and the ground changed", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.verb === "set" && JSON.stringify(st4().entities["@world"]?.c?.terrain ?? null) !== t0),
       { acts: myActs().slice(n0).map((a) => a.e.verb), refused: await evalJson(`__refused.map((r) => r.text)`), toasts: await evalJson(`[...document.querySelectorAll('.toast')].map((t) => t.textContent.slice(0, 160))`) });
     n0 = myActs().length; await evalJson(`(window.__gbtn(/grow/).click(), true)`);
     check("GR2 grow plants grass: set @world grass", await waitDisk(() => myActs().length === n0 + 1 && !!st4().entities["@world"]?.c?.grass), { acts: myActs().slice(n0).map((a) => a.e.verb), refused: await evalJson(`__refused.map((r) => r.text)`) });

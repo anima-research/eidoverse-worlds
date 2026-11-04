@@ -151,7 +151,7 @@ console.log('\n2. picking a sky replaces the Sky; the Weather stays:');
   const g = () => G.view();
   const pk = (kind: string, v: string) => { const r = worldPick(g(), kind, v, { pal: PAL, now: now() }); const s = G.sendAll(r.ops); if (!s.ok) check(`the door takes the ${kind} pick`, false, JSON.stringify(s.refused)); return r; };
   const shape = pk('shape', 'rugged');
-  check('a ground pick is ONE set @world terrain', shape.ops.length === 1 && shape.ops[0].op === 'set' && shape.ops[0].args.id === WORLD_ID && shape.ops[0].args.component === 'terrain', JSON.stringify(shape.ops));
+  check('a ground pick is ONE set @world terrain', shape.ops.length === 1 && shape.ops[0].verb === 'set' && shape.ops[0].args.id === WORLD_ID && shape.ops[0].args.component === 'terrain', JSON.stringify(shape.ops));
   check('a shape on a world with no ground grows the panel\'s ground in that shape (the default tint)', g().terrain?.amplitude === PAL.shapes.rugged && g().terrain.layers[0].color === hexInt(PAL.tints.meadow.layer) && g().terrain.size === 160, canon(g().terrain));
   pk('tint', 'arid');
   check('…a tint pick changes the colour and keeps the shape', g().terrain.amplitude === PAL.shapes.rugged && g().terrain.layers[0].color === hexInt(PAL.tints.arid.layer), canon(g().terrain));
@@ -163,7 +163,7 @@ console.log('\n2. picking a sky replaces the Sky; the Weather stays:');
   pk('plant', 'tufts');
   check('…a planting pick replaces what grows but keeps the height and density dials', g().grass.species === PAL.plantings.tufts.args.species && g().grass.height === PAL.grassHeight.tall && g().grass.density === PAL.grassDensity.lush, canon(g().grass));
   const mow = pk('mow', '');
-  check('…mow is delete @world grass, and clears the field', mow.ops[0]?.op === 'delete' && mow.ops[0].args.component === 'grass' && g().grass === null, JSON.stringify([mow.ops, g().grass]));
+  check('…mow is delete @world grass, and clears the field', mow.ops[0]?.verb === 'delete' && mow.ops[0].args.component === 'grass' && g().grass === null, JSON.stringify([mow.ops, g().grass]));
   check('the panel\'s args and the World tiles\' are one recipe: terrainArgs = what groundpanel wrote',
     canon(terrainArgs(PAL, { seed: 7, shape: 'hills', tint: 'meadow' })) === canon({ seed: 7, size: 160, segments: 200, amplitude: PAL.shapes.hills, flatRadius: 16, layers: [{ color: PAL.tints.meadow.layer, repeat: 16 }] })
     && canon(grassArgs(PAL, { ...paletteDefaults(PAL), plant: 'meadow' })) === canon({ ...PAL.plantings.meadow.args, height: PAL.grassHeight.meadow, density: PAL.grassDensity.normal }));
@@ -195,7 +195,7 @@ console.log('\n3. the cards: every field commits as door requests and reads back
   check('three sky fields are ONE sky request, and the door takes it', e1.ops.length === 1 && e1.ops[0].verb === 'sky' && e1.one.ok, JSON.stringify([e1.ops, e1.one.refused]));
   check('…and read back as typed (hours 17 now, on a turning day)', Math.abs(readBack('sky.hours') - 17) < 0.05 && readBack('sky.clouds') === 'cirrus' && readBack('sky.exposure') === 1.25, `${readBack('sky.hours')} ${readBack('sky.clouds')} ${readBack('sky.exposure')}`);
   const e2 = edit({ 'terrain.amplitude': '*=2', 'terrain.color': '#112233', 'grass.density': 1.4, 'weather.state': 'rain' });
-  check('ground, grass and weather edits: one set terrain, one set grass, one weather request', canon(e2.ops.map((o: any) => o.op === 'set' ? `set ${o.args.component}` : o.verb).sort()) === canon(['set grass', 'set terrain', 'weather']), JSON.stringify(e2.ops));
+  check('ground, grass and weather edits: one set terrain, one set grass, one weather request', canon(e2.ops.map((o: any) => o.verb === 'set' ? `set ${o.args.component}` : o.verb).sort()) === canon(['set grass', 'set terrain', 'weather']), JSON.stringify(e2.ops));
   check('…and the door takes the edit as ONE request (one act, one undo)', e2.one.ok, JSON.stringify(e2.one.refused));
   check('…read back as typed', readBack('terrain.amplitude') === PAL.shapes.hills * 2 && readBack('terrain.color') === 0x112233 && readBack('grass.density') === 1.4 && readBack('weather.state') === 'rain'
     && st().terrain.size === 160 && st().terrain.layers[0].repeat === 16, canon(st().terrain));
@@ -203,7 +203,7 @@ console.log('\n3. the cards: every field commits as door requests and reads back
   const u2 = undo(e2);
   check('the door\'s undo puts the ground and grass back exactly, and the weather back', u2 && canon(st().terrain) === canon(e2.was.terrain) && canon(st().grass) === canon(e2.was.grass) && (st().sky.weather ?? 'clear') === (e2.was.sky.weather ?? 'clear'), JSON.stringify([st().terrain, st().sky.weather]));
   const e3 = edit({ 'grass.mow': true });
-  check('grass.mow mows (delete @world grass); undo grows the same field back', e3.ops[0]?.op === 'delete' && st().grass === null && (undo(e3), canon(st().grass) === canon(e3.was.grass)), JSON.stringify(e3.ops));
+  check('grass.mow mows (delete @world grass); undo grows the same field back', e3.ops[0]?.verb === 'delete' && st().grass === null && (undo(e3), canon(st().grass) === canon(e3.was.grass)), JSON.stringify(e3.ops));
   check('grass.mow on a world with nothing growing sends nothing', (() => { const M = scratchWorld('worldentity'); return worldEditOps(M.view(), { 'grass.mow': true }, { now: now() }).ops.length === 0; })());
   const e4 = edit({ 'sky.tz': 'America/Los_Angeles' });
   check('a timezone (sky.tz; R 10-17: was sky.clock real) → the hour and rate become read-only and say whose clock it is', fieldAt(worldSchema(st(), { now: now() }), 'sky.hours')?.disabled === true && /Los_Angeles/.test(fieldAt(worldSchema(st(), { now: now() }), 'sky.hours')?.hint ?? '') && e4.ops[0].args.tz === 'America/Los_Angeles' && e4.one.ok);

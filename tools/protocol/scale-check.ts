@@ -146,7 +146,7 @@ const AT_BASE = !fs.existsSync(path.join(TREE, "shared/protocol/authority.js"));
 const BASE_RUNG = AT_BASE ? "visitor" : "member";
 const BASE_VERB: Record<string, string> = { "create-world": "new", lint: "check" };
 // …and its batch ops were {tool, args}
-const baseArgs = (verb: string, args: any) => (verb === "batch" && Array.isArray(args?.ops) ? { ...args, ops: args.ops.map((o: any) => (o && "verb" in o ? (({ verb: v, ...r }) => ({ tool: BASE_VERB[v] ?? v, ...r }))(o) : o)) } : args);
+const baseArgs = (verb: string, args: any) => (verb === "batch" && Array.isArray(args?.requests) ? { ...args, ops: args.requests.map((o: any) => (o && "verb" in o ? (({ verb: v, ...r }) => ({ tool: BASE_VERB[v] ?? v, ...r }))(o) : o)) } : args);
 function session(o: any = {}) {
   const name = `w${++N}`; let w = open(name, o);
   const call = (actor: string, verb: string, args: any = {}, step = 100) => { clock.advance(step);
@@ -170,7 +170,7 @@ function cast(s: any) {
 function fill(s: any, n: number, at = (i: number, side: number) => [(i % side) * 2 - side, 0, Math.floor(i / side) * 2 - side]) {
   const side = Math.ceil(Math.sqrt(n));
   for (let made = 0; made < n;) { const ops = []; for (let k = 0; k < 50 && made < n; k++, made++) ops.push({ verb: "create", args: { id: `c-${made}`, model: "crate", components: { transform: { pos: at(made, side), q: [0, 0, 0, 1], scale: [1, 1, 1] } } } });
-    const r = s.call("olive", "batch", { ops }, 20000); if (!ok(r)) return r; }
+    const r = s.call("olive", "batch", { requests }, 20000); if (!ok(r)) return r; }
   return { ok: true, side };
 }
 const T0 = (pos: number[], scale = [1, 1, 1]) => ({ pos, q: [0, 0, 0, 1], scale });
@@ -199,7 +199,7 @@ function scaleCase(n: number) {
     op("look", () => s.call("vic", "look", {}));
     op("create", () => s.call("olive", "create", { model: "crate", components: { transform: T0([X - 40, 0, -20]) } }, 20000));
     op("set", (i) => s.call("olive", "set", { id: `c-${20 + i}`, component: "label", value: "x" }, 20000));
-    op("batch", (i) => s.call("olive", "batch", { ops: Array.from({ length: 50 }, (_, k) => ({ verb: "create", args: { model: "crate", components: { transform: T0([X - 60 - k, 0, -20 - 4 * i]) } } })) }, 20000));
+    op("batch", (i) => s.call("olive", "batch", { requests: Array.from({ length: 50 }, (_, k) => ({ verb: "create", args: { model: "crate", components: { transform: T0([X - 60 - k, 0, -20 - 4 * i]) } } })) }, 20000));
     s.call("vic", "move", { to: [X - 20.7, 0, 39.4], teleport: true }, 20000);
     // grab a tray WITH its cup on it (so grab's "what rested on it loses support" pass is timed: the cup is set down), walk
     // it — untimed — to its own clear spot and drop it there straight down (timed). The op is grab + drop, as before. (It
@@ -268,7 +268,7 @@ const cases: Case[] = [
   { id: "Q3", what: "check {} on a heap of 700 things in one spot is refused too-costly inside the budget, saying what it was checking; a batch of 120 creates into the heap still lands, its warnings saying what went unchecked", run(s) { cast(s);
       fill(s, 700, () => [0, 0, 0]);
       const c = best(5, () => s.call("vic", "lint", {})); const one = best(5, () => s.call("vic", "lint", { id: "c-3" }));
-      const mk = best(3, (i) => s.call("olive", "batch", { ops: Array.from({ length: 120 }, (_, k) => ({ verb: "create", args: { id: `more-${i}-${k}`, model: "crate", components: { transform: T0([0, 0, 0]) } } })) }, 20000));
+      const mk = best(3, (i) => s.call("olive", "batch", { requests: Array.from({ length: 120 }, (_, k) => ({ verb: "create", args: { id: `more-${i}-${k}`, model: "crate", components: { transform: T0([0, 0, 0]) } } })) }, 20000));
       return { check: code(c.r), ms: r1(c.ms), one: code(one.r), oneMs: r1(one.ms), batch: code(mk.r), batchMs: r1(mk.ms), bound: r1(bound()), made: !!s.w().state().entities["more-0-119"],
         unchecked: mk.r?.warnings?.find((x: any) => x.kind === "unchecked")?.things ?? 0, why: c.r?.refused?.reason }; },
     // the refusal names what it was checking (review r4 F4: a trailing comment once swallowed the line that says so)
@@ -290,7 +290,7 @@ const cases: Case[] = [
   { id: "Q5", what: "settling orphaned holds at load is bounded: 400 holders left by a crash end quickly, the first ones settled as leave settles them, the rest said to wait", run(s) { cast(s);
       const holds: any = {}, bodies: any = {};
       for (let made = 0; made < 400;) { const ops = []; for (let k = 0; k < 50; k++, made++) ops.push({ verb: "create", args: { id: `g-${made}`, model: "book", components: { transform: T0([made % 20, 0, Math.floor(made / 20)]), grabbable: { who: "member" } } } });
-        s.call("olive", "batch", { ops }, 20000); }
+        s.call("olive", "batch", { requests }, 20000); }
       for (let i = 0; i < 400; i++) { holds[`g-${i}`] = { by: `h-${i}`, since: clock.t, pose: { pos: [i % 20, 1.1, Math.floor(i / 20)], q: [0, 0, 0, 1], scale: [1, 1, 1] }, handled: [`h-${i}`] }; bodies[`h-${i}`] = { at: [i % 20, 0, Math.floor(i / 20)], ts: clock.t, tokens: 4 }; }
       s.call("olive", "look", {}, 20000);
       let w: any = null;   // best of 3 fresh loads, as best() does for the other rows: one slow scheduler slice isn't the bound
@@ -316,7 +316,7 @@ const cases: Case[] = [
       const sock = s.call("bob", "create", { id: "t-2-seat", components: { parent: { to: "t-2" }, socket: { name: "seat" } } }, 2000);
       const set = s.call("bob", "set", { id: "t-1", component: "label", value: "still open" }, 2000);
       s.call("bob", "delete", { id: "t-0" }, 2000);
-      const batch = s.call("bob", "batch", { ops: [{ verb: "create", args: { id: "t-11", model: "crate" } }, { verb: "create", args: { id: "t-12", model: "crate" } }] }, 2000);
+      const batch = s.call("bob", "batch", { requests: [{ verb: "create", args: { id: "t-11", model: "crate" } }, { verb: "create", args: { id: "t-12", model: "crate" } }] }, 2000);
       const one = s.call("bob", "create", { id: "t-13", model: "crate", components: { transform: T0([0, 0, 3]) } }, 2000);
       return { made: [...new Set(made)], over: code(over), why: `${over.refused?.reason} | ${over.refused?.fix}`, sock: code(sock), sockWhy: sock.refused?.reason, set: code(set), batch: code(batch), one: code(one), entities: Object.keys(s.w().state().entities).length - 1 }; },
     good: (o) => JSON.stringify(o.made) === '["ok"]' && o.over === "full" && /holds 10 entities and its limit is 10 \(@world\.capacity\.entities\)/.test(o.why) && /value: \{entities: <n>\}/.test(o.why) && o.sock === "full" && /@world\.capacity\.entities/.test(o.sockWhy ?? "") && o.set === "ok" && o.batch === "full" && o.one === "ok" && o.entities === 10 },
@@ -431,7 +431,7 @@ const cases: Case[] = [
       for (let d = 0; d < 300;) { const ops = []; for (let k = 0; k < 10; k++, d++) { const x = (d % 20) * 3 - 30, z = Math.floor(d / 20) * 3 - 22;
           ops.push({ verb: "create", args: { id: `desk-${d}`, model: "table", components: { transform: { pos: [x, 0, z], q: yq(30), scale: [1.5, 1, 1.5] } } } });
           for (let b = 0; b < 4; b++) ops.push({ verb: "create", args: { id: `bk-${d}-${b}`, model: "book", components: { transform: { pos: [x + (b - 1.5) * 0.25, 0.75, z], q: yq(30), scale: [1, 1, 1] } } } }); }
-        const r = s.call("olive", "batch", { ops }, 20000); if (!ok(r)) return { fill: show(r) }; }
+        const r = s.call("olive", "batch", { requests }, 20000); if (!ok(r)) return { fill: show(r) }; }
       s.call("olive", "create", { id: "pile", model: "crate", components: { transform: { pos: [-30, 0.75, -22], q: yq(30), scale: [1.2, 0.3, 1.2] } } }, 20000);
       s.call("olive", "create", { id: "cup", model: "book", components: { transform: T0([40, 0, 40]) } }, 20000);
       const ms: any = {}, codes: any = {};
@@ -442,7 +442,7 @@ const cases: Case[] = [
     good: (o) => !!o.ms && Object.values(o.ms).every((v: any) => v <= o.bound) && JSON.stringify(o.codes) === '{"check":"ok","look":"ok","place":"ok"}' },
   { id: "S6", what: `a 4 m step beside 800 small things at body height (books on shelves) takes under ${BOUND_MS} ms, and one into them is refused (solid) as fast`, run(s) { cast(s);
       for (let made = 0; made < 800;) { const ops = []; for (let k = 0; k < 50 && made < 800; k++, made++) ops.push({ verb: "create", args: { id: `b-${made}`, model: "book", components: { transform: T0([2.2 + (made % 10) * 0.06, 0.9 + (Math.floor(made / 100) % 8) * 0.1, 2.2 + (Math.floor(made / 10) % 10) * 0.06]) } } });
-        const r = s.call("olive", "batch", { ops }, 20000); if (!ok(r)) return { fill: show(r) }; }
+        const r = s.call("olive", "batch", { requests }, 20000); if (!ok(r)) return { fill: show(r) }; }
       s.call("vic", "move", { to: [0, 0, 2.8] }, 5000);
       const past = best(5, (i) => s.call("vic", "move", { to: i % 2 ? [0, 0, 2.8] : [2.8, 0, 0] }, 2000));
       s.call("vic", "move", { to: [0, 0, 2.8], teleport: true }, 5000);

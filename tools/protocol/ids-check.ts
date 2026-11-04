@@ -69,7 +69,7 @@ await C("W2", "a chosen id is refused on create {from} (duplicate and blueprint)
   const dup = W.call("create", { from: src, id: "twin" });
   const pub = W.call("publish", { from: src, name: "p" }); const h = hashOf(pub);
   const bp = W.call("create", { from: h, id: "copy" });
-  const b = W.call("batch", { ops: [{ verb: "create", args: { model: "crate" } }, { verb: "create", args: { id: "chair", model: "crate" } }] });
+  const b = W.call("batch", { requests: [{ verb: "create", args: { model: "crate" } }, { verb: "create", args: { id: "chair", model: "crate" } }] });
   return [!dup.ok && dup.refused.code === "shape" && !bp.ok && bp.refused.code === "shape" && !b.ok && b.refused.code === "shape" && /op 1/.test(b.refused.reason) && /\$chair/.test(b.refused.fix), [why(dup), why(bp), why(b)]]; });
 await C("W3", "the identity-shaped id refusal still holds through the system door (a fork's copy can't wear u-…)", () => {
   const W = world(); const w = SD.worldObject(W);
@@ -83,7 +83,7 @@ await C("P1", "create {id: '$potion'} mints an opaque id; the reply's ids map na
   return [r.ok && OPAQUE.test(id ?? "") && W.state().entities[id] && made(r).includes(id) && !logText(W).includes("$potion"), [why(r), r.ids]]; });
 await C("P2", "one batch: refs to placeholders resolve (parent.to, place on, a set's id, a look-at target), in any op order", () => {
   const W = world();
-  const r = W.call("batch", { ops: [
+  const r = W.call("batch", { requests: [
     { verb: "create", args: { id: "$table", model: "table" } },
     { verb: "create", args: { id: "$lamp", model: "crate", components: { parent: { to: "$table" } } } },
     { verb: "set", args: { id: "$lamp", component: "label", value: "the lamp" } },
@@ -94,7 +94,7 @@ await C("P2", "one batch: refs to placeholders resolve (parent.to, place on, a s
     && st[m.$cup]?.c["look-at"]?.target === m.$lamp && !/\$table|\$lamp|\$cup/.test(logText(W)), [why(r), m]]; });
 await C("P3", "a placeholder defined twice in one request is refused; one used but never defined is refused by name", () => {
   const W = world();
-  const twice = W.call("batch", { ops: [{ verb: "create", args: { id: "$a", model: "crate" } }, { verb: "create", args: { id: "$a", model: "crate" } }] });
+  const twice = W.call("batch", { requests: [{ verb: "create", args: { id: "$a", model: "crate" } }, { verb: "create", args: { id: "$a", model: "crate" } }] });
   const undef = W.call("set", { id: "$nope", component: "label", value: "x" });
   return [!twice.ok && twice.refused.code === "shape" && /\$a/.test(twice.refused.reason) && !undef.ok && /\$nope/.test(undef.refused.reason) && /isn't defined|not defined/.test(undef.refused.reason), [why(twice), why(undef)]]; });
 await C("P4", "a placeholder is request-local: '$potion' from one request means nothing in the next", () => {
@@ -112,9 +112,9 @@ await C("P7", "a refused request with a placeholder leaves no '$name' in the log
   return [!r.ok && !logText(W).includes("$x"), why(r)]; });
 
 await C("P8", "a chosen id refused beside a placeholder in one batch: the attempt isn't recorded with its '$name' in it", () => {
-  const W = world(); const r = W.call("batch", { ops: [{ verb: "create", args: { id: "$keep", model: "crate" } }, { verb: "create", args: { id: "chair", model: "crate" } }] });
+  const W = world(); const r = W.call("batch", { requests: [{ verb: "create", args: { id: "$keep", model: "crate" } }, { verb: "create", args: { id: "chair", model: "crate" } }] });
   const plain = W.call("create", { id: "table", model: "crate" });   // a chosen id alone is an attempt like any other: recorded, as names and a code (engine-scars 6a, R 10-17 02:45: never its values)
-  const att = W.entries().findLast((e: any) => e.kind === "request" && e.op === "create");
+  const att = W.entries().findLast((e: any) => e.kind === "request" && e.verb === "create");
   return [!r.ok && /op 1/.test(r.refused.reason) && !logText(W).includes("$keep") && !plain.ok && JSON.stringify(att?.body?.args) === '["id","model"]' && att?.body?.refused?.code === "shape" && !logText(W).includes('"table"'), [why(r), att?.body]]; });
 
 // ---- Y: system acts keep ids ----
@@ -158,7 +158,7 @@ await C("D4", "an undo that takes a thing away (the undo of its create) clears r
   const u = W.call("undo", { act: mk.act });
   const c = made(W.call("create", { model: "crate" }))[0];
   const d = made(W.call("create", { model: "crate", components: { story: { title: "t", text: "x", marks: [c] } } }))[0];
-  const bt = W.call("batch", { ops: [{ verb: "delete", args: { id: c } }] });
+  const bt = W.call("batch", { requests: [{ verb: "delete", args: { id: c } }] });
   const st = W.state().entities;
   return [u.ok && !st[b] && !st[a].c["look-at"] && bt.ok && JSON.stringify(st[d].c.story.marks) === "[]", [why(u), st[a]?.c["look-at"], why(bt), st[d]?.c.story]]; });
 

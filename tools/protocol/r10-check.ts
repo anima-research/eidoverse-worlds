@@ -259,7 +259,7 @@ const cases: Case[] = [
       s.call("olive", "create-world", { title: s.name }); s.call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } });
       s.call("olive", "create", { id: "plinth", components: { mesh: { shape: "box", size: [1.5, 0.8, 1.5] }, transform: { pos: [0, 0, 0] } } });
       const n0 = s.entries().length;
-      const r = s.call("olive", "batch", { ops: [{ verb: "set", args: { id: "plinth", component: "mesh", value: { shape: "box", size: [1.5, 0.3, 1.5] } } },
+      const r = s.call("olive", "batch", { requests: [{ verb: "set", args: { id: "plinth", component: "mesh", value: { shape: "box", size: [1.5, 0.3, 1.5] } } },
         { verb: "create", args: { id: "crate", components: { mesh: { shape: "box", size: [0.4, 0.4, 0.4] }, physics: { kind: "dynamic" }, parent: { to: "plinth" }, transform: { pos: [0, 0.6, 0] } } } }] });
       const E = s.entries().slice(n0); const rs = E.find((e: any) => e.kind === "request" && e.verb === "resettle"); const ln = E.find((e: any) => e.kind === "physics" && e.verb === "launch" && e.body?.id === "crate");
       return { r: show(r), resettle: rs?.body?.occupants ?? null, launchY: ln?.body?.p?.[1] ?? null, crate: !!comp(s, "crate", "physics") }; },

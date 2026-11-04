@@ -245,7 +245,7 @@ ok(foldName("Marígold") === foldName("marigold") && foldName("JOSÉ") === foldN
   const war: any[] = [];
   for (const v of ["a", "b", "c"]) { const s1 = q(bob, "set", { id: "post", component: "label", value: v }); war.push(q(cy, "undo", { act: actOf(s1) })); }
   ok(war[0].ok && war[1].ok && war[2].refused?.code === "revert-war", "U8 the third revert across people on one thing within the hour is refused below owner (a dispute)", war.map((r) => r.ok || r.refused?.code));
-  const last = [...w.entries.keys()].reverse().find((i) => w.entries[i].kind === "request" && w.entries[i].actor === bob && w.entries[i].op === "set");
+  const last = [...w.entries.keys()].reverse().find((i) => w.entries[i].kind === "request" && w.entries[i].actor === bob && w.entries[i].verb === "set");
   ok(q(ann, "undo", { act: last }).ok, "U9 …an owner still can (owners settle it)");
   ok(q(bob, "undo", { acts: 3 }).refused?.code === "unknown-arg", "U10 a typo'd undo argument is refused, not a silent undo of your latest act (R10)"); }
 

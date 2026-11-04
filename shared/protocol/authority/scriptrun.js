@@ -128,7 +128,7 @@ function activate(w, id, name, ev) {
   const anon = ANON_EVENTS.has(ev.on) || (GRIP_EVENTS.has(ev.on) && ev.seq === undefined);
   const actE = { kind: "request", actor: `script:${id}`, verb: "script", ...(cause !== undefined ? { cause } : {}),
     body: { script: key, src: v.src, sponsor: sp.sponsor, sponsorAt: sp.sponsorAt, on: ev.on, ...(ev.by && !anon ? { trigger: { actor: ev.by, ...(ev.seq !== undefined ? { seq: ev.seq } : {}) } } : {}),
-      event: anon ? anonEvent(recorded(event)) : recorded(event), head: actSeq - 1, seed, depth, engine: SR.ENGINE, api: SR.API, ...(res.reads ? { reads: res.reads } : {}),
+      event: anon ? anonEvent(recorded(event)) : recorded(event), seq: actSeq - 1, seed, depth, engine: SR.ENGINE, api: SR.API, ...(res.reads ? { reads: res.reads } : {}),
       // a body effect is recorded as WHAT and ON WHOM, never which consent let it through: an allow list vs an open gate is a
       // relationship fact, and consent is presence, never appended (consent gaps 6c, R 10-17 02:45)
       ...(gates.length ? { bodies: gates.map((g) => ({ kind: g.kind, to: `body:${g.to}` })) } : {}), ...(uses.length ? { uses } : {}) } };

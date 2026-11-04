@@ -32,12 +32,12 @@ World state splits into two things with different consistency needs:
 
 **1. The world log (authored plane).** Everything that constructs or mutates
 the world is a request to the world's door, recorded in an append-only,
-per-world, hash-chained log as the request (an *act*) and its result (a
-*state* entry). Low frequency, high value, persisted forever. The log **is**
+per-world, hash-chained log as the request (a `request` entry) and its result (a
+`change` entry). Low frequency, high value, persisted forever. The log **is**
 the world format — there is no scene file. The log records **results, never
 processes**: a recorded result folds into the identical world on every
 client, in any year, while a recorded sequence of actions breaks when code
-changes. Late joiners adopt a cut of the fold and continue from it.
+changes. Late joiners adopt a snapshot of the fold and continue from it.
 (spec/PROTOCOL.md is the contract.)
 
 Consequences we get for free:
@@ -130,7 +130,7 @@ Building blocks:
   transition back to rest stamps absolute state into the log** — the log
   stays self-sufficient, never dependent on reconstructing a live motion.
 - **`use`** — the universal interact, open to visitors: a *request*, kept
-  in the log as an act, whose *effects* are the change entries it caused.
+  in the log as a `request` entry, whose *effects* are the change entries it caused.
 - **`reactions`** — the data half of interaction: an entity's component
   maps use-actions to handlers (`toggle`, `set`, `impulse`, `script`). A
   pendulum `impulse` is closed-form and velocity-matched — pushing against
@@ -237,7 +237,7 @@ place has its own diffable chronicle. Per-place visibility (private / invited
 Worlds from the start; **archipelago, not grid** (discrete worlds + portals;
 no region-crossing netcode). World = log + asset refs — cheap, forkable,
 hostable N-per-server. Per-world trust domain and house rules. Travel is a
-client operation: drop presence in A, adopt B's cut, arrive. Identity and
+client operation: drop presence in A, adopt B's snapshot, arrive. Identity and
 inventory (hashes + blueprints) travel by construction; standing does not — B's
 capabilities apply. Portals are Layer-1 objects. Agents may hold presence in
 multiple worlds simultaneously — but visibly (presence never lies about

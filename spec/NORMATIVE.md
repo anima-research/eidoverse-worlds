@@ -16,7 +16,7 @@ These files, at a given commit, are the eidoverse world protocol. Nothing else i
 | `spec/kernel-pin.json` | The kernel, what the fold reads: the log envelope, the fold, the identity grammar, the version, and the field shapes of `roles` and `access`. Machine-checked. |
 | `spec/registry-pin.json` | The registry: every bare component name and its shape. A second reader needs its types, required fields and meanings of absence; its defaults, ranges and enum members are the registry's current settings. Machine-checked. |
 | `spec/refusal-codes.json` | Every code the authority refuses with: what it means and when (and the words renamed before release). Machine-checked. |
-| `spec/readback.json` | Every place the authority reads an old act's body, and what an unknown (purged) body means there. Machine-checked. |
+| `spec/readback.json` | Every place the authority reads an old request's body, and what an unknown (redacted) body means there. Machine-checked. |
 | `spec/REGISTRY-CHANGELOG.md` | Every change to a pin, acknowledged. A pin can't move without a line here. |
 | `spec/conformance/` | Logs, and `expected.json`: what each must fold to (status, digest, diagnostic codes), so any implementation checks itself against this set alone. Status and digest are normative; the diagnostic codes are informative. Where the prose and a vector disagree, **the prose wins**: the vector is fixed to match it. |
 | `spec/conformance/laws.json` | The ground's height (terrain numbers and features → heights) and the sky's forecast (a policy → its segments), for fixed inputs, bit for bit. Machine-checked. |
@@ -69,7 +69,7 @@ does, and no role overrides it).
 | Granting | only roles ranked below yours, with only permissions you hold | trial · lead |
 | What a thing admits (`who`) | on grabbable, physics, station and each reaction handler: a role id (that rank or above), `{permission}` (anyone holding it, whatever the role is called) or `{roles: [...]}` (exactly those; an owner always). Absent: anyone who may use the thing | trial · lead (house markup) |
 | Last owner | `@world.keep-owner` absent or true: a change leaving no owner is refused (`last-owner`); false: a world may be ownerless on purpose (the host operator can mend it); a world with no owner gives nobody more than member (a translation always ends with an owner) | default · house 22:03Z (starter config, switched on) |
-| Timed roles | `until` up to a year; never on owner; ended by the authority's logged act | trial · lead |
+| Timed roles | `until` up to a year; never on owner; ended by the authority's logged request | trial · lead |
 | Locks | `lock: true`; its strength is its setter's rank now (read from the log), member in a world with no owner; that rank or above may act through it (`throughLock`) or lift it; lower is refused; no levels | default · lead (R 10-20; house 21:59Z) |
 | Caps | mute ≤ 7 days · a kick has no length (out now, back at once: R 10-28; a timed exclusion is a ban) · reason ≤ 500 characters | trial · lead |
 | Q1: caption | a property of the screen it captions, not a role permission | **open** · never ruled |

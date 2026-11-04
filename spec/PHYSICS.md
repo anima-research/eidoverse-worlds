@@ -7,7 +7,7 @@ contract is free.
 (PROTOCOL_v2.md, "dialect 3"; kept verbatim as `history/PROTOCOL-v2-sim.md`,
 which is what code citing "PROTOCOL_v2 Covenant I" points at) and is now the
 physics part of the protocol (PROTOCOL.md); the covenants carried over
-unchanged, and how physics meets the log was redone: launches are `sim`
+unchanged, and how physics meets the log was redone: launches are `physics`
 entries, and the log records where things come to rest.*
 
 Status: normative for worlds whose `@world.physics-engine` names an engine, with a
@@ -34,9 +34,9 @@ the world depends on carrying the engine; only watching the flight does.
 ## 1. Two folds, one truth
 
 - **The fold** (PROTOCOL.md §3): pure, per-entry state transitions. It
-  never reads `sim` entries and never runs an engine.
+  never reads `physics` entries and never runs an engine.
 - **The sim layer**: a fixed-tick, deterministic reduction over the log's
-  change entries and its `sim` entries (launches, lifts, catches), run by
+  change entries and its `physics` entries (launches, lifts, catches), run by
   the engine `@world.physics-engine` names. It owns what is in the air between a launch
   and its rest. It never writes the log; the authority does, from its own copy.
 
@@ -96,13 +96,13 @@ versioned in the log itself:
 - **A version the authority stamped is the authority's to restamp.** When a world
   names an engine this server carries under a version it doesn't, and the version
   was stamped (no version typed in the request that set the engine), the authority
-  cuts the world to the version it would stamp today, itself, as `system` (act
+  cuts the world to the version it would stamp today, itself, as `system` (request
   `restamp-engine`), at the next request or heartbeat. The owner never chose the
   old version, so the cut overrides no choice of theirs, and the log shows where
   the world's law changed. **A flight doesn't hold the cut back**: this server
   can't compute it, so a cut that waited for its rest would never come. The cut
   ends each flight itself, leaving the thing where the fold has it (only a rest
-  moves it), and names what it ended (`ended`; a purged launch's unknown body is
+  moves it), and names what it ended (`ended`; a redacted launch's unknown body is
   counted, `endedUnknown`). That is the cut's change, not a rest, so a reader that
   carries the old version has no rest to check it against. A lift on the record
   outlives the cut; only a hold in presence defers it, to the next act. A server
@@ -266,8 +266,8 @@ nothing.
 - The presence plane still **never folds** and is never a sim input.
 - **The engine/presence boundary is crossed only by log entries, in both
   directions.** Bodies and hands affect the sim only by crossing the plane as
-  checked acts — `throw {id, v, w?}`, `punt {id, power | v}`, a `drop` with
-  physics — and the `sim` entry they produce carries everything the engine
+  checked requests — `throw {id, v, w?}`, `punt {id, power | v}`, a `drop` with
+  physics — and the `physics` entry they produce carries everything the engine
   needs. Taking a thing *out* of the engine is a `lift` or `catch`, whatever
   the cause: a grab today, a touch or push takeover later. Returning it is a
   `launch` (a release with its state) or (reserved) a settlement (§4.3). The engine MUST
@@ -277,7 +277,7 @@ nothing.
   only as a settlement or a launch.
 - **A launched thing belongs to the engine until it rests.** No state write
   may touch it in flight except its rest (caused by its launch) or a catch
-  (itself a `sim` entry).
+  (itself a `physics` entry).
 - Carrying is presence: a held thing moves with its holder's body and is
   settled into the log by `put`, `drop` or `throw` (AGENTS.md).
 
@@ -294,7 +294,7 @@ updates; VRChat splits them the same way):
   the log is results, never processes; a body in the engine is a process.**
   A body has no `physics` component and the engine never sees it: a flight
   passes through a body. The body's client may `catch` (existing) or,
-  *reserved* (refused until built), `deflect` (a `sim` entry: the body hands a flying thing back). A thing under live authority that meets a
+  *reserved* (refused until built), `deflect` (a `physics` entry: the body hands a flying thing back). A thing under live authority that meets a
   body delivers a `shove` to that body's client, if that body's consent
   allows it (actor: the thing's live authority, carrying the thing's `id` and
   `v`); the thing's own motion ignores the body. Carrying a person is reserved,
@@ -319,7 +319,7 @@ updates; VRChat splits them the same way):
 ### 4.2. Releases carry their state
 
 A `throw` or `drop` MAY carry `w` (spin, rad/s, world frame) and `t` (the
-moment the hand let go, on the authority's clock, §5.1). The act records the
+moment the hand let go, on the authority's clock, §5.1). The request entry records the
 request as sent; the launch carries `w` for engines that spin things (eidosim
 does, capped as in §3), and `q` (the thing's orientation as it was
 let go) for engines that rotate them; a rest under such an engine writes the

@@ -165,7 +165,7 @@ async function said(f) { const lines = [], ow = console.warn, oe = console.error
 // ---- SC10 / SC11: a generated large log ----
 { const K = Number(process.env.SC_ENTRIES ?? 60000);
   const { dir, w } = world("big", 50, 0); const lines = [];
-  let head = w.headAt(w.entries.length - 1); const cause = w.entries.findIndex((e) => e.kind === "request" && e.op === "create");
+  let head = w.headAt(w.entries.length - 1); const cause = w.entries.findIndex((e) => e.kind === "request" && e.verb === "create");
   for (let i = 0; i < K; i++) { const e = { world: w.worldId, kind: "change", actor: "rowan", cause, op: "set", body: { id: `t-${i % 50}`, comp: "label", value: `label ${i}`, salt: "AAAAAAAAAAAAAAAAAAAAAA" }, ts: ++now };
     head = chainStep(head, e); lines.push(JSON.stringify({ ...e, head })); }
   fs.appendFileSync(path.join(dir, "world.jsonl"), lines.join("\n") + "\n");

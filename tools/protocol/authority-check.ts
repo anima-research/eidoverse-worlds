@@ -73,7 +73,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     { seq: 2, ts: 3, actor: "Marigold", verb: "comp", args: { id: "lamp_1", type: "0abc", data: 1 } },
     { seq: 3, ts: 4, actor: "Marigold", verb: "comp", args: { id: "lamp_1", type: "n0abc", data: 2 } }];
   const r = translate(old, { foldBuild: v1FoldBuild() });
-  ok(r.out[1].verb === "translated" && r.out[1].body.from.translator === TRANSLATOR && r.out[1].body.from.fold === v1FoldBuild() && r.out[0].body.minor === 0, "T2 the act after genesis names the translator and the v1 fold build", r.out[1].body);
+  ok(r.out[1].verb === "translated" && r.out[1].body.from.translator === TRANSLATOR && r.out[1].body.from.fold === v1FoldBuild() && r.out[0].body.minor === 1, "T2 the act after genesis names the translator and the v1 fold build", r.out[1].body);
   const c = r.final.translated[enc("lamp_1")];
   ok(c && c["imported/n0abc"] === 2 && c[`imported/${encName("0abc")}`] === 1 && !r.stats.divergences, "T3 a translated world keeps comps '0abc' and 'n0abc' apart (each under the imported namespace: bare names are the registry's, PROTOCOL §4)", c);
   ok(JSON.stringify(r.out[0].body.owners) === JSON.stringify([[], [r.out[0].body.sequencer]]) && r.out[1].body.from.roles?.Marigold?.role === "owner" && !r.final.translated["@world"]?.[`roles:${enc("Marigold")}`], "T4 genesis is custodial (tier 0 empty, the authority's key in tier 1); v1 genesis roles, which v1 never folds, are kept verbatim in the translated act and grant nothing", [r.out[0].body.owners, r.out[1].body.from])
@@ -327,7 +327,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(refusalText("x", { refused: { code: "c", reason: "h--abc and plain-id and x--zz stay" } }) === "x refused by the authority (c): h--abc and plain-id and x--zz stay", "NR7 …a hashed name (h--) or a non-hex x-- is left as it is (it can't be read back)");
   { const V = (req) => lockVerb(req); const set = (component) => ({ verb: "set", args: { id: "a", component, value: 1 } });
     const got = [V(set("transform")), V(set("parent")), V({ verb: "place", args: { id: "a", at: [0, 0] } }), V({ verb: "delete", args: { id: "a" } }), V(set("model")),
-      V({ verb: "batch", args: { ops: [set("transform"), { verb: "delete", args: { id: "b" } }] } }), V({ verb: "undo", args: { act: 3 } }), V(set("label")), V({ verb: "delete", args: { id: "a", component: "parent" } })];
+      V({ verb: "batch", args: { requests: [set("transform"), { verb: "delete", args: { id: "b" } }] } }), V({ verb: "undo", args: { act: 3 } }), V(set("label")), V({ verb: "delete", args: { id: "a", component: "parent" } })];
     ok(JSON.stringify(got) === JSON.stringify(["Move", "Move", "Move", "Delete", "Replace", "Delete", "Undo", "Change", "Move"]) && lockQuestion("Delete") === "This is locked. Delete anyway?"
       && lockChoices("Move").map((c) => c.v).join() === "through,cancel,unlock", "NR8 the lock question names what the request would do: Move / Delete / Replace anyway? (R's three answers)", got); }
 }
@@ -464,7 +464,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(call("ann", "set", { id: "tbl", component: "label", value: "x", expect: [{ id: "tbl", component: "label" }] }).ok, "E4 value left out = expect it absent");
   ok(code(call("ann", "set", { id: "tbl", component: "label", value: "z", expect: [{ id: "tbl", component: "label" }] })) === "changed", "E4b …and refused once it's there");
   ok(code(call("ann", "set", { id: "tbl", component: "label", value: "z", expect: { id: "tbl" } })) === "shape", "E5 a malformed expect is a shape refusal");
-  ok(code(call("ann", "batch", { ops: [{ verb: "delete", args: { id: "tbl" } }], expect: [{ id: "gone", component: "transform", value: {} }] })) === "changed", "E6 expect guards a batch too (a thing that's gone)");
+  ok(code(call("ann", "batch", { requests: [{ verb: "delete", args: { id: "tbl" } }], expect: [{ id: "gone", component: "transform", value: {} }] })) === "changed", "E6 expect guards a batch too (a thing that's gone)");
   // duplicate: create {from: <a thing>}
   call("ann", "set", { id: "tbl", component: "lock", value: true });
   const d1 = call("bob", "create", { from: "tbl" });
@@ -706,13 +706,13 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     ok(add.ok && undoAdd.ok && !("light" in cb) && cb["imported:light"]?.flicker === 2,
       "S3h undoing the addition of a light leaves the thing as it was, its lone leftover kept", { add: res(add), undo: res(undoAdd), keys: Object.keys(cb) });
     const c = made({ light }); leave(c, "imported:light", { flicker: 3 });
-    const re = ih("ann", "batch", { ops: [{ verb: "delete", args: { id: c, component: "light" } }, { verb: "set", args: { id: c, component: "light", value: light } }] });
+    const re = ih("ann", "batch", { requests: [{ verb: "delete", args: { id: c, component: "light" } }, { verb: "set", args: { id: c, component: "light", value: light } }] });
     ok(re.ok && C(c)?.["imported:light"]?.flicker === 3, "S3h a request that deletes the light and sets it again keeps its leftover, as a set does", { re: res(re), keys: Object.keys(C(c) ?? {}) });
     const d = made({ light }); leave(d, "imported:light", { flicker: 4 });
-    const gone = ih("ann", "batch", { ops: [{ verb: "delete", args: { id: d, component: "light" } }, { verb: "delete", args: { id: d } }] });
+    const gone = ih("ann", "batch", { requests: [{ verb: "delete", args: { id: d, component: "light" } }, { verb: "delete", args: { id: d } }] });
     ok(gone.ok && C(d) === undefined, "S3h a batch that deletes the light and then the thing is taken", { gone: res(gone) });
     const d2 = made({ light }); leave(d2, "imported:light", { flicker: 5 });
-    const bobGone = ih("bob", "batch", { ops: [{ verb: "delete", args: { id: d2, component: "light" } }, { verb: "delete", args: { id: d2 } }] }); const cd2 = C(d2) ?? {};
+    const bobGone = ih("bob", "batch", { requests: [{ verb: "delete", args: { id: d2, component: "light" } }, { verb: "delete", args: { id: d2 } }] }); const cd2 = C(d2) ?? {};
     ok(res(bobGone) === "rights" && "light" in cd2 && cd2["imported:light"]?.flicker === 5,
       "S3h …but a builder's batch that deletes the light and then the thing is judged on the thing as it stands: the translation's leftover isn't theirs to delete", { bobGone: res(bobGone), keys: Object.keys(cd2) });
     const e = made({}); const f = ih("ann", "create", { components: { label: "child", parent: { to: e } } }).refs?.find((r: any) => r.id !== e)?.id; leave(f, "imported:parent", { slot: "x" });
@@ -724,7 +724,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     const late = ih("bob", "undo", {}); const cg = C(g) ?? {};
     ok(steps.every((x) => x === "ok") && res(late) === "conflict" && /"component":"light"[^}]*changed it since/.test(JSON.stringify(late)) && !("light" in cg) && !("imported:light" in cg), "S3h a leftover's undo goes with its light's: where someone else has changed the light since, the undo leaves both as they are, and the view shows no light they deleted", { steps, late: res(late), keys: Object.keys(cg) });
     const h = made({}); leave(h, "imported:light", { flicker: 7 });
-    const setDel = ih("bob", "batch", { ops: [{ verb: "set", args: { id: h, component: "light", value: light } }, { verb: "delete", args: { id: h, component: "light" } }] }); const ch2 = C(h) ?? {};
+    const setDel = ih("bob", "batch", { requests: [{ verb: "set", args: { id: h, component: "light", value: light } }, { verb: "delete", args: { id: h, component: "light" } }] }); const ch2 = C(h) ?? {};
     ok(setDel.ok && !("light" in ch2) && ch2["imported:light"]?.flicker === 7,
       "S3h a batch that sets a light where there was none and then deletes it keeps the lone leftover", { setDel: res(setDel), keys: Object.keys(ch2) });
     const m = made({ light }); leave(m, "imported:light", { flicker: 8 });
@@ -733,7 +733,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     ok(delM.ok && undoM.ok && "light" in cm && cm["imported:light"]?.flicker === 9 && /imported:light/.test(JSON.stringify(undoM.notes ?? [])),
       "S3h where the owner has rewritten the leftover since, the undo puts back the light and leaves the owner's leftover, naming it skipped", { del: res(delM), undo: res(undoM), keys: Object.keys(cm), flicker: cm["imported:light"]?.flicker, notes: undoM.notes });
     const p = made({ light }); leave(p, "imported:light", { flicker: 10 });
-    const mixed = [ih("bob", "batch", { ops: [{ verb: "delete", args: { id: p, component: "light" } }, { verb: "set", args: { id: p, component: "label", value: "new" } }] }),
+    const mixed = [ih("bob", "batch", { requests: [{ verb: "delete", args: { id: p, component: "light" } }, { verb: "set", args: { id: p, component: "label", value: "new" } }] }),
       ih("carol", "set", { id: p, component: "light", value: light }), ih("carol", "delete", { id: p, component: "light" })].map(res);
     const undoP = ih("bob", "undo", {}); const cp = C(p) ?? {};
     ok(mixed.every((x) => x === "ok") && undoP.ok && cp.label === "lamp" && !("light" in cp) && !("imported:light" in cp),
@@ -749,7 +749,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 // ---- P: the pivot component (research 52: Roblox's PivotOffset; where it turns and scales from, never moves it) ----
 { const { editOps, inspectSchema, addOps } = await import("../../shared/editschema.js");
   // the planner's ops: a set's value / a delete of the component
-  const val = (r) => r.ops[0]?.op === "set" ? r.ops[0].args.value : r.ops[0]?.op === "delete" ? null : undefined;
+  const val = (r) => r.ops[0]?.verb === "set" ? r.ops[0].args.value : r.ops[0]?.verb === "delete" ? null : undefined;
   const { componentsOf, entityOf } = await import("../../shared/components.js");
   const pw = callAt("pivots");
   pw("ann", "create-world", { title: "pivots" });
@@ -767,7 +767,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const c2 = val(editOps(ent, "g", { "pivot.base": true }, live));
   ok(JSON.stringify(c2) === JSON.stringify({ pos: [2.6, 0, 0] }), "P6 'base' snaps it to the middle of the bottom face", c2);
   const c3 = editOps(ent, "g", { "pivot.reset": true }, live).ops[0];
-  ok(c3?.op === "delete" && c3.args.component === "pivot", "P7 'origin' removes it (turn about the origin again)", c3);
+  ok(c3?.verb === "delete" && c3.args.component === "pivot", "P7 'origin' removes it (turn about the origin again)", c3);
   const sc = inspectSchema(ent, "g", live);
   ok(sc.sections.list.some((c) => c.type === "Pivot" && c.fields.includes("pivot.x")), "P8 the Inspector draws a Pivot card with its channels");
   const a = addOps({ model: "x.glb", pos: [0, 0, 0] }, "g", "Pivot");
@@ -779,7 +779,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(!c5.errors.length && JSON.stringify(val(c5)) === JSON.stringify({ pos: [0, 1.5, 0] }), "P11 …as does pivot.y", c5);
   // the channel edits honour the pivot too (Maya's channel box; agent lab round 2, Rowan: 'edit rot.y +=90' swung the gate about its origin)
   const gate = { model: "x.glb", pos: [10, 0, 10], yaw: 0, pivot: { pos: [1, 0, 0] } };
-  const placeOf = (r) => r.ops.find((o) => o.op === "set" && o.args.component === "transform")?.args.value;   // the whole transform
+  const placeOf = (r) => r.ops.find((o) => o.verb === "set" && o.args.component === "transform")?.args.value;   // the whole transform
   const r1 = placeOf(editOps(gate, "g", { "rot.y": 90 }, live));
   ok(r1 && Math.abs(r1.pos[0] - 11) < 1e-6 && Math.abs(r1.pos[2] - 11) < 1e-6, "P12 rot.y = 90 on a pivoted thing turns it ABOUT the pivot: its origin goes to (11, 0, 11)", r1);
   const r2 = placeOf(editOps(gate, "g", { "pos.scale": 2 }, live));
@@ -832,7 +832,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 // UR6 (review 2.20): an act whose ops changed nothing isn't undoable: a bare undo steps over it to the act before, undo {act} of it says so
 { const nw = callAt("noopundo"); nw("ann", "create-world", { title: "noopundo" });
   const mk = nw("ann", "create", { id: "box", model: "crate", components: { transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
-  const nop = nw("ann", "batch", { ops: [{ verb: "set", args: { id: "box", component: "label", value: "x" } }, { verb: "delete", args: { id: "box", component: "label" } }] });
+  const nop = nw("ann", "batch", { requests: [{ verb: "set", args: { id: "box", component: "label", value: "x" } }, { verb: "delete", args: { id: "box", component: "label" } }] });
   const u = nw("ann", "undo", {}), direct = nw("ann", "undo", { act: nop.act });
   ok(mk.ok && nop.ok && u.ok && u.undid?.act === mk.act && openWorld(root, "noopundo").state().entities.box === undefined && direct.refused?.code === "nothing" && /changed nothing/.test(direct.refused.reason),
     "UR6 a request whose ops changed nothing (set + delete of a component the thing lacked) is stepped over by a bare undo, which undoes the act before; undo {act} of it says it changed nothing", { nop: nop.act, u: u.undid ?? u.refused, direct: direct.refused }); }
@@ -1395,7 +1395,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   // the host's owner still may: bob seats his own crate, in either spelling; ann (owner) seats hers
   const ob = R("bob", "create", { id: "bobseat2", components: { parent: { to: "bobcrate" }, socket: { name: "back", body: { action: "sit" } } } });
   const om = R("bob", "set", { id: "bobcrate", component: "sockets", value: { drv: { pos: [0, 0.6, 0], body: { action: "drive" } }, back: { pos: [0, 0.5, 0], body: { action: "sit" } }, side: { pos: [0.5, 0.5, 0] } } });
-  const hm = R("bob", "create", { id: "bobnew", model: "crate", components: { transform: { pos: [6, 0, 0] } } }) && R("bob", "batch", { ops: [{ verb: "create", args: { id: "bobnew2", model: "crate" } }, { verb: "create", args: { id: "bobnew2-s", components: { parent: { to: "bobnew2" }, socket: { name: "s" } } } }] });
+  const hm = R("bob", "create", { id: "bobnew", model: "crate", components: { transform: { pos: [6, 0, 0] } } }) && R("bob", "batch", { requests: [{ verb: "create", args: { id: "bobnew2", model: "crate" } }, { verb: "create", args: { id: "bobnew2-s", components: { parent: { to: "bobnew2" }, socket: { name: "s" } } } }] });
   ok(ob.ok && om.ok && hm.ok && JSON.stringify(kids("bobcrate")) === '["back","drv","side"]', "SR1e the host's own builder still adds seats (natively, by the legacy map, and on a host made in the same batch)", [ob.refused, om.refused, hm.refused, kids("bobcrate")]);
 }
 
@@ -1434,15 +1434,15 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   R("ann", "set", { id: "@world", component: "capacity", value: { guestEntities: 1000, entities: 2000 } });
   // the review's C1: fresh guest identities, one batch of 20 described sockets each, onto one guest's crate
   R("g1", "create", { id: "gbox", model: "crate" }); let n = 0, last = null;
-  for (let i = 0; i < 40; i++) { const x = R(`g${i + 2}`, "batch", { ops: Array.from({ length: 20 }, (_, j) => ({ verb: "create", args: { id: `gs-${i}-${j}`, components: { parent: { to: "gbox" }, socket: { name: `n${i}x${j}` }, description: "x".repeat(500) } } })) }); if (x.ok) n += 20; else { last = x; break; } }
+  for (let i = 0; i < 40; i++) { const x = R(`g${i + 2}`, "batch", { requests: Array.from({ length: 20 }, (_, j) => ({ verb: "create", args: { id: `gs-${i}-${j}`, components: { parent: { to: "gbox" }, socket: { name: `n${i}x${j}` }, description: "x".repeat(500) } } })) }); if (x.ok) n += 20; else { last = x; break; } }
   ok(code(last) === "full" && n <= 64 && nSock() === n, "SR2a the review's C1 (a pool of guests, 20 described sockets a batch onto one crate) is refused full, at the host's ceiling", { n, last: last?.refused, sockets: nSock() });
   // the guests' pool, across hosts: their sockets and their things are one pool
   const guests0 = 1 + n; R("ann", "set", { id: "@world", component: "capacity", value: { guestEntities: guests0 + 30 } });
   let gn = 0, glast = null;
   for (let i = 0; i < 10; i++) { const host = `gh${i}`; R("ann", "create", { id: host, model: "crate", components: { transform: { pos: [i * 2, 0, 5] } } });
-    const x = R(`g${100 + i}`, "batch", { ops: Array.from({ length: 8 }, (_, j) => ({ verb: "create", args: { id: `gp-${i}-${j}`, components: { parent: { to: host }, socket: { name: `p${j}` } } } })) }); if (x.ok) gn += 8; else { glast = x; break; } }
+    const x = R(`g${100 + i}`, "batch", { requests: Array.from({ length: 8 }, (_, j) => ({ verb: "create", args: { id: `gp-${i}-${j}`, components: { parent: { to: host }, socket: { name: `p${j}` } } } })) }); if (x.ok) gn += 8; else { glast = x; break; } }
   const room = guests0 + 30 - (guests0 + gn);   // what the pool still holds: things fill it, and then a thing is refused like a socket
-  const gFill = R("g200", "batch", { ops: Array.from({ length: room }, (_, j) => ({ verb: "create", args: { id: `gt-${j}`, model: "crate", components: { transform: { pos: [j * 2, 0, 9] } } } })) });
+  const gFill = R("g200", "batch", { requests: Array.from({ length: room }, (_, j) => ({ verb: "create", args: { id: `gt-${j}`, model: "crate", components: { transform: { pos: [j * 2, 0, 9] } } } })) });
   const gThing = R("g201", "create", { id: "gthing", model: "crate", components: { transform: { pos: [0, 0, 12] } } });
   ok(code(glast) === "full" && /@world\.capacity\.guestEntities/.test(glast?.refused?.reason ?? "") && gn === 24 && room === 6 && gFill.ok && code(gThing) === "full", "SR2b account-less people together have at most capacity.guestEntities entities standing, sockets and things in one pool, across hosts (each a fresh identity)", { gn, room, glast: glast?.refused, gFill: gFill.refused, gThing: gThing.refused });
   const acct = R("ann", "create", { id: "acct-s", components: { parent: { to: "gh0" }, socket: { name: "a" } } });
@@ -1465,11 +1465,11 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
     Rn("ann", "create-world", { title: "guestnet" }); Rn("ann", "set", { id: "@world", component: "default-role", value: { role: "builder", guests: "builder" } });
     Rn("ann", "set", { id: "@world", component: "capacity", value: { guestEntities: 2 } });
     const made = ["gn-0", "gn-1"].map((id, i) => Rn("g1", "create", { id, model: "crate", components: { transform: { pos: [i * 2, 0, 0] } } }));
-    const swap = Rn("g1", "batch", { ops: [{ verb: "delete", args: { id: "gn-0" } }, { verb: "create", args: { id: "gn-2", model: "crate", components: { transform: { pos: [4, 0, 0] } } } }] });
-    const grow = Rn("g1", "batch", { ops: [{ verb: "delete", args: { id: "gn-1" } }, ...["gn-3", "gn-4"].map((id, i) => ({ verb: "create", args: { id, model: "crate", components: { transform: { pos: [6 + i * 2, 0, 0] } } } }))] });
+    const swap = Rn("g1", "batch", { requests: [{ verb: "delete", args: { id: "gn-0" } }, { verb: "create", args: { id: "gn-2", model: "crate", components: { transform: { pos: [4, 0, 0] } } } }] });
+    const grow = Rn("g1", "batch", { requests: [{ verb: "delete", args: { id: "gn-1" } }, ...["gn-3", "gn-4"].map((id, i) => ({ verb: "create", args: { id, model: "crate", components: { transform: { pos: [6 + i * 2, 0, 0] } } } }))] });
     // a pool already past a lowered cap still takes a delete-and-make; a make is refused against the lowered cap
     Rn("ann", "set", { id: "@world", component: "capacity", value: { guestEntities: 1 } });
-    const swap2 = Rn("g1", "batch", { ops: [{ verb: "delete", args: { id: "gn-1" } }, { verb: "create", args: { id: "gn-5", model: "crate", components: { transform: { pos: [10, 0, 0] } } } }] });
+    const swap2 = Rn("g1", "batch", { requests: [{ verb: "delete", args: { id: "gn-1" } }, { verb: "create", args: { id: "gn-5", model: "crate", components: { transform: { pos: [10, 0, 0] } } } }] });
     const over = Rn("g1", "create", { id: "gn-6", model: "crate", components: { transform: { pos: [12, 0, 0] } } });
     ok(made.every((x) => x.ok) && swap.ok && code(grow) === "full" && /1 more won't fit/.test(grow.refused?.reason ?? "") && /delete/.test(grow.refused?.fix ?? "")
       && swap2.ok && code(over) === "full" && /lets them have 1 \(/.test(over.refused?.reason ?? "") && /1 more won't fit/.test(over.refused?.reason ?? ""),
@@ -1486,7 +1486,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   // one host's ceiling: an owner too
   R("ann", "set", { id: "@world", component: "capacity", value: { entities: 5000 } });
   R("ann", "create", { id: "big", model: "crate", components: { transform: { pos: [0, 0, -9] } } });
-  const fill = R("ann", "batch", { ops: Array.from({ length: 64 }, (_, j) => ({ verb: "create", args: { id: `big-${j}`, components: { parent: { to: "big" }, socket: { name: `s${j}` } } } })) });
+  const fill = R("ann", "batch", { requests: Array.from({ length: 64 }, (_, j) => ({ verb: "create", args: { id: `big-${j}`, components: { parent: { to: "big" }, socket: { name: `s${j}` } } } })) });
   const over = R("ann", "create", { id: "big-64", components: { parent: { to: "big" }, socket: { name: "s64" } } });
   const map = R("ann", "set", { id: "w-host", component: "sockets", value: Object.fromEntries(Array.from({ length: 70 }, (_, j) => [`m${j}`, { pos: [0, 1, 0] }])) });
   ok(fill.ok && code(over) === "full" && over.refused?.limit === 64 && code(map) === "full", "SR2d one host holds at most 64 sockets (SOCKETS_PER_HOST), whoever asks and in either spelling", [fill.refused, over.refused, map.refused]);
@@ -1624,23 +1624,23 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   call("olive", "create", { id: "lamp", model: "crate", components: { description: "a lamp" } });
   call("olive", "create", { id: "shade", model: "crate", components: { parent: { to: "lamp" } } });
   const n0 = openWorld(root, name).entries.length;
-  const r = call("olive", "batch", { ops: [{ verb: "delete", args: { id: "lamp", componnent: "description" } }] });
-  ok(!r.ok && code(r) === "unknown-arg" && r.refused?.op === 0 && ents().lamp && ents().shade, "BT1 batch delete {id, componnent} is refused unknown-arg (op 0), as it is outside a batch; the entity and its child stay", [r.refused ?? r, !!ents().lamp, !!ents().shade]);
-  const r2 = call("olive", "batch", { ops: [{ verb: "set", args: { id: "lamp", component: "description", value: "ok" } }, { verb: "create", args: { model: "crate", place: { on: "lamp", oops: 1 } } }] });
-  ok(!r2.ok && code(r2) === "unknown-arg" && r2.refused?.op === 1 && ents().lamp?.c?.description === "a lamp", "BT2 a nested create.place is checked too, and an earlier valid op isn't written", [r2.refused ?? r2, ents().lamp?.c?.description]);
+  const r = call("olive", "batch", { requests: [{ verb: "delete", args: { id: "lamp", componnent: "description" } }] });
+  ok(!r.ok && code(r) === "unknown-arg" && r.refused?.index === 0 && ents().lamp && ents().shade, "BT1 batch delete {id, componnent} is refused unknown-arg (op 0), as it is outside a batch; the entity and its child stay", [r.refused ?? r, !!ents().lamp, !!ents().shade]);
+  const r2 = call("olive", "batch", { requests: [{ verb: "set", args: { id: "lamp", component: "description", value: "ok" } }, { verb: "create", args: { model: "crate", place: { on: "lamp", oops: 1 } } }] });
+  ok(!r2.ok && code(r2) === "unknown-arg" && r2.refused?.index === 1 && ents().lamp?.c?.description === "a lamp", "BT2 a nested create.place is checked too, and an earlier valid op isn't written", [r2.refused ?? r2, ents().lamp?.c?.description]);
   const changes = openWorld(root, name).entries.slice(n0).filter((e) => e.kind === "change").length;
   ok(changes === 0, "BT3 neither refused batch wrote a change", changes);
   // the verbs batch's help names are the verbs it takes (review of #260): help listed turn, which the batch refused
   const q = () => ents().lamp?.c?.transform?.q;
   const q0 = JSON.stringify(q()), n1 = openWorld(root, name).entries.length;
-  const tr = call("olive", "batch", { ops: [{ verb: "turn", args: { id: "lamp", axis: "y", deg: 90 } }, { verb: "set", args: { id: "lamp", component: "description", value: "turned" } }], label: "spin" });
+  const tr = call("olive", "batch", { requests: [{ verb: "turn", args: { id: "lamp", axis: "y", deg: 90 } }, { verb: "set", args: { id: "lamp", component: "description", value: "turned" } }], label: "spin" });
   const acts = openWorld(root, name).entries.slice(n1).filter((e) => e.kind === "change").length;
   const turned = JSON.stringify(q()) !== q0 && Math.abs(Math.abs(q()?.[1] ?? 0) - Math.SQRT1_2) < 1e-6;
   const un = call("olive", "undo", { label: "spin" });
   ok(tr.ok && turned && acts === 1 && un.ok && JSON.stringify(q()) === q0 && ents().lamp?.c?.description === "a lamp",
     "BT4 a batch takes turn: the turn and a set are one act, and one undo takes both back", { tr: tr.refused ?? tr.ok, q: q(), acts, un: un.refused ?? un.ok });
   // a turn reads the batch's working copy: a thing made earlier in the same batch is found and turned
-  const ct = call("olive", "batch", { ops: [{ verb: "create", args: { id: "crate-bt", model: "crate", components: { transform: { pos: [3, 0, 3] } } } }, { verb: "turn", args: { id: "crate-bt", axis: "y", deg: 90 } }] });
+  const ct = call("olive", "batch", { requests: [{ verb: "create", args: { id: "crate-bt", model: "crate", components: { transform: { pos: [3, 0, 3] } } } }, { verb: "turn", args: { id: "crate-bt", axis: "y", deg: 90 } }] });
   const cq = ents()["crate-bt"]?.c?.transform?.q;
   ok(ct.ok && Math.abs(Math.abs(cq?.[1] ?? 0) - Math.SQRT1_2) < 1e-6, "BT4b a batch's turn finds a thing made earlier in the same batch and turns it", { ct: ct.refused ?? ct.ok, q: cq });
   // an inherited name is no argument (review of #260, #522/#538): `toString` is `in` every object; the attempt act doesn't list it as known
@@ -1655,7 +1655,7 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   const WANT = ["create", "set", "delete", "place", "turn", "sky", "weather"];
   const named = (VERBSPEC.batch.doc.match(/ of ([a-z-]+(?:, [a-z-]+)*)$/)?.[1] ?? "").split(", ").filter(Boolean);
   const alone = Object.fromEntries(WANT.map((v) => [v, ARGS[v] ? call("olive", v, { ...ARGS[v], dry: true }) : null]));
-  const inBatch = Object.fromEntries(WANT.map((v) => [v, ARGS[v] ? call("olive", "batch", { ops: [{ verb: v, args: ARGS[v] }], dry: true }) : null]));
+  const inBatch = Object.fromEntries(WANT.map((v) => [v, ARGS[v] ? call("olive", "batch", { requests: [{ verb: v, args: ARGS[v] }], dry: true }) : null]));
   const turnedAway = WANT.filter((v) => !alone[v]?.ok || !inBatch[v]?.ok);
   ok(JSON.stringify(named) === JSON.stringify(WANT) && !turnedAway.length, "BT5 batch's help names exactly create, set, delete, place, turn, sky, weather, and each goes in a batch, dry, as it goes alone (a builder for each)", { named, turnedAway: turnedAway.map((v) => [v, alone[v]?.refused ?? alone[v]?.ok, inBatch[v]?.refused ?? inBatch[v]?.ok]) }); }
 
@@ -1834,7 +1834,7 @@ for (const [name, steps] of [
   ["sru3c", [["create", { id: "post", model: "crate", place: { at: [5, 5] } }], ["create", { id: "bobhook", components: { parent: { to: "post" }, transform: { pos: [0, 1, 0] }, socket: { name: "hook" } } }],
     ["set", { id: "bobhook", component: "parent", value: { to: "shelf" } }]]],
   // SRU3d: one batch makes the socket on another thing and then hangs it on the shelf
-  ["sru3d", [["create", { id: "post", model: "crate", place: { at: [5, 5] } }], ["batch", { ops: [
+  ["sru3d", [["create", { id: "post", model: "crate", place: { at: [5, 5] } }], ["batch", { requests: [
     { verb: "create", args: { id: "bobhook", components: { parent: { to: "post" }, transform: { pos: [0, 1, 0] }, socket: { name: "hook" } } } },
     { verb: "set", args: { id: "bobhook", component: "parent", value: { to: "shelf" } } }] }]]],
 ] as const) {
@@ -1854,7 +1854,7 @@ for (const [name, steps] of [
   call("olive", "create-world", { title: name });
   for (const who of ["ann", "bob"]) call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role: "builder" } });
   const mk = call("ann", "create", { id: "shelf", model: "crate", place: { at: [2, 2] } });
-  const made = [call("bob", "create", { id: "post", model: "crate", place: { at: [5, 5] } }), call("bob", "batch", { ops: [
+  const made = [call("bob", "create", { id: "post", model: "crate", place: { at: [5, 5] } }), call("bob", "batch", { requests: [
     { verb: "create", args: { id: "bobhook", components: { parent: { to: "shelf" }, transform: { pos: [0, 1, 0] }, socket: { name: "hook" } } } },
     { verb: "set", args: { id: "bobhook", component: "parent", value: { to: "post" } } }] })];
   const u = call("ann", "undo", {}); const st = openWorld(root, name).state();

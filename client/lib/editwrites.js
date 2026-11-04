@@ -51,8 +51,8 @@ export function expectOf(ids, comps, base = null) {
 
 /** The (id, component) pairs a request sets: what a gesture's expect covers. */
 export function writesOf(req) {
-  const ops = req.op === 'batch' ? req.args.ops : [req];
-  return ops.filter((o) => o.op === 'set').map((o) => [idOut(o.args.id), o.args.component]);
+  const ops = req.verb === 'batch' ? req.args.requests : [req];
+  return ops.filter((o) => o.verb === 'set').map((o) => [idOut(o.args.id), o.args.component]);
 }
 
 /** May this viewer lift a lock (§5: builders and owners)? The lock question and the Hierarchy's lock icons ask this. */
@@ -190,7 +190,7 @@ export function del(ids) {
   const under = (x) => { let p = st.entities[x]?.c.parent?.to, n = 0; while (p && n++ < 32) { if (set.has(p)) return true; p = st.entities[p]?.c.parent?.to; } return false; };
   const go = [...set].filter((x) => st.entities[x] && !under(x));
   if (!go.length) return Promise.resolve({ ok: true, noop: true });
-  const req = go.length === 1 ? { verb: 'delete', args: { id: go[0] } } : { verb: 'batch', args: { ops: go.map((id) => ({ verb: 'delete', args: { id } })) } };
+  const req = go.length === 1 ? { verb: 'delete', args: { id: go[0] } } : { verb: 'batch', args: { requests: go.map((id) => ({ verb: 'delete', args: { id } })) } };
   return send(req, { what: go.length === 1 ? `delete ${idOut(go[0])}` : `delete ${go.length} things` });
 }
 /** Duplicate: create {from: <the thing>} (the authority copies it and what's attached to it; 0.5 m along x). */

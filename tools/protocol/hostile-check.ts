@@ -39,12 +39,12 @@ const keys = (o) => (o ? Object.keys(o) : []);
 // a deep batch as raw text (JSON.stringify itself overflows at this depth)
 const deepLine = (n) => `{"world":"${WID}","kind":"change","ts":1,"actor":"olive","cause":1,"op": "batch","body":{"ops":[` + '{"op": "batch","ops":['.repeat(n) + '{"op": "create","id":"deep"}' + "]}".repeat(n) + "]}}";
 const deepBatch = (n, shape) => { let o = shape === "now" ? { op: "create", id: "deep" } : { verb: "create", args: { id: "deep" } };
-  for (let k = 0; k < n; k++) o = shape === "now" ? { op: "batch", ops: [o] } : { verb: "batch", args: { ops: [o] } }; return o; };
+  for (let k = 0; k < n; k++) o = shape === "now" ? { op: "batch", ops: [o] } : { verb: "batch", args: { requests: [o] } }; return o; };
 
 const probes = [
   { id: "H3a", src: "25d H3", what: "batch {ops:[null]}",
-    base: () => run(() => base.fold([bGen, bst(1, "batch", { ops: [null] })])),
-    baseBad: (r) => !r.ok, now: () => now(logOf(st("batch", { ops: [null] }))), nowGood: (s) => s.status === "ok" && codes(s).includes("2:malformed:batch-op") },
+    base: () => run(() => base.fold([bGen, bst(1, "batch", { requests: [null] })])),
+    baseBad: (r) => !r.ok, now: () => now(logOf(st("batch", { requests: [null] }))), nowGood: (s) => s.status === "ok" && codes(s).includes("2:malformed:batch-op") },
   { id: "H3b", src: "25d H3", what: "a log line that is `null`",
     base: () => run(() => base.fold([bGen, null])), baseBad: (r) => !r.ok,
     now: () => now(logOf("null")), nowGood: (s) => s.status === "ok" && codes(s).includes("2:malformed:not-object") },
@@ -78,7 +78,7 @@ const probes = [
     nowGood: (s) => codes(s).includes("3:malformed:comp-name") && s.entities.e.c.transform === undefined },
   { id: "E0d", src: "25e §0", what: "a batch nested 20,000 deep: bun folds it, node overflows (readers disagree)",
     base: () => { const f = root + "probe-deep.mjs";
-      fs.writeFileSync(f, `import { fold } from ${JSON.stringify(pathToFileURL(basePath).href)}; const o0 = { verb: "create", args: { id: "deep" } }; let o = o0; for (let k = 0; k < 20000; k++) o = { verb: "batch", args: { ops: [o] } };
+      fs.writeFileSync(f, `import { fold } from ${JSON.stringify(pathToFileURL(basePath).href)}; const o0 = { verb: "create", args: { id: "deep" } }; let o = o0; for (let k = 0; k < 20000; k++) o = { verb: "batch", args: { requests: [o] } };
         try { const s = fold([{ kind: "genesis", seq: 0, args: {} }, { kind: "change", seq: 1, ...o }], () => null); console.log("folded:" + Object.keys(s.entities)); } catch (e) { console.log("threw:" + e.constructor.name); }`);
       const out = ["bun", "node"].map((r) => Bun.spawnSync([r, f]).stdout.toString().trim()); fs.rmSync(f); return { ok: true, v: { bun: out[0], node: out[1] } }; },
     baseBad: (r) => r.v.bun !== r.v.node,
@@ -152,9 +152,9 @@ const probes = [
     now: () => now(logOf(st("set", { id: "@world", comp: "roles:olive", value: { role: "owner" } }), st("delete", { id: "@world" }))),
     nowGood: (s) => s.entities?.["@world"]?.c["roles:olive"]?.role === "owner" && codes(s).includes("3:noop:delete-@world") },
   { id: "H3i", src: "25d H3 (fix a)", what: "a batch inside a batch, two deep (no depth trick)",
-    base: () => run(() => keys(base.fold([bGen, bst(1, "batch", { ops: [{ verb: "batch", args: { ops: [{ verb: "create", args: { id: "inner", components: {} } }] } }] })]).entities)),
+    base: () => run(() => keys(base.fold([bGen, bst(1, "batch", { requests: [{ verb: "batch", args: { requests: [{ verb: "create", args: { id: "inner", components: {} } }] } }] })]).entities)),
     baseBad: (r) => r.ok && r.v.includes("inner"),
-    now: () => now(logOf(st("batch", { ops: [{ op: "batch", ops: [{ op: "create", id: "inner" }] }] }))), nowGood: (s) => codes(s).includes("2:malformed:nested-batch") && !s.entities.inner },
+    now: () => now(logOf(st("batch", { requests: [{ op: "batch", ops: [{ op: "create", id: "inner" }] }] }))), nowGood: (s) => codes(s).includes("2:malformed:nested-batch") && !s.entities.inner },
   { id: "H3j", src: "25d H3, 25e §0", what: "a VALUE holding a `__proto__` key: kept as plain data, never a prototype",
     base: () => run(() => { const s = baseText([bGen, bst(1, "create", { id: "a", components: {} })].map(L).join("\n") + '\n{"kind":"change","actor":"olive","cause":1,"verb":"set","args":{"id":"a","component":"x","value":{"__proto__":{"pinned":true}}},"seq":2}');
       const v = s.entities.a.c.x; return { own: Object.keys(v), inherited: v.pinned }; }),
@@ -166,7 +166,7 @@ const probes = [
     now: () => now(logOf(st("create", { id: "body:vic" }))), nowGood: (s) => codes(s).includes("2:malformed:entity-id") },
   { id: "S24", src: "PLAN-sockets-entities §3", what: "a hand-written line in the old spelling (a host's sockets map, a thing on parent {to, socket}) folds as written, and maintenance at open (AU.maintain) lifts it",
     base: () => ({ ok: true, v: "(the lift is the engine's)" }), held: true,
-    now: () => { const text = logOf(st("batch", { ops: [{ op: "create", id: "chair" }, { op: "set", id: "chair", comp: "sockets", value: { seat: { pos: [0, 0.5, 0], body: { action: "sit" } } } },
+    now: () => { const text = logOf(st("batch", { requests: [{ op: "create", id: "chair" }, { op: "set", id: "chair", comp: "sockets", value: { seat: { pos: [0, 0.5, 0], body: { action: "sit" } } } },
       { op: "create", id: "cat" }, { op: "set", id: "cat", comp: "parent", value: { to: "chair", socket: "seat" } }, { op: "set", id: "cat", comp: "transform", value: { pos: [0, 0.5, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } }] }));
       const s0 = now(text); const lines = []; const w = AU.worldOf({ name: "h", entries: readLog(text).map(AU.posAt), getBlob: () => { throw new Error(); }, putBlob: () => "", writeLine: (l) => lines.push(l), now: () => 10 });
       AU.maintain(w); const s1 = now(text + lines.map((l) => l + "\n").join("")); return { s0, s1, s: s1 }; },

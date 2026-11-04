@@ -1348,7 +1348,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const req: any = OP.batch(ops);
       // every component an op sets or unsets is pinned to the value the plan read: an unset planned from a read (an openable's
       // reactions taken away) erases whatever landed since as surely as a set does
-      const touched = [...new Set(ops.filter((o: any) => (o.op === "set" || o.op === "delete") && o.args?.id === wireId && o.args?.component != null)
+      const touched = [...new Set(ops.filter((o: any) => (o.verb === "set" || o.verb === "delete") && o.args?.id === wireId && o.args?.component != null)
         .map((o: any) => String(o.args.component)))];
       const writesSockets = touched.includes("sockets");
       if (writesSockets) {
@@ -1433,7 +1433,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
   world_history: async (ag, a, ctx, name) => {
       // the world's log is read through the authority (its history request: verbs, before and after reach it)
       // SWEEP-3 G2 (main's shape): kinds (default act + say), a window with before AND after (read forward from after, cut at before), 50 a page
-      const kinds = Array.isArray(a.kinds) && a.kinds.length ? new Set(a.kinds.map(String)) : new Set(["act", "say"]);
+      const kinds = Array.isArray(a.kinds) && a.kinds.length ? new Set(a.kinds.map(String)) : new Set(["request", "say"]);
       const both = typeof a.before === "number" && typeof a.after === "number";
       const h = await ag.request("history", { limit: Math.min(200, Math.max(1, Number(a.limit ?? 50))),
         ...(Array.isArray(a.verbs) && a.verbs.length ? { verbs: a.verbs.map(String) } : {}),
@@ -1447,7 +1447,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const said = [...kinds].join(" / ");
       if (!rows.length) return text(`${Array.isArray(a.verbs) && a.verbs.length ? `no ${said} entries with ${a.verbs.join(" / ")}` : `no ${said} entries`} in this page of the log${more || " — and nothing further that way"}`);
       return text(rows.map(historyLine).join("\n") + more
-        + `\n(the world log: ${said}${kinds.size === 2 && kinds.has("act") && kinds.has("say") ? "; kinds: ['change', 'sim'] shows what acts wrote and the physics" : ""}; act {verb: 'history', args: {id}} reads one thing's own acts)`);
+        + `\n(the world log: ${said}${kinds.size === 2 && kinds.has("request") && kinds.has("say") ? "; kinds: ['change', 'physics'] shows what requests wrote and the physics" : ""}; act {verb: 'history', args: {id}} reads one thing's own acts)`);
   },
   world_debug: async (ag, a, ctx, name) => {
       // main's names teach, and nothing unknown is silently dropped (Mica 10-31, matrix #10)
@@ -1670,7 +1670,7 @@ export const TOOL_REMOVED: Record<string, string> = {
 /** A timed grant's duration, main's world_access `for: "2h"`: each set of @world roles:<id> carrying `for` gets until = the
  *  server's now + it, in place (decision table row 14). A refusal's words, or null. */
 export function grantsFor(ag: { serverNow(): number }, verb: string, args: Record<string, any>): string | null {
-  const sets = verb === "set" ? [args] : verb === "batch" && Array.isArray(args.ops) ? args.ops.filter((o: any) => o?.op === "set").map((o: any) => o.args ?? {}) : [];
+  const sets = verb === "set" ? [args] : verb === "batch" && Array.isArray(args.requests) ? args.requests.filter((o: any) => o?.verb === "set").map((o: any) => o.args ?? {}) : [];
   for (const s of sets) {
     const v = s?.value;
     if (s?.id !== "@world" || !/^roles:/.test(String(s.component ?? "")) || !v || typeof v !== "object" || Array.isArray(v) || !Object.hasOwn(v, "for")) continue;

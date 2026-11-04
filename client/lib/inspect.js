@@ -145,7 +145,7 @@ export function planEdit(id, key, value) {
 /** Keep a rotate-order pick (a planEdit's rotOrder) as this viewer's: nothing is sent. */
 export const keepView = (id, plan) => { if (plan?.rotOrder) setRotOrder(id, plan.rotOrder); };
 /** Does this plan write a transform (a move/turn/scale)? The euler hint follows the pose. */
-export const movesPose = (ops) => ops.some((o) => (o.op === 'batch' ? o.args.ops : [o]).some((x) => x.args?.component === 'transform'));
+export const movesPose = (ops) => ops.some((o) => (o.verb === 'batch' ? o.args.requests : [o]).some((x) => x.args?.component === 'transform'));
 
 // a scrubbed transform is a live drag for everyone else (E2: the same presence lane the gizmo uses, so co-builders see the
 // number move and the claim badge); the release's commit sends the last sample with end

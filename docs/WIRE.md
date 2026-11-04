@@ -40,7 +40,7 @@ client); a page from another build isn't a supported pair.
 - Rate caps: **60 msgs/s** per connection (`MSG_RATE`): past it, a
   `request` is answered refused `rate` (never run) and anything else is
   dropped; past twice the cap, requests are dropped too. The authority's
-  own rate per identity over everything it makes the log hold (acts and says: entries and bytes per window: server policy,
+  own rate per identity over everything it makes the log hold (requests and says: entries and bytes per window: server policy,
   `server/config.ts` ACT_RATE, SAY_RATE, RATE_WINDOW_SEC, RATE_KIB, ANON_RATE_KIB; defaults 60, 20, 10 s, 256, 32), refused with code `rate`.
 - No message may kill the process: handler errors answer
   `{type:"error", error:"that request failed server-side — it has been logged"}`.
@@ -108,8 +108,8 @@ Every message belongs to exactly one plane:
 | `bc` | dev | anyone | `{tag}` | crash breadcrumbs, printed on disconnect. |
 | `capture-result` | service | renderer legs | `{id, dataUrl?/error?}` | answers a server `capture` request (backs HTTP `/snap`). |
 | `capture-capabilities` | service | embodied legs | `{capture: {version: 1, engine: "unreal", scene}}` | an opt-in native donor says it can capture (server/screenshots.ts captureCapability); anything else clears it. |
-| `world-fork` | admin | owner | `{to}` | a new world (its own genesis) whose founding act names this one, holding a copy of its current state; answers `world-forked`. |
-| `operator-repair` | admin | server operator (`SERVER_OPERATORS`) | `{id, verb, args}` | a server operator's recorded repair of the world it is in (PROTOCOL §7a): `set`/`delete` of @world `roles:<id>`, `access`, `default-role`, `role-defs`, `unban`, and `repair` (the maintenance command, PROTOCOL §4: lift-sockets, rename-components, repair-shapes, each its own system act with `by` and `operator: true`; never run by a load; `args.dryRun: true` computes without writing; the pre-repair log is kept under the world's `repair-backups/` for `world.ts repair --rollback`; `repair-shapes` is accepted as its older name); answers `reply` with `operator: true`; the act's body carries `operator: true`. |
+| `world-fork` | admin | owner | `{to}` | a new world (its own genesis) whose founding request names this one, holding a copy of its current state; answers `world-forked`. |
+| `operator-repair` | admin | server operator (`SERVER_OPERATORS`) | `{id, verb, args}` | a server operator's recorded repair of the world it is in (PROTOCOL §7a): `set`/`delete` of @world `roles:<id>`, `access`, `default-role`, `role-defs`, `unban`, and `repair` (the maintenance command, PROTOCOL §4: lift-sockets, rename-components, repair-shapes, each its own system request with a body `by` and `operator: true`; never run by a load; `args.dryRun: true` computes without writing; the pre-repair log is kept under the world's `repair-backups/` for `world.ts repair --rollback`; `repair-shapes` is accepted as its older name); answers `reply` with `operator: true`; the request's body carries `operator: true`. |
 | `world-reset` | admin | owner | `{name}` (must equal the world's) | archives the log beside it and re-founds the world for the same owners. |
 | `world-bans` | read | anyone present | `{}` | answers a `mod` text summary. |
 | `world-upgrade-review` / `world-upgrade` | — | a server operator (`SERVER_OPERATORS`) or the world's owner (main's records bind the owner to this account, or name them with no account: world.ts owner-of), by a session or an agent credential (no join needed) | `{id, world}` / `{id, world, approved: <report hash>}` | an old-format world's upgrade (docs/TRANSLATING-OLD-WORLDS.md): the CLI's dry-run report `{ok, world, report, hash, owner?, warning?}`, then the backup and the CLI's translation bound to that hash `{ok, world, backup, report, rollback, people, owner?, claimed?, owned?, warning?}`. `owner {recognised: "bound" \| "name", name}`: how an owner was recognised; `claimed: true` + `owned`: an ownerless world's upgrader is now its owner; `warning`: no owner is bound to an account; `people`: everyone who holds a role, with the account bound to them (if any). Refused `{ok: false, refused: {code, reason, fix?}}`: not-old, rights (ask the server's operator or the world's owner), cli, shape (approved isn't a hash), busy, rate, stale (another hash), refused, failed (server/upgrade.ts). |
@@ -117,20 +117,26 @@ Every message belongs to exactly one plane:
 
 ## 4. Server → client messages
 
-- `snapshot` — the join answer: `{world, you, gen, yourSurfaces, recording,
-  cut: {dialect, v, head, worldId, verbs, state, sim, names, holds, mine, you},
-  state (the chat window: always `recentChat: []`, since speech is arrival-only;
-  `chatTotal` is the master log's line count for an admin, else 0), avatars (roster), yourRights, restore, present[{id, avatar, pose,
-  declares?, surfaces, session}]}`. `cut.state` is the fold at `head` (each component
-  wrapped `{v}` or `{purged: true}`, as in the digest); a joiner adopts that
-  cut and folds on from `head + 1`. Cost scales with the world, not its
-  history.
+- `snapshot` — the join answer, flat: `{type: "snapshot", dialect, v, minor,
+  world: <world id>, name: <directory name>, you, gen, seq, state, physics,
+  names, holds, mine, verbs, chat: {recentChat, chatTotal}, yourSurfaces,
+  recording, avatars (roster), yourRights, restore, present[{id, avatar, pose,
+  declares?, surfaces, session}]}`. `world` is the world id, as in the log; the
+  directory name is `name`. `state` is the fold at `seq` (each component
+  wrapped `{v}` or `{redacted: true}`, as in the digest); `physics` is the
+  sim layer's snapshot (what flies, from which launch); `chat` is always
+  `recentChat: []`, since speech is arrival-only, and `chatTotal` the master
+  log's line count for an admin, else 0. A joiner adopts the snapshot and
+  folds on from `seq + 1`; one that doesn't know `{dialect, v, minor}` refuses
+  it whole with `unknown-version` (shared/protocol/replica.js `adopt`), never
+  a half-view. Cost scales with the world, not its history. (`cut` was the
+  old nested payload: docs/DESIGN-log-vocabulary.md §1.8.)
 - `geom` — async join follow-up: `{geom: {lib: {bbox}}}` placeholders.
 - `log` — `{world, from, entries, names?}`: the raw entries the authority just
   appended, starting at seq `from`, fanned to everyone; `names` maps new
   identities to display names. The authored plane's only carrier. A gap, a
-  purge or a genesis means the client can't continue its cut and asks for a
-  fresh snapshot.
+  redaction, a governance entry or a genesis means the client can't continue
+  its snapshot and asks for a fresh one (`resync`).
 - `reply` — `{id, verb, ok, reply}`: the authority's own answer to your
   request, whole under `reply` (`{ok: false, refused: {code, reason,
   fix}}` when refused). A request whose creates named placeholders (`$name`:
@@ -139,7 +145,7 @@ Every message belongs to exactly one plane:
   socket they occupy says so in its notes (`{who, vacated: true, socket, why}`), and the one let go finds
   `vacated {socket, host?, by, why, at?}` in their body inbox (the `inbox` request; PROTOCOL §5): presence, never logged.
 - `holds` — `{world, holds: {id: {by, hand, grip?|offset?, second?}}}`:
-  who holds what (presence), sent whenever it changes and in every cut.
+  who holds what (presence), sent whenever it changes and in every snapshot.
 - `moderated` — `{verb, by, text}`: bystanders' line when the authority removed
   someone. A guest's mute is also filed against their address and re-issued
   at their next join, as one record per moderator: all the channels that
@@ -220,7 +226,7 @@ Reach travels inside presence pose bags (`pose.reach`, relayed opaquely —
 see the amended spec/PROTOCOL.md §5).
 
 Wire additions since the v0 freeze (each flagged in its commit):
-physics (PROTOCOL_v2): `snapshot.cut.sim` (the sim layer's cut: what flies,
+physics (PROTOCOL_v2): `snapshot.physics` (the sim layer's snapshot: what flies,
 from which launch, adopted by joiners) ·
 `/defs` (the def registry, charter §3 — instance content as data, slice 2) ·
 `/tick` (heartbeat gauges, charter §4 — per-system runs/worst-ms/errors,
@@ -240,7 +246,7 @@ client must currently reproduce, and a candidate for a deliberate ruling:
 
 1. `world-fork`/`world-reset`/`world-bans` and the `global-*` family are
    messages, not requests — world lifecycle lives outside the authority.
-2. Objects settle through requests (put, drop, throw: checked acts),
+2. Objects settle through requests (put, drop, throw: checked requests),
    while `bodydrag` settles through the dragged body's OWNER, on the
    presence plane. Two motion idioms, one seam.
 3. `snapshot.yourRights` is advisory — clients re-derive rights from

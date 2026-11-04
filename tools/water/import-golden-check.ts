@@ -23,7 +23,7 @@ let dry = null; try { dry = JSON.parse(run.stdout.toString()); } catch {}
 C("G0", "import.ts --dry prints its requests (exit 0)", run.exitCode === 0 && dry?.requests?.length === 1, { code: run.exitCode, err: run.stderr.toString().slice(-400) });
 if (!dry) { console.log(`[import-golden-check] ${pass} passed, ${fail} failed`); process.exit(1); }
 
-const ops = dry.requests[0].args.ops, creates = ops.filter((o) => o.op === "create").map((o) => o.args);
+const ops = dry.requests[0].args.requests, creates = ops.filter((o) => o.verb === "create").map((o) => o.args);
 const bodies = creates.filter((a) => a.components.water), pockets = creates.filter((a) => a.components["water-exclusion"]);
 const by = (host) => pockets.filter((a) => a.components.parent?.to === `$${host}`);
 const b = bodies[0]?.components;
@@ -45,14 +45,14 @@ C("G3c", "each of main's three routes is a climb child of its host: main's path 
   climbs.length === 3 && ["water-habitat", "water-submarine", "water-platform"].every((h) => { const a = climbs.find((x) => x.components.parent?.to === `$${h}`), m = mainRoute(h);
     return a && JSON.stringify(a.components.climb) === JSON.stringify({ points: m.path, reach: m.radius, speed: m.speed }) && a.components.label === m.name; })
   && JSON.stringify(creates.find((a) => a.id === "$water-scenery")?.components.collider) === JSON.stringify({ shape: "mesh", enabled: false }), climbs);
-const envMain = manifest.verbs.find((v) => v.verb === "comp" && v.args.type === "environment").args.data, setOf = (k) => ops.find((o) => o.op === "set" && o.args.id === "@world" && o.args.component === k)?.args.value;
+const envMain = manifest.verbs.find((v) => v.verb === "comp" && v.args.type === "environment").args.data, setOf = (k) => ops.find((o) => o.verb === "set" && o.args.id === "@world" && o.args.component === k)?.args.value;
 C("G3e", "main's environment: @world.spawn and bounds as main's (min.y 2 m under the floor when the floor lies below it: #248), @world.sky.gradient, @world.terrain flat at main's floor (no floor thing), a directional sun and a child naming a derived dust document, uploaded with the batch (translate-v1@34); ambient listed as unmapped (the motes fit the effect limits since translate-v1@38); vehicle probes listed with what becomes of them (FATES; minY/maxY and water speed are mapped since translate-v1@29, R 10-28 item 50)",
   JSON.stringify(setOf("spawn")) === JSON.stringify({ pos: envMain.spawn }) && JSON.stringify(setOf("bounds")) === JSON.stringify({ min: [envMain.bounds.min[0], Math.min(envMain.bounds.min[1], envMain.floor - 2), envMain.bounds.min[2]], max: envMain.bounds.max }) && !!setOf("sky")?.gradient
   && JSON.stringify(setOf("terrain")) === JSON.stringify({ kind: "flat", height: envMain.floor }) && !creates.some((a) => a.components.hidden === true && a.components.mesh?.shape === "box" && !a.components.collider?.blocks) && creates.some((a) => a.components.light?.kind === "directional") && creates.some((a) => /^sha256:/.test(a.components.particles?.effect) && a.components.parent?.to === "$water-terrain") && dry.uploads?.length === 1
   && JSON.stringify(dry.unmapped.map(({ becomes, ...u }) => u)) === JSON.stringify([{ component: "environment", id: "water-terrain", fields: ["sky.ambient"], as: "water-terrain imported:environment" },
     { component: "vehicle", id: "water-submarine", fields: ["probes"], as: "water-submarine imported:vehicle" }])
   && dry.unmapped[0].becomes === undefined && /retired: the authority's hull sweep/.test(dry.unmapped[1].becomes?.probes) && dry.unmapped[1].becomes?.minY === undefined,
-  { unmapped: dry.unmapped, sets: ops.filter((o) => o.op === "set").map((o) => o.args.component) });
+  { unmapped: dry.unmapped, sets: ops.filter((o) => o.verb === "set").map((o) => o.args.component) });
 
 // the batch through a real authority (a scratch world): placeholders minted, every op taken
 const D = await import(ENGINE + "shared/protocol/authority.js"), F = await import(ENGINE + "shared/protocol/fold.js"), Z = await import(ENGINE + "shared/zone.js");
@@ -112,12 +112,12 @@ C("G4", "a real authority takes the whole batch: every create and set, its place
   const band = (q) => { const o = openWorld(`water-o${q[0] ? "f" : "u"}`), go = (verb, args) => { clock.advance(1000); return D.request(o, "olive", verb, args); };
     go("create-world", { title: "o" }); const pos = [26, -100, 60];
     go("set", { id: "@world", component: "terrain", value: { kind: "flat", height: -300 } }); go("set", { id: "@world", component: "bounds", value: { min: [-100, -290, -100], max: [100, 50, 150] } });
-    const made = go("batch", { ops: [{ verb: "create", args: { id: "$sub", components: { transform: { pos, q, scale: [1, 1, 1] }, model: CRATE, drive: { maxSpeed: 4, turnRate: 0.4, climbRate: 4 }, collider: { mask: TV1.vehiclePartsOf("sub", m).mask } } } },   // it scans its band's layer (@32)
+    const made = go("batch", { requests: [{ verb: "create", args: { id: "$sub", components: { transform: { pos, q, scale: [1, 1, 1] }, model: CRATE, drive: { maxSpeed: 4, turnRate: 0.4, climbRate: 4 }, collider: { mask: TV1.vehiclePartsOf("sub", m).mask } } } },   // it scans its band's layer (@32)
       { verb: "create", args: { id: "$helm", components: { transform: { pos: [0, 0.3, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, parent: { to: "$sub" }, socket: { name: "helm" }, station: { action: "drive", input: { move: "drive" } } } } }] });
     if (!made.ok) return { hull: null, said: { made: `${made.refused?.code}: ${made.refused?.reason}` }, good: false };
     const sub = made.ids.$sub, helm = made.ids.$helm;
     const H = MATH.aabb(o.state(), sub), hull = TV1.hullExtentOf([H.min.map((v, i) => v - pos[i]), H.max.map((v, i) => v - pos[i])]);
-    const walls = go("batch", { ops: TV1.vehiclePartsOf("sub", m, hull).walls.map(([, c], k) => ({ verb: "create", args: { id: `$w${k}`, components: c } })) });
+    const walls = go("batch", { requests: TV1.vehiclePartsOf("sub", m, hull).walls.map(([, c], k) => ({ verb: "create", args: { id: `$w${k}`, components: c } })) });
     const drive = (y) => { clock.advance(1000); return D.request(o, "olive", "drive", { id: sub, pos: [pos[0], y, pos[2]], q }); }, at = (y) => go("set", { id: sub, component: "transform", value: { pos: [pos[0], y, pos[2]], q, scale: [1, 1, 1] } });
     const leave = () => { go("move", { to: [pos[0] + 30, -100, pos[2]], teleport: true }); clock.advance(5000); D.drives?.(o); };
     const board = () => { const hp = (SLw.worldPose(o.state(), helm)).pos; go("move", { to: [hp[0] + 1, hp[1], hp[2]], teleport: true }); return go("use", { id: sub, action: "drive" }); };

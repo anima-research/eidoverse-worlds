@@ -30,8 +30,8 @@ const check = (name: string, ok: boolean, detail = "") => {
 };
 const near = (a: number, b: number, e = 1e-6) => Math.abs(a - b) < e;
 // the door ops one edit planned: sets / deletes of one component
-const sets = (r: any, comp: string) => flat(r.ops).filter((o: any) => o.op === "set" && o.args.component === comp);
-const dels = (r: any, comp: string) => flat(r.ops).filter((o: any) => o.op === "delete" && o.args.component === comp);
+const sets = (r: any, comp: string) => flat(r.ops).filter((o: any) => o.verb === "set" && o.args.component === comp);
+const dels = (r: any, comp: string) => flat(r.ops).filter((o: any) => o.verb === "delete" && o.args.component === comp);
 const val = (r: any, comp: string) => sets(r, comp)[0]?.args.value;
 
 const chair = { model: "furniture/chair.glb", pos: [1, 0, 2], yaw: 1.5708, actor: "r", ts: 1,
@@ -368,7 +368,7 @@ console.log("\nmesh (a parametric body with no model):");
   check("mesh edits = ONE set mesh: size x 1.5, shape cylinder, the rest kept", sets(r, "mesh").length === 1 && flat(r.ops).length === 1 && v?.shape === "cylinder" && JSON.stringify(v?.size) === "[1.5,2,3]", JSON.stringify(v));
   check("a size below the door's 0.05 is refused in its words, nothing sent; an unknown shape is an error, not an op", !editOps(cube, "m1", { "mesh.size.z": "0" }).ops.length && /must be ≥ 0\.05/.test(editOps(cube, "m1", { "mesh.size.z": "0" }).errors[0] ?? "") && /one of/.test(editOps(cube, "m1", { "mesh.shape": "cone" }).errors[0] ?? "") && editOps(cube, "m1", { "mesh.shape": "cone" }).ops.length === 0);
   const addL = editOps(cube, "m1", { "comp.+": "Light" });
-  check("Add Component ▸ Light on a mesh thing makes a CHILD light (one place per thing), as on a model", flat(addL.ops).some((o: any) => o.op === "create" && o.args.id === "$light" && o.args.components?.parent?.to === "m1"), JSON.stringify(addL));
+  check("Add Component ▸ Light on a mesh thing makes a CHILD light (one place per thing), as on a model", flat(addL.ops).some((o: any) => o.verb === "create" && o.args.id === "$light" && o.args.components?.parent?.to === "m1"), JSON.stringify(addL));
   const addM = editOps(chair, "c1", { "comp.+": "Mesh" });
   check("Add Component ▸ Mesh on a model is refused with the one-place text", addM.ops.length === 0 && /one place per thing/.test(addM.errors[0] ?? ""), JSON.stringify(addM.errors));
   const addM2 = editOps(lamp, "lamp", { "comp.+": "Mesh" });
@@ -380,8 +380,8 @@ console.log("\nmesh (a parametric body with no model):");
   // light hangs half a metre over its top; a plane's at 0.55
   const gr = editOps(cube, "m1", { "comp.+": "Grabbable" }), so = editOps(cube, "m1", { "comp.+": "Sockets" }), co = editOps(cube, "m1", { "comp.+": "Collider" }, {});
   check("Add ▸ Grabbable and Collider on a mesh thing write their component; Sockets is its own gesture (none says 'needs a model')", sets(gr, "grabbable").length === 1 && !gr.errors.length && !/needs a model/.test(so.errors[0] ?? "") && sets(co, "collider").length === 1 && !co.errors.length, JSON.stringify([gr.errors, so.errors, co.errors, gr.choice ?? null, so.choice ?? null]));
-  const lt = editOps(cube, "m1", { "comp.+": "Light" }); const ly = flat(lt.ops).find((o: any) => o.op === "create")?.args.components?.transform?.pos?.[1];
-  const pl = editOps({ ...cube, mesh: { shape: "plane", size: [4, 0.05, 4] } }, "p1", { "comp.+": "Light" }); const py = flat(pl.ops).find((o: any) => o.op === "create")?.args.components?.transform?.pos?.[1];
+  const lt = editOps(cube, "m1", { "comp.+": "Light" }); const ly = flat(lt.ops).find((o: any) => o.verb === "create")?.args.components?.transform?.pos?.[1];
+  const pl = editOps({ ...cube, mesh: { shape: "plane", size: [4, 0.05, 4] } }, "p1", { "comp.+": "Light" }); const py = flat(pl.ops).find((o: any) => o.verb === "create")?.args.components?.transform?.pos?.[1];
   check("Add ▸ Light on a 2 m box childs the bulb at 2.5; on a plane at 0.55", ly === 2.5 && py === 0.55, JSON.stringify([ly, py]));
   check("a carried thing with both a lib and a mesh is shown as its model: no mesh card", !inspectSchema({ ...cube, model: "m/crate.glb" }, "m2").groups.some((g) => g.group === "mesh"));
 }
@@ -411,7 +411,7 @@ console.log("\ntrusted drafts (the ladder's second rung):");
   const t1 = editOps(ov, "m1", { "hmat.trust": true }, { materials: [], mayTrust: true, trusted: ["mica/heart"] });
   check("TD9 the button writes @world.trusted with the name added (the rest kept)", JSON.stringify(flat(t1.ops).find((o: any) => o.args.id === "@world")?.args) === JSON.stringify({ id: "@world", component: "trusted-components", value: { components: ["mica/heart", "hesperus/material"] } }), JSON.stringify(t1));
   const t2 = editOps(ov, "m1", { "hmat.trust": true }, { materials: [], mayTrust: true, trusted: ["hesperus/material"] });
-  check("TD10 …and removes it when it was trusted (an empty list deletes the component)", flat(t2.ops).some((o: any) => o.op === "delete" && o.args.id === "@world" && o.args.component === "trusted-components"), JSON.stringify(t2));
+  check("TD10 …and removes it when it was trusted (an empty list deletes the component)", flat(t2.ops).some((o: any) => o.verb === "delete" && o.args.id === "@world" && o.args.component === "trusted-components"), JSON.stringify(t2));
   // the World inspector (where sky/weather live): a "trusted components" card listing them, each with remove (owner)
   const ws = (live: any) => worldSchema({ sky: null, terrain: null, grass: null }, live);
   const wcard = ws({ trusted: ["hesperus/material", "mica/heart"], mayTrust: true }).sections.list.find((x: any) => x.key === "trusted-components");

@@ -379,7 +379,7 @@ const cases: Case[] = [
       const lamp = { model: "lamp", pos: [0, 0, 0], light: { color: 1, intensity: 16 } };
       const sch = ES.inspectSchema?.(lamp, "lamp", { materials: [] }); const g = (sch?.groups ?? []).find((x: any) => x.group === "light");
       const e = ES.editOps?.(lamp, "lamp", { "light.daytime": true }); const old = ES.editOps?.(lamp, "lamp", { "light.noon": true });
-      const flat = (ops: any[]) => ops.flatMap((o: any) => (o.op === "batch" ? o.args.ops : [o]));
+      const flat = (ops: any[]) => ops.flatMap((o: any) => (o.verb === "batch" ? o.args.requests : [o]));
       return { keys: (g?.fields ?? []).map((f: any) => f.k), w: JSON.stringify(flat(e?.ops ?? [])), oldErr: old?.errors ?? [] }; },
     good: (o) => o.keys.includes("daytime") && !o.keys.includes("noon") && /"daytime":"full"/.test(o.w) && o.oldErr.length > 0 },
   { id: "S2", what: "…the world's Sky card has sky.tz (empty: the authored clock) and no sky.clock; an edit of sky.clock is no field", async run() {

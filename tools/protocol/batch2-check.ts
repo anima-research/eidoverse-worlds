@@ -461,7 +461,7 @@ const cases: Case[] = [
       const names = ["story", "text", "picture", "sound", "look-at"].filter((c) => sch(c)?.help);
       const rx = s.call("olive", "schema", { component: "reactions" }).components?.reactions?.handlers ?? {};
       s.call("olive", "create", { id: "kiosk", components: { transform: { pos: [0, 0, 0] } } }); s.call("olive", "create", { id: "lamp", components: { transform: { pos: [2, 0, 0] } } });
-      s.call("olive", "batch", { ops: [
+      s.call("olive", "batch", { requests: [
         { verb: "set", args: { id: "kiosk", component: "story", value: { title: "Kiosk", text: "Where the map was." } } },
         { verb: "set", args: { id: "kiosk", component: "text", value: { text: "MAP" } } },
         { verb: "set", args: { id: "kiosk", component: "picture", value: { src: IMG, description: "a map" } } },

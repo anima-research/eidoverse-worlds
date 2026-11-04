@@ -184,13 +184,13 @@ long as it rides; that field is reserved today (a write is refused), so no held 
 ## What an activation is, in the log
 
 ```text
-812 act    actor=vic        verb=use     body={request: {id: "bell1", action: "ring"}, runs: "script:bell"}
-813 act    actor=script:bell1  verb=script  cause=812  body={script, src, sponsor, sponsorAt, on, trigger, event,
+812 request actor=vic        verb=use     body={args: {id: "bell1", action: "ring"}, runs: "script:bell"}
+813 request actor=script:bell1  verb=script  cause=812  body={script, src, sponsor, sponsorAt, on, trigger, event,
                                                          head, seed, depth, engine, api, reads?, bodies?}
 814 change actor=script:bell1  cause=813    the batch: every write, all or nothing
 815 say    actor=script:bell1  cause=813
-816 act    actor=script:bell1  verb=use  cause=813  body={request: {id, action, args?}, sponsor, …}   a world.use: then the
-                                                         target's change or script act, caused by 816
+816 request actor=script:bell1  verb=use  cause=813  body={args: {id, action, args?}, sponsor, …}   a world.use: then the
+                                                         target's change or script request, caused by 816
 ```
 A timer's or a presence event's act has `cause` = the entry that made its sponsor. Replay never runs code: the fold
 reads 814. An auditor may: `shared/protocol/scriptaudit.js` folds to `head`, re-runs the source with the recorded event,
@@ -216,7 +216,7 @@ Moved from PROTOCOL §8 (one optional tool's procedure; the protocol keeps that 
   (within its declared scope). That is the script's own act, signed with its sponsor's rights, and readable in its source.
   A re-run gets stand-ins. Body effects (`world.shove`, `world.pose`) are recorded as
   `{kind, to}`, never which consent let them through. A `say`'s text and a `use`'s `args` are not copied into the act: it points at them (`trigger`),
-  so purging that say or request purges them everywhere.
+  so redacting that say or request redacts them everywhere.
 - Each activation runs in a **fresh** sandbox: nothing survives between activations. Keep state in a component in your
   scope (it is world state: forkable, readable, undoable). There is no private kv.
 - No timers (`setTimeout`), network, files or other clocks exist. Motion is a function of time (`motion`), never a

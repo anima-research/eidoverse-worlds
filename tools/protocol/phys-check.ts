@@ -549,7 +549,7 @@ function playground(name) {
   ok(g.ok && on.ok && lift?.actor === "sam", "U5b the lift an engine's start logs names the holder, not whoever started the engine", { g: g.ok ?? g.refused, on: on.ok, actor: lift?.actor }); }
 { const W = playground("held-released-at-epoch");
   call(W, "rowan", "grab", { id: "ball" }); const held = view(W).lifted.has("ball");
-  const b = call(W, "rowan", "batch", { ops: [{ verb: "set", args: { id: "@world", component: "physics-engine", value: { ...ENG, tickMs: 16 } } },
+  const b = call(W, "rowan", "batch", { requests: [{ verb: "set", args: { id: "@world", component: "physics-engine", value: { ...ENG, tickMs: 16 } } },
     { verb: "set", args: { id: "ball", component: "transform", value: { pos: [1, 0, 1], q: [0, 0, 0, 1], scale: [1, 1, 1] } } }] });
   const v = view(W); const w = openWorld(root, W);
   ok(held && b.ok && !!w.presence.holds && !w.presence.holds.ball && !v.lifted.has("ball") && !!v.sim && !!(v.sim.bodies.ball || v.sim.statics?.ball),
@@ -558,7 +558,7 @@ function playground(name) {
   call(W, "rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 0] } });
   call(W, "sam", "move", { to: [0, 0, -0.5] }); const g = call(W, "sam", "grab", { id: "ball" });
   // two engine sets in one batch, by someone who isn't holding it: one lift, naming the holder
-  const on = call(W, "rowan", "batch", { ops: [{ verb: "set", args: { id: "@world", component: "physics-engine", value: { ...ENG, tickMs: 16 } } }, { verb: "set", args: { id: "@world", component: "physics-engine", value: ENG } }] });
+  const on = call(W, "rowan", "batch", { requests: [{ verb: "set", args: { id: "@world", component: "physics-engine", value: { ...ENG, tickMs: 16 } } }, { verb: "set", args: { id: "@world", component: "physics-engine", value: ENG } }] });
   const lifts = log(W).filter((e: any) => e?.kind === "physics" && e.verb === "lift" && e.body?.id === "ball"); const v = view(W);
   ok(g.ok && on.ok && lifts.length === 1 && lifts[0].actor === "sam" && v.lifted.has("ball") && !!v.sim && !!v.sim.statics && !v.sim.bodies.ball && !v.sim.statics.ball,
     "U5c an engine started inside a batch, twice over, logs one lift for a thing in a hand, naming its holder, so the thing stays out of the engine's world", { g: g.ok, on: on.ok ?? on.refused, lifts: lifts.map((e: any) => e.actor), lifted: [...v.lifted], sim: !!v.sim, body: !!v.sim?.bodies.ball, st: !!v.sim?.statics?.ball }); }
@@ -575,8 +575,8 @@ function playground(name) {
   call(W, "sam", "move", { to: [0, 0, -0.5] }); const g = call(W, "sam", "grab", { id: "ball" });
   const ops = [{ verb: "set", args: { id: "@world", component: "physics-engine", value: ENG } },
     { verb: "set", args: { id: "ball", component: "transform", value: { pos: [1, 0, 1], q: [0, 0, 0, 1], scale: [1, 1, 1] } } }];
-  const dry = call(W, "rowan", "batch", { ops, dry: true }); const n = log(W).length;
-  const b = call(W, "rowan", "batch", { ops });
+  const dry = call(W, "rowan", "batch", { requests, dry: true }); const n = log(W).length;
+  const b = call(W, "rowan", "batch", { requests });
   const lift = log(W).slice(n).find((e: any) => e?.kind === "physics" && e.verb === "lift" && e.body?.id === "ball"); const v = view(W); const w = openWorld(root, W);
   ok(g.ok && b.ok && !lift && !w.presence.holds?.ball && !v.lifted.has("ball") && !!(v.sim?.bodies.ball || v.sim?.statics?.ball),
     "U5f a batch that starts the engine and moves a held thing logs no lift for it: it leaves the hand and is in the engine's world where the edit put it", { g: g.ok ?? g.refused, b: b.ok ?? b.refused, lift: !!lift, hold: !!w.presence.holds?.ball, lifted: [...v.lifted], body: !!v.sim?.bodies.ball, st: !!v.sim?.statics?.ball });
@@ -588,8 +588,8 @@ function playground(name) {
   call(W, "sam", "move", { to: [0, 0, -0.5] }); const g = [call(W, "sam", "grab", { id: "ball" }), call(W, "sam", "grab", { id: "cup" })];
   const ops = [{ verb: "set", args: { id: "@world", component: "physics-engine", value: ENG } },
     { verb: "set", args: { id: "ball", component: "transform", value: { pos: [1, 0, 1], q: [0, 0, 0, 1], scale: [1, 1, 1] } } }];
-  const dry = call(W, "rowan", "batch", { ops, dry: true }); const n = log(W).length;
-  const b = call(W, "rowan", "batch", { ops });
+  const dry = call(W, "rowan", "batch", { requests, dry: true }); const n = log(W).length;
+  const b = call(W, "rowan", "batch", { requests });
   const lifts = log(W).slice(n).filter((e: any) => e?.kind === "physics" && e.verb === "lift").map((e: any) => `${e.body?.id}:${e.actor}`); const v = view(W);
   ok(g.every((x) => x.ok) && b.ok && JSON.stringify(lifts) === '["cup:sam"]' && JSON.stringify(dry.lifts) === '["cup"]' && v.lifted.has("cup") && !v.lifted.has("ball"),
     "U5g with two things in hand, a batch that starts the engine and moves one lifts the other alone, dry and live", { g: g.map((x) => x.ok ?? x.refused?.code), b: b.ok ?? b.refused, lifts, dryLifts: dry.lifts, lifted: [...v.lifted] }); }
@@ -872,7 +872,7 @@ function playground(name) {
 // the one the fold keeps, is stamped too
 { const W = playground("pc-s9"); const e = () => openWorld(root, W).state().entities["crate-1"]?.c.physics;
   const want = e()?.shape; const fake = [[-4, 0, -4], [4, 9, 4]];
-  const r = call(W, "rowan", "batch", { ops: [{ verb: "set", args: { id: "crate-1", component: "physics", value: { kind: "dynamic", who: "builder" } } },
+  const r = call(W, "rowan", "batch", { requests: [{ verb: "set", args: { id: "crate-1", component: "physics", value: { kind: "dynamic", who: "builder" } } },
     { verb: "set", args: { id: "crate-1", component: "physics", value: { kind: "dynamic", who: "builder", shape: fake } } }] });
   ok(r?.ok && want && JSON.stringify(e()?.shape) === JSON.stringify(want), "S9 the second of two physics sets in one batch can't put the asker's shape in place of the measured one", { r: r?.ok ?? r, want, got: e()?.shape }); }
 

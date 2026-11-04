@@ -18,10 +18,10 @@ Two planes with different consistency needs:
 - **The world log (authored plane).** Every construction or mutation is a
   request to the world's **door** (`create`, `set`, `place`, `use`, `say`,
   `undo`, `grab`…), checked by one gate and written to an append-only,
-  hash-chained log as the act and its result: entities carrying components,
+  hash-chained log as the request and its result: entities carrying components,
   changed only by `create` / `set` / `delete`. The log *is* the world
   format; there is no scene file. Every client folds it with the same strict
-  reader, and late joiners adopt a cut of the fold and continue from there,
+  reader, and late joiners adopt a snapshot of the fold and continue from there,
   so join cost tracks the size of the world, not the length of its history.
   The protocol is `spec/PROTOCOL.md` (the protocol, CC0).
 - **Presence (embodied plane).** Avatar transforms, animation intent, gaze,

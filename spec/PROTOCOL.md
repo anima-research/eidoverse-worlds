@@ -11,7 +11,8 @@ Which files are the contract, and the status of each choice it makes (decided, t
 `spec/NORMATIVE.md`. Code this document names is informative: a place to look, never the contract.
 
 Status: normative for logs whose genesis says `dialect: "eidoverse-log", v: 4,
-minor: 0` (the version history is at the end).
+minor: 1` (the version history is at the end; minor 1 is this vocabulary, D1 of
+`docs/DESIGN-log-vocabulary.md`, and a minor-0 world is read only by the migration tool).
 **Alpha.** This whole protocol is in a trial period of about a year from v1.
 There is **no guarantee** that a log folded today will fold the same way under
 a later version: not a component's shape, not a field or message name, and not
@@ -82,31 +83,38 @@ or null-prototype objects, and a tokenizer that sees duplicate keys, since
 | field | |
 |---|---|
 | `world` | the world id (§2); required on every entry after genesis |
-| `kind` | `genesis` · `change` · `act` · `sim` · `say` · `purge` · `sequencer` |
+| `kind` | `genesis` · `change` · `request` · `physics` · `say` · `redaction` · `governance` |
 | `ts` | the authority's admission time, integer milliseconds ≥ 0; required after genesis, never decreasing along the log |
-| `actor` | who: an identity, `system`, `sim`, `world` or `script:<entity>` (§6) |
+| `actor` | who: an identity, `system`, `sim` or `script:<entity>` (§6) |
 | `cause` | the seq of the entry that caused this one, `0 ≤ cause < seq`; required on `change` |
-| `verb` | a string: for `change`, one of the four operations (§3) |
+| `op` | on `change` only (and on each item of its batch): one of the four operations (§3) |
+| `verb` | on `request` and `physics` only: the request word, or the physics event (`PHYSICS.md`) |
 | `body` | an object |
 | `head`, `sig` | the sequencer's chain fields, on chain points (§12) |
-| `for`, `grant` | reserved for acting on someone's behalf; until identities have keys, an entry carrying `for` is malformed (`grant` is reserved and not yet checked) |
-| `by` | legacy (the lab's name for `actor`): allowed, and every reader MUST ignore it. Writers MUST NOT write it |
 
-An unknown field, a `seq` field, a missing or non-string `kind`/`actor`/
-`verb`, a non-object `body`, a bad `cause`, or a missing, fractional or
-decreasing `ts` makes the entry malformed: it shapes nothing and the reader
-reports it in diagnostics, never in the world.
+A `genesis`, `say`, `redaction` or `governance` entry carries neither `op` nor
+`verb`. `for`, `grant` and `by` are unknown fields: acting on someone's behalf
+is a concept this protocol reserves in prose only (it needs a per-entry
+credential once identities have keys), never as a field name. `seq` is never
+an envelope field; in a body it names a position (a checkpoint's `seq`, a
+redaction target's `seq`). An unknown field, a `seq` field, a missing or
+non-string `kind`/`actor`, an `op` or `verb` missing or on the wrong kind, a
+non-object `body`, a bad `cause`, or a missing, fractional or decreasing `ts`
+makes the entry malformed: it shapes nothing and the reader reports it in
+diagnostics, never in the world. Why each word: `docs/DESIGN-log-vocabulary.md`.
 
 **The kinds.**
 
 - **`genesis`** — entry 0, and only entry 0 (§13).
 - **`change`** — the fold's only input (§3).
-- **`act`** — a request as it was sent. A refused one keeps only its verb
-  (the entry's own `verb`), the names of the arguments that verb takes, and
-  its refusal code (§7): never a value. Acts are history: the fold never
-  reads them. A change entry's `cause` is usually the act that asked for it.
-- **`sim`** — a physics intent (a launch, a lift, a catch, the engine's
-  digest); read only by readers that carry the world's engine
+- **`request`** — a request as the authority admitted or refused it. An
+  admitted one carries `body {args, salt}`; a refused one keeps only its verb
+  (the entry's own `verb`), the names of the arguments it sent (`argNames`),
+  and its refusal code (§7): never a value. Requests are history: the fold
+  never reads them. A change entry's `cause` is usually the request that
+  asked for it.
+- **`physics`** — a physics event (a launch, a lift, a catch, the engine's
+  digest or checkpoint); read only by readers that carry the world's engine
   (`PHYSICS.md`).
 - **`say`** — chat: `body {text, to?, spoken?, utt?, t0?}`. Never world state.
   The spoken trio (`spoken: true`, an utterance counter `utt`, a start `t0`
@@ -117,15 +125,20 @@ reports it in diagnostics, never in the world.
   performed, never who performed them (§6a). Every say is kept in the log;
   who may read one back is the authority's practice, not the record's
   (arrival-only speech, §5).
-- **`purge`** — the one rule that changes the record (§12).
-- **`sequencer`** — governance: handing the writer role on, or an owner
-  override (§13).
+- **`redaction`** — the one rule that changes the record (§12).
+- **`governance`** — handing the writer role on, or an owner override
+  (§13).
 
-**Where the authority reads old acts (readback).** The fold never reads an
-act, but the *authority* reads a few act fields back for meaning: an undo's
+The agent's in-memory inbox event `kind: "act"` (mcpl/agent.ts) is a volatile
+agent event, never logged: not a log kind. Two survivors keep their words: the
+component field `physics.kind` (`dynamic|static|kinematic|none`, §4) and the
+checkpoint body's `sim` (the sim-layer digest, `PHYSICS.md`).
+
+**Where the authority reads old requests (readback).** The fold never reads a
+request, but the *authority* reads a few request fields back for meaning: an undo's
 `undoes` and a rollback's `acts` (the undo chain), a `use`'s `capability`
-(whose rights admitted its writes), a script act's `sponsor`, a sculpt's
-`request.brush` and `clamped`, a request's `label`, the request that typed a
+(whose rights admitted its writes), a script request's `sponsor`, a sculpt's
+`args.brush` and `clamped`, a request's `label`, the request that typed a
 physics-engine `engine` (whether the owner typed a version: a deploy restamps only a
 version the server stamped), a launch's, lift's or catch's `id`, and a
 founding's `shapes` or a translation's `from.translator` (the shape repair's
@@ -134,8 +147,8 @@ list, with what each reader does, is pinned in `spec/readback.json` (each
 row's fields and what an unknown means; the reference keeps it as `READBACK`
 in shared/protocol/verbclasses.js, a pointer, not the contract). A new readback
 is a new row; a changed or removed one needs an acknowledged re-pin.
-§12 lets the whole body of an act be purged, so every one of these reads
-treats a purged body as **unknown**, never as a default: an unknown chooser
+§12 lets the whole body of a request be redacted, so every one of these reads
+treats a redacted body as **unknown**, never as a default: an unknown chooser
 of an engine version is the owner's (no restamp), unknown rights match nobody,
 an unknown undo names no target, an unknown flight may still be in the air,
 and an unknown marker counts as marked (the shape repair never re-runs).
@@ -146,7 +159,7 @@ The fold yields a **status** (`ok`, `no-world`, or `unknown-version`), a
 **world id**, a map of **entities**, and **diagnostics**.
 
 - An entity is an id and a map of **components**: name → value. A value is
-  any JSON value (`null` included), or the defined marker *absent(purged)*
+  any JSON value (`null` included), or the defined marker *absent(redacted)*
   (§12).
 - `@world` is live from genesis and can never be deleted. Its components
   are the world's own settings: sky, terrain, roles, bounds, spawn…
@@ -155,15 +168,15 @@ The fold yields a **status** (`ok`, `no-world`, or `unknown-version`), a
   `world`; a mismatch is reported in diagnostics.
 - The **digest** of a folded world is the lowercase hex
   sha256(UTF-8(JCS(view))), where `view` is `{<live id>: {<component>:
-  {"v": value} | {"purged": true}}}` over every live entity, empty ones and
-  `@world` included. Wrapping values in `{"v": …}` keeps `purged` out of the
+  {"v": value} | {"redacted": true}}}` over every live entity, empty ones and
+  `@world` included. Wrapping values in `{"v": …}` keeps `redacted` out of the
   value space. Two readers agree on a world exactly when they agree on its
   digest.
 
 Readers MAY start from a **checkpoint** — a folded view whose digest the
 log records — and verify it by folding forward; the digest is never itself
 folded. A checkpoint that readers may *trust* rather than merely start from
-will be a governance entry (`kind: "sequencer"`, §13) carrying a
+will be a governance entry (`kind: "governance"`, §13) carrying a
 `checkpoint` field, signed like any governance entry. **The name is
 reserved and its shape is not specified**: no sequencer writes one, and a
 reader refuses a governance body that carries it (`gov.py`: "checkpoint is
@@ -173,23 +186,23 @@ trusts, and a world ten years old is verifiable only from entry 0.
 
 ## 3. State operations and their fold semantics (normative)
 
-A `change` entry's `verb` and `body` are one of:
+A `change` entry's `op` and `body` are one of:
 
-| verb | body | fold |
+| op | body | fold |
 |---|---|---|
 | `create` | `{id}` | a new, empty entity; does nothing if `id` is live |
 | `set` | `{id, comp, value?, salt?}` | replace that one component's value; does nothing if the entity is missing, or if `value` is **absent** (`null` is a value) |
 | `delete` | `{id, comp?}` | with `comp`: remove that component (nothing if it isn't there); without: remove the entity (never `@world`) |
-| `batch` | `{ops: [{verb, id, comp?, value?, salt?}, …], followUps?: [i, …]}` | the ops above, applied in order |
+| `batch` | `{ops: [{op, id, comp?, value?, salt?}, …], cascade?: [i, …]}` | the ops above, applied in order |
 
 - A batch never contains a batch.
-- **`followUps`**, when present, names the ops the authority derived as
+- **`cascade`**, when present, names the ops the authority derived as
   consequences of the asker's own (a deletion's reference clears and the
   set-down of what rested on the deleted thing, §4; an undo putting clears
   back): a **non-empty, strictly ascending list of integer indices into
   `ops`**, each `0 ≤ i < ops.length`. Anything else (empty, out of order, a
   repeat, out of range, a fraction, a non-number) makes the **whole entry**
-  malformed (`batch-followups`). The invariant: these ops were admitted
+  malformed (`batch-cascade`). The invariant: these ops were admitted
   **without the asker's rights or locks** (§7); the fold applies them like
   any op, so it never needs the field to fold; readers that derive
   **authorship** from the log — who set up a handler, who created or last
@@ -198,9 +211,9 @@ A `change` entry's `verb` and `body` are one of:
   the marked `delete` it reverses, so the restored value keeps its author
   (a key written by anyone else in between is a new life, never merged with
   the old). A verifier re-running the gate re-runs it on the **unmarked ops
-  only**. A tool that rewrites a batch's `ops` remaps `followUps` with
-  them. (This field was added to the batch body before this protocol's
-  release, at minor 0: see §10.)
+  only**. A tool that rewrites a batch's `ops` remaps `cascade` with
+  them. (Added to the batch body before release as `followUps`, at minor 0;
+  `cascade` since minor 1: see §10.)
 - A shape or grammar error anywhere in an entry (an unknown field, a bad id
   or component name, a nested batch) makes the **whole entry** malformed. A
   semantic no-op (a missing entity, an absent component) skips only that
@@ -236,13 +249,13 @@ All ASCII.
   never choose ids (§7, "Ids are the authority's").
 - **Identities** (actors, and keys such as `roles:<identity>`):
   `[a-z0-9-]{1,64}`, opaque. The mapping from an identity to a person lives
-  outside the log, so purging a person never needs the log's skeleton. An
+  outside the log, so redacting a person never needs the log's skeleton. An
   identity's shape MUST NOT encode what holds it (§6a rule 2).
 - **Component names**: `[a-z][a-z0-9-]*`, optionally prefixed by a domain
   (`example.org/`), optionally versioned `@<n>` (`light@2`), optionally
   keyed `:<key>` with a key of `[a-z0-9-]{1,64}` (`roles:u-abc`,
   `script:bell`).
-- `body:<identity>` names a body (§5). It may be the target of an act or a
+- `body:<identity>` names a body (§5). It may be the target of a request or a
   say, but it is never an entity: a change op on it is malformed.
 
 ## 4. Components
@@ -351,7 +364,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   gate it) leases the hull to its occupant (Roblox network ownership): their client steps it kinematically and sends
   `drive {id, pos, q}` (presence, relayed only from the helm); the authority checks each step against the spec (with
   slack: a fraction over its rates and a fixed allowance that only what a step leaves of its rates unused refills, so a stream gains no speed it can keep) and the hull's own collider, swept over the step, against what's solid (an overlap it starts in may only lessen),
-  answering a refusal with the pose that stands. Only the last accepted pose is written, as the system's act
+  answering a refusal with the pose that stands. Only the last accepted pose is written, as the system's request
   `drive-commit {id, driver, carried, why}` (`carried`: the passengers' ids): on getting up, every 5 s, when a passenger
   gets up (`alight`) and when the steps stop for 3 s (the lease is lost: passengers stay seated, the helm frees). Sitting
   is consent to ride (Roblox VehicleSeat, VRChat stations): a passenger may get up or leave at any time, never blocked by
@@ -364,7 +377,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   `KILL_MARGIN` (50 m) under `@world.bounds.min.y`, has fallen out (Unreal's
   KillZ; the floor itself is the terrain's, so water and ground may lie under
   `@world.bounds.min.y`): its own client sends it back with `move {teleport:
-  true, reason: 'below-bounds'}`, an act on the record; the authority takes it
+  true, reason: 'below-bounds'}`, a request on the record; the authority takes it
   only when it last knew the body below the kill line (one step's slack,
   `TRACK.cap`); a seated or climbing body is exempt. A person's client judges
   a body knocked down only once they get up.
@@ -428,14 +441,14 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   shapes are the kernel's.
 - **A load never writes to the log; stored values are rewritten only by one
   explicit maintenance command.** Three rewrites exist, each the system's own
-  recorded act: `lift-sockets` (a world stored before sockets were entities:
+  recorded request: `lift-sockets` (a world stored before sockets were entities:
   its `sockets` maps and body blocks become socket children with stations),
   `rename-components` (names and fields renamed before release, below) and
   `repair-shapes` (the shape audit's one-way repair, below). None runs at load
   or on read. One write does happen when a server OPENS a world, and it is
   not a shape rewrite: holds left from before a restart are set down
-  (`return-held`, the system's act; `settleOrphans`), presence repair for
-  bodies that are no longer here — the same act a leave writes, never a
+  (`return-held`, the system's request; `settleOrphans`), presence repair for
+  bodies that are no longer here — the same request a leave writes, never a
   stored value changed. A stored world keeps its old values as they are; the load says
   which steps it needs, naming the command, and **fails closed** where
   today's readers don't serve the old shape: a world needing `lift-sockets`
@@ -448,8 +461,8 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   the command. Renames whose old spelling the readers serve (`@world`
   `trusted`, a motion's old type word, a station's `pose`) leave the world writable.
   The maintenance command (its operation: docs/MAINTENANCE.md) runs the three
-  steps in that order, each its own act carrying
-  `command: "repair"` and `by` (who asked; `operator: true` from the wire):
+  steps in that order, each its own request carrying
+  `command: "repair"` and a body `by` (who asked; `operator: true` from the wire):
   `lift-sockets {id, made, moved, capability?}`, `rename-components
   {renamed, failed?}`, `repair-shapes {v, ids, failed?}`
   (shared/protocol/shaperepair.js: `repairComps` for each thing, `repairWorld`
@@ -459,24 +472,24 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   of its size and sha256) and `repair <name> --rollback` puts it back
   byte-identical, refusing when the log has grown since (`--force` overrides).
   A v1 world translated today needs no step: the translate command runs the
-  same maintenance on its output (its `lift-sockets` act says `by:
+  same maintenance on its output (its `lift-sockets` request says `by:
   "translate"`; §14).
-  The repair runs **once per world**: the system's `repair-shapes` act is the world's
-  marker, read by verb and actor only (they survive a purge), and a world
+  The repair runs **once per world**: the system's `repair-shapes` request is the world's
+  marker, read by verb and actor only (they survive a redaction), and a world
   founded or translated today gets one beside its founding or its `translated`
-  act (`ids: []`, with `founding: true` or `translated: true`). Worlds from
-  before that act carry an older marker, a founding stamped `shapes` or a
-  `translated` act by translate-v1@12 or later. Those are read back (§1), and
-  a purged one counts as marked: a one-way rewrite is never re-run on values
+  request (`ids: []`, with `founding: true` or `translated: true`). Worlds from
+  before that request carry an older marker, a founding stamped `shapes` or a
+  `translated` request by translate-v1@12 or later. Those are read back (§1), and
+  a redacted one counts as marked: a one-way rewrite is never re-run on values
   that may already be in today's spelling (`shapesMarked`, a pure view over
   the log, so every replica agrees). The
   rules that read an absent field (a pendulum's swing point, physics kind,
   a light's decay and daytime, the sky's and terrain's defaults) therefore
   only ever see values stored before the marker, never a write made since:
   a pendulum set today without a pivot keeps none, and a deleted pivot
-  stays deleted. The act is written even when nothing needs repair. Each
+  stays deleted. The request is written even when nothing needs repair. Each
   thing is admitted on its own: a thing the door refuses keeps its old
-  spelling and is named in the act's `failed`; the rest repair. A purged
+  spelling and is named in the request's `failed`; the rest repair. A redacted
   value is left alone. The shape audit repairs: a bare motion
   naming a part → `motion:<slot> {node: <part>}` (the slot is `partSlot`
   of the name, shared/protocol/names.js: the name itself when it is a tag,
@@ -512,11 +525,11 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   is not marker-gated,
   unlike the once-per-world repair above: a rename means the same whenever it
   runs, so the command renames whatever it finds, as the system's
-  `rename-components {renamed, failed?, why}` act and its change, and writes nothing
+  `rename-components {renamed, failed?, why}` request and its change, and writes nothing
   when there is nothing to rename. A value already under the new name wins
   (the old one is deleted), an old field stored as null is removed, and each
   thing is admitted per thing, as the repair is: a thing the door refuses
-  keeps its old spelling and is named in the act's `failed` (written only
+  keeps its old spelling and is named in the request's `failed` (written only
   when something else renamed). The door takes a write in the old spelling
   and stores it in the new.
 - **Every defaulted parameter is written down.** The authority writes a
@@ -528,9 +541,9 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
 - **A stamped field is the authority's.** A definition's `stamped` lists the
   fields only the authority writes (a dotted path reaches inside a value):
   `sky.ts`, `sky.override` and `sky.forecast.epoch`. A `set` carrying one is
-  refused `stamped`, naming the act that owns it: the `sky` act stamps `ts`
-  and a forecast's epoch, the `weather` act an override. A sky set by hand is
-  stamped like the sky act's (`ts` is the authority's clock when it lands).
+  refused `stamped`, naming the request that owns it: the `sky` request stamps `ts`
+  and a forecast's epoch, the `weather` request an override. A sky set by hand is
+  stamped like the sky request's (`ts` is the authority's clock when it lands).
 - **Absence means absent.** A reader that gives absence a meaning is naming
   a default, and that default belongs in the component's definition.
 - **A field added later states its meaning of absence.** A value stored
@@ -591,7 +604,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   follow-up: the clears are admitted without the deleter's rights, and the
   referring thing's lock or key can't veto them (an undo of the delete puts
   them back the same way, dropping any reference to a thing gone since).
-  The change entry names them (`followUps`, §3), so a reader of the log
+  The change entry names them (`cascade`, §3), so a reader of the log
   alone tells them from the deleter's own ops: a clear never makes the
   deleter the author of the value it rewrites (a handler's author, a
   component's creator, a script's sponsor). So does what rested on the
@@ -727,24 +740,24 @@ copy that was updated and is published again keeps its parts' keys.
   joiner. The name `live` is reserved for ad-libbed anims (no clip, def,
   pose or world's or avatar's anim may be called it). Receivers MUST clamp
   `scale` (0.5–2) and `plateY` (−0.3…+0.8 m) to those ranges and read a non-number as absent.
-- **Presence touches the log only through checked acts, and only with what
+- **Presence touches the log only through checked requests, and only with what
   the world needs.** The authority checks every body request against its
   own cheap track of each body (speed, reach, solids). Arriving is presence:
-  it is never logged. A teleport while present is an act (it resets the
+  it is never logged. A teleport while present is a request (it resets the
   track), recording who and when, never where from or to, and never what kind
   of client someone uses. Picking something up, putting it down, letting it
-  go, throwing and punting are acts that record the request about the thing
+  go, throwing and punting are requests that record the thing
   and who handled it, never the body's position or hand (a blast, `force
   {at, radius, power}`, records its request; the bodies it knocks over are
   presence, never in the log; each thing it punts is a launch it caused): a put's change
-  carries where the thing went, and a launch's `sim` entry where it left and
+  carries where the thing went, and a launch's `physics` entry where it left and
   how fast, which the engine needs. A release with velocity is a launch.
   Continuous contact from a body or a held thing gives no unlogged impulse
   **to the engine**: contact under live simulation authority is presence,
   and enters history only as a settlement or a launch (spec/PHYSICS.md §4). A
   disconnect settles at the last accepted state. (An `enter`/`leave`
   activation records *that* someone arrived or left, never who: the
-  authority strips the trigger and `event.by` from the act (scriptrun.js
+  authority strips the trigger and `event.by` from the request (scriptrun.js
   ANON_EVENTS). What a script itself writes about the arrival is the world's
   choice, visible in its scripts.)
 - **One mover.** A body has one mover (shared/mover.js) and the mover has
@@ -843,10 +856,10 @@ Attention sounds stay local to the receiver, chime only for live says, and never
 Speech in a world is public and **arrival-only**:
 
 - The world's log keeps **every** `say` (§1), for research and moderation. Nothing about a say's entry changes.
-- A participant receives speech only for the time they are present: the says the log stream carries after the cut they
+- A participant receives speech only for the time they are present: the says the log stream carries after the snapshot they
   adopted at join. A join's snapshot replays no earlier line (its `state.recentChat` is always empty), and nothing
   said before a connection arrived is read back to it, by any route: the chat-history message, the authority's
-  `history` read, or a door built on them (an agent's catch-up). A connection's arrival is the log head at its join;
+  `history` read, or a door built on them (an agent's catch-up). A connection's arrival is the log's seq at its join;
   an identity with several connections here counts from the earliest one present. A reconnect is a new arrival.
 - Reading the master log's speech back past your own arrival is a permission, `readChat` (§7: a role holds it; owners
   hold every permission); a server operator (`SERVER_OPERATORS`) reads back only by a role here. Their join says how many lines the log holds
@@ -866,7 +879,7 @@ Speech in a world is public and **arrival-only**:
   payload**.
 - An actor is an **identity** (§3.1); `system` (the authority itself: genesis, its
   own follow-ups such as sending a released thing home); `sim` (the physics
-  engine: its launches, digests and rests); `world`; or `script:<entity>` (a script installed on that entity, acting with its
+  engine: its launches, digests and rests); or `script:<entity>` (a script installed on that entity, acting with its
   sponsor's rights, §8). Doors MUST refuse a client claiming a reserved
   actor.
 - Display names are a view, kept outside the log. A stranger who takes your
@@ -929,9 +942,9 @@ Every write reaches the log through the world's **authority**. A request
 `undo`, `publish`, `update`, `grab`, `put`, `throw`, `drop`, `punt`… — is
 first turned into the state writes it would make, whatever word or path
 produced it (a request verb, a `use` handler, an undo, a blueprint update, a script,
-a rest). A `batch` request's children are each checked against their own verb's arguments (a `create`'s
+a rest). A `batch` request's children (`args.requests`, each `{verb, args}`) are each checked against their own verb's arguments (a `create`'s
 `place` too) before any of them is built, exactly as they would be alone: a misspelt argument in any child
-refuses the whole batch with that child's code and its index (`op`), never builds a different write. Then
+refuses the whole batch with that child's code and its index (`index`), never builds a different write. Then
 **one gate, `admit`**, checks those writes, keyed on:
 
 - the stamped asker (and, later, the grant it cites);
@@ -946,12 +959,12 @@ refuses the whole batch with that child's code and its index (`op`), never build
 - the asker's active sanctions (bans, from the moderator log).
 
 For any `change`, verb-specific checks MAY add to `admit`, never replace it. Accepted, the
-authority appends the request as an `act` and its result as one `change` entry
-caused by it; a refused write is appended as an act whose body is `{args:
-<the names of the arguments the verb takes>, refused: {code}}` (with
+authority appends the request as a `request` entry (`body {args, salt}`) and its result as one `change` entry
+caused by it; a refused write is appended as a `request` entry whose body is `{argNames:
+[<the names of the arguments it sent>], refused: {code}}` (with
 `unknownArgs: n` when the request carried names the verb doesn't take, and
 `unrecorded: n` when refusals past the actor's budget went unwritten), and
-nothing else is written. A refused act never holds a value or a name the
+nothing else is written. A refused request never holds a value or a name the
 verb doesn't know: a visitor can't write text into a permanent, forkable
 record by being refused. The reference authority keeps the values in an
 in-memory ring for diagnosis, never persisted. Refusals that would only
@@ -967,8 +980,8 @@ shared/protocol/refusalcodes.js, a pointer): a code is written into signed
 entries, so a removal or a changed meaning needs an acknowledged re-pin, and
 a new one is a new row. A file named inside a `when` is a pointer too. **Every appended `change` passes the gate** (`admit`), except that the
 authority's own follow-ups inside a write pass it without the asker's rights, locks, keys or in-flight
-check (shape and value checks still apply) and are named in the entry's `followUps` (§3); a `say` passes its own
-checks (length, rate, the sayer's rights), and a `sim` entry is written by the authority itself from a grab, a launch
+check (shape and value checks still apply) and are named in the entry's `cascade` (§3); a `say` passes its own
+checks (length, rate, the sayer's rights), and a `physics` entry is written by the authority itself from a grab, a launch
 (throw, punt, a release with velocity) or a settle, never by a client.
 
 **Durable before live.** An entry reaches the authority's live state (its chain head, its fold, what it
@@ -989,22 +1002,22 @@ before it publishes:
   the history says what holds. An ambiguous request is never reported as ok, nor as a plain failure.
 
 A request's lines are written one at a time, in order, each durable before the next, so a request that ends
-ambiguous leaves a prefix of its lines, never a gap. An act whose change was not written is an act with no
-result: readers already tolerate one (an act carries no ops), and undo passes over it.
+ambiguous leaves a prefix of its lines, never a gap. A request whose change was not written is a request with no
+result: readers already tolerate one (a request carries no ops), and undo passes over it.
 Every line that reached the log is published, whatever became of the request that wrote it.
 
 **The authority's consequences are follow-ups** (one rule): what the authority writes because of
 an asker's write is never written as the asker's own. A consequence that must be atomic with the asker's
-change rides in it, marked; one that may stand alone is the system's own act, caused by the asker's.
+change rides in it, marked; one that may stand alone is the system's own request, caused by the asker's.
 Only what the asker could have written themselves, on what they are writing anyway, is theirs:
 
 | consequence | where it is written | actor | admitted with | marked |
 |---|---|---|---|---|
-| a deletion's reference clears (§4), and their restoration by its undo | the asker's change | the asker | no rights, locks or keys (shape checks) | `followUps` |
-| a deletion's set-down of unparented things resting on what it removes | the asker's change | the asker | no rights, locks or keys (shape checks) | `followUps` |
-| occupants set down or dropped when a host's geometry changes | its own act `resettle {hosts, occupants, asked}` (`riders` in entries before 10-17), caused by the asker's act, and its change | `system` | the system's capability, scoped to those occupants | the actor |
-| settle, return-lost, return-held, restamp-engine, lift-sockets, repair-shapes, expire-roles, drive-commit | their own act and change | `system` | the system's capability | the actor |
-| components and fields renamed before release (§4), by the explicit `repair` command (never at load) | its own act `rename-components {renamed, why, failed?}` and its change | `system` | the system's capability, per thing | the actor |
+| a deletion's reference clears (§4), and their restoration by its undo | the asker's change | the asker | no rights, locks or keys (shape checks) | `cascade` |
+| a deletion's set-down of unparented things resting on what it removes | the asker's change | the asker | no rights, locks or keys (shape checks) | `cascade` |
+| occupants set down or dropped when a host's geometry changes | its own request `resettle {hosts, occupants, asked}` (`riders` in entries before 10-17), caused by the asker's request, and its change | `system` | the system's capability, scoped to those occupants | the actor |
+| settle, return-lost, return-held, restamp-engine, lift-sockets, repair-shapes, expire-roles, drive-commit | their own request and change | `system` | the system's capability | the actor |
+| components and fields renamed before release (§4), by the explicit `repair` command (never at load) | its own request `rename-components {renamed, why, failed?}` and its change | `system` | the system's capability, per thing | the actor |
 | a physics rest | its own change, caused by the launch | `sim` | the rest capability | the actor |
 | stamps on what the asker is writing (a physics shape, a home, a media or model hash; a home for a reset's target) | the asker's change | the asker | the asker's rights (a target they may not edit refuses the write) | no: they are the asker's |
 
@@ -1037,7 +1050,7 @@ refused while `@world.keep-owner` is absent or true (starter config, on); an
 owner who sets it false may leave the world ownerless on purpose. A world with
 no owner gives nobody more than member (nobody could have granted more); its host operator can mend it. A translation always ends with an owner (§14: the upgrader's claim). A role
 MAY carry `until` (epoch ms, the authority's clock): the grant ends then. The
-authority writes the end itself, as the system's act `expire-roles {ids}` and
+authority writes the end itself, as the system's request `expire-roles {ids}` and
 its change deleting each `roles:<id>` whose `until` has passed, within a second
 of it, so the log says when it ended and a replay agrees; until that write the
 grant stands. `until` is never on `owner` (an ownerless world would open), and
@@ -1097,9 +1110,9 @@ request is checked the authority mints an id for each placeholder a create
 defines, writes it wherever the placeholder stands in the request (a parent's
 `to`, a place's `on`, a set's `id`, a reference list), and answers with the
 map: `{ok: true, ids: {"$table": "<minted>"}, …}` (a dry run maps them too).
-The `act` is the request with the minted ids in it: **a placeholder never
+The `request` entry is the request with the minted ids in it: **a placeholder never
 reaches the log**. A placeholder defined twice, or used where a thing is named
-without a create defining it, is refused by name. System acts that must keep
+without a create defining it, is refused by name. System requests that must keep
 ids — a fork's copy, a translation, a merge, the shape repair — copy them
 verbatim. A script's `world.create(components)` returns the id it was minted
 (script API 2; it takes none).
@@ -1121,8 +1134,11 @@ rule rather than inventing one. Each is **normative** where the code already
 enforces it; the items marked *intended* are gaps found since 2026-10-14 and are
 owed before this section is complete.
 
-**The parties.** The *operator* (runs the sequencer; genesis names them,
-§13). The *owner* (the role, §6: the world's). A *builder* (anyone whose
+**The parties.** The *authority* is the gate that admits or refuses (§7); the
+*sequencer* is the chain-writer role whose key genesis names (§12, §13); the
+*operator* is the human in custody of the host (the operator key, repairs,
+the redaction decider); the *host* is the machine or service that runs them
+(`docs/DESIGN-log-vocabulary.md` §1.10). The *owner* (the role, §6: the world's). A *builder* (anyone whose
 role holds `build`). The *invoker* (whoever's request this is). The
 *affected participant* (whoever's body a request touches). A *sponsor*
 (whoever's rights a script acts with, §8).
@@ -1133,7 +1149,7 @@ out it has one more capability, reached only by the server's `operator-repair` m
 and `delete` of @world's door components (`roles:<id>`, `access`, `default-role`, `role-defs`) and `unban` (lifting a
 ban or a kick, its own included). These pass without the world's rights, keys, grant rule or the operator's own
 sanctions there; every other check (shape, value, `rolesCheck`, the last owner) still applies, and nothing else is
-opened. Each repair is the operator identity's own act whose body carries `operator: true` (an `unban`'s
+opened. Each repair is the operator identity's own request whose body carries `operator: true` (an `unban`'s
 moderator-log record likewise), so history and the moderation log say who mended what and by what right.
 
 **1. Standing: what a role may do.** A role is a set of named permissions,
@@ -1208,22 +1224,22 @@ that key — re-checked at every activation and never wider than the `scope`
 it declares. The visitor whose `use` triggers it adds no rights. A demoted
 sponsor's scripts go dormant; a banned sponsor's are suspended.
 
-Each activation that changes something is one `act` (actor `script:<entity>`,
+Each activation that changes something is one `request` entry (actor `script:<entity>`,
 naming the source hash, sponsor, trigger, clock and seed) plus one
 all-or-nothing batch through the same `admit`. Every cause chain ends at a
-person. **Replay never re-runs code**: the fold reads the batch. The act
+person. **Replay never re-runs code**: the fold reads the batch. The request
 records what its presence reads asked and how much came back (`reads
 {near: [{r, n}], count: [n], names: k}`), never who was near or what anyone
 is called, and a body effect as `{kind, to}`, never which consent admitted
 it: the log is permanent and public, and the authority's own record of an
 activation never becomes an attendance list (an `enter` / `leave`
 activation, and a grab that isn't itself logged, records no trigger actor
-and no `event.by`; a release keeps its trigger, since it has its own act,
+and no `event.by`; a release keeps its trigger, since it has its own request,
 except a leaving holder's whose drop was refused where the authority doesn't
 put the thing back (no engine, or no stored pose): that one has none and,
 like a departure, records no identity). What a script writes with the
 identities it receives live is its
-own act, signed with its sponsor's rights. An auditor's re-run of a script is a
+own request, signed with its sponsor's rights. An auditor's re-run of a script is a
 check, never the record; its procedure is `docs/SCRIPTS.md` ("Auditing a script"). A sponsor reader skips the authority's follow-ups (§3). The reference API, limits and determinism rules are
 `docs/SCRIPTS.md`.
 
@@ -1342,8 +1358,10 @@ the thing's (or part's) own frame before scale; `motion.center` and
   that doesn't carry its translator, changelog line and vectors.
   Changing them is a new `minor` (or a new `v`) in genesis; a reader that
   doesn't know a world's minor refuses the world rather than folding it to
-  a different digest. One exception, before release: the batch body's
-  `followUps` (§3) was added to this protocol **at minor 0**, because it had
+  a different digest. Minor 1 is this vocabulary (`docs/DESIGN-log-vocabulary.md`):
+  a reader knows `MINORS = {1}`, and a minor-0 world is read only by the
+  migration tool. One exception, before release: the batch body's
+  `followUps` (now `cascade`, §3) was added to this protocol **at minor 0**, because it had
   not been released. Every such log written so far was written by the reference
   authority on its own branch, and every one folds to the same digest with
   or without the field (the fold applies marked ops like any op); the only
@@ -1359,11 +1377,11 @@ the thing's (or part's) own frame before scale; `motion.center` and
 - `EXAMPLE-01.jsonl` folds to status `ok` and digest
   `80a9ef2d5b8ee340e811d6b3068d65b480c6d0e1643e0e1e6b4ab961c317b581`.
 - `logs/` — hostile logs (duplicate keys, `-0`, big integers, surrogates,
-  nested batches, bad names, purges of purges, bad genesis shapes…), each
+  nested batches, bad names, redactions of redactions, bad genesis shapes…), each
   with the status, digest and diagnostic codes a conforming reader gives.
 - `reader.py` — the reference reader, written from this document;
   `test_reader.py` its tests. `chain.py` and `test_chain.py` — the chain,
-  signatures and purge (§12). `ed25519/` — the key vectors (§13).
+  signatures and redaction (§12). `ed25519/` — the key vectors (§13).
 
 `bun tools/protocol/run.ts conformance` folds every log with the JavaScript fold
 and the Python reader and fails on any difference in status, digest or
@@ -1373,16 +1391,18 @@ conforming reader must give each log's **status and digest**; the diagnostic
 codes in `expected.json` are informative (the two reference readers agree on
 them, and the suite holds them to it), not part of conformance.
 
-## 12. The chain, signatures and purge
+## 12. The chain, signatures and redaction
 
 - **The chain.** `head(-1)` = 32 zero bytes; `head(i)` = sha256(`head(i-1)`
   ‖ sha256(UTF-8(JCS(skeleton(i))))). The **skeleton** is the entry without
-  `head`/`sig`, where each set op's `value` + `salt` becomes `commit` = hex
-  sha256(UTF-8(salt) ‖ UTF-8(JCS(value))), and an `act`/`say`/`sim` body
-  becomes `{commit}`, with commit = hex sha256(UTF-8(body.salt) ‖
-  UTF-8(JCS(body without salt))). In a chained log every `set` carries a
-  `salt` (base64url, ≥ 16 random bytes). The fold ignores `salt` and
-  `commit`.
+  `head`/`sig`, where each set op's `value` + `salt` becomes its
+  **commitment** (`commitment` = hex sha256(UTF-8(salt) ‖ UTF-8(JCS(value))):
+  a salted hash that binds the value and hides it), and a
+  `request`/`say`/`physics` body becomes the stub `{commitment}` exactly, with
+  commitment = hex sha256(UTF-8(body.salt) ‖ UTF-8(JCS(body without salt))).
+  A stub carrying anything else (a `salt`) is not a stub. In a chained log
+  every `set` carries a `salt` (base64url, ≥ 16 random bytes). The fold
+  ignores `salt` and `commitment`.
 - **Chain points.** Any entry may carry `head` (hex) and `sig`: base64url
   Ed25519 over UTF-8 `"eidoverse-head:<world id>:<seq>:<head hex>"`, by
   the sequencer key named in genesis (handoffs are reserved, §13). The authority signs
@@ -1392,55 +1412,59 @@ them, and the suite holds them to it), not part of conformance.
   sequencer rewriting its own history. Its shape is not fixed by this
   protocol: no client can make the check today, because the wire strips
   `head` and `sig` from every entry it sends, and no client is held to it.
-- **Purge** (`kind: "purge"`, `body {values: [{seq, op?}, …]}`) is the one
+- **Redaction** (`kind: "redaction"`, `body {values: [{seq, index?}, …]}`,
+  `index` an op's position inside a batch; no `verb`) is the one
   rule that changes the record. **Who decides:** the host operator, outside the
-  request path. No request writes a purge, and the reference server has no verb
-  for one; an operator applies it to the stored log by this rule. A purge an
+  request path. No request writes a redaction, and the reference server has no verb
+  for one; an operator applies it to the stored log by this rule. A redaction an
   owner asks for through the request path, with a named decider, is future
-  work, not part of this protocol. Each target folds as *absent(purged)* at
+  work, not part of this protocol. Each target folds as *absent(redacted)* at
   every point in time — a defined value, distinct from deleted — and a
-  later `set` of the same component replaces it normally. Purgeable: a
+  later `set` of the same component replaces it normally. Redactable: a
   `set`'s value (the id, component name and position never are, so the fold
-  can still say what was purged), and the whole body of an `act`, `say` or
-  `sim` entry (an act body the authority reads back, §1, may be purged like
-  any other: its readers take it as unknown). A purge rewrites the stored line, replacing `value` + `salt`
-  with `commit`; the skeleton is unchanged, so every head still verifies
-  and the bytes are gone. A purge of a purge, a target at or after the
-  purge's own seq, a target that isn't a value, and a `roles:` value
-  (governance is reversed by acts, never erased) are each diagnosed and
-  ignored. Blobs are purged by deleting their bytes; since the fold never
+  can still say what was redacted), and the whole body of a `request`, `say` or
+  `physics` entry (a request body the authority reads back, §1, may be redacted like
+  any other: its readers take it as unknown). A redaction rewrites the stored line, replacing `value` + `salt`
+  with `commitment`; the skeleton is unchanged, so every head still verifies
+  and the bytes are gone. A redaction of a redaction, a target at or after the
+  redaction's own seq, a target that isn't a value, and a `roles:` value
+  (governance is reversed by requests, never erased) are each diagnosed and
+  ignored. Blobs are redacted by deleting their bytes; since the fold never
   reads bytes, the world doesn't change.
 - **A change outside this rule is detected, not enforced.** A value stored as
-  `commit` that no purge names folds as *absent(purged)*, like a purged one,
-  and is diagnosed `commit-unpurged` naming its line. Nothing else follows:
+  `commitment` that no redaction names folds as *absent(redacted)*, like a redacted one,
+  and is diagnosed `commitment-unredacted` naming its line. Nothing else follows:
   writes go on, and restoring the line is the operator's to do.
 
 ## 13. Genesis and governance
 
-- **Genesis** (seq 0, `kind: "genesis"`, actor `system`, verb `genesis`):
-  `body {dialect: "eidoverse-log", v: 4, minor: 0, nonce, owners: [[<key>…], …],
-  sequencer, quorum?, rewind_window?, parent?}`. Exactly those fields within a
+- **Genesis** (seq 0, `kind: "genesis"`, actor `system`, no `op` or `verb`):
+  `body {dialect: "eidoverse-log", v: 4, minor: 1, nonce, owners: [[<key>…], …],
+  sequencer, quorum?, rewindWindow?, parent?}`. Exactly those fields within a
   known minor. `dialect` and `v` are the shape every eidoverse log has
   announced itself with since its first genesis (`{v, dialect}`); `v` is the
   protocol's number, and it is written here and nowhere else. `nonce` is ≥ 16 random bytes, canonical unpadded base64url (two
   worlds founded with the same keys must not share an id). `owners` is a list
   of lists of keys (list 0 is the founder's, list 1 the host's operator key);
   what more the lists mean (rank tiers, a quorum per tier) is reserved with
-  governance, below, and today only the founding act reads list 0; `parent {world, seq, head}` names the world a fork came from.
-  Genesis seeds no state: the founding act then writes `@world` through the
+  governance, below, and today only the founding request reads list 0; `parent {world, seq, head}` names the world a fork came from.
+  Genesis seeds no state: the founding request then writes `@world` through the
   gate. A missing or malformed genesis means "no world"; a `dialect`, `v` or
   `minor` the reader doesn't implement means "unknown version" and no world.
+  Genesis hashes into the world id, so a genesis-changing migration is
+  possible only while a world holds no governance entry; after the first one
+  the world id is frozen for good.
 - **Keys** are `ed25519:<base64url of 32 bytes>`. Registration refuses a key
   that is small-order in any sign-bit encoding or has y ≥ p; verification
   is cofactorless with canonical S and R (the `ed25519/` vectors).
 - **Governance is RESERVED.** Handoff, quorum, reclaim and rewind are designed
   but not part of this protocol yet; the full draft rules (GOV-1 to GOV-5, the
   rewind window, the merge rule) are kept on the project wishlist until a
-  server implements them. What is fixed now: the entry kind `sequencer` and the
-  genesis fields `owners`, `sequencer`, `quorum?` and `rewind_window?` are
+  server implements them. What is fixed now: the entry kind `governance` and the
+  genesis fields `owners`, `sequencer` (the writer role's key), `quorum?` and `rewindWindow?` are
   reserved names (`owners` with the shape above; every one of them a reader
   carries and does not interpret). The fold never
-  reads a `sequencer` entry. **The reference server never writes one and
+  reads a `governance` entry. **The reference server never writes one and
   refuses to serve a log that holds one**: such an entry may have moved the
   writer role somewhere the server cannot check, so it says so ("governance is
   reserved in this server … Nothing was changed") instead of writing after it.
@@ -1449,7 +1473,7 @@ them, and the suite holds them to it), not part of conformance.
   different: a fork is a new genesis naming its parent. Nothing is atomic
   across worlds.
 - **Forks.** A fork's genesis carries `parent {world, seq, head}`: the world it
-  was copied from, the seq it was copied at and that seq's chain head. The acts
+  was copied from, the seq it was copied at and that seq's chain head. The requests
   that copy the parent's state are verb `fork-copy`, so a reader tells an
   inherited thing from one born in the fork. Merging a fork back into its
   parent is RESERVED with governance (the draft rule is on the wishlist).
@@ -1472,8 +1496,8 @@ them, and the suite holds them to it), not part of conformance.
 The first protocol (an untyped verb log) is retired. An old world's log can be translated once, one way, into a world of
 this protocol. A translated log is an ordinary log of this protocol, and these hold for it:
 
-- **Every old entry but its genesis is kept** (the old genesis is not re-played: the `translated` act right after the new
-  genesis carries its copy as `body.from`). Each other entry appears in the new log as an `act` with verb `imported` (`body {verb, args, from}`)
+- **Every old entry but its genesis is kept** (the old genesis is not re-played: the `translated` request right after the new
+  genesis carries its copy as `body.from`). Each other entry appears in the new log as a `request` with verb `imported` (`body {verb, args, from}`)
   or as a `say`, followed by the change it produced. Fields with no component in this protocol ride along as
   `imported:<name>`; a person's grant this protocol has no rung for (v1's `spectator` or `none`) rides as
   `imported-roles:<id>`. Nothing of a world is dropped quietly: what a translation drops or renames by design is listed
@@ -1512,9 +1536,9 @@ this protocol. A translated log is an ordinary log of this protocol, and these h
   so nothing can bind a key to the old world's owner: the new world's tier 0 is empty (§13), and the approval is the
   host operator's countersignature alone, an ed25519 signature by the custody operator key (never the sequencer key)
   over `eidoverse-approve-translation:<world>:<report hash>`. It rides in the new log as the system's
-  `translation-approved` act right after `repair-shapes` (`body {report, approval: {over, owner: null, operator: {key,
+  `translation-approved` request right after `repair-shapes` (`body {report, approval: {over, owner: null, operator: {key,
   sig}, noOwner}}`, `noOwner` saying in words that no owner was attested). The fold never reads it (§1).
-- **The translator is named** in the system's `translated` act (`body {from: {…, translator}}`), so a reader knows which
+- **The translator is named** in the system's `translated` request (`body {from: {…, translator}}`), so a reader knows which
   rules produced the log.
 
 The operator's procedure (the dry-run report and its hash, the in-place swap, rollback) is in
@@ -1529,7 +1553,7 @@ v}`. File names, wire fields and code don't carry the number.
 |---|---|---|
 | 1–2 | The first world log: an untyped verb log folded by its reader (`genesis {verb: "genesis", args: {v, dialect}}`); dialect 2 added `force` and `punt` | `history/PROTOCOL-v1.md` |
 | 3 | The deterministic-physics amendment: a sim fold over sim-scoped entries, sim epochs (`dialect 3`) | `history/PROTOCOL-v2-sim.md` |
-| 4 | This protocol: typed entries (`change`, `act`, `sim`, `say`, `purge`, `sequencer`), the authority, opaque identities, the signed chain and governance keys. Its physics is `PHYSICS.md`. Before release, minor 0 gained the batch body's `followUps` and §6a, and renamed a number of pre-release words; each rename and how an older spelling is still read is `spec/history/PRE-RELEASE-RENAMES.md` (informative). Those readings serve the playtest worlds written before the renames, and go at release. | this document |
+| 4 | This protocol: typed entries (`change`, `request`, `physics`, `say`, `redaction`, `governance`), the authority, opaque identities, the signed chain and governance keys. Its physics is `PHYSICS.md`. **Minor 1** (the current one) is the log vocabulary of `docs/DESIGN-log-vocabulary.md`: the kinds above, `op` on a change, `verb` on a request or physics entry, `cascade`, `commitment`, `rewindWindow`, no `verb` on genesis; a reader knows `MINORS = {1}`, and a minor-0 world is read only by the migration tool (`tools/protocol/migrate-minor-1`). Minor 0 (before release) gained the batch body's `followUps` and §6a, and renamed a number of pre-release words; each rename and how an older spelling was read is `spec/history/PRE-RELEASE-RENAMES.md` (informative). | this document |
 
 Logs of `v` 1–3 are not read at runtime; §14 translates one, once, into a new
 world.

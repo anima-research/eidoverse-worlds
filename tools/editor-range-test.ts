@@ -54,7 +54,7 @@ for (const [card, d] of Object.entries(DESCRIPTORS) as [string, any][]) {
     rows++;
     const bag = comp[d.key];
     const typed = (x: number) => { const e = fd.wire ? fd.wire.from(x, { ...bag, [fd.path]: x }) : x; return ui.deg ? e * R2D : e; };
-    const written = (r: any) => flat(r.ops).find((o: any) => o.op === "set" && o.args.component === d.key)?.args.value?.[fd.path];
+    const written = (r: any) => flat(r.ops).find((o: any) => o.verb === "set" && o.args.component === d.key)?.args.value?.[fd.path];
     const lo = f.min, hi = f.max;
     const inside: number[] = [], outside: number[] = [];
     // wire candidates around each slider bound and past the door's: the door's own verdict sorts them
@@ -97,7 +97,7 @@ console.log(`  ${rows} num rows; ${typedRed.size} write something other than a v
 {
   const bare = { pos: [0, 0, 0], yaw: 0, actor: "r", ts: 1 };
   const SRC = { "picture.src": "https://example.org/a.png", "sound.src": "https://example.org/a.ogg", "look-at.target": "other" };
-  const one = (key: string, raw: any, comp: string, path: string) => { const r = editOps(bare, "t1", { [Object.keys(SRC).find((k) => k.startsWith(key.split(".")[0] + "."))!]: SRC[Object.keys(SRC).find((k) => k.startsWith(key.split(".")[0] + "."))! as keyof typeof SRC], [key]: raw }); return { r, v: flat(r.ops).find((o: any) => o.op === "set" && o.args.component === comp)?.args.value?.[path] }; };
+  const one = (key: string, raw: any, comp: string, path: string) => { const r = editOps(bare, "t1", { [Object.keys(SRC).find((k) => k.startsWith(key.split(".")[0] + "."))!]: SRC[Object.keys(SRC).find((k) => k.startsWith(key.split(".")[0] + "."))! as keyof typeof SRC], [key]: raw }); return { r, v: flat(r.ops).find((o: any) => o.verb === "set" && o.args.component === comp)?.args.value?.[path] }; };
   let x = one("picture.width", 0.03, "picture", "width"); check("a picture being made: width 0.03 (> 0) is written as typed", x.v === 0.03 && !x.r.errors.length, JSON.stringify(x));
   x = one("picture.width", 0, "picture", "width"); check("a picture being made: width 0 is refused (its src still commits; no 0 travels)", x.r.errors.length > 0 && x.v !== 0, JSON.stringify(x));
   x = one("sound.near", 0.05, "sound", "near"); check("a sound being made: near 0.05 (> 0) is written as typed", x.v === 0.05 && !x.r.errors.length, JSON.stringify(x));

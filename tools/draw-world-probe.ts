@@ -94,7 +94,7 @@ try {
     || !after.parity.ok) throw Error('real-world draw/pixel/fold check failed');
   // Fold-driven transform, mount, remove and replay still address ORIGINALS.
   await request('set',{id:crate[0],component:'transform',value:{pos:[4,1,4],q:qFromYaw(1.2),scale:[1,1,1]}});
-  await request('batch',{ops:[{verb:'set',args:{id:crate[1],component:'parent',value:{to:crate[0]}}},
+  await request('batch',{requests:[{verb:'set',args:{id:crate[1],component:'parent',value:{to:crate[0]}}},
     {verb:'set',args:{id:crate[1],component:'transform',value:{pos:[0,1,0],q:[0,0,0,1],scale:[1,1,1]}}}]});
   await request('delete',{id:crate[2]});
   await page.waitForFunction(([c0,c1,c2]) => !EW.entities.has(c2) && EW.entities.get(c1)?.userData.mountedTo===c0, [crate[0],crate[1],crate[2]]);

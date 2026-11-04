@@ -536,8 +536,8 @@ const cases: Case[] = [
       const wide = { ...v, scope: { ids: ["self", "@world"], comps: ["t/bell", "script-settings"], say: true } };
       const owner = s.call("olive", "set", { id: "bell1", component: "script:bell", value: wide }); // an owner may widen it: now olive's
       const adopt = s.call("bob", "adopt", { id: "bell1", script: "bell" });
-      const reset = s.call("bob", "batch", { ops: [{ verb: "delete", args: { id: "bell1", component: "script:bell" } }, { verb: "set", args: { id: "bell1", component: "script:bell", value: wide } }] });
-      const twice = s.call("bob", "batch", { ops: [{ verb: "set", args: { id: "bell1", component: "script:bell", value: v } }, { verb: "set", args: { id: "bell1", component: "script:bell", value: wide } }] });
+      const reset = s.call("bob", "batch", { requests: [{ verb: "delete", args: { id: "bell1", component: "script:bell" } }, { verb: "set", args: { id: "bell1", component: "script:bell", value: wide } }] });
+      const twice = s.call("bob", "batch", { requests: [{ verb: "set", args: { id: "bell1", component: "script:bell", value: v } }, { verb: "set", args: { id: "bell1", component: "script:bell", value: wide } }] });
       const pause = s.call("bob", "set", { id: "bell1", component: "script:bell", value: { paused: true }, merge: true }); // a pause is still his to flip (creator)
       return { owner: show(owner), adopt: code(adopt), reset: code(reset), twice: code(twice), pause: show(pause), sponsor: s.call("olive", "scripts", {}).scripts?.[0]?.sponsor }; },
     good: (o) => o.owner === "ok" && o.adopt === "rights" && o.reset === "rights" && o.twice === "rights" && o.pause === "ok" && o.sponsor === "olive" },
@@ -815,7 +815,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r)); process.exit(0);\n`);   // 
       // a batch the authority finds too costly for one request (its time cap is real time: a slow host reaches it sooner) is
       // sent again as two halves; the setup only needs the 3000 things
       const refusedBatches: string[] = [];
-      const put = (ops: any[]) => { const rb = s.call("olive", "batch", { ops }, 11000);
+      const put = (ops: any[]) => { const rb = s.call("olive", "batch", { requests }, 11000);
         if (!rb?.ok && rb?.refused?.code === "too-costly" && ops.length > 1) { refusedBatches.push(`split ${ops.length}`); put(ops.slice(0, ops.length >> 1)); put(ops.slice(ops.length >> 1)); }
         else if (!rb?.ok) refusedBatches.push(show(rb)); };
       for (let b = 0; b < 30; b++) put(Array.from({ length: 100 }, (_, i) => ({ verb: "create", args: { id: `t${b}-${i}`, components: { "t/data": { xs: big } } } }))); // each batch alone in the 10 s byte window: the charge is PRE-paid since C0 (10-15), so 6 s steps held two batches and tripped the cap
@@ -1306,7 +1306,7 @@ console.log(JSON.stringify({ platform: process.platform, available: SANDBOX.avai
       s.call("olive", "set", { id: "@world", component: "script-settings", value: { max: 5 } });
       const u = s.call("bob", "upload", { text: onUse(`world.say("b");`) });
       for (let i = 0; i < 6; i++) s.call("bob", "create", { id: `b${i}`, model: "crate", place: { at: [i, 0] } }, 200);
-      const r = s.call("bob", "batch", { ops: [0, 1, 2, 3, 4, 5].map((i) => ({ verb: "set", args: { id: `b${i}`, component: "script:p", value: { src: u.src, scope: { ids: "self", comps: [] }, on: ["use"] } } })) }, 200);
+      const r = s.call("bob", "batch", { requests: [0, 1, 2, 3, 4, 5].map((i) => ({ verb: "set", args: { id: `b${i}`, component: "script:p", value: { src: u.src, scope: { ids: "self", comps: [] }, on: ["use"] } } })) }, 200);
       return { r: r?.refused ? `${r.refused.code}: ${r.refused.reason} | ${r.refused.fix}` : r?.ok ? "ok" : JSON.stringify(r).slice(0, 200) }; },
     good: (o) => /^too-many: .* would have 6 scripts; it allows 5, which the world's owner sets in @world\.script-settings\.max \| add one fewer in this request \(it adds 6\), or the world's owner may raise @world\.script-settings\.max to 6 or more \(up to 64 on this server\)$/.test(o.r) },
   { id: "Q1d", what: "…and where neither the scripts here nor the request's own installs alone hold the excess, it says to take it from both (review of #260)", run(s) { cast(s);
@@ -1315,7 +1315,7 @@ console.log(JSON.stringify({ platform: process.platform, available: SANDBOX.avai
       const val = { src: u.src, scope: { ids: "self", comps: [] }, on: ["use"] };
       const two = [0, 1].map((i) => s.call("bob", "set", { id: `m${i}`, component: "script:p", value: val }, 200));
       const one = s.call("olive", "set", { id: "@world", component: "script-settings", value: { max: 1 } });
-      const r = s.call("bob", "batch", { ops: [2, 3].map((i) => ({ verb: "set", args: { id: `m${i}`, component: "script:p", value: val } })) }, 200);
+      const r = s.call("bob", "batch", { requests: [2, 3].map((i) => ({ verb: "set", args: { id: `m${i}`, component: "script:p", value: val } })) }, 200);
       return { two: two.map((x: any) => x?.ok === true), one: one?.ok === true, r: r?.refused ? `${r.refused.code}: ${r.refused.reason} | ${r.refused.fix}` : r?.ok ? "ok" : JSON.stringify(r).slice(0, 200) }; },
     good: (o) => o.two.every(Boolean) && o.one && /^too-many: .* would have 4 scripts; it allows 1, which the world's owner sets in @world\.script-settings\.max \| take 3 away between the 2 here and the 2 this request adds, or the world's owner may raise @world\.script-settings\.max to 4 or more \(up to 64 on this server\)$/.test(o.r) },
   { id: "Q1", what: "reinstalling a script whose value was purged counts against the world's script limit, as a new one does", run(s) { cast(s);
@@ -1331,7 +1331,7 @@ console.log(JSON.stringify({ platform: process.platform, available: SANDBOX.avai
   { id: "Q2", what: "a script whose value stands but whose install act was purged says why it doesn't run in the status view (its activation gives the same why)", run(s) { cast(s);
       s.call("bob", "create", { id: "qc", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "qc", "p", onUse(`world.say("c");`), { scope: { ids: "self", comps: [] }, on: ["use"] });
-      const act = s.entries().findLastIndex((e: any) => e?.kind === "request" && e.op === "set" && JSON.stringify(e.body ?? {}).includes('"script:p"'));
+      const act = s.entries().findLastIndex((e: any) => e?.kind === "request" && e.verb === "set" && JSON.stringify(e.body ?? {}).includes('"script:p"'));
       s.w().append({ kind: "redaction", actor: "system", body: { values: [{ seq: act }] } });
       const v = s.call("olive", "scripts", { id: "qc" }); const view = (v?.scripts ?? []).find((x: any) => x.script === "script:p");
       return { act, view: view?.status, why: view?.why ?? null }; },
@@ -1339,7 +1339,7 @@ console.log(JSON.stringify({ platform: process.platform, available: SANDBOX.avai
   { id: "Q2b", what: "the remedy a purged install's why gives works: its installer can't set it again, an owner's set of the same value names no sponsor, and an owner's adopt makes it active", run(s) { cast(s);
       s.call("bob", "create", { id: "qd", model: "crate", place: { at: [0, 0] } });
       const { src } = install(s, "bob", "qd", "p", onUse(`world.say("d");`), { scope: { ids: "self", comps: [] }, on: ["use"] });
-      const act = s.entries().findLastIndex((e: any) => e?.kind === "request" && e.op === "set" && JSON.stringify(e.body ?? {}).includes('"script:p"'));
+      const act = s.entries().findLastIndex((e: any) => e?.kind === "request" && e.verb === "set" && JSON.stringify(e.body ?? {}).includes('"script:p"'));
       s.w().append({ kind: "redaction", actor: "system", body: { values: [{ seq: act }] } });
       const view = () => (s.call("olive", "scripts", { id: "qd" })?.scripts ?? []).find((x: any) => x.script === "script:p");
       const why = view()?.why ?? null;

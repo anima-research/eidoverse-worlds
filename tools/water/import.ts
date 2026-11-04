@@ -28,7 +28,7 @@ if (dry) {
   process.exit(0);
 }
 const base = new URL(server);
-console.log(JSON.stringify({ world, server: base.origin, apply, files: bytes.size, absent: absent.length, ops: req.batch.args.ops.length, deferred: req.deferred.length, coordinateSystem: manifest.coordinateSystem }, null, 2));
+console.log(JSON.stringify({ world, server: base.origin, apply, files: bytes.size, absent: absent.length, ops: req.batch.args.requests.length, deferred: req.deferred.length, coordinateSystem: manifest.coordinateSystem }, null, 2));
 if (!apply) process.exit(0);
 if (req.deferred.length) throw Error(`not sent: ${req.deferred.length} use(s) of features this protocol doesn't carry yet (${[...new Set(req.deferred.map((u) => u.feature))].join(', ')}); see --dry`);
 if (absent.length) throw Error(`not sent: ${absent.length} file(s) missing beside the manifest`);

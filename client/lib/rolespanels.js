@@ -210,7 +210,7 @@ function deleteRole(rid, body) {
     const ops = [...ids.map((id) => ({ verb: 'set', args: { id: '@world', component: `roles:${id}`, value: { role: to }, merge: true } })),   // they hold the role, so each entry exists: keep its exceptions (K3)
       ...(wc()['default-role']?.role === rid ? [{ verb: 'set', args: { id: '@world', component: 'default-role', value: { ...wc()['default-role'], role: to } } }] : []),
       { verb: 'set', args: { id: '@world', component: 'role-defs', value: d } }];
-    act('batch', { ops, label: `delete role ${rid}` }, `move ${ids.length} to ${to} and delete ${rid}`).then(() => paintRoles(body)); };
+    act('batch', { requests, label: `delete role ${rid}` }, `move ${ids.length} to ${to} and delete ${rid}`).then(() => paintRoles(body)); };
 }
 function paintAccess(body) {
   const a = wc().access ?? {}, dr = wc()['default-role'] ?? {}; const edit = isOwner();
@@ -324,7 +324,7 @@ function paintPlaces(body) {
     if (min) ops.push({ verb: 'set', args: { id: '@world', component: 'bounds', value: { min, max } } });
     else if (bd) ops.push({ verb: 'delete', args: { id: '@world', component: 'bounds' } });   // emptied: no bounds, as the toast says
     if (!ops.length) return toast('Places: nothing to save', 'info');
-    act('batch', { ops, label: 'places' }, 'places', () => paintPlaces(body));
+    act('batch', { requests, label: 'places' }, 'places', () => paintPlaces(body));
   });
 }
 // what translation carried from an older world: imported:<k> (an old sim epoch is imported:epoch), imported-behavior:<k>, imported-bans:<id>

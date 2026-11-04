@@ -534,8 +534,8 @@ function copyInto(w: Any, actor: string, st: Any, skipWorld: (k: string) => bool
     if (lock !== undefined) late.push({ verb: "set", args: { id, component: "lock", value: lock } });
   }
   const all = [...reqs, ...late]; let batch: Any[] = [], size = 0, acts = 0;
-  const flush = () => { if (!batch.length) return; const r = forkCopy(w, actor, { ops: batch, throughLock: true });   // logged as fork-copy: inherited, not born
-    if (!r.ok) throw new Error(`the copy was refused at ${JSON.stringify(batch[r.refused?.op ?? 0]?.args?.id ?? "?")}: ${r.refused?.code} ${r.refused?.reason}`); acts++; batch = []; size = 0; };
+  const flush = () => { if (!batch.length) return; const r = forkCopy(w, actor, { requests: batch, throughLock: true });   // logged as fork-copy: inherited, not born
+    if (!r.ok) throw new Error(`the copy was refused at ${JSON.stringify(batch[r.refused?.index ?? 0]?.args?.id ?? "?")}: ${r.refused?.code} ${r.refused?.reason}`); acts++; batch = []; size = 0; };
   for (const q of all) { const n = JSON.stringify(q).length; if (size + n > 400_000) flush(); batch.push(q); size += n; }
   flush();
   return acts;

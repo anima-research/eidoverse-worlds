@@ -281,9 +281,9 @@ try {
     const fw = `${WORLD}-pose`;   // a scratch world for building (the main world's log is being counted above)
     const builder = await joined("alice", fw);
     const ops = (f: (i: number) => any) => Array.from({ length: 60 }, (_, i) => f(i));
-    const c1 = await builder.req("batch", { ops: ops((i) => ({ verb: "create", args: { id: `f${i}`, components: { transform: { pos: [i, 0, 0] } } } })) });
-    const c2 = await builder.req("batch", { ops: ops((i) => ({ verb: "set", args: { id: `f${i}`, component: "transform", value: { pos: [i, 0, 5] }, merge: true } })) });
-    const c3 = await builder.req("batch", { ops: Array.from({ length: 30 }, (_, i) => ({ verb: "delete", args: { id: `f${i}` } })) });
+    const c1 = await builder.req("batch", { requests: ops((i) => ({ verb: "create", args: { id: `f${i}`, components: { transform: { pos: [i, 0, 0] } } } })) });
+    const c2 = await builder.req("batch", { requests: ops((i) => ({ verb: "set", args: { id: `f${i}`, component: "transform", value: { pos: [i, 0, 5] }, merge: true } })) });
+    const c3 = await builder.req("batch", { requests: Array.from({ length: 30 }, (_, i) => ({ verb: "delete", args: { id: `f${i}` } })) });
     check("sixty things built, moved, and half removed, as three batches", c1.ok && c2.ok && c3.ok, JSON.stringify([c1.reply?.refused, c2.reply?.refused, c3.reply?.refused]));
     await sleep(300);
     const late = await joined("latecomer", fw);

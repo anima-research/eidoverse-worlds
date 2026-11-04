@@ -159,7 +159,7 @@ function ownerless(d) {
   const s = session(d, name); s.call("olive", "create-world", { title: name }); s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
   // rewrite the log so that olive's owner role was never there (same entries otherwise)
   const p = `${d.root}worlds/${name}.jsonl`; const lines = fs.readFileSync(p, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
-  for (const e of lines) { for (const o of [e.args, ...(e.args?.ops ?? []).map((x) => x.args), e.body, ...(e.body?.ops ?? [])]) if (o) { if (o.components) delete o.components["roles:olive"]; if ((o.component ?? o.comp) === "roles:olive") { o.value = { role: "member" }; } } }
+  for (const e of lines) { for (const o of [e.args, ...(e.args?.requests ?? []).map((x) => x.args), e.body, ...(e.body?.ops ?? [])]) if (o) { if (o.components) delete o.components["roles:olive"]; if ((o.component ?? o.comp) === "roles:olive") { o.value = { role: "member" }; } } }
   fs.writeFileSync(p, lines.map((e) => JSON.stringify(e)).join("\n") + "\n");
   return { bob: s.call("bob", "create", { model: "crate", place: { at: [1, 1] } }), zed: s.call("zed", "create", { model: "crate", place: { at: [2, 2] } }) };
 }
@@ -179,11 +179,11 @@ function physLog(d) {
 const forgeries = {
   baseline: (w) => { const L = w.entries; const i = L.findIndex((e) => e.args?.sim?.rest); const launch = L[i].cause; const c = () => JSON.parse(JSON.stringify(L));
     const fold = (X) => doors.baseline.sim.simFold(X, w.getBlob, w.now()).checks;
-    const P1a = c(); P1a[i].args.ops = P1a[i].args.ops ?? [{ verb: P1a[i].verb, args: P1a[i].args }]; // edit both copies (test M's forger)
-    for (const o of P1a[i].args.ops) if (o.args.component === "transform") o.args.value.pos = [15, 0, -15]; P1a[i].args.sim.at = [15, 0, -15];
+    const P1a = c(); P1a[i].args.requests = P1a[i].args.requests ?? [{ verb: P1a[i].verb, args: P1a[i].args }]; // edit both copies (test M's forger)
+    for (const o of P1a[i].args.requests) if (o.args.component === "transform") o.args.value.pos = [15, 0, -15]; P1a[i].args.sim.at = [15, 0, -15];
     const P1b = c(); P1b[i] = { ...P1b[i], verb: "set", args: { id: "ball", component: "transform", value: { pos: [15, 0, -15], q: [0, 0, 0, 1], scale: [1, 1, 1] } } };
     const P1c = c(); P1c[i] = { ...P1b[i], actor: "rowan", cause: L[launch].cause };
-    const P1d = c(); for (const o of P1d[i].args.ops ?? [{ args: P1d[i].args }]) if (o.args.component === "transform") o.args.value.pos = [15, 0, -15];
+    const P1d = c(); for (const o of P1d[i].args.requests ?? [{ args: P1d[i].args }]) if (o.args.component === "transform") o.args.value.pos = [15, 0, -15];
     const P4 = c(); P4[i].args.sim.at = [9, 9, 9];
     const caught = (k) => k.disagree.length > 0;
     return { P1a: caught(fold(P1a)), P1b: caught(fold(P1b)), P1c: caught(fold(P1c)), P1d: caught(fold(P1d)),
@@ -230,8 +230,8 @@ const oracles = [
   { id: "H5d", what: "a 32-deep parent chain refuses as a LIMIT, not as a loop (a guard: the message must tell the truth)", guard: true, run(s) { cast(s);
       // one batch: 40 creates, then 39 parentings. The engine's own walk (`ancestors`) stops at 32, so the 33rd
       // link is refused — it is a depth limit and nothing is a cycle, which "loop" used to claim.
-      const made = s.call("olive", "batch", { ops: Array.from({ length: 40 }, (_, i) => ({ verb: "create", args: { id: "n" + i, model: "crate", components: { transform: { pos: [i * 3, 0, 0] } } } })) });
-      const par = s.call("olive", "batch", { ops: Array.from({ length: 39 }, (_, i) => ({ verb: "set", args: { id: "n" + (i + 1), component: "parent", value: { to: "n" + i } } })) });
+      const made = s.call("olive", "batch", { requests: Array.from({ length: 40 }, (_, i) => ({ verb: "create", args: { id: "n" + i, model: "crate", components: { transform: { pos: [i * 3, 0, 0] } } } })) });
+      const par = s.call("olive", "batch", { requests: Array.from({ length: 39 }, (_, i) => ({ verb: "set", args: { id: "n" + (i + 1), component: "parent", value: { to: "n" + i } } })) });
       // and a REAL cycle still says loop
       const cyc = s.call("olive", "set", { id: "n0", component: "parent", value: { to: "n0" } });
       return { made, par, cyc }; },

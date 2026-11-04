@@ -578,7 +578,7 @@ const cases: Case[] = [
       s.call("olive", "create", { id: "cup", model: "book", components: { parent: { to: "tray" }, physics: { kind: "dynamic" }, grabbable: { who: "member", release: "return" } }, place: { on: "tray" } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); const g = s.call("vic", "grab", { id: "cup" });
       // one batch: the tray comes to hang from the shelf, and the shelf is switched off (read after the whole entry)
-      const b = s.call("olive", "batch", { ops: [{ verb: "set", args: { id: "tray", component: "parent", value: { to: "shelf" } } }, { verb: "set", args: { id: "shelf", component: "disabled", value: true } }] });
+      const b = s.call("olive", "batch", { requests: [{ verb: "set", args: { id: "tray", component: "parent", value: { to: "shelf" } } }, { verb: "set", args: { id: "shelf", component: "disabled", value: true } }] });
       const ended = !s.w().presence.holds.cup; const on = s.call("olive", "set", { id: "shelf", component: "disabled", value: false });
       const w2 = s.reopen({ bodies: {}, holds: {} }); const n0 = s.entries().length; clock.advance(100);
       const lift = s.entries().some((e: any) => e.kind === "physics" && e.verb === "lift" && e.body?.id === "cup");
@@ -590,7 +590,7 @@ const cases: Case[] = [
       s.call("olive", "create", { id: "tray", model: "table", place: { at: [0, 1] } });
       s.call("olive", "create", { id: "cup", model: "book", components: { parent: { to: "tray" }, physics: { kind: "dynamic" }, grabbable: { who: "member", release: "return" } }, place: { on: "tray" } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); const g = s.call("vic", "grab", { id: "cup" });
-      const b = s.call("olive", "batch", { ops: [{ verb: "set", args: { id: "shelf", component: "disabled", value: true } }, { verb: "set", args: { id: "tray", component: "parent", value: { to: "shelf" } } }] });
+      const b = s.call("olive", "batch", { requests: [{ verb: "set", args: { id: "shelf", component: "disabled", value: true } }, { verb: "set", args: { id: "tray", component: "parent", value: { to: "shelf" } } }] });
       const ended = !s.w().presence.holds.cup; const on = s.call("olive", "set", { id: "shelf", component: "disabled", value: false });
       const w2 = s.reopen({ bodies: {}, holds: {} }); const n0 = s.entries().length; clock.advance(100);
       const lift = s.entries().some((e: any) => e.kind === "physics" && e.verb === "lift" && e.body?.id === "cup");

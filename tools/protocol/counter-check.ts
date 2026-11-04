@@ -85,7 +85,7 @@ if (!red("C9")) { const rd = W.call("set", { id: "@world", component: "role-defs
 { const mk = W.call("create", { id: "counter", components: { transform: T0([2, 0, 2]), mesh: BOX, label: "counter", text: { text: "0" } } }, "bld-a");
   if (!mk.ok) throw new Error(`the specimen: ${J(mk.refused)}`);
   const up = W.call("upload", { text: SCRIPT }, "bld-a"); if (!up.ok) throw new Error(`upload: ${J(up.refused)}`);
-  const inst = W.call("batch", { ops: [
+  const inst = W.call("batch", { requests: [
     { verb: "set", args: { id: "counter", component: "script:counter", value: { src: up.src, scope: { ids: "self", comps: ["text"] }, on: ["use"] } } },
     { verb: "set", args: { id: "counter", component: "reactions", value: { increment: { kind: "script", script: "counter", ...(red("C4") ? {} : { who: "builder" }) }, reset: { kind: "script", script: "counter" } } } },
   ] }, "bld-a");
