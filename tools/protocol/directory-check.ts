@@ -577,12 +577,13 @@ ok(foldName("Marígold") === foldName("marigold") && foldName("JOSÉ") === foldN
   const kid = path.join(tmp, "race-kid.ts"); const mod = path.resolve(import.meta.dir, "../../server/directory.ts");
   fs.writeFileSync(kid, `import { directoryAt } from ${JSON.stringify(mod)};
 const slow = () => { const t = Date.now() + 400; while (Date.now() < t) {} return Date.now(); };
-process.stdout.write(directoryAt(${JSON.stringify(f)}, slow).resolve({ sub: "human:race", name: "Race" }));`);
+const t0 = Date.now(); const id = directoryAt(${JSON.stringify(f)}, slow).resolve({ sub: "human:race", name: "Race" }); process.stdout.write(JSON.stringify([t0, Date.now(), id]));`);
   const kids = [0, 1, 2, 3].map(() => Bun.spawn([process.execPath, kid], { stdout: "pipe", stderr: "pipe", env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } }));
-  const ids = await Promise.all(kids.map(async (k) => { await k.exited; return (await new Response(k.stdout).text()).trim() || `(exit ${k.exitCode}: ${(await new Response(k.stderr).text()).slice(0, 200)})`; }));
+  const outs = await Promise.all(kids.map(async (k) => { await k.exited; try { return JSON.parse((await new Response(k.stdout).text()).trim()); } catch { return [0, 0, `(exit ${k.exitCode}: ${(await new Response(k.stderr).text()).slice(0, 200)})`]; } }));
+  const ids = outs.map((o) => o[2]), starts = outs.map((o) => o[0]).sort((a, b) => a - b), overlap = starts[1] < Math.min(...outs.map((o) => o[1]));   // a second kid was inside before the first was out: they met
   const onDisk = Object.entries(JSON.parse(fs.readFileSync(f, "utf8")).ids).filter(([, e]: any) => e.subs.includes("human:race")).map(([id]) => id);
-  ok(ids.every((id) => isMinted(id)) && new Set(ids).size === 1 && onDisk.length === 1 && onDisk[0] === ids[0] && !fs.existsSync(`${f}.lock`),
-    "DW19 four processes that miss on one account at once mint one id between them, the file holds it, and the lock is let go", { ids, onDisk }); }
+  ok(overlap && ids.every((id) => isMinted(id)) && new Set(ids).size === 1 && onDisk.length === 1 && onDisk[0] === ids[0] && !fs.existsSync(`${f}.lock`),
+    "DW19 four processes that miss on one account at once (their resolves overlapped) mint one id between them, the file holds it, and the lock is let go", { ids, onDisk, overlap, outs }); }
 // DW19b: a lock left by a process that has exited is removed and taken (never waited out); the lock is let go after
 { const f = path.join(tmp, "dead", ".directory.json"); fs.mkdirSync(path.dirname(f), { recursive: true });
   const k = Bun.spawn([process.execPath, "-e", ""]); await k.exited; fs.writeFileSync(`${f}.lock`, `${k.pid} ${"0".repeat(16)}`);
@@ -594,8 +595,8 @@ process.stdout.write(directoryAt(${JSON.stringify(f)}, slow).resolve({ sub: "hum
   (fs as any).openSync = function (p: any, ...a: any[]) { const fd = (o.open as any).call(fs, p, ...a); what.set(fd, path.resolve(String(p))); return fd; };
   (fs as any).fsyncSync = function (fd: number) { synced.push(what.get(fd) ?? "?"); return o.sync.call(fs, fd); };
   try { d.resolve({ sub: "human:second", name: "Second" }); } finally { Object.assign(fs, { openSync: o.open, fsyncSync: o.sync }); }
-  const dirSynced = synced.includes(path.resolve(path.dirname(f))), tmpSynced = synced.some((p) => p.startsWith(path.resolve(f) + ".") && p.endsWith(".tmp"));
-  ok(tmpSynced && (process.platform === "win32" || dirSynced), "DW20 a directory write syncs its temp file, then (POSIX) the directory holding the new name", synced); }
+  const dirAt = synced.lastIndexOf(path.resolve(path.dirname(f))), tmpAt = synced.findIndex((p) => p.startsWith(path.resolve(f) + ".") && p.endsWith(".tmp"));
+  ok(tmpAt >= 0 && (process.platform === "win32" || tmpAt < dirAt), "DW20 a directory write syncs its temp file, then (POSIX) the directory holding the new name, in that order", synced); }
 
 // DW21: the running server's directory sees what another writer (the bind / translate tools) wrote since
 { const f = path.join(tmp, "live", ".directory.json"); const cli = directoryAt(f); const moe = cli.imported("Moe");
