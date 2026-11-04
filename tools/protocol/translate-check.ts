@@ -200,6 +200,9 @@ row("B24f", () => { const M = require(MOD); const known = (n: string) => (n === 
   const text = M.serverBansText(out, {});
   ok(lines.some((l) => /WARNING 1 pre-account server ban\(s\) bound .*check it: the name was typed, so a guest who wore it may have been someone else/.test(l)) && /griefer \(human:test:g1\).*check it/.test(text),
     "B24f a ban bound by name alone is never silent: the boot line is a WARNING saying check it (a guest namesake was someone else), and the operators' list marks it", { lines, text }); });
+row("B24g", () => { const M = require(MOD); const now = T0 + 10 * 86_400_000;
+  const text = M.serverBansText({ "acct:human:test:a": { by: "op", ts: T0, account: "human:test:a", name: "Ada", until: T0 + 86_400_000 }, "acct:human:test:b": { by: "op", ts: T0, account: "human:test:b", name: "Bea", until: now + 86_400_000 }, "acct:human:test:c": { by: "op", ts: T0, account: "human:test:c", name: "Cy" } }, {}, null, now);
+  ok(/server bans \(2\)/.test(text) && !text.includes("Ada") && text.includes("Bea") && text.includes("Cy"), "B24g a timed server ban past its end is left out of the list and its count (as findBan leaves it out); the record stays in the file", { text }); });
 row("B24d", () => { const src = fs.readFileSync(MOD, "utf8");
   ok(!/name-only server ban\(s\) from before accounts dropped/.test(src), "B24d no name-only ban is dropped at boot any more"); });
 

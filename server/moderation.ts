@@ -87,10 +87,11 @@ try {
   }
 } catch (e) { unreadable.add(BANS_FILE); console.log(`[mod] WARNING server ban restore failed: ${e}. ${BANS_FILE} is kept as it was and not saved over; its bans aren't enforced until it is fixed and the server restarted`); }
 
-/** The operator's ban list in words (server-bans): the lock if any, the enforced bans, then the pre-account ones, listed and never enforced. */
-export function serverBansText(map: Record<string, BanRec> = serverBans, pending: Record<string, BanRec & { why: string }> = pendingBans, locked: string | null = lockedLine()): string {
+/** The operator's ban list in words (server-bans): the lock if any, the enforced bans, then the pre-account ones, listed and never enforced.
+ *  A timed ban past its end is left out, as findBan leaves it out; the record stays in the file (the history). */
+export function serverBansText(map: Record<string, BanRec> = serverBans, pending: Record<string, BanRec & { why: string }> = pendingBans, locked: string | null = lockedLine(), now = Date.now()): string {
   const day = (ts: number) => new Date(ts).toISOString().slice(0, 10);
-  const list = Object.entries(map).map(([k, b]) => `${b.name ?? k}${b.account ? ` (${b.account})` : b.addr ? " (a guest's connection)" : ""} — by ${b.by}, ${day(b.ts)}${b.until && b.account ? `, until ${day(b.until)}` : ""}${b.reason ? `: ${b.reason}` : ""}${b.boundFrom ? ` [bound by name from ${b.boundFrom}; check it: ${BOUND_BY_NAME}]` : ""}`);
+  const list = Object.entries(map).filter(([, b]) => b.until == null || b.until > now).map(([k, b]) => `${b.name ?? k}${b.account ? ` (${b.account})` : b.addr ? " (a guest's connection)" : ""} — by ${b.by}, ${day(b.ts)}${b.until && b.account ? `, until ${day(b.until)}` : ""}${b.reason ? `: ${b.reason}` : ""}${b.boundFrom ? ` [bound by name from ${b.boundFrom}; check it: ${BOUND_BY_NAME}]` : ""}`);
   const pre = Object.values(pending).map((b) => `${b.name} — ${PENDING_WORDS} (${b.why}); by ${b.by}, ${day(b.ts)}${b.reason ? `: ${b.reason}` : ""}`);
   return [...(locked ? [locked] : []), list.length ? `server bans (${list.length}):\n${list.join("\n")}` : "no server bans", ...(pre.length ? [`pre-account bans, not enforced (${pre.length}):\n${pre.join("\n")}`] : [])].join("\n");
 }
