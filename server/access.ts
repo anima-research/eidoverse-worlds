@@ -23,7 +23,7 @@
 import { statSync } from "node:fs";
 import { join } from "node:path";
 import { WORLDS_DIR, JOIN_TOKEN } from "./config.ts";
-import { globalBans, findBan, unreadableBanFiles, LOCKED_WHY } from "./moderation.ts";
+import { globalBans, findBan, doorLocked, LOCKED_WHY } from "./moderation.ts";
 import { isOperator } from "./operators.ts";
 import { sessionOfRequest, accountOf } from "./auth.ts";
 import { directoryFor } from "./directory.ts";
@@ -128,8 +128,8 @@ export function entryFor(door: Door, who: Who, mode: EntryMode, { now = Date.now
   // authority's sweep writes its end (expire-roles) — so an unloaded world's HTTP reads and a join don't honour it indefinitely
   const listed = !!actorId && listedIn(door.wc, actorId, now);
   const bypass = isOperator(account) || (listed && (isOwner(eff) || MOD_POWERS.some((p: string) => eff?.permissions?.includes(p))));
-  // a ban file the server couldn't read: the door is locked to everyone it doesn't know (moderation.ts unreadableBanFiles); the renderer holds the operator's own key and never embodies
-  if (unreadableBanFiles().length && !isOperator(account) && !listed && !who.trustedRenderer) return { code: ACCESS_CLOSE, reason: "locked", why: LOCKED_WHY };
+  // a ban file the server couldn't read: the door is locked to everyone it doesn't know (moderation.ts doorLocked); the renderer holds the operator's own key and never embodies
+  if (doorLocked() && !isOperator(account) && !listed && !who.trustedRenderer) return { code: ACCESS_CLOSE, reason: "locked", why: LOCKED_WHY };
   const e = entryOf(door.wc, { actor: actorId ?? undefined, anon: !account, bypass, trustedRenderer: !!who.trustedRenderer }, door.name, now);
   if (e.may === "none" || (mode === "embody" && e.may === "watch")) return { code: ACCESS_CLOSE, reason: "no-access", why: e.why ?? `"${door.name}" isn't open to you` };
   if (bypass) return null;
@@ -166,12 +166,14 @@ export function httpCaller(req: Request): Who | null {
 }
 /** Who an `Authorization: Bearer` proves, ignoring any cookie: undefined when none is sent, null when it proves nobody. */
 export function bearerCaller(req: Request): Who | null | undefined {
-  const h = req.headers.get("authorization") ?? ""; if (!/^Bearer\b/i.test(h)) return undefined;
-  const tok = /^Bearer\s+(\S+)$/i.exec(h)?.[1];
+  if (!/^Bearer\b/i.test(req.headers.get("authorization") ?? "")) return undefined;
+  const tok = bearerOf(req);
   if (!tok || (JOIN_TOKEN && tok === JOIN_TOKEN)) return null;
   const a = accountOf(tok);
   return a && "account" in a ? whoAccount(a.account) : null;
 }
+/** The token an `Authorization: Bearer <token>` header carries (RFC 6750; the scheme in any case), else "". */
+export const bearerOf = (req: Request): string => /^Bearer\s+(\S+)$/i.exec(req.headers.get("authorization") ?? "")?.[1] ?? "";
 /** A request's hashed address (never kept raw), as a guest's ban names it: the upgrade and the HTTP reads hash alike. */
 export const hashedAddress = (req: Request, srv?: Parameters<typeof addressOf>[1]) =>
   new Bun.CryptoHasher("sha256").update(`eidoverse-addr:${addressOf(req, srv)}`).digest("hex").slice(0, 24);

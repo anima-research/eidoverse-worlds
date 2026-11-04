@@ -2,6 +2,7 @@
 // the native client. Pending grants are memory-only, bounded, and single-use.
 import { randomBytes } from "node:crypto";
 import type { HnSession } from "./auth.ts";
+import { readCapped } from "./reqbody.ts";
 
 // A session issued to a native client: `native`, or `nativeWorld` on one paired before native sessions became
 // ordinary ones (auth.ts). It may not approve another pairing. Kept here, so loading the handler runs nothing of auth.ts.
@@ -39,16 +40,9 @@ export function createNativeLogin(o: Options) {
     if (!req.headers.get("content-type")?.startsWith("application/json")) return json(415, { error: "json_required" });
     let body: any;
     try {
-      // Bound streamed/chunked bodies too, not just the declared length.
-      const reader = req.body?.getReader(); let size = 0; const chunks: Uint8Array[] = [];
-      if (!reader) return json(400, { error: "bad_request" });
-      while (true) {
-        const { done, value } = await reader.read(); if (done) break;
-        size += value.length;
-        if (size > 1024) { await reader.cancel(); return json(413, { error: "too_large" }); }
-        chunks.push(value);
-      }
-      body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      const text = await readCapped(req, 1024);   // streamed/chunked bodies bounded too, not just the declared length
+      if (text === null) return json(413, { error: "too_large" });
+      body = JSON.parse(text);
       if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error();
     } catch { return json(400, { error: "bad_request" }); }
     t = now(); // Body reads can yield; never authorize against stale time.

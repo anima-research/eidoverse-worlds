@@ -78,6 +78,8 @@ export type Client = {
   msgs: import("./msgrate.ts").MsgBucket;   // all messages: a token bucket (server/msgrate.ts)
   /** this connection's requests, one at a time in the order sent (server/requestwire.ts) */
   verbQueue?: Promise<void>;
+  /** how many of them are still waiting their turn (requestwire.ts QUEUE_MAX) */
+  queued?: number;
   /** the log head when this connection arrived in its world (server.ts join, beside the snapshot's cut). Speech is
    *  arrival-only (R 10-18): a say at or below it is never sent back to this connection unless it is an admin's. */
   arrivedSeq?: number;
@@ -246,8 +248,11 @@ export function worldExists(name: string): boolean {
  *  "Commons", and a second World over one log is a second authority (#260 bot 17): a name is served in its own case only. */
 export function worldDirNamed(name: string): boolean {
   if (!existsSync(join(WORLDS_DIR, name))) return false;
-  try { return readdirSync(WORLDS_DIR).includes(name); } catch { return false; }
+  const now = Date.now();   // the listing is kept 5 s; a miss re-lists, so a new world is known at once (was routes.ts knownWorld)
+  if (now - dirsAt > 5000 || !dirs.has(name)) { try { dirs = new Set(readdirSync(WORLDS_DIR)); } catch { dirs = new Set(); } dirsAt = now; }
+  return dirs.has(name);
 }
+let dirs = new Set<string>(), dirsAt = 0;
 
 export function getWorld(name: string): World {
   if (!/^[a-z0-9_-]{1,64}$/i.test(name)) throw new Error(`bad world name: ${name}`);

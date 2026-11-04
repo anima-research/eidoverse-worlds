@@ -51,40 +51,30 @@ import { cspFor, cspForFile } from "./csp.ts";
 // sender under $CLIENTLOG_DIR; any other label shares the '~unknown' directory, so a made-up label buys no file of its own.
 const rebuildWin = new Map<string, { t: number; n: number }>();   // POST /rebuild per-IP windows (4/min, as /upload)
 const CLIENTLOG_DIR = process.env.CLIENTLOG_DIR ?? join(WORLDS_DIR, ".clientlogs");   // beside the worlds, like .perflogs — never a shared temp dir
-// EXACT-case match against the world directory listing (existsSync would say yes to every case variant on a
-// case-insensitive filesystem — each a fresh bucket and file); listed once per few seconds, never per request.
-let worldDirs: Set<string> = new Set(), worldDirsAt = 0;
-const knownWorld = (name: string) => {
-  if (worlds.has(name)) return true;
-  const now = Date.now();
-  const relist = () => { try { worldDirs = new Set(readdirSync(WORLDS_DIR)); } catch { worldDirs = new Set(); } worldDirsAt = now; };
-  if (now - worldDirsAt > 5000) relist();
-  if (!worldDirs.has(name) && now - worldDirsAt > 1000) relist();   // a miss re-lists (at most once a second): a new world is known at once
-  return worldDirs.has(name) && existsSync(join(WORLDS_DIR, name, "world.jsonl"));   // listed: its own case already
-};
 /** Reads of a world's live state (/geom?world, /snap, /worlds): behind the same door as joining it. On a box with a
  *  JOIN_TOKEN they need the authority key as a Bearer header, or a caller the door takes (access.ts httpCaller: a scoped
  *  session cookie, an agent's credential); an agent's credential alone suffices here, where its join also sends the key
  *  (by design, #260 bot 1). An open box is open. */
 function mayRead(req: Request): boolean {
   if (!JOIN_TOKEN) return true;
-  const key = /^Bearer\s+(\S+)$/i.exec(req.headers.get("authorization") ?? "")?.[1] ?? "";
-  return key === JOIN_TOKEN || httpCaller(req) !== null;   // a human's aid1 token signs in at /auth, never reads by Bearer (#260 bot 12)
+  return bearerOf(req) === JOIN_TOKEN || httpCaller(req) !== null;   // a human's aid1 token signs in at /auth, never reads by Bearer (#260 bot 12)
 }
 const unauthorized = () => new Response("this world's state is behind its door: send a key it takes as a Bearer header", { status: 401 });
 
 /** A world's directory holds its log, world.jsonl. */
 const hasWorldLog = (name: string) => worldDirNamed(name) && existsSync(join(WORLDS_DIR, name, "world.jsonl"));   // in its own case (world.ts)
+const knownWorld = (name: string) => worlds.has(name) || hasWorldLog(name);   // exact case: a variant buys no bucket or file of its own
 const CLIENTLOG_UNKNOWN = "~unknown";   // '~' is outside the world-name alphabet, so no real world can share this file
 const clientLogRate = new ClientLogRate();
 let clientLogStore: ClientLogStore | null = null;
 try { clientLogStore = new ClientLogStore(CLIENTLOG_DIR); } catch (e) { console.warn(`[clientlog] cannot open ${CLIENTLOG_DIR}: ${(e as Error)?.message ?? e}`); }
 import { seatStore, announceProfileUpdate, MAX_PROPOSAL_BYTES } from "./seats.ts";
 import { agentTokens, aid1JoinIdentity } from "./auth.ts";
-import { httpCaller, httpVisitor, hashedAddress, visibleTo, doorFor, youAt } from "./access.ts";
+import { httpCaller, httpVisitor, hashedAddress, visibleTo, doorFor, youAt, bearerOf } from "./access.ts";
 import { setupPage, setupClaim } from "./setup.ts";
 import { setupOpen } from "./operators.ts";
-import { ClientLogRate, ClientLogStore, LIMITS as CLIENTLOG_LIMITS, readCapped, scrub, holdsPrivateKey, boundLines } from "./clientlog.ts";
+import { ClientLogRate, ClientLogStore, LIMITS as CLIENTLOG_LIMITS, scrub, holdsPrivateKey, boundLines } from "./clientlog.ts";
+import { readCapped } from "./reqbody.ts";
 
 import { recordComponents } from "../shared/protocol/view.js";
 /** What the routes need from Bun's server object, structurally: the WS
@@ -478,8 +468,7 @@ const ROUTES: Route[] = [
       const label = (url.searchParams.get("world") ?? "").replace(/[^a-z0-9_-]/gi, "").slice(0, 64);   // 64: the world-name limit (world.ts)
       // A key in the query is refused outright so the old client shape cannot ship by accident (review of #172).
       if (url.searchParams.has("key")) return new Response("key belongs in the Authorization header", { status: 400 });
-      const auth = req.headers.get("authorization") ?? "";
-      const key = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+      const key = bearerOf(req);
       const session = sessionOfRequest(req);
       // the door is the first gate: no lookup for a stranger (a home-node human has no JOIN_TOKEN; bot review #260 188)
       if (JOIN_TOKEN && key !== JOIN_TOKEN && !session) return new Response("no", { status: 401 });
@@ -944,8 +933,7 @@ const ROUTES: Route[] = [
       // session cookie — a person who came in through the home node carries no door key and got 401 here. The key rides
       // `Authorization: Bearer`, never the URL (base.js: it would land in access logs). A key in ?token= is refused.
       if (JOIN_TOKEN) {
-        const auth = req.headers.get("authorization") ?? "";
-        const key = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+        const key = bearerOf(req);
         const ok = (key && (key === JOIN_TOKEN || agentTokens().byToken.has(key) || !!aid1JoinIdentity(key)))
           // a cookie rides requests from sibling subdomains (SameSite=Lax is per-SITE): never from another site's page.
           // Embodied sign-ins only (worlds:join), as /upload asks: a spectate-only session can't rebuild (#260 bot 12's twin)
@@ -971,8 +959,7 @@ const ROUTES: Route[] = [
       // The authority key rides `Authorization: Bearer`, never the URL (access logs; see /clientlog). The old ?token= shape
       // is refused outright so a stale client cannot keep leaking it.
       if (url.searchParams.has("token")) return new Response("key belongs in the Authorization header", { status: 400 });
-      const auth = req.headers.get("authorization") ?? "";
-      if (JOIN_TOKEN && (auth.startsWith("Bearer ") ? auth.slice(7).trim() : "") !== JOIN_TOKEN)
+      if (JOIN_TOKEN && bearerOf(req) !== JOIN_TOKEN)
         return new Response("token required", { status: 401 });
       const safe = (url.searchParams.get("name") ?? "").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 48);
       if (!safe) return new Response("name required", { status: 400 });

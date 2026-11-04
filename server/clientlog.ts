@@ -42,21 +42,8 @@ export class ClientLogRate {
   }
 }
 
-/** The body as text, or null once it passes `cap` bytes (the rest is cancelled, never buffered). */
-export async function readCapped(req: Request, cap: number): Promise<string | null> {
-  const r = req.body?.getReader(); if (!r) return "";
-  const parts: Uint8Array[] = []; let n = 0;
-  for (;;) {
-    const { done, value } = await r.read(); if (done) break;
-    n += value.byteLength; if (n > cap) { await r.cancel().catch(() => {}); return null; }
-    parts.push(value);
-  }
-  return new TextDecoder().decode(Buffer.concat(parts));
-}
-
 const KEYS = String.raw`(?:password|passwd|secret|token|bearer|auth|authorization|cookie|set-cookie|api[_-]?key|credentials?|private[_-]?key)`;
 const RULES: [RegExp, string][] = [
-  [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "[Filtered]"],
   [new RegExp(String.raw`((?<![a-z0-9])${KEYS}(?![a-z0-9])[\w-]*"?\s*[:=]\s*"?)(?!\[Filtered\])((?:bearer\s+)?[^"\s,;&}\]]+)`, "gi"), "$1[Filtered]"],   // key: value, key=value, "key":"value", Header: value
   [/\bbearer\s+(?!\[Filtered\])[A-Za-z0-9._~+/=-]{8,}/gi, "Bearer [Filtered]"],
   [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*/g, "[Filtered]"],                      // a JWT
