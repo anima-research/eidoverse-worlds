@@ -292,7 +292,7 @@ export function simFolder(entries, { models = MODELS, from = null, purged = null
       if (relock) { const view = engineView(st);
         for (const id of Object.keys(out.sim.statics ?? {})) if (!!out.sim.statics[id].dyn !== (view.entities[id]?.kind === "dynamic"))
           SE(out.sim, { seq, ts: clock, actor: e.actor, verb: view.entities[id] ? "place" : "remove", args: { id } }, view); }
-    } else if (e.kind === "sim") {   // under a foreign engine (no sim here) only the hand's bookkeeping runs: a lift outlives the epoch (bot review #260 23)
+    } else if (e.kind === "sim") {   // under a foreign engine (no sim here) only the hand's bookkeeping runs: a lift outlives the epoch
       // purged whole: the engine can't fly or lift what it can't read, so until the next cut the engine that read it and this
       // one may differ, and what this one computes meanwhile is unknown here: a launch until the next cut (out.unknownEpoch), a
       // lift or catch to the log's end (out.unknownHold). The authority's readback reads such a body as unknown too, for its own

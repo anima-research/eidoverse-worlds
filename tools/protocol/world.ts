@@ -125,7 +125,7 @@ function sayPeople(people: any[] = []) {
     : `${p.role} ${p.name} has no account yet (${p.why}): bind with ${p.bind}`);
 }
 /** `--dry-run`: the report and its hash, printed; nothing written. Exit 1 when the translation would be refused. */
-function dryRun(D: string, name: string, words = name) {   // words: the command's own world name(s), `old new` in the two-name form (bot review #260 87)
+function dryRun(D: string, name: string, words = name) {   // words: the command's own world name(s), `old new` in the two-name form
   const { report, hash } = reportNow(D, name);
   console.log(`dry-run report of "${name}" (nothing was written):`); console.log(JSON.stringify(report, null, 1));
   console.log(`trial period: ${report.trial}`);
@@ -222,7 +222,7 @@ function translateInPlace(name: string, approval: Approval, approvedSource: { si
   for (const f of fs.readdirSync(T)) if (f !== "world.jsonl" && !TEMP_ONLY.has(f)) steps.push([path.join(T, f), path.join(D, f)]);
   // the in-progress marker, before the first rename and gone only once the identities are in: the server never serves a
   // directory holding it (server/livehost.ts SWAP_MARKER; R 10-27), and a recovery clears it
-  syncTree(T);   // the translated files on disk before any of them is renamed in (bot review #260 9)
+  syncTree(T);   // the translated files on disk before any of them is renamed in
   { const fd = fs.openSync(path.join(D, SWAP_MARKER), "wx"); fs.writeSync(fd, JSON.stringify({ temp: T, at: Date.now() })); fs.fsyncSync(fd); fs.closeSync(fd); }
   syncDir(D);   // the marker's name, before the first rename
   const done: [string, string][] = []; let minted = false;
@@ -243,7 +243,7 @@ function translateInPlace(name: string, approval: Approval, approvedSource: { si
     fs.rmSync(path.join(D, SWAP_MARKER)); syncDir(D); }
   catch (x) {
     const stuck: string[] = [];
-    if (minted) directoryFor(WORLDS_DIR).forgetPlanned(r!.planned);   // a swap undone takes its identities with it (bot review #260 435)
+    if (minted) directoryFor(WORLDS_DIR).forgetPlanned(r!.planned);   // a swap undone takes its identities with it
     for (const [a, b] of done.reverse()) { try { fs.renameSync(b, a); } catch (y) { stuck.push(`${b} (should be ${a}: ${(y as Error).message})`); } }
     if (!stuck.length) fs.rmSync(path.join(D, SWAP_MARKER), { force: true });   // all put back: an old world again; else it stays marked
     if (stuck.length) die(`the swap failed (${(x as Error).message}) and these couldn't be put back; move them by hand:\n  ${stuck.join("\n  ")}\nThe translated files are in ${T}.`);
@@ -275,7 +275,7 @@ function rollback(name: string) {
   let m: any; try { m = JSON.parse(fs.readFileSync(mf, "utf8")); } catch (x) { die(`${mf} doesn't parse: ${(x as Error).message}. Nothing was changed.`); }
   const discard = rest.includes("--discard-changes");
   // every renamed original must still be there, exactly as recorded for the log; every made file either as made or discarded knowingly
-  // an original already under its old name with the kept one gone is an interrupted rollback's work: left as restored (bot review #260 138)
+  // an original already under its old name with the kept one gone is an interrupted rollback's work: left as restored
   const restored = new Set<string>(m.renamed.filter(([a, b]: string[]) => !fs.existsSync(path.join(D, b)) && fs.existsSync(path.join(D, a))).map(([, b]: string[]) => b));
   const missing = m.renamed.filter(([a, b]: string[]) => !fs.existsSync(path.join(D, b)) && !fs.existsSync(path.join(D, a))).map(([, b]: string[]) => b);
   if (missing.length) die(`can't roll back "${name}": the kept original(s) ${missing.join(", ")} are gone from ${D}. Nothing was changed.`);
@@ -349,7 +349,7 @@ function finishSwap(name: string, at: { D: string; temps: string[]; oldLog: bool
   const mv = (a: string, b: string) => { if (!fs.existsSync(a)) return; if (fs.existsSync(b)) { stuck.push(`${a} (${b} is already there)`); return; } fs.renameSync(a, b); did.push(`${path.relative(WORLDS_DIR, a).split(path.sep).join("/")} → ${path.relative(WORLDS_DIR, b).split(path.sep).join("/")}`); };
   mv(path.join(D, "log.jsonl"), path.join(D, ORIGINAL.log));
   // the other renames are the swap's own list (its manifest, still in the temporary sibling or already moved in): the swap
-  // recorded poses.json → poses.original.json whether or not the translation wrote a new poses.json (bot review #260 432)
+  // recorded poses.json → poses.original.json whether or not the translation wrote a new poses.json
   const mfAt = [...(temps[0] ? [temps[0]] : []), D].map((d) => path.join(d, MANIFEST)).find((f) => fs.existsSync(f));
   const renamed: [string, string][] = mfAt ? (() => { try { return JSON.parse(fs.readFileSync(mfAt, "utf8")).renamed ?? []; } catch { return []; } })() : [];
   // without a manifest, the old snapshot and poses go only while the swap is visibly unfinished (a temporary directory left):
@@ -361,7 +361,7 @@ function finishSwap(name: string, at: { D: string; temps: string[]; oldLog: bool
     if (process.env.WORLD_TS_DIE_IN_RECOVERY === "1") process.exit(9);   // tests only: the recovery dies after the first rename, before the moves (IP36)
     if (fs.existsSync(path.join(T, IDENTITIES))) { const n = putIdentities(JSON.parse(fs.readFileSync(path.join(T, IDENTITIES), "utf8"))); fs.rmSync(path.join(T, IDENTITIES)); if (n) did.push(`${n} identit${n === 1 ? "y" : "ies"} added to the directory`); }
     for (const f of fs.readdirSync(T)) if (!TEMP_ONLY.has(f)) mv(path.join(T, f), path.join(D, f));
-    fs.rmSync(path.join(T, SOURCE), { force: true });   // last: a recovery interrupted before this still checks the old log next time (bot review #260 139)
+    fs.rmSync(path.join(T, SOURCE), { force: true });   // last: a recovery interrupted before this still checks the old log next time
     if (!fs.readdirSync(T).length) { fs.rmSync(T, { recursive: true, force: true }); did.push(`removed ${path.relative(WORLDS_DIR, T).split(path.sep).join("/")}`); } }
   if (!stuck.length && isSwapUnfinished(D)) { fs.rmSync(path.join(D, SWAP_MARKER)); did.push(`removed ${SWAP_MARKER}`); }
   if (stuck.length) die(`the in-place translation of "${name}" was interrupted; finishing it moved ${did.length ? did.join(", ") : "nothing"}, but these are in the way; move them by hand:\n  ${stuck.join("\n  ")}\n`

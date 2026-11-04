@@ -12,7 +12,7 @@ import { dec, actorName, ACTOR_ID } from "./names.js";
 const readable0 = (s) => String(s).replace(ACTOR_ID, (m) => actorName(m)).replace(/\bx--(?:[0-9a-f]{2})+\b/g, (m) => dec(m) ?? m);
 const readable = readable0;
 
-// a write whose outcome nobody knows (a store's ambiguous transaction, or no answer: mayHaveLanded) is neither done nor refused (bot review #260 57)
+// a write whose outcome nobody knows (a store's ambiguous transaction, or no answer: mayHaveLanded) is neither done nor refused
 const unsure = (reply) => reply?.txn === "ambiguous" || reply?.refused?.code === "ambiguous" || reply?.refused?.mayHaveLanded === true;
 export function refusalText(what, reply) {
   const r = reply?.refused ?? {};
@@ -32,7 +32,7 @@ export function namedFor(text, nameOf = () => null) {
     const n = nameOf(id); if (!n) return m;
     return path ? `${n}'s ${path.slice(1).split(".").join(" ")}` : n; });
 }
-// the fix's leading plain clauses (split at ". " / "; "), up to the first with tool syntax (bot #260 200: a remedy is kept, not dropped whole)
+// the fix's leading plain clauses (split at ". " / "; "), up to the first with tool syntax (a remedy is kept, not dropped whole)
 const plainFix = (fix) => { if (typeof fix !== "string" || !fix) return ""; const out = [];
   for (const c of fix.split(/(?<=[.;])\s+/)) { if (TOOLISH.test(c)) break; out.push(c); } return out.join(" ").replace(/[.;]$/, ""); };
 /** "Couldn't move the crate: …" — a refusal as a person reads it. */

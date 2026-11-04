@@ -66,7 +66,7 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
   // an account another writer bound to an id this process holds (tools/operator-bind.ts, the server running): a bind only
   // adds, so it is taken, never written over; an account this process already gives another id stays that id's
   const takeBinds = (id: string, e: Entry) => { const mine = d.ids[id]; if (!mine || !Array.isArray(e?.subs)) return;
-    // a rename another writer made since (newer renamedAt): its name is taken, not written over (bot review #260 529)
+    // a rename another writer made since (newer renamedAt): its name is taken, not written over
     if ((e.renamedAt ?? 0) > (mine.renamedAt ?? 0)) { mine.name = e.name; mine.renamedAt = e.renamedAt; }
     for (const s of e.subs) { const k = mine.world ? `${s}|${mine.world}` : s;
       if (mine.subs.includes(s) || !ACCOUNT_SHAPE.test(s) || (byKey.has(k) && byKey.get(k) !== id)) continue;
@@ -84,7 +84,7 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
   const refresh = () => { if (!fs.existsSync(file)) return;
     const disk = JSON.parse(fs.readFileSync(file, "utf8")) as File;
     for (const [id, e] of Object.entries(disk.ids ?? {})) if (!d.ids[id]) { d.ids[id] = unkind(e); index(id, e); } else takeBinds(id, e); };
-  // another writer's change since this process last looked (the file's mtime moved): re-read, for the reads that don't mint (bot review #260 120)
+  // another writer's change since this process last looked (the file's mtime moved): re-read, for the reads that don't mint
   let seen = -1; const fresh = () => { try { const m = fs.statSync(file).mtimeMs; if (m !== seen) { seen = m; refresh(); } } catch { /* no file yet */ } };
   const add = (e: Entry) => { let id = mintId(); while (d.ids[id] || anon.has(id)) id = mintId(); d.ids[id] = e; index(id, e); save(); return id; };
   const get = (id: string) => d.ids[id] ?? anon.get(id) ?? null;
@@ -159,7 +159,7 @@ export type Directory = ReturnType<typeof directoryAt>;
 
 /** A display name folded for comparison: Unicode-compatibility normalized, case-folded, a Latin letter's accents, format
  *  characters (zero-width, bidi controls) and separators removed — so "Marígold", "marigold", "Mari​gold" are the same
- *  claim (M3). Only marks on Latin letters go: a kana's dakuten or an Indic vowel sign is a different letter (bot #260 #40). */
+ *  claim (M3). Only marks on Latin letters go: a kana's dakuten or an Indic vowel sign is a different letter. */
 export function foldName(s: string): string {
   return String(s).normalize("NFKD").replace(/(?<=\p{Script=Latin}\p{M}*)\p{M}/gu, "").normalize("NFKC").toLowerCase().replace(/[\p{Cf}\p{Z}\p{P}\p{S}_]/gu, "");
 }

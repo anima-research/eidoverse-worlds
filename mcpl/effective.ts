@@ -125,7 +125,7 @@ function resolve(id: string, view: EffectiveView, nowMs: number, depth: number, 
     // child world = parent world ∘ (scaled local offset, then local yaw) —
     // socket coords are model-frame, so the parent's world scale applies to
     // them (world.js runs the offset through matrixWorld for the same reason)
-    const PL = parent.lin ?? linQS(parent.quat, parent.scale3);   // a sheared parent's whole linear part, not its diagonal (bot #260 #39)
+    const PL = parent.lin ?? linQS(parent.quat, parent.scale3);   // a sheared parent's whole linear part, not its diagonal
     const d = applyM(PL, rawOff);
     let pos: [number, number, number] = [parent.pos[0] + d[0], parent.pos[1] + d[1], parent.pos[2] + d[2]];
     // The profile correction (#101), bodies only: contact plane onto the

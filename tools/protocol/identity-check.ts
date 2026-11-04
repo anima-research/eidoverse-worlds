@@ -216,7 +216,7 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
   ok(demote.refused?.code === "rights" && /longer than you/.test(demote.refused.reason), "H5 the junior owner can't demote the founder", demote.refused);
   ok((await wren.req("ban", { who: you(jo) })).refused?.code === "rights", "H5 an owner can't be banned");
   ok((await own.req("set", { id: "@world", component: `roles:${you(jw)}`, value: { role: "builder" } })).ok, "H5 …but the senior owner can demote the junior one");
-  // H4p (bot #260 #146): a guest's ban whose address record can't be written is still acked, and the reply and the moderated
+  // H4p: a guest's ban whose address record can't be written is still acked, and the reply and the moderated
   // line SAY it isn't persisted (it ends at restart) — never a silent evaporation. The file is made a directory, which no write can replace.
   { const BANS = path.join(W, ".bans.json"); fs.rmSync(BANS, { force: true }); fs.mkdirSync(BANS);
     const g4 = await sock(S3.port); const jg4 = await g4.join("meadow", "drifter-p"); const k = wren.msgs.length;
@@ -387,7 +387,7 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     const seen10b = { granted: gr.ok ?? gr, ws: await hist2(nt2), req: await histReq(nt2, { verbs: ["say"], limit: 200 }), total: jn2.snapshot?.state?.chatTotal };
     ok(seen10b.granted === true && some(seen10b.ws) && some(seen10b.req) && seen10b.total > 0,
       "RS10b reading speech back is a permission (readChat), not a role: a member granted it reads the master log on its next arrival", seen10b);
-    // RS10c (bot review #260 finding 6; R 11-02): a server operator holding no role here reads speech from its arrival, like anyone
+    // RS10c (R 11-02): a server operator holding no role here reads speech from its arrival, like anyone
     const op = await sock(S4.port); const jop = await op.join("heath", "Opal", { agentToken: "tok-opal" });
     const seen10c = { joinErr: jop.errors, joined: !!jop.snapshot, ws: await hist2(op), req: await histReq(op, { verbs: ["say"], limit: 200 }), total: jop.snapshot?.state?.chatTotal };
     ok(seen10c.joined && none(seen10c.ws) && none(seen10c.req) && seen10c.total === 0,
@@ -444,7 +444,7 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     own.raw({ type: "voice-moderate", actorId: you(j6), muted: false }); await sleep(400); g6.close(); await sleep(300);
     const [g7, j7] = await guest("drifter7");
     ok(JSON.stringify(rights(j6).muted?.channels) === '["voice"]' && !rights(j7).muted, "GG5 a voice-control mute carries by address (voice only), and its unmute lifts it", [rights(j6).muted, rights(j7).muted]);
-    // GG6 (bot review #260 118): two people's mutes on one guest are filed apart: each carries as its issuer's own, never merged
+    // GG6: two people's mutes on one guest are filed apart: each carries as its issuer's own, never merged
     g7.close(); await tryUntil("drifter7's socket is closed", () => g7.closed != null, { ms: 3000 });
     const gm = await own.req("set", { id: "@world", component: `roles:${you(jm)}`, value: { role: "moderator" } });
     const [g8, j8] = await guest("drifter8");

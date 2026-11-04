@@ -1502,7 +1502,7 @@ export function updateSky(nowMs, t) {
   // same heartbeat to notice its segment boundaries. ~1Hz is plenty — even at
   // rate 24 the sun moves 0.1°/s, and the forecast's cursor makes each check
   // O(1) (never a re-walk from the policy epoch).
-  if (skyTicks(clock?.args) && nowMs - lastClockTick > 1000) {   // a tz alone is the wall clock too (bot #260 54)
+  if (skyTicks(clock?.args) && nowMs - lastClockTick > 1000) {   // a tz alone is the wall clock too
     lastClockTick = nowMs;
     render().catch((e) => report('sky clock', e));
   }

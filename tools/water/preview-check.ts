@@ -1,5 +1,5 @@
 // tools/water/preview-check.ts — preview.ts sends the manifest's effect uploads before its batch, as import.ts --apply does
-// (bot #260 99: the dust effect was never uploaded, so the scratch world's emitters drew nothing). The public #248 manifest
+// (the dust effect was never uploaded, so the scratch world's emitters drew nothing). The public #248 manifest
 // through import.ts --dry is the bundle (no GLBs: the batch names models the preview copies only when present).
 //   bun tools/water/preview-check.ts
 // @ts-nocheck

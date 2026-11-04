@@ -25,7 +25,7 @@ try {
   await pg.evaluate(() => { localStorage.setItem('ew-cloud-quality', 'off'); localStorage.setItem('ew-shadows', 'on'); localStorage.setItem('ew-my-shadow', '1'); });   // the own-body pref: its lit+depth warms run through the real renderer
   await pg.goto(`${world.origin}/?world=${W}&name=shadowfade&key=${world.key}&lite=0&webgpu=1`, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await pg.waitForFunction(() => globalThis.__ewEngineUp, null, { timeout: 120000 });
-  const upErrs = shader.length;   // from engine-up: the first fade-in's depth-pass compile is watched too (bot review #260 91)
+  const upErrs = shader.length;   // from engine-up: the first fade-in's depth-pass compile is watched too
   await pg.evaluate(async () => { globalThis.__rig = await import('./lib/lightrig.js'); });
   const up = await poll(() => { const l = globalThis.__rig.rigDebug().casterList; return l.some((c) => c.casting && c.fade === 1) ? l.filter((c) => c.casting).length : 0; }, 90000);
   console.log('    casters faded in through the depth pass:', up, 'of', await pg.evaluate(() => globalThis.__rig.casterCount()), 'backend:', await pg.evaluate(async () => (await import('./lib/core.js')).backendName()));

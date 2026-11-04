@@ -175,7 +175,7 @@ live('delete', { id: 'houseexact', component: 'structure' });
 check('a building with collider {shape: "mesh"}: its structure removed, its anchor\'s collider keeps that preference',
   C.colliders.get('houseexact')?.pref === 'exact', JSON.stringify(C.colliders.get('houseexact')?.pref ?? null));
 
-console.log('\na switched-off building (bot #260 60: structure.js ignored disabled)');
+console.log('\na switched-off building (structure.js ignored disabled)');
 check('control: an enabled building and one under an enabled thing have their boxes', boxes('housedis').length === 3 && boxes('shed').length === 3, JSON.stringify([C.structureBoxIds('housedis'), C.structureBoxIds('shed')]));
 live('set', { id: 'housedis', component: 'disabled', value: true }); live('set', { id: 'porch', component: 'disabled', value: true });
 check('switched off, itself or the thing it hangs under: no boxes and not realized', C.structureBoxIds('housedis').length === 0 && C.structureBoxIds('shed').length === 0 && !ST.structureIds().includes('housedis') && !ST.structureIds().includes('shed'),

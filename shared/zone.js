@@ -109,7 +109,7 @@ export function mediumOf(p, zones, { time = 0, volumes = waterVolumes(zones) } =
  *  surface) is dry: a pocket that keeps @world's water out. No pockets, no change. */
 export function worldLevelAt(p, zones, level, { volumes = waterVolumes(zones) } = {}) {
   if (!fin(level)) return null;
-  const q = [p[0], Math.min(p[1], level), p[2]];   // only a pocket keeping @world out decides: a thing's water there is its own reader's (bot #260 124)
+  const q = [p[0], Math.min(p[1], level), p[2]];   // only a pocket keeping @world out decides: a thing's water there is its own reader's
   return volumes.airs.some((a) => inBox(q, a) && excludes(a, AT_WORLD)) ? null : level;
 }
 

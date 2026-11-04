@@ -16,7 +16,7 @@
 //       none — the refusal never loads the world (Antra's review of f91840e5 P1: /geom was 200); a kick closes no door
 //   A12 (security review 10-18 H1) an operator's GLOBAL ban binds to the target's account NOW: a present target is removed and
 //       can't reconnect (4006, "these worlds"), an absent one can't join; the record carries the account; unban lifts it
-//   A12b (bot #260 #41, #42) a global ban by u- identity binds the absent account; days gives it an end; unban by identity lifts it
+//   A12b a global ban by u- identity binds the absent account; days gives it an end; unban by identity lifts it
 //   A13 (10-18 H2) the client's address: X-Real-IP / X-Forwarded-For honoured only from a trusted proxy (loopback, TRUSTED_PROXIES);
 //       from any other peer the socket's own address is used (a guest can't pick or frame an address)
 //   A14 (10-18 M6) a timed grant whose until has passed is ABSENT on every read, loaded or not: an unloaded world's /access and
@@ -156,7 +156,7 @@ ok(close.ok && removed && bob.closed === 4010 && bob.msgs.some((m) => m.type ===
   const ops = log.filter((e) => e.kind === "change").flatMap((e) => (Array.isArray(e.body?.ops) ? e.body.ops : [e.body]));   // a batch, or one op
   const access = ops.find((o) => o.id === "@world" && o.comp === "access")?.value;
   const rowan = ops.find((o) => o.id === "@world" && o.comp === `roles:${ids.Rowan}`)?.value;
-  const reset = own.msgs.slice(k0).some((m) => m.type === "world-reset") && first() !== g0;   // the reset happened (bot review #260 115): an error also ends the wait
+  const reset = own.msgs.slice(k0).some((m) => m.type === "world-reset") && first() !== g0;   // the reset happened: an error also ends the wait
   ok(reset && access?.join === "listed" && rowan?.role === "member", "A7 a reset keeps an invite-only world's door and the people it lists", [reset, access, rowan, ops.length, own.closed, own.msgs.slice(k0).map((m) => m.type + (m.error ? `: ${m.error}` : "")).slice(0, 6)]);
   // A7b (review of #260, server I7): a signed-in-only door is kept too (only "listed" was, so the reset opened it to guests)
   const set = await own.req("set", { id: "@world", component: "access", value: { join: "signed-in" } });
@@ -240,7 +240,7 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   // authority: Fen, an operator not listed in the invite-only world, gets in (the bypass) but an ordinary write is still the
   // world's to judge; operator-repair lifts Moss's ban and lists Fen, each the operator's own act / record marked operator;
   // a non-operator's operator-repair is refused
-  // A11b (bot review #260 119): the address entry a guest's ban of Moss left in keep, which operator-repair's unban must lift too
+  // A11b: the address entry a guest's ban of Moss left in keep, which operator-repair's unban must lift too
   const BJ = path.join(W, ".bans.json"), was = fs.existsSync(BJ) ? JSON.parse(fs.readFileSync(BJ, "utf8")) : {};
   fs.writeFileSync(BJ, JSON.stringify({ ...was, "world:keep:addr:a11b": { by: "Rowan", ts: Date.now(), name: "drifter", addr: "a11b", until: Date.now() + 3600_000, world: "keep", who: ids.Moss } }));
   const s3 = await start({ SERVER_OPERATORS: "agent:token:fen" });
@@ -281,7 +281,7 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   const row3 = await sock(s3.port); const jr3 = await row3.join("keep", "Rowan", { agentToken: "tok-rowan" }); const moss2 = await sock(s3.port); const jm2 = await moss2.join("keep", "Moss", { agentToken: "tok-moss" });
   ok(!!jr3.snapshot && !!jm2.snapshot && Object.keys(JSON.parse(fs.readFileSync(path.join(W, ".bans.json"), "utf8"))).length === 0, "A12 global-unban by name or by account lifts it: both join again, the list is empty", [jr3.errors, jm2.errors]);
   row2.close(); row3.close(); moss.close(); moss2.close();
-  // A12b (bot #260 #41, #42): a global ban by u- identity binds the absent person's account, and days gives it an end; unban by identity lifts it
+  // A12b: a global ban by u- identity binds the absent person's account, and days gives it an end; unban by identity lifts it
   const k2 = fen.msgs.length; fen.raw({ type: "global-ban", id: ids.Moss, days: 2, reason: "A12b" }); await tryUntil("Fen hears back on the identity ban", () => fen.msgs.slice(k2).some((m: any) => /ban/i.test(JSON.stringify(m))), { ms: 2000, step: 50 });
   const recI: any = Object.values(JSON.parse(fs.readFileSync(path.join(W, ".bans.json"), "utf8"))).find((b: any) => b.account === "agent:token:moss");
   const moss3 = await sock(s3.port); const jm3 = await moss3.join("keep", "Moss", { agentToken: "tok-moss" });
@@ -322,7 +322,7 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   const unset = probe({}), xff = probe({ PROXY_ADDRESS_HEADER: "X-Forwarded-For" }), real = probe({ PROXY_ADDRESS_HEADER: "x-real-ip" });
   ok(unset === "203.0.113.7" && xff === "203.0.113.8" && real === "203.0.113.7",
     "A13e the setting picks the header the routes read: unset or x-real-ip reads X-Real-IP, X-Forwarded-For (any case) reads its rightmost untrusted hop", { unset, xff, real }); }
-// ---- A13m (bot review #260 17): a damaged ban or sanction file is kept as it was: a later ban or mute never saves over it ----
+// ---- A13m: a damaged ban or sanction file is kept as it was: a later ban or mute never saves over it ----
 { const modTs = new URL("../../server/moderation.ts", import.meta.url).href, D = fs.mkdtempSync(path.join(scratch("a13m"), "w-"));
   const bans = path.join(D, ".bans.json"), sanc = path.join(D, ".addr-sanctions.json"), torn = '{"acct:u-aaaaaaaaaaaaaaaaaaaa": {"by": "op", "ts": 1, "acc';
   fs.writeFileSync(bans, torn); fs.writeFileSync(sanc, torn);
@@ -493,7 +493,7 @@ const gonePid = await exitedPid();
 { // A9 (final review M1): an invite-only door is not opened by default-role / role-defs powers handed to everyone
   const { entryFor } = await import(path.join(ENGINE, "server/access.ts"));
   const { effectiveOf } = await import(path.join(ENGINE, "shared/protocol/roles.js"));
-  // an owner, or roleIdOf caps everyone at member; the stranger holds the default role, member (bot #260 114)
+  // an owner, or roleIdOf caps everyone at member; the stranger holds the default role, member
   const base = { access: { join: "listed" }, "roles:u-owner000000000000000000": { role: "owner" } };
   const cases = [
     ["default-role {can:{kick}}", { ...base, "default-role": { role: "member", can: { kick: true } } }],
@@ -617,7 +617,7 @@ const gonePid = await exitedPid();
     "B14 in a world that can't log a grant's end (expire-roles writes nothing), the sweep still removes whoever's timed grant has passed; a live grant stays", o?.sweep);
   if (caseless) ok(o?.exists?.lower === true && o?.exists?.upper === false, "B17 on a case-insensitive filesystem a world is served in its own case only: keep exists, KEEP does not", o?.exists);
   else console.log(`  skip B17: ${PW} is case-sensitive, so "KEEP" can't open keep/ here (run with PROTOCOL_SCRATCH on a case-insensitive filesystem)`); }
-// ---- A13n (bot review #260 17, R 11-03 "b"): a ban or sanction file the server can't read LOCKS the door: the owner, an operator
+// ---- A13n (R 11-03 "b"): a ban or sanction file the server can't read LOCKS the door: the owner, an operator
 // and a role holder still join; a stranger and an unlisted account are refused with the plain reason; the operator's list says LOCKED
 { const BJ = path.join(W, ".bans.json"), SJ = path.join(W, ".addr-sanctions.json"), torn = '{"acct:u-aaaaaaaaaaaaaaaaaaaa": {"by": "op", "ts": 1, "acc';
   ok(tool(["found", "lockt", "--owner", "Ann"]).code === 0, "(A13n setup) found lockt, Ann owns it, open to anyone");

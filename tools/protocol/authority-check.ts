@@ -873,7 +873,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const p1 = sw("ann", "set", { id: "frame", component: "reactions", value: { push: { kind: "impulse", angular: "fast" } } });
   ok(p1.refused?.code === "shape", "SW1b an impulse handler's strength and angular are numbers", p1.refused);
   const RH = (await import("../../shared/protocol/componentspec.js")).COMPONENTS.reactions.help;
-  ok(/\bimpulse\b/.test(RH) && !/impulse is reserved/.test(RH), "SW1c the reactions help names impulse as a kind a builder may write, not a reserved one (bot #260 #25)", RH);
+  ok(/\bimpulse\b/.test(RH) && !/impulse is reserved/.test(RH), "SW1c the reactions help names impulse as a kind a builder may write, not a reserved one", RH);
   void pendulumTheta;
   const tx = (await import("./import-v1/translate-v1.js")).translate(
     [{ seq: 0, ts: 1, actor: "a", verb: "spawn", args: { id: "s", lib: "swing-seat" } }, { seq: 1, ts: 2, actor: "a", verb: "comp", args: { id: "s", type: "reactions", data: { push: { impulse: 0.35 } } } }], {});
@@ -1187,7 +1187,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
     call("bob", "create", { id: "cr", model: "crate", place: { at: [5, 5] } }); const r3 = call("bob", "set", { id: "cr", component: "mesh", value: { shape: "sphere", size: [1, 1, 1] } });
     call("bob", "create", { id: "lt", components: { light: { color: 0xffd9a0, intensity: 16, range: 10 }, transform: { pos: [7, 1, 7] } } }); const r4 = call("bob", "set", { id: "lt", component: "mesh", value: { shape: "box", size: [1, 1, 1] } });
     ok([r1, r2, r3, r4].every((r) => code(r) === "one-place"), "MS2 one place per thing: a model or a light on a mesh, a mesh on a model or a light, are all refused", [r1, r2, r3, r4].map((r) => r.refused?.code ?? "ok"));
-    // bot #260 #28: the refusal's fix, submitted as written (its {…} a real mesh), is a create the door takes, ids not seeded
+    // the refusal's fix, submitted as written (its {…} a real mesh), is a create the door takes, ids not seeded
     const fx = String(r3.refused?.fix ?? ""), lit = fx.match(/^create (\{.*\}), or /)?.[1]?.replace("{…}", "{shape: 'box', size: [1, 1, 1]}");
     fixtureIds(false); let r5: any; try { r5 = lit ? call("bob", "create", new Function(`return (${lit})`)()) : null; } finally { fixtureIds(true); }
     ok(!!lit && r5?.ok === true, "MS2b the one-place fix for a mesh on a model, sent as written, is accepted (no writer-chosen id)", { fx, r5: r5?.refused ?? r5?.ok }); }
@@ -1334,7 +1334,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   ok(!openWorld(root, "tr-lift").entries.slice(r.out.length).some((e) => e.kind === "change" && opsOf(e).some((o) => o.comp === "sockets" && o.verb === "set" || (o.comp === "parent" && o.value?.socket !== undefined))), "LS2 …and nothing written after the cut holds the old spelling");
 }
 
-// LK122 (bot #260 122): a lock refusal says whether the asker may lift it (the padlock's buttons ride on mayLift: true): a
+// LK122: a lock refusal says whether the asker may lift it (the padlock's buttons ride on mayLift: true): a
 // builder without editOthers, at the locker's rank, may not delete another's lock; the owner may
 { clock.advance(100); const W = () => openWorld(root, "lk122");
   const R = (actor, verb, args) => { clock.advance(2000); return request(W(), actor, verb, args); };

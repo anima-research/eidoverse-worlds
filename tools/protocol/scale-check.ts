@@ -281,7 +281,7 @@ const cases: Case[] = [
       const k = m.record(b, t); k.ms = RM.READ.ms + 100; out.slow = m.check(b, t + 1)?.code ?? "ok"; out.other = m.check({}, t)?.code ?? "ok";
       return out; },
     good: (o) => o.sixtyFirst === "rate" && o.later === "ok" && o.slow === "rate" && o.other === "ok" },
-  { id: "Q4b", what: "a read's time is charged when the authority answers (bot review #260 465): a read that ran past the window is still on the meter then, not expired before its cost landed", run() {
+  { id: "Q4b", what: "a read's time is charged when the authority answers: a read that ran past the window is still on the meter then, not expired before its cost landed", run() {
       if (!RM) return { missing: true };
       let clock = 1000; const m = RM.readMeter(RM.READ, () => clock); const a = {};
       const k = m.record(a, clock); clock += RM.READ.window + 1000; k.ms = RM.READ.ms + 100;   // answered 11 s after it arrived

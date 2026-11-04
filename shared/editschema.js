@@ -1533,7 +1533,7 @@ export function editOps(ent, id, edits, live = {}) {
   // (design §5): read q in the entity's order, set the typed channels, recompose.
   if (Object.keys(quatSet).length || Object.keys(rotSet).length) {
     basePlace();
-    const q0 = headingSet ? qWithHeading(pv.q ?? qFromYaw(pv.yaw ?? 0), place.yaw) : (pv.q ?? qFromYaw(pv.yaw ?? 0));   // a heading typed with them turns first (bot #260 111)
+    const q0 = headingSet ? qWithHeading(pv.q ?? qFromYaw(pv.yaw ?? 0), place.yaw) : (pv.q ?? qFromYaw(pv.yaw ?? 0));   // a heading typed with them turns first
     const order = rotOrderOf(live);   // this viewer's (live.rotOrder): Euler channels are a view (PROTOCOL §9.1)
     if (Object.keys(quatSet).length) {
       const qn = qNorm(q0.map((v, i) => (quatSet[i] ?? v)));

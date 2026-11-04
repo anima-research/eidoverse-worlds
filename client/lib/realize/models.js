@@ -557,7 +557,7 @@ function dropCompLight(id) {
 /** Make the realized light match the fold for this id: create, update, move
  *  to the current realized object, or release. Idempotent; called whenever
  *  the comp changes or the entity's realized object is replaced. */
-// no realized host yet: the fold's world pose (a child's own pos is its parent's frame; bot #260 112), and its q for a spot
+// no realized host yet: the fold's world pose (a child's own pos is its parent's frame), and its q for a spot
 export const lightSpec = (id, ent, L, host) => { const w = host ? null : worldPose(state.st.entities, id); return {
   color: L.color, intensity: L.intensity, range: L.range, decay: L.decay, keep: L.important, dayAware: L.daytime !== 'full',   // the rig's `keep` tier is light.important; decay is the value's (shape audit 10-16)
   spot: L.kind === 'spot' ? { angle: L.angle, inner: L.inner } : null,

@@ -114,7 +114,7 @@ export const UPGRADE_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     void runCli(["translate", "--no-founder-key", "--operator-only-no-owner", "--claim", "--approved", approved, "--json", "--", a.world], claimEnv(a)).then((r) => {
       const got = r.code === 0 ? tagged(r.out, "result-json") : null;
       const said = `${r.err}\n${r.out}`.trim();
-      // a CLI the timer stopped may have been mid-swap: its outcome is unknown, never "refused" (bot #260 29)
+      // a CLI the timer stopped may have been mid-swap: its outcome is unknown, never "refused"
       if (!got && r.stopped) { a.refuse("interrupted", `the upgrade ran past ${CLI_MS / 60_000} min and was stopped; it may be half done: ${said.slice(-1200)}`); console.log(`[upgrade] ${a.world}: upgrade by ${a.account} stopped (timeout)`); return; }
       if (!got) { a.refuse(/is not the one that was approved/.test(said) ? "stale" : "refused", said.slice(-1500)); console.log(`[upgrade] ${a.world}: upgrade by ${a.account} refused`); return; }
       // the world is on disk in this protocol now: the next join opens it (nothing of it was ever loaded while it was old)

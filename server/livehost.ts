@@ -62,7 +62,7 @@ export const SWAP_MARKER = "translation.lock";
 export const isSwapUnfinished = (dir: string): boolean => fs.existsSync(path.join(dir, SWAP_MARKER));
 /** What the operator does about an unfinished swap (boot notice, openLive's refusal). */
 export const swapRecovery = (name: string, tool = "bun tools/protocol/world.ts") => `its in-place translation was interrupted mid-swap (${SWAP_MARKER} is still in its directory), so its bans and identity mappings may not be in place yet. `
-  + `Finish it: ${tool} translate ${name} --no-founder-key (renames and moves only; it says what it did). If the translated world landed and you want the old one back: ${tool} rollback ${name}.`;   // bot review #260 57
+  + `Finish it: ${tool} translate ${name} --no-founder-key (renames and moves only; it says what it did). If the translated world landed and you want the old one back: ${tool} rollback ${name}.`;
 
 const RETRY = Symbol("the tail boot's whole-log retry: its refusal was said once");
 /** Open (or prepare to found) the world stored in `dir`. */
@@ -156,7 +156,7 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   const ckptSt = useCk ? (resumed?.snap ?? atCover ?? (lazy?.prefix.loadAll(), fold(entries, { until: useCk.seq }))) : null;
   const ckptAtBoot = ckptSt && cloneState(ckptSt);   // the sim folds onto ckptSt
   const simFrom = useCk ? { ...useCk.cut, st: ckptSt } : simCover ? simFromCut(V, atCover, entries[hit!.coversIndex].ts) : null;
-  // the clock starts no earlier than the cut the engine resumes from, or the last checkpoint's: a folder never runs back (bot review #260 18)
+  // the clock starts no earlier than the cut the engine resumes from, or the last checkpoint's: a folder never runs back
   for (let s = entries.length - 1; s >= from0; s--) { const e = entries[s]; if (isE(e) && e.kind === "sim" && e.verb === "checkpoint") { if (Number.isFinite(e.body?.clock)) lastNow = Math.max(lastNow, Math.floor(e.body.clock)); break; } }
   if (Number.isFinite(simFrom?.clock)) lastNow = Math.max(lastNow, Math.floor(simFrom!.clock));
   let sim = simFolder(entries, { models: opts.simModels ?? {}, purged: lazy ? new Map() : purgesIn(entries), ...(simFrom ? { from: simFrom } : {}) });

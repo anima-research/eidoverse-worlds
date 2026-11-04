@@ -246,7 +246,7 @@ console.log('\nrealized lifecycle — four registries, one id, every seam\n');
   noErrors('disabled light');
 }
 
-// ---- 11. (bot #260 #27) a sun is the rig's: a directional light requests no point light of its own (lightOf kept no kind)
+// ---- 11. a sun is the rig's: a directional light requests no point light of its own (lightOf kept no kind)
 {
   door('create', { id: 'sun11', components: { light: { kind: 'directional', color: 0xffffff, intensity: 3 }, transform: { pos: [0, 10, 0] } } }); await settle(); drain();
   door('create', { id: 'lamp11', components: { light: { color: 0xffcc88, intensity: 4, range: 6 }, transform: { pos: [0, 1, 6] } } }); await settle(); drain();

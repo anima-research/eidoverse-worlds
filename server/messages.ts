@@ -102,7 +102,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     const limit = pageLimit(msg.limit);
     if (msg.script != null) {
       // one script's own log ring + status — the author's console
-      const b = c.world.scripts.inspect(String(msg.script), c.world.sayFloorFor(c));   // a say from before the asker came stays out (bot review #260 21)
+      const b = c.world.scripts.inspect(String(msg.script), c.world.sayFloorFor(c));   // a say from before the asker came stays out
       ws.send(JSON.stringify({ type: "debug", reqId: msg.reqId ?? null,
         script: String(msg.script),
         status: b?.status ?? "no such script",
@@ -324,7 +324,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       ws.send(JSON.stringify({ type: "error", error: "attest names no recent say of yours" }));
       return;
     }
-    if (Date.now() - (e.ts ?? 0) > LIMITS.ATTEST_FRESH_MS) {   // stale receipt: refused, and said (bot review #260 469)
+    if (Date.now() - (e.ts ?? 0) > LIMITS.ATTEST_FRESH_MS) {   // stale receipt: refused, and said
       ws.send(JSON.stringify({ type: "error", error: "attest is stale (too long after the say)" }));
       return;
     }
@@ -468,7 +468,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       const gone = bansLiftedBy(globalBans, id, accts, fold);
       for (const k of gone) delete globalBans[k];
       gone.push(...takePending(id, fold));
-      const unsaved = saveGlobalBans();   // the lift holds in memory only when the file wasn't written: said (bot #260 #146)
+      const unsaved = saveGlobalBans();   // the lift holds in memory only when the file wasn't written: said
       console.log(`[mod] ${c.id} lifted global ban on ${id}${gone.length ? ` (${gone.length} record(s))` : " (was not banned)"}`);
       ws.send(JSON.stringify({ type: "mod", text: (gone.length ? `${id} is no longer banned globally` : `${id} was not globally banned`) + (unsaved ? ` (${notPersisted(unsaved)})` : "") }));
       return;
@@ -477,7 +477,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // guest's hashed address — never a display name alone (findBan matches account/addr; a name-keyed record bound nothing until
     // a restart rewrote it). Present anywhere: their account (or, a guest, their address); absent: every account the directory
     // knows under that name. Nothing to bind → refused, said plainly.
-    const byIdentity = isMinted(id) ? dir.entry(id)?.subs ?? [] : [];   // a u- identity (whois) binds its accounts (bot #260 #42)
+    const byIdentity = isMinted(id) ? dir.entry(id)?.subs ?? [] : [];   // a u- identity (whois) binds its accounts
     const present = [...worlds.values()].flatMap((w) => [...w.clients]).filter((o) => fold(o.id) === fold(id) || (typeof msg.id === "string" && o.account === msg.id) || (isMinted(id) && o.actorId === id));
     if (present.some((o) => isOperator(o.account))) {
       ws.send(JSON.stringify({ type: "error", error: `${id} is a server operator — remove them from SERVER_OPERATORS first` }));
@@ -488,7 +488,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       return;
     }
     const reason = msg.reason != null ? String(msg.reason).slice(0, LIMITS.BAN_REASON_LEN) : undefined;
-    // days, as a world's ban takes it (authority/moderation.js): absent = until lifted (bot #260 #41)
+    // days, as a world's ban takes it (authority/moderation.js): absent = until lifted
     if (msg.days !== undefined && !(typeof msg.days === "number" && msg.days > 0 && msg.days <= 3650)) { ws.send(JSON.stringify({ type: "error", error: "global-ban days is a number of days (more than 0, at most 3650); leave it out for a ban until lifted" })); return; }
     const accounts = new Set<string>([...present.map((o) => o.account).filter((a): a is string => !!a), ...dir.accountsNamed(id), ...byIdentity, ...(/^(human|agent|aid1|local):/.test(id) ? [id] : [])]);
     if ([...accounts].some((a) => isOperator(a))) { ws.send(JSON.stringify({ type: "error", error: `${id} is a server operator — remove them from SERVER_OPERATORS first` })); return; }
@@ -501,7 +501,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     for (const account of accounts) globalBans[banKey(account)] = { by: c.id, ts, name: id, account, ...(until ? { until } : {}), ...(reason ? { reason } : {}) };
     if (accounts.size) takePending(id, fold);   // a pre-account ban under this name is bound to a person now
     for (const addr of guestAddrs) globalBans[banKey(null, addr)] = { by: c.id, ts, name: id, addr, until: Math.min(ts + ADDR_BAN_MS, until ?? Infinity), ...(reason ? { reason } : {}) };
-    const unsaved = saveGlobalBans();   // the ban holds in memory only when the file wasn't written: said in the reply (bot #260 #146)
+    const unsaved = saveGlobalBans();   // the ban holds in memory only when the file wasn't written: said in the reply
     let expelled = 0;
     for (const w2 of worlds.values()) {
       for (const other of [...w2.clients]) {

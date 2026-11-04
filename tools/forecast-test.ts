@@ -468,7 +468,7 @@ const policyArgs = {
   }
 }
 
-// bot #260 54: the stored sky keeps a tz and drops clock: 'real'; the client's ~1 Hz re-render must still run for it
+// the stored sky keeps a tz and drops clock: 'real'; the client's ~1 Hz re-render must still run for it
 {
   const skySrc = await Bun.file(new URL("../client/lib/sky.js", import.meta.url)).text();   // sky.js isn't loadable here: it asks forecast.js
   check("sky.js's heartbeat asks skyTicks", /if \(skyTicks\(clock\?\.args\) && nowMs - lastClockTick > 1000\)/.test(skySrc));

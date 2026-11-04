@@ -99,7 +99,7 @@ export function placesOf(meta: any, comp: unknown): Place[] {
 /** Model frame → world (the inverse of shared/structure.js localizePoint). */
 const scale3 = (s: PlaceHolder["scale"]): Vec3 => Array.isArray(s) && s.length === 3 && s.every((x) => Number.isFinite(x) && x !== 0) ? [s[0], s[1], s[2]]
   : typeof s === "number" && s > 0 ? [s, s, s] : [1, 1, 1];
-/** The frame's stretch as sizes: a mirrored axis (negative) is drawn mirrored, but its lengths are positive (bot #260 #40). */
+/** The frame's stretch as sizes: a mirrored axis (negative) is drawn mirrored, but its lengths are positive. */
 const mag3 = (s: PlaceHolder["scale"]): Vec3 => scale3(s).map(Math.abs) as Vec3;
 /** How much a thing's frame scales a volume in it: the product of the axes its places are framed at (scale3), so a
  *  region's size in the world agrees with where inRegion finds it. */

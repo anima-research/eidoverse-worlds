@@ -276,7 +276,7 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
     "BN1 banned in main (a name nothing else in the log names) → after the upgrade that account is still banned (the authority's check, as at join); the approved report and the dry run list it, saying to check a by-name binding", { code: u.up.code, ban: banOf(live, zed), B, out: u.up.code ? u.up.out.slice(-400) : undefined }));
   row("BN2", () => ok(B.Nemo?.account === null && /no account/.test(B.Nemo?.why ?? "") && new RegExp(`operator-repair\\.ts bind hall ${B.Nemo?.id} <their account>$`).test(B.Nemo?.bind ?? ""),
     "BN2 a ban-only name main recorded no account for is listed unbound, with why and the bind command", B.Nemo));
-  // BN3 (bot review #260 82, #369): the advice is pasted into a shell and names ONE person: it carries the id, never the name (Ann and ann are two)
+  // BN3: the advice is pasted into a shell and names ONE person: it carries the id, never the name (Ann and ann are two)
   const odd = "$HOME `id` it's", r = { final: { translated: { "@world": { "roles:u-odd": { role: "builder" }, "imported-bans:u-odd": true } } } };
   const said = [...peopleOf("hall", r, () => ({ name: odd })), ...bansOf("hall", r, () => ({ name: odd }))].map((p) => p.bind);
   row("BN3", () => ok(said.length === 2 && said.every((b) => b === "bun tools/operator-repair.ts bind hall u-odd <their account>"), "BN3 the bind advice names the identity by id (shell-safe, and one person even when the name is two people's)", { said }));
@@ -372,7 +372,7 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
     "OR12 world.mod.jsonl unwritable: the bind stands in the directory and the CLI exits 0 saying NOT recorded, with the audit line to add by hand (no account in it); nothing was written", { sealed, code: r.exitCode, out: out.slice(0, 200), err: err.slice(0, 300), e }));
 }
 
-// UW (bot #260 29): the splash says "nothing was changed" only for the CLI's own refusal; no answer or a stopped CLI is unknown
+// UW: the splash says "nothing was changed" only for the CLI's own refusal; no answer or a stopped CLI is unknown
 row("UW1", () => { const W = (code: string) => (typeof (UV as any).upgradeFailedWords === "function" ? (UV as any).upgradeFailedWords({ ok: false, refused: { code, reason: "x" } }) : "The upgrade was refused, and nothing was changed: x");
   const w = { refused: W("refused"), stale: W("stale"), timeout: W("timeout"), offline: W("offline"), interrupted: W("interrupted"), failed: W("failed") };
   ok(/nothing was changed/.test(w.refused) && /nothing was changed/.test(w.stale) && ["timeout", "offline", "interrupted", "failed"].every((k) => /outcome is unknown/.test(w[k]) && !/nothing was changed/.test(w[k])),

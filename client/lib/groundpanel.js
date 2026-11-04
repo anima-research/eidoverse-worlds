@@ -171,7 +171,7 @@ export function paintGround(body) {
     // tint drives both terrain layer and grass colour
     const tint = selectRow('tint', Object.keys(pal.tints), st.tint, (v) => {
       st.tint = v;
-      growTerrain({ layers: terrainArgs(pal, { tint: v }, terrainEditBase() ?? fresh()).layers });   // the recipe's layers: the first recoloured, the rest kept (bot #260 66)
+      growTerrain({ layers: terrainArgs(pal, { tint: v }, terrainEditBase() ?? fresh()).layers });   // the recipe's layers: the first recoloured, the rest kept
       if (st.grass) growGrass();
     });
     body.appendChild(tint.row);

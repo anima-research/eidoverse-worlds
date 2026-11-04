@@ -31,7 +31,7 @@ const code = (p: string) => fs.readFileSync(p, "utf8").split("\n").map((l, i) =>
 
 // ---- MH1 ----
 const LOADS = [/\bimport\(\s*(?!['"])/, /(^|[^.\w$])eval\s*\(/, /\(0,\s*eval\)/, /new Function\s*\(/, /importScripts\s*\(/, /new (Shared)?Worker\(\s*(?!new URL\(\s*['"])/, /createObjectURL\(/];
-// the patterns themselves, on lines that must and mustn't match (bot review #260 373: `new URL(worldPath, …)` once slipped the Worker rule)
+// the patterns themselves, on lines that must and mustn't match (`new URL(worldPath, …)` once slipped the Worker rule)
 const CAUGHT = ["new Worker(new URL(path, import.meta.url))", "new SharedWorker(url)", "new Worker(blobUrl, { type: 'module' })"], PASSED = ["new Worker(new URL('./phon.worker.js', import.meta.url), { type: 'module' })", 'new Worker(new URL("./a.js", import.meta.url))'];
 ok(CAUGHT.every((l) => LOADS.some((r) => r.test(l))) && PASSED.every((l) => !LOADS.some((r) => r.test(l))), "MH1 (the rule) a Worker from anything but a fixed URL is caught; a quoted new URL(...) passes", { caught: CAUGHT.map((l) => LOADS.some((r) => r.test(l))), passed: PASSED.map((l) => !LOADS.some((r) => r.test(l))) });
 // [file, the line, why it can't be fed by a world]

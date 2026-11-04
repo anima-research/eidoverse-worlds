@@ -36,7 +36,7 @@ const H = (o: Partial<Held> = {}): Held => ({ move: null, touch: null, allow: []
   ag.bodyInbox([{ type: "body-refused", from: "u-wren", gate: "move", class: "shove" }, { type: "body-refused", from: "u-kit", gate: null, class: "pose" }]);
   ok(ev.length === 2 && ev[0].kind === "act" && ev[0].who === "Wren" && /^tried to move you/.test(ev[0].text) && /move gate is off/.test(ev[0].text) && /block list/.test(ev[1].text) && ag.inbox.length === 2,
     "R7 a refused act on the agent's body is an event in its inbox: who tried (by name), and its move gate (or its block list) turned it away", ev); }
-// R8 (bot #260 #104): every body-inbox row reads `* <name> <rest>` (look, net-server): the actor's name once, never its id
+// R8: every body-inbox row reads `* <name> <rest>` (look, net-server): the actor's name once, never its id
 { const ag = new WorldAgent({ name: "told" }) as any; ag.actorIds.set("Mira", "u-mira");
   ag.bodyInbox([{ type: "body-revoked", by: "u-mira", class: "touch" }, { type: "body", from: "u-mira", kind: "pose", consent: "touch" }]);
   const lines = ag.inbox.map((m: any) => `* ${m.who} ${m.text}`);

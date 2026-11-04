@@ -160,7 +160,7 @@ const cases: Case[] = [
       const e = s.call("vic", "set", { id: "lamp", component: "label", value: "x" });
       return { b: show(b), r: show(r), c: show(c), wrote: n1 - n0, edit: code(e), editLogged: s.entries().length - n2 }; },
     good: (o) => /^refused/.test(o.b) && /^refused/.test(o.c) && o.wrote === 0 && o.edit === "rights" && o.editLogged === 1 },
-  { id: "L5b", what: "…and a refused drag sent as grab {id: 'body:X'} (bodyverbs' alias for body {kind: drag}) is presence too: never logged (bot #260 126)", run(s) { cast(s);
+  { id: "L5b", what: "…and a refused drag sent as grab {id: 'body:X'} (bodyverbs' alias for body {kind: drag}) is presence too: never logged", run(s) { cast(s);
       s.call("bob", "move", { to: [0, 0, 0] }); s.call("vic", "move", { to: [0.5, 0, 0] }); s.call("bob", "consent", { move: false });
       const n0 = s.entries().length; const g = s.call("vic", "grab", { id: "body:bob" });
       return { g: show(g), wrote: s.entries().length - n0 }; },

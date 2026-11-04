@@ -115,7 +115,7 @@ const load = (consent: any) => { const w: any = S.worldOf({ name: "w", entries: 
     && open.presenceDirty && dw(open, "stan") === "deny" && dw(open, "pal") === "deny" && open.presence.consent.me.move === false && open.presence.consent.me.touch === undefined
     && dw(oneWay, "stan") === "allow" && oneWay.presence.consent.me.move === true,
     { stella: stella.presence.consent.me, open: open.presence.consent.me, oneWay: oneWay.presence.consent.me }); }
-// M15 (bot review #260 47): an allow never opens an ungated class the migration kept closed
+// M15: an allow never opens an ungated class the migration kept closed
 { const five = Object.fromEntries(["touch", "intimate", "pose", "shove", "displace"].map((c) => [c, { mode: "allow" }]));
   const p = mig({ me: { preset: "normal", cells: { everyone: { near: "ask" } }, over: { pal: five, kit: { ...five, near: { mode: "allow" }, follow: { mode: "allow" }, voice: { mode: "allow" } } } } });
   check("M15", "everyone-row near:ask + pal's row allowing the five enforced classes: near stays closed and pal is not allow-listed (near was no for pal before); kit, whose row also allowed near, follow and voice, is",

@@ -599,7 +599,7 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
       if (c.anonymous && c.addr && !c.spectator && (c.surface ?? "world") === "world") {
         let carried = 0;
         for (const s of addrSanctionsFor(w.name, c.addr)) {
-          // a guest ghost stored before 10-20 is ignored (ghost is gone); one record per issuer, each carried as its own (bot review #260 118)
+          // a guest ghost stored before 10-20 is ignored (ghost is gone); one record per issuer, each carried as its own
           if (s.kind !== "mute" || inForceOf(w.log.live, c.actorId, "mute").some((m: any) => m.actor === s.actor)) continue;
           w.log.live.appendMod({ actor: s.actor, verb: s.kind, who: c.actorId, ...(s.kind === "mute" ? { channels: s.channels ?? ["voice", "chat"] } : {}), until: s.until, ...(s.reason ? { reason: s.reason } : {}), carried: "address" });
           if (!s.ids.includes(c.actorId)) s.ids.push(c.actorId); carried++;
@@ -1240,7 +1240,7 @@ const server = Bun.serve({
               if (!r?.ok) { ws.send(JSON.stringify({ type: "error", error: r?.refused?.reason ?? "that mute was refused" })); return; }
               sanctionSweep(w);
               const unsaved = guestSanctionByAddress(w, actorIdOf(c), c.id, muted ? "mute" : "unmute", target, typeof msg.reason === "string" ? msg.reason : undefined);   // R 10-07
-              if (unsaved) ws.send(JSON.stringify({ type: "mod", text: `that mute's address record is ${notPersisted(unsaved)}` }));   // bot #260 #146
+              if (unsaved) ws.send(JSON.stringify({ type: "mod", text: `that mute's address record is ${notPersisted(unsaved)}` }));
               if (muted) for (const t of w.clients) if (t.actorId === target) { try { t.ws.send(JSON.stringify({ type: "moderated", verb: "mute", by: c.id, you: true, channels: ["voice"], until: r.until })); } catch { /* gone */ } }
               // moderation is world-visible by design: a silence nobody can see the cause of is indistinguishable from a bug
               const name = [...w.clients].find((t) => t.actorId === target)?.id ?? target;

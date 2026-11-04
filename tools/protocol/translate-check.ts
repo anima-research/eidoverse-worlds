@@ -246,7 +246,7 @@ row("F51b", () => { const Z = require("../../shared/zone.js"), WJ = require("../
   const runs = [both({ speed: 1.2 }, {}), both({}, { speed: 1.2 }), both({ speed: 1.2 }, { speed: 2.45 })], lone = tr([OWNER, ["olga", "spawn", { id: "a", lib: "p.glb" }], ["olga", "comp", { id: "a", type: "water", data: { size: [8, 4, 8] } }]]);
   ok(runs.every((x) => x.swim === x.own) && runs.some((x) => !x.inSlow) && runs.every((x) => x.mapped?.length === 2 && x.mapped.every(Boolean)) && !JSON.stringify(lone.r.out).includes("physics-area"),
     "F51b two overlapping waters, one slow (1.2) and one at the stroke here (unset or 2.45): a swimmer's speed factor is the one of the water mediumAt puts them in, either way round (the other gets factor 1, said in the report); a lone default water writes no area", { runs, lone: JSON.stringify(lone.r.out).includes("physics-area") }); });
-// bot review #260 33: a main size past zone.size's 1e4 is clamped, and the report keeps main's size beside it, as speed's dropped note
+// a main size past zone.size's 1e4 is clamped, and the report keeps main's size beside it, as speed's dropped note
 row("F51c", () => { const { r, E } = tr([OWNER, ["olga", "spawn", { id: "sea", lib: "s.glb" }], ["olga", "comp", { id: "sea", type: "water", data: { center: [0, 0, 0], size: [20000, 200, 200] } }],
     ["olga", "spawn", { id: "pond", lib: "p.glb" }], ["olga", "comp", { id: "pond", type: "water", data: { size: [8, 4, 8] } }],
     ["olga", "spawn", { id: "hab", lib: "h.glb" }], ["olga", "comp", { id: "hab", type: "air", data: { boxes: [null, { size: [2, 2, 2] }, { size: [30000, 1, 1] }] } }]]);

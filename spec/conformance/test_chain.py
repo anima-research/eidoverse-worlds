@@ -115,7 +115,7 @@ def roles_stripped(t):
 r = strip_unnamed(roles_stripped)
 check("4m a roles: value stripped, named only by a purge the fold refuses, is detected", r["status"] == "broken" and r["at"] == len(es), r)
 
-# --- the verifier is as strict as the spec (bot #260 #480-482) ---
+# --- the verifier is as strict as the spec () ---
 t = copy.deepcopy(es); t[3]["body"]["salt"] = chain.b64u(b"x" * 8)
 for e in t: e.pop("head", None); e.pop("sig", None)
 r = chain.verify(dump(chain.seal(t, priv, 2)))

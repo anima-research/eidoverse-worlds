@@ -81,7 +81,7 @@ try {
   let s = await until(pg, (x) => x.entity, 90_000);
   check('the model spawned', s.entity, JSON.stringify(s));
   const t0 = Date.now() - 10_000;   // started ten seconds ago
-  // a first write is stamped t0 = now; a same-src rewrite while it plays keeps the t0 it names (followups.js stampMedia; bot #260 96)
+  // a first write is stamped t0 = now; a same-src rewrite while it plays keeps the t0 it names (followups.js stampMedia)
   await sound(pg, { src, description: 'a probe tone', volume: 0.5, near: 8, radius: 20 });
   await sound(pg, { src, t0, description: 'a probe tone', volume: 0.5, near: 8, radius: 20 });
   s = await until(pg, (x) => x.has && x.dur > 0);

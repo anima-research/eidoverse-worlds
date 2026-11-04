@@ -124,7 +124,7 @@ const head0 = w.log.head;
   const out3 = reachTo(sly, { p: [-0.62, 1.2, 0.05], space: "self" });   // Sly stands at x 0.6, yaw 0: that is Vic's middle
   ok(out3 && !out3.reach, "RG6 …and a point in Sly's own frame that lands inside Vic is stripped", out3); }
 
-// RG6b (bot review #260 13): a body turned by q (a swimmer lying flat) is held to its own turned capsule
+// RG6b: a body turned by q (a swimmer lying flat) is held to its own turned capsule
 { const s = Math.SQRT1_2; pose(ann, { p: [5, 0, 0], q: [s, 0, 0, s] });   // 90° about +x: her local +y (head) points to world +z
   ok(Array.isArray(ann.lastPose?.q), "(RG6b setup) Ann's relayed pose keeps its q", ann.lastPose);
   const out = reachTo(bob, { p: [5, 0, 1.6] });
@@ -346,7 +346,7 @@ let skipped = null; const SKIP = Symbol("skip");
     let k = msgs.length;
     const r1 = await call("reach", { who: "Vic", point: "chest_front" });
     // the delivery barrier: the refusal in r1 came from the relay, which had the pose by then; a reply to Vic's own request lands
-    // on her ordered socket after anything that pose sent her, so the absence below is judged, not waited on (bot review #260 498)
+    // on her ordered socket after anything that pose sent her, so the absence below is judged, not waited on
     const barrier = await vreq("whois", { id: hepId() }); ok(barrier && !barrier.timeout, "(AG1 barrier) Vic's own request is answered after the relay handled the reach", barrier);
     ok(!seenReach(k, "chest_front"), "AG1 Vic receives no frame carrying the agent's hand on her chest_front", msgs.slice(k).filter((m) => m.type === "frame" && m.poses?.Hep).map((m) => m.poses.Hep.reach).slice(-3));
     ok(/not shown/.test(T(r1)) && /intimate/.test(T(r1)) && !ag.reaches.has("rightHand"), "AG1 the reach reply says the hand was not shown and why, and the agent stops streaming it", { text: T(r1), reaches: [...ag.reaches.keys()] });

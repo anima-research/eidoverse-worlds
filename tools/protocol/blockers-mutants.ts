@@ -135,7 +135,7 @@ for (const m of todo) {
   table.push(`| ${m.id} | ${m.file} — ${m.what} | ${m.suite} | ${m.rows.join(", ") || "(control)"} | ${good ? (m.rows.length ? `red: ${red.filter((x) => m.rows.includes(x)).join(", ")}` : "green") : `WRONG (exit ${r.exitCode}, red ${red.join(",") || "none"})`} |`);
   fs.rmSync(d, { recursive: true, force: true });
 }
-if (!only) {   // --only refuses an id with no row (bot review #260 78: B3 ran nothing and exited 0)
+if (!only) {   // --only refuses an id with no row (B3 ran nothing and exited 0)
   const r = Bun.spawnSync(["bun", import.meta.path, "--only", "B3"], { env: process.env }); const out = r.stdout.toString() + r.stderr.toString();
   const good = r.exitCode !== 0 && /no mutant B3/.test(out); if (!good) bad++;
   console.log(`${good ? "ok  " : "FAIL"} ONLY '--only B3 (no such row) is refused, not run as nothing': exit ${r.exitCode}`);

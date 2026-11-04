@@ -16,7 +16,7 @@ export const authorityTime = new WeakMap<object, number>();
 
 type Mark = { t: number; ms: number };
 /** A read's mark: counted at arrival (t); setting .ms when the authority answers moves t to then, so a read that ran
- *  past the window is charged at completion, never expired before its cost lands (bot review #260 465). */
+ *  past the window is charged at completion, never expired before its cost lands. */
 class ReadMark implements Mark { t: number; #ms = 0; constructor(t: number, private readonly clock: () => number) { this.t = t; }
   get ms() { return this.#ms; } set ms(v: number) { this.#ms = v; this.t = this.clock(); } }
 export function readMeter(limits = READ, clock: () => number = Date.now) {

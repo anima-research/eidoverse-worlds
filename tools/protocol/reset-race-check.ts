@@ -57,7 +57,7 @@ ok(old.requestSync("olive", "say", { text: "late" })?.refused?.code === "reset",
   const { owner } = foundWorld(path.join(process.env.WORLDS_DIR, "scripted"), "scripted", "olive");
   const sw = new World("scripted"); const sync = WorldScripts.prototype.sync;
   const sent = []; const c = { id: "olive", world: sw, actorId: owner, spectator: false, ws: { send: (d) => sent.push(JSON.parse(d)) } }; sw.clients.add(c);
-  let threw = 0; WorldScripts.prototype.sync = () => { threw++; throw new Error("injected: the scripts won't start"); };   // counted: a stub never reached proves nothing (bot review #260 490)
+  let threw = 0; WorldScripts.prototype.sync = () => { threw++; throw new Error("injected: the scripts won't start"); };   // counted: a stub never reached proves nothing
   try { REQUEST_MESSAGES["world-reset"]({ c, ws: c.ws }, { name: "scripted" }); } finally { WorldScripts.prototype.sync = sync; }
   const fresh = sw.log.live.entries.length, err = sent.find((m) => m.type === "error")?.error;
   ok(threw === 1 && !err && sent.some((m) => m.type === "world-reset") && sw.log.requestSync(owner, "create", { components: { description: "after" } })?.ok === true,
@@ -80,7 +80,7 @@ ok(old.requestSync("olive", "say", { text: "late" })?.refused?.code === "reset",
   const hold = () => { gate = new Promise((r) => { release = r; }); };
   // superseded: the old tab's request is waiting when the same account's new tab takes over
   hold(); const oldTab = tab(1); const n0 = tw.log.live.entries.length;
-  // the setup is asserted: a wait that expires (tryUntil → undefined) must not read as "the request was inside" (bot review #260 489)
+  // the setup is asserted: a wait that expires (tryUntil → undefined) must not read as "the request was inside"
   let e0 = entered; send(oldTab, "a1", "from-the-old-tab"); const in1 = await tryUntil("the old tab's request is inside the await", () => entered > e0, { ms: 2000, step: 10 });   // it is inside the await now
   oldTab.c.superseded = true; tw.clients.delete(oldTab.c); tab(2);   // the takeover path (server.ts admitJoin)
   release(); await tryUntil("the old tab's request is answered", () => oldTab.replies.length, { ms: 2000, step: 10 });
@@ -96,7 +96,7 @@ ok(old.requestSync("olive", "say", { text: "late" })?.refused?.code === "reset",
   // the control: a connection that stays writes
   hold(); const stays = tab(4); send(stays, "c1", "from-a-live-tab"); release(); await tryUntil("the live tab's request is answered", () => stays.replies.length, { ms: 2000, step: 10 });
   ok(stays.replies[0]?.ok === true && described("from-a-live-tab"), "SR3 (control) a connection that is still in the world writes", stays.replies[0]);
-  // SR4 (bot review #260 43): whois waits its turn too: asked while the same connection's role grant awaits, it answers after it
+  // SR4: whois waits its turn too: asked while the same connection's role grant awaits, it answers after it
   hold(); const asker = tab(5); const bob = (await import("../../server/directory.ts")).directoryFor(process.env.WORLDS_DIR).resolve({ sub: "local:bob", name: "bob" }); const order = []; const sendRaw = asker.c.ws.send;
   asker.c.ws.send = (d) => { const m = JSON.parse(d); if (m.type === "reply") order.push(`${m.verb}:${m.verb === "whois" ? m.reply?.people?.[0]?.role : m.ok}${m.ok ? "" : ":" + JSON.stringify(m.reply?.refused).slice(0, 200)}`); return sendRaw(d); };
   e0 = entered; REQUEST_MESSAGES.request({ c: asker.c, ws: asker.c.ws, now: Date.now(), expel: () => {} }, { id: "d1", verb: "set", args: { id: "@world", component: `roles:${bob}`, value: { role: "builder" } } });

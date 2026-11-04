@@ -1053,7 +1053,7 @@ try {
   await stage("NP", async () => {
   const r = await page(`const n = await import('/lib/net.js'); const ws = n.net.ws, send = ws.send.bind(ws);
     let went = 0; ws.send = (m) => { if (!/"verb":"look"/.test(m)) send(m); else went++; };   // this one request never reaches the authority
-    const live = n.net.joined && ws.readyState === 1;   // else sendRequest answers offline at once and the row proves nothing (bot review #260 517)
+    const live = n.net.joined && ws.readyState === 1;   // else sendRequest answers offline at once and the row proves nothing
     const t0 = performance.now(); const p = n.sendRequest('look', {}); setTimeout(() => ws.close(), 300);
     const out = await Promise.race([p, new Promise((z) => setTimeout(() => z('still waiting at 2 s'), 2000))]);
     return { live, went, out, ms: Math.round(performance.now() - t0) };`);

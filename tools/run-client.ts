@@ -26,7 +26,7 @@ const args = process.argv.slice(2);
 const flag = (f: string) => args.includes(f);
 const opt = (f: string, d: number) => { const i = args.indexOf(f); return i >= 0 ? Number(args[i + 1]) : d; };
 const importOnly = flag("--import-only");
-const strictEnv = flag("--strict-env");   // a dependency missing here is a red, not an env note (the gate's client-tools; bot review #260 187)
+const strictEnv = flag("--strict-env");   // a dependency missing here is a red, not an env note (the gate's client-tools)
 // a load failure comes before a test does any work (a stub plugin, then its import); one later than this is the full run's
 const JOBS = opt("--jobs", importOnly ? 6 : 2);
 const TIMEOUT_S = opt("--timeout", importOnly ? 15 : 90);

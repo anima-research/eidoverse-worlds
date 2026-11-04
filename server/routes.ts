@@ -470,7 +470,7 @@ const ROUTES: Route[] = [
       if (url.searchParams.has("key")) return new Response("key belongs in the Authorization header", { status: 400 });
       const key = bearerOf(req);
       const session = sessionOfRequest(req);
-      // the door is the first gate: no lookup for a stranger (a home-node human has no JOIN_TOKEN; bot review #260 188)
+      // the door is the first gate: no lookup for a stranger (a home-node human has no JOIN_TOKEN)
       if (JOIN_TOKEN && key !== JOIN_TOKEN && !session) return new Response("no", { status: 401 });
       // the sender: the account, else the hashed address (never the address itself)
       const sender = session ? session.sub.replace(/[^a-z0-9_-]/gi, "-").slice(0, 80) : `addr-${hashedAddress(req, srv)}`;
@@ -630,7 +630,7 @@ const ROUTES: Route[] = [
         const sum = file ? await summarizeGlb(file) : null;
         return j({ ...record(id, e),
           geometry: sum,   // local frame — compose with pos/q-or-yaw/scale for world space
-          note: "geometry coords are the MODEL's local frame; sockets use the same frame, so a topSurface center is a socket pos verbatim. The pose is the log's: a thing in flight reads at its last logged pose until its rest is logged" });   // bot review #260 109
+          note: "geometry coords are the MODEL's local frame; sockets use the same frame, so a topSurface center is a socket pos verbatim. The pose is the log's: a thing in flight reads at its last logged pose until its rest is logged" });
       }
       const withBoxes = url.searchParams.get("boxes") !== "0";
       const out = [];

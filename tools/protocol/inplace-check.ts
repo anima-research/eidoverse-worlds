@@ -30,7 +30,7 @@
 //   IP16 finishing an interrupted swap refuses when the old log changed since the translation read it
 //   IP17 a failed in-place translation adds no identity to the shared directory; the clean run adds them once
 //   IP18 the recovery of an interrupted swap writes the identities the interrupted run planned
-//   IP34–IP37 (bot review #260 138/435/139/432) an interrupted rollback finishes; a swap failing after its identities forgets them;
+//   IP34–IP37 an interrupted rollback finishes; a swap failing after its identities forgets them;
 //        a recovery dying after its first rename keeps the source record; the recovery renames poses.json as the swap recorded
 //   IP11 a snapshot.json the oracle can't compare (a fold of part of the log) doesn't block the translation: it says,
 //        in its output, that the snapshot was NOT compared and why, and keeps it as snapshot.original.json
@@ -453,7 +453,7 @@ const waiting = oldWorld("waiting");
   // steps: world.jsonl in, log.jsonl → log.original.jsonl, snapshot.json → …, poses.json → …, poses.json in (the new one), translation.json in
   const results: any[] = [];
   for (let k = 0; k < 6; k++) { const r = xlate(["swapper"], { WORLD_TS_FAULT_AT_STEP: String(k) });
-    results.push({ k, code: r.code, restored: same(fingerprint(d), fp), temps: temps().length, said: new RegExp(`the swap failed: \\(injected\\) step ${k} failed; everything that had moved was put back`).test(r.out) }); }   // step k itself (bot review #260 485)
+    results.push({ k, code: r.code, restored: same(fingerprint(d), fp), temps: temps().length, said: new RegExp(`the swap failed: \\(injected\\) step ${k} failed; everything that had moved was put back`).test(r.out) }); }   // step k itself
   ok(results.every((x) => x.code !== 0 && x.restored && x.temps === 0 && x.said), "IP6 a failure at any step of the swap (0..5) puts every moved file back, removes the temporary directory and says so", results);
   const r = xlate(["swapper"]);
   ok(r.code === 0 && isWorldDir(d) && same(fingerprint(d)["log.original.jsonl"], fp["log.jsonl"]), "IP6 …and a clean run afterwards translates it in place", r.out.slice(-600)); }
@@ -562,7 +562,7 @@ for (const k of [1, 3]) { const name = `halfway${k}`; const d = oldWorld(name); 
 const actorsOf = (d: string) => [...new Set(fs.readFileSync(path.join(d, "world.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l).actor).filter((a: string) => /^u-/.test(a)))];
 { const name = "nameless"; const d = oldWorld(name); const before = fs.readFileSync(dirf, "utf8");
   const runs = [0, 2, 6].map((k) => { const r = xlate([name], { TRUST_NAMES: "", WORLD_TS_FAULT_AT_STEP: String(k) });
-    return { k, code: r.code, dirSame: fs.readFileSync(dirf, "utf8") === before, temps: temps().filter((t) => t.includes(name)).length, said: new RegExp(`\\(injected\\) step ${k} failed`).test(r.out) }; });   // the injected step was reached (bot review #260 486)
+    return { k, code: r.code, dirSame: fs.readFileSync(dirf, "utf8") === before, temps: temps().filter((t) => t.includes(name)).length, said: new RegExp(`\\(injected\\) step ${k} failed`).test(r.out) }; });   // the injected step was reached
   const ok1 = xlate([name], { TRUST_NAMES: "" });
   const ids = JSON.parse(fs.readFileSync(dirf, "utf8")).ids ?? {}; const was = JSON.parse(before).ids ?? {};
   const added = Object.keys(ids).filter((k) => !was[k]); const actors = actorsOf(d);
@@ -576,7 +576,7 @@ const actorsOf = (d: string) => [...new Set(fs.readFileSync(path.join(d, "world.
   const r = tool(["translate", name, "--no-founder-key"], { TRUST_NAMES: "" }); const ids = JSON.parse(fs.readFileSync(dirf, "utf8")).ids ?? {};
   ok(died.code !== 0 && actors.some((a) => !mid[a]) && r.code === 0 && actors.every((a) => ids[a]) && /identit/.test(r.out),
     "IP18 an interrupted swap's identities aren't in the directory until the recovery finishes it, which adds them", { died: died.code, missingMid: actors.filter((a) => !mid[a]).length, code: r.code, out: r.out.slice(-300) }); }
-// ---- bot review #260 435/138/139/432: the swap, its recovery and the rollback each decide from the manifest, idempotently ----
+// ---- the swap, its recovery and the rollback each decide from the manifest, idempotently ----
 // IP35 (435) a swap that fails after its identities went in (injected step 7: the marker's removal) forgets them again
 { const name = "nameless4"; oldWorld(name); const before = fs.readFileSync(dirf, "utf8");
   const r = xlate([name], { TRUST_NAMES: "", WORLD_TS_FAULT_AT_STEP: "7" });
@@ -616,7 +616,7 @@ const actorsOf = (d: string) => [...new Set(fs.readFileSync(path.join(d, "world.
   const r = tool(["translate", name, "--no-founder-key", "--operator-only-no-owner", "--approved", rep?.hash ?? "x"]);
   ok(rep?.report?.source?.poses?.sha256 === crypto.createHash("sha256").update(was).digest("hex") && r.code !== 0 && /is not the one that was approved/.test(r.out) && !fs.existsSync(path.join(d, "world.jsonl")),
     "IP21c the dry run's report pins poses.json (size, sha256); a poses.json rewritten after it refuses the approval, and nothing moves", { pin: rep?.report?.source?.poses, code: r.code, out: r.out.slice(-300) }); }
-// IP32 (bot review #260 9) the in-place swap is durably ordered: the translated files are on disk before the first rename,
+// IP32 the in-place swap is durably ordered: the translated files are on disk before the first rename,
 // and the directory D is synced after the marker lands, after the last rename, and after the marker goes (a spy preload logs it)
 { const name = "durable"; const d = oldWorld(name); const trace = path.join(root, "fsync-trace.log"), spy = path.join(root, "fsync-spy.ts");
   fs.writeFileSync(spy, `import fs from "node:fs"; const out = process.env.FSYNC_TRACE, fds = new Map(), o = fs.openSync, f = fs.fsyncSync, rn = fs.renameSync, rm = fs.rmSync, put = fs.writeFileSync;
@@ -636,7 +636,7 @@ fs.rmSync = (p, x) => { log("rm " + p); return rm(p, x); };\n`);
   ok(r.exitCode === 0 && first > 0 && into.length >= 2 && synced && marked >= 0 && marked < first && dirSync(marked, first) && cleared > last && dirSync(last, cleared) && dirSync(cleared, L.length),
     "IP32 the in-place swap's durable order: every translated file fsynced before the first rename; the world's directory synced after the marker lands, after the last rename, and after the marker is removed",
     { code: r.exitCode, out: (r.stdout.toString() + r.stderr.toString()).slice(-300), first, last, marked, cleared, synced, renamedIn: into.length, dSyncs: L.map((l, i) => (l === `fsync ${d}` ? i : -1)).filter((i) => i >= 0) }); }
-// IP33 (bot review #260 87) the two-name form's advice names both worlds: the printed command, run as printed, translates old into new
+// IP33 the two-name form's advice names both worlds: the printed command, run as printed, translates old into new
 { const src = "advised", dest = "advised-new"; oldWorld(src);
   const bare = tool(["translate", src, dest, "--no-founder-key"]), dr = tool(["translate", src, dest, "--dry-run", "--no-founder-key"]);
   const said = /^to translate: approve exactly this report\. translate (.+?) (--no-founder-key --approved [0-9a-f]{64} --operator-only-no-owner)/m.exec(dr.out);

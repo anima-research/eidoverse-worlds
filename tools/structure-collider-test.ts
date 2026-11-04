@@ -200,7 +200,7 @@ const WALK = PLAN.levels[0].y;
     structureBoxIds('other').length === PLAN.boxes.length + 1);
 }
 
-// 7b. (bot #260 #35) the boxes take the transform the drawn group takes: per-axis scale and a whole rotation
+// 7b. the boxes take the transform the drawn group takes: per-axis scale and a whole rotation
 {
   clean();
   // scale [2, 1, 1] (view.js: scale = its y, scale3 the three): the door spans x 0..2, the solid segment x 2..4

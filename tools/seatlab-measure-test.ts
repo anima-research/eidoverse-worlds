@@ -1,4 +1,4 @@
-// seatlab-measure — tools/seatlab/seatlab.js measureSeat reports the seat's pose and anchor from its station (bot #260 90:
+// seatlab-measure — tools/seatlab/seatlab.js measureSeat reports the seat's pose and anchor from its station (
 // it read the retired socket.body and always said sitchair / null). The page modules it imports (/lib/...) are stubbed;
 // three and seatcore are real.
 //   bun tools/seatlab-measure-test.ts

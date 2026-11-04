@@ -484,7 +484,7 @@ const cases: Case[] = [
       return { ban: show(ban), r: st(s, r), why: sv?.why, status: sv?.status, newKinds: kinds(s.entries().slice(n0)), worldLogHasBan: s.entries().some((e: any) => JSON.stringify(e).includes('"ban"')),
         modLog: s.w().mod.some((m: any) => m.verb === "ban" && m.who === "bob") }; },
     good: (o) => o.r === "suspended" && o.status === "suspended" && /banned/.test(o.why) && JSON.stringify(o.newKinds) === '{"act":1}' && !o.worldLogHasBan && o.modLog },
-  { id: "B15b", what: "a chat-muted sponsor's script can't say (bot review #260 16): the activation is refused as muted, no say and no act is written; a voice-only mute changes nothing", run(s) { cast(s);
+  { id: "B15b", what: "a chat-muted sponsor's script can't say: the activation is refused as muted, no say and no act is written; a voice-only mute changes nothing", run(s) { cast(s);
       bell(s, "bob"); const voice = s.call("olive", "mute", { who: "bob", minutes: 30, channels: ["voice"] }); const rv = s.call("vic", "use", { id: "bell1", action: "ring" });
       const mute = s.call("olive", "mute", { who: "bob", minutes: 30, channels: ["chat"] }); const n0 = s.entries().length;
       const r = s.call("vic", "use", { id: "bell1", action: "ring" });
@@ -915,7 +915,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r)); process.exit(0);\n`);   // 
       const t0 = performance.now(); const r = s.call("vic", "say", { text: "hello" }); const ms = performance.now() - t0;
       const t1 = performance.now(); const other = s2.call("olive", "inspect", { id: "cup" }); const otherMs = performance.now() - t1;
       const sv = s.call("olive", "scripts", {}).scripts, st0 = sv.map((x: any) => `${x.last.at(-1)?.status} ${x.last.at(-1)?.code}`);
-      const busyFails = sv.filter((x: any) => x.last.at(-1)?.status === "refused" && x.last.at(-1)?.code === "busy").map((x: any) => s.w().presence.scripts?.[`${x.id}|${x.script.slice("script:".length)}`]?.fails ?? 0);   // a refusal is not the script's failure (bot review #260 520)
+      const busyFails = sv.filter((x: any) => x.last.at(-1)?.status === "refused" && x.last.at(-1)?.code === "busy").map((x: any) => s.w().presence.scripts?.[`${x.id}|${x.script.slice("script:".length)}`]?.fails ?? 0);   // a refusal is not the script's failure
       D.setScriptDuty({ maxMs: 1e9 });
       return { said: r.ok, ms: Math.round(ms), other: other.ok, otherMs: Math.round(otherMs), killed: st0.filter((x: string) => x === "failed time").length, busy: st0.filter((x: string) => x === "refused busy").length, busyFails }; },
     good: (o) => o.said && o.ms < DUTY0.maxMs + 500 + 300 && o.other && o.otherMs < 150 && o.killed >= 1 && o.busy >= 6 && o.busyFails.length === o.busy && o.busyFails.every((n: number) => n === 0) },
@@ -944,7 +944,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r)); process.exit(0);\n`);   // 
       bell(s, "bob"); const v = s.call("olive", "scripts", {}); const one = v.scripts?.find((x: any) => x.id === "bell1");
       return { status: one?.status, why: one?.why, sandbox: v.sandbox }; },
     good: (o) => o.status === "unavailable" && /operator can repair/.test(o.why ?? "") && /asking again won't/.test(o.why ?? "") && !/stand-in/.test(o.why ?? "") && o.sandbox === "unavailable" },
-  { id: "U2w", what: "bot review #260 11: on Windows (platform forced here) no script runs and the sandbox says unavailable, unless the operator sets EIDO_SANDBOX=inprocess; then it runs in-process", run() {
+  { id: "U2w", what: "bot on Windows (platform forced here) no script runs and the sandbox says unavailable, unless the operator sets EIDO_SANDBOX=inprocess; then it runs in-process", run() {
       if (!SB) return { absent: true };
       const f = path.join(root, "win-probe.ts");
       fs.writeFileSync(f, `Object.defineProperty(process, "platform", { value: "win32" });
@@ -967,7 +967,7 @@ console.log(JSON.stringify({ platform: process.platform, available: SANDBOX.avai
       return { r: st(s, r), open: comp(s, "gate", "openable")?.open, uses: act?.body?.uses, use: use ? [use.cause === r.script?.act, use.body?.request?.id, use.body?.request?.action, use.body?.sponsor] : null, change: change?.actor ?? null,
         audit: `${A.reran}/${A.acts} ${A.flags.map((f: any) => f.check).join(",")}`, forged: AU.auditScripts(forged, s.w().getBlob, { run: SB.runScript }).flags.map((f: any) => f.check) }; },
     good: (o) => o.r === "ran" && o.open === true && JSON.stringify(o.uses) === '[{"id":"gate","action":"open"}]' && JSON.stringify(o.use) === '[true,"gate","open","bob"]' && o.change === "script:lever" && o.audit === "1/1 " && o.forged.includes("rerun-use") },
-  { id: "D4b", what: "a script whose read SHAPE turns on a name (an unrecorded identity) is skipped as depending on who was near, never flagged `reads` (bot review #260 52)", run(s) { cast(s);
+  { id: "D4b", what: "a script whose read SHAPE turns on a name (an unrecorded identity) is skipped as depending on who was near, never flagged `reads`", run(s) { cast(s);
       s.call("bob", "create", { id: "dial", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "dial", "who", onUse(`const near = world.near(5); const n = near.length ? world.name(near[0]) : null;\nif (n) { world.count(); world.set("self", "t/seen", 1); }`), { scope: { ids: "self", comps: ["t/seen"] }, on: ["use"] });
       s.call("bob", "set", { id: "dial", component: "reactions", value: { look: { kind: "script", script: "who" } } });
@@ -1095,7 +1095,7 @@ console.log(JSON.stringify({ platform: process.platform, available: SANDBOX.avai
       return { heard: comp(s, "parrot", "t/heard"), squawks: s.entries().filter((e: any) => e.kind === "say" && e.actor === "script:parrot").map((e: any) => e.body.text),
         copied: JSON.stringify(act?.body?.event ?? {}).includes("!hello"), audit: A ? `${A.reran}/${A.acts} ${A.flags.map((f: any) => f.check).join(",")}` : null }; },
     good: (o) => o.heard?.by === "vic" && o.heard?.text === "!hello" && o.heard?.n === 1 && JSON.stringify(o.squawks) === '["squawk: !hello"]' && o.copied === false && o.audit === "1/1 " },
-  { id: "E1b", what: "a say heard before you arrived stays out of the script's console for you (bot review #260 21): `scripts` shows the activation without its console lines or why; one with no floor (an admin) and a say since you came show them", run(s) { cast(s);
+  { id: "E1b", what: "a say heard before you arrived stays out of the script's console for you: `scripts` shows the activation without its console lines or why; one with no floor (an admin) and a say since you came show them", run(s) { cast(s);
       s.call("bob", "create", { id: "ear", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "ear", "echo", `world.on("say", (e) => { console.log("heard " + e.text); });\n`, { scope: { ids: "self", comps: [] }, on: ["say"] });
       s.call("vic", "say", { text: "early secret" }); const floor = s.entries().length - 1; s.call("vic", "say", { text: "later line" });
@@ -1183,7 +1183,7 @@ console.log(JSON.stringify({ platform: process.platform, available: SANDBOX.avai
       const act = s.entries().findLast((e: any) => e.actor === "script:trap" && e.kind === "act");
       return { r1: st(s, r1), scripted1, r2: st(s, r2), recorded: act?.body?.bodies, tumble: !!s.w().presence.bodies.vic?.tumble }; },
     good: (o) => o.r1 === "refused consent" && o.scripted1 === 0 && o.r2 === "ran" && JSON.stringify(o.recorded) === '[{"kind":"shove","to":"body:vic"}]' && o.tumble },
-  { id: "C1b", what: "the auditor compares body effects (bot review #260 32): a shove re-runs to the act's record; a forged target or a dropped effect is flagged rerun-body", run(s) { cast(s);
+  { id: "C1b", what: "the auditor compares body effects: a shove re-runs to the act's record; a forged target or a dropped effect is flagged rerun-body", run(s) { cast(s);
       s.call("bob", "create", { id: "trap", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "trap", "spring", onUse(`world.shove(e.by);`), { scope: { ids: "self", comps: [], bodies: ["shove"] }, on: ["use"] });
       s.call("bob", "set", { id: "trap", component: "reactions", value: { step: { kind: "script", script: "spring" } } });
@@ -1430,7 +1430,7 @@ console.log(JSON.stringify({ platform: process.platform, available: SANDBOX.avai
       s.advance(61000); rs.push(code(s.call("bob", "upload", { text: "// later" })) ?? "ok");
       return { rs }; },
     good: (o) => o.rs.slice(0, 20).every((x: string) => x === "ok") && o.rs[20] === "rate" && o.rs[21] === "rate" && o.rs[22] === "ok" },
-  { id: "H6", what: "bot review #260 278: with no QuickJS (a host whose runtime didn't load), checkSyntax answers undefined (unchecked), not null (clean), and a dry upload says the syntax went unchecked instead of claiming it parses", run(s) {
+  { id: "H6", what: "bot with no QuickJS (a host whose runtime didn't load), checkSyntax answers undefined (unchecked), not null (clean), and a dry upload says the syntax went unchecked instead of claiming it parses", run(s) {
       if (!SB) return { absent: true };
       const plug = path.join(root, "no-quickjs.ts"), f = path.join(root, "noq-probe.ts");
       fs.writeFileSync(plug, `Bun.plugin({ name: "no-quickjs", setup(b) { b.module("quickjs-emscripten", () => ({ exports: { getQuickJS: async () => { throw new Error("stand-in: no QuickJS here"); } }, loader: "object" })); } });\n`);
@@ -1441,7 +1441,7 @@ console.log(JSON.stringify({ platform: process.platform, available: SANDBOX.avai
       return { child, dry: show(dry), note: dry.note ?? null }; },
     opts: { scripts: SB?.SANDBOX ? { ...SB.SANDBOX, checkSyntax: () => undefined } : null },   // the authority side: what that host's checkSyntax hands scriptrun
     good: (o) => o.child.bad === "undefined" && o.child.fine === "undefined" && o.dry === "ok" && /unchecked/.test(o.note ?? "") && !/parses/.test(o.note ?? "") },
-  { id: "H7", what: "bot review #260 196: a deleted script's console ring leaves presence.scripts (saved whole with presence) once the request drains; a live script's stays", run(s) { cast(s);
+  { id: "H7", what: "bot a deleted script's console ring leaves presence.scripts (saved whole with presence) once the request drains; a live script's stays", run(s) { cast(s);
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
       for (const n of ["a", "b"]) install(s, "bob", "box", n, onUse(`world.set("self", "t/${n}", 1);`), { scope: { ids: "self", comps: [`t/${n}`] }, on: ["use"] });
       s.call("bob", "set", { id: "box", component: "reactions", value: { a: { kind: "script", script: "a" }, b: { kind: "script", script: "b" } } });
@@ -1514,7 +1514,7 @@ const serverCases: Case[] = [{ id: "S1", server: true, what: "the server: a worl
 }, good: (o) => o.mk && o.inst === "ok" && o.clock === "ok" && o.ring === "ran" && o.rung === 1 && o.tickActs >= 1 && o.beats >= 1 && o.hello && o.sawScript
   && o.roster?.includes("bell1/bell:active") && o.roster?.includes("bell1/clock:active") && !o.v1Host && o.malformed === 0 }];
 
-serverCases.push({ id: "S3", server: true, what: "the server: `debug {script}` keeps a say from before the asker arrived out of the console ring (bot review #260 21); the owner (no floor) still reads it",
+serverCases.push({ id: "S3", server: true, what: "the server: `debug {script}` keeps a say from before the asker arrived out of the console ring; the owner (no floor) still reads it",
   run: async () => {
     const W4 = path.join(root, "srv3"); fs.mkdirSync(W4, { recursive: true });
     const env = { ...process.env, TRUST_NAMES: "1", WORLDS_DIR: W4, OPT_DIR: path.join(root, "opt"), SKIP_OPT_SWEEP: "1", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", SERVER_OPERATORS: "", EIDO_FLIGHT_REHEARSAL: "" };
@@ -1595,7 +1595,7 @@ const isolating = !!SBX.isolated(), mustIsolate = process.platform !== "win32" &
 const all = [...cases, ...(argv.includes("--no-server") ? [] : serverCases)];
 for (const c of all) {
   if (ONLY && !ONLY.includes(c.id)) continue;
-  // printed as OPTIONAL, which the gate's receipt records (run.ts `optional`), never as a silent n/a (bot review #260 145)
+  // printed as OPTIONAL, which the gate's receipt records (run.ts `optional`), never as a silent n/a
   if (!isolating && (/^I\d/.test(c.id) || c.id === "S2")) { na++; console.log(`OPTIONAL ${c.id}: not run, no isolation on ${process.platform}${process.env.EIDO_SANDBOX === "inprocess" ? " (EIDO_SANDBOX=inprocess)" : ""} — ${c.what}`); continue; }
   let o: any, good = false;
   try { o = c.server ? await c.run(null) : c.run(session(c.opts)); good = !!c.good(o) && !o?.absent; } catch (e: any) { o = { threw: `${e?.constructor?.name}: ${e?.message}`.slice(0, 300) }; }

@@ -41,7 +41,7 @@ import { ENGINES, DEFAULT_ENGINE } from "../../../shared/protocol/simlayer.js";
 export const hexColor = (x) => { if (typeof x !== "string") return x; const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(x.trim());
   if (!m) return Object.hasOwn(CSS_NAMES, x.trim().toLowerCase()) ? CSS_NAMES[x.trim().toLowerCase()] : x;   // @24: a CSS name, as three.js read it
   const h = m[1].length === 3 ? [...m[1]].map((d) => d + d).join("") : m[1]; return parseInt(h, 16); };
-function splitUnknown(c, said = null) {   // said: (component, fields) for each split, the report's unmapped (bot review #260 33)
+function splitUnknown(c, said = null) {   // said: (component, fields) for each split, the report's unmapped
   if (c.light && typeof c.light === "object" && "color" in c.light) c.light = { ...c.light, color: hexColor(c.light.color) };
   if (c.light && typeof c.light === "object" && !Array.isArray(c.light) && "keep" in c.light) { const { keep, ...l } = c.light; c.light = { ...l, important: keep }; } // @7: v1's keep is light.important
   for (const [k, v] of Object.entries(c)) {
@@ -462,7 +462,7 @@ export function waterOfOld(d) {
   return { center: vec3(center, [0, 0, 0]), zone, water, ...(area ? { area } : {}), ...clampNote(sz, zone.size),
     ...(speed !== undefined ? { speed: area ? { "physics-area": area, ...(f !== raw ? { clamped: { factorWas: +raw.toFixed(4), to: f, why: "a speed area's factor is 0.05..10 (componentspec.js)" } } : {}) } : { dropped: `× ${f.toFixed(3)} of the stroke here, within ${SPEED_NEAR * 100}%` } } : {}) };   // the clamp said (bot review 445)
 }
-/** zone.size's bound per axis (componentspec.js zone); a main size past it is clamped and the report says so (bot review #260 33) */
+/** zone.size's bound per axis (componentspec.js zone); a main size past it is clamped and the report says so */
 export const ZONE_MAX = 1e4;
 const clampNote = (was, to) => (was.some((x) => Math.abs(x) > ZONE_MAX) ? { clamped: { size: was, to, why: `a zone is at most ${ZONE_MAX} m along each axis` } } : {});
 /** A main water speed this close (as × the stroke) to the one a body swims at here is dropped, not written as a physics-area. */
@@ -478,7 +478,7 @@ export function volumePartsOf(host, comp, c, { pin = false } = {}) {
   const w = comp?.water;
   if (w && typeof w === "object" && !Array.isArray(w)) {
     const m = waterOfOld(w), a = m.area ? { "physics-area": m.area } : pin ? { "physics-area": speedPin() } : {};
-    // main kept a water box axis-aligned whatever its host's turn: a turned host's water is a child turned back by it (bot #260 103;
+    // main kept a water box axis-aligned whatever its host's turn: a turned host's water is a child turned back by it (
     // the host's own q: a host under a turned parent still turns with that parent)
     const hq = Array.isArray(c.transform?.q) ? c.transform.q : [0, 0, 0, 1], turned = Math.abs(hq[0]) + Math.abs(hq[1]) + Math.abs(hq[2]) > 1e-12;
     if (!turned && c.model === undefined && c.light === undefined && m.center.every((x) => x === 0)) Object.assign(own, { zone: m.zone, water: m.water, ...a });
@@ -529,7 +529,7 @@ export function volumeMappings(st) {
     const { own, children } = volumePartsOf(enc(id), { [k]: e.comp[k] }, c);
     const m = k === "water" && e.comp.water && typeof e.comp.water === "object" && !Array.isArray(e.comp.water) ? waterOfOld(e.comp.water) : null;   // @35: what main's speed became
     const sp = m && !m.area && pin ? { "physics-area": speedPin(), why: "another water here has a speed area: factor 1 keeps this one's own stroke where they overlap (@42)" } : m?.speed;
-    // what main's size was where the zone had to be smaller (bot review #260 33)
+    // what main's size was where the zone had to be smaller
     const boxes = k === "air" && Array.isArray(e.comp.air?.boxes) ? e.comp.air.boxes : [];
     const clamped = m ? m.clamped : boxes.flatMap((b, i) => { const ch = children.find(([cid]) => cid === airChildId(enc(id), i)); const n = ch && clampNote(vec3(b.size, [1, 1, 1]), ch[1].zone.size).clamped; return n ? [{ box: i, ...n }] : []; });
     out.push({ component: k, feature: VOLUMES[k].feature, id, into: [...(Object.keys(own).length ? [enc(id)] : []), ...children.map(([cid]) => cid)], ...(sp ? { speed: sp } : {}),

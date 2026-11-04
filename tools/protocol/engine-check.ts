@@ -2,7 +2,7 @@
 // reproduces that version's conformance digests. Each scenario in spec/conformance/physics/ is a log holding a throw's
 // inputs and no rest; replayed through a version, its rests (id, pose rounded to the millimetre, rest tick) hash to
 // spec/conformance/physics/digests.json[version][scenario], and its rests' exact float bits with the engine's final snapshot
-// (simlayer digestOf, what the live L3 check compares) hash to digests-exact.json (bot review #260 35). A change that still reproduces them needs no cut; a change
+// (simlayer digestOf, what the live L3 check compares) hash to digests-exact.json. A change that still reproduces them needs no cut; a change
 // meant to alter results is a new version with its own digests.
 //   bun tools/protocol/engine-check.ts            check every carried version
 //   bun tools/protocol/engine-check.ts --write    write the digests of a carried version the file doesn't hold yet (and of a
@@ -66,7 +66,7 @@ for (const ver of carried) {
     check(`EN2x ${ver} reproduces ${s} bit for bit, engine state included (digests-exact.json)`, bit === exact?.[ver]?.[s], { got: bit, want: exact?.[ver]?.[s] });
   }
 }
-// EN6 (bot review #260 35): a rest moved by one ulp, which the live L3 check calls a disagreement, changes the exact digest
+// EN6: a rest moved by one ulp, which the live L3 check calls a disagreement, changes the exact digest
 { const s = scenarios[0], v = replayed(fs.readFileSync(`${DIR}${s}.jsonl`, "utf8"), carried[0]); const n = structuredClone(v);
   const r = n.rested[0]; if (r) { const b = new DataView(new ArrayBuffer(8)); b.setFloat64(0, r.p[0]); b.setBigUint64(0, b.getBigUint64(0) + 1n); r.p[0] = b.getFloat64(0); }
   check(`EN6 ${s}: one rest nudged by one ulp is a different exact digest (the rounded one can't see it: ${roundedOf(v) === roundedOf(n) ? "same" : "differs"})`, !!r && exactOf(v) !== exactOf(n), { at: r?.p }); }
@@ -78,7 +78,7 @@ for (const s of scenarios) {
   const v: any = simFold(readLog(fs.readFileSync(`${DIR}${s}.jsonl`, "utf8")), 1e15);
   check(`EN3 ${s} has a rest to hold the engine to`, (v.rested?.length ?? 0) > 0, v.rested);
 }
-// EN6 (bot review #260 72): the knock wakes the sleeper — crate-1 is never thrown, yet comes to rest beside the ball
+// EN6: the knock wakes the sleeper — crate-1 is never thrown, yet comes to rest beside the ball
 { const s = "knock-a-sleeper-2", f = `${DIR}${s}.jsonl`; const v: any = fs.existsSync(f) ? simFold(readLog(fs.readFileSync(f, "utf8")), 1e15) : null;
   const ids = (v?.rested ?? []).map((r: any) => r.id);
   check(`EN6 ${s}: the thrown ball knocks crate-1 awake (both come to rest; the crate was never thrown)`, ids.includes("ball") && ids.includes("crate-1"), ids); }

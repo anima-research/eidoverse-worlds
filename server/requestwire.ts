@@ -104,12 +104,12 @@ export function guestSanctionByAddress(w: World, actor: string, by: string, verb
   if (!kind || !w.log) return null;
   const addrs = [...new Set([...w.clients].filter((t) => t.actorId === who && t.anonymous && t.addr).map((t) => t.addr as string))];
   if (verb.startsWith("un")) { liftAddrSanction(kind, w.name, who, addrs[0]); return null; }
-  // this actor's own mutes in force on `who`, never the union with another's: each issuer's is filed apart (bot review #260 118)
+  // this actor's own mutes in force on `who`, never the union with another's: each issuer's is filed apart
   const mine = inForceOf(w.log.live, who, "mute").filter((m: Any) => m.actor === actor);
   if (!mine.length) return null;
   const channels = [...new Set(mine.flatMap((m: Any) => m.channels ?? ["voice", "chat"]))] as string[];
   const until = mine.some((m: Any) => m.until === undefined) ? null : Math.max(...mine.map((m: Any) => m.until));
-  let unsaved: string | null = null;   // why the file wasn't written (the sanction holds in memory only), said in the reply (bot #260 #146)
+  let unsaved: string | null = null;   // why the file wasn't written (the sanction holds in memory only), said in the reply
   for (const addr of addrs) unsaved ??= fileAddrSanction({ kind, world: w.name, addr, actor, by, who, until, channels, ...(reason ? { reason: reason.slice(0, 280) } : {}) });
   return unsaved;
 }
@@ -125,7 +125,7 @@ export const actorOf = (c: Client) => { if (!c.actorId) throw new Error(`request
  *  escapes before the request was answered is answered with the request's own id (`unanswered`), never an id-less error:
  *  a client never leaves a request pending. WorldLog.request never throws (its outcome rides its reply), so such a throw
  *  happened before the authority was reached: nothing was written (rolled back, code server-error). */
-const QUEUE_MAX = 256;   // requests one connection may have waiting behind a slow one (a stalled warm): past it, refused at arrival (bot review #260 110)
+const QUEUE_MAX = 256;   // requests one connection may have waiting behind a slow one (a stalled warm): past it, refused at arrival
 function inOrder(c: Client, ws: Ctx["ws"], fn: () => Promise<void>, unanswered?: (r: Any) => void) {
   const n = c.queued ?? 0;
   if (n >= QUEUE_MAX) { const no = { code: "busy", reason: `${n} of your requests are still waiting their turn`, fix: "wait for their replies, then ask again" };
@@ -162,7 +162,7 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     const metered_no = (no: Any) => { if (recordRefusal(c)) w.debug("refused", { who: c.id, verb: verb.slice(0, 32), code: no.code, line: `${c.id}'s ${verb.slice(0, 32)} was refused (${no.code}): ${no.reason}`.slice(0, 300) }); reply({ ok: false, refused: no }); };
     if (metered) { const no = reads.check(c, Date.now()); if (no) { metered_no(no); return; } }
     const mark = metered ? reads.record(c, Date.now()) : null;
-    // the server's directory and the authority's roles, read in this connection's turn (bot review #260 43)
+    // the server's directory and the authority's roles, read in this connection's turn
     if (verb === "whois") { inOrder(c, ws, async () => { reply(whois(w, args)); }, reply); return; }
     if (verb === "consent") { const gone = goneListing(w, args); if (gone) { reply({ ok: false, refused: gone }); return; } }
     // a caption carries the connection's leg generation, stamped here (never the client's word): a captioner that was
@@ -183,7 +183,7 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
       const r = await w.log.request(cap.actorId, verb, args, still);
       const ms = (r && typeof r === "object" && authorityTime.get(r)) || 0; if (mark) mark.ms = ms; spent.ms = ms;
       // a guest's sanction is also filed by address, BEFORE the reply: a file that couldn't be written is said in the
-      // reply (`warning`) and the moderated line, never swallowed after the ack (bot #260 #146)
+      // reply (`warning`) and the moderated line, never swallowed after the ack
       let unsaved: string | null = null;
       // a guest has no account: a fresh connection is a fresh identity, so its ban (at most a day) also names its
       // connection's address in this world, or reconnecting would shed it (review 10-07)
@@ -257,7 +257,7 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
       const r = w.log.operatorRepair(cap.actorId, verb, args);
       console.log(`[world:${w.name}] operator repair by ${c.account} (${c.id}): ${verb.slice(0, 32)} ${String((args as Any).component ?? (args as Any).who ?? "").slice(0, 64)} → ${r?.ok ? "ok" : r?.refused?.code}`);
       reply(r);
-      if (r?.ok && verb === "unban" && typeof (args as Any).who === "string") liftGuestAddressBan(w, (args as Any).who);   // as request's unban does (bot review #260 119)
+      if (r?.ok && verb === "unban" && typeof (args as Any).who === "string") liftGuestAddressBan(w, (args as Any).who);   // as request's unban does
       if (r?.ok) sweep?.(w);   // an unban or a role change applies now (the sanctions sweep; the role change re-sends rights itself)
     }, (r) => { if (!answered) reply(r); });
   },
@@ -303,7 +303,7 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     if (w.log.seniorOwner() !== actorOf(c)) return err("erasing a world is for its most senior owner (its founder) — ask them");
     if (String(msg.name ?? "") !== w.name) return err(`confirmation mismatch — reset must name "${w.name}"`);
     let arch: string; try { arch = w.resetWorld(); } catch (e: Any) {
-      // where the logs are now, as worldlog.ts resetWorld left them (lane a's note on bot review #260 10)
+      // where the logs are now, as worldlog.ts resetWorld left them ()
       if (e?.movedTo) console.error(`[world:${w.name}] reset failed partway: ${e.swapped ? `old log archived in ${e.movedTo}, the fresh one in place`
         : e.logMoved ? `no world.jsonl here (moved aside before this reset); the fresh log is in ${e.freshAt}` : "nothing moved: the old log is where it was"}:`, e);
       if (e?.resetDone && e.opened) {   // the fresh world is open: the reset stands, and its scripts (it has none yet) are the operator's to look at

@@ -102,7 +102,7 @@ try {
     // the remaining hints show as text).
     await evalJson(`import('/lib/consent.js').then((m) => (m.setPushable?.(false), true)).catch(() => true)`);
     await emit("bodydrag", { by: SVG, grab: { joint: "hips" } });
-    await emit("puppet", { by: SVG, pose: { head: [0, 0, 0, 1] } });   // a later event on the same bus, seen: the drag before it has been handled (bot review #260 515)
+    await emit("puppet", { by: SVG, pose: { head: [0, 0, 0, 1] } });   // a later event on the same bus, seen: the drag before it has been handled
     const after = await waitFor(`${hint}.includes("posed you")`, 3000);
     check("S5 no client-side refusal toast: the authority decided before it arrived (a later bus event was handled first)", after && !(await evalJson(`[...document.querySelectorAll('.toast')].some((t) => t.textContent.includes('tried to drag you'))`)) && await evalJson(clean), { after });
     await evalJson(`import('/lib/consent.js').then((m) => (m.setPushable?.(true), true)).catch(() => true)`);
@@ -186,7 +186,7 @@ try {
     check("P1 puppet and bodydrag name the identity (targetActor) beside the name", by("puppet")?.targetActor === wrenActor && by("bodydrag")?.targetActor === wrenActor, sent);
     check("P2 typing names it too (toActor)", by("typing")?.toActor === wrenActor, sent);
     await sleep(500);
-    const got = (t: string, f: (m: any) => boolean) => wren.msgs.some((m) => m.type === t && f(m));   // each of the three, from me (bot review #260 409)
+    const got = (t: string, f: (m: any) => boolean) => wren.msgs.some((m) => m.type === t && f(m));   // each of the three, from me
     check("P3 …and the server delivered all three to that identity (puppet, the drag's end, typing), each from me", got("puppet", (m) => m.by === me) && got("bodydrag", (m) => m.by === me && m.end != null) && got("typing", (m) => m.id === me), wren.msgs.filter((m) => ["puppet", "bodydrag", "typing"].includes(m.type)).map((m) => ({ type: m.type, by: m.by ?? m.id, end: m.end })).slice(-6));
     wren.ws.close();
   });
@@ -251,7 +251,7 @@ try {
     const before = (await evalJson(`__csp`)).length;
     await evalJson(`(() => { const d = document.createElement('div'); d.innerHTML = ${JSON.stringify(`<img src="data:," onerror="window.__inline=1">`)}; document.body.append(d);
       const s = document.createElement('script'); s.textContent = 'window.__inline2 = 1'; document.body.append(s); return true; })()`);
-    // the handler's own violation first: the policy has judged it by then (bot review #260 153); a <script> element's is the other
+    // the handler's own violation first: the policy has judged it by then; a <script> element's is the other
     const attr = await waitFor(`__csp.slice(${before}).some((v) => /script-src-attr|^script-src$/.test(v.dir) && /inline/.test(v.blocked))`, 3000);
     check("C1 an injected inline handler does not run (its violation reported first)", attr && await evalJson(`window.__inline === undefined`), await evalJson(`__csp`));
     check("C2 an injected inline <script> does not run", await evalJson(`window.__inline2 === undefined`));

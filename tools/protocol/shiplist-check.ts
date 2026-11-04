@@ -313,7 +313,7 @@ await C("M5", "the editor: a rate typed on an orbit drops its period (one speed)
 
 // ---- H: help text ----
 await C("H1", "what agents read says physics.who and grabbable.who default to member (3b3ad8e2; visitor until R 10-21), never builder", () => {
-  const agents = fs.readFileSync(path.join(T, "AGENTS.md"), "utf8"), i = agents.indexOf("`grabbable.who` says who may pick it up");   // the passage itself, not a phrase that may have gone (bot review #260 398)
+  const agents = fs.readFileSync(path.join(T, "AGENTS.md"), "utf8"), i = agents.indexOf("`grabbable.who` says who may pick it up");   // the passage itself, not a phrase that may have gone
   const texts = [CAT.COMPONENTS.physics.help, CAT.COMPONENTS.grabbable.help, JSON.stringify(TS), i < 0 ? "" : agents.slice(i, i + 400)];
   const bad = texts.filter((t) => /default builder/.test(t)).map((t) => t.slice(0, 80));
   return [!bad.length && texts.every((t) => t.length > 0) && texts.every((t) => /default member/.test(t)), { bad, lens: texts.map((t) => t.length), agents: texts[3].slice(0, 120) }];
@@ -328,12 +328,12 @@ await C("P1", "a refusal for a person: what they tried and why, no refusal code,
   const agent = RF.refusalText("move 3485c78e0a1b", r);
   return [p.includes("“Front door”") && !/3485c78e|\(locked\)|\{|throughLock|§/.test(p) && /ask someone who can/i.test(plainTeach) && plainTeach.includes("“Desk lamp”") && agent.includes("(locked)") && agent.includes("throughLock"), { p, plainTeach, agent }];
 });
-await C("P1c", "a fix whose plain clauses come before its tool syntax keeps them for a person (bot #260 200: the owner-only refusal's 'ask the world's owner' was dropped whole)", () => {
+await C("P1c", "a fix whose plain clauses come before its tool syntax keeps them for a person (the owner-only refusal's 'ask the world's owner' was dropped whole)", () => {
   const r = { refused: { code: "rights", reason: "changing @world.about needs an owner; you are a builder", fix: "ask the world's owner; help shows your role and permissions; say {text, to: <owner>} reaches them" } };
   const p = RF.plainRefusal("change about", r);
   return [/Ask the world's owner; help shows your role and permissions/.test(p) && !/[{}<]/.test(p), { p }];
 });
-await C("P1b", "an ambiguous write (txn ambiguous, or no answer: mayHaveLanded) reads as maybe-happened for a person and an agent, never as a failure or a refusal (bot review #260 57)", () => {
+await C("P1b", "an ambiguous write (txn ambiguous, or no answer: mayHaveLanded) reads as maybe-happened for a person and an agent, never as a failure or a refusal", () => {
   const amb = { ok: false, txn: "ambiguous", refused: { code: "ambiguous", reason: "the write's result is unknown: the store didn't answer" } };
   const late = { ok: false, refused: { code: "timeout", reason: "the authority didn't answer 'move' in 8 s", fix: "it may still land: look before trying again", mayHaveLanded: true } };
   const p = [RF.plainRefusal("move the crate", amb), RF.plainRefusal("move the crate", late)], a = [RF.refusalText("move crate", amb), RF.refusalText("move crate", late)];

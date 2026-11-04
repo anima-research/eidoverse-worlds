@@ -111,7 +111,7 @@ function activate(w, id, name, ev) {
   const cap = { kind: "script", key, id, sponsor: sp.sponsor, ids: scopeIds(st, id, v.scope?.ids), comps: v.scope?.comps ?? [], create: !!v.scope?.create };
   const mark = (code, why) => out("refused", { code, why, sponsor: sp.sponsor, ...logs });
   if (res.says.length && !v.scope?.say) return mark("scope", `${key} doesn't declare say: true`);
-  if (res.says.length && muteOf(w, sp.sponsor, "chat")) return mark("muted", `its sponsor ${said(sp.sponsor)} is muted in this world's chat; nothing ran`);   // as the say verb (bot review #260 16)
+  if (res.says.length && muteOf(w, sp.sponsor, "chat")) return mark("muted", `its sponsor ${said(sp.sponsor)} is muted in this world's chat; nothing ran`);   // as the say verb
   for (const b of res.bodies) if (!(v.scope?.bodies ?? []).includes(b.kind)) return mark("scope", `${key} doesn't declare bodies: ['${b.kind}']`);
   for (const u of uses) if (!cap.ids.includes(u.id)) return mark("scope", `${key} on ${id} may use only ${cap.ids.join(", ") || "nothing"}, not ${u.id}`);
   { const why = overBudget(st, B, cfg, key, sp.sponsor, 1 + (ops.length ? 1 : 0) + res.says.length + uses.length); if (why) return mark("budget", why); } // what it would actually write
@@ -506,7 +506,7 @@ function drainAll(w) {
   if (w.heldQ) w.heldQ.length = 0;
   dropDeadRings(w);
 }
-// a deleted script's console ring would otherwise sit in presence (saved whole) for ever (bot review #260 196)
+// a deleted script's console ring would otherwise sit in presence (saved whole) for ever
 function dropDeadRings(w) {
   const R = w.presence.scripts; if (!R) return; const live = new Set(allScripts(w.state()).map((x) => rtKey(x.id, x.name)));
   for (const k of Object.keys(R)) if (!live.has(k)) { delete R[k]; w.presenceDirty = true; }
@@ -545,7 +545,7 @@ function drainScripts(w) {
  *  whatever it's given, as activate runs it, so it counts as available. */
 const sandboxUp = (w) => (typeof w.scripts?.available === "function" ? w.scripts.available() : true);
 const SANDBOX_DOWN = "this server's script sandbox isn't available (it didn't load, or the host can't isolate scripts), so no script runs here; only the server's operator can repair or enable it, and asking again won't change it until then";
-// a say heard at or below the reader's floor (storage.js sayFloor) keeps its console lines and why to itself, as history does (bot review #260 21)
+// a say heard at or below the reader's floor (storage.js sayFloor) keeps its console lines and why to itself, as history does
 const ringFor = (lines, floor) => lines.map(({ sayAt, ...l }) => (floor != null && sayAt !== undefined && sayAt <= floor ? { ts: l.ts, on: l.on, status: l.status, hidden: "a say from before you arrived" } : l));
 function scriptStatus(w, st, id, name, v, floor = null) {
   const key = `script:${name}`, sp = sponsorOf(w, id, key), rt = w.presence.scripts?.[rtKey(id, name)], cfg = scriptsCfg(st);

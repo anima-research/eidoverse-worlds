@@ -699,7 +699,7 @@ try {
   const me1 = await evalJson(`import('/lib/controller.js').then((m) => [m.myState.pos.x, m.myState.pos.y, m.myState.pos.z])`);
   check("CD2 …and the chord never counts as a held D, so it can't strafe the body (the walk reads the held set)", heldD === false && Math.hypot(me1[0] - me0[0], me1[2] - me0[2]) < 0.05, { heldD, me0, me1 });
   // the copy reselects ITSELF 400 ms after it lands unless the selection changed since (editpanels duplicate: Sel.mark()):
-  // re-selecting pt while pt is still selected changes nothing, so clear first; then the late reselect stands down (bot #260 27)
+  // re-selecting pt while pt is still selected changes nothing, so clear first; then the late reselect stands down
   await page(`(await import('/lib/edit/selection.js')).clear(); (await import('/lib/scenegraph.js')).sceneSelect('pt'); return true;`);
   await waitFor(`import('/lib/scenegraph.js').then((m) => m.sceneSelected() === 'pt')`, 3000);
   await key("KeyD", { ctrlKey: true });
@@ -713,7 +713,7 @@ try {
 
   // drivers are ordinary cards; a driven field's ~ leads to its driver (R 10-04: follow Blender/Unity/Godot/Roblox/Resonite)
   const mset = await page(`const r = await (await import('/lib/net.js')).sendRequest('set', { id: 'pt', component: 'motion', value: { type: 'pendulum', axis: [0, 0, 1], amp: 0.1, period: 3 } }); return JSON.stringify(r?.ok);`);
-  // a duplicate earlier in the run reselects its copy 400 ms after it lands unless the selection changed: clear, then select (bot #260 27)
+  // a duplicate earlier in the run reselects its copy 400 ms after it lands unless the selection changed: clear, then select
   await page(`(await import('/lib/edit/selection.js')).clear(); (await import('/lib/scenegraph.js')).sceneSelect('pt'); return true;`);
   await waitFor(`import('/lib/scenegraph.js').then((m) => m.sceneSelected() === 'pt')`, 3000);
   await waitFor(`!!document.querySelector('[data-frame="inspector"] .sp-drv')`, 5000);
@@ -828,7 +828,7 @@ try {
     check("GR2 grow plants grass: set @world grass", await waitDisk(() => myActs().length === n0 + 1 && !!st4().entities["@world"]?.c?.grass), { acts: myActs().slice(n0).map((a) => a.e.verb), refused: await evalJson(`__refused.map((r) => r.text)`) });
     n0 = myActs().length; await evalJson(`(window.__gbtn(/^mow$/).click(), true)`);
     check("GR3 mow clears it: one act, and @world has no grass", await waitDisk(() => myActs().length === n0 + 1 && !st4().entities["@world"]?.c?.grass), { acts: myActs().slice(n0).map((a) => a.e.verb), refused: await evalJson(`__refused.map((r) => r.text)`) });
-    // GR4 (bot #260 66): the tint row writes what the Build tab's recipe writes: the first layer recoloured, its repeat and
+    // GR4: the tint row writes what the Build tab's recipe writes: the first layer recoloured, its repeat and
     // every later layer kept (it replaced them with one layer at repeat 16)
     const two = [{ color: 0x112233, repeat: 4 }, { color: 0x445566, repeat: 8 }];
     const set2 = await page(`const n = await import('/lib/net.js'); const t = (await import('/lib/world.js')).terrainEditBase(); return JSON.stringify(await n.sendRequest('set', { id: '@world', component: 'terrain', value: { ...t, layers: ${JSON.stringify(two)} } }));`);

@@ -54,7 +54,7 @@ try {
     const before = old.fold(old.readLog(raw)); const dBefore = before.status === "ok" ? old.digest(before) : null;
     const cu = custodyAt(custodyFileIn(path.dirname(path.resolve(dir))));
     const oldId = worldIdOf(parseLine(gline));
-    // keys are minted (and .custody.json written) only under --apply; a dry run reads what's there and names what it would mint (bot review #260 370)
+    // keys are minted (and .custody.json written) only under --apply; a dry run reads what's there and names what it would mint
     const peek = (() => { try { return JSON.parse(fs.readFileSync(custodyFileIn(path.dirname(path.resolve(dir))), "utf8")); } catch { return {}; } })();
     // a stand-in key, made in memory and never saved, keeps the dry run's fold (and so its digest check) real
     const WOULD = "ed25519:" + (crypto.generateKeyPairSync("ed25519").publicKey.export({ format: "jwk" }) as { x: string }).x, seqKey = () => apply ? cu.sequencer() : peek.sequencer?.pub ?? WOULD, holderKey = (who: string) => apply ? cu.keyOf(who, true)! : cu.keyOf(who, false) ?? WOULD;
@@ -73,7 +73,7 @@ try {
     const kept = path.join(dir, KEPT);
     if (same && apply && fs.existsSync(kept) && !fs.readFileSync(kept).equals(raw)) { out.push({ dir, shape, refused: `${kept} already holds other bytes: move it aside first. Nothing was changed.` }); continue; }
     if (same && apply) {
-      if (!fs.existsSync(kept)) replaceDurable(kept, raw);   // the whole old log, durable, before it is replaced (bot review #260 10)
+      if (!fs.existsSync(kept)) replaceDurable(kept, raw);   // the whole old log, durable, before it is replaced
       appendDurable(path.join(dir, "world.genesis-before.jsonl"), JSON.stringify({ oldId, newId, genesis: g, at: new Date().toISOString() }));
       replaceDurable(f, next);
     }

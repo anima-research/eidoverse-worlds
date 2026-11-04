@@ -276,7 +276,7 @@ check("retirement clears the leg", (sfuDiag(W) as any).moderatorMuted.length ===
     voiceServiceState().state === "live" && /negotiation completed/.test(voiceServiceState().reason));
 }
 
-// ── bot #260 #468: a leg revoked while its offer was being made gets no offer ─
+// ── a leg revoked while its offer was being made gets no offer ─
 // revokeSfuLeg lands between createOffer's await and the send: the retired leg's
 // socket must not receive an offer (and no resolver is left for its successor).
 {

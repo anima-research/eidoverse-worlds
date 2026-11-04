@@ -162,7 +162,7 @@ const sameAsGenesis = (b) => digestOf(b.sim().sim) === digestOf(simFold(b.entrie
   labels(x, 3); const b = reopen(x.dir);
   ok(b.bootedFrom === s && sameAsGenesis(b), "PC8 a checkpoint whose blob holds its own clock and tick (written before 10-28) still boots", { from: b.bootedFrom, s }); }
 
-// ---- PC10 (bot review #260 18): a boot's clock starts at the checkpoint's, so nothing is written behind the engine's clock ----
+// ---- PC10: a boot's clock starts at the checkpoint's, so nothing is written behind the engine's clock ----
 { const x = world("q", 6, 0); labels(x, 2); x.beat();
   const sf = x.w.sim(), ahead = T + 1000, cut = simCutOf(sf, x.w.entries); cut.clock = ahead;   // a cut whose clock is ahead of every ts
   const state = x.w.putBlob({ cutJson: JSON.stringify(cut) });

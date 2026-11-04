@@ -437,7 +437,7 @@ export function fitStructureBoxes(ownerId, boxes, { position, yaw = 0, scale = 1
   if (!Array.isArray(position) || position.length !== 3 || !position.every(Number.isFinite)) return 0;
   if (!Number.isFinite(yaw) || !Number.isFinite(scale) || !(scale > 0)) return 0;
   // per-axis scale is folded into the boxes (an axis-aligned box stays one), a whole rotation rides as a quaternion for
-  // frameOf: the boxes match the drawn group's TRS (bot #260 #35)
+  // frameOf: the boxes match the drawn group's TRS
   const s3 = Array.isArray(scale3) && scale3.length === 3 && scale3.every((x) => Number.isFinite(x) && x > 0) ? scale3 : [scale, scale, scale];
   const quat = Array.isArray(q) && q.length === 4 && q.every(Number.isFinite) && Math.hypot(...q) > 1e-6 ? new THREE.Quaternion(...q).normalize() : null;
   const obj = {

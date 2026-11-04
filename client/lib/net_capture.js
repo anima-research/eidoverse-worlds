@@ -19,7 +19,7 @@ const _snapBox = new THREE.Box3();
 // until the world is REALIZED there: the body in the scene, the world's builds (terrain, water, grass) done, no model
 // loading or standing in — steady for a second. Not ready in time → an explicit error with
 // the counts. A settled renderer already looking there passes straight through. (Residency's unscheduled `waiting` models
-// aren't counted: one the aim hasn't reached in the steady second can still be missing. bot #260 59)
+// aren't counted: one the aim hasn't reached in the steady second can still be missing)
 //
 // "In time" is the server's to say: each snap carries `wait`, how long the asker will still wait for this frame less
 // a margin for the capture and the send (server/screenshots.ts dispatch). The renderer used to stop at a fixed 20 s
@@ -41,7 +41,7 @@ function aimAt(p) {
   return moved;
 }
 async function settle(follow, budget = SETTLE_MS) {
-  // aim FIRST: a readiness taken before the camera reaches the body judged the old view (bot #260 59)
+  // aim FIRST: a readiness taken before the camera reaches the body judged the old view
   const near = remotes.get(follow)?.avatar?.root?.position;
   const moved = aimAt(near);
   let last = await readiness(follow);

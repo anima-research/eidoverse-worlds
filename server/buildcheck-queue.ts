@@ -53,7 +53,7 @@ export const checkConfig = {
   /** reports kept: in memory, and files in OPT_DIR/checks */
   memoMax: 512,
   diskMax: 4096,
-  /** paths whose digest is remembered against their stat (the oldest forgotten past this; bot review #260 466) */
+  /** paths whose digest is remembered against their stat (the oldest forgotten past this) */
   digestMax: 4096,
 };
 /** New checks a minute: per asking address, and for the whole process (a cached answer costs nothing). */
@@ -70,7 +70,7 @@ export const CHECK_SCALE = { min: 0.05, max: 20 };
 const memo = new Map<string, unknown>();
 const running = new Map<string, Promise<unknown>>();
 const digests = new Map<string, { id: string; digest: string }>();
-const reading = new Map<string, Promise<{ data: Uint8Array; digest: string }>>();   // file|stat id → its one read+hash, shared by concurrent asks (bot review #260 15)
+const reading = new Map<string, Promise<{ data: Uint8Array; digest: string }>>();   // file|stat id → its one read+hash, shared by concurrent asks
 let queue: Promise<unknown> = Promise.resolve();
 let waiting = 0, heldBytes = 0;
 /** One snapshot per distinct model in the queue: digest -> its jobs still to finish and its size. */
@@ -141,7 +141,7 @@ export async function checkFile(file: string, scale = 1, bytes?: Uint8Array, opt
   if (inflight) return inflight;
   // new work: the queue's room first (a refusal there spends no one's budget), then the asker's grant
   const newBytes = snaps.has(digest) ? 0 : data.length;
-  if (waiting >= checkConfig.queueMax || heldBytes + newBytes > checkConfig.queueBytes)   // one over-cap snapshot is refused too (bot review #260 253)
+  if (waiting >= checkConfig.queueMax || heldBytes + newBytes > checkConfig.queueBytes)   // one over-cap snapshot is refused too
     throw new CheckRefused(`the build check's queue is full (${waiting} waiting) — ask again in a minute`, 503, 60);
   if (opts.address !== undefined) {
     const g = checkGate.grant(opts.address);

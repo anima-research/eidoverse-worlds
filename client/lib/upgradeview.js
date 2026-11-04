@@ -17,7 +17,7 @@ function ask(type, body, ms = 10 * 60_000) {
 }
 const refusedWords = (r) => `${r?.refused?.reason ?? 'refused'}${r?.refused?.fix ? ` — ${r.refused.fix}` : ''}`;
 /** An upgrade that didn't say ok: "nothing was changed" only when the CLI itself refused; no answer, a closed socket or a
- *  stopped CLI leaves the outcome unknown (bot #260 29). */
+ *  stopped CLI leaves the outcome unknown. */
 export const upgradeFailedWords = (u) => (['refused', 'stale'].includes(u?.refused?.code)
   ? `The upgrade was refused, and nothing was changed: ${refusedWords(u)}`
   : `The upgrade's outcome is unknown (${refusedWords(u)}). Reload to see whether the world opens; if the server says it is mid-upgrade, run the rollback it names.`);

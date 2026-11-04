@@ -116,7 +116,7 @@ function tab(W_, actorId, { account = undefined, spectator = false } = {}) {
     ws: { send: (d) => { const m = JSON.parse(d);
       if (m.type === "reply") replies.push(m);
       if (m.type === "log") { logs.push(m); const L = lines(W_.name), n = L.length; if (n < m.from + m.entries.length) publishedNotOnDisk.push({ world: W_.name, from: m.from, n: m.entries.length, onDisk: n });
-        else { const differ = m.entries.findIndex((e, i) => JSON.stringify(wireEntry(JSON.parse(L[m.from + i]))) !== JSON.stringify(e));   // the same entries, not just enough lines (bot review #260 405)
+        else { const differ = m.entries.findIndex((e, i) => JSON.stringify(wireEntry(JSON.parse(L[m.from + i]))) !== JSON.stringify(e));   // the same entries, not just enough lines
           if (differ >= 0) publishedNotOnDisk.push({ world: W_.name, from: m.from, differsAt: m.from + differ, sent: JSON.stringify(m.entries[differ]).slice(0, 200), onDisk: L[m.from + differ].slice(0, 200) }); } } } } };
   W_.w.clients.add(c); return { c, replies, logs };
 }
@@ -307,7 +307,7 @@ const described = (W_, label) => Object.values(W_.w.log.live.state().entities).s
   const resetOk = !!arch && (none || (syncedAfter(path.join(arch, "world.jsonl"), arch) && syncedAfter(path.join(dir, "world.jsonl"), dir)));
   ok(foundOk && forkOk && resetOk, "T8f a person's founding, a fork (its copied blobs too) and a reset each sync the directory a new name lands in, after the rename (none on win32)",
     { foundOk, forkOk, blobSynced, resetOk, tmp }); }
-// ---------------- T8g (bot review #260 31) ----------------
+// ---------------- T8g ----------------
 // founding writes the ledger row before the world lands: a failed ledger write leaves no world (a retry founds it); an
 // unreadable ledger refuses the founding and is left as it was (it used to be replaced by a one-row ledger)
 { const WL = await import("../../server/worldlog.ts"); const lp = path.join(W, ".founders.json"); const fay = idOf("local:fay", "fay");
@@ -391,7 +391,7 @@ const described = (W_, label) => Object.values(W_.w.log.live.state().entities).s
   const bad = t.replies.filter((m) => !(m.ok === true && m.txn === "committed"));
   ok(t.replies.length === 100 && !bad.length && said(X, "n97") && t.replies.filter((m) => m.verb === "say").length === 14, "T10 100 serial requests from an unchanged guest connection: all committed, no false refusal", { n: t.replies.length, bad: bad.slice(0, 2) }); }
 
-// ---------------- T12 (bot review #260 110) ----------------
+// ---------------- T12 ----------------
 // a connection's queue behind a stalled warm is bounded: past 256 waiting, a request is refused at arrival (busy), and once the
 // stall ends every queued one is answered and the queue is empty again
 { const X = world("t12"); const guest = directoryFor(W).resolve({ sub: null, name: "guest12" }); const t = tab(X, guest, { account: undefined }); t.c.anonymous = true;

@@ -28,7 +28,7 @@ if (CLK && S.playheadOf) {
   ok("K1", Math.abs(at - 5) < 0.5, "a looping sound started 5 s ago (server clock) plays at 5 s on a client 60 s behind", at);
   const once = S.playheadOf({ t0: CLK.serverNow() - 3_000, loop: false }, 10);
   ok("K2", once !== null && Math.abs(once - 3) < 0.5, "a one-shot started 3 s ago is 3 s in, not finished", once);
-  const src = fs.readFileSync(path.join(ENGINE, "client/lib/sounds.js"), "utf8");   // a module compared to itself proved nothing (bot review #260 701)
+  const src = fs.readFileSync(path.join(ENGINE, "client/lib/sounds.js"), "utf8");   // a module compared to itself proved nothing
   ok("K3", /from '\.\/serverclock\.js'/.test(src) && !/Date\.now\(/.test(src), "one clock: sounds.js reads the server clock module and never Date.now()", { imports: /from '\.\/serverclock\.js'/.test(src), dateNow: (src.match(/Date\.now\(/g) ?? []).length });
 }
 console.log(`\nsoundclock: ${pass} passed, ${fail} failed`);

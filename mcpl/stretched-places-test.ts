@@ -29,7 +29,7 @@ check("...and a point named on it is stored in its own frame", h && same(toLocal
 
 ag.entities.set("mirror", { id: "mirror", model: "zz/mirror.glb", kind: "thing", pos: [0, 0, 0], yaw: 0, actor: "x", scale: 2, scale3: [-2, 2, 2] });
 const mh = ag.placeHolder(ag.entities.get("mirror"));
-check("a mirrored thing's places are mirrored with it, as it is drawn (bot #260 #40)", mh && same(toWorld(mh, [1, 0, 1]), [-2, 0, 2]), JSON.stringify(mh && toWorld(mh, [1, 0, 1])));
+check("a mirrored thing's places are mirrored with it, as it is drawn", mh && same(toWorld(mh, [1, 0, 1]), [-2, 0, 2]), JSON.stringify(mh && toWorld(mh, [1, 0, 1])));
 check("...and toLocal inverts it", mh && same(toLocal(mh, [-2, 0, 2]), [1, 0, 1]), JSON.stringify(mh && toLocal(mh, [-2, 0, 2])));
 
 ag.entities.set("hall", { id: "hall", model: "zz/hall.glb", kind: "thing", pos: [0, 0, 0], yaw: 0, actor: "x", scale: 2, scale3: [1, 2, 1] });

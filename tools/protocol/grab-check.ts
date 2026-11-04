@@ -514,7 +514,7 @@ const cases: Case[] = [
       s.call("olive", "create", { id: "ball", model: "ball", components: { grabbable: { who: "member" } }, place: { at: [0, 0] } });
       s.call("olive", "create", { id: "balloon", model: "ball", components: { grabbable: { who: "member", release: "stay" } }, place: { at: [0.3, 0] } });
       s.call("olive", "create", { id: "torch", model: "book", components: { grabbable: { who: "member", release: "return" } }, place: { at: [-0.3, 0] } });
-      // MAX_HELD is 2: vic holds the ball and the torch, ann the balloon; every grab is asserted (bot #260 81)
+      // MAX_HELD is 2: vic holds the ball and the torch, ann the balloon; every grab is asserted
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("ann", "move", { to: [0.3, 0, 0.5] });
       const grabs = [s.call("vic", "grab", { id: "ball" }), s.call("vic", "grab", { id: "torch" }), s.call("ann", "grab", { id: "balloon" })].map(show);
       s.call("vic", "move", { to: [0, 0, 2] }, 1000); const carried = s.w().presence.holds.torch?.pose?.pos;
@@ -717,7 +717,7 @@ const cases: Case[] = [
         cause: lact ? s.entries()[lact.cause]?.verb ?? null : null, trigger: lact?.body?.trigger?.actor ?? null, by: lact?.body?.event?.by ?? null, ret }; },
     good: (o) => o.grab === "ok" && o.lock === "ok" && o.leave === "ok" && !o.holds.length && o.how === "left" && o.cause === "return-held" && o.trigger === "vic" && o.by === "vic"
       && o.ret.length === 1 && o.ret[0].holder === "vic" && o.ret[0].why === "locked" },
-  { id: "U3d", what: "bot review #260 539: a leave whose return-held append fails (disk) keeps the hold, so a retried leave still finds the thing and puts it back; the hold ends only once the return is logged", run(s) { cast(s, true);
+  { id: "U3d", what: "bot a leave whose return-held append fails (disk) keeps the hold, so a retried leave still finds the thing and puts it back; the hold ends only once the return is logged", run(s) { cast(s, true);
       s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); const grab = s.call("vic", "grab", { id: "ball" });
       const lock = s.call("olive", "set", { id: "ball", component: "lock", value: true });

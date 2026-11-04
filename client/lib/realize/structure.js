@@ -333,7 +333,7 @@ function retire(id) {
 /** Create or rebuild one building. Idempotent: same state in, same scene out. */
 function realize(id, ent) {
   const data = structOf(ent);
-  // switched off, itself or up its chain: not drawn, no boxes (models_field offIn; bot #260 60)
+  // switched off, itself or up its chain: not drawn, no boxes (models_field offIn)
   if (!data || offIn(state.st.entities ?? {}, id)) { retire(id); return; }
   // collision off for bodies (collider.enabled false, or blocks without bodies): no box a walker meets
   const tf = { ...transformOf(ent), solid: !solidOff(ent, 'bodies') };

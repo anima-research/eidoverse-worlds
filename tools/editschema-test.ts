@@ -105,7 +105,7 @@ console.log("\nedits → the fewest door ops:");
   const sent = W.send(r.ops[0]);
   const after = W.rec("c1");
   check("…through the door: the chair stands at (2,0,4), heading 45°", sent.ok && JSON.stringify(after.pos) === "[2,0,4]" && near(after.yaw, Math.PI / 4, 1e-3) && after.scale === 1, JSON.stringify([sent.refused, after]));
-  // bot #260 111: a heading and an Euler channel typed together both land (the heading was dropped for the old q's)
+  // a heading and an Euler channel typed together both land (the heading was dropped for the old q's)
   { const e0 = { ...unlocked, yaw: 0 }, qOf = (r: any) => sets(r, "transform")[0]?.args.value.q;
     const both = qOf(editOps(e0, "c1", { "pos.yaw": "90", "rot.x": "30" })), q1 = qOf(editOps(e0, "c1", { "pos.yaw": "90" }));
     const twoStep = q1 && qOf(editOps({ ...e0, q: q1, yaw: qHeading(q1) }, "c1", { "rot.x": "30" })), rotOnly = qOf(editOps(e0, "c1", { "rot.x": "30" }));

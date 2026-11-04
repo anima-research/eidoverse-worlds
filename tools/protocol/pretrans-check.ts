@@ -881,7 +881,7 @@ await C("P3", "grab, put, throw and punt acts record the request about the thing
   W.call("grab", { id: "ball" }, "vic"); const t = W.call("throw", { id: "ball", v: [0, 1, 1] }, "vic");
   W.call("create", { id: "ball2", model: "ball", components: { physics: { kind: "dynamic" } }, place: { at: [0, 0.3] } }); const k = W.call("punt", { id: "ball2", power: 4 }, "vic");
   const acts = actsBy(W, "vic").filter((e: any) => ["grab", "put", "throw", "punt", "drop"].includes(e.verb));
-  const bad = acts.filter((e: any) => POSKEYS.test(JSON.stringify(e.body)));   // the same keys P2 refuses (bot review #260 389)
+  const bad = acts.filter((e: any) => POSKEYS.test(JSON.stringify(e.body)));   // the same keys P2 refuses
   return [g.ok && p.ok && t.ok && k.ok && acts.length >= 4 && acts.some((e: any) => e.verb === "punt") && !bad.length, [why(g), why(p), why(t), why(k), bad.map((e: any) => e.body)]]; });
 await C("P4", "§5 says what touches the log and what doesn't: arrivals don't; a teleport does, with no position; hands never", () => {
   const g = SPEC.slice(SPEC.indexOf("## 5."), SPEC.indexOf("## 6.")); const need = ["Arriving is presence", "never logged", "client"];

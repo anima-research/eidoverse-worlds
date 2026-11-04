@@ -800,7 +800,7 @@ try {
   const r = await handleUpload(new Request(u, { method: "POST", body: "export default {}" }), u, { requestIP: () => ({ address: "127.0.0.1" }) });
   const t = await r.text();
   check("/upload?as=script is refused 415, naming the upload {text} request that stores a script now", r.status === 415 && /upload \{text\}/.test(t) && /act \{verb: "upload"/.test(t) && !/GLB/.test(t), `${r.status} ${t}`); }
-// bot review #260 51: on a JOIN_TOKEN server /upload takes the key as an Authorization Bearer header (RFC 6750), as the read
+// on a JOIN_TOKEN server /upload takes the key as an Authorization Bearer header (RFC 6750), as the read
 // door does; ?token= still works. as=script answers 415 right after the door, so 415 = let in, 401 = refused at the door.
 { const { spawnSync } = await import("node:child_process");
   const src = `const { handleUpload } = await import(${JSON.stringify(new URL("../server/upload.ts", import.meta.url).href)});   // a file URL: a pathname is "/D:/…" on Windows

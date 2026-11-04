@@ -27,7 +27,7 @@ export function backupBeforeRepair(dir: string, { by = null as string | null, co
   const log = path.join(dir, LOG);
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const out = path.join(dir, BACKUPS, stamp);
-  mkdirDurable(out);   // copyFileSync syncs nothing: the copy, its manifest and their names are synced (bot review #260 8)
+  mkdirDurable(out);   // copyFileSync syncs nothing: the copy, its manifest and their names are synced
   fs.copyFileSync(log, path.join(out, LOG)); syncFile(path.join(out, LOG));
   const before = measure(path.join(out, LOG));
   if (before.sha256 !== measure(log).sha256) throw new Error(`the backup of ${log} doesn't match the file (it changed while being copied)`);
@@ -61,7 +61,7 @@ export function rollbackRepair(dir: string, { force = false } = {}): Rollback {
   if (sha256(saved) !== m.before.sha256 || saved.length !== m.before.size) return { ok: false, backup: b, why: `the backup's bytes don't match its manifest (${b}): refusing to restore from it` };
   if (now.length < saved.length || sha256(now.subarray(0, saved.length)) !== m.before.sha256) {
     if (!force) return { ok: false, backup: b, why: `the current log no longer begins with the bytes the repair wrote over (a different history, or already rolled back): refusing; --force restores the backup anyway` }; }
-  if (!m.after && !force) return { ok: false, backup: b, why: `this backup was never sealed (the repair may have died mid-write): what the repair wrote and what came after it can't be told apart, so later writes could be lost. --force restores anyway` };   // bot review #260 4
+  if (!m.after && !force) return { ok: false, backup: b, why: `this backup was never sealed (the repair may have died mid-write): what the repair wrote and what came after it can't be told apart, so later writes could be lost. --force restores anyway` };
   if (m.after && now.length > m.after.size && !force) return { ok: false, backup: b, why: `the log has grown since the repair (${now.length} bytes, ${m.after.size} right after it): ${now.length - m.after.size} bytes of later writes would be lost. --force restores anyway` };
   if (m.after && now.length === m.after.size && sha256(now) !== m.after.sha256 && !force) return { ok: false, backup: b, why: `the log was rewritten since the repair (same size, different bytes): refusing; --force restores anyway` };
   const tmp = log + ".rollback-tmp"; fs.copyFileSync(path.join(b, LOG), tmp); syncFile(tmp); fs.renameSync(tmp, log); syncDir(dir);

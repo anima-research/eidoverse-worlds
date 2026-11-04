@@ -105,7 +105,7 @@ console.log("\nwhere the body is, not just the bed under it");
   a.flight = null;
 }
 
-console.log("\na dry pocket under the level (bot #260 123)");
+console.log("\na dry pocket under the level");
 {
   await a.setAvatar("fix/short.vrm"); await a.buildTerrain(WET); await settle(); a.pos.x = 0; a.pos.z = 0; tickN(10);
   const wet = a.float.on;

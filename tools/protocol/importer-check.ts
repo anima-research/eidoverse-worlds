@@ -305,7 +305,7 @@ row("IM-C1", () => {
     && JSON.stringify(r.stats.unmapped) === JSON.stringify([{ component: "collision", id: "post", fields: ["layer"], as: "post imported:collision" }]),
     "IM-C1 collision {enabled: false} becomes collider {enabled: false} beside its shape; enabled: true is the default; anything else it said rides imported:collision and the report lists it", { rock: T.rock, post: T.post, unmapped: r.stats.unmapped });
 });
-row("IM-U1", () => {   // bot review #260 33: a key no component has rides imported:<component>, and the report says so
+row("IM-U1", () => {   // a key no component has rides imported:<component>, and the report says so
   const L = seqd([BASIC[0], { actor: "Ann", verb: "spawn", args: { id: "lamp", lib: "l.glb", pos: [0, 0, 0] } }, { actor: "Ann", verb: "comp", args: { id: "lamp", type: "light", data: { color: "#ffaa00", flicker: 1 } } }]);
   const r = TV1.translate(L), T = r.final.translated;
   ok(JSON.stringify(T.lamp?.["imported:light"]) === JSON.stringify({ flicker: 1 }) && JSON.stringify(r.stats.unmapped) === JSON.stringify([{ component: "light", id: "lamp", fields: ["flicker"], as: "lamp imported:light" }]),
@@ -389,7 +389,7 @@ row("IM-W5", () => {
     "IM-W5 a scaled host's water and air boxes are main's size in metres: the host keeps its scale, its children's zones are read through it (main: size × the host's scale), no correction needed", o);
 });
 
-row("IM-W6", () => {   // bot #260 103: main's water box stayed world-axis-aligned on a turned host (watervolumes.js: q discarded)
+row("IM-W6", () => {   // main's water box stayed world-axis-aligned on a turned host (watervolumes.js: q discarded)
   const L = seqd([BASIC[0], { actor: "Ann", verb: "spawn", args: { id: "barge", lib: "b.glb", pos: [0, -10, 0], yaw: Math.PI / 2 } },
     { actor: "Ann", verb: "comp", args: { id: "barge", type: "water", data: { center: [0, 0, 0], size: [20, 2, 4] } } }]);
   const T = TV1.translate(L).final.translated, st = { entities: Object.fromEntries(Object.entries(T).map(([id, c]) => [id, { c }])) }, z = ZN.zonesOf(st);

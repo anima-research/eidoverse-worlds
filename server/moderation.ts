@@ -29,7 +29,7 @@ export const pendingBans: Record<string, BanRec & { why: string }> = {};
 /** Why a ban bound by name alone is worth a look (review full-260 L11): the name was typed, so its wearer may not be that account. */
 export const BOUND_BY_NAME = "the name was typed, so a guest who wore it may have been someone else; global-unban <the name> lifts it";
 export const PENDING_WORDS = "pre-account ban: bind to a person (global-ban <the name> binds whoever wears it here) or lift (global-unban <the name>)";
-/** A ban or sanction file that couldn't be read at boot: kept as it was, never saved over (bot review #260 17; the ledger's rule). */
+/** A ban or sanction file that couldn't be read at boot: kept as it was, never saved over (the ledger's rule). */
 const unreadable = new Set<string>();
 /** The ban or sanction files that couldn't be read at boot: while any is, the door is LOCKED (access.ts entryFor; R 11-03,
  *  a fail-safe default like a wiki's maintenance mode): owners, operators and role holders get in, everyone else is refused. */
@@ -39,7 +39,7 @@ export const LOCKED_WHY = "this server can't read its ban list right now, so onl
 /** One line for the boot log and the operator's list while the door is locked, else null. */
 export const lockedLine = (): string | null => unreadable.size ? `LOCKED: ${LOCKED_WHY} (${[...unreadable].join(", ")}; fix or move aside and restart)` : null;
 const keptAside = (f: string, what: string) => { if (!unreadable.has(f)) return null; const why = `${f} couldn't be read at boot and is kept as it was; fix or move it aside and restart`; console.log(`[mod] ${what} not saved: ${why}`); return why; };
-/** The words a reply and the moderated line carry when a sanction's file wasn't written (bot #260 #146): it holds in memory only. */
+/** The words a reply and the moderated line carry when a sanction's file wasn't written: it holds in memory only. */
 export const notPersisted = (why: string) => `NOT persisted: ${why} — it ends at restart`;
 /** Writes the file; returns why it wasn't written (the record holds in memory only), else null. */
 export function saveGlobalBans(): string | null {
@@ -115,7 +115,7 @@ export function findBan(map: Record<string, BanRec> | undefined, account: string
   if (!map) return null;
   for (const b of Object.values(map)) {
     if (b.world && b.world !== world) continue;   // a guest's ban in one world (the door's world ban can't name a guest)
-    if (banHoldsAgainst(b, account) && (b.until == null || b.until > now)) return b;   // a timed global ban ends (bot #260 #41)
+    if (banHoldsAgainst(b, account) && (b.until == null || b.until > now)) return b;   // a timed global ban ends
     if (!account && addr && b.addr === addr && (b.until ?? 0) > now) return b;
   }
   return null;
@@ -132,7 +132,7 @@ export const banKey = (account: string | null | undefined, addr?: string | null,
 export type AddrSanction = { kind: "mute"; world: string; addr: string; actor: string; by: string; ts: number; until: number; channels?: string[]; reason?: string; ids: string[] };
 export const ADDR_SANCTIONS_FILE = join(WORLDS_DIR, ".addr-sanctions.json");
 export const addrSanctions: Record<string, AddrSanction> = {};
-/** One record per issuer (`actor`): two people's mutes are never merged into one (bot review #260 118). */
+/** One record per issuer (`actor`): two people's mutes are never merged into one. */
 export const addrSanctionKey = (kind: string, world: string, addr: string, actor: string) => `world:${world}:addr:${addr}:${kind}:by:${actor}`;
 /** Writes the file; returns why it wasn't written (the sanction holds in memory only), else null. */
 export function saveAddrSanctions(now = Date.now()): string | null {

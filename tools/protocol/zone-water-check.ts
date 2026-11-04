@@ -248,7 +248,7 @@ await C("Z11", "the client's level asks mediumOf: worldLevelAt is null in a pock
   const o = { room: L([0, -7.5, 0]), beside: L([6, -7.5, 0]), above: L([0, 3, 0]), picky: L([20, -7.5, 0]), none: [L([0, -7.5, 0], none), L([0, 3, 0], none)], noLevel: Z.worldLevelAt([0, -7.5, 0], z, null) };
   return [o.room === null && o.beside === 0 && o.above === 0 && o.picky === 0 && o.none.join() === "0,0" && o.noLevel === null, o]; });
 
-await C("Z15", "a thing's water in a pocket is not @world's (bot #260 124): worldLevelAt is null where a pocket keeps @world out, even with a lower thing body inside it; a thing body over the open sea leaves the level as it is", () => {
+await C("Z15", "a thing's water in a pocket is not @world's: worldLevelAt is null where a pocket keeps @world out, even with a lower thing body inside it; a thing body over the open sea leaves the level as it is", () => {
   const s = session();
   s.call("set", { id: "@world", component: "water", value: { level: 10 } });
   s.call("create", { id: "dome", components: { transform: tf([0, 5, 0]), zone: box([10, 10, 10]), "water-exclusion": {} } });
@@ -258,7 +258,7 @@ await C("Z15", "a thing's water in a pocket is not @world's (bot #260 124): worl
   const o = { pool: Z.worldLevelAt([0, 1, 0], z, 10), poolMedium: Z.mediumOf([0, 1, 0], z).body, dry: Z.worldLevelAt([3, 1, 3], z, 10), lagoon: Z.worldLevelAt([30, 1, 0], z, 10), sea: Z.worldLevelAt([60, 1, 0], z, 10) };
   return [o.poolMedium === "pool" && o.pool === null && o.dry === null && o.lagoon === 10 && o.sea === 10, o]; });
 
-await C("Z16", "the authority's walk reads the pockets (bot #260 123): under @world's level 5, a dry dome over flat ground; a walk under a beam 5.7 m up inside it is taken (a walker's box), the same walk outside the dome is a swimmer's and meets the beam's twin", () => {
+await C("Z16", "the authority's walk reads the pockets: under @world's level 5, a dry dome over flat ground; a walk under a beam 5.7 m up inside it is taken (a walker's box), the same walk outside the dome is a swimmer's and meets the beam's twin", () => {
   const s = session();
   s.call("set", { id: "@world", component: "terrain", value: { amplitude: 0, size: 80 } });
   s.call("set", { id: "@world", component: "water", value: { level: 5 } });

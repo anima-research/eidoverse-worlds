@@ -26,7 +26,7 @@ const reply:any=await new Promise((res,rej)=>{
  ws.onerror=()=>rej(Error('cannot connect'));
  ws.onmessage=(e)=>{const m=JSON.parse(String(e.data));
   if(m.type==='error'){clearTimeout(timer);rej(Error(m.error??'refused'));}
-  // the effect documents the batch names go first, as import.ts sends them (bot #260 99)
+  // the effect documents the batch names go first, as import.ts sends them
   if(m.type==='snapshot'){(manifest.uploads??[]).forEach((u:any,i:number)=>ws.send(JSON.stringify({type:'request',id:`water-effect-${i}`,...u})));ws.send(JSON.stringify({type:'request',id:'water-preview',...manifest.requests[0]}));}
   if(m.type==='reply'&&/^water-effect-/.test(m.id)&&!m.ok){clearTimeout(timer);rej(Error(`effect upload refused: ${JSON.stringify(m.reply?.refused??m).slice(0,600)}`));}
   if(m.type==='reply'&&m.id==='water-preview'){clearTimeout(timer);res(m);}};

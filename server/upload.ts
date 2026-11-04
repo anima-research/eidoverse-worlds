@@ -513,7 +513,7 @@ export async function handleUpload(req: Request, url: URL, srv: UploadSrv): Prom
   return r;
 }
 async function uploadBy(req: Request, url: URL, srv: UploadSrv): Promise<Response> {
-  // the key by Authorization: Bearer (RFC 6750, as the read door takes it); ?token= still works for older clients (bot review #260 51)
+  // the key by Authorization: Bearer (RFC 6750, as the read door takes it); ?token= still works for older clients
   const upTok = bearerOf(req) || (url.searchParams.get("token") ?? "");
   let upAgent = agentTokens().byToken.get(upTok);
   // The aid1 leg the join door has: guests enrolled via archipelago-home

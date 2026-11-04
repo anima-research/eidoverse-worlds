@@ -262,7 +262,7 @@ const openNow = (st, id) => { const o = st.entities[id]?.c.openable; return !!o 
 // The sub-strides are at least MOVER.track.sweep (5 cm) apart in the ground plane (the sweep's own points are closer
 // where y changes: its spacing is 3-D): the floor law is a stride's law, and a chain of millimetre steps would walk up
 // any wall the ground draws as steep-but-continuous (the terrain law's flatten edge is 1 cm wide, not 0).
-// @world's level at p as the browser's walk reads it: none in a pocket that keeps it out (zone.js worldLevelAt; bot #260 123)
+// @world's level at p as the browser's walk reads it: none in a pocket that keeps it out (zone.js worldLevelAt)
 const ZONES = new WeakMap();
 function levelAt(st, lv, p) {
   if (lv == null) return null;
@@ -291,7 +291,7 @@ function sizeOf(a, prev) {
 // the walker's own arguments for this body: floorStep's {height, scale}, bodyBox's scale
 const lawOf = (size) => ({ height: size?.height, scale: bodyScale(size?.scale) });
 function groundSteps(st, from, pts, size) {
-  const G = groundOf(st); if (!G.terrain && G.level == null) return null;   // water without terrain: the mover's water rule over flat ground (bot review #260 46)
+  const G = groundOf(st); if (!G.terrain && G.level == null) return null;   // water without terrain: the mover's water rule over flat ground
   const { height, scale: s } = lawOf(size), L = (p) => levelAt(st, G.level, p), reachW = (lv) => (lv != null ? lv + MOVER.swim.climb * s : -Infinity);
   const step = (o) => floorStep({ ...o, height, scale: s });
   const b0 = bodyAt(st, from), lv = L(from); const r0 = step({ y: b0.y, ground0: b0.ground, level0: lv, f: b0.ground, level1: lv });

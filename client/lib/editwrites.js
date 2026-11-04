@@ -109,7 +109,7 @@ async function sendNow(req, { what = req.verb, revert = null, record = true } = 
   //   🔓 unlock: delete the lock, then the request as it was: two acts on my stack, so Ctrl+Z undoes the edit first.
   //     Undo and redo aren't offered it: their act isn't mine to stack under an unlock (Ctrl+Z would then undo the unlock).
   // A member (who may not lift locks) gets the refusal as a toast, no buttons. Another lock further up asks again.
-  let cancelled = false, lifted = 0;   // lifted: the unlocks already written when a later lock's question is cancelled (bot #260 121)
+  let cancelled = false, lifted = 0;   // lifted: the unlocks already written when a later lock's question is cancelled
   // a lock you may not lift (above your level, R 10-07, or no right to delete it: refused with mayLift: false) isn't yours to
   // go through or lift: its refusal shows as words, no buttons
   for (let round = 0; round < 8 && !r.ok && r.refused?.code === 'locked' && r.refused?.mayLift === true && req.args?.throughLock !== true && mayLift(); round++) {

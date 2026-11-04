@@ -54,7 +54,7 @@ export function measureSeat(occupantId, { localAvatar = null } = {}) {
   const seat = { world: seatPos.toArray().map((n) => +n.toFixed(4)) };
   seat.parentYaw = +claim.parentYaw.toFixed(4);
   const t = bagOf(m.to)?.transform;
-  // the pose and anchor are the sibling station's (componentspec: the door lifts a socket's old body block there; bot #260 90)
+  // the pose and anchor are the sibling station's (componentspec: the door lifts a socket's old body block there)
   seat.socketLocal = sock ? { pos: t?.pos ?? null, q: t?.q ?? null, name: ss.name, pose: ss.station?.anim ?? 'sitchair',
     part: sock.part ?? null, anchor: ss.station?.anchor ?? 'root' } : null;
   seat.mountOverrides = { offset: m.offset ?? null, yaw: m.yaw ?? null };

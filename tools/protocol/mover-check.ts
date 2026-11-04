@@ -339,7 +339,7 @@ if (M) {
     const rim = agree("pool", "ann", [14, 12], [19.5, 12], envP, { claim, h: hP });
     ok(rim.accepted && rim.seen.swim && rim.at[0] > 19.4 && near(rim.seen.maxY, 0, 1e-3), `G5 [${claim}] out of a dug pit over a vertical rim AT the waterline (2 m of terrain wall): accepted by both`, rim);
   }
-  // G8 (bot review #260 46): water with no terrain (flat ground at y 0): hauling out onto a quay 0.4 m above the surface
+  // G8: water with no terrain (flat ground at y 0): hauling out onto a quay 0.4 m above the surface
   const QUAY = { id: "quay", p: [6, 0, 0], s: [4, 2.4, 6] };
   for (const claim of ["mover", "bed"]) { const W = `flatwater-${claim}`;
     call(W, "olive", "create-world", { title: W });

@@ -46,7 +46,7 @@ function bodiesAt(c: Client, pt: number[]): Hit[] {
   for (const o of c.world?.clients ?? []) {
     if (!bodyLeg(o) || sameBody(c, o) || !fin3(o.lastPose?.p)) continue;
     const at = o.lastPose!.p!, s = scaleOf(o.lastPose);
-    const d = unturn(o.lastPose!.q, [pt[0] - at[0], pt[1] - at[1], pt[2] - at[2]]);   // into their frame: a turned body's capsule turns with it (bot review #260 13)
+    const d = unturn(o.lastPose!.q, [pt[0] - at[0], pt[1] - at[1], pt[2] - at[2]]);   // into their frame: a turned body's capsule turns with it
     const cls = pointClass([0, 0, 0], [d[0] / s, d[1] / s, d[2] / s]) as Cls | null;
     if (cls) out.push({ tc: o, cls, point: null });
   }

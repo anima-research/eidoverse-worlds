@@ -577,7 +577,7 @@ export class WorldAgent {
     for (const m of Array.isArray(messages) ? messages : []) {
       if (!m || typeof m !== "object") continue;
       const ts = Date.now(); let text: string | null = null;
-      // a row reads `* <who> <text>` (look, net-server): who is the actor's name, text the rest (bot #260 #104)
+      // a row reads `* <who> <text>` (look, net-server): who is the actor's name, text the rest
       const actor = m.from ?? m.by, subj = typeof actor === "string" ? this.nameOfActor(actor) ?? actor : "world";
       // what the authority did: it let the act reach this body, and recorded it
       if (m.type === "body" && m.kind === "shove") {   // a shove the authority delivered (a blast's): applied as the relay's is
@@ -1708,7 +1708,7 @@ export class WorldAgent {
   /** × my speed at p: a physics-area {kind: speed} (shared/zone.js, the client's and the authority's reading), once per view */
   private areas: { st: unknown; a: any[] } | null = null;
   speedAt = (p: number[], mode?: string): number => { if (this.areas?.st !== this.st) this.areas = { st: this.st, a: physicsAreasOf(foldOfView(this.st)) }; return speedFactorAt(this.areas.a, p, mode); };
-  /** The world's level where my feet are: none in a dry pocket below it (zone.js worldLevelAt, the client's levelHere; bot #260 123) */
+  /** The world's level where my feet are: none in a dry pocket below it (zone.js worldLevelAt, the client's levelHere) */
   private pockets: { st: unknown; z: any; v: any } | null = null;
   levelHere(): number | null {
     const level = this.water?.level; if (level == null) return null;
@@ -1901,7 +1901,7 @@ export class WorldAgent {
       // A null regex means this body has no usable name (a malformed tokens
       // entry). Not being mentionable is degraded, not fatal — the body still
       // hears the room; it just cannot be addressed by name.
-      const mention = this.mentionsMe(String(args.text)) || this.isMe(args.to);   // the name, the credential's display name (#184), or a say addressed to me (bot #260 #106)
+      const mention = this.mentionsMe(String(args.text)) || this.isMe(args.to);   // the name, the credential's display name (#184), or a say addressed to me
       if (mention) this.ping({ ts, kind: "mention", who: actor, text: args.text });
       this.onEvent?.({ ts, kind: "say", who: actor, text: args.text, mention });
     }
@@ -2531,7 +2531,7 @@ export class WorldAgent {
     const sp = this.replica?.st ? fallBackOf(this.replica.st) : null; if (!sp) return;
     this.respawning = true;
     try {
-      this.abandonWalk(); this.flight = null; this.endFloat(); this.vy = 0;   // the walk's promise ends now, not at its timeout (bot #260 #105)
+      this.abandonWalk(); this.flight = null; this.endFloat(); this.vy = 0;   // the walk's promise ends now, not at its timeout
       if (this.clip === "ragdoll" || (this.heldPose && !this.heldPoseAuthored)) {
         ++this.bodyEpoch; this.body?.stop(); this.stopSim(); this.pins.clear();
         if (!this.heldPoseAuthored) this.heldPose = null;
@@ -4081,7 +4081,7 @@ export class WorldAgent {
   private placeHolder(e: Entity, nowMs = Date.now()): PlaceHolder | null {
     const f = this.eff(e.id, nowMs);
     // its per-axis scale, so a place on a stretched thing is stretched with it, as the thing is drawn. places.ts frames
-    // any non-zero axis, a mirrored one too (bot #260 #40)
+    // any non-zero axis, a mirrored one too
     const s3 = f.ok ? f.scale3 : undefined;
     const scale = Array.isArray(s3) && s3.every((v) => Number.isFinite(v) && v !== 0) ? s3 : f.ok ? f.scale : undefined;
     return f.ok ? { id: e.id, name: this.refName(e.id), pos: f.pos, yaw: f.yaw, q: f.quat, scale } : null;
@@ -4761,7 +4761,7 @@ export class WorldAgent {
     if (verb === "move" && this.water && args.height === undefined) args = { ...args, height: this.stature() };
     const id = `v${++this.histId}`;
     return new Promise((resolve) => {
-      const t = setTimeout(() => { this.pendingRequests.delete(id); resolve({ ok: false, refused: { code: "timeout", reason: "the authority did not answer within 8 s", fix: "it may still land: look before trying again", mayHaveLanded: true } }); }, 8000);   // as net.js (bot #260 #53)
+      const t = setTimeout(() => { this.pendingRequests.delete(id); resolve({ ok: false, refused: { code: "timeout", reason: "the authority did not answer within 8 s", fix: "it may still land: look before trying again", mayHaveLanded: true } }); }, 8000);   // as net.js
       this.pendingRequests.set(id, (m) => { clearTimeout(t);
         if (verb === "consent" && m.reply?.ok) this.noteConsent(args);
         resolve(m.reply ?? { ok: false, refused: { code: "no-reply", reason: "the authority's answer had no reply" } }); });
@@ -5373,7 +5373,7 @@ export class WorldAgent {
     const { entries } = await this.history({ after: seq, limit, verbs: ["say"] });
     return entries.map((e) => ({ ts: e.ts, who: e.actor, text: e.args?.text ?? "", seq: e.seq }));
   }
-  /** The OLDEST `limit` says after `seq`, and whether more follow: the log pages newest-first, so page back to `seq` (bot #260 #63). */
+  /** The OLDEST `limit` says after `seq`, and whether more follow: the log pages newest-first, so page back to `seq`. */
   async firstSaidSince(seq: number, limit: number): Promise<{ said: { ts: number; who: string; text: string; seq: number }[]; more: boolean }> {
     let all: any[] = [], before: number | undefined;
     for (let n = 0; n < 100; n++) {
@@ -5592,7 +5592,7 @@ export class WorldAgent {
       if (lit) aff.push(`light: #${lit.color.toString(16).padStart(6, "0")}, brightness ${+lit.intensity.toFixed(2)}, reaches ${+lit.range.toFixed(2)}m${lit.important ? ", important (always casts)" : ""}${lit.daytime === "full" ? ", burns at noon" : ""}`);
       // a declared collider (the collider component)
       const col = c.collider && typeof c.collider === "object" && !Array.isArray(c.collider) ? c.collider.shape : undefined;
-      if ((col === "mesh" || col === "exact" || col === "box") && solidOffRecord(c)) aff.push("collider off: walk-through");   // enabled/blocks, as the walker reads it (bot #260 #62)
+      if ((col === "mesh" || col === "exact" || col === "box") && solidOffRecord(c)) aff.push("collider off: walk-through");   // enabled/blocks, as the walker reads it
       else if (col === "mesh" || col === "exact" || col === "box") aff.push(col === "box" ? "collides as a box" : "collides as its mesh (its triangles)");
       const socks = this.socketsOf(e.id);
       if (socks.length) {

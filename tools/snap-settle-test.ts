@@ -67,7 +67,7 @@ console.log("the server's budget");
   check("…and a world already ready is captured at once, whatever the wait", ready.r?.dataUrl === "data:image/png;base64,FROM" && ready.ms < 600, JSON.stringify(ready));
 }
 
-console.log("aim first (bot #260 59)");
+console.log("aim first");
 {
   // the body stands 60 m away and the world there is "ready" from the first look (its models not yet scheduled): the
   // camera is aimed before readiness is asked, and a renderer that had to move waits the steady second

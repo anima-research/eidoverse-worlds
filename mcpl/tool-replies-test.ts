@@ -1,4 +1,4 @@
-// mcpl/tool-replies-test.ts — what the agent's tools and body say and send, pure (no server): one row per bot review #260
+// mcpl/tool-replies-test.ts — what the agent's tools and body say and send, pure (no server): one row per behaviour.
 // finding (38, 41, 53, 62, 63, 92, 105, 106, 107), each red on aeaf71de5; bot-review rows 453/454/458/459/462, each red on 884ae7cef.
 // run: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun mcpl/tool-replies-test.ts
 import { WorldAgent } from "./agent.ts";

@@ -47,7 +47,7 @@ const file = path.join(tmp, "worlds", ".directory.json");
   ok(firstFree && free(second) && second !== first && own === "Zed" && first.endsWith(`-${tag}`) && second.endsWith(`-${tag}2`) && !/555/.test(tag),
     "D12 a spectator's name is the typed one unless another account wears it; otherwise a name that keeps its account's tag (a hash: none of the account's digits), fits the limit and no other account wears", { first, second, own, tag }); }
 
-// D13 (bot #260 #40): a Latin letter's accent folds away, as the M3 comment claims; a kana's dakuten or a Devanagari vowel sign stays
+// D13: a Latin letter's accent folds away, as the M3 comment claims; a kana's dakuten or a Devanagari vowel sign stays
 ok(foldName("Marígold") === foldName("marigold") && foldName("JOSÉ") === foldName("jose") && foldName("Ångström") === "angstrom"
   && foldName("が") !== foldName("か") && foldName("कि") !== foldName("क"),
   "D13 foldName drops a Latin letter's accents (Marígold is marigold), never a kana's or an Indic vowel sign", ["Marígold", "JOSÉ", "Ångström", "が", "कि"].map(foldName));
@@ -597,7 +597,7 @@ process.stdout.write(directoryAt(${JSON.stringify(f)}, slow).resolve({ sub: "hum
   const dirSynced = synced.includes(path.resolve(path.dirname(f))), tmpSynced = synced.some((p) => p.startsWith(path.resolve(f) + ".") && p.endsWith(".tmp"));
   ok(tmpSynced && (process.platform === "win32" || dirSynced), "DW20 a directory write syncs its temp file, then (POSIX) the directory holding the new name", synced); }
 
-// DW21 (bot review #260 120): the running server's directory sees what another writer (the bind / translate tools) wrote since
+// DW21: the running server's directory sees what another writer (the bind / translate tools) wrote since
 { const f = path.join(tmp, "live", ".directory.json"); const cli = directoryAt(f); const moe = cli.imported("Moe");
   const srv = directoryAt(f);   // the server's copy, read before the tools below write
   directoryAt(f).bind(moe, "human:moe"); const lark = directoryAt(f).resolve({ sub: "human:lark", name: "Lark" });
@@ -605,7 +605,7 @@ process.stdout.write(directoryAt(${JSON.stringify(f)}, slow).resolve({ sub: "hum
     "DW21 an account bound or minted by another writer since the server read the file: idOfSub finds it, and its name reads as claimed",
     { moe: srv.idOfSub("human:moe"), lark: srv.idOfSub("human:lark"), claimed: srv.claimedName("Lark"), other: srv.claimedByOther("Lark", "human:other") }); }
 
-// DW22 (bot review #260 529): a rename another writer made since this process read the file survives this process's save
+// DW22: a rename another writer made since this process read the file survives this process's save
 { const f = path.join(tmp, "ren", ".directory.json"); const srv = directoryAt(f); const id = srv.resolve({ sub: "human:ren", name: "Ren" });
   const other = directoryAt(f); other.resolve({ sub: "human:ren", name: "Wren" }); other.markRenamed(id);   // the other writer renames
   srv.resolve({ sub: "human:new", name: "New" });   // this process saves for a reason of its own

@@ -3,10 +3,10 @@
 //   bun tools/protocol/migrate-genesis-check.ts
 // Rows:
 //   MG1  --apply keeps the whole old log, byte for byte, as world.pre-genesis-migration.jsonl before replacing it, and the
-//        new log is today's shape (bot review #260 10: the "before" file held only the genesis line)
+//        new log is today's shape (the "before" file held only the genesis line)
 //   MG2  the dry run writes nothing
 //   MG4  --apply rewrites only the `world` field (#436)
-//   MG3  …and mints no key: a worlds dir with no .custody.json still has none after a dry run (bot review #260 370)
+//   MG3  …and mints no key: a worlds dir with no .custody.json still has none after a dry run
 // GENESIS_TOOL=<path> runs another copy of the tool (a base, for the rows' red).
 // @ts-nocheck
 import fs from "node:fs";
@@ -59,7 +59,7 @@ const run = (W: string, args: string[]) => { const r = Bun.spawnSync([process.ex
   fs.writeFileSync(f, [...lines, JSON.stringify({ world: oldId, kind: "say", actor: last.actor, verb: "say", body: { text: `our id was ${oldId}` }, ts: (last.ts ?? 0) + 1000 })].join("\n") + "\n");
   const r = run(W, ["--apply", dir]); const now = fs.readFileSync(f, "utf8").split("\n").filter(Boolean); const say = JSON.parse(now.at(-1)!);
   ok(r.code === 0 && say.body?.text === `our id was ${oldId}` && say.world !== oldId && !now.slice(1).some((l) => JSON.parse(l).world === oldId),
-    "MG4 --apply rewrites only the `world` field: a say quoting the old id keeps its words (bot review #260 436)", { code: r.code, say, out: r.out.slice(-300) }); }
+    "MG4 --apply rewrites only the `world` field: a say quoting the old id keeps its words", { code: r.code, say, out: r.out.slice(-300) }); }
 
 console.log(`[migrate-genesis-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

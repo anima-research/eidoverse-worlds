@@ -164,7 +164,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["party-probe", "party-probe.ts", 1], // the editor's party blockers (review 10-07 B1–B5, S1/S4/S5/S7, lock levels, moderation commands) with real mouse and keys
   ["colour-picker", "../colour-picker-bench.ts", 1], // the Inspector's colour field is a picker of solid cells a headset quad can click (R 10-12), in headless Chromium (one browser, guarded)
   ["alias", "../../mcpl/alias-test.ts", 1], // old tool names AND their old argument shapes run the new tool (10-15)
-  ["tool-replies", "../../mcpl/tool-replies-test.ts", 1], // bot #260 #38 #41 #53 #62 #63 #92 #105 #106 #107: what the agent's tools and body say and send (pure; #53 waits out the 8 s timeout)
+  ["tool-replies", "../../mcpl/tool-replies-test.ts", 1], // what the agent's tools and body say and send (pure; #53 waits out the 8 s timeout)
   // socketteer's pathfinding stack (#235/#236/#239/#241, merged into the protocol 10-15): its own suites, as it ships them
   ["agent-mesh-collision", "../agent-mesh-collision-test.ts", 1], // #235: an agent's body collides with placed models (the support barrier, the 3-at-once governor)
   ["navgrid", "../navgrid-test.ts", 1],  // #236: move routes through placed models (round furniture, through doors, up stairs; y picks the floor)
@@ -218,8 +218,8 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["consent-scripts-list", "../consent-scripts-list-test.ts", 1], // consent {allow|block} naming a script or a sponsor's scripts reaches the authority through the server; an allow naming nobody says how to name someone
   ["custody-save", "../custody-save-test.ts", 1], // a governance key is handed out only once the keys file holds it: a failed save hands out nothing
   ["client-tools", "../run-client.ts --import-only --skip-suites --strict-env", 14], // refactor plan 2 D5: every tools/*-{test,check} loads (a stub missing an export, a moved module); the full run is `bun tools/run-client.ts`
-  ["migrate-genesis", "migrate-genesis-check.ts", 1],   // bot review #260 10: migrate-genesis keeps the whole old log, fsynced, before it replaces it; the dry run writes nothing
-  ["replica-freeze", "../replica-freeze-test.ts", 1],   // C7a: the client's fold is frozen in dev, and still folds every later entry (bot review #260 84: it sat outside the gate and couldn't start)
+  ["migrate-genesis", "migrate-genesis-check.ts", 1],   // migrate-genesis keeps the whole old log, fsynced, before it replaces it; the dry run writes nothing
+  ["replica-freeze", "../replica-freeze-test.ts", 1],   // C7a: the client's fold is frozen in dev, and still folds every later entry (it sat outside the gate and couldn't start)
 ];
 
 // ---- lanes ----
@@ -276,7 +276,7 @@ export function setAside(root: string, files: string[], base: string, prefix: st
  *  (where checks print what they saw), at most `per` each. The evidence used to be dropped: a FAIL said WHICH row failed
  *  and never WHAT it saw (scripts I2, 10-22: two gate failures, no values to compare with a passing run). */
 /** The gate's record of a suite's output: the last `keep` chars once it passes `limit`, plus every verdict line (FAIL, SKIP,
- *  OPTIONAL, ✗) the cut dropped, so an early red can't fall off the tail (bot review #260 483). */
+ *  OPTIONAL, ✗) the cut dropped, so an early red can't fall off the tail. */
 export function outputKeeper(limit = 4e6, keep = 2e6) {
   let out = ""; const dropped: string[] = []; const MARK = /^\s*(FAIL|SKIP|OPTIONAL)\b|✗/;
   return {

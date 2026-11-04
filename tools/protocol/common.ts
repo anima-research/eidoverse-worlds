@@ -75,7 +75,7 @@ export function canLinkFiles(): boolean {
 /** A list of directories from one environment variable, split on the platform's own separator (`:` on POSIX, `;` on
  *  Windows, like PATH). Splitting on ":" cut `C:\\…` at its drive letter (pretrans K21, CI Windows 10-22). */
 /** The commit a sibling's dist/ was built from (dist/.built-at, written by run.ts --siblings), or null: a dist/ from another
- *  commit is stale even when the checkout is at the pin (bot review #260 50). */
+ *  commit is stale even when the checkout is at the pin. */
 export const siblingBuiltAt = (at: string): string | null => { try { return fs.readFileSync(path.join(at, "dist", ".built-at"), "utf8").trim() || null; } catch { return null; } };
 export function pathList(v: string | undefined): string[] {
 

@@ -73,7 +73,7 @@ export function backupWorld(worldsDir: string, name: string, { backupsDir = BACK
     syncTree(dir); syncDir(backupsDir);   // copyFileSync syncs nothing: on disk before anything moves (review L5)
     return { dir, files: files.length, bytes };
   } catch (x) {
-    let removed = true; try { fs.rmSync(dir, { recursive: true, force: true }); } catch { removed = false; }   // (bot review #260 437)
+    let removed = true; try { fs.rmSync(dir, { recursive: true, force: true }); } catch { removed = false; }   //
     throw new Error(`the backup of "${name}" failed${removed ? " and was removed" : `; its partial directory ${dir} could NOT be removed`}: ${(x as Error).message}`);
   }
 }

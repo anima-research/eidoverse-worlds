@@ -466,7 +466,7 @@ export function foundWorld(dir: string, name: string, owner: string, title?: str
 // .founders.json records who founded what (name → {account, actor, ts}); a dot-name is never a world.
 export const FOUND_NAME = /^[a-z0-9][a-z0-9-]{2,31}$/;
 const foundersPath = () => path.join(WORLDS_DIR, ".founders.json");
-/** The ledger; {} only when there is none yet. An unreadable one throws, so a founding never replaces it (bot review #260 31). */
+/** The ledger; {} only when there is none yet. An unreadable one throws, so a founding never replaces it. */
 export function foundersLedger(): Record<string, { account: string; actor: string; ts: number }> {
   let text: string; try { text = fs.readFileSync(foundersPath(), "utf8"); } catch (e: Any) { if (e?.code === "ENOENT") return {}; throw e; }
   const v = JSON.parse(text); if (!v || typeof v !== "object" || Array.isArray(v)) throw new Error("not a JSON object"); return v;
@@ -496,7 +496,7 @@ export function foundOwnedWorld(name: string, actor: string, account: string, ti
     if (!r.ok) throw new Error(`the authority refused the founding: ${r.refused?.reason}`);
     if (fs.existsSync(dest)) throw new Error(`there's already a world called "${name}"`);   // taken while this one was built
     // answered only once durable (house 6344940039). The ledger row first: a crash between leaves a row for no world, which a
-    // retry overwrites, never a world with no row (bot review #260 31)
+    // retry overwrites, never a world with no row
     replaceDurable(foundersPath(), JSON.stringify({ ...L, [name]: { account, actor, ts: now } }, null, 1)); rowWritten = true;
     fs.renameSync(tmp, dest); syncDir(WORLDS_DIR);
     return { ok: true, worldId: w.worldId };

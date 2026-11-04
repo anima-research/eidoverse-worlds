@@ -104,14 +104,14 @@ check("PG5 a zombie in the group is not counted as left running", suiteMembers(7
     /killGroup\(child\.pid, "SIGKILL", \{ exited: \(\) => !stuck \|\| gone\(\) \}\)/.test(rs) && !/killSuite\(/.test(kcBody) && /exitCode/.test(kcBody), kcBody);
 }
 
-{ // bot review #260 49: a table that never answers falls back to the running root's tree (taskkill /T), and to nothing once it exited
+{ // a table that never answers falls back to the running root's tree (taskkill /T), and to nothing once it exited
   const calls: string[][] = [], never = () => new Promise<string | null>(() => {}), rec = async (a: string[]) => { calls.push(a); };
   await (PG as any).killSuiteAsync(100, "SIGKILL", "win32", { exited: false, ms: 300, query: never, taskkill: rec }); const live = calls.splice(0);
   await (PG as any).killSuiteAsync(100, "SIGKILL", "win32", { exited: true, ms: 300, query: never, taskkill: rec }); const dead = calls.splice(0);
   check("PG17 the Windows table timing out kills the still-running root's tree (taskkill /PID root /T /F); an exited root's id is left alone",
     JSON.stringify(live) === JSON.stringify([["/PID", "100", "/T", "/F"]]) && dead.length === 0, { live, dead });
 }
-{ // bot review #260 50: --siblings rebuilds a dist/ made at another commit, and preflight reads the build's own commit, not dist/'s presence
+{ // --siblings rebuilds a dist/ made at another commit, and preflight reads the build's own commit, not dist/'s presence
   const siblingBuiltAt = (await import("./common.ts") as any).siblingBuiltAt ?? (() => "no helper"); const at = fs.mkdtempSync(path.join(os.tmpdir(), "pg14-")), pin = "e17f773a9247c41d5c872d760aac7f243748d134";
   fs.mkdirSync(path.join(at, "dist")); const bare = siblingBuiltAt(at);
   fs.writeFileSync(path.join(at, "dist", ".built-at"), "0000000000000000000000000000000000000000\n"); const other = siblingBuiltAt(at);
@@ -157,14 +157,14 @@ check("PG5 a zombie in the group is not counted as left running", suiteMembers(7
     { r, r2, a });
   fs.rmSync(tmp, { recursive: true, force: true }); }
 
-{ // bot review #260 483: a suite's early FAIL / SKIP survives the output cut; the gate reads them from the kept lines
+{ // a suite's early FAIL / SKIP survives the output cut; the gate reads them from the kept lines
   const { outputKeeper, failLines } = (await import("./suites.ts")) as any; const k = typeof outputKeeper === "function" ? outputKeeper(4000, 2000) : null;
   k?.add("ok   A1 fine\nFAIL B2 early red\n       {\"saw\":1}\nSKIP C3 not here\n"); for (let i = 0; i < 400; i++) k?.add("ok   filler row ".padEnd(40, "x") + "\n");
   const lines: string[] = k?.lines() ?? [];
   check("PG19 the gate's output keeper drops the middle, never a FAIL or SKIP line: an early red is still in the lines the gate greps and in its evidence",
     !!k && k.out.length <= 4000 && !k.out.includes("B2 early red") && lines.some((l) => /^FAIL B2/.test(l)) && lines.some((l) => /^SKIP C3/.test(l)) && failLines(lines).some((l) => /^FAIL B2/.test(l)) && !lines.some((l) => /^xx/.test(l)),
     { tail: k?.out.length, dropped: k?.dropped }); }
-{ // bot review #260 145: an isolation row a host can't run is OPTIONAL on the receipt (run.ts `optional`), never a silent n/a
+{ // an isolation row a host can't run is OPTIONAL on the receipt (run.ts `optional`), never a silent n/a
   const r = spawnSync(process.execPath, [path.join(path.dirname(fileURLToPath(import.meta.url)), "scripts-check.ts"), "--only", "I1", "--no-server"], { encoding: "utf8", env: { ...process.env, EIDO_SANDBOX: "inprocess", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, timeout: 120_000 });
   const out = (r.stdout ?? "") + (r.stderr ?? ""), optional = out.split("\n").filter((l) => /^\s*OPTIONAL\b/.test(l));
   check("PG20 scripts-check without isolation (EIDO_SANDBOX=inprocess) prints its I rows as OPTIONAL lines the gate's receipt keeps, not n/a",

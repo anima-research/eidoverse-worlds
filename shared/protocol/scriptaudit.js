@@ -113,7 +113,7 @@ export function auditScripts(L, getBlob, { run = null, depth: maxD = 8 } = {}) {
     const rerun = (ev) => run({ text: blob.text, self: id, key: b.script, event: ev, knobs: v.knobs ?? {}, now: a.ts, seed: b.seed, api: b.api ?? 1, st, reads: b.reads ?? { near: [], count: [], names: 0 }, limits: { wallMs: 10000 } });
     const res = rerun(event);
     if (!res.ok) { flags.push({ seq, check: "rerun", why: `the re-run failed: ${res.code}: ${res.why}` }); return; }
-    if (jcs(readShape(res.reads)) !== jcs(readShape(b.reads))) { if (typeof b.reads?.names === "number" && b.reads.names > 0) { skipped.push({ seq, why: WHO_WHY }); return; }   // a name re-runs as null and can steer the shape (bot review #260 52); a near count can't, so a forged one stays flagged
+    if (jcs(readShape(res.reads)) !== jcs(readShape(b.reads))) { if (typeof b.reads?.names === "number" && b.reads.names > 0) { skipped.push({ seq, why: WHO_WHY }); return; }   // a name re-runs as null and can steer the shape; a near count can't, so a forged one stays flagged
       flags.push({ seq, check: "reads", why: "the re-run asked different presence reads than the act records", want: readShape(res.reads), got: readShape(b.reads) }); return; }
     const want = elide(st, stampMotions(st, res.ops, a.ts));   // as the authority stamped and elided it (scriptrun)
     const outs = []; for (let i = seq + 1; i < L.length; i++) if (isE(L[i]) && L[i].cause === seq) outs.push(L[i]);
@@ -121,7 +121,7 @@ export function auditScripts(L, getBlob, { run = null, depth: maxD = 8 } = {}) {
     const got = state ? quiet(state) : [];
     const says = outs.filter((e) => e.kind === "say").map((e) => e.body?.text);
     const sameW = norm(want) === norm(got), sameS = jcs(says) === jcs(res.says), sameU = jcs(res.uses ?? []) === jcs(b.uses ?? []);
-    const bodiesOf = (r) => jcs((r.bodies ?? []).map((x) => ({ kind: x.kind, to: `body:${x.to}` }))), sameB = bodiesOf(res) === jcs(b.bodies ?? []);   // as scriptrun records them (bot review #260 32)
+    const bodiesOf = (r) => jcs((r.bodies ?? []).map((x) => ({ kind: x.kind, to: `body:${x.to}` }))), sameB = bodiesOf(res) === jcs(b.bodies ?? []);   // as scriptrun records them
     if (sameW && sameS && sameU && sameB) { reran++; return; }
     if (whoReads(b.reads)) { skipped.push({ seq, why: WHO_WHY }); return; }
     // an arrival's mismatch on a part both stand-ins agree on is named as one (review r10 M3): two stand-ins that agree can't prove

@@ -1095,7 +1095,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const from = typeof a.since === "number" ? a.since : (ctx.cursor.caughtUpTo ?? -1);
       const n = Number(a.limit ?? 60), limit = Number.isFinite(n) ? Math.min(200, Math.max(1, Math.floor(n))) : 60;   // 1–200; a non-number is the default
       const { said, more } = await ag.firstSaidSince(from, limit);
-      ctx.cursor.caughtUpTo = more ? said[said.length - 1].seq : ag.lastSeq;   // a full page moves the cursor only past what it showed (bot #260 #63)
+      ctx.cursor.caughtUpTo = more ? said[said.length - 1].seq : ag.lastSeq;   // a full page moves the cursor only past what it showed
       if (!said.length) return text(`nothing said since seq ${from}. You are up to seq ${ag.lastSeq}.`);
       const lines = said.map((m) => `[${m.seq}] ${m.who}: ${m.text}`);
       return text(`${said.length} message(s) since seq ${from} (now at ${ag.lastSeq}):\n${lines.join("\n")}${more ? "\n(more remain: call catch_up again)" : ""}`);
@@ -1134,7 +1134,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         delete args.at;
         // at sets the position only: a rotation or scale given in components.transform stays
         if (pt.length === 3 || bodiless) args.components = { ...(comps ?? {}), transform: { ...(comps?.transform ?? {}), pos: pt.length === 3 ? pt : [pt[0], ag.heightAt(pt[0], pt[1]), pt[1]] } };
-        else args.place = { ...(args.place && typeof args.place === "object" ? args.place : {}), at: pt };   // the resolved targets (bot #260 #107)
+        else args.place = { ...(args.place && typeof args.place === "object" ? args.place : {}), at: pt };   // the resolved targets
       } else if (!somewhere && a.from == null) {
         if (bodiless) args.components = { ...(comps ?? {}), transform: { pos: [ahead[0], ag.heightAt(ahead[0], ahead[1]), ahead[1]] } };
         else args.place = { at: ahead };

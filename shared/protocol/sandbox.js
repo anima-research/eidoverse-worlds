@@ -38,7 +38,7 @@ import { isEido, modelWord } from "../eido.js";
 let Q = null, unavailable = null;
 try { const mod = await import("quickjs-emscripten"); Q = await mod.getQuickJS(); }
 catch (e) { unavailable = String(e?.message ?? e).slice(0, 200); console.error(`[sandbox] quickjs-emscripten didn't load, so no script runs here: ${unavailable}`); }
-// Windows can't isolate (fifoOk), so no script runs there unless the operator opts in with EIDO_SANDBOX=inprocess (bot review #260 11)
+// Windows can't isolate (fifoOk), so no script runs there unless the operator opts in with EIDO_SANDBOX=inprocess
 const WINDOWS = "this server runs on Windows, where scripts can't be isolated yet, so none runs here unless its operator sets EIDO_SANDBOX=inprocess";
 const winRefuses = () => globalThis.process?.platform === "win32" && globalThis.process?.env?.EIDO_SANDBOX !== "inprocess";
 /** Is the sandbox here? (The authority says "unavailable" for every activation when it isn't.) */
@@ -273,7 +273,7 @@ export function runScript(x) {
   return h.finish(vmRun(x.text, h.input, x.event, h.limits, h.call, x.clock));
 }
 /** Does the source parse? (At upload and install: a refusal that teaches, before anything runs.) null (it parses), undefined
- *  (unchecked: no sandbox here; bot review #260 278), or {code, why}. */
+ *  (unchecked: no sandbox here), or {code, why}. */
 export function checkSyntax(text) {
   if (!Q) return undefined; // no sandbox: install still works; every activation says "unavailable"
   let rt = null, ctx = null;

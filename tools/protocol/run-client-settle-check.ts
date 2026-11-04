@@ -36,7 +36,7 @@ ok(/^ok\s+\S*a-holds-pipes-passes-test\.ts/m.test(out), "the file that exited 0 
 ok(/^SLOW\s+\S*b-holds-pipes-hangs-test\.ts/m.test(out), "the file that hung is a timeout", out.slice(-400));
 ok(/^ok\s+\S*c-browser-test\.ts \[browser, alone\]/m.test(out) && /; 1 launch a browser/.test(out), "the browser-marked file is reported [browser, alone] and counted once the lanes have drained the queue (bot #412)", out.slice(-600));
 // --import-only: a file whose top-level await never resolves is a timeout, not loaded; a missing package is a red under
-// --strict-env (the gate's client-tools row); either fails the run (bot review #260 187)
+// --strict-env (the gate's client-tools row); either fails the run
 const dir2 = path.join(root, "imports"); fs.mkdirSync(dir2);
 fs.writeFileSync(path.join(dir2, "c-hangs-at-import-test.ts"), `await new Promise(() => {});\n`);
 fs.writeFileSync(path.join(dir2, "d-missing-package-test.ts"), `import "no-such-package-zz-${Date.now()}";\n`);

@@ -72,7 +72,7 @@ jobs:
         env:
           EIDOVERSE_DIR: ${{ runner.temp }}/eidoverse-video
           PROTOCOL_KEEP: "1"   # keep each suite's scratch so a failure's logs can be uploaded
-          GATE_PR_HEAD: ${{ github.event.pull_request.head.sha }}   # empty on a push, where HEAD is the pushed head (bot review #260 28)
+          GATE_PR_HEAD: ${{ github.event.pull_request.head.sha }}   # empty on a push, where HEAD is the pushed head
           # no EIDO_CHROME_ARGS: each OS's Chrome flags are in tools/protocol/chrome.ts platformArgs (Linux --no-sandbox,
           # macOS --use-mock-keychain). macOS takes the default GL: 10-19 forced SwiftShader here for a hang whose cause was
           # the keychain; SwiftShader then blocked the page's main thread > 60 s and the lane failed 5/10 for days. Default

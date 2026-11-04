@@ -902,7 +902,7 @@ if (RIGID) { const W = playground("rr-group");
   const at = call(W, "rowan", "inspect", { id: "crate-1" }).world?.pos;
   ok(/back at its home/.test(cc?.lost ?? "") && JSON.stringify(at) === "[3,0,-1]", "RR2 …and the lost one, sent to its home, is told it's at its home", { lost: cc?.lost, at }); }
 
-// FL (bot review #260 23): a lift under an engine this reader doesn't carry still holds the thing out of the next carried epoch
+// FL: a lift under an engine this reader doesn't carry still holds the thing out of the next carried epoch
 { const W = playground("pc-fl"); const g = call(W, "rowan", "grab", { id: "ball" }); const L = log(W);
   const ep = L.findIndex((e) => e?.kind === "change" && e.body?.comp === "physics-engine"), lift = L.findIndex((e) => e?.kind === "sim" && e.verb === "lift" && e.body?.id === "ball");
   const recut = (C) => { const last = C[C.length - 1]; return copyOf([...C, { ...C[ep], ts: last.ts + 100, body: { ...L[ep].body, value: { ...L[ep].body.value, tickMs: 16 } } }]); };

@@ -255,7 +255,7 @@ await tryRow('RP12', async () => {
   check('RP12 …--force restores it anyway, byte-identical', rb3.status === 0 && sha(file) === before, [rb3.status, rb3.stderr.slice(0, 200)]);
 });
 
-// RP12b/RP12c (bot review #260 4, 8): an unsealed backup refuses a rollback; backup, seal and rollback fsync what they write
+// RP12b/RP12c: an unsealed backup refuses a rollback; backup, seal and rollback fsync what they write
 await tryRow('RP12b', async () => {
   const RF = await import('../server/repairfiles.ts');
   const root = fs.mkdtempSync(path.join(process.env.PROTOCOL_SCRATCH ?? process.env.TMPDIR ?? '/tmp', 'rp12b-')); const file = path.join(root, 'world.jsonl');
