@@ -22,7 +22,7 @@
 // shared/protocol/requests.js; the authority mints ids, so the console's id is read from each create's reply. A picture
 // has no part any more (shared/picture.js): it is the thing's own quad, so a hang is judged by that quad's texture,
 // and a held load shows the empty plate (hung, no map) until it lands.
-import { launchBrowser, ownedWorld, checker } from './probe-harness.mjs';
+import { launchBrowser, ownedWorld, checker, waitJoined } from './probe-harness.mjs';
 import { join } from 'node:path';
 import * as OP from '../shared/protocol/requests.js';
 import { qFromYaw } from '../shared/rot.js';
@@ -61,7 +61,7 @@ async function joinAs(name: string) {
   await pg.goto(`${world.origin}/?world=raceprobe&key=${world.key}&name=${name}`, { waitUntil: 'domcontentloaded' });
   await pg.fill('#d-name', name, { timeout: 5000 }).catch(() => {});   // the entry dialog, when it shows
   await pg.click('#d-go', { timeout: 5000 }).catch(() => {});
-  await pg.waitForSelector('#micbtn', { state: 'attached', timeout: 30000 });   // hidden when not pinned
+  await waitJoined(pg);
   return pg;
 }
 const req = async (pg: any, op: any) => {

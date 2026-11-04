@@ -31,7 +31,7 @@
 // Synchronization is on the AUTHORITATIVE repaint, never a sleep: after C the
 // probe waits for the block that only exists once the comp is in the bag (it
 // carries `take down`), and after D it polls for the refusal text.
-import { launchBrowser, ownedWorld, checker } from './probe-harness.mjs';
+import { launchBrowser, ownedWorld, checker, waitJoined } from './probe-harness.mjs';
 import { join } from 'node:path';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -87,7 +87,7 @@ try {
   await pg.goto(`${world.origin}/?world=piceditprobe&key=${world.key}&name=editor`, { waitUntil: 'domcontentloaded' });
   await pg.fill('#d-name', 'editor', { timeout: 5000 }).catch(() => {});   // the entry dialog, when it shows
   await pg.click('#d-go', { timeout: 5000 }).catch(() => {});
-  await pg.waitForSelector('#micbtn', { state: 'attached', timeout: 30000 });   // the mic badge (hidden when not pinned)
+  await waitJoined(pg);
   await spawn(pg);
   let s = await until(pg, (x) => x.part, 90_000);
   check('the model spawned and has a part named screenplane', s.part, JSON.stringify(s));

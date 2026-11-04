@@ -22,7 +22,7 @@
 //      preference (Mica, #192 review, blocker 1: the slider had promised
 //      "ambience and place-sound" since 2026-08-16 and the first placed
 //      sound ignored it).
-import { launchBrowser, ownedWorld, checker } from './probe-harness.mjs';
+import { launchBrowser, ownedWorld, checker, waitJoined } from './probe-harness.mjs';
 import { join } from 'node:path';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -59,7 +59,7 @@ const state = (pg: any) => pg.evaluate(async (id: string) => {
     entity: !!root, graphs: _playing.size, has: !!h,
     src: h?.el?.currentSrc ?? h?.el?.src ?? null, paused: h?.el?.paused ?? null, t: h?.el?.currentTime ?? null, dur: h?.el?.duration ?? null,
     gain: h?.gain?.gain?.value ?? null, world: _worldBus()?.gain?.value ?? null, eff: effectiveGain(id), panner: h ? [h.panner.positionX?.value ?? null, h.panner.positionY?.value ?? null, h.panner.positionZ?.value ?? null] : null,
-    ctx: audioContextState(), entityPos: pos,
+    ctx: audioContextState(), entityPos: pos, listenerPos: (() => { const L = h?.panner?.context?.listener; return L?.positionX ? [L.positionX.value, L.positionY.value, L.positionZ.value] : null; })(),
   };
 }, ID);
 const until = async (pg: any, pred: (s: any) => boolean, ms = 30000) => { const t0 = Date.now(); let s; while (Date.now() - t0 < ms) { s = await state(pg); if (pred(s)) return s; await new Promise((r) => setTimeout(r, 200)); } return s; };
@@ -76,18 +76,25 @@ try {
   // script runs, exactly as a saved preference would be
   await pg.addInitScript(() => { try { localStorage.setItem('eido.audio.prefs', JSON.stringify({ volWorld: 0 })); } catch { /* private mode */ } });
   await pg.goto(`${world.origin}/?world=soundprobe&key=${world.key}&name=listener`, { waitUntil: 'domcontentloaded' });
-  await pg.waitForSelector('#micbtn, #mictoggle', { timeout: 30000 });
+  const reloads = await waitJoined(pg);
   await spawn(pg);
   let s = await until(pg, (x) => x.entity, 90_000);
   check('the model spawned', s.entity, JSON.stringify(s));
   const t0 = Date.now() - 10_000;   // started ten seconds ago
   // a first write is stamped t0 = now; a same-src rewrite while it plays keeps the t0 it names (followups.js stampMedia; bot #260 96)
-  await sound(pg, { src, description: 'a probe tone', volume: 0.5, radius: 20 });
-  await sound(pg, { src, t0, description: 'a probe tone', volume: 0.5, radius: 20 });
+  await sound(pg, { src, description: 'a probe tone', volume: 0.5, near: 8, radius: 20 });
+  await sound(pg, { src, t0, description: 'a probe tone', volume: 0.5, near: 8, radius: 20 });
   s = await until(pg, (x) => x.has && x.dur > 0);
+  // the playhead is read right after the seek: an element keeps playing through a frozen headless main thread but
+  // slips against the wall clock while it does (7.5 s over a 2-minute freeze, 11-03), so a late read says nothing
+  const onPlayhead = (x: any) => { const d = Math.abs(x.t - ((Date.now() - t0) / 1000) % 30); return x.paused === false && Math.min(d, 30 - d) < 2.5; };   // a 30 s loop: the distance is on the circle
+  const sp = await until(pg, onPlayhead, 15000);
+  check('B. a t0 in the past seeks to the shared playhead ((now - t0) mod duration), not the top', onPlayhead(sp), `currentTime=${sp.t?.toFixed(2)} expected≈${(((Date.now() - t0) / 1000) % 30).toFixed(2)}`);
   const heldT0 = await pg.evaluate((id: string) => import('/lib/world.js').then((w: any) => w.bagOf(id)?.sound?.t0), ID);
   check('B. (setup) the world holds the ten-second-old t0 the probe measures from', heldT0 === t0, `held ${heldT0}, sent ${t0}`);
   check('A. one graph on the shared context, sourced from the store path', s.has && s.graphs === 1 && String(s.src).includes(src.split('/').pop()!) && s.ctx !== 'none', JSON.stringify(s));
+  // the gain is volume × gainAt(distance) (sounds.js tick, shared/sound.js); near: 8 holds that at 1 from the spawn, so the gain IS the authored volume
+  check('A. (setup) the listener stands inside near (8 m): the distance gain is 1', !!s.listenerPos && Math.hypot(s.listenerPos[0] - s.entityPos[0], s.listenerPos[1] - s.entityPos[1], s.listenerPos[2] - s.entityPos[2]) < 8, JSON.stringify({ listener: s.listenerPos, entity: s.entityPos }));
   check('A. the gain carries the volume', s.gain === 0.5, JSON.stringify(s.gain));
   check('F. …and with the listener\'s world volume at 0 it is heard at 0, the authored 0.5 preserved', s.world === 0 && s.eff === 0 && s.gain === 0.5, JSON.stringify({ gain: s.gain, world: s.world, eff: s.eff }));
   await pg.evaluate(() => import('/lib/voiceconsent.js').then((v: any) => v.setVolume('world', 1)));
@@ -100,19 +107,15 @@ try {
   await pg.keyboard.press('Shift');
   s = await until(pg, (x) => x.paused === false && x.t > 0, 15000);
   check('B. it plays after a gesture', s.paused === false && s.t > 0, JSON.stringify({ paused: s.paused, t: s.t, ctx: s.ctx }));
-  // the shared playhead is a function of the clock, not of when we looked:
-  // (now - t0) mod duration, measured at the moment of the read
-  const expected = ((Date.now() - t0) / 1000) % 30;
-  check('B. …from the shared playhead ((now - t0) mod duration), not the top', Math.abs(s.t - expected) < 2.5 && s.t > 5, `currentTime=${s.t.toFixed(2)} expected≈${expected.toFixed(2)}`);
   // C. same src, new volume: in place
-  await sound(pg, { src, t0, description: 'a probe tone', volume: 0.9, radius: 20 });
+  await sound(pg, { src, t0, description: 'a probe tone', volume: 0.9, near: 8, radius: 20 });
   s = await until(pg, (x) => Math.abs((x.gain ?? 0) - 0.9) < 1e-3, 5000);   // AudioParam holds float32
   check('C. a same-src replace adjusts in place: volume 0.9, still one graph, still playing', Math.abs(s.gain - 0.9) < 1e-3 && s.graphs === 1 && s.paused === false, JSON.stringify(s));
   // F. a partial preference composes with the authored volume, and follows a same-source update
   await pg.evaluate(() => import('/lib/voiceconsent.js').then((v: any) => v.setVolume('world', 0.5)));
   s = await until(pg, (x) => x.eff != null && Math.abs(x.eff - 0.45) < 1e-3, 3000);
   check('F. world 0.5 under authored 0.9 is heard at 0.45, authored kept at 0.9', Math.abs((s.eff ?? 0) - 0.45) < 1e-3 && Math.abs(s.gain - 0.9) < 1e-3, JSON.stringify({ gain: s.gain, world: s.world, eff: s.eff }));
-  await sound(pg, { src, t0, description: 'a probe tone', volume: 0.6, radius: 20 });
+  await sound(pg, { src, t0, description: 'a probe tone', volume: 0.6, near: 8, radius: 20 });
   s = await until(pg, (x) => x.eff != null && Math.abs(x.eff - 0.3) < 1e-3, 5000);
   check('F. a same-src update to 0.6 under world 0.5 is heard at 0.3, one graph', Math.abs((s.eff ?? 0) - 0.3) < 1e-3 && s.graphs === 1, JSON.stringify({ gain: s.gain, world: s.world, eff: s.eff, graphs: s.graphs }));
   // F. gone and back: the entity removed takes its graph; respawned and re-authored, it is heard under the same preference
@@ -121,7 +124,7 @@ try {
   check('F. the entity removed: no graph', !s.has && s.graphs === 0, JSON.stringify({ has: s.has, graphs: s.graphs, entity: s.entity }));
   await spawn(pg);
   s = await until(pg, (x) => x.entity, 90_000);
-  await sound(pg, { src, t0, description: 'a probe tone', volume: 0.9, radius: 20 });
+  await sound(pg, { src, t0, description: 'a probe tone', volume: 0.9, near: 8, radius: 20 });
   s = await until(pg, (x) => x.has && x.eff != null && Math.abs(x.eff - 0.45) < 1e-3, 15000);
   check('F. …respawned and re-authored at 0.9, heard at 0.45 under the listener\'s 0.5 that never changed', s.has && Math.abs((s.eff ?? 0) - 0.45) < 1e-3 && s.world === 0.5, JSON.stringify({ gain: s.gain, world: s.world, eff: s.eff }));
   await pg.evaluate(() => import('/lib/voiceconsent.js').then((v: any) => v.setVolume('world', 1)));
@@ -138,6 +141,7 @@ try {
   s = await state(pg);
   check('E. an un-opted-in link realizes nothing', !s.has && s.graphs === 0, JSON.stringify(s));
   check('no page errors across the cycle', errs.length === 0, errs.join(' | '));
+  check('the page never reloaded mid-cycle', reloads.length === 0, reloads.join(' | '));
 } catch (e: any) {
   console.log('probe aborted:', e?.message ?? e); if (errs.length) console.log('page errors:', errs.join(' | '));
   check('the probe ran to the end', false, e?.message ?? String(e));
