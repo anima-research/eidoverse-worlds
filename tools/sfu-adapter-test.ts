@@ -173,7 +173,7 @@ check("retirement clears the leg", (sfuDiag(W) as any).moderatorMuted.length ===
   registerSfuSender(WB, "dupL", (p) => wsB.push(p));  // bare keying: clobbers wsA…
   revokeSfuLeg(WB, "dupL");                           // …and this then deletes it
   setSfuConsent(WA, "dupL", 4, true);                 // negotiation fires in world A
-  await new Promise((r) => setTimeout(r, 300));
+  for (let i = 0; i < 100 && !wsA.length; i++) await new Promise((r) => setTimeout(r, 20));   // A's offer landed, then B is read
   check("world A's offer reaches world A's socket despite world B's register+revoke",
     wsA.length > 0, `wsA=${wsA.length}`);
   check("…and nothing leaks into world B's socket", wsB.length === 0, `wsB=${wsB.length}`);
@@ -269,7 +269,7 @@ check("retirement clears the leg", (sfuDiag(W) as any).moderatorMuted.length ===
   check("repeat fault UPDATES the reason (latest fault is what an operator needs)",
     voiceServiceState().state === "degraded" && voiceServiceState().reason === "fault-2");
   await new Promise((r) => setTimeout(r, 50));
-  check("degraded does NOT age into live — no silence timer exists to fire",
+  check("degraded stays degraded with no receipt (50 ms; a timer longer than that is not this row's)",
     voiceServiceState().state === "degraded");
   markVoiceLive("negotiation completed for test-leg");
   check("a positive receipt (completed negotiation) returns the service to live",
@@ -283,12 +283,12 @@ check("retirement clears the leg", (sfuDiag(W) as any).moderatorMuted.length ===
   const WR = "revoke-mid-offer"; const sent: any[] = [];
   mintSfuCredential(WR, "spk", 1, 2); mintSfuCredential(WR, "lis", 1, 2);
   const pcR: any = sfuState(WR).sfu.getLeg("lis")!.pc; const sld = pcR.setLocalDescription.bind(pcR);
-  pcR.setLocalDescription = async (d: any) => { await sld(d); revokeSfuLeg(WR, "lis"); };   // the revoke lands after the last await, before the send
+  let hooked = false; pcR.setLocalDescription = async (d: any) => { await sld(d); hooked = true; revokeSfuLeg(WR, "lis"); };   // the revoke lands after the last await, before the send
   registerSfuSender(WR, "lis", (p: any) => sent.push(p));
   setSfuConsent(WR, "lis", 2, true);                 // negotiation fires: sfu-route, then the awaits, then sfu-offer
   await new Promise((r) => setTimeout(r, 600));
   check("a leg revoked mid-negotiation is sent no offer (the route was sent, the offer was not)",
-    sent.some((p) => p.type === "sfu-route") && !sent.some((p) => p.type === "sfu-offer"), `sent=${JSON.stringify(sent.map((p) => p.type))}`);
+    hooked && sent.some((p) => p.type === "sfu-route") && !sent.some((p) => p.type === "sfu-offer"), `hooked=${hooked} sent=${JSON.stringify(sent.map((p) => p.type))}`);
 }
 
 // ── a leg re-minted (same id) while its offer was being made: the old offer is not sent to the new leg ─

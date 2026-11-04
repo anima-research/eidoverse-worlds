@@ -307,8 +307,8 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     const kw = wren.msgs.length; wren.raw({ type: "voice-moderate", id: "Moss", muted: false });
     const wrenErr = await tryUntil("wren's unmute is answered with an error", () => wren.msgs.slice(kw).find((m) => m.type === "error"), { ms: 5000 });   // the refusal, not a 300 ms guess
     const still = (await (await fetch(`http://127.0.0.1:${S4.port}/relay-diag?world=heath`)).json()).moderatorMuted ?? [];
-    fern.raw({ type: "voice-moderate", id: "Moss", muted: false }); await sleep(400);
-    const after = (await (await fetch(`http://127.0.0.1:${S4.port}/relay-diag?world=heath`)).json()).moderatorMuted ?? [];
+    fern.raw({ type: "voice-moderate", id: "Moss", muted: false });
+    const after = (await tryUntil("the moderator's unmute reaches the SFU", async () => { const m = (await (await fetch(`http://127.0.0.1:${S4.port}/relay-diag?world=heath`)).json()).moderatorMuted ?? []; return m.includes("Moss") ? null : m; }, { ms: 5000 })) ?? ["Moss"];
     ok(!!wrenErr && still.includes("Moss") && !after.includes("Moss"), "RS2 a builder's voice-moderate is refused (needs mute, told in an error); the moderator's unmute lifts it", [wrenErr, still, after]);
     // RS3 (R 10-28, conventional): a kick removes them now and they may come straight back; a kick with a length is refused
     const timed = await fern.req("kick", { who: you(jm2), minutes: 5 });
@@ -454,7 +454,7 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     const recs = ((await own.req("modlog", { who: you(j9) })).records ?? []).filter((r) => r.verb === "mute");
     const byOwn = recs.find((r) => r.actor === you(jo)), byMoss = recs.find((r) => r.actor === you(jm));
     ok(gm.ok && mo.ok && mm.ok && recs.length === 2 && JSON.stringify(byOwn?.channels) === '["chat"]' && byOwn.until <= Date.now() + 5 * 60_000
-      && JSON.stringify(byMoss?.channels) === '["voice"]',
+      && JSON.stringify(byMoss?.channels) === '["voice"]' && byMoss.until <= Date.now() + 60 * 60_000 && byMoss.until > byOwn.until,
       "GG6 an owner's 5-min chat mute and a moderator's 1-h voice mute on one guest carry to the next guest as two records, each its issuer's, channels and end kept", [gm.ok, mo.ok, mm.ok, recs]);
     await own.req("unmute", { who: you(j9) }); g9.close(); await tryUntil("drifter9's socket is closed", () => g9.closed != null, { ms: 3000 });
     for (const x of [moss]) x.close(); }

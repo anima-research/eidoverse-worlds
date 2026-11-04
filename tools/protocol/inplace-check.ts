@@ -587,10 +587,11 @@ const actorsOf = (d: string) => [...new Set(fs.readFileSync(path.join(d, "world.
     "IP18 an interrupted swap's identities aren't in the directory until the recovery finishes it, which adds them", { died: died.code, missingMid: actors.filter((a) => !mid[a]).length, code: r.code, out: r.out.slice(-300) }); }
 // ---- the swap, its recovery and the rollback each decide from the manifest, idempotently ----
 // IP35 (435) a swap that fails after its identities went in (injected step 7: the marker's removal) forgets them again
-{ const name = "nameless4"; oldWorld(name); const before = fs.readFileSync(dirf, "utf8");
-  const r = xlate([name], { TRUST_NAMES: "", WORLD_TS_FAULT_AT_STEP: "7" });
-  ok(r.code !== 0 && /\(injected\) step 7 failed/.test(r.out) && fs.readFileSync(dirf, "utf8") === before && !temps().some((t) => t.includes(name)),
-    "IP35 a swap that fails after the identities were written forgets them: the shared directory is as it was", { code: r.code, dirSame: fs.readFileSync(dirf, "utf8") === before, out: r.out.slice(-300) }); }
+{ const name = "nameless4"; oldWorld(name, { extra: [{ actor: "Bob", verb: "say", args: { text: "nameless4 is its own world" } }] }); const before = fs.readFileSync(dirf, "utf8");
+  const r = xlate([name], { TRUST_NAMES: "", WORLD_TS_FAULT_AT_STEP: "7" }); const dirSame = fs.readFileSync(dirf, "utf8") === before;
+  const clean = xlate([name], { TRUST_NAMES: "" }); const added = Object.keys(JSON.parse(fs.readFileSync(dirf, "utf8")).ids ?? {}).length - Object.keys(JSON.parse(before).ids ?? {}).length;   // its own bytes: the clean run adds ids, so the failed one had some to forget
+  ok(r.code !== 0 && /\(injected\) step 7 failed/.test(r.out) && dirSame && !temps().some((t) => t.includes(name)) && clean.code === 0 && added > 0,
+    "IP35 a swap that fails after the identities were written forgets them: the shared directory is as it was (the clean run then adds them)", { code: r.code, dirSame, clean: clean.code, added, out: r.out.slice(-300) }); }
 // IP34 (138) a rollback interrupted after it put the log back (log.original.jsonl → log.jsonl, the manifest still there) finishes on a re-run
 { const name = "halfback"; const d = oldWorld(name); const fp = fingerprint(d);
   const t = xlate([name]); fs.renameSync(path.join(d, "log.original.jsonl"), path.join(d, "log.jsonl"));   // what the interrupted rollback had done

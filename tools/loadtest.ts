@@ -97,14 +97,15 @@ setTimeout(() => {
   perfs.forEach((s, i) => { if (s.ws.readyState === 1 && burstTexts[i]) s.ws.send(JSON.stringify({ type: "request", id: `burst-${i}`, verb: "say", args: { text: burstTexts[i] } })); });
 }, DURATION / 2);
 
-// reconnect churn: 10 spectators drop and rejoin mid-run
+// reconnect churn: 10 spectators drop and rejoin mid-run (the dropped ones were present at the burst: kept for the gates)
+const retired: Spec[] = [];
 setTimeout(async () => {
   for (let i = 0; i < Math.min(10, specs.length); i++) {
     const idx = specs.length - 1 - i;
     specs[idx].ws.close();
     try {
       const re = await connect(`spec-re-${i}`, true);
-      specs[idx] = re; // replaces: fresh join must succeed under load
+      retired.push(specs[idx]); specs[idx] = re; // replaces: fresh join must succeed under load
     } catch { specs[idx].joinMs = -2; }
   }
 }, DURATION * 0.6);
@@ -121,7 +122,7 @@ const endAt = performance.now();
 const fpsPer = specs.map((s) => s.frames / Math.max(0.001, (endAt - s.snapAt - 500) / 1000));
 const latAll = specs.flatMap((s) => s.lat);
 const gapsTotal = specs.reduce((a, s) => a + s.gaps, 0);
-const heard = specs.filter((s) => s.snapAt > 0 && s.snapAt < burstAt);   // present when the burst was said
+const heard = [...specs, ...retired].filter((s) => s.snapAt > 0 && s.snapAt < burstAt);   // present when the burst was said
 const burstMisses = heard.filter((s) => burstTexts.filter((t) => t && !s.says.has(t)).length > 0).length;
 const reconnFails = specs.filter((s) => s.joinMs === -2).length;
 

@@ -249,7 +249,8 @@ else {
   await r.stop(); }
 
 // SU12 (bot #342): the shared picker never hands out a live sequencer's port (8968/8970), even from a window that starts on one
-{ const p = freePort(8968, 5, 8968); ok(p !== 8968 && p !== 8970 && p > 8968, "SU12 freePort skips the live sequencers' ports 8968 and 8970", p); }
+{ const p = freePort(8968, 5, 8968); ok(p !== 8968 && p !== 8970 && p > 8968, "SU12 freePort skips the live sequencers' ports 8968 and 8970", p);
+  const p2 = freePort(8970, 5, 8970); ok(p2 !== 8970 && p2 > 8970, "SU12b …from a window that starts on 8970 too", p2); }
 
 console.log(`[setup-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -110,6 +110,8 @@ def verify(data):
             entries.append(parse_ijson(raw))
         except Malformed as m:
             return {"status": "broken", "at": seq, "detail": "malformed line in a chained log: " + m.code}
+        if not isinstance(entries[-1], dict):
+            return {"status": "broken", "at": seq, "detail": "malformed line in a chained log: not an object"}
     if not entries:
         return {"status": "unchained", "detail": "empty log"}
     g = entries[0]
@@ -137,7 +139,7 @@ def verify(data):
                 return {"status": "broken", "at": seq, "detail": "head mismatch (an earlier entry was altered)"}
             try:
                 sig = unb64u(e.get("sig"))
-            except Malformed:
+            except (Malformed, ValueError):
                 return {"status": "broken", "at": seq, "detail": "bad signature encoding (not base64url)"}
             try:
                 pub.verify(sig, sig_msg(world_id, seq, head.hex()))

@@ -31,11 +31,14 @@ const EXEMPT = [["tools/protocol/import-v1/", "the old-world importer names the 
 // a word-start v/V + N not followed by another digit; or a camelCase part (lowercase, then V + N)
 // (a dotted number after it, `vN.4` or `vN.4.2`, is some tool's release, not the protocol)
 const NAME = new RegExp(`(?<![A-Za-z0-9])[vV]${N}(?![0-9]|\\.[0-9])|(?<=[a-z])V${N}(?![0-9])`);
-// the camelCase part again on the RAW line (a long identifier like useVNProtocolMode is blanked as opaque below: bot review
-// #260 377); it must be followed by a Word or end the identifier, which a base64 run (`…hVNBA/…`) isn't
+// the camelCase part again, on the line with only its 40+ runs blanked (a long identifier like useVNProtocolMode is blanked
+// as opaque below; a 40+ run is a signature or hash, never a name); it must be followed by a Word or end the identifier
 const CAMEL = new RegExp(`(?<=[a-z])V${N}(?![0-9])(?=[A-Z][a-z]|[^A-Za-z0-9]|$)`);
 // signatures, keys and integrity hashes: one unbroken run of 20+ base64/hex characters with no word separator in it
-const OPAQUE = /[A-Za-z0-9+/=]{20,}/g;
+const OPAQUE = /[A-Za-z0-9+/=]{20,}/g, LONG = /[A-Za-z0-9+/=]{40,}/g;
+// the rules on their own samples: an identifier is caught, a signature holding the same letters is not
+for (const [line, hit] of [[`const mode = useV${N}ProtocolMode();`, true], [`"sig": "${"aV" + N + "AbQ9".repeat(12)}"`, false]])
+  if (CAMEL.test(line.replace(LONG, " ")) !== hit) { console.log(`[nonumber-check] self-check failed on ${line.slice(0, 40)}`); process.exit(2); }
 const files = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], { cwd: ROOT, encoding: "utf8" })
   .split("\0").filter(Boolean).filter((f) => fs.existsSync(path.join(ROOT, f)));
 const offences = [];
@@ -49,7 +52,7 @@ for (const rel of files) {
   if (buf.subarray(0, 8192).includes(0)) continue;   // binary
   buf.toString("utf8").split("\n").forEach((line, i) => {
     const bare = line.replace(OPAQUE, (m) => (/[0-9]/.test(m) && /[A-Z]/.test(m) && /[a-z]/.test(m) ? " " : m));
-    if ((NAME.test(bare) || CAMEL.test(line)) && !UNRELATED.some(([f, re]) => rel === f && re.test(line))) offences.push(`${rel}:${i + 1}  ${line.trim().slice(0, 120)}`);
+    if ((NAME.test(bare) || CAMEL.test(line.replace(LONG, " "))) && !UNRELATED.some(([f, re]) => rel === f && re.test(line))) offences.push(`${rel}:${i + 1}  ${line.trim().slice(0, 120)}`);
   });
 }
 for (const o of offences) console.log("  " + o);

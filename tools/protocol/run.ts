@@ -123,7 +123,7 @@ if (argv.includes("--siblings")) {
       const c = spawnSync("git", ["-C", at, "checkout", "-q", commit], { stdio: "inherit" });
       if (c.status !== 0) { console.error(`--siblings: ${dir} could not check out ${commit}`); process.exit(1); }
     }
-    if (build && siblingBuiltAt(at) !== commit) { for (const step of [["install"], ["run", "build"]]) {
+    if (build && siblingBuiltAt(at) !== commit) { fs.rmSync(path.join(at, "dist", ".built-at"), { force: true }); for (const step of [["install"], ["run", "build"]]) {
       const c = spawnSync(process.execPath, step, { cwd: at, stdio: "inherit" });
       if (c.status !== 0) { console.error(`--siblings: \`bun ${step.join(" ")}\` failed in ${dir}`); process.exit(1); }
     } fs.writeFileSync(path.join(at, "dist", ".built-at"), commit + "\n"); }   // a dist/ built at another commit is rebuilt
@@ -367,8 +367,8 @@ if (receiptAt) {
     os: { platform: process.platform, release: os.release(), arch: process.arch }, runtimes: { ...RUNTIMES, bun: { ...RUNTIMES.bun, found: Bun.version } },
     library: LIBRARY ? { head: LIBRARY_HEAD, pinned: LIBRARY_PIN } : null, scratch: { dir: SCRATCH_ROOT, kept: !!process.env.PROTOCOL_KEEP }, seconds: Math.round((performance.now() - t0) / 1000),
     tally: Object.fromEntries((["core", "main", "browser"] as Lane[]).map((l) => [l, { pass: count(l, "pass"), fail: count(l, "fail"), skip: count(l, "skip") }])),
-    notSelected: notRun, suites,
-    // one hash over every suite's captured output, in run order: the log this verdict rests on
+    notSelected: notRun, suites, optional: Object.fromEntries(optional),
+    // one hash over every suite's kept output (its tail and every verdict line, outputKeeper), in run order: the log this verdict rests on
     logSha256: createHash("sha256").update(suites.map((x) => `${x.name}\t${x.outSha256 ?? ""}`).join("\n")).digest("hex"),
   };
   fs.writeFileSync(receiptAt, JSON.stringify(receipt, null, 1) + "\n");

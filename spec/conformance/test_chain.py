@@ -141,5 +141,12 @@ t = copy.deepcopy(es); t[0]["body"]["sequencer"] = "nokey"
 r = chain.verify(dump(t))
 check("4t …a key without its ed25519: prefix likewise", r["status"] == "broken" and r["at"] == 0, r)
 
+t = copy.deepcopy(es); i = next(i for i, e in enumerate(t) if "sig" in e); t[i]["sig"] = t[i]["sig"][:-1]
+r = chain.verify(dump(t))
+check("4u a sig whose length base64 can't pad (85 chars) is broken at its entry, not a crash", r["status"] == "broken" and r["at"] == i and "encoding" in r["detail"], r)
+for body, where in ((b"5\n", "as genesis"), (dump(es[:1]) + b'"x"\n' + dump(es[1:]), "before the first chain point")):
+    r = chain.verify(body)
+    check("4v a line that is JSON but not an object (%s) is broken at its line, not a crash" % where, r["status"] == "broken" and "not an object" in r["detail"], r)
+
 print("%d/%d passed" % (passed, passed + failed))
 raise SystemExit(1 if failed else 0)
