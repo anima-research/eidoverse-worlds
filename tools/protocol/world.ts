@@ -490,7 +490,7 @@ if (cmd === "found") {
 } else if (cmd === "info") {
   const name = rest[0]; if (!name || !NAME.test(name)) die("usage: info <name>");
   if (!isWorldSaved(name)) die(`${name} is not a world (no world.jsonl with a genesis)`);
-  const w = openLive(path.join(WORLDS_DIR, name), name);
+  const w = openLive(path.join(WORLDS_DIR, name), name, { readOnly: true });
   const st = w.state();
   console.log(JSON.stringify({ name, worldId: w.worldId, entries: w.entries.length, status: st.status,
     entities: Object.keys(st.entities).length - 1, entitiesNote: "not counting @world, the world's own entity",
@@ -508,8 +508,8 @@ if (cmd === "found") {
     if (!r.ok) die(`rollback refused: ${r.why}`);
     console.log(`restored ${path.join(dir, "world.jsonl")} from ${r.backup}: ${r.restored.size} bytes, sha256 ${r.restored.sha256} (byte-identical to the pre-repair log; ${r.dropped} bytes written by the repair and since are gone)`);
   } else {
-    const w = openLive(dir, name, { catalogue: ENGINE_CATALOGUE, scripts: null });
     const by = flag("by") ?? null, dryRun = rest.includes("--dry-run");
+    const w = openLive(dir, name, { catalogue: ENGINE_CATALOGUE, scripts: null, readOnly: dryRun });
     const say = (r: any) => { const L = r.steps.lift, R = r.steps.rename, P = r.steps.repair;
       console.log(`  lift-sockets:      ${L.made.length} host(s)${L.made.length ? ` (${L.made.map((m: any) => m.host).join(", ")})` : ""}, ${L.failed.length} refused${L.failed.length ? ` ${JSON.stringify(L.failed).slice(0, 300)}` : ""}`);
       console.log(`  rename-components: ${R.renamed.length} rename(s)${R.renamed.length ? ` (${R.renamed.map((x: any) => `${x.id}.${x.from ?? x.component}`).slice(0, 12).join(", ")})` : ""}, ${R.failed.length} refused${R.failed.length ? ` ${JSON.stringify(R.failed).slice(0, 300)}` : ""}`);

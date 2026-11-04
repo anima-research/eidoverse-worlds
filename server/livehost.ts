@@ -54,7 +54,8 @@ export type LiveOpts = { /** the act rate (server/config.ts RATE_POLICY); defaul
   /** speech is arrival-only (R 10-18): the seq at or below which this asker may not read a say's body; null = no floor (storage.js worldOf) */ sayFloor?: (actor: string) => number | null;
   /** a sim checkpoint once `every` entries follow the last one (authority checkpointSim; server policy SIM_CHECKPOINT_EVERY); none: only after launches */ simCheckpoint?: { every: number };
   /** the derived fold cache (server/statecache.ts): written every `every` entries; onRefold after a re-derive disagreed */ stateCache?: { every: number; onRefold?: () => void };
-  /** read the whole log even when the fold cache would let the boot read only its tail (the fallback; the suites' control) */ eager?: boolean };
+  /** read the whole log even when the fold cache would let the boot read only its tail (the fallback; the suites' control) */ eager?: boolean;
+  /** a reader's open (info, a dry run): the torn tail is left for the writer to cut, purged leftovers are left in place */ readOnly?: boolean };
 
 /** An in-place translation's in-progress marker, like git's index.lock (tools/protocol/world.ts translateInPlace; R 10-27). */
 export const SWAP_MARKER = "translation.lock";
@@ -78,7 +79,7 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   let logEnd = 0, lastStart = 0, genEnd = 0;   // where the head line sits in the file (the next cache's offsets)
   let entries: Any[];
   if (lazy) { entries = lazy.entries; genEnd = cfile.at.g; logEnd = lazy.size; lastStart = lazy.lastStart; }
-  else { const buf = readLogBytes(logPath); entries = readLog(buf).map(posAt);
+  else { const buf = readLogBytes(logPath, { cut: !opts.readOnly }); entries = readLog(buf).map(posAt);
     logEnd = buf.length; genEnd = buf.indexOf(0x0a) + 1; lastStart = logEnd ? buf.lastIndexOf(0x0a, logEnd - 2) + 1 : 0; }
   // governance is RESERVED (§13): this server neither writes nor validates `sequencer` entries, and one may have moved the
   // writer role somewhere it can't check, so it refuses to serve the world rather than fold past the entry and write on
@@ -118,7 +119,7 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
     ...modLogAt(path.join(dir, "world.mod.jsonl")),
   });
 
-  if (!lazy) dropPurgedLeftovers(dir, entries, blobPath, cfile);
+  if (!lazy && !opts.readOnly) dropPurgedLeftovers(dir, entries, blobPath, cfile);
 
   // ---- the views, built once from the log (or seeded from the cache's, at its covered line), then advanced per entry ----
   // a cache's views that don't fit (a hand edit, a bad disk) throw somewhere below: the boot reads the whole log instead (bot #30)

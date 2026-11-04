@@ -420,6 +420,11 @@ ok(/snapshot\.json agrees/.test(r1.out) && /mtime unchanged: true/.test(r1.out) 
   const n = Object.keys(fold(readLog(fs.readFileSync(path.join(porch, "world.jsonl")))).entities).filter((k) => k !== "@world").length;
   ok(j && j.entities === n && n === 2 && !("things" in j) && /not counting @world/.test(j.entitiesNote ?? ""), "IP7 info says `entities` (every entity but @world, and says so), never `things`", j ?? r.out); }
 
+// ================= IP44: info is a reader: a torn last line is left for the writer to cut =================
+{ const log = path.join(porch, "world.jsonl"); const before = fs.readFileSync(log); fs.appendFileSync(log, '{"torn":'); const torn = fs.readFileSync(log);
+  const r = tool(["info", "porch"]); const after = fs.readFileSync(log); fs.writeFileSync(log, before);
+  ok(r.code === 0 && after.equals(torn), "IP44 `info` leaves a torn last line in place (a reader never cuts the writer's line)", { code: r.code, cut: torn.length - after.length, out: r.out.slice(-200) }); }
+
 // ================= IP9: the namespace is the world's name =================
 { const text = fs.readFileSync(path.join(porch, "world.jsonl"), "utf8");
   ok(text.includes('"porch/heart"') && !text.includes("translating"), "IP9 the world's own inventions are namespaced by its name (porch/heart), never by the temporary directory", text.match(/"[^"]*\/heart"/g)); }
