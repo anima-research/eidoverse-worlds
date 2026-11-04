@@ -80,7 +80,7 @@ export const pageLimit = (v: unknown): number => { const n = Number(v ?? LIMITS.
 export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
   "history": ({ c, ws, now, expel }, msg) => {
     // Speech is arrival-only (R 10-18): the log keeps every say, but a page holds only the lines said since this
-    // connection arrived, unless it is the owner's, an operator's or a readChat holder's (world.ts isAdmin), who reads the master log.
+    // connection arrived, unless it holds readChat (owners do; world.ts isAdmin), which reads the master log.
     // Spectators page like anyone else: what they were present for.
     if (!c.world) return;
     const r = c.world.readHistory({
@@ -470,7 +470,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       gone.push(...takePending(id, fold));
       const unsaved = saveServerBans();   // the lift holds in memory only when the file wasn't written: said
       console.log(`[mod] ${c.id} lifted server ban on ${id}${gone.length ? ` (${gone.length} record(s))` : " (was not banned)"}`);
-      ws.send(JSON.stringify({ type: "mod", text: (gone.length ? `${id} is no longer banned server-wide` : `${id} was not banned server-wide`) + (unsaved ? ` (${notPersisted(unsaved, true)})` : "") }));
+      ws.send(JSON.stringify({ type: "mod", text: (gone.length ? `${id} is no longer banned server-wide` : `${id} was not banned server-wide`) + (unsaved ? ` (${notPersisted(unsaved)})` : "") }));
       return;
     }
     // server-ban (security review 10-18 H1): a ban is filed against what the DOOR checks — the target's proven account, or a
@@ -513,7 +513,8 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       }
     }
     console.log(`[mod] ${c.id} server-banned ${id} (${accounts.size} account(s), ${guestAddrs.size} guest address(es))${reason ? ` (${reason})` : ""}${expelled ? ` — ${expelled} session(s) disconnected` : ""}`);
-    ws.send(JSON.stringify({ type: "mod", text: `${id} is banned from all worlds${until ? ` until ${new Date(until).toISOString().slice(0, 10)}` : ""}${reason ? ` — ${reason}` : ""}${expelled ? ` (${expelled} live session${expelled === 1 ? "" : "s"} disconnected)` : ""}${unsaved ? ` (${notPersisted(unsaved)})` : ""}` }));
+    const addrCapped = guestAddrs.size && !(until && until <= ts + ADDR_BAN_MS) ? " (guest addresses: 24 h at most)" : "";
+    ws.send(JSON.stringify({ type: "mod", text: `${id} is banned from all worlds${until ? ` until ${new Date(until).toISOString().slice(0, 10)}` : ""}${addrCapped}${reason ? ` — ${reason}` : ""}${expelled ? ` (${expelled} live session${expelled === 1 ? "" : "s"} disconnected)` : ""}${unsaved ? ` (${notPersisted(unsaved)})` : ""}` }));
     return;
   }
 };
