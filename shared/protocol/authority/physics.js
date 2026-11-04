@@ -267,7 +267,7 @@ const ZONES = new WeakMap();
 function levelAt(st, lv, p) {
   if (lv == null) return null;
   let z = ZONES.get(st.entities); if (!z) { const zs = zonesOf(st); ZONES.set(st.entities, (z = { zs, volumes: waterVolumes(zs) })); }
-  return z.zs.exclusions.length ? worldLevelAt(p, z.zs, lv, { volumes: z.volumes }) : lv;
+  return worldLevelAt(p, z.zs, lv, { volumes: z.volumes });
 }
 function bodyAt(st, p) {   // where a body claimed at p stands: {y (feet), ground}
   const g = supportBelow(st, p[0], p[2], p[1]).y; return { y: Math.max(p[1], g), ground: g };
