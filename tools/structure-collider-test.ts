@@ -42,7 +42,7 @@ const {
   colliders, fitStructureBoxes, removeStructureBoxes, structureBoxIds,
   fitSupportBox, removeCollider, resolveColliders, surfaceUnder,
 } = await import('../client/lib/colliders.js');
-const { planStructure } = await import('../shared/structure.js');
+const { planStructure, collisionBoxes } = await import('../shared/structure.js');
 const { transformOf: structureTf } = await import('../client/lib/realize/structuretf.js');
 
 let pass = 0, fail = 0;
@@ -241,5 +241,9 @@ const WALK = PLAN.levels[0].y;
 // review of #260, #474: a negative scale mirrors (componentspec.js), so a mirrored building must draw mirrored, not snap to 1
 { const u = structureTf({ scale: -1 }), p = structureTf({ scale3: [-1, 1, 1] }), z = structureTf({ scale: 0, scale3: [0, 1, 1] });
   check('a building keeps a negative (mirroring) scale and scale3; a zero one falls back', u.scale === -1 && JSON.stringify(p.scale3) === '[-1,1,1]' && z.scale === 1 && z.scale3 === null, JSON.stringify({ u: u.scale, p: p.scale3, z: [z.scale, z.scale3] })); }
+// a diagonal wall is stair-stepped at ~1.2 wallT per step, so a legal but tiny wallT must not mean an unbounded box count
+{ const thin = collisionBoxes({ tile: 1, wallT: 1e-4, levels: [{ y: 0, tiles: [[0, 0]], walls: [[2, 0, 0]] }] }).filter((b: any) => b.kind === 'wall');
+  const step = Math.SQRT2 / Math.max(1, thin.length - 1), covered = thin.every((b: any) => (b.x1 - b.x0) >= step && (b.z1 - b.z0) >= step);
+  check('a diagonal wall at wallT 1e-4 is at most 65 boxes, each still wider than its step', thin.length <= 65 && covered, `${thin.length} boxes, step ${step.toFixed(4)}`); }
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
