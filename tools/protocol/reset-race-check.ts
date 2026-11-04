@@ -32,6 +32,16 @@ ok(r?.ok === false && r?.refused?.code === "reset", "RR2 the straggler is refuse
 ok(lines("race").length === before, "RR3 the new world's file gained no line from the old log", { before, after: lines("race").length });
 ok(!fresh.live.state().entities.straggler && fresh.live.entries.length === before, "RR4 the fresh log never saw it", { head: fresh.live.entries.length });
 ok(old.requestSync("olive", "say", { text: "late" })?.refused?.code === "reset", "RR5 the old log stays retired for every later request");
+// RR7: the world directory's sync failing AFTER the fresh log is renamed into place is said, not a failed reset: the fresh log is
+// there, the world stays live and is not retired (a retirement told the owner to put the old log back, for nothing)
+if (process.platform !== "win32") { foundWorld(path.join(process.env.WORLDS_DIR, "synced"), "synced", "olive");
+  const sw = new World("synced"); const wdir = path.resolve(process.env.WORLDS_DIR, "synced"); const o = fs.openSync; let threw = 0;
+  const oldIno = fs.statSync(path.join(wdir, "world.jsonl")).ino;   // the dir's open after the fresh log replaced the old one is the one that fails
+  fs.openSync = function (p, ...a) { if (path.resolve(String(p)) === wdir && fs.statSync(path.join(wdir, "world.jsonl")).ino !== oldIno) { threw++; throw new Error("injected: fsync of the world dir"); } return o.call(fs, p, ...a); };
+  let arch7 = null, err7 = null; try { arch7 = sw.resetWorld(); } catch (e) { err7 = e; } finally { fs.openSync = o; }
+  const entries = fs.readdirSync(wdir);
+  ok(threw > 0 && arch7 && !err7 && !sw.log.retired && entries.includes("world.jsonl") && sw.log.requestSync("olive", "say", { text: "after" })?.ok === true,
+    "RR7 a sync that fails after the swap: the reset stands (its archive returned), the world takes writes, nothing is retired", { threw, err: String(err7?.message ?? err7), entries }); }
 // RR6: a failure after the fresh log is in place has erased the world; the owner is told it was, not that nothing changed
 { const { REQUEST_MESSAGES } = await import("../../server/requestwire.ts");
   const { owner } = foundWorld(path.join(process.env.WORLDS_DIR, "reopen"), "reopen", "olive");

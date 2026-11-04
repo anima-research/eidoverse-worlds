@@ -617,18 +617,20 @@ export function resetWorld(log: WorldLog): string {
   dropCache(dir);   // derived from the log that leaves (server/statecache.ts): the fresh world derives its own
   // the old files are linked into the archive, then the fresh log renamed OVER world.jsonl: no moment, crash or failure, leaves the
   // world without a log (bot review of #260, #10: moved out first, a crash between the renames lost the world from the listing)
-  const linked: string[] = []; let swapped = false;
+  const logFile = path.join(dir, "world.jsonl"), poses = path.join(dir, "poses.json"); let linked = false, posesMoved = false;
   try {
-    for (const f of ["world.jsonl", "poses.json"]) if (fs.existsSync(path.join(dir, f))) { keepCopy(path.join(dir, f), path.join(arch, f)); linked.push(f); }
+    if (fs.existsSync(logFile)) { keepCopy(logFile, path.join(arch, "world.jsonl")); linked = true; }
+    if (fs.existsSync(poses)) { fs.renameSync(poses, path.join(arch, "poses.json")); posesMoved = true; }   // the old world's poses: the archive's now
     syncDir(arch);   // the archive's names first, then the world's: a crash never loses the old log (house 6344940039)
-    fs.renameSync(path.join(fresh, "world.jsonl"), path.join(dir, "world.jsonl")); swapped = true;
-    try { fs.unlinkSync(path.join(dir, "poses.json")); } catch { /* none */ }   // the old world's poses: in the archive now
-    syncDir(dir);
+    fs.renameSync(path.join(fresh, "world.jsonl"), logFile);
   } catch (e: Any) { const err: Any = new Error(String(e?.message ?? e)); err.movedTo = arch; err.freshAt = fresh;
-    // not swapped: the old log is where it was, and the archive's copies of it go (the world stays live); logMoved also
-    // covers an earlier failed reset that left no world.jsonl
-    if (!swapped) { for (const f of linked) try { fs.unlinkSync(path.join(arch, f)); } catch { /* gone */ } try { fs.rmdirSync(arch); } catch { /* not empty */ } }
-    err.swapped = swapped; err.logMoved = swapped || !fs.existsSync(path.join(dir, "world.jsonl")); throw err; }
+    // not swapped: the old log and poses are put back where they were, and the archive goes (the world stays live); logMoved
+    // also covers an earlier failed reset that left no world.jsonl
+    if (posesMoved) try { fs.renameSync(path.join(arch, "poses.json"), poses); } catch { /* the archive keeps it */ }
+    if (linked) try { fs.unlinkSync(path.join(arch, "world.jsonl")); } catch { /* gone */ } try { fs.rmdirSync(arch); } catch { /* not empty */ }
+    err.logMoved = !fs.existsSync(logFile); throw err; }
+  // the fresh log is in place: a sync that fails now is said, never a failed reset (the world would be retired for nothing)
+  try { syncDir(dir); } catch (e) { console.warn(`[world] reset: ${dir} wasn't synced after the swap (the fresh log is in place): ${e}`); }
   // the fresh log is in place, and nothing left in the scratch directory is used again: failing to remove it, whole or in
   // part, leaves litter for the operator, not a failed reset
   try { fs.rmSync(fresh, { recursive: true, force: true }); } catch (e) { console.warn(`[world] reset left its scratch directory ${fresh}: ${e}`); }
