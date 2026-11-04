@@ -66,8 +66,15 @@ const SOURCE = ".source.json";
 // attempt leaves none behind: review of PR #260, import-v1/world.ts:86), or by the recovery that finishes an interrupted one
 const IDENTITIES = ".identities.json";
 const putIdentities = (planned: Record<string, any>) => { const dir = directoryFor(WORLDS_DIR);
-  const fresh = Object.fromEntries(Object.entries(planned).filter(([id]) => !dir.entry(id)));   // a recovery after they landed adds nothing twice
-  if (Object.keys(fresh).length) dir.put(fresh); return Object.keys(fresh).length; };
+  const fresh = Object.entries(planned).filter(([id]) => !dir.entry(id));   // a recovery after they landed adds nothing twice
+  // an account that took another id meanwhile (the server minted one while the world was half landed) keeps it: said, never merged
+  const worn = fresh.filter(([, e]) => e.subs?.some((sub: string) => dir.idOfSub(sub)));
+  if (worn.length) console.log(`NOTE: ${worn.length} planned identit${worn.length === 1 ? "y" : "ies"} not added: the account already wears another id here (${worn.map(([id, e]) => `${e.name}: planned ${id}, wears ${dir.idOfSub(e.subs.find((sub: string) => dir.idOfSub(sub)))}`).join("; ")}); the log names the planned id`);
+  const add = Object.fromEntries(fresh.filter((f) => !worn.includes(f)));
+  if (Object.keys(add).length) dir.put(add); return Object.keys(add).length; };
+/** The names `from` would move into `to` that `to` already holds (a directory on both sides is merged, its files named). */
+const inTheWay = (from: string, to: string): string[] => !fs.existsSync(to) ? [] : fs.readdirSync(from).flatMap((f) => { const a = path.join(from, f), b = path.join(to, f);
+  if (!fs.existsSync(b)) return []; return fs.statSync(a).isDirectory() && fs.statSync(b).isDirectory() ? inTheWay(a, b).map((x) => `${f}/${x}`) : [f]; });
 const TEMP_ONLY = new Set([SOURCE, IDENTITIES]);
 // what the in-place swap did, kept in the world's directory for `rollback` (review of PR #260, Mica, item 6: "keeping
 // log.original.jsonl is preservation, not a tested rollback"): every file it renamed, every file it made (with the bytes it
@@ -381,6 +388,7 @@ if (cmd === "found") {
   if (process.env.WORLD_TS_DIE_WHILE_FOUNDING) { const open = fs.openSync;   // tests only: the process dies at the append after genesis (inplace-check IP31b)
     (fs as any).openSync = (p: any, f: any, ...m: any[]) => { if (f === "a" && String(p).endsWith("world.jsonl") && (fs.statSync(p, { throwIfNoEntry: false })?.size ?? 0) > 0) process.exit(9); return open(p, f, ...m); }; }
   let r; try { r = foundWorld(tmp, name, owner!, flag("title")); } catch (e: any) { fs.rmSync(tmp, { recursive: true, force: true }); die(String(e?.message ?? e)); }
+  { const w = inTheWay(tmp, dest); if (w.length) { fs.rmSync(tmp, { recursive: true, force: true }); die(`${dest} already holds ${w.join(", ")}, where the new world's files would go. Nothing was changed.`); } }
   if (!fs.existsSync(dest)) fs.renameSync(tmp, dest);
   else { for (const f of fs.readdirSync(tmp).sort((a, b) => Number(a === "world.jsonl") - Number(b === "world.jsonl"))) fs.renameSync(path.join(tmp, f), path.join(dest, f)); fs.rmdirSync(tmp); }   // world.jsonl last
   syncDir(WORLDS_DIR); syncDir(dest);
@@ -450,6 +458,8 @@ if (cmd === "found") {
     { const why = unapproved(r.source, approvedSource);
       if (why) { fs.rmSync(T, { recursive: true, force: true }); die(`${why}\nNothing was changed: what this run wrote under "${dest}" was removed, and no identity was added.`); } }
     fs.writeFileSync(path.join(T, IDENTITIES), JSON.stringify(r.planned));
+    { const w = inTheWay(T, destDir); if (w.length) { fs.rmSync(T, { recursive: true, force: true }); die(`can't translate into "${dest}": ${destDir} already holds ${w.join(", ")}, where the translation would put its own.\nNothing was changed: what this run wrote under "${dest}" was removed, and no identity was added.`); } }
+    syncTree(T);   // the translated files on disk before any of them is renamed in
     if (!fs.existsSync(destDir)) fs.renameSync(T, destDir);
     else { const into = (from: string, to: string) => { for (const f of fs.readdirSync(from).sort((a, b) => Number(a === "world.jsonl") - Number(b === "world.jsonl"))) {
         if (fs.statSync(path.join(from, f)).isDirectory() && fs.existsSync(path.join(to, f))) { into(path.join(from, f), path.join(to, f)); fs.rmdirSync(path.join(from, f)); }
