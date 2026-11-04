@@ -432,7 +432,7 @@ export class WorldLog {
     const acts: number[] = X.actsOf.get(actor) ?? [], mine: number[] = [];   // newest first, so only the last 40 are read
     for (let k = acts.length - 1; k >= 0 && mine.length < 40; k--) { const q = acts[k]; if (!["undo", "create-world", "throw", "drop", "leave", "move", "grab"].includes(E[q].verb) && !X.undone.has(q) && X.resultOf.has(q)) mine.push(q); }
     mine.reverse();
-    return { ...clientSnapshotOf(this.live), mine, you: actor, names: this.names([...this.actors, actor]), holds: this.holds() };
+    return { ...clientSnapshotOf(this.live), mine, actor, names: this.names([...this.actors, actor]), holds: this.holds() };
   }
   rememberPose(id: string, pose: unknown, settle: (p: unknown) => unknown) {
     if (!pose) return;
@@ -441,11 +441,11 @@ export class WorldLog {
   }
   /** What the snapshot says about this world's protocol (agents read it to route their tools). */
   /** What the snapshot says about this world's protocol (D5: {dialect, v, minor} gate a joiner; `world` is the id, `name` the directory). */
-  info() { return { dialect: DIALECT, v: VERSION, minor: MINOR, world: this.live.worldId, name: this.name, seq: this.seq, verbs: "send {type: 'request', id, verb, args}; reply {type: 'reply', id, …}" }; }
+  info() { return { name: this.name, verbs: "send {type: 'request', id, verb, args}; reply {type: 'reply', id, …}" }; }
 }
 
 // ---- founding and translating (tools/protocol/world.ts is the command line) ----
-import { opsOf, DIALECT, VERSION, MINOR } from "../shared/protocol/fold.js";
+import { opsOf } from "../shared/protocol/fold.js";
 import { isOwner } from "../shared/protocol/roles.js";
 
 /** Found a new world in `dir` (which must not hold a world): genesis + the founding act, through the authority. */

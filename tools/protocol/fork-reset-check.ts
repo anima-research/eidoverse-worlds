@@ -51,9 +51,9 @@ const thingsOf = (st) => Object.fromEntries(Object.entries(st.entities).map(([id
 
 ok(tool(["found", "src", "--owner", "Ann"]).code === 0 && tool(["found", "taken", "--owner", "Ann"]).code === 0, "(setup) found src and taken, Ann owns both");
 const S = await start();
-const ann = await sock(S.port); const ja0 = await ann.join("src", "Ann"); const annId = ja0.snapshot?.cut?.you;
+const ann = await sock(S.port); const ja0 = await ann.join("src", "Ann"); const annId = ja0.snapshot?.actor;
 const bob = await sock(S.port); const jb = await bob.join("src", "Bob");
-const bobId = jb.snapshot?.cut?.you;
+const bobId = jb.snapshot?.actor;
 // a world worth copying: a parent with a locked child, a light, sockets, @world settings and roles, and a chat line
 for (const r of [
   await ann.req("set", { id: "@world", component: `roles:${bobId}`, value: { role: "builder" } }),
@@ -86,7 +86,7 @@ ok(fk?.type === "world-forked" && fk.to === "copy", "FK3 the owner copies it", f
 { const src = readSrc(), { fold } = await import("../../shared/protocol/fold.js"); const cp = fold(logOf("copy"));
   const f = founding("copy"); const srcGen = logOf("src")[0];
   ok(cp.worldId && cp.worldId !== fold(logOf("src")).worldId, "FK4 the copy is a NEW world (its own genesis, its own id)", [cp.worldId]);
-  ok(f?.body?.request?.from?.world === fold(logOf("src")).worldId && f.body.request.from.name === "src" && /^[0-9a-f]{64}$/.test(f.body.request.from.head), "FK4 its founding act names where it came from {world, name, head}", f?.body);
+  ok(f?.body?.args?.from?.world === fold(logOf("src")).worldId && f.body.args.from.name === "src" && /^[0-9a-f]{64}$/.test(f.body.args.from.head), "FK4 its founding act names where it came from {world, name, head}", f?.body);
   const a = thingsOf(src), b = thingsOf(cp); delete a["@world"].about; delete b["@world"].about;
   ok(JSON.stringify(Object.keys(a).sort()) === JSON.stringify(Object.keys(b).sort()) && ["table1", "lamp1", "chair1"].map((n) => IDS.of(n)).every((id) => a[id] !== undefined && canon(a[id]) === canon(b[id])),
     "FK5 every thing is copied component for component (the parent, the locked child, the spot light, the sockets)", [Object.keys(b)]);
@@ -98,7 +98,7 @@ ok(fk?.type === "world-forked" && fk.to === "copy", "FK3 the owner copies it", f
   // that copied the parent are marked, so a reader tells inherited things from births
   const gp = logOf("copy")[0]?.body?.parent, sl = logOf("src");
   ok(gp && gp.world === fold(sl).worldId && Number.isInteger(gp.seq) && gp.seq < sl.length && /^[0-9a-f]{64}$/.test(gp.head) && (sl[gp.seq]?.head === undefined || sl[gp.seq].head === gp.head)
-    && f?.body?.request?.from?.seq === gp.seq, "FK10 the fork's genesis names its parent {world, seq, head}; the head is the parent's chain head at that seq", { gp, at: sl[gp?.seq]?.head });
+    && f?.body?.args?.from?.seq === gp.seq, "FK10 the fork's genesis names its parent {world, seq, head}; the head is the parent's chain head at that seq", { gp, at: sl[gp?.seq]?.head });
   const copyActs = logOf("copy").filter((e) => e.kind === "request" && e.verb !== "create-world" && !(e.actor === "system" && e.verb === "repair-shapes"));   // the founding's shape marker (review r8 M3) copies nothing
   ok(copyActs.length > 0 && copyActs.every((e) => e.verb === "fork-copy") && !logOf("src").slice(-1)[0]?.body?.parent, "FK11 every act that copied the parent is a fork-copy (inherited, not born)", copyActs.map((e) => e.verb));
   const after = fs.readdirSync(W).filter((d) => d.startsWith("."));
@@ -127,19 +127,19 @@ ok((await ann.req("set", { id: "@world", component: `roles:${bobId}`, value: { r
     "RS3 the old log is archived beside it (chat and all), never deleted", arch);
   const { fold } = await import("../../shared/protocol/fold.js"); const fresh = fold(logOf("src"));
   ok(fresh.worldId !== oldId && Object.keys(fresh.entities).length === 1, "RS4 a fresh world: a new genesis, nothing in it but @world", Object.keys(fresh.entities));
-  ok(founding("src")?.body?.request?.from?.world === oldId, "RS4 its founding act names the world it replaced", founding("src")?.body?.request?.from);
+  ok(founding("src")?.body?.args?.from?.world === oldId, "RS4 its founding act names the world it replaced", founding("src")?.body?.args?.from);
   const roles = Object.entries(fresh.entities["@world"].c).filter(([k, v]) => k.startsWith("roles:") && v.role === "owner").length;
   ok(roles === 2, "RS5 both owners are still owners", fresh.entities["@world"].c);
   const again = await sock(S.port); const ja = await again.join("src", "Ann");
-  ok(!!ja.snapshot && ja.snapshot.yourRights?.role === "owner" && Object.keys(ja.snapshot.cut?.state ?? { x: 1 }).filter((x) => x !== "@world").length === 0, "RS6 rejoining finds the fresh, empty world, still Ann's", [ja.errors, ja.snapshot?.yourRights]);
+  ok(!!ja.snapshot && ja.snapshot.yourRights?.role === "owner" && Object.keys(ja.snapshot.state ?? { x: 1 }).filter((x) => x !== "@world").length === 0, "RS6 rejoining finds the fresh, empty world, still Ann's", [ja.errors, ja.snapshot?.yourRights]);
   const w2 = await again.req("create", { id: "new-crate", model: MODEL });
   // the fresh world's scripts run (the server's tick and arrivals reach THIS world's script host, not the archived one's)
   const up = await again.req("upload", { text: 'world.on("enter", (e) => { world.set("self", "t/greet", { last: e.by }); });' });
   const inst = await again.req("set", { id: "new-crate", component: "script:greeter", value: { src: up.src, scope: { ids: "self", comps: ["t/greet"] }, on: ["enter"] } });
   const arriving = await sock(S.port); const jr = await arriving.join("src", "Dee");
-  await tryUntil("the greeter greets Dee, on disk", () => !!jr.snapshot && fold(logOf("src")).entities[IDS.of("new-crate")]?.c["t/greet"]?.last === jr.snapshot.cut?.you, { ms: 7500 });
+  await tryUntil("the greeter greets Dee, on disk", () => !!jr.snapshot && fold(logOf("src")).entities[IDS.of("new-crate")]?.c["t/greet"]?.last === jr.snapshot.actor, { ms: 7500 });
   const greet = fold(logOf("src")).entities[IDS.of("new-crate")]?.c["t/greet"];
-  ok(up.ok && inst.ok && !!jr.snapshot && greet?.last === jr.snapshot.cut?.you, "RS7 scripts run in the fresh world: an arrival reaches its greeter (the script host was rebuilt with the log)", [up.refused, inst.refused, greet]);
+  ok(up.ok && inst.ok && !!jr.snapshot && greet?.last === jr.snapshot.actor, "RS7 scripts run in the fresh world: an arrival reaches its greeter (the script host was rebuilt with the log)", [up.refused, inst.refused, greet]);
   arriving.close();
   ok(w2.ok, "RS6 …and it takes writes (the live world was swapped in place)", w2.refused);
   watcher.close(); again.close(); }

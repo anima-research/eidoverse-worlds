@@ -34,7 +34,7 @@ const page = (js: string) => evalJson(`(async () => { ${js} })()`);
 const sock = (world: string, name: string) => new Promise<{ ws: WebSocket; id: string }>((res, rej) => {
   const ws = new WebSocket(BASE.replace("http", "ws") + "/ws");
   ws.onopen = () => ws.send(JSON.stringify({ type: "join", world, id: name, avatar: "", replica: true }));
-  ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "snapshot" && m.cut?.you) res({ ws, id: m.cut.you }); };
+  ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "snapshot" && m.actor) res({ ws, id: m.actor }); };
   ws.onerror = rej; setTimeout(() => rej(new Error(`${name} never joined ${world}`)), 15000);
 });
 const P = `document.querySelector('#__acc .ap-listed')`;

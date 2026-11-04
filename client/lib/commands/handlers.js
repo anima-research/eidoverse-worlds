@@ -187,7 +187,7 @@ register('access', (arg) => {
   if (!door) return logChat('*', notADoor(a, worldComponents()));
   const ws = doorWrites(door, worldComponents());
   const ops = ws.map((w) => ({ verb: 'set', args: { id: '@world', component: w.component, value: w.value } }));
-  send(ops.length === 1 ? ops[0] : { verb: 'batch', args: { requests } }, { what: `make this world ${door === 'invite-only' ? 'invite-only' : door === 'watch' ? 'watch only' : door}`, record: false });
+  send(ops.length === 1 ? ops[0] : { verb: 'batch', args: { requests: ops } }, { what: `make this world ${door === 'invite-only' ? 'invite-only' : door === 'watch' ? 'watch only' : door}`, record: false });
 });
 register('members', () => showMembers());
 /** Who may come into this world, and until when: the door (shared/protocol/access.js) and everyone listed, from this

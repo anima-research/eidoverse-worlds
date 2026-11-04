@@ -101,7 +101,7 @@ function cast(s: any) {
   for (const who of ["bob", "vic"]) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role: "builder" } });
 }
 const comp = (s: any, id: string, c: string) => s.w().state().entities[id]?.c[c];
-const STUB = { commit: "0".repeat(64) };
+const STUB = { commitment: "0".repeat(64) };
 
 type Case = { id: string; what: string; run: (s: any) => any; good: (o: any) => boolean; cat?: any };
 const H = "ab".repeat(32);
@@ -127,7 +127,7 @@ const cases: Case[] = [
       hashed = true;
       const B = session(CAT); B.call("olive", "create-world", { title: "fork" }); B.step();
       const { model, lock, ...comps } = src;
-      let r; try { r = D.forkCopy(B.w(), "olive", { ops: [{ verb: "create", args: { id: "crow", model, components: comps } }], throughLock: true }); } catch (e) { r = { crashed: String(e) }; }
+      let r; try { r = D.forkCopy(B.w(), "olive", { requests: [{ verb: "create", args: { id: "crow", model, components: comps } }], throughLock: true }); } catch (e) { r = { crashed: String(e) }; }
       const got = B.w().state().entities.crow?.c; hashed = false;
       return { c: show(c), r: show(r), hadHash: "model-hash" in src, same: JSON.stringify(src) === JSON.stringify(got) }; },
     good: (o) => o.c === "ok" && o.r === "ok" && !o.hadHash && o.same },
@@ -163,7 +163,7 @@ const cases: Case[] = [
   { id: "M1", what: "a founding writes the system's repair-shapes act beside it (the marker is that act: verb + actor), and READBACK lists the founding's marker", run(s) { cast(s);
       const L = s.entries(); const i = L.findIndex((e: any) => e.kind === "request" && e.verb === "create-world");
       const j = L.findIndex((e: any) => e.kind === "request" && e.verb === "repair-shapes" && e.actor === "system");
-      return { i, j, row: !!VC.READBACK?.["act:create-world"] }; },
+      return { i, j, row: !!VC.READBACK?.["request:create-world"] }; },
     good: (o) => o.i > 0 && o.j > o.i && o.row },
   { id: "M2", what: "a world founded today with a pendulum (no pivot) and a sky azimuth; its founding act's body purged (the stored stub): a reload's lift writes nothing, the values stay as they were", run(s) { cast(s);
       s.call("olive", "create", { id: "swing", model: "crate", components: { transform: { pos: [0, 0, 0] } } });

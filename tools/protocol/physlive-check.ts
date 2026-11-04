@@ -17,7 +17,7 @@ import { readLog, fold, opsOf, REDACTED } from "../../shared/protocol/fold.js";
 import { simFold, restsOf, digestOf } from "../../shared/protocol/simlayer.js";
 import { makeReplica } from "../../shared/protocol/replica.js";
 import { openLive } from "../../server/livehost.ts";
-import { clientCutOf } from "../../shared/protocol/replica.js";
+import { clientSnapshotOf } from "../../shared/protocol/replica.js";
 
 const root = scratch("physlive");
 let pass = 0, fail = 0;
@@ -200,18 +200,18 @@ function playground(clock = "pinned") {
   const { call, w, L, at } = playground("ticking");
   call("rowan", "grab", { id: "ball" }); call("rowan", "throw", { id: "ball", v: [0.3, 3, 2.5] });
   const pre = call("rowan", "look", {}, 120);
-  const cut = clientCutOf(w);
+  const cut = clientSnapshotOf(w);
   ok(cut.sim && cut.sim.launched?.ball && Object.keys(cut.sim.launches ?? {}).length === 1, "F1 a mid-flight cut carries the sim's state and the launch in flight", cut.sim && { launched: cut.sim.launched, launches: cut.launches });
   const c = makeReplica(); c.adopt(JSON.parse(JSON.stringify({ ...cut, you: "vic" }))); // as it crosses the wire
   // a second client that joined before the throw (it folds the launch itself)
   const x = playground("ticking"); x.call("rowan", "grab", { id: "ball" });
-  const early = makeReplica(); early.adopt(JSON.parse(JSON.stringify({ ...clientCutOf(x.w), you: "vic" })));
+  const early = makeReplica(); early.adopt(JSON.parse(JSON.stringify({ ...clientSnapshotOf(x.w), you: "vic" })));
   const from = x.L().length; x.call("rowan", "throw", { id: "ball", v: [0.3, 3, 2.5] }, 100);
   early.ingest(x.L().slice(from), from);
   // the screen re-copies its sim only when the engine moved: a say leaves simVersion alone, a launch bumps it (PH-S2 #6).
   // Its own world, so stage F's digests and rests are untouched.
   { const z = playground("ticking");
-    const rep = makeReplica(); rep.adopt(JSON.parse(JSON.stringify({ ...clientCutOf(z.w), you: "vic" })));
+    const rep = makeReplica(); rep.adopt(JSON.parse(JSON.stringify({ ...clientSnapshotOf(z.w), you: "vic" })));
     const v0 = rep.simVersion; const f2 = z.L().length; z.call("rowan", "say", { text: "hello" }, 50); rep.ingest(z.L().slice(f2), f2);
     ok(rep.simVersion === v0, "F0 a say entry doesn't bump the client's simVersion (no re-copy of the presentation sim)", { v0, now: rep.simVersion });
     const f3 = z.L().length; const g = z.call("rowan", "grab", { id: "ball" }, 50); const th = z.call("rowan", "throw", { id: "ball", v: [0.2, 3, 2] }, 50); rep.ingest(z.L().slice(f3), f3);   // contiguous: the lift rides along
@@ -237,7 +237,7 @@ function playground(clock = "pinned") {
   ok(JSON.stringify(c.st?.entities?.ball?.c.transform.pos) === JSON.stringify(rest?.at), "F8 …and its state holds the logged rest", c.st.entities.ball.c.transform);
   // the display clock never feeds the canonical fold: asking for a far-future frame doesn't change what a later entry does
   const y = playground("pinned"); y.call("rowan", "grab", { id: "ball" });
-  const cl = makeReplica(); cl.adopt(JSON.parse(JSON.stringify({ ...clientCutOf(y.w), you: "vic" })));
+  const cl = makeReplica(); cl.adopt(JSON.parse(JSON.stringify({ ...clientSnapshotOf(y.w), you: "vic" })));
   cl.simAt?.(y.at() + 60000); // a client whose clock runs a minute fast
   const f4 = y.L().length; y.call("rowan", "throw", { id: "ball", v: [0, 2, 2] }); y.call("rowan", "wait", {}, 6000); cl.ingest(y.L().slice(f4), f4);
   ok(cl.sim?.checks?.agree === 1 && !cl.sim.checks.disagree.length, "F9 a client with a fast clock still agrees (presentation never advances the canonical fold)", cl.sim.checks);

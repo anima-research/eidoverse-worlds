@@ -248,7 +248,7 @@ try {
       const m = JSON.parse(String(ev.data));
       if (m.type === "snapshot") resolve(true);
       // chat is the log stream's say entries; their actors are opaque ids, named by the stream
-      if (m.type === "snapshot") Object.assign(names, m.cut?.names ?? {});
+      if (m.type === "snapshot") Object.assign(names, m.names ?? {});
       if (m.type === "log") { Object.assign(names, m.names ?? {});
         for (const e of m.entries ?? []) if (e?.kind === "say") seen.push({ who: names[e.actor] ?? e.actor, text: e.body?.text }); }
       if (m.type === "typing" && m.id === "claude") typings.push(Date.now());

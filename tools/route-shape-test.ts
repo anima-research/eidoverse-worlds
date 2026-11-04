@@ -73,7 +73,7 @@ async function client(port: number, world: string, id: string) {
   const msgs: any[] = []; const waiters = new Map<string, (r: any) => void>(); let n = 0;
   const rep = makeReplica();
   ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); msgs.push(m);
-    if (m.type === "snapshot" && m.cut) rep.adopt(m.cut);
+    if (m.type === "snapshot" && m.cut) rep.adopt(m);
     if (m.type === "log") rep.ingest(m.entries, m.from, m.names);
     if (m.type === "reply") { const f = waiters.get(m.id); if (f) { waiters.delete(m.id); f(m.reply); } } };
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });

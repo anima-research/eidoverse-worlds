@@ -49,7 +49,7 @@ export function saysIn(msgs: any[]) {
   const names: Record<string, string> = {};
   const out: { seq: number; actor: string; by: string; text: string; body: any }[] = [];
   for (const m of msgs) {
-    if (m?.type === "snapshot" && m.cut?.names) Object.assign(names, m.cut.names);
+    if (m?.type === "snapshot" && m.names) Object.assign(names, m.names);
     if (m?.type !== "log") continue;
     if (m.names) Object.assign(names, m.names);
     (m.entries ?? []).forEach((e: any, i: number) => {

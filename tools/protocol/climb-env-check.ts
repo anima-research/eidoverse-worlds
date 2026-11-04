@@ -197,7 +197,7 @@ await C("K9", "KillZ: below the kill line, KILL_MARGIN under @world.bounds.min.y
   const back = s.call("move", { to: [0, 0, 8], teleport: true, reason: "below-bounds" }, "vic");
   const acts = s.log().slice(before).filter((e: any) => e.kind === "request" && e.verb === "move");
   const bare = s.call("move", { to: [0, 0, 8], reason: "below-bounds" }, "vic");
-  return [fell && !riding && !above && back.ok && acts.length === 1 && acts[0].body?.request?.reason === "below-bounds" && acts[0].body?.request?.teleport === true
+  return [fell && !riding && !above && back.ok && acts.length === 1 && acts[0].body?.args?.reason === "below-bounds" && acts[0].body?.args?.teleport === true
     && early?.refused?.code === "doesnt-apply" && noBounds.refused?.code === "out-of-bounds" && away.refused?.code === "spawn" && bare.refused?.code === "shape",
     { fell, riding, above, early: show(early), back: show(back), acts: acts.map((e: any) => e.body), noBounds: show(noBounds), away: show(away), bare: show(bare) }]; });
 

@@ -873,7 +873,7 @@ await C("P1", "arriving in a world writes nothing to its log (presence, never hi
   return [r.ok && W.entries().length === n0 && !r.recorded, [why(r), W.entries().length - n0]]; });
 await C("P2", "a teleport while present is an act on the record, without where from, where to, or what kind of client", () => {
   const W = world(); W.call("move", { to: [0, 0, 0.5] }, "olive"); const r = W.call("move", { to: [3, 0, 3], teleport: true }, "olive");
-  const a = actsBy(W, "olive", "move").at(-1); return [r.ok && !!a && !POSKEYS.test(JSON.stringify(a.body)) && a.body.request?.teleport === true, a?.body]; });
+  const a = actsBy(W, "olive", "move").at(-1); return [r.ok && !!a && !POSKEYS.test(JSON.stringify(a.body)) && a.body.args?.teleport === true, a?.body]; });
 await C("P3", "grab, put, throw and punt acts record the request about the thing, never the body's position or hand", () => {
   const W = world(); W.call("set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } });
   W.call("create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic" } }, place: { at: [0, 0] } });

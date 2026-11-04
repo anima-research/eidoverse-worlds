@@ -139,7 +139,7 @@ const cases: Case[] = [
       const r = s.call("vic", "punt", { id: "crate", v: [0, 0.2, 1.8], contact: true });
       const act = s.entries().slice(n0).find((e: any) => e.kind === "request" && e.verb === "punt");
       s.call("vic", "wait", {}, 6000); const at = s.w().state().entities.crate.c.transform.pos;
-      return { r: show(r), v: r.v, launches: launches(s), shove: act?.body?.request?.contact ?? act?.body?.contact ?? JSON.stringify(act?.body ?? null), at }; },
+      return { r: show(r), v: r.v, launches: launches(s), shove: act?.body?.args?.contact ?? act?.body?.contact ?? JSON.stringify(act?.body ?? null), at }; },
     good: (o) => o.r === "ok" && o.launches === 1 && JSON.stringify(o.v) === "[0,0.2,1.8]" && (o.shove === true || /"contact":true/.test(String(o.shove))) && o.at[2] > 0.05 },
   { id: "S2", what: "from a body out of range (1.2 m off its side: a kick's reach, not a shove's) it is refused out-of-reach", run(s) { cast(s);
       s.call("vic", "move", { to: [0, 0, -1.5] }); const r = s.call("vic", "punt", { id: "crate", v: [0, 0.2, 1.5], contact: true });

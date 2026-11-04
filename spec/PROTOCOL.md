@@ -509,7 +509,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   sun/fill/world dropped, the registry's seven defaults written; `terrain`
   layer colours `"#rrggbb"` → ints, the sim's defaults written,
   `terrain.water` → `water`; `grass` in the flora spelling (a preset keeps
-  its name). The translator (`translate-v1@43`, §14) writes its
+  its name). The translator (`translate-v1@44`, §14) writes its
   projection through the same functions, so a translated world needs no
   repair, and the old-world oracle mirrors the repair with them; the sweep's
   declared projection and the oracle's core check are written independently,
@@ -1361,7 +1361,7 @@ the thing's (or part's) own frame before scale; `motion.center` and
   a different digest. Minor 1 is this vocabulary (`docs/DESIGN-log-vocabulary.md`):
   a reader knows `MINORS = {1}`, and a minor-0 world is read only by the
   migration tool. One exception, before release: the batch body's
-  `followUps` (now `cascade`, §3) was added to this protocol **at minor 0**, because it had
+  `cascade` (§3) was added to this protocol **at minor 0** (as `followUps`; `cascade` since minor 1), because it had
   not been released. Every such log written so far was written by the reference
   authority on its own branch, and every one folds to the same digest with
   or without the field (the fold applies marked ops like any op); the only
@@ -1553,7 +1553,7 @@ v}`. File names, wire fields and code don't carry the number.
 |---|---|---|
 | 1–2 | The first world log: an untyped verb log folded by its reader (`genesis {verb: "genesis", args: {v, dialect}}`); dialect 2 added `force` and `punt` | `history/PROTOCOL-v1.md` |
 | 3 | The deterministic-physics amendment: a sim fold over sim-scoped entries, sim epochs (`dialect 3`) | `history/PROTOCOL-v2-sim.md` |
-| 4 | This protocol: typed entries (`change`, `request`, `physics`, `say`, `redaction`, `governance`), the authority, opaque identities, the signed chain and governance keys. Its physics is `PHYSICS.md`. **Minor 1** (the current one) is the log vocabulary of `docs/DESIGN-log-vocabulary.md`: the kinds above, `op` on a change, `verb` on a request or physics entry, `cascade`, `commitment`, `rewindWindow`, no `verb` on genesis; a reader knows `MINORS = {1}`, and a minor-0 world is read only by the migration tool (`tools/protocol/migrate-minor-1`). Minor 0 (before release) gained the batch body's `followUps` and §6a, and renamed a number of pre-release words; each rename and how an older spelling was read is `spec/history/PRE-RELEASE-RENAMES.md` (informative). | this document |
+| 4 | This protocol: typed entries (`change`, `request`, `physics`, `say`, `redaction`, `governance`), the authority, opaque identities, the signed chain and governance keys. Its physics is `PHYSICS.md`. **Minor 1** (the current one) is the log vocabulary of `docs/DESIGN-log-vocabulary.md`: the kinds above, `op` on a change, `verb` on a request or physics entry, `cascade`, `commitment`, `rewindWindow`, no `verb` on genesis; a reader knows `MINORS = {1}`, and a minor-0 world is read only by the migration tool (`tools/protocol/migrate-minor-1`). Before release, minor 0 gained the batch body's `cascade` (as `followUps`) and §6a, and renamed a number of pre-release words; each rename and how an older spelling was read is `spec/history/PRE-RELEASE-RENAMES.md` (informative). | this document |
 
 Logs of `v` 1–3 are not read at runtime; §14 translates one, once, into a new
 world.

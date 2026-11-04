@@ -1259,7 +1259,7 @@ async function onSnapshot(msg) {
 
   // remote avatars build in parallel and never block log replay — the
   // roster is an AUTHORITY: a same-id record here is a fresh generation
-  identities.clear(); guests.clear(); if (msg.you) net.you = msg.you;
+  identities.clear(); guests.clear(); if (msg.actor) net.you = msg.actor;
   for (const p of msg.present) {
     if (p.actorId) identities.set(p.id, p.actorId);
     if (p.guest) guests.add(p.id);

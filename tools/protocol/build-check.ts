@@ -219,7 +219,7 @@ const cases: { id: string; what: string; run: (s: any) => any; good: (o: any) =>
       const plan = NS.planNewScript({ id: "bell", name: "Ring Me!", text: NS.TEMPLATES.use, trigger: "use", comps: NS.TEMPLATE_SCOPE.use.comps, say: NS.TEMPLATE_SCOPE.use.say }, thing);
       if (plan.errors.length) return { errors: plan.errors };
       const up = s.call("olive", plan.upload.verb, plan.upload.args);
-      const ops = plan.install(up.src); const inst = s.call("olive", "batch", { requests });
+      const ops = plan.install(up.src); const inst = s.call("olive", "batch", { requests: ops });
       const acts = s.w().entries.filter((e: any) => e.kind === "request" && e.verb === "batch").length;
       const use = s.call("vic", "use", { id: "bell" });
       const st = s.w().state().entities.bell.c;

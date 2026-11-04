@@ -73,7 +73,7 @@ async function sock(port) {
     close: () => ws.close(),
   };
 }
-const you = (j) => j.snapshot?.cut?.you;
+const you = (j) => j.snapshot?.actor;
 const worldsAs = async (port, bearer?) => (await (await fetch(`http://127.0.0.1:${port}/worlds`, bearer ? { headers: { authorization: `Bearer ${bearer}` } } : {})).json()).worlds ?? [];
 const accessAs = async (port, world, bearer?) => { const r = await fetch(`http://127.0.0.1:${port}/access?world=${world}`, bearer ? { headers: { authorization: `Bearer ${bearer}` } } : {}); return { status: r.status, body: await r.json().catch(() => null) }; };
 
@@ -263,7 +263,7 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   const mossGeom = await geomAs(s3.port, "keep", "tok-moss");
   const log = fs.readFileSync(path.join(W, "keep", "world.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
   const mod = fs.readFileSync(path.join(W, "keep", "world.mod.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
-  const act = log.find((e) => e.kind === "request" && e.actor === fenId && e.body?.operator === true && e.body?.request?.component === `roles:${fenId}`);
+  const act = log.find((e) => e.kind === "request" && e.actor === fenId && e.body?.operator === true && e.body?.args?.component === `roles:${fenId}`);
   const rec = mod.find((m) => m.verb === "unban" && m.who === ids.Moss && m.actor === fenId && m.operator === true);
   ok(!!jf.snapshot && !plain.ok && plain.refused?.code === "rights" && unban?.reply?.ok && list?.reply?.ok && wide?.reply?.refused?.code === "rights" && !!jr.snapshot && notOp?.reply?.refused?.code === "rights" && mossGeom === 200 && !!act && !!rec,
     "A11 an operator repairs through the authority, narrowly and on the record: ordinary write refused, operator-repair unbans and lists (act / mod record marked operator), another component refused, a non-operator refused",

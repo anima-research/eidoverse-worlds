@@ -98,7 +98,7 @@ function world(name, N) {
   for (let k = 0; k < 1800; k++) { beat(TICK); if (k > 2 && !flying() && w.simPeek().rested.length === 0) break; }
   const n1 = w.entries.length; for (let k = 0; k < 40; k++) beat(1000);   // 40 s of quiet beats
   const ck = w.entries.slice(n1).filter((e) => e.kind === "physics" && e.verb === "checkpoint");
-  ok(ck.length === 1 && ck[0].body.at === w.entries.indexOf(ck[0]) - 1 && typeof ck[0].body.state === "string", "T6 one checkpoint, right after the entry it names, with a blob", ck.map((e) => e.body));
+  ok(ck.length === 1 && ck[0].body.seq === w.entries.indexOf(ck[0]) - 1 && typeof ck[0].body.state === "string", "T6 one checkpoint, right after the entry it names, with a blob", ck.map((e) => e.body));
   const fromGenesis = w.sim(); const dA = digestOf(fromGenesis.sim);   // both views at the same clock
   // w2 starts on the same clock as w (the comparison below), then r.tick moves its own
   const dir = `${root}t6`; let T2 = now(); const a0 = performance.now(); const w2 = openLive(dir, "t6", { now: () => T2 }); const openMs = performance.now() - a0;

@@ -65,7 +65,7 @@ const idWithSub = (root: string, sub: string) => Object.entries<any>(entriesOf(d
   const ann = L[1].actor; const roleKeys = new Set<string>();
   for (const e of L as any[]) if (e.kind === "change") for (const o of e.op === "batch" ? e.body.ops : [e.body]) if (String(o?.comp).startsWith("roles:")) roleKeys.add(o.comp);
   const roleKey = [...roleKeys].find((k) => k !== `roles:${ann}`) ?? null;
-  const say = L.find((e: any) => e.kind === "say" && e.body?.text === "hello"), bobSet = L.find((e: any) => e.kind === "request" && e.body?.request?.component === "about");
+  const say = L.find((e: any) => e.kind === "say" && e.body?.text === "hello"), bobSet = L.find((e: any) => e.kind === "request" && e.body?.args?.component === "about");
   const use = L.find((e: any) => e.kind === "request" && e.verb === "use"), scr = L.find((e: any) => e.kind === "request" && e.verb === "script");
   ok(minted(bobAcct) && roleKey === `roles:${bobAcct}` && say?.actor === bobAcct && bobSet?.actor === bobAcct && scr?.body?.sponsor === bobAcct,
     "MI1 bob is one id everywhere: the id holding his account holds his role, his say, his act and his script's sponsorship (I3, I9)", { bobAcct, roleKey, say: say?.actor, act: bobSet?.actor, sponsor: scr?.body?.sponsor });

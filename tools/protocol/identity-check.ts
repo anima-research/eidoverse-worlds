@@ -87,7 +87,7 @@ async function sock(port, headers = undefined) {
   };
   return s;
 }
-const you = (j) => j.snapshot?.cut?.you;
+const you = (j) => j.snapshot?.actor;
 
 // ---- C3: a bare name in SERVER_OPERATORS (or the legacy WORLD_ADMIN) is refused loudly; the server still boots (accounts only) ----
 const bootErr = (s) => (fs.existsSync(s.log + ".err") ? fs.readFileSync(s.log + ".err", "utf8") : "") + (fs.existsSync(s.log) ? fs.readFileSync(s.log, "utf8") : "");
@@ -208,7 +208,7 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
   ok((await own.req("set", { id: "@world", component: "default-role", value: { role: "builder" } })).ok, "(H4g teardown) back to guests-as-visitors");
   { const rb = await own.req("set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
     ok(rb.refused?.code === "shape" && /identity/.test(rb.refused.reason ?? ""), "T1c roles:<key> must be someone the directory knows (roles:bob matched nobody, silently)", rb.refused);
-    ok((await own.req("set", { id: "@world", component: `roles:${jw.snapshot.cut.you}`, value: { role: "builder" } })).ok, "T1c …a known person's identity is taken"); }
+    ok((await own.req("set", { id: "@world", component: `roles:${jw.snapshot.actor}`, value: { role: "builder" } })).ok, "T1c …a known person's identity is taken"); }
   // H5: default-role owner refused; a junior owner can't demote the founder; owners can't be banned
   ok((await own.req("set", { id: "@world", component: "default-role", value: { role: "owner" } })).refused?.code === "shape", "H5 default-role can't be owner");
   ok((await own.req("set", { id: "@world", component: `roles:${you(jw)}`, value: { role: "owner" } })).ok, "(H5 setup) Rowan makes Wren an owner");
@@ -565,7 +565,7 @@ const postAuth = (port, token) => fetch(`http://127.0.0.1:${port}/auth`, { metho
   const S7 = await start({ SESSIONS_PATH: SF }); const ck = { cookie: `ew_sess=${sid}` }, host = `127.0.0.1:${S7.port}`;
   // a refusal is named by the door's status (403 is the cross-site rule, routes.ts /ws), never "any throw": the upgrade is re-asked as a plain fetch
   const refusedAs = async (port, h) => { try { const r = await fetch(`http://127.0.0.1:${port}/ws`, { headers: { connection: "Upgrade", upgrade: "websocket", "sec-websocket-version": "13", "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==", ...h }, signal: AbortSignal.timeout(3000) }); return `refused:${r.status}`; } catch (e) { return `threw:${e?.message ?? e}`; } };
-  const opens = async (h) => { try { const s = await sock(S7.port, h); const j = await s.join("garden", `Cs${Math.random().toString(36).slice(2, 6)}`); s.close(); return j.snapshot ? (j.snapshot.cut?.account ?? j.snapshot.account ?? "joined") : "no-snapshot"; } catch { return refusedAs(S7.port, h); } };
+  const opens = async (h) => { try { const s = await sock(S7.port, h); const j = await s.join("garden", `Cs${Math.random().toString(36).slice(2, 6)}`); s.close(); return j.snapshot ? (j.snapshot.account ?? "joined") : "no-snapshot"; } catch { return refusedAs(S7.port, h); } };
   const got = { evil: await opens({ ...ck, origin: "https://evil.example" }), sibling: await opens({ ...ck, origin: `http://${host}`, "sec-fetch-site": "same-site" }), nul: await opens({ ...ck, origin: "null" }),
     own: await opens({ ...ck, origin: `http://${host}`, "sec-fetch-site": "same-origin" }), proxied: await opens({ ...ck, origin: "https://public.example", "sec-fetch-site": "same-origin" }), native: await opens(ck), guest: await opens({ origin: "https://evil.example", "sec-fetch-site": "cross-site" }),
     ownOrigin: await opens({ ...ck, origin: `http://${host}` }), scheme: await opens({ ...ck, origin: `https://${host}` }), fwd: await opens({ ...ck, origin: "https://public.example", "x-forwarded-host": "public.example" }) };

@@ -85,7 +85,7 @@ function readers(w) {
 function logReaders(L) {
   const pages = []; let before = Infinity; for (let k = 0; k < 200; k++) { const r = L.readHistory({ before, limit: 13, floor: null }); pages.push(r); if (!r.hasMore) break; before = r.oldestSeq; }
   const actors = [...L.knownIds()].sort();
-  return { chat: L.state.recentChat, chatTotal: L.state.chatTotal, pages, known: actors, cuts: ["rowan", "ash", ...actors].map((a) => [a, L.clientCut(a).mine]), senior: L.seniorOwner(), sanctions: L.sanctions(), head: L.head, roles: ["rowan", "ash"].map((a) => L.roleOf(a)) };
+  return { chat: L.state.recentChat, chatTotal: L.state.chatTotal, pages, known: actors, cuts: ["rowan", "ash", ...actors].map((a) => [a, L.clientSnapshot(a).mine]), senior: L.seniorOwner(), sanctions: L.sanctions(), head: L.head, roles: ["rowan", "ash"].map((a) => L.roleOf(a)) };
 }
 
 /** A world with history: things made, labelled, parented, deleted; chat; a role granted and changed; undos. */

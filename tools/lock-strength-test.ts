@@ -28,7 +28,7 @@ try {
   const bob = await new Promise<string>((res, rej) => {
     ws = new WebSocket(BASE.replace('http', 'ws') + '/ws');
     ws.onopen = () => ws!.send(JSON.stringify({ type: 'join', world: WORLD, id: 'bob', avatar: '', replica: true }));
-    ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === 'snapshot' && m.cut?.you) res(m.cut.you); if (m.type === 'reply') replies.get(m.id)?.(m); };
+    ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === 'snapshot' && m.you) res(m.you); if (m.type === 'reply') replies.get(m.id)?.(m); };
     ws.onerror = rej; setTimeout(() => rej(new Error('bob never joined')), 15000);
   });
   const bobAsks = (verb: string, args: unknown) => new Promise<any>((res) => { const id = `bob-${Math.random()}`; replies.set(id, res); ws!.send(JSON.stringify({ type: 'request', id, verb, args })); });

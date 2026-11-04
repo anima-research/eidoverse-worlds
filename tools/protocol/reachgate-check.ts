@@ -333,7 +333,7 @@ let skipped = null; const SKIP = Symbol("skip");
     try { ({ WorldAgent } = await import("../../mcpl/agent.ts")); ({ HANDLERS } = await import("../../mcpl/tools.ts")); }
     catch (e) { if (!/Cannot find module/.test(String(e))) throw e; skipped = String(e).replace(/^.*Cannot find module /, "").slice(0, 120); throw SKIP; }
     ag = new WorldAgent({ url: `ws://127.0.0.1:${port}/ws`, name: "Hep", world: "yard", avatar: "" });
-    await ag.connect(); await tryUntil("the agent has its cut", () => ag.cut, { ms: 3000, step: 50 });
+    await ag.connect(); await tryUntil("the agent has its cut", () => ag.snapshot, { ms: 3000, step: 50 });
     await tryUntil("the agent knows Vic's identity", () => ag.actorIds.get("Vic") || (vicPose(), false), { ms: 2000, step: 50 });
     ok(!!ag.actorIds.get("Vic"), "(AG setup) the agent knows Vic's identity");
     const call = (name, a = {}) => HANDLERS[name](ag, a, { agent: ag, canPush: () => false, heldActivity: [], cursor: { caughtUpTo: null } }, name);

@@ -302,7 +302,7 @@ console.log('— M. the join line: the captioners hint keeps the screen\'s exist
   (globalThis as any).WebSocket = class { onopen: any; onclose: any; onmessage: any; send() {} close() {} };   // no socket: the snapshot is handed in
   try {
     w.connect();
-    (w as any).ws.onmessage({ data: JSON.stringify({ type: 'snapshot', cut: { you: 'cap-1', head: 0, state: { cinema: { born: 0, c: { captioners: { v: { ids: ['keeper'] } } } } } }, yourRights: { role: 'member' } }) });
+    (w as any).ws.onmessage({ data: JSON.stringify({ type: 'snapshot', dialect: 'eidoverse-log', v: 4, minor: 1, actor: 'cap-1', seq: 0, state: { cinema: { born: 0, c: { captioners: { v: { ids: ['keeper'] } } } } }, yourRights: { role: 'member' } }) });
   } finally { (globalThis as any).WebSocket = RealWS; }
   const joined = logs.find((l) => /^joined/.test(l)) ?? '';
   check('not a captioner yet: the hint lists the existing captioner AND me, so the set keeps the first', /value: \{ids: \["keeper", "cap-1"\]\}/.test(joined) && /NOT one of cinema's captioners/.test(joined) && /screen cinema present/.test(joined), joined);

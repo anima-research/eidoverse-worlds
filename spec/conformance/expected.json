@@ -447,5 +447,156 @@
   "codes": [
    "4:redaction-target-bad"
   ]
+ },
+ "logs/23a-f1-request-admitted.jsonl": {
+  "status": "ok",
+  "digest": "ab569bd597e331c85b5a000e8d33c715118a219caec8b8f0a47c204c2666d9be",
+  "codes": []
+ },
+ "logs/23b-f2-request-refused.jsonl": {
+  "status": "ok",
+  "digest": "02e890d89599fdee6c30649d1b73c5959daff5b4849f98076ffe630446eb2e1f",
+  "codes": []
+ },
+ "logs/23c-f3-say.jsonl": {
+  "status": "ok",
+  "digest": "02e890d89599fdee6c30649d1b73c5959daff5b4849f98076ffe630446eb2e1f",
+  "codes": []
+ },
+ "logs/23d-f8-cascade.jsonl": {
+  "status": "ok",
+  "digest": "b1945da00accb736f6abf114d7fc0b92d7ced24887a9b940dac9c3b6e289c9c3",
+  "codes": [
+   "2:noop:delete-missing-entity"
+  ]
+ },
+ "logs/24a-old-change-verb.jsonl": {
+  "status": "ok",
+  "digest": "9bdfd10b40e1070ebce6cf23486669988bf5ca5b2213d74eb1c46217db139b89",
+  "codes": [
+   "3:malformed:envelope"
+  ]
+ },
+ "logs/24b-old-request-op.jsonl": {
+  "status": "ok",
+  "digest": "9bdfd10b40e1070ebce6cf23486669988bf5ca5b2213d74eb1c46217db139b89",
+  "codes": [
+   "1:malformed:envelope"
+  ]
+ },
+ "logs/24c-old-say-verb.jsonl": {
+  "status": "ok",
+  "digest": "02e890d89599fdee6c30649d1b73c5959daff5b4849f98076ffe630446eb2e1f",
+  "codes": [
+   "2:malformed:envelope"
+  ]
+ },
+ "logs/24d-old-redaction-verb.jsonl": {
+  "status": "ok",
+  "digest": "9bdfd10b40e1070ebce6cf23486669988bf5ca5b2213d74eb1c46217db139b89",
+  "codes": [
+   "3:malformed:envelope"
+  ]
+ },
+ "logs/24e-old-governance-verb.jsonl": {
+  "status": "ok",
+  "digest": "02e890d89599fdee6c30649d1b73c5959daff5b4849f98076ffe630446eb2e1f",
+  "codes": [
+   "2:malformed:envelope"
+  ]
+ },
+ "logs/24f-old-batch-followUps.jsonl": {
+  "status": "ok",
+  "digest": "02e890d89599fdee6c30649d1b73c5959daff5b4849f98076ffe630446eb2e1f",
+  "codes": [
+   "2:malformed:batch-field"
+  ]
+ },
+ "logs/24g-old-batch-item-verb.jsonl": {
+  "status": "ok",
+  "digest": "02e890d89599fdee6c30649d1b73c5959daff5b4849f98076ffe630446eb2e1f",
+  "codes": [
+   "2:malformed:op"
+  ]
+ },
+ "logs/24h-old-set-commit.jsonl": {
+  "status": "ok",
+  "digest": "9bdfd10b40e1070ebce6cf23486669988bf5ca5b2213d74eb1c46217db139b89",
+  "codes": [
+   "3:malformed:op-field"
+  ]
+ },
+ "logs/24i-old-redaction-target-op.jsonl": {
+  "status": "ok",
+  "digest": "1cabd6e3c6cbea97c38ac6adb6d14f73e608408a059245c29b8eaa4bbc58e9c3",
+  "codes": [
+   "4:redaction-target-bad"
+  ]
+ },
+ "logs/24j-old-envelope-for.jsonl": {
+  "status": "ok",
+  "digest": "02e890d89599fdee6c30649d1b73c5959daff5b4849f98076ffe630446eb2e1f",
+  "codes": [
+   "2:malformed:unknown-field"
+  ]
+ },
+ "logs/24k-old-envelope-grant.jsonl": {
+  "status": "ok",
+  "digest": "02e890d89599fdee6c30649d1b73c5959daff5b4849f98076ffe630446eb2e1f",
+  "codes": [
+   "2:malformed:unknown-field"
+  ]
+ },
+ "logs/24l-old-envelope-by.jsonl": {
+  "status": "ok",
+  "digest": "02e890d89599fdee6c30649d1b73c5959daff5b4849f98076ffe630446eb2e1f",
+  "codes": [
+   "2:malformed:unknown-field"
+  ]
+ },
+ "logs/24m-old-kind-act.jsonl": {
+  "status": "ok",
+  "digest": "02e890d89599fdee6c30649d1b73c5959daff5b4849f98076ffe630446eb2e1f",
+  "codes": [
+   "1:malformed:kind"
+  ]
+ },
+ "logs/24n-old-kind-sim.jsonl": {
+  "status": "ok",
+  "digest": "02e890d89599fdee6c30649d1b73c5959daff5b4849f98076ffe630446eb2e1f",
+  "codes": [
+   "2:malformed:kind"
+  ]
+ },
+ "logs/24o-old-kind-purge.jsonl": {
+  "status": "ok",
+  "digest": "02e890d89599fdee6c30649d1b73c5959daff5b4849f98076ffe630446eb2e1f",
+  "codes": [
+   "2:malformed:kind"
+  ]
+ },
+ "logs/24p-old-kind-sequencer.jsonl": {
+  "status": "ok",
+  "digest": "02e890d89599fdee6c30649d1b73c5959daff5b4849f98076ffe630446eb2e1f",
+  "codes": [
+   "2:malformed:kind"
+  ]
+ },
+ "logs/24q-old-genesis-verb.jsonl": {
+  "status": "no-world",
+  "digest": null,
+  "codes": [
+   "0:malformed:envelope",
+   "0:no-genesis"
+  ]
+ },
+ "logs/25-story.jsonl": {
+  "status": "ok",
+  "digest": "02e890d89599fdee6c30649d1b73c5959daff5b4849f98076ffe630446eb2e1f",
+  "codes": [
+   "5:redaction",
+   "3:noop:delete-missing-entity",
+   "3:noop:set-missing-entity"
+  ]
  }
 }

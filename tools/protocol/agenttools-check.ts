@@ -143,7 +143,7 @@ async function sock(name) {
   ws.send(JSON.stringify({ type: "join", world: "yard", id: name, avatar: "", replica: true }));
   await tryUntil(`${name}'s join is answered`, () => msgs.some((m) => m.type === "snapshot" || m.type === "error"), { ms: 4000, step: 50 });
   const snap = msgs.find((m) => m.type === "snapshot"); let rn = 0;
-  return { ws, msgs, snap, actor: snap?.cut?.you ?? null, close: () => ws.close(),
+  return { ws, msgs, snap, actor: snap?.actor ?? null, close: () => ws.close(),
     at: (x, z) => ws.send(JSON.stringify({ type: "pose", pose: { p: [x, 0, z], yaw: 0, speed: 0, clip: "idle" } })),
     req: async (verb, args = {}) => { const id = `q${++rn}`; ws.send(JSON.stringify({ type: "request", id, verb, args }));
       const r = await tryUntil(`the reply to ${verb}`, () => msgs.find((m) => m.type === "reply" && m.id === id), { ms: 4000, step: 50 }); return r ? r.reply : { ok: false, timeout: true }; } };
@@ -152,9 +152,9 @@ async function sock(name) {
 const ann = await sock("Ann");
 const { WorldAgent } = await import("../../mcpl/agent.ts");
 const ag = new WorldAgent({ url: `ws://127.0.0.1:${port}/ws`, name: "Hep", world: "yard", avatar: "" });
-await ag.connect(); await tryUntil("the agent has its cut", () => ag.cut, { ms: 3000, step: 50 });
-const HEP = ag.cut?.you;
-ok(/^u-/.test(HEP ?? "") && ag.replica?.active, "(setup) the agent joins and folds the world", ag.cut);
+await ag.connect(); await tryUntil("the agent has its cut", () => ag.snapshot, { ms: 3000, step: 50 });
+const HEP = ag.replica?.you;
+ok(/^u-/.test(HEP ?? "") && ag.replica?.active, "(setup) the agent joins and folds the world", ag.snapshot);
 ok((await ann.req("set", { id: "@world", component: `roles:${HEP}`, value: { role: "builder" } })).ok, "(setup) Ann makes the agent a builder");
 // R 10-17: a writer never chooses an id. Ann names each thing with a placeholder and a label; the authority mints its id
 // (ID[name]); the agent's tools reach it by that label, by its handle, or by any unique prefix of its id

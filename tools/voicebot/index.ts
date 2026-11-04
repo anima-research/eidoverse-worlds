@@ -142,9 +142,9 @@ function connectWorld() {
     const msg = JSON.parse(String(ev.data));
     if (msg.type === "error") { log(`world says: ${msg.error}`); return; }
     if (msg.type === "snapshot") {
-      Object.assign(names, msg.cut?.names ?? {});
-      head = Number.isInteger(msg.cut?.head) ? msg.cut.head : -1;
-      log(`watching world "${WORLD_NAME}" as spectator (${msg.state?.recentChat?.length ?? 0} recent lines skipped — live lines only)`);
+      Object.assign(names, msg.names ?? {});
+      head = Number.isInteger(msg.seq) ? msg.seq : -1;
+      log(`watching world "${WORLD_NAME}" as spectator (${msg.chat?.recentChat?.length ?? 0} recent lines skipped — live lines only)`);
       return;
     }
     if (msg.type !== "log") return;

@@ -77,7 +77,7 @@ for (const dir of dirs) {
   const op = (o: any) => ({ ...o, ...(o.comp !== undefined ? { comp: keyOf(o.comp) } : {}), ...("value" in o ? { value: valOf(o.comp, o.value) } : {}) });
   const next = old.map((e0: any, i: number) => { const e = JSON.parse(JSON.stringify(e0)); if (i === 0) return e; delete e.head; delete e.sig;
     if (typeof e.actor === "string") e.actor = who(e.actor);
-    if (e.kind === "change") e.body = e.op === "batch" ? { ...e.body, ops: e.body.ops.map(op) } : (({ verb, ...b }) => b)(op({ verb: e.verb, ...e.body }));
+    if (e.kind === "change") e.body = e.op === "batch" ? { ...e.body, ops: e.body.ops.map(op) } : (({ op: _o, ...b }) => b)(op({ op: e.op, ...e.body }));
     if (e.kind === "say" && typeof e.body?.to === "string") e.body.to = who(e.body.to);
     if (e.kind === "request" && typeof e.body?.capability?.author === "string") e.body.capability.author = who(e.body.capability.author);
     if (e.kind === "request" && typeof e.body?.sponsor === "string") e.body.sponsor = who(e.body.sponsor);

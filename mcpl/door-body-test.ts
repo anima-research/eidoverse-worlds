@@ -129,7 +129,7 @@ check("(2 m in front of a body is beside it, not in it)", !pointClass([0, 0, 0],
 console.log("a walk carried across a rejoin");
 {
   // A stand-in world: every join is answered with an empty world's snapshot.
-  const snapshot = () => JSON.stringify({ type: "snapshot", state: null, entries: [], present: [], cut: { state: wireState(emptyState()), head: 0, worldId: "w" } });
+  const snapshot = () => JSON.stringify({ type: "snapshot", dialect: "eidoverse-log", v: 4, minor: 1, chat: null, entries: [], present: [], state: wireState(emptyState()), seq: 0, world: "w" });
   const sockets = new Map<string, any>();
   const world = Bun.serve({
     hostname: "127.0.0.1", port: 0,

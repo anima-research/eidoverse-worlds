@@ -193,7 +193,7 @@ long as it rides; that field is reserved today (a write is refused), so no held 
                                                          target's change or script request, caused by 816
 ```
 A timer's or a presence event's act has `cause` = the entry that made its sponsor. Replay never runs code: the fold
-reads 814. An auditor may: `shared/protocol/scriptaudit.js` folds to `head`, re-runs the source with the recorded event,
+reads 814. An auditor may: `shared/protocol/scriptaudit.js` folds to the body's `seq`, re-runs the source with the recorded event,
 clock (the act's `ts`), `seed` and presence `reads`, and compares the writes. An act's `reads` say what was asked and
 how much came back (`{near: [{r, n}], count: [n], names: k}`; `nearby` is recorded under `near`), never who: so a re-run
 answers `world.near` and `world.nearby` with stand-ins (each `r` away) and `world.name` with `null`. When the writes and says still match, the act is verified; when they differ and the script

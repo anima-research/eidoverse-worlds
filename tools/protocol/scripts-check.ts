@@ -642,7 +642,7 @@ const cases: Case[] = [
       const r1 = useSteady(s, "vic", { id: "box", action: "go" }); const t1 = comp(s, "box", "t/t"); const act1 = s.entries()[r1.script?.act];
       const r2 = useSteady(s, "vic", { id: "box", action: "go" }); const t2 = comp(s, "box", "t/t");
       // the re-run is about determinism, not time: a slow host gets the whole 30 s to replay it (wallMs is only the backstop)
-      const again = SB.runScript({ text: s.w().getBlob(act1.body.src).text, self: "box", key: "script:clock", event: act1.body.event, now: act1.ts, seed: act1.body.seed, st: F.fold(s.entries(), { until: act1.body.head }), limits: { wallMs: 30000 } });
+      const again = SB.runScript({ text: s.w().getBlob(act1.body.src).text, self: "box", key: "script:clock", event: act1.body.event, now: act1.ts, seed: act1.body.seed, st: F.fold(s.entries(), { until: act1.body.seq }), limits: { wallMs: 30000 } });
       return { nowIsTs: t1?.now === act1?.ts, same: t1?.same, r1: t1?.r, r2: t2?.r, rerun: again.ops?.[0]?.value?.r }; },
     good: (o) => o.nowIsTs && o.same === true && JSON.stringify(o.r1) === JSON.stringify(o.rerun) && JSON.stringify(o.r1) !== JSON.stringify(o.r2) },
   { id: "D3", what: "the sandbox's time zone is UTC wherever the authority runs: local-time methods, parsing and Date() agree under TZ=UTC and TZ=Asia/Tokyo", run() {
@@ -727,7 +727,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r)); process.exit(0);\n`);   // 
       s.call("olive", "create", { id: "cup", model: "crate", place: { at: [2, 0] } }); s.call("olive", "set", { id: "cup", component: "label", value: "cup" });
       // strip the label's value to a commit, with no purge: as a copy of the log changed by hand would hold it
       const lines = fs.readFileSync(s.logPath, "utf8").split("\n"); const k = lines.findLastIndex((l) => l.includes('"label"') && l.includes('"kind":"change"'));
-      const e = JSON.parse(lines[k]); const { value: _v, salt: _s, ...rest } = e.body; e.body = { ...rest, commit: "0".repeat(64) }; lines[k] = JSON.stringify(e); fs.writeFileSync(s.logPath, lines.join("\n"));
+      const e = JSON.parse(lines[k]); const { value: _v, salt: _s, ...rest } = e.body; e.body = { ...rest, commitment: "0".repeat(64) }; lines[k] = JSON.stringify(e); fs.writeFileSync(s.logPath, lines.join("\n"));
       const w = openWorld(s.name); const req = (() => { clock.advance(100); return D.request(w, "olive", "set", { id: "clock", component: "label", value: "x" }); })();
       const n0 = w.entries.length, ticks: string[] = [];
       for (let i = 0; i < 3; i++) { clock.advance(5000); for (const x of D.tick(w) ?? []) ticks.push(`${x.status}${x.code ? ` ${x.code}` : ""}`); }
@@ -815,7 +815,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r)); process.exit(0);\n`);   // 
       // a batch the authority finds too costly for one request (its time cap is real time: a slow host reaches it sooner) is
       // sent again as two halves; the setup only needs the 3000 things
       const refusedBatches: string[] = [];
-      const put = (ops: any[]) => { const rb = s.call("olive", "batch", { requests }, 11000);
+      const put = (ops: any[]) => { const rb = s.call("olive", "batch", { requests: ops }, 11000);
         if (!rb?.ok && rb?.refused?.code === "too-costly" && ops.length > 1) { refusedBatches.push(`split ${ops.length}`); put(ops.slice(0, ops.length >> 1)); put(ops.slice(ops.length >> 1)); }
         else if (!rb?.ok) refusedBatches.push(show(rb)); };
       for (let b = 0; b < 30; b++) put(Array.from({ length: 100 }, (_, i) => ({ verb: "create", args: { id: `t${b}-${i}`, components: { "t/data": { xs: big } } } }))); // each batch alone in the 10 s byte window: the charge is PRE-paid since C0 (10-15), so 6 s steps held two batches and tripped the cap
@@ -966,7 +966,7 @@ console.log(JSON.stringify({ platform: process.platform, available: SANDBOX.avai
       if (!AU) return { absent: true };
       const A = AU.auditScripts(L, s.w().getBlob, { run: SB.runScript });
       const forged = F.readLog(Buffer.from(L.map((e: any) => JSON.stringify(e)).join("\n") + "\n")); const k = forged.findIndex((e: any) => e.actor === "script:lever" && e.verb === "script"); if (forged[k]?.body?.uses) forged[k].body.uses[0].action = "close";
-      return { r: st(s, r), open: comp(s, "gate", "openable")?.open, uses: act?.body?.uses, use: use ? [use.cause === r.script?.act, use.body?.request?.id, use.body?.request?.action, use.body?.sponsor] : null, change: change?.actor ?? null,
+      return { r: st(s, r), open: comp(s, "gate", "openable")?.open, uses: act?.body?.uses, use: use ? [use.cause === r.script?.act, use.body?.args?.id, use.body?.args?.action, use.body?.sponsor] : null, change: change?.actor ?? null,
         audit: `${A.reran}/${A.acts} ${A.flags.map((f: any) => f.check).join(",")}`, forged: AU.auditScripts(forged, s.w().getBlob, { run: SB.runScript }).flags.map((f: any) => f.check) }; },
     good: (o) => o.r === "ran" && o.open === true && JSON.stringify(o.uses) === '[{"id":"gate","action":"open"}]' && JSON.stringify(o.use) === '[true,"gate","open","bob"]' && o.change === "script:lever" && o.audit === "1/1 " && o.forged.includes("rerun-use") },
   { id: "D4b", what: "a script whose read SHAPE turns on a name (an unrecorded identity) is skipped as depending on who was near, never flagged `reads`", run(s) { cast(s);
@@ -1510,7 +1510,7 @@ const serverCases: Case[] = [{ id: "S1", server: true, what: "the server: a worl
       await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
       ws.send(JSON.stringify({ type: "join", world: "chimes", id: name, avatar: "", replica: true }));
       await tryUntil(`${name}'s join is answered`, () => msgs.some((m) => m.type === "snapshot" || m.type === "error"), { ms: 3000, step: 50 });
-      return { ws, msgs, you: msgs.find((m) => m.type === "snapshot")?.cut?.you, req: (verb: string, args: any = {}) => new Promise<any>((res) => { const rid = `${name}-${++n}`; waiters.set(rid, (r: any) => res(IDS.back(r))); ws.send(JSON.stringify({ type: "request", id: rid, verb, args: IDS.out(verb, args) })); setTimeout(() => { if (waiters.delete(rid)) res({ ok: false, refused: { code: "timeout" } }); }, 8000); }),
+      return { ws, msgs, you: msgs.find((m) => m.type === "snapshot")?.actor, req: (verb: string, args: any = {}) => new Promise<any>((res) => { const rid = `${name}-${++n}`; waiters.set(rid, (r: any) => res(IDS.back(r))); ws.send(JSON.stringify({ type: "request", id: rid, verb, args: IDS.out(verb, args) })); setTimeout(() => { if (waiters.delete(rid)) res({ ok: false, refused: { code: "timeout" } }); }, 8000); }),
         send: (m: any) => ws.send(JSON.stringify(m)) }; };
     const ann = await client("Ann");
     const mk = await ann.req("create", { id: "bell1" });

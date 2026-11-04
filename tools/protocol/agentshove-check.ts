@@ -85,8 +85,8 @@ try {
   const { WorldAgent } = await import("../../mcpl/agent.ts");
   const { HANDLERS } = await import("../../mcpl/tools.ts");
   ag = new WorldAgent({ url: `ws://127.0.0.1:${port}/ws`, name: "Hep", world: "yard", avatar: "" });
-  await ag.connect(); for (let i = 0; i < 60 && !ag.cut; i++) await sleep(50);
-  const HEP = ag.cut?.you;
+  await ag.connect(); for (let i = 0; i < 60 && !ag.snapshot; i++) await sleep(50);
+  const HEP = ag.actor;
   ok(/^u-/.test(HEP ?? "") && ag.replica?.active, "(setup) the agent joins and folds the world");
   ok((await ann.req("set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } })).ok, "(setup) the yard runs eidosim");
   // empty crates (20 and 30 kg): a body's push (BODY_MASS 70 kg, elastic) sends them well along; a full one wouldn't budge much
@@ -101,7 +101,7 @@ try {
   ok(["low", "tall", "still", "locked"].every((id) => Array.isArray(ag.replica?.st?.entities?.[N(id)]?.c?.physics?.shape)), "(setup) the authority measured each crate's shape (the agent folds it)");
   const call = (name, a = {}) => HANDLERS[name](ag, a, { agent: ag, canPush: () => false, heldActivity: [], cursor: { caughtUpTo: null } }, name);
   const entries = () => readLog(fs.readFileSync(path.join(W, "yard", "world.jsonl")));
-  const shoves = (id) => entries().filter((e) => e.kind === "request" && e.verb === "punt" && e.actor === HEP && !e.body?.refused && e.body?.request?.id === N(id) && e.body?.request?.contact === true);
+  const shoves = (id) => entries().filter((e) => e.kind === "request" && e.verb === "punt" && e.actor === HEP && !e.body?.refused && e.body?.args?.id === N(id) && e.body?.args?.contact === true);
   const anyPunt = (id) => entries().filter((e) => e.kind === "request" && e.verb === "punt" && e.actor === HEP && JSON.stringify(e.body ?? {}).includes(`"${N(id)}"`));
   const posOf = (id) => ag.replica?.st?.entities?.[N(id)]?.c?.transform?.pos ?? null;
   const settle = async (id) => { for (let i = 0; i < 100; i++) { await sleep(100); if (!ag.replica?.sim?.sim?.bodies?.[N(id)]) { await ann.req("wait", {}); return; } } };

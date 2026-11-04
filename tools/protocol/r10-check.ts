@@ -131,7 +131,7 @@ const seated = (s: any, who: string) => !!s.w().presence.occupants?.[who];
 const inboxOf = (s: any, who: string) => JSON.stringify(s.w().presence.inbox?.[who] ?? s.w().presence.inboxes?.[who] ?? null);
 
 const RT = await import(TREE + "shared/protocol/authority/rights.js");
-const FU = (s: any, seq: number) => { const ch = s.entries()[seq]; const ops = ch?.body?.ops ?? []; return (ch?.body?.cascade ?? []).map((k: number) => `${ops[k]?.verb} ${ops[k]?.id}.${ops[k]?.comp ?? "*"}`); };
+const FU = (s: any, seq: number) => { const ch = s.entries()[seq]; const ops = ch?.body?.ops ?? []; return (ch?.body?.cascade ?? []).map((k: number) => `${ops[k]?.op} ${ops[k]?.id}.${ops[k]?.comp ?? "*"}`); };
 const readText = (rel: string) => { try { return fs.readFileSync(TREE + rel, "utf8"); } catch { return fs.readFileSync(ENGINE + rel, "utf8"); } };
 const section = (md: string, head: RegExp) => { const i = md.search(head); if (i < 0) return ""; const rest = md.slice(i + 1); const j = rest.search(/\n## /); return md.slice(i, j < 0 ? undefined : i + 1 + j); };
 

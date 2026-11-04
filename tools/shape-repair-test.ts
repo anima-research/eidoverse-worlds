@@ -34,8 +34,8 @@ function legacyWorld(things: Record<string, Record<string, any>>, world: Record<
   const entries: any[] = []; let T = 1785000000000;
   const io = { name: 'legacy', entries, getBlob: () => { throw new Error('no blobs'); }, putBlob: () => { throw new Error('no blobs'); }, writeLine: () => {}, now: () => (T += 1000), catalogue };
   const w = worldOf(io);
-  w.append({ kind: 'genesis', actor: 'system', verb: 'genesis', body: { dialect: 'eidoverse-log', v: 4, minor: 0, nonce: 'j1783lQSA7cL_W-K6NwvNw', owners: [[], [KEY]], sequencer: KEY } });
-  const a = w.append({ kind: 'request', actor: 'olive', verb: 'create-world', body: { request: { title: 'old' } } });
+  w.append({ kind: 'genesis', actor: 'system', body: { dialect: 'eidoverse-log', v: 4, minor: 1, nonce: 'j1783lQSA7cL_W-K6NwvNw', owners: [[], [KEY]], sequencer: KEY } });
+  const a = w.append({ kind: 'request', actor: 'olive', verb: 'create-world', body: { args: { title: 'old' } } });
   const ops: any[] = [{ op: 'set', id: '@world', comp: 'roles:olive', value: { role: 'owner' } }];
   for (const [k, v] of Object.entries(world)) ops.push({ op: 'set', id: '@world', comp: k, value: v });
   for (const [id, c] of Object.entries(things)) { ops.push({ op: 'create', id }); for (const [k, v] of Object.entries({ transform: TF, ...c })) ops.push({ op: 'set', id, comp: k, value: v }); }

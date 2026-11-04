@@ -117,7 +117,7 @@ function playground() {
   call("rowan", "grab", { id: "ball" });
   const r = call("rowan", "throw", { id: "ball", v: [0, 2, 3], w: [0, 0, 6.28], t: 1800000000123 });
   const act = L().filter((e) => e?.kind === "request" && e.verb === "throw").at(-1); const la = L().filter((e) => e?.kind === "physics" && e.verb === "launch").at(-1);
-  ok("TH1", r.ok && JSON.stringify(act?.body?.request?.w) === "[0,0,6.28]" && act?.body?.request?.t === 1800000000123 && JSON.stringify(la?.body?.w) === "[0,0,6.28]",
+  ok("TH1", r.ok && JSON.stringify(act?.body?.args?.w) === "[0,0,6.28]" && act?.body?.args?.t === 1800000000123 && JSON.stringify(la?.body?.w) === "[0,0,6.28]",
     "throw {w (rad/s, world), t (capture, authority clock)}: the act records the request, the launch carries w (eidosim ignores it, as it ignores roll)", [r.refused, act?.body, la?.body]);
   call("rowan", "wait", {}, 8000); { const p = w.state().entities.ball.c.transform.pos; call("rowan", "move", { to: [p[0], 0, p[2] - 0.5] }, 2000); }
   ok("TH2", call("rowan", "grab", { id: "ball" }).ok && call("rowan", "throw", { id: "ball", v: [0, 1, 1], w: [0, "x", 0] }).refused?.code === "shape", "a malformed w is refused");

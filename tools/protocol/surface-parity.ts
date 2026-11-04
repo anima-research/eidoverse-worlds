@@ -253,7 +253,7 @@ async function spectate(s: Server, world: string): Promise<{ entities: number; p
     ws.onmessage = (ev) => {
       const m = JSON.parse(String(ev.data));
       if (m.type === "error") { clearTimeout(t); ws.close(); rej(new Error(String(m.error))); }
-      if (m.type === "snapshot") { clearTimeout(t); const ents = m.cut?.state ?? {}; /* clientCutOf (shared/protocol/replica.js:150): state = wireState = {id: {born, c}}, the entity map itself */ const people = (m.present ?? m.people ?? []).length; ws.close(); res({ entities: Object.keys(ents).length, people }); }
+      if (m.type === "snapshot") { clearTimeout(t); const ents = m.state ?? {}; /* clientSnapshotOf (shared/protocol/replica.js:150): state = wireState = {id: {born, c}}, the entity map itself */ const people = (m.present ?? m.people ?? []).length; ws.close(); res({ entities: Object.keys(ents).length, people }); }
     };
     ws.onerror = () => { clearTimeout(t); rej(new Error("socket error")); };
   });

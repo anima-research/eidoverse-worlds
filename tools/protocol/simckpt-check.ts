@@ -158,7 +158,7 @@ const sameAsGenesis = (b) => digestOf(b.sim().sim) === digestOf(simFold(b.entrie
 // ---- PC8 ----
 { const x = world("o", 6, 0); labels(x, 4); T += 25000; x.beat();
   const sf = x.w.sim(); const cut = simSnapshotOf(sf, x.w.entries); const state = x.w.putBlob({ cutJson: JSON.stringify(cut) });   // the shape before 10-28: time inside
-  const s = x.w.append({ kind: "physics", actor: "sim", verb: "checkpoint", body: { at: x.w.entries.length - 1, engine: { engine: sf.spec.engine }, tick: sf.sim.tick, clock: sf.clock, sim: digestOf(sf.sim), state } });
+  const s = x.w.append({ kind: "physics", actor: "sim", verb: "checkpoint", body: { seq: x.w.entries.length - 1, engine: { engine: sf.spec.engine }, tick: sf.sim.tick, clock: sf.clock, sim: digestOf(sf.sim), state } });
   labels(x, 3); const b = reopen(x.dir);
   ok(b.bootedFrom === s && sameAsGenesis(b), "PC8 a checkpoint whose blob holds its own clock and tick (written before 10-28) still boots", { from: b.bootedFrom, s }); }
 
@@ -166,7 +166,7 @@ const sameAsGenesis = (b) => digestOf(b.sim().sim) === digestOf(simFold(b.entrie
 { const x = world("q", 6, 0); labels(x, 2); x.beat();
   const sf = x.w.sim(), ahead = T + 1000, cut = simSnapshotOf(sf, x.w.entries); cut.clock = ahead;   // a cut whose clock is ahead of every ts
   const state = x.w.putBlob({ cutJson: JSON.stringify(cut) });
-  const s = x.w.append({ kind: "physics", actor: "sim", verb: "checkpoint", body: { at: x.w.entries.length - 1, engine: { engine: sf.spec.engine }, tick: sf.sim.tick, clock: ahead, sim: digestOf(sf.sim), state } });
+  const s = x.w.append({ kind: "physics", actor: "sim", verb: "checkpoint", body: { seq: x.w.entries.length - 1, engine: { engine: sf.spec.engine }, tick: sf.sim.tick, clock: ahead, sim: digestOf(sf.sim), state } });
   const T0 = T; T -= 900;   // the wall stepped back across the restart
   const b = reopen(x.dir); const r = request(b, "rowan", "set", { id: "cr-0", component: "label", value: "after" }); const ts = b.entries[r.seq]?.ts;
   T = T0 + 2000;

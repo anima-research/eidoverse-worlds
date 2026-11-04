@@ -91,7 +91,7 @@ class Client {
   /** the door's entries this client was sent, numbered */
   entries() { return this.of("log").flatMap((m) => m.entries.map((e: any, i: number) => ({ seq: m.from + i, ...e }))); }
   says() { return this.entries().filter((e) => e.kind === "say"); }
-  get me() { return this.snapshot?.cut?.you as string | undefined; }
+  get me() { return this.snapshot?.you as string | undefined; }
   close() { this.ws.close(); }
 }
 const joined = async (id: string, world = WORLD, opts: { agent?: boolean } = {}) => { const c = new Client(id, { ...opts, world }); await c.connect(); return c; };
@@ -171,11 +171,11 @@ try {
   check("join returns a snapshot", !!alice.snapshot);
   check("snapshot names you", alice.snapshot.you === "alice", alice.snapshot.you);
   check("the snapshot is a cut (version, head, the fold's state) and carries no history",
-    alice.snapshot.cut?.dialect === "eidoverse-log" && alice.snapshot.cut?.v === 4 && Number.isInteger(alice.snapshot.cut?.head) && !!alice.snapshot.cut?.state && !("entries" in alice.snapshot),
-    JSON.stringify(Object.keys(alice.snapshot.cut ?? {})));
+    alice.snapshot.dialect === "eidoverse-log" && alice.snapshot.v === 4 && Number.isInteger(alice.snapshot.seq) && !!alice.snapshot.state && !("entries" in alice.snapshot),
+    JSON.stringify(Object.keys(alice.snapshot ?? {})));
   check("you are told your identity: an opaque directory id, not your name", /^u-[a-z2-7]{20}$/.test(alice.me ?? ""), alice.me);
   check("the founder, joining by name, is the world's owner", alice.snapshot.yourRights?.role === "owner", JSON.stringify(alice.snapshot.yourRights));
-  const head0 = alice.snapshot.cut.head;
+  const head0 = alice.snapshot.seq;
 
   // --- door requests are answered, ordered, echoed, and persisted
   const r1 = await alice.req("create", { id: "box1", components: { transform: { pos: [1, 0, 2] } } });
@@ -194,9 +194,9 @@ try {
   // --- a second body sees the world by its cut
   const bob = await joined("bob", WORLD, { agent: true });
   check("a late joiner's cut holds the world as it is now (box1 where it was moved)",
-    JSON.stringify(bob.snapshot.cut.state?.[IDS.of("box1")]?.c?.transform?.v?.pos) === "[5,0,5]",
-    JSON.stringify(Object.keys(bob.snapshot.cut.state ?? {})));
-  check("a late joiner gets no chat from before it arrived (arrival-only: no window, no count)", JSON.stringify(bob.snapshot.state?.recentChat) === "[]" && bob.snapshot.state?.chatTotal === 0, JSON.stringify(bob.snapshot.state));
+    JSON.stringify(bob.snapshot.state?.[IDS.of("box1")]?.c?.transform?.v?.pos) === "[5,0,5]",
+    JSON.stringify(Object.keys(bob.snapshot.state ?? {})));
+  check("a late joiner gets no chat from before it arrived (arrival-only: no window, no count)", JSON.stringify(bob.snapshot.chat?.recentChat) === "[]" && bob.snapshot.chat?.chatTotal === 0, JSON.stringify(bob.snapshot.state));
   check("late joiner sees who is present", bob.snapshot.present.some((p: any) => p.id === "alice"));
   await sleep(300);
   check("arrival is announced to those already here", alice.of("arrive").some((m) => m.id === "bob"));
@@ -287,7 +287,7 @@ try {
     check("sixty things built, moved, and half removed, as three batches", c1.ok && c2.ok && c3.ok, JSON.stringify([c1.reply?.refused, c2.reply?.refused, c3.reply?.refused]));
     await sleep(300);
     const late = await joined("latecomer", fw);
-    const st = late.snapshot.cut?.state ?? {};
+    const st = late.snapshot.state ?? {};
     // ids are minted (R 10-17): the suite's names f0..f59 read as theirs through IDS
     const mine = new Set(Array.from({ length: 60 }, (_, i) => IDS.of(`f${i}`)));
     const things = Object.keys(st).filter((k) => mine.has(k));
@@ -295,8 +295,8 @@ try {
     const f31 = st[IDS.of("f31")]?.c?.transform?.v?.pos;
     check("the cut holds the LATEST transforms", f31?.[2] === 5, JSON.stringify(f31));
     check("a joiner is not handed the history (no entries; the cut's head says where it stands)",
-      !("entries" in late.snapshot) && late.snapshot.cut.head >= 4, `head ${late.snapshot.cut.head}`);
-    local("the full history stays on disk", () => logLines(fw).length === late.snapshot.cut.head + 1, `${logLines(fw).length} lines, head ${late.snapshot.cut.head}`);
+      !("entries" in late.snapshot) && late.snapshot.seq >= 4, `head ${late.snapshot.seq}`);
+    local("the full history stays on disk", () => logLines(fw).length === late.snapshot.seq + 1, `${logLines(fw).length} lines, head ${late.snapshot.seq}`);
     builder.close(); late.close();
   }
 
@@ -312,9 +312,9 @@ try {
     // the master log, whenever she arrives
     const arrival = await joined("arrival", hw);
     const owner = await joined("alice", hw);
-    const recent = arrival.snapshot.state?.recentChat ?? [];
-    check("an arrival gets no chat from before it came (no window, no count)", recent.length === 0 && arrival.snapshot.state?.chatTotal === 0, `${recent.length} / ${arrival.snapshot.state?.chatTotal}`);
-    check("the owner's join replays nothing either, and counts what the master log holds", JSON.stringify(owner.snapshot.state?.recentChat) === "[]" && owner.snapshot.state?.chatTotal === 120, JSON.stringify(owner.snapshot.state));
+    const recent = arrival.snapshot.chat?.recentChat ?? [];
+    check("an arrival gets no chat from before it came (no window, no count)", recent.length === 0 && arrival.snapshot.chat?.chatTotal === 0, `${recent.length} / ${arrival.snapshot.chat?.chatTotal}`);
+    check("the owner's join replays nothing either, and counts what the master log holds", JSON.stringify(owner.snapshot.chat?.recentChat) === "[]" && owner.snapshot.chat?.chatTotal === 120, JSON.stringify(owner.snapshot.state));
 
     const askAs = (who: Client) => (o: any) => new Promise<any>((res) => {
       const reqId = `t${Math.random()}`;
@@ -361,7 +361,7 @@ try {
     const arrival = await joined("arrival2", nw);
     // (the window's fairness — a flood can't erase the other speakers — reached a joiner until speech became arrival-only,
     // R 10-18; a joiner is now handed no window at all)
-    check("a joiner after a flood is handed none of it", JSON.stringify(arrival.snapshot.state?.recentChat) === "[]" && arrival.snapshot.state?.chatTotal === 0, JSON.stringify(arrival.snapshot.state));
+    check("a joiner after a flood is handed none of it", JSON.stringify(arrival.snapshot.chat?.recentChat) === "[]" && arrival.snapshot.chat?.chatTotal === 0, JSON.stringify(arrival.snapshot.state));
     human.close(); bot.close(); arrival.close();
   }
 
@@ -372,7 +372,7 @@ try {
     const t = await owner.req("set", { id: "@world", component: "terrain", value: { seed: 7, size: 160, amplitude: 2.6, flatRadius: 16, layers: [{ color: "#4a5d33", repeat: 16 }] } });
     const g = await owner.req("set", { id: "@world", component: "grass", value: { width: 90, depth: 80, spacing: 0.26, perCell: 4, color: 0x3a5a2c } });
     check("the owner sets terrain and grass on @world", t.ok && g.ok, JSON.stringify([t.reply?.refused, g.reply?.refused]));
-    const w = (c: Client) => c.snapshot.cut?.state?.["@world"]?.c ?? {};
+    const w = (c: Client) => c.snapshot.state?.["@world"]?.c ?? {};
     const a = await joined("g-after", gw);
     check("terrain is in a joiner's cut", w(a).terrain?.v?.amplitude === 2.6, JSON.stringify(w(a).terrain));
     check("grass is in a joiner's cut", w(a).grass?.v?.width === 90 && w(a).grass?.v?.depth === 80, JSON.stringify(w(a).grass));   // spacing and perCell are not grass fields now (the door drops them)
@@ -394,13 +394,13 @@ try {
     check("a light is created and moved through the door", c.ok && p.ok, JSON.stringify([c.reply?.refused, p.reply?.refused]));
     const late = await joined("lightlate", lw);
     const key = IDS.of("lamp1");
-    const ent = late.snapshot.cut.state[key]?.c ?? {};
+    const ent = late.snapshot.state[key]?.c ?? {};
     check("a light is a thing with a light component (no model)", !!ent.light && !ent.model, JSON.stringify(ent));
     check("a light carries its colour and intensity", ent.light?.v?.color === 0xffcc88 && ent.light?.v?.intensity === 20, JSON.stringify(ent.light));
     check("a light moves like any thing (latest transform)", ent.transform?.v?.pos?.[0] === 5, JSON.stringify(ent.transform));
     const d = await owner.req("delete", { id: "lamp1" });
     const after = await joined("lightlater", lw);
-    check("removing a light drops it from the world", d.ok && !Object.keys(after.snapshot.cut.state).some((k) => k.endsWith("lamp1")));
+    check("removing a light drops it from the world", d.ok && !Object.keys(after.snapshot.state).some((k) => k.endsWith("lamp1")));
     owner.close(); late.close(); after.close();
   }
 

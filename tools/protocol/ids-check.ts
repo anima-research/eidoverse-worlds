@@ -73,7 +73,7 @@ await C("W2", "a chosen id is refused on create {from} (duplicate and blueprint)
   return [!dup.ok && dup.refused.code === "shape" && !bp.ok && bp.refused.code === "shape" && !b.ok && b.refused.code === "shape" && /op 1/.test(b.refused.reason) && /\$chair/.test(b.refused.fix), [why(dup), why(bp), why(b)]]; });
 await C("W3", "the identity-shaped id refusal still holds through the system door (a fork's copy can't wear u-…)", () => {
   const W = world(); const w = SD.worldObject(W);
-  const r = D.forkCopy(w, W.owner, { ops: [{ verb: "create", args: { id: "u-abcdefghijklmnopqrst", model: "crate" } }] });
+  const r = D.forkCopy(w, W.owner, { requests: [{ verb: "create", args: { id: "u-abcdefghijklmnopqrst", model: "crate" } }] });
   return [!r.ok && r.refused.code === "shape" && /person/.test(r.refused.reason), why(r)]; });
 
 // ---- P: placeholders ----
@@ -120,7 +120,7 @@ await C("P8", "a chosen id refused beside a placeholder in one batch: the attemp
 // ---- Y: system acts keep ids ----
 await C("Y1", "a fork's copy (the system door) writes the ids it is given, verbatim", () => {
   const W = world(); const w = SD.worldObject(W);
-  const r = D.forkCopy(w, W.owner, { ops: [{ verb: "create", args: { id: "old-world-table-1", model: "crate" } }] });
+  const r = D.forkCopy(w, W.owner, { requests: [{ verb: "create", args: { id: "old-world-table-1", model: "crate" } }] });
   return [r.ok && !!W.state().entities["old-world-table-1"], why(r)]; });
 
 // ---- D: delete nulls incoming references ----
@@ -167,7 +167,7 @@ await C("L1", "lint reports a stored reference that names nothing (kind dangling
   const W = world(); const w = SD.worldObject(W);
   // a dangling reference can't be written any more (every write checks its refs; a delete clears them), so the state an old
   // log or an import could leave is made by hand: the thing a watcher looks at is taken out of the folded state
-  const r0 = D.forkCopy(w, W.owner, { ops: [{ verb: "create", args: { id: "gone-thing-9", model: "crate" } }, { verb: "create", args: { id: "watcher-1", model: "crate", components: { "look-at": { target: "gone-thing-9" } } } }] });
+  const r0 = D.forkCopy(w, W.owner, { requests: [{ verb: "create", args: { id: "gone-thing-9", model: "crate" } }, { verb: "create", args: { id: "watcher-1", model: "crate", components: { "look-at": { target: "gone-thing-9" } } } }] });
   delete W.state().entities["gone-thing-9"];
   const l = W.call("lint", {}); const d = (l.warnings ?? []).find((x) => x.kind === "dangling");
   return [r0.ok && l.ok && d && d.id === "watcher-1" && d.names === "gone-thing-9" && /look-at/.test(d.at), [why(r0), l.warnings]]; });

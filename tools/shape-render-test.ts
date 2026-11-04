@@ -141,7 +141,7 @@ await tryRow('AD', async () => {
     const { request, LAB_CATALOGUE } = await import('../shared/protocol/authority.js');
     const { readLog } = await import('../shared/protocol/fold.js');
     const { openLive } = await import('../server/livehost.ts');
-    const { makeReplica, clientCutOf } = await import('../shared/protocol/replica.js');
+    const { makeReplica, clientSnapshotOf } = await import('../shared/protocol/replica.js');
     const { scratch } = await import('./protocol/common.ts');
     const CA = `eido:sha256/${'5'.repeat(64)}`;
     const cat = { get: (n: string) => LAB_CATALOGUE.get(n === CA ? 'crate' : n), list: (q: string) => LAB_CATALOGUE.list(q) };
@@ -153,7 +153,7 @@ await tryRow('AD', async () => {
     lc('rowan', 'set', { id: '@world', component: 'physics-engine', value: { engine: 'eidosim@1.0.0' } });
     lc('rowan', 'create', { id: 'cuball', model: CA, components: { physics: { kind: 'dynamic', who: 'member' }, transform: { pos: [0, 0, 0], scale: 0.3 } } });
     lc('rowan', 'move', { to: [0, 0, -0.5] });
-    const rep = makeReplica(); rep.adopt(JSON.parse(JSON.stringify({ ...clientCutOf(lw), you: 'vic' })));
+    const rep = makeReplica(); rep.adopt(JSON.parse(JSON.stringify({ ...clientSnapshotOf(lw), you: 'vic' })));
     const from = LL().length; const pr = lc('rowan', 'punt', { id: 'cuball', power: 6 }); rep.ingest(LL().slice(from), from);
     const flown: string[] = []; for (let t = 0; t < 40; t++) { const b = rep.simAt?.(now + t * 33)?.bodies?.cuball; if (b) flown.push(b.p.join()); }
     const c0 = lw.state().entities.cuball.c;

@@ -377,7 +377,7 @@ const cases: Case[] = [
       const act = s.entries().filter((e: any) => e.kind === "request" && e.verb === "throw").at(-1);
       s.call("vic", "wait", {}, 8000); s.call("vic", "grab", { id: "anvil" }); const n0 = s.entries().length;
       const t0 = s.call("vic", "throw", { id: "anvil", v: [0, 1, 3] });
-      return { t: show(t), v: L?.body?.v, sent: act?.body?.request?.v, note: t.notes?.some((n: any) => /grabbable\.throw/.test(n.why)), t0: show(t0), after: since(s, n0), v0: s.entries().at(-1)?.body?.v, why: t0.notes?.find((n: any) => n.thrown)?.why, carrier: carrier(s) }; },
+      return { t: show(t), v: L?.body?.v, sent: act?.body?.args?.v, note: t.notes?.some((n: any) => /grabbable\.throw/.test(n.why)), t0: show(t0), after: since(s, n0), v0: s.entries().at(-1)?.body?.v, why: t0.notes?.find((n: any) => n.thrown)?.why, carrier: carrier(s) }; },
     good: (o) => o.t === "ok" && JSON.stringify(o.v) === "[0,2,3]" && JSON.stringify(o.sent) === "[0,1,1.5]" && o.note && o.t0 === "ok" && JSON.stringify(o.after) === '["act:drop","sim:launch"]' && JSON.stringify(o.v0) === "[0,0,0]" && /can't be thrown/.test(o.why ?? "") && !o.carrier.disagree },
   { id: "R2", what: "release: stay hangs where the hand lets go: a put with no pos isn't set down, a floating put isn't refused; a plain thing still is", run(s) { cast(s);
       s.call("olive", "create", { id: "balloon", model: "ball", components: { grabbable: { who: "member", release: "stay" } }, place: { at: [0, 0] } });
@@ -640,7 +640,7 @@ const cases: Case[] = [
       const u = s.call("vic", "use", { id: "torch", args: { phase: "up" } }); const lit2 = comp(s, "torch", "t/burning");
       const named = s.call("vic", "use", { id: "torch", action: "poke" });
       const thief = s.call("ann", "use", { id: "torch", args: { held: true } });
-      return { before: show(before), litBefore, d: show(d), lit1, held: actD?.body?.held, action: actD?.body?.action, sent: actD?.body?.request, u: show(u), lit2, named: [show(named), comp(s, "torch", "t/poked")], thief: code(thief) }; },
+      return { before: show(before), litBefore, d: show(d), lit1, held: actD?.body?.held, action: actD?.body?.action, sent: actD?.body?.args, u: show(u), lit2, named: [show(named), comp(s, "torch", "t/poked")], thief: code(thief) }; },
     good: (o) => /^refused no-action: torch offers \d+ things to do/.test(o.before) && o.litBefore === null && o.d === "ok" && o.lit1 === true && JSON.stringify(o.held) === '{"held":true,"hand":"right","phase":"down"}' && o.action === "on" && JSON.stringify(o.sent) === '{"id":"torch","args":{"phase":"down"}}'
       && o.u === "ok" && o.lit2 === false && o.named[0] === "ok" && o.named[1] === true && o.thief === "not-holding" },
   { id: "U2", what: "…a script reached by that use hears held, hand and phase (and its act records them: an auditor re-runs it)", run(s) { cast(s);

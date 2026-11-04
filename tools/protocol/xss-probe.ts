@@ -170,7 +170,7 @@ try {
   await stage("P", async () => {
     const wren = guest("Wren");
     const { snap } = await wren.join();
-    const wrenActor = snap?.cut?.you;
+    const wrenActor = snap?.actor;
     check("(P setup) a second person is here, with an identity", /^u-/.test(wrenActor ?? ""), snap ? Object.keys(snap) : null);
     check("(P setup) …and the page knows it from their arrival", await waitFor(`import('/lib/net.js').then((m) => m.identities.get('Wren') === ${JSON.stringify(wrenActor)})`, 5000));
     // Wren stands beside me and takes poses and drags from strangers (the server checks a body's consent and reach first)
@@ -215,7 +215,7 @@ try {
     const tbl = `import('/lib/net.js').then((m) => m.sendRequest('consent', {})).then((r) => r?.table ?? null)`;
     await evalJson(`(async () => { if (document.querySelector('.chat-side')?.classList.contains('closed')) (await import('/lib/ui.js')).togglePeopleHere(); return true; })()`);
     await evalJson(`import('/lib/consent.js').then((m) => (m.setGate('move', true), m.setGate('touch', false), true))`);
-    const wren = guest("Wren"); const { snap } = await wren.join(); const wrenActor = snap?.cut?.you;
+    const wren = guest("Wren"); const { snap } = await wren.join(); const wrenActor = snap?.actor;
     check("(L setup) Wren is here with an identity, and the page knows it", /^u-/.test(wrenActor ?? "") && await waitFor(`import('/lib/net.js').then((m) => m.identities.get('Wren') === ${JSON.stringify(wrenActor)})`, 5000));
     const victim = await evalJson(`import('/lib/net.js').then((m) => m.net.you)`);
     const mine = await evalJson(`import('/lib/controller.js').then((m) => m.myState.pos.toArray())`);

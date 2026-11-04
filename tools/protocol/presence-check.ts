@@ -42,7 +42,7 @@ async function sock(name) {
   await tryUntil(`${name}'s join is answered`, () => msgs.some((m) => m.type === "snapshot" || m.type === "error"), { ms: 4000, step: 50 });
   const snap = msgs.find((m) => m.type === "snapshot");
   let rn = 0;
-  return { ws, msgs, snap, actor: snap?.cut?.you ?? null, send: (m) => ws.send(JSON.stringify(m)), close: () => ws.close(),
+  return { ws, msgs, snap, actor: snap?.actor ?? null, send: (m) => ws.send(JSON.stringify(m)), close: () => ws.close(),
     since: (k) => msgs.slice(k),
     at: (x, z) => ws.send(JSON.stringify({ type: "pose", pose: { p: [x, 0, z], yaw: 0, speed: 0, clip: "idle" } })),
     req: async (verb, args = {}) => { const id = `q${++rn}`; ws.send(JSON.stringify({ type: "request", id, verb, args }));

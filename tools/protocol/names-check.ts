@@ -288,11 +288,11 @@ const cases: Case[] = [
   // ---------------- P: punt {contact} ----------------
   { id: "P1", what: "(R 14:34) punt {contact: true} from a body against the crate is admitted, and the act records contact: true", run(s) { cast(s);
       s.call("vic", "move", { to: AGAINST }); const r = s.call("vic", "punt", { id: "crate", v: [0, 0.2, 1.8], contact: true });
-      return { r: show(r), req: lastAct(s, "punt", "vic")?.body?.request ?? null }; },
+      return { r: show(r), req: lastAct(s, "punt", "vic")?.body?.args ?? null }; },
     good: (o) => o.r === "ok" && o.req?.contact === true && !("shove" in o.req) },
   { id: "P2", what: "…its old spelling shove: true is taken at the door and recorded as contact (no shove in the act); help lists contact", run(s) { cast(s);
       s.call("vic", "move", { to: AGAINST }); const r = s.call("vic", "punt", { id: "crate", v: [0, 0.2, 1.8], shove: true });
-      return { r: show(r), req: lastAct(s, "punt", "vic")?.body?.request ?? null, args: Object.keys(VS.VERBSPEC.punt.args) }; },
+      return { r: show(r), req: lastAct(s, "punt", "vic")?.body?.args ?? null, args: Object.keys(VS.VERBSPEC.punt.args) }; },
     good: (o) => o.r === "ok" && o.req?.contact === true && !("shove" in o.req) && o.args.includes("contact") },
   { id: "P3", what: "…both spellings at once is a shape refusal (and a refused contact push stays unrecorded)", run(s) { cast(s);
       s.call("vic", "move", { to: AGAINST }); const n = s.entries().length; const r = s.call("vic", "punt", { id: "crate", v: [0, 0.2, 1.8], contact: true, shove: true });

@@ -127,7 +127,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     const E = W().entries.slice(n); const st = E.filter((e) => e.kind === "change"); const ops = st.flatMap((e) => e.body.ops ?? [e.body]);
     ok(r.ok, "P16 throughLock: true lets a builder (who may remove the lock) act through it", r.refused);
     ok(E.length === 2 && ops.length && ops.every((o) => o.comp !== "lock") && W().state().entities.tbl.c.lock === true, "P17 …and the log records only the edit: one act, one change entry, no unlock or relock; the lock is still on (stored true: recut B2)", E.map((e) => [e.kind, e.verb, e.body?.comp]));
-    ok(E[0].kind === "request" && E[0].body.request.throughLock === true, "P18 …the act carries the request as sent, flag and all (history shows who went through)", E[0].body); }
+    ok(E[0].kind === "request" && E[0].body.args.throughLock === true, "P18 …the act carries the request as sent, flag and all (history shows who went through)", E[0].body); }
   ok(call("olive", "set", { id: "tbl", component: "transform", value: { pos: [0, 0, 3.1] }, throughLock: true }).ok, "P19 the owner acts through it the same way");
   ok(code(call("bob", "set", { id: "cup", component: "transform", value: { pos: [0, 0.75, 0] }, throughLock: "yes" })) === "shape", "P20 throughLock is a boolean");
   ok(call("bob", "set", { id: "cup2", component: "label", value: "x", throughLock: true }).ok, "P21 throughLock on an edit no lock guards is harmless");
@@ -429,7 +429,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const u5 = step("bob", "undo", {});
   ok(code(u5) === "conflict" && /purged/.test(u5.refused.skipped?.[0]?.why) && w.state().entities.crate.c.label === "public", "U5 undoing the later label won't restore the purged one", [u5.refused, w.state().entities.crate.c.label]);
   // purge an act's whole body: its label can't be read, so undo {label} can't find it
-  const b1 = step("bob", "batch", { label: "tidy", ops: [{ verb: "set", args: { id: "crate", component: "description", value: "a tidy crate" } }] });   // (a light on a model is refused since 10-11: one place per thing)
+  const b1 = step("bob", "batch", { label: "tidy", requests: [{ verb: "set", args: { id: "crate", component: "description", value: "a tidy crate" } }] });   // (a light on a model is refused since 10-11: one place per thing)
   purge([{ seq: b1.act }]);
   ok(code(step("bob", "undo", { label: "tidy" })) === "nothing", "U6 a purged act's label can't be matched any more", b1.refused);
   // entityBefore = the fold at every seq, for every thing (purged values included)
@@ -453,7 +453,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const t0 = w.state().entities.tbl.c.transform;
   const moved = { ...t0, pos: [1, t0.pos[1], 3] };
   const e1 = call("ann", "set", { id: "tbl", component: "transform", value: moved, expect: [{ id: "tbl", component: "transform", value: t0 }] });
-  ok(e1.ok && w.entries[e1.act].body.request.expect?.length === 1, "E1 expect equal to what's there: written, and the act records it as sent", e1.refused);
+  ok(e1.ok && w.entries[e1.act].body.args.expect?.length === 1, "E1 expect equal to what's there: written, and the act records it as sent", e1.refused);
   call("bob", "set", { id: "tbl", component: "transform", value: { ...moved, pos: [2, t0.pos[1], 3] } });
   const before = n();
   const e2 = call("ann", "set", { id: "tbl", component: "transform", value: { ...moved, pos: [5, t0.pos[1], 5] }, expect: [{ id: "tbl", component: "transform", value: moved }] });
@@ -472,7 +472,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const kid = copy && Object.keys(st.entities).find((k) => st.entities[k].c.parent?.to === copy);
   ok(d1.ok && copy && kid && !("lock" in st.entities[copy].c) && st.entities[kid].c.model === "crate", "D1 duplicate copies the thing and what's attached to it, as one act (the lock isn't copied)", [d1.refused, copy, kid]);
   ok(d1.ok && Math.abs(st.entities[copy].c.transform.pos[0] - (st.entities.tbl.c.transform.pos[0] + 0.5)) < 1e-9 && opsOf(w.entries[d1.seq]).filter((o) => o.op === "create").length === 2, "D2 …0.5 m along x, in ONE change entry (two creates)", st.entities[copy]?.c.transform);
-  ok(d1.ok && w.entries[d1.seq].actor === "bob" && w.entries[d1.act].body.request.from === "tbl", "D3 the copy is bob's (the act says what it copied)");
+  ok(d1.ok && w.entries[d1.seq].actor === "bob" && w.entries[d1.act].body.args.from === "tbl", "D3 the copy is bob's (the act says what it copied)");
   const d4 = call("bob", "undo", { act: d1.act });
   ok(d4.ok && !w.state().entities[copy] && !w.state().entities[kid], "D4 undoing the duplicate removes both parts", d4.refused);
   ok(code(call("bob", "create", { from: "nope" })) === "not-found", "D5 duplicating nothing is not-found");
@@ -1667,7 +1667,7 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "member" } });
   // strip the roles: value to a commit, with no purge: as a copy of the log changed by hand would hold it
   const lines = fs.readFileSync(file, "utf8").split("\n"); const k = lines.findLastIndex((l) => l.includes('"roles:bob"') && l.includes('"kind":"change"'));
-  const e = JSON.parse(lines[k]); const { value, salt, ...rest } = e.body; e.body = { ...rest, commit: "0".repeat(64) }; lines[k] = JSON.stringify(e); fs.writeFileSync(file, lines.join("\n"));
+  const e = JSON.parse(lines[k]); const { value, salt, ...rest } = e.body; e.body = { ...rest, commitment: "0".repeat(64) }; lines[k] = JSON.stringify(e); fs.writeFileSync(file, lines.join("\n"));
   const w = openWorld(root, name); const role = w.state().entities["@world"].c["roles:bob"];
   const before = entityBefore(w, "@world", w.entries.length)?.c["roles:bob"];   // undo's reading of the past agrees with the fold
   const write = call("olive", "create", { model: "crate" }), read = call("olive", "look", {});
@@ -1684,7 +1684,7 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   const w = openWorld(root, name); w.state();   // folded once: the next new plain lines are applied incrementally
   const L = w.entries, last = L[L.length - 1], at = L.length;
   const line = (e) => { const x = readLog(JSON.stringify(e) + "\n")[0]; Object.defineProperty(x, "seq", { value: L.length, enumerable: false, configurable: true }); L.push(x); };
-  line({ world: last.world, kind: "change", ts: last.ts + 1, actor: "olive", cause: at - 1, op: "set", body: { id: "sign", comp: "label", commit: "0".repeat(64) } });
+  line({ world: last.world, kind: "change", ts: last.ts + 1, actor: "olive", cause: at - 1, op: "set", body: { id: "sign", comp: "label", commitment: "0".repeat(64) } });
   let st1 = null, err = null; try { st1 = w.state(); } catch (x) { err = `${x?.constructor?.name}: ${x?.message}`.slice(0, 120); }
   line({ world: last.world, kind: "redaction", ts: last.ts + 2, actor: "system", body: { values: [{ seq: at }] } });
   const st2 = err ? null : w.state();

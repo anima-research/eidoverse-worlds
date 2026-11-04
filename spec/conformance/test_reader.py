@@ -349,6 +349,53 @@ check("20 redaction of roles: ignored (diagnosed), the note redacted",
       r.view()["@world"] == {"roles:alice": {"v": {"role": "owner"}}, "note": {"redacted": True}, "roles:bob": {"v": {"role": "builder"}}}
       and [c for s_, c in codes(r)].count("redaction-target-governance") == 2, (r.view(), codes(r)))
 
+
+# ---- docs/DESIGN-log-vocabulary.md §5: the positive fixtures F1–F3, F8 and the negative set F14 (minor 1) ----
+# F1 an admitted request: kind request, verb, body.args an object (the readback keys on args.*)
+r = run("23a-f1-request-admitted", [GEN_LINE,
+    json.dumps({"world": WID, "kind": "request", "ts": 1, "actor": "alice", "verb": "set", "body": {"args": {"id": "@world", "component": "label", "value": "x"}, "salt": "UUPZ_XwQSbZtpmdmt87bSQ"}}),
+    st("set", {"id": "@world", "comp": "label", "value": "x", "salt": "5hGJikDRuwCGCS7slx6mug"})])
+check("F1 an admitted request folds beside its change; the fold never reads it", r.status == "ok" and not r.diag and r.view()["@world"] == {"label": {"v": "x"}}, codes(r))
+# F2 a refused request: body.argNames lists names, never a value; refused.code
+F2 = {"world": WID, "kind": "request", "ts": 1, "actor": "bob", "verb": "delete", "body": {"argNames": ["id"], "refused": {"code": "locked"}, "salt": "UWGy2eg11rNn2Sl6urvUTg"}}
+r = run("23b-f2-request-refused", [GEN_LINE, json.dumps(F2)])
+check("F2 a refused request is a request entry (argNames, refused.code) the fold never reads", r.status == "ok" and not r.diag and r.view() == {"@world": {}}, codes(r))
+# F3 a say: no verb
+r = run("23c-f3-say", [GEN_LINE, json.dumps({"world": WID, "kind": "say", "ts": 1, "actor": "alice", "body": {"text": "hi", "salt": "Gz4fypccq-7GOARwIgA8Vw"}})])
+check("F3 a say carries no verb and folds nothing", r.status == "ok" and not r.diag and r.view() == {"@world": {}}, codes(r))
+# F8 cascade: the batch folds whole; the marked op is the authority's (readers of authorship skip it: tools/protocol/r9-check)
+r = run("23d-f8-cascade", [GEN_LINE, ACT,
+    st("batch", {"ops": [{"op": "delete", "id": "shelf"}, {"op": "create", "id": "vase"}, {"op": "set", "id": "vase", "comp": "transform", "value": {"pos": [0, 0.9, 0]}, "salt": "5hGJikDRuwCGCS7slx6mug"}], "cascade": [2]})])
+check("F8 a batch with a cascade folds like any batch", r.status == "ok" and r.view()["vase"] == {"transform": {"v": {"pos": [0, 0.9, 0]}}} and codes(r) == [(2, "noop:delete-missing-entity")], codes(r))
+# F14 the new reader refuses every old spelling by name, status ok, the rest of the log folded
+GEN_OLD_VERB = json.dumps({"kind": "genesis", "actor": "system", "verb": "genesis", "body": GBODY})
+F14 = {
+    "24a-old-change-verb": ([GEN_LINE, ACT, st("create", {"id": "a"}), json.dumps({"world": WID, "kind": "change", "ts": 1, "actor": "system", "cause": 1, "verb": "create", "body": {"id": "b"}})], (3, "malformed:envelope"), {"@world", "a"}),
+    "24b-old-request-op": ([GEN_LINE, json.dumps({"world": WID, "kind": "request", "ts": 1, "actor": "alice", "op": "spawn", "body": {"args": {}}}), st("create", {"id": "a"}, cause=0)], (1, "malformed:envelope"), {"@world", "a"}),
+    "24c-old-say-verb": ([GEN_LINE, ACT, json.dumps({"world": WID, "kind": "say", "ts": 1, "actor": "alice", "verb": "say", "body": {"text": "hi"}})], (2, "malformed:envelope"), {"@world"}),
+    "24d-old-redaction-verb": ([GEN_LINE, ACT, st("create", {"id": "a"}), json.dumps({"world": WID, "kind": "redaction", "ts": 1, "actor": "system", "verb": "purge", "body": {"values": [{"seq": 2}]}})], (3, "malformed:envelope"), {"@world", "a"}),
+    "24e-old-governance-verb": ([GEN_LINE, ACT, json.dumps({"world": WID, "kind": "governance", "ts": 1, "actor": "system", "verb": "sequencer", "body": {"key": K_TIER1, "sigs": []}})], (2, "malformed:envelope"), {"@world"}),
+    "24f-old-batch-followUps": ([GEN_LINE, ACT, st("batch", {"ops": [{"op": "create", "id": "a"}, {"op": "create", "id": "b"}], "followUps": [1]})], (2, "malformed:batch-field"), {"@world"}),
+    "24g-old-batch-item-verb": ([GEN_LINE, ACT, st("batch", {"ops": [{"verb": "create", "id": "a"}]})], (2, "malformed:op"), {"@world"}),
+    "24h-old-set-commit": ([GEN_LINE, ACT, st("create", {"id": "a"}), st("set", {"id": "a", "comp": "x", "commit": "00" * 32})], (3, "malformed:op-field"), {"@world", "a"}),
+    "24i-old-redaction-target-op": ([GEN_LINE, ACT, st("create", {"id": "a"}), st("set", {"id": "a", "comp": "x", "value": 1}),
+                                     json.dumps({"world": WID, "kind": "redaction", "ts": 1, "actor": "system", "body": {"values": [{"seq": 3, "op": 0}]}})], (4, "redaction-target-bad"), {"@world", "a"}),
+    "24j-old-envelope-for": ([GEN_LINE, ACT, st("create", {"id": "a"}, **{"for": "bob"})], (2, "malformed:unknown-field"), {"@world"}),
+    "24k-old-envelope-grant": ([GEN_LINE, ACT, st("create", {"id": "a"}, grant="x")], (2, "malformed:unknown-field"), {"@world"}),
+    "24l-old-envelope-by": ([GEN_LINE, ACT, st("create", {"id": "a"}, by="alice")], (2, "malformed:unknown-field"), {"@world"}),
+    "24m-old-kind-act": ([GEN_LINE, json.dumps({"world": WID, "kind": "act", "ts": 1, "actor": "alice", "verb": "spawn", "body": {}})], (1, "malformed:kind"), {"@world"}),
+    "24n-old-kind-sim": ([GEN_LINE, ACT, json.dumps({"world": WID, "kind": "sim", "ts": 1, "actor": "sim", "verb": "digest", "body": {}})], (2, "malformed:kind"), {"@world"}),
+    "24o-old-kind-purge": ([GEN_LINE, ACT, json.dumps({"world": WID, "kind": "purge", "ts": 1, "actor": "system", "body": {"values": []}})], (2, "malformed:kind"), {"@world"}),
+    "24p-old-kind-sequencer": ([GEN_LINE, ACT, json.dumps({"world": WID, "kind": "sequencer", "ts": 1, "actor": "system", "body": {"key": K_TIER1, "sigs": []}})], (2, "malformed:kind"), {"@world"}),
+    "24q-old-genesis-verb": ([GEN_OLD_VERB, ACT], (0, "malformed:envelope"), None),
+}
+for nm, (lines, code, live) in F14.items():
+    r = run(nm, lines)
+    if live is None:
+        check("F14 %s: a genesis carrying verb is no world" % nm, r.status == "no-world" and code in codes(r), (r.status, codes(r)))
+    else:
+        check("F14 %s refused by name, status ok, the rest folded" % nm, r.status == "ok" and code in codes(r) and set(r.view()) == live, (r.status, codes(r), sorted(r.view())))
+
 fails = 0
 for n, ok, info in results:
     print(("PASS " if ok else "FAIL ") + n + ("" if ok else "   -> %s" % (info,)))

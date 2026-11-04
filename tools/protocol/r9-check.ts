@@ -145,7 +145,7 @@ const cases: Case[] = [
       const ch = s.entries()[d.seq]; s.reopen();
       const g = s.call("vic", "use", { id: "lever", action: "go" });
       const ops = ch?.body?.ops ?? []; const fu = ch?.body?.cascade ?? [];
-      return { d: show(d), verb: ch?.verb, fu, marked: fu.map((k: number) => `${ops[k]?.id}.${ops[k]?.comp}`), own: ops.filter((_: any, k: number) => !fu.includes(k)).map((o: any) => `${o.verb} ${o.id}`), g: show(g) }; },
+      return { d: show(d), verb: ch?.verb, fu, marked: fu.map((k: number) => `${ops[k]?.id}.${ops[k]?.comp}`), own: ops.filter((_: any, k: number) => !fu.includes(k)).map((o: any) => `${o.op} ${o.id}`), g: show(g) }; },
     good: (o) => o.d === "ok" && o.op === "batch" && JSON.stringify(o.marked) === '["lever.reactions"]' && o.own.includes("delete x") && /set up by bob/.test(o.g) },
   { id: "H3", what: "the other way: owner olive's door {open: toggle, sweep: reset [builder vic's ball, her statue]}; vic deletes his ball, then is demoted; the door's handlers stay olive's (a visitor still opens it), inspect says the clear was a follow-up", run(s) {
       s.call("olive", "create-world", { title: s.name }); roles(s, { vic: "builder", wes: "member" });
@@ -270,7 +270,7 @@ const cases: Case[] = [
       const out: any = {}; for (const v of ["constructor", "toString", "__proto__", "hasOwnProperty", "valueOf"]) out[v] = show(s.call("olive", v, { x: 1 })); return out; },
     good: (o) => Object.values(o).every((x: any) => /^refused unknown-verb/.test(x)) },
   { id: "L2", what: "(holes L5) only the founding is the founding: a later create-world act (a refused attempt the log keeps) whose body is purged doesn't mark the log", run() {
-      const L = [{ kind: "genesis", body: {} }, { kind: "request", actor: "olive", verb: "create-world", body: { title: "t" } }, { kind: "request", actor: "vic", verb: "create-world", body: { commit: "0".repeat(64) } }];
+      const L = [{ kind: "genesis", body: {} }, { kind: "request", actor: "olive", verb: "create-world", body: { title: "t" } }, { kind: "request", actor: "vic", verb: "create-world", body: { commitment: "0".repeat(64) } }];
       return { marked: SR.shapesMarked(L, (i: number) => (i === 2 ? null : L[i]?.body)), founding: SR.shapesMarked(L.slice(0, 2), (i: number) => (i === 1 ? null : L[i]?.body)) }; },
     good: (o) => o.marked === false && o.founding === true },
   { id: "L3", what: "(claims O2) an unlogged grab's activation records no identity (no trigger, no event.by; the script still hears `by`)", run(s) {

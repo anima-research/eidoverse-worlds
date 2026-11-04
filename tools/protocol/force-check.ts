@@ -155,7 +155,7 @@ const cases: Case[] = [
     good: (o) => o.r === "ok" && o.punted === 0 && /no physics/.test(o.notes) && o.me === 1 && o.launches === 0 && o.added === 1 },
   { id: "F9", what: "who was shoved never reaches the log: the act holds the request, not the bodies", run(s) { cast(s, { physics: false });
       s.call("vic", "move", { to: [1, 0, 0] }); const n0 = s.entries().length; s.call("bob", "force", { at: [0, 0, 0] });
-      const added = s.entries().slice(n0); return { n: added.length, at: added[0]?.body?.request?.at, refused: added[0]?.body?.refused, text: JSON.stringify(added) }; },
+      const added = s.entries().slice(n0); return { n: added.length, at: added[0]?.body?.args?.at, refused: added[0]?.body?.refused, text: JSON.stringify(added) }; },
     good: (o) => o.n === 1 && !o.refused && JSON.stringify(o.at) === "[0,0,0]" && !/vic/.test(o.text) && /"force"/.test(o.text) },
   { id: "F10", what: "a refused body hears body-refused {from, class shove, gate move} once per asker per TRIED_NOTE_MS, however many blasts land meanwhile", run(s) { cast(s, { physics: false });
       s.call("ida", "move", { to: [1, 0, 0] }); s.call("ida", "consent", { move: false }); s.call("bob", "move", { to: [0, 0, 6] });

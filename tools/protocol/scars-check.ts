@@ -117,12 +117,12 @@ const cases: Case[] = [
       const r = s.call("vic", "set", { id: "lamp", component: "label", value: "my phone is 555-0100" });
       const a = lastAct(s);
       return { r: code(r), verb: a?.verb, body: a?.body, log: JSON.stringify(s.entries()).includes("555-0100") }; },
-    good: (o) => o.r === "rights" && o.verb === "set" && JSON.stringify(o.body?.args) === '["component","id","value"]' && o.body?.refused?.code === "rights" && !("request" in (o.body ?? {})) && !o.log },
+    good: (o) => o.r === "rights" && o.verb === "set" && JSON.stringify(o.body?.argNames) === '["component","id","value"]' && o.body?.refused?.code === "rights" && !("args" in (o.body ?? {})) && !o.log },
   { id: "L2", what: "…argument names are the verb's own (VERBSPEC): a name the verb doesn't take is counted, never written (a key is text too)", run(s) { cast(s);
       const r = s.call("vic", "set", { id: "nothing", component: "label", value: 1, "call me on 555-0100": true });
       const a = lastAct(s);
       return { r: code(r), body: a?.body, log: JSON.stringify(s.entries()).includes("555-0100") }; },
-    good: (o) => o.r === "unknown-arg" && JSON.stringify(o.body?.args) === '["component","id","value"]' && o.body?.unknownArgs === 1 && !o.log },
+    good: (o) => o.r === "unknown-arg" && JSON.stringify(o.body?.argNames) === '["component","id","value"]' && o.body?.unknownArgs === 1 && !o.log },
   { id: "L3", what: "…the values go to the authority's in-memory ring (never persisted), capped", run(s) { cast(s);
       s.call("olive", "create", { id: "lamp", model: "crate", place: { at: [0, 0] } });
       s.call("vic", "set", { id: "lamp", component: "label", value: "hello there" });
@@ -134,7 +134,7 @@ const cases: Case[] = [
       const r = s.call("vic", "call-me-on-5550100", { secret: "555-0100" }); const a = lastAct(s);
       const ring = D.refusalRing ? D.refusalRing(s.w()) : [];
       return { r: code(r), verb: a?.verb, body: a?.body, log: JSON.stringify(s.entries()).includes("5550100") || JSON.stringify(s.entries()).includes("555-0100"), ring: ring.at(-1)?.verb }; },
-    good: (o) => o.r === "unknown-verb" && o.verb === "unknown-verb" && JSON.stringify(o.body?.args) === "[]" && o.body?.unknownArgs === 1 && !o.log && o.ring === "call-me-on-5550100" },
+    good: (o) => o.r === "unknown-verb" && o.verb === "unknown-verb" && JSON.stringify(o.body?.argNames) === "[]" && o.body?.unknownArgs === 1 && !o.log && o.ring === "call-me-on-5550100" },
   { id: "L7", what: "one consent per body, and nothing around it (recut A2, house plan #260 10-20; two gates and two lists, R 10-28): what consent grants lands in presence fields (poseBy, draggedBy, tumble, the reaches a relay caches), and the authority and the relay write them in bodyconsent.js alone, where every path (a request, a script's world.pose, a seat, a stream) is decided first; a write anywhere else in shared/ or server/ is a path around the gates", run() {
       const walk = (d: string): string[] => fs.readdirSync(path.join(TREE, d), { withFileTypes: true }).flatMap((e) => e.isDirectory() ? (e.name === "node_modules" ? [] : walk(path.join(d, e.name))) : /\.(js|ts|mjs)$/.test(e.name) ? [path.join(d, e.name)] : []);
       const WRITE = /\.(poseBy|poseSponsor|draggedBy|dragSponsor|tumble)\s*(=[^=]|\?\?=)|reaches\s*\?\?=|\.reaches\)?\[[^\]]+\]\s*=[^=]/;
@@ -251,7 +251,7 @@ const cases: Case[] = [
       const w = s.w(); clock.advance(100); w.append({ kind: "redaction", actor: "system", body: { values: [{ seq: actSeq }] } });
       s.reopen(); s.call("olive", "look", {});
       const restamp1 = s.entries().filter((e: any) => e.verb === "restamp-engine").length;
-      const w2 = s.reopen(); w2.entries[actSeq].body = { commit: "0".repeat(64) }; s.call("olive", "look", {});
+      const w2 = s.reopen(); w2.entries[actSeq].body = { commitment: "0".repeat(64) }; s.call("olive", "look", {});
       const restamp2 = s.entries().filter((e: any) => e.verb === "restamp-engine").length;
       const spec = s.w().state().entities["@world"].c["physics-engine"];
       return { set: show(set), restamp1, restamp2, engine: spec.engine }; },
@@ -261,7 +261,7 @@ const cases: Case[] = [
       const u = s.call("vic", "use", { id: "lamp", action: "on" });
       const before = D.creatorOf(s.w(), "lamp", "t/lit")?.rights;
       const useSeq = s.entries().findLastIndex((e: any) => e.kind === "request" && e.verb === "use");
-      const w = s.reopen(); w.entries[useSeq].body = { commit: "0".repeat(64) };
+      const w = s.reopen(); w.entries[useSeq].body = { commitment: "0".repeat(64) };
       const stub = D.creatorOf(w, "lamp", "t/lit");
       const w2 = s.reopen(); clock.advance(100); w2.append({ kind: "redaction", actor: "system", body: { values: [{ seq: useSeq }] } });
       const idx = D.creatorOf(s.w(), "lamp", "t/lit");
@@ -273,7 +273,7 @@ const cases: Case[] = [
       const u1 = s.call("bob", "undo", {}); const uSeq = s.entries().findLastIndex((e: any) => e.kind === "request" && e.verb === "undo");
       const w = s.w(); clock.advance(100); w.append({ kind: "redaction", actor: "system", body: { values: [{ seq: uSeq }] } });
       const mem = s.call("bob", "undo", {}); const after1 = s.w().state().entities.lamp?.c.label ?? null;
-      const w2 = s.reopen(); w2.entries[uSeq].body = { commit: "0".repeat(64) };
+      const w2 = s.reopen(); w2.entries[uSeq].body = { commitment: "0".repeat(64) };
       const stub = s.call("bob", "undo", {});
       return { u1: show(u1), mem: show(mem), stub: show(stub), after1, readback: D.readback ? [D.readback(s.w(), uSeq), D.readback(w, uSeq)] : "absent" }; },
     good: (o) => o.u1 === "ok" && !/CRASH/.test(o.mem) && !/CRASH/.test(o.stub) && Array.isArray(o.readback) && o.readback[0] === null && o.readback[1] === null },
@@ -294,7 +294,7 @@ const cases: Case[] = [
       const spec = read("spec/PROTOCOL.md"); const RB = (globalThis as any).__VC?.READBACK ?? {};
       return { para: /\*\*Where the authority reads old acts \(readback\)\.\*\*/.test(spec) && /treats a purged body as \*\*unknown\*\*/.test(spec),
         purge12: /act body the authority reads back, §1, may be purged/.test(spec), rows: Object.keys(RB), whole: Object.values(RB).every((r: any) => r.fields?.length && r.where && r.unknown) }; },
-    good: (o) => o.para && o.purge12 && ["act:undo", "act:use", "act:script", "act:sculpt", "act:*", "sim:launch"].every((k) => o.rows.includes(k)) && o.whole },
+    good: (o) => o.para && o.purge12 && ["request:undo", "request:use", "request:script", "request:sculpt", "request:*", "physics:launch"].every((k) => o.rows.includes(k)) && o.whole },
   { id: "X3", what: "avatars (house markup D, #260 10-20): the spec keeps only the bone (every write to a body goes through the one request path, and the body's owner decides), under its own heading, no 'sealed'; the guard rails (owner stamped at wear, one predicate, every path, the grant, the wearer's log) are direction in docs/AVATAR-DIRECTION.md; the precedence ladder between a world and the person in the body is in neither", run() {
       const spec = read("spec/PROTOCOL.md"); const sec = spec.slice(spec.indexOf("### Body ownership (avatars)"), spec.indexOf("\n## 8. ")); const dir = read("docs/AVATAR-DIRECTION.md");
       return { bone: /\*\*every write to a body goes\s+through the one request path, and the body's owner decides\*\*/.test(sec), noRules: !/\*\*B[1-6]\./.test(sec), pointer: sec.includes("docs/AVATAR-DIRECTION.md"), sealed: !/sealed/i.test(sec),

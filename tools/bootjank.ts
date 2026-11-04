@@ -163,7 +163,7 @@ if (WIDE) {
     dws.onopen = () => dws.send(JSON.stringify({ type: "join", world: WORLD, id: "widedriver", avatar: "", replica: true }));
     dws.onmessage = (ev) => {
       const m = JSON.parse(String(ev.data));
-      if (m.type === "snapshot") dws.send(JSON.stringify({ type: "request", id: "wide", verb: "batch", args: { requests } }));
+      if (m.type === "snapshot") dws.send(JSON.stringify({ type: "request", id: "wide", verb: "batch", args: { requests: ops } }));
       if (m.type === "reply" && m.id === "wide") {
         try { dws.close(); } catch { /* fine */ }
         if (m.ok) resolve(); else reject(new Error(`batch refused: ${JSON.stringify(m.reply?.refused ?? m).slice(0, 400)}`));

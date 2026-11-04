@@ -188,7 +188,7 @@ try {
       if (m.type === "snapshot") { clearTimeout(t); res(); }
       if (m.type === "typing" && m.id === "claude") frames.push({ t: at, seq });
       // a say is a log entry of kind "say" by an opaque actor, whose name the snapshot's cut and each log message carry
-      if (m.type === "snapshot" && m.cut?.names) Object.assign(names, m.cut.names);
+      if (m.type === "snapshot" && m.names) Object.assign(names, m.names);
       if (m.type === "log") {
         if (m.names) Object.assign(names, m.names);
         if ((m.entries ?? []).some((e: any) => e?.kind === "say" && /^claude$/i.test(String(names[e.actor] ?? e.actor)))) sayEntry ??= { t: at, seq };

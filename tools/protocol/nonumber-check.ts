@@ -27,7 +27,9 @@ const UNRELATED = [
   [".github/workflows/browser-probe.yml", new RegExp(`^\\s*(- )?uses: [\\w-]+/[\\w-]+@v\\d+\\s*$`), "a GitHub action's own release tag (actions/checkout@v + its major), not the protocol"],
   [".github/workflows/protocol-gate.yml", new RegExp(`^\\s*branches: \\[main, protocol-v${N}\\]`), "the PR's branch name on the fork (a git ref chosen before the names pass)"]];
 const EXEMPT = [["tools/protocol/import-v1/", "the old-world importer names the protocols it translates between"],
-  ["spec/history/", "upstream's earlier protocol texts, verbatim"]];
+  ["spec/history/", "upstream's earlier protocol texts, verbatim"],
+  ["docs/DESIGN-log-vocabulary.md", "the 2026-11-04 design record: quotes the reviews it answers"],
+  ["docs/research-portable-identity.md", "the same record's research companion"]];
 // a word-start v/V + N not followed by another digit; or a camelCase part (lowercase, then V + N)
 // (a dotted number after it, `vN.4` or `vN.4.2`, is some tool's release, not the protocol)
 const NAME = new RegExp(`(?<![A-Za-z0-9])[vV]${N}(?![0-9]|\\.[0-9])|(?<=[a-z])V${N}(?![0-9])`);

@@ -23,11 +23,11 @@ const verbose = process.argv.includes("--verbose");
 // ---- builders for both formats ----
 // §2.4 + §3d: genesis {dialect, v, minor, nonce, owners: tiers of keys, sequencer} (fixed test key and nonce; lab hostile-check)
 const KEY = "ed25519:BP7aKo17f474DD1aBSLG0a3Pb29Qs3yqQ6Ve0wSRVD0";
-const GEN = { kind: "genesis", actor: "system", body: { dialect: "eidoverse-log", v: 4, minor: 0, nonce: "XWVu1u7BpaZTDFSETYiphg", owners: [[KEY]], sequencer: KEY } };
+const GEN = { kind: "genesis", actor: "system", body: { dialect: "eidoverse-log", v: 4, minor: 1, nonce: "XWVu1u7BpaZTDFSETYiphg", owners: [[KEY]], sequencer: KEY } };
 const WID = worldIdOf(parseLine(JSON.stringify(GEN)));
 const L = (o) => JSON.stringify(o);
-const act = L({ world: WID, kind: "request", ts: 1, actor: "olive", op: "set", body: {} }); // §2.1: every entry after genesis carries ts
-const st = (verb, body, extra = {}) => L({ world: WID, kind: "change", ts: 1, actor: "olive", cause: 1, verb, body, ...extra });
+const act = L({ world: WID, kind: "request", ts: 1, actor: "olive", verb: "set", body: { args: {} } }); // §2.1: every entry after genesis carries ts
+const st = (verb, body, extra = {}) => L({ world: WID, kind: "change", ts: 1, actor: "olive", cause: 1, op: verb, body, ...extra });
 const logOf = (...lines) => [L(GEN), act, ...lines].join("\n") + "\n";
 const bGen = { kind: "genesis", actor: "world", args: { v: 4, fold: 1 }, seq: 0 };
 const bst = (seq, verb, args) => ({ kind: "change", actor: "olive", cause: 1, verb, args, seq });
@@ -44,7 +44,7 @@ const deepBatch = (n, shape) => { let o = shape === "now" ? { op: "create", id: 
 const probes = [
   { id: "H3a", src: "25d H3", what: "batch {ops:[null]}",
     base: () => run(() => base.fold([bGen, bst(1, "batch", { requests: [null] })])),
-    baseBad: (r) => !r.ok, now: () => now(logOf(st("batch", { requests: [null] }))), nowGood: (s) => s.status === "ok" && codes(s).includes("2:malformed:batch-op") },
+    baseBad: (r) => !r.ok, now: () => now(logOf(st("batch", { ops: [null] }))), nowGood: (s) => s.status === "ok" && codes(s).includes("2:malformed:batch-op") },
   { id: "H3b", src: "25d H3", what: "a log line that is `null`",
     base: () => run(() => base.fold([bGen, null])), baseBad: (r) => !r.ok,
     now: () => now(logOf("null")), nowGood: (s) => s.status === "ok" && codes(s).includes("2:malformed:not-object") },
@@ -154,7 +154,7 @@ const probes = [
   { id: "H3i", src: "25d H3 (fix a)", what: "a batch inside a batch, two deep (no depth trick)",
     base: () => run(() => keys(base.fold([bGen, bst(1, "batch", { requests: [{ verb: "batch", args: { requests: [{ verb: "create", args: { id: "inner", components: {} } }] } }] })]).entities)),
     baseBad: (r) => r.ok && r.v.includes("inner"),
-    now: () => now(logOf(st("batch", { requests: [{ op: "batch", ops: [{ op: "create", id: "inner" }] }] }))), nowGood: (s) => codes(s).includes("2:malformed:nested-batch") && !s.entities.inner },
+    now: () => now(logOf(st("batch", { ops: [{ op: "batch", requests: [{ op: "create", id: "inner" }] }] }))), nowGood: (s) => codes(s).includes("2:malformed:nested-batch") && !s.entities.inner },
   { id: "H3j", src: "25d H3, 25e §0", what: "a VALUE holding a `__proto__` key: kept as plain data, never a prototype",
     base: () => run(() => { const s = baseText([bGen, bst(1, "create", { id: "a", components: {} })].map(L).join("\n") + '\n{"kind":"change","actor":"olive","cause":1,"verb":"set","args":{"id":"a","component":"x","value":{"__proto__":{"pinned":true}}},"seq":2}');
       const v = s.entities.a.c.x; return { own: Object.keys(v), inherited: v.pinned }; }),
@@ -166,7 +166,7 @@ const probes = [
     now: () => now(logOf(st("create", { id: "body:vic" }))), nowGood: (s) => codes(s).includes("2:malformed:entity-id") },
   { id: "S24", src: "PLAN-sockets-entities §3", what: "a hand-written line in the old spelling (a host's sockets map, a thing on parent {to, socket}) folds as written, and maintenance at open (AU.maintain) lifts it",
     base: () => ({ ok: true, v: "(the lift is the engine's)" }), held: true,
-    now: () => { const text = logOf(st("batch", { requests: [{ op: "create", id: "chair" }, { op: "set", id: "chair", comp: "sockets", value: { seat: { pos: [0, 0.5, 0], body: { action: "sit" } } } },
+    now: () => { const text = logOf(st("batch", { ops: [{ op: "create", id: "chair" }, { op: "set", id: "chair", comp: "sockets", value: { seat: { pos: [0, 0.5, 0], body: { action: "sit" } } } },
       { op: "create", id: "cat" }, { op: "set", id: "cat", comp: "parent", value: { to: "chair", socket: "seat" } }, { op: "set", id: "cat", comp: "transform", value: { pos: [0, 0.5, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } }] }));
       const s0 = now(text); const lines = []; const w = AU.worldOf({ name: "h", entries: readLog(text).map(AU.posAt), getBlob: () => { throw new Error(); }, putBlob: () => "", writeLine: (l) => lines.push(l), now: () => 10 });
       AU.maintain(w); const s1 = now(text + lines.map((l) => l + "\n").join("")); return { s0, s1, s: s1 }; },
@@ -213,16 +213,16 @@ const probes = [
   // review of #260: a value stripped to its commit with no purge naming it isn't a purge, and reads as unknown
   { id: "RI1a", src: "review of #260", what: "a roles: value stripped to its commit, with no purge, folds as unknown: the fold flags it commitment-unredacted", held: true,
     base: () => ({ ok: true, v: "(not in the baseline)" }),
-    now: () => now(logOf(st("set", { id: "@world", comp: "roles:u-bbbbbbbbbbbbbbbbbbbb", value: { role: "owner" } }), st("set", { id: "@world", comp: "roles:u-bbbbbbbbbbbbbbbbbbbb", commit: "0".repeat(64) }))),
+    now: () => now(logOf(st("set", { id: "@world", comp: "roles:u-bbbbbbbbbbbbbbbbbbbb", value: { role: "owner" } }), st("set", { id: "@world", comp: "roles:u-bbbbbbbbbbbbbbbbbbbb", commitment: "0".repeat(64) }))),
     nowGood: (s) => s.entities?.["@world"]?.c["roles:u-bbbbbbbbbbbbbbbbbbbb"]?.role !== "owner" && codes(s).includes("3:commitment-unredacted") },
   { id: "RI1b", src: "review of #260", what: "…nor with a purge aimed at it that the fold refuses (a roles: value is never purged)", held: true,
     base: () => ({ ok: true, v: "(not in the baseline)" }),
-    now: () => now(logOf(st("set", { id: "@world", comp: "roles:u-bbbbbbbbbbbbbbbbbbbb", value: { role: "owner" } }), st("set", { id: "@world", comp: "roles:u-bbbbbbbbbbbbbbbbbbbb", commit: "0".repeat(64) }),
+    now: () => now(logOf(st("set", { id: "@world", comp: "roles:u-bbbbbbbbbbbbbbbbbbbb", value: { role: "owner" } }), st("set", { id: "@world", comp: "roles:u-bbbbbbbbbbbbbbbbbbbb", commitment: "0".repeat(64) }),
       L({ world: WID, kind: "redaction", ts: 1, actor: "system", body: { values: [{ seq: 3 }] } }))),
     nowGood: (s) => s.entities?.["@world"]?.c["roles:u-bbbbbbbbbbbbbbbbbbbb"]?.role !== "owner" && codes(s).includes("3:commitment-unredacted") },
   { id: "RI1c", src: "review of #260", what: "…while a value a valid purge names folds as absent(purged), status ok, with no such diagnostic", held: true,
     base: () => ({ ok: true, v: "(not in the baseline)" }),
-    now: () => now(logOf(st("create", { id: "a" }), st("set", { id: "a", comp: "label", commit: "0".repeat(64) }), L({ world: WID, kind: "redaction", ts: 1, actor: "system", body: { values: [{ seq: 3 }] } }))),
+    now: () => now(logOf(st("create", { id: "a" }), st("set", { id: "a", comp: "label", commitment: "0".repeat(64) }), L({ world: WID, kind: "redaction", ts: 1, actor: "system", body: { values: [{ seq: 3 }] } }))),
     nowGood: (s) => s.status === "ok" && s.entities.a.c.label === REDACTED && !codes(s).some((c) => c.includes("commitment-unredacted")) },
 ];
 

@@ -203,14 +203,14 @@ function connectWorld() {
     }
     if (msg.type === "snapshot") {
       joined = true;
-      myId = msg.cut?.you ?? null;
-      Object.assign(names, msg.cut?.names ?? {});
+      myId = msg.actor ?? null;
+      Object.assign(names, msg.names ?? {});
       // live lines only: the channel is a window, not an archive. Everything at
       // or before the snapshot's head is history (a reconnect replays none of
       // it); the head, not a remembered high-water mark, so a reset world (a
       // fresh, shorter log) isn't muted until it outgrows the old one
-      lastSeq = Number.isInteger(msg.cut?.head) ? msg.cut.head : lastSeq;
-      log(`joined "${msg.world}" as ${msg.you} (${msg.state?.recentChat?.length ?? 0} recent lines skipped — live lines only)`);
+      lastSeq = Number.isInteger(msg.seq) ? msg.seq : lastSeq;
+      log(`joined "${msg.name}" as ${msg.you} (${msg.chat?.recentChat?.length ?? 0} recent lines skipped — live lines only)`);
       pumpWorld().catch((e) => log(`world pump error: ${e.message}`));
       return;
     }

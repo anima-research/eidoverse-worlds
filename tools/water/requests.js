@@ -24,5 +24,5 @@ export function requestsOf(records, ns = 'water') {
   for (const [k, v] of Object.entries(out['@world'])) if (JSON.stringify(v) !== JSON.stringify(blank[k])) ops.push({ verb: 'set', args: { id: '@world', component: k, value: v } });
   // the derived particle effects the batch names (translate-v1 @24/@34), each an upload {effect} sent before it
   const uploads = [...effects.values()].map((effect) => ({ verb: 'upload', args: { effect } }));
-  return { batch: { verb: 'batch', args: { requests } }, uploads, deferred: deferred.map(({ component, feature, id }) => ({ component, feature, id })), mapped: [...volumeMappings(st), ...carriedMappings(st)], unmapped: [...unmappedOf(st), ...unknown] };   // unknown: keys no component has, carried as imported:<component>
+  return { batch: { verb: 'batch', args: { requests: ops } }, uploads, deferred: deferred.map(({ component, feature, id }) => ({ component, feature, id })), mapped: [...volumeMappings(st), ...carriedMappings(st)], unmapped: [...unmappedOf(st), ...unknown] };   // unknown: keys no component has, carried as imported:<component>
 }

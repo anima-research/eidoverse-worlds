@@ -111,7 +111,7 @@ export function makeReplica({ freeze = true } = {}) {
   v.adopt = (snap) => {
     if (!snap || typeof snap !== "object" || snap.dialect !== DIALECT || snap.v !== VERSION || !MINORS.has(snap.minor)) { v.reset(); v.status = "unknown-version"; return false; }
     v.status = "ok"; v.st = stateFromWire(snap.state); v.seq = Number.isInteger(snap.seq) ? snap.seq : -1; v.world = snap.world ?? null; v.active = true;
-    v.you = typeof snap.you === "string" ? snap.you : null; learn(snap.names);
+    v.you = typeof snap.actor === "string" ? snap.actor : null;   // the snapshot's `actor`: this joiner's id in the log (`you` is the connection's) learn(snap.names);
     freezeAll();
     rebuildIndex();
     startSim(snap);
@@ -175,7 +175,7 @@ export function makeReplica({ freeze = true } = {}) {
  *  where the authority's clock stands (what flies, from which launch), so a joiner sees a flight already in the air. */
 export function clientSnapshotOf(w) {
   const sf = w.sim();
-  return { state: wireState(w.state()), seq: w.entries.length - 1, world: w.worldId ?? null, physics: simSnapshotOf(sf, w.entries) };
+  return { ...snapshotVersion(), state: wireState(w.state()), seq: w.entries.length - 1, world: w.worldId ?? null, physics: simSnapshotOf(sf, w.entries) };
 }
-/** The version triple a snapshot carries, for a test that builds one by hand. */
+/** The version triple a snapshot carries ({dialect, v, minor}: what adopt checks first), for a snapshot built by hand. */
 export const snapshotVersion = () => ({ dialect: DIALECT, v: VERSION, minor: [...MINORS][0] });
