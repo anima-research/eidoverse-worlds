@@ -164,7 +164,7 @@ const probes = [
   { id: "S23", src: "PROTOCOL §2.3", what: "a state op on `body:<identity>` (bodies are presence)",
     base: () => run(() => keys(base.fold([bGen, bst(1, "create", { id: "body:vic", components: {} })]).entities)), baseBad: (r) => r.ok && r.v.includes("body:vic"),
     now: () => now(logOf(st("create", { id: "body:vic" }))), nowGood: (s) => codes(s).includes("2:malformed:entity-id") },
-  { id: "S24", src: "PLAN-sockets-entities §3", what: "a hand-written line in the old spelling (a host's sockets map, a thing on parent {to, socket}) folds as written, and the load lifts it",
+  { id: "S24", src: "PLAN-sockets-entities §3", what: "a hand-written line in the old spelling (a host's sockets map, a thing on parent {to, socket}) folds as written, and maintenance at open (AU.maintain) lifts it",
     base: () => ({ ok: true, v: "(the lift is the engine's)" }), held: true,
     now: () => { const text = logOf(st("batch", { ops: [{ verb: "create", id: "chair" }, { verb: "set", id: "chair", comp: "sockets", value: { seat: { pos: [0, 0.5, 0], body: { action: "sit" } } } },
       { verb: "create", id: "cat" }, { verb: "set", id: "cat", comp: "parent", value: { to: "chair", socket: "seat" } }, { verb: "set", id: "cat", comp: "transform", value: { pos: [0, 0.5, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } }] }));
