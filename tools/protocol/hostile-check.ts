@@ -179,7 +179,7 @@ const probes = [
     nowGood: (s) => s.entities.a.c.x === REDACTED },
   { id: "R118", src: "review of #260", what: "a change whose verb is `constructor` (an inherited name of the op table) is diagnosed, not thrown",
     base: () => ({ ok: true, v: "(the baseline has no op table)" }), held: true,
-    now: () => now(logOf(st("constructor", { id: "a" }))), nowGood: (s) => s.status === "ok" && codes(s).includes("2:malformed:verb") },
+    now: () => now(logOf(st("constructor", { id: "a" }))), nowGood: (s) => s.status === "ok" && codes(s).includes("2:malformed:op") },
   { id: "R120", src: "review of #260", what: "an engine this build doesn't have, with no build named, isn't carried",
     base: () => ({ ok: true, v: "(the baseline has no engines)" }), held: true,
     now: () => ({ unknown: carried({ engine: "no-such-engine" }), toString: carried({ engine: "toString" }) }),

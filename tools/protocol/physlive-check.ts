@@ -111,7 +111,7 @@ function playground(clock = "pinned") {
   const v2 = call("rowan", "punt", { id: "ball", v: [0, 3, -2] }, 10);
   ok(v2.ok, "K7 a thing in the air can be punted again (a volley)", v2);
   const tail = L().slice(-3).map((e) => [e.kind, e.verb]);
-  ok(JSON.stringify(tail) === JSON.stringify([["act", "punt"], ["sim", "catch"], ["sim", "launch"]]), "K8 …logged as a catch and a new launch", tail);
+  ok(JSON.stringify(tail) === JSON.stringify([["request", "punt"], ["physics", "catch"], ["physics", "launch"]]), "K8 …logged as a catch and a new launch", tail);
   call("rowan", "wait", {}, 8000);
   const v = simFold(L(), Date.now() + 1e9, { models: {} });
   ok(restsOf(L()).length === 1 && v.checks.agree === 1 && !v.checks.disagree.length, "K9 one rest (the volley's), and a carrier agrees", [restsOf(L()), v.checks]);
@@ -201,7 +201,7 @@ function playground(clock = "pinned") {
   call("rowan", "grab", { id: "ball" }); call("rowan", "throw", { id: "ball", v: [0.3, 3, 2.5] });
   const pre = call("rowan", "look", {}, 120);
   const cut = clientSnapshotOf(w);
-  ok(cut.sim && cut.sim.launched?.ball && Object.keys(cut.sim.launches ?? {}).length === 1, "F1 a mid-flight cut carries the sim's state and the launch in flight", cut.sim && { launched: cut.sim.launched, launches: cut.launches });
+  ok(cut.physics && cut.physics.launched?.ball && Object.keys(cut.physics.launches ?? {}).length === 1, "F1 a mid-flight cut carries the sim's state and the launch in flight", cut.physics && { launched: cut.physics.launched, launches: cut.physics.launches });
   const c = makeReplica(); c.adopt(JSON.parse(JSON.stringify({ ...cut, you: "vic" }))); // as it crosses the wire
   // a second client that joined before the throw (it folds the launch itself)
   const x = playground("ticking"); x.call("rowan", "grab", { id: "ball" });

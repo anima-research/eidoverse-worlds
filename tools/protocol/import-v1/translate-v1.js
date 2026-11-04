@@ -704,7 +704,7 @@ export function accountIn(entries) {
   return null;
 }
 /** a v1 actor name → the v4 actor, by grammar only (no directory): v1's "door" is v4's `system`, anything else enc() */
-export const actorOf = (a) => (a === "door" ? "system" : enc(a));
+export const actorOf = (a) => (a === "door" || a === "world" ? "system" : enc(a));   // v1's `door` and `world` are the authority: `system` (D3)
 const asSub = (k) => (isAccountName(k) ? k : undefined);   // a role or ban keyed by its account (@19)
 const PERSON_REQUESTS = new Set(["grant", "ban", "unban"]);   // the old requests whose id names a person
 // @8 (2026-10-07, review H1 + R's ruling): bare names are the registry's, and the authority refuses an unregistered one. A

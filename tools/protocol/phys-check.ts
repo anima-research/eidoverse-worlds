@@ -575,7 +575,7 @@ function playground(name) {
   call(W, "sam", "move", { to: [0, 0, -0.5] }); const g = call(W, "sam", "grab", { id: "ball" });
   const ops = [{ verb: "set", args: { id: "@world", component: "physics-engine", value: ENG } },
     { verb: "set", args: { id: "ball", component: "transform", value: { pos: [1, 0, 1], q: [0, 0, 0, 1], scale: [1, 1, 1] } } }];
-  const dry = call(W, "rowan", "batch", { requests, dry: true }); const n = log(W).length;
+  const dry = call(W, "rowan", "batch", { requests: ops, dry: true }); const n = log(W).length;
   const b = call(W, "rowan", "batch", { requests: ops });
   const lift = log(W).slice(n).find((e: any) => e?.kind === "physics" && e.verb === "lift" && e.body?.id === "ball"); const v = view(W); const w = openWorld(root, W);
   ok(g.ok && b.ok && !lift && !w.presence.holds?.ball && !v.lifted.has("ball") && !!(v.sim?.bodies.ball || v.sim?.statics?.ball),
@@ -588,7 +588,7 @@ function playground(name) {
   call(W, "sam", "move", { to: [0, 0, -0.5] }); const g = [call(W, "sam", "grab", { id: "ball" }), call(W, "sam", "grab", { id: "cup" })];
   const ops = [{ verb: "set", args: { id: "@world", component: "physics-engine", value: ENG } },
     { verb: "set", args: { id: "ball", component: "transform", value: { pos: [1, 0, 1], q: [0, 0, 0, 1], scale: [1, 1, 1] } } }];
-  const dry = call(W, "rowan", "batch", { requests, dry: true }); const n = log(W).length;
+  const dry = call(W, "rowan", "batch", { requests: ops, dry: true }); const n = log(W).length;
   const b = call(W, "rowan", "batch", { requests: ops });
   const lifts = log(W).slice(n).filter((e: any) => e?.kind === "physics" && e.verb === "lift").map((e: any) => `${e.body?.id}:${e.actor}`); const v = view(W);
   ok(g.every((x) => x.ok) && b.ok && JSON.stringify(lifts) === '["cup:sam"]' && JSON.stringify(dry.lifts) === '["cup"]' && v.lifted.has("cup") && !v.lifted.has("ball"),
