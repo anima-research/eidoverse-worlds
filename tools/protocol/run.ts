@@ -4,7 +4,7 @@
 //   bun tools/protocol/run.ts --lane core     only one lane (core | main | browser), also PARTIAL
 //   bun tools/protocol/run.ts --manifest      print the suite table docs/GATE-MANIFEST.md carries (generated from here)
 //   bun tools/protocol/run.ts --check-manifest   exit 1 if the doc's table is not what --manifest prints
-//   bun tools/protocol/run.ts --siblings      fetch, pin and build mcpl's two sibling repos beside this checkout
+//   bun tools/protocol/run.ts --siblings      fetch, pin and build the sibling repos (SIBLINGS, below) beside this checkout
 //   bun tools/protocol/run.ts --library <dir>    clone (or move) the asset library to its pin at <dir>, for EIDOVERSE_DIR
 //   bun tools/protocol/run.ts --receipt <file>   also write a JSON receipt of this run (head, OS, runtimes, library, scratch dir, per-suite results and output hashes)
 //   bun tools/protocol/run.ts --scratch-out <file>   append `scratch=<the gate's temp dir>` to <file> as soon as it exists (CI: $GITHUB_OUTPUT)
