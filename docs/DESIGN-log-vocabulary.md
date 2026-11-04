@@ -397,3 +397,19 @@ A fork's genesis names its parent as `parent: {world, seq, head}` (`verbs.js:52`
 6. **Governance stops the run for that world** (B2, D11). Before any rewriting, the tool counts governance entries per world; a world holding one is refused, loud, naming the seq, and no receipt is written for it. Its children (step 2) are then `parentUnmapped` with `parentOld` recorded, like any child whose parent is absent. On this host the count is expected to be zero (`livehost.ts:84–88` refuses to serve such a world today), so this is a rule for the next genesis-changing migration as much as for this one.
 
 Q2 asks the reviewer to confirm step 3; it follows from the code, not from the review's wording. (Review 2 confirmed it.)
+
+## §P Portable identity: what this freeze must decide
+
+Portable identity (one person, one identity across worlds and servers) is the next work item. Its full research is in `docs/research-portable-identity.md`. The recommendation is a did:plc-shaped self-certifying id with ordered rotation keys and a recovery window, resolved through a home node the person chooses. It is bound to the log's opaque `u-` actor by a signed claim held outside the log. Only the items below touch this freeze. Everything else (body signatures, the claim verb, delegation in request bodies, identity documents, pairwise ids) is additive later. Hash effect today: nil.
+
+- **P1** `actor` stays an opaque `u-` id: never a DID string, a key, or `name@host`. §6 gains "an actor is a world-visible alias; what it binds to lives outside the log."
+- **P2** The envelope never carries an identity field (no `for`/`grant`/`proof`). Signatures, delegation and claims live in bodies, which hash as `{commitment}` and so cost nothing later. A later envelope field would mean a minor bump, which means every world id changes.
+- **P3** Identity grammar: `u-` + lowercase base32, and readers accept 20–32 characters. 20 is today's random mint; 24 is reserved for a portable id. Widen the person-shape checks (`componentspec.js`, `ids.js`, `directory.ts`, `messages.ts`, `presencewire.js`, `names.js`) in the same PR.
+- **P4** Genesis `owners` tiers may hold an identity as well as an `ed25519:` key. Today `checkGenesis` refuses a non-key owner, so a founder's lost key loses the world's governance forever. Genesis is in the world id, so this is free now and costs a full re-id later.
+- **P5** A claim (a stand-in becoming a real person) is a request verb plus system changes, never a new kind.
+- **P6** Governance signatures are checked against the signer's identity document as of `ts`, not against a key frozen in genesis (prose, §13).
+- **P7** §12 says an `actor` id is never redactable. Erasing a person means tombstoning the identity and deleting the directory binding.
+
+**Q6 (for the reviewer):** do P1–P7 hold up? P3 and P4 are the two that change kernel shape checks in this PR.
+
+**Q3 lean (inbox `kind:"act"`):** rename it, to `"notice"` (6 sites, one file, no migration), so the retired log word has no surviving homonym. The keep-it call in review 1 stands unless the reviewer agrees.
