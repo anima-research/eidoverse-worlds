@@ -13,6 +13,7 @@
 //      spent learning them instead of watching a bar.
 
 import { bus } from './base.js';
+import { escapeHtml } from './markup.js';
 // Injected, not imported: assets.js reaches the engine (GLTFLoader), and this splash
 // is shared with a client that loads no assets and therefore has no bytes to count.
 // The empty defaults are the truth for such a client — its phases finish on their own
@@ -82,7 +83,6 @@ function paintItems() {
   itemsEl.innerHTML = shown.map((it) => `<div class="sp-load"><span class="sp-load-name">${escapeHtml(prettyLabel(it.label))}</span><span class="sp-load-bytes">${it.total > 0 ? `${(it.done / 1048576).toFixed(1)} / ${(it.total / 1048576).toFixed(1)} MB` : it.done > 0 ? `${(it.done / 1048576).toFixed(1)} MB…` : ''}</span></div>`).join('');
 }
 const prettyLabel = (l) => String(l).split('/').pop().replace(/\.(vrm|glb|gltf|png|jpg|ktx2|json|g|gl)(\?.*)?$/i, '').replace(/[_-]+/g, ' ');   // some labels arrive pre-truncated ('desk.g')
-const escapeHtml = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // THE PEG IS THE PROGRESS (owner, 09-29 23:53): the new mark's peg enters from the sphere's left skin,
 // passes the doorway, and rests at 1 — the logo notes' splash/doorway.html render(p), verbatim in its

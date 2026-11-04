@@ -28,6 +28,7 @@ import { makeSection, toast, flashHint } from './ui.js';
 import { net } from './net.js';
 import { holdGhost } from './build.js';
 import { logChat } from './chat.js';
+import { escapeHtml as esc } from './markup.js';
 
 // A self-hosted Orrery may be named by ?orrery= (remembered). Only an http(s) BASE is taken — origin plus path, as the
 // URL parser re-serialises them (a path of plain segments only; no query, hash or credentials): the value is interpolated into this
@@ -109,7 +110,6 @@ async function poll() {
 
 let connected = null;      // null = unknown, false = needs login, object = me
 
-const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const STAGES = ['images', 'compose', 'mesh'];
 function stageOf(j) {

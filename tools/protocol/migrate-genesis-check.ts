@@ -13,6 +13,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { ENGINE, scratch } from "./common.ts";
+import { foundWorlds } from "../harness.ts";
 import { worldIdOf, parseLine, DIALECT } from "../../shared/protocol/fold.js";
 
 const TOOL = process.env.GENESIS_TOOL ?? path.join(ENGINE, "tools/protocol/migrate-genesis.ts");
@@ -24,15 +25,14 @@ const env = (W: string) => ({ ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(
 /** A world founded today, its genesis turned back to shape B ({version: 4, minor, …}) and every later line's id with it. */
 function shapeB(tag: string) {
   const root = scratch(tag), W = path.join(root, "worlds"); fs.mkdirSync(path.join(root, "opt"), { recursive: true });
-  const f0 = Bun.spawnSync(["bun", path.join(ENGINE, "tools/protocol/world.ts"), "found", "gen", "--owner", "ann"], { cwd: ENGINE, env: env(W) });
-  if (f0.exitCode !== 0) throw new Error(`found: ${f0.stderr.toString().slice(-300)}`);
+  foundWorlds(W, ["gen"], "ann");
   const f = path.join(W, "gen", "world.jsonl"), lines = fs.readFileSync(f, "utf8").split("\n").filter(Boolean);
   const g = JSON.parse(lines[0]), newId = worldIdOf(parseLine(lines[0])); const { dialect: _d, v: _v, ...rest } = g.body;
   const gl = JSON.stringify({ ...g, body: { version: 4, ...rest } }), oldId = worldIdOf(parseLine(gl));
   fs.writeFileSync(f, [gl, ...lines.slice(1).map((l) => l.replaceAll(newId, oldId))].join("\n") + "\n");
   return { W, dir: path.join(W, "gen"), f };
 }
-const run = (W: string, args: string[]) => { const r = Bun.spawnSync(["bun", TOOL, ...args], { cwd: ENGINE, env: env(W), timeout: 60_000 }); return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; };
+const run = (W: string, args: string[]) => { const r = Bun.spawnSync([process.execPath, TOOL, ...args], { cwd: ENGINE, env: env(W), timeout: 60_000 }); return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; };
 
 { const { W, dir, f } = shapeB("mg1"); const before = fs.readFileSync(f), kept = path.join(dir, "world.pre-genesis-migration.jsonl");
   const r = run(W, ["--apply", dir]); const res = (() => { try { return JSON.parse(r.out.trim().split("\n").at(-1)!); } catch { return null; } })();

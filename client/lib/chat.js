@@ -25,6 +25,7 @@ import { requestHistory } from './net.js';
 // closes (§14.2). The registry is a pure table with no imports of its own.
 import { COMMANDS, resolveCommand } from './commands/registry.js';
 import { register as registerAction } from './actions.js';
+import { escapeHtml as esc } from './markup.js';
 
 const MAX_LINES = 400;
 const HISTORY = 'ew-chat-history';
@@ -1034,7 +1035,6 @@ function paintSide(force = false) {
   const strip = stripName && listEl.querySelector('.pm-strip');
   if (strip) personUi.stripFor(stripName, strip);
 }
-const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // ---- chat gear: text size (the sheet's -a/+A) + which side the people pane
 // sits on. Small popover; both persisted.

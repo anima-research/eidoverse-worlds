@@ -47,9 +47,9 @@ import { logChat } from './chat.js';
 import { myState } from './controller.js';
 import { modelWord } from '../../shared/eido.js';
 import { called } from './plainwords.js';
+import { escapeHtml as esc } from './markup.js';
 
 
-const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const _wp = new THREE.Vector3();
 

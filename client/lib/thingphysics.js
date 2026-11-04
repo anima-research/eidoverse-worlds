@@ -440,7 +440,8 @@ export const simShown = () => pres;
 // entry within PENDING_MS, removes it and the thing eases back into the hand. Nothing here is ever read back into a
 // request (Covenant III): whereIs, reach and the canonical fold never see a provisional body.
 const pending = new Map();   // id -> { ts, args, sentAt }
-const PENDING_MS = 1500, OFFSET_SNAP = 3, OFFSET_DEAD = 0.02;   // a reply normally lands within 300 ms; while a guess is pending, others' news waits (second review S3)
+export const PENDING_MS = 1500;   // a reply normally lands within 300 ms; while a guess is pending, others' news waits (second review S3); predict-pending-test reads it
+const OFFSET_SNAP = 3, OFFSET_DEAD = 0.02;
 let predictOn = true;        // lab knob (physicsApi.predict(false)): the old shape, for the probe's control arm
 const swapFrom = new Map();  // id -> drawn world position before a copy swap (the offset starts from it)
 function planRelease(id, pos, v, w) {

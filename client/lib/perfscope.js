@@ -31,12 +31,12 @@ import { positionLocal, normalLocal, positionWorld, cameraPosition, modelScale }
 import { entities, metaOf } from './world.js';
 import * as icons from './icons.js';
 import { modelWord } from '../../shared/eido.js';
+import { escapeHtml as esc } from './markup.js';
 // the fill icon set is optional: without it the loupe button is its word
 const fsvg = (name, size) => (typeof icons.fsvg === 'function' ? icons.fsvg(name, size) : '');
 
 // HTML-attribute escaper for the tooltip strings below (was used un-imported —
 // a real hover threw ReferenceError; mocked-innerHTML shots never caught it).
-const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // data colors, not chrome: a perceptual cheap→dear ramp shared by every mode
 // (VRChat's five ranks). Deliberately literal — these mean the same thing in
