@@ -11,6 +11,8 @@
 //   MI5  the reference reader's malformed diagnostics stop the write even when its status is ok (I307)
 //   MI6  a crash between the directory and the logs leaves the logs as they were and the directory already holding the
 //        ids, so nothing names an id the directory lacks (I91)
+//   MI8  the backups and the replacement logs are fsynced before the renames that publish them, the directory after
+//   MI9  a dry run mints nothing: a worlds dir without a custody file is skipped, and none is written
 // MIGRATE_TOOL=<path> runs another copy of the tool (a base, for the rows' red).
 // @ts-nocheck
 import fs from "node:fs";
@@ -111,5 +113,26 @@ process.exit(Bun.spawnSync([${JSON.stringify(process.env.PYTHON || "python3")}, 
   ok(r0.code === 9 && r.code === 0 && r.o?.written === true && r.o?.interrupted === true && say?.actor === bob && minted(say?.body?.to)
     && fs.readFileSync(path.join(d, "world.jsonl.before-identities")).equals(before) && modOf(d).find((m: any) => m.verb === "mute")?.who === bob,
     "MI7 a run killed after the backup (before the renames) is finished by the next --apply from the backup, which stays the original", { first: r0.code, again: r.o ?? r.out.slice(-300) }); }
+
+// ================= MI8: durable order (a spy preload logs every fsync and rename) =================
+{ const root = scratch("migsync"); const d = oldWorld(root, "cellar"); const trace = path.join(root, "fsync-trace.log"), spy = path.join(root, "fsync-spy.ts");
+  fs.writeFileSync(spy, `import fs from "node:fs"; const out = process.env.FSYNC_TRACE, fds = new Map(), o = fs.openSync, f = fs.fsyncSync, rn = fs.renameSync, put = fs.writeFileSync;
+const log = (x) => put(out, x + "\\n", { flag: "a" });
+fs.openSync = (p, ...a) => { const fd = o(p, ...a); fds.set(fd, String(p)); return fd; };
+fs.fsyncSync = (fd) => { log("fsync " + fds.get(fd)); return f(fd); };
+fs.renameSync = (a, b) => { log("rename " + a + " " + b); return rn(a, b); };\n`);
+  const r = Bun.spawnSync(["bun", "--preload", spy, TOOL, "--apply", d], { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", FSYNC_TRACE: trace } });
+  const L = fs.existsSync(trace) ? fs.readFileSync(trace, "utf8").split("\n").filter(Boolean) : [];
+  const f = path.join(d, "world.jsonl"), mf = path.join(d, "world.mod.jsonl");
+  const at = (x: string) => L.indexOf(x), firstRename = L.findIndex((l) => l.startsWith("rename ") && (l.endsWith(" " + f) || l.endsWith(" " + mf)));
+  const before = (x: string) => at(x) >= 0 && at(x) < firstRename;
+  const dirAfter = process.platform === "win32" || L.slice(at(`rename ${f + ".id-tmp"} ${f}`) + 1).includes(`fsync ${d}`);
+  ok(r.exitCode === 0 && firstRename > 0 && before(`fsync ${f}.before-identities`) && before(`fsync ${mf}.before-identities`) && before(`fsync ${f}.id-tmp`) && before(`fsync ${mf}.id-tmp`) && dirAfter,
+    "MI8 both backups and both replacement logs are fsynced before the first rename publishes them; the world's directory is synced after the last", { code: r.exitCode, firstRename, trace: L.map((l) => l.replace(d, "")).slice(0, 16), dirAfter }); }
+
+// ================= MI9: the dry run mints no key =================
+{ const root = scratch("migdry"); const d = oldWorld(root, "loft"); const cf = path.join(root, "worlds", ".custody.json"); fs.rmSync(cf);
+  const r = tool([d]);
+  ok(r.code === 0 && /sequencer key/.test(r.o?.skipped ?? "") && !fs.existsSync(cf), "MI9 a dry run on a worlds dir with no custody file is skipped (no sequencer key here) and writes no custody file", { code: r.code, o: r.o, minted: fs.existsSync(cf) }); }
 
 console.log(`[migrate-identities-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
