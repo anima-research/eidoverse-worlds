@@ -35,7 +35,7 @@ import { modLogAt } from "./custody.ts";
 import { readLogBytes } from "./durable.ts";
 import { addressOf } from "./peer.ts";
 import { entryOf, doorOf as doorOfWc, listedIn, timedGrants, leftWords, ACCESS_WARN_MS } from "../shared/protocol/access.js";
-import type { World, Client } from "./world.ts";
+import { worldDirNamed, type World, type Client } from "./world.ts";
 
 /** Close code for "this world is not open to you": refused at the door, or removed because access ended or changed.
  *  Clients don't redial it (4006 is moderation's, 4005 a bad link). */
@@ -78,7 +78,7 @@ export function setLoadedWorlds(fn: () => Map<string, World>) { loadedWorlds = f
 export function doorFor(name: string): Door | null {
   const live = loadedWorlds().get(name);
   if (live) return doorOfWorld(live);
-  if (!/^[a-z0-9_-]{1,64}$/i.test(name)) return null;
+  if (!/^[a-z0-9_-]{1,64}$/i.test(name) || !worldDirNamed(name)) return null;   // its own case only, as the join door (world.ts)
   const file = join(WORLDS_DIR, name, "world.jsonl");
   let st; try { st = statSync(file); } catch { return null; }
   const modFile = join(WORLDS_DIR, name, "world.mod.jsonl");

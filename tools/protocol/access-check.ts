@@ -117,6 +117,13 @@ ok(close.ok && removed && bob.closed === 4010 && bob.msgs.some((m) => m.type ===
   const a0 = await accessAs(srv.port, "keep"), a1 = await accessAs(srv.port, "keep", "tok-moss"), a2 = await accessAs(srv.port, "keep", "tok-rowan"), a3 = await accessAs(srv.port, "nowhere", "tok-rowan");
   ok(a0.status === 401 && a1.body?.you === "none" && a2.body?.you === "enter" && a3.body?.exists === false && a3.body?.found?.ok === false,
     "A3 /access: 401 anonymously; none for a stranger, enter for a member; a name with no world says joining never founds one", [a0.status, a1.body, a2.body, a3.body]); }
+// A3b: an unloaded world is read in its own case only, as the join door reads it (world.ts worldDirNamed); the variant
+// is only a finding on a case-insensitive filesystem (Windows, macOS): elsewhere the stat misses on its own
+{ const code = `const { doorFor } = await import(${JSON.stringify(new URL("../../server/access.ts", import.meta.url).href)});
+    const fs = await import("node:fs"); const ci = fs.existsSync(${JSON.stringify(path.join(W, "KEEP"))});
+    console.log(JSON.stringify({ exact: doorFor("keep") !== null, variant: doorFor("Keep") !== null || doorFor("KEEP") !== null, ci }));`;
+  const r = Bun.spawnSync(["bun", "-e", code], { env: env(), stdout: "pipe", stderr: "pipe" }); let j: any = null; try { j = JSON.parse(r.stdout.toString().trim()); } catch {}
+  ok(!!j && j.exact && !j.variant, `A3b the unloaded door reader answers for a world's name in its own case only, never a case variant of it${j?.ci ? "" : " (case-sensitive filesystem here: the variant misses on its own)"}`, j ?? r.stderr.toString().slice(0, 300)); }
 
 // ---- A2: watch only ----
 { ok((await own.req("set", { id: "@world", component: "access", value: { join: "listed", watch: "anyone" } })).ok, "(A2 setup) the door: watch only");
