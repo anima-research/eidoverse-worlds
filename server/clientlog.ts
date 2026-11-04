@@ -44,6 +44,7 @@ export class ClientLogRate {
 
 const KEYS = String.raw`(?:password|passwd|secret|token|bearer|auth|authorization|cookie|set-cookie|api[_-]?key|credentials?|private[_-]?key)`;
 const RULES: [RegExp, string][] = [
+  [/((?<![a-z0-9])(?:set-)?cookie(?![a-z0-9])"?\s*[:=]\s*"?)(?!\[Filtered\])[^"\n}]+/gi, "$1[Filtered]"],   // a cookie header whole: its value is `a=1; ew_sess=…`, so no stop at `;`
   [new RegExp(String.raw`((?<![a-z0-9])${KEYS}(?![a-z0-9])[\w-]*"?\s*[:=]\s*"?)(?!\[Filtered\])((?:bearer\s+)?[^"\s,;&}\]]+)`, "gi"), "$1[Filtered]"],   // key: value, key=value, "key":"value", Header: value
   [/\bbearer\s+(?!\[Filtered\])[A-Za-z0-9._~+/=-]{8,}/gi, "Bearer [Filtered]"],
   [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*/g, "[Filtered]"],                      // a JWT

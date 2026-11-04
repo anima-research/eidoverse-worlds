@@ -79,6 +79,7 @@ ip = "10.0.3.2";
 ok(await st(post("world=known", "GET https://user:pw@turn.example/x?access_token=sekret&y=1 iceServers credential: turnpass urls=turn:turn.example")) === 200, "C3 URL auth and ICE credentials are taken");
 const s3 = logs("known");
 ok(s3.includes("https://[Filtered]@turn.example/x?access_token=[Filtered]&y=1") && s3.includes("credential: [Filtered] urls=turn:turn.example") && !s3.includes("sekret") && !s3.includes("turnpass"), "C4 …user:pass@ and ?access_token= and credential: are [Filtered]");
+ok(scrub("cookie: a=1; ew_sess=deadbeef12; b=2").text === "cookie: [Filtered]" && scrub('{"cookie":"a=1; ew_sess=deadbeef12","n":1}').text === '{"cookie":"[Filtered]","n":1}' && scrub("set-cookie: ew_sess=deadbeef12; Path=/; HttpOnly").text === "set-cookie: [Filtered]", "C5b a cookie header is filtered whole: the session id after a `;` never lands");
 ok(scrub("[authority] 3 pending, author: bob, token_v2=abc").text === "[authority] 3 pending, author: bob, token_v2=[Filtered]", "C5 'authority' and 'author' are words, not keys; token_v2 is a key");
 ip = "10.0.3.3";
 const pem = `oops\n-----BEGIN RSA PRIVATE KEY-----\nMIIEow\n-----END RSA PRIVATE KEY-----\n`;
