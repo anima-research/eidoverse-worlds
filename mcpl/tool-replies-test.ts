@@ -59,6 +59,16 @@ const creator = (reply: any = { ok: true, after: {} }) => { const sent: any[] = 
   ok(/^60 message/.test(one) && /line 1\n/.test(one) && /more remain/.test(one) && /^10 message/.test(two) && /line 61\n/.test(two) && /line 70$/.test(two),
     "63 70 lines: catch_up shows the first 60 and says more remain; the next shows the last 10", { one: one.slice(0, 120), two: two.slice(0, 120) }); }
 
+// kudzu M6: catch_up {limit: 0} (or a limit that isn't a number) is a page of at least one line, never a throw
+{ const ag: any = new WorldAgent({ name: "me", world: "w" });
+  const all = Array.from({ length: 3 }, (_, i) => ({ seq: (i + 1) * 1000, ts: i, actor: "Bea", verb: "say", args: { text: `line ${i + 1}` } }));
+  ag.lastSeq = 3000;
+  ag.history = async ({ after = -Infinity, before = Infinity, limit = 50 }: any) => { const m = all.filter((e) => e.seq > after && e.seq < before);
+    const page = m.slice(-limit); return { entries: page, oldestSeq: page[0]?.seq ?? null, hasMore: m.length > page.length }; };
+  const outs: string[] = []; let threw: unknown = null;
+  try { for (const limit of [0, -5, "x"]) outs.push(textOf(await handleTool(ctxOf(ag), "catch_up", { limit }))); } catch (e) { threw = String(e); }
+  ok(threw === null && /^1 message/.test(outs[0]) && /^1 message/.test(outs[1]) && /^3 message/.test(outs[2]), "M6 catch_up {limit: 0 | -5 | 'x'}: one line, one line, the default page", { threw, outs: outs.map((o) => o.slice(0, 60)) }); }
+
 // #105: a fall below the world ends the walk's promise now (false), not at its timeout
 { const ag: any = new WorldAgent({ name: "me", world: "w" }); ag.replica = { st: { entities: { "@world": { c: {} } } } };
   let done: boolean | null = null; ag.target = { x: 5, z: 5 }; ag.walkDone = (v: boolean) => { done = v; };
