@@ -33,8 +33,10 @@ import { randomUUID } from 'node:crypto';
  *  flags a microphone probe needs (and its contexts get mic permission). */
 export async function launchBrowser({ mic = false, vrMicChoice = 'later' } = {}) {
   const exe = process.env.SFU_TEST_CHROME;
-  const args = mic ? ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream',
-    '--autoplay-policy=no-user-gesture-required'] : [];
+  // no GPU watchdog: a software-rendered sky bake is a 4–7 s frame here, and the watchdog's kill loses every page's
+  // WebGL context (gpulost.js then reloads the page mid-probe, 11-03)
+  const args = ['--disable-gpu-watchdog', ...(mic ? ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream',
+    '--autoplay-policy=no-user-gesture-required'] : [])];
   const b = await chromium.launch({ ...(exe ? { executablePath: exe } : {}), args });
   // BOOT_CHECK_VIEWPORT=390x844 drives a probe at a phone-width (or any) viewport.
   // Without it the context takes Playwright's default — which is why a layout that
@@ -53,6 +55,10 @@ export async function launchBrowser({ mic = false, vrMicChoice = 'later' } = {})
       ...(viewport ? { viewport } : {}),
       ...(touch ? { hasTouch: true, isMobile: true } : {}),
     });
+    // a lost context stays lost: headless software GL loses the page's WebGL context a couple of minutes in (a
+    // 3–7 s frame, 11-03), and gpulost.js would reload the page, resetting every state a row reads. Seeded at its
+    // own stop rule (3 losses in 15 min), it says so (capnotice) and stays; scene, audio and network rows read on.
+    await ctx.addInitScript(() => { try { if (!sessionStorage.getItem('ew-gpu-lost')) sessionStorage.setItem('ew-gpu-lost', JSON.stringify([Date.now() - 1000, Date.now() - 500])); } catch { /* opaque origin */ } });
     if (vrMicChoice) await ctx.addInitScript((v) => { try { if (!localStorage.getItem('ew-vr-mic-choice')) localStorage.setItem('ew-vr-mic-choice', v); } catch { /* opaque origin */ } }, vrMicChoice);
     return ctx.newPage();
   };
@@ -177,4 +183,19 @@ export function checker() {
     process.exit(fail ? 1 : 0);
   };
   return { check, done };
+}
+
+/** Resolves once the page is in the world: the client's own `net.joined` (set on the snapshot, client/lib/net.js
+ *  onSnapshot). The mic badge is no proxy for it — `#micbtn` mounts hidden until pinned (mictoggle.js
+ *  applyPairVisibility), so a visibility wait on it never returns. Resolves to the list of reloads the page makes
+ *  from here on (URL + seconds since join): a reload (gpulost.js after a lost headless context) starts the page's
+ *  state over, so a row read after one is not about the product — a probe checks the list is empty. */
+export async function waitJoined(pg, { timeout = 90000 } = {}) {
+  const t0 = Date.now();
+  // the engine flag first: an import('/lib/net.js') issued while main.js's graph is still loading hangs the poll's first call for good
+  await pg.waitForFunction(() => globalThis.__ewEngineUp === true, null, { timeout });
+  await pg.waitForFunction(() => import('/lib/net.js').then((n) => n.net.joined === true), null, { timeout: Math.max(1000, timeout - (Date.now() - t0)) });
+  const reloads = [], joinedAt = Date.now();
+  pg.on('framenavigated', (f) => { if (f === pg.mainFrame()) reloads.push(`${f.url().slice(0, 80)} at +${((Date.now() - joinedAt) / 1000).toFixed(0)}s`); });
+  return reloads;
 }
