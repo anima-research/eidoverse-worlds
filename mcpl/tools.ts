@@ -1094,11 +1094,14 @@ export const HANDLERS: Record<string, ToolHandler> = {
   catch_up: async (ag, a, ctx, name) => {
       const from = typeof a.since === "number" ? a.since : (ctx.cursor.caughtUpTo ?? -1);
       const n = Number(a.limit ?? 60), limit = Number.isFinite(n) ? Math.min(200, Math.max(1, Math.floor(n))) : 60;   // 1–200; a non-number is the default
-      const { said, more } = await ag.firstSaidSince(from, limit);
-      ctx.cursor.caughtUpTo = more ? said[said.length - 1].seq : ag.lastSeq;   // a full page moves the cursor only past what it showed
-      if (!said.length) return text(`nothing said since seq ${from}. You are up to seq ${ag.lastSeq}.`);
+      const covered = ag.lastSeq;   // logged before the read was sent, so the read covers it; a say arriving mid-read is not
+      const { said, more, failed, truncated } = await ag.firstSaidSince(from, limit);
+      if (failed) return { content: [{ type: "text", text: `catch_up: the world didn't answer the history read; nothing was read, so you are still at seq ${from} — call again` }], isError: true };
+      ctx.cursor.caughtUpTo = more ? said[said.length - 1].seq : Math.max(from, covered, said[said.length - 1]?.seq ?? -1);   // a full page moves the cursor only past what it showed
+      if (!said.length) return text(`nothing said since seq ${from}. You are up to seq ${ctx.cursor.caughtUpTo}.`);
       const lines = said.map((m) => `[${m.seq}] ${m.who}: ${m.text}`);
-      return text(`${said.length} message(s) since seq ${from} (now at ${ag.lastSeq}):\n${lines.join("\n")}${more ? "\n(more remain: call catch_up again)" : ""}`);
+      const older = truncated ? `\n(older says between seq ${from} and ${said[0].seq} were not read — more than 20,000 unread; world_history {after: ${from}, before: ${said[0].seq}} reads them)` : "";
+      return text(`${said.length} message(s) since seq ${from} (now at ${ag.lastSeq}):\n${lines.join("\n")}${older}${more ? "\n(more remain: call catch_up again)" : ""}`);
 
   },
   create: async (ag, a, ctx, name) => {

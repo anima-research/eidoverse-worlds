@@ -5316,15 +5316,16 @@ export class WorldAgent {
    *  process is up; this is how it recovers everything else, including what
    *  happened before it was ever started. */
   history(opts: { before?: number; after?: number; limit?: number; verbs?: string[] } = {}):
-      Promise<{ entries: any[]; oldestSeq: number | null; hasMore: boolean }> {
+      Promise<{ entries: any[]; oldestSeq: number | null; hasMore: boolean; failed?: boolean }> {
+    // no answer (offline, a timeout) is `failed`, never an empty final page: a reader must not advance past it
     if (!this.joined || this.ws?.readyState !== 1) {
-      return Promise.resolve({ entries: [], oldestSeq: null, hasMore: false });
+      return Promise.resolve({ entries: [], oldestSeq: null, hasMore: false, failed: true });
     }
     const reqId = `h${++this.histId}`;
     return new Promise((resolve) => {
       const t = setTimeout(() => {
         this.pendingHistory.delete(reqId);
-        resolve({ entries: [], oldestSeq: null, hasMore: false });
+        resolve({ entries: [], oldestSeq: null, hasMore: false, failed: true });
       }, 8000);
       this.pendingHistory.set(reqId, (m) => {
         clearTimeout(t);
@@ -5374,13 +5375,15 @@ export class WorldAgent {
     return entries.map((e) => ({ ts: e.ts, who: e.actor, text: e.args?.text ?? "", seq: e.seq }));
   }
   /** The OLDEST `limit` says after `seq`, and whether more follow: the log pages newest-first, so page back to `seq`. */
-  async firstSaidSince(seq: number, limit: number): Promise<{ said: { ts: number; who: string; text: string; seq: number }[]; more: boolean }> {
-    let all: any[] = [], before: number | undefined;
-    for (let n = 0; n < 100; n++) {
+  async firstSaidSince(seq: number, limit: number): Promise<{ said: { ts: number; who: string; text: string; seq: number }[]; more: boolean; failed?: boolean; truncated?: boolean }> {
+    let all: any[] = [], before: number | undefined, n = 0;
+    for (; n < 100; n++) {
       const r = await this.history({ after: seq, ...(before != null ? { before } : {}), limit: 200, verbs: ["say"] });
+      if (r.failed) return { said: [], more: true, failed: true };
       all = [...r.entries, ...all]; if (!r.hasMore || !r.entries.length || r.oldestSeq == null) break; before = r.oldestSeq;
     }
-    return { said: all.slice(0, limit).map((e) => ({ ts: e.ts, who: e.actor, text: e.args?.text ?? "", seq: e.seq })), more: all.length > limit };
+    // 100 pages read and older ones remain: what was read is not the oldest (`truncated`); the cap stays
+    return { said: all.slice(0, limit).map((e) => ({ ts: e.ts, who: e.actor, text: e.args?.text ?? "", seq: e.seq })), more: all.length > limit, ...(n === 100 ? { truncated: true } : {}) };
   }
 
   // ---- perception (text tier) ----

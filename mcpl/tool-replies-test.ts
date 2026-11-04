@@ -69,6 +69,27 @@ const creator = (reply: any = { ok: true, after: {} }) => { const sent: any[] = 
   try { for (const limit of [0, -5, "x"]) outs.push(textOf(await handleTool(ctxOf(ag), "catch_up", { limit }))); } catch (e) { threw = String(e); }
   ok(threw === null && /^1 message/.test(outs[0]) && /^1 message/.test(outs[1]) && /^3 message/.test(outs[2]), "M6 catch_up {limit: 0 | -5 | 'x'}: one line, one line, the default page", { threw, outs: outs.map((o) => o.slice(0, 60)) }); }
 
+// #27 (bot2): a history read that got no answer is not an empty final page — catch_up keeps its cursor and says so
+{ const ag: any = new WorldAgent({ name: "me", world: "w" });
+  const offline = await ag.history({ after: 0 });
+  ag.lastSeq = 99000; ag.history = async () => ({ entries: [], oldestSeq: null, hasMore: false, failed: true });
+  const ctx = ctxOf(ag); ctx.cursor.caughtUpTo = 5000; const r = await handleTool(ctx, "catch_up", {});
+  ok(offline.failed === true && r?.isError === true && /seq 5000/.test(textOf(r)) && ctx.cursor.caughtUpTo === 5000,
+    "27 an unanswered history read is an error that leaves the cursor where it was", { offline, r: textOf(r), cursor: ctx.cursor }); }
+
+// #105 (bot2): the cursor after an exhausted read is a seq the read covered, not a say that arrived while it ran
+{ const ag: any = new WorldAgent({ name: "me", world: "w" }); ag.lastSeq = 10000;
+  ag.history = async () => { ag.lastSeq = 11000; return { entries: [{ seq: 2000, ts: 0, actor: "Bea", verb: "say", args: { text: "hi" } }], oldestSeq: 2000, hasMore: false }; };
+  const ctx = ctxOf(ag); await handleTool(ctx, "catch_up", {});
+  ok(ctx.cursor.caughtUpTo === 10000, "105 a say arriving mid-read stays unread: the cursor is the lastSeq from before the read", ctx.cursor); }
+
+// #65 (bot2): past the 100-page cap, catch_up says which older says were not read, instead of calling the newest 20,000 the oldest
+{ const ag: any = new WorldAgent({ name: "me", world: "w" }); ag.lastSeq = 30_000_000; let pages = 0;
+  ag.history = async ({ before = 30_000_000 }: any) => { pages++; const page = Array.from({ length: 200 }, (_, i) => ({ seq: before - 200 * 1000 + i * 1000, ts: 0, actor: "Bea", verb: "say", args: { text: "x" } }));
+    return { entries: page, oldestSeq: page[0].seq, hasMore: true }; };
+  const ctx = ctxOf(ag); const out = textOf(await handleTool(ctx, "catch_up", { limit: 1 }));
+  ok(pages === 100 && /not read/.test(out) && /world_history/.test(out) && /more remain/.test(out), "65 a run longer than 100 pages is named as unread older speech, with the way to read it", out.slice(-240)); }
+
 // #105: a fall below the world ends the walk's promise now (false), not at its timeout
 { const ag: any = new WorldAgent({ name: "me", world: "w" }); ag.replica = { st: { entities: { "@world": { c: {} } } } };
   let done: boolean | null = null; ag.target = { x: 5, z: 5 }; ag.walkDone = (v: boolean) => { done = v; };
