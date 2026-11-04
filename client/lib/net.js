@@ -1024,8 +1024,8 @@ async function handle(msg, at) {
 
     case 'puppet':
       // Someone wants to pose US. A puppet is an INPUT to our own body, not a
-      // pose asserted onto it — main.js decides whether to honour it and then
-      // drives our avatar through the normal presence path.
+      // pose asserted onto it: localbody.js applyPuppet drives our avatar
+      // through the normal presence path (the authority already gated it).
       bus.emit('puppet', msg);
       break;
 
@@ -1174,6 +1174,15 @@ async function handle(msg, at) {
 }
 
 async function onSnapshot(msg) {
+  // no cut, no join: refused before any joined state is published (the voice bridge arms on it)
+  if (!msg.cut?.state) {
+    replica.reset(); report('snapshot', new Error('the server sent no world cut (an old server?)'));
+    // an older server: not "live" with nothing loaded — say so, fail the queued says, hang up without a redial (#470)
+    net.joined = false; net.status = 'rejected'; bus.emit('net', net); failSays();
+    toast('this server is older than the page: nothing will load — reload once it is updated', 'warn', 60000);
+    intentionalClose = net.ws ?? true; try { net.ws?.close(4000); } catch { /* already gone */ }
+    return;
+  }
   // what the server says you may do here; live grants keep it fresh via world.js
   net.myRights = msg.yourRights ?? { role: 'builder', gen: true };
   // the body roster rides the snapshot — resolveMyAvatarPath and the avatar
@@ -1261,14 +1270,6 @@ async function onSnapshot(msg) {
 
   // State adopts the snapshot FIRST, synchronously: the authority's own cut, drawn as the view of THIS client's fold of it
   // (the snapshot's `state` is the chat window: chat isn't world state).
-  if (!msg.cut?.state) {
-    replica.reset(); report('snapshot', new Error('the server sent no world cut (an old server?)'));
-    // an older server: not "live" with nothing loaded — say so, fail the queued says, hang up without a redial (#470)
-    net.joined = false; net.status = 'rejected'; bus.emit('net', net); failSays();
-    toast('this server is older than the page: nothing will load — reload once it is updated', 'warn', 60000);
-    intentionalClose = net.ws ?? true; try { net.ws?.close(4000); } catch { /* already gone */ }
-    return;
-  }
   replica.adopt(msg.cut); bus.emit('my-acts', msg.cut.mine ?? []); bus.emit('cut-adopted'); bus.emit('holds', msg.cut.holds ?? {});
   shadowHydrate(replica.view(msg.state), typeof msg.throughSeq === 'number' ? msg.throughSeq : -1);
   rememberWorld();   // the door said yes, and the shadow now holds what is here

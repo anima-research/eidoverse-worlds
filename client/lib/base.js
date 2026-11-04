@@ -84,7 +84,10 @@ export function forgetRememberedWorlds() {
 }
 
 const params = new URLSearchParams(globalThis.location?.search ?? '');
-const store = (() => { try { return globalThis.localStorage ?? null; } catch { return null; } })();   // a sandboxed frame throws on the property (bot #578)
+// a sandboxed frame throws on the property, a blocked one on every call: either way the page runs without a memory
+const store = (() => { try { return globalThis.localStorage ?? null; } catch { return null; } })();
+const remembered = (k) => { try { return store?.getItem(k) ?? null; } catch { return null; } };
+const remember = (k, v) => { try { store?.setItem(k, v); } catch { /* no memory here */ } };
 const picked = globalThis.__ewWorld ?? pickWorld(params, ...rememberedWorlds());
 export const CONFIG = {
   params,
@@ -99,14 +102,14 @@ export const CONFIG = {
   roam: params.has('renderer') && params.has('roam'),
   follow: params.get('follow'),
   // Door key: ?key=… once, remembered for this origin thereafter.
-  token: params.get('key') || store?.getItem('ew-key') || '',
-  name: params.get('name') || store?.getItem('ew-name') ||
+  token: params.get('key') || remembered('ew-key') || '',
+  name: params.get('name') || remembered('ew-name') ||
     `guest-${Math.random().toString(36).slice(2, 6)}`,
   // a dev host (the probes, a local server, ?dev): the guards that throw loudly instead of letting drift pass
   dev: params.has('dev') || /^(localhost|127\.0\.0\.1|\[::1\])$/.test(globalThis.location?.hostname ?? ''),
 };
-if (params.get('key')) store?.setItem('ew-key', CONFIG.token);
-store?.setItem('ew-name', CONFIG.name);
+if (params.get('key')) remember('ew-key', CONFIG.token);
+remember('ew-name', CONFIG.name);
 // the ACCOUNT a private (TRUST_NAMES) server knows you by, kept apart from the name you show (R 10-11: renaming herself
 // "Rab" made her a stranger with no role in her own world). Fixed at the first real name this browser used; ?account=
 // overrides. A server with sign-in ignores it: the session is the account there.
@@ -161,8 +164,9 @@ function teeFlush() {
   teeTimer = 0;
   if (!teeQ.length || teeMuted) return;
   if (Date.now() < teePausedUntil) { teeTimer = setTimeout(teeFlush, teePausedUntil - Date.now()); return; }
-  let body = teeQ[0], i = 1;
-  for (; i < teeQ.length && body.length + 1 + teeQ[i].length <= TEE_BYTES; i++) body += `\n${teeQ[i]}`;
+  const bytes = (s) => new TextEncoder().encode(s).length;   // the cap is in bytes on the wire, not UTF-16 units
+  let body = teeQ[0], i = 1, size = bytes(body);
+  for (; i < teeQ.length && size + 1 + bytes(teeQ[i]) <= TEE_BYTES; i++) { body += `\n${teeQ[i]}`; size += 1 + bytes(teeQ[i]); }
   const batch = teeQ.splice(0, i);
   const url = `/clientlog?world=${encodeURIComponent(CONFIG.world ?? '')}`;
   const headers = { authorization: `Bearer ${CONFIG.token ?? ''}` };   // the door key never rides in a URL
@@ -182,6 +186,7 @@ export function tee(line) {
     const who = CONFIG.name ?? '?';
     const key = String(line).slice(0, 160);
     if (!key.startsWith('[xr:rec]')) {
+      if (teeSeen.size >= 4096) teeSeen.clear();   // bounded: a long session forgets its repeat counts rather than growing
       const n = (teeSeen.get(key) ?? 0) + 1; teeSeen.set(key, n);
       if (n > 1 && n % 20 !== 0) return;
       if (n > 1) line = `${line} ×${n}`;

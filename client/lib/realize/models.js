@@ -45,7 +45,7 @@ import { tracked, reserve, regen, untrack, release } from './lifecycle.js';
 
 import { recordComponents } from '../../../shared/protocol/view.js';
 import { R_BASE, residencyRadiusFor } from '../../../shared/lod-distance.js';   // shared with the server's LOD budget
-import { worldPose } from '../../../shared/hierarchy.js';
+import { worldPose, ancestors } from '../../../shared/hierarchy.js';
 
 // Orientation (PROTOCOL §9 amendment): the fold's q when the thing is more
 // than turned, else its yaw. base carries q too, so motion composes on the
@@ -563,6 +563,8 @@ export const lightSpec = (id, ent, L, host) => { const w = host ? null : worldPo
   spot: L.kind === 'spot' ? { angle: L.angle, inner: L.inner } : null,
   obj: host, pos: host ? null : [...(w?.pos ?? ent.pos ?? [0, 0, 0])], q: host ? null : (w?.q ?? null),
 }; };
+/** Parked lights (no realized host yet) at or under `id` re-read the fold's world pose: a carrier moved or a chain changed. */
+const resyncParkedUnder = (id) => { for (const lid of compLights.keys()) if (!entities.has(lid) && (lid === id || ancestors(state.st.entities, lid).includes(id))) syncCompLight(lid); };
 /** A light card's drag, before release (SWEEP-3 N4): the realized light takes the dragged brightness or range; the fold's
  *  value comes back with the commit (syncCompLight) or the card's restore. */
 export function previewLight(id, patch) {
@@ -1115,6 +1117,7 @@ function onChange({ id, what, comp }) {
       case 'pose':
         if (ent) refreshModel(id, ent);
         syncCompLight(id);   // a parked light (model still loading) moves with the fold
+        resyncParkedUnder(id);
         if (standIns.size) restandWaiting(id);
         break;
       case 'parent':
@@ -1122,6 +1125,7 @@ function onChange({ id, what, comp }) {
         if (offIn(state.st.entities, id) !== !(entities.has(id) || tracked.has(id))) { reconcileSubtree(id); break; }
         if (ent?.parent) execMount(id);
         else if (entities.has(id) || tracked.has(id)) execDismount(id, ent);
+        resyncParkedUnder(id);
         if (standIns.size) restandWaiting(id);
         break;
       case 'comp':

@@ -199,7 +199,7 @@ function showInspector(id) {
   inspector.innerHTML =
     `<span><b>${escapeHtml(label.slice(0, 34))}</b></span>` +   // a thing's label or model path: world content, text
     (locked
-        ? `<span style="color:var(--dim)">locked — nobody's edits change it until unchecked</span>`
+        ? `<span style="color:var(--dim)">locked — only a builder who may lift the lock edits it, until unchecked</span>`
         : `<span style="color:var(--dim)">drag move · <kbd>Shift</kbd>+drag up/down · ` +
           `<kbd>G</kbd> move · <kbd>E</kbd> rotate · <kbd>R</kbd> scale · <kbd>F</kbd> find · <kbd>X</kbd> remove · <kbd>Esc</kbd> done</span>`) +
     `<label title="nail it down: while locked, nobody's drags, edits or scripts change it (server-enforced) — sitting on it and using it (doors, handlers) stay open; a builder who may lift the lock edits through it" style="display:flex;gap:4px;align-items:center;cursor:pointer">` +

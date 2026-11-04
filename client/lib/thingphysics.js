@@ -471,6 +471,7 @@ function unpredict(id) {
 }
 const pendingNow = () => Object.fromEntries([...pending].map(([id, p]) => [id, { ts: p.ts, sentAt: p.sentAt }]));
 function drawFlights(wall, now) {
+  replica.settleInputs();   // a late input (a heightmap's grid) landed: the canonical fold refolds before this frame copies it
   const canon = replica.sim;
   if (!canon?.sim || canon.foreign) { if (pres) { for (const id of Object.keys(pres.bodies)) suspendCollider(id, false); } pres = null; prev.clear(); return; }
   // while one of my releases is still a guess (no entry yet), keep this copy: a fresh copy of the canonical fold stands at
@@ -522,7 +523,7 @@ function drawFlights(wall, now) {
     // the engine carries the body's own rotation: draw that, nothing invented (a body without one keeps the rotation it has)
     if (b.q) { q.set(b.q[0], b.q[1], b.q[2], b.q[3]); if (pv?.q) q.copy(_dq.copy(pv.q).slerp(q, k)); }
     setWorldPose(obj, _p, q);
-    if (obj.userData.base?.pos) { obj.userData.base.pos[0] = b.p[0]; obj.userData.base.pos[1] = b.p[1]; obj.userData.base.pos[2] = b.p[2]; }
+    if (!b.provisional && obj.userData.base?.pos) { obj.userData.base.pos[0] = b.p[0]; obj.userData.base.pos[1] = b.p[1]; obj.userData.base.pos[2] = b.p[2]; }
   }
   for (const id of spins.keys()) if (!pres.bodies[id]) spins.delete(id);
   swapFrom.clear();
@@ -578,6 +579,7 @@ const dynamicIds = () => { const es = replica.st?.entities ?? {}; return Object.
 /** Where the thing is now, as the authority sees it: someone's hand, the air (the engine), or the log. */
 function whereIs(id) {
   const b = pres?.bodies?.[id]; if (b && !b.resting && !b.provisional) return b.p;   // a guess is drawn, never read back (Covenant III, bot #574)
+  const pd = pending.get(id); if (pd) return [...pd.args.p];   // while the guess flies, the authority still has it at the release point
   const st = settledTruth(id); if (st) return st.toArray();
   const obj = entities.get(id); if (obj) { obj.updateWorldMatrix(true, false); return obj.getWorldPosition(new THREE.Vector3()).toArray(); }
   return null;

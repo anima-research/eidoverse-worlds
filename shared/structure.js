@@ -610,13 +610,17 @@ function levelBoxes(level, g) {
   // shared by every box of a building, so a genuinely rotated box would mean
   // changing that contract; stepping keeps the existing machinery and the
   // steps are at most 1.2 wallT apart and the boxes 1.6 wallT wide at any
-  // tile (review of #260, #287), so nothing can slip between them. Visually the wall is a true
+  // tile (review of #260, #287), so nothing can slip between them; past 64
+  // steps (a tiny wallT) the boxes widen to 1.4 steps instead, so the count
+  // stays bounded and the overlap holds. Visually the wall is a true
   // mitred diagonal — this approximation is only what the body feels.
   for (const [k, e] of level.walls) {
     if (e.axis < 2) continue;
     const [[sx, sz], [ex, ez]] = segmentEnds(e, g);
     const open = ['door', 'arch'].includes(level.apertures.get(k));
-    const r = g.wallT * 0.8, N = Math.max(8, Math.ceil(Math.hypot(ex - sx, ez - sz) / (g.wallT * 1.2)));
+    const len = Math.hypot(ex - sx, ez - sz);
+    const N = Math.min(64, Math.max(8, Math.ceil(len / (g.wallT * 1.2))));
+    const r = Math.max(g.wallT * 0.8, (len / N) * 0.7);
     for (let i = 0; i <= N; i++) {
       const t = i / N;
       const cx = sx + (ex - sx) * t, cz = sz + (ez - sz) * t;

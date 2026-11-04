@@ -42,7 +42,7 @@ const {
   colliders, fitStructureBoxes, removeStructureBoxes, structureBoxIds,
   fitSupportBox, removeCollider, resolveColliders, surfaceUnder,
 } = await import('../client/lib/colliders.js');
-const { planStructure } = await import('../shared/structure.js');
+const { planStructure, collisionBoxes } = await import('../shared/structure.js');
 const { transformOf: structureTf } = await import('../client/lib/realize/structuretf.js');
 
 let pass = 0, fail = 0;
@@ -212,6 +212,17 @@ const WALK = PLAN.levels[0].y;
   resolveColliders(atDoor, flat);
   check('scale3 [2,1,1]: the widened doorway lets a body stand in it (x 1.5)', Math.abs(atDoor.z) < 1e-6 && Math.abs(atDoor.x - 1.5) < 1e-6,
     `(${atDoor.x.toFixed(3)}, ${atDoor.z.toFixed(3)})`);
+  // mirrored (a negative scale, as the drawn group takes it): every box registers, flipped through the origin on all three axes
+  clean();
+  const nm = fitStructureBoxes('mirror', PLAN.boxes, { ...AT, scale: -1 });
+  const mirrored = structureBoxIds('mirror').map((i) => colliders.get(i) as any);
+  check('scale -1: a mirrored building registers every box, below and left of the origin', nm === PLAN.boxes.length + 1 && mirrored.length === nm && mirrored.every((e) => e.box.max.x <= 1e-9 && e.box.max.y <= 1e-9),
+    JSON.stringify({ n: nm, boxes: mirrored.map((e) => [e.box.min.toArray(), e.box.max.toArray()]) }));
+  clean();
+  fitStructureBoxes('mirror3', PLAN.boxes, { ...AT, scale: 1, scale3: [-2, 1, 1] });
+  const atMirror3 = new THREE.Vector3(-3, WALK, 0);
+  resolveColliders(atMirror3, flat);
+  check('scale3 [-2,1,1]: the mirrored, widened solid segment pushes a body out (x -3)', Math.abs(atMirror3.z) > 0.01, `z=${atMirror3.z.toFixed(3)}`);
   // laid on its back (90° about x): the wall is a slab at grade, not a wall where it stood
   clean();
   const h = Math.SQRT1_2;
@@ -241,5 +252,9 @@ const WALK = PLAN.levels[0].y;
 // review of #260, #474: a negative scale mirrors (componentspec.js), so a mirrored building must draw mirrored, not snap to 1
 { const u = structureTf({ scale: -1 }), p = structureTf({ scale3: [-1, 1, 1] }), z = structureTf({ scale: 0, scale3: [0, 1, 1] });
   check('a building keeps a negative (mirroring) scale and scale3; a zero one falls back', u.scale === -1 && JSON.stringify(p.scale3) === '[-1,1,1]' && z.scale === 1 && z.scale3 === null, JSON.stringify({ u: u.scale, p: p.scale3, z: [z.scale, z.scale3] })); }
+// a diagonal wall is stair-stepped at ~1.2 wallT per step, so a legal but tiny wallT must not mean an unbounded box count
+{ const thin = collisionBoxes({ tile: 1, wallT: 1e-4, levels: [{ y: 0, tiles: [[0, 0]], walls: [[2, 0, 0]] }] }).filter((b: any) => b.kind === 'wall');
+  const step = Math.SQRT2 / Math.max(1, thin.length - 1), covered = thin.every((b: any) => (b.x1 - b.x0) >= step && (b.z1 - b.z0) >= step);
+  check('a diagonal wall at wallT 1e-4 is at most 65 boxes, each still wider than its step', thin.length <= 65 && covered, `${thin.length} boxes, step ${step.toFixed(4)}`); }
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

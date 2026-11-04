@@ -94,6 +94,8 @@ export function makeReplica({ freeze = true } = {}) {
     startSim(snap); for (const [seq, e] of fed) feedOne(seq, e);
     v.sim = folder.view(); v.simVersion++;
   };
+  /** The browser's draw clones v.sim itself (never simAt): its door to the refold once a late input lands. */
+  v.settleInputs = inputsLanded;
   const startSim = (snap) => {
     E = []; const cut = snap.sim ?? null;
     for (const [q, e] of Object.entries(cut?.launches ?? {})) E[Number(q)] = e;

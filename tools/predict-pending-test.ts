@@ -68,7 +68,9 @@ const apart = Math.hypot(drawn[0] - b1.p[0], drawn[1] - b1.p[1], drawn[2] - b1.p
 check('setup: still provisional and flying, drawn between ticks (its p is elsewhere)', b1.provisional === true && b1.resting === false && apart > 1e-3, J({ b1: { p: b1.p, prov: b1.provisional, resting: b1.resting }, drawn, apart }));
 const w = tp.physicsApi.whereIs('ball');
 const dp = (a: number[], b: number[]) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
-check('#574 whereIs ignores the provisional body (answers from the thing, not the guess)', !!w && dp(w, b1.p) > 1e-3 && dp(w, drawn) < 1e-6, J({ whereIs: w, bodyP: b1.p, drawn }));
+// the drawing moved the thing along the guess too, so "the thing" is no answer either: the release point the authority still has it at is
+const release = S.sent.find(([v]: any) => v === 'throw')?.[1]?.pos;
+check('#574 whereIs ignores the provisional body AND the place the guess drew it (answers the release point)', !!w && !!release && dp(w, b1.p) > 1e-3 && dp(w, drawn) > 1e-3 && dp(w, release) < 1e-9, J({ whereIs: w, bodyP: b1.p, drawn, release }));
 
 // ---- #575: no entry within PENDING_MS, and no sim update either: the guess is still dropped
 const c0 = S.replica.simVersion;

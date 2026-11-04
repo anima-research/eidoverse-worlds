@@ -151,6 +151,7 @@ export function dismountMe(kind = 'menu', at = null) {
   } else {
     me?.root.rotation.set(0, exitYaw, 0);  // stand upright again (a rocket seat may have had me on my back)
     myState.pos.set(off.x, off.y, off.z); myState.yaw = exitYaw;   // at the height I'm let go at: a seat upstairs stands me upstairs (review of PR #260)
+    myState.q = undefined;
     setPosture('stand');
   }
   return true;
@@ -210,6 +211,7 @@ export function updateMountedMe(dt) {
   myState.yaw = r.yaw;
   myState.speed = 0;
   myState.clip = r.clip;
+  myState.q = r.q.toArray();   // presence carries the socket's whole rotation: the reach gate turns my capsule by it (server/reachgate.ts)
   me.root.position.copy(r.pos);
   me.root.quaternion.copy(r.q);   // the socket's whole rotation: upright on a chair, on your back in a rocket
   // look locked: the view faces the way the seat does (the camera sits behind it)

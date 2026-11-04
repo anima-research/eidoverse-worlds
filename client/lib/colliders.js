@@ -435,10 +435,11 @@ export function fitStructureBoxes(ownerId, boxes, { position, yaw = 0, scale = 1
   removeStructureBoxes(ownerId);
   if (!Array.isArray(boxes) || !boxes.length) return 0;
   if (!Array.isArray(position) || position.length !== 3 || !position.every(Number.isFinite)) return 0;
-  if (!Number.isFinite(yaw) || !Number.isFinite(scale) || !(scale > 0)) return 0;
-  // per-axis scale is folded into the boxes (an axis-aligned box stays one), a whole rotation rides as a quaternion for
-  // frameOf: the boxes match the drawn group's TRS
-  const s3 = Array.isArray(scale3) && scale3.length === 3 && scale3.every((x) => Number.isFinite(x) && x > 0) ? scale3 : [scale, scale, scale];
+  if (!Number.isFinite(yaw) || !Number.isFinite(scale) || scale === 0) return 0;
+  // per-axis scale (a negative one mirrors, as structuretf.js draws it) is folded into the boxes (an axis-aligned box stays
+  // one); a whole rotation rides as a quaternion that frameOf reads as one yaw per building, so a tilt collides as the
+  // yaw-framed bounding box, not the drawn TRS (an oriented box is a wishlist item)
+  const s3 = Array.isArray(scale3) && scale3.length === 3 && scale3.every((x) => Number.isFinite(x) && x !== 0) ? scale3 : [scale, scale, scale];
   const quat = Array.isArray(q) && q.length === 4 && q.every(Number.isFinite) && Math.hypot(...q) > 1e-6 ? new THREE.Quaternion(...q).normalize() : null;
   const obj = {
     position: new THREE.Vector3(position[0], position[1], position[2]),

@@ -10,7 +10,7 @@ export function suspendCollider(id, on) { colliderLog.push([id, on]); if (on) su
 export const hostHooks = [];
 export const pushHostHook = (fn) => hostHooks.push(fn);
 export const colliderFor = () => ({ r: 0.3, h: 1.6 });
-export const replica = { active: true, sim: null, simVersion: 0, head: 0, st: { entities: {} }, simClone: () => null };
+export const replica = { active: true, sim: null, simVersion: 0, head: 0, st: { entities: {} }, simClone: () => null, settleInputs: () => {} };
 export const net = { you: 'me', joined: true };
 export const sent = [];
 export async function sendRequest(verb, args) { sent.push([verb, args]); return { ok: true }; }
