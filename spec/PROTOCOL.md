@@ -1473,7 +1473,7 @@ The first protocol (an untyped verb log) is retired. An old world's log can be t
 this protocol. A translated log is an ordinary log of this protocol, and these hold for it:
 
 - **Every old entry but its genesis is kept** (the old genesis is not re-played: the `translated` act right after the new
-  genesis carries its copy, `translatedFrom`). Each other entry appears in the new log as an `act` with verb `imported` (`body {verb, args, from}`)
+  genesis carries its copy as `body.from`). Each other entry appears in the new log as an `act` with verb `imported` (`body {verb, args, from}`)
   or as a `say`, followed by the change it produced. Fields with no component in this protocol ride along as
   `imported:<name>`; a person's grant this protocol has no rung for (v1's `spectator` or `none`) rides as
   `imported-roles:<id>`. Nothing of a world is dropped quietly: what a translation drops or renames by design is listed
@@ -1498,7 +1498,8 @@ this protocol. A translated log is an ordinary log of this protocol, and these h
   ['hulls'], layer: [its own band layer]}`, its thing `collider {mask: [1, that layer]}`: another hull passes) set off by the hull's measured box, so its origin keeps main's band (unmeasured: at `minY`/`maxY`, the
   whole hull in it); `probes` ride `imported:vehicle`, listed under `unmapped` (collision is the hull's own collider). A
   water volume's `speed` is a `physics-area {kind: 'speed', factor: speed / 2.4, modes: ['swim']}` on its zone (2.4 m/s: the volume
-  stroke here, shared/water.js; walking and wading there are not slowed, as in main); within 5% of 2.4 none is written. Driving is not
+  stroke here, shared/water.js; walking and wading there are not slowed, as in main); within 5% of 2.4 none is written, unless another
+  water volume in the world has a speed area: then factor 1 is written, so the areas overlap as the waters do. Driving is not
   bit-identical to main's (a collider sweep, not ray probes). The translator's DEFERRED table is empty.
 - **A world that uses a deferred feature is refused**, naming each use (component, entity, actor, seq): a water volume
   or air box on `@world`, which has no frame to hold one (`water` on `@world` without one is the world's water level and
