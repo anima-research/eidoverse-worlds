@@ -469,7 +469,7 @@ const clampNote = (was, to) => (was.some((x) => Math.abs(x) > ZONE_MAX) ? { clam
 export const SPEED_NEAR = 0.05;
 /** @42: the area every other water gets where one water's speed is written, so the speed areas overlap as the waters do (the
  *  last by priority, then id, wins both: shared/zone.js), and a body in this water strokes at its own pace, as in main. */
-export const SPEED_PIN = Object.freeze({ kind: "speed", factor: 1, modes: Object.freeze(["swim"]) });
+export const speedPin = () => ({ kind: "speed", factor: 1, modes: ["swim"] });
 export const pinsSpeed = (st) => Object.values(st?.entities ?? {}).some((e) => { const w = e?.comp?.water; return !!(w && typeof w === "object" && !Array.isArray(w) && waterOfOld(w).area); });
 /** One old thing's water / air as [id, components] parts: `own` is merged into the thing's components, `children` are new
  *  things under it. `c` is the thing's components so far (its model, light). */
@@ -477,7 +477,7 @@ export function volumePartsOf(host, comp, c, { pin = false } = {}) {
   const own = {}, children = [];
   const w = comp?.water;
   if (w && typeof w === "object" && !Array.isArray(w)) {
-    const m = waterOfOld(w), a = m.area ? { "physics-area": m.area } : pin ? { "physics-area": { ...SPEED_PIN, modes: ["swim"] } } : {};
+    const m = waterOfOld(w), a = m.area ? { "physics-area": m.area } : pin ? { "physics-area": speedPin() } : {};
     // main kept a water box axis-aligned whatever its host's turn: a turned host's water is a child turned back by it (bot #260 103;
     // the host's own q: a host under a turned parent still turns with that parent)
     const hq = Array.isArray(c.transform?.q) ? c.transform.q : [0, 0, 0, 1], turned = Math.abs(hq[0]) + Math.abs(hq[1]) + Math.abs(hq[2]) > 1e-12;
@@ -528,7 +528,7 @@ export function volumeMappings(st) {
     const c = { ...(e.lib !== undefined ? { model: e.lib } : {}), ...(e.kind === "light" ? { light: {} } : {}) };
     const { own, children } = volumePartsOf(enc(id), { [k]: e.comp[k] }, c);
     const m = k === "water" && e.comp.water && typeof e.comp.water === "object" && !Array.isArray(e.comp.water) ? waterOfOld(e.comp.water) : null;   // @35: what main's speed became
-    const sp = m && !m.area && pin ? { "physics-area": { ...SPEED_PIN, modes: ["swim"] }, why: "another water here has a speed area: factor 1 keeps this one's own stroke where they overlap (@42)" } : m?.speed;
+    const sp = m && !m.area && pin ? { "physics-area": speedPin(), why: "another water here has a speed area: factor 1 keeps this one's own stroke where they overlap (@42)" } : m?.speed;
     // what main's size was where the zone had to be smaller (bot review #260 33)
     const boxes = k === "air" && Array.isArray(e.comp.air?.boxes) ? e.comp.air.boxes : [];
     const clamped = m ? m.clamped : boxes.flatMap((b, i) => { const ch = children.find(([cid]) => cid === airChildId(enc(id), i)); const n = ch && clampNote(vec3(b.size, [1, 1, 1]), ch[1].zone.size).clamped; return n ? [{ box: i, ...n }] : []; });
