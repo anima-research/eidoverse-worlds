@@ -129,16 +129,18 @@ ok(await get("/.clientlogs/known/human-u_test.log") !== 200 && await get("/world
 // ---- the client's side (client/lib/base.js): one POST per flush, 429's Retry-After honoured, 413 keeps the newer half
 const calls: { body: string }[] = []; let answer = () => new Response("ok");
 (globalThis as any).fetch = (_u: string, init: any) => { calls.push({ body: String(init.body) }); return Promise.resolve(answer()); };
-const { tee, teeNow, teeState, CONFIG } = await import("../client/lib/base.js");
+const { tee, teeNow, teeOnHide, teeState, CONFIG } = await import("../client/lib/base.js");
 CONFIG.name = "tester"; CONFIG.token = "test-door";
 tee("one"); tee("two"); teeNow("three");
 ok(calls.length === 1 && calls[0]!.body === "tester one\ntester two\ntester three", `T1 three lines go as ONE POST, newline-joined (got ${calls.length} calls)`);
+tee("h1"); tee("h2"); const n0 = calls.length; teeOnHide();
+ok(calls.length === n0 + 1 && calls.at(-1)!.body === "tester h1\ntester h2" && teeState().queued === 0, `T1b the page hiding sends what's queued at once, not after the 10 s batch (got ${calls.length - n0} calls)`);
 answer = () => new Response("too big", { status: 413 });
 tee("p1"); tee("p2"); tee("p3"); teeNow("p4");
-ok(calls.length === 2 && await tryUntil("the newer half is re-queued after a 413", () => (teeState().queued === 2 ? true : undefined)), `T2 a 413 keeps the newer half of the batch for the next flush (queued ${teeState().queued})`);
+ok(calls.length === n0 + 2 && await tryUntil("the newer half is re-queued after a 413", () => (teeState().queued === 2 ? true : undefined)), `T2 a 413 keeps the newer half of the batch for the next flush (queued ${teeState().queued})`);
 answer = () => new Response("slow down", { status: 429, headers: { "retry-after": "30" } });
 teeNow("r1");
-ok(await tryUntil("a 429 pauses the tee", () => (teeState().pausedUntil > Date.now() + 20_000 ? true : undefined)) && calls.length === 3, "T3 a 429 with Retry-After: 30 pauses the tee ~30 s, its lines kept");
+ok(await tryUntil("a 429 pauses the tee", () => (teeState().pausedUntil > Date.now() + 20_000 ? true : undefined)) && calls.length === n0 + 3, "T3 a 429 with Retry-After: 30 pauses the tee ~30 s, its lines kept");
 const before = calls.length; answer = () => new Response("ok"); teeNow("r2");
 ok(calls.length === before && teeState().queued === 4, `T4 …and a flush inside the wait sends nothing (queued ${teeState().queued}: the 413's half, the 429's batch, r2)`);
 console.log(`clientlog: ${n} ok`);
