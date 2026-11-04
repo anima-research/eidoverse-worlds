@@ -1,7 +1,7 @@
 // bun tools/clientlog-test.ts — the /clientlog tee through the REAL route(): the door (auth), the budget (rate, size,
 // scrub, disk; server/clientlog.ts), a known world's own directory, an unknown label's shared one, no read path, and a
 // failed append answering 500 — never a false ok. The budget's numbers: RESEARCH-clientlog-budget-conventions-2026-11-03.
-import { mkdtempSync, existsSync, readFileSync, chmodSync, utimesSync, readdirSync } from "node:fs";
+import { mkdtempSync, existsSync, readFileSync, utimesSync, readdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { tryUntil } from "./protocol/wait.ts";
@@ -117,14 +117,14 @@ const get = (p: string) => st(route(new Request(`http://x${p}`, { headers: { aut
 ok(await get("/clientlog") !== 200 && await get("/clientlog?world=known") !== 200, "G1 GET /clientlog is not a read");
 ok(await get("/.clientlogs/known/human-u_test.log") !== 200 && await get("/worlds/.clientlogs/known/human-u_test.log") !== 200 && await get("/known/.clientlogs/human-u_test.log") !== 200, "G2 no static path reaches the store");
 
-if (process.getuid?.() !== 0) {
+{
   ip = "10.0.7.1";
   foundWorlds(wd, ["fresh"]);   // a known world with NO client-log directory yet
   await tryUntil("the fresh world is known", () => (ip = `10.0.8.${1 + (w3++ % 200)}`, existsSync(join(wd, "fresh", "world.jsonl")) ? true : undefined), { ms: 5000 });
-  chmodSync(ld, 0o500);   // a read-only dir blocks creating the world's directory
+  writeFileSync(join(ld, "fresh"), "");   // a file where the world's directory goes: blocks it on every OS, root included
   try { ok(await tryUntil("unwritable log dir → 500", async () => (ip = `10.0.8.${1 + (w3++ % 200)}`, (await st(post("world=fresh", "into a wall", session()))) === 500 ? true : undefined), { ms: 5000 }), "E1 unwritable log dir → 500, not a false ok"); }
-  finally { chmodSync(ld, 0o700); }   // a failure here once left the dir read-only, and the gate's cleanup crashed on it
-} else console.log("(root: skipping the unwritable-dir case)");
+  finally { rmSync(join(ld, "fresh"), { force: true }); }
+}
 
 // ---- the client's side (client/lib/base.js): one POST per flush, 429's Retry-After honoured, 413 keeps the newer half
 const calls: { body: string }[] = []; let answer = () => new Response("ok");
