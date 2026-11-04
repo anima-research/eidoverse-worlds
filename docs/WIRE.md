@@ -14,7 +14,8 @@ Source of truth: `server/server.ts` (WS switch + stage tick),
 authored plane), `server/messages.ts` (presence lanes), `server/routes.ts`
 (HTTP). Where this doc and the code disagree, the code is right and this doc
 has a bug — fix the doc, or flag the code change as a **wire change** in
-review.
+review. The page and the server ship together (the server serves its own
+client); a page from another build isn't a supported pair.
 
 ## 1. Transport and session model
 
