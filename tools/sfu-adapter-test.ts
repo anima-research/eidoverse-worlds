@@ -269,7 +269,7 @@ check("retirement clears the leg", (sfuDiag(W) as any).moderatorMuted.length ===
   check("repeat fault UPDATES the reason (latest fault is what an operator needs)",
     voiceServiceState().state === "degraded" && voiceServiceState().reason === "fault-2");
   await new Promise((r) => setTimeout(r, 50));
-  check("degraded does NOT age into live — no silence timer exists to fire",
+  check("degraded stays degraded with no receipt (50 ms; a timer longer than that is not this row's)",
     voiceServiceState().state === "degraded");
   markVoiceLive("negotiation completed for test-leg");
   check("a positive receipt (completed negotiation) returns the service to live",
