@@ -1710,10 +1710,12 @@ export class WorldAgent {
   speedAt = (p: number[], mode?: string): number => { if (this.areas?.st !== this.st) this.areas = { st: this.st, a: physicsAreasOf(foldOfView(this.st)) }; return speedFactorAt(this.areas.a, p, mode); };
   /** The world's level where my feet are: none in a dry pocket below it (zone.js worldLevelAt, the client's levelHere) */
   private pockets: { st: unknown; z: any; v: any } | null = null;
-  levelHere(): number | null {
+  levelHere(): number | null { return this.levelAt(this.pos.x, this.pos.z); }
+  /** The world's level at (x, z), at my feet's height: none in a dry pocket there */
+  levelAt(x: number, z: number): number | null {
     const level = this.water?.level; if (level == null) return null;
-    if (this.pockets?.st !== this.st) { const z = zonesOf(foldOfView(this.st)); this.pockets = { st: this.st, z, v: waterVolumes(z) }; }
-    return worldLevelAt([this.pos.x, this.pos.y, this.pos.z], this.pockets.z, level, { volumes: this.pockets.v });
+    if (this.pockets?.st !== this.st) { const zs = zonesOf(foldOfView(this.st)); this.pockets = { st: this.st, z: zs, v: waterVolumes(zs) }; }
+    return worldLevelAt([x, this.pos.y, z], this.pockets.z, level, { volumes: this.pockets.v });
   }
   /** The world's half of the fold — state.sky / terrain / grass — which
    *  shared/worldentity.js reads as the world entity `@world`. */
@@ -2714,17 +2716,17 @@ export class WorldAgent {
       // stairs within the mover's step, else the walk's floor) — the same answer the collider pass below gives the stride
       const colliding0 = collidersReady() && !this.myOccupancy && !this.feetSettling;
       const floorAt = colliding0 ? (x: number, z: number, y?: number) => this.feetAt(x, z, y ?? this.pos.y, walkFloor) : walkFloor;
-      // WATER (upstream #242) is the mover's too: handed the world's level (env.waterAt) and this body's measured stature,
-      // the stride wades (dragged) or swims (a stroke's pace, afloat at the chest) — no water arithmetic here.
-      const wl = this.levelHere();
+      // WATER (upstream #242) is the mover's too: handed the world's level (env.waterAt, asked per point: a dry pocket's
+      // edge) and this body's measured stature, the stride wades (dragged) or swims (afloat at the chest) — no water arithmetic here.
+      const wl = this.levelHere(), wet = this.water?.level != null;
       // feet on the live ground BEFORE the stride: terrain that loads late or changes under the walker lifts the body here, so
       // the mover judges a ledge AHEAD against where the feet now stand — not against a y the ground has since left (the
       // lifecycle test's mid-walk terrain swap; before 10-15 one refused stride, then the feet clamp, then on)
       // (colliding, the feet below do this themselves, falling to a lower floor rather than jumping to it)
       if (!colliding0 && !this.flight && !this.draggedBy && this.pins.size === 0) { const g0 = floorAt(this.pos.x, this.pos.z); if (Number.isFinite(g0) && (wl == null || g0 >= wl)) this.pos.y = g0; }
       const r = walkToward({ pos: [this.pos.x, this.pos.y, this.pos.z], target: [T.x, T.z], dt, run: T.run, tolerance: T.tolerance ?? MOVER.arrive.tolerance, room,
-        ...(wl != null ? { height: this.stature() } : {}) },
-        wl != null ? { floorAt, waterAt: () => wl, speedAt: this.speedAt } : { floorAt, speedAt: this.speedAt });
+        ...(wet ? { height: this.stature() } : {}) },
+        wet ? { floorAt, waterAt: (x: number, z: number) => this.levelAt(x, z), speedAt: this.speedAt } : { floorAt, speedAt: this.speedAt });
       if (r.arrived) {
         // A route through a building arrives in legs. Only the LAST one
         // finishes the walk; the rest hand off to the next waypoint, so a body
@@ -4122,11 +4124,12 @@ export class WorldAgent {
    *  holds that text (any case). */
   placeList(filter = ""): string {
     const f = filter.trim().toLowerCase();
-    const all = this.placesNear().filter((x) => !f || x.ref.toLowerCase().includes(f) || (x.place.label ?? "").toLowerCase().includes(f));
+    const at = this.myPlace();
+    const all = this.placesNear(at ? [at.x, at.y, at.z] : undefined).filter((x) => !f || x.ref.toLowerCase().includes(f) || (x.place.label ?? "").toLowerCase().includes(f));
     if (!all.length) return f ? `no named places here whose name or label holds "${filter.trim()}" — move {to: "?"} lists them all`
       : "no named places here — a model can declare them, and name_place names a spot";
     const shown = all.slice(0, PLACE_LIST_MAX), more = all.length - shown.length;
-    return `named places here${f ? ` holding "${filter.trim()}"` : ""}, nearest first (move {to: "<thing>/<place>"} or a place's name):\n${shown.map((x) => `  ${WorldAgent.placeLine(x)}`).join("\n")}`
+    return `named places here${f ? ` holding "${filter.trim()}"` : ""}, nearest first${at ? "" : " (seat unresolved: distances from where you boarded)"} (move {to: "<thing>/<place>"} or a place's name):\n${shown.map((x) => `  ${WorldAgent.placeLine(x)}`).join("\n")}`
       + (more ? `\n…and ${more} more, farther away — narrow it with move {to: "?<text>"} (e.g. "?${shown[shown.length - 1].ref.split("/")[0]}"): only places whose name or label holds that text` : "");
   }
   /** look's listing (owner 22:43): the places this body can SEE — a ray from its eye to the place (a point, or a room's
@@ -5316,15 +5319,16 @@ export class WorldAgent {
    *  process is up; this is how it recovers everything else, including what
    *  happened before it was ever started. */
   history(opts: { before?: number; after?: number; limit?: number; verbs?: string[] } = {}):
-      Promise<{ entries: any[]; oldestSeq: number | null; hasMore: boolean }> {
+      Promise<{ entries: any[]; oldestSeq: number | null; hasMore: boolean; failed?: boolean }> {
+    // no answer (offline, a timeout) is `failed`, never an empty final page: a reader must not advance past it
     if (!this.joined || this.ws?.readyState !== 1) {
-      return Promise.resolve({ entries: [], oldestSeq: null, hasMore: false });
+      return Promise.resolve({ entries: [], oldestSeq: null, hasMore: false, failed: true });
     }
     const reqId = `h${++this.histId}`;
     return new Promise((resolve) => {
       const t = setTimeout(() => {
         this.pendingHistory.delete(reqId);
-        resolve({ entries: [], oldestSeq: null, hasMore: false });
+        resolve({ entries: [], oldestSeq: null, hasMore: false, failed: true });
       }, 8000);
       this.pendingHistory.set(reqId, (m) => {
         clearTimeout(t);
@@ -5374,13 +5378,15 @@ export class WorldAgent {
     return entries.map((e) => ({ ts: e.ts, who: e.actor, text: e.args?.text ?? "", seq: e.seq }));
   }
   /** The OLDEST `limit` says after `seq`, and whether more follow: the log pages newest-first, so page back to `seq`. */
-  async firstSaidSince(seq: number, limit: number): Promise<{ said: { ts: number; who: string; text: string; seq: number }[]; more: boolean }> {
-    let all: any[] = [], before: number | undefined;
-    for (let n = 0; n < 100; n++) {
+  async firstSaidSince(seq: number, limit: number): Promise<{ said: { ts: number; who: string; text: string; seq: number }[]; more: boolean; failed?: boolean; truncated?: boolean }> {
+    let all: any[] = [], before: number | undefined, n = 0;
+    for (; n < 100; n++) {
       const r = await this.history({ after: seq, ...(before != null ? { before } : {}), limit: 200, verbs: ["say"] });
+      if (r.failed) return { said: [], more: true, failed: true };
       all = [...r.entries, ...all]; if (!r.hasMore || !r.entries.length || r.oldestSeq == null) break; before = r.oldestSeq;
     }
-    return { said: all.slice(0, limit).map((e) => ({ ts: e.ts, who: e.actor, text: e.args?.text ?? "", seq: e.seq })), more: all.length > limit };
+    // 100 pages read and older ones remain: what was read is not the oldest (`truncated`); the cap stays
+    return { said: all.slice(0, limit).map((e) => ({ ts: e.ts, who: e.actor, text: e.args?.text ?? "", seq: e.seq })), more: all.length > limit, ...(n === 100 ? { truncated: true } : {}) };
   }
 
   // ---- perception (text tier) ----
@@ -5457,6 +5463,12 @@ export class WorldAgent {
     return `Water: ${big.map(say).join("; ")}${A.bodies.length > big.length ? `; and ${A.bodies.length - big.length} smaller puddles` : ""}. Bodies wade to their chest (slower the deeper), then swim (slower still).`;
   }
 
+  /** Where my body is now: seated, its seat's composition (what the renderer draws), else the controller's pos; null while a seat can't compose. */
+  myPlace(nowMs = this.serverNow()): { x: number; y: number; z: number } | null {
+    if (!this.mounts.get(this.name)) return this.pos;
+    const e = this.eff(this.name, nowMs); return e.ok ? { x: e.pos[0], y: e.pos[1], z: e.pos[2] } : null;
+  }
+
   look(nowMs = this.serverNow()): string {
     const L: string[] = [];
     // The agent's own seat rides its parent too: seated on a moving ferry,
@@ -5470,7 +5482,7 @@ export class WorldAgent {
     const selfOcc = this.mounts.get(this.name);
     const selfEff = selfOcc ? this.eff(this.name, nowMs) : null;
     const meKnown = !selfOcc || selfEff?.ok === true;
-    const me = selfEff?.ok ? { x: selfEff.pos[0], y: selfEff.pos[1], z: selfEff.pos[2] } : this.pos;
+    const me = this.myPlace(nowMs) ?? this.pos;
     // #101: an uncorrected seat composition is never silent — the same
     // "(seat approximate: reason)" every renderer consumer declares.
     const selfSeatNote = selfEff?.ok && selfEff.seat?.state === "approximate" ? ` (seat approximate: ${selfEff.seat.reason})` : "";
