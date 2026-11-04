@@ -29,7 +29,9 @@ const finished = await new Promise<boolean>((res) => { const t = setTimeout(() =
 const s = (performance.now() - t0) / 1000;
 if (!finished) rc.kill("SIGKILL");
 rc.stdout.destroy(); rc.stderr.destroy();
-for (const p of fs.readFileSync(pids, "utf8").split("\n").filter(Boolean)) try { process.kill(Number(p), "SIGKILL"); } catch { /* gone */ }
+const alive = fs.readFileSync(pids, "utf8").split("\n").filter(Boolean).filter((p) => { try { process.kill(Number(p), 0); return true; } catch { return false; } });
+for (const p of alive) try { process.kill(Number(p), "SIGKILL"); } catch { /* gone */ }
+ok(alive.length === 2, "both grandchildren were still alive when run-client settled (the pipes really were held)", alive);
 
 ok(finished, `run-client finished while both grandchildren still held the pipes (${s.toFixed(1)} s; they live 90 s)`, out.slice(-400));
 ok(/^ok\s+\S*a-holds-pipes-passes-test\.ts/m.test(out), "the file that exited 0 is a pass", out.slice(-400));
