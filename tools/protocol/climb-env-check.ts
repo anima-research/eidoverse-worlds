@@ -29,6 +29,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["riding bodies fall out too", "spawn.js", "return !riding && !!B", "return !!B", ["K9"]],
   ["the fall is the client's word", "protocol/authority/bodyverbs.js", "if (fell && B && !(me && me.at[1] < B.min[1] - KILL_MARGIN + TRACK.cap))", "if (false)", ["K13"]],
   ["a fall loses its reason on the record", "protocol/authority/bodyverbs.js", "...(fell ? { reason: FELL } : {})", "", ["K9"]],
+  ["the fall-back point is refused as an arrival", "protocol/authority/bodyverbs.js", "back = !!home && home.id === null && dist(home.pos, to) <= home.radius;", "back = false;", ["K9e"]],
   ["no arrival place, nowhere to fall back to", "spawn.js", "spawnOf(st) ?? { id: null, pos: [0, 0, 0], yaw: 0, radius: MOVER.track.spawnR };", "spawnOf(st); if (!sp) return null;", ["K9b"]],
   ["a place below the kill line given", "spawn.js", "const fails = (p) => belowWorld(st, p) || ", "const fails = (p) => ", ["K9c", "K9d"]],
   ["a place outside the box given", "spawn.js", " || (boxed && outsideWorld(B, p))", "", ["K9c", "K9d"]],
@@ -272,6 +273,19 @@ await C("K9d", "KillZ, a declared @world.spawn: under the floor but above the ki
   return [killed.declared?.[1] === kz - 2 && mid(killed) && same(under) && under.given?.[1] === -12 && same(above) && above.given?.[1] === -8
     && outside.declared?.[0] === 60 && mid(outside),
     { kz, killed, under, above, outside }]; });
+
+await C("K9e", "KillZ, a declared spawn the box can't take (outside it): fallBackOf gives the box's centre at its floor, and the authority takes a fall back to it from under the kill line (a member, who faces the arrival check too)", () => {
+  if (SP.__missing) return [false, SP.__missing];
+  if (typeof SP.fallBackOf !== "function") return [false, "shared/spawn.js has no fallBackOf"];
+  const s = session();
+  s.call("set", { id: "@world", component: "bounds", value: { min: [-50, -10, -50], max: [50, 50, 50] } });
+  const kz = -10 - SP.KILL_MARGIN;
+  s.call("set", { id: "@world", component: "terrain", value: { kind: "flat", height: kz - 10 } });
+  s.call("delete", { id: "@world", component: "spawn" }); s.call("move", { to: [0, 0, 0] }, "vic"); for (let y = -3.5; y > kz - 4; y -= 3.5) s.call("move", { to: [0, y, 0] }, "vic");
+  s.call("set", { id: "@world", component: "spawn", value: { pos: [60, -8, 8] } });
+  const home = SP.fallBackOf(s.st());
+  const back = s.call("move", { to: home.pos, teleport: true, reason: "below-bounds" }, "vic");
+  return [home?.id === null && JSON.stringify(home.pos) === "[0,-10,0]" && back.ok === true, { home, back: show(back) }]; });
 
 await C("K10", "@world.sky.gradient {top, horizon, bottom?} (linear 0..1) taken, a bad one refused; lookOf reads it (an absent bottom is the horizon) and the first directional light thing by id as the sun, standing along its +Z", () => {
   const s = session();

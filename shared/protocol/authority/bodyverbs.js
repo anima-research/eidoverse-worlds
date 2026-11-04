@@ -3,7 +3,7 @@
 // "physics" section unchanged). They stand on physics.js, occupants.js and manipulate.js; the gate is above them, through UP.
 import { TRACK, areaFactor, bodyScale, tokensAfter } from "../../mover.js";
 import { AREA_MODES, physicsAreasOf, speedFactorAt } from "../../zone.js";
-import { atASpawn, spawnsOf, FELL } from "../../spawn.js";
+import { atASpawn, spawnsOf, fallBackOf, FELL } from "../../spawn.js";
 import { DEFAULT_WHO, grabOf, offsetOk } from "../../grab.js";
 import { livePoses, ENGINES, carried } from "../simlayer.js";
 import { REACH, HAND_Y, MAX_HELD, KICK, BLAST, KILL_MARGIN } from "../physconst.js";
@@ -77,13 +77,15 @@ const EMBODIED_VERBS = {
     if (fell && B && !(me && me.at[1] < B.min[1] - KILL_MARGIN + TRACK.cap)) refuse("doesnt-apply", me ? `your body was last at y ${r3(me.at[1])}, which isn't below this world's kill line (y ${B.min[1] - KILL_MARGIN}, ${KILL_MARGIN} m under its bounds): it hasn't fallen out` : "your body isn't in the world yet: it has nowhere to have fallen from",
       "arrive or teleport without a reason; below-bounds is for a body that fell under the kill line (@world.bounds.min.y − KILL_MARGIN)");
     if (fell && occupantOf(w, st, actor)) refuse("doesnt-apply", "a seated body rides its seat: it doesn't fall out of the world", "stand up first");
-    if (fell && !atASpawn(st, to)) refuse("spawn", `a body that fell is sent back to an arrival place: [${to.join(", ")}] isn't within one`, `arrive at one of: ${spawnsOf(st).map((s) => `[${s.pos.join(", ")}] (${s.id})`).join("; ") || "(none)"}`);
+    // the fall-back point (fallBackOf: the box's centre when no arrival place can take a fall) is an arrival place for a fall
+    const home = fell ? fallBackOf(st) : null, back = !!home && home.id === null && dist(home.pos, to) <= home.radius;
+    if (fell && !back && !atASpawn(st, to)) refuse("spawn", `a body that fell is sent back to an arrival place: [${to.join(", ")}] isn't within one`, `arrive at one of: ${spawnsOf(st).map((s) => `[${s.pos.join(", ")}] (${s.id})`).join("; ") || "(none)"}`);
     if (!me || a.teleport === true) { // a teleport (arriving is one): an act, so the track's reset is on the record
       const mine = Object.entries(w.presence.holds).filter(([, h]) => h.by === actor).map(([id]) => id);
       if (mine.length && !fell) refuse("holding", `you're holding ${mine.join(", ")}; a teleport can't carry things`, "put it down (or walk it there) first", { at: me?.at });
       const inSolid = solidAt(w, st, to, new Set(), null, arrivalBox(st, to, size)); if (inSolid) refuse("solid", `[${to.join(", ")}] is inside ${inSolid}`, "arrive somewhere a body fits", { at: me?.at });
       // a visitor arrives at an arrival place: @world.spawn or a spawn-point (shared/spawn.js)
-      if (!may(st, actor, "build") && !atASpawn(st, to)) { const all = spawnsOf(st);
+      if (!may(st, actor, "build") && !back && !atASpawn(st, to)) { const all = spawnsOf(st);
         refuse("spawn", `this world's arrivals are within ${all.map((s) => `${s.radius} m of [${s.pos.join(", ")}]`).join(" or ")}`, "arrive there, then walk", { at: me?.at }); }
       rateCheck(w, actor);
       // review 10-07 M3: a body's whereabouts are presence. An ARRIVAL writes nothing to the log (that a person was here
