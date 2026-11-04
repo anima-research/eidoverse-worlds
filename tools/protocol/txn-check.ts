@@ -39,7 +39,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["an await in the authority's commit", "shared/protocol/authority/writes.js", "// A write: build ops against the folded state", "async function __m() { await 0; }\n// A write: build ops against the folded state", ["T7"]],
   ["new directories' names not synced: mkdir alone", "server/durable.ts", "  if (first === undefined) return;", "  return;", ["T8c"]],
   ["a founded world's directory made by plain mkdir", "server/worldlog.ts", "  mkdirDurable(dir);   // the world's", "  fs.mkdirSync(dir, { recursive: true });   // the world's", ["T8c"]],
-  ["a replaced file renamed in unsynced", "server/durable.ts", "writeAll(fd, Buffer.from(data, \"utf8\")); fs.fsyncSync(fd); }", "writeAll(fd, Buffer.from(data, \"utf8\")); }", ["T8d"]],
+  ["a replaced file renamed in unsynced", "server/durable.ts", "writeAll(fd, typeof data === \"string\" ? Buffer.from(data, \"utf8\") : data); fs.fsyncSync(fd); }", "writeAll(fd, typeof data === \"string\" ? Buffer.from(data, \"utf8\") : data); }", ["T8d"]],
   ["the keys file's directory made by plain mkdir", "server/custody.ts", "    mkdirDurable(path.dirname(file));   // the keys file's", "    fs.mkdirSync(path.dirname(file), { recursive: true });   // the keys file's", ["T8e"]],
   ["a replaced file's new name left unsynced", "server/durable.ts", "  syncDir(path.dirname(file));   // the new name, in its directory", "", ["T8e"]],
   ["short writes: writeSync's count ignored", "server/durable.ts", "    const n = fs.writeSync(fd, buf, off, buf.length - off);", "    fs.writeSync(fd, buf, off, buf.length - off); const n = buf.length - off;", ["T8", "T8b"]],
