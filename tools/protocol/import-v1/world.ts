@@ -6,7 +6,7 @@ import fs from "node:fs";
 import crypto from "node:crypto";
 import path from "node:path";
 import { TRUST_NAMES } from "../../../server/config.ts";
-import { directoryFor, foldName, ACCOUNT_SHAPE, type Entry } from "../../../server/directory.ts";
+import { directoryFor, foldName, idOfBytes, ACCOUNT_SHAPE, type Entry } from "../../../server/directory.ts";
 import { mainKnowledge, type Known } from "../../../server/mainknew.ts";
 import { agentTokens, HN_ISS } from "../../../server/auth.ts";
 import { custodyAt, modLogAt } from "../../../server/custody.ts";
@@ -100,7 +100,7 @@ function identityMapper(old: Any[], dir: ReturnType<typeof directoryFor> | null,
   const liveAccount = (sub: string) => (/^agent:/.test(sub) && !/^agent:token:/.test(sub) ? (agents.bySub.has(sub) ? `agent:token:${agents.bySub.get(sub)!.toLowerCase()}` : `aid1:${HN_ISS}:${sub}`) : sub);
   // the id a key (an account, or name:<name>) gets here, in the one id shape (directory.ts isMinted): keyed by the salt, so a public
   // log confirms no account and two worlds' namesakes are two ids; a later rename edits the name label only, the id is this once
-  const stable = (key: string) => "u-" + [...crypto.createHmac("sha256", salt).update(key).digest()].slice(0, 20).map((b) => "abcdefghijklmnopqrstuvwxyz234567"[b & 31]).join("");
+  const stable = (key: string) => idOfBytes(crypto.createHmac("sha256", salt).update(key).digest());
   const who = (name0: string, { sub, lowered = false, from = "this world's log" }: { sub?: string; lowered?: boolean; from?: string } = {}) => {
     const name = lowered && sub === undefined ? unlowered(name0) : name0;
     // no account in the log: an agent's reserved name is its account; on a TRUST_NAMES (private) server a bare name is
