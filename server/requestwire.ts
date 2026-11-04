@@ -220,8 +220,9 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
       if (r?.ok && (verb === "ban" || verb === "kick" || verb === "unban" || verb === "mute" || verb === "unmute") && typeof args.who === "string") {
         const who = String(args.who);
         const happened = verb === "kick" || verb === "mute" || verb === "unmute" ? [...w.clients].some((t) => t.actorId === who && !t.spectator) : wasBanned !== isBanned(w.log.live, who);
-        if (happened) { const text = modLine(w, c.id, verb, who) + (unsaved ? ` (${notPersisted(unsaved, lifted)})` : "");
-          for (const t of w.clients) if (t.actorId !== who) { try { t.ws.send(JSON.stringify({ type: "moderated", verb, by: c.id, text })); } catch { /* gone */ } } }
+        if (happened) { const said = modLine(w, c.id, verb, who), text = said + (unsaved ? ` (${notPersisted(unsaved, lifted)})` : "");
+          // the moderator's own line carries no warning: their reply said it
+          for (const t of w.clients) if (t.actorId !== who) { try { t.ws.send(JSON.stringify({ type: "moderated", verb, by: c.id, text: t === c ? said : text })); } catch { /* gone */ } } }
       }
       // a ban or kick the authority accepted takes the person out NOW (H4b: a ban used to leave the banned person present,
       // talking until they chose to leave); a kicked person may come straight back (R 10-28). A guest has no account to ban,

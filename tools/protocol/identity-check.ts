@@ -219,13 +219,15 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
   // H4p: a guest's ban whose address record can't be written is still acked, and the reply and the moderated
   // line SAY it isn't persisted (it ends at restart) — never a silent evaporation. The file is made a directory, which no write can replace.
   { const BANS = path.join(W, ".bans.json"); fs.rmSync(BANS, { force: true }); fs.mkdirSync(BANS);
-    const g4 = await sock(S3.port); const jg4 = await g4.join("meadow", "drifter-p"); const k = wren.msgs.length;
+    const g4 = await sock(S3.port); const jg4 = await g4.join("meadow", "drifter-p"); const k = wren.msgs.length, kOwn = own.msgs.length;
     const bp = await own.req("ban", { who: you(jg4), reason: "test" });
     const line = (await tryUntil("the moderated ban line", () => wren.msgs.slice(k).find((m) => m.type === "moderated" && m.verb === "ban")?.text)) ?? "";
     await tryUntil("the banned guest closed", () => g4.closed != null);
     fs.rmSync(BANS, { recursive: true, force: true }); const lift = await own.req("unban", { who: you(jg4) });   // lifted again: H4 below bans exactly one
     ok(bp.ok && lift.ok && /NOT persisted: .*ends at restart/.test(bp.warning ?? "") && /NOT persisted/.test(line) && g4.closed != null,
-      "H4p a guest's ban whose address file can't be written is acked with warning: NOT persisted, and bystanders' moderated line says so", [bp, line]); }
+      "H4p a guest's ban whose address file can't be written is acked with warning: NOT persisted, and bystanders' moderated line says so", [bp, line]);
+    const mine = own.msgs.slice(kOwn).find((m) => m.type === "moderated" && m.verb === "ban")?.text ?? null;
+    ok(mine && !/NOT persisted/.test(mine), "H4p2 the moderator's own moderated line carries no warning: the reply said it once", [mine]); }
   // H4: a door ban removes the guest now, and the guest's reconnect is refused
   const ban = await own.req("ban", { who: you(jg), reason: "test" }); await sleep(300);
   ok(ban.ok && g.closed != null, "H4 a door ban removes the banned guest at once", [ban, g.closed]);
