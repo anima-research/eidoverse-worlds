@@ -1,4 +1,4 @@
-# Portable identity: the protocol shape, evaluated against the v4 freeze
+# Portable identity: the protocol shape, evaluated against the format freeze
 
 2026-11-04 · read-only against `~/eido/wt-vocab` (design doc `docs/DESIGN-log-vocabulary.md`, `spec/PROTOCOL.md` §1, §3.1, §6, §6a, §7a, §12, §13, §14; `shared/protocol/fold.js`, `spec/conformance/chain.py`, `spec/conformance/gov.py`, `server/directory.ts`, `server/custody.ts`, `server/aid1.ts`, `tools/protocol/import-v1/world.ts`, `tools/protocol/migrate-identities.ts`). Every codebase claim below names its line; external claims name their source at the bottom. Guesses are marked **guess**.
 
