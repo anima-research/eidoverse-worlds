@@ -85,7 +85,7 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
     const disk = JSON.parse(fs.readFileSync(file, "utf8")) as File;
     for (const [id, e] of Object.entries(disk.ids ?? {})) if (!d.ids[id]) { d.ids[id] = unkind(e); index(id, e); } else takeBinds(id, e); };
   // another writer's change since this process last looked (the file's mtime moved): re-read, for the reads that don't mint
-  let seen = -1; const fresh = () => { try { const m = fs.statSync(file).mtimeMs; if (m !== seen) { seen = m; refresh(); } } catch { /* no file yet */ } };
+  let seen = -1; const fresh = () => { try { const m = fs.statSync(file).mtimeMs; if (m !== seen) { refresh(); seen = m; } } catch { /* no file yet, or a write in progress: looked at again */ } };
   const add = (e: Entry) => { let id = mintId(); while (d.ids[id] || anon.has(id)) id = mintId(); d.ids[id] = e; index(id, e);
     try { save(); } catch (err) { delete d.ids[id]; for (const s of e.subs) byKey.delete(e.world ? `${s}|${e.world}` : s); throw err; }   // not written: not held either
     return id; };
