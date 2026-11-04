@@ -98,7 +98,7 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["acts point at a say's text, never copy it", "authority/scriptrun.js", "const recorded = (ev) => { const { text, to, args, ...rest } = ev; return ev.seq !== undefined ? rest : ev; };", "const recorded = (ev) => ev;", ["E1"]],
   ["the auditor reads a say's text from the say", "scriptaudit.js", "event.text = trig.body.text;", "", ["E1"]],
   ["an authority runs activations isolated (in a killable process)", "sandbox.js", "canIsolate() ? runIsolated(x) : runScript(x))", "runScript(x))", ["I1", "I2"]],
-  ["Windows runs no script unless the operator opts in", "sandbox.js", "winRefuses() ? { fuel: 0, fail: { code: \"unavailable\", why: WINDOWS } } : ", "", ["U2w"]],
+  ["Windows runs no script unless the operator opts in", "sandbox.js", "winRefuses() ? { ok: false, code: \"unavailable\", why: WINDOWS, logs: [], fuel: 0 } : ", "", ["U2w"]],
   ["Windows says the sandbox is unavailable", "sandbox.js", "!Q ? unavailable : winRefuses() ? WINDOWS : true", "!Q ? unavailable : true", ["U2w"]],
   ["the kill at the deadline", "sandbox.js", "deadline = sentAt + L.wallMs + GRACE,", "deadline = sentAt + L.wallMs + GRACE + 60000,", ["I1"]],
   ["a pause write adopts nothing (sponsor skips it)", "authority/scripts.js", "if (k === W.length - 1 || !pauseOnly(W[k].value, W[k + 1].value)) {", "if (true) {", ["PA1"]],
@@ -950,7 +950,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r)); process.exit(0);\n`);   // 
       fs.writeFileSync(f, `Object.defineProperty(process, "platform", { value: "win32" });
 const { SANDBOX } = await import(${JSON.stringify(TREE + "shared/protocol/sandbox.js")});
 const r = SANDBOX.run({ self: "b", key: "script:x", now: 1, seed: "ab".repeat(32), st: { entities: { b: { born: 1, c: {} } } }, event: { on: "use" }, text: 'world.on("use", () => { world.set("self", "t/t", 1); })' });
-console.log(JSON.stringify({ platform: process.platform, available: SANDBOX.available(), isolated: SANDBOX.isolated(), fail: r.fail ?? null, ops: r.ops?.length ?? 0 })); process.exit(0);\n`);
+console.log(JSON.stringify({ platform: process.platform, available: SANDBOX.available(), isolated: SANDBOX.isolated(), fail: r.ok === false ? { code: r.code, why: r.why } : null, ops: r.ops?.length ?? 0 })); process.exit(0);\n`);
       const out = (sandbox?: string) => { const env: Record<string, string> = { ...process.env as Record<string, string>, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }; delete env.EIDO_SANDBOX; if (sandbox) env.EIDO_SANDBOX = sandbox;
         const r = Bun.spawnSync(["bun", f], { env, timeout: 30_000 }); try { return JSON.parse(r.stdout.toString()); } catch { return { raw: `${r.stdout}${r.stderr}`.slice(0, 300) }; } };
       return { plain: out(), opted: out("inprocess") }; },

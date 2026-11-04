@@ -415,5 +415,5 @@ if (Q) try { runScript({ text: "", self: "warm", key: "script:warm", event: { on
 /** What an authority injects as io.scripts. */
 // an authority runs activations isolated where it can (Bun, not Windows: a pooled sandbox-child.js process over FIFOs; canIsolate); EIDO_SANDBOX=inprocess opts out
 // (and is the only way scripts run on Windows: winRefuses)
-export const SANDBOX = Object.freeze({ run: (x) => (winRefuses() ? { fuel: 0, fail: { code: "unavailable", why: WINDOWS } } : canIsolate() ? runIsolated(x) : runScript(x)), checkSyntax, available: sandboxAvailable, warm, isolated: canIsolate });
+export const SANDBOX = Object.freeze({ run: (x) => (winRefuses() ? { ok: false, code: "unavailable", why: WINDOWS, logs: [], fuel: 0 } : canIsolate() ? runIsolated(x) : runScript(x)), checkSyntax, available: sandboxAvailable, warm, isolated: canIsolate });
 export { jcs };
