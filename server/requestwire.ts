@@ -105,6 +105,7 @@ export function guestSanctionByAddress(w: World, actor: string, by: string, verb
   const addrs = [...new Set([...w.clients].filter((t) => t.actorId === who && t.anonymous && t.addr).map((t) => t.addr as string))];
   if (verb.startsWith("un")) return liftAddrSanction(kind, w.name, who, addrs[0]);
   // this actor's own mutes in force on `who`, never the union with another's: each issuer's is filed apart
+  // one record per issuer: its channels union to the longest end, as a timeout replaces a timeout elsewhere; unmute lifts it
   const mine = inForceOf(w.log.live, who, "mute").filter((m: Any) => m.actor === actor);
   if (!mine.length) return null;
   const channels = [...new Set(mine.flatMap((m: Any) => m.channels ?? ["voice", "chat"]))] as string[];

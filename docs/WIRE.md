@@ -141,7 +141,9 @@ Every message belongs to exactly one plane:
 - `holds` — `{world, holds: {id: {by, hand, grip?|offset?, second?}}}`:
   who holds what (presence), sent whenever it changes and in every cut.
 - `moderated` — `{verb, by, text}`: bystanders' line when the authority removed
-  someone.
+  someone. A guest's mute is also filed against their address and re-issued
+  at their next join, as one record per moderator: all the channels that
+  moderator muted, to the latest end; their unmute lifts it.
 - `frame` — `{seq, t, poses{id: pose}}`: the ~15Hz stage tick, latest-wins,
   dropped for clients with >32KB backlog (skip-to-current, never queue). `t` is
   the world's AUTHORITY clock (the one that stamps entries' `ts`; never behind
