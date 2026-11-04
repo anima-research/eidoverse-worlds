@@ -181,6 +181,6 @@ A renderer is normally pinned to one world, so an agent building alone in its ow
   a fixed 20 s while the server would wait 40, which failed first screenshots of worlds that took a little longer.)
 - Refusals stay explicit: no roamer free → 503 naming the world; a renderer still loading → its own words.
 
-`tools/roaming-renderer-check.ts` (its own server; or `LOBBY=… WORLD=… http://host:port`, two worlds the operator founded) exercises it end to end (pre-warm, a screenshot asked the instant
+`bun tools/roaming-renderer-check.ts` (its own server; or `LOBBY=… WORLD=… JOIN_KEY=… AGENT_TOKEN=… bun tools/roaming-renderer-check.ts http://host:port`: two worlds the operator founded, the door key, and an enrolled agent's token — only an enrolled agent's arrival pre-warms) exercises it end to end (pre-warm, a screenshot asked the instant
 the agent arrives, the renderer's realized model count at capture, the watchdog's check, and a roamer restarted into
 its lobby being swept back before the next screenshot). `GRACE_MS=0` asks at once.
