@@ -4122,11 +4122,12 @@ export class WorldAgent {
    *  holds that text (any case). */
   placeList(filter = ""): string {
     const f = filter.trim().toLowerCase();
-    const all = this.placesNear().filter((x) => !f || x.ref.toLowerCase().includes(f) || (x.place.label ?? "").toLowerCase().includes(f));
+    const at = this.myPlace();
+    const all = this.placesNear(at ? [at.x, at.y, at.z] : undefined).filter((x) => !f || x.ref.toLowerCase().includes(f) || (x.place.label ?? "").toLowerCase().includes(f));
     if (!all.length) return f ? `no named places here whose name or label holds "${filter.trim()}" — move {to: "?"} lists them all`
       : "no named places here — a model can declare them, and name_place names a spot";
     const shown = all.slice(0, PLACE_LIST_MAX), more = all.length - shown.length;
-    return `named places here${f ? ` holding "${filter.trim()}"` : ""}, nearest first (move {to: "<thing>/<place>"} or a place's name):\n${shown.map((x) => `  ${WorldAgent.placeLine(x)}`).join("\n")}`
+    return `named places here${f ? ` holding "${filter.trim()}"` : ""}, nearest first${at ? "" : " (seat unresolved: distances from where you boarded)"} (move {to: "<thing>/<place>"} or a place's name):\n${shown.map((x) => `  ${WorldAgent.placeLine(x)}`).join("\n")}`
       + (more ? `\n…and ${more} more, farther away — narrow it with move {to: "?<text>"} (e.g. "?${shown[shown.length - 1].ref.split("/")[0]}"): only places whose name or label holds that text` : "");
   }
   /** look's listing (owner 22:43): the places this body can SEE — a ray from its eye to the place (a point, or a room's
@@ -5460,6 +5461,12 @@ export class WorldAgent {
     return `Water: ${big.map(say).join("; ")}${A.bodies.length > big.length ? `; and ${A.bodies.length - big.length} smaller puddles` : ""}. Bodies wade to their chest (slower the deeper), then swim (slower still).`;
   }
 
+  /** Where my body is now: seated, its seat's composition (what the renderer draws), else the controller's pos; null while a seat can't compose. */
+  myPlace(nowMs = this.serverNow()): { x: number; y: number; z: number } | null {
+    if (!this.mounts.get(this.name)) return this.pos;
+    const e = this.eff(this.name, nowMs); return e.ok ? { x: e.pos[0], y: e.pos[1], z: e.pos[2] } : null;
+  }
+
   look(nowMs = this.serverNow()): string {
     const L: string[] = [];
     // The agent's own seat rides its parent too: seated on a moving ferry,
@@ -5473,7 +5480,7 @@ export class WorldAgent {
     const selfOcc = this.mounts.get(this.name);
     const selfEff = selfOcc ? this.eff(this.name, nowMs) : null;
     const meKnown = !selfOcc || selfEff?.ok === true;
-    const me = selfEff?.ok ? { x: selfEff.pos[0], y: selfEff.pos[1], z: selfEff.pos[2] } : this.pos;
+    const me = this.myPlace(nowMs) ?? this.pos;
     // #101: an uncorrected seat composition is never silent — the same
     // "(seat approximate: reason)" every renderer consumer declares.
     const selfSeatNote = selfEff?.ok && selfEff.seat?.state === "approximate" ? ` (seat approximate: ${selfEff.seat.reason})` : "";
