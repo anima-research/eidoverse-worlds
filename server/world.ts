@@ -246,8 +246,11 @@ export function worldExists(name: string): boolean {
  *  "Commons", and a second World over one log is a second authority (#260 bot 17): a name is served in its own case only. */
 export function worldDirNamed(name: string): boolean {
   if (!existsSync(join(WORLDS_DIR, name))) return false;
-  try { return readdirSync(WORLDS_DIR).includes(name); } catch { return false; }
+  const now = Date.now();   // the listing is kept 5 s; a miss re-lists, so a new world is known at once (was routes.ts knownWorld)
+  if (now - dirsAt > 5000 || !dirs.has(name)) { try { dirs = new Set(readdirSync(WORLDS_DIR)); } catch { dirs = new Set(); } dirsAt = now; }
+  return dirs.has(name);
 }
+let dirs = new Set<string>(), dirsAt = 0;
 
 export function getWorld(name: string): World {
   if (!/^[a-z0-9_-]{1,64}$/i.test(name)) throw new Error(`bad world name: ${name}`);

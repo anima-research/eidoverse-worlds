@@ -51,17 +51,6 @@ import { cspFor, cspForFile } from "./csp.ts";
 // sender under $CLIENTLOG_DIR; any other label shares the '~unknown' directory, so a made-up label buys no file of its own.
 const rebuildWin = new Map<string, { t: number; n: number }>();   // POST /rebuild per-IP windows (4/min, as /upload)
 const CLIENTLOG_DIR = process.env.CLIENTLOG_DIR ?? join(WORLDS_DIR, ".clientlogs");   // beside the worlds, like .perflogs — never a shared temp dir
-// EXACT-case match against the world directory listing (existsSync would say yes to every case variant on a
-// case-insensitive filesystem — each a fresh bucket and file); listed once per few seconds, never per request.
-let worldDirs: Set<string> = new Set(), worldDirsAt = 0;
-const knownWorld = (name: string) => {
-  if (worlds.has(name)) return true;
-  const now = Date.now();
-  const relist = () => { try { worldDirs = new Set(readdirSync(WORLDS_DIR)); } catch { worldDirs = new Set(); } worldDirsAt = now; };
-  if (now - worldDirsAt > 5000) relist();
-  if (!worldDirs.has(name) && now - worldDirsAt > 1000) relist();   // a miss re-lists (at most once a second): a new world is known at once
-  return worldDirs.has(name) && existsSync(join(WORLDS_DIR, name, "world.jsonl"));   // listed: its own case already
-};
 /** Reads of a world's live state (/geom?world, /snap, /worlds): behind the same door as joining it. On a box with a
  *  JOIN_TOKEN they need the authority key as a Bearer header, or a caller the door takes (access.ts httpCaller: a scoped
  *  session cookie, an agent's credential); an agent's credential alone suffices here, where its join also sends the key
@@ -75,6 +64,7 @@ const unauthorized = () => new Response("this world's state is behind its door: 
 
 /** A world's directory holds its log, world.jsonl. */
 const hasWorldLog = (name: string) => worldDirNamed(name) && existsSync(join(WORLDS_DIR, name, "world.jsonl"));   // in its own case (world.ts)
+const knownWorld = (name: string) => worlds.has(name) || hasWorldLog(name);   // exact case: a variant buys no bucket or file of its own
 const CLIENTLOG_UNKNOWN = "~unknown";   // '~' is outside the world-name alphabet, so no real world can share this file
 const clientLogRate = new ClientLogRate();
 let clientLogStore: ClientLogStore | null = null;

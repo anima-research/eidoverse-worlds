@@ -103,8 +103,8 @@ ok(!existsSync(old) && existsSync(join(sd, "w", "b.log")), "D5 a file 15 days ol
 ip = "10.0.4.1";
 ok(await st(post("world=madeup-9x", "from nowhere")) === 200 && !existsSync(join(ld, "madeup-9x")) && logs("~unknown").includes("from nowhere"), "W1 an unknown label is taken into '~unknown', never a directory of its own");
 ok(await st(post("world=KNOWN", "case variant")) === 200 && logs("~unknown").includes("case variant") && !logs("known").includes("case variant"), "W2 a case variant of a real world routes to ~unknown (asserted on content — path case aliases on macOS)");
-const long = "w".repeat(50); foundWorlds(wd, [long]); let w3 = 0;
-ok(await tryUntil("a 50-char world gets its own directory", async () => (ip = `10.0.4.${2 + (w3++ % 200)}`, await st(post(`world=${long}`, "long name")) === 200 && existsSync(join(ld, long)) ? true : undefined), { ms: 5000 }), "W3 a 50-char world name (under the 64 limit) keeps its own directory");
+const long = "w".repeat(50); foundWorlds(wd, [long]); ip = "10.0.4.2";
+ok(await st(post(`world=${long}`, "long name")) === 200 && existsSync(join(ld, long)), "W3 a 50-char world name (under the 64 limit) keeps its own directory");
 ok(!logs("~unknown").includes('"ip"') && !logs("~unknown").includes("10.0.4"), "W4 no address recorded");
 for (let i = 0; i < 64; i++) { ip = `10.0.5.${i + 1}`; await post(`world=label${i}`, "z"); }
 ip = "10.0.6.1";
@@ -118,9 +118,8 @@ ok(await get("/.clientlogs/known/human-u_test.log") !== 200 && await get("/world
 {
   ip = "10.0.7.1";
   foundWorlds(wd, ["fresh"]);   // a known world with NO client-log directory yet
-  await tryUntil("the fresh world is known", () => (ip = `10.0.8.${1 + (w3++ % 200)}`, existsSync(join(wd, "fresh", "world.jsonl")) ? true : undefined), { ms: 5000 });
   writeFileSync(join(ld, "fresh"), "");   // a file where the world's directory goes: blocks it on every OS, root included
-  try { ok(await tryUntil("unwritable log dir → 500", async () => (ip = `10.0.8.${1 + (w3++ % 200)}`, (await st(post("world=fresh", "into a wall", session()))) === 500 ? true : undefined), { ms: 5000 }), "E1 unwritable log dir → 500, not a false ok"); }
+  try { ok(await st(post("world=fresh", "into a wall", session())) === 500, "E1 unwritable log dir → 500, not a false ok"); }
   finally { rmSync(join(ld, "fresh"), { force: true }); }
 }
 
