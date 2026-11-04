@@ -395,3 +395,15 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
   - fold.batch: ["ops","followUps"] → ["ops","cascade"]
   - version.minors: [0] → [1]
   - version.genesis: ["dialect","minor","nonce","owners","parent","quorum","rewind_window","sequencer","v"] → ["dialect","minor","nonce","owners","parent","quorum","rewindWindow","sequencer","v"]
+- 2026-11-04: normative: readback rows re-keyed for minor 1: act:*→request:*, sim:*→physics:*, the admitted body's request.*→args.* (docs/DESIGN-log-vocabulary.md D2, D3)
+  - readback act:undo: gone (old logs may hold it)
+  - readback act:use: gone (old logs may hold it)
+  - readback act:script: gone (old logs may hold it)
+  - readback act:sculpt: gone (old logs may hold it)
+  - readback act:*: gone (old logs may hold it)
+  - readback act:system: gone (old logs may hold it)
+  - readback act:create-world: gone (old logs may hold it)
+  - readback act:translated: gone (old logs may hold it)
+  - readback sim:launch: gone (old logs may hold it)
+  - readback sim:lift: gone (old logs may hold it)
+  - readback sim:catch: gone (old logs may hold it)
