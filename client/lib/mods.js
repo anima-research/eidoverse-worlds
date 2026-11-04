@@ -28,6 +28,7 @@ import { bodyEngine, setBodyEngine, currentBodyEngine, listBodyEngines } from '.
 import { physicsEnabled, setPhysicsEnabled } from './thingphysics.js';
 import { makeFrame } from './windows.js';
 import { logChat } from './chat.js';
+import { escapeHtml as esc } from './markup.js';
 
 // ---------------------------------------------------------------- storage
 
@@ -125,7 +126,6 @@ export function tickMods(dt, now) {
 // ---------------------------------------------------------------- the panel
 
 let paint = null;
-const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const TEMPLATE = `// an eidoverse mod — full client access, trusted like a browser extension.
 // export default gets { name, world, EW, ui, onTick, onDispose }.

@@ -12,6 +12,7 @@ import { renderDOM } from './panels.js';
 import { makeFrame, fitTabStrip } from './windows.js';
 import { fsvg } from './icons.js';
 import { net } from './net.js';
+import { escapeHtml as escape } from './markup.js';
 
 let frame = null;
 
@@ -156,7 +157,6 @@ function paintPane(pane) {
   }
 }
 
-const escape = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // Which rename this session has (house I180): a signed-in name is the sign-in's (net.js takes identity.name over ours on
 // every load, so a reload would undo a change); an account on a name-trusting server renames by reload, under the

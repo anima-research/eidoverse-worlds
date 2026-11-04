@@ -14,6 +14,7 @@
 // (↑/↓ or the mouse onto a row) — then Enter runs that row.
 import { list, grouped } from './actions.js';
 import { svg, has, rsvg, hasLine, fsvg, hasFill } from './icons.js';
+import { escapeHtml as esc } from './markup.js';
 
 const SEEN_LS = 'ew-lantern-seen';
 const isMac = typeof navigator !== 'undefined' && /Mac|iP(hone|ad|od)/.test(navigator.platform || navigator.userAgent || '');
@@ -27,7 +28,6 @@ let moved = false;    // the person moved the highlight themselves: Enter runs i
 let prevFocus = null; // what had focus when it opened: closing hands it back
 let deps = { submit: () => {} };
 
-const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 export const isLanternOpen = () => !!root && !root.hidden;
 

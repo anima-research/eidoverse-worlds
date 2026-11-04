@@ -8,7 +8,7 @@ import { bus, CONFIG, setName, setToken, setErrorSink, report, forgetRememberedW
 import { resizeZoneAt, fitTabStrip } from './windows.js';
 import { flipMic, flipEar, micLive, earOn, glyphPinned, setGlyphPinned, micGlyph, earGlyph, xrGlyph, xrGlyphAvailable, xrLive, flipXr } from './mictoggle.js';
 import { svg, fsvg, hasFill, rsvg, hasLine } from './icons.js';
-import { html, paint, lineKey } from './markup.js';
+import { html, paint, lineKey, escapeHtml } from './markup.js';
 export { html, markup } from './markup.js';
 
 // section-head emoji → Phosphor fill glyph (menu chrome never rides emoji —
@@ -486,7 +486,7 @@ export function collapseAll() {
 // ============================================================ who's here
 
 // (the roster frame is gone — 'present' lives in Chat's side pane)
-export const escapeHtml = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+export { escapeHtml };   // markup.js's: the one escaper (kudzu C1)
 
 // ============================================================ dock
 // A closed frame has to be findable again. One row of toggles, plus the

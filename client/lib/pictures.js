@@ -16,6 +16,7 @@ import { toast, flashHint } from './ui.js';
 import { normalizePicture, PICTURE_LIT, PICTURE_DESCRIPTION_MAX, PICTURE_STORE, DESCRIPTION_HINT } from '../../shared/picture.js';
 import { clientMayFetch } from '../../shared/mediasrc.js';
 import { allowUntrusted, RIGHTS_WARNING } from './mediaprefs.js';
+import { escapeHtml as esc } from './markup.js';
 
 // Batch 2 (R 10-07):
 //   3. A QUAD of its own (Godot Sprite3D, a Resonite image import): `width` metres wide, its height from the
@@ -236,7 +237,6 @@ export { THREE as _THREE };
 // read-only line: the server would refuse the comp, so the block says who may.
 
 const PICTURE_ACCEPT = 'image/png,image/jpeg,image/webp';
-const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 export { namedParts };   // lives in parts.js now: the inspector's `parts` extra reads the same list
 

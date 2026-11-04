@@ -32,6 +32,7 @@ import { HTMLMesh } from './vendor/htmlmesh.js';
 import { prepareQuadMaterial } from './domquad.js';
 import { PLATE_GETON_RAD } from './xrpointer.js';   // the laser's get-on slack around a plate (see below)
 import { makeDwell, DWELL_MS } from './dwell.js';
+import { escapeHtml as esc } from './markup.js';
 
 export const HOVER_MS = DWELL_MS;  // rest this long on a plate before the card opens: the shared dwell (300 ms)
 const LEAVE_MS = 250;              // grace to travel from plate to card
@@ -305,7 +306,6 @@ export function close() {
   if (xrMesh?.visible) { xrMesh.visible = false; xrMesh.material.map.pause?.(); }
 }
 
-const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 function paint() {
   const r = d.remotes.get(cardFor);
