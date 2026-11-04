@@ -47,7 +47,7 @@ check('setup: the epoch took (a live engine, the ball a static)', !!canon.e2 && 
 S.replica.sim = { sim: canon, launched: {}, foreign: false, spec: { engine: sim.SIM_ID } };
 S.replica.simVersion = 1;
 S.replica.simClone = () => JSON.parse(JSON.stringify(canon));
-const PENDING_MS = 1500;   // thingphysics.js
+const { PENDING_MS } = tp;
 
 // ---- hold it, then let it go upward: the guess goes into the presentation copy before the reply
 tick(0); bus.emit('holds', { ball: { by: 'me' } });
@@ -72,7 +72,7 @@ check('#574 whereIs ignores the provisional body (answers from the thing, not th
 
 // ---- #575: no entry within PENDING_MS, and no sim update either: the guess is still dropped
 const c0 = S.replica.simVersion;
-frame(1000);
+frame(PENDING_MS - 1);
 check('setup: inside PENDING_MS, no sim update: the guess stays', S.replica.simVersion === c0 && !!tp.physicsApi.pending().ball && !!tp.physicsApi.shown().bodies.ball, J({ pending: tp.physicsApi.pending(), simVersion: S.replica.simVersion }));
 frame(PENDING_MS + 1);
 check('#575 past PENDING_MS with no sim update: the guess is removed and the copy is the truth again (back in the hand)', S.replica.simVersion === c0 && !tp.physicsApi.pending().ball && !tp.physicsApi.shown().bodies.ball, J({ pending: tp.physicsApi.pending(), bodies: Object.keys(tp.physicsApi.shown()?.bodies ?? {}) }));
