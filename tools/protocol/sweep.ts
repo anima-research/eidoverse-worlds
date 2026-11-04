@@ -52,6 +52,7 @@ check("the native path is the one in use under bun", typeof (globalThis as any).
 
 // ---- 3. her dialect-3 fixtures through translate-d3 ----
 const golden = JSON.parse(fs.readFileSync(ENGINE + "spec/fixtures/replay/.replaybench.json", "utf8"));
+for (const d of fs.readdirSync(ENGINE + "spec/fixtures/replay")) if (fs.existsSync(ENGINE + `spec/fixtures/replay/${d}/log.jsonl`)) check(`${d}: has a sim golden (a committed fixture without one fails)`, d in golden);
 for (const name of Object.keys(golden)) {
   const old = parse(fs.readFileSync(ENGINE + `spec/fixtures/replay/${name}/log.jsonl`, "utf8"));
   const st0 = v1Empty(), s0 = eidosim.emptySim();
