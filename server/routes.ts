@@ -44,7 +44,7 @@ import { screenshots } from "./screenshots.ts";
 import { handleUpload, optStatus, rebuildAsset } from "./upload.ts";
 import { serveHeightmapExport, heightRange } from "./heightmap.ts";
 import { defsPayload, avatarDefs, animationDefs } from "./defs.ts";
-import { tickStats } from "./tick.ts";
+import { tickStats, registerSystem } from "./tick.ts";
 import { atomicWrite } from "./fsutil.ts";
 import { cspFor, cspForFile } from "./csp.ts";
 // client console tee (the /clientlog route): one file per KNOWN world (loaded in memory, or with a data dir on disk) and
@@ -68,6 +68,8 @@ const CLIENTLOG_UNKNOWN = "~unknown";   // '~' is outside the world-name alphabe
 const clientLogRate = new ClientLogRate();
 let clientLogStore: ClientLogStore | null = null;
 try { clientLogStore = new ClientLogStore(CLIENTLOG_DIR); } catch (e) { console.warn(`[clientlog] cannot open ${CLIENTLOG_DIR}: ${(e as Error)?.message ?? e}`); }
+// retention runs on the clock, not only on a post: an idle server keeps its promise too (rageshake cleanup.py, Synapse purge_jobs)
+registerSystem({ name: "clientlog-retire", everyMs: 3_600_000, fn: (now) => clientLogStore?.retire(now) });
 import { seatStore, announceProfileUpdate, MAX_PROPOSAL_BYTES } from "./seats.ts";
 import { agentTokens, aid1JoinIdentity } from "./auth.ts";
 import { httpCaller, httpVisitor, hashedAddress, visibleTo, doorFor, youAt, bearerOf } from "./access.ts";

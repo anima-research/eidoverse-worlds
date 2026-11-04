@@ -11,7 +11,8 @@ const { foundWorlds } = await import("./harness.ts");
 foundWorlds(wd, ["known"]);   // a world with a log (world.jsonl) = known
 const { route } = await import("../server/routes.ts");
 const { hnSessions } = await import("../server/auth.ts");
-const { ClientLogStore, ClientLogRate, ipBucketKey, scrub, boundLines } = await import("../server/clientlog.ts");
+const { ClientLogStore, ClientLogRate, ipBucketKey, scrub, boundLines, LIMITS } = await import("../server/clientlog.ts");
+const { tickStats } = await import("../server/tick.ts");
 let n = 0;
 const ok = (v: unknown, why: string) => { if (!v) { console.error("FAIL", why); process.exit(1); } n++; };
 let ip = "10.0.0.1";   // each row its own address unless it is about the address
@@ -102,6 +103,15 @@ ok(readFileSync(join(sd, "w", "b.log"), "utf8").endsWith("more\n"), "D4 …and k
 const old = join(sd, "x", "c.log"); utimesSync(old, new Date(t0), new Date(t0));
 const store2 = new ClientLogStore(sd, store.caps); store2.retire(t0 + 15 * 86_400_000);
 ok(!existsSync(old) && existsSync(join(sd, "w", "b.log")), "D5 a file 15 days old is retired; a 3-second-old one stays (a fresh store scans what is on disk)");
+// ---- the rails are settings (0 = off), and the 14 days hold on the clock, not only on a post
+{ utimesSync(join(sd, "w", "b.log"), new Date(t0), new Date(t0)); const k2 = new ClientLogStore(sd, { ...store.caps, keepMs: 0 }); k2.retire(t0 + 400 * 86_400_000);
+  ok(existsSync(join(sd, "w", "b.log")), "D6 CLIENTLOG_KEEP_DAYS=0: a file a year old stays (the size caps alone evict)"); }
+ok(tickStats().systems.some((s) => s.name === "clientlog-retire" && s.everyMs === 3_600_000), "D7 retention is a registered hourly system: an idle server retires too");
+{ const r3 = new ClientLogRate(); LIMITS.ipPer10Min = 0; let refused = 0; for (let i = 0; i < 40; i++) if (r3.admit("3.3.3.3", `t${i}`, t0) !== null) refused++; LIMITS.ipPer10Min = 30;
+  ok(refused === 0, `R9 CLIENTLOG_IP_PER_10MIN=0: no address bucket, forty tabs behind one NAT all post (${refused} refused)`); }
+{ const r = Bun.spawnSync(["bun", "-e", `const { LIMITS } = await import(${JSON.stringify(new URL("../server/clientlog.ts", import.meta.url).href)}); console.log(JSON.stringify([LIMITS.ipPer10Min, LIMITS.senderPer10Min, LIMITS.keepMs]));`],
+    { env: { ...process.env, CLIENTLOG_IP_PER_10MIN: "0", CLIENTLOG_SENDER_PER_10MIN: "5", CLIENTLOG_KEEP_DAYS: "0", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, stdout: "pipe", stderr: "pipe" });
+  ok(r.stdout.toString().trim() === "[0,5,0]", `R9b the three names are read from the environment (got ${r.stdout.toString().trim()} ${r.stderr.toString().slice(0, 200)})`); }
 
 // ---- worlds and labels, as before
 ip = "10.0.4.1";

@@ -69,6 +69,16 @@ only the one header named is read, since a proxy passes the other on as the clie
 world; `bun run test:protocol` runs every protocol suite. AGENTS.md is the
 builder's guide.
 
+The browser's console tee (`POST /clientlog`) lands under `CLIENTLOG_DIR`
+(default `<worlds dir>/.clientlogs`), one file per world and sender. Its rails
+are settings; `0` turns one off:
+
+| setting | default | what |
+|---|---|---|
+| `CLIENTLOG_KEEP_DAYS` | 14 | a sender's file is removed this long after its last write (checked hourly); 0 = kept until the size caps evict it |
+| `CLIENTLOG_IP_PER_10MIN` | 30 | posts per client address per 10 minutes (IPv6 by /64; a venue behind one NAT shares it); 0 = no limit |
+| `CLIENTLOG_SENDER_PER_10MIN` | 30 | posts per signed-in account (else per address) per 10 minutes, 10 in a row; 0 = no limit |
+
 ## Layout
 
 - `server/` — the Bun/TS sequencer (WS, per-world logs, presence relay, asset serving; `server/` hosts the door)

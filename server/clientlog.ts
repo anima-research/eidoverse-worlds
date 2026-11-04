@@ -4,14 +4,15 @@ import { existsSync, mkdirSync, readdirSync, statSync, appendFileSync, readFileS
 import { join } from "node:path";
 import { newBucket, admitMessage, type MsgBucket } from "./msgrate.ts";
 
+const num = (k: string, d: number) => Math.max(0, Number(process.env[k] ?? d));   // an operator's rail (README): 0 = none
 export const LIMITS = {
-  ipPer10Min: 30,                        // posts per address (IPv6 by /64) per 10 min, the burst the same
-  senderPer10Min: 30, senderBurst: 10,   // posts per signed-in account (else per address) per 10 min, 10 in a row: several tabs and an agent fit (RESEARCH-bf4-questions)
+  ipPer10Min: num("CLIENTLOG_IP_PER_10MIN", 30),        // posts per address (IPv6 by /64) per 10 min, the burst the same
+  senderPer10Min: num("CLIENTLOG_SENDER_PER_10MIN", 30), senderBurst: 10,   // posts per signed-in account (else per address) per 10 min, 10 in a row: several tabs and an agent fit (RESEARCH-bf4-questions)
   bodyBytes: 256 * 1024,                 // a request above this is 413, by Content-Length and again while reading
   lineChars: 2000, lines: 2000,          // inside a request: cut, never refused
   senderBytes: 2 * 1024 * 1024,          // a sender's file keeps its newest 2 MB
   totalBytes: 200 * 1024 * 1024,         // the store keeps its newest 200 MB, oldest files first
-  keepMs: 14 * 86_400_000,               // and nothing older than 14 days
+  keepMs: num("CLIENTLOG_KEEP_DAYS", 14) * 86_400_000,   // and nothing older than 14 days, per file by its last write; retired hourly (routes.ts)
 };
 const WINDOW_MS = 600_000;
 
@@ -38,6 +39,7 @@ export class ClientLogRate {
       ?? this.take(this.ip, ipBucketKey(addr), now, LIMITS.ipPer10Min, LIMITS.ipPer10Min);
   }
   private take(m: Map<string, MsgBucket>, key: string, now: number, per10Min: number, burst: number): number | null {
+    if (!per10Min) return null;
     let b = m.get(key); if (!b) { b = newBucket(burst); m.set(key, b); }
     const rate = per10Min * 1000 / WINDOW_MS;
     if (admitMessage(b, now, rate, burst) === "run") return null;
@@ -114,9 +116,10 @@ export class ClientLogStore {
     while (this.total > this.caps.totalBytes) { const oldest = this.oldest(); if (!oldest || oldest === path) break; this.remove(oldest); }
     if (now - this.retiredAt > 3_600_000) this.retire(now);
   }
-  /** Unlinks every file last written before `now - keepMs`. */
+  /** Unlinks every file last written before `now - keepMs`; keepMs 0 keeps everything. */
   retire(now = Date.now()) {
     this.retiredAt = now;
+    if (!this.caps.keepMs) return;
     for (const [p, e] of this.files) if (now - e.mtime > this.caps.keepMs) this.remove(p);
   }
   private oldest(): string | null {
