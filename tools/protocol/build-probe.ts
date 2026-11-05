@@ -147,7 +147,7 @@ try {
     const n0 = myActs().length;
     await evalJson(`(() => { const n = document.querySelector('#script-new .sn-name'); if (!n) return false; n.value = 'Greeter'; document.querySelector('#script-new .sn-ok').click(); return true; })()`);
     const made = await waitDisk(() => myActs().length === n0 + 1);
-    const b = myActs().at(-1)?.e; const ops = b?.body?.args?.ops ?? [];
+    const b = myActs().at(-1)?.e; const ops = b?.body?.args?.requests ?? [];
     check("SC3 Create: ONE act, script:greeter + its use reaction (the upload isn't an act)", made && b.verb === "batch" && ops.some((o: any) => o.args?.component === "script:greeter") && ops.some((o: any) => o.args?.component === "reactions"),
       { acts: myActs().slice(n0).map((x) => x.e.verb), refused: await evalJson(`__refused.map((r) => r.text)`), card: await evalJson(`document.querySelector('#script-new .sn-err')?.textContent ?? null`) });
     check("SC4 …and the card closes", await waitFor(`!document.querySelector('#script-new')`));

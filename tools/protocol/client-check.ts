@@ -145,7 +145,7 @@ try {
   check("G1 release = ONE act", await waitDisk(() => myActs().length === n0 + 1), myActs().slice(n0).map((a) => a.e.verb));
   const g = myActs().at(-1);
   const gReq = g?.e.body?.args;
-  check("G2 …a set of the transform with expect on where the drag started (§3a)", g?.e.op === "set" && gReq?.component === "transform" && JSON.stringify(gReq?.expect?.[0]?.value) === JSON.stringify(start), gReq);
+  check("G2 …a set of the transform with expect on where the drag started (§3a)", g?.e.verb === "set" && gReq?.component === "transform" && JSON.stringify(gReq?.expect?.[0]?.value) === JSON.stringify(start), gReq);
   check("G3 …and it moved 1 m on the record", await waitDisk(() => Math.abs(disk().entities[crate].c.transform.pos[0] - (start.pos[0] + 1)) < 1e-3), { now: disk().entities[crate].c.transform.pos, from: start.pos, settled });
 
   // ---- U: undo and redo through the authority ----
@@ -262,7 +262,7 @@ try {
   await page(`(await import('/lib/scenegraph.js')).sceneSelect('${crate}'); (await import('/lib/base.js')).bus.emit('edit-extend', '${dup}'); return true;`);
   check("M0 two things selected", await waitFor(`import('/lib/editpanels.js').then((m) => m.selection().length === 2)`), await evalJson(`import('/lib/editpanels.js').then((m) => m.selection())`));
   await key("Delete");
-  check("M1 Delete on both = ONE act, a batch of two deletes", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.verb === "batch" && myActs().at(-1).e.body.args.ops.length === 2), myActs().slice(n0).map((a) => a.e.body.args));
+  check("M1 Delete on both = ONE act, a batch of two deletes", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.verb === "batch" && myActs().at(-1).e.body.args.requests.length === 2), myActs().slice(n0).map((a) => a.e.body.args));
   // the act and its change are two appends (writes.js changeEntry): M1 waits for the act, so the change may not be on disk
   // yet — wait for it too (anima 40115466089 ubuntu read the log between the two)
   check("M2 …both are gone, on disk and in the page", await waitDisk(() => !disk().entities[crate] && !disk().entities[dup]) && await waitFor(`import('/lib/world.js').then((m) => !m.entities.has('${crate}') && !m.entities.has('${dup}'))`),
@@ -322,7 +322,7 @@ try {
   await dlgClick("Unlock");
   check("K5 🔓 Unlock: TWO acts, the unlock and then the move (no throughLock)", await waitDisk(() => myActs().length === n0 + 2), myActs().slice(n0).map((a) => a.e.body.args));
   const [ul, mv] = myActs().slice(n0);
-  check("K6 …the first deletes the lock, the second moves it; it's unlocked and 1 m along", ul?.e.op === "delete" && ul?.e.body.args.component === "lock" && mv?.e.op === "set" && mv?.e.body.args.throughLock === undefined
+  check("K6 …the first deletes the lock, the second moves it; it's unlocked and 1 m along", ul?.e.verb === "delete" && ul?.e.body.args.component === "lock" && mv?.e.verb === "set" && mv?.e.body.args.throughLock === undefined
     && !("lock" in disk().entities[crate].c) && Math.abs(disk().entities[crate].c.transform.pos[0] - (kStart.pos[0] + 1)) < 1e-3, [ul?.e.body.args, mv?.e.body.args]);
   await waitFor(`globalThis.__editWrites().undo.at(-1) === ${mv?.seq}`);
   await key("KeyZ", { ctrlKey: true });
