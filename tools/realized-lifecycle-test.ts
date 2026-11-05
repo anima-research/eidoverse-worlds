@@ -166,7 +166,7 @@ console.log('\nrealized lifecycle — four registries, one id, every seam\n');
   const kids = Object.keys(S.state.st.entities).filter((k) => S.state.st.entities[k].parent?.to === 'sw');
   const seat = kids.find((k) => S.state.st.entities[k].socket?.name === 'seat'), hook = kids.find((k) => S.state.st.entities[k].socket?.name === 'hook');
   const so = seat && stub.entities.get(seat), ho = hook && stub.entities.get(hook);
-  check('a socket child is realized: an Empty (a Group marked socket), tracked as a socket', !!so && so.isGroup && so.userData.socket === true && M.realizedAs(seat)?.kind === 'socket', JSON.stringify({ seat, kind: M.realizedAs(seat ?? '') }));
+  check('a socket child is realized: a frame (a Group, no model) marked socket', !!so && so.isGroup && so.userData.socket === true && M.realizedAs(seat)?.kind === 'host' && !M.realizedAs(seat)?.model, JSON.stringify({ seat, as: M.realizedAs(seat ?? '') }));
   check('…with no collider, no caster and no box', !stub.colliders.has(seat) && !stub.casters.has(seat) && M.boxOf(seat) === null && !stub.colliders.has(hook), JSON.stringify({ seat: held(seat), box: M.boxOf(seat) }));
   check('a plain socket hangs on its host at its own pose', !!ho && ho.parent === stub.entities.get('sw') && ho.position.toArray().join() === '0.4,1,0', JSON.stringify({ parent: ho?.parent?.userData, pos: ho?.position?.toArray() }));
   const host = stub.entities.get('sw'); const plank = host.getObjectByName('plank'); const pivot = host.getObjectByName('pivot');

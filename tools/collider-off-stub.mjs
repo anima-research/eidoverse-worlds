@@ -1,5 +1,5 @@
 // collider-off-bodies-test's renderer cone: everything unknown-comp-stub stands in for (core, assets, lightrig, lights,
-// world's maps), with THREE's node materials mapped to their plain kin (createMesh and the structure palette build them),
+// world's maps), with THREE's node materials mapped to their plain kin (the mesh part and the structure palette build them),
 // TSL as core-stub's chainable proxy, and the two imports the structure realizer adds (materials' prepareObject, defs'
 // registry). colliders.js is NOT stubbed: the test reads the walker's own registry and resolveColliders.
 import * as THREE_ from 'three';

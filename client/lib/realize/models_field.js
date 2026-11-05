@@ -11,35 +11,33 @@
 import { P } from '../scheduler.js';
 import { COMPONENTS } from '../../../shared/protocol/componentspec.js';
 import { solidOff } from '../../../shared/protocol/simlayer.js';
-import { formOf, isMeshBag } from '../../../shared/protocol/kind.js';
-export { formOf, isMeshBag };
+import { isMeshBag } from '../../../shared/components.js';
+export { isMeshBag };
 
-/** What the realizer needs to know about a realized id to detect identity
- *  drift. kind: formOf's word; model only meaningful for models.
- *  @typedef {{ kind: 'model'|'mesh'|'light'|'empty', model?: string }} RealizedView */
+/** The model a record draws, or null: the one component that decides what a realized object IS (a GLB, or a bare frame).
+ *  Mesh, light and socket are realized on that frame, each on its own (models.js syncParts, syncCompLight). */
+export const modelOf = (ent) => (typeof ent?.model === 'string' ? ent.model : null);
+
+/** What the realizer needs to know about a realized id to detect identity drift: the model it wears (none for a frame).
+ *  @typedef {{ model?: string|null }} RealizedView */
 
 /** Diff folded entities against the realized view.
  *
  *  Identity rules:
  *  - an id in state but not realized → create
  *  - realized but gone from state → retire
- *  - realized as one kind, folded as another (a light component landing on an
- *    Empty's id, or a model replacing a light — the id namespace is flat) →
- *    rebuild (retire + create)
- *  - a model whose `model` changed → rebuild. The fold leaves a same-id create
+ *  - a model whose `model` changed, arrived or left → rebuild. The fold leaves a same-id create
  *    as a no-op (fold.js create-live); a changed model arrives as a set (the
  *    realizer projects state, so it follows — PROTOCOL.md §3 "no-op if id
  *    exists" holds; and
  *    whichever way that lands, this planner keeps projecting the fold).
- *  - everything else (transform, params, comps) is a cheap in-place refresh
- *    the hosted half applies directly; not this planner's business.
+ *  - everything else (transform, params, mesh, light, socket) is a cheap
+ *    in-place refresh the hosted half applies directly; not this planner's business.
  *
  *  @param {Record<string, any>} stEntities  state.st.entities
  *  @param {Map<string, RealizedView>} realized
  *  @returns {{ create: {id: string, ent: any}[], retire: string[] }} */
-/** (formOf — what the realizer builds for a folded entity — is shared/protocol/kind.js's, one answer for every reader;
- *  a thing with both a model and a mesh exists only by carry and is its model, review S3.)
- *  The registered `mesh` component (shared/protocol/componentspec.js), read as a client reads it: a malformed value is
+/** The registered `mesh` component (shared/protocol/componentspec.js), read as a client reads it: a malformed value is
  *  absent (the thing is an Empty), never a throw. A field outside its range is clamped to it; a capsule is at least its
  *  diameter tall (the authority's meshSize says the same). */
 export const MESH_SHAPES = COMPONENTS.mesh.enums.shape;
@@ -64,8 +62,7 @@ export function planReconcile(stEntities, realized) {
   for (const [id, view] of realized) {
     const ent = stEntities[id];
     if (!ent || offIn(stEntities, id)) { retire.push(id); continue; }
-    const foldedKind = formOf(ent);
-    if (view.kind !== foldedKind || (foldedKind === 'model' && view.model !== ent.model) || (foldedKind === 'mesh' && view.mesh !== meshKeyOf(ent))) {
+    if ((view.model ?? null) !== modelOf(ent)) {
       retire.push(id);
       create.push({ id, ent });
     }

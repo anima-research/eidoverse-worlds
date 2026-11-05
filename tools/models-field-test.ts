@@ -10,7 +10,7 @@
 // every linkage a completed spawn could unblock); distance bands promote
 // what is in front of you.
 
-import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere, formOf, readMesh, meshKeyOf } from "../client/lib/realize/models_field.js";
+import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere, modelOf, readMesh, meshKeyOf } from "../client/lib/realize/models_field.js";
 import { P } from "../client/lib/scheduler.js";
 
 let passed = 0, failed = 0;
@@ -45,11 +45,11 @@ const light = () => ({ pos: [0, 1, 0], light: { color: 0xffd9a0, intensity: 16, 
   check("vanished id retires", plan.retire.join() === "a" && plan.create.length === 0);
 }
 
-// 4. kind flip (light verb landed on a model id) → rebuild
+// 4. the model left (a light-only record now under a model's id) → rebuild
 {
   const st = { a: light() };
   const plan = planReconcile(st, new Map([["a", { kind: "model", model: "x.glb" }]] as any));
-  check("kind flip rebuilds", plan.retire.join() === "a" && plan.create.length === 1 && plan.create[0].id === "a");
+  check("a model leaving rebuilds", plan.retire.join() === "a" && plan.create.length === 1 && plan.create[0].id === "a");
 }
 
 // 5. lib change under a same-id spawn → rebuild (follows the fold's
@@ -106,23 +106,18 @@ const light = () => ({ pos: [0, 1, 0], light: { color: 0xffd9a0, intensity: 16, 
   check("…a static body still does", !collisionOwnedElsewhere({ ...model("x.glb"), physics: { kind: "static" } }, false));
 }
 
-// 9. a mesh thing (componentspec `mesh`, R 10-12): its own kind; a changed shape or size is a rebuild, a malformed value an Empty
+// 9. a mesh (componentspec `mesh`, R 10-12) is realized on its thing's frame, in place: only the model decides a rebuild
 {
-  const mesh = (m: any) => ({ pos: [0, 0, 0], actor: "t", ts: 1, mesh: m });
-  check("kind 'mesh' for a thing with a mesh bag and no lib", formOf(mesh({ shape: "box", size: [1, 1, 1] })) === "mesh");
-  check("a malformed mesh (unknown shape) reads as absent: an Empty, never a throw", formOf(mesh({ shape: "cone", size: [1, 1, 1] })) === "empty" && readMesh({ shape: "cone" }) === null && readMesh("box") === null);
+  const mesh = (m: any, more: any = {}) => ({ pos: [0, 0, 0], actor: "t", ts: 1, mesh: m, ...more });
+  check("a malformed mesh (unknown shape) reads as absent, never a throw", readMesh({ shape: "cone" }) === null && readMesh("box") === null && meshKeyOf(mesh({ shape: "cone", size: [1, 1, 1] })) === null);
   check("readMesh clamps a size to 0.05..200 and fills a missing size with 1", JSON.stringify(readMesh({ shape: "sphere", size: [0.001, 999, 2] })?.size) === "[0.05,200,2]" && JSON.stringify(readMesh({ shape: "box" })?.size) === "[1,1,1]");
-  const st = { a: mesh({ shape: "box", size: [1, 1, 1] }) };
-  const same = planReconcile(st, new Map([["a", { kind: "mesh", mesh: meshKeyOf(st.a) }]] as any));
-  check("a mesh whose key matches plans nothing", same.create.length === 0 && same.retire.length === 0);
-  const changed = planReconcile({ a: mesh({ shape: "sphere", size: [1, 1, 1] }) }, new Map([["a", { kind: "mesh", mesh: meshKeyOf(st.a) }]] as any));
-  check("a shape change under the same id → retire + create (a rebuild)", changed.retire.includes("a") && changed.create.some((c) => c.id === "a"));
-  const flip = planReconcile({ a: { model: "x.glb", pos: [0, 0, 0], actor: "t", ts: 1 } }, new Map([["a", { kind: "mesh", mesh: "box|1,1,1" }]] as any));
-  check("a mesh id that becomes a model → rebuild", flip.retire.includes("a") && flip.create.length === 1);
-  // review round 2: S2.3 a capsule is at least its diameter tall (the authority's meshSize agrees); S3 a carried thing with
-  // both a lib and a mesh is its model, as the hierarchy and the Inspector read it
+  const changed = planReconcile({ a: mesh({ shape: "sphere", size: [1, 1, 1] }) }, new Map([["a", { model: null }]] as any));
+  check("a shape change under the same id plans nothing (the frame reshapes its mesh in place)", changed.retire.length === 0 && changed.create.length === 0);
+  const flip = planReconcile({ a: mesh({ shape: "box", size: [1, 1, 1] }, { model: "x.glb" }) }, new Map([["a", { model: null }]] as any));
+  check("a mesh thing that gains a model → rebuild (a GLB frame)", flip.retire.includes("a") && flip.create.length === 1);
   check("readMesh: a capsule [1, 0.2, 1] is 1 m tall", JSON.stringify(readMesh({ shape: "capsule", size: [1, 0.2, 1] })?.size) === "[1,1,1]");
-  check("kind 'model' when a carried thing has both a lib and a mesh", formOf({ model: "x.glb", pos: [0, 0, 0], actor: "t", ts: 1, mesh: { shape: "box", size: [1, 1, 1] } }) === "model");
+  const both = planReconcile({ a: mesh({ shape: "box", size: [1, 1, 1] }, { model: "x.glb" }) }, new Map([["a", { model: "x.glb" }]] as any));
+  check("a model with a mesh beside it is planned by its model alone (both are drawn)", both.retire.length === 0 && both.create.length === 0 && modelOf(both.create[0]?.ent ?? { model: "x.glb" }) === "x.glb");
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -17,6 +17,7 @@ import { tmpdir } from "node:os";
 import { foundWorlds } from "./harness.ts";
 import { makeReplica } from "../shared/protocol/replica.js";
 import { viewOf } from "../shared/protocol/view.js";
+import { KIND_RETIRED } from "../shared/components.js";
 import { idAliases } from "./protocol/idalias.ts";
 const IDS = idAliases();   // R 10-17: the suite's names ride as placeholders and minted ids
 
@@ -116,7 +117,7 @@ console.log("\n— C. the whole scene —");
   check("the crate's row", !!row, J(body).slice(0, 200));
   const want = viewOf(cid, c);
   const diffs = row ? Object.keys(want).filter((k) => J(want[k]) !== J(row[k])) : ["(no row)"];
-  check("C the row is the same record (scale3 included), plus kind", diffs.length === 0 && row?.kind === "model", J(diffs));
+  check("C the row is the same record (scale3 included), plus the retired kind note naming the components", diffs.length === 0 && row?.kind === KIND_RETIRED, J(diffs));
 }
 
 ann.close();

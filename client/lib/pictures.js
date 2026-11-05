@@ -251,8 +251,8 @@ export async function uploadPicture(file) {
   return path;
 }
 
-registerEditor(({ id, obj, meta, bag, commit }) => {
-  if (!obj || meta?.kind === 'light') return null;   // a bulb has no part to texture
+registerEditor(({ id, obj, bag, commit }) => {
+  if (!obj || obj.userData?.empty) return null;   // an Empty draws nothing: no part to texture
   const parts = namedParts(obj);
   if (!parts.length) return null;                     // nothing to hang on — the generic JSON row still exists
   const cur = bag?.picture && typeof bag.picture === 'object' ? bag.picture : null;

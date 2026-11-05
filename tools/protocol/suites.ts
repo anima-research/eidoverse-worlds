@@ -66,7 +66,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["oldworlds", "../oldworlds-test.ts", 1], // owner 10-15: an old-format world is found and named at boot (the exact translate command), and a visitor is told in plain words             // the old-world importer (tools/protocol/import-v1/) on every local old world log + her dialect-3 goldens + pins
   ["browser", "browser-check.ts", 1],   // the shared core imported by headless Chromium, byte-for-byte with bun
   ["descriptors", "../descriptor-defaults-test.ts", 1], // C5 (DEBT 10-12 #3a): every record and inspector default is the registry's, through the editor translation
-  ["light-readers", "../light-readers-test.ts", 1], // D2 (DEBT-2 #5): a light is found by kindOf and the rig's complight key, its gizmo is no box or material slot
+  ["light-readers", "../light-readers-test.ts", 1], // D2 (DEBT-2 #5): a light is found by its light component and the rig's complight key, its gizmo is no box or material slot
   ["ghost-mesh-size", "../ghost-mesh-size-test.ts", 1], // D1: every shape × scale the build ghost sends passes the door's mesh check (the plane at 1/1.1 did not)
   ["boot-init", "../boot-init-test.ts", 1], // D3: every client init* has a caller (initOccupants had none)
   ["editor-range", "../editor-range-test.ts", 1], // D4a: the editor writes what was typed inside the door's range, and refuses outside it with nothing sent
@@ -207,6 +207,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["shadow-fade", "../shadow-fade-test.mjs", 1], // house client I172: registered shadow casters start not casting
   ["frames-layout", "../frames-layout-test.ts", 1], // the frames and panels layout
   ["models-field", "../models-field-test.ts", 1], // house client I173: an override's clone is wrapped once
+  ["compose", "../compose-test.ts", 1], // Mica 11-04: one thing carries model + mesh + light + socket, each realized on its own; labels read the components
   ["translate", "translate-check.ts", 1], // R 10-28 translation rulings (22 rights, 17 particles, 24 name bans, 50 report, version) + SWEEP-3 + light parity
   ["owners", "owners-check.ts", 1], // R 10-28: a translated world's owners are bound to the accounts main recorded for them; the rest listed, bindable (operator-repair bind)
   ["setup", "setup-check.ts", 1], // R 10-28: the first-run setup link: no operator → one boot line; a signed-in person or agent claims it once, stored, live; guests, other sites, wrong tokens refused

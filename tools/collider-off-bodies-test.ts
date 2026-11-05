@@ -11,7 +11,7 @@
 //
 // What each part pins:
 //  - a mesh thing: no collider when it loads, when it's born live, when a mesh change re-births it, and when it's
-//    dismounted (models.js createMesh, execDismount);
+//    dismounted (models.js syncParts, execDismount);
 //  - a structure thing: no wall or floor box, only the grass mask, and a live collider change takes its boxes away and
 //    back (structure.js realize, onChange);
 //  - the structure realizer's retire() gives an anchor back only for a building it realized: a thing born without a
@@ -92,7 +92,7 @@ const has = (id: string) => C.colliders.has(id);
 const step = (x: number, z: number) => { const p = { x, y: 0, z }; C.resolveColliders(p, () => 0); return [+p.x.toFixed(3), +p.z.toFixed(3)]; };
 const moved = (at: number[], x: number, z: number) => at[0] !== x || at[1] !== z;
 
-console.log('\na mesh thing (models.js createMesh)');
+console.log('\na mesh thing (models.js syncParts)');
 for (const id of ['meshoff', 'meshhulls', 'meshon', 'hiddenload', 'cart']) await realized(id);
 check('collider {enabled: false}: no collider once it loads', !has('meshoff'));
 check('collider {blocks: ["hulls"]}: no collider once it loads (bodies aren\'t blocked)', !has('meshhulls'));
@@ -118,14 +118,14 @@ check('control: loaded with the world, the same', lightload.userData?.empty === 
 check('born live with collider {shape: "mesh"}: its collider keeps the preference it asked for', C.colliders.get('exactborn')?.pref === 'exact',
   JSON.stringify(C.colliders.get('exactborn')?.pref ?? null));
 check('control: loaded with the world, the same', C.colliders.get('exactload')?.pref === 'exact', JSON.stringify(C.colliders.get('exactload')?.pref ?? null));
-check('born live with collision off: no collider (neither createMesh nor the structure realizer fits one)', !has('meshlive'));
+check('born live with collision off: no collider (neither the mesh part nor the structure realizer fits one)', !has('meshlive'));
 check('born live with hidden: true: not drawn (the structure realizer\'s retire() leaves a thing it never realized alone)', hiddenborn.visible === false);
 check('control: loaded with hidden: true, not drawn', stub.entities.get('hiddenload')?.visible === false);
 check('control: born live and not hidden, drawn', meshlive.visible === true);
 
 live('set', { id: 'meshhulls', component: 'mesh', value: { shape: 'box', size: [4, 4, 4] } });
-await until('meshhulls rebuilt at its new size', () => { const o = stub.entities.get('meshhulls'); return o?.userData?.meshSize?.[0] === 4 && o; });
-check('a mesh change on a collision-off mesh (folded as gone, then born) leaves it with no collider', !has('meshhulls'));
+await until('meshhulls reshaped at its new size', () => { const o = stub.entities.get('meshhulls'); return o?.children.find((c: any) => c.userData?.meshPart)?.userData?.meshSize?.[0] === 4 && o; });
+check('a mesh change on a collision-off mesh (reshaped in place) leaves it with no collider', !has('meshhulls'));
 
 console.log('\nsteps off a carrier (models.js execDismount)');
 const riders = () => [stub.entities.get('rideoff'), stub.entities.get('rideon')];

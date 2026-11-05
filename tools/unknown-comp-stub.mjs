@@ -7,5 +7,5 @@
 export * from './lod-client-stub.mjs';
 export const serverNow = () => Date.now();
 
-// materials.js: the mesh thing (realize/models.js createMesh) hands its material to the factory; nothing to prepare here
+// materials.js: the mesh thing (realize/models.js syncParts) hands its material to the factory; nothing to prepare here
 export const prepareMaterial = () => {};

@@ -22,7 +22,6 @@
 // HTTP surface, which is exactly what makes it transport-agnostic.
 
 import { bodyOf } from "../shared/components.js";
-import { formOf } from "../shared/protocol/kind.js";
 import { describeBody, socketRole } from "../shared/sockbody.js";
 import { dec as decName, enc as encId } from "../shared/protocol/names.js";
 import { actorName } from "../shared/protocol/names.js";
@@ -35,7 +34,7 @@ import { CONTACT_POINTS, canonicalPoint } from "../shared/contact.js";
 import { inspectSchema, editOps, describeSchema } from "../shared/editschema.js";
 import * as OP from "../shared/protocol/requests.js";
 import { REDACTED } from "../shared/protocol/fold.js";
-import { childrenOf } from "../shared/hierarchy.js";
+import { childrenOf, kindHint } from "../shared/hierarchy.js";
 import { WORLD_ID, worldSchema, worldEditOps, describeWorld } from "../shared/worldentity.js";
 /** Every folded record by id — what the hierarchy maths reads (a child's
  *  parent and its socket, children, in-place parenting). */
@@ -1310,7 +1309,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const schema = inspectSchema(rec, id, { world, box: rec.model ? await ag.modelBox(String(rec.model)) : null });
       if (a.json) return text(JSON.stringify(schema));
       const kids = childrenOf(world, id);
-      const head = `[${ag.handle(id)}] ${formOf(rec) === "model" ? modelWord(rec.model) : formOf(rec)}${rec?.label ? ` "${rec.label}"` : ""} — id ${id} (minted, never renamed: its label is its name)`
+      const head = `[${ag.handle(id)}] ${typeof rec.model === "string" ? modelWord(rec.model) : kindHint(rec)}${rec?.label ? ` "${rec.label}"` : ""} — id ${id} (minted, never renamed: its label is its name)`
         + `\nparent: ${rec.parent ? `${ag.socketName(rec.parent.to)} — its Transform below is LOCAL to ${rec.parent.to}` : "none (a root: its Transform is the world's)"}`
         + `\nchildren: ${kids.length ? kids.join(", ") : "none"}`
         // a copy's parts carry copy-of {from: sha256:<hash>, key} (blueprints.js), not a hash field
@@ -1387,7 +1386,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const line = (e: any) => {
         const c = recordComponents(e);
         const comps = Object.keys(c).filter((k) => k !== "lock" && k !== "label").map((k) => (k === "motion" || k.startsWith("motion:")) ? `${k}(${c[k]?.type ?? "…"})` : k === "socket" ? `socket(${c.socket?.name ?? ""}: ${socketRole(c)})` : k);
-        return `[${ag.handle(e.id)}]${c.label ? ` "${c.label}"` : ""} ${e.kind === "model" ? modelWord(e.model) : e.kind}${comps.length ? ` · ${comps.join(" · ")}` : ""}${c.lock ? " · 🔒" : ""}${c.hidden ? " · hidden" : ""}`;
+        return `[${ag.handle(e.id)}]${c.label ? ` "${c.label}"` : ""} ${[e.model ? modelWord(e.model) : "", ...comps].filter(Boolean).join(" · ") || "empty"}${c.lock ? " · 🔒" : ""}${c.hidden ? " · hidden" : ""}`;
       };
       const hit = (e: any) => !q || [e.id, e.model, e.model ? modelWord(e.model) : "", e?.label ?? "", ...Object.keys(recordComponents(e))].join(" ").toLowerCase().includes(q);
       const L: string[] = [];

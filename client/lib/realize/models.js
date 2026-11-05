@@ -29,7 +29,7 @@ import { loadGLB, retainGLB, releaseGLB, evictIdleProtos, lodRecipeReady, gpuPre
   lodNegotiable, negotiationReady } from '../assets.js';
 import { makeModelQuality, chooseTier } from '../lod_policy.js';
 import { colliders, fitCollider, removeCollider, reindexCollider, refitCollider } from '../colliders.js';
-import { registerCaster, requestLight, updateRequest, releaseLight } from '../lightrig.js';
+import { registerCaster, releaseCaster, requestLight, updateRequest, releaseLight } from '../lightrig.js';
 import { makeLightGizmo } from '../lights.js';
 // ../../../ — not ../../ — so the path resolves to the repo's shared/ on disk
 // (bun tests) and still clamps to /shared/ in the browser (server/routes.ts)
@@ -39,7 +39,7 @@ import { compKeys } from '../../../shared/protocol/view.js';
 import { encName } from '../../../shared/protocol/names.js';
 import { state, onWorldChange } from '../state.js';
 import { schedule, cancelOwner } from '../scheduler.js';
-import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere, formOf, offIn, readMesh, meshKeyOf } from './models_field.js';
+import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere, modelOf, offIn, readMesh, meshKeyOf } from './models_field.js';
 import { prepareMaterial } from '../materials.js';
 import { tracked, reserve, regen, untrack, release } from './lifecycle.js';
 
@@ -126,6 +126,7 @@ function maybePlaceholder(id) {
   const grp = makePlaceholder(id, ent, g);
   entities.set(id, grp);
   scene.add(grp);
+  syncParts(id);     // its mesh and socket ride the stand-in too
   applyHidden(id);   // hidden survives the stand-in box (placeholder / demote)
   syncCompLight(id); // a lamp's light rides the stand-in until the model lands
   bus.emit('entity', { id, kind: 'placeholder' });
@@ -215,7 +216,7 @@ function scheduleLoad(id, ent, gen, tier = null) {
       // by a light, re-spawned with a different lib (its own job follows),
       // demoted-then-reset, or this whole realizer generation was reset
       if (signal.aborted || t?.gen !== gen) return;
-      if (!cur || formOf(cur) !== 'model' || cur.model !== ent.model) {
+      if (!cur || modelOf(cur) !== ent.model) {
         clearReservation(id);
         if (tracked.get(id)?.gen === gen) untrack(id);
         return;
@@ -307,6 +308,7 @@ function realizeModel(id, cur, obj) {
   obj.userData.base = restOf(obj, cur);
   entities.set(id, obj);
   scene.add(obj);
+  syncParts(id);     // its mesh and socket move onto the real thing
   applyHidden(id);   // a thing hidden before its model arrived stays hidden
   bus.emit('entity', { id, kind: 'spawn' });
   // comps that folded while the GLB was in flight (or that rode the
@@ -337,6 +339,7 @@ function shareableLib(id, cur) {
     const cobj = entities.get(cid);
     if (cobj && cobj.parent && cobj.parent !== scene && !cobj.userData.socket) return null;   // a socket is a frame, not geometry
   }
+  if (meshParts.has(id)) return null;   // its own mesh component is geometry the lib's derivations don't hold
   const bag = recordComponents(cur);
   if (bag) {
     if (bag.motion?.part) return null;
@@ -404,50 +407,36 @@ export function drainPromoteTail() {
   }
 }
 
-/** An Empty (PROTOCOL §3.2): a transform with nothing to draw — a pivot, a
- *  group parent, a target. A bare Group, so every consumer of the entities
- *  map (mounts, motion, the hierarchy, selection, emitters) treats it as an
- *  entity; it owns no collider, no lamps, no caster slot and no load. It
- *  announces itself as a 'spawn' because that is the event the comp
- *  evaluators (emitters, pictures) rebuild on. A light component on it
- *  brings its gizmo (syncCompLight), which is how a bare bulb is seen. `kind` is the fold's word for it (formOf). */
-function createHost(id, ent, kind) {
-  reserve(id, { kind });
+/** A thing with no model is a frame (PROTOCOL §3.2): a bare Group, so every consumer of the entities map (mounts, motion,
+ *  the hierarchy, selection, emitters) treats it as an entity. What a frame carries is realized on it component by
+ *  component (syncParts: a mesh, a socket; syncCompLight: a light). Drawing nothing, it is an Empty: no collider, no caster
+ *  slot, a build-mode marker, a light's gizmo. It announces itself as a 'spawn' because that is the event the comp
+ *  evaluators (emitters, pictures) rebuild on. */
+function createHost(id, ent) {
+  reserve(id, { kind: 'host' });
   const g = new THREE.Group();
   g.userData.entityId = id;
-  g.userData.empty = true;
   g.userData.noCamCollide = true;
   g.position.set(...(ent.pos ?? [0, 0, 0]));
   orientObj(g, ent);
   if (ent.scale) applyScale(g, entScale(ent));
   g.userData.base = restOf(g, ent);
-  if (kind === 'socket') g.userData.socket = true;   // a socket: no marker (the seat gizmos draw it), no collider, no box
-  else setEmptyMarker(g, editing);
   entities.set(id, g);
   scene.add(g);
+  syncParts(id);
   applyHidden(id);
   bus.emit('entity', { id, kind: 'spawn' });
   emitCompBag(id);
   // mounts that were waiting on this id — as child or carrier (a model's
-  // promote tail does this; an Empty has no tail, it exists at once)
+  // promote tail does this; a frame has no tail, it exists at once)
   for (const mid of mountsTouching(state.st.entities, id, childrenOf)) execMount(mid);
 }
+/** A model makes a GLB frame (createModel); anything else a bare one. Every other component is realized on the frame. */
+const create = (id, ent) => (modelOf(ent) ? createModel(id, ent) : createHost(id, ent));
 
-const createEmpty = (id, ent) => createHost(id, ent, 'empty');
-/** A light component landing on, or leaving, a standing host changes what the fold calls it — the same Group serves, so
- *  only the word changes (the realized object is the one a planReconcile would otherwise rebuild). A mesh is drawn
- *  (createMesh below), so a mesh component arriving or leaving is a rebuild, never a relabel. */
-function relabelHost(id) {
-  const t = tracked.get(id), ent = state.st.entities[id];
-  if (!t || !ent || t.kind === 'model' || t.kind === 'mesh') return;
-  const kind = formOf(ent);
-  if (kind === 'model' || kind === 'mesh' || kind === t.kind) return;
-  t.kind = kind;
-}
-/** A mesh thing (componentspec `mesh`, R 10-12): a parametric body with no model, drawn as one THREE.Mesh whose single
- *  material is named 'surface' so hesperus/material (and its :surface slot) colours it as it colours a model's. Base-centred
- *  like a measured model (the authority's boxOfM): it stands on its own origin. The same tail a model gets: a collider fitted
- *  in its local frame, a caster slot. A changed shape or size rebuilds the geometry in place. */
+/** A mesh component (componentspec `mesh`, R 10-12): a parametric body drawn as one THREE.Mesh on its thing's frame (beside
+ *  its model, if it has one), whose single material is named 'surface' so hesperus/material (and its :surface slot) colours
+ *  it as it colours a model's. Base-centred like a measured model (the authority's boxOfM): it stands on the frame's origin. */
 function meshGeometry({ shape, size: [x, y, z] }) {
   const r = x / 2;
   switch (shape) {
@@ -463,52 +452,53 @@ function meshMaterial(shape) {
   mat.name = 'surface';
   return mat;
 }
-function createMesh(id, ent) {
-  const m = readMesh(ent?.mesh);
-  reserve(id, { kind: 'mesh', mesh: meshKeyOf(ent) });
-  const obj = new THREE.Mesh(meshGeometry(m), meshMaterial(m.shape));
-  obj.castShadow = true; obj.receiveShadow = true;
-  obj.userData.entityId = id;
-  obj.userData.meshShape = m.shape; obj.userData.meshSize = m.size;
-  prepareMaterial(obj.material, obj);
-  obj.position.set(...(ent.pos ?? [0, 0, 0]));
-  orientObj(obj, ent);
-  if (ent.scale) applyScale(obj, entScale(ent));
-  obj.userData.base = restOf(obj, ent);
-  entities.set(id, obj);
-  scene.add(obj);
-  applyHidden(id);
-  // collision off for bodies has no box, as runPromoteTail and rebuildMesh read it (collisionOwnedElsewhere)
+const meshParts = new Map();   // id -> the THREE.Mesh drawing its mesh component, on whichever frame stands for it now
+function dropMeshPart(id) {
+  const part = meshParts.get(id); if (!part) return;
+  part.parent?.remove(part); part.geometry.dispose();
+  for (const mat of new Set([part.material, ...(part.userData.__matOrig ?? []), ...(part.userData.__matClones ?? [])])) mat?.dispose?.();
+  meshParts.delete(id);
+}
+function setMeshShape(part, m) {
+  part.geometry.dispose(); part.geometry = meshGeometry(m); part.userData.meshSize = m.size;
+  if (part.userData.meshShape !== m.shape) { part.userData.meshShape = m.shape; for (const mat of [part.material, ...(part.userData.__matClones ?? [])]) if (mat) mat.side = m.shape === 'plane' ? THREE.DoubleSide : THREE.FrontSide; }
+}
+/** Realize the frame's own components, each on its own: the mesh (made, reshaped, moved onto a replaced frame, or dropped),
+ *  the socket flag, and whether the frame is an Empty (nothing drawn). Idempotent. */
+function syncParts(id) {
+  const ent = state.st.entities[id], obj = entities.get(id); if (!ent || !obj) return;
+  const m = readMesh(ent.mesh), key = meshKeyOf(ent); let part = meshParts.get(id) ?? null, changed = false;
+  if (!m && part) { dropMeshPart(id); part = null; changed = true; }
+  else if (m && !part) {
+    part = new THREE.Mesh(meshGeometry(m), meshMaterial(m.shape));
+    part.castShadow = part.receiveShadow = true;
+    part.userData = { meshPart: true, meshShape: m.shape, meshSize: m.size, key };
+    prepareMaterial(part.material, part);
+    meshParts.set(id, part); changed = true;
+  } else if (m && part.userData.key !== key) { setMeshShape(part, m); part.userData.key = key; changed = true; }
+  if (part && part.parent !== obj) obj.add(part);
+  if (ent.socket && typeof ent.socket === 'object' && !Array.isArray(ent.socket)) obj.userData.socket = true; else delete obj.userData.socket;
+  obj.userData.empty = tracked.get(id)?.kind === 'host' && !part;
+  syncMarker(id);
+  if (changed) partsChanged(id, obj, ent);
+}
+/** A frame's drawn geometry changed: its collider and caster slot follow (a model's promote tail does both when it lands). */
+function partsChanged(id, obj, ent) {
+  if (isPlaceholder(obj) || obj.userData.tier === 'lod' || promoteTail.has(id)) return;
+  if (obj.userData.empty) { if (colliders.has(id)) removeCollider(id); releaseCaster(id); return; }
+  // collision off for bodies has no box, as runPromoteTail reads it (collisionOwnedElsewhere)
   if (!collisionOwnedElsewhere(ent, obj.userData.mountedTo)) fitCollider(id, obj, { collide: colliderOf(ent), scale: ent.scale || 1, localFrame: true });
   registerCaster(id, obj);
-  bus.emit('entity', { id, kind: 'spawn' });
-  emitCompBag(id);
-  for (const mid of mountsTouching(state.st.entities, id, childrenOf)) execMount(mid);
-}
-function rebuildMesh(id) {
-  const ent = state.st.entities[id]; const obj = entities.get(id); const t = tracked.get(id);
-  const m = readMesh(ent?.mesh); if (!obj || !t || t.kind !== 'mesh' || !m) return;
-  const key = meshKeyOf(ent); if (key === t.mesh) return;
-  obj.geometry.dispose(); obj.geometry = meshGeometry(m); obj.userData.meshSize = m.size;
-  if (obj.userData.meshShape !== m.shape) { obj.userData.meshShape = m.shape; for (const mat of [obj.material, ...(obj.userData.__matClones ?? [])]) if (mat) mat.side = m.shape === 'plane' ? THREE.DoubleSide : THREE.FrontSide; }
-  t.mesh = key;
-  if (!collisionOwnedElsewhere(ent, obj.userData.mountedTo)) fitCollider(id, obj, { collide: colliderOf(ent), scale: ent.scale || 1, localFrame: true });
   bus.emit('entity', { id, kind: 'place' });
 }
 
 /** The Inspector's live preview of a mesh card scrub: the geometry as the field reads now, before release. The fold's
- *  echo (rebuildMesh, keyed) settles it. */
+ *  echo (syncParts, keyed) settles it. */
 export function previewMesh(id, m) {
-  const obj = entities.get(id); const t = tracked.get(id); if (!obj || t?.kind !== 'mesh') return false;
-  const r = readMesh(m); if (!r) return false;
-  obj.geometry.dispose(); obj.geometry = meshGeometry(r); obj.userData.meshSize = r.size; t.mesh = null;   // null: the next fold word (or a pose-revert) rebuilds and refits
+  const part = meshParts.get(id); const r = readMesh(m); if (!part || !r) return false;
+  setMeshShape(part, r); part.userData.key = null;   // null: the next fold word (or a pose-revert) rebuilds and refits
   return true;
 }
-/** A light is an Empty that casts (syncCompLight hangs the cast and the gizmo on it); a mesh is its own drawn thing — each
- *  tracked under its own kind so the planner's identity rule and the residency sweep read the same word the fold does. */
-// A socket (PLAN-sockets-entities) is an Empty that is only ever a frame: attached to its host (or into the host's moving
-// part, at rest: execMount), so an occupant's seat and the cargo on it ride whatever carries the socket through the scene graph.
-const CREATE = { light: (id, ent) => createHost(id, ent, 'light'), mesh: createMesh, empty: createEmpty, model: createModel, socket: (id, ent) => createHost(id, ent, 'socket') };
 
 // An Empty is invisible, so in BUILD MODE it wears a small wireframe marker
 // that a click can pick (build.js walks up from the hit mesh to entityId).
@@ -518,6 +508,8 @@ const CREATE = { light: (id, ent) => createHost(id, ent, 'light'), mesh: createM
 let editing = false;
 let _emGeo = null;
 let _emMat = null;
+/** An Empty that is no socket wears the marker while editing (a socket's seat gizmos draw it). */
+function syncMarker(id) { const g = entities.get(id); if (g && tracked.get(id)?.kind === 'host') setEmptyMarker(g, editing && g.userData.empty === true && !g.userData.socket); }
 function setEmptyMarker(g, on) {
   const cur = g.children.find((c) => c.userData?.emptyMarker);
   if (on && !cur) {
@@ -603,7 +595,7 @@ function applyColliderPref(id) {
   // collision switched off or back on (collider.enabled): the walker's collider goes, or is fitted again (a full-tier thing)
   const ent = state.st.entities[id], obj = entities.get(id);
   if (collisionOwnedElsewhere(ent, obj?.userData?.mountedTo)) { if (colliders.has(id)) removeCollider(id); return; }
-  if (!colliders.has(id) && obj && !isPlaceholder(obj) && obj.userData.tier !== 'lod' && ['model', 'mesh'].includes(tracked.get(id)?.kind)) { fitCollider(id, obj, { collide: colliderOf(ent), scale: ent.scale || 1, localFrame: true }); bus.emit('entity', { id, kind: 'place' }); return; }
+  if (!colliders.has(id) && obj && !isPlaceholder(obj) && obj.userData.tier !== 'lod' && !obj.userData.empty) { fitCollider(id, obj, { collide: colliderOf(ent), scale: ent.scale || 1, localFrame: true }); bus.emit('entity', { id, kind: 'place' }); return; }
   const e = colliders.get(id);
   if (!e) return;
   e.pref = colliderOf(state.st.entities[id]);
@@ -637,7 +629,7 @@ function retire(id) {
   promoteTail.delete(id);         // a pending heavy tail dies with the id
   const obj = entities.get(id);
   if (obj && !isPlaceholder(obj) && obj.userData?.lib) releaseGLB(obj.userData.glbKey ?? obj.userData.lib);
-  if (obj?.userData?.meshShape) { obj.geometry?.dispose?.(); for (const mat of new Set([obj.material, ...(obj.userData.__matOrig ?? []), ...(obj.userData.__matClones ?? [])])) mat?.dispose?.(); }
+  dropMeshPart(id);
   const rode = obj?.userData?.mountedTo;
   // a carrier that leaves the fold with only a stand-in: its cargo steps off that, the same way (one that is only being
   // rebuilt keeps it: the rebuild re-mounts them)
@@ -699,9 +691,8 @@ function onComp(id, type) {
   if (type === 'motion' && data == null) restAtBase(id);
   if (type === 'hidden') applyHidden(id);
   if (type === 'light') syncCompLight(id);
-  if (type === 'light') relabelHost(id);
-  // a mesh's own geometry follows its component in place; a mesh arriving on (or leaving) a host is a rebuild
-  if (type === 'mesh') { if (formOf(state.st.entities[id]) === 'mesh' && tracked.get(id)?.kind === 'mesh') rebuildMesh(id); else reconcileId(id); }
+  // a mesh or a socket arriving, changing or leaving is realized on the standing frame (an Empty's gizmo follows the mesh)
+  if (type === 'mesh' || type === 'socket') { syncParts(id); syncCompLight(id); }
   if (type === 'collider') applyColliderPref(id);
   // a socket that starts (or stops) riding a part re-attaches: into the part's node at rest, or back onto its host
   if (type === 'socket') execMount(id);
@@ -946,7 +937,7 @@ function entDist(ent) {
 /** The audit's three impossibles plus the edit hold — things whose demote
  *  has no clean undo. All are cheap fold-truth predicates. */
 function canDemote(id, ent) {
-  if (!ent || formOf(ent) !== 'model' || ent.parent) return false;   // only a model has a stand-in (a mesh has no bytes to shed); mounted children ride carriers
+  if (!ent || !modelOf(ent) || ent.parent) return false;   // only a model has a stand-in (a mesh has no bytes to shed); mounted children ride carriers
   const obj = entities.get(id);
   if (!obj || isPlaceholder(obj) || editHolds.has(id)) return false;
   if (!libGeom.get(ent.model)?.bbox) return false;    // nothing honest to stand in
@@ -983,6 +974,7 @@ function demote(id) {
   const grp = makePlaceholder(id, ent, libGeom.get(ent.model));
   entities.set(id, grp);
   scene.add(grp);
+  syncParts(id);     // its mesh and socket ride the stand-in
   applyHidden(id);   // hidden survives the stand-in box (placeholder / demote)
   syncCompLight(id); // the lamp's light follows it onto the stand-in
   resStats.demotes++;
@@ -1073,30 +1065,30 @@ function reconcileId(id) {
   const ent = state.st.entities[id];
   const t = tracked.get(id);
   if (!ent || offIn(state.st.entities, id)) { if (t || entities.has(id)) retire(id); return; }
-  const kind = formOf(ent);
-  if (!t) { CREATE[kind](id, ent); return; }
-  if (t.kind !== kind || (kind === 'model' && t.model !== ent.model)) {
+  if (!t) { create(id, ent); return; }
+  if ((t.model ?? null) !== modelOf(ent)) {
     retire(id);
-    CREATE[kind](id, ent);
+    create(id, ent);
     return;
   }
-  if (kind === 'mesh') rebuildMesh(id);
+  syncParts(id);
   refreshModel(id, ent);
-  if (kind !== 'model') { emitCompBag(id); execMount(id); }
+  if (t.kind !== 'model') { emitCompBag(id); execMount(id); }
 }
 
 /** Full idempotent pass — hydration, reconnect. reconcile ∘ reconcile =
  *  reconcile is the contract (§11.4). */
 export function reconcileModels() {
-  const view = new Map([...tracked].map(([id, t]) => [id, { kind: t.kind, model: t.model, mesh: t.mesh }]));
-  const { create, retire: dead } = planReconcile(state.st.entities, view);
+  const view = new Map([...tracked].map(([id, t]) => [id, { model: t.model }]));
+  const { create: plan, retire: dead } = planReconcile(state.st.entities, view);
   for (const id of dead) retire(id);
-  const created = new Set(create.map((c) => c.id));
-  for (const { id, ent } of create) CREATE[formOf(ent)](id, ent);
+  const created = new Set(plan.map((c) => c.id));
+  for (const { id, ent } of plan) create(id, ent);
   // survivors refresh in place — a reconnect may have moved anything
   for (const [id, t] of tracked) {
     if (created.has(id) || !state.st.entities[id]) continue;
     const ent = state.st.entities[id];
+    syncParts(id);
     refreshModel(id, ent);
     emitCompBag(id);
     execMount(id);
@@ -1150,7 +1142,7 @@ export function initModelsRealizer() {
   });
   bus.on('build-mode', (on) => {
     editing = !!on;
-    for (const [id, t] of tracked) if (t.kind !== 'model' && t.kind !== 'socket' && entities.get(id)) setEmptyMarker(entities.get(id), editing);
+    for (const id of tracked.keys()) syncMarker(id);
   });
   // a gesture the authority refused, or one cancelled with Esc (worlds, editwrites.js): the preview snaps back to the fold.
   // A mounted child's pose is its mount's (parent-relative), which execMount skips when the linkage is unchanged.
@@ -1158,7 +1150,7 @@ export function initModelsRealizer() {
     const ent = state.st.entities[id]; const obj = entities.get(id);
     if (!ent || !obj) return;
     // a refused or cancelled mesh scrub previewed a geometry the fold never took (review S2.1): back to the fold's, collider too
-    if (tracked.get(id)?.kind === 'mesh') { tracked.get(id).mesh = null; rebuildMesh(id); }
+    if (meshParts.has(id)) { meshParts.get(id).userData.key = null; syncParts(id); }
     if (obj.userData.mountedTo && ent.parent) {
       if (typeof ent?.socket?.part === 'string') { delete obj.userData.mountRel; execMount(id); bus.emit('entity', { id, kind: 'place' }); return; }   // in a part, at rest
       obj.position.set(...(ent.parent.offset ?? [0, 0, 0]));

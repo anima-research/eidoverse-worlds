@@ -26,9 +26,9 @@ export function near(a, b) {
 const POSE = ["pos", "q", "scale", "scale3"];
 // fields the diff reads itself (the derived ones, view.js DERIVED), or that are stamps rather than state; every other key on
 // a record is a component (model, parent and the rest sit flat, in the protocol's names)
-const OWN = new Set([...POSE, "model", "kind", "yaw", "parent", "born", "actor", "ts", "placer"]);
-// a component only a rebuild can show: the thing becomes another thing when it changes
-const REBUILDS = new Set(["model", "kind", "mesh"]);
+const OWN = new Set([...POSE, "model", "yaw", "parent", "born", "actor", "ts", "placer"]);
+// the one component only a rebuild can show: a changed model is another object (a mesh, a light, a socket change in place)
+const REBUILDS = new Set(["model"]);
 const NOT_WORLD = new Set(["entities", "recentChat", "chatTotal"]);
 const MAPS = new Set(["roles", "bans", "behaviors"]);
 

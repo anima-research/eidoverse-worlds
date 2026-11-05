@@ -11,7 +11,7 @@
 // gone: state is folded once, realizers read it, and every load
 // completion re-reads current state (TEL0S_NOTES §11).
 
-import { bodyOf } from '../../shared/components.js';
+import { bodyOf, KIND_RETIRED } from '../../shared/components.js';
 import { socketsUnder, resolveSeat } from '../../shared/sockbody.js';
 import { THREE, scene, camera, renderer } from './core.js';
 import { report, bus, CONFIG } from './base.js';
@@ -19,7 +19,6 @@ import { report, bus, CONFIG } from './base.js';
 // via world.js"), so this direction closes no cycle.
 import { net, replica } from './net.js';
 import { enc, dec } from '../../shared/protocol/names.js';
-import { formOf } from '../../shared/protocol/kind.js';
 import { loadEidoModule, noiseTexture, loadTrack, loadDone, libLabels } from './assets.js';
 import { prepareObject } from './materials.js';
 import { beginWork } from './loadwork.js';
@@ -58,9 +57,8 @@ export function* bags() {
   const es = replica.st?.entities; if (!es) return;
   for (const k in es) if (k !== '@world') yield [dec(k) ?? k, es[k].c];
 }
-/** What a thing IS as realized and where from, for the panels: {kind, model?} — the fold's word (shared/protocol/kind.js),
- *  the realizer keeps no second copy (entityMeta is gone, C7c). */
-export const metaOf = (id) => { const c = bagOf(id); return c ? { kind: formOf({ c }), ...(typeof c.model === 'string' ? { model: c.model } : {}) } : null; };
+/** A thing's model, for the panels: {kind, model?}, read from the fold (entityMeta is gone, C7c); `kind` is retired (KIND_RETIRED). */
+export const metaOf = (id) => { const c = bagOf(id); return c ? { kind: KIND_RETIRED, ...(typeof c.model === 'string' ? { model: c.model } : {}) } : null; };
 /** The tree's edges as this client's fold indexes them (shared/protocol/replica.js, kept at every ingest): the ids a
  *  carrier holds (id order), a thing's carrier, the ids above it nearest first — ids as the page spells them. One
  *  index for the realizer's carrier checks, the panels and the seats; no map is kept beside the fold (C12b). */

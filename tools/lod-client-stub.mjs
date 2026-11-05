@@ -19,13 +19,13 @@ import * as THREE_ from '../client/node_modules/three/build/three.module.js';
 import { askFor, tierOf } from '../client/lib/lod_policy.js';
 import { state } from '../client/lib/state.js';
 import { recordComponents } from '../shared/protocol/view.js';
-import { formOf } from '../shared/protocol/kind.js';
+import { KIND_RETIRED } from '../shared/components.js';
 import { bus } from '../client/lib/base.js';
 
 // ---- core.js ----------------------------------------------------------------
 // makePlaceholder wants the node material class from three/webgpu; the
 // stand-in's material is never rendered here
-export const THREE = { ...THREE_, MeshBasicNodeMaterial: THREE_.MeshBasicMaterial };
+export const THREE = { ...THREE_, MeshBasicNodeMaterial: THREE_.MeshBasicMaterial, MeshStandardNodeMaterial: THREE_.MeshStandardMaterial };
 export const scene = new THREE_.Scene();
 export const camera = new THREE_.PerspectiveCamera();
 export const renderer = { info: { memory: { total: 0 } }, domElement: null };
@@ -166,7 +166,7 @@ export const comps = new Map();
 const recordOfView = (e) => (e ? { transform: {}, ...recordComponents(e) } : null);   // the view's record is flat (view.js): its model, parent and components as the fold spells them
 export const bagOf = (id) => comps.get(id) ?? recordOfView(state.st.entities?.[id]);
 export function* bags() { const seen = new Set(); for (const [id, c] of comps) { seen.add(id); yield [id, c]; } for (const id of Object.keys(state.st.entities ?? {})) if (!seen.has(id) && id !== '@world') yield [id, bagOf(id)]; }
-export const metaOf = (id) => entityMeta.get(id) ?? (state.st.entities?.[id] ? { kind: formOf(state.st.entities[id]), ...(state.st.entities[id].model ? { model: state.st.entities[id].model } : {}) } : null);
+export const metaOf = (id) => entityMeta.get(id) ?? (state.st.entities?.[id] ? { kind: KIND_RETIRED, ...(state.st.entities[id].model ? { model: state.st.entities[id].model } : {}) } : null);
 /** the fold's edge index (world.js childrenOf/parentIdOf/ancestorsOf): this cone has no replica, so the view's records answer */
 export const childrenOf = (id) => Object.keys(state.st.entities ?? {}).filter((k) => state.st.entities[k]?.parent?.to === id).sort();
 export const parentIdOf = (id) => state.st.entities?.[id]?.parent?.to ?? null;
@@ -179,7 +179,7 @@ export function findPart(root, name) {
   return hit;
 }
 
-// materials.js: the realizer's mesh thing (createMesh) hands its one material to the factory; nothing to prepare here
+// materials.js: the realizer's mesh part (syncParts) hands its one material to the factory; nothing to prepare here
 export const prepareMaterial = () => {};
 
 // governor.js (VR alpha) imports the shadow switch + resolution from lightrig; inert here

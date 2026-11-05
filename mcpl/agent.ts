@@ -4,9 +4,8 @@
 // terrain replicated (Skye's terrain.js eval'd in Bun) so feet agree with
 // every renderer. No GPU here — rendering is the retina's job (see server.ts).
 
-import { bodyOf } from "../shared/components.js";
+import { bodyOf, KIND_RETIRED } from "../shared/components.js";
 import { CLASSES, REACH_NOTE_MS, namedPointClass, pointClass } from "../shared/protocol/consent.js";
-import { formOf } from "../shared/protocol/kind.js";
 import { helloOf } from "../shared/protocol/hello.js";
 import { describeBody, mayLeave, resolveSeat, socketsUnder, vacatedFromMine, vacatedAt } from "../shared/sockbody.js";
 import { grabOf, describeGrab } from "../shared/grab.js";
@@ -231,8 +230,9 @@ function trimMeshCache(key: string, m: CollisionMesh) {
   }
 }
 type Pose = PublicPose;
-type Kind = ReturnType<typeof formOf>;
-type Entity = { id: string; model: string; kind: Kind; pos: number[]; yaw: number; actor: string; scale?: number;
+/** A record carrying a socket component (an attachment point, listed under its host); it may carry anything else too. */
+const isSocketRec = (e: any) => !!e?.socket && typeof e.socket === "object" && !Array.isArray(e.socket);
+type Entity = { id: string; model: string; kind: typeof KIND_RETIRED; pos: number[]; yaw: number; actor: string; scale?: number;
   /** a stretched thing's per-axis scale, and a tilted one's whole rotation (the fold keeps both beside scale and yaw) */
   scale3?: number[]; q?: number[];
   /** the spawn's collider override ("exact" | "box"); the browser's decide() reads it, and so does ours */
@@ -548,7 +548,7 @@ export class WorldAgent {
   /** How a thing reads in a list of candidates: its label, what it is, where it is, its handle. */
   thingLine(id: string): string {
     const e: any = this.entities.get(id); if (!e) return `[${this.handle(id)}]`;
-    const what = e.model ? modelWord(e.model).split("_").slice(0, 5).join(" ") : e.kind === "socket" ? "a socket" : "(empty)";
+    const what = e.model ? modelWord(e.model).split("_").slice(0, 5).join(" ") : isSocketRec(e) ? "a socket" : "(empty)";
     const up = this.mounts.get(id)?.to; const f = this.eff(id, Date.now());
     const where = up && this.entities.has(up) ? `on ${(this.entities.get(up) as any)?.label ?? `[${this.handle(up)}]`}` : f.ok ? `at (${f.pos[0].toFixed(1)}, ${f.pos[1].toFixed(1)}, ${f.pos[2].toFixed(1)})` : "where unknown";
     return `${typeof e.label === "string" && e.label ? `"${e.label}" ` : ""}${what} ${where} [${this.handle(id)}]`;
@@ -1777,7 +1777,7 @@ export class WorldAgent {
       seen.add(id);
       this.entities.set(id, {
         id,
-        model: String((e as any).model ?? ""), kind: formOf(e),
+        model: String((e as any).model ?? ""), kind: KIND_RETIRED,
         pos: (e as any).pos, yaw: (e as any).yaw ?? 0,
         ...((e as any).scale != null ? { scale: (e as any).scale } : {}),
         ...(Array.isArray((e as any).scale3) ? { scale3: (e as any).scale3 } : {}),   // a stretched thing stays stretched
@@ -5570,7 +5570,7 @@ export class WorldAgent {
     }
 
     // a socket is part of its host (a seat, a hook): listed under the host, never as a thing of its own
-    const ents = [...this.entities.values()].filter((e) => e.kind !== "socket");
+    const ents = [...this.entities.values()].filter((e) => !isSocketRec(e));
     L.push(ents.length ? `\nThings (${ents.length}):` : "\nNo placed things yet.");
     // one composition per entity per look, shared by the sort and the line.
     // Resolved things sort by their EFFECTIVE distance; unresolved ones make
@@ -5683,7 +5683,7 @@ export class WorldAgent {
         L.push(`  - [${this.handle(e.id)}] ${short}: ${where} — ${f.why}${aff.length ? ` — ${aff.join(" · ")}` : ""}`);
       }
     }
-    if (ents.some((e) => e?.reactions) || [...this.entities.values()].some((e) => e.kind === "socket")) {
+    if (ents.some((e) => e?.reactions) || [...this.entities.values()].some(isSocketRec)) {
       L.push(`  (use a thing: act {verb: "use", args: {id, action?}} · sit or ride: attach {to: id, socket?} — a thing's \`who\` may limit either, and the reply says; detach gets you off, escape: true if it holds you)`);
     }
 

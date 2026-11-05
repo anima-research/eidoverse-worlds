@@ -36,7 +36,6 @@ import { inspectSchema, editOps, fieldAt } from '../../shared/editschema.js';
 import { namedParts } from './parts.js';
 import { sameRotation } from '../../shared/euler.js';
 import { localOf } from '../../shared/hierarchy.js';
-import { formOf } from '../../shared/protocol/kind.js';
 import { lightOf } from '../../shared/components.js';
 import { WORLD_ID, worldSchema, worldEditOps } from '../../shared/worldentity.js';
 import * as Edits from './editwrites.js';   // slice 3b: component edits are requests
@@ -91,8 +90,8 @@ function eulerHint(id, rec) {
 /** What only a live client knows about a thing: the schema AND the commit path read the same. */
 export function liveFor(id) {
   const obj = entities.get(id); const rec = foldRecord(id);
-  const light = formOf(rec) === 'light';
-  return { casting: lightOf(rec) ? hooks.casting?.(id) : undefined, parts: obj && !light ? namedParts(obj) : undefined, materials: obj && !light ? materialsOf(obj) : undefined,
+  const drawn = obj && !obj.userData?.empty;   // an Empty draws nothing: its only mesh may be a light's gizmo
+  return { casting: lightOf(rec) ? hooks.casting?.(id) : undefined, parts: drawn ? namedParts(obj) : undefined, materials: drawn ? materialsOf(obj) : undefined,
     euler: eulerHint(id, foldRecord(id)),
     // this viewer's rotate order (viewprefs.js): how the channels read, never sent
     rotOrder: rotOrderFor(id),

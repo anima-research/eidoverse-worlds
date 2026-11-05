@@ -20,8 +20,7 @@ import * as OP from './protocol/requests.js';
 import { enc } from './protocol/names.js';
 import { scale3, scaleWire, entScale } from './scale3.js';
 import { qNorm, qMul, qRotate, qFromYaw, qHeading, qConj as conj, composePose } from './rot.js';
-import { socketQ, lightOf } from './components.js';
-import { formOf } from './protocol/kind.js';
+import { socketQ, lightOf, isMeshBag } from './components.js';
 import { socketRole } from './sockbody.js';
 import { r9 } from './protocol/round.js';
 import { modelWord } from './eido.js';
@@ -115,15 +114,15 @@ export function childrenOf(world, id) {
   return Object.keys(world ?? {}).filter((k) => world[k]?.parent?.to === id).sort();
 }
 
-/** What a row says a thing IS, in a word or two: formOf's word, or a model's file stem (+ light for an imported lamp). */
+/** What a row says a thing carries, in a word or two: its model's word, its mesh's shape, light, its socket's role, joined
+ *  by ' + '; a thing with none of them is an empty. Read from its components (a thing may carry any of them at once). */
 export function kindHint(ent) {
   if (!ent) return '?';
-  const kind = formOf(ent);
-  if (kind === 'socket') return socketRole(ent.c ?? ent);   // what it is for: station, snap or attach (never stored)
-  const plus = lightOf(ent) ? ' + light' : '';
-  if (kind === 'mesh') return `${(ent.c ?? ent).mesh.shape}${plus}`;
-  if (kind !== 'model') return kind;
-  return `${modelWord(ent.model).split('_').slice(0, 3).join(' ')}${plus}`;   // an address: the word for it, never its hex (shared/eido.js)
+  const c = ent.c ?? ent;
+  const words = [typeof c.model === 'string' ? modelWord(c.model).split('_').slice(0, 3).join(' ') : null,   // an address: the word for it, never its hex (shared/eido.js)
+    isMeshBag(c.mesh) ? c.mesh.shape : null, lightOf(c) ? 'light' : null,
+    c.socket && typeof c.socket === 'object' && !Array.isArray(c.socket) ? socketRole(c) : null].filter(Boolean);   // what a socket is for: station, snap or attach (never stored)
+  return words.length ? words.join(' + ') : 'empty';
 }
 
 /** { roots, kids } from the fold: a thing whose carrier is absent, or whose
