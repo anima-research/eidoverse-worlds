@@ -8,6 +8,7 @@ import path from "node:path";
 import { TRUST_NAMES } from "../../../server/config.ts";
 import { directoryFor, foldName, idOfBytes, ACCOUNT_SHAPE, type Entry } from "../../../server/directory.ts";
 import { mainKnowledge, type Known } from "../../../server/mainknew.ts";
+import { recogniseOwner } from "../../../server/ownerrecognise.ts";
 import { agentTokens, HN_ISS } from "../../../server/auth.ts";
 import { custodyAt, modLogAt } from "../../../server/custody.ts";
 import { custodyFileIn } from "../../../server/keyfiles.ts";
@@ -153,18 +154,20 @@ function identitySalt(worldsDir: string, sourceSha256: string): Buffer {
 }
 const sha256Hex = (b: Buffer) => crypto.createHash("sha256").update(b).digest("hex");
 
-/** The old world's owners as an upgrade checks them (server/upgrade.ts, through world.ts owner-of): the v1 fold's final owner
+/** The old world's owners as an upgrade checks them (server/ownerrecognise.ts; the server holds them in its access index, world.ts owners-of): the v1 fold's final owner
  *  roles, each through the translation's own identity mapper (mints no identity, writes none; the host's custody key, if none yet, is minted). Accounts stay in this process. */
 export function oldOwners(srcDir: string) {
   const srcBytes = fs.readFileSync(path.join(srcDir, "log.jsonl")), { old } = readOld(srcBytes);
   const st: Any = v1Empty(); for (const e of old) if (e?.verb !== "genesis") foldEntry(st, e);   // as translate folds it
   const worlds = path.dirname(path.resolve(srcDir)), self = path.basename(path.resolve(srcDir));
-  const m = identityMapper(old, directoryFor(worlds), { salt: identitySalt(worlds, sha256Hex(srcBytes)), known: mainKnowledge(worlds, { self }) });
+  const known = mainKnowledge(worlds, { self });
+  const m = identityMapper(old, directoryFor(worlds), { salt: identitySalt(worlds, sha256Hex(srcBytes)), known });
   return Object.entries<Any>(st.roles ?? {}).filter(([k, v]) => k !== "*" && v?.role === "owner").sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([k, v]) => {
     const a = m.accountOf(m.who(k, { sub: (v && typeof v.sub === "string" ? v.sub : undefined) ?? (isAccountName(k) ? k : undefined) }));
     // on a TRUST_NAMES server a name IS its local account: that binding is the name's, so it is recognised by name
     const byName = !!a.from?.startsWith("TRUST_NAMES");
-    return { name: byName ? k : a.name, account: byName ? null : a.account, unbound: byName ? "none" as const : a.unbound }; });
+    const name = byName ? k : a.name;
+    return { name, account: byName ? null : a.account, unbound: byName ? "none" as const : a.unbound, mainSubs: known(name)?.subs ?? [] }; });
 }
 /** May this signed-in account upgrade the old world as its owner (R 10-28)? "bound": main's records bind an owner to exactly this
  *  account; "name": an owner main recorded NO account for has this name, as the directory folds names (foldName; provisional: an alpha risk the owner
@@ -177,21 +180,7 @@ export function ownerRecognised(srcDir: string, account: string | null, name: st
   return recognisedSeen.get(key)!;
 }
 function recognise(srcDir: string, account: string | null, name: string | null) {
-  const owners = oldOwners(srcDir), ownerless = owners.length === 0;
-  if (!account) return { recognised: null, ownerless, why: "not signed in" };
-  if (ownerless) return { recognised: null, ownerless, why: "the world has no owner: an operator upgrades it and becomes its owner" };
-  const bound = owners.find((o) => o.account !== null && o.account === account);
-  if (bound) return { recognised: "bound" as const, owner: bound.name, ownerless };
-  const named = name ? owners.find((o) => o.unbound === "none" && foldName(o.name) === foldName(name)) : undefined;   // the directory's one rule for a name (accountsNamed)
-  if (named) {   // R 10-28: only if main never bound the name to another account, and only one account here holds the name
-    const worlds = path.dirname(path.resolve(srcDir));
-    const main = mainKnowledge(worlds, { self: path.basename(path.resolve(srcDir)) })(named.name)?.subs ?? [];
-    if (main.some((s) => s !== account)) return { recognised: null, ownerless, why: `main's records bind the owner ${named.name} to another account: that account is the owner` };
-    // a local:<name> (TRUST_NAMES) is the name itself, not another person holding it
-    if (directoryFor(worlds).accountsNamed(name!).some((s) => s !== account && !s.startsWith("local:"))) return { recognised: null, ownerless, why: `the name ${name} is held by more than one account on this server: which one is the owner isn't guessed` };
-    return { recognised: "name" as const, owner: named.name, ownerless }; }
-  const several = name ? owners.find((o) => o.unbound === "several" && foldName(o.name) === foldName(name)) : undefined;
-  return { recognised: null, ownerless, why: several ? `main recorded several accounts for the owner ${several.name}: which one is yours isn't guessed` : "main's records don't make this account one of the world's owners" };
+  return recogniseOwner(oldOwners(srcDir), account, name, (n) => directoryFor(path.dirname(path.resolve(srcDir))).accountsNamed(n));
 }
 type OwnerClaim = { by: string; how: "bound" | "name"; account: string };
 /** The upgrader recognised as an owner of the old world (ownerRecognised, its guards): bound to that owner in the translation (R 10-28). */

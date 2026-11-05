@@ -15,6 +15,7 @@ import { WorldLog, isWorldSaved, resetWorld } from "./worldlog.ts";
 import { WorldScripts, type ScriptHost } from "./scripts.ts";
 import type { HnSession } from "./auth.ts";
 import { gateReach } from "./reachgate.ts";
+import { accessTrace } from "./worldindex.ts";
 
 // The settle rule — what a pose looks like TO SOMEONE ELSE — is pinned to
 // server.ts by source-text gates (§15.1: settled-pose-test regexes the file
@@ -257,7 +258,7 @@ let dirs = new Set<string>(), dirsAt = 0;
 export function getWorld(name: string): World {
   if (!/^[a-z0-9_-]{1,64}$/i.test(name)) throw new Error(`bad world name: ${name}`);
   let w = worlds.get(name);
-  if (!w) { w = new World(name); worlds.set(name, w); }
+  if (!w) { accessTrace("load", name); w = new World(name); worlds.set(name, w); }
   return w;
 }
 

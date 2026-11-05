@@ -617,11 +617,8 @@ const ROUTES: Route[] = [
       // read-only: answer for LOADED or on-disk worlds, never create one —
       // and only for worlds this caller may see. A world closed to them reads
       // exactly like one that does not exist (access.ts).
-      if (!/^[a-z0-9_-]{1,64}$/i.test(wname)
-        || (!worlds.has(wname) && !hasWorldLog(wname))) {
-        return j({ error: "no such world" }, 404);
-      }
-      if (!visibleTo(doorFor(wname), httpVisitor(req, srv))) return j({ error: "no such world" }, 404);
+      // (one question, the access index's, for every name: a missing world and a hidden one take the same path)
+      if (!/^[a-z0-9_-]{1,64}$/i.test(wname) || !visibleTo(doorFor(wname), httpVisitor(req, srv))) return j({ error: "no such world" }, 404);
       const w = getWorld(wname);
       // the view record (shared/protocol/view.js viewOf) verbatim — scale3, q, every component — never a projection of it
       const record = (eid: string, e: Record<string, unknown>) => ({ id: eid, ...e, model: e.model ?? null, parent: e.parent ?? null });
@@ -727,7 +724,7 @@ const ROUTES: Route[] = [
       if (!mayRead(req)) return unauthorized();
       const name = url.searchParams.get("world") ?? "commons";
       if (!/^[a-z0-9_-]{1,64}$/i.test(name)) return new Response("bad world name", { status: 400 });
-      if (!worlds.has(name) && !hasWorldLog(name)) return new Response("no such world", { status: 404 });
+      // the access index's answer for every name: missing and hidden alike
       { const door = doorFor(name); if (!door || !visibleTo(door, httpVisitor(req, srv))) return new Response("no such world", { status: 404 }); }
       const t = getWorld(name).state.terrain;
       if (!t) return new Response("this world has no terrain (it is flat)", { status: 404 });

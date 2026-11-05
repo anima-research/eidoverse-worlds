@@ -7,8 +7,8 @@
 //   A3  /worlds and the reads are per caller: an invite-only world is on no stranger's map and /geom answers as for no
 //       world; a listed caller's bearer sees it (access, you); /access answers enter | watch | none, 404 world-unavailable
 //       to whom the world isn't discoverable, and 401 anonymously
-//   F23 no existence oracle (docs/DESIGN-log-vocabulary.md §F F-3): O1–O9 at their block (O7–O9: interrupted and old-format
-//       worlds, Mica 11-05)
+//   F23 no existence oracle (docs/DESIGN-log-vocabulary.md §F F-3): O1–O11 at their block (O7–O9: interrupted and old-format
+//       worlds, Mica 11-05; O10–O11: the same call sequence, not only the same bytes)
 //   A4  closing the door removes whoever is no longer let in, at once (4010); owners stay
 //   A5  a timed grant (roles:<id>.until): its holder is told before it ends (notice), and when it passes the authority
 //       writes its end (expire-roles) and the door removes them (4010)
@@ -155,7 +155,8 @@ ok(close.ok && removed && bob.closed === 4010 && bob.msgs.some((m) => m.type ===
     { seq: 1, ts: 1_700_000_001_000, actor: "Fen", verb: "say", args: { text: "mine" } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
   ok(tool(["found", "halfway", "--owner", "Ann"]).code === 0, "(F23-O7 setup) found halfway, then mark it mid-swap");
   fs.writeFileSync(path.join(W, "halfway", "translation.lock"), "{}");
-  const s3 = await start({ SERVER_OPERATORS: "agent:token:ivy" });
+  const TRACE = path.join(root, "access-trace.jsonl");   // server/worldindex.ts accessTrace: the test seam (F23-O10/O11)
+  const s3 = await start({ SERVER_OPERATORS: "agent:token:ivy", EIDO_TEST_ACCESS_TRACE: TRACE });
   ok(!s3.dead, "(F23-O7 setup) a server with an operator is up", s3.dead ? fs.readFileSync(s3.log + ".err", "utf8").slice(-400) : "");
   const raw = (world, extra = {}) => new Promise((res) => { const ws = new WebSocket(`ws://127.0.0.1:${s3.port}/ws`); const got = [];
     ws.onmessage = (ev) => got.push(String(ev.data)); ws.onclose = (ev) => res([...got, `close ${ev.code} ${ev.reason}`].join("\n").split(world).join("<name>"));
@@ -186,6 +187,26 @@ ok(close.ok && removed && bob.closed === 4010 && bob.msgs.some((m) => m.type ===
   ok(/"code":"old-format"/.test(fOld) && /"owner":"(bound|name)"/.test(fOld) && /"may":true/.test(fOld) && faOld.status === 200 && faOld.body?.state === "old-format"
     && /^close 4005 world-unavailable$/m.test(fHalf) && !/interrupted/.test(fHalf),
     "F23-O9 the old world's recognised owner (Fen, the grant's name) is told it is old-format and may upgrade it (join and /access); an interrupted conversion is said to the operator only", { fOld, fHalf, faOld: faOld.body });
+  // F23-O10/O11 (Mica 11-05, "timing oracle": byte equality is necessary, not sufficient): a structural receipt. The server
+  // traces each access-index lookup, each read of a world's bytes into the index, each owner check and each world load
+  // (EIDO_TEST_ACCESS_TRACE). For an unauthorized asker a hidden old-format world, an interrupted conversion and a hidden
+  // saved world (keep: invite-only) make the call sequence a missing name makes: index lookups only, no world read or
+  // loaded, no owners read; the bytes are O7's. The recognised owner is told from the same lookup (the index's owners).
+  const traced = async (fn) => { fs.writeFileSync(TRACE, ""); await fn();   // each trace line is written before its answer is sent
+    return fs.readFileSync(TRACE, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)); };
+  // the asker's own calls: the index's background sweep ("refresh", every 2 s, whoever asks) is no part of them
+  const seq = (t, world) => t.filter((x) => x.ev !== "refresh").map((x) => `${x.ev}:${x.name === world ? "<name>" : x.name}`).join(" ");
+  const asked = {};
+  // Wren: a stranger to all four whose upgrade-request slots O7 hasn't spent (six per ten minutes, for every name)
+  for (const tok of ["tok-wren", undefined]) for (const world of ["nowhere", "attic", "halfway", "keep"]) {
+    let bytes; const t = await traced(async () => { bytes = await all(world, tok); }); asked[`${tok ?? "guest"} ${world}`] = { seq: seq(t, world), bytes: JSON.stringify(bytes) }; }
+  const want = (tok) => asked[`${tok} nowhere`];
+  const same = (tok) => ["attic", "halfway", "keep"].every((w) => asked[`${tok} ${w}`].seq === want(tok).seq && asked[`${tok} ${w}`].bytes === want(tok).bytes);
+  ok(/^(lookup:<name> ?)+$/.test(want("tok-wren").seq) && same("tok-wren") && same("guest") && !Object.values(asked).some((a) => /read:|owners:|load:/.test(a.seq)),
+    "F23-O10 to a stranger and to a guest, a hidden old-format world, an interrupted conversion and a hidden saved world are a missing name's call sequence (index lookups only: no world read or loaded, no owners read) and its bytes", asked);
+  const fen = seq(await traced(() => raw("attic", { agentToken: "tok-fen" })), "attic"), ivy = seq(await traced(() => raw("attic", { agentToken: "tok-ivy" })), "attic");
+  ok(/^lookup:<name>$/.test(fen) && /^lookup:<name>$/.test(ivy),
+    "F23-O11 the recognised owner (Fen) and the operator (Ivy) are told from the same one lookup: no old log read, no owner CLI (O9 checks what they are told)", { fen, ivy });
   try { s3.proc.kill(); } catch {}
   fs.rmSync(attic, { recursive: true, force: true }); fs.rmSync(path.join(W, "halfway"), { recursive: true, force: true }); }
 // F23-O6 (mutation, run by hand and recorded in the commit): restoring `exists: true` on /access for an undiscoverable world, or

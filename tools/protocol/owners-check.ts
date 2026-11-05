@@ -29,7 +29,7 @@
 //   OU5  (a) main's records bind the owner's name to another account (here on a TRUST_NAMES server): refused by name; that account is recognised
 //   OU6  (b) another account on this server already holds the signed-in name: refused by name
 //   OU7  a name is matched as the directory folds it (foldName), the same rule as OU6's check
-//   OC1  ownerRecognised is computed once per log head in a process; OC2 a refused join's owner check is capped (JOIN_CHECKS)
+//   OC1  ownerRecognised is computed once per log head in a process; OC2 the server answers owners from its access index (no per-request CLI)
 //   CL1  --claim on an ownerless world: the upgrader's account is its owner, the report says so (claim), no warning, the result names them
 //   CL2  …everyone else keeps main's ownerless rights (newcomers and guests build, edit others, generate; never fly)
 //   CL3  …and rollback forgets the claimant's identity with the rest (the backup and undo as before)
@@ -191,12 +191,13 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
   const read0 = fs.readFileSync; let reads = 0; (fs as any).readFileSync = (f: any, ...a: any[]) => { if (path.resolve(String(f)) === logf) reads++; return (read0 as any)(f, ...a); };
   let a: any, b: any, n1 = 0; try { a = ownerRecognised(d, "human:test:x", "Ann"); n1 = reads; b = ownerRecognised(d, "human:test:x", "Ann"); } finally { (fs as any).readFileSync = read0; }
   row("OC1", () => ok(a?.recognised === "name" && same(a, b) && n1 >= 1 && reads === n1, "OC1 an apply asks twice (its report, then the write): the second answer is the first, by the log's head, with no second read and fold", { n1, reads, a }));
-  const t0 = Date.now(), q = Bun.spawnSync(["bun", "-e", `const U = await import("./server/upgrade.ts"); const who = (k) => ({ account: "human:test:j" + k, name: "J" + k });
-    const r = await Promise.all([0, 1, 2, 3, 4].map((k) => U.ownerOf("mews", who(k), { join: true }))); console.log("R " + JSON.stringify(r.map((x) => x === null ? "skipped" : "checked")) + " " + U.JOIN_CHECKS);`],
-    { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(root, "opt"), BACKUPS_DIR: "", TRUST_NAMES: "", SERVER_OPERATORS: "", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, timeout: 600_000 });   // two concurrent CLI children, cache off: a Windows runner overran 120 s (#260 run 41014925239)
-  const got = /^R (\[.*\]) (\d+)$/m.exec(q.stdout.toString());
-  row("OC2", () => ok(got && same(JSON.parse(got[1]), ["checked", "checked", "skipped", "skipped", "skipped"]) && got[2] === "2",
-    "OC2 a burst of refused joins runs at most JOIN_CHECKS owner checks at once (each a CLI read and fold); the rest are skipped (may: false), not queued", { ms: Date.now() - t0, exit: q.exitCode, signal: q.signalCode ?? null, out: q.stdout.toString().slice(-300), err: q.stderr.toString().slice(-300) }));
+  // OC2 (11-05, R kept the owner path; Mica's timing oracle): the server answers who owns an old world from its access index
+  // (server/worldindex.ts, owners read once per change of the world by world.ts owners-of); no request runs a CLI or reads the log.
+  // The index's owners list and the rule are the translation's own: world.ts owners-of gives what oldOwners gives
+  const ix = tagged(tool(root, ["owners-of", "--", "mews"]).out, "owners-json");
+  const U = fs.readFileSync(path.join(ENGINE, "server/upgrade.ts"), "utf8");
+  row("OC2", () => ok(Array.isArray(ix) && ix.length === 1 && ix[0].name === "Ann" && ix[0].unbound === "none" && Array.isArray(ix[0].mainSubs) && !/runCli\(\["owner-of"/.test(U) && !/JOIN_CHECKS/.test(U),
+    "OC2 the server's owner answer reads the access index: world.ts owners-of lists the owners (name, account, how main bound them, main's accounts for the name) and upgrade.ts runs no per-request owner-of", { ix }));
 }
 
 // ================= CL: an ownerless world is claimed by whoever upgrades it (R 10-28) =================

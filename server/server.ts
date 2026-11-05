@@ -31,6 +31,7 @@ import { summarizeGlb } from "./geometry.ts";
 import { World, type Client, worlds, getWorld, wireSettledPose, wireRights, authorityNow } from "./world.ts";
 import { isWorldSaved } from "./worldlog.ts";
 import { bootNotice, noFoldRefusal, interruptedVisitorText } from "./oldworlds.ts";
+import { warmIndex } from "./worldindex.ts";
 import { oldFormatRefused, provenWho } from "./upgrade.ts";
 import { backupsDirProblem } from "./backups.ts";
 import { isNativeSession } from "./native-login.ts";
@@ -304,6 +305,8 @@ try {
 // Old-format worlds are not served, and the operator is TOLD (they were skipped in silence above): one block per world with
 // the translator's command, this WORLDS_DIR filled in (server/oldworlds.ts).
 try { const notice = bootNotice(WORLDS_DIR); if (notice) console.log(notice); } catch (err) { console.error("[boot] old-world notice failed", err); }
+// the access index (worldindex.ts): every world's state, door and (an old one's) owners, read before the first request
+try { await warmIndex((n) => worlds.has(n)); } catch (err) { console.error("[boot] access index failed", err); }
 { const bad = backupsDirProblem(WORLDS_DIR); if (bad) console.log(`[boot] ${bad}. Upgrades of old-format worlds refuse until it is moved.`); }
 
 let nextClientNum = 1;
@@ -512,7 +515,7 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
         else if (t.kind === "old") { ws.send(JSON.stringify({ type: "error", error: t.old.visitor, refused: oldFormatRefused(t.old.kind, t.old.visitor, t.operator, t.owner) })); c.ws.close?.(4005, "old-format world"); }
         else if (t.kind === "unavailable") unavailableHere();
         return null; };
-      const told = toldOf(wname, { account: c.account ?? null, actorId: c.account ? dir.idOfSub(c.account) : null, trustedRenderer: !!c.trustedRenderer }, provenWho(c, msg), { join: true });
+      const told = toldOf(wname, { account: c.account ?? null, actorId: c.account ? dir.idOfSub(c.account) : null, trustedRenderer: !!c.trustedRenderer }, provenWho(c, msg));
       if (told instanceof Promise) { void told.then(answer); return null; }
       if (told.kind !== "door") return answer(told); }
     const w = getWorld(wname);

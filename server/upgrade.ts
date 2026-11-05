@@ -3,8 +3,8 @@
 // world-upgrade {id, world, approved} → {type, id, ok, world, backup, report, rollback, people, warning?}: the CLI's in-place translation, bound to
 // that hash (a verified backup first: server/backups.ts). Both run tools/protocol/world.ts itself: the translation has one code path.
 // A server operator (SERVER_OPERATORS) or the world's owner, by a proven account (R 10-28): an owner main's records bind to
-// that account ("bound"), or one main recorded no account for whose name the account's is ("name", provisional): world.ts
-// owner-of. An ownerless world's upgrader becomes its owner (--claim); a recognised owner is bound to them (report.claim). The translation binds an owner to the account main
+// that account ("bound"), or one main recorded no account for whose name the account's is ("name", provisional):
+// the access index (worldindex.ts ownerIn, server/ownerrecognise.ts). An ownerless world's upgrader becomes its owner (--claim); a recognised owner is bound to them (report.claim). The translation binds an owner to the account main
 // recorded for them; when no owner is bound, both replies carry `warning` and the server log says so (docs/TRANSLATING-OLD-WORLDS.md).
 import fs from "node:fs";
 import path from "node:path";
@@ -47,23 +47,6 @@ async function runCli(args: string[], extra: Record<string, string> = {}) {
 const tagged = (out: string, tag: string): Any => { const l = out.split("\n").find((x) => x.startsWith(`${tag} `)); try { return l ? JSON.parse(l.slice(tag.length + 1)) : null; } catch { return null; } };
 
 type Owner = { recognised: "bound" | "name" | null; owner?: string; ownerless: boolean; why?: string };
-const OWNER_MS = 30_000, ownerSeen = new Map<string, { at: number; p: Promise<Owner | null> }>();
-/** At most this many owner checks (CLI runs) at once for joins (review full-260 L2): a burst of refused joins can't fork the server. */
-export const JOIN_CHECKS = 2; let joinChecks = 0;
-/** world.ts owner-of: is this proven account an owner of the old world? Cached briefly per (world, account, name, log); null when
- *  the check didn't run. `join`: a refused join's check, skipped (null) while JOIN_CHECKS are already running. */
-export function ownerOf(world: string, who: { account: string; name: string } | null, { join = false } = {}): Promise<Owner | null> {
-  if (!who) return Promise.resolve(null);
-  let st: { size: number; mtimeMs: number }; try { st = fs.statSync(path.join(WORLDS_DIR, world, "log.jsonl")); } catch { return Promise.resolve(null); }
-  const key = JSON.stringify([world, who.account, who.name, st.size, st.mtimeMs]), now = Date.now(), hit = ownerSeen.get(key);
-  if (hit && now - hit.at < OWNER_MS) return hit.p;
-  if (join && joinChecks >= JOIN_CHECKS) return Promise.resolve(null);
-  for (const [k, v] of ownerSeen) if (now - v.at >= OWNER_MS) ownerSeen.delete(k);
-  if (join) joinChecks++;
-  const p = runCli(["owner-of", "--", world], { EIDO_UPGRADER_ACCOUNT: who.account, EIDO_UPGRADER_NAME: who.name }).then((r) => tagged(r.out, "owner-json") as Owner | null).catch(() => null)
-    .finally(() => { if (join) joinChecks--; });
-  ownerSeen.set(key, { at: now, p }); return p;
-}
 
 // one run per world at a time; at most RATE_N requests per account per RATE_MS (each runs the translator)
 const RATE_N = 6, RATE_MS = 10 * 60_000;

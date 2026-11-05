@@ -20,8 +20,6 @@
 // spectator` for ONE person (a role is membership here, never a state: a world that admits only people listed lets
 // everyone else watch with access.watch, or no one).
 
-import { statSync } from "node:fs";
-import { join } from "node:path";
 import { WORLDS_DIR, JOIN_TOKEN } from "./config.ts";
 import { serverBans, findBan, doorLocked, LOCKED_WHY } from "./moderation.ts";
 import { isOperator } from "./operators.ts";
@@ -29,16 +27,12 @@ import { sessionOfRequest, accountOf } from "./auth.ts";
 import { directoryFor } from "./directory.ts";
 import { accountAgeRefusal } from "./accountage.ts";
 import { effectiveOf, isOwner, MOD_POWERS } from "../shared/protocol/roles.js";
-import { opsOf } from "../shared/protocol/fold.js";
 import { isBanned } from "../shared/protocol/authority.js";
-import { modLogAt } from "./custody.ts";
-import { readLogBytes } from "./durable.ts";
 import { addressOf } from "./peer.ts";
 import { entryOf, doorOf as doorOfWc, listedIn, timedGrants, leftWords, ACCESS_WARN_MS } from "../shared/protocol/access.js";
-import { worldDirNamed, type World, type Client } from "./world.ts";
-import { isWorldDir, isSwapUnfinished } from "./livehost.ts";
-import { oldWorldAt, type OldWorld } from "./oldworlds.ts";
-import { ownerOf } from "./upgrade.ts";
+import { type World, type Client } from "./world.ts";
+import { type OldWorld } from "./oldworlds.ts";
+import { lookup, ownerIn, type IndexEntry } from "./worldindex.ts";
 
 /** Close code for "this world is not open to you": refused at the door, or removed because access ended or changed.
  *  Clients don't redial it (4006 is moderation's, 4005 a bad link). */
@@ -71,49 +65,20 @@ export function doorOf(w: World): string { return doorOfWc(wcOfWorld(w)); }
 
 // ---- a world's door, without loading the world ----------------------------------------------------------------------
 // Listing and HTTP reads must answer "may this caller see world X?" for worlds nobody is in. Loading them would do it,
-// but a loaded world is never unloaded, so a /worlds call would pull every world on disk into memory for good. Instead:
-// the change entries in world.jsonl that touch @world's access, default-role, role-defs and roles:*, folded set/delete in order,
-// cached until the file changes. (Only those keys: nothing else about the world is read.) Its moderator log
-// (world.mod.jsonl, never in the world log) comes with it: a ban or kick there must close the door before the world is
-// loaded, as after (Antra's review of f91840e5 P1: a banned member's first /geom after a restart answered 200).
-const doorCache = new Map<string, { key: string; wc: Record<string, any>; mod: any[] }>();
-const DOOR_LINE = /"id"\s*:\s*"@world"/;
-const isDoorComp = (k: unknown) => typeof k === "string" && (k === "access" || k === "default-role" || k === "role-defs" || k.startsWith("roles:"));   // role-defs: a custom role's powers (the moderation bypass)
+// but a loaded world is never unloaded, so a /worlds call would pull every world on disk into memory for good. Instead the
+// door is read off the access index (worldindex.ts: @world's door components and the moderator log, read from disk when
+// they change, never because of who asks).
 /** Set by server.ts: the loaded worlds (a loaded world's own fold is the truth). */
 let loadedWorlds: () => Map<string, World> = () => new Map();
 export function setLoadedWorlds(fn: () => Map<string, World>) { loadedWorlds = fn; }
+const doorOfEntry = (name: string, e: IndexEntry): Door | null => (e.kind === "saved" && e.door ? { name, wc: e.door.wc, label: doorOfWc(e.door.wc), mod: e.door.mod } : null);
 
-/** A world's door by name: the loaded world's, else read from disk; null when there is no such world. */
+/** A world's door by name: the loaded world's, else the index's; null when there is no such saved world (missing, mid-swap,
+ *  an old format, or a moderator log that can't be read). Every name makes the same index lookup. */
 export function doorFor(name: string): Door | null {
-  const live = loadedWorlds().get(name);
-  if (live) return doorOfWorld(live);
-  if (!/^[a-z0-9_-]{1,64}$/i.test(name) || !worldDirNamed(name)) return null;   // its own case only, as the join door (world.ts)
-  if (!savedWorld(name)) return null;   // mid-swap or an old format: no door to read (its bans may not be in); toldOf says the rest
-  const file = join(WORLDS_DIR, name, "world.jsonl");
-  let st; try { st = statSync(file); } catch { return null; }
-  const modFile = join(WORLDS_DIR, name, "world.mod.jsonl");
-  let ms: { size: number; mtimeMs: number } | null = null; try { ms = statSync(modFile); } catch { ms = null; }
-  const key = `${st.size}:${st.mtimeMs}:${ms ? `${ms.size}:${ms.mtimeMs}` : "-"}`;
-  const hit = doorCache.get(name);
-  if (hit?.key === key) return { name, wc: hit.wc, label: doorOfWc(hit.wc), mod: hit.mod };
-  // unreadable moderator log: no door (as an unreadable world log), never a door that forgets its bans
-  let mod: any[]; try { mod = modLogAt(modFile).mod; } catch { return null; }
-  const wc: Record<string, any> = {};
-  try {
-    for (const line of readLogBytes(file, { cut: false }).toString("utf8").split("\n")) {   // a torn last line is not the log's yet (#260 bot 7)
-      if (!line || !DOOR_LINE.test(line)) continue;
-      let e: any; try { e = JSON.parse(line); } catch { continue; }
-      if (e?.kind !== "change") continue;
-      let ops: any[] = []; try { ops = opsOf(e); } catch { continue; }   // a batch's ops, or a single set/delete's own body
-      for (const o of ops) {
-        if (o?.id !== "@world" || !isDoorComp(o.comp)) continue;
-        if (o.op === "set" && o.value && typeof o.value === "object") wc[o.comp] = o.value;
-        else if (o.op === "delete") delete wc[o.comp];
-      }
-    }
-  } catch { return null; }
-  doorCache.set(name, { key, wc, mod });
-  return { name, wc, label: doorOfWc(wc), mod };
+  if (!/^[a-z0-9_-]{1,64}$/i.test(name)) return null;
+  const live = loadedWorlds().get(name), e = lookup(name, { loaded: !!live });
+  return live ? doorOfWorld(live) : doorOfEntry(name, e);
 }
 
 /** Who goes past this door whatever it says: operators, and owners and holders of a moderation power (what @world.access
@@ -167,27 +132,30 @@ export function discoverable(door: Door | null, who: Who | null, now = Date.now(
   const { bypass } = bypassOf(door.wc, account, actorId, now);
   return entryOf(door.wc, { actor: actorId ?? undefined, anon: !account, bypass, trustedRenderer: !!who?.trustedRenderer }, door.name, now).may !== "none";
 }
-// ---- what a name is to someone (§F F-3: no existence oracle; Mica 11-05, #23 ruling 4) ----
-const savedWorld = (name: string) => { const d = join(WORLDS_DIR, name); return !isSwapUnfinished(d) && isWorldDir(d); };
+// ---- what a name is to someone (§F F-3: no existence oracle; Mica 11-05, #23 rulings 4 and "timing oracle") ----
 /** What `who` may be told about `name`: `door` (a saved world discoverable to them), `interrupted` (an in-place conversion
- *  stopped mid-swap) or `old` (saved in an older format), else `unavailable`, what a missing world gets. The two diagnoses
- *  go only to the operator and, for an old world, its recognised owner (upgrade.ts ownerOf); `proven` is the account a
- *  credential proved (upgrade.ts provenWho), never a typed name. A Promise only while an old world's owner is read. */
+ *  stopped mid-swap) or `old` (saved in an older format), else `unavailable`, what a missing world gets. Decided from the
+ *  access index (worldindex.ts lookup: the same calls for every name, no world opened): the two diagnoses go only to the
+ *  operator and, for an old world, its recognised owner (worldindex.ts ownerIn, from the owners the entry holds: no log
+ *  read, no CLI). Anyone else gets `unavailable` from the same lookup, as a missing name does. `proven` is the account a
+ *  credential proved (upgrade.ts provenWho), never a typed name. A Promise only while an old world's owners are still being
+ *  read (it appeared or changed a moment ago). */
 export type Told = { kind: "door"; door: Door } | { kind: "unavailable" } | { kind: "interrupted" }
   | { kind: "old"; old: OldWorld; operator: boolean; owner: "bound" | "name" | null; ownerName?: string };
-export function toldOf(name: string, who: Who | null, proven: { account: string; name: string } | null = null, { join: joining = false } = {}): Told | Promise<Told> {
+export function toldOf(name: string, who: Who | null, proven: { account: string; name: string } | null = null): Told | Promise<Told> {
   const no: Told = { kind: "unavailable" };
   if (!/^[a-z0-9_-]{1,64}$/i.test(name)) return no;
-  if (!loadedWorlds().has(name)) {
-    if (!worldDirNamed(name)) return no;
-    const d = join(WORLDS_DIR, name), operator = isOperator(proven?.account ?? null);
-    if (isSwapUnfinished(d)) return operator ? { kind: "interrupted" } : no;
-    if (!isWorldDir(d)) { const old = oldWorldAt(WORLDS_DIR, name); if (!old) return no;
-      if (operator) return { kind: "old", old, operator, owner: null };
-      if (old.kind !== "translatable" || !proven) return no;
-      return ownerOf(name, proven, { join: joining }).then((o) => (o?.recognised ? { kind: "old", old, operator, owner: o.recognised, ownerName: o.owner } as Told : no), () => no); } }
-  const door = doorFor(name);
-  return door && discoverable(door, who) ? { kind: "door", door } : no;
+  const live = loadedWorlds().get(name), e = lookup(name, { loaded: !!live });   // the one index read, whatever the name is
+  const operator = isOperator(proven?.account ?? null);
+  const door = live ? doorOfWorld(live) : doorOfEntry(name, e);
+  if (door) return discoverable(door, who) ? { kind: "door", door } : no;
+  if (e.kind === "interrupted") return operator ? { kind: "interrupted" } : no;
+  if (e.kind !== "old") return no;
+  if (operator) return { kind: "old", old: e.old, operator, owner: null };
+  const old = e.old;
+  const asOwner = (): Told => { const o = ownerIn(e, proven); return o?.recognised ? { kind: "old", old, operator, owner: o.recognised, ownerName: o.owner } : no; };
+  // its owners still being read (the world appeared or changed a moment ago): a signed-in asker waits for them
+  return e.ready && proven ? e.ready.then(asOwner, () => no) : asOwner();
 }
 /** May `who` at least watch this world (it is on their map, its reads answer)? */
 export function visibleTo(door: Door | null, who: Who | null, now = Date.now()): boolean {

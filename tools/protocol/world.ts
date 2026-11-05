@@ -33,7 +33,7 @@ import { WORLDS_DIR } from "../../server/config.ts";
 import { directoryFor } from "../../server/directory.ts";
 import { foundWorld, isWorldSaved } from "../../server/worldlog.ts";
 import { syncDir, syncTree } from "../../server/durable.ts";
-import { translateV1World, reportV1World, warmHulls, approvalProblem, makeApproval, ownerWarning, ownerRecognised, ownerlessRefusal, NO_FOUNDER, type Approval } from "./import-v1/world.ts";
+import { translateV1World, reportV1World, warmHulls, approvalProblem, makeApproval, ownerWarning, ownerRecognised, oldOwners, ownerlessRefusal, NO_FOUNDER, type Approval } from "./import-v1/world.ts";
 import { contentAddressOf } from "../../server/eidoindex.ts";
 import { custodyAt } from "../../server/custody.ts";
 import { custodyFileIn } from "../../server/keyfiles.ts";
@@ -481,6 +481,13 @@ if (cmd === "found") {
   const D = path.join(WORLDS_DIR, name);
   if (fs.lstatSync(D, { throwIfNoEntry: false })?.isSymbolicLink() || !fs.existsSync(path.join(D, "log.jsonl"))) die(`"${name}" holds no old log here`);
   console.log(`owner-json ${JSON.stringify(ownerRecognised(D, process.env.EIDO_UPGRADER_ACCOUNT || null, process.env.EIDO_UPGRADER_NAME || null))}`);
+} else if (cmd === "owners-of") {
+  // server/worldindex.ts: the old world's owners as the access index holds them (server/ownerrecognise.ts reads them), so no
+  // request reads the old log
+  const name = AFTER_DD[0] ?? rest[0]; if (!name || !NAME.test(name)) die("usage: owners-of [--] <old world>");
+  const D = path.join(WORLDS_DIR, name);
+  if (fs.lstatSync(D, { throwIfNoEntry: false })?.isSymbolicLink() || !fs.existsSync(path.join(D, "log.jsonl"))) die(`"${name}" holds no old log here`);
+  console.log(`owners-json ${JSON.stringify(oldOwners(D))}`);
 } else if (cmd === "rollback") {
   const name = rest[0]; if (!name || !NAME.test(name)) die("usage: rollback <world> [--discard-changes]");
   rollback(name); process.exit(0);   // synchronous and done: exit now (windows-latest once sat 45 s after the last line, CI 10-29)
