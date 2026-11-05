@@ -26,8 +26,8 @@ const ok = (cond: any, what: string, detail?: any) => { if (cond) pass++; else {
 // every module the sim imports, from its two entries (the engine adapter and the layer beside the fold)
 const ENTRIES = ["shared/sim.js", "shared/protocol/simlayer.js"];
 const CLOSURE = [
-  "shared/eidosim.js", "shared/mover.js", "shared/protocol/fold.js", "shared/protocol/hash.js", "shared/protocol/labmodels.js",
-  "shared/protocol/round.js", "shared/protocol/shapes.js", "shared/protocol/simlayer.js", "shared/rot.js", "shared/scale3.js",
+  "shared/eidosim.js", "shared/mover.js", "shared/protocol/features.js", "shared/protocol/fold.js", "shared/protocol/hash.js", "shared/protocol/labmodels.js",
+  "shared/protocol/provenance.js", "shared/protocol/round.js", "shared/protocol/shapes.js", "shared/protocol/simlayer.js", "shared/rot.js", "shared/scale3.js",
   "shared/sha256.js", "shared/sim.js", "shared/simmath.js", "shared/terrainmath.js", "shared/terrainshape.js",
 ];
 const OUTSIDE = /export function set\w*(?:Loader|Fetcher|Source)\b|\bfetch\s*\(|readFileSync|readFile\s*\(|XMLHttpRequest|localStorage|indexedDB|\bimport\s*\(/;

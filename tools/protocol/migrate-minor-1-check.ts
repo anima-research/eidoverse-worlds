@@ -7,7 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { ENGINE, scratch } from "./common.ts";
-import { readLog, jcs, worldIdOf, fold } from "../../shared/protocol/fold.js";
+import { readLog, jcs, worldIdOf, fold, digest } from "../../shared/protocol/fold.js";
 import { sha256, sha256Bytes, hexBytes } from "../../shared/protocol/hash.js";
 import { TABLE } from "../../shared/protocol/vocab-minor-1.js";
 import { custodyAt } from "../../server/custody.ts";
@@ -129,6 +129,10 @@ ok("F17-5 the new log reads in the new spellings: request/args, argNames, op/cas
 ok("F17-6 the redacted world's digests differ by the marker alone (digestDelta: redaction-marker); a world with no redaction says none", ra.digestDelta === "redaction-marker" && ra.oldStateDigest !== ra.newStateDigest && pb.receipt.digestDelta === "none" && pb.receipt.oldStateDigest === pb.receipt.newStateDigest);
 ok("F17-7 heads and sigs: every line after genesis carries the new head and a sequencer signature that verifies against the new world id", newA.slice(1).every((e, i) => e.head === pa.newHeads[i + 1] && M.verifies(SEQ.pub, `eidoverse-head:${pa.newWorldId}:${i + 1}:${e.head}`, e.sig)));
 
+{ const e = M.renameEntry({ world: "sha256:" + "0".repeat(64), kind: "act", actor: "script:s", verb: "script", ts: 1, body: { script: "x", head: 4, seed: 1, salt: "UUPZ_XwQSbZtpmdmt87bSQ" } }, 5);
+  ok("F17-9 a script request's body position `head` is `seq`, as the live writer (scriptrun.js) and the auditor (scriptaudit.js) spell it", e.kind === "request" && e.body.seq === 4 && !("head" in e.body) && Object.keys(e.body).join() === "script,seq,seed,salt", e); }
+const liveDigest = (p) => { const st = fold(p.entries); return st.status === "ok" ? digest(st) : st.status; };
+ok("F17-8 the live minor-1 reader folds every migrated log to its receipt's newStateDigest", [pa, pb, pc, pr].every((p) => liveDigest(p) === p.receipt.newStateDigest), [pa, pb, pc, pr].map(liveDigest));
 // F13 determinism
 const run2 = await run([A, B, C, R]);
 const same = (x, y) => Buffer.from(x.bytes).equals(Buffer.from(y.bytes));
@@ -148,6 +152,7 @@ ok("F15-1 the child's parent is rewritten from the parent's receipt: world = par
 ok("F15-2 the founding `from` is rewritten through the same map and row (fork: at from.seq; reset: the predecessor's last head)", newB[1].body.args.from.world === pa.newWorldId && newB[1].body.args.from.head === pa.newHeads[4] && newB[1].body.args.from.seq === 4 && pr.entries[1].body.args.from.world === pa.newWorldId && pr.entries[1].body.args.from.head === pa.newHeads.at(-1));
 { const rc = recompute(fs.readFileSync(path.join(B.dir, M.LOG)), { ...pb.receipt, _parent: newB[0].body.parent, _from: { world: pa.newWorldId, head: pa.newHeads[4] } });
   ok("F15-3 a third party, holding the parent's receipt, recomputes the child's new id and heads", rc.newWorldId === pb.newWorldId && rc.newHeads.join() === pb.newHeads.join()); }
+{ const r = await run([R]); ok("F15-9 a reset successor whose predecessor is in neither the run nor a map is refused the same way (strict: its founding `from` is unmapped); nothing written", r.refused.get("r")?.code === "parent-unmapped" && /founding 'from'/.test(r.refused.get("r").message) && r.done.size === 0, r.refused.get("r")?.message); }
 ok("F15-4 worldmap.json holds every old → new pair of the run", (() => { const m = JSON.parse(fs.readFileSync(path.join(OUT1, M.WORLDMAP), "utf8")); return [pa, pb, pc, pr].every((p) => m[p.oldWorldId] === p.newWorldId) && Object.keys(m).length === 4; })());
 const bx = snapshot(X.dir); const runX = await run([X]);
 ok("F15-5 a child whose parent is absent from the run and from any map is refused, loud, naming the child, the parent id and the seq; nothing written", runX.refused.get("x")?.code === "parent-unmapped" && /x:/.test(runX.refused.get("x").message) && runX.refused.get("x").message.includes("sha256:" + "e".repeat(64)) && /seq 3/.test(runX.refused.get("x").message) && runX.done.size === 0 && untouched(X, bx), runX.refused.get("x")?.message);
@@ -191,9 +196,9 @@ ok("F16-2 --dry-run yields the receipt message to sign (ownerAttested names the 
 { const r = await run([K]); ok("K-1 a stored head that is not the chain's is refused: a broken chain is not migrated", r.refused.get("k")?.code === "chain-broken", r.refused.get("k")?.message); }
 
 // F20: the minor-0 reader over the new log
-{ const st = fold(newA);
-  // DOC GAP (reported): D1 expects `unknown-version`; the base fold checks the envelope before the minor, so a genesis without
-  // `verb` (D3) is `no-genesis` → `no-world`. Either way: no world, nothing folded, loud at seq 0. Pinned as observed.
+{ const { fold } = await M.oldFold();   // the minor-0 reader is the kernel snapshot (D1: the live fold knows minor 1 only)
+  const st = fold(newA);
+  // the base fold checks the envelope before the minor, so a genesis without `verb` (D3) is no-genesis → no-world (doc F20, D1)
   ok("F20-1 the minor-0 reader (the base fold) refuses the new log before folding anything: entities null, status no-world (not unknown-version: the envelope check meets the dropped genesis verb first)", st.status === "no-world" && st.entities === null && st.diagnostics.some(([s, c]) => s === 0 && c === "no-genesis"), { status: st.status, d: st.diagnostics.slice(0, 3) });
   const back = JSON.parse(JSON.stringify(newA)); back[0].body.minor = 0; back[0].verb = "genesis"; delete back[0].body.rewindWindow; delete back[0].body.provenance; const st0 = fold(back);
   ok("F20-M the genesis is the gate: with minor 0, the verb and the old genesis fields put back, the old reader folds a world (the renamed lines are per-entry malformed, status ok)", st0.status === "ok" && st0.entities !== null, { status: st0.status, d: st0.diagnostics.slice(0, 2) });
@@ -226,6 +231,12 @@ const mrun = (m, inputs, o = {}) => m.planRun(inputs, { custody: CUSTODY, ...o }
   ok("F15-R4 without the once-only guard a migrated child is re-id'd by a later run (row F15-7 red)", r && (r.done.has("b") || r.refused.get("b")?.code !== "already-migrated"), r?.refused.get("b")?.message); }
 { const m = await mutant('if (typeof old[i].head === "string" && old[i].head !== oldHeads[i]) refuse("chain-broken"', 'if (false) refuse("chain-broken"'); const r = m && await mrun(m, [K]);
   ok("K-R without the chain check a broken chain migrates (row K-1 red)", r && r.done.has("k")); }
+const MARK = 'view[id][c] = { [VIEW_MARKER.purged]: true };';
+{ const m = await mutant(MARK, 'view[id][c] = { purged: true };'); const r = m && await mrun(m, [A]);
+  ok("F17-R1 a view renamed without the marker is refused by the live reader's digest check (new-reader)", r && r.refused.get("a")?.code === "new-reader", r?.refused.get("a")?.message); }
+{ const m = await mutant('if (nst.status !== "ok" || digest(nst) !== newStateDigest) refuse("new-reader"', 'if (false) refuse("new-reader"'); const text = m && fs.readFileSync(path.join(D, `mutant-${mi - 1}.ts`), "utf8").replace(MARK, 'view[id][c] = { purged: true };');
+  const f = path.join(D, `mutant-${mi++}.ts`); fs.writeFileSync(f, text); const mm = await import(f); const r = await mrun(mm, [A]);
+  ok("F17-R2 with the check gone too, the receipt's newStateDigest is not what the live reader folds (row F17-8 red)", r.done.has("a") && liveDigest(r.done.get("a")) !== r.done.get("a").receipt.newStateDigest); }
 const PHYS = 'if (kind === "physics") return renameKeys(b, { ...(e.verb === "checkpoint" ? BODY.physics.checkpoint : {}), commit: BODY.physics.commit });';
 { const m = await mutant(PHYS, 'if (kind === "physics") { const { salt: _s, ...r } = renameKeys(b, { commit: BODY.physics.commit }); return r; }'); const r = m && await mrun(m, [A]);
   ok("F13-R1 a rename that drops a salt is refused by the tool's own determinism guard", r && r.refused.get("a")?.code === "determinism" && /salt/.test(r.refused.get("a").message), r?.refused.get("a")?.message); }

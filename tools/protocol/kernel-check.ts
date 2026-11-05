@@ -55,10 +55,11 @@ async function runVectors(dir: string) {
 /** The old reader, from git, into the vectors dir (old-fold.js importing ./old-hash.js). */
 function snapshotOldReader(dir: string, base: string) {
   const d = path.join(T, VECTORS, dir); fs.mkdirSync(d, { recursive: true });
-  // the reader and its two leaves (fold → hash → sha256), their imports rewritten to the snapshot's own names
-  for (const [src, dst] of [["shared/protocol/fold.js", "old-fold.js"], ["shared/protocol/hash.js", "old-hash.js"], ["shared/sha256.js", "old-sha256.js"]]) {
-    const r = spawnSync("git", ["-C", T, "show", `${base}:${src}`], { encoding: "utf8" }); if (r.status !== 0) throw new Error(`git show ${base}:${src}: ${r.stderr.trim()}`);
-    fs.writeFileSync(path.join(d, dst), r.stdout.replace('from "./hash.js"', 'from "./old-hash.js"').replace("from '../sha256.js'", "from './old-sha256.js'")); }
+  // the reader and its leaves (fold → hash → sha256, fold → features, provenance), their imports rewritten to the snapshot's own names
+  const leaves = [["shared/protocol/fold.js", "old-fold.js"], ["shared/protocol/hash.js", "old-hash.js"], ["shared/sha256.js", "old-sha256.js"], ["shared/protocol/features.js", "old-features.js"], ["shared/protocol/provenance.js", "old-provenance.js"]];
+  for (const [src, dst] of leaves) {
+    const r = spawnSync("git", ["-C", T, "show", `${base}:${src}`], { encoding: "utf8" }); if (r.status !== 0) { if (dst === "old-features.js" || dst === "old-provenance.js") continue; throw new Error(`git show ${base}:${src}: ${r.stderr.trim()}`); }
+    fs.writeFileSync(path.join(d, dst), r.stdout.replace('from "./hash.js"', 'from "./old-hash.js"').replace("from '../sha256.js'", "from './old-sha256.js'").replace('from "./features.js"', 'from "./old-features.js"').replace('from "./provenance.js"', 'from "./old-provenance.js"')); }
 }
 
 /** A scope trim (recut C11, C11b): what leaves the kernel. A `grammar` leaving is accounted key by key: HELD when

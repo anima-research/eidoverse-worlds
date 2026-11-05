@@ -72,7 +72,7 @@ try { clientLogStore = new ClientLogStore(CLIENTLOG_DIR); } catch (e) { console.
 registerSystem({ name: "clientlog-retire", everyMs: 3_600_000, fn: (now) => clientLogStore?.retire(now) });
 import { seatStore, announceProfileUpdate, MAX_PROPOSAL_BYTES } from "./seats.ts";
 import { agentTokens, aid1JoinIdentity } from "./auth.ts";
-import { httpCaller, httpVisitor, hashedAddress, visibleTo, doorFor, youAt, bearerOf } from "./access.ts";
+import { httpCaller, httpVisitor, hashedAddress, visibleTo, discoverable, unavailable, doorFor, youAt, bearerOf } from "./access.ts";
 import { setupPage, setupClaim } from "./setup.ts";
 import { setupOpen } from "./operators.ts";
 import { ClientLogRate, ClientLogStore, LIMITS as CLIENTLOG_LIMITS, scrub, holdsPrivateKey, boundLines } from "./clientlog.ts";
@@ -791,11 +791,9 @@ const ROUTES: Route[] = [
     // "May I go there?" — asked BEFORE moving, so a refused trip never strands
     // a body (the MCPL door's travel gate asks this as the agent). Answers for
     // the CALLER only, and only for a signed-in caller (cookie session or
-    // Authorization bearer): an anonymous probe is 401. For a world the caller
-    // may not see it says `you: "none"` and `exists: true` — that a name is
-    // taken cannot be hidden (founding it would fail), and a join attempt
-    // reveals exactly as much; nothing about who is inside or why.
-    //   { world, exists, you: "enter"|"watch"|"none", why?, found?: {ok, why?} }
+    // Authorization bearer): an anonymous probe is 401. A world the caller may
+    // not discover answers exactly as a missing one: 404 world-unavailable.
+    //   { world, exists: true, you: "enter"|"watch"|"none", why? } | 404 {code: "world-unavailable", message}
     match: (u) => u.pathname === "/access",
     handler: ({ req, url }) => {
       const j = (o: unknown, status = 200) => new Response(JSON.stringify(o),
@@ -805,9 +803,8 @@ const ROUTES: Route[] = [
       const name = url.searchParams.get("world") ?? "";
       if (!/^[a-z0-9_-]{1,64}$/i.test(name)) return j({ error: `"${name}" is not a world name` }, 400);
       const door = doorFor(name);
-      // joining never founds a world here: `found` says so (a person founds with world-found; an operator for an agent)
-      if (!door) return j({ world: name, exists: false, you: "none", found: { ok: false, why: `there's no world called "${name}" — joining never founds one here (any signed-in account founds a world with world-found)` } });
-      const y = youAt(door, caller);
+      if (!discoverable(door, caller)) return j(unavailable(name), 404);
+      const y = youAt(door!, caller);
       return j({ world: name, exists: true, you: y.you, ...(y.why && y.you !== "enter" ? { why: y.why } : {}) });
     },
   },

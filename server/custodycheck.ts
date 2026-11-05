@@ -14,7 +14,7 @@ export function readCustody(file: string): CustodyFile { return fs.existsSync(fi
  *  tail boot holds (server/lazylog.ts); a cache is never written over a governance entry, so the prefix needs no scan. */
 export function expectedSequencer(entries: any[], from = 0): string | null {
   let key = entries[0]?.kind === "genesis" ? entries[0].body?.sequencer ?? null : null;
-  for (let s = Math.max(from, 1); s < entries.length; s++) { const e = entries[s]; if (e && (e.kind === "governance" || e.kind === "sequencer") && typeof e.body?.key === "string") key = e.body.key; }
+  for (let s = Math.max(from, 1); s < entries.length; s++) { const e = entries[s]; if (e && e.kind === "governance" && typeof e.body?.key === "string") key = e.body.key; }
   return key;
 }
 /** Does the custody file hold the key the log names? Read-only when not; a world with no genesis yet is fine (founding mints). */

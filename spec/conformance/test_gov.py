@@ -19,17 +19,18 @@ def mk():
     k = Ed25519PrivateKey.generate()
     return k, "ed25519:" + b64u(k.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw))
 
-def world(owners, seq_key, steps):
-    """genesis with these owner tiers, then each step (body, [signers]) as a governance entry; gov.py's events"""
-    g = {"kind": "genesis", "actor": "system", "body": {"dialect": "eidoverse-log", "v": 4, "minor": 1,
-         "nonce": b64u(b"0123456789abcdef"), "owners": owners, "sequencer": seq_key}}
+def world(owners, seq_key, steps, full=False, **genesis):
+    """genesis with these owner tiers, then each step (body, [signers]) as a governance entry; gov.py's events (full: its whole answer)"""
+    g = {"kind": "genesis", "actor": "system", "body": dict({"dialect": "eidoverse-log", "v": 4, "minor": 1,
+         "nonce": b64u(b"0123456789abcdef"), "owners": owners, "sequencer": seq_key}, **genesis)}
     wid = "sha256:" + hashlib.sha256(jcs(g).encode()).hexdigest()
     lines = [g]
     for body, signers in steps:
         seq = len(lines); msg = gov_message(wid, seq, body)
         lines.append({"world": wid, "kind": "governance", "ts": seq, "actor": "system",
                       "body": dict(body, sigs=[{"key": pk, "v": b64u(sk.sign(msg))} for sk, pk in signers])})
-    return governance(("\n".join(json.dumps(l) for l in lines) + "\n").encode())["events"]
+    r = governance(("\n".join(json.dumps(l) for l in lines) + "\n").encode())
+    return r if full else r["events"]
 
 (A, a), (B, b), (C1, c1), (C2, c2), (S, s), (N, n) = mk(), mk(), mk(), mk(), mk(), mk()
 
@@ -61,6 +62,16 @@ check("GV9 a governance body carrying `checkpoint` is refused as reserved (until
 # GV8: a new lower tier may be added by any tier at or above it
 ev = world([[a], [b]], s, [({"owners": [[a], [b], [c1]]}, [(B, b)])])
 check("GV8 tier 1 may add a tier 2 below itself", ev[0]["valid"], ev)
+
+# GV10–GV12: requiresAdd (§F F-1) is a governance decision like any other: a tier's quorum signs it, the union only grows
+r = world([[a], [b]], s, [({"requiresAdd": ["x:y@1"]}, [(B, b)]), ({"requiresAdd": ["a:b@1", "z:z@1"]}, [(A, a)])], full=True, requires=["m:n@1"])
+check("GV10 a requiresAdd signed by a tier is valid, and the world's requires is the sorted union", r["events"][0]["valid"] and r["events"][0]["act"] == "requires" and r["events"][1]["valid"] and r["requires"] == ["a:b@1", "m:n@1", "x:y@1", "z:z@1"], r)
+r = world([[a], [b]], s, [({"requiresAdd": ["m:n@1"]}, [(A, a)]), ({"requiresAdd": ["z:z@1", "a:b@1"]}, [(A, a)]), ({"requiresAdd": []}, [(A, a)]), ({"requiresAdd": ["A:b@1"]}, [(A, a)])], full=True, requires=["m:n@1"])
+check("GV11 a requiresAdd that repeats a required id, is unsorted, empty or malformed is invalid; nothing is removed", not any(e["valid"] for e in r["events"]) and r["requires"] == ["m:n@1"], r)
+r = world([[a], [b]], s, [({"requiresAdd": ["x:y@1"]}, [(S, s)]), ({"key": n, "requiresAdd": ["x:y@1"]}, [(S, s)])], full=True)
+check("GV12 the sequencer alone can't declare a feature (not even inside a handoff): no system actor activates law", not any(e["valid"] for e in r["events"]) and r["requires"] == [], r)
+r = world([[a], [b]], s, [], full=True, rewindWindow=5)
+check("GV13 the window is read from genesis rewindWindow", r["window"] == 5, r)
 
 print("%d/%d passed" % (passed, passed + failed))
 raise SystemExit(1 if failed else 0)

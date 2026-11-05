@@ -53,6 +53,7 @@
 import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 import { normalizeCaptionArgs, mintSession } from '../../shared/captions.js';
 import { makeReplica } from '../../shared/protocol/replica.js';
+import { helloOf } from '../../shared/protocol/hello.js';
 import type { Caption } from './captioner.ts';
 
 export interface WorldOptions {
@@ -141,7 +142,7 @@ export class WorldClient {
     const ws = new WebSocket(this.opts.url);
     this.ws = ws;
     ws.onopen = () => {
-      ws.send(JSON.stringify({ type: 'join', world: this.opts.world, id: this.opts.actor, avatar: '', replica: true, ...(this.opts.agent === false ? {} : { declares: 'agent' }), token: this.opts.token, ...(this.opts.agentToken ? { agentToken: this.opts.agentToken } : {}) }));
+      ws.send(JSON.stringify({ type: 'join', world: this.opts.world, id: this.opts.actor, avatar: '', replica: true, hello: helloOf(), ...(this.opts.agent === false ? {} : { declares: 'agent' }), token: this.opts.token, ...(this.opts.agentToken ? { agentToken: this.opts.agentToken } : {}) }));
     };
     ws.onclose = () => {
       this.open = false;

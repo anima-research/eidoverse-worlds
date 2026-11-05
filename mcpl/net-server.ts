@@ -449,9 +449,9 @@ class Session {
         : `"${target}" isn't open to you; its owners decide who comes in` };
     }
     if (this.auth.create === false)
-      return { ok: false, code: -32023, why: `no world named "${target}" exists, and this credential may not found one; worlds lists the worlds that exist` };
+      return { ok: false, code: -32023, why: `no accessible world is named "${target}", and this credential may not found one; worlds lists the worlds you can reach` };
     if (!a.found?.ok)
-      return { ok: false, code: -32023, why: `no world named "${target}" exists, and you can't found it right now: ${a.found?.why ?? "the world server refused"}` };
+      return { ok: false, code: -32023, why: `no accessible world is named "${target}", and you can't found it right now: ${a.found?.why ?? "the world server refused"}` };
     return { ok: true, founding: true };
   }
 
@@ -1382,8 +1382,9 @@ async function accessProbe(name: string, token: string): Promise<AccessAnswer | 
   u.search = `?world=${encodeURIComponent(name)}`;
   try {
     const r = await fetch(u, { signal: AbortSignal.timeout(2_000), headers: { authorization: `Bearer ${token}` } });
+    const a = (await r.json().catch(() => null)) as any;
+    if (r.status === 404 && a?.code === "world-unavailable") return { exists: false, you: "none" };   // missing, or not discoverable by this agent: one answer
     if (!r.ok) return null;
-    const a = (await r.json()) as AccessAnswer;
     return typeof a?.exists === "boolean" && typeof a?.you === "string" ? a : null;
   } catch { return null; }
 }
@@ -1535,7 +1536,7 @@ wss.on("connection", (ws, req) => {
           admit(); return;
         }
         if (!r) recordStart = false;   // keep the memory: the next reconnect tries it again
-        console.log(`[${ts()}] [mcpl] ${auth!.id}: last world "${resume}" ${!r ? "could not be checked (memory kept)" : !r.exists ? "no longer exists" : "isn't open to it now"} — starting at home "${mintedWorld}"`);
+        console.log(`[${ts()}] [mcpl] ${auth!.id}: last world "${resume}" ${!r ? "could not be checked (memory kept)" : !r.exists ? "is no longer accessible" : "isn't open to it now"} — starting at home "${mintedWorld}"`);
       }
       const wname = auth!.world ?? "commons";
       const a = await accessProbe(wname, token ?? "");
@@ -1554,7 +1555,7 @@ wss.on("connection", (ws, req) => {
         if (auth!.create === false || !a.found?.ok) {
           const why = auth!.create === false ? "this credential may not found worlds" : (a.found?.why ?? "the world server refused");
           console.log(`[${ts()}] [audit] founding DENIED: ${auth!.id} → "${wname}" (dial-time: ${why})`);
-          refuse(`world "${wname}" does not exist, and it can't be founded now: ${why}`);
+          refuse(`no accessible world is named "${wname}", and it can't be founded now: ${why}`);
           return;
         }
         console.log(`[${ts()}] [audit] founding GRANTED: ${auth!.id} → "${wname}" (dial-time)`);

@@ -14,7 +14,11 @@
   },
   "unreadable": {
    "meaning": "the log folds to a status the authority won't write to",
-   "when": "a write while the fold says no-world/unknown-version"
+   "when": "a write while the fold says no-world/unknown-version/unsupported-feature"
+  },
+  "unsupported-feature": {
+   "meaning": "a feature this world or server can't use (docs/DESIGN-log-vocabulary.md §F F-1)",
+   "when": "a feature's verb before the world declares it; founding a world requiring a feature this server doesn't implement"
   },
   "repair-needed": {
    "meaning": "the world's stored values are in an old spelling no reader serves; the maintenance command must run first",

@@ -123,7 +123,8 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@44";   // @44: minor 1, the log vocabulary (docs/DESIGN-log-vocabulary.md)
+export const TRANSLATOR = "eidoverse/translate-v1@45";   // @45: a minor-1 genesis may carry requires and provenance (§F); output unchanged
+// @44: minor 1, the log vocabulary (docs/DESIGN-log-vocabulary.md)
 // @43 (bot review 440, 441): a valid exit with no helm child rides imported:vehicle; a model with its own light still gets main's inferred lamps. Output differs there.
 // @42 (bot review 58): where any water writes a speed area, every other water gets physics-area {factor: 1, modes: [swim]}, so the water a body is in sets its stroke (main read the selected volume's own speed). Output differs there.
 // @41 (bot review 59): what main's air held beyond its boxes' centre, size and q (another key, a box's other keys, an entry that is no box) rides imported:air, listed. Output differs there.
@@ -241,7 +242,7 @@ export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(nam
 // came to rest; but a punt stays its imported act (no v4 launch), each rest is a plain change by `sim` caused by that act
 // (no digest), the world's engine is today's eidosim from the epoch on, and (R 2026-10-08) a thing v1 ever punted is a
 // `dynamic` collider, every other one `static`. Nothing in the new log asks a reader to fly her engine.
-export const TRANSLATOR_SIM = "eidoverse/translate-v1@44";
+export const TRANSLATOR_SIM = "eidoverse/translate-v1@45";
 // @9 (2026-10-07, R's particles ruling): a v1 `particles` bag is today's instance: its preset is the effect, its origin is
 // `at`, its seed stays, and its count, size, opacity, speed, lifetime, area, texture and quality are the params of the
 // same names every Essential declares (shared/particle_effects.js modernize; instanceOf reads it back exactly). A key

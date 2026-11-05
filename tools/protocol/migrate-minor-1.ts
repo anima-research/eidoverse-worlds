@@ -9,9 +9,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { spawnSync } from "node:child_process";
 import { ENGINE } from "./common.ts";
-import { readLog, jcs, Malformed, MINORS, worldIdOf } from "../../shared/protocol/fold.js";
+import { readLog, jcs, Malformed, MINORS, worldIdOf, fold, digest } from "../../shared/protocol/fold.js";
+import { skeleton } from "../../shared/protocol/authority/storage.js";
+import { provenanceAt } from "../../server/provenance.ts";
 import { sha256, sha256Bytes, hexBytes } from "../../shared/protocol/hash.js";
 import { TABLE, TABLE_SHA256, VOCAB_VERSION, MINOR, KINDS, ENVELOPE, BODY, GENESIS, VIEW_MARKER } from "../../shared/protocol/vocab-minor-1.js";
 import { custodyAt } from "../../server/custody.ts";
@@ -19,24 +20,22 @@ import { custodyAt } from "../../server/custody.ts";
 export const IDENTITY = "eidoverse/migrate-minor-1@1";
 export const RECEIPT = "migration-receipt.json", HEADMAP = "migration-headmap.json", WORLDMAP = "worldmap.json", LOG = "world.jsonl";
 const ZERO = "00".repeat(32), PERSON24 = /^u-[a-z2-7]{24}$/;
-const PURGEABLE_OLD = new Set(["act", "say", "sim"]), PURGEABLE_NEW = new Set(["request", "say", "physics"]);
+const PURGEABLE_OLD = new Set(["act", "say", "sim"]);
 
 export class Refused extends Error { constructor(code, msg) { super(msg); this.code = code; } }
 const refuse = (code, msg) => { throw new Refused(code, msg); };
 
-// ---------- the two chains (§0): old spellings in, new spellings out; both local so the live storage.js may move on ----------
-// TODO(integration): the new skeleton is Lane R's reader's; swap to it once shared/protocol/authority/storage.js speaks minor 1.
-const commitOf = (o, key) => (key in o && !("value" in o) ? o[key] : sha256((o.salt ?? "") + jcs(o.value)));
-const skelOp = (o, key) => { const { value, salt, [key]: c, ...rest } = o; return "value" in o || key in o ? { ...rest, [key]: commitOf(o, key) } : rest; };
-const bodyCommit = (b, key) => { const ks = Object.keys(b); if (ks.length === 1 && ks[0] === key) return b[key]; const { salt, ...rest } = b; return sha256((salt ?? "") + jcs(rest)); };
-const skeletonWith = (e, { purgeable, verb, key }) => {
+// ---------- the two chains (§0): the old spelling's skeleton is this tool's own (minor 0 is read nowhere else); the new one is the live writer's ----------
+const commitOf = (o) => ("commit" in o && !("value" in o) ? o.commit : sha256((o.salt ?? "") + jcs(o.value)));
+const skelOp = (o) => { const { value, salt, commit: c, ...rest } = o; return "value" in o || "commit" in o ? { ...rest, commit: commitOf(o) } : rest; };
+const bodyCommit = (b) => { const ks = Object.keys(b); if (ks.length === 1 && ks[0] === "commit") return b.commit; const { salt, ...rest } = b; return sha256((salt ?? "") + jcs(rest)); };
+export const oldSkeleton = (e) => {
   const { head, sig, ...s } = e;
-  if (purgeable.has(e.kind)) s.body = { [key]: bodyCommit(e.body, key) };
-  else if (e.kind === "change") s.body = e[verb] === "batch" ? { ...e.body, ops: (e.body.ops ?? []).map((o) => (o?.[verb] === "set" ? skelOp(o, key) : o)) } : e[verb] === "set" ? skelOp(e.body, key) : e.body;
+  if (PURGEABLE_OLD.has(e.kind)) s.body = { commit: bodyCommit(e.body) };
+  else if (e.kind === "change") s.body = e.verb === "batch" ? { ...e.body, ops: (e.body.ops ?? []).map((o) => (o?.verb === "set" ? skelOp(o) : o)) } : e.verb === "set" ? skelOp(e.body) : e.body;
   return s;
 };
-export const oldSkeleton = (e) => skeletonWith(e, { purgeable: PURGEABLE_OLD, verb: "verb", key: "commit" });
-export const newSkeleton = (e) => skeletonWith(e, { purgeable: PURGEABLE_NEW, verb: "op", key: "commitment" });
+export const newSkeleton = skeleton;
 const step = (prevHex, skel) => { const b = new Uint8Array(64); b.set(hexBytes(prevHex), 0); b.set(hexBytes(sha256(jcs(skel))), 32); return sha256Bytes(b); };
 /** Every head of a log, seq 0 included (the genesis head is computed, never stored: storage.js lowHeads). */
 export const headsOf = (entries, skeleton) => { const out = []; let prev = ZERO; for (const e of entries) out.push((prev = step(prev, skeleton(e)))); return out; };
@@ -64,7 +63,7 @@ function renameBody(kind, e, seq) {
     if (e.verb === "batch" && Array.isArray(top.ops)) top.ops = top.ops.map((o) => (isObj(o) ? renameKeys(o, BODY.changeOp) : o));
     return top;
   }
-  if (kind === "request") { const stub = Object.keys(b).length === 1 && "commit" in b; return renameKeys(b, stub ? { commit: BODY.request.commit } : { ...("refused" in b ? BODY.request.refused : BODY.request.admitted), commit: BODY.request.commit }); }
+  if (kind === "request") { const stub = Object.keys(b).length === 1 && "commit" in b; return renameKeys(b, stub ? { commit: BODY.request.commit } : { ...("refused" in b ? BODY.request.refused : BODY.request.admitted), ...(e.verb === "script" ? BODY.request.script : {}), commit: BODY.request.commit }); }
   if (kind === "physics") return renameKeys(b, { ...(e.verb === "checkpoint" ? BODY.physics.checkpoint : {}), commit: BODY.physics.commit });
   if (kind === "say") return renameKeys(b, BODY.say);
   if (kind === "redaction") return { ...b, ...(Array.isArray(b.values) ? { values: b.values.map((t) => (isObj(t) ? renameKeys(t, BODY.redaction.target) : t)) } : {}) };
@@ -78,15 +77,10 @@ function renameGenesis(g, provenance, sequencer) {
   return out;
 }
 
-// ---------- founding provenance (F-2) ----------
-// TODO(integration): swap this local builder for shared/protocol/provenance.js once that lane lands.
-const git = (...a) => { const r = spawnSync("git", ["-C", ENGINE, ...a], { encoding: "utf8" }); return r.status === 0 ? r.stdout.trim() : null; };
-const SOURCES = ["shared/protocol/vocab-minor-1.js", "tools/protocol/migrate-minor-1.ts"];
+// ---------- founding provenance (F-2): this tool's own, from the tree it runs ----------
 export function provenanceOf() {
-  const commit = git("rev-parse", "HEAD") ?? "0".repeat(40), dirty = (git("status", "--porcelain", "--", ...SOURCES) ?? "dirty") !== "";
-  const tree = sha256(SOURCES.map((f) => fs.readFileSync(ENGINE + f, "utf8").replace(/\r\n/g, "\n")).join("\n\0\n"));
-  const registry = sha256Bytes(fs.readFileSync(ENGINE + "spec/registry-pin.json"));
-  return { commit, provenance: { registry: { id: "registry-pin", sha256: registry }, writer: { name: "migrate-minor-1", version: "1.0.0", sourceRevision: "git:sha1:" + commit, sourceTreeSha256: tree, dirty } } };
+  const provenance = provenanceAt(ENGINE, "migrate-minor-1", "1.0.0");
+  return { commit: provenance.writer.sourceRevision.replace(/^git:sha(?:1|256):/, ""), provenance };
 }
 
 // ---------- the minor-0 reader (D1, M2): the old fold's snapshot, or the live fold while it still knows minor 0 ----------
@@ -169,7 +163,8 @@ export async function planWorld({ name, bytes, parents, custody, ownerSig, owner
   const view = F.canonicalView(st); let redactions = 0;
   for (const id of Object.keys(view)) for (const c of Object.keys(view[id])) if (view[id][c].purged === true) { view[id][c] = { [VIEW_MARKER.purged]: true }; redactions++; }
   const oldStateDigest = F.digest(st), newStateDigest = sha256(jcs(view));
-  // TODO(integration): fold `out` with the minor-1 reader (Lane R) and assert its digest equals newStateDigest.
+  // the live minor-1 reader folds the output to that digest, or it is no migration
+  const nst = fold(out); if (nst.status !== "ok" || digest(nst) !== newStateDigest) refuse("new-reader", `${name}: the minor-1 reader gives ${nst.status === "ok" ? `digest ${digest(nst)}, not the renamed view's ${newStateDigest}` : `status ${nst.status}`}: not a migration`);
   const lines = out.map((e) => JSON.stringify(e)).join("\n") + "\n", newBytes = new TextEncoder().encode(lines);
   const headMap = out.map((_, i) => [i, oldHeads[i], newHeads[i]]), headMapBytes = new TextEncoder().encode(JSON.stringify(headMap) + "\n");
   const receipt = {

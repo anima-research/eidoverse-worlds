@@ -739,7 +739,7 @@ const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
     check("the owner agent closes it (set @world.access {join: listed})", !closed.result?.isError, txt(closed));
     const refused = await free.request("tools/call", { name: "travel", arguments: { world: "keep" } });
     check("travel into the closed world is refused, saying only that it isn't open",
-      refused.result?.isError === true && /"keep" isn't open to you/.test(txt(refused)), txt(refused));
+      refused.result?.isError === true && /no accessible world is named "keep"/.test(txt(refused)), txt(refused));
     const still = await free.request("channels/list", {});
     check("…and nothing moved", still.result?.channels?.[0]?.id === "world:commons", JSON.stringify(still.result));
     const fmap = txt(await free.request("tools/call", { name: "worlds", arguments: {} }));

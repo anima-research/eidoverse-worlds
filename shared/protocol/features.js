@@ -1,5 +1,5 @@
 // shared/protocol/features.js — feature declarations (docs/DESIGN-log-vocabulary.md §F F-1): genesis.body.requires, governance.body.requiresAdd.
-// Pure: no fold here. The fold's genesis field list admits `requires` when minor 1 lands; this module decides what the list means.
+// Pure: the fold (fold.js checkGenesis, fold) calls in here; this module decides what the lists mean.
 
 /** namespace:name@major, ≤ 88 characters; a new major is a new id. */
 export const FEATURE_ID = /^[a-z][a-z0-9-]{0,31}:[a-z][a-z0-9-]{0,47}@[1-9][0-9]{0,3}$/;
@@ -7,6 +7,8 @@ export const MAX_FEATURES = 64;
 export const MAX_FEATURE_ID_LEN = 88;
 /** The feature ids this reader implements: none yet (a world requiring any id is unsupported here). */
 export const KNOWN_FEATURES = new Set([]);
+/** verb → the feature id that owns it, registered by the feature's implementation; the authority refuses a use before the world declares it. */
+export const FEATURE_VERBS = new Map();
 
 const sortedUnique = (xs) => xs.every((x, i) => i === 0 || xs[i - 1] < x);
 /** Why `list` is not a feature list ({code, detail}), or null. Absent (undefined) is the empty list. */

@@ -1,5 +1,5 @@
 // shared/protocol/provenance.js — writer provenance (docs/DESIGN-log-vocabulary.md §F F-2): the object genesis.body.provenance and a
-// repair request's body carry; the builder the server and the translator call; the tree hash it names. Browser-safe: node is imported lazily.
+// repair request's body carry; its builder and readback. Pure: the writer side (tree hash, revision) is server/provenance.ts.
 
 export const WRITER_NAME = /^[a-z][a-z0-9-]{0,47}$/;
 export const SOURCE_REVISION = /^git:(?:sha1:[0-9a-f]{40}|sha256:[0-9a-f]{64})$/;
@@ -35,25 +35,4 @@ export function provenanceReadback(body) {
   if (bag(body.provenance)) { const bad = checkProvenance(body.provenance); return bad ? { available: false, reason: `provenance unavailable: ${bad.code}` } : { available: true, provenance: body.provenance }; }
   if (typeof body.commitment === "string" || typeof body.commit === "string") return { available: false, reason: "provenance unavailable: the body was redacted; only its commitment remains" };
   return { available: false, reason: "provenance unavailable: the body carries none" };
-}
-
-/** sha256 over the working tree at `root`, as git sees it (tracked and untracked-unignored files, sorted paths, each path and
- *  its content hash): the exact source that ran. Node only. */
-export async function sourceTreeSha256(root) {
-  const [{ spawnSync }, fs, path, crypto] = await Promise.all([import("node:child_process"), import("node:fs"), import("node:path"), import("node:crypto")]);
-  const ls = spawnSync("git", ["-C", root, "ls-files", "-z", "--cached", "--others", "--exclude-standard"], { encoding: "utf8", maxBuffer: 1 << 28 });
-  if (ls.status !== 0) throw new Error(`git ls-files in ${root}: ${ls.stderr.trim()}`);
-  const h = crypto.createHash("sha256");
-  for (const rel of ls.stdout.split("\0").filter(Boolean).sort()) {
-    const f = path.join(root, rel); if (!fs.statSync(f, { throwIfNoEntry: false })?.isFile()) continue;
-    h.update(rel); h.update("\0"); h.update(crypto.createHash("sha256").update(fs.readFileSync(f)).digest()); h.update("\n");
-  }
-  return h.digest("hex");
-}
-/** git's HEAD at `root` as a sourceRevision, and whether the tree differs from it. Node only. */
-export async function sourceRevisionOf(root) {
-  const { spawnSync } = await import("node:child_process");
-  const git = (...a) => { const r = spawnSync("git", ["-C", root, ...a], { encoding: "utf8" }); return r.status === 0 ? r.stdout.trim() : null; };
-  const head = git("rev-parse", "HEAD"); if (!head) throw new Error(`no git revision at ${root}`);
-  return { sourceRevision: `git:${head.length === 64 ? "sha256" : "sha1"}:${head}`, dirty: (git("status", "--porcelain") ?? "") !== "" };
 }

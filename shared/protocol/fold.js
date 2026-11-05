@@ -6,6 +6,8 @@
 // node: imports) so the browser imports this file as-is. Nothing else differs; the conformance suite (Python
 // reference reader vs this file) is tools/protocol/compare.ts.
 import { sha256 } from "./hash.js";
+import { checkRequires, featureDecision, KNOWN_FEATURES } from "./features.js";
+import { checkProvenance } from "./provenance.js";
 
 // §2.4: genesis says which log this is and which protocol reads it, in upstream's established shape: {dialect:
 // "eidoverse-log", v: N}. v 1–2 was the first world log, 3 the deterministic-sim amendment, 4 this protocol (spec/PROTOCOL.md,
@@ -239,10 +241,10 @@ export function shapeOne(verb, b, inner, where) {
 }
 
 // ---------- genesis (§2.4; §3d C1, H5, H6) ----------
-// body {dialect: "eidoverse-log", v: 4, minor, nonce, rewindWindow?, parent?, owners: [[<key>…], …], quorum?, sequencer}. A malformed
+// body {dialect: "eidoverse-log", v: 4, minor, nonce, rewindWindow?, parent?, owners: [[<key>…], …], quorum?, sequencer, requires?, provenance?}. A malformed
 // genesis means "no world"; an unknown minor means "unknown version". The minor is read before the shape, so a later
 // minor may add fields; within a known minor the fields are exact (a typo such as `rewind_n` is not a default).
-export const GENESIS_FIELDS = new Set(["dialect", "v", "minor", "nonce", "rewindWindow", "parent", "owners", "quorum", "sequencer"]);
+export const GENESIS_FIELDS = new Set(["dialect", "v", "minor", "nonce", "rewindWindow", "parent", "owners", "quorum", "sequencer", "requires", "provenance"]);
 // canonical unpadded base64url (one spelling per byte string), or null
 export function b64uDecode(s) {
   if (typeof s !== "string" || !/^[A-Za-z0-9_-]*$/.test(s) || s.length % 4 === 1) return null;
@@ -281,6 +283,8 @@ export function checkGenesis(b) {
   if ("parent" in b) { const p = b.parent, hex = (x) => typeof x === "string" && /^[0-9a-f]{64}$/.test(x);
     if (!(p && typeof p === "object" && !Array.isArray(p) && Object.keys(p).sort().join() === "head,seq,world" && typeof p.world === "string" && p.world.startsWith("sha256:") && hex(p.world.slice(7)) && nat(p.seq) && hex(p.head)))
       bad("genesis-parent", JSON.stringify(p)); }
+  const r = checkRequires(b.requires); if (r) bad("genesis-requires", r.detail);   // §F F-1: what a reader must implement to read this world
+  if ("provenance" in b) { const p = checkProvenance(b.provenance); if (p) bad("genesis-provenance", p.code); }   // §F F-2: who wrote it
   return null;
 }
 
@@ -301,6 +305,10 @@ export function fold(entries, { until = Infinity } = {}) {
   catch (x) { if (!(x instanceof Malformed)) throw x; d(0, "malformed:" + x.code, x.detail); return { ...st, status: "no-world", entities: null }; }
   st.worldId = worldIdOf(g);
   settledEntries(ok, st.worldId, d);
+  // §F F-1: a feature this reader doesn't implement, declared anywhere, means no world (never a partial fold)
+  const fd = featureDecision(ok, KNOWN_FEATURES);
+  if (fd.malformed) d(fd.malformed.seq, "malformed:" + fd.malformed.code, fd.malformed.detail);
+  if (fd.unsupported) { d(fd.unsupported.seq, "unsupported-feature", fd.unsupported.ids.join(",")); return { ...st, status: "unsupported-feature", entities: null }; }
   const redacted = unnamedStubs(ok, redactionsOf(ok, d), d);
   for (let seq = 1; seq < ok.length && seq <= until; seq++) {
     const e = ok[seq]; if (!e || e.kind !== "change") continue;
@@ -431,6 +439,7 @@ export function acceptedEntries(entries, { ops = false } = {}) {
   if (!g || g.kind !== "genesis" || g.body.dialect !== DIALECT || g.body.v !== VERSION) return [];   // the fold reads no world here
   try { if (checkGenesis(g.body) === "unknown-minor") return []; } catch (x) { if (x instanceof Malformed) return []; throw x; }
   const settled = settledEntries(ok, worldIdOf(g), none);
+  if (featureDecision(settled, KNOWN_FEATURES).unsupported) return [];
   if (ops) for (let seq = 1; seq < settled.length; seq++) { const e = settled[seq]; if (e?.kind !== "change") continue;
     try { opsOf(e); } catch (x) { if (x instanceof Malformed) settled[seq] = null; else throw x; } }
   return settled;

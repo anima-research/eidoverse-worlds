@@ -9,7 +9,7 @@ Every place the spec is silent, the choice made here is tagged GUESS-nn; the
 numbers match the ambiguity list in 27-python-reader-from-spec.md.
 
 Output:
-  status   ok | unknown-version | no-world
+  status   ok | unknown-version | unsupported-feature | no-world
   digest   sha256 hex of JCS(world-view)   (see DIGEST below)
   diagnostics, one per line: seq  code  detail
 
@@ -213,7 +213,7 @@ def jcs(v):
 
 
 # ---- genesis (spec 2.4, 3d C1/H5/H6) -----------------------------------------
-GENESIS_FIELDS = {"dialect", "v", "minor", "nonce", "rewindWindow", "parent", "owners", "quorum", "sequencer"}
+GENESIS_FIELDS = {"dialect", "v", "minor", "nonce", "rewindWindow", "parent", "owners", "quorum", "sequencer", "requires", "provenance"}
 _B64U = re.compile(r"\A[A-Za-z0-9_-]*\Z")
 _HEX64 = re.compile(r"\A[0-9a-f]{64}\Z")
 # the 8 small-order points' y (sign bit cleared): conformance/ed25519/test_vectors.py, spec 2.4 "Keys"
@@ -291,7 +291,90 @@ def check_genesis(b):
                 and p["world"].startswith("sha256:") and _HEX64.match(p["world"][7:]) and _int(p["seq"])
                 and isinstance(p["head"], str) and _HEX64.match(p["head"])):
             raise Malformed("genesis-parent", repr(p)[:60])
+    r = check_requires(b.get("requires"))
+    if r:
+        raise Malformed("genesis-requires", r[1])
+    if "provenance" in b:
+        p = check_provenance(b["provenance"])
+        if p:
+            raise Malformed("genesis-provenance", p)
     return None
+
+
+# ---- feature declarations and writer provenance (§F F-1, F-2; the twin of features.js, provenance.js) ----
+FEATURE_ID = re.compile(r"\A[a-z][a-z0-9-]{0,31}:[a-z][a-z0-9-]{0,47}@[1-9][0-9]{0,3}\Z")
+MAX_FEATURES = 64
+KNOWN_FEATURES = set()   # the feature ids this reader implements: none yet
+
+
+def check_requires(lst, at="requires"):
+    """(code, detail) when lst is not a feature list, else None. Absent (None) is the empty list."""
+    if lst is None:
+        return None
+    if not isinstance(lst, list):
+        return (at + "-shape", at + " is a list of feature ids")
+    if len(lst) > MAX_FEATURES:
+        return (at + "-count", "%d ids; at most %d per world" % (len(lst), MAX_FEATURES))
+    for i in lst:
+        if not isinstance(i, str) or len(i) > 88 or not FEATURE_ID.match(i):
+            return (at + "-id", "%s is not namespace:name@major" % json.dumps(i))
+    if any(utf16(lst[k - 1]) >= utf16(lst[k]) for k in range(1, len(lst))):
+        return (at + "-order", "ids are sorted and unique")
+    return None
+
+
+def utf16(s):
+    return s.encode("utf-16-be")
+
+
+_SEMVER = re.compile(r"\A(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?\Z")
+
+
+def check_provenance(p):
+    """The code naming why p is not a provenance object, else None."""
+    if not isinstance(p, dict) or set(p) != {"registry", "writer"}:
+        return "provenance-shape"
+    r, w = p["registry"], p["writer"]
+    if not isinstance(r, dict) or set(r) != {"id", "sha256"} or r["id"] != "registry-pin" or not isinstance(r["sha256"], str) or not _HEX64.match(r["sha256"]):
+        return "provenance-registry"
+    if not isinstance(w, dict) or set(w) != {"name", "version", "sourceRevision", "sourceTreeSha256", "dirty"}:
+        return "provenance-writer"
+    if not isinstance(w["name"], str) or not re.match(r"\A[a-z][a-z0-9-]{0,47}\Z", w["name"]):
+        return "provenance-writer-name"
+    if not isinstance(w["version"], str) or not _SEMVER.match(w["version"]):
+        return "provenance-writer-version"
+    if not isinstance(w["sourceRevision"], str) or not re.match(r"\Agit:(?:sha1:[0-9a-f]{40}|sha256:[0-9a-f]{64})\Z", w["sourceRevision"]):
+        return "provenance-writer-revision"
+    if not isinstance(w["sourceTreeSha256"], str) or not _HEX64.match(w["sourceTreeSha256"]):
+        return "provenance-writer-tree"
+    if not isinstance(w["dirty"], bool):
+        return "provenance-writer-dirty"
+    return None
+
+
+def feature_decision(entries, known):
+    """Genesis requires, then each governance requiresAdd in order: (malformed (seq, code, detail) | None,
+    unsupported (seq, ids) | None). Nothing is declared past either."""
+    req = list(entries[0]["body"].get("requires") or [])
+    u = [i for i in req if i not in known]
+    if u:
+        return None, (0, u)
+    for seq, e in enumerate(entries):
+        if seq == 0 or e is None or e.get("kind") != "governance" or not isinstance(e.get("body"), dict) or "requiresAdd" not in e["body"]:
+            continue
+        add = e["body"]["requiresAdd"]
+        bad = check_requires(add, "requiresAdd")
+        if not bad and any(i in req for i in add):
+            bad = ("requiresAdd-present", "%s is already required" % next(i for i in add if i in req))
+        if not bad and len(req) + len(add) > MAX_FEATURES:
+            bad = ("requiresAdd-count", "%d ids; at most %d per world" % (len(req) + len(add), MAX_FEATURES))
+        if bad:
+            return (seq,) + bad, None
+        req = sorted(req + add, key=utf16)
+        u = [i for i in add if i not in known]
+        if u:
+            return None, (seq, u)
+    return None, None
 
 
 # ---- the fold --------------------------------------------------------------
@@ -385,6 +468,15 @@ class Reader:
             if last_ts is not None and t < last_ts:
                 self.d(seq, "malformed:ts-decreasing", "%d < %d" % (t, last_ts)); entries[seq] = None; continue
             last_ts = t
+
+        # -- §F F-1: a feature this reader doesn't implement, declared anywhere, means no world (never a partial fold) --
+        bad, unsupported = feature_decision(entries, KNOWN_FEATURES)
+        if bad:
+            self.d(bad[0], "malformed:" + bad[1], bad[2])
+        if unsupported:
+            self.status = "unsupported-feature"
+            self.d(unsupported[0], "unsupported-feature", ",".join(unsupported[1]))
+            return
 
         # -- redactions first (L1: "applied before anything else") --
         redacted = self.collect_redactions(entries)

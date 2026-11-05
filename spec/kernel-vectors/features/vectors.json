@@ -1,0 +1,63 @@
+{
+ "what": "\u00a7F F-1/F-2 (docs/DESIGN-log-vocabulary.md): genesis admits requires (sorted unique feature ids) and provenance (the writer object). The reader before this refuses either as malformed:genesis-field (no world); this one folds them.",
+ "vectors": [
+  {
+   "name": "genesis-requires-empty",
+   "entries": [
+    {
+     "kind": "genesis",
+     "actor": "system",
+     "body": {
+      "dialect": "eidoverse-log",
+      "v": 4,
+      "minor": 1,
+      "nonce": "XWVu1u7BpaZTDFSETYiphg",
+      "owners": [
+       [],
+       [
+        "ed25519:BP7aKo17f474DD1aBSLG0a3Pb29Qs3yqQ6Ve0wSRVD0"
+       ]
+      ],
+      "sequencer": "ed25519:rRoIPhqlc8rDxC1GZlfHOe1IBJYWQ8MDNg9QuZzMsic",
+      "requires": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "genesis-provenance",
+   "entries": [
+    {
+     "kind": "genesis",
+     "actor": "system",
+     "body": {
+      "dialect": "eidoverse-log",
+      "v": 4,
+      "minor": 1,
+      "nonce": "XWVu1u7BpaZTDFSETYiphg",
+      "owners": [
+       [],
+       [
+        "ed25519:BP7aKo17f474DD1aBSLG0a3Pb29Qs3yqQ6Ve0wSRVD0"
+       ]
+      ],
+      "sequencer": "ed25519:rRoIPhqlc8rDxC1GZlfHOe1IBJYWQ8MDNg9QuZzMsic",
+      "provenance": {
+       "registry": {
+        "id": "registry-pin",
+        "sha256": "abababababababababababababababababababababababababababababababab"
+       },
+       "writer": {
+        "name": "eidoverse-server",
+        "version": "4.1.0",
+        "sourceRevision": "git:sha1:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "sourceTreeSha256": "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef",
+        "dirty": false
+       }
+      }
+     }
+    }
+   ]
+  }
+ ]
+}

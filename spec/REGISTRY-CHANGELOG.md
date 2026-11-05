@@ -407,3 +407,7 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
   - readback sim:launch: gone (old logs may hold it)
   - readback sim:lift: gone (old logs may hold it)
   - readback sim:catch: gone (old logs may hold it)
+- 2026-11-05: kernel: minor 1 genesis admits requires (sorted unique feature ids, §F F-1) and provenance (the writer object, §F F-2); governance requiresAdd declares later features; a feature the reader doesn't implement is unsupported-feature, no world
+  - version.genesis: ["dialect","minor","nonce","owners","parent","quorum","rewindWindow","sequencer","v"] → ["dialect","minor","nonce","owners","parent","provenance","quorum","requires","rewindWindow","sequencer","v"]
+- 2026-11-05: normative: refusal unreadable: also given while the fold says unsupported-feature; new code unsupported-feature (docs/DESIGN-log-vocabulary.md §F F-1)
+  - refusal unreadable: {"meaning":"the log folds to a status the authority won't write to","when":"a write while the fold says no-world/unknown-version"} → {"meaning":"the log folds to a status the authority won't write to","when":"a write while the fold says no-world/unknown-version/unsupported-feature"}

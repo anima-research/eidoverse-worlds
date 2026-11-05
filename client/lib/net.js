@@ -10,6 +10,7 @@ import { avatarMounts } from './mounts.js';   // not world.js: that pulls core.j
 import { hydrate as shadowHydrate, reset as shadowReset, state as shadowState, applyView } from './state.js';
 import { hear } from '../../shared/chatwindow.js';
 import { refusalText } from '../../shared/protocol/refusal.js';
+import { helloOf } from '../../shared/protocol/hello.js';
 import { pending, P } from './scheduler.js';
 // The realizers (TEL0S_NOTES §11.4) own the scene: state verbs realize
 // FROM the fold, and fold-inert causes (use/punt/force, moderation
@@ -317,6 +318,7 @@ export function sendJoin() {
     replica: true,
     session: PAGE_SESSION,
     clock: true,   // the server's time just before the snapshot ('clock' below)
+    hello: helloOf(),   // the protocol this client reads (docs/DESIGN-log-vocabulary.md §F F-3)
   }));
 }
 
@@ -785,7 +787,7 @@ function onSocketClosed(ev) {
     showRefusal(joinRefusal ?? `you're not in "${CONFIG.world}" — ${reloadHint('reload if your access changes')}`);
     return;
   }
-  // 4011 = there's nothing to watch here YET (a spectator of a world nobody has founded): not a refusal — try again,
+  // 4011 = nothing to watch here (a spectator of a world that is unavailable to it, perhaps not founded yet): try again,
   // backing off, so an observer started early joins once the world exists.
   if (ev.code === 4011) {
     net.status = 'retrying';
@@ -793,9 +795,9 @@ function onSocketClosed(ev) {
     setTimeout(connect, redial.next(REDIAL.full));
     return;
   }
-  // 4005 = a refused join: a malformed name, no such world, an old-format world, a client that doesn't fold the log.
+  // 4005 = a refused join: a malformed name, world-unavailable (missing or not yours to see), an old-format world, a client that doesn't fold the log.
   // No retry — the answer won't change, so reconnecting is just hammering the authority. The server says why in an `error` just before this close; that sentence is shown. Without one, the close
-  // reason picks the words (the server's reasons: "old-format world", "no such world", "bad world name", …).
+  // reason picks the words (the server's reasons: "old-format world", "world-unavailable", "bad world name", …).
   // 4005 "full" = the world is at its access max: TRANSIENT — someone leaving makes room. Say the server's words (on
   // the splash if it is still up, else a toast) and try again, backing off; never pinned as the answer (review r3 F6).
   if (ev.code === 4005 && String(ev.reason ?? '') === 'full') {
@@ -815,7 +817,7 @@ function onSocketClosed(ev) {
     const why = String(ev.reason ?? '');
     showRefusal(joinRefusal ?? (
       /old-format/i.test(why) ? `"${CONFIG.world}" was saved by an older version of Eidoverse and needs a one-time conversion by whoever runs this server. Nothing is lost.`
-      : /no such world/i.test(why) ? `there's no world called "${CONFIG.world}" here — check the link that brought you here`
+      : /world-unavailable/i.test(why) ? `No accessible world named ${CONFIG.world}.`
       : /world name/i.test(why) ? `"${CONFIG.world}" is not a valid world name — check the link that brought you here`
       : `"${CONFIG.world}" refused this visit${why ? ` (${why})` : ''} — reload to try again`));
     return;

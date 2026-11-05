@@ -7,6 +7,7 @@
 import { bodyOf } from "../shared/components.js";
 import { CLASSES, REACH_NOTE_MS, namedPointClass, pointClass } from "../shared/protocol/consent.js";
 import { formOf } from "../shared/protocol/kind.js";
+import { helloOf } from "../shared/protocol/hello.js";
 import { describeBody, mayLeave, resolveSeat, socketsUnder, vacatedFromMine, vacatedAt } from "../shared/sockbody.js";
 import { grabOf, describeGrab } from "../shared/grab.js";
 import { r3 } from "../shared/protocol/round.js";
@@ -809,7 +810,7 @@ export class WorldAgent {
   private joinMsg() {
     // clock: the server's time just before the snapshot (the `clock` case below), so serverNow() is set from the join on
     return { type: "join", world: this.world, id: this.name, avatar: this.avatar, ...(this.declares ? { declares: this.declares } : {}), replica: true,
-      token: process.env.WORLD_TOKEN ?? "", agentToken: this.agentToken, clock: true };
+      token: process.env.WORLD_TOKEN ?? "", agentToken: this.agentToken, clock: true, hello: helloOf() };
   }
   private pendingRequests = new Map<string, (m: any) => void>();
   private pendingDebug = new Map<string, (m: any) => void>();

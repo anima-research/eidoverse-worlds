@@ -43,6 +43,12 @@ export const ACCESS_CLOSE = 4010;
 /** Close code for "there is nothing here YET": a spectator of a world nobody has founded. Not a refusal: clients redial
  *  it with their usual backoff, so an observer started early joins once the world exists. */
 export const NOT_YET_CLOSE = 4011;
+/** The one refusal for a world that doesn't exist and one this principal may not discover: the same bytes for both (no
+ *  existence oracle, docs/DESIGN-log-vocabulary.md §F F-3). */
+export const unavailable = (name: string) => ({ code: "world-unavailable", message: `No accessible world named ${name}.` });
+/** Its close code, by what the joiner asked for (never by what exists): a watcher redials (an observer started before a
+ *  founding gets in once the world exists), a body doesn't. */
+export const unavailableClose = (watching: boolean) => (watching ? NOT_YET_CLOSE : 4005);
 
 /** An identity as the door sees it. `account`: the account a credential proved (null = a guest); `actorId`: the world's
  *  opaque id for it (server/directory.ts); `trustedRenderer`: the renderers' credential (may watch anywhere, never
@@ -143,9 +149,20 @@ export function entryFor(door: Door, who: Who, mode: EntryMode, { now = Date.now
   return null;
 }
 
+/** May `who` learn that this world exists: its door shows itself to them (public or listed to them, a grant, a power that
+ *  bypasses the door). The one predicate behind /worlds, the join, /access and redial; anything else is `unavailable`. */
+export function discoverable(door: Door | null, who: Who | null, now = Date.now()): boolean {
+  if (!door) return false;
+  const { account = null, actorId = null } = who ?? {};
+  if (isOperator(account)) return true;
+  const eff = actorId ? effectiveOf(door.wc, actorId, { anon: !account }) : null;
+  const listed = !!actorId && listedIn(door.wc, actorId, now);
+  const bypass = listed && (isOwner(eff) || MOD_POWERS.some((p: string) => eff?.permissions?.includes(p)));
+  return entryOf(door.wc, { actor: actorId ?? undefined, anon: !account, bypass, trustedRenderer: !!who?.trustedRenderer }, door.name, now).may !== "none";
+}
 /** May `who` at least watch this world (it is on their map, its reads answer)? */
 export function visibleTo(door: Door | null, who: Who | null, now = Date.now()): boolean {
-  return !!door && entryFor(door, who ?? { account: null }, "watch", { now }) === null;
+  return discoverable(door, who, now) && entryFor(door!, who ?? { account: null }, "watch", { now }) === null;
 }
 /** What `who` may do at this door: enter | watch | none, with the refusal's words. */
 export function youAt(door: Door, who: Who | null): { you: "enter" | "watch" | "none"; why?: string } {

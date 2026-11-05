@@ -129,7 +129,7 @@ ok(!srv.dead, "(setup) the server is up", srv.dead ? fs.readFileSync(srv.log + "
 
 // ---- H3: no founding by joining ----
 { const g = await sock(srv.port); const j = await g.join("nowhere", "Ann");
-  ok(!j.snapshot && /no world called "nowhere"/.test(j.errors.join(" ")) && !fs.existsSync(path.join(W, "nowhere")), "H3 joining a name nobody founded is refused; nothing is written", j.errors); g.close(); }
+  ok(!j.snapshot && /No accessible world named nowhere\./.test(j.errors.join(" ")) && !fs.existsSync(path.join(W, "nowhere")), "H3 joining a name nobody founded is refused; nothing is written", j.errors); g.close(); }
 
 // ---- C1: a token's proof dies with its join ----
 { const s = await sock(srv.port);
@@ -334,8 +334,8 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     const fz = await sock(S4.port); const jfz = await fz.join("heath", "Fern", { agentToken: "tok-fern" });
     const full = await sock(S4.port); const jfull = await full.join("heath", "Other", { agentToken: mint({ kind: "agent", name: "Other", sub: "agent:other@home.test" }) });
     await own.req("delete", { id: "@world", component: "access" });
-    // the words (upstream #258's decision 4): a refusal says only that the world isn't open to you, nothing about who is listed
-    ok(!js.snapshot && /isn't open to you/.test(js.errors.join(" ")) && !!jfz.snapshot && !jfull.snapshot && /full/.test(jfull.errors.join(" ")),
+    // the words (upstream #258's decision 4; §F F-3): to someone the world doesn't show itself to, it answers as no world at all
+    ok(!js.snapshot && /No accessible world named heath\./.test(js.errors.join(" ")) && !!jfz.snapshot && !jfull.snapshot && /full/.test(jfull.errors.join(" ")),
       "RS6 access: 'listed' refuses someone with no role here; past max a moderator still gets in, a stranger doesn't", [js.errors, !!jfz.snapshot, jfull.errors]);
     for (const x of [st, fz, full, rejoin]) x.close(); }
   // RS7 (review 10-06): erasing is the most senior owner's; a fork can't run in a loop (config.ts FORK_GAP_SEC default)

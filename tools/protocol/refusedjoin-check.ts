@@ -5,7 +5,9 @@
 // the refusal) and dialled again.
 // One headless Chromium against a scratch sequencer (tools/harness.ts scratchBench) whose worlds dir holds:
 //   old-x   a first-protocol log.jsonl (an old-format world: the server answers with the "translate" visitor sentence)
-//   (nope)  nothing at all (no such world)
+//   (nope)  nothing at all: world-unavailable, the same bytes a world this visitor may not discover gets (§F F-3)
+// The server requires the hello (HELLO_REQUIRED=1, the deployment candidate's setting), so every join below proves its client sends one:
+//   W0 the page's early socket joins (one join, adopted); W0b ?earlysock=0's fresh connect (net.js) joins
 // For each world, by both boot paths (the early socket, and ?earlysock=0's fresh connect):
 //   W1 the refusal is on screen (an old world: the one-line splash; else the server's sentence), and still there 6 s later (not a 4-second toast)
 //   W2 the bad-LINK wording ("is not a valid world name") is not shown — the name is fine
@@ -30,6 +32,7 @@ import os from "node:os";
 import { OLD_FORMAT_SPLASH, IF_YOU_RUN_IT } from "../../shared/oldformat.js";
 import { scratchBench, mkCheck, sleep } from "../harness.ts";
 import { tryUntil } from "./wait.ts";
+import { helloOf } from "../../shared/protocol/hello.js";
 
 process.env.AGENT_BODY_ENGINE = "verlet";
 // any first-protocol log will do (a v1 world is recognised by its genesis line): the repo's own fixture unless V1_LOG names one
@@ -39,7 +42,7 @@ const OP_SID = "e".repeat(64), AUTHOR_SID = "f".repeat(64), VEE_SID = "9".repeat
 fs.writeFileSync(SESS, JSON.stringify({ [OP_SID]: { sub: "human:test:op", name: "Opal", scopes: ["worlds:join"], exp: Date.now() + 3600_000 },
   [AUTHOR_SID]: { sub: "human:test:author", name: "author", scopes: ["worlds:join"], exp: Date.now() + 3600_000 },
   [VEE_SID]: { sub: "human:test:vee", name: "Vee", scopes: ["worlds:join"], exp: Date.now() + 3600_000 } }), { mode: 0o600 });
-const { evalJson, cdp, cleanup, die, BASE, SCRATCH } = await scratchBench("refusedjoin", { worlds: ["here"], owner: "keeper", serverEnv: { TRUST_NAMES: "1", SERVER_OPERATORS: "human:test:op", SESSIONS_PATH: SESS, BACKUPS_DIR: "" },
+const { evalJson, cdp, cleanup, die, BASE, SCRATCH } = await scratchBench("refusedjoin", { worlds: ["here"], owner: "keeper", serverEnv: { TRUST_NAMES: "1", SERVER_OPERATORS: "human:test:op", SESSIONS_PATH: SESS, BACKUPS_DIR: "", HELLO_REQUIRED: "1" },
   prepare: (scratch) => {
     // a first-protocol log, cut to its first lines (a v1 world is recognised by its genesis line); old-y is W11's to upgrade
     const lines = fs.readFileSync(V1, "utf8").split("\n").slice(0, 200).filter(Boolean);
@@ -52,13 +55,21 @@ const check = (name: string, ok: any, detail?: any) => check0(name, !!ok, detail
 // what the server says to a joiner of each world (a plain socket: the source of truth for the words)
 const serverSays = (world: string) => new Promise<{ error: string; code: number; reason: string }>((res) => {
   const ws = new WebSocket(BASE.replace("http", "ws") + "/ws"); let error = "";
-  ws.onopen = () => ws.send(JSON.stringify({ type: "join", world, id: "probe", avatar: "", replica: true }));
+  ws.onopen = () => ws.send(JSON.stringify({ type: "join", world, id: "probe", avatar: "", replica: true, hello: helloOf() }));
   ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "error") error = m.error; };
   ws.onclose = (ev) => res({ error, code: ev.code, reason: ev.reason });
 });
 
 try {
   await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: `window.__joins = 0; { const send = WebSocket.prototype.send; WebSocket.prototype.send = function (d) { try { if (JSON.parse(d)?.type === 'join') __joins++; } catch {} return send.call(this, d); }; }` });
+  // W0: with the hello required, the page's own joins get in: the early socket (adopted: one join) and net.js's fresh connect
+  for (const early of [true, false]) {
+    await cdp.send("Page.navigate", { url: `${BASE}/?world=here&name=T0${early ? "" : "&earlysock=0"}` });
+    const probe = () => evalJson(`import('/lib/net.js').then((m) => ({ status: m.net.status, joined: m.net.joined, joins: window.__joins }))`).catch((e) => ({ err: String(e) }));
+    const st: any = (await tryUntil("the page joins", async () => { const x: any = await probe(); return x?.joined ? x : null; }, { ms: 20000, step: 300 })) ?? await probe();
+    check(`W0${early ? "" : "b"} a HELLO_REQUIRED server admits the page's ${early ? "early socket's" : "fresh (net.js)"} join: its hello is valid (one join, joined)`, st?.joined === true && st.joins === 1, st);
+  }
+  await cdp.send("Page.navigate", { url: "about:blank" });
   for (const world of ["old-x", "nope"]) {
     const said = await serverSays(world);
     check(`(setup) ${world}: the server refuses with words and 4005`, said.code === 4005 && said.error.length > 10, said);

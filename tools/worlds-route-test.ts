@@ -128,7 +128,7 @@ console.log("\n— C. a join never founds; D. the map never founds —");
   const refused = await joinBody(port, "fresh", "founder").then(() => null, (e) => String(e.message));
   await new Promise((r) => setTimeout(r, 200));
   const m = byName((await fetchWorlds(port)).rows);
-  check("a join to a world that doesn't exist is refused, and says so", /no world called "fresh"/.test(refused ?? ""), String(refused));
+  check("a join to a world that doesn't exist is refused, and says so", /No accessible world named fresh\./.test(refused ?? ""), String(refused));
   check("…and founds nothing: not listed, nothing on disk", !m.fresh && JSON.stringify(readdirSync(worldsDir).sort()) === JSON.stringify(before), Object.keys(m).join(","));
   await fetch(`http://127.0.0.1:${port}/worlds?world=never-made`);
   await fetch(`http://127.0.0.1:${port}/worlds`);

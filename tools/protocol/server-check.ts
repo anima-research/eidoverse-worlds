@@ -447,7 +447,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
     "S6 a pre-names world is refused in its own plain words (no command line)", preSay); pre.close();
   fs.mkdirSync(path.join(W4, "hollow"));   // a directory with no log in it: no world, not an old one
   const hol = await client(srv.port, "hollow", "Ann", REPLICA);
-  ok(!hol.snapshot && /no world called "hollow"/.test(hol.of("error").at(-1)?.error ?? ""), "S6 an empty directory is no world (it was told it was an old-format one)", hol.of("error").map((m) => m.error)); hol.close();
+  ok(!hol.snapshot && /No accessible world named hollow\./.test(hol.of("error").at(-1)?.error ?? ""), "S6 an empty directory is no world (it was told it was an old-format one)", hol.of("error").map((m) => m.error)); hol.close();
   // what a person SEES: each thing's world pose as the renderer composes it (shared/hierarchy.js). A riding thing's own
   // v1 pos is its unused pre-mount pose, so comparing raw `pos` would compare a hidden field (translate-v1@2 DROPPED)
   const r6 = (v) => v.map((n) => Math.round(n * 1e6) / 1e6);
@@ -560,7 +560,7 @@ await sleep(200);
 
 // ================= S7: joining never founds a world (security review 10-06 H3) =================
 { const ghost = await client(srv.port, "nobodyhome", "Ann", REPLICA);
-  ok(!ghost.snapshot && ghost.of("error").some((m) => /no world called "nobodyhome"/.test(m.error)) && !fs.existsSync(path.join(W4, "nobodyhome")),
+  ok(!ghost.snapshot && ghost.of("error").some((m) => m.code === "world-unavailable" && /No accessible world named nobodyhome\./.test(m.error)) && !fs.existsSync(path.join(W4, "nobodyhome")),
     "S7 joining a world name that doesn't exist is refused, and nothing is created on disk", [ghost.msgs.map((m) => m.type), fs.existsSync(path.join(W4, "nobodyhome"))]);
   ghost.close(); }
 

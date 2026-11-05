@@ -104,7 +104,7 @@ export const VERBSPEC = {
     example: { who: "u-…", point: "shoulder_l" } },
   inbox: { doc: "what reached your body since you last asked (acts done to it, someone's act on it refused — once per person per minute —, revocations, your refused reaches, a seat let go), then empty", args: {} },
   "create-world": { doc: "found this world (you become its owner)", args: { title: { type: "any", doc: "its name" }, text: { type: "any", doc: "a line about it" },
-      from: { type: "any", doc: "a fork or reset: {world: sha256:…, head, seq?, name?}" }, ownerKey: { type: "any", doc: "your own governance key, ed25519:<base64url> (PROTOCOL §13)" }, dry: { type: "bool" } }, example: { title: "the meadow" } },
+      from: { type: "any", doc: "a fork or reset: {world: sha256:…, head, seq?, name?}" }, ownerKey: { type: "any", doc: "your own governance key, ed25519:<base64url> (PROTOCOL §13)" }, requires: { type: "any", doc: "the feature ids a reader must implement to read it (sorted namespace:name@major; PROTOCOL §13 genesis)" }, dry: { type: "bool" } }, example: { title: "the meadow" } },
   help: { doc: "what the authority answers: every verb, or one verb's arguments with examples", args: { verb: { type: "string", doc: "one verb" } }, example: { verb: "place" } },
   look: { doc: "what's here: the things (a tree, the first `limit`), and the bodies (your own consent table and who touches you; of others, where they are)", args: { limit: { type: "number", doc: "things shown (default 40)" } } },
   inspect: { doc: "one thing in full: its components, versions, who touched what lately, its children, what it offers you", args: { id: ref("the thing") }, required: ["id"] },

@@ -311,6 +311,7 @@ SMALL_NEG = "ed25519:" + "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIA"  # same y
 import base64 as _b
 _b64 = lambda raw: _b.urlsafe_b64encode(raw).rstrip(b"=").decode()
 BIG_Y = "ed25519:" + _b64((2**255 - 19 + 1).to_bytes(32, "little"))     # y >= p
+PROV = {"registry": {"id": "registry-pin", "sha256": "ab" * 32}, "writer": {"name": "eidoverse-server", "version": "4.1.0", "sourceRevision": "git:sha1:" + "cd" * 20, "sourceTreeSha256": "ef" * 32, "dirty": False}}
 bad19 = {
     "19a-genesis-no-nonce": (gen_with(nonce=_DEL), "no-world", "malformed:genesis-nonce"),
     "19b-genesis-short-nonce": (gen_with(nonce=_b64(b"\x01" * 15)), "no-world", "malformed:genesis-nonce"),
@@ -328,6 +329,10 @@ bad19 = {
     "19m-genesis-bad-window": (gen_with(rewindWindow=-1), "no-world", "malformed:genesis-window"),
     "19m2-genesis-old-window": (gen_with(rewind_window=5), "no-world", "malformed:genesis-field"),
     "19n-genesis-bad-parent": (gen_with(parent={"world": "sha256:00", "seq": 3, "head": "00" * 32}), "no-world", "malformed:genesis-parent"),
+    # §F F-1/F-2: requires is sorted unique namespace:name@major ids; provenance is the exact writer object
+    "19q-genesis-bad-requires": (gen_with(requires=["b:b@1", "a:a@1"]), "no-world", "malformed:genesis-requires"),
+    "19r-genesis-bad-provenance": (gen_with(provenance=dict(PROV, writer={k: v for k, v in PROV["writer"].items() if k != "sourceTreeSha256"})), "no-world", "malformed:genesis-provenance"),
+    "19s-genesis-unknown-feature": (gen_with(requires=["x:unknown@1"]), "unsupported-feature", "unsupported-feature"),
 }
 for nm, (gl, want, code) in bad19.items():
     r = gen_log(nm, gl)
@@ -335,6 +340,13 @@ for nm, (gl, want, code) in bad19.items():
 r = gen_log("19o-genesis-full", gen_with(owners=[[], [K_TIER1, K_OWNER]], quorum=[1, 2], rewindWindow=500,
                                          parent={"world": "sha256:" + "ab" * 32, "seq": 12, "head": "cd" * 32}))
 check("19o full genesis (empty tier 0, quorum, window, parent) folds", r.status == "ok" and "a" in r.view() and not r.diag, codes(r))
+r = gen_log("19t-genesis-requires-provenance", gen_with(requires=[], provenance=PROV))
+check("19t a genesis carrying an empty requires and a writer provenance folds", r.status == "ok" and "a" in r.view() and not r.diag, codes(r))
+gl = gen_with(); w = wid_of(gl)
+r = run("19u-requiresadd-unknown", [gl, json.dumps({"world": w, "kind": "change", "ts": 1, "actor": "system", "op": "create", "cause": 0, "body": {"id": "a"}}),
+        json.dumps({"world": w, "kind": "governance", "ts": 2, "actor": "system", "body": {"requiresAdd": ["x:unknown@1"], "sigs": []}}),
+        json.dumps({"world": w, "kind": "change", "ts": 3, "actor": "system", "op": "create", "cause": 0, "body": {"id": "b"}})])
+check("19u a governance requiresAdd naming an unknown feature: unsupported-feature at its seq, no world (never a partial fold)", r.status == "unsupported-feature" and r.world is None and (2, "unsupported-feature") in codes(r), (r.status, codes(r)))
 g1, g2 = gen_with(), gen_with(nonce=NONCE2)
 check("19p same keys, different nonce -> different world ids (C1)", wid_of(g1) != wid_of(g2) and R.parse_ijson(g1.encode())["body"]["owners"] == R.parse_ijson(g2.encode())["body"]["owners"])
 

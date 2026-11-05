@@ -10,11 +10,11 @@ empty tier never acts, explicitly. The rules are PROTOCOL §13's (GOV-1..GOV-5);
 Usage:  python3 gov.py LOG.jsonl     prints one JSON object: {status, window, events: [...]}
 """
 import base64, hashlib, json, sys
-from reader import Reader, parse_ijson, jcs, Malformed, check_genesis, key_ok, b64u_decode
+from reader import Reader, parse_ijson, jcs, Malformed, check_genesis, check_requires, key_ok, b64u_decode, utf16, MAX_FEATURES
 
 DEFAULT_WINDOW = 1000
 NONE = "none"   # GOV-2: a handoff signed only by the outgoing sequencer has rank "none" (lower than every tier)
-GOV_FIELDS = {"key", "owners", "fork", "sigs"}
+GOV_FIELDS = {"key", "owners", "fork", "requiresAdd", "sigs"}   # requiresAdd: §F F-1, the one way a feature is declared after genesis
 # PROTOCOL §2: a trusted checkpoint will be a governance entry carrying `checkpoint`; its shape isn't specified, so the name
 # is held and refused by name (10-17 engine-scars 4: reserve the name, don't pin a guess at its shape)
 RESERVED_GOV = {"checkpoint"}
@@ -79,10 +79,11 @@ def governance(data):
     except Malformed:
         return {"status": "no-world", "events": []}
     world_id = "sha256:" + hashlib.sha256(jcs(g).encode()).hexdigest()
-    N = int(g["body"].get("rewind_window", DEFAULT_WINDOW))
+    N = int(g["body"].get("rewindWindow", DEFAULT_WINDOW))
     tiers = [list(t) for t in g["body"]["owners"]]
     quorum = g["body"].get("quorum")
     sequencer = g["body"]["sequencer"]
+    requires = list(g["body"].get("requires") or [])
     branches = [(1, 0)]   # (from seq, rank): the founding branch has rank 0 (3d H5)
 
     def rank_at(seq):
@@ -123,7 +124,11 @@ def governance(data):
             if not (isinstance(f, dict) and set(f) == {"seq", "head"} and type(f["seq"]) is float and f["seq"].is_integer()
                     and 0 <= f["seq"] < seq and isinstance(f["head"], str) and len(f["head"]) == 64):
                 ev["why"] = "fork must be {seq < this seq, head}"; continue
-        if not ({"key", "owners", "fork"} & set(b)):
+        if "requiresAdd" in b:
+            a = b["requiresAdd"]
+            if check_requires(a, "requiresAdd") or not a or any(i in requires for i in a) or len(requires) + len(a) > MAX_FEATURES:
+                ev["why"] = "requiresAdd adds sorted, unique, well-formed ids not already required (never removes or reorders)"; continue
+        if not ({"key", "owners", "fork", "requiresAdd"} & set(b)):
             ev["why"] = "changes nothing"; continue
         msg = gov_message(world_id, seq, b)
         signed = {s["key"] for s in sigs if verifies(s["key"], msg, s["v"])}
@@ -131,7 +136,7 @@ def governance(data):
         for t in range(len(tiers) - 1, -1, -1):
             if tier_acts(tiers, quorum, t, signed):
                 rank = t
-        handoff = "key" in b and "owners" not in b and "fork" not in b and sequencer in signed
+        handoff = "key" in b and "owners" not in b and "fork" not in b and "requiresAdd" not in b and sequencer in signed
         if rank == NONE and not handoff:
             ev["why"] = "no tier's quorum signed it, and it isn't a handoff by the outgoing sequencer"; continue
         ev["rank"] = rank
@@ -168,7 +173,7 @@ def governance(data):
                 ev["why"] = "the orphaned branch holds %d change entries, not fewer than the window (%d): that needs every tier-0 key" % (change_count, N); continue
             ev["act"] = "rewind"
         elif "key" not in b:
-            ev["act"] = "owners"
+            ev["act"] = "owners" if "owners" in b else "requires"
         elif lower(rank, current):
             ev["act"] = "reclaim"
         elif handoff:
@@ -182,9 +187,11 @@ def governance(data):
                 quorum = None
         if "key" in b:
             sequencer = b["key"]
-        if ev["act"] != "owners":
+        if "requiresAdd" in b:
+            requires = sorted(requires + b["requiresAdd"], key=utf16)   # a monotonic union: never removed
+        if ev["act"] not in ("owners", "requires"):
             branches.append((seq, ev["rank"]))
-    return {"status": "ok", "window": N, "events": events}
+    return {"status": "ok", "window": N, "requires": requires, "events": events}
 
 
 if __name__ == "__main__":

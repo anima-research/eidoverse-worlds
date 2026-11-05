@@ -58,6 +58,7 @@ export function worldOf(io) {
   // Governance keys (§2.4) live outside the log. Custody is authority practice (§5 identity), injected like storage:
   // io.custody = { sequencer() → "ed25519:…", keyOf(who, make?) → "ed25519:…" | null } (server/filehost.ts keeps the keys).
   w.custody = () => io.custody ?? null;
+  if (io.provenance) w.provenance = io.provenance;   // () → the writer's provenance genesis records (§F F-2; server/livehost.ts)
   // §2.1: moderation lives in a SEPARATE moderator log with the authority's enforcement, never in the world log
   w.mod = io.mod ?? [];
   // Persist before publishing (review of PR #260, storage.js:110): a line reaches memory only after durable storage took it.
@@ -198,7 +199,7 @@ export const seedPurgedSeqs = (w, n) => { purgeIx.set(w.entries, { n, seqs: new 
 export function purgedSeqs(w) {
   const E = w.entries; let c = purgeIx.get(E); if (!c) purgeIx.set(E, (c = { n: 0, seqs: new Set() }));
   for (; c.n < E.length; c.n++) { const e = E[c.n];
-    if (isE(e) && e.kind === "redaction" && Array.isArray(e.body?.values)) for (const t of e.body.values) if (t && typeof t === "object" && Number.isInteger(t.seq) && t.seq < c.n && t.op === undefined) c.seqs.add(t.seq); }
+    if (isE(e) && e.kind === "redaction" && Array.isArray(e.body?.values)) for (const t of e.body.values) if (t && typeof t === "object" && Number.isInteger(t.seq) && t.seq < c.n && t.index === undefined) c.seqs.add(t.seq); }
   return c.seqs;
 }
 const isCommitStub = (b) => !!b && typeof b === "object" && !Array.isArray(b) && Object.keys(b).length === 1 && "commitment" in b;   // {commitment} exactly (N4)

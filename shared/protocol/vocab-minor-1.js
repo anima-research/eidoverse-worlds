@@ -18,7 +18,7 @@ export const ENVELOPE = Object.freeze({ verbToOp: ["change"], verbKept: ["reques
 export const BODY = Object.freeze({
   change: Object.freeze({ followUps: "cascade", commit: "commitment" }),
   changeOp: Object.freeze({ verb: "op", commit: "commitment" }),
-  request: Object.freeze({ admitted: Object.freeze({ request: "args" }), refused: Object.freeze({ args: "argNames" }), commit: "commitment" }),
+  request: Object.freeze({ admitted: Object.freeze({ request: "args" }), refused: Object.freeze({ args: "argNames" }), script: Object.freeze({ head: "seq" }), commit: "commitment" }),
   physics: Object.freeze({ checkpoint: Object.freeze({ at: "seq" }), commit: "commitment" }),
   say: Object.freeze({ commit: "commitment" }),
   redaction: Object.freeze({ target: Object.freeze({ op: "index" }) }),

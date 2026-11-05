@@ -1,20 +1,17 @@
 {
  "status": "trial-kernel",
- "translator": "eidoverse/translate-v1@44",
+ "translator": "eidoverse/translate-v1@45",
  "companions": {
-  "changelog": "2026-11-04: kernel: minor 1, the log vocabulary (docs/DESIGN-log-vocabulary.md D1-D5): kinds request/physics/redaction/governance; op on a change, verb on a request or physics entry, neither elsewhere; cascade, commitment, rewindWindow; for/grant/by leave the envelope; MINORS = {1}",
+  "changelog": "2026-11-05: kernel: minor 1 genesis admits requires (sorted unique feature ids, §F F-1) and provenance (the writer object, §F F-2); governance requiresAdd declares later features; a feature the reader doesn't implement is unsupported-feature, no world",
   "translator": {
-   "from": "eidoverse/translate-v1@43",
-   "to": "eidoverse/translate-v1@44"
+   "from": "eidoverse/translate-v1@44",
+   "to": "eidoverse/translate-v1@45"
   },
   "vectors": {
-   "dir": "minor-1",
+   "dir": "features",
    "names": [
-    "request-change",
-    "refused-request-argNames",
-    "batch-cascade-physics",
-    "say-governance-no-verb",
-    "genesis-rewindWindow"
+    "genesis-requires-empty",
+    "genesis-provenance"
    ]
   }
  },
@@ -85,7 +82,9 @@
     "nonce",
     "owners",
     "parent",
+    "provenance",
     "quorum",
+    "requires",
     "rewindWindow",
     "sequencer",
     "v"

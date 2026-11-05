@@ -509,7 +509,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   sun/fill/world dropped, the registry's seven defaults written; `terrain`
   layer colours `"#rrggbb"` → ints, the sim's defaults written,
   `terrain.water` → `water`; `grass` in the flora spelling (a preset keeps
-  its name). The translator (`translate-v1@44`, §14) writes its
+  its name). The translator (`translate-v1@45`, §14) writes its
   projection through the same functions, so a translated world needs no
   repair, and the old-world oracle mirrors the repair with them; the sweep's
   declared projection and the oracle's core check are written independently,
@@ -1440,7 +1440,7 @@ them, and the suite holds them to it), not part of conformance.
 
 - **Genesis** (seq 0, `kind: "genesis"`, actor `system`, no `op` or `verb`):
   `body {dialect: "eidoverse-log", v: 4, minor: 1, nonce, owners: [[<key>…], …],
-  sequencer, quorum?, rewindWindow?, parent?}`. Exactly those fields within a
+  sequencer, quorum?, rewindWindow?, parent?, requires?, provenance?}`. Exactly those fields within a
   known minor. `dialect` and `v` are the shape every eidoverse log has
   announced itself with since its first genesis (`{v, dialect}`); `v` is the
   protocol's number, and it is written here and nowhere else. `nonce` is ≥ 16 random bytes, canonical unpadded base64url (two
@@ -1448,6 +1448,10 @@ them, and the suite holds them to it), not part of conformance.
   of lists of keys (list 0 is the founder's, list 1 the host's operator key);
   what more the lists mean (rank tiers, a quorum per tier) is reserved with
   governance, below, and today only the founding request reads list 0; `parent {world, seq, head}` names the world a fork came from.
+  `requires` is the sorted, unique list of feature ids (`namespace:name@major`, at most 64) a reader must implement to read
+  the world; later ones are added only by a governance entry's `requiresAdd` (a monotonic union, never removed). A feature
+  this reader doesn't implement, declared anywhere, means "unsupported feature" and no world (never a partial fold).
+  `provenance {registry, writer}` names the writer and its exact source tree (`docs/DESIGN-log-vocabulary.md` §F F-2).
   Genesis seeds no state: the founding request then writes `@world` through the
   gate. A missing or malformed genesis means "no world"; a `dialect`, `v` or
   `minor` the reader doesn't implement means "unknown version" and no world.
@@ -1463,8 +1467,8 @@ them, and the suite holds them to it), not part of conformance.
   server implements them. What is fixed now: the entry kind `governance` and the
   genesis fields `owners`, `sequencer` (the writer role's key), `quorum?` and `rewindWindow?` are
   reserved names (`owners` with the shape above; every one of them a reader
-  carries and does not interpret). The fold never
-  reads a `governance` entry. **The reference server never writes one and
+  carries and does not interpret). The fold reads a `governance` entry only
+  for its `requiresAdd`. **The reference server never writes one and
   refuses to serve a log that holds one**: such an entry may have moved the
   writer role somewhere the server cannot check, so it says so ("governance is
   reserved in this server … Nothing was changed") instead of writing after it.

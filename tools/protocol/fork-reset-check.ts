@@ -78,7 +78,7 @@ const readSrc = () => fold(logOf("src"));
 { const r = await bob.raw({ type: "world-fork", to: "copy" }, "world-forked");
   ok(r?.type === "error" && /needs its owner/.test(r.error) && !fs.existsSync(path.join(W, "copy")), "FK1 a builder can't copy the world (owner-only), and nothing is written", r); }
 { const r = await ann.raw({ type: "world-fork", to: "bad name!" }, "world-forked"); ok(r?.type === "error" && /bad world name/.test(r.error), "FK2 a bad name is refused", r);
-  const r2 = await ann.raw({ type: "world-fork", to: "taken" }, "world-forked"); ok(r2?.type === "error" && /already exists/.test(r2.error), "FK2 a taken name is refused", r2);
+  const r2 = await ann.raw({ type: "world-fork", to: "taken" }, "world-forked"); ok(r2?.type === "error" && /isn't available/.test(r2.error), "FK2 a taken name is refused", r2);
   const r3 = await ann.raw({ type: "world-fork", to: "src" }, "world-forked"); ok(r3?.type === "error", "FK2 a world can't be copied onto itself", r3); }
 const before = fs.readdirSync(W).filter((d) => d.startsWith("."));
 const fk = await ann.raw({ type: "world-fork", to: "copy" }, "world-forked", 8000);
@@ -145,7 +145,7 @@ ok((await ann.req("set", { id: "@world", component: `roles:${bobId}`, value: { r
   watcher.close(); again.close(); }
 
 // ---- FD ----
-{ const r0 = await bob.raw({ type: "world-found", name: "src" }, "world-founded"); ok(r0?.type === "error" && /already a world called "src"/.test(r0.error), "FD1 an existing world's name is refused (and the world is untouched)", r0);
+{ const r0 = await bob.raw({ type: "world-found", name: "src" }, "world-founded"); ok(r0?.type === "error" && r0.error === '"src" isn\'t available — pick another name', "FD1 an existing world's name is refused (and the world is untouched)", r0);
   const r1 = await bob.raw({ type: "world-found", name: "No Good!" }, "world-founded"); ok(r1?.type === "error" && /can't be a world's name/.test(r1.error), "FD1 a bad name is refused", r1);
   const r = await bob.raw({ type: "world-found", name: "bobs-place", title: "Bob's place" }, "world-founded", 8000);
   ok(r?.type === "world-founded" && r.name === "bobs-place" && fs.existsSync(path.join(W, "bobs-place", "world.jsonl")), "FD2 a signed-in person founds a world", r);

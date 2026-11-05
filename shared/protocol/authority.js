@@ -18,6 +18,7 @@ import { validate, verbHelp, ownArg, VERBSPEC, RESERVED_VERBS, REMOVED_VERBS } f
 import { dec, partSlot } from "./names.js";
 import { READ_ONLY } from "./verbclasses.js";
 import { isRefusalCode } from "./refusalcodes.js";
+import { FEATURE_VERBS, KNOWN_FEATURES, featureDecision, declaredBefore } from "./features.js";
 import { foldSkyEntry } from "../forecast.js";
 import { normalizeCaptionArgs, captionRefusal, foldCaption } from "../captions.js";
 import * as C from "./consent.js";
@@ -124,13 +125,16 @@ export function request(w, actor, verb, args = {}) {
     // write lines its own verifier calls forged (a moved dir, a lost or swapped custody file): it refuses instead (R5).
     if (h && w.exists && w.custody()?.sign && w.custody().sequencer() !== w.entries[0]?.body?.sequencer && !READ_ONLY.has(verb))
       refuse("custody", "this server doesn't hold the key that signs this world's log, so it can't write to it", "only this server's operator can fix this, by restoring the world's signing key or handing the world over to this server; asking again won't change it, and reads still work");
-    if (h && w.exists && w.state().status !== "ok") refuse("unreadable", `this world's log can't be read here ('${w.state().status}': ${w.state().status === "unknown-version" ? "it's written in a protocol version this server doesn't read" : "its first entry isn't a genesis this server can read"}), and the authority won't act on a log it can't read`, "only this server's operator can fix this, by repairing the log or serving it with a server that reads its version; asking again won't change it until then");
+    if (h && w.exists && w.state().status !== "ok") refuse("unreadable", `this world's log can't be read here ('${w.state().status}': ${w.state().status === "unknown-version" ? "it's written in a protocol version this server doesn't read" : w.state().status === "unsupported-feature" ? "it requires a feature this server doesn't implement" : "its first entry isn't a genesis this server can read"}), and the authority won't act on a log it can't read`, "only this server's operator can fix this, by repairing the log or serving it with a server that reads its version; asking again won't change it until then");
     // writes the record itself stops (writeBlock: an altered log, a world waiting for its maintenance command): every write
     // but `leave` and the operator's own, and the scripts the host sets off meet the same gate (scriptrun activate)
     if (h && w.exists && !READ_ONLY.has(verb) && verb !== "leave" && CTX.operator !== actor) { const b = writeBlock(w); if (b) refuse(b.code, b.reason, b.fix, b.extra); }
     if (!h && Object.hasOwn(REMOVED_VERBS, verb)) refuse("removed", `'${verb}' was removed: ${REMOVED_VERBS[verb].why}`, REMOVED_VERBS[verb].fix);
     if (!h && Object.hasOwn(RESERVED_VERBS, verb)) refuse("reserved", `'${verb}' is a reserved request: ${RESERVED_VERBS[verb].why}`, "help lists every verb");
     if (!h) refuse("unknown-verb", `there is no '${verb}'`, "help lists every verb", { didYouMean: guess(verb, Object.keys(VERBS)) });
+    // §F F-1: a feature's verb is refused until the world has declared the feature (genesis requires, or a requiresAdd before this seq)
+    if (w.exists && FEATURE_VERBS.has(verb) && !declaredBefore(featureDecision(w.entries, KNOWN_FEATURES), FEATURE_VERBS.get(verb), w.entries.length))
+      refuse("unsupported-feature", `'${verb}' belongs to the feature ${FEATURE_VERBS.get(verb)}, which this world hasn't declared`, "a world declares a feature in its genesis requires, or later by a governance requiresAdd; never after its first use");
     // `leave` passes: it settles their own presence (the server sends it when it removes them; review 10-07: a kicked
     // body and what it held were never released)
     // an operator's recorded repair (operatorRepair) is not the person's own request: their sanctions and role here don't gate it

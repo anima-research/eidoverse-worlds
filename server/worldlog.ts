@@ -449,7 +449,7 @@ import { opsOf } from "../shared/protocol/fold.js";
 import { isOwner } from "../shared/protocol/roles.js";
 
 /** Found a new world in `dir` (which must not hold a world): genesis + the founding act, through the authority. */
-export function foundWorld(dir: string, name: string, owner: string, title?: string, now?: () => number) {
+export function foundWorld(dir: string, name: string, owner: string, title?: string, now?: () => number, args: Record<string, unknown> = {}) {
   if (fs.existsSync(path.join(dir, "world.jsonl")) || fs.existsSync(path.join(dir, "log.jsonl"))) throw new Error(`${dir} already holds a world`);
   mkdirDurable(dir);   // the world's directory is named in its parent, which a crash can lose like the log's first line
   const w = openLive(dir, name, { now });
@@ -457,7 +457,7 @@ export function foundWorld(dir: string, name: string, owner: string, title?: str
   // server gives that typed name. Its opaque id comes from the authority directory (round-2 review R1).
   const acct = /^(human|agent|aid1|local):/.test(owner) ? owner : `local:${owner.toLowerCase()}`;
   const id = directoryFor(path.dirname(dir)).resolve({ sub: acct, name: acct.startsWith("local:") ? owner : acct.split(":").pop()! });
-  const r = authorityRequest(w, id, "create-world", { title: title ?? name });
+  const r = authorityRequest(w, id, "create-world", { title: title ?? name, ...args });
   if (!r.ok) throw new Error(`founding refused: ${JSON.stringify(r.refused)}`);
   return { worldId: w.worldId, owner: id, account: acct, entries: w.entries.length };
 }
@@ -476,7 +476,7 @@ export function foundersLedger(): Record<string, { account: string; actor: strin
 /** Why `name` can't be founded (a sentence for the person), or null when it can. */
 export function foundRefusal(name: string, exists: (n: string) => boolean): string | null {
   if (!FOUND_NAME.test(name)) return `"${name.slice(0, 40)}" can't be a world's name: 3 to 32 lowercase letters, digits and '-', starting with a letter or digit`;
-  if (exists(name)) return `there's already a world called "${name}" — pick another name`;
+  if (exists(name)) return `"${name}" isn't available — pick another name`;   // generic: creating may learn a name is taken, never whose or what kind (§F F-3)
   return null;
 }
 /** Found `name` for `actor` (its owner), recording it in the ledger. Built aside, renamed into place: nothing half-made. */
@@ -496,7 +496,7 @@ export function foundOwnedWorld(name: string, actor: string, account: string, ti
     const w = openLive(tmp, name, { catalogue: ENGINE_CATALOGUE });
     const r = authorityRequest(w, actor, "create-world", { title: String(title || name).slice(0, 80) });
     if (!r.ok) throw new Error(`the authority refused the founding: ${r.refused?.reason}`);
-    if (fs.existsSync(dest)) throw new Error(`there's already a world called "${name}"`);   // taken while this one was built
+    if (fs.existsSync(dest)) throw new Error(`"${name}" isn't available — pick another name`);   // taken while this one was built
     // answered only once durable (house 6344940039). The ledger row first: a crash between leaves a row for no world, which a
     // retry overwrites, never a world with no row
     replaceDurable(foundersPath(), JSON.stringify({ ...L, [name]: { account, actor, ts: now } }, null, 1)); rowWritten = true;
@@ -551,7 +551,7 @@ export function forkWorld(src: WorldLog, to: string, forker: string): { ok: true
   if (!WORLD_NAME.test(to)) return { ok: false, err: `bad world name "${to}" — letters, digits, - and _ only` };
   if (to === src.name) return { ok: false, err: "a world can't be copied onto itself" };
   const dest = path.join(WORLDS_DIR, to);
-  if (fs.existsSync(dest)) return { ok: false, err: `world "${to}" already exists` };
+  if (fs.existsSync(dest)) return { ok: false, err: `"${to}" isn't available — pick another name` };
   const tmp = path.join(WORLDS_DIR, `.forking-${to}-${crypto.randomBytes(4).toString("hex")}`);
   try {
     const st = src.live.state();

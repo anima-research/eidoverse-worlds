@@ -407,6 +407,39 @@
   "digest": "9bdfd10b40e1070ebce6cf23486669988bf5ca5b2213d74eb1c46217db139b89",
   "codes": []
  },
+ "logs/19q-genesis-bad-requires.jsonl": {
+  "status": "no-world",
+  "digest": null,
+  "codes": [
+   "0:malformed:genesis-requires"
+  ]
+ },
+ "logs/19r-genesis-bad-provenance.jsonl": {
+  "status": "no-world",
+  "digest": null,
+  "codes": [
+   "0:malformed:genesis-provenance"
+  ]
+ },
+ "logs/19s-genesis-unknown-feature.jsonl": {
+  "status": "unsupported-feature",
+  "digest": null,
+  "codes": [
+   "0:unsupported-feature"
+  ]
+ },
+ "logs/19t-genesis-requires-provenance.jsonl": {
+  "status": "ok",
+  "digest": "9bdfd10b40e1070ebce6cf23486669988bf5ca5b2213d74eb1c46217db139b89",
+  "codes": []
+ },
+ "logs/19u-requiresadd-unknown.jsonl": {
+  "status": "unsupported-feature",
+  "digest": null,
+  "codes": [
+   "2:unsupported-feature"
+  ]
+ },
  "logs/20-redaction-roles.jsonl": {
   "status": "ok",
   "digest": "10c81246e8b263d3b7a8e2d74676e4b3036d9fc8ced04a760907bcfa9ccc59c7",

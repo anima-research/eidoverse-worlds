@@ -1,11 +1,13 @@
 // tools/protocol/access-check.ts — WHO MAY COME IN, decided by the world (upstream #258/#259, ported to this protocol
 // 2026-10-17: shared/protocol/access.js + server/access.ts), against a real sequencer. Scratch port, scratch WORLDS_DIR, its
 // own tokens.json; never 8968/8970. usage: bun tools/protocol/access-check.ts
-//   A1  invite-only (@world.access {join: listed}): someone not listed is refused at the door, 4010, in words that say
-//       only that the world isn't open to them; someone listed comes in
+//   A1  invite-only (@world.access {join: listed}): someone not listed is refused as for no world (world-unavailable);
+//       someone listed comes in
 //   A2  watch only ({join: listed, watch: anyone}): the same person may watch (spectate), and a body is refused
 //   A3  /worlds and the reads are per caller: an invite-only world is on no stranger's map and /geom answers as for no
-//       world; a listed caller's bearer sees it (access, you); /access answers enter | watch | none, and 401 anonymously
+//       world; a listed caller's bearer sees it (access, you); /access answers enter | watch | none, 404 world-unavailable
+//       to whom the world isn't discoverable, and 401 anonymously
+//   F23 no existence oracle (docs/DESIGN-log-vocabulary.md §F F-3): O1–O6 at their block
 //   A4  closing the door removes whoever is no longer let in, at once (4010); owners stay
 //   A5  a timed grant (roles:<id>.until): its holder is told before it ends (notice), and when it passes the authority
 //       writes its end (expire-roles) and the door removes them (4010)
@@ -101,12 +103,12 @@ ok(close.ok && removed && bob.closed === 4010 && bob.msgs.some((m) => m.type ===
 
 // ---- A1: invite-only ----
 { const c = await sock(srv.port); const j = await c.join("keep", "Carl");
-  ok(!j.snapshot && c.closed === 4010 && /"keep" isn't open to you/.test(j.errors.join(" ")) && !/role|listed/.test(j.errors.join(" ")),
-    "A1 someone not listed is refused at the door: 4010, and the words say only that it isn't open to them", [j.errors, c.closed]); c.close();
+  ok(!j.snapshot && c.closed === 4005 && j.errors.join(" ") === "No accessible world named keep.",
+    "A1 someone not listed is refused as for no world at all: world-unavailable (4005), words that say nothing more (§F F-3)", [j.errors, c.closed]); c.close();
   const r = await sock(srv.port); const jr = await r.join("keep", "Rowan", { agentToken: "tok-rowan" });
   ok(!!jr.snapshot, "A1 someone listed comes in", jr.errors); r.close();
   const w = await sock(srv.port); const jw = await w.join("keep", "Carl", { spectate: true });
-  ok(!jw.snapshot && w.closed === 4010, "A1 …and in an invite-only world the stranger can't even watch", [jw.errors, w.closed]); w.close(); }
+  ok(!jw.snapshot && w.closed === 4011, "A1 …and in an invite-only world the stranger can't even watch (world-unavailable: a watcher's close, as for no world)", [jw.errors, w.closed]); w.close(); }
 
 // ---- A3: per-caller visibility ----
 { const anon = await worldsAs(srv.port), stranger = await worldsAs(srv.port, "tok-moss"), member = await worldsAs(srv.port, "tok-rowan");
@@ -115,8 +117,37 @@ ok(close.ok && removed && bob.closed === 4010 && bob.msgs.some((m) => m.type ===
   ok(!anon.some((x) => x.name === "keep") && !stranger.some((x) => x.name === "keep") && geom.status === 404 && mine?.access === "invite-only" && mine?.you === "enter",
     "A3 an invite-only world is on no stranger's map (/geom answers as for no world); a listed caller sees it, and listed people enter", [anon.map((x) => x.name), stranger.map((x) => x.name), geom.status, mine]);
   const a0 = await accessAs(srv.port, "keep"), a1 = await accessAs(srv.port, "keep", "tok-moss"), a2 = await accessAs(srv.port, "keep", "tok-rowan"), a3 = await accessAs(srv.port, "nowhere", "tok-rowan");
-  ok(a0.status === 401 && a1.body?.you === "none" && a2.body?.you === "enter" && a3.body?.exists === false && a3.body?.found?.ok === false,
-    "A3 /access: 401 anonymously; none for a stranger, enter for a member; a name with no world says joining never founds one", [a0.status, a1.body, a2.body, a3.body]); }
+  ok(a0.status === 401 && a1.status === 404 && a1.body?.code === "world-unavailable" && a2.body?.you === "enter" && a3.status === 404 && a3.body?.code === "world-unavailable",
+    "A3 /access: 401 anonymously; world-unavailable (404) for a stranger, as for a name with no world; enter for a member", [a0.status, a1.body, a2.body, a3.body]); }
+// ---- F23 no existence oracle: one discoverability predicate (access.ts discoverable) behind /worlds, the join, /access and redial ----
+{ // the raw bytes of a join: every message as sent, then the close code and reason; the world's name stands as <name>
+  const rawJoin = (world, extra = {}) => new Promise((res) => { const ws = new WebSocket(`ws://127.0.0.1:${srv.port}/ws`); const got = [];
+    ws.onmessage = (ev) => got.push(String(ev.data)); ws.onclose = (ev) => res([...got, `close ${ev.code} ${ev.reason}`].join("\n").split(world).join("<name>"));
+    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world, id: "Moss", agentToken: "tok-moss", avatar: "", replica: true, ...extra })); });
+  const rawAccess = async (world, bearer?) => { const r = await fetch(`http://127.0.0.1:${srv.port}/access?world=${world}`, bearer ? { headers: { authorization: `Bearer ${bearer}` } } : {});
+    return `${r.status} ${r.headers.get("content-type")} ${(await r.text()).split(world).join("<name>")}`; };
+  const body = [await rawJoin("keep"), await rawJoin("nowhere")], watch = [await rawJoin("keep", { spectate: true }), await rawJoin("nowhere", { spectate: true })];
+  const acc = [await rawAccess("keep", "tok-moss"), await rawAccess("nowhere", "tok-moss")];
+  ok(body[0] === body[1] && watch[0] === watch[1] && acc[0] === acc[1] && /"code":"world-unavailable"/.test(body[0]) && /No accessible world named <name>\./.test(body[0]) && /^close 4005 world-unavailable$/m.test(body[0])
+    && /^close 4011 world-unavailable$/m.test(watch[0]) && acc[0] === '404 application/json {"code":"world-unavailable","message":"No accessible world named <name>."}' && !/exists/.test(acc[0] + body[0] + watch[0]),
+    "F23-O1 a hidden private world and a missing one are byte-equivalent to a signed stranger: the join (4005), the watcher's redial (4011) and /access (404 world-unavailable, no exists field)", { body, watch, acc });
+  const map = (await worldsAs(srv.port, "tok-moss")).map((x) => x.name);
+  ok(!map.includes("keep") && !map.includes("nowhere"), "F23-O2 /worlds lists neither the hidden world nor the missing one", map);
+  const m = await sock(srv.port); const jm = await m.join("keep", "Rowan", { agentToken: "tok-rowan" }); const am = await accessAs(srv.port, "keep", "tok-rowan");
+  ok(!!jm.snapshot && am.body?.exists === true && am.body?.you === "enter" && (await worldsAs(srv.port, "tok-rowan")).some((x) => x.name === "keep"),
+    "F23-O3 an authorized member sees the private world (/worlds), is answered by /access (exists, enter) and joins it", [jm.errors, am.body]); m.close();
+  ok(tool(["found", "porch", "--owner", "Ann"]).code === 0, "(F23-O4 setup) found porch, Ann owns it");
+  const ow = await sock(srv.port); await ow.join("porch", "Ann"); const door = await ow.req("set", { id: "@world", component: "access", value: { join: "listed", watch: "anyone" } }); ow.close();
+  const pj = await sock(srv.port); const jp = await pj.join("porch", "Moss", { agentToken: "tok-moss" }); const ap = await accessAs(srv.port, "porch", "tok-moss");
+  ok(door.ok && !jp.snapshot && pj.closed === 4010 && /"porch" isn.t open to you.*you may watch/.test(jp.errors.join(" ")) && ap.body?.exists === true && ap.body?.you === "watch",
+    "F23-O4 a world the stranger may discover (anyone may watch it) keeps its specific words: a body is refused naming the world and that watching is open; /access says exists, watch", [door.ok, jp.errors, pj.closed, ap.body]); pj.close();
+  const anonAcc = [await rawAccess("keep"), await rawAccess("nowhere")], anonJoin = await Promise.all(["keep", "nowhere"].map((w) => new Promise((res) => { const ws = new WebSocket(`ws://127.0.0.1:${srv.port}/ws`); const got = [];
+    ws.onmessage = (ev) => got.push(String(ev.data)); ws.onclose = (ev) => res([...got, `close ${ev.code}`].join("\n").split(w).join("<name>"));
+    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: w, id: "Carl", avatar: "", replica: true })); })));
+  ok(anonAcc[0] === anonAcc[1] && /^401 /.test(anonAcc[0]) && /sign in/.test(anonAcc[0]) && !/world-unavailable/.test(anonAcc[0]) && acc[0] !== anonAcc[0] && anonJoin[0] === anonJoin[1] && /world-unavailable/.test(anonJoin[0]),
+    "F23-O5 the unauthenticated stay classified apart from the signed-but-unentitled: /access says sign in (401) for both names, a stranger's says world-unavailable (404); a guest's join is world-unavailable for both", { anonAcc, anonJoin }); }
+// F23-O6 (mutation, run by hand and recorded in the commit): restoring `exists: true` on /access for an undiscoverable world, or
+// the old split (hidden → 4010 "isn't open to you", missing → 4005/4011 "no such world"), turns F23-O1 red
 // A3b: an unloaded world is read in its own case only, as the join door reads it (world.ts worldDirNamed); the variant
 // is only a finding on a case-insensitive filesystem (Windows, macOS): elsewhere the stat misses on its own
 { const code = `const { doorFor } = await import(${JSON.stringify(new URL("../../server/access.ts", import.meta.url).href)});
@@ -206,18 +237,18 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
 { const s2 = await start();
   const anon = await worldsAs(s2.port), member = (await worldsAs(s2.port, "tok-rowan")).find((x) => x.name === "keep");
   const a1 = await accessAs(s2.port, "keep", "tok-ivy");   // a stranger (Moss is listed by now, for A8; Fen holds A14's timed grant)
-  ok(!s2.dead && !anon.some((x) => x.name === "keep") && member?.loaded === false && member?.access === "invite-only" && member?.you === "enter" && a1.body?.you === "none",
+  ok(!s2.dead && !anon.some((x) => x.name === "keep") && member?.loaded === false && member?.access === "invite-only" && member?.you === "enter" && a1.body?.code === "world-unavailable",
     "A3 an idle world's door is read from its log (not loaded): a stranger's map lacks it; a member's shows it, members, enter", [anon.map((x) => x.name), member, a1.body]);
   // A14 (security review 10-18 M6): Fen's grant has ended but no sweep ran (the world is unloaded, the log still holds it): the reads refuse
   await pause("Fen's timed grant runs out, with no sweep to write its end", Math.max(0, fenUntil + 51 - Date.now()));
   // …by the SERVER's clock: WSL's wall clock steps back ~1.4 s now and then (identity RS3, 10-22), so a test-side pause can end
   // while the server still reads the grant as live; it then answers Fen 'enter', serves her /geom, and that loads the world.
   // /access is a door read (it loads nothing): wait until it says the grant is over
-  await tryUntil("the server's own clock has passed Fen's until", async () => (await accessAs(s2.port, "keep", "tok-fen")).body?.you === "none", { ms: 5000, step: 100 });
+  await tryUntil("the server's own clock has passed Fen's until", async () => (await accessAs(s2.port, "keep", "tok-fen")).body?.code === "world-unavailable", { ms: 5000, step: 100 });
   { const logHas = fs.readFileSync(path.join(W, "keep", "world.jsonl"), "utf8").includes(`"roles:${ids.Fen}"`) && !fs.readFileSync(path.join(W, "keep", "world.jsonl"), "utf8").includes("expire-roles");
     const map = await worldsAs(s2.port, "tok-fen"), acc = await accessAs(s2.port, "keep", "tok-fen"), g = await geomAs(s2.port, "keep", "tok-fen");
     const still = (await worldsAs(s2.port, "tok-rowan")).find((x) => x.name === "keep");
-    ok(logHas && !map.some((x) => x.name === "keep") && acc.body?.you === "none" && g === 404 && still?.loaded === false,
+    ok(logHas && !map.some((x) => x.name === "keep") && acc.body?.code === "world-unavailable" && g === 404 && still?.loaded === false,
       "A14 an ended timed grant is absent on every read: the unloaded world's /worlds, /access and /geom refuse the ex-member (the log still holds the grant, no expire-roles yet), and the refusal loads nothing",
       { logHas, map: map.map((x) => x.name), access: acc.body, geom: g, loaded: still?.loaded }); }
   // A8: the same world, still not loaded — the moderator log is read with the door
@@ -232,7 +263,7 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   // A14, the join: the first join loads the world; the door reads Fen's ended grant as absent BEFORE any sweep (4010)
   { const logHas = !fs.readFileSync(path.join(W, "keep", "world.jsonl"), "utf8").includes("expire-roles");
     const f = await sock(s2.port); const jf = await f.join("keep", "Fen", { agentToken: "tok-fen" });
-    ok(logHas && !jf.snapshot && f.closed === 4010 && /isn't open to you/.test(jf.errors.join(" ")), "A14 …and the join that loads the world is refused at the door (4010), the grant unswept until then", { logHas, join: jf.errors, closed: f.closed }); f.close(); }
+    ok(logHas && !jf.snapshot && f.closed === 4005 && jf.errors.join(" ") === "No accessible world named keep.", "A14 …and the join that loads the world is refused at the door (world-unavailable), the grant unswept until then", { logHas, join: jf.errors, closed: f.closed }); f.close(); }
   { // A10 (after A14's join, which must be the one that loads keep) (main #255, Mica 10-17: one sign-in, every world): a native session paired before that, which still carries
     // nativeWorld "water", is the account at every world's door, exactly as the same account's ordinary session
     const cookieGet = (sid, u) => fetch(`http://127.0.0.1:${s2.port}${u}`, { headers: { cookie: `ew_sess=${sid}` } });
@@ -555,9 +586,9 @@ const gonePid = await exitedPid();
   const v = await sock(s4.port); await v.join("yard", "Moss", { agentToken: "tok-moss" }); const asPip = await v.join("door", "Pip");
   const q = await sock(s4.port); await q.join("yard", "Moss", { agentToken: "tok-moss" }); const asQ = await q.join("yard", "Quentin");
   const fresh = await sock(s4.port); const jq = await fresh.join("yard", "Quentin");
-  ok(you(jx) === who.Moss && !asRowan.snapshot && x.closed != null && !ownTok.snapshot && y.closed === 4010 && !asPip.snapshot && /already joined as someone else/.test(asPip.errors.join(" "))
+  ok(you(jx) === who.Moss && !asRowan.snapshot && x.closed != null && !ownTok.snapshot && y.closed === 4005 && !asPip.snapshot && /already joined as someone else/.test(asPip.errors.join(" "))
     && !asQ.snapshot && /already joined as someone else/.test(asQ.errors.join(" ")) && !!jq.snapshot && you(jq) !== who.Moss,
-    "A15 a credentialed socket's re-join carries nothing over: as a member's typed name it is refused (the reserved name, or 'already joined as someone else' for Pip); with its own token it is still Moss, refused as a stranger (4010); and it files no identity under a name it types (a fresh Quentin isn't Moss)",
+    "A15 a credentialed socket's re-join carries nothing over: as a member's typed name it is refused (the reserved name, or 'already joined as someone else' for Pip); with its own token it is still Moss, refused as a stranger (world-unavailable); and it files no identity under a name it types (a fresh Quentin isn't Moss)",
     { asRowan: [asRowan.errors, x.closed], ownTok: [ownTok.errors, y.closed, you(ownTok)], asPip: [asPip.errors, v.closed, you(asPip)], asQ: [asQ.errors, q.closed], fresh: you(jq) });
   [x, y, v, q, fresh].forEach((s) => s.close());
   // A16: a role is keyed by the actor's opaque id, so no request under a name reaches another record. A role under the bare
@@ -568,7 +599,7 @@ const gonePid = await exitedPid();
   const delWren = await ann.req("delete", { id: "@world", component: `roles:${who.Wren}` });
   const f = await sock(s4.port); const jf = await f.join("door", "Fen", { agentToken: "tok-fen" });
   const wren = await accessAs(s4.port, "door", "tok-wren"), stranger = await accessAs(s4.port, "door", "tok-ivy"), anonMap = (await worldsAs(s4.port)).some((w) => w.name === "door");
-  ok(!byName.ok && byName.refused?.code === "shape" && !delName.ok && delWren.ok && jf.snapshot?.yourRights?.role === "owner" && wren.body?.you === "none" && stranger.body?.you === "none" && !anonMap,
+  ok(!byName.ok && byName.refused?.code === "shape" && !delName.ok && delWren.ok && jf.snapshot?.yourRights?.role === "owner" && wren.body?.code === "world-unavailable" && stranger.body?.code === "world-unavailable" && !anonMap,
     "A16 a revoke touches only its own record: a role under a bare name is refused and its delete finds nothing; deleting Wren's role leaves co-owner Fen an owner, and the door stays closed",
     { byName: byName.refused, delName: delName.refused, delWren: delWren.refused, fen: [jf.errors, jf.snapshot?.yourRights?.role], wren: wren.body, stranger: stranger.body, anonMap });
   f.close();
@@ -581,8 +612,8 @@ const gonePid = await exitedPid();
   const back = await sock(s4.port); const jb = await back.join("door", "Rowan", { agentToken: "tok-rowan" });
   const logged = fs.readFileSync(path.join(W, "door", "world.jsonl"), "utf8").split("\n").filter(Boolean)
     .some((l) => l.includes(`roles:${who.Rowan}`) && l.includes('"delete"'));
-  ok(!!jr.snapshot && del.ok && out && r.closed === 4010 && acc.body?.you === "none" && !jb.snapshot && back.closed === 4010 && logged,
-    "A17 a revoke takes effect: deleting a present member's role is accepted, removes them now (4010), /access says none, the rejoin is refused, and the log holds the delete",
+  ok(!!jr.snapshot && del.ok && out && r.closed === 4010 && acc.body?.code === "world-unavailable" && !jb.snapshot && back.closed === 4005 && logged,
+    "A17 a revoke takes effect: deleting a present member's role is accepted, removes them now (4010), /access and the rejoin answer world-unavailable, and the log holds the delete",
     { joined: !!jr.snapshot, del: del.refused, closed: r.closed, acc: acc.body, back: [jb.errors, back.closed], logged });
   r.close(); back.close(); ann.close(); try { s4.proc.kill(); await s4.proc.exited; } catch {} }
 // ---- B5, B12, B16 (anima-review[bot] on #260, 11-02): a server with a door key and an aid1 issuer; yard (A15's) is open ----

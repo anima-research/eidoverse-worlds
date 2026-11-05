@@ -6,15 +6,17 @@
 // @ts-nocheck
 import fs from "node:fs"; import path from "node:path"; import os from "node:os"; import crypto from "node:crypto"; import { spawnSync } from "node:child_process";
 import { tryUntil, until } from "./wait.ts";
-import { FEATURE_ID, checkRequires, requiresAdd, featureDecision, declaredBefore, MAX_FEATURES } from "../../shared/protocol/features.js";
-import { checkProvenance, provenanceOf, provenanceReadback, sourceTreeSha256, sourceRevisionOf } from "../../shared/protocol/provenance.js";
-import { checkHello, missingFeatures, NEED } from "../../shared/protocol/hello.js";
+import { FEATURE_ID, checkRequires, requiresAdd, featureDecision, declaredBefore, MAX_FEATURES, KNOWN_FEATURES, FEATURE_VERBS } from "../../shared/protocol/features.js";
+import { checkProvenance, provenanceOf, provenanceReadback } from "../../shared/protocol/provenance.js";
+import { sourceTreeSha256, sourceRevisionOf } from "../../server/provenance.ts";
+import { checkHello, missingFeatures, NEED, helloOf } from "../../shared/protocol/hello.js";
 import { readLog, fold, DIALECT, VERSION } from "../../shared/protocol/fold.js";
 import { PERSON_ID } from "../../shared/protocol/ids.js";
 import { ACTOR_ID } from "../../shared/protocol/names.js";
 import { custodyVerdict, readOnlyCustody, backupManifestOf, checkBackupManifest, MANIFEST } from "../../server/custodycheck.ts";
 import { openLive } from "../../server/livehost.ts";
 import { backupWorld } from "../../server/backups.ts";
+import { foundWorld } from "../../server/worldlog.ts";
 import { request } from "../../shared/protocol/authority.js";
 import { custodyFileIn } from "../../server/keyfiles.ts";
 
@@ -64,11 +66,17 @@ try {
     && checkProvenance({ ...P, writer: { ...P.writer, sourceRevision: "git:sha256:" + "b".repeat(64) } }) === null && checkProvenance({ ...P, writer: { ...P.writer, sourceRevision: "hg:" + "a".repeat(40) } })?.code === "provenance-writer-revision"
     && checkProvenance({ ...P, registry: { id: "registry", sha256: reg } })?.code === "provenance-registry" && checkProvenance({ ...P, extra: 1 })?.code === "provenance-shape");
   { // genesis is never redactable: a redaction naming seq 0 is refused by the fold, and the genesis stays
-    const lines = fs.readFileSync(path.join(ENGINE, "spec/conformance/logs/09-purge.jsonl"), "utf8").split("\n").filter(Boolean).slice(0, 2);
-    const g = JSON.parse(lines[0]); const wid = JSON.parse(lines[1]).world;
-    const purge = JSON.stringify({ world: wid, kind: "purge", actor: "system", verb: "purge", ts: 2, body: { values: [{ seq: 0 }] } });
-    const st = fold(readLog(lines.join("\n") + "\n" + purge + "\n"));
-    check("F24 genesis provenance is non-redactable: a redaction naming seq 0 is diagnosed and nothing of genesis is stripped", st.status === "ok" && st.diagnostics.some(([, c]) => c === "purge-target-range") && st.worldId === wid, st.diagnostics); }
+    const lines = fs.readFileSync(path.join(ENGINE, "spec/conformance/logs/09-redaction.jsonl"), "utf8").split("\n").filter(Boolean).slice(0, 2);
+    const wid = JSON.parse(lines[1]).world;
+    const redaction = JSON.stringify({ world: wid, kind: "redaction", actor: "system", ts: 2, body: { values: [{ seq: 0 }] } });
+    const st = fold(readLog(lines.join("\n") + "\n" + redaction + "\n"));
+    check("F24 genesis provenance is non-redactable: a redaction naming seq 0 is diagnosed and nothing of genesis is stripped", st.status === "ok" && st.diagnostics.some(([, c]) => c === "redaction-target-range") && st.worldId === wid, st.diagnostics); }
+  { // the server stamps it: a world it founds carries this tree's provenance in genesis, and the fold reads it
+    const W0 = path.join(S, "w0"); fs.mkdirSync(W0); const d0 = found(W0, "stamped"); const g0 = readLog(fs.readFileSync(path.join(d0, "world.jsonl")))[0];
+    const rev = sourceRevisionOf(ENGINE);
+    check("F24 a world the server founds carries genesis.body.provenance: schema-valid, writer eidoverse-server at this tree's revision and tree hash; the fold reads the world",
+      checkProvenance(g0.body.provenance) === null && g0.body.provenance.writer.name === "eidoverse-server" && g0.body.provenance.writer.sourceRevision === rev.sourceRevision && /^[0-9a-f]{64}$/.test(g0.body.provenance.writer.sourceTreeSha256)
+      && fold(readLog(fs.readFileSync(path.join(d0, "world.jsonl")))).status === "ok", g0.body); }
   { // the tree hash of a real tree, and a revision from git
     const R = path.join(S, "tree"); fs.mkdirSync(R); const git = (...a: string[]) => spawnSync("git", ["-C", R, ...a], { encoding: "utf8" });
     git("init", "-q"); git("config", "user.email", "t@example.invalid"); git("config", "user.name", "t"); fs.writeFileSync(path.join(R, "a.txt"), "one\n"); git("add", "."); git("commit", "-qm", "one");
@@ -91,9 +99,9 @@ try {
 
   // ---- F-3 on the server: the hello before any world lookup; F26: a key is not admission ----
   const freePort = async (from: number) => { for (let p = from; p < from + 200; p++) { const ok = await new Promise((res) => { try { const s = Bun.listen({ hostname: "0.0.0.0", port: p, socket: { data() {} } }); s.stop(true); res(true); } catch { res(false); } }); if (ok) return p; } throw new Error("no free port"); };
-  const startServer = async (worlds: string, tag: string, env: Record<string, string>) => {
+  const startServer = async (worlds: string, tag: string, env: Record<string, string>, pre: string[] = []) => {
     const port = await freePort(9100 + procs.length * 7); const logf = path.join(S, `${tag}.log`);
-    const p = Bun.spawn([process.execPath, "server/server.ts"], { cwd: ENGINE, env: { ...process.env, PORT: String(port), WORLDS_DIR: worlds, SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1", JOIN_TOKEN: "", SERVER_OPERATORS: "", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", ...env }, stdout: Bun.file(logf), stderr: Bun.file(logf + ".err") });
+    const p = Bun.spawn([process.execPath, ...pre, "server/server.ts"], { cwd: ENGINE, env: { ...process.env, PORT: String(port), WORLDS_DIR: worlds, SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1", JOIN_TOKEN: "", SERVER_OPERATORS: "", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", ...env }, stdout: Bun.file(logf), stderr: Bun.file(logf + ".err") });
     procs.push(p);
     if (!(await tryUntil(`the ${tag} server answers /worlds`, async () => (await fetch(`http://127.0.0.1:${port}/worlds`, { signal: AbortSignal.timeout(1000) })).status > 0, { ms: 115_000, step: 150 }))) throw new Error(`${tag} server didn't come up: ${fs.existsSync(logf + ".err") ? fs.readFileSync(logf + ".err", "utf8").slice(-800) : ""}`);
     return port;
@@ -123,7 +131,41 @@ try {
   { const r = await join(port2, { world: "here", id: "ann", ownerKey: "ed25519:BP7aKo17f474DD1aBSLG0a3Pb29Qs3yqQ6Ve0wSRVD0", hello: good });
     check("F26 a key alone is no admission: a join presenting a founder's key and no host credential is refused at the door", r.msgs.length === 1 && r.msgs[0].type === "error" && /token/.test(r.msgs[0].error) && r.close === 4003, r); }
   check("F26 (pending design row) create quota: the server sets no per-identity create quota today (worldlog.ts: 'sets no quotas'), so 'no quota without a host capability' has nothing to bind to yet; recorded, not claimed", true);
-  check("F23 (pending) the world-side compare over a world that REQUIRES a feature waits for the minor-1 fold to admit genesis.requires (the kernel re-pin); the pure compare and the order are proven above", true);
+  // F23 step 4 over a world that requires a feature: a server that implements test:probe@1 (a preload adds it), a world founded requiring it
+  const PROBE = "test:probe@1", pre = path.join(S, "probe-feature.ts");
+  fs.writeFileSync(pre, `import { KNOWN_FEATURES } from ${JSON.stringify(path.join(ENGINE, "shared/protocol/features.js"))}; KNOWN_FEATURES.add(${JSON.stringify(PROBE)});\n`);
+  const W4 = path.join(S, "w4"); fs.mkdirSync(W4);
+  KNOWN_FEATURES.add(PROBE); try { foundWorld(path.join(W4, "needs"), "needs", "keeper", "needs", undefined, { requires: [PROBE] }); } finally { KNOWN_FEATURES.delete(PROBE); }
+  const port4 = await startServer(W4, "features", {}, ["--preload", pre]);
+  { const r = await join(port4, { world: "needs", id: "ann", hello: good });
+    check("F23 a world requiring a feature the client lacks: after access, unsupported-feature naming only that id (no snapshot)", r.msgs.length === 1 && r.msgs[0].code === "unsupported-feature" && JSON.stringify(r.msgs[0].need) === JSON.stringify([PROBE]) && r.close === 4005, r); }
+  { const r = await join(port4, { world: "needs", id: "ann", hello: { ...good, features: [PROBE] } }); const snap = r.msgs.find((m) => m.type === "snapshot");
+    check("F23 …a client declaring it joins, and the snapshot repeats requires", !!snap && JSON.stringify(snap.requires) === JSON.stringify([PROBE]), snap ? snap.requires : r.msgs); }
+  { const r = await join(port4, { world: "nope", id: "ann", hello: good });
+    check("F23 …and a missing world is world-unavailable, never unsupported-feature (step 4 only after access)", r.msgs.length === 1 && r.msgs[0].code === "world-unavailable" && !/unsupported/.test(JSON.stringify(r.msgs)), r); }
+  { // F30 in the authority: a feature's verb before the world declares it is refused; declared in genesis, it runs
+    KNOWN_FEATURES.add(PROBE); FEATURE_VERBS.set("say", PROBE);
+    try { const W5 = path.join(S, "w5"); fs.mkdirSync(W5);
+      foundWorld(path.join(W5, "plain"), "plain", "keeper", "plain"); foundWorld(path.join(W5, "declared"), "declared", "keeper", "declared", undefined, { requires: [PROBE] });
+      const [a, b] = ["plain", "declared"].map((n) => { const w = openLive(path.join(W5, n), n); return request(w, w.entries[1].actor, "say", { text: "hi" }); });
+      check("F30 the authority refuses a feature's verb before the world declares it (unsupported-feature, via declaredBefore), and runs it once genesis requires it", a?.ok === false && a.refused?.code === "unsupported-feature" && b?.ok === true, { a, b }); }
+    finally { KNOWN_FEATURES.delete(PROBE); FEATURE_VERBS.delete("say"); } }
+  // F-3: every in-repo client sends a valid hello: each joins a server that requires one (the browser's two paths: refusedjoin-check W0)
+  const W6 = path.join(S, "w6"); fs.mkdirSync(W6); found(W6, "here");
+  const port6 = await startServer(W6, "hello-required", { HELLO_REQUIRED: "1" });
+  const url6 = `ws://127.0.0.1:${port6}/ws`;
+  { const r = await join(port6, { world: "here", id: "ann" }); check("F22 (control) this server requires the hello: a join without one is update-required", r.msgs[0]?.code === "update-required", r); }
+  { const { WorldAgent } = await import("../../mcpl/agent.ts"); const a: any = new WorldAgent({ url: url6, name: "probe-agent", world: "here", declares: null });
+    let err = ""; try { await a.connect(); } catch (e) { err = String(e?.message ?? e); } try { a.close(); } catch {}
+    check("F22 mcpl/agent.ts sends a valid hello: it joins a HELLO_REQUIRED server", !err, err); }
+  { const r = spawnSync(process.execPath, ["server/tend.ts", "here"], { cwd: ENGINE, env: { ...process.env, PORT: String(port6), JOIN_TOKEN: "" }, encoding: "utf8", timeout: 20_000 });
+    check("F22 server/tend.ts sends a valid hello: it joins a HELLO_REQUIRED server (exit 0 at the snapshot)", r.status === 0, (r.stderr ?? "") + (r.stdout ?? "")); }
+  { const { WorldClient } = await import("../captionbot/world.ts"); const c: any = new WorldClient({ url: url6, token: "", world: "here", actor: "probe-captions", screenId: "none", agent: false });
+    c.connect(); const ok = await tryUntil("the captionbot joins", () => c.open === true, { ms: 10_000, step: 50 }); c.ws.onclose = null; c.ws.close();
+    check("F22 tools/captionbot/world.ts sends a valid hello: it joins a HELLO_REQUIRED server", !!ok); }
+  { const html = fs.readFileSync(path.join(ENGINE, "client/index.html"), "utf8"); const m = /hello: (\{ dialect: 'eidoverse-log'[^}]*\})/.exec(html);
+    const inline = m ? Function(`return (${m[1]});`)() : null;
+    check("F22 the page's inline early socket spells exactly helloOf() (it imports nothing; refusedjoin-check W0 joins with it)", JSON.stringify(inline) === JSON.stringify(helloOf()), { inline, helloOf: helloOf() }); }
 
   // ---- F-5: custody ----
   const W3 = path.join(S, "w3"); fs.mkdirSync(W3); const d3 = found(W3, "keyed"); const cf = custodyFileIn(W3);

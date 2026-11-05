@@ -3,6 +3,7 @@
 // turn, publish, update), SAY_VERBS (say, undo, caption), BATCH_VERBS (sky, weather, sculpt, batch, fork-copy), and
 // buildBatch (refactor split, 2026-10-17; moved from authority.js's VERBS table unchanged). Only schema's did-you-mean reads UP (its guess).
 import { cowState, applyCow, DIALECT, VERSION, emptyState, keyOk, utf8Len } from "../fold.js";
+import { checkRequires, KNOWN_FEATURES } from "../features.js";
 import { valueCheck } from "./checks.js";
 import { COMPONENTS, STATUSES, defOf } from "../componentspec.js";
 import { normalizeCaptionArgs, captionRefusal, foldCaption } from "../../captions.js";
@@ -38,6 +39,8 @@ const FOUNDING_VERBS = {
     // key is tier 1. Without one tier 0 stays empty, and under §13's add-key rule (GOV-5) it can never be filled later:
     // the operator is then the world's top governance key. rewindWindow is left at its default (1000 change entries).
     if (a.ownerKey !== undefined && !keyOk(a.ownerKey)) refuse("shape", "ownerKey is your own governance key: ed25519:<base64url of 32 bytes> (PROTOCOL §13)", "make one on your own machine (openssl genpkey -algorithm ed25519; PROTOCOL §13, \"Whose key is tier 0\"); or leave ownerKey out");
+    if (a.requires !== undefined) { const r = checkRequires(a.requires); if (r) refuse("shape", `requires: ${r.detail}`, "requires is a sorted list of namespace:name@major ids");
+      const u = a.requires.filter((id) => !KNOWN_FEATURES.has(id)); if (u.length) refuse("unsupported-feature", `this server doesn't implement ${u.join(", ")}, so it couldn't read a world requiring it`, "leave it out, or found the world on a server that implements it"); }
     const cu = w.custody(); if (!cu) throw new Error("authority bug: founding needs io.custody (the sequencer and founder keys, §13)");
     if (a.ownerKey !== undefined && (a.ownerKey === cu.operator() || a.ownerKey === cu.sequencer())) refuse("shape", "ownerKey must be your own key, not this server's", "");
     const ops = [setOp("@world", "about", { name: a.title ?? w.name, text: a.text ?? "" }), setOp("@world", "bounds", { min: [-20, -50, -20], max: [20, 12, 20] }),
@@ -49,7 +52,8 @@ const FOUNDING_VERBS = {
     // after genesis would leave a world that exists and that nobody owns
     for (const op of ops) valueCheck(emptyState(), op, { now: w.now() });
     w.append({ kind: "genesis", actor: "system", body: { dialect: DIALECT, v: VERSION, minor: 1, nonce: nonce16(w), owners: [a.ownerKey ? [a.ownerKey] : [], [cu.operator()]], sequencer: cu.sequencer(),
-      ...(a.from?.seq !== undefined ? { parent: { world: a.from.world, seq: a.from.seq, head: a.from.head } } : {}) } });
+      ...(a.from?.seq !== undefined ? { parent: { world: a.from.world, seq: a.from.seq, head: a.from.head } } : {}),
+      ...(a.requires?.length ? { requires: a.requires } : {}), ...(w.provenance?.() ? { provenance: w.provenance() } : {}) } });   // §F F-1, F-2
     const plan = admit(w, w.state(), { actor, cap: { kind: "founding", ids: ["@world"], comps: ops.map((o) => o.comp) } }, ops);
     // born in today's spelling (shapes: the shape repair's version): the maintenance command's repair never runs on this world (shapesMarked)
     changeEntry(w, plan, w.append(actOf(w, actor, "create-world", a, { shapes: SHAPES_VERSION })));

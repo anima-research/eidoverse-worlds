@@ -2296,7 +2296,8 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
       ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`);
     // replica: a world sends this page its own log stream (slice 3b; net.js sendJoin says the same, and
     // a v1 world ignores it)
-    ws.onopen = () => ws.send(JSON.stringify({ type: 'join', world, id: name, avatar, spectate: false, renderer: false, token, ...(account ? { account } : {}), replica: true, session, clock: true }));
+    // hello: shared/protocol/hello.js helloOf(), spelled out (an inline script imports nothing); refusedjoin-check W0 joins with it
+    ws.onopen = () => ws.send(JSON.stringify({ type: 'join', world, id: name, avatar, spectate: false, renderer: false, token, ...(account ? { account } : {}), replica: true, session, clock: true, hello: { dialect: 'eidoverse-log', v: 4, minor: 1, features: [] } }));
     ws.onmessage = (ev) => {
       stash.buffered.push(ev.data);
       stash.arrived.push(performance.now());

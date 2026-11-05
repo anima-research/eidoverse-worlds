@@ -23,6 +23,7 @@ import { simFolder, carried, digestOf } from "../shared/protocol/simlayer.js";
 import { readLogBytes, appendDurable, putBlobFile } from "./durable.ts";
 import { custodyAt, modLogAt } from "./custody.ts";
 import { custodyVerdict, readOnlyCustody } from "./custodycheck.ts";
+import { serverProvenance } from "./provenance.ts";
 import { directoryFor } from "./directory.ts";
 import { SANDBOX } from "../shared/protocol/sandbox.js";
 import { readCache, readCacheFile, checkCache, resumeFold, writeCache, dropCache, CACHE_FILE } from "./statecache.ts";
@@ -119,7 +120,7 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
     scripts: opts.scripts === undefined ? SANDBOX : opts.scripts, present: opts.present, sayFloor: opts.sayFloor,
     writeLine: (line: string) => appendDurable(logPath, line),
     presence: { bodies: {}, holds: {}, ...loadConsent(dir) }, savePresence: saveConsent(dir),
-    custody: cv.ok ? custodyAt(custodyFile) : readOnlyCustody(custodyFile, cv.why),
+    custody: cv.ok ? custodyAt(custodyFile) : readOnlyCustody(custodyFile, cv.why), provenance: serverProvenance,
     nameOf: opts.nameOf ?? directoryFor(path.dirname(dir)).nameOf,
     kindOf: opts.kindOf ?? ((id: string) => directoryFor(path.dirname(dir)).entry(id)?.kind ?? null),
     ...modLogAt(path.join(dir, "world.mod.jsonl")),
