@@ -1,5 +1,5 @@
 // tools/protocol/freeze-check.ts — the §F freeze of docs/DESIGN-log-vocabulary.md as fixtures: F22–F31 and P3's identity grammar.
-//   F28–F31 feature declarations (shared/protocol/features.js); F24/F25 provenance (shared/protocol/provenance.js);
+//   F28–F31 feature declarations (shared/protocol/features.js); F24 provenance (shared/protocol/provenance.js; F25, a repair body's, lands with the first repair writer);
 //   F22/F23 the join's hello order (shared/protocol/hello.js, server/server.ts join); F26 a key is not admission;
 //   F27 custody at startup and in backups (server/custodycheck.ts); P3 the person shape is exactly u-{20} | u-{24}.
 //   bun tools/protocol/freeze-check.ts
@@ -7,7 +7,7 @@
 import fs from "node:fs"; import path from "node:path"; import os from "node:os"; import crypto from "node:crypto"; import { spawnSync } from "node:child_process";
 import { tryUntil, until } from "./wait.ts";
 import { FEATURE_ID, checkRequires, requiresAdd, featureDecision, declaredBefore, MAX_FEATURES, KNOWN_FEATURES, FEATURE_VERBS } from "../../shared/protocol/features.js";
-import { checkProvenance, provenanceOf, provenanceReadback } from "../../shared/protocol/provenance.js";
+import { checkProvenance, provenanceOf } from "../../shared/protocol/provenance.js";
 import { sourceTreeSha256, sourceRevisionOf } from "../../server/provenance.ts";
 import { checkHello, missingFeatures, NEED, helloOf } from "../../shared/protocol/hello.js";
 import { readLog, fold, DIALECT, VERSION } from "../../shared/protocol/fold.js";
@@ -87,10 +87,6 @@ try {
     fs.writeFileSync(path.join(R, "b.txt"), "new, untracked\n"); const h3 = await sourceTreeSha256(R);
     check("F24 sourceTreeSha256 hashes the running tree: 64 hex, moved by an edit and by an untracked file; the revision is git:sha1:<40 hex> with dirty read from the tree",
       /^[0-9a-f]{64}$/.test(h1) && h1 !== h2 && h2 !== h3 && /^git:sha1:[0-9a-f]{40}$/.test(r1.sourceRevision) && r1.dirty === false && r2.dirty === true && r1.sourceRevision === r2.sourceRevision, { h1, h2, h3, r1, r2 }); }
-  check("F25 a repair body carrying provenance reads back; after a redaction only the commitment remains and the reader says 'provenance unavailable', never a guess",
-    provenanceReadback({ provenance: P, salt: "x" }).available === true && provenanceReadback({ commitment: "0".repeat(64) }).available === false && /provenance unavailable/.test(provenanceReadback({ commitment: "0".repeat(64) }).reason)
-    && /redacted/.test(provenanceReadback({ commitment: "0".repeat(64) }).reason) && provenanceReadback({ commit: "0".repeat(64) }).available === false && provenanceReadback({ args: {} }).available === false && provenanceReadback(undefined).available === false
-    && !("provenance" in provenanceReadback({ commitment: "0".repeat(64) })));
 
   // ---- F-3: the hello, pure ----
   const good = { dialect: DIALECT, v: VERSION, features: [] };

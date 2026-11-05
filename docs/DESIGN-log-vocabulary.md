@@ -404,7 +404,7 @@ Fixtures for §F (implementation gate, beside F1–F21):
 | F22 | hello: an unknown v/minor gets `update-required` before any world lookup; no world name/existence in the reply |
 | F23 | hello: `unsupported-feature` only after access is granted; a refused principal can't tell a missing world from a closed one |
 | F24 | genesis provenance present, schema-valid, non-redactable; `dirty:true` without `sourceTreeSha256` is invalid |
-| F25 | repair provenance: after a redaction only the commitment remains, and the reader reports "provenance unavailable", not a guess |
+| F25 | repair provenance: after a redaction only the commitment remains, and the reader reports "provenance unavailable", not a guess. *Deferred (simplify review D5, 11-05): no writer puts provenance in a repair body yet, so the reader lands with the first one.* |
 | F26 | a self-minted (key-only) identity may be a tier-0 owner, yet gets no create quota or admission without a host-issued capability |
 | F27 | custody: a missing/mismatched sequencer key → read-only at startup; no key is minted; a backup manifest without fingerprints + custody hash fails the server check |
 | F28–F31 | the four F-1 feature fixtures (unknown in genesis; unknown `requiresAdd`; use-before-declare; remove/reorder invalid) |

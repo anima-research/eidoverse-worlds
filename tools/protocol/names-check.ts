@@ -625,10 +625,10 @@ const cases: Case[] = [
       return { stale: files.filter((f) => motionBob.test(readText(f))), says: files.filter((f) => /\boscillate\b/.test(readText(f))), vh: /`oscillate`/.test(vh) && /`bob`/.test(vh), cl: /oscillate/.test(readText("spec/REGISTRY-CHANGELOG.md").split("\n").filter((l: string) => /^- 2026-10-1[78]/.test(l)).join("\n")) }; },
     good: (o) => !o.stale.length && o.says.length === 5 && o.vh && o.cl },
   // ---------------- OLD: the read-side fallbacks S6 deleted (11-05), one row per old key ----------------
-  { id: "OLD", what: "every old spelling S6 stopped reading is ignored by its reader (the value's absence, or the reader's refusal), while today's spelling reads: grip fingers, the packet's pre-release key, terrain.water, the renamed codes, the sky's clock/weatherSeconds/dormantRated/forecast dwellSec+transitionSec, world.log, provenance body.commit, Light day, motion bob (cutJson: vocab-fixtures F12)", async run() {
+  { id: "OLD", what: "every old spelling S6 stopped reading is ignored by its reader (the value's absence, or the reader's refusal), while today's spelling reads: grip fingers, the packet's pre-release key, terrain.water, the renamed codes, the sky's clock/weatherSeconds/dormantRated/forecast dwellSec+transitionSec, world.log, Light day, motion bob (cutJson: vocab-fixtures F12; provenance body.commit: its reader went with simplify D5)", async run() {
       const imp = (f: string) => import(TREE + f);
-      const [G, OA, TS, FC, SB, PV, CM, ME] = await Promise.all(["shared/grab.js", "shared/onceanim.js", "shared/terrainshape.js", "shared/forecast.js", "shared/protocol/sandbox.js",
-        "shared/protocol/provenance.js", "shared/components.js", "client/lib/motioneval.js"].map(imp)) as any[];
+      const [G, OA, TS, FC, SB, CM, ME] = await Promise.all(["shared/grab.js", "shared/onceanim.js", "shared/terrainshape.js", "shared/forecast.js", "shared/protocol/sandbox.js",
+        "shared/components.js", "client/lib/motioneval.js"].map(imp)) as any[];
       const T = 1_700_000_000_000; const keys = (src: string) => { const r = SB.runScript({ text: src, self: "k", key: "script:k", event: { on: "load" }, now: 0, seed: "0".repeat(64), st: { entities: { k: { born: 0, c: {} } }, diagnostics: [] } }); return r.ok ? r.ops[0].value : r; };
       // [old key, what the reader gives the old spelling, what it gives today's]: old must be the absent/default reading, today's the value
       const rows: [string, any, any, any, any][] = [
@@ -642,12 +642,11 @@ const cases: Case[] = [
         ["sky forecast dwellSec", FC.normalizePolicy({ seed: 1, states: ["rain"], dwellSec: [900, 900] }).dwellMinMs, 600_000, FC.normalizePolicy({ seed: 1, states: ["rain"], dwell: [900, 900] }).dwellMinMs, 900_000],
         ["sky forecast transitionSec", FC.normalizePolicy({ seed: 1, states: ["rain"], dwell: [900, 900], transitionSec: 40 }).transitionSec, 30, FC.normalizePolicy({ seed: 1, states: ["rain"], dwell: [900, 900], transition: 40 }).transitionSec, 40],
         ["world.log", (keys(`world.set("self", "t/k", Object.keys(world).sort());`) ?? []).includes?.("log") ?? "ran?", false, (keys(`world.set("self", "t/k", Object.keys(console));`) ?? []).includes?.("log"), true],
-        ["provenance body.commit", PV.provenanceReadback({ commit: "abc" }).reason, "provenance unavailable: the body carries none", /redacted/.test(PV.provenanceReadback({ commitment: "abc" }).reason), true],
         ["Light day", CM.lightOf({ light: { day: false } })?.daytime, "dim", CM.lightOf({ light: { daytime: "full" } })?.daytime, "full"],
         ["motion bob", ME.evalWholeMotion({ pos: [0, 0, 0], yaw: 0 }, { type: "bob", amp: 1, period: 2, t0: T }, T + 500).ok, false, ME.evalWholeMotion({ pos: [0, 0, 0], yaw: 0 }, { type: "oscillate", amp: 1, period: 2, t0: T }, T + 500).ok, true],
       ];
       return { bad: rows.filter(([, o, ow, n, nw]) => JSON.stringify(o) !== JSON.stringify(ow) || JSON.stringify(n) !== JSON.stringify(nw)).map(([k, o, ow, n, nw]) => ({ k, o, ow, n, nw })), n: rows.length }; },
-    good: (o) => o.n === 13 && o.bad.length === 0 },
+    good: (o) => o.n === 12 && o.bad.length === 0 },
   // ---------------- X: the record ----------------
   { id: "X1", what: "the version history records the renames at minor 0, and the spec body speaks the new words (§5 consent: the two gates since R 10-28, §7a rule 4)", run() {
       const md = readText("spec/PROTOCOL.md"); const vh = md.slice(md.indexOf("## Version history")) + readText("spec/history/PRE-RELEASE-RENAMES.md"); const body = md.slice(0, md.indexOf("## Version history"));

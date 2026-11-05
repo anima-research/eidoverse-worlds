@@ -28,11 +28,3 @@ export function provenanceOf({ registrySha256, name, version, sourceRevision, so
   const bad = checkProvenance(p); if (bad) throw new Error(`provenance: ${bad.code}: ${bad.detail}`);
   return p;
 }
-
-/** What a reader says of a request body that carried provenance: after a redaction only the commitment remains. */
-export function provenanceReadback(body) {
-  if (!bag(body)) return { available: false, reason: "provenance unavailable: no body" };
-  if (bag(body.provenance)) { const bad = checkProvenance(body.provenance); return bad ? { available: false, reason: `provenance unavailable: ${bad.code}` } : { available: true, provenance: body.provenance }; }
-  if (typeof body.commitment === "string") return { available: false, reason: "provenance unavailable: the body was redacted; only its commitment remains" };
-  return { available: false, reason: "provenance unavailable: the body carries none" };
-}
