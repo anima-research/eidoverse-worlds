@@ -20,7 +20,7 @@ const RENAME_COOLDOWN_MS = Math.max(0, Number(process.env.RENAME_COOLDOWN_DAYS ?
 import { PORT, HOST, JOIN_TOKEN, RENDERER_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, MSG_RATE, FRAME_MS, FRAME_SKIP_BUFFERED, SNAP_TIMEOUT_MS, SNAP_SWEEP_GRACE_MS, SNAP_SWEEP_EVERY_MS } from "./config.ts";
 import { type HnSession, agentTokens, accountOf } from "./auth.ts";
 import { addrSanctionsFor, saveAddrSanctions, notPersisted } from "./moderation.ts";
-import { entryFor, doorOfWorld, doorFor, whoOf, settleAccess, sweepAccess, setLoadedWorlds, discoverable, unavailable, unavailableClose, type Expel } from "./access.ts";
+import { entryFor, doorOfWorld, whoOf, settleAccess, sweepAccess, setLoadedWorlds, unavailable, unavailableClose, toldOf, type Told, type Expel } from "./access.ts";
 import { isOperator, mintSetupToken } from "./operators.ts";
 import { setupLine } from "./setup.ts";
 import { resolveLibFile } from "./libfile.ts";
@@ -28,11 +28,10 @@ import { summarizeGlb } from "./geometry.ts";
 // The world itself (a log + the embodied plane) and the registry. The boot
 // sweep below stays HERE: waking scripted worlds with the server is boot
 // policy, not world mechanics.
-import { World, type Client, worlds, getWorld, worldExists, wireSettledPose, wireRights, authorityNow } from "./world.ts";
+import { World, type Client, worlds, getWorld, wireSettledPose, wireRights, authorityNow } from "./world.ts";
 import { isWorldSaved } from "./worldlog.ts";
-import { oldWorldAt, bootNotice, noFoldRefusal, interruptedVisitorText } from "./oldworlds.ts";
-import { isSwapUnfinished } from "./livehost.ts";
-import { oldFormatRefused, provenWho, ownerOf } from "./upgrade.ts";
+import { bootNotice, noFoldRefusal, interruptedVisitorText } from "./oldworlds.ts";
+import { oldFormatRefused, provenWho } from "./upgrade.ts";
 import { backupsDirProblem } from "./backups.ts";
 import { isNativeSession } from "./native-login.ts";
 import { custodyFileIn, directoryFileIn } from "./keyfiles.ts";
@@ -502,34 +501,20 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     // (access.ts unavailable). A watcher's close redials (upstream #258: an observer started early gets in once it is founded).
     const unavailableHere = () => { const u = unavailable(wname);
       ws.send(JSON.stringify({ type: "error", code: u.code, error: u.message })); c.ws.close?.(unavailableClose(!!(msg.spectate || msg.renderer)), u.code); return null; };
-    // Joining never FOUNDS a world (security review 10-06 H3; RFC-005 §3.2.7 "founding is not joining"): a name with no
-    // world behind it is refused, and only a world is served (the old protocol has no runtime here: an old log is
-    // translated once, by the operator, into a new world).
-    if (worldExists(wname) && isSwapUnfinished(join(WORLDS_DIR, wname))) {   // an in-place translation stopped mid-swap: never served (boot names the recovery)
-      ws.send(JSON.stringify({ type: "error", error: interruptedVisitorText(wname) }));
-      c.ws.close?.(4005, "interrupted conversion");
-      return null;
-    }
-    if (worldExists(wname) && !isWorldSaved(wname)) {   // a world saved in an old format: it is translated once, by the operator
-      // (server/oldworlds.ts: a first-protocol log.jsonl is translatable; a log saved before the 2026-10-07 names pass is
-      // re-translated from its original log, or refounded). The visitor is told in plain words that nothing is lost and
-      // who converts it; the command line is the operator's, in the boot notice. A directory holding no old log at all
-      // (an empty one) is no world: it is refused as one.
-      const old = oldWorldAt(WORLDS_DIR, wname);
-      if (!old) return unavailableHere();   // an empty directory is no world
-      // …with the structured reason beside the words: who may upgrade it, and the doc (server/upgrade.ts; docs/WIRE.md 4005)
-      const who = provenWho(c, msg), operator = isOperator(who?.account ?? null);
-      const refuse = (owner: "bound" | "name" | null) => { ws.send(JSON.stringify({ type: "error", error: old.visitor, refused: oldFormatRefused(old.kind, old.visitor, operator, owner) }));
-        c.ws.close?.(4005, "old-format world"); };
-      // a signed-in non-operator may be its owner: world.ts owner-of answers (cached), then the refusal goes
-      if (old.kind === "translatable" && who && !operator) void ownerOf(wname, who, { join: true }).then((o) => refuse(o?.recognised ?? null), () => refuse(null));
-      else refuse(null);
-      return null;
-    }
-    if (!worldExists(wname)) return unavailableHere();
-    // asked of the door on disk (access.ts doorFor), before loading: a refused join never loads or pins the world
+    // What this joiner may be told (access.ts toldOf, the one predicate): a world discoverable to them opens; an interrupted
+    // in-place conversion or an old-format world is diagnosed only to the operator and (an old one) its recognised owner, with
+    // its structured reason (server/upgrade.ts; docs/WIRE.md 4005); to anyone else it is world-unavailable, as a missing or
+    // private world. Asked of the door on disk, before loading: a refused join never loads or pins the world. Joining never
+    // FOUNDS a world (security review 10-06 H3; RFC-005 §3.2.7).
     { const dir = directoryFor(WORLDS_DIR);   // read-only: an undiscoverable world records nothing about who asked
-      if (!discoverable(doorFor(wname), { account: c.account ?? null, actorId: c.account ? dir.idOfSub(c.account) : null, trustedRenderer: !!c.trustedRenderer })) return unavailableHere(); }
+      const answer = (t: Told) => {
+        if (t.kind === "interrupted") { ws.send(JSON.stringify({ type: "error", error: interruptedVisitorText(wname) })); c.ws.close?.(4005, "interrupted conversion"); }
+        else if (t.kind === "old") { ws.send(JSON.stringify({ type: "error", error: t.old.visitor, refused: oldFormatRefused(t.old.kind, t.old.visitor, t.operator, t.owner) })); c.ws.close?.(4005, "old-format world"); }
+        else if (t.kind === "unavailable") unavailableHere();
+        return null; };
+      const told = toldOf(wname, { account: c.account ?? null, actorId: c.account ? dir.idOfSub(c.account) : null, trustedRenderer: !!c.trustedRenderer }, provenWho(c, msg), { join: true });
+      if (told instanceof Promise) { void told.then(answer); return null; }
+      if (told.kind !== "door") return answer(told); }
     const w = getWorld(wname);
     // A display name is not proof of anything, so two people may never show the same one at once, and an anonymous
     // visitor may not wear a name an account has claimed here (H1/M3: typing someone's name to stand in for them).

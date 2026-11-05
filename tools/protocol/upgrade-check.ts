@@ -9,20 +9,21 @@
 //   UB11 a link inside an old world refuses its upgrade: the boot notice says so (which, and the way past it), the CLI's refusal says the same, nothing moved (review L6)
 //   US14 …and the browser's upgrade is refused in those words (the splash shows the reason)
 //   UB9  a translation that fails after its backup (an injected swap failure) names the kept backup, still verified (review L5)
-//   US1  an old-format world's join is refused (close 4005 kept) with refused {code: "old-format", doc, upgrade: "operator-or-owner", operator, may}: false for a visitor, true for an operator's session
-//   US2  world-upgrade-review / world-upgrade from someone who is neither an operator nor its owner: refused, "an operator or the world's owner", nothing written
+//   US1  an old-format world's join is refused (close 4005 kept) with refused {code: "old-format", doc, upgrade: "operator-or-owner", operator, may} to an operator's
+//        session; a visitor and a guest get a missing world's world-unavailable (F23, Mica 11-05: only the operator and its owner are told)
+//   US2  world-upgrade-review / world-upgrade from someone who is neither an operator nor its owner: refused as for no world (world-unavailable), nothing written
 //   US3  world-upgrade-review → the dry-run report and its hash (the CLI's), nothing written
 //   US4  world-upgrade with a stale hash is refused (both hashes), nothing written
 //   US5  world-upgrade with the reviewed hash: a verified backup, the CLI's translation bound to it, the world joinable at once; the result names the backup and the hash
 //   US6  operator requests are rate-limited (a fresh account: RATE_N taken, the next refused)
-//   US7  an agent (mcpl/agent.ts) refused at an old-format world says, in words, who can upgrade it and where the doc is
+//   US7  an agent (mcpl/agent.ts; the operator's) refused at an old-format world says, in words, who can upgrade it and where the doc is
 //   UB6  a world name starting with "-" is refused by the CLI; UB7 a WORLDS_DIR/<name> that is a symlink is refused; UB8 after `--` nothing is a flag
 //   US8  the server refuses a "-x" world and a symlinked one (not-old), nothing written
 //   US9  an ownerless world: the operator who upgrades it is its owner (claim); the result says "You're now this world's owner", no warning
 //   US10 its owner bound by main's records (the grant's sub) may upgrade it: the join says may, owner "bound"; the review and upgrade run, the log says how; they join as owner
 //   US11 an owner main recorded no account for may upgrade it by name (owner "name", provisional), said in the replies and the log; the report's claim binds that owner to them, and they join as owner
-//   US12 a signed-in account of another name may not: the join says may false, the review is refused, nothing written
-//   US13 a malformed world-upgrade (approved not 64 hex) spends no rate slot; a visitor asking about no such world is told not-old (review L3)
+//   US12 a signed-in account of another name may not: the join and the review say world-unavailable, nothing written
+//   US13 a malformed world-upgrade (approved not 64 hex) spends no rate slot; a visitor asking about no such world is told world-unavailable (review L3; F23)
 //   US15 a non-owner's requests are rate-limited before the owner check runs (review full-260 L2)
 //   UD   the doc's "Upgrading a main-era server" (R 10-27), run as written: /whoami names your account; after an upgrade the
 //        operator's whois, then operator-repair set/delete, give the world to the right account (nobody is locked out)
@@ -132,6 +133,7 @@ async function freePort(from: number) { for (let p = from; p < from + 200; p++) 
   const free = await new Promise((res) => { try { const s = Bun.listen({ hostname: "0.0.0.0", port: p, socket: { data() {} } }); s.stop(true); res(true); } catch { res(false); } }); if (free) return p; } throw new Error("no free port"); }
 const OP = "a".repeat(64), VIS = "b".repeat(64), OP2 = "c".repeat(64), OP3 = "d".repeat(64), ANN = "e".repeat(64), BO = "f".repeat(64), OP4 = "9".repeat(64), NOB = "8".repeat(64);
 const sf = path.join(root, "sessions.json");
+const AGTOK = path.join(root, "tokens.json"); fs.writeFileSync(AGTOK, JSON.stringify({ "tok-ag": { id: "Ag" } }));   // US7's agent, an operator
 fs.writeFileSync(sf, JSON.stringify({ [OP]: { sub: "human:test:op", name: "Opal", scopes: ["worlds:join"], exp: Date.now() + 3600_000 },
   [VIS]: { sub: "human:test:vis", name: "Vee", scopes: ["worlds:join"], exp: Date.now() + 3600_000 },
   [OP2]: { sub: "human:test:op2", name: "Otto", scopes: ["worlds:join"], exp: Date.now() + 3600_000 },
@@ -142,7 +144,7 @@ fs.writeFileSync(sf, JSON.stringify({ [OP]: { sub: "human:test:op", name: "Opal"
   [NOB]: { sub: "human:test:nob", name: "Nobody", scopes: ["worlds:join"], exp: Date.now() + 3600_000 } }), { mode: 0o600 });
 const port = await freePort(9440); const slog = path.join(root, "server.log");
 const proc = Bun.spawn(["bun", "server/server.ts"], { cwd: ENGINE, env: { ...process.env, PORT: String(port), WORLDS_DIR: W, OPT_DIR: OPT, BACKUPS_DIR: "", SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1",
-  BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", SERVER_OPERATORS: "human:test:op,human:test:op2,human:test:op3,human:test:op4", SESSIONS_PATH: sf, EIDO_FLIGHT_REHEARSAL: "" }, stdout: Bun.file(slog), stderr: Bun.file(slog + ".err") });
+  BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", SERVER_OPERATORS: "human:test:op,human:test:op2,human:test:op3,human:test:op4,agent:token:ag", SESSIONS_PATH: sf, AGENT_TOKENS_PATH: AGTOK, EIDO_FLIGHT_REHEARSAL: "" }, stdout: Bun.file(slog), stderr: Bun.file(slog + ".err") });
 process.on("exit", () => { try { proc.kill(); } catch {} });
 if (!(await tryUntil("the server answers /worlds", async () => (await fetch(`http://127.0.0.1:${port}/worlds`, { signal: AbortSignal.timeout(1000) })).ok, { ms: 115_000, step: 150 })))
   { console.log(`  FAIL the server didn't come up: ${fs.existsSync(slog + ".err") ? fs.readFileSync(slog + ".err", "utf8").slice(-500) : ""}`); process.exit(1); }
@@ -167,12 +169,16 @@ async function ask(sid: string | null, type: string, body: any, ms = 60_000) {
 const attic = oldWorld("attic"); const atticBefore = tree(attic);
 { const v = await joinOld(VIS, "attic"), a = await joinOld(null, "attic"), o = await joinOld(OP, "attic");
   const want = (r: any, op: boolean) => r.closed?.code === 4005 && r.err?.refused?.code === "old-format" && r.err.refused.doc === "docs/TRANSLATING-OLD-WORLDS.md" && r.err.refused.upgrade === "operator-or-owner" && r.err.refused.operator === op && r.err.refused.may === op && r.err.refused.owner === undefined && typeof r.err.error === "string" && r.err.error.length > 10;
-  ok(want(v, false) && want(a, false) && want(o, true), "US1 an old-format world's join: close 4005 as before, and the error carries refused {code: 'old-format', doc, upgrade: 'operator-or-owner', operator, may} — false for a signed-in visitor (not its owner) and a guest, true for the operator's session", { v, a, o });
+  const nv = await joinOld(VIS, "no-such-attic"), na = await joinOld(null, "no-such-attic");
+  const gone = (r: any, n: any) => r.closed?.code === 4005 && r.closed.reason === "world-unavailable" && r.err?.code === "world-unavailable" && !r.err.refused
+    && JSON.stringify({ ...r.err, error: r.err.error.replace("attic", "W") }) === JSON.stringify({ ...n.err, error: n.err.error.replace("no-such-attic", "W") }) && n.closed?.code === 4005;
+  ok(want(o, true) && gone(v, nv) && gone(a, na), "US1 an old-format world's join: the operator's session gets close 4005 and refused {code: 'old-format', doc, upgrade: 'operator-or-owner', operator, may: true}; a signed-in visitor (not its owner) and a guest get a missing world's answer, world-unavailable (F23, Mica 11-05)", { v, a, o, nv });
 }
 { const r1 = await ask(VIS, "world-upgrade-review", { world: "attic" }), r2 = await ask(null, "world-upgrade", { world: "attic", approved: "0".repeat(64) });
-  ok(r1.ok === false && r1.refused?.code === "rights" && /operator .*or the world's owner/.test(r1.refused.reason) && /ask the server's operator or the world's owner/.test(r1.refused.fix ?? "") && !r1.report && r2.ok === false && r2.refused?.code === "rights" && /not signed in/.test(r2.refused.reason)
-    && same(tree(attic), atticBefore) && backupsOf("attic").length === 0,
-    "US2 world-upgrade-review / world-upgrade from someone who is neither an operator nor its owner (a signed-in visitor, a guest): refused, 'an operator or the world's owner' (the guest: not signed in), no report, nothing written", { r1, r2 });
+  const n1 = await ask(VIS, "world-upgrade-review", { world: "no-such-attic" }), n2 = await ask(null, "world-upgrade", { world: "no-such-attic", approved: "0".repeat(64) });
+  const asMissing = (r: any, n: any) => r.ok === false && r.refused?.code === "world-unavailable" && r.refused.reason === n.refused?.reason?.replace("no-such-attic", "attic") && !r.report;
+  ok(asMissing(r1, n1) && asMissing(r2, n2) && same(tree(attic), atticBefore) && backupsOf("attic").length === 0,
+    "US2 world-upgrade-review / world-upgrade from someone who is neither an operator nor its owner (a signed-in visitor, a guest): refused as for a world that isn't there (world-unavailable, F23), no report, nothing written", { r1, r2, n1 });
 }
 let reviewed = "";
 { const r = await ask(OP, "world-upgrade-review", { world: "attic" }); reviewed = r.hash ?? "";
@@ -218,8 +224,8 @@ const byOwner = async (sid: string, world: string, id: string) => { const j = aw
     "US10 its owner bound by main's records (the grant's sub; another name now): the join says may, owner 'bound'; the review and the upgrade run and say so (report.claim how 'bound'); the log says 'as owner (bound)'; they join as owner", { j: x.j, r: x.r.owner ?? x.r.refused, claim: x.r.report?.claim, u: x.u?.owner ?? x.u?.refused, role: x.role }); }
 { const d = ownedWorld("nook", { id: "Ann", role: "owner" }), before = tree(d);
   const v = await joinOld(VIS, "nook"), vr = await ask(VIS, "world-upgrade-review", { world: "nook" });
-  ok(v.err?.refused?.may === false && v.err.refused.owner === undefined && vr.ok === false && vr.refused?.code === "rights" && !vr.report && same(tree(d), before) && backupsOf("nook").length === 0,
-    "US12 a signed-in account of another name (Vee) at Ann's world: the join says may false, the review is refused (rights), nothing written", { j: v.err?.refused, vr: vr.refused ?? vr.ok });
+  ok(v.err?.code === "world-unavailable" && !v.err.refused && vr.ok === false && vr.refused?.code === "world-unavailable" && !vr.report && same(tree(d), before) && backupsOf("nook").length === 0,
+    "US12 a signed-in account of another name (Vee) at Ann's world: the join and the review answer as for a world that isn't there (world-unavailable, F23), nothing written", { j: v.err, vr: vr.refused ?? vr.ok });
   const x = await byOwner(ANN, "nook", "Ann");
   ok(x.role === "owner" && x.r.report?.claim?.how === "name" && x.r.report.claim.by === "Ann" && x.u?.warning === undefined && x.j?.may === true && x.j.owner === "name" && x.r.ok && x.r.owner?.recognised === "name" && x.r.owner.name === "Ann" && x.u?.ok === true && x.u.owner?.recognised === "name" && isWorldDir(d)
     && /nook: upgraded by human:test:ann as owner \(name\)/.test(fs.readFileSync(slog, "utf8")),
@@ -232,19 +238,20 @@ const byOwner = async (sid: string, world: string, id: string) => { const j = aw
 { const RATE_N = 6, seen: any[] = [];   // server/upgrade.ts RATE_N; OP4 is used nowhere else
   for (let k = 0; k <= RATE_N; k++) seen.push((await ask(OP4, "world-upgrade", { world: "cellar", approved: "nope" })).refused?.code);
   const after = await ask(OP4, "world-upgrade-review", { world: "cellar" }), none = await ask(VIS, "world-upgrade-review", { world: "nowhere-at-all" });
-  ok(seen.every((x) => x === "shape") && after.ok === true && none.refused?.code === "not-old" && /no world saved in an older format called "nowhere-at-all"/.test(none.refused.reason),
-    "US13 RATE_N+1 malformed world-upgrades (approved not a hash) are each refused 'shape' and spend no rate slot (the next review runs); a visitor asking about a world that doesn't exist is told not-old", { seen, after: after.ok ?? after.refused, none: none.refused }); }
+  ok(seen.every((x) => x === "shape") && after.ok === true && none.refused?.code === "world-unavailable" && none.refused.reason === "No accessible world named nowhere-at-all.",
+    "US13 RATE_N+1 malformed world-upgrades (approved not a hash) are each refused 'shape' and spend no rate slot (the next review runs); a visitor asking about a world that doesn't exist is told world-unavailable (F23: as an old world they may not upgrade)", { seen, after: after.ok ?? after.refused, none: none.refused }); }
 { const r = await ask(OP4, "world-upgrade-review", { world: "rafters" }), u = r.ok ? await ask(OP4, "world-upgrade", { world: "rafters", approved: r.hash }, 120_000) : r;
   ok(u.ok === false && u.refused?.code === "refused" && /extra\/shared is a link .*replaced by the file it points to/.test(u.refused.reason) && !isWorldDir(rafters),
     "US14 the browser's upgrade of a world holding a link is refused in the boot notice's words (the splash shows the reason)", u.refused ?? u); }
 { oldWorld("granary"); const RATE_N = 6, seen: any[] = [];   // review full-260 L2: the rate is checked before the owner check (a CLI run) it pays for
   for (let k = 0; k <= RATE_N; k++) { const r = await ask(NOB, "world-upgrade-review", { world: "granary" }); seen.push(r.ok ? "ok" : r.refused?.code); }
-  ok(seen.slice(0, RATE_N).every((x) => x === "rights") && seen[RATE_N] === "rate", "US15 a signed-in non-owner's requests spend the rate too: RATE_N refused 'rights' (each an owner check), then 'rate' with no check run", seen); }
+  const nob = (await ask(NOB, "world-upgrade-review", { world: "no-such-granary" })).refused?.code;
+  ok(seen.slice(0, RATE_N).every((x) => x === "world-unavailable") && seen[RATE_N] === "rate" && nob === "rate", "US15 a signed-in non-owner's requests spend the rate too: RATE_N refused world-unavailable (each an owner check), then 'rate' with no check run, for a missing name too (F23: the slot is spent on every name)", { seen, nob }); }
 { oldWorld("loft");
   const { WorldAgent } = await import("../../mcpl/agent.ts");
-  const ag: any = new WorldAgent({ name: "Ag", world: "loft", url: `ws://127.0.0.1:${port}/ws` });
+  const ag: any = new WorldAgent({ name: "Ag", world: "loft", url: `ws://127.0.0.1:${port}/ws`, agentToken: "tok-ag" });   // an operator: a stranger is told world-unavailable (F23)
   let said = ""; try { await ag.connect(); } catch (x) { said = String(x?.message ?? x); } try { ag.close(); } catch {}
-  ok(/operator or the world's owner/.test(said) && /TRANSLATING-OLD-WORLDS\.md/.test(said) && /upgrade/.test(said) && /older/.test(said), "US7 an agent refused at an old-format world is told in words: saved by an older Eidoverse, a one-time upgrade only the server's operator or the world's owner can run, and where the doc is", said);
+  ok(/You are this server's operator: upgrade it/.test(said) && /TRANSLATING-OLD-WORLDS\.md/.test(said) && /upgrade/.test(said) && /older/.test(said), "US7 an agent (the operator's) refused at an old-format world is told in words: saved by an older Eidoverse, a one-time upgrade it may run from the server or the browser, and where the doc is (a stranger's agent is told world-unavailable: F23)", said);
 }
 // ================= UD: the main-era upgrade section, its commands run as the doc writes them =================
 { const doc = fs.readFileSync(path.join(ENGINE, "docs/TRANSLATING-OLD-WORLDS.md"), "utf8");

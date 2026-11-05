@@ -143,9 +143,11 @@ translated world is an ordinary world from then on.
 
 ## Upgrading from the browser
 
-Opening an old-format world shows a splash: "This world was saved by an
-older Eidoverse. It needs a one-time upgrade before anyone can enter.", the
-server's own sentence, and a link to this page. The join is still refused
+Opening an old-format world as its server's operator or its owner (below)
+shows a splash: "This world was saved by an older Eidoverse. It needs a
+one-time upgrade before anyone can enter.", the server's own sentence, and a
+link to this page. Anyone else is told what a missing world tells them
+(`world-unavailable`: a world never says it exists to someone it isn't open to). The join is still refused
 (close 4005); its `error` carries `refused {code: "old-format", doc,
 upgrade: "operator-or-owner", operator, may, owner?}`, so agents read the same thing in words.
 

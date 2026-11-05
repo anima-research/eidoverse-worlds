@@ -51,11 +51,13 @@ async function freePort(from: number) { for (let p = from; p < from + 200; p++) 
   const ok2 = await new Promise((res) => { try { const s = Bun.listen({ hostname: "0.0.0.0", port: p, socket: { data() {} } }); s.stop(true); res(true); } catch { res(false); } }); if (ok2) return p; } throw new Error("no free port"); }
 const procs: any[] = [];
 process.on("exit", () => { for (const p of procs) try { p.kill(); } catch {} });
+// S6's operator (an enrolled agent): an old-format world is said only to the operator and its owner (F23, Mica 11-05)
+const OPTOK = path.join(root, "op-tokens.json"); fs.writeFileSync(OPTOK, JSON.stringify({ "tok-opal": { id: "Opal" } }));
 async function startServer(tree: string, worlds: string, opt: string, tag: string) {
   const port = await freePort(8990 + procs.length * 7);
   const logf = path.join(root, `${tag}.log`);
   const p = Bun.spawn(["bun", "server/server.ts"], { cwd: tree, env: { ...process.env, PORT: String(port), WORLDS_DIR: worlds, OPT_DIR: opt, SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1", RENAME_COOLDOWN_DAYS: "0.001",
-    BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", SERVER_OPERATORS: "", EIDO_FLIGHT_REHEARSAL: "" }, stdout: Bun.file(logf), stderr: Bun.file(logf + ".err") });
+    BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", SERVER_OPERATORS: "agent:token:opal", AGENT_TOKENS_PATH: OPTOK, EIDO_FLIGHT_REHEARSAL: "" }, stdout: Bun.file(logf), stderr: Bun.file(logf + ".err") });
   procs.push(p);
   if (await tryUntil(`the ${tag} server answers /worlds`, async () => (await fetch(`http://127.0.0.1:${port}/worlds`, { signal: AbortSignal.timeout(1000) })).ok, { ms: 115_000, step: 150 })) return { port, proc: p, log: logf }; // bounded: on this host a closed local port can drop the SYN instead of refusing it
   throw new Error(`${tag} server didn't come up: ${fs.existsSync(logf + ".err") ? fs.readFileSync(logf + ".err", "utf8").slice(-800) : ""}`);
@@ -429,13 +431,13 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   // v1's mount names its socket `slot`; today's (and shared/hierarchy.js, the renderer's reading) `socket`
   const v1Translated = (st: any) => ({ ...st, entities: Object.fromEntries(Object.entries<any>(st.entities).map(([id, e]) => [id, e.parent && "slot" in e.parent ? { ...e, parent: (({ slot, ...p }) => ({ ...p, socket: slot }))(e.parent) } : e])) });
   const old = { snapshot: { state: v1Translated(v1st) } }, neu = await client(srv.port, "oldtown-new", "Ann", REPLICA);
-  const oldv1 = await client(srv.port, "oldtown", "Ann");
+  const oldv1 = await client(srv.port, "oldtown", "Opal", { agentToken: "tok-opal" });
   await tryUntil("the old world's joiner is closed", () => oldv1.ws.readyState === 3, { ms: 2000, step: 50 });
   const OLD_SAY = `"oldtown" was saved by an older version of Eidoverse and needs a one-time conversion by whoever runs this server or the world's owner. Nothing is lost — the world's log is kept as it was.`;
-  ok(!oldv1.snapshot && oldv1.of("error").some((m) => m.error === OLD_SAY) && oldv1.ws.readyState === 3, "S6 the server doesn't serve the old world itself: the visitor is told, in plain words, that it needs a one-time conversion and nothing is lost (owner 10-15)", oldv1.msgs.map((m) => m.type === "error" ? m.error : m.type));
+  ok(!oldv1.snapshot && oldv1.of("error").some((m) => m.error === OLD_SAY) && oldv1.ws.readyState === 3, "S6 the server doesn't serve the old world itself: the operator is told, in plain words, that it needs a one-time conversion and nothing is lost (owner 10-15; a stranger is told world-unavailable: F23, access-check O7)", oldv1.msgs.map((m) => m.type === "error" ? m.error : m.type));
   ok(oldv1.of("error").every((m) => !/\bbun\b|tools\/|world\.ts/.test(m.error)), "S6 …with no command line a visitor can't run", oldv1.of("error").map((m) => m.error)); oldv1.close();
   { const { WorldAgent } = await import("../../mcpl/agent.ts");   // an agent is told the same, as its join's error (not a join timeout)
-    const ag: any = new WorldAgent({ url: `ws://127.0.0.1:${srv.port}/ws`, name: "Bob", world: "oldtown", avatar: "" });
+    const ag: any = new WorldAgent({ url: `ws://127.0.0.1:${srv.port}/ws`, name: "Opal", world: "oldtown", avatar: "", agentToken: "tok-opal" });
     let why = ""; try { await ag.connect(); } catch (e) { why = String((e as Error).message); } try { ag.close(); } catch {}
     // the world's words as the cause inside the agent's own sentence (upstream #247: "the world refused the join: …")
     ok(why.startsWith(`the world refused the join: ${OLD_SAY.replace(/\.+$/, "")}. `) && /server's operator/.test(why) && /TRANSLATING-OLD-WORLDS\.md/.test(why), "S6 an agent joining the old world is refused with the same words (its connect rejects with them; mcpl travel reports them), then who may upgrade it and the doc (upgrade-check US7)", why); }
@@ -443,7 +445,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok(tool(["found", "prenamed", "--owner", "Ann"]).code === 0, "S6 a world to age into a pre-names one");
   { const fp = path.join(W4, "prenamed", "world.jsonl"); const lines = fs.readFileSync(fp, "utf8").split("\n");
     const g = JSON.parse(lines[0]); const { v, ...rest } = g.body; g.body = { ...rest, version: v }; lines[0] = JSON.stringify(g); fs.writeFileSync(fp, lines.join("\n")); }
-  const pre = await client(srv.port, "prenamed", "Ann", REPLICA); await tryUntil("the prenamed world's joiner is closed", () => pre.ws.readyState === 3, { ms: 2000, step: 50 });
+  const pre = await client(srv.port, "prenamed", "Opal", { ...REPLICA, agentToken: "tok-opal" }); await tryUntil("the prenamed world's joiner is closed", () => pre.ws.readyState === 3, { ms: 2000, step: 50 });
   const preSay = pre.of("error").at(-1)?.error ?? "";
   ok(!pre.snapshot && /^"prenamed" /.test(preSay) && /whoever runs this server/.test(preSay) && /kept as it was/.test(preSay) && !/\bbun\b|tools\/|world\.ts|translate /.test(preSay) && preSay !== OLD_SAY.replace("oldtown", "prenamed"),
     "S6 a pre-names world is refused in its own plain words (no command line)", preSay); pre.close();

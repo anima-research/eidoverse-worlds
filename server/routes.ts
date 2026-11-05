@@ -72,7 +72,8 @@ try { clientLogStore = new ClientLogStore(CLIENTLOG_DIR); } catch (e) { console.
 registerSystem({ name: "clientlog-retire", everyMs: 3_600_000, fn: (now) => clientLogStore?.retire(now) });
 import { seatStore, announceProfileUpdate, MAX_PROPOSAL_BYTES } from "./seats.ts";
 import { agentTokens, aid1JoinIdentity } from "./auth.ts";
-import { httpCaller, httpVisitor, hashedAddress, visibleTo, discoverable, unavailable, doorFor, youAt, bearerOf } from "./access.ts";
+import { httpCaller, httpVisitor, hashedAddress, visibleTo, unavailable, doorFor, youAt, bearerOf, toldOf, httpProven } from "./access.ts";
+import { interruptedVisitorText } from "./oldworlds.ts";
 import { setupPage, setupClaim } from "./setup.ts";
 import { setupOpen } from "./operators.ts";
 import { ClientLogRate, ClientLogStore, LIMITS as CLIENTLOG_LIMITS, scrub, holdsPrivateKey, boundLines } from "./clientlog.ts";
@@ -795,16 +796,21 @@ const ROUTES: Route[] = [
     // not discover answers exactly as a missing one: 404 world-unavailable.
     //   { world, exists: true, you: "enter"|"watch"|"none", why? } | 404 {code: "world-unavailable", message}
     match: (u) => u.pathname === "/access",
-    handler: ({ req, url }) => {
+    // An interrupted conversion or an old-format world is said only to the operator or its recognised owner (access.ts toldOf):
+    //   { world, exists: true, you: "none", state: "interrupted" | "old-format", why }
+    handler: async ({ req, url }) => {
       const j = (o: unknown, status = 200) => new Response(JSON.stringify(o),
         { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
       const caller = httpCaller(req);
       if (!caller) return j({ error: "sign in (cookie) or send Authorization: Bearer <your credential>" }, 401);
       const name = url.searchParams.get("world") ?? "";
       if (!/^[a-z0-9_-]{1,64}$/i.test(name)) return j({ error: `"${name}" is not a world name` }, 400);
-      const door = doorFor(name);
-      if (!discoverable(door, caller)) return j(unavailable(name), 404);
-      const y = youAt(door!, caller);
+      const told = await toldOf(name, caller, httpProven(req));
+      if (told.kind === "unavailable") return j(unavailable(name), 404);
+      if (told.kind === "interrupted") return j({ world: name, exists: true, you: "none", state: "interrupted", why: interruptedVisitorText(name) });
+      if (told.kind === "old") return j({ world: name, exists: true, you: "none", state: "old-format", why: told.old.visitor });
+      const door = told.door;
+      const y = youAt(door, caller);
       return j({ world: name, exists: true, you: y.you, ...(y.why && y.you !== "enter" ? { why: y.why } : {}) });
     },
   },

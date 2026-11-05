@@ -36,6 +36,9 @@ import { readLogBytes } from "./durable.ts";
 import { addressOf } from "./peer.ts";
 import { entryOf, doorOf as doorOfWc, listedIn, timedGrants, leftWords, ACCESS_WARN_MS } from "../shared/protocol/access.js";
 import { worldDirNamed, type World, type Client } from "./world.ts";
+import { isWorldDir, isSwapUnfinished } from "./livehost.ts";
+import { oldWorldAt, type OldWorld } from "./oldworlds.ts";
+import { ownerOf } from "./upgrade.ts";
 
 /** Close code for "this world is not open to you": refused at the door, or removed because access ended or changed.
  *  Clients don't redial it (4006 is moderation's, 4005 a bad link). */
@@ -85,6 +88,7 @@ export function doorFor(name: string): Door | null {
   const live = loadedWorlds().get(name);
   if (live) return doorOfWorld(live);
   if (!/^[a-z0-9_-]{1,64}$/i.test(name) || !worldDirNamed(name)) return null;   // its own case only, as the join door (world.ts)
+  if (!savedWorld(name)) return null;   // mid-swap or an old format: no door to read (its bans may not be in); toldOf says the rest
   const file = join(WORLDS_DIR, name, "world.jsonl");
   let st; try { st = statSync(file); } catch { return null; }
   const modFile = join(WORLDS_DIR, name, "world.mod.jsonl");
@@ -160,6 +164,28 @@ export function discoverable(door: Door | null, who: Who | null, now = Date.now(
   const bypass = listed && (isOwner(eff) || MOD_POWERS.some((p: string) => eff?.permissions?.includes(p)));
   return entryOf(door.wc, { actor: actorId ?? undefined, anon: !account, bypass, trustedRenderer: !!who?.trustedRenderer }, door.name, now).may !== "none";
 }
+// ---- what a name is to someone (§F F-3: no existence oracle; Mica 11-05, #23 ruling 4) ----
+const savedWorld = (name: string) => { const d = join(WORLDS_DIR, name); return !isSwapUnfinished(d) && isWorldDir(d); };
+/** What `who` may be told about `name`: `door` (a saved world discoverable to them), `interrupted` (an in-place conversion
+ *  stopped mid-swap) or `old` (saved in an older format), else `unavailable`, what a missing world gets. The two diagnoses
+ *  go only to the operator and, for an old world, its recognised owner (upgrade.ts ownerOf); `proven` is the account a
+ *  credential proved (upgrade.ts provenWho), never a typed name. A Promise only while an old world's owner is read. */
+export type Told = { kind: "door"; door: Door } | { kind: "unavailable" } | { kind: "interrupted" }
+  | { kind: "old"; old: OldWorld; operator: boolean; owner: "bound" | "name" | null; ownerName?: string };
+export function toldOf(name: string, who: Who | null, proven: { account: string; name: string } | null = null, { join: joining = false } = {}): Told | Promise<Told> {
+  const no: Told = { kind: "unavailable" };
+  if (!/^[a-z0-9_-]{1,64}$/i.test(name)) return no;
+  if (!loadedWorlds().has(name)) {
+    if (!worldDirNamed(name)) return no;
+    const d = join(WORLDS_DIR, name), operator = isOperator(proven?.account ?? null);
+    if (isSwapUnfinished(d)) return operator ? { kind: "interrupted" } : no;
+    if (!isWorldDir(d)) { const old = oldWorldAt(WORLDS_DIR, name); if (!old) return no;
+      if (operator) return { kind: "old", old, operator, owner: null };
+      if (old.kind !== "translatable" || !proven) return no;
+      return ownerOf(name, proven, { join: joining }).then((o) => (o?.recognised ? { kind: "old", old, operator, owner: o.recognised, ownerName: o.owner } as Told : no), () => no); } }
+  const door = doorFor(name);
+  return door && discoverable(door, who) ? { kind: "door", door } : no;
+}
 /** May `who` at least watch this world (it is on their map, its reads answer)? */
 export function visibleTo(door: Door | null, who: Who | null, now = Date.now()): boolean {
   return discoverable(door, who, now) && entryFor(door!, who ?? { account: null }, "watch", { now }) === null;
@@ -180,6 +206,14 @@ export function httpCaller(req: Request): Who | null {
   const s = sessionOfRequest(req);
   if (s && (s.scopes.includes("worlds:join") || s.scopes.includes("worlds:spectate"))) return whoAccount(s.sub);   // one sign-in, every world (main #255: a session's old nativeWorld no longer narrows it)
   return bearerCaller(req) ?? null;
+}
+/** The account and credential name an HTTP caller proves (httpCaller's, with the name an old world's owner check reads). */
+export function httpProven(req: Request): { account: string; name: string } | null {
+  const s = sessionOfRequest(req);
+  if (s && (s.scopes.includes("worlds:join") || s.scopes.includes("worlds:spectate"))) return { account: s.sub, name: s.name ?? "" };
+  if (!/^Bearer\b/i.test(req.headers.get("authorization") ?? "")) return null;
+  const tok = bearerOf(req); if (!tok || (JOIN_TOKEN && tok === JOIN_TOKEN)) return null;
+  const a = accountOf(tok); return a && "account" in a ? { account: a.account, name: a.name } : null;
 }
 /** Who an `Authorization: Bearer` proves, ignoring any cookie: undefined when none is sent, null when it proves nobody. */
 export function bearerCaller(req: Request): Who | null | undefined {

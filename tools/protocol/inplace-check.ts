@@ -23,7 +23,8 @@
 //   IP12 the snapshot oracle re-runs on a translated world's kept originals (log.original.jsonl, snapshot.original.json)
 //   IP13 the process dies between swap steps (WORLD_TS_DIE_AT_STEP, no rollback): a re-run sees the half-swapped
 //        directory and finishes the swap, saying so (review r11 L4)
-//   IP13s a half-swapped world (marked translation.lock) is never served, banned account included; boot names the recovery
+//   IP13s a half-swapped world (marked translation.lock) is never served, banned account included; boot names the recovery;
+//        a stranger's join is a missing world's bytes, the operator's join and /access say it was interrupted (F23)
 //   IP13z a death before the first rename: the re-run clears the marker; rollback of a marked world refuses
 //   IP14 an old log written to during the translation (a server still running): the swap refuses and moves nothing
 //   IP15 a write that slips in mid-swap (injected: WORLD_TS_TOUCH_SOURCE_AT_STEP) undoes the swap
@@ -164,6 +165,15 @@ async function boot(tag: string, extra: Record<string, string> = {}, attempt = 1
   if (proc.exitCode !== null && attempt < 3) return boot(tag, extra, attempt + 1);   // lost the port to a sibling: pick another
   throw new Error(`${tag}: the server didn't come up: ${fs.existsSync(log + ".err") ? fs.readFileSync(log + ".err", "utf8").slice(-500) : ""}`);
 }
+// F23 (Mica 11-05, #23 ruling 4): what a stranger and the operator are told. The operator's session; a join's raw bytes
+// (every message, then the close), the world's name read as <name>, for byte-equivalence with a missing world
+const OP_SID = "0".repeat(64), OPS = path.join(root, "op-sessions.json");
+fs.writeFileSync(OPS, JSON.stringify({ [OP_SID]: { sub: "human:test:op", name: "Opal", scopes: ["worlds:join"], exp: Date.now() + 3600_000 } }), { mode: 0o600 });
+const WITH_OP = { SERVER_OPERATORS: "human:test:op", SESSIONS_PATH: OPS };
+const rawJoin = (port: number, world: string, id = "Ann", sid: string | null = null, extra: Record<string, unknown> = {}) => new Promise<string>((res) => {
+  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, sid ? { headers: { cookie: `ew_sess=${sid}` } } as any : undefined); const got: string[] = [];
+  ws.onmessage = (ev) => got.push(String(ev.data)); ws.onclose = (ev) => res([...got, `close ${ev.code} ${ev.reason}`].join("\n").split(world).join("<name>"));
+  ws.onopen = () => ws.send(JSON.stringify({ type: "join", world, id, avatar: "", replica: true, ...extra })); });
 async function joinAs(port: number, world: string, id = "Ann") {
   const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`); const msgs: any[] = [];
   ws.onmessage = (ev) => msgs.push(JSON.parse(String(ev.data)));
@@ -178,9 +188,11 @@ async function joinAs(port: number, world: string, id = "Ann") {
 const porch = oldWorld("porch");
 const before = fingerprint(porch);
 // the server is running before the translation, and refuses the old world as it is (control)
-const srv1 = await boot("boot1");
-{ const j = await joinAs(srv1.port, "porch");
-  ok(!j.snap && /older version of Eidoverse/.test(j.err ?? "") && /old-format world "porch"/.test(fs.readFileSync(srv1.log, "utf8")), "IP2 setup: before the translation, the running server flags \"porch\" at boot and refuses a visitor in plain words", j.types); }
+const srv1 = await boot("boot1", WITH_OP);
+{ const v = [await rawJoin(srv1.port, "porch"), await rawJoin(srv1.port, "nowhere")], op = await rawJoin(srv1.port, "porch", "Opal", OP_SID);
+  ok(v[0] === v[1] && /"code":"world-unavailable"/.test(v[0]) && /^close 4005 world-unavailable$/m.test(v[0]) && /old-format world "porch"/.test(fs.readFileSync(srv1.log, "utf8")),
+    "IP2 setup: before the translation, the running server flags \"porch\" at boot, and a visitor's join is byte-identical to a missing world's (world-unavailable, F23)", v);
+  ok(/older version of Eidoverse/.test(op) && /"code":"old-format"/.test(op) && /^close 4005 old-format world$/m.test(op), "IP2 F23 …while the operator is told it is an old-format world, in plain words with its structured reason", op); }
 // IP27 (wire half): a browser-like joiner that doesn't say replica (not a native session) is told to reload or update
 { const ws = new WebSocket(`ws://127.0.0.1:${srv1.port}/ws`); const msgs: any[] = []; ws.onmessage = (ev) => msgs.push(JSON.parse(String(ev.data)));
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
@@ -516,13 +528,19 @@ for (const k of [1, 3]) { const name = `halfway${k}`; const d = oldWorld(name); 
 // finishes it, the ban holds
 { const name = "halfbanned"; oldWorld(name, { extra: [{ actor: "Ann", verb: "ban", args: { id: "Troll", reason: "spam" } }] });
   const died = xlate([name], { WORLD_TS_DIE_AT_STEP: "1" });
-  const srv = await boot("bootHalf");
+  const srv = await boot("bootHalf", WITH_OP);
   // /worlds answers before boot has printed (and registered) the half-swapped world: wait for that line, not a time (16-shard load red)
   const said = () => { try { return fs.readFileSync(srv.log, "utf8"); } catch { return ""; } };
   await tryUntil(`boot names ${name} as not served`, () => new RegExp(`world "${name}".*NOT being served`).test(said()), { ms: 30_000, step: 100 });
-  const j = await joinAs(srv.port, name, "Troll"); const bootLog = said();
+  const j = [await rawJoin(srv.port, name, "Troll"), await rawJoin(srv.port, "nowhere", "Troll")], jw = [await rawJoin(srv.port, name, "Troll", null, { spectate: true }), await rawJoin(srv.port, "nowhere", "Troll", null, { spectate: true })];
+  const op = await rawJoin(srv.port, name, "Opal", OP_SID);
+  const acc = await Promise.all([name, "nowhere"].map(async (w) => { const r = await fetch(`http://127.0.0.1:${srv.port}/access?world=${w}`, { headers: { cookie: `ew_sess=${OP_SID}` } }); return { status: r.status, body: await r.json().catch(() => null) }; }));
+  const bootLog = said();
   try { srv.proc.kill(); } catch {}
-  ok(died.code !== 0 && !j.snap && /interrupted/.test(j.err ?? ""), "IP13s a half-swapped world is not served: the banned account's join is refused (the world isn't open), in words saying its conversion was interrupted", j.types);
+  ok(died.code !== 0 && j[0] === j[1] && jw[0] === jw[1] && /"code":"world-unavailable"/.test(j[0]) && /^close 4005 world-unavailable$/m.test(j[0]) && /^close 4011 world-unavailable$/m.test(jw[0]) && !/interrupted/.test(j[0] + jw[0]),
+    "IP13s a half-swapped world is not served: the banned account's join is refused byte-identically to a missing world's, and so is a watcher's redial (world-unavailable 4005 / 4011, F23: a stranger isn't told it exists)", { j, jw });
+  ok(/interrupted/.test(op) && /^close 4005 interrupted conversion$/m.test(op) && acc[0].status === 200 && acc[0].body?.state === "interrupted" && /interrupted/.test(acc[0].body?.why ?? "") && acc[1].status === 404 && acc[1].body?.code === "world-unavailable",
+    "IP13s F23 …while the operator's join is told its conversion was interrupted, and so is their /access (state interrupted); a missing name is still world-unavailable to them", { op, acc });
   ok(new RegExp(`world "${name}".*NOT being served`).test(bootLog) && bootLog.includes(`translate ${name}`) && /rollback/.test(bootLog), "IP13s …and boot lists it as needing recovery, naming `translate <world>` (and rollback)", bootLog.slice(-800));
   const r = tool(["translate", name, "--no-founder-key"]);
   const srv2 = await boot("bootHalf2"); const j2 = await joinAs(srv2.port, name, "Troll"); const j3 = await joinAs(srv2.port, name, "Ann");

@@ -7,7 +7,8 @@
 //   A3  /worlds and the reads are per caller: an invite-only world is on no stranger's map and /geom answers as for no
 //       world; a listed caller's bearer sees it (access, you); /access answers enter | watch | none, 404 world-unavailable
 //       to whom the world isn't discoverable, and 401 anonymously
-//   F23 no existence oracle (docs/DESIGN-log-vocabulary.md §F F-3): O1–O6 at their block
+//   F23 no existence oracle (docs/DESIGN-log-vocabulary.md §F F-3): O1–O9 at their block (O7–O9: interrupted and old-format
+//       worlds, Mica 11-05)
 //   A4  closing the door removes whoever is no longer let in, at once (4010); owners stay
 //   A5  a timed grant (roles:<id>.until): its holder is told before it ends (notice), and when it passes the authority
 //       writes its end (expire-roles) and the door removes them (4010)
@@ -146,6 +147,47 @@ ok(close.ok && removed && bob.closed === 4010 && bob.msgs.some((m) => m.type ===
     ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: w, id: "Carl", avatar: "", replica: true })); })));
   ok(anonAcc[0] === anonAcc[1] && /^401 /.test(anonAcc[0]) && /sign in/.test(anonAcc[0]) && !/world-unavailable/.test(anonAcc[0]) && acc[0] !== anonAcc[0] && anonJoin[0] === anonJoin[1] && /world-unavailable/.test(anonJoin[0]),
     "F23-O5 the unauthenticated stay classified apart from the signed-but-unentitled: /access says sign in (401) for both names, a stranger's says world-unavailable (404); a guest's join is world-unavailable for both", { anonAcc, anonJoin }); }
+// F23-O7–O9 (Mica 11-05, #23 ruling 4): an interrupted conversion and an old-format world are unavailable states too. To a
+// stranger every one is a missing world's bytes (join, a watcher's redial, /access, the reads, /worlds, the upgrade request);
+// only the operator, and an old world's recognised owner, are told the specific state. Its own server, with an operator (Ivy)
+{ const attic = path.join(W, "attic"); fs.mkdirSync(attic, { recursive: true });   // a first-protocol log; Fen owns it (by name)
+  fs.writeFileSync(path.join(attic, "log.jsonl"), [{ seq: 0, ts: 1_700_000_000_000, actor: "world", verb: "grant", args: { id: "Fen", role: "owner" } },
+    { seq: 1, ts: 1_700_000_001_000, actor: "Fen", verb: "say", args: { text: "mine" } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
+  ok(tool(["found", "halfway", "--owner", "Ann"]).code === 0, "(F23-O7 setup) found halfway, then mark it mid-swap");
+  fs.writeFileSync(path.join(W, "halfway", "translation.lock"), "{}");
+  const s3 = await start({ SERVER_OPERATORS: "agent:token:ivy" });
+  ok(!s3.dead, "(F23-O7 setup) a server with an operator is up", s3.dead ? fs.readFileSync(s3.log + ".err", "utf8").slice(-400) : "");
+  const raw = (world, extra = {}) => new Promise((res) => { const ws = new WebSocket(`ws://127.0.0.1:${s3.port}/ws`); const got = [];
+    ws.onmessage = (ev) => got.push(String(ev.data)); ws.onclose = (ev) => res([...got, `close ${ev.code} ${ev.reason}`].join("\n").split(world).join("<name>"));
+    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world, id: extra.agentToken ? String(extra.agentToken).slice(4) : "Carl", avatar: "", replica: true, ...extra })); });
+  const upgrade = (world, tok) => new Promise((res) => { const ws = new WebSocket(`ws://127.0.0.1:${s3.port}/ws`); const got = [];
+    ws.onmessage = (ev) => { got.push(String(ev.data)); if (JSON.parse(String(ev.data)).type === "world-upgrade-review") ws.close(); };
+    ws.onclose = () => res(got.filter((g) => /world-upgrade-review/.test(g)).join("\n").split(world).join("<name>"));
+    ws.onopen = () => ws.send(JSON.stringify({ type: "world-upgrade-review", id: 1, world, ...(tok ? { agentToken: tok } : {}) })); });
+  const http = async (p, world, tok) => { const r = await fetch(`http://127.0.0.1:${s3.port}${p}${world}`, tok ? { headers: { authorization: `Bearer ${tok}` } } : {});
+    return `${r.status} ${r.headers.get("content-type")} ${(await r.text()).split(world).join("<name>")}`; };
+  const all = async (world, tok) => [await raw(world, tok ? { agentToken: tok } : {}), await raw(world, { spectate: true, ...(tok ? { agentToken: tok } : {}) }),
+    await http("/access?world=", world, tok), await http("/geom?world=", world, tok), await http("/heightmap?world=", world, tok), await upgrade(world, tok)];
+  const none = await all("nowhere", "tok-moss"), old = await all("attic", "tok-moss"), half = await all("halfway", "tok-moss");
+  const map = (await worldsAs(s3.port, "tok-moss")).map((x) => x.name);
+  ok(JSON.stringify(old) === JSON.stringify(none) && JSON.stringify(half) === JSON.stringify(none) && /^close 4005 world-unavailable$/m.test(none[0]) && /^close 4011 world-unavailable$/m.test(none[1])
+    && /^404 .*world-unavailable/.test(none[2]) && /"code":"world-unavailable"/.test(none[5]) && !/older|interrupted|old-format/.test(old.join() + half.join()) && !map.includes("attic") && !map.includes("halfway"),
+    "F23-O7 to a signed stranger an old-format world and an interrupted conversion are a missing world's bytes: the join (4005), the watcher's redial (4011), /access, /geom, /heightmap, the upgrade review; on no /worlds map", { none, old, half, map });
+  const gNone = await all("nowhere"), gOld = await all("attic"), gHalf = await all("halfway");
+  ok(JSON.stringify(gOld) === JSON.stringify(gNone) && JSON.stringify(gHalf) === JSON.stringify(gNone) && /world-unavailable/.test(gNone[0]),
+    "F23-O7 …and to a guest (no credential) too", { gNone, gOld, gHalf });
+  const jOld = await raw("attic", { agentToken: "tok-ivy" }), jHalf = await raw("halfway", { agentToken: "tok-ivy" });
+  const aOld = await accessAs(s3.port, "attic", "tok-ivy"), aHalf = await accessAs(s3.port, "halfway", "tok-ivy"), aNone = await accessAs(s3.port, "nowhere", "tok-ivy");
+  ok(/"code":"old-format"/.test(jOld) && /"operator":true/.test(jOld) && /older version of Eidoverse/.test(jOld) && /^close 4005 old-format world$/m.test(jOld)
+    && /interrupted/.test(jHalf) && /^close 4005 interrupted conversion$/m.test(jHalf)
+    && aOld.status === 200 && aOld.body?.state === "old-format" && aHalf.status === 200 && aHalf.body?.state === "interrupted" && aNone.status === 404 && aNone.body?.code === "world-unavailable",
+    "F23-O8 the operator is told the specific state: the join says old-format (operator, may) or that its conversion was interrupted, and /access says state old-format / interrupted; a missing name is still world-unavailable", { jOld, jHalf, aOld: aOld.body, aHalf: aHalf.body });
+  const fOld = await raw("attic", { agentToken: "tok-fen" }), fHalf = await raw("halfway", { agentToken: "tok-fen" }), faOld = await accessAs(s3.port, "attic", "tok-fen");
+  ok(/"code":"old-format"/.test(fOld) && /"owner":"(bound|name)"/.test(fOld) && /"may":true/.test(fOld) && faOld.status === 200 && faOld.body?.state === "old-format"
+    && /^close 4005 world-unavailable$/m.test(fHalf) && !/interrupted/.test(fHalf),
+    "F23-O9 the old world's recognised owner (Fen, the grant's name) is told it is old-format and may upgrade it (join and /access); an interrupted conversion is said to the operator only", { fOld, fHalf, faOld: faOld.body });
+  try { s3.proc.kill(); } catch {}
+  fs.rmSync(attic, { recursive: true, force: true }); fs.rmSync(path.join(W, "halfway"), { recursive: true, force: true }); }
 // F23-O6 (mutation, run by hand and recorded in the commit): restoring `exists: true` on /access for an undiscoverable world, or
 // the old split (hidden → 4010 "isn't open to you", missing → 4005/4011 "no such world"), turns F23-O1 red
 // A3b: an unloaded world is read in its own case only, as the join door reads it (world.ts worldDirNamed); the variant
@@ -652,7 +694,9 @@ const gonePid = await exitedPid();
 //   B17 a world is served in its own case only: on a case-insensitive filesystem "KEEP" is not "keep" (a second authority)
 { const P = fs.mkdtempSync(path.join(root, "pure-")), PW = path.join(P, "worlds");
   const line = (join) => JSON.stringify({ kind: "change", op: "set", body: { id: "@world", comp: "access", value: { join } } });
-  fs.mkdirSync(path.join(PW, "torn"), { recursive: true }); fs.writeFileSync(path.join(PW, "torn", "world.jsonl"), `${line("listed")}\n${line("anyone")}`);
+  // a world's genesis first: a directory with none is no saved world, and has no door (access.ts doorFor, F23 11-05)
+  const GENESIS = JSON.stringify({ kind: "genesis", actor: "system", ts: 1, body: { dialect: "eidoverse-log", v: 4, nonce: "b7", owners: [[], []], sequencer: "ed25519:b7" } });
+  fs.mkdirSync(path.join(PW, "torn"), { recursive: true }); fs.writeFileSync(path.join(PW, "torn", "world.jsonl"), `${GENESIS}\n${line("listed")}\n${line("anyone")}`);
   fs.mkdirSync(path.join(PW, "keep"), { recursive: true });
   const caseless = fs.existsSync(path.join(PW, "KEEP"));
   const code = `const A = await import(${JSON.stringify(new URL("../../server/access.ts", import.meta.url).href)});

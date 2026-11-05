@@ -11,8 +11,9 @@ import path from "node:path";
 import { WORLDS_DIR, BACKUPS_DIR, OPT_DIR, ROOT } from "./config.ts";
 import { accountOf } from "./auth.ts";
 import { isOperator } from "./operators.ts";
-import { oldWorldAt, type OldWorldKind } from "./oldworlds.ts";
-import { OLD_FORMAT_DOC, IF_YOU_RUN_IT } from "../shared/oldformat.js";
+import { type OldWorldKind } from "./oldworlds.ts";
+import { toldOf, unavailable } from "./access.ts";
+import { OLD_FORMAT_DOC } from "../shared/oldformat.js";
 import type { Client } from "./world.ts";
 
 type Any = any;
@@ -74,18 +75,19 @@ async function admit({ c, ws }: Ctx, msg: Any, type: string, shape?: () => [stri
   const refuse = (code: string, reason: string, fix?: string) => { ws.send(JSON.stringify({ type, id, ok: false, refused: { code, reason, ...(fix ? { fix } : {}) } })); return null; };
   const who = provenWho(c, msg), account = who?.account ?? null, operator = isOperator(account);
   const world = String(msg.world ?? "");
-  const old = oldWorldAt(WORLDS_DIR, world);
-  const rights = (why = "") => refuse("rights", `upgrading a world saved in an older format is for this server's operator (an account in SERVER_OPERATORS) or the world's owner, signed in${why ? ` (${why})` : ""}. ${IF_YOU_RUN_IT}`, "ask the server's operator or the world's owner");
-  let owner: Owner | null = null;
-  if (!old) return refuse("not-old", `there is no world saved in an older format called "${world.slice(0, 64)}" here`);   // to anyone: a join says as much
-  if (!account) return rights("not signed in");
+  // §F F-3 (Mica 11-05): an old world is said only to the operator and its recognised owner (access.ts toldOf); to anyone
+  // else, as a world that isn't there. A guest is neither, so is answered at once, for any name
+  const unavailableHere = () => { const u = unavailable(world.slice(0, 64)); return refuse(u.code, u.message); };
+  if (!account) return unavailableHere();
   const bad = shape?.(); if (bad) return refuse("shape", bad[0], bad[1]);   // before the rate slot: a malformed request runs nothing
-  // the rate next (review full-260 L2): an owner check runs the CLI (a read and fold of the old log), so it is spent on the slot
+  // the rate next, for every name (review full-260 L2: an owner check runs the CLI, so it is spent on the slot; and a slot
+  // spent only on an old world's name would tell a stranger it is there)
   const now = Date.now(), mine = (recent.get(account) ?? []).filter((t) => now - t < RATE_MS);
   if (mine.length >= RATE_N) return refuse("rate", `at most ${RATE_N} upgrade requests in ${RATE_MS / 60_000} minutes`, "try again later");
   recent.set(account, [...mine, now]);   // taken in the same turn as the check, before the await below
-  if (!operator) { if (old.kind !== "translatable") return rights();
-    owner = await ownerOf(world, who); if (!owner?.recognised) return rights(owner?.why ?? ""); }
+  const told = await toldOf(world, { account }, who);
+  if (told.kind !== "old") return operator ? refuse("not-old", `there is no world saved in an older format called "${world.slice(0, 64)}" here`) : unavailableHere();
+  const old = told.old; const owner = told.owner ? { recognised: told.owner, owner: told.ownerName, ownerless: false } as Owner : null;
   if (old.kind !== "translatable") return refuse("cli", `"${world}" was saved before this protocol's names changed; it is re-translated from its original old log on the command line (the boot notice gives the commands): ${OLD_FORMAT_DOC}`);
   if (running.has(world)) return refuse("busy", `"${world}" is already being reviewed or upgraded`, "wait for that to finish");
   running.add(world);   // in the same turn as the busy check

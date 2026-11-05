@@ -89,12 +89,14 @@ const postChunked = (port, body, headers = {}, finish = true) => new Promise((re
 const get = (port, headers = {}) => fetch(`http://127.0.0.1:${port}/setup`, { headers }).then(async (r) => ({ status: r.status, text: await r.text(), csp: r.headers.get("content-security-policy") }));
 const missing = (port) => fetch(`http://127.0.0.1:${port}/no-such-page-here`).then(async (r) => ({ status: r.status, text: await r.text() }));
 const cookie = (sid) => ({ cookie: `ew_sess=${sid}` });
-/** An old world's join refusal says whether the joiner is an operator (refused.operator): the ws door's own isOperator, live. */
+/** An old world's join refusal says whether the joiner is an operator (refused.operator): the ws door's own isOperator, live.
+ *  A non-operator (not its owner) is told world-unavailable, as for no world (F23, Mica 11-05): that answer is false. */
 const operatorAtJoin = (port, { headers, agentToken }: any = {}) => new Promise((res) => {
   const ws = headers ? new WebSocket(`ws://127.0.0.1:${port}/ws`, { headers }) : new WebSocket(`ws://127.0.0.1:${port}/ws`); let refused = null;
   ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: "old-x", id: "probe", avatar: "", replica: true, ...(agentToken ? { agentToken } : {}) }));
-  ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "error" && m.refused) refused = m.refused; };
-  ws.onclose = () => res(refused?.operator ?? null);
+  let unavailable = false;
+  ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "error" && m.refused) refused = m.refused; if (m.type === "error" && m.code === "world-unavailable") unavailable = true; };
+  ws.onclose = () => res(refused ? refused.operator : unavailable ? false : null);
   setTimeout(() => { try { ws.close(); } catch {} res(null); }, 8000);
 });
 const stored = (W) => { const f = path.join(W, ".operators.json"); return fs.existsSync(f) ? { list: JSON.parse(fs.readFileSync(f, "utf8")).operators, mode: fs.statSync(f).mode & 0o777 } : null; };

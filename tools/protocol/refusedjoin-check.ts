@@ -4,11 +4,12 @@
 // lost it: the inline boot script's early socket caught the refusal, and connect() threw that socket away (and with it
 // the refusal) and dialled again.
 // One headless Chromium against a scratch sequencer (tools/harness.ts scratchBench) whose worlds dir holds:
-//   old-x   a first-protocol log.jsonl (an old-format world: the server answers with the "translate" visitor sentence)
+//   old-x   a first-protocol log.jsonl (an old-format world: the server answers the operator with the "translate" visitor
+//           sentence, a guest with world-unavailable, as nope: F23, Mica 11-05)
 //   (nope)  nothing at all: world-unavailable, the same bytes a world this visitor may not discover gets (§F F-3)
 // The server requires the hello (HELLO_REQUIRED=1, the deployment candidate's setting), so every join below proves its client sends one:
 //   W0 the page's early socket joins (one join, adopted); W0b ?earlysock=0's fresh connect (net.js) joins
-// For each world, by both boot paths (the early socket, and ?earlysock=0's fresh connect):
+// For each world, by both boot paths (the early socket, and ?earlysock=0's fresh connect), old-x as the operator:
 //   W1 the refusal is on screen (an old world: the one-line splash; else the server's sentence), and still there 6 s later (not a 4-second toast)
 //   W2 the bad-LINK wording ("is not a valid world name") is not shown — the name is fine
 //   W3 the client knows it is refused (net.status 'rejected') and never says it joined (net.joined false)
@@ -21,15 +22,15 @@
 //      gets in by itself once there is room (review r3 F6)
 //   W8 while it stays full, the redials back off (each wait longer than the last), not every 5 s in step (review r4 F5)
 //   W9 an agent (mcpl/agent.ts) dialling a full world waits and dials again too, and gets in when a seat frees (r4 C2)
-//   W10 an old-format world's splash (a guest): the headline, the server's words, the doc (served), no Upgrade world…; W10b the setup-link words
+//   W10 a guest at an old-format world gets nope's answer (world-unavailable) and no old-format splash; W10b the doc's setup-link words
 //   W11 the operator's splash: Upgrade world… → the report → Back up and upgrade → the backup and the rollback command
-//   W12 the world's owner's splash (signed in as "author", its owner by name, not an operator) offers Upgrade world… too; another name's doesn't
+//   W12 the world's owner's splash (signed in as "author", its owner by name, not an operator) offers Upgrade world… too; another name is told world-unavailable
 // Run under the house guards: code/scripts/eido-probe.sh -C <worktree> -t 300 tools/protocol/refusedjoin-check.ts
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { OLD_FORMAT_SPLASH, IF_YOU_RUN_IT } from "../../shared/oldformat.js";
+import { OLD_FORMAT_SPLASH } from "../../shared/oldformat.js";
 import { scratchBench, mkCheck, sleep } from "../harness.ts";
 import { tryUntil } from "./wait.ts";
 import { helloOf } from "../../shared/protocol/hello.js";
@@ -70,12 +71,17 @@ try {
     check(`W0${early ? "" : "b"} a HELLO_REQUIRED server admits the page's ${early ? "early socket's" : "fresh (net.js)"} join: its hello is valid (one join, joined)`, st?.joined === true && st.joins === 1, st);
   }
   await cdp.send("Page.navigate", { url: "about:blank" });
+  // old-x is shown to the operator (F23, Mica 11-05: an old world is said only to the operator and its owner; to a guest it is
+  // world-unavailable, W10)
+  await cdp.send("Network.enable", {});
   for (const world of ["old-x", "nope"]) {
     const said = await serverSays(world);
     check(`(setup) ${world}: the server refuses with words and 4005`, said.code === 4005 && said.error.length > 10, said);
     for (const early of [true, false]) {
       const tag = `${world} ${early ? "early socket" : "fresh connect"}`;
-      await cdp.send("Page.navigate", { url: `${BASE}/?world=${world}&name=T${early ? "" : "&earlysock=0"}` });
+      if (world === "old-x") await cdp.send("Network.setCookie", { name: "ew_sess", value: OP_SID, url: BASE });
+      else await cdp.send("Network.deleteCookies", { name: "ew_sess", url: BASE });
+      await cdp.send("Page.navigate", { url: `${BASE}/?world=${world}&name=${world === "old-x" ? "Opal" : "T"}${early ? "" : "&earlysock=0"}` });
       // on screen = in the page's text AND the topmost thing where it is drawn (a toast UNDER the splash is in the text
       // and invisible: that was the bug)
       const visible = `(() => { const want = ${JSON.stringify(world === "old-x" ? OLD_FORMAT_SPLASH : said.error)};
@@ -103,6 +109,7 @@ try {
       }
     }
   }
+  await cdp.send("Network.deleteCookies", { name: "ew_sess", url: BASE });
   // W6: the early socket's join differs from the page's (here: it asked for "nope"); its refusal must not be the page's
   {
     const said = await serverSays("nope");
@@ -174,17 +181,21 @@ try {
     check("W9 ...and once a seat frees it gets in by itself", ag9.joined === true, { waited: Date.now() - t9, closed: ag9.closed });
     try { ag9.close(); } catch { /* gone */ }
   }
-  // W10: an old-format world's splash for someone who can't upgrade it: the headline, the server's words, the doc, no button
+  // W10 (F23, Mica 11-05): a guest at an old-format world is told what a missing world tells them: the server's bytes are the
+  // same as nope's, and the page shows that sentence, with no old-format splash, doc link or Upgrade world…
   {
+    const old = await serverSays("old-x"), none = await serverSays("nope");
     await cdp.send("Page.navigate", { url: `${BASE}/?world=old-x&name=T10&earlysock=0` });
-    const probe = `(() => { const s = document.getElementById('splash'); const a = s?.querySelector('a.sp-up-doc');
-      return { head: s?.querySelector('.sp-phase')?.textContent, doc: a ? a.getAttribute('href') : null, review: !!s?.querySelector('.sp-up-review'), who: s?.querySelector('.sp-up-who')?.textContent ?? null }; })()`;
-    const st: any = await tryUntil("the old-format splash shows its doc link", async () => { const v = await evalJson(probe).catch(() => null); return v?.doc ? v : null; }, { ms: 20000, step: 250 });
-    const doc = st?.doc ? await fetch(new URL(st.doc, BASE)).then(async (r) => ({ status: r.status, text: (await r.text()).slice(0, 400) })).catch((e) => ({ err: String(e) })) : null;
-    check("W10 old-x as a guest: the splash says the world was saved by an older version of the engine and needs a one-time upgrade, links the doc (served), and offers no Upgrade world…",
-      st?.head === OLD_FORMAT_SPLASH && st.doc === "/docs/TRANSLATING-OLD-WORLDS.md" && doc?.status === 200 && /Translating a first-protocol world/.test(doc.text) && st.review === false, { st, doc });
-    check("W10b …and says how to get in: the setup link if you run the server, else ask whoever runs it; the doc opens with those two lines (R 10-28)", st?.who === IF_YOU_RUN_IT
-      && /^# Translating[^\n]*\n\nIf you run this server, open the setup link printed in its console \(or add your account to `SERVER_OPERATORS`\)\.\nOtherwise ask whoever runs it\.\n/.test(doc?.text ?? ""), { who: st?.who, doc: doc?.text });
+    const probe = `(() => { const s = document.getElementById('splash'); return { text: document.body.innerText, doc: !!s?.querySelector('a.sp-up-doc'), review: !!s?.querySelector('.sp-up-review'), who: !!s?.querySelector('.sp-up-who') }; })()`;
+    const st: any = await tryUntil("the guest's refusal is shown", async () => { const v = await evalJson(probe).catch(() => null); return v?.text?.includes(old.error) ? v : null; }, { ms: 20000, step: 250 });
+    check("W10 old-x as a guest: the server answers as for nope (world-unavailable, the same words and close but the name), and the page shows that sentence with no old-format splash, doc link or Upgrade world…",
+      old.error === none.error.replace("nope", "old-x") && old.code === none.code && old.reason === none.reason && /No accessible world named old-x\./.test(old.error)
+      && !!st && !st.text.includes(OLD_FORMAT_SPLASH) && !st.doc && !st.review && !st.who, { old, none, st: st && { ...st, text: st.text.slice(0, 200) } });
+    // W10b: the splash's "if you run this server" line (IF_YOU_RUN_IT) was for a guest; no one who is told a world is old-format
+    // lacks the way in now. The doc still opens with those two lines (R 10-28)
+    const doc = await fetch(new URL("/docs/TRANSLATING-OLD-WORLDS.md", BASE)).then(async (r) => ({ status: r.status, text: (await r.text()).slice(0, 400) })).catch((e) => ({ err: String(e) }));
+    check("W10b the doc (served) opens with the way in: the setup link if you run the server, else ask whoever runs it (R 10-28)", doc?.status === 200 && /Translating a first-protocol world/.test(doc.text)
+      && /^# Translating[^\n]*\n\nIf you run this server, open the setup link printed in its console \(or add your account to `SERVER_OPERATORS`\)\.\nOtherwise ask whoever runs it\.\n/.test(doc?.text ?? ""), doc);
   }
   // W11: the operator's splash: Upgrade world… → the report → Back up and upgrade (the only action) → the backup and the rollback command
   {
@@ -214,9 +225,13 @@ try {
       await cdp.send("Page.navigate", { url: `${BASE}/?world=old-x&name=${name}&earlysock=0` });
       const st: any = await tryUntil(`${name}'s old-format splash`, () => evalJson(`(() => { const s = document.getElementById('splash'); return s?.querySelector('a.sp-up-doc') ? { review: s.querySelector('.sp-up-review')?.textContent ?? null } : null; })()`).catch(() => null), { ms: 20000, step: 250 });
       await cdp.send("Network.deleteCookies", { name: "ew_sess", url: BASE }); return st; };
-    const own = await btnOf(AUTHOR_SID, "author"), other = await btnOf(VEE_SID, "Vee");
-    check("W12 old-x signed in as its owner by name (author, not an operator): the splash offers Upgrade world…; signed in as Vee, it doesn't",
-      own?.review === "Upgrade world…" && other && other.review === null, { own, other });
+    const own = await btnOf(AUTHOR_SID, "author");
+    await cdp.send("Network.setCookie", { name: "ew_sess", value: VEE_SID, url: BASE });
+    await cdp.send("Page.navigate", { url: `${BASE}/?world=old-x&name=Vee&earlysock=0` });
+    const other: any = await tryUntil("Vee's refusal is shown", () => evalJson(`(() => { const t = document.body.innerText; return /No accessible world named old-x\./.test(t) ? { doc: !!document.querySelector('#splash a.sp-up-doc'), review: !!document.querySelector('#splash .sp-up-review') } : null; })()`).catch(() => null), { ms: 20000, step: 250 });
+    await cdp.send("Network.deleteCookies", { name: "ew_sess", url: BASE });
+    check("W12 old-x signed in as its owner by name (author, not an operator): the splash offers Upgrade world…; signed in as Vee, the world is unavailable (F23: no old-format splash, no button)",
+      own?.review === "Upgrade world…" && other && other.doc === false && other.review === false, { own, other });
   }
 } catch (e) { check("the run threw", false, String(e?.stack ?? e)); }
 console.log(`[refusedjoin-check] ${tally.passed} passed, ${tally.failed} failed${tally.note()}`);

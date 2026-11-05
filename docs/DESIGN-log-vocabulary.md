@@ -448,6 +448,11 @@ Fixtures for §F (implementation gate, beside F1–F21):
      Specific words only once the world is discoverable to that principal (public or
      listed to them, granted, or a bypass). The unauthenticated stay classified apart
      (sign in) from the signed-but-unentitled (world-unavailable).
+     A world that can't open (an in-place conversion interrupted mid-swap, a world
+     saved in an older format) is an unavailable state too: its diagnosis goes only
+     to the operator and, for an old world, its recognised owner (server/access.ts
+     toldOf, the same predicate, also behind the reads and the upgrade requests);
+     to anyone else it is world-unavailable (Mica 11-05, #23 ruling 4).
   4. only after access is granted, compare world.requires to client.features
      missing → {type:"refused", code:"unsupported-feature", need:[ids]}
   5. else the snapshot, repeating the authoritative {dialect, v, minor, requires}
