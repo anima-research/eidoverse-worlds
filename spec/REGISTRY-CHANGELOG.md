@@ -426,6 +426,8 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
 - 2026-11-05: kernel: no minor (Mica 11-04): genesis is {dialect, v, …}; dialect names the family, v is the hard break, requires the additive gate. minor leaves the genesis fields and the version pin; a stray minor is malformed
   - version.minors: [1] → absent
   - version.genesis: ["dialect","minor","nonce","owners","parent","provenance","quorum","requires","rewindWindow","sequencer","v"] → ["dialect","nonce","owners","parent","provenance","quorum","requires","rewindWindow","sequencer","v"]
+- 2026-11-05: normative: no revert-war brake (Kudzu 6, Mica 11-04): undo counted cross-person reverts and refused the third within the hour below owner; a direct set bypassed it, so it held nothing
+  - refusal revert-war: gone (old logs may hold it)
 - 2026-11-05: normative: no renamed refusal codes (S6 read-side cut, 11-05): canonicalCode read four old words as their new codes; a reader reads the code as sent
   - renamed code hands-full: gone (old logs may hold it)
   - renamed code underfoot: gone (old logs may hold it)

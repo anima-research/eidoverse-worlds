@@ -247,14 +247,6 @@ function buildUndo(ctx, a, w) {
   const { groups, skipped } = inverseOf(target, res, ctx.st);
   if (!groups.length) refuse("conflict", "everything that act touched has been changed by someone else since", "their later change stands (undo never writes over it); if you still want yours, make the change again yourself, and history shows who did what", { skipped });
   if (skipped.length) ctx.notes.push({ skipped });
-  // round-2 R11: a brake on revert wars (Wikipedia's 3RR): reverting someone else's work on a thing that has already been
-  // reverted across people twice within the hour is refused below owner rank: that's a dispute, and owners settle it
-  if (target.actor !== ctx.actor && roleOf(ctx.st, ctx.actor) !== "owner") {
-    const mine2 = new Set(groups.flat().map((o) => o.id)); const t0 = w.now() - 3600000; let n = 0;
-    for (let i = E.length - 1; i >= 0; i--) { const e = E[i]; if (!isE(e)) continue; if (Number.isInteger(e.ts) && e.ts < t0) break;
-      if (e.kind !== "request" || e.verb !== "undo" || !Number.isInteger(e.body?.undoes) || E[e.body.undoes]?.actor === e.actor) continue;
-      const r = result(i); if (r && opsQuiet(r).some((o) => mine2.has(o.id))) n++; }
-    if (n >= 2) refuse("revert-war", `${[...mine2].join(", ")} has been reverted across people ${n} times in the last hour`, "that's a disagreement, not a fix: ask an owner (owners may still revert), or talk it out"); }
   ctx.actExtra = { undoes: target.seq };
   // round-2 R11: undoing my own `use` is admitted under the same reaction capability the use was (a visitor may open
   // a door through its handler, so they may close it again by undo), asked for again NOW: no handler, no undo

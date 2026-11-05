@@ -37,7 +37,6 @@ export const REFUSAL_CODES = Object.freeze({
   "barred":         { meaning: "this action is closed until another happens first", when: "a reaction handler whose `unless` holds" },
   "locked":         { meaning: "a lock covers it", when: "a write to a locked thing (or under one) without throughLock" },
   "occupied":       { meaning: "someone is on it", when: "a hand verb (grab, put, punt, throw, drop) on a thing someone sits or stands on, or a seat that's taken" },
-  "revert-war":     { meaning: "that's a dispute: an owner settles it", when: "reverting someone's work on a thing already reverted across people twice in the hour, below owner" },
   // ---- the request's shape ----
   "shape":          { meaning: "the request or value isn't the right shape", when: "a wrong type, a missing part, a bad name, a bad placeholder, anything the shape rules refuse" },
   "unknown-arg":    { meaning: "the verb has no such argument", when: "an argument VERBSPEC doesn't list for the verb" },
