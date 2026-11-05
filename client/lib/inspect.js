@@ -8,7 +8,7 @@
 //   commitEdit(id, key, value, {live})
 //     live   → PREVIEW: the group's handler moves the realized object (a
 //              light brightens, a seat gizmo slides) — no log traffic;
-//     final  → COMMIT: editOps() turns the edit into the fewest door ops, sent as ONE request (shared/protocol/requests.js via
+//     final  → COMMIT: editOps() turns the edit into the fewest door ops, sent as ONE request (shared/requests.js via
 //              editwrites.sendOps): one act, undone by the authority's undo; expect carries the values as the gesture began.
 //
 //   registerHandler(group, fn(id, obj, k, value, opts) → handled?)

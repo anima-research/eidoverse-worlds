@@ -9,7 +9,7 @@ import { pathToFileURL } from "node:url";
 import { readLog, fold, digest, worldIdOf, parseLine, cloneState, REDACTED } from "../../shared/protocol/fold.js";
 import { carried } from "../../shared/protocol/simlayer.js";
 import { elide } from "../../shared/protocol/scriptrules.js";
-import { create as createRequest } from "../../shared/protocol/requests.js";
+import { create as createRequest } from "../../shared/requests.js";
 import { leftWords, listedIn } from "../../shared/protocol/access.js";
 import { ENGINE, LAB, scratch, controlNote } from "./common.ts";
 import * as AU from "../../shared/protocol/authority.js";

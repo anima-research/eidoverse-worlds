@@ -6,7 +6,7 @@
 import "./protocol/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import { scratchWorld } from './protocol/scratchworld.ts';
 import { COMPONENTS, statusOf, pinOf, refsOf, mapRefs, materialize } from '../shared/protocol/componentspec.js';
-import { socketMapOps } from '../shared/protocol/requests.js';
+import { socketMapOps } from '../shared/requests.js';
 import { legacyHosts, liftHostOps } from './protocol/import-v1/shapes.js';
 import { evalLookAt } from '../shared/lookat.js';
 import { toWorld, toLocal } from '../mcpl/places.ts';

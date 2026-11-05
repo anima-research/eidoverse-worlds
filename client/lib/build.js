@@ -17,7 +17,7 @@
 // across that seam and never re-implements them.
 
 import { svg as iconSvg } from './icons.js';
-import * as OP from '../../shared/protocol/requests.js';
+import * as OP from '../../shared/requests.js';
 import { LIGHT_DEFAULTS } from '../../shared/components.js';
 import { THREE, scene, camera, canvas } from './core.js';
 import { bus, report } from './base.js';

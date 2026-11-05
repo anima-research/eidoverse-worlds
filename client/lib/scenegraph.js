@@ -39,7 +39,7 @@ import { editorsFor, commitEdit } from './inspect.js';
 import './lights.js';   // for its registered light editor (world.js pulls it in anyway)
 import { requestDebug, replica } from './net.js';
 import { sendOps, del, revertPose } from './editwrites.js';
-import * as OP from '../../shared/protocol/requests.js';
+import * as OP from '../../shared/requests.js';
 import { state } from './state.js';
 import { offIn } from './realize/models_field.js';
 import { makeSection, flashHint, html } from './ui.js';

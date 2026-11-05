@@ -1,4 +1,4 @@
-// shared/protocol/newscript.js — the editor's "new script" (ship list 10-07: the editor couldn't make a script; nothing in the
+// client/lib/newscript.js — the editor's "new script" (ship list 10-07: the editor couldn't make a script; nothing in the
 // client called `upload`). A person fills in a small card (a name, what starts it, the source); this plans the SAME two
 // requests an agent sends (docs/SCRIPTS.md, "the loop"):
 //   1. upload {text}                                     → {src}   (not an act: a blob in the world's store)
@@ -7,7 +7,7 @@
 //        set {id, component: 'reactions', value: {<action>: {kind: 'script', script: <name>}}, merge: true}   (on use)
 // Pure: no DOM, no network (client/lib/scriptnew.js draws the card and sends; tools/protocol/build-check.ts K runs these
 // requests through the real authority and sandbox).
-import { set } from "./requests.js";
+import { set } from "../../shared/requests.js";
 
 /** A starting point that runs as it stands and shows the loop: use it, and it speaks. */
 export const TEMPLATES = Object.freeze({

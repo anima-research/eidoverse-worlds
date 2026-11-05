@@ -19,12 +19,12 @@
 //      pending (Mica, round 2: {part:true, hung:false, mapSrc:null}).
 //
 // Ported to the request path (#260 house I397/I401): writes go through net.sendRequest with ops built by
-// shared/protocol/requests.js; the authority mints ids, so the console's id is read from each create's reply. A picture
+// shared/requests.js; the authority mints ids, so the console's id is read from each create's reply. A picture
 // has no part any more (shared/picture.js): it is the thing's own quad, so a hang is judged by that quad's texture,
 // and a held load shows the empty plate (hung, no map) until it lands.
 import { launchBrowser, ownedWorld, checker, waitJoined } from './probe-harness.mjs';
 import { join } from 'node:path';
-import * as OP from '../shared/protocol/requests.js';
+import * as OP from '../shared/requests.js';
 import { qFromYaw } from '../shared/rot.js';
 
 const LIB = 'eidoverse/assets/models/scif_cyberpunk_crt_retro_computer_monitor_screen_keyboard_tower.glb';

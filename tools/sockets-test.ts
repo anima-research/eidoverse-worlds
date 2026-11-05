@@ -7,7 +7,7 @@ import { inspectSchema, editOps } from '../shared/editschema.js';
 import { bodyOf, socketQ } from '../shared/components.js';
 import { localOf, kindHint } from '../shared/hierarchy.js';
 import { scratchWorld } from './protocol/scratchworld.ts';
-import * as OP from '../shared/protocol/requests.js';
+import * as OP from '../shared/requests.js';
 import { checkSockets, evalPose, choosePose, mayLeave, reachWins, describeBody, NEAR_M, resolveSeat, socketMapIn, socketsIn } from '../shared/sockbody.js';
 import { socketSignals, cycleOf, travelOf } from '../client/lib/socksignals.js';
 import { opsOf } from '../shared/protocol/fold.js';

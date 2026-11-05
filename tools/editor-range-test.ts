@@ -2,14 +2,14 @@
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/editor-range-test.ts
 //
-// Binds, for every descriptor num row (shared/protocol/descriptors.js) the Inspector writes: a value the DOOR takes is
+// Binds, for every descriptor num row (shared/descriptors.js) the Inspector writes: a value the DOOR takes is
 // written as typed, though it is outside the row's slider bounds (its hard min/max, and past a softMin/softMax stop:
 // the midpoint between the soft stop and the door's own bound); a value the door refuses is refused here with nothing
 // sent. The door's verdict is the authority's own (schemaRefusal), never a restated range. Also: an enum row is closed
 // exactly where the registry names its enum.
 
 import { inspectSchema, editOps, fieldAt } from "../shared/editschema.js";
-import { DESCRIPTORS } from "../shared/protocol/descriptors.js";
+import { DESCRIPTORS } from "../shared/descriptors.js";
 import { COMPONENTS } from "../shared/protocol/componentspec.js";
 import { schemaRefusal } from "../shared/protocol/authority.js";
 import { flat } from "./protocol/scratchworld.ts";

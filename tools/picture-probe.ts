@@ -17,7 +17,7 @@
 // Plus a screenshot for the by-eye check the tests cannot make.
 import { launchBrowser, ownedWorld, checker, waitJoined } from './probe-harness.mjs';
 import { join } from 'node:path';
-import * as OP from '../shared/protocol/requests.js';
+import * as OP from '../shared/requests.js';
 import { qFromYaw } from '../shared/rot.js';
 
 const LIB = 'eidoverse/assets/models/scif_cyberpunk_crt_retro_computer_monitor_screen_keyboard_tower.glb';

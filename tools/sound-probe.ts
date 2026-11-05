@@ -27,7 +27,7 @@ import { join } from 'node:path';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { wavBytes } from './wav-fixture.ts';
-import * as OP from '../shared/protocol/requests.js';
+import * as OP from '../shared/requests.js';
 
 const LIB = 'eidoverse/assets/models/crate_large_red.glb';
 const { check, done } = checker();

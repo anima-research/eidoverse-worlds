@@ -80,7 +80,7 @@ const D = await import(TREE + "shared/protocol/authority.js");
 D.fixtureIds?.(true);   // the fixtures below seed the ids they read (ids-check covers the refusal)
 const F = await import(TREE + "shared/protocol/fold.js");
 const SB = await import(TREE + "shared/protocol/sandbox.js");
-const REQ = await import(TREE + "shared/protocol/requests.js");
+const REQ = await import(TREE + "shared/requests.js");
 const AU = await import(TREE + "shared/protocol/scriptaudit.js");
 const SK = await import(TREE + "shared/sockbody.js");
 if (D.setScriptDuty) D.setScriptDuty({ maxMs: 1e9 });

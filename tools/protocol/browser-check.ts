@@ -16,7 +16,7 @@ import { sha256 } from "../../shared/protocol/hash.js";
 // the cottage's pinned digest (replay-check.ts says why it moved from the lab's 22a27ab0… in the names pass, and how it
 // was confirmed independently)
 const PINNED_DIGEST = "b17bf98f909347df1024b39ad4cc044b5f08a713f2d4765fb0d3c767253971b8";
-const CORE = ["fold", "hash", "componentspec", "verbspec", "simlayer", "authority", "names", "view", "replica", "requests", "refusal"];
+const CORE = ["fold", "hash", "componentspec", "verbspec", "simlayer", "authority", "names", "view", "replica", "../requests", "refusal"];   // requests.js is shared/, beside the editor's other planners
 // …plus every shared/protocol module the client imports (a grep of client/, so a new import is covered without a list edit)
 const clientImports = (dir: string): string[] => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? clientImports(`${dir}/${e.name}`)
   : /\.(js|html)$/.test(e.name) ? [...fs.readFileSync(`${dir}/${e.name}`, "utf8").matchAll(/shared\/protocol\/([A-Za-z0-9_\-/]+)\.js/g)].map((m) => m[1]) : []);

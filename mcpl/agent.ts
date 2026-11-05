@@ -94,10 +94,10 @@ import { foldSkyEntry, describeSky, effectiveSky, effectiveClock, dayPhase, hour
 // the world: this process folds the authority's own stream and reads the VIEW of that fold, like the browser
 import { makeReplica } from "../shared/protocol/replica.js";
 import { REDACTED } from "../shared/protocol/fold.js";
-import { diffView } from "../shared/protocol/viewdiff.js";
+import { diffView } from "../shared/viewdiff.js";
 import { emptyView, idOut } from "../shared/protocol/view.js";
 import { hear } from "../shared/chatwindow.js";
-import * as OP from "../shared/protocol/requests.js";
+import * as OP from "../shared/requests.js";
 // The `particles` component's meaning, shared verbatim with the browser host:
 // a renderer client and a resident who perceives by reading must agree about
 // what is burning (#25's shared-facts boundary).
@@ -1765,7 +1765,7 @@ export class WorldAgent {
     return c ? Object.fromEntries(Object.entries(c).map(([k, v]) => [k, v === REDACTED ? REDACTED : structuredClone(v)])) : null;
   }
   /** A host's socket children as the replica folds them now: each one's id, as the authority has it, and its components
-   *  (componentsOf). The Sockets card's write sets the children it names and deletes the rest (shared/protocol/requests.js
+   *  (componentsOf). The Sockets card's write sets the children it names and deletes the rest (shared/requests.js
    *  socketMapOps), so it pins these. */
   socketChildrenOf(id: string): Record<string, Record<string, unknown>> {
     const out: Record<string, Record<string, unknown>> = {};
@@ -1820,7 +1820,7 @@ export class WorldAgent {
   }
 
   /** A world: take the next view of this body's own fold, and act on what changed (said in the protocol's terms,
-   *  shared/protocol/viewdiff.js): percepts when `live`, supports always. The first view is diffed from nothing. */
+   *  shared/viewdiff.js): percepts when `live`, supports always. The first view is diffed from nothing. */
   private async applyView(live: boolean, actor: string | null, ts: number | null) {
     const prev = this.st as any;
     const next = this.replica.view(prev);   // carries the chat window this body already holds
@@ -4887,7 +4887,7 @@ export class WorldAgent {
     const r = [...this.reachRefusals].reverse().find((x) => holderOf(x) && x.ts > Date.now() - REACH_NOTE_MS);   // (target, class) exactly (F9)
     return r ? { r, by: holderOf(r)!.name, fresh: false } : null;
   }
-  /** A gesture's ops (shared/protocol/requests.js) as ONE request — one act, the authority's answer — sent after the previous one
+  /** A gesture's ops (shared/requests.js) as ONE request — one act, the authority's answer — sent after the previous one
    *  was answered (its log arrived first). Ops planned before that wait don't see what landed meanwhile, so a caller that
    *  planned from the replica pins what it read with `expect` (componentsOf), and a change since is refused, not overwritten
    *  `extra` rides the request (dry, expect, throughLock). The same requests a person's edit sends: one vocabulary, both audiences. */

@@ -35,7 +35,7 @@ In the editor (desktop), the same loop is **Inspector › Scripts › new script
 starts it (someone using it, or every N seconds), what it may change, whether it may speak, and the source (a template
 that runs as it stands). Create sends `upload`, then ONE batch: `script:<name>` and, for a use script, its reaction
 (`use`, or the script's own name when the thing's `use` already does something else). One act, so Ctrl+Z takes it off.
-Refusals show on the card in these same words. (shared/protocol/newscript.js plans it; client/lib/scriptnew.js is the card.)
+Refusals show on the card in these same words. (client/lib/newscript.js plans it; client/lib/scriptnew.js is the card.)
 
 ## Developer kit
 

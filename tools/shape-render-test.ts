@@ -236,7 +236,7 @@ await tryRow('DS', async () => {
   const { renameFields } = await import('./protocol/import-v1/shapes.js');
   const rp = renameFields('picture', { src: 'store/images/a.png', alt: 'a print' }), rs = renameFields('sound', { src: 'store/audio/a.ogg', alt: 'rain', description: 'kept' }), rl = renameFields('picture', { src: 'store/images/a.png', look: 'older' });
   check('DS5 repair: a stored alt (or the look before it) is description (one time); description already there wins', rp.value.description === 'a print' && !('alt' in rp.value) && rs.value.description === 'kept' && !('alt' in rs.value) && rl.value.description === 'older' && !('look' in rl.value), [rp, rs, rl]);
-  const src = ['shared/protocol/descriptors.js', 'shared/editschema.js', 'shared/components.js', 'client/lib/pictures.js', 'client/lib/sounds.js'].map(read).join('\n');
+  const src = ['shared/descriptors.js', 'shared/editschema.js', 'shared/components.js', 'client/lib/pictures.js', 'client/lib/sounds.js'].map(read).join('\n');
   check('DS6 alt leaves the editors (descriptors, editschema, components, the client\'s panels)', !/['"]alt['"]|\.alt\b|\balt:|ALT_/.test(src), (src.match(/.{0,40}(['"]alt['"]|\.alt\b|\balt:|ALT_).{0,40}/g) ?? []).slice(0, 5));
 });
 

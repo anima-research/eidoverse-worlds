@@ -15,7 +15,7 @@ import { sendRequest } from './net.js';
 import { requestWithBody } from './thingphysics.js';
 import { flashHint } from './ui.js';
 import { html } from './markup.js';
-import * as OP from '../../shared/protocol/requests.js';
+import * as OP from '../../shared/requests.js';
 
 import { USE_REACH } from '../../shared/protocol/physconst.js';
 export { USE_REACH };

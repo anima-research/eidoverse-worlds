@@ -20,7 +20,7 @@
 // dev — a MOCK_APIS Orrery instance makes the whole flow testable offline.
 
 import { enc } from '../../shared/protocol/names.js';
-import * as OP from '../../shared/protocol/requests.js';
+import * as OP from '../../shared/requests.js';
 import { sendOps } from './editwrites.js';
 import { CONFIG, bus, report } from './base.js';
 import { fsvg } from './icons.js';

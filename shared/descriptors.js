@@ -1,4 +1,4 @@
-// shared/protocol/descriptors.js — one descriptor per engine component, derived from componentspec.js.
+// shared/descriptors.js — one descriptor per engine component, derived from componentspec.js.
 //
 // The registry (COMPONENTS) is the schema: every field a card can show, its type, its default and what its absence means
 // are read from there. What this table adds is the EDITOR'S VOCABULARY — the names and spellings the inspector, the
@@ -31,8 +31,8 @@
 // RECORDS is generated from this table) or as a registered default (none yet: each would be a registry change and a pin
 // regeneration, spec/fixtures/registry-pin.json D8). See DECIDED below.
 
-import { COMPONENTS, materialize } from './componentspec.js';
-import { AXES } from '../axes.js';
+import { COMPONENTS, materialize } from './protocol/componentspec.js';
+import { AXES } from './axes.js';
 
 export { AXES };
 /** A unit-axis vector's letter (x, -z), a letter as itself, anything else null. */

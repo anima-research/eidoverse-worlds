@@ -25,7 +25,7 @@ import { engage, release } from './keyhints.js';
 import { boxOf } from './realize/models.js';
 import { foldRecord } from './inspect.js';
 import { editOps, inspectSchema, fieldAt, poseEdits } from '../../shared/editschema.js';
-import * as OP from '../../shared/protocol/requests.js';
+import * as OP from '../../shared/requests.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { gripEditing } from './gripedit.js';
 

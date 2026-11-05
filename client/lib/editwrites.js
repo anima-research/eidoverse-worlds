@@ -6,7 +6,7 @@
 //   send(req, opts)        one request; on a `locked` refusal by someone who may lift the lock, a centre dialog offers
 //                          "Move anyway", which re-sends the SAME request with throughLock: true (§5: the log records
 //                          only the edit; the lock stays on). A refusal reverts the local preview.
-//   sendOps(ops, opts)     an edit's ops (shared/protocol/requests.js, planned by editschema.js, build.js…) as ONE request (a
+//   sendOps(ops, opts)     an edit's ops (shared/requests.js, planned by editschema.js, build.js…) as ONE request (a
 //                          single tool, or a batch): one edit is one act, so one Ctrl+Z.
 //   expectOf(ids, comps)   §3a: the values a gesture started from, as `expect`. A drag is presence until release; the
 //                          release is one request with expect, refused `changed` if anyone wrote those since.
@@ -17,7 +17,7 @@
 import { bus } from './base.js';
 import { net, sendRequest, replica, replicaActive, sendDrag } from './net.js';
 import { entities } from './world.js';
-import * as OP from '../../shared/protocol/requests.js';
+import * as OP from '../../shared/requests.js';
 import { enc, dec, actorName } from '../../shared/protocol/names.js';
 import { refusalText, lockVerb, lockQuestion, lockChoices, lockBody } from '../../shared/protocol/refusal.js';
 import { plain, warnPlain, nameOf as thingName } from './plainwords.js';
@@ -140,7 +140,7 @@ async function sendNow(req, { what = req.verb, revert = null, record = true } = 
   }
   return r;
 }
-/** A gesture's ops (shared/protocol/requests.js) as ONE request — one act, one Ctrl+Z — sent and waited for; `expect` covers
+/** A gesture's ops (shared/requests.js) as ONE request — one act, one Ctrl+Z — sent and waited for; `expect` covers
  *  what it sets, as this viewer saw it at `base` (a gesture's start: id → components) or now. */
 export async function sendOps(ops, { what, base = null, expect = true, revert = null } = {}) {
   const req = OP.batch(Array.isArray(ops) ? ops : [ops]);

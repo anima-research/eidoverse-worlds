@@ -227,7 +227,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   // S5e: the agent at a thing's sockets (shared/sockbody.js): look says what each does; sit picks by action/slot, asks
   // the authority (who), and keeps to how the seat lets you go (leaveBy) and whether it takes you from another (fromSeat)
   // its seats are socket children (the door takes no sockets map): the editor's map, sent as the children's own requests
-  const { socketMapOps } = await import("../../shared/protocol/requests.js");
+  const { socketMapOps } = await import("../../shared/requests.js");
   ok((await ann.req("batch", { requests: [{ verb: "create", args: { id: "carriage", model: "test/table.glb", place: { at: [9, 9] } } }, ...socketMapOps({}, "$carriage", {
     throne: { pos: [0, 0.5, 0], body: { who: "owner" } },
     box: { pos: [0.6, 0.5, 0], body: { action: "drive", leaveBy: "script" } },

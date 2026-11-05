@@ -7,7 +7,7 @@
 // renderer is a bug (pretrans-check D7); a changed default, type or enum is a changed meaning (spec/registry-pin.json, D8).
 //
 // ONE description, derived readers (review 10-14 §3.4, R: "fix"): a field's type (`fields`), default (`defaults`/`when`),
-// limits (`ranges`), unit (`units`) and one-line doc (`docs`) are written HERE and nowhere else. shared/protocol/descriptors.js
+// limits (`ranges`), unit (`units`) and one-line doc (`docs`) are written HERE and nowhere else. shared/descriptors.js
 // derives the inspector's rows from them (keeping only widget facts: step, decimals, soft maxima, which rows a card shows),
 // shared/components.js derives its records' params, shared/editschema.js and shared/worldentity.js read limits from here, and
 // the agent's `schema` request returns this table. tools/schema-layers-test.ts holds every reader to it. `units` and `docs`

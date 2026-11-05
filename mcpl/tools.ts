@@ -32,7 +32,7 @@ import { validatePose, validateTracks, tracksSpan, poseReport, HUMANOID_BONES, m
 import { rigBonesFor } from "./rigbones.ts";
 import { CONTACT_POINTS, canonicalPoint } from "../shared/contact.js";
 import { inspectSchema, editOps, describeSchema } from "../shared/editschema.js";
-import * as OP from "../shared/protocol/requests.js";
+import * as OP from "../shared/requests.js";
 import { REDACTED } from "../shared/protocol/fold.js";
 import { childrenOf, kindHint } from "../shared/hierarchy.js";
 import { WORLD_ID, worldSchema, worldEditOps, describeWorld } from "../shared/worldentity.js";

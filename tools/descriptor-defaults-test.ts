@@ -1,13 +1,13 @@
 // tools/descriptor-defaults-test.ts — the registry is the schema: every default the records (shared/components.js
 // RECORDS), the inspector (shared/editschema.js) and the hand (shared/grab.js) state equals what the authority writes,
-// materialize(key, {type}), read through the descriptor's editor translation (shared/protocol/descriptors.js).
+// materialize(key, {type}), read through the descriptor's editor translation (shared/descriptors.js).
 // Refactor plan C5 (notes/eidoverse/PLAN-refactor-2026-10-12.md); STRIKES C-S2.
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/descriptor-defaults-test.ts
 // First run, at b6db5c47 (before the fixes in the same commit), 9 red: RECORDS Pendulum period 3.5 / damp 0 / maxAmp 1.1
 // against the registry's 2.4 / 0.08 / 0.9; the inspector's pendulum period def 3.5 and damp def 0; its orbit radius def 1
 // against 3; the Add Pendulum and Add Reactions seeds writing period 3.5; and Transform.scale (the record's uniform 1 against
 // the registry's [1, 1, 1], a vocabulary, now translated). Mutation: a registry pendulum period of 2.9 → 2 red.
-import { DESCRIPTORS, editorDefault, materializedOf, toWire, axisLetter, axisVector } from "../shared/protocol/descriptors.js";
+import { DESCRIPTORS, editorDefault, materializedOf, toWire, axisLetter, axisVector } from "../shared/descriptors.js";
 import { COMPONENTS, materialize } from "../shared/protocol/componentspec.js";
 import { RECORDS, LIGHT_DEFAULTS } from "../shared/components.js";
 import { inspectSchema, fieldAt, addOps } from "../shared/editschema.js";

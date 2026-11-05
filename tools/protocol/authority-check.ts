@@ -36,7 +36,7 @@ import { worldPose } from "../../shared/hierarchy.js";
 import { viewState } from "../../shared/protocol/view.js";
 import { worldPose as worldT } from "../../shared/protocol/simlayer.js";
 import { labClock } from "./clock.ts";
-import { socketMapOps } from "../../shared/protocol/requests.js";
+import { socketMapOps } from "../../shared/requests.js";
 
 const root = scratch("door");
 // lab worlds name people by bare test names; the directory a real server has would know them (roles:<key> checks it)
@@ -506,11 +506,11 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 // ---- K: the client's own fold (shared/protocol/replica.js): adopt a cut, ingest the authority's entries; the state equals the
 // server's after every request, and the VIEW the renderer draws is recomputed from it (slice 3c: no v1 verbs) ----
 // review of #260: the view diff compares a timestamp exactly, and tells an absent world key from an empty one
-{ const { diffView } = await import("../../shared/protocol/viewdiff.js");
+{ const { diffView } = await import("../../shared/viewdiff.js");
   const t0 = 1800000000000, thing = (ts) => ({ entities: { s1: { model: "crate", pos: [0, 0, 0], sound: { clip: "bell", at: ts } } } });
   const restart = diffView(thing(t0), thing(t0 + 500)), grass = diffView({ entities: {} }, { entities: {}, grass: {} });
   ok(restart.things.some((x) => x.id === "s1" && x.comp === "sound") && grass.world.includes("grass"), "VD1 a sound restamped 500 ms later is a change, and grass going from absent to {} (the default lawn) is one", { restart, grass }); }
-{ const { viewState } = await import("../../shared/protocol/view.js"); const { diffView } = await import("../../shared/protocol/viewdiff.js");
+{ const { viewState } = await import("../../shared/protocol/view.js"); const { diffView } = await import("../../shared/viewdiff.js");
   let now = clock.t + 12000; const w = openLive(root + "client/", "client", { kindOf: LABKIND, now: () => now });
   const call = (actor, verb, args = {}) => { now += 100; return request(w, actor, verb, args); };
   call("ann", "create-world", { title: "client" }); call("ann", "create", { id: "tbl", model: "table", place: { at: [0, 3] } });
@@ -631,7 +631,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     "SKY1 a merged sky hour holds from the merge (9 then, 15 a quarter hour on at 24×), and a merged rate keeps the hour it shows (15, standing still at rate 0)", { half, afterHours, later, afterRate, stood, sky: sky() }); }
 
 // ---- V: what changed, said in the protocol's terms (slice 3c: the renderer reacts to these, not to v1 verbs) ----
-{ const { viewState } = await import("../../shared/protocol/view.js"); const { diffView } = await import("../../shared/protocol/viewdiff.js");
+{ const { viewState } = await import("../../shared/protocol/view.js"); const { diffView } = await import("../../shared/viewdiff.js");
   let now = clock.t + 9500; const w = openLive(root + "vdiff/", "vdiff", { kindOf: LABKIND, now: () => now });
   let held = viewState(w.state());
   const step = (actor, verb, args) => { now += 100; const r = request(w, actor, verb, args); const next = viewState(w.state()); const d = diffView(held, next); held = next; return { r, d,

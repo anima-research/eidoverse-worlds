@@ -441,7 +441,7 @@ console.log("\ntrusted drafts (the ladder's second rung):");
 // a thing that has its component: a value it refuses is an error and no op. A refused key in an edit with valid ones drops
 // alone; the others still commit (an agent's multi-field edit keeps what was right).
 {
-  const { DESCRIPTORS, materializedOf } = await import("../shared/protocol/descriptors.js");
+  const { DESCRIPTORS, materializedOf } = await import("../shared/descriptors.js");
   const BAD: Record<string, string> = { num: "zz", color: "zz", enum: "no-such-option" };
   const tried: string[] = [], rowless: string[] = [], wrong: string[] = [], skipped: string[] = [];
   for (const [card, d] of Object.entries<any>(DESCRIPTORS)) {

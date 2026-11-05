@@ -6,7 +6,7 @@
 import { fileURLToPath } from "node:url";
 import "./protocol/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from 'node:fs';
-import { socketMapOps } from '../shared/protocol/requests.js';
+import { socketMapOps } from '../shared/requests.js';
 import { scratchWorld } from './protocol/scratchworld.ts';
 import { COMPONENTS, statusOf, pinOf, materialize } from '../shared/protocol/componentspec.js';
 import { evalWholeMotion } from '../client/lib/motioneval.js';

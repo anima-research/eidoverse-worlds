@@ -8,7 +8,7 @@ import { request, fixtureIds } from "../../shared/protocol/authority.js";
 import { LAB_CATALOGUE } from "./labmodels.js";
 import { openWorld } from "../../server/filehost.ts";
 import { viewState } from "../../shared/protocol/view.js";
-import { socketMapOps } from "../../shared/protocol/requests.js";
+import { socketMapOps } from "../../shared/requests.js";
 import { enc, encName } from "../../shared/protocol/names.js";
 import { localOf } from "../../shared/hierarchy.js";
 import { qNorm, qFromYaw } from "../../shared/rot.js";
@@ -43,7 +43,7 @@ export function scratchWorld(tag = "edit", { owner = "olive", title = "scratch",
     call,
     /** send one planned request ({verb, args}); extra args (throughLock, dry, expect) ride along. */
     send: (req, extra = {}, actor = owner) => (req ? call(req.verb, { ...req.args, ...extra }, actor) : { ok: true, noop: true }),
-    /** several planned requests as ONE gesture (shared/protocol/requests.js batch semantics: one act). */
+    /** several planned requests as ONE gesture (shared/requests.js batch semantics: one act). */
     sendAll: (reqs, extra = {}, actor = owner) => {
       const flat = reqs.filter(Boolean).flatMap((o) => (o.verb === "batch" ? o.args.requests : [o]));
       if (!flat.length) return { ok: true, noop: true };

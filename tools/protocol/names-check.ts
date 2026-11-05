@@ -70,7 +70,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the agent's seat again", "mcpl/agent.ts", "mayVacate(kind: \"move\"", "mayLeaveSeat(kind: \"move\"", ["O1"]],
   ["socketRole says seat", "shared/sockbody.js", "!isRedacted(c.station) ? 'station' :", "!isRedacted(c.station) ? 'seat' :", ["O2"]],
   ["the toast says seat", "client/lib/localbody.js", "moved what you were occupying, so you stood up", "moved the seat you were on, so you stood up", ["O3"]],
-  ["light.noon again", "shared/protocol/descriptors.js", "daytime: { k: 'daytime', param: 'burnsAtNoon'", "daytime: { k: 'noon', param: 'burnsAtNoon'", ["S1"]],
+  ["light.noon again", "shared/descriptors.js", "daytime: { k: 'daytime', param: 'burnsAtNoon'", "daytime: { k: 'noon', param: 'burnsAtNoon'", ["S1"]],
   ["sky.clock again", "shared/worldentity.js", "    { t: 'text', k: 'tz', label: 'timezone', value: real ? (s.tz ?? DEFAULT_TZ) : '', ...ro,", "    { t: 'enum', k: 'clock', label: 'clock', value: real ? 'real' : 'authored', def: 'authored', options: [{ v: 'authored', label: 'authored' }, { v: 'real', label: 'real time' }] },\n    { t: 'text', k: 'tz', label: 'timezone', value: real ? (s.tz ?? DEFAULT_TZ) : '', ...ro,", ["S2"]],
   ["measure teaches set sockets", "mcpl/tools.ts", "a socket is a child entity, made with create {components: {parent: {to: id}", "act {verb: 'set', args: {id, component: 'sockets', value: {seat: {pos: [cx, y, cz], body: {pose: 'sitchair'}}}}} — or create {components: {parent: {to: id}", ["S3"]],
   ["the history forgets", "spec/PROTOCOL.md", "the refusal codes `hold-limit`, `beneath`, `not-pushable`", "the refusal codes", ["X1"]],
@@ -128,7 +128,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the spec says the old word", "spec/PROTOCOL.md", "poses, gestures (`pose.anim`), reach descriptors", `poses, ${EM}s, reach descriptors`, ["E3"]],
   ["the old gesture tool's alias forgets once (a dance would loop forever)", "mcpl/tools.ts", `  ${EM}: (a) => ({ name: a.name, mode: "once" }),`, `  ${EM}: (a) => ({ name: a.name }),`, ["M5"]],
   ["the registry says bob", "shared/protocol/componentspec.js", "enums: { type: [\"pendulum\", \"spin\", \"orbit\", \"oscillate\", \"path\"]", "enums: { type: [\"pendulum\", \"spin\", \"orbit\", \"bob\", \"path\"]", ["OS1"]],
-  ["the card is still Bob", "shared/protocol/descriptors.js", "  Oscillate: { type: 'oscillate', show: ['axis', 'amp', 'period', 'phase'],", "  Bob: { type: 'oscillate', show: ['axis', 'amp', 'period', 'phase'],", ["OS1"]],
+  ["the card is still Bob", "shared/descriptors.js", "  Oscillate: { type: 'oscillate', show: ['axis', 'amp', 'period', 'phase'],", "  Bob: { type: 'oscillate', show: ['axis', 'amp', 'period', 'phase'],", ["OS1"]],
   ["bob finds nothing", "shared/editschema.js", "Oscillate: ['float', 'hover', 'bob', 'back and forth', 'piston', 'sine']", "Oscillate: ['float', 'hover', 'back and forth', 'piston', 'sine']", ["OS5"]],
   ["Add Component writes bob", "shared/editschema.js", "Oscillate: { type: 'oscillate', amp: 0.3, period: 4 }", "Oscillate: { type: 'bob', amp: 0.3, period: 4 }", ["OS5"]],
   ["the translator keeps bob", "tools/protocol/import-v1/translate-v1.js", "  const m = motionType(m0) === m0.type ? m0 : { ...m0, type: motionType(m0) };", "  const m = m0;", ["OS6"]],
@@ -393,7 +393,7 @@ const cases: Case[] = [
       s.call("olive", "create-world", { title: s.name }); s.call("olive", "create", { id: "bench", model: "crate", place: { at: [4, 0] } });
       const want = { bunk: { pos: [0, 0.5, 0], body: { action: "lie", pose: "lie" } } };
       const door = show(s.call("olive", "set", { id: "bench", component: "sockets", value: want }));
-      const RQ = await import(TREE + "shared/protocol/requests.js"); const ops = RQ.socketMapOps(s.w().state().entities, "bench", want);
+      const RQ = await import(TREE + "shared/requests.js"); const ops = RQ.socketMapOps(s.w().state().entities, "bench", want);
       const r = s.call("olive", "batch", { requests: ops });
       const E = s.w().state().entities; const kid = Object.keys(E).find((k) => E[k].c.socket?.name === "bunk");
       const SK = await import(TREE + "shared/sockbody.js"); const slot = kid ? SK.slotOf(E[kid].c.socket, E[kid].c.transform, E[kid].c.station) : null;
@@ -584,7 +584,7 @@ const cases: Case[] = [
     good: (o) => o.nStray === 0 && o.kept >= 2 && o.alias === "anim" && o.read === null },
   // ---------------- OS: oscillate (R 10-17 21:40) ----------------
   { id: "OS1", what: "(R 21:40) the registry: motion.type is pendulum | spin | orbit | oscillate | path (no bob); oscillate's per-type defaults and units; the editor's card is Oscillate (descriptors, the component list, MOTION_TYPES)", async run() {
-      const M = CS.COMPONENTS.motion; const DS: any = await import(TREE + "shared/protocol/descriptors.js"); const CO: any = await import(TREE + "shared/components.js"); const ES: any = await import(TREE + "shared/editschema.js");
+      const M = CS.COMPONENTS.motion; const DS: any = await import(TREE + "shared/descriptors.js"); const CO: any = await import(TREE + "shared/components.js"); const ES: any = await import(TREE + "shared/editschema.js");
       const m = CS.materialize("motion", { type: "oscillate" }).value;
       return { enum: M.enums.type, unit: M.units.amp, m, cards: Object.keys(DS.DESCRIPTORS ?? {}).filter((k: string) => /^(Bob|Oscillate)$/.test(k)), list: Object.keys(CO.RECORDS ?? {}).filter((k: string) => /^(Bob|Oscillate)$/.test(k)), types: ES.MOTION_TYPES, help: M.help }; },
     good: (o) => JSON.stringify(o.enum) === '["pendulum","spin","orbit","oscillate","path"]' && o.unit?.oscillate === "m" && !("bob" in (o.unit ?? {})) && JSON.stringify(o.m.axis) === "[0,1,0]" && o.m.amp === 0.3 && o.m.period === 4 && o.m.phase === 0

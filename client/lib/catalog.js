@@ -4,7 +4,7 @@
 // is how a thing gets INTO your hand, build.js is what your hand does with it.
 
 import { enc } from '../../shared/protocol/names.js';
-import * as OP from '../../shared/protocol/requests.js';
+import * as OP from '../../shared/requests.js';
 import { sendOps } from './editwrites.js';
 import { TIER_COLORS } from '../../shared/perfrank.js';
 import { CONFIG, report, bus } from './base.js';

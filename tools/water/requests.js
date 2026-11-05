@@ -2,7 +2,7 @@
 // `batch` of create/set requests, through the old-world translator's own mapping (import-v1/translate-v1.js project:
 // water → zone + water, air boxes → zone + water-exclusion children, climb routes, collision, environment). Read by import.ts and prepare.ts.
 import { emptyState, foldEntry } from '../protocol/import-v1/fold.js';
-import { socketMapOps } from '../../shared/protocol/requests.js';
+import { socketMapOps } from '../../shared/requests.js';
 import { project, deferredFeatures, volumeMappings, carriedMappings, unmappedOf, namespaceOf } from '../protocol/import-v1/translate-v1.js';
 
 export const RECORD_VERBS = ['asset', 'spawn', 'comp', 'light', 'mount', 'motion'];

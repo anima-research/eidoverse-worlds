@@ -95,7 +95,7 @@ for (const [id, e] of ents) {
   }
 }
 // C8: every engine card the corpus may lack (openable, pivot, description, story, text, particles…) on one synthetic thing —
-// every value row of a typed card is claimed by its card (shared/protocol/descriptors.js claims it, or the card's own
+// every value row of a typed card is claimed by its card (shared/descriptors.js claims it, or the card's own
 // extra), and nothing a typed card shows is doubled on the raw-JSON floor. Mutation (2026-10-12): drop `intensity` from
 // the Light descriptor's show → "light.intensity is in no card" on every lamp here and in the corpus.
 {

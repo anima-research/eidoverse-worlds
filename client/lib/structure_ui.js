@@ -15,7 +15,7 @@
 // this file used to keep its own stack and write the popped plan into whatever
 // building was current, with expect: false.)
 
-import * as OP from '../../shared/protocol/requests.js';
+import * as OP from '../../shared/requests.js';
 import { sendOps } from './editwrites.js';
 import { flashHint } from './ui.js';
 import { THREE, canvas, camera, scene } from './core.js';

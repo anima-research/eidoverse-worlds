@@ -11,7 +11,7 @@ import { THREE } from './core.js';
 import { entities } from './world.js';
 import { bus } from './base.js';
 import { enc } from '../../shared/protocol/names.js';
-import * as OP from '../../shared/protocol/requests.js';
+import * as OP from '../../shared/requests.js';
 import { sendOps } from './editwrites.js';
 
 const r4 = (v) => +v.toFixed(4);

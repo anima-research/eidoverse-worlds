@@ -18,7 +18,7 @@
 //
 // The widget bodies are the three renderers' cases moved here verbatim (REFACTOR-C13-2026-10-12.md lists where the
 // two canvas looks differ; those differences are kept, not reconciled). The facts a widget reads (step, dp, unit, deg,
-// min, max, options, def) are the descriptor's `ui` facts (shared/protocol/descriptors.js) as editschema's rowOf hands
+// min, max, options, def) are the descriptor's `ui` facts (shared/descriptors.js) as editschema's rowOf hands
 // them on; the shared readers of them are FACTS below.
 
 import { svg as strokeSvg, rsvg, has as hasIcon, fsvg, hasFill, hasLine, stroke as strokeIcon } from './icons.js';

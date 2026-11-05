@@ -6,7 +6,7 @@ import "./protocol/fixture-ids.ts";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { AXES, POSITIVE_AXES } from "../shared/axes.js";
-import * as D from "../shared/protocol/descriptors.js";
+import * as D from "../shared/descriptors.js";
 import * as ES from "../shared/editschema.js";
 import * as LA from "../shared/lookat.js";
 import * as ME from "../client/lib/motioneval.js";

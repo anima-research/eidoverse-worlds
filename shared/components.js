@@ -19,7 +19,7 @@
 
 import { recordOf, recordComponents } from './protocol/view.js';
 import { materialize, COMPONENTS } from './protocol/componentspec.js';
-import { DESCRIPTORS, editorDefault, AXES } from './protocol/descriptors.js';
+import { DESCRIPTORS, editorDefault, AXES } from './descriptors.js';
 import { ESSENTIAL_NAMES } from './particle_effects.js';
 import { qNorm, qFromYaw } from './rot.js';
 import { WEATHERS, CLOUDS } from './forecast.js';

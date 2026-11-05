@@ -5,7 +5,7 @@
 // scene through the scheduler; this file never does.
 //
 // net.js folds the door's stream (shared/protocol/replica.js) and hands this module each new view (applyView); this module
-// says what changed, in the protocol's terms (shared/protocol/viewdiff.js). Events are invalidation signals, not data carriers:
+// says what changed, in the protocol's terms (shared/viewdiff.js). Events are invalidation signals, not data carriers:
 // subscribers are told WHAT changed and read the world from state.st:
 //   {type:'hydrated'} · {type:'reset'}
 //   {type:'change', id, what: 'born'|'gone'|'pose'|'parent'|'comp', comp?}
@@ -13,7 +13,7 @@
 // What I may do here (role, gen, fly) is the server's answer (`your-rights`, re-sent whenever a role changes), never
 // recomputed here.
 
-import { diffView } from '../../shared/protocol/viewdiff.js';
+import { diffView } from '../../shared/viewdiff.js';
 import { emptyView } from '../../shared/protocol/view.js';
 
 export const state = {

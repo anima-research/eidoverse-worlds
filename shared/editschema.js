@@ -28,7 +28,7 @@ const sockRot = (s) => eulerFromQ(socketQ(s), 'ZXY').e;
 // the postures every body has, and the library's other seated clips (any library clip name works; these are offered)
 const SOCKET_POSES = ['sitchair', 'sit', 'lie', 'idle', 'sitting_nervous_arm_rub_chair'];
 import { LAYERS, LAYER_KEY, defaultLayer } from './layers.js';
-import * as OP from './protocol/requests.js';
+import * as OP from './requests.js';
 import { normalizePicture, PICTURE_LIT, PICTURE_DESCRIPTION_MAX, DESCRIPTION_HINT } from './picture.js';
 import { normalizeSound, SOUND_DESCRIPTION_MAX, SOUND_DESCRIPTION_HINT, SOUND_MAX_RADIUS } from './sound.js';
 import { mediaTier, tierWords } from './mediasrc.js';
@@ -49,7 +49,7 @@ import { recordOf } from './protocol/view.js';
 import { partSlot, motionNode } from './protocol/names.js';
 import { modelWord } from './eido.js';
 import { isBase } from './protocol/roles.js';
-import { DESCRIPTORS, fieldOf, claimOf, CLAIMED_KEYS, editorDefault, toWire } from './protocol/descriptors.js';
+import { DESCRIPTORS, fieldOf, claimOf, CLAIMED_KEYS, editorDefault, toWire } from './descriptors.js';
 
 import { recordComponents } from './protocol/view.js';
 const R2D = 180 / Math.PI;
@@ -116,7 +116,7 @@ function axisName(m, def) {
   return def;
 }
 const isBag = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
-/** A card's row from its descriptor (shared/protocol/descriptors.js): the widget facts (ui), the value read through the
+/** A card's row from its descriptor (shared/descriptors.js): the widget facts (ui), the value read through the
  *  wire translation with the registry's default (or the field's `absent` reading) behind it, and `def` where the row
  *  offers a reset. `over` is the prose and anything the card knows better (a softMax that follows the value). A field the
  *  descriptor doesn't name still draws (its value from `over`), and no card claims it: components-inspector-test says so. */
@@ -144,7 +144,7 @@ const uprightHint = (ent) => (ent?.q && Math.abs(ent.q[0]) < 1e-12 && Math.abs(e
 const motionKeys = (ent) => Object.keys(recordComponents(ent)).filter((k) => (k === 'motion' || k.startsWith('motion:')) && ent[k] && typeof ent[k] === 'object' && MOTION_TYPES.includes(ent[k]?.type));
 
 // ---------------------------------------------------------------- the hand-written cards
-// The four the descriptor table marks `hand` (shared/protocol/descriptors.js HAND_CARDS): their rows are not built from
+// The four the descriptor table marks `hand` (shared/descriptors.js HAND_CARDS): their rows are not built from
 // the table — a Transform's channels are an editor's reading of one pose, a Sockets' rows are per slot, a Material's are
 // the model's own slots, and a Grabbable's registry fields ride beside the hand's own (pose, carries, fits, use, prompt,
 // grips). Each keeps a `read` (its rows) and a `write` (its edits); the inspector and editOps call them where the card
@@ -1182,7 +1182,7 @@ export function channels(schema) {
   return out;
 }
 
-// ---------------------------------------------------------------- edits → door ops (shared/protocol/requests.js)
+// ---------------------------------------------------------------- edits → door ops (shared/requests.js)
 
 /** Look a field up by dotted address. */
 export function fieldAt(schema, key) {
@@ -1245,7 +1245,7 @@ export function editOps(ent, id, edits, live = {}) {
     return true;
   };
   const bool = (v) => (typeof v === 'string' ? !/^(false|0|no|off)$/i.test(v) : !!v);
-  // a descriptor field's write (shared/protocol/descriptors.js): parsed by its widget, rounded to the card's writeDp, put
+  // a descriptor field's write (shared/descriptors.js): parsed by its widget, rounded to the card's writeDp, put
   // on the wire through its translation and held to the door's range there; a sparse field is deleted at its default, and
   // a write retires the spellings it clears. false = not a field the table writes (the card's own code does: an axis, a text, a button)
   const writeField = (card, k, key, f, raw, next) => {

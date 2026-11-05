@@ -16,7 +16,7 @@
 // A number a motion comp drives shows its REST pose, tinted: `place` moves
 // the base the motion composes onto, which is the honest thing to edit.
 
-import * as OP from '../../shared/protocol/requests.js';
+import * as OP from '../../shared/requests.js';
 import { worldHistoryRows, historyView, HISTORY_MODES, mergeHistory } from './historyrows.js';
 import { creditLine } from '../../shared/libcredits.js';
 import { THREE, scene } from './core.js';

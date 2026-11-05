@@ -1,15 +1,15 @@
-// shared/protocol/requests.js — the authority requests an edit plans, in the protocol's terms.
+// shared/requests.js — the authority requests an edit plans, in the protocol's terms.
 // Every planner (editschema, hierarchy, blueprint, the client's gestures, the agent's tools) builds these, and every
 // sender sends them as they are: {verb, args}, one per change, or one `batch` for one gesture (= one act = one undo).
 // Ids and component names arrive as the VIEW shows them (shared/protocol/view.js decodes the translator's x-- escapes)
 // and are encoded here, once. A transform is always written whole ({pos, q, scale}); for a child it is LOCAL to its
 // parent (PROTOCOL §2.3), exactly what the view shows as the child's pos/q/scale. Pure; browser, server, agent.
-import { socketsIn } from "../sockbody.js";
-import { enc, encName } from "./names.js";
-import { isPlaceholder } from "./ids.js";
-import { qNorm, qFromYaw, qWithHeading, qMul, qRotate } from "../rot.js";
-import { socketQ } from "../components.js";
-import { materialize } from "./componentspec.js";
+import { socketsIn } from "./sockbody.js";
+import { enc, encName } from "./protocol/names.js";
+import { isPlaceholder } from "./protocol/ids.js";
+import { qNorm, qFromYaw, qWithHeading, qMul, qRotate } from "./rot.js";
+import { socketQ } from "./components.js";
+import { materialize } from "./protocol/componentspec.js";
 
 const E = (id) => (id === "@world" || isPlaceholder(id) ? id : enc(String(id ?? "")));   // the world entity is itself, never escaped; a request-local placeholder ('$lamp') is the authority's to mint
 const finite3 = (a) => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
