@@ -21,9 +21,8 @@ export const idOut = (id) => dec(id) ?? id;
 const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
 const HIDDEN_WORLD = new Set(["physics-engine", "about", "bounds", "spawn"]);
 const IMP = "imported:", IMP_BANS = "imported-bans:";
-/** The record's derived fields (and its stamps): not components. The authority refuses a component named like one.
- *  `kind` is the retired stamp a few readers still carry until its date (components.js KIND_RETIRED), never a view field. */
-export const DERIVED = new Set(["id", "pos", "q", "yaw", "scale", "scale3", "born", "kind", "actor", "ts", "placer"]);
+/** The record's derived fields (and its stamps): not components. The authority refuses a component named like one. */
+export const DERIVED = new Set(["id", "pos", "q", "yaw", "scale", "scale3", "born", "actor", "ts", "placer"]);
 export const fillsFromImported = (n) => !DERIVED.has(n) && n !== "parent";
 /** The components on a record (its facts), without the derived fields. */
 export const recordComponents = (rec) => { const out = {}; for (const k in rec ?? {}) if (!DERIVED.has(k)) out[k] = rec[k]; return out; };

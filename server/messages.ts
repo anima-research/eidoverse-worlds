@@ -524,7 +524,3 @@ MESSAGES["server-ban"] = MESSAGES["server-mod"];
 MESSAGES["server-unban"] = MESSAGES["server-mod"];
 MESSAGES["server-bans"] = MESSAGES["server-mod"];
 delete (MESSAGES as Record<string, unknown>)["server-mod"];
-// the old names run nothing: each is refused naming the new one until the date, then its entry goes (mcpl/tools.ts TOOL_RENAMED)
-export const MESSAGE_RENAMED_UNTIL = "2026-12-01";
-export const MESSAGE_RENAMED: Record<string, { to: string; until: string }> = Object.fromEntries(["ban", "unban", "bans"].map((k) => [`global-${k}`, { to: `server-${k}`, until: MESSAGE_RENAMED_UNTIL }]));
-for (const [old, { to }] of Object.entries(MESSAGE_RENAMED)) MESSAGES[old] = ({ ws }) => { ws.send(JSON.stringify({ type: "error", error: `"${old}" is now "${to}" — nothing ran` })); };

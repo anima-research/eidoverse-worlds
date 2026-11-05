@@ -13,7 +13,7 @@
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { componentsOf, entityOf, canon, sha256hex, RECORDS, addable, lightOf, colliderOf, isMeshBag, recordHash, KIND_RETIRED, KIND_RETIRED_UNTIL } from '../shared/components.js';
+import { componentsOf, entityOf, canon, sha256hex, RECORDS, addable, lightOf, colliderOf, isMeshBag, recordHash } from '../shared/components.js';
 import { worldComponents, worldOf, worldState } from '../shared/worldentity.js';
 import { blueprintRefusal, blueprintHash, expand, overridesOf, placeVerbs, placeRefusal, copyTree, modernize, localComponents, LINK_KEY } from '../shared/blueprint.js';
 import { treeOf } from '../shared/hierarchy.js';
@@ -110,7 +110,6 @@ check('colliderOf: comp.collider wins (mesh, and the older exact, as the walker\
   && colliderOf({ collide: 'box', collider: { shape: 'mesh' } }) === 'exact'
   && colliderOf({ collide: 'box', collider: { shape: 'triangles' } }) === 'box'
   && colliderOf({ model: L }) === undefined);
-check('the retired `kind` note names the components and its date is not past (then delete KIND_RETIRED and the keys that carry it)', /model, mesh, light, socket/.test(KIND_RETIRED) && KIND_RETIRED.includes(KIND_RETIRED_UNTIL) && KIND_RETIRED_UNTIL >= new Date().toISOString().slice(0, 10), KIND_RETIRED);
 check('isMeshBag: a mesh a reader may draw names a registered shape (a malformed mesh is absent, as the realizer reads it)', isMeshBag({ shape: 'box', size: [1, 1, 1] }) && !isMeshBag({}) && !isMeshBag({ shape: 'cone' }) && !isMeshBag(null) && !isMeshBag([]));
 check('a lamp (Model + comp.light) cannot add a second Light; an Empty can add one; Collider still needs a Model',
   !addable(componentsOf({ model: L, light: {} }).components).some((a) => a.name === 'Light')

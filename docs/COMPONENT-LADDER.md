@@ -24,7 +24,9 @@ definition in `shared/protocol/componentspec.js`; `schema` returns it, and the I
   (`--ack "<why>"`, written as `kernel: <why>` with the diff beneath), and vectors (`--vectors <dir>`:
   `spec/kernel-vectors/<dir>/vectors.json`, entries the OLD reader — snapshotted from git into `old-fold.js` at re-pin time —
   refuses and the NEW reader folds clean; the gate runs them). The pin records the companions and the check verifies them
-  at every run, so none can be dropped after the fact. Not an acknowledgement rung: `--ack` alone never re-pins the kernel.
+  at every run, so none can be dropped after the fact. The kernel the first deploy ships was pinned once by the first-deploy
+  ceremony (`--pin --first-deploy --ack --vectors first-deploy`): no older reader was deployed, so its vectors are synthetic
+  fixtures with the verdict this reader gives each (K3, K3b). Not an acknowledgement rung: `--ack` alone never re-pins the kernel.
   A **scope extension** (a registered name entering the kernel with the shape the registry pin already holds, as model, roles
   and access did on 10-18) changes what no stored byte means: it re-pins on `--ack` alone, no translator or vectors, and the
   pin records the names (kernel-check K12 proves a shape change can't ride in on it).

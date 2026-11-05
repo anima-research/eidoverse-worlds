@@ -84,8 +84,8 @@ const settle = async () => { for (let i = 0; i < 6; i++) { M.residencySweep?.();
   const piv = stub.entities.get('pivot');
   check('an Empty realizes at once as an invisible Group at its folded transform', !!piv && piv.isGroup && piv.userData.empty === true
     && jeq(piv.position.toArray().map((x: number) => +x.toFixed(9)), [1, 2, 3]) && Math.abs(piv.rotation.y - 0.5) < 1e-9, `${piv?.type} ${JSON.stringify(piv?.position)}`);
-  check('…loads nothing (no asset request names it); its panel meta carries no model, and `kind` is the retired note naming the components',
-    !stub.loads.some((l: any) => l.lib == null || l.lib === 'undefined') && stub.metaOf('pivot')?.model === undefined && /read the thing's components/.test(stub.metaOf('pivot')?.kind), JSON.stringify([stub.loads.map((l: any) => l.lib), stub.metaOf('pivot')]));   // loads: the loader's own record (its lib path, as userData.lib), not a view record
+  check('…loads nothing (no asset request names it); its panel meta carries no model and no kind (read its components)',
+    !stub.loads.some((l: any) => l.lib == null || l.lib === 'undefined') && stub.metaOf('pivot')?.model === undefined && !('kind' in (stub.metaOf('pivot') ?? { kind: 1 })), JSON.stringify([stub.loads.map((l: any) => l.lib), stub.metaOf('pivot')]));   // loads: the loader's own record (its lib path, as userData.lib), not a view record
   check('…and owns no collider', !stub.colliderLog.some((e: any) => e[1] === 'pivot'), JSON.stringify(stub.colliderLog));
   const cup = stub.entities.get('cup');
   check('a model parented to an Empty rides it (parented into the Empty\'s Group at its offset)', !!cup && cup.parent === piv && jeq(cup.position.toArray().map((x: number) => +x.toFixed(9)), [0, 0.5, 0]), `${cup?.parent?.type} ${JSON.stringify(cup?.position)}`);

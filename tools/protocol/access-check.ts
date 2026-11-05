@@ -394,16 +394,16 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
     "A12b a server ban by u- identity binds the absent person's account (join refused), days sets until (and findBan lets a lapsed one go), unban by identity lifts it",
     { rec: recI, said: fen.msgs.slice(k2).map((m) => m.text ?? m.error), refused: jm3.errors, again: jm4.errors, lapsed: !!lapsed, held: !!held });
   moss3.close(); moss4.close();
-  // A12c (owner 11-03, the house rename shape): the old names run nothing; each is refused naming the new one, until a date
+  // A12c: the old global-* names are unknown types (no client of this dialect sends them: an old client gets no session): silence, nothing
+  // runs. The server-bans after them answers, so the three were read before it
   const before = fs.readFileSync(path.join(W, ".bans.json"), "utf8"); const k4 = fen.msgs.length;
   for (const type of ["global-ban", "global-unban", "global-bans"]) fen.raw({ type, id: ids.Moss, reason: "A12c" });
-  const errs = () => fen.msgs.slice(k4).filter((m: any) => m.type === "error");
-  await tryUntil("Fen hears back on the three old names", () => errs().length >= 3, { ms: 2000, step: 50 });
-  const olds = errs(); const { MESSAGE_RENAMED, MESSAGE_RENAMED_UNTIL } = await import("../../server/messages.ts");
-  ok(olds.length === 3 && olds.every((m: any, i: number) => m.error.includes(`"${["global-ban", "global-unban", "global-bans"][i]}" is now "${["server-ban", "server-unban", "server-bans"][i]}"`))
-    && fs.readFileSync(path.join(W, ".bans.json"), "utf8") === before && Object.values(MESSAGE_RENAMED ?? {}).every((v: any) => v.until === MESSAGE_RENAMED_UNTIL) && MESSAGE_RENAMED_UNTIL >= new Date().toISOString().slice(0, 10),
-    "A12c global-ban / global-unban / global-bans run nothing: each is refused naming its server-* name, the ban file is untouched, and the teaching has a date not yet past (then delete MESSAGE_RENAMED)",
-    { said: olds.map((m: any) => m.error ?? m.text), until: MESSAGE_RENAMED_UNTIL });
+  fen.raw({ type: "server-bans" });
+  await tryUntil("Fen hears server-bans answer", () => fen.msgs.slice(k4).some((m: any) => m.type === "mod"), { ms: 2000, step: 50 });
+  const heard = fen.msgs.slice(k4); const { MESSAGES } = await import("../../server/messages.ts");
+  ok(heard.some((m: any) => m.type === "mod") && !heard.some((m: any) => m.type === "error" || /global-/.test(String(m.error ?? m.text ?? ""))) && fs.readFileSync(path.join(W, ".bans.json"), "utf8") === before && ["global-ban", "global-unban", "global-bans"].every((t) => !Object.hasOwn(MESSAGES, t)),
+    "A12c global-ban / global-unban / global-bans are unknown types: no handler, no answer, the ban file untouched (server-bans after them is the one reply)",
+    { heard: heard.map((m: any) => m.type + ":" + String(m.error ?? m.text).slice(0, 60)) });
   fen.close(); row.close(); try { s3.proc.kill(); await s3.proc.exited; } catch {} }
 // ---- A13 (security review 10-18 H2): the client's address, from a trusted proxy only (pure) ----
 { const { clientAddress } = await import("../../server/peer.ts");

@@ -424,8 +424,12 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   `REGISTRY-CHANGELOG.md` line prefixed `kernel:`, and (c) vectors under
   `spec/kernel-vectors/` that the old reader (snapshotted from git at re-pin
   time) refuses and the new reader folds clean; the pin records the three and
-  the gate verifies them at every run, so none can be dropped afterwards. One
-  exception, named: a **scope extension** — a registered name entering the
+  the gate verifies them at every run, so none can be dropped afterwards. The
+  kernel the first deploy ships was pinned once, by the first-deploy ceremony
+  (`--pin --first-deploy`): no older reader was deployed, so its vectors are
+  synthetic fixtures (`spec/kernel-vectors/first-deploy/`, each a hand-written
+  log and the verdict this reader gives it), and the gate is red if the pin or
+  its fixtures are missing or altered. One exception, named: a **scope extension** — a registered name entering the
   kernel with exactly the shape `spec/registry-pin.json` already pinned for it
   — changes what no stored
   byte means, so no translator and no vectors can exist for it; it re-pins on

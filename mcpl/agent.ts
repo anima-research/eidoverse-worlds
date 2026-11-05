@@ -4,7 +4,7 @@
 // terrain replicated (Skye's terrain.js eval'd in Bun) so feet agree with
 // every renderer. No GPU here — rendering is the retina's job (see server.ts).
 
-import { bodyOf, KIND_RETIRED } from "../shared/components.js";
+import { bodyOf } from "../shared/components.js";
 import { CLASSES, REACH_NOTE_MS, namedPointClass, pointClass } from "../shared/protocol/consent.js";
 import { helloOf, refusalWords } from "../shared/protocol/hello.js";
 import { describeBody, mayLeave, resolveSeat, socketsUnder, vacatedFromMine, vacatedAt } from "../shared/sockbody.js";
@@ -232,7 +232,7 @@ function trimMeshCache(key: string, m: CollisionMesh) {
 type Pose = PublicPose;
 /** A record carrying a socket component (an attachment point, listed under its host); it may carry anything else too. */
 const isSocketRec = (e: any) => !!e?.socket && typeof e.socket === "object" && !Array.isArray(e.socket);
-type Entity = { id: string; model: string; kind: typeof KIND_RETIRED; pos: number[]; yaw: number; actor: string; scale?: number;
+type Entity = { id: string; model: string; pos: number[]; yaw: number; actor: string; scale?: number;
   /** a stretched thing's per-axis scale, and a tilted one's whole rotation (the fold keeps both beside scale and yaw) */
   scale3?: number[]; q?: number[];
   /** the spawn's collider override ("exact" | "box"); the browser's decide() reads it, and so does ours */
@@ -1771,7 +1771,7 @@ export class WorldAgent {
       seen.add(id);
       this.entities.set(id, {
         id,
-        model: String((e as any).model ?? ""), kind: KIND_RETIRED,
+        model: String((e as any).model ?? ""),
         pos: (e as any).pos, yaw: (e as any).yaw ?? 0,
         ...((e as any).scale != null ? { scale: (e as any).scale } : {}),
         ...(Array.isArray((e as any).scale3) ? { scale3: (e as any).scale3 } : {}),   // a stretched thing stays stretched

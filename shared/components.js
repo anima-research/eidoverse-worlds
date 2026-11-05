@@ -503,10 +503,6 @@ export function colliderOf(ent) {
 
 /** A `mesh` component a reader may draw: a bag whose shape the registry names (a malformed mesh is absent, never a throw). */
 export const isMeshBag = (m) => isBag(m) && COMPONENTS.mesh.enums.shape.includes(m.shape);
-/** The retired `kind` field (one word per thing: socket | model | mesh | light | empty) runs nothing: it names its replacement
- *  until the date, then the key goes. A thing carries any of its components at once; read them. */
-export const KIND_RETIRED_UNTIL = '2026-12-01';
-export const KIND_RETIRED = `retired: read the thing's components (model, mesh, light, socket); this note goes ${KIND_RETIRED_UNTIL}`;
 
 /** Why a `comp` of type light/collider would be refused, or null. The authority
  *  (server/verbs.ts vComp) and the inspector ask the same question, so a

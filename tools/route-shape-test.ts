@@ -17,7 +17,6 @@ import { tmpdir } from "node:os";
 import { foundWorlds } from "./harness.ts";
 import { makeReplica } from "../shared/protocol/replica.js";
 import { viewOf } from "../shared/protocol/view.js";
-import { KIND_RETIRED } from "../shared/components.js";
 import { idAliases } from "./protocol/idalias.ts";
 const IDS = idAliases();   // R 10-17: the suite's names ride as placeholders and minted ids
 
@@ -90,7 +89,7 @@ async function client(port: number, world: string, id: string) {
 
 const { port } = await spawnServer();
 const ann = await client(port, "yard", "Ann");
-const made = await ann.req("create", { id: "crate", model: "test/crate.glb", components: { transform: { pos: [1, 0, 2], q: [0, 0, 0, 1], scale: [1, 2, 1] }, label: "tall crate", sockets: { top: { pos: [0, 1, 0] } } } });
+const made = await ann.req("create", { id: "crate", model: "test/crate.glb", components: { transform: { pos: [1, 0, 2], q: [0, 0, 0, 1], scale: [1, 2, 1] }, label: "tall crate" } });
 check("the owner makes a crate scaled [1,2,1]", made.ok === true, J(made.refused));
 await new Promise((r) => setTimeout(r, 300));
 const cid = IDS.of("crate");   // the authority mints the id; "crate" rode as a placeholder
@@ -117,7 +116,7 @@ console.log("\n— C. the whole scene —");
   check("the crate's row", !!row, J(body).slice(0, 200));
   const want = viewOf(cid, c);
   const diffs = row ? Object.keys(want).filter((k) => J(want[k]) !== J(row[k])) : ["(no row)"];
-  check("C the row is the same record (scale3 included), plus the retired kind note naming the components", diffs.length === 0 && row?.kind === KIND_RETIRED, J(diffs));
+  check("C the row is the same record (scale3 included), and carries no kind (one word per thing is gone: read its components)", diffs.length === 0 && !!row && !("kind" in row), J(diffs));
 }
 
 ann.close();

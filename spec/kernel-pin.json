@@ -2,18 +2,24 @@
  "status": "trial-kernel",
  "translator": "eidoverse/translate-v1@48",
  "companions": {
-  "changelog": "2026-11-05: kernel: no minor (Mica 11-04): genesis is {dialect, v, …}; dialect names the family, v is the hard break, requires the additive gate. minor leaves the genesis fields and the version pin; a stray minor is malformed",
-  "translator": {
-   "from": "eidoverse/translate-v1@45",
-   "to": "eidoverse/translate-v1@48",
-   "step": "48"
+  "changelog": "2026-11-05: kernel: the kernel the first deploy ships (Mica 11-05: first-deploy pin ceremony). No kernel before it was deployed: the predeploy history above (minor 1, its features and provenance, no minor) was collapsed into this one pin, and its old-reader vectors (kernel-vectors/minor-1, features, no-minor) are gone. Its fixtures are synthetic: hand-written logs and the verdict this reader gives each; a change after it carries a translator and vectors red on this reader",
+  "firstDeploy": {
+   "vectors": {
+    "dir": "first-deploy",
+    "names": [
+     "control",
+     "stray-minor",
+     "envelope-field",
+     "version-3",
+     "version-5",
+     "other-dialect",
+     "old-kind-act",
+     "unknown-feature"
+    ]
+   }
   },
-  "vectors": {
-   "dir": "no-minor",
-   "names": [
-    "genesis-without-minor"
-   ]
-  }
+  "translator": null,
+  "vectors": null
  },
  "kernel": {
   "envelope": {

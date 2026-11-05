@@ -9,6 +9,11 @@
 //                                                              re-pin a CHANGED kernel: refused unless every companion is present and
 //                                                              the vectors run red on the old reader (snapshotted from git at --base,
 //                                                              default: the commit that last pinned) and green on the new
+//   bun tools/protocol/kernel-check.ts --pin --first-deploy --ack "<why>" --vectors <dir>
+//                                                              THE FIRST-DEPLOY CEREMONY (Mica 11-05, Q3), once: pins the unchanged
+//                                                              kernel as the first deployed one. No old reader was deployed, so its
+//                                                              vectors are synthetic: <dir>/vectors.json, each {name, entries, verdict},
+//                                                              the verdict the deployed reader gives (negatives, and a clean control)
 //   bun tools/protocol/kernel-check.ts --pin --ack "<why>"     a SCOPE EXTENSION only (10-18: model, roles, access joined the kernel):
 //                                                              every change is a kernel component entering the pin with the shape
 //                                                              spec/registry-pin.json already pinned for it; no byte changes meaning, so
@@ -52,6 +57,15 @@ async function runVectors(dir: string) {
   const ran = (spec.vectors ?? []).map((v: any) => ({ name: v.name, old: verdict(OLD, v.entries), new: verdict(FOLD, v.entries) }));
   return { ran, why: null };
 }
+/** Run a first-deploy fixtures dir against today's reader: {ran: [{name, want, got}], why?}. */
+function runFixtures(dir: string) {
+  const f = path.join(T, VECTORS, dir, "vectors.json");
+  if (!fs.existsSync(f)) return { ran: null, why: `${path.relative(T, f).split(path.sep).join("/")} is missing` };
+  const spec = JSON.parse(fs.readFileSync(f, "utf8"));
+  return { ran: (spec.vectors ?? []).map((v: any) => ({ name: v.name, want: v.verdict, got: verdict(FOLD, v.entries) })), why: null };
+}
+/** Synthetic fixtures prove something when every verdict is as recorded, one is the clean control, and at least one is refused. */
+const fixturesHold = (ran: any[] | null) => !!ran && ran.length >= 2 && ran.every((x) => x.got === x.want) && ran.some((x) => x.want === "ok") && ran.some((x) => x.want !== "ok");
 /** The old reader, from git, into the vectors dir (old-fold.js importing ./old-hash.js). */
 function snapshotOldReader(dir: string, base: string) {
   const d = path.join(T, VECTORS, dir); fs.mkdirSync(d, { recursive: true });
@@ -82,6 +96,15 @@ function trimOf(now: any, rp: any) {
   return { trim: { held, ...(heldPaths.length ? { heldPaths } : {}), dropped } };
 }
 
+if (argv.includes("--pin") && argv.includes("--first-deploy")) {
+  const now = KS.kernelPinOf(); const ack = (opt("ack") ?? "").trim(); const vdir = opt("vectors");
+  const why = !pin ? "no pin to deploy: pin the kernel first" : pin.companions?.firstDeploy ? "the first deploy is pinned already: a change after it carries a translator and vectors" : KS.kernelDiff(pin.kernel, now).length ? "the kernel differs from the pin: re-pin the change first, then pin it as deployed" : !ack ? 'a changelog line: --ack "<why>"' : !vdir ? "synthetic fixtures: --vectors <dir>" : null;
+  if (why) { console.log(`refusing the first-deploy pin: ${why}`); process.exit(1); }
+  const r = runFixtures(vdir); if (!fixturesHold(r.ran)) { console.log(`refusing the first-deploy pin: the fixtures don't hold (${r.why ?? JSON.stringify(r.ran)})`); process.exit(1); }
+  const line = `${new Date().toISOString().slice(0, 10)}: kernel: ${ack}`; fs.appendFileSync(path.join(T, CHANGELOG), `- ${line}\n`);
+  const out = { status: KS.TRIAL_KERNEL, translator: TV1.TRANSLATOR, companions: { changelog: line, firstDeploy: { vectors: { dir: vdir, names: r.ran.map((x: any) => x.name) } }, translator: null, vectors: null }, kernel: now };
+  fs.writeFileSync(path.join(T, PIN), JSON.stringify(out, null, 1) + "\n"); console.log(`${PIN} written: the first deployed kernel, ${r.ran.length} fixtures`); process.exit(0);
+}
 if (argv.includes("--pin")) {
   const now = KS.kernelPinOf();
   const base = opt("base") ?? (spawnSync("git", ["-C", T, "log", "-1", "--format=%H", "--", PIN], { encoding: "utf8" }).stdout.trim() || "HEAD");
@@ -116,27 +139,41 @@ await C("K1", "the kernel is what the fold reads (house plan #260 10-20, C11: 't
 await C("K2", "the code's kernel is what spec/kernel-pin.json pins (a difference is THE change: red until `kernel-check.ts --pin` with its companions)", () => {
   const d = pin ? KS.kernelDiff(pin.kernel, KS.kernelPinOf()) : ["no pin: bun tools/protocol/kernel-check.ts --pin"]; return [!d.length && pin?.status === "trial-kernel", d.slice(0, 12)]; });
 
-await C("K3", "the pin's recorded companions hold: the changelog line is in REGISTRY-CHANGELOG.md, the translator moved (and is still there), and the vectors still run red on the old reader and green on the new (the latest re-pin's companions only; the initial pin, before any change, records none)", async () => {
-  const c = pin?.companions; if (!c) return [pin?.companions === null, "initial pin: no change yet, nothing to verify"];
-  const log = read(CHANGELOG); const line = typeof c.changelog === "string" && log.includes(`- ${c.changelog}`);
+/** Whether a pin's recorded companions hold against a changelog: [ok, detail]. A pin always records something: its first-deploy
+ *  ceremony (synthetic fixtures run on today's reader) or its latest change (translator + vectors, a scope extension or trim). */
+async function companionsHold(pin: any, log: string) {
+  const c = pin?.companions; if (!c) return [false, pin ? "the pin records no companions: neither the first-deploy ceremony nor a change" : "no pin"];
+  const line = typeof c.changelog === "string" && log.includes(`- ${c.changelog}`);
+  if (c.firstDeploy) { const d = c.firstDeploy.vectors ?? {}; const r = runFixtures(d.dir ?? ""); const names = d.names ?? [];
+    const fx = fixturesHold(r.ran) && names.length === r.ran.length && names.every((n: string) => r.ran.some((x: any) => x.name === n));
+    return [line && fx, { line, firstDeploy: r.ran ?? r.why }]; }
   // a scope extension recorded (model, roles, access entered 10-18): its names are still the kernel's, in code and in the registry pin
   const rp = JSON.parse(read("spec/registry-pin.json")); const now = KS.kernelPinOf();
   const scope = !c.scope || (Array.isArray(c.scope.names) && c.scope.names.length >= 1 && c.scope.names.every((n: string) => KS.KERNEL_COMPONENTS.includes(n) && now[n]?.status === "trial-kernel" && rp[n]?.status === "trial-kernel" && CAT.statusOf(n) === "trial-kernel"));
   // a kernel CHANGE recorded (translator + vectors): the translator moved at re-pin time AND is still at least there now (a bump
-  // reverted after the re-pin is red), OR the recorded step file still exists (kernelspec --translator <step>); the vectors still run old-red/new-green. A pin whose only
-  // recorded change is a scope extension carries none of these (null) and is verified by `scope` alone
+  // reverted after the re-pin is red), OR the recorded step file still exists (kernelspec --translator <step>); the vectors still run old-red/new-green
   const changed = !!(c.translator || c.vectors);
   const tr = !changed || (KS.translatorN(c.translator?.to) > KS.translatorN(c.translator?.from) && KS.translatorN(TV1.TRANSLATOR) >= KS.translatorN(c.translator?.to)) || (typeof c.translator?.step === "string" && fs.existsSync(path.join(T, c.translator.step)));
   const r = changed ? await runVectors(c.vectors?.dir ?? "") : { ran: null, why: "no kernel change recorded (a scope extension only)" }; const names = (c.vectors?.names ?? []);
   const vec = !changed || (!!r.ran && r.ran.length >= 1 && r.ran.every((x: any) => x.old !== "ok" && x.new === "ok") && names.every((n: string) => r.ran.some((x: any) => x.name === n)));
   // a scope trim recorded (C11): every key it says the registry holds is still in the registry pin's vocab, and still out of the kernel
-  // (and every name it trims is still a kernel component: a name leaving the kernel since is a scope change, not this trim)
   const outOf = (p: string) => { const [n, key] = p.split("."); return key ? !(now[n] && Object.hasOwn(now[n], key)) : !now[n]; };
   const inReg = (p: string) => { const [n, key] = p.split("."); return key ? !!rp[n] && Object.hasOwn(rp[n], key) : !!rp[n]; };
   const trim = !c.trim || (Object.entries(c.trim.held ?? {}).every(([n, ks]: [string, any]) => Array.isArray(ks) && ks.every((k: string) => rp[n]?.vocab && Object.hasOwn(rp[n].vocab, k) && !now[n]?.grammar))
     && (c.trim.heldPaths ?? []).every((p: string) => inReg(p) && outOf(p))
     && Object.entries(c.trim.dropped ?? {}).every(([p, w]) => typeof w === "string" && w.trim() && !now[p.split(".")[0]]?.grammar && outOf(p)));
-  return [line && tr && vec && scope && trim && (changed || !!c.scope || !!c.trim), { line, tr, vec, scope: c.scope ?? null, trim: c.trim ?? null, vectors: r.ran ?? r.why }]; });
+  return [line && tr && vec && scope && trim && (changed || !!c.scope || !!c.trim), { line, tr, vec, scope: c.scope ?? null, trim: c.trim ?? null, vectors: r.ran ?? r.why }];
+}
+await C("K3", "the pin's recorded companions hold: the first deployed kernel's (Mica 11-05: its changelog line is in REGISTRY-CHANGELOG.md, and its synthetic fixtures still give the deployed reader's verdicts, a clean control among them), or a later change's (its changelog line, the translator moved, the vectors red on the old reader and green on the new). A pin with no companions is red", () => companionsHold(pin, read(CHANGELOG)));
+await C("K3b", "…and K3 is red when the pin is absent or tampered: no pin, its companions dropped, its changelog line gone, a fixture's recorded verdict changed, a fixture named that isn't there, or the fixtures dir renamed", async () => {
+  const log = read(CHANGELOG); const fd = pin?.companions?.firstDeploy; if (!fd) return [false, "the pin isn't the first-deploy ceremony's"];
+  const t = (f: (p: any) => void) => { const p = JSON.parse(JSON.stringify(pin)); f(p); return p; };
+  const cases: [string, any, string][] = [["absent", null, log], ["no companions", t((p) => { p.companions = null; }), log], ["line gone", pin, log.replace(`- ${pin.companions.changelog}`, "")],
+    ["name added", t((p) => { p.companions.firstDeploy.vectors.names.push("never-written"); }), log], ["dir renamed", t((p) => { p.companions.firstDeploy.vectors.dir = "no-such-dir"; }), log]];
+  const got = await Promise.all(cases.map(async ([k, p, l]) => [k, (await companionsHold(p, l))[0]]));
+  // a recorded verdict changed: the same check over the fixtures with one expectation flipped
+  const r = runFixtures(fd.vectors.dir); const flipped = r.ran ? fixturesHold(r.ran.map((x: any, i: number) => (i === 1 ? { ...x, want: "ok" } : x))) : true;
+  return [!!(await companionsHold(pin, log))[0] && got.every(([, ok]) => ok === false) && flipped === false, { got, flipped }]; });
 
 // ---- the verdict itself, on a mutated kernel (the proof the gate carries: red without the companions, green with them) ----
 const mutated = () => { const now = KS.kernelPinOf(); now.envelope.fields = [...now.envelope.fields, "note"].sort(); return now; };
