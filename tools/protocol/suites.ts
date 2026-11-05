@@ -208,6 +208,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["shadow-fade", "../shadow-fade-test.mjs", 1], // house client I172: registered shadow casters start not casting
   ["frames-layout", "../frames-layout-test.ts", 1], // the frames and panels layout
   ["models-field", "../models-field-test.ts", 1], // house client I173: an override's clone is wrapped once
+  ["axes", "../axes-test.ts", 1], // the axis letters are one table (shared/axes.js); motion takes negative letters, look-at's door and turn don't (as before)
   ["compose", "../compose-test.ts", 1], // Mica 11-04: one thing carries model + mesh + light + socket, each realized on its own; labels read the components
   ["translate", "translate-check.ts", 1], // R 10-28 translation rulings (22 rights, 17 particles, 24 name bans, 50 report, version) + SWEEP-3 + light parity
   ["owners", "owners-check.ts", 1], // R 10-28: a translated world's owners are bound to the accounts main recorded for them; the rest listed, bindable (operator-repair bind)

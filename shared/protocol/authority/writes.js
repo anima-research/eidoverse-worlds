@@ -29,6 +29,7 @@ import { isLookAt } from "./checks.js";
 import { Admitted, admit, rateCheck } from "./gate.js";
 import { applyResettle, clearRefsTo, lastTouch, planResettle, resettleEntries, stampMedia, stampModelHash, stampShapes, stripDry, touched, warnOrNot, warnings } from "./followups.js";
 import { renameFields } from "../names.js";
+import { AXES, POSITIVE_AXES } from "../../axes.js";
 import { ratedHoursAt } from "../../forecast.js";
 // the layers above this one (a leaf may not import them: authority-layers-check), reached through UP (ctx.js), which
 // authority.js binds at load
@@ -188,7 +189,7 @@ function needThing(ctx, id) {
 // treated as no bounds, never a crash in every create's reply (review T0d)
 const boundsOf = (st) => { const B = st.entities["@world"]?.c.bounds; const v3 = (a) => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
   return B && v3(B.min) && v3(B.max) ? B : null; };
-const MOTION_AXES = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1], "-x": [-1, 0, 0], "-y": [0, -1, 0], "-z": [0, 0, -1] };   // motioneval.js AXES
+const MOTION_AXES = AXES;   // shared/axes.js: all six letters
 function resolve(ctx, id, comp, value, prev) {
   const def = !comp.includes(":") || comp.startsWith("look-at:") ? defOf(comp) : undefined;   // an alias has its registered name's defaults; a part's look-at the whole one's
   if (comp === "transform") {
@@ -221,7 +222,7 @@ function resolve(ctx, id, comp, value, prev) {
     value = { ...value, layers: value.layers.map((l) => (typeof l?.color === "string" && /^#[0-9a-f]{6}$/i.test(l.color) ? { ...l, color: parseInt(l.color.slice(1), 16) } : l)) };
   // a sky written by hand is stamped like the sky act's: ts is the instant its hours held (the stamped fields are refused in buildSet)
   if (comp === "sky" && value && typeof value === "object" && !Array.isArray(value) && value.ts === undefined) value = { ...value, ts: Math.floor(ctx.w.now()) };
-  if (isLookAt(comp) && value && typeof value === "object" && !Array.isArray(value)) { const AXV = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] };   // the letters the door takes (tools/lookat-forward-check: no negative letter)
+  if (isLookAt(comp) && value && typeof value === "object" && !Array.isArray(value)) { const AXV = POSITIVE_AXES;   // the letters the door takes (tools/lookat-forward-check: no negative letter)
     for (const f of ["forward", "up"]) if (typeof value[f] === "string" && AXV[value[f]]) value = { ...value, [f]: AXV[value[f]].slice() }; }
   // every parameter written down (PROTOCOL §4): the definition's defaults and per-kind rules (componentspec materialize)
   const filled = (v, list) => { if (list.length) ctx.notes.push({ id, component: comp, filled: list, why: "defaults written out so the engine can't change them later" }); return v; };
@@ -392,7 +393,7 @@ function buildDelete(ctx, a) {
 // has one: the pivot stays put and the thing swings round it, research 52) | 'origin'. The log gets a plain transform.
 function buildTurn(ctx, a) {
   const e = needThing(ctx, a.id); const st = ctx.st;
-  const AX = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] };
+  const AX = POSITIVE_AXES;
   const ax0 = typeof a.axis === "string" ? AX[a.axis] : Array.isArray(a.axis) && a.axis.length === 3 && a.axis.every((v) => typeof v === "number" && Number.isFinite(v)) ? a.axis : null;
   const len = ax0 ? Math.hypot(...ax0) : 0;
   if (!ax0 || len < 1e-9) refuse("shape", `axis is 'x', 'y', 'z' or [x, y, z] (not zero)`, "e.g. turn {id, axis: 'x', deg: 30}");

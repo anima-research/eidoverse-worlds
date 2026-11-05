@@ -17,6 +17,7 @@
 // does not displace the entity's ROOT transform at all — those stay in
 // motion.js, THREE-side, and this module reports the root as unmoved.
 import { motionType } from '../../shared/protocol/names.js';
+import { AXES } from '../../shared/axes.js';
 import { qMul, qRotate as qApply, qAxisAngle as qAxisAngleUnit } from '../../shared/rot.js';
 
 // ---- quaternions: shared/rot.js's -----------------------------------------
@@ -47,8 +48,7 @@ const baseQuat = (base) => (Array.isArray(base?.q) && base.q.length === 4 ? base
 // [1,0,0], no t0 at all. Parsing is where generosity lives; the closed form
 // stays exact.
 
-export const AXES = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1],
-  '-x': [-1, 0, 0], '-y': [0, -1, 0], '-z': [0, 0, -1] };
+export { AXES };
 
 export const axisOf = (m, def) => {
   const a = m.axis;

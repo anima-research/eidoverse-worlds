@@ -22,6 +22,7 @@ import { grassAtWrite } from "../../../shared/protocol/assetref.js";
 import { eidoHex } from "../../../shared/eido.js";
 import { COMPONENTS, materialize } from "../../../shared/protocol/componentspec.js";
 import { partSlot } from "../../../shared/protocol/names.js";
+import { AXES as AXIS_VECTORS } from "../../../shared/axes.js";
 import { lifter, isLegacyParent, isSocketC } from "../../../shared/protocol/authority/sockets.js";
 import { emptyState, applyInPlace } from "../../../shared/protocol/fold.js";
 const bag = (v) => !!v && typeof v === "object" && !Array.isArray(v);
@@ -29,7 +30,7 @@ const bag = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 export const OLD_LIGHT_DECAY = 1.7;
 /** …and its intensity when a light wrote none (lightrig.js requestLight; the registry's default is 25.93 since 10-28). */
 export const OLD_LIGHT_INTENSITY = 16;
-export const AXIS_VECTORS = Object.freeze({ x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1], "-x": [-1, 0, 0], "-y": [0, -1, 0], "-z": [0, 0, -1] });
+export { AXIS_VECTORS };
 /** The pendulum readings that lived only in the reader (client/lib/motioneval.js, before 10-16). */
 // maxAmp 1.1: the old server's push cap (its reactions.ts pendulumImpulse), so a translated swing swings as it did (R 10-27)
 export const OLD_READINGS = Object.freeze({ pendulumPeriod: 3.5, pendulumDamp: 0, pendulumMaxAmp: 1.1, wholePendulumPivot: Object.freeze([0, 2, 0]) });

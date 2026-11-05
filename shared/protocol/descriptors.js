@@ -32,8 +32,9 @@
 // regeneration, spec/fixtures/registry-pin.json D8). See DECIDED below.
 
 import { COMPONENTS, materialize } from './componentspec.js';
+import { AXES } from '../axes.js';
 
-export const AXES = Object.freeze({ x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1], '-x': [-1, 0, 0], '-y': [0, -1, 0], '-z': [0, 0, -1] });
+export { AXES };
 /** A unit-axis vector's letter (x, -z), a letter as itself, anything else null. */
 export function axisLetter(a) {
   if (typeof a === 'string') return Object.hasOwn(AXES, a.toLowerCase()) ? a.toLowerCase() : null;

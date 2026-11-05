@@ -33,6 +33,7 @@ import { normalizePicture, PICTURE_LIT, PICTURE_DESCRIPTION_MAX, DESCRIPTION_HIN
 import { normalizeSound, SOUND_DESCRIPTION_MAX, SOUND_DESCRIPTION_HINT, SOUND_MAX_RADIUS } from './sound.js';
 import { mediaTier, tierWords } from './mediasrc.js';
 import { graphemes } from './text.js';
+import { AXES } from './axes.js';
 import { ESSENTIAL_NAMES, instanceOf, effectFor, effectBlobName, modernize, instanceProblem, paramShown, essentialNameOf, angleParam } from './particle_effects.js';
 import { readOut, readLine } from './a11y.js';
 import { COMPONENTS as SPEC, registered, outOfRange, rangeWords, statusOf } from './protocol/componentspec.js';
@@ -52,7 +53,7 @@ import { DESCRIPTORS, fieldOf, claimOf, CLAIMED_KEYS, editorDefault, toWire } fr
 
 import { recordComponents } from './protocol/view.js';
 const R2D = 180 / Math.PI;
-export const AXES = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1], '-x': [-1, 0, 0], '-y': [0, -1, 0], '-z': [0, 0, -1] };
+export { AXES };
 /** Which channels a whole-entity motion moves: { t: Set of translate axes, r: Set of rotate axes }. */
 export function motionChannels(m) {
   const all = new Set(['x', 'y', 'z']), none = () => new Set();
