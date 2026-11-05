@@ -10,8 +10,9 @@
 import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import { request, settle } from "../../shared/protocol/authority.js";
-import { openLive } from "../../server/livehost.ts";
-import { restsOf, digestOf, simFold, livePoses } from "../../shared/protocol/simlayer.js";
+import { openLive } from "./labhost.ts";
+import { restsOf, digestOf, livePoses } from "../../shared/protocol/simlayer.js";
+import { simFold } from "./labmodels.js";   // the sim over the lab table (its logs name lab models)
 import { scratch } from "./common.ts";
 
 const root = scratch("phystick"); let fails = 0, passes = 0;

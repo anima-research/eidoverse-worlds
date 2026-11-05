@@ -1,24 +1,22 @@
 // shared/protocol/authority/catalogue.js — the model catalogue and a thing's geometry (refactor C11, 2026-10-12; moved from
 // authority.js's "the model catalogue" section unchanged). A leaf: math and the spatial index read a thing's box through
-// geomE; nothing here reaches the gate. The load-time `CTX.cat = LAB_CATALOGUE` rides along: authority.js imports this
-// file, so an out-of-call reader (a test reading the index) still finds the lab's catalogue in force.
+// geomE; nothing here reaches the gate. A world reads only the catalogue it is handed (w.catalogue); with none, no model is
+// known (NO_CATALOGUE), so a create naming one is refused in plain words, never placed against a silent default.
 import { REDACTED } from "../fold.js";
-import { MODELS } from "../labmodels.js";
 import { COMPONENTS } from "../componentspec.js";
 import { collisionBoxes } from "../../structure.js";
 import { CTX } from "./ctx.js";
 // ---------- the model catalogue (engine, slice 2) ----------
-// The lab's authority read its own table (./labmodels.js). The engine's models are library paths measured from their GLBs
-// (server/modelcatalogue.ts), so the catalogue is injected: io.catalogue = { get(name) → entry | undefined,
+// The engine's models are library paths measured from their GLBs (server/modelcatalogue.ts), so the catalogue is injected: io.catalogue = { get(name) → entry | undefined,
 // list(query) → [name, entry][] }. An entry is { label, size?, box?, surfaces, solids?, sockets? }:
 //   box      [[x,y,z], [x,y,z]] in the model's frame (a GLB's origin is wherever its author put it); absent → the lab's
 //            convention, a size-box with the origin at the base centre;
 //   surfaces [{y, x?: [min,max], z?: [min,max], inset?}] in the model's frame (measured flat zones carry x/z);
 //   size     absent → a model this server can name but not measure (no placement help, no collisions, said so).
 // request() sets CTX.cat for the duration of one synchronous call; nothing in the authority awaits, so calls can't interleave.
-// own keys only: MODELS["constructor"] is Object (the lab authority accepted model "constructor"; L1's no-prototype rule)
-export const LAB_CATALOGUE = Object.freeze({ get: (n) => (Object.hasOwn(MODELS, n) ? MODELS[n] : undefined), list: (q) => Object.entries(MODELS).filter(([k, m]) => k.includes(q) || m.label.includes(q)) });
-CTX.cat = LAB_CATALOGUE;
+/** No catalogue: no model is known (a suite hands its worlds the lab table itself). */
+export const NO_CATALOGUE = Object.freeze({ get: () => undefined, list: () => [] });
+CTX.cat = NO_CATALOGUE;
 const modelOf = (name) => (typeof name === "string" ? CTX.cat.get(name) : undefined);
 const geomOf = (name) => { const m = modelOf(name); return m && m.size ? m : undefined; };
 const boxOfM = (m) => m.box ?? [[-m.size[0] / 2, 0, -m.size[2] / 2], [m.size[0] / 2, m.size[1], m.size[2] / 2]];
@@ -84,5 +82,5 @@ export function meshShape(v) {
 /** A thing's geometry: its building's (structure) if it has one, else its mesh's, else its model's. */
 const geomE = (e) => (e?.c.structure !== undefined ? structGeom(e.c.structure) : e?.c.mesh !== undefined ? meshGeom(e.c.mesh) : geomOf(e?.c.model));
 /** Run fn with world w's catalogue in force (also for callers outside request(), e.g. a server's settle tick). */
-export function withCatalogue(w, fn) { const prev = CTX.cat; CTX.cat = w.catalogue ?? LAB_CATALOGUE; try { return fn(); } finally { CTX.cat = prev; } }
+export function withCatalogue(w, fn) { const prev = CTX.cat; CTX.cat = w.catalogue ?? NO_CATALOGUE; try { return fn(); } finally { CTX.cat = prev; } }
 export { modelOf, geomOf, boxOfM, geomE };

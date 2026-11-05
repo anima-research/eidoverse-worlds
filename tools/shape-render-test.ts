@@ -138,9 +138,9 @@ await tryRow('AD', async () => {
   check('AD7 every client and agent reader that names a thing by its model goes through the shared word', stale.length === 0, stale);
   // the sim (shiplist FL1, 10-16): an addressed dynamic thing is stamped, punted, and flies in the authority and in a client's fold
   {
-    const { request, LAB_CATALOGUE } = await import('../shared/protocol/authority.js');
+    const { request } = await import('../shared/protocol/authority.js'); const { LAB_CATALOGUE } = await import('./protocol/labmodels.js');
     const { readLog } = await import('../shared/protocol/fold.js');
-    const { openLive } = await import('../server/livehost.ts');
+    const { openLive } = await import('./protocol/labhost.ts');
     const { makeReplica, clientSnapshotOf } = await import('../shared/protocol/replica.js');
     const { scratch } = await import('./protocol/common.ts');
     const CA = `eido:sha256/${'5'.repeat(64)}`;

@@ -18,7 +18,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { ENGINE, scratch } from "./common.ts";
-import { openLive } from "../../server/livehost.ts";
+import { openLive } from "./labhost.ts";
 import { request } from "../../shared/protocol/authority.js";
 import { readLog } from "../../shared/protocol/fold.js";
 

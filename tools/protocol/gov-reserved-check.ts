@@ -4,7 +4,7 @@
 //   bun tools/protocol/gov-reserved-check.ts
 import fs from "node:fs"; import path from "node:path"; import os from "node:os"; import { spawnSync } from "node:child_process";
 import { jcs, readLog } from "../../shared/protocol/fold.js"; import { sha256, sha256Bytes, hexBytes } from "../../shared/protocol/hash.js";
-import { openLive } from "../../server/livehost.ts";
+import { openLive } from "./labhost.ts";
 const ENGINE = path.resolve(import.meta.dir, "../.."); let pass = 0, fail = 0;
 const check = (name: string, ok: unknown, info?: unknown) => { if (ok) { pass++; console.log(`ok   ${name}`); } else { fail++; console.log(`FAIL ${name}${info === undefined ? "" : " — " + JSON.stringify(info).slice(0, 300)}`); } };
 const W = fs.mkdtempSync(path.join(process.env.PROTOCOL_SCRATCH ?? os.tmpdir(), "gov-"));

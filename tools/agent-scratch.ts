@@ -14,7 +14,8 @@
 // @ts-nocheck
 import "./protocol/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import { scratch } from "./protocol/common.ts";
-import { request, LAB_CATALOGUE } from "../shared/protocol/authority.js";
+import { request } from "../shared/protocol/authority.js";
+import { LAB_CATALOGUE } from "./protocol/labmodels.js";
 import { openWorld } from "../server/filehost.ts";
 import { viewState } from "../shared/protocol/view.js";
 import { enc, encName } from "../shared/protocol/names.js";

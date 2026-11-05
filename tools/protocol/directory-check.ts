@@ -8,7 +8,7 @@ import path from "node:path";
 import { directoryAt, directoryFor, isMinted, accountTag, foldName, lockFor } from "../../server/directory.ts";
 import { CUSTODY_FILE, DIRECTORY_FILE, OLD_NAMES, custodyFileIn } from "../../server/keyfiles.ts";
 import { custodyAt } from "../../server/custody.ts";
-import { openLive } from "../../server/livehost.ts";
+import { openLive } from "./labhost.ts";
 import { request, actIndexOf, isBanned } from "../../shared/protocol/authority.js";
 
 let pass = 0, fail = 0;
@@ -350,7 +350,7 @@ ok(foldName("Marígold") === foldName("marigold") && foldName("JOSÉ") === foldN
 // directory identities and content addresses, and is compared with HER sim (shared/sim.js beside the v1 fold, as sweep §3).
 { const { emptyState: v1Empty, foldEntry } = await import("./import-v1/fold.js");
   const eidosim = await import("./import-v1/eidosim-v1.js");   // HER engine: what the v1 log means
-  const { simFold, DEFAULT_ENGINE } = await import("../../shared/protocol/simlayer.js");
+  const { DEFAULT_ENGINE } = await import("../../shared/protocol/simlayer.js"); const { simFold } = await import("./labmodels.js");
   const { readLog, fold } = await import("../../shared/protocol/fold.js");
   const TV1 = await import("./import-v1/translate-v1.js");
   const crypto = await import("node:crypto");

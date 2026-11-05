@@ -28,9 +28,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { ENGINE, scratch, copyTree, archiveTo } from "./common.ts";
 
-import { CAPACITY, CAPACITY_CEILING, LAB_CATALOGUE } from "../../shared/protocol/authority.js";   // LAB_CATALOGUE: one catalogue for this tree and the base (G3 compares the index, not the lab's seats)
+import { CAPACITY, CAPACITY_CEILING } from "../../shared/protocol/authority.js";
 import { COMPONENTS } from "../../shared/protocol/componentspec.js";
 import { labClock, pinned } from "./clock.ts";
+import { LAB_CATALOGUE } from "./labmodels.js";
 const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
 const BASE = "d374d2ef";
@@ -242,7 +243,7 @@ function closedEntry() {
   const solids = SOL?.solidsFromTriangles(new Float32Array(s), [-1.5, 0, -1.5], [1.5, 3, 1.5]) ?? undefined;
   return { label: "closed box", size: [3, 3, 3], box: [[-1.5, 0, -1.5], [1.5, 3, 1.5]], surfaces: [{ y: 3, x: [-1.5, 1.5], z: [-1.5, 1.5] }], ...(solids ? { solids } : {}) };
 }
-const withLab = (extra: any) => { const lab = D.LAB_CATALOGUE; return { get: (n: string) => (Object.hasOwn(extra, n) ? extra[n] : lab.get(n)), list: (q: string) => lab.list(q) }; };
+const withLab = (extra: any) => { const lab = LAB_CATALOGUE; return { get: (n: string) => (Object.hasOwn(extra, n) ? extra[n] : lab.get(n)), list: (q: string) => lab.list(q) }; };
 
 type Case = { id: string; what: string; run: (s: any) => any; good: (o: any) => boolean; o?: any };
 const cases: Case[] = [

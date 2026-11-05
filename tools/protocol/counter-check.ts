@@ -21,7 +21,7 @@ import path from "node:path";
 import { scratch } from "./common.ts";
 import { request } from "../../shared/protocol/authority.js";
 import { creatorOf } from "../../shared/protocol/authority/rights.js";
-import { openLive } from "../../server/livehost.ts";
+import { openLive } from "./labhost.ts";
 import { SANDBOX } from "../../shared/protocol/sandbox.js";
 import { labClock, pinned } from "./clock.ts";
 

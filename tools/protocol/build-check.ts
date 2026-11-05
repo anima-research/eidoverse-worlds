@@ -22,6 +22,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { ENGINE, scratch, archiveTo } from "./common.ts";
 import { labClock, pinned } from "./clock.ts";
+import { LAB_CATALOGUE } from "./labmodels.js";   // the suites' model table (a base or mutant tree reads it from here)
 
 const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
@@ -92,7 +93,7 @@ const root = scratch("build");
 const clock = labClock(); let N = 0;
 function open(name: string, o: any = {}) {
   const dir = path.join(root, "worlds", name); fs.mkdirSync(dir, { recursive: true });
-  return L.openLive(dir, name, { now: () => pinned(clock.t), scripts: o.scripts ?? null, custodyFile: path.join(root, "custody.json"), nameOf: () => null, kindOf: o.kindOf ?? (() => "human"), catalogue: o.catalogue });
+  return L.openLive(dir, name, { now: () => pinned(clock.t), scripts: o.scripts ?? null, custodyFile: path.join(root, "custody.json"), nameOf: () => null, kindOf: o.kindOf ?? (() => "human"), catalogue: o.catalogue ?? LAB_CATALOGUE });
 }
 function session(o: any = {}) {
   const name = `w${++N}`; const w = open(name, { scripts: SB.SANDBOX, ...o });

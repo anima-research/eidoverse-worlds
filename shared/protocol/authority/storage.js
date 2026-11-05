@@ -29,6 +29,7 @@ export const posAt = (e, i) => { if (e && typeof e === "object") Object.definePr
 export function worldOf(io) {
   const { name, entries, getBlob, putBlob } = io;
   const w = { name, entries, getBlob, putBlob, exists: entries.length > 0, catalogue: io.catalogue ?? null };
+  const simModels = io.simModels ?? {};   // the sim's measured boxes by model name (a host's own; none: models fly unmeasured)
   w.worldId = entries[0] && !(entries[0] instanceof Malformed) ? worldIdOf(entries[0]) : null;
   w.random = io.random ?? null;
   w.kindOf = io.kindOf ?? null; // id → account|anon|imported (the directory: about the account, never what holds it, §6a); only "anon" is read (a guest gets a smaller budget)
@@ -97,7 +98,7 @@ export function worldOf(io) {
   // §3d H7: every id this world has ever created (a log view, kept incrementally): an id is never reused
   const ever = { n: 0, ids: new Set() }; w.__ever = ever;   // a host seeds it from its fold cache (server/foldviews.ts)
   w.everIds = () => { for (; ever.n < entries.length; ever.n++) { const e = entries[ever.n]; if (isE(e) && e.kind === "change") for (const o of opsQuiet(e)) if (o.op === "create") ever.ids.add(o.id); } return ever.ids; };
-  w.sim = () => simFold(entries, w.now());
+  w.sim = () => simFold(entries, w.now(), { models: simModels });
   w.stateAt = (seq) => fold(entries, { until: seq });
   // The authority re-reads every line it writes with the strict reader: it can never write what a reader would refuse.
   // §2.1: ts = the authority's admission time, an integer that never decreases along the log (a clock that steps back,

@@ -14,6 +14,7 @@ import fs from "node:fs";
 import { scratch, labAt, controlNote } from "./common.ts";
 import * as doorNow from "../../shared/protocol/authority.js";
 import * as simNow from "../../shared/protocol/simlayer.js";
+import { MODELS as LABM } from "./labmodels.js";
 import { openWorld as openNow } from "../../server/filehost.ts";
 import { fold as foldNow, readLog as readNow } from "../../shared/protocol/fold.js";
 import { labClock } from "./clock.ts";
@@ -249,7 +250,7 @@ const cases = [
       s.call("bob", "move", { to: [0, 0, 0.3] }); s.call("bob", "grab", { id: "ball-2" }); s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "member" } });
       const left = s.call("bob", "leave", {}); s.call("olive", "wait", {}, 3000);
       const w = s.world(); const ret = w.entries.filter((e) => e.kind === "request" && e.actor === "system" && e.verb === "return-held").length;
-      return { left: show(left), stillHeld: !!w.presence.holds["ball-2"], returnActs: ret, ball: posOf(s, "ball-2"), carriers: doors.now.sim.simFold(w.entries, w.now()).checks.disagree.length }; },
+      return { left: show(left), stillHeld: !!w.presence.holds["ball-2"], returnActs: ret, ball: posOf(s, "ball-2"), carriers: doors.now.sim.simFold(w.entries, w.now(), { models: LABM }).checks.disagree.length }; },
     nowGood: (o) => o.left === "ok" && !o.stillHeld && o.returnActs === 1 && o.ball === "[0,0,0]" && o.carriers === 0 },
   { id: "R4", what: "33 F4: the authority's clock steps back (NTP slew, VM restore): it writes a decreasing ts", run(s) { cast(s);
       const keep = clock.t; clock.t = 1000000; s.call("olive", "create", { id: "c", model: "crate", place: { at: [0, 0] } }); clock.t = keep;

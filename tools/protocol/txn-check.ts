@@ -65,7 +65,7 @@ if (process.argv.includes("--mutants")) {
     const d = scratch("txnmut");
     for (const dir of ["server", "shared", "client", "mcpl"]) copyTree(path.join(ENGINE, dir), path.join(d, dir));
     fs.mkdirSync(path.join(d, "tools/protocol"), { recursive: true });
-    for (const f of ["common.ts", "txn-check.ts", "wait.ts"]) fs.copyFileSync(path.join(ENGINE, "tools/protocol", f), path.join(d, "tools/protocol", f));
+    for (const f of ["common.ts", "txn-check.ts", "wait.ts", "labhost.ts", "labmodels.js"]) fs.copyFileSync(path.join(ENGINE, "tools/protocol", f), path.join(d, "tools/protocol", f));
     fs.copyFileSync(path.join(ENGINE, "package.json"), path.join(d, "package.json")); fs.symlinkSync(path.join(ENGINE, "node_modules"), path.join(d, "node_modules"), "junction");
     const f = path.join(d, file); const src = fs.readFileSync(f, "utf8");
     if (src.split(find).length !== 2) { bad++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${file} (the fix moved?)`); continue; }
@@ -87,7 +87,7 @@ const { foundWorld, WorldLog, wireEntry } = await import("../../server/worldlog.
 const { World } = await import("../../server/world.ts");
 const { REQUEST_MESSAGES } = await import("../../server/requestwire.ts");
 const { directoryFor } = await import("../../server/directory.ts");
-const { openLive } = await import("../../server/livehost.ts");
+const { openLive } = await import("./labhost.ts");
 const { appendDurable } = await import("../../server/durable.ts");
 const { OPERATORS } = await import("../../server/operators.ts");
 const nodefs = (await import("node:fs")).default;

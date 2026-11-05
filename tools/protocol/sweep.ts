@@ -25,7 +25,8 @@ import { readLog, fold as replica, opsOf, applyInPlace, emptyState } from "../..
 import { translate as translateV1, DROPPED, hasEpoch, puntedLives, lifeTracker } from "./import-v1/translate-v1.js";
 import { liftProjection } from "./import-v1/shapes.js";
 import { translate as translateD3 } from "./import-v1/translate-d3.js";
-import { simFold, DEFAULT_ENGINE } from "../../shared/protocol/simlayer.js";
+import { DEFAULT_ENGINE } from "../../shared/protocol/simlayer.js";
+import { simFold } from "./labmodels.js";   // the sim over the lab table (its logs name lab models)
 import { emptyState as v1Empty, foldEntry } from "./import-v1/fold.js";
 import * as eidosim from "./import-v1/eidosim-v1.js";   // HER engine (the first eidosim): what v1 logs mean
 import { localOf } from "../../shared/hierarchy.js";

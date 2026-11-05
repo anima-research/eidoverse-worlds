@@ -12,9 +12,11 @@ import { readLogBytes, appendDurable, putBlobFile } from "./durable.ts";
 import { custodyAt, modLogAt } from "./custody.ts";
 import { SANDBOX } from "../shared/protocol/sandbox.js";
 import { now as hostNow } from "./clock.ts";
+import { LAB_CATALOGUE, MODELS } from "../tools/protocol/labmodels.js";   // this file is the suites' host (slice 1): never the server's
 
-/** scripts: the sandbox (default: QuickJS, shared/protocol/sandbox.js); null = an authority with none (activations say unavailable) */
-export type OpenOpts = { now?: () => number; scripts?: unknown; present?: () => { id: string; at: number[] | null }[] };
+/** scripts: the sandbox (default: QuickJS, shared/protocol/sandbox.js); null = an authority with none (activations say unavailable).
+ *  catalogue / simModels: the models it knows (a suite's world: the lab table, tools/protocol/labmodels.js, unless it names another). */
+export type OpenOpts = { now?: () => number; scripts?: unknown; present?: () => { id: string; at: number[] | null }[]; catalogue?: unknown; simModels?: Record<string, unknown> };
 
 export function openWorld(root: string, name: string, opts: OpenOpts = {}) {
   const logPath = path.join(root, "worlds", `${name}.jsonl`);
@@ -33,7 +35,7 @@ export function openWorld(root: string, name: string, opts: OpenOpts = {}) {
     return h;
   };
   return worldOf({
-    name, entries, getBlob, putBlob,
+    name, entries, getBlob, putBlob, catalogue: opts.catalogue ?? LAB_CATALOGUE, simModels: opts.simModels ?? MODELS,
     now: opts.now ?? hostNow,
     scripts: opts.scripts === undefined ? SANDBOX : opts.scripts, present: opts.present,
     writeLine: (line: string) => appendDurable(logPath, line),

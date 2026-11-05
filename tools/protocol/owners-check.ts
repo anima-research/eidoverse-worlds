@@ -49,7 +49,7 @@ import { directoryAt } from "../../server/directory.ts";
 import { directoryFileIn } from "../../server/keyfiles.ts";
 import { readLog, fold } from "../../shared/protocol/fold.js";
 import * as R from "../../shared/protocol/roles.js";
-import { openLive } from "../../server/livehost.ts";
+import { openLive } from "./labhost.ts";
 import { ENGINE_CATALOGUE } from "../../server/modelcatalogue.ts";
 import { request, operatorRepair } from "../../shared/protocol/authority.js";
 import { banOf } from "../../shared/protocol/authority/rights.js";

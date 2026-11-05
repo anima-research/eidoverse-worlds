@@ -4,15 +4,17 @@
 import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import { pathToFileURL } from "node:url";
-import { request, settle, forkCopy } from "../../shared/protocol/authority.js";
+import { request, settle, forkCopy, withCatalogue } from "../../shared/protocol/authority.js";
 import { openWorld } from "../../server/filehost.ts";
 import { fold, readLog, digest, redactionsIn, REDACTED } from "../../shared/protocol/fold.js";
-import { simFold, simFolder, simSnapshotOf, restsOf, ENGINES } from "../../shared/protocol/simlayer.js";
+import { simSnapshotOf, restsOf, ENGINES } from "../../shared/protocol/simlayer.js";
+import { simFold, simFolder, LAB_CATALOGUE } from "./labmodels.js";   // the sim over the lab table (its logs name lab models)
 import { makeReplica, wireState } from "../../shared/protocol/replica.js";
 import { ENGINE, scratch } from "./common.ts";
 import { worldT, yawQ, qrot, qmul, aabb, surfacesOf } from "../../shared/protocol/authority/math.js";
 import { supportBelow } from "../../shared/protocol/authority/spatial.js";
 import { labClock, pinEnv } from "./clock.ts";
+const lab = (fn) => withCatalogue({ catalogue: LAB_CATALOGUE }, fn);   // a read outside a request sees the lab table
 
 const root = scratch("phys");
 const clock = labClock(); let fails = 0, passes = 0;
@@ -365,7 +367,7 @@ function playground(name) {
   const forged = insertAt(L, catchSeq + 1, { world: L[1].world, kind: "change", ts: L[catchSeq].ts, actor: "sim", cause: t1.seq, op: "set", body: { id: "ball", comp: "transform", value: { pos: [0, 0, 1], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
   const fv = simFold(forged, w.now());
   ok(fv.checks.disagree.some((d) => d.id === "ball"), "M a forged rest(A) after the catch is rejected by carriers", fv.checks);
-  const read = () => { const r = Bun.spawnSync(["bun", "-e", `import fs from "node:fs"; import {simFold} from ${JSON.stringify(pathToFileURL(ENGINE + "shared/protocol/simlayer.js").href)}; import {fold, readLog} from ${JSON.stringify(pathToFileURL(ENGINE + "shared/protocol/fold.js").href)};
+  const read = () => { const r = Bun.spawnSync(["bun", "-e", `import fs from "node:fs"; import {simFold} from ${JSON.stringify(pathToFileURL(ENGINE + "tools/protocol/labmodels.js").href)}; import {fold, readLog} from ${JSON.stringify(pathToFileURL(ENGINE + "shared/protocol/fold.js").href)};
     const L = readLog(fs.readFileSync("worlds/${W}.jsonl")); const sf = simFold(L, ${clock.t});
     console.log(JSON.stringify({ blind: fold(L).entities.ball.c.transform.pos, sim: sf.sim.bodies.ball?.p ?? null, checks: sf.checks }));`], { cwd: root, env: { ...process.env, ...pinEnv(clock.t) } });
     return r.stdout.toString().trim(); };
@@ -826,7 +828,7 @@ function playground(name) {
   const u3 = qrot(st.entities["table-1"].c.transform.q, [1, 0, 0]), u = [u3[0], u3[2]], v = [-u[1], u[0]];   // the top's own axes on the ground
   const inTop = (x: number, z: number, m = 0) => { const d = [x, z - 4]; return Math.abs(d[0] * u[0] + d[1] * u[1]) <= 0.6 - m + 1e-6 && Math.abs(d[0] * v[0] + d[1] * v[1]) <= 0.4 - m + 1e-6; };
   // (0.65, 0): inside the box of its corners (half 0.707), off its top; 0.5 m along its long axis: on its top
-  const corner = supportBelow(st, 0.65, 4, 2), along = supportBelow(st, 0.5 * u[0], 4 + 0.5 * u[1], 2);
+  const [corner, along] = lab(() => [supportBelow(st, 0.65, 4, 2), supportBelow(st, 0.5 * u[0], 4 + 0.5 * u[1], 2)]);
   ok(turn.ok && !inTop(0.65, 4) && inTop(0.5 * u[0], 4 + 0.5 * u[1]) && corner.id === "ground" && along.id === "table-1" && Math.abs(along.y - top) < 1e-6,
     "U8 a table turned 45 degrees supports at a point over its top, not at a corner of its bounding box", { turn: turn.ok ?? turn.refused, corner, along });
   // asked to place the 0.6 m crate turned with the table 0.35 m to the side (toward a corner of the box), it is put wholly on
@@ -852,9 +854,9 @@ function playground(name) {
 { const W = playground("lying-turned"); const r = Math.SQRT1_2;
   const side = qmul(yawQ(Math.PI / 4), [r, 0, 0, r]);   // on its side (a quarter turn about x), then turned 45 degrees
   const set = call(W, "rowan", "set", { id: "crate-1", component: "transform", value: { pos: [6, 0.3, 0], q: side, scale: [1, 1, 1] } });
-  const st = openWorld(root, W).state(); const b = aabb(st, "crate-1"); const cx = (b.min[0] + b.max[0]) / 2, cz = (b.min[2] + b.max[2]) / 2;
+  const st = openWorld(root, W).state(); const b = lab(() => aabb(st, "crate-1")); const cx = (b.min[0] + b.max[0]) / 2, cz = (b.min[2] + b.max[2]) / 2;
   // (0.3, 0.3) from the centre: inside the box of the face's corners (half 0.424), off the face itself (0.424 along its axis, half 0.3)
-  const mid = supportBelow(st, cx, cz, 3), off = supportBelow(st, cx + 0.3, cz + 0.3, 3); const face = surfacesOf(st, "crate-1").at(-1);
+  const [mid, off, face] = lab(() => [supportBelow(st, cx, cz, 3), supportBelow(st, cx + 0.3, cz + 0.3, 3), surfacesOf(st, "crate-1").at(-1)]);
   ok(set.ok && mid.id === "crate-1" && off.id !== "crate-1" && !!face?.rect, "U8b a crate on its side, turned, holds things over its face, not over the box of the face's corners", { set: set.refused ?? set.ok, mid, off, face }); }
 
 // review of #260: a body at rest whose rest isn't logged yet is read where the engine has it, and said to be so

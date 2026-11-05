@@ -206,7 +206,7 @@ function translateInPlace(name: string, approval: Approval, approvedSource: { si
   { const why = unapproved(r.source, approvedSource); if (why) fail(why, T); }
   if (fs.existsSync(path.join(T, "blobs")) && fs.existsSync(path.join(D, "blobs"))) fail(`can't translate "${name}" in place: blobs/ already exists in ${D}, where the translation would put its derived particle effects.`, T);
   // 3. the result, opened as the server opens it: a world, folding to the importer's digest
-  try { const live = openLive(T, name); const st = live.state();
+  try { const live = openLive(T, name, { catalogue: ENGINE_CATALOGUE }); const st = live.state();
     if (!isWorldDir(T) || st.status !== "ok" || digest(st) !== r.digest) throw new Error(`opened as the server opens it: ${isWorldDir(T) ? "" : "not a world, "}status ${st.status}, digest ${digest(st)} (the importer said ${r.digest})`); }
   catch (x) { fail(`the translated world didn't verify: ${(x as Error).message}`, T); }
   // 3b. the old log still holds exactly the bytes that were translated (recorded in the temporary sibling, for a recovery too)
@@ -487,7 +487,7 @@ if (cmd === "found") {
 } else if (cmd === "info") {
   const name = rest[0]; if (!name || !NAME.test(name)) die("usage: info <name>");
   if (!isWorldSaved(name)) die(`${name} is not a world (no world.jsonl with a genesis)`);
-  const w = openLive(path.join(WORLDS_DIR, name), name, { readOnly: true });
+  const w = openLive(path.join(WORLDS_DIR, name), name, { readOnly: true, catalogue: ENGINE_CATALOGUE });
   const st = w.state();
   console.log(JSON.stringify({ name, worldId: w.worldId, entries: w.entries.length, status: st.status,
     entities: Object.keys(st.entities).length - 1, entitiesNote: "not counting @world, the world's own entity",

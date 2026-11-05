@@ -26,7 +26,7 @@ Object.assign(process.env, { WORLDS_DIR: W, BACKUPS_DIR: path.join(root, "backup
 const { request } = await import("../../shared/protocol/authority.js");
 const { readLog, fold, jcs, REDACTED } = await import("../../shared/protocol/fold.js");
 const { chainStep } = await import("../../shared/protocol/authority/storage.js");
-const { openLive } = await import("../../server/livehost.ts");
+const { openLive } = await import("./labhost.ts");
 const SC = await import("../../server/statecache.ts");
 const { forkWorld, resetWorld } = await import("../../server/worldlog.ts");
 const { backupWorld } = await import("../../server/backups.ts");

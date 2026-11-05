@@ -19,7 +19,7 @@ const F = await import("../../shared/protocol/fold.js"); const { readLog, fold, 
 const { makeReplica, wireState, stateFromWire, snapshotVersion, clientSnapshotOf } = await import("../../shared/protocol/replica.js");
 const { request, settle, checkpointNow } = await import("../../shared/protocol/authority.js");
 const { simSnapshotOf, digestOf, simFold } = await import("../../shared/protocol/simlayer.js");
-const { openLive } = await import("../../server/livehost.ts");
+const { openLive } = await import("./labhost.ts");
 const { translate } = await import("./import-v1/translate-v1.js");
 
 let pass = 0, fail = 0;

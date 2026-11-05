@@ -5,7 +5,7 @@
 import { join } from "node:path";
 const { scratchSequencer, mkCheck } = await import("./harness.ts");
 const { foundWorld } = await import("../server/worldlog.ts");
-const { openLive } = await import("../server/livehost.ts");
+const { openLive } = await import("./protocol/labhost.ts");
 const { request } = await import("../shared/protocol/authority.js");
 const { check, tally } = mkCheck();
 

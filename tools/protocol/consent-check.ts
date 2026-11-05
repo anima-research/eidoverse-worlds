@@ -54,7 +54,7 @@ ok(decide(P, "u-bbbbbbbbbbbbbbbbbbbb", "u-alice", "shove").mode === "deny", "C5 
 // C11 (Basil 1.4; owner chose (a) 10-30): a landed block survives the live host's restart: the reopened authority still
 // refuses the blocked person and the read returns the block; the rest of presence (bodies) does not survive
 { const fs = require("node:fs"), os = require("node:os"), path = require("node:path");
-  const { openLive, CONSENT_FILE } = await import("../../server/livehost.ts"); const { request } = await import("../../shared/protocol/authority.js");
+  const { openLive, CONSENT_FILE } = await import("./labhost.ts"); const { request } = await import("../../shared/protocol/authority.js");
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "consent-restart-")), dir = path.join(root, "w"); fs.mkdirSync(dir);
   const A = "u-aaaaaaaaaaaaaaaaaaaa", B = "u-bbbbbbbbbbbbbbbbbbbb"; let now = 1800000000000;
   const open = () => openLive(dir, "w", { now: () => now, custodyFile: path.join(root, "custody.json"), nameOf: () => null, kindOf: () => "human" });
@@ -71,7 +71,7 @@ ok(decide(P, "u-bbbbbbbbbbbbbbbbbbbb", "u-alice", "shove").mode === "deny", "C5 
 // C12 (bot review of #260, #2): the consent file is replaced durably: written whole through a short write, its directory synced
 // after the rename (a new name isn't on disk until its directory is: POSIX)
 { const fs = require("node:fs"), os = require("node:os"), path = require("node:path");
-  const { openLive, CONSENT_FILE } = await import("../../server/livehost.ts"); const { request } = await import("../../shared/protocol/authority.js");
+  const { openLive, CONSENT_FILE } = await import("./labhost.ts"); const { request } = await import("../../shared/protocol/authority.js");
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "consent-durable-")), dir = path.join(root, "w"); fs.mkdirSync(dir);
   const A = "u-aaaaaaaaaaaaaaaaaaaa", B = "u-bbbbbbbbbbbbbbbbbbbb"; let now = 1800000000000;
   const w = openLive(dir, "w", { now: () => now, custodyFile: path.join(root, "custody.json"), nameOf: () => null, kindOf: () => "human" });

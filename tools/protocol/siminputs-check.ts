@@ -12,7 +12,7 @@ import { request } from "../../shared/protocol/authority.js";
 import { readLog } from "../../shared/protocol/fold.js";
 import { restsOf } from "../../shared/protocol/simlayer.js";
 import { makeReplica, clientSnapshotOf } from "../../shared/protocol/replica.js";
-import { openLive } from "../../server/livehost.ts";
+import { openLive } from "./labhost.ts";
 import { registerGrid, setGridLoader, shapeReady, shapeParams } from "../../shared/terrainshape.js";
 import { SIM_INPUTS } from "../../shared/protocol/siminputs.js";
 import { ENGINE } from "./common.ts";
@@ -26,7 +26,7 @@ const ok = (cond: any, what: string, detail?: any) => { if (cond) pass++; else {
 // every module the sim imports, from its two entries (the engine adapter and the layer beside the fold)
 const ENTRIES = ["shared/sim.js", "shared/protocol/simlayer.js"];
 const CLOSURE = [
-  "shared/eidosim.js", "shared/mover.js", "shared/protocol/features.js", "shared/protocol/fold.js", "shared/protocol/hash.js", "shared/protocol/labmodels.js",
+  "shared/eidosim.js", "shared/mover.js", "shared/protocol/features.js", "shared/protocol/fold.js", "shared/protocol/hash.js",
   "shared/protocol/provenance.js", "shared/protocol/round.js", "shared/protocol/shapes.js", "shared/protocol/simlayer.js", "shared/rot.js", "shared/scale3.js",
   "shared/sha256.js", "shared/sim.js", "shared/simmath.js", "shared/terrainmath.js", "shared/terrainshape.js",
 ];

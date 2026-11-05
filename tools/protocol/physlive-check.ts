@@ -14,9 +14,10 @@ import fs from "node:fs";
 import { scratch } from "./common.ts";
 import { request } from "../../shared/protocol/authority.js";
 import { readLog, fold, opsOf, REDACTED } from "../../shared/protocol/fold.js";
-import { simFold, restsOf, digestOf } from "../../shared/protocol/simlayer.js";
+import { restsOf, digestOf } from "../../shared/protocol/simlayer.js";
+import { simFold } from "./labmodels.js";   // the sim over the lab table (its logs name lab models)
 import { makeReplica } from "../../shared/protocol/replica.js";
-import { openLive } from "../../server/livehost.ts";
+import { openLive } from "./labhost.ts";
 import { clientSnapshotOf } from "../../shared/protocol/replica.js";
 
 const root = scratch("physlive");

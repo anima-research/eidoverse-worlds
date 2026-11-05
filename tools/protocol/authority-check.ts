@@ -14,7 +14,7 @@
 import { fileURLToPath } from "node:url";
 import fs from "node:fs";
 import { scratch } from "./common.ts";
-import { request, isBanned, worldOf, creatorOf, LAB_CATALOGUE, actIndexOf, actIndexFresh, entityBefore, fixtureIds } from "../../shared/protocol/authority.js";
+import { request, isBanned, worldOf, creatorOf, actIndexOf, actIndexFresh, entityBefore, fixtureIds } from "../../shared/protocol/authority.js";
 fixtureIds(true);   // the fixtures below seed the ids they read (R 10-17: a writer never chooses one; ids-check covers the refusal)
 import { fold, readLog, digest, opsOf, REDACTED } from "../../shared/protocol/fold.js";
 import * as AUTH from "../../shared/protocol/authority.js";
@@ -22,14 +22,14 @@ import * as AUTH from "../../shared/protocol/authority.js";
 const operatorRepair = AUTH.operatorRepair ?? ((w, a, v, x) => request(w, a, v, x));
 import { makeReplica, wireState, stateFromWire } from "../../shared/protocol/replica.js";
 import { simFold, digestOf, restsOf } from "../../shared/protocol/simlayer.js";
-import { MODELS } from "../../shared/protocol/labmodels.js";
+import { MODELS, LAB_CATALOGUE } from "./labmodels.js";
 import { enc, encName, dec } from "../../shared/protocol/names.js";
 import { refusalText, lockVerb, lockQuestion, lockChoices } from "../../shared/protocol/refusal.js";
 import { VERBSPEC } from "../../shared/protocol/verbspec.js";
 import { custodyAt } from "../../server/custody.ts";
 import { translate, TRANSLATOR } from "./import-v1/translate-v1.js";
 import { openWorld } from "../../server/filehost.ts";
-import { openLive } from "../../server/livehost.ts";
+import { openLive } from "./labhost.ts";
 import { v1FoldBuild, v1FoldFiles } from "./import-v1/build.ts";
 import { emptyState as v1Empty, foldEntry as v1fold } from "./import-v1/fold.js";
 import { worldPose } from "../../shared/hierarchy.js";

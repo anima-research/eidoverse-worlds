@@ -26,8 +26,8 @@ const A = await import("../../shared/protocol/authority.js"); const { request, s
 const checkpointNow = A.checkpointNow ?? (() => 0);   // absent before 10-28: its rows go red, the rest still run
 const { readLog, fold, worldIdOf, digest } = await import("../../shared/protocol/fold.js");
 const { seal } = await import("../../shared/protocol/authority/storage.js");
-const { simFold, simSnapshotOf, digestOf } = await import("../../shared/protocol/simlayer.js");
-const { openLive } = await import("../../server/livehost.ts");
+const { simSnapshotOf, digestOf } = await import("../../shared/protocol/simlayer.js"); const { simFold } = await import("./labmodels.js");
+const { openLive } = await import("./labhost.ts");
 const { custodyAt } = await import("../../server/custody.ts");
 const SC = await import("../../server/statecache.ts");
 

@@ -5,9 +5,10 @@ import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writer
 import fs from "node:fs";
 import { request } from "../../shared/protocol/authority.js";
 import { openWorld } from "../../server/filehost.ts";
-import { openLive } from "../../server/livehost.ts";
+import { openLive } from "./labhost.ts";
 import { fold, readLog } from "../../shared/protocol/fold.js";
-import { simFold, restsOf, worldPose, ENGINES } from "../../shared/protocol/simlayer.js";
+import { restsOf, worldPose, ENGINES } from "../../shared/protocol/simlayer.js";
+import { simFold } from "./labmodels.js";   // the sim over the lab table (its logs name lab models)
 import { scratch } from "./common.ts";
 import { labClock } from "./clock.ts";
 const ENG = { engine: Object.keys(ENGINES).find((k) => k.startsWith("eidosim@")) };

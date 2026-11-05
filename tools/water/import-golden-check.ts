@@ -12,6 +12,7 @@ import { ENGINE, scratch } from "../protocol/common.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
 import { labClock, pinned } from "../protocol/clock.ts";
+import { LAB_CATALOGUE, MODELS as LAB_MODELS } from "../protocol/labmodels.js";
 
 const MAIN = "ccd5c53fa";   // upstream main (#281's merge): its shared/water.js is the reference reader
 let pass = 0, fail = 0;
@@ -60,7 +61,7 @@ const root = scratch("water-golden"), clock = labClock();
 function openWorld(name) {
   const logPath = path.join(root, "worlds", `${name}.jsonl`), storeDir = path.join(root, "store");
   const blobPath = (h) => path.join(storeDir, `${String(h).replace(/[^a-z0-9]/g, "-")}.json`);
-  return D.worldOf({ name, entries: F.readLog(readLogBytes(logPath)).map(D.posAt), getBlob: (h) => JSON.parse(fs.readFileSync(blobPath(h), "utf8")),
+  return D.worldOf({ catalogue: LAB_CATALOGUE, simModels: LAB_MODELS, name, entries: F.readLog(readLogBytes(logPath)).map(D.posAt), getBlob: (h) => JSON.parse(fs.readFileSync(blobPath(h), "utf8")),
     putBlob: (v) => { const s = F.jcs(v); const h = `sha256:${F.sha256(s)}`; putBlobFile(blobPath(h), s, h); return h; }, now: () => pinned(), writeLine: (line) => appendDurable(logPath, line),
     presence: { bodies: {}, holds: {} }, savePresence: () => {}, scripts: null, custody: custodyAt(path.join(root, "keys", "custody.json")), ...modLogAt(path.join(root, "worlds", `${name}.mod.jsonl`)) });
 }
@@ -92,7 +93,7 @@ C("G4", "a real authority takes the whole batch: every create and set, its place
   const top = (a) => at(a).pos[1] + a.components.mesh.size[1] * at(a).scale[1];
   const shape = walls.length === 2 && walls.every((a) => a.components.hidden === true && !a.components.parent) && top(floor) === m.minY && at(ceil).pos[1] === m.maxY;
   // a real hull at the band's edges: the authority's sweep stops it at each wall (the stock model's box stands on its origin)
-  const s0 = w.state(), t0 = s0.entities[sub].c.transform, H = (await import(ENGINE + "shared/protocol/authority/math.js")).aabb(s0, sub);
+  const MATH0 = await import(ENGINE + "shared/protocol/authority/math.js"); const s0 = w.state(), t0 = s0.entities[sub].c.transform, H = D.withCatalogue(w, () => MATH0.aabb(s0, sub));
   const rise = t0.pos[1] - H.min[1], tall = H.max[1] - H.min[1], drive = (y) => { clock.advance(1000); return D.request(w, "olive", "drive", { id: sub, pos: [t0.pos[0], y, t0.pos[2]], q: t0.q }); };
   const lowY = m.minY + rise + 1, highY = m.maxY - tall + rise - 1;
   const SL = await import(ENGINE + "shared/protocol/simlayer.js"), steps: any = {};
@@ -116,7 +117,7 @@ C("G4", "a real authority takes the whole batch: every create and set, its place
       { verb: "create", args: { id: "$helm", components: { transform: { pos: [0, 0.3, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, parent: { to: "$sub" }, socket: { name: "helm" }, station: { action: "drive", input: { move: "drive" } } } } }] });
     if (!made.ok) return { hull: null, said: { made: `${made.refused?.code}: ${made.refused?.reason}` }, good: false };
     const sub = made.ids.$sub, helm = made.ids.$helm;
-    const H = MATH.aabb(o.state(), sub), hull = TV1.hullExtentOf([H.min.map((v, i) => v - pos[i]), H.max.map((v, i) => v - pos[i])]);
+    const H = D.withCatalogue(o, () => MATH.aabb(o.state(), sub)), hull = TV1.hullExtentOf([H.min.map((v, i) => v - pos[i]), H.max.map((v, i) => v - pos[i])]);
     const walls = go("batch", { requests: TV1.vehiclePartsOf("sub", m, hull).walls.map(([, c], k) => ({ verb: "create", args: { id: `$w${k}`, components: c } })) });
     const drive = (y) => { clock.advance(1000); return D.request(o, "olive", "drive", { id: sub, pos: [pos[0], y, pos[2]], q }); }, at = (y) => go("set", { id: sub, component: "transform", value: { pos: [pos[0], y, pos[2]], q, scale: [1, 1, 1] } });
     const leave = () => { go("move", { to: [pos[0] + 30, -100, pos[2]], teleport: true }); clock.advance(5000); D.drives?.(o); };

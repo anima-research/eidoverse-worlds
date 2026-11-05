@@ -239,7 +239,7 @@ await C("G2", "at runtime, loading the server's and the agent door's own code ne
   const src = `
     await import(${JSON.stringify(path.join(T, "server/worldlog.ts"))}); await import(${JSON.stringify(path.join(T, "server/messages.ts"))});
     await import(${JSON.stringify(path.join(T, "mcpl/tools.ts"))}); await import(${JSON.stringify(path.join(T, "mcpl/agent.ts"))});
-    const { request, LAB_CATALOGUE } = await import(${JSON.stringify(path.join(T, "shared/protocol/authority.js"))});
+    const { request } = await import(${JSON.stringify(path.join(T, "shared/protocol/authority.js"))}); const { LAB_CATALOGUE } = await import(${JSON.stringify(path.join(T, "tools/protocol/labmodels.js"))});
     const { openWorld } = await import(${JSON.stringify(path.join(T, "server/filehost.ts"))});
     const { scratch } = await import(${JSON.stringify(path.join(T, "tools/protocol/common.ts"))});
     const { pin } = await import(${JSON.stringify(path.join(T, "tools/protocol/clock.ts"))});

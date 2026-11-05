@@ -117,7 +117,7 @@ if (argv.includes("--control")) {
 const T = opt("tree") ?? ENGINE;
 const only = opt("only")?.split(",") ?? null;
 const imp = async (p: string) => { try { return await import(path.join(T, p)); } catch (e) { return { __err: String(e?.message ?? e) }; } };
-const D = await imp("shared/protocol/authority.js"), CAT = await imp("shared/protocol/componentspec.js"), LAB = await imp("shared/protocol/labmodels.js"), TS = await imp("shared/protocol/verbspec.js");
+const D = await imp("shared/protocol/authority.js"), CAT = await imp("shared/protocol/componentspec.js"), LAB = await import(ENGINE + "tools/protocol/labmodels.js"), TS = await imp("shared/protocol/verbspec.js");
 const SD = await imp("tools/protocol/scratchworld.ts"), TV1 = await imp("tools/protocol/import-v1/translate-v1.js"), FOLD = await imp("shared/protocol/fold.js");
 const ME = await imp("client/lib/motioneval.js"), ES = await imp("shared/editschema.js"), RF = await imp("shared/protocol/refusal.js");
 let pass = 0, fail = 0;

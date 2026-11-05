@@ -19,6 +19,7 @@ import path from "node:path";
 import { ENGINE, scratch } from "./common.ts";
 import { tryUntil } from "./wait.ts";
 import { pin, LAB_EPOCH } from "./clock.ts";
+import { LAB_CATALOGUE } from "./labmodels.js";
 
 const argv = process.argv.slice(2);
 const only = (() => { const i = argv.indexOf("--only"); return i >= 0 ? argv[i + 1].split(",") : null; })();
@@ -84,7 +85,7 @@ const { readLog } = await imp("shared/protocol/fold.js");
 const root = scratch("physseeds"); let N = 0;
 function live() {
   const dir = `${root}w${++N}/`; fs.mkdirSync(dir, { recursive: true }); let now = 1800000000000;
-  const w = openLive(dir, `w${N}`, { now: () => now, custodyFile: `${root}custody.json`, nameOf: () => null, kindOf: () => "human" });
+  const w = openLive(dir, `w${N}`, { now: () => now, custodyFile: `${root}custody.json`, nameOf: () => null, kindOf: () => "human", catalogue: LAB_CATALOGUE });
   const call = (actor, verb, args = {}, step = 100) => { now += step; return request(w, actor, verb, args); };
   return { w, call, L: () => readLog(fs.readFileSync(dir + "world.jsonl")) };
 }

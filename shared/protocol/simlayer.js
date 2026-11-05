@@ -14,7 +14,6 @@
 // say where old punts came to rest, and writes those rests as plain changes.
 import { sha256 } from "./hash.js";
 import { fold, opsOf, applyOps, applyInPlace, emptyState, Malformed, REDACTED, redactionsIn } from "./fold.js";
-import { MODELS } from "./labmodels.js";
 import * as eidosim from "../sim.js";
 import { isBoxShape, shapeError } from "./shapes.js";
 import { r3, r2 } from "./round.js";
@@ -114,7 +113,7 @@ function lostBody(st, id, models) {
   if (offChain(st, id)) return false;
   return c.model === REDACTED || c.physics === REDACTED || !!(models[c.model] || engineBox(c.physics) || sphereShape(c.physics));
 }
-function engineEntity(st, id, models = MODELS, fixed = null) {
+function engineEntity(st, id, models = {}, fixed = null) {
   const e = st.entities[id]; if (!e || purgedPhysical(e.c) || lostPlace(st, id) || !(models[e.c.model] || engineBox(e.c.physics) || sphereShape(e.c.physics)) || solidOff(e.c, "things")) return null;
   if (offChain(st, id)) return null;
   const t = worldPose(st, id);
@@ -122,7 +121,7 @@ function engineEntity(st, id, models = MODELS, fixed = null) {
   return { pos: t.pos, yaw: yawOf(t.q), q: t.q, model: libOf(e), scale: t.scale[1], scale3: t.scale, ...(sh && !isBoxShape(sh) ? { shape: sh } : {}),
     ...(e.c.physics?.kind === "dynamic" && !(fixed ?? fixedSet(st)).has(id) ? { kind: "dynamic" } : {}) };
 }
-export function engineViewM(st, models = MODELS) {
+export function engineViewM(st, models = {}) {
   const entities = {}, fixed = fixedSet(st);
   for (const id of Object.keys(st.entities)) { const v = engineEntity(st, id, models, fixed); if (v) entities[id] = v; }
   const terr = st.entities["@world"]?.c.terrain;
@@ -130,7 +129,7 @@ export function engineViewM(st, models = MODELS) {
 }
 const catalogueBox = (m) => [[-m.size[0] / 2, 0, -m.size[2] / 2], [m.size[0] / 2, m.size[1], m.size[2] / 2]];
 // a collider's shape is the log's word when stamped there (physics.shape, Covenant III); the catalogue's otherwise
-function boxesForM(st, models = MODELS) {
+function boxesForM(st, models = {}) {
   const out = Object.fromEntries(Object.entries(models).map(([k, m]) => [k, catalogueBox(m)]));
   for (const id of Object.keys(st.entities)) { const e = st.entities[id]; const lib = libOf(e); if (engineBox(e.c.physics) && typeof lib === "string") out[lib] = e.c.physics.shape; }
   return out;
@@ -166,7 +165,7 @@ export function simFold(entries, now, opts = {}) {
 // every later entry (their ts are never earlier than that clock). Advancement is schedule-independent, so this is exact.
 // opts.purged: the log's purges (redactionsIn), so a replay writes REDACTED where the strict fold does; a live host that sees a new purge
 // builds a fresh folder with them (a purge is retroactive), rather than feeding it.
-export function simFolder(entries, { models = MODELS, from = null, purged = null } = {}) {
+export function simFolder(entries, { models = {}, from = null, purged = null } = {}) {
   const st = from?.st ?? emptyState(); let clock = from?.clock ?? 0;
   const out = { st, spec: from?.spec ?? null, foreign: from?.foreign ?? false, sim: from?.sim ?? null, launched: from?.launched ?? {}, lifted: new Set(from?.lifted ?? []), rested: [], checks: from?.checks ?? { agree: 0, disagree: [] }, restTicks: {},
     unknownEpoch: !!from?.unknownEpoch, unknownHold: !!from?.unknownHold };

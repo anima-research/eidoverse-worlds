@@ -1,5 +1,4 @@
 // shared/protocol/componentspec.js — the component types a builder can discover: their fields, defaults, ranges and help.
-// The lab's hand-written models are shared/protocol/labmodels.js.
 //
 // Every parameter is written down (PROTOCOL §4; review 10-07 H2, R: "the parameter is the parameter"). The authority writes a
 // component's defaults into the stored value when it's created or set (materialize, below): `defaults` always, and each

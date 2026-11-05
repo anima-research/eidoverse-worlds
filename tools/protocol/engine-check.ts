@@ -12,7 +12,8 @@
 import fs from "node:fs";
 import { createHash } from "node:crypto";
 import { readLog } from "../../shared/protocol/fold.js";
-import { simFold, ENGINES, digestOf as simDigest } from "../../shared/protocol/simlayer.js";
+import { ENGINES, digestOf as simDigest } from "../../shared/protocol/simlayer.js";
+import { simFold } from "./labmodels.js";   // the sim over the lab table (its logs name lab models)
 import { r3 } from "../../shared/protocol/round.js";
 import * as PH from "./pinhistory.ts";
 import { fileURLToPath } from "node:url";

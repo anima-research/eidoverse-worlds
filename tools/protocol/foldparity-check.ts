@@ -36,7 +36,7 @@ const { readLog, fold, jcs, worldIdOf } = await import("../../shared/protocol/fo
 const { seal } = await import("../../shared/protocol/authority/storage.js");
 const { actIndexOf, entityBefore } = await import("../../shared/protocol/authority/undo.js");
 const { digestOf } = await import("../../shared/protocol/simlayer.js");
-const { openLive } = await import("../../server/livehost.ts");
+const { openLive } = await import("./labhost.ts");
 const { custodyAt } = await import("../../server/custody.ts");
 const SC = await import("../../server/statecache.ts");
 const FV = await import("../../server/foldviews.ts").catch(() => null);   // absent before 10-28: its rows go red, the rest still run

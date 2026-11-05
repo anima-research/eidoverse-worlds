@@ -4,7 +4,8 @@
 // request(openWorld(root, name), actor, verb, args), a `create-world` first to found the world (its founder is its owner).
 // @ts-nocheck
 import { scratch } from "./common.ts";
-import { request, LAB_CATALOGUE, fixtureIds } from "../../shared/protocol/authority.js";
+import { request, fixtureIds } from "../../shared/protocol/authority.js";
+import { LAB_CATALOGUE } from "./labmodels.js";
 import { openWorld } from "../../server/filehost.ts";
 import { viewState } from "../../shared/protocol/view.js";
 import { socketMapOps } from "../../shared/protocol/requests.js";

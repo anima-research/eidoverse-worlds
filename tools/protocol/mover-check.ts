@@ -160,7 +160,7 @@ if (M) {
   // real server opens a world (openLive with no clock of its own), the wall stepped back 1.5 s after the arrival; 2 m every
   // 0.4 s (5 m/s: under the track's 6) must each be accepted. Red before the fix at the third step (0.0 m left).
   { const { request } = await import(ENGINE + "shared/protocol/authority.js");
-    const { openLive } = await import(ENGINE + "server/livehost.ts");
+    const { openLive } = await import(ENGINE + "tools/protocol/labhost.ts");
     const root = scratch("mover-pace"), dir = path.join(root, "worlds", "pace"); fs.mkdirSync(dir, { recursive: true });
     const w = openLive(dir, "pace", { custodyFile: path.join(root, "custody.json"), nameOf: () => null, kindOf: () => "human", scripts: null });
     const realNow = Date.now;

@@ -14,7 +14,7 @@ import { readLog, fold, DIALECT, VERSION } from "../../shared/protocol/fold.js";
 import { PERSON_ID } from "../../shared/protocol/ids.js";
 import { ACTOR_ID } from "../../shared/protocol/names.js";
 import { custodyVerdict, readOnlyCustody, backupManifestOf, checkBackupManifest, MANIFEST } from "../../server/custodycheck.ts";
-import { openLive } from "../../server/livehost.ts";
+import { openLive } from "./labhost.ts";
 import { backupWorld } from "../../server/backups.ts";
 import { foundWorld } from "../../server/worldlog.ts";
 import { request } from "../../shared/protocol/authority.js";

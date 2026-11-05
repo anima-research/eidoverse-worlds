@@ -1,5 +1,5 @@
-// shared/protocol/labmodels.js — the lab's hand-written models (the protocol lab's own table, kept for the tests and any
-// world opened without the engine catalogue: server/modelcatalogue.ts measures library GLBs instead). Models are
+// tools/protocol/labmodels.js — the lab's hand-written models: a test fixture. A world reads only the catalogue it is
+// handed (server/modelcatalogue.ts measures library GLBs); suites hand it this one (LAB_CATALOGUE) or pass MODELS to the sim. Models are
 // local-space boxes with the origin at the base centre, front = +Z, with their support surfaces.
 export const MODELS = {
   table:       { size: [1.2, 0.75, 0.8],  surfaces: [{ y: 0.75 }], label: "a wooden table" },
@@ -18,3 +18,9 @@ export const MODELS = {
   ball:        { size: [0.22, 0.22, 0.22], surfaces: [], round: true, label: "a rubber ball" },
   bell:        { size: [0.25, 0.3, 0.25], surfaces: [], round: true, label: "a brass hand bell" },
 };
+// own keys only: MODELS["constructor"] is Object (the lab authority accepted model "constructor"; L1's no-prototype rule)
+export const LAB_CATALOGUE = Object.freeze({ get: (n) => (Object.hasOwn(MODELS, n) ? MODELS[n] : undefined), list: (q) => Object.entries(MODELS).filter(([k, m]) => k.includes(q) || m.label.includes(q)) });
+// the sim layer over the lab table, for the suites whose logs name lab models (the runtime passes a host's own, or none)
+import * as SL from "../../shared/protocol/simlayer.js";
+export const simFold = (entries, now, opts = {}) => SL.simFold(entries, now, { models: MODELS, ...opts });
+export const simFolder = (entries, opts = {}) => SL.simFolder(entries, { models: MODELS, ...opts });
