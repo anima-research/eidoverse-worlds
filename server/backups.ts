@@ -63,7 +63,9 @@ export function backupWorld(worldsDir: string, name: string, { backupsDir = BACK
       fs.mkdirSync(path.dirname(b), { recursive: true }); fs.copyFileSync(a, b);
       const st = fs.statSync(a); fs.utimesSync(b, st.atime, st.mtime); sums[rel] = hashFile(a); bytes += st.size; }
     fs.writeFileSync(path.join(dir, SUMS), files.map((rel) => `${sums[rel]}  ${rel}\n`).join(""));
-    // F-5: the keys that governed the world, as fingerprints, and the custody file's hash (server/custodycheck.ts); checked back
+    // F-5: the keys that governed the world, as fingerprints, and the custody file's hash (server/custodycheck.ts); the written
+    // bytes are read back and checked against the custody file itself (not the builder), so a builder or serialization defect
+    // refuses the backup. No restore path reads the manifest yet (notes WISHLIST)
     const manifest = backupManifestOf(custodyFile); fs.writeFileSync(path.join(dir, MANIFEST), JSON.stringify(manifest, null, 1) + "\n");
     if (fs.existsSync(custodyFile)) { const bad = checkBackupManifest(JSON.parse(fs.readFileSync(path.join(dir, MANIFEST), "utf8")), custodyFile); if (bad) throw new Error(bad); }   // a worlds dir with no keys yet (old-format worlds) records none
     afterCopy?.(dir);

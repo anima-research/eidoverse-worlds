@@ -196,6 +196,12 @@ try {
     check("F27 a backup's manifest records the sequencer and operator FINGERPRINTS (never a key) and the custody file's hash; the check passes it against the live custody", m.sequencer === seqFp && /^[0-9a-f]{64}$/.test(m.operator) && m.custodySha256 === custodyHash && !/ed25519/.test(JSON.stringify(m)) && checkBackupManifest(m, cf) === null, m);
     check("F27 a manifest without fingerprints, or without the custody hash, or naming other keys, fails the server check", /fingerprints/.test(checkBackupManifest({ ...m, sequencer: null }) ?? "") && /custody file hash/.test(checkBackupManifest({ ...m, custodySha256: undefined }) ?? "")
       && /other keys/.test(checkBackupManifest({ ...m, operator: "1".repeat(64) }, cf) ?? "") && /missing/.test(checkBackupManifest(undefined) ?? "") && JSON.stringify(backupManifestOf(cf)) === JSON.stringify(m));
+    // D6 (Mica 11-05): the checker reads the custody file itself, so a builder defect is caught, not repeated; and the manifest is
+    // read from the backup's bytes on disk as its own step (what a restore will do first; no restore path calls it yet: WISHLIST)
+    { const disk = JSON.parse(fs.readFileSync(path.join(b.dir, MANIFEST), "utf8"));
+      const swapped = checkBackupManifest({ ...disk, sequencer: disk.operator, operator: disk.sequencer }, cf), stale = checkBackupManifest({ ...disk, custodySha256: "0".repeat(64) }, cf);
+      check("F27 the manifest read back from the backup on disk, as a separate step, checks against the live custody; a builder defect is caught by the checker (fingerprints swapped: other keys; a hash that isn't the custody file's: refused)",
+        checkBackupManifest(disk, cf) === null && /other keys/.test(swapped ?? "") && /custody file's hash/.test(stale ?? ""), { swapped, stale }); }
     check("F27 (not minted) reading custody for a manifest or a verdict never creates a key file", !fs.existsSync(path.join(S, "nokeys.json")) && backupManifestOf(path.join(S, "nokeys.json")).sequencer === null && !fs.existsSync(path.join(S, "nokeys.json"))); }
 
   // ---- P3: the person shape ----

@@ -1,6 +1,7 @@
 // server/custodycheck.ts — custody at startup and in backups (docs/DESIGN-log-vocabulary.md §F F-5): the live sequencer key is
 // verified against genesis (or the latest governance handoff) without minting; a mismatch serves the world read-only; a backup
-// manifest records the key fingerprints and the custody file's hash, and is checked before anything restores from it.
+// manifest records the key fingerprints and the custody file's hash, and is checked from its written bytes when the backup is
+// made. No restore path reads it yet (notes WISHLIST, restore-path custody check): restoration is not verified by this.
 import fs from "node:fs";
 import crypto from "node:crypto";
 
@@ -39,13 +40,17 @@ export function backupManifestOf(custodyFile: string): BackupManifest {
   const c = readCustody(custodyFile);
   return { sequencer: fp(c.sequencer?.pub), operator: fp(c.operator?.pub), custodySha256: fs.existsSync(custodyFile) ? crypto.createHash("sha256").update(fs.readFileSync(custodyFile)).digest("hex") : null };
 }
-/** Why `m` is not a complete backup manifest, or (with the live custody file) why it is not this custody's; null when it checks. */
+/** Why `m` is not a complete backup manifest, or (with the live custody file) why it is not this custody's; null when it checks.
+ *  The custody comparison reads the file itself, never through backupManifestOf: a builder defect (a swapped or wrong
+ *  fingerprint, a stale hash) is caught, not repeated. */
 export function checkBackupManifest(m: unknown, custodyFile?: string): string | null {
   const x = m as BackupManifest; const hex = (s: unknown) => typeof s === "string" && /^[0-9a-f]{64}$/.test(s);
   if (!x || typeof x !== "object") return `${MANIFEST} is missing or not an object`;
   if (!hex(x.sequencer) || !hex(x.operator)) return `${MANIFEST} records no sequencer/operator fingerprints`;
   if (!hex(x.custodySha256)) return `${MANIFEST} records no custody file hash`;
-  if (custodyFile) { const live = backupManifestOf(custodyFile);
-    if (live.sequencer !== x.sequencer || live.operator !== x.operator) return `${MANIFEST} names other keys than the live custody file`; }
+  if (custodyFile) { const bytes = fs.readFileSync(custodyFile); const c = JSON.parse(bytes.toString("utf8")) as CustodyFile;
+    const sha = (s: string | Buffer) => crypto.createHash("sha256").update(s).digest("hex");
+    if (sha(String(c.sequencer?.pub ?? "")) !== x.sequencer || sha(String(c.operator?.pub ?? "")) !== x.operator) return `${MANIFEST} names other keys than the live custody file`;
+    if (sha(bytes) !== x.custodySha256) return `${MANIFEST} records another custody file's hash than the live one`; }
   return null;
 }
