@@ -55,7 +55,6 @@ export const REFUSAL_CODES = Object.freeze({
   "server-written": { meaning: "the server writes that (copy-of, rebase)", when: "a request or handler setting a server-written component" },
   "caption-only":   { meaning: "captions are written by the caption request", when: "a set of `captions` by hand" },
   "caption":        { meaning: "that caption line was refused by the caption rules", when: "a resend, an out-of-order n, a superseded leg" },
-  "one-place":      { meaning: "a thing is in one place", when: "two ways of saying where it is (a socket and a parent, two seats…)" },
   "world":          { meaning: "@world can't be that", when: "deleting or locking @world" },
   "world-only":     { meaning: "a world setting goes on @world", when: "a world component written on a thing" },
   "thing-only":     { meaning: "that component belongs to a thing", when: "a thing's component written on @world" },

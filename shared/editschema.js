@@ -1074,8 +1074,8 @@ function addOwnOps(ent, id, name, value) {
   // so a later change of the engine's defaults cannot change this lamp
   if (name === 'Light') {
     if (c.light != null) return { ops: [], errors: [`${id} already has a light`] };
-    // one place per thing (R 10-11; the authority refuses a light on a model): on a model, the light is a CHILD thing a
-    // metre up, so its pose is its own and the gizmo moves one thing
+    // the editor's guidance (the door takes a light on any thing): on a model or a mesh, the light goes on a CHILD a metre
+    // up, so its pose is its own and the gizmo moves one thing
     // on a mesh thing the bulb hangs half a metre over its top (a plane's at 0.55, a 5 m box's at 5.5), not at a fixed metre
     const top = compMesh(ent) ? (c.mesh.shape === 'plane' ? 0.05 : c.mesh.shape === 'sphere' ? +c.mesh.size?.[0] || 1 : c.mesh.shape === 'capsule' ? Math.max(+c.mesh.size?.[0] || 1, +c.mesh.size?.[1] || 1) : +c.mesh.size?.[1] || 1) : null;
     if (c.model != null || ent?.model != null || c.mesh != null) return { ops: [OP.create('$light', { transform: { pos: [0, top == null ? 1 : round(top + 0.5, 3), 0] }, components: { label: 'light', parent: { to: id }, light: { ...LIGHT_DEFAULTS } } })], errors: [] };

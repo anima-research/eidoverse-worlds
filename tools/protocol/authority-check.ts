@@ -116,12 +116,12 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(call("bob", "set", { id: "tbl", component: "reactions", value: { knock: { kind: "set", component: "label", value: "knocked" } }, throughLock: true }).ok && call("vic", "use", { id: "tbl", action: "knock" }).ok, "P14 through the lock a builder sets reactions, and a visitor may still `use` it (use stays open, its label write too)");
   ok(call("olive", "set", { id: "tbl", component: "label", value: "the long table", throughLock: true }).ok, "P14b the owner edits through it with throughLock");
   { const r = call("bob", "create", { id: "cup2", model: "ball", place: { on: "tbl" } }); ok(r.ok, "P15 a NEW thing may be put on a locked table (a lock guards what is attached, not the surface)", r); }
-  // one place per thing (R 10-11): a light never shares an entity with a model; it goes on a child
+  // components compose (Mica 11-04): a light may share a thing with a model, or go on a child of its own
   { call("bob", "create", { id: "pole", model: "crate", place: { at: [-9, 9] } });   // its own thing, under no lock, away from P32's spot
     const r1 = call("bob", "set", { id: "pole", component: "light", value: { color: 0xffd9a0, intensity: 16, range: 10 } });
     const r2 = call("bob", "create", { id: "pole-light", components: { light: { color: 0xffd9a0, intensity: 16, range: 10 }, parent: { to: "pole" }, transform: { pos: [0, 1, 0] } } });
     const r3 = call("bob", "set", { id: "pole-light", component: "model", value: "crate" });
-    ok(code(r1) === "one-place" && r2.ok && code(r3) === "one-place", "P15b a light on a model is refused (one place per thing), a child light is fine, and a model on a light is refused too", { r1: r1.refused ?? null, r2: r2.refused ?? null, r3: r3.refused ?? null }); }
+    ok(r1.ok && r2.ok && r3.ok && !!W().state().entities.pole?.c.light && W().state().entities["pole-light"]?.c.model === "crate", "P15b a light on a model is taken (components compose), a child light is fine, and a model on a light is taken too", { r1: r1.refused ?? null, r2: r2.refused ?? null, r3: r3.refused ?? null }); }
   // throughLock
   { const n = W().entries.length; const r = call("bob", "set", { id: "cup", component: "transform", value: { pos: [0.1, 0.75, 0] }, throughLock: true });
     const E = W().entries.slice(n); const st = E.filter((e) => e.kind === "change"); const ops = st.flatMap((e) => e.body.ops ?? [e.body]);
@@ -1175,8 +1175,8 @@ ok(code(call("olive", "set", { id: "@world", component: "bounds", value: { min: 
 ok(code(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-5, 0, -5], max: [5, 0, 5] } })) === "shape", "BZ2 a box flat on one axis (min = max) is refused");
 ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50, -10, -50], max: [50, 40, 50] } }).ok, "BZ3 a real box is accepted"); }
 
-// ---- MS: mesh (R 10-12, primitives): a registered parametric body on a model-less thing. One place per thing with a model
-// and a light; it has a size to place and stack on; its physics shape is stamped from the component and re-stamped on resize
+// ---- MS: mesh (R 10-12, primitives): a registered parametric body; it composes with a model and a light (Mica 11-04); on a
+// model-less thing it has a size to place and stack on; its physics shape is stamped from the component and re-stamped on resize
 { const name = "mesh"; clock.t += 1000;
   const call = callAt(name);
   const W = () => openWorld(root, name); const E = (id) => W().state().entities[id]?.c;
@@ -1186,11 +1186,8 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   { const r1 = call("bob", "set", { id: "mb", component: "model", value: "crate" }); const r2 = call("bob", "set", { id: "mb", component: "light", value: { color: 0xffd9a0, intensity: 16, range: 10 } });
     call("bob", "create", { id: "cr", model: "crate", place: { at: [5, 5] } }); const r3 = call("bob", "set", { id: "cr", component: "mesh", value: { shape: "sphere", size: [1, 1, 1] } });
     call("bob", "create", { id: "lt", components: { light: { color: 0xffd9a0, intensity: 16, range: 10 }, transform: { pos: [7, 1, 7] } } }); const r4 = call("bob", "set", { id: "lt", component: "mesh", value: { shape: "box", size: [1, 1, 1] } });
-    ok([r1, r2, r3, r4].every((r) => code(r) === "one-place"), "MS2 one place per thing: a model or a light on a mesh, a mesh on a model or a light, are all refused", [r1, r2, r3, r4].map((r) => r.refused?.code ?? "ok"));
-    // the refusal's fix, submitted as written (its {…} a real mesh), is a create the door takes, ids not seeded
-    const fx = String(r3.refused?.fix ?? ""), lit = fx.match(/^create (\{.*\}), or /)?.[1]?.replace("{…}", "{shape: 'box', size: [1, 1, 1]}");
-    fixtureIds(false); let r5: any; try { r5 = lit ? call("bob", "create", new Function(`return (${lit})`)()) : null; } finally { fixtureIds(true); }
-    ok(!!lit && r5?.ok === true, "MS2b the one-place fix for a mesh on a model, sent as written, is accepted (no writer-chosen id)", { fx, r5: r5?.refused ?? r5?.ok }); }
+    ok([r1, r2, r3, r4].every((r) => r.ok) && !!E("cr")?.mesh && !!E("lt")?.mesh, "MS2 components compose: a model or a light on a mesh, a mesh on a model or a light, are all taken", [r1, r2, r3, r4].map((r) => r.refused?.code ?? "ok"));
+    call("bob", "delete", { id: "mb", component: "model" }); call("bob", "delete", { id: "mb", component: "light" }); }   // MS3 on: the mesh alone
   { const r1 = call("bob", "set", { id: "mb", component: "mesh", value: { shape: "box", size: [0.01, 1, 1] } }); const r2 = call("bob", "set", { id: "mb", component: "mesh", value: { shape: "cone", size: [1, 1, 1] } });
     ok(code(r1) === "bounds" && code(r2) === "shape" && /each must be/.test(r1.refused?.reason ?? ""), "MS3 a size outside 0.05..200 (the definition's ranges, per element) and an unknown shape are refused", [r1.refused, r2.refused]); }
   { const r = call("bob", "create", { id: "cup", model: "ball", place: { on: "mb" } }); const y = E("cup")?.transform?.pos?.[1];
@@ -1242,7 +1239,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   const sock = (id, extra = {}, socket = {}) => R("ann", "create", { id, components: { parent: { to: "bench" }, transform: { pos: [0, 0.5, 0] }, socket: { name: "seat", body: { action: "sit" }, ...socket }, ...extra } });
   const s1 = sock("bench-seat");
   ok(s1.ok && E("bench-seat")?.socket?.name === "seat" && E("bench-seat")?.parent?.to === "bench", "SKE1 a socket child of a thing is taken", s1.refused ?? E("bench-seat"));
-  ok(code(sock("bench-lamp", { light: { kind: "point" } }, { name: "lamp" })) === "one-place" && code(sock("bench-crate", { model: "crate" }, { name: "c2" })) === "one-place" && code(sock("bench-phys", { physics: { kind: "dynamic" } }, { name: "p2" })) === "one-place", "SKE2 a socket carries no model, light or physics: one-place");
+  ok(sock("bench-lamp", { light: { kind: "point" } }, { name: "lamp" }).ok && sock("bench-crate", { model: "crate" }, { name: "c2" }).ok && !!E("bench-lamp")?.light && E("bench-crate")?.model === "crate", "SKE2 a socket may carry a light or a model of its own (components compose, Mica 11-04)");
   ok(sock("bench-swing", { motion: { type: "oscillate", amp: 0.1, period: 2 } }, { name: "swing" }).ok, "SKE2 …but a motion of its own is allowed (R 10-12 20:44)");
   const dup = sock("bench-seat2");
   ok(code(dup) === "name-taken" && dup.refused?.taken === "bench-seat", "SKE3 a second socket called 'seat' on the same host is refused: name-taken, naming the first", dup);

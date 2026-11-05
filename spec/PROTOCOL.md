@@ -288,11 +288,11 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   `@world`: `about`, `bounds`, `spawn`, `roles:<identity>`, `default-role`,
   `sky`, `terrain`, `water`, `terrain-grid` (reserved), `terrain-tile:<i>-<j>` (reserved), `grass`, `physics-engine`, `surface:<name>` (reserved),
   `script-settings`, `blueprints:<hash>`, `assets:<key>`, `capacity`, `schemas:<name>` (reserved).
-- **A mesh is a body without a model.** `mesh {shape, size}` draws a
-  parametric body (box, sphere, cylinder, plane, capsule) on a thing that has
-  no model; the authority reads its size as it reads a measured model's, so
-  the thing can be placed, stacked on and given a physics shape. A mesh never
-  shares a thing with a model or a light (one place per thing).
+- **A mesh is a parametric body.** `mesh {shape, size}` draws a parametric
+  body (box, sphere, cylinder, plane, capsule); on a thing with no model the
+  authority reads its size as it reads a measured model's, so the thing can be
+  placed, stacked on and given a physics shape. Components compose: a mesh, a
+  model, a light and a socket may share one thing, and each is drawn.
 - **Water is its own component.** `@world`'s `water {level, color?, opacity?,
   kind?, flow?}` (trial; split from `terrain`, as every engine separates
   water from ground) is one surface height for the world, metres in world y:

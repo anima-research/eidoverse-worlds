@@ -3,7 +3,7 @@
 // its own (Godot's Marker3D, Unity's child Transform), and what a person's body does there, its station (shape audit
 // 10-16: once socket.body). What it is for is read from what it has, never stored: a seat if a station, a snap point if
 // accepts, else an attach point.
-import { ONE_PLACE, socketQ } from "../../components.js";
+import { socketQ } from "../../components.js";
 import { checkSockets } from "../../sockbody.js";
 import { COMPONENTS, materialize } from "../componentspec.js";
 import { REDACTED, cowState, applyCow } from "../fold.js";
@@ -17,12 +17,9 @@ import { refuse } from "./refuse.js";
 const bag = (v) => !!v && typeof v === "object" && !Array.isArray(v) && v !== REDACTED;
 export const isSocketC = (c) => bag(c?.socket);
 export { socketRole } from "../../sockbody.js";
-// what a socket may carry besides its pose and its name: what reads it (label, description), what switches or freezes it
-// (disabled, lock, hidden), a motion of its own (R 10-12 20:44), and the blueprint mark every placed part carries
 // one host holds at most this many sockets (review 10-12 S1-2): a seat map past it is several things. No setting raises it;
 // a socket is an entity, so it also counts in @world.capacity.entities (authority.js CAPACITY)
 export const SOCKETS_PER_HOST = 64;
-export const ON_A_SOCKET = new Set(["transform", "parent", "socket", "station", "label", "description", "disabled", "lock", "hidden", "motion", "copy-of"]);
 const UNIT = (sc) => sc === undefined || (Array.isArray(sc) && sc.length === 3 && sc.every((x) => x === 1));
 
 /** The door's rules for socket entities, over the state a write leaves: the first that breaks, as {code, reason, fix}, or
@@ -36,8 +33,6 @@ export function socketRules(s, ids) {
     const host = e.c.parent?.to;
     if (!host) return { code: "shape", reason: `${id} is a socket, and a socket needs a host`, fix: `give it parent {to: <the thing it belongs to>}, or delete it` };
     if (isSocketC(s.entities[host]?.c)) return { code: "shape", reason: `${id} is a socket, and ${host} is a socket too: a socket hangs on a thing, never on another socket`, fix: `parent it to ${s.entities[host].c.parent?.to ?? "the thing it belongs to"}` };
-    const extra = Object.keys(e.c).find((k) => !ON_A_SOCKET.has(k));
-    if (extra) return { code: "one-place", reason: ONE_PLACE.socket.reason(id, extra), fix: ONE_PLACE.socket.fix(id, extra) };
     if (!UNIT(e.c.transform?.scale)) return { code: "shape", reason: `${id}.transform.scale is ${JSON.stringify(e.c.transform.scale)}; a socket's scale is [1, 1, 1] (its host's scale already applies, and a scaled socket would scale what attaches)`, fix: "scale the host, or what attaches to it" };
     const under = kidsOf(id).find((k) => isSocketC(s.entities[k].c));
     if (under) return { code: "shape", reason: `${under} is a socket under the socket ${id}: a socket hangs on a thing, never on another socket`, fix: `parent ${under} to ${host}` };

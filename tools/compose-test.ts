@@ -1,5 +1,6 @@
 // compose-test — one thing carrying several components (Mica 11-04: "component bags should compose"): model + mesh + light
-// + socket on one entity, each realized on its own, none deciding the others away; labels read the components.
+// + socket on one entity, each realized on its own, none deciding the others away; the gate takes it, capacity counts it
+// once (and as a socket), delete takes all of it, a late join folds and realizes the same; labels read the components.
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/compose-test.ts
 //
@@ -68,6 +69,47 @@ check("…its mesh leaving makes it a bulb in place: the same frame, an Empty, i
 { const v = structuredClone(view0); delete v.entities.meshbulb.mesh; delete v.entities.mixed.socket; S.applyView(v); }
 check("a socket leaving is the socket flag off on the same object; the model, the mesh and the light stay", stub.entities.get("mixed") === mixed && !mixed.userData.socket && !!part(mixed) && rq("mixed")?.obj === mixed);
 check("the realizer reported nothing", spy.reports.length === 0, spy.reports);
+
+console.log("\nthe door, capacity, delete and a late join agree (a scratch world behind the real authority)");
+{
+  const { scratchWorld } = await import("./protocol/scratchworld.ts");
+  const { openWorld } = await import("../server/filehost.ts");
+  const { viewState } = await import("../shared/protocol/view.js");
+  const { SOCKETS_PER_HOST } = await import("../shared/protocol/authority/sockets.js");
+  S.reset();
+  const W: any = scratchWorld("compose");
+  W.seed({ host: { model: "eidoverse/assets/models/crate.glb", pos: [0, 0, 0] } });
+  const comps = { transform: { pos: [0, 1, 0] }, parent: { to: "host" }, mesh: { shape: "box", size: [0.5, 0.5, 0.5] }, light: { intensity: 4 }, socket: { name: "perch" } };
+  const made = W.call("create", { id: "mixed", model: LAMP, components: comps });
+  const c = W.state().entities.mixed?.c;
+  check("the gate takes model + mesh + light + socket on one thing (no one-place refusal)", made.ok && c?.model === LAMP && !!c?.mesh && !!c?.light && c?.socket?.name === "perch", made.refused ?? c);
+  S.hydrate(structuredClone(W.view())); await settle();
+  const live = stub.entities.get("mixed");
+  check("…and the renderer draws all of it", !!live?.userData?.lib && !!part(live) && live.userData.socket === true && rq("mixed")?.obj === live);
+  // capacity: one entity, and one of its host's sockets (capacity.js counts by component presence: isSocketC)
+  const n = Object.keys(W.state().entities).length - 1;
+  W.call("set", { id: "@world", component: "capacity", value: { entities: n } });
+  const full = W.call("create", { components: { transform: { pos: [5, 0, 5] } } });
+  check("capacity counts the composed thing as one entity", !full.ok && full.refused?.code === "full" && full.refused?.entities === n, full.refused);
+  W.call("set", { id: "@world", component: "capacity", value: { entities: 500 } });
+  const socks = Array.from({ length: SOCKETS_PER_HOST - 1 }, (_, i) => ({ verb: "create", args: { components: { transform: { pos: [0, 0.5, 0] }, parent: { to: "host" }, socket: { name: `s${i}` } } } }));
+  const fill = W.call("batch", { requests: socks });
+  const over = W.call("create", { components: { transform: { pos: [0, 0.5, 0] }, parent: { to: "host" }, socket: { name: "one-more" } } });
+  check(`…and as one of its host's sockets: ${SOCKETS_PER_HOST - 1} more fill the host, the next is refused`, fill.ok && !over.ok && over.refused?.code === "full" && over.refused?.sockets === SOCKETS_PER_HOST, [fill.refused ?? "ok", over.refused]);
+  // a late join: the log folded again from disk is the same thing, realized the same way
+  const reread = openWorld(W.root, W.name).state().entities.mixed?.c;
+  S.applyView(structuredClone(W.view())); await settle();
+  const before = { lib: live.userData.lib, part: part(live)?.userData.key, socket: live.userData.socket, light: rq("mixed")?.intensity };
+  S.reset(); S.hydrate(viewState(openWorld(W.root, W.name).state())); await settle();
+  const late = stub.entities.get("mixed");
+  const after = { lib: late?.userData?.lib, part: part(late)?.userData.key, socket: late?.userData?.socket, light: rq("mixed")?.intensity };
+  check("a late join folds the same record and realizes it the same way", JSON.stringify(reread) === JSON.stringify(W.state().entities.mixed?.c) && late !== live && JSON.stringify(after) === JSON.stringify(before), { before, after });
+  // delete: the thing and every component go, at the door and on screen
+  const del = W.call("delete", { id: "mixed" }); S.applyView(structuredClone(W.view())); await settle();
+  check("delete takes the whole thing: gone from the fold, no object, no light, no caster, no mesh left in the scene",
+    del.ok && !W.state().entities.mixed && !stub.entities.has("mixed") && !rq("mixed") && !stub.casters.has("mixed") && !part(late?.parent ? late : null) && !late?.parent,
+    { ok: del.ok, refused: del.refused, has: stub.entities.has("mixed"), light: !!rq("mixed") });
+}
 
 console.log("\nlabels read the components (shared/hierarchy.js kindHint)");
 check("kindHint names every component it carries", kindHint(MIXED) === "lamp + box + light + attach", kindHint(MIXED));

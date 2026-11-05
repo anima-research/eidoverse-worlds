@@ -132,7 +132,7 @@ const DEFS = [
   { name: 'Light', category: 'Rendering', summary: 'a point light',
     params: paramsOf('Light'),
     fallback: { visual: 'a glowing gizmo when the slot pool is spent', text: '(light)' },
-    note: 'wire: comp.light {color, intensity, range, important, day} on a thing of its own (one place per thing: never beside a model or mesh; an imported lamp becomes a Model with a Light child)' },
+    note: 'wire: comp.light {color, intensity, range, important, day}, on any thing (beside a model or a mesh too); Add Component ▸ Light on a model or a mesh puts it on a child a metre up, so its pose is its own' },
   // the motions' READS: a whole thing swings and turns about its Pivot component, else its origin (shape audit 10-16; a pendulum
   // was [0, 2, 0]); a part about its own origin; an orbit's part circles at 1 m
   { name: 'Pendulum', category: 'Motion', summary: 'swings back and forth about an axis',
@@ -202,12 +202,11 @@ const DEFS = [
   { name: 'Description', category: 'Core', summary: 'how it is described to anyone who reads it', params: paramsOf('Description', { text: { t: 'text', default: '', max: COMPONENTS.description.maxLen } }), fallback: { text: 'the description' } },
   { name: 'Captions', category: 'Media', readOnly: true, summary: 'live captions (written by the caption verb)', params: paramsOf('Captions', { feed: { t: 'json', default: null } }), fallback: { text: 'captions' } },
   { name: 'Stage', category: 'Media', summary: 'who is speaking (captionbot)', params: paramsOf('Stage', { speaker: { default: null } }), fallback: { text: 'components: stage' } },
-  // R 10-12 (primitives): a parametric body on a thing with no model, registered bare (componentspec `mesh`); one place per
-  // thing with a model and a light, as the authority refuses
+  // R 10-12 (primitives): a parametric body, registered bare (componentspec `mesh`); it may sit beside a model or a light
   { name: 'Mesh', category: 'Rendering', summary: 'a parametric body with no model: a box, sphere, cylinder, plane or capsule, sized in metres',
     params: paramsOf('Mesh', { size: { default: [1, 1, 1] } }),
     fallback: { visual: 'a grey body', text: '(a <shape>)' },
-    note: 'wire: comp.mesh {shape, size}; never beside a model or a light on one thing (give it a child). Its one material slot is \'surface\'' },
+    note: 'wire: comp.mesh {shape, size}; it may sit beside a model or a light. Its one material slot is \'surface\'' },
   { name: 'Annotation', category: 'Data', summary: 'any other data a world invents (recipe, notice, story…)',
     params: { type: { t: 'text', default: null, required: true }, data: { t: 'json', default: null } }, fallback: { text: 'components: <type>' } },
   // The world entity's components (design §3, shared/worldentity.js): `@world`
@@ -520,31 +519,15 @@ export const KIND_RETIRED = `retired: read the thing's components (model, mesh, 
  *  refusal reads the same from either. `data: null` (removal) is always fine.
  *  Keys a record does not name are allowed, as in every bag (annotations
  *  ride along); the ones it names must have their type. */
-/** One place per thing (R 10-11): the refusal's words, the same from the authority and the Inspector. `has` is what the thing
- *  already is (model | light | mesh), `wants` what was asked for. */
-export const ONE_PLACE = {
-  reason: (id, has, wants) => (has === 'light' ? `${id} is a light; a ${wants} goes on its own thing${wants === 'model' ? '' : ' under it'}`
-    : has === 'mesh' ? `${id} is a mesh; a ${wants} goes on its own thing${wants === 'light' ? ' under it' : ''}` : `${id} has a model; a ${wants} ${wants === 'light' ? 'goes on its own thing under it' : 'is its own thing'}`),
-  fix: (id, has, wants) => (wants === 'light' ? `create {components: {light: {…}, parent: {to: '${id}'}, transform: {pos: [0, 1, 0]}}}`
-    : wants === 'mesh' ? (has === 'light' ? 'create the mesh as its own thing and parent this light to it' : `create {components: {mesh: {…}, parent: {to: '${id}'}}}, or delete its model first`)
-    : has === 'light' ? 'create the model as its own thing and parent this light to it' : 'create the model as its own thing, or delete the mesh first'),
-  socket: {
-    reason: (id, comp) => `${id} is a socket (an attachment point); a ${comp} goes on its host, or on its own thing attached to it`,
-    fix: (id, comp) => `put the ${comp} on the thing the socket belongs to, or create a thing with parent {to: '${id}'} and give it the ${comp}`,
-  },
-};
 export const MESH_SHAPES = COMPONENTS.mesh.enums.shape;
 export function compRefusal(type, data, ent = null) {
   if (data == null) return null;
   if (type === 'mesh') {
-    if (ent?.model != null || ent?.model != null) return `${ONE_PLACE.reason('this thing', 'model', 'mesh')} (one place per thing) — ${ONE_PLACE.fix('it', 'model', 'mesh')}`;
-    if (isBag(ent?.light)) return `${ONE_PLACE.reason('this thing', 'light', 'mesh')} (one place per thing) — ${ONE_PLACE.fix('it', 'light', 'mesh')}`;
     if (!isBag(data) || !MESH_SHAPES.includes(data.shape)) return `a mesh component is {shape: ${MESH_SHAPES.join('|')}, size: [x, y, z]}`;
     if (data.size !== undefined && !(Array.isArray(data.size) && data.size.length === 3 && data.size.every((x) => finite(x) && x >= 0.05 && x <= 200))) return 'mesh size is [x, y, z] in metres, each 0.05 to 200';
     return null;
   }
   if (type === 'light') {
-    if (isBag(ent?.mesh)) return `${ONE_PLACE.reason('this thing', 'mesh', 'light')} (one place per thing) — Add Component ▸ Light makes that child`;
     if (!isBag(data)) return 'a light component is an object: {color?, intensity?, range?, decay?, important?, daytime?}';
     if (data.color !== undefined && !(Number.isInteger(data.color) && data.color >= 0 && data.color <= 0xffffff)) return 'light color is an integer 0…0xffffff (e.g. 16767392 for 0xffd9a0)';
     if (data.intensity !== undefined && !(finite(data.intensity) && data.intensity >= 0)) return 'light intensity is a number ≥ 0';

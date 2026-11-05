@@ -170,10 +170,6 @@
    "meaning": "that caption line was refused by the caption rules",
    "when": "a resend, an out-of-order n, a superseded leg"
   },
-  "one-place": {
-   "meaning": "a thing is in one place",
-   "when": "two ways of saying where it is (a socket and a parent, two seats…)"
-  },
   "world": {
    "meaning": "@world can't be that",
    "when": "deleting or locking @world"

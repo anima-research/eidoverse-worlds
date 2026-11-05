@@ -411,3 +411,5 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
   - version.genesis: ["dialect","minor","nonce","owners","parent","quorum","rewindWindow","sequencer","v"] → ["dialect","minor","nonce","owners","parent","provenance","quorum","requires","rewindWindow","sequencer","v"]
 - 2026-11-05: normative: refusal unreadable: also given while the fold says unsupported-feature; new code unsupported-feature (docs/DESIGN-log-vocabulary.md §F F-1)
   - refusal unreadable: {"meaning":"the log folds to a status the authority won't write to","when":"a write while the fold says no-world/unknown-version"} → {"meaning":"the log folds to a status the authority won't write to","when":"a write while the fold says no-world/unknown-version/unsupported-feature"}
+- 2026-11-05: normative: components compose (Mica 11-04): one-place refused a light, model or mesh beside another, and anything but a socket's own fields on a socket; nothing refuses with it now
+  - refusal one-place: gone (old logs may hold it)

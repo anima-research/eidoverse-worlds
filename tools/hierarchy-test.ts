@@ -63,11 +63,9 @@ console.log('tree building from a world\'s view');
   check('kind hints: model stem, an Empty with a light (a bulb), a bare Empty; an imported lamp (model + light) says both', kindHint(W.table) === 'table oak round' && kindHint(W.lamp) === 'lamp brass desk' && kindHint(W.bulb) === 'light' && kindHint(W.porch) === 'light' && kindHint(W.marker) === 'empty'
     && kindHint({ ...W.lamp, light: { color: 1 } }) === 'lamp brass desk + light',
     JSON.stringify(['table', 'lamp', 'bulb', 'porch', 'marker'].map((k) => kindHint(W[k]))));
-  // kindHint is a pure function on a record, so the LEGACY shape (a model and a light on one thing) is checked
-  // here directly: one-place refuses it at the door now, but old logs keep folding it ("the fold never refuses")
-  // and the Hierarchy must still name what it finds.
-  const legacy = { model: 'eidoverse/assets/models/lamp_brass_desk.glb', light: { color: 0xffd9a0, intensity: 8, range: 4 } };
-  check('…and a legacy model-with-a-light (an old log, which the fold never refuses) is still named', kindHint(legacy) === 'lamp brass desk + light', kindHint(legacy));
+  // a model and a light on one thing (components compose): the Hierarchy names both
+  const both = { model: 'eidoverse/assets/models/lamp_brass_desk.glb', light: { color: 0xffd9a0, intensity: 8, range: 4 } };
+  check('…and a model with a light on the same thing is named with both', kindHint(both) === 'lamp brass desk + light', kindHint(both));
   check('childrenOf / ancestors read the view', childrenOf(W, 'lamp').join() === 'bulb' && ancestors(W, 'bulb').join() === 'lamp,table');
   // a loop written by hand (the door refuses one; a hand-edited log file need not): both members are roots, nothing vanishes
   const loop: any = { a: { pos: [0, 0, 0], parent: { to: 'b' } }, b: { pos: [1, 0, 0], parent: { to: 'a' } }, c: { pos: [0, 0, 0], parent: { to: 'a' } } };
