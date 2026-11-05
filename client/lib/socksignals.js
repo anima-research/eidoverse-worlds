@@ -14,11 +14,11 @@
 // occupant's presence — so two clients looking at one swing put the occupant's clip at the same frame. (A thing moved by
 // physics, not by a motion component, reads speed/turn 0 here: physics is a later port.)
 //
-// Pure: imports only the motion closed forms (motioneval.js, itself pure and shared with the agent) and the node and type readers (names.js motionNode, motionType). It lives beside
+// Pure: imports only the motion closed forms (motioneval.js, itself pure and shared with the agent) and the node reader (names.js motionNode). It lives beside
 // them in client/lib because the browser is served client/ at its root: shared/ code can't reach back into it.
 
 import { evalWholeMotion, since, ampOf, rateOf } from './motioneval.js';
-import { motionNode, motionType } from '../../shared/protocol/names.js';
+import { motionNode } from '../../shared/protocol/names.js';
 
 const TAU = 2 * Math.PI;
 const frac = (x) => x - Math.floor(x);
@@ -50,7 +50,7 @@ export const STILL = 0.01;
 export function cycleOf(m, nowMs) {
   if (!m?.type) return { phase: 0, swing: 0 };
   const t = since(m, nowMs);
-  switch (motionType(m)) {
+  switch (m?.type) {
     case 'pendulum': {
       const w0 = TAU / (m.period ?? 3.5), damp = m.damp ?? 0, amp = Math.abs(ampOf(m));
       if (amp < STILL) return { phase: frac((m.phase ?? 0) / TAU), swing: 0 };

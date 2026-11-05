@@ -4,7 +4,7 @@
 //   F5  a redaction entry resyncs a live client; the wire marker is `{redacted: true}` (an old `{purged: true}` cell is no redaction)
 //   F7  replica.adopt refuses an unknown {dialect, v} whole: status unknown-version, no state (the live wire's D1)
 //   F10 the v1 translator writes this vocabulary directly: the new kinds, no verb on genesis or says, no `by`, no actor `world`, no minor
-//   F12 a checkpoint blob written as `cutJson` and one written as `snapshotJson` both boot the engine; new writes carry snapshotJson only
+//   F12 a checkpoint blob written as `snapshotJson` boots the engine; one keyed `cutJson` (the old spelling, read no more: S6 11-05) is skipped; new writes carry snapshotJson only
 //   F20 a reader given the next v returns unknown-version: no world, nothing folded or cached; a stray minor is malformed (Mica 11-04)
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/vocab-fixtures-check.ts
 // @ts-nocheck
@@ -99,13 +99,13 @@ const read = (p) => readLog(fs.readFileSync(p));
     ok(b2.bootedFrom !== s2 && b2.bootedFrom === x.w.entries.indexOf(ck), "F4 mutation: a checkpoint carrying `at` is 'checkpoint at N malformed; skipped' (livehost.ts:136): the boot resumes from the last well-formed one instead", { from: b2.bootedFrom, s2 }); }
   { const x = world("dual"); x.call("set", { id: "cr-1", component: "label", value: "b" }); T += TICK; settle(x.w);
     const sf = x.w.sim(); const cut = simSnapshotOf(sf, x.w.entries); cut.clock = null; cut.sim.tick = null;
-    const old = x.w.putBlob({ cutJson: JSON.stringify(cut) });   // a historical blob keeps its key (D5: never re-blobbed)
+    const old = x.w.putBlob({ cutJson: JSON.stringify(cut) });   // the old key: no reader reads it since S6 (11-05)
     const sA = x.w.append({ kind: "physics", actor: "sim", verb: "checkpoint", body: { seq: x.w.entries.length - 1, engine: { engine: sf.spec.engine }, tick: sf.sim.tick, clock: sf.clock, sim: digestOf(sf.sim), state: old } });
     const bA = reopen(x.dir); const dA = digestOf(bA.sim().sim), dGA = digestOf(simFold(bA.entries, bA.now(), { models: {} }).sim);
     x.call("set", { id: "cr-1", component: "label", value: "c" }); T += TICK; settle(x.w);
     const sf2 = x.w.sim(); const cut2 = simSnapshotOf(sf2, x.w.entries); cut2.clock = null; cut2.sim.tick = null; const nu = x.w.putBlob({ snapshotJson: JSON.stringify(cut2) });
     const sB = x.w.append({ kind: "physics", actor: "sim", verb: "checkpoint", body: { seq: x.w.entries.length - 1, engine: { engine: sf2.spec.engine }, tick: sf2.sim.tick, clock: sf2.clock, sim: digestOf(sf2.sim), state: nu } });
     const bB = reopen(x.dir); const dB = digestOf(bB.sim().sim); const dG = digestOf(simFold(bB.entries, bB.now(), { models: {} }).sim);
-    ok(bA.bootedFrom === sA && bB.bootedFrom === sB && dA === dGA && dB === dG, "F12 a blob with cutJson and one with snapshotJson both boot the physics layer to a from-genesis fold's digest", { a: bA.bootedFrom, sA, b: bB.bootedFrom, sB, dA, dGA, dB, dG }); } }
+    ok(bA.bootedFrom !== sA && bB.bootedFrom === sB && dA === dGA && dB === dG, "F12 a blob keyed cutJson (the old spelling) is skipped, never booted from (the boot still reaches the from-genesis fold's digest); one with snapshotJson boots the physics layer to it", { a: bA.bootedFrom, sA, b: bB.bootedFrom, sB, dA, dGA, dB, dG }); } }
 
 console.log(`[vocab-fixtures-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

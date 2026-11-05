@@ -470,11 +470,5 @@
    "meaning": "a link points outside what you publish",
    "when": "publish of a set whose refs name things outside it"
   }
- },
- "renamed": {
-  "hands-full": "hold-limit",
-  "underfoot": "beneath",
-  "no-body": "not-pushable",
-  "no-such": "not-found"
  }
 }

@@ -127,10 +127,10 @@ function paint() {
     move.onclick = () => { st.controls.setMode('translate'); paint(); }; turn.onclick = () => { st.controls.setMode('rotate'); paint(); };
     bar.append(mirror, tryIt, del);
     const fields = el('div', 'gripedit-fields');
-    const set = (k) => async (v) => { const gs = gripsOf(st.id); gs[st.name] = { ...gs[st.name], [k]: v }; if (k === 'grasp') delete gs[st.name].fingers; await writeGrips(gs, `grip ${k}`); };
+    const set = (k) => async (v) => { const gs = gripsOf(st.id); gs[st.name] = { ...gs[st.name], [k]: v }; await writeGrips(gs, `grip ${k}`); };
     fields.append(el('label', null, 'hand'), select(HANDS, g.hand ?? 'either', set('hand')),
       el('label', null, 'role'), select(ROLES, g.role ?? 'primary', set('role')),
-      el('label', null, 'grasp'), select(GRASPS, g.grasp ?? g.fingers ?? 'fist', set('grasp')));
+      el('label', null, 'grasp'), select(GRASPS, g.grasp ?? 'fist', set('grasp')));
     const tools = el('div', 'gripedit-bar'); tools.append(move, turn);
     p.append(fields, tools);
   }

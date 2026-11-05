@@ -13,7 +13,8 @@ import { emptyState as v1Empty, foldEntry } from "./fold.js";
 import { emptyState as v4Empty, applyInPlace, opsOf, worldIdOf, DIALECT, VERSION } from "../../../shared/protocol/fold.js";
 import { unNegZero } from "../../../shared/protocol/round.js";
 // an old log's names are never ids, so a name in the hashed form is escaped too (encRaw; house 6340433633, @19)
-import { encRaw as enc, encNameRaw as encName, dec, partSlot, motionType } from "../../../shared/protocol/names.js";
+import { encRaw as enc, encNameRaw as encName, dec, partSlot } from "../../../shared/protocol/names.js";
+import { motionType } from "./shapes.js";
 import { qNorm, qRotate } from "../../../shared/rot.js";
 import { waterParams } from "../../../shared/water.js";
 import { sha256 } from "../../../shared/protocol/hash.js";

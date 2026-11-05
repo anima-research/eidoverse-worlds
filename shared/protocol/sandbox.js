@@ -107,9 +107,6 @@ const PRELUDE = String.raw`"use strict";
     use(id, action, args) { call(["use", String(id), String(action), args === undefined ? null : JSON.parse(enc(args, "world.use " + action))]); },
     shove(who) { call(["body", "shove", String(who), null]); },
     pose(who, spec) { call(["body", "pose", String(who), JSON.parse(enc(spec ?? {}, "world.pose"))]); },
-    // world.log: the old spelling of console.log, kept for one version (the names pass, 2026-10-07); "the world log" is
-    // the event log, never a script's console
-    log(...parts) { consoleLog(...parts); },
   };
   globalThis.world = Object.freeze(world);
   globalThis.console = Object.freeze({ log: (...parts) => consoleLog(...parts) });

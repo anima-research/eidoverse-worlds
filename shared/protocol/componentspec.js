@@ -551,7 +551,7 @@ export const COMPONENTS = {
                help: "the ground's base: {kind: 'flat', height (m)} (level everywhere; nothing else), or {kind: 'noise', seed, size, amplitude, octaves, frequency, flatRadius, flatHeight, segments, layers? [{color: 0xRRGGBB, repeat}], features?, heightmap?} (absent numbers are the sim's: seed 1, size 80 m, amplitude 3 m, octaves 4, frequency 2.5, flat radius 0); a raster kind is reserved; water is its own component" },
   // split out of terrain (shape audit 10-16, render-media-env §15): on @world the world's one level (SL's per-region water); on a
   // thing a water body filling its sibling zone (Unity WaterSurface, Unreal WaterBody; optics named as KHR_materials_volume's).
-  // shared/terrainshape.js waterParams reads the level (an older terrain.water too); shared/zone.js reads the bodies
+  // shared/terrainshape.js waterParams reads the level; shared/zone.js reads the bodies
   water:     { fields: { level: "number", color: "int", opacity: "number", kind: "string", flow: "array", waves: "array", attenuationColor: "vec3", attenuationDistance: "number", scatterColor: "vec3", density: "number" },
                enums: { kind: ["still", "river", "ocean", "lake", "pool"] },
                ranges: { level: { min: -500, max: 500 }, color: { min: 0, max: 0xffffff }, opacity: { min: 0.1, max: 1 }, waves: { maxItems: 8 }, attenuationColor: { min: 0, max: 1 }, attenuationDistance: { gt: 0, max: 1e4 },

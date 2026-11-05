@@ -94,8 +94,8 @@ export function worldOf({ components = [], stamps = {} } = {}) {
  *  itself (ts/seq/by, the override, a forecast's epoch/seq/by). A rated clock is
  *  re-anchored at `now` (unless the patch sets hours) so the day doesn't snap
  *  back to the hour it was last authored at — the weather fold's own rule. */
-// a tz present is the wall clock (shape audit 10-16); an older value said so with clock: 'real'
-const realClock = (sky) => isBag(sky) && (typeof sky.tz === 'string' || sky.clock === 'real');
+// a tz present is the wall clock (shape audit 10-16)
+const realClock = (sky) => isBag(sky) && typeof sky.tz === 'string';
 const DEG = 180 / Math.PI;
 export function skyReissue(sky, patch = {}, now = 0) {
   const base = isBag(sky) ? omit(sky, [...SKY_STAMPS, 'override']) : {};

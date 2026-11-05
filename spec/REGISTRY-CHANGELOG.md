@@ -426,3 +426,8 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
 - 2026-11-05: kernel: no minor (Mica 11-04): genesis is {dialect, v, …}; dialect names the family, v is the hard break, requires the additive gate. minor leaves the genesis fields and the version pin; a stray minor is malformed
   - version.minors: [1] → absent
   - version.genesis: ["dialect","minor","nonce","owners","parent","provenance","quorum","requires","rewindWindow","sequencer","v"] → ["dialect","nonce","owners","parent","provenance","quorum","requires","rewindWindow","sequencer","v"]
+- 2026-11-05: normative: no renamed refusal codes (S6 read-side cut, 11-05): canonicalCode read four old words as their new codes; a reader reads the code as sent
+  - renamed code hands-full: gone (old logs may hold it)
+  - renamed code underfoot: gone (old logs may hold it)
+  - renamed code no-body: gone (old logs may hold it)
+  - renamed code no-such: gone (old logs may hold it)

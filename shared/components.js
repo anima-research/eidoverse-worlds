@@ -11,8 +11,7 @@
 // `comp.light` on a thing of its own, `comp.collider`, and the Empty — a spawn with no
 // `lib`. (The old protocol's `kind: "light"` light entity is gone from the view:
 // the importer rewrites it to comp.light.) `componentsOf` reads any folded entity as a component list,
-// and `entityOf` writes a component list back to those bytes (except a motion type in its old spelling, written in
-// today's word: names.js OLD_MOTION_TYPES); an instance's `key` says which comp-bag key it came from. Nothing in an existing
+// and `entityOf` writes a component list back to those bytes; an instance's `key` says which comp-bag key it came from. Nothing in an existing
 // world is rewritten (RFC: updates are offered, never applied);
 // tools/components-corpus-test.ts proves the round trip on the conformance fixtures and every dir in COMPONENTS_CORPUS.
 //
@@ -23,7 +22,6 @@ import { materialize, COMPONENTS } from './protocol/componentspec.js';
 import { DESCRIPTORS, editorDefault, AXES } from './protocol/descriptors.js';
 import { ESSENTIAL_NAMES } from './particle_effects.js';
 import { qNorm, qFromYaw } from './rot.js';
-import { motionType } from './protocol/names.js';
 import { WEATHERS, CLOUDS } from './forecast.js';
 
 // ------------------------------------------------------------ canonical bytes
@@ -279,8 +277,8 @@ const omit = (o, keys) => Object.fromEntries(Object.entries(o).filter(([k]) => !
 
 const isBag = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
 // A comp-bag Light/Collider: the bag's keys map to the record's params by their
-// wire names (Light's `daytime: 'full'` is the record's burnsAtNoon, as an older
-// value's `day: false` was); any other daytime (or an older day) is kept verbatim in
+// wire names (Light's `daytime: 'full'` is the record's burnsAtNoon); any other
+// daytime is kept verbatim in
 // `wire`, and keys the record has no param for ride `extra.unknown`, so the bytes
 // always come back.
 const COMP_WIRE = { Light: { color: 'color', intensity: 'intensity', range: 'range', decay: 'decay', important: 'important' }, Collider: { shape: 'shape' } };
@@ -289,7 +287,6 @@ function compInstance(type, key, data) {
   for (const [k, v] of Object.entries(data)) {
     if (COMP_WIRE[type][k]) params[COMP_WIRE[type][k]] = v;
     else if (type === 'Light' && k === 'daytime') { if (v === 'full') params.burnsAtNoon = true; else wire = { ...(wire ?? {}), daytime: v }; }
-    else if (type === 'Light' && k === 'day') { if (v === false) params.burnsAtNoon = true; wire = { ...(wire ?? {}), day: v }; }   // the older spelling, remembered so its bytes come back
     else (extra.unknown ??= {})[k] = v;
   }
   return { type, key, params, ...(wire ? { wire } : {}), ...(Object.keys(extra).length ? { extra } : {}) };
@@ -297,11 +294,9 @@ function compInstance(type, key, data) {
 function compBag(inst) {
   const p = inst.params ?? {}; const bag = {};
   for (const [k, v] of Object.entries(p)) {
-    if (k === 'burnsAtNoon') { if (v === true) { if (inst.wire?.day !== undefined) bag.day = false; else bag.daytime = 'full'; } } else bag[k] = v;
+    if (k === 'burnsAtNoon') { if (v === true) bag.daytime = 'full'; } else bag[k] = v;
   }
-  if (inst.wire?.daytime !== undefined && bag.daytime === undefined && bag.day === undefined) bag.daytime = inst.wire.daytime;
-  // an older day: true comes back as written; an older day: false only while it still burns at noon (else it was edited off)
-  if (inst.wire?.day !== undefined && bag.day === undefined && bag.daytime === undefined && (inst.wire.day !== false || p.burnsAtNoon === true)) bag.day = inst.wire.day;
+  if (inst.wire?.daytime !== undefined && bag.daytime === undefined) bag.daytime = inst.wire.daytime;
   return Object.assign(bag, inst.extra?.unknown ?? {});
 }
 
@@ -327,8 +322,8 @@ export function componentsOf(ent) {
     if (key === 'hidden') { out.push({ type: 'Hidden', key, params: {}, wire: { value: data } }); continue; }
     if (key === 'label') { out.push({ type: 'Label', key, params: { text: data } }); continue; }
     if (key === 'description' && typeof data === 'string') { out.push({ type: 'Description', key, params: { text: data } }); continue; }
-    if ((key === 'motion' || key.startsWith('motion:')) && data && typeof data === 'object' && MOTION[motionType(data)]) {
-      const type = MOTION[motionType(data)];   // a value stored before the rename reads as today's (and is written back in today's word)
+    if ((key === 'motion' || key.startsWith('motion:')) && data && typeof data === 'object' && MOTION[data.type]) {
+      const type = MOTION[data.type];
       const known = Object.keys(RECORDS[type].params);
       const params = {}; const extra = {};
       for (const [k, v] of Object.entries(data)) {
@@ -471,8 +466,7 @@ const finite = (v) => typeof v === 'number' && Number.isFinite(v);
 /** The light an entity casts, normalized, or null: a plain-object comp.light on any entity (a bare light, or an imported
  *  lamp that is a model too). A field of the wrong type reads as its default — never a throw, never NaN reaching the rig. */
 // shape audit 10-16: a value a reader can't read is that component absent (one rule with isMeshBag): an unknown
-// kind is no light, never a point light. decay is part of the value (absent: the rig's old 1.7); daytime is dim | full (an
-// older value's day: false is full)
+// kind is no light, never a point light. decay is part of the value (absent: the rig's old 1.7); daytime is dim | full
 export function lightOf(ent) {
   if (!ent || typeof ent !== 'object') return null;
   const src = isBag(ent?.light) ? ent.light : null;
@@ -487,7 +481,7 @@ export function lightOf(ent) {
     range: finite(src.range) && src.range > 0 ? src.range : LIGHT_DEFAULTS.range,
     important: src.important === true,
     decay: decay ?? 1.7,
-    daytime: daytime ?? (src.day === false ? 'full' : 'dim'),
+    daytime: daytime ?? 'dim',
     // a spot's cone, glTF's half-angles (rad): angle = outer (default π/4), inner where the edge starts to soften
     // a point light is the default and says nothing more; a spot adds its kind and cone; a sun its kind (models.js leaves it to the rig)
     ...(src.kind === 'spot' ? (() => { const angle = finite(src.angle) && src.angle > 0 && src.angle <= Math.PI / 2 ? src.angle : Math.PI / 4;
@@ -533,7 +527,6 @@ export function compRefusal(type, data, ent = null) {
     if (data.intensity !== undefined && !(finite(data.intensity) && data.intensity >= 0)) return 'light intensity is a number ≥ 0';
     if (data.range !== undefined && !(finite(data.range) && data.range > 0)) return 'light range is a number of metres > 0';
     if (data.important !== undefined && typeof data.important !== 'boolean') return 'light important is true or false';
-    if (data.day !== undefined && typeof data.day !== 'boolean') return 'light day is true or false (false = burns at noon; it is stored as daytime)';
     if (data.daytime !== undefined && !COMPONENTS.light.enums.daytime.includes(data.daytime)) return 'light daytime is dim (follows the day) or full (burns at noon too)';
     if (data.decay !== undefined && !(finite(data.decay) && data.decay >= 0 && data.decay <= 4)) return 'light decay is a falloff exponent 0..4 (2 = inverse square)';
     return null;

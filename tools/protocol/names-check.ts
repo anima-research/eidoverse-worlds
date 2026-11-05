@@ -29,9 +29,8 @@
 //   E   the old name of a gesture is gone (R 10-17 16:26): presence pose.anim (the old key read for one release), the
 //       action bar's modules and defs, every identifier, comment and string; it is spelled in exactly two places: the
 //       hidden tool alias's entry and the old key's read (EM below builds the word, so this file never spells it)
-//   OS  a motion's back-and-forth along an axis is oscillate (R 10-17 21:40; was bob): the registry, the door (old spelling
-//       taken, stored new), the load's rename (a field VALUE, per thing, every load, idempotent), the readers (the old spelling
-//       read for one release: names.js motionType), the editor's card, the translator (@14), the docs
+//   OS  a motion's back-and-forth along an axis is oscillate (R 10-17 21:40; was bob): the registry, the door (bob refused),
+//       the readers (the type as written), the editor's card, the translator (@14, import-v1/shapes.js motionType), the docs
 //   X   the version history records it
 // @ts-nocheck
 import fs from "node:fs";
@@ -51,7 +50,6 @@ const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? a
 const MUTANTS: [string, string, string, string, string[]][] = [
   ["hold-limit is hands-full again", "shared/protocol/authority/bodyverbs.js", "refuse(\"hold-limit\",", "refuse(\"hands-full\",", ["N1", "N2"]],
   ["beneath is underfoot again", "shared/protocol/authority/manipulate.js", "refuse(\"beneath\",", "refuse(\"underfoot\",", ["N2"]],
-  ["no old-word map", "shared/protocol/refusalcodes.js", "export const RENAMED_CODES = Object.freeze({ \"hands-full\": \"hold-limit\", \"underfoot\": \"beneath\", \"no-body\": \"not-pushable\", \"no-such\": \"not-found\" });", "export const RENAMED_CODES = Object.freeze({});", ["N3"]],
   ["the door records shove", "shared/protocol/authority/bodyverbs.js", "a = { ...a, contact: a.shove }; delete a.shove; }", "a = { ...a, contact: a.shove }; }", ["P2"]],
   ["no old spelling at the door", "shared/protocol/verbspec.js", ", shove: { type: \"bool\", doc: \"old spelling of contact (recorded as contact)\" }", "", ["P2"]],
   ["both spellings at once taken", "shared/protocol/authority/bodyverbs.js", "if (a.contact !== undefined) refuse(\"shape\", \"contact, or its old spelling shove: not both\", \"send contact: true\");", "", ["P3"]],
@@ -120,7 +118,6 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["flying isn't reported", "shared/bodymode.js", "  if (flying) return 'fly';\n", "", ["B3"]],
   ["a declaration is ignored", "shared/bodymode.js", "      return declared ?? real;", "      return real;", ["B3"]],
   ["the agent's once anim rides the old key", "mcpl/agent.ts", "...(this.pendingAnim ? { anim: this.pendingAnim } : {}),", `...(this.pendingAnim ? { ${EM}: this.pendingAnim } : {}),`, ["E1", "E3"]],
-  ["the old key isn't read", "shared/onceanim.js", "const v = sample.anim ?? sample[OLD_KEY];", "const v = sample.anim;", ["E1", "E3"]],
   ["the server remembers the once anim", "shared/onceanim.js", "  for (const k of ONCE_KEYS) delete out[k];\n", "", ["E1"]],
   ["the browser sends the old key", "client/lib/net.js", "if (s.anim) { pose.anim = s.anim; s.anim = null; }", `if (s.anim) { pose.${EM} = s.anim; s.anim = null; }`, ["E1", "E3"]],
   ["a remote reads only today's key", "client/lib/remotes.js", "  const once = onceAnimOf(s);\n  if (once && once !== r.lastAnim) {", "  const once = s.anim;\n  if (once && once !== r.lastAnim) {", ["E1"]],
@@ -131,10 +128,6 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the old gesture tool's alias forgets once (a dance would loop forever)", "mcpl/tools.ts", `  ${EM}: (a) => ({ name: a.name, mode: "once" }),`, `  ${EM}: (a) => ({ name: a.name }),`, ["M5"]],
   ["the registry says bob", "shared/protocol/componentspec.js", "enums: { type: [\"pendulum\", \"spin\", \"orbit\", \"oscillate\", \"path\"]", "enums: { type: [\"pendulum\", \"spin\", \"orbit\", \"bob\", \"path\"]", ["OS1"]],
   ["the card is still Bob", "shared/protocol/descriptors.js", "  Oscillate: { type: 'oscillate', show: ['axis', 'amp', 'period', 'phase'],", "  Bob: { type: 'oscillate', show: ['axis', 'amp', 'period', 'phase'],", ["OS1"]],
-  ["the old word isn't read", "shared/protocol/names.js", "  return typeof t === \"string\" && Object.hasOwn(OLD_MOTION_TYPES, t) ? OLD_MOTION_TYPES[t] : t;", "  return t;", ["OS2", "OS4"]],
-  ["the closed form reads the raw type", "client/lib/motioneval.js", "  let r;\n  switch (motionType(m)) {", "  let r;\n  switch (m.type) {", ["OS4"]],
-  ["the seat signals read the raw type", "client/lib/socksignals.js", "  switch (motionType(m)) {", "  switch (m.type) {", ["OS4"]],
-  ["the editor's card reads the raw type", "shared/editschema.js", "      const ty = motionType(m);", "      const ty = m.type;", ["OS4"]],
   ["bob finds nothing", "shared/editschema.js", "Oscillate: ['float', 'hover', 'bob', 'back and forth', 'piston', 'sine']", "Oscillate: ['float', 'hover', 'back and forth', 'piston', 'sine']", ["OS5"]],
   ["Add Component writes bob", "shared/editschema.js", "Oscillate: { type: 'oscillate', amp: 0.3, period: 4 }", "Oscillate: { type: 'bob', amp: 0.3, period: 4 }", ["OS5"]],
   ["the translator keeps bob", "tools/protocol/import-v1/translate-v1.js", "  const m = motionType(m0) === m0.type ? m0 : { ...m0, type: motionType(m0) };", "  const m = m0;", ["OS6"]],
@@ -270,9 +263,9 @@ const cases: Case[] = [
       return { has: ["hold-limit", "beneath", "not-pushable"].every((c) => RC.isRefusalCode(c)), old: ["hands-full", "underfoot", "no-body"].filter((c) => RC.isRefusalCode(c)),
         gives: ["hold-limit", "beneath", "not-pushable"].every((c) => src.includes(`refuse("${c}"`)), givesOld: ["hands-full", "underfoot", "no-body"].filter((c) => src.includes(`refuse("${c}"`)) }; },
     good: (o) => o.has && !o.old.length && o.gives && !o.givesOld.length },
-  { id: "N3", what: "…a reader maps an older log's word through RENAMED_CODES / canonicalCode (no-such merged into not-found, 10-17)", run() {
-      return { map: RC.RENAMED_CODES ?? null, c: ["hands-full", "underfoot", "no-body", "no-such", "rights"].map((x) => RC.canonicalCode?.(x) ?? null) }; },
-    good: (o) => JSON.stringify(o.c) === '["hold-limit","beneath","not-pushable","not-found","rights"]' },
+  { id: "N3", what: "…no reader maps an old code (RENAMED_CODES / canonicalCode are gone: no log of this protocol ever held one, and the fold never judges a code)", run() {
+      return { map: "RENAMED_CODES" in RC, fn: "canonicalCode" in RC, old: ["hands-full", "underfoot", "no-body", "no-such"].filter((c) => RC.isRefusalCode(c)) }; },
+    good: (o) => !o.map && !o.fn && o.old.length === 0 },
   { id: "G1", what: "(guard) the fold reads a log whose refused act carries an old code: status ok, the act kept as written", run(s) {
       s.call("olive", "create-world", { title: s.name }); const L = s.entries(); const wid = L[1]?.world ?? L[0]?.world;
       fs.appendFileSync(path.join(root, "worlds", `${s.name}.jsonl`), JSON.stringify({ world: wid, kind: "request", actor: "olive", verb: "grab", body: { args: ["id"], refused: { code: "hands-full" } }, ts: L.at(-1).ts + 1 }) + "\n");
@@ -551,7 +544,7 @@ const cases: Case[] = [
       return { tool: says(d), agents: says(a), spec: (() => { const pw = fs.readFileSync(TREE + "docs/pose-wire.md", "utf8"); return /never the bind pose/i.test(pw) && /`\{type: "anim", stop: true\}`/.test(pw) && /`live` is reserved/.test(md); })() }; },   // the rest rule and the relay message are client docs since the house's view (#260 10-20); the reserved name is the spec's
     good: (o) => o.tool && o.agents && o.spec },
   // ---------------- E: the old name of a gesture, gone (R 10-17 16:26) ----------------
-  { id: "E1", what: "(R 16:26) presence pose.anim: the agent's once anim rides the next packet as anim (never the old key); the browser sends pose.anim; a receiver (browser, agent) reads either key; the server remembers neither", async run() {
+  { id: "E1", what: "(R 16:26) presence pose.anim: the agent's once anim rides the next packet as anim (never the old key); the browser sends pose.anim; a receiver (browser, agent) reads anim alone (the pre-release key is gone: no build that sent it shipped); the server remembers neither", async run() {
       const { ag, call, sent } = await animAgent(); ag.joined = true; await call("anim", { name: "wave" }); ag.tick(); ag.tick(); ag.joined = false;
       const pk = sent.filter((m: any) => m.type === "pose").map((m: any) => m.pose);
       const OA = exists("shared/onceanim.js") ? await import(TREE + "shared/onceanim.js") : null;
@@ -559,10 +552,10 @@ const cases: Case[] = [
       const acts: any[] = []; const ag2: any = (await animAgent()).ag; ag2.inbox = []; try { ag2.noteActs?.("u-x", null, old, 1); ag2.noteActs?.("u-y", null, { p: [0, 0, 0], clip: "idle", anim: "clap" }, 1); } catch (e) { acts.push(String(e)); }
       const srv = readText("server/server.ts"), net = readText("client/lib/net.js"), rem = readText("client/lib/remotes.js");
       return { first: pk[0]?.anim ?? null, firstOld: pk[0] ? EM in pk[0] : null, second: pk[1] ? "anim" in pk[1] : null,
-        read: OA ? [OA.onceAnimOf({ anim: "wave" }), OA.onceAnimOf(old), OA.onceAnimOf({})] : null, drop: OA ? JSON.stringify(OA.withoutOnceAnim({ a: 1, anim: "x", [EM]: "y" })) : null,
+        read: OA ? [OA.onceAnimOf({ anim: "wave" }), OA.onceAnimOf(old), OA.onceAnimOf({})] : null, drop: OA ? JSON.stringify(OA.withoutOnceAnim({ a: 1, anim: "x" })) : null,
         heard: ag2.inbox.map((m: any) => m.text).join(" | ").slice(0, 300), acts,
         srv: /settledPose[^]*?withoutOnceAnim\(pose/.test(srv), net: /pose\.anim = s\.anim/.test(net), rem: (rem.match(/onceAnimOf\(s\)/g) ?? []).length }; },
-    good: (o) => o.first === "wave" && o.firstOld === false && o.second === false && JSON.stringify(o.read) === '["wave","cheer",null]' && o.drop === '{"a":1}' && o.srv && o.net && o.rem === 2 },
+    good: (o) => o.first === "wave" && o.firstOld === false && o.second === false && JSON.stringify(o.read) === '["wave",null,null]' && o.drop === '{"a":1}' && o.srv && o.net && o.rem === 2 },
   { id: "E2", what: "…the action bar's modules and defs: actionbar.js, actionbar_lite.js, animnames.js, defs/animations/_actionbar.json (the registry's actionbar key, validateActionBar); the old files are gone; the slash command is /anim", async run() {
       const AD: any = await import(TREE + "shared/animdefs.js"); const defs = readText("server/defs.ts"), reg = readText("client/lib/commands/registry.js");
       const olds = fs.readdirSync(TREE + "client/lib").concat(fs.readdirSync(TREE + "defs/animations")).filter((f: string) => new RegExp(`(?<![rd])${EM}`, "i").test(f));
@@ -570,7 +563,7 @@ const cases: Case[] = [
         key: /actionbar: loadSidecar\("animations\/_actionbar\.json", validateActionBar\)/.test(defs), v: typeof AD.validateActionBar === "function" && AD.validateActionBar({ wave: { clip: "raise" } }).length === 0,
         slash: /\{ name: 'anim', help: '\/anim <name>/.test(reg) }; },
     good: (o) => o.now && !o.olds.length && o.key && o.v && o.slash },
-  { id: "E3", what: "…the word appears nowhere but the old tool name's education entry (TOOL_RENAMED) and the old key's read (shared/onceanim.js) and the action bar's old id for carrying saved storage (client/lib/ui.js ACTIONBAR_OLD_ID): every file of the tree (spec/history, the frozen v1 record, aside), file names too; and both of those still work", async run() {
+  { id: "E3", what: "…the word appears nowhere but the old tool name's education entry (TOOL_RENAMED) and the action bar's old id for carrying saved storage (client/lib/ui.js ACTIONBAR_OLD_ID): every file of the tree (spec/history, the frozen v1 record, aside), file names too; and both of those still work", async run() {
       const re = new RegExp(`(?<![rd])${EM}`, "i"); const hits: string[] = []; const SKIP = new Set(["node_modules", ".git", "worlds", "store", "history"]);
       const walk = (rel: string) => { let ents: any[] = []; try { ents = fs.readdirSync(TREE + rel, { withFileTypes: true }); } catch { return; }
         for (const e of ents) { const r = rel ? `${rel}/${e.name}` : e.name; if (SKIP.has(e.name)) continue;
@@ -580,14 +573,14 @@ const cases: Case[] = [
           if (st.size > 4e6 || /\.(png|jpe?g|glb|vrm|vrma|wasm|ico|webp|gz|zip|mp3|ogg|wav)$/i.test(e.name)) continue;
           const lines = fs.readFileSync(TREE + r, "utf8").split("\n"); lines.forEach((l: string, i: number) => { if (re.test(l)) hits.push(`${r}:${i + 1}: ${l.trim().slice(0, 120)}`); }); } };
       walk("");
-      const allowed = (h: string) => /^mcpl\/tools\.ts:\d+: pose: "anim", animate: "anim", \w+: "anim", posture: "anim" \}\)\.map\(/.test(h) || /^shared\/onceanim\.js:\d+: const OLD_KEY = '\w+';$/.test(h)
+      const allowed = (h: string) => /^mcpl\/tools\.ts:\d+: pose: "anim", animate: "anim", \w+: "anim", posture: "anim" \}\)\.map\(/.test(h)
         || /^client\/lib\/ui\.js:\d+: export const ACTIONBAR_OLD_ID = '\w+';$/.test(h)
         // the retired chat command's own row (typed, it says what replaced it) and its test (house config I19)
         || /^client\/lib\/commands\/registry\.js:\d+: (\/\/ whisper was removed \(R 10-18\); \/\w+ became \/anim|\{ name: '\w+', listed: false, help: '\/\w+ is \/anim now')/.test(h)
         || /^tools\/retired-commands-test\.ts:\d+: /.test(h);   // its args, beside its alias   // a returning person's saved pins/frame carried once (gym 10-17 20:00)
       const T: any = await import(TREE + "mcpl/tools.ts"); const OA = exists("shared/onceanim.js") ? await import(TREE + "shared/onceanim.js") : null;
       return { stray: hits.filter((h) => !allowed(h)).slice(0, 12), nStray: hits.filter((h) => !allowed(h)).length, kept: hits.filter(allowed).length, alias: T.TOOL_RENAMED?.[EM]?.to ?? null, read: OA?.onceAnimOf({ [EM]: "wave" }) ?? null }; },
-    good: (o) => o.nStray === 0 && o.kept >= 3 && o.alias === "anim" && o.read === "wave" },
+    good: (o) => o.nStray === 0 && o.kept >= 2 && o.alias === "anim" && o.read === null },
   // ---------------- OS: oscillate (R 10-17 21:40) ----------------
   { id: "OS1", what: "(R 21:40) the registry: motion.type is pendulum | spin | orbit | oscillate | path (no bob); oscillate's per-type defaults and units; the editor's card is Oscillate (descriptors, the component list, MOTION_TYPES)", async run() {
       const M = CS.COMPONENTS.motion; const DS: any = await import(TREE + "shared/protocol/descriptors.js"); const CO: any = await import(TREE + "shared/components.js"); const ES: any = await import(TREE + "shared/editschema.js");
@@ -602,15 +595,15 @@ const cases: Case[] = [
       const c = s.call("olive", "set", { id: "drone", component: "motion", value: { type: "oscillate", amp: 0.5 } });
       return { a: a.refused ?? null, b: b.refused ?? null, c: show(c), drone: s.w().state().entities.drone?.c.motion ?? null }; },
     good: (o) => o.a?.code === "shape" && /got "bob"/.test(o.a.reason) && o.b?.code === "shape" && o.c === "ok" && o.drone?.type === "oscillate" && o.drone?.amp === 0.5 },
-  { id: "OS4", what: "…the readers read the old spelling for one release (names.js motionType): the closed form, the seat signals, the editor's channels and card draw a stored bob as an oscillate", async run() {
+  { id: "OS4", what: "…the readers read the type as written (no world of this protocol stored bob; the v1 translation writes oscillate, import-v1/shapes.js motionType): a bob is no motion the closed form or the editor's channels know, and names.js maps nothing", async run() {
       const ME: any = await import(TREE + "client/lib/motioneval.js"), SS: any = await import(TREE + "client/lib/socksignals.js"), ES: any = await import(TREE + "shared/editschema.js"), NM: any = await import(TREE + "shared/protocol/names.js");
       const base = { pos: [1, 2, 3], yaw: 0 }, m = (type: string) => ({ type, axis: [0, 0, 1], amp: 0.5, period: 2, phase: 0.3, t0: 1000 });
       const now = ME.evalWholeMotion(base, m("oscillate"), 1700), old = ME.evalWholeMotion(base, m("bob"), 1700);
       const sch = ES.inspectSchema({ id: "d", model: "book", pos: [0, 0, 0], motion: m("bob") }, "d");
       const groups = JSON.stringify(sch);
       return { now: now.ok && now.pos, old: old.ok && old.pos, cyc: [SS.cycleOf(m("oscillate"), 1700), SS.cycleOf(m("bob"), 1700)].map((c: any) => JSON.stringify(c)), ch: [ES.motionChannels(m("oscillate")), ES.motionChannels(m("bob"))].map((c: any) => [...c.t].join() + "|" + [...c.r].join()),
-        card: /"Oscillate"/.test(groups), typeRow: /"t":"enum","k":"type","label":"type","value":"oscillate"/.test(groups) && !/"value":"bob"/.test(groups), bobCard: /"Bob"/.test(groups), read: NM.motionType ? [NM.motionType({ type: "bob" }), NM.motionType({ type: "spin" }), NM.motionType(null)] : null }; },
-    good: (o) => Array.isArray(o.now) && JSON.stringify(o.now) === JSON.stringify(o.old) && Math.abs(o.now[2] - 3) > 0.01 && o.cyc[0] === o.cyc[1] && o.ch[0] === o.ch[1] && o.ch[0] === "z|" && o.card && o.typeRow && !o.bobCard && JSON.stringify(o.read) === '["oscillate","spin",null]' },
+        card: /"Oscillate"/.test(groups), typeRow: /"t":"enum","k":"type","label":"type","value":"oscillate"/.test(groups) && !/"value":"bob"/.test(groups), bobCard: /"Bob"/.test(groups), read: "motionType" in NM || "OLD_MOTION_TYPES" in NM }; },
+    good: (o) => Array.isArray(o.now) && Math.abs(o.now[2] - 3) > 0.01 && JSON.stringify(o.now) !== JSON.stringify(o.old) && o.ch[0] === "z|" && o.ch[1] !== o.ch[0] && o.read === false },
   { id: "OS5", what: "…Add Component offers Oscillate (bob, float, hover find it) and writes type oscillate", async run() {
       const ES: any = await import(TREE + "shared/editschema.js");
       const r = ES.addOps({ id: "d", model: "book", pos: [0, 0, 0] }, "d", "Oscillate");
@@ -630,6 +623,30 @@ const cases: Case[] = [
       const motionBob = /pendulum[^\n]{0,40}\bbob\b|\bbob\b[^\n]{0,40}\bpath\b|type: ?['"]bob['"]/;
       return { stale: files.filter((f) => motionBob.test(readText(f))), says: files.filter((f) => /\boscillate\b/.test(readText(f))), vh: /`oscillate`/.test(vh) && /`bob`/.test(vh), cl: /oscillate/.test(readText("spec/REGISTRY-CHANGELOG.md").split("\n").filter((l: string) => /^- 2026-10-1[78]/.test(l)).join("\n")) }; },
     good: (o) => !o.stale.length && o.says.length === 5 && o.vh && o.cl },
+  // ---------------- OLD: the read-side fallbacks S6 deleted (11-05), one row per old key ----------------
+  { id: "OLD", what: "every old spelling S6 stopped reading is ignored by its reader (the value's absence, or the reader's refusal), while today's spelling reads: grip fingers, the packet's pre-release key, terrain.water, the renamed codes, the sky's clock/weatherSeconds/dormantRated/forecast dwellSec+transitionSec, world.log, provenance body.commit, Light day, motion bob (cutJson: vocab-fixtures F12)", async run() {
+      const imp = (f: string) => import(TREE + f);
+      const [G, OA, TS, FC, SB, PV, CM, ME] = await Promise.all(["shared/grab.js", "shared/onceanim.js", "shared/terrainshape.js", "shared/forecast.js", "shared/protocol/sandbox.js",
+        "shared/protocol/provenance.js", "shared/components.js", "client/lib/motioneval.js"].map(imp)) as any[];
+      const T = 1_700_000_000_000; const keys = (src: string) => { const r = SB.runScript({ text: src, self: "k", key: "script:k", event: { on: "load" }, now: 0, seed: "0".repeat(64), st: { entities: { k: { born: 0, c: {} } }, diagnostics: [] } }); return r.ok ? r.ops[0].value : r; };
+      // [old key, what the reader gives the old spelling, what it gives today's]: old must be the absent/default reading, today's the value
+      const rows: [string, any, any, any, any][] = [
+        ["grip fingers", G.gripOf({ pos: [0, 0, 0], fingers: "pinch" }).grasp, "fist", G.gripOf({ pos: [0, 0, 0], grasp: "pinch" }).grasp, "pinch"],
+        ["packet's old key", OA.onceAnimOf({ [EM]: "wave" }), null, OA.onceAnimOf({ anim: "wave" }), "wave"],
+        ["terrain.water", TS.worldWater({ terrain: { water: { level: 2 } } }) ?? null, null, TS.worldWater({ water: { level: 2 } })?.level, 2],
+        ["renamed codes", ["hands-full", "underfoot", "no-body", "no-such"].filter((c) => RC.isRefusalCode(c)).length + ("canonicalCode" in RC ? 1 : 0), 0, RC.isRefusalCode("not-found"), true],
+        ["sky clock", FC.isRealClock({ clock: "real" }), false, FC.isRealClock({ tz: "UTC" }), true],
+        ["sky weatherSeconds", FC.effectiveSky({ weather: "rain", weatherSeconds: 12 }, T).seconds ?? null, null, FC.effectiveSky({ weather: "rain", transition: 12 }, T).seconds, 12],
+        ["sky dormantRated", FC.ratedHoursAt({ tz: "UTC", hours: 3, rate: 0, ts: T, dormantRated: { hours: 9, rate: 0, ts: T } }, T), 3, FC.ratedHoursAt({ hours: 9, rate: 0, ts: T }, T), 9],
+        ["sky forecast dwellSec", FC.normalizePolicy({ seed: 1, states: ["rain"], dwellSec: [900, 900] }).dwellMinMs, 600_000, FC.normalizePolicy({ seed: 1, states: ["rain"], dwell: [900, 900] }).dwellMinMs, 900_000],
+        ["sky forecast transitionSec", FC.normalizePolicy({ seed: 1, states: ["rain"], dwell: [900, 900], transitionSec: 40 }).transitionSec, 30, FC.normalizePolicy({ seed: 1, states: ["rain"], dwell: [900, 900], transition: 40 }).transitionSec, 40],
+        ["world.log", (keys(`world.set("self", "t/k", Object.keys(world).sort());`) ?? []).includes?.("log") ?? "ran?", false, (keys(`world.set("self", "t/k", Object.keys(console));`) ?? []).includes?.("log"), true],
+        ["provenance body.commit", PV.provenanceReadback({ commit: "abc" }).reason, "provenance unavailable: the body carries none", /redacted/.test(PV.provenanceReadback({ commitment: "abc" }).reason), true],
+        ["Light day", CM.lightOf({ light: { day: false } })?.daytime, "dim", CM.lightOf({ light: { daytime: "full" } })?.daytime, "full"],
+        ["motion bob", ME.evalWholeMotion({ pos: [0, 0, 0], yaw: 0 }, { type: "bob", amp: 1, period: 2, t0: T }, T + 500).ok, false, ME.evalWholeMotion({ pos: [0, 0, 0], yaw: 0 }, { type: "oscillate", amp: 1, period: 2, t0: T }, T + 500).ok, true],
+      ];
+      return { bad: rows.filter(([, o, ow, n, nw]) => JSON.stringify(o) !== JSON.stringify(ow) || JSON.stringify(n) !== JSON.stringify(nw)).map(([k, o, ow, n, nw]) => ({ k, o, ow, n, nw })), n: rows.length }; },
+    good: (o) => o.n === 13 && o.bad.length === 0 },
   // ---------------- X: the record ----------------
   { id: "X1", what: "the version history records the renames at minor 0, and the spec body speaks the new words (§5 consent: the two gates since R 10-28, §7a rule 4)", run() {
       const md = readText("spec/PROTOCOL.md"); const vh = md.slice(md.indexOf("## Version history")) + readText("spec/history/PRE-RELEASE-RENAMES.md"); const body = md.slice(0, md.indexOf("## Version history"));

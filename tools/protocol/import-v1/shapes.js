@@ -21,7 +21,7 @@
 import { grassAtWrite } from "../../../shared/protocol/assetref.js";
 import { eidoHex } from "../../../shared/eido.js";
 import { COMPONENTS, materialize } from "../../../shared/protocol/componentspec.js";
-import { partSlot, motionType } from "../../../shared/protocol/names.js";
+import { partSlot } from "../../../shared/protocol/names.js";
 import { AXES as AXIS_VECTORS } from "../../../shared/axes.js";
 import { isSocketC } from "../../../shared/protocol/authority/sockets.js";
 import { lifter, isLegacyParent } from "./sockets.js";
@@ -180,6 +180,8 @@ export function liftProjection(P, ever0) {
  *  object; an old field stored as null is removed, never renamed to a null. {value, renamed: [{field, from?, to}]} */
 export const RENAMED_FIELDS = Object.freeze({ grabbable: Object.freeze({ pose: "anim", "grips.*.fingers": "grasp" }), station: Object.freeze({ pose: "anim" }),
   motion: Object.freeze({ "type=bob": "type=oscillate" }), picture: Object.freeze({ alt: "description", look: "description" }), sound: Object.freeze({ alt: "description", look: "description" }) });
+/** A v1 motion's type in today's word (R 10-17 21:40: the back-and-forth along an axis is oscillate; v1 said bob). */
+export const motionType = (m) => (m?.type === "bob" ? "oscillate" : m?.type);
 /** The RENAMED_FIELDS entry a component key reads by: a part's motion (motion:<slot>) is a motion. */
 export const renamedFieldsKey = (comp) => (typeof comp === "string" && comp.startsWith("motion:") ? "motion" : comp);
 const fbag = (v) => !!v && typeof v === "object" && !Array.isArray(v);

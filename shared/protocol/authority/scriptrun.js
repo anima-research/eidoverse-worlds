@@ -203,7 +203,7 @@ function checkpointSim(w, { every = w.simCheckpointEvery ?? 0 } = {}) {
   // law's (statics and bodies tie by insertion order), so a re-keyed cut would be a different sim. Its clock and tick ride in
   // the entry (null in the blob, in place): at rest they are all that time moves, so an unchanged engine is the same blob
   const cut = simSnapshotOf(sf, E); cut.clock = null; cut.sim.tick = null;
-  const state = w.putBlob({ snapshotJson: JSON.stringify(cut) });   // D5: new blobs write snapshotJson; readers take snapshotJson ?? cutJson
+  const state = w.putBlob({ snapshotJson: JSON.stringify(cut) });   // D5: new blobs write snapshotJson; readers take snapshotJson
   w.append({ kind: "physics", actor: "sim", verb: "checkpoint", body: { seq: E.length - 1, engine: { engine: sf.spec.engine }, tick: sf.sim.tick, clock: sf.clock, sim: digestOf(sf.sim), state } });
 }
 /** A checkpoint now if the tail is at least `every` (a host's clean shutdown). Returns how many entries it wrote (0 or 1). */

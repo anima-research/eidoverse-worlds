@@ -48,7 +48,7 @@ export function openNewScript(id) {
       <label>it may change <input type="text" class="sn-comps" placeholder="components on this thing, comma-separated"></label>
       <label><input type="checkbox" class="sn-say"> it may speak in chat</label>
       <textarea class="sn-src" spellcheck="false" aria-label="the script's source"></textarea>
-      <div class="sn-hint">JavaScript, run on the server with your rights and no more (docs/SCRIPTS.md). world.on('use' | 'tick', fn), world.get / world.set on this thing, world.say, world.log (its console).</div>
+      <div class="sn-hint">JavaScript, run on the server with your rights and no more (docs/SCRIPTS.md). world.on('use' | 'tick', fn), world.get / world.set on this thing, world.say, console.log (its console).</div>
       <div class="sn-err" role="status"></div>
       <div class="sn-btns"><button type="button" class="sn-no">Cancel</button><button type="button" class="sn-ok">Create</button></div></div>`;
     const $ = (s) => root.querySelector(s);

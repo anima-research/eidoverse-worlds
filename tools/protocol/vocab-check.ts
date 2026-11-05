@@ -102,22 +102,21 @@ const riderWalk = (dir: string) => {
 for (const d of [...RUNTIME, ...DEPLOYED]) riderWalk(path.join(ROOT, d));
 for (const rel of RIDER_DOCS) { const p = path.join(ROOT, rel); if (fs.existsSync(p)) riderScan(rel, fs.readFileSync(p, "utf8")); else offences.push(`${rel}: missing (RIDER_DOCS lists it)`); }
 // A motion's back-and-forth along an axis is `oscillate` (R 10-17 21:40; it was `bob` before release). The old word as a
-// motion type ("bob", 'bob', a `bob:` key, the card "Bob") may appear only where the old spelling is READ: names.js
-// OLD_MOTION_TYPES (the door, the load's rename and every reader go through motionType). Runtime code (comments too:
+// motion type ("bob", 'bob', a `bob:` key, the card "Bob") may appear nowhere in runtime code: the door refuses it and
+// readers read the type as written; only the v1 translation maps it (tools/protocol/import-v1/shapes.js motionType). Runtime code (comments too:
 // "a bob's offset" names the type) and the docs; English uses ("head bob", "bobs up" in the water) are not a quoted word.
 // OSC_OK lists each allowed line, with why.
 const OSC_CODE = /['"`]bob['"`]|['"`]Bob['"`]|(?<![\w$.])[Bb]ob\s*:|\ba bob's\b|\bbob\/|\/bob\b/;
 const OSC_DOCS = ["spec/PROTOCOL.md", "spec/PHYSICS.md", "AGENTS.md", "DESIGN.md"];
 const OSC_DOC = /`bob`|\|bob\\?\||\bbob\s*\||\borbit, bob\b|\bbob, path\b|type: ?['"]bob['"]/;
 const OSC_OK: [string, RegExp, string][] = [
-  ["shared/protocol/names.js", /^export const OLD_MOTION_TYPES = Object\.freeze\(\{ bob: "oscillate" \}\);$/, "the old spelling's one reading (motionType): the door, the load's rename and the readers go through it"],
   ["shared/editschema.js", /Oscillate: \['float', 'hover', 'bob',/, "a word people search Add Component with (finds Oscillate), not a motion type"],
   ["spec/PROTOCOL.md", /motion's `type` `bob` → `oscillate`/, "§4: the load's rename, naming the old value so a reader of an old log knows it"],
   ["spec/PROTOCOL.md", /is `oscillate` \(R 10-17 21:40; was `bob`:/, "the version history records the rename"],
 ];
 const oscScan = (rel: string, text: string, re: RegExp) => text.split("\n").forEach((line, i) => {
   if (!re.test(line) || OSC_OK.some(([f, ok]) => rel === f && ok.test(line.trim()))) return;
-  offences.push(`${rel}:${i + 1}  says bob as a motion type (the word is oscillate; the old spelling is read only by names.js motionType): ${line.trim().slice(0, 100)}`);
+  offences.push(`${rel}:${i + 1}  says bob as a motion type (the word is oscillate; only the v1 translation maps the old one): ${line.trim().slice(0, 100)}`);
 });
 const oscWalk = (dir: string) => {
   if (!fs.existsSync(dir)) return;

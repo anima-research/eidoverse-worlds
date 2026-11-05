@@ -124,7 +124,7 @@ always the right one to keep.)
 | `world.say(text)` | a say entry (needs `scope.say`) |
 | `world.use(id, action, args?)` | set off another thing's reaction (the id must be in `scope.ids`; ≤ 4): after the batch lands it meets that thing's own gate as a visitor's use would, with the sponsor's rights; its script hears `use` with `by: "script:<thing>"`. The act records the call, the use is its own act, and the cascade depth bounds a loop |
 | `world.shove(who)`, `world.pose(who, spec)` | effects on a person (needs `scope.bodies`, then their consent) |
-| `console.log(...parts)` | its console (`scripts {id}` shows the last lines; never logged). `world.log` is the old spelling, kept for one version |
+| `console.log(...parts)` | its console (`scripts {id}` shows the last lines; never logged). |
 
 Events (`e`): every event has `on`.
 - `use`: `by` (who), `seq` (their act), `action`, `args` (what they sent); used while held (a `grabbable`'s use

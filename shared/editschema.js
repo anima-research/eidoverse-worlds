@@ -46,7 +46,7 @@ import { qNorm, qHeading, qFromYaw, qWithHeading, qRotate } from './rot.js';
 import { scale3, scaleWire, entScale } from './scale3.js';
 import { localOf, parentOps, childrenOf, worldPose } from './hierarchy.js';
 import { recordOf } from './protocol/view.js';
-import { partSlot, motionNode, motionType } from './protocol/names.js';
+import { partSlot, motionNode } from './protocol/names.js';
 import { modelWord } from './eido.js';
 import { isBase } from './protocol/roles.js';
 import { DESCRIPTORS, fieldOf, claimOf, CLAIMED_KEYS, editorDefault, toWire } from './protocol/descriptors.js';
@@ -60,7 +60,7 @@ export function motionChannels(m) {
   const letter = (axis, dflt) => { const v = typeof axis === 'string' ? AXES[axis.toLowerCase()] : Array.isArray(axis) ? axis : AXES[dflt];
     if (!v) return all; const nz = [0, 1, 2].filter((i) => Math.abs(v[i]) > 1e-9); return nz.length === 1 ? new Set(['xyz'[nz[0]]]) : all; };
   const pivoted = Array.isArray(m?.pivot) && m.pivot.some((n) => Math.abs(n) > 1e-9);
-  switch (motionType(m)) {
+  switch (m?.type) {
     case 'spin': return { t: pivoted ? all : none(), r: letter(m.axis, 'y') };
     case 'pendulum': return { t: pivoted ? all : none(), r: letter(m.axis, 'x') };
     case 'oscillate': return { t: letter(m.axis, 'y'), r: none() };
@@ -141,7 +141,7 @@ const uprightHint = (ent) => (ent?.q && Math.abs(ent.q[0]) < 1e-12 && Math.abs(e
 // A motion key is a Motion only when its value names a motion type. A `motion` holding something else — a reaction's
 // {cause, by} stamp with no `type` (components-inspector-test's swing1) — is not one: it falls to the raw-JSON floor, where
 // the card and the field agree, instead of a Motion card naming a comp.motion field nobody emits.
-const motionKeys = (ent) => Object.keys(recordComponents(ent)).filter((k) => (k === 'motion' || k.startsWith('motion:')) && ent[k] && typeof ent[k] === 'object' && MOTION_TYPES.includes(motionType(ent[k])));
+const motionKeys = (ent) => Object.keys(recordComponents(ent)).filter((k) => (k === 'motion' || k.startsWith('motion:')) && ent[k] && typeof ent[k] === 'object' && MOTION_TYPES.includes(ent[k]?.type));
 
 // ---------------------------------------------------------------- the hand-written cards
 // The four the descriptor table marks `hand` (shared/protocol/descriptors.js HAND_CARDS): their rows are not built from
@@ -407,7 +407,7 @@ export function inspectSchema(ent, id, live = {}) {
   if (driven) { const ch = motionChannels(c.motion);
     for (const f of [...transform, ...rotation]) { if (f.t !== 'num') continue; const lb = String(f.label ?? '');
       const hit = /^translate ([xyz])$/.test(lb) ? ch.t.has(lb.slice(-1)) : /^rotate ([xyz])$/.test(lb) ? ch.r.has(lb.slice(-1)) : /^quat /.test(lb) ? ch.r.size > 0 : lb === 'heading' ? ch.r.has('y') : false;
-      if (hit) { f.driven = driven; f.drivenBy = String(motionType(c.motion)).replace(/^./, (x) => x.toUpperCase()); } } }
+      if (hit) { f.driven = driven; f.drivenBy = String(c.motion?.type).replace(/^./, (x) => x.toUpperCase()); } } }
   if (L.mounted) transform.unshift({ t: 'info', label: 'frame', value: `local to its parent, ${ent.parent.to} — translate and rotate write its mount; scale is its own (the parent's multiplies it)` });
   groups.push({ group: 'pos', label: 'Transform', verb: L.mounted ? 'mount' : 'place', fields: transform, ...(L.mounted ? { local: ent.parent.to } : {}) });
   if (rotation.length) groups.push({ group: 'rot', label: 'Rotate', verb: L.mounted ? 'mount' : 'place', fields: rotation, ...(gimbal ? { gimbal: true } : {}) });
@@ -531,7 +531,7 @@ export function inspectSchema(ent, id, live = {}) {
       const m = c[key];
       const P = key === 'motion' ? '' : `${motionNode(key, m)} · `;   // the node's name (its value's `node`); the row keys keep the slot
       const k = (p) => (key === 'motion' ? p : `${key.slice(7)}|${p}`);
-      const ty = motionType(m);   // a value stored before the rename (an older replica) shows in today's word
+      const ty = m?.type;
       const types = MOTION_TYPES.includes(ty) ? MOTION_TYPES : [...MOTION_TYPES, ty ?? '?'];
       fields.push({ t: 'enum', k: k('type'), label: `${P}type`, value: ty, options: types.map((v) => ({ v, label: v })) });
       if (['pendulum', 'spin', 'oscillate'].includes(ty)) {
@@ -1363,7 +1363,7 @@ export function editOps(ent, id, edits, live = {}) {
         const param = bar < 0 ? k : k.slice(bar + 1);
         const prev = c[mkey]; if (!prev) { errors.push(`${key}: no ${mkey} on ${id}`); break; }
         if (param === 'rest') { motions.set(mkey, null); break; }
-        const next = motions.get(mkey) ?? { ...prev, ...(prev.type !== motionType(prev) ? { type: motionType(prev) } : {}) };   // an edit writes today's type
+        const next = motions.get(mkey) ?? { ...prev };
         if (param === 'axis') { if (raw === 'custom') break; if (!AXES[String(raw).toLowerCase()]) { errors.push(`${key}: axis must be one of ${Object.keys(AXES).join(' ')}`); break; } next.axis = String(raw).toLowerCase(); }
         else if (param === 'type') {
           if (!MOTION_TYPES.includes(raw)) { errors.push(`${key}: type must be one of ${MOTION_TYPES.join(' ')}`); break; }
@@ -1373,7 +1373,7 @@ export function editOps(ent, id, edits, live = {}) {
           for (const p of Object.keys(next)) if (!['type', 'axis', 'pivot', 'phase', 't0', 'part', 'node'].includes(p)) delete next[p];
           next.type = raw;
         }
-        else if (!writeField(MOTION_CARD[motionType(prev)] ?? 'Spin', param, key, f, raw, next)) { errors.push(`${key}: no such field`); break; }
+        else if (!writeField(MOTION_CARD[prev?.type] ?? 'Spin', param, key, f, raw, next)) { errors.push(`${key}: no such field`); break; }
         motions.set(mkey, next);
         break;
       }

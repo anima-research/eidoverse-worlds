@@ -141,9 +141,4 @@ export const REFUSAL_SOURCES = Object.freeze(["shared/protocol/verbspec.js", "sh
 export const DYNAMIC_REFUSALS = Object.freeze(["code", "bad.code", "e.code", "dirty.code", "r.code", "g.code"]);
 /** `code:` literals in the scanned files that aren't refusal codes (none today; a status code that isn't a refusal goes here). */
 export const NOT_REFUSALS = Object.freeze([]);
-/** Codes renamed before release (protocol minor 0, R 10-17: no body plan in a name). A log written before the rename may
- *  carry the old word in a refused act; the fold never judges a code, so it reads either, and a reader that branches on
- *  one maps it through here. The authority never refuses with an old word. */
-export const RENAMED_CODES = Object.freeze({ "hands-full": "hold-limit", "underfoot": "beneath", "no-body": "not-pushable", "no-such": "not-found" });
-export const canonicalCode = (c) => (typeof c === "string" && Object.hasOwn(RENAMED_CODES, c) ? RENAMED_CODES[c] : c);
 export const isRefusalCode = (c) => typeof c === "string" && Object.hasOwn(REFUSAL_CODES, c);

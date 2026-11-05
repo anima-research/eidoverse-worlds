@@ -63,8 +63,6 @@ interface World {
   /** effects on a person (scope.bodies, then their consent) */
   shove(who: Id): void;
   pose(who: Id, spec: Record<string, Json>): void;
-  /** the old spelling of console.log, kept for one version */
-  log(...parts: unknown[]): void;
 }
 
 declare const world: World;

@@ -24,7 +24,7 @@ export const CLOUDS = ['clear', 'cumulus', 'stratus', 'cirrus'];
 
 // ---------------------------------------------------------------- day clock
 
-// Wall-clock mode: `sky {clock: "real", tz: "America/Los_Angeles"}` makes the
+// Wall-clock mode: `sky {tz: "America/Los_Angeles"}` makes the
 // world's hour BE the named timezone's hour — noon in the world is noon on
 // that clock, DST included (Intl owns the tz database; ECMA-402, present in
 // every runtime that folds a sky). Formatters are cached per tz: hoursAt runs
@@ -48,17 +48,13 @@ function tzFormatter(tz) {
  *  keeps a weather verb from snapping the day (see foldSkyEntry). No ambient
  *  Date.now() even in clock mode: the wall hour is derived from the caller's
  *  tMs, so tests can freeze time and every plane derives identically. */
-// A tz present is the wall clock (shape audit 10-16: clock and dormantRated are gone from the stored sky; hours, rate and ts
-// stay put as the rated fallback). An older value said so with clock: 'real' (tz absent = Los Angeles), and parked its
-// rated clock under dormantRated: both still read.
-export const isRealClock = (sky) => !!sky && (typeof sky.tz === 'string' || sky.clock === 'real');
+// A tz present is the wall clock (shape audit 10-16; hours, rate and ts stay put as the rated fallback).
+export const isRealClock = (sky) => !!sky && typeof sky.tz === 'string';
 /** Whether a sky moves by itself (a rate, the wall clock, a forecast): the client re-renders it ~1 Hz (sky.js updateSky). */
 export const skyTicks = (sky) => !!sky && ((sky.rate ?? 0) !== 0 || isRealClock(sky) || !!sky.forecast);
-/** The rated clock's hour at tMs: hours + rate × elapsed since ts (an older value's parked clock when it has one). */
+/** The rated clock's hour at tMs: hours + rate × elapsed since ts. */
 export function ratedHoursAt(sky, tMs) {
   if (!sky) return 12;
-  const d = sky.dormantRated;
-  if (isRealClock(sky) && d && typeof d === 'object') return ((((d.hours ?? 12) + (d.rate ?? 0) * (tMs - (d.ts ?? sky.ts ?? tMs)) / 3600e3) % 24) + 24) % 24;
   return ((sky.hours ?? 12) + (sky.rate ?? 0) * (tMs - (sky.ts ?? tMs)) / 3600e3 + 24000) % 24;
 }
 export function hoursAt(sky, tMs) {
@@ -132,9 +128,8 @@ export function normalizePolicy(f) {
     if (WEATHERS.includes(name) && weight > 0) states.push({ state: name, weight });
   }
   if (!states.length) return null;
-  // dwell and transition (shape audit 10-16: no unit in a name); an older policy's dwellSec / transitionSec read too
-  const dw = Array.isArray(f.dwell) ? f.dwell : f.dwellSec;
-  const d = Array.isArray(dw) ? dw : [600, 1800];
+  // dwell and transition (shape audit 10-16: no unit in a name)
+  const d = Array.isArray(f.dwell) ? f.dwell : [600, 1800];
   const dwellMin = clamp(d[0], DWELL_FLOOR_S, DWELL_CAP_S);
   const dwellMax = clamp(d[1] ?? dwellMin, dwellMin, DWELL_CAP_S);
   const k = Array.isArray(f.k) ? f.k : [0.7, 1];
@@ -148,7 +143,7 @@ export function normalizePolicy(f) {
     kMin, kMax,
     // a transition may never outlive the shortest segment — otherwise a new
     // ease can begin before the previous one finishes, forever
-    transitionSec: clamp(f.transition ?? f.transitionSec ?? 30, 1, Math.min(600, dwellMin)),
+    transitionSec: clamp(f.transition ?? 30, 1, Math.min(600, dwellMin)),
     epoch: Number.isFinite(f.epoch) ? f.epoch : 0,   // stamped at fold; 0 = never folded
     seq: f.seq, by: f.by,
   };
@@ -203,7 +198,7 @@ export function effectiveSky(sky, nowMs, cursor = null) {
     source: 'authored',
     weather: WEATHERS.includes(sky?.weather) ? sky.weather : null,
     k: sky?.weatherK ?? 1,
-    seconds: sky?.transition ?? sky?.weatherSeconds,
+    seconds: sky?.transition,
     cursor: null,
   };
   const p = normalizePolicy(sky?.forecast);
@@ -215,7 +210,7 @@ export function effectiveSky(sky, nowMs, cursor = null) {
   if (o && WEATHERS.includes(o.state) && nowMs >= o.ts && o.ts >= seg.startMs && o.ts < seg.endMs) {
     return {
       source: 'manual', weather: o.state, k: o.k ?? 1,
-      seconds: sky.transition ?? sky.weatherSeconds, seg, cursor: seg,
+      seconds: sky.transition, seg, cursor: seg,
       by: o.by, seq: o.seq, resumesMs: seg.endMs,
     };
   }
@@ -228,29 +223,6 @@ export function effectiveSky(sky, nowMs, cursor = null) {
 }
 
 // ---------------------------------------------------------------- fold
-
-// ---------------------------------------------------------------- spelling (shape audit 10-16)
-// What a sky or weather act may still SAY the old way, stored the one way: clock 'real' is a tz (the old default zone when
-// none was named); any other clock is a rated sky (no tz); weatherSeconds is transition; a forecast's dwellSec and
-// transitionSec are dwell and transition; a re-issued dormantRated {hours, rate, ts} (the old park) is the rated clock,
-// re-anchored at the entry's ts so the day doesn't snap. Pure; a value already in today's spelling comes back unchanged.
-const FIX = (o) => o && typeof o === 'object' && !Array.isArray(o);
-export function skySpelling(args, ts) {
-  if (!FIX(args)) return args;
-  const out = { ...args };
-  if ('clock' in out) { if (out.clock === 'real') out.tz = typeof out.tz === 'string' && out.tz ? out.tz : 'America/Los_Angeles'; else delete out.tz; delete out.clock; }
-  if ('weatherSeconds' in out) { if (out.transition === undefined && out.weatherSeconds != null) out.transition = out.weatherSeconds; delete out.weatherSeconds; }
-  if (FIX(out.forecast)) { const f = { ...out.forecast };
-    if ('dwellSec' in f) { if (f.dwell === undefined) f.dwell = f.dwellSec; delete f.dwellSec; }
-    if ('transitionSec' in f) { if (f.transition === undefined) f.transition = f.transitionSec; delete f.transitionSec; }
-    out.forecast = f; }
-  if ('dormantRated' in out) { const d = out.dormantRated; delete out.dormantRated;
-    if (FIX(d) && out.hours == null && (Number.isFinite(d.hours) || Number.isFinite(d.rate))) {
-      const rate = Number.isFinite(d.rate) ? d.rate : 0, h0 = Number.isFinite(d.hours) ? d.hours : 12;
-      out.hours = Number.isFinite(ts) && Number.isFinite(d.ts) ? ((((h0 + rate * (ts - d.ts) / 3600e3) % 24) + 24) % 24) : h0;
-      if (out.rate == null) out.rate = rate; } }
-  return out;
-}
 
 /** Fold a `sky` or `weather` log entry onto the standing sky state. The
  *  sequencer, the live browser client, and the embodied agent all fold
@@ -271,7 +243,6 @@ export function skySpelling(args, ts) {
  *  weather change — on both planes, live and fold. */
 export function foldSkyEntry(prev, { verb, args = {}, ts, seq, actor }) {
   const synthetic = (seq ?? 0) < 0;
-  args = skySpelling(args, ts);
   if (verb === 'sky') {
     const out = { ...args, ts: synthetic ? (args.ts ?? ts) : ts };
     if (!synthetic) {
@@ -323,7 +294,7 @@ export function foldSkyEntry(prev, { verb, args = {}, ts, seq, actor }) {
  *    { mode:'real',  tz, hour, seq?, by? }
  *    { mode:'rated', rate, hour, seq?, by?, requestedTz? }
  *    { mode:'fixed', hour, seq?, by?, requestedTz? }
- *  `requestedTz` appears only when `clock:'real'` was authored with a tz Intl
+ *  `requestedTz` appears only when a tz was authored that Intl
  *  cannot resolve — the fallback governs and says so. `seq`/`by` are the
  *  fold-stamped provenance of the sky entry that authored this bag. */
 export function effectiveClock(sky, nowMs) {
@@ -336,10 +307,7 @@ export function effectiveClock(sky, nowMs) {
   if (isRealClock(sky)) {
     const tz = sky.tz ?? 'America/Los_Angeles';
     if (tzFormatter(tz)) return { mode: 'real', tz, hour, ...prov };
-    // fallback mirrors hoursAt exactly: the parked clock on a normalized
-    // bag, the top-level fields on a bag that never folded (preview args)
-    const rate = (sky.dormantRated && typeof sky.dormantRated === 'object')
-      ? (sky.dormantRated.rate ?? 0) : (sky.rate ?? 0);
+    const rate = sky.rate ?? 0;   // the fallback, as hoursAt has it
     return rate !== 0
       ? { mode: 'rated', rate, hour, requestedTz: tz, ...prov }
       : { mode: 'fixed', hour, requestedTz: tz, ...prov };

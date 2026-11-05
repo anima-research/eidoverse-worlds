@@ -23,12 +23,12 @@ const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 // ---- C12: the two pins, and the one rule for moving them ----
 const RC_PIN = "spec/refusal-codes.json", RB_PIN = "spec/readback.json";
 /** What the code says, in the pins' shape. readback's `where` is a pointer into the reference code, never pinned. */
-const refusalNow = () => ({ codes: Object.fromEntries(Object.entries(RC.REFUSAL_CODES).map(([k, v]: [string, any]) => [k, { meaning: v.meaning, when: v.when, ...(v.reserved ? { reserved: true } : {}) }])), renamed: { ...RC.RENAMED_CODES } });
+const refusalNow = () => ({ codes: Object.fromEntries(Object.entries(RC.REFUSAL_CODES).map(([k, v]: [string, any]) => [k, { meaning: v.meaning, when: v.when, ...(v.reserved ? { reserved: true } : {}) }])) });   // the renamed words went in S6 (11-05): an old pin's renamed table reads as gone
 const readbackNow = () => Object.fromEntries(Object.entries(VC.READBACK).map(([k, v]: [string, any]) => [k, { fields: [...v.fields], unknown: v.unknown }]));
 /** Breaks between a pinned table and now: a row gone or a row changed (an addition is not a break). */
 const tableBreaks = (pin: Record<string, any>, now: Record<string, any>, label: string) => Object.entries(pin ?? {}).flatMap(([k, v]) =>
   !Object.hasOwn(now, k) ? [`${label} ${k}: gone (old logs may hold it)`] : JSON.stringify(v) !== JSON.stringify(now[k]) ? [`${label} ${k}: ${JSON.stringify(v)} → ${JSON.stringify(now[k])}`] : []);
-const pinBreaksC12 = (rc: any, rb: any, nowRc = refusalNow(), nowRb = readbackNow()) => [...tableBreaks(rc?.codes, nowRc.codes, "refusal"), ...tableBreaks(rc?.renamed, nowRc.renamed, "renamed code"), ...tableBreaks(rb, nowRb, "readback")];
+const pinBreaksC12 = (rc: any, rb: any, nowRc = refusalNow(), nowRb = readbackNow()) => [...tableBreaks(rc?.codes, nowRc.codes, "refusal"), ...tableBreaks(rc?.renamed, nowRc.renamed ?? {}, "renamed code"), ...tableBreaks(rb, nowRb, "readback")];
 /** May the code be pinned over the pins? {ok, breaks, changelog?, why?}: breaks need an ack, additions don't. */
 const pinVerdictC12 = (rc: any, rb: any, ack: string | null, date: string, nowRc = refusalNow(), nowRb = readbackNow()) => {
   const breaks = pinBreaksC12(rc, rb, nowRc, nowRb); const why = (ack ?? "").trim();
@@ -96,7 +96,7 @@ check("N5", "PROTOCOL.md never calls a code file normative", !codeNormative.leng
 // N6–N9 (recut C12)
 { const rc = readJson(RC_PIN), rb = readJson(RB_PIN); const nowRc = refusalNow(), nowRb = readbackNow();
   const same = (a: any, b: any) => JSON.stringify(a) === JSON.stringify(b);
-  check("N6", `the refusal codes are pinned in ${RC_PIN} and the pin equals refusalcodes.js (every code, its meaning and when; the renamed words)`, !!rc && same(rc, nowRc),
+  check("N6", `the refusal codes are pinned in ${RC_PIN} and the pin equals refusalcodes.js (every code, its meaning and when)`, !!rc && same(rc, nowRc),
     rc ? [...pinBreaksC12(rc, null, nowRc, {}), ...Object.keys(nowRc.codes).filter((k) => !Object.hasOwn(rc.codes ?? {}, k)).map((k) => `unpinned ${k}`)].slice(0, 8) : "no pin: --pin");
   check("N7", `the readback table is pinned in ${RB_PIN} (fields and the unknown rule; never the code pointer) and equals verbclasses.js READBACK`, !!rb && same(rb, nowRb) && Object.values(rb ?? {}).every((r: any) => !("where" in r)),
     rb ? Object.keys({ ...rb, ...nowRb }).filter((k) => !same(rb[k], nowRb[k])) : "no pin: --pin");
@@ -117,7 +117,7 @@ check("N5", "PROTOCOL.md never calls a code file normative", !codeNormative.leng
 
 // N10: N6/N7 compare the pins to the code, so the code and a pin edited together, with no changelog line, passed them
 { const files = [RC_PIN, RB_PIN]; const now = (f: string) => (existsSync(ROOT + f) ? readFileSync(ROOT + f, "utf8") : null);
-  const r = PH.unacknowledged(ROOT, files, "spec/REGISTRY-CHANGELOG.md", now, (was, is) => pinBreaksC12(was[RC_PIN] ?? {}, was[RB_PIN] ?? {}, is[RC_PIN] ?? { codes: {}, renamed: {} }, is[RB_PIN] ?? {}));
+  const r = PH.unacknowledged(ROOT, files, "spec/REGISTRY-CHANGELOG.md", now, (was, is) => pinBreaksC12(was[RC_PIN] ?? {}, was[RB_PIN] ?? {}, is[RC_PIN] ?? { codes: {} }, is[RB_PIN] ?? {}));
   check("N10", `a pin break is acknowledged in the record: every break between an earlier ${RC_PIN} / ${RB_PIN} (the base's, where this branch left origin/main; and the previous version, before the newest change) and now is a \`  - <break>\` line spec/REGISTRY-CHANGELOG.md gained since then`,
     r.judged.length >= 1 && !r.out.length, { judged: r.judged, base: r.base, unacknowledged: r.out.slice(0, 8) }); }
 

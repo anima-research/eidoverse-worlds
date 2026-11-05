@@ -42,7 +42,7 @@ import { serverNow } from './remotes.js';
 // applying evaluated transforms to THREE objects, and the part-frame
 // machinery only a renderer with a loaded model can have.
 import { evalWholeMotion, evalPath, axisOf, ampOf, since, pendulumTheta, rateOf } from './motioneval.js';
-import { motionNode, motionType } from '../../shared/protocol/names.js';
+import { motionNode } from '../../shared/protocol/names.js';
 
 const _q = new THREE.Quaternion();
 const _ax = new THREE.Vector3();
@@ -77,7 +77,7 @@ function rotatePartAtPivot(obj, pbase, axis, pivot, theta) {
 
 /** One motion type evaluated on a part, in part-local terms. */
 function evalPart(m, t, obj, pbase) {
-  switch (motionType(m)) {
+  switch (m?.type) {
     case 'pendulum':
       rotatePartAtPivot(obj, pbase, axisOf(m, [1, 0, 0]), m.pivot ?? [0, 0, 0], pendulumTheta(m, t));
       return true;

@@ -142,7 +142,7 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
     for (const s of cands()) { const e = entries[s]; if (!isE(e) || e.kind !== "physics" || e.verb !== "checkpoint") continue;
       const b = e.body ?? {}; if (b.seq !== s - 1 || typeof b.state !== "string") { w.log?.(`checkpoint at ${s} malformed; skipped`); continue; }
       let blob: Any; try { blob = getBlob(b.state); } catch (err) { console.warn(`[world:${name}] checkpoint ${s}: ${(err as Error).message}; skipped`); continue; }
-      let cut: Any = null; try { const j = blob?.snapshotJson ?? blob?.cutJson; cut = typeof j === "string" ? JSON.parse(j) : null; } catch { cut = null; }   // cutJson: a historical blob's key (D5)
+      let cut: Any = null; try { const j = blob?.snapshotJson; cut = typeof j === "string" ? JSON.parse(j) : null; } catch { cut = null; }
       if (cut?.clock === null && cut.sim?.tick === null) { cut.clock = b.clock; cut.sim.tick = b.tick; }   // a blob shared by checkpoints: the time is the entry's (checkpointSim)
       if (!cut?.spec || !carried(cut.spec) || !cut.sim || digestOf(cut.sim) !== b.sim) { console.warn(`[world:${name}] checkpoint ${s}: ${!cut ? "no cut in the blob" : !carried(cut.spec) ? `engine ${cut.spec?.engine}@${cut.spec?.build} not carried` : "digest mismatch"}; skipped`); continue; }
       return { seq: s, cut }; }

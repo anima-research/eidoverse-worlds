@@ -38,8 +38,8 @@ const HOUR = 3600e3, MIN = 60e3;
 const policyArgs = {
   seed: 7,
   states: ["clear", "overcast", "rain", { state: "storm", weight: 0.5 }],
-  dwellSec: [300, 900],
-  transitionSec: 30,
+  dwell: [300, 900],
+  transition: 30,
   k: [0.7, 1],
 };
 
@@ -73,7 +73,7 @@ const policyArgs = {
   check("cursor ticking === cold oracle (7200 ticks)", cursorOk);
 
   // dwell floor: a strobing policy is clamped, segments never shorter than 60s
-  const strobe = normalizePolicy({ seed: 1, states: ["clear", "rain"], dwellSec: [1, 2] })!;
+  const strobe = normalizePolicy({ seed: 1, states: ["clear", "rain"], dwell: [1, 2] })!;
   Object.assign(strobe, { epoch: T0 });
   let floorOk = true;
   let s = segmentAt(strobe, T0);
@@ -213,7 +213,7 @@ const policyArgs = {
 
 {
   const on = foldSkyEntry(null, { verb: "sky", args: { forecast: policyArgs, weather: "clear" }, ts: T0, seq: 1, actor: "antra" });
-  const off = foldSkyEntry(null, { verb: "sky", args: { weather: "rain", weatherSeconds: 5 }, ts: T0 + HOUR, seq: 2, actor: "antra" });
+  const off = foldSkyEntry(null, { verb: "sky", args: { weather: "rain", transition: 5 }, ts: T0 + HOUR, seq: 2, actor: "antra" });
   check("re-authoring sky without forecast turns it off", off.forecast === undefined);
   const eff = effectiveSky(off, T0 + HOUR + MIN);
   check("authored-only worlds behave exactly as before",
@@ -246,7 +246,7 @@ const policyArgs = {
   // per year of age. This is the number the receipt has to be honest about —
   // it is a one-time join cost, not a per-tick one; long-lived worlds that
   // outgrow it want checkpoints, not a bigger budget here.
-  const worst = normalizePolicy({ seed: 1, states: ["clear", "rain"], dwellSec: [60, 60] })!;
+  const worst = normalizePolicy({ seed: 1, states: ["clear", "rain"], dwell: [60, 60] })!;
   Object.assign(worst, { epoch: T0 });
   const w0 = performance.now();
   segmentAt(worst, tYear);
@@ -281,7 +281,7 @@ const policyArgs = {
     effectiveSky({ forecast: policyArgs, weather: "clear" }, T0).source === "authored");
   check("WEATHERS is the canonical 8", WEATHERS.length === 8 && WEATHERS.includes("darkstorm"));
   // a transition may never outlive the shortest segment (overlapping eases)
-  const tight = normalizePolicy({ seed: 1, states: ["clear", "rain"], dwellSec: [60, 120], transitionSec: 600 })!;
+  const tight = normalizePolicy({ seed: 1, states: ["clear", "rain"], dwell: [60, 120], transition: 600 })!;
   check("transitionSec is clamped to dwellMin", tight.transitionSec === 60, String(tight.transitionSec));
 }
 
@@ -289,24 +289,24 @@ const policyArgs = {
 {
   // hoursAt in clock mode = the named timezone's wall hour at tMs, DST and
   // all — fixed instants, no ambient clock, so every plane derives the same
-  const real = { clock: "real" };                       // tz defaults to LA
+  const real = { tz: "America/Los_Angeles" };          // a tz present is the wall clock
   const jan = Date.UTC(2026, 0, 15, 20, 30, 0);        // LA = UTC-8 (PST)
   const jul = Date.UTC(2026, 6, 15, 19, 0, 0);         // LA = UTC-7 (PDT)
   check("real clock: winter 20:30Z is 12.5 LA", Math.abs(hoursAt(real, jan) - 12.5) < 1e-9,
     String(hoursAt(real, jan)));
   check("real clock: summer 19:00Z is 12.0 LA (DST)", Math.abs(hoursAt(real, jul) - 12) < 1e-9,
     String(hoursAt(real, jul)));
-  check("real clock: named tz honored", Math.abs(hoursAt({ clock: "real", tz: "UTC" }, jan) - 20.5) < 1e-9,
-    String(hoursAt({ clock: "real", tz: "UTC" }, jan)));
+  check("real clock: named tz honored", Math.abs(hoursAt({ tz: "UTC" }, jan) - 20.5) < 1e-9,
+    String(hoursAt({ tz: "UTC" }, jan)));
   check("real clock: authored hours/rate are ignored",
-    Math.abs(hoursAt({ clock: "real", hours: 3, rate: 24, ts: T0 }, jan) - 12.5) < 1e-9);
+    Math.abs(hoursAt({ tz: "America/Los_Angeles", hours: 3, rate: 24, ts: T0 }, jan) - 12.5) < 1e-9);
   // a typo'd tz must not freeze the sun — the rated clock takes over
-  const typo = { clock: "real", tz: "America/Nowhere", hours: 6, rate: 1, ts: T0 };
+  const typo = { tz: "America/Nowhere", hours: 6, rate: 1, ts: T0 };
   check("real clock: unknown tz falls back to the rated formula",
     Math.abs(hoursAt(typo, T0 + 2 * HOUR) - 8) < 1e-9, String(hoursAt(typo, T0 + 2 * HOUR)));
   // the fold carries clock mode through a weather merge — a passing storm
   // must not knock a world back onto the frozen authored clock
-  const sky = foldSkyEntry(null, { verb: "sky", args: { clock: "real", tz: "America/Los_Angeles" }, ts: T0, seq: 1, actor: "antra" });
+  const sky = foldSkyEntry(null, { verb: "sky", args: { tz: "America/Los_Angeles" }, ts: T0, seq: 1, actor: "antra" });
   const wet = foldSkyEntry(sky, { verb: "weather", args: { weather: "rain" }, ts: T0 + HOUR, seq: 2, actor: "world" });
   // shape audit 10-16: clock 'real' is stored as its tz (a tz present is the wall clock)
   check("fold: weather merge keeps the tz (the wall clock)", wet.clock === undefined && wet.tz === "America/Los_Angeles",
@@ -341,7 +341,7 @@ const policyArgs = {
   // exact authoring shape that produced the issue's receipt at seq 4777)
   const T1 = T0 + 2 * HOUR;
   const real = foldSkyEntry(null,
-    { verb: "sky", args: { ...rated, clock: "real", tz: "America/Los_Angeles" }, ts: T1, seq: 4777, actor: "antra" });
+    { verb: "sky", args: { ...rated, tz: "America/Los_Angeles" }, ts: T1, seq: 4777, actor: "antra" });
   // shape audit 10-16 (render-media-env §13): one clock governs and the stored sky says which by its tz alone; hours/rate/ts
   // stay put as the rated fallback (no dormantRated park: fold bookkeeping in the authored value)
   check("#65 CONTROL: the effective clock is the wall clock after the flip, never ×24",
@@ -401,8 +401,8 @@ const policyArgs = {
   // shape-sanitized — junk keys and non-finite values can never land
   const wSpoof = foldSkyEntry(real,
     { verb: "weather", args: { weather: "rain", dormantRated: { rate: 666 } } as any, ts: T3, seq: 5200, actor: "digi" });
-  check("#65 guard: weather verb cannot author the clock under a tz",
-    wSpoof.rate === 24 && wSpoof.dormantRated === undefined, JSON.stringify(wSpoof));
+  check("#65 guard: weather verb cannot author the clock under a tz (dormantRated is no clock: the door refuses it, the fold reads nothing in it)",
+    wSpoof.rate === 24 && hoursAt(wSpoof, T3) === hoursAt(real, T3), JSON.stringify(wSpoof));
   // the indirect route (review N1'): top-level hours/rate on a weather verb
   // while the standing clock is real must not reach the park either
   const wIndirect = foldSkyEntry(real,
@@ -411,22 +411,19 @@ const policyArgs = {
     wIndirect.rate === 24 && Math.abs(wIndirect.hours - hoursAt({ ...real, tz: "America/Nowhere" }, T3)) < 1e-9,
     JSON.stringify({ hours: wIndirect.hours, rate: wIndirect.rate }));
   const junk = foldSkyEntry(null,
-    { verb: "sky", args: { clock: "real", tz: "America/Los_Angeles", dormantRated: { rate: 999, hours: "noon", junk: 7, ts: "yes" } } as any, ts: T0, seq: 5300, actor: "antra" });
-  check("#65 guard: a re-issued dormantRated is read as the rated clock, finite numbers only (never stored)",
-    junk.rate === 999 && junk.hours === 12 && junk.dormantRated === undefined && (junk as any).junk === undefined,
-    JSON.stringify(junk));
+    { verb: "sky", args: { tz: "America/Los_Angeles", dormantRated: { rate: 999, hours: "noon", junk: 7, ts: "yes" } } as any, ts: T0, seq: 5300, actor: "antra" });
+  check("#65 guard: a dormantRated (the door refuses it) is never read as the rated clock (S6, 11-05)",
+    junk.rate === undefined && junk.hours === undefined && effectiveClock?.(junk, T0)?.mode !== "rated", JSON.stringify(junk));
   const spoof = foldSkyEntry(null,
     { verb: "sky", args: { hours: 3, rate: 1, seq: 1, by: "evil", dormantRated: { rate: 999 } } as any, ts: T0, seq: 6000, actor: "antra" });
-  check("#65 guard: rated mode drops dormantRated and fold owns seq/by",
-    spoof.seq === 6000 && spoof.by === "antra" && spoof.dormantRated === undefined, JSON.stringify(spoof));
+  check("#65 guard: the fold owns seq/by, and a dormantRated beside a rated clock is not its clock",
+    spoof.seq === 6000 && spoof.by === "antra" && spoof.rate === 1 && spoof.hours === 3, JSON.stringify(spoof));
 
-  // 7 — a legacy bag (folded before the contract: stale top-level fields
-  // beside clock:'real' — the live commons shape) heals on synthetic replay,
-  // provenance untouched
-  const legacy = { hours: 6.8, rate: 24, clouds: "cumulus", clock: "real", tz: "America/Los_Angeles",
+  // 7 — a bag replays to itself on synthetic replay (the wall clock by its tz; hours/rate the fallback), provenance untouched
+  const legacy = { hours: 6.8, rate: 24, clouds: "cumulus", tz: "America/Los_Angeles",
     forecast: { ...policyArgs, epoch: T0, seq: 4777, by: "antra" }, ts: T1 };
   const healed = synth(legacy);
-  check("#65 legacy bag heals on late-join replay (clock real → its tz; hours/rate the fallback)",
+  check("#65 a bag replays to itself on late join (its tz the wall clock; hours/rate the fallback)",
     healed.hours === 6.8 && healed.rate === 24 && healed.tz === "America/Los_Angeles" && healed.clock === undefined
       && healed.dormantRated === undefined, JSON.stringify(healed));
   check("#65 healing never restamps provenance",
@@ -472,8 +469,8 @@ const policyArgs = {
 {
   const skySrc = await Bun.file(new URL("../client/lib/sky.js", import.meta.url)).text();   // sky.js isn't loadable here: it asks forecast.js
   check("sky.js's heartbeat asks skyTicks", /if \(skyTicks\(clock\?\.args\) && nowMs - lastClockTick > 1000\)/.test(skySrc));
-  check("skyTicks: a tz alone at rate 0 ticks (the wall clock), as do a rate, an older clock: 'real' and a forecast; a still sky doesn't",
-    typeof F.skyTicks === "function" && F.skyTicks({ tz: "Europe/Paris", rate: 0 }) && F.skyTicks({ rate: 2 }) && F.skyTicks({ clock: "real" }) && F.skyTicks({ forecast: { seed: 1 } }) && !F.skyTicks({ rate: 0, hours: 12 }) && !F.skyTicks(undefined));
+  check("skyTicks: a tz alone at rate 0 ticks (the wall clock), as do a rate and a forecast; an old clock: 'real' (read no more) and a still sky don't",
+    typeof F.skyTicks === "function" && F.skyTicks({ tz: "Europe/Paris", rate: 0 }) && F.skyTicks({ rate: 2 }) && !F.skyTicks({ clock: "real" }) && F.skyTicks({ forecast: { seed: 1 } }) && !F.skyTicks({ rate: 0, hours: 12 }) && !F.skyTicks(undefined));
 }
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

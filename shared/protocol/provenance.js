@@ -33,6 +33,6 @@ export function provenanceOf({ registrySha256, name, version, sourceRevision, so
 export function provenanceReadback(body) {
   if (!bag(body)) return { available: false, reason: "provenance unavailable: no body" };
   if (bag(body.provenance)) { const bad = checkProvenance(body.provenance); return bad ? { available: false, reason: `provenance unavailable: ${bad.code}` } : { available: true, provenance: body.provenance }; }
-  if (typeof body.commitment === "string" || typeof body.commit === "string") return { available: false, reason: "provenance unavailable: the body was redacted; only its commitment remains" };
+  if (typeof body.commitment === "string") return { available: false, reason: "provenance unavailable: the body was redacted; only its commitment remains" };
   return { available: false, reason: "provenance unavailable: the body carries none" };
 }

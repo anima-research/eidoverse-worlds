@@ -209,8 +209,8 @@ export function shapeHeight(base, S, size) {
 }
 
 // ---- water ---------------------------------------------------------------------
-// One level per world: the `water` component on @world, {level, color?, opacity?} (terrain.water is the old spelling,
-// moved by a translation). Every point of ground below `level` is under water unless a pocket zone keeps the water
+// One level per world: the `water` component on @world, {level, color?, opacity?} (the old world's terrain.water is moved there by
+// the translation). Every point of ground below `level` is under water unless a pocket zone keeps the water
 // out (shared/zone.js), so one number makes every low place a lake. It is presence-free world state like the ground itself:
 // rendered by every client, read by every agent, and (for now) ignored by the sim —
 // a thrown thing still lands on the lakebed.
@@ -231,9 +231,9 @@ export const WALK_SPEED = MOVER.walk.speed;   // the walking pace waterCost pric
 /** @deprecated wading has no depth limit now — kept so callers of the old rule still read one. */
 export const WADE_DEPTH = 1.0;
 const HEX = /^#[0-9a-fA-F]{6}$/;
-/** @world's water (shape audit 10-16: its own component, @world.water; an older world's terrain.water until the maintenance command moves
- *  it), or undefined. @param {Record<string, any>} c  @world's components (or a view: {water, terrain}) */
-export const worldWater = (c) => c?.water ?? c?.terrain?.water;
+/** @world's water (shape audit 10-16: its own component, @world.water), or undefined. @param {Record<string, any>} c  @world's
+ *  components (or a view: {water}) */
+export const worldWater = (c) => c?.water;
 /** A world's water, normalized — or null when it has none. Its colour is an int (0xRRGGBB) or an older '#rrggbb'.
  *  @param {Record<string, any>} a  terrain-verb args carrying `water` (the water component riding on them) */
 export function waterParams(a) {
