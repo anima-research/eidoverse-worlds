@@ -561,6 +561,18 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(!r.ok && r.refused?.code === "rights" && /erased/.test(r.refused?.reason ?? "") && w.state().entities.box.c.label !== "tagged",
     "E1 the purge erased whose rights installed tag: it acts for nobody (not as a newcomer, which here builds), and says why", r); }
 
+// ---- R: a per-op redaction reaches undo (review 11-05 B1: undo read the pre-rename `op` key and wrote the value back) ----
+{ let now = clock.t + 7500; const w = openLive(root + "redact-undo/", "redact-undo", { kindOf: LABKIND, now: () => now, catalogue: LAB_CATALOGUE });
+  const call = (actor, verb, args = {}) => { now += 100; return request(w, actor, verb, args); };
+  call("ann", "create-world", { title: "redact-undo" });
+  const c = call("ann", "create", { model: "crate", place: { at: [3, 3] }, components: { label: "my phone number" } });
+  const seq = c.seq, i = opsOf(w.entries[seq]).findIndex((o) => o.comp === "label"), id = c.refs[0].id;
+  now += 100; w.append({ kind: "redaction", actor: "system", body: { values: [{ seq, index: i }] } });
+  call("ann", "set", { id, component: "label", value: "safe" }); const after = w.entries.length;
+  call("ann", "undo", {});
+  ok(!w.entries.slice(after).some((e) => JSON.stringify(e).includes("my phone number")) && w.state().entities[id].c.label !== "my phone number",
+    "R1 undoing the edit after a redacted value never writes that value back", w.state().entities[id]?.c.label); }
+
 // ---- C: an off-centre catalogue box and measured surfaces ----
 { const cat = { get: (n) => ({ "lib/desk.glb": { label: "desk", box: [[-0.5, -0.4, -0.3], [0.7, 0.35, 0.5]], size: [1.2, 0.75, 0.8], surfaces: [{ y: 0.35, x: [-0.4, 0.6], z: [-0.2, 0.4] }] },
       "lib/cup.glb": { label: "cup", box: [[-0.05, 0, -0.05], [0.05, 0.1, 0.05]], size: [0.1, 0.1, 0.1], surfaces: [] }, "lib/ghost.glb": { label: "ghost", surfaces: [] } } as any)[n], list: () => [] };

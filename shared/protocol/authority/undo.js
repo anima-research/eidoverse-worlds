@@ -41,11 +41,11 @@ function freshIndex() {
 function purgeTargets(E, x) { // the fold's own reading of purge entries (fold.js purgesOf), kept for views
   x.pt = E.length; // purges below this seq are already in purged/purgedOps
   E.forEach((e, pseq) => { if (!isE(e) || x.bad.has(pseq) || e.kind !== "redaction" || !Array.isArray(e.body?.values)) return;
-    for (const t of e.body.values) { if (!t || typeof t !== "object" || Array.isArray(t) || !Object.keys(t).every((k) => k === "seq" || k === "op")) continue;
-      if (!Number.isInteger(t.seq) || t.seq <= 0 || t.seq >= pseq || (t.op !== undefined && !(Number.isInteger(t.op) && t.op >= 0))) continue;
+    for (const t of e.body.values) { if (!t || typeof t !== "object" || Array.isArray(t) || !Object.keys(t).every((k) => k === "seq" || k === "index")) continue;
+      if (!Number.isInteger(t.seq) || t.seq <= 0 || t.seq >= pseq || (t.index !== undefined && !(Number.isInteger(t.index) && t.index >= 0))) continue;
       const tgt = E[t.seq]; if (!isE(tgt) || x.bad.has(t.seq) || tgt.kind === "redaction") continue;
-      if (t.op === undefined && ["request", "say", "physics"].includes(tgt.kind)) x.purged.add(t.seq);
-      x.purgedOps.set(`${t.seq}:${t.op ?? "-"}`, pseq); } });
+      if (t.index === undefined && ["request", "say", "physics"].includes(tgt.kind)) x.purged.add(t.seq);
+      x.purgedOps.set(`${t.seq}:${t.index ?? "-"}`, pseq); } });
 }
 function indexEntry(x, E, i) {
   const e = E[i]; if (!isE(e) || x.bad.has(i)) return; // what the fold refuses (malformed) shapes no view either

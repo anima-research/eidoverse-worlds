@@ -33,10 +33,10 @@ import { elide, seedOf, stampMotions } from "./scriptrules.js";
 const isE = (e) => e && typeof e === "object" && typeof e.kind === "string";
 const isScriptActor = (a) => typeof a === "string" && a.startsWith("script:");
 const quiet = (e) => { try { return opsOf(e); } catch { return []; } };
-// a purged cause act (§12: its body is the {commit} stub, or a purge entry names it) says nothing about whose rights admitted
+// a purged cause act (§12: its body is the {commitment} stub, or a purge entry names it) says nothing about whose rights admitted
 // it: unknown (null), as the authority's entryBy reads it (READBACK) — never its actor, which would be the visitor's
-const purgedIn = (L) => { const p = new Set(); L.forEach((e, i) => { if (isE(e) && e.kind === "redaction" && Array.isArray(e.body?.values)) for (const t of e.body.values) if (t && Number.isInteger(t.seq) && t.seq < i && t.op === undefined) p.add(t.seq); }); return p; };
-const stub = (b) => !!b && typeof b === "object" && Object.keys(b).length > 0 && Object.keys(b).every((k) => k === "commit" || k === "salt");
+const purgedIn = (L) => { const p = new Set(); L.forEach((e, i) => { if (isE(e) && e.kind === "redaction" && Array.isArray(e.body?.values)) for (const t of e.body.values) if (t && Number.isInteger(t.seq) && t.seq < i && t.index === undefined) p.add(t.seq); }); return p; };
+const stub = (b) => !!b && typeof b === "object" && Object.keys(b).length > 0 && Object.keys(b).every((k) => k === "commitment" || k === "salt");
 const PURGED_OF = new WeakMap();
 function by(L, seq) { const e = L[seq], c = L[e.cause];
   if (isE(c) && c.kind === "request") { let P = PURGED_OF.get(L); if (!P) PURGED_OF.set(L, (P = purgedIn(L)));
