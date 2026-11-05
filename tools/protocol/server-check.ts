@@ -418,7 +418,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok(tr.code === 0 && /0 divergences/.test(tr.out) && /mtime unchanged: true/.test(tr.out) && /approved by the operator/.test(tr.out), "S6 translate, approved, writes a new world and reports 0 divergences", tr.out);
   ok(Buffer.compare(before, fs.readFileSync(v1log)) === 0, "S6 the v1 log's bytes are unchanged (R9)");
   const [g, t1] = fs.readFileSync(path.join(W4, "oldtown-new", "world.jsonl"), "utf8").split("\n").slice(0, 2).map((l) => JSON.parse(l));
-  ok(g.body.minor === 0 && typeof g.body.nonce === "string" && /^ed25519:/.test(g.body.sequencer) && !("translatedFrom" in g.body), "S6 genesis is §2.4's (minor, nonce, sequencer; no translatedFrom)", g.body);
+  ok(g.body.minor === 1 && typeof g.body.nonce === "string" && /^ed25519:/.test(g.body.sequencer) && !("translatedFrom" in g.body), "S6 genesis is §2.4's (minor, nonce, sequencer; no translatedFrom)", g.body);
   ok(t1.verb === "translated" && /^eidoverse\/translate-v1@/.test(t1.body.from?.translator) && /^[0-9a-f]{16}$/.test(t1.body.from?.fold), "S6 the act after genesis names the engine translator and the v1 fold build", t1.body);
   ok(tool(["translate", "oldtown", "oldtown-new"]).code !== 0, "S6 translating onto an existing world is refused");
   // the old world as the old fold reads its log (the translator's own reader; nothing serves v1 any more) vs the new copy
@@ -485,7 +485,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   { const g = await fetch(`http://127.0.0.1:${srv.port}/geom?world=meadow&id=${IDS.of("box")}`, { signal: AbortSignal.timeout(3000) });
     ok(g.status === 200, "S8 an HTTP reader of the world's view (/geom) sees a thing just made (the view is rebuilt for its reader, never stale)", g.status); }
   bv.close();
-  ok(r1.ok && a.of("log").length >= 2 && a.of("log").every((m: any) => Array.isArray(m.entries) && m.entries.every((e: any) => typeof e.kind === "string" && typeof e.verb === "string" && !("args" in e))), "S8 it gets the log stream, entries only", a.of("log").length);
+  ok(r1.ok && a.of("log").length >= 2 && a.of("log").every((m: any) => Array.isArray(m.entries) && m.entries.every((e: any) => typeof e.kind === "string" && typeof (e.verb ?? e.op) === "string" && !("args" in e))), "S8 it gets the log stream, entries only", a.of("log").length);
   const c = makeReplica(); c.adopt(a.snapshot);
   for (const m of a.of("log")) c.ingest(m.entries, m.from);
   const disk = fold(readLog(fs.readFileSync(path.join(W4, "meadow", "world.jsonl"))));
@@ -629,7 +629,7 @@ srv.proc.kill();
   const L = readLog(fs.readFileSync(path.join(W4, "crash", "world.jsonl")));
   const after = L.slice(before).map((e) => `${e.actor === "system" ? "system" : "?"}:${e.kind}:${e.verb ?? e.op}${e.body?.id ? `:${e.body.id}` : ""}`);
   const k = heldBy(c); const bodies = Object.keys(k?.sim?.sim?.statics ?? {});   // a thing at rest is a static in the engine (shared/sim.js)
-  ok(after.includes(`system:act:return-held:${IDS.of("ball")}`) && after.includes(`system:act:return-home:${IDS.of("torch")}`), "SK1 after the restart, the authority settled both: the ball where the log had it (return-held), the torch home (release: return)", after);
+  ok(after.includes(`system:request:return-held:${IDS.of("ball")}`) && after.includes(`system:request:return-home:${IDS.of("torch")}`), "SK1 after the restart, the authority settled both: the ball where the log had it (return-held), the torch home (release: return)", after);
   ok(!Object.keys(c.snapshot?.holds ?? {}).length && bodies.includes(IDS.of("ball")) && bodies.includes(IDS.of("torch")), "SK2 …nobody holds them, and a joiner's engine has them back (colliders again)", [c.snapshot?.holds, bodies]);
   c.close(); srvB.proc.kill(); }
 

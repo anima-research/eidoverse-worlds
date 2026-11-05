@@ -198,7 +198,7 @@ const cases: Case[] = [
       const mk = (ops: any, actor: string, fu?: number[]) => ({ kind: "change", actor, op: "batch", body: { ops, ...(fu ? { cascade: fu } : {}) } });
       const H: any[] = [{ kind: "genesis", body: {} }, { kind: "request", actor: "bob", verb: "set", body: {} }, { ...mk([{ op: "set", id: "d", comp: "script:a", value: { src: "s" } }], "bob"), cause: 1 },
         { kind: "request", actor: "olive", verb: "delete", body: {} }, { ...mk([{ op: "delete", id: "x" }, { op: "delete", id: "d", comp: "script:a" }], "olive", [1]), cause: 3 },
-        { kind: "request", actor: "olive", verb: "undo", body: {} }, { ...mk([{ verb: "create", id: "x" }, { op: "set", id: "d", comp: "script:a", value: { src: "s" } }], "olive", [1]), cause: 5 }];
+        { kind: "request", actor: "olive", verb: "undo", body: {} }, { ...mk([{ op: "create", id: "x" }, { op: "set", id: "d", comp: "script:a", value: { src: "s" } }], "olive", [1]), cause: 5 }];
       o.sponsor = AU.sponsorAt(H, "d", "script:a", H.length - 1)?.rights ?? null; o.hCreator = AU.creatorAt(H, "d", "script:a", H.length - 1)?.rights ?? null;
       roles(s, { bob: "member" }); o.demoted = show(s.call("vic", "use", { id: "lever", action: "go" }));
       return o; },

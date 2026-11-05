@@ -230,7 +230,7 @@ const stripLast = (s: any, id: string, comp: string) => {
   const file = path.join(root, "worlds", `${s.name}.jsonl`); const lines = fs.readFileSync(file, "utf8").split("\n");
   for (let k = lines.length - 1; k > 0; k--) { if (!lines[k]) continue; const e = JSON.parse(lines[k]); if (e.kind !== "change") continue;
     const ops = e.op === "batch" ? e.body.ops : [e.body]; const o = ops.find((x: any) => x.op !== "delete" && x.id === id && x.comp === comp && "value" in x) ?? (e.op === "set" && e.body.id === id && e.body.comp === comp && "value" in e.body ? e.body : null);
-    if (!o) continue; const c = ST.opCommit(o); delete o.value; delete o.salt; o.commit = c; lines[k] = JSON.stringify(e); fs.writeFileSync(file, lines.join("\n")); return k; }
+    if (!o) continue; const c = ST.opCommit(o); delete o.value; delete o.salt; o.commitment = c; lines[k] = JSON.stringify(e); fs.writeFileSync(file, lines.join("\n")); return k; }
   return -1; };
 const since = (s: any, n0: number) => s.entries().slice(n0).map((e: any) => `${e.kind}:${e.verb ?? e.op}`);
 const carrier = (s: any) => { const v = SL.simFold(s.entries(), clock.t + 1e9); /* the authority here folds with the lab catalogue (worldOf: no simModels), so the carrier does too */ return { agree: v.checks.agree, disagree: v.checks.disagree.length }; };

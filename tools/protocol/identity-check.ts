@@ -377,21 +377,21 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     const none = (x) => x.got && !x.heron, some = (x) => x.got && x.heron;
     const nt = await sock(S4.port); const jn = await nt.join("heath", "Newt", { agentToken: mint({ kind: "agent", name: "Newt", sub: "agent:newt@home.test" }) });
     const w2 = await sock(S4.port); const jw2 = await w2.join("heath", "Wren", { agentToken: "tok-wren" });   // a takeover of Wren's leg: a fresh arrival
-    const seen10 = { newtWs: await hist2(nt), newtReq: await histReq(nt, { limit: 200 }), newtJoin: heron(jn.snapshot?.state) || jn.snapshot?.state?.chatTotal !== 0,
+    const seen10 = { newtWs: await hist2(nt), newtReq: await histReq(nt, { limit: 200 }), newtJoin: heron(jn.snapshot?.state) || jn.snapshot?.chat?.chatTotal !== 0,
       fernWs: await hist2(mo), fernReq: await histReq(mo, { verbs: ["say"], limit: 200 }),
-      ownerWs: await hist2(w2), ownerReq: await histReq(w2, { verbs: ["say"], limit: 200 }), ownerTotal: jw2.snapshot?.state?.chatTotal, ownerWindow: jw2.snapshot?.state?.recentChat?.length };
+      ownerWs: await hist2(w2), ownerReq: await histReq(w2, { verbs: ["say"], limit: 200 }), ownerTotal: jw2.snapshot?.chat?.chatTotal, ownerWindow: jw2.snapshot?.chat?.recentChat?.length };
     ok(!!jn.snapshot && !!jw2.snapshot && none(seen10.newtWs) && none(seen10.newtReq) && !seen10.newtJoin && none(seen10.fernWs) && none(seen10.fernReq) && some(seen10.ownerWs) && some(seen10.ownerReq) && seen10.ownerTotal > 0 && seen10.ownerWindow === 0,
       "RS10 speech is arrival-only: a stranger and a moderator who arrived after a say read none of it back (history, the authority's history, the join); an owner arriving later reads the master log", seen10);
     // RS10b (the house's view, #260 10-20): reading speech back is a permission a role holds (readChat), not a role named in
     // the protocol: Newt, granted readChat alone, reads the master log on a fresh arrival; still nothing for Newt before it
     const gr = await w2.req("set", { id: "@world", component: `roles:${you(jn)}`, value: { role: "member", can: { readChat: true } } });
     const nt2 = await sock(S4.port); const jn2 = await nt2.join("heath", "Newt", { agentToken: mint({ kind: "agent", name: "Newt", sub: "agent:newt@home.test" }) });
-    const seen10b = { granted: gr.ok ?? gr, ws: await hist2(nt2), req: await histReq(nt2, { verbs: ["say"], limit: 200 }), total: jn2.snapshot?.state?.chatTotal };
+    const seen10b = { granted: gr.ok ?? gr, ws: await hist2(nt2), req: await histReq(nt2, { verbs: ["say"], limit: 200 }), total: jn2.snapshot?.chat?.chatTotal };
     ok(seen10b.granted === true && some(seen10b.ws) && some(seen10b.req) && seen10b.total > 0,
       "RS10b reading speech back is a permission (readChat), not a role: a member granted it reads the master log on its next arrival", seen10b);
     // RS10c (R 11-02): a server operator holding no role here reads speech from its arrival, like anyone
     const op = await sock(S4.port); const jop = await op.join("heath", "Opal", { agentToken: "tok-opal" });
-    const seen10c = { joinErr: jop.errors, joined: !!jop.snapshot, ws: await hist2(op), req: await histReq(op, { verbs: ["say"], limit: 200 }), total: jop.snapshot?.state?.chatTotal };
+    const seen10c = { joinErr: jop.errors, joined: !!jop.snapshot, ws: await hist2(op), req: await histReq(op, { verbs: ["say"], limit: 200 }), total: jop.snapshot?.chat?.chatTotal };
     ok(seen10c.joined && none(seen10c.ws) && none(seen10c.req) && seen10c.total === 0,
       "RS10c a server operator with no role in a world reads none of its speech from before arriving (history, the authority's history, the join)", seen10c);
     op.close();

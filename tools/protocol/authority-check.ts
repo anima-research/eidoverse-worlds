@@ -1310,7 +1310,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   // (before the last sockets edit, which stays the latest act: the one the undo below takes back)
   const home = { pos: [0.1, 0, 0], q: [0, 0, 0, 1], parent: { to: "tbl", socket: "perch" } }; const wid = r.out[1].world; const n = r.out.length - 2;
   const last = r.out.splice(n, 2); last[1] = { ...last[1], cause: last[1].cause + 2 };
-  r.out.push({ world: wid, kind: "request", actor: "ann", verb: "set", body: { args: { id: "coin", component: "home", value: home } }, ts: last[0].ts }, { world: wid, kind: "change", actor: "ann", cause: n, verb: "batch", body: { ops: [{ op: "set", id: "coin", comp: "home", value: home }, { op: "set", id: "coin", comp: "grabbable", value: { who: "member", home } }] }, ts: last[0].ts }, ...last);
+  r.out.push({ world: wid, kind: "request", actor: "ann", verb: "set", body: { args: { id: "coin", component: "home", value: home } }, ts: last[0].ts }, { world: wid, kind: "change", actor: "ann", cause: n, op: "batch", body: { ops: [{ op: "set", id: "coin", comp: "home", value: home }, { op: "set", id: "coin", comp: "grabbable", value: { who: "member", home } }] }, ts: last[0].ts }, ...last);
   fs.writeFileSync(root + "worlds/tr-lift.jsonl", r.out.map((e) => JSON.stringify(e)).join("\n") + "\n");
   const tc = (verb, args) => { clock.advance(100); return request(openWorld(root, "tr-lift"), "ann", verb, args); };
   const homeAt = (st, h) => worldT({ entities: { ...st.entities, x: { c: { parent: { to: h.parent.to }, transform: { pos: h.pos, q: h.q } } } } }, "x").pos;
@@ -1647,7 +1647,7 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   const n2 = openWorld(root, name).entries.length;
   const ih = call("olive", "delete", { id: "lamp", toString: 1 });
   const att = openWorld(root, name).entries.slice(n2).map((e) => e.body).find((b) => b?.refused);
-  ok(!ih.ok && code(ih) === "unknown-arg" && !!ents().lamp && att && !att.args.includes("toString") && att.unknownArgs === 1, "BT6 delete {id, toString} is refused unknown-arg; its attempt act counts toString as unknown, never as a known name", [ih.refused ?? ih, att]);
+  ok(!ih.ok && code(ih) === "unknown-arg" && !!ents().lamp && att && !att.argNames.includes("toString") && att.unknownArgs === 1, "BT6 delete {id, toString} is refused unknown-arg; its attempt act counts toString as unknown, never as a known name", [ih.refused ?? ih, att]);
   // each verb the help names, with args it accepts alone, dry: a verb named here without args below fails the row too
   const ARGS = { create: { model: "crate" }, set: { id: "lamp", component: "description", value: "x" }, delete: { id: "shade" }, place: { id: "shade", on: "lamp" },
     turn: { id: "lamp", axis: "y", deg: 10 }, sky: { hours: 7 }, weather: { hours: 7 } };
