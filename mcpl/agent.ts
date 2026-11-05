@@ -1764,16 +1764,6 @@ export class WorldAgent {
     const c = this.replica?.st?.entities?.[id]?.c;
     return c ? Object.fromEntries(Object.entries(c).map(([k, v]) => [k, v === REDACTED ? REDACTED : structuredClone(v)])) : null;
   }
-  /** A host's socket children as the replica folds them now: each one's id, as the authority has it, and its components
-   *  (componentsOf). The Sockets card's write sets the children it names and deletes the rest (shared/requests.js
-   *  socketMapOps), so it pins these. */
-  socketChildrenOf(id: string): Record<string, Record<string, unknown>> {
-    const out: Record<string, Record<string, unknown>> = {};
-    for (const [k, e] of Object.entries((this.replica?.st?.entities ?? {}) as Record<string, any>))
-      if (e?.c?.parent?.to === id && e.c.socket && typeof e.c.socket === "object" && !Array.isArray(e.c.socket) && e.c.socket !== REDACTED)
-        out[k] = this.componentsOf(k)!;   // a socket child as the door counts one (isSocketC)
-    return out;
-  }
 
   private reconcileFromFold() {
     const seen = new Set<string>();

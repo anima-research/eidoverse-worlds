@@ -19,14 +19,14 @@ const check = (name: string, ok: boolean, detail = "") => {
 };
 
 const W = scratchWorld("hier").seed({
-  truck: { model: "truck.glb", pos: [0, 0, 0], yaw: 0, sockets: { bed: { pos: [0, 1, 0] } } },
+  truck: { model: "truck.glb", pos: [0, 0, 0], yaw: 0 },
+  "truck-bed": { parent: { to: "truck", offset: [0, 1, 0] }, socket: { name: "bed" } },
   crate: { model: "crate.glb", pos: [0, 0, 0], yaw: 0, parent: { to: "truck", socket: "bed" } },
   lantern: { model: "lantern.glb", pos: [0, 0, 0], yaw: 0, parent: { to: "crate" } },
   rock: { model: "rock.glb", pos: [5, 0, 5], yaw: 0 },
 });
-// the truck's bed is a socket child (PLAN-sockets-entities: the seed sends the view's `sockets` map as socket children), so the crate
-// rides it: truck › bed › crate › lantern
-const bed = socketChild(W.state(), "truck", "bed");   // a minted id: it sorts anywhere among the truck's children
+// the truck's bed is a socket child (PLAN-sockets-entities), so the crate rides it: truck › bed › crate › lantern
+const bed = socketChild(W.state(), "truck", "bed");
 const cutAt = () => JSON.parse(JSON.stringify({ dialect: "eidoverse-log", v: 4, state: wireState(W.state()), seq: W.entries().length - 1 }));
 const r = makeReplica(); r.adopt(cutAt());
 let head = W.entries().length;

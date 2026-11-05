@@ -8,7 +8,6 @@ import { request, fixtureIds } from "../../shared/protocol/authority.js";
 import { LAB_CATALOGUE } from "./labmodels.js";
 import { openWorld } from "../../server/filehost.ts";
 import { viewState } from "../../shared/protocol/view.js";
-import { socketMapOps } from "../../shared/requests.js";
 import { enc, encName } from "../../shared/protocol/names.js";
 import { localOf } from "../../shared/hierarchy.js";
 import { qNorm, qFromYaw } from "../../shared/rot.js";
@@ -72,14 +71,11 @@ export function scratchWorld(tag = "edit", { owner = "olive", title = "scratch",
         const q = (L?.mounted ? L.q : null) ?? qNorm(r.q) ?? qFromYaw((L?.mounted ? L.yaw : r.yaw) ?? 0);
         const s = r.scale3 ?? (Number.isFinite(r.scale) ? [r.scale, r.scale, r.scale] : [1, 1, 1]);
         const components = { transform: { pos, q, scale: s } };
-        for (const [k, v] of Object.entries(recordComponents(r))) if (v !== undefined && k !== "sockets") components[encName(k)] = v;
-        // a view record's sockets map / parent {to, socket} is the editor's grammar: seeded as socket children (the door refuses the map)
+        for (const [k, v] of Object.entries(recordComponents(r))) if (v !== undefined) components[encName(k)] = v;
+        // a socket is a record of its own ({parent: {to: host}, socket: {name}, station?}); parent {to, socket} names one
         if (r.parent?.to) components.parent = { to: r.parent.socket ? socketChild(W.state(), enc(r.parent.to), r.parent.socket) : enc(r.parent.to) };
         const res = call("create", { id: enc(id), ...(r.model ? { model: r.model } : {}), components });
         if (!res.ok) throw new Error(`seed ${id}: ${JSON.stringify(res.refused)}`);
-        const ops = r.sockets ? socketMapOps(W.state().entities, enc(id), r.sockets) : [];
-        const sk = ops.length ? call("batch", { requests: ops, throughLock: true }) : { ok: true };   // a locked host is seeded whole
-        if (!sk.ok) throw new Error(`seed ${id}'s sockets: ${JSON.stringify(sk.refused)}`);
       }
       return W;
     },

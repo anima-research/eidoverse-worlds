@@ -2,7 +2,7 @@
 // own engine reads (valueCheck), media sources, the typed fields and the terrain's shape, unknown and dropped keys, the
 // registry's schema (schemaCheck, schemaRefusal), particle effects, handlers, and a rest's claim against the engine
 // (restCheck) (refactor split, 2026-10-17; moved from authority.js's gate section unchanged). guess is above it, through UP.
-import { checkSockets, checkSocket, checkStation } from "../../sockbody.js";
+import { checkSocket, checkStation } from "../../sockbody.js";
 import { checkGrabbable } from "../../grab.js";
 import { forecastSpellingRefusal } from "../../forecast.js";
 import { isEntityId, isComponent, isIdentity, REDACTED } from "../fold.js";
@@ -325,8 +325,6 @@ function schemaCheck(at, comp, v, { carry = false } = {}) {
     if (def.choices && !def.choices.includes(v)) refuse("shape", `${at} is one of ${def.choices.join(", ")}, got ${JSON.stringify(v).slice(0, 40)}`, def.help ?? "");
     if (def.maxLen !== undefined && graphemes(v) > def.maxLen) refuse("bounds", `${at} is ${graphemes(v).toLocaleString("en")} characters; it must be ≤ ${def.maxLen}`, def.help ?? "");
     if (def.cleanAs) { const bad = cleanText(v, { lines: def.cleanAs === "lines" }); if (bad) refuse("shape", `${at} ${bad.why}`, bad.fix); } }
-  // a socket's whole shape (shared/sockbody.js: closed keys, ranges, enums, one driver per thing), in its own words
-  if (name === "sockets") { const bad = checkSockets(v, at); if (bad) refuse(bad.code, bad.reason, bad.fix || COMPONENTS.sockets.help, bad.didYouMean ? { didYouMean: bad.didYouMean } : undefined); }
   if (name === "sky") { const bad = forecastSpellingRefusal(v?.forecast, at); if (bad) refuse(bad.code, bad.reason, bad.fix, { didYouMean: bad.didYouMean }); }
   if (name === "socket") { const bad = checkSocket(v, at); if (bad) refuse(bad.code, bad.reason, bad.fix || COMPONENTS.socket.help, bad.didYouMean ? { didYouMean: bad.didYouMean } : undefined); }
   // what a body does at a socket (shape audit 10-16): the core, closed; the reserved keys refused as reserved

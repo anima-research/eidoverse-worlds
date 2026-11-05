@@ -114,10 +114,9 @@ const show = (r: any) => (r?.crashed ? `CRASH ${r.crashed}` : r?.ok ? "ok" : `re
 const comp = (s: any, id: string, c: string) => s.w().state().entities[id]?.c[c];
 const roles = (s: any, m: Record<string, string>) => { for (const [who, role] of Object.entries(m)) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } }); };
 const lastUse = (s: any) => s.entries().findLast((e: any) => e.kind === "request" && e.verb === "use");
-// a seat is a socket child with a station (the door refuses a sockets map): create the host, then its seat from the editor's map
-const SEAT = (extra: any = {}) => ({ a: { pos: [0, 0.45, 0], body: { action: "sit", ...extra } } });
-function mkSeat(s: any, actor: string, args: any, map: any = SEAT()) { const r = s.call(actor, "create", args); if (!r.ok) return r;
-  return s.call(actor, "batch", { requests: REQ.socketMapOps(s.w().state().entities, args.id, map) }); }
+// a seat is a socket child with a station: create the host, then its seat as its child
+function mkSeat(s: any, actor: string, args: any) { const r = s.call(actor, "create", args); if (!r.ok) return r;
+  const o = REQ.addSocket(args.id, { name: "a" }, { pos: [0, 0.45, 0], station: { action: "sit" } }); return s.call(actor, o.verb, o.args); }
 const seated = (s: any, who: string) => !!s.w().presence.occupants?.[who];
 const inboxOf = (s: any, who: string) => JSON.stringify(s.w().presence.inbox?.[who] ?? s.w().presence.inboxes?.[who] ?? null);
 

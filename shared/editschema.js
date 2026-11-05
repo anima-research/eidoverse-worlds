@@ -22,11 +22,6 @@
 //   Edits that share a verb coalesce: three transform channels are ONE place
 //   carrying the full pose; two socket fields are ONE merged comp.
 
-// the held poses a socket can give a person (the posture clips every body has)
-// a socket's rotation as [pitch, heading, roll]: q = qY(heading)·qX(pitch)·qZ(roll), the tilt in the turned frame (Maya order ZXY = three.js 'YXZ'), radians
-const sockRot = (s) => eulerFromQ(socketQ(s), 'ZXY').e;
-// the postures every body has, and the library's other seated clips (any library clip name works; these are offered)
-const SOCKET_POSES = ['sitchair', 'sit', 'lie', 'idle', 'sitting_nervous_arm_rub_chair'];
 import { LAYERS, LAYER_KEY, defaultLayer } from './layers.js';
 import * as OP from './requests.js';
 import { normalizePicture, PICTURE_LIT, PICTURE_DESCRIPTION_MAX, DESCRIPTION_HINT } from './picture.js';
@@ -37,11 +32,11 @@ import { AXES } from './axes.js';
 import { ESSENTIAL_NAMES, instanceOf, effectFor, effectBlobName, modernize, instanceProblem, paramShown, essentialNameOf, angleParam } from './particle_effects.js';
 import { readOut, readLine } from './a11y.js';
 import { COMPONENTS as SPEC, registered, outOfRange, rangeWords, statusOf } from './protocol/componentspec.js';
-import { componentsOf, addable, RECORDS, compRefusal, LIGHT_DEFAULTS, bodyOf, socketQ, MESH_SHAPES, lightOf } from './components.js';
+import { componentsOf, addable, RECORDS, compRefusal, LIGHT_DEFAULTS, MESH_SHAPES, lightOf } from './components.js';
 import { draftsRead, readsDraft, isTrusted, toggleTrusted, TRUSTED, UNPROVEN_HINT } from './drafts.js';
-import { checkSockets, ANCHORS, ACTION_DEFAULTS, socketMapIn, socketsIn } from './sockbody.js';
+import { socketsIn } from './sockbody.js';
 import { grabOf, checkGrabbable, DEFAULTS as GRAB_DEFAULTS, WHO as GRAB_WHO, HOLDS as GRAB_HOLDS, HOLD_POSES as GRAB_HOLD_POSES, RELEASES as GRAB_RELEASES } from './grab.js';
-import { eulerFromQ, qFromEuler, rotOrderOf, ROT_MODES, QUAT_MODE, setEulerChannel } from './euler.js';
+import { eulerFromQ, qFromEuler, rotOrderOf, ROT_MODES, QUAT_MODE } from './euler.js';
 import { qNorm, qHeading, qFromYaw, qWithHeading, qRotate } from './rot.js';
 import { scale3, scaleWire, entScale } from './scale3.js';
 import { localOf, parentOps, childrenOf, worldPose } from './hierarchy.js';
@@ -144,100 +139,33 @@ const uprightHint = (ent) => (ent?.q && Math.abs(ent.q[0]) < 1e-12 && Math.abs(e
 const motionKeys = (ent) => Object.keys(recordComponents(ent)).filter((k) => (k === 'motion' || k.startsWith('motion:')) && ent[k] && typeof ent[k] === 'object' && MOTION_TYPES.includes(ent[k]?.type));
 
 // ---------------------------------------------------------------- the hand-written cards
-// The four the descriptor table marks `hand` (shared/descriptors.js HAND_CARDS): their rows are not built from
-// the table — a Transform's channels are an editor's reading of one pose, a Sockets' rows are per slot, a Material's are
+// The ones the descriptor table marks `hand` (shared/descriptors.js HAND_CARDS), and Sockets (no component: the host's
+// socket children): their rows are not built from the table — a Transform's channels are an editor's reading of one pose, a Material's are
 // the model's own slots, and a Grabbable's registry fields ride beside the hand's own (pose, carries, fits, use, prompt,
 // grips). Each keeps a `read` (its rows) and a `write` (its edits); the inspector and editOps call them where the card
 // stands. Transform's hooks are inline in inspectSchema/editOps (its edits coalesce into the one place every channel
 // shares); HAND.Transform names where.
-// A host's sockets are its socket children (PLAN-sockets-entities); until the Parts UI (PLAN §10 12b) the Sockets card
-// still reads and writes them as the one map it was built on: the children, read as `sockets.<name>` (shared/sockbody.js
-// socketMapIn); editOps sends a write of the map as the children's own requests (requests.js socketMapOps).
-// Needs the world (live.world); without it a record shows the sockets it carries itself (none, after the cut).
-function withSocketMap(ent, id, live) {
-  if (!ent || !live?.world || ent.sockets) return ent;
-  const map = socketMapIn(live.world, id);
-  return map ? { ...ent, sockets: map } : ent;
-}
+// A host's sockets are its socket children (PLAN-sockets-entities; Godot's Marker3D, Unity's child Transform): each is a
+// thing of its own, edited where any thing is (its pose, its socket, its station). The card lists them.
+const socketsOf = (id, live) => (live?.world ? socketsIn(live.world, id, { all: true }) : []);
 const HAND = {
   Transform: { read: 'inspectSchema: the pos and rot groups', write: 'editOps: case pos, case rot, and the compose after the loop' },
   Sockets: {
-    // the list, then per slot its channels and its body block (shared/sockbody.js); the component's JSON hatch reaches the rest
-    read(c) {
-      const slots = Object.keys(c.sockets);
-      const fields = [{ t: 'list', k: 'slots', empty: 'no anchors yet', rows: slots.map((slot) => {
-        const s = c.sockets[slot] ?? {}; const p = s.pos ?? [0, 0.5, 0];
-        const b = bodyOf(s.body);
-        return { id: slot, label: slot, sub: `(${p.map((v) => (+v).toFixed(2)).join(', ')}) · ${sockRot(s).map((v) => Math.round(v * R2D)).join('/')}°${s.part ? ` · rides ${s.part}` : ''} · ${b ? `${b.action} (${typeof b.pose === 'string' ? b.pose : 'a blend'}, ${b.anchor})${b.input.move === 'drive' ? ' · drives' : ''}${b.leaveBy === 'script' ? ' · held' : ''}` : 'things attach'}`, actions: [{ k: 'del', label: '✕', danger: true }] };
-      }) }];
-      for (const slot of slots) {
-        const s = c.sockets[slot] ?? {}; const p = s.pos ?? [0, 0.5, 0];
-        ['x', 'y', 'z'].forEach((ax, i) => fields.push({ t: 'num', k: `${slot}|pos|${i}`, label: `${slot} ${ax}`, value: p[i], step: 0.05, dp: 2, unit: 'm' }));
-        // its whole rotation (Unreal sockets): heading, then pitch and roll — a rocket's seat lies on its back
-        const e = sockRot(s);
-        [['heading', 1], ['pitch', 0], ['roll', 2]].forEach(([nm, ax]) => fields.push({ t: 'num', k: `${slot}|rot|${ax}`, label: `${slot} ${nm}`, value: round(e[ax], 6), step: 5, deg: true }));
-        // a socket a PERSON attaches to by using it (VRChat Station, Roblox Seat): a chair, a saddle, a car seat
-        const b = bodyOf(s.body);
-        fields.push({ t: 'check', k: `${slot}|body`, label: `${slot}: people attach`, value: !!b, hint: 'a person attaches here by using it (sit, ride…); off: an attachment point for things only' });
-        if (b) {
-          // the body block is the socket child's station (shape audit 10-16; shared/sockbody.js): its core fields as rows
-          const raw = s.body ?? {}; const d = ACTION_DEFAULTS[b.action] ?? ACTION_DEFAULTS.sit;
-          fields.push({ t: 'text', k: `${slot}|action`, label: `${slot} action`, value: b.action, hint: "what using it is called: sit, ride, lie, stand, drive… (it also picks the default pose and anchor)" });
-          fields.push({ t: 'enum', k: `${slot}|anchor`, label: `${slot} anchor`, value: b.anchor, def: d.anchor, options: ANCHORS.map((v) => ({ v, label: v })), hint: 'the body point that lands on the socket: hips (a seat), feet (a place to stand), head, or the root' });
-          // its anim (R 10-17: station.pose → anim; the legacy map's body block keeps the word pose, and the lift makes it
-          // the station's anim). Addressed |anim; |pose is still taken on a write (below)
-          if (typeof b.pose === 'string') fields.push({ t: 'enum', k: `${slot}|anim`, label: `${slot} anim`, value: b.pose, def: d.pose, options: [...new Set([...SOCKET_POSES, b.pose])].map((v) => ({ v, label: v })), hint: 'the clip the body holds (any animation-library name; a blend or a phase-locked clip: edit as JSON)' });
-          else fields.push({ t: 'json', k: `${slot}|anim`, label: `${slot} anim`, value: JSON.stringify(b.pose, null, 2), hint: '{clip, time: "phase"} or a blend {by: "speed", clips: [[0, "idle"], [2, "walk"]]}; a clip name string makes it one clip again' });
-          fields.push({ t: 'enum', k: `${slot}|leaveBy`, label: `${slot} leave by`, value: b.leaveBy, def: 'any', options: [['any', 'moving, jumping or X'], ['jump', 'jump or X'], ['menu', 'X only'], ['script', 'only the world (a script)']].map(([v, label]) => ({ v, label })) });
-          fields.push({ t: 'enum', k: `${slot}|who`, label: `${slot} who`, value: b.who ?? 'anyone', def: 'anyone', options: [['anyone', 'anyone'], ['builder', 'builders'], ['owner', 'owners']].map(([v, label]) => ({ v, label })) });
-          // the station's reserved keys (fromSeat, enter/leave, input, look, reach…: shape audit 10-16) have no rows: the door refuses them
-        }
-      }
-      fields.push({ t: 'btn', k: 'add', label: '+ socket here', hint: 'click the spot on the thing where a body (or a thing) attaches', client: true });
-      return { group: 'sockets', label: 'sockets', types: ['sockets'], fields };
+    // one row per socket child: a click selects it (the client's), ✕ deletes it
+    read(socks, world) {
+      const rows = socks.map((x) => { const L = localOf(world[x.id] ?? {}, world); const st = x.station;
+        const anim = typeof st?.anim === 'string' ? st.anim : st?.anim ? 'a blend' : null;
+        return { id: x.id, label: x.name, sub: `(${(L.pos ?? [0, 0, 0]).map((v) => (+v).toFixed(2)).join(', ')})${x.sock.part ? ` · rides ${x.sock.part}` : ''} · ${st ? `${st.action ?? 'sit'}${anim ? ` (${anim})` : ''}` : 'things attach'}`, actions: [{ k: 'del', label: '✕', danger: true }] }; });
+      return { group: 'sockets', label: 'sockets', fields: [
+        { t: 'list', k: 'slots', empty: 'no sockets yet', rows },
+        { t: 'info', k: 'kids', label: 'socket children', value: `${socks.map((x) => `${x.name} (${x.id})`).join(', ')}: each a thing of its own (its pos, rot, socket and station)` },
+        { t: 'btn', k: 'add', label: '+ socket here', hint: 'click the spot on the thing where a body (or a thing) attaches', client: true }] };
     },
-    write({ id, k, raw, f, c, comps, errors, num, bool }) {
-      const next = comps.get('sockets') ?? JSON.parse(JSON.stringify(c.sockets ?? {}));
-      if (k === 'del' && !next[raw]) { errors.push(`sockets.del: no slot ${JSON.stringify(raw)} on ${id}`); return; }
-      if (k === 'del') { delete next[raw]; comps.set('sockets', Object.keys(next).length ? next : null); return; }
-      const [slot, what0, idx, sub] = k.split('|'); const what = what0 === 'anim' ? 'pose' : what0;   // |anim, and the old |pose
-      const cur = next[slot] ?? (next[slot] = { pos: [0, 0.5, 0], body: {} });   // a new slot takes a body, as '+ socket' makes
-      if (what === 'body') { if (bool(raw)) cur.body = cur.body ?? {}; else delete cur.body; comps.set('sockets', next); return; }
-      if (what === 'action') { const v = String(raw).trim().toLowerCase(); if (!/^[a-z][a-z0-9-]{0,31}$/.test(v)) { errors.push(`sockets.${slot}|action: a verb in lower case (sit, ride)`); return; }
-        cur.body = { ...(cur.body ?? {}), action: v }; if (v === 'sit') delete cur.body.action; comps.set('sockets', next); return; }
-      // the rest of the body block: each field written the way the authority reads it (shared/sockbody.js), a default left
-      // out, and the result checked with the authority's own check, so a refusal here reads as the authority's would
-      const BODY = ['anchor', 'pose', 'leaveBy', 'who', 'fromSeat', 'enter', 'leave', 'input', 'look', 'reach', 'hold', 'poses', 'sync', 'approach', 'exit'];
-      if (BODY.includes(what)) {
-        const b = cur.body = { ...(cur.body ?? {}) };
-        const d = ACTION_DEFAULTS[b.action ?? 'sit'] ?? ACTION_DEFAULTS.sit;
-        const json = (v) => { if (v == null || v === '') return undefined; if (typeof v !== 'string') return v; const t = v.trim(); if (!/^[[{"]/.test(t)) return t; try { return JSON.parse(t); } catch (e) { errors.push(`sockets.${slot}|${what}: not valid JSON (${e.message})`); return null; } };
-        const put = (key, v, dflt) => { if (v === undefined || v === dflt || (v && typeof v === 'object' && !Array.isArray(v) && !Object.keys(v).length)) delete b[key]; else b[key] = v; };
-        if (what === 'anchor') put('anchor', String(raw), d.anchor);
-        else if (what === 'pose') { const v = json(raw); if (v === null) return; put('pose', v, d.pose); }
-        else if (what === 'leaveBy') put('leaveBy', String(raw), 'any');
-        else if (what === 'who') { const v = String(raw); put('who', isBase(v) ? 'anyone' : v, 'anyone'); }
-        else if (what === 'fromSeat') put('fromSeat', bool(raw) || undefined, undefined);
-        else if (what === 'enter' || what === 'leave' || what === 'sync') put(what, String(raw ?? '').trim() || undefined, undefined);
-        else if (what === 'input') { const inp = { ...(b.input ?? {}) }; if (!['move', 'look'].includes(idx)) { errors.push(`sockets.${slot}|input|${idx}: input is move or look`); return; }
-          inp[idx] = String(raw); if (inp[idx] === (idx === 'move' ? 'none' : 'free')) delete inp[idx]; put('input', inp, undefined); }
-        else if (what === 'look') { const lk = { ...(b.look ?? {}) };
-          if (idx === 'up') { lk.up = String(raw); if (lk.up === 'world') delete lk.up; }
-          else if (idx === 'yaw' || idx === 'pitch') { const lim = idx === 'yaw' ? 180 : 90; const n = num(f ?? { value: (lk[idx] ?? [-lim, lim])[+sub] ?? 0, k }, raw); if (n == null) return;
-            const r = [...(lk[idx] ?? [-lim, lim])]; r[+sub] = round(n, 2); lk[idx] = r; if (r[0] === -lim && r[1] === lim) delete lk[idx]; }
-          else { errors.push(`sockets.${slot}|look|${idx}: look is yaw|0..1, pitch|0..1, up`); return; }
-          put('look', lk, undefined); }
-        else { const v = json(raw); if (v === null) return; put(what, v, undefined); }
-        const bad = checkSockets(next);
-        if (bad) { errors.push(`sockets.${slot}|${what}: ${bad.reason}${bad.fix ? ` — ${bad.fix}` : ''}`); return; }
-        comps.set('sockets', next); return;
-      }
-      const n = num(f ?? { value: what === 'rot' ? sockRot(cur)[+idx] : (cur.pos ?? [0, 0.5, 0])[+idx] ?? 0, deg: what === 'rot', k }, raw); if (n == null) return;
-      if (what === 'pos') { cur.pos = [...(cur.pos ?? [0, 0.5, 0])]; cur.pos[+idx] = round(n); }
-      else if (what === 'rot') { const q = setEulerChannel(socketQ(cur), 'ZXY', sockRot(cur), +idx, n).q.map((v) => round(v, 6)); delete cur.yaw;
-        if (Math.abs(q[3]) > 1 - 1e-12) delete cur.q; else cur.q = q; }
-      else { errors.push(`sockets.${slot}|${what}: not a socket field (pos|0..2, rot|0..2, body, action, anchor, pose, leaveBy, who, fromSeat, enter, leave, input|move, input|look, look|yaw|0..1, look|pitch|0..1, look|up, reach, hold, poses, sync, approach, exit)`); return; }
-      comps.set('sockets', next);
+    write({ id, k, raw, socks, ops, errors }) {
+      if (k !== 'del') { errors.push(`sockets.${k}: a socket is a thing of its own: edit its id (pos.*, rot.*, comp.socket, comp.station)`); return; }
+      const x = socks.find((s) => s.id === raw || s.name === raw);
+      if (!x) { errors.push(`sockets.del: ${id} has no socket ${JSON.stringify(raw)}`); return; }
+      ops.push(OP.remove(x.id));
     },
   },
   Material: {
@@ -344,7 +272,7 @@ const HAND = {
  *               Who may change it is the authority's to decide (it refuses, saying why). */
 export function inspectSchema(ent, id, live = {}) {
   if (!ent) return { id, groups: [] };
-  ent = withSocketMap(recordOf(ent, id), id, live);
+  ent = recordOf(ent, id); const socks = socketsOf(id, live);
   const c = recordComponents(ent);
   const mounted = !!ent.parent;
   const locked = !!c.lock;
@@ -571,7 +499,7 @@ export function inspectSchema(ent, id, live = {}) {
     groups.push({ group: 'motion', label: 'motion', types: mk, fields });
   }
 
-  if (c.sockets && typeof c.sockets === 'object') groups.push(HAND.Sockets.read(c));
+  if (socks.length) groups.push(HAND.Sockets.read(socks, live.world));
 
   // openable (R 10-07; shared/protocol/componentspec.js): open and locked are its state; it turns `angle` about its pivot (or slides
   // `slide` in its own frame) over `time`. The hinge buttons put the pivot on an edge of the model's own box (live.box).
@@ -782,7 +710,7 @@ export function inspectSchema(ent, id, live = {}) {
   // a picture needs an image and a part, a sound a file. Both are uploads.
   if (!c.picture) fields.push({ t: 'btn', k: 'add:picture', label: '+ picture…', client: true, hint: 'upload an image and hang it on this thing (make sure you own the rights to it)' });
   if (!c.sound) fields.push({ t: 'btn', k: 'add:sound', label: '+ sound…', client: true, hint: 'upload audio and put it on this thing (make sure you own the rights to it)' });
-  if (!c.sockets && live.parts) fields.push({ t: 'btn', k: 'add:seat', label: '+ socket…', client: true, hint: 'click the spot on the thing where a body (or a thing) attaches' });
+  if (!socks.length && live.parts) fields.push({ t: 'btn', k: 'add:seat', label: '+ socket…', client: true, hint: 'click the spot on the thing where a body (or a thing) attaches' });
   fields.push({ t: 'text', k: '+', label: '+ component', value: '', placeholder: 'type (local/recipe, example.org/notice…) ⏎', hint: 'attach a component — any type folds, evaluators give known ones behavior' });
   groups.push({ group: 'comp', label: `Components (${rest.length})`, fields });
 
@@ -894,7 +822,6 @@ function componentSections(ent, groups, live = {}, id = '?') {
         break;
       case 'Label': case 'Hidden': case 'Description': continue;       // the header's, like Unity's name and active box
       case 'Lock': sec.fields = refs('flags', (f) => f.k === inst.key); sec.removable = true; break;
-      case 'Sockets': sec.fields = refs('sockets'); sec.removable = true; break;
       case 'Grabbable': sec.fields = claims('Grabbable', 'grabbable'); sec.removable = true; break;
       case 'Openable': sec.fields = claims('Openable', 'openable'); sec.removable = true; break;
       case 'Particles': sec.fields = claims('Particles', 'particles', (f) => f.k !== 'out'); sec.removable = true; break;
@@ -936,6 +863,7 @@ function componentSections(ent, groups, live = {}, id = '?') {
     if (typeof sec.title === 'string' && sec.title) sec.title = sec.title.charAt(0).toUpperCase() + sec.title.slice(1);   // every card starts with a capital (R 10-10: 'physics')
     out.push(sec);
   }
+  if (g('sockets')) { const rec = RECORDS.Sockets; out.push({ type: 'Sockets', key: null, title: 'Sockets', hash: rec.hash, category: rec.category, summary: rec.summary, fields: refs('sockets'), removable: true }); }
   // R 10-10: every thing with a model shows a Material card, its model's own materials, even with no override yet
   if (g('hmat') && !components.some((x) => x.key === 'hesperus/material')) {
     const anySlot = Object.keys(recordComponents(ent)).some((k) => k.startsWith('hesperus/material:'));
@@ -1196,7 +1124,7 @@ export function fieldAt(schema, key) {
  *  relative expressions; a number is written as typed, or refused (nothing written) where the door's range refuses it:
  *  a row's min/max bound its slider, never the value. Disabled fields refuse. Pure: never sends, never mutates `ent`. */
 export function editOps(ent, id, edits, live = {}) {
-  ent = withSocketMap(recordOf(ent, id), id, live);
+  ent = recordOf(ent, id); const socks = socketsOf(id, live);
   const schema = inspectSchema(ent, id, live);
   const errors = [];
   const ops = [];
@@ -1281,8 +1209,8 @@ export function editOps(ent, id, edits, live = {}) {
     const f = fieldAt(schema, key);
     const dot = key.indexOf('.'); const group = key.slice(0, dot); const k = key.slice(dot + 1);
     // components (B): add.<Component> = value is a part name / annotation type; remove.<comp key>
-    // the Sockets card's ✕: its children go, as the map's own requests (requests.js socketMapOps), never `delete sockets`
-    if (group === 'remove' && k === 'sockets') { comps.set('sockets', null); return; }
+    // the Sockets card's ✕: its socket children go
+    if (group === 'remove' && k === 'sockets') { ops.push(...socks.map((x) => OP.remove(x.id))); return; }
     if (group === 'add' || group === 'remove') {
       const r = group === 'add' ? addOps(ent, id, k, raw) : removeOps(ent, id, k, raw);
       errors.push(...r.errors); ops.push(...r.ops);
@@ -1377,7 +1305,7 @@ export function editOps(ent, id, edits, live = {}) {
         motions.set(mkey, next);
         break;
       }
-      case 'sockets': HAND.Sockets.write({ id, k, raw, f, c, comps, errors, num, bool }); break;
+      case 'sockets': HAND.Sockets.write({ id, k, raw, socks, ops, errors }); break;
       case 'openable': {
         const next = comps.get('openable') ?? JSON.parse(JSON.stringify(c.openable ?? {}));
         if (k === 'hingeL' || k === 'hingeR') { const box = live.box; if (!Array.isArray(box)) { errors.push(`${key}: its box isn't known yet`); break; }
@@ -1580,7 +1508,7 @@ export function editOps(ent, id, edits, live = {}) {
   // one whole transform (§2.3): local to the parent for a child, which is the pose the channels edit (pv)
   if (place) ops.push(OP.set(id, 'transform', OP.transformOf(pv, { pos: place.pos, ...(place.q ? { q: place.q } : place.yaw != null ? { yaw: place.yaw } : {}), scale: place.scale })));
   for (const [mkey, next] of motions) ops.push(next ? OP.set(id, mkey, next) : OP.unset(id, mkey));
-  for (const [type, data] of comps) { if (type === 'sockets') { ops.push(...OP.socketMapOps(live.world, id, data ?? {})); continue; }
+  for (const [type, data] of comps) {
     if (data == null) { if (c[type] != null) ops.push(OP.unset(id, type)); } else ops.push(OP.set(id, type, type === 'lock' ? true : data)); }
   return { ops, errors, ...(euler ? { euler } : {}), ...(asks.length ? { asks } : {}), ...(viewOrder ? { rotOrder: viewOrder } : {}) };
 }

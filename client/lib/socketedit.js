@@ -1,9 +1,7 @@
 // seatedit — the seat-anchor authoring grammar (split from build.js, §R4).
 //
-// Sit anchors (socket children with a body block; PLAN-sockets-entities) get the same editing grammar as
-// things: visible in build mode as gold gizmos, click to select, drag to
-// refine, Q/E to face, Del to remove, one undoable log entry per commit.
-// Zero server involvement — this is all authoring UI over the comp verb.
+// Sockets are child entities of their host (PLAN-sockets-entities), shown in build mode as gold gizmos: click to
+// select, drag to refine, Q/E to face, Del to remove. Each commit is one write to the socket child itself.
 //
 // build.js stays the gesture ROUTER (one pointer, one key ladder — two
 // modules both listening on the canvas would re-fight every contested
@@ -17,9 +15,8 @@ import { sendOps } from './editwrites.js';
 import { THREE, camera } from './core.js';
 import { bus } from './base.js';
 import { modelName } from './assets.js';
-import { entities, metaOf, bags, bagOf, parentIdOf, findPart } from './world.js';
-import { state } from './state.js';
-import { socketMapIn } from '../../shared/sockbody.js';
+import { entities, metaOf, bags, bagOf, parentIdOf, childrenOf, findPart } from './world.js';
+import { socketsUnder } from '../../shared/sockbody.js';
 import { motionNode } from '../../shared/protocol/names.js';
 import { mouse } from './controller.js';
 import { flashHint, html } from './ui.js';
@@ -27,13 +24,13 @@ import { engage, release } from './keyhints.js';
 import { setBuildMode, isBuilding, deselect,
   setInspectorHtml, hideInspector } from './build.js';
 import { registerHandler } from './inspect.js';
-import { socketQ } from '../../shared/components.js';
+import { sceneSelect } from './scenegraph.js';
 import { qMul, qFromYaw, qNorm } from '../../shared/rot.js';
 
 const raycaster = new THREE.Raycaster();
 
-const seatGizmos = new Map();   // "id\x00slot" -> gizmo (child of entity root)
-let seatSel = null;             // { id, slot } — the anchor under edit
+const seatGizmos = new Map();   // socket child id -> { host, gizmo (child of the host's root) }
+let seatSel = null;             // { id: host, sock: socket child id, slot: its name } — the anchor under edit
 let seatDrag = null;            // { armed, startX, startY, pending } drag state
 let seatArm = null;             // entity id waiting for a placement click
 
@@ -58,31 +55,31 @@ function makeSeatGizmo() {
  *  model frame — the anchor's rest spot, matching socketWorldPos semantics
  *  (reach never oscillates with a part's motion, neither should the gizmo). */
 export function refreshSocketGizmos() {
-  for (const [k, g] of seatGizmos) { g.parent?.remove(g); seatGizmos.delete(k); }
+  for (const [k, { g }] of seatGizmos) { g.parent?.remove(g); seatGizmos.delete(k); }
   if (!isBuilding()) return;
-  // a seat is a socket child (PLAN-sockets-entities): every host that has one, read as its old map (socketMapIn)
   const hosts = new Set();
   for (const [sid, c] of bags()) if (c?.socket && typeof c.socket === 'object') { const h = parentIdOf(sid); if (h != null) hosts.add(h); }
   for (const id of hosts) {
     const root = entities.get(id);
     if (!root) continue;
-    for (const [slot, sock] of Object.entries(socketsOf(id))) {
+    for (const x of socketsOf(id)) {
+      const t = bagOf(x.id)?.transform ?? {};   // local to the host
       const g = makeSeatGizmo();
-      g.position.set(...(sock.pos ?? [0, 0.5, 0]));
-      g.quaternion.fromArray(socketQ(sock));   // the socket's whole rotation
+      g.position.set(...(Array.isArray(t.pos) ? t.pos : [0, 0, 0]));
+      g.quaternion.fromArray(qNorm(t.q) ?? [0, 0, 0, 1]);   // the socket's whole rotation
       root.add(g);
-      seatGizmos.set(`${id}\x00${slot}`, g);
+      seatGizmos.set(x.id, { host: id, slot: x.name, g });
     }
   }
-  if (seatSel && !seatGizmos.has(`${seatSel.id}\x00${seatSel.slot}`)) deselectSocket();
+  if (seatSel && !seatGizmos.has(seatSel.sock)) deselectSocket();
   else refreshSeatHighlight();
 }
-bus.on('comp', ({ type }) => { if (type === 'socket' && isBuilding()) refreshSocketGizmos(); });
+bus.on('comp', ({ type }) => { if ((type === 'socket' || type === 'transform') && isBuilding()) refreshSocketGizmos(); });
 bus.on('entity', () => { if (isBuilding()) refreshSocketGizmos(); });
 
 function refreshSeatHighlight() {
-  for (const [k, g] of seatGizmos) {
-    const on = seatSel && k === `${seatSel.id}\x00${seatSel.slot}`;
+  for (const [k, { g }] of seatGizmos) {
+    const on = seatSel && k === seatSel.sock;
     g.scale.setScalar(on ? 1.6 : 1);
     g.traverse((o) => o.material?.color.setHex(on ? 0x8fe8c8 : 0xf5c96b));
   }
@@ -94,15 +91,15 @@ function refreshSeatHighlight() {
 const _spV = new THREE.Vector3();
 function pickSeat(ray) {
   let best = null, bestD = Infinity;
-  for (const [k, g] of seatGizmos) {
+  for (const [k, { g }] of seatGizmos) {
     g.getWorldPosition(_spV);
     const tol = Math.min(0.3, 0.06 + camera.position.distanceTo(_spV) * 0.015);
     const d = ray.distanceToPoint(_spV);
     if (d < tol && d < bestD) { bestD = d; best = k; }
   }
   if (!best) return null;
-  const [id, slot] = best.split('\x00');
-  return { id, slot };
+  const { host, slot } = seatGizmos.get(best);
+  return { id: host, sock: best, slot };
 }
 
 export function selectSocket(pick) {
@@ -128,17 +125,10 @@ export function resetSockets() {
   deselectSocket();
 }
 
-/** A host's sockets as the map this grammar edits (its socket children: shared/sockbody.js socketMapIn); a map written
- *  back is sent as the children's own requests (requests.js socketMapOps). */
-function socketsOf(id) { return socketMapIn(state.st.entities, id) ?? {}; }
-
-/** One merged comp entry per gesture, with its inverse on the undo stack —
- *  merged, because comp data replaces wholesale and a naive write would
- *  silently eat every OTHER anchor on the thing. */
-export function commitSockets(id, next, describe) {
-  const ops = OP.socketMapOps(state.st.entities, id, next);
-  if (ops.length) sendOps(ops, { what: describe });
-}
+/** A host's socket children, switched-off ones included: [{id, name, sock, station}]. */
+const socketsOf = (id) => socketsUnder(String(id), childrenOf, bagOf, { all: true });
+/** A socket child's new pose (local to its host): one write of its whole transform. */
+const poseOps = (sid, pos, q) => [OP.set(sid, 'transform', { pos, q, scale: [1, 1, 1] })];
 
 const _saM = new THREE.Matrix4();
 const _saM2 = new THREE.Matrix4();
@@ -214,12 +204,12 @@ function placeSeatAt(e) {
   // face the declarer: you are looking at the seat from where an occupant's
   // knees would point. Q/E refines from there.
   const yaw = +(Math.atan2(camera.position.x - hit.point.x, camera.position.z - hit.point.z) - worldYawOf(root)).toFixed(3);
-  const sockets = socketsOf(id);
+  const names = new Set(socketsOf(id).map((x) => x.name));
   let slot = 'seat', n = 2;
-  while (sockets[slot]) slot = `seat${n++}`;
-  sockets[slot] = { pos, ...(yaw ? { q: qFromYaw(yaw).map((v) => +v.toFixed(6)) } : {}), ...(part ? { part } : {}), body: {} };   // '+ seat' places a seat: a person attaches here
-  commitSockets(id, sockets, 'seat anchor');
-  selectSocket({ id, slot });      // the comp echo builds the gizmo already selected
+  while (names.has(slot)) slot = `seat${n++}`;
+  // '+ seat' places a seat: a socket child with a station (a person attaches here)
+  sendOps([OP.addSocket(id, { name: slot, ...(part ? { part } : {}) }, { id: '$seat', pos, q: qFromYaw(yaw).map((v) => +v.toFixed(6)), station: { action: 'sit' } })], { what: 'seat anchor' })
+    ?.then?.((r) => { const sid = r?.ids?.$seat; if (sid) { refreshSocketGizmos(); if (seatGizmos.has(sid)) selectSocket({ id, sock: sid, slot }); } });
   flashHint(html`<b>${slot}</b> declared${part ? ' (rides ' + part + ')' : ''} — drag refines · <kbd>Q</kbd><kbd>E</kbd> face · <kbd>Del</kbd> removes`);
 }
 
@@ -259,36 +249,28 @@ export function updateSocketDrag() {
   if (!hit) return;
   const next = seatFromHit(seatSel.id, root, hit);
   seatDrag.pending = next;
-  const g = seatGizmos.get(`${seatSel.id}\x00${seatSel.slot}`);
+  const g = seatGizmos.get(seatSel.sock)?.g;
   if (g) g.position.set(...next.pos);
 }
 
 function commitSeatDrag() {
   if (!seatDrag?.pending || !seatSel) return;
-  const sockets = socketsOf(seatSel.id);
-  const cur = sockets[seatSel.slot] ?? {};
-  sockets[seatSel.slot] = { ...cur, pos: seatDrag.pending.pos,
-    ...(seatDrag.pending.part ? { part: seatDrag.pending.part } : {}) };
-  if (!seatDrag.pending.part) delete sockets[seatSel.slot].part;
-  commitSockets(seatSel.id, sockets, 'seat move');
+  const c = bagOf(seatSel.sock); if (!c?.socket) return;
+  const { part, ...sock } = c.socket; const p = seatDrag.pending.part;
+  sendOps([...poseOps(seatSel.sock, seatDrag.pending.pos, qNorm(c.transform?.q) ?? [0, 0, 0, 1]),
+    ...((p ?? null) !== (part ?? null) ? [OP.set(seatSel.sock, 'socket', { ...sock, ...(p ? { part: p } : {}) })] : [])], { what: 'seat move' });
 }
 
 function turnSeat(d) {
   if (!seatSel) return;
-  const sockets = socketsOf(seatSel.id);
-  const cur = sockets[seatSel.slot];
-  if (!cur) return;
+  const t = bagOf(seatSel.sock)?.transform; if (!t) return;
   // turn about the socket's OWN up (a tilted socket turns in its tilt)
-  const { yaw: _y, ...rest } = cur;
-  sockets[seatSel.slot] = { ...rest, q: qNorm(qMul(socketQ(cur), qFromYaw(d))).map((v) => +v.toFixed(6)) };
-  commitSockets(seatSel.id, sockets, 'seat facing');
+  sendOps(poseOps(seatSel.sock, Array.isArray(t.pos) ? t.pos : [0, 0, 0], qNorm(qMul(qNorm(t.q) ?? [0, 0, 0, 1], qFromYaw(d))).map((v) => +v.toFixed(6))), { what: 'seat facing' });
 }
 
 function removeSeat() {
   if (!seatSel) return;
-  const sockets = socketsOf(seatSel.id);
-  delete sockets[seatSel.slot];
-  commitSockets(seatSel.id, sockets, 'seat removal');
+  sendOps([OP.remove(seatSel.sock)], { what: 'seat removal' });
   deselectSocket();
 }
 
@@ -309,22 +291,13 @@ addEventListener('mouseup', () => {
 });
 
 
-// ---- the inspector's sockets GESTURES + preview --------------------------------
-// The fields are declared in shared/editschema.js. What only this module can
-// add: '+ socket here' arms the click-to-place, a row click selects the gizmo,
-// a live drag on a slot's channels moves the gizmo before the merged comp
-// commits (the shared path merges and pushes the undo).
+// ---- the inspector's sockets GESTURES --------------------------------
+// The card is shared/editschema.js's: '+ socket here' arms the click-to-place, a row click selects that socket child.
 // Components ▸ + seat…: the first seat in ONE step (before, a sockets comp had to exist first)
 registerHandler('comp', (id, _obj, k, _v, opts) => { if (k !== 'add:seat' || opts?.live) return false; armSocketPlacement(id); return true; });
-registerHandler('sockets', (id, obj, k, value, opts) => {
+registerHandler('sockets', (id, _obj, k, value) => {
   if (k === 'add') { armSocketPlacement(id); return true; }
-  if (k === 'slots') { if (entities.get(id)) selectSocket({ id, slot: value }); return true; }
-  if (k === 'del') { if (seatSel?.id === id && seatSel.slot === value) deselectSocket(); return false; }
-  if (!opts?.live) return false;
-  const [slot, what, idx] = k.split('|');
-  const g = seatGizmos.get(`${id}\x00${slot}`);
-  if (!g) return true;
-  if (what === 'pos') { const p = g.position.toArray(); p[+idx] = +value; g.position.set(...p); }
-  else if (what === 'rot') { g.rotation.reorder('YXZ'); g.rotation[['x', 'y', 'z'][+idx]] = +value; }   // the inspector's heading/pitch/roll (Euler YXZ)
-  return true;
+  if (k === 'slots') { sceneSelect(value); return true; }
+  if (k === 'del') { if (seatSel?.sock === value) deselectSocket(); return false; }
+  return false;
 });

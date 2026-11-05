@@ -320,12 +320,10 @@ thing's rotation order) · `rot.qx rot.qy rot.qz rot.qw` · `rot.order`
 `flags.lock flags.hidden flags.label flags.description` · `light.color
 light.intensity light.range light.important light.daytime` · `motion.type motion.axis motion.amp
 motion.period motion.phase motion.damp …` (a part's motion as
-`motion.<part>|amp`; `motion.rest` stops it) · `sockets.<slot>|pos|0..2
-sockets.<slot>|rot|0..2 sockets.<slot>|anim sockets.del` (a host's socket
-children, read and written as one map) · `particles.*` · `comp.<type>` (raw JSON
+`motion.<part>|amp`; `motion.rest` stops it) · `sockets.del` (a host's socket
+children by name; each is a thing of its own, edited by its id) · `particles.*` · `comp.<type>` (raw JSON
 for any component no group speaks for; `comp.+` adds one) · `parent.to` /
-`parent.unparent`. The transform channels become one `set transform`;
-socket fields one `set sockets`, lifted into the socket children. Numbers take Maya's relative math —
+`parent.unparent`. The transform channels become one `set transform`. Numbers take Maya's relative math —
 `"+=1"`, `"-=0.5"`, `"*=-1"`, `"+=10%"` — against the current value;
 angles are typed in degrees. A child's transform is LOCAL to its parent.
 **The world itself is `@world`**: `inspect {id: "@world"}` shows its Sky,
@@ -351,7 +349,7 @@ The ones you'll reach for:
 | `light` | `{kind: point\|spot, color, intensity, range, angle, inner, decay, daytime: dim\|full, important}` — on any thing, a model's or a mesh's too (components compose); a light on its own child (`parent {to: <the model>}`) has a pose of its own to aim and move; `daytime: "full"` burns at noon too, `important` claims a slot first (more such lights than slots: the nearest cast) |
 | `motion` | `{type: pendulum\|spin\|orbit\|oscillate\|path, …}`: spin `degPerSec` or `period`; oscillate `axis`, `amp` (m), `period`, `phase?` (back and forth along its axis, a sine; up by default); orbit `radius`, `center?`, `period` or `degPerSec`, `face?`; path `points`, `speed` or `duration`, `loop?`; the authority stamps `t0` |
 | `openable` | `{open, locked?, angle?, axis?, slide?, time?, part?}`: it opens and closes when used (a door, a gate, a lid); it turns about its `pivot`, or slides; every client animates it |
-| `socket`, `station` | an attachment point is a child entity: `socket {name, part?, accepts?, radius?}` (its pose is its transform, local to its host), and `station {action, anim, anchor, exit?, leaveBy?, who?}` on the same child makes it a place a person can sit, ride, stand (below); `anim` is an open name of a pose or a clip (one the body doesn't know is its default; absent, picked from the action). The old map `sockets` is reserved: a write of it is lifted into socket children |
+| `socket`, `station` | an attachment point is a child entity: `socket {name, part?, accepts?, radius?}` (its pose is its transform, local to its host), and `station {action, anim, anchor, exit?, leaveBy?, who?}` on the same child makes it a place a person can sit, ride, stand (below); `anim` is an open name of a pose or a clip (one the body doesn't know is its default; absent, picked from the action). The old map `sockets` is reserved: a write of it is refused (legacy) |
 | `reactions` | `{<action>: handler}`: what `use {id, action}` does (below) |
 | `places` | `{<name>: {at} \| {min, max} \| null}`: named places to walk to, in its own frame (on `@world`: world coordinates); see "Named places" |
 | `lock` | `true`: binds everyone, owners included — no component set, added or removed, no move, reparent, new model or removal, on it or anything attached to it. Anyone at the rank its setter holds now, or above, may act through it (`throughLock: true`) or lift it (below) |

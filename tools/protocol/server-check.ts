@@ -228,12 +228,12 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok(!wh.isError && /Bob: set /.test(wh.content[0].text) && /say "hello, Ann"|hello, Ann/.test(wh.content[0].text), "S5d world_history in a world reads the log (acts and says), not v1's chat-only history", wh.content[0].text.slice(0, 400));
   // S5e: the agent at a thing's sockets (shared/sockbody.js): look says what each does; sit picks by action/slot, asks
   // the authority (who), and keeps to how the seat lets you go (leaveBy) and whether it takes you from another (fromSeat)
-  // its seats are socket children (the door takes no sockets map): the editor's map, sent as the children's own requests
-  const { socketMapOps } = await import("../../shared/requests.js");
-  ok((await ann.req("batch", { requests: [{ verb: "create", args: { id: "carriage", model: "test/table.glb", place: { at: [9, 9] } } }, ...socketMapOps({}, "$carriage", {
-    throne: { pos: [0, 0.5, 0], body: { who: "owner" } },
-    box: { pos: [0.6, 0.5, 0], body: { action: "drive", leaveBy: "script" } },
-    rumble: { pos: [-0.6, 0.5, 0], body: { action: "ride", leaveBy: "menu" } } })] })).ok, "S5e (Ann builds a carriage: an owner's throne, a driver's box that holds you, a rumble seat)");
+  // its seats are socket children
+  const { addSocket } = await import("../../shared/requests.js");
+  ok((await ann.req("batch", { requests: [{ verb: "create", args: { id: "carriage", model: "test/table.glb", place: { at: [9, 9] } } },
+    addSocket("$carriage", { name: "throne" }, { pos: [0, 0.5, 0], station: { who: "owner" } }),
+    addSocket("$carriage", { name: "box" }, { pos: [0.6, 0.5, 0], station: { action: "drive", leaveBy: "script" } }),
+    addSocket("$carriage", { name: "rumble" }, { pos: [-0.6, 0.5, 0], station: { action: "ride", leaveBy: "menu" } })] })).ok, "S5e (Ann builds a carriage: an owner's throne, a driver's box that holds you, a rumble seat)");
   // wait for all three
   await tryUntil("the agent has the carriage's three seats", () => ag.socketsOf(IDS.of("carriage")).length >= 3, { ms: 2000, step: 50 });
   const seatId = (n: string) => ag.socketsOf(IDS.of("carriage")).find((x: any) => x.name === n)?.id;

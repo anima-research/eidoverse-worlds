@@ -12,7 +12,7 @@
 //       is passed on as sent, never read as a kind
 //   R   renames (stern L3): a stored null old field is a removal; renames are admitted per thing
 //   D   repo items (claims R1, R3, R4) and the docs pass: the consent code's words, move's name order, attach's dead pose
-//       arg and /seatpose gone, replies and help in today's words, the inspector's sockets.<slot>|anim; a removed
+//       arg and /seatpose gone, replies and help in today's words; a removed
 //       command (/ghost, /unghost) answers why
 //   (stern L4, the interrupted in-place swap, is inplace-check IP13: it needs a v1 world and the CLI)
 // @ts-nocheck
@@ -36,7 +36,6 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the consent code's old words", "shared/protocol/refusalcodes.js", "(touch, pose, shove, displace…)", "(touch, pose, shove, move…)", ["D1"]],
   ["move's old name order", "AGENTS.md", "a thing by id (its entrance, else beside it), a place's name or label, a thing's label or handle,", "a thing (id, label or handle: its entrance, else beside it), a place's name or label,", ["D2"]],
   ["attach takes pose again", "mcpl/tools.ts", ", action: { type: \"string\" } }, required: [\"to\"] } },", ", action: { type: \"string\" }, pose: { type: \"string\" } }, required: [\"to\"] } },", ["D3"]],
-  ["the inspector says |pose", "shared/editschema.js", "k: `${slot}|anim`, label: `${slot} anim`, value: b.pose, def", "k: `${slot}|pose`, label: `${slot} anim`, value: b.pose, def", ["D4"]],
   ["CONTROL (no-op: must stay green)", "shared/protocol/authority/gate.js", "// ---------- L7: the one gate ----------", "// ---------- L7:  the one gate ----------", []],
 ];
 async function runSelf(tree: string, only: string[] | null) {
@@ -163,11 +162,11 @@ const cases: Case[] = [
       const tl = readText("mcpl/tools.ts"); const row = tl.split("\n").find((l) => l.includes('{ name: "attach"')) ?? ""; const reg = readText("client/lib/commands/registry.js"), h = readText("client/lib/commands/handlers.js"), lb = readText("client/lib/localbody.js");
       return { schema: /pose: \{ type/.test(row), handler: /a\.pose != null && body\.poses/.test(tl), seatpose: /seatpose/.test(reg + h), choose: /chooseSeatPose/.test(h + lb) }; },
     good: (o) => !o.schema && !o.handler && !o.seatpose && !o.choose },
-  { id: "D4", what: "(docs pass) replies and help in today's words: travel names anims and body-mode (not held pose and posture); ragdoll and live-pose replies name anim; /pushable says everyone (not a stranger); the inspector's sockets.<slot>|anim (|pose still read)", run() {
-      const net = readText("mcpl/net-server.ts"), tl = readText("mcpl/tools.ts"), reg = readText("client/lib/commands/registry.js"), es = readText("shared/editschema.js"), ag = readText("AGENTS.md");
+  { id: "D4", what: "(docs pass) replies and help in today's words: travel names anims and body-mode (not held pose and posture); ragdoll and live-pose replies name anim; /pushable says everyone (not a stranger); no sockets.<slot>|pose", run() {
+      const net = readText("mcpl/net-server.ts"), tl = readText("mcpl/tools.ts"), reg = readText("client/lib/commands/registry.js"), ag = readText("AGENTS.md");
       return { net: !/held pose and posture/.test(net), tl: !/a posture, or walking, stands you back up/.test(tl) && !/`pose \{ragdoll\} refused/.test(tl) && !/pose \{clear: true\} drops it/.test(tl) && !/sockets\.<slot>\|pose/.test(tl),
-        reg: !/stranger/.test(reg.split("\n").find((l) => l.includes("'pushable'")) ?? ""), es: (es.match(/k: `\$\{slot\}\|anim`/g) ?? []).length === 2 && !/k: `\$\{slot\}\|pose`/.test(es) && /what0 === 'anim' \? 'pose'/.test(es), ag: /sockets\.<slot>\|anim/.test(ag) }; },
-    good: (o) => o.net && o.tl && o.reg && o.es && o.ag },
+        reg: !/stranger/.test(reg.split("\n").find((l) => l.includes("'pushable'")) ?? ""), ag: !/sockets\.<slot>\|pose/.test(ag) }; },
+    good: (o) => o.net && o.tl && o.reg && o.ag },
   { id: "D5", what: "a removed command answers why, as /w does: /ghost and /unghost resolve to an unlisted row that says ghost was removed, and chat answers it locally (not 'unknown command')", async run() {
       const reg = await import(TREE + "client/lib/commands/registry.js"); const chat = readText("client/lib/chat.js");
       const rows = ["ghost", "unghost"].map((c) => reg.resolveCommand?.(c) ?? null);

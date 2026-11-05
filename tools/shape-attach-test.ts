@@ -6,7 +6,6 @@
 import "./protocol/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import { scratchWorld } from './protocol/scratchworld.ts';
 import { COMPONENTS, statusOf, pinOf, refsOf, mapRefs, materialize } from '../shared/protocol/componentspec.js';
-import { socketMapOps } from '../shared/requests.js';
 import { legacyHosts, liftHostOps } from './protocol/import-v1/shapes.js';
 import { evalLookAt } from '../shared/lookat.js';
 import { toWorld, toLocal } from '../mcpl/places.ts';
@@ -48,15 +47,11 @@ tryRow('ST', () => {
   check('ST6 a station hangs only on a socket entity', code(W.call('set', { id: 'crate2', component: 'station', value: { action: 'sit' } })) !== 'ok');
   check('ST7 station.who names a role here', code(mk('wh1', { name: 'wh' }, { station: { who: 'wizard' } })) === 'shape' && mk('wh2', { name: 'wh2' }, { station: { who: 'builder' } }).ok);
 
-  // the map: the door refuses a write of it (legacy); the editor's map grammar is sent as the children's own requests
+  // the old map: the door refuses a write of it (legacy)
   W.call('create', { id: 'sofa', model: 'crate' });
   const map = { left: { pos: [-0.4, 0.5, 0], body: {} }, right: { pos: [0.4, 0.5, 0], body: { action: 'sit', pose: 'sit' } } };
   r = W.call('set', { id: 'sofa', component: 'sockets', value: map });
   check('ST8 a write of the old sockets map is refused (legacy), the fix naming the socket children', code(r) === 'legacy' && /socket: \{name/.test(r.refused?.fix ?? '') && !C('sofa')?.sockets, r.refused ?? r);
-  r = W.sendAll(socketMapOps(W.state().entities, 'sofa', map));
-  const kid = (n: string) => Object.values(W.state().entities).find((e: any) => e.c.parent?.to === 'sofa' && e.c.socket?.name === n)?.c;
-  const L = kid('left'), R = kid('right');
-  check('ST8b …socketMapOps sends it as socket children, each body a station on its child (body.pose → station.anim)', r.ok && L?.station?.anim === 'sitchair' && R?.station?.anim === 'sit' && !('body' in (L?.socket ?? {})), [r.refused, L, R]);
 
   // a stored socket.body (a log stored before station), lifted at load
   const st = { diagnostics: [], entities: { h: { c: { transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } }, s: { c: { parent: { to: 'h' }, transform: { pos: [0, 1, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, socket: { name: 'seat', body: { action: 'lie' } } } } } };

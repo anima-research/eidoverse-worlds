@@ -112,11 +112,11 @@ for (const kind of ["track", "clip"]) {
   ok(kind === "track" ? ag.clip === "idle-rest" : ag.clip === "wave",
     kind === "track" ? "anim {stop}: a tracks loop begun while the wings opened doesn't keep the rest clip from coming back" : "…a clip begun meanwhile keeps its own (the control)", { clip: ag.clip, anims: ag.anims }); }
 
-// attach on a thing with no seat teaches a whole edit call, id and set
+// attach on a thing with no seat teaches a whole create call: a socket child of it
 { const ag: any = { socketRec: () => null, thingRef: () => ({ id: "crate-0a1b2c3d" }), foldRecord: () => ({}), socketsOf: () => [], mounts: new Map(),
     myOccupancy: null, name: "me", handle: (id: string) => id.slice(0, 10) };
   const out: any = await handleTool({ agent: ag } as any, "attach", { to: "crate" });
-  ok(out.isError && out.content[0].text.includes(`edit {id: "crate-0a1b", set: {"sockets.seat|body": true}}`), "attach's no-seat refusal gives the whole edit call", out.content[0].text); }
+  ok(out.isError && out.content[0].text.includes(`act {verb: "create", args: {components: {parent: {to: "crate-0a1b"}, transform: {pos: [0, 0.5, 0]}, socket: {name: "seat"}, station: {}}}}`), "attach's no-seat refusal gives the whole create call (a socket child)", out.content[0].text); }
 
 // the door's seat lines name the door's way off, not a person's X, get up or jump
 { const { describeBody, bodyOf } = await import("../shared/sockbody.js");
@@ -143,7 +143,7 @@ for (const kind of ["track", "clip"]) {
 // meanwhile is refused as changed instead of overwritten
 { let comps: any = { label: "old" }; const sent: any[] = [];
   const ag: any = { thingRef: () => ({ id: "lamp-1" }), foldRecord: () => ({ id: "lamp-1", model: "lamp.glb", label: comps.label }), foldedIds: () => ["lamp-1"],
-    componentsOf: (id: string) => id === "lamp-1" ? structuredClone(comps) : null, socketChildrenOf: () => ({}), entities: new Map(), st: { entities: {} }, mounts: new Map(),
+    componentsOf: (id: string) => id === "lamp-1" ? structuredClone(comps) : null, entities: new Map(), st: { entities: {} }, mounts: new Map(),
     // the model's box is awaited while planning: someone else's label lands then
     modelBox: async () => { comps = { label: "someone else's" }; return null; }, worldFold: () => ({}), handle: (x: string) => x,
     sendOps: async (ops: any[], extra: any) => { sent.push({ ops, extra }); return { ok: true }; } };
@@ -159,79 +159,30 @@ for (const [what, set, comps, want] of [
 ] as const) {
   const sent: any[] = [];
   const ag: any = { thingRef: () => ({ id: "lamp-1" }), foldRecord: () => ({ id: "lamp-1", ...(comps as any) }), foldedIds: () => ["lamp-1"],
-    componentsOf: () => ({ ...(comps as any) }), socketChildrenOf: () => ({}), entities: new Map(), st: { entities: {} }, mounts: new Map(),
+    componentsOf: () => ({ ...(comps as any) }), entities: new Map(), st: { entities: {} }, mounts: new Map(),
     modelBox: async () => null, worldFold: () => ({}), handle: (x: string) => x,
     sendOps: async (ops: any[], extra: any) => { sent.push({ ops, extra }); return { ok: true }; } };
   const out: any = await handleTool({ agent: ag } as any, "edit", { id: "lamp-1", set });
   const pin = sent[0]?.extra?.expect ?? null;
   ok(sent.length === 1 && JSON.stringify(pin) === JSON.stringify(want), `edit pins ${what} ${want ? "to the value it read" : "not at all"}`, { pin, out: out.content?.[0]?.text }); }
 
-// a sockets write is a write of the host's socket children (the door retires the ones the map doesn't name), so edit pins
-// each child the plan read, its parent included (a child moved to another host meanwhile isn't this host's to rewrite), and a
-// child added or taken away while the plan awaited the model's box stops it: no pin can name a child the plan never saw
-for (const change of ["none", "added", "taken"] as const) {
-  const added = change !== "none";
-  const sent: any[] = [];
+// a host's Sockets card names its socket children: sockets.del deletes that child (by name or id), nothing else is pinned
+{ const sent: any[] = [];
   const front = { parent: { to: "bus-1" }, socket: { name: "front" }, transform: { pos: [0, 1, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } };
-  const kids: Record<string, any> = { "seat-1": front };
   const recs: Record<string, any> = { "bus-1": { id: "bus-1", model: "bus.glb" }, "seat-1": { id: "seat-1", ...front } };
   const ag: any = { thingRef: () => ({ id: "bus-1" }), foldRecord: (id: string) => recs[id] ?? null, foldedIds: () => Object.keys(recs),
-    componentsOf: (id: string) => id === "bus-1" ? {} : structuredClone(kids[id] ?? null), socketChildrenOf: () => structuredClone(kids),
-    entities: new Map(), st: { entities: {} }, mounts: new Map(), worldFold: () => ({}), handle: (x: string) => x,
-    // the model's box is awaited while planning: someone else's socket lands then
-    modelBox: async () => {
-      if (change === "added") kids["seat-2"] = { parent: { to: "bus-1" }, socket: { name: "back" }, transform: front.transform };
-      if (change === "taken") delete kids["seat-1"];
-      return null; },
-    sendOps: async (ops: any[], extra: any) => { sent.push({ ops, extra }); return { ok: true }; } };
+    componentsOf: (id: string) => id === "bus-1" ? {} : structuredClone(front), entities: new Map(), st: { entities: {} }, mounts: new Map(), worldFold: () => ({}),
+    handle: (x: string) => x, modelBox: async () => null, sendOps: async (ops: any[], extra: any) => { sent.push({ ops, extra }); return { ok: true }; } };
   const out: any = await handleTool({ agent: ag } as any, "edit", { id: "bus-1", set: { "sockets.del": "front" } });
-  const pin = sent[0]?.extra?.expect ?? null;
-  ok(added
-    ? !sent.length && out.isError && /sockets changed while the edit was being prepared/.test(out.content[0].text)
-    : sent.length === 1 && JSON.stringify(pin) === JSON.stringify([
-        { id: "seat-1", component: "parent", value: { to: "bus-1" } }, { id: "seat-1", component: "socket", value: { name: "front" } },
-        { id: "seat-1", component: "transform", value: front.transform }, { id: "seat-1", component: "station" }]),
-    added ? `a socket ${change} while edit planned stops the sockets write: nothing is sent` : "a sockets write pins each socket child it read, its parent included (the host has no sockets component to pin: the map is sent as the children's own requests)", { sent, pin, out: out.content?.[0]?.text }); }
+  ok(sent.length === 1 && JSON.stringify(sent[0].ops) === '[{"verb":"delete","args":{"id":"seat-1"}}]' && !sent[0].extra?.expect,
+    "sockets.del sends a delete of that socket child, unpinned (a socket is a thing of its own)", { sent, out: out.content?.[0]?.text }); }
 
-// more socket children than one request can pin (the authority takes 256 expect entries) is refused here, in words that say
-// what to do instead, not sent to be refused for its shape; a write of exactly 256 pins goes (four host components and 63
-// children of four pins each; the map itself is no host component since it's sent as the children's requests)
-async function socketsEdit(children: number, set: Record<string, unknown>) {
-  const sent: any[] = []; const kids: Record<string, any> = {}; const recs: Record<string, any> = { "bus-1": { id: "bus-1" } };
-  for (let i = 0; i < children; i++) { const c = { parent: { to: "bus-1" }, socket: { name: `s${i}` }, transform: { pos: [i, 1, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } };
-    kids[`seat-${i}`] = c; recs[`seat-${i}`] = { id: `seat-${i}`, ...c }; }
-  const ag: any = { thingRef: () => ({ id: "bus-1" }), foldRecord: (id: string) => recs[id] ?? null, foldedIds: () => Object.keys(recs),
-    componentsOf: (id: string) => id === "bus-1" ? {} : structuredClone(kids[id] ?? null), socketChildrenOf: () => structuredClone(kids),
-    entities: new Map(), st: { entities: {} }, mounts: new Map(), worldFold: () => ({}), handle: (x: string) => x, modelBox: async () => null,
-    sendOps: async (ops: any[], extra: any) => { sent.push({ ops, extra }); return { ok: true }; } };
-  const out: any = await handleTool({ agent: ag } as any, "edit", { id: "bus-1", set });
-  return { sent, out };
-}
-{ const over = await socketsEdit(90, { "sockets.del": "s0" });
-  ok(!over.sent.length && over.out.isError && /more sockets than one edit can pin \(360 pins; a request carries at most 256\)/.test(over.out.content[0].text),
-    "a sockets write with more children than a request can pin is refused here, saying edit them one at a time", { sent: over.sent.length, out: over.out.content?.[0]?.text });
-  const four = { "sockets.del": "s0", "flags.label": "zz bus", "flags.lock": true, "flags.hidden": true, "flags.clickthrough": true };
-  const at = await socketsEdit(63, four);
-  ok(at.sent.length === 1 && at.sent[0].extra.expect.length === 256, "a sockets write of exactly 256 pins is sent", { pins: at.sent[0]?.extra?.expect?.length, out: at.out.content?.[0]?.text });
-  const past = await socketsEdit(64, four);
-  ok(!past.sent.length && /\(260 pins; a request carries at most 256\)/.test(past.out.content?.[0]?.text ?? ""), "one child more is refused", { sent: past.sent.length, out: past.out.content?.[0]?.text }); }
-
-// the body's read for a pin keeps a purged component as the fold's REDACTED, so a pin can leave it out, and copies the rest;
-// a host's socket children are the things parented to it with a socket, as the door counts them (isSocketC)
+// the body's read for a pin keeps a purged component as the fold's REDACTED, so a pin can leave it out, and copies the rest
 { const fake: any = Object.create(WorldAgent.prototype);
   const tf = { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] };
-  fake.replica = { st: { entities: {
-    "bus-1": { c: { label: REDACTED, transform: tf } },
-    "seat-1": { c: { parent: { to: "bus-1" }, socket: { name: "front" } } },
-    "seat-2": { c: { parent: { to: "bus-1" }, socket: REDACTED } },
-    "cup-1": { c: { parent: { to: "bus-1" }, transform: tf } },
-    "seat-9": { c: { parent: { to: "car-1" }, socket: { name: "back" } } } } } };
+  fake.replica = { st: { entities: { "bus-1": { c: { label: REDACTED, transform: tf } } } } };
   const c = fake.componentsOf("bus-1");
-  ok(c.label === REDACTED && c.transform !== tf && JSON.stringify(c.transform) === JSON.stringify(tf), "componentsOf keeps a purged component as REDACTED and copies the rest", c);
-  const kids = fake.socketChildrenOf("bus-1");
-  ok(JSON.stringify(Object.keys(kids)) === '["seat-1"]', "socketChildrenOf counts a child parented with a socket, not a purged socket, a plain child or another host's", kids);
-  ok(JSON.stringify(kids["seat-1"]) === JSON.stringify({ parent: { to: "bus-1" }, socket: { name: "front" } }) && kids["seat-1"].socket !== fake.replica.st.entities["seat-1"].c.socket,
-    "socketChildrenOf gives each child's components as componentsOf reads them, copied", kids); }
+  ok(c.label === REDACTED && c.transform !== tf && JSON.stringify(c.transform) === JSON.stringify(tf), "componentsOf keeps a purged component as REDACTED and copies the rest", c); }
 
 // face turns to a thing's world point, not a child's pos, which is local to its parent
 for (const where of [{ pos: [10, 0, 10] }, { why: "its parent isn't here" }] as any[]) {

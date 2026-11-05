@@ -2,7 +2,9 @@
 // `batch` of create/set requests, through the old-world translator's own mapping (import-v1/translate-v1.js project:
 // water → zone + water, air boxes → zone + water-exclusion children, climb routes, collision, environment). Read by import.ts and prepare.ts.
 import { emptyState, foldEntry } from '../protocol/import-v1/fold.js';
-import { socketMapOps } from '../../shared/requests.js';
+import { addSocket } from '../../shared/requests.js';
+import { socketQ } from '../../shared/components.js';
+import { stationOfBody } from '../protocol/import-v1/sockets.js';
 import { project, deferredFeatures, volumeMappings, carriedMappings, unmappedOf, namespaceOf } from '../protocol/import-v1/translate-v1.js';
 
 export const RECORD_VERBS = ['asset', 'spawn', 'comp', 'light', 'mount', 'motion'];
@@ -23,7 +25,10 @@ export function requestsOf(records, ns = 'water') {
     // a sockets map is the old spelling the door refuses: its slots go as socket children of the host (each body its station)
     const sockets = components.sockets; delete components.sockets;
     ops.push({ verb: 'create', args: { id: ph(id), components } });
-    if (sockets && typeof sockets === 'object') for (const o of socketMapOps({}, ph(id), sockets)) ops.push(o.verb === 'create' ? { ...o, args: { ...o.args, id: `${ph(id)}-${o.args.id.slice(1)}` } } : o);
+    let n = 0;
+    if (sockets && typeof sockets === 'object') for (const [name, sk] of Object.entries(sockets)) { if (!sk || typeof sk !== 'object') continue;
+      const sock = { name, ...Object.fromEntries(['part', 'accepts', 'radius'].filter((k) => sk[k] !== undefined).map((k) => [k, sk[k]])) };
+      ops.push(addSocket(ph(id), sock, { id: `${ph(id)}-socket-${n++}`, pos: sk.pos, q: socketQ(sk), station: stationOfBody(sk.body) })); }
   }
   for (const [k, v] of Object.entries(out['@world'])) if (JSON.stringify(v) !== JSON.stringify(blank[k])) ops.push({ verb: 'set', args: { id: '@world', component: k, value: v } });
   // the derived particle effects the batch names (translate-v1 @24/@34), each an upload {effect} sent before it

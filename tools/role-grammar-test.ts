@@ -10,7 +10,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import * as R from "../shared/protocol/roles.js";
 import { checkGrabbable } from "../shared/grab.js";
-import { checkSockets } from "../shared/sockbody.js";
+import { checkStation } from "../shared/sockbody.js";
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = "") => {
@@ -43,7 +43,7 @@ check("no reserved-word list outside roles.js", !reserved.length, reserved.join(
 check("roles.js exports isRoleId", typeof (R as any).isRoleId === "function");
 const isRoleId = (R as any).isRoleId ?? (() => null);
 const grabTakes = (who: any) => checkGrabbable({ who }) === null;
-const seatTakes = (who: any) => checkSockets({ seat: { pos: [0, 0.5, 0], body: { who } } }) === null;
+const seatTakes = (who: any) => checkStation({ who }) === null;
 const CORPUS = ["member", "builder", "moderator", "owner", "dj", "stage-crew", "a", "a".repeat(24), "a".repeat(25), "none", "guest", "everyone", "ghost", "banned",
   "Builder", "9lives", "-x", "", "with space", 3, null];
 for (const id of CORPUS) {

@@ -389,16 +389,14 @@ const cases: Case[] = [
       const GB = await import(TREE + "shared/grab.js"); const g = GB.grabOf(s.w().state().entities.cup?.c ?? {});
       return { r: show(r), held: GB.holdPoseOf(g, [0.2, 0.2, 0.2]), big: GB.holdPoseOf(g, [1, 1, 1]), torch: GB.holdPoseOf(GB.grabOf({ grabbable: { anim: "torch" } }), [0.2, 0.2, 0.2]), two: GB.holdPoseOf(GB.grabOf({ grabbable: { twoHanded: true } }), [0.2, 0.2, 0.2]), named: GB.HOLD_POSES ?? null }; },
     good: (o) => o.r === "ok" && o.held === "hand" && o.big === "carry" && o.torch === "torch" && o.two === "both-hands" && JSON.stringify(o.named) === '["hand","carry","torch","pistol","shoulder"]' },
-  { id: "A5", what: "…the Sockets card's map keeps a body block's pose: the door refuses the map (legacy), its requests (requests.js socketMapOps) make the body station.anim, and the map's readers get body.pose back (slotOf)", async run(s) {
+  { id: "A5", what: "…a socket child's station holds anim, never pose; the old sockets map with a body block's pose is refused (legacy)", async run(s) {
       s.call("olive", "create-world", { title: s.name }); s.call("olive", "create", { id: "bench", model: "crate", place: { at: [4, 0] } });
-      const want = { bunk: { pos: [0, 0.5, 0], body: { action: "lie", pose: "lie" } } };
-      const door = show(s.call("olive", "set", { id: "bench", component: "sockets", value: want }));
-      const RQ = await import(TREE + "shared/requests.js"); const ops = RQ.socketMapOps(s.w().state().entities, "bench", want);
-      const r = s.call("olive", "batch", { requests: ops });
-      const E = s.w().state().entities; const kid = Object.keys(E).find((k) => E[k].c.socket?.name === "bunk");
-      const SK = await import(TREE + "shared/sockbody.js"); const slot = kid ? SK.slotOf(E[kid].c.socket, E[kid].c.transform, E[kid].c.station) : null;
-      return { door, r: show(r), st: kid ? E[kid].c.station : null, body: slot?.body ?? null, b: SK.bodyOf?.(kid ? E[kid].c.station : null)?.clip ?? null }; },
-    good: (o) => /^refused legacy/.test(o.door) && o.r === "ok" && o.st?.anim === "lie" && !("pose" in o.st) && o.body?.pose === "lie" && !("anim" in o.body) && o.b === "lie" },
+      const door = show(s.call("olive", "set", { id: "bench", component: "sockets", value: { bunk: { pos: [0, 0.5, 0], body: { action: "lie", pose: "lie" } } } }));
+      const kid = (station: any) => s.call("olive", "create", { components: { parent: { to: "bench" }, transform: { pos: [0, 0.5, 0] }, socket: { name: "bunk" }, station } });
+      const old = show(kid({ action: "lie", pose: "lie" })), r = kid({ action: "lie", anim: "lie" });
+      const E = s.w().state().entities; const k = Object.keys(E).find((x) => E[x].c.socket?.name === "bunk");
+      return { door, old, r: show(r), st: k ? E[k].c.station : null }; },
+    good: (o) => /^refused legacy/.test(o.door) && /^refused schema/.test(o.old) && o.r === "ok" && o.st?.anim === "lie" && !("pose" in o.st) },
   { id: "A6", what: "(R 15:09) folded wings are the named pose wings-folded on the wire (poses: [names]; [] holds none); an older sample's wingsFolded still reads; the server's fence keeps a clean poses list", async run() {
       const WP = await import(TREE + "shared/wingpresence.js"); const PC = await import(TREE + "server/posecheck.ts");
       const keep = PC.sanePose({ p: [0, 0, 0], poses: ["wings-folded"] }), bad = PC.sanePose({ p: [0, 0, 0], poses: [1, 2] });

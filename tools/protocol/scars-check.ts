@@ -108,10 +108,9 @@ function cast(s: any) {
   s.call("olive", "create-world", { title: s.name });
   for (const [who, role] of [["bob", "builder"], ["vic", "member"]]) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });
 }
-// a seat is a socket child with a station (the door refuses a sockets map): the host is created, then its seats from the editor's map
-const SEAT = { seat: { pos: [0, 0.45, 0], body: { action: "sit" } } };
-function seated(s: any, actor: string, args: any, map: any = SEAT) { const r = s.call(actor, "create", args); if (!r.ok) return r;
-  return s.call(actor, "batch", { requests: REQ.socketMapOps(s.w().state().entities, args.id, map) }); }
+// a seat is a socket child with a station: the host is created, then each seat [name, pos] as its child
+function seated(s: any, actor: string, args: any, seats: [string, number[]][] = [["seat", [0, 0.45, 0]]]) { const r = s.call(actor, "create", args); if (!r.ok) return r;
+  return s.call(actor, "batch", { requests: seats.map(([name, pos]) => REQ.addSocket(args.id, { name }, { id: `$${name}`, pos, station: { action: "sit" } })) }); }
 const read = (p: string) => fs.readFileSync(path.join(TREE, p), "utf8");
 
 type Case = { id: string; what: string; run: (s: any) => any; good: (o: any) => boolean };
@@ -232,7 +231,7 @@ const cases: Case[] = [
       return { mv: show(mv), u: show(u) }; },
     good: (o) => o.mv === "ok" && o.u === "ok" },
   { id: "O7", what: "bob and vic sit on a two-seat bench: the owner's move of it lets BOTH go, not just the first occupant found (holes r8 M2)", run(s) { cast(s);
-      const BENCH = { a: { pos: [-0.5, 0.45, 0], body: { action: "sit" } }, b: { pos: [0.5, 0.45, 0], body: { action: "sit" } } };
+      const BENCH: [string, number[]][] = [["a", [-0.5, 0.45, 0]], ["b", [0.5, 0.45, 0]]];
       seated(s, "olive", { id: "bench", model: "chair", place: { at: [4, 0] } }, BENCH);
       s.call("bob", "move", { to: [3.6, 0, -0.6] }); const b = s.call("bob", "use", { id: "bench", action: "sit" });
       s.call("vic", "move", { to: [4.4, 0, -0.6] }); const v = s.call("vic", "use", { id: "bench", action: "sit" });
