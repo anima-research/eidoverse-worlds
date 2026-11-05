@@ -1,6 +1,6 @@
 # Log vocabulary: the decided contract
 
-The words the protocol log, the wire snapshot and the hello use, what each one means, and why. This dialect is `{dialect: "eidoverse-log", v: 4}`. Section numbers (§0, §1.x, §2.x, §3, §5, §F, §P) and the ids D1–D13, F1–F31 and M1–M2 are cited from code comments and stay stable.
+The words the protocol log, the wire snapshot and the hello use, what each one means, and why. This dialect is `{dialect: "eidoverse-log", v: 4}`. Section numbers (§0, §1.x, §2.x, §3, §5, §F, §P) and the ids D1–D13, F1–F31 and M1–M2 are cited from code comments and stay stable. An F id names a fixture, not a receipt: §5's table is the proven set; F21 and F25 are deferred (§5, Deferred) and F11, F13, F15–F18 are retired.
 
 Examples are quoted from `spec/conformance/` or from the code that writes the entry. Review history lives in git and PR #23, not here.
 
@@ -213,7 +213,6 @@ Each fixture is guarded by a mutation that proves it exercises what it names. Wh
 | F14 | the reader refuses every old spelling | one negative log per old spelling: a `change` with `verb`; a `request` with `op`; a `genesis`/`say`/`redaction`/`governance` with `verb`; a batch with `followUps`; a set with `commit`; a redaction target with `op`; an envelope with `for`, `grant` or `by`; a kind `act`/`sim`/`purge`/`sequencer`. Each: its `malformed:*` code, status `ok`, the rest folded (a genesis with `verb`: no world) | a reader that accepts both spellings passes every positive fixture; only F14 catches it |
 | F19 | `u-` + 24 entity-id collision is loud (P3) | the v1 translator refuses any entity id in the reserved person shape `u-[a-z2-7]{24}`, naming the id; person-shape checks accept exactly `{20}` and `{24}` | an entity of the 24 shape passing through silently → red |
 | F20 | version refusal before any state | a reader given a log at the next `v`: `unknown-version`, no world, no entry folded, nothing accepted to cache; a genesis carrying `minor` is `malformed:genesis-field`, no world; every conformance log folds to its pinned status and digest | a reader that folds one entry before reporting the version → red |
-| F21 | historical identity-key verification is offline-stable (P4/P6) | **design fixture, pending governance support; no test exists today.** A governance entry signed by an identity-tier owner verifies from the identity document version (or op-log CID) and proof history bound at the entry's `ts`, with the home node unreachable or rotated | a verifier that resolves the signer's current document → red |
 | F22 | hello version | an unknown `{dialect, v}` gets `update-required` before any world lookup; no world name or existence in the reply | — |
 | F23 | no existence oracle | `unsupported-feature` only after access is granted; a refused principal can't tell a missing world from a closed one | — |
 | F24 | genesis provenance | present, schema-valid, non-redactable; `dirty: true` without `sourceTreeSha256` is invalid | — |
@@ -223,6 +222,7 @@ Each fixture is guarded by a mutation that proves it exercises what it names. Wh
 
 ### Deferred (not part of the proven set)
 
+- **F21 — historical identity-key verification is offline-stable (P4/P6).** A governance entry signed by an identity-tier owner verifies from the identity document version (or op-log CID) and proof history bound at the entry's `ts`, with the home node unreachable or rotated; a verifier that resolves the signer's current document must go red. Governance does not verify identity-tier signatures yet, so nothing implements or tests it today. It lands with that governance support.
 - **F25 — repair-body provenance.** After a redaction only the commitment of a repair request's body remains, and the reader reports "provenance unavailable", never a guess. No writer puts provenance in a repair body yet, so nothing tests it today. It lands with the first repair writer.
 
 ### Mutation rules
@@ -239,12 +239,12 @@ Portable identity (one person, one identity across worlds and servers) is later 
 - **P3** Person ids are `u-` + lowercase base32 at **exactly two lengths**: `u-[a-z2-7]{20}` (today's mint) and `u-[a-z2-7]{24}` (reserved for a portable id). Not 20–32: reserving every length would reclassify legal entity ids as people. The shape checks (`ids.js PERSON_ID`, `componentspec.js`, `directory.ts isMinted`, `presencewire.js`, `names.js ACTOR_ID`) accept `{20}` or `{24}`. The v1 translator refuses an entity id already wearing the 24 shape (F19); the collision is resolved by hand. A future length is added before anyone mints entities in it.
 - **P4** Genesis `owners` tiers may hold an identity as well as an `ed25519:` key, so a founder's lost key need not lose the world's governance. Genesis is in the world id, so this is reserved now.
 - **P5** A claim (a stand-in becoming a real person) is a request verb plus system changes, never a new kind.
-- **P6** Governance signatures are checked against the signer's identity as of `ts`, offline-stable: never against a key frozen in genesis, never against the home node's current document. The governance design binds the identity id, the identity document or op-log version (or CID), the key valid at `ts`, and the proof history needed offline (F21).
+- **P6** Governance signatures are checked against the signer's identity as of `ts`, offline-stable: never against a key frozen in genesis, never against the home node's current document. The governance design binds the identity id, the identity document or op-log version (or CID), the key valid at `ts`, and the proof history needed offline (F21, deferred: no verifier exists yet).
 - **P7** Actor history is never redactable. Revoking a local binding tombstones the directory relation, not the person and not their authored entries. Request and say bodies may be redacted as today; `actor` ids and commitments stay.
 
 ## §F Freeze contract
 
-Fixtures F22–F31 in §5; F25 is deferred.
+Fixtures F22–F31 in §5, except F25 (deferred, §5).
 
 - **F-1 Feature declarations (kernel reservation).** Contract:
   ```text
