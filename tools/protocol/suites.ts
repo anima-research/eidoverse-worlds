@@ -220,6 +220,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["custody-save", "../custody-save-test.ts", 1], // a governance key is handed out only once the keys file holds it: a failed save hands out nothing
   ["client-tools", "../run-client.ts --import-only --skip-suites --strict-env", 14], // refactor plan 2 D5: every tools/*-{test,check} loads (a stub missing an export, a moved module); a hung import reads SLOW, not red (run-client-settle pins it); the full run is `bun tools/run-client.ts`
   ["migrate-genesis", "migrate-genesis-check.ts", 1],   // migrate-genesis is retired: the name refuses and points at tools/protocol/migrate-minor-1 (D1)
+  ["migrate-minor-1", "migrate-minor-1-check.ts", 1],   // the minor-0 → minor-1 migration: a deterministic pure rename (DESIGN-log-vocabulary F13, F15–F20), third-party recomputation, one mutant per guard
   ["replica-freeze", "../replica-freeze-test.ts", 1],   // C7a: the client's fold is frozen in dev, and still folds every later entry (it sat outside the gate and couldn't start)
 ];
 
