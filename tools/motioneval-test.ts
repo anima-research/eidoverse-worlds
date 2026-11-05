@@ -123,7 +123,7 @@ console.log("\n━━ oscillate ━━");
   const r = evalWholeMotion(base, { type: "oscillate", axis: "-x", amp: 0.45, period: 1.9, phase: 0.6, t0: T0 }, T0 + 800);
   check("off-axis oscillate displaces along −x only", r.ok && near3(r.pos, [2 - offv, 3, 4]), JSON.stringify(r));
   check("oscillate never touches rotation", r.ok && r.rot === false && near(r.yaw, 0.9));
-  const d = evalWholeMotion(base, { type: "bob" /* the old spelling, read as oscillate */, period: 1.9, phase: 0.6, t0: T0 }, T0 + 800);
+  const d = evalWholeMotion(base, { type: "oscillate", period: 1.9, phase: 0.6, t0: T0 }, T0 + 800);
   check("default amp 0.3 on default axis y", d.ok && near3(d.pos, [2, 3 + Math.sin((2 * Math.PI / 1.9) * t + 0.6) * 0.3, 4]));
 }
 

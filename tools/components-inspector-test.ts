@@ -134,7 +134,7 @@ for (const [id, e] of ents) {
   check(`no part-scoped card is titled with a generator's node name (${titled} part cards in the corpus)`, rawTitles.length === 0, rawTitles.slice(0, 6).join(' | '));
 }
 {
-  const sw = { model: 'store/swing.glb', pos: [0, 0, 0], 'motion:tripo_part_fused_0': { type: 'pendulum', amp: 0.2 }, 'motion:tripo_part_fused_3': { type: 'spin' }, 'motion:seat_plank': { type: 'bob' } /* stored before the rename: reads as Oscillate */, 'motion:mesh7': { type: 'bob' } };
+  const sw = { model: 'store/swing.glb', pos: [0, 0, 0], 'motion:tripo_part_fused_0': { type: 'pendulum', amp: 0.2 }, 'motion:tripo_part_fused_3': { type: 'spin' }, 'motion:seat_plank': { type: 'oscillate' }, 'motion:mesh7': { type: 'oscillate' } };
   const titles = (live: any = {}) => inspectSchema(sw, 's', live).sections.list.filter((c: any) => c.part).map((c: any) => c.title);
   check('part cards: "Pendulum · part 1" for tripo_part_fused_0 (its number + 1), the modeller\'s own word kept ("seat plank"), mesh7 → part 8',
     JSON.stringify(titles()) === JSON.stringify(['Pendulum · part 1', 'Spin · part 4', 'Oscillate · seat plank', 'Oscillate · part 8']), JSON.stringify(titles()));
