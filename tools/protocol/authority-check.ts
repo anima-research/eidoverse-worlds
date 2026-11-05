@@ -74,7 +74,12 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     { seq: 2, ts: 3, actor: "Marigold", verb: "comp", args: { id: "lamp_1", type: "0abc", data: 1 } },
     { seq: 3, ts: 4, actor: "Marigold", verb: "comp", args: { id: "lamp_1", type: "n0abc", data: 2 } }];
   const r = translate(old, { foldBuild: v1FoldBuild() });
-  ok(r.out[1].verb === "translated" && r.out[1].body.from.translator === TRANSLATOR && r.out[1].body.from.fold === v1FoldBuild() && !("minor" in r.out[0].body), "T2 the act after genesis names the translator and the v1 fold build", r.out[1].body);
+  ok(r.out[1].verb === "translated" && !("translator" in r.out[1].body.from) && r.out[1].body.from.fold === v1FoldBuild() && r.out[1].body.from.roles?.Marigold?.role === "owner" && !("minor" in r.out[0].body) && !("provenance" in r.out[0].body) && !("provenance" in r.out[1].body),
+    "T2 the act after genesis names its parent (the old genesis) and the v1 fold build, never the translator; a pure translation (no provenance given) writes none (S4: provenance is genesis's alone)", r.out[1].body);
+  { const P = { registry: { id: "registry-pin", sha256: "a".repeat(64) }, writer: { name: "eidoverse-translate-v1", version: "49.0.0", sourceRevision: "git:sha1:" + "b".repeat(40), sourceTreeSha256: "c".repeat(64), dirty: false } };
+    const rp = translate(old, { foldBuild: v1FoldBuild(), provenance: P }); let bad: any = null; try { translate(old, { provenance: { ...P, writer: { ...P.writer, sourceTreeSha256: undefined } } }); } catch (e) { bad = String(e); }
+    ok(JSON.stringify(rp.out[0].body.provenance) === JSON.stringify(P) && JSON.stringify(rp.out[1].body.provenance) === JSON.stringify(P) && !!rp.out[1].world && rp.out[1].world !== r.out[1].world && /provenance-writer/.test(bad ?? ""),
+      "T2b given provenance, genesis carries it (a new world id) and `translated` repeats it; a malformed one refuses the translation", { g: rp.out[0].body.provenance, bad }); }
   const c = r.final.translated[enc("lamp_1")];
   ok(c && c["imported/n0abc"] === 2 && c[`imported/${encName("0abc")}`] === 1 && !r.stats.divergences, "T3 a translated world keeps comps '0abc' and 'n0abc' apart (each under the imported namespace: bare names are the registry's, PROTOCOL §4)", c);
   ok(JSON.stringify(r.out[0].body.owners) === JSON.stringify([[], [r.out[0].body.sequencer]]) && r.out[1].body.from.roles?.Marigold?.role === "owner" && !r.final.translated["@world"]?.[`roles:${enc("Marigold")}`], "T4 genesis is custodial (tier 0 empty, the authority's key in tier 1); v1 genesis roles, which v1 never folds, are kept verbatim in the translated act and grant nothing", [r.out[0].body.owners, r.out[1].body.from])

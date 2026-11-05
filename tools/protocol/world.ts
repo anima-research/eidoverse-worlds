@@ -37,7 +37,6 @@ import { translateV1World, reportV1World, warmHulls, approvalProblem, makeApprov
 import { contentAddressOf } from "../../server/eidoindex.ts";
 import { custodyAt } from "../../server/custody.ts";
 import { custodyFileIn } from "../../server/keyfiles.ts";
-import { TRANSLATOR } from "./import-v1/translate-v1.js";
 import { openLive, isWorldDir, SWAP_MARKER, isSwapUnfinished } from "../../server/livehost.ts";
 import { digest, keyOk } from "../../shared/protocol/fold.js";
 import { ENGINE_CATALOGUE } from "../../server/modelcatalogue.ts";
@@ -222,7 +221,8 @@ function translateInPlace(name: string, approval: Approval, approvedSource: { si
   // what the old world's directory held before the swap (r14 M3, 10-18): anything else found there at rollback time — a
   // world.mod.jsonl the server made at its first ban — is the server's, made since: history with nowhere to go
   const present = fs.readdirSync(D);
-  fs.writeFileSync(path.join(T, MANIFEST), JSON.stringify({ v: 2, world: name, at: Date.now(), translator: TRANSLATOR, report: approval.report, approval, present, backup: backup!.dir,
+  const provenance = JSON.parse(fs.readFileSync(path.join(T, "world.jsonl"), "utf8").split("\n")[0]).body?.provenance ?? null;   // the receipt repeats genesis's (S4)
+  fs.writeFileSync(path.join(T, MANIFEST), JSON.stringify({ v: 2, world: name, at: Date.now(), provenance, report: approval.report, approval, present, backup: backup!.dir,
     source: r!.source, renamed: steps.slice(1).map(([a, b]) => [path.basename(a), path.basename(b)]), made: Object.fromEntries([...made, MANIFEST].map((f) => [f, f === MANIFEST ? null : sha(path.join(T, f))])),
     identities: r!.planned, eido: r!.addressed,
     note: "written by tools/protocol/world.ts translate (in place); read by `rollback <world>`, which puts the renamed files back, removes the made ones and forgets the identities. The content-address index (OPT_DIR/eido-index.json) is a cache of library bytes, not world state: a rollback leaves it." }, null, 1));

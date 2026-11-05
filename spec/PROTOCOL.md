@@ -438,7 +438,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
 - **A load never writes to a stored value.** A world founded today is written in today's spelling from its first
   entry, so nothing repairs it. One write does happen when a server OPENS a world, and it is not a shape rewrite:
   holds left from before a restart are set down (`return-held`, the system's request; `settleOrphans`), the same
-  request a leave writes. A v1 world comes forward through the translator (`translate-v1@48`, §14), which writes today's spelling
+  request a leave writes. A v1 world comes forward through the translator (`translate-v1@49`, §14), which writes today's spelling
   (the shape audit's rules, `tools/protocol/import-v1/shapes.js`) and lifts v1's `sockets` maps into socket
   children with its own `lift-sockets {id, made, moved}` requests. The door takes a write in a spelling renamed
   before release (`grabbable.pose`/`station.pose` → `anim`, a grip's `fingers` → `grasp`, a motion's old type
@@ -1350,7 +1350,9 @@ them, and the suite holds them to it), not part of conformance.
   `requires` is the sorted, unique list of feature ids (`namespace:name@major`, at most 64) a reader must implement to read
   the world; later ones are added only by a governance entry's `requiresAdd` (a monotonic union, never removed). A feature
   this reader doesn't implement, declared anywhere, means "unsupported feature" and no world (never a partial fold).
-  `provenance {registry, writer}` names the writer and its exact source tree (`docs/DESIGN-log-vocabulary.md` §F F-2).
+  `provenance {registry, writer}` names the writer and its exact source tree (`docs/DESIGN-log-vocabulary.md` §F F-2):
+  the server's (`eidoverse-server`) at founding, the import tool's (`eidoverse-translate-v1`) at translation; it is the
+  one carrier, and a translation's `translated` request and rollback manifest repeat it.
   Genesis seeds no state: the founding request then writes `@world` through the
   gate. A missing or malformed genesis means "no world"; a `dialect` or `v` the
   reader doesn't implement means "unknown version" and no world.

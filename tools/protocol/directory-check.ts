@@ -392,7 +392,10 @@ ok(foldName("Marígold") === foldName("marigold") && foldName("JOSÉ") === foldN
       && (!t.r.sim.engine || t.r.sim.engine.engine === DEFAULT_ENGINE), { flown, checks: sf.checks, sim: t.r.sim }];
     out.strict = [t.back.status === "ok" && !t.back.diagnostics.some(([, c]: any) => String(c).startsWith("malformed")), t.back.diagnostics.slice(0, 3)];
     out.tier0 = [Array.isArray(t.lines[0].body.owners[0]) && t.lines[0].body.owners[0].length === 0, t.lines[0].body.owners];   // #260 rereview blocker 1: no founder
-    out.stamp = [t.lines[1].body.from.translator === TV1.TRANSLATOR_SIM, t.lines[1].body.from.translator];
+    // S4 (Mica 11-05): one provenance carrier: genesis names the import tool's writer at the sim translator's number, and the
+    // `translated` receipt repeats it; `from` (the parent) names no translator
+    const pv = t.lines[0].body.provenance;
+    out.stamp = [pv?.writer?.name === "eidoverse-translate-v1" && pv.writer.version === `${TV1.translatorVersion(TV1.TRANSLATOR_SIM)}.0.0` && JSON.stringify(t.lines[1].body.provenance) === JSON.stringify(pv) && !("translator" in t.lines[1].body.from), { pv, from: t.lines[1].body.from }];
     // identities: every old actor's act (and the launch it caused) is an opaque directory id, never the old name
     const people = t.lines.filter((e: any) => (e.kind === "request" && e.verb === "imported") || (e.kind === "physics" && e.verb === "launch"));
     // (v1's own system actors keep their v1 spelling on this path, as before: "world" stays "world", "door" is "system")
@@ -504,11 +507,11 @@ ok(foldName("Marígold") === foldName("marigold") && foldName("JOSÉ") === foldN
         const t = importer("commons", X, libDir ? { libDir } : { lib });
         report("EP3", `an epoch entered after ${C.length} instant-fold entries (${src}, her epoch and punts on ${four.join(", ")}): every body rests where her sim rests, through the importer`, facts(t, X, { addresses, launches: tail.filter((e: any) => e.verb === "punt").length }));
         // the thousands before it: the pure translator over the copy alone and over the copy + epoch agree entry for entry
-        // up to the epoch's act (the second entry, the translator's stamp, differs by design: @10 says the sim ran)
+        // up to the epoch's act (@49: neither `translated` names a translator; provenance is the import tool's, given by it)
         const nonce = "ZXAzLXNhbWUtbm9uY2UtMDAw";   // one world id for both (the default nonce hashes the whole source)
         const a = TV1.translate(C, { nonce }).out, b = TV1.translate(X, { nonce }).out; const k = b.findIndex((e: any) => e.kind === "request" && e.body?.verb === "epoch");
         const same = k > 2 && b.slice(2, k).every((e: any, i: number) => JSON.stringify(e) === JSON.stringify(a[i + 2])) && JSON.stringify(a[0]) !== undefined;
-        ok(same && a[1].body.from.translator === TV1.TRANSLATOR && b[1].body.from.translator === TV1.TRANSLATOR_SIM, `EP3 …and the ${k - 2} entries before the epoch are byte-for-byte what the copy alone translates to`, { k }); }
+        ok(same && !("translator" in a[1].body.from) && !("translator" in b[1].body.from), `EP3 …and the ${k - 2} entries before the epoch are byte-for-byte what the copy alone translates to`, { k }); }
 
     } }
 

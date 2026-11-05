@@ -18,11 +18,12 @@ import { openLive } from "../../../server/livehost.ts";
 import { ENGINE_CATALOGUE, warm } from "../../../server/modelcatalogue.ts";
 import { readLog, fold, digest, keyOk } from "../../../shared/protocol/fold.js";
 import { simFold } from "../../../shared/protocol/simlayer.js";
-import { translate, TRANSLATOR, DROPPED, deferredFeatures, deferredRefusal, watchGrants, watchRefusal, accountIn, isAccount, isAccountName } from "./translate-v1.js";
+import { translate, TRANSLATOR, translatorVersion, DROPPED, deferredFeatures, deferredRefusal, watchGrants, watchRefusal, accountIn, isAccount, isAccountName } from "./translate-v1.js";
 import { sha256 } from "../../../shared/protocol/hash.js";
 import { jcs } from "../../../shared/protocol/fold.js";
 import { putBlobFile } from "../../../server/durable.ts";
 import { v1FoldBuild } from "./build.ts";
+import { provenanceAt } from "../../../server/provenance.ts";
 import { contentAddressOf, recordEido, storeNameMatches } from "../../../server/eidoindex.ts";
 
 type Any = any;
@@ -288,8 +289,17 @@ function dryTranslation(old: Any[], srcDir: string, world: string, owner: OwnerC
   const m = identityMapper(old, directoryFor(worlds), { salt: identitySalt(worlds, sourceSha256), known: mainKnowledge(worlds, { self: path.basename(path.resolve(srcDir)) }), owner });
   return { m, r: translateOld(old, world, { who: m.who, content }) };
 }
-/** Every translation of a v1 log here, dry or applied: one set of options (fold build, namespace, hull boxes), so the digest can't drift from the write. */
-const translateOld = (old: Any[], world: string, opts: Any) => translate(old, { foldBuild: v1FoldBuild(), namespace: world, boxOf: hullBox, lampsOf, ...opts });
+/** The translator's provenance (§F F-2; Mica 11-05, S4): writer eidoverse-translate-v1 at TRANSLATOR's number, from the source tree
+ *  this tool runs; read once. Null (said once) outside a git checkout: the genesis then carries none, never a guess. */
+let PROVENANCE: Any;
+export function translatorProvenance() {
+  if (PROVENANCE === undefined) try { PROVENANCE = provenanceAt(path.resolve(import.meta.dir, "../../.."), "eidoverse-translate-v1", `${translatorVersion(TRANSLATOR)}.0.0`); }
+  catch (e) { PROVENANCE = null; console.warn(`[provenance] ${(e as Error)?.message ?? e}: worlds translated by this process carry no genesis provenance`); }
+  return PROVENANCE;
+}
+/** Every translation of a v1 log here, dry or applied: one set of options (fold build, namespace, hull boxes, provenance), so the digest can't drift from the write. */
+const translateOld = (old: Any[], world: string, opts: Any) => { const provenance = translatorProvenance();
+  return translate(old, { foldBuild: v1FoldBuild(), namespace: world, boxOf: hullBox, lampsOf, ...(provenance ? { provenance } : {}), ...opts }); };
 export function reportV1World(srcDir: string, { name, content, claim }: { name?: string; content?: (p: string) => string | null; claim?: boolean | { account: string; name: string } } = {}) {
   const src = path.join(srcDir, "log.jsonl");
   if (!fs.existsSync(src)) throw new Error(`${src}: no v1 log`);

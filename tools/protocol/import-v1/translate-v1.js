@@ -18,6 +18,7 @@ import { motionType } from "./shapes.js";
 import { qNorm, qRotate } from "../../../shared/rot.js";
 import { waterParams } from "../../../shared/water.js";
 import { sha256 } from "../../../shared/protocol/hash.js";
+import { checkProvenance } from "../../../shared/protocol/provenance.js";
 import { COMPONENTS, registered } from "../../../shared/protocol/componentspec.js";
 import { modernize as newParticles, hashSeed, isLegacy, derivedEffect, effectAddress, effectProblem, EFFECT_LIMITS } from "../../../shared/particle_effects.js";
 import { CSS_NAMES } from "./cssnames.js";
@@ -125,7 +126,8 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@48";   // @48: the genesis carries no minor (Mica 11-04: dialect + v, then requires). Every world id differs
+export const TRANSLATOR = "eidoverse/translate-v1@49";   // @49: the translator's provenance is genesis.body.provenance (given by the import tool), repeated on `translated`; `from` no longer names the translator (Mica 11-05, S4). Every translated log's bytes differ; a world id differs where provenance is given
+// @48: the genesis carries no minor (Mica 11-04: dialect + v, then requires). Every world id differs
 // @47: an entity id in the reserved person shape u-[a-z2-7]{24} refuses the translation (F19, P3). Output otherwise unchanged
 // @46: no repair-shapes marker; a stored sockets map is lifted here (lift-sockets acts at the end). Output differs there
 // @45: a minor-1 genesis may carry requires and provenance (§F); output unchanged
@@ -247,7 +249,7 @@ export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(nam
 // came to rest; but a punt stays its imported act (no v4 launch), each rest is a plain change by `sim` caused by that act
 // (no digest), the world's engine is today's eidosim from the epoch on, and (R 2026-10-08) a thing v1 ever punted is a
 // `dynamic` collider, every other one `static`. Nothing in the new log asks a reader to fly her engine.
-export const TRANSLATOR_SIM = "eidoverse/translate-v1@48";
+export const TRANSLATOR_SIM = "eidoverse/translate-v1@49";
 // @9 (2026-10-07, R's particles ruling): a v1 `particles` bag is today's instance: its preset is the effect, its origin is
 // `at`, its seed stays, and its count, size, opacity, speed, lifetime, area, texture and quality are the params of the
 // same names every Essential declares (shared/particle_effects.js modernize; instanceOf reads it back exactly). A key
@@ -282,9 +284,9 @@ const b64url = (bytes) => { let s = ""; for (const x of bytes) s += String.fromC
 // bind a key to the old world's owner, and a translation names no founder. The operator (custody) is tier 1. The reserved
 // governance draft (§13) must allow ONE attested fill of a translated world's empty tier 0 later, once something (a home-node
 // attestation) can vouch that a key is the v1 owner's. A world FOUNDED new (create-world ownerKey) is a different path.
-export function translatedGenesis(oldEntries, { key = LAB_DOOR_KEY, operator = key, nonce } = {}) {
+export function translatedGenesis(oldEntries, { key = LAB_DOOR_KEY, operator = key, nonce, provenance } = {}) {
   if (!nonce) { const h = sha256(oldEntries.map((e) => JSON.stringify(e)).join("\n")); nonce = b64url(Uint8Array.from(h.slice(0, 32).match(/../g), (x) => parseInt(x, 16))); }
-  return { dialect: DIALECT, v: VERSION, nonce, owners: [[], [operator]], sequencer: key };
+  return { dialect: DIALECT, v: VERSION, nonce, owners: [[], [operator]], sequencer: key, ...(provenance ? { provenance } : {}) };
 }
 export { enc, encName, dec };
 const yawQ = (y) => [0, Math.sin(y / 2), 0, Math.cos(y / 2)];
@@ -1051,7 +1053,10 @@ export function loneSurrogateIn(oldEntries) {
   for (let at = 0; at < oldEntries.length; at++) { const r = walk(oldEntries[at], "entry"); if (r) return { at, seq: oldEntries[at]?.seq, ...r }; }
   return null;
 }
-export function translate(oldEntries, { onDivergence, foldBuild, key, operator, nonce, who, founder, namespace, content, approved, boxOf, lampsOf } = {}) {
+export function translate(oldEntries, { onDivergence, foldBuild, key, operator, nonce, provenance, who, founder, namespace, content, approved, boxOf, lampsOf } = {}) {
+  // provenance (§F F-2): the import tool's writer object (server/provenance.ts provenanceAt), written into genesis and repeated on
+  // `translated`; a pure caller passes none and the genesis carries none, never a guess
+  if (provenance !== undefined) { const bad = checkProvenance(provenance); if (bad) throw new Error(`provenance: ${bad.code}: ${bad.detail}`); }
   if (founder !== undefined) throw new Error("a translation names no founder: nothing can yet bind a key to the old world's owner (v1 logs record accounts, not keys); tier 0 stays empty");
   const lone = loneSurrogateIn(oldEntries); if (lone) throw new Error(`entry ${lone.at}${lone.seq !== undefined ? ` (seq ${lone.seq})` : ""}, ${lone.path}: a lone surrogate (U+${lone.code}); enc maps every lone surrogate alike, so this log isn't imported`);   // bot review #367
   const ns = namespace === undefined ? NAMESPACE : namespaceOf(namespace);
@@ -1073,13 +1078,14 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
     return seq; };
   const genesis = oldEntries[0]?.verb === "genesis" ? oldEntries[0].args : { v: 1, dialect: "eidoverse-log", implicit: true };
   const t0 = Number.isInteger(oldEntries[0]?.ts) ? { ts: oldEntries[0].ts } : {};
-  push({ kind: "genesis", actor: "system", ...t0, body: translatedGenesis(oldEntries, { ...(key ? { key } : {}), ...(operator ? { operator } : {}), ...(nonce ? { nonce } : {}) }) });
+  push({ kind: "genesis", actor: "system", ...t0, body: translatedGenesis(oldEntries, { ...(key ? { key } : {}), ...(operator ? { operator } : {}), ...(nonce ? { nonce } : {}), ...(provenance ? { provenance } : {}) }) });
   const physics = hasEpoch(oldEntries);
   // @19: the name beside an account is joined to it only where v1's server wrote both (a grant's or ban's id and sub, a
   // spawn's or light's placer, a behaviour's bySub with the act's actor); any other account is its own person's alone
   const mapAcct = who ? (sub) => who(sub, { sub }) : undefined;
-  // the old genesis as it was, but never an account (@19): a genesis role's sub becomes its person's id, as in an old request
-  const translatedSeq = push({ kind: "request", actor: "system", verb: "translated", ts: t0.ts ?? 0, body: { from: unNegZero(withoutAccounts({ ...genesis, translator: physics ? TRANSLATOR_SIM : TRANSLATOR, ...(foldBuild ? { fold: foldBuild } : {}) }, mapAcct)) } });
+  // the import receipt: `from` is the parent (the old genesis as it was, but never an account (@19): a genesis role's sub becomes
+  // its person's id, as in an old request; and the v1 fold build that read it); provenance repeats genesis's (@49: one carrier)
+  const translatedSeq = push({ kind: "request", actor: "system", verb: "translated", ts: t0.ts ?? 0, body: { from: unNegZero(withoutAccounts({ ...genesis, ...(foldBuild ? { fold: foldBuild } : {}) }, mapAcct)), ...(provenance ? { provenance } : {}) } });
   // the operator's approval of this translation (import-v1/world.ts), written here, before any cause is taken
   if (approved) push({ kind: "request", actor: "system", verb: "translation-approved", ts: t0.ts ?? 0, body: approved });
   // an old request as sent keeps its words, but never an account: a grant's or a ban's top-level sub, whatever its shape, as
