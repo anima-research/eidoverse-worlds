@@ -76,8 +76,6 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["measure teaches set sockets", "mcpl/tools.ts", "a socket is a child entity, made with create {components: {parent: {to: id}", "act {verb: 'set', args: {id, component: 'sockets', value: {seat: {pos: [cx, y, cz], body: {pose: 'sitchair'}}}}} — or create {components: {parent: {to: id}", ["S3"]],
   ["the history forgets", "spec/PROTOCOL.md", "the refusal codes `hold-limit`, `beneath`, `not-pushable`", "the refusal codes", ["X1"]],
   ["the registry keeps pose", "shared/protocol/componentspec.js", "hold: \"string\", anim: \"string\", grips:", "hold: \"string\", pose: \"string\", grips:", ["A1"]],
-  ["no door translation", "shared/protocol/authority/writes.js", "if (comp === \"grabbable\" || comp === \"station\") { const r = renameFields(comp, value);", "if (false) { const r = renameFields(comp, value);", ["A2"]],
-  ["two-hand is a name", "shared/protocol/names.js", "if (comp === \"grabbable\" && p === \"two-hand\") {", "if (false) {", ["A2"]],
   ["an unknown name is refused", "shared/grab.js", "if (v.anim !== undefined && !(typeof v.anim === 'string' && ANIM_RE.test(v.anim)))", "if (v.anim !== undefined && !HOLD_POSES.includes(v.anim))", ["A3"]],
   ["an unknown name is held as written", "shared/grab.js", "if (g?.anim && ARMS[g.anim] && g.anim !== BOTH_HANDS) return g.anim;", "if (g?.anim) return g.anim;", ["A3"]],
   ["the lift keeps pose", "shared/protocol/authority/sockets.js", "const b = \"pose\" in b0 && !(\"anim\" in b0) ? (({ pose, ...r }) => ({ ...r, anim: pose }))(b0) : b0;", "const b = b0;", ["A5"]],
@@ -133,7 +131,6 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the old gesture tool's alias forgets once (a dance would loop forever)", "mcpl/tools.ts", `  ${EM}: (a) => ({ name: a.name, mode: "once" }),`, `  ${EM}: (a) => ({ name: a.name }),`, ["M5"]],
   ["the registry says bob", "shared/protocol/componentspec.js", "enums: { type: [\"pendulum\", \"spin\", \"orbit\", \"oscillate\", \"path\"]", "enums: { type: [\"pendulum\", \"spin\", \"orbit\", \"bob\", \"path\"]", ["OS1"]],
   ["the card is still Bob", "shared/protocol/descriptors.js", "  Oscillate: { type: 'oscillate', show: ['axis', 'amp', 'period', 'phase'],", "  Bob: { type: 'oscillate', show: ['axis', 'amp', 'period', 'phase'],", ["OS1"]],
-  ["the door stores bob as written", "shared/protocol/authority/writes.js", "if (comp === \"motion\" || comp.startsWith(\"motion:\")) { const r = renameFields(comp, value);", "if (false) { const r = renameFields(comp, value);", ["OS2"]],
   ["the old word isn't read", "shared/protocol/names.js", "  return typeof t === \"string\" && Object.hasOwn(OLD_MOTION_TYPES, t) ? OLD_MOTION_TYPES[t] : t;", "  return t;", ["OS2", "OS4"]],
   ["the closed form reads the raw type", "client/lib/motioneval.js", "  let r;\n  switch (motionType(m)) {", "  let r;\n  switch (m.type) {", ["OS4"]],
   ["the seat signals read the raw type", "client/lib/socksignals.js", "  switch (motionType(m)) {", "  switch (m.type) {", ["OS4"]],
@@ -383,16 +380,15 @@ const cases: Case[] = [
       const G = CS.COMPONENTS.grabbable, S = CS.COMPONENTS.station; const GR = readText("shared/grab.js");
       return { g: Object.keys(G.fields), genum: G.enums?.pose ?? null, s: Object.keys(S.fields), ap: CS.COMPONENTS["anim-pose"]?.status ?? null, ac: CS.COMPONENTS["anim-clip"]?.status ?? null, grasp: /GRIP_KEYS = \['pos', 'q', 'hand', 'role', 'grasp', 'part'\]/.test(GR) }; },
     good: (o) => o.g.includes("anim") && !o.g.includes("pose") && o.genum === null && o.s.includes("anim") && !o.s.includes("pose") && o.ap === "reserved" && o.ac === "reserved" && o.grasp },
-  { id: "A2", what: "…a write in the old spelling is taken and stored in the new, with a note: grabbable {pose: torch, grips.fingers} → {anim: torch, grips.grasp}; pose two-hand → twoHanded: true; station {pose} → anim", run(s) {
-      s.call("olive", "create-world", { title: s.name }); s.call("olive", "create", { id: "cup", model: "book", place: { at: [0, 0] } }); s.call("olive", "create", { id: "rod", model: "book", place: { at: [2, 0] } });
-      const a = s.call("olive", "set", { id: "cup", component: "grabbable", value: { pose: "torch", grips: { h: { pos: [0, 0.1, 0], fingers: "pinch" } } } });
-      const b = s.call("olive", "set", { id: "rod", component: "grabbable", value: { pose: "two-hand" } });
+  { id: "A2", what: "…the door refuses the old spelling as unknown (nothing deployed wrote it; the v1 translator writes the new): grabbable pose, a grip's fingers, a station's pose", run(s) {
+      s.call("olive", "create-world", { title: s.name }); s.call("olive", "create", { id: "cup", model: "book", place: { at: [0, 0] } });
+      const a = s.call("olive", "set", { id: "cup", component: "grabbable", value: { pose: "torch" } });
+      const f = s.call("olive", "set", { id: "cup", component: "grabbable", value: { grips: { h: { pos: [0, 0.1, 0], fingers: "pinch" } } } });
       s.call("olive", "create", { id: "bench", model: "crate", place: { at: [4, 0] } });
       const c = s.call("olive", "create", { components: { parent: { to: "bench" }, transform: { pos: [0, 0.5, 0] }, socket: { name: "bunk" }, station: { action: "lie", pose: "lie" } } });
-      const E = s.w().state().entities; const kid = Object.keys(E).find((k) => E[k].c.socket?.name === "bunk");
-      return { a: show(a), b: show(b), c: show(c), cup: E.cup?.c.grabbable ?? null, rod: E.rod?.c.grabbable ?? null, st: kid ? E[kid].c.station : null, notes: JSON.stringify(a.notes ?? []) }; },
-    good: (o) => o.a === "ok" && o.b === "ok" && o.c === "ok" && o.cup?.anim === "torch" && !("pose" in o.cup) && o.cup?.grips?.h?.grasp === "pinch" && !("fingers" in o.cup.grips.h)
-      && o.rod?.twoHanded === true && !("pose" in o.rod) && !("anim" in o.rod) && o.st?.anim === "lie" && !("pose" in o.st) && /renamed before release/.test(o.notes) },
+      const ok = s.call("olive", "set", { id: "cup", component: "grabbable", value: { anim: "torch", grips: { h: { pos: [0, 0.1, 0], grasp: "pinch" } } } });
+      return { a: a.refused ?? null, f: f.refused ?? null, c: c.refused ?? null, ok: show(ok) }; },
+    good: (o) => o.a?.code === "schema" && /unknown key 'pose'/.test(o.a.reason) && o.f?.code === "schema" && /unknown key 'fingers'/.test(o.f.reason) && o.c?.code === "schema" && /unknown key 'pose'/.test(o.c.reason) && o.ok === "ok" },
   { id: "A3", what: "…anim is an OPEN name: one the body doesn't know is admitted and held as the body's default (by size), never refused; a built-in one (torch) is held as named", async run(s) {
       s.call("olive", "create-world", { title: s.name }); s.call("olive", "create", { id: "cup", model: "book", place: { at: [0, 0] } });
       const r = s.call("olive", "set", { id: "cup", component: "grabbable", value: { anim: "juggle-overhand" } });
@@ -596,15 +592,13 @@ const cases: Case[] = [
       return { enum: M.enums.type, unit: M.units.amp, m, cards: Object.keys(DS.DESCRIPTORS ?? {}).filter((k: string) => /^(Bob|Oscillate)$/.test(k)), list: Object.keys(CO.RECORDS ?? {}).filter((k: string) => /^(Bob|Oscillate)$/.test(k)), types: ES.MOTION_TYPES, help: M.help }; },
     good: (o) => JSON.stringify(o.enum) === '["pendulum","spin","orbit","oscillate","path"]' && o.unit?.oscillate === "m" && !("bob" in (o.unit ?? {})) && JSON.stringify(o.m.axis) === "[0,1,0]" && o.m.amp === 0.3 && o.m.period === 4 && o.m.phase === 0
       && JSON.stringify(o.cards) === '["Oscillate"]' && JSON.stringify(o.list) === '["Oscillate"]' && JSON.stringify(o.types) === '["pendulum","spin","orbit","oscillate","path"]' && /oscillate \{axis, amp \(m\), period \(s\), phase\}/.test(o.help) && !/\bbob\b/.test(o.help) },
-  { id: "OS2", what: "…the door takes the old spelling for one release and stores oscillate, with a note (a whole motion and a part's motion:<slot>); its defaults are oscillate's", run(s) {
+  { id: "OS2", what: "…the door refuses bob as an unknown motion type (a whole motion and a part's motion:<slot>); oscillate is taken", run(s) {
       s.call("olive", "create-world", { title: s.name }); s.call("olive", "create", { id: "drone", model: "book", place: { at: [0, 0] } }); s.call("olive", "create", { id: "arm", model: "book", place: { at: [2, 0] } });
       const a = s.call("olive", "set", { id: "drone", component: "motion", value: { type: "bob", amp: 0.4, period: 3 } });
       const b = s.call("olive", "set", { id: "arm", component: "motion:piston", value: { type: "bob", node: "Piston", axis: "x" } });
       const c = s.call("olive", "set", { id: "drone", component: "motion", value: { type: "oscillate", amp: 0.5 } });
-      const E = s.w().state().entities;
-      return { a: show(a), b: show(b), c: show(c), notes: JSON.stringify(a.notes ?? []), arm: E.arm?.c["motion:piston"] ?? null, drone: E.drone?.c.motion ?? null }; },
-    good: (o) => o.a === "ok" && o.b === "ok" && o.c === "ok" && /"field":"type","from":"bob","to":"oscillate"/.test(o.notes) && /renamed before release/.test(o.notes)
-      && o.arm?.type === "oscillate" && o.arm?.amp === 0.3 && o.arm?.period === 4 && JSON.stringify(o.arm?.axis) === "[1,0,0]" && o.drone?.type === "oscillate" && o.drone?.amp === 0.5 },
+      return { a: a.refused ?? null, b: b.refused ?? null, c: show(c), drone: s.w().state().entities.drone?.c.motion ?? null }; },
+    good: (o) => o.a?.code === "shape" && /got "bob"/.test(o.a.reason) && o.b?.code === "shape" && o.c === "ok" && o.drone?.type === "oscillate" && o.drone?.amp === 0.5 },
   { id: "OS4", what: "…the readers read the old spelling for one release (names.js motionType): the closed form, the seat signals, the editor's channels and card draw a stored bob as an oscillate", async run() {
       const ME: any = await import(TREE + "client/lib/motioneval.js"), SS: any = await import(TREE + "client/lib/socksignals.js"), ES: any = await import(TREE + "shared/editschema.js"), NM: any = await import(TREE + "shared/protocol/names.js");
       const base = { pos: [1, 2, 3], yaw: 0 }, m = (type: string) => ({ type, axis: [0, 0, 1], amp: 0.5, period: 2, phase: 0.3, t0: 1000 });

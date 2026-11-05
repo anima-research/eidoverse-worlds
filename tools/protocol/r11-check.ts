@@ -32,7 +32,6 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a stored pause doesn't close the gates", "shared/protocol/consent.js", "if (sw === \"refuse\" || sw === \"ask\") { t.move = false; t.touch = false; }", "if (sw === \"refuse\" || sw === \"ask\") { t.move = true; t.touch = true; }", ["C4"]],
   ["a seated declaration says nothing", "mcpl/tools.ts", "and grants nothing${seated}`); }", "and grants nothing`); }", ["B1"]],
   ["a declaration dropped", "mcpl/ping-wire.ts", "const d = typeof declares === \"string\" && declares ? { declares } : {};", "const d = {};", ["B2"]],
-  ["a stored null renamed to anim: null", "shared/protocol/names.js", "else if (p === null) renamed.push({ field: \"pose\", to: null });", "", ["R1"]],
   ["the consent code's old words", "shared/protocol/refusalcodes.js", "(touch, pose, shove, displace…)", "(touch, pose, shove, move…)", ["D1"]],
   ["move's old name order", "AGENTS.md", "a thing by id (its entrance, else beside it), a place's name or label, a thing's label or handle,", "a thing (id, label or handle: its entrance, else beside it), a place's name or label,", ["D2"]],
   ["attach takes pose again", "mcpl/tools.ts", ", action: { type: \"string\" } }, required: [\"to\"] } },", ", action: { type: \"string\" }, pose: { type: \"string\" } }, required: [\"to\"] } },", ["D3"]],
@@ -76,7 +75,7 @@ const D = await import(TREE + "shared/protocol/authority.js");
 D.fixtureIds?.(true);
 const F = await import(TREE + "shared/protocol/fold.js");
 const C = await import(TREE + "shared/protocol/consent.js");
-const SR = await import(TREE + "shared/protocol/names.js");
+const SR = await import(ENGINE + "tools/protocol/import-v1/shapes.js");
 const VS = await import(TREE + "shared/protocol/verbspec.js");
 const RC = await import(TREE + "shared/protocol/refusalcodes.js");
 if (D.setScriptDuty) D.setScriptDuty({ maxMs: 1e9 });

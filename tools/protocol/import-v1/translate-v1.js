@@ -21,8 +21,7 @@ import { COMPONENTS, registered } from "../../../shared/protocol/componentspec.j
 import { modernize as newParticles, hashSeed, isLegacy, derivedEffect, effectAddress, effectProblem, EFFECT_LIMITS } from "../../../shared/particle_effects.js";
 import { CSS_NAMES } from "./cssnames.js";
 import { mapGrassArgs } from "../../../shared/flora_args.js";
-import { repairComps, repairWorld, OLD_LIGHT_DECAY, legacyHosts, liftHostOps } from "./shapes.js";
-import { renameFields } from "../../../shared/protocol/names.js";
+import { repairComps, repairWorld, OLD_LIGHT_DECAY, legacyHosts, liftHostOps, renameFields } from "./shapes.js";
 import { checkSocket, checkStation } from "../../../shared/sockbody.js";
 const PERSON24 = /^u-[a-z2-7]{24}$/;
 import * as eidosim from "./eidosim-v1.js";   // HER engine (the first eidosim, dialect 3): what a v1 punt did. Importer-only.
@@ -163,7 +162,7 @@ export const TRANSLATOR = "eidoverse/translate-v1@48";   // @48: the genesis car
 // @23 (R 10-27, audit B2): main's picture {src, part, look?, lit?, flip?} is a material on that node {node, texture,
 // description?, lit?} (materialOf), where @22 made it a quad of its own at the thing's origin; flip: true, which the material
 // can't say, rides imported:material and is listed. A picture with no part (main drew none) is carried as imported:picture.
-// @22 (R 10-27): main's sound look is description (names.js renameFields), where @21 left
+// @22 (R 10-27): main's sound look is description (shapes.js renameFields), where @21 left
 // it in imported:sound. Output differs from @21 on any log with a described sound. Both names.
 /** The version number in a translator name ("eidoverse/translate-v1@20" → 20), or NaN. Compare numbers, never a regex
  *  of version digits: `@(1[4-9])` quietly stopped matching at @20 and broke four suites (10-22). */
@@ -215,7 +214,7 @@ export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(nam
 // the old builder's table, which an effect document's modules say in full: they ride in imported:particles (carried,
 // not drawn), and v2's `scale` is the instance's scale. Output differs from @14 on any log with a named emitter.
 // @14 (R 10-17 21:40): a motion's type is written in today's spelling: v1's back-and-forth along an axis is oscillate (the maintenance
-// repair renames a stored one the same way: names.js renameFields). Output differs from @13 on any log with that motion. Both names.
+// repair renames a stored one the same way: shapes.js renameFields). Output differs from @13 on any log with that motion. Both names.
 // @13 (review r9 claims O3, 2026-10-17): every translation writes the system's repair-shapes act right after `translated`
 // (the shape repair's once-per-world marker, review r8 M3), one entry @12 didn't. Its projection is @12's; its log is one
 // entry longer. Both names move to @13 (the name says which output you got).

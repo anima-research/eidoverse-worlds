@@ -21,7 +21,7 @@
 import { grassAtWrite } from "../../../shared/protocol/assetref.js";
 import { eidoHex } from "../../../shared/eido.js";
 import { COMPONENTS, materialize } from "../../../shared/protocol/componentspec.js";
-import { partSlot } from "../../../shared/protocol/names.js";
+import { partSlot, motionType } from "../../../shared/protocol/names.js";
 import { AXES as AXIS_VECTORS } from "../../../shared/axes.js";
 import { lifter, isLegacyParent, isSocketC } from "../../../shared/protocol/authority/sockets.js";
 import { emptyState, applyInPlace } from "../../../shared/protocol/fold.js";
@@ -171,4 +171,31 @@ export function liftProjection(P, ever0) {
   const hosts = legacyHosts(st);
   for (const h of hosts) { if (!st.entities[h]) continue; const { ops } = liftHostOps(st, ever, h); for (const o of ops) if (o.op === "create") ever.add(o.id); applyInPlace(st, ops, 1); }
   return { lifted: Object.fromEntries(Object.entries(st.entities).map(([id, e]) => [id, JSON.parse(JSON.stringify(e.c))])), hosts };
+}
+
+/** Fields renamed before release (R 10-17 15:09/15:11): grabbable.pose and station.pose → anim (an open name of a pose or a
+ *  clip; grabbable's 'two-hand' → twoHanded: true), a grip's fingers → grasp; a motion's type bob → oscillate; a picture's and
+ *  a sound's alt or look → description (R 10-27). The door refuses the old spellings; the v1 translator writes the new. Idempotent; a value already spelled today is returned as the same
+ *  object; an old field stored as null is removed, never renamed to a null. {value, renamed: [{field, from?, to}]} */
+export const RENAMED_FIELDS = Object.freeze({ grabbable: Object.freeze({ pose: "anim", "grips.*.fingers": "grasp" }), station: Object.freeze({ pose: "anim" }),
+  motion: Object.freeze({ "type=bob": "type=oscillate" }), picture: Object.freeze({ alt: "description", look: "description" }), sound: Object.freeze({ alt: "description", look: "description" }) });
+/** The RENAMED_FIELDS entry a component key reads by: a part's motion (motion:<slot>) is a motion. */
+export const renamedFieldsKey = (comp) => (typeof comp === "string" && comp.startsWith("motion:") ? "motion" : comp);
+const fbag = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+export function renameFields(comp0, v) {
+  const comp = renamedFieldsKey(comp0);
+  if (!fbag(v) || !Object.hasOwn(RENAMED_FIELDS, comp)) return { value: v, renamed: [] };
+  if (comp === "motion") { const t = motionType(v); return t === v.type ? { value: v, renamed: [] } : { value: { ...v, type: t }, renamed: [{ field: "type", from: v.type, to: t }] }; }
+  let out = v; const renamed = []; const edit = () => (out === v ? (out = { ...v }) : out);
+  if (comp === "picture" || comp === "sound") for (const f of ["alt", "look"]) if (f in out) { edit(); const a = out[f]; delete out[f];
+    if (a !== null && out.description === undefined) out.description = a; renamed.push({ field: f, to: a === null ? null : "description" }); }
+  if ("pose" in out) { edit(); const p = out.pose; delete out.pose;
+    if (comp === "grabbable" && p === "two-hand") { if (out.twoHanded === undefined) out.twoHanded = true; renamed.push({ field: "pose", from: p, to: { twoHanded: out.twoHanded } }); }
+    else if (p === null) renamed.push({ field: "pose", to: null });   // a stored null is a removal (anim is never null)
+    else { if (out.anim === undefined) out.anim = p; renamed.push({ field: "pose", to: "anim" }); } }
+  if (comp === "grabbable" && fbag(out.grips) && Object.values(out.grips).some((g) => fbag(g) && "fingers" in g)) { edit();
+    out.grips = Object.fromEntries(Object.entries(out.grips).map(([k, g]) => { if (!fbag(g) || !("fingers" in g)) return [k, g];
+      const { fingers, ...r } = g; renamed.push({ field: `grips.${k}.fingers`, to: fingers === null ? null : "grasp" });
+      return [k, { ...r, ...(r.grasp === undefined && fingers !== null ? { grasp: fingers } : {}) }]; })); }
+  return { value: out, renamed };
 }

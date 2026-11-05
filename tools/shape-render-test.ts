@@ -40,9 +40,9 @@ await tryRow('LI', async () => {
   let r = W.call('set', { id: 'lamp', component: 'light', value: { color: 0xffffff } });
   check('LI2 a new light stores decay 2 and daytime dim', r.ok && C('lamp').light.decay === 2 && C('lamp').light.daytime === 'dim' && !('shadows' in C('lamp').light) && !('day' in C('lamp').light), [r.refused, C('lamp').light]);
   r = W.call('set', { id: 'porch', component: 'light', value: { day: false } });
-  check('LI3 day: false is taken and stored as daytime: full (it burns at noon)', r.ok && C('porch').light.daytime === 'full' && !('day' in C('porch').light), [r.refused, C('porch')?.light]);
-  r = W.call('set', { id: 'porch', component: 'light', value: { day: true } });
-  check('LI3 …day: true as daytime: dim', r.ok && C('porch').light.daytime === 'dim', [r.refused, C('porch')?.light]);
+  check('LI3 a light written with day is refused: the field is daytime (nothing deployed wrote day; the v1 translator writes daytime)', code(r) === 'schema' && /day is gone: renamed daytime/.test(r.refused?.reason ?? '') && !/taken/.test(r.refused?.reason ?? ''), r.refused);
+  r = W.call('set', { id: 'porch', component: 'light', value: { daytime: 'full' } });
+  check('LI3 …daytime full is taken', r.ok && C('porch').light.daytime === 'full', [r.refused, C('porch')?.light]);
   r = W.call('set', { id: 'lamp', component: 'light', value: { shadows: true } });
   check('LI4 shadows is refused (read by nothing; it returns when the rig reads it)', code(r) === 'schema' && /shadows/.test(r.refused?.reason ?? ''), r.refused);
   r = W.call('set', { id: '@world', component: 'light', value: {} });
@@ -233,7 +233,7 @@ await tryRow('DS', async () => {
   const r1 = W.call('set', { id: 'frame', component: 'picture', value: { src: 'store/images/0123456789abcdef.png', description: 'a print' } });
   const r2 = W.call('set', { id: 'radio', component: 'sound', value: { src: 'store/audio/0123456789abcdef.ogg', alt: 'rain' } });
   check('DS4 the door takes description and refuses alt', r1.ok && W.state().entities.frame.c.picture.description === 'a print' && code(r2) === 'schema', [r1.refused, r2.refused]);
-  const { renameFields } = await import('../shared/protocol/names.js');
+  const { renameFields } = await import('./protocol/import-v1/shapes.js');
   const rp = renameFields('picture', { src: 'store/images/a.png', alt: 'a print' }), rs = renameFields('sound', { src: 'store/audio/a.ogg', alt: 'rain', description: 'kept' }), rl = renameFields('picture', { src: 'store/images/a.png', look: 'older' });
   check('DS5 repair: a stored alt (or the look before it) is description (one time); description already there wins', rp.value.description === 'a print' && !('alt' in rp.value) && rs.value.description === 'kept' && !('alt' in rs.value) && rl.value.description === 'older' && !('look' in rl.value), [rp, rs, rl]);
   const src = ['shared/protocol/descriptors.js', 'shared/editschema.js', 'shared/components.js', 'client/lib/pictures.js', 'client/lib/sounds.js'].map(read).join('\n');
@@ -329,9 +329,10 @@ await tryRow('TE', async () => {
   const W = scratchWorld('w2r-terrain');
   let r = W.call('set', { id: '@world', component: 'terrain', value: { kind: 'raster', blob: 'x', w: 2, h: 2 } });
   check('TE4 a raster terrain is refused as reserved', code(r) === 'reserved', r.refused);
-  r = W.call('set', { id: '@world', component: 'terrain', value: { seed: 4, layers: [{ color: '#4a5d33', repeat: 16 }] } });
+  const rh = W.call('set', { id: '@world', component: 'terrain', value: { seed: 4, layers: [{ color: '#4a5d33', repeat: 16 }] } });
+  r = W.call('set', { id: '@world', component: 'terrain', value: { seed: 4, layers: [{ color: 0x4a5d33, repeat: 16 }] } });
   const t = W.state().entities['@world'].c.terrain;
-  check('TE5 a layer colour "#rrggbb" is taken and stored as an int; the sim\'s defaults are written', r.ok && t.layers[0].color === 0x4a5d33 && t.amplitude === 3 && t.size === 80 && t.octaves === 4 && t.frequency === 2.5 && t.flatHeight === 0, [r.refused, t]);
+  check('TE5 a layer colour "#rrggbb" is refused (a colour is an int); an int is taken and the sim\'s defaults are written', code(rh) === 'shape' && r.ok && t.layers[0].color === 0x4a5d33 && t.amplitude === 3 && t.size === 80 && t.octaves === 4 && t.frequency === 2.5 && t.flatHeight === 0, [r.refused, t]);
   r = W.call('set', { id: '@world', component: 'terrain', value: { seed: 4, water: { level: 1 } } });
   check('TE6 terrain.water is refused: water is its own component', code(r) === 'schema' && /water/.test(`${r.refused?.reason} ${r.refused?.fix}`), r.refused);
   const Wa = COMPONENTS.water;

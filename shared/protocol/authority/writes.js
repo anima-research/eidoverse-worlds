@@ -28,7 +28,6 @@ import { outsideWorld } from "../../spawn.js";
 import { isLookAt } from "./checks.js";
 import { Admitted, admit, rateCheck } from "./gate.js";
 import { applyResettle, clearRefsTo, lastTouch, planResettle, resettleEntries, stampMedia, stampModelHash, stampShapes, stripDry, touched, warnOrNot, warnings } from "./followups.js";
-import { renameFields } from "../names.js";
 import { AXES, POSITIVE_AXES } from "../../axes.js";
 import { ratedHoursAt } from "../../forecast.js";
 // the layers above this one (a leaf may not import them: authority-layers-check), reached through UP (ctx.js), which
@@ -209,17 +208,6 @@ function resolve(ctx, id, comp, value, prev) {
   if (comp === "grass") { let r;
     try { r = atWrite(comp, value); } catch (x) { refuse("shape", `${id}.${comp}: ${String(x?.message ?? x).replace(/^\[flora\] /, "")}`, COMPONENTS.grass.help); }
     for (const n of r.notes) ctx.notes.push({ id, component: comp, ...n }); value = r.value; }
-  // grabbable.pose / station.pose are anim, a grip's fingers its grasp (R 10-17 15:09/15:11): a write in the old spelling is
-  // taken and stored in the new (names.js renameFields)
-  if (comp === "grabbable" || comp === "station") { const r = renameFields(comp, value); if (r.renamed.length) { value = r.value; for (const n of r.renamed) ctx.notes.push({ id, component: comp, ...n, why: "renamed before release (R 10-17): pose is anim, fingers is grasp" }); } }
-  // a motion's type bob is oscillate (R 10-17 21:40): the old spelling is taken for one release and stored in the new
-  if (comp === "motion" || comp.startsWith("motion:")) { const r = renameFields(comp, value); if (r.renamed.length) { value = r.value; for (const n of r.renamed) ctx.notes.push({ id, component: comp, ...n, why: "renamed before release (R 10-17): a motion's bob is oscillate" }); } }
-  // a light's day (a double negative) is daytime (shape audit 10-16): true = dim, false = full
-  if (comp === "light" && value && typeof value === "object" && !Array.isArray(value) && typeof value.day === "boolean") { const { day, ...rest } = value;
-    value = { ...rest, daytime: rest.daytime ?? (day ? "dim" : "full") }; ctx.notes.push({ id, component: comp, field: "day", sent: day, kept: value.daytime, why: "a light's day is daytime: dim | full" }); }
-  // a terrain layer's colour is an int, as every colour (shape audit 10-16): "#rrggbb" is taken
-  if (comp === "terrain" && value && typeof value === "object" && !Array.isArray(value) && Array.isArray(value.layers) && value.layers.some((l) => typeof l?.color === "string" && /^#[0-9a-f]{6}$/i.test(l.color)))
-    value = { ...value, layers: value.layers.map((l) => (typeof l?.color === "string" && /^#[0-9a-f]{6}$/i.test(l.color) ? { ...l, color: parseInt(l.color.slice(1), 16) } : l)) };
   // a sky written by hand is stamped like the sky act's: ts is the instant its hours held (the stamped fields are refused in buildSet)
   if (comp === "sky" && value && typeof value === "object" && !Array.isArray(value) && value.ts === undefined) value = { ...value, ts: Math.floor(ctx.w.now()) };
   if (isLookAt(comp) && value && typeof value === "object" && !Array.isArray(value)) { const AXV = POSITIVE_AXES;   // the letters the door takes (tools/lookat-forward-check: no negative letter)
@@ -229,7 +217,6 @@ function resolve(ctx, id, comp, value, prev) {
   // an axis is a vector (PROTOCOL §9.2): the letters the readers take are stored as their vectors
   if ((comp === "motion" || comp.startsWith("motion:")) && value && typeof value === "object" && !Array.isArray(value) && typeof value.axis === "string" && MOTION_AXES[value.axis.toLowerCase()]) {
     ctx.notes.push({ id, component: comp, field: "axis", sent: value.axis, kept: MOTION_AXES[value.axis.toLowerCase()], why: "an axis is stored as a vector" }); value = { ...value, axis: MOTION_AXES[value.axis.toLowerCase()].slice() }; }
-  if (comp === "collider" && value && typeof value === "object" && !Array.isArray(value) && value.shape === "exact") { ctx.notes.push({ id, component: comp, field: "shape", sent: "exact", kept: "mesh", why: "mesh is the word for its triangles" }); value = { ...value, shape: "mesh" }; }
   if (comp === "parent" && value && typeof value === "object" && !Array.isArray(value) && "order" in value) { const { order, ...rest } = value; ctx.notes.push({ id, component: comp, field: "order", sent: order, why: "siblings have no stored order: dropped" }); value = rest; }
   if (comp === "motion" && value && typeof value === "object") { const m = materialize("motion", value); const v = filled(m.value, m.filled);
     if (v.t0 === undefined) { v.t0 = ctx.w.now(); ctx.notes.push({ id, component: "motion", field: "t0", kept: v.t0, why: "stamped by the authority" }); } return v; }

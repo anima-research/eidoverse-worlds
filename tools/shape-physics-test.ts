@@ -159,7 +159,7 @@ await tryRow('CO', () => {
   check('CO1 …and its absence is pinned for both readers (physics: its box; walking: the size rule)', /physics/.test(Co.absentMeans?.shape ?? '') && /16 m²/.test(Co.absentMeans?.shape ?? '') && /2 m²/.test(Co.absentMeans?.shape ?? ''), Co.absentMeans);
   const W = scratchWorld('w2p-collider').seed({ hut: { model: 'crate', pos: [0, 0, 0] } });
   const r = W.call('set', { id: 'hut', component: 'collider', value: { shape: 'exact' } });
-  check('CO2 exact is taken and stored as mesh', r.ok && W.state().entities.hut.c.collider.shape === 'mesh', [r.refused, W.state().entities.hut.c.collider]);
+  check('CO2 exact is refused (the word is mesh; nothing deployed wrote exact)', r.refused?.code === 'shape' && /got "exact"/.test(r.refused.reason) && !W.state().entities.hut.c.collider, [r.refused, W.state().entities.hut.c.collider]);
   check('CO3 the walker reads mesh as its triangles (and an old exact the same)', colliderOf({ collider: { shape: 'mesh' } }) === 'exact' && colliderOf({ collider: { shape: 'exact' } }) === 'exact' && colliderOf({ collider: { shape: 'box' } }) === 'box');
 });
 await tryRow('JT', () => {

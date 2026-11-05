@@ -59,7 +59,7 @@ try {
   const wide = await (await fetch(`${h.BASE}/upload?name=wide-hall`, { method: "POST", body: await buildGlb(hall(0.45) as any) })).json() as any;
   const slim = await (await fetch(`${h.BASE}/upload?name=slim-hall`, { method: "POST", body: await buildGlb(hall(0.25) as any) })).json() as any;
   // 0.45m door at 0.6×: 0.27m, narrower than a body; 0.25m door at 1.6×: 0.4m, a body fits
-  await legacyVerb(a, "spawn", { id: "small", lib: wide.path, pos: [40, a.heightAt(40, 0), 0], yaw: 0, scale: 0.6, collide: "exact" });
+  await legacyVerb(a, "spawn", { id: "small", lib: wide.path, pos: [40, a.heightAt(40, 0), 0], yaw: 0, scale: 0.6, collide: "mesh" });
   await legacyVerb(a, "spawn", { id: "big", lib: slim.path, pos: [80, a.heightAt(80, 0), 0], yaw: 0, scale: 1.6 });
   await legacyVerb(a, "spawn", { id: "forced", lib: up.path, pos: [60, a.heightAt(60, 0), 0], yaw: 0, collide: "box" });
   await tryUntil("the agent holds the small, big and forced things", () => a.entities.get(sceneId(a, "small")) && a.entities.get(sceneId(a, "big")) && a.entities.get(sceneId(a, "forced")), { ms: 2000, step: 50 });

@@ -218,7 +218,7 @@ try {
   // measure its solid parts (server/solids.ts: under 2 m a model's one box is solid, and a body on the floor at 0.05 m
   // would be inside it); the room's floor and its furnished middle are the same as before
   const rug = await upload("rug", await buildGlb([[-6, 0, -1.5, 6, 0.05, 1.5], [-1.5, 0.05, -1.5, 1.5, 2.2, 1.5]]));
-  await legacyVerb(a, "spawn", { id: "rug", lib: rug, pos: [50, ry, -20], yaw: 0, collide: "exact" });
+  await legacyVerb(a, "spawn", { id: "rug", lib: rug, pos: [50, ry, -20], yaw: 0, collide: "mesh" });
   await legacyVerb(a, "comp", { id: "rug", type: "places", data: {
     long_room: { min: [-6, 0.05, -1.5], max: [6, 3, 1.5], label: "the long room" },
     loft: { min: [-6, 3, -1.5], max: [6, 5, 1.5] } } });

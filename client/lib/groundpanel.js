@@ -217,7 +217,7 @@ export function paintGround(body) {
           return;
         }
         lo.value = (+min).toFixed(1); hi.value = (+max).toFixed(1);
-        const cur = terrainEditBase() ?? { seed: st.seed, segments: 200, layers: [{ color: pal().tints[st.tint].layer, repeat: 16 }] };
+        const cur = terrainEditBase() ?? { seed: st.seed, segments: 200, layers: terrainArgs(pal(), { tint: st.tint }).layers };
         ground('terrain', noteTerrainSent({
           ...cur, size: up.meta?.size ?? cur.size ?? 160,
           // enough mesh to show the image's detail along its longer side

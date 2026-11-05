@@ -74,7 +74,7 @@ console.log('1. the alias both ways, through the real door:');
   step('sky', { hours: 9, clouds: 'stratus', forecast: { seed: 7, states: ['clear', 'fair', 'rain'], dwellSec: [600, 1800], transitionSec: 45 } });
   step('weather', { weather: 'overcast' });                                      // a manual override under the forecast
   step('sky', { clock: 'real', tz: 'Europe/Paris', hours: 10, rate: 2 });         // parks hours/rate under dormantRated
-  step(...terrainReq({ seed: 7, size: 160, segments: 200, amplitude: 2.6, flatRadius: 16, layers: [{ color: '#4a5d33', repeat: 16 }] }));
+  step(...terrainReq({ seed: 7, size: 160, segments: 200, amplitude: 2.6, flatRadius: 16, layers: [{ color: 0x4a5d33, repeat: 16 }] }));
   step(...grassReq({ species: 'grass', width: 90, depth: 80, center: [0, 0], height: 0.42, density: 1 }));
   step(...grassReq(null));                                                       // mow: delete @world grass
   step(...grassReq({ preset: 'mojave', width: 90, depth: 80, center: [0, 0], density: 1.4 }));
@@ -165,7 +165,7 @@ console.log('\n2. picking a sky replaces the Sky; the Weather stays:');
   const mow = pk('mow', '');
   check('…mow is delete @world grass, and clears the field', mow.ops[0]?.verb === 'delete' && mow.ops[0].args.component === 'grass' && g().grass === null, JSON.stringify([mow.ops, g().grass]));
   check('the panel\'s args and the World tiles\' are one recipe: terrainArgs = what groundpanel wrote',
-    canon(terrainArgs(PAL, { seed: 7, shape: 'hills', tint: 'meadow' })) === canon({ seed: 7, size: 160, segments: 200, amplitude: PAL.shapes.hills, flatRadius: 16, layers: [{ color: PAL.tints.meadow.layer, repeat: 16 }] })
+    canon(terrainArgs(PAL, { seed: 7, shape: 'hills', tint: 'meadow' })) === canon({ seed: 7, size: 160, segments: 200, amplitude: PAL.shapes.hills, flatRadius: 16, layers: [{ color: hexInt(PAL.tints.meadow.layer), repeat: 16 }] })
     && canon(grassArgs(PAL, { ...paletteDefaults(PAL), plant: 'meadow' })) === canon({ ...PAL.plantings.meadow.args, height: PAL.grassHeight.meadow, density: PAL.grassDensity.normal }));
   check('weather picks are the authority\'s weather verb, and only real weathers', canon(worldPick(g(), 'weather', 'rain').ops) === canon([{ verb: 'weather', args: { weather: 'rain' } }]) && worldPick(g(), 'weather', 'hail').errors.length === 1);
 }

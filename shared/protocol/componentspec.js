@@ -99,7 +99,7 @@ export const COMPONENTS = {
   // intensity 25.93 = main's 16 cd at decay 1.7, matched at 5 m (half the default range): 16 × 5^0.3 (translate-v1 parityIntensity)
   light:     { on: "thing", fields: { kind: "string", color: "int", intensity: "number", range: "number", angle: "number", inner: "number", decay: "number", important: "bool", daytime: "string" },
     defaults: { kind: "point", color: 0xffd9a0, intensity: 25.93, range: 10, decay: 2, important: false, daytime: "dim" }, enums: { kind: ["point", "spot", "directional"], daytime: ["dim", "full"] },
-    dropped: { shadows: "read by nothing (it returns when the light rig reads it; absent = no shadows)", day: "renamed daytime: 'dim' (true) | 'full' (false); a write of day is taken and stored as daytime" },
+    dropped: { shadows: "read by nothing (it returns when the light rig reads it; absent = no shadows)", day: "renamed daytime: 'dim' (true) | 'full' (false)" },
     when: [{ if: { kind: "spot" }, set: { angle: Math.PI / 4, inner: 0 } }],
     ranges: { color: { min: 0, max: 0xffffff }, intensity: { min: 0 }, range: { gt: 0 }, angle: { gt: 0, max: Math.PI / 2 }, inner: { min: 0, max: Math.PI / 2 }, decay: { min: 0, max: 4 } },
     units: { range: "m", angle: "rad", inner: "rad" },
