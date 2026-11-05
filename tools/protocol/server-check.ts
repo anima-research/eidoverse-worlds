@@ -495,7 +495,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   await tryUntil("the joiner that doesn't fold is closed", () => b.ws.readyState === 3, { ms: 2000, step: 50 });
   ok(!b.snapshot && /needs a client that folds its log/.test(b.of("error").at(-1)?.error ?? "") && b.ws.readyState === 3, "S8 a joiner that doesn't fold the log is refused, told why, and closed", [b.of("error").at(-1), b.ws.readyState]);
   const r2 = await a.req("set", { id: "box", component: "label", value: "after the refusal" }); await sleep(200);
-  ok(r2.ok && a.of("log").every((m: any) => Array.isArray(m.entries) && m.entries.every((e: any) => typeof e.kind === "string" && typeof e.verb === "string" && !("args" in e))), "S8 …and the world carries on, still sending only entries", a.of("log").length);
+  ok(r2.ok && a.of("log").every((m: any) => Array.isArray(m.entries) && m.entries.every((e: any) => typeof e.kind === "string" && typeof (e.verb ?? e.op) === "string" && !("args" in e))), "S8 …and the world carries on, still sending only entries", a.of("log").length);
   ok(a.snapshot.mine.length === 0 && (await client(srv.port, "meadow", "Ann", { replica: true })).snapshot.mine.includes(r2.act), "S8 a rejoin's undo stack holds my acts (Ctrl+Z survives a reload)");
   a.close(); }
 // ---- SP: physics at the server (design 20): who holds what is sent to everyone; a joiner's cut carries it and the sim;
