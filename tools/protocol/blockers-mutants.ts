@@ -28,7 +28,7 @@ const M: Mutant[] = [
     find: '    durably("log", () => io.writeLine(line));   // on disk first; only then the live chain and fold see it\n    entries.push(posAt(parsed, seq));',
     repl: '    entries.push(posAt(parsed, seq)); durably("log", () => io.writeLine(line));', suite: "authority", rows: ["ST1"], expect: 9 },
   { id: "B2", what: "a batch op's args unchecked before any is built ({verb: delete, args: {id, componnent}} deletes the entity)", file: "shared/protocol/authority/verbs.js",
-    find: "        if (bad) { const { code, reason, fix, ...rest } = bad; refuse(code, `batch op ${i}", repl: "        if (false) { const { code, reason, fix, ...rest } = bad; refuse(code, `batch op ${i}", suite: "authority", rows: ["BT1"], expect: 9 },
+    find: "        if (bad) { const { code, reason, fix, ...rest } = bad; refuse(code, `batch request ${i}", repl: "        if (false) { const { code, reason, fix, ...rest } = bad; refuse(code, `batch request ${i}", suite: "authority", rows: ["BT1"], expect: 9 },
   { id: "B4", what: "a request whose connection was superseded while it awaited still writes", file: "server/reqcap.ts",
     find: "  if (!(c.world === w && !c.superseded && w.clients.has(c) && (c.gen ?? null) === cap.gen))", repl: "  if (false)", suite: "reset-race", rows: ["SR1"], expect: 1 },
   { id: "B5", what: "a server operator's repair is not narrow: any verb through the operator door", file: "shared/protocol/authority.js",
@@ -70,7 +70,7 @@ const M: Mutant[] = [
   { id: "M7", what: "a deferred feature (an air box on @world) is dropped quietly instead of refusing the translation", file: "tools/protocol/import-v1/world.ts",
     find: '    refused: deferred.length ? deferredRefusal(deferred, `"${world}"`) : watchRefusal(watch, `"${world}"`),', repl: '    refused: watchRefusal(watch, `"${world}"`),', suite: "inplace", rows: ["IP26"], expect: 20 },
   { id: "M8", what: "governance not marked reserved: a log holding a sequencer entry is served", file: "server/livehost.ts",
-    find: '    if (g >= 0) throw new Error(`"${name}" can\'t be served: its log holds a governance (sequencer) entry', repl: '    if (false) throw new Error(`"${name}" can\'t be served: its log holds a governance (sequencer) entry', suite: "gov-reserved", rows: ["G2"], expect: 1 },
+    find: '    if (g >= 0) throw new Error(`"${name}" can\'t be served: its log holds a governance entry', repl: '    if (false) throw new Error(`"${name}" can\'t be served: its log holds a governance entry', suite: "gov-reserved", rows: ["G2"], expect: 1 },
   { id: "M9", what: "a world needing maintenance is written to anyway (the repair-needed refusal gone)", file: "shared/protocol/authority/scriptrun.js",
     // the gate moved into scriptrun's one write-gate helper (49d17e4b: a script's write meets it too)
     find: '  if (n.blocking.length) return { code: "repair-needed",', repl: '  if (false) return { code: "repair-needed",', suite: "shape-repair", rows: ["RP15"], expect: 1 },

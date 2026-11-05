@@ -891,7 +891,7 @@ try {
     let carlId = "";
     // CP4 (setup) carl visits, speaks and leaves, BEFORE the page reconnects (CP6): a page that never saw him arrive
     { const carl = new WebSocket(BASE.replace("http", "ws") + "/ws"); await new Promise((r, j) => { carl.onopen = r; carl.onerror = j; });
-      carl.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "snapshot") { carlId = m.actor; carl.send(JSON.stringify({ type: "request", id: 1, args: { text: "carl was here" } })); } };
+      carl.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "snapshot") { carlId = m.actor; carl.send(JSON.stringify({ type: "request", id: 1, verb: "say", args: { text: "carl was here" } })); } };
       carl.send(JSON.stringify({ type: "join", world: WORLD, id: "carl", avatar: "", replica: true }));
       await waitDisk(() => entries().some((e) => e?.kind === "say" && e.body?.text === "carl was here")); carl.close(); await sleep(300); }
     // CP6 a line typed while reconnecting is queued, then sent (the port dropped it as 'offline')
