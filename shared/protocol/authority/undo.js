@@ -115,8 +115,7 @@ function buildUndo(ctx, a, w) {
   const flat = opsOf(res);
   // what others wrote since: a thing's own later history (touch), and, for the spatial check, every change entry since
   // the result (bounded by what happened after the act, never the log before it)
-  // later work by anyone but the act's own author stands. A translated world's tail lift-sockets is the system's work: an
-  // imported act's value from before it is the old world's spelling, which the door refuses, so undoing that act skips what the lift touched
+  // later work by anyone but the act's own author stands
   const others = (i) => E[i].actor !== target.actor;
   const touchedBy = (id, comp) => { const h = X.touch.get(id) ?? []; for (let k = firstAfter(h, res.seq); k < h.length; k++) { const e = E[h[k]]; if (!others(h[k])) continue;
     for (const o of opsQuiet(e)) if (o.id === id && (comp === undefined || o.comp === comp || o.comp === undefined || o.op === "create")) return e.actor; } return null; };
@@ -194,6 +193,19 @@ function buildUndo(ctx, a, w) {
     if (hit) { const who = later.find((e) => opsQuiet(e).some((q) => q.id === hit))?.actor;
       skipped.push({ id: o.id, component: o.comp, why: `putting it back would land it on ${hit}, which ${said(who)} has placed since`, by: who }); groups.splice(i, 1); } }
   return { groups, skipped }; };
+  // An act the import's tail lift-sockets rewrote (its value before is the old world's spelling, which the door refuses) can't be undone
+  // in part: the whole request refuses, naming the act and its ops (Mica 11-05, #23 ruling 1)
+  const isLift = (i) => { const e = E[i], c = E[e.cause]; return e.actor === "system" && isE(c) && c.kind === "request" && c.verb === "lift-sockets" && c.actor === "system"; };
+  const liftedOps = (res) => { const lifts = X.changes.slice(firstAfter(X.changes, res.seq)).filter(isLift); if (!lifts.length) return [];
+    const ops = opsQuiet(res), hit = [];
+    ops.forEach((o, j) => { const whole = o.op === "create" || (o.op === "delete" && o.comp === undefined);
+      const by = lifts.find((i) => opsQuiet(E[i]).some((x) => (x.id === o.id && (whole || x.comp === o.comp || x.comp === undefined || x.op === "create"))
+        || (o.op === "create" && x.op === "set" && x.comp === "parent" && x.value?.to === o.id)));
+      if (by !== undefined) hit.push({ index: j, op: o.op, id: o.id, ...(o.comp !== undefined ? { component: o.comp } : {}), lift: E[by].cause }); });
+    return hit; };
+  const refuseLifted = (seq) => { const r = X.resultOf.get(seq); const ops = r === undefined ? [] : liftedOps(E[r]); if (!ops.length) return;
+    refuse("undo-unavailable", `act ${seq} was imported, and the import rewrote ${ops.map((o) => `op ${o.index} (${o.id}${o.component ? ` ${o.component}` : ""})`).join(", ")} into today's spelling: its old value can't be put back, so nothing is undone`,
+      "change it yourself; history shows the imported act and the lift that rewrote it", { cause: "migration-transformed", act: seq, ops }); };
   // an act whose result leaves every thing it touched as it was (set then delete of a component it lacked) changed nothing: not undoable (review 2.20)
   const changedNothing = (seq) => { const r = X.resultOf.get(seq); if (r === undefined) return false;
     return [...new Set(opsQuiet(E[r]).map((o) => o.id))].every((id) => JSON.stringify(entityBefore(w, id, r, X)) === JSON.stringify(entityBefore(w, id, r + 1, X))); };
@@ -215,6 +227,7 @@ function buildUndo(ctx, a, w) {
     const from = versionSeq(w, a.since, "since");
     const acts = (X.actsOf.get(a.actor) ?? []).filter((q) => q >= from && X.resultOf.has(q) && !X.undone.has(q) && !["create-world", "undo", "throw", "drop", "leave"].includes(E[q].verb)).reverse();
     if (!acts.length) refuse("nothing", `${said(a.actor)} has made no change since act ${from} that's still in force`, "");
+    for (const q of acts) refuseLifted(q);
     if (acts.length > 20 && a.confirm !== true && a.dry !== true) refuse("confirm", `that rolls back ${acts.length} acts by ${said(a.actor)} since act ${from}`, "dry: true lists them; confirm: true does it", { acts: acts.length });
     let st = ctx.st; const all = []; const skippedAll = [], done = [];
     for (const q of acts) { const { groups, skipped } = inverseOf(E[q], result(q), st); const ops = groups.flat();
@@ -244,6 +257,7 @@ function buildUndo(ctx, a, w) {
       live !== null ? `it's back in force through redo ${live}: undo {act: ${live}} (or a bare undo) takes it back` : "a bare undo takes back your latest change; history shows the chain"); }
   if (["throw", "drop", "leave"].includes(target.verb)) refuse("physical", `that was a ${target.verb}: what it changed is where things came to rest, which physics decided`, "put it back yourself: grab it, then put {id, pos}");
   const res = result(target.seq); if (!res || changedNothing(target.seq)) refuse("nothing", "that act changed nothing", "");
+  refuseLifted(target.seq);
   const { groups, skipped } = inverseOf(target, res, ctx.st);
   if (!groups.length) refuse("conflict", "everything that act touched has been changed by someone else since", "their later change stands (undo never writes over it); if you still want yours, make the change again yourself, and history shows who did what", { skipped });
   if (skipped.length) ctx.notes.push({ skipped });

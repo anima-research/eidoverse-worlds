@@ -82,6 +82,7 @@ export const REFUSAL_CODES = Object.freeze({
   "conflicts":      { meaning: "parts changed both here and upstream", when: "a blueprint update without resolve for parts edited on both sides" },
   "founding":       { meaning: "founding a world can't be undone", when: "undo of create-world" },
   "physical":       { meaning: "physics decided that, not an edit", when: "undo of a throw, drop or leave" },
+  "undo-unavailable": { meaning: "that act can't be undone, and nothing was", when: "undo or rollback of an imported act the translation's lift-sockets rewrote (cause: migration-transformed, with the act and its ops): the whole request refuses, never a partial undo" },
   "disabled":       { meaning: "it's switched off", when: "handling, using or standing on a thing that is (or hangs under) disabled" },
   "in-flight":      { meaning: "the engine has it until it rests", when: "any write to a launched thing before its rest" },
   "not-at-rest":    { meaning: "the engine doesn't have it at rest", when: "a rest the engine doesn't agree with" },

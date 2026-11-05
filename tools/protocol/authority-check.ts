@@ -333,6 +333,47 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
       && lockChoices("Move").map((c) => c.v).join() === "through,cancel,unlock", "NR8 the lock question names what the request would do: Move / Delete / Replace anyway? (R's three answers)", got); }
 }
 
+// ---- UM: undo of an imported act the translation's lift-sockets rewrote (Mica 11-05, #23 ruling 1) ----
+// the whole request refuses (undo-unavailable, cause migration-transformed, naming the act and its ops) and writes no change;
+// a mixed batch never undoes its untouched ops alone; an imported act the lift left alone undoes as before
+{ const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
+    { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } },
+    { seq: 2, ts: 3, actor: "ann", verb: "spawn", args: { id: "tbl", lib: "table", pos: [2, 0, 3] } },
+    { seq: 3, ts: 4, actor: "ann", verb: "comp", args: { id: "tbl", type: "sockets", data: { perch: { pos: [0.45, 0.75, 0.25], yaw: 1.2 }, other: { pos: [-0.4, 0.75, 0] } } } },
+    { seq: 4, ts: 5, actor: "ann", verb: "spawn", args: { id: "bell", lib: "bell", pos: [-5, 0, -5] } },
+    { seq: 5, ts: 6, actor: "ann", verb: "mount", args: { id: "bell", to: "tbl", slot: "other" } },
+    { seq: 6, ts: 7, actor: "ann", verb: "spawn", args: { id: "box", lib: "crate", pos: [9, 0, 9] } },
+    // drops the bell's slot: one change sets tbl.sockets (the lift deletes it) and bell.transform (the lift leaves it)
+    { seq: 7, ts: 8, actor: "ann", verb: "comp", args: { id: "tbl", type: "sockets", data: { perch: { pos: [0.45, 0.75, 0.25], yaw: 1.2 } } } }];
+  const tr = translate(old, DOORKEYS()); const name = "tr-undolift";
+  fs.writeFileSync(root + `worlds/${name}.jsonl`, tr.out.map((e) => JSON.stringify(e)).join("\n") + "\n");
+  const actOf = (verb, id) => tr.out.findIndex((e) => e?.verb === "imported" && e.body?.verb === verb && e.body.args?.id === id);
+  const comps = tr.out.flatMap((e, i) => (e?.verb === "imported" && e.body?.verb === "comp" ? [i] : []));
+  const single = comps[0], mixed = comps[1], mount = actOf("mount", "bell"), box = actOf("spawn", "box");
+  const resOf = (q) => tr.out.find((e) => e?.kind === "change" && e.cause === q);
+  ok(opsOf(resOf(single)).length === 1 && opsOf(resOf(mixed)).map((o) => `${o.id} ${o.comp}`).join() === "tbl sockets,bell transform",
+    "UM0 the fixture: one imported change of one op the lift rewrote, and one batch the lift rewrote half of", [opsOf(resOf(single)), opsOf(resOf(mixed))]);
+  const tryUndo = (args) => { clock.advance(100); const w = openWorld(root, name); const n = w.entries.length, d = digest(w.state());
+    const r = request(w, "ann", "undo", args); const w2 = openWorld(root, name); const added = w2.entries.slice(n);
+    return { r, added, same: digest(w2.state()) === d, st: w2.state() }; };
+  const whole = (u, act, ops) => !u.r.ok && u.r.refused?.code === "undo-unavailable" && u.r.refused.cause === "migration-transformed" && u.r.refused.act === act
+    && JSON.stringify(u.r.refused.ops.map((o) => [o.index, o.id, o.component])) === JSON.stringify(ops)
+    && u.added.length === 1 && u.added[0].kind === "request" && u.added[0].body?.refused?.code === "undo-unavailable" && !u.added.some((e) => e.kind === "change") && u.same;
+  const a = tryUndo({ act: single });
+  ok(whole(a, single, [[0, "tbl", "sockets"]]), "UM1 undo of an imported act whose one op the lift rewrote refuses whole: undo-unavailable, migration-transformed, the act and op 0; no change entry, the state unchanged", [a.r, a.added.map((e) => e.kind)]);
+  const bx = tryUndo({ act: mixed });
+  ok(whole(bx, mixed, [[0, "tbl", "sockets"]]) && JSON.stringify(bx.st.entities.bell.c.transform.pos) === "[0,0,0]",
+    "UM2 a mixed batch refuses whole too: the untouched sibling (bell transform) is not put back, no ok, no partial receipt, no change entry", [bx.r, bx.added.map((e) => e.kind), bx.st.entities.bell?.c.transform]);
+  const m = tryUndo({ act: mount });
+  ok(whole(m, mount, [[1, "bell", "parent"]]), "UM3 …an imported mount whose parent the lift rewrote (its transform it left) refuses whole, naming op 1", m.r);
+  const from = actOf("spawn", "tbl"); const rb = tryUndo({ actor: "ann", since: { seq: from, head: openWorld(root, name).headAt(from) }, confirm: true });
+  ok(!rb.r.ok && rb.r.refused?.code === "undo-unavailable" && !rb.added.some((e) => e.kind === "change") && rb.same, "UM4 an owner's rollback over imported acts the lift rewrote refuses whole (nothing rolled back)", [rb.r, rb.added.map((e) => e.kind)]);
+  const c = tryUndo({ act: box });
+  ok(c.r.ok && c.r.undid?.act === box && !c.st.entities.box && c.added.some((e) => e.kind === "change"), "UM5 control: an imported act the lift never touched (box's spawn) undoes as before", c.r.refused ?? c.r);
+  clock.advance(100); const mk = request(openWorld(root, name), "ann", "set", { id: "tbl", component: "label", value: "after" });
+  const u = tryUndo({});
+  ok(mk.ok && u.r.ok && u.r.undid?.act === mk.act && u.st.entities.tbl.c.label === undefined, "UM6 control: a live act in the translated world undoes as before", [mk.refused, u.r.refused ?? u.r.undid]); }
+
 // ---- M: translated mounts in the authority's shape (research 37, slice 3 #3) ----
 // translate-v1@1 carried v1's parent record and v1's own pos; the authority reads transform as LOCAL to parent, so it saw a
 // riding crate wherever its unused pre-mount pos pointed. Now the authority must see it where v1 draws it.

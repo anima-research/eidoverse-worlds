@@ -274,6 +274,10 @@
    "meaning": "physics decided that, not an edit",
    "when": "undo of a throw, drop or leave"
   },
+  "undo-unavailable": {
+   "meaning": "that act can't be undone, and nothing was",
+   "when": "undo or rollback of an imported act the translation's lift-sockets rewrote (cause: migration-transformed, with the act and its ops): the whole request refuses, never a partial undo"
+  },
   "disabled": {
    "meaning": "it's switched off",
    "when": "handling, using or standing on a thing that is (or hangs under) disabled"
