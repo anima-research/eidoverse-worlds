@@ -485,20 +485,20 @@ const cases: Case[] = [
       const r = s.call("vic", "use", { id: "bell1", action: "ring" }); const sv = s.call("olive", "scripts", {}).scripts?.[0];
       return { ban: show(ban), r: st(s, r), why: sv?.why, status: sv?.status, newKinds: kinds(s.entries().slice(n0)), worldLogHasBan: s.entries().some((e: any) => JSON.stringify(e).includes('"ban"')),
         modLog: s.w().mod.some((m: any) => m.verb === "ban" && m.who === "bob") }; },
-    good: (o) => o.r === "suspended" && o.status === "suspended" && /banned/.test(o.why) && JSON.stringify(o.newKinds) === '{"act":1}' && !o.worldLogHasBan && o.modLog },
+    good: (o) => o.r === "suspended" && o.status === "suspended" && /banned/.test(o.why) && JSON.stringify(o.newKinds) === '{"request":1}' && !o.worldLogHasBan && o.modLog },
   { id: "B15b", what: "a chat-muted sponsor's script can't say: the activation is refused as muted, no say and no act is written; a voice-only mute changes nothing", run(s) { cast(s);
       bell(s, "bob"); const voice = s.call("olive", "mute", { who: "bob", minutes: 30, channels: ["voice"] }); const rv = s.call("vic", "use", { id: "bell1", action: "ring" });
       const mute = s.call("olive", "mute", { who: "bob", minutes: 30, channels: ["chat"] }); const n0 = s.entries().length;
       const r = s.call("vic", "use", { id: "bell1", action: "ring" });
       return { voice: show(voice), rv: st(s, rv), mute: show(mute), r: st(s, r), code: r.script?.code, why: r.script?.why, newKinds: kinds(s.entries().slice(n0)), scriptSays: s.entries().slice(n0).filter((e: any) => e.kind === "say" && e.actor === "script:bell1").length }; },
-    good: (o) => o.voice === "ok" && o.rv === "ran" && o.mute === "ok" && o.r === "refused muted" && o.code === "muted" && /muted/.test(o.why) && JSON.stringify(o.newKinds) === '{"act":1}' && o.scriptSays === 0 },
+    good: (o) => o.voice === "ok" && o.rv === "ran" && o.mute === "ok" && o.r === "refused muted" && o.code === "muted" && /muted/.test(o.why) && JSON.stringify(o.newKinds) === '{"request":1}' && o.scriptSays === 0 },
   { id: "B16", what: "no-op elision (a stated rule for script batches, §3d): a use that re-sets the same value logs the visitor's act and nothing else", run(s) { cast(s);
       s.call("bob", "create", { id: "lamp", components: { label: "lamp", transform: { pos: [0, 0, 0] } } });
       install(s, "bob", "lamp", "on", onUse(`world.set("self", "light", { kind: "point", color: 1, intensity: 1, range: 6, decay: 2 });`), { scope: { ids: "self", comps: ["light"] }, on: ["use"] });
       s.call("bob", "set", { id: "lamp", component: "reactions", value: { on: { kind: "script", script: "on" } } });
       const n0 = s.entries().length; const a = s.call("vic", "use", { id: "lamp", action: "on" }); const n1 = s.entries().length; const b = s.call("vic", "use", { id: "lamp", action: "on" });
       return { first: a.script?.status, second: b.script?.status, firstKinds: kinds(s.entries().slice(n0, n1)), secondKinds: kinds(s.entries().slice(n1)) }; },
-    good: (o) => o.first === "ran" && o.second === "nothing" && JSON.stringify(o.firstKinds) === '{"act":2,"change":1}' && JSON.stringify(o.secondKinds) === '{"act":1}' },
+    good: (o) => o.first === "ran" && o.second === "nothing" && JSON.stringify(o.firstKinds) === '{"request":2,"change":1}' && JSON.stringify(o.secondKinds) === '{"request":1}' },
   { id: "B17", what: "install rules: a builder's `always`, a 1 s timer, a visitor's install, and a builder's install after the owner turns off the builder role's scripts permission (role-defs; script-settings.install is gone)", run(s) { cast(s);
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } }); const t = onUse(`world.set("self", "t/a", 1);`);
       const always = install(s, "bob", "box", "a", t, { scope: { ids: "self", comps: ["t/a"] }, every: 5, always: true }).r;
@@ -749,7 +749,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r)); process.exit(0);\n`);   // 
       const n1 = s.entries().length; const b = useSteady(s, "vic", { id: "fan", action: "go" }); const m2 = comp(s, "fan", "motion");
       const A = AU ? AU.auditScripts(s.entries(), s.w().getBlob, { run: SB.runScript }) : null;
       return { a: st(s, a), b: st(s, b), t0: m1?.t0 ?? null, actTs: act?.ts ?? null, kept: m2?.t0 === m1?.t0, written: kinds(s.entries().slice(n1)), flags: A ? A.flags.length : "no auditor" }; },
-    good: (o) => o.a === "ran" && typeof o.t0 === "number" && o.t0 === o.actTs && o.b === "nothing" && o.kept && JSON.stringify(o.written) === '{"act":1}' && o.flags === 0 },
+    good: (o) => o.a === "ran" && typeof o.t0 === "number" && o.t0 === o.actTs && o.b === "nothing" && o.kept && JSON.stringify(o.written) === '{"request":1}' && o.flags === 0 },
   // ---------------- R: runaway work ----------------
   ...[["R1", "while (true) {}", "fuel"], ["R2", "function f() { return f(); } f();", "stack"], ["R3", `let s = "x"; for (;;) s += s;`, "memory"],
       ["R4", `for (let i = 0; i < 1000; i++) world.get("self");`, "calls"], ["R5", `for (let i = 0; i < 40; i++) world.set("self", "t/n", i);`, "too-big"], ["R6", "this is not javascript", "syntax"]].map(([id, body, want]) => ({

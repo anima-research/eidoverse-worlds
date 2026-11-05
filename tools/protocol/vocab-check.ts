@@ -144,11 +144,14 @@ const LOG_RETIRED: [RegExp, string][] = [
   [/\bMINORS = new Set\(\[0/, "minor 0 is read only by the migration tool (D1)"],
 ];
 const LOG_OK: [string, RegExp, string][] = [
-  ["mcpl/agent.ts", /kind: "act"/, "the agent's in-memory inbox event, never a log entry (D6)"],
+  ["mcpl/agent.ts", /kind(: | === )"act"/, "the agent's in-memory inbox event, never a log entry (D6)"],
   ["mcpl/denoise.ts", /kind: "act"/, "the agent's inbox event (D6)"],
+  ["mcpl/declaration.ts", /kind === "act"/, "the agent's inbox event's speech facet (D6)"],
+  ["mcpl/net-server.ts", /kind === "act"/, "the agent's inbox event relayed to its MCP client (D6)"],
   ["shared/protocol/names.js", /./, "the old world's spellings, read by the translator's renames only"],
 ];
 const logScan = (rel: string, text: string) => text.split("\n").forEach((line, i) => {
+  if (/-test\.(ts|mjs)$/.test(rel) && /kind === "act"/.test(line)) return;   // the agent's own tests read its inbox (D6)
   if (/^\s*(\/\/|\*|\/\*)/.test(line) || LOG_OK.some(([f, re]) => (rel === f || rel.startsWith(f)) && re.test(line))) return;
   for (const [re, what] of LOG_RETIRED) if (re.test(line.replace(/\s\/\/\s.*$/, ""))) offences.push(`${rel}:${i + 1}  retired log spelling (${what}): ${line.trim().slice(0, 100)}`);
 });

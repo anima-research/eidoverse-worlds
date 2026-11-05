@@ -1,65 +1,21 @@
-// tools/protocol/migrate-genesis-check.ts — migrate-genesis.ts on a world whose genesis is in an earlier shape (B: §3d with the
-// number in `version`, before the 10-07 names pass), made from a world founded today and turned back.
+// tools/protocol/migrate-genesis-check.ts — migrate-genesis.ts is retired (minor 1): the name runs nothing, points at the whole-log
+// migration (tools/protocol/migrate-minor-1), and touches no file, with or without --apply.
 //   bun tools/protocol/migrate-genesis-check.ts
-// Rows:
-//   MG1  --apply keeps the whole old log, byte for byte, as world.pre-genesis-migration.jsonl before replacing it, and the
-//        new log is today's shape (the "before" file held only the genesis line)
-//   MG2  the dry run writes nothing
-//   MG4  --apply rewrites only the `world` field (#436)
-//   MG3  …and mints no key: a worlds dir with no .custody.json still has none after a dry run
-// GENESIS_TOOL=<path> runs another copy of the tool (a base, for the rows' red).
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
-import crypto from "node:crypto";
 import { ENGINE, scratch } from "./common.ts";
 import { foundWorlds } from "../harness.ts";
-import { worldIdOf, parseLine, DIALECT } from "../../shared/protocol/fold.js";
 
-const TOOL = process.env.GENESIS_TOOL ?? path.join(ENGINE, "tools/protocol/migrate-genesis.ts");
+const TOOL = path.join(ENGINE, "tools/protocol/migrate-genesis.ts");
 let pass = 0, fail = 0;
 const ok = (c: any, what: string, info?: unknown) => { if (c) { pass++; console.log(`ok   ${what}`); } else { fail++; console.log(`FAIL ${what}${info === undefined ? "" : ` — ${JSON.stringify(info).slice(0, 600)}`}`); } };
-const sha = (b: Buffer) => crypto.createHash("sha256").update(b).digest("hex");
-const env = (W: string) => ({ ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(path.dirname(W), "opt"), BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" });
-
-/** A world founded today, its genesis turned back to shape B ({version: 4, minor, …}) and every later line's id with it. */
-function shapeB(tag: string) {
-  const root = scratch(tag), W = path.join(root, "worlds"); fs.mkdirSync(path.join(root, "opt"), { recursive: true });
-  foundWorlds(W, ["gen"], "ann");
-  const f = path.join(W, "gen", "world.jsonl"), lines = fs.readFileSync(f, "utf8").split("\n").filter(Boolean);
-  const g = JSON.parse(lines[0]), newId = worldIdOf(parseLine(lines[0])); const { dialect: _d, v: _v, ...rest } = g.body;
-  const gl = JSON.stringify({ ...g, body: { version: 4, ...rest } }), oldId = worldIdOf(parseLine(gl));
-  fs.writeFileSync(f, [gl, ...lines.slice(1).map((l) => l.replaceAll(newId, oldId))].join("\n") + "\n");
-  return { W, dir: path.join(W, "gen"), f };
+const root = scratch("mg"), W = path.join(root, "worlds"); foundWorlds(W, ["gen"], "ann");
+const dir = path.join(W, "gen"); const before = fs.readFileSync(path.join(dir, "world.jsonl")); const files = fs.readdirSync(dir).sort();
+for (const args of [[dir], ["--apply", dir]]) {
+  const r = Bun.spawnSync(["bun", TOOL, ...args], { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: W, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
+  const said = r.stdout.toString() + r.stderr.toString();
+  ok(r.exitCode === 2 && /retired/.test(said) && /migrate-minor-1/.test(said) && /Nothing was read or changed/.test(said), `MG1 \`migrate-genesis ${args.join(" ").replace(dir, "<dir>")}\` refuses, naming the whole-log migration that replaced it`, said.slice(0, 300));
+  ok(fs.readFileSync(path.join(dir, "world.jsonl")).equals(before) && JSON.stringify(fs.readdirSync(dir).sort()) === JSON.stringify(files), "MG2 …and wrote nothing", fs.readdirSync(dir));
 }
-const run = (W: string, args: string[]) => { const r = Bun.spawnSync([process.execPath, TOOL, ...args], { cwd: ENGINE, env: env(W), timeout: 60_000 }); return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; };
-
-{ const { W, dir, f } = shapeB("mg1"); const before = fs.readFileSync(f), kept = path.join(dir, "world.pre-genesis-migration.jsonl");
-  const r = run(W, ["--apply", dir]); const res = (() => { try { return JSON.parse(r.out.trim().split("\n").at(-1)!); } catch { return null; } })();
-  const now = fs.readFileSync(f), g = JSON.parse(now.toString("utf8").split("\n")[0]);
-  ok(r.code === 0 && res?.shape === "B" && res?.written === true && g.body?.dialect === DIALECT && !now.equals(before) && fs.existsSync(kept) && sha(fs.readFileSync(kept)) === sha(before),
-    "MG1 --apply keeps the whole old log, byte for byte, beside the migrated one (world.pre-genesis-migration.jsonl); the new log is today's shape",
-    { code: r.code, res, dialect: g.body?.dialect, kept: fs.existsSync(kept), out: r.out.slice(-400) }); }
-{ const { W, dir, f } = shapeB("mg2"); const before = fs.readFileSync(f), files = fs.readdirSync(dir).sort();
-  const r = run(W, [dir]);
-  ok(r.code === 0 && fs.readFileSync(f).equals(before) && JSON.stringify(fs.readdirSync(dir).sort()) === JSON.stringify(files) && /"written":false/.test(r.out),
-    "MG2 the dry run (no --apply) writes nothing", { code: r.code, files: fs.readdirSync(dir), out: r.out.slice(-300) }); }
-
-{ // shape A ({version, owners: [<identity>]}) is the one whose owners and sequencer are keys the tool would mint; its old fold is
-  // read from --old-fold (the pre-names tree reads it as no-world, so `same` is false here; the row is about what's on disk)
-  const { W, dir, f } = shapeB("mg3"); const cf = path.join(W, ".custody.json"); fs.rmSync(cf, { force: true });
-  const lines = fs.readFileSync(f, "utf8").split("\n"); const g = JSON.parse(lines[0]); fs.writeFileSync(f, [JSON.stringify({ ...g, body: { version: 4, owners: ["ann"] } }), ...lines.slice(1)].join("\n")); const before = fs.readFileSync(f);
-  const r = run(W, ["--old-fold", "4d7b81cd", dir]);
-  ok(/"shape":"A"/.test(r.out) && !fs.existsSync(cf) && fs.readFileSync(f).equals(before) && /"wouldMint":true/.test(r.out),
-    "MG3 the dry run mints no key: a shape-A world in a worlds dir with no .custody.json leaves none behind, and says what it would mint", { code: r.code, custody: fs.existsSync(cf), out: r.out.slice(-300) }); }
-
-{ const { W, dir, f } = shapeB("mg3"); const lines = fs.readFileSync(f, "utf8").split("\n").filter(Boolean);
-  const oldId = worldIdOf(parseLine(lines[0])); const last = JSON.parse(lines.at(-1)!);
-  // a say quoting the old id (unsealed, as migrate-identities-check writes its rows): only the `world` field may change
-  fs.writeFileSync(f, [...lines, JSON.stringify({ world: oldId, kind: "say", actor: last.actor, body: { text: `our id was ${oldId}` }, ts: (last.ts ?? 0) + 1000 })].join("\n") + "\n");
-  const r = run(W, ["--apply", dir]); const now = fs.readFileSync(f, "utf8").split("\n").filter(Boolean); const say = JSON.parse(now.at(-1)!);
-  ok(r.code === 0 && say.body?.text === `our id was ${oldId}` && say.world !== oldId && !now.slice(1).some((l) => JSON.parse(l).world === oldId),
-    "MG4 --apply rewrites only the `world` field: a say quoting the old id keeps its words", { code: r.code, say, out: r.out.slice(-300) }); }
-
-console.log(`[migrate-genesis-check] ${pass} passed, ${fail} failed`);
-process.exit(fail ? 1 : 0);
+console.log(`[migrate-genesis-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

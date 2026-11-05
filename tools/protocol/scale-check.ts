@@ -541,7 +541,7 @@ async function realGlbs() {
 }
 
 // reply keys the names pass renamed (PROPOSAL-conventional-names-2026-10-07): base spelling → today's
-const RENAMED_KEYS: Record<string, string> = { teach: "fix", touchI: "intimate" };
+const RENAMED_KEYS: Record<string, string> = { teach: "fix", touchI: "intimate", verb: "op" };   // verb → op: a dry run's would ops, minor 1 (D3); the base wrote verb
 async function sameAsBase() {
   const d = scratch("sbase"); const r0 = archiveTo(ENGINE, BASE, ["shared", "server", "package.json"], d);
   if (r0.exitCode !== 0) return { error: String(r0.stderr) }; fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));

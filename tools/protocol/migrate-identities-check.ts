@@ -40,7 +40,7 @@ function oldWorld(root: string, name: string) {
   add({ kind: "say", actor: "bob", body: { text: "hello", to: "ann" } });
   const a2 = add({ kind: "request", actor: "bob", op: "set", body: { request: { id: "@world", component: "about", value: { name, text: "bob's" } } } });
   add({ kind: "change", actor: "bob", cause: a2, op: "set", body: { id: "@world", comp: "about", value: { name, text: "bob's" } } });
-  add({ kind: "request", actor: "carl", verb: "use", body: { request: { id: "bell", action: "ring" }, capability: { reaction: "ring", author: "ann", grantedAt: 2 } } });
+  add({ kind: "request", actor: "carl", verb: "use", body: { args: { id: "bell", action: "ring" }, capability: { reaction: "ring", author: "ann", grantedAt: 2 } } });
   add({ kind: "request", actor: "script:bell1", verb: "script", body: { script: "bell", sponsor: "bob", sponsorAt: a2 } });
   fs.writeFileSync(f, L.map((e: any) => JSON.stringify(e)).join("\n") + "\n");
   fs.writeFileSync(path.join(W, name, "world.mod.jsonl"), [{ ts: ts + 1, actor: "ann", verb: "ban", who: "dave" }, { ts: ts + 2, actor: "ann", verb: "mute", who: "bob", until: ts + 1e9 },

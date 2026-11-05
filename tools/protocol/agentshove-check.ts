@@ -86,7 +86,7 @@ try {
   const { HANDLERS } = await import("../../mcpl/tools.ts");
   ag = new WorldAgent({ url: `ws://127.0.0.1:${port}/ws`, name: "Hep", world: "yard", avatar: "" });
   await ag.connect(); for (let i = 0; i < 60 && !ag.snapshot; i++) await sleep(50);
-  const HEP = ag.actor;
+  const HEP = ag.replica?.you;
   ok(/^u-/.test(HEP ?? "") && ag.replica?.active, "(setup) the agent joins and folds the world");
   ok((await ann.req("set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } })).ok, "(setup) the yard runs eidosim");
   // empty crates (20 and 30 kg): a body's push (BODY_MASS 70 kg, elastic) sends them well along; a full one wouldn't budge much

@@ -322,7 +322,7 @@ const cases: Case[] = [
       s.call("vic", "move", { to: [0, 0, 2] }, 1000); const n1 = s.entries().length;
       const d = s.call("vic", "drop", { id: "lantern" }); const after = since(s, n1);
       return { g: show(g), lift, d: show(d), after, at: tf(s, "lantern")?.pos, launches: s.entries().filter((e: any) => e.kind === "physics" && e.verb === "launch").length, carrier: carrier(s) }; },
-    good: (o) => o.g === "ok" && o.lift.includes("sim:lift") && o.d === "ok" && JSON.stringify(o.after) === '["act:put","change:set"]' && o.at[1] === 0 && o.launches === 0 && !o.carrier.disagree },
+    good: (o) => o.g === "ok" && o.lift.includes("physics:lift") && o.d === "ok" && JSON.stringify(o.after) === '["request:put","change:set"]' && o.at[1] === 0 && o.launches === 0 && !o.carrier.disagree },
   { id: "G4", what: "a throw in a world with no physics is a drop that says so (a VR hand lets go with its velocity; it was refused and stuck in the hand)", run(s) { cast(s);
       s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "ball" });
@@ -378,7 +378,7 @@ const cases: Case[] = [
       s.call("vic", "wait", {}, 8000); s.call("vic", "grab", { id: "anvil" }); const n0 = s.entries().length;
       const t0 = s.call("vic", "throw", { id: "anvil", v: [0, 1, 3] });
       return { t: show(t), v: L?.body?.v, sent: act?.body?.args?.v, note: t.notes?.some((n: any) => /grabbable\.throw/.test(n.why)), t0: show(t0), after: since(s, n0), v0: s.entries().at(-1)?.body?.v, why: t0.notes?.find((n: any) => n.thrown)?.why, carrier: carrier(s) }; },
-    good: (o) => o.t === "ok" && JSON.stringify(o.v) === "[0,2,3]" && JSON.stringify(o.sent) === "[0,1,1.5]" && o.note && o.t0 === "ok" && JSON.stringify(o.after) === '["act:drop","sim:launch"]' && JSON.stringify(o.v0) === "[0,0,0]" && /can't be thrown/.test(o.why ?? "") && !o.carrier.disagree },
+    good: (o) => o.t === "ok" && JSON.stringify(o.v) === "[0,2,3]" && JSON.stringify(o.sent) === "[0,1,1.5]" && o.note && o.t0 === "ok" && JSON.stringify(o.after) === '["request:drop","physics:launch"]' && JSON.stringify(o.v0) === "[0,0,0]" && /can't be thrown/.test(o.why ?? "") && !o.carrier.disagree },
   { id: "R2", what: "release: stay hangs where the hand lets go: a put with no pos isn't set down, a floating put isn't refused; a plain thing still is", run(s) { cast(s);
       s.call("olive", "create", { id: "balloon", model: "ball", components: { grabbable: { who: "member", release: "stay" } }, place: { at: [0, 0] } });
       s.call("olive", "create", { id: "rock", model: "ball", components: { grabbable: { who: "member" } }, place: { at: [0.4, 0] } });
@@ -397,7 +397,7 @@ const cases: Case[] = [
       const at = tf(s, "torch").pos; s.call("vic", "move", { to: [0, 0, 0.5] }, 1000); s.call("vic", "grab", { id: "torch" }); const n1 = s.entries().length;
       const t = s.call("vic", "throw", { id: "torch", v: [0, 2, 3] });
       return { home, stampNote: c.notes?.some((n: any) => n.component === "home"), d: show(d), after, cause: ret ? L[ret.cause]?.verb : null, at, held: held(s, "torch"), t: show(t), thrown: since(s, n1), carrier: carrier(s) }; },
-    good: (o) => JSON.stringify(o.home?.pos) === "[0,0,0]" && o.stampNote && o.d === "ok" && JSON.stringify(o.after) === '["act:put","act:return-home","change:set"]' && o.cause === "put" && JSON.stringify(o.at) === "[0,0,0]" && o.held === null && o.t === "ok" && JSON.stringify(o.thrown) === '["act:put","act:return-home","change:set"]' && !o.carrier.disagree },
+    good: (o) => JSON.stringify(o.home?.pos) === "[0,0,0]" && o.stampNote && o.d === "ok" && JSON.stringify(o.after) === '["request:put","request:return-home","change:set"]' && o.cause === "put" && JSON.stringify(o.at) === "[0,0,0]" && o.held === null && o.t === "ok" && JSON.stringify(o.thrown) === '["request:put","request:return-home","change:set"]' && !o.carrier.disagree },
   { id: "R4", what: "returnAfter: unheld that long after a hand moved it, the next request sends it home, once; not while held; an edit's move doesn't count", run(s) { cast(s);
       s.call("olive", "create", { id: "ball", model: "ball", components: { grabbable: { who: "member", returnAfter: 30 } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "ball" }); s.call("vic", "move", { to: [0, 0, 3] }, 1000);
@@ -417,7 +417,7 @@ const cases: Case[] = [
       s.call("olive", "set", { id: "ball", component: "home", value: { pos: [0, 0, 0], q: [0, 0, 0, 1] } });
       s.advance(60000); const n3 = s.entries().length; s.call("vic", "look", {});
       return { early, back, first, again, whileHeld, home2, afterEdit: since(s, n3), at: tf(s, "ball").pos }; },
-    good: (o) => o.early[2] > 2 && JSON.stringify(o.back) === "[0,0,0]" && JSON.stringify(o.first) === '["act:return-home","change:set"]' && !o.again.length && !o.whileHeld.length && JSON.stringify(o.home2) === "[2,0,2]" && !o.afterEdit.length && JSON.stringify(o.at) === "[2,0,2]" },
+    good: (o) => o.early[2] > 2 && JSON.stringify(o.back) === "[0,0,0]" && JSON.stringify(o.first) === '["request:return-home","change:set"]' && !o.again.length && !o.whileHeld.length && JSON.stringify(o.home2) === "[2,0,2]" && !o.afterEdit.length && JSON.stringify(o.at) === "[2,0,2]" },
   { id: "R5", what: "fits + sockets.accepts: let go within the socket's radius, it snaps in (parent {to: <the lifted socket child>}, the socket's pose); undo takes it back out", run(s) { cast(s);
       s.call("olive", "create", { id: "rack", model: "crate", components: { sockets: { hook: { pos: [0, 0.8, 0], accepts: ["key"], radius: 0.3 } } }, place: { at: [0, 0] } });
       s.call("olive", "create", { id: "key", model: "book", components: { grabbable: { who: "member", fits: ["key"] } }, place: { at: [1, 0] } });
@@ -462,7 +462,7 @@ const cases: Case[] = [
       const d = s.call("vic", "drop", { id: "key", pos: [0.1, 0.8, 0.1] }); const near = since(s, n0); const par = slotOf(s, "key");
       s.call("vic", "grab", { id: "key" }); const n1 = s.entries().length; const f = s.call("vic", "drop", { id: "key", pos: [0.9, 1, 0.9] }); s.call("vic", "wait", {}, 6000);
       return { d: show(d), near, par, f: show(f), far: since(s, n1).slice(0, 2), carrier: carrier(s) }; },
-    good: (o) => o.d === "ok" && JSON.stringify(o.near) === '["act:put","change:batch"]' && o.par === "hook" && o.f === "ok" && JSON.stringify(o.far) === '["act:drop","sim:launch"]' && !o.carrier.disagree },
+    good: (o) => o.d === "ok" && JSON.stringify(o.near) === '["request:put","change:batch"]' && o.par === "hook" && o.f === "ok" && JSON.stringify(o.far) === '["request:drop","physics:launch"]' && !o.carrier.disagree },
   { id: "R8", what: "sockets.accepts/radius are checked: radius 5 and an empty accepts are refused", run(s) { cast(s);
       s.call("olive", "create", { id: "rack", model: "crate", place: { at: [0, 0] } });
       const a = s.call("olive", "set", { id: "rack", component: "sockets", value: { hook: { pos: [0, 1, 0], accepts: ["key"], radius: 5 } } });
@@ -522,7 +522,7 @@ const cases: Case[] = [
       const r = D.settleOrphans?.(w2, []);
       return { grabs, carried, r: r?.length, holds: Object.keys(w2.presence.holds), body: !!w2.presence.bodies.vic, after: since(s, n0), by: s.entries().slice(n0).filter((e: any) => e.kind === "request").map((e: any) => e.actor),
         ball: tf(s, "ball").pos, balloon: tf(s, "balloon").pos, torch: tf(s, "torch").pos }; },
-    good: (o) => o.grabs.every((g: string) => g === "ok") && o.carried?.[2] > 1 && o.r >= 1 && !o.holds.length && !o.body && o.by.includes("vic") && o.ball[1] === 0 && Math.abs(o.ball[2] - 2) < 1e-6 && o.balloon[1] === 1.1 && o.after.includes("act:return-home") && JSON.stringify(o.torch) === "[-0.3,0,0]" },
+    good: (o) => o.grabs.every((g: string) => g === "ok") && o.carried?.[2] > 1 && o.r >= 1 && !o.holds.length && !o.body && o.by.includes("vic") && o.ball[1] === 0 && Math.abs(o.ball[2] - 2) < 1e-6 && o.balloon[1] === 1.1 && o.after.includes("request:return-home") && JSON.stringify(o.torch) === "[-0.3,0,0]" },
   { id: "O2", what: "presence kept in memory: in a physics world the log's lift is settled at load (door return-held, cause the lift; a return goes home), once, and a carrier agrees", run(s) { cast(s, true);
       s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 0] } });
       s.call("olive", "create", { id: "torch", model: "book", components: { physics: { kind: "dynamic" }, grabbable: { who: "member", release: "return" } }, place: { at: [0.3, 0] } });
@@ -543,7 +543,7 @@ const cases: Case[] = [
       const k = stripLast(s, "ball", "transform"); const w2 = s.reopen(s.w().presence);
       s.advance(40000); const n0 = s.entries().length; D.settle?.(w2); const look = s.call("vic", "look", {});
       return { k, lost: tf(s, "ball") === F.REDACTED, after: since(s, n0), look: show(look), diag: w2.state().diagnostics.some((d: any) => d[0] === k && d[1] === "commitment-unredacted") }; },
-    good: (o) => o.k > 0 && o.diag && o.lost && !o.after.includes("act:return-home") && o.look === "ok" },
+    good: (o) => o.k > 0 && o.diag && o.lost && !o.after.includes("request:return-home") && o.look === "ok" },
   { id: "RA3", what: "a stripped transform: settling an orphaned lift at load leaves the thing where the record lost it", run(s) { cast(s, true);
       s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 0] } });
       s.call("olive", "create", { id: "torch", model: "book", components: { physics: { kind: "dynamic" }, grabbable: { who: "member", release: "return" } }, place: { at: [0.3, 0] } });

@@ -1153,7 +1153,7 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
     if (sim.epoch && ts !== undefined) { stepTo(eidosim.tickOf(sim, ts)); logRests(Math.max(ts, clock())); }
     foldEntry(v1, e); eidosim.simEntry(sim, e, v1);
     lifeNow.step(e);
-    const actor = actorFor(e.actor); if (actor !== e.actor) stats.renamed++;
+    const actor = actorFor(e.actor); if (actor !== e.actor && !SYSTEM.has(e.actor)) stats.renamed++;   // a person became an identity (v1's world/door are the system, not a rename)
     const tl = push({ ...(e.verb === "say" ? { kind: "say", actor, body: unNegZero(((b) => (who && typeof b.to === "string" && !SYSTEM.has(b.to) ? { ...b, to: who(b.to, {}) } : b))(clone(e.args) ?? {})) }
       : { kind: "request", actor, verb: "imported", body: unNegZero({ verb: e.verb, args: noAcct(e, clone(e.args) ?? null), from: e.seq ?? null }) }), ...(ts !== undefined ? { ts } : {}) });
     const b = sim.bodies[e.args?.id];

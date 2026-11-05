@@ -388,7 +388,7 @@ function playground(name) {
   const throwAct = L[r0.cause].cause;
   const P1c = forge((e) => ({ world: e.world, kind: "change", ts: e.ts, actor: "rowan", cause: throwAct, op: "set", body: { id: "ball", comp: "transform", value: { ...tval(e), pos: [15, 0, -15] } } }));
   ok(P1c.disagree.some((d) => d.seq === i && /not after the launch/.test(d.why)), "N P1c: the thrower's own 'result' of the throw act, while the ball flies → caught", P1c);
-  const P1x = forge((e) => ({ ...e, op: "batch", body: { ops: [{ verb: "set", ...e.body }, { op: "set", id: "table-1", comp: "transform", value: { pos: [9, 0, 9], q: [0, 0, 0, 1], scale: [1, 1, 1] } }] } }));
+  const P1x = forge((e) => ({ ...e, op: "batch", body: { ops: [{ op: "set", ...e.body }, { op: "set", id: "table-1", comp: "transform", value: { pos: [9, 0, 9], q: [0, 0, 0, 1], scale: [1, 1, 1] } }] } }));
   ok(P1x.disagree.some((d) => d.id === "table-1"), "N a rest that also moves something the launch didn't throw → caught", P1x);
   const lift = L.findIndex((e) => e.kind === "physics" && e.verb === "lift");
   const P1y = forge((e) => ({ ...e, cause: lift }));
