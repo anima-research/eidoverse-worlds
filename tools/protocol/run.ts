@@ -285,7 +285,9 @@ async function run(name: string, file: string): Promise<{ code: number | null; s
   let cmd = [process.execPath, path.resolve(ENGINE, "tools/protocol", script), ...args];
   const lock = process.env.PROTOCOL_HEADLESS_LOCK, guard = process.env.PROTOCOL_PERF_GUARD;
   if (laneOf(name) === "browser" && lock && guard) cmd = ["flock", lock, "bash", guard, "-t", String(timeoutOf(name)), "--", ...cmd];
-  const child = spawn(cmd[0], cmd.slice(1), { cwd: ENGINE, env, detached: true, stdio: ["ignore", "pipe", "pipe"] });
+  // detached: a process group to kill on POSIX. Not on Windows: there it means no console, and every process the suite starts
+  // then pays for one of its own (inplace 66 s attached, 131 s detached on Cyllene, 11-05); the kill walks parent links there
+  const child = spawn(cmd[0], cmd.slice(1), { cwd: ENGINE, env, detached: process.platform !== "win32", windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
   current = child as unknown as { pid: number; exitCode: number | null; signalCode: string | null };
   let timedOut = false; const kept = outputKeeper(); const keep = (b: Buffer) => kept.add(b.toString());   // the tail, and every verdict line the cut dropped (suites.ts outputKeeper)
   child.stdout!.on("data", keep); child.stderr!.on("data", keep);
