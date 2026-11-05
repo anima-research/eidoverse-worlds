@@ -339,7 +339,7 @@ const READ_VERBS = {
         if (out.length === lim) { next = out.at(-1).seq; break; }
         const act = Number.isInteger(e.cause) ? w.entries[e.cause] : null;
         // an imported act reads as what it was (spawn, place, comp), never "imported" (batch 2: Credits in History)
-        out.push({ seq: i, by: e.actor, who: said(e.actor), ts: e.ts, verb: (isE(act) && act.kind === "request" ? (act.verb === "imported" && typeof act.body?.verb === "string" ? act.body.verb : act.verb) : null) ?? ops[0].verb,
+        out.push({ seq: i, by: e.actor, who: said(e.actor), ts: e.ts, verb: (isE(act) && act.kind === "request" ? (act.verb === "imported" && typeof act.body?.verb === "string" ? act.body.verb : act.verb) : null) ?? ops[0].op,
           changed: [...new Set(ops.map((o) => o.op === "create" ? "(created)" : o.op === "delete" && o.comp === undefined ? "(deleted)" : o.comp))],
           ...(() => { const d = historyDiff(w, id, i, ops); return d ? { diff: d } : {}; })(),
           ...(isE(act) && readback(w, e.cause)?.undoes !== undefined ? { undoes: readback(w, e.cause).undoes } : {}), ...(Number.isInteger(e.cause) ? { act: e.cause } : {}) }); }
