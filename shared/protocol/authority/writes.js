@@ -16,7 +16,7 @@ import { modelOf, boxOfM, geomE } from "./catalogue.js";
 import { CHANGE, clone, createOps, delOp, followUp, lockedC, nonce16, qr3, scratch, setOp, versionSeq } from "./storage.js";
 import { NONE, aabb, ancestors, descendants, hits, localFrom, obbs, qYaw, qinv, qmul, qrot, inRect, surfacesOf, worldT, yawQ } from "./math.js";
 import { groundReady, hitsIx, near, spatial, spend, supportBelow } from "./spatial.js";
-import { isSocketC, socketsOf } from "./sockets.js";
+import { isSocketC } from "./sockets.js";
 import { madeBy, roleOf } from "./rights.js";
 import { inboxPush } from "./bodyconsent.js";
 import { buildCreateFrom } from "./blueprints.js";
@@ -328,8 +328,6 @@ function buildDelete(ctx, a) {
       const wt = worldT(ctx.st, a.id); ctx.refs.add(a.id);
       return [delOp(a.id, "parent"), setOp(a.id, "transform", { ...wt, pos: wt.pos.map(r3) })];
     }
-    // the old spelling's `delete sockets`: a host's sockets are its socket children, each deleted by its own id
-    if (a.component === "sockets" && !(a.component in e.c)) refuse("legacy", `${a.id}.sockets is the old spelling: each socket is a child entity now`, `delete {id: <the socket's id>} (inspect {id: '${a.id}'} lists its sockets: ${socketsOf(ctx.st, a.id, { off: true }).map((x) => x.id).join(", ") || "none"})`);
     if (!(a.component in e.c)) refuse("not-found", `${a.id} has no ${a.component}`, `it has: ${Object.keys(e.c).join(", ")}`);
     ctx.refs.add(a.id);
     return [delOp(a.id, a.component)];

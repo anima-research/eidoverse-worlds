@@ -174,8 +174,6 @@ function valueCheck(s, { id, comp, value: v }, { carry = false, now = null } = {
   schemaCheck(at, comp, v, { carry });
   // physics.material (a surface's name) is renamed physics.surface and reserved with surfaces (shape audit 10-16): the
   // check that it names one of this world's surfaces returns when the field opens
-  // well-shaped and still here: the translator didn't see it (the door stores no old spelling)
-  if (comp === "sockets") refuse("legacy", `${at} is the old spelling: each socket is a child entity now`, "create {components: {parent: {to: <host>}, transform: {pos}, socket: {name, …}}}");
 }
 // batch 2 (10-07): pictures, sounds, stories, signs and look-at, beyond their catalogue shape
 const LOOK_WORDS = ["@viewer", "@nearest"];

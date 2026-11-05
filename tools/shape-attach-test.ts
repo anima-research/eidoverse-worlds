@@ -25,7 +25,7 @@ tryRow('ST', () => {
 
   check('ST1 the registry: socket is {name, part?, accepts?, radius?} (no body)', JSON.stringify(Object.keys(COMPONENTS.socket.fields)) === '["name","part","accepts","radius"]', COMPONENTS.socket.fields);
   check('ST1 …station is its own component, core {action, anim, anchor, exit, leaveBy, who, input} (R 10-17: anim was pose; input opened for the drive helm, step 3b)', JSON.stringify(Object.keys(COMPONENTS.station?.fields ?? {})) === '["action","anim","anchor","exit","leaveBy","who","input"]', COMPONENTS.station);
-  check('ST1 …sockets (the old map) is reserved, lift-only', statusOf('sockets') === 'reserved' && !!COMPONENTS.sockets.lifted);
+  check('ST1 …sockets (the old map) is no name: the registry holds no entry for it', !Object.hasOwn(COMPONENTS, 'sockets'));
 
   let r = mk('lie1', { name: 'bunk' }, { station: { action: 'lie' } });
   check('ST2 a station is materialized on write: lie → anim lie, anchor root', r.ok && JSON.stringify(C('lie1')?.station) === '{"action":"lie","anchor":"root","anim":"lie"}', [r.refused, C('lie1')]);
@@ -47,11 +47,11 @@ tryRow('ST', () => {
   check('ST6 a station hangs only on a socket entity', code(W.call('set', { id: 'crate2', component: 'station', value: { action: 'sit' } })) !== 'ok');
   check('ST7 station.who names a role here', code(mk('wh1', { name: 'wh' }, { station: { who: 'wizard' } })) === 'shape' && mk('wh2', { name: 'wh2' }, { station: { who: 'builder' } }).ok);
 
-  // the old map: the door refuses a write of it (legacy)
+  // the old map: no name, so the door refuses a write of it as any unknown name (schema, did you mean socket)
   W.call('create', { id: 'sofa', model: 'crate' });
   const map = { left: { pos: [-0.4, 0.5, 0], body: {} }, right: { pos: [0.4, 0.5, 0], body: { action: 'sit', pose: 'sit' } } };
   r = W.call('set', { id: 'sofa', component: 'sockets', value: map });
-  check('ST8 a write of the old sockets map is refused (legacy), the fix naming the socket children', code(r) === 'legacy' && /socket: \{name/.test(r.refused?.fix ?? '') && !C('sofa')?.sockets, r.refused ?? r);
+  check('ST8 a write of the old sockets map is refused (schema, did you mean socket); the sofa holds nothing new', code(r) === 'schema' && (r.refused?.didYouMean ?? []).includes('socket') && !C('sofa')?.sockets, r.refused ?? r);
 
   // a stored socket.body (a log stored before station), lifted at load
   const st = { diagnostics: [], entities: { h: { c: { transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } }, s: { c: { parent: { to: 'h' }, transform: { pos: [0, 1, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, socket: { name: 'seat', body: { action: 'lie' } } } } } };

@@ -269,9 +269,8 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   child entity of the thing it is on, carrying `parent {to: <host>}`), `station {action, anim, anchor,
   exit?, leaveBy?, who?}` (what a person's body does at that socket, on the same entity; `anim`, like
   `grabbable.anim`, is an open name of a pose (one frame, only the bones it names) or a clip (more than one key):
-  a name the body doesn't know plays its default, never a refusal; `sockets`, the old
-  map spelling, is reserved and lift-only: the authority lifts it into socket children with their stations
-  on write (and the v1 translator does the same for a translated world), and a socket's old `body` block into its station),
+  a name the body doesn't know plays its default, never a refusal; the old `sockets` map is no name here: only the
+  v1 translator knows it, and lifts it into socket children with their stations and a socket's old `body` block into its station),
   `params`, `reactions`, `lock`, `hidden`, `disabled`, `clickthrough`,
   `collider {shape, enabled?, blocks?, layer?, mask?}` (mesh, box or sphere; absent, its size decides), `places` (named places to walk to, in the
   thing's own frame; on `@world`, world coordinates),

@@ -125,8 +125,7 @@ function admit(w, st, who, ops) {
     // a reserved name (componentspec STATUSES) is held, never written: one refusal for every reserved name, before rights
     // (nobody may write it, so who is asking doesn't matter). A carried value (a fork's copy) keeps what it
     // holds: the refusal is about new writes, not about what an older log stored
-    // (sockets, the old world's spelling, is refused below as legacy, naming the socket children that replace it)
-    if (op.op === "set" && statusOf(op.comp) === "reserved" && !defOf(op.comp)?.lifted && !CTX.forking) { const b = canonicalName(baseOf(op.comp));
+    if (op.op === "set" && statusOf(op.comp) === "reserved" && !CTX.forking) { const b = canonicalName(baseOf(op.comp));
       refuse("reserved", `${at}: '${b}' is a reserved name: it is held for a shape that isn't settled yet, and nothing may write it`, COMPONENTS[b].instead ?? `schema {component: '${b}'} says what it is held for`, { status: "reserved" }); }
     const pause = op.op === "set" && op.comp.startsWith("script:") && pauseOnly(op.value, s.entities[op.id]?.c[op.comp]);
     if (!fu && !operatorRepairs(who, op)) { rights(w, st, s, who, role, op, at, made, pause);

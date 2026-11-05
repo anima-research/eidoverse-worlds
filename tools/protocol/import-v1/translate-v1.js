@@ -720,9 +720,11 @@ const PERSON_REQUESTS = new Set(["grant", "ban", "unban"]);   // the old request
 export const NAMESPACE = "imported";
 /** A world's name as a §3.1 namespace (lowercase letters, digits, '-', '.'), or the default. */
 export const namespaceOf = (name) => { const s = String(name ?? "").toLowerCase().replace(/[^a-z0-9.-]+/g, "-").replace(/^[-.]+|[-.]+$/g, "").replace(/\.{2,}/g, "."); return /^[a-z0-9]/.test(s) ? s.slice(0, 63).replace(/[-.]+$/, "") : NAMESPACE; };
+// v1's sockets map is the translator's own word (the registry no longer holds it): it stays bare until the tail lift
+const V1_LIFTED = new Set(["sockets"]);
 function namespaceUnknown(c, ns) {
   for (const k of Object.keys(c)) { const base = k.split(":")[0];
-    if (base.includes("/") || registered(base)) continue;
+    if (base.includes("/") || registered(base) || V1_LIFTED.has(base)) continue;
     const to = `${ns}/${k}`; if (to in c) continue;   // never overwrite (a world that already used both spellings keeps the bare one)
     c[to] = c[k]; delete c[k]; }
 }

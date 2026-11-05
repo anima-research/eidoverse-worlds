@@ -202,15 +202,15 @@ check('…and a station is materialized: the anchor is written down, an absent l
 } catch (e) { check('the Inspector\'s Sockets card section ran to its end', false, String(e)); }
 
 // ===================================================================== the old spelling, refused at the door (PLAN §3)
-// LS1: a `sockets` map written by anyone (an old agent, an old doc) is refused as legacy, its fix naming the socket children;
-// a socket is a child entity, made, moved and deleted as one
+// LS1: `sockets` is no name: a map written by anyone (an old agent, an old doc) is refused as any unknown name (schema, did you
+// mean socket); a socket is a child entity, made, moved and deleted as one
 { const L = scratchWorld('lift').seed({ bench: { model: 'crate', pos: [0, 0, 0] } });
   const MAP = { seat: { pos: [0, 0.5, 0], body: { action: 'sit' } }, hook: { pos: [0.4, 0.8, 0], accepts: ['coat'] } };
   const r0 = L.call('set', { id: 'bench', component: 'sockets', value: MAP });
   const kids = () => Object.entries(L.state().entities).filter(([, e]: any) => e.c.parent?.to === 'bench' && e.c.socket).map(([k, e]: any) => [k, e.c.socket.name]);
   const stored = () => L.entries().some((e: any) => e.kind === 'change' && opsOf(e).some((o: any) => o.comp === 'sockets'));
   const idOf = (n: string) => kids().find(([, m]) => m === n)?.[0];
-  check('LS1 set sockets {seat, hook} is refused as legacy, its fix naming the socket child (parent, socket {name}); nothing is written', r0.refused?.code === 'legacy' && /socket: \{name/.test(r0.refused.fix) && /parent: \{to: <host>\}/.test(r0.refused.fix) && !kids().length && !stored(), r0.refused);
+  check('LS1 set sockets {seat, hook} is refused (schema, did you mean socket); nothing is written', r0.refused?.code === 'schema' && (r0.refused.didYouMean ?? []).includes('socket') && !kids().length && !stored(), r0.refused);
   const r1 = L.sendAll([OP.addSocket('bench', { name: 'seat' }, { pos: [0, 0.5, 0], station: { action: 'sit' } }), OP.addSocket('bench', { name: 'hook', accepts: ['coat'] }, { pos: [0.4, 0.8, 0], q: [0, 0.7071068, 0, 0.7071068] })]);
   const seatId = idOf('seat');
   check('LS1 socket children: each its own create (requests.js addSocket), its pose its transform, its station beside it; no sockets component in the log', r1.ok && JSON.stringify(kids().map(([, n]) => n)) === '["seat","hook"]' && !stored()
@@ -219,7 +219,7 @@ check('…and a station is materialized: the anchor is written down, an absent l
   const r2 = L.sendAll([OP.set(seatId, 'transform', { pos: [0, 0.6, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }), OP.remove(idOf('hook')!)]);
   check('LS1 moving a socket is a set transform on its child (same id); deleting one deletes what hangs on it, as any delete', r2.ok && JSON.stringify(kids()) === JSON.stringify([[seatId, 'seat']]) && L.state().entities[seatId].c.transform.pos[1] === 0.6 && !L.state().entities.coat && !stored(), [r2.refused, kids()]);
   const r3 = L.call('delete', { id: 'bench', component: 'sockets' });
-  check('LS1 delete {component: sockets} is refused as legacy, its fix naming each socket child to delete', r3.refused?.code === 'legacy' && r3.refused.fix.includes(seatId) && !!L.state().entities[seatId], r3.refused);
+  check('LS1 delete {component: sockets} names nothing the host has (not-found) and takes no socket child', r3.refused?.code === 'not-found' && !!L.state().entities[seatId], r3.refused);
   check('LS1 a socket child with an unknown key is refused (schema)', L.call('create', { id: 'bench-s', components: { parent: { to: 'bench' }, transform: { pos: [0, 1, 0] }, socket: { name: 's', pose: 'sit' } } }).refused?.code === 'schema'); }
 
 // LS3: parent {to: host, socket} and home {parent: {to, socket}} are refused as legacy; parent {to: <the socket child>} rides it

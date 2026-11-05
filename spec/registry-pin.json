@@ -576,10 +576,6 @@
   "keyed": "optional",
   "on": "thing"
  },
- "sockets": {
-  "status": "reserved",
-  "on": "thing"
- },
  "socket": {
   "status": "trial",
   "fields": {

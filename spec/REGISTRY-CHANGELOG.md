@@ -434,3 +434,5 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
   - renamed code no-body: gone (old logs may hold it)
   - renamed code no-such: gone (old logs may hold it)
 - 2026-11-05: normative: new refusal code undo-unavailable (Mica 11-05, #23 ruling 1): an undo or rollback of an imported act the translation's lift-sockets rewrote refuses whole (cause migration-transformed, naming the act and its ops) instead of undoing the rest
+- 2026-11-05: the reserved sockets name goes before deploy (Mica 11-05): the old map spelling was held only so the door could refuse it as legacy; a write of it is now refused as any unknown name (schema, did you mean socket), and only the v1 translator knows the word, lifting a v1 map to socket children
+  - sockets: the name is gone (stored values need a repair or a translation; a stable name never goes)

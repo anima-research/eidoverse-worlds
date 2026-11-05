@@ -349,8 +349,10 @@ for (const p of logs.sort()) {
   if (!loss && k !== body.length - 1) loss = { truncated: { consumed: k + 1, of: body.length } };
   if (loss) lossy++;
   // the authority takes the translated world as it is: every component of every thing passes the catalogue (a v1 key a
-  // closed component doesn't define rides beside it as imported:<component>, so nothing is refused at the first edit)
-  { const bad: string[] = []; for (const [id, comps] of Object.entries<any>(r.final.translated)) for (const [k, v] of Object.entries<any>(comps)) {
+  // closed component doesn't define rides beside it as imported:<component>, so nothing is refused at the first edit). The
+  // world as written, after the tail lift: the pre-lift projection still holds v1's sockets maps, a word only the translator knows
+  { const bad: string[] = []; const written = replica(readLog(r.out.map((e: any) => JSON.stringify(e)).join("\n") + "\n")).entities ?? {};
+    for (const [id, { c: comps }] of Object.entries<any>(written)) for (const [k, v] of Object.entries<any>(comps)) {
       const why = schemaRefusal(k, v); if (why) bad.push(`${id}.${k}: ${why}`); }
     check(`${name}: the authority's catalogue takes every translated component as it is`, !bad.length, bad.slice(0, 4)); }
   check(`${name}: the projection loses nothing (independent inverse vs the engine fold${every > 1 ? `, every ${every}` : ", every entry"})`, !loss, JSON.stringify(loss).slice(0, 400));

@@ -87,8 +87,7 @@ seats and lights.
 ```
 act {verb: "create", args: {components: {parent: {to: id}, transform: {pos: [-1.2, 3.65, 0.2], q: [0, 1, 0, 0]}, socket: {name: "stool"}, station: {anim: "sitchair"}}}}
 ```
-No rotation faces +Z (`q: [0, 1, 0, 0]` turns it to face −Z). The old `sockets` map is reserved: a write of it is still
-lifted into socket children, but write the children. `measure {id}` lists the model's flat zones; a zone's centre
+No rotation faces +Z (`q: [0, 1, 0, 0]` turns it to face −Z). There is no `sockets` map: a seat is a socket child, as above. `measure {id}` lists the model's flat zones; a zone's centre
 is a socket's position verbatim.
 
 **Lights** — one `create {components: {light: {…}}}` each. They are separate things at world

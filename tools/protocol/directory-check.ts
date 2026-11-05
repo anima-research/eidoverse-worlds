@@ -210,7 +210,7 @@ ok(foldName("Marígold") === foldName("marigold") && foldName("JOSÉ") === foldN
   ok(set("transform@2", { pos: [1e9, 0, 0] }).refused?.code === "schema", "S3 transform@2 is a near-miss too");
   ok(request(w, me, "set", { id: "@world", component: "terrain:base", value: { amp: 0 } }).refused?.code === "shape" && set("light:main", { intnsity: 5 }).refused?.code === "shape",
     "S4 an unkeyed name written keyed (terrain:base, light:main) no longer dodges the schema");
-  ok(set("label", 42).refused?.code === "shape" && set("sockets", "nope").refused?.code === "shape" && set("model", { x: 1 }).refused?.code === "shape", "S5 label, sockets and model are typed");
+  ok(set("label", 42).refused?.code === "shape" && set("model", { x: 1 }).refused?.code === "shape", "S5 label and model are typed");
   ok(set("placer", { id: "me" }).refused?.code === "derived", "S6 placer is derived (L2): refused");
   const lit: any = request(w, me, "create", { id: "lamp", components: { transform: { pos: [2, 1, 2] }, light: {} } });
   ok(lit.ok && w.state().entities.lamp.c.light.intensity === 25.93 && w.state().entities.lamp.c.light.range === 10, "S7 an agent's light {} gets the renderer's defaults (25.93, 10), as the editor's does (R9)", w.state().entities.lamp?.c.light);
