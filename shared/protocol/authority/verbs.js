@@ -50,7 +50,7 @@ const FOUNDING_VERBS = {
     // the founding writes' values are checked before anything is appended, against the state genesis folds to: a refusal
     // after genesis would leave a world that exists and that nobody owns
     for (const op of ops) valueCheck(emptyState(), op, { now: w.now() });
-    w.append({ kind: "genesis", actor: "system", body: { dialect: DIALECT, v: VERSION, minor: 1, nonce: nonce16(w), owners: [a.ownerKey ? [a.ownerKey] : [], [cu.operator()]], sequencer: cu.sequencer(),
+    w.append({ kind: "genesis", actor: "system", body: { dialect: DIALECT, v: VERSION, nonce: nonce16(w), owners: [a.ownerKey ? [a.ownerKey] : [], [cu.operator()]], sequencer: cu.sequencer(),
       ...(a.from?.seq !== undefined ? { parent: { world: a.from.world, seq: a.from.seq, head: a.from.head } } : {}),
       ...(a.requires?.length ? { requires: a.requires } : {}), ...(w.provenance?.() ? { provenance: w.provenance() } : {}) } });   // §F F-1, F-2
     const plan = admit(w, w.state(), { actor, cap: { kind: "founding", ids: ["@world"], comps: ops.map((o) => o.comp) } }, ops);

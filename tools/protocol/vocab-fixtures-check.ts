@@ -2,13 +2,10 @@
 // (F1–F3, F8, F14 are spec/conformance/test_reader.py's; F6, F9 test_story.py's; the chain's F9 test_chain.py's).
 //   F4  a physics checkpoint: body `seq` (was `at`); a checkpoint carrying `at` is skipped as malformed, never booted from
 //   F5  a redaction entry resyncs a live client; the wire marker is `{redacted: true}` (an old `{purged: true}` cell is no redaction)
-//   F7  replica.adopt refuses an unknown {dialect, v, minor} whole: status unknown-version, no state (the live wire's D1)
-//   F10 the v1 translator writes minor 1 directly: the new kinds, no verb on genesis or says, no `by`, no actor `world`
+//   F7  replica.adopt refuses an unknown {dialect, v} whole: status unknown-version, no state (the live wire's D1)
+//   F10 the v1 translator writes this vocabulary directly: the new kinds, no verb on genesis or says, no `by`, no actor `world`, no minor
 //   F12 a checkpoint blob written as `cutJson` and one written as `snapshotJson` both boot the engine; new writes carry snapshotJson only
-//   F20 (M2) the minor-0 reader (spec/kernel-vectors/minor-1/old-fold.js, the base commit's fold) refuses EVERY fixture of this
-//       branch whole: no world (entities null), nothing folded. Its status word is `no-world`, not the design doc's `unknown-version`:
-//       that reader checks the envelope before the minor, and a minor-1 genesis carries no `verb` (D3), so it never reaches
-//       its minor check. Loud either way; recorded here so the doc's row can be corrected (lane R report, 2026-11-04)
+//   F20 a reader given the next v returns unknown-version: no world, nothing folded or cached; a stray minor is malformed (Mica 11-04)
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/vocab-fixtures-check.ts
 // @ts-nocheck
 import "./fixture-ids.ts";
@@ -18,8 +15,7 @@ import { scratch, ENGINE } from "./common.ts";
 
 const root = scratch("vocab-fx"); const W = path.join(root, "worlds");
 Object.assign(process.env, { WORLDS_DIR: W, BACKUPS_DIR: path.join(root, "backups"), OPT_DIR: path.join(root, "opt"), SKIP_OPT_SWEEP: "1" });
-const F = await import("../../shared/protocol/fold.js"); const { readLog, fold, digest, REDACTED, MINORS } = F;
-const OLD = await import("../../spec/kernel-vectors/minor-1/old-fold.js");
+const F = await import("../../shared/protocol/fold.js"); const { readLog, fold, digest, REDACTED, VERSION } = F;
 const { makeReplica, wireState, stateFromWire, snapshotVersion, clientSnapshotOf } = await import("../../shared/protocol/replica.js");
 const { request, settle, checkpointNow } = await import("../../shared/protocol/authority.js");
 const { simSnapshotOf, digestOf, simFold } = await import("../../shared/protocol/simlayer.js");
@@ -30,32 +26,27 @@ let pass = 0, fail = 0;
 const ok = (cond, what, detail?) => { if (cond) { pass++; console.log(`ok   ${what}`); } else { fail++; console.log(`FAIL ${what}${detail !== undefined ? ` — ${JSON.stringify(detail).slice(0, 500)}` : ""}`); } };
 const read = (p) => readLog(fs.readFileSync(p));
 
-// ---- F20 / M2: every fixture of this branch, through the minor-0 reader ----
-{ const C = path.join(ENGINE, "spec/conformance"); const files = [...fs.readdirSync(path.join(C, "logs")).map((f) => `logs/${f}`), "EXAMPLE-01.jsonl", "lab-cottage.jsonl", ...fs.readdirSync(path.join(C, "physics")).filter((f) => f.endsWith(".jsonl")).map((f) => `physics/${f}`)].sort();
-  const exp = JSON.parse(fs.readFileSync(path.join(C, "expected.json"), "utf8"));
-  const minor1 = files.filter((f) => { const g = read(path.join(C, f))[0]; return g && typeof g === "object" && g.body?.minor === 1; });   // the negative genesis logs (07*, 19*) are what they test
-  const REFUSED = new Set(["no-world", "unknown-version"]);
-  const bad = minor1.filter((f) => { const st = OLD.fold(OLD.readLog(fs.readFileSync(path.join(C, f)))); return !(REFUSED.has(st.status) && st.entities === null); });
-  ok(minor1.length >= 60 && !bad.length, `F20/M2 the minor-0 reader refuses every minor-1 fixture whole (${minor1.length} logs: no world, entities null, nothing folded)`, bad);
-  { const st = OLD.fold(OLD.readLog(fs.readFileSync(path.join(C, "EXAMPLE-01.jsonl")))); const withVerb = read(path.join(C, "EXAMPLE-01.jsonl")); withVerb[0] = { ...withVerb[0], verb: "genesis" };
-    const st2 = OLD.fold(OLD.readLog(withVerb.map((e) => JSON.stringify(e)).join("\n") + "\n"));
-    ok(st.status === "no-world" && st.diagnostics[0]?.[1] === "malformed:envelope" && st2.status === "unknown-version" && st2.diagnostics.some(([q, c]) => q === 0 && c === "unknown-minor"),
-      "F20 the old reader's word: `no-world` (its envelope check wants a verb on genesis); with a verb put back it says `unknown-version` (unknown-minor): the doc's row names the second, the fixtures meet the first", { a: st.status, b: st2.status }); }
-  const fresh = files.filter((f) => f.startsWith("logs/") && exp[f.slice(5)]).filter((f) => { const st = fold(read(path.join(C, f))); const e = exp[f.slice(5)]; return !(st.status === e.status && (st.status !== "ok" || digest(st) === e.digest)); });
-  ok(!fresh.length, "F20 …and this branch's reader folds each conformance log to its pinned status and digest", fresh);
-  const vec = JSON.parse(fs.readFileSync(path.join(ENGINE, "spec/kernel-vectors/minor-1/vectors.json"), "utf8")).vectors;
-  ok(vec.length >= 5 && vec.every((v) => REFUSED.has(OLD.fold(OLD.readLog(v.entries.map((e) => JSON.stringify(e)).join("\n") + "\n")).status) && fold(readLog(v.entries.map((e) => JSON.stringify(e)).join("\n") + "\n")).status === "ok"),
-    "F20 the kernel vectors: old reader refuses, new reader ok (what kernel-check K3 re-runs at every gate)", vec.map((v) => v.name)); }
+// ---- F20 (Mica 11-04): a reader given the next v returns unknown-version: no usable world, no entry folded or cached ----
+{ const C = path.join(ENGINE, "spec/conformance"); const exp = JSON.parse(fs.readFileSync(path.join(C, "expected.json"), "utf8"));
+  const L = read(path.join(C, "EXAMPLE-01.jsonl")); const v5 = [{ ...L[0], body: { ...L[0].body, v: VERSION + 1 } }, ...L.slice(1)];
+  const st = fold(v5), acc = F.acceptedEntries(v5);
+  ok(st.status === "unknown-version" && st.entities === null && acc.length === 0 && st.diagnostics.length === 1 && st.diagnostics[0][1] === "unknown-version",
+    "F20 a reader given a log at the next v: unknown-version, no world, no entry folded (the fold's one diagnostic is the version) and nothing accepted to cache", { status: st.status, acc: acc.length, d: st.diagnostics });
+  const stray = [{ ...L[0], body: { ...L[0].body, minor: 1 } }, ...L.slice(1)]; const s2 = fold(stray);
+  ok(s2.status === "no-world" && s2.entities === null && s2.diagnostics.some(([q, c]) => q === 0 && c === "malformed:genesis-field"), "F20 …and a genesis carrying a minor is malformed (there is none): no world", s2.diagnostics);
+  const files = fs.readdirSync(path.join(C, "logs")).map((f) => `logs/${f}`);
+  const fresh = files.filter((f) => exp[f]).filter((f) => { const s = fold(read(path.join(C, f))); const e = exp[f]; return !(s.status === e.status && (s.status !== "ok" || digest(s) === e.digest)); });
+  ok(!fresh.length, "F20 …and this branch's reader folds each conformance log to its pinned status and digest", fresh); }
 
 // ---- F7: the live wire's version gate ----
 { const st = fold(read(path.join(ENGINE, "spec/conformance/EXAMPLE-01.jsonl")));
   const good = { ...snapshotVersion(), state: wireState(st), seq: 5, world: st.worldId, physics: null, actor: "alice" };
   const a = makeReplica(); const took = a.adopt(good);
-  ok(took === true && a.active && a.status === "ok" && a.seq === 5 && a.world === st.worldId && a.you === "alice" && digest(a.st) === digest(st), "F7 (control) a snapshot carrying this reader's {dialect, v, minor} is adopted: the fold, its seq, the world id, the actor", { took, status: a.status });
-  for (const [what, snap] of [["minor 0", { ...good, minor: 0 }], ["minor 2", { ...good, minor: 2 }], ["no minor", (({ minor: _m, ...r }) => r)(good)], ["v 5", { ...good, v: 5 }], ["another dialect", { ...good, dialect: "some-other-log" }], ["the old nested shape", { cut: good }]]) {
+  ok(took === true && a.active && a.status === "ok" && a.seq === 5 && a.world === st.worldId && a.you === "alice" && digest(a.st) === digest(st), "F7 (control) a snapshot carrying this reader's {dialect, v} is adopted: the fold, its seq, the world id, the actor", { took, status: a.status });
+  for (const [what, snap] of [["v 5", { ...good, v: 5 }], ["v 3", { ...good, v: 3 }], ["no v", (({ v: _v, ...r }) => r)(good)], ["another dialect", { ...good, dialect: "some-other-log" }], ["the old nested shape", { cut: good }]]) {
     const r = makeReplica(); const t = r.adopt(snap);
     ok(t === false && !r.active && r.status === "unknown-version" && r.st === null && r.seq === -1, `F7 a snapshot with ${what} is refused whole: unknown-version, no state, nothing folded`, { t, status: r.status, active: r.active }); }
-  ok([...MINORS].join() === "1", "F7 MINORS = {1}: minor 0 is the migration tool's to read (D1)", [...MINORS]); }
+  ok(!("minor" in snapshotVersion()) && !("MINORS" in F), "F7 there is no minor: the snapshot's version is {dialect, v}, and the fold exports no MINORS", snapshotVersion()); }
 
 // ---- F5: a redaction resyncs a live client; the wire marker is redacted ----
 { const st = fold(read(path.join(ENGINE, "spec/conformance/logs/09-redaction.jsonl")));
@@ -71,17 +62,18 @@ const read = (p) => readLog(fs.readFileSync(p));
   const r2 = makeReplica(); r2.adopt({ ...snapshotVersion(), state: w, seq: 9, world: st.worldId, physics: null });
   const ing2 = r2.ingest([{ ...red, kind: "purge" }], 10, {}); ok(ing2.resync === false && r2.seq === 10 && !ing2.changed, "F5 mutation: the old kind `purge` is no redaction: a malformed line, folded past (status ok, nothing resynced): only the kind rename makes F5 hold", ing2); }
 
-// ---- F10: the translator writes minor 1 ----
+// ---- F10: the translator writes this vocabulary ----
 { const v1 = fs.readFileSync(path.join(ENGINE, "spec/fixtures/01-build/log.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
   const r = translate(v1, { foldBuild: "x" }); const out = r.out; const g = out[0];
   const text = out.map((e) => JSON.stringify(e)).join("\n") + "\n"; const st = fold(readLog(text));
   const KINDS = new Set(["genesis", "change", "request", "physics", "say", "redaction", "governance"]);
-  ok(g.kind === "genesis" && g.body.minor === 1 && !("verb" in g) && !("op" in g), "F10 the translated genesis is minor 1 and carries no verb", g);
+  ok(g.kind === "genesis" && !("minor" in g.body) && !("verb" in g) && !("op" in g), "F10 the translated genesis carries no minor and no verb", g);
   ok(out.every((e) => KINDS.has(e.kind)) && out.filter((e) => e.kind === "say").every((e) => !("verb" in e)) && out.filter((e) => e.kind === "change").every((e) => typeof e.op === "string" && !("verb" in e)) && out.filter((e) => e.kind === "request").every((e) => typeof e.verb === "string" && !("op" in e)),
-    "F10 every translated entry wears a minor-1 kind: op on changes, verb on requests, neither on says", out.map((e) => [e.kind, e.op ?? e.verb ?? null]).slice(0, 12));
+    "F10 every translated entry wears this vocabulary's kind: op on changes, verb on requests, neither on says", out.map((e) => [e.kind, e.op ?? e.verb ?? null]).slice(0, 12));
   ok(!out.some((e) => "by" in e || "for" in e || "grant" in e) && !out.some((e) => e.actor === "world") && out.some((e) => e.kind === "request" && e.verb === "imported" && typeof e.body?.verb === "string"), "F10 no envelope by/for/grant, no actor `world`; the v1 verb rides in the imported request's body", out.filter((e) => e.actor === "world").length);
-  ok(st.status === "ok" && !st.diagnostics.some(([, c]) => String(c).startsWith("malformed")), "F10 the minor-1 reader folds the translation clean", st.diagnostics.slice(0, 5));
-  ok(["no-world", "unknown-version"].includes(OLD.fold(OLD.readLog(text)).status), "F10 mutation (M2): the minor-0 reader refuses it; a translator emitting minor 0, `act` or `verb: genesis` would be refused by the new reader instead (F14)"); }
+  ok(st.status === "ok" && !st.diagnostics.some(([, c]) => String(c).startsWith("malformed")), "F10 the reader folds the translation clean", st.diagnostics.slice(0, 5));
+  { const withMinor = readLog(text); withMinor[0] = { ...withMinor[0], body: { ...withMinor[0].body, minor: 1 } };
+    ok(fold(withMinor).status === "no-world", "F10 mutation: a translator writing a minor would be refused by the reader (no world)"); } }
 
 // ---- F4 + F12: checkpoints ----
 { const TICK = 33; let T = 1800000000000;

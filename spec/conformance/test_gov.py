@@ -21,7 +21,7 @@ def mk():
 
 def world(owners, seq_key, steps, full=False, **genesis):
     """genesis with these owner tiers, then each step (body, [signers]) as a governance entry; gov.py's events (full: its whole answer)"""
-    g = {"kind": "genesis", "actor": "system", "body": dict({"dialect": "eidoverse-log", "v": 4, "minor": 1,
+    g = {"kind": "genesis", "actor": "system", "body": dict({"dialect": "eidoverse-log", "v": 4,
          "nonce": b64u(b"0123456789abcdef"), "owners": owners, "sequencer": seq_key}, **genesis)}
     wid = "sha256:" + hashlib.sha256(jcs(g).encode()).hexdigest()
     lines = [g]

@@ -349,12 +349,12 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
     "OR10 bind refuses an identity whose only entry is a change the fold skips (an unknown op); the same change, valid, makes Okop bindable", { change: !!change, r10, k10 }));
   const lines = fs.readFileSync(wl, "utf8").split("\n").filter(Boolean), g = JSON.parse(lines[0]), late = d9.imported("Late");
   fs.appendFileSync(wl, JSON.stringify({ ...said, actor: late, ts: ts + 5 }) + "\n");
-  fs.writeFileSync(wl, [JSON.stringify({ ...g, body: { ...g.body, minor: 999 } }), ...fs.readFileSync(wl, "utf8").split("\n").filter(Boolean).slice(1)].join("\n") + "\n");
+  fs.writeFileSync(wl, [JSON.stringify({ ...g, body: { ...g.body, v: 999 } }), ...fs.readFileSync(wl, "utf8").split("\n").filter(Boolean).slice(1)].join("\n") + "\n");
   const r11 = bind("yard", "Late", "human:test:late");
   fs.writeFileSync(wl, [lines[0], ...fs.readFileSync(wl, "utf8").split("\n").filter(Boolean).slice(1)].join("\n") + "\n");
   const k11 = bind("yard", "Late", "human:test:late");
   row("OR11", () => ok(r11.code !== 0 && !/^bound /m.test(r11.out) && k11.code === 0 && /^bound /m.test(k11.out),
-    "OR11 under a genesis with an unsupported minor (the fold reads no world) nobody's entry counts; the same log with its own genesis binds Late", { r11, k11 }));
+    "OR11 under a genesis with an unsupported v (the fold reads no world) nobody's entry counts; the same log with its own genesis binds Late", { r11, k11 }));
 }
 
 // OR12 (bot #192): the bind lands in the directory before the audit line; an append that fails is SAID (the record to add by hand), never undone

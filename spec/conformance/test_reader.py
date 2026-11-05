@@ -8,13 +8,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 LOGS = os.path.join(HERE, "logs")
 os.makedirs(LOGS, exist_ok=True)
 
-# PROTOCOL §2.4 + §3d (C1, H5, H6): genesis body {dialect: "eidoverse-log", v: 4, minor, nonce, rewindWindow?, parent?,
+# PROTOCOL §2.4 + §3d (C1, H5, H6): genesis body {dialect: "eidoverse-log", v: 4, nonce, rewindWindow?, parent?,
 # owners: [[<key>…], …], quorum?, sequencer}. Keys are fixed test keys (ed25519 from sha256 seeds), nonce fixed.
 K_OWNER = "ed25519:BP7aKo17f474DD1aBSLG0a3Pb29Qs3yqQ6Ve0wSRVD0"
 K_SEQ = "ed25519:rRoIPhqlc8rDxC1GZlfHOe1IBJYWQ8MDNg9QuZzMsic"
 K_TIER1 = "ed25519:iUs8tlcXt9q0Zq1OuuCX-llZgf5YdLA9vJ5aoaEFpkg"
 NONCE, NONCE2 = "XWVu1u7BpaZTDFSETYiphg", "dLedD3Y4zEayxxDNGOBM6w"
-GBODY = {"dialect": "eidoverse-log", "v": 4, "minor": 1, "nonce": NONCE, "owners": [[K_OWNER]], "sequencer": K_SEQ}
+GBODY = {"dialect": "eidoverse-log", "v": 4, "nonce": NONCE, "owners": [[K_OWNER]], "sequencer": K_SEQ}
 GEN = {"kind": "genesis", "actor": "system", "body": GBODY}
 GEN_LINE = json.dumps(GEN)
 WID = "sha256:" + hashlib.sha256(R.jcs(R.parse_ijson(GEN_LINE.encode())).encode()).hexdigest()
@@ -292,8 +292,8 @@ r = run("16-bool", [GEN_LINE, ACT, st("create", {"id": "a"}),
     st("set", {"id": "a", "comp": "t", "value": True}), st("set", {"id": "a", "comp": "o", "value": 1})])
 check("16 true and 1 stay distinct", R.jcs(r.view()["a"]) == '{"o":{"v":1},"t":{"v":true}}', R.jcs(r.view()))
 
-# 19 genesis shape (PROTOCOL §2.4, §3d C1/H5/H6). A malformed genesis means "no world"; an unknown minor
-# means "unknown version" (L1), checked before the shape so a later minor may add fields.
+# 19 genesis shape (PROTOCOL §2.4, §3d C1/H5/H6). A malformed genesis means "no world"; an unknown v means "unknown
+# version" (07a); the fields are exact, so a `minor` is a stray field (Mica 11-04: there is no minor).
 def gen_with(**kw):
     b = dict(GBODY)
     for k, v in kw.items():
@@ -316,9 +316,7 @@ bad19 = {
     "19a-genesis-no-nonce": (gen_with(nonce=_DEL), "no-world", "malformed:genesis-nonce"),
     "19b-genesis-short-nonce": (gen_with(nonce=_b64(b"\x01" * 15)), "no-world", "malformed:genesis-nonce"),
     "19c-genesis-nonce-not-b64url": (gen_with(nonce="XWVu1u7BpaZTDFSETYiphg=="), "no-world", "malformed:genesis-nonce"),
-    "19d-genesis-no-minor": (gen_with(minor=_DEL), "no-world", "malformed:genesis-minor"),
-    "19e-genesis-minor-0": (gen_with(minor=0), "unknown-version", "unknown-minor"),   # minor 0 is the migration tool's to read (D1)
-    "19e2-genesis-minor-2": (gen_with(minor=2, future=True), "unknown-version", "unknown-minor"),
+    "19e-genesis-stray-minor": (gen_with(minor=1), "no-world", "malformed:genesis-field"),
     "19f-genesis-flat-owners": (gen_with(owners=[K_OWNER]), "no-world", "malformed:genesis-owners"),
     "19g-genesis-small-order-key": (gen_with(owners=[[SMALL_NEG]]), "no-world", "malformed:genesis-key"),
     "19h-genesis-key-y-ge-p": (gen_with(sequencer=BIG_Y), "no-world", "malformed:genesis-key"),
@@ -362,7 +360,7 @@ check("20 redaction of roles: ignored (diagnosed), the note redacted",
       and [c for s_, c in codes(r)].count("redaction-target-governance") == 2, (r.view(), codes(r)))
 
 
-# ---- docs/DESIGN-log-vocabulary.md §5: the positive fixtures F1–F3, F8 and the negative set F14 (minor 1) ----
+# ---- docs/DESIGN-log-vocabulary.md §5: the positive fixtures F1–F3, F8 and the negative set F14 ----
 # F1 an admitted request: kind request, verb, body.args an object (the readback keys on args.*)
 r = run("23a-f1-request-admitted", [GEN_LINE,
     json.dumps({"world": WID, "kind": "request", "ts": 1, "actor": "alice", "verb": "set", "body": {"args": {"id": "@world", "component": "label", "value": "x"}, "salt": "UUPZ_XwQSbZtpmdmt87bSQ"}}),

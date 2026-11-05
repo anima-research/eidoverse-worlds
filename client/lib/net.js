@@ -1278,12 +1278,12 @@ async function onSnapshot(msg) {
   }
 
   // State adopts the snapshot FIRST, synchronously: the authority's own fold, drawn as the view of THIS client's fold of it
-  // (the snapshot's `chat` is the chat window: chat isn't world state). A {dialect, v, minor} this page doesn't read is refused
+  // (the snapshot's `chat` is the chat window: chat isn't world state). A {dialect, v} this page doesn't read is refused
   // whole (D5): nothing is folded, and the page says so instead of half-reading the world.
   if (!replica.adopt(msg)) {
-    report('snapshot', new Error(`unknown-version: the world speaks ${msg.dialect} v${msg.v} minor ${msg.minor}; this page reads another`));
+    report('snapshot', new Error(`unknown-version: the world speaks ${msg.dialect} v${msg.v}; this page reads another`));
     net.joined = false; net.status = 'rejected'; bus.emit('net', net); failSays();
-    toast(`this world's log is a version this page doesn't read (${msg.dialect} v${msg.v} minor ${msg.minor}): nothing will load — reload once the page is updated`, 'warn', 60000);
+    toast(`this world's log is a version this page doesn't read (${msg.dialect} v${msg.v}): nothing will load — reload once the page is updated`, 'warn', 60000);
     return;
   }
   bus.emit('my-acts', msg.mine ?? []); bus.emit('snapshot-adopted'); bus.emit('holds', msg.holds ?? {});

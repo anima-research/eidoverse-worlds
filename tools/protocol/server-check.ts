@@ -186,7 +186,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   // the real MCPL body (mcpl/agent.ts), joined as Bob: its snapshot sets ag.snapshot, and its request() awaits reply
   const ag: any = new WorldAgent({ url: `ws://127.0.0.1:${srv.port}/ws`, name: "Bob", world: "garden", avatar: "" });
   await ag.connect(); await tryUntil("the agent has its cut", () => ag.snapshot, { ms: 2000, step: 50 });
-  ok(ag.snapshot?.dialect === "eidoverse-log" && ag.snapshot?.v === 4 && ag.snapshot?.minor === 1, "S5 the MCPL agent learns from its snapshot which log this is and which protocol reads it", ag.snapshot);
+  ok(ag.snapshot?.dialect === "eidoverse-log" && ag.snapshot?.v === 4 && !("minor" in (ag.snapshot ?? {})), "S5 the MCPL agent learns from its snapshot which log this is and which protocol reads it", ag.snapshot);
   ag.verb = () => { throw new Error("a world's building tool must not fire-and-forget"); };
   // R 10-17: the agent names what it makes with a placeholder; the reply says the handle and the id it became
   const sp = await HANDLERS.create(ag, { model: "test/cup.glb", place: { at: [2, 2] }, id: "$agentcup" }, {} as any, "create");
@@ -418,7 +418,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok(tr.code === 0 && /0 divergences/.test(tr.out) && /mtime unchanged: true/.test(tr.out) && /approved by the operator/.test(tr.out), "S6 translate, approved, writes a new world and reports 0 divergences", tr.out);
   ok(Buffer.compare(before, fs.readFileSync(v1log)) === 0, "S6 the v1 log's bytes are unchanged (R9)");
   const [g, t1] = fs.readFileSync(path.join(W4, "oldtown-new", "world.jsonl"), "utf8").split("\n").slice(0, 2).map((l) => JSON.parse(l));
-  ok(g.body.minor === 1 && typeof g.body.nonce === "string" && /^ed25519:/.test(g.body.sequencer) && !("translatedFrom" in g.body), "S6 genesis is §2.4's (minor, nonce, sequencer; no translatedFrom)", g.body);
+  ok(!("minor" in g.body) && typeof g.body.nonce === "string" && /^ed25519:/.test(g.body.sequencer) && !("translatedFrom" in g.body), "S6 genesis is §2.4's (minor, nonce, sequencer; no translatedFrom)", g.body);
   ok(t1.verb === "translated" && /^eidoverse\/translate-v1@/.test(t1.body.from?.translator) && /^[0-9a-f]{16}$/.test(t1.body.from?.fold), "S6 the act after genesis names the engine translator and the v1 fold build", t1.body);
   ok(tool(["translate", "oldtown", "oldtown-new"]).code !== 0, "S6 translating onto an existing world is refused");
   // the old world as the old fold reads its log (the translator's own reader; nothing serves v1 any more) vs the new copy

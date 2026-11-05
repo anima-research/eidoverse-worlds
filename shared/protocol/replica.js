@@ -14,7 +14,7 @@
 // so there's nothing held beside it to drift; client/lib/state.js diffs successive views and tells the realizers
 // what changed, in the protocol's terms. `say` entries come back as chat lines ({seq, ts, actor, text,
 // to?}): chat isn't world state, it's the log's own kind.
-import { opsOf, applyInPlace, emptyState, REDACTED, Malformed, DIALECT, VERSION, MINORS } from "./fold.js";
+import { opsOf, applyInPlace, emptyState, REDACTED, Malformed, DIALECT, VERSION } from "./fold.js";
 import { simFolder, simSnapshotOf, advanceSim, tickOf, carried } from "./simlayer.js";
 import { viewState } from "./view.js";
 import { dec, learnNames, actorName } from "./names.js";
@@ -107,9 +107,9 @@ export function makeReplica({ freeze = true } = {}) {
     folder = simFolder(E, { models: {}, from: { st: stateFromWire(snap.state), clock: cut?.clock ?? 0, spec, foreign, sim: foreign ? null : cut?.sim ?? null, launched: cut?.launched ?? {}, lifted: cut?.lifted ?? [], unknownEpoch: !!cut?.unknownEpoch, unknownHold: !!cut?.unknownHold } });
     v.sim = folder.view(); v.simVersion++;
   };
-  /** Adopt a join snapshot. False, with v.status "unknown-version" and no state, when its {dialect, v, minor} isn't this reader's (D5): never a half-read. */
+  /** Adopt a join snapshot. False, with v.status "unknown-version" and no state, when its {dialect, v} isn't this reader's (D5): never a half-read. */
   v.adopt = (snap) => {
-    if (!snap || typeof snap !== "object" || snap.dialect !== DIALECT || snap.v !== VERSION || !MINORS.has(snap.minor)) { v.reset(); v.status = "unknown-version"; return false; }
+    if (!snap || typeof snap !== "object" || snap.dialect !== DIALECT || snap.v !== VERSION) { v.reset(); v.status = "unknown-version"; return false; }
     v.status = "ok"; v.st = stateFromWire(snap.state); v.seq = Number.isInteger(snap.seq) ? snap.seq : -1; v.world = snap.world ?? null; v.active = true;
     v.you = typeof snap.actor === "string" ? snap.actor : null;   // the snapshot's `actor`: this joiner's id in the log (`you` is the connection's)
     learn(snap.names);
@@ -178,5 +178,5 @@ export function clientSnapshotOf(w) {
   const sf = w.sim();
   return { ...snapshotVersion(), state: wireState(w.state()), seq: w.entries.length - 1, world: w.worldId ?? null, physics: simSnapshotOf(sf, w.entries) };
 }
-/** The version triple a snapshot carries ({dialect, v, minor}: what adopt checks first), for a snapshot built by hand. */
-export const snapshotVersion = () => ({ dialect: DIALECT, v: VERSION, minor: [...MINORS][0] });
+/** The version a snapshot carries ({dialect, v}: what adopt checks first), for a snapshot built by hand. */
+export const snapshotVersion = () => ({ dialect: DIALECT, v: VERSION });

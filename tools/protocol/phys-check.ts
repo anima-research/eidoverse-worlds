@@ -760,7 +760,7 @@ function playground(name) {
   const cut = simSnapshotOf(f1.view(P[k].ts), P);
   const f2 = simFolder(P, { purged, from: { ...JSON.parse(JSON.stringify(cut)), st: fold(P, { until: k }) } }); for (let s = k + 1; s < P.length; s++) if (!bad.has(s)) f2.feed(s);
   const whole = simFold(P, last.ts + 1000), v = f2.view(last.ts + 1000);
-  const c = makeReplica(); c.adopt(JSON.parse(JSON.stringify({ dialect: "eidoverse-log", v: 4, minor: 1, state: wireState(fold(P, { until: k })), seq: k, physics: cut })));
+  const c = makeReplica(); c.adopt(JSON.parse(JSON.stringify({ dialect: "eidoverse-log", v: 4, state: wireState(fold(P, { until: k })), seq: k, physics: cut })));
   ok(lift > 0 && lift < k && cut.unknownHold === true && v.checks.disagree.length === 0 && v.checks.agree === 0 && whole.checks.disagree.length === 0 && c.sim?.unknownHold === true,
     "U7l a folder resumed from a cut taken after a purged lift judges nothing after it, as the uninterrupted replay doesn't", { lift, k, hold: cut.unknownHold, agree: v.checks.agree, disagree: v.checks.disagree.slice(0, 3), whole: whole.checks.disagree.length }); }
 // review of #260: a cut taken while a purged launch leaves the epoch unknown carries that too, to a resumed folder and to
@@ -777,7 +777,7 @@ function playground(name) {
   const cut = simSnapshotOf(f1.view(P[k].ts), P);
   const f2 = simFolder(P, { purged, from: { ...JSON.parse(JSON.stringify(cut)), st: fold(P, { until: k }) } }); for (let s = k + 1; s < P.length; s++) if (!bad.has(s)) f2.feed(s);
   const v = f2.view(last.ts + 1000), base = simFold(L, last.ts + 1000), digestsAfter = L.filter((e: any, i: number) => i > k && e?.kind === "physics" && e.verb === "digest").length;
-  const c = makeReplica(); c.adopt(JSON.parse(JSON.stringify({ dialect: "eidoverse-log", v: 4, minor: 1, state: wireState(fold(P, { until: k })), seq: k, physics: cut })));
+  const c = makeReplica(); c.adopt(JSON.parse(JSON.stringify({ dialect: "eidoverse-log", v: 4, state: wireState(fold(P, { until: k })), seq: k, physics: cut })));
   ok(ln > 0 && ln < k && digestsAfter > 0 && base.checks.disagree.length === 0 && cut.unknownEpoch === true && !cut.unknownHold && v.checks.disagree.length === 0 && v.checks.agree === 0
     && c.sim?.unknownEpoch === true && c.sim?.unknownHold === false,
     "U7m a cut taken after a purged launch, before the epoch's next boundary, carries the unknown epoch: a resumed folder judges none of it, and a joiner's replica adopts it", { ln, k, digestsAfter, epoch: cut.unknownEpoch, agree: v.checks.agree, disagree: v.checks.disagree.slice(0, 2), replica: { epoch: c.sim?.unknownEpoch, hold: c.sim?.unknownHold } }); }

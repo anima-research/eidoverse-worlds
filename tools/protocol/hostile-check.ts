@@ -21,9 +21,9 @@ if (LAB) { fs.writeFileSync(basePath, Bun.spawnSync(["git", "show", "4f62913:fol
 const verbose = process.argv.includes("--verbose");
 
 // ---- builders for both formats ----
-// §2.4 + §3d: genesis {dialect, v, minor, nonce, owners: tiers of keys, sequencer} (fixed test key and nonce; lab hostile-check)
+// §2.4 + §3d: genesis {dialect, v, nonce, owners: tiers of keys, sequencer} (fixed test key and nonce; lab hostile-check)
 const KEY = "ed25519:BP7aKo17f474DD1aBSLG0a3Pb29Qs3yqQ6Ve0wSRVD0";
-const GEN = { kind: "genesis", actor: "system", body: { dialect: "eidoverse-log", v: 4, minor: 1, nonce: "XWVu1u7BpaZTDFSETYiphg", owners: [[KEY]], sequencer: KEY } };
+const GEN = { kind: "genesis", actor: "system", body: { dialect: "eidoverse-log", v: 4, nonce: "XWVu1u7BpaZTDFSETYiphg", owners: [[KEY]], sequencer: KEY } };
 const WID = worldIdOf(parseLine(JSON.stringify(GEN)));
 const L = (o) => JSON.stringify(o);
 const act = L({ world: WID, kind: "request", ts: 1, actor: "olive", verb: "set", body: { args: {} } }); // §2.1: every entry after genesis carries ts

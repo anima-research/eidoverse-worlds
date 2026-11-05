@@ -1,17 +1,17 @@
 {
  "status": "trial-kernel",
- "translator": "eidoverse/translate-v1@47",
+ "translator": "eidoverse/translate-v1@48",
  "companions": {
-  "changelog": "2026-11-05: kernel: minor 1 genesis admits requires (sorted unique feature ids, §F F-1) and provenance (the writer object, §F F-2); governance requiresAdd declares later features; a feature the reader doesn't implement is unsupported-feature, no world",
+  "changelog": "2026-11-05: kernel: no minor (Mica 11-04): genesis is {dialect, v, …}; dialect names the family, v is the hard break, requires the additive gate. minor leaves the genesis fields and the version pin; a stray minor is malformed",
   "translator": {
-   "from": "eidoverse/translate-v1@44",
-   "to": "eidoverse/translate-v1@45"
+   "from": "eidoverse/translate-v1@45",
+   "to": "eidoverse/translate-v1@48",
+   "step": "48"
   },
   "vectors": {
-   "dir": "features",
+   "dir": "no-minor",
    "names": [
-    "genesis-requires-empty",
-    "genesis-provenance"
+    "genesis-without-minor"
    ]
   }
  },
@@ -73,12 +73,8 @@
    "status": "trial-kernel",
    "dialect": "eidoverse-log",
    "v": 4,
-   "minors": [
-    1
-   ],
    "genesis": [
     "dialect",
-    "minor",
     "nonce",
     "owners",
     "parent",

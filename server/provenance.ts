@@ -6,7 +6,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { provenanceOf } from "../shared/protocol/provenance.js";
-import { VERSION, MINOR } from "../shared/protocol/fold.js";
+import { VERSION } from "../shared/protocol/fold.js";
 
 /** sha256 over the working tree at `root`, as git sees it (tracked and untracked-unignored files, sorted paths, each path and
  *  its content hash): the exact source that ran. */
@@ -35,7 +35,7 @@ export function provenanceAt(root, name, version) {
  *  is no git checkout: genesis then carries none, never a guess. */
 let SERVER;
 export function serverProvenance() {
-  if (SERVER === undefined) try { SERVER = provenanceAt(path.resolve(import.meta.dir, ".."), "eidoverse-server", `${VERSION}.${MINOR}.0`); }
+  if (SERVER === undefined) try { SERVER = provenanceAt(path.resolve(import.meta.dir, ".."), "eidoverse-server", `${VERSION}.0.0`); }
   catch (e) { SERVER = null; console.warn(`[provenance] ${e?.message ?? e}: worlds founded by this process carry no genesis provenance`); }
   return SERVER;
 }

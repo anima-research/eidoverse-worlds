@@ -125,7 +125,8 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@47";   // @47: an entity id in the reserved person shape u-[a-z2-7]{24} refuses the translation (F19, P3). Output otherwise unchanged
+export const TRANSLATOR = "eidoverse/translate-v1@48";   // @48: the genesis carries no minor (Mica 11-04: dialect + v, then requires). Every world id differs
+// @47: an entity id in the reserved person shape u-[a-z2-7]{24} refuses the translation (F19, P3). Output otherwise unchanged
 // @46: no repair-shapes marker; a stored sockets map is lifted here (lift-sockets acts at the end). Output differs there
 // @45: a minor-1 genesis may carry requires and provenance (§F); output unchanged
 // @44: minor 1, the log vocabulary (docs/DESIGN-log-vocabulary.md)
@@ -246,7 +247,7 @@ export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(nam
 // came to rest; but a punt stays its imported act (no v4 launch), each rest is a plain change by `sim` caused by that act
 // (no digest), the world's engine is today's eidosim from the epoch on, and (R 2026-10-08) a thing v1 ever punted is a
 // `dynamic` collider, every other one `static`. Nothing in the new log asks a reader to fly her engine.
-export const TRANSLATOR_SIM = "eidoverse/translate-v1@47";
+export const TRANSLATOR_SIM = "eidoverse/translate-v1@48";
 // @9 (2026-10-07, R's particles ruling): a v1 `particles` bag is today's instance: its preset is the effect, its origin is
 // `at`, its seed stays, and its count, size, opacity, speed, lifetime, area, texture and quality are the params of the
 // same names every Essential declares (shared/particle_effects.js modernize; instanceOf reads it back exactly). A key
@@ -283,7 +284,7 @@ const b64url = (bytes) => { let s = ""; for (const x of bytes) s += String.fromC
 // attestation) can vouch that a key is the v1 owner's. A world FOUNDED new (create-world ownerKey) is a different path.
 export function translatedGenesis(oldEntries, { key = LAB_DOOR_KEY, operator = key, nonce } = {}) {
   if (!nonce) { const h = sha256(oldEntries.map((e) => JSON.stringify(e)).join("\n")); nonce = b64url(Uint8Array.from(h.slice(0, 32).match(/../g), (x) => parseInt(x, 16))); }
-  return { dialect: DIALECT, v: VERSION, minor: 1, nonce, owners: [[], [operator]], sequencer: key };
+  return { dialect: DIALECT, v: VERSION, nonce, owners: [[], [operator]], sequencer: key };
 }
 export { enc, encName, dec };
 const yawQ = (y) => [0, Math.sin(y / 2), 0, Math.cos(y / 2)];

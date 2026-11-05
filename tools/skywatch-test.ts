@@ -138,7 +138,7 @@ async function rig(args: any, who = "antra") {
   const ag = new WorldAgent({ name: "late" }) as any; const events: any[] = [];
   ag.onEvent = (ev: any) => { if (ev.kind === "weather") events.push(ev); };
   // the live fold's cut, serialized and adopted by a fresh replica: what a joiner gets (never the live object itself)
-  ag.replica = makeReplica(); ag.replica.adopt(JSON.parse(JSON.stringify({ dialect: "eidoverse-log", v: 4, minor: 1, state: wireState(live.ag.replica.st), seq: live.ag.replica.seq })));
+  ag.replica = makeReplica(); ag.replica.adopt(JSON.parse(JSON.stringify({ dialect: "eidoverse-log", v: 4, state: wireState(live.ag.replica.st), seq: live.ag.replica.seq })));
   await ag.applyView(false, null, T0);
   check("a late joiner's sky is the live agent's", JSON.stringify(ag.skyState) === JSON.stringify(live.ag.skyState), JSON.stringify([ag.skyState, live.ag.skyState]));
   ag.checkSky(T0 + 5 * MIN);

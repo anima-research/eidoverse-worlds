@@ -28,7 +28,7 @@ const W = scratchWorld("hier").seed({
 // the truck's bed is a socket child (PLAN-sockets-entities: the seed's old `sockets` map is lifted at load), so the crate
 // rides it: truck › bed › crate › lantern
 const bed = socketId("truck", "bed");
-const cutAt = () => JSON.parse(JSON.stringify({ dialect: "eidoverse-log", v: 4, minor: 1, state: wireState(W.state()), seq: W.entries().length - 1 }));
+const cutAt = () => JSON.parse(JSON.stringify({ dialect: "eidoverse-log", v: 4, state: wireState(W.state()), seq: W.entries().length - 1 }));
 const r = makeReplica(); r.adopt(cutAt());
 let head = W.entries().length;
 const write = (tool: string, args: any) => {

@@ -800,8 +800,8 @@ export class WorldAgent {
   private pendingHistory = new Map<string, (m: any) => void>();
   /** The world's protocol facts, from the snapshot ({dialect, v} from genesis, its head and world id). Building tools route through
    *  request()/sendOps() and WAIT for the authority's reply, so a refusal reaches the agent (PARITY (d)1). null until joined. */
-  /** the join snapshot's protocol line (D5): {dialect, v, minor, world: the id, name: the directory, seq} */
-  snapshot: { dialect: string; v: number; minor: number; world: string; name: string; seq: number } | null = null;
+  /** the join snapshot's protocol line (D5): {dialect, v, world: the id, name: the directory, seq} */
+  snapshot: { dialect: string; v: number; world: string; name: string; seq: number } | null = null;
   /** The world's own fold, from the join cut and the authority's `log` stream (shared/protocol/replica.js). */
   private replica: any = null;
   /** The last building verb's turn: each is spelled after the one before it is answered. */
@@ -1141,7 +1141,7 @@ export class WorldAgent {
             if (msg.rights) this.acceptEffectiveRights(msg.rights, "world");
             break;
           case "snapshot":
-            this.snapshot = msg.state ? { dialect: msg.dialect, v: msg.v, minor: msg.minor, world: msg.world, name: msg.name, seq: msg.seq } : null;
+            this.snapshot = msg.state ? { dialect: msg.dialect, v: msg.v, world: msg.world, name: msg.name, seq: msg.seq } : null;
             // Our surface generation, issued by the server on acceptance —
             // every attest must echo it or the receipt is refused (PR #103 B2).
             if (typeof msg.gen === "number") this.surfaceGen = msg.gen;
@@ -1188,7 +1188,7 @@ export class WorldAgent {
             // chat window (chat isn't world state): its lines land in the inbox once, as history
             if (!(msg as any).state) { this.closed = true; clearTimeout(timeout); reject(new Error("the server sent no world snapshot (an old server?)")); break; }
             this.replica = makeReplica();
-            if (!this.replica.adopt(msg)) { this.closed = true; clearTimeout(timeout); reject(new Error(`unknown-version: the world speaks ${msg.dialect} v${msg.v} minor ${msg.minor}; this agent reads another (D5)`)); break; }
+            if (!this.replica.adopt(msg)) { this.closed = true; clearTimeout(timeout); reject(new Error(`unknown-version: the world speaks ${msg.dialect} v${msg.v}; this agent reads another (D5)`)); break; }
             this.st.recentChat = structuredClone(msg.chat?.recentChat ?? []);
             this.st.chatTotal = msg.chat?.chatTotal ?? 0;
             for (const m of this.st.recentChat) this.hearSay({ seq: m.seq ?? -1, ts: m.ts, actor: m.actor, verb: "say", args: { text: m.text } }, false);

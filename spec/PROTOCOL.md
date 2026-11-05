@@ -10,9 +10,8 @@ mail ecosystem exist.
 Which files are the contract, and the status of each choice it makes (decided, trial, open), is in
 `spec/NORMATIVE.md`. Code this document names is informative: a place to look, never the contract.
 
-Status: normative for logs whose genesis says `dialect: "eidoverse-log", v: 4,
-minor: 1` (the version history is at the end; minor 1 is this vocabulary, D1 of
-`docs/DESIGN-log-vocabulary.md`, and a minor-0 world is read only by the migration tool).
+Status: normative for logs whose genesis says `dialect: "eidoverse-log", v: 4` (the version history is at the end;
+this vocabulary is `docs/DESIGN-log-vocabulary.md`'s).
 **Alpha.** This whole protocol is in a trial period of about a year from v1.
 There is **no guarantee** that a log folded today will fold the same way under
 a later version: not a component's shape, not a field or message name, and not
@@ -207,8 +206,8 @@ A `change` entry's `op` and `body` are one of:
   (a key written by anyone else in between is a new life, never merged with
   the old). A verifier re-running the gate re-runs it on the **unmarked ops
   only**. A tool that rewrites a batch's `ops` remaps `cascade` with
-  them. (Added to the batch body before release as `followUps`, at minor 0;
-  `cascade` since minor 1: see §10.)
+  them. (Added to the batch body before release as `followUps`;
+  `cascade` since this vocabulary.)
 - A shape or grammar error anywhere in an entry (an unknown field, a bad id
   or component name, a nested batch) makes the **whole entry** malformed. A
   semantic no-op (a missing entity, an absent component) skips only that
@@ -408,7 +407,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
 - **The kernel is `trial-kernel`.** Below the registry sits what every reader
   agrees on before a component is read: the log envelope and its kinds (§1),
   the fold's four operations and the batch body (§3), the identity grammar
-  (§3.1), the version (`{dialect, v}`, the minors, genesis's fields, §13), and
+  (§3.1), the version (`{dialect, v}`, genesis's fields, §13), and
   the two components every reader rests on, `roles` and `access` (§7), each
   as its field shape only (their ranges, enums and meanings are the
   registry's). The kernel is what the fold reads: `transform`, `parent` and
@@ -436,7 +435,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
 - **A load never writes to a stored value.** A world founded today is written in today's spelling from its first
   entry, so nothing repairs it. One write does happen when a server OPENS a world, and it is not a shape rewrite:
   holds left from before a restart are set down (`return-held`, the system's request; `settleOrphans`), the same
-  request a leave writes. A v1 world comes forward through the translator (`translate-v1@47`, §14), which writes today's spelling
+  request a leave writes. A v1 world comes forward through the translator (`translate-v1@48`, §14), which writes today's spelling
   (the shape audit's rules, `tools/protocol/import-v1/shapes.js`) and lifts v1's `sockets` maps into socket
   children with its own `lift-sockets {id, made, moved}` requests. The door takes a write in a spelling renamed
   before release (`grabbable.pose`/`station.pose` → `anim`, a grip's `fingers` → `grasp`, a motion's old type
@@ -1264,19 +1263,8 @@ the thing's (or part's) own frame before scale; `motion.center` and
 - **The four operations, the envelope, the kinds and the fold are fixed.**
   They are the kernel (`trial-kernel`, §4): the gate refuses a change to them
   that doesn't carry its translator, changelog line and vectors.
-  Changing them is a new `minor` (or a new `v`) in genesis; a reader that
-  doesn't know a world's minor refuses the world rather than folding it to
-  a different digest. Minor 1 is this vocabulary (`docs/DESIGN-log-vocabulary.md`):
-  a reader knows `MINORS = {1}`, and a minor-0 world is read only by the
-  migration tool. One exception, before release: the batch body's
-  `cascade` (§3) was added to this protocol **at minor 0** (as `followUps`; `cascade` since minor 1), because it had
-  not been released. Every such log written so far was written by the reference
-  authority on its own branch, and every one folds to the same digest with
-  or without the field (the fold applies marked ops like any op); the only
-  readers that refuse it are that branch's own earlier builds. Bumping to
-  minor 1 would have made every trial world and conformance log carry a
-  version that marks nothing a released reader could disagree on. From
-  release on, the rule above holds without exception.
+  A reader that doesn't know a world's `v` refuses the world rather than folding it to a different digest.
+  **Versioning rule** (Mica, 11-04): `dialect` names the protocol family, `v` is the hard semantic or wire break, and `requires` is the monotonic, additive, opt-in feature gate. New op, kind or component semantics declared before their first use → `requires`; a changed meaning of existing historical bytes, of the envelope or genesis skeleton, or anything impossible to predeclare → bump `v`. There is no `minor`.
 
 ## 11. Conformance
 
@@ -1347,9 +1335,9 @@ them, and the suite holds them to it), not part of conformance.
 ## 13. Genesis and governance
 
 - **Genesis** (seq 0, `kind: "genesis"`, actor `system`, no `op` or `verb`):
-  `body {dialect: "eidoverse-log", v: 4, minor: 1, nonce, owners: [[<key>…], …],
-  sequencer, quorum?, rewindWindow?, parent?, requires?, provenance?}`. Exactly those fields within a
-  known minor. `dialect` and `v` are the shape every eidoverse log has
+  `body {dialect: "eidoverse-log", v: 4, nonce, owners: [[<key>…], …],
+  sequencer, quorum?, rewindWindow?, parent?, requires?, provenance?}`. Exactly those fields: any other (a `minor`
+  included) is malformed. `dialect` and `v` are the shape every eidoverse log has
   announced itself with since its first genesis (`{v, dialect}`); `v` is the
   protocol's number, and it is written here and nowhere else. `nonce` is ≥ 16 random bytes, canonical unpadded base64url (two
   worlds founded with the same keys must not share an id). `owners` is a list
@@ -1361,8 +1349,8 @@ them, and the suite holds them to it), not part of conformance.
   this reader doesn't implement, declared anywhere, means "unsupported feature" and no world (never a partial fold).
   `provenance {registry, writer}` names the writer and its exact source tree (`docs/DESIGN-log-vocabulary.md` §F F-2).
   Genesis seeds no state: the founding request then writes `@world` through the
-  gate. A missing or malformed genesis means "no world"; a `dialect`, `v` or
-  `minor` the reader doesn't implement means "unknown version" and no world.
+  gate. A missing or malformed genesis means "no world"; a `dialect` or `v` the
+  reader doesn't implement means "unknown version" and no world.
   Genesis hashes into the world id, so a genesis-changing migration is
   possible only while a world holds no governance entry; after the first one
   the world id is frozen for good.
@@ -1465,7 +1453,7 @@ v}`. File names, wire fields and code don't carry the number.
 |---|---|---|
 | 1–2 | The first world log: an untyped verb log folded by its reader (`genesis {verb: "genesis", args: {v, dialect}}`); dialect 2 added `force` and `punt` | `history/PROTOCOL-v1.md` |
 | 3 | The deterministic-physics amendment: a sim fold over sim-scoped entries, sim epochs (`dialect 3`) | `history/PROTOCOL-v2-sim.md` |
-| 4 | This protocol: typed entries (`change`, `request`, `physics`, `say`, `redaction`, `governance`), the authority, opaque identities, the signed chain and governance keys. Its physics is `PHYSICS.md`. **Minor 1** (the current one) is the log vocabulary of `docs/DESIGN-log-vocabulary.md`: the kinds above, `op` on a change, `verb` on a request or physics entry, `cascade`, `commitment`, `rewindWindow`, no `verb` on genesis; a reader knows `MINORS = {1}`, and a minor-0 world is read only by the migration tool (`tools/protocol/migrate-minor-1`). Before release, minor 0 gained the batch body's `cascade` (as `followUps`) and §6a, and renamed a number of pre-release words; each rename and how an older spelling was read is `spec/history/PRE-RELEASE-RENAMES.md` (informative). | this document |
+| 4 | This protocol: typed entries (`change`, `request`, `physics`, `say`, `redaction`, `governance`), the authority, opaque identities, the signed chain and governance keys. Its physics is `PHYSICS.md`. **Minor 1** (the current one) is the log vocabulary of `docs/DESIGN-log-vocabulary.md`: the kinds above, `op` on a change, `verb` on a request or physics entry, `cascade`, `commitment`, `rewindWindow`, no `verb` on genesis; no `minor` (Mica 11-04: dialect + v, then requires). Before release, minor 0 gained the batch body's `cascade` (as `followUps`) and §6a, and renamed a number of pre-release words; each rename and how an older spelling was read is `spec/history/PRE-RELEASE-RENAMES.md` (informative). | this document |
 
 Logs of `v` 1–3 are not read at runtime; §14 translates one, once, into a new
 world.

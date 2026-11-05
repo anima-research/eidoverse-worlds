@@ -33,7 +33,6 @@ from decimal import Decimal
 
 DIALECT = "eidoverse-log"      # spec 2.4: genesis says {dialect: "eidoverse-log", v: 4} (upstream's shape)
 FOLD_VERSIONS = {4}            # GUESS-03: v is the integer 4
-KNOWN_MINORS = {1}             # §3d H6: a reader that doesn't know the minor refuses the world (minor 0: the migration tool only, D1)
 MAX_LINE_BYTES = 1 << 20       # GUESS-12: spec says "size caps", gives none
 MAX_DEPTH = 64                 # GUESS-12
 KINDS = {"genesis", "change", "request", "physics", "say", "redaction", "governance"}
@@ -213,7 +212,7 @@ def jcs(v):
 
 
 # ---- genesis (spec 2.4, 3d C1/H5/H6) -----------------------------------------
-GENESIS_FIELDS = {"dialect", "v", "minor", "nonce", "rewindWindow", "parent", "owners", "quorum", "sequencer", "requires", "provenance"}
+GENESIS_FIELDS = {"dialect", "v", "nonce", "rewindWindow", "parent", "owners", "quorum", "sequencer", "requires", "provenance"}
 _B64U = re.compile(r"\A[A-Za-z0-9_-]*\Z")
 _HEX64 = re.compile(r"\A[0-9a-f]{64}\Z")
 # the 8 small-order points' y (sign bit cleared): conformance/ed25519/test_vectors.py, spec 2.4 "Keys"
@@ -252,15 +251,11 @@ def _int(v, lo=0):
 
 
 def check_genesis(b):
-    """Returns None if the genesis body is well formed, "unknown-minor" if this reader doesn't know its minor, else
-    raises Malformed. The minor is checked before the shape: a later minor may add fields (L1)."""
-    if "minor" not in b or not _int(b["minor"]):
-        raise Malformed("genesis-minor", repr(b.get("minor"))[:40])
-    if int(b["minor"]) not in KNOWN_MINORS:
-        return "unknown-minor"
+    """Returns None if the genesis body is well formed, else raises Malformed. Its fields are exact: a stray one (`minor`
+    included) is malformed."""
     extra = set(b) - GENESIS_FIELDS
     if extra:
-        raise Malformed("genesis-field", ",".join(sorted(extra)))   # GUESS-27: a known minor's fields are exact
+        raise Malformed("genesis-field", ",".join(sorted(extra)))   # GUESS-27: the fields are exact
     n = b64u_decode(b.get("nonce"))
     if n is None or len(n) < 16:
         raise Malformed("genesis-nonce", repr(b.get("nonce"))[:40])
@@ -435,10 +430,7 @@ class Reader:
             self.d(0, "unknown-version", repr(ver))
             return
         try:
-            if check_genesis(g["body"]) == "unknown-minor":
-                self.status = "unknown-version"
-                self.d(0, "unknown-minor", repr(g["body"]["minor"]))
-                return
+            check_genesis(g["body"])
         except Malformed as m:
             self.status = "no-world"
             self.d(0, "malformed:" + m.code, m.detail)

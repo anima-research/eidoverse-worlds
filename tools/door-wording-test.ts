@@ -715,7 +715,7 @@ try {
   // A stand-in world on a WebSocket: each body's name picks how the join is answered.
   // A join's snapshot carries the authority's cut of the world here (replica.adopt): an empty world's.
   const snapshot = (extra: Record<string, unknown> = {}) => JSON.stringify({ type: "snapshot", state: null, entries: [], present: [],
-    dialect: "eidoverse-log", v: 4, minor: 1, state: wireState(emptyState()), seq: 0, world: "w", ...extra });
+    dialect: "eidoverse-log", v: 4, state: wireState(emptyState()), seq: 0, world: "w", ...extra });
   const joins = new Map<string, number>();
   const answers: Record<string, (ws: any, n: number) => void> = {
     kicked: (ws) => { ws.send(snapshot()); setTimeout(() => ws.close(4006, "kicked"), 200); },

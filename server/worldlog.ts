@@ -424,7 +424,7 @@ export class WorldLog {
     try { replaceDurable(this.posesPath, JSON.stringify(this.poses)); } catch (err) { console.error(`[world:${this.name}] poses`, err); }
   }
   /** What the snapshot says about this world's protocol (agents read it to route their tools). */
-  /** What the snapshot says about this world's protocol (D5: {dialect, v, minor} gate a joiner; `world` is the id, `name` the directory). */
+  /** What the snapshot says about this world's protocol (D5: {dialect, v} gate a joiner; `world` is the id, `name` the directory). */
   info() { return { name: this.name, verbs: "send {type: 'request', id, verb, args}; reply {type: 'reply', id, …}" }; }
 }
 

@@ -822,8 +822,8 @@ function buildSnapshot(w: World, c: Client) {
       recording: RECORD,
       // the world: the authority's cut (its fold, head, your undoable acts, names, holds), which the joiner folds and then
       // advances with the `log` stream. A joiner's cost is the size of the WORLD, not the length of its history.
-      ...w.log.info(), ...w.log.clientSnapshot(actorIdOf(c)),   // flat (D5): {dialect, v, minor, world, name, seq, state, physics, names, holds, mine, you}
-      ...versionLine(featureDecision(w.log.live?.entries ?? [], KNOWN_FEATURES).requires),   // F-3 step 5: the authoritative {dialect, v, minor, requires}
+      ...w.log.info(), ...w.log.clientSnapshot(actorIdOf(c)),   // flat (D5): {dialect, v, world, name, seq, state, physics, names, holds, mine, you}
+      ...versionLine(featureDecision(w.log.live?.entries ?? [], KNOWN_FEATURES).requires),   // F-3 step 5: the authoritative {dialect, v, requires}
       // chat isn't world state, and speech is arrival-only (R 10-18): a joiner is sent no line said before it came, so the
       // window is always empty. chatTotal is how many lines a history page could still show this joiner: for an admin
       // (owner, operator) every line the master log holds; for everyone else none

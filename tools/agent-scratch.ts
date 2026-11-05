@@ -46,8 +46,8 @@ export function agentOnDoor(agent: any, tag = "agent", { owner = "olive", start 
   let head = -1;
   const sync = async (live: boolean, who: string | null = null, ts: number | null = null) => {
     const E = w.entries;
-    if (!joined) { A.replica.adopt({ dialect: "eidoverse-log", v: 4, minor: 1, state: wireState(w.state()), seq: E.length - 1 }); head = E.length - 1; }
-    else { const r = A.replica.ingest(JSON.parse(JSON.stringify(E.slice(head + 1))), head + 1); head = E.length - 1; if (r.sky) A.skyStamp = r.sky; if (r.resync) A.replica.adopt({ dialect: "eidoverse-log", v: 4, minor: 1, state: wireState(w.state()), head }); }
+    if (!joined) { A.replica.adopt({ dialect: "eidoverse-log", v: 4, state: wireState(w.state()), seq: E.length - 1 }); head = E.length - 1; }
+    else { const r = A.replica.ingest(JSON.parse(JSON.stringify(E.slice(head + 1))), head + 1); head = E.length - 1; if (r.sky) A.skyStamp = r.sky; if (r.resync) A.replica.adopt({ dialect: "eidoverse-log", v: 4, state: wireState(w.state()), head }); }
     await A.applyView(joined ? live : false, who, ts ?? clock.t);
     joined = true;
   };

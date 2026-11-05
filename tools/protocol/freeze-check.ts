@@ -25,7 +25,7 @@ const check = (name: string, ok: unknown, info?: unknown) => { if (ok) { pass++;
 const S = fs.mkdtempSync(path.join(process.env.PROTOCOL_SCRATCH ?? os.tmpdir(), "freeze-"));
 const procs: any[] = []; process.on("exit", () => { for (const p of procs) try { p.kill(); } catch {} });
 const found = (W: string, name: string) => { const r = spawnSync(process.execPath, ["tools/protocol/world.ts", "found", name, "--owner", "u-aaaaaaaaaaaaaaaaaaaaaa", "--title", name], { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: W }, encoding: "utf8" }); if (r.status !== 0) throw new Error(r.stderr); return path.join(W, name); };
-const G = (requires?: string[]) => ({ kind: "genesis", actor: "system", body: { dialect: DIALECT, v: VERSION, minor: 1, nonce: "XWVu1u7BpaZTDFSETYiphg", owners: [[]], sequencer: "ed25519:rRoIPhqlc8rDxC1GZlfHOe1IBJYWQ8MDNg9QuZzMsic", ...(requires ? { requires } : {}) } });
+const G = (requires?: string[]) => ({ kind: "genesis", actor: "system", body: { dialect: DIALECT, v: VERSION, nonce: "XWVu1u7BpaZTDFSETYiphg", owners: [[]], sequencer: "ed25519:rRoIPhqlc8rDxC1GZlfHOe1IBJYWQ8MDNg9QuZzMsic", ...(requires ? { requires } : {}) } });
 const gov = (requiresAdd: string[]) => ({ kind: "governance", actor: "system", body: { requiresAdd, sigs: [] } });
 const chg = { kind: "change", actor: "system", op: "create", body: { id: "a" } };
 
@@ -93,10 +93,10 @@ try {
     && !("provenance" in provenanceReadback({ commitment: "0".repeat(64) })));
 
   // ---- F-3: the hello, pure ----
-  const good = { dialect: DIALECT, v: VERSION, minor: NEED.minor, features: [] };
-  check("F22 (pure) a known hello passes; an unknown dialect, v or minor, a missing hello, or a malformed features list is update-required with need {dialect, v, minor} and nothing else",
-    checkHello(good) === null && [undefined, null, {}, { ...good, dialect: "other" }, { ...good, v: 3 }, { ...good, minor: 99 }, { ...good, features: "x" }, { ...good, features: ["BAD"] }]
-      .every((h) => { const r = checkHello(h); return r?.type === "refused" && r.code === "update-required" && Object.keys(r).sort().join() === "code,need,type" && Object.keys(r.need).sort().join() === "dialect,minor,v"; }));
+  const good = { dialect: DIALECT, v: VERSION, features: [] };
+  check("F22 (pure) a known hello passes; an unknown dialect or v, a stray key (a minor: there is none), a missing hello, or a malformed features list is update-required with need {dialect, v} and nothing else",
+    checkHello(good) === null && [undefined, null, {}, { ...good, dialect: "other" }, { ...good, v: 3 }, { ...good, minor: 1 }, { ...good, features: "x" }, { ...good, features: ["BAD"] }]
+      .every((h) => { const r = checkHello(h); return r?.type === "refused" && r.code === "update-required" && Object.keys(r).sort().join() === "code,need,type" && Object.keys(r.need).sort().join() === "dialect,v"; }));
   check("F23 (pure) unsupported-feature names the missing ids only; nothing missing is no refusal", missingFeatures(["a:b@1", "c:d@1"], ["c:d@1"])?.need.join() === "a:b@1" && Object.keys(missingFeatures(["a:b@1"], [])).sort().join() === "code,need,type" && missingFeatures(["a:b@1"], ["a:b@1"]) === null && missingFeatures([], undefined) === null);
 
   // ---- F-3 on the server: the hello before any world lookup; F26: a key is not admission ----
@@ -117,18 +117,18 @@ try {
   });
   const W1 = path.join(S, "w1"); fs.mkdirSync(W1); found(W1, "here");
   const port = await startServer(W1, "open", {});
-  { const r = await join(port, { world: "nope", id: "ann", hello: { ...good, minor: 99 } }); const text = JSON.stringify(r.msgs);
-    check("F22 an unknown minor is refused update-required BEFORE any world lookup: the reply carries need {dialect, v, minor} and no world name or existence", r.msgs.length === 1 && r.msgs[0].code === "update-required" && r.msgs[0].need.minor === NEED.minor && !/nope/.test(text) && !/world/i.test(text) && r.close === 4005, r); }
+  { const r = await join(port, { world: "nope", id: "ann", hello: { ...good, v: VERSION + 1 } }); const text = JSON.stringify(r.msgs);
+    check("F22 an unknown v is refused update-required BEFORE any world lookup: the reply carries need {dialect, v} and no world name or existence", r.msgs.length === 1 && r.msgs[0].code === "update-required" && r.msgs[0].need.v === NEED.v && !("minor" in r.msgs[0].need) && !/nope/.test(text) && !/world/i.test(text) && r.close === 4005, r); }
   { const r = await join(port, { world: "nope", id: "ann" }); check("F22 (control) the same join with no hello reaches the world lookup today (HELLO_REQUIRED unset: the clients shipped before the hello)", r.msgs.some((m) => /nope/.test(m.error ?? "")), r); }
   { const r = await join(port, { world: "here", id: "ann", hello: good }); const snap = r.msgs.find((m) => m.type === "snapshot");
-    check("F23 a known hello joins, and the snapshot repeats the authoritative {dialect, v, minor, requires}", snap && snap.dialect === DIALECT && snap.v === VERSION && snap.minor === NEED.minor && Array.isArray(snap.requires) && snap.requires.length === 0, snap && { dialect: snap.dialect, v: snap.v, minor: snap.minor, requires: snap.requires }); }
+    check("F23 a known hello joins, and the snapshot repeats the authoritative {dialect, v, requires} (no minor)", snap && snap.dialect === DIALECT && snap.v === VERSION && !("minor" in snap) && Array.isArray(snap.requires) && snap.requires.length === 0, snap && { dialect: snap.dialect, v: snap.v, minor: snap.minor, requires: snap.requires }); }
   { const r = await join(port, { world: "here", id: "ann", hello: { ...good, features: ["a:b@1"] } });
     check("F23 a client declaring more features than the world requires is not refused", r.msgs.some((m) => m.type === "snapshot"), r.msgs.map((m) => m.type)); }
   const W2 = path.join(S, "w2"); fs.mkdirSync(W2); found(W2, "here");
   const port2 = await startServer(W2, "strict", { HELLO_REQUIRED: "1", JOIN_TOKEN: "sesame" });
   { const r = await join(port2, { world: "nope", id: "ann", token: "sesame" }); const text = JSON.stringify(r.msgs);
     check("F22 with HELLO_REQUIRED a missing hello fails loudly (update-required), with no legacy default and no world name", r.msgs.length === 1 && r.msgs[0].code === "update-required" && !/nope/.test(text), r); }
-  { const r = await join(port2, { world: "here", id: "ann", token: "wrong", hello: { ...good, minor: 99 } });
+  { const r = await join(port2, { world: "here", id: "ann", token: "wrong", hello: { ...good, v: VERSION + 1 } });
     check("F23 step 1 precedes step 2: a principal the door refuses gets the door's refusal, never update-required or unsupported-feature", r.msgs.length === 1 && r.msgs[0].type === "error" && !/update-required|unsupported-feature/.test(JSON.stringify(r.msgs)) && r.close === 4003, r); }
   { const r = await join(port2, { world: "here", id: "ann", ownerKey: "ed25519:BP7aKo17f474DD1aBSLG0a3Pb29Qs3yqQ6Ve0wSRVD0", hello: good });
     check("F26 a key alone is no admission: a join presenting a founder's key and no host credential is refused at the door", r.msgs.length === 1 && r.msgs[0].type === "error" && /token/.test(r.msgs[0].error) && r.close === 4003, r); }

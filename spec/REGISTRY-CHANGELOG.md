@@ -423,3 +423,6 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
   - refusal grid-fixed: gone (old logs may hold it)
   - refusal no-grid: gone (old logs may hold it)
   - readback request:sculpt: gone (old logs may hold it)
+- 2026-11-05: kernel: no minor (Mica 11-04): genesis is {dialect, v, …}; dialect names the family, v is the hard break, requires the additive gate. minor leaves the genesis fields and the version pin; a stray minor is malformed
+  - version.minors: [1] → absent
+  - version.genesis: ["dialect","minor","nonce","owners","parent","provenance","quorum","requires","rewindWindow","sequencer","v"] → ["dialect","nonce","owners","parent","provenance","quorum","requires","rewindWindow","sequencer","v"]

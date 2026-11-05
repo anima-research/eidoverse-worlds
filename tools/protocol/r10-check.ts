@@ -328,9 +328,8 @@ cases.push(
   { id: "X1", what: "(holes M4 = scars M1; claims R1) PROTOCOL §3's batch row names cascade with its well-formedness (non-empty, strictly ascending integers, in range, else the entry is malformed) and its invariant (no asker's rights or locks; folded like any op; authorship skips it; a restore steps over its delete; a verifier re-runs the gate on unmarked ops only); §10 and the version history say minor 0 gained it before release", run() {
       const md = PROTO(); const s3 = section(md, /\n## 3\. /); const s10 = section(md, /\n## 10\. /); const vh = md.slice(md.indexOf("## Version history"));
       return { row: /\| `batch` \| `\{ops: \[[^`]*\], cascade\?: \[i, …\]\}`/.test(s3), shape: /non-empty, strictly ascending list of integer indices/.test(s3) && /`batch-cascade`/.test(s3) && /whole entry\*\* malformed/.test(s3),
-        inv: /without the asker's rights or locks/.test(s3) && /applies them like\s+any op/.test(s3) && /\*\*authorship\*\*/.test(s3) && /steps over\s+the marked `delete` it reverses/.test(s3) && /\*\*unmarked ops\s+only\*\*/.test(s3) && /remaps `cascade`/.test(s3),
-        minor: /`cascade` \(§3\) was added to this protocol \*\*at minor 0\*\*/.test(s10) && /minor 0 gained the batch body's `cascade`/.test(vh) }; },
-    good: (o) => o.row && o.shape && o.inv && o.minor },
+        inv: /without the asker's rights or locks/.test(s3) && /applies them like\s+any op/.test(s3) && /\*\*authorship\*\*/.test(s3) && /steps over\s+the marked `delete` it reverses/.test(s3) && /\*\*unmarked ops\s+only\*\*/.test(s3) && /remaps `cascade`/.test(s3) }; },
+    good: (o) => o.row && o.shape && o.inv },
   { id: "X2", what: "(scars M3; claims R2, R3) §7: the gate's follow-up exception (named in cascade), and one table of the authority's consequences (clears and set-down: cascade; resettle: the system's own act; stamps: the asker's); §4's deletion names the clears and sets down what rested", run() {
       const md = PROTO(); const s7 = section(md, /\n## 7\. /); const s4 = section(md, /\n## 4\. /);
       return { gate: /except that the\s+authority's own follow-ups inside a write pass it without the asker's rights, locks, keys or in-flight\s+check/.test(s7),

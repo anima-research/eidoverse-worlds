@@ -23,7 +23,7 @@ OWNER = "ed25519:BP7aKo17f474DD1aBSLG0a3Pb29Qs3yqQ6Ve0wSRVD0"   # test_reader's 
 SEQ, SEQ_PUB = key("eidoverse story fixture: the outgoing sequencer")
 NEW, NEW_PUB = key("eidoverse story fixture: the incoming sequencer")
 
-G = {"kind": "genesis", "actor": "system", "body": {"dialect": "eidoverse-log", "v": 4, "minor": 1, "nonce": "XWVu1u7BpaZTDFSETYiphg", "owners": [[OWNER]], "sequencer": SEQ_PUB}}
+G = {"kind": "genesis", "actor": "system", "body": {"dialect": "eidoverse-log", "v": 4, "nonce": "XWVu1u7BpaZTDFSETYiphg", "owners": [[OWNER]], "sequencer": SEQ_PUB}}
 W = "sha256:" + hashlib.sha256(R.jcs(G).encode()).hexdigest()
 L = [G,
      {"world": W, "kind": "request", "ts": 1001, "actor": "bob", "verb": "delete", "body": {"argNames": ["id"], "refused": {"code": "locked"}, "salt": "UWGy2eg11rNn2Sl6urvUTg"}},

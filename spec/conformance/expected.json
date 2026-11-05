@@ -311,25 +311,11 @@
    "0:malformed:genesis-nonce"
   ]
  },
- "logs/19d-genesis-no-minor.jsonl": {
+ "logs/19e-genesis-stray-minor.jsonl": {
   "status": "no-world",
   "digest": null,
   "codes": [
-   "0:malformed:genesis-minor"
-  ]
- },
- "logs/19e-genesis-minor-0.jsonl": {
-  "status": "unknown-version",
-  "digest": null,
-  "codes": [
-   "0:unknown-minor"
-  ]
- },
- "logs/19e2-genesis-minor-2.jsonl": {
-  "status": "unknown-version",
-  "digest": null,
-  "codes": [
-   "0:unknown-minor"
+   "0:malformed:genesis-field"
   ]
  },
  "logs/19f-genesis-flat-owners.jsonl": {

@@ -23,7 +23,7 @@
 //   (c) vectors (--vectors <dir>): spec/kernel-vectors/<dir>/vectors.json, entries the OLD reader refuses (a snapshot of the
 //       old fold, old-fold.js, taken from git at --pin time) and the NEW reader folds clean. The gate RUNS them.
 // Pure: this module knows no files; the check does the reading and writing.
-import { ENVELOPE, KINDS, IDENT, ENTITY, COMP, OP_FIELDS, BATCH_FIELDS, GENESIS_FIELDS, DIALECT, VERSION, MINORS } from "./fold.js";
+import { ENVELOPE, KINDS, IDENT, ENTITY, COMP, OP_FIELDS, BATCH_FIELDS, GENESIS_FIELDS, DIALECT, VERSION } from "./fold.js";
 import { COMPONENTS, pinOf } from "./componentspec.js";
 
 export const TRIAL_KERNEL = "trial-kernel";
@@ -44,7 +44,7 @@ export function kernelPinOf() {
     envelope: { status: TRIAL_KERNEL, fields: [...ENVELOPE].sort(), kinds: [...KINDS].sort() },
     fold: { status: TRIAL_KERNEL, ops: Object.fromEntries(Object.entries(OP_FIELDS).map(([k, v]) => [k, [...v]])), batch: [...BATCH_FIELDS] },
     identity: { status: TRIAL_KERNEL, identity: IDENT, entity: ENTITY.source, component: COMP.source },
-    version: { status: TRIAL_KERNEL, dialect: DIALECT, v: VERSION, minors: [...MINORS].sort((a, b) => a - b), genesis: [...GENESIS_FIELDS].sort() },
+    version: { status: TRIAL_KERNEL, dialect: DIALECT, v: VERSION, genesis: [...GENESIS_FIELDS].sort() },
     roles: comp("roles"),
     access: comp("access"),
   };

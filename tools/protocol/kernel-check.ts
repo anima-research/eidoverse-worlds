@@ -161,7 +161,7 @@ await C("K7", "an unchanged kernel re-pins freely and keeps the old companions; 
   const same = KS.kernelVerdict(pinned, KS.kernelPinOf(), null); const now = KS.kernelPinOf(); now.roles.fields.extra = "int";
   const t = KS.kernelVerdict(pinned, now, null); return [same.ok && !same.diff.length && same.companions === pinned.companions && !t.ok && t.diff.some((d: string) => /roles\.fields\.extra/.test(d)), [same.diff, t.diff]]; });
 await C("K8", "the real readers run as vectors run them: today's fold reads a clean two-entry log as ok, and refuses an envelope field it doesn't know (malformed:unknown-field) — the shape a kernel vector takes", () => {
-  const g = { kind: "genesis", actor: "system", body: { dialect: "eidoverse-log", v: 4, minor: 1, nonce: "j1783lQSA7cL_W-K6NwvNw", owners: [[]], sequencer: "ed25519:NP1SCq4fthEWnhu_stdrB1gT8wu06eXvKTemf02lqSw" } };
+  const g = { kind: "genesis", actor: "system", body: { dialect: "eidoverse-log", v: 4, nonce: "j1783lQSA7cL_W-K6NwvNw", owners: [[]], sequencer: "ed25519:NP1SCq4fthEWnhu_stdrB1gT8wu06eXvKTemf02lqSw" } };
   const wid = FOLD.worldIdOf(g); const a = { world: wid, kind: "request", actor: "olive", verb: "x", ts: 1, body: { args: {} } };
   return [verdict(FOLD, [g, a]) === "ok" && verdict(FOLD, [g, { ...a, "zz-no-such-field": 1 }]) === "malformed:unknown-field", [verdict(FOLD, [g, a]), verdict(FOLD, [g, { ...a, "zz-no-such-field": 1 }])]]; });
 await C("K9", "the words: §4 of the spec and the ladder doc say what trial-kernel is and what a kernel change must carry; the gate runs this check in its core lane", () => {

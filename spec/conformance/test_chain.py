@@ -18,7 +18,7 @@ priv, other = Ed25519PrivateKey.generate(), Ed25519PrivateKey.generate()
 KEY = "ed25519:" + chain.b64u(raw(priv.public_key()))
 
 def build(every=2):
-    g = {"kind": "genesis", "actor": "system", "body": {"dialect": "eidoverse-log", "v": 4, "minor": 1, "nonce": chain.b64u(os.urandom(16)), "owners": [[KEY]], "sequencer": KEY}}  # §2.4 + §3d
+    g = {"kind": "genesis", "actor": "system", "body": {"dialect": "eidoverse-log", "v": 4, "nonce": chain.b64u(os.urandom(16)), "owners": [[KEY]], "sequencer": KEY}}  # §2.4 + §3d
     import hashlib
     wid = "sha256:" + hashlib.sha256(reader.jcs(g).encode()).hexdigest()
     st = lambda verb, body: {"world": wid, "kind": "change", "ts": 1, "actor": "system", "cause": 1, "op": verb, "body": body}

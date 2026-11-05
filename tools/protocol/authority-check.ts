@@ -73,7 +73,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     { seq: 2, ts: 3, actor: "Marigold", verb: "comp", args: { id: "lamp_1", type: "0abc", data: 1 } },
     { seq: 3, ts: 4, actor: "Marigold", verb: "comp", args: { id: "lamp_1", type: "n0abc", data: 2 } }];
   const r = translate(old, { foldBuild: v1FoldBuild() });
-  ok(r.out[1].verb === "translated" && r.out[1].body.from.translator === TRANSLATOR && r.out[1].body.from.fold === v1FoldBuild() && r.out[0].body.minor === 1, "T2 the act after genesis names the translator and the v1 fold build", r.out[1].body);
+  ok(r.out[1].verb === "translated" && r.out[1].body.from.translator === TRANSLATOR && r.out[1].body.from.fold === v1FoldBuild() && !("minor" in r.out[0].body), "T2 the act after genesis names the translator and the v1 fold build", r.out[1].body);
   const c = r.final.translated[enc("lamp_1")];
   ok(c && c["imported/n0abc"] === 2 && c[`imported/${encName("0abc")}`] === 1 && !r.stats.divergences, "T3 a translated world keeps comps '0abc' and 'n0abc' apart (each under the imported namespace: bare names are the registry's, PROTOCOL §4)", c);
   ok(JSON.stringify(r.out[0].body.owners) === JSON.stringify([[], [r.out[0].body.sequencer]]) && r.out[1].body.from.roles?.Marigold?.role === "owner" && !r.final.translated["@world"]?.[`roles:${enc("Marigold")}`], "T4 genesis is custodial (tier 0 empty, the authority's key in tier 1); v1 genesis roles, which v1 never folds, are kept verbatim in the translated act and grant nothing", [r.out[0].body.owners, r.out[1].body.from])
@@ -514,7 +514,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const call = (actor, verb, args = {}) => { now += 100; return request(w, actor, verb, args); };
   call("ann", "create-world", { title: "client" }); call("ann", "create", { id: "tbl", model: "table", place: { at: [0, 3] } });
   const c = makeReplica();
-  c.adopt(JSON.parse(JSON.stringify({ dialect: "eidoverse-log", v: 4, minor: 1, state: wireState(w.state()), seq: w.entries.length - 1, world: w.worldId })));
+  c.adopt(JSON.parse(JSON.stringify({ dialect: "eidoverse-log", v: 4, state: wireState(w.state()), seq: w.entries.length - 1, world: w.worldId })));
   let steps = 0, bad = null; const same = (a, b) => { const d = diffView(a, b); return !d.things.length && !d.world.length; };
   const step = (what, actor, verb, args) => { const from = w.entries.length; const r = call(actor, verb, args);
     const fresh = JSON.parse(JSON.stringify(w.entries.slice(from))); // over the wire: plain JSON
@@ -541,7 +541,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   call("ann", "create", { id: "gap-1", model: "crate", place: { at: [3, 3] } }); c.ingest(JSON.parse(JSON.stringify(w.entries.slice(c.head + 1))), c.head + 1);
   call("ann", "set", { id: "gap-1", component: "label", value: "x" }); const from = w.entries.length; ok(call("ann", "set", { id: "gap-1", component: "label", value: "y" }).ok, "K4 (precondition) the edit after the missed one is written");
   ok(c.ingest(JSON.parse(JSON.stringify(w.entries.slice(from))), from).resync, "K4 a gap (a missed entry) asks for a fresh snapshot, never folds past it");
-  const c2 = makeReplica(); c2.adopt(JSON.parse(JSON.stringify({ dialect: "eidoverse-log", v: 4, minor: 1, state: wireState(w.state()), seq: w.entries.length - 1 })));
+  const c2 = makeReplica(); c2.adopt(JSON.parse(JSON.stringify({ dialect: "eidoverse-log", v: 4, state: wireState(w.state()), seq: w.entries.length - 1 })));
   now += 100; w.append({ kind: "redaction", actor: "system", body: { values: [{ seq: from + 1 }] } });
   ok(c2.ingest(JSON.parse(JSON.stringify(w.entries.slice(-1))), w.entries.length - 1).resync, "K5 a purge (retroactive, L1) asks for a fresh snapshot");
   const sv = stateFromWire(JSON.parse(JSON.stringify(wireState(w.state()))));
@@ -1122,7 +1122,7 @@ const w0 = () => openWorld(root, "tier0");
   ok(b(s2).t0 >= now + 100 - 300_000 && b(s2).utt === 4, "CP8 …t0 is clamped into the 5-minute utterance window", b(s2));
   ok(b(s5).t0 <= now + 600 && b(s5).t0 >= now, "CP8 …a t0 in the future is clamped to now", b(s5));
   ok(!("spoken" in b(s3)) && !("utt" in b(s3)) && !("t0" in b(s3)) && !("utt" in b(s4)), "CP8 …a malformed trio (utt -1, or no spoken) leaves a plain say", [b(s3), b(s4)]);
-  const k = makeReplica(); k.adopt({ dialect: "eidoverse-log", v: 4, minor: 1, state: wireState(fold(E.slice(0, s1.seq))), seq: s1.seq - 1 });
+  const k = makeReplica(); k.adopt({ dialect: "eidoverse-log", v: 4, state: wireState(fold(E.slice(0, s1.seq))), seq: s1.seq - 1 });
   const got = k.ingest([E[s1.seq]], s1.seq).says[0];
   ok(got?.spoken === true && got.utt === 3 && got.t0 === now - 1000, "CP8 …and a client's fold hands it on with the chat line", got); }
 // ---- CA: captions (one line of what a screen said). The rights live on the SCREEN (captioners {ids}); the tool writes

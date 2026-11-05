@@ -14,8 +14,6 @@ import { checkProvenance } from "./provenance.js";
 // "Version history"). The number lives there and nowhere else.
 export const DIALECT = "eidoverse-log";
 export const VERSION = 4;
-export const MINOR = 1;   // what this writer founds (D1)
-export const MINORS = new Set([MINOR]); // §3d H6: a reader that doesn't know the minor refuses the world (L1: no world); minor 0 is read only by the migration tool (docs/DESIGN-log-vocabulary.md D1)
 const MAX_LINE = 1 << 20, MAX_DEPTH = 64, BIG = 2 ** 53;
 // §2.1 + §2.4: `ts` is the authority's admission time; `head`/`sig` mark chain points (§2.1 still says `prev`; §2.4 and the reference reader say `head`)
 // The KERNEL (trial-kernel, PROTOCOL §4; shared/protocol/kernelspec.js pins these): the envelope, the kinds, the identity
@@ -244,7 +242,7 @@ export function shapeOne(verb, b, inner, where) {
 // body {dialect: "eidoverse-log", v: 4, minor, nonce, rewindWindow?, parent?, owners: [[<key>…], …], quorum?, sequencer, requires?, provenance?}. A malformed
 // genesis means "no world"; an unknown minor means "unknown version". The minor is read before the shape, so a later
 // minor may add fields; within a known minor the fields are exact (a typo such as `rewind_n` is not a default).
-export const GENESIS_FIELDS = new Set(["dialect", "v", "minor", "nonce", "rewindWindow", "parent", "owners", "quorum", "sequencer", "requires", "provenance"]);
+export const GENESIS_FIELDS = new Set(["dialect", "v", "nonce", "rewindWindow", "parent", "owners", "quorum", "sequencer", "requires", "provenance"]);
 // canonical unpadded base64url (one spelling per byte string), or null
 export function b64uDecode(s) {
   if (typeof s !== "string" || !/^[A-Za-z0-9_-]*$/.test(s) || s.length % 4 === 1) return null;
@@ -267,10 +265,8 @@ export function keyOk(k) {
   return !SMALL_Y.has(hexOf(y)) && BigInt("0x" + hexOf(Uint8Array.from(y).reverse())) < P25519;
 }
 const nat = (v, lo = 0) => Number.isInteger(v) && v >= lo;
-// null if well formed, "unknown-minor" if this reader doesn't know the minor; else throws Malformed
+// null if well formed; else throws Malformed (the fields are exact: a stray one, `minor` included, is malformed)
 export function checkGenesis(b) {
-  if (!nat(b.minor)) bad("genesis-minor", JSON.stringify(b.minor) ?? "missing");
-  if (!MINORS.has(b.minor)) return "unknown-minor";
   const extra = Object.keys(b).filter((k) => !GENESIS_FIELDS.has(k)); if (extra.length) bad("genesis-field", extra.sort().join(","));
   const n = b64uDecode(b.nonce); if (!n || n.length < 16) bad("genesis-nonce", JSON.stringify(b.nonce) ?? "missing");
   if (!Array.isArray(b.owners) || !b.owners.every(Array.isArray)) bad("genesis-owners", "owners is a list of tiers, each a list of keys");
@@ -301,7 +297,7 @@ export function fold(entries, { until = Infinity } = {}) {
   const g = ok[0];
   if (!g || g.kind !== "genesis") { d(0, "no-genesis", g ? `entry 0 kind=${g.kind}` : "entry 0 missing or malformed"); return { ...st, status: "no-world", entities: null }; }
   if (g.body.dialect !== DIALECT || g.body.v !== VERSION) { d(0, "unknown-version", JSON.stringify(g.body.dialect === DIALECT ? g.body.v : g.body.dialect) ?? "missing"); return { ...st, status: "unknown-version", entities: null, v: g.body.v }; }
-  try { if (checkGenesis(g.body) === "unknown-minor") { d(0, "unknown-minor", JSON.stringify(g.body.minor)); return { ...st, status: "unknown-version", entities: null, v: g.body.v }; } }
+  try { checkGenesis(g.body); }
   catch (x) { if (!(x instanceof Malformed)) throw x; d(0, "malformed:" + x.code, x.detail); return { ...st, status: "no-world", entities: null }; }
   st.worldId = worldIdOf(g);
   settledEntries(ok, st.worldId, d);
@@ -437,7 +433,7 @@ export function redactionsIn(entries) {
 export function acceptedEntries(entries, { ops = false } = {}) {
   const none = () => {}; const ok = checkedEntries(entries, none); const g = ok[0];
   if (!g || g.kind !== "genesis" || g.body.dialect !== DIALECT || g.body.v !== VERSION) return [];   // the fold reads no world here
-  try { if (checkGenesis(g.body) === "unknown-minor") return []; } catch (x) { if (x instanceof Malformed) return []; throw x; }
+  try { checkGenesis(g.body); } catch (x) { if (x instanceof Malformed) return []; throw x; }
   const settled = settledEntries(ok, worldIdOf(g), none);
   if (featureDecision(settled, KNOWN_FEATURES).unsupported) return [];
   if (ops) for (let seq = 1; seq < settled.length; seq++) { const e = settled[seq]; if (e?.kind !== "change") continue;
