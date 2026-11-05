@@ -2,7 +2,7 @@
 // sky and weather builders that live beside it (refactor split, 2026-10-17; moved from authority.js's "the act
 // index" and "undo" sections unchanged). The inverse goes through admit like any write; the write path's helpers it
 // borrows (needThing, lastTouch, the reference clears) are above it, reached through UP.
-import { fold, opsOf, isIdentity, jcs, REDACTED } from "../fold.js";
+import { fold, opsOf, isIdentity, jcs, REDACTED, redactionsIn, redactedBodies } from "../fold.js";
 import { materialize, refsOf } from "../componentspec.js";
 import { foldSkyEntry } from "../../forecast.js";
 import { UP } from "./ctx.js";
@@ -28,7 +28,7 @@ const withoutRefs = (...a) => UP.withoutRefs(...a);
 // throws the index away and rebuilds it, as livehost.ts refolds the state. What it holds:
 //   actsOf    actor → their act seqs, in order          resultOf  act seq → the first change entry it caused
 //   undone    act seqs some `undo` act names (body.undoes)
-//   purged    seqs whose act/say/sim BODY is purged; purgedOps `${seq}:${op|-}` → a purged set value (as the fold keys it)
+//   purged    seqs whose act/say/sim BODY is purged; purgedOps `${seq}:${index|-}` → the redaction naming a set value (fold.js redactionsIn)
 //   changes   every change seq, in order                touch     id → the change seqs that touch it, in order
 //   rests     change seqs that are rests (caused by a sim launch); restAfter: `${rest seq}:${body id}` → the authority's
 //             follow-up act for that body (a rest can carry several bodies, each with its own follow-up, as restsOf reads them)
@@ -38,14 +38,9 @@ function freshIndex() {
   return { n: 0, actsOf: new Map(), resultOf: new Map(), undone: new Set(), purged: new Set(), purgedOps: new Map(), changes: [], touch: new Map(),
     rests: [], restAfter: new Map(), lastAct: null };
 }
-function purgeTargets(E, x) { // the fold's own reading of purge entries (fold.js purgesOf), kept for views
-  x.pt = E.length; // purges below this seq are already in purged/purgedOps
-  E.forEach((e, pseq) => { if (!isE(e) || x.bad.has(pseq) || e.kind !== "redaction" || !Array.isArray(e.body?.values)) return;
-    for (const t of e.body.values) { if (!t || typeof t !== "object" || Array.isArray(t) || !Object.keys(t).every((k) => k === "seq" || k === "index")) continue;
-      if (!Number.isInteger(t.seq) || t.seq <= 0 || t.seq >= pseq || (t.index !== undefined && !(Number.isInteger(t.index) && t.index >= 0))) continue;
-      const tgt = E[t.seq]; if (!isE(tgt) || x.bad.has(t.seq) || tgt.kind === "redaction") continue;
-      if (t.index === undefined && ["request", "say", "physics"].includes(tgt.kind)) x.purged.add(t.seq);
-      x.purgedOps.set(`${t.seq}:${t.index ?? "-"}`, pseq); } });
+function purgeTargets(E, x) { // the fold's own reading of redactions (fold.js redactionsIn), kept for views
+  x.pt = E.length; // redactions below this seq are already in purged/purgedOps
+  x.purgedOps = redactionsIn(E, { stubs: false }); x.purged = redactedBodies(E, x.purgedOps);
 }
 function indexEntry(x, E, i) {
   const e = E[i]; if (!isE(e) || x.bad.has(i)) return; // what the fold refuses (malformed) shapes no view either

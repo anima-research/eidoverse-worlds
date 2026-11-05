@@ -424,9 +424,19 @@ export function applyInPlace(s, ops, seq = Infinity, redacted = null, batch = fa
   for (const [op, by] of shaped) applyOp(s, seq, op, by, d);
   return s;
 }
-/** every redaction in a log, as the strict fold reads them: `${seq}:${op index, or - for a whole entry}` → the redaction's seq */
-export function redactionsIn(entries) {
-  const none = () => {}, settled = acceptedEntries(entries); return unnamedStubs(settled, redactionsOf(settled, none), none);
+/** every redaction in a log, as the strict fold reads them: `${seq}:${op index, or - for a whole entry}` → the redaction's seq.
+ *  The one parser of redaction targets: every other reader derives from this (hygiene-check redaction-parse).
+ *  `stubs: false` leaves out the values stripped with no redaction naming them (keyed → 0 otherwise). */
+export function redactionsIn(entries, { stubs = true } = {}) {
+  const none = () => {}, settled = acceptedEntries(entries), named = redactionsOf(settled, none);
+  return stubs ? unnamedStubs(settled, named, none) : named;
+}
+/** the seqs whose whole request, say or physics body a redaction names (§12), from redactionsIn's map */
+export function redactedBodies(entries, red = redactionsIn(entries, { stubs: false })) {
+  const out = new Set();
+  for (const k of red.keys()) { const [s, i] = k.split(":"); const e = entries[+s];
+    if (i === "-" && ["request", "say", "physics"].includes(e?.kind)) out.add(+s); }
+  return out;
 }
 /** the entries the strict fold accepts, by seq (null where it rejects one); none where it reads no world (#260 Stella 10-30).
  *  `ops`: also null a change whose ops the fold skips as malformed (a bind's authors; redactionsIn keeps the fold's own input). */

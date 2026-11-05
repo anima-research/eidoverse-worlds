@@ -3,7 +3,7 @@
 // rotation a log takes; scratch is the preview the index files). Two lines ride along from elsewhere because this is where
 // they are read: VOLATILE (the spatial section's "indexed whole" mark, which scratch propagates) and opsQuiet (the rights
 // section's quiet opsOf, which worldOf's presence fold uses).
-import { readLog, fold, opsOf, cascadeOf, applyInPlace, cloneState, cowState, applyCow, checkEntry, jcs, sha256, utf8Len, worldIdOf, Malformed, REDACTED } from "../fold.js";
+import { readLog, fold, opsOf, cascadeOf, applyInPlace, cloneState, cowState, applyCow, checkEntry, jcs, sha256, utf8Len, worldIdOf, Malformed, REDACTED, redactedBodies } from "../fold.js";
 import { sha256Bytes, hexBytes } from "../hash.js";
 import * as R from "../roles.js";
 import { simFold } from "../simlayer.js";
@@ -198,8 +198,8 @@ const purgeIx = new WeakMap();   // entries array → {n, seqs}: purge targets w
 export const seedPurgedSeqs = (w, n) => { purgeIx.set(w.entries, { n, seqs: new Set() }); };
 export function purgedSeqs(w) {
   const E = w.entries; let c = purgeIx.get(E); if (!c) purgeIx.set(E, (c = { n: 0, seqs: new Set() }));
-  for (; c.n < E.length; c.n++) { const e = E[c.n];
-    if (isE(e) && e.kind === "redaction" && Array.isArray(e.body?.values)) for (const t of e.body.values) if (t && typeof t === "object" && Number.isInteger(t.seq) && t.seq < c.n && t.index === undefined) c.seqs.add(t.seq); }
+  let fresh = false; for (; c.n < E.length; c.n++) if (isE(E[c.n]) && E[c.n].kind === "redaction") fresh = true;
+  if (fresh) c.seqs = redactedBodies(E);   // a redaction is rare and retroactive: read the whole log as the fold does
   return c.seqs;
 }
 const isCommitStub = (b) => !!b && typeof b === "object" && !Array.isArray(b) && Object.keys(b).length === 1 && "commitment" in b;   // {commitment} exactly (N4)

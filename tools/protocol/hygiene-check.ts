@@ -24,6 +24,9 @@
 //   lab-clock     the authority's clock env set or deleted by hand: 124 inline "advance then pin" copies in 34 files (10-22),
 //                 where a helper that forgot to advance (or two sharing one counter) could run time backwards silently. Use
 //                 tools/protocol/clock.ts (labClock().advance, pin, unpinned).
+//   redaction-parse  a redaction's targets read by hand (`.body.values`) outside fold.js: four parsers drifted apart when
+//                 {seq, op} became {seq, index}, and undo wrote a redacted value back (review 11-05 B1). Use fold.js
+//                 redactionsIn / redactedBodies.
 //   role-words    WORLD_ADMIN / "world admin" / "world operator" for the server's operator (R 10-27): say "server operator".
 import fs from "node:fs";
 import path from "node:path";
@@ -45,10 +48,11 @@ export const RULES: Record<string, RegExp> = {
   // the gate runs under Bun, and under Bun on Windows playwright neither launches (its pipe descriptors don't pass through
   // Bun's spawn) nor connects over CDP: browser-check hung to its timeout on every Windows run until 10-22. Gate suites drive
   // Chrome with chrome.ts cdpPage / harness scratchBench. Benches run under node may use it.
+  "redaction-parse": /\.body\??\.values\b/g,
   "playwright": /\bfrom\s+["']playwright(?:-core)?["']|\b(?:require|import)\(\s*["']playwright(?:-core)?["']/g,
 };
 const SELF = "tools/protocol/hygiene-check.ts";   // its fixtures are the bad shapes on purpose
-const EXEMPT: Record<string, string[]> = { "chrome-flags": ["tools/protocol/chrome.ts", "tools/roaming-renderer-check.ts"], "raw-symlink": ["tools/protocol/common.ts"], "bare-wait": ["tools/protocol/wait.ts"], "own-until": ["tools/protocol/wait.ts"], "lab-clock": ["tools/protocol/clock.ts"] };
+const EXEMPT: Record<string, string[]> = { "chrome-flags": ["tools/protocol/chrome.ts", "tools/roaming-renderer-check.ts"], "raw-symlink": ["tools/protocol/common.ts"], "bare-wait": ["tools/protocol/wait.ts"], "own-until": ["tools/protocol/wait.ts"], "lab-clock": ["tools/protocol/clock.ts"], "redaction-parse": ["shared/protocol/fold.js"] };
 const SUITE_ONLY = new Set(["bare-wait", "own-until", "playwright"]);   // the waiting rules are about tests; server code may wait on purpose
 const ALL_TOOLS = new Set(["chrome-flags"]);
 
@@ -138,10 +142,11 @@ if (import.meta.main) {
     // split: the whole flag in this file would make suites.ts read the hygiene suite as one that launches a browser
     "chrome-flags": 'Bun.spawn([CHROME, "--headless=new", `--remote-' + 'debugging-port=${port}`, url]);',
     // split, like chrome-flags: the whole import in this file would make suites.ts read hygiene as a browser suite
+    "redaction-parse": 'if (e.kind === "redaction") for (const t of e.body.values) p.add(t.seq); const v = e.body?.values;',
     "playwright": 'import { chromium } from "play' + 'wright"; const { chromium: c2 } = await import("playwright-core");',
   };
-  const want: Record<string, number> = { "bare-wait": 4, "own-until": 2, "url-path": 1, "shell-interp": 1, "raw-symlink": 1, "colon-list": 1, "version-regex": 1, "slash-path": 1, "chrome-flags": 2, "lab-clock": 3, "playwright": 2 };
-  const good = 'await until("the crate rests", () => crate.rest); await pause("the 2 s refractory window", 2000); const d = fileURLToPath(new URL("../f/", import.meta.url)); Bun.spawnSync(["sh", "-c", \'git archive "$1"\', "sh", c]); linkInto(t, at); if (/[\\\\/]tools[\\\\/]/.test(p)) walk(p); const poll = (p) => post("/native/poll", p); const r = pathList(process.env.PROTOCOL_WORLDS); ok(translatorVersion(TRANSLATOR) >= 14); Bun.spawn([CHROME, ...chromeArgs({ port, profile }), url]); const n = rows.filter((r) => /chrom(e|ium).*--headless/.test(r)); // a --headless Chrome clock.advance(100); pin(LAB_EPOCH); const t = pinned(); if (process.env.PROTOCOL_NOW === "1") unpinned(f);';
+  const want: Record<string, number> = { "bare-wait": 4, "own-until": 2, "url-path": 1, "shell-interp": 1, "raw-symlink": 1, "colon-list": 1, "version-regex": 1, "slash-path": 1, "chrome-flags": 2, "lab-clock": 3, "redaction-parse": 2, "playwright": 2 };
+  const good = 'await until("the crate rests", () => crate.rest); await pause("the 2 s refractory window", 2000); const d = fileURLToPath(new URL("../f/", import.meta.url)); Bun.spawnSync(["sh", "-c", \'git archive "$1"\', "sh", c]); linkInto(t, at); if (/[\\\\/]tools[\\\\/]/.test(p)) walk(p); const poll = (p) => post("/native/poll", p); const r = pathList(process.env.PROTOCOL_WORLDS); ok(translatorVersion(TRANSLATOR) >= 14); Bun.spawn([CHROME, ...chromeArgs({ port, profile }), url]); const n = rows.filter((r) => /chrom(e|ium).*--headless/.test(r)); // a --headless Chrome clock.advance(100); pin(LAB_EPOCH); const t = pinned(); if (process.env.PROTOCOL_NOW === "1") unpinned(f); const red = redactionsIn(E); const body = redactedBodies(E, red); const values = Object.values(body);';
   let i = 1;
   for (const k of Object.keys(RULES)) check(`H${i++} ${k}: caught in its known-bad form (${want[k]}), and not in the right way`, (scan(bad[k])[k] ?? 0) === want[k] && !(scan(good)[k] ?? 0), { bad: scan(bad[k]), good: scan(good) });
   // own-until has one false friend in the tree ('const poll = (p: any) => post(...)', native-login-test); it's a request, not a loop
