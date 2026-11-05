@@ -20,7 +20,7 @@ const RENAME_COOLDOWN_MS = Math.max(0, Number(process.env.RENAME_COOLDOWN_DAYS ?
 import { PORT, HOST, JOIN_TOKEN, RENDERER_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, MSG_RATE, FRAME_MS, FRAME_SKIP_BUFFERED, SNAP_TIMEOUT_MS, SNAP_SWEEP_GRACE_MS, SNAP_SWEEP_EVERY_MS } from "./config.ts";
 import { type HnSession, agentTokens, accountOf } from "./auth.ts";
 import { addrSanctionsFor, saveAddrSanctions, notPersisted } from "./moderation.ts";
-import { entryFor, doorOfWorld, whoOf, settleAccess, sweepAccess, setLoadedWorlds, discoverable, unavailable, unavailableClose, type Expel } from "./access.ts";
+import { entryFor, doorOfWorld, doorFor, whoOf, settleAccess, sweepAccess, setLoadedWorlds, discoverable, unavailable, unavailableClose, type Expel } from "./access.ts";
 import { isOperator, mintSetupToken } from "./operators.ts";
 import { setupLine } from "./setup.ts";
 import { resolveLibFile } from "./libfile.ts";
@@ -527,9 +527,10 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
       return null;
     }
     if (!worldExists(wname)) return unavailableHere();
-    const w = getWorld(wname);
+    // asked of the door on disk (access.ts doorFor), before loading: a refused join never loads or pins the world
     { const dir = directoryFor(WORLDS_DIR);   // read-only: an undiscoverable world records nothing about who asked
-      if (!discoverable(doorOfWorld(w), { account: c.account ?? null, actorId: c.account ? dir.idOfSub(c.account) : null, trustedRenderer: !!c.trustedRenderer })) return unavailableHere(); }
+      if (!discoverable(doorFor(wname), { account: c.account ?? null, actorId: c.account ? dir.idOfSub(c.account) : null, trustedRenderer: !!c.trustedRenderer })) return unavailableHere(); }
+    const w = getWorld(wname);
     // A display name is not proof of anything, so two people may never show the same one at once, and an anonymous
     // visitor may not wear a name an account has claimed here (H1/M3: typing someone's name to stand in for them).
     // RENAME COOLDOWN (R 10-11: "you can only rename yourself every so often (moderation reasons)"): a typed name that
