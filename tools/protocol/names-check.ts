@@ -447,11 +447,11 @@ const cases: Case[] = [
       const told = ag.inbox?.filter((m: any) => /^stopped \{/.test(m.text ?? "")).length ?? 0;
       return { why: why(), told }; },
     good: (o) => JSON.stringify(o.why) === '["sit:replaced","dance:moved","lie:stopped","live:knocked over"]' && o.told === 4 },
-  { id: "M5", what: "…pose, animate, posture and the action bar's old tool are not tools now (R 10-28): none is advertised or resolves; each is taught as anim (TOOL_RENAMED) and runs nothing", async run() {
+  { id: "M5", what: "…pose, animate, posture and the action bar's old tool are not tools now (R 10-28): none is advertised or resolves; each is refused as an unknown tool (Mica 11-05)", async run() {
       const T: any = await import(TREE + "mcpl/tools.ts"); const olds = ["pose", "animate", EM, "posture"];
       return { listed: olds.filter((n) => T.TOOLS.some((t: any) => t.name === n)), anim: T.TOOLS.some((t: any) => t.name === "anim"),
-        resolves: olds.filter((n) => T.resolveTool(n) !== null), taught: olds.map((n) => T.TOOL_RENAMED?.[n]?.to ?? null) }; },
-    good: (o) => !o.listed.length && o.anim && !o.resolves.length && o.taught.every((n: string) => n === "anim") },
+        resolves: olds.filter((n) => T.resolveTool(n) !== null), said: await Promise.all(olds.map(async (n) => (await T.handleTool({ agent: {} }, n, {})).content?.[0]?.text ?? "")) }; },
+    good: (o) => !o.listed.length && o.anim && !o.resolves.length && o.said.length === 4 && o.said.every((t: string, i: number) => t.startsWith(`there's no tool named "${["pose", "animate", EM, "posture"][i]}" on this server, so nothing ran`)) },
   { id: "M6", what: "…live tracks in mode hold freeze on one frame: `at` picks it (the last key at or before), default the last key", async run() {
       const { ag, call } = await animAgent(); const tr = { head: [{ t: 0, q: [0, 0, 0, 1] }, { t: 0.5, q: [0, 0.1, 0, 0.995] }, { t: 1, q: [0, 0.2, 0, 0.98] }] };
       const a = played(await call("anim", { tracks: tr, dur: 1, mode: "hold", at: 0.6 })); const f1 = JSON.stringify(ag.heldPose?.head ?? null);
@@ -562,7 +562,7 @@ const cases: Case[] = [
         key: /actionbar: loadSidecar\("animations\/_actionbar\.json", validateActionBar\)/.test(defs), v: typeof AD.validateActionBar === "function" && AD.validateActionBar({ wave: { clip: "raise" } }).length === 0,
         slash: /\{ name: 'anim', help: '\/anim <name>/.test(reg) }; },
     good: (o) => o.now && !o.olds.length && o.key && o.v && o.slash },
-  { id: "E3", what: "…the word appears nowhere but the old tool name's education entry (TOOL_RENAMED) and the action bar's old id for carrying saved storage (client/lib/ui.js ACTIONBAR_OLD_ID): every file of the tree (spec/history, the frozen v1 record, aside), file names too; and both of those still work", async run() {
+  { id: "E3", what: "…the word appears nowhere but the action bar's old id for carrying saved storage (client/lib/ui.js ACTIONBAR_OLD_ID): every file of the tree (spec/history, the frozen v1 record, aside), file names too; and both of those still work", async run() {
       const re = new RegExp(`(?<![rd])${EM}`, "i"); const hits: string[] = []; const SKIP = new Set(["node_modules", ".git", "worlds", "store", "history"]);
       const walk = (rel: string) => { let ents: any[] = []; try { ents = fs.readdirSync(TREE + rel, { withFileTypes: true }); } catch { return; }
         for (const e of ents) { const r = rel ? `${rel}/${e.name}` : e.name; if (SKIP.has(e.name)) continue;
@@ -572,14 +572,13 @@ const cases: Case[] = [
           if (st.size > 4e6 || /\.(png|jpe?g|glb|vrm|vrma|wasm|ico|webp|gz|zip|mp3|ogg|wav)$/i.test(e.name)) continue;
           const lines = fs.readFileSync(TREE + r, "utf8").split("\n"); lines.forEach((l: string, i: number) => { if (re.test(l)) hits.push(`${r}:${i + 1}: ${l.trim().slice(0, 120)}`); }); } };
       walk("");
-      const allowed = (h: string) => /^mcpl\/tools\.ts:\d+: pose: "anim", animate: "anim", \w+: "anim", posture: "anim" \}\)\.map\(/.test(h)
-        || /^client\/lib\/ui\.js:\d+: export const ACTIONBAR_OLD_ID = '\w+';$/.test(h)
+      const allowed = (h: string) => /^client\/lib\/ui\.js:\d+: export const ACTIONBAR_OLD_ID = '\w+';$/.test(h)
         // the retired chat command's own row (typed, it says what replaced it) and its test (house config I19)
         || /^client\/lib\/commands\/registry\.js:\d+: (\/\/ whisper was removed \(R 10-18\); \/\w+ became \/anim|\{ name: '\w+', listed: false, help: '\/\w+ is \/anim now')/.test(h)
         || /^tools\/retired-commands-test\.ts:\d+: /.test(h);   // its args, beside its alias   // a returning person's saved pins/frame carried once (gym 10-17 20:00)
       const T: any = await import(TREE + "mcpl/tools.ts"); const OA = exists("shared/onceanim.js") ? await import(TREE + "shared/onceanim.js") : null;
-      return { stray: hits.filter((h) => !allowed(h)).slice(0, 12), nStray: hits.filter((h) => !allowed(h)).length, kept: hits.filter(allowed).length, alias: T.TOOL_RENAMED?.[EM]?.to ?? null, read: OA?.onceAnimOf({ [EM]: "wave" }) ?? null }; },
-    good: (o) => o.nStray === 0 && o.kept >= 2 && o.alias === "anim" && o.read === null },
+      return { stray: hits.filter((h) => !allowed(h)).slice(0, 12), nStray: hits.filter((h) => !allowed(h)).length, kept: hits.filter(allowed).length, alias: T.resolveTool(EM), read: OA?.onceAnimOf({ [EM]: "wave" }) ?? null }; },
+    good: (o) => o.nStray === 0 && o.kept >= 1 && o.alias === null && o.read === null },
   // ---------------- OS: oscillate (R 10-17 21:40) ----------------
   { id: "OS1", what: "(R 21:40) the registry: motion.type is pendulum | spin | orbit | oscillate | path (no bob); oscillate's per-type defaults and units; the editor's card is Oscillate (descriptors, the component list, MOTION_TYPES)", async run() {
       const M = CS.COMPONENTS.motion; const DS: any = await import(TREE + "shared/descriptors.js"); const CO: any = await import(TREE + "shared/components.js"); const ES: any = await import(TREE + "shared/editschema.js");

@@ -273,8 +273,9 @@ is 29 tools, and what used to be bespoke verbs are their modes:
 The old names (`take_off`, `fold_wings`, `clear_pose`, `ragdoll`, `light`,
 `remove`, `blueprint_place`, `kick`, `list_bans`, `library_sheet`…) are
 refused with the call that does it now; `walk_to`/`snapshot`/`spawn`/
-`check_model` and anim's old names run nothing and name the tool that does it now (`move`, `screenshot`, `create`,
-`measure`, `anim`), until 2026-12-01, when the note goes too (R 10-28; mcpl/tools.ts TOOL_RENAMED). `world_verb` is
+`check_model` and anim's old names are unknown tools: refused like any name
+this server never served, and nothing runs (`move`, `screenshot`, `create`,
+`measure`, `anim` do those now). `world_verb` is
 removed: `act {verb, args}` takes this authority's verbs, and an old verb
 (`comp`, `motion`, `mount`, `grant`, `epoch`…) is refused as `removed`
 with the call that does it now (`help {verb}` says the same). Every tool that

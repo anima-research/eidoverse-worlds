@@ -48,7 +48,7 @@ async function writeBoxGlb(file, [sx, sy, sz]) {
 }
 
 // ---- AT4 needs no server: the table itself ----
-const { HANDLERS, TOOLS, TOOL_RENAMED, toolList, handleTool: handleToolDoor } = await import("../../mcpl/tools.ts");
+const { HANDLERS, TOOLS, toolList, handleTool: handleToolDoor } = await import("../../mcpl/tools.ts");
 { const listed = [...toolList({ travel: true }), ...toolList({ travel: false })];
   const HINTS = ["readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"];
   const bad = listed.filter((t) => typeof t.title !== "string" || !t.title.trim() || !t.annotations || HINTS.some((h) => typeof t.annotations[h] !== "boolean"));
@@ -81,7 +81,7 @@ const { HANDLERS, TOOLS, TOOL_RENAMED, toolList, handleTool: handleToolDoor } = 
     "clear_pose", "clear_reach", "posture", "ragdoll", "library_sheet", "library_preview", "list_library", "light", "remove", "blueprint_place", "kick", "ban", "unban", "list_bans"];
   ok(names.length <= 32 && names.length >= 28, `AT6 the table is ~30 tools (${names.length})`, names);
   ok(!folded.some((n) => names.includes(n)), "AT6 none of the folded names is a tool of its own", folded.filter((n) => names.includes(n)));
-  ok(["move", "act", "anim", "reach", "library", "set_avatar", "create", "edit", "body_state"].every((n) => names.includes(n)) && !Object.keys(TOOL_RENAMED).some((n) => names.includes(n)) && Object.values(TOOL_RENAMED).filter((v) => v.to === "anim").length === 4, "AT6 the general tools they folded into exist (anim: R 10-17 15:31; the four old body tools are taught as it, R 10-28)");
+  ok(["move", "act", "anim", "reach", "library", "set_avatar", "create", "edit", "body_state"].every((n) => names.includes(n)) && !["walk_to", "snapshot", "spawn", "check_model", "pose", "animate", "em" + "ote", "posture"].some((n) => names.includes(n)), "AT6 the general tools they folded into exist (anim: R 10-17 15:31); no old name is advertised (Mica 11-05)");
   ok(/mode/.test(desc.move) && /fly/.test(desc.move) && /altitude/.test(desc.move) && /name/.test(desc.move), "AT6 move documents mode: \"fly\" (altitude) and to: <a name>", desc.move.slice(0, 300));
   ok(/land/.test(desc.act) && /kick/.test(desc.act) && /\bbans\b/.test(desc.act) && /delete/.test(desc.act), "AT6 act documents land, kick/ban/unban/bans and delete", desc.act.slice(0, 200));
   ok(/wings-folded/.test(desc.anim) && /stop/.test(desc.anim) && /mode/.test(desc.anim) && /joints/.test(desc.anim) && /tracks/.test(desc.anim), "AT6 anim documents names (wings-folded), mode, joints, tracks and stop");
@@ -89,7 +89,7 @@ const { HANDLERS, TOOLS, TOOL_RENAMED, toolList, handleTool: handleToolDoor } = 
   ok(/query/.test(desc.library) && /preview/.test(desc.library) && /sheet|page/.test(desc.library), "AT6 library documents query, preview and the sheet");
   ok(/light/.test(desc.create) && /\bat\b/.test(desc.create), "AT6 create documents a light and at");
   const { resolveTool, handleTool } = await import("../../mcpl/tools.ts");
-  ok(resolveTool("set_avatar")?.name === "set_avatar" && resolveTool("wear") === null && resolveTool("walk_to") === null && TOOL_RENAMED.walk_to?.to === "move", "AT6 set_avatar keeps its name (R: unambiguous; wear could mean a hat); the old renames are taught, not run (R 10-28)");
+  ok(resolveTool("set_avatar")?.name === "set_avatar" && resolveTool("wear") === null && resolveTool("walk_to") === null, "AT6 set_avatar keeps its name (R: unambiguous; wear could mean a hat); the old renames are not tools");
   ok(/ragdoll: true/.test(desc.anim) && !/limp: true/.test(desc.anim) && !/shove \{target/.test(desc.anim) && /shove \{target/.test(desc.act), "AT6 anim documents ragdoll (one vocabulary with the browser: a body going limp); the push's form (shove {target…}) is act's alone");
   ok(resolveTool("take_off") === null && resolveTool("kick") === null, "AT6 a folded tool does not resolve to a handler (it folded, it was not renamed)");
   const gone = await handleTool({ agent: null } as any, "take_off", {});
@@ -266,7 +266,7 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   const sit = await call("anim", { name: "sit" });
   ok(!sit.isError && /"playing":"sit","mode":"loop"/.test(T(sit)) && ag.clip === "sit", "AT6d anim {name: \"sit\"} sits, looped (its own mode)", [T(sit), ag.clip]);
   const old = await call("pose", { posture: "stand" });
-  ok(old.isError && /pose is now called anim/.test(T(old)) && /nothing ran/.test(T(old)) && ag.clip === "sit", "AT6d …the old pose {posture: \"stand\"} runs nothing and teaches anim (R 10-28)", [T(old), ag.clip]);
+  ok(old.isError && T(old) === `there's no tool named "pose" on this server, so nothing ran (did you mean move?); your tool list has the ones it serves` && ag.clip === "sit", "AT6d …the old pose {posture: \"stand\"} is an unknown tool: refused, and the body still sits (Mica 11-05)", [T(old), ag.clip]);
   const stand = await call("anim", { name: "stand" });
   ok(!stand.isError && /"playing":"stand"/.test(T(stand)) && ag.clip === "idle", "AT6d …anim {name: \"stand\"} stands", [T(stand), ag.clip]);
   const posed = await call("anim", { joints: { head: [0, 0.2, 0, 0.98] }, hold: true });
@@ -337,12 +337,12 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   await tryUntil("the post is unlocked and shown in the agent's fold", () => !ag.foldRecord(ID.post)?.lock && !ag.foldRecord(ID.post)?.hidden, { ms: 2000 });
   ok(!un.isError && !ag.foldRecord(ID.post)?.lock && !ag.foldRecord(ID.post)?.hidden, "AT5 …and what it teaches works (by its label too)", T(un)); }
 
-// ---- AT9: the old names run nothing and teach the new (R 10-28); create's at / place shapes the old spawn used still land ----
+// ---- AT9: the old names are unknown tools and run nothing (Mica 11-05); create's at / place shapes the old spawn used still land ----
 { const { handleTool } = await import("../../mcpl/tools.ts");
   const ctx = { agent: ag, canPush: () => false, heldActivity: [], cursor: { caughtUpTo: null } };
   const x0 = ag.pos.x, z0 = ag.pos.z;
   const w0 = await handleTool(ctx as any, "walk_to", { x: x0 + 1.5, z: z0, tolerance: 0.2 });
-  ok(w0.isError && /walk_to is now called move/.test(T(w0)) && /nothing ran/.test(T(w0)) && Math.abs(ag.pos.x - x0) < 0.05, "AT9 walk_to runs nothing and teaches move (R 10-28)", { text: T(w0).slice(0, 160), x: ag.pos.x, x0 });
+  ok(w0.isError && T(w0) === `there's no tool named "walk_to" on this server, so nothing ran; your tool list has the ones it serves` && Math.abs(ag.pos.x - x0) < 0.05, "AT9 walk_to is refused as an unknown tool and the body stays put (Mica 11-05)", { text: T(w0).slice(0, 160), x: ag.pos.x, x0 });
   const w = await handleTool(ctx as any, "move", { to: [x0 + 1.5, z0], tolerance: 0.2 });
   ok(!w.isError && Math.abs(ag.pos.x - (x0 + 1.5)) < 0.25, "AT9 move {to: [x, z], tolerance} walks the body", { text: T(w).slice(0, 160), x: ag.pos.x, x0 });
   const n0 = ag.entities.size;
@@ -371,7 +371,7 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
     && Array.isArray(ywOn.rec?.q) && ywOn.rec.q.every((n, i) => Math.abs(n - qy[i]) < 1e-3),
     "AT9 spawn {lib, x, z, yaw} over the wall sits on its top, like spawn without a yaw, facing yaw (review r2 F8)", [T(ywOn.r).slice(0, 200), ywOn.rec?.pos, ywOn.rec?.q, noYaw.rec?.pos]);
   const sq = await handleTool(ctx as any, "spawn", { query: "cup" });
-  ok(sq.isError && /spawn is now called create/.test(T(sq)) && /nothing ran/.test(T(sq)), "AT9 spawn runs nothing and teaches create (R 10-28)", T(sq).slice(0, 200));
+  ok(sq.isError && T(sq) === `there's no tool named "spawn" on this server, so nothing ran (did you mean say?); your tool list has the ones it serves` && ag.entities.size === n0 + 5, "AT9 spawn is refused as an unknown tool and creates nothing (Mica 11-05)", [T(sq).slice(0, 200), ag.entities.size, n0]);
   const wv = await handleTool(ctx as any, "world_verb", { verb: "say", args: { text: "alias says" } });
   ok(wv.isError && /world_verb was removed/.test(T(wv)) && /act \{verb, args\}/.test(T(wv)), "AT9 world_verb is refused as removed, naming act (R 10-27)", T(wv).slice(0, 160));
   // main's verbs the authority doesn't have are refused as removed with the call that does it now, never a did-you-mean (R 10-27)
@@ -384,7 +384,7 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   const hp = await handleTool(ctx as any, "act", { verb: "help", args: { verb: "comp" } }); const hj = JSON.parse(T(hp));
   ok(/removed/.test(hj?.refused?.reason ?? "") && /set \{/.test(hj?.refused?.fix ?? ""), "AT9 help {verb: comp} says it was removed and what does it now", hj);
   const sn = await handleTool(ctx as any, "snapshot", { view: "third" });
-  ok(sn.isError && /snapshot is now called screenshot/.test(T(sn)) && /nothing ran/.test(T(sn)), "AT9 snapshot runs nothing and teaches screenshot (R 10-28)", T(sn).slice(0, 160)); }
+  ok(sn.isError && T(sn) === `there's no tool named "snapshot" on this server, so nothing ran; your tool list has the ones it serves`, "AT9 snapshot is refused as an unknown tool (Mica 11-05)", T(sn).slice(0, 160)); }
 
 // ---- AT8 (review r5 F4): a dropped agent dials again on the browser's schedule (shared/redial.js), not a fixed 1.5 s ----
 { const rid = new WorldAgent({ url: `ws://127.0.0.1:${port}/ws`, name: "Rid", world: "yard", avatar: "" });

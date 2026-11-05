@@ -1,6 +1,6 @@
 # Remote scene screenshots
 
-Headless clients call the MCPL tool `screenshot {view:"first"|"third"|"selfie"}` (its old name `snapshot` is refused, naming it, until 2026-12-01: mcpl/tools.ts TOOL_RENAMED).
+Headless clients call the MCPL tool `screenshot {view:"first"|"third"|"selfie"}` (its old name `snapshot` is an unknown tool).
 An optional `renderer:"unreal"|"browser"|"auto"` selects the implementation;
 auto prefers an available Unreal donor, otherwise a legacy browser donor.
 HTTP equivalents use `GET /snap?world=water&follow=ID&view=first&renderer=unreal`.

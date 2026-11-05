@@ -1461,8 +1461,8 @@ export const HANDLERS: Record<string, ToolHandler> = {
 
 
 // ---------------- anim (R 10-17 15:31/15:32): ONE tool for a pose or a clip, by name or live ----------------
-// The old pose / animate handlers are its live and by-name halves now (LEGACY below): they keep their words, and the old
-// tool names are refused naming anim until TOOL_RENAMED's date (R 10-28).
+// The old pose / animate handlers are its live and by-name halves now (LEGACY below): they keep their words; the old
+// tool names are unknown tools (Mica 11-05).
 const LEGACY: Record<string, ToolHandler> = { pose: HANDLERS.pose, animate: HANDLERS.animate };
 delete HANDLERS.pose; delete HANDLERS.animate;
 /** Each built-in anim's own mode (R 15:32): what plays when the call says none. A one-frame pose holds. A name not
@@ -1619,12 +1619,6 @@ function describeCheck(what: string, r: any, named: number, id?: string, collide
   return L.join("\n");
 }
 
-// R 10-28 ("drop and educate the new aliases for one release, and then drop the education"): an old name runs nothing; it
-// is refused naming the tool that does it now, until `until`, then its entry goes. Names only (alias-test holds it so).
-export const TOOL_RENAMED_UNTIL = "2026-12-01";
-export const TOOL_RENAMED: Record<string, { to: string; until: string }> = Object.fromEntries(Object.entries({
-  walk_to: "move", snapshot: "screenshot", spawn: "create", check_model: "measure",
-  pose: "anim", animate: "anim", emote: "anim", posture: "anim" }).map(([old, to]) => [old, { to, until: TOOL_RENAMED_UNTIL }]));
 /** Tools that FOLDED into a general tool's mode (10-14): the old name is refused with the call that does it now. Not an
  *  alias — the arguments changed shape, so running the new tool on the old args would do the wrong thing quietly. */
 export const TOOL_FOLDS: Record<string, string> = {
@@ -1671,8 +1665,6 @@ export async function handleTool(ctx: ToolCtx, name: string, a: Record<string, a
   if (!r && TOOL_FOLDS[name]) return { content: [{ type: "text", text: `${name} folded into a general tool: ${TOOL_FOLDS[name]} — nothing ran` }], isError: true };
   // the same words for a tool this server doesn't serve, hidden or never there (#247), with the nearest name when one is close
   if (!r && TOOL_REMOVED[name]) return { content: [{ type: "text", text: `${name} was removed: ${TOOL_REMOVED[name]} — nothing ran` }], isError: true };
-  if (!r && TOOL_RENAMED[name]) { const to = TOOL_RENAMED[name].to;
-    return { content: [{ type: "text", text: `${name} is now called ${to}: call ${to} (its arguments are in your tool list; they may differ from ${name}'s) — nothing ran` }], isError: true }; }
   if (!r) { const near = nearestTool(name); return { content: [{ type: "text", text: `there's no tool named "${name}" on this server, so nothing ran${near && near[1] <= 4 ? ` (did you mean ${near[0]}?)` : ""}; your tool list has the ones it serves` }], isError: true }; }
   // A tool's failure belongs in its result, where the model reads it: a
   // handler that throws, such as verb()'s refusal while the link is down,

@@ -20,11 +20,10 @@ Ask them in order. A "no" to any one ends the climb at that rung.
 Passes all three → an **engine tool**: a row in `TOOL_ROWS` and a handler.
 Fails 2 or 3 but the action exists → a **mode** of a general tool (`pose {wings}`, `reach {release}`, `create {from}`),
 and if it had a name before, that name goes in `TOOL_FOLDS` so the old call answers with the call that does it now.
-A rename of something that stays → an **education entry** in `TOOL_RENAMED` (R 10-28: "drop and educate the new aliases
-for one release, and then drop the education"): `{to, until}` and nothing else. Calling the old name runs nothing and
-says which tool does it now; past `until` (one release, `TOOL_RENAMED_UNTIL`) `mcpl/alias-test.ts` goes red until the
-entry is deleted. No argument translators: an old name never runs. (Until 2026-10-28 renames were aliases with
-argument translations, `TOOL_ALIASES` + `TOOL_ALIAS_ARGS`; the worked example below is that history.)
+A rename of something that stays → the old name is an **unknown tool**: it is refused with the same words as any name
+the server never served, and runs nothing (Mica 11-05: no dated education table). Add it to `OLD` in
+`mcpl/alias-test.ts`, which holds every old name to exactly those words. No argument translators: an old name never
+runs. (Until 2026-10-28 renames were aliases with argument translations; the worked example below is that history.)
 
 ## The checklist (each line but one is a suite that fails without it)
 
@@ -40,11 +39,11 @@ argument translations, `TOOL_ALIASES` + `TOOL_ALIAS_ARGS`; the worked example be
       real sequencer and checks the world, not the text. Watch it fail first (stash the handler).
 - [ ] **Its words in AGENTS.md**: the tools table (`### The tools — general shapes, with modes`), in the protocol's words.
       *No suite checks this line yet: the reviewer does.*
-- [ ] **If it replaces a name**: `TOOL_RENAMED` (rename: names and a date only) or `TOOL_FOLDS` (became a mode);
-      `mcpl/alias-test.ts` drives every entry. Never delete a name without one of the two.
+- [ ] **If it replaces a name**: `OLD` in `mcpl/alias-test.ts` (a rename: refused as unknown) or `TOOL_FOLDS` (became a
+      mode); `mcpl/alias-test.ts` drives every entry. Never delete a name without one of the two.
 - [ ] **Not a tool at all**: a bench or rehearsal hook (`flightBodyDown`) is called on the agent directly by its test.
 
-## Worked example — `walk_to` (2026-10-15; history: since 2026-10-28 walk_to is a TOOL_RENAMED entry and runs nothing)
+## Worked example — `walk_to` (2026-10-15; history: walk_to is an unknown tool now and runs nothing)
 
 `walk_to {x, z, run?, tolerance?}` was the agent's walk. Question 1: the browser has no `walk_to`; it has `move`
 (the W key, the VR stick, `move {to}` at the door). So the tool is `move {to: [x, z] | [x, y, z] | "<name>", run?,
