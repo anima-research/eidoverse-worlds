@@ -115,15 +115,16 @@ try {
   const port = await startServer(W1, "open", {});
   { const r = await join(port, { world: "nope", id: "ann", hello: { ...good, v: VERSION + 1 } }); const text = JSON.stringify(r.msgs);
     check("F22 an unknown v is refused update-required BEFORE any world lookup: the reply carries need {dialect, v} and no world name or existence", r.msgs.length === 1 && r.msgs[0].code === "update-required" && r.msgs[0].need.v === NEED.v && !("minor" in r.msgs[0].need) && !/nope/.test(text) && !/world/i.test(text) && r.close === 4005, r); }
-  { const r = await join(port, { world: "nope", id: "ann" }); check("F22 (control) the same join with no hello reaches the world lookup today (HELLO_REQUIRED unset: the clients shipped before the hello)", r.msgs.some((m) => /nope/.test(m.error ?? "")), r); }
+  { const r = await join(port, { world: "nope", id: "ann" }); const text = JSON.stringify(r.msgs);
+    check("F22 the hello is always required (S5: no knob): the same join with none is refused update-required before any world lookup, naming no world", r.msgs.length === 1 && r.msgs[0].code === "update-required" && !/nope/.test(text) && r.close === 4005, r); }
   { const r = await join(port, { world: "here", id: "ann", hello: good }); const snap = r.msgs.find((m) => m.type === "snapshot");
     check("F23 a known hello joins, and the snapshot repeats the authoritative {dialect, v, requires} (no minor)", snap && snap.dialect === DIALECT && snap.v === VERSION && !("minor" in snap) && Array.isArray(snap.requires) && snap.requires.length === 0, snap && { dialect: snap.dialect, v: snap.v, minor: snap.minor, requires: snap.requires }); }
   { const r = await join(port, { world: "here", id: "ann", hello: { ...good, features: ["a:b@1"] } });
     check("F23 a client declaring more features than the world requires is not refused", r.msgs.some((m) => m.type === "snapshot"), r.msgs.map((m) => m.type)); }
   const W2 = path.join(S, "w2"); fs.mkdirSync(W2); found(W2, "here");
-  const port2 = await startServer(W2, "strict", { HELLO_REQUIRED: "1", JOIN_TOKEN: "sesame" });
+  const port2 = await startServer(W2, "strict", { JOIN_TOKEN: "sesame" });
   { const r = await join(port2, { world: "nope", id: "ann", token: "sesame" }); const text = JSON.stringify(r.msgs);
-    check("F22 with HELLO_REQUIRED a missing hello fails loudly (update-required), with no legacy default and no world name", r.msgs.length === 1 && r.msgs[0].code === "update-required" && !/nope/.test(text), r); }
+    check("F22 behind a join token too, a missing hello fails loudly (update-required), with no legacy default and no world name", r.msgs.length === 1 && r.msgs[0].code === "update-required" && !/nope/.test(text), r); }
   { const r = await join(port2, { world: "here", id: "ann", token: "wrong", hello: { ...good, v: VERSION + 1 } });
     check("F23 step 1 precedes step 2: a principal the door refuses gets the door's refusal, never update-required or unsupported-feature", r.msgs.length === 1 && r.msgs[0].type === "error" && !/update-required|unsupported-feature/.test(JSON.stringify(r.msgs)) && r.close === 4003, r); }
   { const r = await join(port2, { world: "here", id: "ann", ownerKey: "ed25519:BP7aKo17f474DD1aBSLG0a3Pb29Qs3yqQ6Ve0wSRVD0", hello: good });
@@ -148,19 +149,25 @@ try {
       const [a, b] = ["plain", "declared"].map((n) => { const w = openLive(path.join(W5, n), n); return request(w, w.entries[1].actor, "say", { text: "hi" }); });
       check("F30 the authority refuses a feature's verb before the world declares it (unsupported-feature, via declaredBefore), and runs it once genesis requires it", a?.ok === false && a.refused?.code === "unsupported-feature" && b?.ok === true, { a, b }); }
     finally { KNOWN_FEATURES.delete(PROBE); FEATURE_VERBS.delete("say"); } }
-  // F-3: every in-repo client sends a valid hello: each joins a server that requires one (the browser's two paths: refusedjoin-check W0)
-  const W6 = path.join(S, "w6"); fs.mkdirSync(W6); found(W6, "here");
-  const port6 = await startServer(W6, "hello-required", { HELLO_REQUIRED: "1" });
-  const url6 = `ws://127.0.0.1:${port6}/ws`;
-  { const r = await join(port6, { world: "here", id: "ann" }); check("F22 (control) this server requires the hello: a join without one is update-required", r.msgs[0]?.code === "update-required", r); }
+  // F-3: every in-repo client sends a valid hello (helloOf): each joins (the browser's two paths: refusedjoin-check W0)
+  const port6 = port, url6 = `ws://127.0.0.1:${port6}/ws`;
   { const { WorldAgent } = await import("../../mcpl/agent.ts"); const a: any = new WorldAgent({ url: url6, name: "probe-agent", world: "here", declares: null });
     let err = ""; try { await a.connect(); } catch (e) { err = String(e?.message ?? e); } try { a.close(); } catch {}
-    check("F22 mcpl/agent.ts sends a valid hello: it joins a HELLO_REQUIRED server", !err, err); }
+    check("F22 mcpl/agent.ts sends a valid hello: it joins", !err, err); }
   { const r = spawnSync(process.execPath, ["server/tend.ts", "here"], { cwd: ENGINE, env: { ...process.env, PORT: String(port6), JOIN_TOKEN: "" }, encoding: "utf8", timeout: 20_000 });
-    check("F22 server/tend.ts sends a valid hello: it joins a HELLO_REQUIRED server (exit 0 at the snapshot)", r.status === 0, (r.stderr ?? "") + (r.stdout ?? "")); }
+    check("F22 server/tend.ts sends a valid hello: it joins (exit 0 at the snapshot)", r.status === 0, (r.stderr ?? "") + (r.stdout ?? "")); }
   { const { WorldClient } = await import("../captionbot/world.ts"); const c: any = new WorldClient({ url: url6, token: "", world: "here", actor: "probe-captions", screenId: "none", agent: false });
     c.connect(); const ok = await tryUntil("the captionbot joins", () => c.open === true, { ms: 10_000, step: 50 }); c.ws.onclose = null; c.ws.close();
-    check("F22 tools/captionbot/world.ts sends a valid hello: it joins a HELLO_REQUIRED server", !!ok); }
+    check("F22 tools/captionbot/world.ts sends a valid hello: it joins", !!ok); }
+  { // S5: one hello helper. Every file that builds a join imports helloOf (the page's inline socket spells it, checked below;
+    // this suite's own raw join is the no-hello probe; Python spells it as HELLO)
+    const own = new Set(["client/index.html", "tools/protocol/freeze-check.ts", "tools/surface-test.py"]); const bad: string[] = [];
+    const walk = (d: string) => { for (const e of fs.readdirSync(path.join(ENGINE, d), { withFileTypes: true })) { const r = path.join(d, e.name);
+      if (e.isDirectory()) { if (!["node_modules", ".git", "worlds", "spec"].includes(e.name)) walk(r); continue; }
+      if (!/\.(ts|js|mjs|html)$/.test(e.name) || own.has(r)) continue; const t = fs.readFileSync(path.join(ENGINE, r), "utf8");
+      if (/type\s*:\s*['"]join['"]/.test(t) && !/\bhelloOf\b/.test(t)) bad.push(r); } };
+    for (const d of ["client", "server", "mcpl", "tools", "shared"]) walk(d);
+    check("F22 every in-repo file that builds a join sends helloOf() (shared/protocol/hello.js): one helper, no hand-spelled or missing hello", !bad.length, bad.slice(0, 10)); }
   { const html = fs.readFileSync(path.join(ENGINE, "client/index.html"), "utf8"); const m = /hello: (\{ dialect: 'eidoverse-log'[^}]*\})/.exec(html);
     const inline = m ? Function(`return (${m[1]});`)() : null;
     check("F22 the page's inline early socket spells exactly helloOf() (it imports nothing; refusedjoin-check W0 joins with it)", JSON.stringify(inline) === JSON.stringify(helloOf()), { inline, helloOf: helloOf() }); }

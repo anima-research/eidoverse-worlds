@@ -40,6 +40,7 @@ import crypto from "node:crypto";
 import { ENGINE, scratch } from "./common.ts";
 import { tryUntil, pause } from "./wait.ts";
 import { freePort } from "../harness.ts";
+import { helloOf } from "../../shared/protocol/hello.js";
 
 const root = scratch("access");
 let pass = 0, fail = 0;
@@ -68,7 +69,7 @@ async function sock(port) {
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
   return {
     msgs, get closed() { return closed; },
-    async join(world, id, extra = {}) { const k = msgs.length; ws.send(JSON.stringify({ type: "join", world, id, avatar: "", replica: true, ...extra }));
+    async join(world, id, extra = {}) { const k = msgs.length; ws.send(JSON.stringify({ type: "join", hello: helloOf(), world, id, avatar: "", replica: true, ...extra }));
       await tryUntil(`${id}'s join is answered (or its socket closes)`, () => msgs.slice(k).some((m) => m.type === "snapshot" || m.type === "error") || closed != null, { ms: 10_000, step: 50 });   // an upper bound: it returns as soon as the answer lands
       await sleep(80); return { snapshot: msgs.slice(k).find((m) => m.type === "snapshot"), errors: msgs.slice(k).filter((m) => m.type === "error").map((m) => m.error) }; },
     req: (verb, args = {}) => new Promise((res) => { const id = `r${++n}`; waiters.set(id, res); ws.send(JSON.stringify({ type: "request", id, verb, args })); setTimeout(() => res({ ok: false, timeout: true }), 4000); }),
@@ -124,7 +125,7 @@ ok(close.ok && removed && bob.closed === 4010 && bob.msgs.some((m) => m.type ===
 { // the raw bytes of a join: every message as sent, then the close code and reason; the world's name stands as <name>
   const rawJoin = (world, extra = {}) => new Promise((res) => { const ws = new WebSocket(`ws://127.0.0.1:${srv.port}/ws`); const got = [];
     ws.onmessage = (ev) => got.push(String(ev.data)); ws.onclose = (ev) => res([...got, `close ${ev.code} ${ev.reason}`].join("\n").split(world).join("<name>"));
-    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world, id: "Moss", agentToken: "tok-moss", avatar: "", replica: true, ...extra })); });
+    ws.onopen = () => ws.send(JSON.stringify({ type: "join", hello: helloOf(), world, id: "Moss", agentToken: "tok-moss", avatar: "", replica: true, ...extra })); });
   const rawAccess = async (world, bearer?) => { const r = await fetch(`http://127.0.0.1:${srv.port}/access?world=${world}`, bearer ? { headers: { authorization: `Bearer ${bearer}` } } : {});
     return `${r.status} ${r.headers.get("content-type")} ${(await r.text()).split(world).join("<name>")}`; };
   const body = [await rawJoin("keep"), await rawJoin("nowhere")], watch = [await rawJoin("keep", { spectate: true }), await rawJoin("nowhere", { spectate: true })];
@@ -144,7 +145,7 @@ ok(close.ok && removed && bob.closed === 4010 && bob.msgs.some((m) => m.type ===
     "F23-O4 a world the stranger may discover (anyone may watch it) keeps its specific words: a body is refused naming the world and that watching is open; /access says exists, watch", [door.ok, jp.errors, pj.closed, ap.body]); pj.close();
   const anonAcc = [await rawAccess("keep"), await rawAccess("nowhere")], anonJoin = await Promise.all(["keep", "nowhere"].map((w) => new Promise((res) => { const ws = new WebSocket(`ws://127.0.0.1:${srv.port}/ws`); const got = [];
     ws.onmessage = (ev) => got.push(String(ev.data)); ws.onclose = (ev) => res([...got, `close ${ev.code}`].join("\n").split(w).join("<name>"));
-    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: w, id: "Carl", avatar: "", replica: true })); })));
+    ws.onopen = () => ws.send(JSON.stringify({ type: "join", hello: helloOf(), world: w, id: "Carl", avatar: "", replica: true })); })));
   ok(anonAcc[0] === anonAcc[1] && /^401 /.test(anonAcc[0]) && /sign in/.test(anonAcc[0]) && !/world-unavailable/.test(anonAcc[0]) && acc[0] !== anonAcc[0] && anonJoin[0] === anonJoin[1] && /world-unavailable/.test(anonJoin[0]),
     "F23-O5 the unauthenticated stay classified apart from the signed-but-unentitled: /access says sign in (401) for both names, a stranger's says world-unavailable (404); a guest's join is world-unavailable for both", { anonAcc, anonJoin }); }
 // F23-O7–O9 (Mica 11-05, #23 ruling 4): an interrupted conversion and an old-format world are unavailable states too. To a
@@ -160,7 +161,7 @@ ok(close.ok && removed && bob.closed === 4010 && bob.msgs.some((m) => m.type ===
   ok(!s3.dead, "(F23-O7 setup) a server with an operator is up", s3.dead ? fs.readFileSync(s3.log + ".err", "utf8").slice(-400) : "");
   const raw = (world, extra = {}) => new Promise((res) => { const ws = new WebSocket(`ws://127.0.0.1:${s3.port}/ws`); const got = [];
     ws.onmessage = (ev) => got.push(String(ev.data)); ws.onclose = (ev) => res([...got, `close ${ev.code} ${ev.reason}`].join("\n").split(world).join("<name>"));
-    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world, id: extra.agentToken ? String(extra.agentToken).slice(4) : "Carl", avatar: "", replica: true, ...extra })); });
+    ws.onopen = () => ws.send(JSON.stringify({ type: "join", hello: helloOf(), world, id: extra.agentToken ? String(extra.agentToken).slice(4) : "Carl", avatar: "", replica: true, ...extra })); });
   const upgrade = (world, tok) => new Promise((res) => { const ws = new WebSocket(`ws://127.0.0.1:${s3.port}/ws`); const got = [];
     ws.onmessage = (ev) => { got.push(String(ev.data)); if (JSON.parse(String(ev.data)).type === "world-upgrade-review") ws.close(); };
     ws.onclose = () => res(got.filter((g) => /world-upgrade-review/.test(g)).join("\n").split(world).join("<name>"));

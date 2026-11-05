@@ -7,6 +7,7 @@
 //   WORLD_URL=ws://localhost:8996/ws bun tools/forecast-probe.mjs
 
 import { effectiveSky, describeSky } from "../shared/forecast.js";
+import { helloOf } from "../shared/protocol/hello.js";
 
 const URL = process.env.WORLD_URL ?? "ws://localhost:8996/ws";
 const world = `probe-${Math.random().toString(36).slice(2, 8)}`;
@@ -15,7 +16,7 @@ function connect(id) {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(URL);
     const state = { ws, entries: [], snapshot: null, live: [] };
-    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world, id }));
+    ws.onopen = () => ws.send(JSON.stringify({ type: "join", hello: helloOf(), world, id }));
     ws.onmessage = (m) => {
       const msg = JSON.parse(m.data);
       if (msg.type === "snapshot") { state.snapshot = msg.state; state.entries = msg.entries ?? []; resolve(state); }

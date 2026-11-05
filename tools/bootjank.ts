@@ -29,6 +29,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromeArgs, findChrome } from "./protocol/chrome.ts";
 import { killChild } from "./protocol/procgroup.ts";
+import { helloOf } from "../shared/protocol/hello.js";
 
 const args = process.argv.slice(2);
 const has = (n: string) => args.includes(`--${n}`);
@@ -160,7 +161,7 @@ if (WIDE) {
   ];
   await new Promise<void>((resolve, reject) => {
     const dws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
-    dws.onopen = () => dws.send(JSON.stringify({ type: "join", world: WORLD, id: "widedriver", avatar: "", replica: true }));
+    dws.onopen = () => dws.send(JSON.stringify({ type: "join", hello: helloOf(), world: WORLD, id: "widedriver", avatar: "", replica: true }));
     dws.onmessage = (ev) => {
       const m = JSON.parse(String(ev.data));
       if (m.type === "snapshot") dws.send(JSON.stringify({ type: "request", id: "wide", verb: "batch", args: { requests: ops } }));
@@ -353,7 +354,7 @@ if (HEAVYJOIN) {
   const heavyJoin = (id: string) => {
     const hws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
     hws.onopen = () => hws.send(JSON.stringify({
-      type: "join", world: WORLD, id, token: "", replica: true,
+      type: "join", hello: helloOf(), world: WORLD, id, token: "", replica: true,
       avatar: "eidoverse/assets/vrms/aletheia.vrm",   // library-relative, like resolveMyAvatarPath
     }));
     return hws;

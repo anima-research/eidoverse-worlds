@@ -28,6 +28,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { foundWorlds, freePort } from "./harness.ts";
 import { idAliases } from "./protocol/idalias.ts";
+import { helloOf } from "../shared/protocol/hello.js";
 const IDS = idAliases();
 
 const EXTERNAL = process.env.URL;
@@ -63,7 +64,7 @@ class Client {
       this.ws = new WebSocket(URL_);
       const t = setTimeout(() => reject(new Error(`${this.id}: join timeout`)), 8000);
       this.ws.onopen = () => this.ws.send(JSON.stringify({
-        type: "join", world: this.opts.world ?? WORLD, id: this.id,
+        type: "join", hello: helloOf(), world: this.opts.world ?? WORLD, id: this.id,
         avatar: "eidoverse/assets/vrms/claude.vrm",
         ...(this.opts.agent ? { declares: "agent" } : {}), token: TOKEN, replica: true,
       }));

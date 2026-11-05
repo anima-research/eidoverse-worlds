@@ -7,6 +7,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { scratchSequencer, mkCheck, sleep } from './harness.ts';
+import { helloOf } from '../shared/protocol/hello.js';
 const { check, tally } = mkCheck();
 const data = mkdtempSync(join(tmpdir(), 'presence-data-'));
 // (ported 10-17: the world is founded first — joining never founds one — and joins fold the log, replica: true)
@@ -31,7 +32,7 @@ async function join_(id: string, session?: unknown) {
   const got: any[] = [];
   ws.onmessage = e => got.push(JSON.parse(String(e.data)));
   await until(() => ws.readyState === 1);
-  ws.send(JSON.stringify({ type: 'join', token: 'test-door', world: 'presence', id, replica: true, ...(session === undefined ? {} : { session }) }));
+  ws.send(JSON.stringify({ type: 'join', hello: helloOf(), token: 'test-door', world: 'presence', id, replica: true, ...(session === undefined ? {} : { session }) }));
   await until(() => got.some(m => m.type === 'snapshot'));
   open.push(ws);
   return { ws, got };

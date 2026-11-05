@@ -101,6 +101,7 @@ import { approvalText, approvalProblem, makeApproval, translateV1World, NO_OWNER
 const operatorPub = () => JSON.parse(fs.readFileSync(path.join(W, ".custody.json"), "utf8")).operator?.pub as string;
 const verifies = (key: string, msg: string, sig: string) => { try { return crypto.verify(null, Buffer.from(msg), crypto.createPublicKey({ key: Buffer.concat([Buffer.from("302a300506032b6570032100", "hex"), Buffer.from(key.slice(8), "base64url")]), format: "der", type: "spki" }), Buffer.from(sig, "base64url")); } catch { return false; } };
 import { readLog } from "../../shared/protocol/fold.js";
+import { helloOf } from "../../shared/protocol/hello.js";
 
 const root = scratch("inplace");
 let pass = 0, fail = 0;
@@ -173,12 +174,12 @@ const WITH_OP = { SERVER_OPERATORS: "human:test:op", SESSIONS_PATH: OPS };
 const rawJoin = (port: number, world: string, id = "Ann", sid: string | null = null, extra: Record<string, unknown> = {}) => new Promise<string>((res) => {
   const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, sid ? { headers: { cookie: `ew_sess=${sid}` } } as any : undefined); const got: string[] = [];
   ws.onmessage = (ev) => got.push(String(ev.data)); ws.onclose = (ev) => res([...got, `close ${ev.code} ${ev.reason}`].join("\n").split(world).join("<name>"));
-  ws.onopen = () => ws.send(JSON.stringify({ type: "join", world, id, avatar: "", replica: true, ...extra })); });
+  ws.onopen = () => ws.send(JSON.stringify({ type: "join", hello: helloOf(), world, id, avatar: "", replica: true, ...extra })); });
 async function joinAs(port: number, world: string, id = "Ann") {
   const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`); const msgs: any[] = [];
   ws.onmessage = (ev) => msgs.push(JSON.parse(String(ev.data)));
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
-  ws.send(JSON.stringify({ type: "join", world, id, avatar: "", replica: true }));
+  ws.send(JSON.stringify({ type: "join", hello: helloOf(), world, id, avatar: "", replica: true }));
   await tryUntil(`${id}'s join to ${world} is answered`, () => msgs.some((m) => m.type === "snapshot" || m.type === "error"), { ms: 4000, step: 50 });
   ws.close();
   return { snap: msgs.find((m) => m.type === "snapshot"), err: msgs.find((m) => m.type === "error")?.error, types: msgs.map((m) => m.type === "error" ? m.error : m.type).slice(0, 6) };
@@ -198,7 +199,7 @@ const srv1 = await boot("boot1", WITH_OP);
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
   // a current world to be refused at: found one
   tool(["found", "current", "--owner", "Ann"]);
-  ws.send(JSON.stringify({ type: "join", world: "current", id: "Ann", avatar: "" }));
+  ws.send(JSON.stringify({ type: "join", hello: helloOf(), world: "current", id: "Ann", avatar: "" }));
   await tryUntil("the join to current is answered", () => msgs.some((m) => m.type === "snapshot" || m.type === "error"), { ms: 4000, step: 50 }); ws.close();
   const err = msgs.find((m) => m.type === "error")?.error ?? "";
   ok(err === noFoldRefusal("current", false) && /reload the page/.test(err) && !/Unreal/.test(err), "IP27 a joiner with no replica and no native session is told, on the wire, to reload the page or update the agent (the non-native text)", err); }
@@ -211,7 +212,7 @@ ok(/update the Unreal client/.test(noFoldRefusal("current", true)) && /a world o
   const srvN = await boot("bootN", { SESSIONS_PATH: sf });
   const ws = new WebSocket(`ws://127.0.0.1:${srvN.port}/ws`, { headers: { cookie: `ew_sess=${sid}` } } as any); const msgs: any[] = []; ws.onmessage = (ev) => msgs.push(JSON.parse(String(ev.data)));
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
-  ws.send(JSON.stringify({ type: "join", world: "current", id: "Nat", avatar: "" }));
+  ws.send(JSON.stringify({ type: "join", hello: helloOf(), world: "current", id: "Nat", avatar: "" }));
   await tryUntil("the join to current is answered", () => msgs.some((m) => m.type === "snapshot" || m.type === "error"), { ms: 4000, step: 50 }); ws.close();
   const err = msgs.find((m) => m.type === "error")?.error ?? "";
   try { srvN.proc.kill(); } catch {}

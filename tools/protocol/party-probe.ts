@@ -29,6 +29,7 @@ const CRATE = "eidoverse/assets/models/crate_large_blue.glb";
 let worldsDir = "";
 import { inPage } from "./idalias.ts";
 import { until, tryUntil, pageWaiter } from "./wait.ts";
+import { helloOf } from "../../shared/protocol/hello.js";
 // R 10-17: the page names what it makes with placeholders (tools/protocol/idalias.ts pageIds); NODE holds the minted ids
 const NODE = new Map<string, string>(); const NAMES = ["box2", "bench5", "lockd", "signbox", "bpbox", "child1"];
 const { cdp, evalJson: evalRaw, cleanup, die, BASE } = await scratchBench("party", {
@@ -70,7 +71,7 @@ function guest(name: string) {
   const ws = new WebSocket(BASE.replace("http", "ws") + "/ws"); const msgs: any[] = [];
   ws.onmessage = (ev) => { try { msgs.push(JSON.parse(String(ev.data))); } catch {} };
   const opened = new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
-  return { ws, msgs, async join() { await opened; ws.send(JSON.stringify({ type: "join", world: WORLD, id: name, avatar: "", replica: true }));
+  return { ws, msgs, async join() { await opened; ws.send(JSON.stringify({ type: "join", hello: helloOf(), world: WORLD, id: name, avatar: "", replica: true }));
     const t0 = Date.now(); while (Date.now() - t0 < 5000) { if (msgs.some((m) => m.type === "snapshot" || m.type === "error")) return; await sleep(50); } } };
 }
 

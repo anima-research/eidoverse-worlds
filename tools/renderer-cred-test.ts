@@ -8,6 +8,7 @@
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/renderer-cred-test.ts
 import { scratchSequencer, mkCheck } from "./harness.ts";
+import { helloOf } from "../shared/protocol/hello.js";
 
 const W = "closed", DOOR = "door-key", RKEY = "renderer-key";
 const h = await scratchSequencer("renderercred", { worlds: [W], owner: "keeper",
@@ -23,7 +24,7 @@ const open = (id: string, extra: Record<string, unknown>) => new Promise<Conn>((
   const t = setTimeout(done, 3000);
   ws.onmessage = (e) => { const m = JSON.parse(String(e.data)); c.msgs.push(m); if (m.type === "snapshot") { clearTimeout(t); done(); } };
   ws.onclose = (e) => { c.closedWith = e.code; clearTimeout(t); done(); };
-  ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: W, id, replica: true, ...extra }));
+  ws.onopen = () => ws.send(JSON.stringify({ type: "join", hello: helloOf(), world: W, id, replica: true, ...extra }));
 });
 let rq = 0;
 const req = (c: Conn, verb: string, args: any) => new Promise<any>((res) => {

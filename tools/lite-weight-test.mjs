@@ -6,6 +6,7 @@
 // Recipe: `node tools/lite-weight-test.mjs` (BUN_PATH=<abs bun.exe> on Windows —
 // playwright's launch hangs under bun there, see probe-harness).
 import { launchBrowser, ownedWorld, checker } from './probe-harness.mjs';
+import { helloOf } from '../shared/protocol/hello.js';
 
 const ENGINE = /three\.webgpu|three\.tsl|three-vrm|three-mesh-bvh/;
 const { check, done } = checker();
@@ -167,18 +168,18 @@ const framesOf = (page) => page.evaluate(() => globalThis.__frames ?? { sent: []
   // Route to a remembered pose: join as this identity on a plain socket, send the pose,
   // disconnect. The server calls rememberPose on disconnect (server.ts:212), so the next
   // join under the same id gets it back as `restore`.
-  await page.evaluate(async (pose) => {
+  await page.evaluate(async ([pose, hello]) => {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     const sock = new WebSocket(`${proto}://${location.host}/ws`);
     await new Promise((res) => { sock.onopen = res; });
     const q = new URLSearchParams(location.search);
-    sock.send(JSON.stringify({ type: 'join', world: q.get('world'), id: q.get('name'),
+    sock.send(JSON.stringify({ type: 'join', hello, world: q.get('world'), id: q.get('name'),
       avatar: globalThis.__ewWantAvatar ?? 'claude', spectate: false, renderer: false, token: q.get('key'), replica: true }));
     await new Promise((res) => setTimeout(res, 1200));
     sock.send(JSON.stringify({ type: 'pose', pose }));
     await new Promise((res) => setTimeout(res, 800));
     sock.close();
-  }, STORED);
+  }, [STORED, helloOf()]);
   await page.waitForTimeout(1200);
 
   // Now arrive in lite under that identity and tap one gesture.
@@ -237,7 +238,7 @@ const RAW = `
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     const sock = new WebSocket(proto + '://' + location.host + '/ws');
     await new Promise((res, rej) => { sock.onopen = res; sock.onerror = rej; });
-    sock.send(JSON.stringify({ type: 'join', world: q.get('world'), id,
+    sock.send(JSON.stringify({ type: 'join', hello: ${JSON.stringify(helloOf())}, world: q.get('world'), id,
       avatar: 'claude', spectate: false, renderer: false, token: q.get('key'), replica: true }));
     await new Promise((res) => setTimeout(res, wait));
     for (const m of msgs) { sock.send(JSON.stringify(m)); await new Promise((res) => setTimeout(res, 250)); }

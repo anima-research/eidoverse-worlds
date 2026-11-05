@@ -11,6 +11,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { foundWorlds, freePort, sleep } from "./harness.ts";
+import { helloOf } from "../shared/protocol/hello.js";
 
 const DOOR = "test-door";
 const scratch = mkdtempSync(join(tmpdir(), "ew-permtest-"));
@@ -38,7 +39,7 @@ type Sock = { ws: WebSocket; msgs: any[]; errors: string[]; closedWith: number |
 const open = (joinMsg: Record<string, unknown>) => new Promise<Sock>((resolve) => {
   const ws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
   const s: Sock = { ws, msgs: [], errors: [], closedWith: null };
-  ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: "permtest", token: DOOR, replica: true, ...joinMsg }));
+  ws.onopen = () => ws.send(JSON.stringify({ type: "join", hello: helloOf(), world: "permtest", token: DOOR, replica: true, ...joinMsg }));
   ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); s.msgs.push(m); if (m.type === "error") s.errors.push(m.error); };
   ws.onclose = (ev) => { s.closedWith = ev.code; };
   setTimeout(() => resolve(s), 600);   // resolve regardless — rejection cases inspect closedWith

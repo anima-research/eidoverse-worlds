@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { foundWorlds, freePort } from "./harness.ts";
 import { verifyToken } from "../server/aid1.ts";
 import { accountTag } from "../server/directory.ts";
+import { helloOf } from "../shared/protocol/hello.js";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : freePort(9420);   // a free port, never a fixed default
 const HTTP = `http://localhost:${PORT}`;
@@ -59,7 +60,7 @@ function open(joinMsg: Record<string, unknown>, cookie = ""): Promise<Sock> {
   return new Promise((resolve) => {
     const ws = new WebSocket(WS_URL, cookie ? ({ headers: { cookie } } as any) : undefined);
     const s: Sock = { ws, msgs: [], errors: [], closedWith: null };
-    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: "authtest", replica: true, ...joinMsg }));
+    ws.onopen = () => ws.send(JSON.stringify({ type: "join", hello: helloOf(), world: "authtest", replica: true, ...joinMsg }));
     ws.onmessage = (ev) => {
       const m = JSON.parse(String(ev.data));
       s.msgs.push(m);

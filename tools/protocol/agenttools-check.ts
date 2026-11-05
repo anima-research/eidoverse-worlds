@@ -26,6 +26,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { ENGINE, scratch } from "./common.ts";
 import { tryUntil, pause } from "./wait.ts";
+import { helloOf } from "../../shared/protocol/hello.js";
 
 const root = scratch("agenttools");
 let pass = 0, fail = 0;
@@ -140,7 +141,7 @@ async function sock(name) {
   const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`); const msgs = [];
   ws.onmessage = (ev) => msgs.push(JSON.parse(String(ev.data)));
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
-  ws.send(JSON.stringify({ type: "join", world: "yard", id: name, avatar: "", replica: true }));
+  ws.send(JSON.stringify({ type: "join", hello: helloOf(), world: "yard", id: name, avatar: "", replica: true }));
   await tryUntil(`${name}'s join is answered`, () => msgs.some((m) => m.type === "snapshot" || m.type === "error"), { ms: 4000, step: 50 });
   const snap = msgs.find((m) => m.type === "snapshot"); let rn = 0;
   return { ws, msgs, snap, actor: snap?.actor ?? null, close: () => ws.close(),

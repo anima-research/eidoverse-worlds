@@ -58,6 +58,7 @@ import { join, resolve, basename, dirname } from "node:path";
 import { PNG } from "pngjs";
 import { cdpOn, freePort, sleep, bold, dim } from "../harness.ts";
 import { chromeArgs, chromeCandidates, isBrowser } from "./chrome.ts";
+import { helloOf } from "../../shared/protocol/hello.js";
 
 // ---- flags -----------------------------------------------------------------------------------------------------------
 const argv = process.argv.slice(2);
@@ -249,7 +250,7 @@ async function spectate(s: Server, world: string): Promise<{ entities: number; p
   return new Promise((res, rej) => {
     const ws = new WebSocket(`ws://127.0.0.1:${s.port}/ws`);
     const t = setTimeout(() => { ws.close(); rej(new Error("no snapshot in 15 s")); }, 15_000);
-    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world, id: "parity-eye", name: "parity-eye", avatar: "", spectate: true, replica: true }));   // replica: a client that folds the log (server.ts:930 refuses one that does not)
+    ws.onopen = () => ws.send(JSON.stringify({ type: "join", hello: helloOf(), world, id: "parity-eye", name: "parity-eye", avatar: "", spectate: true, replica: true }));   // replica: a client that folds the log (server.ts:930 refuses one that does not)
     ws.onmessage = (ev) => {
       const m = JSON.parse(String(ev.data));
       if (m.type === "error") { clearTimeout(t); ws.close(); rej(new Error(String(m.error))); }

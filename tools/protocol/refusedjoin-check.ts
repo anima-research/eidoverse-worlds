@@ -7,7 +7,7 @@
 //   old-x   a first-protocol log.jsonl (an old-format world: the server answers the operator with the "translate" visitor
 //           sentence, a guest with world-unavailable, as nope: F23, Mica 11-05)
 //   (nope)  nothing at all: world-unavailable, the same bytes a world this visitor may not discover gets (§F F-3)
-// The server requires the hello (HELLO_REQUIRED=1, the deployment candidate's setting), so every join below proves its client sends one:
+// The server always requires the hello, so every join below proves its client sends one:
 //   W0 the page's early socket joins (one join, adopted); W0b ?earlysock=0's fresh connect (net.js) joins
 // For each world, by both boot paths (the early socket, and ?earlysock=0's fresh connect), old-x as the operator:
 //   W1 the refusal is on screen (an old world: the one-line splash; else the server's sentence), and still there 6 s later (not a 4-second toast)
@@ -43,7 +43,7 @@ const OP_SID = "e".repeat(64), AUTHOR_SID = "f".repeat(64), VEE_SID = "9".repeat
 fs.writeFileSync(SESS, JSON.stringify({ [OP_SID]: { sub: "human:test:op", name: "Opal", scopes: ["worlds:join"], exp: Date.now() + 3600_000 },
   [AUTHOR_SID]: { sub: "human:test:author", name: "author", scopes: ["worlds:join"], exp: Date.now() + 3600_000 },
   [VEE_SID]: { sub: "human:test:vee", name: "Vee", scopes: ["worlds:join"], exp: Date.now() + 3600_000 } }), { mode: 0o600 });
-const { evalJson, cdp, cleanup, die, BASE, SCRATCH } = await scratchBench("refusedjoin", { worlds: ["here"], owner: "keeper", serverEnv: { TRUST_NAMES: "1", SERVER_OPERATORS: "human:test:op", SESSIONS_PATH: SESS, BACKUPS_DIR: "", HELLO_REQUIRED: "1" },
+const { evalJson, cdp, cleanup, die, BASE, SCRATCH } = await scratchBench("refusedjoin", { worlds: ["here"], owner: "keeper", serverEnv: { TRUST_NAMES: "1", SERVER_OPERATORS: "human:test:op", SESSIONS_PATH: SESS, BACKUPS_DIR: "" },
   prepare: (scratch) => {
     // a first-protocol log, cut to its first lines (a v1 world is recognised by its genesis line); old-y is W11's to upgrade
     const lines = fs.readFileSync(V1, "utf8").split("\n").slice(0, 200).filter(Boolean);
@@ -68,7 +68,7 @@ try {
     await cdp.send("Page.navigate", { url: `${BASE}/?world=here&name=T0${early ? "" : "&earlysock=0"}` });
     const probe = () => evalJson(`import('/lib/net.js').then((m) => ({ status: m.net.status, joined: m.net.joined, joins: window.__joins }))`).catch((e) => ({ err: String(e) }));
     const st: any = (await tryUntil("the page joins", async () => { const x: any = await probe(); return x?.joined ? x : null; }, { ms: 20000, step: 300 })) ?? await probe();
-    check(`W0${early ? "" : "b"} a HELLO_REQUIRED server admits the page's ${early ? "early socket's" : "fresh (net.js)"} join: its hello is valid (one join, joined)`, st?.joined === true && st.joins === 1, st);
+    check(`W0${early ? "" : "b"} the server (the hello always required) admits the page's ${early ? "early socket's" : "fresh (net.js)"} join: its hello is valid (one join, joined)`, st?.joined === true && st.joins === 1, st);
   }
   await cdp.send("Page.navigate", { url: "about:blank" });
   // old-x is shown to the operator (F23, Mica 11-05: an old world is said only to the operator and its owner; to a guest it is

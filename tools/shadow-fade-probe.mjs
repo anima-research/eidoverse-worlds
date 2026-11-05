@@ -3,6 +3,7 @@
 // Real client; the witness is the console (a WGSL/pipeline error is console.error) plus rigDebug's caster amounts.
 //   code/scripts/eido-probe.sh -C <worktree> tools/shadow-fade-probe.mjs
 import { launchBrowser, ownedWorld, checker } from './probe-harness.mjs';
+import { helloOf } from '../shared/protocol/hello.js';
 const { check, done } = checker();
 const W = `fade-${Math.random().toString(36).slice(2, 7)}`;
 const world = await ownedWorld({ worlds: [W], owner: 'seeder', env: { TRUST_NAMES: '1' } });   // the seeder owns W, so its creates are admitted
@@ -10,7 +11,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // a few crates near the origin in a world of our own (staging is founded empty and owned; a stranger's spawn there is refused)
 const ws = new WebSocket(world.origin.replace('http', 'ws') + '/ws');
 await new Promise((r) => (ws.onopen = r));
-ws.send(JSON.stringify({ type: 'join', world: W, id: 'seeder', token: world.key, replica: true }));
+ws.send(JSON.stringify({ type: 'join', hello: helloOf(), world: W, id: 'seeder', token: world.key, replica: true }));
 await sleep(800);
 const replies = []; ws.onmessage = (m) => { const d = JSON.parse(String(m.data)); if (d.type === 'reply') replies.push(d.reply); };
 for (let i = 0; i < 6; i++) ws.send(JSON.stringify({ type: 'request', id: `c${i}`, verb: 'create', args: { id: `$crate${i}`, model: `eidoverse/assets/models/crate_large_${i % 2 ? 'red' : 'blue'}.glb`, components: { transform: { pos: [(i - 2.5) * 2.5, 0, -5 - (i % 3) * 2] } } } }));

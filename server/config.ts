@@ -39,8 +39,6 @@ export const SKIP_OPT_SWEEP = process.env.SKIP_OPT_SWEEP === "1";
 // `local:<name>`, so its owner can be who they say without a login. Never set it on a server strangers can reach: there
 // anyone typing the owner's name would BE the owner (round-2 review R2). Off by default; the server says so at boot.
 export const TRUST_NAMES = process.env.TRUST_NAMES === "1";
-/** F-3 (docs/DESIGN-log-vocabulary.md §F): HELLO_REQUIRED=1 refuses a join without a hello; off by default, flipped on at the deployment candidate. */
-export const HELLO_REQUIRED = process.env.HELLO_REQUIRED === "1";
 // OPT_MEM_BUDGET_MB bounds the optimizer so serving a world never competes
 // with encoding one: each optimize child runs under RLIMIT_DATA of this
 // many MB (Linux only — XNU accepts the limit and ignores it), and an item

@@ -23,6 +23,7 @@ import { enc } from "../../shared/protocol/names.js";
 import { worldPose } from "../../shared/hierarchy.js";
 import { idAliases } from "./idalias.ts";
 import { shellWord } from "../../server/oldworlds.ts";
+import { helloOf } from "../../shared/protocol/hello.js";
 const IDS = idAliases();
 
 
@@ -69,7 +70,7 @@ async function client(port: number, world: string, id: string, extra: any = {}) 
   const msgs: any[] = []; const waiters = new Map(); let n = 0;
   ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); msgs.push(m); if (m.type === "reply") { const f = waiters.get(m.id); if (f) { waiters.delete(m.id); f(m.reply); } } };
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
-  ws.send(JSON.stringify({ type: "join", world, id, avatar: "", ...extra }));
+  ws.send(JSON.stringify({ type: "join", hello: helloOf(), world, id, avatar: "", ...extra }));
   await tryUntil(`${id}'s join is answered`, () => msgs.some((m) => m.type === "snapshot" || m.type === "error"), { ms: 3000, step: 50 });
   const c = {
     id, ws, msgs, snapshot: msgs.find((m) => m.type === "snapshot"),

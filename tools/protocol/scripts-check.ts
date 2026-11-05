@@ -22,6 +22,7 @@ import { idAliases } from "./idalias.ts";
 import { tryUntil, pause } from "./wait.ts";
 import { labClock, pinned } from "./clock.ts";
 import { LAB_CATALOGUE, MODELS as LAB_MODELS } from "./labmodels.js";
+import { helloOf } from "../../shared/protocol/hello.js";
 const IDS = idAliases();   // the real-server rows: the suite's names ride as placeholders and minted ids (R 10-17)
 
 const argv = process.argv.slice(2);
@@ -1489,7 +1490,7 @@ const serverCases: Case[] = [{ id: "S1", server: true, what: "the server: a worl
     const client = async (name: string) => { const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`); const msgs: any[] = []; const waiters = new Map(); let n = 0;
       ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); msgs.push(m); if (m.type === "reply") { const fn = waiters.get(m.id); if (fn) { waiters.delete(m.id); fn(m.reply); } } };
       await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
-      ws.send(JSON.stringify({ type: "join", world: "chimes", id: name, avatar: "", replica: true }));
+      ws.send(JSON.stringify({ type: "join", hello: helloOf(), world: "chimes", id: name, avatar: "", replica: true }));
       await tryUntil(`${name}'s join is answered`, () => msgs.some((m) => m.type === "snapshot" || m.type === "error"), { ms: 3000, step: 50 });
       return { ws, msgs, you: msgs.find((m) => m.type === "snapshot")?.actor, req: (verb: string, args: any = {}) => new Promise<any>((res) => { const rid = `${name}-${++n}`; waiters.set(rid, (r: any) => res(IDS.back(r))); ws.send(JSON.stringify({ type: "request", id: rid, verb, args: IDS.out(verb, args) })); setTimeout(() => { if (waiters.delete(rid)) res({ ok: false, refused: { code: "timeout" } }); }, 8000); }),
         send: (m: any) => ws.send(JSON.stringify(m)) }; };
@@ -1540,7 +1541,7 @@ serverCases.push({ id: "S3", server: true, what: "the server: `debug {script}` k
       const client = async (name: string) => { const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`); const msgs: any[] = []; const waiters = new Map(); let n = 0;
         ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); msgs.push(m); const k = m.type === "reply" ? m.id : m.type === "debug" ? m.reqId : null; const fn = waiters.get(k); if (fn) { waiters.delete(k); fn(m.type === "reply" ? m.reply : m); } };
         await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
-        ws.send(JSON.stringify({ type: "join", world: "chimes", id: name, avatar: "", replica: true }));
+        ws.send(JSON.stringify({ type: "join", hello: helloOf(), world: "chimes", id: name, avatar: "", replica: true }));
         await tryUntil(`${name}'s join is answered`, () => msgs.some((m) => m.type === "snapshot" || m.type === "error"), { ms: 3000, step: 50 });
         const ask = (m: any) => new Promise<any>((res) => { const rid = `${name}-${++n}`; waiters.set(rid, res); ws.send(JSON.stringify(m.type === "request" ? { ...m, id: rid } : { ...m, reqId: rid })); setTimeout(() => { if (waiters.delete(rid)) res({ timeout: true }); }, 8000); });
         return { ws, req: (verb: string, args: any = {}) => ask({ type: "request", verb, args: IDS.out(verb, args) }).then((r) => IDS.back(r)), debug: (script: string) => ask({ type: "debug", script, limit: 50 }) }; };
@@ -1572,7 +1573,7 @@ serverCases.push({ id: "S2", server: true, what: "the server: while a hostile sc
       const client = async (world: string, name: string) => { const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`); const msgs: any[] = []; const waiters = new Map(); let n = 0;
         ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); msgs.push(m); if (m.type === "reply") { const fn = waiters.get(m.id); if (fn) { waiters.delete(m.id); fn(m.reply); } } };
         await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
-        ws.send(JSON.stringify({ type: "join", world, id: name, avatar: "", replica: true }));
+        ws.send(JSON.stringify({ type: "join", hello: helloOf(), world, id: name, avatar: "", replica: true }));
         await tryUntil(`${name}'s join is answered`, () => msgs.some((m) => m.type === "snapshot" || m.type === "error"), { ms: 3000, step: 50 });
         return { ws, req: (verb: string, args: any = {}) => new Promise<any>((res) => { const rid = `${name}-${++n}`; waiters.set(rid, (r: any) => res(IDS.back(r))); ws.send(JSON.stringify({ type: "request", id: rid, verb, args: IDS.out(verb, args) })); setTimeout(() => { if (waiters.delete(rid)) res({ ok: false, refused: { code: "timeout" } }); }, 30000); }) }; };
       const ann = await client("alpha", "Ann"), bea = await client("beta", "Bea");

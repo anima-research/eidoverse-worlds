@@ -14,6 +14,7 @@ import { ENGINE, scratch } from "./common.ts";
 import { readLog, fold } from "../../shared/protocol/fold.js";
 import { idAliases } from "./idalias.ts";
 import { tryUntil } from "./wait.ts";
+import { helloOf } from "../../shared/protocol/hello.js";
 const IDS = idAliases();   // R 10-17: the suite's names ride as placeholders and minted ids
 
 const root = scratch("forkreset");
@@ -37,7 +38,7 @@ async function sock(port) {
   ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); msgs.push(m); if (m.type === "reply") waiters.get(m.id)?.(m.reply); };
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
   return { msgs,
-    async join(world, id, extra = {}) { const k = msgs.length; ws.send(JSON.stringify({ type: "join", world, id, avatar: "", replica: true, ...extra }));
+    async join(world, id, extra = {}) { const k = msgs.length; ws.send(JSON.stringify({ type: "join", hello: helloOf(), world, id, avatar: "", replica: true, ...extra }));
       await tryUntil(`${id}'s join is answered`, () => msgs.slice(k).some((m) => m.type === "snapshot" || m.type === "error"), { ms: 3000, step: 50 }); await sleep(50);
       return { snapshot: msgs.slice(k).find((m) => m.type === "snapshot"), errors: msgs.slice(k).filter((m) => m.type === "error").map((m) => m.error) }; },
     req: (verb, args = {}) => new Promise((res) => { const id = `r${++n}`; waiters.set(id, (r) => res(IDS.back(r))); ws.send(JSON.stringify({ type: "request", id, verb, args: IDS.out(verb, args) })); setTimeout(() => res({ ok: false, timeout: true }), 5000); }),

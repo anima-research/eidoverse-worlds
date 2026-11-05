@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { encodeGrid } from '../shared/terrainshape.js';
 import { terrainParams, makeHeightField } from '../shared/terrainmath.js';
 import { scratchBench, mkCheck, sleep } from './harness.ts';
+import { helloOf } from '../shared/protocol/hello.js';
 
 const OPT = mkdtempSync(join(tmpdir(), 'hm-ready-opt-'));
 const REF_A = 'store/heightmaps/00000000000000b1.json', REF_B = 'store/heightmaps/00000000000000b2.json';
@@ -47,7 +48,7 @@ const msgs: any[] = [];
 const dws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
 dws.onmessage = (ev) => msgs.push(JSON.parse(String(ev.data)));
 await new Promise((r, j) => { dws.onopen = r as any; dws.onerror = j as any; });
-dws.send(JSON.stringify({ type: 'join', world: WORLD, id: 'hmdriver', token: '', replica: true }));
+dws.send(JSON.stringify({ type: 'join', hello: helloOf(), world: WORLD, id: 'hmdriver', token: '', replica: true }));
 await until(() => msgs.some((m) => m.type === 'snapshot'), 'driver join');
 // the ground is @world's terrain component: one door request (`set`), answered by its reply
 let reqN = 0;

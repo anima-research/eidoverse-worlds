@@ -49,6 +49,7 @@ import { join } from "node:path";
 import { createServer } from "node:net";
 import { launchBrowser } from "./probe-harness.mjs";
 import { foundWorlds } from "./harness.ts";
+import { helloOf } from "../shared/protocol/hello.js";
 
 const ROOT = join(import.meta.dir, "..");
 
@@ -195,7 +196,7 @@ try {
       }
     };
     // replica: a world speaks only to clients that fold its log
-    watcher.onopen = () => watcher.send(JSON.stringify({ type: "join", world: "commons", id: "watcher", avatar: "a.vrm", replica: true }));
+    watcher.onopen = () => watcher.send(JSON.stringify({ type: "join", hello: helloOf(), world: "commons", id: "watcher", avatar: "a.vrm", replica: true }));
   });
 
   // The host: an MCPL client on the door, as the agent `claude`.

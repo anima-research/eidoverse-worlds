@@ -8,6 +8,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { foundWorlds, saysIn } from "./harness.ts";
+import { helloOf } from "../shared/protocol/hello.js";
 
 // Owned ports: derived from pid so parallel CI runs don't collide; ownership is
 // verified by the world's own snapshot handshake below (a foreign listener would
@@ -52,7 +53,7 @@ try {
     const t = setTimeout(() => rej(new Error("watcher join timeout — is the owned world up?")), 8000);
     watcher.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); seen.push(m);
       if (m.type === "snapshot") { clearTimeout(t); res(); } };
-    watcher.onopen = () => watcher.send(JSON.stringify({ type: "join", world: "commons", id: "watcher", spectate: true, replica: true }));
+    watcher.onopen = () => watcher.send(JSON.stringify({ type: "join", hello: helloOf(), world: "commons", id: "watcher", spectate: true, replica: true }));
   });
 
   // The advertised MCPL surface, exactly as a schema-driven client would use it.

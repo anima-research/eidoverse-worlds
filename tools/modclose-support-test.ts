@@ -24,6 +24,7 @@ import { foundWorlds, freePort } from "./harness.ts";
 import { WorldAgent } from "../mcpl/agent.ts";
 import { supportHolders } from "../mcpl/physics.ts";
 import { idAliases } from "./protocol/idalias.ts";
+import { helloOf } from "../shared/protocol/hello.js";
 const IDS = idAliases();   // R 10-17: the suite's names ride as placeholders and minted ids
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : freePort(9460);   // a free port, never a fixed default
@@ -71,7 +72,7 @@ const wardenReq = async (verb: string, args: any) => { const id = `w${++rq}`; wa
 /** a person's directory identity, as their arrival announced it (moderation names identities, never typed names) */
 const idOf = (name: string) => seen.find((m) => m.type === "arrive" && m.id === name)?.actorId;
 await new Promise<void>((res, rej) => {
-  warden.onopen = () => { warden.send(JSON.stringify({ type: "join", world: WORLD, id: "warden", avatar: "eidoverse/assets/vrms/claude.vrm", replica: true })); res(); };
+  warden.onopen = () => { warden.send(JSON.stringify({ type: "join", hello: helloOf(), world: WORLD, id: "warden", avatar: "eidoverse/assets/vrms/claude.vrm", replica: true })); res(); };
   warden.onerror = () => rej(new Error("warden failed to connect — is the scratch server up?"));
 });
 await sleep(400);

@@ -6,6 +6,7 @@ import { strict as assert } from "node:assert";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { helloOf } from "../shared/protocol/hello.js";
 const scratch = mkdtempSync(join(tmpdir(), "ew-screenshots-"));
 mkdirSync(join(scratch, "opt"));
 foundWorlds(join(scratch, "worlds"), ["screenshot-test", "other-world", "sweep-lobby", "sweep-build"]);
@@ -29,7 +30,7 @@ async function wait(fn: () => boolean, label: string) {
 }
 async function connect(id: string, extras = {}, world = "screenshot-test") {
   const messages: any[] = []; const ws = new WebSocket(origin.replace("http:", "ws:") + "/ws"); sockets.push(ws);
-  ws.onopen = () => ws.send(JSON.stringify({ type: "join", world, id, token: "screenshot-test-door", replica: true, ...extras }));
+  ws.onopen = () => ws.send(JSON.stringify({ type: "join", hello: helloOf(), world, id, token: "screenshot-test-door", replica: true, ...extras }));
   ws.onmessage = e => messages.push(JSON.parse(String(e.data)));
   await wait(() => messages.some(m => m.type === "snapshot"), id + " join");
   return { ws, messages, send: (m: object) => ws.send(JSON.stringify(m)) };

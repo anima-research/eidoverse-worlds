@@ -18,6 +18,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { scratchBench, mkCheck, sleep } from "../harness.ts";
 import { pageWaiter } from "./wait.ts";
+import { helloOf } from "../../shared/protocol/hello.js";
 
 const WORLD = "xss3";
 // the reviewer's payload, and a <svg onload> (fires synchronously on insertion, no network) for the seam stage
@@ -37,7 +38,7 @@ function guest(name: string) {
   ws.onmessage = (ev) => { try { msgs.push(JSON.parse(String(ev.data))); } catch {} };
   const opened = new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
   return { ws, msgs, opened, send: (m: any) => ws.send(JSON.stringify(m)),
-    async join() { await opened; ws.send(JSON.stringify({ type: "join", world: WORLD, id: name, avatar: "", replica: true }));
+    async join() { await opened; ws.send(JSON.stringify({ type: "join", hello: helloOf(), world: WORLD, id: name, avatar: "", replica: true }));
       const t0 = Date.now(); while (Date.now() - t0 < 5000) { const s = msgs.find((m) => m.type === "snapshot"), e = msgs.find((m) => m.type === "error"); if (s || e) return { snap: s, err: e }; await sleep(50); } return {}; } };
 }
 

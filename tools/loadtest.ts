@@ -1,3 +1,4 @@
+import { helloOf } from "../shared/protocol/hello.js";
 // Show-scale load harness: N synthetic performers + M spectators against a
 // running sequencer. Measures what the audience will actually feel:
 //   - join latency (ws open → snapshot), simultaneous-arrival burst
@@ -40,7 +41,7 @@ function connect(id: string, spectate: boolean, n = 0): Promise<Spec> {
     const ws = new WebSocket(URL);
     const s: Spec = { ws, joinMs: -1, frames: 0, gaps: 0, lastSeq: -1, lat: [], says: new Set(), openAt: performance.now(), snapAt: 0 };
     const to = setTimeout(() => reject(new Error(`${id}: join timeout`)), 30_000);
-    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: WORLD, id, avatar: AVATARS[n % AVATARS.length], spectate, token: TOKEN, replica: true }));
+    ws.onopen = () => ws.send(JSON.stringify({ type: "join", hello: helloOf(), world: WORLD, id, avatar: AVATARS[n % AVATARS.length], spectate, token: TOKEN, replica: true }));
     ws.onmessage = (ev) => {
       const m = JSON.parse(String(ev.data));
       if (m.type === "snapshot") {

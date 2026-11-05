@@ -8,6 +8,7 @@
 // must not see the crate (control); `at: crate` must put it in the middle of the frame. Before the change the
 // `at` parameter is ignored, the frame is first person, and the middle is not red: watched failing.
 import { launchBrowser, ownedWorld, checker } from './probe-harness.mjs';
+import { helloOf } from '../shared/protocol/hello.js';
 const { check, done } = checker();
 const W = `snapat-${Math.random().toString(36).slice(2, 7)}`;
 const world = await ownedWorld({ worlds: [W], owner: 'agent', env: { TRUST_NAMES: '1' } });   // the agent owns W, so its create is admitted
@@ -22,7 +23,7 @@ ws.onmessage = (m) => { const d = JSON.parse(String(m.data));
   if (d.type === 'snapshot') joined ??= 'ok'; else if (d.type === 'error') joined ??= `refused: ${d.error}`;
   else if (d.type === 'reply') replies.set(d.id, d); };
 ws.onclose = (e) => { joined ??= `closed ${e.code} ${e.reason}`; };
-ws.send(JSON.stringify({ type: 'join', world: W, id: 'agent', token: world.key, replica: true }));
+ws.send(JSON.stringify({ type: 'join', hello: helloOf(), world: W, id: 'agent', token: world.key, replica: true }));
 for (let i = 0; i < 100 && !joined; i++) await sleep(100);
 if (joined !== 'ok') { console.error(`the agent's join failed: ${joined ?? 'no answer in 10 s'}`); await world.close(); process.exit(1); }
 ws.send(JSON.stringify({ type: 'pose', pose: { p: [0, 0, 0], yaw: 0, speed: 0, clip: 'idle' } }));

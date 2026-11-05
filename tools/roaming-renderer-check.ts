@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { health } from '../deploy/render-health.ts';
 import { ownedWorld } from './probe-harness.mjs';
+import { helloOf } from '../shared/protocol/hello.js';
 const live = process.argv[2] ?? null;
 const shot = process.env.SHOT;
 const world = live ? process.env.WORLD : `roam-build-${Date.now().toString(36)}`, lobby = live ? process.env.LOBBY : `roam-lobby-${Date.now().toString(36)}`;
@@ -55,7 +56,7 @@ try {
           if (m.type === 'snapshot') settle();
           else if (m.type === 'error') settle(new Error(`joining the lobby "${lobby}" was refused: ${m.error}`));
         };
-        f.onopen = () => f.send(JSON.stringify({ type: 'join', world: lobby, id: 'lobby-visitor', agent: true, token: key, replica: true, avatar: 'eidoverse/assets/vrms/shino.vrm' }));
+        f.onopen = () => f.send(JSON.stringify({ type: 'join', hello: helloOf(), world: lobby, id: 'lobby-visitor', agent: true, token: key, replica: true, avatar: 'eidoverse/assets/vrms/shino.vrm' }));
       });
     } finally { f.onclose = null; f.close(); }
   }
@@ -83,7 +84,7 @@ try {
   const joined = new Promise<void>((res, rej) => { sock.onmessage = (e) => { const m = JSON.parse(String(e.data));
     if (m.type === 'snapshot') res(); else if (m.type === 'error') rej(new Error(`the agent's join was refused: ${m.error}`));
     else if (m.type === 'reply') made[m.id] = m.ok === true; }; });
-  sock.send(JSON.stringify({ type: 'join', world, id: 'builder-agent', agent: true, token: key, agentToken, replica: true, avatar: 'eidoverse/assets/vrms/shino.vrm' }));
+  sock.send(JSON.stringify({ type: 'join', hello: helloOf(), world, id: 'builder-agent', agent: true, token: key, agentToken, replica: true, avatar: 'eidoverse/assets/vrms/shino.vrm' }));
   await joined;
   for (const v of crates) { sock.send(JSON.stringify(v)); await Bun.sleep(300); }
   for (let i = 0; i < 50 && Object.keys(made).length < crates.length; i++) await Bun.sleep(100);

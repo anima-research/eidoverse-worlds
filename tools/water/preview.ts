@@ -3,6 +3,7 @@
 import {mkdtempSync,mkdirSync,readFileSync,copyFileSync} from 'node:fs';
 import {join,resolve,dirname} from 'node:path';
 import {tmpdir} from 'node:os';
+import { helloOf } from '../../shared/protocol/hello.js';
 const bundle=resolve(process.argv[2]??'');
 const port=process.argv[3]??'19347';
 const manifest=JSON.parse(readFileSync(join(bundle,'manifest.json'),'utf8'));
@@ -22,7 +23,7 @@ if(!up){server.kill();throw Error('the preview server did not come up');}
 const ws=new WebSocket(`ws://127.0.0.1:${port}/ws`);
 const reply:any=await new Promise((res,rej)=>{
  const timer=setTimeout(()=>rej(Error('no reply in 30 s')),30000);
- ws.onopen=()=>ws.send(JSON.stringify({type:'join',world:'water-preview',id:'water-author',avatar:'',replica:true}));
+ ws.onopen=()=>ws.send(JSON.stringify({type:'join', hello: helloOf(),world:'water-preview',id:'water-author',avatar:'',replica:true}));
  ws.onerror=()=>rej(Error('cannot connect'));
  ws.onmessage=(e)=>{const m=JSON.parse(String(e.data));
   if(m.type==='error'){clearTimeout(timer);rej(Error(m.error??'refused'));}

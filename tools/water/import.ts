@@ -8,6 +8,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { requestsOf } from './requests.js';
+import { helloOf } from '../../shared/protocol/hello.js';
 
 const argv = process.argv.slice(2), flags = new Set(argv.filter((a) => a.startsWith('--'))), [file, server, world] = argv.filter((a) => !a.startsWith('--'));
 const dry = flags.has('--dry'), apply = flags.has('--apply');
@@ -56,7 +57,7 @@ try {
       if (m.type === 'reply' && /^water-effect-/.test(m.id) && !m.ok) { clearTimeout(timer); rej(Error(`effect upload refused: ${JSON.stringify(m.reply?.refused ?? m)}`)); }
       if (m.type === 'reply' && m.id === 'water-import') { clearTimeout(timer); res(m); } };
     ws.onclose = () => rej(Error('the server closed the connection'));
-    ws.send(JSON.stringify({ type: 'join', world, id: 'water-import', token }));
+    ws.send(JSON.stringify({ type: 'join', hello: helloOf(), world, id: 'water-import', token }));
   });
   console.log(JSON.stringify({ ok: reply.ok, refused: reply.reply?.refused ?? null, ids: reply.reply?.ids ?? null }, null, 1));
   if (!reply.ok) process.exit(1);

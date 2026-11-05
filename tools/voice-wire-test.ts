@@ -1,3 +1,4 @@
+import { helloOf } from "../shared/protocol/hello.js";
 // Voice state on the pose wire (`mic`, `hear` — shared/presencewire.js voiceWire) under the owner's recorded privacy
 // decision (docs/pose-wire.md "Voice state — who sees it", 2026-10-02): it is shared with EVERYONE in the world, like
 // a mute/deafen indicator, and it is live-only. End to end through a scratch sequencer:
@@ -48,7 +49,7 @@ async function join_(id: string, extra: Record<string, unknown> = {}): Promise<S
       if (m.type === "frame" && m.poses?.[OWNER]) s.last = m.poses[OWNER];
       if (m.type === "leave" && typeof m.id === "string") s.left.add(m.id);
     };
-    s.ws.onopen = () => s.ws.send(JSON.stringify({ type: "join", world: WORLD, id, avatar: AVATAR, replica: true, ...extra }));
+    s.ws.onopen = () => s.ws.send(JSON.stringify({ type: "join", hello: helloOf(), world: WORLD, id, avatar: AVATAR, replica: true, ...extra }));
   });
   return s;
 }

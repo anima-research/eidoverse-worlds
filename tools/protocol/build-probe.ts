@@ -24,6 +24,7 @@ const CRATE = "eidoverse/assets/models/crate_large_blue.glb";
 let worldsDir = "";
 import { inPage } from "./idalias.ts";
 import { pageWaiter } from "./wait.ts";
+import { helloOf } from "../../shared/protocol/hello.js";
 // R 10-17: the page names what it makes with placeholders (tools/protocol/idalias.ts pageIds); NODE holds the minted ids
 // once read back, so node-side checks and later page code use them
 const NODE = new Map<string, string>(); const NAMES = ["house-a", "house-b"];
@@ -62,7 +63,7 @@ try {
   if (secs < 4) await die(1, "the page never booted");
   await evalJson(`(() => { const s = document.querySelector('#splash'); if (s) s.style.pointerEvents = 'none'; return true; })()`);
   await waitFor(`import('/lib/net.js').then((m) => m.replicaActive())`);
-  bob.send(JSON.stringify({ type: "join", world: WORLD, id: "bob", avatar: "", replica: true })); await sleep(600);
+  bob.send(JSON.stringify({ type: "join", hello: helloOf(), world: WORLD, id: "bob", avatar: "", replica: true })); await sleep(600);
   check("(setup) the owner makes bob a builder", (await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: '@world', component: 'roles:${BOB}', value: { role: 'builder' } })).ok;`)) === true);
   await evalJson(`import('/lib/build.js').then((m) => (m.setBuildMode(true), true))`);
   check("(setup) build mode opens", await waitFor(`document.body.classList.contains('build-mode')`));

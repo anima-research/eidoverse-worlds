@@ -58,6 +58,7 @@ const env = (extra = {}) => ({ ...process.env, WORLDS_DIR: W, OPT_DIR: OPT, SKIP
 const r0 = Bun.spawnSync(["bun", "tools/protocol/world.ts", "found", "yard", "--owner", "Ann"], { cwd: ENGINE, env: env() });
 ok(r0.exitCode === 0, "(setup) found yard, Ann owns it", r0.stderr.toString().slice(-300));
 import { idAliases } from "./idalias.ts";
+import { helloOf } from "../../shared/protocol/hello.js";
 const IDS = idAliases();
 let port = 9640; for (; port < 9740; port++) { try { const s = Bun.listen({ hostname: "127.0.0.1", port, socket: { data() {} } }); s.stop(true); break; } catch {} }
 const logf = path.join(root, "srv.log");
@@ -73,7 +74,7 @@ try {
     const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`); const msgs = [];
     ws.onmessage = (ev) => msgs.push(JSON.parse(String(ev.data)));
     await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
-    ws.send(JSON.stringify({ type: "join", world: "yard", id: name, avatar: "", replica: true }));
+    ws.send(JSON.stringify({ type: "join", hello: helloOf(), world: "yard", id: name, avatar: "", replica: true }));
     for (let i = 0; i < 80 && !msgs.some((m) => m.type === "snapshot" || m.type === "error"); i++) await sleep(50);
     let rn = 0;
     return { ws, msgs, close: () => ws.close(),

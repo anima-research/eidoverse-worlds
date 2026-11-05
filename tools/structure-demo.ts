@@ -1,3 +1,4 @@
+import { helloOf } from '../shared/protocol/hello.js';
 // Author a demo griddled house into a world, over real websockets.
 //
 //   WORLD_URL=ws://localhost:8961/ws JOIN_TOKEN=test-door bun run tools/structure-demo.ts [world]
@@ -57,7 +58,7 @@ const STRUCTURE = {
 const ws = new WebSocket(`${URL_}?token=${encodeURIComponent(TOKEN)}`);
 const send = (o: unknown) => ws.send(JSON.stringify(o));
 
-ws.onopen = () => send({ type: 'join', world: WORLD, id: ID, token: TOKEN, replica: true });
+ws.onopen = () => send({ type: 'join', hello: helloOf(), world: WORLD, id: ID, token: TOKEN, replica: true });
 
 ws.onmessage = (ev: MessageEvent) => {
   const m = JSON.parse(String(ev.data));

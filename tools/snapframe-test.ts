@@ -17,6 +17,7 @@ import * as fp from "../client/lib/fp_view.js";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { helloOf } from "../shared/protocol/hello.js";
 
 let pass = 0, fail = 0;
 function check(name: string, cond: boolean, detail = "") {
@@ -97,7 +98,7 @@ for (let i = 1; i <= 10; i++) {
   await new Promise<void>((res, rej) => {
     const timer = setTimeout(() => rej(new Error(`renderer-fake-${i}'s join had no answer in 10 s`)), 10_000);
     ws.onerror = () => { clearTimeout(timer); rej(new Error(`renderer-fake-${i}'s socket failed`)); };
-    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: WORLD, id: `renderer-fake-${i}`, spectate: true, renderer: true, token: TOKEN, replica: true }));
+    ws.onopen = () => ws.send(JSON.stringify({ type: "join", hello: helloOf(), world: WORLD, id: `renderer-fake-${i}`, spectate: true, renderer: true, token: TOKEN, replica: true }));
     ws.onmessage = (ev) => { if (JSON.parse(String(ev.data)).type === "snapshot") { clearTimeout(timer); res(); } };
   });
   ws.onmessage = (ev) => {

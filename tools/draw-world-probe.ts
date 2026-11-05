@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs';
 import { PNG } from 'pngjs';
 import { ownedWorld } from './probe-harness.mjs';
 import { qFromYaw } from '../shared/rot.js';
+import { helloOf } from '../shared/protocol/hello.js';
 
 // founded and owned by the driver's id (TRUST_NAMES), so its creates are admitted (#260 house I419)
 const world = await ownedWorld({ worlds: ['draw-probe'], owner: 'draw-driver', env: { ACT_RATE: '250', TRUST_NAMES: '1' } });
@@ -13,7 +14,7 @@ const errors = [];
 try {
   ws = new WebSocket(world.origin.replace('http:', 'ws:')+'/ws');
   await new Promise((resolve, reject) => {
-    ws.onopen = () => ws.send(JSON.stringify({ type:'join', id:'draw-driver', world:'draw-probe', token:world.key, replica:true }));
+    ws.onopen = () => ws.send(JSON.stringify({ type:'join', hello: helloOf(), id:'draw-driver', world:'draw-probe', token:world.key, replica:true }));
     ws.onmessage = (e) => { const m=JSON.parse(e.data); if(m.type==='snapshot') resolve(m); if(m.type==='error') reject(Error(m.error)); };
     ws.onerror = reject;
   });

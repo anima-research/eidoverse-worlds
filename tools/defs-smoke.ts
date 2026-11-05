@@ -16,6 +16,7 @@ import { mkdtempSync, readFileSync, readdirSync, copyFileSync, mkdirSync, writeF
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { scratchBench, readSequencerLog, mkCheck, bold, dim, sleep, ROOT, foundWorlds } from "./harness.ts";
+import { helloOf } from "../shared/protocol/hello.js";
 
 const HEADED = process.argv.includes("--headed");
 const ECHO = process.argv.includes("--console");
@@ -174,7 +175,7 @@ function joinDriver(world: string, id: string): Promise<Driver> {
       close: () => { try { dws.close(); } catch { /* fine */ } },
     };
     let n = 0;
-    dws.onopen = () => dws.send(JSON.stringify({ type: "join", world, id, token: "", replica: true }));
+    dws.onopen = () => dws.send(JSON.stringify({ type: "join", hello: helloOf(), world, id, token: "", replica: true }));
     dws.onmessage = (ev) => {
       const m = JSON.parse(String(ev.data));
       if (m.type === "snapshot") resolveP(self);

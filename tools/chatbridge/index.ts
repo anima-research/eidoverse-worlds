@@ -1,3 +1,4 @@
+import { helloOf } from "../../shared/protocol/hello.js";
 // Chat bridge: mirrors a world's spoken chat into one Discord text channel,
 // and carries that channel's messages back in as speech.
 //
@@ -181,7 +182,7 @@ function connectWorld() {
   const ws = new WebSocket(WORLD_URL);
   worldWs = ws;
   ws.onopen = () =>
-    ws.send(JSON.stringify({ type: "join", world: WORLD_NAME, id: BRIDGE_ID, token: WORLD_TOKEN, replica: true }));
+    ws.send(JSON.stringify({ type: "join", hello: helloOf(), world: WORLD_NAME, id: BRIDGE_ID, token: WORLD_TOKEN, replica: true }));
   ws.onclose = () => {
     joined = false;
     log("world socket closed — reconnecting in 1.5s");

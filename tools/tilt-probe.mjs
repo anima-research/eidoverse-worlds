@@ -11,6 +11,7 @@
 // nothing founded, and authors with v1 `verb` spawn/place and chosen ids. It needs a port (world.ts found; create/set
 // requests with $placeholders) before it shows anything; until then it times out at the join snapshot.
 import { chromium } from 'playwright-core';
+import { helloOf } from '../shared/protocol/hello.js';
 
 const BASE = (process.argv[2] ?? 'ws://localhost:8998').replace(/\/$/, '');
 const HTTP = BASE.replace(/^ws/, 'http');
@@ -33,7 +34,7 @@ try {
   ws = new WebSocket(`${BASE}/ws?name=builder`);
   const errs = [];
   await timed(new Promise((res, rej) => {
-    ws.onopen = () => ws.send(JSON.stringify({ type: 'join', world: WORLD, id: 'builder', token: process.env.JOIN_TOKEN ?? '' }));
+    ws.onopen = () => ws.send(JSON.stringify({ type: 'join', hello: helloOf(), world: WORLD, id: 'builder', token: process.env.JOIN_TOKEN ?? '' }));
     ws.onmessage = (e) => { const m = JSON.parse(String(e.data)); if (m.type === 'snapshot') res(); if (m.type === 'error') errs.push(m.error); };
     ws.onerror = rej;
   }), 10000, 'join snapshot');

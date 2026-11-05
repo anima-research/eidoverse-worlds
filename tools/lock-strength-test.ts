@@ -4,6 +4,7 @@
 import { scratchBench, mkCheck } from './harness.ts';
 import { pagedEval } from './protocol/idalias.ts';
 import { pageWaiter, tryUntil } from './protocol/wait.ts';
+import { helloOf } from '../shared/protocol/hello.js';
 
 const WORLD = 'locks';
 const { cdp, evalJson: evalRaw, cleanup, die, BASE } = await scratchBench('lock-strength', { worlds: [WORLD], owner: 'editbot', serverEnv: { TRUST_NAMES: '1', ACT_RATE: '1000' } });
@@ -27,7 +28,7 @@ try {
   const replies = new Map<string, (r: any) => void>();
   const bob = await new Promise<string>((res, rej) => {
     ws = new WebSocket(BASE.replace('http', 'ws') + '/ws');
-    ws.onopen = () => ws!.send(JSON.stringify({ type: 'join', world: WORLD, id: 'bob', avatar: '', replica: true }));
+    ws.onopen = () => ws!.send(JSON.stringify({ type: 'join', hello: helloOf(), world: WORLD, id: 'bob', avatar: '', replica: true }));
     ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === 'snapshot' && m.actor) res(m.actor); if (m.type === 'reply') replies.get(m.id)?.(m); };
     ws.onerror = rej; setTimeout(() => rej(new Error('bob never joined')), 15000);
   });

@@ -1,3 +1,4 @@
+import { helloOf } from "../shared/protocol/hello.js";
 // Headless bodies are pushable: the WorldAgent's knockdown semantics, against
 // a real scratch sequencer. A body with no physics in-process cannot tumble,
 // but it must (1) CONSENT, (2) land displaced the way the shove was taking
@@ -56,7 +57,7 @@ function human(name: string): Promise<Human> {
     const ws = new WebSocket(`${URL}?name=${name}`);
     const errors: string[] = [];
     const send = (m2: any) => ws.send(JSON.stringify(m2));
-    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: W, id: name, token: TOKEN, replica: true }));
+    ws.onopen = () => ws.send(JSON.stringify({ type: "join", hello: helloOf(), world: W, id: name, token: TOKEN, replica: true }));
     ws.onmessage = (e) => {
       const m = JSON.parse(String(e.data));
       if (m.type === "error") errors.push(String(m.error));

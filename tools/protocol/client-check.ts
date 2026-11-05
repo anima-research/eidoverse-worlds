@@ -33,6 +33,7 @@ const CRATE = "eidoverse/assets/models/crate_large_blue.glb", RED = "eidoverse/a
 let worldsDir = "";
 import { idAliases, inPage } from "./idalias.ts";
 import { pause, tryUntil, pageWaiter, WAIT_SCALE } from "./wait.ts";
+import { helloOf } from '../../shared/protocol/hello.js';
 // R 10-17: the scene's names ride as placeholders and minted ids — bob's through IDS (node), the page's own through the page
 // helper (pageIds); every expression sent to the page reads the quoted names as ids (inPage)
 const IDS = idAliases();
@@ -108,7 +109,7 @@ try {
     const plain = await evalJson(people);
     check("KU1 Ctrl+U leaves People Here alone; U alone opens it", !before.open && !ctrl.open && !ctrl.vis && plain.vis && plain.open, { before, ctrl, plain });
   }
-  bob.send(JSON.stringify({ type: "join", world: WORLD, id: "bob", avatar: "", replica: true })); await tryUntil("bob's snapshot names his id", () => BOB || undefined, { ms: 15000 });   // a fixed 500 ms raced the snapshot on Windows CI (40976310724): roles: with no id   // replica: a world speaks only to clients that fold its log (3c)
+  bob.send(JSON.stringify({ type: "join", hello: helloOf(), world: WORLD, id: "bob", avatar: "", replica: true })); await tryUntil("bob's snapshot names his id", () => BOB || undefined, { ms: 15000 });   // a fixed 500 ms raced the snapshot on Windows CI (40976310724): roles: with no id   // replica: a world speaks only to clients that fold its log (3c)
   check("(setup) the owner makes bob a builder", (await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: '@world', component: 'roles:${BOB}', value: { role: 'builder' } })).ok;`)) === true && /^u-/.test(BOB));
   await evalJson(`import('/lib/build.js').then((m) => (m.setBuildMode(true), true))`);
   check("B2 build mode opens (the owner may build)", await waitFor(`document.body.classList.contains('build-mode')`));
@@ -892,7 +893,7 @@ try {
     // CP4 (setup) carl visits, speaks and leaves, BEFORE the page reconnects (CP6): a page that never saw him arrive
     { const carl = new WebSocket(BASE.replace("http", "ws") + "/ws"); await new Promise((r, j) => { carl.onopen = r; carl.onerror = j; });
       carl.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "snapshot") { carlId = m.actor; carl.send(JSON.stringify({ type: "request", id: 1, verb: "say", args: { text: "carl was here" } })); } };
-      carl.send(JSON.stringify({ type: "join", world: WORLD, id: "carl", avatar: "", replica: true }));
+      carl.send(JSON.stringify({ type: "join", hello: helloOf(), world: WORLD, id: "carl", avatar: "", replica: true }));
       await waitDisk(() => entries().some((e) => e?.kind === "say" && e.body?.text === "carl was here")); carl.close(); await sleep(300); }
     // CP6 a line typed while reconnecting is queued, then sent (the port dropped it as 'offline')
     // the first redial is random in [0, 1.2 s] (shared/redial.js), so redials are held here until the queued line is seen

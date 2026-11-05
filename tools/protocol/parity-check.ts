@@ -23,6 +23,7 @@ import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.t
 import { custodyAt, modLogAt } from "../../server/custody.ts";
 import { labClock, pinned } from "./clock.ts";
 import { LAB_CATALOGUE, MODELS as LAB_MODELS } from "./labmodels.js";
+import { helloOf } from "../../shared/protocol/hello.js";
 
 const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
@@ -137,7 +138,7 @@ async function sock(port: number) {
     ws.send(JSON.stringify({ type: "request", id, verb, args }));
     const t0 = Date.now(); const look = () => { const m = msgs.slice(k).find((x) => x.type === "reply" && x.id === id); if (m) return res(m.reply); if (Date.now() - t0 > 4000) return res({ timeout: true }); setTimeout(look, 30); }; look(); });
   return { msgs, req, close: () => ws.close(),
-    async join(id: string, extra = {}) { const k = msgs.length; ws.send(JSON.stringify({ type: "join", world: "glade", id, avatar: "", replica: true, ...extra }));
+    async join(id: string, extra = {}) { const k = msgs.length; ws.send(JSON.stringify({ type: "join", hello: helloOf(), world: "glade", id, avatar: "", replica: true, ...extra }));
       await tryUntil(`${id}'s join is answered`, () => msgs.slice(k).some((m) => m.type === "snapshot" || m.type === "error"), { ms: 4000, step: 50 });
       return { snapshot: msgs.slice(k).find((m) => m.type === "snapshot"), errors: msgs.slice(k).filter((m) => m.type === "error").map((m) => m.error) }; } };
 }

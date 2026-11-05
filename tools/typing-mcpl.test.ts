@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { foundWorlds, saysIn } from "./harness.ts";
 import { createServer } from "node:net";
+import { helloOf } from "../shared/protocol/hello.js";
 
 // Ports the kernel hands out, so two runs on one machine don't meet on fixed
 // ones and read each other's world.
@@ -70,7 +71,7 @@ try {
     const t = setTimeout(() => rej(new Error("watcher join timeout")), 6000);
     watcher.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); seen.push(m); all.push(m);
       if (m.type === "snapshot") { clearTimeout(t); res(); } };
-    watcher.onopen = () => watcher.send(JSON.stringify({ type: "join", world: "commons", id: "watcher", avatar: "a.vrm", replica: true }));
+    watcher.onopen = () => watcher.send(JSON.stringify({ type: "join", hello: helloOf(), world: "commons", id: "watcher", avatar: "a.vrm", replica: true }));
   });
 
   // A raw MCP host connecting to the MCPL door as the "claude" agent (dev-token).

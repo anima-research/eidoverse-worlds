@@ -28,6 +28,7 @@ import { join } from "node:path";
 import { WorldAgent } from "../mcpl/agent.ts";
 import { supportHolders } from "../mcpl/physics.ts";
 import { summarizeGlb } from "../server/geometry.ts";
+import { helloOf } from "../shared/protocol/hello.js";
 
 const PORT = Number(process.env.PORT ?? 9001);
 const URL_ = `ws://127.0.0.1:${PORT}/ws`;
@@ -80,7 +81,7 @@ await sleep(1500);
 const warden = new WebSocket(URL_);
 const verb = (v: string, args: any) => warden.send(JSON.stringify({ type: "verb", verb: v, args }));
 await new Promise<void>((res, rej) => {
-  warden.onopen = () => { warden.send(JSON.stringify({ type: "join", world: WORLD, id: "warden", avatar: "eidoverse/assets/vrms/claude.vrm" })); res(); };
+  warden.onopen = () => { warden.send(JSON.stringify({ type: "join", hello: helloOf(), world: WORLD, id: "warden", avatar: "eidoverse/assets/vrms/claude.vrm" })); res(); };
   warden.onerror = () => rej(new Error("warden failed to connect"));
 });
 await sleep(400);

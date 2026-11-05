@@ -1,3 +1,4 @@
+import { helloOf } from "../shared/protocol/hello.js";
 // tools/operator-repair.ts — one server operator's request into a world, from the command line (docs/TRANSLATING-OLD-WORLDS.md).
 // usage: EIDO_SESSION=<ew_sess cookie> | EIDO_AGENT_TOKEN=<token>  [EIDO_KEY=<door key>]
 //        bun tools/operator-repair.ts <server url> <world> <verb> ['<args as JSON>']
@@ -16,7 +17,7 @@ const done = (code: number, line: unknown) => { if (over) return; over = true; c
 setTimeout(() => done(1, "no answer in 20 s"), 20_000);
 ws.onerror = () => done(1, `couldn't reach ${url}`);
 ws.onclose = (e) => done(1, `the server closed the connection (${e.code}${e.reason ? `: ${e.reason}` : ""})`);
-ws.onopen = () => ws.send(JSON.stringify({ type: "join", world, id: "operator", avatar: "", spectate: true, replica: true, token: process.env.EIDO_KEY ?? "", ...(agentToken ? { agentToken } : {}) }));
+ws.onopen = () => ws.send(JSON.stringify({ type: "join", hello: helloOf(), world, id: "operator", avatar: "", spectate: true, replica: true, token: process.env.EIDO_KEY ?? "", ...(agentToken ? { agentToken } : {}) }));
 ws.onmessage = (ev) => {
   const m = JSON.parse(String(ev.data));
   if (m.type === "error") done(1, m.error);

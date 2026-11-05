@@ -30,6 +30,7 @@ import { join } from "node:path";
 import { foundWorlds, freePort } from "./harness.ts";
 import { qFromYaw } from "../shared/rot.js";
 import { idAliases } from "./protocol/idalias.ts";
+import { helloOf } from "../shared/protocol/hello.js";
 const IDS = idAliases();
 
 // Bun 1.3.x caches transpiled module graphs globally by content. A failed
@@ -140,7 +141,7 @@ function hand(world: string, name: string) {
     const waiting = new Map<string, (r: any) => void>(); let chain: Promise<any> = Promise.resolve();
     const ask = (r: { verb: string; args: any }) => new Promise<any>((done) => { const id = `${name}-${++n}`; waiting.set(id, done);
       ws.send(JSON.stringify({ type: "request", id, verb: r.verb, args: IDS.out(r.verb, r.args) })); setTimeout(() => { if (waiting.delete(id)) done(null); }, 8000); });
-    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world, id: name, token: TOKEN, replica: true }));
+    ws.onopen = () => ws.send(JSON.stringify({ type: "join", hello: helloOf(), world, id: name, token: TOKEN, replica: true }));
     ws.onmessage = (e) => {
       const m = JSON.parse(String(e.data));
       if (m.type === "reply") { IDS.back(m.reply); const d = waiting.get(m.id); if (d) { waiting.delete(m.id); d(m.reply); } }

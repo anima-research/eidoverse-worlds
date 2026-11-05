@@ -10,6 +10,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { CHROME, scratchSequencer, mkCheck, sleep } from './harness.ts';
+import { helloOf } from '../shared/protocol/hello.js';
 const { check, tally } = mkCheck();
 const data = mkdtempSync(join(tmpdir(), 'attention-data-'));
 const h = await scratchSequencer('attention', { serverEnv: {
@@ -44,7 +45,7 @@ try {
     const own: any[] = [];
     ws.onmessage = e => { const m = JSON.parse(String(e.data)); packets.push(m); own.push(m); };
     await until(() => ws.readyState === 1);
-    ws.send(JSON.stringify({ type: 'join', token: 'test-door', world: 'attention', id: 'speaker', ...(session ? { session } : {}) }));
+    ws.send(JSON.stringify({ type: 'join', hello: helloOf(), token: 'test-door', world: 'attention', id: 'speaker', ...(session ? { session } : {}) }));
     await until(() => own.some(m => m.type === 'snapshot'));
     return ws;
   }

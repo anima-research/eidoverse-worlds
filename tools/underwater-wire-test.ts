@@ -6,6 +6,7 @@ import { strict as assert } from 'node:assert';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { helloOf } from '../shared/protocol/hello.js';
 const scratch=mkdtempSync(join(tmpdir(),'eido-underwater-'));
 const port=Number(process.env.UNDERWATER_TEST_PORT??18993);
 foundWorlds(join(scratch,'worlds'),['underwater-test']);
@@ -17,7 +18,7 @@ const sleep=(n:number)=>new Promise(r=>setTimeout(r,n));
 async function wait(fn:()=>boolean,label:string){for(let i=0;i<100;i++){if(fn())return;await sleep(50);}throw Error('timeout: '+label);}
 async function client(id:string,spectate=false){
  const messages:any[]=[];const ws=new WebSocket(`ws://127.0.0.1:${port}/ws`);sockets.push(ws);
- ws.onopen=()=>ws.send(JSON.stringify({type:'join',world:'underwater-test',id,spectate,token:'underwater-test-door',replica:true}));
+ ws.onopen=()=>ws.send(JSON.stringify({type:'join', hello: helloOf(),world:'underwater-test',id,spectate,token:'underwater-test-door',replica:true}));
  ws.onmessage=e=>messages.push(JSON.parse(String(e.data)));
  await wait(()=>messages.some(m=>m.type==='snapshot'),id+' join');return {ws,messages};
 }

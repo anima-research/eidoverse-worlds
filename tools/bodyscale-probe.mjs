@@ -18,6 +18,7 @@
 //   restore — the sizer reloads and wears its saved size again without touching anything.
 import { launchBrowser, ownedWorld, checker } from './probe-harness.mjs';
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { helloOf } from '../shared/protocol/hello.js';
 
 const { check, done } = checker();
 const shotDir = (() => { const i = process.argv.indexOf('--shots'); return i > 0 ? process.argv[i + 1] : null; })();
@@ -34,7 +35,7 @@ function peer(id, pose, avatar) {
   const ws = new WebSocket(`${world.origin.replace(/^http/, 'ws')}/ws`);
   const p = { ws, pose, timer: null };
   ws.onopen = () => {
-    ws.send(JSON.stringify({ type: 'join', world: WORLD, id, token: world.key, avatar, replica: true }));
+    ws.send(JSON.stringify({ type: 'join', hello: helloOf(), world: WORLD, id, token: world.key, avatar, replica: true }));
     p.timer = setInterval(() => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'pose', pose: p.pose })); }, 66);
   };
   ws.onmessage = (e) => { try { const m = JSON.parse(String(e.data)); if (m.type === 'frame') for (const [k, v] of Object.entries(m.poses ?? {})) seen.set(k, v); } catch {} };

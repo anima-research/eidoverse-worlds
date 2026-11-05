@@ -12,7 +12,7 @@ import { join } from "node:path";
 // config FIRST — it carries the WORLDS_DIR mkdir, and auth.ts/moderation.ts
 // carry their restore-at-boot blocks, so this import order IS the unsplit
 // file's boot order: mkdir → session restore → ban restore (§15, step 7a).
-import { TRUST_NAMES, HELLO_REQUIRED } from "./config.ts";
+import { TRUST_NAMES } from "./config.ts";
 import { checkHello, missingFeatures, versionLine } from "../shared/protocol/hello.js";
 import { featureDecision, KNOWN_FEATURES } from "../shared/protocol/features.js";
 // how often a person may change the name they show (moderation: a name is how people recognise who did what)
@@ -980,10 +980,8 @@ const server = Bun.serve({
             }
           }
           // F-3 step 2 (docs/DESIGN-log-vocabulary.md §F): the global hello, before any world lookup; the refusal names no world
-          if (msg.hello !== undefined || HELLO_REQUIRED) {
-            const r = checkHello(msg.hello);
-            if (r) { ws.send(JSON.stringify(r)); c.ws.close?.(4005, "update-required"); return; }
-          }
+          { const r = checkHello(msg.hello);   // always: a join with no hello is a client this server doesn't speak to
+            if (r) { ws.send(JSON.stringify(r)); c.ws.close?.(4005, "update-required"); return; } }
           // leave previous world (travel is: leave A, join B). Review finding
           // 6: travel never runs the ws-close handler, so without the reap a
           // traveling primary left a live, credentialed orphan mic behind —

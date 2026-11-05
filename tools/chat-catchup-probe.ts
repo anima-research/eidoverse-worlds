@@ -44,6 +44,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { scratchSequencer, mkCheck, sleep, saysIn } from "./harness.ts";
 import { launchBrowser } from "./probe-harness.mjs";
+import { helloOf } from "../shared/protocol/hello.js";
 
 const { check, tally } = mkCheck();
 const BEFORE = 200, HEARD = 40, END = "— the beginning of this world —", LOADING = "… loading earlier messages";
@@ -77,7 +78,7 @@ async function voice(world: string, id: string) {
   };
   ws.onclose = (e) => { closed = { code: e.code, reason: e.reason }; for (const done of waiting.values()) done(null); waiting.clear(); };
   await until(`${id}'s socket`, () => ws.readyState === 1);
-  ws.send(JSON.stringify({ type: "join", token: "test-door", world, id, replica: true }));
+  ws.send(JSON.stringify({ type: "join", hello: helloOf(), token: "test-door", world, id, replica: true }));
   await until(`${id}'s join`, () => {
     const refused = seen.find((m) => m.type === "error");
     if (refused) throw new Error(`${id}'s join was refused: ${JSON.stringify(refused)}`);

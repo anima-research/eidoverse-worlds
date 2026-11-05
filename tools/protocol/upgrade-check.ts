@@ -37,6 +37,7 @@ import { tryUntil } from "./wait.ts";
 import { isWorldDir } from "../../server/livehost.ts";
 import { backupWorld } from "../../server/backups.ts";
 import { bootNotice } from "../../server/oldworlds.ts";
+import { helloOf } from "../../shared/protocol/hello.js";
 
 const root = scratch("upgrade");
 let pass = 0, fail = 0;
@@ -156,7 +157,7 @@ async function sock(sid: string | null) {
   return { ws, msgs, closed: () => closed, send: (m: any) => ws.send(JSON.stringify(m)) };
 }
 async function joinOld(sid: string | null, world: string) {
-  const s = await sock(sid); s.send({ type: "join", world, id: "Pat", avatar: "", replica: true });
+  const s = await sock(sid); s.send({ type: "join", hello: helloOf(), world, id: "Pat", avatar: "", replica: true });
   await tryUntil(`the join to ${world} is closed`, () => !!s.closed(), { ms: 5000, step: 50 });
   return { err: s.msgs.find((m) => m.type === "error"), closed: s.closed() };
 }
@@ -192,7 +193,7 @@ let reviewed = "";
 { const r = await ask(OP, "world-upgrade", { world: "attic", approved: reviewed }, 120_000);
   const b = backupsOf("attic")[0]; const m = JSON.parse(fs.existsSync(path.join(attic, "translation.json")) ? fs.readFileSync(path.join(attic, "translation.json"), "utf8") : "{}");
   const copied = b ? tree(b) : {}; delete copied.SHA256SUMS; delete copied["CUSTODY.json"];
-  const s = await sock(VIS); s.send({ type: "join", world: "attic", id: "Vee", avatar: "", replica: true });
+  const s = await sock(VIS); s.send({ type: "join", hello: helloOf(), world: "attic", id: "Vee", avatar: "", replica: true });
   await tryUntil("the join to the upgraded attic is answered", () => s.msgs.some((x) => x.type === "snapshot" || x.type === "error"), { ms: 8000, step: 50 }); s.ws.close();
   ok(r.ok === true && r.backup === b && r.report === reviewed && /rollback attic/.test(r.rollback ?? "") && isWorldDir(attic) && m.report === reviewed && m.backup === b && m.approval?.owner === null && same(copied, atticBefore)
     && s.msgs.some((x) => x.type === "snapshot"),
@@ -205,7 +206,7 @@ let reviewed = "";
 { const d = path.join(W, "barn"); fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(d, "log.jsonl"), JSON.stringify({ seq: 0, ts: T0, actor: "Pip", verb: "say", args: { text: "nobody owns this" } }) + "\n");
   const r = await ask(OP2, "world-upgrade-review", { world: "barn" }), u = r.ok ? await ask(OP2, "world-upgrade", { world: "barn", approved: r.hash }, 120_000) : null;
-  const s = await sock(OP2); s.send({ type: "join", world: "barn", id: "Otto", avatar: "", replica: true });
+  const s = await sock(OP2); s.send({ type: "join", hello: helloOf(), world: "barn", id: "Otto", avatar: "", replica: true });
   await tryUntil("Otto's join to barn is answered", () => s.msgs.some((x) => x.type === "snapshot" || x.type === "error"), { ms: 8000, step: 50 }); s.ws.close();
   ok(r.ok && /whoever performs this upgrade becomes its owner/.test(r.report?.claim ?? "") && r.warning === undefined && u?.ok === true && u.claimed === true && u.owned === "You're now this world's owner." && u.warning === undefined
     && isWorldDir(d) && /barn: upgraded by human:test:op2 as operator .*it had no owner: human:test:op2 claimed it/.test(fs.readFileSync(slog, "utf8")) && s.msgs.find((x) => x.type === "snapshot")?.yourRights?.role === "owner",
@@ -213,7 +214,7 @@ let reviewed = "";
 // ================= US10-12: the world's owner may upgrade it (R 10-28) =================
 const ownedWorld = (name: string, grant: any) => { const d = path.join(W, name); fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(d, "log.jsonl"), [{ actor: "world", verb: "grant", args: grant }, { actor: grant.id, verb: "say", args: { text: "mine" } }].map((e, k) => JSON.stringify({ seq: k, ts: T0 + k * 1000, ...e })).join("\n") + "\n"); return d; };
-const roleIn = async (sid: string, world: string, id: string) => { const s = await sock(sid); s.send({ type: "join", world, id, avatar: "", replica: true });
+const roleIn = async (sid: string, world: string, id: string) => { const s = await sock(sid); s.send({ type: "join", hello: helloOf(), world, id, avatar: "", replica: true });
   await tryUntil(`${id}'s join to ${world} is answered`, () => s.msgs.some((x) => x.type === "snapshot" || x.type === "error"), { ms: 8000, step: 50 }); s.ws.close();
   return s.msgs.find((x) => x.type === "snapshot")?.yourRights?.role ?? null; };
 const byOwner = async (sid: string, world: string, id: string) => { const j = await joinOld(sid, world), r = await ask(sid, "world-upgrade-review", { world }), u = r.ok ? await ask(sid, "world-upgrade", { world, approved: r.hash }, 120_000) : null;
@@ -267,7 +268,7 @@ const byOwner = async (sid: string, world: string, id: string) => { const j = aw
   fs.writeFileSync(path.join(d, "log.jsonl"), [{ actor: "world", verb: "grant", args: { id: "Ann", role: "owner" } }, { actor: "Ann", verb: "say", args: { text: "mine" } }]
     .map((e, k) => JSON.stringify({ seq: k, ts: T0 + k * 1000, ...e })).join("\n") + "\n");
   const up = xlate("den");
-  const ann = await sock(ANN); ann.send({ type: "join", world: "den", id: "Ann", avatar: "", replica: true });
+  const ann = await sock(ANN); ann.send({ type: "join", hello: helloOf(), world: "den", id: "Ann", avatar: "", replica: true });
   await tryUntil("Ann is in the upgraded den", () => ann.msgs.some((m) => m.type === "snapshot" || m.type === "error"), { ms: 8000, step: 50 });
   const before = ann.msgs.find((m) => m.type === "snapshot")?.yourRights?.role;
   const run = (verb: string, args: string, ids: Record<string, string>) => { let a = args; for (const [k, v] of Object.entries(ids)) a = a.split(k).join(v);

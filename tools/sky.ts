@@ -1,3 +1,4 @@
+import { helloOf } from "../shared/protocol/hello.js";
 // Set a world's time of day: a door `sky` request (persists in the world's log as @world's sky).
 //   bun tools/sky.ts [world] [hours] [clouds]     e.g.  bun tools/sky.ts commons 16.8 clear
 // The client maps hours→sun elevation/warmth: 12 = noon, ~17 = golden hour,
@@ -19,7 +20,7 @@ const ws = new WebSocket(process.env.EW_URL ?? "ws://localhost:8940/ws");
 const fail = (why: string) => { console.error(`sky → ${world}: ${why}`); try { ws.close(); } catch {} process.exit(1); };
 const timer = setTimeout(() => fail("no answer from the world in 10 s"), 10_000);
 ws.onerror = () => fail("socket error");
-ws.onopen = () => ws.send(JSON.stringify({ type: "join", world, id, replica: true, token: process.env.EW_TOKEN ?? "",
+ws.onopen = () => ws.send(JSON.stringify({ type: "join", hello: helloOf(), world, id, replica: true, token: process.env.EW_TOKEN ?? "",
   ...(process.env.EW_AGENT_TOKEN ? { agentToken: process.env.EW_AGENT_TOKEN, declares: "agent" } : {}) }));
 ws.onmessage = (ev) => {
   const m = JSON.parse(String(ev.data));

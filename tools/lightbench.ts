@@ -26,6 +26,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromeArgs, findChrome } from "./protocol/chrome.ts";
 import { killChild } from "./protocol/procgroup.ts";
+import { helloOf } from "../shared/protocol/hello.js";
 
 const args = process.argv.slice(2);
 const has = (n: string) => args.includes(`--${n}`);
@@ -117,7 +118,7 @@ function joinDriver(world: string, id: string): Promise<Driver> {
       verb: async (v, a) => { dws.send(JSON.stringify({ type: "verb", verb: v, args: a })); await sleep(420); },
       close: () => { try { dws.close(); } catch { /* fine */ } },
     };
-    dws.onopen = () => dws.send(JSON.stringify({ type: "join", world, id, token: "" }));
+    dws.onopen = () => dws.send(JSON.stringify({ type: "join", hello: helloOf(), world, id, token: "" }));
     dws.onmessage = (ev) => {
       const m = JSON.parse(String(ev.data));
       if (m.type === "snapshot") resolve(self);

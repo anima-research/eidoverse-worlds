@@ -9,6 +9,7 @@
 // xrpointer-test.mjs is the policy half (the numbers); this is the wiring, in a browser, through real buttons.
 import { launchBrowser, ownedWorld, checker } from './probe-harness.mjs';
 import { readFileSync } from 'node:fs';
+import { helloOf } from '../shared/protocol/hello.js';
 
 const { check, done } = checker();
 const WORLD = 'pointer';
@@ -28,7 +29,7 @@ function peer(id, pose) {
   const ws = new WebSocket(`${world.origin.replace(/^http/, 'ws')}/ws`);
   const p = { ws, pose, timer: null };
   ws.onopen = () => {
-    ws.send(JSON.stringify({ type: 'join', world: WORLD, id, token: world.key, replica: true }));
+    ws.send(JSON.stringify({ type: 'join', hello: helloOf(), world: WORLD, id, token: world.key, replica: true }));
     p.timer = setInterval(() => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'pose', pose: p.pose })); }, 66);
   };
   peers.push(p);

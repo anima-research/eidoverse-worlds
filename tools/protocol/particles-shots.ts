@@ -12,6 +12,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { scratchBench, mkCheck, sleep } from "../harness.ts";
 import { idAliases } from "./idalias.ts";
+import { helloOf } from "../../shared/protocol/hello.js";
 const IDS = idAliases();   // R 10-17: the owner's names ride as placeholders and minted ids
 
 const ENGINE = path.resolve(import.meta.dir, "../..");
@@ -41,7 +42,7 @@ try {
   const own = new WebSocket(BASE.replace("http", "ws") + "/ws"); const replies = new Map(); let rn = 0;
   own.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "reply") replies.get(m.id)?.(m.reply); };
   await new Promise((r, j) => { own.onopen = r; own.onerror = j; });
-  own.send(JSON.stringify({ type: "join", world: WORLD, id: ME, avatar: "", replica: true })); await sleep(800);
+  own.send(JSON.stringify({ type: "join", hello: helloOf(), world: WORLD, id: ME, avatar: "", replica: true })); await sleep(800);
   const req = (verb: string, args: any) => new Promise<any>((res) => { const id = `o${++rn}`; replies.set(id, (r: any) => res(IDS.back(r))); own.send(JSON.stringify({ type: "request", id, verb, args: IDS.out(verb, args) })); setTimeout(() => res({ ok: false, refused: { code: "timeout" } }), 6000); });
   const sky = await req("sky", { hours: 0, rate: 0 }); check("night sky", sky?.ok, sky);
   await cdp.send("Page.navigate", { url: `${BASE}/?name=shots&world=${WORLD}&webgl=1&spectate` });

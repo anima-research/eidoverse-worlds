@@ -6,6 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { ENGINE, scratch } from "../protocol/common.ts";
+import { helloOf } from "../../shared/protocol/hello.js";
 let fail = 0;
 const C = (id, what, good, info) => { console.log(`${good ? "ok  " : "FAIL"} ${id} ${what}`); if (!good) { fail++; if (info !== undefined) console.log("     ", JSON.stringify(info).slice(0, 600)); } };
 const dry = JSON.parse(Bun.spawnSync(["bun", path.join(ENGINE, "tools/water/import.ts"), path.join(ENGINE, "world-data/water/manifest.json"), "--dry"], { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } }).stdout.toString());
@@ -23,7 +24,7 @@ try {
   if (/Preview:/.test(out)) {
     const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
     effect = await new Promise((res) => { const t = setTimeout(() => res({ timeout: true }), 15000);
-      ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: "water-preview", id: "water-review", avatar: "", replica: true }));
+      ws.onopen = () => ws.send(JSON.stringify({ type: "join", hello: helloOf(), world: "water-preview", id: "water-review", avatar: "", replica: true }));
       ws.onmessage = (e) => { const m = JSON.parse(String(e.data)); if (m.type === "snapshot") ws.send(JSON.stringify({ type: "request", id: "fx", verb: "effect", args: { name } }));
         if (m.type === "reply" && m.id === "fx") { clearTimeout(t); res(m); } }; });
     ws.close();

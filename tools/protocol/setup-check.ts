@@ -20,6 +20,7 @@ import http from "node:http";
 import { ENGINE, scratch, linkFile, canLinkFiles } from "./common.ts";
 import { tryUntil } from "./wait.ts";
 import { freePort } from "../harness.ts";
+import { helloOf } from "../../shared/protocol/hello.js";
 
 const root = scratch("setup");
 let pass = 0, fail = 0;
@@ -93,7 +94,7 @@ const cookie = (sid) => ({ cookie: `ew_sess=${sid}` });
  *  A non-operator (not its owner) is told world-unavailable, as for no world (F23, Mica 11-05): that answer is false. */
 const operatorAtJoin = (port, { headers, agentToken }: any = {}) => new Promise((res) => {
   const ws = headers ? new WebSocket(`ws://127.0.0.1:${port}/ws`, { headers }) : new WebSocket(`ws://127.0.0.1:${port}/ws`); let refused = null;
-  ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: "old-x", id: "probe", avatar: "", replica: true, ...(agentToken ? { agentToken } : {}) }));
+  ws.onopen = () => ws.send(JSON.stringify({ type: "join", hello: helloOf(), world: "old-x", id: "probe", avatar: "", replica: true, ...(agentToken ? { agentToken } : {}) }));
   let unavailable = false;
   ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "error" && m.refused) refused = m.refused; if (m.type === "error" && m.code === "world-unavailable") unavailable = true; };
   ws.onclose = () => res(refused ? refused.operator : unavailable ? false : null);

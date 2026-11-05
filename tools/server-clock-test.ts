@@ -46,6 +46,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { foundWorlds } from "./harness.ts";
+import { helloOf } from "../shared/protocol/hello.js";
 
 // A free port unless PORT names one: on a fixed default, another server
 // already listening there would answer this test's joins.
@@ -80,7 +81,7 @@ function connect(): Promise<Sock> {
 async function joinWorld(s: Sock, msg: Record<string, unknown>) {
   const from = s.msgs.length;
   const sentAt = Date.now();
-  s.ws.send(JSON.stringify({ type: "join", replica: true, ...msg }));   // a world talks only to clients that fold its log
+  s.ws.send(JSON.stringify({ type: "join", hello: helloOf(), replica: true, ...msg }));   // a world talks only to clients that fold its log
   for (let i = 0; i < 80; i++) {
     const got = s.msgs.slice(from);
     if (got.some((m) => m.type === "snapshot" || m.type === "error")) return { got, sentAt, snapAt: Date.now() };

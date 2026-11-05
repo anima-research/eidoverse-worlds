@@ -20,6 +20,7 @@ import { ENGINE, scratch } from "./common.ts";
 import { tryUntil } from "./wait.ts";
 import { pin, LAB_EPOCH } from "./clock.ts";
 import { LAB_CATALOGUE } from "./labmodels.js";
+import { helloOf } from "../../shared/protocol/hello.js";
 
 const argv = process.argv.slice(2);
 const only = (() => { const i = argv.indexOf("--only"); return i >= 0 ? argv[i + 1].split(",") : null; })();
@@ -171,7 +172,7 @@ if (!only || only.some((x) => x.startsWith("SV"))) {
   ws.onmessage = (ev) => msgs.push(JSON.parse(String(ev.data)));
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
   const send = (m) => ws.send(JSON.stringify(m));
-  send({ type: "join", world: "glade", id: "Ann", avatar: "", replica: true });
+  send({ type: "join", hello: helloOf(), world: "glade", id: "Ann", avatar: "", replica: true });
   await tryUntil("Ann's join is answered", () => msgs.some((m) => m.type === "snapshot" || m.type === "error"), { ms: 4000, step: 50 });
   send({ type: "pose", pose: { p: [0, 0, 0], yaw: 0, speed: 0, t: lastTs + 5, seq: 42 } });
   await tryUntil("a frame arrives", () => msgs.some((m) => m.type === "frame"), { ms: 3000, step: 50 });

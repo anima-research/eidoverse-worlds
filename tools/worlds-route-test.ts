@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { foundWorlds } from "./harness.ts";
+import { helloOf } from "../shared/protocol/hello.js";
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = "") => {
@@ -80,7 +81,7 @@ function joinBody(port: number, world: string, id: string, extra: Record<string,
   return new Promise((res, rej) => {
     const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
     const t = setTimeout(() => rej(new Error(`join ${id}@${world} timed out`)), 8000);
-    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world, id, avatar: "", replica: true, ...extra }));
+    ws.onopen = () => ws.send(JSON.stringify({ type: "join", hello: helloOf(), world, id, avatar: "", replica: true, ...extra }));
     ws.onmessage = (ev) => {
       const m = JSON.parse(String(ev.data));
       if (m.type === "snapshot") { clearTimeout(t); res(ws); }

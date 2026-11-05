@@ -19,6 +19,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { foundWorlds } from "./harness.ts";
 import { createServer } from "node:net";
+import { helloOf } from "../shared/protocol/hello.js";
 
 /** A port nothing is listening on RIGHT NOW: bind :0, read what the kernel
  *  gave us, release it. Racy in principle (someone could take it in the gap)
@@ -363,7 +364,7 @@ async function watchWorld(w: string, id: string) {
     const t = setTimeout(() => rej(new Error("watcher join timeout")), 6000);
     ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); events.push(m);
       if (m.type === "snapshot") { clearTimeout(t); res(); } };
-    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: w, id, avatar: "a.vrm", replica: true }));
+    ws.onopen = () => ws.send(JSON.stringify({ type: "join", hello: helloOf(), world: w, id, avatar: "a.vrm", replica: true }));
   });
   return { ws, events };
 }

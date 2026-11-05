@@ -1,5 +1,7 @@
 import asyncio, json, websockets
 import os
+# shared/protocol/hello.js helloOf(), spelled out (Python imports no JS): the server refuses a join without it
+HELLO = {"dialect": "eidoverse-log", "v": 4, "features": []}
 # No default endpoint (review finding 10): :8940 is a PRODUCTION sequencer per
 # AGENTS.md ("NEVER develop against a port someone lives on") — a bare run of
 # this matrix must refuse, not dial a lived-in world with a default token and
@@ -39,7 +41,7 @@ def say_req(text):
 
 async def join(name, surface=None, world="surftest", agent_token=None):
     ws = await websockets.connect(URL)
-    msg = {"type": "join", "token": TOK, "id": name, "world": world, "agent": True, "replica": True}
+    msg = {"type": "join", "hello": HELLO, "token": TOK, "id": name, "world": world, "agent": True, "replica": True}
     if surface: msg["surface"] = surface
     if agent_token: msg["agentToken"] = agent_token
     await ws.send(json.dumps(msg))
@@ -312,7 +314,7 @@ async def main():
     # T20 (review finding 6): travel reaps — "leave A, join B" never runs the
     # ws close handler, so the reap must live on the travel path itself.
     ew2.clear()
-    await p5.send(json.dumps({"type": "join", "token": TOK, "id": "hesp2", "world": "elsewhere", "agent": True,
+    await p5.send(json.dumps({"type": "join", "hello": HELLO, "token": TOK, "id": "hesp2", "world": "elsewhere", "agent": True,
                               "agentToken": "surf-lab-hesp2"}))
     await asyncio.sleep(0.6)
     t20_ret = [m for m in ew2 if m.get("type") == "surface-transition" and m.get("id") == "hesp2"

@@ -12,6 +12,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { foundWorlds } from "./harness.ts";
+import { helloOf } from "../shared/protocol/hello.js";
 
 const PORT = 8420 + (process.pid % 150);
 const worldsDir = mkdtempSync(join(tmpdir(), "eido-surfmatrix-"));
@@ -54,7 +55,7 @@ try {
     owned = await new Promise<boolean>((res) => {
       const ws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
       const t = setTimeout(() => { ws.close(); res(false); }, 1500);
-      ws.onopen = () => ws.send(JSON.stringify({ type: "join", token: TOK, world: "ownprobe", id: "harness-probe", spectate: true, replica: true }));
+      ws.onopen = () => ws.send(JSON.stringify({ type: "join", hello: helloOf(), token: TOK, world: "ownprobe", id: "harness-probe", spectate: true, replica: true }));
       ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data));
         clearTimeout(t);
         if (m.type === "snapshot") { ws.close(); res(true); }

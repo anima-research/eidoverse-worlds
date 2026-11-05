@@ -26,6 +26,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { foundWorlds } from "./harness.ts";
+import { helloOf } from "../shared/protocol/hello.js";
 
 let pass = 0, fail = 0;
 function check(name: string, cond: boolean, detail = "") {
@@ -65,7 +66,7 @@ function join_(port: number, msg: Record<string, unknown>) {
     const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
     const t = setTimeout(() => rej(new Error(`join ${msg.id}: no snapshot in 5s`)), 5000);
     // replica: a world talks only to clients that fold its log (docs/WIRE.md join)
-    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: "snapt", replica: true, ...msg }));
+    ws.onopen = () => ws.send(JSON.stringify({ type: "join", hello: helloOf(), world: "snapt", replica: true, ...msg }));
     ws.addEventListener("message", function hello(ev) {
       if (JSON.parse(String(ev.data)).type !== "snapshot") return;
       ws.removeEventListener("message", hello); clearTimeout(t); res(ws);
