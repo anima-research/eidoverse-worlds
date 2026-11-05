@@ -707,7 +707,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r)); process.exit(0);\n`);   // 
       // a value stored in an old spelling no reader serves (a grabbable's pose: grab.js reads anim), as an old log holds it
       s.call("olive", "create", { id: "cup", model: "crate", place: { at: [2, 0] } });
       const w = s.w(); clock.advance(100);
-      const a = w.append({ kind: "request", actor: "olive", op: "set", body: { request: { id: "cup", component: "grabbable" } } });
+      const a = w.append({ kind: "request", actor: "olive", verb: "set", body: { args: { id: "cup", component: "grabbable" } } });
       w.append({ kind: "change", actor: "olive", cause: a, op: "set", body: { id: "cup", comp: "grabbable", value: { pose: "pistol" } } }, STOR.CHANGE);
       const blocking = D.maintenanceNeeds(w).blocking;
       const req = s.call("olive", "set", { id: "clock", component: "label", value: "x" }), n0 = s.entries().length;   // (its refusal is on the record)

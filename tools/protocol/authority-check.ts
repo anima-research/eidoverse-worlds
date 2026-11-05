@@ -1092,7 +1092,7 @@ const w0 = () => openWorld(root, "tier0");
   const h1 = R("ann", "history", { verbs: ["say"], limit: 5 });
   ok(h1.ok && h1.entries.length === 1 && h1.entries[0].kind === "say" && h1.entries[0].body?.text === "hello", "CP4 history {verbs} filters the whole log (it reached nobody: only limit was read)", h1);
   const p1 = R("ann", "history", { verbs: ["set"], limit: 3 }); const p2 = R("ann", "history", { verbs: ["set"], limit: 3, before: p1.next });
-  ok(p1.entries.length === 3 && p1.next === p1.entries[0].seq && p2.entries.length === 3 && p2.entries.at(-1).seq < p1.entries[0].seq && p2.entries.every((e) => e.op === "set"),
+  ok(p1.entries.length === 3 && p1.next === p1.entries[0].seq && p2.entries.length === 3 && p2.entries.at(-1).seq < p1.entries[0].seq && p2.entries.every((e) => e.verb === "set"),
     "CP5 history {before} pages back through the whole log, oldest first within a page, with next", [p1.entries.map((e) => e.seq), p1.next, p2.entries.map((e) => e.seq)]);
   const a1 = R("ann", "history", { after: all[0].seq, limit: 2 });
   ok(a1.entries.length === 2 && a1.entries[0].seq > all[0].seq && a1.next === a1.entries[1].seq, "CP5 …and {after} forward", a1);
@@ -1310,7 +1310,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   // (before the last sockets edit, which stays the latest act: the one the undo below takes back)
   const home = { pos: [0.1, 0, 0], q: [0, 0, 0, 1], parent: { to: "tbl", socket: "perch" } }; const wid = r.out[1].world; const n = r.out.length - 2;
   const last = r.out.splice(n, 2); last[1] = { ...last[1], cause: last[1].cause + 2 };
-  r.out.push({ world: wid, kind: "request", actor: "ann", op: "set", body: { request: { id: "coin", component: "home", value: home } }, ts: last[0].ts }, { world: wid, kind: "change", actor: "ann", cause: n, op: "batch", body: { ops: [{ op: "set", id: "coin", comp: "home", value: home }, { op: "set", id: "coin", comp: "grabbable", value: { who: "member", home } }] }, ts: last[0].ts }, ...last);
+  r.out.push({ world: wid, kind: "request", actor: "ann", verb: "set", body: { args: { id: "coin", component: "home", value: home } }, ts: last[0].ts }, { world: wid, kind: "change", actor: "ann", cause: n, verb: "batch", body: { ops: [{ op: "set", id: "coin", comp: "home", value: home }, { op: "set", id: "coin", comp: "grabbable", value: { who: "member", home } }] }, ts: last[0].ts }, ...last);
   fs.writeFileSync(root + "worlds/tr-lift.jsonl", r.out.map((e) => JSON.stringify(e)).join("\n") + "\n");
   const tc = (verb, args) => { clock.advance(100); return request(openWorld(root, "tr-lift"), "ann", verb, args); };
   const homeAt = (st, h) => worldT({ entities: { ...st.entities, x: { c: { parent: { to: h.parent.to }, transform: { pos: h.pos, q: h.q } } } } }, "x").pos;
@@ -1497,7 +1497,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
     { seq: 2, ts: 3, actor: "ann", verb: "spawn", args: { id: "wall", lib: "crate", pos: [0, 0, 0] } }, { seq: 3, ts: 4, actor: "ann", verb: "comp", args: { id: "wall", type: "sockets", data: slots } }];
   const out = translate(old, DOORKEYS()).out; const n0 = out.length;   // and the world's entity budget is already spent: 1 (the wall)
   const capv = { entities: 1, guestEntities: 0, avatar: 2000 }, ts = out[n0 - 1].ts + 1;   // an act and its change, as the precut helper below writes them
-  out.push({ world: out[1].world, kind: "request", actor: "ann", op: "set", body: { request: { id: "@world", component: "capacity", value: capv } }, ts },
+  out.push({ world: out[1].world, kind: "request", actor: "ann", verb: "set", body: { args: { id: "@world", component: "capacity", value: capv } }, ts },
     { world: out[1].world, kind: "change", actor: "ann", cause: n0, op: "batch", body: { ops: [{ op: "set", id: "@world", comp: "capacity", value: capv }] }, ts });
   fs.writeFileSync(root + "worlds/sockcap-lift.jsonl", out.map((e) => JSON.stringify(e)).join("\n") + "\n");
   const lw = openWorld(root, "sockcap-lift"); const cap0 = lw.state().entities["@world"]?.c.capacity?.entities; let threw = null; try { maintain(lw); } catch (x) { threw = String(x?.message ?? x); }
@@ -1515,8 +1515,8 @@ const precut = (name, extra = [], acts = []) => {
     { seq: 5, ts: 5, actor: "ann", verb: "mount", args: { id: "bell", to: "tbl", slot: "perch" } }, ...extra];
   const out = translate(old, DOORKEYS()).out; const wid = out[1].world;
   for (const [actor, ops] of acts) { const n = out.length; const ts = out[n - 1].ts + 1;   // an act and its change, as a pre-cut door wrote them
-    out.push({ world: wid, kind: "request", actor, verb: ops.length > 1 ? "batch" : "set", body: { request: ops.length > 1 ? { ops } : { id: ops[0].id, component: ops[0].comp, value: ops[0].value } }, ts },
-      { world: wid, kind: "change", actor, cause: n, op: "batch", body: { ops: ops.map((o) => ({ verb: "set", ...o })) }, ts }); }
+    out.push({ world: wid, kind: "request", actor, verb: ops.length > 1 ? "batch" : "set", body: { args: ops.length > 1 ? { requests: ops.map((o) => ({ verb: "set", args: { id: o.id, component: o.comp, value: o.value } })) } : { id: ops[0].id, component: ops[0].comp, value: ops[0].value } }, ts },
+      { world: wid, kind: "change", actor, cause: n, op: "batch", body: { ops: ops.map((o) => ({ op: "set", ...o })) }, ts }); }
   fs.writeFileSync(root + `worlds/${name}.jsonl`, out.map((e) => JSON.stringify(e)).join("\n") + "\n"); return out; };
 const nearly = (a, b, e = 1e-8) => !!a && !!b && a.every((v, i) => Math.abs(v - b[i]) < e);
 // SRU1 (S2-1): a pre-cut act moved the bell up 0.2 m on its perch (the transform in the HOST's frame, as stored then)
@@ -1553,7 +1553,7 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
     { seq: 4, ts: 5, actor: "ann", verb: "spawn", args: { id: "c-chair", lib: "crate", pos: [6, 0, 0] } }];
   const write = (name, ops) => { const out = translate(old, DOORKEYS()).out; const wid = out[1].world;
     for (const o of ops) { const n = out.length; const ts = out[n - 1].ts + 1; const req = o.op === "delete" ? { id: o.id, component: o.comp } : { id: o.id, component: o.comp, value: o.value };
-      out.push({ world: wid, kind: "request", actor: "ann", verb: o.verb, body: { request: req }, ts }, { world: wid, kind: "change", actor: "ann", cause: n, verb: o.verb, body: { id: o.id, comp: o.comp, ...(o.op === "set" ? { value: o.value } : {}) }, ts }); }
+      out.push({ world: wid, kind: "request", actor: "ann", verb: o.op, body: { args: req }, ts }, { world: wid, kind: "change", actor: "ann", cause: n, op: o.op, body: { id: o.id, comp: o.comp, ...(o.op === "set" ? { value: o.value } : {}) }, ts }); }
     fs.writeFileSync(root + `worlds/${name}.jsonl`, out.map((e) => JSON.stringify(e)).join("\n") + "\n"); };
   const seat = (extra = {}) => ({ seat: { pos: [0, 0.5, 0], body: { action: "sit", ...extra } } });
   write("srw1", [{ op: "set", id: "@world", comp: "role-defs", value: { crew: { name: "Crew", rank: 150, can: { build: true } } } },

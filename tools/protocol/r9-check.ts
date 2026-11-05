@@ -145,7 +145,7 @@ const cases: Case[] = [
       const ch = s.entries()[d.seq]; s.reopen();
       const g = s.call("vic", "use", { id: "lever", action: "go" });
       const ops = ch?.body?.ops ?? []; const fu = ch?.body?.cascade ?? [];
-      return { d: show(d), verb: ch?.verb, fu, marked: fu.map((k: number) => `${ops[k]?.id}.${ops[k]?.comp}`), own: ops.filter((_: any, k: number) => !fu.includes(k)).map((o: any) => `${o.op} ${o.id}`), g: show(g) }; },
+      return { d: show(d), op: ch?.op, fu, marked: fu.map((k: number) => `${ops[k]?.id}.${ops[k]?.comp}`), own: ops.filter((_: any, k: number) => !fu.includes(k)).map((o: any) => `${o.op} ${o.id}`), g: show(g) }; },
     good: (o) => o.d === "ok" && o.op === "batch" && JSON.stringify(o.marked) === '["lever.reactions"]' && o.own.includes("delete x") && /set up by bob/.test(o.g) },
   { id: "H3", what: "the other way: owner olive's door {open: toggle, sweep: reset [builder vic's ball, her statue]}; vic deletes his ball, then is demoted; the door's handlers stay olive's (a visitor still opens it), inspect says the clear was a follow-up", run(s) {
       s.call("olive", "create-world", { title: s.name }); roles(s, { vic: "builder", wes: "member" });

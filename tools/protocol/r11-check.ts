@@ -169,9 +169,9 @@ const cases: Case[] = [
       const L = s.entries(); const wid = L[1]?.world ?? L[0]?.world; const ts = L.at(-1).ts; const n = L.length;
       const E0 = s.w().state().entities; const kid = Object.keys(E0).find((k) => E0[k].c.socket?.name === "bunk");
       const gv = { who: "member", pose: "pistol" }, sv = { action: "lie", pose: "live" };
-      s.append([{ world: wid, kind: "request", actor: "olive", op: "set", body: { request: { id: "cup", component: "grabbable", value: gv } }, ts: ts + 1 },
+      s.append([{ world: wid, kind: "request", actor: "olive", verb: "set", body: { args: { id: "cup", component: "grabbable", value: gv } }, ts: ts + 1 },
         { world: wid, kind: "change", actor: "olive", cause: n, op: "set", body: { id: "cup", comp: "grabbable", value: gv }, ts: ts + 1 },
-        { world: wid, kind: "request", actor: "olive", op: "set", body: { request: { id: kid, component: "station", value: sv } }, ts: ts + 2 },
+        { world: wid, kind: "request", actor: "olive", verb: "set", body: { args: { id: kid, component: "station", value: sv } }, ts: ts + 2 },
         { world: wid, kind: "change", actor: "olive", cause: n + 2, op: "set", body: { id: kid, comp: "station", value: sv }, ts: ts + 2 }]);
       clock.advance(1000);
       const w1 = s.reopen(); const out = D.maintain(w1); const w2 = s.reopen(); const E = w2.state().entities;

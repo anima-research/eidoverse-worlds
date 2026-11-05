@@ -70,7 +70,7 @@ await C("W2", "a chosen id is refused on create {from} (duplicate and blueprint)
   const pub = W.call("publish", { from: src, name: "p" }); const h = hashOf(pub);
   const bp = W.call("create", { from: h, id: "copy" });
   const b = W.call("batch", { requests: [{ verb: "create", args: { model: "crate" } }, { verb: "create", args: { id: "chair", model: "crate" } }] });
-  return [!dup.ok && dup.refused.code === "shape" && !bp.ok && bp.refused.code === "shape" && !b.ok && b.refused.code === "shape" && /op 1/.test(b.refused.reason) && /\$chair/.test(b.refused.fix), [why(dup), why(bp), why(b)]]; });
+  return [!dup.ok && dup.refused.code === "shape" && !bp.ok && bp.refused.code === "shape" && !b.ok && b.refused.code === "shape" && /request 1/.test(b.refused.reason) && /\$chair/.test(b.refused.fix), [why(dup), why(bp), why(b)]]; });
 await C("W3", "the identity-shaped id refusal still holds through the system door (a fork's copy can't wear u-…)", () => {
   const W = world(); const w = SD.worldObject(W);
   const r = D.forkCopy(w, W.owner, { requests: [{ verb: "create", args: { id: "u-abcdefghijklmnopqrst", model: "crate" } }] });

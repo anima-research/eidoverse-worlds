@@ -316,7 +316,7 @@ const cases: Case[] = [
   { id: "T2", what: "…a world whose log holds @world trusted is renamed at load (the system's rename-components act, the value kept, the old key gone); the next load writes nothing", run(s) {
       s.call("olive", "create-world", { title: s.name }); const L = s.entries(); const wid = L[1]?.world ?? L[0]?.world; const ts = L.at(-1).ts; const n = L.length;
       const v = { components: ["hesperus/material"] };
-      fs.appendFileSync(path.join(root, "worlds", `${s.name}.jsonl`), [{ world: wid, kind: "request", actor: "olive", op: "set", body: { request: { id: "@world", component: "trusted", value: v } }, ts: ts + 1 },
+      fs.appendFileSync(path.join(root, "worlds", `${s.name}.jsonl`), [{ world: wid, kind: "request", actor: "olive", verb: "set", body: { args: { id: "@world", component: "trusted", value: v } }, ts: ts + 1 },
         { world: wid, kind: "change", actor: "olive", cause: n, op: "set", body: { id: "@world", comp: "trusted", value: v }, ts: ts + 1 }].map((e) => JSON.stringify(e)).join("\n") + "\n");
       clock.advance(1000);
       const w1 = s.reopen(); const before = Object.keys(w1.state().entities["@world"].c); const out = D.maintain(w1);
@@ -422,9 +422,9 @@ const cases: Case[] = [
       const E0 = s.w().state().entities; const kid = Object.keys(E0).find((k) => E0[k].c.socket?.name === "bunk");
       const gv = { who: "member", pose: "pistol", grips: { h: { pos: [0, 0.1, 0], fingers: "point" } } }, sv = { action: "lie", anchor: "root", pose: "lie" };
       fs.appendFileSync(path.join(root, "worlds", `${s.name}.jsonl`), [
-        { world: wid, kind: "request", actor: "olive", op: "set", body: { request: { id: "cup", component: "grabbable", value: gv } }, ts: ts + 1 },
+        { world: wid, kind: "request", actor: "olive", verb: "set", body: { args: { id: "cup", component: "grabbable", value: gv } }, ts: ts + 1 },
         { world: wid, kind: "change", actor: "olive", cause: n, op: "set", body: { id: "cup", comp: "grabbable", value: gv }, ts: ts + 1 },
-        { world: wid, kind: "request", actor: "olive", op: "set", body: { request: { id: kid, component: "station", value: sv } }, ts: ts + 2 },
+        { world: wid, kind: "request", actor: "olive", verb: "set", body: { args: { id: kid, component: "station", value: sv } }, ts: ts + 2 },
         { world: wid, kind: "change", actor: "olive", cause: n + 2, op: "set", body: { id: kid, comp: "station", value: sv }, ts: ts + 2 }].map((e) => JSON.stringify(e)).join("\n") + "\n");
       clock.advance(1000);
       const w1 = s.reopen(); D.maintain(w1); const w2 = s.reopen(); const E = w2.state().entities;
@@ -643,9 +643,9 @@ const cases: Case[] = [
       const L = s.entries(); const wid = L[1]?.world ?? L[0]?.world; const ts = L.at(-1).ts; const n = L.length;
       const mv = { type: "bob", axis: [0, 1, 0], amp: 0.4, period: 3, phase: 0, t0: 1700000000000 }, pv = { type: "bob", node: "Piston", axis: [1, 0, 0], amp: 0.2, period: 2, phase: 0, t0: 1700000000000 };
       fs.appendFileSync(path.join(root, "worlds", `${s.name}.jsonl`), [
-        { world: wid, kind: "request", actor: "olive", op: "set", body: { request: { id: "drone", component: "motion", value: mv } }, ts: ts + 1 },
+        { world: wid, kind: "request", actor: "olive", verb: "set", body: { args: { id: "drone", component: "motion", value: mv } }, ts: ts + 1 },
         { world: wid, kind: "change", actor: "olive", cause: n, op: "set", body: { id: "drone", comp: "motion", value: mv }, ts: ts + 1 },
-        { world: wid, kind: "request", actor: "olive", op: "set", body: { request: { id: "arm", component: "motion:piston", value: pv } }, ts: ts + 2 },
+        { world: wid, kind: "request", actor: "olive", verb: "set", body: { args: { id: "arm", component: "motion:piston", value: pv } }, ts: ts + 2 },
         { world: wid, kind: "change", actor: "olive", cause: n + 2, op: "set", body: { id: "arm", comp: "motion:piston", value: pv }, ts: ts + 2 }].map((e) => JSON.stringify(e)).join("\n") + "\n");
       clock.advance(1000);
       const w1 = s.reopen(); const before = w1.state().entities.drone?.c.motion?.type; D.maintain(w1); const w2 = s.reopen(); const E = w2.state().entities;

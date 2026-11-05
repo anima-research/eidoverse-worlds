@@ -35,10 +35,10 @@ function oldWorld(root: string, name: string) {
   const r = request(w, "ann", "create-world", { title: name }); if (!r.ok) throw new Error(JSON.stringify(r));
   const f = path.join(W, name, "world.jsonl"); const L = readLog(fs.readFileSync(f, "utf8")); const world = L[1].world; let ts = T;
   const add = (e: any) => { L.push({ world, ts: (ts += 1000), ...e }); return L.length - 1; };
-  const a1 = add({ kind: "request", actor: "ann", op: "set", body: { request: { id: "@world", component: "roles:bob", value: { role: "builder" } } } });
+  const a1 = add({ kind: "request", actor: "ann", verb: "set", body: { args: { id: "@world", component: "roles:bob", value: { role: "builder" } } } });
   add({ kind: "change", actor: "ann", cause: a1, op: "set", body: { id: "@world", comp: "roles:bob", value: { role: "builder", sub: "aid1:example.org:bob" } } });
   add({ kind: "say", actor: "bob", body: { text: "hello", to: "ann" } });
-  const a2 = add({ kind: "request", actor: "bob", op: "set", body: { request: { id: "@world", component: "about", value: { name, text: "bob's" } } } });
+  const a2 = add({ kind: "request", actor: "bob", verb: "set", body: { args: { id: "@world", component: "about", value: { name, text: "bob's" } } } });
   add({ kind: "change", actor: "bob", cause: a2, op: "set", body: { id: "@world", comp: "about", value: { name, text: "bob's" } } });
   add({ kind: "request", actor: "carl", verb: "use", body: { args: { id: "bell", action: "ring" }, capability: { reaction: "ring", author: "ann", grantedAt: 2 } } });
   add({ kind: "request", actor: "script:bell1", verb: "script", body: { script: "bell", sponsor: "bob", sponsorAt: a2 } });

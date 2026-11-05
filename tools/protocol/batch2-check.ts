@@ -436,10 +436,10 @@ const cases: Case[] = [
       const f = HR.historyView; if (!f) return { none: true };
       const nameOf = (id: string) => ({ "u-a": "Ann", "u-b": "Bob" } as any)[id] ?? id;
       const E = [
-        { seq: 1, kind: "request", actor: "u-b", verb: "create", ts: 1000, body: { request: { id: "lamp" } } }, { seq: 2, kind: "change", actor: "u-b", verb: "batch", ts: 1000, cause: 1, body: {} },
-        { seq: 3, kind: "request", actor: "u-a", verb: "set", ts: 2000, body: { request: { id: "lamp", component: "light" } } }, { seq: 4, kind: "change", actor: "u-a", verb: "set", ts: 2000, cause: 3, body: {} },
-        { seq: 5, kind: "request", actor: "u-a", verb: "set", ts: 3000, body: { request: { id: "chair", component: "label" } } }, { seq: 6, kind: "change", actor: "u-a", verb: "set", ts: 3000, cause: 5, body: {} },
-        { seq: 7, kind: "request", actor: "u-b", verb: "delete", ts: 4000, body: { request: { id: "lamp" }, refused: { code: "rights" } } },
+        { seq: 1, kind: "request", actor: "u-b", verb: "create", ts: 1000, body: { args: { id: "lamp" } } }, { seq: 2, kind: "change", actor: "u-b", verb: "batch", ts: 1000, cause: 1, body: {} },
+        { seq: 3, kind: "request", actor: "u-a", verb: "set", ts: 2000, body: { args: { id: "lamp", component: "light" } } }, { seq: 4, kind: "change", actor: "u-a", verb: "set", ts: 2000, cause: 3, body: {} },
+        { seq: 5, kind: "request", actor: "u-a", verb: "set", ts: 3000, body: { args: { id: "chair", component: "label" } } }, { seq: 6, kind: "change", actor: "u-a", verb: "set", ts: 3000, cause: 5, body: {} },
+        { seq: 7, kind: "request", actor: "u-b", verb: "delete", ts: 4000, body: { args: { id: "lamp" }, refused: { code: "rights" } } },
       ];
       const ann = f(E, nameOf, { mode: "person", who: "u-a" });
       const top = f(E, nameOf, { mode: "top" });

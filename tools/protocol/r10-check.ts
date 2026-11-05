@@ -196,9 +196,9 @@ const cases: Case[] = [
       o.creator = RT.creatorOf(w, "lever", "reactions")?.by ?? null; o.setter = RT.lastSetterOf(w, "lever", "reactions"); o.at = AU.creatorAt(L, "lever", "reactions", L.length - 1)?.rights ?? null;
       // a script key the same way (the sponsor view): olive's delete of x drops nothing on a script (r8 H1), so drive the readers with a hand-made log
       const mk = (ops: any, actor: string, fu?: number[]) => ({ kind: "change", actor, op: "batch", body: { ops, ...(fu ? { cascade: fu } : {}) } });
-      const H: any[] = [{ kind: "genesis", body: {} }, { kind: "request", actor: "bob", op: "set", body: {} }, { ...mk([{ op: "set", id: "d", comp: "script:a", value: { src: "s" } }], "bob"), cause: 1 },
-        { kind: "request", actor: "olive", op: "delete", body: {} }, { ...mk([{ op: "delete", id: "x" }, { op: "delete", id: "d", comp: "script:a" }], "olive", [1]), cause: 3 },
-        { kind: "request", actor: "olive", verb: "undo", body: {} }, { ...mk([{ op: "create", id: "x" }, { op: "set", id: "d", comp: "script:a", value: { src: "s" } }], "olive", [1]), cause: 5 }];
+      const H: any[] = [{ kind: "genesis", body: {} }, { kind: "request", actor: "bob", verb: "set", body: {} }, { ...mk([{ op: "set", id: "d", comp: "script:a", value: { src: "s" } }], "bob"), cause: 1 },
+        { kind: "request", actor: "olive", verb: "delete", body: {} }, { ...mk([{ op: "delete", id: "x" }, { op: "delete", id: "d", comp: "script:a" }], "olive", [1]), cause: 3 },
+        { kind: "request", actor: "olive", verb: "undo", body: {} }, { ...mk([{ verb: "create", id: "x" }, { op: "set", id: "d", comp: "script:a", value: { src: "s" } }], "olive", [1]), cause: 5 }];
       o.sponsor = AU.sponsorAt(H, "d", "script:a", H.length - 1)?.rights ?? null; o.hCreator = AU.creatorAt(H, "d", "script:a", H.length - 1)?.rights ?? null;
       roles(s, { bob: "member" }); o.demoted = show(s.call("vic", "use", { id: "lever", action: "go" }));
       return o; },
@@ -213,10 +213,10 @@ const cases: Case[] = [
       const w = s.w(); const L = s.entries();
       return { nw: show(nw), creator: RT.creatorOf(w, "lever", "reactions")?.by ?? null, at: AU.creatorAt(L, "lever", "reactions", L.length - 1)?.rights ?? null,
         hand: (() => { const mk = (ops: any, actor: string, fu?: number[]) => ({ kind: "change", actor, op: "batch", body: { ops, ...(fu ? { cascade: fu } : {}) } });
-          const W2: any = { entries: [{ kind: "genesis", body: {} }, { kind: "request", actor: "bob", op: "set", body: {} }, { ...mk([{ op: "set", id: "l", comp: "reactions", value: 1 }], "bob"), cause: 1 },
-            { kind: "request", actor: "olive", op: "delete", body: {} }, { ...mk([{ op: "delete", id: "x" }, { op: "delete", id: "l", comp: "reactions" }], "olive", [1]), cause: 3 },
-            { kind: "request", actor: "wes", op: "set", body: {} }, { ...mk([{ op: "set", id: "l", comp: "reactions", value: 2 }], "wes"), cause: 5 },
-            { kind: "request", actor: "olive", verb: "undo", body: {} }, { ...mk([{ op: "set", id: "l", comp: "reactions", value: 2 }], "olive", [0]), cause: 7 }], presence: {} };
+          const W2: any = { entries: [{ kind: "genesis", body: {} }, { kind: "request", actor: "bob", verb: "set", body: {} }, { ...mk([{ op: "set", id: "l", comp: "reactions", value: 1 }], "bob"), cause: 1 },
+            { kind: "request", actor: "olive", verb: "delete", body: {} }, { ...mk([{ op: "delete", id: "x" }, { op: "delete", id: "l", comp: "reactions" }], "olive", [1]), cause: 3 },
+            { kind: "request", actor: "wes", verb: "set", body: {} }, { ...mk([{ op: "set", id: "l", comp: "reactions", value: 2 }], "wes"), cause: 5 },
+            { kind: "request", actor: "olive", verb: "undo", body: {} }, { ...mk([{ verb: "set", id: "l", comp: "reactions", value: 2 }], "olive", [0]), cause: 7 }], presence: {} };
           return { creator: RT.creatorOf(W2, "l", "reactions")?.by ?? null, at: AU.creatorAt(W2.entries, "l", "reactions", W2.entries.length - 1)?.rights ?? null }; })() }; },
     good: (o) => o.nw === "ok" && o.creator === "wes" && o.at === "wes" && o.hand.creator === "wes" && o.hand.at === "wes" },
   // ---------------- A: the auditor's stand-ins ----------------

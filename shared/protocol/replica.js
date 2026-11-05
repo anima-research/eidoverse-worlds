@@ -111,7 +111,8 @@ export function makeReplica({ freeze = true } = {}) {
   v.adopt = (snap) => {
     if (!snap || typeof snap !== "object" || snap.dialect !== DIALECT || snap.v !== VERSION || !MINORS.has(snap.minor)) { v.reset(); v.status = "unknown-version"; return false; }
     v.status = "ok"; v.st = stateFromWire(snap.state); v.seq = Number.isInteger(snap.seq) ? snap.seq : -1; v.world = snap.world ?? null; v.active = true;
-    v.you = typeof snap.actor === "string" ? snap.actor : null;   // the snapshot's `actor`: this joiner's id in the log (`you` is the connection's) learn(snap.names);
+    v.you = typeof snap.actor === "string" ? snap.actor : null;   // the snapshot's `actor`: this joiner's id in the log (`you` is the connection's)
+    learn(snap.names);
     freezeAll();
     rebuildIndex();
     startSim(snap);
