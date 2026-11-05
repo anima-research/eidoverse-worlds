@@ -24,6 +24,7 @@ import { mapGrassArgs } from "../../../shared/flora_args.js";
 import { repairComps, repairWorld, OLD_LIGHT_DECAY, legacyHosts, liftHostOps } from "./shapes.js";
 import { renameFields } from "../../../shared/protocol/names.js";
 import { checkSocket, checkStation } from "../../../shared/sockbody.js";
+const PERSON24 = /^u-[a-z2-7]{24}$/;
 import * as eidosim from "./eidosim-v1.js";   // HER engine (the first eidosim, dialect 3): what a v1 punt did. Importer-only.
 import { ENGINES, DEFAULT_ENGINE } from "../../../shared/protocol/simlayer.js";
 
@@ -124,7 +125,8 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@46";   // @46: no repair-shapes marker; a stored sockets map is lifted here (lift-sockets acts at the end). Output differs there
+export const TRANSLATOR = "eidoverse/translate-v1@47";   // @47: an entity id in the reserved person shape u-[a-z2-7]{24} refuses the translation (F19, P3). Output otherwise unchanged
+// @46: no repair-shapes marker; a stored sockets map is lifted here (lift-sockets acts at the end). Output differs there
 // @45: a minor-1 genesis may carry requires and provenance (§F); output unchanged
 // @44: minor 1, the log vocabulary (docs/DESIGN-log-vocabulary.md)
 // @43 (bot review 440, 441): a valid exit with no helm child rides imported:vehicle; a model with its own light still gets main's inferred lamps. Output differs there.
@@ -244,7 +246,7 @@ export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(nam
 // came to rest; but a punt stays its imported act (no v4 launch), each rest is a plain change by `sim` caused by that act
 // (no digest), the world's engine is today's eidosim from the epoch on, and (R 2026-10-08) a thing v1 ever punted is a
 // `dynamic` collider, every other one `static`. Nothing in the new log asks a reader to fly her engine.
-export const TRANSLATOR_SIM = "eidoverse/translate-v1@46";
+export const TRANSLATOR_SIM = "eidoverse/translate-v1@47";
 // @9 (2026-10-07, R's particles ruling): a v1 `particles` bag is today's instance: its preset is the effect, its origin is
 // `at`, its seed stays, and its count, size, opacity, speed, lifetime, area, texture and quality are the params of the
 // same names every Essential declares (shared/particle_effects.js modernize; instanceOf reads it back exactly). A key
@@ -1061,7 +1063,11 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
   const push = (e) => { if (e.kind !== "genesis") e = { world, ...e };
     if (Number.isInteger(e.ts)) { if (e.ts < lastTs) { e.ts = lastTs; stats.tsClamped = (stats.tsClamped ?? 0) + 1; } lastTs = e.ts; }
     const seq = out.length; out.push(e);
-    if (e.kind === "genesis") world = worldIdOf(e); if (e.kind === "change") applyInPlace(v4, opsOf(e), seq); return seq; };
+    if (e.kind === "genesis") world = worldIdOf(e);
+    // P3 (F19): u- + 24 base32 is reserved for a person; an entity wearing it is refused loud, never passed through
+    if (e.kind === "change") { for (const o of opsOf(e)) if (o.op === "create" && PERSON24.test(o.id)) throw new Error(`entity id ${o.id} (translated seq ${seq}) wears the reserved person shape u-[a-z2-7]{24} (P3): resolve it by hand. Nothing written`);
+      applyInPlace(v4, opsOf(e), seq); }
+    return seq; };
   const genesis = oldEntries[0]?.verb === "genesis" ? oldEntries[0].args : { v: 1, dialect: "eidoverse-log", implicit: true };
   const t0 = Number.isInteger(oldEntries[0]?.ts) ? { ts: oldEntries[0].ts } : {};
   push({ kind: "genesis", actor: "system", ...t0, body: translatedGenesis(oldEntries, { ...(key ? { key } : {}), ...(operator ? { operator } : {}), ...(nonce ? { nonce } : {}) }) });

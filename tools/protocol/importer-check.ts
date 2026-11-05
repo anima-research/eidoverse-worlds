@@ -527,5 +527,11 @@ row("IM-I45", () => {
     "IM-I45 (#369) Ann and ann, two unbound role holders: the report's bind advice for each, pasted as written, binds that one person (by id; by name it would be refused as ambiguous)", { advice, bound });
 });
 
+// ---- F19 (P3): an entity id in the reserved person shape refuses the translation (was the minor-0 migration's guard) ----
+{ const id24 = "u-" + "a".repeat(24), id26 = "u-" + "b".repeat(26);
+  let threw = ""; try { TV1.translate([BASIC[0], { actor: "a", verb: "spawn", args: { id: id24, lib: "b.glb", pos: [0, 0, 0] } }].map((e, i) => ({ seq: i, ts: i + 1, ...e }))); } catch (e: any) { threw = String(e?.message ?? e); }
+  let ok26 = true; try { TV1.translate([BASIC[0], { actor: "a", verb: "spawn", args: { id: id26, lib: "b.glb", pos: [0, 0, 0] } }].map((e, i) => ({ seq: i, ts: i + 1, ...e }))); } catch { ok26 = false; }
+  ok(threw.includes(id24) && /reserved person shape/.test(threw) && ok26, "F19 an entity id wearing u-[a-z2-7]{24} refuses the translation, loud, naming the id; a 26-char u- id is fine", { threw, ok26 }); }
+
 console.log(`[importer-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -436,7 +436,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
 - **A load never writes to a stored value.** A world founded today is written in today's spelling from its first
   entry, so nothing repairs it. One write does happen when a server OPENS a world, and it is not a shape rewrite:
   holds left from before a restart are set down (`return-held`, the system's request; `settleOrphans`), the same
-  request a leave writes. A v1 world comes forward through the translator (`translate-v1@46`, §14), which writes today's spelling
+  request a leave writes. A v1 world comes forward through the translator (`translate-v1@47`, §14), which writes today's spelling
   (the shape audit's rules, `tools/protocol/import-v1/shapes.js`) and lifts v1's `sockets` maps into socket
   children with its own `lift-sockets {id, made, moved}` requests. The door takes a write in a spelling renamed
   before release (`grabbable.pose`/`station.pose` → `anim`, a grip's `fingers` → `grasp`, a motion's old type

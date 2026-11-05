@@ -149,7 +149,6 @@ const LOG_OK: [string, RegExp, string][] = [
   ["mcpl/declaration.ts", /kind === "act"/, "the agent's inbox event's speech facet (D6)"],
   ["mcpl/net-server.ts", /kind === "act"/, "the agent's inbox event relayed to its MCP client (D6)"],
   ["shared/protocol/names.js", /./, "the old world's spellings, read by the translator's renames only"],
-  ["shared/protocol/vocab-minor-1.js", /./, "the minor-0 → minor-1 rename table: each old spelling once, read by the migration tool only"],
 ];
 const logScan = (rel: string, text: string) => text.split("\n").forEach((line, i) => {
   if (/-test\.(ts|mjs)$/.test(rel) && /kind === "act"/.test(line)) return;   // the agent's own tests read its inbox (D6)
