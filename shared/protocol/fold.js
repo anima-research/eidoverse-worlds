@@ -239,9 +239,9 @@ export function shapeOne(verb, b, inner, where) {
 }
 
 // ---------- genesis (§2.4; §3d C1, H5, H6) ----------
-// body {dialect: "eidoverse-log", v: 4, minor, nonce, rewindWindow?, parent?, owners: [[<key>…], …], quorum?, sequencer, requires?, provenance?}. A malformed
-// genesis means "no world"; an unknown minor means "unknown version". The minor is read before the shape, so a later
-// minor may add fields; within a known minor the fields are exact (a typo such as `rewind_n` is not a default).
+// body {dialect: "eidoverse-log", v: 4, nonce, rewindWindow?, parent?, owners: [[<key>…], …], quorum?, sequencer, requires?, provenance?}. A malformed
+// genesis means "no world"; an unknown v means "unknown version". A new feature is declared in `requires`, never by a
+// version bump; the fields are exact (a typo such as `rewind_n` is not a default).
 export const GENESIS_FIELDS = new Set(["dialect", "v", "nonce", "rewindWindow", "parent", "owners", "quorum", "sequencer", "requires", "provenance"]);
 // canonical unpadded base64url (one spelling per byte string), or null
 export function b64uDecode(s) {

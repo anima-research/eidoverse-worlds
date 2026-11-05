@@ -2,9 +2,9 @@
 // suites (tools/protocol/authority-check.ts) run the same code.
 //
 // The client folds the log itself, from the server's own log stream:
-//   adopt(snap)        the join snapshot: {dialect, v, minor, world, seq, state: wireState(fold), physics, mine?}, the fold as the
+//   adopt(snap)        the join snapshot: {dialect, v, world, seq, state: wireState(fold), physics, mine?}, the fold as the
 //                      server holds it at `seq` (a client can't refold the whole log on join; it adopts a snapshot). An unknown
-//                      {dialect, v, minor} is refused before anything is folded: status `unknown-version`, no state (D5)
+//                      {dialect, v} is refused before anything is folded: status `unknown-version`, no state (D5)
 //   ingest(entries, from, held)
 //                      the `log` message: the raw entries the authority just wrote, folded with the fold's own ops
 //                      (opsOf + applyInPlace, the strict reader's code). A gap, a redaction (retroactive by law, L1), a
