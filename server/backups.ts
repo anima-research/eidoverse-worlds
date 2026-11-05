@@ -7,6 +7,8 @@ import crypto from "node:crypto";
 import { BACKUPS_DIR } from "./config.ts";
 import { isCacheFile } from "./statecache.ts";
 import { mkdirDurable, syncDir, syncTree } from "./durable.ts";
+import { custodyFileIn } from "./keyfiles.ts";
+import { MANIFEST, backupManifestOf, checkBackupManifest } from "./custodycheck.ts";
 
 const NAME = /^[a-z0-9_-]{1,64}$/i;
 export const SUMS = "SHA256SUMS";
@@ -45,7 +47,7 @@ function filesUnder(d: string, at = ""): string[] {
 /** Copy WORLDS_DIR/<name>/ byte for byte to <backupsDir>/<name>-<stamp>/ with SHA256SUMS, then re-read and verify every hash
  *  (the copy against the original, and the original against what was copied). Throws, in words, on any copy error or
  *  mismatch, removing the incomplete copy (it never became a backup). `afterCopy`: tests only, runs before the verify. */
-export function backupWorld(worldsDir: string, name: string, { backupsDir = BACKUPS_DIR, now = new Date(), afterCopy }: { backupsDir?: string; now?: Date; afterCopy?: (dir: string) => void } = {}): Backup {
+export function backupWorld(worldsDir: string, name: string, { backupsDir = BACKUPS_DIR, now = new Date(), afterCopy, custodyFile = custodyFileIn(worldsDir) }: { backupsDir?: string; now?: Date; afterCopy?: (dir: string) => void; custodyFile?: string } = {}): Backup {
   if (!NAME.test(name)) throw new Error(`"${name}" is not a world name`);
   const bad = backupsDirProblem(worldsDir, backupsDir); if (bad) throw new Error(bad);
   const src = path.join(worldsDir, name);
@@ -56,16 +58,19 @@ export function backupWorld(worldsDir: string, name: string, { backupsDir = BACK
   fs.mkdirSync(dir);
   try {
     const files = filesUnder(src).filter((f) => !isCacheFile(f)); const sums: Record<string, string> = {}; let bytes = 0;
-    if (files.includes(SUMS)) throw new Error(`${src} holds a file named ${SUMS}, the name the backup's own list takes`);
+    if (files.includes(SUMS) || files.includes(MANIFEST)) throw new Error(`${src} holds a file named ${SUMS} or ${MANIFEST}, the names the backup's own list and manifest take`);
     for (const rel of files) { const a = path.join(src, rel), b = path.join(dir, rel);
       fs.mkdirSync(path.dirname(b), { recursive: true }); fs.copyFileSync(a, b);
       const st = fs.statSync(a); fs.utimesSync(b, st.atime, st.mtime); sums[rel] = hashFile(a); bytes += st.size; }
     fs.writeFileSync(path.join(dir, SUMS), files.map((rel) => `${sums[rel]}  ${rel}\n`).join(""));
+    // F-5: the keys that governed the world, as fingerprints, and the custody file's hash (server/custodycheck.ts); checked back
+    const manifest = backupManifestOf(custodyFile); fs.writeFileSync(path.join(dir, MANIFEST), JSON.stringify(manifest, null, 1) + "\n");
+    if (fs.existsSync(custodyFile)) { const bad = checkBackupManifest(JSON.parse(fs.readFileSync(path.join(dir, MANIFEST), "utf8")), custodyFile); if (bad) throw new Error(bad); }   // a worlds dir with no keys yet (old-format worlds) records none
     afterCopy?.(dir);
     // verify: the list as written, every copy against it, and the original still the bytes that were copied
     const listed = fs.readFileSync(path.join(dir, SUMS), "utf8").split("\n").filter(Boolean).map((l) => /^([0-9a-f]{64}) {2}(.+)$/.exec(l));
     if (listed.length !== files.length || listed.some((m, i) => !m || m[2] !== files[i] || m[1] !== sums[files[i]])) throw new Error(`the backup's ${SUMS} doesn't read back as written`);
-    const copied = filesUnder(dir).filter((f) => f !== SUMS);
+    const copied = filesUnder(dir).filter((f) => f !== SUMS && f !== MANIFEST);
     if (copied.join("\n") !== files.join("\n")) throw new Error(`the backup holds ${copied.length} file(s), the world ${files.length}`);
     for (const rel of files) {
       const h = hashFile(path.join(dir, rel)); if (h !== sums[rel]) throw new Error(`the backup's copy of ${rel} doesn't match the original (sha256 ${h.slice(0, 16)}…, the original ${sums[rel].slice(0, 16)}…)`);

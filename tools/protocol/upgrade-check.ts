@@ -73,7 +73,7 @@ const backupsOf = (name: string) => (fs.existsSync(B) ? fs.readdirSync(B).filter
   const bs = backupsOf("porch"), b = bs[0];
   const sums = b && fs.existsSync(path.join(b, "SHA256SUMS")) ? fs.readFileSync(path.join(b, "SHA256SUMS"), "utf8") : "";
   const listed = Object.fromEntries(sums.split("\n").filter(Boolean).map((l) => { const m = /^([0-9a-f]{64}) {2}(.+)$/.exec(l); return m ? [m[2], m[1]] : ["?", l]; }));
-  const copied = b ? tree(b) : {}; delete copied.SHA256SUMS;
+  const copied = b ? tree(b) : {}; delete copied.SHA256SUMS; delete copied["CUSTODY.json"];
   ok(r.code === 0 && bs.length === 1 && /^porch-\d{8}T\d{6}Z$/.test(path.basename(b)) && same(copied, before) && same(listed, before) && !b.startsWith(W + path.sep) && r.out.includes(`backup: ${b}`),
     "UB1 an in-place translate first copies the whole old world dir (nested files too) to BACKUPS_DIR/<world>-<UTC yyyymmddThhmmssZ>/ beside the worlds dir, with SHA256SUMS; every byte equal; the output names it", { code: r.code, bs, copied, before, listed, out: r.out.slice(-500) });
   const m = JSON.parse(fs.existsSync(path.join(d, "translation.json")) ? fs.readFileSync(path.join(d, "translation.json"), "utf8") : "{}");
@@ -94,7 +94,7 @@ const backupsOf = (name: string) => (fs.existsSync(B) ? fs.readdirSync(B).filter
 }
 
 { const d = oldWorld("shed"); const before = tree(d);
-  const r = xlate("shed", { WORLD_TS_FAULT_AT_STEP: "0" }), b = backupsOf("shed")[0], copied = b ? tree(b) : {}; delete copied.SHA256SUMS;
+  const r = xlate("shed", { WORLD_TS_FAULT_AT_STEP: "0" }), b = backupsOf("shed")[0], copied = b ? tree(b) : {}; delete copied.SHA256SUMS; delete copied["CUSTODY.json"];
   ok(r.code !== 0 && /the swap failed: \(injected\) step 0 failed/.test(r.out) && !!b && r.out.includes(`The verified backup made first is kept at ${b}`) && !/nothing was left behind/.test(r.out) && same(copied, before) && same(tree(d), before),
     "UB9 a translation that fails after its backup (an injected swap failure) says the verified backup is kept, and where; the world as it was", { code: r.code, b, out: r.out.slice(-500) }); }
 
@@ -104,7 +104,7 @@ const backupsOf = (name: string) => (fs.existsSync(B) ? fs.readdirSync(B).filter
   let b: any = null; try { b = backupWorld(W, "vault", { backupsDir: BB }); } finally { fs.openSync = o.openSync; fs.fsyncSync = o.fsyncSync; }
   const files = Object.keys(tree(b.dir)).map((f) => path.join(b.dir, f)), dirs = process.platform === "win32" ? [] : [b.dir, path.join(b.dir, "extra"), BB];
   const missing = [...files, ...dirs].filter((f) => !synced.has(path.resolve(f)));
-  ok(files.length === 4 && !missing.length, "UB10 a backup is fsynced before it's returned: every copied file and SHA256SUMS, each of its directories and BACKUPS_DIR's entry for it (none of the directories on win32)", { missing, files: files.length }); }
+  ok(files.length === 5 && !missing.length, "UB10 a backup is fsynced before it's returned: every copied file, SHA256SUMS and CUSTODY.json, each of its directories and BACKUPS_DIR's entry for it (none of the directories on win32)", { missing, files: files.length }); }
 
 // when the failed backup's partial directory can't be removed, the error says so (never "was removed")
 { oldWorld("stuck"); const BB = path.join(root, "backups-stuck"), rm = fs.rmSync; let err = "";
@@ -185,7 +185,7 @@ let reviewed = "";
 }
 { const r = await ask(OP, "world-upgrade", { world: "attic", approved: reviewed }, 120_000);
   const b = backupsOf("attic")[0]; const m = JSON.parse(fs.existsSync(path.join(attic, "translation.json")) ? fs.readFileSync(path.join(attic, "translation.json"), "utf8") : "{}");
-  const copied = b ? tree(b) : {}; delete copied.SHA256SUMS;
+  const copied = b ? tree(b) : {}; delete copied.SHA256SUMS; delete copied["CUSTODY.json"];
   const s = await sock(VIS); s.send({ type: "join", world: "attic", id: "Vee", avatar: "", replica: true });
   await tryUntil("the join to the upgraded attic is answered", () => s.msgs.some((x) => x.type === "snapshot" || x.type === "error"), { ms: 8000, step: 50 }); s.ws.close();
   ok(r.ok === true && r.backup === b && r.report === reviewed && /rollback attic/.test(r.rollback ?? "") && isWorldDir(attic) && m.report === reviewed && m.backup === b && m.approval?.owner === null && same(copied, atticBefore)

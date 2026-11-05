@@ -18,4 +18,4 @@ export function mintId() { return randomPart(); }
 export const PLACEHOLDER = /^\$[A-Za-z0-9][A-Za-z0-9_-]{0,62}$/;
 export const isPlaceholder = (x) => typeof x === "string" && PLACEHOLDER.test(x);
 /** The shape of a person's identity (server/directory.ts): an entity may never wear it, so a reference is never ambiguous. */
-export const PERSON_ID = /^u-[a-z2-7]{20}$/;
+export const PERSON_ID = /^u-[a-z2-7]{20}(?:[a-z2-7]{4})?$/;

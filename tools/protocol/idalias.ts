@@ -15,7 +15,7 @@ export function idAliases() {
     if (v && typeof v === "object") { const o = {}; for (const [k, x] of Object.entries(v)) o[k] = sub(x, k); return o; }
     return v; };
   const names = new Set();
-  const named = (a) => { if (a && typeof a === "object" && typeof a.id === "string" && !a.id.startsWith("$") && /^[a-z0-9][a-z0-9-]*$/.test(a.id) && !/^u-[a-z2-7]{20}$/.test(a.id)) { names.add(a.id); return { ...a, id: `$${a.id}` }; } return a; };
+  const named = (a) => { if (a && typeof a === "object" && typeof a.id === "string" && !a.id.startsWith("$") && /^[a-z0-9][a-z0-9-]*$/.test(a.id) && !/^u-[a-z2-7]{20}(?:[a-z2-7]{4})?$/.test(a.id)) { names.add(a.id); return { ...a, id: `$${a.id}` }; } return a; };
   return {
     /** the request as the wire gets it: a create's chosen id → '$id', every known name → its minted id */
     out(verb, args = {}) {

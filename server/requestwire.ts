@@ -45,7 +45,7 @@ export function whois(w: World, args: Any) {
   for (const c of w.clients) if (c.actorId && !c.spectator) { here.set(c.actorId, c.id); if (c.declares) said.set(c.actorId, c.declares); }
   const known = new Set<string>([...here.keys(), ...log.knownIds()]);
   const want = foldName(q);
-  if (!want && !/^u-[a-z2-7]{20}$/.test(q)) return { ok: false, refused: { code: "shape", reason: `"${q.slice(0, 40)}" has no letters or digits to look up`, fix: "the name someone goes by here, as their nameplate shows it" } };
+  if (!want && !/^u-[a-z2-7]{20}(?:[a-z2-7]{4})?$/.test(q)) return { ok: false, refused: { code: "shape", reason: `"${q.slice(0, 40)}" has no letters or digits to look up`, fix: "the name someone goes by here, as their nameplate shows it" } };
   const people = [...known].filter((id) => id === q || (dir.nameOf(id) != null && foldName(dir.nameOf(id)!) === want) || (here.has(id) && foldName(here.get(id)!) === want))
     .map((id) => { const k = dir.entry(id)?.kind;
       // no kind of participant (§6a rule 3): their own declared word while here, else nothing; the account facts (a guest, an

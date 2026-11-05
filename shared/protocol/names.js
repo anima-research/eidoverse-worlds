@@ -112,7 +112,7 @@ export function dec(s) {
 // directory, outside the log (§2.3), and reaches clients beside the entries ({names: {id: name}}). Every client in a
 // process feeds this one registry (ids are random, so worlds and doors can't collide), and every place that shows a
 // person reads it: actorName(id) is the name, else an old escaped identity read back, else the id itself.
-export const ACTOR_ID = /\bu-[a-z2-7]{20}\b/g;
+export const ACTOR_ID = /\bu-[a-z2-7]{20}(?:[a-z2-7]{4})?\b/g;
 const NAMES = Object.create(null);
 export function learnNames(o) { if (o && typeof o === "object") for (const [k, n] of Object.entries(o)) if (typeof n === "string" && n) NAMES[k] = n; }
 export const actorName = (id) => NAMES[String(id)] ?? dec(String(id)) ?? String(id);

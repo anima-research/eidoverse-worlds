@@ -558,7 +558,7 @@ export class WorldAgent {
    *  {id} | {refusal} | {none} (nothing here is called that: a caller may try a place or a person next). */
   thingRef(raw: string): { id: string } | { refusal: string } | { none: true } {
     const q = String(raw ?? "").trim();
-    if (!q || q.startsWith("$") || q.startsWith("@") || q.startsWith("sha256:") || /^u-[a-z2-7]{20}$/.test(q)) return q ? { id: q } : { none: true };
+    if (!q || q.startsWith("$") || q.startsWith("@") || q.startsWith("sha256:") || /^u-[a-z2-7]{20}(?:[a-z2-7]{4})?$/.test(q)) return q ? { id: q } : { none: true };
     const r = resolveThing(q, [...this.entities.values()] as any[]);
     if ("id" in r) return { id: r.id };
     if ("ambiguous" in r) {

@@ -485,7 +485,7 @@ type ToolHandler = (ag: WorldAgent, a: Record<string, any>, ctx: ToolCtx, name: 
 async function resolveWho(ag: any, raw: unknown, verb: string): Promise<{ who: string } | { err: any }> {
   const id = String(raw ?? "").trim();
   if (!id) return { err: fail(`${verb} needs who — their name or identity (u-…)`) };
-  let who = /^u-[a-z2-7]{20}$/.test(id) ? id : ag.actorIds.get(id) ?? null;
+  let who = /^u-[a-z2-7]{20}(?:[a-z2-7]{4})?$/.test(id) ? id : ag.actorIds.get(id) ?? null;
   if (!who) {
     const w: any = await ag.request("whois", { name: id });
     const ppl: any[] = w?.ok ? w.people ?? [] : [];

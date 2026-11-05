@@ -12,7 +12,7 @@ import { listedIn, leftWords } from '../../shared/protocol/access.js';
 import { serverNow, serverUntil } from './serverclock.js';
 import { escapeHtml as esc } from './markup.js';
 
-const ID = /^u-[a-z2-7]{20}$/;
+const ID = /^u-[a-z2-7]{20}(?:[a-z2-7]{4})?$/;
 const SPANS = [['', 'no end'], ['3600000', '1 hour'], ['86400000', '1 day'], ['604800000', '1 week']];
 const wc = () => replica.st?.entities?.['@world']?.c ?? {};
 const me = () => { const r = net.myRights ?? {}; return { id: net.you, role: r.role ?? 'member', rank: r.rank ?? 0, permissions: r.permissions ?? [] }; };
