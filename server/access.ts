@@ -116,6 +116,18 @@ export function doorFor(name: string): Door | null {
   return { name, wc, label: doorOfWc(wc), mod };
 }
 
+/** Who goes past this door whatever it says: operators, and owners and holders of a moderation power (what @world.access
+ *  always said). The one reading for entryFor and discoverable. The bypass is for people this world LISTS (an explicit role
+ *  row): a power handed to everyone through default-role or role-defs must not open an invite-only door (final review M1,
+ *  10-18); an ended timed grant is absent at `now` (security review 10-18 M6): the door reads it as not listed, loaded or not,
+ *  before the authority's sweep writes its end (expire-roles), so an unloaded world's HTTP reads and a join don't honour it
+ *  indefinitely. */
+function bypassOf(wc: Record<string, any>, account: string | null, actorId: string | null, now: number): { listed: boolean; bypass: boolean } {
+  const eff = actorId ? effectiveOf(wc, actorId, { anon: !account }) : null;
+  const listed = !!actorId && listedIn(wc, actorId, now);
+  return { listed, bypass: isOperator(account) || (listed && (isOwner(eff) || MOD_POWERS.some((p: string) => eff?.permissions?.includes(p)))) };
+}
+
 /** May `who` be in this world — with a body, or watching? null = yes; else the refusal (code, reason, words).
  *  `here` (embodied joins only): how many bodies are in the world now, for access.max. */
 export function entryFor(door: Door, who: Who, mode: EntryMode, { now = Date.now(), here = null as number | null } = {}): Refusal | null {
@@ -130,14 +142,7 @@ export function entryFor(door: Door, who: Who, mode: EntryMode, { now = Date.now
     const ban = gb ?? findBan(serverBans, account, addr, now, door.name) ?? (actorId && bannedHere(actorId) ? { by: "a moderator" } as any : null);
     if (ban) return { code: 4006, reason: "banned", why: `you are banned from ${gb ? "these worlds" : `"${door.name}"`}${ban.reason ? ` — ${ban.reason}` : ""}` };
   }
-  // operators, owners and holders of a moderation power always get in (what @world.access always said)
-  const eff = actorId ? effectiveOf(door.wc, actorId, { anon: !account }) : null;
-  // the bypass is for people this world LISTS (an explicit role row): a power handed to everyone through default-role or
-  // role-defs must not open an invite-only door (final review M1, 10-18)
-  // an ended timed grant is absent at `now` (security review 10-18 M6): the door reads it as not listed, loaded or not, before the
-  // authority's sweep writes its end (expire-roles) — so an unloaded world's HTTP reads and a join don't honour it indefinitely
-  const listed = !!actorId && listedIn(door.wc, actorId, now);
-  const bypass = isOperator(account) || (listed && (isOwner(eff) || MOD_POWERS.some((p: string) => eff?.permissions?.includes(p))));
+  const { listed, bypass } = bypassOf(door.wc, account, actorId ?? null, now);
   // a ban file the server couldn't read: the door is locked to everyone it doesn't know (moderation.ts doorLocked); the renderer holds the operator's own key and never embodies
   if (doorLocked() && !isOperator(account) && !listed && !who.trustedRenderer) return { code: ACCESS_CLOSE, reason: "locked", why: LOCKED_WHY };
   const e = entryOf(door.wc, { actor: actorId ?? undefined, anon: !account, bypass, trustedRenderer: !!who.trustedRenderer }, door.name, now);
@@ -159,9 +164,7 @@ export function discoverable(door: Door | null, who: Who | null, now = Date.now(
   if (!door) return false;
   const { account = null, actorId = null } = who ?? {};
   if (isOperator(account)) return true;
-  const eff = actorId ? effectiveOf(door.wc, actorId, { anon: !account }) : null;
-  const listed = !!actorId && listedIn(door.wc, actorId, now);
-  const bypass = listed && (isOwner(eff) || MOD_POWERS.some((p: string) => eff?.permissions?.includes(p)));
+  const { bypass } = bypassOf(door.wc, account, actorId, now);
   return entryOf(door.wc, { actor: actorId ?? undefined, anon: !account, bypass, trustedRenderer: !!who?.trustedRenderer }, door.name, now).may !== "none";
 }
 // ---- what a name is to someone (§F F-3: no existence oracle; Mica 11-05, #23 ruling 4) ----
