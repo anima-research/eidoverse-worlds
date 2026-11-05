@@ -138,7 +138,7 @@ const LOG_RETIRED: [RegExp, string][] = [
   [/\brewind_window\b/, "`rewind_window` is `rewindWindow`"],
   [/commit-unpurged|\bpurged:\s*true\b|\{\s*"?purged"?\s*:/, "the redaction marker is `redacted` (commitment-unredacted)"],
   [/\bverb:\s*['"](genesis|purge|sequencer)['"]|"verb":\s*"(genesis|purge|sequencer)"/, "genesis, redaction and governance carry no verb (a say entry neither; a chat line's verb is the client's own shape)"],
-  [/\bcutJson:/, "a checkpoint blob is written as snapshotJson (cutJson is read only from historical blobs)"],
+  [/\bcutJson:/, "a checkpoint blob is written as snapshotJson (a blob keyed cutJson is skipped: no reader takes it)"],
 ];
 const LOG_OK: [string, RegExp, string][] = [
   ["mcpl/agent.ts", /kind(: | === )"act"/, "the agent's in-memory inbox event, never a log entry (D6)"],

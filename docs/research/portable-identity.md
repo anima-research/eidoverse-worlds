@@ -1,5 +1,7 @@
 # Portable identity: the protocol shape, evaluated against the format freeze
 
+> **Research and future design, not implemented protocol law.** Nothing here binds a reader or writer. The decided contract lives in [`docs/DESIGN-log-vocabulary.md`](../DESIGN-log-vocabulary.md) (§P, §F) and [`spec/PROTOCOL.md`](../../spec/PROTOCOL.md). Where this note and those differ, they win.
+
 2026-11-04 · read-only against `~/eido/wt-vocab` (design doc `docs/DESIGN-log-vocabulary.md`, `spec/PROTOCOL.md` §1, §3.1, §6, §6a, §7a, §12, §13, §14; `shared/protocol/fold.js`, `spec/conformance/chain.py`, `spec/conformance/gov.py`, `server/directory.ts`, `server/custody.ts`, `server/aid1.ts`, `tools/protocol/import-v1/world.ts`, `tools/protocol/migrate-identities.ts`). Every codebase claim below names its line; external claims name their source at the bottom. Guesses are marked **guess**.
 
 **One line:** make an identity a did:plc-shaped *self-certifying id* (the hash of a signed identity-genesis, with ordered rotation keys and a recovery window, resolved through a home node the person chooses), keep `actor` as the opaque `u-` id it is today, and bind the two outside the log by signed claim — so the freeze touches only the id grammar, the genesis `owners` grammar, and one sentence forbidding identity from ever entering the envelope.

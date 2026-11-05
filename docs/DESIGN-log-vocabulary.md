@@ -1,84 +1,28 @@
-# Log vocabulary: the term table, before any code
+# Log vocabulary: the decided contract
 
-2026-11-04 · read-only against `wt-13teach` at 2a852459f; revised the same day to the design review of PR #23 (§D, §Q below; the story in §3, the receipt in §4.6, fixtures in §5, the fork map in §6). Answers the reviewer's (Mica's) request: one row per term with the exact referent, a real example, every surface, the hash/world-id effect, what the v1 translator would emit, and whether an old reader fails loud or misreads; the four contested referents settled; a six-entry story in the proposed words. Inputs: `RULING-act-change-2026-11-04.md` (act → request) and `REVIEW-log-vocabulary-2026-11-04.md`.
+The words the protocol log, the wire snapshot and the hello use, what each one means, and why. This dialect is `{dialect: "eidoverse-log", v: 4}`. Section numbers (§0, §1.x, §2.x, §3, §5, §F, §P) and the ids D1–D13, F1–F31 and M1–M2 are cited from code comments and stay stable.
 
-Examples are quoted from `spec/conformance/` and `spec/fixtures/` or lifted from the code that writes the entry; anything I assembled myself is marked **constructed**. No private world data is quoted.
+Examples are quoted from `spec/conformance/` or from the code that writes the entry. Review history lives in git and PR #23, not here.
 
-## Changes from the implementation
-
-What the implementation found, folded in (each is a sentence where the row lives):
-
-- **A minor-0 reader reports `no-world`, not `unknown-version`, for a minor-1 world**: its envelope check meets genesis's dropped `verb` (D3) before the minor. Loud, and nothing is folded. D1, §1.5, §4.5, F7, F20, M2.
-- §1.8: the snapshot carries `actor` (the joiner's log id) beside `you` (the connection's id), and `chat: {recentChat, chatTotal}`.
-- §4.7: `set`, `delete` and `batch` are spellings shared by request verbs and change ops.
-- The script request's body position `head` is `seq` (row 1.4), in the writer and the rename table.
-- No migration: the minor-0 → minor-1 tool, its receipt and its fixtures are gone (§4.6); F19's guard is the v1 translator's.
-- §6 step 4 covers a reset successor too: an unmapped predecessor is strict refusal.
-- F-3 step 3 is the reviewer's no-existence-oracle rule, with one caveat.
-- **No `minor`** (Mica, 11-04): it leaves genesis, the world id's input, the reader's status, the snapshot and the hello; a stray `minor` is malformed. **Versioning rule** (Mica, 11-04): `dialect` names the protocol family, `v` is the hard semantic or wire break, and `requires` is the monotonic, additive, opt-in feature gate. New op, kind or component semantics declared before their first use → `requires`; a changed meaning of existing historical bytes, of the envelope or genesis skeleton, or anything impossible to predeclare → bump `v`. There is no `minor`. F20 now reads: a reader given the next `v` returns `unknown-version`, no world, no entry folded or cached (conformance 07a, vocab-fixtures F20); same `v` with an unknown `requires` → `unsupported-feature`; an unknown `v` at the hello → `update-required`. D1's minor bump is superseded by this; its history stays below.
-- F-1: an empty `requiresAdd` is invalid in every reader (`requiresAdd-empty`), as `gov.py` already held: a governance decision that changes nothing. F-3: every client says a hello refusal in words (`hello.js refusalWords`); an agent's join rejects with them instead of timing out.
-- **No entity classifier** (Mica, 11-04: delete `formOf` and drop `form` from the rename set). `kind.js` is gone: the renderer realizes each component on its own (model, mesh, light, socket), and labels, capacity and the gate read component presence. The `kind` field on `/geom` rows, the client's `metaOf` and the agent's records is a retired note naming the components until 2026-12-01. §1.14 and §2.4 are kept as the record.
-
-## Changes since review 2
-
-Folded from Mica's round-2 review of PR #23 (read against 2b72cd972). Verdict: **vocabulary design approved; migration and identity changes requested before code.** The term set, D1–D5, D7, D10, D11, the story and the receipt's determinism contract stand as written. What moved:
-
-- **No later re-id of an already migrated child.** An unmapped fork parent is **strict refusal**: the child is refused until the parent's receipt or map is supplied; a later explicit import may translate parent and child together. The promise that a later run re-ids a migrated child is removed everywhere (here and in `research-portable-identity.md`); `parentUnmapped`/`parentOld` leave the receipt. D9, §6 step 4, F15.
-- **Migration authority is a three-row table** (D12, §4.6): custodial default with no governance → the operator may migrate; founder-keyed → a tier-0 signature is required before any output; governance present → refuse. A late countersignature ratifies a receipt only if nothing migrated has been served or mutated. `ownerAttested` is **mandatory** for a founder-keyed world, never `false`. Q4 closed. F16–F18.
-- **`physics.kind` stays** (D13): a scoped component field with conventional rigid-body values, not the entry discriminator; documented as a deliberate survivor beside actor `sim` and checkpoint-body `sim`. Q5 closed.
-- **P1:** `actor` is a world-visible alias by default; writing the global portable id as the actor is an explicit resident choice, never the default. The research doc's contradicting line is fixed.
-- **P3:** the person shape reserves exactly `u-[a-z2-7]{20}` and `u-[a-z2-7]{24}`, not 20–32; the translator scans every world for entity ids already wearing the 24 shape and refuses loudly on a collision. F19.
-- **P4/P6:** historical governance verification is offline-stable: it binds the identity id, the identity document/op-log version or CID, the key valid at `ts`, and the proof history; never the home node's current state. F21 (design fixture, pending).
-- **P7** reworded: actor history is never redactable; revoking a local binding tombstones the directory relation, not the person and not their authored entries.
-- **Q1, Q2, Q4, Q5, Q6 answered** (§Q); Q3 was already settled (keep the inbox `kind: "act"`). Seven fixture rows added to §5 (F15–F21). D6 and D8 updated to match.
-
-## Changes since review 1
-
-Folded from the second, independent review (`REVIEW2-vocab-design-2026-11-04.md`, read against f49ce8710). Its verdict: the vocabulary half stands; the migration half needed work. What moved:
-
-- **Migration is a pure deterministic rename** (B1): same salts, nonce, `ts`, entry count; receipt gains `deterministic`, `vocabulary` (rename-table version), `ownerAttested`, `governanceEntries`, `parentOld` (the last removed again in round 2: strict refusal, D9); the receipt is stated to prove custody plus reproducibility, never owner consent. New fixture **F13** (migrate twice → identical minus signatures; a third party recomputes the head map from the old bytes). §4.6, §5.
-- **A world holding a governance entry is refused by the migration** (B2): governance signatures bind the old world id and the host holds none of the signing keys. Spec line: a genesis-changing migration is possible only before the first governance entry. §4.6, §6.
-- **Redaction targets are `{seq, index?}`** (S1): `op` is the operation word and nothing else. D3, §1.3, §3.
-- **The flattened snapshot carries `minor`; `replica.adopt` refuses an unknown version** (S2); F7 extended with the old-client case. D5, §1.8, §5.
-- **On the wire `world` is the id, `name` the directory** (S3), consistent with the log. D5, §1.8.
-- **Fork/reset founding `from: {world, head}` is rewritten through the map** (S4). §6, F11.
-- **Negative fixtures: the minor-1 reader refuses every old spelling** (S5); `MINORS = {1}`, minor-0 reading lives only in the migration tool. §5 (F14), D1.
-- **The migration tool checks a child's rewritten `parent.head` against the parent's new head** (S6); F11's mutation names that check. §6, §5.
-- §1.2's `cause` row corrected (Q-a); `parentOld` in the receipt (Q-b; removed in round 2); the `physics` component and the surviving `kind`s listed as deliberate survivors (Q-d, Q-e). §1.2, §1.15, §6.
-- Nits: `cause` is an envelope field (N1); `cascade` given its SQL referent (N3); `isCommitStub` vs `bodyCommit` to agree at the rename (N4); "`seq` is never an envelope field" (N5); `get head()` vs `headAt` (N6); M2 names `old-fold.js` (N7); the no-partial-state verification recorded (N8); D6's site count corrected to 6.
-- **Three new open questions** for the reviewer (§Q): Q3 the inbox `kind: "act"` (S7, against D6); Q4 who authorizes migrating a founder-keyed world (Q-c); Q5 whether to rename `physics.kind`.
-
-## D. Decisions (agreed in review)
-
-Disposition from review: **direction approved; design changes requested before code**. Each call below is the review's; the table in §1 and the arguments in §2 are kept as the record of how they were reached.
+## D. Decisions
 
 | # | call | decision | where |
 |---|---|---|---|
-| D1 | `minor` | **bump to 1** before any world in this dialect is stored. Acceptance: an old reader returns no world before applying any state (`no-world`: the minor-0 envelope check meets genesis's dropped `verb` first; loud and stateless); no partial-state fallback; the translator maps every old world id, fork parent and bookmark to the new id; v1 translates directly to the final minor-1 vocabulary, never through a stored intermediate (#260) dialect. **`MINORS = {1}`** (`fold.js:15`, `reader.py:36 KNOWN_MINORS`): the live reader never reads minor 0 (it refuses it, F20), so one vocabulary never quietly becomes two; nothing migrates minor 0 (§4.6) | §0, §4.5, §5 |
-| D2 | `request` body | admitted `{"args": {…}, "salt"}`; refused `{"argNames": [names], "refused": {code}, "salt"}` (plus the writer's optional body fields `unknownArgs`, `unrecorded`, `operator` as today; `cause` is an envelope field, `writes.js:111`, not a body field). Matches the wire's `{verb, args}`, leaks no refused values, ends request-in-request. Readback re-pinned `request.*` → `args.*` | §1.1, §4.1 |
-| D3 | genesis + field spellings | drop `verb: "genesis"`; `rewind_window` → `rewindWindow`; position `head` → `seq`, hash `head` stays; `verb` → `op` on changes and batch items; `followUps` → `cascade`; `purge`/`purged` → `redaction`/`redacted`; redaction target `{seq, op?}` → **`{seq, index?}`** (`op` is the operation word, nowhere an index; the refusal's `{op: i}` → `index: i` in 1.15 is the same rule); `commit` → `commitment`; kind `sim` → `physics` (actor `sim` and the checkpoint body field `sim` keep their meanings); kind `sequencer` → `governance` (the writer/signing role stays `sequencer`); envelope `by` retired; v1 actor `world` dropped (`system` covers authority-authored entries) | §1.2–1.7, 1.9, 1.12, 1.13, 1.15, §2.2, §2.3 |
-| D4 | `grant` / `for` | **not renamed to `delegation`**: both dead reservations are **dropped from the accepted envelope** for minor 1 (`for` becomes `malformed:unknown-field` like any stranger). Delegation returns in a later minor when the object has keys, signatures and semantics; the spec may reserve the concept in prose, never a field name | §1.11, §2.1 |
-| D5 | `cut` → snapshot | flatten the `snapshot` wire message (no `snapshot.snapshot`). The flattened message carries **`dialect`, `v`, `minor`** and `replica.adopt` refuses an unknown triple with a visible `unknown-version` state (today it checks none: `replica.js:109`). On the wire **`world` is the world id**, as in the log; the directory name travels as **`name`** (today `world: this.name`, `worldlog.ts:359`). Checkpoint blobs: new writes `snapshotJson`; readers `snapshotJson ?? cutJson`; migration preserves old blob bytes and references, never re-blobs a historical checkpoint for spelling | §1.8 |
-| D6 | agent inbox `kind: "act"` | **kept**, documented as a volatile agent event (`mcpl/agent.ts` inbox, 6 sites), not a protocol-log kind. Re-opened by review 2 as Q3; **settled: kept** (review 2 final disposition, and the note at the end of §P) | §4.7, §Q |
-| D7 | the story | a real causal order (refusal first; request → change → physics; redaction of the admitted request; governance last); the handoff shows the **old key signing a distinct new key**; the story becomes an executable conformance fixture | §3, §5 |
-| D8 | migration receipt | **superseded: no migration** (§4.6) | §4.6 |
-| D9 | fork parents | **superseded: no migration** (§4.6) | §4.6 |
-| D10 | conformance + mutations | the positive fixtures (F1–F13), the negative set F14, the round-2 rows F15–F21 (F21 a design fixture pending governance support) and the two mutation rules in §5 go in the implementation PR | §5 |
-| D11 | governance freezes the id | the migration **refuses** any world holding a governance entry (loud, naming the seq); spec §13 gains: *a genesis-changing migration is possible only while a world holds no governance entry; after the first one the world id is frozen for good* | §4.6, §6 |
-| D12 | migration authority | **superseded: no migration** (§4.6) | §4.6 |
-| D13 | `physics.kind` | **kept** as a deliberate survivor: a scoped component field with conventional rigid-body values (`dynamic\|static\|kinematic\|none`, `componentspec.js:240`), not the protocol entry discriminator; renaming it is a state rewrite and digest churn for little cold-reading benefit. If a component redesign ever prefers `bodyType`, that is a component-version migration, never collateral vocabulary cleanup | §1.15, §Q (Q5) |
+| D1 | versioning | The version is `{dialect, v}`. **There is no `minor`**: a genesis or hello carrying one is malformed, and the snapshot carries none. `dialect` names the protocol family; `v` is a hard semantic or wire break; `requires` (§F F-1) is the monotonic, additive, opt-in feature gate. New op, kind or component semantics declared before first use → `requires`. A changed meaning of existing bytes, of the envelope or genesis skeleton, or anything that can't be predeclared → bump `v`. A reader given an unknown `v` returns `unknown-version`: no world, no entry folded or cached (F20). An unknown `requires` id → `unsupported-feature`. An unknown `v` at the hello → `update-required` (F22). v1 worlds translate directly to this vocabulary; no intermediate dialect is ever stored (F10). The kernel is pinned once, by the first-deploy ceremony (`spec/kernel-vectors/first-deploy`, kernel-check K3) | §0, §5 |
+| D2 | `request` body | admitted `{args: {…}, salt}`; refused `{argNames: [names], refused: {code}, salt}`, plus the writer's optional `unknownArgs`, `unrecorded`, `operator`. `cause` is an envelope field, not a body field. Matches the wire's `{verb, args}`, keeps refused values out of the log, ends request-in-request. Readback rows read `args.*` | §1.1 |
+| D3 | genesis + field spellings | genesis has no `verb`; `rewindWindow`; position `seq`, hash `head`; `op` on changes and batch items; `cascade`; `redaction`/`redacted`; redaction target `{seq, index?}`; `commitment`; kind `physics` (actor `sim` and the checkpoint body's `sim` keep their meanings); kind `governance` (the signing role stays `sequencer`); envelope `by` retired; actor `world` dropped (`system` covers authority-authored entries) | §1.2–1.7, 1.9, 1.12, 1.13, 1.15, §2.2, §2.3 |
+| D4 | `grant` / `for` | both are **out of the envelope**; either is `malformed:unknown-field`. Delegation returns as a feature or a new `v` once it has keys, signatures and semantics. The spec may reserve the concept in prose, never a field name | §1.11, §2.1 |
+| D5 | `cut` → snapshot | the `snapshot` wire message is flat (no `snapshot.cut`). It repeats the authoritative `{dialect, v, requires}`; `replica.adopt` refuses an unknown `{dialect, v}` whole with a visible `unknown-version` state (F7). On the wire `world` is the world id, as in the log; the directory name travels as `name`. Checkpoint blobs are written and read as `snapshotJson`; a blob keyed `cutJson` is skipped (F12) | §1.8 |
+| D6 | agent inbox `kind: "act"` | **kept**: a volatile event in `mcpl/agent.ts`'s in-memory inbox `{ts, kind, who, text}`, never logged, never on the protocol wire. `spec/PROTOCOL.md` says so beside the kind table. With `act` gone from the log, the word has one meaning in protocol code | §1.1 |
+| D7 | the story | a real causal order (refusal; request → change → physics; redaction of the admitted request; governance last); the handoff shows the old key signing a distinct new key; the story is an executable fixture (`spec/conformance/logs/25-story.jsonl`) | §3, §5 |
+| D8 | migration receipt | **none**: no earlier version of this dialect was ever deployed, so nothing migrates within it | — |
+| D9 | fork parents | **none**: no migration, so no fork-parent remap | — |
+| D10 | conformance + mutations | the fixtures and mutation rules in §5 ship with the implementation | §5 |
+| D11 | governance freezes the id | a genesis-changing rewrite is possible only while a world holds no governance entry; after the first one the world id is frozen for good (`spec/PROTOCOL.md` §13) | §F F-5 |
+| D12 | migration authority | **none**: no migration | — |
+| D13 | `physics.kind` | **kept**: a scoped component field with conventional rigid-body values (`dynamic\|static\|kinematic\|none`), not the entry discriminator. Renaming it would rewrite state and churn digests for little cold-reading benefit. A future `bodyType` would be a component-version change, never vocabulary cleanup | §1.15 |
 
-Endorsed term set: `genesis · change · request · physics · say · redaction · governance`, with `change.op`, `request.verb`, `physics.verb`, `body.args` / `body.argNames`, `body.cascade`, `body.commitment`, `snapshot.seq`, redaction target `{seq, index?}`.
-
-## Q. Questions for the reviewer, and the answers
-
-All six are now answered (Q3 before round 2, the rest by it). Each keeps the question as asked, so the record shows how the answer was reached; the answer is in bold at the end.
-
-- **Q1 — a wake's `cause` is the request, not the change.** **Answered: yes.** A wake's `cause` is the admitted request; request → change → physics is the reading order, not a `cause` value. The story's line 4 stays `cause: 2`. The review's example order says "4 physics caused by 3" (the change). The writer says otherwise: `shared/protocol/authority/writes.js:114` builds each wake as `{kind: "sim", actor, cause: w.entries.length, verb: "launch", body}` where `w.entries.length` is the seq the *request* entry takes (`w.fits(actE, changeE, …wakes)` appends the request first), and the comment above it reads "falls from rest after the change, caused by the act". The physics fixture agrees: every `launch` in `spec/conformance/physics/arc-onto-table.jsonl` carries the `cause` of its request. The story in §3 therefore writes line 4 with `cause: 2` (the admitted request), and the prose says "caused by the request that caused the change". (The earlier draft of this doc had the same error the other way round: it claimed "for a wake, the change that removed a support"; corrected.) If the reviewer meant the chain *request → change → physics* as a reading order rather than a `cause` value, nothing else moves.
-- **Q2 — a fork parent carries a `head`, so the world-id map alone can't remap it.** `shared/protocol/authority/verbs.js:52` writes a fork genesis with `parent: {world, seq, head}` and `fold.js checkGenesis` requires all three. After re-chaining, the parent's head at `parent.seq` is a *new* hex; a fork remapped only by world id would name the old head and fail the parent's chain check. §6 therefore makes the fork map two-stage: parents migrate first, and the child's `parent` is rewritten from the parent's receipt (`newWorldId` and the `(seq, oldHead, newHead)` row at `parent.seq`), which in turn changes the child's own genesis and id. The review's "old→new world-ID map" is kept as the index; the head rows come from the receipt it already requires. Confirm this is the intended reading. **Answered: the two-stage remap is accepted** for a parent present in the migration set: a child's new `parent.world` and `parent.head` come from the already-migrated parent's receipt at the unchanged `parent.seq`, and the translator verifies the head it writes (grandchildren follow the same rule inside the one run, by depth order). The unmapped-parent rule changed: **strict refusal** (D9, §6 step 4): the child is refused until the parent's receipt or map is supplied, and a later explicit import may translate parent and child together. A migrated child is never silently re-id'd by a later run; that would break the one-translation goal, make bookmarks and children unstable, and can become impossible once a governance entry freezes the id.
-- **Q3 — rename the agent inbox `kind: "act"` after all?** D6 kept it. Review 2 re-examined and asks for the rename, against D6. The evidence: `grep -c 'kind: "act"' mcpl/agent.ts` = 6 (the first review said 7), all in one file, in the agent's in-memory inbox `{ts, kind, who, text}`, never logged, never on the protocol wire. *For keeping (D6):* it is volatile, out of the log, and one sentence beside the kind table says so; renaming a working agent event for a word it never shares a surface with is churn. *For renaming (S7):* it is the one surviving `kind: "act"` a grep finds after the rename, under the same key `kind` the log uses, in the file a new engineer reads next (the agent); the doc's own test ("any SWE could read a thing and correctly intuit what it does") fails for a `kind: "act"` that is not a log kind, and a spec sentence is a weaker fix than a word. Cost: ~10 minutes, six sites. If renamed, any word that is not a log kind (`did`, `deed`, `done`); if kept, at least the key (`type:`), so `kind:` means one thing across the codebase. Reviewer's call.
-- **Q4 — who authorizes migrating a founder-keyed world?** The custodial default founds with tier 0 empty (`verbs.js:52` `owners: [[ownerKey] | [], [operator]]`), so the host's operator key is the top tier and its receipt signature is complete. A world founded with `ownerKey` has a founder at tier 0 and the host's keys at tier 1; the governance draft (`gov.py`) would not let tier 1 rewrite a branch, and the migration rewrites every byte. The receipt now carries `ownerAttested: false | {key, sig}` and is honest that it does not prove consent (§4.6). **Proposed rule:** the host migrates every world on its disk, founder-keyed or not, because the alternative (serving a minor-0 world beside minor-1 ones, or refusing to serve it) leaves the founder with a world no shipped reader opens; the receipt's `ownerAttested: false` records that the founder was not consulted, and a founder may later countersign the receipt (`{key, sig}` over the same message, by a tier-0 key of the old genesis), which upgrades it from custody to consent without a second migration. Say yes to that, or say a founder-keyed world must wait for the countersignature before it is served under the new id. **Answered: the latter.** A founder-keyed world waits for a tier-0 countersignature **before migration** produces any output. `ownerAttested: false` is honest but not authority: the host's tier-1 operator gains no right to rewrite genesis because new software cannot open minor 0; serve or export the old world under the old reader, or hold it. The proposed rule above is withdrawn; the three-row table is D12 and §4.6. A later countersignature may ratify a receipt only if no migrated world has been served or mutated.
-- **Q5 — rename the component field `physics.kind`?** `componentspec.js:240`: `physics: {kind: dynamic|static|kinematic|none, who, shape, mass, density}`. After D3 a screen of code holds the entry kind `physics`, the component `physics`, and `c.physics.kind === "dynamic"`: two `physics` and a third `kind`. The kind `physics` is the conforming word (netcode, ECS) and the component is the thing's physics while the kind is the engine's record, so both stay (listed in 1.15). `physics.kind` is the one `kind` worth considering: it is a stored field a reader meets constantly, and `mode` names a dynamic/static/kinematic/none choice exactly (it is what physics engines call it). Against: it is a stored component field, so renaming it is a state migration of every world carrying a `physics` component (a `set` per thing, or a translator rewrite with a digest change), not a spelling change inside an envelope; and `kind` on a component never collided with the log's `kind` until now. **Answered: keep `physics.kind`** (D13). It is a scoped component field with conventional rigid-body values, not the entry discriminator; the rename would be state rewrite and digest churn for little cold-reading benefit. It is documented as a deliberate survivor in §1.15. A future `bodyType` is a component-version migration, not vocabulary cleanup.
+Term set: `genesis · change · request · physics · say · redaction · governance`, with `change.op`, `request.verb`, `physics.verb`, `body.args` / `body.argNames`, `body.cascade`, `body.commitment`, `snapshot.seq`, redaction target `{seq, index?}`.
 
 ## 0. Three facts every row depends on
 
@@ -86,328 +30,221 @@ All six are now answered (Q3 before round 2, the rest by it). Each keeps the que
 
 | hash | input | changed by |
 |---|---|---|
-| **world id** | `sha256(JCS(genesis entry))` — the *whole* entry 0, envelope included (`fold.js:167 worldIdOf`) | any byte of genesis: its `verb: "genesis"`, its `minor`, a genesis body field's spelling |
-| **chain head** | `head(i) = sha256(head(i-1) ‖ sha256(JCS(skeleton(i))))`; skeleton = entry minus `head`/`sig`, each set's `value`+`salt` → `commit`, an `act`/`say`/`sim` body → `{commit}` (`chain.py:79`) | any envelope key or value (`kind`, `verb`), any body key that survives into the skeleton (`ops`, `followUps`, `commit`, `id`, `comp`), and the chain rule's own list of "body-purgeable kinds" |
-| **state digest** | `sha256(JCS(view))`, view = `{id: {comp: {"v": value} | {"purged": true}}}` (`fold.js:168–178`) | only the view: the marker key `purged`, and nothing else in this proposal |
+| **world id** | `sha256(JCS(genesis entry))`: the whole entry 0, envelope included (`worldIdOf`) | any byte of genesis, including a genesis body field's spelling |
+| **chain head** | `head(i) = sha256(head(i-1) ‖ sha256(JCS(skeleton(i))))`; skeleton = entry minus `head`/`sig`, each set's `value`+`salt` → `commitment`, a `request`/`say`/`physics` body → `{commitment}` | any envelope key or value, any body key that survives into the skeleton (`ops`, `cascade`, `commitment`, `id`, `comp`), and the chain rule's list of body-purgeable kinds |
+| **state digest** | `sha256(JCS(view))`, view = `{id: {comp: {"v": value} \| {"redacted": true}}}` | only the view, including the marker key `redacted` |
 
-Signatures are Ed25519 over `"eidoverse-head:<world id>:<seq>:<head hex>"` by the sequencer key named in genesis — the host's custody key (`server/custody.ts:74`). The reference server writes chain points on every entry (the physics fixtures carry `head`/`sig` on every line), so **every rename below that touches the skeleton re-hashes and re-signs every entry of every world**. That is exactly the act §12's reserved client head check exists to detect ("a sequencer rewriting its own history"), which is why the migration needs a published receipt (§6).
+Signatures are Ed25519 over `"eidoverse-head:<world id>:<seq>:<head hex>"` by the sequencer key named in genesis, the host's custody key. The reference server writes chain points on every entry. So any spelling inside the skeleton is frozen once a world is written: changing it later re-hashes and re-signs every entry, which is exactly what the client head check exists to detect.
 
-**How today's readers meet a word they don't know.** `fold.js checkEntry` (line 181–191) makes the *entry* malformed (`malformed:kind`, `malformed:unknown-field`, `malformed:envelope`, `malformed:batch-field`, `malformed:op-field`): it "shapes nothing and the reader reports it in diagnostics, never in the world" (§1). The fold's **status stays `ok`**. So a renamed entry is loud in diagnostics and silent in state; whether that is a misread depends on whether the entry ever shaped state (a `change` does; `act`/`sim`/`purge`/`sequencer` don't, but the readers that *do* read them — the sim layer, the governance refusal in `server/livehost.ts:87`, `replica.js:141`'s resync trigger — go quiet). `chain.py skeleton()` has no unknown-kind branch: it hashes the raw body, so a chain check on a renamed log reports `broken` at the first renamed line (loud). `reader.py` raises `Malformed("kind")` per entry, same as the JS fold.
+**How a reader meets a word it doesn't know.** Per entry, `fold.js checkEntry` makes the entry malformed (`malformed:kind`, `malformed:unknown-field`, `malformed:envelope`, `malformed:batch-field`, `malformed:op-field`). It shapes nothing and is reported in diagnostics; the fold's status stays `ok`. That is why per-entry malformation is never enough to keep a reader honest across a vocabulary change: a dropped `change` leaves a wrong digest with status `ok`. Whole-world refusal comes only from the version (D1): an unknown `v` is `unknown-version`, a stray `minor` or other unknown genesis field is `no-world`, an unknown feature is `unsupported-feature`. Each refuses before any entry is folded.
 
-The one thing that makes **every** old reader fail loud on the whole world is a `minor` the reader doesn't know (`fold.js:266 → status unknown-version, no world`). `minor` lives in the genesis body, so **bumping it changes every world's id**. §10 says a kernel change *is* a new minor "from release on" and allowed `followUps` at minor 0 only because it was fold-neutral. These renames are not fold-neutral for an old reader. This is the first decision the PR had to make, and it isn't a vocabulary question — settled as D1 (bump); the cost analysis is §4.5.
+**One vocabulary.** The reader accepts only this vocabulary's spellings. A reader that quietly accepted both old and new would pass every positive fixture; F14 exists to catch it.
 
 ## 1. The table
 
-Each row: **old → new** · referent · example · surfaces (wire / log / state / UI / code-only) · hash & world-id effect · v1 translator output · old reader. Surface counts are `grep` of kind-discriminator sites across `shared/ server/ client/ mcpl/ tools/ spec/conformance/` (comments and prose excluded where I could).
+Each row: the decision, the referent, the surfaces, and the hash effect.
 
-### 1.1 `act` → `request` (strong KEEP)
+### 1.1 `act` → `request`
 
-- **Referent.** A request as the authority admitted it, or as it refused it: the entry kind whose body is `{request: <args>, …}` when admitted (`authority/writes.js:60 actOf`) and `{args: [<arg names>], refused: {code}}` when refused (`authority.js:265`). Never read by the fold; read back by the authority for nine named fields (`spec/readback.json`).
-- **Example** (`spec/conformance/physics/arc-onto-table.jsonl` line 3; chain fields elided):
-  `{"kind":"act","actor":"rowan","verb":"set","body":{"request":{"id":"@world","component":"physics-engine","value":{"engine":"eidosim@1.0.0"}},"salt":"UUPZ_XwQSbZtpmdmt87bSQ"},"ts":1800000000200}`
-  Refused shape, **constructed** from `authority.js:265`: `{"kind":"act","actor":"bob","verb":"delete","body":{"args":["id"],"refused":{"code":"locked"}},"ts":…}` (no public fixture holds a refused act).
-- **Surfaces.** Wire: `log` entries carry it; the request message is already `request` (`docs/WIRE.md` §3). Log: `KINDS` (`fold.js:22`, `reader.py:39`), `chain.py:81` (body-purgeable kinds), `readback.json` keys `act:*` (8 rows → `request:*`: an acknowledged re-pin), `READBACK` in `verbclasses.js:28`. State: none (the fold never reads it). UI: `client/lib/historyrows.js:6` filters `kind === 'act'`; `mcpl/tools.ts historyLine`. Code-only: ~126 kind-discriminator sites, ~900 uses of the word `act`/`acts` in prose, comments and identifiers (`actOf`, `actEntry`, `actsOf`, `rollback.acts`, `rateCheck(w, actor, "act", …)`); `mcpl/agent.ts` has its *own* inbox `kind: "act"` (an agent event, not a log entry) at ~8 sites — a collision that outlives the rename unless the agent's word moves too.
-- **Hash / world id.** Chain: every `act` skeleton changes (`kind` is in it) → every head after the first act, every signature. Digest: none. World id: none.
-- **v1 translator.** `translate-v1.js:1070–1075, 1157` writes `kind: "act"` with verbs `translated`, `repair-shapes`, `translation-approved`, `imported {verb, args, from}` → each becomes `kind: "request"`. Note the imported body keeps v1's verb as provenance (`body.verb: "grant"`, `"ban"`, `"punt"` …).
-- **Old reader.** JS fold / `reader.py`: `malformed:kind` per entry, status `ok`, state unchanged (correct by accident: acts never fold). `chain.py`: `broken`. Authority readback (`storage.js readback`): finds no `act:*` row → undo chains, sponsors, capability rights read as **unknown** → a silent misread of authorship and undo. `historyrows.js`: an empty History panel (silent).
-- **Weakens it:** after the rename the admitted body reads `{"kind":"request", …, "body":{"request":{…}}}` — request-in-request. See §4.1. **Settled (D2):** admitted `body.args` (an object), refused `body.argNames` (a list of names); readback `request.*` → `args.*`.
+- **Referent.** A request as the authority admitted or refused it. Admitted: `{args: {…}, salt}`; refused: `{argNames: [names], refused: {code}, salt}` (D2). The fold never reads it; the authority reads it back for the rows in `spec/readback.json` (`request:*`, `args.*`).
+- **Example** (`spec/conformance/logs/25-story.jsonl` line 1, chain fields elided): `{"kind":"request","ts":1001,"actor":"bob","verb":"delete","body":{"argNames":["id"],"refused":{"code":"locked"},"salt":"UWGy2eg11rNn2Sl6urvUTg"}}`.
+- **Surfaces.** Wire: `log` entries; the request message is already `request`. Log: `KINDS`, the chain's body-purgeable kinds, `readback.json`, `verbclasses.js`. UI: the History panel and `mcpl/tools.ts historyLine` filter on `kind === "request"`.
+- **Hash.** Every request skeleton (the kind is in it). Digest, world id: none.
+- **v1 translator.** Writes `kind: "request"` with verbs `translated`, `imported`, `lift-sockets`, `translation-approved`. An `imported` body keeps v1's verb and args as provenance (`body.verb: "grant"`, `"ban"`, …). The v1 `sockets` map is no registry name: only the v1 translator knows it, and it lifts it into socket children with its own `lift-sockets` requests.
+- `set`, `delete` and `batch` are spellings shared by a request's `verb` and a change's `op`. Read the kind first.
 
-### 1.2 `sim` (kind) → `physics` (strong KEEP); `sim` (actor) stays
+### 1.2 `sim` (kind) → `physics`; `sim` (actor) stays
 
-- **Referent.** The authority's own record of a physics boundary: verbs `launch` (7 writers), `lift`, `catch`, `digest`, `checkpoint` (`grep kind: "sim"` in `authority/`). Written by the authority, never by a client, never refused; `actor` is the thrower/lifter for launch/lift/catch (`manipulate.js:281`, `bodyverbs.js:209`) and `sim` for digest/checkpoint (`physics.js:71`, `scriptrun.js:212`); `cause` is always a request: for a wake it is the request whose change removed the support, not the change (`writes.js:111–125`: `cause: w.entries.length` is the seq the request takes, and the final append is `{...e, cause: act}`; see Q1). Read only by the sim layer (`simlayer.js:216–355`) and three readback rows.
-- **Example** (`arc-onto-table.jsonl`, chain fields elided):
-  `{"kind":"sim","actor":"rowan","cause":14,"verb":"launch","body":{"id":"ball","p":[0,1.1,-0.5],"yaw":0,"q":[0,0,0,1],"v":[0,2,3],"handled":["rowan"],"salt":"Gz4fypccq-7GOARwIgA8Vw"},"ts":1800000000800}`
-  Checkpoint shape (`scriptrun.js:212`): `body {at, engine: {engine}, tick, clock, sim: <digest>, state: <blob>}` — note the body field named `sim` (the sim-layer digest) and `at` (a seq).
-- **Surfaces.** Wire: `snapshot.cut.sim` (`WIRE.md:121, 223`). Log: `KINDS`, `chain.py:81`, `readback.json` `sim:launch/lift/catch` (re-pin), `READBACK`. State: none in the fold; the sim layer's state. UI: none in `client/lib` (zero `kind === 'sim'` sites — the client never branches on it). Code-only: ~104 kind sites; `simlayer.js`, `livehost.ts:135` (checkpoint scan), `undo.js`, `scriptaudit.js`; `spec/PHYSICS.md` names "`sim` entries" ~6 times.
-- **Hash / world id.** Chain: every sim skeleton → every head after. Digest, world id: none.
-- **v1 translator.** Never emits `sim`: since @11 "each rest is a plain change by `sim` caused by [the imported act]" (`import-v1/README.md`). Output unchanged except that the `actor: "sim"` on those changes stays `sim`.
-- **Old reader.** Fold: `malformed:kind`, status `ok`. **Old sim layer never sees a launch** (`simlayer.js:216,295,351`) → it flies nothing, compares no digest, reports no disagreement: a silent misread of the physics plane (rest changes still fold, so the *state* is right; the engine's provenance is gone). Old `livehost.ts:135` finds no checkpoint → boots from genesis (slow, not wrong). `chain.py`: `broken`.
-- **Note.** The checkpoint body keeps a field called `sim` (the sim-layer digest) and `at` (a seq). Under `kind: "physics"` the `sim` field is fine (it names the sim layer); `at` → `seq` goes with row 1.4.
+- **Referent.** The authority's own record of a physics boundary: verbs `launch`, `lift`, `catch`, `digest`, `checkpoint`. Written by the authority, never by a client, never refused. `actor` is the thrower or lifter for `launch`/`lift`/`catch` and `sim` for `digest`/`checkpoint`.
+- **`cause` is always the request.** For a wake it is the request whose change removed the support, not the change: `writes.js` sets `cause` to the seq the request entry takes, and every `launch` in `spec/conformance/physics/arc-onto-table.jsonl` carries its request's seq. Request → change → physics is the reading order, not a `cause` chain.
+- **Checkpoint body.** `{seq, engine, tick, clock, sim: <digest>, state: <blob>}`. `seq` is a position (§1.4). The body field `sim` names the sim layer, which keeps its name.
+- **Hash.** Every physics skeleton. Digest, world id: none.
+- **v1 translator.** Never emits `physics`: each rest is a plain change by actor `sim`, caused by the imported request.
 
-### 1.3 `purge` → `redaction`; view marker `purged` → `redacted` (strong KEEP)
+### 1.3 `purge` → `redaction`; view marker `purged` → `redacted`
 
-- **Referent.** Kind `purge`, body `{values: [{seq, op?}, …]}`: the operator's instruction, outside the request path, that named values fold as *absent(purged)*; the stored line of each target is rewritten with `value`+`salt` → `commit` so the skeleton (and every head) is unchanged (§12, `fold.js:347–365 purgesOf`). **The target's `op` is an index into `ops`, not an operation word**; under D3 it becomes `{seq, index?}` (`purgesOf`, `reader.py collect_purges`, `undo.js purgedOps`, spec §12; logs 09/20/20b/22 are re-pinned by the marker rename anyway), so after the rename `op` is a verb on line 3 and never a number on line 9.
-- **Example** (`spec/conformance/logs/09-purge.jsonl` line 9): `{"ts":1,"world":"sha256:f39d7e…","kind":"purge","actor":"system","verb":"purge","body":{"values":[{"seq":3},{"seq":4,"op":1},{"seq":5},{"seq":6},{"seq":2}]}}` and the view it yields: `{"a":{"note":{"purged":true},…}}` (digest `7b42865a…`, `expected.json`).
-- **Surfaces.** Wire: `snapshot.cut.state` wraps components `{v}` or `{purged: true}` (`WIRE.md:124`); a `purge` in the `log` stream forces a client resync (`replica.js:141`). Log: `KINDS`, `purgesOf`, diagnostics `purge`, `purge-ignored`, `purge-target-bad/-range/-not-a-value/-governance`, `purge-of-purge-refused`, `commit-unpurged`; `expected.json` code lists for logs 09, 20, 20b, 22. State: `PURGED` sentinel, `isPurged`, `canonicalView` (`fold.js:168–178`) — **the digest hashes the key `purged`**. UI: `editwrites.js:222` reads `v.purged === true`; `mcpl/tools.ts:410` prints "say (purged)". Code-only: ~56 kind sites, ~263 uses of `purged`, ~19 of `commit-unpurged`; `livehost.ts:133` (checkpoint candidates stop at the last purge), `scriptaudit.js`, `undo.js` (`purged`, `purgedOps`).
-- **Hash / world id.** Chain: the purge entry's own skeleton (`kind`) → heads after it. **Digest: changes for every world that has a purged value** (`{"purged":true}` → `{"redacted":true}`); conformance logs 09, 20, 20b, 22 re-pinned. World id: none.
-- **v1 translator.** Never emits a purge. No change.
-- **Old reader.** Fold: `malformed:kind` on the redaction entry, status `ok` — but every target's stored line already carries `commit`, so `unnamedStubs` folds it *absent(purged)* anyway and diagnoses **`commit-unpurged`**: the state is right, the diagnosis says "the log was changed outside its purge rule", and `worldlog.ts:146` prints that as an operator warning. Loud, and wrong about why. Old client: no resync on the entry (`replica.js:141` lists `purge`), so a live client keeps the value in memory until it rejoins — a silent misread of a redaction, which is the one case where that matters. Digest comparison: loud.
+- **Referent.** Kind `redaction`, body `{values: [{seq, index?}, …]}`: the operator's instruction, outside the request path, that named values fold as absent. Each target's stored line is rewritten with `value`+`salt` → `commitment`, so its skeleton and every head are unchanged (spec §12). `index` is an index into `ops`; `op` is an operation word and nowhere a number.
+- **Surfaces.** Wire: snapshot state cells are `{v}` or `{redacted: true}`; a `redaction` in the `log` stream makes a live client resync (`replica.js`, F5). Log: `KINDS`, diagnostics `redaction`, `redaction-ignored`, `redaction-target-bad/-range/-not-a-value/-governance`, `redaction-of-redaction-refused`, `commitment-unredacted`. State: the `REDACTED` sentinel; **the digest hashes the key `redacted`**.
+- **Hash.** The redaction entry's own skeleton; the digest of every world with a redacted value.
 
-### 1.4 `head` (seq sense) → `seq`; `head` (hash) stays (strong KEEP)
+### 1.4 `head` (position) → `seq`; `head` (hash) stays
 
-- **Referent.** Two things wear the word. (a) The chain hash on the envelope and in `parent {world, seq, head}` — kept. (b) A *position*: `cut.head` ("the fold at `head` … folds on from `head + 1`", `WIRE.md:124–126`), `worldlog.ts:184 get head(): number { return this.live.entries.length - 1 }`, `replica.js:110 v.head = snap.head`, the checkpoint body's `at` (`scriptrun.js:212`, checked `b.at !== s - 1` at `livehost.ts:136`), §5's "the log head at its join".
-- **Example** (`worldlog.ts:434`, the join cut): `{ ...clientCutOf(this.live), head: this.head, mine, you: actor, names, holds }` — `head` here is an integer.
-- **Surfaces.** Wire: `snapshot.cut.head` → `snapshot.seq`. Log: the checkpoint body `at` → `seq`, and the script request's body `head` → `seq` (a physics body: purgeable, so it is hashed as `{commit}` — a chain change). State: none. UI: none. Code-only: `worldlog.ts:184,434`, `replica.js:5,110,117,138–140` (`v.head`), `livehost.ts:136`, `foldparity-check.ts`. Two methods on `worldlog.ts` wear the word and only one moves: `get head(): number` (line 184, a position) → `seq`; `headAt(at)` (returns the hash at a position) **keeps its name**.
-- **Spec sentence** (N5): "`seq` is never an envelope field (`checkEntry:184 seq-field`); in a body it names a position" — the checkpoint's `seq` and a redaction target's `seq` are both body positions, and the double-take is spared.
-- **Hash / world id.** Chain: only via the checkpoint body rename. Digest, world id: none.
-- **v1 translator.** Not involved (no wire, no checkpoints).
-- **Old reader.** Old client `adopt(snap)`: `snap.head` undefined → `v.head = -1` → the first streamed entry's seq ≠ 0 → `resync` on every `log` message (`replica.js:138`): a loud resync loop. Old server reading a new checkpoint (`seq` not `at`): "checkpoint at N malformed; skipped" → boots from genesis (loud in the log, not wrong).
+- **Referent.** `head` is the chain hash only: on the envelope and in `parent {world, seq, head}`. A position is `seq`: the snapshot's `seq`, the checkpoint body's `seq`, the script request's body position. `worldlog.ts`: `get seq()` is a position, `headAt(seq)` returns the hash at one.
+- **Rule.** `seq` is never an envelope field (`checkEntry` refuses it); in a body it names a position. A checkpoint carrying the old `at` is skipped as malformed (F4).
+- **Hash.** Through the checkpoint and script request bodies only.
 
-### 1.5 `verb` → `op` on `change`; `verb` only on `request` and `physics`; neither on `say` / `genesis` / `redaction` / `governance` (strong KEEP, **one trap**)
+### 1.5 `verb` → `op` on `change`; `verb` only on `request` and `physics`; neither on `say` / `genesis` / `redaction` / `governance`
 
-- **Referent.** `verb` on a change is one of the four storage operations (`OP_FIELDS` keys: `create/set/delete/batch`, `fold.js:193`); inside a batch each op item carries `verb` too (`shapeOne`, `opsOf`). On an act it is the request word; on a sim entry the physics event. On `say` and `genesis` it is the kind's name again (`verbs.js:51,93`; every fixture: `"kind": "genesis", … "verb": "genesis"`; `"kind": "purge", … "verb": "purge"`; `test_gov.py:30` `"kind": "sequencer", … "verb": "sequencer"`).
-- **Example** (`EXAMPLE-01.jsonl` line 5): `{"kind":"change","ts":1,"actor":"system","cause":1,"verb":"batch","body":{"ops":[{"verb":"create","id":"chair"},{"verb":"set","id":"chair","comp":"example.com/seat@2","value":[1,2]},…]}}` → `"op":"batch","body":{"ops":[{"op":"create",…},{"op":"set",…}]}`.
-- **Surfaces.** Wire: every `log` entry. Log: `ENVELOPE` gains `op` and a per-kind rule (`checkEntry:186` requires `verb` as a string on every entry today — the rule becomes "`op` on change, `verb` on request/physics, neither elsewhere, anything else malformed"); `OP_FIELDS`/`shapeOne` keyed by `op`; `reader.py:419`; `chain.py:85–88` reads `e["verb"]` and `o.get("verb")`; `kernelspec.js` envelope pin. State: none (the view doesn't carry the op). UI: `historyrows.js` reads `e.verb` on acts only — unchanged. Code-only: every `e.verb === "batch"` / `op.verb` reader in `fold.js`, `replica.js`, `simlayer.js:218+`, `scriptaudit.js`, `undo.js`, `followups.js`, `writes.js`, `livehost.ts`; `governanceTarget` (`fold.js:310`).
-- **Hash / world id.** Chain: every change skeleton (`verb` → `op`, item keys) → every head. Digest: none. **World id: dropping `verb: "genesis"` from entry 0 changes every world's id** (`worldIdOf` hashes the whole genesis entry). That is the trap: the "no tautological verb" rule, applied to genesis, costs every link, every fork's `parent.world`, every bookmark — the same cost the review reserved for `rewind_window`. Options in §4.5.
-- **v1 translator.** Emits changes via `changeBody(ops)` (`translate-v1.js:1136,1145,1170`) and `verb: "say"` on says, `verb: "genesis"` on genesis (`:1064`) → `op`, and no verb on says; genesis per the decision.
-- **Old reader.** A change with `op` and no `verb`: `malformed:envelope "verb missing or not a string"` → **the change is dropped, status stays `ok`, the digest is wrong**: the quietest misread in the set. A genesis without `verb`: the same check → `no-genesis` → status `no-world` (loud). `chain.py`: `KeyError` on `e["verb"]` for a change → crash (loud, ugly).
+- **Referent.** On a change, `op` is one of the four storage operations (`create/set/delete/batch`, `OP_FIELDS`); each batch item carries `op` too. On a request, `verb` is the request word; on a physics entry, the physics event. On `say`, `genesis`, `redaction` and `governance` the word only repeated the kind, so it is gone.
+- **Example** (`25-story.jsonl` line 3): `{"kind":"change","actor":"alice","cause":2,"op":"batch","body":{"ops":[{"op":"delete","id":"shelf"},{"op":"set","id":"vase","comp":"transform","value":{"pos":[0,0.9,0]},"salt":"…"}],"cascade":[1]}}`.
+- **Envelope rule.** `ENVELOPE = {world, kind, ts, actor, cause, op, verb, body, head, sig}`; `op` on change only, `verb` on request/physics only, neither elsewhere; anything else is malformed.
+- **Hash.** Every change skeleton. **World id: genesis has no `verb`**, so the genesis spelling is part of every world id. That is why this was settled before any world in this dialect was stored.
+- **Why it matters.** A change that a reader drops as malformed leaves a wrong digest with status `ok`: the quietest failure in the set. F14 pins the refusal of every old spelling.
 
-### 1.6 `followUps` → `cascade` (strong KEEP)
+### 1.6 `followUps` → `cascade`
 
-- **Referent.** On a batch body: a non-empty strictly ascending list of indices into `ops` naming the ops the authority derived from the asker's own (a deletion's reference clears and set-downs; an undo's restores), admitted without the asker's rights or locks; readers deriving authorship skip them (§3, `followUpsCheck`, `followUpsOf`). Industry referent: SQL's `ON DELETE CASCADE` — ops the system derived from yours and applied without asking your rights again — which is exactly this.
-- **Example** (`spec/conformance/logs/06b-followups.jsonl` line 3): `{"kind":"change","ts":1,"actor":"system","cause":1,"verb":"batch","body":{"ops":[{"verb":"create","id":"a"},{"verb":"set","id":"a","comp":"label","value":"x"}],"followUps":[1]}}`.
-- **Surfaces.** Wire: in `log` entries. Log: `BATCH_FIELDS`, `followUpsCheck`, diagnostic `batch-followups` (logs 06b–06g in `expected.json`), `reader.py`. State: none (the fold applies marked ops like any). UI: none directly; Credits ranks by authorship, which skips marked ops (`historyrows.js` via `rights.js`). Code-only: ~59 sites; `authority/followups.js` (file name), `gate.js`, `rights.js`, `undo.js`, `writes.js`, `scriptaudit.js`; §3, §7's table column "marked", §10's history line.
-- **Hash / world id.** Chain: every batch carrying it → heads after. Digest, world id: none.
-- **v1 translator.** Never writes `followUps` (no occurrence in `translate-v1.js`): its system changes carry no marked ops. No change to its output.
-- **Old reader.** `malformed:batch-field "cascade"` → **whole entry dropped, status `ok`, digest wrong**: silent misread.
+- **Referent.** On a batch body: a non-empty, strictly ascending list of indices into `ops` naming the ops the authority derived from the asker's own (a deletion's reference clears and set-downs, an undo's restores), admitted without the asker's rights or locks. Readers deriving authorship skip them. The referent is SQL's `ON DELETE CASCADE`.
+- **Surfaces.** `BATCH_FIELDS = ["ops", "cascade"]`, diagnostic `batch-cascade`, `authority/followups.js`, `gate.js`, `rights.js`, `undo.js`.
+- **Hash.** Every batch carrying it.
 
-### 1.7 `by` (envelope) retired (strong KEEP)
+### 1.7 `by` (envelope) retired
 
-- **Referent.** A legacy alias of `actor` the lab wrote; "every reader MUST ignore it. Writers MUST NOT write it" (§1). In `ENVELOPE` (`fold.js:21`, `reader.py:40`) only so an old lab log isn't malformed. Presence's `drag.by`, `holds.by`, `moderated.by`, `vacated.by` are a different plane (never logged) and stay.
-- **Example.** No public fixture carries it.
-- **Surfaces.** Log: `ENVELOPE`, `reader.py`, §1 table, kernel pin. Nothing else.
-- **Hash.** None unless a stored line carries it (then its skeleton changes when the translator strips it). World id: none.
-- **v1 translator.** Never emits it; a translator step strips it from any lab log.
-- **Old reader.** Ignores it; a new reader on an old line with `by`: `malformed:unknown-field`. Fails loud in the right direction.
+A legacy alias of `actor` the lab wrote. It is not in `ENVELOPE`; a line carrying it is `malformed:unknown-field`. Presence's `drag.by`, `holds.by`, `moderated.by` are a different plane (never logged) and stay.
 
-### 1.8 `cut` → `snapshot` (wire) (strong KEEP)
+### 1.8 `cut` → `snapshot` (wire)
 
-- **Referent.** The fold handed to a joiner at seq N: wire message `snapshot` with payload `cut: {dialect, v, head, worldId, verbs, state, sim, names, holds, mine, you}` (`WIRE.md:120–126`, `worldlog.ts:429–434 clientCut`, `replica.js:5 adopt(snap)`); never logged, verified by folding forward. Also "epoch cut" in `simlayer.js` prose (an epoch boundary).
-- **Surfaces.** Wire only: the `snapshot` message's `cut` key (flatten: `{dialect, v, minor, world, name, you, actor, gen, seq, state, physics, names, holds, mine, chat, …}`; `actor` is the joiner's log id, the one entries carry, beside `you`, the connection's id; `chat: {recentChat, chatTotal}`), `cut.sim` → `physics` (row 1.2), `cut.head` → `seq` (row 1.4). **`world` and `name` (S3):** today the message's `world` is the directory name (`worldlog.ts:359 world: this.name`) while `cut.worldId` is the id and the log's `world` is the id (`checkEntry:187`); flattening would have left one `world` meaning two things across the two surfaces a client reads side by side. Settled: on the wire `world` = the id, as in the log; the directory name goes as `name`. **`minor` (S2):** today `snapshot.cut` carries `{dialect, v, …}` and `replica.js:109 adopt()` checks none of it (zero hits for `dialect`/`minor`/`unknown-version` in `replica.js` and `client/lib/*.js`), so an old client given a minor-1 snapshot adopts it and then drops every `log` entry as malformed with status `ok` — §4.4's quietest misread, on the surface most people read. The flattened snapshot carries `minor` beside `dialect` and `v`; `adopt` refuses an unknown triple with a visible `unknown-version` state and no half-view (F7). Code-only: `clientCutOf`, `clientCut`, `cutNow`, `simCutOf`, `cutJson` in the checkpoint blob (`scriptrun.js:211` — a *blob* key: renaming it changes nothing hashed, but old blobs keep `cutJson`, so the reader keeps both spellings or re-blobs), `refusalcodes.js` wording for `legacy`/`busy`; ~240 `cut` sites, many unrelated English.
-- **Hash / world id.** None (nothing logged). The checkpoint blob's `cutJson` key is referenced by hash from a physics body: leave the stored key, or re-blob. **Settled (D5):** the wire `snapshot` is flattened; new blobs write `snapshotJson` (`scriptrun.js:211` is the one writer); the two readers (`livehost.ts:138`, `tools/protocol/simckpt-check.ts`) read `snapshotJson ?? cutJson`; historical blobs are never re-blobbed (their content address and provenance outweigh one legacy key inside an opaque blob).
-- **v1 translator.** Not involved.
-- **Old reader.** Old client: `msg.cut` undefined → `adopt(undefined)` throws → loud. (An old client handed the *flattened* shape by a proxy, or a new client handed an old `cut`, is the S2 case: without the `minor` gate it half-reads; with it, `unknown-version`.)
+- **Referent.** The fold handed to a joiner at seq N; never logged, verified by folding forward.
+- **Shape.** Flat: `{dialect, v, requires, world, name, you, actor, gen, seq, state, physics, names, holds, mine, chat, …}`. `world` is the world id; `name` the directory name. `actor` is the joiner's log id (the one entries carry); `you` is the connection's id. `chat` is `{recentChat, chatTotal}`. `physics` was `cut.sim`; `seq` was `cut.head`.
+- **Version gate.** `replica.adopt` checks `{dialect, v}` first and refuses an unknown pair whole: status `unknown-version`, no state, nothing folded (F7). Without it a client would adopt a foreign snapshot and drop every following `log` entry as malformed with status `ok`.
+- **Checkpoint blobs.** The one writer (`scriptrun.js`) writes `snapshotJson`; the readers (`livehost.ts`, `tools/protocol/simckpt-check.ts`) read `snapshotJson` only. A blob keyed `cutJson` is skipped and the boot falls back to an earlier checkpoint or genesis (F12).
+- **Hash.** None: nothing logged.
 
-### 1.9 `rewind_window` → `rewindWindow` (strong KEEP, conditional)
+### 1.9 `rewind_window` → `rewindWindow`
 
-- **Referent.** A reserved, optional genesis-body field: the draft governance rewind window, a non-negative integer (`GENESIS_FIELDS`, `fold.js:275`, `gov.py DEFAULT_WINDOW`).
-- **Example** (`19o-genesis-full.jsonl` line 1): `… "quorum": [1, 2], "rewind_window": 500, "parent": {"world": "sha256:abab…", "seq": 12, "head": "cdcd…"} …`.
-- **Surfaces.** Log: `GENESIS_FIELDS`, `checkGenesis`, `reader.py:215`, `gov.py`, §13; ~11 sites. Conformance logs 19m, 19o re-pinned (their world ids change: 19o's `sha256:5a948c38…` is hashed from that genesis).
-- **Hash / world id.** **World id of any genesis carrying it.** On this host no stored genesis carries it (0 of 6 genesis files, counted, not read). So it is free today *if minor stays 0*, and moot if minor bumps (every id changes then anyway).
-- **Old reader.** `malformed:genesis-field "rewindWindow"` → `no-world`. Loud.
+An optional genesis-body field: the governance rewind window, a non-negative integer (`GENESIS_FIELDS`, `gov.py`). It is in the world id of any genesis carrying it, so the spelling was settled before first deploy.
 
-### 1.10 The four-line glossary: `authority` / `sequencer` / `operator` / `host` (strong KEEP)
+### 1.10 The four-line glossary: `authority` / `sequencer` / `operator` / `host`
 
-No referent change; prose only (§7a "The parties"). Today: `authority` = the gate that admits or refuses (`shared/protocol/authority.js`); `sequencer` = the chain-writer role whose key genesis names (`body.sequencer`, `custody.ts sign`); `operator` = the human in custody of the host (the operator key, `operator-repair`, the purge decider); `host` = the machine/service (`livehost.ts`, "a host's custody keys"). All four are used consistently in code. Nothing hashed.
+Prose only (spec §7a "The parties"). Nothing hashed.
 
-### 1.11 `grant` (envelope) and `for`: dropped from the envelope (D4; the `delegation` argument is kept in §2.1 for the later minor)
+- `authority`: the gate that admits or refuses (`shared/protocol/authority.js`).
+- `sequencer`: the chain-writer role whose key genesis names (`body.sequencer`, `custody.ts sign`).
+- `operator`: the human in custody of the host (the operator key, `operator-repair`, the redaction decider).
+- `host`: the machine or service (`livehost.ts`, "a host's custody keys").
 
-- **Referent.** A reserved, never-written, never-checked envelope field paired with `for`: "reserved for acting on someone's behalf; until identities have keys, an entry carrying `for` is malformed (`grant` is reserved and not yet checked)" (§1). `checkEntry:189` refuses `for`; nothing reads `grant`.
-- **Example.** None exists in any log or fixture; the field has never been written.
-- **Surfaces.** Log: `ENVELOPE` (`fold.js:21`), `reader.py:40`, kernel pin `envelope.fields`, §1 table — 7 sites. Nothing else. The *other* `grant` — a role grant — lives in `roles:<id>` components, `gate.js:238 needOf → "grant"`, `access.js` "timed grant", the `grantRoles` permission, `verbspec.js:163`'s retired v1 verb `grant`, and ~40 prose sites; none of those is the envelope field.
-- **Hash / world id.** None (never written). Kernel pin: an envelope-field rename is a kernel change (K2) even unwritten.
-- **v1 translator.** v1 logs have a `grant` *verb* (`mainknew.ts:38`, `PERSON_REQUESTS` in `translate-v1.js:709`); it is carried as `body.verb: "grant"` inside an `imported` request forever. The envelope field never appears in translator output.
-- **Old reader.** A new line carrying `delegation`: `malformed:unknown-field` (loud) — but no line will carry it until keys exist.
-- **Decision (D4).** Neither field is in minor 1's `ENVELOPE`. `for` stops being a special case: the `for-before-keys` branch (`fold.js:189`, `reader.py:428`) goes, and the log that pins `7:malformed:for-before-keys` in `expected.json` re-pins to `malformed:unknown-field`. The spec reserves the *concept* (acting on someone's behalf needs a per-entry credential once identities have keys) in prose only. Kernel pin: `envelope.fields` shrinks by two — a K2 change carried by the same minor bump.
+### 1.11 `grant` (envelope) and `for`: not in the envelope (D4)
 
-### 1.12 `commit` (§12 field) → `commitment` (contested) — see §2.2
+Both were reserved, never written, never checked. Neither is in `ENVELOPE`; `for` is `malformed:unknown-field` like any stranger. The role grant (`roles:<id>` components, the gate's `grant` need-class) is a different thing and unaffected. v1's `grant` verb survives only as `body.verb` inside `imported` requests.
 
-- **Referent.** On a `set` op (or batch item), the hex `sha256(UTF-8(salt) ‖ UTF-8(JCS(value)))` that stands in for `value`+`salt` after a redaction; on an `act`/`say`/`sim` body, the same over the body. Computed for **every** set and every body in the chain skeleton whether or not anything was redacted (`chain.py:56–77`); stored only after a redaction. The fold ignores it except to mark a stripped op (`shapeOne:232`, `unnamedStubs`).
-- **Example** (`20b-commit-unpurged.jsonl` line 4): `{"kind":"change","ts":1,"actor":"system","cause":1,"verb":"set","body":{"id":"@world","comp":"roles:u-bbbb…","commit":"0000…0000"}}`.
-- **Surfaces.** Wire: a redacted line in the `log` stream and in `history` reads carries it; `mcpl/tools.ts:410` prints "say (purged)" when `b.commit !== undefined`; `worldlog.ts:380` reads `e.body?.commit` on says. Log: `OP_FIELDS.set`, `BATCH_FIELDS` comment, `chain.py` (`commit_of`, `skel_op`, `body_commit`), diagnostic `commit-unpurged` (log 20b), §12. State: none. UI: none. Code-only: ~19 `commit-unpurged` sites; `txn: committed` (§7) is a different word and stays.
-- **Make the three agree at the rename** (N4): `storage.js:204 isCommitStub` accepts a body of `{commit, salt}` (any non-empty subset of those two keys), while `bodyCommit` and `chain.py body_commit` produce and require `{commit}` alone. Under `commitment` the stub test is `{commitment}` exactly, in all three places; a stub carrying a `salt` is not a stub.
-- **Hash / world id.** **Chain: every head** — the key name `commit` is inside every skeleton's set op and purgeable body, redacted or not. Digest, world id: none.
-- **v1 translator.** Never writes a redacted line.
-- **Old reader.** A redacted line with `commitment`: `malformed:op-field` → **the change dropped, status `ok`**, and since the value is gone anyway the state is the same (*absent*) — but the diagnostic is wrong and `unnamedStubs` no longer sees a stub. Silent-ish. `chain.py`: hashes `commitment` as an ordinary key → `broken`.
+### 1.12 `commit` → `commitment` — see §2.2
 
-### 1.13 `sequencer` (kind) → `governance` (contested) — see §2.3; `sequencer` (role, genesis field) stays
+- **Referent.** On a `set` op, `hex sha256(UTF-8(salt) ‖ UTF-8(JCS(value)))`, standing in for `value`+`salt` after a redaction; on a request/say/physics body, the same over the body. The chain computes it for **every** set and purgeable body whether or not anything was redacted; it is stored only after a redaction.
+- **Stub rule.** A redacted body is `{commitment}` exactly, in `storage.js isCommitStub`, `bodyCommit` and `chain.py body_commit`. A stub carrying `salt` is not a stub.
+- **Hash.** Every chain head: the key is in every skeleton, redacted or not.
+- Diagnostic: `commitment-unredacted` (a stored line carries a commitment no redaction names).
 
-- **Referent.** The entry kind whose body is one of: a handoff `{key, sigs}`; an owners override `{owners, sigs}`; a reclaim `{key, sigs}` by a higher tier; a rewind `{fork: {seq, head}, sigs}`; plus the reserved `checkpoint` (a trusted fold) — exactly `GOV_FIELDS = {key, owners, fork, sigs}` and `RESERVED_GOV = {checkpoint}` (`gov.py:17–20, 95–180`). The reference server never writes one and refuses to serve a log that holds one (`livehost.ts:87`).
-- **Example** (**constructed** by `test_gov.py:30`, the only writer in the repository): `{"world": wid, "kind": "sequencer", "ts": 1, "actor": "system", "verb": "sequencer", "body": {"key": "ed25519:…", "sigs": [{"key": "ed25519:…", "v": "<base64url sig>"}]}}`.
-- **Surfaces.** Wire: `replica.js:141` resyncs on it. Log: `KINDS`, `gov.py`, `livehost.ts:87`, `foldparity-check.ts:177`, `gov-reserved-check.ts:20`, §1, §2 ("a governance entry (`kind: "sequencer"`)"), §13 — 5 code sites. State: none (the fold never reads it). UI: none.
-- **Hash / world id.** Chain: its own skeleton → heads after. Digest, world id: none. The genesis field `sequencer` is untouched (so no world-id effect).
-- **v1 translator.** Never emits one.
-- **Old reader.** Fold: `malformed:kind`, status `ok`. **Old server: the `livehost.ts:87` refusal doesn't fire, so an old server serves and writes past a governance entry it can't check** — precisely the hazard §13 wrote the refusal for. Silent, and the worst misread in the table. (A minor bump closes it.)
+### 1.13 `sequencer` (kind) → `governance` — see §2.3; `sequencer` (role, genesis field) stays
 
-### 1.14 `kind.js` entity kind → `form` (contested, code-only) — see §2.4. **Superseded: the classifier is deleted** (Changes from the implementation)
+- **Referent.** The entry kind whose body is a handoff `{key, sigs}`, an owners override `{owners, sigs}`, a reclaim `{key, sigs}` by a higher tier, a rewind `{fork: {seq, head}, sigs}`, or a feature activation `{requiresAdd, sigs}` (§F F-1); `checkpoint` is reserved. The reference server never writes one and refuses to serve past one it can't check (`livehost.ts`).
+- **Hash.** Its own skeleton. The genesis field `sequencer` is untouched.
 
-- **Referent.** `kindOf(record) → 'socket' | 'model' | 'mesh' | 'light' | 'empty'` (`shared/protocol/kind.js`): a *derived* classification with a precedence rule (socket first; model over mesh over light; else empty), never stored, never on the wire ("a view record never carries `kind`", `kind.js:11`). Used for drawing (`client/lib/world.js`, `realize/models.js`, `inspect.js`), capacity counting (`authority/capacity.js`), gating (`gate.js`), storage and routes (16 files, ~125 call sites). Exported as `KINDS`, the same name as `fold.js`'s entry-kind set.
-- **Example.** `kindOf({c: {model: "lib/lamp.glb", light: {…}}}) === "model"` (the lamp case the file's header describes).
-- **Surfaces.** Code-only. Not wire, not log, not state, not digest.
-- **Old reader.** Not applicable.
+### 1.14 Entity classifier
 
-### 1.15 Smaller rows the review added
+Gone. `kind.js` (`kindOf`, and the proposed `formOf`/`form`) is deleted; the renderer, labels, capacity and the gate read component presence directly.
 
-| old → new | referent | surfaces | hash | old reader |
-|---|---|---|---|---|
-| request-batch `ops` → `requests`; refusal `op: i` → `index: i` | a batch *request*'s children `{verb, args}` (`verbs.js:128–138`, checked "exactly as it would be alone"); the reply's index of the refused child (the `{op: i}` fourth arg to `refuse`) | wire (`request` message body, `reply.refused`), `verbs.js`, `requests.js`, agent tool schemas, `refusalcodes.js` prose | none: a request body is purgeable and hashed as `{commit}`, so the *admitted* act's chain skeleton changes only through the body commit — which changes, since `body.request.ops` → `body.request.requests` | an old authority refuses the new shape (`shape` code) — loud at the door |
-| actor `world` | listed in §6, never written by this protocol; it is a **v1 actor** (`mainknew.ts:41` lists v1's `door`, `world`, `sim`) | §6 only | none | — |
-| `salt` | keep, gloss | — | — | — |
-| `digest` | keep, gloss "the physics digest" | — | — | — |
-| **deliberate survivors** (Q-d, Q-e): component `physics` and its field `physics.kind`; the directory's identity kind | `componentspec.js:240` `physics: {kind: dynamic\|static\|kinematic\|none, who, shape, mass, density}` is the *thing's* physics, the entry kind `physics` is the *engine's* record: both are the conforming word and both stay. `livehost.ts:118 kindOf: (id) => directory.entry(id)?.kind` (`account\|anon\|imported`, `worldlog.ts:572`) is the directory's word for an identity, never on the wire or in the log. So after D3 three `kind`s remain: the entry kind, the component field, the directory field; 1.14 clears the *entity classifier* only, not the word. **`physics.kind` is settled as a survivor (Q5 closed, D13)**: scoped to its component, conventional rigid-body values, never the protocol discriminator | code and state (the component field is stored); none on the envelope | none: `physics.kind` is kept (D13) | — |
+### 1.15 Smaller rows
+
+| term | decision | note |
+|---|---|---|
+| request-batch `ops` → `requests`; refusal `op: i` → `index: i` | renamed | a batch request's children `{verb, args}` and the reply's index of the refused child |
+| actor `world` | dropped | a v1 actor; `system` covers authority-authored entries |
+| `salt` | kept | glossed |
+| `digest` | kept | glossed "the physics digest" |
+| component `physics` and its field `physics.kind` (D13); the directory's identity kind (`account\|anon\|imported`) | kept | deliberate survivors. Three `kind`s remain: the entry kind, the component field, the directory field. None is on the envelope besides the first |
 
 ## 2. The four contested referents
 
-### 2.1 `grant` (envelope) → `delegation`. Recommend **`delegation`** *when the object exists* — deferred to a later minor (D4); it is never the role grant.
+### 2.1 `grant` (envelope) → `delegation`, when the object exists
 
-What the field is: a reserved slot on the *entry* that, once identities have keys, will carry the proof by which `actor` acts `for` someone else. It is per-entry, travels with the write, and is checked (eventually) at admission. The durable role grant is a different object entirely: a `roles:<id>` component on `@world` with `{role, until?}`, written by a `set` through the gate's `grant` need-class (`gate.js:238`), expired by `expire-roles`, read by `access.js`. One is a credential presented with a request; the other is state. They never meet: `needOf` returns `"grant"` for a roles write and nothing about the envelope; the envelope field is read by nothing.
+The envelope slot was for the proof by which `actor` acts for someone else: per-entry, presented with the write, checked at admission. The durable role grant is state (`roles:<id>` on `@world`). The two never meet. When delegation returns (D4) its word is `delegation`, matching UCAN's referent (a signed, chained capability presented with a call). Not `capability` (already a readback field), not `token` (the wire's auth word), and not `grant` (it would sit beside `body.verb: "grant"` in every translated world). Spec sentence: "`for` names whom the actor acts for; `delegation` is the credential by which they may. A role someone holds is a `roles:<id>` component, never a delegation."
 
-Can `delegation` ever drift into meaning the durable grant? Only if someone later stores a delegation *as* a component, and the registry (§4) would have to name that component — at which point it would be `delegation:<id>` and the collision would be visible on the page. The word's referent in UCAN (a signed, chained capability token presented with a call) is exactly the per-entry object here. The alternatives: `capability` is already a readback field (`act:use` → `capability.author`, "the system's capability" in §7's table) and would make three meanings; `warrant`/`proxy` are plain but have no industry referent; `token` is the wire's auth word (`join {token}`). One more reason to move off `grant`: every translated world carries `body.verb: "grant"` inside its `imported` requests forever (row 1.11), so `grant` on the envelope would sit two keys away from `grant` meaning v1's role verb.
+### 2.2 `commit` (§12) → `commitment`
 
-Spec sentence to pin it: "`for` names whom the actor acts for; `delegation` is the credential by which they may. A role someone *holds* is a `roles:<id>` component, never a delegation."
+The object is a salted hash of one value: binding (the hash fixes the value) and hiding (the salt stops a dictionary guess). That is a cryptographer's commitment. It is not a checkpoint, not a decision (the operator's decision is the `redaction` entry), and not a transaction commit (`txn: committed`, §7). `digest` and `hash` were taken or too generic; `seal` has no industry referent.
 
-### 2.2 `commit` (§12) → `commitment`. Recommend **`commitment`**, with `seal` as the honest runner-up.
+### 2.3 `sequencer` (kind) → `governance`
 
-The exact object (`chain.py:56–77`, §12): `hex sha256(UTF-8(salt) ‖ UTF-8(JCS(value)))` — a *salted hash of one value*. It is computed for every set op and every purgeable body when the chain is verified, and stored only once a redaction has stripped the value. Its two properties are a cryptographer's **commitment**: binding (the hash fixes the value) and hiding (the salt stops a dictionary guess). It is not a checkpoint (that is a whole folded view or engine state written into the log — §2, `scriptrun.js:212`), not a decision (nothing is decided; the operator's decision is the `redaction` entry), not a transaction commit (`txn: committed`, §7). Against the candidates:
+Every valid entry of the kind is a decision about who writes the world or what its trusted history is: handoff, reclaim, owners, rewind, and the reserved trusted checkpoint (`gov.py`: `GOV_FIELDS`). **An entry that changes nothing is invalid**; so is an empty `requiresAdd` (`requiresAdd-empty`, `features.js`). Nothing administrative lives there: maintenance and the translator's own acts are `request`s by actor `system`, and the engine's checkpoint is a `physics` verb. The role keeps the word `sequencer` (genesis field, signing key); the kind had to move so one word stops being a kind, a role and a genesis field at once.
 
-- `commitment` — the exact term; §12 already says "replaces `value` + `salt` with `commit`" and could say "with its commitment". The promise/vow sense is real in this community, but the field holds 64 hex characters next to `id` and `comp`; nobody reads a vow into `"commitment":"3f9a…"`, and the gloss "a commitment to the value: its salted hash" settles it in one clause.
-- `seal` — short, a noun, plain English ("a sealed value"), no git/txn/vow sense, and "the seal still verifies" reads well. Its cost: no industry referent (a verifier reading "seal" doesn't know it means H(salt‖value) until told), and "seal" also suggests the operator *sealed* it, which is the redaction, not the hash.
-- `checkpoint`, `decision` — wrong referent (above). `digest` — already the state digest and a physics verb. `hash` — too generic; scripts and blobs have hashes. `hidden`/`redactedValue` — describes the stored case only, but the chain computes it for every value.
+### 2.4 Entity classifier
 
-Diagnostic: `commit-unpurged` → `commitment-unredacted` (one word, one meaning).
-
-### 2.3 `sequencer` (kind) → `governance`. Recommend **`governance`**; the kind holds nothing but governance.
-
-What every valid entry of the kind contains, from the only reader (`gov.py`): `GOV_FIELDS = {key, owners, fork, sigs}`; an entry naming none of `key`/`owners`/`fork` is "changes nothing" and invalid. The four acts it classifies: **handoff** (`key` signed by the outgoing sequencer), **reclaim** (`key` by a higher tier), **owners** (an `owners` tiers override), **rewind** (`fork {seq, head}`, orphaning a branch). The reserved fifth, `checkpoint`, is "a folded view readers may *trust*" — an attestation signed by governance keys, refused by name today. Every one of these is a decision about who writes the world or what its trusted history is. **Nothing administrative lives there**: maintenance (`repair`, `lift-sockets`, `rename-components`, `expire-roles`, `restamp-engine`) is written as `act` by actor `system` (§7's table), and the engine's own checkpoint is a `sim` verb. So the name does not overstate; it says what the four bodies are and what `sequencer` (the role) only named by its author. The role keeps its word (genesis `sequencer`, the signing key, §12 "the sequencer's chain fields"), which is also why the kind must move: today one word is a kind, a role and a genesis field (`fold.js:22,240,272`).
-
-### 2.4 `kind.js` → `form`. Recommend **`form`** (`formOf`, `FORMS`); not `entityType`, not `archetype`. **Superseded: the classifier is deleted** (Changes from the implementation)
-
-The values: `socket`, `model`, `mesh`, `light`, `empty`, chosen by precedence from the components a record carries. Against the candidates, on those values:
-
-- `entityType` reads as a *stored* field on the entity. `kind.js:11–13` exists to warn that it is not one ("readers that branch on `ent.kind === 'light'` are reading a field that is never there"); `entityType` rebuilds the trap under a name that promises a field even more strongly. It also suggests a type system (TS `type`), and `type` is Matrix's word for the entry discriminator.
-- `archetype` is Bevy/DOTS vocabulary for the *exact component set* of an entity. A lamp with `model` + `light` is one archetype there and the value `model` here; a `socket` with a `light` is `socket` here. The precedence rule means these five values are not archetypes, and an ECS reader would expect them to be.
-- `shape` (taken: `mesh.shape`, `physics.shape`), `body` (taken), `drawAs` (honest for four values, wrong for `socket`, which is an attachment point and draws nothing; and `capacity.js`/`gate.js` use the value for counting and gating, not drawing).
-- `form` — "what form the thing takes": derived, five-valued, not a field, and free in the protocol (the only nearby use is "spoken form" in a test name). Short enough that `formOf(x) === "light"` reads as it should.
+Gone with §1.14: readers read components.
 
 ## 3. The six-entry story
 
-**Constructed** from the writers cited in §1 (`authority.js:265` refused record, `writes.js:60` admitted record, `writes.js:111–114` change + wake, `storage.js` redaction rewrite, `gov.py` handoff); the genesis is the conformance genesis (`logs/09-purge.jsonl` line 1) at `minor: 1` with the tautological verb dropped, so its world id is recomputed: `sha256(JCS(genesis))` = `sha256:61f58404bbd3acafd901ec8eb8a26427a1eeeb9d92a8f67c2cd81ea91a2ce0b8` (checked by reproducing the minor-0 id `f39d7e…` from the stored genesis with the same function). Bob tries to delete a locked lamp and is refused; Alice deletes a shelf a vase rested on; the deletion cascades the vase's set-down and wakes it into the engine; the operator redacts Alice's request body; the sequencer hands the writer role to a new key.
-
-Line 0 is the genesis the fixture needs; lines 1–6 are the story. **Placeholders** (the implementation PR fills them when it mints the fixture): `head`/`sig` are elided on every line as the wire elides them (the reference server writes them on every entry; the fixture carries them or the chain check skips them, the PR's choice); `<NEW-SEQUENCER-KEY>` is any registrable `ed25519:` key other than the genesis sequencer's; `<SIG-BY-OLD-SEQUENCER>` is that old key's Ed25519 signature over `eidoverse-gov:<world>:6:<JCS(body minus sigs)>` (`gov.py gov_message`). Salts are real 16-byte base64url salts lifted from public fixtures. Nothing else is a placeholder.
+`spec/conformance/logs/25-story.jsonl`, run by `spec/conformance/test_story.py` (F1 + F2 + F6 + F8 + F9). Chain fields `head`/`sig` are elided here; the fixture carries them. Line 2 is shown as stored, after line 5 redacted it. World id `sha256:4416ed919cbd56aa164ca6d4a54323d7d00c2dde60994dc9c95cb6a02556f2cc`, shortened below.
 
 ```jsonl
-{"kind":"genesis","actor":"system","body":{"dialect":"eidoverse-log","v":4,"minor":1,"nonce":"XWVu1u7BpaZTDFSETYiphg","owners":[["ed25519:BP7aKo17f474DD1aBSLG0a3Pb29Qs3yqQ6Ve0wSRVD0"]],"sequencer":"ed25519:rRoIPhqlc8rDxC1GZlfHOe1IBJYWQ8MDNg9QuZzMsic"}}
-{"world":"sha256:61f58404bbd3acafd901ec8eb8a26427a1eeeb9d92a8f67c2cd81ea91a2ce0b8","kind":"request","ts":1001,"actor":"bob","verb":"delete","body":{"argNames":["id"],"refused":{"code":"locked"},"salt":"UWGy2eg11rNn2Sl6urvUTg"}}
-{"world":"sha256:61f58404bbd3acafd901ec8eb8a26427a1eeeb9d92a8f67c2cd81ea91a2ce0b8","kind":"request","ts":1002,"actor":"alice","verb":"delete","body":{"args":{"id":"shelf"},"salt":"UUPZ_XwQSbZtpmdmt87bSQ"}}
-{"world":"sha256:61f58404bbd3acafd901ec8eb8a26427a1eeeb9d92a8f67c2cd81ea91a2ce0b8","kind":"change","ts":1002,"actor":"alice","cause":2,"op":"batch","body":{"ops":[{"op":"delete","id":"shelf"},{"op":"set","id":"vase","comp":"transform","value":{"pos":[0,0.9,0]},"salt":"5hGJikDRuwCGCS7slx6mug"}],"cascade":[1]}}
-{"world":"sha256:61f58404bbd3acafd901ec8eb8a26427a1eeeb9d92a8f67c2cd81ea91a2ce0b8","kind":"physics","ts":1002,"actor":"alice","cause":2,"verb":"launch","body":{"id":"vase","p":[0,0.9,0],"yaw":0,"q":[0,0,0,1],"v":[0,0,0],"handled":["alice"],"salt":"Gz4fypccq-7GOARwIgA8Vw"}}
-{"world":"sha256:61f58404bbd3acafd901ec8eb8a26427a1eeeb9d92a8f67c2cd81ea91a2ce0b8","kind":"redaction","ts":1003,"actor":"system","body":{"values":[{"seq":2}]}}
-{"world":"sha256:61f58404bbd3acafd901ec8eb8a26427a1eeeb9d92a8f67c2cd81ea91a2ce0b8","kind":"governance","ts":1004,"actor":"system","body":{"key":"<NEW-SEQUENCER-KEY>","sigs":[{"key":"ed25519:rRoIPhqlc8rDxC1GZlfHOe1IBJYWQ8MDNg9QuZzMsic","v":"<SIG-BY-OLD-SEQUENCER>"}]}}
+{"kind":"genesis","actor":"system","body":{"dialect":"eidoverse-log","v":4,"nonce":"XWVu1u7BpaZTDFSETYiphg","owners":[["ed25519:BP7aKo17f474DD1aBSLG0a3Pb29Qs3yqQ6Ve0wSRVD0"]],"sequencer":"ed25519:9prLVyWUYAOt0-PHqJMvRi6S1MsIrtAkadAuWsfDcJc"}}
+{"world":"sha256:4416ed91…","kind":"request","ts":1001,"actor":"bob","verb":"delete","body":{"argNames":["id"],"refused":{"code":"locked"},"salt":"UWGy2eg11rNn2Sl6urvUTg"}}
+{"world":"sha256:4416ed91…","kind":"request","ts":1002,"actor":"alice","verb":"delete","body":{"commitment":"7ae472db599f3797e22b852f246c73b3221e4ea75b69b3e57d8189250e867f70"}}
+{"world":"sha256:4416ed91…","kind":"change","ts":1002,"actor":"alice","cause":2,"op":"batch","body":{"ops":[{"op":"delete","id":"shelf"},{"op":"set","id":"vase","comp":"transform","value":{"pos":[0,0.9,0]},"salt":"5hGJikDRuwCGCS7slx6mug"}],"cascade":[1]}}
+{"world":"sha256:4416ed91…","kind":"physics","ts":1002,"actor":"alice","cause":2,"verb":"launch","body":{"id":"vase","p":[0,0.9,0],"yaw":0,"q":[0,0,0,1],"v":[0,0,0],"handled":["alice"],"salt":"Gz4fypccq-7GOARwIgA8Vw"}}
+{"world":"sha256:4416ed91…","kind":"redaction","ts":1003,"actor":"system","body":{"values":[{"seq":2}]}}
+{"world":"sha256:4416ed91…","kind":"governance","ts":1004,"actor":"system","body":{"key":"ed25519:7vY8rgwiep8OmNeVW8VrGtplQW9LlPf8cmOx9Npkvxg","sigs":[{"key":"ed25519:9prLVyWUYAOt0-PHqJMvRi6S1MsIrtAkadAuWsfDcJc","v":"0EY8W4FmYTIcG2D8DnkTubTINSyEzQ5uqFXW_ogHxXg5UONg5aaKkpHfRMtkC3fSfwtWkPz3LAuU1b0lhjhTAQ"}]}}
 ```
 
-**Checked against the envelope rules** (`fold.js checkEntry`/`checkedEntries`, `reader.py:376–385`, spec §1 table):
+**Envelope rules it exercises** (`fold.js checkEntry`, `reader.py`, spec §1):
 
-| rule | source | lines |
-|---|---|---|
-| `world` on every entry after genesis, equal to the genesis id; none on genesis | `checkEntry:187` | 1–6 carry it; 0 doesn't |
-| `ts` integer ms, required after genesis, never decreasing | `fold.js:332`, spec §1 "never decreasing" | 1001, 1002, 1002, 1002, 1003, 1004 |
-| `cause` required on `change`, integer `0 ≤ cause < seq`; optional elsewhere, same range when present | `checkEntry:190` | line 3: `cause: 2 < 3`; line 4: `cause: 2 < 4` (Q1); lines 1, 5, 6: none |
-| `actor` a string on every entry | `checkEntry:186` | all |
-| `verb` only on `request` and `physics`; `op` only on `change` and its batch items; neither on `genesis`/`redaction`/`governance` | D3 (replaces `checkEntry:186`'s "verb on every entry") | lines 1, 2, 4 `verb`; line 3 `op`; 0, 5, 6 neither |
-| no `seq` field, no unknown envelope field (`for`, `grant`, `by` are now unknown) | `checkEntry:184–185`, D4 | none present |
-| `cascade` non-empty, strictly ascending indices into `ops` | `followUpsCheck` (`fold.js:214`) | `[1]` into two ops |
-| a batch never contains a batch; each item has an `op` and that op's exact fields | `opsOf`, `OP_FIELDS` | `delete {id}`; `set {id, comp, value, salt}` |
-| a `set`'s `salt` is 16+ bytes of canonical base64url | `chain.py salt_ok`, `storage.js:111` | 22-char salts, lifted from fixtures |
-| redaction targets: `{seq}` or `{seq, index}` (D3; was `{seq, op}`), `0 < seq < this seq`, never a redaction, never a `roles:` set | `purgesOf` (`fold.js:349–361`), re-keyed to `index` | `{seq: 2}`: a request (its whole body is purgeable, `chain.py:81`) |
-| governance body ⊆ `{key, owners, fork, sigs}`, `sigs` non-empty and distinct, `key` registrable; a handoff is `key` alone, signed by the current sequencer | `gov.py:95–160` | line 6: `key` = new, `sigs[0].key` = the genesis sequencer — **two different identities** |
-| genesis: `minor` read before shape; exact fields; `nonce` ≥ 16 bytes; `owners` tiers of registrable keys; `sequencer` registrable | `checkGenesis` | `minor: 1`; `rewindWindow`/`parent` absent (optional) |
+| rule | lines |
+|---|---|
+| `world` on every entry after genesis, equal to the genesis id; none on genesis | 1–6 carry it; 0 doesn't |
+| `ts` integer ms, required after genesis, never decreasing | 1001, 1002, 1002, 1002, 1003, 1004 |
+| `cause` required on `change`, `0 ≤ cause < seq`; optional elsewhere | 3 and 4: `cause: 2`; 1, 5, 6: none |
+| `verb` only on `request`/`physics`; `op` only on `change` and its items; neither on `genesis`/`redaction`/`governance` | 1, 2, 4 `verb`; 3 `op`; 0, 5, 6 neither |
+| no `seq` field, no unknown envelope field (`for`, `grant`, `by`) | none present |
+| `cascade` non-empty, strictly ascending indices into `ops` | `[1]` into two ops |
+| a batch never contains a batch; each item has an `op` and that op's exact fields | `delete {id}`; `set {id, comp, value, salt}` |
+| redaction targets `{seq}` or `{seq, index}`, `0 < seq <` this seq, never a redaction, never a `roles:` set | `{seq: 2}`: a request, whose whole body is purgeable |
+| governance body ⊆ `{key, owners, fork, requiresAdd, sigs}`; a handoff is `key` alone, signed by the current sequencer | line 6: `key` ≠ `sigs[0].key`, which is the genesis sequencer |
+| genesis: exact fields, no `minor`, no `verb`; `nonce` ≥ 16 bytes; `owners` tiers of registrable keys; `sequencer` registrable | `rewindWindow`, `parent`, `requires`, `provenance` absent (optional) |
 
-The refused body's `argNames` leaves out the lamp's id value itself: the name of the argument Bob sent, and not what he typed, as `authority.js:265` does today under the key `args`.
+**Read as prose.** 1: Bob requested `delete` and was refused, `locked`; the record keeps the name of the one argument he sent and nothing he typed. 2: Alice requested `delete shelf`; its body is now only a commitment. 3: the world changed because of 2: the shelf deleted and the vase set down, the second op a cascade of the first (not Alice's authorship). 4: a physics entry caused by the same request: the vase launched at rest, Alice handling it. 5: the system redacted line 2; its commitment still hashes, so the head is unchanged. 6: governance: the writer role handed to a new key, signed by the outgoing sequencer.
 
-After the redaction, line 2 as stored becomes `{"world":"sha256:61f5…","kind":"request","ts":1002,"actor":"alice","verb":"delete","body":{"commitment":"<hex sha256(salt ‖ JCS(body minus salt))>"}}` — same skeleton, same head (`chain.py body_commit`; `storage.js:216–218`). The redaction entry itself makes a live client resync (`replica.js:141`, re-keyed to `redaction`).
-
-**Read back as prose.** 1: Bob *requested* `delete` and was *refused*, `locked` — the record keeps that he tried, the name of the one argument he sent, and nothing he typed. 2: Alice *requested* `delete shelf`. 3: the world *changed* because of 2: a batch of two ops, the shelf deleted and the vase set down where it was, the second op a *cascade* of the first (not Alice's authorship). 4: a *physics* entry, caused by that same request: the vase was *launched* at rest from its set-down, Alice handling it. 5: a *redaction* by the system of what line 2 said; its *commitment* still hashes. 6: a *governance* entry: the writer role handed to a new key, signed by the outgoing sequencer — the key named in genesis signs, the key in the body takes over.
-
-**Honest reading of the nouns.** All six read cleanly cold now that the admitted body says `args`. What still makes a stranger pause:
-
-- `"kind":"physics","actor":"alice"` (line 4): a reader asks why Alice is the actor of a physics entry. She is the handler (the deleter who woke it), as today under `sim`; the kind is honest about what the entry is, and `actor` about whose doing it was. It reads better than `kind: "sim", actor: "alice"`, which read as a contradiction.
-- `"op":"batch"` whose body holds `"ops":[{"op":…}]` (line 3): "an op of ops" is a little recursive but it is what Automerge and the oplog say, and `batch` is the one op that contains ops. Fine.
-- `redaction` and `governance` with no `verb` and actor `system`: both read as nouns for what the entry *is*, and the missing verb is not missed. `cascade: [1]` reads as "op 1 cascaded from op 0", which is the truth.
-- two requests with the same `verb` and different body shapes (lines 1, 2): `argNames` vs `args` is the one signal of refused vs admitted besides `refused` itself. A reader that keys on `refused` is right; one that keys on the shape is also right.
-
-## 4. What surprised me, and what weakens a strong KEEP
-
-### 4.1 The admitted body's `request` key stutters under the new kind
-`writes.js:60` writes an admitted act's body as `{request: args, …}`; the refused record (`authority.js:265`) writes `{args: [names], refused: {code}}`. Under `kind: "request"` the first becomes request-in-request, and the two spellings of "what was asked" were already inconsistent (object vs name-list under different keys). Options: (a) admitted `{args: {…}}`, refused `{argNames: […], refused}` — the wire already says `{verb, args}` (`WIRE.md` §3), so `args` on the log matches the wire; the four readback rows that read `request.id/.label/.component/.brush` are re-pinned to `args.*`. (b) Leave it and gloss. I'd do (a) in the same PR: it is one more skeleton change on entries that are all re-hashed anyway, and it is the one place the six-entry story reads badly. Put to review; settled as D2: (a), with `argNames` for the refused list.
-
-### 4.2 Dropping `verb: "genesis"` changes every world id
-`worldIdOf = sha256(JCS(genesis))` over the whole entry. "Verb only on requests and physics" applied to entry 0 costs every world's id — the same cost the review reserved for `rewind_window` and the reason it said "do it now or never". The review's list of what the verb-drop carries (`verbs.js:51,93` stop writing it) missed this. Choices in §4.5; moot under D1, since the minor bump changes every id anyway.
-
-### 4.3 `commit` is in every skeleton, not only redacted lines
-`chain.py skel_op` puts `commit` into the skeleton of **every** set op and every purgeable body whether or not a redaction happened. The review said the field "appears only in redacted lines and skeletons, so length is free" — true, but "and skeletons" means every chain head of every world changes with the rename, not only purged ones. Since the kind renames already re-hash everything, this adds no cost; it does mean `commitment` can't be done *later* on its own cheaply.
-
-### 4.4 Old readers mostly misread quietly; only a minor bump makes them fail loud
-Per-entry `malformed:*` diagnostics leave status `ok`. For `change` (`verb` → `op`, `cascade`, `commitment`) the dropped entry means a **wrong digest with status `ok`**; for `governance` the old server's reserved-governance refusal **doesn't fire** and it writes past an entry it can't check; for `redaction` an old live client keeps the value until rejoin. `chain.py` is loud (`broken` or a `KeyError`). The kernel gate's vector verdict (`kernel-check.ts:41–43`) counts any diagnostic as a refusal, so the gate will accept vectors that an old *fold* in fact reads to a wrong-but-`ok` world. If the PR wants "old reader fails loud" to be true of the world and not just the line, it bumps `minor` — and `minor` is in genesis.
-
-### 4.5 So the real decision is `minor` 1 (every world id changes, every old reader refuses cleanly) vs minor 0 (ids stable, old readers misread)
-§10's own rule is minor 1 "from release on"; the kernel pin still says `trial-kernel` and `history/PRE-RELEASE-RENAMES.md` says "before release", so minor 0 is *allowed* by the letter — but §10 allowed it for `followUps` because every reader folded to the same digest with or without it, and that is false here (4.4). If minor bumps: `rewindWindow` is free, the genesis verb can go (the id changes anyway), and 4.2 stops being a separate cost; every `world` field on every line, every `parent.world` in forks, every bookmark and link is rewritten by the translator, and the receipt must map old id → new id. If minor stays 0: keep `verb: "genesis"` as the one tautology the world id freezes (say so in §13), keep `rewind_window` only if a reader insists on never changing an id, and accept that old readers read a wrong-but-`ok` world. I'd bump: the whole point of the exercise is that a 2035 reader meets one vocabulary, and a world that an old reader folds to a different digest with status `ok` is the failure mode §10 was written to forbid. **Settled as D1 (bump)**, with the four acceptance conditions in §D; the minor-0 reader's refusal is `no-world` (`checkEntry` refuses a genesis without `verb` → `no-genesis`, `entities: null`), which fires before any state is folded; a genesis that kept its `verb` and said `minor: 1` would be `unknown-version`.
-
-"No partial-state fallback" is verified, not hoped (N8): `fold.js:296` returns `entities: null` before any entry folds, and `statecache.ts:82` keys the derived cache by `worldIdOf(entries[0])`, so after the bump every existing cache reads as "another world's" and is rebuilt from the log (loud in the host log, never wrong). The one reader D1's acceptance was *not* true for was the live wire (`replica.adopt`, no version check); D5 closes it.
-
-### 4.6 The hash migration receipt (D8)
-
-**No migration.** This dialect was never deployed, and a v1 world translates straight to minor 1 (`tools/protocol/import-v1/`, D1), so there is no minor-0 world to migrate: the receipt, the migration authority table, the fork-parent map and their fixtures (F11, F13, F15–F18) went with the tool (Mica, 11-04). The reader still refuses minor 0 loudly (F20). What stays general: a genesis-changing rewrite is possible only while a world holds no governance entry (D11).
-
-### 4.7 Smaller surprises
-- `set`, `delete` and `batch` are spellings shared by a request's `verb` and a change's `op`: `{"kind":"request","verb":"delete"}` caused `{"kind":"change","op":"batch"}` in §3. Read the kind first; the word alone doesn't say which.
-- Actor `world` is a **v1 actor** (`mainknew.ts:41` lists v1's `door`, `world`, `sim`); §6 inherited it. Drop it from the actor set; `system` covers the authority's writes.
-- `mcpl/agent.ts` has an inbox event `kind: "act"` (6 sites by `grep -c 'kind: "act"'`; the first count of 7 was wrong) that is not a log entry. **Kept (D6):** it is a volatile agent event — an item in the agent's in-memory inbox with `{ts, kind, who, text}`, never logged, never on the protocol wire — and the spec says so in one sentence beside the kind table, so a reader of both doesn't look for `act` in `KINDS`. Review 2 asks for the rename after all; both sides are in **Q3**.
-- The physics checkpoint body (`scriptrun.js:212`) carries both `at` (a seq → `seq`, row 1.4) and a field named `sim` (the sim-layer digest). Under `kind: "physics"` the body field `sim` is the one place the old kind's word survives in a body; it names the sim layer, which keeps its name, so it can stay.
-- The checkpoint blob's `cutJson` key is behind a blob hash in a physics body: `cut` → `snapshot` can't rename a stored blob's key without re-blobbing; the reader accepts both or the translator re-blobs.
-- No public fixture holds a refused act, a `say`, a `digest` entry or a `sequencer` entry; the conformance suite tests their *absence* well and their presence not at all. The mutation suite Mica asked for is where those shapes get their first vectors.
-- `kind.js` and `fold.js` both export `KINDS` — the review's finding, confirmed; 16 importing files.
+`"kind":"physics","actor":"alice"` is deliberate: the kind says what the entry is, `actor` whose doing it was. Two requests with the same `verb` differ by `refused` and by `args` vs `argNames`; a reader may key on either.
 
 ## 5. Conformance fixtures and mutations (D10)
 
-Today's suite tests the absence of a refused request, a `say`, a `digest`, a `sequencer` entry well and their presence not at all (§4.7). The implementation PR adds **positive** fixtures, each a log under `spec/conformance/logs/` with its `expected.json` row (status, digest, codes), and each guarded by a mutation that proves the fixture exercises what it names:
+Each fixture is guarded by a mutation that proves it exercises what it names. Where the test lives: F1–F3, F8, F14 in `spec/conformance/test_reader.py`; F6, F9 in `test_story.py`; F4, F5, F7, F10, F12, F20 in `tools/protocol/vocab-fixtures-check.ts`; F19 in `tools/protocol/importer-check.ts`; F22–F31 in `tools/protocol/freeze-check.ts` (F23 also across the access, setup, upgrade and join checks). F11, F13 and F15–F18 were migration fixtures and are retired with it; their ids are not reused.
 
 | # | fixture | proves | mutation that must go red |
 |---|---|---|---|
 | F1 | admitted request | `kind: "request"`, `verb`, `body.args` object, readback `args.*` resolves | readback keyed on `request.*` → the row reads unknown |
 | F2 | refused request | `body.argNames` is a list of names, no values anywhere in the line; `refused.code` | a refused line carrying `args` → malformed |
-| F3 | say | `kind: "say"`, no `verb`, body hashed as `{commitment}` in the skeleton | `verb` present on a say → malformed |
-| F4 | physics launch + checkpoint | `kind: "physics"`, `verb: "launch"`/`"checkpoint"`, checkpoint body `seq` (was `at`), body field `sim` kept | checkpoint with `at` → "checkpoint malformed; skipped" |
-| F5 | redaction + live-client resync | `kind: "redaction"`, targets rewrite to `commitment`, view marker `{"redacted": true}`, digest pinned; `replica.js` resyncs on the kind | old marker `purged` → digest mismatch; resync list without `redaction` → the client keeps the value |
-| F6 | governance handoff (§3 line 6) | `kind: "governance"`, no `verb`, `key` ≠ the signing key, signed by the current sequencer; subsequent chain points signed by the new key | signer == new key → "not a handoff by the outgoing sequencer"; `livehost.ts:87` refusal keyed on the old kind → the server serves past it |
-| F7 | unknown-minor old-reader refusal, log **and wire** | (a) a minor-1 log read by the minor-0 fold: status `no-world`, `entities: null`, diagnostic `no-genesis`, nothing folded; (b) an old `replica.js` (base commit) given a minor-1 flattened `snapshot`: refuses with a visible `unknown-version` state, never folds, never half-reads; (c) the new `replica.adopt` given a snapshot with an unknown `{dialect, v, minor}`: the same refusal | (a) *is* the mutation rule M2; (b)/(c): `adopt` without the version gate → the client adopts the state and drops every following `log` entry as malformed with status `ok` |
-| F8 | cascade authorship | `body.cascade` indices are skipped by authorship/Credits; `batch-cascade` diagnostic on a bad list | reader keyed on `followUps` → the whole entry malformed, digest wrong, status `ok` |
+| F3 | say | `kind: "say"`, no `verb`, body hashed as `{commitment}` | `verb` present on a say → malformed |
+| F4 | physics checkpoint | checkpoint body `seq`; body field `sim` kept; a boot resumes from it | a checkpoint carrying `at` → "checkpoint malformed; skipped" |
+| F5 | redaction + live-client resync | wire marker `{redacted: true}`; the client folds back to the same digest; `replica` resyncs on the kind | an old `{purged: true}` cell → digest never agrees; an entry of kind `purge` → folded past, no resync |
+| F6 | governance handoff (§3 line 6) | `kind: "governance"`, no `verb`, `key` ≠ the signing key, signed by the current sequencer | signed by the new key alone → "not a handoff by the outgoing sequencer" |
+| F7 | the wire's version gate | `replica.adopt` given a snapshot with an unknown `{dialect, v}` refuses whole: `unknown-version`, no state, nothing folded; a snapshot with this reader's pair is adopted (control); the snapshot's version has no `minor` and the fold exports no `MINORS` | `adopt` without the gate → the client adopts and drops every following `log` entry with status `ok` |
+| F8 | cascade authorship | `body.cascade` indices are skipped by authorship; `batch-cascade` on a bad list | a reader keyed on `followUps` → entry malformed, digest wrong, status `ok` |
 | F9 | commitment skeleton before/after redaction | the head at the redacted seq is identical before and after the line is rewritten to `commitment` | key `commit` in the skeleton → `broken` at that seq |
-| F10 | v1 direct-to-minor-1 translation | a v1 fixture translates to `minor: 1`, `request`/`op`/`args` spellings, no `verb` on genesis or says, no `by`, no actor `world`; no intermediate dialect stored | translator emitting `kind: "act"` or `verb: "genesis"` → the new reader refuses |
-| F12 | dual-read checkpoint blob | a blob with `cutJson` and one with `snapshotJson` both boot the physics layer to the same digest; new writes carry `snapshotJson` only | reader of `snapshotJson` alone → the old blob boots from genesis; writer of `cutJson` → F12's "new writes" assert fails |
-| F14 | the new reader refuses the old spellings (a set) | under `minor: 1`, one negative log per old spelling: a `change` carrying `verb`; a `request` carrying `op`; a `genesis`/`say`/`redaction`/`governance` carrying `verb`; a batch carrying `followUps`; a set carrying `commit`; a redaction target carrying `op`; an envelope carrying `for`, `grant` or `by`; a kind `act`/`sim`/`purge`/`sequencer`. Each: the expected `malformed:envelope` / `malformed:batch-field` / `malformed:op-field` / `malformed:unknown-field` / `malformed:kind`, status `ok`, digest of the entries that remain | a reader that quietly accepts both spellings passes F1–F13 and both M rules; only F14 catches it. This is how a dual vocabulary is kept out for the next five years |
-| F19 | `u-` + 24 entity-id collision is loud (P3) | the v1 translator refuses any entity id in the reserved shape (`translate-v1@47`, importer-check F19); an entity id matching `u-[a-z2-7]{24}` refuses the run for that world, loud, naming the id and seq; the shape checks accept exactly `{20}` and `{24}` and refuse 21–23 and 25–32 | an entity id of the 24 shape passing through silently, or a 28-char `u-` id accepted as a person → red |
-| F20 | the minor-0 reader refuses before applying any state (D1, M2) | the base commit's `fold.js` over a minor-1 log: status `no-world` (the dropped genesis `verb`, §1.5), `entities: null`, no entry folded, `statecache.ts` rebuilds nothing from it | a reader that folds one entry before reporting the unknown minor → red (this is M2 stated as a row, so the gate counts it) |
-| F21 | historical identity-key verification is offline-stable (P4/P6) — **design fixture, pending governance support** | a governance entry signed by an identity-tier owner verifies from the retained identity document version (or op-log CID) and proof history bound at the entry's `ts`, with the home node unreachable or rotated since | a verifier that resolves the signer's *current* document → red when the home node has rotated the key or disappeared |
+| F10 | v1 straight to this vocabulary | the translator writes the new kinds, `op`/`verb` per kind, no `verb` on genesis or says, no `minor`, no `by`/`for`/`grant`, no actor `world`; the v1 verb rides in the `imported` body; the reader folds it clean | a translator writing a `minor` → the reader returns no world |
+| F12 | checkpoint blob key | a blob written as `snapshotJson` boots the physics layer; one keyed `cutJson` is skipped; new writes carry `snapshotJson` only | a writer of `cutJson`, or a reader of it → red |
+| F14 | the reader refuses every old spelling | one negative log per old spelling: a `change` with `verb`; a `request` with `op`; a `genesis`/`say`/`redaction`/`governance` with `verb`; a batch with `followUps`; a set with `commit`; a redaction target with `op`; an envelope with `for`, `grant` or `by`; a kind `act`/`sim`/`purge`/`sequencer`. Each: its `malformed:*` code, status `ok`, the rest folded (a genesis with `verb`: no world) | a reader that accepts both spellings passes every positive fixture; only F14 catches it |
+| F19 | `u-` + 24 entity-id collision is loud (P3) | the v1 translator refuses any entity id in the reserved person shape `u-[a-z2-7]{24}`, naming the id; person-shape checks accept exactly `{20}` and `{24}` | an entity of the 24 shape passing through silently → red |
+| F20 | version refusal before any state | a reader given a log at the next `v`: `unknown-version`, no world, no entry folded, nothing accepted to cache; a genesis carrying `minor` is `malformed:genesis-field`, no world; every conformance log folds to its pinned status and digest | a reader that folds one entry before reporting the version → red |
+| F21 | historical identity-key verification is offline-stable (P4/P6) | **design fixture, pending governance support; no test exists today.** A governance entry signed by an identity-tier owner verifies from the identity document version (or op-log CID) and proof history bound at the entry's `ts`, with the home node unreachable or rotated | a verifier that resolves the signer's current document → red |
+| F22 | hello version | an unknown `{dialect, v}` gets `update-required` before any world lookup; no world name or existence in the reply | — |
+| F23 | no existence oracle | `unsupported-feature` only after access is granted; a refused principal can't tell a missing world from a closed one | — |
+| F24 | genesis provenance | present, schema-valid, non-redactable; `dirty: true` without `sourceTreeSha256` is invalid | — |
+| F26 | self-minted identity | a key-only identity may be a tier-0 owner, yet gets no create quota or admission without a host-issued capability | — |
+| F27 | custody | a missing or mismatched sequencer key → read-only at startup; no key is minted; a backup manifest without fingerprints and custody hash fails the check | — |
+| F28–F31 | feature declarations (§F F-1) | unknown id in genesis; unknown `requiresAdd`; use before declaration; a `requiresAdd` that removes or reorders is invalid | — |
 
-Two mutation rules over the whole set:
+### Deferred (not part of the proven set)
 
-- **M1 — every rename is load-bearing.** Removing any one rename or reader branch (`verb`→`op`, `followUps`→`cascade`, `commit`→`commitment`, `purged`→`redacted`, each kind, `at`→`seq`, `rewind_window`→`rewindWindow`, `cutJson` dual-read, the `for`/`grant` drop) makes **its own fixture** red, not merely some fixture. The kernel gate's vector verdict (`kernel-check.ts:41–43`) counts any diagnostic as a refusal; these rows ask for the *right* diagnostic, or the right digest, per fixture.
-- **M2 — an old minor-0 reader never returns `ok` for a minor-1 world.** The minor-0 `fold.js` (base commit) over every new fixture: status `no-world` (or `unknown-version`), never `ok`, never a partial world. This is D1's acceptance, run as a test against the base commit's reader, not the branch's. The old reader is the snapshot the kernel gate already keeps: `spec/kernel-vectors/<dir>/old-fold.js` (`tools/protocol/kernel-check.ts:46–51`), so M2 uses that mechanism and grows no second one.
+- **F25 — repair-body provenance.** After a redaction only the commitment of a repair request's body remains, and the reader reports "provenance unavailable", never a guess. No writer puts provenance in a repair body yet, so nothing tests it today. It lands with the first repair writer.
 
-The story in §3 is F1 + F2 + F6 + F8 + F9 in one log and should be the first fixture minted.
+### Mutation rules
 
-## 6. The fork-parent id map (D9)
+- **M1 — every rename is load-bearing.** Removing any one rename or reader branch (`op`, `cascade`, `commitment`, `redacted`, each kind, `seq` in the checkpoint, `rewindWindow`, `snapshotJson`, the `for`/`grant` drop) makes its own fixture red, not merely some fixture. The mutation column above is that rule per row.
+- **M2 — no old reader to run against.** Removed with the first-deploy ceremony. No kernel before this one was deployed, so no old reader is snapshotted. `spec/kernel-vectors/first-deploy/vectors.json` holds hand-written logs and the verdict the deployed reader gives each (control, stray `minor`, unknown envelope field, `v` 3, `v` 5, another dialect, kind `act`, unknown feature); kernel-check K3 runs them at every gate. A later kernel change brings its own vectors, red on this reader (snapshotted at re-pin as `old-fold.js`) and green on the new.
 
-**No migration.** This dialect was never deployed, and a v1 world translates straight to minor 1 (`tools/protocol/import-v1/`, D1), so there is no minor-0 world to migrate: the receipt, the migration authority table, the fork-parent map and their fixtures (F11, F13, F15–F18) went with the tool (Mica, 11-04). The reader still refuses minor 0 loudly (F20). What stays general: a genesis-changing rewrite is possible only while a world holds no governance entry (D11).
+## §P Portable identity: what this freeze decides
 
-## §P Portable identity: what this freeze must decide
+Portable identity (one person, one identity across worlds and servers) is later work. Its research is in `docs/research/portable-identity.md` (research, not protocol law). The direction: a did:plc-shaped self-certifying id with ordered rotation keys and a recovery window, resolved through a home node the person chooses, bound to the log's opaque `u-` actor by a signed claim held outside the log. Only the items below touch this freeze; body signatures, the claim verb, delegation in request bodies, identity documents and pairwise ids are additive later.
 
-Portable identity (one person, one identity across worlds and servers) is the next work item. Its full research is in `docs/research-portable-identity.md`. The recommendation is a did:plc-shaped self-certifying id with ordered rotation keys and a recovery window, resolved through a home node the person chooses. It is bound to the log's opaque `u-` actor by a signed claim held outside the log. Only the items below touch this freeze. Everything else (body signatures, the claim verb, delegation in request bodies, identity documents, pairwise ids) is additive later. Hash effect today: nil.
-
-- **P1** `actor` stays an opaque `u-` id: never a DID string, a key, or `name@host`. §6 gains "an actor is a world-visible alias; what it binds to lives outside the log." **By default the actor is a world-visible alias whose binding lives outside the log.** A resident holding a portable identity *may* elect to use one spelling across worlds, and may elect the portable id itself as that spelling, but that is an **explicit resident choice**, never the host's default: writing the globally self-certifying id as the automatic actor spelling would turn portability into irreversible global correlation by default. Per-world and per-host aliases remain first-class.
-- **P2** The envelope never carries an identity field (no `for`/`grant`/`proof`). Signatures, delegation and claims live in bodies, which hash as `{commitment}` and so cost nothing later. A later envelope field would mean a minor bump, which means every world id changes.
-- **P3** Identity grammar: `u-` + lowercase base32 at **exactly two lengths**: `u-[a-z2-7]{20}` (today's random mint) and `u-[a-z2-7]{24}` (reserved for a portable id, the did:plc length). Not 20–32: reserving every length would classify previously legal entity ids at eleven lengths as people without defining an identity format for any of them, which is the collision the guard exists to prevent. The person-shape checks (`componentspec.js:726`, `ids.js:21`, `directory.ts:34`, `messages.ts:40`, `presencewire.js:99`, `names.js:115`, all `{20}` today) become `{20}|{24}` in the same PR. **Before widening, the translator scans every translated world for an entity id already matching `u-` + 24 base32 and refuses that world loudly, naming the id and seq** (F19); the collision is resolved by hand, never by the tool guessing. Future identity lengths are added deliberately, before anyone mints entities in that exact shape.
-- **P4** Genesis `owners` tiers may hold an identity as well as an `ed25519:` key. Today `checkGenesis` refuses a non-key owner, so a founder's lost key loses the world's governance forever. Genesis is in the world id, so this is free now and costs a full re-id later.
+- **P1** `actor` is an opaque `u-` id: never a DID string, a key, or `name@host`. By default it is a world-visible alias whose binding lives outside the log. A resident may elect one spelling across worlds, even the portable id itself, as an explicit choice; the host never does so by default, because that would make portability into global correlation by default.
+- **P2** The envelope never carries an identity field (no `for`/`grant`/`proof`). Signatures, delegation and claims live in bodies, which hash as `{commitment}` and cost nothing later. A new envelope field would be a new `v`.
+- **P3** Person ids are `u-` + lowercase base32 at **exactly two lengths**: `u-[a-z2-7]{20}` (today's mint) and `u-[a-z2-7]{24}` (reserved for a portable id). Not 20–32: reserving every length would reclassify legal entity ids as people. The shape checks (`ids.js PERSON_ID`, `componentspec.js`, `directory.ts isMinted`, `presencewire.js`, `names.js ACTOR_ID`) accept `{20}` or `{24}`. The v1 translator refuses an entity id already wearing the 24 shape (F19); the collision is resolved by hand. A future length is added before anyone mints entities in it.
+- **P4** Genesis `owners` tiers may hold an identity as well as an `ed25519:` key, so a founder's lost key need not lose the world's governance. Genesis is in the world id, so this is reserved now.
 - **P5** A claim (a stand-in becoming a real person) is a request verb plus system changes, never a new kind.
-- **P6** Governance signatures are checked against the signer's identity **as of `ts`, offline-stable**: never against a key frozen in genesis, and never against the home node's *current* document. "As of `ts`" requires a signed append-only identity op log and an immutable document version or proof that an offline verifier can retain. The later governance design binds at least: the **identity id**; the **identity document / op-log version or CID**; the **signing key valid at the entry's `ts`**; and the **proof history** needed to verify offline. Otherwise a home-node rotation or disappearance would change whether an old world's governance verifies (F21, design fixture).
-- **P7** §12 says: **actor history is never redactable.** Retiring or revoking a local binding **tombstones the directory relation**: not the person, and not their historical authored entries. A directory cannot remove a person from history; it can only stop resolving one binding. A person's request/say bodies may be redacted as today; their `actor` ids and commitments stay.
+- **P6** Governance signatures are checked against the signer's identity as of `ts`, offline-stable: never against a key frozen in genesis, never against the home node's current document. The governance design binds the identity id, the identity document or op-log version (or CID), the key valid at `ts`, and the proof history needed offline (F21).
+- **P7** Actor history is never redactable. Revoking a local binding tombstones the directory relation, not the person and not their authored entries. Request and say bodies may be redacted as today; `actor` ids and commitments stay.
 
-**Q6 — do P1–P7 hold up?** **Answered: yes, with three narrowed** (P1 alias by default, P3 exactly 20|24, P6 offline-stable) and P7 reworded, all above. Kept as proposed: no identity/proof fields in the envelope; claims as request verbs plus system changes, not a new kind; delegation/proofs in purgeable request bodies later; owner tiers may contain portable identities; actor ids never redacted; identity documents/op logs remain additive later. P3 and P4 are the two that change kernel shape checks in this PR.
+## §F Freeze contract
 
-**Q3 resolved: keep the inbox `kind:"act"`** as review 1 said, documented as a volatile agent event. Once the log retires `act`, the word has one meaning in live code. The only other place it appears is the migration tool, which reads old minor-0 logs, and that is clearly labelled as old.
-
-## §F Freeze questions (round 3, answered in review)
-
-Fixtures for §F (implementation gate, beside F1–F21):
-| id | row |
-|---|---|
-| F22 | hello: an unknown v/minor gets `update-required` before any world lookup; no world name/existence in the reply |
-| F23 | hello: `unsupported-feature` only after access is granted; a refused principal can't tell a missing world from a closed one |
-| F24 | genesis provenance present, schema-valid, non-redactable; `dirty:true` without `sourceTreeSha256` is invalid |
-| F25 | repair provenance: after a redaction only the commitment remains, and the reader reports "provenance unavailable", not a guess. *Deferred (simplify review D5, 11-05): no writer puts provenance in a repair body yet, so the reader lands with the first one.* |
-| F26 | a self-minted (key-only) identity may be a tier-0 owner, yet gets no create quota or admission without a host-issued capability |
-| F27 | custody: a missing/mismatched sequencer key → read-only at startup; no key is minted; a backup manifest without fingerprints + custody hash fails the server check |
-| F28–F31 | the four F-1 feature fixtures (unknown in genesis; unknown `requiresAdd`; use-before-declare; remove/reorder invalid) |
+Fixtures F22–F31 in §5; F25 is deferred.
 
 - **F-1 Feature declarations (kernel reservation).** Contract:
   ```text
@@ -416,15 +253,16 @@ Fixtures for §F (implementation gate, beside F1–F21):
                     exactly like every other governance decision; no
                     system actor and no change/request may activate law
   semantics: monotonic union; never removed; must precede first use
+  empty requiresAdd → invalid (requiresAdd-empty): a decision that changes nothing
   unknown id → the whole world is unsupported-feature at the declaring
                seq; no later entry is applied (no partial fold)
-  feature id grammar (v1, known to the minor-1 reader from day one):
+  feature id grammar (known to this reader from day one):
     ^[a-z][a-z0-9-]{0,31}:[a-z][a-z0-9-]{0,47}@[1-9][0-9]{0,3}$
     i.e. namespace:name@major, ≤ 88 chars; ≤ 64 ids per world
     a new major is a new id; no ranges, no wildcards
   ```
-  Fixtures: unknown id in genesis refuses before entry 1; an unknown `requiresAdd` refuses at that seq with nothing after it applied; a use of a feature before its declaration is refused by the authority; a `requiresAdd` that removes or reorders is invalid.
-- **F-2 Registry epoch / writer provenance.** Exact object:
+  This reader implements no feature ids yet (`features.js KNOWN_FEATURES`, `reader.py KNOWN_FEATURES`).
+- **F-2 Writer provenance.** Exact object (`shared/protocol/provenance.js`):
   ```json
   "provenance": {
     "registry": {"id": "registry-pin", "sha256": "<64 hex>"},
@@ -434,12 +272,13 @@ Fixtures for §F (implementation gate, beside F1–F21):
                  "dirty": false}
   }
   ```
-  **Carrier (decided in review):** `sourceTreeSha256` is mandatory when `dirty` is true and written always. `name` is a bounded identifier, so a future repair writer needs no protocol change. A world's *founding* provenance lives in `genesis.body.provenance`. Genesis is hashed into the world id and never redactable, so it is durably readable; the translator writes it there for every migrated world. A *repair* request carries the same object in its request body, which is purgeable, so we say plainly: after a redaction only the commitment remains, and a later reader knows which rules governed that stretch only if the body or an external receipt survives. The migration receipt repeats the founding provenance externally.
+  Every field is required; `sourceTreeSha256` is always written. `name` is a bounded identifier, so a new writer needs no protocol change. A world's founding provenance lives in `genesis.body.provenance`: genesis is in the world id and never redactable, so it stays readable. The v1 translator writes it there as writer `eidoverse-translate-v1` at version `<translator number>.0.0`. The `translated` request after genesis repeats it in its body, and the in-place translation's rollback manifest repeats it (`tools/protocol/world.ts`). `translated.body.from` names the parent and the v1 fold build, never the translator. Provenance in a repair request body is deferred (F25).
 - **F-3 Join contract.** Internal order:
   ```text
   1. authenticate the principal
-  2. validate the global hello {dialect, v, minor, features}; no world lookup
-     unknown dialect/v/minor → {type:"refused", code:"update-required", need:{dialect,v,minor}}
+  2. validate the global hello {dialect, v, features}, exactly; no world lookup
+     unknown dialect/v, a stray key (minor included), or a missing hello →
+       {type:"refused", code:"update-required", need:{dialect, v}}
   3. authorize the requested world with no existence oracle: one discoverability
      predicate (server/access.ts discoverable) across /worlds, the join, /access and
      redial. Not discoverable → byte-equivalent to missing: same status / close code,
@@ -452,19 +291,20 @@ Fixtures for §F (implementation gate, beside F1–F21):
      saved in an older format) is an unavailable state too: its diagnosis goes only
      to the operator and, for an old world, its recognised owner (server/access.ts
      toldOf, the same predicate, also behind the reads and the upgrade requests);
-     to anyone else it is world-unavailable (Mica 11-05, #23 ruling 4).
+     to anyone else it is world-unavailable.
   4. only after access is granted, compare world.requires to client.features
      missing → {type:"refused", code:"unsupported-feature", need:[ids]}
-  5. else the snapshot, repeating the authoritative {dialect, v, minor, requires}
+  5. else the snapshot, repeating the authoritative {dialect, v, requires}
   ```
-  `update-required` may precede world authorization; the world-specific `unsupported-feature` never may. Caveat: whoever may create a world can learn that a name is taken; the collision refusal stays generic (`"X" isn't available`), never whose or what kind. A missing hello fails loudly after the first deploy of this dialect, with no legacy default. The same contract holds for browser, native, MCPL and agent joins.
-- **F-4 Self-minted identity.** A key-only identity may be an owner, including tier 0. Identity is not admission: quota, rate and create-standing attach to a *host-issued admission capability*, never to the cheap key or id. A key proves continuity and authorship, not entitlement to resources.
+  `update-required` may precede world authorization; the world-specific `unsupported-feature` never may. Caveat: whoever may create a world can learn that a name is taken; the collision refusal stays generic (`"X" isn't available`), never whose or what kind. The hello is always required: there is no legacy default. Every client says a hello refusal in words (`shared/protocol/hello.js refusalWords`); an agent's join rejects with them instead of timing out. The same contract holds for browser, native, MCPL and agent joins.
+- **F-4 Self-minted identity.** A key-only identity may be an owner, including tier 0. Identity is not admission: quota, rate and create-standing attach to a host-issued admission capability, never to the cheap key or id. A key proves continuity and authorship, not entitlement to resources.
 - **F-5 Custody.** Invariant:
   ```text
-  the migration receipt precedes the first governance entry
+  a genesis-changing rewrite (the v1 translation) precedes the first governance entry (D11)
   each backup manifest records the sequencer/operator public fingerprints + the custody-file hash
   an encrypted, offline custody backup exists and is restore-tested
   startup verifies the live custody keys against genesis / the latest governance
   missing or mismatched authority → read-only, never a replacement mint
-  the migration receipt and the old and new logs travel together
+  a translation's rollback manifest and the v1 and translated logs travel together
   ```
+  Implemented today (`server/custodycheck.ts`): the startup check without minting, read-only on mismatch, and the backup manifest's fingerprints and custody hash, checked from its written bytes. No restore path reads the manifest yet, so restoration is not verified by code.
