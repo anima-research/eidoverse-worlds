@@ -237,7 +237,7 @@ const cases: Case[] = [
 
   // ---------------- T: the translator ----------------
   { id: "T1", what: "translate-v1: Mica's v1 story becomes {title, text + her practice as a paragraph, marks: [the fire]}; plantedBy and assetAuthor ride in imported:story; the authority then takes an edit of it", run(s) {
-      const old = [{ seq: 0, ts: 1, actor: "world", args: { v: 2, dialect: "eidoverse-log" } },
+      const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
         { seq: 1, ts: 2, actor: "mica", verb: "spawn", args: { id: "fire", lib: "crate", pos: [3, 0, 0] } },
         { seq: 2, ts: 3, actor: "mica", verb: "spawn", args: { id: "tree", lib: "crate", pos: [0, 0, 0] } },
         { seq: 3, ts: 4, actor: "mica", verb: "comp", args: { id: "tree", type: "story", data: { title: "The first marker tree", text: "Mica's fire — already burning when FC arrived.", assetAuthor: "SkyeShark", plantedBy: "mica", practice: "One tree, renewing, not accumulating. The next event belongs to the next planter.", markedEntity: "fire" } } }];

@@ -145,7 +145,7 @@ ok(foldName("Marígold") === foldName("marigold") && foldName("JOSÉ") === foldN
   ok(r1.ok && w.entries.length > n1, "K4d …the rest was due: the server that holds the key logs it at its next read", { r1: r1.ok ?? r1.refused, logged: w.entries.slice(n1).map((e: any) => e?.verb) }); }
 { const { translateV1World } = await import("./import-v1/world.ts");
   const W = path.join(tmp, "tw"); fs.mkdirSync(path.join(W, "old"), { recursive: true });
-  fs.writeFileSync(path.join(W, "old", "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", args: { v: 2, dialect: "eidoverse-log" } },
+  fs.writeFileSync(path.join(W, "old", "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
     { seq: 1, ts: 2, actor: "Ann", verb: "spawn", args: { id: "lamp_1", lib: "a.glb", pos: [1, 0, 1] } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
   const a = translateV1World(path.join(W, "old"), path.join(W, "a")), b = translateV1World(path.join(W, "old"), path.join(W, "b"));
   const ga = JSON.parse(fs.readFileSync(path.join(W, "a", "world.jsonl"), "utf8").split("\n")[0]).body;
@@ -293,7 +293,7 @@ ok(foldName("Marígold") === foldName("marigold") && foldName("JOSÉ") === foldN
 // ---- X: a translated thing whose reaction runs a v1 script (round-2 R14: this path threw a ReferenceError) ----
 { const { translateV1World } = await import("./import-v1/world.ts");
   const W = path.join(tmp, "xs"); fs.mkdirSync(path.join(W, "old"), { recursive: true });
-  fs.writeFileSync(path.join(W, "old", "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", args: { v: 2, dialect: "eidoverse-log" } },
+  fs.writeFileSync(path.join(W, "old", "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
     { seq: 1, ts: 2, actor: "Ann", verb: "spawn", args: { id: "bell", lib: "a.glb", pos: [1, 0, 1] } },
     { seq: 2, ts: 3, actor: "Ann", verb: "comp", args: { id: "bell", type: "reactions", data: { ring: { kind: "script", script: "bell" } } } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
   translateV1World(path.join(W, "old"), path.join(W, "new"));
@@ -305,7 +305,7 @@ ok(foldName("Marígold") === foldName("marigold") && foldName("JOSÉ") === foldN
 // state key the authority never reads, so a translated world quietly unbanned everyone) ----
 { const { translateV1World } = await import("./import-v1/world.ts");
   const W = path.join(tmp, "xb"); fs.mkdirSync(path.join(W, "old"), { recursive: true });
-  fs.writeFileSync(path.join(W, "old", "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", args: { v: 2, dialect: "eidoverse-log", roles: { Ann: { role: "owner" } } } },
+  fs.writeFileSync(path.join(W, "old", "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log", roles: { Ann: { role: "owner" } } } },
     { seq: 1, ts: 2, actor: "Ann", verb: "ban", args: { id: "Mallory", reason: "spam" } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
   translateV1World(path.join(W, "old"), path.join(W, "new"));
   const w: any = openLive(path.join(W, "new"), "new", { now: () => 1800000000000 });
@@ -518,7 +518,7 @@ ok(foldName("Marígold") === foldName("marigold") && foldName("JOSÉ") === foldN
   // carry (nothing flew) → that name with no build (nothing flies here either); an epoch she refused (tickMs 5: it never
   // started) → no physics at all, the epoch kept as a record
   { const B = [[-0.5, 0, -0.5], [0.5, 1, 0.5]];
-    const log = (sim: string, tickMs: number) => [{ seq: 0, ts: 1000, actor: "world", args: { v: 3, dialect: "eidoverse-log" } },
+    const log = (sim: string, tickMs: number) => [{ seq: 0, ts: 1000, actor: "world", verb: "genesis", args: { v: 3, dialect: "eidoverse-log" } },
       { seq: 1, ts: 1020, actor: "fx", verb: "epoch", args: { sim, tickMs, boxes: { "crate.glb": B } } },
       { seq: 2, ts: 1030, actor: "fx", verb: "spawn", args: { id: "crate", lib: "crate.glb", pos: [0, 0, 0], yaw: 0, box: B } },
       { seq: 3, ts: 1500, actor: "fx", verb: "punt", args: { id: "crate", power: 8, dir: [1, 0.3, 0] } }];

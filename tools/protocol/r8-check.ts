@@ -181,7 +181,7 @@ const cases: Case[] = [
     good: (o) => o.m === "ok" && o.k === "ok" && o.after === o.n && o.az === o.az0 && o.mo === o.mo0 && o.markedOld === true },
   { id: "M3", what: "a translation carries the marker from its start: the system's repair-shapes act beside `translated`; with the translated act's body purged (unknown) the log still reads marked", async run() {
       const TV = await import(ENGINE + "tools/protocol/import-v1/translate-v1.js");
-      const old = [{ seq: 0, ts: 1, actor: "world", args: { v: 2, dialect: "eidoverse-log", roles: { Marigold: { role: "owner" } } } },
+      const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log", roles: { Marigold: { role: "owner" } } } },
         { seq: 1, ts: 2, actor: "Marigold", verb: "spawn", args: { id: "lamp_1", lib: "a.glb", pos: [1, 0, 1] } }];
       const r = TV.translate(old, {}); const L = r.out;
       const t = L.findIndex((e: any) => e.verb === "translated"), m = L.findIndex((e: any) => e.verb === "repair-shapes" && e.actor === "system");

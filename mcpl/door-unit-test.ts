@@ -52,7 +52,7 @@ for (const why of ["superseded by a newer walk or a stop", "no route: the way th
 // act's say {to} and body {to} name a person, so a thing sharing their name isn't sent in their place
 { const sent: any[] = [];
   const ag: any = { thingRef: (v: string) => v === "Mira" ? { id: "lamp-7f3a" } : {}, request: async (verb: string, args: any) => { sent.push([verb, args]); return { ok: true }; } };
-  await handleTool({ agent: ag } as any, "act", { args: { text: "hi", to: "Mira" } });
+  await handleTool({ agent: ag } as any, "act", { verb: "say", args: { text: "hi", to: "Mira" } });
   await handleTool({ agent: ag } as any, "act", { verb: "body", args: { to: "Mira", kind: "pose" } });
   await handleTool({ agent: ag } as any, "act", { verb: "delete", args: { id: "Mira" } });
   ok(sent[0][1].to === "Mira" && sent[1][1].to === "Mira", "act say {to} and body {to} keep the person's name", sent);

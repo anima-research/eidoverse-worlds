@@ -50,7 +50,7 @@ const creator = (reply: any = { ok: true, after: {} }) => { const sent: any[] = 
 
 // #63: catch_up pages from the oldest unread; a full page moves the cursor only past what it showed
 { const ag: any = new WorldAgent({ name: "me", world: "w" });
-  const all = Array.from({ length: 70 }, (_, i) => ({ seq: (i + 1) * 1000, ts: i, actor: "Bea", args: { text: `line ${i + 1}` } }));
+  const all = Array.from({ length: 70 }, (_, i) => ({ seq: (i + 1) * 1000, ts: i, actor: "Bea", verb: "say", args: { text: `line ${i + 1}` } }));
   ag.lastSeq = 70000;
   // the server's paging (worldlog.ts readHistory): the newest `limit` after `after`, before `before`, hasMore when older remain
   ag.history = async ({ after = -Infinity, before = Infinity, limit = 50 }: any) => { const m = all.filter((e) => e.seq > after && e.seq < before);
@@ -61,7 +61,7 @@ const creator = (reply: any = { ok: true, after: {} }) => { const sent: any[] = 
 
 // kudzu M6: catch_up {limit: 0} (or a limit that isn't a number) is a page of at least one line, never a throw
 { const ag: any = new WorldAgent({ name: "me", world: "w" });
-  const all = Array.from({ length: 3 }, (_, i) => ({ seq: (i + 1) * 1000, ts: i, actor: "Bea", args: { text: `line ${i + 1}` } }));
+  const all = Array.from({ length: 3 }, (_, i) => ({ seq: (i + 1) * 1000, ts: i, actor: "Bea", verb: "say", args: { text: `line ${i + 1}` } }));
   ag.lastSeq = 3000;
   ag.history = async ({ after = -Infinity, before = Infinity, limit = 50 }: any) => { const m = all.filter((e) => e.seq > after && e.seq < before);
     const page = m.slice(-limit); return { entries: page, oldestSeq: page[0]?.seq ?? null, hasMore: m.length > page.length }; };
@@ -79,13 +79,13 @@ const creator = (reply: any = { ok: true, after: {} }) => { const sent: any[] = 
 
 // #105 (bot2): the cursor after an exhausted read is a seq the read covered, not a say that arrived while it ran
 { const ag: any = new WorldAgent({ name: "me", world: "w" }); ag.lastSeq = 10000;
-  ag.history = async () => { ag.lastSeq = 11000; return { entries: [{ seq: 2000, ts: 0, actor: "Bea", args: { text: "hi" } }], oldestSeq: 2000, hasMore: false }; };
+  ag.history = async () => { ag.lastSeq = 11000; return { entries: [{ seq: 2000, ts: 0, actor: "Bea", verb: "say", args: { text: "hi" } }], oldestSeq: 2000, hasMore: false }; };
   const ctx = ctxOf(ag); await handleTool(ctx, "catch_up", {});
   ok(ctx.cursor.caughtUpTo === 10000, "105 a say arriving mid-read stays unread: the cursor is the lastSeq from before the read", ctx.cursor); }
 
 // #65 (bot2): past the 100-page cap, catch_up says which older says were not read, instead of calling the newest 20,000 the oldest
 { const ag: any = new WorldAgent({ name: "me", world: "w" }); ag.lastSeq = 30_000_000; let pages = 0;
-  ag.history = async ({ before = 30_000_000 }: any) => { pages++; const page = Array.from({ length: 200 }, (_, i) => ({ seq: before - 200 * 1000 + i * 1000, ts: 0, actor: "Bea", args: { text: "x" } }));
+  ag.history = async ({ before = 30_000_000 }: any) => { pages++; const page = Array.from({ length: 200 }, (_, i) => ({ seq: before - 200 * 1000 + i * 1000, ts: 0, actor: "Bea", verb: "say", args: { text: "x" } }));
     return { entries: page, oldestSeq: page[0].seq, hasMore: true }; };
   const ctx = ctxOf(ag); const out = textOf(await handleTool(ctx, "catch_up", { limit: 1 }));
   ok(pages === 100 && /not read/.test(out) && /world_history/.test(out) && /more remain/.test(out), "65 a run longer than 100 pages is named as unread older speech, with the way to read it", out.slice(-240)); }

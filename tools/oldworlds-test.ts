@@ -39,7 +39,7 @@ const T0 = 1790000000000;
 const L = [
   { actor: "world", verb: "grant", args: { id: "Ann", role: "owner", gen: true } },
   { actor: "Ann", verb: "spawn", args: { id: "lamp_1", lib: "test/table.glb", pos: [1, 0, 1], yaw: 0.5 } },
-  { actor: "Ann", args: { text: "hello from the old days" } }];
+  { actor: "Ann", verb: "say", args: { text: "hello from the old days" } }];
 fs.mkdirSync(path.join(W, "oldtown"));
 const oldLog = path.join(W, "oldtown", "log.jsonl");
 fs.writeFileSync(oldLog, L.map((e, k) => JSON.stringify({ seq: k, ts: T0 + k * 1000, ...e })).join("\n") + "\n");

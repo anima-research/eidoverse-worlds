@@ -1186,7 +1186,7 @@ export class WorldAgent {
             if (!this.replica.adopt(msg)) { this.closed = true; clearTimeout(timeout); reject(new Error(`unknown-version: the world speaks ${msg.dialect} v${msg.v} minor ${msg.minor}; this agent reads another (D5)`)); break; }
             this.st.recentChat = structuredClone(msg.chat?.recentChat ?? []);
             this.st.chatTotal = msg.chat?.chatTotal ?? 0;
-            for (const m of this.st.recentChat) this.hearSay({ seq: m.seq ?? -1, ts: m.ts, actor: m.actor, args: { text: m.text } }, false);
+            for (const m of this.st.recentChat) this.hearSay({ seq: m.seq ?? -1, ts: m.ts, actor: m.actor, verb: "say", args: { text: m.text } }, false);
             // the feet hold their height until the floors this join is about to learn about have been fitted (#235) —
             // before that, the only ground a body could find is the terrain under the building it is in
             this.feetSettling = true;
@@ -1320,7 +1320,7 @@ export class WorldAgent {
             // a gap, a purge or a new genesis: this cut can't continue; ask for a fresh snapshot on the same connection
             if (r.resync) { if (this.ws?.readyState === 1) this.ws.send(JSON.stringify(this.joinMsg())); break; }
             for (const x of r.says) {
-              const e = { seq: x.seq * 1000, ts: x.ts, actor: x.actor, args: { text: x.text, ...(x.to ? { to: x.to } : {}), ...(x.spoken ? { spoken: true, utt: x.utt, ...(x.t0 !== undefined ? { t0: x.t0 } : {}) } : {}) } };
+              const e = { seq: x.seq * 1000, ts: x.ts, actor: x.actor, verb: "say", args: { text: x.text, ...(x.to ? { to: x.to } : {}), ...(x.spoken ? { spoken: true, utt: x.utt, ...(x.t0 !== undefined ? { t0: x.t0 } : {}) } : {}) } };
               this.lastSeq = Math.max(this.lastSeq, e.seq);
               this.noteOwnSay(e);
               hear(this.st, { actor: e.actor, text: x.text, ts: e.ts, seq: e.seq });   // the chat window
@@ -5692,7 +5692,7 @@ export class WorldAgent {
       L.push(`\nSince you last looked:`);
       for (const m of unread.slice(-25)) {
         L.push(m.kind === "say" ? `  ${m.who}: ${m.text}`
-          : m.kind === "request" ? `  * ${m.who} ${m.text}`
+          : m.kind === "act" ? `  * ${m.who} ${m.text}`
           : `  * ${m.who} ${m.kind === "arrive" ? "arrived" : "left"}`);
       }
     }

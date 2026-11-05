@@ -251,7 +251,7 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
   const wc = w.state().entities["@world"].c, n = R.effectiveOf(wc, "u-somebodyelse00000000"), again = operatorRepair(w, rue, "set", { id: "@world", component: `roles:${pip}`, value: { role: "owner" } });
   row("CL6", () => ok(set?.ok && n.role === "builder" && n.can.generate && n.can.build && wc["role-defs"]?.builder?.can?.generate === true && again?.ok
     && wrote.filter((e: any) => e.kind === "change").length === 1 && wrote.filter((e: any) => e.kind === "request").length === 1 && JSON.stringify(wrote).includes(`roles:${rue}`) && !JSON.stringify(wrote).includes("role-defs"),
-    "CL6 operator-repair set of another owner is one write (one act, one change), the role alone; builder keeps generate from the translation's role-defs", { set: set?.refused, n: n.permissions, rd: wc["role-defs"], wrote: wrote.map((e: any) => [e.kind, e.verb]) }));
+    "CL6 operator-repair set of another owner is one write (one act, one change), the role alone; builder keeps generate from the translation's role-defs", { set: set?.refused, n: n.permissions, rd: wc["role-defs"], wrote: wrote.map((e: any) => [e.kind, e.verb ?? e.op]) }));
 }
 
 { // CL11 (fixF): the translation's ownerless lift (imported:ownerless) ends with the first owner; grants made after it count only while owned

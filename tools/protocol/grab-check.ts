@@ -223,7 +223,7 @@ function cast(s: any, sim = false) {
   for (const [who, role] of [["bob", "builder"], ["vic", "member"], ["ann", "member"]]) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });
   if (sim) s.call("olive", "set", { id: "@world", component: "physics-engine", value: ENG });
 }
-const tail = (s: any, n: number) => s.entries().slice(-n).map((e: any) => `${e.kind}:${e.verb}`);
+const tail = (s: any, n: number) => s.entries().slice(-n).map((e: any) => `${e.kind}:${e.verb ?? e.op}`);
 // strip the last logged value of id's comp to its commit, with no purge: as a copy of the log changed by hand would hold it
 // (the commit is the value's own, so every head still verifies); the session reopens to read it. → the line's seq
 const stripLast = (s: any, id: string, comp: string) => {
@@ -232,7 +232,7 @@ const stripLast = (s: any, id: string, comp: string) => {
     const ops = e.op === "batch" ? e.body.ops : [e.body]; const o = ops.find((x: any) => x.op !== "delete" && x.id === id && x.comp === comp && "value" in x) ?? (e.op === "set" && e.body.id === id && e.body.comp === comp && "value" in e.body ? e.body : null);
     if (!o) continue; const c = ST.opCommit(o); delete o.value; delete o.salt; o.commit = c; lines[k] = JSON.stringify(e); fs.writeFileSync(file, lines.join("\n")); return k; }
   return -1; };
-const since = (s: any, n0: number) => s.entries().slice(n0).map((e: any) => `${e.kind}:${e.verb}`);
+const since = (s: any, n0: number) => s.entries().slice(n0).map((e: any) => `${e.kind}:${e.verb ?? e.op}`);
 const carrier = (s: any) => { const v = SL.simFold(s.entries(), clock.t + 1e9); /* the authority here folds with the lab catalogue (worldOf: no simModels), so the carrier does too */ return { agree: v.checks.agree, disagree: v.checks.disagree.length }; };
 
 type Case = { id: string; what: string; run: (s: any) => any; good: (o: any) => boolean };

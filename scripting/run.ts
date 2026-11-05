@@ -25,7 +25,7 @@ export function runEvents(text: string, o: Opts) {
       near: (rr: number) => people.filter((p) => p.d <= rr), count: () => people.length, name: (id: string) => id });
     for (const l of r.logs ?? []) { out.console.push(l); print(`  console ${l}`); }
     if (!r.ok) { out.failed.push({ on: ev.on, code: r.code, why: r.why }); print(`  failed ${r.code}: ${r.why}`); return; }
-    for (const op of r.ops) { out.writes.push(op); print(`  ${op.verb} ${op.id}${op.comp ? ` ${op.comp}` : ""}${"value" in op ? ` ${JSON.stringify(op.value)}` : ""}`); }
+    for (const op of r.ops) { out.writes.push(op); print(`  ${op.op} ${op.id}${op.comp ? ` ${op.comp}` : ""}${"value" in op ? ` ${JSON.stringify(op.value)}` : ""}`); }
     for (const t of r.says) { out.says.push(t); print(`  say ${JSON.stringify(t)}`); }
     for (const u of r.uses) { out.uses.push(u); print(`  use ${u.id} ${u.action}${u.args !== undefined ? ` ${JSON.stringify(u.args)}` : ""}`); }
     for (const b of r.bodies) { out.bodies.push(b); print(`  ${b.kind} ${b.to}`); }

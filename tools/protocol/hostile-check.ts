@@ -29,7 +29,7 @@ const L = (o) => JSON.stringify(o);
 const act = L({ world: WID, kind: "request", ts: 1, actor: "olive", verb: "set", body: { args: {} } }); // §2.1: every entry after genesis carries ts
 const st = (verb, body, extra = {}) => L({ world: WID, kind: "change", ts: 1, actor: "olive", cause: 1, op: verb, body, ...extra });
 const logOf = (...lines) => [L(GEN), act, ...lines].join("\n") + "\n";
-const bGen = { kind: "genesis", actor: "world", args: { v: 4, fold: 1 }, seq: 0 };
+const bGen = { kind: "genesis", actor: "world", verb: "genesis", args: { v: 4, fold: 1 }, seq: 0 };
 const bst = (seq, verb, args) => ({ kind: "change", actor: "olive", cause: 1, verb, args, seq });
 const baseText = (text, getBlob = () => { throw new Error("no blob"); }) => base.fold(text.split("\n").filter(Boolean).map((l) => JSON.parse(l)), getBlob);
 const run = (f) => { try { return { ok: true, v: f() }; } catch (e) { return { ok: false, err: `${e.constructor.name}: ${e.message}`.slice(0, 120) }; } };
@@ -79,7 +79,7 @@ const probes = [
   { id: "E0d", src: "25e §0", what: "a batch nested 20,000 deep: bun folds it, node overflows (readers disagree)",
     base: () => { const f = root + "probe-deep.mjs";
       fs.writeFileSync(f, `import { fold } from ${JSON.stringify(pathToFileURL(basePath).href)}; const o0 = { verb: "create", args: { id: "deep" } }; let o = o0; for (let k = 0; k < 20000; k++) o = { verb: "batch", args: { requests: [o] } };
-        try { const s = fold([{ kind: "genesis", seq: 0, args: {} }, { kind: "change", seq: 1, ...o }], () => null); console.log("folded:" + Object.keys(s.entities)); } catch (e) { console.log("threw:" + e.constructor.name); }`);
+        try { const s = fold([{ kind: "genesis", verb: "genesis", seq: 0, args: {} }, { kind: "change", seq: 1, ...o }], () => null); console.log("folded:" + Object.keys(s.entities)); } catch (e) { console.log("threw:" + e.constructor.name); }`);
       const out = ["bun", "node"].map((r) => Bun.spawnSync([r, f]).stdout.toString().trim()); fs.rmSync(f); return { ok: true, v: { bun: out[0], node: out[1] } }; },
     baseBad: (r) => r.v.bun !== r.v.node,
     now: () => { const f = root + "probe-deep2.mjs"; fs.writeFileSync(root + "probe-deep.jsonl", logOf(deepLine(20000)));
@@ -92,7 +92,7 @@ const probes = [
     now: () => now([L({ ...GEN, body: { version: 5, owners: [] } }), act, st("create", { id: "a" }), st("move", { id: "a", to: [1, 0, 0] })].join("\n")),
     nowGood: (s) => s.status === "unknown-version" && s.entities === null },
   { id: "H5b", src: "25d H5", what: "a later entry with verb genesis rewrites the version mid-log",
-    base: () => run(() => base.fold([bGen, { kind: "timeline", seq: 1, args: { fold: 99 } }]).fold), baseBad: (r) => r.ok && r.v === 99,
+    base: () => run(() => base.fold([bGen, { kind: "timeline", verb: "genesis", seq: 1, args: { fold: 99 } }]).fold), baseBad: (r) => r.ok && r.v === 99,
     now: () => now(logOf(L({ kind: "genesis", actor: "system", body: { dialect: "eidoverse-log", v: 99, owners: [] } }), st("create", { id: "a" }))),
     nowGood: (s) => s.status === "ok" && s.v === 4 && codes(s).includes("2:malformed:genesis-not-first") && s.entities.a },
   { id: "H5c", src: "PROTOCOL L1", what: "no genesis at entry 0 (genesis only as entry 0 of kind genesis)",

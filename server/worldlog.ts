@@ -165,7 +165,7 @@ export class WorldLog {
   /** One say entry: into the chat window and readHistory, as {seq: seq × 1000, …}. */
   private sayLine(e: Any): ChatLine {
     const who = (x: string) => directoryFor(WORLDS_DIR).nameOf(x) ?? idOut(x);
-    return { seq: e.seq * 1000, ts: e.ts, actor: who(String(e.actor)), args: { text: String(e.body?.text ?? ""), ...(e.body?.to ? { to: who(String(e.body.to)) } : {}), ...spokenOf(e.body) } } as ChatLine;
+    return { seq: e.seq * 1000, ts: e.ts, actor: who(String(e.actor)), verb: "say", args: { text: String(e.body?.text ?? ""), ...(e.body?.to ? { to: who(String(e.body.to)) } : {}), ...spokenOf(e.body) } } as ChatLine;
   }
   private hearSay(e: Any) {
     const line = this.sayLine(e);

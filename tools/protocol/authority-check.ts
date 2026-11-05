@@ -68,7 +68,7 @@ ok(enc("anon-3") === "anon-3" && enc("Marigold").startsWith("x--"), "N5 identiti
 
 // ---- T: the translator's name and stamp ----
 ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the engine translator has its own name (not the lab's)", TRANSLATOR);
-{ const old = [{ seq: 0, ts: 1, actor: "world", args: { v: 2, dialect: "eidoverse-log", roles: { Marigold: { role: "owner" } } } },
+{ const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log", roles: { Marigold: { role: "owner" } } } },
     { seq: 1, ts: 2, actor: "Marigold", verb: "spawn", args: { id: "lamp_1", lib: "a.glb", pos: [1, 0, 1] } },
     { seq: 2, ts: 3, actor: "Marigold", verb: "comp", args: { id: "lamp_1", type: "0abc", data: 1 } },
     { seq: 3, ts: 4, actor: "Marigold", verb: "comp", args: { id: "lamp_1", type: "n0abc", data: 2 } }];
@@ -278,7 +278,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     ok(tc("olive", "delete", { id: "@world", component: "trusted-components" }).ok && TW().entities["@world"].c["trusted-components"] === undefined, "TR7 the owner removes the list (stop trusting the last one)");
   }
   { // translation: v1 lock is the identity; v1 guard becomes a lock, and is counted
-    const old = [{ seq: 0, ts: 1, actor: "world", args: { v: 2, dialect: "eidoverse-log", roles: { ann: { role: "owner" } } } },
+    const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log", roles: { ann: { role: "owner" } } } },
       { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } },
       { seq: 1, ts: 2, actor: "ann", verb: "spawn", args: { id: "statue", lib: "crate", pos: [1, 0, 1] } },
       { seq: 2, ts: 3, actor: "ann", verb: "comp", args: { id: "statue", type: "lock", data: true } },
@@ -335,7 +335,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 // ---- M: translated mounts in the authority's shape (research 37, slice 3 #3) ----
 // translate-v1@1 carried v1's parent record and v1's own pos; the authority reads transform as LOCAL to parent, so it saw a
 // riding crate wherever its unused pre-mount pos pointed. Now the authority must see it where v1 draws it.
-{ const old = [{ seq: 0, ts: 1, actor: "world", args: { v: 2, dialect: "eidoverse-log" } },
+{ const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
     { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } },
     { seq: 2, ts: 3, actor: "ann", verb: "spawn", args: { id: "tbl", lib: "table", pos: [2, 0, 3] } },
     { seq: 2, ts: 3, actor: "ann", verb: "spawn", args: { id: "rack", lib: "table", pos: [-3, 0, 2], yaw: 0.5 } },
@@ -513,7 +513,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const call = (actor, verb, args = {}) => { now += 100; return request(w, actor, verb, args); };
   call("ann", "create-world", { title: "client" }); call("ann", "create", { id: "tbl", model: "table", place: { at: [0, 3] } });
   const c = makeReplica();
-  c.adopt(JSON.parse(JSON.stringify({ state: wireState(w.state()), head: w.entries.length - 1, worldId: w.worldId })));
+  c.adopt(JSON.parse(JSON.stringify({ dialect: "eidoverse-log", v: 4, minor: 1, state: wireState(w.state()), seq: w.entries.length - 1, world: w.worldId })));
   let steps = 0, bad = null; const same = (a, b) => { const d = diffView(a, b); return !d.things.length && !d.world.length; };
   const step = (what, actor, verb, args) => { const from = w.entries.length; const r = call(actor, verb, args);
     const fresh = JSON.parse(JSON.stringify(w.entries.slice(from))); // over the wire: plain JSON
@@ -540,7 +540,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   call("ann", "create", { id: "gap-1", model: "crate", place: { at: [3, 3] } }); c.ingest(JSON.parse(JSON.stringify(w.entries.slice(c.head + 1))), c.head + 1);
   call("ann", "set", { id: "gap-1", component: "label", value: "x" }); const from = w.entries.length; ok(call("ann", "set", { id: "gap-1", component: "label", value: "y" }).ok, "K4 (precondition) the edit after the missed one is written");
   ok(c.ingest(JSON.parse(JSON.stringify(w.entries.slice(from))), from).resync, "K4 a gap (a missed entry) asks for a fresh snapshot, never folds past it");
-  const c2 = makeReplica(); c2.adopt(JSON.parse(JSON.stringify({ state: wireState(w.state()), head: w.entries.length - 1 })));
+  const c2 = makeReplica(); c2.adopt(JSON.parse(JSON.stringify({ dialect: "eidoverse-log", v: 4, minor: 1, state: wireState(w.state()), seq: w.entries.length - 1 })));
   now += 100; w.append({ kind: "redaction", actor: "system", body: { values: [{ seq: from + 1 }] } });
   ok(c2.ingest(JSON.parse(JSON.stringify(w.entries.slice(-1))), w.entries.length - 1).resync, "K5 a purge (retroactive, L1) asks for a fresh snapshot");
   const sv = stateFromWire(JSON.parse(JSON.stringify(wireState(w.state()))));
@@ -1101,10 +1101,10 @@ const w0 = () => openWorld(root, "tier0");
   const ref = R("ann", "history", { verbs: ["create"], limit: 10 }).entries.find((e) => e.actor === "vic");
   ok(ref?.body?.refused?.code === "rights", "CP6 a refused attempt reads as refused in history (its body says so)", ref);
   // a translated world: a v1 entry is an act `legacy` naming its v1 verb; verbs: ['comp'] finds it
-  { const old = [{ seq: 0, ts: 1, actor: "world", args: { v: 2, dialect: "eidoverse-log", roles: { ann: { role: "owner" } } } },
+  { const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log", roles: { ann: { role: "owner" } } } },
       { seq: 1, ts: 2, actor: "ann", verb: "spawn", args: { id: "lamp_1", lib: "crate", pos: [1, 0, 1] } },
       { seq: 2, ts: 3, actor: "ann", verb: "comp", args: { id: "lamp_1", type: "label", data: "old" } },
-      { seq: 3, ts: 4, actor: "ann", args: { text: "from v1" } }];
+      { seq: 3, ts: 4, actor: "ann", verb: "say", args: { text: "from v1" } }];
     const r = translate(old, { foldBuild: v1FoldBuild(), ...DOORKEYS() });
     fs.writeFileSync(root + "worlds/cp-tr.jsonl", r.out.map((e) => JSON.stringify(e)).join("\n") + "\n");
     const hv = request(openWorld(root, "cp-tr"), "ann", "history", { verbs: ["comp"] });
@@ -1121,7 +1121,7 @@ const w0 = () => openWorld(root, "tier0");
   ok(b(s2).t0 >= now + 100 - 300_000 && b(s2).utt === 4, "CP8 …t0 is clamped into the 5-minute utterance window", b(s2));
   ok(b(s5).t0 <= now + 600 && b(s5).t0 >= now, "CP8 …a t0 in the future is clamped to now", b(s5));
   ok(!("spoken" in b(s3)) && !("utt" in b(s3)) && !("t0" in b(s3)) && !("utt" in b(s4)), "CP8 …a malformed trio (utt -1, or no spoken) leaves a plain say", [b(s3), b(s4)]);
-  const k = makeReplica(); k.adopt({ state: wireState(fold(E.slice(0, s1.seq))), head: s1.seq - 1 });
+  const k = makeReplica(); k.adopt({ dialect: "eidoverse-log", v: 4, minor: 1, state: wireState(fold(E.slice(0, s1.seq))), seq: s1.seq - 1 });
   const got = k.ingest([E[s1.seq]], s1.seq).says[0];
   ok(got?.spoken === true && got.utt === 3 && got.t0 === now - 1000, "CP8 …and a client's fold hands it on with the chat line", got); }
 // ---- CA: captions (one line of what a screen said). The rights live on the SCREEN (captioners {ids}); the tool writes
@@ -1295,7 +1295,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
 // LS2: a world written before the cut (translate-v1 still writes the old spelling): undoing its last sockets edit lands
 // on socket children. The door lifts the host first (its stored map to children, the bell on its perch into the perch's
 // child, where it was), then the old value is a diff against them.
-{ const old = [{ seq: 0, ts: 1, actor: "world", args: { v: 2, dialect: "eidoverse-log" } },
+{ const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
     { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } },
     { seq: 1, ts: 2, actor: "ann", verb: "spawn", args: { id: "tbl", lib: "table", pos: [2, 0, 3], yaw: 0.7 } },
     { seq: 2, ts: 3, actor: "ann", verb: "comp", args: { id: "tbl", type: "sockets", data: { perch: { pos: [0.45, 0.75, 0.25], yaw: 1.2 } } } },
@@ -1493,7 +1493,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
 }
 // SR2e: the maintenance lift carries what the log already holds: a pre-cut host with 70 slots keeps all 70 (a carry, not a request)
 { const slots = Object.fromEntries(Array.from({ length: 70 }, (_, j) => [`m${j}`, { pos: [0, 1, j * 0.01] }]));
-  const old = [{ seq: 0, ts: 1, actor: "world", args: { v: 2, dialect: "eidoverse-log" } }, { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } },
+  const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } }, { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } },
     { seq: 2, ts: 3, actor: "ann", verb: "spawn", args: { id: "wall", lib: "crate", pos: [0, 0, 0] } }, { seq: 3, ts: 4, actor: "ann", verb: "comp", args: { id: "wall", type: "sockets", data: slots } }];
   const out = translate(old, DOORKEYS()).out; const n0 = out.length;   // and the world's entity budget is already spent: 1 (the wall)
   const capv = { entities: 1, guestEntities: 0, avatar: 2000 }, ts = out[n0 - 1].ts + 1;   // an act and its change, as the precut helper below writes them
@@ -1507,7 +1507,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
 // SRU (review 10-12 S2): undo across the maintenance lift. A pre-cut world: tbl has sockets {perch}, the bell is mounted on the
 // perch. Its writer is the door's own (translate-v1, then acts appended as a pre-cut door stored them); maintenance at open (AU.maintain) lifts it.
 const precut = (name, extra = [], acts = []) => {
-  const old = [{ seq: 0, ts: 1, actor: "world", args: { v: 2, dialect: "eidoverse-log" } },
+  const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
     { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } }, { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "bob", role: "owner" } },
     { seq: 2, ts: 2, actor: "ann", verb: "spawn", args: { id: "tbl", lib: "table", pos: [2, 0, 3], yaw: 0.7 } },
     { seq: 3, ts: 3, actor: "ann", verb: "comp", args: { id: "tbl", type: "sockets", data: { perch: { pos: [0.45, 0.75, 0.25], yaw: 1.2 } } } },
@@ -1548,7 +1548,7 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
 // SRW (S2-3): the maintenance lift of a host the door would refuse today. Pre-cut: role-defs crew; a-chair's seat has body.who
 // 'crew'; b-chair has a plain seat; crew is deleted. The lift re-spells what the log holds (a carry: no re-judging
 // historical values), and one host that fails anyway doesn't stop the hosts after it: it's said, per host, to the caller.
-{ const old = [{ seq: 0, ts: 1, actor: "world", args: { v: 2, dialect: "eidoverse-log" } }, { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } },
+{ const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } }, { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } },
     { seq: 2, ts: 3, actor: "ann", verb: "spawn", args: { id: "a-chair", lib: "crate", pos: [0, 0, 0] } }, { seq: 3, ts: 4, actor: "ann", verb: "spawn", args: { id: "b-chair", lib: "crate", pos: [3, 0, 0] } },
     { seq: 4, ts: 5, actor: "ann", verb: "spawn", args: { id: "c-chair", lib: "crate", pos: [6, 0, 0] } }];
   const write = (name, ops) => { const out = translate(old, DOORKEYS()).out; const wid = out[1].world;

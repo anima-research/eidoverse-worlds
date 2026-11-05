@@ -164,7 +164,7 @@ async function pumpWorld() {
     if (text.length > MAX_LINE_CHARS) text = `${text.slice(0, MAX_LINE_CHARS)}…`;
     const id = `chatbridge-${++reqN}`;
     inFlight.set(id, m);
-    worldWs.send(JSON.stringify({ type: "request", id, args: { text } }));
+    worldWs.send(JSON.stringify({ type: "request", id, verb: "say", args: { text } }));
     await new Promise((r) => setTimeout(r, SEND_GAP_MS));
   }
   speaking = false;

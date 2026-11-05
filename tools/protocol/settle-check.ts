@@ -181,7 +181,7 @@ for (const verb of ["delete", "grab"]) { const W = `straddle-foreign-${verb}`; c
   const r = call(W, "rowan", "set", { id: "plinth", component: "mesh", value: { shape: "box", size: [1.5, 0.3, 1.5] } });
   const added = openWorld(root, W).entries.slice(n0);
   ok(sw.ok && on === "plinth" && !r.ok && r.refused?.code === "foreign-engine" && r.refused.reason.includes(foreign) && r.refused.reason.includes("crate") && !added.some((e: any) => e.kind === "change") && st(W).entities.plinth.c.mesh.size[1] === 0.6,
-    "SE21 under a version this server doesn't carry, reshaping what a thing rests on is refused, naming the engine and what rests on it (only that engine re-drops it); the host keeps its shape", { sw: sw.ok ?? sw.refused, on, r: r.ok ?? r.refused, added: added.map((e: any) => [e.kind, e.verb]) }); }
+    "SE21 under a version this server doesn't carry, reshaping what a thing rests on is refused, naming the engine and what rests on it (only that engine re-drops it); the host keeps its shape", { sw: sw.ok ?? sw.refused, on, r: r.ok ?? r.refused, added: added.map((e: any) => [e.kind, e.verb ?? e.op]) }); }
 
 console.log(`[settle-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

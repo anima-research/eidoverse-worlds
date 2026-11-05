@@ -108,7 +108,7 @@ export function tags(...list: (string | false | null | undefined)[]): string[] {
  *  themselves are tested, not only the facet (house 6340433633). */
 export function speechTags(kind: "say" | "act", declares: string | null | undefined, mention = false): string[] {
   const from = senderFacet(declares);
-  if (kind === "request") return tags(CHAT.ambient, EIDO.act, from);
+  if (kind === "act") return tags(CHAT.ambient, EIDO.act, from);
   return mention ? tags(CHAT.mention, CHAT.addressed, from) : tags(CHAT.ambient, from);
 }
 

@@ -258,7 +258,7 @@ const cases: { id: string; what: string; run: (s: any) => any; good: (o: any) =>
       const ops = plan.install(up.src);
       // editwrites.js expectOf over what the batch sets, read from base: a component the thing lacked is expected absent
       const expect = [...new Set(ops.map((o: any) => o.args.component))].map((k) => (k in thing ? { id: "bell", component: k, value: thing[k] } : { id: "bell", component: k }));
-      const inst = s.call("olive", "batch", { requests, expect });
+      const inst = s.call("olive", "batch", { requests: ops, expect });
       return { action: plan.action, theirs: show(theirs), inst: inst.refused?.code ?? show(inst), use: s.w().state().entities.bell.c.reactions?.use?.kind ?? null }; },
     good: (o) => o.action === "use" && o.theirs === "ok" && o.inst === "changed" && o.use === "toggle" },
   { id: "U1", what: "update {copy, to} carries a reparent: a part moved under another part upstream lands under it here (not 3 m off, under its old parent)", run(s) { cast(s);

@@ -42,7 +42,7 @@ let pass = 0, fail = 0;
 const ok = (cond: any, what: string, detail?: any) => { if (cond) { pass++; console.log(`  ok  ${what}`); } else { fail++; console.log(`  FAIL ${what}${detail !== undefined ? ` — ${JSON.stringify(detail)?.slice(0, 900)}` : ""}`); } };
 const row = (what: string, fn: () => any) => { try { return fn(); } catch (e) { ok(false, what, `threw: ${e?.stack ?? e}`); } };
 const T0 = 1790000000000;
-const log = (L: [string, string, any][]) => [{ seq: 0, ts: T0, actor: "world", args: { v: 1, dialect: "eidoverse-log" } },
+const log = (L: [string, string, any][]) => [{ seq: 0, ts: T0, actor: "world", verb: "genesis", args: { v: 1, dialect: "eidoverse-log" } },
   ...L.map(([actor, verb, args], k) => ({ seq: k + 1, ts: T0 + (k + 1) * 1000, actor, verb, args }))];
 const tr = (L: [string, string, any][]) => { const r = TV1.translate(log(L)); return { r, W: r.final.translated["@world"] ?? {}, E: r.final.translated }; };
 const eff = (W: any, id: string, anon = false) => R.effectiveOf(W, id, { anon, owners: Object.keys(W).some((k) => k.startsWith("roles:") && W[k]?.role === "owner") });
@@ -317,8 +317,8 @@ row("V5", () => { const root = scratch("translate-v5"), W = path.join(root, "wor
   const old = /H ([0-9a-f]{64})/.exec(rep.stdout.toString())?.[1];
   const up = Bun.spawnSync(["bun", "tools/protocol/world.ts", "translate", "--no-founder-key", "--operator-only-no-owner", "--approved", old ?? "x", "--", "den"], { cwd: ENGINE, env });
   const said = up.stdout.toString() + up.stderr.toString();
-  ok(TV1.translatorVersion(TV1.TRANSLATOR) === 43 && TV1.translatorVersion(TV1.TRANSLATOR_SIM) === 43 && old && up.exitCode !== 0 && /is not the one that was approved/.test(said) && /earlier translator than eidoverse\/translate-v1@43/.test(said) && fs.existsSync(path.join(d, "log.jsonl")) && !fs.existsSync(path.join(d, "world.jsonl")),
-    "V5 the translator is @43; a report reviewed under @42 is refused, saying an earlier translator's review never approves this one, and nothing moves", { v: TV1.TRANSLATOR, said: said.slice(-500) }); });
+  ok(TV1.translatorVersion(TV1.TRANSLATOR) === 44 && TV1.translatorVersion(TV1.TRANSLATOR_SIM) === 44 && old && up.exitCode !== 0 && /is not the one that was approved/.test(said) && /earlier translator than eidoverse\/translate-v1@43/.test(said) && fs.existsSync(path.join(d, "log.jsonl")) && !fs.existsSync(path.join(d, "world.jsonl")),
+    "V5 the translator is @44; a report reviewed under @42 is refused, saying an earlier translator's review never approves this one, and nothing moves", { v: TV1.TRANSLATOR, said: said.slice(-500) }); });
 
 row("V6", () => { const root = scratch("translate-v6"), W = path.join(root, "worlds"), d = path.join(W, "den"), opt = path.join(root, "opt"); fs.mkdirSync(d, { recursive: true }); fs.mkdirSync(path.join(opt, "store"), { recursive: true });
   fs.writeFileSync(path.join(d, "log.jsonl"), log([OWNER, ["olga", "spawn", { id: "boat", lib: "store/boat.glb" }]]).map((e) => JSON.stringify(e)).join("\n") + "\n");

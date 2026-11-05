@@ -303,7 +303,7 @@ const cases: Case[] = [
       let after: any; for (let a = 0; a <= UNAVAILABLE_RETRIES; a++) { n0 = s.entries().length; after = s.call("vic", "use", { id: "bell1", action: "ring" }); if (after?.script?.code !== "unavailable") break; warmUp(); }   // what the last use logged
       const sv = s.call("olive", "scripts", {}).scripts?.[0];
       return { u: show(u), first: st(s, first), after: st(s, after), newKinds: kinds(s.entries().slice(n0)), status: sv?.status, why: sv?.why }; },
-    good: (o) => o.first === "ran" && o.after === "refused rights" && JSON.stringify(o.newKinds) === '{"act":1}' && o.status === "dormant" && /sponsor bob \(member now.*bell1\.t\/bell/.test(o.why) },
+    good: (o) => o.first === "ran" && o.after === "refused rights" && JSON.stringify(o.newKinds) === '{"request":1}' && o.status === "dormant" && /sponsor bob \(member now.*bell1\.t\/bell/.test(o.why) },
   { id: "B3", what: "41 #3 confused deputy: an OWNER uses a script installed by bob (owner then, builder now) that writes roles:mal; the trigger adds no rights", run(s) { cast(s);
       s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "owner" } });
       s.call("bob", "create", { id: "kiosk", model: "crate", place: { at: [0, 0] } });
@@ -713,7 +713,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r)); process.exit(0);\n`);   // 
       const req = s.call("olive", "set", { id: "clock", component: "label", value: "x" }), n0 = s.entries().length;   // (its refusal is on the record)
       const ticks: string[] = []; for (let i = 0; i < 3; i++) { s.advance(5000); for (const x of s.tick() ?? []) ticks.push(`${x.status}${x.code ? ` ${x.code}` : ""}`); }
       clock.advance(100); const enter = D.presenceEvent(s.w(), "enter", "vic").map((x: any) => `${x.status}${x.code ? ` ${x.code}` : ""}`);
-      const written = s.entries().slice(n0).map((e: any) => `${e.kind}:${e.verb}:${e.actor}`), n = comp(s, "clock", "t/n") ?? null;
+      const written = s.entries().slice(n0).map((e: any) => `${e.kind}:${e.verb ?? e.op}:${e.actor}`), n = comp(s, "clock", "t/n") ?? null;
       D.maintain(s.w(), { by: "olive" }); const after: string[] = [];   // once the command has run, the timer writes again
       for (let i = 0; i < 2; i++) { s.advance(5000); for (const x of s.tick() ?? []) after.push(x.status); }
       return { blocking, req: code(req), ticks, enter, written, n, after, nAfter: comp(s, "clock", "t/n")?.n ?? null }; },
@@ -732,7 +732,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r)); process.exit(0);\n`);   // 
       const n0 = w.entries.length, ticks: string[] = [];
       for (let i = 0; i < 3; i++) { clock.advance(5000); for (const x of D.tick(w) ?? []) ticks.push(`${x.status}${x.code ? ` ${x.code}` : ""}`); }
       clock.advance(100); const enter = D.presenceEvent(w, "enter", "vic").map((x: any) => `${x.status}${x.code ? ` ${x.code}` : ""}`);
-      return { req: ok(req) ? "ok" : code(req), ticks, enter, written: w.entries.slice(n0).map((x: any) => `${x.kind}:${x.verb}:${x.actor}`) }; },
+      return { req: ok(req) ? "ok" : code(req), ticks, enter, written: w.entries.slice(n0).map((x: any) => `${x.kind}:${x.verb ?? x.op}:${x.actor}`) }; },
     good: (o) => o.req === "ok" && o.ticks.length >= 2 && !o.ticks.some((t: string) => /record-altered/.test(t)) && !o.enter.some((t: string) => /record-altered/.test(t)) && o.written.length > 0 },
   { id: "B27", what: "knobs' 4 KiB is counted in UTF-8 bytes: 3 000 two-byte characters (about 6 000 bytes) are refused too-big where 3 000 ASCII fit", run(s) { cast(s);
       s.call("olive", "create", { id: "kb", model: "crate", place: { at: [0, 0] } }); const t = `world.on("use", () => {});\n`;

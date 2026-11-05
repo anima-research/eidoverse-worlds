@@ -371,7 +371,7 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
     "AT9 spawn {lib, x, z, yaw} over the wall sits on its top, like spawn without a yaw, facing yaw (review r2 F8)", [T(ywOn.r).slice(0, 200), ywOn.rec?.pos, ywOn.rec?.q, noYaw.rec?.pos]);
   const sq = await handleTool(ctx as any, "spawn", { query: "cup" });
   ok(sq.isError && /spawn is now called create/.test(T(sq)) && /nothing ran/.test(T(sq)), "AT9 spawn runs nothing and teaches create (R 10-28)", T(sq).slice(0, 200));
-  const wv = await handleTool(ctx as any, "world_verb", { args: { text: "alias says" } });
+  const wv = await handleTool(ctx as any, "world_verb", { verb: "say", args: { text: "alias says" } });
   ok(wv.isError && /world_verb was removed/.test(T(wv)) && /act \{verb, args\}/.test(T(wv)), "AT9 world_verb is refused as removed, naming act (R 10-27)", T(wv).slice(0, 160));
   // main's verbs the authority doesn't have are refused as removed with the call that does it now, never a did-you-mean (R 10-27)
   const { VERBSPEC } = await import("../../shared/protocol/verbspec.js");

@@ -59,7 +59,7 @@ const T0 = 1790000000000;
 function oldWorld(name: string) {
   const d = path.join(W, name); fs.mkdirSync(path.join(d, "extra"), { recursive: true });
   const L = [{ actor: "world", verb: "grant", args: { id: "Ann", role: "owner" } }, { actor: "Ann", verb: "spawn", args: { id: "cup_1", lib: "test/cup.glb", pos: [1, 0, 1] } },
-    { actor: "Ann", args: { text: "an old hello" } }];
+    { actor: "Ann", verb: "say", args: { text: "an old hello" } }];
   fs.writeFileSync(path.join(d, "log.jsonl"), L.map((e, k) => JSON.stringify({ seq: k, ts: T0 + k * 1000, ...e })).join("\n") + "\n");
   fs.writeFileSync(path.join(d, "poses.json"), JSON.stringify({ Ann: { p: [1, 0, 2], yaw: 0 } }));
   fs.writeFileSync(path.join(d, "extra", "note.txt"), "kept by the old server\n");
@@ -197,7 +197,7 @@ let reviewed = "";
   ok(a.refused?.code === "not-old" && b.refused?.code === "not-old" && same(tree(x), xb) && same(tree(to), lb) && backupsOf("linked").length === 0 && backupsOf("-x").length === 0,
     "US8 the server refuses a world named \"-x\" and a symlinked world dir (not-old), nothing written", { a: a.refused ?? a.ok, b: b.refused ?? b.ok }); }
 { const d = path.join(W, "barn"); fs.mkdirSync(d, { recursive: true });
-  fs.writeFileSync(path.join(d, "log.jsonl"), JSON.stringify({ seq: 0, ts: T0, actor: "Pip", args: { text: "nobody owns this" } }) + "\n");
+  fs.writeFileSync(path.join(d, "log.jsonl"), JSON.stringify({ seq: 0, ts: T0, actor: "Pip", verb: "say", args: { text: "nobody owns this" } }) + "\n");
   const r = await ask(OP2, "world-upgrade-review", { world: "barn" }), u = r.ok ? await ask(OP2, "world-upgrade", { world: "barn", approved: r.hash }, 120_000) : null;
   const s = await sock(OP2); s.send({ type: "join", world: "barn", id: "Otto", avatar: "", replica: true });
   await tryUntil("Otto's join to barn is answered", () => s.msgs.some((x) => x.type === "snapshot" || x.type === "error"), { ms: 8000, step: 50 }); s.ws.close();
@@ -206,7 +206,7 @@ let reviewed = "";
     "US9 an ownerless world: the operator who upgrades it is its owner — the review's report says so, the result says \"You're now this world's owner\", no warning, the log says who claimed it, and they join as owner", { r: r.report?.claim ?? r.refused, u, role: s.msgs.find((x) => x.type === "snapshot")?.yourRights }); }
 // ================= US10-12: the world's owner may upgrade it (R 10-28) =================
 const ownedWorld = (name: string, grant: any) => { const d = path.join(W, name); fs.mkdirSync(d, { recursive: true });
-  fs.writeFileSync(path.join(d, "log.jsonl"), [{ actor: "world", verb: "grant", args: grant }, { actor: grant.id, args: { text: "mine" } }].map((e, k) => JSON.stringify({ seq: k, ts: T0 + k * 1000, ...e })).join("\n") + "\n"); return d; };
+  fs.writeFileSync(path.join(d, "log.jsonl"), [{ actor: "world", verb: "grant", args: grant }, { actor: grant.id, verb: "say", args: { text: "mine" } }].map((e, k) => JSON.stringify({ seq: k, ts: T0 + k * 1000, ...e })).join("\n") + "\n"); return d; };
 const roleIn = async (sid: string, world: string, id: string) => { const s = await sock(sid); s.send({ type: "join", world, id, avatar: "", replica: true });
   await tryUntil(`${id}'s join to ${world} is answered`, () => s.msgs.some((x) => x.type === "snapshot" || x.type === "error"), { ms: 8000, step: 50 }); s.ws.close();
   return s.msgs.find((x) => x.type === "snapshot")?.yourRights?.role ?? null; };
@@ -257,7 +257,7 @@ const byOwner = async (sid: string, world: string, id: string) => { const j = aw
   // each documented call: EIDO_SESSION=… bun tools/operator-repair.ts <server> <world> <verb> ['<args>']
   const calls = [...sec.matchAll(/^\s*EIDO_SESSION=\S+ bun tools\/operator-repair\.ts (\S+) (\S+) (\S+)(?: '(.*)')?$/gm)].map((m) => ({ verb: m[3], args: m[4] ?? "{}" }));
   const d = path.join(W, "den"); fs.mkdirSync(d, { recursive: true });
-  fs.writeFileSync(path.join(d, "log.jsonl"), [{ actor: "world", verb: "grant", args: { id: "Ann", role: "owner" } }, { actor: "Ann", args: { text: "mine" } }]
+  fs.writeFileSync(path.join(d, "log.jsonl"), [{ actor: "world", verb: "grant", args: { id: "Ann", role: "owner" } }, { actor: "Ann", verb: "say", args: { text: "mine" } }]
     .map((e, k) => JSON.stringify({ seq: k, ts: T0 + k * 1000, ...e })).join("\n") + "\n");
   const up = xlate("den");
   const ann = await sock(ANN); ann.send({ type: "join", world: "den", id: "Ann", avatar: "", replica: true });

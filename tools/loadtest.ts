@@ -94,7 +94,7 @@ let burstAt = Infinity;   // when the burst was said: a spectator that joined af
 const burstTexts = Array.from({ length: N_PERF }, (_, i) => `burst-${i}-${Math.floor(t0)}`);
 setTimeout(() => {
   burstAt = performance.now();
-  perfs.forEach((s, i) => { if (s.ws.readyState === 1 && burstTexts[i]) s.ws.send(JSON.stringify({ type: "request", id: `burst-${i}`, args: { text: burstTexts[i] } })); });
+  perfs.forEach((s, i) => { if (s.ws.readyState === 1 && burstTexts[i]) s.ws.send(JSON.stringify({ type: "request", id: `burst-${i}`, verb: "say", args: { text: burstTexts[i] } })); });
 }, DURATION / 2);
 
 // reconnect churn: 10 spectators drop and rejoin mid-run (the dropped ones were present at the burst: kept for the gates)

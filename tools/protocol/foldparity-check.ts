@@ -137,7 +137,7 @@ async function equivalent(label, dir, { writes = true, wantTail = true, mustWrit
     const E = La.live.entries, X = actIndexOf(La.live), hist = [];
     for (let i = E.length - 1; i >= 0; i--) { const e = E[i]; if (!e || e.kind !== "say" || e.body?.commit !== undefined) continue; hist.push(e.seq * 1000); }
     const paged = logReaders(La).pages.flatMap((p) => p.entries.map((x) => x.seq)).sort((a, b) => b - a);
-    const cuts = ["rowan", "ash"].filter((a) => J(La.clientCut(a).mine) !== J((X.actsOf.get(a) ?? []).filter((q) => !["undo", "create-world", "throw", "drop", "leave", "move", "grab"].includes(E[q].verb) && !X.undone.has(q) && X.resultOf.has(q)).slice(-40)));
+    const cuts = ["rowan", "ash"].filter((a) => J(La.clientSnapshot(a).mine) !== J((X.actsOf.get(a) ?? []).filter((q) => !["undo", "create-world", "throw", "drop", "leave", "move", "grab"].includes(E[q].verb) && !X.undone.has(q) && X.resultOf.has(q)).slice(-40)));
     ok(!cr.length && ml && J(paged) === J(hist) && !cuts.length, `FP10 ${label}: creatorOf (born line), modlog (@world's index), chat pages (say index) and client cuts (newest 40) answer as their whole-log formulas`, { cr, ml, pages: paged.length, says: hist.length, cuts }); }
   ok(await wa.cacheChecked !== false, `FP2 ${label}: the re-derive agrees with the cache`);
   return { wa, wb, a, b };

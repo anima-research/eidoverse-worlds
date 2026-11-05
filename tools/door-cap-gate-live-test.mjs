@@ -439,7 +439,7 @@ try {
   check("granted: channels/open answers with the channel", !!r.result?.channel, JSON.stringify(r).slice(0, 120));
 
   // ---- phase 3: live mention routing (observer → world → door → host) ------
-  obs.send(JSON.stringify({ type: "request", id: "obs-say", args: { text: "hey @claude — live mention check" } }));
+  obs.send(JSON.stringify({ type: "request", id: "obs-say", verb: "say", args: { text: "hey @claude — live mention check" } }));
   const mention = await full.waitFor((m) =>
     m.method === "channels/incoming" &&
     JSON.stringify(m.params ?? {}).includes("live mention check"), 8000);

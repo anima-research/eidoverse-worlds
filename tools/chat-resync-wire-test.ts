@@ -23,7 +23,7 @@ for (const m of ["core", "assets", "world", "chat", "fp_view", "boot", "ui", "av
   mock.module(`${import.meta.dir}/../client/lib/${m}.js`, () => stubs);
 }
 const { _dispatch } = (await import("../client/lib/net.js")) as any;
-const say = (seq: number) => ({ seq, ts: Date.now(), actor: "cairn", args: { text: `#${seq}` } });
+const say = (seq: number) => ({ seq, ts: Date.now(), actor: "cairn", verb: "say", args: { text: `#${seq}` } });
 const snapshot = (throughSeq: number, entries: any[]) => ({ type: "snapshot", you: "tester",
   yourRights: { role: "member" }, present: [], state: null, entries, throughSeq });
 

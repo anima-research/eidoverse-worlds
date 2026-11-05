@@ -531,7 +531,7 @@ const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
   const annexBefore = statSync(annexLog).size;
   // (ported) the first transition is a travel to an existing world, the second back
   await founder.request("tools/call", { name: "travel", arguments: { world: "annex" } });
-  const said = await founder.request("tools/call", { name: "act", arguments: { args: { text: "control line" } } });
+  const said = await founder.request("tools/call", { name: "act", arguments: { verb: "say", args: { text: "control line" } } });
   await sleep(400);              // appended durably before it is published
   check("…and the CONTROL: a line said in a world lands in its log at that path (a server-side write)",
     !said.result?.isError && statSync(annexLog).size > annexBefore, `${annexLog} ${annexBefore}→${statSync(annexLog).size} ${txt(said).slice(0, 200)}`);

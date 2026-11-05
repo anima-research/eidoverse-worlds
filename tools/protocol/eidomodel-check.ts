@@ -41,7 +41,7 @@ const imp = (p: string) => import(path.join(ENGINE, p));
 
 await C("U1", "the translator keeps model paths (R 10-17) and writes model-hash sha256:<64> beside one whose bytes the resolver knows; one it can't hash has none and is listed; the imported act keeps the path", async () => {
   const T = await imp("tools/protocol/import-v1/translate-v1.js");
-  const old = [{ seq: 0, ts: 1, actor: "world", args: { v: 2, dialect: "eidoverse-log", roles: { olive: { role: "owner" } } } },
+  const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log", roles: { olive: { role: "owner" } } } },
     { seq: 1, ts: 2, actor: "olive", verb: "spawn", args: { id: "a", lib: `store/${H.slice(0, 16)}.glb`, pos: [0, 0, 0] } },
     { seq: 2, ts: 3, actor: "olive", verb: "spawn", args: { id: "b", lib: "claude/no-such-thing", pos: [1, 0, 0] } }];
   const content = (p: string) => (p === `store/${H.slice(0, 16)}.glb` ? `sha256:${H}` : null);

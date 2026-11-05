@@ -127,7 +127,7 @@ const L = [
   { actor: "Ann", verb: "comp", args: { id: "table_1", type: "label", data: "the old table" } },
   { actor: "Ann", verb: "comp", args: { id: "table_1", type: "heart", data: { beats: 3 } } },   // an invention: namespaced (IP9)
   { actor: "Ann", verb: "spawn", args: { id: "cup_1", lib: "test/cup.glb", pos: [4, 0, 2] } },
-  { actor: "Bob", args: { text: "hello from the old days" } }];
+  { actor: "Bob", verb: "say", args: { text: "hello from the old days" } }];
 // (worlds with the same log bytes name the same people: a row about identities being added needs its own log, as `extra` gives)
 function oldWorld(name: string, { tamper = false, extra = [] as any[] } = {}) {
   const d = path.join(W, name); fs.mkdirSync(d, { recursive: true });
@@ -214,7 +214,7 @@ ok(/update the Unreal client/.test(noFoldRefusal("current", true)) && /a world o
   const no = tool(["translate", "careful", "--no-founder-key"]);
   ok(no.code !== 0 && /needs the operator's approval of its dry-run report first/.test(no.out) && /--dry-run/.test(no.out) && /Nothing was changed/.test(no.out) && same(fingerprint(d), fp) && !temps().length, "IP20 translate with no --approved refuses, says to dry-run first, and changes nothing", no.out.slice(-600));
   // the old log grows after the report was read: the approved hash is of a different log
-  fs.appendFileSync(path.join(d, "log.jsonl"), JSON.stringify({ seq: L.length, ts: T0 + 100000, actor: "Bob", args: { text: "after the dry run" } }) + "\n");
+  fs.appendFileSync(path.join(d, "log.jsonl"), JSON.stringify({ seq: L.length, ts: T0 + 100000, actor: "Bob", verb: "say", args: { text: "after the dry run" } }) + "\n");
   fs.rmSync(path.join(d, "snapshot.json"));   // (the snapshot is of the shorter log; not what this row is about)
   const fp2 = fingerprint(d);
   const stale = tool(["translate", "careful", "--no-founder-key", "--operator-only-no-owner", "--approved", ha!]);
@@ -338,7 +338,7 @@ const NO_KEY = (out: string) => /nothing can yet bind a key to the old world's o
   ok(r4.code !== 0 && /holds no translation\.json/.test(r4.out) && /Nothing was changed/.test(r4.out) && same(fingerprint(d), fp), "IP25 a directory with no manifest refuses with that reason", r4.out.slice(-300)); }
 // ================= IP24b: rollback keeps an identity another world's translation reused =================
 // (TRUST_NAMES on: a name is an account, so a second world translated after the first wears the first one's id for Zed)
-{ const zed = [{ actor: "Zed", args: { text: "here in both" } }];
+{ const zed = [{ actor: "Zed", verb: "say", args: { text: "here in both" } }];
   const d1 = oldWorld("share1", { extra: zed }), d2 = oldWorld("share2", { extra: zed });
   const t1 = xlate(["share1"]), t2 = xlate(["share2"]);
   const zedIn = (d: string) => readLog(fs.readFileSync(path.join(d, "world.jsonl"), "utf8")).find((e: any) => e.kind === "say" && e.body?.text === "here in both")?.actor;
@@ -541,7 +541,7 @@ for (const k of [1, 3]) { const name = `halfway${k}`; const d = oldWorld(name); 
 //      (it says the old log changed and to stop the old server), moves nothing, and every line the writer wrote is still there
 { const name = "stillwriting"; const d = oldWorld(name); fs.rmSync(path.join(d, "snapshot.json"));   // no oracle (it would refuse on a growing log for its own reason)
   const logf = path.join(d, "log.jsonl"); let n = 0;
-  const writer = setInterval(() => { try { fs.appendFileSync(logf, JSON.stringify({ seq: 100 + n, ts: T0 + 100000 + n, actor: "Bob", args: { text: `late ${n}` } }) + "\n"); n++; } catch { /* gone */ } }, 2);
+  const writer = setInterval(() => { try { fs.appendFileSync(logf, JSON.stringify({ seq: 100 + n, ts: T0 + 100000 + n, actor: "Bob", verb: "say", args: { text: `late ${n}` } }) + "\n"); n++; } catch { /* gone */ } }, 2);
   const proc = Bun.spawn(["bun", "tools/protocol/world.ts", "translate", name, "--no-founder-key", "--operator-only-no-owner", "--approved", dryHash([name])], { cwd: ENGINE, stdout: "pipe", stderr: "pipe",
     env: { ...process.env, TRUST_NAMES: "1", WORLDS_DIR: W, OPT_DIR: OPT, PROTOCOL_SCRATCH: root, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
   // Bounded: on windows-latest the suite once died at its 180 s with IP13 the last line printed (anima run 40061183406,
@@ -564,7 +564,7 @@ for (const k of [1, 3]) { const name = `halfway${k}`; const d = oldWorld(name); 
 //      the re-run refuses to finish (it would drop that write) and moves nothing
 { const name = "halfwritten"; const d = oldWorld(name);
   const died = xlate([name], { WORLD_TS_DIE_AT_STEP: "1" });
-  fs.appendFileSync(path.join(d, "log.jsonl"), JSON.stringify({ seq: 50, ts: T0 + 50000, actor: "Bob", args: { text: "after the crash" } }) + "\n");
+  fs.appendFileSync(path.join(d, "log.jsonl"), JSON.stringify({ seq: 50, ts: T0 + 50000, actor: "Bob", verb: "say", args: { text: "after the crash" } }) + "\n");
   const mid = fingerprint(d); const r = tool(["translate", name, "--no-founder-key"]); const after = fingerprint(d);
   ok(died.code !== 0 && r.code !== 0 && /changed while it was being translated/.test(r.out) && same(after, mid) && temps().some((t) => t.includes(name)),
     "IP16 finishing an interrupted swap refuses when the old log changed since it was read, and moves nothing", { died: died.code, code: r.code, out: r.out.slice(-500), same: same(after, mid) }); }
@@ -584,7 +584,7 @@ const actorsOf = (d: string) => [...new Set(fs.readFileSync(path.join(d, "world.
   ok(ok1.code === 0 && actors.length >= 2 && actors.every((a) => ids[a]) && added.length === actors.filter((a) => !was[a]).length,
     "IP17 …and the clean run adds exactly the identities its world names, once (no leftovers from the failed attempts)", { code: ok1.code, out: ok1.out.slice(-300), added: added.length, actors: actors.length }); }
 // IP18 the recovery of an interrupted swap writes the identities the interrupted run planned (it died before writing them)
-{ const name = "nameless2"; const d = oldWorld(name, { extra: [{ actor: "Bob", args: { text: "nameless2 is its own world" } }] });
+{ const name = "nameless2"; const d = oldWorld(name, { extra: [{ actor: "Bob", verb: "say", args: { text: "nameless2 is its own world" } }] });
   const died = xlate([name], { TRUST_NAMES: "", WORLD_TS_DIE_AT_STEP: "1" });
   const mid = JSON.parse(fs.readFileSync(dirf, "utf8")).ids ?? {}; const actors = actorsOf(d);
   const r = tool(["translate", name, "--no-founder-key"], { TRUST_NAMES: "" }); const ids = JSON.parse(fs.readFileSync(dirf, "utf8")).ids ?? {};
@@ -592,7 +592,7 @@ const actorsOf = (d: string) => [...new Set(fs.readFileSync(path.join(d, "world.
     "IP18 an interrupted swap's identities aren't in the directory until the recovery finishes it, which adds them", { died: died.code, missingMid: actors.filter((a) => !mid[a]).length, code: r.code, out: r.out.slice(-300) }); }
 // ---- the swap, its recovery and the rollback each decide from the manifest, idempotently ----
 // IP35 (435) a swap that fails after its identities went in (injected step 7: the marker's removal) forgets them again
-{ const name = "nameless4"; oldWorld(name, { extra: [{ actor: "Bob", args: { text: "nameless4 is its own world" } }] }); const before = fs.readFileSync(dirf, "utf8");
+{ const name = "nameless4"; oldWorld(name, { extra: [{ actor: "Bob", verb: "say", args: { text: "nameless4 is its own world" } }] }); const before = fs.readFileSync(dirf, "utf8");
   const r = xlate([name], { TRUST_NAMES: "", WORLD_TS_FAULT_AT_STEP: "7" }); const dirSame = fs.readFileSync(dirf, "utf8") === before;
   const clean = xlate([name], { TRUST_NAMES: "" }); const added = Object.keys(JSON.parse(fs.readFileSync(dirf, "utf8")).ids ?? {}).length - Object.keys(JSON.parse(before).ids ?? {}).length;   // its own bytes: the clean run adds ids, so the failed one had some to forget
   ok(r.code !== 0 && /\(injected\) step 7 failed/.test(r.out) && dirSame && !temps().some((t) => t.includes(name)) && clean.code === 0 && added > 0,
@@ -625,7 +625,7 @@ const actorsOf = (d: string) => [...new Set(fs.readFileSync(path.join(d, "world.
   ok(died.code !== 0 && r.code === 0 && !!mid["poses.original.json"] && !mid["poses.json"] && back.code === 0 && same(after, fp),
     "IP37 the recovery renames the old poses.json as the swap recorded even when the translation wrote no new one; the rollback then puts everything back", { died: died.code, code: r.code, mid: Object.keys(mid), back: back.code, out: back.out.slice(-300) }); }
 // IP8b (bot review 21) the two-name form, stopped once its world landed: the next run writes the identities it planned
-{ const name = "nameless3", dest = "nameless3-new"; oldWorld(name, { extra: [{ actor: "Bob", args: { text: "nameless3 is its own world" } }] }); const D = path.join(W, dest);
+{ const name = "nameless3", dest = "nameless3-new"; oldWorld(name, { extra: [{ actor: "Bob", verb: "say", args: { text: "nameless3 is its own world" } }] }); const D = path.join(W, dest);
   const died = xlate([name, dest], { TRUST_NAMES: "", WORLD_TS_DIE_BEFORE_IDENTITIES: "1" }), landed = isWorldDir(D);
   const mid = JSON.parse(fs.readFileSync(dirf, "utf8")).ids ?? {}; const actors = landed ? actorsOf(D) : [];
   const r = tool(["translate", name, dest, "--no-founder-key"], { TRUST_NAMES: "" }); const ids = JSON.parse(fs.readFileSync(dirf, "utf8")).ids ?? {};
@@ -682,7 +682,7 @@ fs.rmSync = (p, x) => { log("rm " + p); return rm(p, x); };\n`);
   ok(r.code !== 0 && r.out.includes(`translate ${src} ${dest} --no-founder-key --approved ${h} --operator-only-no-owner`) && !isWorldDir(path.join(W, dest)),
     "IP33b `translate old new --approved` without --operator-only-no-owner: the refusal's command names old and new", r.out.slice(-300)); }
 // IP38 a lone surrogate in the old log: the translator refuses it, and the CLI says so in its own words
-{ const name = "lone"; oldWorld(name, { extra: [{ actor: "Bob", args: { text: "half a pair \ud800 here" } }] });
+{ const name = "lone"; oldWorld(name, { extra: [{ actor: "Bob", verb: "say", args: { text: "half a pair \ud800 here" } }] });
   const r = tool(["translate", name, "--dry-run", "--no-founder-key"]);
   ok(r.code === 1 && /refused: the report of "lone" can't be made: .*lone surrogate/.test(r.out) && /Nothing was changed/.test(r.out) && !/\n\s+at /.test(r.out),
     "IP38 a log with a lone surrogate: the dry run exits 1 with a refusal in words (the translator's reason), no stack trace", { code: r.code, out: r.out.slice(-400) }); }
@@ -705,7 +705,7 @@ fs.rmSync = (p, x) => { log("rm " + p); return rm(p, x); };\n`);
   ok(r.code !== 0 && /already holds poses\.json/.test(r.out) && fs.readFileSync(path.join(D, "poses.json"), "utf8") === "keep me" && !fs.existsSync(path.join(D, "world.jsonl")) && !temps().some((t) => t.includes(dest)),
     "IP41 `translate old new` where new/ already holds poses.json refuses by name; the file is untouched, no world lands, no temporary directory is left", { code: r.code, out: r.out.slice(-300) }); }
 // IP42 a planned identity whose account took another id while the world was half landed is left as it is, said; the rest are added
-{ const name = "worn", dest = "worn-new"; oldWorld(name, { extra: [{ actor: "Wren", args: { text: "worn is its own world" } }] }); const D = path.join(W, dest);
+{ const name = "worn", dest = "worn-new"; oldWorld(name, { extra: [{ actor: "Wren", verb: "say", args: { text: "worn is its own world" } }] }); const D = path.join(W, dest);
   const died = xlate([name, dest], { WORLD_TS_DIE_BEFORE_IDENTITIES: "1" }); const planned = JSON.parse(fs.readFileSync(path.join(D, ".identities.json"), "utf8"));
   const bob = Object.entries<any>(planned).find(([, e]) => e.subs?.includes("local:wren"));
   const other = mintId(); directoryFor(W).put({ [other]: { name: "Wren", subs: ["local:wren"], kind: "account", since: Date.now() } });   // the server minted one for the same account meanwhile

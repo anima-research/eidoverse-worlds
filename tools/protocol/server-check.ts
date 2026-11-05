@@ -136,7 +136,7 @@ const c1 = await bob.req("create", { id: "cup", model: "test/cup.glb", place: { 
 const placed = c1.notes?.find((n) => n.placed)?.placed;
 ok(c1.ok && Math.abs(placed?.restsAt - 0.75) < 0.002 && placed?.on === IDS.of("tbl"), "S2 place ON it: the engine catalogue measured the GLB's top at 0.75 m", c1);
 await tryUntil("the cup, parented to the table, is in Vic's own fold", () => heldBy(vic)?.view()?.entities?.[IDS.of("cup")]?.parent?.to === IDS.of("tbl"), { ms: 2000 });
-ok(vic.of("log").length >= 2 && vic.of("log").every((m: any) => Array.isArray(m.entries) && m.entries.every((e: any) => typeof e.kind === "string" && typeof e.verb === "string" && !("args" in e))), "S2 another client is sent the raw entries (log), every one a typed entry (kind, verb, body; never a v1 {verb, args})", vic.of("log").map((m: any) => m.entries?.map((e: any) => e.kind)));
+ok(vic.of("log").length >= 2 && vic.of("log").every((m: any) => Array.isArray(m.entries) && m.entries.every((e: any) => typeof e.kind === "string" && typeof (e.verb ?? e.op) === "string" && !("args" in e))), "S2 another client is sent the raw entries (log), every one a typed entry (kind, verb, body; never a v1 {verb, args})", vic.of("log").map((m: any) => m.entries?.map((e: any) => e.kind)));
 { const m = heldBy(vic)?.view()?.entities?.[IDS.of("cup")]?.parent; const loc = fold(readLog(fs.readFileSync(path.join(W4, "garden", "world.jsonl")))).entities[IDS.of("cup")].c.transform.pos;
   ok(m?.to === IDS.of("tbl") && Array.isArray(m?.offset) && Math.abs(m.offset[0] - loc[0]) < 1e-9 && Math.abs(m.offset[2] - loc[2]) < 1e-9 && Math.abs(m.offset[2]) < 0.5, "S2 in that client's own fold the cup hangs from the table at the authority's LOCAL transform (the table stands at z = 3; the cup's offset is near 0)", [m, loc]); }
 
@@ -186,7 +186,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   // the real MCPL body (mcpl/agent.ts), joined as Bob: its snapshot sets ag.snapshot, and its request() awaits reply
   const ag: any = new WorldAgent({ url: `ws://127.0.0.1:${srv.port}/ws`, name: "Bob", world: "garden", avatar: "" });
   await ag.connect(); await tryUntil("the agent has its cut", () => ag.snapshot, { ms: 2000, step: 50 });
-  ok(ag.dialect === "eidoverse-log" && ag.v === 4, "S5 the MCPL agent learns from its snapshot which log this is and which protocol reads it", ag.snapshot);
+  ok(ag.snapshot?.dialect === "eidoverse-log" && ag.snapshot?.v === 4 && ag.snapshot?.minor === 1, "S5 the MCPL agent learns from its snapshot which log this is and which protocol reads it", ag.snapshot);
   ag.verb = () => { throw new Error("a world's building tool must not fire-and-forget"); };
   // R 10-17: the agent names what it makes with a placeholder; the reply says the handle and the id it became
   const sp = await HANDLERS.create(ag, { model: "test/cup.glb", place: { at: [2, 2] }, id: "$agentcup" }, {} as any, "create");
@@ -407,7 +407,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
     { actor: "Ann", verb: "comp", args: { id: "lamp_1", type: "sockets", data: { seat: { pos: [0.3, 0.75, 0.1], yaw: 1 } } } },
     { actor: "Ann", verb: "spawn", args: { id: "mug_1", lib: "test/cup.glb", pos: [7, 0, 7] } },
     { actor: "Ann", verb: "mount", args: { id: "mug_1", to: "lamp_1", slot: "seat" } },
-    { actor: "Ann", args: { text: "hello from v1" } }];
+    { actor: "Ann", verb: "say", args: { text: "hello from v1" } }];
   fs.mkdirSync(path.join(W4, "oldtown"), { recursive: true });
   fs.writeFileSync(path.join(W4, "oldtown", "log.jsonl"), L.map((e, k) => JSON.stringify({ seq: k, ts: T0 + k * 1000, ...e })).join("\n") + "\n");
   const v1log = path.join(W4, "oldtown", "log.jsonl"); const before = fs.readFileSync(v1log);
@@ -486,7 +486,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
     ok(g.status === 200, "S8 an HTTP reader of the world's view (/geom) sees a thing just made (the view is rebuilt for its reader, never stale)", g.status); }
   bv.close();
   ok(r1.ok && a.of("log").length >= 2 && a.of("log").every((m: any) => Array.isArray(m.entries) && m.entries.every((e: any) => typeof e.kind === "string" && typeof e.verb === "string" && !("args" in e))), "S8 it gets the log stream, entries only", a.of("log").length);
-  const c = makeReplica(); c.adopt(a.snapshot.cut);
+  const c = makeReplica(); c.adopt(a.snapshot);
   for (const m of a.of("log")) c.ingest(m.entries, m.from);
   const disk = fold(readLog(fs.readFileSync(path.join(W4, "meadow", "world.jsonl"))));
   ok(digest(c.st) === digest(disk), "S8 its own fold of the stream = the log on disk (digest)");
@@ -627,7 +627,7 @@ srv.proc.kill();
   const srvB = await startServer(ENGINE, W4, OPT, "sk2");
   const c = await client(srvB.port, "crash", "Cy", REPLICA); await sleep(200);
   const L = readLog(fs.readFileSync(path.join(W4, "crash", "world.jsonl")));
-  const after = L.slice(before).map((e) => `${e.actor === "system" ? "system" : "?"}:${e.kind}:${e.verb}${e.body?.id ? `:${e.body.id}` : ""}`);
+  const after = L.slice(before).map((e) => `${e.actor === "system" ? "system" : "?"}:${e.kind}:${e.verb ?? e.op}${e.body?.id ? `:${e.body.id}` : ""}`);
   const k = heldBy(c); const bodies = Object.keys(k?.sim?.sim?.statics ?? {});   // a thing at rest is a static in the engine (shared/sim.js)
   ok(after.includes(`system:act:return-held:${IDS.of("ball")}`) && after.includes(`system:act:return-home:${IDS.of("torch")}`), "SK1 after the restart, the authority settled both: the ball where the log had it (return-held), the torch home (release: return)", after);
   ok(!Object.keys(c.snapshot?.holds ?? {}).length && bodies.includes(IDS.of("ball")) && bodies.includes(IDS.of("torch")), "SK2 …nobody holds them, and a joiner's engine has them back (colliders again)", [c.snapshot?.holds, bodies]);
@@ -644,7 +644,7 @@ const W = process.env.WORLDS_DIR, E = process.env.ENGINE;
 const { custodyAt } = await import(E + "/server/custody.ts"); const { custodyFileIn } = await import(E + "/server/keyfiles.ts");
 const { translate } = await import(E + "/tools/protocol/import-v1/translate-v1.js");
 const cu = custodyAt(custodyFileIn(W)); const keys = { key: cu.sequencer(), operator: cu.operator() };
-const old = [{ seq: 0, ts: 1, actor: "world", args: { v: 2, dialect: "eidoverse-log" } }, { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } },
+const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } }, { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } },
   { seq: 2, ts: 3, actor: "ann", verb: "spawn", args: { id: "a-cart", lib: "crate", pos: [0, 0, 0] } }, { seq: 3, ts: 4, actor: "ann", verb: "spawn", args: { id: "b-bench", lib: "crate", pos: [3, 0, 0] } },
   { seq: 4, ts: 5, actor: "ann", verb: "comp", args: { id: "a-cart", type: "sockets", data: { "front seat": { pos: [0, 0.5, 0], body: { action: "sit" } } } } },
   { seq: 5, ts: 6, actor: "ann", verb: "comp", args: { id: "b-bench", type: "sockets", data: { seat: { pos: [0, 0.5, 0], body: { action: "sit" } } } } }];

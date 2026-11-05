@@ -110,7 +110,7 @@ function playground(clock = "pinned") {
   call("rowan", "move", { to: mid.moving.pos.map((n, i) => (i === 1 ? 0 : n)) });
   const v2 = call("rowan", "punt", { id: "ball", v: [0, 3, -2] }, 10);
   ok(v2.ok, "K7 a thing in the air can be punted again (a volley)", v2);
-  const tail = L().slice(-3).map((e) => [e.kind, e.verb]);
+  const tail = L().slice(-3).map((e) => [e.kind, e.verb ?? e.op]);
   ok(JSON.stringify(tail) === JSON.stringify([["request", "punt"], ["physics", "catch"], ["physics", "launch"]]), "K8 …logged as a catch and a new launch", tail);
   call("rowan", "wait", {}, 8000);
   const v = simFold(L(), Date.now() + 1e9, { models: {} });
@@ -180,7 +180,7 @@ function playground(clock = "pinned") {
   ok(L().length === n0, "W3 …and neither refusal is written to the log (a person's client sends steps several times a second)", L().slice(n0).map((e) => [e.kind, e.verb, e.body?.refused]));
   const x = live(); x.call("rowan", "create-world", { title: "w" }); x.call("rowan", "create", { id: "wall", model: "wall", place: { at: [0, 0] } });
   const n1 = x.L().length;
-  ok(code(x.call("rowan", "move", { to: [0, 0, 0] })) === "solid" && x.L().length === n1, "W4 a refused ARRIVAL isn't on the record either (a body's track is presence; review 10-06 S0-3)", x.L().slice(n1).map((e) => [e.kind, e.verb]));
+  ok(code(x.call("rowan", "move", { to: [0, 0, 0] })) === "solid" && x.L().length === n1, "W4 a refused ARRIVAL isn't on the record either (a body's track is presence; review 10-06 S0-3)", x.L().slice(n1).map((e) => [e.kind, e.verb ?? e.op]));
 }
 
 // ---- Q: one clock per request ----

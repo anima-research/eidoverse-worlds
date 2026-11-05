@@ -132,7 +132,7 @@ async function C(id: string, what: string, fn: () => any) {
 const why = (r: any) => (r?.ok ? "ok" : `${r?.refused?.code}: ${r?.refused?.reason}`);
 const world = (tag = "ship") => SD.scratchWorld(tag);
 // a v1 log (the importer's input): genesis, then entries as the old server wrote them
-const v1 = (...entries: any[]) => [{ seq: 0, ts: 1, actor: "world", args: { v: 2, dialect: "eidoverse-log", roles: { olive: { role: "owner" } } } },
+const v1 = (...entries: any[]) => [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log", roles: { olive: { role: "owner" } } } },
   ...entries.map((e, i) => ({ seq: i + 1, ts: 10 + i, actor: "olive", ...e }))];
 const finalOf = (r: any) => r.final.translated;
 

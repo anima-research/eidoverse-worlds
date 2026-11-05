@@ -43,7 +43,7 @@ const spoken: any[] = [];
 bus.on("speech", (s: any) => spoken.push(s));
 let seq = 100;
 const say = (actor: string, text: string, extra: Record<string, unknown> = {}) =>
-  causes.handleLiveCause({ actor, args: { text, ...extra }, seq: ++seq, ts: Date.now() });
+  causes.handleLiveCause({ verb: "say", actor, args: { text, ...extra }, seq: ++seq, ts: Date.now() });
 
 // ── 1. first voice join enables hold ────────────────────────────────────────
 {

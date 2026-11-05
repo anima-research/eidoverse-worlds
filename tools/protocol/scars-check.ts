@@ -292,8 +292,8 @@ const cases: Case[] = [
     good: (o) => !o.oldShape && o.reserved && o.gov },
   { id: "X2", what: "readback: PROTOCOL §1 names where the authority reads old acts and that a purged one is unknown; READBACK lists each reader with its unknown rule", run() {
       const spec = read("spec/PROTOCOL.md"); const RB = (globalThis as any).__VC?.READBACK ?? {};
-      return { para: /\*\*Where the authority reads old acts \(readback\)\.\*\*/.test(spec) && /treats a purged body as \*\*unknown\*\*/.test(spec),
-        purge12: /act body the authority reads back, §1, may be purged/.test(spec), rows: Object.keys(RB), whole: Object.values(RB).every((r: any) => r.fields?.length && r.where && r.unknown) }; },
+      return { para: /\*\*Where the authority reads old requests \(readback\)\.\*\*/.test(spec) && /treats a redacted body as \*\*unknown\*\*/.test(spec),
+        purge12: /request body the authority reads back, §1, may be redacted/.test(spec), rows: Object.keys(RB), whole: Object.values(RB).every((r: any) => r.fields?.length && r.where && r.unknown) }; },
     good: (o) => o.para && o.purge12 && ["request:undo", "request:use", "request:script", "request:sculpt", "request:*", "physics:launch"].every((k) => o.rows.includes(k)) && o.whole },
   { id: "X3", what: "avatars (house markup D, #260 10-20): the spec keeps only the bone (every write to a body goes through the one request path, and the body's owner decides), under its own heading, no 'sealed'; the guard rails (owner stamped at wear, one predicate, every path, the grant, the wearer's log) are direction in docs/AVATAR-DIRECTION.md; the precedence ladder between a world and the person in the body is in neither", run() {
       const spec = read("spec/PROTOCOL.md"); const sec = spec.slice(spec.indexOf("### Body ownership (avatars)"), spec.indexOf("\n## 8. ")); const dir = read("docs/AVATAR-DIRECTION.md");

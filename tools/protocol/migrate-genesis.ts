@@ -1,4 +1,4 @@
-// tools/protocol/migrate-genesis.ts — move a world's genesis to today's shape, {dialect: "eidoverse-log", v: 4, minor: 0,
+// tools/protocol/migrate-genesis.ts — move a world's genesis to today's shape, {dialect: "eidoverse-log", v: 4, minor: 1,
 // nonce, owners: [[<key>…], …], sequencer} (§2.4 + §3d), from either earlier shape this engine wrote:
 //   A. pre-§3d ({version, owners: [<identity>…]}, sometimes translatedFrom). Ported from the protocol lab's
 //      migrate-genesis.js (lab 62301b8) for the engine's layout (<world dir>/world.jsonl). Review F1, 2026-10-05.
@@ -64,7 +64,7 @@ try {
     const owners = shape === "B" ? g.body.owners : (g.body.owners ?? []).length ? [g.body.owners.map(holderKey)] : [[], [seqKey()]];
     const { version: _number, ...rest } = g.body;
     const body = shape === "B" ? { dialect: DIALECT, v: VERSION, ...rest }
-      : { dialect: DIALECT, v: VERSION, minor: 0, nonce: crypto.createHash("sha256").update(raw).digest().subarray(0, 16).toString("base64url"), owners, sequencer: seqKey() };
+      : { dialect: DIALECT, v: VERSION, minor: 1, nonce: crypto.createHash("sha256").update(raw).digest().subarray(0, 16).toString("base64url"), owners, sequencer: seqKey() };
     const ngLine = JSON.stringify({ ...g, body }); const newId = worldIdOf(parseLine(ngLine));
     const next = ngLine + text.slice(nl).replaceAll(`"world":${JSON.stringify(oldId)}`, `"world":${JSON.stringify(newId)}`);   // the field only: a say quoting the id keeps it (#260 436)
     const after = fold(readLog(next)); const dAfter = after.status === "ok" ? digest(after) : null;
