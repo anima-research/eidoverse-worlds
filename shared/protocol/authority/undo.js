@@ -4,12 +4,12 @@
 // borrows (needThing, lastTouch, the reference clears) are above it, reached through UP.
 import { fold, opsOf, isIdentity, jcs, REDACTED, redactionsIn, redactedBodies } from "../fold.js";
 import { materialize, refsOf } from "../componentspec.js";
-import { foldSkyEntry } from "../../forecast.js";
+import { foldSkyEntry, forecastSpellingRefusal } from "../../forecast.js";
 import { UP } from "./ctx.js";
 import { refuse, said } from "./refuse.js";
 import { readback, FOLLOW_UP, clone, createOps, delOp, cascadeOf, isE, opsQuiet, scratch, setOp, versionOf, versionSeq } from "./storage.js";
 import { obbs, satDepth, worldT } from "./math.js";
-import { isLegacyParent, isSocketC, socketsOf } from "./sockets.js";
+import { isSocketC } from "./sockets.js";
 import { RESERVED, admits, may, rankOf, roleOf } from "./rights.js";
 import { reactionCap } from "./use.js";
 import { idOut } from "../view.js";
@@ -95,6 +95,7 @@ export function entityBefore(w, id, seq, x = actIndexOf(w)) {
 function skyValue(prev, verb, args, now) {
   if (!args || typeof args !== "object" || Array.isArray(args)) refuse("shape", `${verb} takes the sky's fields {hours, rate, weather, clouds…}`, "");
   const { dry, ...a } = args;
+  const bad = forecastSpellingRefusal(a.forecast, verb); if (bad) refuse(bad.code, bad.reason, bad.fix, { didYouMean: bad.didYouMean });   // the door translates nothing
   const out = clone(foldSkyEntry(prev, { verb, args: a, ts: Math.floor(now), seq: 0, actor: "system" }));
   delete out.seq; delete out.by;
   for (const k of ["forecast", "override"]) if (out[k] && typeof out[k] === "object") { delete out[k].seq; delete out[k].by; }
@@ -114,16 +115,14 @@ function buildUndo(ctx, a, w) {
   const flat = opsOf(res);
   // what others wrote since: a thing's own later history (touch), and, for the spatial check, every change entry since
   // the result (bounded by what happened after the act, never the log before it)
-  // later work by anyone but the act's own author stands; the maintenance command's lift isn't work (it respells, and its old values
-  // are translated again on the way back in)
-  const others = (i) => E[i].actor !== target.actor && E[E[i].cause]?.verb !== "lift-sockets";
+  // later work by anyone but the act's own author stands. A translated world's tail lift-sockets is the system's work: an
+  // imported act's value from before it is the old world's spelling, which the door refuses, so undoing that act skips what the lift touched
+  const others = (i) => E[i].actor !== target.actor;
   const touchedBy = (id, comp) => { const h = X.touch.get(id) ?? []; for (let k = firstAfter(h, res.seq); k < h.length; k++) { const e = E[h[k]]; if (!others(h[k])) continue;
     for (const o of opsQuiet(e)) if (o.id === id && (comp === undefined || o.comp === comp || o.comp === undefined || o.op === "create")) return e.actor; } return null; };
   const later = X.changes.slice(firstAfter(X.changes, res.seq)).filter(others).map((i) => E[i]);
-  // a host's seats after the cut are its socket children, and nobody writes its `sockets` key (review 10-12 S2-2): later
-  // work by others on them (a socket made under it, or any write to one of its socket children, deleted ones included)
-  // is a change to what a pre-cut `sockets` edit set, so undoing that edit skips, as it did before the cut
-  // A socket made under it counts however its two halves were written: a change that sets either one counts when the
+  // a host's seats are its socket children: later work by others on them (a socket made under it, or any write to one of
+  // its socket children, deleted ones included) stops undoing its creation. A socket made under it counts however its two halves were written: a change that sets either one counts when the
   // thing it leaves (every op of the change applied, a batch's later re-parent included) is a socket under the host
   const socketWorkBy = (host) => {
     for (const i of X.changes.slice(firstAfter(X.changes, res.seq))) { if (!others(i)) continue; const ops = opsQuiet(E[i]);
@@ -159,35 +158,23 @@ function buildUndo(ctx, a, w) {
     const old = before(o.id)?.c[o.comp]; return old !== undefined && old !== REDACTED && refsOf(o.comp, old).some((r) => goneHere.has(r.id)); };
   for (const o of flat) { if (madeHere.has(o.id) && o.op !== "create") continue;
     const k = o.id + "|" + (o.op === "set" || (o.op === "delete" && o.comp !== undefined) ? o.comp : "*"); if (!keys.has(k)) keys.set(k, o); }
-  const paired = new Set();
   for (const [, o] of [...keys].reverse()) {
     const { id, comp } = o; const whole = o.op === "create" || (o.op === "delete" && comp === undefined);
     if (ownerOf.has(o)) continue;
-    // where a thing sat on a socket before the cut, its transform was in the HOST's frame (review 10-12 S2-1): its parent
-    // and its transform go back as one group, so the door lifts the parent and re-expresses the pose in the socket child's
-    // frame (liftOps' `via`); a bare transform would be read in the socket's frame and land it elsewhere
-    const ob = !whole && (comp === "transform" || comp === "parent") ? before(id) : null;
-    if (ob && isLegacyParent(ob.c.parent)) { if (paired.has(id)) continue; paired.add(id);
-      const by = touchedBy(id, "parent") ?? touchedBy(id, "transform");
-      if (by) { skipped.push({ id, component: comp, why: `${said(by)} changed it since`, by }); continue; }
-      if (ob.c.transform === REDACTED) { skipped.push({ id, component: "transform", why: "its old value was purged" }); continue; }
-      if (now.entities[id]) groups.push([setOp(id, "parent", ob.c.parent), ...(ob.c.transform ? [setOp(id, "transform", ob.c.transform)] : [])]);
-      ctx.refs.add(id); continue; }
-    // a host's seats are its socket children: work by others on them since stops undoing its `sockets` and its creation alike
-    // (undoing the create would delete a socket someone made on it since)
-    const by = touchedBy(id, whole ? undefined : comp) ?? ((comp === "sockets" && !whole) || o.op === "create" ? socketWorkBy(id) : null);
+    // a host's seats are its socket children: work by others on them since stops undoing its creation (it would delete a
+    // socket someone made on it since)
+    const by = touchedBy(id, whole ? undefined : comp) ?? (o.op === "create" ? socketWorkBy(id) : null);
     if (by) { skipped.push({ id, component: comp, why: `${said(by)} changed it since`, by }); continue; }
     // undoing a create: what others hung on it since is THEIR work. It stays, let go where it is (round-1 F3), never
     // deleted with it and never left pointing at a thing that's gone
     if (o.op === "create") { if (now.entities[id]) { const kidsOf = (p) => Object.keys(now.entities).filter((k) => now.entities[k].c.parent?.to === p && !madeHere.has(k));
-        // its sockets are its parts (a lift made them): they go with it, and what others put in them is let go like the rest
+        // its sockets are its parts: they go with it, and what others put in them is let go like the rest
         const parts = kidsOf(id).filter((k) => isSocketC(now.entities[k].c)); const kids = [...kidsOf(id).filter((k) => !parts.includes(k)), ...parts.flatMap(kidsOf)];
         groups.push([...kids.flatMap((k) => [setOp(k, "transform", worldT(now, k)), delOp(k, "parent")]), ...parts.map((k) => delOp(k)), delOp(id)]); kids.forEach((k) => ctx.refs.add(k)); } }
     else if (whole) { const old = before(id); if (old && !now.entities[id]) (ctx.restores ??= new Set()).add(id), groups.push(createOps(id, Object.fromEntries(Object.entries(old.c).filter(([, v]) => v !== REDACTED)))); }
     else { const old = before(id)?.c[comp];
       if (old === REDACTED) { skipped.push({ id, component: comp, why: "its old value was purged" }); continue; }
-      // (sockets: a host's socket children stand for the map it held before the cut; their delete is translated at the door)
-      if (old === undefined) { if (now.entities[id] && (comp in now.entities[id].c || (comp === "sockets" && socketsOf(now, id, { off: true }).some((x) => x.id)))) { const g = delOp(id, comp); if (leftoverFU(o)) g[FOLLOW_UP] = true; groups.push([...leftoversBack(id, comp), g]); } }
+      if (old === undefined) { if (now.entities[id] && comp in now.entities[id].c) { const g = delOp(id, comp); if (leftoverFU(o)) g[FOLLOW_UP] = true; groups.push([...leftoversBack(id, comp), g]); } }
       else if (now.entities[id]) {
         if (!refRestore(o)) { const g = setOp(id, comp, old); if (leftoverFU(o)) g[FOLLOW_UP] = true; groups.push([...leftoversBack(id, comp), g]); }
         // a follow-up restore names what this undo brings back; a reference to anything else gone since stays cleared (holes r10 L1:

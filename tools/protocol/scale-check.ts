@@ -28,7 +28,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { ENGINE, scratch, copyTree, archiveTo } from "./common.ts";
 
-import { CAPACITY, CAPACITY_CEILING } from "../../shared/protocol/authority.js";
+import { CAPACITY, CAPACITY_CEILING, LAB_CATALOGUE } from "../../shared/protocol/authority.js";   // LAB_CATALOGUE: one catalogue for this tree and the base (G3 compares the index, not the lab's seats)
 import { COMPONENTS } from "../../shared/protocol/componentspec.js";
 import { labClock, pinned } from "./clock.ts";
 const argv = process.argv.slice(2);
@@ -134,7 +134,7 @@ const clock = labClock(); let N = 0;
 function open(name: string, o: any = {}) {
   const dir = path.join(root, "worlds", name); fs.mkdirSync(dir, { recursive: true });
   const w = L.openLive(dir, name, { now: () => pinned(clock.t), scripts: o.scripts ?? null, custodyFile: path.join(root, "custody.json"),
-    nameOf: () => null, kindOf: o.kindOf ?? (() => "human"), catalogue: o.catalogue });
+    nameOf: () => null, kindOf: o.kindOf ?? (() => "human"), catalogue: o.catalogue ?? LAB_CATALOGUE });
   if (o.presence) Object.assign(w.presence, o.presence);
   return w;
 }

@@ -61,7 +61,9 @@ for (const r of [
   await ann.req("create", { id: "table1", model: MODEL, components: { transform: { pos: [1, 0, 1], q: [0, 0, 0, 1], scale: [1, 1, 1] } } }),
   await ann.req("create", { id: "lamp1", components: { label: "lamp1", parent: { to: "table1" }, transform: { pos: [0, 0.75, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, light: { kind: "spot", angle: 0.5, intensity: 12 } } }),
   await ann.req("set", { id: "lamp1", component: "lock", value: true }),
-  await ann.req("create", { id: "chair1", model: MODEL, components: { sockets: { seat: { pos: [0, 0.45, 0], body: { action: "sit" } } } } }),
+  await ann.req("create", { id: "chair1", model: MODEL }),
+  // its seat: a socket child with a station (a socket is an entity of its own: PLAN-sockets-entities)
+  await ann.req("create", { id: "chair1-seat", components: { parent: { to: "chair1" }, transform: { pos: [0, 0.45, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, socket: { name: "seat" }, station: { action: "sit" } } }),
   await ann.req("say", { text: "a private chat line from before the copy" }),
   await ann.req("sky", { hours: 18, rate: 1 }),   // the act stamps sky.ts, which a writer may never set (review of #260, server I36)
 ]) ok(r.ok, "(setup) the source world takes it", r.refused);
@@ -88,8 +90,8 @@ ok(fk?.type === "world-forked" && fk.to === "copy", "FK3 the owner copies it", f
   ok(cp.worldId && cp.worldId !== fold(logOf("src")).worldId, "FK4 the copy is a NEW world (its own genesis, its own id)", [cp.worldId]);
   ok(f?.body?.args?.from?.world === fold(logOf("src")).worldId && f.body.args.from.name === "src" && /^[0-9a-f]{64}$/.test(f.body.args.from.head), "FK4 its founding act names where it came from {world, name, head}", f?.body);
   const a = thingsOf(src), b = thingsOf(cp); delete a["@world"].about; delete b["@world"].about;
-  ok(JSON.stringify(Object.keys(a).sort()) === JSON.stringify(Object.keys(b).sort()) && ["table1", "lamp1", "chair1"].map((n) => IDS.of(n)).every((id) => a[id] !== undefined && canon(a[id]) === canon(b[id])),
-    "FK5 every thing is copied component for component (the parent, the locked child, the spot light, the sockets)", [Object.keys(b)]);
+  ok(JSON.stringify(Object.keys(a).sort()) === JSON.stringify(Object.keys(b).sort()) && ["table1", "lamp1", "chair1", "chair1-seat"].map((n) => IDS.of(n)).every((id) => a[id] !== undefined && canon(a[id]) === canon(b[id])),
+    "FK5 every thing is copied component for component (the parent, the locked child, the spot light, the chair's socket child)", [Object.keys(b)]);
   ok(b["@world"][`roles:${bobId}`]?.role === "builder" && b["@world"]["default-role"]?.role === "member", "FK5 roles and the default role travel", b["@world"]);
   ok(Number.isFinite(b["@world"].sky?.ts) && canon(a["@world"].sky) === canon(b["@world"].sky), "FK5b a sky an act stamped travels as it stands, its stamped ts with it", [a["@world"].sky, b["@world"].sky]);
   // FK12 (training consent's per-person keys staying out of a fork) went with training-consent itself (R 10-16 14:16)

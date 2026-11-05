@@ -32,7 +32,7 @@ export const isWorldId = (id) => id === WORLD_ID;
 // state.sky's keys that are the Weather component's (written by the weather
 // verb, or the sky verb's forecast policy and the fold's override stamp), and
 // the ones the fold stamps on the bag. Everything else in state.sky is the Sky.
-const WEATHER_KEYS = ['weather', 'weatherK', 'transition', 'weatherSeconds', 'forecast', 'override'];
+const WEATHER_KEYS = ['weather', 'weatherK', 'transition', 'forecast', 'override'];
 const SKY_STAMPS = ['ts', 'seq', 'by'];
 const DEFAULT_TZ = 'America/Los_Angeles';
 
@@ -110,7 +110,7 @@ export function skyReissue(sky, patch = {}, now = 0) {
  *  key matches and the Sky holds nothing the preset doesn't say. */
 export function skyPresetOf(sky, presets) {
   if (!isBag(sky) || !isBag(presets)) return null;
-  const own = omit(sky, [...WEATHER_KEYS, ...SKY_STAMPS, 'dormantRated']);
+  const own = omit(sky, [...WEATHER_KEYS, ...SKY_STAMPS]);
   for (const [name, p] of Object.entries(presets)) {
     if (name === 'doc' || !isBag(p)) continue;
     const keys = Object.keys(p).filter((k) => !WEATHER_KEYS.includes(k));
@@ -124,7 +124,7 @@ export function skyPresetOf(sky, presets) {
  *  preset's and nothing else. The Weather component is carried (the sky verb
  *  would otherwise wipe it); a preset that names weather itself wins. */
 export function pickSky(sky, preset) {
-  const weather = isBag(sky) ? pick(sky, ['weather', 'weatherK', 'transition', 'weatherSeconds', 'forecast']) : {};
+  const weather = isBag(sky) ? pick(sky, ['weather', 'weatherK', 'transition', 'forecast']) : {};
   if (isBag(weather.forecast)) weather.forecast = omit(weather.forecast, ['epoch', 'seq', 'by']);
   return { ...clone(weather), ...omit(clone(preset) ?? {}, ['doc']) };
 }
@@ -298,11 +298,7 @@ export function worldEditOps(st, edits, live = {}) {
         if (k === 'tz') {
           if (v) skyPatch.tz = v;
           else {
-            // back to the authored clock (an empty timezone): an older fold parked the rated clock under
-            // dormantRated (#65); hand it back, as the sky panel does
-            Object.assign(skyPatch, { tz: undefined });
-            const d = sky?.dormantRated;
-            if (isBag(d)) { if (d.rate != null) skyPatch.rate = d.rate; if (d.hours != null) skyPatch.hours = round(d.rate ? hoursAt({ hours: d.hours, rate: d.rate, ts: d.ts }, now) : d.hours, 4); }
+            Object.assign(skyPatch, { tz: undefined });   // back to the authored clock (an empty timezone)
           }
         }
         else if (k === 'azimuth') skyPatch.azimuth = round(v / DEG, 6);   // shown in degrees, stored in radians

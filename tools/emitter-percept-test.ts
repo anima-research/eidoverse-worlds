@@ -170,7 +170,7 @@ const SMOKE = { effect: "smoke", at: [0, 0.25, 0] };
   // Nothing about a NON-particles component changed.
   const { events, spawn, other } = await rig();
   await spawn("swing", [1, 0, 0]);
-  await other("swing", "sockets", { seat: { pos: [0, 0.5, 0] } }, true);
+  await other("swing", "label", "a swing", true);   // a socket is a child now (the door refuses a sockets map): any other component will do
   check("other component types narrate nothing (scope fence)", events.length === 0);
 }
 

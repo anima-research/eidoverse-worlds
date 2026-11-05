@@ -125,7 +125,8 @@ try {
   check("walks across the upper floor, still upstairs", await walk(0, -2.4) && near(a.pos.y, gy + UPPER), `y ${a.pos.y.toFixed(3)}`);
   a.setPosture("idle");
   check("standing still upstairs does not drop it to the ground floor", near(a.pos.y, gy + UPPER), `y ${a.pos.y.toFixed(3)}`);
-  await legacyVerb(a, "comp", { id: "tower", type: "sockets", data: { bench: { pos: [-0.8, UPPER + 0.45, -2.4], body: { pose: "sitchair" } } } });
+  // a seat is a socket child of the tower (its station's anim is the pose)
+  await a.request("create", { id: "$bench", components: { parent: { to: sceneId(a, "tower") }, transform: { pos: [-0.8, UPPER + 0.45, -2.4], q: [0, 0, 0, 1], scale: [1, 1, 1] }, socket: { name: "bench" }, station: { anim: "sitchair" } } });
   await sleep(200);
   await legacyVerb(a, "mount", { id: "walker", to: "tower", slot: "bench" });
   await tryUntil("the walker is seated", () => !!a.myOccupancy, { ms: 2000, step: 50 });

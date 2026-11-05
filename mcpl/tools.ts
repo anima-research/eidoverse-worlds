@@ -1330,8 +1330,8 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // that lands meanwhile is refused as changed, not overwritten (a person's edit pins the same way)
       const wireId = id === WORLD_ID ? id : encId(id);   // the authority's own id, as the ops carry it (requests.js)
       const base = ag.componentsOf(wireId);
-      // a host's sockets are its socket children: a write of the sockets map changes the children it names and retires the
-      // rest (authority/sockets.js liftOps), so the plan's read of them is pinned too
+      // a host's sockets are its socket children: a write of the Sockets card sets the children it names and deletes the
+      // rest (requests.js socketMapOps), so the plan's read of them is pinned too
       const sockets = id === WORLD_ID ? {} : ag.socketChildrenOf(wireId);
       const { ops, errors, asks } = id === WORLD_ID
         ? { ...worldEditOps(ag.worldFold(), (a.set ?? {}) as Record<string, unknown>, { now: Date.now() }), asks: undefined }
@@ -1349,7 +1349,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // reactions taken away) erases whatever landed since as surely as a set does
       const touched = [...new Set(ops.filter((o: any) => (o.verb === "set" || o.verb === "delete") && o.args?.id === wireId && o.args?.component != null)
         .map((o: any) => String(o.args.component)))];
-      const writesSockets = touched.includes("sockets");
+      const writesSockets = ops.some((o: any) => (o.verb === "create" && o.args?.components?.socket) || (o.args?.id != null && Object.hasOwn(sockets, o.args.id)));
       if (writesSockets) {
         // a socket child added or taken away while the plan awaited the model's box: the map would retire one it never read,
         // and no pin can name a child the plan didn't see, so nothing is sent
@@ -1359,7 +1359,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       }
       const pins = [
         ...pinsOf(wireId, touched, base),
-        // each socket child the map was planned from, as liftOps reads and writes it: its parent (which host's child it is),
+        // each socket child the map was planned from, as socketMapOps reads and writes it: its parent (which host's child it is),
         // its socket, its transform and its station
         ...(writesSockets ? Object.entries(sockets).flatMap(([kid, c]) => pinsOf(kid, ["parent", "socket", "transform", "station"], c)) : []),
       ];

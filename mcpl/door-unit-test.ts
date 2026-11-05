@@ -188,14 +188,14 @@ for (const change of ["none", "added", "taken"] as const) {
   const pin = sent[0]?.extra?.expect ?? null;
   ok(added
     ? !sent.length && out.isError && /sockets changed while the edit was being prepared/.test(out.content[0].text)
-    : sent.length === 1 && JSON.stringify(pin) === JSON.stringify([{ id: "bus-1", component: "sockets" },
+    : sent.length === 1 && JSON.stringify(pin) === JSON.stringify([
         { id: "seat-1", component: "parent", value: { to: "bus-1" } }, { id: "seat-1", component: "socket", value: { name: "front" } },
         { id: "seat-1", component: "transform", value: front.transform }, { id: "seat-1", component: "station" }]),
-    added ? `a socket ${change} while edit planned stops the sockets write: nothing is sent` : "a sockets write pins each socket child it read, its parent included", { sent, pin, out: out.content?.[0]?.text }); }
+    added ? `a socket ${change} while edit planned stops the sockets write: nothing is sent` : "a sockets write pins each socket child it read, its parent included (the host has no sockets component to pin: the map is sent as the children's own requests)", { sent, pin, out: out.content?.[0]?.text }); }
 
 // more socket children than one request can pin (the authority takes 256 expect entries) is refused here, in words that say
 // what to do instead, not sent to be refused for its shape; a write of exactly 256 pins goes (four host components and 63
-// children of four pins each)
+// children of four pins each; the map itself is no host component since it's sent as the children's requests)
 async function socketsEdit(children: number, set: Record<string, unknown>) {
   const sent: any[] = []; const kids: Record<string, any> = {}; const recs: Record<string, any> = { "bus-1": { id: "bus-1" } };
   for (let i = 0; i < children; i++) { const c = { parent: { to: "bus-1" }, socket: { name: `s${i}` }, transform: { pos: [i, 1, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } };
@@ -208,16 +208,16 @@ async function socketsEdit(children: number, set: Record<string, unknown>) {
   return { sent, out };
 }
 { const over = await socketsEdit(90, { "sockets.del": "s0" });
-  ok(!over.sent.length && over.out.isError && /more sockets than one edit can pin \(361 pins; a request carries at most 256\)/.test(over.out.content[0].text),
+  ok(!over.sent.length && over.out.isError && /more sockets than one edit can pin \(360 pins; a request carries at most 256\)/.test(over.out.content[0].text),
     "a sockets write with more children than a request can pin is refused here, saying edit them one at a time", { sent: over.sent.length, out: over.out.content?.[0]?.text });
-  const four = { "sockets.del": "s0", "flags.label": "zz bus", "flags.lock": true, "flags.hidden": true };
+  const four = { "sockets.del": "s0", "flags.label": "zz bus", "flags.lock": true, "flags.hidden": true, "flags.clickthrough": true };
   const at = await socketsEdit(63, four);
   ok(at.sent.length === 1 && at.sent[0].extra.expect.length === 256, "a sockets write of exactly 256 pins is sent", { pins: at.sent[0]?.extra?.expect?.length, out: at.out.content?.[0]?.text });
   const past = await socketsEdit(64, four);
   ok(!past.sent.length && /\(260 pins; a request carries at most 256\)/.test(past.out.content?.[0]?.text ?? ""), "one child more is refused", { sent: past.sent.length, out: past.out.content?.[0]?.text }); }
 
 // the body's read for a pin keeps a purged component as the fold's REDACTED, so a pin can leave it out, and copies the rest;
-// a host's socket children are the things parented to it with a socket, as the door's liftOps counts them (isSocketC)
+// a host's socket children are the things parented to it with a socket, as the door counts them (isSocketC)
 { const fake: any = Object.create(WorldAgent.prototype);
   const tf = { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] };
   fake.replica = { st: { entities: {

@@ -302,9 +302,16 @@ await tryRow('SK', async () => {
   check('SK2 …override too (the weather act stamps it)', code(r) === 'stamped' || code(r) === 'derived', r.refused);
   r = W.call('set', { id: '@world', component: 'sky', value: { hours: 9, forecast: { seed: 1, states: ['rain'], epoch: 3 } } });
   check('SK2 …and a forecast\'s epoch', code(r) === 'stamped' || code(r) === 'derived', r.refused);
-  r = W.call('sky', { hours: 8, clock: 'real', tz: 'Europe/Paris', weatherSeconds: 12 });
+  const old = [W.call('sky', { hours: 8, clock: 'real', tz: 'Europe/Paris' }), W.call('sky', { hours: 8, tz: 'Europe/Paris', weatherSeconds: 12 })];
+  r = W.call('sky', { hours: 8, tz: 'Europe/Paris', transition: 12 });
   const s = W.state().entities['@world'].c.sky;
-  check('SK3 the sky act takes the old spellings and stores today\'s: clock real → tz governs (no clock, no dormantRated), weatherSeconds → transition', r.ok && s.tz === 'Europe/Paris' && !('clock' in s) && !('dormantRated' in s) && s.transition === 12 && !('weatherSeconds' in s) && s.hours === 8, [r.refused, s]);
+  check('SK3 the sky act refuses the old spellings (unknown-arg), the fix naming today\'s: clock → tz, weatherSeconds → transition; today\'s are stored as sent', code(old[0]) === 'unknown-arg' && /tz/.test(old[0].refused?.fix ?? '') && code(old[1]) === 'unknown-arg' && /transition/.test(old[1].refused?.fix ?? '')
+    && r.ok && s.tz === 'Europe/Paris' && !('clock' in s) && !('dormantRated' in s) && s.transition === 12 && !('weatherSeconds' in s) && s.hours === 8, [old.map((x) => x.refused), r.refused, s]);
+  const fw = [W.call('sky', { hours: 8, forecast: { seed: 1, states: ['rain'], dwellSec: [600, 900] } }), W.call('weather', { forecast: { seed: 1, states: ['rain'], transitionSec: 40 } }),
+    W.call('set', { id: '@world', component: 'sky', value: { hours: 9, forecast: { seed: 1, states: ['rain'], dwellSec: [600, 900] } } })];
+  check('SK3b …and a forecast\'s old field names (sky, weather, set): refused (schema), naming dwell / transition; nothing stored', fw.every((x) => code(x) === 'schema')
+    && fw[0].refused?.didYouMean?.[0] === 'dwell' && fw[1].refused?.didYouMean?.[0] === 'transition' && fw[2].refused?.didYouMean?.[0] === 'dwell'
+    && JSON.stringify(W.state().entities['@world'].c.sky) === JSON.stringify(s), fw.map((x) => x.refused ?? x.ok));
   check('SK3 …tz present means the wall clock governs', Math.abs(hoursAt({ tz: 'UTC', hours: 3, rate: 0, ts: 0 }, Date.UTC(2026, 0, 1, 15, 30)) - 15.5) < 1e-9, hoursAt({ tz: 'UTC', hours: 3, rate: 0, ts: 0 }, Date.UTC(2026, 0, 1, 15, 30)));
   check('SK4 the sky reader turns the sun by azimuth in radians', /a\.azimuth \?\? Math\.PI/.test(read('client/lib/sky.js')) && !/degToRad\(a\.azimuth/.test(read('client/lib/sky.js')), '');
   check('SK5 a forecast reads dwell and transition (dwellSec/transitionSec read too, in an older value)', effectiveSky({ forecast: { seed: 1, states: ['rain', 'clear'], dwell: [600, 600], transition: 20, epoch: 1 } }, 2).seconds === 20, effectiveSky({ forecast: { seed: 1, states: ['rain', 'clear'], dwell: [600, 600], transition: 20, epoch: 1 } }, 2));

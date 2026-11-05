@@ -1,5 +1,5 @@
 // sockbody — what a person's body does at a socket: the `station` component on a socket entity (shape audit 10-16; it
-// was the `body` block of `socket` / `sockets.<name>`, still read here as the old spelling the door lifts), as data.
+// was the `body` block of `socket` / `sockets.<name>`, still read here as the old world's spelling the importer lifts), as data.
 //
 // The alpha registers the station's core only (shared/protocol/componentspec.js station: action, pose, anchor, exit,
 // leaveBy, who). The rest of the researched shape below is RESERVED: the door refuses it (STATION_RESERVED), its names are
@@ -260,7 +260,7 @@ export function checkSockets(v, at = 'sockets') {
 }
 
 /** One socket entity's `socket` component, checked (closed keys, accepts): null when good. The rules that need its
- *  siblings (a unique name) are the door's. A body block is the station's now (the door lifts an old write of one). */
+ *  siblings (a unique name) are the door's. A body block is the station's now (the door refuses one on a socket). */
 export function checkSocket(v, at = 'socket') {
   if (!isObj(v)) return bad('shape', `${at} must be {name, part?, accepts?, radius?}`);
   if (v.body !== undefined) return bad('schema', `${at}.body: what a person's body does at a socket is the station component on the same entity now`, 'station {action, anim?, anchor?, exit?, leaveBy?, who?} beside socket', ['station']);
@@ -414,7 +414,7 @@ export function socketsIn(entities, host, opts) {
 /** A socket child as the old `sockets.<name>` entry read ({pos, q?, part?, body?, accepts?, radius?}): its pose is its own
  *  transform, local to its host, and its station is the entry's body. For the readers still written against the map (the
  *  Inspector's Sockets card and the seat gizmos, until the Parts UI: PLAN §10 12b); writing one back as a map is
- *  translated at the door (each body a station). `t` is the socket's transform ({pos, q}). */
+ *  sent as the children's requests (requests.js socketMapOps: each body a station). `t` is the socket's transform ({pos, q}). */
 export function slotOf(sock, t, station = null) {
   const { name, ...rest } = sock ?? {};
   const q = Array.isArray(t?.q) && t.q.length === 4 && !(t.q[0] === 0 && t.q[1] === 0 && t.q[2] === 0 && t.q[3] === 1) ? { q: t.q.slice() } : {};

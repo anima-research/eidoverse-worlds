@@ -16,7 +16,7 @@ const check = (name: string, ok: boolean, detail: unknown = "") => {
 const W = scratchWorld("skystamp").seed({});
 const r = makeReplica(); r.adopt(JSON.parse(JSON.stringify({ dialect: "eidoverse-log", v: 4, state: wireState(W.state()), seq: W.entries().length - 1 })));
 const from = W.entries().length;
-const res = W.send({ verb: "sky", args: { forecast: { seed: 7, states: ["clear", "rain"], dwellSec: [300, 900], transitionSec: 20 } } });
+const res = W.send({ verb: "sky", args: { forecast: { seed: 7, states: ["clear", "rain"], dwell: [300, 900], transition: 20 } } });
 check("(setup) the owner sets a forecast", res?.ok === true, res);
 const got = r.ingest(JSON.parse(JSON.stringify(W.entries().slice(from))), from);
 const stored = r.st.entities["@world"]?.c.sky;

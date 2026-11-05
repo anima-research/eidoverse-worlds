@@ -107,8 +107,8 @@ for (const verb of ["throw", "drop"]) { const W = `ride-${verb}`; call(W, "rowan
   const c4 = st(W).entities.crate3.c; const w4 = c4.parent?.to === "mp" ? c4.transform.pos[1] * 0.5 : c4.transform.pos[1];
   const ws = c4.parent?.to === "mp" ? (c4.transform.scale ?? [1, 1, 1]).map((v, i) => v * [2.5, 0.5, 2.5][i]) : (c4.transform.scale ?? [1, 1, 1]);
   // r2 S2.1/S2.2/S2.3 under an engine: a no-op write re-drops nothing; a socketed child rides its socket; a deleted body frees the occupants
-  call(W, "rowan", "set", { id: "plinth", component: "sockets", value: { perch: { pos: [0.5, 0.3, 0.5] } } });
-  call(W, "rowan", "create", { id: "cup", model: "ball", components: { physics: { kind: "dynamic", who: "member" }, parent: { to: "plinth", socket: "perch" }, transform: { pos: [0, 0, 0] } } });
+  call(W, "rowan", "create", { id: "plinth-perch", components: { parent: { to: "plinth" }, transform: { pos: [0.5, 0.3, 0.5], q: [0, 0, 0, 1], scale: [1, 1, 1] }, socket: { name: "perch" } } });
+  call(W, "rowan", "create", { id: "cup", model: "ball", components: { physics: { kind: "dynamic", who: "member" }, parent: { to: "plinth-perch" }, transform: { pos: [0, 0, 0] } } });
   const n1 = openWorld(root, W).entries.length; const same = call(W, "rowan", "set", { id: "plinth", component: "mesh", value: { shape: "box", size: [1.5, 0.3, 1.5] } }); clock.t += 8000; call(W, "vic", "look", {});
   ok(same.ok && openWorld(root, W).entries.length - n1 === 2 && !(same.notes ?? []).some((n) => n.fell), "SE14 re-asserting the plinth's mesh value re-drops nothing: 2 rows, no fell note (r2 S2.1)", { rows: openWorld(root, W).entries.length - n1, notes: same.notes });
   const grow = call(W, "rowan", "set", { id: "plinth", component: "mesh", value: { shape: "box", size: [1.5, 0.5, 1.5] } }); clock.t += 8000; call(W, "vic", "look", {});

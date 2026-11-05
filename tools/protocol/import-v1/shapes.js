@@ -23,7 +23,8 @@ import { eidoHex } from "../../../shared/eido.js";
 import { COMPONENTS, materialize } from "../../../shared/protocol/componentspec.js";
 import { partSlot, motionType } from "../../../shared/protocol/names.js";
 import { AXES as AXIS_VECTORS } from "../../../shared/axes.js";
-import { lifter, isLegacyParent, isSocketC } from "../../../shared/protocol/authority/sockets.js";
+import { isSocketC } from "../../../shared/protocol/authority/sockets.js";
+import { lifter, isLegacyParent } from "./sockets.js";
 import { emptyState, applyInPlace } from "../../../shared/protocol/fold.js";
 const bag = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 /** The light rig's falloff before a light said its own (client/lib/lightrig.js, three.js decay). */

@@ -114,6 +114,15 @@ const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, Number.isFinite(x) ? x : 
 /** Validate + normalize an authored policy bag. Returns null when the bag
  *  doesn't amount to a usable policy (no valid states, not an object) —
  *  callers treat null as "forecast off". */
+/** A forecast policy's old field names → today's: the door refuses them, naming today's (the sky act and a set of the sky). */
+export const FORECAST_WAS = Object.freeze({ dwellSec: 'dwell', transitionSec: 'transition' });
+/** The door's refusal for a forecast that says an old field name, or null. @param {any} f @param {string} at */
+export function forecastSpellingRefusal(f, at) {
+  if (!f || typeof f !== 'object' || Array.isArray(f)) return null;
+  for (const [old, now] of Object.entries(FORECAST_WAS)) if (Object.hasOwn(f, old))
+    return { code: 'schema', reason: `${at}.forecast: '${old}' is the old spelling of '${now}'`, fix: `forecast {…, ${now}: …}`, didYouMean: [now] };
+  return null;
+}
 export function normalizePolicy(f) {
   if (!f || typeof f !== 'object') return null;
   const states = [];

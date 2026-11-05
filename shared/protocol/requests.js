@@ -7,7 +7,9 @@
 import { socketsIn } from "../sockbody.js";
 import { enc, encName } from "./names.js";
 import { isPlaceholder } from "./ids.js";
-import { qNorm, qFromYaw, qWithHeading } from "../rot.js";
+import { qNorm, qFromYaw, qWithHeading, qMul, qRotate } from "../rot.js";
+import { socketQ } from "../components.js";
+import { materialize } from "./componentspec.js";
 
 const E = (id) => (id === "@world" || isPlaceholder(id) ? id : enc(String(id ?? "")));   // the world entity is itself, never escaped; a request-local placeholder ('$lamp') is the authority's to mint
 const finite3 = (a) => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
@@ -56,13 +58,13 @@ export const setTransform = (ent, id, patch) => set(id, "transform", transformOf
 
 /** ride `to`: parent + the local pose (local to `to`). `socket` names one of `to`'s sockets (a socket child: PLAN-sockets-
  *  entities): the thing then rides THAT, and with no pose given lands on it (the socket's own frame: identity). So does
- *  a `to` that is itself a socket. Otherwise, with no pose, the carrier's origin. A socket name `to` doesn't have goes
- *  as the old spelling {to, socket}, which the door lifts (or refuses, in its words). Re-parenting to the parent it
- *  already has is just the pose. `world` is the view ({entities}). */
+ *  a `to` that is itself a socket. Otherwise, with no pose, the carrier's origin. A socket name `to` doesn't have throws
+ *  (nothing is sent). Re-parenting to the parent it already has is just the pose. `world` is the view ({entities}). */
 export function parent(world, id, to, { socket = null, pos = null, q = null, yaw = null } = {}) {
   const E0 = world?.entities ?? {};
   const ent = E0[id] ?? null;
   const kid = socket != null ? socketsIn(E0, to).find((x) => x.name === String(socket)) : null;
+  if (socket != null && !kid) throw new Error(`${to} has no socket called '${socket}'`);
   if (kid) { to = kid.id; socket = null; }
   const local = {
     pos: finite3(pos) ? pos : [0, 0, 0],
@@ -70,11 +72,42 @@ export function parent(world, id, to, { socket = null, pos = null, q = null, yaw
   };
   const t = set(id, "transform", { ...local, scale: scale3(ent?.scale3) ?? scale3(ent?.scale) ?? [1, 1, 1] });
   if (socket == null && ent?.parent?.to === to) return t;
-  return batch([set(id, "parent", { to: E(to), ...(socket != null ? { socket: String(socket) } : {}) }), t]);
+  return batch([set(id, "parent", { to: E(to) }), t]);
 }
 /** stop riding: drop the parent and stand at a world pose (the caller computes it: hierarchy.worldPose). */
 export const unparent = (ent, id, worldPatch) => batch([unset(id, "parent"), set(id, "transform", transformOf({ ...ent, parent: null }, worldPatch))]);
 
+/** A host's sockets written as the editor's map ({name: {pos, q?, yaw?, part?, accepts?, radius?, body?}}, the shape
+ *  sockbody.js socketMapIn reads them as) → the requests that make its socket children match it: a new slot is a child
+ *  created under the host, a changed one is set, a missing one is deleted (what sat in it stays with the host, where it
+ *  was). A slot's body block is the child's station (its pose is the station's anim). `entities` as socketsIn. The door
+ *  takes socket children only: the map is the editor's grammar, never written. */
+export function socketMapOps(entities, host, want) {
+  const W = entities ?? {}; const rec = (k) => W[k]?.c ?? W[k] ?? null; const ops = [];
+  const tfOf = (r) => r?.transform ?? { pos: r?.pos, q: r?.q, scale: r?.scale };
+  const have = socketsIn(W, host, { all: true }); const byName = new Map(have.map((x) => [x.name, x]));
+  // the host's world scale (a socket's own scale is 1): a pose re-expressed across the socket keeps its world place
+  let hs = [1, 1, 1]; for (let k = host, n = 0; k && rec(k) && n < 64; k = rec(k).parent?.to, n++) { const sc = scale3(tfOf(rec(k)).scale) ?? [1, 1, 1]; hs = hs.map((v, i) => v * sc[i]); }
+  for (const x of have) { if (Object.hasOwn(want ?? {}, x.name)) continue;
+    const st = tfOf(rec(x.id)), sp = finite3(st.pos) ? st.pos : [0, 0, 0], sq = qNorm(st.q) ?? [0, 0, 0, 1];
+    for (const k of Object.keys(W)) { const r = rec(k); if (r?.parent?.to !== x.id) continue; const t = tfOf(r), kp = finite3(t.pos) ? t.pos : [0, 0, 0];
+      const d = qRotate(sq, kp.map((v, i) => v * hs[i])).map((v, i) => v / hs[i] + sp[i]);
+      ops.push(set(k, "parent", { ...r.parent, to: E(host) }), set(k, "transform", { pos: d, q: qMul(sq, qNorm(t.q) ?? [0, 0, 0, 1]), scale: scale3(t.scale) ?? [1, 1, 1] })); }
+    ops.push(remove(x.id)); }
+  let n = 0;
+  for (const [name, sk] of Object.entries(want ?? {})) { if (!sk || typeof sk !== "object") continue;
+    const t = { pos: finite3(sk.pos) ? [...sk.pos] : [0, 0, 0], q: socketQ(sk), scale: [1, 1, 1] };
+    const sock = { name, ...Object.fromEntries(["part", "accepts", "radius"].filter((k) => sk[k] !== undefined).map((k) => [k, sk[k]])) };
+    const b = sk.body && typeof sk.body === "object" ? sk.body : null;
+    const station = b ? materialize("station", "pose" in b && !("anim" in b) ? (({ pose, ...r }) => ({ ...r, anim: pose }))(b) : { ...b }).value : undefined;
+    const x = byName.get(name);
+    if (!x) { ops.push(create(`$socket-${n++}`, { transform: t, components: { parent: { to: E(host) }, socket: sock, ...(station ? { station } : {}) } })); continue; }
+    const ct = tfOf(rec(x.id)), same = (a, c) => JSON.stringify(a) === JSON.stringify(c);
+    if (!same(ct.pos, t.pos) || !same(qNorm(ct.q) ?? [0, 0, 0, 1], t.q)) ops.push(set(x.id, "transform", t));
+    if (!same(x.sock, sock)) ops.push(set(x.id, "socket", sock));
+    if (station) { if (!same(x.station, station)) ops.push(set(x.id, "station", station)); } else if (x.station) ops.push(unset(x.id, "station")); }
+  return ops;
+}
 /** one request for one gesture: a single op as itself, several as one batch (nested batches flattened). */
 export function batch(ops) {
   const flat = ops.filter(Boolean).flatMap((o) => (o.verb === "batch" ? o.args.requests : [o]));

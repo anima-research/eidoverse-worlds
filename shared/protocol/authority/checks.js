@@ -4,6 +4,7 @@
 // (restCheck) (refactor split, 2026-10-17; moved from authority.js's gate section unchanged). guess is above it, through UP.
 import { checkSockets, checkSocket, checkStation } from "../../sockbody.js";
 import { checkGrabbable } from "../../grab.js";
+import { forecastSpellingRefusal } from "../../forecast.js";
 import { isEntityId, isComponent, isIdentity, REDACTED } from "../fold.js";
 import { COMPONENTS, defOf, registered, baseOf, isNamespaced, outOfRange, rangeWords } from "../componentspec.js";
 import { partSlot } from "../names.js";
@@ -84,7 +85,6 @@ function valueCheck(s, { id, comp, value: v }, { carry = false, now = null } = {
   if (comp === "physics" && obj) whoOk(v.who, at);
   if (comp === "grabbable" && obj) whoOk(v.who, at);
   if (comp === "reactions" && obj) for (const [act, h] of Object.entries(v)) if (h && typeof h === "object") whoOk(h.who, `${at}.${act}`);
-  if (comp === "sockets" && obj) for (const [slot, sk] of Object.entries(v)) if (sk?.body && typeof sk.body === "object") whoOk(sk.body.who, `${at}.${slot}.body`);
   if (comp === "station" && obj) whoOk(v.who, at);
   if (comp === "transform") { if (!obj || !nums(v.pos, 3) || !nums(v.q, 4, 1.0001) || !nums(v.scale, 3, 1e3) || Object.keys(v).some((k) => !["pos", "q", "scale"].includes(k)))
     refuse("shape", `${at} must be {pos: [x,y,z], q: [x,y,z,w], scale: [x,y,z]}, finite and within bounds`, "pos within ±100 km, q a rotation, scale within ±1000");
@@ -121,6 +121,7 @@ function valueCheck(s, { id, comp, value: v }, { carry = false, now = null } = {
   if (comp.startsWith("motion:") && obj && "node" in v && !(typeof v.node === "string" && v.node.length >= 1 && v.node.length <= 256)) refuse("shape", `${at}.node is the name of a node in its model, as the file spells it (1–256 characters)`, "measure {id} lists its model's parts");
   if (comp === "motion" && obj && "pivot" in v && !carry) refuse("derived", `${at}.pivot: a whole thing's motion turns about its pivot component, not a field of the motion`, `set {id: '${id}', component: 'pivot', value: {pos: [x, y, z]}} (its own frame); a part's motion (motion:<part>) takes pivot`);
   if (comp === "home") { const okQ = (q) => nums(q, 4, 2) && Math.abs(Math.hypot(...q) - 1) < 1e-3;
+    if (obj && v.parent && typeof v.parent === "object" && v.parent.socket !== undefined) refuse("legacy", `${at}.parent.socket is the old spelling: a socket is a child entity now`, `home {parent: {to: <the socket's id>}} (inspect {id: '${v.parent.to}'} lists its sockets)`);
     // one spelling (shape audit 10-16): scale is [x, y, z] (a number is taken at write and stored as one; an older stored
     // number is carried by a fork or a lift), parent is {to}
     const okScale = (sc) => (nums(sc, 3) && sc.every((x) => x > 0)) || (carry && typeof sc === "number" && sc > 0);
@@ -279,7 +280,7 @@ const DROPPED_FIX = {
   "picture.part": "a picture is a quad of its own; an image on a node of a model is set {id, component: 'material', value: {node, texture}}",
   "picture.flip": "an image on a node of a model is set {id, component: 'material', value: {node, texture}}",
   "terrain.water": "set {id: '@world', component: 'water', value: {level, color?, opacity?, kind?, flow?}}",
-  "sky.clock": "a tz present is the wall clock: {tz: 'Europe/Paris'} (the sky act still takes clock: 'real')",
+  "sky.clock": "a tz present is the wall clock: {tz: 'Europe/Paris'}",
   "sky.weatherSeconds": "transition (seconds) is the one spelling",
 };
 const DROPPED_DYM = { "motion.amplitude": ["amp"], "physics.material": ["surface"], "light.day": ["daytime"], "sky.weatherSeconds": ["transition"], "sky.clock": ["tz"], "terrain.water": ["water"] };
@@ -326,6 +327,7 @@ function schemaCheck(at, comp, v, { carry = false } = {}) {
     if (def.cleanAs) { const bad = cleanText(v, { lines: def.cleanAs === "lines" }); if (bad) refuse("shape", `${at} ${bad.why}`, bad.fix); } }
   // a socket's whole shape (shared/sockbody.js: closed keys, ranges, enums, one driver per thing), in its own words
   if (name === "sockets") { const bad = checkSockets(v, at); if (bad) refuse(bad.code, bad.reason, bad.fix || COMPONENTS.sockets.help, bad.didYouMean ? { didYouMean: bad.didYouMean } : undefined); }
+  if (name === "sky") { const bad = forecastSpellingRefusal(v?.forecast, at); if (bad) refuse(bad.code, bad.reason, bad.fix, { didYouMean: bad.didYouMean }); }
   if (name === "socket") { const bad = checkSocket(v, at); if (bad) refuse(bad.code, bad.reason, bad.fix || COMPONENTS.socket.help, bad.didYouMean ? { didYouMean: bad.didYouMean } : undefined); }
   // what a body does at a socket (shape audit 10-16): the core, closed; the reserved keys refused as reserved
   if (name === "station") { const bad = checkStation(v, at); if (bad) refuse(bad.code, bad.reason, bad.fix || COMPONENTS.station.help, { ...(bad.didYouMean ? { didYouMean: bad.didYouMean } : {}), ...(bad.code === "reserved" ? { status: "reserved" } : {}) }); }

@@ -6,7 +6,7 @@
 // mounted thing, a driven thing, unknown comps); channels() flattens every
 // num with a dotted address; editOps turns dotted edits into the FEWEST
 // door requests (three transform channels = one whole `set transform`; two
-// socket fields = one merged `set sockets`), honours relative math on the face
+// socket fields = one write per edited socket child, never `set sockets`), honours relative math on the face
 // scale (degrees), the door's ranges (a value it takes is written as typed), read-only fields, and never mutates the record
 // it reads. Where the old test checked what an edit DOES (a pose, a lock), the
 // ops go through the real door on a scratch world (tools/protocol/scratchworld.ts)
@@ -119,13 +119,23 @@ console.log("\nedits → the fewest door ops:");
   check("…and the door refuses it `locked`; the chair hasn't moved", refused.ok === false && refused.refused?.code === "locked" && WL.rec("c1").pos[0] === 1, JSON.stringify(refused));
   const through = WL.send(rl.ops[0], { throughLock: true });
   check("…with throughLock (the person answered \"move anyway\") it moves, lock kept", through.ok && WL.rec("c1").pos[0] === 3 && WL.rec("c1").lock === true,   /* lock true is stored as true: recut B2 */ JSON.stringify(through.refused));
-  const rs = editOps(chair, "c1", { "sockets.seat|pos|1": "+=0.1", "sockets.side|rot|1": "*=2" });
-  const cs = sets(rs, "sockets");
-  check("two socket edits = ONE merged set sockets keeping the other slot", cs.length === 1 && flat(rs.ops).length === 1 && near(cs[0].args.value.seat.pos[1], 0.6) && near(cs[0].args.value.side.q[1], Math.sin(1)) && near(cs[0].args.value.side.q[3], Math.cos(1)) && cs[0].args.value.side.pos[0] === 0.4, JSON.stringify(cs));
-  const rd = editOps(chair, "c1", { "sockets.del": "seat" });
-  check("del keeps the rest", val(rd, "sockets").seat === undefined && val(rd, "sockets").side);
-  const rd2 = editOps({ ...chair, sockets: { seat: { pos: [0, 0.5, 0] } } }, "c1", { "sockets.del": "seat" });
-  check("deleting the last slot removes the comp (delete sockets)", dels(rd2, "sockets").length === 1 && sets(rd2, "sockets").length === 0, JSON.stringify(rd2));
+  // a host's sockets are its socket children: the Sockets card's map edits go as the children's own requests (requests.js
+  // socketMapOps), never a `set sockets` (the door refuses that spelling: legacy). Read and sent against a real world's state.
+  const WS = scratchWorld("editschema").seed({ c1: unlocked }); const SE = WS.state().entities;
+  const kid = (name: string) => Object.keys(WS.state().entities).find((k) => WS.state().entities[k].c.parent?.to === "c1" && WS.state().entities[k].c.socket?.name === name);
+  const seatId = kid("seat"), sideId = kid("side");
+  const rs = editOps(SE.c1.c, "c1", { "sockets.seat|pos|1": "+=0.1", "sockets.side|rot|1": "*=2" }, { world: SE });
+  const ts = sets(rs, "transform");
+  check("two socket edits = one set transform on each edited socket child (no set sockets: the map is the children's requests)", flat(rs.ops).length === 2 && sets(rs, "sockets").length === 0 && ts.length === 2
+    && ts[0].args.id === seatId && near(ts[0].args.value.pos[1], 0.6) && ts[1].args.id === sideId && near(ts[1].args.value.q[1], Math.sin(1)) && near(ts[1].args.value.q[3], Math.cos(1)) && ts[1].args.value.pos[0] === 0.4, JSON.stringify(rs));
+  const sentS = WS.sendAll(rs.ops);
+  check("…through the door: the seat child stands at y 0.6, the side child turned to 2 rad, both still c1's", sentS.ok && near(WS.state().entities[seatId].c.transform.pos[1], 0.6) && near(WS.state().entities[sideId].c.transform.q[1], Math.sin(1)) && WS.state().entities[sideId].c.parent?.to === "c1", JSON.stringify(sentS.refused));
+  const rd = editOps(WS.state().entities.c1.c, "c1", { "sockets.del": "seat" }, { world: WS.state().entities });
+  check("del deletes that socket child and keeps the rest (no set sockets)", flat(rd.ops).length === 1 && flat(rd.ops)[0].verb === "delete" && flat(rd.ops)[0].args.id === seatId && flat(rd.ops)[0].args.component === undefined, JSON.stringify(rd));
+  const sentD = WS.sendAll(rd.ops);
+  check("…through the door the seat is gone and the side stays", sentD.ok && !kid("seat") && kid("side") === sideId, JSON.stringify(sentD.refused));
+  const rd2 = editOps(WS.state().entities.c1.c, "c1", { "sockets.del": "side" }, { world: WS.state().entities });
+  check("deleting the last slot deletes its child: no delete sockets (that spelling is gone)", flat(rd2.ops).length === 1 && flat(rd2.ops)[0].verb === "delete" && flat(rd2.ops)[0].args.id === sideId && dels(rd2, "sockets").length === 0, JSON.stringify(rd2));
   const rL = editOps(lamp, "lamp", { "light.intensity": "-=10%", "light.daytime": true, "light.color": "#00ff00" });
   const lv = sets(rL, "light");
   check("light edits = ONE set light: intensity 18, daytime full (was day:false), color parsed, range and important kept", lv.length === 1 && flat(rL.ops).length === 1 && lv[0].args.value.intensity === 18 && lv[0].args.value.daytime === "full" && lv[0].args.value.color === 0x00ff00 && lv[0].args.value.range === 6 && lv[0].args.value.important === true, JSON.stringify(lv));
@@ -171,8 +181,11 @@ console.log("\nthe survivors of the mutation sweep, bound:");
   check("…and clearing a flag that isn't set sends nothing (no delete of an absent component)", editOps(unlocked, "c1", { "flags.hidden": "no" }).ops.length === 0);
   check("comp.+ of a type already there is refused; comp.+ '' is ignored", /already has/.test(editOps(unlocked, "c1", { "comp.+": "local/recipe" }).errors[0] ?? "") && editOps(unlocked, "c1", { "comp.+": "" }).ops.length === 0);
   check("sockets.del of a missing slot is an error, nothing sent", editOps(unlocked, "c1", { "sockets.del": "nope" }).ops.length === 0 && /no slot/.test(editOps(unlocked, "c1", { "sockets.del": "nope" }).errors[0] ?? ""));
-  const ns = val(editOps(unlocked, "c1", { "sockets.back|pos|1": 0.7 }), "sockets");
-  check("a new slot name declares a seat (pos default [0,0.5,0], no rotation, body) and keeps the others", ns.back.pos[1] === 0.7 && ns.back.pos[0] === 0 && ns.back.q === undefined && ns.back.yaw === undefined && !!ns.back.body && !!ns.seat && !!ns.side, JSON.stringify(ns));
+  { const SE = scratchWorld("editschema").seed({ c1: unlocked }).state().entities;
+    const nr = editOps(SE.c1.c, "c1", { "sockets.back|pos|1": 0.7 }, { world: SE }); const nc = flat(nr.ops);
+    const v = nc[0]?.args.components;
+    check("a new slot name declares a seat: ONE create of a socket child under c1 (pos default [0,0.5,0] with y typed, no rotation, a station) and nothing for the others", nc.length === 1 && nc[0].verb === "create"
+      && v?.parent?.to === "c1" && v.socket?.name === "back" && v.transform.pos[1] === 0.7 && v.transform.pos[0] === 0 && JSON.stringify(v.transform.q) === "[0,0,0,1]" && !!v.station && !("sockets" in v), JSON.stringify(nr)); }
   const ch = channels(inspectSchema(swing, "s"));
   check("channels() carries the group and lists pos before motion", ch[0].group === "pos" && ch.findIndex((c) => c.group === "motion") > ch.findIndex((c) => c.group === "pos"));
   check("a label longer than 80 chars is refused, with the count (the authority caps it at 80)", (editOps(unlocked, "c1", { "flags.label": "x".repeat(100) }).errors ?? []).some((e) => /label: 100 characters; at most 80/.test(e)));
@@ -279,8 +292,9 @@ console.log("\nthe JSON escape hatch: every typed group, addressed to its comp, 
   check("particles too (its seed has no field)", hatch("particles")?.commit === "comp.particles" && /"seed": 7/.test(hatch("particles")?.value ?? ""));
   check("a motion:<part> key gets its own hatch", hatch("motion")?.commit === "comp.motion:arm");
   check("a model's description doesn't dump the hatches (comp.<type> is the address)", !/\{ \"seat\"/.test(describeSchema(sch)));
-  const part = editOps(ent, "x", { "comp.sockets": JSON.stringify({ seat: { pos: [0, 0.5, 0], yaw: 0, part: "seatboard" } }) });
-  check("editing through the hatch replaces the comp wholesale", val(part, "sockets")?.seat?.part === "seatboard", JSON.stringify(part));
+  { const SE = scratchWorld("editschema").seed({ x: { pos: ent.pos, sockets: ent.sockets } }).state().entities; const seatId = Object.keys(SE).find((k) => SE[k].c.parent?.to === "x" && SE[k].c.socket?.name === "seat");
+    const part = editOps(SE.x.c, "x", { "comp.sockets": JSON.stringify({ seat: { pos: [0, 0.5, 0], yaw: 0, part: "seatboard" } }) }, { world: SE });
+    check("editing through the hatch replaces the map wholesale, sent as the socket child's own write (set socket {part: seatboard}; no set sockets)", sets(part, "sockets").length === 0 && sets(part, "socket").length === 1 && sets(part, "socket")[0].args.id === seatId && sets(part, "socket")[0].args.value.part === "seatboard", JSON.stringify(part)); }
   const url = editOps(ent, "x", { "comp.picture": JSON.stringify({ src: "http://x.example.org/a.png", part: "screen" }) });
   check("comp.picture as JSON still runs normalizePicture: an http link is refused, nothing sent", !url.ops.length && /https/.test(url.errors[0] ?? ""), JSON.stringify(url));
   const bad = editOps(ent, "x", { "comp.local/recipe": "{ nope" });

@@ -243,7 +243,8 @@ const cases: Case[] = [
   // ---------------- O: occupy is the one word family (R 10-17 13:46) ----------------
   { id: "O1", what: "(R 13:46) a socket removed under vic: his inbox has `vacated {socket, by, why, at}` (no `unseated`, no `seat`), the reply's note says `vacated: true, socket`-free of seat words, and presence keeps `occupants` (no `seats`)", run(s) {
       s.call("olive", "create-world", { title: s.name }); s.call("olive", "set", { id: "@world", component: "roles:vic", value: { role: "member" } });
-      s.call("olive", "create", { id: "chair", model: "chair", components: { sockets: { a: { pos: [0, 0.45, 0], body: { action: "sit" } } } }, place: { at: [4, 0] } });
+      s.call("olive", "create", { id: "chair", model: "chair", place: { at: [4, 0] } });   // its seat: a socket child with a station
+      s.call("olive", "create", { id: "chair-a", components: { parent: { to: "chair" }, transform: { pos: [0, 0.45, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, socket: { name: "a" }, station: { action: "sit" } } });
       s.call("vic", "move", { to: [4, 0, -0.6] }); const sit = s.call("vic", "use", { id: "chair", action: "sit" });
       const pres = Object.keys(s.w().presence); const occ = s.w().presence.occupants?.vic?.to ?? null;
       const mv = s.call("olive", "set", { id: "chair", component: "transform", value: { pos: [6, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } });
@@ -253,7 +254,8 @@ const cases: Case[] = [
     good: (o) => o.sit === "ok" && !!o.occ && o.pres.includes("occupants") && !o.pres.includes("seats") && o.mv === "ok" && !!o.m && o.m.socket === o.occ && typeof o.m.why === "string" && Array.isArray(o.m.at) && !("seat" in o.m) && !o.types.includes("unseated") && /"vacated":true/.test(o.notes) && /"socket":/.test(o.notes) && !/unseated|"seat":/.test(o.notes) },
   { id: "O1b", what: "…a dry run of that move says who it would stand up (vacates), and changes nothing: vic stays seated", run(s) {
       s.call("olive", "create-world", { title: s.name }); s.call("olive", "set", { id: "@world", component: "roles:vic", value: { role: "member" } });
-      s.call("olive", "create", { id: "chair", model: "chair", components: { sockets: { a: { pos: [0, 0.45, 0], body: { action: "sit" } } } }, place: { at: [4, 0] } });
+      s.call("olive", "create", { id: "chair", model: "chair", place: { at: [4, 0] } });   // its seat: a socket child with a station
+      s.call("olive", "create", { id: "chair-a", components: { parent: { to: "chair" }, transform: { pos: [0, 0.45, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, socket: { name: "a" }, station: { action: "sit" } } });
       s.call("vic", "move", { to: [4, 0, -0.6] }); const sit = s.call("vic", "use", { id: "chair", action: "sit" }); const occ = s.w().presence.occupants?.vic?.to ?? null;
       const dry = s.call("olive", "set", { id: "chair", component: "transform", value: { pos: [6, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, dry: true });
       return { sit: show(sit), occ, dry: show(dry), vacates: dry?.vacates ?? null, still: s.w().presence.occupants?.vic?.to ?? null }; },

@@ -14,7 +14,7 @@ import { CTX, UP } from "./ctx.js";
 import { refuse, said } from "./refuse.js";
 import { FOLLOW_UP, IMPORTED_ONLY, isE, lockedC, opsQuiet } from "./storage.js";
 import { ancestors } from "./math.js";
-import { socketRules, actionRules, liftOps } from "./sockets.js";
+import { socketRules, actionRules } from "./sockets.js";
 import { RANK, admits, backward, creatorOf, effective, lastSetterOf, lockStrength, may, ownersOf, rankOf, roleOf, wcOf } from "./rights.js";
 import { whoWords } from "../roles.js";
 import { installCheck, particlesCheck, pauseOnly, pausedBy, scriptRights, sponsorOf } from "./scripts.js";
@@ -91,8 +91,6 @@ const operatorRepairs = (who, op) => !!CTX.operator && CTX.operator === who.acto
 function admit(w, st, who, ops) {
   const { actor, cap } = who;
   if (!cap || cap.kind === "reaction" || cap.kind === "handle" || cap.kind === "caption") rateCheck(w, actor);
-  // preLifted: commit() lifted them already (so its reference clearing saw the lift's deletes), and passes the lift's notes
-  const lifted = who.preLifted ? { ops, notes: who.preLifted } : liftOps(st, ops, w.everIds()); ops = lifted.ops;
   if (!ops.length) refuse("nothing", "that changes nothing", "");
   const role = roleOf(st, actor);
   const keysMade = new Set(); // keyed components this very write brings into being (their creator is the asker)
@@ -127,8 +125,7 @@ function admit(w, st, who, ops) {
     // a reserved name (componentspec STATUSES) is held, never written: one refusal for every reserved name, before rights
     // (nobody may write it, so who is asking doesn't matter). A carried value (a fork's copy) keeps what it
     // holds: the refusal is about new writes, not about what an older log stored
-    // (a lifted name, sockets, is the lift's: a write of it never gets here as itself unless malformed, and then its own
-    // check says what is wrong with it in its own words)
+    // (sockets, the old world's spelling, is refused below as legacy, naming the socket children that replace it)
     if (op.op === "set" && statusOf(op.comp) === "reserved" && !defOf(op.comp)?.lifted && !CTX.forking) { const b = canonicalName(baseOf(op.comp));
       refuse("reserved", `${at}: '${b}' is a reserved name: it is held for a shape that isn't settled yet, and nothing may write it`, COMPONENTS[b].instead ?? `schema {component: '${b}'} says what it is held for`, { status: "reserved" }); }
     const pause = op.op === "set" && op.comp.startsWith("script:") && pauseOnly(op.value, s.entities[op.id]?.c[op.comp]);
@@ -177,7 +174,7 @@ function admit(w, st, who, ops) {
     refuse("scope", `${cap.key} may create only inside its subtree; ${id} isn't under ${cap.ids[0]}`, "give it parent {to: <an entity in the scope>} in the same batch");
   if (ownersOf(st).length && !ownersOf(s).length && s.entities["@world"]?.c?.["keep-owner"] !== false) refuse("last-owner", "that would leave this world with no owner", "§7: add the new owner's role first (set {id: '@world', component: 'roles:<them>', value: {role: 'owner'}}), then change yours");
   if (cap?.kind === "rest") restCheck(w, cap, s);
-  return new Admitted(who, norm, s, vacate.length ? [...lifted.notes, ...vacate.map((u) => ({ who: u.who, vacated: true, socket: u.socket, why: vacateWhy(u) }))] : lifted.notes, vacate,
+  return new Admitted(who, norm, s, vacate.map((u) => ({ who: u.who, vacated: true, socket: u.socket, why: vacateWhy(u) })), vacate,
     norm.flatMap((o, i) => (fuOps.has(o) ? [i] : [])));
 }
 // A lock binds everyone, the locker and owners included (§5). `throughLock: true` on the request lets anyone who may

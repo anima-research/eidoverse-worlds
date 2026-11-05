@@ -63,13 +63,13 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["returnAfter: not while held", "protocol/authority/manipulate.js", "if (!g?.home || w.presence.holds[id]) continue;", "if (!g?.home) continue;", ["R4"]],
   ["returnAfter: only a hand or physics moving it counts", "protocol/authority/manipulate.js", "const byManipulation = (c.kind === \"act\" && (MANIPULATE_VERBS.has(c.verb)", "const byManipulation = true || (c.kind === \"act\" && (MANIPULATE_VERBS.has(c.verb)", ["R4"]],
   ["returnAfter: the time", "protocol/authority/manipulate.js", "now - r.ts < g.returnAfter * 1000 ||", "", ["R4"]],
-  ["snapping", "protocol/authority.js", "const snap = snapTarget(st, a.id, g, a.pos ?? h.pose.pos);", "const snap = { to: null, notes: [] };", ["R5", "R5s", "R6", "R7", "R9"]],
+  ["snapping", "protocol/authority/bodyverbs.js", "const snap = snapTarget(st, a.id, g, a.pos ?? h.pose.pos, w);", "const snap = { to: null, notes: [] };", ["R5", "R5s", "R6", "R7", "R9"]],
   ["snapping: within the radius", "protocol/authority/manipulate.js", "if (d > socketRadius(sk)) continue;", "", ["R5", "R5s"]],
   ["snapping: fits meets accepts", "protocol/authority/manipulate.js", "if (!fitsSocket(g, sk)) continue;", "", ["R6"]],
   ["snapping: an occupied socket is passed over", "protocol/authority/manipulate.js", "if (Object.entries(st.entities).some(([k, y]) => k !== id && y.c.parent?.to === x.id)) {", "if (false) {", ["R6"]],
   ["snapping: a locked host is passed over", "protocol/authority/manipulate.js", "if (lk) { out.notes.push({ passedOver: where, why: `${lk} is locked` }); continue; }", "", ["R6"]],
   ["snapping: a drop in a physics world snaps instead of flying", "protocol/authority/bodyverbs.js", "|| (g && w.presence.holds[a.id]?.by === actor && snapTarget(st, a.id, g, a.pos ?? w.presence.holds[a.id].pose.pos).to);", ";", ["R9"]],
-  ["sockets.accepts/radius are checked", "sockbody.js", "if ((r = checkAccepts(sk, sat))) return r;", "", ["R8"]],
+  ["socket.accepts/radius are checked", "sockbody.js", "if ((r = checkAccepts(v, at))) return r;", "", ["R8"]],
   ["the hold record keeps hand and grip or offset", "protocol/authority/bodyverbs.js", "scale: t.scale }, handled, ...how };", "scale: t.scale }, handled };", ["H1", "H4"]],
   ["a named grip must exist", "protocol/authority/manipulate.js", "if (!g.grips[a.grip]) refuse(\"no-grip\", `it has no grip called '${a.grip}'`, `its grips: ${names.join(\", \")}`", "if (false) refuse(\"no-grip\", `it has no grip called '${a.grip}'`, `its grips: ${names.join(\", \")}`", ["H2"]],
   ["a named grip must suit the hand", "protocol/authority/manipulate.js", "if (a.grip !== undefined && !pickGrip(g, hand, { named: a.grip })) refuse(\"wrong-hand\"", "if (false) refuse(\"wrong-hand\"", ["H2"]],
@@ -211,9 +211,16 @@ function session(o: any = {}) {
 const ok = (r: any) => r?.ok === true, code = (r: any) => r?.refused?.code;
 const show = (r: any) => (r?.crashed ? `CRASH ${r.crashed}` : r?.ok ? "ok" : `refused ${r?.refused?.code}: ${String(r?.refused?.reason).slice(0, 120)}`);
 const comp = (s: any, id: string, c: string) => s.w().state().entities[id]?.c[c];
-// the socket a thing sits in, by name, and its host: a socket child's (parent {to: <socket>}) since the cut, or the old parent {to, socket}
-const slotOf = (s: any, id: string) => { const p = comp(s, id, "parent"); if (!p) return null; const sk = s.w().state().entities[p.to]?.c.socket; return sk ? sk.name : p.socket ?? null; };
+// the socket a thing sits in, by name, and its host: a socket child's (parent {to: <socket>})
+const slotOf = (s: any, id: string) => { const p = comp(s, id, "parent"); if (!p) return null; const sk = s.w().state().entities[p.to]?.c.socket; return sk ? sk.name : null; };
 const hostOf = (s: any, id: string) => { const p = comp(s, id, "parent"); if (!p) return null; const e = s.w().state().entities[p.to]; return e?.c.socket ? e.c.parent?.to : p.to; };
+// a host and its socket children (<host>-<name>), each {pos, q?, accepts?, radius?}: the door takes sockets as children only
+// (a lock goes on last: a locked host takes no new socket)
+const withSockets = (s: any, actor: string, id: string, socks: Record<string, any>, { components: { lock, ...cs } = {} as any, ...args }: any = {}) => {
+  const r = s.call(actor, "create", { id, model: "crate", ...(Object.keys(cs).length ? { components: cs } : {}), ...args });
+  for (const [name, { pos, q, ...sock }] of Object.entries(socks)) s.call(actor, "create", { id: `${id}-${name}`, components: { parent: { to: id }, transform: { pos, ...(q ? { q } : {}), scale: [1, 1, 1] }, socket: { name, ...sock } } });
+  if (lock !== undefined) s.call(actor, "set", { id, component: "lock", value: lock });
+  return r; };
 const tf = (s: any, id: string) => s.w().state().entities[id]?.c.transform;
 const held = (s: any, id: string) => s.w().presence.holds[id] ?? null;
 const ENG = { engine: process.env.PHYS_ENGINE ?? "eidosim@1.0.0" };
@@ -418,8 +425,8 @@ const cases: Case[] = [
       s.advance(60000); const n3 = s.entries().length; s.call("vic", "look", {});
       return { early, back, first, again, whileHeld, home2, afterEdit: since(s, n3), at: tf(s, "ball").pos }; },
     good: (o) => o.early[2] > 2 && JSON.stringify(o.back) === "[0,0,0]" && JSON.stringify(o.first) === '["request:return-home","change:set"]' && !o.again.length && !o.whileHeld.length && JSON.stringify(o.home2) === "[2,0,2]" && !o.afterEdit.length && JSON.stringify(o.at) === "[2,0,2]" },
-  { id: "R5", what: "fits + sockets.accepts: let go within the socket's radius, it snaps in (parent {to: <the lifted socket child>}, the socket's pose); undo takes it back out", run(s) { cast(s);
-      s.call("olive", "create", { id: "rack", model: "crate", components: { sockets: { hook: { pos: [0, 0.8, 0], accepts: ["key"], radius: 0.3 } } }, place: { at: [0, 0] } });
+  { id: "R5", what: "fits + socket.accepts: let go within the socket child's radius, it snaps in (parent {to: <the socket child>}, the socket's pose); undo takes it back out", run(s) { cast(s);
+      withSockets(s, "olive", "rack", { hook: { pos: [0, 0.8, 0], accepts: ["key"], radius: 0.3 } }, { place: { at: [0, 0] } });
       s.call("olive", "create", { id: "key", model: "book", components: { grabbable: { who: "member", fits: ["key"] } }, place: { at: [1, 0] } });
       s.call("bob", "move", { to: [0.8, 0, 0.6] }); s.call("bob", "grab", { id: "key" });
       const far = s.call("bob", "drop", { id: "key", pos: [0.65, 0.8, 0.1] }); const farPar = comp(s, "key", "parent") ?? null; s.call("bob", "grab", { id: "key" }); const n0 = s.entries().length;
@@ -439,8 +446,8 @@ const cases: Case[] = [
     good: (o) => o.far === "ok" && o.farPar === null && o.d === "ok" && o.par?.to === "rack-hook" && !("socket" in (o.par ?? {})) && JSON.stringify(o.t.pos) === "[0,0,0]" && JSON.stringify(o.t.q) === "[0,0,0,1]" && o.settled?.in === "rack-hook" && !("socket" in (o.settled ?? {}))
       && o.snapped?.to === "rack-hook" && Math.abs(o.at[1] - 0.8) < 1e-9 && Math.abs(o.at[0]) < 1e-9 },
   { id: "R6", what: "…an occupied socket and one on a locked thing are passed over (it's set down, and the reply says why); a key that doesn't fit is simply not a candidate (no note)", run(s) { cast(s);
-      s.call("olive", "create", { id: "rack", model: "crate", components: { sockets: { hook: { pos: [0, 0.8, 0], accepts: ["key"], radius: 0.3 } } }, place: { at: [0, 0] } });
-      s.call("olive", "create", { id: "safe", model: "crate", components: { lock: true, sockets: { slot: { pos: [0, 0.8, 0], accepts: ["key"], radius: 0.3 } } }, place: { at: [3, 0] } });
+      withSockets(s, "olive", "rack", { hook: { pos: [0, 0.8, 0], accepts: ["key"], radius: 0.3 } }, { place: { at: [0, 0] } });
+      withSockets(s, "olive", "safe", { slot: { pos: [0, 0.8, 0], accepts: ["key"], radius: 0.3 } }, { components: { lock: true }, place: { at: [3, 0] } });
       for (const [id, x, fits] of [["k1", 1, ["key"]], ["k2", 1.2, ["key"]], ["coin", 1.4, ["coin"]], ["k3", 2.2, ["key"]]]) s.call("olive", "create", { id, model: "book", components: { grabbable: { who: "member", fits } }, place: { at: [x, 0] } });
       s.call("vic", "move", { to: [0.8, 0, 0.6] });
       const go = (id: string, pos: number[]) => { s.call("vic", "grab", { id }); return s.call("vic", "drop", { id, pos }); };
@@ -449,25 +456,24 @@ const cases: Case[] = [
       return { a: slotOf(s, "k1"), b: [show(b), comp(s, "k2", "parent") ?? null, b.notes?.find((n: any) => n.passedOver)?.why], c: [show(c), comp(s, "coin", "parent") ?? null], d: [show(d), comp(s, "k3", "parent") ?? null, d.notes?.find((n: any) => n.passedOver)?.why] }; },
     good: (o) => o.a === "hook" && o.b[0] === "ok" && o.b[1] === null && /already sits/.test(o.b[2] ?? "") && o.c[0] === "ok" && o.c[1] === null && o.d[0] === "ok" && o.d[1] === null && /locked/.test(o.d[2] ?? "") },
   { id: "R7", what: "taken back out of its socket, it's an ordinary grab, and the put that follows deletes the parent", run(s) { cast(s);
-      s.call("olive", "create", { id: "rack", model: "crate", components: { sockets: { hook: { pos: [0, 0.8, 0], accepts: ["key"] } } }, place: { at: [0, 0] } });
+      withSockets(s, "olive", "rack", { hook: { pos: [0, 0.8, 0], accepts: ["key"] } }, { place: { at: [0, 0] } });
       s.call("olive", "create", { id: "key", model: "book", components: { grabbable: { who: "member", fits: ["key"] } }, place: { at: [1, 0] } });
       s.call("vic", "move", { to: [0.5, 0, 0.6] }); s.call("vic", "grab", { id: "key" }); s.call("vic", "drop", { id: "key", pos: [0, 0.8, 0.05] });
       const inIt = slotOf(s, "key"); const g = s.call("vic", "grab", { id: "key" }); s.call("vic", "move", { to: [0.5, 0, 2] }, 1000); const p = s.call("vic", "put", { id: "key" });
       return { inIt, g: show(g), p: show(p), parent: comp(s, "key", "parent") ?? null }; },
     good: (o) => o.inIt === "hook" && o.g === "ok" && o.p === "ok" && o.parent === null },
   { id: "R9", what: "in a world that runs physics, a dynamic key dropped near its hook snaps in (no flight); dropped away from it, it falls (a launch)", run(s) { cast(s, true);
-      s.call("olive", "create", { id: "rack", model: "crate", components: { sockets: { hook: { pos: [0, 0.8, 0], accepts: ["key"], radius: 0.3 } } }, place: { at: [0, 0] } });
+      withSockets(s, "olive", "rack", { hook: { pos: [0, 0.8, 0], accepts: ["key"], radius: 0.3 } }, { place: { at: [0, 0] } });
       s.call("olive", "create", { id: "key", model: "book", components: { physics: { kind: "dynamic" }, grabbable: { who: "member", fits: ["key"] } }, place: { at: [1, 0] } });
       s.call("vic", "move", { to: [0.8, 0, 0.6] }); s.call("vic", "grab", { id: "key" }); const n0 = s.entries().length;
       const d = s.call("vic", "drop", { id: "key", pos: [0.1, 0.8, 0.1] }); const near = since(s, n0); const par = slotOf(s, "key");
       s.call("vic", "grab", { id: "key" }); const n1 = s.entries().length; const f = s.call("vic", "drop", { id: "key", pos: [0.9, 1, 0.9] }); s.call("vic", "wait", {}, 6000);
       return { d: show(d), near, par, f: show(f), far: since(s, n1).slice(0, 2), carrier: carrier(s) }; },
     good: (o) => o.d === "ok" && JSON.stringify(o.near) === '["request:put","change:batch"]' && o.par === "hook" && o.f === "ok" && JSON.stringify(o.far) === '["request:drop","physics:launch"]' && !o.carrier.disagree },
-  { id: "R8", what: "sockets.accepts/radius are checked: radius 5 and an empty accepts are refused", run(s) { cast(s);
+  { id: "R8", what: "socket.accepts/radius are checked (the socket child's own component): radius 5 and an empty accepts are refused", run(s) { cast(s);
       s.call("olive", "create", { id: "rack", model: "crate", place: { at: [0, 0] } });
-      const a = s.call("olive", "set", { id: "rack", component: "sockets", value: { hook: { pos: [0, 1, 0], accepts: ["key"], radius: 5 } } });
-      const b = s.call("olive", "set", { id: "rack", component: "sockets", value: { hook: { pos: [0, 1, 0], accepts: [] } } });
-      const c = s.call("olive", "set", { id: "rack", component: "sockets", value: { hook: { pos: [0, 1, 0], accepts: ["key"], radius: 0.2 } } });
+      const hook = (socket: any) => s.call("olive", "create", { id: "rack-hook", components: { parent: { to: "rack" }, transform: { pos: [0, 1, 0], scale: [1, 1, 1] }, socket: { name: "hook", ...socket } } });
+      const a = hook({ accepts: ["key"], radius: 5 }); const b = hook({ accepts: [] }); const c = hook({ accepts: ["key"], radius: 0.2 });
       return { a: code(a), b: code(b), c: show(c) }; },
     good: (o) => o.a === "shape" && o.b === "shape" && o.c === "ok" },
   // ---------------- H: the hold record (slice 3) ----------------
@@ -654,7 +660,7 @@ const cases: Case[] = [
       return { r: show(r), d: d.script?.status, f1, u: u.script?.status, f2, ev: sact?.body?.event }; },
     good: (o) => o.r === "ok" && o.d === "ran" && JSON.stringify(o.f1) === '{"on":true,"hand":"left","held":true}' && o.u === "ran" && o.f2?.on === false && o.ev?.phase === "up" && o.ev?.hand === "left" },
   { id: "U3", what: "grab and release are script events: a script whose scope covers the thing hears who took it (hand) and how it was let go (drop, snap with its socket); a script that doesn't cover it hears nothing", run(s) { cast(s);
-      s.call("olive", "create", { id: "rack", model: "crate", components: { sockets: { hook: { pos: [0, 0.8, 0], accepts: ["flag"], radius: 0.3 } } }, place: { at: [0, 0] } });
+      withSockets(s, "olive", "rack", { hook: { pos: [0, 0.8, 0], accepts: ["flag"], radius: 0.3 } }, { place: { at: [0, 0] } });
       s.call("olive", "create", { id: "flag", model: "book", components: { grabbable: { who: "member", fits: ["flag"] } }, place: { at: [1, 0] } });
       s.call("olive", "create", { id: "bystander", model: "book", place: { at: [3, 3] } });
       const LOG = `world.on("grab", (e) => world.set("self", "t/log", [...(world.get("self", "t/log") ?? []), "grab " + e.by + " " + e.hand]));\nworld.on("release", (e) => world.set("self", "t/log", [...(world.get("self", "t/log") ?? []), "release " + e.how + (e.socket ? " " + e.to + "/" + e.socket : "")]));\n`;
@@ -878,7 +884,7 @@ const cases: Case[] = [
     good: (o) => /^Take the lantern \(anyone may pick it up;.*use while held: light;.*goes home when let go\)$/.test(o.lantern ?? "") && /^pick up .*anyone may pick it up/.test(o.ball ?? "") && o.heldIn === "left" && ["hand", "grip", "offset"].every((k) => o.args.includes(k)) },
   // ---------------- F: the independent review's findings (each red before its fix) ----------------
   { id: "F1", what: "a put's pos is checked (shape, reach) before snapping: a far or malformed pos never snaps into a socket across the world", run(s) { cast(s);
-      s.call("olive", "create", { id: "rack", model: "crate", components: { sockets: { hook: { pos: [0, 0.8, 0], accepts: ["key"], radius: 0.3 } } }, place: { at: [20, 20] } });
+      withSockets(s, "olive", "rack", { hook: { pos: [0, 0.8, 0], accepts: ["key"], radius: 0.3 } }, { place: { at: [20, 20] } });
       s.call("olive", "create", { id: "key", model: "book", components: { grabbable: { who: "member", fits: ["key"] } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "key" });
       const far = s.call("vic", "put", { id: "key", pos: [20, 0.8, 20] }); const bad = s.call("vic", "put", { id: "key", pos: ["x"] });

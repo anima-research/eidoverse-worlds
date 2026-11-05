@@ -128,15 +128,16 @@ export function resetSockets() {
   deselectSocket();
 }
 
-/** A host's sockets as the map this grammar edits (its socket children: shared/sockbody.js socketMapIn); writing the map
- *  back is translated into the children at the door. */
+/** A host's sockets as the map this grammar edits (its socket children: shared/sockbody.js socketMapIn); a map written
+ *  back is sent as the children's own requests (requests.js socketMapOps). */
 function socketsOf(id) { return socketMapIn(state.st.entities, id) ?? {}; }
 
 /** One merged comp entry per gesture, with its inverse on the undo stack —
  *  merged, because comp data replaces wholesale and a naive write would
  *  silently eat every OTHER anchor on the thing. */
 export function commitSockets(id, next, describe) {
-  sendOps([Object.keys(next).length ? OP.set(id, 'sockets', next) : OP.unset(id, 'sockets')], { what: describe });
+  const ops = OP.socketMapOps(state.st.entities, id, next);
+  if (ops.length) sendOps(ops, { what: describe });
 }
 
 const _saM = new THREE.Matrix4();

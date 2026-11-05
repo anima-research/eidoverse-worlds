@@ -6,7 +6,7 @@
 import "./protocol/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import { scratchWorld } from './protocol/scratchworld.ts';
 import { COMPONENTS, statusOf, pinOf, refsOf, mapRefs, materialize } from '../shared/protocol/componentspec.js';
-import { socketId } from '../shared/protocol/authority/sockets.js';
+import { socketMapOps } from '../shared/protocol/requests.js';
 import { legacyHosts, liftHostOps } from './protocol/import-v1/shapes.js';
 import { evalLookAt } from '../shared/lookat.js';
 import { toWorld, toLocal } from '../mcpl/places.ts';
@@ -38,7 +38,7 @@ tryRow('ST', () => {
   check('ST3 use {lie} attaches there in the stored pose', u.ok && u.attach?.to === 'lie1' && u.attach.pose === 'lie', u);
 
   r = mk('old1', { name: 'stool', body: { action: 'sit' } });
-  check('ST4 a socket written with the old body block is lifted: socket without body + station', r.ok && C('old1')?.socket && !('body' in C('old1').socket) && C('old1')?.station?.action === 'sit' && C('old1')?.station?.anim === 'sitchair', [r.refused, C('old1')]);
+  check('ST4 a socket written with the old body block is refused (schema), the fix naming the station beside it; nothing is made', code(r) === 'schema' && /station/.test(r.refused?.fix ?? '') && !C('old1'), [r.refused, C('old1')]);
   check('ST5 a station key the alpha holds back (reach) is refused as reserved', code(mk('rb1', { name: 'rb' }, { station: { reach: { leftHand: { at: [0, 1, 0] } } } })) === 'reserved');
   check('ST5 …so are poses, sync, approach, enter, leave, look, fromSeat', ['poses', 'sync', 'approach', 'enter', 'leave', 'look', 'fromSeat'].every((k, i) => code(mk(`rb${i + 2}`, { name: `rb${i + 2}` }, { station: { [k]: k === 'fromSeat' ? true : k === 'sync' || k === 'enter' || k === 'leave' ? 'x' : k === 'approach' ? [0, 0, 0, 0] : {} } })) === 'reserved'));
   { const r = mk('in1', { name: 'helm' }, { station: { action: 'drive', input: { move: 'drive' } } });
@@ -48,11 +48,15 @@ tryRow('ST', () => {
   check('ST6 a station hangs only on a socket entity', code(W.call('set', { id: 'crate2', component: 'station', value: { action: 'sit' } })) !== 'ok');
   check('ST7 station.who names a role here', code(mk('wh1', { name: 'wh' }, { station: { who: 'wizard' } })) === 'shape' && mk('wh2', { name: 'wh2' }, { station: { who: 'builder' } }).ok);
 
-  // the map lift: body → station
+  // the map: the door refuses a write of it (legacy); the editor's map grammar is sent as the children's own requests
   W.call('create', { id: 'sofa', model: 'crate' });
-  r = W.call('set', { id: 'sofa', component: 'sockets', value: { left: { pos: [-0.4, 0.5, 0], body: {} }, right: { pos: [0.4, 0.5, 0], body: { action: 'sit', pose: 'sit' } } } });
-  const L = C(socketId('sofa', 'left')), R = C(socketId('sofa', 'right'));
-  check('ST8 the old sockets map lifts each body to a station on its socket child', r.ok && L?.station?.anim === 'sitchair' && R?.station?.anim === 'sit' && !('body' in (L?.socket ?? {})), [r.refused, L, R]);
+  const map = { left: { pos: [-0.4, 0.5, 0], body: {} }, right: { pos: [0.4, 0.5, 0], body: { action: 'sit', pose: 'sit' } } };
+  r = W.call('set', { id: 'sofa', component: 'sockets', value: map });
+  check('ST8 a write of the old sockets map is refused (legacy), the fix naming the socket children', code(r) === 'legacy' && /socket: \{name/.test(r.refused?.fix ?? '') && !C('sofa')?.sockets, r.refused ?? r);
+  r = W.sendAll(socketMapOps(W.state().entities, 'sofa', map));
+  const kid = (n: string) => Object.values(W.state().entities).find((e: any) => e.c.parent?.to === 'sofa' && e.c.socket?.name === n)?.c;
+  const L = kid('left'), R = kid('right');
+  check('ST8b …socketMapOps sends it as socket children, each body a station on its child (body.pose → station.anim)', r.ok && L?.station?.anim === 'sitchair' && R?.station?.anim === 'sit' && !('body' in (L?.socket ?? {})), [r.refused, L, R]);
 
   // a stored socket.body (a log stored before station), lifted at load
   const st = { diagnostics: [], entities: { h: { c: { transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } }, s: { c: { parent: { to: 'h' }, transform: { pos: [0, 1, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, socket: { name: 'seat', body: { action: 'lie' } } } } } };

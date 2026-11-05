@@ -474,8 +474,10 @@ try {
   await stage("ST", async () => {
   const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
   await page(`const m = await import('/lib/net.js');
-    await m.sendRequest('create', { id: 'sthigh', components: { label: 'High sign', transform: { pos: [${me[0]} + 0.8, 3, ${me[1]}] }, text: { text: 'UP HERE', size: 0.2 }, sockets: { seat: { pos: [0, 0, 0], body: {} } } } });
-    return await m.sendRequest('create', { id: 'stlow', model: '${CRATE}', components: { label: 'Low seat', transform: { pos: [${me[0]} - 2.2, 0, ${me[1]}], scale: 0.2 }, sockets: { seat: { pos: [0, 2.2, 0], body: {} } } } });`);
+    await m.sendRequest('create', { id: 'sthigh', components: { label: 'High sign', transform: { pos: [${me[0]} + 0.8, 3, ${me[1]}] }, text: { text: 'UP HERE', size: 0.2 } } });
+    await m.sendRequest('create', { components: { parent: { to: 'sthigh' }, transform: { pos: [0, 0, 0] }, socket: { name: 'seat' }, station: {} } });
+    await m.sendRequest('create', { id: 'stlow', model: '${CRATE}', components: { label: 'Low seat', transform: { pos: [${me[0]} - 2.2, 0, ${me[1]}], scale: 0.2 } } });
+    return await m.sendRequest('create', { components: { parent: { to: 'stlow' }, transform: { pos: [0, 2.2, 0] }, socket: { name: 'seat' }, station: {} } });`);
   await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('sthigh') && !!m.entities.get('stlow'))`, 'sthigh and stlow'); await sleep(1200);
   const r = await page(`const lb = await import('/lib/localbody.js'), w = await import('/lib/world.js'); const did = lb.trySitOn(); await new Promise((z) => setTimeout(z, 1500));
     const on = w.avatarMounts?.get?.((await import('/lib/base.js')).CONFIG.name) ?? null;

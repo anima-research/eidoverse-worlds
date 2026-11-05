@@ -331,12 +331,9 @@ const EMBODIED_VERBS = {
   // too"). A thing low beside the body (or in the air beside it: a volley) is launched with v, or with power along the line
   // from where the body stands through it, lifted (physobj's 0.9 ratio: a knee-high hop at power 4). Its gates are grab's:
   // dynamic, physics.who, its locks and its ancestors', and nobody's hand. A thing in flight is caught and re-launched (logged).
-  // `contact: true` is a moving body's push (shoveGate); `shove: true` is its old spelling, taken at the door and recorded
-  // as `contact` (R 10-17 14:34: one word, `shove`, stays for knocking a BODY over). Both at once is no request.
+  // `contact: true` is a moving body's push (shoveGate); `shove` stays the word for knocking a BODY over (R 10-17 14:34)
   // blast: {from, act} when a blast punts it (force, below): the line starts at the blast, no body or reach, one act for all
   punt(w, actor, a, blast = null) {
-    if (a.shove !== undefined) { if (a.contact !== undefined) refuse("shape", "contact, or its old spelling shove: not both", "send contact: true");
-      a = { ...a, contact: a.shove }; delete a.shove; }
     const me = blast ? { at: blast.from } : body(w, actor); const st = w.state(); const e = st.entities[a.id];
     if (!e) refuse("not-found", `no '${a.id}'`, "look lists what's here", { didYouMean: guess(a.id, Object.keys(st.entities)) });
     notAThing(st, a.id, "punted"); offRefuse(st, a.id, "punted");

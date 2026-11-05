@@ -161,7 +161,7 @@ const cases: Case[] = [
     good: (o) => o.name === "oak door" && o.description === "A heavy oak door, iron-banded." && o.can?.[0] === "opens and shuts (use 'open')" && o.can?.includes("can be used: knock") && o.state?.includes("shut and locked") && o.state?.includes("fixed in place") },
   { id: "D3", what: "the reading follows the components, not the words: open the door and its state says open; a grabbable says it can be picked up; a seat says it can be sat on", run(s) { cast(s);
       thing(s, "door", { label: "oak door", ...DOOR, openable: { open: false } }); s.call("olive", "use", { id: "door", action: "open" });
-      thing(s, "cup", { grabbable: {} }); thing(s, "chair", { sockets: { seat: { pos: [0, 0.45, 0], body: { action: "sit" } } } });
+      thing(s, "cup", { grabbable: {} }); thing(s, "chair"); thing(s, "chair-seat", { parent: { to: "chair" }, transform: { pos: [0, 0.45, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, socket: { name: "seat" }, station: { action: "sit" } });
       return { door: lookOf(s, "door")?.state, cup: lookOf(s, "cup")?.can, chair: lookOf(s, "chair")?.can }; },
     good: (o) => o.door?.[0] === "open" && o.cup?.includes("can be picked up") && o.chair?.includes("can be sat on (seat)") },
   { id: "D4", what: "look clips a long description at 200 (inspect for all); inspect has it whole", run(s) { cast(s); thing(s, "lamp", { description: "x".repeat(300) });

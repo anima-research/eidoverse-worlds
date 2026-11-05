@@ -152,7 +152,7 @@ const motionKeys = (ent) => Object.keys(recordComponents(ent)).filter((k) => (k 
 // shares); HAND.Transform names where.
 // A host's sockets are its socket children (PLAN-sockets-entities); until the Parts UI (PLAN §10 12b) the Sockets card
 // still reads and writes them as the one map it was built on: the children, read as `sockets.<name>` (shared/sockbody.js
-// socketMapIn); a write of the whole map is translated into the children at the door (authority/sockets.js liftOps).
+// socketMapIn); editOps sends a write of the map as the children's own requests (requests.js socketMapOps).
 // Needs the world (live.world); without it a record shows the sockets it carries itself (none, after the cut).
 function withSocketMap(ent, id, live) {
   if (!ent || !live?.world || ent.sockets) return ent;
@@ -1281,6 +1281,8 @@ export function editOps(ent, id, edits, live = {}) {
     const f = fieldAt(schema, key);
     const dot = key.indexOf('.'); const group = key.slice(0, dot); const k = key.slice(dot + 1);
     // components (B): add.<Component> = value is a part name / annotation type; remove.<comp key>
+    // the Sockets card's ✕: its children go, as the map's own requests (requests.js socketMapOps), never `delete sockets`
+    if (group === 'remove' && k === 'sockets') { comps.set('sockets', null); return; }
     if (group === 'add' || group === 'remove') {
       const r = group === 'add' ? addOps(ent, id, k, raw) : removeOps(ent, id, k, raw);
       errors.push(...r.errors); ops.push(...r.ops);
@@ -1578,7 +1580,8 @@ export function editOps(ent, id, edits, live = {}) {
   // one whole transform (§2.3): local to the parent for a child, which is the pose the channels edit (pv)
   if (place) ops.push(OP.set(id, 'transform', OP.transformOf(pv, { pos: place.pos, ...(place.q ? { q: place.q } : place.yaw != null ? { yaw: place.yaw } : {}), scale: place.scale })));
   for (const [mkey, next] of motions) ops.push(next ? OP.set(id, mkey, next) : OP.unset(id, mkey));
-  for (const [type, data] of comps) { if (data == null) { if (c[type] != null) ops.push(OP.unset(id, type)); } else ops.push(OP.set(id, type, type === 'lock' ? true : data)); }
+  for (const [type, data] of comps) { if (type === 'sockets') { ops.push(...OP.socketMapOps(live.world, id, data ?? {})); continue; }
+    if (data == null) { if (c[type] != null) ops.push(OP.unset(id, type)); } else ops.push(OP.set(id, type, type === 'lock' ? true : data)); }
   return { ops, errors, ...(euler ? { euler } : {}), ...(asks.length ? { asks } : {}), ...(viewOrder ? { rotOrder: viewOrder } : {}) };
 }
 

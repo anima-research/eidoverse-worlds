@@ -1668,7 +1668,7 @@ export class WorldAgent {
    *  already told the story, a jump is one thing, not two. */
   private noteActs(id: string, prev: Pose | null, pose: Pose & { anim?: string; pose?: Record<string, unknown> | null }, dist = Infinity) {
     const acts: { key: string; text: string }[] = [];
-    const once = onceAnimOf(pose);   // pose.anim (its pre-release key still read for one release)
+    const once = onceAnimOf(pose);   // pose.anim
     if (once) acts.push({ key: `anim:${once}`, text: `plays ${once} (once)` });
     const prevHeld = Boolean((prev as { pose?: unknown } | null)?.pose);
     const nowHeld = Boolean(pose.pose);
@@ -1765,13 +1765,13 @@ export class WorldAgent {
     return c ? Object.fromEntries(Object.entries(c).map(([k, v]) => [k, v === REDACTED ? REDACTED : structuredClone(v)])) : null;
   }
   /** A host's socket children as the replica folds them now: each one's id, as the authority has it, and its components
-   *  (componentsOf). A write of the host's sockets map changes the children it names and retires the rest
-   *  (shared/protocol/authority/sockets.js liftOps), so it pins these. */
+   *  (componentsOf). The Sockets card's write sets the children it names and deletes the rest (shared/protocol/requests.js
+   *  socketMapOps), so it pins these. */
   socketChildrenOf(id: string): Record<string, Record<string, unknown>> {
     const out: Record<string, Record<string, unknown>> = {};
     for (const [k, e] of Object.entries((this.replica?.st?.entities ?? {}) as Record<string, any>))
       if (e?.c?.parent?.to === id && e.c.socket && typeof e.c.socket === "object" && !Array.isArray(e.c.socket) && e.c.socket !== REDACTED)
-        out[k] = this.componentsOf(k)!;   // a socket child as liftOps counts one (isSocketC)
+        out[k] = this.componentsOf(k)!;   // a socket child as the door counts one (isSocketC)
     return out;
   }
 

@@ -79,6 +79,7 @@ const D = await import(TREE + "shared/protocol/authority.js");
 D.fixtureIds?.(true);   // the fixtures below seed the ids they read (ids-check covers the refusal)
 const F = await import(TREE + "shared/protocol/fold.js");
 const SB = await import(TREE + "shared/protocol/sandbox.js");
+const REQ = await import(TREE + "shared/protocol/requests.js");
 const AU = await import(TREE + "shared/protocol/scriptaudit.js");
 const SK = await import(TREE + "shared/sockbody.js");
 if (D.setScriptDuty) D.setScriptDuty({ maxMs: 1e9 });
@@ -112,7 +113,10 @@ const show = (r: any) => (r?.crashed ? `CRASH ${r.crashed}` : r?.ok ? "ok" : `re
 const comp = (s: any, id: string, c: string) => s.w().state().entities[id]?.c[c];
 const roles = (s: any, m: Record<string, string>) => { for (const [who, role] of Object.entries(m)) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } }); };
 const lastUse = (s: any) => s.entries().findLast((e: any) => e.kind === "request" && e.verb === "use");
-const SEAT = (extra: any = {}) => ({ sockets: { a: { pos: [0, 0.45, 0], body: { action: "sit", ...extra } } } });
+// a seat is a socket child with a station (the door refuses a sockets map): create the host, then its seat from the editor's map
+const SEAT = (extra: any = {}) => ({ a: { pos: [0, 0.45, 0], body: { action: "sit", ...extra } } });
+function mkSeat(s: any, actor: string, args: any, map: any = SEAT()) { const r = s.call(actor, "create", args); if (!r.ok) return r;
+  return s.call(actor, "batch", { requests: REQ.socketMapOps(s.w().state().entities, args.id, map) }); }
 const seated = (s: any, who: string) => !!s.w().presence.occupants?.[who];
 const inboxOf = (s: any, who: string) => JSON.stringify(s.w().presence.inbox?.[who] ?? s.w().presence.inboxes?.[who] ?? null);
 
@@ -181,7 +185,7 @@ const cases: Case[] = [
   // ---------------- M: the seat's own motion, as it was when you sat ----------------
   { id: "M1", what: "(q1) vic sits on olive's chair; builder bob adds a `fly` reaction to it, then uses it: it flies, and vic is unseated (told), not carried", run(s) {
       s.call("olive", "create-world", { title: s.name }); roles(s, { bob: "builder", vic: "member" });
-      s.call("olive", "create", { id: "chair", model: "chair", components: SEAT(), place: { at: [4, 0] } });
+      mkSeat(s, "olive", { id: "chair", model: "chair", place: { at: [4, 0] } });
       s.call("vic", "move", { to: [4, 0, -0.6] }); const sit = s.call("vic", "use", { id: "chair", action: "sit" });
       const add = s.call("bob", "set", { id: "chair", component: "reactions", value: { fly: { kind: "set", component: "transform", value: { pos: [4, 40, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } } });
       const after = seated(s, "vic");
@@ -190,12 +194,12 @@ const cases: Case[] = [
     good: (o) => o.sit === "ok" && o.add === "ok" && o.after && o.go === "ok" && o.pos?.[1] === 40 && !o.seated && o.note && o.inbox },
   { id: "M2", what: "…the motion variant: a `spin` handler added after the sit, used: vic unseated; and a motion set up BEFORE the sit (the carousel) still carries", run(s) {
       s.call("olive", "create-world", { title: s.name }); roles(s, { bob: "builder", vic: "member", wes: "member" });
-      s.call("olive", "create", { id: "chair", model: "chair", components: SEAT(), place: { at: [4, 0] } });
+      mkSeat(s, "olive", { id: "chair", model: "chair", place: { at: [4, 0] } });
       s.call("vic", "move", { to: [4, 0, -0.6] }); s.call("vic", "use", { id: "chair", action: "sit" });
       s.call("bob", "set", { id: "chair", component: "reactions", value: { spin: { kind: "set", component: "motion", value: { type: "spin", axis: [0, 1, 0], speed: 500 } } } });
       s.call("bob", "move", { to: [4, 0, -1.5] }); const go = s.call("bob", "use", { id: "chair", action: "spin" });
       const vic = seated(s, "vic");
-      s.call("olive", "create", { id: "carousel", model: "chair", components: { ...SEAT(), reactions: { turn: { kind: "set", component: "motion", value: { type: "spin", axis: [0, 1, 0], speed: 30 } } } }, place: { at: [10, 0] } });
+      mkSeat(s, "olive", { id: "carousel", model: "chair", components: { reactions: { turn: { kind: "set", component: "motion", value: { type: "spin", axis: [0, 1, 0], speed: 30 } } } }, place: { at: [10, 0] } });
       s.call("wes", "move", { to: [10, 0, -0.6] }); const sit = s.call("wes", "use", { id: "carousel", action: "sit" });
       s.call("olive", "move", { to: [10, 0, -1.5] }); const turn = s.call("olive", "use", { id: "carousel", action: "turn" });
       return { go: show(go), vic, sit: show(sit), turn: show(turn), wes: seated(s, "wes") }; },
@@ -245,7 +249,7 @@ const cases: Case[] = [
   { id: "T1", what: "(scars M2) a world with a spawn: visitor vic rides olive's ferry 15 m (a motion set up before he sat), then steps off it: the step is measured from the seat, not refused too-fast from where he boarded", run(s) {
       s.call("olive", "create-world", { title: s.name }); roles(s, { vic: "member" });
       s.call("olive", "set", { id: "@world", component: "spawn", value: { pos: [4, 0, -0.6] } });
-      s.call("olive", "create", { id: "ferry", model: "chair", components: { ...SEAT(), reactions: { cross: { kind: "set", component: "transform", value: { pos: [4, 0, 15], q: [0, 0, 0, 1], scale: [1, 1, 1] } } } }, place: { at: [4, 0] } });
+      mkSeat(s, "olive", { id: "ferry", model: "chair", components: { reactions: { cross: { kind: "set", component: "transform", value: { pos: [4, 0, 15], q: [0, 0, 0, 1], scale: [1, 1, 1] } } } }, place: { at: [4, 0] } });
       s.call("vic", "move", { to: [4, 0, -0.6] }); const sit = s.call("vic", "use", { id: "ferry", action: "sit" });
       s.call("olive", "move", { to: [4, 0, -1.5] }); const go = s.call("olive", "use", { id: "ferry", action: "cross" });
       const rode = seated(s, "vic");
@@ -254,7 +258,7 @@ const cases: Case[] = [
     good: (o) => o.sit === "ok" && o.go === "ok" && o.rode && o.step === "ok" && !o.seated },
   { id: "T2", what: "…and an unseat lets them go at the seat, told where (`at`): bob moves the chair vic sits on 20 m; vic's track is the seat's old pose and his next step from there is fine", run(s) {
       s.call("olive", "create-world", { title: s.name }); roles(s, { bob: "builder", vic: "member" });
-      s.call("olive", "create", { id: "chair", model: "chair", components: SEAT(), place: { at: [4, 0] } });
+      mkSeat(s, "olive", { id: "chair", model: "chair", place: { at: [4, 0] } });
       s.call("vic", "move", { to: [4, 0, -0.6] }); s.call("vic", "use", { id: "chair", action: "sit" });
       const mv = s.call("bob", "set", { id: "chair", component: "transform", value: { pos: [24, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } });
       const msg = (s.w().presence.inbox?.vic ?? []).find?.((m: any) => m.type === "vacated");

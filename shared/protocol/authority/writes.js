@@ -16,7 +16,7 @@ import { modelOf, boxOfM, geomE } from "./catalogue.js";
 import { CHANGE, clone, createOps, delOp, followUp, lockedC, nonce16, qr3, scratch, setOp, versionSeq } from "./storage.js";
 import { NONE, aabb, ancestors, descendants, hits, localFrom, obbs, qYaw, qinv, qmul, qrot, inRect, surfacesOf, worldT, yawQ } from "./math.js";
 import { groundReady, hitsIx, near, spatial, spend, supportBelow } from "./spatial.js";
-import { isSocketC, liftOps, socketsOf } from "./sockets.js";
+import { isSocketC, socketsOf } from "./sockets.js";
 import { madeBy, roleOf } from "./rights.js";
 import { inboxPush } from "./bodyconsent.js";
 import { buildCreateFrom } from "./blueprints.js";
@@ -88,14 +88,11 @@ function commit(w, actor, verb, args, build) {
   const sent = clone(args); // L4: the act is the request AS SENT (builders may annotate their own copy)
   const st = w.state();
   const ctx = { st, actor, w, notes: [], refs: new Set() };
-  // the old spelling's writes (a sockets map) are lifted here, before the references are cleared below, so a socket child the
-  // lift takes away has the references to it cleared too, as a delete's are; admit then takes the ops as lifted
-  const pre = liftOps(st, stampModelHash(ctx, stampMedia(ctx, stampResetHomes(ctx, stampHomes(ctx, stampShapes(ctx, dropImportedShadows(ctx, build(ctx), verb)))))), w.everIds());
-  const ops = pre.ops;
+  const ops = stampModelHash(ctx, stampMedia(ctx, stampResetHomes(ctx, stampHomes(ctx, stampShapes(ctx, dropImportedShadows(ctx, build(ctx), verb))))));
   // whatever removes a thing (delete, a batch's delete, an undo of its create) clears the references to it in the same act
   if (ops.some((o) => o.op === "delete" && o.comp === undefined)) { const after = scratch(st, ops); const gone = new Set(ops.filter((o) => o.op === "delete" && o.comp === undefined && !after.entities[o.id]).map((o) => o.id));
     if (gone.size) ops.push(...clearRefsTo({ ...ctx, st: after }, gone)); }
-  const plan = admit(w, st, { actor, cap: ctx.cap, restores: ctx.restores, preLifted: pre.notes }, ops); ctx.notes.push(...plan.notes);
+  const plan = admit(w, st, { actor, cap: ctx.cap, restores: ctx.restores }, ops); ctx.notes.push(...plan.notes);
   // the write's consequences (occupants re-dropped off a host whose shape changed) are planned and admitted HERE, against the
   // state the write leaves, before anything is appended: a refusal refuses the whole request, never half of it (review of
   // PR #260, followups.js:58: a throw after the commit left a saved edit nobody was sent). A dry run plans them too, and says
@@ -331,8 +328,9 @@ function buildDelete(ctx, a) {
       const wt = worldT(ctx.st, a.id); ctx.refs.add(a.id);
       return [delOp(a.id, "parent"), setOp(a.id, "transform", { ...wt, pos: wt.pos.map(r3) })];
     }
-    // the old spelling's `delete sockets` still means "its sockets" (the door deletes its socket children)
-    if (!(a.component in e.c) && !(a.component === "sockets" && socketsOf(ctx.st, a.id, { off: true }).some((x) => x.id))) refuse("not-found", `${a.id} has no ${a.component}`, `it has: ${Object.keys(e.c).join(", ")}`);
+    // the old spelling's `delete sockets`: a host's sockets are its socket children, each deleted by its own id
+    if (a.component === "sockets" && !(a.component in e.c)) refuse("legacy", `${a.id}.sockets is the old spelling: each socket is a child entity now`, `delete {id: <the socket's id>} (inspect {id: '${a.id}'} lists its sockets: ${socketsOf(ctx.st, a.id, { off: true }).map((x) => x.id).join(", ") || "none"})`);
+    if (!(a.component in e.c)) refuse("not-found", `${a.id} has no ${a.component}`, `it has: ${Object.keys(e.c).join(", ")}`);
     ctx.refs.add(a.id);
     return [delOp(a.id, a.component)];
   }

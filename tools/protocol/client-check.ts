@@ -846,7 +846,7 @@ try {
   // sending seat {to} frames), so a second body can't come to render on the same socket after a re-enable.
   { const made = await page(`const n = await import('/lib/net.js');
       const a = await n.sendRequest('create', { id: 'ststool', model: '${CRATE}', place: { at: [7, 7] } });
-      const b = await n.sendRequest('create', { id: 'ststool-seat', components: { parent: { to: 'ststool' }, transform: { pos: [0, 0.5, 0] }, socket: { name: 'seat', body: { action: 'sit' } } } });
+      const b = await n.sendRequest('create', { id: 'ststool-seat', components: { parent: { to: 'ststool' }, transform: { pos: [0, 0.5, 0] }, socket: { name: 'seat' }, station: { action: 'sit' } } });
       return JSON.stringify([a.ok, b.ok]);`);
     const mine = `Promise.all([import('/lib/world.js'), import('/lib/base.js')]).then(([w, b]) => w.avatarMounts.get(b.CONFIG.name)?.to ?? null)`;
     await waitFor(`import('/lib/world.js').then((w) => !!w.seatSocket('ststool-seat'))`);

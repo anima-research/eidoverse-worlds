@@ -150,7 +150,7 @@ export function paintSky(body) {
 
   // weather — a first-class verb, not a slider
   const { row: wxRow, select: wx } = selectRow('wx', WEATHERS, null,
-    (v) => preview({ weather: v, weatherSeconds: 12 }));
+    (v) => preview({ weather: v, transition: 12 }));
   body.appendChild(wxRow);
 
   const { row: clRow, select: cl } = selectRow('cloud', CLOUDS, 'cumulus',
@@ -323,7 +323,7 @@ export function paintSky(body) {
   const { row: ckRow, select: ck } = selectRow('clock',
     [['', 'authored (slider)']], '', null);
   const fillClocks = () => defsRegistry().then((reg) => {
-    const sa = skyArgs(); const want = typeof sa.tz === 'string' ? sa.tz : sa.clock === 'real' ? (sa.tz ?? '') : ck.value;   // a tz present is the wall clock (shape audit 10-16)
+    const sa = skyArgs(); const want = typeof sa.tz === 'string' ? sa.tz : ck.value;   // a tz present is the wall clock (shape audit 10-16)
     ck.textContent = '';
     ck.appendChild(new Option('authored (slider)', ''));
     for (const c of Object.values(reg.skyClocks ?? {})) {
@@ -344,7 +344,7 @@ export function paintSky(body) {
   const syncClockUi = () => {
     // the clock the commit will SEND, not what the select shows: while you have unsaved edits a remote clock change
     // doesn't reach the select (review 3, L4)
-    const g = gather(); const real = g.clock === 'real' || (typeof g.tz === 'string' && g.clock === undefined && g.tz !== '');
+    const g = gather(); const real = typeof g.tz === 'string' && g.tz !== '';
     for (const k of ['hours', 'rate']) {
       const input = inputs[k], row = input?.parentNode; if (!input || !row) continue;
       input.disabled = real;
@@ -354,17 +354,9 @@ export function paintSky(body) {
     presetWrap.title = real ? 'under a real clock the presets set the look, not the hour' : '';
   };
   ck.onchange = () => {
-    if (ck.value !== '') { local.clock = 'real'; local.tz = ck.value; }
+    if (ck.value !== '') local.tz = ck.value;
     else {
-      local.clock = undefined; local.tz = undefined;
-      // returning to the authored clock: an older value parked the prior rated
-      // fields under dormantRated (#65); a newer one keeps hours/rate (both read) — hand them back to the sliders so
-      // commit restores the old day/rate instead of noon-at-rate-0
-      const d = skyArgs().dormantRated;
-      if (d) for (const k of ['hours', 'rate']) if (d[k] != null && inputs[k]) {
-        inputs[k].value = d[k];
-        inputs[k].parentNode.querySelector('.v').textContent = inputs[k].value;
-      }
+      local.tz = undefined;   // back to the authored clock: hours/rate stay where the sliders hold them
     }
     syncClockUi();
     previewSky(gather()).catch((e) => report('sky preview', e));
@@ -391,10 +383,10 @@ export function paintSky(body) {
     if (!commit.classList.contains('dirty')) for (const k of Object.keys(local)) delete local[k];
     const a = skyArgs();
     for (const [key, , , , , dflt] of SLIDERS) {
-      // under a real clock an older value parked hours/rate under dormantRated (#65); a newer one keeps them (both read):
+      // under a real clock hours/rate stay stored:
       // load them (the rows are hidden) as what the world
       // would return to
-      inputs[key].value = key === 'azimuth' ? (typeof a.azimuth === 'number' ? +(a.azimuth * 180 / Math.PI).toFixed(1) : dflt) : (a[key] ?? a.dormantRated?.[key] ?? dflt);
+      inputs[key].value = key === 'azimuth' ? (typeof a.azimuth === 'number' ? +(a.azimuth * 180 / Math.PI).toFixed(1) : dflt) : (a[key] ?? dflt);
       inputs[key].parentNode.querySelector('.v').textContent = inputs[key].value;
     }
     if (a.weather) wx.value = a.weather;
@@ -402,7 +394,7 @@ export function paintSky(body) {
     sy.value = a.system === 'skymesh' ? 'skymesh' : 'eidoverse';
     // the option list is def-fed; fillClocks appends a raw-tz option when the
     // world's committed clock is one the def no longer lists
-    const realTz = typeof a.tz === 'string' ? a.tz : a.clock === 'real' ? 'America/Los_Angeles' : '';   // a tz present is the wall clock
+    const realTz = typeof a.tz === 'string' ? a.tz : '';   // a tz present is the wall clock
     ck.value = realTz;
     if (realTz && ck.value !== realTz) fillClocks();
     syncClockUi();

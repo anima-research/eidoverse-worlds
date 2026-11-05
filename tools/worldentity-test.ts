@@ -70,10 +70,10 @@ console.log('1. the alias both ways, through the real door:');
   check('an empty world is an entity with no components (and round-trips to the view\'s nulls)', worldComponents(W.view()).components.length === 0 && aliasBad(W.view()) === null);
   step('weather', { weather: 'rain' });                                          // weather before any sky: the door makes a sky of it
   step('sky', { hours: 8, rate: 24, clouds: 'cumulus', exposure: 0.8 });
-  step('weather', { weather: 'storm', weatherSeconds: 12 });                     // (v1's weatherK isn't a key of the door's sky)
-  step('sky', { hours: 9, clouds: 'stratus', forecast: { seed: 7, states: ['clear', 'fair', 'rain'], dwellSec: [600, 1800], transitionSec: 45 } });
+  step('weather', { weather: 'storm', transition: 12 });                     // (v1's weatherK isn't a key of the door's sky)
+  step('sky', { hours: 9, clouds: 'stratus', forecast: { seed: 7, states: ['clear', 'fair', 'rain'], dwell: [600, 1800], transition: 45 } });
   step('weather', { weather: 'overcast' });                                      // a manual override under the forecast
-  step('sky', { clock: 'real', tz: 'Europe/Paris', hours: 10, rate: 2 });         // parks hours/rate under dormantRated
+  step('sky', { tz: 'Europe/Paris', hours: 10, rate: 2 });                      // the wall clock; hours/rate stay as the fallback
   step(...terrainReq({ seed: 7, size: 160, segments: 200, amplitude: 2.6, flatRadius: 16, layers: [{ color: 0x4a5d33, repeat: 16 }] }));
   step(...grassReq({ species: 'grass', width: 90, depth: 80, center: [0, 0], height: 0.42, density: 1 }));
   step(...grassReq(null));                                                       // mow: delete @world grass
@@ -83,7 +83,7 @@ console.log('1. the alias both ways, through the real door:');
   check('the door takes every request of the synthetic world', refusals.length === 0, refusals.join(' | '));
   check(`the alias round-trips exactly after every request of a synthetic world (${n} states)`, bad.length === 0, bad.join(' | '));
   const W2 = scratchWorld('worldentity');
-  W2.call('sky', { hours: 8, rate: 24, clouds: 'cirrus', forecast: { seed: 3, states: ['clear', 'rain'], dwellSec: [600, 900], transitionSec: 30 } });
+  W2.call('sky', { hours: 8, rate: 24, clouds: 'cirrus', forecast: { seed: 3, states: ['clear', 'rain'], dwell: [600, 900], transition: 30 } });
   const ov = W2.call('weather', { weather: 'storm' });   // the override
   const types = worldComponents(W2.view()).components.map((c: any) => `${c.type}:${Object.keys(c.params).sort().join(',')}`);
   check('…and reads as Sky (the day, the clouds) + Weather (weather, forecast, override) — not one opaque bag',
@@ -119,7 +119,7 @@ console.log('\n2. picking a sky replaces the Sky; the Weather stays:');
 {
   const W = scratchWorld('worldentity');
   // the storm is authored with the sky (not a weather override under the forecast: see the KNOWN BUG in section 1)
-  const s0 = W.call('sky', { hours: 8, rate: 24, clouds: 'stratus', exposure: 0.7, fog: 2, azimuth: Math.PI / 2, weather: 'storm', forecast: { seed: 7, states: ['clear', 'rain'], dwellSec: [600, 1800], transitionSec: 45 } });
+  const s0 = W.call('sky', { hours: 8, rate: 24, clouds: 'stratus', exposure: 0.7, fog: 2, azimuth: Math.PI / 2, weather: 'storm', forecast: { seed: 7, states: ['clear', 'rain'], dwell: [600, 1800], transition: 45 } });
   check('(setup) a sky with a storm and a forecast', s0.ok && W.view().sky.weather === 'storm' && !!W.view().sky.forecast, JSON.stringify(s0.refused));
   const st = () => W.view();
   const policy = (s: any) => { const { epoch: _e, seq: _s, by: _b, ...p } = s.forecast ?? {}; return canon(p); };
@@ -287,7 +287,7 @@ console.log('\n5. the text tier (mcpl/tools.ts): inspect, edit and hierarchy spe
 console.log('\nI95. removing the Weather removes it, forecast and all:');
 {
   const W = scratchWorld('worldentity');
-  const s0 = W.call('sky', { hours: 8, clouds: 'stratus', exposure: 0.7, weather: 'storm', forecast: { seed: 7, states: ['clear', 'rain'], dwellSec: [600, 1800], transitionSec: 45 } });
+  const s0 = W.call('sky', { hours: 8, clouds: 'stratus', exposure: 0.7, weather: 'storm', forecast: { seed: 7, states: ['clear', 'rain'], dwell: [600, 1800], transition: 45 } });
   check('(setup) a sky with a storm and a forecast', s0.ok && !!W.view().sky.forecast, JSON.stringify(s0.refused));
   const sch = worldSchema(W.view(), { now: Date.now() });
   check('the Weather card offers remove', fieldAt(sch, 'weather.remove')?.t === 'btn', JSON.stringify(fieldAt(sch, 'weather.remove')));

@@ -6,6 +6,7 @@
 import { fileURLToPath } from "node:url";
 import "./protocol/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from 'node:fs';
+import { socketMapOps } from '../shared/protocol/requests.js';
 import { scratchWorld } from './protocol/scratchworld.ts';
 import { COMPONENTS, statusOf, pinOf, materialize } from '../shared/protocol/componentspec.js';
 import { evalWholeMotion } from '../client/lib/motioneval.js';
@@ -46,9 +47,9 @@ await tryRow('PA', () => {
   const r = W.call('set', { id: 'cup', component: 'parent', value: { to: 'table', order: 'a0' } });
   check('PA2 a written order is taken and dropped: the stored parent is {to}', r.ok && JSON.stringify(W.state().entities.cup.c.parent) === '{"to":"table"}', [r.refused, W.state().entities.cup.c.parent]);
   W.call('create', { id: 'sofa', model: 'crate' });
-  const m = W.call('set', { id: 'sofa', component: 'sockets', value: { left: { pos: [0, 0.5, 0], body: {} } } });
+  const m = W.sendAll(socketMapOps(W.state().entities, 'sofa', { left: { pos: [0, 0.5, 0], body: {} } }));   // the Sockets card's path (the door takes no map)
   const kid = Object.values(W.state().entities).find((e: any) => e.c.parent?.to === 'sofa' && e.c.socket);
-  check('PA3 the authority writes no order either (a socket child made by the lift)', m.ok && JSON.stringify(kid?.c.parent) === '{"to":"sofa"}', [m.refused, kid?.c.parent]);
+  check('PA3 the authority writes no order either (a socket child made from the editor\'s sockets map, socketMapOps)', m.ok && JSON.stringify(kid?.c.parent) === '{"to":"sofa"}', [m.refused, kid?.c.parent]);
   const old = [{ seq: 0, ts: 1, actor: 'world', verb: 'genesis', args: { v: 2, dialect: 'eidoverse-log', roles: { ann: { role: 'owner' } } } },
     { seq: 1, ts: 2, actor: 'ann', verb: 'spawn', args: { id: 'cart', lib: 'crate', pos: [0, 0, 0] } },
     { seq: 2, ts: 3, actor: 'ann', verb: 'spawn', args: { id: 'box', lib: 'crate', pos: [1, 0, 0] } },

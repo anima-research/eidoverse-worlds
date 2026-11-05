@@ -18,7 +18,7 @@ import { modelOf } from "./catalogue.js";
 import { readback, clone, createOps, delOp, isE, lockedC, setOp, versionOf } from "./storage.js";
 import { aabb, descendants, qrot, surfacesOf, worldT } from "./math.js";
 import { kidsMap } from "./spatial.js";
-import { isSocketC, socketsOf, socketRole, modelSocketNames } from "./sockets.js";
+import { isSocketC, socketsOf, socketRole } from "./sockets.js";
 import { backward, creatorOf, effective, lockStrength, madeBy, roleOf } from "./rights.js";
 import { shieldOf } from "./bodyconsent.js";
 import { actionsOf, offersFor, pivotOf } from "./use.js";
@@ -323,7 +323,7 @@ const READ_VERBS = {
     const q = (a.query ?? "").toLowerCase();
     if (a.kind === "blueprint") { const lib = w.state().entities["@world"]?.c ?? {};
       return { ok: true, blueprints: Object.entries(lib).filter(([k]) => k.startsWith(BLUEPRINTS)).map(([k, v]) => ({ hash: `sha256:${k.slice(BLUEPRINTS.length)}`, ...v, by: creatorOf(w, "@world", k)?.rights ?? null })).filter((b) => String(b.name ?? "").toLowerCase().includes(q)) }; }
-    return { ok: true, models: CTX.cat.list(q).slice(0, 50).map(([k, m]) => ({ model: k, ...(m.size ? { size: m.size } : { size: null, note: "not measured here" }), about: m.label, surfaces: (m.surfaces ?? []).map((s) => s.y), ...(modelSocketNames(m) ? { seats: modelSocketNames(m) } : {}) })) };
+    return { ok: true, models: CTX.cat.list(q).slice(0, 50).map(([k, m]) => ({ model: k, ...(m.size ? { size: m.size } : { size: null, note: "not measured here" }), about: m.label, surfaces: (m.surfaces ?? []).map((s) => s.y) })) };
   },
   lint(w, actor, a) { const st = w.state(); const ids = a.id ? [a.id] : Object.keys(st.entities);
     return { ok: true, warnings: [...warnings(st, ids, true), ...danglingRefs(st, ids)] }; },

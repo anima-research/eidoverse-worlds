@@ -92,6 +92,7 @@ const D = await import(TREE + "shared/protocol/authority.js");
 D.fixtureIds?.(true);   // the fixtures below seed the ids they read (ids-check covers the refusal)
 const F = await import(TREE + "shared/protocol/fold.js");
 const SB = await import(TREE + "shared/protocol/sandbox.js");
+const REQ = await import(TREE + "shared/protocol/requests.js");
 const AU = await import(TREE + "shared/protocol/scriptaudit.js");
 const SK = await import(TREE + "shared/sockbody.js");
 if (D.setScriptDuty) D.setScriptDuty({ maxMs: 1e9 });
@@ -125,7 +126,10 @@ const show = (r: any) => (r?.crashed ? `CRASH ${r.crashed}` : r?.ok ? "ok" : `re
 const comp = (s: any, id: string, c: string) => s.w().state().entities[id]?.c[c];
 const roles = (s: any, m: Record<string, string>) => { for (const [who, role] of Object.entries(m)) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } }); };
 const lastUse = (s: any) => s.entries().findLast((e: any) => e.kind === "request" && e.verb === "use");
-const SEAT = (extra: any = {}) => ({ sockets: { a: { pos: [0, 0.45, 0], body: { action: "sit", ...extra } } } });
+// a seat is a socket child with a station (the door refuses a sockets map): create the host, then its seat from the editor's map
+const SEAT = (extra: any = {}) => ({ a: { pos: [0, 0.45, 0], body: { action: "sit", ...extra } } });
+function mkSeat(s: any, actor: string, args: any, map: any = SEAT()) { const r = s.call(actor, "create", args); if (!r.ok) return r;
+  return s.call(actor, "batch", { requests: REQ.socketMapOps(s.w().state().entities, args.id, map) }); }
 const seated = (s: any, who: string) => !!s.w().presence.occupants?.[who];
 const inboxOf = (s: any, who: string) => JSON.stringify(s.w().presence.inbox?.[who] ?? s.w().presence.inboxes?.[who] ?? null);
 
@@ -152,8 +156,8 @@ const cases: Case[] = [
   { id: "S1", what: "(holes M1, p3) a world with a spawn at [-18,0,0]: visitor vic, refused a teleport to olive's chair at [17,0], is refused `use sit` from 35 m too (out-of-reach), stays tracked at the spawn, and his step to the chair is too-fast; only refusals logged. Within reach the sit is fine", run(s) {
       s.call("olive", "create-world", { title: s.name }); roles(s, { vic: "member" });
       s.call("olive", "set", { id: "@world", component: "spawn", value: { pos: [-18, 0, 0] } });
-      s.call("olive", "create", { id: "chair", model: "chair", components: SEAT(), place: { at: [17, 0] } });
-      s.call("olive", "create", { id: "stool", model: "chair", components: SEAT(), place: { at: [-15, 0] } });
+      mkSeat(s, "olive", { id: "chair", model: "chair", place: { at: [17, 0] } });
+      mkSeat(s, "olive", { id: "stool", model: "chair", place: { at: [-15, 0] } });
       s.call("vic", "move", { to: [-18, 0, 0] });
       const tp = s.call("vic", "move", { to: [17, 0, -0.6], teleport: true });
       const n0 = s.entries().length;
@@ -165,7 +169,7 @@ const cases: Case[] = [
     good: (o) => /^refused spawn/.test(o.tp) && /^refused out-of-reach/.test(o.sit) && /^refused too-fast/.test(o.m1) && JSON.stringify(o.at) === "[-18,0,0]" && o.logged.every((x: string) => / refused$/.test(x)) && o.near === "ok" && o.seat?.near === true },
   { id: "S2", what: "(holes M1 b) a seat not boarded within reach (no `near`: a presence file from before r10, or a body not tracked when it sat) never re-anchors the track: the step off is measured from where the body was", run(s) {
       s.call("olive", "create-world", { title: s.name }); roles(s, { vic: "member", bob: "builder" });
-      s.call("olive", "create", { id: "chair", model: "chair", components: SEAT(), place: { at: [20, 0] } });
+      mkSeat(s, "olive", { id: "chair", model: "chair", place: { at: [20, 0] } });
       s.call("vic", "move", { to: [0, 0, 0] });
       s.w().presence.occupants = { vic: { to: Object.keys(s.w().state().entities).find((k) => s.w().state().entities[k].c.parent?.to === "chair"), since: s.entries().length } };
       const m = s.call("vic", "move", { to: [20, 0, -0.6] });
@@ -177,7 +181,7 @@ const cases: Case[] = [
     good: (o) => /^refused too-fast/.test(o.m) && o.mv === "ok" && JSON.stringify(o.at) === "[0,0,0]" && o.msgAt === null && o.told },
   { id: "S3", what: "(holes L5) the first step off a seat is the stand-up: under a metre from the seat clears it (not only past 1 m)", run(s) {
       s.call("olive", "create-world", { title: s.name }); roles(s, { vic: "member" });
-      s.call("olive", "create", { id: "chair", model: "chair", components: SEAT(), place: { at: [4, 0] } });
+      mkSeat(s, "olive", { id: "chair", model: "chair", place: { at: [4, 0] } });
       s.call("vic", "move", { to: [4, 0, -0.6] }); const sit = s.call("vic", "use", { id: "chair", action: "sit" });
       const was = seated(s, "vic"); const step = s.call("vic", "move", { to: [4.5, 0, -0.6] });
       return { sit: show(sit), was, step: show(step), seated: seated(s, "vic") }; },
@@ -281,7 +285,7 @@ const cases: Case[] = [
   // ---------------- U: vacated ----------------
   { id: "U1", what: "(holes L6) olive removes the seat vic sits on: vic gets `vacated {socket, at}` in his inbox (as for an edit), and his track restarts at the seat", run(s) {
       s.call("olive", "create-world", { title: s.name }); roles(s, { vic: "member" });
-      s.call("olive", "create", { id: "chair", model: "chair", components: SEAT(), place: { at: [4, 0] } });
+      mkSeat(s, "olive", { id: "chair", model: "chair", place: { at: [4, 0] } });
       s.call("vic", "move", { to: [4, 0, -0.6] }); s.call("vic", "use", { id: "chair", action: "sit" });
       const sock = s.w().presence.occupants?.vic?.to;
       const del = s.call("olive", "delete", { id: sock });
@@ -296,7 +300,7 @@ const cases: Case[] = [
   { id: "U3", what: "(claims O3) vic rides olive's carousel (set up before he sat); a thing its other handler named is deleted (a follow-up clear on the carousel's reactions); the carousel's turn still carries him", run(s) {
       s.call("olive", "create-world", { title: s.name }); roles(s, { vic: "member" });
       s.call("olive", "create", { id: "x", model: "crate", place: { at: [9, 0] }, components: { home: { pos: [9, 0, 0] } } });
-      s.call("olive", "create", { id: "carousel", model: "chair", components: { ...SEAT(), reactions: { turn: { kind: "set", component: "motion", value: { type: "spin", axis: [0, 1, 0], speed: 30 } }, sweep: { kind: "reset", targets: ["x"] } } }, place: { at: [4, 0] } });
+      mkSeat(s, "olive", { id: "carousel", model: "chair", components: { reactions: { turn: { kind: "set", component: "motion", value: { type: "spin", axis: [0, 1, 0], speed: 30 } }, sweep: { kind: "reset", targets: ["x"] } } }, place: { at: [4, 0] } });
       s.call("vic", "move", { to: [4, 0, -0.6] }); const sit = s.call("vic", "use", { id: "carousel", action: "sit" });
       const d = s.call("olive", "delete", { id: "x" });
       s.call("olive", "move", { to: [4, 0, -1.5] }); const turn = s.call("olive", "use", { id: "carousel", action: "turn" });

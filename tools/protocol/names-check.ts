@@ -9,7 +9,7 @@
 //   bun tools/protocol/names-check.ts --control       every non-guard row must be red at BASE
 // Rows:
 //   N   refusal codes: hold-limit, beneath, not-pushable (were hands-full, underfoot, no-body); the old words map, never given
-//   P   punt keeps its name; its flag is contact: true (shove: true taken at the door, recorded as contact); docs say no kick/feet
+//   P   punt keeps its name; its flag is contact: true (shove: true refused, naming contact); docs say no kick/feet
 //   T   @world trusted-components (was trusted): the registry, the door, the load's rename (every load, idempotent), drafts.js
 //   C   consent: the old words a stored table is READ in (C1) and the authority's load of one as two narrowed gates (C5);
 //       C2/C4/C6/C7 retired with recut A2 (tiers, cells, the client table and delegates are gone)
@@ -283,14 +283,14 @@ const cases: Case[] = [
       s.call("vic", "move", { to: AGAINST }); const r = s.call("vic", "punt", { id: "crate", v: [0, 0.2, 1.8], contact: true });
       return { r: show(r), req: lastAct(s, "punt", "vic")?.body?.args ?? null }; },
     good: (o) => o.r === "ok" && o.req?.contact === true && !("shove" in o.req) },
-  { id: "P2", what: "…its old spelling shove: true is taken at the door and recorded as contact (no shove in the act); help lists contact", run(s) { cast(s);
+  { id: "P2", what: "…its old spelling shove: true is refused, naming contact (unknown-arg; the door translates nothing); help lists contact", run(s) { cast(s);
       s.call("vic", "move", { to: AGAINST }); const r = s.call("vic", "punt", { id: "crate", v: [0, 0.2, 1.8], shove: true });
-      return { r: show(r), req: lastAct(s, "punt", "vic")?.body?.args ?? null, args: Object.keys(VS.VERBSPEC.punt.args) }; },
-    good: (o) => o.r === "ok" && o.req?.contact === true && !("shove" in o.req) && o.args.includes("contact") },
-  { id: "P3", what: "…both spellings at once is a shape refusal (and a refused contact push stays unrecorded)", run(s) { cast(s);
+      return { r: show(r), fix: r?.refused?.fix ?? "", args: Object.keys(VS.VERBSPEC.punt.args) }; },
+    good: (o) => /^refused unknown-arg/.test(o.r) && /contact: true/.test(o.fix) && o.args.includes("contact") && !o.args.includes("shove") },
+  { id: "P3", what: "…with contact: true beside it, refused the same way (and a refused contact push stays unrecorded)", run(s) { cast(s);
       s.call("vic", "move", { to: AGAINST }); const n = s.entries().length; const r = s.call("vic", "punt", { id: "crate", v: [0, 0.2, 1.8], contact: true, shove: true });
       return { r: show(r), logged: s.entries().length - n }; },
-    good: (o) => /^refused shape/.test(o.r) && o.logged === 0 },
+    good: (o) => /^refused unknown-arg/.test(o.r) && o.logged === 0 },
   { id: "P4", what: "…punt's words carry no feet and no kick: the verbspec row, the act tool's punt line, AGENTS.md", run() {
       const d = JSON.stringify(VS.VERBSPEC.punt), t = readText("mcpl/tools.ts"), a = readText("AGENTS.md");
       const punt = (t.match(/punt \{id, power\?\|v\?\} \([^)]*\)/) ?? [""])[0], ag = (a.match(/`punt \{id, power\? \| v\?\}`[^.]*\./) ?? [""])[0];
@@ -395,13 +395,16 @@ const cases: Case[] = [
       const GB = await import(TREE + "shared/grab.js"); const g = GB.grabOf(s.w().state().entities.cup?.c ?? {});
       return { r: show(r), held: GB.holdPoseOf(g, [0.2, 0.2, 0.2]), big: GB.holdPoseOf(g, [1, 1, 1]), torch: GB.holdPoseOf(GB.grabOf({ grabbable: { anim: "torch" } }), [0.2, 0.2, 0.2]), two: GB.holdPoseOf(GB.grabOf({ grabbable: { twoHanded: true } }), [0.2, 0.2, 0.2]), named: GB.HOLD_POSES ?? null }; },
     good: (o) => o.r === "ok" && o.held === "hand" && o.big === "carry" && o.torch === "torch" && o.two === "both-hands" && JSON.stringify(o.named) === '["hand","carry","torch","pistol","shoulder"]' },
-  { id: "A5", what: "…the legacy sockets map's body block keeps pose: the lift makes it station.anim, and the map's readers get body.pose back (slotOf)", async run(s) {
+  { id: "A5", what: "…the Sockets card's map keeps a body block's pose: the door refuses the map (legacy), its requests (requests.js socketMapOps) make the body station.anim, and the map's readers get body.pose back (slotOf)", async run(s) {
       s.call("olive", "create-world", { title: s.name }); s.call("olive", "create", { id: "bench", model: "crate", place: { at: [4, 0] } });
-      const r = s.call("olive", "set", { id: "bench", component: "sockets", value: { bunk: { pos: [0, 0.5, 0], body: { action: "lie", pose: "lie" } } } });
+      const want = { bunk: { pos: [0, 0.5, 0], body: { action: "lie", pose: "lie" } } };
+      const door = show(s.call("olive", "set", { id: "bench", component: "sockets", value: want }));
+      const RQ = await import(TREE + "shared/protocol/requests.js"); const ops = RQ.socketMapOps(s.w().state().entities, "bench", want);
+      const r = s.call("olive", "batch", { requests: ops });
       const E = s.w().state().entities; const kid = Object.keys(E).find((k) => E[k].c.socket?.name === "bunk");
       const SK = await import(TREE + "shared/sockbody.js"); const slot = kid ? SK.slotOf(E[kid].c.socket, E[kid].c.transform, E[kid].c.station) : null;
-      return { r: show(r), st: kid ? E[kid].c.station : null, body: slot?.body ?? null, b: SK.bodyOf?.(kid ? E[kid].c.station : null)?.clip ?? null }; },
-    good: (o) => o.r === "ok" && o.st?.anim === "lie" && !("pose" in o.st) && o.body?.pose === "lie" && !("anim" in o.body) && o.b === "lie" },
+      return { door, r: show(r), st: kid ? E[kid].c.station : null, body: slot?.body ?? null, b: SK.bodyOf?.(kid ? E[kid].c.station : null)?.clip ?? null }; },
+    good: (o) => /^refused legacy/.test(o.door) && o.r === "ok" && o.st?.anim === "lie" && !("pose" in o.st) && o.body?.pose === "lie" && !("anim" in o.body) && o.b === "lie" },
   { id: "A6", what: "(R 15:09) folded wings are the named pose wings-folded on the wire (poses: [names]; [] holds none); an older sample's wingsFolded still reads; the server's fence keeps a clean poses list", async run() {
       const WP = await import(TREE + "shared/wingpresence.js"); const PC = await import(TREE + "server/posecheck.ts");
       const keep = PC.sanePose({ p: [0, 0, 0], poses: ["wings-folded"] }), bad = PC.sanePose({ p: [0, 0, 0], poses: [1, 2] });
