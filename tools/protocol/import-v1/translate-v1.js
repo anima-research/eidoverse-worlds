@@ -320,7 +320,7 @@ export const DROPPED = {
   "a mounted thing's own pos/yaw/q": "v1 keeps a riding thing's pre-mount pose, unused until a dismount; v4's transform IS the pose it rides at (local to its parent: v1's offset, or its socket's pos, and q/yaw). The parent's offset/yaw/q are that transform, not a second copy (L2)",
 };
 // DEFERRED (review of PR #260, Mica, item 7): features main's merges gave v1 worlds that THIS protocol does not carry yet.
-// Each is a component the old renderer read (tools/water/README.md, server/render-scene.ts PASS_THROUGH). The translator
+// Each is a component the old renderer read (tools/water/README.md, upstream server/render-scene.ts PASS_THROUGH). The translator
 // never carries one of these quietly: a log that uses one is REFUSED at `translate`, naming the feature and where it was
 // used (deferredFeatures below), and the dry-run report lists them, so the owner decides with the loss in front of them.
 // Main's water volume and air boxes are carried (VOLUMES below), except on @world, which has no frame of its own to hold them.

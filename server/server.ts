@@ -805,8 +805,8 @@ function buildSnapshot(w: World, c: Client) {
     // snapshot = the authority's cut of the world (the joiner folds it, then the log stream) + who's present now
     return {
       type: "snapshot",
-      // (no renderSceneVersion: upstream #248's render-scene projection isn't served here — server/render-scene.ts reads the
-      // first protocol's fold — so a native client isn't told to ask for it)
+      // (no renderSceneVersion: upstream #248's render-scene projection isn't served here (it read the first protocol's
+      // fold, docs/NATIVE-WORLD-RENDERING.md), so a native client isn't told to ask for it)
       you: c.id,
       // when this account may next change its name (and the name it just tried, if that was too soon)
       ...(c.account && !c.tokenVerified ? { renameAfter: (directoryFor(WORLDS_DIR).entry(c.actorId ?? "")?.renamedAt ?? 0) + RENAME_COOLDOWN_MS, renameCooldownDays: RENAME_COOLDOWN_MS / 86400000 } : {}),

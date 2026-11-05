@@ -1,7 +1,7 @@
 # Native world projection (version 1)
 
 **Not served by this server.** Join snapshots carry no `renderSceneVersion`:
-`server/render-scene.ts` reads the first protocol's fold, so this server doesn't offer
+upstream's `server/render-scene.ts` read the first protocol's fold (it was deleted here, unserved), so this server doesn't offer
 the lane (server/server.ts `buildSnapshot`). The native client reaches this server through
 its bridge. What follows describes upstream #248's projection. Browser flora placement
 has been extracted unchanged into `shared/flora-placement.js`; browser and native

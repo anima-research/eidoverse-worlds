@@ -215,7 +215,6 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["setup", "setup-check.ts", 1], // R 10-28: the first-run setup link: no operator → one boot line; a signed-in person or agent claims it once, stored, live; guests, other sites, wrong tokens refused
   ["importer", "importer-check.ts", 1], // the house's review of #260 (6291883302), the v1 importer: causes, the approval's hash, one identity per person, nothing left half-written, values read as v1 read them
   ["eidosim-v1", "import-v1/eidosim-v1-test.ts", 1], // the first eidosim's covenant tests, on the copy the importer keeps (house #260, importer I8)
-  ["render-scene-import", "../render-scene-import-test.ts", 1], // #260 I464: server/render-scene.ts links (nothing serves it), and particles project through resolveParticles
   ["channelbox", "../channelbox-test.ts", 1], // #260 I242: the channel box through the real door; the rotate order is the viewer's (PROTOCOL §9.1), never sent
   ["last-world", "../last-world-test.ts", 1], // #281 (main, merged 10-27): a bare link goes back to the last world you were in; the real net.js writes it at the door's yes and forgets a refused or empty world
   ["event-wire", "../event-wire-test.ts", 1], // MCPL RFC-001 rev 3 (main, merged 10-27): a world event's tags follow its kind facet; a notice is chat:system, speech never
