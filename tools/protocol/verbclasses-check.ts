@@ -2,7 +2,7 @@
 // READ_ONLY and the wire's spectator READS/PERSON_ACTS used to be four literals in two files that had already
 // drifted (DEBT-SURVEY 10-12 #10). This pin holds the classes as they stood on 2026-10-12 — the wire's set and the
 // authority's differ only by the wire's own answers (`wait`/`whois`, which write nothing to the log but aren't the
-// authority's reads); since 10-12 a spectator may read `scripts`/`effect` too (SPECTATOR_GATED is empty) — and refuses two copies.
+// authority's reads); since 10-12 a spectator may read `scripts`/`effect` too (no read is gated) — and refuses two copies.
 //   bun tools/protocol/verbclasses-check.ts
 import { readFileSync } from "node:fs";
 import { ENGINE } from "./common.ts";
@@ -26,10 +26,9 @@ try { V = await import(ENGINE + "shared/protocol/verbclasses.js"); } catch (x: a
 if (V) {
   for (const [k, pin] of [["READ_ONLY", READ_ONLY_PIN], ["WIRE_READS", WIRE_READS_PIN], ["PERSON_ACTS", PERSON_ACTS_PIN]] as const)
     ok(V[k] instanceof Set && same(V[k], pin), `${k} is the pinned class: ${V[k] instanceof Set ? show(V[k]) : typeof V[k]} vs ${show(pin)}`);
-  ok(V.SPECTATOR_GATED instanceof Set && same(V.SPECTATOR_GATED, diff(READ_ONLY_PIN, WIRE_READS_PIN)), `SPECTATOR_GATED = READ_ONLY − WIRE_READS = ${show(diff(READ_ONLY_PIN, WIRE_READS_PIN))}`);
   if (V.WIRE_READS instanceof Set && V.READ_ONLY instanceof Set) {
     ok(sub(V.WIRE_READS, new Set([...V.READ_ONLY, "wait", "whois", "inbox"])), `WIRE_READS ⊆ READ_ONLY ∪ {wait, whois, inbox}: extra ${show(diff(V.WIRE_READS, new Set([...V.READ_ONLY, "wait", "whois", "inbox"])))}`);
-    ok(same(diff(V.READ_ONLY, V.WIRE_READS), V.SPECTATOR_GATED), `READ_ONLY − WIRE_READS is exactly SPECTATOR_GATED (today: ${show(diff(V.READ_ONLY, V.WIRE_READS))})`);
+    ok(diff(V.READ_ONLY, V.WIRE_READS).size === 0 && !("SPECTATOR_GATED" in V), `a spectator reads every read: READ_ONLY − WIRE_READS is empty and no gated class remains (today: ${show(diff(V.READ_ONLY, V.WIRE_READS))})`);
     ok(!("LOOK_ONLY" in V), "LOOK_ONLY is gone (it only served the none role)");
   }
 }

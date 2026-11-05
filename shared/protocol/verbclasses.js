@@ -7,15 +7,10 @@
 export const READ_ONLY = new Set(["help", "look", "inspect", "measure", "find", "lint", "history", "schema", "scripts", "modlog", "bans", "effect"]);
 
 
-// the authority's reads a SPECTATOR is refused at the door. Empty since 2026-10-12: a world's scripts and effects are part
-// of what a spectator is looking at, and reading changes nothing (Hesperus's call, R deferred). Kept as a class so a
-// future gate is one entry here, not a second literal.
-export const SPECTATOR_GATED = new Set([]);
-
-// the door's reads: metered as reads and the only requests a spectator may send. The authority's reads less the gated
-// two, plus the door's own answers that write nothing: `wait` (the presence long-poll) and `whois` (the server's
-// directory, answered before the authority). `inbox` is a body's but not a spectator's (a spectator has no body to be asked).
-export const WIRE_READS = new Set([...[...READ_ONLY].filter((v) => !SPECTATOR_GATED.has(v)), "wait", "whois"]);
+// the door's reads: metered as reads and the only requests a spectator may send. The authority's reads (a spectator reads
+// scripts and effects too, since 2026-10-12), plus the door's own answers that write nothing: `wait` (the presence
+// long-poll) and `whois` (the server's directory, answered before the authority). `inbox` is a body's but not a spectator's.
+export const WIRE_READS = new Set([...READ_ONLY, "wait", "whois"]);
 
 // acts on a person: after one succeeds the server sweeps (expels, re-rolls badges) — not the authority's concern
 export const PERSON_ACTS = new Set(["warn", "mute", "unmute", "kick", "ban", "unban"]);
