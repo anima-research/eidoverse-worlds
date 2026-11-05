@@ -413,3 +413,9 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
   - refusal unreadable: {"meaning":"the log folds to a status the authority won't write to","when":"a write while the fold says no-world/unknown-version"} → {"meaning":"the log folds to a status the authority won't write to","when":"a write while the fold says no-world/unknown-version/unsupported-feature"}
 - 2026-11-05: normative: components compose (Mica 11-04): one-place refused a light, model or mesh beside another, and anything but a socket's own fields on a socket; nothing refuses with it now
   - refusal one-place: gone (old logs may hold it)
+- 2026-11-05: normative: no shape repair (the dialect was never deployed; Mica 11-04): repair-needed gated writes on a world awaiting the maintenance command, and create-world.shapes / translated.from.translator were read back only as the repair's markers; the command, the gate and the markers are gone
+  - refusal repair-needed: gone (old logs may hold it)
+  - readback request:create-world: gone (old logs may hold it)
+  - readback request:translated: gone (old logs may hold it)
+- 2026-11-05: light.decay's meaning of absence is unchanged (1.7); its words named the deleted maintenance command and now say a translation writes it
+  - light.decay: its meaning of absence "1.7: the falloff exponent the light rig used before it was written (three.js decay); a value stored before 10-16 is repaired to 1.7 by the maintenance command (repair-shapes; docs/MAINTENANCE.md), never at load" → "1.7: the falloff exponent the light rig used before it was written (three.js decay); an older light is written 1.7 when its world is translated"

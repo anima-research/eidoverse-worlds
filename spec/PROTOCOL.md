@@ -20,8 +20,7 @@ a later version: not a component's shape, not a field or message name, and not
 mistake this period exists to avoid. What we promise instead is care: we try
 not to break things, every change is recorded (`REGISTRY-CHANGELOG.md` beside
 this document, and the version history at the end), and where a change would
-break stored logs we ship a **log translator** or a recorded shape repair (a
-maintenance command, §4) with it, so
+break stored logs we ship a **log translator** with it, so
 that existing worlds move forward rather than strand. Translators are the
 migration path for the trial period. Every registered component is `trial`
 until it is promised. Implementations SHOULD NOT add anything they are not
@@ -140,9 +139,7 @@ request, but the *authority* reads a few request fields back for meaning: an und
 (whose rights admitted its writes), a script request's `sponsor`, a sculpt's
 `args.brush` and `clamped`, a request's `label`, the request that typed a
 physics-engine `engine` (whether the owner typed a version: a deploy restamps only a
-version the server stamped), a launch's, lift's or catch's `id`, and a
-founding's `shapes` or a translation's `from.translator` (the shape repair's
-older markers, §4). The full
+version the server stamped), and a launch's, lift's or catch's `id`. The full
 list, with what each reader does, is pinned in `spec/readback.json` (each
 row's fields and what an unknown means; the reference keeps it as `READBACK`
 in shared/protocol/verbclasses.js, a pointer, not the contract). A new readback
@@ -150,8 +147,7 @@ is a new row; a changed or removed one needs an acknowledged re-pin.
 §12 lets the whole body of a request be redacted, so every one of these reads
 treats a redacted body as **unknown**, never as a default: an unknown chooser
 of an engine version is the owner's (no restamp), unknown rights match nobody,
-an unknown undo names no target, an unknown flight may still be in the air,
-and an unknown marker counts as marked (the shape repair never re-runs).
+an unknown undo names no target, and an unknown flight may still be in the air.
 
 ## 2. Folded state
 
@@ -277,7 +273,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   `grabbable.anim`, is an open name of a pose (one frame, only the bones it names) or a clip (more than one key):
   a name the body doesn't know plays its default, never a refusal; `sockets`, the old
   map spelling, is reserved and lift-only: the authority lifts it into socket children with their stations
-  on write, and the maintenance command's `lift-sockets` step does the same for a stored world (never the load), and a socket's old `body` block into its station),
+  on write (and the v1 translator does the same for a translated world), and a socket's old `body` block into its station),
   `params`, `reactions`, `lock`, `hidden`, `disabled`, `clickthrough`,
   `collider {shape, enabled?, blocks?, layer?, mask?}` (mesh, box or sphere; absent, its size decides), `places` (named places to walk to, in the
   thing's own frame; on `@world`, world coordinates),
@@ -303,9 +299,8 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   the client's drawing and ground panel and the agent read it through
   shared/terrainshape.js (`worldWater`, `waterParams`), and the mover's water
   law (shared/mover.js `waterStance`: wading, swimming, the haul-out) takes its
-  level. A write of `terrain.water` is refused with where it went; a stored one
-  is moved by the maintenance command's repair (below; a load never writes), and
-  the readers read it until then.
+  level. A write of `terrain.water` is refused with where it went (the v1
+  translator moves a v1 one).
 - **A water body is a thing.** `water` on a thing (the same fields, `level` in
   its own frame, absent = its zone's top; `flow` may be `[x, y, z]`) fills its
   sibling `zone {shape, size, priority?, blend?, weight?, global?}` (trial; after
@@ -406,8 +401,8 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   `light@2`), registered before anyone writes it, whose definition says what it `supersedes`. Old
   names are read forever. No component may change how another is read.
 - **Every registered name has a status.** `trial`: admitted, but its shape
-  may change during the alpha (above), with stored values repaired or
-  translated where they can be; `reserved`: the name is held and every write
+  may change during the alpha (above), with stored values translated where
+  they can be; `reserved`: the name is held and every write
   of it is refused (one refusal, code `reserved`); `stable`: promised, it only
   grows by additions. `schema` reports each one. None is stable at v1. A
   draft (a namespaced name, below) has no status: it isn't admitted.
@@ -439,99 +434,15 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   byte means, so no translator and no vectors can exist for it; it re-pins on
   the changelog line alone, the pin records the names, and from then on their
   shapes are the kernel's.
-- **A load never writes to the log; stored values are rewritten only by one
-  explicit maintenance command.** Three rewrites exist, each the system's own
-  recorded request: `lift-sockets` (a world stored before sockets were entities:
-  its `sockets` maps and body blocks become socket children with stations),
-  `rename-components` (names and fields renamed before release, below) and
-  `repair-shapes` (the shape audit's one-way repair, below). None runs at load
-  or on read. One write does happen when a server OPENS a world, and it is
-  not a shape rewrite: holds left from before a restart are set down
-  (`return-held`, the system's request; `settleOrphans`), presence repair for
-  bodies that are no longer here — the same request a leave writes, never a
-  stored value changed. A stored world keeps its old values as they are; the load says
-  which steps it needs, naming the command, and **fails closed** where
-  today's readers don't serve the old shape: a world needing `lift-sockets`
-  (no reader serves an un-lifted seat), a grabbable rename (`shared/grab.js`
-  reads `anim` and `grasp` only), a picture's or a sound's `alt` or `look`
-  (`shared/picture.js` and `shared/sound.js` read `description` only) or
-  `repair-shapes` (a sky's azimuth in
-  degrees would read as radians) loads and reads, but refuses every write
-  (not `leave`) with the registered code `repair-needed`, whose text names
-  the command. Renames whose old spelling the readers serve (`@world`
-  `trusted`, a motion's old type word, a station's `pose`) leave the world writable.
-  The maintenance command (its operation: docs/MAINTENANCE.md) runs the three
-  steps in that order, each its own request carrying
-  `command: "repair"` and a body `by` (who asked; `operator: true` from the wire):
-  `lift-sockets {id, made, moved, capability?}`, `rename-components
-  {renamed, failed?}`, `repair-shapes {v, ids, failed?}`
-  (shared/protocol/shaperepair.js: `repairComps` for each thing, `repairWorld`
-  for `@world`'s look; the authority's `maintain`). `--dry-run` reports all
-  three and writes nothing. **Rollback:** the command keeps the pre-repair
-  log beside the world (`repair-backups/<stamp>/world.jsonl`, with a manifest
-  of its size and sha256) and `repair <name> --rollback` puts it back
-  byte-identical, refusing when the log has grown since (`--force` overrides).
-  A v1 world translated today needs no step: the translate command runs the
-  same maintenance on its output (its `lift-sockets` request says `by:
-  "translate"`; §14).
-  The repair runs **once per world**: the system's `repair-shapes` request is the world's
-  marker, read by verb and actor only (they survive a redaction), and a world
-  founded or translated today gets one beside its founding or its `translated`
-  request (`ids: []`, with `founding: true` or `translated: true`). Worlds from
-  before that request carry an older marker, a founding stamped `shapes` or a
-  `translated` request by translate-v1@12 or later. Those are read back (§1), and
-  a redacted one counts as marked: a one-way rewrite is never re-run on values
-  that may already be in today's spelling (`shapesMarked`, a pure view over
-  the log, so every replica agrees). The
-  rules that read an absent field (a pendulum's swing point, physics kind,
-  a light's decay and daytime, the sky's and terrain's defaults) therefore
-  only ever see values stored before the marker, never a write made since:
-  a pendulum set today without a pivot keeps none, and a deleted pivot
-  stays deleted. The request is written even when nothing needs repair. Each
-  thing is admitted on its own: a thing the door refuses keeps its old
-  spelling and is named in the request's `failed`; the rest repair. A redacted
-  value is left alone. The shape audit repairs: a bare motion
-  naming a part → `motion:<slot> {node: <part>}` (the slot is `partSlot`
-  of the name, shared/protocol/names.js: the name itself when it is a tag,
-  else a sanitized form with 8 hex of its sha256), a keyed motion without
-  `node` → its key's tag as `node`, `amplitude` → `amp`, letter axes →
-  vectors, the old pendulum readings written down (period 3.5 s, damp 0, maxAmp 1.1, a
-  whole pendulum's `[0, 2, 0]` swing point as its `pivot`), a motion's
-  `pivot` → the `pivot` component; `collider` exact → mesh; `physics` with no
-  kind → dynamic, `material` → `surface`, layers/mask/ccd dropped; `light`
-  with no decay → 1.7 (the old rig's falloff; a new light's default is 2),
-  `day` → `daytime`, `shadows` dropped; a `model` stored as
-  `eido:sha256/<hex>` (translate-v1@8–@11) → the library path this host's
-  index names for it, with `model-hash` `sha256:<hex>` beside it (an address
-  no file here names stays, and still loads); `sky` clock 'real' and dormantRated → `tz` (hours, rate and ts
-  kept as the fallback clock), azimuth degrees → radians, `weatherSeconds` →
-  `transition`, a forecast's `dwellSec`/`transitionSec` → `dwell`/`transition`,
-  sun/fill/world dropped, the registry's seven defaults written; `terrain`
-  layer colours `"#rrggbb"` → ints, the sim's defaults written,
-  `terrain.water` → `water`; `grass` in the flora spelling (a preset keeps
-  its name). The translator (`translate-v1@45`, §14) writes its
-  projection through the same functions, so a translated world needs no
-  repair, and the old-world oracle mirrors the repair with them; the sweep's
-  declared projection and the oracle's core check are written independently,
-  a second hand on the same rules. Because the repair runs once, every
-  stored sky's azimuth is converted from degrees exactly once (a turn
-  beyond a full one first wraps: 400° is 40°), and a `weatherSeconds`
-  today's range can't hold (0, or above 600 s) is dropped.
-- **A pure rename is the command's second step, idempotent.** A component or field renamed before
-  release (shared/protocol/shaperepair.js `RENAMED_COMPONENTS`: `@world`
-  `trusted` → `trusted-components`; `RENAMED_FIELDS`: `grabbable.pose` and
-  `station.pose` → `anim`, a grip's `fingers` → `grasp`; a field's VALUE: a
-  motion's `type` `bob` → `oscillate`, on `motion` and every `motion:<slot>`)
-  is not marker-gated,
-  unlike the once-per-world repair above: a rename means the same whenever it
-  runs, so the command renames whatever it finds, as the system's
-  `rename-components {renamed, failed?, why}` request and its change, and writes nothing
-  when there is nothing to rename. A value already under the new name wins
-  (the old one is deleted), an old field stored as null is removed, and each
-  thing is admitted per thing, as the repair is: a thing the door refuses
-  keeps its old spelling and is named in the request's `failed` (written only
-  when something else renamed). The door takes a write in the old spelling
-  and stores it in the new.
+- **A load never writes to a stored value.** A world founded today is written in today's spelling from its first
+  entry, so nothing repairs it. One write does happen when a server OPENS a world, and it is not a shape rewrite:
+  holds left from before a restart are set down (`return-held`, the system's request; `settleOrphans`), the same
+  request a leave writes. A v1 world comes forward through the translator (`translate-v1@46`, §14), which writes today's spelling
+  (the shape audit's rules, `tools/protocol/import-v1/shapes.js`) and lifts v1's `sockets` maps into socket
+  children with its own `lift-sockets {id, made, moved}` requests. The door takes a write in a spelling renamed
+  before release (`grabbable.pose`/`station.pose` → `anim`, a grip's `fingers` → `grasp`, a motion's old type
+  word → `oscillate`, a picture's or sound's `alt`/`look` → `description`: shared/protocol/names.js `renameFields`) and stores
+  it in the new.
 - **Every defaulted parameter is written down.** The authority writes a
   component's defaults into the stored value when it is created or set, so a
   reader never supplies a default the log doesn't hold, and a later change to
@@ -1016,8 +927,7 @@ Only what the asker could have written themselves, on what they are writing anyw
 | a deletion's reference clears (§4), and their restoration by its undo | the asker's change | the asker | no rights, locks or keys (shape checks) | `cascade` |
 | a deletion's set-down of unparented things resting on what it removes | the asker's change | the asker | no rights, locks or keys (shape checks) | `cascade` |
 | occupants set down or dropped when a host's geometry changes | its own request `resettle {hosts, occupants, asked}` (`riders` in entries before 10-17), caused by the asker's request, and its change | `system` | the system's capability, scoped to those occupants | the actor |
-| settle, return-lost, return-held, restamp-engine, lift-sockets, repair-shapes, expire-roles, drive-commit | their own request and change | `system` | the system's capability | the actor |
-| components and fields renamed before release (§4), by the explicit `repair` command (never at load) | its own request `rename-components {renamed, why, failed?}` and its change | `system` | the system's capability, per thing | the actor |
+| settle, return-lost, return-held, restamp-engine, lift-sockets (a translation's), expire-roles, drive-commit | their own request and change | `system` | the system's capability | the actor |
 | a physics rest | its own change, caused by the launch | `sim` | the rest capability | the actor |
 | stamps on what the asker is writing (a physics shape, a home, a media or model hash; a home for a reset's target) | the asker's change | the asker | the asker's rights (a target they may not edit refuses the write) | no: they are the asker's |
 
@@ -1278,8 +1188,8 @@ away from it.
   Angles are radians unless the field's name carries its unit (`degPerSec`).
   The shape audit moved the last degrees: `look-at`'s yaw, pitch and
   speed (rad, rad/s) and `sky.azimuth` (where the sun stands round the
-  horizon: default π, within ±2π; a stored degree value is converted by
-  the maintenance command, §4); `grass.heading` was registered in radians. A particle effect
+  horizon: default π, within ±2π; a v1 degree value is converted by the
+  translator, §14); `grass.heading` was registered in radians. A particle effect
   document's angles (`spread`, `cone`, `rotation.angle`, `rotation.velocity`)
   moved to radians on 10-17, before any document was stored.
 - **Rotations** are unit quaternions `[x, y, z, w]` (§9.1). **Axes** are
@@ -1300,8 +1210,7 @@ away from it.
   hashes), drops it when the model changes to one it can't hash (a fork's
   copy carries its parent's `model-hash` as it stood, or none), and nothing
   breaks when it is absent or the host's index is lost. An
-  `eido:sha256/<64 hex>` value stored before is still read (and a model one
-  becomes its path when the world's maintenance command runs, §4). The door's one rewrite is a spelling,
+  `eido:sha256/<64 hex>` value stored before is still read. The door's one rewrite is a spelling,
   not a resolution (shared/protocol/assetref.js `atWrite`): the first
   protocol's makeGrass knobs → the flora spelling, noted in the reply; an
   unknown grass preset is refused.
@@ -1540,7 +1449,7 @@ this protocol. A translated log is an ordinary log of this protocol, and these h
   so nothing can bind a key to the old world's owner: the new world's tier 0 is empty (§13), and the approval is the
   host operator's countersignature alone, an ed25519 signature by the custody operator key (never the sequencer key)
   over `eidoverse-approve-translation:<world>:<report hash>`. It rides in the new log as the system's
-  `translation-approved` request right after `repair-shapes` (`body {report, approval: {over, owner: null, operator: {key,
+  `translation-approved` request right after `translated` (`body {report, approval: {over, owner: null, operator: {key,
   sig}, noOwner}}`, `noOwner` saying in words that no owner was attested). The fold never reads it (§1).
 - **The translator is named** in the system's `translated` request (`body {from: {…, translator}}`), so a reader knows which
   rules produced the log.

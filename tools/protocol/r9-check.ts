@@ -14,7 +14,7 @@
 //   A   the auditor re-runs an arrival with two stand-ins: agreeing re-runs are compared with the log (a forgery is flagged)
 //   U   an agent hears `vacated` (its seat cleared, standing where the authority let it go); only for the seat it is on
 //   T   leaving a seat restarts the authority's track of the body at the seat (no too-fast after being carried)
-//   L   lows: a prototype key as a verb, the founding marker is the first create-world, an unlogged grab records no
+//   L   lows: a prototype key as a verb, an unlogged grab records no
 //       identity, the translator's name is @13
 // @ts-nocheck
 import fs from "node:fs";
@@ -42,7 +42,6 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["no re-anchor on a step off a seat", "shared/protocol/authority/bodyverbs.js", "if (sat && vacateAt(w, st, actor, sat.to)) me = w.presence.bodies[actor];", "", ["T1"]],
   ["no re-anchor on an unseat", "shared/protocol/authority/occupants.js", "w.presence.bodies[who] = { ...b, at, ts: w.pace ? w.pace() : w.now(), tokens: TRACK.cap }; w.presenceDirty = true;", "", ["T1", "T2"]],
   ["a verb read through the prototype", "shared/protocol/authority.js", "const h = Object.hasOwn(VERBS, verb) ? VERBS[verb] : undefined;", "const h = VERBS[verb];", ["L1"]],
-  ["every create-world counts as the founding", "shared/protocol/shaperepair.js", "if (e.verb === \"create-world\" && !founded) {", "if (e.verb === \"create-world\") {", ["L2"]],
   ["an unlogged grab records who", "shared/protocol/authority/scriptrun.js", "const anon = ANON_EVENTS.has(ev.on) || (GRIP_EVENTS.has(ev.on) && ev.seq === undefined);", "const anon = ANON_EVENTS.has(ev.on);", ["L3"]],
   ["CONTROL (no-op: must stay green)", "shared/protocol/authority/gate.js", "// ---------- L7: the one gate ----------", "// ---------- L7:  the one gate ----------", []],
 ];
@@ -81,7 +80,6 @@ D.fixtureIds?.(true);   // the fixtures below seed the ids they read (ids-check 
 const F = await import(TREE + "shared/protocol/fold.js");
 const SB = await import(TREE + "shared/protocol/sandbox.js");
 const AU = await import(TREE + "shared/protocol/scriptaudit.js");
-const SR = await import(TREE + "shared/protocol/shaperepair.js");
 const SK = await import(TREE + "shared/sockbody.js");
 if (D.setScriptDuty) D.setScriptDuty({ maxMs: 1e9 });
 const ONLY = opt("only")?.split(",") ?? null;
@@ -269,10 +267,6 @@ const cases: Case[] = [
       s.call("olive", "create-world", { title: s.name });
       const out: any = {}; for (const v of ["constructor", "toString", "__proto__", "hasOwnProperty", "valueOf"]) out[v] = show(s.call("olive", v, { x: 1 })); return out; },
     good: (o) => Object.values(o).every((x: any) => /^refused unknown-verb/.test(x)) },
-  { id: "L2", what: "(holes L5) only the founding is the founding: a later create-world act (a refused attempt the log keeps) whose body is purged doesn't mark the log", run() {
-      const L = [{ kind: "genesis", body: {} }, { kind: "request", actor: "olive", verb: "create-world", body: { title: "t" } }, { kind: "request", actor: "vic", verb: "create-world", body: { commitment: "0".repeat(64) } }];
-      return { marked: SR.shapesMarked(L, (i: number) => (i === 2 ? null : L[i]?.body)), founding: SR.shapesMarked(L.slice(0, 2), (i: number) => (i === 1 ? null : L[i]?.body)) }; },
-    good: (o) => o.marked === false && o.founding === true },
   { id: "L3", what: "(claims O2) an unlogged grab's activation records no identity (no trigger, no event.by; the script still hears `by`)", run(s) {
       const WHO = "u-vicvicvicvicvicvicvi";
       s.call("olive", "create-world", { title: s.name }); roles(s, { [WHO]: "member" });
@@ -283,10 +277,6 @@ const cases: Case[] = [
       const act = s.entries().findLast((e: any) => e.kind === "request" && e.verb === "script");
       return { ins: show(ins), g: show(g), heard: comp(s, "cup", "t/g")?.heard, logged: !!g.act || !!g.recorded, trigger: act?.body?.trigger ?? null, by: act?.body?.event?.by ?? null }; },
     good: (o) => o.ins === "ok" && o.g === "ok" && o.heard === true && (o.logged || (o.trigger === null && o.by === null)) },
-  { id: "L4", what: "(claims O3) the translator that writes the repair-shapes marker is named @13 or later (both names; @14 renamed a motion type)", async run() {
-      const f = fs.existsSync(TREE + "tools/protocol/import-v1/translate-v1.js") ? TREE : ENGINE;
-      const TV = await import(f + "tools/protocol/import-v1/translate-v1.js"); return { t: TV.TRANSLATOR, s: TV.TRANSLATOR_SIM }; },
-    good: (o) => translatorVersion(o.t) >= 13 && translatorVersion(o.s) >= 13 },
 ];
 
 let pass = 0, fail = 0;

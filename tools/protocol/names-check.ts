@@ -58,7 +58,6 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the punt doc kicks again", "shared/protocol/verbspec.js", "send a loose thing beside your body (low by it", "kick a thing at your feet (low by it", ["P4"]],
   ["the browser sends shove", "client/lib/thingphysics.js", "sendRequest('punt', { id, v, contact: true });", "sendRequest('punt', { id, v, shove: true });", ["P5"]],
   ["the registry says trusted", "shared/protocol/componentspec.js", "  \"trusted-components\": { on: \"world\",", "  trusted: { on: \"world\",", ["T1"]],
-  ["no rename at load", "shared/protocol/shaperepair.js", "export const RENAMED_COMPONENTS = Object.freeze({ \"@world\": Object.freeze({ trusted: \"trusted-components\" }) });", "export const RENAMED_COMPONENTS = Object.freeze({});", ["T2"]],
   ["drafts reads only the new key", "shared/drafts.js", "(worldC?.[TRUSTED] ?? worldC?.[OLD_TRUSTED])?.components", "worldC?.[TRUSTED]?.components", ["T3"]],
   ["the old tier is the tier", "shared/protocol/consent.js", "export const TIERS = [\"everyone\", \"friends\"];", "export const TIERS = [\"strangers\", \"friends\"];", ["C1"]],
   // "no old words on the wire" mutant RETIRED with C2 (recut A2; #260 375)
@@ -78,10 +77,9 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the history forgets", "spec/PROTOCOL.md", "the refusal codes `hold-limit`, `beneath`, `not-pushable`", "the refusal codes", ["X1"]],
   ["the registry keeps pose", "shared/protocol/componentspec.js", "hold: \"string\", anim: \"string\", grips:", "hold: \"string\", pose: \"string\", grips:", ["A1"]],
   ["no door translation", "shared/protocol/authority/writes.js", "if (comp === \"grabbable\" || comp === \"station\") { const r = renameFields(comp, value);", "if (false) { const r = renameFields(comp, value);", ["A2"]],
-  ["two-hand is a name", "shared/protocol/shaperepair.js", "if (comp === \"grabbable\" && p === \"two-hand\") {", "if (false) {", ["A2"]],
+  ["two-hand is a name", "shared/protocol/names.js", "if (comp === \"grabbable\" && p === \"two-hand\") {", "if (false) {", ["A2"]],
   ["an unknown name is refused", "shared/grab.js", "if (v.anim !== undefined && !(typeof v.anim === 'string' && ANIM_RE.test(v.anim)))", "if (v.anim !== undefined && !HOLD_POSES.includes(v.anim))", ["A3"]],
   ["an unknown name is held as written", "shared/grab.js", "if (g?.anim && ARMS[g.anim] && g.anim !== BOTH_HANDS) return g.anim;", "if (g?.anim) return g.anim;", ["A3"]],
-  ["no field renames at load", "shared/protocol/shaperepair.js", "export const RENAMED_FIELDS = Object.freeze({ grabbable: Object.freeze({ pose: \"anim\", \"grips.*.fingers\": \"grasp\" }), station: Object.freeze({ pose: \"anim\" }),", "export const RENAMED_FIELDS = Object.freeze({", ["A2", "A4"]],
   ["the lift keeps pose", "shared/protocol/authority/sockets.js", "const b = \"pose\" in b0 && !(\"anim\" in b0) ? (({ pose, ...r }) => ({ ...r, anim: pose }))(b0) : b0;", "const b = b0;", ["A5"]],
   ["the wire says wingsFolded", "shared/wingpresence.js", "return { poses: folded === true ? [WINGS_FOLDED] : [] };", "return { wingsFolded: folded === true };", ["A6"]],
   ["the old flag isn't read", "shared/wingpresence.js", "return typeof sample.wingsFolded === 'boolean' ? sample.wingsFolded : null;", "return null;", ["A6"]],
@@ -136,9 +134,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the registry says bob", "shared/protocol/componentspec.js", "enums: { type: [\"pendulum\", \"spin\", \"orbit\", \"oscillate\", \"path\"]", "enums: { type: [\"pendulum\", \"spin\", \"orbit\", \"bob\", \"path\"]", ["OS1"]],
   ["the card is still Bob", "shared/protocol/descriptors.js", "  Oscillate: { type: 'oscillate', show: ['axis', 'amp', 'period', 'phase'],", "  Bob: { type: 'oscillate', show: ['axis', 'amp', 'period', 'phase'],", ["OS1"]],
   ["the door stores bob as written", "shared/protocol/authority/writes.js", "if (comp === \"motion\" || comp.startsWith(\"motion:\")) { const r = renameFields(comp, value);", "if (false) { const r = renameFields(comp, value);", ["OS2"]],
-  ["no motion rename", "shared/protocol/shaperepair.js", "  motion: Object.freeze({ \"type=bob\": \"type=oscillate\" }) });", "  });", ["OS2", "OS3"]],
-  ["the load renames only bare keys", "shared/protocol/shaperepair.js", "for (const comp of Object.keys(c).filter((k) => Object.hasOwn(RENAMED_FIELDS, renamedFieldsKey(k))).sort())", "for (const comp of Object.keys(RENAMED_FIELDS))", ["OS3"]],
-  ["the old word isn't read", "shared/protocol/names.js", "  return typeof t === \"string\" && Object.hasOwn(OLD_MOTION_TYPES, t) ? OLD_MOTION_TYPES[t] : t;", "  return t;", ["OS2", "OS3", "OS4"]],
+  ["the old word isn't read", "shared/protocol/names.js", "  return typeof t === \"string\" && Object.hasOwn(OLD_MOTION_TYPES, t) ? OLD_MOTION_TYPES[t] : t;", "  return t;", ["OS2", "OS4"]],
   ["the closed form reads the raw type", "client/lib/motioneval.js", "  let r;\n  switch (motionType(m)) {", "  let r;\n  switch (m.type) {", ["OS4"]],
   ["the seat signals read the raw type", "client/lib/socksignals.js", "  switch (motionType(m)) {", "  switch (m.type) {", ["OS4"]],
   ["the editor's card reads the raw type", "shared/editschema.js", "      const ty = motionType(m);", "      const ty = m.type;", ["OS4"]],
@@ -313,17 +309,6 @@ const cases: Case[] = [
       const a = s.call("olive", "set", { id: "@world", component: "trusted-components", value: v }), b = s.call("olive", "set", { id: "@world", component: "trusted", value: v });
       return { a: show(a), b: show(b), reg: Object.hasOwn(CS.COMPONENTS, "trusted-components"), old: Object.hasOwn(CS.COMPONENTS, "trusted"), c: s.w().state().entities["@world"].c["trusted-components"] ?? null }; },
     good: (o) => o.a === "ok" && /^refused/.test(o.b) && o.reg && !o.old && JSON.stringify(o.c) === '{"components":["hesperus/material"]}' },
-  { id: "T2", what: "…a world whose log holds @world trusted is renamed at load (the system's rename-components act, the value kept, the old key gone); the next load writes nothing", run(s) {
-      s.call("olive", "create-world", { title: s.name }); const L = s.entries(); const wid = L[1]?.world ?? L[0]?.world; const ts = L.at(-1).ts; const n = L.length;
-      const v = { components: ["hesperus/material"] };
-      fs.appendFileSync(path.join(root, "worlds", `${s.name}.jsonl`), [{ world: wid, kind: "request", actor: "olive", verb: "set", body: { args: { id: "@world", component: "trusted", value: v } }, ts: ts + 1 },
-        { world: wid, kind: "change", actor: "olive", cause: n, op: "set", body: { id: "@world", comp: "trusted", value: v }, ts: ts + 1 }].map((e) => JSON.stringify(e)).join("\n") + "\n");
-      clock.advance(1000);
-      const w1 = s.reopen(); const before = Object.keys(w1.state().entities["@world"].c); const out = D.maintain(w1);
-      const w2 = s.reopen(); const c = w2.state().entities["@world"].c; const acts = w2.entries.filter((e: any) => e.kind === "request" && e.verb === "rename-components" && e.actor === "system");
-      const k = w2.entries.length; D.maintain(w2); const again = s.reopen().entries.length - k;
-      return { before, out: JSON.stringify(out).slice(0, 300), keys: Object.keys(c), val: c["trusted-components"] ?? null, acts: acts.length, body: acts[0]?.body ?? null, again, status: w2.state().status }; },
-    good: (o) => o.before.includes("trusted") && !o.keys.includes("trusted") && JSON.stringify(o.val) === '{"components":["hesperus/material"]}' && o.acts === 1 && o.body?.renamed?.[0]?.to === "trusted-components" && o.again === 0 && o.status === "ok" },
   { id: "T3", what: "…drafts.js: TRUSTED is trusted-components and trustedOf reads a world not yet reloaded (the old key) too", async run() {
       const DR = await import(TREE + "shared/drafts.js");
       return { k: DR.TRUSTED, nw: DR.trustedOf({ "trusted-components": { components: ["a/b"] } }), old: DR.trustedOf({ trusted: { components: ["a/c"] } }) }; },
@@ -414,24 +399,6 @@ const cases: Case[] = [
       const GB = await import(TREE + "shared/grab.js"); const g = GB.grabOf(s.w().state().entities.cup?.c ?? {});
       return { r: show(r), held: GB.holdPoseOf(g, [0.2, 0.2, 0.2]), big: GB.holdPoseOf(g, [1, 1, 1]), torch: GB.holdPoseOf(GB.grabOf({ grabbable: { anim: "torch" } }), [0.2, 0.2, 0.2]), two: GB.holdPoseOf(GB.grabOf({ grabbable: { twoHanded: true } }), [0.2, 0.2, 0.2]), named: GB.HOLD_POSES ?? null }; },
     good: (o) => o.r === "ok" && o.held === "hand" && o.big === "carry" && o.torch === "torch" && o.two === "both-hands" && JSON.stringify(o.named) === '["hand","carry","torch","pistol","shoulder"]' },
-  { id: "A4", what: "…a log holding grabbable.pose / a grip's fingers / station.pose is renamed at load (rename-components, every load, idempotent): anim, grasp, twoHanded", run(s) {
-      s.call("olive", "create-world", { title: s.name }); s.call("olive", "create", { id: "cup", model: "book", place: { at: [0, 0] } });
-      s.call("olive", "create", { id: "bench", model: "crate", place: { at: [4, 0] } });
-      s.call("olive", "create", { components: { parent: { to: "bench" }, transform: { pos: [0, 0.5, 0] }, socket: { name: "bunk" }, station: { action: "lie" } } });
-      const L = s.entries(); const wid = L[1]?.world ?? L[0]?.world; const ts = L.at(-1).ts; const n = L.length;
-      const E0 = s.w().state().entities; const kid = Object.keys(E0).find((k) => E0[k].c.socket?.name === "bunk");
-      const gv = { who: "member", pose: "pistol", grips: { h: { pos: [0, 0.1, 0], fingers: "point" } } }, sv = { action: "lie", anchor: "root", pose: "lie" };
-      fs.appendFileSync(path.join(root, "worlds", `${s.name}.jsonl`), [
-        { world: wid, kind: "request", actor: "olive", verb: "set", body: { args: { id: "cup", component: "grabbable", value: gv } }, ts: ts + 1 },
-        { world: wid, kind: "change", actor: "olive", cause: n, op: "set", body: { id: "cup", comp: "grabbable", value: gv }, ts: ts + 1 },
-        { world: wid, kind: "request", actor: "olive", verb: "set", body: { args: { id: kid, component: "station", value: sv } }, ts: ts + 2 },
-        { world: wid, kind: "change", actor: "olive", cause: n + 2, op: "set", body: { id: kid, comp: "station", value: sv }, ts: ts + 2 }].map((e) => JSON.stringify(e)).join("\n") + "\n");
-      clock.advance(1000);
-      const w1 = s.reopen(); D.maintain(w1); const w2 = s.reopen(); const E = w2.state().entities;
-      const k = w2.entries.length; D.maintain(w2); const again = s.reopen().entries.length - k;
-      const act = w2.entries.findLast((e: any) => e.kind === "request" && e.verb === "rename-components");
-      return { g: E.cup?.c.grabbable ?? null, st: E[kid]?.c.station ?? null, again, renamed: act?.body?.renamed ?? null, status: w2.state().status }; },
-    good: (o) => o.status === "ok" && o.g?.anim === "pistol" && !("pose" in o.g) && o.g?.grips?.h?.grasp === "point" && !("fingers" in o.g.grips.h) && o.st?.anim === "lie" && !("pose" in o.st) && o.again === 0 && Array.isArray(o.renamed) && o.renamed.some((r: any) => r.component === "station") },
   { id: "A5", what: "…the legacy sockets map's body block keeps pose: the lift makes it station.anim, and the map's readers get body.pose back (slotOf)", async run(s) {
       s.call("olive", "create-world", { title: s.name }); s.call("olive", "create", { id: "bench", model: "crate", place: { at: [4, 0] } });
       const r = s.call("olive", "set", { id: "bench", component: "sockets", value: { bunk: { pos: [0, 0.5, 0], body: { action: "lie", pose: "lie" } } } });
@@ -638,22 +605,6 @@ const cases: Case[] = [
       return { a: show(a), b: show(b), c: show(c), notes: JSON.stringify(a.notes ?? []), arm: E.arm?.c["motion:piston"] ?? null, drone: E.drone?.c.motion ?? null }; },
     good: (o) => o.a === "ok" && o.b === "ok" && o.c === "ok" && /"field":"type","from":"bob","to":"oscillate"/.test(o.notes) && /renamed before release/.test(o.notes)
       && o.arm?.type === "oscillate" && o.arm?.amp === 0.3 && o.arm?.period === 4 && JSON.stringify(o.arm?.axis) === "[1,0,0]" && o.drone?.type === "oscillate" && o.drone?.amp === 0.5 },
-  { id: "OS3", what: "…a log holding a motion of type bob (whole, and a part's) is renamed at load (rename-components: the value kept, its type oscillate, per thing); the next load writes nothing", run(s) {
-      s.call("olive", "create-world", { title: s.name }); s.call("olive", "create", { id: "drone", model: "book", place: { at: [0, 0] } }); s.call("olive", "create", { id: "arm", model: "book", place: { at: [2, 0] } });
-      const L = s.entries(); const wid = L[1]?.world ?? L[0]?.world; const ts = L.at(-1).ts; const n = L.length;
-      const mv = { type: "bob", axis: [0, 1, 0], amp: 0.4, period: 3, phase: 0, t0: 1700000000000 }, pv = { type: "bob", node: "Piston", axis: [1, 0, 0], amp: 0.2, period: 2, phase: 0, t0: 1700000000000 };
-      fs.appendFileSync(path.join(root, "worlds", `${s.name}.jsonl`), [
-        { world: wid, kind: "request", actor: "olive", verb: "set", body: { args: { id: "drone", component: "motion", value: mv } }, ts: ts + 1 },
-        { world: wid, kind: "change", actor: "olive", cause: n, op: "set", body: { id: "drone", comp: "motion", value: mv }, ts: ts + 1 },
-        { world: wid, kind: "request", actor: "olive", verb: "set", body: { args: { id: "arm", component: "motion:piston", value: pv } }, ts: ts + 2 },
-        { world: wid, kind: "change", actor: "olive", cause: n + 2, op: "set", body: { id: "arm", comp: "motion:piston", value: pv }, ts: ts + 2 }].map((e) => JSON.stringify(e)).join("\n") + "\n");
-      clock.advance(1000);
-      const w1 = s.reopen(); const before = w1.state().entities.drone?.c.motion?.type; D.maintain(w1); const w2 = s.reopen(); const E = w2.state().entities;
-      const k = w2.entries.length; D.maintain(w2); const again = s.reopen().entries.length - k;
-      const act = w2.entries.findLast((e: any) => e.kind === "request" && e.verb === "rename-components");
-      return { before, drone: E.drone?.c.motion ?? null, arm: E.arm?.c["motion:piston"] ?? null, again, renamed: act?.body?.renamed ?? null, actor: act?.actor ?? null, status: w2.state().status }; },
-    good: (o) => o.status === "ok" && o.before === "bob" && o.drone?.type === "oscillate" && o.drone?.amp === 0.4 && o.drone?.t0 === 1700000000000 && o.arm?.type === "oscillate" && o.arm?.node === "Piston" && o.again === 0 && o.actor === "system"
-      && Array.isArray(o.renamed) && ["motion", "motion:piston"].every((c) => o.renamed.some((r: any) => r.component === c && r.field === "type" && r.from === "bob" && r.to === "oscillate")) },
   { id: "OS4", what: "…the readers read the old spelling for one release (names.js motionType): the closed form, the seat signals, the editor's channels and card draw a stored bob as an oscillate", async run() {
       const ME: any = await import(TREE + "client/lib/motioneval.js"), SS: any = await import(TREE + "client/lib/socksignals.js"), ES: any = await import(TREE + "shared/editschema.js"), NM: any = await import(TREE + "shared/protocol/names.js");
       const base = { pos: [1, 2, 3], yaw: 0 }, m = (type: string) => ({ type, axis: [0, 0, 1], amp: 0.5, period: 2, phase: 0.3, t0: 1000 });

@@ -16,10 +16,10 @@
 //      namespace), with the translated world's identities (read back from its directory: a name → the id it was given)
 //      and model hashes (computed here from the same host files) beside the paths;
 //   B. the SERVER's view: the same world opened as the server opens it (server/livehost.ts openLive with the engine's
-//      catalogue), then lifted as server/worldlog.ts lifts it at first load (authority.js liftWorld: a stored `sockets`
-//      map becomes socket child entities, a mounted thing's parent names the child, its pose is re-expressed in the
-//      child's frame), against side A's old projection put through the SAME lift (sockets.js legacyHosts/liftHostOps),
-//      plus an independent check that every old seat is a child entity with that name at that pose.
+//      catalogue), whose log ends with the translation's own socket lifts (a stored `sockets` map becomes socket child
+//      entities, a mounted thing's parent names the child, its pose is re-expressed in the child's frame), against side
+//      A's old projection put through the SAME lift (./shapes.js liftProjection), plus an independent check that
+//      every old seat is a child entity with that name at that pose.
 //   Ids: the translator keeps every entity id (enc() only escapes what the §2.3 grammar refuses), so ids are matched
 //   through enc(); people's names (roles, bans, authors) are matched through the translated world's directory.
 //   Numbers compare with a 1e-9 tolerance; everything else exactly. What the comparison leaves out is only the
@@ -56,18 +56,17 @@ process.env.WORLDS_DIR = path.join(SCRATCH, "worlds");
 
 const { project, DROPPED, namespaceOf, hasEpoch, canon } = await import("./translate-v1.js");
 const { encRaw: enc } = await import("../../../shared/protocol/names.js");   // the translator's encoder (old names are never ids)
-const { readLog, fold, emptyState, applyInPlace } = await import("../../../shared/protocol/fold.js");
+const { readLog, fold } = await import("../../../shared/protocol/fold.js");
 const { translateV1World, warmHulls, hullBox } = await import("./world.ts");
 const { lampsOf } = await import("./lamps.ts");
 const { contentAddressOf } = await import("../../../server/eidoindex.ts");
 const { openLive } = await import("../../../server/livehost.ts");
 const { ENGINE_CATALOGUE } = await import("../../../server/modelcatalogue.ts");
-const { liftWorld } = await import("../../../shared/protocol/authority.js");
 const { opsOf: _opsOf } = await import("../../../shared/protocol/fold.js");
 const opsQuiet = (e: any) => { try { return _opsOf(e); } catch { return []; } };
-const { legacyHosts, liftHostOps, isSocketC } = await import("../../../shared/protocol/authority/sockets.js");
+const { isSocketC } = await import("../../../shared/protocol/authority/sockets.js");
+const { liftProjection } = await import("./shapes.js");
 const { socketQ } = await import("../../../shared/components.js");
-const { shapeRepairOps, shapesMarked } = await import("../../../shared/protocol/shaperepair.js");
 const FA = await import("../../../shared/flora_args.js");   // the grass reader's own mapping, for C
 const { directoryFileIn } = await import("../../../server/keyfiles.ts");
 const { HN_ISS } = await import("../../../server/auth.ts");
@@ -175,18 +174,6 @@ export function whoFrom(worldsDir) {
   return { who, unresolved, people: Object.keys(ids).length };
 }
 
-/** The old projection put through the server's load-time lift: the same functions liftWorld calls (legacyHosts, then
- *  liftHostOps per host, in its order), applied by the real fold's applyInPlace. */
-function liftPlain(P, ever, repair = true) {
-  const st = emptyState(); delete st.entities["@world"];
-  for (const [id, c] of Object.entries(P)) st.entities[id] = { born: 0, c: Object.assign(Object.create(null), jclone(c)) };
-  const hosts = legacyHosts(st, ever);
-  for (const h of hosts) { if (!st.entities[h]) continue; const { ops } = liftHostOps(st, ever, h); applyInPlace(st, ops, 1); }
-  // …then the shape repair (shape audit 10-16), as liftWorld does: once per world, so not on a log that is already marked
-  // (a translate-v1@12 log is: its projection is the repaired one; review r7 F2)
-  if (repair) { const ops = shapeRepairOps(st); if (ops.length) applyInPlace(st, ops, 1); }
-  return { lifted: v4comps(st), hosts };
-}
 
 /** C, independent of the translator's projection (so a bug in `project` itself, which side A shares, still shows): the
  *  fields the old engine's snapshot states plainly, read straight off it — every thing's id, its model (its lib as written)
@@ -219,7 +206,7 @@ function coreCheck(snapState, newA, content) {
   return diffs;
 }
 
-// declared (translate-v1@12, the shape audit's render-media-env family), written here independently of shared/protocol/shaperepair.js:
+// declared (translate-v1@12, the shape audit's render-media-env family), written here independently of ./shapes.js:
 // a terrain's layer colours are ints, the sim's defaults (shared/terrainmath.js) are written where absent, and its water is
 // the world's water component (its colour an int); grass is read in the flora spelling (the grass READER's own mapping:
 // flora_args), a preset kept by its name (R 10-17)
@@ -256,9 +243,6 @@ function originalsOf(dir) {
   return d;
 }
 
-/** What the server's load says a lifted world still lacks: a host it refused or skipped, or maintenance it still needs
- *  (liftWorld's repairNeeded: a translation runs the maintenance itself, so a fresh one never needs any). */
-export const liftFailures = (lifted) => lifted.filter((x) => x.failed || x.skipped || x.repairNeeded);
 
 export async function oracleWorld(given) {
   const dir = originalsOf(given);
@@ -278,10 +262,9 @@ export async function oracleWorld(given) {
   const tTranslate = performance.now();
   // A. the strict reader and the real fold over what was written
   const text = fs.readFileSync(path.join(dest, "world.jsonl"));
-  // the translate command runs the maintenance command on its output (lead 10-18: a load never writes; the lift is the
-  // translation's own act, by: "translate"). A compares the PROJECTION, so it folds the log up to that lift; B compares the
-  // served state (lifted) with the snapshot put through the same lift
-  const all = readLog(text); const liftAt = all.findIndex((e: any) => e?.kind === "request" && e.verb === "lift-sockets" && e.actor === "system" && e.body?.by === "translate");
+  // the translation lifts v1's socket maps at its tail (translate-v1@46). A compares the PROJECTION, so it folds the log up to
+  // the first lift; B compares the served state (lifted) with the snapshot put through the same lift
+  const all = readLog(text); const liftAt = all.findIndex((e: any) => e?.kind === "request" && e.verb === "lift-sockets" && e.actor === "system");
   const preLift = liftAt >= 0 ? all.slice(0, liftAt) : all;
   const st = fold(preLift);
   if (st.status !== "ok") return { name, dir, error: `the translated world folds to ${st.status}` };
@@ -295,13 +278,11 @@ export async function oracleWorld(given) {
   const A = compareWorlds(oldA, newA);
   const C = coreCheck(snapState, newA, content);
   const tA = performance.now();
-  // B. the server's view: opened as the server opens it, lifted as it lifts at first load
+  // B. the server's view: opened as the server opens it
   const live = openLive(dest, name, { catalogue: ENGINE_CATALOGUE, scripts: null });
   const ever = everPre;   // what the lift saw: the ids before it (its children's ids are minted against these)
-  const lifted = liftWorld(live);   // the LOAD: writes nothing; says what the world still needs (nothing, for a translation)
-  const failedLift = liftFailures(lifted);
   const newB = v4comps(live.state());
-  const { lifted: oldB, hosts } = liftPlain(oldA, ever, !shapesMarked(live.entries));
+  const { lifted: oldB, hosts } = liftProjection(oldA, ever);
   const B = compareWorlds(oldB, newB);
   // B', independent of the lift's code: every seat the OLD snapshot has is a socket child of its host, by name, at its pose
   const seatDiffs = [];
@@ -316,13 +297,13 @@ export async function oracleWorld(given) {
       const t = kids[0][1].transform; const y = Number(s.yaw ?? 0); const want = { pos: Array.isArray(s.pos) ? s.pos : [0, 0, 0], q: socketQ({ ...s, yaw: undefined, ...(Number.isFinite(y) && y !== 0 ? { q: [0, Math.sin(y / 2), 0, Math.cos(y / 2)] } : {}) }) };   // v1 turned a seat by its yaw as JS coerces it
       for (const d of deepDiff(want, { pos: t?.pos, q: t?.q })) seatDiffs.push({ id: kids[0][0], field: `seat '${slot}' transform${d.path}`, old: d.old, new: d.new }); } }
   const tB = performance.now();
-  return { name, dir, entries: old.length, unparsed, out: r.entries, people, unresolved, lift: { hosts: hosts.length, failed: failedLift, seats, seatDiffs },
+  return { name, dir, entries: old.length, unparsed, out: r.entries, people, unresolved, lift: { hosts: hosts.length, seats, seatDiffs },
     A, B, C, ms: { translate: tTranslate - t0, compareA: tA - tTranslate, serverB: tB - tA, total: tB - t0 } };
 }
 
 // ---------- the report ----------
 const unexplained = (w) => (w.skipped ? 0 : w.error ? 1 : w.A.missing.length + w.A.extra.length + w.A.diffs.length + w.B.missing.length + w.B.extra.length + w.B.diffs.length
-  + w.lift.seatDiffs.length + w.C.length + w.lift.failed.length + w.unresolved.length);
+  + w.lift.seatDiffs.length + w.C.length + w.unresolved.length);
 function printWorld(w) {
   if (w.skipped) { if (w.skipped !== "no snapshot.json") console.log(`\n-- ${w.name} (${w.dir}): SKIPPED (${w.skipped})`); return; }
   if (w.error) { console.log(`\n-- ${w.name}: FAIL ${w.error}`); return; }
@@ -337,7 +318,7 @@ function printWorld(w) {
   }
   console.log(`   C core fields read straight off the snapshot (model, pose, parent, terrain, grass; not through the projection): ${w.C.length ? `${w.C.length} DIFF` : "all agree"}`);
   for (const d of w.C.slice(0, SHOW)) console.log(`     DIFF ${d.id} ${d.field}: old ${fmt(d.old)}  new ${fmt(d.new)}`);
-  console.log(`   lift: ${w.lift.hosts} socket host(s), ${w.lift.seats} old seat(s), each a socket child at its pose: ${w.lift.seatDiffs.length ? `${w.lift.seatDiffs.length} DIFF` : "yes"}${w.lift.failed.length ? `; lift refused/skipped: ${fmt(w.lift.failed)}` : ""}`);
+  console.log(`   lift: ${w.lift.hosts} socket host(s), ${w.lift.seats} old seat(s), each a socket child at its pose: ${w.lift.seatDiffs.length ? `${w.lift.seatDiffs.length} DIFF` : "yes"}`);
   for (const d of w.lift.seatDiffs.slice(0, SHOW)) console.log(`     DIFF ${d.id} ${d.field}: old ${fmt(d.old)}  new ${fmt(d.new)}`);
   console.log(`   people: ${w.people} identities in the translated world's directory${w.unresolved.length ? `; UNRESOLVED names: ${fmt(w.unresolved.slice(0, SHOW))}` : ", every old name/account found"}`);
 }

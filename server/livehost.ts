@@ -256,7 +256,7 @@ function dropPurgedLeftovers(dir: string, entries: Any[], blobPath: (h: string) 
 }
 
 /** Every view a boot seeded, gone, so each rebuilds from genesis at its next read (a re-derive that disagreed). */
-function resetViews(w: Any) { for (const k of ["__actIndex", "__guests", "ckptScan", "__shapes", "__orphans"]) delete w[k]; w.__ever.n = 0; w.__ever.ids = new Set(); seedPurgedSeqs(w, 0); w.seedHead(-1, null); }
+function resetViews(w: Any) { for (const k of ["__actIndex", "__guests", "ckptScan", "__orphans"]) delete w[k]; w.__ever.n = 0; w.__ever.ids = new Set(); seedPurgedSeqs(w, 0); w.seedHead(-1, null); }
 /** Fold and chain a log's first coversIndex+1 lines in a Worker (server/statecache-verify.ts): {digest, head, n, views?} or {error}. */
 function verifyCache(logPath: string, coversIndex: number, views: { sim: boolean } | null = null): Promise<Any> {
   return new Promise((resolve) => {

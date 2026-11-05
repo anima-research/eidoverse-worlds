@@ -31,7 +31,6 @@ import { saysOf } from "../says.js";
 import { readOut } from "../a11y.js";
 import { instanceProblem, effectFor, effectBlobName, effectProblem, EFFECT_KIND, ESSENTIAL_NAMES, isEssential, LEGACY_FIELDS } from "../particle_effects.js";
 import { livePoses, digestOf, restEta, ENGINES, carried, worldPose, TICK_MS, offChain, simSnapshotOf } from "./simlayer.js";
-import { shapeRepairOps, shapesMarked, SHAPES_VERSION } from "./shaperepair.js";
 import { atWrite } from "./assetref.js";
 import { eidoHex } from "../eido.js";
 import { trustRefusal } from "../drafts.js";
@@ -41,7 +40,7 @@ import { reachTo, massOf, shoveCap, feetOn, sweptCovers } from "../shove.js";
 import { r3, noNeg0, unNegZero } from "./round.js";
 import { shapeError, isBoxShape } from "./shapes.js";
 import { CTX, UP } from "./authority/ctx.js";
-import { SOCKETS_PER_HOST, isLegacyParent, isSocketC, socketRules, actionRules, socketsOf, allSockets, socketPoint, socketRole, liftOps, legacyHosts, liftHostOps, modelSocketNames } from "./authority/sockets.js";
+import { SOCKETS_PER_HOST, isLegacyParent, isSocketC, socketRules, actionRules, socketsOf, allSockets, socketPoint, socketRole, liftOps, modelSocketNames } from "./authority/sockets.js";
 import { Refusal, refuse, said } from "./authority/refuse.js";
 import { LAB_CATALOGUE, modelOf, geomOf, boxOfM, geomE, withCatalogue, meshShape } from "./authority/catalogue.js";
 export { LAB_CATALOGUE, withCatalogue, MESH_SIZE, meshSize, meshGeom, meshShape } from "./authority/catalogue.js";
@@ -62,8 +61,8 @@ import { actIndexOf, buildSculpt, buildSky, buildUndo, buildWeather } from "./au
 export { actIndexFresh, actIndexOf, entityBefore } from "./authority/undo.js";
 import { DRY, DUTY, allScripts, budgetOf, dutyLeft, dutyLog, installCheck, logRt, overCpu, particlesCheck, pauseOnly, pausedBy, presentOf, rtKey, rtOf, sampleOf, scopeIds, scriptCeiling, scriptDefaults, scriptDepth, scriptMemo, scriptRights, scriptsCfg, sponsorOf, uploadEffect } from "./authority/scripts.js";
 export { DUTY, scriptCeiling, scriptDefaults, setScriptConfig, setScriptDuty, unpaused } from "./authority/scripts.js";
-import { SCRIPT_VERBS, activate, drainAll, heldEvent, maintain, maintenanceNeeds, writeBlock } from "./authority/scriptrun.js";
-export { ORPHANS, checkpointNow, expireRoles, liftWorld, maintain, maintenanceNeeds, presenceEvent, repairShapes, scriptsView, settle, settleOrphans, tick } from "./authority/scriptrun.js";
+import { SCRIPT_VERBS, activate, drainAll, heldEvent } from "./authority/scriptrun.js";
+export { ORPHANS, checkpointNow, expireRoles, presenceEvent, scriptsView, settle, settleOrphans, tick } from "./authority/scriptrun.js";
 import { clearOccupant, leftOccupied, occupiedRefuse, occupantOf, occupyRights, setOccupant, occupantOn, vacateAt, vacateWhy, vacatesFor } from "./authority/occupants.js";
 import { arrivalBox, body, buildEpoch, dist, gripPoint, gripOf, lawOf, pathBlocked, restampEngine, settleSim, shearFree, sizeOf, solidAt } from "./authority/physics.js";
 import { fliesIn, flyingWorld, gripHow, homeScale, launch, recentRests, releasePos, returnDue, returnHome, returnPlan, sameHome, secondGrip, shaped, shoveGate, snapTarget, stampHomes, stampResetHomes, vec3s } from "./authority/manipulate.js";
@@ -126,9 +125,6 @@ export function request(w, actor, verb, args = {}) {
     if (h && w.exists && w.custody()?.sign && w.custody().sequencer() !== w.entries[0]?.body?.sequencer && !READ_ONLY.has(verb))
       refuse("custody", "this server doesn't hold the key that signs this world's log, so it can't write to it", "only this server's operator can fix this, by restoring the world's signing key or handing the world over to this server; asking again won't change it, and reads still work");
     if (h && w.exists && w.state().status !== "ok") refuse("unreadable", `this world's log can't be read here ('${w.state().status}': ${w.state().status === "unknown-version" ? "it's written in a protocol version this server doesn't read" : w.state().status === "unsupported-feature" ? "it requires a feature this server doesn't implement" : "its first entry isn't a genesis this server can read"}), and the authority won't act on a log it can't read`, "only this server's operator can fix this, by repairing the log or serving it with a server that reads its version; asking again won't change it until then");
-    // writes the record itself stops (writeBlock: an altered log, a world waiting for its maintenance command): every write
-    // but `leave` and the operator's own, and the scripts the host sets off meet the same gate (scriptrun activate)
-    if (h && w.exists && !READ_ONLY.has(verb) && verb !== "leave" && CTX.operator !== actor) { const b = writeBlock(w); if (b) refuse(b.code, b.reason, b.fix, b.extra); }
     if (!h && Object.hasOwn(REMOVED_VERBS, verb)) refuse("removed", `'${verb}' was removed: ${REMOVED_VERBS[verb].why}`, REMOVED_VERBS[verb].fix);
     if (!h && Object.hasOwn(RESERVED_VERBS, verb)) refuse("reserved", `'${verb}' is a reserved request: ${RESERVED_VERBS[verb].why}`, "help lists every verb");
     if (!h) refuse("unknown-verb", `there is no '${verb}'`, "help lists every verb", { didYouMean: guess(verb, Object.keys(VERBS)) });
@@ -360,12 +356,8 @@ export function forkCopy(w, actor, args) { CTX.forking = true; try { return requ
  *  message); no request word does. */
 export function operatorRepair(w, actor, verb, args = {}) {
   const door = (verb === "set" || verb === "delete") && args && args.id === "@world" && REPAIR_COMP(args.component);
-  // reviewer item 9 (10-18): the shape repair is a maintenance command, never the load's; an operator runs it here, recorded
-  // with the operator's id (the act's `by`, operator: true). Not a request word: it has no verb at the door
-  if (verb === "repair" || verb === "repair-shapes") { const r = maintain(w, { by: actor, operator: true, dryRun: args?.dryRun === true });
-    return r.refused ? { ok: false, refused: r.refused } : { ok: true, ...r }; }
   if (!(door || verb === "unban"))
-    return { ok: false, refused: { code: "rights", reason: `an operator's repair covers @world's roles, access, default-role and role-defs (set, delete), lifting a ban or kick (unban) and the maintenance command (repair: lift-sockets, rename-components, repair-shapes); not ${String(verb).slice(0, 32)}${args?.component !== undefined ? ` ${String(args.component).slice(0, 64)}` : ""}`,
+    return { ok: false, refused: { code: "rights", reason: `an operator's repair covers @world's roles, access, default-role and role-defs (set, delete), and lifting a ban or kick (unban); not ${String(verb).slice(0, 32)}${args?.component !== undefined ? ` ${String(args.component).slice(0, 64)}` : ""}`,
       fix: "anything else goes through the world's own roles: repair a role (set {id: '@world', component: 'roles:<id>', value: {role: 'owner'}}), then act as that person" } };
   CTX.operator = actor; try { return request(w, actor, verb, args); } finally { CTX.operator = false; }
 }

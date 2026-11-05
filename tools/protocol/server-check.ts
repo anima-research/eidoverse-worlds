@@ -633,35 +633,5 @@ srv.proc.kill();
   ok(!Object.keys(c.snapshot?.holds ?? {}).length && bodies.includes(IDS.of("ball")) && bodies.includes(IDS.of("torch")), "SK2 …nobody holds them, and a joiner's engine has them back (colliders again)", [c.snapshot?.holds, bodies]);
   c.close(); srvB.proc.kill(); }
 
-// ================= SL: the load's socket lift, per host, said to the flight recorder (review 10-12 S2-3) =================
-// A world stored in the old spelling, by hand, with one host the door can't lift (a slot called "front seat": a socket's
-// name is one word, and the name is a shape, not a value the lift carries) before a healthy one. WorldLog lifts at construction: the healthy host lifts, the bad one is
-// left as it was, and attaching the world says it to its flight recorder (world_debug, /debug), with the host's id.
-{ const WS = scratch("srvlift"); const script = path.join(WS, "lift.ts");
-  fs.writeFileSync(script, `// @ts-nocheck
-import fs from "node:fs"; import path from "node:path";
-const W = process.env.WORLDS_DIR, E = process.env.ENGINE;
-const { custodyAt } = await import(E + "/server/custody.ts"); const { custodyFileIn } = await import(E + "/server/keyfiles.ts");
-const { translate } = await import(E + "/tools/protocol/import-v1/translate-v1.js");
-const cu = custodyAt(custodyFileIn(W)); const keys = { key: cu.sequencer(), operator: cu.operator() };
-const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } }, { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } },
-  { seq: 2, ts: 3, actor: "ann", verb: "spawn", args: { id: "a-cart", lib: "crate", pos: [0, 0, 0] } }, { seq: 3, ts: 4, actor: "ann", verb: "spawn", args: { id: "b-bench", lib: "crate", pos: [3, 0, 0] } },
-  { seq: 4, ts: 5, actor: "ann", verb: "comp", args: { id: "a-cart", type: "sockets", data: { "front seat": { pos: [0, 0.5, 0], body: { action: "sit" } } } } },
-  { seq: 5, ts: 6, actor: "ann", verb: "comp", args: { id: "b-bench", type: "sockets", data: { seat: { pos: [0, 0.5, 0], body: { action: "sit" } } } } }];
-fs.mkdirSync(path.join(W, "liftw"), { recursive: true }); fs.writeFileSync(path.join(W, "liftw", "world.jsonl"), translate(old, keys).out.map((e) => JSON.stringify(e)).join("\\n") + "\\n");
-const { WorldLog } = await import(E + "/server/worldlog.ts");
-const log = new WorldLog("liftw"); const notes = []; log.attach({ broadcast() {}, rightsChanged() {}, debug: (k, d) => notes.push({ kind: k, ...d }) });
-const st0 = log.live.state(); const kids0 = (h) => Object.values(st0.entities).filter((e) => e.c.parent?.to === h && e.c.socket).length;
-const atLoad = { notes, a: kids0("a-cart"), aMap: !!st0.entities["a-cart"].c.sockets, b: kids0("b-bench"), entries: log.live.entries.length };
-// the operator runs the maintenance command from inside the world (operator-repair {verb: "repair"}): the healthy host lifts, the one the door refuses is named
-const r = log.operatorRepair("opie", "repair", {});
-const st = log.live.state(); const kids = (h) => Object.values(st.entities).filter((e) => e.c.parent?.to === h && e.c.socket).length;
-console.log("SL " + JSON.stringify({ atLoad, r: { ok: r.ok, lift: r.steps?.lift }, a: kids("a-cart"), aMap: !!st.entities["a-cart"].c.sockets, b: kids("b-bench"), by: log.live.entries.find((e) => e?.verb === "lift-sockets")?.body?.by }));
-`);
-  const r = Bun.spawnSync(["bun", script], { env: { ...process.env, WORLDS_DIR: path.join(WS, "worlds"), ENGINE }, stdout: "pipe", stderr: "pipe" });
-  const line = String(r.stdout).split("\n").find((l) => l.startsWith("SL ")); const got = line ? JSON.parse(line.slice(3)) : null;
-  ok(!!got && got.atLoad.a === 0 && got.atLoad.b === 0 && got.atLoad.aMap && got.atLoad.notes.some((n) => n.kind === "repair-needed" && n.steps?.includes("lift-sockets") && n.blocking?.includes("lift-sockets")), "SL1 at load nothing is lifted (a load never writes: lead 10-18); the flight recorder is told the world needs lift-sockets and refuses writes meanwhile (repair-needed)", got);
-  ok(!!got && got.r.ok && got.b === 1 && got.a === 0 && got.aMap && got.by === "opie" && got.r.lift?.failed?.some((f) => f.host === "a-cart" && f.code === "shape") && got.r.lift?.made?.some((m) => m.host === "b-bench"), "SL1 …the operator's repair (operator-repair {verb: repair}) lifts the healthy host, recorded with the operator's id, and names the host the door refuses ({host, code}), left as it was", got); }
-
 console.log(`[server-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

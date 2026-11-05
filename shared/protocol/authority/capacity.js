@@ -48,7 +48,6 @@ function guestMade(w, st, s = st) {
 }
 const entityCount = (st) => Object.keys(st.entities).length - (st.entities["@world"] ? 1 : 0);
 function capacityCheck(w, st, s, who, norm) {
-  if (who.lifting) return;   // the maintenance command's lift carries what the log already holds (sockets in the old spelling): never refused
   const made = norm.filter((o) => o.op === "create" && s.entities[o.id]).length;
   // the hosts that sockets join in this write (made, re-parented onto one, or a thing made one): one holds at most SOCKETS_PER_HOST
   const joined = new Set();

@@ -89,7 +89,7 @@ await tryRow('MO', async () => {
   const a = evalWholeMotion(base, m, 300), b = evalWholeMotion({ ...base, pivot: [0, 0, 0] }, m, 300);
   check('MO7 a whole pendulum with no pivot component swings about its origin', a.ok && near(a.pos, b.pos) && near(a.pos, [0, 0, 0]), [a.pos, b.pos]);
 
-  const { repairComps, shapeRepairOps } = await import('../shared/protocol/shaperepair.js');
+  const { repairComps } = await import('./protocol/import-v1/shapes.js');
   const R = repairComps({ motion: { type: 'pendulum', amplitude: 0.4, axis: 'z' }, collider: { shape: 'exact' } }).c;
   check('MO8 repair: amplitude → amp, a letter axis → its vector, the old period/damp/maxAmp readings written, the old swing point a pivot', JSON.stringify(R.motion) === '{"type":"pendulum","axis":[0,0,1],"amp":0.4,"period":3.5,"damp":0,"maxAmp":1.1}' && JSON.stringify(R.pivot) === '{"pos":[0,2,0]}', R);
   check('MO8 …collider exact → mesh', R.collider?.shape === 'mesh', R.collider);
@@ -101,13 +101,8 @@ await tryRow('MO', async () => {
   check('MO8 …a whole motion\'s pivot field moves to the pivot component', !('pivot' in P4.motion) && JSON.stringify(P4.pivot) === '{"pos":[0.1,0.2,0.3]}', P4);
   const P5 = repairComps({ motion: { type: 'pendulum', period: 2, damp: 0.1, maxAmp: 0.9 }, pivot: { pos: [0, 1, 0] } });
   check('MO8 …a pendulum that already has its pivot and readings is left alone (a second run finds nothing)', P5.set.length === 0 && P5.del.length === 0, P5);
-  const st = { entities: { '@world': { c: {} }, s: { c: { motion: { type: 'pendulum', amp: 0.3, period: 2, damp: 0, maxAmp: 0.9 } } }, t: { c: { motion: { type: 'spin', axis: 'y' } } } } };
-  const ops = shapeRepairOps(st);
-  check('MO9 the repair\'s ops: a pivot for the pendulum that relied on [0, 2, 0], a vector axis for the spin', ops.some((o: any) => o.id === 's' && o.comp === 'pivot' && JSON.stringify(o.value) === '{"pos":[0,2,0]}') && ops.some((o: any) => o.id === 't' && o.comp === 'motion' && JSON.stringify(o.value.axis) === '[0,1,0]') && ops.length === 2, ops);
-  const Ld = readAuthority();
-  // item 9 (10-18): the repair is the explicit command's (repairShapes), never the load's (liftWorld computes no repair ops)
-  const lift = Ld.slice(Ld.indexOf('export function liftWorld'), Ld.indexOf('export function maintain')), cmd = Ld.slice(Ld.indexOf('export function maintain'));
-  check('MO9 …and the maintenance command applies them (maintain: repair-shapes), while the load never does', !/shapeRepairOps\(/.test(lift) && /shapeRepairOps\(/.test(cmd) && /"repair-shapes"/.test(cmd), '');
+  const S = repairComps({ motion: { type: 'pendulum', amp: 0.3, period: 2, damp: 0, maxAmp: 0.9 } }).c, T = repairComps({ motion: { type: 'spin', axis: 'y' } }).c;
+  check('MO9 the importer\'s rules: a pivot for the pendulum that relied on [0, 2, 0], a vector axis for the spin', JSON.stringify(S.pivot) === '{"pos":[0,2,0]}' && JSON.stringify(T.motion.axis) === '[0,1,0]', [S, T]);
 
   const old = [{ seq: 0, ts: 1, actor: 'world', verb: 'genesis', args: { v: 2, dialect: 'eidoverse-log', roles: { ann: { role: 'owner' } } } },
     { seq: 1, ts: 2, actor: 'ann', verb: 'spawn', args: { id: 'bell', lib: 'crate', pos: [0, 0, 0] } },

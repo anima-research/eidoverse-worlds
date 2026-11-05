@@ -92,7 +92,7 @@ function admit(w, st, who, ops) {
   const { actor, cap } = who;
   if (!cap || cap.kind === "reaction" || cap.kind === "handle" || cap.kind === "caption") rateCheck(w, actor);
   // preLifted: commit() lifted them already (so its reference clearing saw the lift's deletes), and passes the lift's notes
-  const lifted = who.lifting ? { ops, notes: [] } : who.preLifted ? { ops, notes: who.preLifted } : liftOps(st, ops, w.everIds()); ops = lifted.ops;
+  const lifted = who.preLifted ? { ops, notes: who.preLifted } : liftOps(st, ops, w.everIds()); ops = lifted.ops;
   if (!ops.length) refuse("nothing", "that changes nothing", "");
   const role = roleOf(st, actor);
   const keysMade = new Set(); // keyed components this very write brings into being (their creator is the asker)
@@ -125,11 +125,11 @@ function admit(w, st, who, ops) {
     else if (op.op === "delete" && op.comp !== undefined && !(op.comp in e.c)) refuse("not-found", `${op.id} has no ${op.comp}`, `it has: ${Object.keys(e.c).join(", ")}`);
     else if (op.op === "set" && !("value" in op)) refuse("shape", `set ${at} needs a value`, "");
     // a reserved name (componentspec STATUSES) is held, never written: one refusal for every reserved name, before rights
-    // (nobody may write it, so who is asking doesn't matter). A carried value (a fork's copy, the command's lift) keeps what it
+    // (nobody may write it, so who is asking doesn't matter). A carried value (a fork's copy) keeps what it
     // holds: the refusal is about new writes, not about what an older log stored
     // (a lifted name, sockets, is the lift's: a write of it never gets here as itself unless malformed, and then its own
     // check says what is wrong with it in its own words)
-    if (op.op === "set" && statusOf(op.comp) === "reserved" && !defOf(op.comp)?.lifted && !(CTX.forking || who.lifting)) { const b = canonicalName(baseOf(op.comp));
+    if (op.op === "set" && statusOf(op.comp) === "reserved" && !defOf(op.comp)?.lifted && !CTX.forking) { const b = canonicalName(baseOf(op.comp));
       refuse("reserved", `${at}: '${b}' is a reserved name: it is held for a shape that isn't settled yet, and nothing may write it`, COMPONENTS[b].instead ?? `schema {component: '${b}'} says what it is held for`, { status: "reserved" }); }
     const pause = op.op === "set" && op.comp.startsWith("script:") && pauseOnly(op.value, s.entities[op.id]?.c[op.comp]);
     if (!fu && !operatorRepairs(who, op)) { rights(w, st, s, who, role, op, at, made, pause);
@@ -165,13 +165,13 @@ function admit(w, st, who, ops) {
     applyCow(s, [op]); norm.push(op); // one entity copied per op it touches, not the world (s is this write's own copy)
   });
   occupyRights(w, st, s, who, role, norm.filter((o) => !fuOps.has(o)), made);
-  const vacate = CTX.forking || who.lifting ? [] : vacatesFor(w, st, who, norm);
+  const vacate = CTX.forking ? [] : vacatesFor(w, st, who, norm);
   capacityCheck(w, st, s, who, norm);
-  for (const op of norm) if (op.op === "set") valueCheck(s, op, { carry: CTX.forking || !!who.lifting, now: w.now() }); // against the state the whole write leaves (parents may come later in a batch); a fork's copy carries what its parent holds
+  for (const op of norm) if (op.op === "set") valueCheck(s, op, { carry: CTX.forking, now: w.now() }); // against the state the whole write leaves (parents may come later in a batch); a fork's copy carries what its parent holds
   { const bad = socketRules(s, new Set(norm.map((o) => o.id))); if (bad) { const { code, reason, fix, ...rest } = bad; refuse(code, reason, fix, rest); } }
-  if (!(CTX.forking || who.lifting)) { const bad = actionRules(s, new Set(norm.map((o) => o.id))); if (bad) { const { code, reason, fix, ...rest } = bad; refuse(code, reason, fix, rest); } }
-  if (!(CTX.forking || who.lifting)) { const bad = zoneRules(s, new Set(norm.map((o) => o.id))); if (bad) refuse(bad.code, bad.reason, bad.fix); }
-  if (!(CTX.forking || who.lifting)) { const bad = colliderRules(s, new Set(norm.map((o) => o.id))); if (bad) refuse(bad.code, bad.reason, bad.fix); }
+  if (!CTX.forking) { const bad = actionRules(s, new Set(norm.map((o) => o.id))); if (bad) { const { code, reason, fix, ...rest } = bad; refuse(code, reason, fix, rest); } }
+  if (!CTX.forking) { const bad = zoneRules(s, new Set(norm.map((o) => o.id))); if (bad) refuse(bad.code, bad.reason, bad.fix); }
+  if (!CTX.forking) { const bad = colliderRules(s, new Set(norm.map((o) => o.id))); if (bad) refuse(bad.code, bad.reason, bad.fix); }
   rolesCheck(st, s, norm);
   for (const op of norm) if (op.op === "set" && op.comp.startsWith("script:") && !pauseOnly(op.value, prevOf.get(op))) installCheck(w, st, s, who, op); // 41 §3.14: at install (not a pause: it needs no source, no scope)
   if (!CTX.forking) for (const op of norm) if (op.op === "set") particlesCheck(w, op); // a particles value names an effect this world has, with params it declares (shared/particle_effects.js)

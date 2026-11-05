@@ -49,13 +49,11 @@ definition in `shared/protocol/componentspec.js`; `schema` returns it, and the I
     `density` stay open: the body shove reads them.
     `layers`, `mask`, `ccd` are cut, not held.
 - **cut fields that say where they went** (the registry's `dropped`): a write of one is refused with a pointer, a
-  stored one is repaired by the explicit maintenance command (shared/protocol/shaperepair.js; `bun tools/protocol/world.ts repair <name>`, which runs lift-sockets, rename-components and repair-shapes in that order; never at load: reviewer item 9 + the lead's ruling, 10-18) and by translate-v1@12 and later: `motion.amplitude`
+  v1 one is written in today's spelling by translate-v1@12 and later (tools/protocol/import-v1/shapes.js): `motion.amplitude`
   (→ `amp`), `motion.part` (→ `motion:<slot> {node: <part>}`: a node's name from a model file is data in the value, never part of a key; readers find the part by `node`), `physics.material` (→ `surface`), `sky.weatherSeconds` (→
   `transition`; the sky act still takes it), `sky.clock` (→ `tz`; likewise), `terrain.water` (→ the `water` component).
   Some are taken at the door instead and stored in today's spelling: `parent.order` (dropped), `light.day` (→
-  `daytime`) and the first protocol's grass knobs. The command's requests are `lift-sockets`, `rename-components` and `repair-shapes` (each with `command` and `by`: provenance; one pre-repair backup under `repair-backups/` for `--rollback`); a world needing a step its readers can't serve loads but refuses writes with `repair-needed`. The shape repair runs once per world (the system's
-  `repair-shapes` request marks the world; a founding or translation writes one; older worlds' markers are read back, and a
-  redacted one counts as marked); PROTOCOL §4 lists everything it repairs.
+  `daytime`) and the first protocol's grass knobs. A world founded today is written in today's spelling, so nothing repairs it (PROTOCOL §4).
 - **references are stored as written** (R 10-17, binding: "definitely serve path again alongside hash"): `model` is its
   library path, a particle Essential its name, `grass.preset` its name (back as a field: Fable #4, expanding later is
   cheap, un-expanding impossible). `model-hash` (trial, 10-17; `sha256:<64 hex>`, written by the server) rides beside a
@@ -67,7 +65,7 @@ definition in `shared/protocol/componentspec.js`; `schema` returns it, and the I
   `water` is a dry world, and absent fields read as `0x1d5a6e`, 0.82, a kind decided from the ground
   (shared/waterkind.js) and no current. Its readers moved with it: the authority's ground (spatial.js), the client
   (drawing, ground panel), the agent, and the mover's water law (shared/mover.js), through shared/terrainshape.js's
-  `worldWater`, which reads an older `terrain.water` until the maintenance command moves it.
+  `worldWater`.
 - **stable**: promised. Its meaning never changes; it only grows by additions, and a changed meaning is a new versioned
   name (rung 4). None is stable at v1.
 

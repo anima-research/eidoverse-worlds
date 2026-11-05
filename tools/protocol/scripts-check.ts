@@ -699,26 +699,6 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r)); process.exit(0);\n`);   // 
       const direct = s.call("gus", "set", { id: "gbox", component: "label", value: "x" }); const r = s.call("vic", "use", { id: "gbox", action: "go" });
       return { direct: code(direct), r: st(s, r), status: s.call("olive", "scripts", { id: "gbox" }).scripts?.[0]?.status }; },
     good: (o) => o.direct === "rights" && o.r === "refused rights" && o.status === "dormant" },
-  { id: "B25", what: "a world whose stored values wait for the maintenance command refuses every write until it runs: a timer's and an arrival's activations too, not only requests", run(s) { cast(s);
-      if (!D.tick || !D.presenceEvent) return { absent: true };
-      const BEAT = `world.on("tick", () => world.set("self", "t/n", { n: (world.get("self", "t/n")?.n ?? 0) + 1 }));\nworld.on("enter", () => world.set("self", "t/n", { n: (world.get("self", "t/n")?.n ?? 0) + 1 }));\n`;
-      s.call("olive", "create", { id: "clock", model: "crate", place: { at: [0, 0] } });
-      install(s, "olive", "clock", "beat", BEAT, { scope: { ids: "self", comps: ["t/n"] }, every: 5, always: true, on: ["enter"] });
-      // a value stored in an old spelling no reader serves (a grabbable's pose: grab.js reads anim), as an old log holds it
-      s.call("olive", "create", { id: "cup", model: "crate", place: { at: [2, 0] } });
-      const w = s.w(); clock.advance(100);
-      const a = w.append({ kind: "request", actor: "olive", verb: "set", body: { args: { id: "cup", component: "grabbable" } } });
-      w.append({ kind: "change", actor: "olive", cause: a, op: "set", body: { id: "cup", comp: "grabbable", value: { pose: "pistol" } } }, STOR.CHANGE);
-      const blocking = D.maintenanceNeeds(w).blocking;
-      const req = s.call("olive", "set", { id: "clock", component: "label", value: "x" }), n0 = s.entries().length;   // (its refusal is on the record)
-      const ticks: string[] = []; for (let i = 0; i < 3; i++) { s.advance(5000); for (const x of s.tick() ?? []) ticks.push(`${x.status}${x.code ? ` ${x.code}` : ""}`); }
-      clock.advance(100); const enter = D.presenceEvent(s.w(), "enter", "vic").map((x: any) => `${x.status}${x.code ? ` ${x.code}` : ""}`);
-      const written = s.entries().slice(n0).map((e: any) => `${e.kind}:${e.verb ?? e.op}:${e.actor}`), n = comp(s, "clock", "t/n") ?? null;
-      D.maintain(s.w(), { by: "olive" }); const after: string[] = [];   // once the command has run, the timer writes again
-      for (let i = 0; i < 2; i++) { s.advance(5000); for (const x of s.tick() ?? []) after.push(x.status); }
-      return { blocking, req: code(req), ticks, enter, written, n, after, nAfter: comp(s, "clock", "t/n")?.n ?? null }; },
-    good: (o) => o.blocking.includes("rename-components") && o.req === "repair-needed" && o.ticks.length >= 2 && o.ticks.every((t: string) => t === "refused repair-needed")
-      && JSON.stringify(o.enter) === '["refused repair-needed"]' && o.written.length === 0 && o.n === null && o.after.includes("ran") && o.nAfter >= 1 },
   { id: "B26", what: "…but a log changed outside the purge rule does NOT stop them (house markup, #260 10-20: detection is §12's bone, a write lockout was a policy no world asked for): a timer's and an arrival's activations still write", run(s) { cast(s);
       if (!D.tick || !D.presenceEvent) return { absent: true };
       const BEAT = `world.on("tick", () => world.set("self", "t/n", { n: (world.get("self", "t/n")?.n ?? 0) + 1 }));\nworld.on("enter", () => world.set("self", "t/n", { n: (world.get("self", "t/n")?.n ?? 0) + 1 }));\n`;

@@ -483,7 +483,7 @@ export function lightOf(ent) {
   const decay = finite(src.decay) && src.decay >= 0 && src.decay <= 4 ? src.decay : undefined;   // unread: an older value (the rig's 1.7 and 16)
   return {
     color: finite(src.color) && src.color >= 0 && src.color <= 0xffffff ? Math.round(src.color) : LIGHT_DEFAULTS.color,
-    intensity: finite(src.intensity) && src.intensity >= 0 ? src.intensity : decay === undefined ? 16 : LIGHT_DEFAULTS.intensity,   // shaperepair OLD_LIGHT_INTENSITY
+    intensity: finite(src.intensity) && src.intensity >= 0 ? src.intensity : decay === undefined ? 16 : LIGHT_DEFAULTS.intensity,   // an older light's reading (16)
     range: finite(src.range) && src.range > 0 ? src.range : LIGHT_DEFAULTS.range,
     important: src.important === true,
     decay: decay ?? 1.7,

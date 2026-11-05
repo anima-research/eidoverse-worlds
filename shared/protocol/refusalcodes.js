@@ -15,7 +15,6 @@ export const REFUSAL_CODES = Object.freeze({
   "custody":        { meaning: "this server can't sign for the world", when: "a write to a world whose genesis names another sequencer key" },
   "unreadable":     { meaning: "the log folds to a status the authority won't write to", when: "a write while the fold says no-world/unknown-version/unsupported-feature" },
   "unsupported-feature": { meaning: "a feature this world or server can't use (docs/DESIGN-log-vocabulary.md §F F-1)", when: "a feature's verb before the world declares it; founding a world requiring a feature this server doesn't implement" },
-  "repair-needed":  { meaning: "the world's stored values are in an old spelling no reader serves; the maintenance command must run first", when: "any write (not a read, not leave) to a world needing lift-sockets, a grabbable, picture or sound rename, or repair-shapes (authority maintenanceNeeds); the text names `bun tools/protocol/world.ts repair <name>`" },
   // ---- the transaction (PROTOCOL §7: every request ends committed, rolled-back or ambiguous) ----
   "ambiguous":      { meaning: "the request's result is unknown: some or all of it may be written; never ok, never a plain failure", when: "a durable write threw (its line may be on disk; the log is wedged until reopened), or the request was cut off after part of it was written; the reply's `from` is the first seq whose state history must settle (storage.js txnOutcome)" },
   "server-error":   { meaning: "the server failed handling the request and nothing it asked for was written", when: "a throw before any line of the request reached the log, including a write refused because the log was already wedged (rolled back)" },
@@ -141,7 +140,7 @@ export const REFUSAL_CODES = Object.freeze({
 export const REFUSAL_SOURCES = Object.freeze(["shared/protocol/verbspec.js", "shared/protocol/roles.js", "shared/protocol/consent.js", "shared/protocol/scriptrules.js", "shared/sockbody.js", "shared/grab.js"]);
 /** The refuse(<expression>) sites in authority.js, by the expression they pass: each forwards a code one of the sources
  *  above (or the authority's own refusals) produced, so the static scan covers what they can carry. A new one is reviewed. */
-export const DYNAMIC_REFUSALS = Object.freeze(["code", "bad.code", "e.code", "dirty.code", "r.code", "g.code", "b.code"]);   // b.code: writeBlock's (scriptrun.js), whose codes are literals there
+export const DYNAMIC_REFUSALS = Object.freeze(["code", "bad.code", "e.code", "dirty.code", "r.code", "g.code"]);
 /** `code:` literals in the scanned files that aren't refusal codes (none today; a status code that isn't a refusal goes here). */
 export const NOT_REFUSALS = Object.freeze([]);
 /** Codes renamed before release (protocol minor 0, R 10-17: no body plan in a name). A log written before the rename may

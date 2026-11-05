@@ -11,7 +11,7 @@ import { mainKnowledge, type Known } from "../../../server/mainknew.ts";
 import { agentTokens, HN_ISS } from "../../../server/auth.ts";
 import { custodyAt, modLogAt } from "../../../server/custody.ts";
 import { custodyFileIn } from "../../../server/keyfiles.ts";
-import { seal, maintain, operatorRepair } from "../../../shared/protocol/authority.js";
+import { seal, operatorRepair } from "../../../shared/protocol/authority.js";
 import { emptyState as v1Empty, foldEntry } from "./fold.js";
 import { openLive } from "../../../server/livehost.ts";
 import { ENGINE_CATALOGUE, warm } from "../../../server/modelcatalogue.ts";
@@ -364,7 +364,7 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
   const content = (p: string) => { const h = contentAddressOf(p); if (!h) return null; addressed.set(h, p); if (!storeNameMatches(p)) renamedBlobs.push(p); return `sha256:${h}`; };
   const renamedBlobs: string[] = [];   // store blobs whose bytes no longer hash to their name: hashed by what's here
   // the approval (the operator's countersignature; no owner attested), bound to the dry-run report's hash, rides in the
-  // world's own log right after the system's repair-shapes act, written by translate itself so every later cause counts it:
+  // world's own log right after `translated`, written by translate itself so every later cause counts it:
   // provenance a reader can check against `reportV1World` of log.original.jsonl. The fold never reads acts (PROTOCOL §1), so
   // this changes no state; a translation nothing approved carries none (the pure callers: sweep, oracle)
   const approved = approval ? { report: approval.report, approval: { over: approvalText(world, approval.report), owner: null, operator: { key: approval.operator.key, sig: approval.operator.sig }, noOwner: NO_OWNER } } : undefined;
@@ -405,19 +405,12 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
   // back), so a rerun isn't refused as "already holds a world"; the shared directory is written last, once nothing can fail
   const touched: Touched = [{ file: path.join(destDir, "world.jsonl"), before: null }];
   try {
-    // lead's ruling 10-18: a LOAD never writes, so the translation runs the maintenance command on its own output here: the
-    // v1 sockets maps become socket children (lift-sockets, the system's act with by: "translate"); the renames and the shape
-    // repair are already in the projection and write nothing. A translated world therefore needs no step when it is served.
     // the derived particle effects (translate-v1 particlesOf): blobs of the world, by their content address, as an upload stores them
     for (const [h, doc] of r.effects ?? []) { const f = path.join(destDir, "blobs", `${h.replace(/[^a-z0-9]/g, "-")}.json`), b = jcs(doc);
       if (`sha256:${sha256(b)}` !== h) throw new Error(`a derived particle effect doesn't hash to its address ${h}`);
       if (!fs.existsSync(f)) { touched.push({ file: f, before: null }); putBlobFile(f, b, h); } }
     const live = openLive(destDir, world, { catalogue: ENGINE_CATALOGUE, scripts: null });
     for (const [h, doc] of r.effects ?? []) if (JSON.stringify(live.getBlob(h)) !== JSON.stringify(JSON.parse(jcs(doc)))) throw new Error(`the stored particle effect ${h} doesn't read back as written`);
-    const m: Any = maintain(live, { by: "translate" });
-    if (m.refused) throw new Error(`the translated world could not be lifted: ${m.refused.code}: ${m.refused.reason}`);
-    const maintenance = { lifted: m.steps.lift.made.length, liftFailed: m.steps.lift.failed, renamed: m.steps.rename.renamed.length, repaired: m.repaired.length, entries: live.entries.length };
-    if (maintenance.liftFailed.length) throw new Error(`the translated world's seats could not all be lifted: ${JSON.stringify(maintenance.liftFailed).slice(0, 300)}`);
     // v1 bans are the moderator's record in v4 (the authority reads bans only from world.mod.jsonl): file each one there, or a
     // translated world quietly unbans everyone (component review, world-settings #3)
     const banned = Object.entries<Any>(back.entities?.["@world"]?.c ?? {}).filter(([k]) => k.startsWith("imported-bans:"));
@@ -440,9 +433,9 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
       people.unshift({ name: claimed.name, role: "owner", id, account: claimed.account, from: "claimed: they upgraded it (it had no owner)", claimed: true }); }
     for (const [h, p] of addressed) recordEido(h, p);
     if (!deferIdentities) dir.put(planned);
-    // the approval act (translation-approved, bound to the dry-run report) sits right after the translation's marker, BEFORE the
-    // content it approves; the maintenance acts (lift-sockets by: "translate") come at the tail, derived from that approved content
-    return { source, unparsed, planned, people, claimed, effects: [...(r.effects?.keys() ?? [])], identities: Object.keys(planned).length, renamedBlobs, addressed: [...addressed.keys()], stats: r.stats, entries: live.entries.length, worldId: back.worldId, digest: digest(live.state()), maintenance, ...places, ...(sim ? { sim } : {}) };
+    // the approval act (translation-approved, bound to the dry-run report) sits right after `translated`, BEFORE the content it
+    // approves; the socket lifts (lift-sockets) come at the translation's tail, derived from that approved content
+    return { source, unparsed, planned, people, claimed, effects: [...(r.effects?.keys() ?? [])], identities: Object.keys(planned).length, renamedBlobs, addressed: [...addressed.keys()], stats: r.stats, entries: live.entries.length, worldId: back.worldId, digest: digest(live.state()), ...places, ...(sim ? { sim } : {}) };
   } catch (x) {
     const undone: string[] = [];
     for (const { file, before } of [...touched].reverse()) try { if (before === null) fs.rmSync(file, { force: true }); else fs.writeFileSync(file, before); undone.push(path.basename(file)); } catch { /* named below as not undone */ }

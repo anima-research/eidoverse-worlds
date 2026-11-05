@@ -31,7 +31,7 @@ import { pause } from "./wait.ts";
 const root = scratch("foldparity");
 const W = path.join(root, "worlds");
 Object.assign(process.env, { WORLDS_DIR: W, BACKUPS_DIR: path.join(root, "backups"), OPT_DIR: path.join(root, "opt"), SKIP_OPT_SWEEP: "1", STATE_CACHE_EVERY: "1000", SIM_CHECKPOINT_EVERY: "1000" });
-const A = await import("../../shared/protocol/authority.js"); const { request, settle, checkpointNow, creatorOf, lastSetterOf, sanctionsNow, seniorOwnerOf, maintenanceNeeds } = A;
+const A = await import("../../shared/protocol/authority.js"); const { request, settle, checkpointNow, creatorOf, lastSetterOf, sanctionsNow, seniorOwnerOf } = A;
 const { readLog, fold, jcs, worldIdOf } = await import("../../shared/protocol/fold.js");
 const { seal } = await import("../../shared/protocol/authority/storage.js");
 const { actIndexOf, entityBefore } = await import("../../shared/protocol/authority/undo.js");
@@ -77,7 +77,7 @@ function readers(w) {
     creators: ids.map((id) => [id, creatorOf(w, id), Object.keys(st.entities[id].c).sort().map((c) => [c, creatorOf(w, id, c), lastSetterOf(w, id, c)])]),
     before: ids.slice(0, 12).map((id) => [id, entityBefore(w, id, Math.floor(n / 2))]),
     history: page("history", { limit: 9 }, "next"), modlog: page("modlog", { limit: 5 }, "next"),
-    sanctions: sanctionsNow(w), senior: seniorOwnerOf(w), maint: maintenanceNeeds(w), actors,
+    sanctions: sanctionsNow(w), senior: seniorOwnerOf(w), actors,
     sim: { clock: sf.clock, spec: sf.spec, foreign: sf.foreign, digest: sf.sim ? digestOf(sf.sim) : null, launched: sf.launched, lifted: [...(sf.lifted ?? [])], rev: sf.rev, checks: sf.checks, st: sf.st ? jcs(SC.encodeState({ ...sf.st, diagnostics: sf.st.diagnostics ?? [] })) : null, unknownEpoch: !!sf.unknownEpoch, unknownHold: !!sf.unknownHold },
   };
 }

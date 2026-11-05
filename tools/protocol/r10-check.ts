@@ -93,7 +93,6 @@ D.fixtureIds?.(true);   // the fixtures below seed the ids they read (ids-check 
 const F = await import(TREE + "shared/protocol/fold.js");
 const SB = await import(TREE + "shared/protocol/sandbox.js");
 const AU = await import(TREE + "shared/protocol/scriptaudit.js");
-const SR = await import(TREE + "shared/protocol/shaperepair.js");
 const SK = await import(TREE + "shared/sockbody.js");
 if (D.setScriptDuty) D.setScriptDuty({ maxMs: 1e9 });
 const ONLY = opt("only")?.split(",") ?? null;

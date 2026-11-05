@@ -8,7 +8,6 @@ import { valueCheck } from "./checks.js";
 import { COMPONENTS, STATUSES, defOf } from "../componentspec.js";
 import { normalizeCaptionArgs, captionRefusal, foldCaption } from "../../captions.js";
 import { effectFor, ESSENTIAL_NAMES } from "../../particle_effects.js";
-import { SHAPES_VERSION } from "../shaperepair.js";
 import { CTX, UP } from "./ctx.js";
 import { BATCH_OPS, validate } from "../verbspec.js";
 import { Refusal, refuse } from "./refuse.js";
@@ -20,7 +19,7 @@ import { buildSculpt, buildSky, buildUndo, buildWeather } from "./undo.js";
 import { scriptCeiling, scriptDefaults, scriptMemo } from "./scripts.js";
 import { CAPACITY, CAPACITY_CEILING } from "./capacity.js";
 import { SAY_MAX, admit, rateCheck, spokenOf } from "./gate.js";
-import { actEntry, actOf, buildCreate, buildDelete, buildPlace, buildSet, buildTurn, changeEntry, commit } from "./writes.js";
+import { actOf, buildCreate, buildDelete, buildPlace, buildSet, buildTurn, changeEntry, commit } from "./writes.js";
 
 const FOUNDING_VERBS = {
   "create-world"(w, actor, a) {
@@ -55,11 +54,7 @@ const FOUNDING_VERBS = {
       ...(a.from?.seq !== undefined ? { parent: { world: a.from.world, seq: a.from.seq, head: a.from.head } } : {}),
       ...(a.requires?.length ? { requires: a.requires } : {}), ...(w.provenance?.() ? { provenance: w.provenance() } : {}) } });   // §F F-1, F-2
     const plan = admit(w, w.state(), { actor, cap: { kind: "founding", ids: ["@world"], comps: ops.map((o) => o.comp) } }, ops);
-    // born in today's spelling (shapes: the shape repair's version): the maintenance command's repair never runs on this world (shapesMarked)
-    changeEntry(w, plan, w.append(actOf(w, actor, "create-world", a, { shapes: SHAPES_VERSION })));
-    // …and the marker itself is the system's repair-shapes act beside it (review r8 M3): read by verb and actor only, which
-    // a purge never reaches (the founding's body holds the title, the first thing an owner might purge)
-    w.append(actEntry(w, "system", "repair-shapes", { v: SHAPES_VERSION, ids: [], founding: true }));
+    changeEntry(w, plan, w.append(actOf(w, actor, "create-world", a)));
     return { ok: true, world: w.name, you: "owner", ...(a.ownerKey ? {} : { governance: "tier 0 is empty: this server's operator key is the world's top governance key (PROTOCOL §13). Founding with ownerKey (your own ed25519 key) puts you there instead; tier 0 can't be filled later" }) };
   },
 };

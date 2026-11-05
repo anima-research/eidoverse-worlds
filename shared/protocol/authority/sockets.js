@@ -144,8 +144,9 @@ export function carriesLegacy(ops) {
     || (o.comp === "socket" && bag(o.value) && o.value.body !== undefined) || (o.comp === "model" && typeof o.value === "string" && bag(modelOf(o.value)?.sockets)))));
 }
 
-/** The write in the new spelling: {ops, notes}. `ever` is every id the world has made (a lifted id is never a reused one). */
-function lifter(st, ever) {
+/** The write in the new spelling: {ops, notes}. `ever` is every id the world has made (a lifted id is never a reused one).
+ *  The door's liftOps runs it; so does a translation, over a stored map. */
+export function lifter(st, ever) {
   const s = cowState(st); const out = []; const taken = new Set();
   const emit = (o) => { out.push(o); applyCow(s, [o]); };
   const fresh = (host, name) => { for (let n = 1; ; n++) { const id = socketId(host, n === 1 ? name : `${name}\0${n}`);
@@ -235,45 +236,8 @@ export function liftOps(st, ops, ever = new Set()) {
   }
   // a catalogue model that declares seats: they are made as children ("the log holds every number"), once
   for (const h of models) { const e = s.entities[h]; const ms = modelOf(e?.c.model)?.sockets;
-    // never one of its seats made before: a seat someone deleted stays deleted, as the maintenance command's lift (modelSeatsDue) reads it
+    // never one of its seats made before: a seat someone deleted stays deleted
     if (!bag(ms) || bag(e.c.sockets) || kidsOf(h).some((k) => isSocketC(s.entities[k].c)) || Object.keys(ms).some((n) => ever.has(socketId(h, n)))) continue;
     L.stored(true); const made = liftHost(h, ms, { stored: false }); L.stored(false); notes.push({ legacy: "model sockets", id: h, wrote: made, why: `its model declares ${Object.keys(made).join(", ")}: made as socket children` }); }
   return { ops: out, notes };
-}
-
-// ---------- the old spelling, lifted by the maintenance command (lift-sockets; it ran at load until 10-18) ----------
-const modelSeatsDue = (st, ever, k) => { const c = st.entities[k].c; const ms = modelOf(c.model)?.sockets;
-  return bag(ms) && !bag(c.sockets) && !Object.keys(ms).some((n) => ever.has(socketId(k, n))) && !Object.keys(st.entities).some((x) => st.entities[x].c.parent?.to === k && isSocketC(st.entities[x].c)); };
-/** The hosts a stored world still holds in the old spelling, in id order: one that stores a map; one a parent or a home
- *  names a slot of; one whose model declares seats it was never given (none of their ids was ever made, so a seat
- *  someone deleted stays deleted). */
-/** The hosts a stored world holds in the OLD STORED FORMAT (a sockets map, a parent or home naming a slot, a socket child
- *  with a body block): the subset of legacyHosts that is a stale stored format rather than a catalogue model that gained
- *  sockets after the host was stored (modelSeatsDue: a library update, lead 10-18, never a reason to refuse writes). */
-export function storedLegacyHosts(st) {
-  const hosts = new Set();
-  for (const [k, e] of Object.entries(st.entities)) { const c = e.c;
-    if (bag(c.sockets)) hosts.add(k);
-    if (legacyParent(c.parent) && st.entities[c.parent.to]) hosts.add(c.parent.to);
-    if (legacyHome(c.home) && st.entities[c.home.parent.to]) hosts.add(c.home.parent.to);
-    if (isSocketC(c) && c.socket.body !== undefined && st.entities[c.parent?.to]) hosts.add(c.parent.to); }
-  return [...hosts].sort();
-}
-export function legacyHosts(st, ever = new Set()) {
-  const hosts = new Set();
-  for (const [k, e] of Object.entries(st.entities)) { const c = e.c;
-    if (bag(c.sockets)) hosts.add(k);
-    if (legacyParent(c.parent) && st.entities[c.parent.to]) hosts.add(c.parent.to);
-    if (legacyHome(c.home) && st.entities[c.home.parent.to]) hosts.add(c.home.parent.to);
-    if (isSocketC(c) && c.socket.body !== undefined && st.entities[c.parent?.to]) hosts.add(c.parent.to);
-    if (modelOf(c.model)?.sockets && modelSeatsDue(st, ever, k)) hosts.add(k); }
-  return [...hosts].sort();
-}
-/** One host's lift: the ops (the system's own), the children it made by slot, and the things it moved. */
-export function liftHostOps(st, ever, h) {
-  const L = lifter(st, ever); const c = L.s.entities[h].c; L.stored(true);   // what a log or a catalogue holds is re-spelled, not judged anew
-  const made = bag(c.sockets) ? L.liftStored(h) : modelSeatsDue(L.s, ever, h) ? L.liftHost(h, modelOf(c.model).sockets, { stored: false }) : L.liftHost(h, {}, { stored: false });
-  L.liftBodies(h);
-  const mine = new Set([h, ...Object.values(made)]);
-  return { ops: L.out, made, moved: [...new Set(L.out.map((o) => o.id).filter((id) => !mine.has(id)))] };
 }

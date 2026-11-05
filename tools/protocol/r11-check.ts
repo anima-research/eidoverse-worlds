@@ -8,7 +8,6 @@
 // Rows:
 //   C   consent after recut A2: a stored table narrows to two gates (C4); the verb's doc names them and a retired argument
 //       (friend, delegate…) is refused with a pointer (C5). C1/C2/C3/C6 retired with the tier they tested
-//   X   the spec says it (stern M2): §7's table lists rename-components; §4 says a rename runs at every load, unmarked
 //   B   the agent's body (stern L1, L2): declaring stand on a seat says to detach (it never moves you off); a declaration
 //       is passed on as sent, never read as a kind
 //   R   renames (stern L3): a stored null old field is a removal; renames are admitted per thing
@@ -31,12 +30,9 @@ const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? a
 const MUTANTS: [string, string, string, string, string[]][] = [
   // C1–C3, C6's mutants RETIRED with their rows (recut A2; #260 390); C4 is held by this one
   ["a stored pause doesn't close the gates", "shared/protocol/consent.js", "if (sw === \"refuse\" || sw === \"ask\") { t.move = false; t.touch = false; }", "if (sw === \"refuse\" || sw === \"ask\") { t.move = true; t.touch = true; }", ["C4"]],
-  ["§7 forgets rename-components", "spec/PROTOCOL.md", "\n| components and fields renamed before release (§4), by the explicit `repair` command (never at load) | its own act `rename-components {renamed, why, failed?}` and its change | `system` | the system's capability, per thing | the actor |", "", ["X1"]],
-  ["§4 forgets the rename", "spec/PROTOCOL.md", "**A pure rename is the command's second step, idempotent.**", "**A pure rename runs.**", ["X1"]],
   ["a seated declaration says nothing", "mcpl/tools.ts", "and grants nothing${seated}`); }", "and grants nothing`); }", ["B1"]],
   ["a declaration dropped", "mcpl/ping-wire.ts", "const d = typeof declares === \"string\" && declares ? { declares } : {};", "const d = {};", ["B2"]],
-  ["a stored null renamed to anim: null", "shared/protocol/shaperepair.js", "else if (p === null) renamed.push({ field: \"pose\", to: null });", "", ["R1"]],
-  ["renames all or nothing", "shared/protocol/authority/scriptrun.js", "if (kept.length && !dryRun) { const ids = [...new Set(kept.map((o) => o.id))], comps", "if (kept.length && !dryRun && !rename.failed.length) { const ids = [...new Set(kept.map((o) => o.id))], comps", ["R2"]],
+  ["a stored null renamed to anim: null", "shared/protocol/names.js", "else if (p === null) renamed.push({ field: \"pose\", to: null });", "", ["R1"]],
   ["the consent code's old words", "shared/protocol/refusalcodes.js", "(touch, pose, shove, displace…)", "(touch, pose, shove, move…)", ["D1"]],
   ["move's old name order", "AGENTS.md", "a thing by id (its entrance, else beside it), a place's name or label, a thing's label or handle,", "a thing (id, label or handle: its entrance, else beside it), a place's name or label,", ["D2"]],
   ["attach takes pose again", "mcpl/tools.ts", ", action: { type: \"string\" } }, required: [\"to\"] } },", ", action: { type: \"string\" }, pose: { type: \"string\" } }, required: [\"to\"] } },", ["D3"]],
@@ -80,7 +76,7 @@ const D = await import(TREE + "shared/protocol/authority.js");
 D.fixtureIds?.(true);
 const F = await import(TREE + "shared/protocol/fold.js");
 const C = await import(TREE + "shared/protocol/consent.js");
-const SR = await import(TREE + "shared/protocol/shaperepair.js");
+const SR = await import(TREE + "shared/protocol/names.js");
 const VS = await import(TREE + "shared/protocol/verbspec.js");
 const RC = await import(TREE + "shared/protocol/refusalcodes.js");
 if (D.setScriptDuty) D.setScriptDuty({ maxMs: 1e9 });
@@ -137,12 +133,6 @@ const cases: Case[] = [
       return { doc: /move and touch/.test(doc) && /allow, block and unlist/.test(doc) && !/delegate|switch|asks? /.test(doc), r: show(r), r2: show(r2) }; },
     good: (o) => o.doc && [o.r, o.r2].every((x) => /^refused shape/.test(x) && /two gates/.test(x)) },
   // ---------------- X: the spec says it ----------------
-  { id: "X1", what: "(stern M2) §7's table of the authority's consequences lists rename-components ({renamed, why}: the system's act and change); §4 says a pure rename is not marker-gated: the explicit repair command renames what it finds (a load never writes) and writes nothing when there's nothing", run() {
-      const md = PROTO(); const s7 = section(md, /\n## 7\. /); const s4 = section(md, /\n## 4\. /);
-      return { s7: /\| [^\n]*explicit `repair` command \(never at load\)[^\n]*`rename-components \{renamed, why, failed\?\}`[^\n]*\| `system` \|/.test(s7),
-        s4: /\*\*A pure rename is the command's second step, idempotent\.\*\*/.test(s4) && !/at every load/.test(s7) && /`RENAMED_COMPONENTS`/.test(s4) && /`RENAMED_FIELDS`/.test(s4) && /not marker-gated/.test(s4) && /writes nothing\s+when there is nothing to rename/.test(s4) && /admitted per thing/.test(s4) }; },
-    good: (o) => o.s7 && o.s4 },
-  // ---------------- B: the agent's body ----------------
   { id: "B1", what: "(stern L1) on a seat, anim {bodyMode: stand} never takes you off it (body-mode grants nothing): the reply says you're still attached and to detach; the tool's text says the same", async run() {
       const TL = await import(TREE + "mcpl/tools.ts"); let detached = false, mode: any = null;
       const ag: any = { myOccupancy: { to: "seat1" }, socketName: () => "the bench", anims: [], clip: "sitchair", target: null,
@@ -162,22 +152,6 @@ const cases: Case[] = [
       const g = SR.renameFields("grabbable", { pose: null, grips: { h: { pos: [0, 0, 0], fingers: null } } }), st = SR.renameFields("station", { action: "sit", pose: null });
       return { g: JSON.stringify(g.value), gr: g.renamed.length, st: JSON.stringify(st.value), sr: st.renamed.length }; },
     good: (o) => o.g === '{"grips":{"h":{"pos":[0,0,0]}}}' && o.gr === 2 && o.st === '{"action":"sit"}' && o.sr === 1 },
-  { id: "R2", what: "(stern L3) renames are admitted per thing: a log holding one station whose old pose the door refuses as anim (\"live\", reserved) and one cup whose grabbable.pose is fine: the cup is renamed by the repair, the station is named in the act's failed and left as it was", run(s) {
-      s.call("olive", "create-world", { title: s.name }); s.call("olive", "create", { id: "cup", model: "book", place: { at: [0, 0] } });
-      s.call("olive", "create", { id: "bench", model: "crate", place: { at: [4, 0] } });
-      s.call("olive", "create", { components: { parent: { to: "bench" }, transform: { pos: [0, 0.5, 0] }, socket: { name: "bunk" }, station: { action: "lie" } } });
-      const L = s.entries(); const wid = L[1]?.world ?? L[0]?.world; const ts = L.at(-1).ts; const n = L.length;
-      const E0 = s.w().state().entities; const kid = Object.keys(E0).find((k) => E0[k].c.socket?.name === "bunk");
-      const gv = { who: "member", pose: "pistol" }, sv = { action: "lie", pose: "live" };
-      s.append([{ world: wid, kind: "request", actor: "olive", verb: "set", body: { args: { id: "cup", component: "grabbable", value: gv } }, ts: ts + 1 },
-        { world: wid, kind: "change", actor: "olive", cause: n, op: "set", body: { id: "cup", comp: "grabbable", value: gv }, ts: ts + 1 },
-        { world: wid, kind: "request", actor: "olive", verb: "set", body: { args: { id: kid, component: "station", value: sv } }, ts: ts + 2 },
-        { world: wid, kind: "change", actor: "olive", cause: n + 2, op: "set", body: { id: kid, comp: "station", value: sv }, ts: ts + 2 }]);
-      clock.advance(1000);
-      const w1 = s.reopen(); const out = D.maintain(w1); const w2 = s.reopen(); const E = w2.state().entities;
-      const act = w2.entries.findLast((e: any) => e.kind === "request" && e.verb === "rename-components");
-      return { g: E.cup?.c.grabbable ?? null, st: E[kid]?.c.station ?? null, failed: act?.body?.failed ?? null, renamed: act?.body?.renamed ?? null, out: JSON.stringify(out).slice(0, 300), status: w2.state().status, kid }; },
-    good: (o) => o.status === "ok" && o.g?.anim === "pistol" && !("pose" in o.g) && o.st?.pose === "live" && Array.isArray(o.failed) && o.failed.some((f: any) => f.id === o.kid) && o.renamed?.some((r: any) => r.id === "cup") },
   // ---------------- D: repo items and the docs pass ----------------
   { id: "D1", what: "(claims R1) the consent refusal code's words: a body act (touch, pose, shove, displace…) their table refuses; no `move` class, no edit that would move them (an edit vacates since round 8)", run() {
       const w = RC.REFUSAL_CODES?.consent?.when ?? ""; return { w }; },

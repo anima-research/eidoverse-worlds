@@ -4,7 +4,7 @@ import { fold, opsOf, Malformed, cloneState } from "../shared/protocol/fold.js";
 import { worldOf } from "../shared/protocol/authority.js";
 import { actIndexOf, seedActIndex } from "../shared/protocol/authority/undo.js";
 import { guestScan } from "../shared/protocol/authority/capacity.js";
-import { ckptScanOf, orphanScan, shapesOf } from "../shared/protocol/authority/scriptrun.js";
+import { ckptScanOf, orphanScan } from "../shared/protocol/authority/scriptrun.js";
 import { seedPurgedSeqs } from "../shared/protocol/authority/storage.js";
 import { simFolder } from "../shared/protocol/simlayer.js";
 
@@ -14,7 +14,7 @@ const opsQuiet = (e: Any) => { try { return opsOf(e); } catch { return []; } };
 /** Every file whose code shapes a view (statecache.ts foldKey hashes them: a change to any refuses every cache). */
 export const VIEW_FILES = ["./foldviews.ts", "./livehost.ts", "../shared/protocol/authority/undo.js", "../shared/protocol/authority/capacity.js",
   "../shared/protocol/authority/scriptrun.js", "../shared/protocol/authority/storage.js", "../shared/protocol/authority/rights.js",
-  "../shared/protocol/shaperepair.js", "../shared/protocol/simlayer.js"];
+  "../shared/protocol/simlayer.js"];
 
 /** The host's own views (livehost.ts): id → the change seqs touching it, actors in first-seen order, say seqs, sim checkpoint
  *  seqs, the last change seq, and how many purge / governance entries the log holds. */
@@ -45,12 +45,12 @@ export const viewsCarried = (st: Any, X: LogIndex) => st?.status === "ok" && X.p
 export function captureViews(w: Any, X: LogIndex, sf: Any) {
   const n = w.entries.length, x = actIndexOf(w), G0 = w.__guests;
   const G = guestScan(w, G0 ? { n: G0.n, made: new Map(G0.made), pending: new Map(), ids: new Map() } : { n: 0, made: new Map(), pending: new Map(), ids: new Map() });
-  const k = ckptScanOf(w); shapesOf(w); const o = orphanScan(w, (w.__orphans ??= { n: 0, lifted: new Map(), parentOf: new Map() }));
+  const k = ckptScanOf(w); const o = orphanScan(w, (w.__orphans ??= { n: 0, lifted: new Map(), parentOf: new Map() }));
   const simOk = sf && !sf.sim && sf.spec === null && !sf.foreign && !sf.lifted?.size && !Object.keys(sf.launched ?? {}).length && !sf.unknownEpoch && !sf.unknownHold;
   return { n, touch: mapOut(X.touching), actors: [...X.actors], says: delta(X.says), ckpts: X.ckpts, lastChange: X.lastChange,
     act: { actsOf: mapOut(x.actsOf), resultOf: [...x.resultOf].flat(), undone: [...x.undone], changes: delta(x.changes), rests: delta(x.rests), restAfter: [...x.restAfter], lastAct: x.lastAct },
     ever: [...w.everIds()], guests: [...G.made], ckpt: { ...k, newest: Number.isFinite(k.newest) ? k.newest : null },
-    shapes: { ...w.__shapes }, orphans: { n: o.n, lifted: [...o.lifted].map(([id, l]: Any) => [id, l.seq, l.by]), parentOf: [...o.parentOf] },
+    orphans: { n: o.n, lifted: [...o.lifted].map(([id, l]: Any) => [id, l.seq, l.by]), parentOf: [...o.parentOf] },
     sim: simOk ? { rev: sf.rev ?? 0, checks: sf.checks ?? { agree: 0, disagree: [] } } : null };
 }
 
@@ -65,7 +65,6 @@ export function seedViews(w: Any, X: LogIndex, V: Any, st: Any) {
   seedPurgedSeqs(w, n);
   w.__guests = { n, made: new Map(V.guests), pending: new Map(V.guests), ids: new Map(), seeded: true };
   w.ckptScan = { ...V.ckpt, newest: V.ckpt.newest ?? -Infinity };
-  w.__shapes = { ...V.shapes };
   w.__orphans = { n: V.orphans.n, lifted: new Map(V.orphans.lifted.map(([id, seq, by]: Any) => [id, { seq, by }])), parentOf: new Map(V.orphans.parentOf) };
 }
 

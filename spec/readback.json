@@ -45,18 +45,6 @@
   ],
   "unknown": "no rest link; no `onto` in the view; a lost body whose return names no home reads as back where it was picked up"
  },
- "request:create-world": {
-  "fields": [
-   "shapes"
-  ],
-  "unknown": "marked: a purged founding never re-runs the repair"
- },
- "request:translated": {
-  "fields": [
-   "from.translator"
-  ],
-  "unknown": "marked: a purged translation never re-runs the repair"
- },
  "physics:launch": {
   "fields": [
    "id",

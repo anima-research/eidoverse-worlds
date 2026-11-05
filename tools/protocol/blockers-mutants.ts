@@ -71,12 +71,7 @@ const M: Mutant[] = [
     find: '    refused: deferred.length ? deferredRefusal(deferred, `"${world}"`) : watchRefusal(watch, `"${world}"`),', repl: '    refused: watchRefusal(watch, `"${world}"`),', suite: "inplace", rows: ["IP26"], expect: 20 },
   { id: "M8", what: "governance not marked reserved: a log holding a sequencer entry is served", file: "server/livehost.ts",
     find: '    if (g >= 0) throw new Error(`"${name}" can\'t be served: its log holds a governance entry', repl: '    if (false) throw new Error(`"${name}" can\'t be served: its log holds a governance entry', suite: "gov-reserved", rows: ["G2"], expect: 1 },
-  { id: "M9", what: "a world needing maintenance is written to anyway (the repair-needed refusal gone)", file: "shared/protocol/authority/scriptrun.js",
-    // the gate moved into scriptrun's one write-gate helper (49d17e4b: a script's write meets it too)
-    find: '  if (n.blocking.length) return { code: "repair-needed",', repl: '  if (false) return { code: "repair-needed",', suite: "shape-repair", rows: ["RP15"], expect: 1 },
   // ---- review r14 (10-18) ----
-  { id: "r14-H1", what: "maintain swallows a durable-write throw as a refused host (the repair reports ok while the disk is unknown)", file: "shared/protocol/authority/scriptrun.js",
-    find: "      } catch (x) { if (!(x instanceof Refusal)) throw x;   // r14 H1 (10-18)", repl: "      } catch (x) { if (false) throw x;   // r14 H1 (10-18)", suite: "shape-repair", rows: ["RP18"], expect: 1 },
   { id: "r14-M1", what: "voice-moderate writes through w.log.request directly (no capability, no queue, no meters)", file: "server/server.ts",
     find: '          void requestAs(c, ws, w, muted ? "mute" : "unmute",', repl: '          void w.log.request(actorIdOf(c), muted ? "mute" : "unmute",', suite: "txn", rows: ["T11"], expect: 1 },
   { id: "r14-M2", what: "the transaction outcome ignores the moderator log's wedge (a ban whose mod-log write threw is rolled-back)", file: "shared/protocol/authority/storage.js",

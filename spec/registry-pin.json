@@ -265,7 +265,7 @@
    }
   },
   "absentMeans": {
-   "decay": "1.7: the falloff exponent the light rig used before it was written (three.js decay); a value stored before 10-16 is repaired to 1.7 by the maintenance command (repair-shapes; docs/MAINTENANCE.md), never at load",
+   "decay": "1.7: the falloff exponent the light rig used before it was written (three.js decay); an older light is written 1.7 when its world is translated",
    "intensity": "the default; on a light with no decay (stored before 10-16) 16, the old rig's, written by the same repair",
    "daytime": "dim: it follows the day cycle (an older value's day: false meant full)"
   },

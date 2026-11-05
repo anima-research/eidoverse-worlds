@@ -21,7 +21,9 @@ import { COMPONENTS, registered } from "../../../shared/protocol/componentspec.j
 import { modernize as newParticles, hashSeed, isLegacy, derivedEffect, effectAddress, effectProblem, EFFECT_LIMITS } from "../../../shared/particle_effects.js";
 import { CSS_NAMES } from "./cssnames.js";
 import { mapGrassArgs } from "../../../shared/flora_args.js";
-import { repairComps, repairWorld, renameFields, SHAPES_VERSION, OLD_LIGHT_DECAY } from "../../../shared/protocol/shaperepair.js";
+import { repairComps, repairWorld, OLD_LIGHT_DECAY, legacyHosts, liftHostOps } from "./shapes.js";
+import { renameFields } from "../../../shared/protocol/names.js";
+import { checkSocket, checkStation } from "../../../shared/sockbody.js";
 import * as eidosim from "./eidosim-v1.js";   // HER engine (the first eidosim, dialect 3): what a v1 punt did. Importer-only.
 import { ENGINES, DEFAULT_ENGINE } from "../../../shared/protocol/simlayer.js";
 
@@ -102,8 +104,7 @@ function newMotion(m0) {
   const rate = (rpm ?? 6) * 6;
   return Number.isFinite(rate) ? { ...rest, degPerSec: rate } : m;
 }
-// @12, wave 2 (the shape audit's physics-motion family): what the maintenance command repairs in a stored v4 world (never the load)
-// (shared/protocol/shaperepair.js), the translation writes already: a bare motion naming a part is motion:<part>,
+// @12, wave 2 (the shape audit's physics-motion family): a v1 value in today's spelling (./shapes.js): a bare motion naming a part is motion:<part>,
 // amplitude is amp, a letter axis its vector, a pendulum's unwritten period and damp the 3.5 s and 0 the renderer read, a
 // whole pendulum with no pivot component swings about the [0, 2, 0] the renderer used (now its pivot component), a
 // whole motion's pivot field is the thing's pivot, collider exact is mesh. A parent no longer carries order.
@@ -123,13 +124,14 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@45";   // @45: a minor-1 genesis may carry requires and provenance (§F); output unchanged
+export const TRANSLATOR = "eidoverse/translate-v1@46";   // @46: no repair-shapes marker; a stored sockets map is lifted here (lift-sockets acts at the end). Output differs there
+// @45: a minor-1 genesis may carry requires and provenance (§F); output unchanged
 // @44: minor 1, the log vocabulary (docs/DESIGN-log-vocabulary.md)
 // @43 (bot review 440, 441): a valid exit with no helm child rides imported:vehicle; a model with its own light still gets main's inferred lamps. Output differs there.
 // @42 (bot review 58): where any water writes a speed area, every other water gets physics-area {factor: 1, modes: [swim]}, so the water a body is in sets its stroke (main read the selected volume's own speed). Output differs there.
 // @41 (bot review 59): what main's air held beyond its boxes' centre, size and q (another key, a box's other keys, an entry that is no box) rides imported:air, listed. Output differs there.
 // @40 (bot review 60, R 10-30): main's ambient motes take main's defaults where unset or 0 (1,200 motes, not the effect limit) and main's 0.08 size cap. Output differs there.
-// @39 (decision table, R 10-30): main's sky sun and fill sliders are kept (shaperepair no longer drops them)
+// @39 (decision table, R 10-30): main's sky sun and fill sliders are kept (shapes.js no longer drops them)
 // @38 (decision table row 7): the particle limits grew (4,000 per emitter, 64 m), so main's motes (≤3,000, ≤60 m) carry over unclamped
 // @37 (Mica 10-31, decision row 27): main's water.speed slowed only the swim; its physics-area now carries modes: ['swim'], so a
 // walk or a wade on the pond floor keeps its own speed. Output differs there.
@@ -158,17 +160,17 @@ export const TRANSLATOR = "eidoverse/translate-v1@45";   // @45: a minor-1 genes
 // @23 (R 10-27, audit B2): main's picture {src, part, look?, lit?, flip?} is a material on that node {node, texture,
 // description?, lit?} (materialOf), where @22 made it a quad of its own at the thing's origin; flip: true, which the material
 // can't say, rides imported:material and is listed. A picture with no part (main drew none) is carried as imported:picture.
-// @22 (R 10-27): main's sound look is description (shaperepair renameFields, as the maintenance repair renames a stored one), where @21 left
+// @22 (R 10-27): main's sound look is description (names.js renameFields), where @21 left
 // it in imported:sound. Output differs from @21 on any log with a described sound. Both names.
 /** The version number in a translator name ("eidoverse/translate-v1@20" → 20), or NaN. Compare numbers, never a regex
  *  of version digits: `@(1[4-9])` quietly stopped matching at @20 and broke four suites (10-22). */
 export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(name ?? "")); return m ? Number(m[1]) : NaN; };
-// @21 (R 10-27): a pendulum with no maxAmp is written maxAmp 1.1, the old server's push cap (shaperepair OLD_READINGS), so a
+// @21 (R 10-27): a pendulum with no maxAmp is written maxAmp 1.1, the old server's push cap (shapes.js OLD_READINGS), so a
 // translated swing swings as it did when pushed. Output differs from @20 only on such a pendulum.
 // @19 (house 6340433633): an old name already in the hashed form h--<61 hex> is escaped like any other name, never kept as
 // that id (old logs never held one): a long name and a raw name equal to its hashed form were one thing id (people were
 // already two: the directory keys them by name). Also since @18: a motion whose amplitude was null is carried as amp 0, as
-// the old reader read it (shaperepair, 5ba2320f), where @18 dropped it. Output differs from @18 only on those two.
+// the old reader read it (shapes.js, 5ba2320f), where @18 dropped it. Output differs from @18 only on those two.
 // @20 (the house's PR #10 into #260, on top of @19): its own output changed again, so it is a version of its own (two
 // translators never share a name):
 // a name is joined to an account only where v1's server wrote the pair itself (server/verbs.ts at 306a00b0: a grant's or
@@ -210,7 +212,7 @@ export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(nam
 // the old builder's table, which an effect document's modules say in full: they ride in imported:particles (carried,
 // not drawn), and v2's `scale` is the instance's scale. Output differs from @14 on any log with a named emitter.
 // @14 (R 10-17 21:40): a motion's type is written in today's spelling: v1's back-and-forth along an axis is oscillate (the maintenance
-// repair renames a stored one the same way: shaperepair.js renameFields). Output differs from @13 on any log with that motion. Both names.
+// repair renames a stored one the same way: names.js renameFields). Output differs from @13 on any log with that motion. Both names.
 // @13 (review r9 claims O3, 2026-10-17): every translation writes the system's repair-shapes act right after `translated`
 // (the shape repair's once-per-world marker, review r8 M3), one entry @12 didn't. Its projection is @12's; its log is one
 // entry longer. Both names move to @13 (the name says which output you got).
@@ -219,7 +221,7 @@ export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(nam
 // identity mapper is given (with one, it becomes the person's id, as before). A dialect-3 epoch her sim refused is carried
 // as imported:epoch (was the imported-epoch component). Both names (with and without her sim) move to @12.
 // @12, wave 2 (the shape audit's physics-motion family): a stored value's old spelling is written in today's (shapeRepaired,
-// below; shared/protocol/shaperepair.js, the same rules the maintenance command applies to a stored v4 world), and a
+// below; ./shapes.js), and a
 // parent carries no order. Output differs on any log with a motion, a collider or a mount.
 // @12, wave 2 (the shape audit's render-media-env family): the same repair's render rules: a light carries decay 1.7 (the
 // rig's old falloff) and daytime (was day), no shadows; @world's sky, terrain
@@ -230,7 +232,7 @@ export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(nam
 // wave-2 render notes above wrote the address and the strokes). Output differs on any log with a model, particles or grass.
 // @12, wave 2 (the shape audit's attach-interact family): a lock is written in its one spelling, {rank: 'builder'} (a v1
 // lock: true, and a guard merged into it, were true). Sockets stay the v1 map with each seat's body block: the server's
-// lift (authority/sockets.js) makes them socket children with a station when the maintenance command runs, as for any older v4 log.
+// lift makes them socket children with a station (@46: this translation's own lift-sockets acts; before, the maintenance command).
 // @10 (2026-10-08): a dialect-3 log (one with a physics `epoch`, PROTOCOL_v2 §3) is translated with her sim run beside the
 // v1 fold (what translate-d3 did on its own, now on this one path with its identities, model hashes, founder key and
 // namespace): a punt is a logged launch with its exact stamped state, every rest a logged result the authority's sim layer
@@ -242,7 +244,7 @@ export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(nam
 // came to rest; but a punt stays its imported act (no v4 launch), each rest is a plain change by `sim` caused by that act
 // (no digest), the world's engine is today's eidosim from the epoch on, and (R 2026-10-08) a thing v1 ever punted is a
 // `dynamic` collider, every other one `static`. Nothing in the new log asks a reader to fly her engine.
-export const TRANSLATOR_SIM = "eidoverse/translate-v1@45";
+export const TRANSLATOR_SIM = "eidoverse/translate-v1@46";
 // @9 (2026-10-07, R's particles ruling): a v1 `particles` bag is today's instance: its preset is the effect, its origin is
 // `at`, its seed stays, and its count, size, opacity, speed, lifetime, area, texture and quality are the params of the
 // same names every Essential declares (shared/particle_effects.js modernize; instanceOf reads it back exactly). A key
@@ -311,7 +313,7 @@ export const DROPPED = {
   "motion.rpm": "becomes degPerSec = rpm × 6 (@5): the rate the renderer drew, under the authority's one name for it",
   "motion.type": "the back-and-forth along an axis is written oscillate (@14, R 10-17 21:40; shared/protocol/names.js OLD_MOTION_TYPES holds the old word): the same motion under today's name",
   "motion.part": "a bare motion naming a part becomes motion:<slot> {node: <the part's name>} (@12; the slot is shared/protocol/names.js partSlot of the name: the name itself when it is a §2.3 tag, else a sanitized form with 8 hex of its sha256): when the thing already has a motion on that node, that one wins and the bare one is dropped (the renderer drew both on one node, the keyed one last). A keyed motion carries node (its key's tag, the old reading)",
-  "physics.layers / physics.mask / physics.ccd": "cut (shared/protocol/shaperepair.js, the shape audit): main's sim never read them, so they reach neither physics nor imported:physics",
+  "physics.layers / physics.mask / physics.ccd": "cut (./shapes.js, the shape audit): main's sim never read them, so they reach neither physics nor imported:physics",
   "a mounted thing's own pos/yaw/q": "v1 keeps a riding thing's pre-mount pose, unused until a dismount; v4's transform IS the pose it rides at (local to its parent: v1's offset, or its socket's pos, and q/yaw). The parent's offset/yaw/q are that transform, not a second copy (L2)",
 };
 // DEFERRED (review of PR #260, Mica, item 7): features main's merges gave v1 worlds that THIS protocol does not carry yet.
@@ -965,7 +967,7 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
     for (const a of parts.clamped ?? []) adjust(host, "environment", a.field, a.was, a.now, a.why);   // the floor's clamp, listed under adjusted (bot review 446)
     if (Object.keys(parts.left).length && out[host]) out[host][keyed("imported", "environment")] = parts.left; }
   { const sb = stageBoundsOf(st); if (sb) w.bounds = sb; }   // @31: main's 78 m stage island as the world's box (stageBoundsOf)
-  // @12, wave 2 (render-media-env): the world's look in today's spelling, as the maintenance repair does a stored one (repairWorld: the sky's
+  // @12, wave 2 (render-media-env): the world's look in today's spelling (repairWorld: the sky's
   // clock as tz, radians, transition; the terrain's int colours and the sim's defaults, its water as the water component;
   // grass in the flora spelling, a preset kept by its name)
   out["@world"] = repairWorld(w).c; // @world is live from genesis (§2.3)
@@ -1069,9 +1071,6 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
   const mapAcct = who ? (sub) => who(sub, { sub }) : undefined;
   // the old genesis as it was, but never an account (@19): a genesis role's sub becomes its person's id, as in an old request
   const translatedSeq = push({ kind: "request", actor: "system", verb: "translated", ts: t0.ts ?? 0, body: { from: unNegZero(withoutAccounts({ ...genesis, translator: physics ? TRANSLATOR_SIM : TRANSLATOR, ...(foldBuild ? { fold: foldBuild } : {}) }, mapAcct)) } });
-  // the translation writes the repaired spelling, so its log carries the repair's once-per-world marker from the start: the
-  // system's repair-shapes act, read by verb and actor only (review r8 M3: the translated act's body is purgeable)
-  push({ kind: "request", actor: "system", verb: "repair-shapes", ts: t0.ts ?? 0, body: { v: SHAPES_VERSION, ids: [], translated: true } });
   // the operator's approval of this translation (import-v1/world.ts), written here, before any cause is taken
   if (approved) push({ kind: "request", actor: "system", verb: "translation-approved", ts: t0.ts ?? 0, body: approved });
   // an old request as sent keeps its words, but never an account: a grant's or a ban's top-level sub, whatever its shape, as
@@ -1175,6 +1174,17 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
     const tsAt = (tick) => sim.epoch.ts + tick * sim.epoch.tickMs;
     logRests(Object.values(restTicks).reduce((m, t) => Math.max(m, tsAt(t)), clock()));
   }
+  // @46: v1's sockets maps (and a parent or home naming a slot) become socket children, one host at a time (./shapes.js)
+  const projected = v4project(v4);   // final.translated: the projection, before the lifts (its tests read v1's maps there)
+  { const ever = new Set(); for (const e of out) if (e.kind === "change") for (const o of opsOf(e)) if (o.op === "create") ever.add(o.id);
+    for (const h of legacyHosts(v4)) { if (!v4.entities[h]) continue;
+      const { ops, made, moved } = liftHostOps(v4, ever, h); if (!ops.length) continue;
+      // a seat today's door would refuse (a name that isn't one word) is no socket: the translation is refused, naming it
+      for (const o of ops) { const bad = o.op === "set" && (o.comp === "socket" ? checkSocket(o.value) : o.comp === "station" ? checkStation(o.value) : null);
+        if (bad) throw new Error(`${h}'s v1 seat can't be a socket child: ${bad.reason ?? bad.code}. Nothing written`); }
+      for (const o of ops) if (o.op === "create") ever.add(o.id);
+      const lift = push({ kind: "request", actor: "system", verb: "lift-sockets", ts: clock(), body: { id: h, made, moved } });
+      push({ kind: "change", actor: "system", cause: lift, ts: clock(), ...changeBody(unNegZero(ops)) }); stats.change++; stats.ops += ops.length; stats.lifted = (stats.lifted ?? 0) + 1; } }
   stats.out = out.length;
   if (addr) { stats.modelsHashed = [...seenModels.values()].filter(Boolean).length; stats.modelsUnhashed = [...seenModels].filter(([, a]) => !a).map(([p]) => p); }
   const mapped = [...volumeMappings(v1), ...carriedMappings(v1), ...lampMappings(v1, lampsOf)]; if (mapped.length) stats.mapped = mapped;   // main's volumes, climb routes, collision, environment (VOLUMES, CARRIED)
@@ -1183,5 +1193,5 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
   stats.rights = mainRights(v1).report; if (effects.size) stats.effects = [...effects.keys()].sort();
   if (adjusted.size) stats.adjusted = [...adjusted.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : `${a.component}.${a.field}` < `${b.component}.${b.field}` ? -1 : 1));
   stats.guards = seen.guards.size; stats.guardsLive = Object.values(v1.entities ?? {}).filter((e) => e?.comp?.guard && !e.comp.lock).length;
-  return { out, stats, effects, final: { v1: finalV1, translated: v4project(v4) }, ...(physics ? { theirs: sim } : {}) };
+  return { out, stats, effects, final: { v1: finalV1, translated: projected }, ...(physics ? { theirs: sim } : {}) };
 }

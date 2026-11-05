@@ -329,7 +329,7 @@ time.
 | 157 | door-body | main | `mcpl/door-body-test.ts` | bun | ? | 300 s |
 | 158 | shape-attach | main | `tools/shape-attach-test.ts` | bun | 0.7 s | 180 s |
 | 159 | shape-physics | main | `tools/shape-physics-test.ts` | bun | 0.7 s | 180 s |
-| 160 | shape-repair | main | `tools/shape-repair-test.ts` | bun | 0.4 s | 180 s |
+| 160 | shape-import | main | `tools/shape-import-test.ts` | bun | 0.4 s | 180 s |
 | 161 | buildcheck | main | `tools/buildcheck-test.ts` | bun | 18 s | 180 s |
 | 162 | buildcheck-queue | main | `tools/buildcheck-queue-test.ts` | bun | 7.4 s | 180 s |
 | 163 | buildcheck-route | main | `tools/buildcheck-route-test.ts` | bun | 22 s | 180 s |

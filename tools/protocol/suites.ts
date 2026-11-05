@@ -53,7 +53,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["sockets", "../sockets-test.ts", 1], // #260 I454: sockets as entities (resolveSeat, the seat views); ran only as an import before
   ["msgrate", "../msgrate-test.ts", 1],
   ["clientlog", "../clientlog-test.ts", 1], // the /clientlog tee's door and budget (server/clientlog.ts: rate, size, scrub, disk; no read path) and the client's side of it // server/msgrate.ts: the message cap is a token bucket (a server stall is not the client's flood)
-  ["shape-render", "../shape-render-test.ts", 1], // #260 I515: the shape audit's render rows and the maintenance repair's; ran only as an import before
+  ["shape-render", "../shape-render-test.ts", 1], // #260 I515: the shape audit's render rows and the v1 importer's; ran only as an import before
   ["originof", "../originof-test.ts", 1], // #260 I98: the ?orrery= guard (generate.js originOf) takes only an http(s) base, never markup or javascript:
   ["renderer-cred", "../renderer-cred-test.ts", 1], // #260 I143/I144: the renderers' credential (flag + key) watches an invite-only world; a stranger's /snap and /heightmap of it are 404
   ["replay", "replay-check.ts", 1],     // L1: the fold alone, self-agreement, the lab's digest
@@ -182,7 +182,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["door-body", "../../mcpl/door-body-test.ts", 1], // the door's own body state on a bare agent: a tracks loop, a reach held to several bodies, a walk across a rejoin
   ["shape-attach", "../shape-attach-test.ts", 1], // shape audit 10-16 wave 2: socket/station, one action namespace, one home, grabbable registered, reactions frozen, look-at radians, places closed, spawn, lock, reserved names
   ["shape-physics", "../shape-physics-test.ts", 1], // shape audit 10-16 wave 2: transform pinned (glTF rule), parent −order, pivot {pos}, motion trims + repair, physics kind/reserved/kinematic, physics-engine, collider mesh, physics-joint + joint, structure, surface, stage
-  ["shape-repair", "../shape-repair-test.ts", 1], // review r7 (10-16): the maintenance repair once per world (a marker in the log), per thing, a node's name as data (motion:<slot> {node}); no empty stations by default
+  ["shape-import", "../shape-import-test.ts", 1], // the shape audit's rules live in the v1 importer: a translated world comes out in today's spelling, sockets lifted; nothing repairs a world founded today
   ["buildcheck", "../buildcheck-test.ts", 1], // #241: the build check against the walking body's rules
   ["buildcheck-queue", "../buildcheck-queue-test.ts", 1], // #241: checks are queued, cached, and answer for the bytes hashed
   ["buildcheck-route", "../buildcheck-route-test.ts", 1], // #241: GET /check and measure {check: true} (check_model)

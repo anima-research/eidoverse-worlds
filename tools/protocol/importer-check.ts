@@ -32,7 +32,6 @@
 //   IM-I3b  the old fold's whole import closure is frozen beside it (nothing it reads is a live runtime module)
 //   IM-I38  a lone surrogate anywhere in the old log refuses the import, naming the entry (enc maps every lone surrogate alike)
 //   IM-I14  a rest tick from an earlier epoch never dates a later epoch's rest
-//   IM-I17  the oracle counts a lifted world's repairNeeded as a failure
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/importer-check.ts
 // @ts-nocheck
 import fs from "node:fs";
@@ -97,8 +96,8 @@ row("IM-I1", () => {
   const bad = L.map((e: any, i: number) => [e, i]).filter(([e]: any) => e.kind === "change" && Number.isInteger(e.cause))
     .filter(([e]: any) => { const c = L[e.cause]; return !c || !(c.kind === "request" || c.kind === "say") || c.actor !== e.actor || c.verb === "translation-approved" || (c.ts ?? 0) !== (e.ts ?? 0); })
     .map(([e, i]: any) => ({ at: i, cause: e.cause, causeIs: L[e.cause]?.verb, actor: e.actor }));
-  ok(at === 3 && L[2].verb === "repair-shapes" && L.some((e: any) => e.kind === "change") && !bad.length,
-    "IM-I1 with an approval, translation-approved sits right after repair-shapes and every change's cause is the act it answers (its actor and time)", { at, bad });
+  ok(at === 2 && L[1].verb === "translated" && L.some((e: any) => e.kind === "change") && !bad.length,
+    "IM-I1 with an approval, translation-approved sits right after `translated` and every change's cause is the act it answers (its actor and time)", { at, bad });
 });
 row("IM-I25", () => {
   const w = oldWorld(BASIC); const other = oldWorld([...BASIC, { actor: "Ann", verb: "remove", args: { id: "table" } }]);
@@ -467,10 +466,6 @@ row("IM-I14", () => {
   ok(a.length === 2 && b.length === 1 && a[1] === b[0] && a[0] <= T0 + 30_000, "IM-I14 the later epoch's rest is dated by its own tick, whatever an earlier epoch's body left behind", { withFar: a, without: b });
 });
 
-// ---- IM-I17: the oracle's lift check ----
-{ const { liftFailures } = await import("./import-v1/snapshot-oracle.ts");
-  const got = liftFailures([{ repairNeeded: { steps: ["repair-shapes"], blocking: [], optional: [] } }, { host: "h", made: [] }]);
-  ok(got.length === 1 && got[0].repairNeeded, "IM-I17 the oracle counts a lifted world that still needs maintenance (liftWorld's repairNeeded) as a lift failure", got); }
 
 // ---- IM-I40–I44 (bot #369): the ids the dry run reports are the ids the real run writes; salted, so a public log confirms no account ----
 const rolesIn = (dest: string) => Object.keys(fold(linesOf(dest)).entities?.["@world"]?.c ?? {}).filter((k) => k.startsWith("roles:")).map((k) => k.slice(6));

@@ -64,9 +64,9 @@ const sameAsGenesis = (b) => digestOf(b.sim().sim) === digestOf(simFold(b.entrie
   labels(x, 2 * N);
   const C = cks(x.w), gaps = C.map((s, i) => s - (i ? C[i - 1] : -1));
   ok(C.length >= 3 && gaps.every((g) => g >= N && g <= N + 6), "PC1 no launches, and a checkpoint every N (40) entries", { C, gaps, len: x.w.entries.length });
-  labels(x, 7);
+  labels(x, 7); const C2 = cks(x.w);   // the last checkpoint at boot time (7 more labels may cross one)
   const b = reopen(x.dir);
-  ok(b.bootedFrom === C.at(-1) && replayed(b) <= N && replayed(b) > 0, "PC2 a boot starts the engine from the last checkpoint and replays at most N", { from: b.bootedFrom, replayed: replayed(b), last: C.at(-1) });
+  ok(b.bootedFrom === C2.at(-1) && replayed(b) <= N && replayed(b) > 0, "PC2 a boot starts the engine from the last checkpoint and replays at most N", { from: b.bootedFrom, replayed: replayed(b), last: C2.at(-1) });
   ok(sameAsGenesis(b) && digestOf(b.sim().sim) === digestOf(x.w.sim().sim), "PC2 …and lands on the bits a replay from genesis gets (and the running host's)");
   // the engine is still the world's: a throw after the reopen flies and rests on the record
   T += 100; request(b, "rowan", "move", { to: [0, 0, 2.5] }); T += 100; const g = request(b, "rowan", "grab", { id: "cr-0" }); T += 100; const th = g.ok ? request(b, "rowan", "throw", { id: "cr-0", v: [0, 1, 4] }) : null;

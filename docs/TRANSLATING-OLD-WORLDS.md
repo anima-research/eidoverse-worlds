@@ -35,7 +35,7 @@ writer checks it itself (`approvalProblem`) before the log is written: a
 countersignature missing, not verifying, or over another hash or world, an
 approval carrying an owner's signature, or a founder key is refused by name.
 The approval rides in the new log as the system's `translation-approved` request
-right after `repair-shapes` (`body {report, approval: {over, owner: null,
+right after `translated` (`body {report, approval: {over, owner: null,
 operator: {key, sig}, noOwner}}`, `noOwner` saying in words that no owner was
 attested): provenance a reader checks against `log.original.jsonl`. The fold
 never reads it (§1).

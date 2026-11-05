@@ -47,7 +47,7 @@ record says no owner was attested.
    sequencer key) over `eidoverse-approve-translation:<world>:<hash>`, and the writer checks it itself before the log is
    written (`approvalProblem`): a countersignature missing, not verifying, or over another hash or world, an approval
    carrying an owner's signature, or a founder key handed to `translateV1World` refuses by name. The approval is in the new
-   world's log, the system's `translation-approved` act right after `repair-shapes`:
+   world's log, the system's `translation-approved` act right after `translated`:
    `{report, approval: {over, owner: null, operator: {key, sig}, noOwner}}`, `noOwner` saying in words that no owner was
    attested. A refused report can't be approved.
 

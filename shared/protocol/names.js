@@ -86,7 +86,7 @@ export function motionNode(key, m) {
 
 // A motion's type (R 10-17 21:40: the back-and-forth along an axis is `oscillate`; it was bob before release). The old
 // spelling is READ for one release (a value an older log stored, a replica that folded it before the rename); the door
-// takes it and stores today's, and the maintenance command renames a stored one (shaperepair.js renameFields, rename-components).
+// takes it and stores today's (renameFields, below).
 // The one reading every reader shares (renderer, seat signals, editor, agent): the old word is spelled here and nowhere
 // else in a reader (tools/protocol/vocab-check.ts).
 export const OLD_MOTION_TYPES = Object.freeze({ bob: "oscillate" });
@@ -94,6 +94,34 @@ export const OLD_MOTION_TYPES = Object.freeze({ bob: "oscillate" });
 export function motionType(m) {
   const t = m?.type;
   return typeof t === "string" && Object.hasOwn(OLD_MOTION_TYPES, t) ? OLD_MOTION_TYPES[t] : t;
+}
+
+/** Fields renamed before release (R 10-17 15:09/15:11): grabbable.pose and station.pose → anim (an open name of a pose or a
+ *  clip; grabbable's 'two-hand' → twoHanded: true), a grip's fingers → grasp; a motion's type bob → oscillate; a picture's and
+ *  a sound's alt or look → description (R 10-27). The door takes a write in the old spelling and stores the new
+ *  (authority/writes.js); a translation writes the new. Idempotent; a value already spelled today is returned as the same
+ *  object; an old field stored as null is removed, never renamed to a null. {value, renamed: [{field, from?, to}]} */
+export const RENAMED_FIELDS = Object.freeze({ grabbable: Object.freeze({ pose: "anim", "grips.*.fingers": "grasp" }), station: Object.freeze({ pose: "anim" }),
+  motion: Object.freeze({ "type=bob": "type=oscillate" }), picture: Object.freeze({ alt: "description", look: "description" }), sound: Object.freeze({ alt: "description", look: "description" }) });
+/** The RENAMED_FIELDS entry a component key reads by: a part's motion (motion:<slot>) is a motion. */
+export const renamedFieldsKey = (comp) => (typeof comp === "string" && comp.startsWith("motion:") ? "motion" : comp);
+const fbag = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+export function renameFields(comp0, v) {
+  const comp = renamedFieldsKey(comp0);
+  if (!fbag(v) || !Object.hasOwn(RENAMED_FIELDS, comp)) return { value: v, renamed: [] };
+  if (comp === "motion") { const t = motionType(v); return t === v.type ? { value: v, renamed: [] } : { value: { ...v, type: t }, renamed: [{ field: "type", from: v.type, to: t }] }; }
+  let out = v; const renamed = []; const edit = () => (out === v ? (out = { ...v }) : out);
+  if (comp === "picture" || comp === "sound") for (const f of ["alt", "look"]) if (f in out) { edit(); const a = out[f]; delete out[f];
+    if (a !== null && out.description === undefined) out.description = a; renamed.push({ field: f, to: a === null ? null : "description" }); }
+  if ("pose" in out) { edit(); const p = out.pose; delete out.pose;
+    if (comp === "grabbable" && p === "two-hand") { if (out.twoHanded === undefined) out.twoHanded = true; renamed.push({ field: "pose", from: p, to: { twoHanded: out.twoHanded } }); }
+    else if (p === null) renamed.push({ field: "pose", to: null });   // a stored null is a removal (anim is never null)
+    else { if (out.anim === undefined) out.anim = p; renamed.push({ field: "pose", to: "anim" }); } }
+  if (comp === "grabbable" && fbag(out.grips) && Object.values(out.grips).some((g) => fbag(g) && "fingers" in g)) { edit();
+    out.grips = Object.fromEntries(Object.entries(out.grips).map(([k, g]) => { if (!fbag(g) || !("fingers" in g)) return [k, g];
+      const { fingers, ...r } = g; renamed.push({ field: `grips.${k}.fingers`, to: fingers === null ? null : "grasp" });
+      return [k, { ...r, ...(r.grasp === undefined && fingers !== null ? { grasp: fingers } : {}) }]; })); }
+  return { value: out, renamed };
 }
 
 /** @param {string} s @returns {string | null} the original name, or null when it was hashed (h--) */

@@ -1,6 +1,6 @@
 {
  "status": "trial-kernel",
- "translator": "eidoverse/translate-v1@45",
+ "translator": "eidoverse/translate-v1@46",
  "companions": {
   "changelog": "2026-11-05: kernel: minor 1 genesis admits requires (sorted unique feature ids, §F F-1) and provenance (the writer object, §F F-2); governance requiresAdd declares later features; a feature the reader doesn't implement is unsupported-feature, no world",
   "translator": {

@@ -32,8 +32,6 @@ export const READBACK = Object.freeze({
   "request:sculpt":  { fields: ["args.brush", "clamped"], where: "buildUndo sculptInverse", unknown: "not exact: restore-before (refused if changed since)" },
   "request:*":       { fields: ["args.label", "args.id", "args.component", "args (a physics-engine version it typed)"], where: "undo {label}, undo's reply, restampEngine's chose()", unknown: "no label match; an unknown chooser of an engine version is the owner's: never restamped" },
   "request:system":  { fields: ["rest", "id", "onto", "home"], where: "the act index (restAfter, per rest and body), recentRests and wait's lost notice", unknown: "no rest link; no `onto` in the view; a lost body whose return names no home reads as back where it was picked up" },
-  "request:create-world": { fields: ["shapes"], where: "shaperepair shapesMarked (the once-per-world shape repair command, a founding made before the repair-shapes marker act)", unknown: "marked: a purged founding never re-runs the repair" },
-  "request:translated":   { fields: ["from.translator"], where: "shaperepair shapesMarked (a translation by translate-v1@12 before the marker act)", unknown: "marked: a purged translation never re-runs the repair" },
   "physics:launch":  { fields: ["id", "handled"], where: "restampEngine's in-flight walk, recentRests", unknown: "maybe in flight: no restamp; handled falls back to the launch's actor" },
   "physics:lift":    { fields: ["id"], where: "restampEngine's in-flight walk, orphanLifts", unknown: "maybe held: no restamp" },
   "physics:catch":   { fields: ["id"], where: "restampEngine's in-flight walk, orphanLifts", unknown: "maybe held: no restamp" },

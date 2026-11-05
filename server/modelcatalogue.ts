@@ -119,8 +119,7 @@ export const ENGINE_CATALOGUE = {
     if (e.credits === undefined) e.credits = creditsFor(libraryCredits(), pathOfAddress(name) ?? name);
     return e;
   },
-  /** The library path an old content address (eido:sha256/<hex>, stored before 10-17) names on this host, or null: the load
-   *  repair writes it back as the model (shared/protocol/shaperepair.js). */
+  /** The library path an old content address (eido:sha256/<hex>, stored before 10-17) names on this host, or null. */
   pathOf(name: string): string | null { return typeof name === "string" ? pathOfAddress(name) : null; },
   list(q: string): [string, Entry][] {
     const ql = String(q ?? "").toLowerCase();

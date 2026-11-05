@@ -9,8 +9,6 @@
 //   WORLDS_DIR=<dir> bun tools/protocol/world.ts rollback <world> [--discard-changes]       (undo an in-place translation: the old files back, everything it made removed)
 //   bun tools/protocol/world.ts owner-key <ed25519:…> <signature>      (checks a founder's own key, for founding a new world with it: import-v1/README.md)
 //   WORLDS_DIR=<dir> bun tools/protocol/world.ts info <name>
-//   WORLDS_DIR=<dir> bun tools/protocol/world.ts repair <name> [--dry-run] [--by <who asked>]     maintenance: lift-sockets, rename-components, repair-shapes (PROTOCOL §4), each recorded
-//   WORLDS_DIR=<dir> bun tools/protocol/world.ts repair <name> --rollback [--force]               the pre-repair log put back, byte-identical
 //
 // The server never makes a world by itself (it serves only worlds in this protocol, and refuses a directory holding only an old log). A directory is a world because it holds world.jsonl
 // whose line 0 is a genesis saying {dialect, v: 4}, written by this tool (`found`, `translate`) or by the server's `new` request for an
@@ -42,9 +40,7 @@ import { custodyFileIn } from "../../server/keyfiles.ts";
 import { TRANSLATOR } from "./import-v1/translate-v1.js";
 import { openLive, isWorldDir, SWAP_MARKER, isSwapUnfinished } from "../../server/livehost.ts";
 import { digest, keyOk } from "../../shared/protocol/fold.js";
-import { maintain } from "../../shared/protocol/authority.js";
 import { ENGINE_CATALOGUE } from "../../server/modelcatalogue.ts";
-import { backupBeforeRepair, sealBackup, dropBackup, rollbackRepair } from "../../server/repairfiles.ts";
 import { backupWorld, type Backup } from "../../server/backups.ts";
 import { isCacheFile } from "../../server/statecache.ts";
 import { shellWord } from "../../server/oldworlds.ts";
@@ -224,7 +220,7 @@ function translateInPlace(name: string, approval: Approval, approvedSource: { si
   // made (the bytes as made: a rollback refuses to delete a file the server has written to since, unless told to), who was minted
   const made = fs.readdirSync(T).filter((f) => !TEMP_ONLY.has(f));
   // what the old world's directory held before the swap (r14 M3, 10-18): anything else found there at rollback time — a
-  // world.mod.jsonl the server made at its first ban, a repair-backups/ — is the server's, made since: history with nowhere to go
+  // world.mod.jsonl the server made at its first ban — is the server's, made since: history with nowhere to go
   const present = fs.readdirSync(D);
   fs.writeFileSync(path.join(T, MANIFEST), JSON.stringify({ v: 2, world: name, at: Date.now(), translator: TRANSLATOR, report: approval.report, approval, present, backup: backup!.dir,
     source: r!.source, renamed: steps.slice(1).map(([a, b]) => [path.basename(a), path.basename(b)]), made: Object.fromEntries([...made, MANIFEST].map((f) => [f, f === MANIFEST ? null : sha(path.join(T, f))])),
@@ -298,7 +294,7 @@ function rollback(name: string) {
   if (origNow) die(`can't roll back "${name}": ${ORIGINAL.log} no longer holds the bytes that were translated (${m.source.size} bytes then, ${origNow.size} now): it was written to, and the original is lost. Nothing was changed.`);
   const changed = Object.entries<string | null>(m.made).filter(([f, h]) => h && !isBack(f) && fs.existsSync(path.join(D, f)) && sha(path.join(D, f)) !== h).map(([f]) => f);
   // files the server made since the translation (r14 M3): not made by it, not renamed by it, not there before it. The moderator
-  // log (bans, mutes, kicks: PROTOCOL §2.1) is the usual one; a repair's backups another. They are history too.
+  // log (bans, mutes, kicks: PROTOCOL §2.1) is the usual one. It is history too.
   const known = new Set([...Object.keys(m.made), ...m.renamed.flat(), ...(m.present ?? []), MANIFEST]);
   const since = fs.readdirSync(D).filter((f) => !known.has(f) && !isCacheFile(f));   // the fold cache is derived, not history (server/statecache.ts)
   if ((changed.length || since.length) && !discard) die(`can't roll back "${name}" without losing history: ${[...changed.map((f) => `${f} changed since the translation made it`), ...since.map((f) => `${f} was made since the translation${f === "world.mod.jsonl" ? " (the moderator log: bans, mutes, kicks were filed)" : ""}`)].join("; ")} `
@@ -496,39 +492,4 @@ if (cmd === "found") {
   console.log(JSON.stringify({ name, worldId: w.worldId, entries: w.entries.length, status: st.status,
     entities: Object.keys(st.entities).length - 1, entitiesNote: "not counting @world, the world's own entity",
     roles: Object.fromEntries(Object.entries(st.entities["@world"].c).filter(([k]) => k.startsWith("roles:"))), digest: digest(st) }, null, 1));
-} else if (cmd === "repair") {
-  // reviewer item 9 + lead's ruling (10-18): a load never writes; the three stored-value rewrites are ONE maintenance command. Stop the server that serves the world
-  // first (two writers of one log). Recorded: the system's repair-shapes act carries command and --by (PROTOCOL §4); its
-  // rollback is the file's: the pre-repair log is kept under <world>/repair-backups/<stamp>/ and --rollback puts it back
-  // byte-identical (server/repairfiles.ts), refusing when the log has grown since (unless --force).
-  const name = rest[0]; if (!name || !NAME.test(name)) die("usage: repair <name> [--dry-run] [--by <id>] | repair <name> --rollback [--force]");
-  if (!isWorldSaved(name)) die(`${name} is not a world (no world.jsonl with a genesis)`);
-  const dir = path.join(WORLDS_DIR, name);
-  if (rest.includes("--rollback")) {
-    const r = rollbackRepair(dir, { force: rest.includes("--force") });
-    if (!r.ok) die(`rollback refused: ${r.why}`);
-    console.log(`restored ${path.join(dir, "world.jsonl")} from ${r.backup}: ${r.restored.size} bytes, sha256 ${r.restored.sha256} (byte-identical to the pre-repair log; ${r.dropped} bytes written by the repair and since are gone)`);
-  } else {
-    const by = flag("by") ?? null, dryRun = rest.includes("--dry-run");
-    const w = openLive(dir, name, { catalogue: ENGINE_CATALOGUE, scripts: null, readOnly: dryRun });
-    const say = (r: any) => { const L = r.steps.lift, R = r.steps.rename, P = r.steps.repair;
-      console.log(`  lift-sockets:      ${L.made.length} host(s)${L.made.length ? ` (${L.made.map((m: any) => m.host).join(", ")})` : ""}, ${L.failed.length} refused${L.failed.length ? ` ${JSON.stringify(L.failed).slice(0, 300)}` : ""}`);
-      console.log(`  rename-components: ${R.renamed.length} rename(s)${R.renamed.length ? ` (${R.renamed.map((x: any) => `${x.id}.${x.from ?? x.component}`).slice(0, 12).join(", ")})` : ""}, ${R.failed.length} refused${R.failed.length ? ` ${JSON.stringify(R.failed).slice(0, 300)}` : ""}`);
-      console.log(`  repair-shapes:     ${P.marked ? "already marked (nothing to repair)" : `${P.repaired.length} entity(ies)${P.repaired.length ? ` (${P.repaired.slice(0, 20).join(", ")}${P.repaired.length > 20 ? ", …" : ""})` : ""}, ${P.failed.length} refused${P.failed.length ? ` ${JSON.stringify(P.failed).slice(0, 300)}` : ""}`}`); };
-    if (dryRun) { const r = maintain(w, { by, dryRun: true }) as any;
-      if (r.refused) die(`repair refused: ${r.refused.code}: ${r.refused.reason}`);
-      console.log(`dry run of ${name} (nothing written): lift-sockets, rename-components, repair-shapes`); say(r); process.exit(0); }
-    const backup = backupBeforeRepair(dir, { by });
-    const n0 = w.entries.length; let r: any;
-    try { r = maintain(w, { by }); }
-    catch (e) {   // r14 H1 (10-18): a throw from a durable write is AMBIGUOUS (the line's disk state is unknown), never "repaired" and never silently dropped
-      sealBackup(backup);   // whatever the count says, the line's disk state is unknown: the backup stays (review of #260, server I24)
-      die(`repair of ${name} ended AMBIGUOUS: ${(e as Error).message}\n${w.wedged?.log ? `storage failed while writing line ${w.wedgedAt ?? w.entries.length}: whether it is on disk is unknown; the world refuses writes until it is reopened from disk. ` : ""}`
-        + `${w.entries.length > n0 ? `${w.entries.length - n0} line(s) of the repair reached the log before it; the pre-repair log is kept at ${backup} (repair ${name} --rollback puts it back)` : `no line of the repair is known to have reached the log, but the one being written may have; the pre-repair log is kept at ${backup} (repair ${name} --rollback puts it back)`}`); }
-    if (r.refused) { dropBackup(backup); die(`repair refused: ${r.refused.code}: ${r.refused.reason}`); }
-    if (w.entries.length === n0) { dropBackup(backup); console.log(`${name} needs nothing: already lifted, renamed and marked; nothing written (no backup kept)`); say(r); process.exit(0); }
-    const m = sealBackup(backup);
-    console.log(`repaired ${name}: ${w.entries.length - n0} entr(y|ies) appended${by ? `, by ${by}` : ""}`); say(r);
-    console.log(`pre-repair log kept: ${backup} (${m.before.size} bytes, sha256 ${m.before.sha256}); to undo: bun tools/protocol/world.ts repair ${name} --rollback`);
-  }
-} else die("usage: found <name> --owner <id> [--title …] | translate <world> [<new name>] --dry-run … | translate <world> [<new name>] --no-founder-key --approved <hash> --operator-only-no-owner | rollback <world> [--discard-changes] | owner-key <key> <sig> | info <name>   | repair <name> [--dry-run] [--by <id>] | repair <name> --rollback [--force]   (WORLDS_DIR=<dir>)");
+} else die("usage: found <name> --owner <id> [--title …] | translate <world> [<new name>] --dry-run … | translate <world> [<new name>] --no-founder-key --approved <hash> --operator-only-no-owner | rollback <world> [--discard-changes] | owner-key <key> <sig> | info <name>   (WORLDS_DIR=<dir>)");

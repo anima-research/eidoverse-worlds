@@ -16,7 +16,7 @@ import path from "node:path";
 import { WORLDS_DIR, STATE_CACHE_EVERY, SIM_CHECKPOINT_EVERY, RATE_POLICY } from "./config.ts";
 import { directoryFor } from "./directory.ts";
 import { mkdirDurable, replaceDurable, syncDir, syncFile, syncTree } from "./durable.ts";
-import { forkCopy, operatorRepair as authorityOperatorRepair, request as authorityRequest, actIndexOf, roleIn, isBanned, muteOf, sanctionsNow, effectiveIn, seniorOwnerOf, tick as authorityTick, settle as authoritySettle, checkpointNow as authorityCheckpointNow, presenceEvent, scriptsView, settleOrphans, liftWorld, reachAdmits, reachLetGo, noteRefused, expireRoles as authorityExpireRoles, drives as authorityDrives } from "../shared/protocol/authority.js";
+import { forkCopy, operatorRepair as authorityOperatorRepair, request as authorityRequest, actIndexOf, roleIn, isBanned, muteOf, sanctionsNow, effectiveIn, seniorOwnerOf, tick as authorityTick, settle as authoritySettle, checkpointNow as authorityCheckpointNow, presenceEvent, scriptsView, settleOrphans, reachAdmits, reachLetGo, noteRefused, expireRoles as authorityExpireRoles, drives as authorityDrives } from "../shared/protocol/authority.js";
 import { authorityTime } from "./readmeter.ts";
 import { txnOutcome, txnRefusal, wedgedOf } from "../shared/protocol/authority/storage.js";
 import { clientSnapshotOf, spokenOf } from "../shared/protocol/replica.js";
@@ -27,7 +27,6 @@ import { dec } from "../shared/protocol/names.js";
 import { openLive, isWorldDir, isPreNamesDir, isSwapUnfinished } from "./livehost.ts";
 import { dropCache } from "./statecache.ts";
 import { ENGINE_CATALOGUE, warm, modelsIn } from "./modelcatalogue.ts";
-import { backupBeforeRepair, sealBackup, dropBackup } from "./repairfiles.ts";
 
 type Any = any;
 /** One chat line as this server's readers hold it (the chat window, history pages, the attest lookup): a say entry
@@ -127,17 +126,10 @@ export class WorldLog {
     // logged, so a joiner's cut already has it back in the world (authority.js settleOrphans)
     try { const settled = settleOrphans(this.live, []); if (settled.length) console.log(`[world:${name}] settled ${settled.length} hold(s) left from before the restart: ${JSON.stringify(settled).slice(0, 300)}`); }
     catch (err) { console.error(`[world:${name}] settling orphaned holds`, err); }
-    // the load (authority.js liftWorld) writes nothing: it reports what maintenance the world needs, to the console and, once
-    // the world is attached, to the flight recorder (world_debug, /debug)
-    try { const lifted = liftWorld(this.live) as Any[];
-      const skipped = lifted.filter((x) => x.skipped);
-      for (const k of skipped) console.warn(`[world:${name}] this server can't sign for this world (${k.skipped}): ${k.why}`);
-      // the load writes nothing (lead's ruling 10-18): it says which maintenance steps the world needs, and whether writes are
-      // refused meanwhile (repair-needed), naming the command
-      const need = lifted.find((x) => x.repairNeeded)?.repairNeeded;
-      if (need) console.warn(`[world:${name}] needs maintenance (${need.steps.join(", ")}): ${need.why}. ${need.fix.replace("<name>", name)}`);
-      this.liftNotes = [...skipped.map((k) => ({ skipped: k.skipped, why: k.why })), ...(need ? [{ repair: true, needed: true, ...need }] : [])]; }
-    catch (err) { console.error(`[world:${name}] lifting sockets`, err); }
+    // a world this server can't sign for loads and reads; the authority refuses its writes (custody): said once at load
+    if (this.live.exists && this.live.custody()?.sign && this.live.custody().sequencer() !== this.live.entries[0]?.body?.sequencer) {
+      const why = "this server doesn't hold the key that signs this world"; console.warn(`[world:${name}] this server can't sign for this world (custody): ${why}`);
+      this.loadNotes = [{ skipped: "custody", why }]; }
     const st = this.live.state();
     if (st.status !== "ok") console.warn(`[world:${name}] log folds to '${st.status}': the authority will refuse writes`);
     // §12: a value stripped to its commit that no purge names: the log was changed outside the purge rule. Said, not enforced:
@@ -154,10 +146,10 @@ export class WorldLog {
     // the first moments after a load met unsized standing models, and its outcome is logged for good)
     this.standing = warm(Object.values(st.entities ?? {}).map((e: Any) => e.c.model)).catch(() => {});
   }
-  /** what the load's socket lift couldn't do (per host), whether the world still needs the shape repair, and a rename's failure, said to the flight recorder when a world attaches */
-  private liftNotes: Record<string, unknown>[] = [];
+  /** what the load found (a world this server can't sign for), said to the flight recorder when a world attaches */
+  private loadNotes: Record<string, unknown>[] = [];
   private standing: Promise<unknown> = Promise.resolve();
-  attach(host: LogHost) { this.host = host; for (const n of this.liftNotes) host.debug(n.repair ? "repair-needed" : "custody", n); }
+  attach(host: LogHost) { this.host = host; for (const n of this.loadNotes) host.debug("custody", n); }
 
   private view(): WorldView {
     return viewState(this.live.state(), { recentChat: this._state?.recentChat ?? [], chatTotal: this._state?.chatTotal ?? 0 }) as WorldView;
@@ -235,7 +227,7 @@ export class WorldLog {
     // not at the reacher's next packet (review of #260)
     try { this.host?.regateReaches?.(); } catch (err) { console.error(`[world:${this.name}] re-gating reaches after a request failed`, err); }
   }
-  /** A server operator's recorded repair (authority.js operatorRepair: @world's roles/access/default-role/role-defs, unban, repair-shapes;
+  /** A server operator's recorded repair (authority.js operatorRepair: @world's roles/access/default-role/role-defs, unban;
    *  recorded as the operator's act with operator: true). Only server/requestwire.ts's operator-repair reaches it, behind
    *  isOperator. Synchronous, like requestSync: there is no await between the check and the write. */
   operatorRepair(actor: string, verb: string, args: Record<string, unknown> = {}) {
@@ -243,16 +235,8 @@ export class WorldLog {
     const live = this.live;
     const from = live.entries.length; const held = this.holdsKey(); const wedgedBefore = wedgedOf(live);
     let r: Any = null; let threw: unknown = null;
-    // the shape repair (reviewer item 9): its pre-repair log is kept beside the world for a rollback (server/repairfiles.ts;
-    // `bun tools/protocol/world.ts repair <name> --rollback`, with the server stopped), as the CLI keeps it
-    try {
-      const backup = (verb === "repair" || verb === "repair-shapes") && args.dryRun !== true ? backupBeforeRepair(this.dir, { by: actor }) : null;
-      // a throw from a durable write is ambiguous (durable.ts: the line may be on disk while the count didn't move), so a
-      // throw keeps the backup; only a repair that returned having written nothing drops it (review of #260, server I24)
-      let threwHere = true;
-      try { r = authorityOperatorRepair(live, actor, verb, args); threwHere = false; }
-      finally { if (backup) { if (threwHere || live.entries.length > from) sealBackup(backup); else dropBackup(backup); } }
-    } catch (err) { threw = err ?? new Error("the repair threw"); }
+    try { r = authorityOperatorRepair(live, actor, verb, args); }
+    catch (err) { threw = err ?? new Error("the repair threw"); }
     finally { this.publish(from, held); }   // the same transaction as requestSync: what reached the log is published
     const o = txnOutcome(live, from, { threw: threw !== null, error: threw, refused: !!r && typeof r === "object" && r.ok === false, wedgedBefore });
     if (threw !== null) { console.error(`[world:${this.name}] operator repair ${verb.slice(0, 32)} threw (${o.outcome}):`, threw); return txnRefusal(o); }

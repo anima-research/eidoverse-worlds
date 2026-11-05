@@ -1,6 +1,6 @@
 // shape-render-test — the shape audit's wave 2, render-media-env family (notes/eidoverse/shape-audit/render-media-env.md;
 // PLAN.md "Wave 2" + LOCKED). Each row is a behaviour the audit changes, through the real door (a scratch world), the pure
-// reader that carries it, or the maintenance repair (shared/protocol/shaperepair.js). Written red first, against the tree before
+// reader that carries it, or the v1 importer's rules (tools/protocol/import-v1/shapes.js). Written red first, against the tree before
 // the change (wt/w2-physics, ec535895).
 //   usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/shape-render-test.ts
 // @ts-nocheck
@@ -26,7 +26,7 @@ const read = (p: string) => fs.readFileSync(ENGINE + p, 'utf8');
 // the authority is authority.js and its leaves under authority/ (refactor split, 2026-10-17): a source check reads them all
 const readAuthority = () => ['shared/protocol/authority.js', ...fs.readdirSync(ENGINE + 'shared/protocol/authority').filter((f) => f.endsWith('.js')).sort().map((f) => 'shared/protocol/authority/' + f)].map(read).join('\n');
 const keys = (o: any) => JSON.stringify(Object.keys(o ?? {}).sort());
-const repairMod = async () => await import('../shared/protocol/shaperepair.js');
+const repairMod = async () => await import('./protocol/import-v1/shapes.js');
 const v1 = (...rest: any[]) => [{ seq: 0, ts: 1, actor: 'world', verb: 'genesis', args: { v: 2, dialect: 'eidoverse-log', roles: { ann: { role: 'owner' } } } },
   ...rest.map((e, i) => ({ seq: i + 1, ts: i + 2, actor: 'ann', ...e }))];
 
@@ -233,11 +233,9 @@ await tryRow('DS', async () => {
   const r1 = W.call('set', { id: 'frame', component: 'picture', value: { src: 'store/images/0123456789abcdef.png', description: 'a print' } });
   const r2 = W.call('set', { id: 'radio', component: 'sound', value: { src: 'store/audio/0123456789abcdef.ogg', alt: 'rain' } });
   check('DS4 the door takes description and refuses alt', r1.ok && W.state().entities.frame.c.picture.description === 'a print' && code(r2) === 'schema', [r1.refused, r2.refused]);
-  const { renameFields, renameOps } = await repairMod();
+  const { renameFields } = await import('../shared/protocol/names.js');
   const rp = renameFields('picture', { src: 'store/images/a.png', alt: 'a print' }), rs = renameFields('sound', { src: 'store/audio/a.ogg', alt: 'rain', description: 'kept' }), rl = renameFields('picture', { src: 'store/images/a.png', look: 'older' });
   check('DS5 repair: a stored alt (or the look before it) is description (one time); description already there wins', rp.value.description === 'a print' && !('alt' in rp.value) && rs.value.description === 'kept' && !('alt' in rs.value) && rl.value.description === 'older' && !('look' in rl.value), [rp, rs, rl]);
-  const ops = renameOps({ entities: { f: { c: { picture: { src: 'store/images/a.png', alt: 'a print' } } }, g: { c: { picture: { src: 'store/images/a.png', description: 'd' } } } } });
-  check('DS5 …renameOps writes only what needs it', ops.length === 1 && ops[0].id === 'f' && ops[0].value.description === 'a print', ops);
   const src = ['shared/protocol/descriptors.js', 'shared/editschema.js', 'shared/components.js', 'client/lib/pictures.js', 'client/lib/sounds.js'].map(read).join('\n');
   check('DS6 alt leaves the editors (descriptors, editschema, components, the client\'s panels)', !/['"]alt['"]|\.alt\b|\balt:|ALT_/.test(src), (src.match(/.{0,40}(['"]alt['"]|\.alt\b|\balt:|ALT_).{0,40}/g) ?? []).slice(0, 5));
 });
@@ -357,15 +355,14 @@ await tryRow('OT', () => {
   check('OT5 water joins the world look (editWorld)', /WORLD_LOOK = new Set\(\[[^\]]*"water"/.test(readAuthority()), '');
 });
 
-// ===================================================================== the load, and the translator, apply the same rules
+// ===================================================================== the importer's rules, and the translator applies them
 await tryRow('LD', async () => {
-  const { shapeRepairOps } = await repairMod();
-  const st = { entities: { '@world': { c: { sky: { azimuth: 180, hours: 6 } } }, l: { c: { light: { kind: 'point', day: true, shadows: false } } } } };
-  const ops = shapeRepairOps(st);
-  check('LD1 the repair\'s ops reach @world (sky) and things (light)', ops.some((o: any) => o.id === '@world' && o.comp === 'sky' && Math.abs(o.value.azimuth - Math.PI) < 1e-12) && ops.some((o: any) => o.id === 'l' && o.comp === 'light' && o.value.decay === 1.7), ops);
+  const { repairWorld, repairComps } = await repairMod();
+  const W0 = repairWorld({ sky: { azimuth: 180, hours: 6 } }).c, L0 = repairComps({ light: { kind: 'point', day: true, shadows: false } }).c;
+  check('LD1 the importer\'s rules reach @world (sky) and things (light)', Math.abs(W0.sky.azimuth - Math.PI) < 1e-12 && L0.light.decay === 1.7, [W0.sky, L0.light]);
   const t = translate(v1({ verb: 'sky', args: { hours: 9, azimuth: 90 } }, { verb: 'terrain', args: { seed: 2, layers: [{ color: '#010203', repeat: 4 }] } }));
   const w = t.final.translated['@world'];
-  check('LD2 translate-v1@12 writes @world as the maintenance repair does (sky radians and the registry\'s defaults, terrain colours and the sim\'s defaults)', Math.abs((w?.sky?.azimuth ?? 0) - Math.PI / 2) < 1e-12 && w?.sky?.fog === 1 && w?.terrain?.layers?.[0]?.color === 0x010203 && w?.terrain?.octaves === 4 && !t.stats.divergences, [w?.sky, w?.terrain, t.stats.divergences]);
+  check('LD2 translate-v1@12 writes @world by those rules (sky radians and the registry\'s defaults, terrain colours and the sim\'s defaults)', Math.abs((w?.sky?.azimuth ?? 0) - Math.PI / 2) < 1e-12 && w?.sky?.fog === 1 && w?.terrain?.layers?.[0]?.color === 0x010203 && w?.terrain?.octaves === 4 && !t.stats.divergences, [w?.sky, w?.terrain, t.stats.divergences]);
 });
 
 console.log(`${pass} passed, ${fail} failed`);

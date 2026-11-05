@@ -4,7 +4,7 @@
 // request(openWorld(root, name), actor, verb, args), a `create-world` first to found the world (its founder is its owner).
 // @ts-nocheck
 import { scratch } from "./common.ts";
-import { request, LAB_CATALOGUE, liftWorld, fixtureIds } from "../../shared/protocol/authority.js";
+import { request, LAB_CATALOGUE, fixtureIds } from "../../shared/protocol/authority.js";
 import { openWorld } from "../../server/filehost.ts";
 import { viewState } from "../../shared/protocol/view.js";
 import { enc, encName } from "../../shared/protocol/names.js";
@@ -20,7 +20,7 @@ const clock = labClock();
 // the engine's catalogue is the library's GLB paths (server/modelcatalogue.ts); a scratch world names any path the tests
 // use: the lab's measured models where they exist, else a model the authority can name but not measure (no `size`)
 const ANY_MODEL = Object.freeze({ get: (n) => LAB_CATALOGUE.get(n) ?? (typeof n === "string" && n ? { label: n, surfaces: [] } : undefined), list: (q) => LAB_CATALOGUE.list(q) });
-const open = (root, name, catalogue = ANY_MODEL) => { const w = openWorld(root, name); w.catalogue = catalogue; liftWorld(w); return w; };
+const open = (root, name, catalogue = ANY_MODEL) => { const w = openWorld(root, name); w.catalogue = catalogue; return w; };
 let n = 0;
 const roots = new Map();
 
