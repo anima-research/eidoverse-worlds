@@ -419,3 +419,7 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
   - readback request:translated: gone (old logs may hold it)
 - 2026-11-05: light.decay's meaning of absence is unchanged (1.7); its words named the deleted maintenance command and now say a translation writes it
   - light.decay: its meaning of absence "1.7: the falloff exponent the light rig used before it was written (three.js decay); a value stored before 10-16 is repaired to 1.7 by the maintenance command (repair-shapes; docs/MAINTENANCE.md), never at load" → "1.7: the falloff exponent the light rig used before it was written (three.js decay); an older light is written 1.7 when its world is translated"
+- 2026-11-05: normative: no sculpt (Mica 11-04: it could only refuse, since terrain-grid is reserved): its two refusal codes and its undo's readback go with it; terrain-grid and terrain-tile stay reserved
+  - refusal grid-fixed: gone (old logs may hold it)
+  - refusal no-grid: gone (old logs may hold it)
+  - readback request:sculpt: gone (old logs may hold it)

@@ -175,7 +175,7 @@ say     {text, to?}
 undo    {act? | label?}                           # your own acts (rank decides others'); undo {act: <the undo>} is redo
 publish {from, name}                              # save a thing and its children as a blueprint
 update  {copy, to}                                # move a copy to a newer blueprint version
-sky {…} · weather {…} · sculpt {…}                # the world's sky, weather and terrain (owner)
+sky {…} · weather {…}                            # the world's sky and weather (owner)
 upload {text} · scripts {id?} · adopt {id, script}   # scripts (below)
 grab · put · drop · throw · punt · move · wait    # carrying and physics (below)
 consent {…} · body {to, kind, spec?} · reach {who, point} · inbox   # your consent gates and lists; acting on another body (below)
@@ -232,7 +232,7 @@ request also takes:
 - `throughLock: true` — act through a lock you are allowed to lift.
 
 and the building writes (`create`, `set`, `delete`, `place`, `turn`,
-`batch`, `use`, `undo`, `publish`, `update`, `upload`, `adopt`, `sculpt`,
+`batch`, `use`, `undo`, `publish`, `update`, `upload`, `adopt`,
 `sky`, `weather`, `caption`, `create-world`) take `dry: true`: the authority
 checks it and says what it would write; nothing is logged. The other verbs
 (among them `grab`, `put`, `throw`, `drop`, `punt`, `say`, `consent`,

@@ -188,7 +188,7 @@ export function txnRefusal(o) {
   return { ok: false, txn: "rolled-back", refused: { code: "server-error", reason: "the server failed while handling the request; nothing it asked for was written", fix: "send it again; if it keeps failing, whoever runs this server can find why in its log" } };
 }
 // READBACK (verbclasses.js; engine-scars 4/6c, R 10-17 02:45): the act fields the authority reads back for meaning (an
-// undo's chain, a use's capability, a script's sponsor, a sculpt's brush, the request that named an engine build…). §12
+// undo's chain, a use's capability, a script's sponsor, the request that named an engine build…). §12
 // lets the WHOLE body of an act, say or sim entry be purged, so every such read goes through readback(): the body, or
 // null when it is purged — named by a purge entry later in the log (the authority's in-memory entry still holds it), or
 // already rewritten to its {commit} stub on disk. Null is UNKNOWN, and each reader says what unknown means for it (never

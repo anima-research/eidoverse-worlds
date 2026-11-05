@@ -141,8 +141,6 @@ function admit(w, st, who, ops) {
     // again changes nothing; deleting it is changing it.
     if (op.id === "@world" && op.comp?.startsWith("schemas:") && e && op.comp in e.c && !(op.op === "set" && jcs(op.value) === jcs(e.c[op.comp])))
       refuse("schema-fixed", `@world.${op.comp} is set; a schema never changes (§4: a name never changes meaning)`, "a new meaning is a new name");
-    if (op.comp === "terrain-grid" && Object.keys(e?.c ?? {}).some((k) => k.startsWith("terrain-tile:")) && !(op.op === "set" && jcs(op.value) === jcs(e.c["terrain-grid"])))
-      refuse("grid-fixed", `${op.id}'s terrain-grid is fixed while it has tiles`, "regridding is a new ground entity");
     if (inFlight(op.id) && !fu) refuse("in-flight", `${op.id} is in flight: the engine has it until it comes to rest`, "wait (or catch it: grab {id}); no write may touch a launched thing before its rest");
     if (op.id === "@world" && op.comp === "lock" && op.op === "set") refuse("world", "@world can't be locked", "§7: lock the things in it instead");
     if (!fu) lockLevelCheck(w, st, s, who, op, at);

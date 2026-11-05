@@ -136,8 +136,7 @@ checkpoint body's `sim` (the sim-layer digest, `PHYSICS.md`).
 **Where the authority reads old requests (readback).** The fold never reads a
 request, but the *authority* reads a few request fields back for meaning: an undo's
 `undoes` and a rollback's `acts` (the undo chain), a `use`'s `capability`
-(whose rights admitted its writes), a script request's `sponsor`, a sculpt's
-`args.brush` and `clamped`, a request's `label`, the request that typed a
+(whose rights admitted its writes), a script request's `sponsor`, a request's `label`, the request that typed a
 physics-engine `engine` (whether the owner typed a version: a deploy restamps only a
 version the server stamped), and a launch's, lift's or catch's `id`. The full
 list, with what each reader does, is pinned in `spec/readback.json` (each

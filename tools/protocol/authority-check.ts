@@ -1663,14 +1663,13 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   const kin = call("olive", "set", { id: "ball", component: "physics", value: { kind: "kinematic" } }); const look2 = call("olive", "set", { id: "ball", component: "look-at", value: { target: "@viewer" } });
   ok(look?.refused?.code === "conflict" && !/on a part/.test(look.refused.fix) && /kinematic/.test(look.refused.fix) && kin.ok && look2.ok,
     "RX1 the dynamic look-at refusal names static or kinematic, and a kinematic one may look", { look: look?.refused, kin: kin.ok, look2: look2.ok ? "ok" : look2.refused }); }
-// RX2: sculpt on a thing with no grid says there's nothing to sculpt, and doesn't send the reader to write terrain-grid,
-// a reserved name the gate refuses
+// RX2: there is no sculpt (it could only refuse: terrain-grid is reserved); terrain-grid stays reserved
 { const name = "rx2";
   const call = callAt(name);
   call("olive", "create-world", { title: "rx2" }); call("olive", "create", { id: "hill", model: "crate", place: { at: [1, 1] } });
-  const sc = call("olive", "sculpt", { on: "hill", brush: { kind: "raise" }, path: [[1, 1]] });
+  const sc = call("olive", "sculpt", { on: "hill", brush: "raise", path: [[1, 1]], radius: 1, strength: 10 });
   const grid = call("olive", "set", { id: "hill", component: "terrain-grid", value: { spacing: 0.5, tile: 32, origin: [0, 0], extent: [1, 1], limits: { raise: 100, lower: 100 } } });
-  ok(sc?.refused?.code === "no-grid" && !/set \{id, component: 'terrain-grid'/.test(sc.refused.fix ?? "") && grid?.refused?.code === "reserved", "RX2 the no-grid refusal names no write of terrain-grid, which is refused as reserved", { sc: sc?.refused, grid: grid?.refused?.code }); }
+  ok(sc?.refused?.code === "unknown-verb" && grid?.refused?.code === "reserved", "RX2 sculpt is no verb (unknown-verb), and terrain-grid stays reserved", { sc: sc?.refused, grid: grid?.refused }); }
 // CAR: a captioner's lines are its own requests, charged to it like any write: past the entries cap in the window, refused rate
 { const name = "car";
   const cw = callAt(name);

@@ -1,6 +1,6 @@
 // shared/protocol/authority/verbs.js — the verb table's own bodies, in the groups authority.js spreads into VERBS in
 // their table order: FOUNDING_VERBS (create-world), SCHEMA_VERBS (schema), WRITE_VERBS (create, set, delete, place,
-// turn, publish, update), SAY_VERBS (say, undo, caption), BATCH_VERBS (sky, weather, sculpt, batch, fork-copy), and
+// turn, publish, update), SAY_VERBS (say, undo, caption), BATCH_VERBS (sky, weather, batch, fork-copy), and
 // buildBatch (refactor split, 2026-10-17; moved from authority.js's VERBS table unchanged). Only schema's did-you-mean reads UP (its guess).
 import { cowState, applyCow, DIALECT, VERSION, emptyState, keyOk, utf8Len } from "../fold.js";
 import { checkRequires, KNOWN_FEATURES } from "../features.js";
@@ -15,7 +15,7 @@ import { VOLATILE, delOp, nonce16, setOp } from "./storage.js";
 import { SPATIAL, clockMs, spend } from "./spatial.js";
 import { muteOf } from "./rights.js";
 import { buildPublish, buildUpdate } from "./blueprints.js";
-import { buildSculpt, buildSky, buildUndo, buildWeather } from "./undo.js";
+import { buildSky, buildUndo, buildWeather } from "./undo.js";
 import { scriptCeiling, scriptDefaults, scriptMemo } from "./scripts.js";
 import { CAPACITY, CAPACITY_CEILING } from "./capacity.js";
 import { SAY_MAX, admit, rateCheck, spokenOf } from "./gate.js";
@@ -112,7 +112,6 @@ const BATCH_VERBS = {
   // sky. The old fold also echoed who and at which seq into the value: derived (the log says so), so never stored here (R8).
   sky: (w, actor, a) => commit(w, actor, "sky", a, (ctx) => buildSky(ctx, a, w)),
   weather: (w, actor, a) => commit(w, actor, "weather", a, (ctx) => buildWeather(ctx, a, w)),
-  sculpt: (w, actor, a) => commit(w, actor, "sculpt", a, (ctx) => buildSculpt(ctx, a)),
   batch(w, actor, a) { return commit(w, actor, "batch", a, (ctx) => buildBatch(ctx, a, w)); },
   // a fork's copy of its parent (server/worldlog.ts forkWorld): an ordinary batch through the same gate, logged under its
   // own verb so a reader tells inherited things from births (PROTOCOL §13; review 10-07 H5), and carrying what the parent

@@ -1,11 +1,10 @@
 // shared/protocol/authority/undo.js — the act index (undo and wait without scanning the log) and undo by act, with the
-// sky, weather and sculpt builders that live beside it (refactor split, 2026-10-17; moved from authority.js's "the act
+// sky and weather builders that live beside it (refactor split, 2026-10-17; moved from authority.js's "the act
 // index" and "undo" sections unchanged). The inverse goes through admit like any write; the write path's helpers it
 // borrows (needThing, lastTouch, the reference clears) are above it, reached through UP.
 import { fold, opsOf, isIdentity, jcs, REDACTED } from "../fold.js";
 import { materialize, refsOf } from "../componentspec.js";
 import { foldSkyEntry } from "../../forecast.js";
-import * as TR from "../sculpt.js";
 import { UP } from "./ctx.js";
 import { refuse, said } from "./refuse.js";
 import { readback, FOLLOW_UP, clone, createOps, delOp, cascadeOf, isE, opsQuiet, scratch, setOp, versionOf, versionSeq } from "./storage.js";
@@ -263,7 +262,6 @@ function buildUndo(ctx, a, w) {
       live !== null ? `it's back in force through redo ${live}: undo {act: ${live}} (or a bare undo) takes it back` : "a bare undo takes back your latest change; history shows the chain"); }
   if (["throw", "drop", "leave"].includes(target.verb)) refuse("physical", `that was a ${target.verb}: what it changed is where things came to rest, which physics decided`, "put it back yourself: grab it, then put {id, pos}");
   const res = result(target.seq); if (!res || changedNothing(target.seq)) refuse("nothing", "that act changed nothing", "");
-  if (target.verb === "sculpt" && TR.ADDITIVE.has(bodyOf(target.seq)?.args?.brush) && bodyOf(target.seq)?.clamped !== true) { const inv = sculptInverse(w, ctx, target, res); if (inv) { ctx.actExtra = { undoes: target.seq, inverse: true }; return inv; } }
   const { groups, skipped } = inverseOf(target, res, ctx.st);
   if (!groups.length) refuse("conflict", "everything that act touched has been changed by someone else since", "their later change stands (undo never writes over it); if you still want yours, make the change again yourself, and history shows who did what", { skipped });
   if (skipped.length) ctx.notes.push({ skipped });
@@ -295,42 +293,4 @@ function buildUndo(ctx, a, w) {
   return groups.flat();
 }
 
-// §3b / 40 §6.2: undo of an additive stroke writes head − (after − before) per touched sample, so strokes made since
-// survive. If that would cross the grid's limits (clamping), it is not exact: fall back to restore-before (refused if
-// changed since). Returns null to fall back.
-function sculptInverse(w, ctx, target, res) {
-  const before = w.stateAt(target.seq - 1), ops = [];
-  // a LATER stroke that clamped on these tiles makes the inverse inexact too (40 says "at either time"; this is a third)
-  const mine = new Set(opsOf(res).map((o) => `${o.id}|${o.comp}`));
-  for (const e of w.entries) if (isE(e) && e.kind === "request" && e.verb === "sculpt" && e.seq > target.seq && (readback(w, e.seq) === null || !!readback(w, e.seq).clamped)) {   // READBACK: a purged later stroke may have clamped: inexact
-    const ri = actIndexOf(w).resultOf.get(e.seq), r = ri === undefined ? undefined : w.entries[ri];   // the act index, as undo reads results: no scan
-    if (r && opsQuiet(r).some((o) => mine.has(`${o.id}|${o.comp}`))) return null; }
-  for (const o of opsOf(res)) { const g = ctx.st.entities[o.id]?.c["terrain-grid"]; if (!g || !o.comp?.startsWith("terrain-tile:") || o.op !== "set") return null;
-    const zeros = () => new Array(g.tile ** 2).fill(0); const b = before.entities[o.id]?.c[o.comp]?.mm ?? zeros(), a = o.value.mm, h = ctx.st.entities[o.id]?.c[o.comp]?.mm ?? zeros();
-    const lo = -(g.limits?.lower ?? Infinity), hi = g.limits?.raise ?? Infinity; const v = h.map((x, k) => x - (a[k] - b[k]));
-    if (v.some((x) => x < lo || x > hi)) return null;
-    if (v.some((x, k) => x !== h[k])) ops.push(setOp(o.id, o.comp, { mm: v })); ctx.refs.add(o.id); }
-  if (!ops.length) refuse("nothing", "undoing that stroke changes nothing now", "");
-  return ops;
-}
-// `sculpt`: one act per stroke, applied by the authority to the tiles AT HEAD (never the client's copy), writing only the
-// touched tiles, whole. Additive brushes commute; smooth reads its neighbours at head and may carry expect {id,
-// component, at} (expect by version) to be refused instead of re-applied.
-function buildSculpt(ctx, a) {
-  const e = needThing(ctx, a.on); const g = e.c["terrain-grid"];
-  // terrain-grid is a reserved name (nothing may write it), so naming a set of it as the remedy sent the reader to a refusal
-  if (!g) refuse("no-grid", `${a.on} has no terrain-grid, so there is nothing to sculpt on it`, "sculpt works on a thing that already carries a terrain-grid; terrain-grid is reserved on this server, so nobody can add one, and asking again won't change that");
-  if (!TR.BRUSHES.includes(a.brush)) refuse("shape", `no brush '${a.brush}'`, TR.BRUSHES.join(", "), { didYouMean: guess(String(a.brush), TR.BRUSHES) });
-  if (!Array.isArray(a.path) || !a.path.length || a.path.length > 256 || !a.path.every((p) => Array.isArray(p) && p.length === 2 && p.every(isNum))) refuse("shape", "path: [[x, z], …] (1–256 points)", "");
-  if (!(a.radius > 0 && a.radius <= 64) || (TR.ADDITIVE.has(a.brush) && !(Number.isInteger(a.strength) && a.strength > 0 && a.strength <= 100000))) refuse("shape", "radius (m, ≤ 64) and strength (whole mm, > 0)", "");
-  for (const x of a.expect ?? []) { const lt = lastTouch(ctx.w, x.id, x.component); const at = versionSeq(ctx.w, x.at, `expect ${x.id}.${x.component} at`);
-    if (lt && lt.seq > at) refuse("stale", `${x.id}.${x.component} changed since ${at}: ${lt.actor} at ${lt.seq}`, "look again, then stroke (or send it without expect to apply at head)", { version: versionOf(ctx.w, lt.seq) }); }
-  const tiles = new Map(Object.entries(e.c).filter(([k]) => k.startsWith("terrain-tile:")).map(([k, v]) => [k, v.mm]));
-  const { writes, clamped } = TR.applyStroke(g, tiles, a);
-  if (!writes.size) refuse("nothing", "the brush touches no sample of the grid", "check the path against terrain-grid.origin and extent");
-  const bytes = [...writes.values()].reduce((t, mm) => t + jcs(mm).length + 60, 0);
-  if (bytes > 1000000) refuse("too-big", `that stroke rewrites ${writes.size} tiles (about ${bytes} bytes); a log line is at most 1 MiB, and a stroke is one entry`, "use the base (terrain) or import a raster for big changes; or use a smaller brush");
-  ctx.actExtra = { tiles: writes.size, ...(clamped ? { clamped: true } : {}) }; ctx.refs.add(a.on);
-  return [...writes].map(([c, mm]) => setOp(a.on, c, { mm }));
-}
-export { buildSculpt, buildSky, buildUndo, buildWeather };
+export { buildSky, buildUndo, buildWeather };

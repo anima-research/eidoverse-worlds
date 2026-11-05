@@ -7,7 +7,6 @@ import { checkGrabbable } from "../../grab.js";
 import { isEntityId, isComponent, isIdentity, REDACTED } from "../fold.js";
 import { COMPONENTS, defOf, registered, baseOf, isNamespaced, outOfRange, rangeWords } from "../componentspec.js";
 import { partSlot } from "../names.js";
-import * as TR from "../sculpt.js";
 import * as R from "../roles.js";
 import { graphemes, cleanText } from "../../text.js";
 import { mediaTier } from "../../mediasrc.js";
@@ -174,15 +173,6 @@ function valueCheck(s, { id, comp, value: v }, { carry = false, now = null } = {
   schemaCheck(at, comp, v, { carry });
   // physics.material (a surface's name) is renamed physics.surface and reserved with surfaces (shape audit 10-16): the
   // check that it names one of this world's surfaces returns when the field opens
-  if (comp === "terrain-grid") { const ok = v.spacing > 0 && Number.isInteger(v.tile) && v.tile >= 1 && v.tile <= 64 && Array.isArray(v.extent) && v.extent.length === 2 && v.extent.every((n) => Number.isInteger(n) && n >= 1 && n <= 4096)
-      && Array.isArray(v.origin) && v.origin.length === 2 && v.origin.every(isNum) && (v.limits === undefined || (Number.isInteger(v.limits.raise) && Number.isInteger(v.limits.lower) && v.limits.raise >= 0 && v.limits.lower >= 0));
-    if (!ok) refuse("shape", `${at} must be {spacing > 0, tile 1–64, origin [x, z], extent [nx, nz], limits? {raise, lower} (mm)}`, COMPONENTS["terrain-grid"].help); }
-  if (comp.startsWith("terrain-tile:")) { const g = s.entities[id]?.c["terrain-grid"]; const ij = TR.parseKey(comp);
-    if (!g) refuse("no-grid", `${id} has no terrain-grid`, "set terrain-grid on the ground first");
-    if (!ij || ij[0] >= g.extent[0] || ij[1] >= g.extent[1]) refuse("shape", `${comp} isn't a tile of ${id}'s ${g.extent.join("×")} grid`, "keys are <i>-<j>, counted from the grid origin");
-    if (!Array.isArray(v.mm) || v.mm.length !== g.tile ** 2 || !v.mm.every(Number.isInteger)) refuse("shape", `${at}.mm must be ${g.tile ** 2} integers (millimetres)`, "");
-    const lo = -(g.limits?.lower ?? Infinity), hi = g.limits?.raise ?? Infinity;
-    if (v.mm.some((n) => n < lo || n > hi)) refuse("bounds", `${at} goes outside the grid's limits (−${g.limits.lower} … +${g.limits.raise} mm)`, "terrain-grid.limits (SL's raise/lower)"); }
   // well-shaped and still here: the translator didn't see it (the door stores no old spelling)
   if (comp === "sockets") refuse("legacy", `${at} is the old spelling: each socket is a child entity now`, "create {components: {parent: {to: <host>}, transform: {pos}, socket: {name, …}}}");
 }

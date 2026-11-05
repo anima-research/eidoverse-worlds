@@ -22,7 +22,6 @@ import { FEATURE_VERBS, KNOWN_FEATURES, featureDecision, declaredBefore } from "
 import { foldSkyEntry } from "../forecast.js";
 import { normalizeCaptionArgs, captionRefusal, foldCaption } from "../captions.js";
 import * as C from "./consent.js";
-import * as TR from "./sculpt.js";
 import * as SR from "./scriptrules.js";
 import * as R from "./roles.js";
 import { graphemes, cleanText } from "../text.js";
@@ -57,7 +56,7 @@ export { reachAdmits, reachLetGo, noteRefused } from "./authority/bodyconsent.js
 import { MOD_VERBS } from "./authority/moderation.js";
 import { USE_VERBS, actionsOf, offersFor, pivotOf, reactionCap, toggleOf } from "./authority/use.js";
 import { READ_VERBS, buildCreateFrom, buildPublish, buildUpdate, thingSaid } from "./authority/blueprints.js";
-import { actIndexOf, buildSculpt, buildSky, buildUndo, buildWeather } from "./authority/undo.js";
+import { actIndexOf, buildSky, buildUndo, buildWeather } from "./authority/undo.js";
 export { actIndexFresh, actIndexOf, entityBefore } from "./authority/undo.js";
 import { DRY, DUTY, allScripts, budgetOf, dutyLeft, dutyLog, installCheck, logRt, overCpu, particlesCheck, pauseOnly, pausedBy, presentOf, rtKey, rtOf, sampleOf, scopeIds, scriptCeiling, scriptDefaults, scriptDepth, scriptMemo, scriptRights, scriptsCfg, sponsorOf, uploadEffect } from "./authority/scripts.js";
 export { DUTY, scriptCeiling, scriptDefaults, setScriptConfig, setScriptDuty, unpaused } from "./authority/scripts.js";

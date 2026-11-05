@@ -182,10 +182,6 @@
    "meaning": "a schema never changes meaning",
    "when": "changing or deleting a set schemas:<name>"
   },
-  "grid-fixed": {
-   "meaning": "the terrain grid is fixed while it has tiles",
-   "when": "changing terrain-grid with tiles under it"
-  },
   "syntax": {
    "meaning": "the script doesn't parse",
    "when": "installing a script whose source has a syntax error"
@@ -437,10 +433,6 @@
   "inside": {
    "meaning": "that would put it inside something solid",
    "when": "a hang or place into a thing's solid parts"
-  },
-  "no-grid": {
-   "meaning": "no terrain grid",
-   "when": "a sculpt on ground without terrain-grid"
   },
   "no-model": {
    "meaning": "nothing to measure",

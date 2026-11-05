@@ -20,13 +20,6 @@
   ],
   "unknown": "no sponsor: nothing runs on nobody's rights"
  },
- "request:sculpt": {
-  "fields": [
-   "args.brush",
-   "clamped"
-  ],
-  "unknown": "not exact: restore-before (refused if changed since)"
- },
  "request:*": {
   "fields": [
    "args.label",

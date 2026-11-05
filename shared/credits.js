@@ -13,7 +13,7 @@
 import { opsOf } from './protocol/fold.js';
 
 export const SESSION_MS = 5 * 60 * 1000;
-const BUILDING = new Set(['create', 'set', 'delete', 'place', 'turn', 'batch', 'undo', 'redo', 'publish', 'update', 'sculpt', 'spawn', 'comp', 'light', 'motion', 'remove', 'mount', 'move', 'scale', 'unmount', 'label', 'edit']);
+const BUILDING = new Set(['create', 'set', 'delete', 'place', 'turn', 'batch', 'undo', 'redo', 'publish', 'update', 'spawn', 'comp', 'light', 'motion', 'remove', 'mount', 'move', 'scale', 'unmount', 'label', 'edit']);
 const SYSTEM = new Set(['sim', 'system', 'world']);
 /** The phrase for one change, from one table (the client and the authority read the same words). */
 export function phraseOf(op) {
