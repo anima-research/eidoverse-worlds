@@ -53,7 +53,7 @@
 import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 import { normalizeCaptionArgs, mintSession } from '../../shared/captions.js';
 import { makeReplica } from '../../shared/protocol/replica.js';
-import { helloOf } from '../../shared/protocol/hello.js';
+import { helloOf, refusalWords } from '../../shared/protocol/hello.js';
 import type { Caption } from './captioner.ts';
 
 export interface WorldOptions {
@@ -164,6 +164,8 @@ export class WorldClient {
         this.schedule();
       } else if (msg.type === 'error') {
         this.onError(String(msg.error ?? ''));
+      } else if (msg.type === 'refused') {
+        this.onError(refusalWords(msg));
       } else if (msg.type === 'log') {
         const r = this.replica.ingest(msg.entries ?? [], msg.from ?? -1, msg.names);
         if (r.resync) { this.ws?.close(); return; }   // a gap: rejoin for a fresh cut (onclose reconnects)

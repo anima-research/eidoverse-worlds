@@ -2,7 +2,7 @@
 // Usage: bun run server/tend.ts <world> <requests.json>
 // requests.json: [{ "verb": "create", "args": {...} }, ...] — the authority's verbs (help lists them)
 
-import { helloOf } from "../shared/protocol/hello.js";
+import { helloOf, refusalWords } from "../shared/protocol/hello.js";
 
 const [world = "commons", reqPath] = process.argv.slice(2);
 const reqs: { verb: string; args?: Record<string, unknown> }[] = reqPath ? await Bun.file(reqPath).json() : [];
@@ -15,6 +15,7 @@ let answered = 0, failed = 0;
 ws.onmessage = (ev) => {
   const msg = JSON.parse(String(ev.data));
   if (msg.type === "error") { console.error(msg.error); process.exit(1); }
+  if (msg.type === "refused") { console.error(refusalWords(msg)); process.exit(1); }
   if (msg.type === "snapshot") { reqs.forEach((r, i) => ws.send(JSON.stringify({ type: "request", id: i, verb: r.verb, args: r.args ?? {} }))); if (!reqs.length) process.exit(0); }
   if (msg.type === "reply") {
     console.log(`${msg.verb}: ${msg.ok ? `ok ${JSON.stringify(msg.reply)}` : `refused (${msg.reply?.refused?.code}: ${msg.reply?.refused?.reason})`}`);

@@ -24,6 +24,8 @@ export function checkRequires(list, at = "requires") {
 /** The monotonic union: `current` plus `add` (both checked lists). `add` may not remove, reorder or repeat what is there. */
 export function requiresAdd(current, add) {
   const bad = checkRequires(add, "requiresAdd"); if (bad) return { ok: false, ...bad };
+  // a governance decision that changes nothing is invalid (gov.py; docs/DESIGN-log-vocabulary.md §2.3)
+  if (!add.length) return { ok: false, code: "requiresAdd-empty", detail: "requiresAdd adds at least one feature id" };
   const have = new Set(current);
   const dup = add.find((id) => have.has(id)); if (dup !== undefined) return { ok: false, code: "requiresAdd-present", detail: `${dup} is already required` };
   const out = [...current, ...add].sort();

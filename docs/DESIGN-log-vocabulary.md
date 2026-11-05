@@ -15,6 +15,7 @@ What the implementation found, folded in (each is a sentence where the row lives
 - `vocabulary` in the receipt is `minor-1@<the migration tool's source commit>`; `tools/protocol/migrate-genesis` is retired and points to `migrate-minor-1`.
 - §6 step 4 covers a reset successor too: an unmapped predecessor is strict refusal.
 - F-3 step 3 is the reviewer's no-existence-oracle rule, with one caveat.
+- F-1: an empty `requiresAdd` is invalid in every reader (`requiresAdd-empty`), as `gov.py` already held: a governance decision that changes nothing. F-3: every client says a hello refusal in words (`hello.js refusalWords`); an agent's join rejects with them instead of timing out.
 - **No entity classifier** (Mica, 11-04: delete `formOf` and drop `form` from the rename set). `kind.js` is gone: the renderer realizes each component on its own (model, mesh, light, socket), and labels, capacity and the gate read component presence. The `kind` field on `/geom` rows, the client's `metaOf` and the agent's records is a retired note naming the components until 2026-12-01. §1.14 and §2.4 are kept as the record.
 
 ## Changes since review 2

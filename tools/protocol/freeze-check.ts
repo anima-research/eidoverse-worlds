@@ -50,6 +50,8 @@ try {
     check("F31 a requiresAdd that removes (re-adds what is there), reorders, or repeats is invalid; the union is monotonic and sorted",
       requiresAdd(["a:b@1"], ["a:b@1"]).code === "requiresAdd-present" && requiresAdd(["a:b@1"], ["d:d@1", "c:c@1"]).code === "requiresAdd-order" && requiresAdd([], ["c:c@1", "c:c@1"]).code === "requiresAdd-order"
       && requiresAdd(["c:c@1"], ["a:a@1"]).requires.join() === "a:a@1,c:c@1");
+    { const d = featureDecision([G(), gov([])], KNOWN_FEATURES); const py = Bun.spawnSync(["python3", "-c", "import sys; sys.path.insert(0, 'spec/conformance'); import reader; print(reader.feature_decision([{'body': {}}, {'kind': 'governance', 'body': {'requiresAdd': []}}], set())[0])"], { cwd: ENGINE });
+      check("F31b an empty requiresAdd is invalid, as gov.py holds it (a governance decision that changes nothing): the JS fold and reader.py agree", requiresAdd([], []).code === "requiresAdd-empty" && d.malformed?.code === "requiresAdd-empty" && /requiresAdd-empty/.test(String(py.stdout)), [requiresAdd([], []), d.malformed, String(py.stdout)]); }
     const d4 = featureDecision([G(["a:b@1"]), chg, gov(["a:b@1"]), chg], known);
     check("F31 …and in a log, such a governance entry is malformed at its seq, nothing after it declared", d4.malformed?.seq === 2 && d4.malformed.code === "requiresAdd-present" && d4.requires.join() === "a:b@1", d4); }
 

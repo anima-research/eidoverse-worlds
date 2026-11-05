@@ -26,3 +26,11 @@ export const helloOf = () => ({ ...NEED, features: [...KNOWN_FEATURES].sort() })
 
 /** The authoritative version line a snapshot repeats. */
 export const versionLine = (requires) => ({ dialect: NEED.dialect, v: NEED.v, minor: NEED.minor, requires: [...(requires ?? [])] });
+
+/** A hello refusal ({type: "refused", code, need}) in words a person or an agent reads; it names no world. */
+export function refusalWords(msg) {
+  const n = msg?.need;
+  if (msg?.code === "update-required") return `this server speaks ${n?.dialect ?? "another dialect"} v${n?.v ?? "?"}${n?.minor !== undefined ? ` minor ${n.minor}` : ""}, which this client doesn't: update the client`;
+  if (msg?.code === "unsupported-feature") return `this world needs features this client doesn't have (${(Array.isArray(n) ? n : []).join(", ") || "unnamed"}): update the client`;
+  return `the server refused the join (${msg?.code ?? "no reason given"})`;
+}

@@ -6,7 +6,7 @@
 
 import { bodyOf, KIND_RETIRED } from "../shared/components.js";
 import { CLASSES, REACH_NOTE_MS, namedPointClass, pointClass } from "../shared/protocol/consent.js";
-import { helloOf } from "../shared/protocol/hello.js";
+import { helloOf, refusalWords } from "../shared/protocol/hello.js";
 import { describeBody, mayLeave, resolveSeat, socketsUnder, vacatedFromMine, vacatedAt } from "../shared/sockbody.js";
 import { grabOf, describeGrab } from "../shared/grab.js";
 import { r3 } from "../shared/protocol/round.js";
@@ -1075,6 +1075,10 @@ export class WorldAgent {
               this.lastRefusal = { ts: Date.now(), text: String(msg.error ?? "refused") };
               this.inbox.push({ ts: Date.now(), kind: "act", who: "world", text: `refused: ${msg.error}` });
             }
+            break;
+          case "refused":
+            // the hello refused (update-required, unsupported-feature): final, said in words when the close comes (onclose 4005)
+            this.joinRefused = `the world refused the join: ${refusalWords(msg)}`;
             break;
           case "mod":
             // Moderation replies (ban lists, server-ban confirmations).

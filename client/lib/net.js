@@ -10,7 +10,7 @@ import { avatarMounts } from './mounts.js';   // not world.js: that pulls core.j
 import { hydrate as shadowHydrate, reset as shadowReset, state as shadowState, applyView } from './state.js';
 import { hear } from '../../shared/chatwindow.js';
 import { refusalText } from '../../shared/protocol/refusal.js';
-import { helloOf } from '../../shared/protocol/hello.js';
+import { helloOf, refusalWords } from '../../shared/protocol/hello.js';
 import { pending, P } from './scheduler.js';
 // The realizers (TEL0S_NOTES §11.4) own the scene: state verbs realize
 // FROM the fold, and fold-inert causes (use/punt/force, moderation
@@ -703,6 +703,7 @@ export async function connect() {
       for (const raw of early.buffered) {
         let msg; try { msg = JSON.parse(raw); } catch { continue; }
         if (msg?.type === 'error') noteRefusal(msg.error, msg.refused);
+        if (msg?.type === 'refused') noteRefusal(refusalWords(msg), { code: msg.code });
       }
       onSocketClosed(early.closeInfo);
       return;
@@ -1157,6 +1158,12 @@ async function handle(msg, at) {
       // optimistic preview its verb was refused.
       toast(String(msg.text ?? ''), 'warn', 20000);
       logChat('*', String(msg.text ?? ''));
+      break;
+
+    case 'refused':
+      // the hello refused (update-required, unsupported-feature): the join's answer, in words; its close shows them
+      noteRefusal(refusalWords(msg), { code: msg.code });
+      toast(refusalWords(msg), 'warn');
       break;
 
     case 'error':

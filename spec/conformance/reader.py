@@ -364,6 +364,8 @@ def feature_decision(entries, known):
             continue
         add = e["body"]["requiresAdd"]
         bad = check_requires(add, "requiresAdd")
+        if not bad and not add:
+            bad = ("requiresAdd-empty", "requiresAdd adds at least one feature id")
         if not bad and any(i in req for i in add):
             bad = ("requiresAdd-present", "%s is already required" % next(i for i in add if i in req))
         if not bad and len(req) + len(add) > MAX_FEATURES:
