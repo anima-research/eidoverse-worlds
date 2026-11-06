@@ -40,7 +40,9 @@ document.body.append(canvas);
 Object.defineProperty(document, 'hasFocus', { value: () => true });
 
 const hints: string[] = [];
+const leases: string[] = [];
 const entities = new Map<string, any>([['lamp', new THREE.Group()]]);
+const comps = new Map<string, any>();
 
 mock.module(base + 'core.js', () => ({ THREE, scene, camera, canvas }));
 // The controller's water and climbing imports pull the sky/renderer chain in at
@@ -70,9 +72,14 @@ mock.module(base + 'fp_view.js', () => ({
 mock.module(base + 'assets.js', () => ({ loadGLB: async () => new THREE.Group(), libLabels: new Map() }));
 mock.module(base + 'lights.js', () => ({ makeLightGizmo: () => new THREE.Group() }));
 mock.module(base + 'world.js', () => ({
-  entities, entityMeta: new Map(), comps: new Map(), editHolds: new Set(),
+  entities, entityMeta: new Map(), comps, editHolds: new Set(),
 }));
-mock.module(base + 'net.js', () => ({ net: { myId: 'me' }, sendVerb() {}, sendDrag() {} }));
+mock.module(base + 'net.js', () => ({
+  net: { myId: 'me' }, sendVerb() {}, sendDrag() {},
+  sendLease(op: string, id: string) { leases.push(`${op}:${id}`); },
+}));
+mock.module(base + 'physobj.js', () => ({ yieldSim() {} }));
+mock.module(base + 'localbody.js', () => ({ isDowned: () => false }));
 mock.module(base + 'scenegraph.js', () => ({ sceneSelect() {} }));
 mock.module(base + 'seatedit.js', () => ({
   refreshSeatGizmos() {}, resetSeats() {}, armSeatPlacement() {},
@@ -161,5 +168,32 @@ ladder = true; pressE();
 assert.deepEqual(actions, [], 'E at a ladder climbs and does not also use');
 ladder = false; pressE();
 assert.deepEqual(actions, ['use'], 'E with no ladder or helm is the contextual use');
+
+// ---- E: a helm claim in flight is not also a use ---------------------------
+// The helm goes in only here, and comes back out. vehicles.js keeps pending
+// and pilot for the page, so a helm left in comps would turn the contextual
+// use above into a claim on a later run of this file.
+await import('../client/lib/vehicles.js');
+const boat = new THREE.Group();
+entities.set('boat', boat);
+comps.set('boat', { vehicle: { helm: [0, 0, 0] } });
+myState.pos.set(0, 0, 0);
+actions.length = 0;
+leases.length = 0;
+pressE();
+assert.deepEqual(leases, ['claim:boat'], 'E at a helm claims it');
+assert.deepEqual(actions, [], 'claiming a helm does not also use');
+pressE();
+assert.deepEqual(leases, ['claim:boat'], 'a second E before the lease does not claim again');
+assert.deepEqual(actions, [], 'a second E while the claim is in flight does not use');
+bus.emit('lease', { id: 'boat', op: 'granted' });
+pressE();
+assert.deepEqual(leases, ['claim:boat', 'release:boat'], 'E at the helm releases it');
+assert.deepEqual(actions, [], 'leaving the helm does not also use');
+comps.delete('boat');
+entities.delete('boat');
+actions.length = 0;
+pressE();
+assert.deepEqual(actions, ['use'], 'E after the helm is gone is the contextual use again');
 
 console.log('Escape priority, E arbitration and pad-hint checks passed');

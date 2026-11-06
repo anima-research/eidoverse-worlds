@@ -22,8 +22,11 @@ function end(release=true,exit=false){
 }
 bus.on('key',e=>{
   if(e.code!=='KeyE'||e.repeat||CONFIG.spectate||photoMode)return;
+  if(e.worldHandled)return;
+  // A second E while the claim is in flight is still the helm's. Returning
+  // without marking it let the contextual use fire before the lease answered.
+  if(pending){e.worldHandled=true;return;}
   if(pilot){e.worldHandled=true;end(true,true);flashHint('left helm');return;}
-  if(pending||e.worldHandled)return;
   for(const [id,specs] of comps){const o=entities.get(id),v=specs.vehicle;
     if(!o||!Array.isArray(v?.helm))continue;
     o.updateWorldMatrix(true,false);local.fromArray(v.helm).applyMatrix4(o.matrixWorld);
