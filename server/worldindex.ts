@@ -16,6 +16,7 @@ import { readLogBytes } from "./durable.ts";
 import { directoryFor } from "./directory.ts";
 import { recogniseOwner, type OldOwner, type Recognised } from "./ownerrecognise.ts";
 import { opsOf } from "../shared/protocol/fold.js";
+import { runOneShot } from "./oneshot.ts";
 
 /** Tests only: EIDO_TEST_ACCESS_TRACE=<file> appends each index lookup, entry read, owner check and world load as a JSON line
  *  (access-check F23-O10/O11 read it; "refresh" is the background sweep's read, which no asker causes). Unset, nothing is written. */
@@ -119,15 +120,15 @@ function readDoor(d: string): DoorRead | null {
   return { wc, mod };
 }
 
-// An old world's owners: tools/protocol/world.ts owners-of, once per change of the world (the translator stays out of the server process).
+// An old world's owners: tools/protocol/world.ts owners-of, once per change of the world (the translator stays out of the server
+// process), one-shot and framed (server/oneshot.ts): an answer it doesn't accept reads as no owners known.
 async function ownersOf(name: string): Promise<Owners | null> {
   accessTrace("owners", name);
   try {
-    const p = Bun.spawn([process.execPath, path.join(ROOT, "tools", "protocol", "world.ts"), "owners-of", "--", name],
-      { cwd: ROOT, env: { ...process.env, WORLDS_DIR, BACKUPS_DIR, OPT_DIR }, stdout: "pipe", stderr: "ignore" });
-    const timer = setTimeout(() => { try { p.kill(); } catch { /* gone */ } }, 120_000);
-    const out = await new Response(p.stdout).text(); await p.exited; clearTimeout(timer);
-    const l = out.split("\n").find((x) => x.startsWith("owners-json "));
+    const r = await runOneShot([process.execPath, path.join(ROOT, "tools", "protocol", "world.ts"), "owners-of", "--", name],
+      { cwd: ROOT, env: { ...process.env, WORLDS_DIR, BACKUPS_DIR, OPT_DIR }, guardMs: 120_000, label: `owners-of ${name}` });
+    if (!r.accepted || r.code !== 0) return null;
+    const l = r.out.split("\n").find((x) => x.startsWith("owners-json "));
     const o = l ? JSON.parse(l.slice("owners-json ".length)) : null;
     return Array.isArray(o) ? o.map((x: any) => ({ name: String(x?.name ?? ""), account: typeof x?.account === "string" ? x.account : null, unbound: String(x?.unbound ?? ""),
       mainSubs: Array.isArray(x?.mainSubs) ? x.mainSubs.map(String) : [] })) : null;

@@ -148,7 +148,7 @@ On a host with its own guards (a flock that keeps headless Chromes one at a time
 ## Operating systems and receipts
 
 The gate is meant to run the same on **Linux, macOS and Windows**. A suite's leftover processes are found and killed per
-OS (`tools/protocol/procgroup.ts`: `/proc` on Linux, `ps` on macOS, the process tree on Windows), and PATH is searched
+OS (`server/procgroup.ts`: `/proc` on Linux, `ps` on macOS, the process tree on Windows), and PATH is searched
 with the OS's own separator. The script sandbox tells a starved process from a stuck script with `/proc` CPU time on
 Linux and, where there is no `/proc`, by whether the process ever took the job (scripts-check I8 and I8n).
 

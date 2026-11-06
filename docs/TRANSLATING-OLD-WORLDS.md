@@ -195,6 +195,15 @@ line are one path. A report that changed since it was reviewed is refused.
 The result screen says where the backup is and how to roll back. The world
 opens on the next join; nobody needs to restart the server.
 
+The server reads the CLI's answer only when it is complete (server/oneshot.ts):
+the CLI frames it, says it holds nothing open, and leaves no process behind.
+If the CLI has answered but doesn't finish exiting (Bun 1.3.14 on Windows
+sometimes doesn't), the server ends it after 5 s, takes the answer, and logs
+`[oneshot] upgrade apply <world>: semantic result complete / forced process cleanup {…}`.
+An answer it can't trust (no frame, something left open or running) is
+reported `interrupted`: the upgrade may or may not have happened; check the
+world before upgrading again.
+
 ## Becoming the operator: the setup link
 
 A server with no operator (`SERVER_OPERATORS` empty, and nobody claimed it yet)

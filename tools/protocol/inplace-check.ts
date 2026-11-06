@@ -63,8 +63,8 @@
 //   IP41 `translate old new` into a directory that already holds a file the translation would write refuses, the file untouched
 //   IP42 a planned identity whose account already wears another id here is left (said), never merged; the rest are added
 //   IP43 `found` under another spelling of an existing name's case refuses (where the file system folds case)
-//   IP45 every world.ts run answers framed (WORLD_TS_FRAME) with no handle of its own open, and ends: exited, or killed 5 s after its
-//        complete answer as "semantic result complete / forced process cleanup" (Bun 1.3.14 on Windows); world-children.json is the receipt
+//   IP45 every world.ts run (server/oneshot.ts runOneShot) is accepted: framed, no handle of its own open, nothing of its group left;
+//        exited, or killed 5 s after its complete answer as "semantic result complete / forced process cleanup"; world-children.json is the receipt
 //   IP32 the in-place swap is durably ordered: translated files fsynced before the first rename, the directory synced after the marker, the last rename, the marker's removal
 //   IP32b the two-name form too: every translated file (the identities file included) fsynced before the move into the new name
 //   IP31b `world.ts found` stopped after genesis leaves no world under the name (built aside, renamed into place); a rerun founds it
@@ -90,7 +90,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { ENGINE, scratch } from "./common.ts";
 import { freePort } from "../harness.ts";
-import { suiteMembersAsync } from "./procgroup.ts";
+import { runOneShot, FORCED, type OneShotEnd } from "../../server/oneshot.ts";
 import { tryUntil } from "./wait.ts";
 import { emptyState as v1Empty, foldEntry as v1Fold } from "./import-v1/fold.js";
 import { TRANSLATOR } from "./import-v1/translate-v1.js";
@@ -111,29 +111,17 @@ let pass = 0, fail = 0;
 const ok = (cond: any, what: string, detail?: any) => { if (cond) { pass++; console.log(`  ok  ${what}`); } else { fail++; console.log(`  FAIL ${what}${detail !== undefined ? ` — ${JSON.stringify(detail).slice(0, 700)}` : ""}`); } };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const W = path.join(root, "worlds"), OPT = path.join(root, "opt"); fs.mkdirSync(OPT, { recursive: true });
-// Every world.ts run is framed (WORLD_TS_FRAME=1: its last line says it answered and names any handle of its own still open).
-// Bun 1.3.14 on Windows sometimes doesn't finish exiting after that line: a framed child still there 5 s on is killed and
-// counted "semantic result complete / forced process cleanup" (IP45); an unframed one gets the full 45 s and is a failure.
-const FRAME = /\n?\[world\.ts\] answered \(exit (-?\d+)\); open handles: (.*)\n$/;
-type End = "exited" | "forced process cleanup" | "timed out";
-const children: { args: string[]; code: number | null; ms: number; framed: boolean; handles: string | null; end: End; gone: boolean; tree: number }[] = [];
-const runWorld = async (pre: string[], args: string[], env: Record<string, string> = {}) => { const t0 = performance.now();
-  const p = Bun.spawn(["bun", ...pre, "tools/protocol/world.ts", ...args], { cwd: ENGINE, stdin: "ignore", stdout: "pipe", stderr: "pipe",
-    env: { ...process.env, TRUST_NAMES: "1", WORLDS_DIR: W, OPT_DIR: OPT, PROTOCOL_SCRATCH: root, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", WORLD_TS_FRAME: "1", ...env } });
-  let so = "", se = "", end: End = "exited"; const timers: any[] = [];
-  const after = <T>(ms: number, v: T) => new Promise<T>((r) => { timers.push(setTimeout(() => r(v), ms)); });
-  let seen: () => void = () => {}; const framed = new Promise<void>((r) => { seen = r; });
-  const pump = async (s: ReadableStream, put: (t: string) => void) => { const d = new TextDecoder(); for await (const c of s as any) put(d.decode(c, { stream: true })); };
-  const read = Promise.all([pump(p.stdout, (t) => { so += t; }), pump(p.stderr, (t) => { se += t; if (FRAME.test(se)) seen(); })]);
-  const late = await Promise.race([p.exited.then(() => false), after(45_000, true), framed.then(() => Promise.race([p.exited.then(() => false), after(5_000, true)]))]);
-  if (late) { end = FRAME.test(se) ? "forced process cleanup" : "timed out"; p.kill(9); }
-  const gone = await Promise.race([p.exited.then(() => true), after(10_000, false)]); await Promise.race([read, after(3_000, null)]); timers.forEach(clearTimeout);
-  const tree = end !== "exited" && process.platform === "win32" ? (await suiteMembersAsync(p.pid)).length : 0;   // anything of the killed child's still running
-  const m = FRAME.exec(se), out = so + se.replace(FRAME, ""), code = end === "exited" ? p.exitCode : end === "forced process cleanup" ? Number(m![1]) : null;
-  children.push({ args: args.slice(0, 2), code, ms: Math.round(performance.now() - t0), framed: !!m, handles: m?.[2] ?? null, end, gone, tree });
-  if (end !== "exited" || m?.[2] !== "none") console.log(`  [inplace-check] world.ts ${args.slice(0, 2).join(" ")}: ${end === "forced process cleanup" ? "semantic result complete / forced process cleanup" : end}`
-    + `${m ? `, open handles: ${m[2]}` : ", no frame"}${gone ? "" : ", STILL RUNNING after the kill"}${tree ? `, ${tree} of its processes left` : ""}; output:\n${out.slice(-800)}`);
-  return { code, out }; };
+// Every world.ts run goes through the server's own one-shot helper (server/oneshot.ts runOneShot: framed, its group checked,
+// a framed child still there 5 s on killed and counted "semantic result complete / forced process cleanup"); the 45 s guard
+// is for an unframed one, a failure. IP45 tallies them.
+const children: { args: string[]; code: number | null; ms: number; framed: boolean; handles: string | null; end: OneShotEnd; accepted: boolean; why: string | null; gone: boolean; left: number[]; group: string; receipt: string | null }[] = [];
+const runWorld = async (pre: string[], args: string[], env: Record<string, string> = {}) => {
+  const r = await runOneShot(["bun", ...pre, "tools/protocol/world.ts", ...args], { cwd: ENGINE, guardMs: 45_000, label: `inplace-check world.ts ${args.slice(0, 2).join(" ")}`,
+    env: { ...process.env, TRUST_NAMES: "1", WORLDS_DIR: W, OPT_DIR: OPT, PROTOCOL_SCRATCH: root, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", ...env } });
+  children.push({ args: args.slice(0, 2), code: r.code, ms: r.ms, framed: r.framed, handles: r.handles, end: r.end, accepted: r.accepted, why: r.why, gone: r.gone, left: r.left, group: r.group, receipt: r.receipt });
+  const out = r.out + r.err;
+  if (!r.accepted || r.end !== "exited") console.log(`  [inplace-check] world.ts ${args.slice(0, 2).join(" ")}: ${r.end === "forced process cleanup" ? FORCED : r.end}${r.why ? ` (${r.why})` : ""}; output:\n${out.slice(-800)}`);
+  return { code: r.code, out }; };
 const tool = (args: string[], env: Record<string, string> = {}) => runWorld([], args, env);
 /** The dry run's report hash for a world (review of PR #260 item 6: a translation needs an approval bound to it). */
 const dryHash = async (words: string[], env: Record<string, string> = {}) => { const r = await tool(["translate", ...words, "--dry-run", "--no-founder-key"], env); return /^report-hash ([0-9a-f]{64})$/m.exec(r.out)?.[1] ?? "no-hash"; };
@@ -751,10 +739,10 @@ fs.rmSync = (p, x) => { log("rm " + p); return rm(p, x); };\n`);
 { const a = await tool(["found", "casefold", "--owner", "Ann"]); const folds = fs.existsSync(path.join(W, "CASEFOLD")); const b = await tool(["found", "CASEFOLD", "--owner", "Ann"]);
   ok(a.code === 0 && (folds ? b.code !== 0 && /another spelling of its case/.test(b.out) && same(fs.readdirSync(path.join(W, "casefold")), ["world.jsonl"]) : b.code === 0 && isWorldDir(path.join(W, "CASEFOLD"))),
     `IP43 found CASEFOLD after casefold: ${folds ? "refused, casefold/ untouched (this file system folds case)" : "a second world (this file system keeps case: the control)"}`, { a: a.code, b: b.code, out: b.out.slice(-200) }); }
-// IP45 every world.ts run answered framed, with no handle of its own open, and ended: on its own, or killed 5 s after a complete
-// answer and counted "semantic result complete / forced process cleanup" (Bun 1.3.14 on Windows); world-children.json lists each
-{ const forced = children.filter((c) => c.end === "forced process cleanup"), bad = children.filter((c) => !c.framed || c.handles !== "none" || c.end === "timed out" || !c.gone || c.tree);
+// IP45 every world.ts run was accepted by server/oneshot.ts (framed, no handle of its own open, nothing of its group left), and
+// ended: on its own, or killed 5 s after a complete answer as "semantic result complete / forced process cleanup"; world-children.json lists each
+{ const forced = children.filter((c) => c.end === "forced process cleanup"), bad = children.filter((c) => !c.accepted);
   const receipt = path.join(root, "world-children.json"); fs.writeFileSync(receipt, JSON.stringify({ bun: Bun.version, platform: process.platform, children }, null, 1) + "\n");
-  ok(children.length > 100 && !bad.length, `IP45 every world.ts run answered framed with no handle of its own open, and ended (${children.length}: ${children.length - forced.length} exited, ${forced.length} semantic result complete / forced process cleanup; ${receipt})`, bad.slice(0, 5)); }
+  ok(children.length > 100 && !bad.length, `IP45 every world.ts run answered framed with no handle of its own open, and ended (${children.length}: ${children.length - forced.length} exited, ${forced.length} ${FORCED}; ${receipt})`, bad.slice(0, 5)); }
 console.log(`inplace: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

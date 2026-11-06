@@ -98,7 +98,7 @@ check("PG5 a zombie in the group is not counted as left running", suiteMembers(7
   const plan14 = plan && (plan as any)(100, stale, true, 900);
   check("PG14 an exited root's sweep never kills the gate, its shell, or anything under them (a reused id as a stale parent)",
     !!plan14 && JSON.stringify(plan14) === JSON.stringify([200]), plan14);
-  const pg = fs.readFileSync(new URL("./procgroup.ts", import.meta.url), "utf8"), rs = fs.readFileSync(new URL("./run.ts", import.meta.url), "utf8");
+  const pg = fs.readFileSync(new URL("../../server/procgroup.ts", import.meta.url), "utf8"), rs = fs.readFileSync(new URL("./run.ts", import.meta.url), "utf8");
   const kc = pg.slice(pg.indexOf("export function killChild")), kcBody = kc.slice(0, kc.indexOf("\n}") + 2);
   check("PG12 the sweep after a suite exits says so (exited), and killChild never blocks or kills an exited child",
     /killGroup\(child\.pid, "SIGKILL", \{ exited: \(\) => !stuck \|\| gone\(\) \}\)/.test(rs) && !/killSuite\(/.test(kcBody) && /exitCode/.test(kcBody), kcBody);
@@ -123,7 +123,7 @@ check("PG5 a zombie in the group is not counted as left running", suiteMembers(7
 { let answered = false, readAfter: boolean | null = null;
   await (PG as any).killSuiteAsync(100, "SIGKILL", "win32", { exited: () => { readAfter = answered; return true; }, query: async () => { answered = true; return "4 0\r\n50 4\r\n100 50\r\n777 100\r\n"; } });
   const src = (f: string) => fs.readFileSync(new URL(f, import.meta.url), "utf8");
-  const pg = src("./procgroup.ts"), rs = src("./run.ts"), rc = src("../run-client.ts");
+  const pg = src("../../server/procgroup.ts"), rs = src("./run.ts"), rc = src("../run-client.ts");
   const kc = pg.slice(pg.indexOf("export function killChild")), kcBody = kc.slice(0, kc.indexOf("\n}") + 2);
   const live = {
     killChild: /exited: \(\) => p\.exitCode != null \|\| p\.signalCode != null/.test(kcBody),

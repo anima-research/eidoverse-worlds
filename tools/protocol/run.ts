@@ -252,7 +252,7 @@ console.log(`  scratch   ${SCRATCH_ROOT}${process.env.PROTOCOL_KEEP ? " (kept: P
 const scratchOut = valueOf("--scratch-out");
 if (scratchOut) fs.appendFileSync(scratchOut, `scratch=${SCRATCH_ROOT.split(path.sep).join("/")}\n`);
 let current: { pid: number; exitCode: number | null; signalCode: string | null } | null = null;
-// Linux, macOS and Windows alike (tools/protocol/procgroup.ts): a POSIX process group, or the process tree on Windows
+// Linux, macOS and Windows alike (server/procgroup.ts): a POSIX process group, or the process tree on Windows
 // the kill path never blocks (CI 10-21: a synchronous WMI query froze the gate for two hours on Windows, past every timer)
 const killGroup = (pid: number, sig: NodeJS.Signals, o?: { exited?: boolean | (() => boolean) }) => killSuiteAsync(pid, sig, process.platform, o);
 const groupMembers = async (pgid: number) => (await suiteMembersAsync(pgid)).length;

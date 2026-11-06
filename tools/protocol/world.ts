@@ -43,7 +43,7 @@ import { ENGINE_CATALOGUE } from "../../server/modelcatalogue.ts";
 import { backupWorld, type Backup } from "../../server/backups.ts";
 import { isCacheFile } from "../../server/statecache.ts";
 import { shellWord } from "../../server/oldworlds.ts";
-import { openHandles } from "./openhandles.ts";
+import { frameAtExit } from "../../server/oneshot.ts";
 
 // `--` ends the flags: what follows is only words (the server passes it before a world name: server/upgrade.ts)
 const [cmd, ...argv0] = process.argv.slice(2);
@@ -52,8 +52,8 @@ const flag = (k: string) => { const i = rest.indexOf(`--${k}`); return i >= 0 ? 
 const NAME = /^[a-z0-9][a-z0-9_-]{0,63}$/i;   // a letter or digit first (server/oldworlds.ts)
 const die = (m: string) => { console.error(m); process.exit(1); };
 const dieStuck = (m: string) => { console.error(m); process.exit(2); };   // files left half-moved: exit 2, which server/upgrade.ts never reads as "refused"
-// WORLD_TS_FRAME=1: the last line says this process answered, and names any event-loop handle of its own still open (inplace-check IP45)
-if (process.env.WORLD_TS_FRAME === "1") process.on("exit", (code) => fs.writeSync(2, `\n[world.ts] answered (exit ${code}); open handles: ${openHandles()}\n`));
+// run by server/oneshot.ts (the server, inplace-check): its last line says it answered, and names any handle of its own still open
+frameAtExit();
 
 
 /** An in-place translation keeps the old world's files beside the new one under these names (never written, never deleted). */
