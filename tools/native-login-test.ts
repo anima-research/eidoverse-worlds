@@ -28,8 +28,9 @@ await status(post("/native/approve",{user_code:p.user_code},approveHeaders),200)
 await status(post("/native/approve",{user_code:p.user_code},approveHeaders),410);
 const granted = await poll(p); assert.equal(granted.status,200);
 assert.match(granted.headers.get("set-cookie")!,/HttpOnly; SameSite=Lax;.*Secure/);
-assert.equal(issued[0].nativeWorld,"water"); assert.deepEqual(issued[0].scopes,["worlds:join","worlds:spectate"]);
-assert.equal(issued[0].exp,browser!.exp); assert.equal(browser!.nativeWorld,undefined); checks+=6;
+assert.equal(issued[0].native,true); assert.equal(issued[0].nativeWorld,undefined); assert.deepEqual(issued[0].scopes,["worlds:join","worlds:spectate"]);
+assert.equal((await granted.json()).world_scope,"*");
+assert.equal(issued[0].exp,browser!.exp); assert.equal(browser!.native,undefined); checks+=8;
 await status(poll(p),410);
 const expired = await start(); time+=300001; await status(poll(expired),410);
 const cancelled = await start(); await status(post("/native/cancel",{device_code:cancelled.device_code}),200); await status(poll(cancelled),410);
@@ -37,12 +38,14 @@ const denied = await start(); await status(post("/native/deny",{user_code:denied
 const revoked = await start(); await status(post("/native/approve",{user_code:revoked.user_code},approveHeaders),200); browser=null; await status(poll(revoked),403);
 browser={sub:"human:test",name:"Test",scopes:["worlds:spectate"],exp:time+3600_000};
 const limited = await start(); await status(post("/native/approve",{user_code:limited.user_code},approveHeaders),403);
-browser.scopes=["worlds:join"]; browser.nativeWorld="water"; await status(post("/native/approve",{user_code:limited.user_code},approveHeaders),403);
+// a native session never approves another pairing: the new mark, and the one sessions from before 2026-10-17 carry
+browser.scopes=["worlds:join"]; browser.native=true; await status(post("/native/approve",{user_code:limited.user_code},approveHeaders),403);
+delete browser.native; browser.nativeWorld="water"; await status(post("/native/approve",{user_code:limited.user_code},approveHeaders),403);
 await status(post("/native/start",{oversize:"x".repeat(2048)}),413);
 await status(post("/native/start",{}, {origin:"null"}),403);
 await status(handler(new Request(origin+"/native/approve")),405);
 const page = await handler(new Request(origin+"/native")); const html=await page.text();
 assert.match(page.headers.get("content-security-policy")!,/frame-ancestors 'none'/);
-assert.ok(html.includes("Authorize Unreal for water")&&!html.includes(p.device_code)); checks+=2;
+assert.ok(html.includes(">Approve</button>")&&!/water|all_worlds/i.test(html)&&!html.includes(p.device_code)); checks+=2;
 time+=60_001; for(let i=0;i<30;i++) await status(post("/native/start"),200); await status(post("/native/start"),429);
 console.log(`Native login: ${checks} checks passed; no filesystem or production access.`);

@@ -42,10 +42,8 @@ export const NOT_YET_CLOSE = 4011;
  *  `nameReserved` — the NAME itself is authoritative: an agent bearer from
  *  tokens.json, or an aid1 agent (the home node enrolls agent names
  *  uniquely). A human's display name is self-chosen, so it never is; a typed
- *  name at the JOIN_TOKEN door never is.
- *  `onlyWorld` — credential narrowing (a native device session limited to one
- *  world). It can only refuse. */
-export type Who = { id: string; sub?: string; nameReserved?: boolean; onlyWorld?: string; watchOnly?: boolean; trustedRenderer?: boolean };
+ *  name at the JOIN_TOKEN door never is. */
+export type Who = { id: string; sub?: string; nameReserved?: boolean; watchOnly?: boolean; trustedRenderer?: boolean };
 export type EntryMode = "embody" | "watch";
 type WorldLike = { name: string; state: WorldState };
 
@@ -79,9 +77,6 @@ export function canEnter(w: WorldLike, who: Who, mode: EntryMode, now = Date.now
   // A TRUSTED RENDERER (RENDERER_TOKEN, config.ts) is the vision of the agents
   // inside: it may watch any world — never be embodied, never author.
   if (who.trustedRenderer && mode === "watch") return { ok: true };
-  if (who.onlyWorld && who.onlyWorld !== "*" && who.onlyWorld !== w.name && !isAdminId(who.id, who.sub)) {
-    return { ok: false, code: ACCESS_CLOSE, reason: "no-access", why: `this sign-in is limited to "${who.onlyWorld}"` };
-  }
   // a sign-in that carries only worlds:spectate may watch, never be embodied
   // (the ws join refuses it on scope; the HTTP answers must agree)
   if (mode === "embody" && who.watchOnly && !isAdminId(who.id, who.sub)) {
@@ -121,8 +116,7 @@ export function httpCaller(req: Request): Who | null {
   // it (Greptile #258).
   const s = sessionFromCookie(req.headers.get("cookie"));
   if (s && (s.scopes.includes("worlds:join") || s.scopes.includes("worlds:spectate"))) {
-    return { id: s.name, sub: s.sub, ...(s.nativeWorld ? { onlyWorld: s.nativeWorld } : {}),
-      ...(!s.scopes.includes("worlds:join") ? { watchOnly: true } : {}) };
+    return { id: s.name, sub: s.sub, ...(!s.scopes.includes("worlds:join") ? { watchOnly: true } : {}) };
   }
   const m = /^Bearer\s+(\S+)$/i.exec(req.headers.get("authorization") ?? "");
   if (m) {

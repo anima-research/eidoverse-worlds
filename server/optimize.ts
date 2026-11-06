@@ -39,13 +39,13 @@ import { tmpdir } from "node:os";
 import { join, basename, dirname } from "node:path";
 
 // ---- ONE libvips per process (#122) -----------------------------------------
-// The store's root manifest declares `sharp: ^0.33.5`; @gltf-transform/
-// functions reaches sharp through ndarray-pixels, which declares `^0.35.0`.
-// The ranges do not intersect, so no installer can dedupe them and BOTH land
-// on disk — node_modules/sharp (0.33.5) beside
-// node_modules/ndarray-pixels/node_modules/sharp (0.35.3). Importing plain
-// "sharp" here therefore loads a SECOND native libvips into a process that
-// already has one, and the two disagree about libvips' own enums:
+// @gltf-transform/functions reaches sharp through ndarray-pixels, which
+// declares `^0.35.0`. Whenever the store's root manifest declares a range
+// that doesn't intersect it, as its `^0.33.5` once did, no installer can
+// dedupe them and BOTH land on disk: node_modules/sharp beside
+// node_modules/ndarray-pixels/node_modules/sharp. Importing plain "sharp"
+// here then loads a SECOND native libvips into a process that already has
+// one, and the two disagree about libvips' own enums:
 //
 //   GLib-GObject-CRITICAL: value "32" of type 'gint' is invalid or out of
 //   range for property 'space' of type 'VipsInterpretation'
@@ -65,9 +65,9 @@ import { join, basename, dirname } from "node:path";
 // to it as the encoder — one libvips, end to end.
 //
 // RESOLUTION and IMPORT are kept separate, and the bare specifier is reached
-// on exactly one condition: no nested copy could be RESOLVED. That means a
-// deduped (or single-copy) install, where the bare import is the same single
-// copy and is therefore safe.
+// on exactly one condition: no copy could be RESOLVED from ndarray-pixels.
+// In a deduped install that resolution finds the root's own copy, the only
+// one, and the import takes it by that path.
 //
 // A nested copy that resolves but fails to IMPORT — ABI mismatch, missing
 // dylib, damaged install — must NOT fall back (#136 review). Doing so loads
@@ -81,14 +81,15 @@ import { join, basename, dirname } from "node:path";
 // that same copy in the verdict stamp; re-exported above.
 
 /** The choice itself, with its two effects injected so a test can drive the
- *  branch that matters (#136 review). Fails CLOSED: once a nested copy has
- *  been resolved, an import failure PROPAGATES. It must not fall back to the
- *  bare specifier — that would load the root copy beside the one
- *  gltf-transform already has and recreate the exact two-libvips condition
- *  this module forbids, in the one situation (ABI mismatch, missing dylib,
- *  damaged install) where things are already going wrong. Both callers
- *  already know how to degrade on rejection by skipping the texture pass,
- *  which is the correct outcome: a draco-only pass ships nothing false. */
+ *  branch that matters (#136 review). Fails CLOSED: once a copy has been
+ *  resolved from ndarray-pixels, an import failure PROPAGATES. Where that
+ *  copy is nested, falling back to the bare specifier would load the root
+ *  copy beside the one gltf-transform already has and recreate the exact
+ *  two-libvips condition this module forbids, in the one situation (ABI
+ *  mismatch, missing dylib, damaged install) where things are already going
+ *  wrong. Both callers already know how to degrade on rejection by skipping
+ *  the texture pass, which is the correct outcome: a draco-only pass ships
+ *  nothing false. */
 export async function pickSharp(
   resolveNested: () => string | null,
   load: (specifier: string) => Promise<any>,
@@ -98,14 +99,16 @@ export async function pickSharp(
     const mod = await load(nested);          // no catch: fail closed
     return { sharp: mod.default ?? mod, from: nested };
   }
-  // No nested copy exists, so the bare specifier IS the single copy.
+  // Nothing resolved from ndarray-pixels, so the bare specifier is the one
+  // copy left to try.
   const mod = await load("sharp");
   return { sharp: mod.default ?? mod, from: "sharp (bare specifier)" };
 }
 
 let sharpP: Promise<{ sharp: any; from: string }> | null = null;
-/** Exported for tools/one-libvips-test.ts, which asserts `from` lands on the
- *  nested copy whenever one exists — the whole fix in one readable value. */
+/** Exported for tools/one-libvips-test.ts, which asserts `from` is the copy
+ *  gltf-transform's own ndarray-pixels resolves, nested or the root's: the
+ *  whole fix in one readable value. */
 export function getSharp(): Promise<{ sharp: any; from: string }> {
   sharpP ??= pickSharp(resolveNestedSharp, (s) => import(s));
   return sharpP;

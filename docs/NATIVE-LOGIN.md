@@ -17,10 +17,13 @@ or Discord OAuth configuration changes, world verbs, or fold changes are needed.
 5. `/native/poll` returns 202 pending, 429 slow down, 403 denied/revoked or 410
    expired/used. A successful single-use redemption returns a separate `ew_sess`
    cookie plus name and remaining lifetime. Native cookies carry only join/spectate
-   scopes and `nativeWorld: water`; the WS join gate checks it before world creation.
-6. Unreal offers a separate **Join water** button. Pairing itself never joins.
-   Native logout revokes only the independent native session. No persistent client
-   credential store; closing Play clears/revokes the session best-effort.
+   scopes, for every world the account may join (as the browser's session does), and
+   `native: true`, which stops them approving another pairing. Sessions issued before
+   this flow was deployed carry `nativeWorld` instead and are treated the same; the poll
+   still answers `world_scope: "*"` for clients of that time.
+6. The approval page has one **Approve** button: there is no per-world choice. Pairing
+   itself never joins; the client joins a world as the signed-in person afterwards.
+   Native logout revokes only the independent native session.
 
 Pending grants are process-local (restart cancels them), capped at 256 and five
 minutes, with 30 starts/minute and 1200 route requests/minute globally. Deployment
@@ -45,8 +48,10 @@ a code received from someone else (standard device-pairing phishing risk).
   no session/world files or production traffic.
 - `bun tools/native-login-wire-test.ts`: scratch issuer, real HTTP and WS on
   loopback :18997, scratch worlds/session/optimizer/relay state. Verifies independent
-  sessions, verified water join, other-world refusal before world creation, replay
-  and browser/native logout isolation. Refuses an occupied test port.
+  sessions, verified joins in three worlds, a session paired before this flow joining
+  another world and answered there over HTTP as the browser's session is, no
+  re-delegation, replay and browser/native logout isolation. Refuses an occupied
+  test port.
 - `bun tools/native-login-fixture.ts`: loopback :18996, memory-only fake identity.
   In Unreal PIE use `Eidoverse.TestDiscordPairing` (development builds only).
   `POST /fixture/approve` or `/fixture/deny` simulates browser consent. The actual
@@ -64,5 +69,6 @@ the generic deploy script, whose reset to origin/main would otherwise remove it.
 Rollback source is retained on the VPS at
 `/home/ubuntu/eidoverse-native-deploy.9EXgyp/source-before.tgz` and Git branch
 `backup/pre-native-login-20260910`. Any rollback after native sessions have been
-issued must revoke those native sessions first; the old server does not enforce
-their water-only restriction. Preserve ordinary browser sessions and world data.
+issued must revoke those native sessions first. Preserve ordinary browser sessions and
+world data. (Before this flow was deployed, a native session was limited to the water
+world unless its approval chose all accessible worlds.)

@@ -76,13 +76,17 @@ export function projectComponentData(comp: any, entityId = "") {
   if (comp?.particles) { const r = normalizeParticles(comp.particles, { entityId }); if (r.ok) data.particles = r.emitter; }
   // Named emitters (`particles:<name>`), by name — the same normalization, so
   // a native renderer builds exactly what the browser does (incl. `scale`).
-  const named: Record<string, unknown> = {};
+  // Entries, not assignment into a plain object: `particles:__proto__` is a
+  // valid name, and `obj["__proto__"] = …` would set the prototype instead of
+  // adding the emitter. No count cap either — the browser builds every
+  // emitter, and only sprite count may differ between viewers.
+  const named: [string, unknown][] = [];
   for (const [k, v] of emittersIn(comp)) {
     if (k === "particles") continue;
     const r = normalizeParticles(v, { entityId, key: k });
-    if (r.ok) named[k.slice(10)] = r.emitter;
+    if (r.ok) named.push([k.slice(10), r.emitter]);
   }
-  if (Object.keys(named).length) data.emitters = Object.fromEntries(Object.entries(named).slice(0, 32));
+  if (named.length) data.emitters = Object.fromEntries(named);
   if (comp?.picture) { const r = normalizePicture(comp.picture); if (r.ok) data.picture = r.picture; }
   if (comp?.sound) { const r = normalizeSound(comp.sound); if (r.ok) data.sound = r.sound; }
   // Named-part motions (motion.js): every motion:<part> key, plus motion with a part.

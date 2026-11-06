@@ -458,7 +458,8 @@ export function updateRemotes(dt, now = performance.now()) {
       while (i > 0 && buf[i - 1].t > renderAt) i--;
       const b = buf[i], a = buf[i - 1] ?? b;
       const span = b.t - a.t;
-      const k = span > 0 ? THREE.MathUtils.clamp((renderAt - a.t) / span, 0, 1) : 1;
+      const limpEdge = (a.clip === 'ragdoll') !== (b.clip === 'ragdoll');
+      const k = span > 0 && !limpEdge ? THREE.MathUtils.clamp((renderAt - a.t) / span, 0, 1) : 1;
 
       _a.set(...a.p); _b.set(...b.p);
       r.avatar.root.position.copy(_a).lerp(_b, k);
@@ -471,7 +472,7 @@ export function updateRemotes(dt, now = performance.now()) {
       r.avatar.pitch = (a.pitch ?? 0) + ((b.pitch ?? 0) - (a.pitch ?? 0)) * k;
       // drop samples we've moved past, but always keep one behind renderAt
       while (buf.length > 2 && buf[1].t < renderAt - 400) buf.shift();
-      applyPose(r, a, b, k);
+      applyPose(r, limpEdge ? b : a, b, k);
       applyXRPresence(r, a, b, k);
       applyPresenceExtras(r, b);
     } else if (buf.length === 1) {

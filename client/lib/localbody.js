@@ -61,8 +61,10 @@ export function goLimp(lean = null) {
   // Park the undriven bones and stop the clip BEFORE constructing the sim.
   // Both of the sim's reference skeletons are read in here — the neutral rest
   // it measures its limits against, and the live pose the tumble starts from —
-  // and neither may still have the walk cycle in it.
-  me.setLimp(true);
+  // and neither may still have the walk cycle in it. A sit/lie clip's hips drop
+  // moves onto the root as it parks (#282): the root everyone sees is measured
+  // from rest hips, as an agent's is.
+  me.setLimp(true, { bake: true });
   clearMyReach();   // a knocked-over body's reach is gone — descriptor AND arm (mirrors agent.ts knockDown)
   ragdoll = makeRagdoll(me, lean ?? toppleVelocity(), me.restBonePositions());
   myState.clip = 'ragdoll';
@@ -216,7 +218,7 @@ function beginDraggedMode(by) {
   ragdoll?.dispose?.(); ragdoll = null;   // the dragger's sim owns the tumble now
   downed = true;
   getUpLatch.disarm();                    // "move to break free" means a NEW press
-  me.setLimp(true);
+  me.setLimp(true, { bake: true });
   myState.clip = 'ragdoll';
   flashHint(`${by} grabs you — move to break free`);
 }

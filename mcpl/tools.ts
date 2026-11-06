@@ -208,7 +208,64 @@ export function toolList({ travel = false }: { travel?: boolean } = {}) {
     && (REHEARSAL_ENABLED || !REHEARSAL_TOOLS.has(t.name)));
 }
 
-export async function snapshotTool(ag: ToolAgent, view = "first", renderer = "auto", frame: { dist?: unknown; height?: unknown; pitch?: unknown } = {}) {
+/** How long one snapshot call may take in all, retries included: SNAP_CALL_BUDGET_MS on the door's own service, 57 s
+ *  by default (under a Connectome host's 60 s per-call deadline, over the world server's own 55 s request deadline);
+ *  0 asks once. The tool sends what is left of it with each ask (?budget=), and the world server never holds an ask
+ *  longer, so its frame window (SNAP_TIMEOUT_SEC, a setting of the world server's service) is honoured within this
+ *  budget. An operator who wants longer calls for a slow renderer raises this too. A bad value is said once and
+ *  ignored. */
+let warnedSnapBudget = false;
+export const snapCallBudgetMs = () => {
+  const raw = process.env.SNAP_CALL_BUDGET_MS;
+  if (raw === undefined || raw === "") return 57_000;
+  const n = Number(raw);
+  if (Number.isFinite(n) && n >= 0 && n <= 600_000) return n;
+  if (!warnedSnapBudget) { warnedSnapBudget = true; console.warn(`[snapshot] SNAP_CALL_BUDGET_MS=${JSON.stringify(raw).slice(0, 40)} is not a number of ms from 0 to 600000; using 57000`); }
+  return 57_000;
+};
+// A FIRST CALL SHOULD COME BACK WITH A PICTURE (owner, 2026-10-24). The world server marks the refusals that pass in
+// seconds with Retry-After: the renderer still loading the world, renderers busy, a frame that did not come in time, a
+// renderer gone mid-shot (server/snapshots.ts retryAfter). The tool asks again exactly then, after that many seconds,
+// within one budget, and tells the server what is left of it (?budget=), so no try outlasts the call. A refusal without
+// Retry-After (no renderer and no roamer to send, members-only, an Unreal-only ask with none serving, a bad argument)
+// is answered at once. A world server that cannot be reached, or a proxy in front answering 502 for it with its own
+// HTML page (both are what a restarting server looks like), is tried once more and then answered: a server that is
+// down should not hold an agent for a minute. The world server's own 502 (a renderer that sent no valid image)
+// carries no Retry-After and is not asked again.
+const SNAP_UNREACHABLE_RETRY_MS = 2_000, SNAP_MIN_TRY_MS = 5_000;
+// The fetch is not cut at the budget: the server's own deadline (sent with ?budget=, which it answers half a second
+// inside) ends a try. This backstop only catches a server that never answers at all, and says so, rather than calling
+// it unreachable: at what is left of the budget plus 1.5 s, so the default call still answers inside a host's 60 s.
+const SNAP_NO_ANSWER_GRACE_MS = 1_500;
+export async function snapshotTool(ag: ToolAgent, view = "first", renderer = "auto", frame: { dist?: unknown; height?: unknown; pitch?: unknown } = {},
+  { budgetMs = snapCallBudgetMs(), noAnswerGraceMs = SNAP_NO_ANSWER_GRACE_MS }: { budgetMs?: number; noAnswerGraceMs?: number } = {}) {
+  const started = Date.now();
+  const left = () => budgetMs - (Date.now() - started);
+  let tries = 0, flakyTries = 0;
+  const after = () => tries > 1 ? ` after ${tries} tries over ${Math.round((Date.now() - started) / 1000)} s` : "";
+  for (;;) {
+    tries++;
+    const r = await snapshotOnce(ag, view, renderer, frame, budgetMs > 0 ? Math.max(1_000, left()) : undefined, noAnswerGraceMs);
+    if (r.kind === "ok") return r.result;
+    if (r.kind === "no-answer") return fail(`snapshot: the world server gave no answer in ${Math.round(r.waitedMs / 1000)} s${after()}; it may still be taking the picture, so try again in a few seconds`);
+    let pause: number | undefined;
+    if (r.kind === "refused" && r.retryAfterMs) pause = r.retryAfterMs;
+    else if (r.kind === "unreachable" || (r.kind === "refused" && r.status === 502 && r.fromProxy)) pause = ++flakyTries <= 1 ? SNAP_UNREACHABLE_RETRY_MS : undefined;
+    if (budgetMs <= 0 || pause === undefined || left() - pause < SNAP_MIN_TRY_MS) {
+      if (r.kind === "unreachable") return fail(`snapshot failed: no picture arrived from the world server (${r.message})${after()}; try again in a moment`);
+      return fail(`snapshot: no picture was taken; the world server answered ${r.status}${r.said ? ` (${r.said})` : ""}${after()}, so ${r.remedy}`);
+    }
+    await new Promise((res) => setTimeout(res, pause));
+  }
+}
+type SnapTry = { kind: "ok"; result: any } | { kind: "unreachable"; message: string } | { kind: "no-answer"; waitedMs: number }
+  | { kind: "refused"; status: number; said: string; remedy: string; retryAfterMs?: number; fromProxy?: boolean };
+/** One GET /snap. `budgetMs` (what is left of the call) goes to the server as ?budget=; the fetch itself is only cut,
+ *  as "no-answer", well after the server's own deadline would have ended it. */
+async function snapshotOnce(ag: ToolAgent, view: string, renderer: string, frame: { dist?: unknown; height?: unknown; pitch?: unknown },
+  budgetMs?: number, noAnswerGraceMs = SNAP_NO_ANSWER_GRACE_MS): Promise<SnapTry> {
+  const t0 = Date.now();
+  const noAnswerMs = budgetMs !== undefined ? budgetMs + noAnswerGraceMs : undefined;
   try {
     const norm = normalizeSnapFrame(frame);
     const extra = Object.entries(norm).map(([k, v]) => `&${k}=${v}`).join("");
@@ -220,8 +277,9 @@ export async function snapshotTool(ag: ToolAgent, view = "first", renderer = "au
       : posed ? "pitch applies only to view first; ignored"
       : `${ignored.join(" and ")} ${ignored.length > 1 ? "apply" : "applies"} only to views third and selfie; ignored`;
     // as this identity: a members-only world's snap answers only its members
-    const r = await fetch(`${ag.httpBase}/snap?world=${encodeURIComponent(ag.world)}&follow=${encodeURIComponent(ag.name)}&view=${encodeURIComponent(view)}&renderer=${encodeURIComponent(renderer)}${extra}`,
-      ag.agentToken ? { headers: { authorization: `Bearer ${ag.agentToken}` } } : undefined);
+    const r = await fetch(`${ag.httpBase}/snap?world=${encodeURIComponent(ag.world)}&follow=${encodeURIComponent(ag.name)}&view=${encodeURIComponent(view)}&renderer=${encodeURIComponent(renderer)}${extra}${budgetMs !== undefined ? `&budget=${Math.round(budgetMs)}` : ""}`,
+      { ...(ag.agentToken ? { headers: { authorization: `Bearer ${ag.agentToken}` } } : {}),
+        ...(noAnswerMs !== undefined ? { signal: AbortSignal.timeout(noAnswerMs) } : {}) });
     if (!r.ok) {
       // The server's text in parentheses, where its own quoted names can't
       // nest in ours; the remedy is the status's (server/snapshots.ts).
@@ -233,16 +291,21 @@ export async function snapshotTool(ag: ToolAgent, view = "first", renderer = "au
         : r.status === 404 ? "calling again works only once what it says has changed"
         : r.status < 500 ? "calling again with the same arguments won't change that"
         : "try again in a while";
-      return fail(`snapshot: no picture was taken; the world server answered ${r.status}${said ? ` (${said})` : ""}, so ${remedy}`);
+      const retryAfter = Number(r.headers.get("retry-after"));
+      // an HTML page is a proxy's (nginx's 502), never the world server's: its answers are plain text
+      const fromProxy = /text\/html/i.test(r.headers.get("content-type") ?? "");
+      return { kind: "refused", status: r.status, said, remedy, fromProxy,
+        ...(Number.isFinite(retryAfter) && retryAfter > 0 ? { retryAfterMs: Math.min(retryAfter, 10) * 1000 } : {}) };
     }
     const b64 = Buffer.from(await r.arrayBuffer()).toString("base64");
     const label = r.headers.get("x-eidoverse-scene") === "world-projection"
       ? "Unreal server-world projection: models, structures, terrain and avatars; unsupported components and effects may be absent. This is a donor-rendered image, not authoritative state."
       : "Unreal underwater prototype view: local terrain/habitats and networked avatars; persistent world buildings are not mirrored.";
     const image = { type: "image", data: b64, mimeType: "image/png" };
-    return { content: [...(r.headers.get("x-eidoverse-renderer") === "unreal" ? [{ type: "text", text: label }] : []), image, ...(note ? [{ type: "text", text: note }] : [])] };
+    return { kind: "ok", result: { content: [...(r.headers.get("x-eidoverse-renderer") === "unreal" ? [{ type: "text", text: label }] : []), image, ...(note ? [{ type: "text", text: note }] : [])] } };
   } catch (e) {
-    return fail(`snapshot failed: no picture arrived from the world server (${(e as Error).message}); try again in a moment`);
+    if ((e as Error)?.name === "TimeoutError") return { kind: "no-answer", waitedMs: Date.now() - t0 };
+    return { kind: "unreachable", message: (e as Error).message };
   }
 }
 

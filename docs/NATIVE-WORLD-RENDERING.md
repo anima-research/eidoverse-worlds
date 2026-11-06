@@ -30,12 +30,11 @@ the same public library/store, preserving the deliberate patch precedence.
 The default browser request still prefers optimized bytes. Original files that
 already require unsupported codecs can still fail in the native client.
 
-Browser native-login approval optionally accepts `all_worlds:true`, issuing a
-new native session with `nativeWorld:"*"`. This can ONLY be selected through
-same-origin browser approval with a valid join-capable browser session. Start or
-poll requests cannot broaden grants. Existing water-only sessions stay water-only;
-native sessions cannot approve other native sessions. All existing per-world
-rights, bans and identity checks still apply after the destination guard.
+Browser-approved native login issues an ordinary session for every world the
+account may join (docs/NATIVE-LOGIN.md); there is no destination guard any more.
+Approval needs same-origin browser approval with a valid join-capable browser
+session, and native sessions cannot approve other native sessions. All existing
+per-world rights, bans and identity checks apply as for any browser session.
 
 Unreal screenshot capabilities may identify `scene:"world-projection"` as well
 as `underwater-prototype`. Tool output labels the distinction and warns that
