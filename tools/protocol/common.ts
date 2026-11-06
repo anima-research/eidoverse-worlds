@@ -64,8 +64,6 @@ export function copyTree(src: string, dst: string) {
   if (fs.existsSync(nm) && !fs.existsSync(path.join(dst, "node_modules"))) fs.symlinkSync(nm, path.join(dst, "node_modules"), "junction");
 }
 
-/** Link the directory `at` to `target` ("junction": no admin rights on Windows; POSIX ignores the type): hygiene raw-symlink. */
-export const linkInto = (target: string, at: string) => fs.symlinkSync(target, at, "junction");
 /** A symlink to a FILE (a junction is a directory link on Windows; a file symlink there needs Developer Mode). */
 export const linkFile = (target: string, at: string) => fs.symlinkSync(target, at, "file");
 /** Whether this process may make file symlinks: Windows without Developer Mode throws EPERM (a junction still works). */
