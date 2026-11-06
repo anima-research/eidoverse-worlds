@@ -1,5 +1,5 @@
 {
- "about": "Exact-digest re-pins under an unchanged engine version, each held by engine-check EN4 through tools/protocol/fixture-repin.ts",
+ "about": "Exact-digest re-pins under an unchanged engine version, each held by engine-check EN4/EN9 through tools/protocol/fixture-repin.ts; a receipt directory keeps the old bytes the hashes name",
  "repins": [
   {
    "why": "the retired shape-repair ceremony left the scenario logs (Mica's EN4 rulings, 11-05): the engine is unchanged, so the exact digests re-pin under eidosim@1.0.0",
@@ -10,6 +10,7 @@
     "cause/seq fields shifted by that removal and insertion (map)",
     "new world id, keys, salts, signatures and heads"
    ],
+   "receipt": "repins/shape-ceremony-2026-11-05/",
    "engine": "eidosim@1.0.0",
    "exactOld": "0d8493afc6f3e512491bab3222f755683ee99759702526e25d43114b618f95a0",
    "exactNew": "3634b8b3d3103bf2fbc3565910b7a9fc6c1cc51119920fe2bbaa9739373d3317",

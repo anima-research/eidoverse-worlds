@@ -2,6 +2,7 @@
 // (spec/conformance/physics/fixture-repins.json; Mica's EN4 rulings, 11-05): every old→new log difference must be one of the
 // named classes, each checked here, and none else. engine-check's EN4 accepts a changed exact digest only through this.
 // @ts-nocheck
+import fs from "node:fs";
 import { createHash } from "node:crypto";
 import { readLog, fold, opsOf } from "../../shared/protocol/fold.js";
 
@@ -57,12 +58,25 @@ export function uncovered(a: any, ver: string, scenarios: string[], was: Record<
   const out: string[] = [], S = a.scenarios ?? {};
   if (a.engine !== ver) out.push(`acknowledged for ${a.engine}, not ${ver}`);
   if (sorted(Object.keys(S).sort()) !== sorted([...scenarios].sort())) out.push(`acknowledges [${Object.keys(S).sort()}], the scenarios are [${[...scenarios].sort()}]`);
-  for (const s of scenarios) { const x = S[s], o = old(s), n = cur(s); if (!x) continue; if (o == null) { out.push(`${s}: no log at the judged version`); continue; }
-    const O = lines(o), N = lines(n), want: [string, unknown, unknown][] = [["logOld", sha(o), x.logOld], ["logNew", sha(n), x.logNew], ["worldOld", O[1]?.world, x.worldOld], ["worldNew", N[1]?.world, x.worldNew],
+  for (const s of scenarios) { const x = S[s], o = old(s), n = cur(s); if (!x) continue; if (o == null) { out.push(`${s}: no old log in the receipt`); continue; }
+    if (sha(o) !== x.logOld) { out.push(`${s} logOld: ${sha(o)} ≠ ${x.logOld} (not the acknowledged bytes; nothing replayed)`); continue; }
+    try {
+    const O = lines(o), N = lines(n), want: [string, unknown, unknown][] = [["logNew", sha(n), x.logNew], ["worldOld", O[1]?.world, x.worldOld], ["worldNew", N[1]?.world, x.worldNew],
       ["headOld", O.at(-1)?.head, x.headOld], ["headNew", N.at(-1)?.head, x.headNew], ["digestOld", was[s], x.digestOld], ["digestNew", now[s], x.digestNew],
       ["engine unchanged: today's engine replays the old log to digestOld", of.exact(o, ver), x.digestOld], ["rounded digest unchanged", of.rounded(n, ver), of.rounded(o, ver)],
       ["inserted entries' canonical ts", sorted(Object.fromEntries(N.map((e, j) => [String(j), e.ts]).filter(([j]) => !x.map.includes(+j)))), sorted(x.inserted)]];
     for (const [k, got, w] of want) if (got !== w) out.push(`${s} ${k}: ${got} ≠ ${w}`);
-    for (const u of unexplained(o, n, x.map, x.bounds, of.replay)) out.push(`${s} ${u}`); }
+    for (const u of unexplained(o, n, x.map, x.bounds, of.replay)) out.push(`${s} ${u}`);
+    } catch (e: any) { out.push(`${s}: today's reader can't replay the pair (${e?.code ?? e?.message ?? e}${e?.detail ? ` ${e.detail}` : ""})`); } }
   return out;
+}
+
+/** An acknowledgement's receipt (the old bytes its hashes name, kept in the repo so no git history is needed): the old
+ *  digests file and logs, and what's missing or doesn't hash to the acknowledgement. */
+export function receiptOf(a: any, dir: string) {
+  const at = (f: string) => { const p = `${dir}${a.receipt ?? "\0"}${f}`; return typeof a.receipt === "string" && !a.receipt.includes("..") && fs.existsSync(p) ? fs.readFileSync(p, "utf8") : null; };
+  const exact = at("digests-exact.json"), bad: string[] = [];
+  if (exact == null) bad.push(`receipt ${a.receipt}: no digests-exact.json`); else if (sha(exact) !== a.exactOld) bad.push(`receipt digests-exact.json: ${sha(exact)} ≠ exactOld ${a.exactOld}`);
+  for (const [s, x] of Object.entries<any>(a.scenarios ?? {})) { const t = at(`${s}.jsonl`); if (t == null) bad.push(`receipt ${a.receipt}: no ${s}.jsonl`); else if (sha(t) !== x.logOld) bad.push(`receipt ${s}.jsonl: ${sha(t)} ≠ logOld ${x.logOld}`); }
+  return { exact, was: exact == null ? {} : JSON.parse(exact)[a.engine] ?? {}, log: (s: string) => at(`${s}.jsonl`), bad };
 }
