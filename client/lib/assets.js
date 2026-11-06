@@ -31,7 +31,6 @@ import { warm } from './warmqueue.js';
 import { prepareObject } from './materials.js';
 import { registerFoliage } from './foliage.js';
 import { markDrawBatchSource } from './draw_batches.js';
-import { optimizeVrmSkeleton } from './vrmskeleton.js';
 
 // ---- loading tray -----------------------------------------------------------
 // Every in-flight asset (downloads with byte progress, builds as spinners) is
@@ -390,7 +389,7 @@ export async function loadVRM(libPath, { priority = 1 } = {}) {
       vrmMeta.set(vrm, { libPath, bytes: buf.byteLength });
       await work.yield();
       work.phase('skeleton');
-      optimizeVrmSkeleton(VRMUtils, vrm.scene);
+      VRMUtils.combineSkeletons(vrm.scene);
       // A SkinnedMesh's bounding sphere comes from BIND-POSE positions, so it
       // stops bounding the mesh the moment the skeleton poses — and three.js
       // then culls against that stale sphere, so parts of a body vanish
