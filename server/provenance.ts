@@ -20,11 +20,14 @@ export function sourceTreeSha256(root) {
   }
   return h.digest("hex");
 }
-/** git's HEAD at `root` as a sourceRevision, and whether the tree differs from it. */
+/** git's HEAD at `root` as a sourceRevision, and whether the tree differs from it: one git call (a git start is ~50 ms on
+ *  Windows, and every translation runs this; inplace on Windows CI 11-05). */
 export function sourceRevisionOf(root) {
-  const git = (...a) => { const r = spawnSync("git", ["-C", root, ...a], { encoding: "utf8" }); return r.status === 0 ? r.stdout.trim() : null; };
-  const head = git("rev-parse", "HEAD"); if (!head) throw new Error(`no git revision at ${root}`);
-  return { sourceRevision: `git:${head.length === 64 ? "sha256" : "sha1"}:${head}`, dirty: (git("status", "--porcelain") ?? "") !== "" };
+  const r = spawnSync("git", ["-C", root, "status", "--porcelain=v2", "--branch"], { encoding: "utf8" });
+  const lines = r.status === 0 ? r.stdout.split("\n").filter(Boolean) : [];
+  const head = lines.find((l) => l.startsWith("# branch.oid "))?.slice("# branch.oid ".length);
+  if (!head || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(head)) throw new Error(`no git revision at ${root}`);
+  return { sourceRevision: `git:${head.length === 64 ? "sha256" : "sha1"}:${head}`, dirty: lines.some((l) => !l.startsWith("#")) };
 }
 /** The provenance of writer `name`@`version` running from the source tree at `root` (its registry pin, revision and tree). */
 export function provenanceAt(root, name, version) {

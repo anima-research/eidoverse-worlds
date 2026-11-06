@@ -292,6 +292,9 @@ function dryTranslation(old: Any[], srcDir: string, world: string, owner: OwnerC
 /** The translator's provenance (§F F-2; Mica 11-05, S4): writer eidoverse-translate-v1 at TRANSLATOR's number, from the source tree
  *  this tool runs; read once. Null (said once) outside a git checkout: the genesis then carries none, never a guess. */
 let PROVENANCE: Any;
+/** The snapshot oracle's child only: the provenance its parent (world.ts translate, the same tree) already computed, so the
+ *  child doesn't re-hash the tree (~0.25 s a translation on Windows; inplace on Windows CI 11-05). It writes only its scratch. */
+export function presetTranslatorProvenance(p: Any) { PROVENANCE = p; }
 export function translatorProvenance() {
   if (PROVENANCE === undefined) try { PROVENANCE = provenanceAt(path.resolve(import.meta.dir, "../../.."), "eidoverse-translate-v1", `${translatorVersion(TRANSLATOR)}.0.0`); }
   catch (e) { PROVENANCE = null; console.warn(`[provenance] ${(e as Error)?.message ?? e}: worlds translated by this process carry no genesis provenance`); }

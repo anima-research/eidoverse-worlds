@@ -33,7 +33,7 @@ import { WORLDS_DIR } from "../../server/config.ts";
 import { directoryFor } from "../../server/directory.ts";
 import { foundWorld, isWorldSaved } from "../../server/worldlog.ts";
 import { syncDir, syncTree } from "../../server/durable.ts";
-import { translateV1World, reportV1World, warmHulls, approvalProblem, makeApproval, ownerWarning, ownerRecognised, oldOwners, ownerlessRefusal, NO_FOUNDER, type Approval } from "./import-v1/world.ts";
+import { translateV1World, reportV1World, warmHulls, approvalProblem, makeApproval, ownerWarning, ownerRecognised, oldOwners, ownerlessRefusal, NO_FOUNDER, translatorProvenance, type Approval } from "./import-v1/world.ts";
 import { contentAddressOf } from "../../server/eidoindex.ts";
 import { custodyAt } from "../../server/custody.ts";
 import { custodyFileIn } from "../../server/keyfiles.ts";
@@ -184,7 +184,7 @@ function translateInPlace(name: string, approval: Approval, approvedSource: { si
   //    (import-v1/snapshot-oracle.ts, in its own scratch: it writes nothing here)
   let oracleSaid = "no snapshot.json here, so nothing to compare with the old engine";
   if (fs.existsSync(path.join(D, "snapshot.json"))) {
-    const o = Bun.spawnSync([process.execPath, path.join(import.meta.dir, "import-v1", "snapshot-oracle.ts"), D], { env: { ...process.env, ORACLE_SUMMARY: "1" } });
+    const o = Bun.spawnSync([process.execPath, path.join(import.meta.dir, "import-v1", "snapshot-oracle.ts"), D], { env: { ...process.env, ORACLE_SUMMARY: "1", ORACLE_PROVENANCE: JSON.stringify(translatorProvenance()) } });
     const out = o.stdout.toString() + o.stderr.toString();
     const line = out.split("\n").find((l) => l.startsWith("oracle-summary "));
     let w: any = null; try { w = JSON.parse(line!.slice("oracle-summary ".length))[0]; } catch { /* no summary: the oracle failed to run */ }

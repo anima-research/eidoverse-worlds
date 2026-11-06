@@ -57,7 +57,8 @@ process.env.WORLDS_DIR = path.join(SCRATCH, "worlds");
 const { project, DROPPED, namespaceOf, hasEpoch, canon } = await import("./translate-v1.js");
 const { encRaw: enc } = await import("../../../shared/protocol/names.js");   // the translator's encoder (old names are never ids)
 const { readLog, fold } = await import("../../../shared/protocol/fold.js");
-const { translateV1World, warmHulls, hullBox } = await import("./world.ts");
+const { translateV1World, warmHulls, hullBox, presetTranslatorProvenance } = await import("./world.ts");
+if (process.env.ORACLE_PROVENANCE) presetTranslatorProvenance(JSON.parse(process.env.ORACLE_PROVENANCE));   // world.ts translate's own, same tree
 const { lampsOf } = await import("./lamps.ts");
 const { contentAddressOf } = await import("../../../server/eidoindex.ts");
 const { openLive } = await import("../../../server/livehost.ts");
