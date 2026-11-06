@@ -16,6 +16,7 @@ import { ENGINES, digestOf as simDigest } from "../../shared/protocol/simlayer.j
 import { simFold } from "./labmodels.js";   // the sim over the lab table (its logs name lab models)
 import { r3 } from "../../shared/protocol/round.js";
 import * as PH from "./pinhistory.ts";
+import * as FR from "./fixture-repin.ts";
 import { fileURLToPath } from "node:url";
 
 const DIR = fileURLToPath(new URL("../../spec/conformance/physics/", import.meta.url)), DIG = `${DIR}digests.json`, EXACT = `${DIR}digests-exact.json`;
@@ -84,9 +85,54 @@ for (const s of scenarios) {
   const ids = (v?.rested ?? []).map((r: any) => r.id);
   check(`EN6 ${s}: the thrown ball knocks crate-1 awake (both come to rest; the crate was never thrown)`, ids.includes("ball") && ids.includes("crate-1"), ids); }
 // EN4: a version's digests never change under its name, against the record (a --write that rewrote them by hand, or an edit of
-// the file, would otherwise pass EN2 against the changed engine)
-for (const [F, now] of [["spec/conformance/physics/digests.json", pinned], ["spec/conformance/physics/digests-exact.json", exact]] as const) { const ROOT = fileURLToPath(new URL("../../", import.meta.url));
+// the file, would otherwise pass EN2 against the changed engine). An exact digest may move only under a fixture-repins.json
+// acknowledgement that binds both files' hashes and explains every log difference (tools/protocol/fixture-repin.ts).
+const ROOT = fileURLToPath(new URL("../../", import.meta.url)), REPINS = `${DIR}fixture-repins.json`, REL = "spec/conformance/physics/";
+const repins: any[] = fs.existsSync(REPINS) ? JSON.parse(fs.readFileSync(REPINS, "utf8")).repins : [];
+const of = { exact: exactDigestOf, rounded: digestOf, replay: (t: string) => replayed(t, carried[0]) }, cur = (s: string) => fs.readFileSync(`${DIR}${s}.jsonl`, "utf8");
+// the old side is always the acknowledgement's receipt, never a log read from git (a merge parent may hold another dialect)
+const covers = (a: any, ver: string, d: Record<string, string>, nowV: Record<string, string>, R = FR.receiptOf(a, DIR)) => [...R.bad, ...FR.uncovered(a, ver, scenarios, d, nowV, R.log, cur, of)];
+for (const [F, now] of [[`${REL}digests.json`, pinned], [`${REL}digests-exact.json`, exact]] as const) {
   const e = PH.earlier(ROOT, [F], (f) => (fs.existsSync(ROOT + f) ? fs.readFileSync(ROOT + f, "utf8") : null));
-  const moved = e.out.flatMap(({ rev, was }) => Object.entries<any>(was[F] ?? {}).flatMap(([ver, d]) => Object.entries<any>(d).filter(([s, x]) => now?.[ver]?.[s] !== x).map(([s, x]) => `${F.split("/").pop()} ${ver} ${s}: ${x} at ${rev.slice(0, 8)} → ${now?.[ver]?.[s] ?? "gone"}`)));
-  check(`EN4 ${F.split("/").pop()}: each version's digests equal that version's at the base (and at the file's previous version) where it had them: a change meant to alter results is a new version (judged: ${e.out.map((o) => `${o.rev.slice(0, 8)} ${o.why}`).join(", ") || "no earlier version"})`, !moved.length, moved.slice(0, 6)); }
+  const moved = e.out.flatMap(({ rev, was }) => Object.entries<any>(was[F] ?? {}).flatMap(([ver, d]) => { const m = Object.entries<any>(d).filter(([s, x]) => now?.[ver]?.[s] !== x);
+    const a = F.endsWith("exact.json") && m.length ? repins.find((r) => r.exactOld === FR.sha(PH.showAt(ROOT, rev, F) ?? "") && r.exactNew === FR.sha(fs.readFileSync(ROOT + F, "utf8"))) : null;
+    const why = a ? covers(a, ver, d, now?.[ver] ?? {}) : [];
+    if (a && !why.length) return [];
+    return [...why, ...m.map(([s, x]) => `${F.split("/").pop()} ${ver} ${s}: ${x} at ${rev.slice(0, 8)} → ${now?.[ver]?.[s] ?? "gone"}${a ? "" : " (no acknowledgement binds these two files)"}`)]; }));
+  check(`EN4 ${F.split("/").pop()}: each version's digests equal that version's at the base (and at the file's previous version) where it had them, or move under a fixture-repins.json acknowledgement: a change meant to alter results is a new version (judged: ${e.out.map((o) => `${o.rev.slice(0, 8)} ${o.why}`).join(", ") || "no earlier version"})`, !moved.length, moved.slice(0, 6)); }
+// EN9: each acknowledgement's receipt holds the bytes it hashes; the one in force (its exactNew is today's file) replays to it
+// from the receipt alone, so a squash with no PR ancestry still verifies it
+const exactNow = FR.sha(fs.readFileSync(EXACT, "utf8")), inForce = repins.find((r) => r.exactNew === exactNow);
+for (const a of repins) { const R = FR.receiptOf(a, DIR), why = [...R.bad, ...(a === inForce ? FR.uncovered(a, a.engine, scenarios, R.was, exact?.[a.engine] ?? {}, R.log, cur, of) : [])];
+  check(`EN9 ${a.receipt}: the receipt holds the old bytes the acknowledgement hashes${a === inForce ? ", and they replay to it (it is in force)" : ""}`, !why.length, why.slice(0, 4)); }
+// EN7: each acknowledged scenario's build box is set before the physics epoch, and is the box its old log had there
+for (const a of repins) for (const [s, x] of Object.entries<any>(a.scenarios ?? {})) { const f = `${DIR}${s}.jsonl`; if (!fs.existsSync(f) || FR.sha(fs.readFileSync(f, "utf8")) !== x.logNew) continue;
+  const t = fs.readFileSync(f, "utf8"), L = t.split("\n").filter(Boolean).map((l) => JSON.parse(l)), ep = FR.epochOf(L), ins = Object.keys(x.inserted).map(Number), at = FR.atEpoch(t)["@world"]?.bounds;
+  check(`EN7 ${s}: its inserted bounds set (${ins.join(",") || "none: founding's box is its box"}) comes before the physics epoch (#${ep}), and @world.bounds there is the old log's`, ins.every((j) => j < ep && (L[j].body?.args?.component === "bounds" || L[j].body?.comp === "bounds")) && JSON.stringify(at) === JSON.stringify(x.bounds), { ep, ins, at, want: x.bounds }); }
+// EN8: what the acknowledgement in force must NOT cover, each a mutation of its receipt or of today's logs
+if (!inForce) check("EN8 no acknowledgement is in force (none names today's digests-exact.json), so there is none to probe", true);
+else if (FR.receiptOf(inForce, DIR).bad.length) check("EN8 the acknowledgement in force has no whole receipt to probe (EN9 says what is missing)", false);
+else { const a = inForce, ver = a.engine, s = "crate-slide", x = a.scenarios[s], R = FR.receiptOf(a, DIR), was = R.was;
+  const o = R.log(s)!, n = cur(s), L = n.split("\n").filter(Boolean).map((l) => JSON.parse(l));
+  const txt = (M: any[]) => M.map((e) => JSON.stringify(e)).join("\n") + "\n", ins = Object.keys(x.inserted).map(Number);
+  const drop = (M: any[], js: number[]) => M.filter((_e, j) => !js.includes(j)).map((e) => (Number.isInteger(e.cause) ? { ...e, cause: e.cause - js.filter((j) => j < e.cause).length } : e));
+  const un = (t: string, map = x.map) => FR.unexplained(o, t, map, x.bounds, of.replay);
+  const withOld = (f: (k: string) => string | null) => FR.uncovered(a, ver, scenarios, was, exact?.[ver] ?? {}, (k) => (k === s ? f(k) : R.log(k)), cur, of);
+  const moveAfter = (() => { const M = drop(L, ins), ep = FR.epochOf(M), r = { ...L[ins[0]] }; M.splice(ep + 1, 0, r, { ...L[ins[1]], cause: ep + 1 }); return M.map((e, j) => (j > ep + 2 && Number.isInteger(e.cause) && e.cause > ep ? { ...e, cause: e.cause + 2 } : e)); })();
+  const rows: [string, () => unknown[]][] = [
+    ["a wrong old hash", () => repins.some((r) => r.exactOld === FR.sha("x" + R.exact) && r.exactNew === a.exactNew) ? [] : ["no acknowledgement binds these hashes"]],
+    ["a wrong new hash", () => repins.some((r) => r.exactOld === a.exactOld && r.exactNew === FR.sha("x" + fs.readFileSync(EXACT, "utf8"))) ? [] : ["no acknowledgement binds these hashes"]],
+    ["a missing scenario", () => FR.uncovered({ ...a, scenarios: Object.fromEntries(Object.entries(a.scenarios).filter(([k]) => k !== s)) }, ver, scenarios, was, exact?.[ver] ?? {}, R.log, cur, of)],
+    ["a missing old log", () => withOld(() => null)],
+    ["an old log that isn't the acknowledged bytes", () => withOld(() => o.replace('"ts":', '"ts": '))],
+    ["an old log in another dialect, even one the acknowledgement hashed (a merge parent's base may hold one): red, not a throw", () => { const t = o.replaceAll('"op":', '"verb":');
+      return FR.uncovered({ ...a, scenarios: { ...a.scenarios, [s]: { ...x, logOld: FR.sha(t) } } }, ver, scenarios, was, exact?.[ver] ?? {}, (k) => (k === s ? t : R.log(k)), cur, of); }],
+    ["an extra changed field (the throw 1 mm/s faster)", () => un(txt(L.map((e) => (e.verb === "launch" ? { ...e, body: { ...e.body, v: [e.body.v[0] + 0.001, ...e.body.v.slice(1)] } } : e))))],
+    ["a bounds change (the restored box's floor at −10)", () => un(txt(L.map((e, j) => (ins.includes(j) ? JSON.parse(JSON.stringify(e).replaceAll('"min":[-20,0,-20]', '"min":[-20,-10,-20]')) : e))))],
+    ["a timestamp change (the scenario 900 ms later)", () => un(txt(L.map((e) => ({ ...e, ts: e.ts + 900 }))))],
+    ["a timestamp change the sim can't see (founding 900 ms earlier)", () => un(txt(L.map((e, j) => (j < 3 ? { ...e, ts: e.ts - 900 } : e))))],
+    ["the bounds set omitted", () => un(txt(drop(L, ins)), x.map.map((j: number | null) => (j === null ? null : j - ins.filter((i) => i < j).length)))],
+    ["the bounds set moved after the epoch", () => un(txt(moveAfter), x.map.map((j: number | null) => (j === null || j < ins[0] ? j : j - 2 <= FR.epochOf(drop(L, ins)) ? j - 2 : j)))],
+  ];
+  for (const [what, f] of rows) { const got = f(); check(`EN8 ${s}: ${what} is not covered by the acknowledgement`, got.length > 0, got.slice(0, 3)); } }
 console.log(`[engine-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
