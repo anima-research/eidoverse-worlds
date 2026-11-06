@@ -1420,6 +1420,8 @@ const wire = wireAuthors(new Map<string, string>());
 const authorOf = (id: string) => wire.authorOf(id);
 const sessions = new Map<string, Session>(); // identity → live session (newest wins)
 wss.on("connection", (ws, req) => {
+  // ws (Bun 1.4) throws an 'error' nobody listens for: a malformed frame from anyone would end every session. ws closes the socket itself.
+  ws.on("error", (e) => console.error(`[${ts()}] [mcpl] socket error: ${(e as Error).message?.slice(0, 160)}`));
   const token = new URL(req.url ?? "/", "http://localhost").searchParams.get("token");
   const registry = readTokens();
   wire.refreshIndex(displayNameIndex(registry));
