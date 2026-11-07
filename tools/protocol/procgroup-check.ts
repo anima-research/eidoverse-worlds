@@ -117,8 +117,8 @@ check("PG5 a zombie in the group is not counted as left running", suiteMembers(7
   fs.writeFileSync(path.join(at, "dist", ".built-at"), "0000000000000000000000000000000000000000\n"); const other = siblingBuiltAt(at);
   fs.writeFileSync(path.join(at, "dist", ".built-at"), pin + "\n"); const same = siblingBuiltAt(at); fs.rmSync(at, { recursive: true, force: true });
   const rs = fs.readFileSync(new URL("./run.ts", import.meta.url), "utf8");
-  check("PG18 a sibling's dist/ counts as built only at the pin (dist/.built-at): none or another commit's is rebuilt by --siblings and refused by preflight",
-    bare === null && other !== pin && same === pin && /if \(build && siblingBuiltAt\(at\) !== commit\)/.test(rs) && /\.built-at"\), commit/.test(rs) && /siblingBuiltAt\(siblingAt\(dir\)\) !== commit\) problems\.push/.test(rs), { bare, other, same });
+  check("PG18 a sibling's dist/ counts as built only at the pin (dist/.built-at): none or another commit's is rebuilt by --siblings, and preflight refuses a consumer's node_modules copy built elsewhere",
+    bare === null && other !== pin && same === pin && /if \(build && siblingBuiltAt\(at\) !== commit\)/.test(rs) && /\.built-at"\), commit/.test(rs) && /const builtCopy = \(c: [^)]*\) => siblingBuiltAt\(path\.join\(ENGINE, c\.pkg, "node_modules", c\.name\)\)/.test(rs) && /else if \(c\.build && builtCopy\(c\) !== c\.commit\)/.test(rs), { bare, other, same });
 }
 { let answered = false, readAfter: boolean | null = null;
   await (PG as any).killSuiteAsync(100, "SIGKILL", "win32", { exited: () => { readAfter = answered; return true; }, query: async () => { answered = true; return "4 0\r\n50 4\r\n100 50\r\n777 100\r\n"; } });
@@ -169,5 +169,26 @@ check("PG5 a zombie in the group is not counted as left running", suiteMembers(7
   const out = (r.stdout ?? "") + (r.stderr ?? ""), optional = out.split("\n").filter((l) => /^\s*OPTIONAL\b/.test(l));
   check("PG20 scripts-check without isolation (EIDO_SANDBOX=inprocess) prints its I rows as OPTIONAL lines the gate's receipt keeps, not n/a",
     r.status === 0 && optional.some((l) => /OPTIONAL I1\b/.test(l)) && !/^n\/a/m.test(out), { status: r.status, optional, tail: out.slice(-300) }); }
+
+// PG21/PG22 (tel0s #260 11-06): the preflight's word holds for what the suites then do
+{ // a python3 whose `cryptography` imports but lacks ed25519 was "accepted", and conformance then died on ModuleNotFoundError
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), "pg21-")); fs.mkdirSync(path.join(d, "cryptography")); fs.writeFileSync(path.join(d, "cryptography", "__init__.py"), '__version__ = "0.0-pg21"\n');
+  const e: Record<string, string | undefined> = { ...process.env, PYTHONPATH: d }; delete e.PYTHON;
+  const r = spawnSync(process.execPath, [fileURLToPath(new URL("./run.ts", import.meta.url)), "conformance"], { cwd: fileURLToPath(new URL("../../", import.meta.url)), env: e as any, encoding: "utf8", timeout: 120000 });
+  const out = (r.stdout ?? "") + (r.stderr ?? ""); fs.rmSync(d, { recursive: true, force: true });
+  check("PG21 a python3 whose cryptography lacks what the suites import (ed25519, serialization) is refused by the preflight, before any suite runs",
+    r.status === 1 && /FAILED before any suite ran/.test(out) && /can't import what the suites need from 'cryptography'/.test(out), out.slice(-600)); }
+{ // the siblings are the gate's: every file: spec that takes one points into tools/protocol/.siblings/ (gitignored), the lockfiles
+  // agree, run.ts never resolves beside the checkout, and the deploy installs through the same --siblings
+  const src = (f: string) => fs.readFileSync(new URL(f, import.meta.url), "utf8"), root = fileURLToPath(new URL("../../", import.meta.url));
+  const dirs = ["agent-framework", "mcpl-core-ts", "voice-kit"], bad: string[] = [];
+  for (const pkg of ["mcpl", "tools/captionbot"]) { const j = JSON.parse(src(`../../${pkg}/package.json`));
+    for (const [name, spec] of Object.entries({ ...j.dependencies, ...j.optionalDependencies } as Record<string, string>)) if (spec.startsWith("file:") && dirs.includes(path.basename(spec))
+      && path.resolve(root, pkg, spec.slice(5)) !== path.join(root, "tools", "protocol", ".siblings", path.basename(spec))) bad.push(`${pkg}: ${name} ${spec}`);
+    if (/file:(?:\.\.\/)+(?:agent-framework|mcpl-core-ts|voice-kit)\b/.test(src(`../../${pkg}/bun.lock`))) bad.push(`${pkg}/bun.lock still names a sibling beside the checkout`); }
+  const rs = src("./run.ts"), dv = src("../../deploy/deploy-vps.sh");
+  check("PG22 mcpl/ and tools/captionbot/ take the siblings from tools/protocol/.siblings/ (gitignored), never beside the checkout, and deploy-vps.sh installs mcpl/ through run.ts --siblings",
+    !bad.length && !/path\.resolve\(ENGINE, "\.\."/.test(rs) && /^tools\/protocol\/\.siblings\/$/m.test(src("../../.gitignore"))
+    && /^"\$BUN" tools\/protocol\/run\.ts --siblings$/m.test(dv) && !/cd mcpl && "\$BUN" install/.test(dv), bad); }
 
 console.log(`[procgroup-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

@@ -416,8 +416,9 @@ export function inspectSchema(ent, id, live = {}) {
     const fields = [
       L('color', { label: 'color' }),
       // sliders that preview while dragged (SWEEP-3 N4, main's lights.js): inspect.js's light handler; the write path stays num's
-      L('intensity', { label: 'brightness', t: 'range', min: 0, max: Math.max(64, src.intensity ?? 16), step: 1, dp: 0, ...drawn('intensity') }),
-      L('range', { label: 'range', t: 'range', min: 1, max: Math.max(40, src.range ?? 10), step: 1, dp: 0 }),
+      // floors are the registry's (rowOf); max is only the slider's span, which grows with the value (the registry sets no ceiling)
+      L('intensity', { label: 'brightness', t: 'range', max: Math.max(64, src.intensity ?? 16), step: 1, dp: 0, ...drawn('intensity') }),
+      L('range', { label: 'range', t: 'range', max: Math.max(40, src.range ?? 10), step: 1, dp: 0 }),
       L('decay', { label: 'falloff', hint: 'how fast it dims with distance (2 is physical; absent, 1.7)', ...drawn('decay') }),
       L('important', { label: 'important', hint: 'first claim on a light slot, never governor-shed (more such lights than slots: the nearest cast)' }),
       L('daytime', { label: 'burns at noon', hint: 'on: daytime full (opts out of the day cycle); off: daytime dim' }),

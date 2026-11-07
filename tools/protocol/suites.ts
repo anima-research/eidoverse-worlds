@@ -71,6 +71,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["ghost-mesh-size", "../ghost-mesh-size-test.ts", 1], // D1: every shape × scale the build ghost sends passes the door's mesh check (the plane at 1/1.1 did not)
   ["boot-init", "../boot-init-test.ts", 1], // D3: every client init* has a caller (initOccupants had none)
   ["editor-range", "../editor-range-test.ts", 1], // D4a: the editor writes what was typed inside the door's range, and refuses outside it with nothing sent
+  ["schema-layers", "../schema-layers-test.ts", 1], // one description, derived readers: every card, record and inspector row reads its limits, unit and doc from the registry (tel0s #260 11-06: it sat outside the gate, red)
   ["editschema", "../editschema-test.ts", 1], // the Inspector's schema: rows, edit ops, locks; it sat outside the gate and a stale lock expectation hid there since recut B2 (found 10-21)
   ["lookat-forward", "../lookat-forward-check.ts", 1], // D7: the authority and the door give one verdict on every LookAt.forward
   ["scriptnew-expect", "../scriptnew-expect-test.ts", 1], // house 6340433633: the editor's new-script card sends expect from the thing as planned, not as it stands after the upload

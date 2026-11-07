@@ -1724,16 +1724,11 @@ export class WorldAgent {
     if (this.pockets?.st !== this.st) { const zs = zonesOf(foldOfView(this.st)); this.pockets = { st: this.st, z: zs, v: waterVolumes(zs) }; }
     return worldLevelAt([x, this.pos.y, z], this.pockets.z, level, { volumes: this.pockets.v });
   }
-  /** The world's half of the fold — state.sky / terrain / grass — which
+  /** The world's half of the view (shared/protocol/view.js: sky / terrain / grass), which
    *  shared/worldentity.js reads as the world entity `@world`. */
   worldFold(): { sky: unknown; terrain: unknown; grass: unknown } {
     const s = this.st as any;
     return { sky: s.sky ?? null, terrain: s.terrain ?? null, grass: s.grass ?? null };
-  }
-  /** The world's blueprint store (shared/fold.js state.blueprints): every
-   *  published record by its content hash, with who and when. */
-  blueprintStore(): Record<string, { record: unknown; by: string; ts: number }> {
-    return ((this.st as any).blueprints ?? {}) as Record<string, { record: unknown; by: string; ts: number }>;
   }
   /** This world's blueprints from the fold: @world blueprints:<hash> → {name, parts?} (the authority's publish). */
   /** a placed copy (or one of its parts) says which blueprint it is: the authority stamps copy-of {from, key} on every

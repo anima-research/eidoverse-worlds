@@ -2,11 +2,11 @@
 //
 //   bun tools/one-libvips-test.ts
 //
-// The store's root manifest declares `sharp: ^0.33.5`; @gltf-transform/
-// functions reaches sharp through ndarray-pixels, which declares `^0.35.0`.
-// Non-intersecting ranges cannot be deduped, so both copies land on disk and
-// a bare `import("sharp")` inside optimize.ts loads a SECOND native libvips
-// beside the one gltf-transform already has. They disagree about libvips'
+// @gltf-transform/functions reaches sharp through ndarray-pixels, which
+// declares `^0.35.0`. Whenever the store's root manifest declares a range
+// that doesn't intersect it, as its `^0.33.5` once did, both copies land on
+// disk and a bare `import("sharp")` inside optimize.ts loads a SECOND native
+// libvips beside the one gltf-transform already has. They disagree about libvips'
 // own enums, and the encode goes wrong in one of two ways:
 //
 //   win32     GLib-GObject-CRITICAL: value "32" ... 'VipsInterpretation'
@@ -20,11 +20,11 @@
 // lantern rendered white for everyone whose client took the variant.
 //
 // The throw is the merciful case and the one this box reproduces, so an
-// end-to-end check here is a real control: on unmodified main case 1 fails
-// outright. But a machine that happens to dedupe (or a future lockfile that
-// aligns the ranges) would pass case 1 for reasons unrelated to the fix, so
-// case 2 asserts the STRUCTURE — the resolver reaches the nested copy
-// whenever a nested copy exists.
+// end-to-end check here is a real control: on a tree from before this fix
+// case 1 fails outright. But an install with one copy (a deduped lockfile, as
+// the root's `^0.35.5` gives) passes case 1 for reasons unrelated to the fix,
+// so case 2 asserts the STRUCTURE: the resolver reaches the copy
+// gltf-transform itself resolves, nested or not, and never a second one.
 //
 // Cases 1 and 2 both describe what optimize.ts ASKS for. Case 3 is the one
 // that answers the question directly — it censuses the native binaries this
@@ -32,16 +32,16 @@
 // specifier" and "loads one libvips" are different claims, and only the
 // second is the fix.
 
-import { existsSync } from "node:fs";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { Document, NodeIO } from "@gltf-transform/core";
 import { optimizeGlb } from "../server/optimize.ts";
 
-// getSharp does not exist on main — pull it dynamically so this file still
-// RUNS there and demonstrates the failure, rather than dying at import and
-// proving nothing (the fail-on-main convention, cf. mcpl/effective-test.ts).
+// getSharp doesn't exist on a tree from before this fix — pull it dynamically
+// so this file still RUNS there and demonstrates the failure, rather than
+// dying at import and proving nothing (the fail-on-main convention, cf.
+// mcpl/effective-test.ts).
 const OPT = await import("../server/optimize.ts") as {
   getSharp?: () => Promise<{ sharp: any; from: string }>;
 };
@@ -94,9 +94,10 @@ console.log("\none libvips per optimize process (#122):\n");
 // texture was its PNG-sourced ORM map — the discriminator that named the
 // mechanism in the first place.)
 // The scaffolding resolves its OWN sharp — gltf-transform's copy, directly.
-// It must not go through the module under test: on main that returns the root
-// copy, the fixture encode is then the first place the two libvips meet, and
-// the file dies at setup instead of reporting which checks failed.
+// It must not go through the module under test: on a tree from before this
+// fix that returns the root copy, the fixture encode is then the first place
+// the two libvips meet, and the file dies at setup instead of reporting which
+// checks failed.
 const fixtureSharp = await (async () => {
   try {
     const fd = dirname(Bun.resolveSync("@gltf-transform/functions", join(import.meta.dir, "../server")));
@@ -167,39 +168,49 @@ try {
 
 // ------------------------------------------- 2. the structure, not the luck
 // Case 1 passes on a machine that happens to have one copy, for reasons that
-// have nothing to do with the fix. This is what actually pins it.
+// have nothing to do with the fix. This is what actually pins it: whatever
+// the install's layout, optimize.ts takes the copy gltf-transform's own
+// ndarray-pixels resolves, which is the root's only when there is one copy.
 const fnDir = dirname(Bun.resolveSync("@gltf-transform/functions", join(import.meta.dir, "../server")));
 const npDir = dirname(Bun.resolveSync("ndarray-pixels", fnDir));
-let nested: string | null = null;
-try { nested = Bun.resolveSync("sharp", npDir); } catch { /* deduped install */ }
+const resolveSharp = (dir: string): string => {
+  try { return Bun.resolveSync("sharp", dir); } catch (e) { return `unresolved (${(e as Error).message})`; }
+};
+const gltfSharp = resolveSharp(npDir);
+const bareSharp = resolveSharp(join(import.meta.dir, "../server"));
 
-if (nested && existsSync(nested)) {
-  check("the resolver reaches gltf-transform's OWN sharp, not the root copy",
-    from === nested, `from=${from}`);
-  check("...and that is a genuinely different copy (else this proves nothing)",
-    !from.includes(join("node_modules", "sharp").replace(/\\/g, "/"))
-      || from.includes("ndarray-pixels"), `from=${from}`);
-} else {
-  // Not a failure: a deduped install is the state this fix is chasing.
-  console.log("  \x1b[36m—\x1b[0m single sharp install; the bare specifier is safe here");
-  console.log(`     resolved: ${from}`);
-}
+check("the resolver reaches gltf-transform's OWN sharp",
+  from === gltfSharp, `from=${from}, gltf-transform's=${gltfSharp}`);
+console.log(gltfSharp === bareSharp
+  ? "  \x1b[36m—\x1b[0m one sharp install: gltf-transform's copy is the root's"
+  : `  \x1b[36m—\x1b[0m two sharp installs: a bare import would load ${bareSharp}`);
 
 // ------------------------------------------- 3. the process, not the resolver
 // Cases 1 and 2 show that optimize.ts ASKS for the right copy. This shows what
 // the process actually LOADED, which is the only claim that matters: the fix
 // is "one libvips per optimize process", so count the libvips.
 //
-// process.report.getReport().sharedObjects lists the native binaries mapped
-// into this process by absolute path. Two distinct install roots holding a
+// Under Node, process.report.getReport().sharedObjects lists the native
+// binaries mapped into this process by absolute path. Under Bun it lists
+// none, so on Linux this reads /proc/self/maps, which lists every file mapped
+// into the process under either runtime. Two distinct install roots holding a
 // sharp binding means two libvips, whatever the resolver intended. Measured
 // AFTER case 1's real optimizeGlb run, so it covers the actual optimize path
 // and not a synthetic import.
-const report = (process as any).report?.getReport?.();
-if (!report || !Array.isArray(report.sharedObjects)) {
-  console.log("  [36m—[0m process.report unavailable on this runtime; skipping the load census");
+function mappedFiles(): string[] | null {
+  const listed = (process as any).report?.getReport?.()?.sharedObjects;
+  if (Array.isArray(listed) && listed.length > 0) return listed;
+  try {
+    return readFileSync("/proc/self/maps", "utf8").split("\n")
+      .map((line) => line.trim().split(/\s+/).slice(5).join(" ").replace(/ \(deleted\)$/, ""))
+      .filter((path) => path.startsWith("/"));
+  } catch { return null; }
+}
+const mapped = mappedFiles();
+if (!mapped) {
+  console.log("  \x1b[36m—\x1b[0m this runtime lists no mapped native binaries; skipping the load census");
 } else {
-  const installs = [...new Set((report.sharedObjects as string[])
+  const installs = [...new Set(mapped
     .filter((s) => /sharp/i.test(s) && s.endsWith(".node"))
     .map((s) => dirname(s)))];
   check("exactly one sharp install is loaded in this process",
@@ -249,12 +260,12 @@ if (typeof (OPT as any).pickSharp !== "function") {
     attempted.length === 1 && attempted[0] === NESTED,
     `load() was handed: ${attempted.join(", ") || "(nothing)"}`);
 
-  // The other side of the same rule: with NO nested copy to resolve, the bare
-  // specifier is the single install and must still be used, or a deduped
-  // machine loses its texture pass for no reason.
+  // The other side of the same rule: when nothing resolves from ndarray-pixels,
+  // the bare specifier must still be used, or that machine loses its texture
+  // pass for no reason.
   const bare: string[] = [];
   const picked = await pickSharp(() => null, async (spec) => { bare.push(spec); return { default: {} }; });
-  check("a genuinely absent nested copy DOES fall back to the bare specifier",
+  check("nothing resolved from ndarray-pixels DOES fall back to the bare specifier",
     bare.length === 1 && bare[0] === "sharp" && picked.from === "sharp (bare specifier)",
     `load() was handed: ${bare.join(", ")}, from=${picked.from}`);
 }

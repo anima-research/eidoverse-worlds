@@ -42,10 +42,11 @@ const read = (p: string) => fs.readFileSync(path.join(T, p), "utf8");
 const PIN = "spec/kernel-pin.json", CHANGELOG = "spec/REGISTRY-CHANGELOG.md", VECTORS = "spec/kernel-vectors";
 const pin = fs.existsSync(path.join(T, PIN)) ? JSON.parse(read(PIN)) : null;
 
-/** Fold each vector's entries with a reader module: "ok" when it folds to a world with no diagnostics, else the first reason. */
+/** Fold each vector's entries with a reader module: "ok" when it folds to a world with no diagnostics, else the first reason
+ *  (a diagnostic that isn't malformed: reads `diagnostic:<code>`, so a vector tells "shaped, and noted" from "nulled"; tel0s D2). */
 function verdict(F: any, entries: any[]) {
   try { const parsed = F.readLog(entries.map((e: any) => JSON.stringify(e)).join("\n") + "\n"); const st = F.fold(parsed);
-    if (st.status !== "ok") return st.status; if (st.diagnostics?.length) return `malformed:${st.diagnostics[0][1]}`.replace(/^malformed:malformed:/, "malformed:"); return "ok"; }
+    if (st.status !== "ok") return st.status; if (st.diagnostics?.length) { const c = String(st.diagnostics[0][1]); return c.startsWith("malformed:") ? c : `diagnostic:${c}`; } return "ok"; }
   catch (e) { return `threw: ${e?.code ?? e?.message ?? e}`; }
 }
 /** Run a vectors dir: {ran: [{name, old, new}], why?}. old-fold.js is the OLD reader's snapshot (beside old-hash.js). */
