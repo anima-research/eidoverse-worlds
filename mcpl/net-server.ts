@@ -210,6 +210,10 @@ class Session {
     this.home = home ?? auth.world ?? "commons";
     this.recordStart = recordStart;
     this.conn = McplConnection.fromWebSocket(ws as never);
+    // The connection re-emits its socket's error as its own 'error' (with Bun 1.4's ws, a malformed frame), and a
+    // connection with no 'error' listener throws, ending the door and every session with it. This only reports it: a
+    // socket's error closes the connection on its own.
+    this.conn.on("error", (e) => console.error(`[${ts()}] [mcpl:${this.auth.id}] connection error: ${(e as Error).message?.slice(0, 160)}`));
     this.agent = this.createAgent(auth.world ?? "commons");
     this.channelId = `world:${this.agent.world}`;
     // The body's speech ends the dots the relay keeps up; if the turn goes on,
