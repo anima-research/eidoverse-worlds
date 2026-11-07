@@ -29,6 +29,7 @@ const BASE = "f3cc7ca6";   // main with #260 merged (11-07), where video is stil
 
 // [name, file, find, replace, cases that must turn red]
 const MUTANTS: [string, string, string, string, string[]][] = [
+  ["placing a video follows the ordinary component rights, not an owner-only gate (hesperus, #5)", "shared/protocol/authority/gate.js", "  if (roleOf(st, holder) === \"owner\") return null;\n", "  if (roleOf(st, holder) === \"owner\") return null;\n  if (op.comp === \"video\") return \"owner\";\n", ["R1", "R2"]],
   ["the door refuses a source this server hasn't admitted", "shared/protocol/authority/checks.js", "if (!carry && !isAdmittedSource(v.source))", "if (false)", ["M2", "M3"]],
   ["a fork's copy carries an unadmitted source (no silent loss)", "shared/protocol/authority/checks.js", "if (!carry && !isAdmittedSource(v.source))", "if (!isAdmittedSource(v.source))", ["M4"]],
   ["nothing is admitted until the server says (fail closed)", "shared/video.js", "export const isAdmittedSource = (id) => typeof id === 'string' && ADMITTED.has(id);", "export const isAdmittedSource = (id) => typeof id === 'string' && (ADMITTED.size === 0 || ADMITTED.has(id));", ["M3"]],
@@ -230,6 +231,29 @@ const cases: Case[] = [
     good: (o) => ["source", "description", "volume", "near", "radius", "width", "mute", "off"].every((k) => o.keys?.includes(k)) && o.state === "stalled" && o.min === 0 && o.max === 1
       && o.ok.v?.volume === 0.5 && o.loud.errors.length && !o.loud.v && /never a URL/.test(o.url.errors.join()) && o.off.verb === "delete"
       && o.add?.ops?.[0]?.args?.value?.source === "solstice" && /never a URL/.test(o.addUrl?.errors?.join() ?? "") },
+
+  // ---------------- R: who may place a screen (hesperus on #5: the operator admits sources; placing follows the ordinary rights) ----------------
+  { id: "R1", what: "a builder places a video on their own thing and on someone else's; a member, who may not build, is refused rights with needs build", run(s) {
+      admit(["solstice"]); cast(s); s.call("olive", "set", { id: "@world", component: "roles:ann", value: { role: "member" } });
+      s.call("bob", "create", { id: "mine", model: "crate", place: { at: [0, 0] } }); s.call("olive", "create", { id: "hers", model: "crate", place: { at: [2, 0] } });
+      const own = show(s.call("bob", "set", { id: "mine", component: "video", value: { source: "solstice" } }));
+      const other = show(s.call("bob", "set", { id: "hers", component: "video", value: { source: "solstice" } }));
+      const m = s.call("ann", "set", { id: "mine", component: "video", value: { source: "solstice", volume: 0.5 } });
+      return { own, other, member: code(m), needs: m.refused?.needs, kept: comp(s, "mine", "video")?.volume }; },
+    good: (o) => o.own === "ok" && o.other === "ok" && o.member === "rights" && o.needs === "build" && o.kept === 0.8 },
+  { id: "R2", what: "with build taken off builders a builder is refused; a custom role given build may place one; a lock holds a screen against a builder", run(s) {
+      admit(["solstice"]); cast(s);
+      s.call("olive", "create", { id: "stage", model: "crate", place: { at: [0, 0] } }); s.call("olive", "create", { id: "booth", model: "crate", place: { at: [2, 0] } });
+      s.call("olive", "set", { id: "booth", component: "lock", value: true });
+      const locked = s.call("bob", "set", { id: "booth", component: "video", value: { source: "solstice" } });
+      // editOthers and scripts need build, so taking build off builders takes those too
+      const defs = show(s.call("olive", "set", { id: "@world", component: "role-defs", value: { builder: { name: "Builder", can: { build: false, editOthers: false, scripts: false } }, crew: { name: "Crew", rank: 150, can: { build: true } } } }));
+      s.call("olive", "set", { id: "@world", component: "roles:cy", value: { role: "crew" } });
+      const off = s.call("bob", "set", { id: "stage", component: "video", value: { source: "solstice" } });
+      s.call("cy", "create", { id: "cys", model: "crate", place: { at: [4, 0] } });
+      const crew = show(s.call("cy", "set", { id: "cys", component: "video", value: { source: "solstice" } }));
+      return { defs, locked: code(locked), off: code(off), needs: off.refused?.needs, crew, booth: comp(s, "booth", "video") ?? null }; },
+    good: (o) => o.defs === "ok" && o.locked === "locked" && o.off === "rights" && o.needs === "build" && o.crew === "ok" && o.booth === null },
 
   // ---------------- B: the broker ----------------
   { id: "B1", what: "the registry: a credential inside a URL, a bad id, an api without a path, a non-http WHEP are dropped by id; a good entry is admitted", run() {
