@@ -11,11 +11,20 @@ import { bodyRuntimeFor } from "../client/lib/bodyruntime.js";
 let pass = 0, fail = 0;
 const check = (n: string, ok: boolean, d: unknown = "") => { ok ? pass++ : fail++; console.log(`  ${ok ? "\x1b[32m✓" : "\x1b[31m✗"}\x1b[0m ${n}${ok ? "" : `  ${JSON.stringify(d)}`}`); };
 const ROOT = join(import.meta.dir, "..");
+const BODY_SHA: Record<string, string> = {
+  claude_robot: "fbeaa3b4162b4fd6d893b13e4172a9a9e8e78eb964e4ae4a3373c1a5bb2ca2f0",
+  claude_robot_2k: "e04e19c594ee55d3017360e21bf499c9f56ed13a1deb17cc04e9acf881696ef4",
+};
 
 // 1. the defs: both robot defs serve; the runtime contract refuses what it should
 for (const name of ["claude_robot", "claude_robot_2k"]) {
   const def = JSON.parse(readFileSync(join(ROOT, "defs", "avatars", `${name}.json`), "utf8"));
   check(`defs/avatars/${name}.json validates`, validateAvatarDef(name, def).length === 0, validateAvatarDef(name, def));
+  check(`${name} carries exact maker/runtime provenance`, def.provenance?.assetRepo === "SkyeShark/eidoverse-video"
+    && def.provenance?.assetCommit === "0e8716fd1ba15dbc23369dd7c84a2053754bb0e2"
+    && def.provenance?.vrmSha256 === BODY_SHA[name]
+    && def.provenance?.runtimeSourceSha256 === "1b5f7c3588444eebc9c88477bfc76d1a730e0949ecb8e827b0f88647747943cc"
+    && def.provenance?.jointsSourceSha256 === "356a2ae9c343281c78fd0b0b15779dc3419312fa03780a815187d47dbc437cf5", def.provenance);
 }
 const good = { kind: "claude-robot-dof-v1" };
 check("a built-in runtime with no skip list validates", validateBodyRuntime(good).length === 0);
