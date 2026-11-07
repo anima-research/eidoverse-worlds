@@ -21,10 +21,11 @@ import path from "node:path";
 import { ENGINE, scratch, copyTree, archiveTo } from "./common.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
+import { LAB_CATALOGUE, MODELS as LAB_MODELS } from "./labmodels.js";
 
 const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
-const BASE = "9d60447f";   // #260's head video is stacked on (restacked 10-25 from b731a8ec, at Mica's approved head)
+const BASE = "f3cc7ca6";   // main with #260 merged (11-07), where video is still reserved; restacked from 9d60447f
 
 // [name, file, find, replace, cases that must turn red]
 const MUTANTS: [string, string, string, string, string[]][] = [
@@ -114,7 +115,7 @@ function openWorld(name: string) {
   const logPath = path.join(root, "worlds", `${name}.jsonl`), storeDir = path.join(root, "store");
   const entries = F.readLog(readLogBytes(logPath)).map(D.posAt);
   const blobPath = (h: string) => path.join(storeDir, `${String(h).replace(/[^a-z0-9]/g, "-")}.json`);
-  return D.worldOf({ name, entries,
+  return D.worldOf({ catalogue: LAB_CATALOGUE, simModels: LAB_MODELS, name, entries,
     getBlob: (h: string) => JSON.parse(fs.readFileSync(blobPath(h), "utf8")),
     putBlob: (v: unknown) => { const s = F.jcs(v); const h = `sha256:${F.sha256(s)}`; putBlobFile(blobPath(h), s, h); return h; },
     now: () => Number(process.env.PROTOCOL_NOW), writeLine: (line: string) => appendDurable(logPath, line),
@@ -189,7 +190,7 @@ const cases: Case[] = [
       && o.miss === "not-found" && /movie-night/.test(o.fix ?? "") && o.dym?.[0] === "solstice" && o.after === "not-found" && o.kept?.source === "solstice" && o.kept.volume === 0.8 },
   { id: "M4", what: "a fork's copy carries a source this server doesn't admit (the bag is kept, not lost); an ordinary write of the same is refused", run(s) {
       admit([]); cast(s);
-      const w = s.w(); let r; try { r = D.forkCopy(w, "olive", { ops: [{ verb: "create", args: { id: "old-screen", model: "crate", components: { video: { source: "elsewhere", description: "a stage on another server" } } } }] }); } catch (e) { r = { crashed: String(e?.message) }; }
+      const w = s.w(); let r; try { r = D.forkCopy(w, "olive", { requests: [{ verb: "create", args: { id: "old-screen", model: "crate", components: { video: { source: "elsewhere", description: "a stage on another server" } } } }] }); } catch (e) { r = { crashed: String(e?.message) }; }
       const plain = s.call("olive", "create", { model: "crate", components: { video: { source: "elsewhere" } }, place: { at: [2, 0] } });
       return { fork: show(r), kept: comp(s, "old-screen", "video"), plain: code(plain) }; },
     good: (o) => o.fork === "ok" && o.kept?.source === "elsewhere" && o.plain === "not-found" },
