@@ -126,7 +126,7 @@ await C("A1", "the agent tools call a translated act what the log calls it: impo
   return [!bad.length, bad.map((s) => s.slice(0, 120))]; });
 
 // ---- G: governance (H4) ----
-const py = (args: string[], cwd = path.join(T, "spec/conformance")) => Bun.spawnSync(["python3", "-B", ...args], { cwd, env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" } });
+const py = (args: string[], cwd = path.join(T, "spec/conformance")) => Bun.spawnSync([process.env.PYTHON || "python3", "-B", ...args], { cwd, env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" } });
 await C("G1", "gov.py: a lower tier can't add or promote keys into a higher tier (test_gov.py, with the reviewer's escalation as GV1)", () => {
   const r = py(["test_gov.py"]); const out = r.stdout.toString() + r.stderr.toString(); return [r.exitCode === 0, out.split("\n").filter((l) => /FAIL|passed|Error/.test(l))]; });
 await C("G2", "the suite runs the governance tests (compare.ts lists test_gov.py)", () => /"test_gov\.py"/.test(read("tools/protocol/compare.ts")));

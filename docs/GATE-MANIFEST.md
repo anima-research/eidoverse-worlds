@@ -9,7 +9,7 @@ disagree, so the table can't drift.
 
 ```sh
 bun install --frozen-lockfile                 # in the checkout root, in client/, and in mcpl/
-bun tools/protocol/run.ts --siblings          # clones/pins ../agent-framework, ../mcpl-core-ts and ../voice-kit (an existing checkout is moved to the pinned commit), installs mcpl/ (the preflight refuses without them)
+bun tools/protocol/run.ts --siblings          # clones/pins agent-framework, mcpl-core-ts and voice-kit in tools/protocol/.siblings/ ($GATE_SIBLINGS overrides; never a working copy beside the checkout), installs mcpl/ and links each built one into the package that takes it (the preflight refuses without them)
 CHROME=/path/to/chrome EIDOVERSE_DIR=/path/to/eidoverse-video bun tools/protocol/run.ts    # or: bun run test:protocol
 ```
 
@@ -188,7 +188,7 @@ time.
 | 16 | reset-race | core | `tools/protocol/reset-race-check.ts` | bun | 0.4 s | 180 s |
 | 17 | txn | core | `tools/protocol/txn-check.ts` | bun | 0.8 s | 180 s |
 | 18 | txn-mutants | core | `tools/protocol/txn-check.ts --mutants` | bun | 11 s | 180 s |
-| 19 | freeze | main | `tools/protocol/freeze-check.ts` | bun | ? | 300 s |
+| 19 | freeze | main | `tools/protocol/freeze-check.ts` | python3 | ? | 300 s |
 | 20 | run-client-settle | main | `tools/protocol/run-client-settle-check.ts` | bun | ? | 300 s |
 | 21 | vocab-fixtures | main | `tools/protocol/vocab-fixtures-check.ts` | bun | ? | 300 s |
 | 22 | nonumber | main | `tools/protocol/nonumber-check.ts` | bun | 1.4 s | 180 s |
@@ -231,7 +231,7 @@ time.
 | 59 | inplace | main | `tools/protocol/inplace-check.ts` | bun | 15 s | 180 s |
 | 60 | oneshot | main | `tools/protocol/oneshot-check.ts` | bun | ? | 300 s |
 | 61 | version-route | main | `tools/version-route-test.ts` | bun | ? | 300 s |
-| 62 | migrate-identities | main | `tools/protocol/migrate-identities-check.ts` | bun | 1.7 s | 180 s |
+| 62 | migrate-identities | main | `tools/protocol/migrate-identities-check.ts` | python3 | 1.7 s | 180 s |
 | 63 | oldworlds | main | `tools/oldworlds-test.ts` | bun | 1.2 s | 180 s |
 | 64 | descriptors | main | `tools/descriptor-defaults-test.ts` | bun | 0.1 s | 180 s |
 | 65 | light-readers | main | `tools/light-readers-test.ts` | bun | 0.4 s | 180 s |
@@ -271,7 +271,7 @@ time.
 | 99 | hello-refused | main | `tools/protocol/hello-refused-check.ts` | bun | ? | 300 s |
 | 100 | server | main | `tools/protocol/server-check.ts` | bun | 40 s | 200 s |
 | 101 | fork-reset | main | `tools/protocol/fork-reset-check.ts` | bun | 6 s | 180 s |
-| 102 | simckpt | main | `tools/protocol/simckpt-check.ts` | bun | ? | 300 s |
+| 102 | simckpt | main | `tools/protocol/simckpt-check.ts` | python3 + cryptography | ? | 300 s |
 | 103 | statecache | main | `tools/protocol/statecache-check.ts` | bun | ? | 300 s |
 | 104 | foldparity | main | `tools/protocol/foldparity-check.ts` | bun | ? | 300 s |
 | 105 | blockers-mutants | main | `tools/protocol/blockers-mutants.ts` | bun | 420 s | 2100 s |
@@ -307,7 +307,7 @@ time.
 | 135 | agenttools | main | `tools/protocol/agenttools-check.ts` | bun | 20 s | 180 s |
 | 136 | presence | main | `tools/protocol/presence-check.ts` | bun | 10 s | 180 s |
 | 137 | modhole | main | `tools/protocol/modhole-check.ts` | bun | 0.1 s | 180 s |
-| 138 | pretrans | main | `tools/protocol/pretrans-check.ts` | bun | 2.8 s | 180 s |
+| 138 | pretrans | main | `tools/protocol/pretrans-check.ts` | python3 | 2.8 s | 180 s |
 | 139 | soundclock | main | `tools/protocol/soundclock-check.ts` | bun | 0.2 s | 180 s |
 | 140 | sound | main | `tools/sound-test.ts` | bun | ? | 300 s |
 | 141 | sound-editor | main | `tools/sound-guard-test.ts` | bun | ? | 300 s |

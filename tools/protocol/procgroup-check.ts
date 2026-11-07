@@ -170,4 +170,19 @@ check("PG5 a zombie in the group is not counted as left running", suiteMembers(7
   check("PG20 scripts-check without isolation (EIDO_SANDBOX=inprocess) prints its I rows as OPTIONAL lines the gate's receipt keeps, not n/a",
     r.status === 0 && optional.some((l) => /OPTIONAL I1\b/.test(l)) && !/^n\/a/m.test(out), { status: r.status, optional, tail: out.slice(-300) }); }
 
+// PG21/PG22 (tel0s #260 11-06): the preflight's word holds for what the suites then do
+const gate = (args: string[], env: Record<string, string | undefined>) => { const e = { ...process.env, ...env }; for (const k of Object.keys(e)) if (e[k] === undefined) delete e[k];
+  const r = spawnSync(process.execPath, [fileURLToPath(new URL("./run.ts", import.meta.url)), ...args], { cwd: fileURLToPath(new URL("../../", import.meta.url)), env: e as any, encoding: "utf8", timeout: 120000 });
+  return { status: r.status, out: (r.stdout ?? "") + (r.stderr ?? "") }; };
+{ // a python3 whose `cryptography` imports but lacks ed25519 was "accepted", and conformance then died on ModuleNotFoundError
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), "pg21-")); fs.mkdirSync(path.join(d, "cryptography")); fs.writeFileSync(path.join(d, "cryptography", "__init__.py"), '__version__ = "0.0-pg21"\n');
+  const r = gate(["conformance"], { PYTHONPATH: d, PYTHON: undefined }); fs.rmSync(d, { recursive: true, force: true });
+  check("PG21 a python3 whose cryptography lacks what the suites import (ed25519, serialization) is refused by the preflight, before any suite runs",
+    r.status === 1 && /FAILED before any suite ran/.test(r.out) && /can't import what the suites need from 'cryptography'/.test(r.out), r.out.slice(-600)); }
+{ // the gate's siblings are its own: $GATE_SIBLINGS (else tools/protocol/.siblings/, gitignored), never the checkout's parent
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), "pg22-")); const r = gate(["alias"], { GATE_SIBLINGS: d }); fs.rmSync(d, { recursive: true, force: true });
+  const rs = fs.readFileSync(new URL("./run.ts", import.meta.url), "utf8"), gi = fs.readFileSync(new URL("../../.gitignore", import.meta.url), "utf8");
+  check("PG22 the preflight looks for the siblings in $GATE_SIBLINGS (else tools/protocol/.siblings/, gitignored), never beside the checkout",
+    r.status === 1 && /FAILED before any suite ran/.test(r.out) && r.out.includes(path.join(d, "mcpl-core-ts")) && !/path\.resolve\(ENGINE, "\.\."/.test(rs) && /^tools\/protocol\/\.siblings\/$/m.test(gi), r.out.slice(-600)); }
+
 console.log(`[procgroup-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

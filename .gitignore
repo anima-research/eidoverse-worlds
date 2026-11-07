@@ -70,3 +70,6 @@ __pycache__/
 
 # surface-parity frames are per-run evidence, not source
 notes/surface-parity/
+
+# the protocol gate's own sibling checkouts (run.ts --siblings; $GATE_SIBLINGS overrides)
+tools/protocol/.siblings/
