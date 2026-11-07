@@ -3,7 +3,7 @@
 //
 //   bun tools/typing-dots-probe.ts
 //
-// Needs the door's sibling built (../mcpl-core-ts, which the door imports: mcpl/net-server.ts) and a Chromium
+// Needs the door's sibling built (tools/protocol/.siblings/mcpl-core-ts via run.ts --siblings, which the door imports: mcpl/net-server.ts) and a Chromium
 // that tools/probe-harness.mjs can find. A run takes two to three minutes on a loaded machine.
 //
 // A scratch world and the door are children of this run, each proved ours by a per-run nonce it echoes
