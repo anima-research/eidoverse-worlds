@@ -132,11 +132,7 @@ check("dispose + pooled rewear retakes constraints from the limp owner", !mgr.co
 // 8. exact external body metadata, when the library is supplied.
 const lib = process.env.EIDOVERSE_DIR;
 if (lib) {
-  const expected: Record<string,string> = {
-    claude_robot: "fbeaa3b4162b4fd6d893b13e4172a9a9e8e78eb964e4ae4a3373c1a5bb2ca2f0",
-    claude_robot_2k: "e04e19c594ee55d3017360e21bf499c9f56ed13a1deb17cc04e9acf881696ef4",
-  };
-  for (const [name, sha] of Object.entries(expected)) {
+  for (const [name, sha] of Object.entries(BODY_SHA)) {
     const bytes = readFileSync(join(lib, "eidoverse/assets/vrms", `${name}.vrm`));
     check(`${name}.vrm has the reviewed content hash`, createHash("sha256").update(bytes).digest("hex") === sha);
     const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength); let off = 12, gltf: any = null;
