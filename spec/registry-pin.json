@@ -1329,7 +1329,7 @@
    "spatial": "bool",
    "width": "number",
    "lit": "string",
-   "alt": "string"
+   "description": "string"
   },
   "defaults": {
    "volume": 0.8,
@@ -1362,7 +1362,7 @@
     "gt": 0,
     "max": 20
    },
-   "alt": {
+   "description": {
     "maxLen": 200
    }
   },
@@ -1382,7 +1382,7 @@
    "spatial": "positional; off: heard evenly everywhere inside its radius",
    "width": "the screen's width, metres; its height follows the stream",
    "lit": "self (a screen, unlit; the default) | scene (takes the scene's light)",
-   "alt": "what the screen is for, in words (\"the solstice stage\"): for people who can't see it and for agents; never a claim about the current frame"
+   "description": "what the screen is for, in words (\"the solstice stage\"): for people who can't see it and for agents; never a claim about the current frame"
   },
   "units": {
    "near": "m",
