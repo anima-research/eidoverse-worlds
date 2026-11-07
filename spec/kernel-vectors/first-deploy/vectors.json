@@ -195,6 +195,46 @@
     }
    ],
    "verdict": "unsupported-feature"
+  },
+  {
+   "name": "world-mismatch",
+   "what": "an entry carrying another world's id: malformed, it shapes nothing (tel0s D2, 11-06; the reader at the first ceremony only noted it)",
+   "entries": [
+    {
+     "kind": "genesis",
+     "actor": "system",
+     "body": {
+      "dialect": "eidoverse-log",
+      "v": 4,
+      "nonce": "j1783lQSA7cL_W-K6NwvNw",
+      "owners": [
+       []
+      ],
+      "sequencer": "ed25519:NP1SCq4fthEWnhu_stdrB1gT8wu06eXvKTemf02lqSw"
+     }
+    },
+    {
+     "world": "sha256:59691a590872503090636b755f939b590275c34939e9e9a528c0dc65ff81f676",
+     "kind": "request",
+     "actor": "olive",
+     "verb": "x",
+     "ts": 1,
+     "body": {
+      "args": {}
+     }
+    },
+    {
+     "world": "sha256:abababababababababababababababababababababababababababababababab",
+     "kind": "request",
+     "actor": "olive",
+     "verb": "x",
+     "ts": 2,
+     "body": {
+      "args": {}
+     }
+    }
+   ],
+   "verdict": "malformed:world-mismatch"
   }
  ]
 }

@@ -45,7 +45,7 @@ function decodeState(o: Any) {
 export const stateDigest = (encoded: Any) => sha256(jcs(encoded));
 
 /** Only a fold every line of which the strict reader took is cached: then its tail resumes exactly as the whole fold reads it. */
-const clean = (st: Any) => st?.status === "ok" && !st.diagnostics.some(([, c]: Any) => String(c).startsWith("malformed") || c === "world-mismatch");
+const clean = (st: Any) => st?.status === "ok" && !st.diagnostics.some(([, c]: Any) => String(c).startsWith("malformed"));
 
 /** Where the covered line sits in the file: genesis ends at byte g; line coversIndex is [start, end) with its newline. */
 export type At = { g: number; start: number; end: number };

@@ -159,7 +159,8 @@ The fold yields a **status** (`ok`, `no-world`, or `unknown-version`), a
   are the world's own settings: sky, terrain, roles, bounds, spawn…
 - The **world id** is `sha256:` + hex(sha256(UTF-8(JCS(genesis entry)))),
   JCS being RFC 8785. It never names a host. Every later entry carries it in
-  `world`; a mismatch is reported in diagnostics.
+  `world`; an entry carrying another world's id is malformed (it shapes
+  nothing and does not move the clock on, like a decreasing `ts`).
 - The **digest** of a folded world is the lowercase hex
   sha256(UTF-8(JCS(view))), where `view` is `{<live id>: {<component>:
   {"v": value} | {"redacted": true}}}` over every live entity, empty ones and
