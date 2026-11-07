@@ -563,7 +563,7 @@ const cases: Case[] = [
         slash: /\{ name: 'anim', help: '\/anim <name>/.test(reg) }; },
     good: (o) => o.now && !o.olds.length && o.key && o.v && o.slash },
   { id: "E3", what: "…the word appears nowhere but the action bar's old id for carrying saved storage (client/lib/ui.js ACTIONBAR_OLD_ID): every file of the tree (spec/history, the frozen v1 record, aside), file names too; and both of those still work", async run() {
-      const re = new RegExp(`(?<![rd])${EM}`, "i"); const hits: string[] = []; const SKIP = new Set(["node_modules", ".git", "worlds", "store", "history"]);
+      const re = new RegExp(`(?<![rd])${EM}`, "i"); const hits: string[] = []; const SKIP = new Set(["node_modules", ".git", "worlds", "store", "history", ".siblings"]);
       const walk = (rel: string) => { let ents: any[] = []; try { ents = fs.readdirSync(TREE + rel, { withFileTypes: true }); } catch { return; }
         for (const e of ents) { const r = rel ? `${rel}/${e.name}` : e.name; if (SKIP.has(e.name)) continue;
           let st: any; try { st = fs.statSync(TREE + r); } catch { continue; }

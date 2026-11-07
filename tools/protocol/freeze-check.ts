@@ -163,7 +163,7 @@ try {
     // this suite's own raw join is the no-hello probe; Python spells it as HELLO)
     const own = new Set(["client/index.html", "tools/protocol/freeze-check.ts", "tools/surface-test.py"]); const bad: string[] = [];
     const walk = (d: string) => { for (const e of fs.readdirSync(path.join(ENGINE, d), { withFileTypes: true })) { const r = path.join(d, e.name);
-      if (e.isDirectory()) { if (!["node_modules", ".git", "worlds", "spec"].includes(e.name)) walk(r); continue; }
+      if (e.isDirectory()) { if (!["node_modules", ".git", "worlds", "spec", ".siblings"].includes(e.name)) walk(r); continue; }
       if (!/\.(ts|js|mjs|html)$/.test(e.name) || own.has(r)) continue; const t = fs.readFileSync(path.join(ENGINE, r), "utf8");
       if (/type\s*:\s*['"]join['"]/.test(t) && !/\bhelloOf\b/.test(t)) bad.push(r); } };
     for (const d of ["client", "server", "mcpl", "tools", "shared"]) walk(d);
