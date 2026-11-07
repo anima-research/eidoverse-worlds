@@ -1,7 +1,7 @@
 // videos — the browser realizer for the `video` component: a live stream on a quad of its own, with its sound coming
 // from the thing (shared/video.js says what the bag MEANS; this file only renders it).
 //
-//   video {source, volume?, near?, radius?, spatial?, width?, lit?, alt?}
+//   video {source, volume?, near?, radius?, spatial?, width?, lit?, description?}
 //
 // The viewer never learns where the stream is. It makes a WebRTC offer (receive-only, video and audio) and sends it over
 // its own connection (video-offer); the sequencer posts it to the projector with the operator's read credential and
@@ -197,7 +197,7 @@ function takeDown(id) {
 function applyFrom(id, data, { fresh = false, why = 'comp' } = {}) {
   const n = data == null ? null : normalizeVideo(data);
   const prev = screens.get(id);
-  // a volume, distance or alt change: the same stream on the same quad, adjusted in the tick (no new intent, no bump)
+  // a volume, distance or description change: the same stream on the same quad, adjusted in the tick (no new intent, no bump)
   if (!fresh && prev && n?.ok && prev.video.source === n.video.source && prev.video.width === n.video.width && prev.video.lit === n.video.lit && prev.video.spatial === n.video.spatial) { prev.video = n.video; return; }
   const rev = bump(id);
   _builds.push({ id, why: n == null ? `${why}: down` : why, at: Math.round(performance.now()) });

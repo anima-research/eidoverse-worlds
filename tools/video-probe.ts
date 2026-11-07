@@ -113,7 +113,7 @@ try {
   // A. the door
   // the screen rides a model: a thing with NO model loses the page's WebGL context in headless Chrome on #260 as it is
   // (reproduced at 9263268c with no video at all), which reloads the page mid-measurement
-  const made = await req(pa, 'create', { id: '$screen', components: { transform: { pos: [0, 1, -4], q: [0, 0, 0, 1], scale: [1, 1, 1] }, model: 'eidoverse/assets/models/crate_large_red.glb', label: 'screen', video: { source: 'solstice', alt: 'the probe stage', width: 3, radius: 15 } } });
+  const made = await req(pa, 'create', { id: '$screen', components: { transform: { pos: [0, 1, -4], q: [0, 0, 0, 1], scale: [1, 1, 1] }, model: 'eidoverse/assets/models/crate_large_red.glb', label: 'screen', video: { source: 'solstice', description: 'the probe stage', width: 3, radius: 15 } } });
   const SCREEN = made?.ids?.$screen;
   check('A. a video naming the admitted source is accepted', made?.ok && typeof SCREEN === 'string', JSON.stringify(made).slice(0, 300));
   const bad = await req(pa, 'create', { id: '$bad', components: { video: { source: 'nobody-admitted-this' } } });

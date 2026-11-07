@@ -3,7 +3,7 @@
 // line) and the mcpl agent (text-tier perception), so no two of them can
 // describe a different screen.
 //
-//   video {source, volume?, near?, radius?, spatial?, width?, lit?, alt?}
+//   video {source, volume?, near?, radius?, spatial?, width?, lit?, description?}
 //   (a quad of its own, facing +Z on the thing's origin, as picture's; its
 //   sound comes from the thing, as sound's)
 //
@@ -45,7 +45,7 @@
 // Neither is inferred from the other. A frozen frame is never "playing".
 //
 // AUTHORED VERSUS LOCAL. The bag holds what is authored and shared: the
-// source, the authored volume, the quad, the alt text. A viewer's own volume,
+// source, the authored volume, the quad, the description. A viewer's own volume,
 // mute and caption overlay are theirs and are never written: what they hear
 // is the authored volume times their own media gain.
 //
@@ -60,12 +60,14 @@ export { gainAt };
 /** A source id: a lowercase name the operator chose, 1–40 characters, letters, digits and hyphens, starting with a
  *  letter. Never a URL: no scheme, no dots, no slashes, so nothing that looks like an address fits. */
 export const VIDEO_SOURCE_ID = /^[a-z][a-z0-9-]{0,39}$/;
-export const VIDEO_ALT_MAX = 200;
+export const VIDEO_DESCRIPTION_MAX = 200;
+/** The description field's tooltip, in plain words (as picture's and sound's). */
+export const VIDEO_DESCRIPTION_HINT = 'Describes in words what the screen is for, for people who can\'t see it and for agents';
 export const VIDEO_MAX_WIDTH = 20;
 export const VIDEO_MAX_RADIUS = SOUND_MAX_RADIUS;
 export const VIDEO_DEFAULTS = Object.freeze({ volume: 0.8, near: 1.5, radius: 12, spatial: true, width: 4, lit: 'self' });
 export const VIDEO_LIT = Object.freeze({ self: 'self-lit (a screen)', scene: 'lit by the scene' });
-const KNOWN_KEYS = new Set(['source', 'volume', 'near', 'radius', 'spatial', 'width', 'lit', 'alt']);
+const KNOWN_KEYS = new Set(['source', 'volume', 'near', 'radius', 'spatial', 'width', 'lit', 'description']);
 
 /** What the appliance can say about a source (the SOURCE state). */
 export const SOURCE_STATES = Object.freeze(['offline', 'live', 'ended', 'unknown']);
@@ -114,7 +116,7 @@ export function sourceIdProblem(id) {
 /** Validate an authored bag. `ok:false` carries WHY; `ok:true` carries the normalized video plus notes. */
 export function normalizeVideo(data) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
-    return { ok: false, why: 'video data must be an object {source, volume?, near?, radius?, spatial?, width?, lit?, alt?}' };
+    return { ok: false, why: 'video data must be an object {source, volume?, near?, radius?, spatial?, width?, lit?, description?}' };
   }
   const bad = sourceIdProblem(data.source);
   if (bad) return { ok: false, why: bad };
@@ -136,12 +138,12 @@ export function normalizeVideo(data) {
     if (Object.hasOwn(VIDEO_LIT, data.lit)) video.lit = data.lit;
     else notes.push(`lit ${JSON.stringify(data.lit)} is unknown (${Object.keys(VIDEO_LIT).join('/')}) — using ${VIDEO_DEFAULTS.lit}`);
   }
-  if (data.alt != null) {
-    const alt = String(data.alt).replace(/\s+/g, ' ').trim();
-    if (graphemes(alt) > VIDEO_ALT_MAX) { notes.push(`alt clipped to ${VIDEO_ALT_MAX} characters`); video.alt = graphemeList(alt).slice(0, VIDEO_ALT_MAX).join(''); }
-    else if (alt) video.alt = alt;
+  if (data.description != null) {
+    const description = String(data.description).replace(/\s+/g, ' ').trim();
+    if (graphemes(description) > VIDEO_DESCRIPTION_MAX) { notes.push(`description clipped to ${VIDEO_DESCRIPTION_MAX} characters`); video.description = graphemeList(description).slice(0, VIDEO_DESCRIPTION_MAX).join(''); }
+    else if (description) video.description = description;
   }
-  if (!video.alt) notes.push('no alt text — anyone who can\'t see it (or reads the world as text) gets only the source\'s id; say what the screen is for');
+  if (!video.description) notes.push('no description — anyone who can\'t see it (or reads the world as text) gets only the source\'s id; say what the screen is for');
   return { ok: true, video, notes };
 }
 
@@ -174,8 +176,8 @@ const STATE_WORDS = { offline: 'its source is offline', live: 'its source is liv
 export function describeVideo(data, obs = sourceStateOf(data?.source), now = Date.now()) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return 'a video (malformed declaration)';
   const bad = sourceIdProblem(data.source);
-  const alt = typeof data.alt === 'string' && data.alt.trim() ? data.alt : null;
-  const head = alt ? `a video screen: ${quoted(alt, VIDEO_ALT_MAX)}` : `a video screen (source ${bad ? 'invalid' : `"${data.source}"`})`;
+  const description = typeof data.description === 'string' && data.description.trim() ? data.description : null;
+  const head = description ? `a video screen: ${quoted(description, VIDEO_DESCRIPTION_MAX)}` : `a video screen (source ${bad ? 'invalid' : `"${data.source}"`})`;
   if (bad) return `${head} (not shown: invalid declaration)`;
   const { state, ageS } = sourceStateNow(obs, now);
   const fresh = ageS == null ? 'never observed' : state === 'unknown' ? `last observed ${ageS} s ago` : `as of ${ageS} s ago`;

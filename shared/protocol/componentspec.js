@@ -362,10 +362,10 @@ export const COMPONENTS = {
   // id the OPERATOR admitted on this server, never a URL: the endpoint stays out of the log and is handed only to an
   // admitted viewer. The door refuses an id this server hasn't admitted (mediaCheck). Live only: every viewer plays the live
   // edge, so playing and t0 are absent on purpose (a recorded source adds them, absent = this)
-  video:      { on: "thing", fields: { source: "string", volume: "number", near: "number", radius: "number", spatial: "bool", width: "number", lit: "string", alt: "string" },
+  video:      { on: "thing", fields: { source: "string", volume: "number", near: "number", radius: "number", spatial: "bool", width: "number", lit: "string", description: "string" },
                 defaults: { volume: 0.8, near: 1.5, radius: 12, spatial: true, width: 4, lit: "self" }, required: ["source"], enums: { lit: ["self", "scene"] },
                 grammar: { source: "source-id" },
-                ranges: { volume: { min: 0, max: 1 }, near: { gt: 0, max: 100 }, radius: { min: 1, max: 100 }, width: { gt: 0, max: 20 }, alt: { maxLen: 200 } }, clean: { alt: "line" },
+                ranges: { volume: { min: 0, max: 1 }, near: { gt: 0, max: 100 }, radius: { min: 1, max: 100 }, width: { gt: 0, max: 20 }, description: { maxLen: 200 } }, clean: { description: "line" },
                 units: { near: "m", radius: "m", width: "m" },
                 absentMeans: { law: "the sound component's distance law, unchanged: gain = min(1, near / distance), then a (1−t)² taper over the last 5% of radius to exactly 0 at radius (shared/sound.js gainAt)",
                   playback: "a live source: every viewer plays its live edge, with no shared playhead (a recorded source's playing and t0, when they exist, are absent = this)",
@@ -373,8 +373,8 @@ export const COMPONENTS = {
                 docs: { source: "the stream: an id this server's operator admitted (1–40 lowercase letters, digits and hyphens), never a URL", volume: "authored linear gain, 0 silent to 1 full; each viewer's own volume multiplies it and is never written",
                   near: "full volume within this many metres", radius: "silent at and beyond this many metres", spatial: "positional; off: heard evenly everywhere inside its radius",
                   width: "the screen's width, metres; its height follows the stream", lit: "self (a screen, unlit; the default) | scene (takes the scene's light)",
-                  alt: "what the screen is for, in words (\"the solstice stage\"): for people who can't see it and for agents; never a claim about the current frame" },
-                help: "a live video this thing plays: {source (an id this server's operator admitted, like 'solstice'; never a URL), volume? 0..1, near? m, radius? m (≤ 100; sound's distance law), spatial?, width? m (the quad's, facing +Z on its origin; height follows the stream), lit?: self|scene, alt? (what the screen is for, in words)}. look says what the appliance last observed of the source (offline, live, ended or unknown, and how fresh); each viewer's own screen says its own playback state. A screen is a thing with video, and captions with its captioners" },
+                  description: "what the screen is for, in words (\"the solstice stage\"): for people who can't see it and for agents; never a claim about the current frame" },
+                help: "a live video this thing plays: {source (an id this server's operator admitted, like 'solstice'; never a URL), volume? 0..1, near? m, radius? m (≤ 100; sound's distance law), spatial?, width? m (the quad's, facing +Z on its origin; height follows the stream), lit?: self|scene, description? (what the screen is for, in words)}. look says what the appliance last observed of the source (offline, live, ended or unknown, and how fresh); each viewer's own screen says its own playback state. A screen is a thing with video, and captions with its captioners. The server operator admits sources; who may place a screen follows the ordinary component rights (build on your own thing, editOthers on another's)" },
   // why a thing is here (batch 2; R: {title, text, marks?}): a museum label's title and text. Who wrote it is a view over
   // the log (History), never stored. The world's own blurb is @world.about
   story:      { on: "thing", fields: { title: "string", text: "string", marks: "refs" }, required: ["title", "text"],

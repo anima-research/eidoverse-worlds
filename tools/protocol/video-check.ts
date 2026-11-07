@@ -179,7 +179,7 @@ const cases: Case[] = [
     good: (o) => o.shared.every((x: any) => x === false) && o.door.every((x: any) => x === "shape" || x === "schema") && o.good === true && /never a URL/.test(o.url ?? "") },
   { id: "M2", what: "the door: an admitted source is accepted with the defaults written; an unadmitted one refused not-found with what IS admitted and a did-you-mean; a revoke refuses new writes and keeps the stored value", run(s) {
       admit(["solstice", "movie-night"]); cast(s); s.call("olive", "create", { id: "screen", model: "crate", place: { at: [0, 0] } });
-      const ok = show(s.call("bob", "set", { id: "screen", component: "video", value: { source: "solstice", alt: "the solstice stage" } }));
+      const ok = show(s.call("bob", "set", { id: "screen", component: "video", value: { source: "solstice", description: "the solstice stage" } }));
       const stored = comp(s, "screen", "video");
       const miss = s.call("bob", "set", { id: "screen", component: "video", value: { source: "solstise" } });
       admit(["movie-night"]);
@@ -189,14 +189,14 @@ const cases: Case[] = [
       && o.miss === "not-found" && /movie-night/.test(o.fix ?? "") && o.dym?.[0] === "solstice" && o.after === "not-found" && o.kept?.source === "solstice" && o.kept.volume === 0.8 },
   { id: "M4", what: "a fork's copy carries a source this server doesn't admit (the bag is kept, not lost); an ordinary write of the same is refused", run(s) {
       admit([]); cast(s);
-      const w = s.w(); let r; try { r = D.forkCopy(w, "olive", { ops: [{ verb: "create", args: { id: "old-screen", model: "crate", components: { video: { source: "elsewhere", alt: "a stage on another server" } } } }] }); } catch (e) { r = { crashed: String(e?.message) }; }
+      const w = s.w(); let r; try { r = D.forkCopy(w, "olive", { ops: [{ verb: "create", args: { id: "old-screen", model: "crate", components: { video: { source: "elsewhere", description: "a stage on another server" } } } }] }); } catch (e) { r = { crashed: String(e?.message) }; }
       const plain = s.call("olive", "create", { model: "crate", components: { video: { source: "elsewhere" } }, place: { at: [2, 0] } });
       return { fork: show(r), kept: comp(s, "old-screen", "video"), plain: code(plain) }; },
     good: (o) => o.fork === "ok" && o.kept?.source === "elsewhere" && o.plain === "not-found" },
   { id: "M5", what: "look says the appliance's state and its age: live (fresh), unknown when stale or never observed; never a URL or a viewer's playback", run(s) {
       admit(["solstice", "movie-night"]); cast(s);
       s.call("olive", "create", { id: "screen", model: "crate", place: { at: [0, 0] } }); s.call("olive", "create", { id: "screen2", model: "crate", place: { at: [3, 0] } });
-      s.call("olive", "set", { id: "screen", component: "video", value: { source: "solstice", alt: "the solstice stage" } });
+      s.call("olive", "set", { id: "screen", component: "video", value: { source: "solstice", description: "the solstice stage" } });
       s.call("olive", "set", { id: "screen2", component: "video", value: { source: "movie-night" } });
       V.forgetSourceState?.("movie-night");
       const now = Date.now();
@@ -226,7 +226,7 @@ const cases: Case[] = [
       return { keys: g?.fields?.map((f: any) => f.k ?? f.label), state: g?.fields?.find((f: any) => f.label === "on your screen")?.value, min: vol?.min, max: vol?.max,
         ok: set({ "video.volume": 0.5 }), loud: set({ "video.volume": 1.5 }), url: set({ "video.source": "http://x/whep" }), off: set({ "video.off": true }),
         add: ES.addOps?.(E({}), "t1", "Video", "solstice"), addUrl: ES.addOps?.(E({}), "t1", "Video", { source: "https://x/whep" }) }; },
-    good: (o) => ["source", "alt", "volume", "near", "radius", "width", "mute", "off"].every((k) => o.keys?.includes(k)) && o.state === "stalled" && o.min === 0 && o.max === 1
+    good: (o) => ["source", "description", "volume", "near", "radius", "width", "mute", "off"].every((k) => o.keys?.includes(k)) && o.state === "stalled" && o.min === 0 && o.max === 1
       && o.ok.v?.volume === 0.5 && o.loud.errors.length && !o.loud.v && /never a URL/.test(o.url.errors.join()) && o.off.verb === "delete"
       && o.add?.ops?.[0]?.args?.value?.source === "solstice" && /never a URL/.test(o.addUrl?.errors?.join() ?? "") },
 

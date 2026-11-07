@@ -184,7 +184,7 @@ const DEFS = [
   // projector design revision 2 (10-21): a live stream on a quad of its own, from a source id the operator admitted (never
   // a URL); its sound is sound's law. A screen is a thing with Video and Captions
   { name: 'Video', category: 'Media', summary: 'a live stream on a screen of its own, from a source this server admits',
-    params: paramsOf('Video', { source: { default: null }, alt: { default: null } }),
+    params: paramsOf('Video', { source: { default: null }, description: { default: null } }),
     fallback: { visual: 'a dark screen', text: 'not shown: <why>' } },
   { name: 'Story', category: 'Info', summary: 'why it is here: a title and a few paragraphs (shown on Inspect, read by agents)',
     params: paramsOf('Story', { title: { default: null }, text: { default: null }, marks: { default: null } }),

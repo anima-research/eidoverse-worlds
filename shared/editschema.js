@@ -26,7 +26,7 @@ import { LAYERS, LAYER_KEY, defaultLayer } from './layers.js';
 import * as OP from './requests.js';
 import { normalizePicture, PICTURE_LIT, PICTURE_DESCRIPTION_MAX, DESCRIPTION_HINT } from './picture.js';
 import { normalizeSound, SOUND_DESCRIPTION_MAX, SOUND_DESCRIPTION_HINT, SOUND_MAX_RADIUS } from './sound.js';
-import { normalizeVideo, VIDEO_ALT_MAX, VIDEO_MAX_RADIUS } from './video.js';
+import { normalizeVideo, VIDEO_DESCRIPTION_MAX, VIDEO_DESCRIPTION_HINT, VIDEO_MAX_RADIUS } from './video.js';
 import { mediaTier, tierWords } from './mediasrc.js';
 import { graphemes } from './text.js';
 import { AXES } from './axes.js';
@@ -661,7 +661,7 @@ export function inspectSchema(ent, id, live = {}) {
     const fields = [
       ...(live.videoState ? [{ t: 'info', label: 'on your screen', value: live.videoState }] : []),
       VI('source', { label: 'source', value: d.source ?? '', placeholder: 'an id this server admits, like solstice', hint: 'a stream this server\'s operator admitted: its id, never a URL' }),
-      VI('alt', { label: 'alt text', value: d.alt ?? '', placeholder: 'what the screen is for, in words', hint: `Alternative text: what the screen is for, for people who can't see it and for agents; never a claim about the current frame (≤${VIDEO_ALT_MAX})` }),
+      VI('description', { label: 'description', value: d.description ?? '', placeholder: 'what the screen is for, in words', hint: `${VIDEO_DESCRIPTION_HINT} (≤${VIDEO_DESCRIPTION_MAX})` }),
       VI('width', { label: 'width' }),
       VI('lit', { label: 'light' }),
       VI('volume', { label: 'volume' }),
@@ -1429,7 +1429,7 @@ export function editOps(ent, id, edits, live = {}) {
         if (writeField('Video', k, key, f, raw, b)) { /* written */ }
         else if (['volume', 'radius', 'near', 'width'].includes(k)) { const was = { volume: 0.8, radius: 12, near: 1.5, width: 4 }[k];   // no row yet: the screen is being made
           const n = num({ value: b[k] ?? was }, raw); if (n == null || outOfDoor('video', k, round(n), key)) break; b[k] = round(n); }
-        else if (k === 'source' || k === 'alt' || k === 'lit') { const v = String(raw ?? '').trim(); if (v) b[k] = v; else if (k === 'alt') delete b.alt; else b[k] = v; }
+        else if (k === 'source' || k === 'description' || k === 'lit') { const v = String(raw ?? '').trim(); if (v) b[k] = v; else if (k === 'description') delete b.description; else b[k] = v; }
         else errors.push(`${key}: no such field`);
         break;
       }
