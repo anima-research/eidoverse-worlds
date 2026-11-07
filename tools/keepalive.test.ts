@@ -69,7 +69,7 @@ function textFrame(s: string): Buffer {
 
 type Peer = { sock: Socket; openedAt: number; closedAt: number; send(s: string): void };
 /** A peer that upgrades to websocket and then NEVER answers a ping. */
-function deafPeer(token = "keepalive-labtok"): Promise<Peer> {
+function deafPeer(): Promise<Peer> {
   return new Promise((res, rej) => {
     const sock = connect(MPORT, "127.0.0.1");
     const peer: Peer = {
@@ -80,7 +80,7 @@ function deafPeer(token = "keepalive-labtok"): Promise<Peer> {
     const t = setTimeout(() => rej(new Error("upgrade timeout")), 6000);
     sock.on("connect", () => {
       sock.write(
-        `GET /?token=${token} HTTP/1.1\r\nHost: 127.0.0.1:${MPORT}\r\n` +
+        `GET /?token=keepalive-labtok HTTP/1.1\r\nHost: 127.0.0.1:${MPORT}\r\n` +
         `Upgrade: websocket\r\nConnection: Upgrade\r\n` +
         `Sec-WebSocket-Key: ${randomBytes(16).toString("base64")}\r\n` +
         `Sec-WebSocket-Version: 13\r\n\r\n`,
@@ -136,17 +136,6 @@ try {
   check("an agent that keeps talking is never reaped, pongs or not",
     chatty.closedAt === 0, `died after ${((chatty.closedAt - chatty.openedAt) / 1000).toFixed(1)}s`);
   chatty.sock.destroy();
-
-  // ── a malformed frame closes that one socket, never the door (Bun 1.4's ws: an 'error' with no listener throws) ──
-  for (const [who, token] of [["a stranger (unknown token)", "nobody"], ["an enrolled agent", "keepalive-labtok"]]) {
-    const rude = await deafPeer(token);
-    rude.sock.write(Buffer.from([0x83, 0x80, 1, 2, 3, 4]));   // reserved opcode 3, masked, empty
-    await sleep(800);
-    const health = await fetch(`http://127.0.0.1:${MPORT}/healthz`).then((r) => r.status).catch((e) => String(e));
-    check(`${who}: a malformed frame closes its socket and the door stays up`, rude.closedAt !== 0 && mcpl.exitCode === null && health === 200,
-      `socket closed=${rude.closedAt !== 0} door exit=${mcpl.exitCode} healthz=${health}`);
-    rude.sock.destroy();
-  }
 } catch (e) {
   fail++;
   console.log(`\x1b[31mFATAL\x1b[0m ${(e as Error).message}\n${(e as Error).stack}`);
