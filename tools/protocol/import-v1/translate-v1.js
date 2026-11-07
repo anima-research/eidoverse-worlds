@@ -126,7 +126,8 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@49";   // @49: the translator's provenance is genesis.body.provenance (given by the import tool), repeated on `translated`; `from` no longer names the translator (Mica 11-05, S4). Every translated log's bytes differ; a world id differs where provenance is given
+export const TRANSLATOR = "eidoverse/translate-v1@50";   // @50: an account's stand-in id is the host's alone (import-v1/world.ts identitySalt), so a dry run reviewed before another world's translation still applies (lead 11-07). Ids of account-bound people differ
+// @49: the translator's provenance is genesis.body.provenance (given by the import tool), repeated on `translated`; `from` no longer names the translator (Mica 11-05, S4). Every translated log's bytes differ; a world id differs where provenance is given
 // @48: the genesis carries no minor (Mica 11-04: dialect + v, then requires). Every world id differs
 // @47: an entity id in the reserved person shape u-[a-z2-7]{24} refuses the translation (F19, P3). Output otherwise unchanged
 // @46: no repair-shapes marker; a stored sockets map is lifted here (lift-sockets acts at the end). Output differs there
@@ -249,7 +250,7 @@ export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(nam
 // came to rest; but a punt stays its imported act (no v4 launch), each rest is a plain change by `sim` caused by that act
 // (no digest), the world's engine is today's eidosim from the epoch on, and (R 2026-10-08) a thing v1 ever punted is a
 // `dynamic` collider, every other one `static`. Nothing in the new log asks a reader to fly her engine.
-export const TRANSLATOR_SIM = "eidoverse/translate-v1@49";
+export const TRANSLATOR_SIM = "eidoverse/translate-v1@50";
 // @9 (2026-10-07, R's particles ruling): a v1 `particles` bag is today's instance: its preset is the effect, its origin is
 // `at`, its seed stays, and its count, size, opacity, speed, lifetime, area, texture and quality are the params of the
 // same names every Essential declares (shared/particle_effects.js modernize; instanceOf reads it back exactly). A key
