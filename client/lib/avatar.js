@@ -2689,6 +2689,7 @@ export class Avatar {
     // before dropping the compose records and handing this VRM to a new wearer.
     for (const node of this._rawComposed?.keys() ?? []) this._rawRelease(node);
     this._rawComposed?.clear();
+    this.bodyRuntime?.dispose?.(this.vrm);
     this.mixer.stopAllAction();
     this._composed.clear();
     releaseVRM(this.vrm);
@@ -2760,8 +2761,7 @@ export async function makeAvatar(id, libPath, { full = false, urgent = false } =
     // A body that brings its own runtime (its def's `runtime`: bodyruntime.js) is set up here, at load, before
     // anything poses it: the runtime reads the skeleton's rest. Most bodies have none and this costs them nothing.
     const bodyDef = await bodyDefFor(libPath).catch(() => null);
-    const bodyRuntime = await bodyRuntimeFor(libPath, (m, e) => report(`${id} ${m}`, e), bodyDef)
-      .catch((e) => { report(`body runtime ${id}`, e); return null; });
+    const bodyRuntime = await bodyRuntimeFor(libPath, (m, e) => report(`${id} ${m}`, e), bodyDef);
     bodyRuntime?.init(vrm);
     capEmissive(vrm, bodyDef?.def?.emissiveMax);   // before the lamps are inferred from it (the Avatar constructor)
     work.phase('clips');

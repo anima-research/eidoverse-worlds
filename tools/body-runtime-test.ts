@@ -3,9 +3,11 @@
 // is at hand (EIDOVERSE_DIR) — that the module claude_robot's def names exports what that order calls.
 // BODY_RUNTIME_TEETH=1 checks the order against a scrambled expectation: it must FAIL, or the order check proves nothing.
 import { readFileSync, existsSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { validateAvatarDef, validateBodyRuntime } from "../shared/avatardefs.js";
 import { makeBodyRuntime, writeAll, defForBody } from "../client/lib/bodyruntime_core.js";
+import { bodyRuntimeFor } from "../client/lib/bodyruntime.js";
 let pass = 0, fail = 0;
 const check = (n: string, ok: boolean, d: unknown = "") => { ok ? pass++ : fail++; console.log(`  ${ok ? "\x1b[32m✓" : "\x1b[31m✗"}\x1b[0m ${n}${ok ? "" : `  ${JSON.stringify(d)}`}`); };
 const ROOT = join(import.meta.dir, "..");
@@ -15,15 +17,15 @@ for (const name of ["claude_robot", "claude_robot_2k"]) {
   const def = JSON.parse(readFileSync(join(ROOT, "defs", "avatars", `${name}.json`), "utf8"));
   check(`defs/avatars/${name}.json validates`, validateAvatarDef(name, def).length === 0, validateAvatarDef(name, def));
 }
-const good = { kind: "eidoverse-dof", module: "eidoverse/claude_robot_dof.js", joints: "eidoverse/assets/vrms/claude_robot.joints.json" };
-check("a runtime without joints is fine", validateBodyRuntime({ kind: good.kind, module: good.module }).length === 0);
+const good = { kind: "claude-robot-dof-v1" };
+check("a built-in runtime with no skip list validates", validateBodyRuntime(good).length === 0);
 for (const [why, rt] of [
-  ["not an object", "eidoverse/claude_robot_dof.js"], ["an unknown kind", { ...good, kind: "anything" }], ["no kind", { module: good.module }],
-  ["module climbs out", { ...good, module: "../secrets.js" }], ["module absolute", { ...good, module: "/etc/x.js" }],
-  ["module a URL", { ...good, module: "https://evil.example/x.js" }], ["module not .js", { ...good, module: "eidoverse/x.ts" }],
-  ["joints climbs out", { ...good, joints: "a/../../b.json" }], ["joints not .json", { ...good, joints: "eidoverse/x.js" }],
+  ["not an object", "claude-robot-dof-v1"], ["an unknown kind", { kind: "anything" }], ["no kind", {}],
+  ["an executable module path", { ...good, module: "eidoverse/claude_robot_dof.js" }],
+  ["a joints path", { ...good, joints: "eidoverse/assets/vrms/claude_robot.joints.json" }],
+  ["an encoded path", { ...good, module: "eidoverse/%2e%2e/x.js" }],
 ] as const) check(`refuses a runtime: ${why}`, validateBodyRuntime(rt).length > 0);
-check("the def refuses a bad runtime too", validateAvatarDef("x", { runtime: { ...good, module: "../x.js" } }).length > 0);
+check("the def refuses a bad runtime too", validateAvatarDef("x", { runtime: { kind: "anything" } }).length > 0);
 
 // 2. the frame order, against a module that records what it's asked
 const calls: string[] = [];
@@ -35,7 +37,7 @@ mod.LEG_JOINTS = [{ bone: "leftLowerLeg" }];
 const set: { off: number }[] = [];
 const binding = (v: number) => ({ buffer: new Float64Array(16), valueSize: v, binding: { setValue: (_b: unknown, off: number) => set.push({ off }) } });
 const mixer = { _bindings: [binding(4), binding(3), binding(4)], _nActiveBindings: 2, _accuIndex: 1 };
-const rt = makeBodyRuntime("eidoverse-dof", mod, { joints: { hinges: { leftLowerArm: {} } }, report: () => {} })!;
+const rt = makeBodyRuntime("claude-robot-dof-v1", mod, { joints: { hinges: { leftLowerArm: {} } }, report: () => {} })!;
 const vrm = {};
 rt.init(vrm);
 rt.afterMixer(vrm, mixer);
@@ -48,15 +50,15 @@ check("writeAll writes the active bindings only, from the accumulator the update
   set.length === 2 && set[0].off === 2 * 4 && set[1].off === 2 * 3, set);
 calls.length = 0;
 rt.init(vrm);
-makeBodyRuntime("eidoverse-dof", mod, { report: () => {} })!.init(vrm);
+makeBodyRuntime("claude-robot-dof-v1", mod, { report: () => {} })!.init(vrm);
 check("a body is set up once, even worn again by a new runtime (a pooled body's skeleton isn't at rest)", calls.length === 0, calls);
-check("no runtime for an unknown kind or no module", makeBodyRuntime("other", mod) === null && makeBodyRuntime("eidoverse-dof", null as any) === null);
+check("no runtime for an unknown kind or no module", makeBodyRuntime("other", mod) === null && makeBodyRuntime("claude-robot-dof-v1", null as any) === null);
 
 // 3. a step that throws: reported once, skipped after, and the rest of the frame still runs
 const reports: string[] = [];
 let crowns = 0;
 const bad = { ...mod, applyArmDOF: () => { throw new Error("boom"); }, applyCrown: () => { crowns++; } };
-const rt2 = makeBodyRuntime("eidoverse-dof", bad, { report: (m: string) => reports.push(m) })!;
+const rt2 = makeBodyRuntime("claude-robot-dof-v1", bad, { report: (m: string) => reports.push(m) })!;
 for (let i = 0; i < 3; i++) rt2.beforeVrmUpdate({}, 1 / 60);
 check("a throwing step is reported once and skipped from then on", reports.length === 1 && rt2.dead.has("applyArmDOF"), reports);
 check("...and the steps after it still run every frame", crowns === 3, crowns);
@@ -69,7 +71,7 @@ const calls2: string[] = [];
 const mod2: Record<string, unknown> = Object.fromEntries(Object.keys(mod).filter((k) => k !== "LEG_JOINTS")
   .map((n) => [n, () => { calls2.push(n); }]));
 mod2.LEG_JOINTS = mod.LEG_JOINTS;
-const rt3 = makeBodyRuntime("eidoverse-dof", mod2, { skip: ["initLegDOF", "applyHardwareDOF", "applyLegClearance"], report: () => {} })!;
+const rt3 = makeBodyRuntime("claude-robot-dof-v1", mod2, { skip: ["initLegDOF", "applyHardwareDOF", "applyLegClearance"], report: () => {} })!;
 rt3.init({}); rt3.beforeVrmUpdate({}, 1 / 60);
 check("a skipped step never runs (the def's runtime.skip)", !calls2.some((c) => ["initLegDOF", "applyHardwareDOF", "applyLegClearance"].includes(c))
   && calls2.includes("applyArmDOF"), calls2);
@@ -83,7 +85,7 @@ const cHip = { destination: "leftHipPitch" }, cCalf = { destination: "leftCalf" 
 const mgr = { constraints: new Set<any>([cHip, cCalf]), addConstraint(c: any) { this.constraints.add(c); }, deleteConstraint(c: any) { this.constraints.delete(c); } };
 const vrmL = { nodeConstraintManager: mgr };
 const modL = { ...mod, initLegDOF: (v: any) => { v.nodeConstraintManager.deleteConstraint(cHip); } };
-const rtL = makeBodyRuntime("eidoverse-dof", modL, { report: () => {} })!;
+const rtL = makeBodyRuntime("claude-robot-dof-v1", modL, { report: () => {} })!;
 rtL.init(vrmL);
 check("init: the module took the hip stage's constraint over", !mgr.constraints.has(cHip) && mgr.constraints.has(cCalf));
 rtL.setLimp(vrmL, true);
@@ -97,17 +99,56 @@ check("by its file name, the roster's ?v= ignored", defForBody(avatars, "eidover
 check("a def declaring the vrm path wins", defForBody(avatars, "eidoverse/assets/vrms/other/robot.vrm?v=9")?.name === "renamed");
 check("a body with no def has no runtime", defForBody(avatars, "eidoverse/assets/vrms/bee.vrm") === null && defForBody(null as any, "x.vrm") === null);
 
-// 5. the real module, when a library is at hand: it must export what the order calls
+// 5. the reviewed built-in loader and exact vendored runtime
+const loaded = await bodyRuntimeFor("eidoverse/assets/vrms/claude_robot.vrm", () => {},
+  { name: "claude_robot", def: { runtime: good } });
+check("the closed loader returns the reviewed runtime kind", loaded?.kind === good.kind);
+const m = await import("../client/lib/bodyruntimes/claude_robot_dof.js");
+const missing = WANT.filter((n) => typeof m[n] !== "function");
+check("the built-in Claude runtime exports every step of the order", missing.length === 0, missing);
+check("the built-in Claude runtime exports LEG_JOINTS", Array.isArray(m.LEG_JOINTS) && m.LEG_JOINTS.length > 0);
+const j = await import("../client/lib/bodyruntimes/claude_robot_joints.js");
+check("the built-in joints data has hinges", !!j.default?.hinges);
+
+// 6. product-door ownership: the pure core is not enough if Avatar never calls it.
+const avsrc = readFileSync(join(ROOT, "client/lib/avatar.js"), "utf8");
+const at = (...needles: string[]) => needles.map((n) => avsrc.indexOf(n));
+const [mix, after, reach, before, vu] = at("this.mixer.update(dt)", "this.bodyRuntime.afterMixer", "BC('av:reach')", "this.bodyRuntime.beforeVrmUpdate", "this.vrm.update(dt)");
+check("Avatar runs the runtime after mixer and after reach, before vrm.update",
+  mix >= 0 && mix < after && after < reach && reach < before && before < vu, { mix, after, reach, before, vu });
+check("Avatar load initializes and installs the runtime",
+  avsrc.includes("await bodyRuntimeFor(libPath") && avsrc.includes("bodyRuntime?.init(vrm)") && avsrc.includes("av.bodyRuntime = bodyRuntime"));
+check("Avatar limp and disposal hand runtime ownership back",
+  avsrc.includes("this.bodyRuntime?.setLimp?.(this.vrm, on)") && avsrc.includes("this.bodyRuntime?.dispose?.(this.vrm)"));
+
+// 7. pool boundary: a body disposed while limp must not return with three-vrm
+// and the body runtime both owning the same node constraint.
+const rtL2 = makeBodyRuntime("claude-robot-dof-v1", modL, { report: () => {} })!;
+rtL.setLimp(vrmL, true);
+rtL.dispose(vrmL);
+rtL2.init(vrmL); // INITED path: reassert ownership instead of reading posed rest
+check("dispose + pooled rewear retakes constraints from the limp owner", !mgr.constraints.has(cHip));
+
+// 8. exact external body metadata, when the library is supplied.
 const lib = process.env.EIDOVERSE_DIR;
-const real = lib ? join(lib, good.module) : "";
-if (real && existsSync(real)) {
-  const m = await import(real);
-  const missing = WANT.filter((n) => typeof m[n] !== "function");
-  check(`${good.module} exports every step of the order`, missing.length === 0, missing);
-  check(`${good.module} exports LEG_JOINTS`, Array.isArray(m.LEG_JOINTS) && m.LEG_JOINTS.length > 0);
-  const jp = join(lib!, good.joints);
-  check(`${good.joints} is there, with hinges`, existsSync(jp) && !!JSON.parse(readFileSync(jp, "utf8")).hinges);
-} else console.log(`  · no library module at ${real || "(EIDOVERSE_DIR unset)"}: the real-module checks skipped`);
+if (lib) {
+  const expected: Record<string,string> = {
+    claude_robot: "fbeaa3b4162b4fd6d893b13e4172a9a9e8e78eb964e4ae4a3373c1a5bb2ca2f0",
+    claude_robot_2k: "e04e19c594ee55d3017360e21bf499c9f56ed13a1deb17cc04e9acf881696ef4",
+  };
+  for (const [name, sha] of Object.entries(expected)) {
+    const bytes = readFileSync(join(lib, "eidoverse/assets/vrms", `${name}.vrm`));
+    check(`${name}.vrm has the reviewed content hash`, createHash("sha256").update(bytes).digest("hex") === sha);
+    const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength); let off = 12, gltf: any = null;
+    while (off < bytes.length) { const n = dv.getUint32(off, true), typ = bytes.toString("ascii", off + 4, off + 8); off += 8;
+      if (typ === "JSON") gltf = JSON.parse(bytes.toString("utf8", off, off + n).trim()); off += n; }
+    const meta = gltf?.extensions?.VRMC_vrm?.meta;
+    check(`${name}.vrm carries coherent CC BY metadata`, meta?.licenseUrl === "https://creativecommons.org/licenses/by/4.0/"
+      && meta?.creditNotation === "required" && meta?.authors?.includes("Claude (Opus 5.5)") && meta?.authors?.includes("SkyeShark")
+      && meta?.allowExcessivelyViolentUsage === true && meta?.allowExcessivelySexualUsage === true
+      && meta?.allowAntisocialOrHateUsage === true && meta?.allowPoliticalOrReligiousUsage === true, meta);
+  }
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -1,8 +1,8 @@
 // bodyruntime_core — the pure half of a body that brings its own runtime (§24 avatar defs: `runtime`, see
-// shared/avatardefs.js). bodyruntime.js finds the def and imports the module; this half knows the frame order and runs
+// shared/avatardefs.js). bodyruntime.js maps the declared kind to reviewed code built into Worlds; this half knows the frame order and runs
 // it, with no DOM and no THREE of its own, so tools/bodyruntime.test.ts drives it headless.
 //
-// kind 'eidoverse-dof': an eidoverse hardware-DOF module, whose header documents its frame order
+// kind 'claude-robot-dof-v1': Claude's reviewed hardware-DOF runtime, whose header documents its frame order
 // (eidoverse/claude_robot_dof.js in the library). Retargeted human clips ask a machine for poses its joints can't
 // take: a knee twist, an ankle yaw, a wrist past its stops, legs through each other. The module projects each pose
 // onto the body's real joints and clamps it to their ranges. Its order, and where it lands in Avatar.update:
@@ -35,10 +35,20 @@ const TAKEN = new WeakMap();   // vrm -> the node constraints the module took ov
  *  @returns {{ kind: string, init(vrm: any): void, afterMixer(vrm: any, mixer: any): void,
  *             beforeVrmUpdate(vrm: any, dt: number): void, stats: Record<string, number>, dead: Set<string> } | null} */
 export function makeBodyRuntime(kind, mod, { joints = null, report = (m, e) => console.warn(m, e), skip = [] } = {}) {
-  if (kind !== 'eidoverse-dof' || !mod) return null;
+  if (kind !== 'claude-robot-dof-v1' || !mod) return null;
   const stats = {};
   const dead = new Set(skip);   // steps asked off (?bodyruntime-skip=a,b: an A/B per step) start out as skipped
   const hinges = joints?.hinges;
+  const setLimpState = (vrm, on) => {
+    const mgr = vrm?.nodeConstraintManager;
+    const taken = TAKEN.get(vrm) ?? [];
+    if (!mgr || !taken.length) return;
+    for (const c of taken) {
+      if (on) { if (mgr.addConstraint) mgr.addConstraint(c); else mgr.constraints.add(c); }
+      else if (mgr.deleteConstraint) mgr.deleteConstraint(c);
+      else mgr.constraints.delete(c);
+    }
+  };
   const step = (name, ...args) => {
     const fn = mod[name];
     if (dead.has(name) || typeof fn !== 'function') return;
@@ -47,7 +57,8 @@ export function makeBodyRuntime(kind, mod, { joints = null, report = (m, e) => c
   return {
     kind, stats, dead,
     init(vrm) {
-      if (!vrm || INITED.has(vrm)) return;
+      if (!vrm) return;
+      if (INITED.has(vrm)) { setLimpState(vrm, false); return; }
       INITED.add(vrm);
       step('initArmDOF', vrm, hinges);
       step('initHandDOF', vrm, hinges);
@@ -64,16 +75,10 @@ export function makeBodyRuntime(kind, mod, { joints = null, report = (m, e) => c
      *  where they were while the limbs flew (a thigh shell on a hip stage stays with the hips). The constraints it took
      *  are handed back for as long as the body is limp: three-vrm runs them inside vrm.update, which goes on while
      *  limp. Taken again when it stands. */
-    setLimp(vrm, on) {
-      const mgr = vrm?.nodeConstraintManager;
-      const taken = TAKEN.get(vrm) ?? [];
-      if (!mgr || !taken.length) return;
-      for (const c of taken) {
-        if (on) { if (mgr.addConstraint) mgr.addConstraint(c); else mgr.constraints.add(c); }
-        else if (mgr.deleteConstraint) mgr.deleteConstraint(c);
-        else mgr.constraints.delete(c);
-      }
-    },
+    setLimp(vrm, on) { setLimpState(vrm, on); },
+    // Pool boundary: return constraint ownership to the runtime before the VRM
+    // is reset/shelved. A new wearer also reasserts it in init above.
+    dispose(vrm) { setLimpState(vrm, false); step('disposeBodyRuntime', vrm); },
     afterMixer(vrm, mixer) {
       if (!dead.has('writeAll')) {
         try { writeAll(mixer); } catch (e) { dead.add('writeAll'); report('body runtime: writeAll threw; skipped from now on', e); }

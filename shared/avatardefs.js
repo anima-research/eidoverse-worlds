@@ -43,23 +43,19 @@ export function validateAvatarDef(name, def) {
 }
 
 /** The kinds of body runtime the client knows how to drive (client/lib/bodyruntime_core.js). */
-export const BODY_RUNTIME_KINDS = ['eidoverse-dof'];
+export const BODY_RUNTIME_KINDS = ['claude-robot-dof-v1'];
 
-/** A body that brings its own runtime: `runtime: { kind, module, joints? }`. `module` is a /library-relative .js
- *  path (an engine module, loaded by URL when the body is worn); `joints` an optional /library-relative .json beside
- *  the body (its exporter's joints file). No "..", no absolute paths, no URLs: the body's code comes from the same
- *  library its .vrm does.
- *  @param {unknown} rt @returns {string[]} */
+/** A body may select one reviewed runtime BUILT INTO this Worlds client.
+ * Defs carry no module URL: avatar assets are data, never an executable-code
+ * grant to every viewer. Adding a kind requires a Worlds source review.
+ * @param {unknown} rt @returns {string[]} */
 export function validateBodyRuntime(rt) {
-  if (rt == null || typeof rt !== 'object' || Array.isArray(rt)) return ['runtime must be an object { kind, module, joints? }'];
+  if (rt == null || typeof rt !== 'object' || Array.isArray(rt)) return ['runtime must be an object { kind, skip? }'];
   const r = /** @type {Record<string, unknown>} */ (rt);
   const errs = [];
-  const libPath = (v, ext) => isStr(v) && v.endsWith(ext) && !v.includes('..') && !v.startsWith('/') && !/^[a-z]+:/i.test(v);
   if (!BODY_RUNTIME_KINDS.includes(/** @type {string} */ (r.kind))) errs.push(`runtime.kind must be one of ${BODY_RUNTIME_KINDS.join(', ')}`);
-  if (!libPath(r.module, '.js')) errs.push('runtime.module must be a /library-relative .js path with no ".."');
-  if (r.joints != null && !libPath(r.joints, '.json')) errs.push('runtime.joints must be a /library-relative .json path with no ".."');
-  // the module's steps this instance doesn't run (an engine module proved on its own clips, not yet on this one's)
-  if (r.skip != null && !(Array.isArray(r.skip) && r.skip.every((s) => isStr(s) && /^[A-Za-z]\w{0,63}$/.test(s))))
+  for (const k of Object.keys(r)) if (!['kind', 'skip'].includes(k)) errs.push(`runtime.${k} is not allowed; executable code and joints are built into the named kind`);
+  if (r.skip != null && !(Array.isArray(r.skip) && r.skip.every((v) => isStr(v) && /^[A-Za-z]\w{0,63}$/.test(v))))
     errs.push('runtime.skip must be an array of step names');
   return errs;
 }
