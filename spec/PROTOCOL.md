@@ -63,7 +63,8 @@ year, gets the same world from the same log:
 ## 1. The log
 
 **Framing.** A log is UTF-8 JSONL: every LF-terminated line is one entry,
-and its 0-based position is its `seq`. A blank or malformed line is still an
+and its 0-based position is its `seq`. A final line with no LF after it is
+an entry too (both reference readers count it). A blank or malformed line is still an
 entry: it takes its seq and shapes nothing. A CR before the LF is tolerated
 (JSON whitespace); a byte-order mark is malformed. Caps: 1 MiB per line,
 nesting depth 64.
@@ -1332,7 +1333,11 @@ them, and the suite holds them to it), not part of conformance.
   redaction's own seq, a target that isn't a value, and a `roles:` value
   (governance is reversed by requests, never erased) are each diagnosed and
   ignored. Blobs are redacted by deleting their bytes; since the fold never
-  reads bytes, the world doesn't change.
+  reads bytes, the world doesn't change. A redaction is retroactive, so no reader can fold
+  past one from where it was: every connected client (browser or agent) meets it
+  and asks for a fresh snapshot. One purge is one snapshot per connected client,
+  all at once. That's fine at today's scale, but a feature that purges often
+  would make them all resync together.
 - **A change outside this rule is detected, not enforced.** A value stored as
   `commitment` that no redaction names folds as *absent(redacted)*, like a redacted one,
   and is diagnosed `commitment-unredacted` naming its line. Nothing else follows:
