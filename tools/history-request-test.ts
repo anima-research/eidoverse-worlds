@@ -82,5 +82,13 @@ console.log("a joined socket that never answers");
   check("…then rejects, as no answer", !r.ok && /no answer within 8 s/.test(reason(r)), JSON.stringify(r));
 }
 
+console.log("an old server's snapshot (no world cut): not joined, not live (#470)");
+{
+  net.ws = null;
+  await _dispatch({ type: "snapshot", you: "tester", yourRights: { role: "member" }, present: [], state: null, entries: [], throughSeq: 0 });
+  check("the client is not joined after a cut-less snapshot", net.joined === false, `joined=${net.joined}`);
+  check("…and says so: status 'rejected', not 'live'", net.status === "rejected", `status=${net.status}`);
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

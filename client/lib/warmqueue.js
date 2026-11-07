@@ -15,7 +15,7 @@
 // (every warm call site already wrote `.catch(() => {})`), but counted;
 // warmStats() is the debug shape 8e hangs on EW later.
 
-import { renderer, scene, sun, THREE, TSL } from './core.js';
+import { renderer, scene, sun, camera, THREE, TSL } from './core.js';
 import { beginWork, nextFrame } from './loadwork.js';
 import { turn, spent, reportPending } from './framebudget.js';
 
@@ -240,6 +240,30 @@ async function compileDepthRound(mesh, material) {
     mesh.frustumCulled = saveCulled;
   }
   await (compiled?.catch(() => {}) ?? Promise.resolve());
+}
+
+/** Warm the LIT pipelines a body needs once it RECEIVES shadows: receiveShadow IS in the render-object cache key
+ *  (three 0.186 RenderObject.js:856/:945; AnalyticLightNode only generates the shadow taps when the object
+ *  receives), so the first lit frame after the flip would build a new program per material in-frame. Same
+ *  save/mutate/restore shape as compileDepthRound: compileAsync captures the render object synchronously, the
+ *  pipeline is cached by its shader code, and the later flip finds it. */
+export function warmLit(label, getMeshes) {
+  if (typeof renderer?.compileAsync !== 'function') return Promise.resolve();
+  return warm(label, async () => {
+    for (const mesh of getMeshes() ?? []) {
+      if (!mesh?.isMesh) continue;
+      const rs = mesh.receiveShadow, fc = mesh.frustumCulled, vis = mesh.visible;
+      let compiled;
+      try {
+        mesh.receiveShadow = true; mesh.frustumCulled = false; mesh.visible = true;
+        compiled = renderer.compileAsync(mesh, camera, scene);
+      } finally {
+        mesh.receiveShadow = rs; mesh.frustumCulled = fc; mesh.visible = vis;
+      }
+      await (compiled?.catch(() => {}) ?? Promise.resolve());
+      await nextFrame();
+    }
+  }, { p: P_AMBIENT });
 }
 
 /** Warm every shadow-depth pipeline a caster will need, through the

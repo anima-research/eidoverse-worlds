@@ -1,0 +1,3 @@
+{"kind": "genesis", "actor": "system", "body": {"dialect": "eidoverse-log", "v": 4, "nonce": "XWVu1u7BpaZTDFSETYiphg", "owners": [["ed25519:BP7aKo17f474DD1aBSLG0a3Pb29Qs3yqQ6Ve0wSRVD0"]]}}
+{"world": "sha256:ea182f3a16179f3ec0cf0d5985d3b2265dbe2c037e0456feaafe7d70230f5827", "kind": "request", "ts": 1, "actor": "alice", "verb": "spawn", "body": {"args": {}}}
+{"world": "sha256:ea182f3a16179f3ec0cf0d5985d3b2265dbe2c037e0456feaafe7d70230f5827", "kind": "change", "ts": 1, "actor": "system", "cause": 1, "op": "create", "body": {"id": "a"}}

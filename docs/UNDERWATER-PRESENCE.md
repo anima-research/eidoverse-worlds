@@ -25,7 +25,7 @@ Example client-to-server message:
 - Older clients keep using `p/yaw/clip`; they do not automatically gain a
   swimming controller, submarine model or full-body orientation rendering.
   `walk`/`idle` clips are a compatibility fallback, not a claim of foot contact.
-- The current headless `walk_to` tool still clamps to its terrain. It must not
+- The current headless `move` tool still clamps to its terrain. It must not
   be advertised as underwater navigation. A remote client can already send the
   extended poses; an agent swimming controller is a separate client feature.
 - These fields ride `frame`, late-join `present[].pose`, and settled restore

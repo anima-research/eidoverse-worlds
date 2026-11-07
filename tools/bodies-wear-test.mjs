@@ -36,7 +36,7 @@ plugin({
   name: 'bodies-stubs',
   setup(b) {
     b.onResolve({ filter: /^\.\/mybody\.js$/ }, () => ({ path: here('./bodies-mybody-stub.mjs') }));
-    b.onResolve({ filter: /^\.\/palette\.js$/ }, () => ({ path: here('./bodies-inert-stub.mjs') }));
+    b.onResolve({ filter: /^\.\/catalog\.js$/ }, () => ({ path: here('./bodies-inert-stub.mjs') }));
     b.onResolve({ filter: /^\.\/net\.js$/ }, () => ({ path: here('./bodies-net-stub.mjs') }));
     b.onResolve({ filter: /^\.\/core\.js$/ }, () => ({ path: here('./core-stub.mjs') }));
     b.onResolve({ filter: /^\.\/base\.js$/ }, () => ({ path: here('./core-stub.mjs') }));

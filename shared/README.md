@@ -24,9 +24,10 @@ Constraints, on purpose:
   no-store policy as client code.
 
 Residents: `forecast.js` (day clock, weather policy, the sky fold),
-`particles.js` (the `particles` component's meaning), and `fold.js` — the
-reference fold of the protocol itself (`foldEntry`, `emptyState`,
-`ROLE_RANK`, with `LogEntry`/`WorldState` as JSDoc typedefs), conformance-
-tested by `bun tools/foldfix-test.ts` against `spec/fixtures/`. The browser
-client's `applyEntry` adopts it with the state/realize skeleton
-(TEL0S_NOTES.md §8 step 3).
+`particles.js` (the `particles` component's meaning), and `protocol/` — the
+protocol core: `protocol/fold.js` (the reference fold, conformance-tested against
+`spec/conformance/` by `bun tools/protocol/run.ts conformance`), `protocol/authority.js`
+(the authority and its one gate), `protocol/componentspec.js` (the component registry),
+`protocol/replica.js` (what a client folds), `protocol/sandbox.js` (scripts) and
+`protocol/simlayer.js` (physics beside the fold). spec/PROTOCOL.md is their
+contract.

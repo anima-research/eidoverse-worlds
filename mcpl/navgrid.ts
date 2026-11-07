@@ -5,8 +5,9 @@
 // colliders.resolveColliders: it stands where that function lets it stand,
 // steps up at most STEP, and is pushed off anything solid within its radius
 // of its hips. So the planner asks the same two questions of the same code,
-// column by column on a fine lattice, and never holds an opinion of its own
-// about what is walkable:
+// with a wider radius and a head band so the authority's box agrees
+// (physics.ts `stand`), column by column on a fine lattice, and never holds
+// an opinion of its own about what is walkable:
 //
 //   - which heights in this column can a body STAND at? Every up-facing
 //     surface (colliders.surfaceUnder, repeated downward) where
@@ -31,6 +32,8 @@
 // changes, so a caller keeps one per collider generation (physics.ts
 // collidersGeneration) and plans every walk in between against it.
 
+import { MOVER } from "../shared/mover.js";
+
 /** Lattice spacing. Under the capsule radius (0.32), so a wall cannot fall
  *  between two neighbouring standing columns: both would be within reach of it. */
 export const NAV_CELL = 0.2;
@@ -42,10 +45,12 @@ export const NAV_OFF = 0.0131;
 const at = (i: number) => i * NAV_CELL + NAV_OFF;
 const cell = (x: number) => Math.round((x - NAV_OFF) / NAV_CELL);
 /** Most a walk climbs or drops between neighbouring columns — the feet's own
- *  step-up (colliders.js STEP; resolveColliders caps it at 0.3 × tall = 0.57
- *  for a standing body). Drops are held to the same bound: a route never
+ *  step-up: the mover's (shared/mover.js MOVER.body.step), which
+ *  colliders.resolveColliders applies to a standing body. One step height for
+ *  the walker, the feet and the planner (the protocol merge: the stack had
+ *  0.55, main's 0.3 × tall). Drops are held to the same bound: a route never
  *  steps off a balcony. */
-export const NAV_STEP = 0.55;
+export const NAV_STEP = MOVER.body.step;
 /** A push smaller than this is a nudge, not a wall: a body at the edge of
  *  something's reach (a balustrade beside a stair, a chair at a table) is
  *  shifted a centimetre or two and walks on. Routed walks arrive at their

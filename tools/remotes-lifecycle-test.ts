@@ -66,6 +66,22 @@ const DEFAULTISH = (p: string) => /claudesona|default|sunflower/i.test(p) || p =
 const defaultBuilds = () => stubs.avatarCalls.filter((c: any) => DEFAULTISH(c.path)).length;
 const pose = (over = {}) => ({ p: [1, 0, 1], yaw: 0.5, speed: 0, clip: "idle", ...over });
 
+// house review of #260, client/lib I15: a body's seat rides its frames (setBodySeat, presence), so dropping the body must
+// clear it, or a leave keeps that person on the seat in avatarMounts (occupied, for every seat check) forever.
+// Mutation (must go red): drop the setBodySeat(id, null) line in remotes.js dropRemote.
+console.log("\n━━ a dropped body leaves its seat ━━");
+{
+  await ensureRemote("sitter", "vrms/sitter.vrm");
+  pushPose("sitter", pose({ seat: { to: "chair-1" } }), 1);
+  check("(setup) its frame sat it down", stubs.seatCalls.some(([id, s]: any) => id === "sitter" && s?.to === "chair-1"), JSON.stringify(stubs.seatCalls));
+  dropRemote("sitter");
+  check("dropping the body clears its seat", JSON.stringify(stubs.seatCalls.at(-1)) === JSON.stringify(["sitter", null]), JSON.stringify(stubs.seatCalls));
+  const live = await ensureRemote("sitter", "vrms/sitter.vrm"); stubs.seatCalls.length = 0;
+  dropRemote("sitter", { id: "sitter" });   // a predecessor's stale cleanup: the successor keeps its seat
+  check("…but a stale drop that doesn't take the body leaves the seat alone", remotes.get("sitter") === live && stubs.seatCalls.length === 0, JSON.stringify(stubs.seatCalls));
+  dropRemote("sitter");
+}
+
 console.log("\n━━ the sunflower door: presence never creates a body ━━");
 {
   // leave → straggler FRAME (Digi's specimen; #56's race)
@@ -207,7 +223,7 @@ console.log("\n━━ reconnect roster seed: the snapshot prunes through the fun
   const torn: string[] = [];
   stubs.bus.on("participant-teardown", (id: string) => torn.push(id));
   const disposedBefore = stubs.disposeCount;
-  await _dispatch({ type: "snapshot", you: "tester", yourRights: { role: "visitor" },
+  await _dispatch({ type: "snapshot", you: "tester", yourRights: { role: "member" },
     present: [{ id: "stays", avatar: "vrms/stays.vrm" }], state: null, entries: [], throughSeq: 0 });
   await settle();
   check("the absent id is torn down THROUGH the funnel", torn.includes("ghost"),

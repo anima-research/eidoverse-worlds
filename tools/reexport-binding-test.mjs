@@ -2,9 +2,9 @@
 // So a module that re-exports a name AND uses that name itself compiles fine, passes
 // every boot-level check, and throws a ReferenceError the moment the using line runs.
 //
-// This branch shipped two of them (avatar.js/EMOTES, models.js/PORTED) while splitting
+// This branch shipped two of them (avatar.js/ANIM_CLIPS, models.js/PORTED) while splitting
 // data out from behind engine imports. Both survived a green boot-check and a green
-// 40-check product suite, because one only fires when a person plays an emote and the
+// 40-check product suite, because one only fires when a person plays a gesture and the
 // other only when a ported verb arrives. A phone found the first. This finds the class.
 //
 //   node tools/reexport-binding-test.mjs

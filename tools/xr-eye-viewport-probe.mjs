@@ -11,11 +11,12 @@
 //   guarded   same call through xrpixelratio.js → deferred, the eyes stay put: red
 //
 // Run: node tools/xr-eye-viewport-probe.mjs   (~10 s; run it under a memory guard)
+import { fileURLToPath } from "node:url";
 import { chromium } from 'playwright';
 import { readFileSync, existsSync } from 'node:fs';
 import { join, extname } from 'node:path';
 
-const ROOT = new URL('../client/', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('../client/', import.meta.url));
 const W = 160, H = 80;   // per-eye size in the output target (2W × H), like an XR layer
 const TYPES = { '.js': 'text/javascript', '.html': 'text/html' };
 const PAGE = `<!doctype html><html><body><script type="importmap">{"imports":{"three":"./node_modules/three/build/three.webgpu.js","three/webgpu":"./node_modules/three/build/three.webgpu.js","three/tsl":"./node_modules/three/build/three.tsl.js"}}</script>

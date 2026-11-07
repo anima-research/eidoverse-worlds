@@ -27,13 +27,14 @@
 //      becomes 127.0.0.1, and an IPv4 bind is left as it is.
 //
 //   bun tools/mkconfig-test.ts   (E and F parse with Bun.YAML, Bun 1.2.21 or later)
+import { fileURLToPath } from "node:url";
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = '') => { ok ? pass++ : fail++; console.log(`${ok ? '  ok' : 'FAIL'}  ${name}${ok || !detail ? '' : ` — ${detail}`}`); };
-const SCRIPT = new URL('../deploy/projector/mkconfig.sh', import.meta.url).pathname;
+const SCRIPT = fileURLToPath(new URL('../deploy/projector/mkconfig.sh', import.meta.url));
 const dir = mkdtempSync(join(tmpdir(), 'mkconfig-'));
 let n = 0;
 
@@ -156,8 +157,8 @@ if (YAML) {
   check('the caption tap stays on IPv4 loopback', c?.rtspAddress === '127.0.0.1:8554', String(c?.rtspAddress));
   const lo = parsed(render({ PROJECTOR_BIND: '::1' }));
   check('::1 still becomes 127.0.0.1, unbracketed', lo?.rtmpAddress === '127.0.0.1:1935', String(lo?.rtmpAddress));
-  const v4 = parsed(render(base));
-  check('an IPv4 bind is left as it is', v4?.rtmpAddress === '0.0.0.0:1935', String(v4?.rtmpAddress));
+  const ipFour = parsed(render(base));
+  check('an IPv4 bind is left as it is', ipFour?.rtmpAddress === '0.0.0.0:1935', String(ipFour?.rtmpAddress));
 }
 
 rmSync(dir, { recursive: true, force: true });

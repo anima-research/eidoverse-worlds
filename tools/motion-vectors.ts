@@ -14,15 +14,15 @@ const motions: [string, any, any][] = [
   ["spin deg/s tilted pivot", base([0, 1, 0]), { type: "spin", degPerSec: -45, axis: [1, 1, 0], pivot: [2, 0, 0], phase: .5, t0: T0 }],
   ["orbit facing", base([0, 4, 0]), { type: "orbit", center: [10, 5, -3], radius: 7, degPerSec: 20, phase: 1, t0: T0 }],
   ["orbit no face default center", base([2, 1, 2], .7), { type: "orbit", radius: 2, face: false, t0: T0 }],
-  ["bob axis x", base([3, 3, 3], -.5), { type: "bob", axis: "-x", amp: .8, period: 3, phase: .2, t0: T0 }],
-  ["bob defaults", base([0, 0, 0]), { type: "bob", t0: T0 }],
+  ["oscillate axis x", base([3, 3, 3], -.5), { type: "oscillate", axis: "-x", amp: .8, period: 3, phase: .2, t0: T0 }],
+  ["oscillate defaults", base([0, 0, 0]), { type: "oscillate", t0: T0 }],
   ["path loop", base([0, 0, 0]), { type: "path", points: [[0, 0, 0], [10, 0, 0], [10, 2, 10], [0, 0, 5]], speed: 3, t0: T0 }],
   ["path pingpong duration", base([0, 0, 0], .9), { type: "path", points: [[1, 1, 1], [4, 5, 1]], duration: 4, loop: "pingpong", face: false, t0: T0 }],
   ["path once", base([0, 0, 0]), { type: "path", points: [[0, 0, 0], [0, 0, 8], [6, 0, 8]], speed: 2, loop: "once", t0: T0 }],
   ["part motion leaves root", base([1, 0, 1], 2), { type: "spin", part: "rotor", rpm: 30, t0: T0 }],
   ["unknown type refused", base([0, 0, 0]), { type: "teleport", t0: T0 }],
   ["short path refused", base([0, 0, 0]), { type: "path", points: [[0, 0, 0]], t0: T0 }],
-  ["before t0 clamps to zero", base([0, 0, 0]), { type: "bob", amp: 1, period: 2, phase: 1, t0: T0 + 60_000 }],
+  ["before t0 clamps to zero", base([0, 0, 0]), { type: "oscillate", amp: 1, period: 2, phase: 1, t0: T0 + 60_000 }],
 ];
 const times = [0, 250, 1_337, 4_000, 9_999, 61_234, 3_600_000];
 const round = (v: any): any => typeof v === "number" ? Number(v.toPrecision(12)) : Array.isArray(v) ? v.map(round) : v;

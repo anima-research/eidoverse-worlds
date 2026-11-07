@@ -68,13 +68,15 @@ decision, made by the screen comp's source allow-list, not here.
 
 ## The captioner
 
-`tools/captionbot` reads the RTSP face and writes one `caption` verb per
-final line (AGENTS.md, "Things can carry CAPTIONS"). It needs the caption
-deed for its screen, granted once by the world's owner:
-
-```
-grant {id: "captioner", caption: "cinema"}
-```
-
-Captions are durable world testimony like `say`; `end` clears current
-perception, not history.
+`tools/captionbot` reads the RTSP face and turns each final line of speech
+into a caption for the screen: one door `caption` request per line
+(`{id, session, n, t0, t1, text, speaker?, title?}`, or `{id, session, end}`),
+which writes the screen's `captions` component by `shared/captions.js`'s rules.
+Who may caption a screen is the screen's own `captioners {ids: [...]}`
+component: anyone who may edit the screen sets it to the bot's identity (the
+bot logs its identity when it joins), and anyone who may edit the screen can
+caption it too. Nobody writes `captions` with a plain `set` (owners excepted),
+so a builder can't forge the bot's lines. The server stamps the connection's
+leg generation on every line, so a superseded bot can't write over its
+successor. Run it with `AGENT_TOKEN` (its tokens.json entry) so it is the same
+identity every time.

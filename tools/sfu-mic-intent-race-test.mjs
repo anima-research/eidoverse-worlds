@@ -12,10 +12,11 @@
 // micstate.js, micgate.js and voiceconsent.js are the shipped modules.
 //
 // Run: bun tools/sfu-mic-intent-race-test.mjs
+import { fileURLToPath } from "node:url";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { mock } from "bun:test";
 GlobalRegistrator.register({ url: "http://localhost/?world=t&name=p" });
-const M = (p) => new URL(`../client/lib/${p}`, import.meta.url).pathname;
+const M = (p) => fileURLToPath(new URL(`../client/lib/${p}`, import.meta.url));
 mock.module(M('net.js'), () => ({ sendTyping: () => {}, requestHistory: () => {} }));
 mock.module(M('chat.js'), () => ({ logChat: () => {} }));
 mock.module(M('audiounlock.js'), () => ({ playWhenAllowed: () => {} }));

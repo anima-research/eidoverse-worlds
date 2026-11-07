@@ -20,6 +20,7 @@ import { randomBytes } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { foundWorlds } from "./harness.ts";
 
 const WPORT = 8957, MPORT = 8958;
 // MISSES is overridable so the suite can prove this test has teeth: run it
@@ -27,6 +28,10 @@ const WPORT = 8957, MPORT = 8958;
 // survive-a-miss assertion must FAIL.
 const PING_SEC = 1, MISSES = Number(process.env.KEEPALIVE_MISSES ?? 5);
 const worldsDir = mkdtempSync(join(tmpdir(), "eido-keepalive-"));
+foundWorlds(worldsDir, ["commons"]);   // joining never founds a world
+// a scratch token registry: "dev-token" is in the tracked example, which the registry refuses to honour anywhere
+const tokensPath = join(worldsDir, "tokens.json");
+await Bun.write(tokensPath, JSON.stringify({ "keepalive-labtok": { id: "claude", name: "Claude", world: "commons" } }));
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, extra = "") => {
@@ -38,14 +43,14 @@ const check = (name: string, ok: boolean, extra = "") => {
 // whose pid dies immediately, orphaning both of these on their ports where
 // they poison the next run.
 const world = Bun.spawn([process.execPath, "server/server.ts"], {
-  env: { ...process.env, PORT: String(WPORT), WORLDS_DIR: worldsDir },
+  env: { ...process.env, PORT: String(WPORT), WORLDS_DIR: worldsDir, SKIP_OPT_SWEEP: "1", AGENT_TOKENS_PATH: tokensPath },   // the world honours the same enrolments the MCPL door does
   stdout: "ignore", stderr: "ignore",
 });
 const mcpl = Bun.spawn([process.execPath, "mcpl/net-server.ts"], {
   env: {
     ...process.env, MCPL_PORT: String(MPORT),
     WORLD_URL: `ws://127.0.0.1:${WPORT}/ws`,
-    MCPL_PING_SEC: String(PING_SEC), MCPL_PING_MISSES: String(MISSES),
+    MCPL_PING_SEC: String(PING_SEC), MCPL_PING_MISSES: String(MISSES), MCPL_TOKENS: tokensPath, MCPL_STATE: tokensPath + ".state.json",
   },
   stdout: "ignore", stderr: "ignore",
 });
@@ -75,7 +80,7 @@ function deafPeer(): Promise<Peer> {
     const t = setTimeout(() => rej(new Error("upgrade timeout")), 6000);
     sock.on("connect", () => {
       sock.write(
-        `GET /?token=dev-token HTTP/1.1\r\nHost: 127.0.0.1:${MPORT}\r\n` +
+        `GET /?token=keepalive-labtok HTTP/1.1\r\nHost: 127.0.0.1:${MPORT}\r\n` +
         `Upgrade: websocket\r\nConnection: Upgrade\r\n` +
         `Sec-WebSocket-Key: ${randomBytes(16).toString("base64")}\r\n` +
         `Sec-WebSocket-Version: 13\r\n\r\n`,

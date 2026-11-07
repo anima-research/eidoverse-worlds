@@ -1,3 +1,6 @@
+// The imported #248 scene in a real browser (Chrome + WebGPU, WATER_PREVIEW_URL): its dry checks read the pockets through
+// watervolumes (zone + water-exclusion, shared/zone.js), its ladders the climb children (client/lib/climb.js). Needs the scene
+// imported (import.ts --apply, refused while the vehicle is deferred) and a preview server.
 import {chromium} from 'playwright';
 import {strict as assert} from 'node:assert';
 const browser=await chromium.launch({headless:true,channel:'chrome',args:['--enable-unsafe-webgpu','--use-angle=metal']});
@@ -13,8 +16,8 @@ try{
   if(ready)break;if(i===899)throw Error('scene/avatar did not load');await page.waitForTimeout(100);
  }
  const result=await page.evaluate(async()=>{
-  const {THREE,camera}=await import('/lib/core.js'),{entities,comps}=await import('/lib/world.js');
-  const c=await import('/lib/controller.js'),w=await import('/lib/watervolumes.js'),t=await import('/lib/traversal.js');
+  const {THREE,camera}=await import('/lib/core.js'),{entities}=await import('/lib/world.js'),{state}=await import('/lib/state.js'),comps={get:(k)=>state.st.entities[k]};   // a record's components sit flat on it (view.js)
+  const c=await import('/lib/controller.js'),w=await import('/lib/watervolumes.js'),t=await import('/lib/climb.js');
   const {getMe}=await import('/lib/mybody.js'),{CONFIG,bus}=await import('/lib/base.js');
   const {resolveColliders,raySegment,reindexCollider}=await import('/lib/colliders.js'),{heightAt}=await import('/lib/terrain.js');
   CONFIG.renderer=true;CONFIG.spectate=false;w.updateWater();
@@ -33,12 +36,14 @@ try{
   const glass=[];sub.traverse(o=>{for(const m of (Array.isArray(o.material)?o.material:[o.material]))if(m?.name==='V_Glass')glass.push({transparent:m.transparent,opacity:m.opacity});});
   const poolRay=raySegment(point(hab,[0,.09,0]),new THREE.Vector3(0,-1,0),.7);
   const routes=[];
+  // each host's ladder is a climb child (translate-v1 climbPartsOf): its points in the child's frame
+  const ladderOf=(host)=>[...entities.keys()].find(k=>comps.get(k)?.climb&&comps.get(k)?.parent?.to===host);
   for(const id of ['water-habitat','water-submarine','water-platform']){
-   const o=entities.get(id),route=comps.get(id).traversal.routes[0];
+   const lid=ladderOf(id),o=entities.get(lid),route={path:comps.get(lid).climb.points};
    for(const reverse of [false,true]){
     c.keys.clear();c.myState.pos.copy(point(o,route.path[reverse?route.path.length-1:0]));
-    bus.emit('key',{code:'KeyE',repeat:false});const began=t.traversing();
-    for(let i=0;i<800&&t.traversing();i++)c.updateMe(1/60,fake);
+    bus.emit('key',{code:'KeyE',repeat:false});const began=t.climbing();
+    for(let i=0;i<800&&t.climbing();i++)c.updateMe(1/60,fake);
     const destination=point(o,route.path[reverse?0:route.path.length-1]);
     const error=c.myState.pos.distanceTo(destination);
     for(let i=0;i<20;i++)c.updateMe(1/60,fake);
@@ -46,11 +51,12 @@ try{
    }
   }
   // A rotating/moving carrier must move both the dry volume and active climb.
-  const oldP=sub.position.clone(),oldYaw=sub.rotation.y,route=comps.get('water-submarine').traversal.routes[0];
-  c.myState.pos.copy(point(sub,route.path[0]));t.startTraversal(c.myState.pos);
+  const subLadder=entities.get(ladderOf('water-submarine')),route={path:comps.get(ladderOf('water-submarine')).climb.points};
+  const oldP=sub.position.clone(),oldYaw=sub.rotation.y;
+  c.myState.pos.copy(point(subLadder,route.path[0]));t.startClimb(c.myState.pos);
   sub.position.x+=15;sub.rotation.y+=.4;sub.updateMatrixWorld(true);reindexCollider('water-submarine');w.updateWater();
-  for(let i=0;i<400&&t.traversing();i++)c.updateMe(1/60,fake);
-  const carrierError=c.myState.pos.distanceTo(point(sub,route.path.at(-1)));
+  for(let i=0;i<400&&t.climbing();i++)c.updateMe(1/60,fake);
+  const carrierError=c.myState.pos.distanceTo(point(subLadder,route.path.at(-1)));
   const carrierDry=!w.waterAt(point(sub,[0,-.8,-10]));sub.position.copy(oldP);sub.rotation.y=oldYaw;sub.updateMatrixWorld(true);reindexCollider('water-submarine');w.updateWater();
   // Exercise the actual VRM and mixer. Hands must stay on their own side and
   // in front of the chest throughout both swim and surface-sculling cycles.
@@ -68,7 +74,7 @@ try{
  assert.ok(result.walkStayedDry&&result.walkedLocal[2]>-5.5,'walking through the aisle failed');
  assert.ok(result.glass.length&&result.glass.every(m=>m.transparent&&m.opacity>0&&m.opacity<.3));
  assert.equal(result.poolRay,null,'moonpool water plane must not collide');
- for(const r of result.routes){assert.ok(r.began&&r.error<.01,`${r.id} ${r.reverse} traversal failed`);assert.equal(r.medium,r.reverse?'water':'air',`${r.id} landing medium`);}
+ for(const r of result.routes){assert.ok(r.began&&r.error<.01,`${r.id} ${r.reverse} climb failed`);assert.equal(r.medium,r.reverse?'water':'air',`${r.id} landing medium`);}
  assert.ok(result.carrierError<.01&&result.carrierDry,'moving carrier lost its climb or air');
  for(const b of result.bones){assert.ok(b.left[0]>b.chest[0]+.08&&b.right[0]<b.chest[0]-.08,'hands crossed');assert.ok(b.left[2]>b.chest[2]-.06&&b.right[2]>b.chest[2]-.06,'hands behind back');}
  assert.equal(errors.length,0,errors.join('\n'));

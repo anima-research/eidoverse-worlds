@@ -13,6 +13,7 @@
 //   2 (cont.) an unanswered Allow was remembered as 'allow', so every later press went straight in and never asked again;
 //   2b. a browser answer after the bound left the card saying "hasn't answered"
 //   5. with no navigator.permissions.query the grant watcher set its flag and never cleared it
+import { fileURLToPath } from "node:url";
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { mock } from 'bun:test';
 import { checker } from './probe-harness.mjs';
@@ -51,7 +52,7 @@ const fakeStream = () => { const t = { readyState: 'live', stop() { t.readyState
 const hints = [], toasts = [];
 const listeners = new Map();
 const bus = { on(e, f) { (listeners.get(e) ?? listeners.set(e, new Set()).get(e)).add(f); }, emit(e, p) { for (const f of listeners.get(e) ?? []) f(p); } };
-const lib = (p) => new URL(`../client/lib/${p}`, import.meta.url).pathname;
+const lib = (p) => fileURLToPath(new URL(`../client/lib/${p}`, import.meta.url));
 mock.module(lib('base.js'), () => ({ bus, CONFIG: { name: 'p', params: new URLSearchParams() } }));
 mock.module(lib('ui.js'), () => ({ flashHint: (t) => hints.push(t), toast: (t) => toasts.push(t) }));
 mock.module(lib('core.js'), () => ({ THREE: {}, camera: {}, renderer: {} }));

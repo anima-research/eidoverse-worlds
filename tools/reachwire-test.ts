@@ -70,7 +70,7 @@ console.log('\nwho a reach is aimed at');
   check('landmark on them ≠ me', !reachTargetsWho(lm, 'you'));
 }
 
-console.log('\nreach identity ignores the reached rider');
+console.log('\nreach identity ignores the reached flag');
 {
   const a = normalizeReachBag({ rightHand: { t: { who: 'x', point: 'head_top' } } })!.rightHand;
   const b = normalizeReachBag({ rightHand: { t: { who: 'x', point: 'head_top' }, reached: true } })!.rightHand;

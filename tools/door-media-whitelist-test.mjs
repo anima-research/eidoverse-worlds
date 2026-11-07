@@ -22,7 +22,8 @@ for (const allowed of ['sfu-answer', 'sfu-ice', 'sfu-want-negotiate', 'sfu-pos',
 }
 // 🔴 The point of the whitelist: a sidecar must NOT be able to author world
 // state or moderate. If any of these ever appear here, that is the finding.
-for (const forbidden of ['say', 'spawn', 'place', 'remove', 'kick', 'ban',
+// (`request` is the message every write is; the rest are the old protocol's verbs and moderation frames)
+for (const forbidden of ['request', 'say', 'spawn', 'place', 'remove', 'kick', 'ban',
                          'voice-moderate', 'grant', 'terrain', 'attest']) {
   check(`outbound REFUSES ${forbidden}`, !guard.includes(`"${forbidden}"`));
 }

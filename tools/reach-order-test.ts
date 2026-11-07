@@ -1,9 +1,9 @@
-import {THREE,frameBody,realRigs,frame} from './reach-frame-fixture.ts';
+import {THREE,frameBody,rigNamed,frame} from './reach-frame-fixture.ts';
 const {initReachNet,setMyReach,clearMyReach,myReachBag,applyRemoteReach,dropRemoteReach}=await import('../client/lib/reachnet.js');
 let current:any=null;const messages:string[]=[];
 const dispatch=await(await import('./reach-command-fixture.ts')).commandsFor(()=>current,messages);
 let fail=0;function check(n:string,v:boolean){console.log(v?'PASS':'FAIL',n);if(!v)fail++;}
-const rig=realRigs().find((r:any)=>r.name==='claude_suit');if(!rig)throw new Error('claude_suit fixture required');
+const rig=rigNamed('claude_suit');if(!rig||rig.err)throw new Error(`claude_suit rig required: ${rig?.err}`);console.log(`rig: claude_suit (${rig.fixture?'spec/fixtures/claude_suit-rig.json':'on disk'}, ${rig.boneCount} bones)`);
 function body(){
  const av=frameBody(rig);av.__marks=new Map(['left','right'].map(side=>['hand_'+side[0],{node:av.nodes[side+'Hand'],offset:new THREE.Vector3(),normal:new THREE.Vector3(0,0,1)}]));
  current=av;

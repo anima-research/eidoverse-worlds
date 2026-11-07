@@ -18,7 +18,7 @@
 //    deployment stays possible but explicit: pass its origin, and identity
 //    checks are skipped because the deployment is not our child.
 import { chromium } from 'playwright';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -33,8 +33,10 @@ import { randomUUID } from 'node:crypto';
  *  flags a microphone probe needs (and its contexts get mic permission). */
 export async function launchBrowser({ mic = false, vrMicChoice = 'later' } = {}) {
   const exe = process.env.SFU_TEST_CHROME;
-  const args = mic ? ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream',
-    '--autoplay-policy=no-user-gesture-required'] : [];
+  // no GPU watchdog: a software-rendered sky bake is a 4–7 s frame here, and the watchdog's kill loses every page's
+  // WebGL context (gpulost.js then reloads the page mid-probe, 11-03)
+  const args = ['--disable-gpu-watchdog', ...(mic ? ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream',
+    '--autoplay-policy=no-user-gesture-required'] : [])];
   const b = await chromium.launch({ ...(exe ? { executablePath: exe } : {}), args });
   // BOOT_CHECK_VIEWPORT=390x844 drives a probe at a phone-width (or any) viewport.
   // Without it the context takes Playwright's default — which is why a layout that
@@ -45,7 +47,7 @@ export async function launchBrowser({ mic = false, vrMicChoice = 'later' } = {})
     // TOUCH IS A PRECONDITION, not a nicety (antra-tess #185 B2): the dock only
     // leaves the left edge when document.body has class 'touch' (controller.js:434,
     // ui.js:489), so without it the rail never goes horizontal along the top and
-    // the landscape dock/emote-bar overlap she reported is invisible to any probe
+    // the landscape dock/action-bar overlap she reported is invisible to any probe
     // by construction. BOOT_CHECK_TOUCH=1 turns it on.
     const touch = process.env.BOOT_CHECK_TOUCH === '1';
     const ctx = await b.newContext({
@@ -53,6 +55,10 @@ export async function launchBrowser({ mic = false, vrMicChoice = 'later' } = {})
       ...(viewport ? { viewport } : {}),
       ...(touch ? { hasTouch: true, isMobile: true } : {}),
     });
+    // a lost context stays lost: headless software GL loses the page's WebGL context a couple of minutes in (a
+    // 3–7 s frame, 11-03), and gpulost.js would reload the page, resetting every state a row reads. Seeded at its
+    // own stop rule (3 losses in 15 min), it says so (capnotice) and stays; scene, audio and network rows read on.
+    await ctx.addInitScript(() => { try { if (!sessionStorage.getItem('ew-gpu-lost')) sessionStorage.setItem('ew-gpu-lost', JSON.stringify([Date.now() - 1000, Date.now() - 500])); } catch { /* opaque origin */ } });
     if (vrMicChoice) await ctx.addInitScript((v) => { try { if (!localStorage.getItem('ew-vr-mic-choice')) localStorage.setItem('ew-vr-mic-choice', v); } catch { /* opaque origin */ } }, vrMicChoice);
     return ctx.newPage();
   };
@@ -88,7 +94,10 @@ function armSignals() {
   process.once('uncaughtException', onThrow); process.once('unhandledRejection', onThrow);
 }
 
-export async function ownedWorld({ live = null, key = process.env.JOIN_KEY || 'dev', env: extraEnv = {} } = {}) {
+// `worlds`: the worlds founded in the scratch WORLDS_DIR before boot. The server never founds a world on join (a
+// name with no world behind it is refused, security review 10-06 H3), so a probe's page reaching ?world=<name> needs
+// that world founded first; staging and commons (the client's default) always are. `owner` founds them.
+export async function ownedWorld({ live = null, key = process.env.JOIN_KEY || 'dev', env: extraEnv = {}, worlds = [], owner = 'owner' } = {}) {
   if (live) return { origin: live, key, owned: false, close: async () => {} };
   // Wide range: with a narrow one, two concurrent runs collide ~1/15 and the
   // loser's readiness poll can reach the WINNER's just-started server, which
@@ -101,7 +110,11 @@ export async function ownedWorld({ live = null, key = process.env.JOIN_KEY || 'd
   // cannot run TS. An absolute bun serves both (house rule's target is
   // Windows PATH shims); BUN_PATH overrides for other layouts.
   const BUN = process.execPath.includes('bun') ? process.execPath
-    : (process.env.BUN_PATH || '/home/claude/.bun/bin/bun');
+    : (process.env.BUN_PATH || 'bun');
+  for (const name of new Set(['staging', 'commons', ...worlds])) {
+    const r = spawnSync(BUN, ['tools/protocol/world.ts', 'found', name, '--owner', owner], { env: { ...process.env, WORLDS_DIR: scratch, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' }, encoding: 'utf8' });
+    if (r.status !== 0) { try { rmSync(scratch, { recursive: true, force: true }); } catch {} throw new Error(`ownedWorld: founding "${name}" failed: ${r.stdout}${r.stderr}`); }
+  }
   const srv = spawn(BUN, ['server/server.ts'], {
     // SKIP_OPT_SWEEP by default: a probe server shares the checkout's OPT_DIR (assets/opt) — its boot sweeps would
     // build variants INTO the directory a live world serves from, mid-session (09-24 22:40: a lowered LOD floor had
@@ -170,4 +183,19 @@ export function checker() {
     process.exit(fail ? 1 : 0);
   };
   return { check, done };
+}
+
+/** Resolves once the page is in the world: the client's own `net.joined` (set on the snapshot, client/lib/net.js
+ *  onSnapshot). The mic badge is no proxy for it — `#micbtn` mounts hidden until pinned (mictoggle.js
+ *  applyPairVisibility), so a visibility wait on it never returns. Resolves to the list of reloads the page makes
+ *  from here on (URL + seconds since join): a reload (gpulost.js after a lost headless context) starts the page's
+ *  state over, so a row read after one is not about the product — a probe checks the list is empty. */
+export async function waitJoined(pg, { timeout = 90000 } = {}) {
+  const t0 = Date.now();
+  // the engine flag first: an import('/lib/net.js') issued while main.js's graph is still loading hangs the poll's first call for good
+  await pg.waitForFunction(() => globalThis.__ewEngineUp === true, null, { timeout });
+  await pg.waitForFunction(() => import('/lib/net.js').then((n) => n.net.joined === true), null, { timeout: Math.max(1000, timeout - (Date.now() - t0)) });
+  const reloads = [], joinedAt = Date.now();
+  pg.on('framenavigated', (f) => { if (f === pg.mainFrame()) reloads.push(`${f.url().slice(0, 80)} at +${((Date.now() - joinedAt) / 1000).toFixed(0)}s`); });
+  return reloads;
 }

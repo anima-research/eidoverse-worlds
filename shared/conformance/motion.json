@@ -23,9 +23,9 @@
    "expect": {
     "ok": true,
     "pos": [
-     0.57761742992,
-     2.31966236371,
-     2.00097127541
+     1,
+     2,
+     3
     ],
     "yaw": 0.4,
     "quat": [
@@ -58,9 +58,9 @@
    "expect": {
     "ok": true,
     "pos": [
-     0.72599410828,
-     2.12786037866,
-     2.35191512168
+     1,
+     2,
+     3
     ],
     "yaw": 0.4,
     "quat": [
@@ -93,9 +93,9 @@
    "expect": {
     "ok": true,
     "pos": [
-     1.38772636279,
-     2.2654479252,
-     3.91705908611
+     1,
+     2,
+     3
     ],
     "yaw": 0.4,
     "quat": [
@@ -128,9 +128,9 @@
    "expect": {
     "ok": true,
     "pos": [
-     1.27400589172,
-     2.12786037866,
-     3.64808487832
+     1,
+     2,
+     3
     ],
     "yaw": 0.4,
     "quat": [
@@ -163,9 +163,9 @@
    "expect": {
     "ok": true,
     "pos": [
-     0.577327053927,
-     2.32014392195,
-     2.00028447161
+     1,
+     2,
+     3
     ],
     "yaw": 0.4,
     "quat": [
@@ -198,9 +198,9 @@
    "expect": {
     "ok": true,
     "pos": [
-     1.42673432371,
-     2.32692864909,
-     4.00932158985
+     1,
+     2,
+     3
     ],
     "yaw": 0.4,
     "quat": [
@@ -233,9 +233,9 @@
    "expect": {
     "ok": true,
     "pos": [
-     0.57761742992,
-     2.31966236371,
-     2.00097127541
+     1,
+     2,
+     3
     ],
     "yaw": 0.4,
     "quat": [
@@ -1585,7 +1585,7 @@
    }
   },
   {
-   "name": "bob axis x",
+   "name": "oscillate axis x",
    "base": {
     "pos": [
      3,
@@ -1595,7 +1595,7 @@
     "yaw": -0.5
    },
    "motion": {
-    "type": "bob",
+    "type": "oscillate",
     "axis": "-x",
     "amp": 0.8,
     "period": 3,
@@ -1621,7 +1621,7 @@
    }
   },
   {
-   "name": "bob axis x",
+   "name": "oscillate axis x",
    "base": {
     "pos": [
      3,
@@ -1631,7 +1631,7 @@
     "yaw": -0.5
    },
    "motion": {
-    "type": "bob",
+    "type": "oscillate",
     "axis": "-x",
     "amp": 0.8,
     "period": 3,
@@ -1657,7 +1657,7 @@
    }
   },
   {
-   "name": "bob axis x",
+   "name": "oscillate axis x",
    "base": {
     "pos": [
      3,
@@ -1667,7 +1667,7 @@
     "yaw": -0.5
    },
    "motion": {
-    "type": "bob",
+    "type": "oscillate",
     "axis": "-x",
     "amp": 0.8,
     "period": 3,
@@ -1693,7 +1693,7 @@
    }
   },
   {
-   "name": "bob axis x",
+   "name": "oscillate axis x",
    "base": {
     "pos": [
      3,
@@ -1703,7 +1703,7 @@
     "yaw": -0.5
    },
    "motion": {
-    "type": "bob",
+    "type": "oscillate",
     "axis": "-x",
     "amp": 0.8,
     "period": 3,
@@ -1729,7 +1729,7 @@
    }
   },
   {
-   "name": "bob axis x",
+   "name": "oscillate axis x",
    "base": {
     "pos": [
      3,
@@ -1739,7 +1739,7 @@
     "yaw": -0.5
    },
    "motion": {
-    "type": "bob",
+    "type": "oscillate",
     "axis": "-x",
     "amp": 0.8,
     "period": 3,
@@ -1765,7 +1765,7 @@
    }
   },
   {
-   "name": "bob axis x",
+   "name": "oscillate axis x",
    "base": {
     "pos": [
      3,
@@ -1775,7 +1775,7 @@
     "yaw": -0.5
    },
    "motion": {
-    "type": "bob",
+    "type": "oscillate",
     "axis": "-x",
     "amp": 0.8,
     "period": 3,
@@ -1801,7 +1801,7 @@
    }
   },
   {
-   "name": "bob axis x",
+   "name": "oscillate axis x",
    "base": {
     "pos": [
      3,
@@ -1811,7 +1811,7 @@
     "yaw": -0.5
    },
    "motion": {
-    "type": "bob",
+    "type": "oscillate",
     "axis": "-x",
     "amp": 0.8,
     "period": 3,
@@ -1837,7 +1837,7 @@
    }
   },
   {
-   "name": "bob defaults",
+   "name": "oscillate defaults",
    "base": {
     "pos": [
      0,
@@ -1847,7 +1847,7 @@
     "yaw": 0
    },
    "motion": {
-    "type": "bob",
+    "type": "oscillate",
     "t0": 1700000000000
    },
    "nowMs": 1700000000000,
@@ -1869,7 +1869,7 @@
    }
   },
   {
-   "name": "bob defaults",
+   "name": "oscillate defaults",
    "base": {
     "pos": [
      0,
@@ -1879,7 +1879,7 @@
     "yaw": 0
    },
    "motion": {
-    "type": "bob",
+    "type": "oscillate",
     "t0": 1700000000000
    },
    "nowMs": 1700000000250,
@@ -1901,7 +1901,7 @@
    }
   },
   {
-   "name": "bob defaults",
+   "name": "oscillate defaults",
    "base": {
     "pos": [
      0,
@@ -1911,7 +1911,7 @@
     "yaw": 0
    },
    "motion": {
-    "type": "bob",
+    "type": "oscillate",
     "t0": 1700000000000
    },
    "nowMs": 1700000001337,
@@ -1933,7 +1933,7 @@
    }
   },
   {
-   "name": "bob defaults",
+   "name": "oscillate defaults",
    "base": {
     "pos": [
      0,
@@ -1943,7 +1943,7 @@
     "yaw": 0
    },
    "motion": {
-    "type": "bob",
+    "type": "oscillate",
     "t0": 1700000000000
    },
    "nowMs": 1700000004000,
@@ -1965,7 +1965,7 @@
    }
   },
   {
-   "name": "bob defaults",
+   "name": "oscillate defaults",
    "base": {
     "pos": [
      0,
@@ -1975,7 +1975,7 @@
     "yaw": 0
    },
    "motion": {
-    "type": "bob",
+    "type": "oscillate",
     "t0": 1700000000000
    },
    "nowMs": 1700000009999,
@@ -1997,7 +1997,7 @@
    }
   },
   {
-   "name": "bob defaults",
+   "name": "oscillate defaults",
    "base": {
     "pos": [
      0,
@@ -2007,7 +2007,7 @@
     "yaw": 0
    },
    "motion": {
-    "type": "bob",
+    "type": "oscillate",
     "t0": 1700000000000
    },
    "nowMs": 1700000061234,
@@ -2029,7 +2029,7 @@
    }
   },
   {
-   "name": "bob defaults",
+   "name": "oscillate defaults",
    "base": {
     "pos": [
      0,
@@ -2039,7 +2039,7 @@
     "yaw": 0
    },
    "motion": {
-    "type": "bob",
+    "type": "oscillate",
     "t0": 1700000000000
    },
    "nowMs": 1700003600000,
@@ -3695,7 +3695,7 @@
     "yaw": 0
    },
    "motion": {
-    "type": "bob",
+    "type": "oscillate",
     "amp": 1,
     "period": 2,
     "phase": 1,
@@ -3730,7 +3730,7 @@
     "yaw": 0
    },
    "motion": {
-    "type": "bob",
+    "type": "oscillate",
     "amp": 1,
     "period": 2,
     "phase": 1,
@@ -3765,7 +3765,7 @@
     "yaw": 0
    },
    "motion": {
-    "type": "bob",
+    "type": "oscillate",
     "amp": 1,
     "period": 2,
     "phase": 1,
@@ -3800,7 +3800,7 @@
     "yaw": 0
    },
    "motion": {
-    "type": "bob",
+    "type": "oscillate",
     "amp": 1,
     "period": 2,
     "phase": 1,
@@ -3835,7 +3835,7 @@
     "yaw": 0
    },
    "motion": {
-    "type": "bob",
+    "type": "oscillate",
     "amp": 1,
     "period": 2,
     "phase": 1,
@@ -3870,7 +3870,7 @@
     "yaw": 0
    },
    "motion": {
-    "type": "bob",
+    "type": "oscillate",
     "amp": 1,
     "period": 2,
     "phase": 1,
@@ -3905,7 +3905,7 @@
     "yaw": 0
    },
    "motion": {
-    "type": "bob",
+    "type": "oscillate",
     "amp": 1,
     "period": 2,
     "phase": 1,

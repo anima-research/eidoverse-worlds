@@ -14,8 +14,10 @@
  * height.
  */
 import { WorldAgent } from "./agent.ts";
+import { tryUntil, pause } from "../tools/protocol/wait.ts";
 import { describeHere, planStructure } from "../shared/structure.js";
 import { NAV_STEP } from "./navgrid.ts";
+import { destinationOf } from "./places.ts";
 
 let failures = 0;
 const check = (label: string, ok: boolean, detail?: string) => {
@@ -45,8 +47,8 @@ function agentIn(y: number, opts: { pos?: number[]; scale?: number; before?: Rec
   const ag: any = new WorldAgent({ name: "climber", world: "test" });
   // entities the agent learned about BEFORE the house: a Map folds in insertion order
   for (const [id, ent] of Object.entries(opts.before ?? {})) ag.entities.set(id, { id, pos: [50, 0, 50], yaw: 0, actor: "test", ...ent });
-  ag.entities.set("house", { id: "house", lib: "house", pos: opts.pos ?? [0, 0, 0], yaw: 0, actor: "test",
-    ...(opts.scale ? { scale: opts.scale } : {}), comp: { structure: opts.house ?? HOUSE } });
+  ag.entities.set("house", { id: "house", model: "house", pos: opts.pos ?? [0, 0, 0], yaw: 0, actor: "test",
+    ...(opts.scale ? { scale: opts.scale } : {}), structure: opts.house ?? HOUSE });
   const [px, py, pz] = opts.pos ?? [0, 0, 0];
   const s = opts.scale ?? 1;
   ag.pos = { x: px + 0.5 * s, y: py + y * s, z: pz + 0.5 * s };
@@ -64,7 +66,7 @@ function landing(ag: any, want: number) {
  *  (a target installed), without ticking it anywhere. */
 async function tryWalk(ag: any, x: number, z: number, y?: number, near: any = {}) {
   const receipt = { refusal: null as string | null };
-  const r = await Promise.race([ag.walkTo(x, z, false, 30_000, 0.05, y, near, receipt), Bun.sleep(20).then(() => "walking")]);
+  const r = await Promise.race([ag.walkTo(x, z, false, 30_000, 0.05, y, near, receipt), pause("a refused walk answers at once; past 20 ms it is walking", 20).then(() => "walking")]);
   const setOff = r === "walking" && ag.target != null;
   if (r === "walking") ag.stop();
   return { refusal: r === false ? String(receipt.refusal ?? ag.walkRefusal ?? "") : "", setOff };
@@ -179,7 +181,7 @@ console.log("\na malformed house elsewhere in the world (Greptile on #200, findi
   // so a primitive that a WeakMap refuses as a key threw out of planOf and
   // took the route through the sound house with it — straight through walls.
   for (const junk of ["junk", true, 7]) {
-    const ag = agentIn(upperY, { before: { junk: { lib: "junk", comp: { structure: junk } } } });
+    const ag = agentIn(upperY, { before: { junk: { model: "junk", structure: junk } } });
     check(`structure: ${JSON.stringify(junk)} learned first: the upstairs walk still detours through the door`,
       legsOf(ag, 3.5, 0.5).length >= 2);
     check(`…and the feet stay on the upper floor`, Math.abs(ag.pos.y - upperY) < 1e-9, String(ag.pos.y));
@@ -261,15 +263,17 @@ console.log("\nwhich levels hold the feet: those raised above their building's b
 }
 {
   // a floor more than a route step but less than the walk grid's step above
-  // the terrain is the terrain's too: a floor walk's grid could step off it
-  const LOW = { levels: [{ y: 0.43, tiles, walls: [], apertures: [] }] };
+  // the terrain is the terrain's too: a floor walk's grid could step off it.
+  // The grid's step is the one walker's (NAV_STEP, shared/mover.js); a level's
+  // walk surface is 0.1 m over its declared y.
+  const LOW = { levels: [{ y: NAV_STEP - 0.12, tiles, walls: [], apertures: [] }] };
   const lowY = planStructure(LOW).levels[0].y;
   const ag = agentIn(lowY, { house: LOW });
-  check("a floor within the walk grid's step of the terrain (0.53 m) doesn't hold the feet either", ag.groundAt(ag.pos.x, ag.pos.z) === 0, `${ag.groundAt(ag.pos.x, ag.pos.z)} (floor ${lowY})`);
-  const ABOVE = { levels: [{ y: 0.5, tiles, walls: [], apertures: [] }] };
+  check(`a floor within the walk grid's step of the terrain (${lowY.toFixed(2)} m) doesn't hold the feet either`, ag.groundAt(ag.pos.x, ag.pos.z) === 0, `${ag.groundAt(ag.pos.x, ag.pos.z)} (floor ${lowY})`);
+  const ABOVE = { levels: [{ y: NAV_STEP - 0.05, tiles, walls: [], apertures: [] }] };
   const aboveY = planStructure(ABOVE).levels[0].y;
   const up = agentIn(aboveY, { house: ABOVE });
-  check("…and one just past it (0.6 m) does", Math.abs(up.groundAt(up.pos.x, up.pos.z) - aboveY) < 1e-9, `${up.groundAt(up.pos.x, up.pos.z)} (floor ${aboveY})`);
+  check(`…and one just past it (${aboveY.toFixed(2)} m) does`, Math.abs(up.groundAt(up.pos.x, up.pos.z) - aboveY) < 1e-9, `${up.groundAt(up.pos.x, up.pos.z)} (floor ${aboveY})`);
 }
 console.log("\nthe feet keep the storey when the walk ends, after a tumble and around a flight\n");
 {
@@ -289,35 +293,38 @@ console.log("\nthe feet keep the storey when the walk ends, after a tumble and a
 {
   // A destination whose height means another floor is refused, with the
   // same reason whichever path would plan the walk and whatever gives the
-  // destination its height. The floor a height means is walk_to's own rule
-  // for y (floorMeant): the floor nearest it, no more than a step above it
+  // destination its height. The floor a height means is move's own rule
+  // for a y (floorMeant): the floor nearest it, no more than a step above it
   // and within the destination's bounds, of the ground and the griddled
   // storeys at the point. A walk the planner routes in legs used to go to
   // the same x and z on its floor and report arriving.
   const { handleTool } = await import("./tools.ts");
   const walkTool = async (ag: any, args: Record<string, any>) => {
-    const r: any = await handleTool({ agent: ag, canPush: () => false, heldActivity: [], cursor: { caughtUpTo: null } } as any, "walk_to", args);
-    return (r.content ?? []).map((c: any) => c.text ?? "").join("\n");
+    // move takes its destination as `to`: [x, y, z], [x, z] or a name
+    const to = typeof args.to === "string" ? args.to : args.y != null ? [args.x, args.y, args.z] : [args.x, args.z];
+    const r: any = await handleTool({ agent: ag, canPush: () => false, heldActivity: [], cursor: { caughtUpTo: null } } as any, "move", { to });
+    // the failed flag kept beside the words: a refusal that answered as a success is the class #269 fixed
+    return { said: (r.content ?? []).map((c: any) => c.text ?? "").join("\n"), failed: r.isError === true };
   };
-  /** Walk to (x, z) with height y and the bounds walk_to passes on, ticking
+  /** Walk to (x, z) with height y and the bounds move passes on, ticking
    *  to arrival: true, false (refused or stopped) or "pending". */
   const walkThere = async (ag: any, x: number, z: number, y?: number, near: any = {}) => {
     const receipt = { refusal: null as string | null };
     ag.joined = true;
     const walk = ag.walkTo(x, z, false, 30_000, 0.05, y, near, receipt);
     for (let i = 0; i < 3000 && ag.target; i++) ag.tick();
-    const r = await Promise.race([walk, Bun.sleep(300).then(() => "pending")]);
+    const r = await Promise.race([walk, pause("the walk's answer has had 300 ms to come", 300).then(() => "pending")]);
     ag.joined = false;
     return { r, refusal: receipt.refusal ?? ag.walkRefusal };
   };
   const toPerson = (ag: any, d: any) => walkThere(ag, d.x, d.z, d.y, { reach: d.reach, above: d.above, below: d.below, bodyAt: d.bodyAt });
-  const toGround = /is at ground level, not on the floor you stand on \(3\.10m\)\. A walk from a floor stays on it, since a griddled building's storeys have no stairs between them or to the ground; pick a destination on this floor, or give coordinates without y, which stay on it/;
+  const toGround = /is at ground level, not on the floor you stand on \(3\.10m\)\. A walk from a floor stays on it, since a griddled building's storeys have no stairs between them or to the ground; pick a destination on this floor, or give to as \[x, z\], without y, which stays on it/;
   const cases: [string, Record<string, any>, (ag: any) => void][] = [
     ["coordinates with y 0", { x: 2.5, z: 1.5, y: 0 }, () => {}],
     ["coordinates with y 0 along a row of cell centres, a walk of one leg", { x: 1.5, z: 0.5, y: 0 }, () => {}],
-    ["a place named on the ground floor", { to: "house/hearth" }, (ag) => { ag.entities.get("house").comp.places = { hearth: { at: [2.5, 0.1, 1.5] } }; }],
+    ["a place named on the ground floor", { to: "house/hearth" }, (ag) => { ag.entities.get("house").places = { hearth: { at: [2.5, 0.1, 1.5] } }; }],
     ["a thing's entrance on the ground floor", { to: "cabinet" }, (ag) => {
-      ag.entities.set("cabinet", { id: "cabinet", lib: "cabinet", pos: [2.5, 0.1, 1.5], yaw: 0, actor: "test", comp: { places: { entrance: { at: [0, 0, -0.6], kind: "door" } } } }); }],
+      ag.entities.set("cabinet", { id: "cabinet", model: "cabinet", pos: [2.5, 0.1, 1.5], yaw: 0, actor: "test", places: { entrance: { at: [0, 0, -0.6], kind: "door" } } }); }],
     ["a person standing on the ground floor", { to: "friend" }, (ag) => { ag.people.set("friend", { id: "friend", pose: { p: [2.5, 0.1, 1.5], yaw: 0, speed: 0, clip: "idle" } }); }],
     ["a canned slump on the ground floor, its root at its feet", { to: "friend" }, (ag) => { ag.people.set("friend", { id: "friend", pose: { p: [2.5, 0, 1.5], yaw: 0, speed: 0, clip: "ragdoll" } }); }],
   ];
@@ -325,13 +332,13 @@ console.log("\nthe feet keep the storey when the walk ends, after a tumble and a
     const ag = agentIn(upperY);
     setup(ag);
     ag.pins.set("hips", [0.5, upperY, 0.5]);
-    const said = await walkTool(ag, args);
+    const { said, failed } = await walkTool(ag, args);
     check(`from the upper floor, a walk to ${what} is refused, saying why, and the body stays upstairs, its pins kept`,
-      toGround.test(said) && Math.abs(ag.pos.y - upperY) < 1e-9 && !ag.target && ag.pins.has("hips"), `${said} at ${ag.pos.y}, pins ${ag.pins.size}`);
+      failed && toGround.test(said) && Math.abs(ag.pos.y - upperY) < 1e-9 && !ag.target && ag.pins.has("hips"), `${said} at ${ag.pos.y}, pins ${ag.pins.size}`);
   }
-  // walk_to's rule for a height, at its edges: the floor no more than a step
-  // (NAV_STEP, 0.55 m) above y, and no cap above a floor
-  for (const [what, y, refused] of [["0.53 m below its floor", upperY - 0.53, false], ["0.6 m below its floor", upperY - 0.6, true],
+  // move's rule for a height, at its edges: the floor no more than a step
+  // (NAV_STEP) above y, and no cap above a floor
+  for (const [what, y, refused] of [[`${(NAV_STEP - 0.02).toFixed(2)} m below its floor`, upperY - (NAV_STEP - 0.02), false], [`${(NAV_STEP + 0.05).toFixed(2)} m below its floor`, upperY - (NAV_STEP + 0.05), true],
     ["2.9 m above its floor, past the storey's height", upperY + 2.9, false]] as const) {
     const w = await walkThere(agentIn(upperY), 2.5, 1.5, y);
     check(`from the upper floor, a walk whose y is ${what} ${refused ? "is refused" : "walks there on it"}`,
@@ -339,10 +346,10 @@ console.log("\nthe feet keep the storey when the walk ends, after a tumble and a
   }
   const TALL = { levels: [{ y: 0, tiles, walls: shell, apertures: [] }, { y: 3, tiles, walls: shell, apertures: [] }, { y: 6, tiles, walls: shell, apertures: [] }] };
   const tallPlan = planStructure(TALL), mid = tallPlan.levels[1].y, top = tallPlan.levels[2].y;
-  const upward = await walkTool(agentIn(mid, { house: TALL }), { x: 2.5, z: 1.5, y: top });
+  const { said: upward, failed: upwardFailed } = await walkTool(agentIn(mid, { house: TALL }), { x: 2.5, z: 1.5, y: top });
   check("from the middle floor, a walk to the floor above it is refused, saying it's another storey of this building and where",
-    /is on another storey of this building, whose floor is at 6\.10m, not on the floor you stand on \(3\.10m\)/.test(upward), upward);
-  for (const [what, y, refused] of [["0.53 m below the top floor, a step from it", top - 0.53, true], ["0.6 m below the top floor", top - 0.6, false]] as const) {
+    upwardFailed && /is on another storey of this building, whose floor is at 6\.10m, not on the floor you stand on \(3\.10m\)/.test(upward), upward);
+  for (const [what, y, refused] of [[`${(NAV_STEP - 0.02).toFixed(2)} m below the top floor, a step from it`, top - (NAV_STEP - 0.02), true], [`${(NAV_STEP + 0.05).toFixed(2)} m below the top floor`, top - (NAV_STEP + 0.05), false]] as const) {
     const w = await walkThere(agentIn(mid, { house: TALL }), 2.5, 1.5, y);
     check(`from the middle floor, a walk whose y is ${what} ${refused ? "is refused as the top floor" : "walks there on the middle floor"}`,
       refused ? w.r === false && /another storey of this building, whose floor is at 6\.10m/.test(String(w.refusal)) : w.r === true, `${String(w.r)} ${w.refusal ?? ""}`);
@@ -369,14 +376,14 @@ console.log("\nthe feet keep the storey when the walk ends, after a tumble and a
   // what placedNear counts: a placed top on this floor, under the next floor
   // above, within the destination's bounds (a step each way unless given),
   // in this world. From the middle floor, y 5.7 means the top floor (0.4 m
-  // up, at 6.10): a shelf at 5.2 or 6.05 lets the walk go; one at 5.1
-  // doesn't, nor one at 6.2, which rests on the top floor, nor one in another
-  // world at 5.7, nor, for a destination whose floor lies no more than 0.1 m
-  // below its height, one at 5.2.
+  // up, at 6.10): a shelf just within a step below 5.7, or at 6.05, lets the
+  // walk go; one just past a step below doesn't, nor one at 6.2, which rests
+  // on the top floor, nor one in another world at 5.7, nor, for a destination
+  // whose floor lies no more than 0.1 m below its height, one at 5.2.
   {
     const { boxMesh } = await import("../tools/two-storey-fixture.ts");
     const { registerMeshSupport, removeSupport } = await import("./physics.ts");
-    for (const [at, world, below, goes] of [[5.1, "", undefined, false], [5.2, "", undefined, true], [6.05, "", undefined, true], [6.2, "", undefined, false],
+    for (const [at, world, below, goes] of [[+(5.7 - NAV_STEP - 0.05).toFixed(2), "", undefined, false], [+(5.7 - NAV_STEP + 0.05).toFixed(2), "", undefined, true], [6.05, "", undefined, true], [6.2, "", undefined, false],
       [5.7, "elsewhere", undefined, false], [5.2, "", 0.1, false]] as const) {
       const ag = agentIn(mid, { house: TALL });
       const { pos, idx } = boxMesh([[2.1, at - 0.05, 1.1, 2.9, at, 1.9]]);
@@ -389,8 +396,13 @@ console.log("\nthe feet keep the storey when the walk ends, after a tumble and a
     }
   }
   // a seat's height is where the hips rest, its floor no higher (above: 0):
-  // a perch 2.65 m above the middle floor is the middle floor's, not the top's
-  const perch = (ag: any) => { ag.entities.get("house").comp.places = { perch: { at: [2.5, mid + 2.65, 1.5], kind: "seat" } }; return ag.destination("house/perch"); };
+  // a perch 2.65 m above the middle floor is the middle floor's, not the top's.
+  // A places component names no seat (its kind is gone: shape audit 10-16; a
+  // seat is a model's or a socket's), so the seat's destination is built by
+  // destinationOf's seat branch (mcpl/places.ts) from a seat-kind place on an
+  // unscaled holder: 0.05 m under the hips, no floor above that.
+  const perch = (_ag: any) => destinationOf({ id: "bench", pos: [0, 0, 0], yaw: 0, scale: 1 },
+    { name: "perch", kind: "seat", at: [2.5, mid + 2.65, 1.5] } as any);
   const onTop = agentIn(top, { house: TALL }), dTop = perch(onTop);
   const fromTop = await walkThere(onTop, dTop.x, dTop.z, dTop.y, { reach: dTop.reach, above: dTop.above });
   check("a seat high above the middle floor, from the top floor: refused as the middle floor's, its bound kept",
@@ -400,7 +412,7 @@ console.log("\nthe feet keep the storey when the walk ends, after a tumble and a
   check("…and from the middle floor it sets off", fromMid.setOff, JSON.stringify(fromMid));
   // a storey of another building at the point, from a floor walk
   const ROOF = { levels: [{ y: 5.9, tiles, walls: [], apertures: [] }] };
-  const under = agentIn(upperY, { before: { roof: { lib: "roof", pos: [0, 0, 0], comp: { structure: ROOF } } } });
+  const under = agentIn(upperY, { before: { roof: { model: "roof", pos: [0, 0, 0], structure: ROOF } } });
   const toRoof = await walkThere(under, 2.5, 1.5, 6);
   check("from the upper floor, a walk to the storey of another building over it is refused, naming another building",
     toRoof.r === false && /is on a storey of another building, whose floor is at 6\.00m/.test(String(toRoof.refusal)), `${String(toRoof.r)} ${toRoof.refusal ?? ""}`);
@@ -434,19 +446,19 @@ console.log("\nthe feet keep the storey when the walk ends, after a tumble and a
   // floor, is on that building's storey, not this one.
   const PAIR = { levels: [{ y: 3, tiles, walls: [], apertures: [] }] };
   const pairY = planStructure(PAIR).levels[0].y;
-  const across = agentIn(pairY, { house: PAIR, before: { next: { lib: "deck", pos: [4.5, 0, 0], comp: { structure: PAIR } } } });
+  const across = agentIn(pairY, { house: PAIR, before: { next: { model: "deck", pos: [4.5, 0, 0], structure: PAIR } } });
   across.pos = { x: 0.5, y: pairY, z: 1 };
   across.people.set("friend", { id: "friend", pose: { p: [4.6, pairY, 1], yaw: 0, speed: 0, clip: "idle" } });
   const dAcross = across.destination("friend");
   const toAcross = await tryWalk(across, dAcross.x, dAcross.z, dAcross.y, { reach: dAcross.reach, above: dAcross.above, bodyAt: dAcross.bodyAt });
   check("from a deck, a walk to someone on the deck beside it, stopping short of them on this one, is refused as another building's storey",
     dAcross.x < 4 && /^the destination is on a storey of another building, whose floor is at 3\.10m/.test(toAcross.refusal), `stopping at ${dAcross.x.toFixed(2)}: ${JSON.stringify(toAcross)}`);
-  // the same through walk_to, with the decks apart along z
-  const acrossZ = agentIn(pairY, { house: PAIR, before: { next: { lib: "deck", pos: [0, 0, 2.5], comp: { structure: PAIR } } } });
+  // the same through move, with the decks apart along z
+  const acrossZ = agentIn(pairY, { house: PAIR, before: { next: { model: "deck", pos: [0, 0, 2.5], structure: PAIR } } });
   acrossZ.pos = { x: 1, y: pairY, z: 0.5 };
   acrossZ.people.set("friend", { id: "friend", pose: { p: [1, pairY, 2.6], yaw: 0, speed: 0, clip: "idle" } });
-  const saidZ = await walkTool(acrossZ, { to: "friend" });
-  check("…and through walk_to, with the decks apart along z", /is on a storey of another building, whose floor is at 3\.10m/.test(saidZ), saidZ);
+  const { said: saidZ, failed: failedZ } = await walkTool(acrossZ, { to: "friend" });
+  check("…and through move, with the decks apart along z", failedZ && /is on a storey of another building, whose floor is at 3\.10m/.test(saidZ), saidZ);
   // someone lying limp on a deck a metre up, which the walker stands on: their
   // root is nearer the ground, but their body is on the deck
   const LOWDECK = { levels: [{ y: 0.9, tiles, walls: [], apertures: [] }] };
@@ -480,15 +492,15 @@ console.log("\nthe feet keep the storey when the walk ends, after a tumble and a
   // placed first; another building's storey at the same level index is still
   // another building's
   const SIDE = { levels: [{ y: 3, tiles: [[0, 0], [1, 0]], walls: [], apertures: [] }] };
-  const twin = agentIn(upperY, { before: { side: { lib: "deck", pos: [2, 0, 1], comp: { structure: SIDE } } } });
+  const twin = agentIn(upperY, { before: { side: { model: "deck", pos: [2, 0, 1], structure: SIDE } } });
   const tied = await tryWalk(twin, 2.5, 1.5, upperY);
   check("from the upper floor, a walk to a point another building's floor also covers at the same height sets off", tied.setOff, JSON.stringify(tied));
   const SIDE2 = { levels: [{ y: 0, tiles: [[0, 0], [1, 0]], walls: [], apertures: [] }, { y: 3, tiles: [[0, 0], [1, 0]], walls: [], apertures: [] }] };
-  const twin2 = agentIn(upperY, { before: { side: { lib: "deck", pos: [2, 0, 1], comp: { structure: SIDE2 } } } });
+  const twin2 = agentIn(upperY, { before: { side: { model: "deck", pos: [2, 0, 1], structure: SIDE2 } } });
   const tied2 = await tryWalk(twin2, 2.5, 1.5, upperY);
   check("…and so does one where the other building's floor at that height is at the walk's own level index", tied2.setOff, JSON.stringify(tied2));
   const ROOF2 = { levels: [{ y: 0, tiles, walls: [], apertures: [] }, { y: 5.9, tiles, walls: [], apertures: [] }] };
-  const under2 = agentIn(upperY, { before: { roof: { lib: "roof", pos: [0, 0, 0], comp: { structure: ROOF2 } } } });
+  const under2 = agentIn(upperY, { before: { roof: { model: "roof", pos: [0, 0, 0], structure: ROOF2 } } });
   const toRoof2 = await tryWalk(under2, 2.5, 1.5, 6);
   check("…and to another building's storey at the same level index is refused, naming another building",
     /is on a storey of another building, whose floor is at 6\.00m/.test(toRoof2.refusal), JSON.stringify(toRoof2));
@@ -576,7 +588,7 @@ console.log("\nthe feet keep the storey when the walk ends, after a tumble and a
     const receipt = { refusal: null as string | null };
     const toThem = ag.walkTo(d.x, d.z, false, 30_000, 0.05, d.y, { reach: d.reach, above: d.above, below: d.below, bodyAt: d.bodyAt }, receipt);
     for (let i = 0; i < 3000 && ag.target; i++) ag.tick();
-    const reached = await Promise.race([toThem, Bun.sleep(300).then(() => "pending")]);
+    const reached = await Promise.race([toThem, pause("the walk's answer has had 300 ms to come", 300).then(() => "pending")]);
     check(`on a placed model's upper floor, a walk to someone ${what} on it goes to them there, not to the hall beneath`,
       fitted && Math.abs(stood - UPPER) < 0.02 && receipt.refusal === null && reached === true && Math.abs(ag.pos.y - UPPER) < 0.02
         && Math.hypot(ag.pos.x - 20, ag.pos.z - 21.5) < 1.6,
@@ -739,13 +751,12 @@ console.log("\na spot named by x/z upstairs is on the upper floor\n");
   const ag = agentIn(upperY);
   const sent: any[] = [];
   ag.joined = true;
-  ag.ws = { readyState: 1, send: (raw: string) => {
-    const m = JSON.parse(raw);
-    sent.push(m);
-    if (m.verb === "comp") ag.entities.get(m.args.id).comp.places = m.args.data;   // the world's echo
-  } };
+  ag.sendOps = async (ops: any[]) => {   // the authority's answer and the world's echo of a places set
+    for (const m of ops) { sent.push(m); if (m.args?.component === "places") { const e = ag.entities.get(m.args.id); e.places = m.args.merge ? { ...(e.places ?? {}), ...m.args.value } : m.args.value; } }
+    return { ok: true };
+  };
   const said = await ag.namePlaceNow("window", { at: { x: 1.5, z: 0.5 } });
-  const at = sent.find((m) => m.verb === "comp")?.args?.data?.window?.at;
+  const at = sent.find((m) => m.args?.component === "places")?.args?.value?.window?.at;
   check("naming a spot by x/z upstairs puts it on the upper floor", Array.isArray(at) && Math.abs(at[1] - upperY) < 1e-3, `${said} ${JSON.stringify(at)}`);
   ag.joined = false;
 }
@@ -773,7 +784,7 @@ console.log("\nwhat is placed on an upper storey is walked round, as it is on th
   check("the walk across the upper room bends round the chest", legs.length >= 2, JSON.stringify(legs));
   const ys: number[] = [];
   for (let i = 0; i < 600 && ag.target; i++) { ag.tick(); ys.push(ag.pos.y); }
-  const arrived = await Promise.race([walk, Bun.sleep(200).then(() => "pending")]);
+  const arrived = await Promise.race([walk, pause("the walk's answer has had 200 ms to come", 200).then(() => "pending")]);
   check("…and arrives", arrived === true, `${String(arrived)} at (${ag.pos.x.toFixed(2)}, ${ag.pos.z.toFixed(2)}) ${ag.walkStall ?? ""}`);
   check("…with the feet on the upper floor all the way", ys.length > 0 && ys.every((y) => Math.abs(y - up) < 1e-6), String(ys.find((y) => Math.abs(y - up) >= 1e-6)));
   await removeSupport("storey-walk-test", chest);
@@ -797,17 +808,17 @@ console.log("\nwhat is placed on an upper storey is walked round, as it is on th
   const DECK = { levels: [{ y: 3, tiles, walls: [], apertures: [] }] };
   const deckY = planStructure(DECK).levels[0].y;
   const ag = agentIn(deckY, { house: DECK });
-  ag.entities.set("next", { id: "next", lib: "house", pos: [10, 0, 0], yaw: 0, actor: "test", comp: { structure: DECK } });
+  ag.entities.set("next", { id: "next", model: "house", pos: [10, 0, 0], yaw: 0, actor: "test", structure: DECK });
   ag.heightAt = (x: number, z: number) => (x > 3 && x < 10 ? deckY - 0.3
     : x >= 1 && x < 2 && z >= 1 ? deckY + 1 : x >= 2 && x < 3 && z >= 1 ? deckY + 0.3
-    : x >= 0 && x < 0.5 && z >= 1 ? deckY + 0.53 : x >= 0.5 && x < 1 && z >= 1 ? deckY + 0.57 : 0);
+    : x >= 0 && x < 0.5 && z >= 1 ? deckY + NAV_STEP - 0.02 : x >= 0.5 && x < 1 && z >= 1 ? deckY + NAV_STEP + 0.02 : 0);
   const probe = ag.walkProbeGround(ag.walkSupport());
   check("a floor walk's probe stands on its own floor", Math.abs(probe(0.5, 0.5) - deckY) < 1e-9, String(probe(0.5, 0.5)));
   check("…and on it at its low end, where the ground beneath rises to 0.3 m below it", Math.abs(probe(3.5, 0.5) - deckY) < 1e-9, String(probe(3.5, 0.5)));
   check("…and where the ground comes up within a step above it", Math.abs(probe(2.5, 1.5) - deckY) < 1e-9, String(probe(2.5, 1.5)));
   check("…but where the ground rises more than a step above it, the deck is buried: a drop", deckY - probe(1.5, 1.5) > NAV_STEP, String(probe(1.5, 1.5)));
-  check("…the step being the grid's (0.55 m): ground 0.53 m above it still leaves the deck", Math.abs(probe(0.25, 1.5) - deckY) < 1e-9, String(probe(0.25, 1.5)));
-  check("…and ground 0.57 m above it buries it", deckY - probe(0.75, 1.5) > NAV_STEP, String(probe(0.75, 1.5)));
+  check(`…the step being the grid's (${NAV_STEP} m): ground ${(NAV_STEP - 0.02).toFixed(2)} m above it still leaves the deck`, Math.abs(probe(0.25, 1.5) - deckY) < 1e-9, String(probe(0.25, 1.5)));
+  check(`…and ground ${(NAV_STEP + 0.02).toFixed(2)} m above it buries it`, deckY - probe(0.75, 1.5) > NAV_STEP, String(probe(0.75, 1.5)));
   check("…beside it, over ground within a step of it, finds a drop the grid won't take", deckY - probe(5, 0.5) > NAV_STEP, String(probe(5, 0.5)));
   check("…and so on another building's floor at its height", deckY - probe(10.5, 0.5) > NAV_STEP, String(probe(10.5, 0.5)));
   ag.joined = true;
@@ -846,18 +857,19 @@ console.log("\nwhat is placed on an upper storey is walked round, as it is on th
     const receipt = { refusal: null as string | null };
     const walked = w.walkTo(x, z, false, 30_000, 0.05, y, {}, receipt);
     for (let i = 0; i < 3000 && w.target; i++) w.tick();
-    const got = await Promise.race([walked, Bun.sleep(300).then(() => "pending")]);
+    const got = await Promise.race([walked, pause("the walk's answer has had 300 ms to come", 300).then(() => "pending")]);
     check(`a walk across the deck to ${what} arrives there`, got === true && Math.hypot(w.pos.x - x, w.pos.z - z) <= 0.05, `${String(got)} ${receipt.refusal ?? ""}`);
     w.joined = false;
   }
 }
 {
-  // A deck a step (NAV_STEP, 0.55 m) above the terrain is one rule's edge
+  // A deck a step (NAV_STEP) above the terrain is one rule's edge
   // for both standing (storeyUnder) and a destination's floor (floorMeant):
-  // 0.53 m up it is the terrain's, so a walk on it is the terrain's, and
-  // goes down; 0.57 m up it is a storey, which a walk from it can't leave.
-  // A walk from the ground isn't checked (#200 doesn't change ground walks).
-  for (const [h, storey] of [[0.53, false], [0.57, true]] as const) {
+  // just under a step up it is the terrain's, so a walk on it is the
+  // terrain's, and goes down; just over, it is a storey, which a walk from it
+  // can't leave. A walk from the ground isn't checked (#200 doesn't change
+  // ground walks).
+  for (const [h, storey] of [[+(NAV_STEP - 0.02).toFixed(2), false], [+(NAV_STEP + 0.02).toFixed(2), true]] as const) {
     const LOW = { levels: [{ y: h - 0.1, tiles, walls: [], apertures: [] }] };
     const lowY = planStructure(LOW).levels[0].y;
     const on = agentIn(lowY, { house: LOW });
@@ -914,7 +926,7 @@ console.log("\nwhat is placed on an upper storey is walked round, as it is on th
   ag.joined = true;
   const walk = ag.walkTo(3.5, 0.5, false, 30_000, 0.05);
   for (let i = 0; i < 600 && ag.target; i++) ag.tick();
-  const walked = await Promise.race([walk, Bun.sleep(300).then(() => "pending")]);
+  const walked = await Promise.race([walk, pause("the walk's answer has had 300 ms to come", 300).then(() => "pending")]);
   check("a floor walk whose only way round a chest is off the deck is refused, not routed over the ground beside it",
     walked === false && /no walkable way/.test(ag.walkRefusal ?? ""), `${String(walked)} ${ag.walkRefusal}`);
   await removeSupport("storey-walk-test", chest);
@@ -964,7 +976,7 @@ console.log("\nwhat is placed on an upper storey is walked round, as it is on th
   shoved.body = null;
   shoved.pos = { x: 7, y: 0, z: 7 };
   shoved.knockDown("tester", [1, 0, 0], "(shoved over)");
-  for (let i = 0; i < 1000 && shoved.pos.x === 7; i++) await Bun.sleep(5);   // at most 1000 waits of 5 ms, done once it moves
+  await tryUntil("the shoved body moves", () => shoved.pos.x !== 7, { ms: 5000, step: 5 });
   check("setup: with no body, the fallback moves the slump 0.4 m along the shove, still under the table, at the same height",
     Math.abs(shoved.pos.x - 7.4) < 1e-9 && shoved.pos.z === 7 && shoved.pos.y === 0, `${shoved.pos.x}, ${shoved.pos.y}, ${shoved.pos.z}`);
   shoved.setPosture("idle");
@@ -1013,7 +1025,7 @@ console.log("\nGreptile's review of October 19: a floor walk's lowest ground, th
     const walk = ag.walkTo(toX, 0.5, false, 30_000, 0.05);
     const ys: number[] = [];
     for (let i = 0; i < 2000 && ag.target; i++) { ag.tick(); ys.push(ag.pos.y); }
-    const walked = await Promise.race([walk, Bun.sleep(300).then(() => "pending")]);
+    const walked = await Promise.race([walk, pause("the walk's answer has had 300 ms to come", 300).then(() => "pending")]);
     for (const [part] of parts) await removeSupport("storey-walk-test", `${ag.world}/${name}-${part}`);
     ag.joined = false;
     return { walked, refusal: ag.walkRefusal ?? "", ys, end: { ...ag.pos } };
@@ -1091,7 +1103,7 @@ console.log("\nGreptile's review of October 19: a floor walk's lowest ground, th
     ag.tick(); ys.push(ag.pos.y);
     if (ag.pos.x > 1.55 && ag.pos.x < 2.45 && ag.pos.z > 0.55 && ag.pos.z < 1.45) overTable.push(ag.pos.y);
   }
-  const arrived = await Promise.race([walk, Bun.sleep(300).then(() => "pending")]);
+  const arrived = await Promise.race([walk, pause("the walk's answer has had 300 ms to come", 300).then(() => "pending")]);
   check("…and walks on from it across the upper floor, its feet on the table's top while over it, never below the floor, ending on it",
     arrived === true && overTable.length > 0 && overTable.every((y) => Math.abs(y - (up + 0.75)) < 0.02)
       && ys.every((y) => y >= up - 1e-6) && Math.abs(ag.pos.y - up) < 1e-6,
@@ -1115,7 +1127,7 @@ console.log("\nGreptile's review of October 19: a floor walk's lowest ground, th
   const alongLegs = [onStage.target, ...onStage.legs].filter(Boolean).length;
   const sy: number[] = [];
   for (let i = 0; i < 3000 && onStage.target; i++) { onStage.tick(); sy.push(onStage.pos.y); }
-  const alongDone = await Promise.race([along, Bun.sleep(300).then(() => "pending")]);
+  const alongDone = await Promise.race([along, pause("the walk's answer has had 300 ms to come", 300).then(() => "pending")]);
   check("a body standing on a stage upstairs walks along its top in one leg, its feet on it all the way",
     alongDone === true && alongLegs === 1 && sy.length > 0 && sy.every((y) => Math.abs(y - (up + 0.75)) < 0.02),
     `${String(alongDone)} ${onStage.walkRefusal ?? ""} legs ${alongLegs}, lowest ${sy.length ? Math.min(...sy) : NaN}, stage ${up + 0.75}`);
@@ -1155,13 +1167,12 @@ console.log("\nGreptile's review of October 19: a floor walk's lowest ground, th
   namer.clip = "ragdoll"; namer.heldPose = { hips: [0, 0, 0, 1] }; namer.heldPoseAuthored = false; namer.pos.y = upperY - 0.7;
   const sent: any[] = [];
   namer.joined = true;
-  namer.ws = { readyState: 1, send: (raw: string) => {
-    const m = JSON.parse(raw);
-    sent.push(m);
-    if (m.verb === "comp") namer.entities.get(m.args.id).comp.places = m.args.data;   // the world's echo
-  } };
+  namer.sendOps = async (ops: any[]) => {   // the authority's answer and the world's echo of a places set
+    for (const m of ops) { sent.push(m); if (m.args?.component === "places") { const e = namer.entities.get(m.args.id); e.places = m.args.merge ? { ...(e.places ?? {}), ...m.args.value } : m.args.value; } }
+    return { ok: true };
+  };
   const said = await namer.namePlaceNow("sill", { at: { x: 1.5, z: 0.5 } });
-  const at = sent.find((m) => m.verb === "comp")?.args?.data?.sill?.at;
+  const at = sent.find((m) => m.args?.component === "places")?.args?.value?.sill?.at;
   check("a body laid down upstairs names a spot by x/z on the upper floor", Array.isArray(at) && Math.abs(at[1] - upperY) < 1e-3, `${said} ${JSON.stringify(at)}`);
   namer.joined = false;
 

@@ -28,10 +28,14 @@
 // hands over its terrain height function (setHeightField — the same generator
 // the browsers run, replicated in agent.ts) and registers support boxes for
 // placed entities; Ragdoll's own _terrain()/_world() clamps then see exactly
-// what a browser's would. Those colliders are fitted from each model's own
-// triangles where the agent can decode them (registerMeshSupport — walls and
-// furniture included, and the walking feet use them too: standOn), and from
-// the server's /geom summaries otherwise (registerSupport/registerSupportGrid
+// what a browser's would, except for a thing stretched by different amounts
+// along its axes, which is fitted as it is drawn where a browser's colliders
+// read one scale for all three, and a thing with a negative scale, fitted at
+// its size where a browser's colliders keep the sign (registerSupport). Those
+// colliders are fitted from each model's own triangles where the agent can
+// decode them (registerMeshSupport — walls and furniture included, and the
+// walking feet use them too: standOn), and from the server's /geom summaries
+// otherwise (registerSupport/registerSupportGrid
 // — floors only; data boxes carry no architecture, see colliders.fitSupportBox).
 //
 // Declared seam: terrain and the collider map are MODULE state in the client
@@ -52,7 +56,7 @@ import { leafForceFor, DEFAULT_LEAF_FORCE } from "../shared/leafforce.js";
 import { bodyFrame, fromBody } from "../shared/joints.js";
 // the walking capsule's dimensions — pure module, the browser controller's own numbers
 import { colliderFor } from "../client/lib/bodyscale.js";
-import type { NavProbe } from "./navgrid.ts";
+import { NAV_NUDGE, type NavProbe } from "./navgrid.ts";
 
 const HEADLESS_CORE = fileURLToPath(new URL("./headless-core.mjs", import.meta.url));
 
@@ -157,19 +161,36 @@ export async function setWaterField(f: { level: number; sample: (x: number, z: n
 // same id twice (a re-sync after a place) still counts once.
 const holders = new Map<string, Set<string>>();
 
+/** A stretched thing's per-axis scale (shared/scale3.js); absent is uniform. */
+const finite3 = (v: unknown) => v == null || (Array.isArray(v) && v.length === 3 && v.every(Number.isFinite));
+/** The per-axis scale a support is fitted at, as physics reads a scale (componentspec: a negative axis mirrors, and
+ *  physics reads |scale|), when the thing is stretched; null when every axis is the same, so the one number serves.
+ *  colliders.js's readers take one scale for all three axes, so a stretched support is fitted at scale 1 with the
+ *  stretch already in its own numbers: its box, its grid, its triangles. */
+const stretchOf = (x: { scale3?: number[] }): [number, number, number] | null => {
+  if (!Array.isArray(x.scale3)) return null;
+  const [a, b, c] = x.scale3.map(Math.abs);
+  return a === b && b === c ? null : [a, b, c];
+};
+/** The transform a support is fitted with: a stretched one at scale 1, its stretch being in its geometry, and any other at
+ *  |scale|, since physics reads a mirrored axis as its size (a mirror the same on every axis is no stretch, and a negative
+ *  one-number scale is refused by the grid fitter and turns a box inside out). */
+const fitXform = <T extends { scale?: number; scale3?: number[] }>(x: T, k: number[] | null): T =>
+  ({ ...x, scale: k ? 1 : Math.abs(x.scale ?? 1), scale3: undefined });
+
 /** Register a placed entity's support geometry (a local-frame box + world
  *  transform) so settling bodies rest on it. `holder` is the claiming agent;
  *  the box survives until every holder has removed it. */
 export async function registerSupport(
   holder: string, id: string, min: number[], max: number[],
-  xform: { position: number[]; yaw?: number; scale?: number },
+  xform: { position: number[]; yaw?: number; scale?: number; scale3?: number[] },
 ) {
   // Last line of defense (#88): this runs detached (`void registerSupport`),
   // so a throw here is an unhandled rejection that takes the WHOLE DOOR
   // down — every agent in the process, not the one with the bad entity.
   // A box or transform that is not finite geometry abstains instead.
   if (![min, max, xform?.position].every(isFiniteVec3)
-      || !Number.isFinite(xform.yaw ?? 0) || !Number.isFinite(xform.scale ?? 1)) {
+      || !Number.isFinite(xform.yaw ?? 0) || !Number.isFinite(xform.scale ?? 1) || !finite3(xform.scale3)) {
     console.error(`[physics] support ${id} abstained — non-finite geometry/transform`);
     return;
   }
@@ -178,7 +199,9 @@ export async function registerSupport(
   (holders.get(id) ?? holders.set(id, new Set()).get(id)!).add(holder);
   // re-fit unconditionally: a place moves the box, and the newest claimant's
   // transform is the freshest reading of where the thing actually is
-  m.colliders.fitSupportBox(id, min, max, xform);
+  const k = stretchOf(xform);
+  if (k) m.colliders.fitSupportBox(id, min.map((v, i) => v * k[i]), max.map((v, i) => v * k[i]), fitXform(xform, k));
+  else m.colliders.fitSupportBox(id, min, max, fitXform(xform, null));
   generation++;
   scopeEntry(m, id);
 }
@@ -196,16 +219,24 @@ export const supportHolders = (): Record<string, string[]> =>
  *  ABSTAIN — registering the box top instead is the bug this exists to fix. */
 export async function registerSupportGrid(
   holder: string, id: string, topGrid: unknown,
-  xform: { position: number[]; yaw?: number; scale?: number },
+  xform: { position: number[]; yaw?: number; scale?: number; scale3?: number[] },
 ): Promise<boolean> {
   if (!isFiniteVec3(xform?.position)
-      || !Number.isFinite(xform.yaw ?? 0) || !Number.isFinite(xform.scale ?? 1)) {
+      || !Number.isFinite(xform.yaw ?? 0) || !Number.isFinite(xform.scale ?? 1) || !finite3(xform.scale3)) {
     console.error(`[physics] grid support ${id} abstained — non-finite transform`);
     return false;
   }
   const m = await loadSim();
   if (!m) return false;
-  if (!m.colliders.fitSupportGrid(id, topGrid, xform)) return false;
+  const k = stretchOf(xform);
+  const grid: any = topGrid;
+  // a stretched grid's cells in world sizes, to the millimetre the server rounds them to
+  const mm = (v: number) => Math.round(v * 1000) / 1000;
+  const fitted = k && grid && typeof grid === "object" && Array.isArray(grid.minXZ) && Array.isArray(grid.sizeXZ) && Array.isArray(grid.cells)
+    ? { ...grid, minXZ: [mm(grid.minXZ[0] * k[0]), mm(grid.minXZ[1] * k[2])], sizeXZ: [mm(grid.sizeXZ[0] * k[0]), mm(grid.sizeXZ[1] * k[2])],
+        cells: grid.cells.map((c: unknown) => (typeof c === "number" ? mm(c * k[1]) : c)) }
+    : topGrid;
+  if (!m.colliders.fitSupportGrid(id, fitted, fitXform(xform, k))) return false;
   generation++;
   scopeEntry(m, id);
   (holders.get(id) ?? holders.set(id, new Set()).get(id)!).add(holder);
@@ -220,16 +251,19 @@ const meshGeometries = new WeakMap<object, any>();
 /** Register a placed entity's REAL collider: fitted by colliders.js from its
  *  triangles (server/geometry.ts collisionTriangles), with the same `collide`
  *  override, scale and lib-sharing the browser's promote tail passes
- *  (client/lib/realize/models.js). decide() then makes the browser's choice —
+ *  (client/lib/realize/models.js), but for a stretched thing, whose triangles are
+ *  stretched as it is drawn, in a copy of its own, where the browser's colliders
+ *  read one scale for all three axes, and a mirrored one, fitted at |scale| where
+ *  the browser keeps the sign. decide() then makes the browser's choice —
  *  box, pillar or exact trimesh — so the walls of a room-scale interior hold
  *  an agent back and its floors hold it up, not just a ragdoll's beads.
  *  Same holder discipline and lifetime as registerSupport. */
 export async function registerMeshSupport(
   holder: string, id: string, mesh: { positions: Float32Array; indices: Uint32Array },
-  xform: { position: number[]; yaw?: number; scale?: number; collide?: string; lib?: string },
+  xform: { position: number[]; yaw?: number; scale?: number; scale3?: number[]; collide?: string; model?: string },
 ): Promise<boolean> {
   if (!isFiniteVec3(xform?.position)
-      || !Number.isFinite(xform.yaw ?? 0) || !Number.isFinite(xform.scale ?? 1)) {
+      || !Number.isFinite(xform.yaw ?? 0) || !Number.isFinite(xform.scale ?? 1) || !finite3(xform.scale3)) {
     console.error(`[physics] mesh support ${id} abstained — non-finite transform`);
     return false;
   }
@@ -243,7 +277,11 @@ export async function registerMeshSupport(
     geom.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
     meshGeometries.set(mesh, geom);
   }
-  const s = xform.scale ?? 1;
+  // a stretched thing's triangles carry its stretch, in a copy of its own: the shared geometry and the lib's shared
+  // fit are for the model at one scale
+  const k = stretchOf(xform);
+  if (k) geom = geom.clone().scale(k[0], k[1], k[2]);
+  const s = fitXform(xform, k).scale!;
   const root = new THREE.Group();
   root.add(new THREE.Mesh(geom));
   root.position.set(xform.position[0], xform.position[1], xform.position[2]);
@@ -253,7 +291,8 @@ export async function registerMeshSupport(
   // Never throws (#88): a model the fit chokes on (degenerate triangles, a
   // BVH build failure) abstains, and the caller falls back to its summary.
   try {
-    m.colliders.fitCollider(id, root, { collide: xform.collide, scale: s, lib: xform.lib ?? null, localFrame: true });
+    const lib = k ? null : xform.model ?? null;   // colliders.js shares a fit between spawns of one model by this name
+    m.colliders.fitCollider(id, root, { collide: xform.collide, scale: s, lib, localFrame: true });
     scopeEntry(m, id);
   } catch (err) {
     console.error(`[physics] mesh support ${id} abstained — fit failed:`, String(err).split("\n")[0]);
@@ -265,6 +304,8 @@ export async function registerMeshSupport(
 }
 
 const WALKING = colliderFor(1);
+/** The route planner's radius: the authority's square body box, corners included, plus navgrid's nudge (navProbe). */
+const PLAN_R = WALKING.r * Math.SQRT2 + NAV_NUDGE;
 
 /** Bumped whenever the collider map changes (a fit, a refit, a removal):
  *  what a route planner learned about the world is good until it moves. */
@@ -318,6 +359,17 @@ export function standOn(pos: { x: number; y: number; z: number }, heightAt: (x: 
   return ground;
 }
 
+/** Run `fn` with the colliders `ids` out of every query (colliders.suspendCollider: out of the grid, the entry kept) and
+ *  put back after — those already out (a thing in a hand) stay as they were. The route planner's passable things: a loose
+ *  thing this body would shove is walked INTO, not round (agent.ts walkNow). Synchronous, so no other query sees the gap. */
+export function withoutColliders<T>(ids: Iterable<string>, fn: () => T): T {
+  const C = simMods?.colliders;
+  if (!C?.suspendCollider) return fn();
+  const out: string[] = [];
+  for (const id of ids) if (C.colliders?.has(id) && !C.isSuspended(id)) { C.suspendCollider(id, true); out.push(id); }
+  try { return fn(); } finally { for (const id of out) C.suspendCollider(id, false); }
+}
+
 /** The route planner's view of the world (mcpl/navgrid.ts): the same
  *  surfaceUnder and resolveColliders, with the same walking capsule, that the
  *  feet will be moved by. null while the sim is not loaded. */
@@ -328,10 +380,35 @@ export function navProbe(heightAt: (x: number, z: number) => number): NavProbe |
     surfaceUnder: (x, z, maxY) => C.surfaceUnder(x, z, heightAt, maxY).y,
     stand: (x, y, z) => {
       v.set(x, y, z);
-      const ground = C.resolveColliders(v, heightAt, WALKING.r, WALKING.tall, true);
-      return { ground, push: Math.hypot(v.x - x, v.z - z) };
+      // the planner's capsule is wider than the feet's: the authority walks a SQUARE box of the mover's radius (shared/
+      // mover.js bodyBox, a centimetre of slack) whose corners reach r·√2, and navgrid accepts a push under NAV_NUDGE as
+      // standing room — so a route planned with the feet's own radius grazed a doorway jamb (1.3 cm) and a railing's end
+      // (1.6 cm), and the authority refused that stretch (protocol merge). PLAN_R clears the box everywhere
+      const ground = C.resolveColliders(v, heightAt, PLAN_R, WALKING.tall, true);
+      const push = Math.hypot(v.x - x, v.z - z);
+      // ...and the authority's box reaches the body's full height (shared/mover.js bodyBox: a step above the feet to the
+      // top of the head), where the feet's wall probe stops at the hips: the same probe again, raised half a body, is
+      // the head's band — so a stair under the edge of an upper floor is climbed where the head clears it
+      v.set(x, y + WALKING.tall / 2, z);
+      C.resolveColliders(v, heightAt, PLAN_R, WALKING.tall, false);
+      return { ground, push: Math.max(push, Math.hypot(v.x - x, v.z - z)) };
     },
   };
+}
+
+/** Can an eye at `from` see `to`? A ray against the fitted colliders (colliders.raySegment: a model's exact triangles where
+ *  it was fitted exact, its box otherwise — the colliders the feet use) and the terrain, sampled every half metre.
+ *  null while the collision modules are not loaded: the caller decides by distance alone then, and says so. */
+export function lineOfSight(from: number[], to: number[], heightAt: (x: number, z: number) => number): boolean | null {
+  if (!simMods) { void loadSim(); return null; }
+  const dx = to[0] - from[0], dy = to[1] - from[1], dz = to[2] - from[2], far = Math.hypot(dx, dy, dz);
+  if (far < 1e-6) return true;
+  const T = simMods.THREE;
+  const hit = simMods.colliders.raySegment(new T.Vector3(from[0], from[1], from[2]), new T.Vector3(dx / far, dy / far, dz / far), Math.max(0, far - 0.05));
+  if (hit != null) return false;
+  const n = Math.ceil(far / 0.5);
+  for (let k = 1; k < n; k++) { const t = k / n; if (heightAt(from[0] + dx * t, from[2] + dz * t) > from[1] + dy * t + 0.05) return false; }
+  return true;
 }
 
 export async function removeSupport(holder: string, id: string) {
@@ -425,8 +502,8 @@ async function skeletonFor(httpBase: string, avatarPath: string) {
       Object.defineProperty(P, "__wingBones", { value: Object.keys(wingParent), enumerable: false });
     }
     // VRM 0.x bodies face -Z; the reach frame algebra needs to know (six of
-    // the shipped rigs). The ragdoll never asked, so this rides as a
-    // non-enumerable rider rather than a change to its P contract.
+    // the shipped rigs). The ragdoll never asked, so this travels as a
+    // non-enumerable extra rather than a change to its P contract.
     Object.defineProperty(P, "__vrm0", { value: !!g.extensions?.VRM, enumerable: false });
     Object.defineProperty(P, "__restAxes", { value: restAxes, enumerable: false });
     skeletons.set(key, P);
@@ -641,13 +718,13 @@ export class HeadlessBody {
   }
 
   /** Advance; returns what to stream, or null once the sim has captured. */
-  private stepIn(dt: number): { pose: Record<string, number[]>; p: number[]; done: boolean } | null {
+  private stepIn(dt: number): { pose: Record<string, number[]>; p: number[]; hipsY: number; done: boolean } | null {
     if (!this.rd) return null;
     this.rd.step(dt);
     const pose = this.rd.done ? this.rd.finalPose : this.rd.pose;
     if (!pose) return null;
     const r = this.av.root.position;
-    const out = { pose, p: [r.x, r.y, r.z], done: !!this.rd.done };
+    const out = { pose, p: [r.x, r.y, r.z], hipsY: Number(this.rd.p?.hips?.y), done: !!this.rd.done };
     if (this.rd.done && process.env.BODY_DEBUG) {
       // Where did she actually COME TO REST? Build-time numbers say nothing
       // about this: the question "does she settle above the floor" is about the

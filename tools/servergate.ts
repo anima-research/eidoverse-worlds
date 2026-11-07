@@ -1,23 +1,26 @@
 // servergate — the step-7 battery, one command.
 //
 //   bun tools/servergate.ts             # the core battery
-//   bun tools/servergate.ts --only permtest,comptest
+//   bun tools/servergate.ts --only permtest,smoke
 //
 // The server split (TEL0S_NOTES §15) walks through a dense lattice of
 // wire-contract suites, each with its own env header. This runner makes
 // that lattice one command: for every external-server tool it boots a
 // fresh scratch sequencer (own WORLDS_DIR, own port, the tool's exact
-// env), runs the tool, kills the sequencer by child handle (§ Windows:
-// taskkill /T — the PID we hold is bun's own since we spawn
-// process.execPath, never the PATH shim), and prints a PASS/FAIL table.
-// Self-booting suites (smoke, authtest, support-lifecycle, collide-fold)
-// just run. Baseline this GREEN before touching server.ts; run it after
+// env), runs the tool, kills the sequencer by child handle (§ Windows: its
+// whole tree, procgroup.ts killChild — the PID we hold is bun's own since we
+// spawn process.execPath, never the PATH shim), and prints a PASS/FAIL table.
+// Self-booting suites (smoke, authtest, support-lifecycle) just run. (Protocol v1
+// removed 2026-10-07: the v1 wire matrices — comptest, modtest, locktest, leasetest,
+// worldops, compfold, behaviortest, collide-fold — went with it; their successors
+// are in tools/protocol/ (bun run test:protocol).) Baseline this GREEN before touching server.ts; run it after
 // every slice.
 
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { killChild } from "./protocol/procgroup.ts";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const only = (() => {
@@ -38,50 +41,19 @@ function freePort(from: number): number {
   throw new Error("no free port");
 }
 
-function reap(p: Bun.Subprocess | null) {
-  if (!p) return;
-  try { p.kill(); } catch { /* gone */ }
-  if (process.platform === "win32" && typeof p.pid === "number") {
-    try { Bun.spawnSync(["taskkill", "/PID", String(p.pid), "/T", "/F"], { stdout: "ignore", stderr: "ignore" }); } catch { /* fine */ }
-  }
-}
+const reap = killChild;
 
 // ---- the battery ------------------------------------------------------------
 // `server: true` → boot a scratch sequencer and hand the tool WORLD_URL/
 // JOIN_TOKEN/HTTP. `env` on either kind is the tool's documented header.
 
-type Row = { name: string; tool: string; server?: boolean; serverEnv?: Record<string, string>; env?: Record<string, string>; timeoutMs?: number; sweepPorts?: number[] };
+type Row = { name: string; tool: string; server?: boolean; serverEnv?: Record<string, string>; env?: Record<string, string>; timeoutMs?: number };
 const BATTERY: Row[] = [
-  { name: "smoke", tool: "tools/smoke.ts", sweepPorts: [8987] },
-  { name: "authtest", tool: "tools/authtest.ts", sweepPorts: [8992] },
-  { name: "collide-fold", tool: "tools/collide-fold-test.ts", sweepPorts: [8990] },
-  { name: "support-lifecycle", tool: "tools/support-lifecycle-test.ts", timeoutMs: 420_000, sweepPorts: [8940] },
-  { name: "permtest", tool: "tools/permtest.ts", server: true },
-  { name: "comptest", tool: "tools/comptest.ts", server: true },
-  { name: "modtest", tool: "tools/modtest.ts", server: true, serverEnv: { WORLD_ADMIN: "admin" } },
-  { name: "locktest", tool: "tools/locktest.ts", server: true },
-  { name: "leasetest", tool: "tools/leasetest.ts", server: true },
-  { name: "worldops", tool: "tools/worldops-test.ts", server: true },
-  { name: "compfold", tool: "tools/compfold-test.ts", server: true, serverEnv: { FOLD_EVERY: "1" } },
-  { name: "behaviortest", tool: "tools/behaviortest.ts", server: true, serverEnv: { BHV_TIMER_MIN: "1" }, timeoutMs: 240_000 },
+  { name: "smoke", tool: "tools/smoke.ts" },   // its own free port (8987 is a live sequencer here)
+  { name: "authtest", tool: "tools/authtest.ts" },   // its own free port
+  { name: "support-lifecycle", tool: "tools/support-lifecycle-test.ts", timeoutMs: 420_000 },   // its own free port (freePort): nothing to sweep
+  { name: "permtest", tool: "tools/permtest.ts" },
 ];
-
-/** Kill whatever LISTENS on `port` (Windows netstat) — self-booting suites
- *  can leak their servers on exit, since Windows children outlive parents. */
-function sweepPort(port: number) {
-  if (process.platform !== "win32") return;
-  try {
-    const out = Bun.spawnSync(["netstat", "-ano"], { stdout: "pipe" }).stdout.toString();
-    for (const line of out.split("\n")) {
-      if (!line.includes(`:${port} `) || !line.includes("LISTENING")) continue;
-      const pid = line.trim().split(/\s+/).pop();
-      if (pid && pid !== "0") {
-        Bun.spawnSync(["taskkill", "/PID", pid, "/T", "/F"], { stdout: "ignore", stderr: "ignore" });
-        console.log(`  \x1b[2m(swept leaked listener on :${port}, pid ${pid})\x1b[0m`);
-      }
-    }
-  } catch { /* sweep is best-effort */ }
-}
 
 const LOGDIR = mkdtempSync(join(tmpdir(), "ew-servergate-"));
 console.log(`\x1b[2mtool logs: ${LOGDIR}\x1b[0m`);
@@ -140,7 +112,6 @@ for (const row of BATTERY) {
     console.log(`\x1b[31m✗\x1b[0m ${row.name.padEnd(18)} — ${String(e)}`);
   } finally {
     reap(seq);
-    for (const p of row.sweepPorts ?? []) sweepPort(p);
     await sleep(300);
     if (scratch) { try { rmSync(scratch, { recursive: true, force: true, maxRetries: 3 }); } catch { /* locks */ } }
   }

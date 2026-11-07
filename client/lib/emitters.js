@@ -1,39 +1,30 @@
-// emitters — the browser host for the `particles` / `particles:<name>` components.
+// emitters — the browser host for the `particles` component.
 //
-// Owns the THREE/DOM-bound half: eval-loading the toolkit's particle builder
-// off the library route, priming and caching sprite textures, building each
-// emitter with a DETERMINISTIC random stream, parenting it to the entity that
-// owns it, and handing the resulting handle to the registry that knows how to
-// take it back out again.
+// Owns the THREE/DOM-bound half: resolving a stored value into its effect (shared/particle_effects.js: an Essential, or
+// a document stored in the world, fetched once with the `effect` request), priming and caching sprite textures, building
+// each emitter (client/lib/particlefx.js: shared/particlesim.js, Godot's CPUParticles3D ported, drawn as instanced
+// quads) with a DETERMINISTIC random stream from its seed, parenting it to the thing (or the model part) that owns it, and
+// handing the handle to the registry that knows how to take it back out again.
 //
 // The split mirrors flora:
-//   particles.js      — what a `particles` bag MEANS (shared with the mcpl agent)
-//   emitter_field.js  — lifecycle/registry, DOM-free and unit-tested
-//   this file         — hosting
+//   particle_effects.js — what a `particles` value MEANS (shared with the authority and the mcpl agent)
+//   particlesim.js      — the simulation (pure)
+//   emitter_field.js    — lifecycle/registry, DOM-free and unit-tested
+//   particlefx.js       — the GPU half of one emitter
+//   this file           — hosting
 //
-// Two upstream facts shape everything here, both named in eidoverse-worlds #25:
-//
-//   1. `makeParticles` seeds its per-instance spawn attributes from
-//      `Math.random()`. Two clients would therefore render two different fires
-//      from one authored component, and a reconnect would render a third. The
-//      build call is synchronous, so the seam is a scoped swap of Math.random
-//      (`withSeededRandom`) around exactly that call — and nothing else.
-//   2. It has no `dispose()` and pushes its billboard `update` into the global
-//      `_autoParticleSystems` array with no way to unregister. Retirement is
-//      therefore ours: identity-splice the hook, dispose the geometry and
-//      material we own, detach the mesh.
-//
-// Both are adapter-side ON PURPOSE, in one function each, so that when the
-// engine grows a `seed` option and a `dispose()` (as `createFlora` already
-// did) this file loses code rather than gaining a second path.
+// `playing: false` is Godot's emitting = false: the living particles finish and none are born; turning it back on
+// resumes the same emitter (no rebuild).
 
 import { THREE, scene } from './core.js';
 import { bus } from './base.js';
-import { loadEidoModule, primeFiles } from './assets.js';
-import { entities } from './world.js';
-import { normalizeParticles, resolvedCount, withSeededRandom, builderOverrides, isParticlesKey, QUALITY_TIERS } from '../../shared/particles.js';
-import { makeEmitterRegistry, retireEmitter, adoptSystem } from './emitter_field.js';
+import { primeFiles } from './assets.js';
+import { entities, findPart } from './world.js';
+import { resolveParticles, effectBlobName, effectProblem, readableEffect, QUALITY_TIERS } from '../../shared/particle_effects.js';
+import { buildEmitter } from './particlefx.js';
+import { makeEmitterRegistry, retireEmitter } from './emitter_field.js';
 import { autoHooks as autos, ownHook } from './autohooks.js';
+import { sendRequest } from './net.js';
 
 // ---- textures --------------------------------------------------------------
 // Sprite textures are SHARED, immutable, and small; one flame_05 serves every
@@ -81,172 +72,172 @@ export const emitterQuality = () => tier;
  *  window onto whether anything leaked. */
 export const emitterCount = () => handles.size;
 
+// ---- stored effects ---------------------------------------------------------
+// A document stored in the world (effect: 'sha256:<hex>') is fetched once and kept: a content address names fixed bytes,
+// so a cached one is never stale. The authority checked it when it was named; it is checked again here (readableEffect: its
+// known parts, every bound) because a viewer runs what it draws.
+const stored = new Map();          // blob name → doc | null (refused) | Promise
+const waiting = new Map();         // blob name → Set of ids to re-apply when it lands
+function lookup(name) { const d = stored.get(name); return d && typeof d.then !== 'function' ? d : null; }
+function fetchEffect(name, id) {
+  (waiting.get(name) ?? waiting.set(name, new Set()).get(name)).add(id);
+  if (stored.has(name)) return;
+  stored.set(name, sendRequest('effect', { name }).then((r) => {
+    // the unknown-field policy (lead 10-17): keep the parts this build knows (readableEffect), so a document using an
+    // addition this client predates draws what it can instead of nothing
+    const doc = r?.ok && r.effect ? readableEffect(r.effect) : null;
+    if (!doc) console.warn(`[emitters] effect ${name}: ${r?.refused?.reason ?? (r?.effect ? effectProblem(r.effect) : 'not stored here')}`);
+    stored.set(name, doc);
+    for (const x of waiting.get(name) ?? []) { const v = lastValue.get(x); if (v !== undefined) applyFrom(x, v); }
+    waiting.delete(name);
+  }).catch(() => { stored.delete(name); }));
+}
+const lastValue = new Map();       // id → the stored value last seen (what a landed effect re-applies)
+/** A stored effect document this viewer has loaded, by blob name (the inspector's knobs read it), or null. */
+export const effectLookup = (name) => lookup(name);
+
 // ---- build -----------------------------------------------------------------
 
-async function build(emitter, { id, key = 'particles' }) {
-  const parent = entities.get(id);
-  // `null` is a spawn reservation whose GLB is still downloading, and an
-  // absent id is an entity that was removed under us. Either way there is
-  // nothing to hang a local origin off, and a world-origin emitter is the
-  // drift #25 names in requirement 2 — so we don't build one.
-  if (!parent) throw new Error(`entity ${id} is not in the scene`);
-  await loadEidoModule('particles.js');
-  const map = await spriteTexture(emitter.texture);
-  // The AUTHORED cap decides how many instances exist at all — allocating 600
-  // sprites for an emitter its author capped at a quarter wastes the memory on
-  // every machine. The local tier then draws fewer still, without a rebuild.
-  const builtCount = resolvedCount(emitter, 'auto');
+/** A viewer's share of particles: its tier (the governor lowers it). */
+const budget = () => QUALITY_TIERS[tier] ?? 1;
 
-  // The scoped-determinism seam. `makeParticles` is fully synchronous, so
-  // nothing else in this tab can observe the swapped Math.random.
-  // Every authored override goes to the builder as-is: upstream merges opts
-  // over the preset (`Object.assign({}, base, opts)`), so sway, velocities,
-  // gravity, growth, swirl, twinkle, taper, spin, colour and blending are all
-  // the preset's defaults until a bag says otherwise (shared/particles.js
-  // bounds and names them).
-  const sys = withSeededRandom(emitter.seed, () => globalThis.makeParticles({
-    scene,                       // the builder adds the mesh here…
-    preset: emitter.preset,
-    map,
-    count: builtCount,
-    origin: [0, 0, 0],           // …and we re-parent it, so the origin is the entity's
-    ...builderOverrides(emitter),
-    name: `particles_${id}_${key === 'particles' ? '' : `${key.slice(10)}_`}${emitter.preset}`,
-  }));
-  if (!sys?.mesh) throw new Error('makeParticles returned no mesh');
-  // From here the mesh is in the scene and the update is in the global hook
-  // array — allocated, and owned by nobody until a handle exists. Everything
-  // below therefore runs inside adoptSystem, which unwinds the raw system if
-  // any of it throws.
-  ownHook(sys.update);           // ours, so no diffing subsystem may claim it
-
-  return adoptSystem(sys, autos(), () => {
-    // Entity-relative, not world-origin: the emitter is a CHILD of the thing
-    // that owns it, so it rides every place/mount/motion that thing does. The
-    // authored origin is a local offset in the entity's own frame.
-    sys.mesh.position.set(emitter.origin[0], emitter.origin[1], emitter.origin[2]);
-    // `scale` is the emitter's OWN frame. The builder computes every sprite in
-    // the mesh's local space (spawn offset + velocity·age + gravity + sway,
-    // then a camera-facing quad of `size`), so scaling the mesh scales all of
-    // it together and nothing else — the origin stays an entity-frame offset,
-    // timing is untouched, and the entity's own scale still composes on top.
-    // It is what lets a fire tuned at hearth size burn on a wick.
-    sys.mesh.scale.setScalar(emitter.scale ?? 1);
-    parent.add(sys.mesh);
-    sys.mesh.userData.emitterOf = id;
-    sys.mesh.userData.emitterKey = key;
-    // The world owns this, not the sky: an async sky build that happens to
-    // snapshot scene.children mid-flight must never claim (and then dispose)
-    // somebody's hearth. Same marker entities and bodies carry.
-    sys.mesh.userData.entityId = id;
-    // …and the weather sweep must not wet a fire (or recompile its
-    // instanced material mid-session trying)
-    sys.mesh.userData.noWet = true;
-    sys.mesh.userData.noCloudShadow = true;
-
-    const handle = {
-      id,
-      key,
-      update: sys.update,
-      mesh: sys.mesh,
-      builtCount,
-      setTier(next) {
-        // InstancedMesh draws `count` of its instances — thinning is a number,
-        // not a rebuild, so the governor can act without a hitch (same lever
-        // flora's density dial pulls).
-        sys.mesh.count = Math.max(1, Math.min(builtCount, resolvedCount(emitter, next)));
-      },
-      dispose() {
-        handles.delete(handle);
-        (sys.mesh.parent ?? scene).remove(sys.mesh);
-        sys.mesh.geometry?.dispose?.();
-        const m = sys.mesh.material;
-        if (Array.isArray(m)) m.forEach((x) => x?.dispose?.()); else m?.dispose?.();
-        // NOT the texture: see textureCache above.
-      },
-    };
-    handle.setTier(tier);
-    handles.add(handle);         // last: nothing after this can throw and strand it
-    return handle;
-  });
+async function build(resolved, { id }) {
+  const ent = entities.get(id);
+  // `null` is a spawn reservation whose GLB is still downloading, and an absent id is an entity that was removed under
+  // us. Either way there is nothing to hang a local origin off, and a world-origin emitter is drift (#25 requirement 2).
+  if (!ent) throw new Error(`entity ${id} is not in the scene`);
+  // a part (picture.part, openable.part): its node, once the model has it; until then the thing itself, re-hung below
+  const host = (resolved.part && findPart(ent, resolved.part)) || ent;
+  const group = new THREE.Group();
+  group.name = `particles_${id}_${resolved.effect}`;
+  group.position.set(resolved.at[0], resolved.at[1], resolved.at[2]);
+  group.scale.setScalar(resolved.scale);
+  const parts = [];
+  try {
+    for (const [i, em] of resolved.emitters.entries()) {
+      const map = await spriteTexture(em.render.texture);
+      // each emitter of an effect its own stream: the instance's seed, then the emitter's place in the document
+      const fx = buildEmitter(em, { map, seed: (resolved.seed + Math.imul(i, 0x9e3779b1)) >>> 0, name: `${group.name}_${i}`, budget });
+      if (!resolved.playing) fx.setEmitting(false);
+      parts.push(fx); group.add(fx.mesh);
+    }
+  } catch (e) { for (const fx of parts) fx.dispose(); throw e; }
+  host.add(group);
+  // The world owns this, not the sky: an async sky build that snapshots scene.children mid-flight must never claim (and
+  // then dispose) somebody's hearth. And the weather sweep must not wet a fire.
+  for (const o of [group, ...parts.map((p) => p.mesh)]) { o.userData.emitterOf = id; o.userData.entityId = id; o.userData.noWet = true; o.userData.noCloudShadow = true; }
+  const update = ownHook(() => {
+    if (resolved.part && group.parent === ent) { const p = findPart(ent, resolved.part); if (p) p.add(group); }   // the GLB landed
+    const now = performance.now(); for (const fx of parts) fx.update(now); });
+  autos().push(update);
+  const handle = {
+    id, update, mesh: group, parts,
+    setEmitting(on) { for (const fx of parts) fx.setEmitting(on); },
+    setTier() { /* drawn counts follow budget() every frame */ },
+    dispose() {
+      handles.delete(handle);
+      group.parent?.remove(group);
+      for (const fx of parts) fx.dispose();
+      // NOT the texture: see textureCache above.
+    },
+  };
+  handles.add(handle);         // last: nothing after this can throw and strand it
+  return handle;
 }
 
 const registry = makeEmitterRegistry({
   autos: autos(),
   build,
-  onError: (e, slot) => console.warn(`[emitters] ${slot}: ${e?.message ?? e}`),
+  onError: (e, id) => console.warn(`[emitters] ${id}: ${e?.message ?? e}`),
 });
-
-/** One registry slot per (entity, component). The default emitter's slot is
- *  the bare entity id — what it has always been — and a named one appends its
- *  key, so `particles` and `particles:smoke` on one hearth never collide. */
-const slotOf = (id, key) => (key === 'particles' ? id : `${id}\u0000${key}`);
-const label = (id, key) => (key === 'particles' ? id : `${id} ${key}`);
 
 // ---- wiring ----------------------------------------------------------------
 // Deferred attach: a `comp` can (and on replay usually does) arrive before the
 // entity's GLB has landed. The bag is already folded — perception is correct
 // the whole time — so the emitter just waits for something to hang off.
-/** slot -> { id, key, emitter } */
 const pending = new Map();
 
-function applyFrom(id, key, data) {
-  const slot = slotOf(id, key);
-  const norm = data == null ? { ok: true, emitter: null } : normalizeParticles(data, { entityId: id, key });
+const sansPlaying = (r) => (r ? JSON.stringify({ ...r, playing: undefined, notes: undefined }) : null);
+function applyFrom(id, data) {
+  if (data == null) { lastValue.delete(id); pending.delete(id); void registry.apply(id, null); return; }
+  lastValue.set(id, data);
+  const norm = resolveParticles(data, { entityId: id, lookup });
   if (!norm.ok) {
-    // Legible, and only once per authoring: the component still folds, still
-    // persists, and still reads as an emitter in every text-tier look().
-    console.warn(`[emitters] ${label(id, key)}: ${norm.why}`);
-    pending.delete(slot);
-    void registry.apply(slot, null, { entity: id, key });
+    const name = effectBlobName(data?.effect);
+    if (norm.pending && name) { fetchEffect(name, id); return; }   // it builds when the document lands
+    // Legible, and only once per authoring: the component still folds, still persists, and still reads as an emitter
+    // in every text-tier look().
+    console.warn(`[emitters] ${id}: ${norm.why}`);
+    void registry.apply(id, null);
     return;
   }
-  if (norm.notes?.length) console.warn(`[emitters] ${label(id, key)}: ${norm.notes.join(' · ')}`);
-  if (norm.emitter && !entities.get(id)) {
-    pending.set(slot, { id, key, emitter: norm.emitter });
-    return;
-  }
-  pending.delete(slot);
-  void registry.apply(slot, norm.emitter, { entity: id, key });
+  if (norm.notes?.length) console.warn(`[emitters] ${id}: ${norm.notes.join(' · ')}`);
+  delete norm.notes;
+  if (!entities.get(id)) { pending.set(id, norm); return; }
+  pending.delete(id);
+  // only playing changed: the same emitter stops or resumes spawning (Godot's emitting), nothing is rebuilt
+  const cur = registry.emitterOf(id), h = registry.get(id);
+  if (cur && h && sansPlaying(cur) === sansPlaying(norm) && cur.playing !== norm.playing) { registry.setPlaying(id, norm.playing); return; }
+  void registry.apply(id, norm);
 }
 
 bus.on('comp', ({ id, type, data }) => {
-  if (!isParticlesKey(type)) return;
-  applyFrom(id, type, data);
+  if (type !== 'particles') return;
+  applyFrom(id, data);
 });
-
-const pendingOf = (id) => [...pending.entries()].filter(([, p]) => p.id === id);
 
 bus.on('entity', ({ id, kind }) => {
   if (kind === 'remove' || kind === 'demote') {
     // demote (residency §13.3): the entity's subtree left the scene with the
-    // emitter meshes inside it — retire the handles or their per-frame hooks
-    // keep ticking against a detached group. Promotion re-announces the comp
-    // bag and the emitters re-attach through the ordinary pending path. ALL of
-    // the entity's emitters, whatever their names.
-    for (const [slot] of pendingOf(id)) pending.delete(slot);
-    registry.retireEntity(id);
+    // emitter mesh inside it — retire the handle or its per-frame hook keeps
+    // ticking against a detached group. Promotion re-announces the comp bag
+    // and the emitter re-attaches through the ordinary pending path.
+    pending.delete(id);
+    registry.retire(id);
   } else if (kind === 'spawn') {
     // a promote replaces the placeholder SUBTREE — an emitter attached to the
     // stand would survive as a live hook on a detached mesh, and the comp
     // re-announcement would hit the registry's same-key idempotence guard and
     // keep the stale handle (review B2). Retire first (no-op when none), so
     // the re-announced bag rebuilds on the real object.
-    registry.retireEntity(id);
-    for (const [slot, p] of pendingOf(id)) {
-      pending.delete(slot);
-      void registry.apply(slot, p.emitter, { entity: id, key: p.key });
+    registry.retire(id);
+    if (pending.has(id)) {
+      const emitter = pending.get(id);
+      pending.delete(id);
+      void registry.apply(id, emitter);
     }
   }
 });
 
 bus.on('world-reset', () => clearEmitters());
 
+// ---- the presence tier of a held thing (grabbable.fx) -----------------------
+// While a holder presses use, every client draws the thing's own fx (a hose's spray, a muzzle flash), from its
+// component data and the holder's presence (pose.use): never a stream of logged acts. Its own registry, keyed
+// fx:<id>, so it never replaces the thing's own particles component; the emitter hangs off the thing at fx.at.
+const fxRegistry = makeEmitterRegistry({
+  autos: autos(),
+  build: (emitter, { id }) => build(emitter, { id: id.slice(3) }),
+  onError: (e, id) => console.warn(`[emitters] ${id}: ${e?.message ?? e}`),
+});
+const fxOn = new Set();
+/** Turn a held thing's fx on (fx = grabbable.fx {particles, at}) or off (null). Idempotent. */
+export function setPressFx(id, fx) {
+  if (!fx) { if (fxOn.delete(id)) void fxRegistry.apply(`fx:${id}`, null); return; }
+  if (!entities.get(id)) return;
+  const norm = resolveParticles(fx.particles, { entityId: id, lookup });
+  if (!norm.ok) { if (norm.pending) fetchEffect(effectBlobName(fx.particles?.effect), id); if (fxOn.delete(id)) void fxRegistry.apply(`fx:${id}`, null); return; }
+  delete norm.notes; norm.at = fx.at ?? norm.at;   // a held thing's fx hangs at fx.at
+  fxOn.add(id); void fxRegistry.apply(`fx:${id}`, norm);
+}
+export const pressFxOn = () => [...fxOn];
+
 /** World teardown (a world switch, a reset): every emitter goes, and the
  *  global hook array comes back to where it started. */
 export function clearEmitters() {
-  pending.clear();
+  pending.clear(); lastValue.clear();
   registry.retireAll();
+  fxRegistry.retireAll(); fxOn.clear();
   for (const h of [...handles]) retireEmitter(h, autos());
   handles.clear();
 }

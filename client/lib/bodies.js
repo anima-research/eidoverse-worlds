@@ -7,7 +7,7 @@
 import { bus, wornNameOf } from './base.js';
 import { net } from './net.js';
 import { renderDOM } from './panels.js';
-import { switchAvatar } from './palette.js';
+import { switchAvatar } from './catalog.js';
 import { getMyAvatarName, getMe, myBodyPrefs, setMyBodyPref } from './mybody.js';
 import { BODY_SCALE_MIN, BODY_SCALE_MAX, PLATE_Y_MIN, PLATE_Y_MAX } from './bodyscale.js';
 

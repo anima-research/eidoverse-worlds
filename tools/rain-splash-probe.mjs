@@ -16,15 +16,20 @@ import { chromium } from 'playwright';
 import { ownedWorld, checker } from './probe-harness.mjs';
 
 const { check, done } = checker();
-const world = await ownedWorld({});
+const world = await ownedWorld({ worlds: ['rainprobe'], owner: 'rainprobe', env: { TRUST_NAMES: '1' } });   // the page owns the world, so its @world writes are admitted
 const browser = await chromium.launch({
   ...(process.env.SFU_TEST_CHROME ? { executablePath: process.env.SFU_TEST_CHROME } : {}),
   args: ['--enable-unsafe-webgpu', '--enable-gpu', '--ignore-gpu-blocklist',
     ...(process.platform === 'darwin' ? ['--use-angle=metal'] : [])],
 });
+// a write through the request path that throws on a refusal (the removed net.sendVerb; #260 house I479)
+const setWorld = (pg, component, value, merge = false) => pg.evaluate(async ([c, v, m]) => {
+  const r = await globalThis.EW.sendRequest('set', { id: '@world', component: c, value: v, ...(m ? { merge: true } : {}) });
+  if (!r.ok) throw new Error(`${c} refused: ${JSON.stringify(r.refused)}`);
+}, [component, value, merge]);
 const TERRAIN = { size: 140, segments: 200, amplitude: 3, seed: 4,
-  features: [{ type: 'hill', x: 0, z: -14, radius: 10, height: 7 }, { type: 'hill', x: 16, z: 6, radius: 9, height: -6 }],
-  water: { level: -2.5 } };
+  features: [{ type: 'hill', x: 0, z: -14, radius: 10, height: 7 }, { type: 'hill', x: 16, z: 6, radius: 9, height: -6 }] };
+const WATER = { level: -2.5 };   // @world's own water component now (terrain.water is refused)
 try {
   const pg = await (await browser.newContext({ viewport: { width: 1280, height: 720 } })).newPage();
   const errs = [];
@@ -39,9 +44,10 @@ try {
     return globalThis.EW.renderer.backend?.isWebGPUBackend ? 'WebGPU' : 'WebGL2';
   });
   console.log(`  (backend: ${backend})`);
-  await pg.evaluate((T) => globalThis.EW.sendVerb('terrain', T), TERRAIN);
+  await setWorld(pg, 'water', WATER);
+  await setWorld(pg, 'terrain', TERRAIN);
   await pg.waitForFunction(async () => (await import('./lib/terrain.js')).hasTerrain(), null, { timeout: 60000, polling: 500 });
-  await pg.evaluate(() => globalThis.EW.sendVerb('sky', { hours: 13, rate: 0, clouds: 'cumulus', weather: 'storm' }));
+  await setWorld(pg, 'sky', { hours: 13, rate: 0, clouds: 'cumulus', weather: 'storm' }, true);
   await pg.waitForFunction(() => globalThis.__wx()?.diagnostics.precipitation.rainVisible, null, { timeout: 240000, polling: 1000 });
   await pg.evaluate(() => { globalThis.EW.myState.pos.set(6, 0, -2); });   // between the hill and the pond
   await pg.waitForTimeout(2500);
@@ -97,7 +103,7 @@ try {
   await pg.waitForTimeout(300);
 
   const bakes0 = (await measure()).bakes;
-  await pg.evaluate((T) => globalThis.EW.sendVerb('terrain', { ...T, features: [{ type: 'hill', x: 4, z: -6, radius: 12, height: 11 }, T.features[1]] }), TERRAIN);
+  await setWorld(pg, 'terrain', { ...TERRAIN, features: [{ type: 'hill', x: 4, z: -6, radius: 12, height: 11 }, TERRAIN.features[1]] });
   await pg.waitForFunction((b0) => globalThis.__wx().diagnostics.ground.bakes > b0, bakes0, { timeout: 60000, polling: 250 });
   await pg.waitForTimeout(1500);
   const c = await measure();

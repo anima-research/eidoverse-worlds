@@ -19,6 +19,8 @@ export const maxSlots = () => state.maxSlots;
 export const litCount = () => state.lit;
 export const setCasterBudget = (n) => { state.casterBudget = n; };
 export const getCasterBudget = () => state.casterBudget;
+// this branch's lightrig: the person's Video setting is the ceiling a restore climbs back to (the scene starts there)
+export const getCasterCeiling = () => 12;
 export const casterCount = () => state.casters;
 export const shadowsOn = () => true;
 export const shadowRes = () => 2048;

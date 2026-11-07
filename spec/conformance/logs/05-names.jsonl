@@ -1,0 +1,15 @@
+{"kind": "genesis", "actor": "system", "body": {"dialect": "eidoverse-log", "v": 4, "nonce": "XWVu1u7BpaZTDFSETYiphg", "owners": [["ed25519:BP7aKo17f474DD1aBSLG0a3Pb29Qs3yqQ6Ve0wSRVD0"]], "sequencer": "ed25519:rRoIPhqlc8rDxC1GZlfHOe1IBJYWQ8MDNg9QuZzMsic"}}
+{"world": "sha256:56d471bcd9fcd6b6cab2be74c0e2f4181a77cec7f24ee6e89273f0cb1d9bb44b", "kind": "request", "ts": 1, "actor": "alice", "verb": "spawn", "body": {"args": {}}}
+{"world": "sha256:56d471bcd9fcd6b6cab2be74c0e2f4181a77cec7f24ee6e89273f0cb1d9bb44b", "kind": "change", "ts": 1, "actor": "system", "cause": 1, "op": "create", "body": {"id": "__proto__"}}
+{"world": "sha256:56d471bcd9fcd6b6cab2be74c0e2f4181a77cec7f24ee6e89273f0cb1d9bb44b", "kind": "change", "ts": 1, "actor": "system", "cause": 1, "op": "create", "body": {"id": "constructor"}}
+{"world": "sha256:56d471bcd9fcd6b6cab2be74c0e2f4181a77cec7f24ee6e89273f0cb1d9bb44b", "kind": "change", "ts": 1, "actor": "system", "cause": 1, "op": "create", "body": {"id": "prototype"}}
+{"world": "sha256:56d471bcd9fcd6b6cab2be74c0e2f4181a77cec7f24ee6e89273f0cb1d9bb44b", "kind": "change", "ts": 1, "actor": "system", "cause": 1, "op": "create", "body": {"id": "l\u0430mp"}}
+{"world": "sha256:56d471bcd9fcd6b6cab2be74c0e2f4181a77cec7f24ee6e89273f0cb1d9bb44b", "kind": "change", "ts": 1, "actor": "system", "cause": 1, "op": "create", "body": {"id": "Lamp"}}
+{"world": "sha256:56d471bcd9fcd6b6cab2be74c0e2f4181a77cec7f24ee6e89273f0cb1d9bb44b", "kind": "change", "ts": 1, "actor": "system", "cause": 1, "op": "set", "body": {"id": "constructor", "comp": "__proto__", "value": 1}}
+{"world": "sha256:56d471bcd9fcd6b6cab2be74c0e2f4181a77cec7f24ee6e89273f0cb1d9bb44b", "kind": "change", "ts": 1, "actor": "system", "cause": 1, "op": "set", "body": {"id": "constructor", "comp": "constructor", "value": {"__proto__": {"polluted": true}}}}
+{"world": "sha256:56d471bcd9fcd6b6cab2be74c0e2f4181a77cec7f24ee6e89273f0cb1d9bb44b", "kind": "change", "ts": 1, "actor": "system", "cause": 1, "op": "create", "body": {"id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}
+{"world": "sha256:56d471bcd9fcd6b6cab2be74c0e2f4181a77cec7f24ee6e89273f0cb1d9bb44b", "kind": "change", "ts": 1, "actor": "system", "cause": 1, "op": "create", "body": {"id": "lamp\n"}}
+{"world": "sha256:56d471bcd9fcd6b6cab2be74c0e2f4181a77cec7f24ee6e89273f0cb1d9bb44b", "kind": "change", "ts": 1, "actor": "system", "cause": 1, "op": "set", "body": {"id": "constructor", "comp": "light@01", "value": 1}}
+{"world": "sha256:56d471bcd9fcd6b6cab2be74c0e2f4181a77cec7f24ee6e89273f0cb1d9bb44b", "kind": "change", "ts": 1, "actor": "system", "cause": 1, "op": "set", "body": {"id": "constructor", "comp": "roles:Alice", "value": 1}}
+{"world": "sha256:56d471bcd9fcd6b6cab2be74c0e2f4181a77cec7f24ee6e89273f0cb1d9bb44b", "kind": "change", "ts": 1, "actor": "system", "cause": 1, "op": "create", "body": {"id": "body:alice"}}
+{"world": "sha256:56d471bcd9fcd6b6cab2be74c0e2f4181a77cec7f24ee6e89273f0cb1d9bb44b", "kind": "change", "ts": 1, "actor": "system", "cause": 1, "op": "create", "body": {"id": "@World"}}

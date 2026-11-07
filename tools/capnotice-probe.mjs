@@ -5,7 +5,7 @@
 //   bun tools/capnotice-probe.mjs [--shots <dir>]
 // What must hold, desktop 1280x720:
 //   the WebGL chip is amber, small, its text folded away; the graphics chip is red and shows its count (×2);
-//   the strip sits on the ∃'s row, right of the glyphs, overlapping none of the rail/glyphs/emote bar;
+//   the strip sits on the ∃'s row, right of the glyphs, overlapping none of the rail/glyphs/action bar;
 //   slow seconds → a 'reduced detail' chip; smooth seconds → it goes (the reduction lifted);
 //   a click opens the full text under the chip, inside the viewport, with "got it" / "don’t show again";
 //   Esc folds the popover and nothing else (the panels stay); "got it" folds it and the chip stays;
@@ -59,7 +59,7 @@ const shedOn = (pg) => pg.evaluate(async () => (await import('/lib/realize/model
 const clash = (pg) => pg.evaluate(() => {
   const s = document.getElementById('hudstatus')?.getBoundingClientRect(); if (!s?.width) return ['no strip'];
   const out = [];
-  for (const sel of ['#dock', '#micbtn', '#earbtn', '#xrbtn', '.frame[data-frame="emotes"]']) {
+  for (const sel of ['#dock', '#micbtn', '#earbtn', '#xrbtn', '.frame[data-frame="actions"]']) {
     const e = document.querySelector(sel); if (!e || getComputedStyle(e).display === 'none') continue;
     const g = e.getBoundingClientRect(); if (!g.width) continue;
     if (s.left < g.right && s.right > g.left && s.top < g.bottom && s.bottom > g.top) out.push(sel);
@@ -83,17 +83,17 @@ try {
   const hud = await box(pg, '#hud'), strip = await box(pg, '#hudstatus'), ear = await box(pg, '#earbtn'), mic = await box(pg, '#micbtn');
   check('the strip sits on the ∃’s row: its first line’s centre is the ∃’s', hud && strip && web && Math.abs((web.t + web.b) / 2 - (hud.t + hud.b) / 2) <= 1.5, JSON.stringify({ hud, strip, web }));
   check('…past the mic/ear glyphs', strip && strip.l >= Math.max(ear?.r ?? 0, mic?.r ?? 0), JSON.stringify({ strip, ear, mic }));
-  check('…overlapping none of the rail, the glyphs or the emote bar', (await clash(pg)).length === 0, JSON.stringify(await clash(pg)));
+  check('…overlapping none of the rail, the glyphs or the action bar', (await clash(pg)).length === 0, JSON.stringify(await clash(pg)));
 
   // QUALITY REDUCED: a state, not an event — slow seconds post it, smooth ones lift it. The real 1 Hz pulse is paused
   // while the probe feeds the governor its seconds (headless is slow: it would shed again between them)
-  const pulse = (pg, on) => pg.evaluate(async (on) => (await import('/lib/frame.js')).setSystemEnabled('pulse', on), on);
+  const pulse = (pg, on) => pg.evaluate(async (on) => (await import('/lib/frameloop.js')).setSystemEnabled('pulse', on), on);
   await pulse(pg, false);
   for (let i = 0; i < 12 && !(await shedOn(pg)); i++) await drive(pg, 10, 4);
   const red = await chip(pg, 'quality-reduced');
   check('slow seconds: the governor sheds model detail and a "reduced detail" caveat chip appears', (await shedOn(pg)) && red?.level === 'attn' && red?.label === 'reduced detail', JSON.stringify(red));
   check('…and no "distant objects reduced" toast', !(await pg.evaluate(() => [...document.querySelectorAll('.toast')].some((t) => /distant objects/.test(t.textContent)))));
-  check('three chips still clear of the rail, glyphs and emote bar', (await clash(pg)).length === 0, JSON.stringify(await clash(pg)));
+  check('three chips still clear of the rail, glyphs and action bar', (await clash(pg)).length === 0, JSON.stringify(await clash(pg)));
   await pg.mouse.move(640, 500);
   await shot(pg, '10-status-chips-1280x720.png');
 

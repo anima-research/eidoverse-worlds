@@ -22,7 +22,7 @@ function body(kind) {
     dispose() { this.disposed = true; },
     resetTransients() {},
     update() {}, setClip() {}, setPose() {}, clearPose() {}, setLimp() {},
-    setGazeTarget() {}, setSeatApprox() {}, playEmote() {},
+    setGazeTarget() {}, setSeatApprox() {}, playOnce() {},
   };
 }
 
@@ -44,8 +44,8 @@ export function makeCapsuleAvatar() { return body('capsule'); }
 // client/lib rather than discovered one SyntaxError at a time. The recovery path touches none of
 // them; they exist so the composed import cone resolves.
 export const BLINK = Object.freeze({});
-export const EMOTE_ICONS = Object.freeze({});
-export const EMOTE_ORDER = Object.freeze([]);
+export const ANIM_ICONS = Object.freeze({});
+export const ANIM_ORDER = Object.freeze([]);
 export const LIMP_SPRINGS = Object.freeze({});
 export const WING_IDLE = Object.freeze({});
 export function contributeThumbnail() {}

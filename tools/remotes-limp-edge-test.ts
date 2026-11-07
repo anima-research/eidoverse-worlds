@@ -25,12 +25,13 @@ const heldStill = <T>(fn: () => T): T => {
 async function drawnBetween(id: string, a: Record<string, unknown>, b: Record<string, unknown>) {
   const r = await remotesMod.ensureRemote(id, null);
   const avatar: any = { root: new stubs.THREE.Object3D(), pitch: 0, posed: undefined,
-    update() {}, setLimp() {}, setClip() {}, setPose(p: unknown) { this.posed = p; }, clearPose() { this.posed = null; }, playEmote() {} };
+    update() {}, setLimp() {}, setClip() {}, setPose(p: unknown) { this.posed = p; }, clearPose() { this.posed = null; } };
   r.avatar = avatar;
   return heldStill(() => {
-    const at = remotesMod.streamNow() - 110;
+    const at = remotesMod.serverNow() - 110;   // bodies are drawn interpDelay (110 ms with no lateness) behind serverNow (remotes.js)
     remotesMod.pushPose(id, a, at - 2_000);
     remotesMod.pushPose(id, b, at + 2_000);
+    r.late = null;   // a sample stamped 2 s back reads as a late link and widens interpDelay; this row is about the edge, not lateness
     remotesMod.updateRemotes(0.016);
     return { y: avatar.root.position.y, yaw: avatar.root.rotation.y, posed: avatar.posed };
   });

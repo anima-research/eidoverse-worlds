@@ -168,10 +168,10 @@ export function mergePose(base, delta) {
 
 /**
  * What a request to pose SOMEONE ELSE carries, from either seat: the agent's
- * pose and clear_pose tools, and the browser console's EW.pose and
- * EW.clearPose. `replace` makes the named bones their whole pose; otherwise
- * they merge over what the target holds. A null pose releases theirs whole,
- * as clear_pose does and as posing yourself with null does. It used to go
+ * anim tool (joints, and {stop: true} to let go), and the browser console's
+ * EW.pose and EW.clearPose. `replace` makes the named bones their whole pose;
+ * otherwise they merge over what the target holds. A null pose releases
+ * theirs whole, as anim {stop} does and as posing yourself with null does. It used to go
  * out as `pose: null`, which both receivers read as a request with no pose
  * in it, so someone letting go of another body that way got no release and
  * no error.

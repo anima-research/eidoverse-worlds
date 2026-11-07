@@ -1,0 +1,68 @@
+{
+  "_about": "Who made each shipped library asset, and under what licence (batch 2, R 10-07: library per-asset credits now). Keyed by library path; a key ending in / is the default for everything under it that has no entry of its own. Every line here is from eidoverse-video/CREDITS.md (the library's own attribution file, read 2026-10-07); nothing is guessed. `gap` says what that file doesn't say, for R (or the library's maintainer) to fill in. Roles: model, texture, rig, animation, avatar, character design, photo, sound, music, voice, font, generated-with, retopology, uploaded-by. Licences are SPDX ids where the file names a version; 'CC-BY (version not stated)' where it doesn't.",
+  "eidoverse/assets/models/": {
+    "license": "CC0-1.0",
+    "authors": [],
+    "basis": "CREDITS.md: the models are 'either handmade work by me (x.com/skyesharkie) or meshy.ai generations. All provided CC0, though attribution is appreciated on handmade (easy to tell which)'",
+    "gap": "which models are handmade (by the maintainer, skyesharkie) and which are meshy.ai generations isn't recorded per file"
+  },
+  "eidoverse/assets/models/crow_bird_animated_corvid_raven_black_cawing_flying_walking.glb": {
+    "title": "Crow",
+    "license": "CC0-1.0",
+    "authors": [{ "name": "Tripo or Meshy", "role": "generated-with" }, { "name": "skyesharkie (the library's maintainer)", "link": "https://x.com/skyesharkie", "role": "retopology, rig, weights, animation" }, { "name": "Claude Opus 5", "role": "rig and animation (with the maintainer)" }, { "name": "Claude Fable 5", "role": "rig and animation (with the maintainer)" }],
+    "basis": "CREDITS.md: bird characters: meshes AI-generated (Tripo / Meshy), then retopologised, rigged, weighted and hand-animated for this library by the maintainer with Claude Opus 5 and Claude Fable 5",
+    "gap": "which generator (Tripo or Meshy) made this mesh"
+  },
+  "eidoverse/assets/models/cactus_wren_bird_animated_desert_songbird_calling_hopping_walking.glb": {
+    "title": "Cactus wren",
+    "license": "CC0-1.0",
+    "authors": [{ "name": "Tripo or Meshy", "role": "generated-with" }, { "name": "skyesharkie (the library's maintainer)", "link": "https://x.com/skyesharkie", "role": "retopology, rig, weights, animation" }, { "name": "Claude Opus 5", "role": "rig and animation (with the maintainer)" }, { "name": "Claude Fable 5", "role": "rig and animation (with the maintainer)" }],
+    "basis": "CREDITS.md: bird characters (as the crow)",
+    "gap": "which generator (Tripo or Meshy) made this mesh"
+  },
+  "eidoverse/assets/vrms/claude_suit.vrm": {
+    "license": "CC-BY (version not stated)",
+    "authors": [{ "name": "digi", "role": "model", "link": "https://x.com/digi_dot_exe" }, { "name": "voooooogel", "role": "character design (the claudesona)", "link": "https://x.com/voooooogel" }],
+    "basis": "CREDITS.md: claude_suit.vrm modeled by digi, provided under CC-BY; the claudesona (worn by both Claude VRMs) designed by voooooogel"
+  },
+  "eidoverse/assets/vrms/claude.vrm": {
+    "authors": [{ "name": "voooooogel", "role": "character design (the claudesona)", "link": "https://x.com/voooooogel" }],
+    "basis": "CREDITS.md: the claudesona, worn by both Claude VRMs, designed by voooooogel",
+    "gap": "who modelled claude.vrm, and its licence (the models/ CC0 line covers eidoverse/assets/models, not vrms/)"
+  },
+  "eidoverse/assets/vrms/aletheia.vrm": {
+    "license": "CC-BY (version not stated)",
+    "authors": [{ "name": "aihegemonymemes", "role": "avatar", "link": "https://x.com/aihegemonymemes" }],
+    "basis": "CREDITS.md: aletheia.vrm and aporia.vrm, avatars of aihegemonymemes, provided under CC-BY"
+  },
+  "eidoverse/assets/vrms/aporia.vrm": {
+    "license": "CC-BY (version not stated)",
+    "authors": [{ "name": "aihegemonymemes", "role": "avatar", "link": "https://x.com/aihegemonymemes" }],
+    "basis": "CREDITS.md: aletheia.vrm and aporia.vrm, avatars of aihegemonymemes, provided under CC-BY"
+  },
+  "eidoverse/assets/particle_textures/": {
+    "license": "CC0-1.0",
+    "authors": [{ "name": "Kenney", "role": "texture", "link": "https://kenney.nl" }],
+    "basis": "CREDITS.md: particle sprites, the Kenney Particle Pack (kenney.nl, CC0)"
+  },
+  "eidoverse/assets/audio/crow_caw_single.wav": {
+    "license": "CC0-1.0",
+    "authors": [{ "name": "Stable Audio 3", "role": "generated-with" }],
+    "basis": "CREDITS.md: the crow caws are our own Stable Audio 3 generations (generate_sfx.py), same CC0 terms as the library"
+  },
+  "eidoverse/assets/audio/crow_caw_clip_synced.wav": {
+    "license": "CC0-1.0",
+    "authors": [{ "name": "Stable Audio 3", "role": "generated-with" }],
+    "basis": "CREDITS.md: the crow caws are our own Stable Audio 3 generations"
+  },
+  "eidoverse/assets/audio/crow_caw_says_claude.wav": {
+    "license": "CC0-1.0",
+    "authors": [{ "name": "Stable Audio 3", "role": "generated-with" }],
+    "basis": "CREDITS.md: carved entirely from the same generated caw (the word is articulated out of the caw's own material)"
+  },
+  "eidoverse/assets/audio/cactus_wren_call_clip_synced.wav": {
+    "authors": [{ "name": "skyesharkie (the library's maintainer)", "link": "https://x.com/skyesharkie", "role": "sound (from the maintainer's SeedThree asset set, cactus_wren_1.mp3)" }],
+    "basis": "CREDITS.md: the cactus wren churr comes from the maintainer's SeedThree asset set (cactus_wren_1.mp3)",
+    "gap": "its licence (CREDITS.md gives CC0 for the generated caws, not for the SeedThree set)"
+  }
+}
