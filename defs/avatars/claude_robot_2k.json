@@ -1,0 +1,12 @@
+{
+  "doc": "Claude's robot body with 2K textures (eidoverse/assets/vrms/claude_robot_2k.vrm): the same body as claude_robot, lighter to load. The same runtime and joints file.",
+  "tags": ["robot", "claude", "hardware-limited"],
+  "lamps": false,
+  "emissiveMax": 1.0,
+  "runtime": {
+    "kind": "eidoverse-dof",
+    "module": "eidoverse/claude_robot_dof.js",
+    "joints": "eidoverse/assets/vrms/claude_robot.joints.json",
+    "skip": ["initLegDOF", "applyHardwareDOF", "applyLegClearance"]
+  }
+}

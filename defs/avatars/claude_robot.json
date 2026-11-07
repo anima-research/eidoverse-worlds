@@ -1,0 +1,13 @@
+{
+  "doc": "Claude's robot body: eidoverse/assets/vrms/claude_robot.vrm in the library, CC BY 4.0 (Claude, Opus 5.5, and SkyeShark). A 1.76 m humanoid robot: ceramic-white polymer shells, terracotta trim, rubber bellows and steel pins; an OLED face under a glass dome (its expressions and visemes are VRM expressions); a crown of twelve hinged petals that follows the face. Its runtime holds every pose to the machine's real joints: single-pin knees and toes, a pitch-and-roll ankle, wrists with real stops, legs that keep clear of each other, and a head and crown that move at their actuators' rates.",
+  "tags": ["robot", "claude", "hardware-limited"],
+  "lamps": false,
+  "emissiveMax": 1.0,
+  "runtime": {
+    "kind": "eidoverse-dof",
+    "module": "eidoverse/claude_robot_dof.js",
+    "joints": "eidoverse/assets/vrms/claude_robot.joints.json",
+    "skip": ["initLegDOF", "applyHardwareDOF", "applyLegClearance"]
+  },
+  "skipDoc": "The legs' steps are off here for now: proved on eidoverse's clips, they misread this instance's jump and its crossfades (a leg kicked out sideways at take-off, knees clamped straight). Without them the legs play as the file's own mechanism: the hip stages and calf actuators follow by the VRM's node constraints, the ragdoll included. The arms, hands, head and crown keep their limits."
+}

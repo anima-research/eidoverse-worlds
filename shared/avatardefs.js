@@ -33,5 +33,33 @@ export function validateAvatarDef(name, def) {
   }
   if (d.height != null && !(isNum(d.height) && d.height > 0)) errs.push('height must be a positive number (metres)');
   if (d.tags != null && !(Array.isArray(d.tags) && d.tags.every(isStr))) errs.push('tags must be an array of strings');
+  if (d.runtime != null) errs.push(...validateBodyRuntime(d.runtime));
+  // a body's glow is not always a lamp: indicator lights and a screen glow, they don't light a room. `lamps: false`
+  // keeps attachLamps off the body; `emissiveMax` caps its materials' emissive strength (a file authored for a film's
+  // bloom threshold glares under another renderer's)
+  if (d.lamps != null && typeof d.lamps !== 'boolean') errs.push('lamps must be true or false');
+  if (d.emissiveMax != null && !(isNum(d.emissiveMax) && d.emissiveMax >= 0)) errs.push('emissiveMax must be a number >= 0');
+  return errs;
+}
+
+/** The kinds of body runtime the client knows how to drive (client/lib/bodyruntime_core.js). */
+export const BODY_RUNTIME_KINDS = ['eidoverse-dof'];
+
+/** A body that brings its own runtime: `runtime: { kind, module, joints? }`. `module` is a /library-relative .js
+ *  path (an engine module, loaded by URL when the body is worn); `joints` an optional /library-relative .json beside
+ *  the body (its exporter's joints file). No "..", no absolute paths, no URLs: the body's code comes from the same
+ *  library its .vrm does.
+ *  @param {unknown} rt @returns {string[]} */
+export function validateBodyRuntime(rt) {
+  if (rt == null || typeof rt !== 'object' || Array.isArray(rt)) return ['runtime must be an object { kind, module, joints? }'];
+  const r = /** @type {Record<string, unknown>} */ (rt);
+  const errs = [];
+  const libPath = (v, ext) => isStr(v) && v.endsWith(ext) && !v.includes('..') && !v.startsWith('/') && !/^[a-z]+:/i.test(v);
+  if (!BODY_RUNTIME_KINDS.includes(/** @type {string} */ (r.kind))) errs.push(`runtime.kind must be one of ${BODY_RUNTIME_KINDS.join(', ')}`);
+  if (!libPath(r.module, '.js')) errs.push('runtime.module must be a /library-relative .js path with no ".."');
+  if (r.joints != null && !libPath(r.joints, '.json')) errs.push('runtime.joints must be a /library-relative .json path with no ".."');
+  // the module's steps this instance doesn't run (an engine module proved on its own clips, not yet on this one's)
+  if (r.skip != null && !(Array.isArray(r.skip) && r.skip.every((s) => isStr(s) && /^[A-Za-z]\w{0,63}$/.test(s))))
+    errs.push('runtime.skip must be an array of step names');
   return errs;
 }
