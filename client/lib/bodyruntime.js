@@ -41,7 +41,6 @@ export function capEmissive(vrm, max) {
  * @param {string} libPath @param {(msg:string,err?:unknown)=>void} report
  * @param {{name:string,def:any}|null} [hit] */
 export async function bodyRuntimeFor(libPath, report, hit) {
-  if (new URLSearchParams(globalThis.location?.search ?? '').get('bodyruntime') === '0') return null;
   hit ??= await bodyDefFor(libPath);
   const rt = hit?.def?.runtime;
   if (!rt) return null;
@@ -56,7 +55,6 @@ export async function bodyRuntimeFor(libPath, report, hit) {
   let loaded;
   try { loaded = await p; }
   catch (e) { report?.(`body runtime ${rt.kind} failed to load`, e); throw e; }
-  const skip = [...(Array.isArray(rt.skip) ? rt.skip : []),
-    ...(new URLSearchParams(globalThis.location?.search ?? '').get('bodyruntime-skip') ?? '').split(',').filter(Boolean)];
+  const skip = Array.isArray(rt.skip) ? [...rt.skip] : [];
   return makeBodyRuntime(rt.kind, loaded.mod, { joints: loaded.joints, report, skip });
 }

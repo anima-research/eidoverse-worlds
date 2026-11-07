@@ -111,6 +111,9 @@ check("a body with no def has no runtime", defForBody(avatars, "eidoverse/assets
 // 5. the reviewed built-in loader and exact vendored runtime
 const loaded = await bodyRuntimeFor("eidoverse/assets/vrms/claude_robot.vrm", () => {},
   { name: "claude_robot", def: { runtime: good } });
+const loaderSrc = readFileSync(join(ROOT, "client/lib/bodyruntime.js"), "utf8");
+check("production has no query-string bypass for authored body constraints",
+  !loaderSrc.includes("bodyruntime=0") && !loaderSrc.includes("bodyruntime-skip") && !loaderSrc.includes("searchParams.get(\"bodyruntime"));
 check("the closed loader returns the reviewed runtime kind", loaded?.kind === good.kind);
 const m = await import("../client/lib/bodyruntimes/claude_robot_dof.js");
 const missing = WANT.filter((n) => typeof m[n] !== "function");
