@@ -66,7 +66,7 @@ for (let i = 0; i < 40; i++) {
   catch { await new Promise((r) => setTimeout(r, 250)); }
 }
 check("child server came up on a verified-free port", up, `:${PORT}`);
-// ownership: the nonce only exists in the tree WE spawned from
+// ownership: only the child we spawned holds the nonce, and /health answers it with that child's pid
 {
   let owned = false, got = "";
   try {
