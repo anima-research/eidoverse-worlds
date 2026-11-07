@@ -405,6 +405,7 @@ function buildPlace(ctx, a) {
   // the one gate before any solving (security pass 2 H-A: a visitor's place on a table scaled 1000× ran the whole search,
   // seconds of every world's thread, and was refused only after): admit a move of this thing as it stands — rights,
   // locks, flight and rate, the checks the placed result meets — so a refusal costs nothing. admit runs again on the result.
+  // one place runs admit up to 3× on purpose: this pre-check, commit's on the result, planResettle's on its consequences (tel0s #260)
   if (!a.__made) admit(ctx.w, ctx.st, { actor: ctx.actor }, [setOp(a.id, "transform", COMPONENTS.transform.defaults)]);   // (the value is a stand-in: these checks don't read it)
   const st = ctx.st, cur = worldT(st, a.id), scale = cur.scale;
   const fam = new Set([a.id, ...descendants(st, a.id)]);

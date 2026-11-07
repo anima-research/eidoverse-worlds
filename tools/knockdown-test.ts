@@ -97,8 +97,18 @@ check("...lying, not standing (root followed the hips down)", ag.pos.y < -0.2, `
 check("...and the agent PERCEIVED it", events.some((t) => t.includes("knocks you over")), events.join(" | "));
 
 // 2. walking stands it up clean — no zombie-walk slump
+const downedOffset = ag.pos.y - ag.heightAt(ag.pos.x, ag.pos.z);
 await ag.walkTo(ag.pos.x + 1, ag.pos.z, false, 10_000);
 check("walking sheds the slump", ag.clip !== "ragdoll" && ag.heldPose == null, `clip=${ag.clip}`);
+// #17's pending acceptance receipt, pinned as a regression: "record her
+// offset immediately before her first self-authored walk, then confirm 0.00m
+// after". A lying rig's root sits its hips offset BELOW the contact surface
+// (−0.68 on a flat disc — Princess's reading, and not a second defect), and
+// self-authored walking is what reasserts the terrain clamp. The downward
+// half was already pinned above; this is the half the thread was waiting on.
+check("...and the walk reasserts the terrain clamp — offset back to 0.00m",
+  Math.abs(ag.pos.y - ag.heightAt(ag.pos.x, ag.pos.z)) < 0.01,
+  `was ${downedOffset.toFixed(2)}m, now ${(ag.pos.y - ag.heightAt(ag.pos.x, ag.pos.z)).toFixed(2)}m`);
 
 // 2b. (R 10-28) a shove the AUTHORITY delivered — a blast (force) or an ask's yes — arrives in the body inbox, not as a puppet:
 // it floors the agent along its lean the same way

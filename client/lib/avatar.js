@@ -9,6 +9,7 @@ import { FADE_PRESS } from './locomotion_clip.js';   // one owner for the jump-p
 import { report, angleDelta, bus, tee } from './base.js';
 import { swimPose } from '../../shared/swimpose.js';
 import { defsRegistry } from './defs.js';
+import { bodyRuntimeFor, bodyDefFor, capEmissive } from './bodyruntime.js';
 import { measureChain, solveChain } from './reachbone.js';
 import { REACH_CHAINS } from '../../shared/joints.js';
 // The light-slot rig: a body that GLOWS should also CAST. Requests, never
@@ -576,7 +577,7 @@ export class Avatar {
   /** Monotonic, so one identity's successive bodies never share a lamp owner. */
   static _seq = 0;
 
-  constructor(id, vrm, clips) {
+  constructor(id, vrm, clips, { lamps = true } = {}) {
     this.id = id;
     this.vrm = vrm;
     this.root = new THREE.Group();
@@ -607,8 +608,11 @@ export class Avatar {
     // `shadows: true` is the avatar's claim on the one casting slot. The
     // default is false at the seam, so a placed glowing prop cannot take it
     // from a body -- see the note in attachLamps.
-    try { this._lamps = attachLamps(vrm.scene, this._lampOwner, { shadows: true }) ?? []; }
-    catch { /* a body with no glow simply has none */ }
+    // ...unless its def says its glow is not a lamp (`lamps: false`: indicator lights, a screen), when it keeps its blob.
+    if (lamps) {
+      try { this._lamps = attachLamps(vrm.scene, this._lampOwner, { shadows: true }) ?? []; }
+      catch { /* a body with no glow simply has none */ }
+    }
     // A LAMPED BODY CASTS AND RECEIVES; every other body keeps its blob.
     //
     // The lamp is the whole reason bodies got real shadows -- "a lamp inside a
@@ -1886,6 +1890,8 @@ export class Avatar {
     const clipHips = hipsNode?.position.clone() ?? null;   // what getting up hands back
     if (on && bake) this.bakeHipsIntoRoot({ clip: true });
     this._limp = on;
+    // A body with its own runtime hands the sim back the nodes it was solving (bodyruntime_core.js setLimp).
+    this.bodyRuntime?.setLimp?.(this.vrm, on);
     // Eyes close when the body goes slack, and open when it gets up. Only for a
     // rig with eyelid BONES — setEyes says so itself and does nothing otherwise,
     // so a VRM that blinks with a blendshape is unaffected.
@@ -2466,6 +2472,9 @@ export class Avatar {
     if (this._sb) this._applySeatBlend(dt);   // a socket's pose: its weights (and locked times) before the mixer samples
     BC('av:mixer');
     this.mixer.update(dt);
+    // A body with its own runtime takes the clip's pose whole, held keys included (bodyruntime_core.js). Not while
+    // limp: the sim owns the bones then.
+    if (this.bodyRuntime && !this._limp) this.bodyRuntime.afterMixer(this.vrm, this.mixer);
     // Generic humanoid swim overlay; semantic presence, no new clip requirement.
     // Restore the underlying clip every frame so leaving water releases limbs.
     for (const node of this._swimNodes ?? []) {
@@ -2675,6 +2684,9 @@ export class Avatar {
     // A system before update() is overwritten by the mixer; one after never
     // reaches the skeleton — the same ordering trap the head pitch met (above).
     this.onBeforeVrmUpdate?.(dt);
+    // ...and its own limits get the final word over the pose every writer above composed: the last thing before
+    // vrm.update copies normalized -> raw (bodyruntime_core.js).
+    if (this.bodyRuntime && !this._limp) { BC('av:body-runtime'); this.bodyRuntime.beforeVrmUpdate(this.vrm, dt); }
     this.vrm.update(dt);
     if (sbm) this.vrm.springBoneManager = sbm;
     if (this._anchorWant) this._measureAnchor();   // the posed anchor (hips/feet/head) where the seat put the root
@@ -2870,6 +2882,7 @@ export class Avatar {
     // before dropping the compose records and handing this VRM to a new wearer.
     for (const node of this._rawComposed?.keys() ?? []) this._rawRelease(node);
     this._rawComposed?.clear();
+    this.bodyRuntime?.dispose?.(this.vrm);
     this.mixer.stopAllAction();
     this._composed.clear();
     releaseVRM(this.vrm);
@@ -2938,6 +2951,12 @@ export async function makeAvatar(id, libPath, { full = false, urgent = false } =
     work.phase('body');
     // VRM + the clip bytes we actually need download in PARALLEL.
     const [vrm] = await Promise.all([loadVRM(libPath, { priority }), ...slots.map(vrmaBytes)]);
+    // A body that brings its own runtime (its def's `runtime`: bodyruntime.js) is set up here, at load, before
+    // anything poses it: the runtime reads the skeleton's rest. Most bodies have none and this costs them nothing.
+    const bodyDef = await bodyDefFor(libPath).catch(() => null);
+    const bodyRuntime = await bodyRuntimeFor(libPath, (m, e) => report(`${id} ${m}`, e), bodyDef);
+    bodyRuntime?.init(vrm);
+    capEmissive(vrm, bodyDef?.def?.emissiveMax);   // before the lamps are inferred from it (the Avatar constructor)
     work.phase('clips');
     const clips = {};
     for (const slot of slots) { // sequential: each may be a VRMA parse (once ever, cached)
@@ -2975,7 +2994,8 @@ export async function makeAvatar(id, libPath, { full = false, urgent = false } =
       }, { p: urgent ? P_GATE : undefined });
       markVrmWarmed(vrm);
     }
-    const av = new Avatar(id, vrm, clips);
+    const av = new Avatar(id, vrm, clips, { lamps: bodyDef?.def?.lamps !== false });
+    av.bodyRuntime = bodyRuntime;
     // The rest arrives behind you. Remote bodies hydrate too — someone else
     // breaking into a run should not be stuck walking on your screen.
     if (!full) av.hydrateClips();

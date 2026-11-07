@@ -7,6 +7,7 @@
 //   N6–N9 (recut C12) the refusal codes and the readback table are PINNED in spec/ (refusal-codes.json, readback.json): the
 //   pins equal the code, a removal or a changed meaning re-pins only with --ack (a REGISTRY-CHANGELOG line), an addition freely
 //   N10 that line is in the record: a break between an earlier pin (the base's, the previous version) and now has a changelog line
+//   N11 tel0s's #260 rulings (11-06) are written: D1, D2, D6, D8
 //   bun tools/protocol/normative-check.ts --pin [--ack "<why>"]   re-pin both from the code
 // A failing row means one of the two moved: change the other in the same commit, or mark the row's status.
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/normative-check.ts
@@ -83,9 +84,9 @@ const builtOk = can("member").length === 0 && /member: none/.test(built) && /bui
   && can("moderator").join() === "build,editOthers,scripts,pauseScripts,mute,kick,ban,grantRoles" && /moderator: those \+ pauseScripts, mute, kick, ban, grantRoles/.test(built)
   && can("owner").length === R.PERMISSION_NAMES.length && /owner: all/.test(built);
 const caps = R.MUTE_MAX_MIN === 7 * 1440 && !("KICK_MAX_MIN" in R) && R.REASON_MAX === 500 && /mute ≤ 7 days · a kick has no length .* · reason ≤ 500/.test(roles);
-const qs = [["Q1", R.CAPTION_ON_SCREENS], ["Q2", R.OWNERS_FLY], ["Q3", R.GUESTS_AT_MOST_DEFAULT], ["Q4", R.EDIT_WORLD_PERMISSION]].every(([q, v]) => v === true && new RegExp(`^\\| ${q}[^\\n]*\\*\\*open\\*\\*`, "m").test(roles))
-  && !("MOD_BAN_MAX_DAYS" in R) && /^\| Q5[^\n]*any length[^\n]*owner 11-03/m.test(roles);
-check("N4", "the roles ladder, permissions, built-in roles, caps, the four open defaults and Q5 (ruled 11-03: no ban cap below owner) equal roles.js",
+const qs = [["Q1", R.CAPTION_ON_SCREENS], ["Q2", R.OWNERS_FLY], ["Q3", R.GUESTS_AT_MOST_DEFAULT], ["Q4", R.EDIT_WORLD_PERMISSION]].every(([q, v]) => v === true && new RegExp(`^\\| ${q}[^\\n]*\\| decided · ratified tel0s 11-06 \\(delegated\\) \\|$`, "m").test(roles))
+  && !("MOD_BAN_MAX_DAYS" in R) && /^\| Q5[^\n]*any length[^\n]*\| decided · R \(the fork's maintainer\), 2026-11-03 22:24: /m.test(roles);
+check("N4", "the roles ladder, permissions, built-in roles, caps, Q1–Q4 (ratified tel0s 11-06) and Q5 (R 2026-11-03 22:24: no ban cap below owner) equal roles.js",
   want.every((w) => ladder.includes(w)) && perms.join() === R.PERMISSION_NAMES.join() && builtOk && caps && qs,
   { ladder: want.every((w) => ladder.includes(w)), perms: perms.join() === R.PERMISSION_NAMES.join() || `${perms} vs ${R.PERMISSION_NAMES}`, builtOk, caps, qs });
 
@@ -120,5 +121,16 @@ check("N5", "PROTOCOL.md never calls a code file normative", !codeNormative.leng
   const r = PH.unacknowledged(ROOT, files, "spec/REGISTRY-CHANGELOG.md", now, (was, is) => pinBreaksC12(was[RC_PIN] ?? {}, was[RB_PIN] ?? {}, is[RC_PIN] ?? { codes: {} }, is[RB_PIN] ?? {}));
   check("N10", `a pin break is acknowledged in the record: every break between an earlier ${RC_PIN} / ${RB_PIN} (the base's, where this branch left origin/main; and the previous version, before the newest change) and now is a \`  - <break>\` line spec/REGISTRY-CHANGELOG.md gained since then`,
     r.judged.length >= 1 && !r.out.length, { judged: r.judged, base: r.base, unacknowledged: r.out.slice(0, 8) }); }
+
+// N11: tel0s's #260 rulings (11-06, delegated by antra) are written: D1 posture and exit rule, D2, D6, and D8 (no roles row's source
+// is a lead's or house's call any more: each is ratified, or marked `proposal · lead`)
+{ const post = section("### The protocol's posture"); const srcs = rows(roles).slice(1).map((r) => r.at(-1) ?? "");
+  const d8 = srcs.filter((x) => /·\s*(lead|house|R)\b/.test(x) && !/·\s*proposal · lead$/.test(x) && !/R \(the fork's maintainer\), \d{4}-\d\d-\d\d \d\d:\d\d/.test(x));
+  const d1 = /^\| D1: alpha posture \|[^\n]*\| decided · ratified tel0s 11-06 \(delegated\) \|$/m.test(post) && /^\| D1: the trial's exit criterion \|[^\n]*first production translation[^\n]*date and author/m.test(post)
+    && /decided at the first\s+production translation, and recorded in `spec\/NORMATIVE\.md` with its date\s+and author/.test(proto);
+  const d2 = /^\| D2: another world's id \|[^\n]*malformed[^\n]*\| decided · ratified tel0s 11-06 \(delegated\) \|$/m.test(post) && /another world's id is malformed/.test(proto);
+  const d6 = /^\| A refused act \| Leaves no record in the world log[^\n]*owner's own record keeps the cause \| \*\*guarantee\*\* · ratified tel0s 11-06 \(delegated\)/m.test(section("### Body consent"));
+  check("N11", "tel0s's #260 rulings are written: D1 (posture ratified; the exit criterion decided at the first production translation, said in PROTOCOL's preamble too), D2 (another world's id is malformed, in §2 too), D6 (a refused act on a body is unrecorded), D8 (no roles row rests on a bare lead/house/R call)",
+    d1 && d2 && d6 && !d8.length && srcs.length >= 19, { d1, d2, d6, d8, rows: srcs.length }); }
 
 console.log(`[normative-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

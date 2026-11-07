@@ -321,7 +321,7 @@ function governanceTarget(e, op) {
   return !!o && typeof o === "object" && o.op === "set" && typeof o.comp === "string" && o.comp.startsWith("roles:");
 }
 // The entries the fold reads, in two steps either side of its genesis checks (so its diagnostics keep their order): each line
-// checked alone, then, after genesis, a later genesis and a bad ts nulled. acceptedEntries (redactionsIn, operator-bind) reads a
+// checked alone, then, after genesis, a later genesis, another world's id and a bad ts nulled. acceptedEntries (redactionsIn, operator-bind) reads a
 // log through the same two, so the redactions a replay applies and the authors a bind counts are exactly the fold's.
 function checkedEntries(entries, d) {
   return entries.map((e, seq) => {
@@ -332,7 +332,7 @@ function checkedEntries(entries, d) {
 function settledEntries(ok, worldId, d) {
   for (let seq = 1; seq < ok.length; seq++) { const e = ok[seq]; if (!e) continue;
     if (e.kind === "genesis") { d(seq, "malformed:genesis-not-first"); ok[seq] = null; continue; }
-    if (e.world !== worldId) d(seq, "world-mismatch", String(e.world)); }
+    if (e.world !== worldId) { d(seq, "malformed:world-mismatch", String(e.world)); ok[seq] = null; } }   // §2: another world's entry shapes nothing (tel0s D2, 11-06)
   // §2.1: ts is an integer (ms) ≥ 0, required on every entry after genesis, never decreasing. A missing, fractional
   // or decreasing ts makes that entry malformed (it shapes nothing and does not move the clock on).
   let lastTs = null;

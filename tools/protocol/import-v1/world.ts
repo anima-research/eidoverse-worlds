@@ -75,7 +75,7 @@ function readOld(srcBytes: Buffer) {
  *  fold lowercased (a ban's key), so it stands for the one name in this log that lowercases to it, when exactly one does.
  *  Reads what `dir` already knows and derives the rest from `salt` (identitySalt: this host's secret and this old
  *  log), writing nothing, so the dry run and the real run name the same people by the same ids (bot #369). */
-function identityMapper(old: Any[], dir: ReturnType<typeof directoryFor> | null, { salt, known = null, owner = null }: { salt: Buffer; known?: ((name: string) => Known | null) | null; owner?: OwnerClaim | null }) {
+function identityMapper(old: Any[], dir: ReturnType<typeof directoryFor> | null, { salt, accountSalt, known = null, owner = null }: { salt: Buffer; accountSalt: Buffer; known?: ((name: string) => Known | null) | null; owner?: OwnerClaim | null }) {
   const planned: Record<string, Entry> = {}; const memo = new Map<string, string>();
   const fromOf = new Map<string, string>();   // account → where this translation learned it (the report says, per role)
   const unbound = new Map<string, string>();  // name → why main's records bind it to no one account
@@ -100,9 +100,10 @@ function identityMapper(old: Any[], dir: ReturnType<typeof directoryFor> | null,
   // a v1 agent's sub is its home-node subject (agent:<name>@<domain>); a live join from this host's home node wears the
   // enrolment that lists it, else aid1:<iss>:<sub> (server.ts join), so its grants and bans land on that same account
   const liveAccount = (sub: string) => (/^agent:/.test(sub) && !/^agent:token:/.test(sub) ? (agents.bySub.has(sub) ? `agent:token:${agents.bySub.get(sub)!.toLowerCase()}` : `aid1:${HN_ISS}:${sub}`) : sub);
-  // the id a key (an account, or name:<name>) gets here, in the one id shape (directory.ts isMinted): keyed by the salt, so a public
-  // log confirms no account and two worlds' namesakes are two ids; a later rename edits the name label only, the id is this once
-  const stable = (key: string) => idOfBytes(crypto.createHmac("sha256", salt).update(key).digest());
+  // the id a key (an account, or name:<name>) gets here, in the one id shape (directory.ts isMinted), keyed by this host's secret so
+  // a public log confirms no account. A name's is this log's too (two worlds' namesakes are two ids); an account's is the host's
+  // alone, as its directory entry is, so a dry run names it as any world's first translation will (lead 11-07: a review went stale)
+  const stable = (key: string) => idOfBytes(crypto.createHmac("sha256", key.startsWith("name:") ? salt : accountSalt).update(key).digest());
   const who = (name0: string, { sub, lowered = false, from = "this world's log" }: { sub?: string; lowered?: boolean; from?: string } = {}) => {
     const name = lowered && sub === undefined ? unlowered(name0) : name0;
     // no account in the log: an agent's reserved name is its account; on a TRUST_NAMES (private) server a bare name is
@@ -148,10 +149,12 @@ function identityMapper(old: Any[], dir: ReturnType<typeof directoryFor> | null,
   return { who, planned, stable, idOfName: (n: string) => memo.get(nameKey(n)), describe, accountOf };
 }
 /** What the ids of a translation are derived from: this host's custody secret (custody.ts secret: keyed by the sequencer key,
- *  minted on first use, never the operator key the approval is countersigned with; the same on the dry run and the apply) and the old log's bytes. Never the destination name: an id is a person, not a world, so
- *  the same log translated twice names the same people (two logs' namesakes stay two people). */
-function identitySalt(worldsDir: string, sourceSha256: string): Buffer {
-  return crypto.createHmac("sha256", custodyAt(custodyFileIn(worldsDir)).secret("import-v1 identity")).update(sourceSha256).digest();
+ *  minted on first use, never the operator key the approval is countersigned with; the same on the dry run and the apply), and for
+ *  a name without an account the old log's bytes. Never the destination name: an id is a person, not a world, so the same log
+ *  translated twice names the same people (two logs' namesakes stay two people; one account is one person on every log here). */
+function identitySalt(worldsDir: string, sourceSha256: string): { salt: Buffer; accountSalt: Buffer } {
+  const c = custodyAt(custodyFileIn(worldsDir));
+  return { salt: crypto.createHmac("sha256", c.secret("import-v1 identity")).update(sourceSha256).digest(), accountSalt: c.secret("import-v1 account identity") };
 }
 const sha256Hex = (b: Buffer) => crypto.createHash("sha256").update(b).digest("hex");
 
@@ -162,7 +165,7 @@ export function oldOwners(srcDir: string) {
   const st: Any = v1Empty(); for (const e of old) if (e?.verb !== "genesis") foldEntry(st, e);   // as translate folds it
   const worlds = path.dirname(path.resolve(srcDir)), self = path.basename(path.resolve(srcDir));
   const known = mainKnowledge(worlds, { self });
-  const m = identityMapper(old, directoryFor(worlds), { salt: identitySalt(worlds, sha256Hex(srcBytes)), known });
+  const m = identityMapper(old, directoryFor(worlds), { ...identitySalt(worlds, sha256Hex(srcBytes)), known });
   return Object.entries<Any>(st.roles ?? {}).filter(([k, v]) => k !== "*" && v?.role === "owner").sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([k, v]) => {
     const a = m.accountOf(m.who(k, { sub: (v && typeof v.sub === "string" ? v.sub : undefined) ?? (isAccountName(k) ? k : undefined) }));
     // on a TRUST_NAMES server a name IS its local account: that binding is the name's, so it is recognised by name
@@ -286,7 +289,7 @@ export async function warmHulls(srcDir: string) {
 /** The dry run's translation (ids derived, nothing written; this host's bytes and hull boxes): the ONE call the report and the apply's digest check share (review delta-260 #1). */
 function dryTranslation(old: Any[], srcDir: string, world: string, owner: OwnerClaim | null, sourceSha256: string, content: (p: string) => string | null = hostContent) {
   const worlds = path.dirname(path.resolve(srcDir));
-  const m = identityMapper(old, directoryFor(worlds), { salt: identitySalt(worlds, sourceSha256), known: mainKnowledge(worlds, { self: path.basename(path.resolve(srcDir)) }), owner });
+  const m = identityMapper(old, directoryFor(worlds), { ...identitySalt(worlds, sourceSha256), known: mainKnowledge(worlds, { self: path.basename(path.resolve(srcDir)) }), owner });
   return { m, r: translateOld(old, world, { who: m.who, content }) };
 }
 /** The translator's provenance (§F F-2; Mica 11-05, S4): writer eidoverse-translate-v1 at TRANSLATOR's number, from the source tree
@@ -357,7 +360,7 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
   // the ids are the dry run's (identitySalt, from the custody the approval is countersigned with): an apply whose custody isn't the
   // dry run's would write ids nobody reviewed, so it is refused (the CLI keeps the old and the new world under one worlds dir)
   if (approval && path.resolve(path.dirname(destDir)) !== path.resolve(srcWorlds)) throw new Error(`the approval is refused: "${destDir}" is not under the old world's worlds dir ${srcWorlds}, whose custody the dry run derived its identities from. Nothing written`);
-  const { who, planned, stable, idOfName, describe } = identityMapper(old, dir, { salt: identitySalt(path.dirname(destDir), source.sha256), known: mainKnowledge(srcWorlds, { self: path.basename(path.resolve(srcDir)) }), owner });
+  const { who, planned, stable, idOfName, describe } = identityMapper(old, dir, { ...identitySalt(path.dirname(destDir), source.sha256), known: mainKnowledge(srcWorlds, { self: path.basename(path.resolve(srcDir)) }), owner });
   // the countersignature must be THIS host's operator key, not just a key that verifies (bot review #368; the CLI builds it from custody, a library caller may not)
   if (approval && approval.operator.key !== cust.operator()) throw new Error(`the approval is refused: countersigned by ${approval.operator.key}, not this host's operator key ${cust.operator()}. Nothing written`);
   // a model's bytes (R 10-17: the path is the reference; this is model-hash beside it): the original bytes on this host, hashed;

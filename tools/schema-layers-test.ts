@@ -105,7 +105,16 @@ const regUnit = (key: string, path: string, type?: string) => { const u = COMPON
   const rows: [any, string, string][] = [[fieldAt(mesh, "mesh.size.x"), "mesh", "size"], [fieldAt(s, "openable.slide|0"), "openable", "slide"], [fieldAt(s, "particles.at|1"), "particles", "at"]];
   const rbad = rows.filter(([f, k, p]) => !f || j({ min: f.min, max: f.max, unit: f.unit }) !== j({ ...regLimits(k, p), unit: regUnit(k, p) })).map(([, k, p]) => `${k}.${p}`);
   check("the hand cards' channel rows (mesh.size, openable.slide, particles.at) carry the registry's limits and unit", !rbad.length, rbad.join(", "));
-  check("limitsOf reads gt as the floor and skips text caps", j(limitsOf("light", "range")) === j({ min: 0, unit: "m" }) && j(limitsOf("story", "title")) === "{}" && j(limitsOf("sound", "radius")) === j({ min: 1, max: 100, unit: "m" }));
+  // the expectations are the registry's own numbers, never restated here (sound.radius's ceiling moved 100 → 200 and this row went red on a copy)
+  const lr = COMPONENTS.light.ranges.range, sr = COMPONENTS.sound.ranges.radius;
+  check("limitsOf reads gt as the floor (editschema refuses the bound itself) and skips text caps",
+    lr.gt !== undefined && lr.min === undefined && j(limitsOf("light", "range")) === j({ min: lr.gt, unit: COMPONENTS.light.units.range }) && COMPONENTS.story.ranges.title.maxLen !== undefined && j(limitsOf("story", "title")) === "{}"
+    && sr.min !== undefined && sr.max !== undefined && j(limitsOf("sound", "radius")) === j({ min: sr.min, max: sr.max, unit: COMPONENTS.sound.units.radius }) && E.editOps({ light: { kind: "point" } }, "l", { "light.range": String(lr.gt) }).errors.length === 1,
+    j({ range: limitsOf("light", "range"), title: limitsOf("story", "title"), radius: limitsOf("sound", "radius") }));
+  // the Light card's sliders: floors are the registry's, the card's own number is only the slider's span (one description, tel0s 11-06)
+  { const lg = inspectSchema({ light: { kind: "point", intensity: 20, range: 10 } }, "lamp").groups?.find((g: any) => g.group === "light")?.fields ?? [];
+    const row = (k: string) => lg.find((f: any) => f.k === k); const bad = ["intensity", "range"].filter((k) => !row(k) || j(row(k).min) !== j(limitsOf("light", k).min));
+    check("the Light card's brightness and range sliders take their floors from the registry", lg.length > 0 && !bad.length, j(["intensity", "range"].map((k) => [k, row(k)?.min, limitsOf("light", k).min]))); }
   // physics as text rows: a refusal reads the registry's range words
   const r = E.editOps(every, "every", { "physics.mass": "2000000" });
   check("a physics number past the registry's range is refused in the registry's words", r.errors.length === 1 && /> 0 and ≤ 1000000/.test(r.errors[0]), j(r.errors));

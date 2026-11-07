@@ -4,7 +4,7 @@
 //   bun tools/protocol/run.ts --lane core     only one lane (core | main | browser), also PARTIAL
 //   bun tools/protocol/run.ts --manifest      print the suite table docs/GATE-MANIFEST.md carries (generated from here)
 //   bun tools/protocol/run.ts --check-manifest   exit 1 if the doc's table is not what --manifest prints
-//   bun tools/protocol/run.ts --siblings      fetch, pin and build the sibling repos (SIBLINGS, below) beside this checkout
+//   bun tools/protocol/run.ts --siblings      fetch, pin and build the sibling repos (SIBLINGS, below) in tools/protocol/.siblings/, and install the packages that take them
 //   bun tools/protocol/run.ts --library <dir>    clone (or move) the asset library to its pin at <dir>, for EIDOVERSE_DIR
 //   bun tools/protocol/run.ts --receipt <file>   also write a JSON receipt of this run (head, OS, runtimes, library, scratch dir, per-suite results and output hashes)
 //   bun tools/protocol/run.ts --scratch-out <file>   append `scratch=<the gate's temp dir>` to <file> as soon as it exists (CI: $GITHUB_OUTPUT)
@@ -21,7 +21,7 @@
 //   PROTOCOL_LAB=<protocol lab checkout>   also run the control arms (common.ts)
 //   PROTOCOL_WORLDS=<dir>[:<dir>…] (`;` on Windows)         also sweep / oracle a host's own world logs (the repo's fixtures always)
 //   CHROME=<chromium binary>                the browser lane's Chromium (else chrome.ts findChrome: playwright's, else the OS's Chrome/Edge)
-//   PYTHON=<python3>                        the conformance suite's interpreter (else python3 on PATH)
+//   PYTHON=<python3>                        the interpreter of every suite that runs Python (else python3 on PATH)
 //   PROTOCOL_KEEP=1                         keep the gate's temp dir to read
 //   PROTOCOL_TIMEOUT_SCALE=<factor>         multiply every suite's timeout (a very slow host: 2)
 //   PROTOCOL_HEADLESS_LOCK=<file> PROTOCOL_PERF_GUARD=<script>   run browser suites under a host's flock + perf guard
@@ -36,7 +36,7 @@ import { failLines, outputKeeper, setAside, type Lane, SUITES, CORE, BROWSER, br
 
 
 // what a suite needs beyond bun and this checkout (a scratch dir, loopback ports: every suite may use those)
-const NEEDS: Record<string, string> = { conformance: "python3 + cryptography" };
+const NEEDS: Record<string, string> = { conformance: "python3 + cryptography", simckpt: "python3 + cryptography", freeze: "python3", pretrans: "python3", "migrate-identities": "python3" };
 for (const n of BROWSER) NEEDS[n] = "Chromium";
 // seconds each suite took on the reference host (WSL2, 16 threads, 7 GB; 2026-10-18, one suite at a time, inside this gate's
 // hermetic env; the browser lane from the house gate's run the same day). The timeout
@@ -46,7 +46,7 @@ const EXPECT: Record<string, number> = {
   "libfile": 0.1, "gaps": 5.6, "phys": 3.9, "physlive": 1.2, "phystick": 5.7, "sclock": 2.8, "physseeds": 2.1,
   "eidosim": 12, "eidosim-live": 1.5, "mover": 4.5, "zone-water": 0.6, "climb-env": 0.5, "drive": 0.6, "physics-area": 0.5, "water-vectors": 0.2, "avatar": 1, "remotes-limp-edge": 0.5, "colliders": 0.2, "collider-off-bodies": 2, "lying-support": 16, "replay": 0.4,
   "conformance": 2.9, "sweep": 0.3, "oracle": 0.4, "importer": 1.2, "translate": 6, "eidosim-v1": 0.2, "inplace": 15, "migrate-identities": 1.7, "oldworlds": 1.2, "browser": 1.5, "descriptors": 0.1,
-  "light-readers": 0.4, "ghost-mesh-size": 12, "boot-init": 0.5, "editor-range": 0.3, "editschema": 0.5, "scriptnew-expect": 0.5, "grant-command": 0.3, "custody-save": 0.1, "migrate-minor-1": 3, "consent-scripts-list": 2, "killz-slumped": 32, "grant-until": 1, "lite-graph": 1, "say-live": 1, "presence-actor": 1, "first-name-account": 1, "retired-commands": 1, "animnames-retry": 2.5, "panels": 1, "surface-hold": 19, "particles": 1, "shadow-fade": 1, "frames-layout": 1, "models-field": 1, "environment-realizer": 0.3, "lookat-forward": 0.5,
+  "light-readers": 0.4, "ghost-mesh-size": 12, "boot-init": 0.5, "editor-range": 0.3, "editschema": 0.5, "schema-layers": 0.3, "scriptnew-expect": 0.5, "grant-command": 0.3, "custody-save": 0.1, "migrate-minor-1": 3, "consent-scripts-list": 2, "killz-slumped": 32, "grant-until": 1, "lite-graph": 1, "say-live": 1, "presence-actor": 1, "first-name-account": 1, "retired-commands": 1, "animnames-retry": 2.5, "panels": 1, "surface-hold": 19, "particles": 1, "shadow-fade": 1, "frames-layout": 1, "models-field": 1, "environment-realizer": 0.3, "lookat-forward": 0.5,
   "role-grammar": 0.3, "rot": 0.1, "onepose": 0.3, "msgrate": 0.1, "clientlog": 3, "dismount-height": 0.2, "helm-leave": 0.2, "build-gate": 0.3,
   "capsule-recovery": 10, "debug-tabs": 0.3, "governor-xr": 0.2, "unknown-comp": 1.1, "reach-order": 1.5,
   "editcommit": 0.8, "hierarchy-commit": 0.6, "verbclasses": 0.0, "authority-layers": 0.0, "authority": 9.0,
@@ -100,9 +100,11 @@ const headOf = (dir: string) => { const r = spawnSync("git", ["-C", dir, "rev-pa
 // Declared like Chrome: required for the browser lane, fetched only by --library, never read from a guessed path.
 const LIBRARY_REPO = "https://github.com/SkyeShark/eidoverse-video.git";
 const LIBRARY_PIN = "9acc1528b2febac11338107645ef500a95985ca5";   // the library's PUBLIC head (10-19: e9f80d02 was a local snapshot, unfetchable by CI)
-// mcpl's package.json takes two sibling repos by path (file:../../<dir>, i.e. beside this checkout). The gate owns that
-// closure (Mica, #260 r3): ONE place pins them; --siblings fetches them there; the preflight refuses a missing or
-// wrong-commit sibling rather than testing whatever happens to sit next to the repo.
+// mcpl/ and tools/captionbot/ take sibling repos by path (file:…/tools/protocol/.siblings/<dir>). The gate owns that closure
+// (Mica, #260 r3; tel0s 11-06): ONE place pins them (here), --siblings checks them out in tools/protocol/.siblings/
+// (gitignored; never a developer's working copy beside the checkout) and installs their consumers from the lockfiles, and
+// deploy/deploy-vps.sh runs the same --siblings, so prod imports the pinned builds too. The preflight refuses a consumer
+// whose node_modules copy isn't the pin's build.
 // build: whether the gate's suites import it (its package main is dist/, which only `tsc` makes). agent-framework is only
 // resolved by bun install, never imported by a gate suite, so it isn't built.
 const SIBLINGS: [dir: string, url: string, commit: string, build: boolean][] = [
@@ -110,11 +112,20 @@ const SIBLINGS: [dir: string, url: string, commit: string, build: boolean][] = [
   ["mcpl-core-ts", "https://github.com/anima-research/mcpl-core-ts.git", "e17f773a9247c41d5c872d760aac7f243748d134", true],
   ["voice-kit", "https://github.com/anima-research/voice-kit.git", "b0699db3afd7e78de7d5d49f3ca4f0f5694887b3", true],   // tools/captionbot's STT seam
 ];
+const SIBLINGS_DIR = path.join(ENGINE, "tools", "protocol", ".siblings");
+const siblingAt = (dir: string) => path.join(SIBLINGS_DIR, dir);
 /** Packages in this repo whose own package.json takes a sibling (file:): --siblings installs them once the siblings are built. */
-const SIBLING_USERS = ["tools/captionbot"];
-const siblingAt = (dir: string) => path.resolve(ENGINE, "..", dir);
+const SIBLING_USERS = ["mcpl", "tools/captionbot"];
+/** Each sibling a package takes, read from its package.json: {pkg, name, dir, commit, build, spec}; `at` is where the spec points. */
+const CONSUMERS = SIBLING_USERS.flatMap((pkg) => { const j = JSON.parse(fs.readFileSync(path.join(ENGINE, pkg, "package.json"), "utf8"));
+  return Object.entries({ ...j.dependencies, ...j.optionalDependencies } as Record<string, string>).flatMap(([name, spec]) => {
+    const s = spec.startsWith("file:") ? SIBLINGS.find(([dir]) => path.basename(spec) === dir) : undefined;
+    return s ? [{ pkg, name, dir: s[0], commit: s[2], build: s[3], at: path.resolve(ENGINE, pkg, spec.slice(5)) }] : []; }); });
+const builtCopy = (c: typeof CONSUMERS[number]) => siblingBuiltAt(path.join(ENGINE, c.pkg, "node_modules", c.name));
 const siblingHead = (dir: string) => headOf(siblingAt(dir));
 if (argv.includes("--siblings")) {
+  for (const c of CONSUMERS) if (c.at !== siblingAt(c.dir)) { console.error(`--siblings: ${c.pkg}/package.json takes ${c.name} from ${c.at}, not ${siblingAt(c.dir)}`); process.exit(1); }
+  fs.mkdirSync(SIBLINGS_DIR, { recursive: true });
   for (const [dir, url, commit, build] of SIBLINGS) {
     const at = siblingAt(dir);
     if (!fs.existsSync(at)) { const c = spawnSync("git", ["clone", "-q", url, at], { stdio: "inherit" }); if (c.status !== 0) { console.error(`--siblings: cloning ${url} failed`); process.exit(1); } }
@@ -129,13 +140,13 @@ if (argv.includes("--siblings")) {
     } fs.writeFileSync(path.join(at, "dist", ".built-at"), commit + "\n"); }   // a dist/ built at another commit is rebuilt
     console.log(`  ${dir.padEnd(16)} ${commit.slice(0, 12)}${build ? " built" : ""}  ${at}`);
   }
+  // --frozen-lockfile fails on a missing sibling where a plain install drops an optional one without a word
   for (const pkg of SIBLING_USERS) {
-    const c = spawnSync(process.execPath, ["install"], { cwd: path.join(ENGINE, pkg), stdio: "inherit" });
-    if (c.status !== 0) { console.error(`--siblings: \`bun install\` failed in ${pkg}`); process.exit(1); }
+    const c = spawnSync(process.execPath, ["install", "--frozen-lockfile"], { cwd: path.join(ENGINE, pkg), stdio: "inherit" });
+    if (c.status !== 0) { console.error(`--siblings: \`bun install --frozen-lockfile\` failed in ${pkg}`); process.exit(1); }
     console.log(`  ${pkg.padEnd(16)} installed`);
   }
-  const m = spawnSync(process.execPath, ["install", "--frozen-lockfile"], { cwd: path.join(ENGINE, "mcpl"), stdio: "inherit" });
-  process.exit(m.status ?? 1);
+  process.exit(0);
 }
 // --library <dir>: the pinned asset library at <dir> (cloned, or moved to the pin), for EIDOVERSE_DIR=<dir>
 if (argv.includes("--library")) {
@@ -170,14 +181,16 @@ for (const [name, file] of SUITES) {
   if (laneOf(name) !== "browser") { const d = browserLauncher(f); if (d) problems.push(`${name} launches a Chromium (${path.relative(ENGINE, d).split(path.sep).join("/")}) but is not in the BROWSER lane`); }
 }
 if (!partial) { const d = manifestDrift(); if (d) problems.push(d); }
-// the siblings are mcpl's: refuse their absence only when a selected suite reaches mcpl/ (C13: conformance, the kernel and the
-// pins must run from this checkout alone, with nothing beside it)
-const reachesMcpl = (file: string) => { const f = suitePath(file); if (/[\\/]mcpl[\\/]/.test(f)) return true;
-  return [...localImports(f)].some((x) => /(?:from|import\(|import)\s*["'`][^"'`]*\bmcpl\//.test(fs.readFileSync(x, "utf8"))); };
+// the siblings are mcpl's and captionbot's: refuse a consumer's copy that isn't the pin's build only when a selected suite
+// reaches that package (C13: conformance, the kernel and the pins must run from this checkout alone, with nothing beside it)
+const reaches = (file: string, pkg: string) => { const f = suitePath(file), b = path.basename(pkg); if (new RegExp(`[\\\\/]${b}[\\\\/]`).test(f)) return true;
+  const imp = new RegExp(`(?:from|import\\(|import)\\s*["'\`][^"'\`]*\\b${b}/`); return [...localImports(f)].some((x) => imp.test(fs.readFileSync(x, "utf8"))); };
+const reachesMcpl = (file: string) => reaches(file, "mcpl");
 const needSiblings = SUITES.some(([n, file]) => selected(n) && reachesMcpl(file));
-if (needSiblings) for (const [dir, , commit] of SIBLINGS) { const h = siblingHead(dir);
-  if (h === commit && SIBLINGS.find(([d]) => d === dir)![3] && siblingBuiltAt(siblingAt(dir)) !== commit) problems.push(`mcpl's sibling ${dir} is unbuilt at the pin (dist/.built-at isn't ${commit.slice(0, 12)}): run \`bun tools/protocol/run.ts --siblings\``);
-  if (h !== commit) problems.push(`mcpl's sibling ${dir} ${h ? `is at ${h.slice(0, 12)}, not the pinned ${commit.slice(0, 12)}` : `is missing at ${siblingAt(dir)}`}: run \`bun tools/protocol/run.ts --siblings\`, which also installs mcpl/`); }
+for (const c of CONSUMERS) if (SUITES.some(([n, file]) => selected(n) && reaches(file, c.pkg))) {
+  if (c.at !== siblingAt(c.dir)) problems.push(`${c.pkg}/package.json takes ${c.name} from ${c.at}, not the gate's ${siblingAt(c.dir)}`);
+  else if (c.build && builtCopy(c) !== c.commit) { const got = builtCopy(c);
+    problems.push(`${c.pkg} imports ${c.name} ${got ? `built at ${got.slice(0, 12)}` : "unbuilt or missing"}, not the pinned ${c.commit.slice(0, 12)}: run \`bun tools/protocol/run.ts --siblings\`, which also installs ${c.pkg}/`); } }
 for (const dir of ["", "client/", ...(needSiblings ? ["mcpl/"] : [])]) if (!fs.existsSync(ENGINE + dir + "node_modules")) problems.push(`${dir || "./"}node_modules is missing: run \`bun install --frozen-lockfile\` in ${dir || "the checkout root"}`);
 
 console.log(`protocol gate @ ${ENGINE}`);
@@ -201,10 +214,13 @@ runtime("bun", Bun.version, ENGINES.bun, "major", process.execPath);
 let PY: string | null = null;
 if (SUITES.some(([n]) => selected(n) && NEEDS[n]?.startsWith("python3"))) {
   PY = which(process.env.PYTHON || "python3");
-  const r = PY ? spawnSync(PY, ["-c", "import sys; print(sys.version.split()[0]); import cryptography; print(cryptography.__version__)"], { encoding: "utf8" }) : null;
+  // the imports the suites make (spec/conformance test_chain.py, chain.py, gov.py, ed25519/): a bare `import cryptography` passed an
+  // install without ed25519, and conformance then failed with ModuleNotFoundError (tel0s 11-06)
+  const probe = "import sys; print(sys.version.split()[0]); import cryptography; from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey; from cryptography.hazmat.primitives import serialization; print(cryptography.__version__)";
+  const r = PY ? spawnSync(PY, ["-c", probe], { encoding: "utf8" }) : null;
   const [pv, cv] = (r?.stdout ?? "").trim().split("\n");
   runtime("python3", pv || null, ENGINES.python3, "major", PY ? `${PY}${cv ? `, cryptography ${cv}` : ""}` : "set PYTHON or put python3 on PATH");
-  if (PY && pv && !cv) problems.push(`python3 at ${PY} has no 'cryptography' module (pip install cryptography): the conformance suite's test_chain.py needs it`);
+  if (PY && pv && !cv && SUITES.some(([n]) => selected(n) && NEEDS[n] === "python3 + cryptography")) problems.push(`python3 at ${PY} can't import what the suites need from 'cryptography' (ed25519, serialization: pip install cryptography): ${(r?.stderr ?? "").trim().split("\n").at(-1)}`);
 }
 let CHROME: string | null = null;
 if (SUITES.some(([n]) => selected(n) && laneOf(n) === "browser")) {
