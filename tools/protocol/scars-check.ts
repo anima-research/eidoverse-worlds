@@ -164,11 +164,12 @@ const cases: Case[] = [
       const e = s.call("vic", "set", { id: "lamp", component: "label", value: "x" });
       return { b: show(b), r: show(r), c: show(c), wrote: n1 - n0, edit: code(e), editLogged: s.entries().length - n2 }; },
     good: (o) => /^refused/.test(o.b) && /^refused/.test(o.c) && o.wrote === 0 && o.edit === "rights" && o.editLogged === 1 },
-  { id: "L5b", what: "…and a refused drag sent as grab {id: 'body:X'} (bodyverbs' alias for body {kind: drag}) is presence too: never logged", run(s) { cast(s);
+  { id: "L5b", what: "…and a refused drag sent as grab {id: 'body:X'} (bodyverbs' alias for body {kind: drag}) is presence too: never logged; the asker gets body {kind: drag}'s uniform refusal, and only the body's owner's record keeps the cause (tel0s D6, 11-06)", run(s) { cast(s);
       s.call("bob", "move", { to: [0, 0, 0] }); s.call("vic", "move", { to: [0.5, 0, 0] }); s.call("bob", "consent", { move: false });
-      const n0 = s.entries().length; const g = s.call("vic", "grab", { id: "body:bob" });
-      return { g: show(g), wrote: s.entries().length - n0 }; },
-    good: (o) => /^refused consent/.test(o.g) && o.wrote === 0 },
+      const n0 = s.entries().length; const g = s.call("vic", "grab", { id: "body:bob" }); const d = s.call("vic", "body", { to: "bob", kind: "drag" });
+      const mine = s.call("bob", "consent", {}).attempts ?? [], theirs = s.call("vic", "consent", {}).attempts ?? [];
+      return { g: show(g), same: JSON.stringify(g.refused) === JSON.stringify(d.refused), why: mine.map((a: any) => a.why ?? null), theirs: theirs.length, wrote: s.entries().length - n0 }; },
+    good: (o) => /^refused consent/.test(o.g) && o.same && o.why.length === 2 && o.why.every((w: any) => typeof w === "string" && w.length > 0) && o.theirs === 0 && o.wrote === 0 },
   // ---------------- K: look ----------------
   { id: "K1", what: "look: vic sees his own consent gates, and nobody else's (bob's closed gates stay bob's)", run(s) { cast(s);
       s.call("bob", "move", { to: [0, 0, 0] }); s.call("vic", "move", { to: [1, 0, 0] }); s.call("bob", "consent", { move: false, touch: false }); s.call("vic", "consent", { touch: true });

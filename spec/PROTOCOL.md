@@ -23,7 +23,9 @@ break stored logs we ship a **log translator** with it, so
 that existing worlds move forward rather than strand. Translators are the
 migration path for the trial period. Every registered component is `trial`
 until it is promised. Implementations SHOULD NOT add anything they are not
-reasonably sure will survive; adding later is cheap, removing is not.
+reasonably sure will survive; adding later is cheap, removing is not. When the trial period ends is not set now: it is decided at the first
+production translation, and recorded in `spec/NORMATIVE.md` with its date
+and author (D1, tel0s 11-06).
 
 The words MUST/SHOULD/MAY are used in the RFC-2119 sense. Where this
 document and the reference implementation disagree, one of them has a bug —
@@ -61,7 +63,8 @@ year, gets the same world from the same log:
 ## 1. The log
 
 **Framing.** A log is UTF-8 JSONL: every LF-terminated line is one entry,
-and its 0-based position is its `seq`. A blank or malformed line is still an
+and its 0-based position is its `seq`. A final line with no LF after it is
+an entry too (both reference readers count it). A blank or malformed line is still an
 entry: it takes its seq and shapes nothing. A CR before the LF is tolerated
 (JSON whitespace); a byte-order mark is malformed. Caps: 1 MiB per line,
 nesting depth 64.
@@ -159,7 +162,8 @@ The fold yields a **status** (`ok`, `no-world`, or `unknown-version`), a
   are the world's own settings: sky, terrain, roles, bounds, spawn…
 - The **world id** is `sha256:` + hex(sha256(UTF-8(JCS(genesis entry)))),
   JCS being RFC 8785. It never names a host. Every later entry carries it in
-  `world`; a mismatch is reported in diagnostics.
+  `world`; an entry carrying another world's id is malformed (it shapes
+  nothing and does not move the clock on, like a decreasing `ts`).
 - The **digest** of a folded world is the lowercase hex
   sha256(UTF-8(JCS(view))), where `view` is `{<live id>: {<component>:
   {"v": value} | {"redacted": true}}}` over every live entity, empty ones and
@@ -438,7 +442,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
 - **A load never writes to a stored value.** A world founded today is written in today's spelling from its first
   entry, so nothing repairs it. One write does happen when a server OPENS a world, and it is not a shape rewrite:
   holds left from before a restart are set down (`return-held`, the system's request; `settleOrphans`), the same
-  request a leave writes. A v1 world comes forward through the translator (`translate-v1@49`, §14), which writes today's spelling
+  request a leave writes. A v1 world comes forward through the translator (`translate-v1@50`, §14), which writes today's spelling
   (the shape audit's rules, `tools/protocol/import-v1/shapes.js`) and lifts v1's `sockets` maps into socket
   children with its own `lift-sockets {id, made, moved}` requests. The door takes a write in a spelling renamed
   before release (`grabbable.pose`/`station.pose` → `anim`, a grip's `fingers` → `grasp`, a motion's old type
@@ -1329,7 +1333,11 @@ them, and the suite holds them to it), not part of conformance.
   redaction's own seq, a target that isn't a value, and a `roles:` value
   (governance is reversed by requests, never erased) are each diagnosed and
   ignored. Blobs are redacted by deleting their bytes; since the fold never
-  reads bytes, the world doesn't change.
+  reads bytes, the world doesn't change. A redaction is retroactive, so no reader can fold
+  past one from where it was: every connected client (browser or agent) meets it
+  and asks for a fresh snapshot. One purge is one snapshot per connected client,
+  all at once. That's fine at today's scale, but a feature that purges often
+  would make them all resync together.
 - **A change outside this rule is detected, not enforced.** A value stored as
   `commitment` that no redaction names folds as *absent(redacted)*, like a redacted one,
   and is diagnosed `commitment-unredacted` naming its line. Nothing else follows:

@@ -290,6 +290,13 @@
    "3:malformed:ts"
   ]
  },
+ "logs/18c-world-mismatch.jsonl": {
+  "status": "ok",
+  "digest": "1cabd6e3c6cbea97c38ac6adb6d14f73e608408a059245c29b8eaa4bbc58e9c3",
+  "codes": [
+   "3:malformed:world-mismatch"
+  ]
+ },
  "logs/19a-genesis-no-nonce.jsonl": {
   "status": "no-world",
   "digest": null,

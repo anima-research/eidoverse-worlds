@@ -50,7 +50,7 @@ try {
     check("F31 a requiresAdd that removes (re-adds what is there), reorders, or repeats is invalid; the union is monotonic and sorted",
       requiresAdd(["a:b@1"], ["a:b@1"]).code === "requiresAdd-present" && requiresAdd(["a:b@1"], ["d:d@1", "c:c@1"]).code === "requiresAdd-order" && requiresAdd([], ["c:c@1", "c:c@1"]).code === "requiresAdd-order"
       && requiresAdd(["c:c@1"], ["a:a@1"]).requires.join() === "a:a@1,c:c@1");
-    { const d = featureDecision([G(), gov([])], KNOWN_FEATURES); const py = Bun.spawnSync(["python3", "-c", "import sys; sys.path.insert(0, 'spec/conformance'); import reader; print(reader.feature_decision([{'body': {}}, {'kind': 'governance', 'body': {'requiresAdd': []}}], set())[0])"], { cwd: ENGINE });
+    { const d = featureDecision([G(), gov([])], KNOWN_FEATURES); const py = Bun.spawnSync([process.env.PYTHON || "python3", "-c", "import sys; sys.path.insert(0, 'spec/conformance'); import reader; print(reader.feature_decision([{'body': {}}, {'kind': 'governance', 'body': {'requiresAdd': []}}], set())[0])"], { cwd: ENGINE });
       check("F31b an empty requiresAdd is invalid, as gov.py holds it (a governance decision that changes nothing): the JS fold and reader.py agree", requiresAdd([], []).code === "requiresAdd-empty" && d.malformed?.code === "requiresAdd-empty" && /requiresAdd-empty/.test(String(py.stdout)), [requiresAdd([], []), d.malformed, String(py.stdout)]); }
     const d4 = featureDecision([G(["a:b@1"]), chg, gov(["a:b@1"]), chg], known);
     check("F31 …and in a log, such a governance entry is malformed at its seq, nothing after it declared", d4.malformed?.seq === 2 && d4.malformed.code === "requiresAdd-present" && d4.requires.join() === "a:b@1", d4); }
@@ -163,7 +163,7 @@ try {
     // this suite's own raw join is the no-hello probe; Python spells it as HELLO)
     const own = new Set(["client/index.html", "tools/protocol/freeze-check.ts", "tools/surface-test.py"]); const bad: string[] = [];
     const walk = (d: string) => { for (const e of fs.readdirSync(path.join(ENGINE, d), { withFileTypes: true })) { const r = path.join(d, e.name);
-      if (e.isDirectory()) { if (!["node_modules", ".git", "worlds", "spec"].includes(e.name)) walk(r); continue; }
+      if (e.isDirectory()) { if (!["node_modules", ".git", "worlds", "spec", ".siblings"].includes(e.name)) walk(r); continue; }
       if (!/\.(ts|js|mjs|html)$/.test(e.name) || own.has(r)) continue; const t = fs.readFileSync(path.join(ENGINE, r), "utf8");
       if (/type\s*:\s*['"]join['"]/.test(t) && !/\bhelloOf\b/.test(t)) bad.push(r); } };
     for (const d of ["client", "server", "mcpl", "tools", "shared"]) walk(d);

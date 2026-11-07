@@ -739,6 +739,16 @@ fs.rmSync = (p, x) => { log("rm " + p); return rm(p, x); };\n`);
 { const a = await tool(["found", "casefold", "--owner", "Ann"]); const folds = fs.existsSync(path.join(W, "CASEFOLD")); const b = await tool(["found", "CASEFOLD", "--owner", "Ann"]);
   ok(a.code === 0 && (folds ? b.code !== 0 && /another spelling of its case/.test(b.out) && same(fs.readdirSync(path.join(W, "casefold")), ["world.jsonl"]) : b.code === 0 && isWorldDir(path.join(W, "CASEFOLD"))),
     `IP43 found CASEFOLD after casefold: ${folds ? "refused, casefold/ untouched (this file system folds case)" : "a second world (this file system keeps case: the control)"}`, { a: a.code, b: b.code, out: b.out.slice(-200) }); }
+// IP46 (lead 11-07): two worlds sharing an account, both dry-run first, then applied in turn: the second's approval still holds,
+// since a dry run names an account by the id any first translation here writes (it read B's stand-in off A's salt, and refused)
+{ const acct = { actor: "world", verb: "grant", args: { id: "Quill", role: "builder", sub: "human:discord:4600" } };
+  oldWorld("share-a", { extra: [acct] }); oldWorld("share-b", { extra: [acct, { actor: "Quill", verb: "say", args: { text: "share-b is its own log" } }] });
+  const ha = await dryHash(["share-a"]), hb = await dryHash(["share-b"]);
+  const a = await tool(["translate", "share-a", "--no-founder-key", "--operator-only-no-owner", "--approved", ha]);
+  const b = await tool(["translate", "share-b", "--no-founder-key", "--operator-only-no-owner", "--approved", hb]);
+  const ids = Object.entries<any>(JSON.parse(fs.readFileSync(dirf, "utf8")).ids ?? {}).filter(([, e]) => e.subs?.includes("human:discord:4600")).map(([id]) => id);
+  ok(a.code === 0 && b.code === 0 && ids.length === 1 && isWorldDir(path.join(W, "share-a")) && isWorldDir(path.join(W, "share-b")),
+    "IP46 two worlds sharing an account are both reviewed first, then translated in turn: each approval still applies, and the account is one id", { a: a.code, b: b.code, ids, out: b.out.slice(-400) }); }
 // IP45 every world.ts run was accepted by server/oneshot.ts (framed, no handle of its own open, nothing of its group left), and
 // ended: on its own, or killed 5 s after a complete answer as "semantic result complete / forced process cleanup"; world-children.json lists each
 { const forced = children.filter((c) => c.end === "forced process cleanup"), bad = children.filter((c) => !c.accepted);

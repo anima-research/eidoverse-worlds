@@ -1,8 +1,8 @@
 {
  "status": "trial-kernel",
- "translator": "eidoverse/translate-v1@49",
+ "translator": "eidoverse/translate-v1@50",
  "companions": {
-  "changelog": "2026-11-05: kernel: the kernel the first deploy ships (Mica 11-05: first-deploy pin ceremony). No kernel before it was deployed: the predeploy history above (minor 1, its features and provenance, no minor) was collapsed into this one pin, and its old-reader vectors (kernel-vectors/minor-1, features, no-minor) are gone. Its fixtures are synthetic: hand-written logs and the verdict this reader gives each; a change after it carries a translator and vectors red on this reader",
+  "changelog": "2026-11-07: kernel: the first deploy's kernel again, before any deploy (tel0s D2, 11-06, ratified for #260): an entry carrying another world's id is malformed (nulled like ts-decreasing), not a diagnostic; fixture world-mismatch joins first-deploy, and a fixture's verdict now tells a diagnostic (diagnostic:<code>) from a malformed entry. Nothing was deployed, so the ceremony re-ran over the same kernel shape",
   "firstDeploy": {
    "vectors": {
     "dir": "first-deploy",
@@ -14,7 +14,8 @@
      "version-5",
      "other-dialect",
      "old-kind-act",
-     "unknown-feature"
+     "unknown-feature",
+     "world-mismatch"
     ]
    }
   },

@@ -181,9 +181,10 @@ compensates.
   silently dropped a tuned engine. The engine now lives as first-class
   client code (`client/lib/vegetation/`) precisely so a merge cannot do
   this again; the `patched/` directory is an ASSET overlay only.
-- `mcpl-core-ts` is a sibling `file:` dependency — clone and `bun run
-  build` it BEFORE `bun install` in mcpl/, or the copy under node_modules
-  is missing its dist.
+- `mcpl-core-ts` is a sibling `file:` dependency in
+  `tools/protocol/.siblings/`: `bun tools/protocol/run.ts --siblings`
+  clones, pins and builds it BEFORE installing mcpl/, or the copy under
+  node_modules is missing its dist.
 
 ## 5. Structural changes a merge will meet on this branch
 

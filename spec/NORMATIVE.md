@@ -36,6 +36,14 @@ One row per choice. **Status:** *decided* (who and when), *trial* (in force, exp
 protocol's author, the maintainers, or the lead implementer (Hesperus) acting on delegated backend calls. A lead's call
 is a proposal the other two can overturn; it is marked so it doesn't read as consensus.
 
+### The protocol's posture and the kernel
+
+| Choice | Value | Status · source |
+|---|---|---|
+| D1: alpha posture | about a year from v1; nothing `stable`; translators are the migration path; the kernel is pinned and never promoted by an acknowledgement alone (`spec/PROTOCOL.md`'s preamble) | decided · ratified tel0s 11-06 (delegated) |
+| D1: the trial's exit criterion | not set now: decided at the first production translation, and recorded in this row with its date and author | **open** · tel0s 11-06 (delegated): decided at the first production translation |
+| D2: another world's id | an entry whose `world` isn't this world's id is malformed: it shapes nothing and doesn't move the clock, like a decreasing `ts` (§2) | decided · ratified tel0s 11-06 (delegated) |
+
 ### Body consent (who may do what to your body)
 
 The bone (normative): **every act on someone else's body goes through one request path to the authority, which applies the body owner's answer — for every kind of body** (a browser, an agent, a server-hosted body). No client decides a second time.
@@ -48,6 +56,7 @@ The bone (normative): **every act on someone else's body goes through one reques
 | Default | `move` on, `touch` off; a world sets its own with `@world.body-default {move?, touch?}` | default |
 | A no | Reads the same to the requester whatever caused it (a gate, a block). The owner's own record keeps the real cause | **guarantee** |
 | Who sets it | Only the body's owner | **guarantee** |
+| A refused act | Leaves no record in the world log: the asker gets the uniform refusal, and the body owner's own record keeps the cause | **guarantee** · ratified tel0s 11-06 (delegated) (D6) |
 
 The earlier designs — eight classes × two tiers × allow/ask/deny, presets, pause, delegates (to 10-20), then one switch `accept`|`ask`|`refuse` with live asks (to 10-28) — are kept as a record in `docs/CONSENT-TABLE-RECORD.md`, not as a direction.
 
@@ -58,25 +67,25 @@ does, and no role overrides it).
 
 | Choice | Value | Status · source |
 |---|---|---|
-| The ladder | `member` 0 · `builder` 100 · `moderator` 200 · `owner` 255; custom roles at any free rank between. Rungs are named for what they let you do | trial · lead (research 10-06; R 10-21; the word R 10-28) |
-| States off the ladder | `banned` (not in the world); never a rank. (`ghost` was removed 10-20; a future neutral spectator role is wishlisted) | trial · lead |
-| Newcomers | `@world.default-role` is the newcomer role: what anyone without a grant holds. Absent: `member` (every world founded before 10-21 keeps that); a world founded since starts with `builder` (starter config). A grant, `member` included, beats it: an owner demotes one person by hand | default · lead (R 10-21) |
-| Guests | a person without an account: an account state, never a rung, and orthogonal to role. A guest starts as `member` even where newcomers build, unless the world raises `default-role.guests`; an owner may give one guest any role, builder included, which lasts as long as that connection (there's no identity to keep it on) | trial · lead (R 10-21) |
-| No rung below the floor | `none` is gone: a grant of it is refused; a stored one (old logs) reads as no grant; a ban or a mute does what it did | trial · lead (R 10-21) |
-| Doors | client presets that write `access` and the newcomer role: `open` (newcomers build) · `public` (newcomers play) · `invite-only` · `watch` | trial · lead (R 10-21) |
-| Permissions | `build`, `editOthers`, `editWorld`, `generate`, `fly`, `scripts`, `pauseScripts`, `mute`, `kick`, `ban`, `grantRoles`, `readChat` | trial · lead |
-| Built-in roles | member: none · builder: build, editOthers, scripts · moderator: those + pauseScripts, mute, kick, ban, grantRoles · owner: all | trial · lead |
-| Granting | only roles ranked below yours, with only permissions you hold | trial · lead |
-| What a thing admits (`who`) | on grabbable, physics, station and each reaction handler: a role id (that rank or above), `{permission}` (anyone holding it, whatever the role is called) or `{roles: [...]}` (exactly those; an owner always). Absent: anyone who may use the thing | trial · lead (house markup) |
-| Last owner | `@world.keep-owner` absent or true: a change leaving no owner is refused (`last-owner`); false: a world may be ownerless on purpose (the host operator can mend it); a world with no owner gives nobody more than member (a translation always ends with an owner) | default · house 22:03Z (starter config, switched on) |
-| Timed roles | `until` up to a year; never on owner; ended by the authority's logged request | trial · lead |
-| Locks | `lock: true`; its strength is its setter's rank now (read from the log), member in a world with no owner; that rank or above may act through it (`throughLock`) or lift it; lower is refused; no levels | default · lead (R 10-20; house 21:59Z) |
-| Caps | mute ≤ 7 days · a kick has no length (out now, back at once: R 10-28; a timed exclusion is a ban) · reason ≤ 500 characters | trial · lead |
-| Q1: caption | a property of the screen it captions, not a role permission | **open** · never ruled |
-| Q2: owners fly | yes by default (v1 had flight off even for owners) | **open** · never ruled |
-| Q3: guests | can't be set above the world's default role | **open** · never ruled |
-| Q4: `editWorld` | a permission (sky, weather, ground, the card, spawn, bounds); false = owner-only | **open** · never ruled |
-| Q5: bans below owner | any length, or until lifted, the same as an owner's (the ban power is the trust) | default · owner 11-03 |
+| The ladder | `member` 0 · `builder` 100 · `moderator` 200 · `owner` 255; custom roles at any free rank between. Rungs are named for what they let you do | trial · ratified tel0s 11-06 (delegated) |
+| States off the ladder | `banned` (not in the world); never a rank. (`ghost` was removed 10-20; a future neutral spectator role is wishlisted) | trial · ratified tel0s 11-06 (delegated) |
+| Newcomers | `@world.default-role` is the newcomer role: what anyone without a grant holds. Absent: `member` (every world founded before 10-21 keeps that); a world founded since starts with `builder` (starter config). A grant, `member` included, beats it: an owner demotes one person by hand | default · ratified tel0s 11-06 (delegated) |
+| Guests | a person without an account: an account state, never a rung, and orthogonal to role. A guest starts as `member` even where newcomers build, unless the world raises `default-role.guests`; an owner may give one guest any role, builder included, which lasts as long as that connection (there's no identity to keep it on) | trial · ratified tel0s 11-06 (delegated) |
+| No rung below the floor | `none` is gone: a grant of it is refused; a stored one (old logs) reads as no grant; a ban or a mute does what it did | trial · ratified tel0s 11-06 (delegated) |
+| Doors | client presets that write `access` and the newcomer role: `open` (newcomers build) · `public` (newcomers play) · `invite-only` · `watch` | trial · ratified tel0s 11-06 (delegated) |
+| Permissions | `build`, `editOthers`, `editWorld`, `generate`, `fly`, `scripts`, `pauseScripts`, `mute`, `kick`, `ban`, `grantRoles`, `readChat` | trial · ratified tel0s 11-06 (delegated) |
+| Built-in roles | member: none · builder: build, editOthers, scripts · moderator: those + pauseScripts, mute, kick, ban, grantRoles · owner: all | trial · ratified tel0s 11-06 (delegated) |
+| Granting | only roles ranked below yours, with only permissions you hold | trial · ratified tel0s 11-06 (delegated) |
+| What a thing admits (`who`) | on grabbable, physics, station and each reaction handler: a role id (that rank or above), `{permission}` (anyone holding it, whatever the role is called) or `{roles: [...]}` (exactly those; an owner always). Absent: anyone who may use the thing | trial · ratified tel0s 11-06 (delegated) |
+| Last owner | `@world.keep-owner` absent or true: a change leaving no owner is refused (`last-owner`); false: a world may be ownerless on purpose (the host operator can mend it); a world with no owner gives nobody more than member (a translation always ends with an owner) | default · ratified tel0s 11-06 (delegated) |
+| Timed roles | `until` up to a year; never on owner; ended by the authority's logged request | trial · ratified tel0s 11-06 (delegated) |
+| Locks | `lock: true`; its strength is its setter's rank now (read from the log), member in a world with no owner; that rank or above may act through it (`throughLock`) or lift it; lower is refused; no levels | default · ratified tel0s 11-06 (delegated) |
+| Caps | mute ≤ 7 days · a kick has no length (out now, back at once: R 10-28; a timed exclusion is a ban) · reason ≤ 500 characters | trial · ratified tel0s 11-06 (delegated) |
+| Q1: caption | a property of the screen it captions, not a role permission | decided · ratified tel0s 11-06 (delegated) |
+| Q2: owners fly | yes by default (v1 had flight off even for owners) | decided · ratified tel0s 11-06 (delegated) |
+| Q3: guests | can't be set above the world's default role | decided · ratified tel0s 11-06 (delegated) |
+| Q4: `editWorld` | a permission (sky, weather, ground, the card, spawn, bounds); false = owner-only | decided · ratified tel0s 11-06 (delegated) |
+| Q5: bans below owner | any length, or until lifted, the same as an owner's (the ban power is the trust) | decided · R (the fork's maintainer), 2026-11-03 22:24: "I would give moderators permanent ban powers too" |
 
 ### Known gap
 

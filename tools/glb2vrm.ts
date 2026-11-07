@@ -256,6 +256,34 @@ const has = (n: string) => argv.includes(`--${n}`);
 
 const { json: g, bin } = parseGLB(await Bun.file(input).arrayBuffer());
 
+// Rig-family gate (#123). The converter bakes Tripo assumptions well beyond
+// bone names (A-pose surgery, Armature as the bake target, NeckTwist02 for
+// head pitch), so a foreign rig must be refused by FAMILY, up front, not die
+// on its first missing bone name. A VRM 1.0 input carries its own humanoid
+// map and skips the gate. Mixamo is identifiable before any conversion:
+// every joint carries the mixamorig prefix (exporters sometimes strip the
+// colon or add a numeric suffix, so match the prefix alone).
+if (!g.extensions?.VRMC_vrm) {
+  const nodeNames = ((g.nodes ?? []) as any[]).map((n) => n?.name ?? "");
+  if (nodeNames.some((n) => /^mixamorig/i.test(n))) {
+    console.error(
+      `${basename(input)}: Mixamo rig detected (mixamorig-prefixed joints). ` +
+        `Mixamo rigs are not currently supported: this converter assumes Tripo ` +
+        `bone names, A-pose rest, and Tripo skeleton structure throughout. ` +
+        `Rerig using Tripo humanoid.`,
+    );
+    process.exit(1);
+  }
+  const missing = Object.values(TRIPO_MAP).filter((b) => !nodeNames.includes(b));
+  if (missing.length) {
+    console.error(
+      `${basename(input)}: missing bones ${missing.join(", ")}: not a Tripo rig? ` +
+        `This converter accepts Tripo humanoid naming (Hip/Spine01/L_Upperarm/...).`,
+    );
+    process.exit(1);
+  }
+}
+
 if (has("measure")) {
   // Report conventions of any glb/vrm — used to sanity-check against library avatars.
   const v1 = g.extensions?.VRMC_vrm;
@@ -275,8 +303,6 @@ if (has("measure")) {
 const name = flag("name") ?? basename(input).replace(/\.(glb|vrm)$/, "");
 const targetHeight = Number(flag("height") ?? 1.65);
 const out = flag("out") ?? join(import.meta.dir, "..", "assets", "opt", "eidoverse", "assets", "vrms", `${name}.vrm`);
-
-for (const vrmBone of Object.values(TRIPO_MAP)) nodeByName(g, vrmBone); // fail fast on unknown rigs
 
 // Facing quadrant, measured ONCE before any pose surgery and reused by both
 // the T-pose step (its side axes are facing-relative!) and the final yaw bake.

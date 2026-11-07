@@ -268,6 +268,13 @@ NO_TS = json.dumps({"kind": "change", "world": WID, "actor": "system", "cause": 
                     "body": {"id": "a", "comp": "x", "value": 9}})   # starts with "kind" so _with_ts leaves it alone
 r = run("18b-ts-missing", [GEN_LINE, ACT, st("create", {"id": "a"}), NO_TS])
 check("18b missing ts malformed", (3, "malformed:ts") in codes(r) and r.view()["a"] == {}, (codes(r), r.view()))
+# 18c another world's id: malformed, like a decreasing ts: it shapes nothing and doesn't move the clock (tel0s D2, 11-06)
+OTHER = "sha256:" + "ab" * 32
+r = run("18c-world-mismatch", [GEN_LINE, ACT, st("create", {"id": "a"}),
+    st("create", {"id": "b"}, world=OTHER, ts=9),
+    st("set", {"id": "a", "comp": "x", "value": 1}, ts=5)])
+check("18c an entry carrying another world's id is malformed and shapes nothing",
+      codes(r) == [(3, "malformed:world-mismatch")] and set(r.view()) == {"@world", "a"} and r.view()["a"] == {"x": {"v": 1}}, (codes(r), r.view()))
 
 # 21 non-string kind / op word: malformed, not a TypeError (parity with fold.js checkEntry / shapeOne; bot #477)
 r = run("21-nonstring-kind-op", [GEN_LINE, ACT, st("create", {"id": "a"}),

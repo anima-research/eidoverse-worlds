@@ -448,8 +448,9 @@ class Reader:
                 continue
             w = e.get("world")
             if w != self.world_id:
-                # GUESS-21: soft: diagnose, do not reject (no hashing rule given)
-                self.d(seq, "world-mismatch", str(w)[:80])
+                # §2: an entry carrying another world's id is malformed, like a decreasing ts
+                self.d(seq, "malformed:world-mismatch", str(w)[:80])
+                entries[seq] = None
 
         # -- ts: integer ms, required after genesis, never decreasing (2.1) --
         last_ts = None
