@@ -322,7 +322,7 @@ const DEFAULT_KEY = {
   Lock: 'lock', Guard: 'guard', Hidden: 'hidden', Label: 'label',
   Pendulum: 'motion', Spin: 'motion', Orbit: 'motion', Oscillate: 'motion', Path: 'motion',
   Sockets: 'sockets', Reactions: 'reactions', Structure: 'structure', Captions: 'captions',
-  LookAt: 'look', Stage: 'stage', Particles: 'particles', Picture: 'picture', Sound: 'sound',
+  LookAt: 'look', Stage: 'stage', Particles: 'particles', Picture: 'picture', Sound: 'sound', Video: 'video',
 };
 const COLLIDER_SHAPES = new Set(['mesh', 'exact', 'box']);   // exact: the stored word before 10-16 (the door stores mesh)
 

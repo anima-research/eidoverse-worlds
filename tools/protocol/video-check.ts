@@ -29,6 +29,7 @@ const BASE = "f3cc7ca6";   // main with #260 merged (11-07), where video is stil
 
 // [name, file, find, replace, cases that must turn red]
 const MUTANTS: [string, string, string, string, string[]][] = [
+  ["a screen expands as a sound does (entityOf's Video alias; a blueprint holding one isn't refused)", "shared/components.js", "case 'Sound': case 'Video': {", "case 'Sound': {", ["K2"]],
   ["placing a video follows the ordinary component rights, not an owner-only gate (hesperus, #5)", "shared/protocol/authority/gate.js", "  if (roleOf(st, holder) === \"owner\") return null;\n", "  if (roleOf(st, holder) === \"owner\") return null;\n  if (op.comp === \"video\") return \"owner\";\n", ["R1", "R2"]],
   ["the door refuses a source this server hasn't admitted", "shared/protocol/authority/checks.js", "if (!carry && !isAdmittedSource(v.source))", "if (false)", ["M2", "M3"]],
   ["a fork's copy carries an unadmitted source (no silent loss)", "shared/protocol/authority/checks.js", "if (!carry && !isAdmittedSource(v.source))", "if (!isAdmittedSource(v.source))", ["M4"]],
@@ -109,6 +110,8 @@ const SB = await import(TREE + "shared/protocol/sandbox.js");
 const V = await import(TREE + "shared/video.js").catch(none);
 const VS = await import(TREE + "server/videosources.ts").catch(none);
 const ES = await import(TREE + "shared/editschema.js").catch(none);
+const CO = await import(TREE + "shared/components.js").catch(none);
+const BP = await import(TREE + "shared/blueprint.js").catch(none);
 const ONLY = opt("only")?.split(",") ?? null;
 const root = scratch("vid");
 
@@ -254,6 +257,16 @@ const cases: Case[] = [
       const crew = show(s.call("cy", "set", { id: "cys", component: "video", value: { source: "solstice" } }));
       return { defs, locked: code(locked), off: code(off), needs: off.refused?.needs, crew, booth: comp(s, "booth", "video") ?? null }; },
     good: (o) => o.defs === "ok" && o.locked === "locked" && o.off === "rights" && o.needs === "build" && o.crew === "ok" && o.booth === null },
+
+  { id: "K2", what: "a screen round-trips through componentsOf and entityOf as a sound does, and a blueprint holding one is a record (no 'does not expand')", run() {
+      const bag = { video: { source: "solstice", volume: 0.5, description: "the solstice stage" } };
+      let back: any; try { back = CO.entityOf?.(CO.componentsOf?.(bag)); } catch (e) { back = { threw: String(e?.message ?? e) }; }
+      const comps = CO.componentsOf?.(bag);
+      // a blueprint's root holds no placement: the Transform componentsOf adds is the copy's own
+      const rec = { kind: BP.BLUEPRINT_KIND, v: 1, name: "a screen", root: { components: (comps?.components ?? []).filter((c: any) => c.type !== "Transform"), children: [] } };
+      let refusal; try { refusal = BP.blueprintRefusal?.(rec); } catch (e) { refusal = `threw ${e?.message}`; }
+      return { back: back?.video ?? back, refusal }; },
+    good: (o) => o.back?.source === "solstice" && o.back.volume === 0.5 && o.back.description === "the solstice stage" && o.refusal === null },
 
   // ---------------- B: the broker ----------------
   { id: "B1", what: "the registry: a credential inside a URL, a bad id, an api without a path, a non-http WHEP are dropped by id; a good entry is admitted", run() {

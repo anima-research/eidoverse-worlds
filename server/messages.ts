@@ -422,14 +422,14 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // presence: batched into stage frames by the tick loop, never persisted
     c.world.dirty.set(c.id, pose);
   },
-  // a renderer (or an opt-in native donor) says what it can capture, and answers a `capture` request (server/screenshots.ts,
-  // the broker: roaming renderers, PNG validation, the generation check)
   // a viewer asks to watch a screen (server/videosources.ts): the offer goes to the projector with the operator's read
   // credential and the answer comes back here, so the endpoint never reaches a client. Async, so its own never-throw
   "video-offer": ({ c, ws }, msg) => {
     void video.offer(c, msg).then((r) => { try { ws.send(JSON.stringify(r)); } catch { /* gone */ } }, () => { try { ws.send(JSON.stringify({ type: "video-error", req: null, id: null, why: "the offer failed" })); } catch { /* gone */ } });
   },
   "video-close": ({ c }, msg) => { void video.close(c, msg).catch(() => {}); },
+  // a renderer (or an opt-in native donor) says what it can capture, and answers a `capture` request (server/screenshots.ts,
+  // the broker: roaming renderers, PNG validation, the generation check)
   "capture-capabilities": ({ c }, msg) => { if (c.world) screenshots.configure(c, msg.capture); },
   "capture-result": ({ c }, msg) => { screenshots.receive(c, msg); },
   "world-bans": ({ c, ws, now, expel }, msg) => {

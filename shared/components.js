@@ -422,7 +422,7 @@ export function entityOf({ components, stamps = {} }) {
       case 'Text': comp[inst.key ?? 'text'] = { ...p }; break;
       case 'Stage': comp[inst.key ?? 'stage'] = { ...p }; break;
       case 'Mesh': comp[inst.key ?? 'mesh'] = { ...p }; break;
-      case 'Particles': case 'Picture': case 'Sound': {
+      case 'Particles': case 'Picture': case 'Sound': case 'Video': {
         const rec = RECORDS[inst.type]; const bag = {};
         for (const [k, v] of Object.entries(p)) bag[rec.params[k]?.wire ?? k] = v;
         Object.assign(bag, inst.extra?.unknown ?? {});
