@@ -9,7 +9,7 @@ import { makeBodyRuntime, defForBody } from './bodyruntime_core.js';
 // Each kind is code-reviewed and commit-bound here. Body-specific joints are
 // vendored with the implementation as data, so code + limits travel together.
 const LOADERS = Object.freeze({
-  'claude-robot-dof-v1': async () => {
+  'claude-robot-dof': async () => {
     const [mod, joints] = await Promise.all([
       import('./bodyruntimes/claude_robot_dof.js'),
       import('./bodyruntimes/claude_robot_joints.js'),

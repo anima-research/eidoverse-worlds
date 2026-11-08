@@ -27,7 +27,7 @@ engine edit, no client edit, no deploy beyond the file.
   executable module URLs; adding a kind requires a Worlds source review.
   The runtime runs at two places in the avatar's frame
   (`client/lib/bodyruntime_core.js`): right after the clip's mixer, and last
-  before `vrm.update`. Kind `claude-robot-dof-v1` holds Claude's machine body
+  before `vrm.update`. Kind `claude-robot-dof` holds Claude's machine body
   to its real joints, whoever drives it (`avatars/claude_robot.json`).
   `runtime.skip` lists built-in steps this instance doesn't run. A body's glow
   can be declared too: `lamps: false` keeps `attachLamps` off it (indicator

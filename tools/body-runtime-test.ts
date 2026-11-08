@@ -26,10 +26,10 @@ for (const name of ["claude_robot", "claude_robot_2k"]) {
     && def.provenance?.runtimeSourceSha256 === "1b5f7c3588444eebc9c88477bfc76d1a730e0949ecb8e827b0f88647747943cc"
     && def.provenance?.jointsSourceSha256 === "356a2ae9c343281c78fd0b0b15779dc3419312fa03780a815187d47dbc437cf5", def.provenance);
 }
-const good = { kind: "claude-robot-dof-v1" };
+const good = { kind: "claude-robot-dof" };
 check("a built-in runtime with no skip list validates", validateBodyRuntime(good).length === 0);
 for (const [why, rt] of [
-  ["not an object", "claude-robot-dof-v1"], ["an unknown kind", { kind: "anything" }], ["no kind", {}],
+  ["not an object", "claude-robot-dof"], ["an unknown kind", { kind: "anything" }], ["no kind", {}],
   ["an executable module path", { ...good, module: "eidoverse/claude_robot_dof.js" }],
   ["a joints path", { ...good, joints: "eidoverse/assets/vrms/claude_robot.joints.json" }],
   ["an encoded path", { ...good, module: "eidoverse/%2e%2e/x.js" }],
@@ -39,19 +39,19 @@ check("the def refuses a bad runtime too", validateAvatarDef("x", { runtime: { k
 // 2. the frame order, against a module that records what it's asked
 const calls: string[] = [];
 const rec = (name: string) => (...a: unknown[]) => { calls.push(name); };
-const mod: Record<string, unknown> = Object.fromEntries(["initArmDOF", "initHandDOF", "initLegDOF", "initCrown", "keepArmPose",
+const mod: Record<string, unknown> = Object.fromEntries(["initArmDOF", "setupHandDOF", "setupLegDOF", "setupCrown", "keepArmPose",
   "rehomeBody", "applyHardwareDOF", "applyLegClearance", "applyArmDOF", "applyHandDOF", "applyHeadExpression", "applyCrown"]
   .map((n) => [n, rec(n)]));
 mod.LEG_JOINTS = [{ bone: "leftLowerLeg" }];
 const set: { off: number }[] = [];
 const binding = (v: number) => ({ buffer: new Float64Array(16), valueSize: v, binding: { setValue: (_b: unknown, off: number) => set.push({ off }) } });
 const mixer = { _bindings: [binding(4), binding(3), binding(4)], _nActiveBindings: 2, _accuIndex: 1 };
-const rt = makeBodyRuntime("claude-robot-dof-v1", mod, { joints: { hinges: { leftLowerArm: {} } }, report: () => {} })!;
+const rt = makeBodyRuntime("claude-robot-dof", mod, { joints: { hinges: { leftLowerArm: {} } }, report: () => {} })!;
 const vrm = {};
 rt.init(vrm);
 rt.afterMixer(vrm, mixer);
 rt.beforeVrmUpdate(vrm, 1 / 60);
-const WANT = ["initArmDOF", "initHandDOF", "initLegDOF", "initCrown", "keepArmPose", "rehomeBody", "applyHardwareDOF",
+const WANT = ["initArmDOF", "setupHandDOF", "setupLegDOF", "setupCrown", "keepArmPose", "rehomeBody", "applyHardwareDOF",
   "applyLegClearance", "applyArmDOF", "applyHandDOF", "applyHeadExpression", "applyCrown"];
 const want = process.env.BODY_RUNTIME_TEETH ? [...WANT].reverse() : WANT;
 check("init, after the mixer, before vrm.update: the module's documented order", JSON.stringify(calls) === JSON.stringify(want), calls);
@@ -59,15 +59,15 @@ check("writeAll writes the active bindings only, from the accumulator the update
   set.length === 2 && set[0].off === 2 * 4 && set[1].off === 2 * 3, set);
 calls.length = 0;
 rt.init(vrm);
-makeBodyRuntime("claude-robot-dof-v1", mod, { report: () => {} })!.init(vrm);
+makeBodyRuntime("claude-robot-dof", mod, { report: () => {} })!.init(vrm);
 check("a body is set up once, even worn again by a new runtime (a pooled body's skeleton isn't at rest)", calls.length === 0, calls);
-check("no runtime for an unknown kind or no module", makeBodyRuntime("other", mod) === null && makeBodyRuntime("claude-robot-dof-v1", null as any) === null);
+check("no runtime for an unknown kind or no module", makeBodyRuntime("other", mod) === null && makeBodyRuntime("claude-robot-dof", null as any) === null);
 
 // 3. a step that throws: reported once, skipped after, and the rest of the frame still runs
 const reports: string[] = [];
 let crowns = 0;
 const bad = { ...mod, applyArmDOF: () => { throw new Error("boom"); }, applyCrown: () => { crowns++; } };
-const rt2 = makeBodyRuntime("claude-robot-dof-v1", bad, { report: (m: string) => reports.push(m) })!;
+const rt2 = makeBodyRuntime("claude-robot-dof", bad, { report: (m: string) => reports.push(m) })!;
 for (let i = 0; i < 3; i++) rt2.beforeVrmUpdate({}, 1 / 60);
 check("a throwing step is reported once and skipped from then on", reports.length === 1 && rt2.dead.has("applyArmDOF"), reports);
 check("...and the steps after it still run every frame", crowns === 3, crowns);
@@ -80,12 +80,12 @@ const calls2: string[] = [];
 const mod2: Record<string, unknown> = Object.fromEntries(Object.keys(mod).filter((k) => k !== "LEG_JOINTS")
   .map((n) => [n, () => { calls2.push(n); }]));
 mod2.LEG_JOINTS = mod.LEG_JOINTS;
-const rt3 = makeBodyRuntime("claude-robot-dof-v1", mod2, { skip: ["initLegDOF", "applyHardwareDOF", "applyLegClearance"], report: () => {} })!;
+const rt3 = makeBodyRuntime("claude-robot-dof", mod2, { skip: ["setupLegDOF", "applyHardwareDOF", "applyLegClearance"], report: () => {} })!;
 rt3.init({}); rt3.beforeVrmUpdate({}, 1 / 60);
-check("a skipped step never runs (the def's runtime.skip)", !calls2.some((c) => ["initLegDOF", "applyHardwareDOF", "applyLegClearance"].includes(c))
+check("a skipped step never runs (the def's runtime.skip)", !calls2.some((c) => ["setupLegDOF", "applyHardwareDOF", "applyLegClearance"].includes(c))
   && calls2.includes("applyArmDOF"), calls2);
-check("runtime.skip validates as step names", validateBodyRuntime({ ...good, skip: ["initLegDOF"] }).length === 0
-  && validateBodyRuntime({ ...good, skip: "initLegDOF" }).length > 0 && validateBodyRuntime({ ...good, skip: ["../x"] }).length > 0);
+check("runtime.skip validates as step names", validateBodyRuntime({ ...good, skip: ["setupLegDOF"] }).length === 0
+  && validateBodyRuntime({ ...good, skip: "setupLegDOF" }).length > 0 && validateBodyRuntime({ ...good, skip: ["../x"] }).length > 0);
 check("lamps and emissiveMax validate", validateAvatarDef("x", { lamps: false, emissiveMax: 1 }).length === 0
   && validateAvatarDef("x", { lamps: "no" }).length > 0 && validateAvatarDef("x", { emissiveMax: -1 }).length > 0);
 
@@ -93,8 +93,8 @@ check("lamps and emissiveMax validate", validateAvatarDef("x", { lamps: false, e
 const cHip = { destination: "leftHipPitch" }, cCalf = { destination: "leftCalf" };
 const mgr = { constraints: new Set<any>([cHip, cCalf]), addConstraint(c: any) { this.constraints.add(c); }, deleteConstraint(c: any) { this.constraints.delete(c); } };
 const vrmL = { nodeConstraintManager: mgr };
-const modL = { ...mod, initLegDOF: (v: any) => { v.nodeConstraintManager.deleteConstraint(cHip); } };
-const rtL = makeBodyRuntime("claude-robot-dof-v1", modL, { report: () => {} })!;
+const modL = { ...mod, setupLegDOF: (v: any) => { v.nodeConstraintManager.deleteConstraint(cHip); } };
+const rtL = makeBodyRuntime("claude-robot-dof", modL, { report: () => {} })!;
 rtL.init(vrmL);
 check("init: the module took the hip stage's constraint over", !mgr.constraints.has(cHip) && mgr.constraints.has(cCalf));
 rtL.setLimp(vrmL, true);
@@ -135,7 +135,7 @@ check("Avatar limp and disposal hand runtime ownership back",
 
 // 7. pool boundary: a body disposed while limp must not return with three-vrm
 // and the body runtime both owning the same node constraint.
-const rtL2 = makeBodyRuntime("claude-robot-dof-v1", modL, { report: () => {} })!;
+const rtL2 = makeBodyRuntime("claude-robot-dof", modL, { report: () => {} })!;
 rtL.setLimp(vrmL, true);
 rtL.dispose(vrmL);
 rtL2.init(vrmL); // INITED path: reassert ownership instead of reading posed rest
