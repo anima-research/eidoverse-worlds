@@ -366,7 +366,7 @@ addEventListener('keydown', (e) => {
   // up. The pad's B/○ is untouched by any of this — it emits `input-action`
   // straight out of pollInput and never visits the keyboard surface — so
   // cancel-while-editing still works on a controller.
-  if (e.code === 'Escape' && !e.repeat && !e.ctrlKey && !e.altKey && !e.metaKey
+  if (e.code === 'Escape' && !e.repeat && !e.ctrlKey && !e.altKey && !e.metaKey   // keys: none — a bare Escape; build's own chain consumed its presses above
       && !e.defaultPrevented) requestAction('cancel');
 });
 addEventListener('keyup', (e) => keys.delete(e.code));
@@ -843,7 +843,9 @@ export function updateMe(dt, me) {
   myState.locomotion = undefined;
   me.locomotion = null;
   me.root.rotation.set(0, myState.yaw, 0);
-  const moving = isMoving(input);   // the one threshold, shared with seats and getUp
+  // the one threshold, shared with seats and getUp — read AFTER the auto-walk and free cam have steered fwd/strafe
+  // (they never write `input`, so reading `input` here left an auto-walk with target 0)
+  const moving = isMoving({ moveX: strafe, moveZ: -fwd });
   wantMove = moving;   // INTENT, for the clip choice below: the walk→idle blend starts on key release, not 0.34 s later when the coast ends
   // walking brings the edit camera home (R, 10-10: "when you use 'f' to frame, can you make it so that using WASD
   // automatically resets the camera back to your character?"): the pan eases out and a far pull-back comes in
