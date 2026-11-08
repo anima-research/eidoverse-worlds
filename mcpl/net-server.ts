@@ -36,6 +36,7 @@ import {
   CHAT, EIDO, CAP, tags, capabilityMatches, MCPL_ADVERTISEMENT, FEATURE_SETS,
 } from "./declaration.ts";
 import { WorldAgent } from "./agent.ts";
+import { publicOrigin } from "../shared/briefing.js";
 import { shown } from "../shared/shown.js";
 import { toolList, handleTool, type ToolCtx } from "./tools.ts";
 import { pingDelivery, type WirePing } from "./ping-wire.ts";
@@ -47,6 +48,7 @@ import { atomicWrite } from "../server/fsutil.ts";
 import { displayNameIndex, lookupToken, readTokenRegistry, wireAuthors, type TokenAuth } from "./token-registry.ts";
 
 const PORT = Number(process.env.MCPL_PORT ?? 8941);
+const PUBLIC_ORIGIN = publicOrigin(process.env.MCPL_PUBLIC_ORIGIN?.trim() ?? "");
 // archipelago-home door (home-node.md §7): a `?token=aid1.…` credential is an
 // identity token minted by the home node — verified OFFLINE right here, no
 // tokens.json entry needed. That is how non-connectome guest agents arrive:
@@ -249,6 +251,7 @@ class Session {
       world,
       avatar: chosenAvatar[this.auth.id] ?? this.auth.avatar,
       url: process.env.WORLD_URL ?? "ws://127.0.0.1:8940/ws",
+      briefingBase: PUBLIC_ORIGIN === null ? null : PUBLIC_ORIGIN + "/",
       // the same bearer that opened THIS door — the sequencer verifies the
       // name against it (agent names are reserved there)
       agentToken: this.agentToken,

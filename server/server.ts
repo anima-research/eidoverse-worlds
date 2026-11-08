@@ -43,6 +43,7 @@ import { directoryFor, foldName, accountTag } from "./directory.ts";
 // 7c). fetch() below delegates; avatarRoster rides back for the join
 // snapshot, pendingCaptures for the renderer's capture-result replies.
 import { route, avatarRoster } from "./routes.ts";
+import { joinBriefing } from "./briefing.ts";
 import { screenshots } from "./screenshots.ts";
 import { registerSystem, startTick } from "./tick.ts";
 import { MESSAGES } from "./messages.ts";
@@ -793,6 +794,7 @@ function buildSnapshot(w: World, c: Client) {
     // snapshot = the authority's cut of the world (the joiner folds it, then the log stream) + who's present now
     return {
       type: "snapshot",
+      briefing: joinBriefing(),
       // (no renderSceneVersion: upstream #248's render-scene projection isn't served here (it read the first protocol's
       // fold, docs/NATIVE-WORLD-RENDERING.md), so a native client isn't told to ask for it)
       you: c.id,
