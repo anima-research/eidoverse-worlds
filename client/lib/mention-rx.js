@@ -13,11 +13,11 @@ export function mentionRx(name) {
   return new RegExp(`${OPEN}@?${escapeRx(name)}${CLOSE}`, 'i');
 }
 
-/** The pattern a chat line renders with: group 1 is a link, group 2 a mention of one of `names`. A name followed by `-`
- *  fails, so the alternation falls through to the longer name and roster order doesn't matter. */
+/** The pattern a chat line renders with: group 1 is a link, group 2 a mention of one of `names`. Longer names are tried
+ *  first, so `Ann Lee` wins over `Ann` and `cairn-bridge` over `cairn` whatever the roster order. */
 export function mentionPattern(names) {
   return new RegExp(
-    `(https?://[^\\s]+)|(${OPEN}@?(?:${names.map(escapeRx).join('|') || '\\u0000'})${CLOSE})`,
+    `(https?://[^\\s]+)|(${OPEN}@?(?:${[...names].sort((a, b) => b.length - a.length).map(escapeRx).join('|') || '\\u0000'})${CLOSE})`,
     'gi',
   );
 }

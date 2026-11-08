@@ -36,6 +36,8 @@ const ROWS = [
   ['R7b', ['helen', 'cairn', 'cairn-bridge'], 'that one goes to cairn-bridge.', ['cairn-bridge'], false],
   ['R8', ['helen', 'cairn', 'mythos'], 'cairn, mythos: hi', ['cairn', 'mythos'], true],
   ['R10', ['helen', 'cairn', 'cairn-0042'], line('cairn-0042'), ['cairn-0042'], false],
+  ['R11', ['helen', 'cairn'], 'xcairn and @@cairn', [], false],
+  ['R12', ['helen', 'Ann', 'Ann Lee'], '@Ann Lee, hi', ['@Ann Lee'], false],
 ];
 for (const [id, roster, text, want, pinged] of ROWS) {
   const got = chips(text, roster);
@@ -60,7 +62,7 @@ for (const name of NAMES) {
 console.log(`\n${pass} passed, ${failed.length} failed`);
 if (!BASE) process.exit(failed.length ? 1 : 0);
 // The control: the base fails exactly these, predicted by hand before this ran
-const PREDICTED = ['R1 chips', 'R1 ping', 'R2 ping', 'R3 ping', 'R6 chips', 'R7a chips', 'R7a ping', 'R7b chips', 'R7b ping', 'R10 chips', 'R10 ping', 'P cairn'];
+const PREDICTED = ['R1 chips', 'R1 ping', 'R2 ping', 'R3 ping', 'R6 chips', 'R7a chips', 'R7a ping', 'R7b chips', 'R7b ping', 'R10 chips', 'R10 ping', 'R11 chips', 'R11 ping', 'R12 chips', 'P cairn'];
 const ok = same([...failed].sort(), [...PREDICTED].sort());
 console.log(ok ? 'control: the base fails exactly the predicted rows' : `control MISMATCH: predicted ${JSON.stringify(PREDICTED)}, got ${JSON.stringify(failed)}`);
 process.exit(ok ? 0 : 1);

@@ -495,7 +495,7 @@ function buildLine(who, text, { kind = '', ts = Date.now(), historical = false }
   if (!sys) w.style.color = colorFor(who);
   // click a name to start a mention of them
   if (!sys && !mine) {
-    w.onclick = () => { open(); insertAtCursor(`@${who} `); };
+    w.onclick = () => { open(); insertMention(who); };
     w.style.cursor = 'pointer';
   }
 
@@ -566,6 +566,12 @@ function paintUnread() {
 
 // ---------------------------------------------------------------- composer
 
+// `@name ` at the caret, after a space when the caret follows a character the mention boundary (mention-rx.js OPEN)
+// excludes: `hello@cairn` isn't read as a mention
+function insertMention(name) {
+  const s = inputEl.selectionStart ?? inputEl.value.length;
+  insertAtCursor(`${s > 0 && /[\w@-]/.test(inputEl.value[s - 1]) ? ' ' : ''}@${name} `);
+}
 function insertAtCursor(str) {
   const s = inputEl.selectionStart ?? inputEl.value.length;
   setInput(inputEl.value.slice(0, s) + str + inputEl.value.slice(inputEl.selectionEnd ?? s));
@@ -1304,7 +1310,7 @@ export function initChat({ send, typing, people, person }) {
 export function mentionPerson(name) {
   if (!name) return;
   chat.open();
-  insertAtCursor(`@${name} `);
+  insertMention(name);
   inputEl.focus();
 }
 
