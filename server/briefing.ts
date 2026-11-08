@@ -31,12 +31,12 @@ export function agentGuideResponse(req: Request, file: string | URL = GUIDE) {
   try {
     const { body, version } = readAgentGuide(file);
     const headers = { "content-type": "text/markdown; charset=utf-8", "cache-control": "no-cache", etag: `"${version}"` };
-    // If-None-Match (RFC 9110 §13.1.2): a list of entity tags, each quoted and optionally weak (W/), or "*".
-    const tags = req.headers.get("if-none-match")?.split(",").map(s => s.trim().replace(/^W\//, "").replace(/^"(.*)"$/, "$1"));
-    if (tags?.some(tag => tag === version || tag === "*")) return new Response(null, { status: 304, headers });
+    // If-None-Match (RFC 9110 §13.1.2): a bare * or a list of entity tags, each quoted and optionally weak (W/).
+    const tags = req.headers.get("if-none-match")?.split(",").map(s => s.trim());
+    if (tags?.some(tag => tag === "*" || tag.replace(/^W\//, "").replace(/^"(.*)"$/, "$1") === version)) return new Response(null, { status: 304, headers });
     return new Response(req.method === "HEAD" ? null : body, { headers });
   } catch (err) {
     console.warn(`[briefing] /agents.md answered 503: ${why(err, file)}`);
-    return new Response("Agent guide unavailable", { status: 503, headers: { "cache-control": "no-store" } });
+    return new Response("Agent guide unavailable: this server couldn't read it, and its log says why.", { status: 503, headers: { "cache-control": "no-store" } });
   }
 }

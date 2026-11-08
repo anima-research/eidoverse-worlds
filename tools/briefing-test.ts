@@ -53,6 +53,7 @@ try {
   check("so do its quoted and weak forms, and a list holding it", conditional(`"${guideVersion}"`) === 304 && conditional(`W/"${guideVersion}"`) === 304 && conditional(`"other", "${guideVersion}"`) === 304);
   check("If-None-Match: * answers 304", conditional("*") === 304);
   check("another version reads the whole guide", conditional(`"sha256:other"`) === 200 && conditional("sha256:other") === 200);
+  check("a quoted \"*\" is an entity tag, not the wildcard, and reads the whole guide", conditional(`"*"`) === 200);
 
   const refused = ["file:///tmp", "https://u:p@world.example", "https://world.example/path", "https://world.example?token=x", "https://world.example/#secret", "not a url"]
     .filter(setting => { try { publicOrigin(setting); return false; } catch { return true; } });
@@ -114,7 +115,7 @@ try {
   const strip = ({ briefing: _b, ...rest }: any) => rest;
   const base = strip(snapshot);
   let current: any = { motd: "offered", docs: [{ title: "guide", url: AGENT_GUIDE, version: "one" }] };
-  let peer: any, joins = 0, guideFetches = 0;
+  let peer: any, joins = 0, guideFetches = 0, holdNextJoin = false, heldJoin: (() => void) | null = null;
   const fake = Bun.serve({ port: 0, hostname: "127.0.0.1",
     fetch(req, server) {
       const u = new URL(req.url);
@@ -125,7 +126,8 @@ try {
     websocket: { message(ws, msg) {
       if (JSON.parse(String(msg)).type !== "join") return;
       peer = ws; joins++;
-      ws.send(JSON.stringify({ ...base, ...(current === undefined ? {} : { briefing: current }) }));
+      const answer = () => ws.send(JSON.stringify({ ...base, ...(current === undefined ? {} : { briefing: current }) }));
+      if (holdNextJoin) { holdNextJoin = false; heldJoin = answer; } else answer();
     } },
   }); servers.push(fake);
   const mounted = new WorldAgent({ name: "mounted-reader", avatar: "", world: "briefing", url: `ws://127.0.0.1:${fake.port}/prefix/ws?token=private-test` }); agents.push(mounted);
@@ -141,9 +143,11 @@ try {
   client.onPing = () => { pings++; };
   await client.connect();
   const joinsBefore = joins;
+  holdNextJoin = true;
   peer.close();
-  await until("the body sees the connection close", () => !client.joined);
+  const release = await until("the body asks to join again", () => heldJoin);
   check("between connections, look names no guide", guideLines(await lookText(client)).length === 0);
+  heldJoin = null; release();
   await until("the body rejoins", () => joins === joinsBefore + 1 && client.joined);
   check("a rejoin with the same guidance names the same version", guideLines(await lookText(client))[0]?.endsWith("version one when you joined"));
   current = { ...current, docs: [{ ...current.docs[0], version: "two" }] };
@@ -156,14 +160,22 @@ try {
   peer.close(); await until("the body rejoins a sequencer whose guide is unavailable", () => joins === joinsBefore + 4 && client.joined);
   check("a rejoin whose briefing offers no document says so", JSON.stringify(guideLines(await lookText(client))) === JSON.stringify(["Agent guide: none offered on this connection"]));
   check("the body neither fetches the guide nor wakes its host for it", guideFetches === 0 && pings === 0);
+  current = { motd: "offered", docs: [{ title: "guide", url: AGENT_GUIDE, version: "one" }] };
+  peer.close(); await until("the body rejoins before a refused snapshot", () => joins === joinsBefore + 5 && client.joined);
+  const beforeRefusal = guideLines(await lookText(client));
+  const { state: _state, ...stateless } = base;
+  peer.send(JSON.stringify({ ...stateless, briefing: { motd: "refused", docs: [{ title: "guide", url: AGENT_GUIDE, version: "refused" }] } }));
+  const refusedCleared = await tryUntil("the body refuses a snapshot with no world state", async () => guideLines(await lookText(client)).length === 0, { ms: 5000 });
+  check("a later snapshot the body refuses, as a resync's could be, leaves no guide line, neither the old one nor its own",
+    beforeRefusal.length === 1 && refusedCleared !== undefined, JSON.stringify([beforeRefusal, guideLines(await lookText(client))]));
 
   const examplePath = join(h.SCRATCH, "tokens.example.json");
   writeFileSync(examplePath, "{}");
-  const refusing = Bun.spawn([process.execPath, "mcpl/net-server.ts"], {
+  const refusing = h.track(Bun.spawn([process.execPath, "mcpl/net-server.ts"], {
     cwd: ROOT, env: { ...process.env, MCPL_PORT: String(freePort(h.PORT + 90)), MCPL_PUBLIC_ORIGIN: "https://world.example/path",
       MCPL_TOKENS: tokenPath, MCPL_TOKENS_EXAMPLE: examplePath, MCPL_STATE: join(h.SCRATCH, "refusing-state.json"), WORLD_URL: WS },
     stdout: "pipe", stderr: "pipe",
-  });
+  }));
   const refusedExit = (await tryUntil("the refusing door exits", () => refusing.exitCode !== null, { ms: 30000 })) ? refusing.exitCode : null;
   if (refusedExit === null) { refusing.kill(); await refusing.exited; }
   const refusedText = await new Response(refusing.stderr as ReadableStream).text();
@@ -182,7 +194,7 @@ try {
     }));
     await until(`door ${label} ready`, async () => {
       if (p.exitCode !== null) throw new Error(`door ${label} exited ${p.exitCode}; logs at ${h!.SCRATCH}`);
-      try { return (await (await fetch(`http://127.0.0.1:${port}/healthz`)).text()).trim() === `ok ${nonce}`; } catch { return false; }
+      try { return (await (await fetch(`http://127.0.0.1:${port}/healthz`, { signal: AbortSignal.timeout(1000) })).text()).trim() === `ok ${nonce}`; } catch { return false; }
     });
     const ws = new WebSocket(`ws://127.0.0.1:${port}/?token=briefing-reader-token&world=briefing`); sockets.push(ws);
     const replies = new Map<number, any>();
@@ -205,18 +217,19 @@ try {
     await rpc("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "briefing-test", version: "1" } });
     send({ method: "notifications/initialized" });
     const call = (name: string, args = {}) => rpc("tools/call", { name, arguments: args });
-    const lookLines = async () => guideLines((await call("look")).content[0].text);
-    return { call, lookLines };
+    const look = async (): Promise<string> => (await call("look")).content[0].text;
+    return { call, look };
   }
   const publicDoor = await door("public", "https://world.example");
-  const publicLines = await publicDoor.lookLines();
+  const publicLines = guideLines(await publicDoor.look());
   check("the network door names the guide at MCPL_PUBLIC_ORIGIN, never at its private sequencer address",
     JSON.stringify(publicLines) === JSON.stringify([`Agent guide: https://world.example/agents.md, version ${doc.version} when you joined`]), JSON.stringify(publicLines));
   const travel = await publicDoor.call("travel", { world: "annex" });
-  check("travel through the door succeeds", !travel.isError);
-  check("and the body it travels with names the guide at the same origin", JSON.stringify(await publicDoor.lookLines()) === JSON.stringify(publicLines));
+  const travelled = await publicDoor.look();
+  check("travel through the door reaches the other world", !travel.isError && travelled.includes(`in world "annex"`), travelled.split("\n")[0]);
+  check("and the body it travels with names the guide at the same origin", JSON.stringify(guideLines(travelled)) === JSON.stringify(publicLines));
   const bareDoor = await door("bare", "");
-  const bareLines = await bareDoor.lookLines();
+  const bareLines = guideLines(await bareDoor.look());
   check("a network door with no MCPL_PUBLIC_ORIGIN gives the version and says the address is unknown on this connection",
     JSON.stringify(bareLines) === JSON.stringify([`Agent guide: version ${doc.version} when you joined; its address is unknown on this connection (this door has no public origin set)`]), JSON.stringify(bareLines));
   completed = true;
