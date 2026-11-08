@@ -13,7 +13,7 @@
 //   const DOF = await import(new URL('claude_robot_dof.js', EIDOVERSE_DIR).href);  ...  DOF.applyHardwareDOF(vrm, DOF.LEG_JOINTS);
 //   (the body is eidoverse/assets/vrms/claude_robot.vrm, its joints file claude_robot.joints.json beside it; the whole
 //   frame order in one scene: eidoverse/examples/claude_robot.js)
-//   the hips' stages (below): initLegDOF(vrm) once at load, before anything poses it; applyHardwareDOF then sets them
+//   the hips' stages (below): setupLegDOF(vrm) once at load, before anything poses it; applyHardwareDOF then sets them
 //   the arms (below): initArmDOF(vrm, hinges) once at load, before anything poses it (hinges: the exporter's joints
 //   file's 'hinges', parsed first; its leftLowerArm record sets the elbow); then each frame, dt its real time step:
 //   restoreArmPose(vrm), the clip's mixer.update(dt), keepArmPose(vrm) (THE CLIP'S POSE FOR THE ARM PASS, below); then
@@ -237,7 +237,7 @@ export function applyHardwareDOF(vrm, joints, stats) {
                 stats[k] = Math.max(stats[k] || 0, d);
             }
         }
-        // the hip's two stages, from the thigh as clamped above (THE HIP'S STAGES, below; after initLegDOF only)
+        // the hip's two stages, from the thigh as clamped above (THE HIP'S STAGES, below; after setupLegDOF only)
         const hs = _legs.get(vrm)?.[side], thigh = hs && H.getNormalizedBoneNode(side + 'UpperLeg');
         if (thigh) hipSolve(thigh.quaternion, hs);
     }
@@ -257,12 +257,12 @@ export function applyHardwareDOF(vrm, joints, stats) {
 // the thigh as applyHardwareDOF clamped it: t, where its turn puts the thigh's axis d0; the roll b about the axle ZR that
 // brings d0's cone to t's height along the pitch axis XP; then the pitch a about XP that turns it onto t. The yaw ring
 // takes what is left, a pure turn about the thigh's axis by construction (the stages put d0 on t). Both stages are set
-// directly; initLegDOF removes their constraints (the file keeps them, for runtimes without robot_dof). The axes are the
+// directly; setupLegDOF removes their constraints (the file keeps them, for runtimes without robot_dof). The axes are the
 // stages' own, read at load (the pitch stage's X and Z, the swing stage's Y); each side is solved in its own frame, so
 // nothing assumes the rig is mirrored. The thigh is not touched: only the parts the two stages carry move
 const _legs = new WeakMap();
 
-export function initLegDOF(vrm) {
+export function setupLegDOF(vrm) {
     // at load, before anything poses the VRM: per side the stages' rest (local, and their parents' turns in the VRM's own
     // frame, where the normalized bones are axis-aligned at rest, whatever carries vrm.scene), their axes, and their VRM
     // constraints removed (applyHardwareDOF sets both stages every frame from then on). A side without the two stages
@@ -274,7 +274,7 @@ export function initLegDOF(vrm) {
     // first record, and a raw hips or thigh turned off its rest (rawRestPose: vrm.update carries a pose into the raw
     // bones) is reported
     if (_legs.has(vrm)) {
-        console.warn('[robot_dof] initLegDOF: called twice for this VRM: the first record is kept (the stages\' rests are read once, at load)');
+        console.warn('[robot_dof] setupLegDOF: called twice for this VRM: the first record is kept (the stages\' rests are read once, at load)');
         return _legs.get(vrm);
     }
     const hum = vrm.humanoid, posed = [];
@@ -286,8 +286,8 @@ export function initLegDOF(vrm) {
         if (deg > 1e-3) posed.push(`${n} ${deg.toFixed(3)}`);
     }
     if (posed.length) {
-        console.warn(`[robot_dof] initLegDOF: the VRM was posed and updated before it (the raw ${posed.join(', ')} deg off its rest): ` +
-            'the hip stages\' rests read now are wrong; call initLegDOF at load, before anything poses the VRM');
+        console.warn(`[robot_dof] setupLegDOF: the VRM was posed and updated before it (the raw ${posed.join(', ')} deg off its rest): ` +
+            'the hip stages\' rests read now are wrong; call setupLegDOF at load, before anything poses the VRM');
     }
     vrm.scene.updateMatrixWorld(true);
     const mgr = vrm.nodeConstraintManager, st = {};
@@ -325,7 +325,7 @@ export function initLegDOF(vrm) {
     return st;
 }
 
-// one side's stages from the thigh's turn q (normalized: the VRM's frame; s: initLegDOF's record). t = q d0. The roll b:
+// one side's stages from the thigh's turn q (normalized: the VRM's frame; s: setupLegDOF's record). t = q d0. The roll b:
 // XP . R(ZR, b) d0 = A cos b + B sin b (A = XP . d0, B = XP . (ZR x d0); its amplitude cos 2.77 deg) must equal XP . t,
 // whose two roots are atan2(B, A) +- acos: the one nearer 0, the rest (the other turns the thigh over the top; the two
 // meet only with the thigh's axis 2.77 deg from the pitch axis, 87 of abduction or 93 of adduction, far past the stops;
@@ -947,10 +947,10 @@ export function applyArmClearance(vrm, deg = 8) {
 export function initArmDOF(vrm, hinges) {
     // at load, before anything poses the VRM: the pitch helpers' rest (local, and their parents' world turn) and their
     // VRM roll constraints removed (the solve sets them; a constraint left in place would overwrite them in update).
-    // hinges: the exporter's joints file 'hinges' (as initHandDOF takes them); its leftLowerArm record sets the elbow
+    // hinges: the exporter's joints file 'hinges' (as setupHandDOF takes them); its leftLowerArm record sets the elbow
     // (THE ELBOW AT THE VRM's REST, above); without it ARM's constants stand
     const THREE = globalThis.THREE;
-    // (round 2, N-i: initLegDOF's guard, REVIEW_HIP P1) a second call would re-read the pitch helpers' rests and the
+    // (round 2, N-i: setupLegDOF's guard, REVIEW_HIP P1) a second call would re-read the pitch helpers' rests and the
     // wrist stages' (initWrist's Lr / Ld) from nodes the solve has posed, silently, and the constraints it removed the
     // first time are gone: so a second call keeps the first record (and its elbow; the hinges it is given now are not read)
     if (_arms.has(vrm)) {
@@ -1265,13 +1265,13 @@ export function applyArmDOF(vrm, stats, dt, clearance = 8) {
 // the clip's thumb direction d, the flexion beta that puts the metacarpal at d's angle from the rotor axis, the rotor
 // alpha that turns it round onto d (where d runs along the rotor axis alpha is undefined: the clip's twist about it is
 // taken instead, blended in over 4..12 deg); the metacarpal is set to rotor(alpha) * pin(beta), the rotor helper to
-// alpha (initHandDOF removes its constraint). The right hand mirrors the left: solved in the left's frame.
-//   initHandDOF(vrm, joints.hinges) once at load; applyHandDOF(vrm, stats) each frame after applyArmDOF
+// alpha (setupHandDOF removes its constraint). The right hand mirrors the left: solved in the left's frame.
+//   setupHandDOF(vrm, joints.hinges) once at load; applyHandDOF(vrm, stats) each frame after applyArmDOF
 const FINGER_PINS = ['Index', 'Middle', 'Ring', 'Little'].flatMap((f) => ['Proximal', 'Intermediate', 'Distal'].map((s) => f + s))
     .concat(['ThumbProximal', 'ThumbDistal']);
 const _hands = new WeakMap();
 
-export function initHandDOF(vrm, hinges) {
+export function setupHandDOF(vrm, hinges) {
     const THREE = globalThis.THREE;
     vrm.scene.updateMatrixWorld(true);
     const H = vrm.humanoid, mgr = vrm.nodeConstraintManager, st = { hinges, side: {} };
@@ -1473,7 +1473,7 @@ export function applyHandDOF(vrm, stats) {
 // 35 with local X on the hinge, + folding back), adds the listening bias toward where the eyes look (the petals facing
 // it open flatter), holds every petal on its BUILT stops (PETAL_FOLD), keeps SPEC's stem interlock (a stem at 70 or more
 // while the head rolls 4 deg or more toward it), and moves no petal faster than its lead-screw actuator would (240 deg/s).
-//   initCrown(vrm) once at load; applyCrown(vrm, dt[, { state, weight }]) each frame after the face's expressions are
+//   setupCrown(vrm) once at load; applyCrown(vrm, dt[, { state, weight }]) each frame after the face's expressions are
 //   set and before vrm.update (state: one of CROWN_STATES blended on top, e.g. 'thinking', 'resting', 'curious')
 // THE STATIONS' CLOCK ANGLES (fix round 1, 10-29), deg from 12 o'clock, + toward the robot's left: v2_crown.CLOCKS, as
 // built, petal_00 .. petal_11 in its _stations() order (the left side top to bottom, then the right bottom to top;
@@ -1563,7 +1563,7 @@ export function applyHeadExpression(vrm, dt, opts = {}) {
     }
 }
 
-export function initCrown(vrm) {
+export function setupCrown(vrm) {
     const petals = [];
     for (let i = 0; i < 12; i++) {
         const o = vrm.scene.getObjectByName('petal_' + String(i).padStart(2, '0'));

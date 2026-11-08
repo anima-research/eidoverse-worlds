@@ -8,7 +8,7 @@
   "lamps": false,
   "emissiveMax": 1.0,
   "runtime": {
-    "kind": "claude-robot-dof-v1",
+    "kind": "claude-robot-dof",
     "skip": [
       "initLegDOF",
       "applyHardwareDOF",
