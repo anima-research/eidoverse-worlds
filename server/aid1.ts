@@ -17,7 +17,7 @@ export type PrincipalKind = "human" | "agent" | "service";
 export interface Aid1Payload {
   v: 1;
   iss: string;
-  /** Durable principal id: `human:discord:<snowflake>` / `agent:<name>@<domain>`. */
+  /** Durable principal id as the issuer signed it, e.g. `human:discord:<snowflake>` / `agent:<name>@<domain>`; /auth takes any `human:` one (server/routes.ts). */
   sub: string;
   kind: PrincipalKind;
   name: string;

@@ -38,7 +38,7 @@ async function boot(ctxOpts, name) {
 
 // only `id` on screen: every other frame hidden
 const solo = (pg, id) => pg.evaluate(async (id) => {
-  const F = await import('/lib/frames.js');
+  const F = await import('/lib/windows.js');
   for (const f of F.allFrames()) if (f.visible && f.id !== id && f.el?.dataset.frame !== id) f.hide();
   const f = F.getFrame(id); f?.show(); return !!f;
 }, id);
@@ -99,7 +99,7 @@ async function tour(pg, tag, base) {
     // the lantern's action for each: from a closed frame, on its own tab
     for (const id of ids) {
       const label = await pg.evaluate((id) => { const t = document.getElementById(`sec-${id}-tab`); return t.title || t._tip; }, id);   // a hovered tab lends its title to the house tooltip (ui.js)
-      await pg.evaluate(async (h) => (await import('/lib/frames.js')).getFrame(h).hide(), host);
+      await pg.evaluate(async (h) => (await import('/lib/windows.js')).getFrame(h).hide(), host);
       await pg.evaluate(async ([h, l]) => (await import('/lib/actions.js')).run(`section:${h}:${l}`), [host, label]);
       await sleep(250);
       const s = await tabState(pg, host, '.sec', '.sec-tabs .pf-tab');
@@ -135,13 +135,13 @@ async function tour(pg, tag, base) {
 
   // ---- the ∃ menu's Panels ▸ (the waterfall, owner 10-01): every window row opens its panel, on screen, and the
   // menu stays open through all of them (a window opening beside the HUD is not "another window")
-  await pg.evaluate(async () => { const F = await import('/lib/frames.js'); for (const f of F.allFrames()) f.hide(); });
+  await pg.evaluate(async () => { const F = await import('/lib/windows.js'); for (const f of F.allFrames()) f.hide(); });
   await pg.click('#hud'); await sleep(250);
   await pg.click('#emenu .mrow[data-item="panels"]'); await sleep(300);
   await shot('emenu-panels');
-  const rows = await pg.evaluate(async () => { const F = await import('/lib/frames.js');
+  const rows = await pg.evaluate(async () => { const F = await import('/lib/windows.js');
     return [...document.querySelectorAll('#emenu-sub .mrow[data-row]')].map((r) => r.dataset.row).filter((id) => F.getFrame(id)); });
-  check(`${tag} Panels ▸ lists a row for every panel (${rows.join(' · ')})`, ['profile', 'chat', 'world', 'emotes', 'debug', 'settings'].every((id) => rows.includes(id)), rows.join());
+  check(`${tag} Panels ▸ lists a row for every panel (${rows.join(' · ')})`, ['profile', 'chat', 'world', 'actions', 'debug', 'settings'].every((id) => rows.includes(id)), rows.join());
   for (const id of rows) {
     const sel = `#emenu-sub .mrow[data-row="${id}"]`;
     await pg.click(sel, { position: { x: 30, y: 12 }, timeout: 3000 }).catch(() => pg.evaluate((s) => document.querySelector(s).click(), sel));

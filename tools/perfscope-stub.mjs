@@ -62,3 +62,4 @@ export const renderer = {
 // ---- world.js: the entity registry perfscope attributes cost to
 export const entities = new Map();
 export const entityMeta = new Map();
+export const metaOf = (id) => entityMeta.get(id) ?? null;

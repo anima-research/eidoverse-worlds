@@ -8,8 +8,8 @@ engine edit, no client edit, no deploy beyond the file.
 - One def per file, `defs/<domain>/<name>.json`; the filename (minus `.json`)
   is the def's name. Domains so far: `flora/`, `avatars/`, `animations/`
   (clip overlay, same declared-beats-discovered contract as avatars — `vrma`
-  adds/repoints, tags/doc ride /defs; the `_emotes.json` sidecar is the
-  emote vocabulary: key order = bar/number-key order, `clip`/`icon`/
+  adds/repoints, tags/doc ride /defs; the `_actionbar.json` sidecar is the
+  action bar's vocabulary: key order = bar/number-key order, `clip`/`icon`/
   `listed`, hot-reloads the bar), `sky/` (the `_presets.json` sidecar:
   named skies for the build panel — authoring conveniences only; commit
   writes concrete args, the log never stores a preset name), `structure/`
@@ -22,6 +22,18 @@ engine edit, no client edit, no deploy beyond the file.
   carrying `vrm` (a /library path) declares an avatar the scan wouldn't
   find, or repoints a name — declared beats discovered. A def whose vrm
   path doesn't resolve is refused loudly and the discovered roster stands.
+  A def may also carry **`runtime: { kind, skip? }`**: it selects one
+  reviewed runtime built into this Worlds client. Avatar assets never name
+  executable module URLs; adding a kind requires a Worlds source review.
+  The runtime runs at two places in the avatar's frame
+  (`client/lib/bodyruntime_core.js`): right after the clip's mixer, and last
+  before `vrm.update`. Kind `claude-robot-dof` holds Claude's machine body
+  to its real joints, whoever drives it (`avatars/claude_robot.json`).
+  `runtime.skip` lists built-in steps this instance doesn't run. A body's glow
+  can be declared too: `lamps: false` keeps `attachLamps` off it (indicator
+  lights and screens glow; they don't light a room), and `emissiveMax` caps
+  its emissive strength. `provenance` records the exact external body bytes
+  and the source bytes vendored into the reviewed runtime.
 - The contract per domain lives in `shared/` as a pure validator
   (`shared/floradefs.js`) — the server refuses to serve a def that fails it
   (loudly, at load), so a typo becomes a boot log line, not a broken world.
@@ -39,7 +51,7 @@ engine edit, no client edit, no deploy beyond the file.
   the hex). `GRASS_COLORS` itself still lives in vegetation.js (calibrated
   against Sol's blade atlas — engine-adjacent for now; a candidate for
   `defs/flora/_colors.json` later).
-- Worlds reference species by name in `grass` verb args. A log that names a
+- Worlds reference species by name in their `grass` component. A log that names a
   species this instance lacks fails that stroke loudly at build time and
   leaves the rest of the world standing — the log itself is untouched
   (append-only, forever).

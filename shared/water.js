@@ -1,4 +1,5 @@
 // Renderer-independent water queries. Metres, Y-up; parameters come from comp data.
+import { MOVER, stepSwim } from './mover.js';
 export const MAX_WATER = 4, MAX_AIR = 16, MAX_WAVES = 8;
 const finite = (x, d) => Number.isFinite(x) ? x : d;
 export function vector(v, fallback = [0, 0, 0]) {
@@ -30,13 +31,16 @@ export function inBox(p, box) {
   const q = box.toLocal ? box.toLocal(p) : p.map((v, i) => v - box.center[i]);
   return q.every((v, i) => Math.abs(v) <= box.size[i] / 2);
 }
+// does dry box b keep water w out? An air with no bodies or priority (an upstream box) keeps every water out (shared/zone.js)
+export const excludes = (b, w) => (!Array.isArray(b.bodies) || b.bodies.includes(w.id)) && !(w.priority > b.priority);
 export function mediumAt(p, waters, airs, time = 0) {
-  if (airs.some(b => inBox(p, b))) return null;
-  // Last authored volume wins where volumes overlap; deterministic ordering by id in adapter.
+  const dry = airs.filter(b => inBox(p, b));
+  // Last volume wins where volumes overlap; the adapter orders them (shared/zone.js: priority, then id).
   for (let i = waters.length - 1; i >= 0; --i) {
     const w = waters[i];
-    if (Math.abs(p[0] - w.center[0]) <= w.size[0] / 2 && Math.abs(p[2] - w.center[2]) <= w.size[2] / 2 &&
-        p[1] >= w.bottom && p[1] <= waveHeight(w, p[0], p[2], time)) return w;
+    const l = w.toLocal ? w.toLocal(p) : p.map((v, i) => v - w.center[i]);   // its own frame, as a pocket's (shared/zone.js)
+    if (Math.abs(l[0]) <= w.size[0] / 2 && Math.abs(l[2]) <= w.size[2] / 2 &&
+        p[1] >= w.bottom && p[1] <= waveHeight(w, p[0], p[2], time) && !dry.some(b => excludes(b, w))) return w;
   }
   return null;
 }
@@ -63,26 +67,15 @@ export function unionLength(intervals) {
 export function waterPath(a, b, water, airs = []) {
   const wet = boxInterval(a,b,water);
   if (!wet) return 0;
-  const dry = airs.map(box => boxInterval(a,b,box)).filter(Boolean)
+  const dry = airs.filter(box => excludes(box, water)).map(box => boxInterval(a,b,box)).filter(Boolean)
     .map(([lo,hi]) => [Math.max(lo,wet[0]), Math.min(hi,wet[1])]).filter(([lo,hi]) => hi>lo);
   return Math.max(0,wet[1]-wet[0]-unionLength(dry)) * Math.hypot(...b.map((v,i) => v-a[i]));
 }
-// Substepped by the controller for collision. Idle swimmers float up gently;
-// descending releases the surface latch, and releasing ascent never jumps out.
+// The 3D swim is the mover's (shared/mover.js stepSwim: one float depth for wading, swimming and diving). This is its
+// adapter for a water VOLUME or the level (`water`: {speed, top, waves}): the surface is the volume's top plus its wave.
+// `input.stature` (1 = a 100% body) is the body's size; the float rides floatDepth of its height. `input.factor`: a speed area's ×.
 export function swimStep(pos, velocity, input, water, dt, time) {
-  dt = Math.max(0, Math.min(.1, finite(dt, 0)));
-  const speed = water.speed * (input.fast ? 1.65 : 1);
-  const dir = vector(input.direction), length = Math.max(1, Math.hypot(...dir));
-  const target = dir.map(v => v / length * speed);
-  if (!input.dive && !input.rise) target[1] += .16;
-  const blend = 1-Math.exp(-5*dt);
-  const vel = velocity.map((v,i) => v+(target[i]-v)*blend);
-  const next = pos.map((v,i) => v+vel[i]*dt);
-  // the root floats a body-length fraction under the surface: 1.1 m for a 100% body, scaled with its size
-  // (input.stature, default 1) so a small body's eyes still clear the water
   const stature = Number.isFinite(input.stature) && input.stature > 0 ? input.stature : 1;
-  const surface = waveHeight(water,next[0],next[2],time)-1.1*stature;
-  let mode = 'swim';
-  if (!input.dive && next[1] >= surface-.12) { next[1] = surface; vel[1] = 0; mode = 'surface'; }
-  return { pos:next, velocity:vel, mode };
+  return stepSwim(vector(pos), vector(velocity), { ...input, direction: vector(input.direction), height: MOVER.body.height * stature },
+    { speed: water.speed, factor: input.factor, surfaceAt: (x, z) => waveHeight(water, x, z, time) }, dt);
 }

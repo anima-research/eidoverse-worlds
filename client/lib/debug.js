@@ -21,11 +21,11 @@ import { perf } from './perf.js';
 import { drawStats } from './render.js';
 import { MODES, setMode, activeMode, setSolid, isSolid } from './perfscope.js';
 import { MeshBVHHelper } from 'three-mesh-bvh';
-import { colliders } from './colliders.js';
+import { colliders, frameOf } from './colliders.js';
 import { closestParams, TUNING } from './ragdoll.js';
 import { JOINT_SPECS, HAIR_TUNING, WING_TUNING } from './ammodoll.js';
 import { BLINK, WING_IDLE, LIMP_SPRINGS } from './avatar.js';
-import { makeFrame } from './frames.js';
+import { makeFrame } from './windows.js';
 import { sliderTable, checkRow, selectRow, btn, sectionHead } from './rows.js';
 import { toast, paintRangesIn } from './ui.js';
 
@@ -124,7 +124,7 @@ function exactView(entry) {
 function syncColliders() {
   const seen = new Set();
   for (const [id, e] of colliders) {
-    const kind = kindOf(e);
+    const F = frameOf(e); const kind = kindOf(F);   // what the walker reads: a lying thing as its turned box
     seen.add(id);
     let view = collViews.get(id);
     if (!view || view.kind !== kind) {
@@ -137,15 +137,15 @@ function syncColliders() {
       view = { kind, node };
       collViews.set(id, view);
     }
-    const { obj, box } = e;
+    const { obj } = e; const box = F.box;
     const s = obj.scale?.x || 1;
-    view.node.quaternion.setFromAxisAngle(_up, obj.rotation.y);
+    view.node.quaternion.setFromAxisAngle(_up, F.yaw);
     if (kind === 'exact') {
       const src = view.node.userData?.source;
       if (src) {
         // drive the source mesh — the helper mirrors it (see exactView)
         src.position.copy(obj.position);
-        src.quaternion.setFromAxisAngle(_up, obj.rotation.y);
+        src.quaternion.setFromAxisAngle(_up, F.yaw);
         src.scale.setScalar(s);
         src.updateMatrixWorld(true);
       } else {
@@ -160,7 +160,7 @@ function syncColliders() {
     const half = kind === 'pillar' ? 0.25 : null;
     const cx = (box.min.x + box.max.x) / 2, cz = (box.min.z + box.max.z) / 2;
     _c.set(half ? cx : cx, (box.min.y + box.max.y) / 2, half ? cz : cz)
-      .multiplyScalar(s).applyAxisAngle(_up, obj.rotation.y).add(obj.position);
+      .multiplyScalar(s).applyAxisAngle(_up, F.yaw).add(obj.position);
     view.node.position.copy(_c);
     view.node.scale.set(
       (half ? half * 2 : box.max.x - box.min.x) * s,
@@ -546,7 +546,7 @@ const viewRow = (label, key, onChange) => checkRow(label,
 export function initDebug(p = {}) {
   providers = p;
   frame = makeFrame('debug', {
-    // second right column, bottom-anchored ABOVE the emote row: emotes own the corner, world/settings the top
+    // second right column, bottom-anchored ABOVE the action row: gestures own the corner, world/settings the top
     title: 'debug', x: -270, y: -165, w: 250, h: 460, minW: 210, hidden: true,
   });
   const stack = document.createElement('div');

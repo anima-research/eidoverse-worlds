@@ -110,7 +110,7 @@ pop()!.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
 check("a pointerdown INSIDE the pop keeps it open", !!pop());
 btn().click();
 check("a second click on the button toggles it closed", !pop());
-check("escape-claim hook: an open pop is what frames.js looks for (.dd-pop)", (btn().click(), !!document.querySelector(".dd-pop")));
+check("escape-claim hook: an open pop is what windows.js looks for (.dd-pop)", (btn().click(), !!document.querySelector(".dd-pop")));
 btn().click();
 
 console.log("DROPDOWN — MutationObserver repaint");

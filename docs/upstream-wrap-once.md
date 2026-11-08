@@ -115,6 +115,6 @@ but the clean fixes are yours:
    HalfFloat env target (~67MB) plus both data textures.
 8. **An azimuth setter with defined units.** `opts.azimuth` seeds
    `state.azBase` (radians) at construction and nothing can move it after;
-   our `sky` verb carries `azimuth` in degrees and silently drops it. A
+   our `sky` request carries `azimuth` in radians (−2π..2π; a v1 degree value is converted by the translator, PROTOCOL §14) and silently drops it. A
    `setAzimuth(deg|rad)` — either unit, just documented — would let a
    placed sun actually move.

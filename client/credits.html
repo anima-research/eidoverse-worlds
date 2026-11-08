@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Credits &amp; licences — eidoverse</title>
+<style>
+  :root { --bg: #16181c; --fg: #e4e4e2; --dim: #9a9c9f; --line: #2c2f35; --link: #9cc3ff; --card: #1d2025; }
+  @media (prefers-color-scheme: light) { :root { --bg: #f6f5f2; --fg: #1d1e20; --dim: #5d5f63; --line: #dcdad4; --link: #1d5fbf; --card: #fff; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); margin: 36px 0 10px; }
+  p.lede { color: var(--dim); margin: 0 0 8px; }
+  a { color: var(--link); }
+  .item { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin: 8px 0; }
+  .item b { font-weight: 600; }
+  .item .what { color: var(--dim); font-size: 13.5px; margin-top: 2px; }
+  .lic { font-size: 12.5px; padding: 1px 7px; border: 1px solid var(--line); border-radius: 99px; margin-left: 6px; white-space: nowrap; }
+  details { margin: 8px 0; }
+  summary { cursor: pointer; }
+  pre { white-space: pre-wrap; font: 12.5px/1.5 ui-monospace, Menlo, Consolas, monospace; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+<main>
+<h1>Credits &amp; licences</h1>
+<p class="lede">eidoverse-worlds runs on other people's generous work. These are the projects whose code, data or designs ship in this client or shaped it, with their licences. Each item's licence text is at the bottom of the page or linked from it.</p>
+
+<h2>Code and data the client loads</h2>
+<div class="item"><b>three.js</b> <span class="lic">MIT</span><div class="what">The renderer. © 2010–2025 three.js authors. <a href="https://github.com/mrdoob/three.js">github.com/mrdoob/three.js</a></div></div>
+<div class="item"><b>three-vrm</b>, <b>three-vrm-animation</b>, <b>three-vrm-materials-mtoon</b> <span class="lic">MIT</span><div class="what">Avatars (VRM), their animation and toon shading. © 2019 pixiv Inc. <a href="https://github.com/pixiv/three-vrm">github.com/pixiv/three-vrm</a></div></div>
+<div class="item"><b>three-mesh-bvh</b> <span class="lic">MIT</span><div class="what">Fast raycasts and collision against meshes. © 2018 Garrett Johnson. <a href="https://github.com/gkjohnson/three-mesh-bvh">github.com/gkjohnson/three-mesh-bvh</a></div></div>
+<div class="item"><b>Rapier</b> (rapier3d-compat) <span class="lic">Apache-2.0</span><div class="what">Physics. © 2020 Dimforge EURL. <a href="https://rapier.rs">rapier.rs</a></div></div>
+<div class="item"><b>ammo.js</b> / <b>Bullet Physics</b> <span class="lic">zlib</span><div class="what">Body physics (ragdolls). Bullet © 2003–2014 Erwin Coumans; ammo.js © Alon Zakai and contributors. <a href="https://github.com/kripken/ammo.js">github.com/kripken/ammo.js</a></div></div>
+<div class="item"><b>Basis Universal transcoder</b> <span class="lic">Apache-2.0</span><div class="what">Compressed (KTX2) textures, as bundled with three.js. © 2019–2024 Binomial LLC. <a href="https://github.com/BinomialLLC/basis_universal">github.com/BinomialLLC/basis_universal</a></div></div>
+<div class="item"><b>Draco</b> decoder <span class="lic">Apache-2.0</span><div class="what">Compressed meshes, as bundled with three.js and served from this server. © Google LLC. <a href="https://github.com/google/draco">github.com/google/draco</a></div></div>
+<div class="item"><b>Phosphor Icons</b> <span class="lic">MIT</span><div class="what">The fill-weight icons (path data copied from @phosphor-icons/core). © 2023 Phosphor Icons (Helena Zhang, Tobias Fried). <a href="https://phosphoricons.com">phosphoricons.com</a></div></div>
+<div class="item"><b>piper-tts-web</b> <span class="lic">MIT</span><div class="what">In-browser text-to-speech. © Mintplex Labs. <a href="https://github.com/Mintplex-Labs/piper-tts-web">github.com/Mintplex-Labs/piper-tts-web</a></div></div>
+<div class="item"><b>ONNX Runtime Web</b> <span class="lic">MIT</span><div class="what">Runs the speech models. © Microsoft Corporation. <a href="https://github.com/microsoft/onnxruntime">github.com/microsoft/onnxruntime</a></div></div>
+<div class="item"><b>piper-phonemize</b> (rhasspy) and <b>piper-wasm</b> (Diffusion Studio) <span class="lic">MIT</span><div class="what">Turn text into sounds for the speech models. <a href="https://github.com/rhasspy/piper-phonemize">rhasspy/piper-phonemize</a>, <a href="https://github.com/diffusion-studio/piper-wasm">diffusion-studio/piper-wasm</a></div></div>
+<div class="item"><b>eSpeak NG</b> data <span class="lic">GPL-3.0</span><div class="what">The pronunciation dictionaries inside <code>vendor/piper/piper_phonemize.data</code>, distributed unmodified as built by piper-wasm 1.0.0. Corresponding source: <a href="https://github.com/espeak-ng/espeak-ng">espeak-ng/espeak-ng</a> (data and library) and <a href="https://github.com/diffusion-studio/piper-wasm">diffusion-studio/piper-wasm</a> (the build). Full licence: <a href="vendor/piper/LICENSE-GPL-3.0.txt">GPL-3.0 text</a>; provenance and digests: <a href="vendor/piper/NOTICE.md">NOTICE</a>. It runs as a separate data file loaded at runtime; nothing else here is derived from it.</div></div>
+<div class="item"><b>Speech voices</b><div class="what">Not shipped here. A voice is fetched from Hugging Face when you choose it, or loaded from a file you provide. Each voice carries its own licence, in its model card.</div></div>
+
+<h2>Designs we learned from</h2>
+<div class="item"><b>Godot Engine</b> <span class="lic">MIT</span><div class="what">The build mode's inspector follows Godot's designs (EditorSpinSlider scrubbing, the property dispatcher, multi-node editing) and the components follow Godot's shapes (lights, impulses). © 2014–present Godot Engine contributors; © 2007–2014 Juan Linietsky, Ariel Manzur. <a href="https://godotengine.org">godotengine.org</a></div></div>
+<div class="item"><b>Basis</b> (BasisVR) <span class="lic">MIT</span><div class="what">The VR client follows Basis's patterns: warming both render variants at load, the soft swap, scaling the avatar to the player, the head chop, voice transport. © 2024 Luke B Doolan. <a href="https://github.com/BasisVR/Basis">github.com/BasisVR/Basis</a></div></div>
+
+<h2>Licence texts</h2>
+<details><summary>MIT</summary><pre>Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.</pre></details>
+<details><summary>Apache License 2.0</summary><pre>Licensed under the Apache License, Version 2.0 (the "License"); you may not use these files except in compliance with the License. You may obtain a copy of the License at
+
+    https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.</pre></details>
+<details><summary>zlib</summary><pre>This software is provided 'as-is', without any express or implied warranty. In no event will the authors be held liable for any damages arising from the use of this software.
+
+Permission is granted to anyone to use this software for any purpose, including commercial applications, and to alter it and redistribute it freely, subject to the following restrictions:
+
+1. The origin of this software must not be misrepresented; you must not claim that you wrote the original software. If you use this software in a product, an acknowledgment in the product documentation would be appreciated but is not required.
+2. Altered source versions must be plainly marked as such, and must not be misrepresented as being the original software.
+3. This notice may not be removed or altered from any source distribution.</pre></details>
+<details><summary>GNU GPL v3</summary><pre>The full text ships with the data it covers: <a href="vendor/piper/LICENSE-GPL-3.0.txt">vendor/piper/LICENSE-GPL-3.0.txt</a> (also at https://www.gnu.org/licenses/gpl-3.0.txt).</pre></details>
+</main>
+</body>
+</html>

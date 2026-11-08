@@ -114,7 +114,7 @@ pg.on('request', (r) => pending.set(r, Date.now()));
 pg.on('requestfinished', (r) => pending.delete(r));
 pg.on('requestfailed', (r) => { pending.delete(r); failed.push(`${r.failure()?.errorText ?? 'failed'} ${r.url()}`); });
 try {
-// pageerror never sees an exception thrown inside a frame callback: frame.js:99 catches per system and
+// pageerror never sees an exception thrown inside a frame callback: frameloop.js:99 catches per system and
 // hands it to report(), which console.error()s `context, err` (base.js:128) — tee() goes to the network,
 // NOT the console, so a '[report]' filter here measured nothing and read green. Capture console errors.
 const reports = [], artifacts = [], consoleTail = [];

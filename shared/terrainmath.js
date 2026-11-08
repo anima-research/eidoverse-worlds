@@ -3,7 +3,7 @@
 // A faithful port of the eidoverse toolkit's makeTerrain height function
 // (eidoverse-video/eidoverse/terrain.js: mulberry32 → 64×64 value-noise grid
 // → fBm → amplitude + flat-radius blend), re-expressed inside the blessed
-// exact-op set so the deterministic sim (eidosim@0.2.0) may ground bodies on
+// exact-op set so the deterministic sim (eidosim) may ground bodies on
 // it. The toolkit's law was ALREADY almost covenant-clean — integer-hash
 // PRNG, lerp/smoothstep, floor; no transcendental anywhere — with exactly
 // two unblessed calls, substituted here:
@@ -24,8 +24,8 @@
 // replay, bit for bit) holds because ALL sim consumers use THIS law.
 //
 // THE CONSTANTS AND THE EVALUATION ORDER ARE THE VERSION (Covenant II):
-// this law is pinned by eidosim@0.2.0 — editing anything here that moves a
-// bit is an epoch bump of the SIM, never a patch.
+// this law is held by eidosim's conformance digests (engine-check: the onto-hills scenario): editing anything here that
+// moves a digest is a new engine version, never a patch.
 //
 // SHAPING (features, heightmap — shared/terrainshape.js) rides on top and is
 // carried ONLY when the args use it: for every world that does not, the
@@ -38,8 +38,12 @@ import { shapeParams, shapeHeight } from './terrainshape.js';
 /** Normalize terrain-verb args to the canonical parameter set, with the
  *  TOOLKIT's own defaults — the sim must assume exactly what the mesh
  *  builder assumes. @param {Record<string, unknown>} a */
+/** A flat ground's height (terrain {kind: 'flat', height}), else null: the readers that build no mesh for it ask this. */
+export const flatHeightOf = (a) => (a?.kind === 'flat' ? (typeof a.height === 'number' && Number.isFinite(a.height) ? a.height : 0) : null);
+
 export function terrainParams(a) {
   const num = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+  if (a?.kind === 'flat') return { flat: num(a.height, 0), size: 200 };   // level ground (componentspec terrain kind flat); size: the no-terrain projection's
   const shape = shapeParams(a);
   return {
     ...(shape ? { shape } : {}),
@@ -58,6 +62,7 @@ export function terrainParams(a) {
  *  @param {ReturnType<typeof terrainParams>} P
  *  @returns {(x: number, z: number) => number} */
 export function makeHeightField(P) {
+  if (typeof P.flat === 'number') { const h = P.flat; return () => h; }
   // mulberry32 — integer ops only, bit-exact on every engine
   let s = (P.seed | 0) || 1;
   const rand = () => {

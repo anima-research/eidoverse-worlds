@@ -27,12 +27,7 @@ check('same utterance continuation ignored after cooldown', !gate.say(say('@test
 check('another actor may use the same utt', gate.say(say('@tester', { spoken: true, utt: 7 }, 'third'))); tick();
 check('non-mention beginning stays eligible for later directed sentence', !gate.say(say('hello', { spoken: true, utt: 8 })));
 check('later directed sentence admitted', gate.say(say('@tester', { spoken: true, utt: 8 }))); tick();
-const dm = { from: 'other', to: 'tester', text: 'hello' };
-check('incoming whisper admitted', gate.whisper(dm)); tick();
-check('held whisper ignored', !gate.whisper({ ...dm, replay: true }));
-check('outgoing whisper ignored', !gate.whisper({ ...dm, echo: true }));
-check('wrong-recipient whisper ignored', !gate.whisper({ ...dm, to: 'elsewhere' }));
-check('self whisper ignored', !gate.whisper({ ...dm, from: 'tester' }));
+check('the gate has no whisper path (whisper was removed, R 10-18): a live say is the one attention source', (gate as any).whisper === undefined);
 world = 'b';
 check('sequence restarts in a new world', gate.say({ ...say(), seq: 1 }));
 me = 'renamed';
@@ -120,7 +115,7 @@ class Audio {
 }
 (window as any).AudioContext = Audio;
 const { bus, CONFIG } = await import('./chat-base-stub.mjs');
-const { initChat, logChat, logWhisper } = await import('../client/lib/chat.js');
+const { initChat, logChat } = await import('../client/lib/chat.js');
 const { attentionPrefs, setAttentionPrefs } = await import('../client/lib/attention.js');
 const { audioPrefs } = await import('../client/lib/voiceconsent.js');
 const { audioContext } = await import('../client/lib/audioctx.js');
@@ -145,25 +140,22 @@ check('tone connects through its own quiet gain', gains.some(g => g.target === a
 time += 3000;
 bus.emit('live-entry', { verb: 'say', actor: 'other', seq: 3, args: { text: '@tester continuation', spoken: true, utt: 1 } });
 check('caption plus repeated durable representation stays one tone', oscillators.length === 1);
-logWhisper({ from: 'other', to: CONFIG.name, text: 'held', replay: true });
-check('actual chat held whisper stays visual-only', oscillators.length === 1 && document.body.textContent!.includes('held'));
-logWhisper({ from: 'other', to: CONFIG.name, text: 'live' });
-check('actual chat live whisper chimes', oscillators.length === 2);
-check('whisper has a visual ping independent of audio', !!document.querySelector('.whisper.ping'));
+bus.emit('live-entry', { verb: 'say', actor: 'other', seq: 10, args: { text: `@${CONFIG.name} live` } });
+check('a second live mention, after the cooldown, chimes (whisper was the other source until R 10-18)', oscillators.length === 2);
 setAttentionPrefs({ enabled: false });
 check('muting silences active attention gains immediately', gains.filter(g => g.target === audioContext().destination).every(g => g.gain.value === 0));
 check('muting attention leaves world, voice and TTS prefs unchanged', JSON.stringify(audioPrefs()) === unrelated);
 setAttentionPrefs({ enabled: true });
 (audioContext() as any).state = 'suspended';
 time += 3000;
-bus.emit('live-entry', { verb: 'say', actor: 'other', seq: 4, args: { text: '@tester locked' } });
+bus.emit('live-entry', { verb: 'say', actor: 'other', seq: 14, args: { text: '@tester locked' } });
 check('suspended context drops notice before scheduling', oscillators.length === 2);
 (audioContext() as any).state = 'running';
 window.dispatchEvent(new Event('pointerdown'));
 await Promise.resolve();
 check('unlock never replays a stale notice', oscillators.length === 2);
 // No cooldown wait: the preceding locked notice made no sound.
-bus.emit('live-entry', { verb: 'say', actor: 'other', seq: 5, args: { text: '@tester fresh' } });
+bus.emit('live-entry', { verb: 'say', actor: 'other', seq: 15, args: { text: '@tester fresh' } });
 check('fresh notice after unlock chimes', oscillators.length === 3);
 const select = document.querySelector<HTMLSelectElement>('[data-attention="sound"]')!;
 select.value = 'chime'; select.dispatchEvent(new Event('change'));
@@ -174,10 +166,10 @@ const slider = document.querySelector<HTMLInputElement>('[data-attention="volume
 slider.value = '0'; slider.dispatchEvent(new Event('input'));
 check('volume control persists independently', JSON.parse(localStorage.getItem('ew-attention')!).volume === 0);
 time += 3000;
-bus.emit('live-entry', { verb: 'say', actor: 'other', seq: 6, args: { text: '@tester zero-volume' } });
+bus.emit('live-entry', { verb: 'say', actor: 'other', seq: 16, args: { text: '@tester zero-volume' } });
 check('zero-volume notice schedules no tone', oscillators.length === 5);
 setAttentionPrefs({ volume: 0.2, sound: 'soft' });
-bus.emit('live-entry', { verb: 'say', actor: 'other', seq: 7, args: { text: '@tester after volume restored' } });
+bus.emit('live-entry', { verb: 'say', actor: 'other', seq: 17, args: { text: '@tester after volume restored' } });
 check('fresh mention after restoring volume has no silent cooldown', oscillators.length === 6);
 
 check('controls keep audio prefs unchanged', JSON.stringify(audioPrefs()) === unrelated);

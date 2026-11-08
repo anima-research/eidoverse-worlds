@@ -1,7 +1,8 @@
 // gputime's shadow A/B gives the shadow maps back however it ends (client/lib/gputime.js). `bun tools/gputime-test.ts`
+import { fileURLToPath } from "node:url";
 import { plugin } from 'bun';
-const STUB = new URL('./gputime-core-stub.mjs', import.meta.url).pathname;
-const RIG = new URL('./gputime-lightrig-stub.mjs', import.meta.url).pathname;
+const STUB = fileURLToPath(new URL('./gputime-core-stub.mjs', import.meta.url));
+const RIG = fileURLToPath(new URL('./gputime-lightrig-stub.mjs', import.meta.url));
 plugin({ name: 'gputime-stubs', setup(b) { b.onResolve({ filter: /^\.\/core\.js$/ }, () => ({ path: STUB })); b.onResolve({ filter: /^\.\/lightrig\.js$/ }, () => ({ path: RIG })); } });
 const { pref } = await import(RIG);
 const { lights } = await import(STUB);

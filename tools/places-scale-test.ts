@@ -8,8 +8,9 @@
 //     model units of rounding) is still reached;
 //   - at 20×, a seat walled off from the walker is refused — not "reached"
 //     from 15m away outside the wall.
+import { fileURLToPath } from "node:url";
 import { plugin } from "bun";
-const STUB = new URL("./core-stub.mjs", import.meta.url).pathname;
+const STUB = fileURLToPath(new URL("./core-stub.mjs", import.meta.url));
 plugin({ name: "core-stub", setup(b) { b.onResolve({ filter: /^\.\/core\.js$/ }, () => ({ path: STUB })); } });
 const { THREE } = await import(STUB);
 const { mergeGeometries } = await import("../client/node_modules/three/examples/jsm/utils/BufferGeometryUtils.js");

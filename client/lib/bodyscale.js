@@ -17,6 +17,7 @@
 // NAMEPLATE LIFT: metres above the measured crown (plateanchor.js), at the body's AUTHORED size — applied × the live
 // model→world scale, so it grows with the body and follows sitting/lying exactly as auto does. 0 = auto.
 import { clampBodyScale, clampPlateY, BODY_SCALE_MIN, BODY_SCALE_MAX, PLATE_Y_MIN, PLATE_Y_MAX } from '../../shared/presencewire.js';
+import { capsule, canMantle } from '../../shared/mover.js';
 export { clampBodyScale, clampPlateY, BODY_SCALE_MIN, BODY_SCALE_MAX, PLATE_Y_MIN, PLATE_Y_MAX };
 
 /** The VR composition. u = chosen size, k = measured device ratio (avatar eye / your eye; 1 unmeasured).
@@ -36,15 +37,16 @@ export const deskEyeY = (u) => DESK_EYE * clampBodyScale(u);
 /** Move speed for a size: stride grows with the legs. */
 export const scaledSpeed = (base, u) => base * clampBodyScale(u);
 
-/** A ledge the body can climb onto (controller.js's mantle): 0.3–1.7 m over the feet at 100%, in proportion to the size.
- *  Jump height and gravity stay absolute — the mantle is a judgement about the body, the jump is physics. */
-export const canMantle = (reach, u) => { const s = clampBodyScale(u); return reach > 0.3 * s && reach <= 1.7 * s; };
+/** A ledge the body can climb onto (controller.js's mantle): over the mover's step (what it walks onto) up to its
+ *  height, in proportion to the size. Jump height and gravity stay absolute — the mantle is a judgement about the
+ *  body, the jump is physics. The mover's (shared/mover.js), so the client, the agent and the authority agree. */
+export { canMantle };
 /** How far onto the ledge the mantle carries the root. */
 export const mantleStep = (u) => 0.6 * clampBodyScale(u);
 
-/** The walking capsule (colliders.resolveColliders r / tall): radius and height grow; a scaled body still climbs. */
-export const COLLIDER_R = 0.32, COLLIDER_TALL = 1.9;
-export const colliderFor = (u) => { const s = clampBodyScale(u); return { r: COLLIDER_R * s, tall: COLLIDER_TALL * s }; };
+/** The walking capsule (colliders.resolveColliders r / tall): the mover's body, grown with the size; a scaled body
+ *  still climbs. */
+export const colliderFor = (u) => { const c = capsule(u); return { r: c.r, tall: c.tall }; };
 
 /** A locomotion clip's playback rate: a u× body covers u× the ground per cycle, so the same speed is 1/u the cadence.
  *  Same clamp as Avatar.setClip always used. */

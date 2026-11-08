@@ -8,6 +8,7 @@
 import { launchBrowser, ownedWorld, checker } from './probe-harness.mjs';
 if (process.env.SKY_REFRESH_GPU !== '1') { console.log('sky-refresh-probe: skipped (needs a GPU or more RAM; set SKY_REFRESH_GPU=1)'); process.exit(0); }
 import { readFileSync } from 'node:fs';
+import { helloOf } from '../shared/protocol/hello.js';
 const { check, done } = checker();
 const IWER_RAW = readFileSync(new URL('../node_modules/iwer/build/iwer.js', import.meta.url), 'utf8');
 const LOOP = 'globalThis.requestAnimationFrame(this[P_SESSION].onDeviceFrame)';
@@ -15,7 +16,7 @@ const IWER = `globalThis.__iwerNativeRAF = globalThis.requestAnimationFrame.bind
 const world = await ownedWorld({});
 const W = 'skyrefresh';
 { const ws = new WebSocket(world.origin.replace('http', 'ws') + '/ws?name=seed');
-  await new Promise((r) => { ws.onopen = () => ws.send(JSON.stringify({ type: 'join', world: W, id: 'seed', token: world.key })); ws.onmessage = (e) => { if (JSON.parse(e.data).type === 'snapshot') r(); }; });
+  await new Promise((r) => { ws.onopen = () => ws.send(JSON.stringify({ type: 'join', hello: helloOf(), world: W, id: 'seed', token: world.key })); ws.onmessage = (e) => { if (JSON.parse(e.data).type === 'snapshot') r(); }; });
   ws.send(JSON.stringify({ type: 'verb', verb: 'sky', args: { hours: 12, clouds: 'cumulus', weather: 'clear' } }));
   await new Promise((r) => setTimeout(r, 500)); ws.close(); }
 const { browser, page } = await launchBrowser(); const pg = await page();

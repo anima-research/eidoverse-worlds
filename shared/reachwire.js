@@ -8,7 +8,8 @@
 // travel is a function, which is why the descriptor grammar below exists.
 //
 // It rides the presence plane (spec/PROTOCOL.md §5): per-frame, lossy, never
-// persisted. The server relays the pose bag opaquely; everything in this file
+// persisted. The server relays the bag unchanged except server/reachgate.ts (a refused
+// or malformed limb is removed); everything else in this file
 // runs at the two ends. Because the ends don't trust the middle — or each
 // other's versions — every reader normalizes: a malformed descriptor folds to
 // nothing rather than to a throw in somebody's frame loop.
@@ -24,7 +25,7 @@
 //       REACHER's root frame and moves with them; a participant id lives in
 //       that body's root frame and tracks them.
 //
-// A limb entry wraps a target with its riders:
+// A limb entry wraps a target with its flags:
 //   { t: <target>, palm?: false, reached?: true }
 // `palm: false` opts out of turning the palm to meet the surface (name-form
 // targets orient the palm by default — see EW.reach's history for why).
@@ -107,7 +108,7 @@ export function reachTargetsWho(entry, id) {
   return t.who === id || t.space === id;
 }
 
-/** Same reach, ignoring the `reached` rider — the identity that edge
+/** Same reach, ignoring the `reached` flag — the identity that edge
  *  detection cares about. Both sides assumed normalized. */
 export function sameReach(a, b) {
   if (!a || !b) return false;

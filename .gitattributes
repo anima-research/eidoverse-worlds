@@ -1,0 +1,4 @@
+# Whitespace kept on purpose (git diff --check honours this; tools/protocol/diffcheck.ts enforces the rest):
+# a conformance vector that tests readers against CRLF and blank lines, and a patch whose context lines end in spaces.
+spec/conformance/logs/12a-blank-crlf.jsonl -whitespace
+tools/water/native-coordinate-fix.patch -whitespace

@@ -1,0 +1,13 @@
+{"seq":0,"ts":1786320000000,"actor":"world","verb":"genesis","args":{"v":2,"dialect":"eidoverse-log"}}
+{"seq":1,"ts":1786320000001,"actor":"world","verb":"grant","args":{"id":"author","role":"owner","gen":true}}
+{"seq":2,"ts":1786320000002,"actor":"author","verb":"spawn","args":{"id":"pivot","pos":[0,1.5,0],"yaw":0.25}}
+{"seq":3,"ts":1786320000003,"actor":"author","verb":"spawn","args":{"id":"lamp","lib":"eidoverse/assets/models/lamp.glb","pos":[2,0,0],"collide":"box"}}
+{"seq":4,"ts":1786320000004,"actor":"author","verb":"comp","args":{"id":"lamp","type":"light","data":{"color":16755302,"intensity":24,"range":9,"day":false}}}
+{"seq":5,"ts":1786320000005,"actor":"author","verb":"comp","args":{"id":"lamp","type":"collider","data":{"shape":"exact"}}}
+{"seq":6,"ts":1786320000006,"actor":"author","verb":"comp","args":{"id":"pivot","type":"light","data":{"keep":true}}}
+{"seq":7,"ts":1786320000007,"actor":"author","verb":"mount","args":{"id":"pivot","to":"lamp","offset":[0,1.8,0]}}
+{"seq":8,"ts":1786320000008,"actor":"author","verb":"spawn","args":{"id":"blank","lib":""}}
+{"seq":9,"ts":1786320000009,"actor":"author","verb":"spawn","args":{"id":"swap","pos":[5,0,5]}}
+{"seq":10,"ts":1786320000010,"actor":"author","verb":"comp","args":{"id":"swap","type":"label","data":"marker"}}
+{"seq":11,"ts":1786320000011,"actor":"author","verb":"spawn","args":{"id":"swap","lib":"eidoverse/assets/models/lamp.glb","pos":[5,0,5]}}
+{"seq":12,"ts":1786320000012,"actor":"author","verb":"light","args":{"id":"porch","pos":[1,2,3],"intensity":30}}

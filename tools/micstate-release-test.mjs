@@ -9,6 +9,7 @@
 // (source → lookahead → gain → destination), so the lane is a genuinely
 // DISTINCT stream from the raw device — a degraded stub where gateStream
 // falls back to raw===lane would make every assertion below vacuous.
+import { fileURLToPath } from "node:url";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { mock } from "bun:test";
 GlobalRegistrator.register({ url: "http://localhost/?world=t&name=p" });
@@ -24,7 +25,7 @@ const mkStream = (label, synthetic = false) => {
 // lane the senders would hold.
 const node = () => ({ connect() {}, disconnect() {},
   gain: { value: 1, setTargetAtTime() {} }, delayTime: { setTargetAtTime() {} } });
-mock.module(new URL("../client/lib/audioctx.js", import.meta.url).pathname, () => ({
+mock.module(fileURLToPath(new URL("../client/lib/audioctx.js", import.meta.url)), () => ({
   audioContext: () => ({
     currentTime: 0, sampleRate: 48000, state: "running", destination: node(),
     createAnalyser: () => ({ fftSize: 0, getFloatTimeDomainData() {}, connect() {}, disconnect() {} }),
@@ -34,10 +35,10 @@ mock.module(new URL("../client/lib/audioctx.js", import.meta.url).pathname, () =
     createMediaStreamDestination: () => ({ ...node(), stream: mkStream("lane") }),
   }),
 }));
-mock.module(new URL("../client/lib/core.js", import.meta.url).pathname, () => ({
+mock.module(fileURLToPath(new URL("../client/lib/core.js", import.meta.url)), () => ({
   report: () => {}, bus: { on() {}, emit() {} },
 }));
-mock.module(new URL("../client/lib/net.js", import.meta.url).pathname, () => ({ sendTyping: () => {} }));
+mock.module(fileURLToPath(new URL("../client/lib/net.js", import.meta.url)), () => ({ sendTyping: () => {} }));
 
 // Pin an SFU hook so micstate's OWN state path is under test here — without
 // this, micstate may delegate micOn() to the (real, happy-dom-loaded) mesh

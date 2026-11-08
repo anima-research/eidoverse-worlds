@@ -24,7 +24,7 @@ writeFileSync(join(lib, "defs/animations/idle.json"), JSON.stringify({ vrma: "fi
 writeFileSync(join(lib, "fixtures/test-body.vrm"), fixture());
 writeFileSync(join(lib, "fixtures/large-body.vrm"), fixture(2));
 writeFileSync(join(lib, "fixtures/old-body.vrm"), fixture(1, true));
-const h = await scratchSequencer("body-state", { serverEnv: { EIDOVERSE_DIR: lib, DEFS_DIR: join(lib, "defs"), SKIP_OPT_SWEEP: "1" }, portFrom: 9300 });
+const h = await scratchSequencer("body-state", { worlds: ["body-test"], serverEnv: { EIDOVERSE_DIR: lib, DEFS_DIR: join(lib, "defs"), SKIP_OPT_SWEEP: "1" }, portFrom: 9300 });
 const agents: any[] = [];
 async function agent(name: string, avatar = "fixtures/test-body.vrm") {
   const a = new WorldAgent({ name, avatar, world: "body-test", url: h.BASE.replace("http", "ws") + "/ws" });
@@ -68,7 +68,7 @@ try {
     const seen = await read(peer, { who: owner.name, detail: "contacts", points: ["knee_r"] });
     check(`${clip}: current-body geometry is withheld on the real self/peer tool path`,
       seated.wire.isError === true && seen.wire.isError === true && seen.geometry?.basis === "rest_pose_estimate"
-      && !seated.joints && !seated.contacts && !seen.contacts && seen.posture === clip && eq(seated.publishedRotations, bones));
+      && !seated.joints && !seated.contacts && !seen.contacts && seen.clip === clip && eq(seated.publishedRotations, bones));
   }
   owner.clip = "idle"; owner.setPose(null); owner.tick();
   await until(() => peer.people.get(owner.name)?.pose?.clip === "idle");

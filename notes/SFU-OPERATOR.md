@@ -60,6 +60,6 @@ behind a home NAT, no port forwarding):
 ## What operators do NOT manage
 
 Credentials are minted per-join by the server (amendment 1 — no API secret
-exists to leak), consent/mute/moderation are in-band verbs, and the
+exists to leak), consent/mute/moderation are in-band messages, and the
 supervisor restarts the engine in-process. Speaker-cap and proximity gating
 default off; they are world-policy code, not deployment config.

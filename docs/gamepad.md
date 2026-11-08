@@ -10,7 +10,7 @@ until it disconnects.
 | Move | Left stick | WASD / arrows |
 | Look | Right stick | Drag / mouselook |
 | Jump | A / Cross | Space |
-| Use nearby object | X / Square | E / click the prompt |
+| Use nearby object | X / Square | E |
 | Cancel posture, photo mode, or pointer lock | B / Circle | Escape (after the editor declines it — see below) |
 | Run | Left stick click | Shift |
 
@@ -51,19 +51,20 @@ frees the cursor and does not cancel a posture; press it again once unlocked,
 or use B / Circle. This is browser behavior with no supported override, and
 the client does not try to work around it.
 
-## Contextual objects
+## Using things
 
-An ordinary `interaction` component selects a primary use action:
+X / Square is the same act as E: it uses the nearest thing in reach that offers
+an action, through the world's use prompt (`client/lib/useprompt.js`), which
+also shows the hint-bar line and follows the active input device (`E`,
+`X / □`). It sends the existing `use {id, action}` verb, so rights, reactions
+and scripts still own the effects, and nothing here adds a verb or a component.
+A climb route takes E first (it marks the press `worldHandled`), and the use
+prompt stands aside for a press that was claimed. Both stand aside while
+building, limp, or in a headset.
 
-```text
-comp {id: "bell", type: "interaction", data: {action: "ring", label: "Ring bell"}}
-```
-
-An entity with exactly one `reactions` action also offers that action without
-an extra component. The nearest visible, unobstructed object within three
-metres offers a prompt. Activation rechecks range and visibility and sends the
-existing `use {id, action}` verb. Server rights, reactions, and bound behaviors
-still own effects; components contain data only. No new verb is introduced.
+B / Circle and an unclaimed Escape stand you up from a seat the way the
+explicit get-up does, so a seat that lets you go only when the world does still
+answers with its hint, and holding X is still the way out.
 
 ## Browser requirements and verification
 
@@ -77,21 +78,20 @@ API access leaves keyboard and touch operational.
 - [Gamepad Permissions Policy](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Permissions-Policy/gamepad)
 
 Run `bun tools/input-test.ts`, `bun tools/input-dom-test.ts`,
-`bun tools/interaction-test.ts`, `bun tools/limp-input-test.ts`,
+`bun tools/limp-input-test.ts`,
 `bun tools/escape-priority-test.ts`, and `bun tools/collider-test.ts` as
 separate processes. They cover normalization, edge triggering,
 discovery/reconnection neutral guards, focus suppression, disconnect clearing,
-denied API fallback, contextual use routing, the prompt never taking the
-keyboard, the movement threshold and neutral latch that guard knock-downs and
-seats, the Escape chain and the once-per-session pad legend (real controller.js
-and build.js, on the real bus), and excluding the target's own collider while
-respecting other obstacles.
+denied API fallback, the movement threshold and neutral latch that guard knock-downs and
+seats, the Escape chain, the once-per-session pad legend, and E and X / □
+sharing one use (real controller.js, build.js and useprompt.js, on the real
+bus), plus the collider suite.
 
 Physical Windows/Edge acceptance on 2026-09-07 exposed an
 `Xbox 360 Controller (XInput STANDARD GAMEPAD)`. The operator verified movement,
 look, jump, use, chat suppression, and stopping on unplug on the source
 implementation, including an iframe session. This upstream adaptation retains
-the same input modules and mapping; its generic use action is tested separately.
+the same input modules and mapping; use is routed through the world's use prompt.
 An Edge smoke test of this upstream adaptation drove the real controller and
 avatar with simulated standard-pad input: movement, camera rotation, jump,
 disconnect clearing, and exactly one server-logged `use` across 120 held polls

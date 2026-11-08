@@ -15,6 +15,7 @@ import { launchBrowser, ownedWorld } from './probe-harness.mjs';
 import { mkdirSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
+import { helloOf } from '../shared/protocol/hello.js';
 
 const shotDir = (() => { const i = process.argv.indexOf('--shots'); return i > 0 ? process.argv[i + 1] : null; })();
 if (shotDir) mkdirSync(shotDir, { recursive: true });
@@ -76,7 +77,7 @@ const agentState = async (name) => {
 // ---- a bare socket that shoves people
 const shover = await new Promise((res) => {
   const ws = new WebSocket(wsUrl);
-  ws.onopen = () => ws.send(JSON.stringify({ type: 'join', world: WORLD, id: 'shover', token: world.key }));
+  ws.onopen = () => ws.send(JSON.stringify({ type: 'join', hello: helloOf(), world: WORLD, id: 'shover', token: world.key }));
   ws.onmessage = (e) => { const m = JSON.parse(String(e.data)); if (m.type === 'snapshot') res(ws); };
 });
 const shove = (target) => shover.send(JSON.stringify({ type: 'puppet', target, ragdoll: true }));

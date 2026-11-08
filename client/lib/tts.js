@@ -629,7 +629,7 @@ export const mouthInfo = () => ({ pacing: !!pacer, queued: queue.length, playhea
  *  whichever source this body uses. */
 
 // ── speak your own says ─────────────────────────────────────────────────────
-// causes.js emits 'speech' for every say that was not already performed —
+// livechat.js emits 'speech' for every say that was not already performed —
 // decided by voice CAPABILITY + `performed` receipts (#57), never by the
 // author-controlled spoken flag (a claim is not a receipt; receipt-confirmed
 // re-emits carry performed:true and are display-only, skipped below).

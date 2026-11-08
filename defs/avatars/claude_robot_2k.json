@@ -1,0 +1,25 @@
+{
+  "doc": "Claude's robot body with 2K textures (eidoverse/assets/vrms/claude_robot_2k.vrm): the same body as claude_robot, lighter to load. The same runtime and joints file.",
+  "tags": [
+    "robot",
+    "claude",
+    "hardware-limited"
+  ],
+  "lamps": false,
+  "emissiveMax": 1.0,
+  "runtime": {
+    "kind": "claude-robot-dof",
+    "skip": [
+      "initLegDOF",
+      "applyHardwareDOF",
+      "applyLegClearance"
+    ]
+  },
+  "provenance": {
+    "assetRepo": "SkyeShark/eidoverse-video",
+    "assetCommit": "0e8716fd1ba15dbc23369dd7c84a2053754bb0e2",
+    "vrmSha256": "e04e19c594ee55d3017360e21bf499c9f56ed13a1deb17cc04e9acf881696ef4",
+    "runtimeSourceSha256": "1b5f7c3588444eebc9c88477bfc76d1a730e0949ecb8e827b0f88647747943cc",
+    "jointsSourceSha256": "356a2ae9c343281c78fd0b0b15779dc3419312fa03780a815187d47dbc437cf5"
+  }
+}

@@ -1,29 +1,32 @@
-// Escape is a chain, not a broadcast — and the pad legend is taught once.
+// Escape is a chain, not a broadcast — the pad legend is taught once — and E
+// is claimed before it is used.
 //
-// The two defects this exists for (PR #171 review, items 4 and 6):
+// The defects this exists for (PR #171 review, items 4 and 6, and the E seam):
 //
 //  4. Escape became a KEYBOARD binding for `cancel` (stand up, leave photo
 //     mode, drop pointer lock) while build.js already owned Escape as its
 //     deselect chain. The controller dispatched `cancel` BEFORE the key bus,
-//     so one press while sitting-and-editing did both: it deselected AND
+//     so one press while sitting-and-building did both: it deselected AND
 //     stood you up. The editor gets first refusal now and declines the
 //     default on the press it consumes; the pad's B/○ never enters this path
 //     at all (it emits `input-action` straight out of pollInput), so
-//     cancel-while-editing still works on a controller.
+//     cancel-while-building still works on a controller.
 //
 //  6. `input-device` fires on every SWITCH, so a mouse-for-UI, pad-for-play
 //     session re-read the same six-second banner on every swap.
 //
-//  E is shared the same way: main's ladders (traversal) and helms
-//  (vehicles.js) claim the press on the key bus and mark it `worldHandled`,
-//  and only an unclaimed press becomes the contextual `use`. Dispatched
-//  before the bus, one press climbed a ladder AND rang the bell beside it.
+//  E is shared the same way: a climb route (controller.js) claims the press on
+//  the key bus and marks it `worldHandled`; useprompt.js uses the nearest thing
+//  only for a press nobody claimed, and the pad's X / □ is the same act. One
+//  press must not climb a ladder AND ring the bell beside it.
 //
-// Real controller.js and real build.js, on the real bus and the real
-// input.js: the whole point is the seam between the two key handlers, and a
-// stub of either end would test the stub.
+// Real controller.js, build.js, useprompt.js and input.js on the real bus: the
+// whole point is the seam between the key handlers, and a stub of either end
+// would test the stub. Every OTHER client module they import is a no-op stub,
+// derived from their import lists so the harness follows them as they change.
 import { strict as assert } from 'node:assert';
 import { mock } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 // three by explicit path: tools/ sits outside client/, where the install is
 // (see tools/core-stub.mjs) — a bare specifier only resolves with a root copy.
@@ -40,58 +43,61 @@ document.body.append(canvas);
 Object.defineProperty(document, 'hasFocus', { value: () => true });
 
 const hints: string[] = [];
-const leases: string[] = [];
-const entities = new Map<string, any>([['lamp', new THREE.Group()]]);
-const comps = new Map<string, any>();
+const uses: string[] = [];           // what useprompt.js sent: "<id>:<action>"
+const lamp = new THREE.Group();      // a bell-ringable thing beside the player
+const entities = new Map<string, any>([['lamp', lamp]]);
+const things = new Map<string, any>();   // id → bag, what useprompt reads through bags()
+let ladder = false;                  // a climb route in reach: E boards it
 
-mock.module(base + 'core.js', () => ({ THREE, scene, camera, canvas }));
-// The controller's water and climbing imports pull the sky/renderer chain in at
-// load; none of it is on the Escape path, so a dry world with no ladders.
-mock.module(base + 'water.js', () => ({ waterLevel: () => null, waterAt: () => null, waveTime: () => 0 }));
-mock.module(base + 'watervolumes.js', () => ({ waterAt: () => null, waterTime: () => 0, movementBounds: () => null }));
-let ladder = false;   // a ladder foot in reach: E starts the climb
-mock.module(base + 'traversal.js', () => ({
-  nearbyTraversal: () => null, startTraversal: () => ladder, stepTraversal: () => null,
-  traversing: () => false, cancelTraversal() {},
-}));
-mock.module(base + 'terrain.js', () => ({ heightAt: () => 0 }));
-mock.module(base + 'colliders.js', () => ({
-  resolveColliders: (p: any) => p, lastBlockedTop: () => null, findSeat: () => null,
-  raySegment: () => null, reindexCollider() {},
-}));
-mock.module(base + 'chat.js', () => ({ chat: { open() {} } }));
-mock.module(base + 'ui.js', () => ({
-  isOverlayOpen: () => false,
-  flashHint: (html: string) => { hints.push(html); },
-  collapseAll() {}, panelFrame: () => ({ show() {} }),
-}));
-mock.module(base + 'fp_view.js', () => ({
-  resolveFirstPersonAnchor: () => null,
-  FP_FORWARD: 0, FP_EYE_LIFT: 0, FP_GAZE_AHEAD: 0, FP_GAZE_DROP: 0,
-}));
-mock.module(base + 'assets.js', () => ({ loadGLB: async () => new THREE.Group(), libLabels: new Map() }));
-mock.module(base + 'lights.js', () => ({ makeLightGizmo: () => new THREE.Group() }));
-mock.module(base + 'world.js', () => ({
-  entities, entityMeta: new Map(), comps, editHolds: new Set(),
-}));
-mock.module(base + 'net.js', () => ({
-  net: { myId: 'me' }, sendVerb() {}, sendDrag() {},
-  sendLease(op: string, id: string) { leases.push(`${op}:${id}`); },
-}));
-mock.module(base + 'physobj.js', () => ({ yieldSim() {} }));
-mock.module(base + 'localbody.js', () => ({ isDowned: () => false }));
-mock.module(base + 'scenegraph.js', () => ({ sceneSelect() {} }));
-mock.module(base + 'seatedit.js', () => ({
-  refreshSeatGizmos() {}, resetSeats() {}, armSeatPlacement() {},
-  seatArmed: () => false, seatSelected: () => false,
-  cancelSeatArm: () => false, deselectSeat() {},
-  seatMouseDown() {}, seatKeyDown() {}, updateSeatDrag() {},
-}));
+const REAL = new Set(['edit/selection.js', 'base.js', 'input.js', 'controller.js', 'build.js', 'useprompt.js', 'markup.js']);
+const overrides: Record<string, Record<string, unknown>> = {
+  'core.js': { THREE, scene, camera, canvas, renderer: null },
+  'ui.js': {
+    isOverlayOpen: () => false,
+    flashHint: (html: string) => { hints.push(String(html)); },
+    html: (s: TemplateStringsArray, ...v: unknown[]) => String.raw({ raw: s }, ...v),
+  },
+  'climb.js': { climbing: () => false, startClimb: () => ladder, cancelClimb() {} },
+  'colliders.js': { resolveColliders: (p: any) => p, lastBlockedTop: () => null, findSeat: () => null, raySegment: () => null },
+  'world.js': { entities, bags: () => things, bagOf: (id: string) => things.get(id) ?? null, comps: new Map(), entityMeta: new Map(), editHolds: new Set() },
+  'myview.js': { outOfMyView: () => false },
+  'xrask.js': { xrActive: () => false },
+  'plainwords.js': { nameOf: (id: string) => id, plain: (w: string) => w },
+  'net.js': { net: { myId: 'me' } },
+  'thingphysics.js': {
+    requestWithBody: async (verb: string, args: any) => { if (verb === 'use') uses.push(`${args.id}:${args.action}`); return { ok: true }; },
+    physicsApi: {},
+  },
+  'seatedit.js': { seatSelected: () => false, cancelSeatArm: () => false, seatArmed: () => false },
+  'actions.js': { register() {} },
+  // build.js reads these through a namespace import (import * as Edits), which the import scan can't enumerate
+  'editwrites.js': { compsOf: () => ({}), revertPose() {} },
+};
+const wanted = new Map<string, Set<string>>();
+for (const file of ['controller.js', 'build.js', 'useprompt.js', 'input.js']) {
+  const src = readFileSync(base + file, 'utf8');
+  for (const m of src.matchAll(/import\s+(?:([\w$]+)\s*,?\s*)?(?:\{([^}]*)\}|\*\s+as\s+([\w$]+))?\s*from\s*'\.\/([\w./]+\.js)'/g)) {
+    const names = wanted.get(m[4]) ?? new Set<string>();
+    for (const part of (m[2] ?? '').split(',')) { const n = part.trim().split(/\s+as\s+/)[0]; if (n) names.add(n); }
+    if (m[1]) names.add('default');
+    wanted.set(m[4], names);
+  }
+  for (const m of src.matchAll(/^import\s*'\.\/([\w./]+\.js)'/gm)) if (!wanted.has(m[1])) wanted.set(m[1], new Set());
+}
+for (const [file, names] of wanted) {
+  if (REAL.has(file)) continue;
+  const exports: Record<string, unknown> = {};
+  for (const n of names) exports[n] = () => undefined;
+  Object.assign(exports, overrides[file] ?? {});
+  mock.module(base + file, () => exports);
+}
 
 const { bus } = await import('../client/lib/base.js');
 const { noteInput } = await import('../client/lib/input.js');
 const { myState, setPosture, getPosture } = await import('../client/lib/controller.js');
-const { setEditMode, isEditing, select, hasSelection } = await import('../client/lib/build.js');
+const { setBuildMode, isBuilding, select, hasSelection } = await import('../client/lib/build.js');
+const { initUsePrompt } = await import('../client/lib/useprompt.js');
+initUsePrompt({ myPos: () => myState.pos, camera, editing: () => isBuilding(), busy: () => false });
 
 const actions: string[] = [];
 bus.on('input-action', (a: string) => actions.push(a));
@@ -105,7 +111,7 @@ const sitOnABench = () => { setPosture('sit'); myState.seat = 'bench'; };
 // ---- item 4: one press, one action -----------------------------------------
 
 sitOnABench();
-setEditMode(true, { quiet: true });
+setBuildMode(true, { quiet: true });
 select('lamp');
 assert.equal(hasSelection(), true, 'fixture: something is selected');
 
@@ -116,13 +122,13 @@ assert.deepEqual(actions, [], 'deselecting must not ALSO stand you up');
 assert.equal(myState.seat, 'bench');
 assert.equal(getPosture(), 'sit');
 
-// The bottom rung of the editor's chain is still the editor's: leaving edit
+// The bottom rung of the editor's chain is still the editor's: leaving build
 // mode is one press, and not one press plus a dismount.
 e = escape();
-assert.equal(isEditing(), false, 'the next press leaves edit mode');
+assert.equal(isBuilding(), false, 'the next press leaves build mode');
 assert.equal(e.defaultPrevented, true);
 assert.deepEqual(actions, []);
-assert.equal(myState.seat, 'bench', 'leaving edit mode is not leaving the seat');
+assert.equal(myState.seat, 'bench', 'leaving build mode is not leaving the seat');
 
 // Nothing left to dismiss: the press falls all the way through, which is the
 // binding the PR added and it has to keep working.
@@ -138,14 +144,14 @@ assert.equal(getPosture(), null);
 // selection live is exactly what the button is for.
 actions.length = 0;
 sitOnABench();
-setEditMode(true, { quiet: true });
+setBuildMode(true, { quiet: true });
 select('lamp');
 bus.emit('input-action', 'cancel');
 assert.deepEqual(actions, ['cancel']);
-assert.equal(myState.seat, null, 'B / ○ stands you up even mid-edit');
+assert.equal(myState.seat, null, 'B / ○ stands you up even mid-build');
 assert.equal(getPosture(), null);
 assert.equal(hasSelection(), true, 'and it leaves the editor alone');
-setEditMode(false, { quiet: true });
+setBuildMode(false, { quiet: true });
 
 // ---- item 6: the legend is taught once -------------------------------------
 
@@ -159,41 +165,27 @@ assert.equal(legends(), 1, 'reaching for the mouse and back does not re-teach it
 
 // ---- E: a ladder's press is not also a use ---------------------------------
 
+things.set('lamp', { reactions: { toggle: { kind: 'toggle' } } });
+myState.pos.set(0, 0, 0);
 const pressE = () => {
   window.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, code: 'KeyE', key: 'e' }));
   window.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, code: 'KeyE', key: 'e' }));
 };
-actions.length = 0;
-ladder = true; pressE();
-assert.deepEqual(actions, [], 'E at a ladder climbs and does not also use');
-ladder = false; pressE();
-assert.deepEqual(actions, ['use'], 'E with no ladder or helm is the contextual use');
+const settle = () => new Promise(r => setTimeout(r, 0));
+ladder = true; pressE(); await settle();
+assert.deepEqual(uses, [], 'E at a ladder climbs and does not also use');
+ladder = false; pressE(); await settle();
+assert.deepEqual(uses, ['lamp:toggle'], 'E with no ladder is the contextual use');
 
-// ---- E: a helm claim in flight is not also a use ---------------------------
-// The helm goes in only here, and comes back out. vehicles.js keeps pending
-// and pilot for the page, so a helm left in comps would turn the contextual
-// use above into a claim on a later run of this file.
-await import('../client/lib/vehicles.js');
-const boat = new THREE.Group();
-entities.set('boat', boat);
-comps.set('boat', { vehicle: { helm: [0, 0, 0] } });
-myState.pos.set(0, 0, 0);
-actions.length = 0;
-leases.length = 0;
-pressE();
-assert.deepEqual(leases, ['claim:boat'], 'E at a helm claims it');
-assert.deepEqual(actions, [], 'claiming a helm does not also use');
-pressE();
-assert.deepEqual(leases, ['claim:boat'], 'a second E before the lease does not claim again');
-assert.deepEqual(actions, [], 'a second E while the claim is in flight does not use');
-bus.emit('lease', { id: 'boat', op: 'granted' });
-pressE();
-assert.deepEqual(leases, ['claim:boat', 'release:boat'], 'E at the helm releases it');
-assert.deepEqual(actions, [], 'leaving the helm does not also use');
-comps.delete('boat');
-entities.delete('boat');
-actions.length = 0;
-pressE();
-assert.deepEqual(actions, ['use'], 'E after the helm is gone is the contextual use again');
+// ---- X / □ is the same act as E --------------------------------------------
+
+uses.length = 0;
+bus.emit('input-action', 'use'); await settle();
+assert.deepEqual(uses, ['lamp:toggle'], 'the pad\'s use button uses what E would');
+setBuildMode(true, { quiet: true });
+bus.emit('input-action', 'use'); await settle();
+assert.deepEqual(uses, ['lamp:toggle'], 'and, like E, does nothing while building');
+setBuildMode(false, { quiet: true });
 
 console.log('Escape priority, E arbitration and pad-hint checks passed');
+process.exit(0);   // the DOM shim keeps timers alive

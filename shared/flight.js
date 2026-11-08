@@ -186,18 +186,9 @@ export const DEFAULT_CONFIG = {
     minTotal: 0.35,           // floor: anything faster reads as a teleport
   },
 
-  // ---- bounds and ceiling (spec R3)
+  // ---- bounds and ceiling (spec R3): the world's own @world.bounds (env.box); no bounds, no fence (LEGACY-PINS item 3)
   bounds: {
-    ceiling: 60,              // m; soft -- banks you back, never a wall-slam
-    softMargin: 8,            // m of authority band below the ceiling
-    // The terrain is ~160m SQUARE, so an 80m radius is the inscribed circle --
-    // it fences off the corners and, worse, anyone standing at x=78 is already
-    // outside it. Janus and I both ended up out there simply by walking, and
-    // R3 then banked her back toward the origin every frame while glide_to
-    // insisted on a heading: she flew 146m the wrong way. 110m circumscribes
-    // the square's half-diagonal (113m) closely enough to keep her over
-    // terrain without fencing the ground people actually stand on.
-    radius: 110,              // m from origin; terrain is ~160m square
+    softMargin: 8,            // m of authority band inside the box's sides and under its top (the ceiling)
     groundClearance: 0.15,    // m; below this counts as ground contact
   },
 
@@ -285,7 +276,7 @@ export function makeConfig(over = {}) {
     ['polar.minSpeed', out.polar.minSpeed, 0.1, out.polar.maxSpeed],
     ['polar.minSinkSpeed', out.polar.minSinkSpeed, out.polar.minSpeed, out.polar.maxSpeed],
     ['stamina.pool', out.stamina.pool, 0, 1e6],
-    ['bounds.softMargin', out.bounds.softMargin, 0.01, out.bounds.ceiling],
+    ['bounds.softMargin', out.bounds.softMargin, 0.01, 1e4],
   ];
   for (const [name, v, lo, hi] of R) {
     if (!(v >= lo && v <= hi)) bad.push(`'${name}' = ${v} is outside [${lo}, ${hi}]`);
@@ -583,13 +574,13 @@ export function bodyRecovered(state, ev = {}) {
  */
 export function step(cfg, state, dt, env = {}) {
   const s = { ...state, pos: { ...state.pos }, vel: { ...state.vel }, events: [] };
-  const groundY = env.groundY ?? (() => 0);
+  const groundY = env.groundY ?? (() => 0), box = boxOf(env.box);
   s.t += dt;
   s.phaseT += dt;
 
   switch (s.phase) {
-    case 'LEAF':      stepLeaf(cfg, s, dt, groundY); break;
-    case 'RECOVER':   stepRecover(cfg, s, dt, groundY); break;
+    case 'LEAF':      stepLeaf(cfg, s, dt, groundY, box); break;
+    case 'RECOVER':   stepRecover(cfg, s, dt, groundY, box); break;
     case 'GLIDE':     stepGlide(cfg, s, dt, env); break;
     case 'PILOT':     stepPilot(cfg, s, dt, env); break;
     case 'RAGDOLL':   /* the ragdoll owns the body; nothing to integrate */ break;
@@ -609,7 +600,7 @@ export function step(cfg, state, dt, env = {}) {
  *  what a human learns on the stick is true of what Mythos will fly, and the
  *  bench is not proving something about a bench. */
 function stepPilot(cfg, s, dt, env) {
-  const groundY = env.groundY ?? (() => 0);
+  const groundY = env.groundY ?? (() => 0), box = boxOf(env.box);
   const inp = env.input || { bank: 0, pitch: 0, yawRate: 0, flap: false, spoil: false };
   s.bank = inp.bank ?? 0;
   s.pitch = inp.pitch ?? 0;
@@ -666,7 +657,7 @@ function stepPilot(cfg, s, dt, env) {
   s.pos.y += s.vel.y * dt;
   s.pos.z += s.vel.z * dt;
 
-  bounds(cfg, s, dt);
+  bounds(cfg, s, dt, box);
   groundContact(cfg, s, groundY, /*ragdoll=*/false);
 }
 
@@ -685,31 +676,38 @@ function stepPilot(cfg, s, dt, env) {
  *  whose wings are out (R2 owns it, and the leaf must be free to land) -- so
  *  altitude is capped for it without any pretence of authority.
  */
-function bounds(cfg, s, dt) {
-  const b = cfg.bounds;
+function bounds(cfg, s, dt, box) {
+  if (!box) return;   // no @world.bounds: anywhere is in the world (componentspec bounds)
+  const b = cfg.bounds, m = Math.max(1e-6, b.softMargin);
   const limp = s.wings === 'LIMP';
 
-  const r = Math.hypot(s.pos.x, s.pos.z);
-  if (r > b.radius && !limp) {
-    const inward = Math.atan2(-s.pos.z, -s.pos.x);
+  // past the box's sides less the margin, the body banks toward its middle, fully at the edge
+  const over = Math.max(box.min[0] + b.softMargin - s.pos.x, s.pos.x - (box.max[0] - b.softMargin),
+    box.min[2] + b.softMargin - s.pos.z, s.pos.z - (box.max[2] - b.softMargin));
+  if (over > 0 && !limp) {
+    const inward = Math.atan2((box.min[2] + box.max[2]) / 2 - s.pos.z, (box.min[0] + box.max[0]) / 2 - s.pos.x);
     // Authority ramps in over the margin rather than snapping: a bank you can
     // see beginning is a bank, a discontinuity is a wall.
-    const over = Math.min(1, (r - b.radius) / Math.max(1e-6, b.softMargin));
-    s.yaw += angleTo(s.yaw, inward) * Math.min(1, 1.5 * over * dt);
-    if (!s._boundNote) { s.events.push({ t: s.t, kind: 'reflex.r3_bounds', radius: r }); s._boundNote = 1; }
-  } else if (r <= b.radius) s._boundNote = 0;
+    s.yaw += angleTo(s.yaw, inward) * Math.min(1, 1.5 * Math.min(1, over / m) * dt);
+    if (!s._boundNote) { s.events.push({ t: s.t, kind: 'reflex.r3_bounds', at: [s.pos.x, s.pos.z] }); s._boundNote = 1; }
+  } else if (over <= 0) s._boundNote = 0;
 
-  const soft = b.ceiling - b.softMargin;
+  const ceiling = box.max[1], soft = ceiling - b.softMargin;
   if (s.pos.y > soft && s.vel.y > 0 && !limp) {
     // Bleed the climb out across the margin; at the ceiling it is zero.
-    const k = Math.min(1, (s.pos.y - soft) / Math.max(1e-6, b.softMargin));
+    const k = Math.min(1, (s.pos.y - soft) / m);
     s.vel.y *= (1 - k);
     if (!s._ceilNote) { s.events.push({ t: s.t, kind: 'reflex.r3_ceiling', altitude: s.pos.y }); s._ceilNote = 1; }
   } else if (s.pos.y <= soft) s._ceilNote = 0;
   // A hard stop remains only as a backstop for a body that got above the
   // ceiling some other way (a teleport, a bad initial state).
-  if (s.pos.y > b.ceiling) { s.pos.y = b.ceiling; if (s.vel.y > 0) s.vel.y = 0; }
+  if (s.pos.y > ceiling) { s.pos.y = ceiling; if (s.vel.y > 0) s.vel.y = 0; }
 }
+/** A world's bounds as flight reads them ({min, max} of finite vec3s), else null. */
+export function boxOf(B) { const ok = (a) => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
+  return B && ok(B.min) && ok(B.max) ? B : null; }
+/** The ceiling a flier meets under these bounds: their top, else none (Infinity). */
+export const ceilingOf = (B) => boxOf(B)?.max[1] ?? Infinity;
 
 function angleTo(from, to) {
   let d = to - from;
@@ -718,7 +716,7 @@ function angleTo(from, to) {
   return d;
 }
 
-function stepLeaf(cfg, s, dt, groundY) {
+function stepLeaf(cfg, s, dt, groundY, box) {
   const a = leafAt(cfg, s.phaseT, s.leafV0);
   s.bank = a.bank; s.pitch = a.pitch;
   s.yaw += a.yawRate * dt;
@@ -731,7 +729,7 @@ function stepLeaf(cfg, s, dt, groundY) {
   // A leaf that wanders forwards is a glide with the wings off.
   s.vel.x = -Math.sin(s.yaw) * a.drift;
   s.vel.z = Math.cos(s.yaw) * a.drift;
-  bounds(cfg, s, dt);
+  bounds(cfg, s, dt, box);
   s.pos.x += s.vel.x * dt;
   s.pos.y += s.vel.y * dt;
   s.pos.z += s.vel.z * dt;
@@ -769,7 +767,7 @@ function stepLeaf(cfg, s, dt, groundY) {
   groundContact(cfg, s, groundY, /*ragdoll=*/true);
 }
 
-function stepRecover(cfg, s, dt, groundY) {
+function stepRecover(cfg, s, dt, groundY, box) {
   // Ground sit-up. The body is not driven here -- the caller animates a sit-up
   // over `reopenEnds` seconds -- but the phase is held so nothing else claims
   // the body mid-rise, and so onlookers see the honest middle state.
@@ -788,13 +786,13 @@ function stepRecover(cfg, s, dt, groundY) {
 }
 
 function stepGlide(cfg, s, dt, env) {
-  const groundY = env.groundY ?? (() => 0);
+  const groundY = env.groundY ?? (() => 0), box = boxOf(env.box);
   const lift = env.lift ? env.lift(s.pos.x, s.pos.y, s.pos.z) : 0;
   const sink = sinkRate(cfg, s.airspeed || bestGlide(cfg).speed);
   s.vel.y = -sink + lift;
   s.vel.x = Math.cos(s.yaw) * (s.airspeed || bestGlide(cfg).speed);
   s.vel.z = Math.sin(s.yaw) * (s.airspeed || bestGlide(cfg).speed);
-  bounds(cfg, s, dt);
+  bounds(cfg, s, dt, box);
   s.pos.x += s.vel.x * dt;
   s.pos.y += s.vel.y * dt;
   s.pos.z += s.vel.z * dt;

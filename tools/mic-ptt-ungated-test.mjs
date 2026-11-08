@@ -7,12 +7,13 @@
 // (micgate.js driveRawTracks). These cases go red if that call is removed.
 //
 // Run: bun tools/mic-ptt-ungated-test.mjs
+import { fileURLToPath } from "node:url";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { mock } from "bun:test";
 GlobalRegistrator.register({ url: "http://localhost/?world=t&name=p" });
-mock.module(new URL('../client/lib/net.js', import.meta.url).pathname, () => ({ sendTyping: () => {} }));
+mock.module(fileURLToPath(new URL('../client/lib/net.js', import.meta.url)), () => ({ sendTyping: () => {} }));
 // A context that CANNOT build the gate graph: no createMediaStreamDestination.
-mock.module(new URL('../client/lib/audioctx.js', import.meta.url).pathname, () => ({
+mock.module(fileURLToPath(new URL('../client/lib/audioctx.js', import.meta.url)), () => ({
   audioContext: () => ({
     currentTime: 0, sampleRate: 48000, state: 'running',
     createAnalyser: () => ({ fftSize: 0, getFloatTimeDomainData() {}, connect() {}, disconnect() {} }),

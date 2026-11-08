@@ -34,7 +34,7 @@ document.body.append(editor); editor.focus();
 pad.axes[0] = 1; input.pollInput(); assert.equal(input.movementInput().moveX, 0);
 editor.blur(); pad.axes[0] = 0; input.pollInput();
 pad.axes[0] = 1; input.pollInput(); assert.equal(input.movementInput().moveX, 1);
-// A bare `contenteditable` (no value) is editable too. interaction.js used to
+// A bare `contenteditable` (no value) is editable too. An earlier interaction module used to
 // keep its own copy of this selector and missed exactly this case; there is
 // one definition now, so this is where it is pinned.
 editor.setAttribute('contenteditable', '');

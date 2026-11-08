@@ -1,0 +1,13 @@
+{"kind": "genesis", "actor": "system", "body": {"dialect": "eidoverse-log", "v": 4, "nonce": "XWVu1u7BpaZTDFSETYiphg", "owners": [["ed25519:BP7aKo17f474DD1aBSLG0a3Pb29Qs3yqQ6Ve0wSRVD0"]], "sequencer": "ed25519:rRoIPhqlc8rDxC1GZlfHOe1IBJYWQ8MDNg9QuZzMsic"}}
+{"world": "sha256:56d471bcd9fcd6b6cab2be74c0e2f4181a77cec7f24ee6e89273f0cb1d9bb44b", "kind": "request", "ts": 1, "actor": "alice", "verb": "spawn", "body": {"args": {}}}
+{"world": "sha256:56d471bcd9fcd6b6cab2be74c0e2f4181a77cec7f24ee6e89273f0cb1d9bb44b", "kind": "change", "ts": 1, "actor": "system", "cause": 1, "op": "create", "body": {"id": "a"}, "seq": 2}
+{"world": "sha256:56d471bcd9fcd6b6cab2be74c0e2f4181a77cec7f24ee6e89273f0cb1d9bb44b", "kind": "change", "ts": 1, "actor": "system", "cause": 1, "op": "create", "body": {"id": "b"}, "extra": 1}
+{"ts": 1, "world": "sha256:56d471bcd9fcd6b6cab2be74c0e2f4181a77cec7f24ee6e89273f0cb1d9bb44b", "kind": "change", "actor": "system", "op": "create", "body": {"id": "c"}}
+{"world": "sha256:56d471bcd9fcd6b6cab2be74c0e2f4181a77cec7f24ee6e89273f0cb1d9bb44b", "kind": "change", "ts": 1, "actor": "system", "cause": 99, "op": "create", "body": {"id": "d"}}
+{"ts": 1, "world": "sha256:56d471bcd9fcd6b6cab2be74c0e2f4181a77cec7f24ee6e89273f0cb1d9bb44b", "kind": "teleport", "actor": "system", "verb": "x", "body": {}}
+{"world": "sha256:56d471bcd9fcd6b6cab2be74c0e2f4181a77cec7f24ee6e89273f0cb1d9bb44b", "kind": "change", "ts": 1, "actor": "system", "cause": 1, "op": "create", "body": {"id": "e"}, "for": "bob"}
+{"world": "sha256:56d471bcd9fcd6b6cab2be74c0e2f4181a77cec7f24ee6e89273f0cb1d9bb44b", "kind": "change", "ts": 1, "actor": "system", "cause": 1.5, "op": "create", "body": {"id": "f"}}
+{"world": "sha256:56d471bcd9fcd6b6cab2be74c0e2f4181a77cec7f24ee6e89273f0cb1d9bb44b", "kind": "change", "ts": 1, "actor": "system", "cause": 0, "op": "create", "body": {"id": "g"}}
+{"world": "sha256:56d471bcd9fcd6b6cab2be74c0e2f4181a77cec7f24ee6e89273f0cb1d9bb44b", "kind": "change", "ts": 1, "actor": "system", "cause": 1, "op": "create", "body": {"id": "h"}, "verb": "create"}
+{"ts": 1, "world": "sha256:56d471bcd9fcd6b6cab2be74c0e2f4181a77cec7f24ee6e89273f0cb1d9bb44b", "kind": "request", "actor": "alice", "op": "spawn", "body": {"args": {}}}
+{"ts": 1, "world": "sha256:56d471bcd9fcd6b6cab2be74c0e2f4181a77cec7f24ee6e89273f0cb1d9bb44b", "kind": "change", "actor": "system", "cause": 1, "verb": "create", "body": {"id": "i"}}

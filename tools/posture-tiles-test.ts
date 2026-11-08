@@ -1,4 +1,4 @@
-// posture tiles (client/lib/controller.js sitHere / standUp / setMountedHook / getPosture) — the emote bar's
+// posture tiles (client/lib/controller.js sitHere / standUp / setMountedHook / getPosture) — the action bar's
 // sit·stand·lie tiles share X's seat search, and a declared-seat MOUNT (sockets, localbody.js) is neither a
 // posture nor myState.seat: on a mount the sit tile is a no-op and the stand tile is the dismount. Drives the
 // REAL controller.js against tools/posture-tiles-stub.mjs (flat world, one optional chair pan) with the same
@@ -11,8 +11,9 @@
 //   standUp() not calling seatHook() while mounted   → "mounted: stand tile dismounts through the seat hook" goes red
 //   standUp() clearing posture without myState.seat  → "stand from a chair clears the seat" goes red
 //   updateMe's seatedClip losing the chair branch    → "a chair sit renders the sitchair clip" goes red
+import { fileURLToPath } from "node:url";
 import { plugin } from 'bun';
-const here = (f: string) => new URL(f, import.meta.url).pathname;
+const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({
   name: 'posture-tiles-stubs',
   setup(b) {
@@ -26,7 +27,7 @@ GlobalRegistrator.register();
 
 const stub = await import('./posture-tiles-stub.mjs');
 const ctl = await import('../client/lib/controller.js');
-const { sitHere, standUp, setPosture, setMountedHook, setSeatHook, getPosture, myState, updateMe } = ctl;
+const { sitHere, standUp, setPosture, setMountedHook, setOccupyHook, getPosture, myState, updateMe } = ctl;
 const { THREE, world } = stub;
 
 let pass = 0, fail = 0;
@@ -39,12 +40,12 @@ const check = (name: string, ok: boolean, detail = '') => {
 // a declared seat in reach → mount and consume; otherwise fall through to the controller's own layers
 const socket = { mounted: false, inReach: false, dismounts: 0, mounts: 0 };
 setMountedHook(() => socket.mounted);
-setSeatHook(() => {
+setOccupyHook(() => {
   if (socket.mounted) { socket.mounted = false; socket.dismounts++; setPosture('stand'); return true; }   // dismountMe
   if (socket.inReach) { socket.mounted = true; socket.mounts++; return true; }                            // trySitOn
   return false;
 });
-// a minimal body for updateMe: the clip is what the tiles' lit state reads (emotebar paint → myState.clip)
+// a minimal body for updateMe: the clip is what the tiles' lit state reads (actionbar.js paint → myState.clip)
 const me = { root: new THREE.Object3D(), clips: [] as string[], setClip(c: string) { this.clips.push(c); }, wingEffort: 0, pitch: 0,
   headWorldPosition: (v: any) => v.set(0, 1.5, 0), vrm: { scene: { visible: true } }, update() {} };
 const tick = () => { updateMe(1 / 60, me); return myState.clip; };

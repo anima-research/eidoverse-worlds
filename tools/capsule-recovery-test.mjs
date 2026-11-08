@@ -24,6 +24,7 @@
 //     instead, which is what the product promises.
 import { plugin } from 'bun';
 import { fileURLToPath } from 'node:url';
+import { tryUntil, pause } from './protocol/wait.ts';
 const here = (f) => fileURLToPath(new URL(f, import.meta.url));
 
 // One shared control object with the avatar stub (see recovery-avatar-stub.mjs):
@@ -38,6 +39,7 @@ plugin({
     b.onResolve({ filter: /^\.\/avatar\.js$/ }, () => ({ path: here('./recovery-avatar-stub.mjs') }));
     b.onResolve({ filter: /^\.\/world\.js$/ }, () => ({ path: here('./recovery-empty-stub.mjs') }));
     b.onResolve({ filter: /^\.\/seats\.js$/ }, () => ({ path: here('./recovery-empty-stub.mjs') }));
+    b.onResolve({ filter: /^\.\/occupants\.js$/ }, () => ({ path: here('./recovery-empty-stub.mjs') }));
     b.onResolve({ filter: /^\.\/reachnet\.js$/ }, () => ({ path: here('./recovery-empty-stub.mjs') }));
     b.onResolve({ filter: /^\.\/poseclips\.js$/ }, () => ({ path: here('./recovery-empty-stub.mjs') }));
     b.onResolve({ filter: /wingpresence\.js$/ }, () => ({ path: here('./recovery-empty-stub.mjs') }));
@@ -54,7 +56,6 @@ const check = (name, ok, detail = '') => {
   if (ok) { pass++; console.log(`  \x1b[32m✓\x1b[0m ${name}`); }
   else { fail++; console.log(`  \x1b[31m✗\x1b[0m ${name}${detail ? ` — ${detail}` : ''}`); }
 };
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const PATH = 'eidoverse/assets/vrms/somebody.vrm';
 
 // ---------------------------------------------------------------- the floor
@@ -75,7 +76,7 @@ check('a same-path reannounce returns the SAME record (no rebuild)', same === r)
 // drive a load per announce. What must be true synchronously is that the record is now armed.
 check('…and arms a retry rather than returning the capsule forever',
   r.retrying === true, `retrying=${r.retrying}`);
-await sleep(700);   // past the first backoff step
+await tryUntil('the armed retry puts alice in her real body', () => probe.attempts > before && r.avatar && !r.avatar.isCapsule && !r.capsuleFor, { ms: 3500 });
 check('the armed retry actually asked for the real body',
   probe.attempts > before, `${probe.attempts - before} attempts`);
 check('the real body replaces the capsule once the network recovers',
@@ -91,7 +92,7 @@ const t1 = await R.ensureRemote('bob', PATH, { authority: true });
 check('an authority takeover produces a FRESH record (identity guard, #97 B2)', t1 !== t0);
 check('the takeover carries the debt forward rather than making it permanent',
   t1.capsuleFor === PATH || !t1.avatar?.isCapsule);
-await sleep(700);
+await tryUntil('the successor ends up in the real body', () => t1.avatar && !t1.avatar.isCapsule, { ms: 3500 });
 check('the successor ends up in the real body', t1.avatar && !t1.avatar.isCapsule);
 
 // ---------------------------------------------------------------- bounded, not a hot loop
@@ -100,7 +101,7 @@ const c = await R.ensureRemote('carol', PATH);
 check('carol falls back', !!c.avatar?.isCapsule);
 const a0 = probe.attempts;
 for (let i = 0; i < 8; i++) { await R.ensureRemote('carol', PATH); }
-await sleep(900);
+await pause('retries are counted over a fixed window', 900);
 const spent = probe.attempts - a0;
 check('a dead asset costs a bounded number of retries, not one per announce',
   spent > 0 && spent <= 4, `${spent} attempts for 8 announces`);
@@ -116,8 +117,8 @@ probe.reset();
 const cap = await R.ensureRemote('cap', PATH);
 check('the capped peer falls back', !!cap.avatar?.isCapsule);
 const capStart = probe.attempts;
-for (let i = 0; i < 10; i++) { await R.ensureRemote('cap', PATH); await sleep(40); }
-await sleep(120);
+for (let i = 0; i < 10; i++) { await R.ensureRemote('cap', PATH); await pause('announces 40 ms apart, past the short backoff', 40); }
+await pause('the last short backoff has had its time to fire', 120);
 const capSpent = probe.attempts - capStart;
 check('a dead asset stops at exactly RETRY_MAX fetches, however often it is announced',
   capSpent === 3, `${capSpent} fetches across 10 announces (cap is 3)`);
@@ -137,9 +138,9 @@ check('frank falls back', !!fl.avatar?.isCapsule);
 const flStart = probe.attempts;
 for (let i = 0; i < 6; i++) {                // six reconnects, each an authority takeover
   fl = await R.ensureRemote('frank', PATH, { authority: true });
-  await sleep(500);                          // past the SHORTEST backoff, so a reset cap would refetch
+  await pause('past the SHORTEST backoff, so a reset cap would refetch', 500);
 }
-await sleep(600);
+await pause('the last takeover\'s backoff has had its time to fire', 600);
 const flSpent = probe.attempts - flStart;
 check('a dead asset on a flapping peer stays bounded across takeovers',
   flSpent <= 4, `${flSpent} fetches across 6 takeovers — the cap resets on reconnect`);
@@ -156,7 +157,7 @@ await R.ensureRemote('dave', PATH);                 // schedules a retry on d0
 const d1 = await R.ensureRemote('dave', 'other/body.vrm');   // different path → rebuild, d0 superseded
 check('a body switch supersedes the pending record', d1 !== d0);
 const d0Body = d0.avatar;                       // the capsule the superseded record holds
-await sleep(700);
+await pause('the stale retry has had its time to fire (it must not land)', 700);
 check('the map still holds the successor', R.remotes.get('dave') === d1);
 // The damage a missing identity guard does lands on the SUPERSEDED RECORD, not on the map: the
 // stale retry resolves and writes its body into d0, leaving a live avatar nobody owns and nobody
@@ -177,10 +178,10 @@ const e0Body = e0.avatar;
 probe.failing = false;
 probe.loadMs = 900;                        // the retry's load will be slow BEFORE it starts
 await R.ensureRemote('erin', PATH);        // arms the retry (fires after the 400ms backoff)
-await sleep(600);                          // timer fired ~400ms; the slow load is now in flight
+await pause('timer fired ~400ms; the slow load is now in flight', 600);
 const e1 = await R.ensureRemote('erin', 'other/body.vrm');   // supersede DURING that load
 check('a mid-load switch supersedes the record', e1 !== e0);
-await sleep(1600);                         // let the stale load finish and be rejected
+await pause('let the stale load finish and be rejected', 1600);
 check('a mid-flight body is not adopted by the superseded record',
   e0.avatar === e0Body, 'the superseded record adopted a mid-flight body');
 // NOT adopted is only half of it: an orphaned body that is never disposed is the undisposable ghost

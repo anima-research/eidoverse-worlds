@@ -167,7 +167,7 @@ try {
   // Only a pose that isn't a map of bones is unusable whole.
   {
     // Both read the reader's own body, whose pose is this door's to drop.
-    const NOT_A_MAP = "your published pose isn't a map of bones, so nothing of your body was read; clear_pose drops it";
+    const NOT_A_MAP = "your published pose isn't a map of bones, so nothing of your body was read; anim {stop: true} drops it";
     const bad = await reader.read("bad", "bones", undefined, () => ({ who: "bad", avatar: "vrm1.vrm", generation: 1, self: true, connected: true,
       source: "unknown", receivedAt: Date.now(), pose: { p: [0, 0, 0], yaw: 0, speed: 0, clip: "ragdoll", pose: [[0, 0, 0, 1]] } } as any));
     check("a published pose that isn't a map of bones is refused whole, with no claim about its bones",

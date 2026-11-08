@@ -12,41 +12,35 @@
 // change to the world, someone arriving or leaving, the activity digest, the
 // catch-up header) carries `chat:system` beside `chat:ambient`, so a host that
 // routes speech by the latest message doesn't follow a notice into the world,
-// while rules written for ambient traffic keep matching. Speech and emotes
+// while rules written for ambient traffic keep matching. Speech and acts
 // are people doing things and stay plain `chat:ambient`.
 
-import { CHAT, EIDO, tags } from "./declaration.ts";
+import { CHAT, EIDO, tags, speechTags } from "./declaration.ts";
 
 export type WireEventKind =
-  | "say" | "whisper" | "act" | "activity" | "weather" | "world-change" | "arrive" | "leave";
+  | "say" | "act" | "activity" | "weather" | "world-change" | "arrive" | "leave";
 
-/** The tags a live world event is delivered with. `fromAgent`: the world
- *  reports this body as model-driven (§16.2 sender facet; there is no
- *  evidence for `chat:from-human`, so it is never claimed). `mention`: the
- *  speech named this agent. */
-export function eventTags(kind: WireEventKind, opts: { fromAgent: boolean; mention?: boolean }): string[] {
-  const from = opts.fromAgent ? CHAT.fromAgent : null;
+/** The tags a live world event is delivered with. `declares`: the speaker's own
+ *  declared word (PROTOCOL §6a rule 3); only speech and acts carry a sender
+ *  facet, through speechTags. Notices carry none: the world wrote them, and the
+ *  declaration rides as metadata. `mention`: the speech named this agent. */
+export function eventTags(kind: WireEventKind, opts: { declares?: string | null; mention?: boolean } = {}): string[] {
   switch (kind) {
     case "say":
-      return opts.mention ? tags(CHAT.mention, CHAT.addressed, from) : tags(CHAT.ambient, from);
-    case "whisper":
-      // A DM, not a mention: `chat:dm` ⇒ addressed + private (§16.3), emitted directly.
-      return tags(CHAT.dm, CHAT.private, CHAT.addressed, EIDO.whisper, from);
+      return speechTags("say", opts.declares, !!opts.mention);
     case "act":
-      return tags(CHAT.ambient, EIDO.act, from);
+      return speechTags("act", opts.declares);
     case "activity":
       // The door's own summary of what is happening nearby, written by the
-      // world, not said by anyone: a notice. It is also the most frequent
-      // world-authored line, so leaving it plain ambient would let it win
-      // "most recent message" whenever anything stirs near the body.
+      // world, not said by anyone: a notice, and the most frequent one.
       return tags(CHAT.ambient, CHAT.system, EIDO.activityDigest);
     case "weather":
       return tags(CHAT.ambient, CHAT.system, EIDO.weather);
     case "world-change":
-      return tags(CHAT.ambient, CHAT.system, EIDO.worldChange, EIDO.particles, from);
+      return tags(CHAT.ambient, CHAT.system, EIDO.worldChange, EIDO.particles);
     case "arrive":
     case "leave":
-      return tags(CHAT.ambient, CHAT.system, EIDO.presence, from);
+      return tags(CHAT.ambient, CHAT.system, EIDO.presence);
   }
 }
 

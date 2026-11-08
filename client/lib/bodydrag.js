@@ -31,7 +31,7 @@ import { JOINTS } from './ragdoll.js';
 import { makeRagdoll } from './bodysim.js';
 import { sendBodyDrag } from './net.js';
 import { flashHint, toast } from './ui.js';
-import { isEditing } from './build.js';
+import { isBuilding } from './build.js';
 
 const GRAB_RANGE = 5;        // how far a body may be from ME to grab (m)
 const STREAM_MS = 66;        // sim → owner cadence, matches presence
@@ -156,7 +156,7 @@ addEventListener('keydown', (e) => {
 }, true);
 
 function beginGrab(e) {
-  if (e.button !== 0 || isEditing() || drag || !hooks) return;
+  if (e.button !== 0 || isBuilding() || drag || !hooks) return;
   _ndc.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
   _ray.setFromCamera(_ndc, camera);
   // a pin marker outranks the body behind it: clicking a nail pulls it
@@ -271,11 +271,7 @@ bus.on('bodydrag', (msg) => {
   if (msg.grab != null) {
     console.debug('[bodydrag] grab from', by,
       { pushable: hooks.pushable(), downed: hooks.isDowned(), draggedBy });
-    if (!hooks.pushable()) {
-      toast(`${by} tried to drag you — /pushable on to allow`, 'warn', 6000);
-      sendBodyDrag(by, { end: true });
-      return;
-    }
+    // consent was the authority's (server/messages.ts bodydrag: a grab is refused there unless displace allows it)
     if (!hooks.isDowned()) { sendBodyDrag(by, { end: true }); return; }     // only limp bodies drag
     if (draggedBy && draggedBy !== by) { sendBodyDrag(by, { end: true }); return; }  // first grab wins
     draggedBy = by;
@@ -289,11 +285,7 @@ bus.on('bodydrag', (msg) => {
     return;
   }
   if (msg.unpin != null) {
-    // someone asks to pull one of my nails — same consent as being moved
-    if (!hooks.pushable()) {
-      toast(`${by} tried to unpin you — /pushable on to allow`, 'warn', 6000);
-      return;
-    }
+    // someone pulls one of my nails — the authority already held it to the same consent as a grab
     hooks.removePin?.(String(msg.unpin.joint ?? ''));
     return;
   }
