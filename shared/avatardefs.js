@@ -43,7 +43,7 @@ export function validateAvatarDef(name, def) {
 }
 
 /** The kinds of body runtime the client knows how to drive (client/lib/bodyruntime_core.js). */
-export const BODY_RUNTIME_KINDS = ['claude-robot-dof-v1'];
+export const BODY_RUNTIME_KINDS = ['claude-robot-dof'];
 
 /** A body may select one reviewed runtime BUILT INTO this Worlds client.
  * Defs carry no module URL: avatar assets are data, never an executable-code
