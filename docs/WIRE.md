@@ -128,10 +128,12 @@ Every message belongs to exactly one plane:
   sim layer's snapshot (what flies, from which launch); `chat` is always
   `recentChat: []`, since speech is arrival-only, and `chatTotal` the master
   log's line count for an admin, else 0. `briefing` is `{motd, docs: [{title,
-  url, version}]}`: each `url` is relative to the sequencer's HTTP base (resolve
-  it against that base with a trailing `/`), and `version` is `sha256:` and the
-  hex digest of the bytes `GET /agents.md` serves at the join, the route's ETag
-  quoted; when the guide can't be read, `docs` is empty and the motd says so.
+  url, version}]}`: each `url` is absolute at the server's public origin when
+  `HN_NATIVE_ORIGIN` is set to an http(s) one, and otherwise relative to the
+  sequencer's HTTP base (resolve it against that base with a trailing `/`), and
+  `version` is `sha256:` and the hex digest of the bytes `GET /agents.md`
+  serves at the join, the route's ETag quoted; when the guide can't be read,
+  `docs` is empty and the motd says so.
   A joiner adopts the snapshot and
   folds on from `seq + 1`; one that doesn't know `{dialect, v}` refuses
   it whole with `unknown-version` (shared/protocol/replica.js `adopt`), never

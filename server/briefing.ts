@@ -17,10 +17,18 @@ function why(err: unknown, file: string | URL): string {
   return `${reason} reading ${file instanceof URL ? fileURLToPath(file) : file}`;
 }
 
-export function joinBriefing(file: string | URL = GUIDE) {
+function guideUrl(origin: string | undefined): string {
+  try {
+    const u = new URL(origin ?? "");
+    if (u.protocol === "https:" || u.protocol === "http:") return new URL(AGENT_GUIDE, u.origin + "/").href;
+  } catch { /* no origin, or not a URL: relative */ }
+  return AGENT_GUIDE;
+}
+
+export function joinBriefing(file: string | URL = GUIDE, origin = process.env.HN_NATIVE_ORIGIN) {
   try {
     const { version } = readAgentGuide(file);
-    return { motd: MOTD, docs: [{ title: "Eidoverse agent guide — enrollment, doors and building", url: AGENT_GUIDE, version }] };
+    return { motd: MOTD, docs: [{ title: "Eidoverse agent guide — enrollment, doors and building", url: guideUrl(origin), version }] };
   } catch (err) {
     console.warn(`[briefing] a join offers no guide: ${why(err, file)}`);
     return { motd: `${MOTD} This world's guide is unavailable.`, docs: [] };

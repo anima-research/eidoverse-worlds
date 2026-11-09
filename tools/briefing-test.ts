@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { readAgentGuide, joinBriefing, agentGuideResponse } from "../server/briefing.ts";
-import { resolveBriefing, briefingLines, publicOrigin, AGENT_GUIDE } from "../shared/briefing.js";
+import { resolveBriefing, briefingLines, AGENT_GUIDE } from "../shared/briefing.js";
 import { helloOf } from "../shared/protocol/hello.js";
 import { scratchSequencer, freePort, mkCheck, ROOT } from "./harness.ts";
 import { until, tryUntil } from "./protocol/wait.ts";
@@ -12,10 +12,11 @@ import { handleTool } from "../mcpl/tools.ts";
 
 process.env.WORLD_TOKEN = "";
 process.env.AGENT_BODY_ENGINE = "verlet";
+delete process.env.HN_NATIVE_ORIGIN;
 const { check, tally } = mkCheck();
 const scratch = mkdtempSync(join(tmpdir(), "briefing-"));
 const agents: WorldAgent[] = [], sockets: WebSocket[] = [], servers: ReturnType<typeof Bun.serve>[] = [];
-let h: Awaited<ReturnType<typeof scratchSequencer>> | undefined;
+let h: Awaited<ReturnType<typeof scratchSequencer>> | undefined, hPublic: Awaited<ReturnType<typeof scratchSequencer>> | undefined;
 let completed = false;
 const hash = (bytes: Uint8Array) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 const lookText = async (agent: WorldAgent): Promise<string> =>
@@ -55,11 +56,12 @@ try {
   check("another version reads the whole guide", conditional(`"sha256:other"`) === 200 && conditional("sha256:other") === 200);
   check("a quoted \"*\" is an entity tag, not the wildcard, and reads the whole guide", conditional(`"*"`) === 200);
 
-  const refused = ["file:///tmp", "https://u:p@world.example", "https://world.example/path", "https://world.example?token=x", "https://world.example/#secret", "not a url"]
-    .filter(setting => { try { publicOrigin(setting); return false; } catch { return true; } });
-  check("MCPL_PUBLIC_ORIGIN refuses a non-http(s) origin, credentials, a path, a query, a fragment and a malformed value", refused.length === 6, refused.join(" | "));
-  check("an http(s) origin is taken, with or without its trailing slash; unset is none",
-    publicOrigin("https://world.example") === "https://world.example" && publicOrigin("http://world.example:8941/") === "http://world.example:8941" && publicOrigin("") === null);
+  const urlAt = (origin: string | undefined) => joinBriefing(file, origin).docs[0]?.url;
+  check("a server with a public origin names the guide there, by its origin alone",
+    urlAt("https://world.example") === "https://world.example/agents.md" && urlAt("https://world.example/") === "https://world.example/agents.md"
+      && urlAt("http://world.example:8941/sub/") === "http://world.example:8941/agents.md");
+  check("without one, or with one that isn't an http(s) origin, the guide's url is relative to the sequencer",
+    [undefined, "", "not a url", "ftp://world.example"].every(origin => urlAt(origin) === AGENT_GUIDE));
 
   const lines = (value: unknown, base: string | null) => briefingLines(resolveBriefing(value, base));
   check("no briefing (an older sequencer) gives no line", lines(undefined, "http://localhost/").length === 0 && lines({ motd: "no docs array" }, "http://localhost/").length === 0);
@@ -69,7 +71,7 @@ try {
   check("a document needs only its url and version for its line, with no motd or title",
     JSON.stringify(lines({ docs: [{ url: AGENT_GUIDE, version: "v1" }] }, "https://w.example/")) === JSON.stringify(["Agent guide: https://w.example/agents.md, version v1 when you joined"]));
   check("a reader with no origin gives the version and says the address is unknown, and why",
-    JSON.stringify(lines({ motd: "m", docs: [{ title: "t", url: AGENT_GUIDE, version: "v1" }] }, null)) === JSON.stringify(["Agent guide: version v1 when you joined; its address is unknown on this connection (this door has no public origin set)"]));
+    JSON.stringify(lines({ motd: "m", docs: [{ title: "t", url: AGENT_GUIDE, version: "v1" }] }, null)) === JSON.stringify(["Agent guide: version v1 when you joined; its address is unknown on this connection (the world's server has no public origin set)"]));
   const mixed = lines({ motd: "m", docs: [null, {}, { title: "bad", url: "javascript:alert(1)", version: "a" }, { title: "broken", url: "http://[", version: "b" },
     { title: "secret", url: "https://u:p@w.example/agents.md", version: "c" }, { title: "guide", url: "/agents.md", version: "d" }] }, "https://w.example/");
   check("a non-http, unparseable or credentialed pointer is never a url, and each says why; a malformed entry is skipped",
@@ -78,9 +80,10 @@ try {
       "Agent guide: version b when you joined; its address is unknown on this connection (malformed)",
       "Agent guide: version c when you joined; its address is unknown on this connection (credentials)"]), JSON.stringify(mixed));
 
-  const serverEnv: Record<string, string> = { EIDOVERSE_DIR: join(scratch, "library"), OPT_DIR: join(scratch, "opt"), SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1", HN_REQUIRE_LOGIN: "0", HN_ISSUER_KEY: "" };
-  h = await scratchSequencer("briefing", { portFrom: 9660, worlds: ["briefing", "annex"], serverEnv,
-    prepare: (dir) => { tokenPath = join(dir, "tokens.json"); writeFileSync(tokenPath, JSON.stringify(registry)); serverEnv.AGENT_TOKENS_PATH = tokenPath; } });
+  tokenPath = join(scratch, "tokens.json");
+  writeFileSync(tokenPath, JSON.stringify(registry));
+  const serverEnv: Record<string, string> = { EIDOVERSE_DIR: join(scratch, "library"), OPT_DIR: join(scratch, "opt"), SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1", HN_REQUIRE_LOGIN: "0", HN_ISSUER_KEY: "", HN_NATIVE_ORIGIN: "", AGENT_TOKENS_PATH: tokenPath };
+  h = await scratchSequencer("briefing", { portFrom: 9660, worlds: ["briefing", "annex"], serverEnv });
   const WS = h.BASE.replace("http", "ws") + "/ws";
   const capture = new WorldAgent({ name: "capture", avatar: "", world: "briefing", url: WS });
   const snapshot: any = await new Promise((resolve, reject) => {
@@ -171,25 +174,28 @@ try {
 
   const examplePath = join(h.SCRATCH, "tokens.example.json");
   writeFileSync(examplePath, "{}");
-  const refusing = h.track(Bun.spawn([process.execPath, "mcpl/net-server.ts"], {
-    cwd: ROOT, env: { ...process.env, MCPL_PORT: String(freePort(h.PORT + 90)), MCPL_PUBLIC_ORIGIN: "https://world.example/path",
-      MCPL_TOKENS: tokenPath, MCPL_TOKENS_EXAMPLE: examplePath, MCPL_STATE: join(h.SCRATCH, "refusing-state.json"), WORLD_URL: WS },
-    stdout: "pipe", stderr: "pipe",
-  }));
-  const refusedExit = (await tryUntil("the refusing door exits", () => refusing.exitCode !== null, { ms: 30000 })) ? refusing.exitCode : null;
-  if (refusedExit === null) { refusing.kill(); await refusing.exited; }
-  const refusedText = await new Response(refusing.stderr as ReadableStream).text();
-  check("the network door refuses to start on a malformed MCPL_PUBLIC_ORIGIN, saying what it needs",
-    refusedExit !== null && refusedExit !== 0 && refusedText.includes("MCPL_PUBLIC_ORIGIN must be"), `exit ${refusedExit}`);
+  hPublic = await scratchSequencer("briefing-public", { portFrom: h.PORT + 300, worlds: ["briefing", "annex"], serverEnv: { ...serverEnv, HN_NATIVE_ORIGIN: "https://world.example" } });
+  const publicWS = hPublic.BASE.replace("http", "ws") + "/ws";
+  const publicSnapshot: any = await new Promise((resolve, reject) => {
+    const ws = new WebSocket(publicWS); sockets.push(ws);
+    const timer = setTimeout(() => reject(new Error("raw join timed out")), 8000);
+    ws.onopen = () => ws.send(JSON.stringify((capture as any).joinMsg()));
+    ws.onmessage = ev => {
+      const m = JSON.parse(String(ev.data));
+      if (m.type === "snapshot") { clearTimeout(timer); resolve(m); }
+      if (m.type === "error") { clearTimeout(timer); reject(new Error(m.error)); }
+    };
+  });
+  check("a join to a sequencer with HN_NATIVE_ORIGIN set names the guide at that origin", publicSnapshot.briefing?.docs?.[0]?.url === "https://world.example/agents.md",
+    JSON.stringify(publicSnapshot.briefing?.docs));
 
-  async function door(label: string, publicOriginSetting: string) {
+  async function door(label: string, worldUrl: string) {
     const port = freePort(h!.PORT + 100 + 10 * sockets.length);
     const nonce = crypto.randomUUID();
     const p = h!.track(Bun.spawn([process.execPath, "mcpl/net-server.ts"], {
       cwd: ROOT,
       env: { ...process.env, MCPL_PORT: String(port), MCPL_INSTANCE_NONCE: nonce, MCPL_TOKENS: tokenPath, MCPL_TOKENS_EXAMPLE: examplePath,
-        MCPL_STATE: join(h!.SCRATCH, label + "-state.json"), WORLD_URL: WS, WORLD_TOKEN: "", EIDO_MEDIA_PORT: "0", HN_ISSUER_KEY: "",
-        MCPL_PUBLIC_ORIGIN: publicOriginSetting },
+        MCPL_STATE: join(h!.SCRATCH, label + "-state.json"), WORLD_URL: worldUrl, WORLD_TOKEN: "", EIDO_MEDIA_PORT: "0", HN_ISSUER_KEY: "" },
       stdout: Bun.file(join(h!.SCRATCH, label + ".log")), stderr: Bun.file(join(h!.SCRATCH, label + ".stderr.log")),
     }));
     await until(`door ${label} ready`, async () => {
@@ -220,23 +226,24 @@ try {
     const look = async (): Promise<string> => (await call("look")).content[0].text;
     return { call, look };
   }
-  const publicDoor = await door("public", "https://world.example");
+  const publicDoor = await door("public", publicWS);
   const publicLines = guideLines(await publicDoor.look());
-  check("the network door names the guide at MCPL_PUBLIC_ORIGIN, never at its private sequencer address",
+  check("a network door names the guide at its server's public origin, never at its private sequencer address",
     JSON.stringify(publicLines) === JSON.stringify([`Agent guide: https://world.example/agents.md, version ${doc.version} when you joined`]), JSON.stringify(publicLines));
   const travel = await publicDoor.call("travel", { world: "annex" });
   const travelled = await publicDoor.look();
   check("travel through the door reaches the other world", !travel.isError && travelled.includes(`in world "annex"`), travelled.split("\n")[0]);
   check("and the body it travels with names the guide at the same origin", JSON.stringify(guideLines(travelled)) === JSON.stringify(publicLines));
-  const bareDoor = await door("bare", "");
+  const bareDoor = await door("bare", WS);
   const bareLines = guideLines(await bareDoor.look());
-  check("a network door with no MCPL_PUBLIC_ORIGIN gives the version and says the address is unknown on this connection",
-    JSON.stringify(bareLines) === JSON.stringify([`Agent guide: version ${doc.version} when you joined; its address is unknown on this connection (this door has no public origin set)`]), JSON.stringify(bareLines));
+  check("a network door whose server has no public origin gives the version and says the address is unknown on this connection",
+    JSON.stringify(bareLines) === JSON.stringify([`Agent guide: version ${doc.version} when you joined; its address is unknown on this connection (the world's server has no public origin set)`]), JSON.stringify(bareLines));
   completed = true;
 } finally {
   for (const a of agents) a.close();
   for (const ws of sockets) ws.close();
   for (const s of servers) s.stop(true);
+  await hPublic?.cleanup(completed && !tally.failed ? 0 : 1);
   await h?.cleanup(completed && !tally.failed ? 0 : 1);
   rmSync(scratch, { recursive: true, force: true });
 }

@@ -3,19 +3,10 @@ export const AGENT_GUIDE = 'agents.md';
 function resolvePointer(url, base) {
   let u;
   try { u = new URL(url, base ?? undefined); }
-  catch { return { why: base == null && !/^[a-z][a-z0-9+.-]*:/i.test(url) ? 'this door has no public origin set' : 'malformed' }; }
+  catch { return { why: base == null && !/^[a-z][a-z0-9+.-]*:/i.test(url) ? "the world's server has no public origin set" : 'malformed' }; }
   if (!['http:', 'https:'].includes(u.protocol)) return { why: 'not http(s)' };
   if (u.username || u.password) return { why: 'credentials' };
   return { url: u.href };
-}
-
-export function publicOrigin(value) {
-  if (!value) return null;
-  let u = null;
-  try { u = new URL(value); } catch { /* refused below */ }
-  if (!u || !['http:', 'https:'].includes(u.protocol) || u.username || u.password || u.pathname !== '/' || u.search || u.hash)
-    throw new Error('MCPL_PUBLIC_ORIGIN must be an HTTP(S) origin without credentials, path, query or fragment');
-  return u.origin;
 }
 
 export function resolveBriefing(value, base) {

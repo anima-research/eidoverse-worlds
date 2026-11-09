@@ -794,7 +794,7 @@ export class WorldAgent {
   private lastSkyCheck = 0;
   worldInfo: Record<string, unknown> = {};
   briefing: ReturnType<typeof resolveBriefing> = null;
-  private briefingBase: string | null | undefined;
+  private briefingBase: null | undefined;
   private ticker: ReturnType<typeof setInterval> | null = null;
   /** Highest world-log seq this body has seen. This — not a wall-clock time —
    *  is what "where was I up to" means: it survives restarts, it cannot drift,
@@ -826,7 +826,7 @@ export class WorldAgent {
     return !!mentionRegexFor([this.name, this.displayName], { dropQualifiers: this.dropMentionQualifiers })?.test(text);
   }
 
-  constructor(opts: { url?: string; name?: string; displayName?: string; dropMentionQualifiers?: boolean; world?: string; avatar?: string; agentToken?: string; declares?: string | null; briefingBase?: string | null } = {}) {
+  constructor(opts: { url?: string; name?: string; displayName?: string; dropMentionQualifiers?: boolean; world?: string; avatar?: string; agentToken?: string; declares?: string | null; briefingBase?: null } = {}) {
     this.briefingBase = opts.briefingBase;
     this.url = opts.url ?? process.env.WORLD_URL ?? "ws://127.0.0.1:8940/ws";
     this.name = opts.name ?? process.env.AGENT_NAME ?? "claude";
@@ -1196,7 +1196,7 @@ export class WorldAgent {
             if (!(msg as any).state) { this.closed = true; clearTimeout(timeout); reject(new Error("the server sent no world snapshot (an old server?)")); break; }
             this.replica = makeReplica();
             if (!this.replica.adopt(msg)) { this.closed = true; clearTimeout(timeout); reject(new Error(`unknown-version: the world speaks ${msg.dialect} v${msg.v}; this agent reads another (D5)`)); break; }
-            this.briefing = resolveBriefing(msg.briefing, this.briefingBase === undefined ? this.httpBase + "/" : this.briefingBase);
+            this.briefing = resolveBriefing(msg.briefing, this.briefingBase === null ? null : this.httpBase + "/");
             this.st.recentChat = structuredClone(msg.chat?.recentChat ?? []);
             this.st.chatTotal = msg.chat?.chatTotal ?? 0;
             for (const m of this.st.recentChat) this.hearSay({ seq: m.seq ?? -1, ts: m.ts, actor: m.actor, verb: "say", args: { text: m.text } }, false);
