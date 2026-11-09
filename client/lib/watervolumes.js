@@ -6,7 +6,7 @@ import { state, onWorldChange } from './state.js';
 import { MAX_WATER, MAX_AIR, mediumAt } from '../../shared/water.js';
 import { zonesOf, waterVolumes, physicsAreasOf, speedFactorAt, zoneChangeTouches, foldOfView, fogSlots, worldLevelAt, lookOf, lookChangeTouches, waterBox, headingOf } from '../../shared/zone.js';
 import { worldPose } from '../../shared/protocol/simlayer.js';
-import { levelWaterInfo, surfaceHeightAt, waterAt as levelWaterAt } from './water.js';
+import { levelWaterInfo, surfaceHeightAt, waterAt as levelWaterAt, showUnderside } from './water.js';
 // the sky's under-water switch, injected by main.js (setSkyHider): importing sky.js here pulled the whole sky (assets,
 // the boot gate, the baked domes) into everything that imports the controller
 let hideSkyForWater = (_on) => {};
@@ -241,9 +241,9 @@ function cameraDryBox() {
   for (let i = 0; i < airs.length; i++) { if (!(airMasks[i] & 1)) continue; const a = airs[i], q = a.toLocal([_cam.x, _cam.y, _cam.z]); if (Math.abs(q[0]) <= a.size[0] / 2 && Math.abs(q[1]) <= a.size[1] / 2 && Math.abs(q[2]) <= a.size[2] / 2) return i; }
   return -1;
 }   // an unreachable point: a segment never meets it (rayBox misses)
-/** The camera-dependent half of the optics: the level's fog slot, the under-water background and sky, and the
- *  fog's install. main.js runs it AFTER this frame's movement (and XR), so crossing the surface never renders a
- *  frame with the previous position's water. */
+/** The camera-dependent half of the optics: the level's fog slot, the under-water background and sky, the sheet's
+ *  underside, and the fog's install. main.js runs it AFTER this frame's movement (and XR), so crossing the surface
+ *  never renders a frame with the previous position's water. */
 export function updateWaterView() {
   const lvl = levelSlot(); underLevelNow = !!lvl;
   if (lvl) { mins.array[0].set(...lvl.min, 0); maxs.array[0].set(...lvl.max, 0); absorption.array[0].set(...lvl.absorption, 0); scatter.array[0].set(...lvl.scatter, 0); }
@@ -254,6 +254,7 @@ export function updateWaterView() {
   dryIdx.value = lvl ? cameraDryBox() : -1;
   if (lvl) lvlTop.value = lvl.max[1];
   placeUnderBackground(lvl);
+  camera.getWorldPosition(_cam); showUnderside(_cam.y);
   waterCount.value = waters.length > 0 || lvl ? 1 + waters.length : 0;
   // installed for the life of the water, never swapped at the surface: a new fog node rebuilds every pipeline (#306)
   const on = waters.length > 0 || !!levelWaterInfo();
