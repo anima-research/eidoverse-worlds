@@ -850,16 +850,18 @@ try {
       const b = await n.sendRequest('create', { id: 'ststool-seat', components: { parent: { to: 'ststool' }, transform: { pos: [0, 0.5, 0] }, socket: { name: 'seat' }, station: { action: 'sit' } } });
       return JSON.stringify([a.ok, b.ok]);`);
     const mine = `Promise.all([import('/lib/world.js'), import('/lib/base.js')]).then(([w, b]) => w.avatarMounts.get(b.CONFIG.name)?.to ?? null)`;
-    await waitFor(`import('/lib/world.js').then((w) => !!w.seatSocket('ststool-seat'))`);
-    await page(`(await import('/lib/localbody.js')).trySitOn('ststool'); return true;`);
+    check("ST setup: the seat socket is on my client before I sit", await waitFor(`import('/lib/world.js').then((w) => !!w.seatSocket('ststool-seat'))`), "");
+    const tried = await page(`return (await import('/lib/localbody.js')).trySitOn('ststool');`);   // false: no seat found
     const sat = await waitFor(`${mine}.then((t) => t === 'ststool-seat')`);
+    // a refused `use` only reaches chat (localbody.js trySitOn), so an unseated row carries the chat's tail
+    const said = sat ? null : await evalJson(`document.querySelector('#chatlog')?.innerText.slice(-300) ?? null`);
     // seated, my presence carries the socket's whole rotation (q), the frame the reach gate turns its capsule by
     const seatedQ = await waitFor(`import('/lib/controller.js').then((m) => Array.isArray(m.myState.q) && m.myState.q.length === 4)`, 3000);
     check("ST0 seated, my state carries the socket's rotation as q (reachgate.ts turns the capsule by it)", seatedQ, await evalJson(`import('/lib/controller.js').then((m) => m.myState.q ?? null)`));
     const off = await page(`return JSON.stringify((await (await import('/lib/net.js')).sendRequest('set', { id: 'ststool-seat', component: 'disabled', value: true })).ok);`);
     const up = await waitFor(`${mine}.then((t) => t === null)`);
     const closed = await evalJson(`import('/lib/world.js').then((w) => w.seatSocket('ststool-seat') === null)`);
-    check("ST1 sitting on a socket that is then switched off: my client lets go of it (no seat), and reads it as no seat", made === "[true,true]" && sat && off === "true" && up && closed, { made, sat, off, up, closed, now: await evalJson(mine) });
+    check("ST1 sitting on a socket that is then switched off: my client lets go of it (no seat), and reads it as no seat", made === "[true,true]" && sat && off === "true" && up && closed, { made, tried, sat, said, off, up, closed, now: await evalJson(mine) });
     await page(`await (await import('/lib/net.js')).sendRequest('delete', { id: 'ststool' }); return true;`); }
 
   // ---- the page's own fold, at the end ----
