@@ -18,11 +18,8 @@ function why(err: unknown, file: string | URL): string {
 }
 
 function guideUrl(origin: string | undefined): string {
-  try {
-    const u = new URL(origin ?? "");
-    if (u.protocol === "https:" || u.protocol === "http:") return new URL(AGENT_GUIDE, u.origin + "/").href;
-  } catch { /* no origin, or not a URL: relative */ }
-  return AGENT_GUIDE;
+  const u = origin && URL.canParse(origin) ? new URL(origin) : null;
+  return u && (u.protocol === "https:" || u.protocol === "http:") ? new URL(AGENT_GUIDE, u.origin + "/").href : AGENT_GUIDE;
 }
 
 export function joinBriefing(file: string | URL = GUIDE, origin = process.env.HN_NATIVE_ORIGIN) {

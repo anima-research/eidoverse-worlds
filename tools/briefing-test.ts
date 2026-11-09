@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync, utimesSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, utimesSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
@@ -55,6 +55,12 @@ try {
   check("If-None-Match: * answers 304", conditional("*") === 304);
   check("another version reads the whole guide", conditional(`"sha256:other"`) === 200 && conditional("sha256:other") === 200);
   check("a quoted \"*\" is an entity tag, not the wildcard, and reads the whole guide", conditional(`"*"`) === 200);
+  writeFileSync(file, "guide one\n");
+  const joinedOne = joinBriefing(file).docs[0]?.version, servedOne = agentGuideResponse(new Request("http://world/agents.md"), file).headers.get("etag");
+  writeFileSync(file, "guide two\n");
+  const joinedTwo = joinBriefing(file).docs[0]?.version, servedTwo = agentGuideResponse(new Request("http://world/agents.md"), file).headers.get("etag");
+  check("each join and each read of the route reads the guide afresh, so an edit between two names the new version",
+    joinedOne !== joinedTwo && servedOne !== servedTwo && servedTwo === `"${joinedTwo}"`);
 
   const urlAt = (origin: string | undefined) => joinBriefing(file, origin).docs[0]?.url;
   check("a server with a public origin names the guide there, by its origin alone",
@@ -102,6 +108,7 @@ try {
   const response = await fetch(new URL(doc.url, h.BASE + "/"));
   const body = new Uint8Array(await response.arrayBuffer());
   check("the guide it names is served, and its bytes hash to the join's version", response.ok && hash(body) === doc.version);
+  check("and the bytes served are the checkout's AGENTS.md", Buffer.compare(Buffer.from(body), readFileSync(join(ROOT, "AGENTS.md"))) === 0);
   check("the guide's ETag is that version, quoted, and it revalidates", response.headers.get("etag") === `"${doc.version}"` && response.headers.get("cache-control") === "no-cache");
   const cached = await fetch(h.BASE + "/AGENTS.md", { headers: { "if-none-match": `W/"${doc.version}"` } });
   check("either spelling of the route answers a conditional read", cached.status === 304 && (await cached.text()) === "");
@@ -146,10 +153,12 @@ try {
   client.onPing = () => { pings++; };
   await client.connect();
   const joinsBefore = joins;
+  const beforeClose = guideLines(await lookText(client));
   holdNextJoin = true;
   peer.close();
   const release = await until("the body asks to join again", () => heldJoin);
-  check("between connections, look names no guide", guideLines(await lookText(client)).length === 0);
+  check("between connections, look names no guide, where it named one before", beforeClose.length === 1 && guideLines(await lookText(client)).length === 0,
+    JSON.stringify(beforeClose));
   heldJoin = null; release();
   await until("the body rejoins", () => joins === joinsBefore + 1 && client.joined);
   check("a rejoin with the same guidance names the same version", guideLines(await lookText(client))[0]?.endsWith("version one when you joined"));
@@ -170,7 +179,14 @@ try {
   peer.send(JSON.stringify({ ...stateless, briefing: { motd: "refused", docs: [{ title: "guide", url: AGENT_GUIDE, version: "refused" }] } }));
   const refusedCleared = await tryUntil("the body refuses a snapshot with no world state", async () => guideLines(await lookText(client)).length === 0, { ms: 5000 });
   check("a later snapshot the body refuses, as a resync's could be, leaves no guide line, neither the old one nor its own",
-    beforeRefusal.length === 1 && refusedCleared !== undefined, JSON.stringify([beforeRefusal, guideLines(await lookText(client))]));
+    beforeRefusal.length === 1 && refusedCleared !== undefined && client.joined, JSON.stringify([beforeRefusal, guideLines(await lookText(client)), client.joined]));
+  const dialectReader = new WorldAgent({ name: "dialect-reader", avatar: "", world: "briefing", url: `ws://127.0.0.1:${fake.port}/ws` }); agents.push(dialectReader);
+  await dialectReader.connect();
+  const beforeDialect = guideLines(await lookText(dialectReader));
+  peer.send(JSON.stringify({ ...base, dialect: "another-dialect", briefing: { motd: "refused", docs: [{ title: "guide", url: AGENT_GUIDE, version: "refused" }] } }));
+  const dialectCleared = await tryUntil("the body refuses a snapshot in a dialect it doesn't read", async () => guideLines(await lookText(dialectReader)).length === 0, { ms: 5000 });
+  check("so does a later snapshot in a dialect the body doesn't read",
+    beforeDialect.length === 1 && dialectCleared !== undefined && dialectReader.joined, JSON.stringify([beforeDialect, guideLines(await lookText(dialectReader)), dialectReader.joined]));
 
   const examplePath = join(h.SCRATCH, "tokens.example.json");
   writeFileSync(examplePath, "{}");
