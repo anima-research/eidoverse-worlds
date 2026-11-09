@@ -249,7 +249,7 @@ class Session {
       world,
       avatar: chosenAvatar[this.auth.id] ?? this.auth.avatar,
       url: process.env.WORLD_URL ?? "ws://127.0.0.1:8940/ws",
-      briefingBase: null,
+      resolveRelative: false,
       // the same bearer that opened THIS door — the sequencer verifies the
       // name against it (agent names are reserved there)
       agentToken: this.agentToken,
