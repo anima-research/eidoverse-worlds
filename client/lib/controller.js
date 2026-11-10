@@ -51,6 +51,7 @@ import { inspectBody } from '../../shared/flightbody.js';
 import { applyOwnedWingFold } from '../../shared/wingpresence.js';
 import { nearbyClimb, startClimb, stepOnClimb, climbing, cancelClimb, climbPresence } from './climb.js';   // climb routes (componentspec climb)
 import { spawnOf, fallBackOf, belowWorld, FELL } from '../../shared/spawn.js';
+import { groundStep } from './groundstep.js';   // one frame of height over the ground, with floor snap
 
 let flight = null, flightCfg = null, flightProv = null;
 let lastFlightEnd = null;   // why the last flight ended -- 'F did nothing' has causes
@@ -996,15 +997,12 @@ export function updateMe(dt, me) {
         const surf = footprintSurface((x, z) => wl + surfaceOffset(waterAt(x, z), x, z, t), myState.pos.x, myState.pos.z);
         floatStep(_float, surf, wadeH, dt, ground);
         myState.pos.y = _float.y; vy = 0; grounded = true;
-      } else if (!grounded || myState.pos.y > support + 0.02) {
-        grounded = false;
-        vy -= 16 * dt;
-        myState.pos.y += vy * dt;
+      } else {
         // into deep water the fall goes on below the floating depth (the float takes it next frame, still
         // moving down); the bed is the only floor there
-        const floor = swimming ? ground : support;
-        if (myState.pos.y <= floor) { myState.pos.y = floor; vy = 0; grounded = true; }
-      } else { myState.pos.y = support; vy = 0; grounded = true; }
+        const s = groundStep({ y: myState.pos.y, vy, grounded }, support, dt, myState.speed * dt, { floor: swimming ? ground : support, snap: !swimming });
+        myState.pos.y = s.y; vy = s.vy; grounded = s.grounded;
+      }
       if (!swimming) _float.on = false;
     }
   }
