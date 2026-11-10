@@ -8,7 +8,7 @@
 // Each of these mutations of the PRODUCT must turn a named check red:
 //   groundStep: SNAP_SLOPE 1 → 0          → GS1 (downhill flickers into the jump clip, the bug)
 //   groundStep: drop the `snap &&` guard   → GS4 (a swimmer would stick to the bed)
-//   groundStep: SNAP_SLOPE 1 → 99          → GS2, GS3 (a ledge, and ground steeper than walkable, no longer fall)
+//   groundStep: SNAP_SLOPE 1 → 99          → GS3 (ground steeper than walkable no longer falls)
 //   groundStep: SNAP_MAX 0.3 → 99          → GS6 (a hitch frame snaps a ledge)
 //   controller.js: snap: true, a dropped floor, or the eased speed in place of the stride → GS5
 import { readFileSync } from 'node:fs';
