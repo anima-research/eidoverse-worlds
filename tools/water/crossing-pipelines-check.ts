@@ -56,10 +56,16 @@ try {
     g.__frames = 0; const tick = () => { g.__frames++; requestAnimationFrame(tick); }; requestAnimationFrame(tick);
     return { backend: be.isWebGLBackend ? 'webgl' : 'webgpu', sheet: !!core.scene.getObjectByName('water') };`);
   // N real frames, then until nothing new has been made for 30 more (a program links when a draw first needs it)
-  const settle = (min: number) => js(`const g = globalThis, made = () => g.__made.gl + g.__made.gpu, f0 = g.__frames;
-    let last = made(), quiet = g.__frames;
-    while (g.__frames - f0 < ${min} || g.__frames - quiet < 30) { await new Promise((r) => requestAnimationFrame(r)); if (made() !== last) { last = made(); quiet = g.__frames; } if (g.__frames - f0 > 3000) return false; }
-    return g.__frames - f0;`);
+  // stepped 10 frames per CDP call, so a loaded machine's slow frames never outlast one call (the budget is frames, not seconds)
+  const settle = async (min: number) => {
+    await js(`const g = globalThis; g.__s = { f0: g.__frames, last: g.__made.gl + g.__made.gpu, quiet: g.__frames }; return true;`);
+    for (;;) {
+      const r = await js(`const g = globalThis, s = g.__s, made = () => g.__made.gl + g.__made.gpu;
+        for (let i = 0; i < 10; i++) { await new Promise((r) => requestAnimationFrame(r)); if (made() !== s.last) { s.last = made(); s.quiet = g.__frames; } }
+        const n = g.__frames - s.f0; return n > 3000 ? false : n >= ${min} && g.__frames - s.quiet >= 30 ? n : null;`);
+      if (r !== null) return r;
+    }
+  };
   await settle(60);
   const phase = async (name: string, y: number) => {
     const before = await js("const g = globalThis; return { made: { ...g.__made }, by: { ...g.__by }, f: g.__frames };");
