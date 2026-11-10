@@ -8,12 +8,13 @@
 // Each of these mutations of the PRODUCT must turn a named check red:
 //   groundStep: SNAP_SLOPE 1 → 0          → GS1 (downhill flickers into the jump clip, the bug)
 //   groundStep: drop the `snap &&` guard   → GS4 (a swimmer would stick to the bed)
-//   groundStep: SNAP_SLOPE 1 → 99          → GS2 (a ledge no longer falls)
-//   controller.js: stop calling groundStep → GS5
+//   groundStep: SNAP_SLOPE 1 → 99          → GS2, GS3 (a ledge, and ground steeper than walkable, no longer fall)
+//   groundStep: SNAP_MAX 0.3 → 99          → GS6 (a hitch frame snaps a ledge)
+//   controller.js: snap: true, a dropped floor, or the eased speed in place of the stride → GS5
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { groundStep } from '../client/lib/groundstep.js';
+import { groundStep, SNAP_SLACK } from '../client/lib/groundstep.js';
 import { selectClip } from '../client/lib/locomotion_clip.js';
 
 let fail = 0;
@@ -40,15 +41,22 @@ for (const slope of [0.2, 0.5, 0.9]) for (const speed of [1.4, 4, 7]) for (const
 // GS2: a ledge is still a fall: walking off a 1.5 m drop leaves the ground and plays the jump clip, then lands
 { const r = walk((x) => (x < 1 ? 0 : -1.5), 1.4, 60, 3);
   check('GS2', r.left && r.clips.includes('jump') && Math.abs(r.y - r.ground) < 1e-9, `ledge: left ${r.left}, clips ${r.clips.join(',')}, landed at ${r.y.toFixed(3)}`); }
-// GS3: ground falling away steeper than walkable (slope 3) is a fall too
-{ const r = walk((x) => -3 * x, 1.4, 60, 1);
-  check('GS3', r.left, `slope 3: left the ground ${r.left}`); }
+// GS3: ground falling away steeper than walkable (slope 2 and 3) is a fall too, at every frame rate where a frame's
+// drop passes the 2 cm slack (below it a body stayed grounded before the snap as well: slope 2 at 144 fps walking)
+for (const slope of [2, 3]) for (const fps of [30, 60, 144]) { if (slope * 1.4 / fps <= SNAP_SLACK) continue; const r = walk((x) => -slope * x, 1.4, fps, 1);
+  check('GS3', r.left, `slope ${slope} @${fps}fps: left the ground ${r.left}`); }
 // GS4: no snap where there's no floor to keep (a swimmer falling toward the bed)
 { const s = { y: 0, vy: 0, grounded: true }; groundStep(s, -0.03, 1 / 60, 0.1, { snap: false, floor: -5 });
   check('GS4', !s.grounded && s.y < 0 && s.y > -0.03, `snap:false falls: grounded ${s.grounded}, y ${s.y.toFixed(4)}`); }
-// GS5: the controller calls it
+// GS5: the controller calls it with the stride's real distance, the swimmer's floor and no snap in water
 { const here = dirname(fileURLToPath(import.meta.url)); const src = readFileSync(join(here, '../client/lib/controller.js'), 'utf8');
-  check('GS5', /groundStep\(\{ y: myState\.pos\.y/.test(src) && /import \{ groundStep \} from '\.\/groundstep\.js'/.test(src), 'controller.js imports and calls groundStep'); }
+  const call = "groundStep({ y: myState.pos.y, vy, grounded }, support, dt, walked, { floor: swimming ? ground : support, snap: !swimming })";
+  check('GS5', src.includes(call) && src.includes('walked = stride.moved') && /import \{ groundStep \} from '\.\/groundstep\.js'/.test(src), 'controller.js passes the stride, the floor and snap: !swimming'); }
+// GS6: a hitch frame (dt 0.1, running 7 m/s: 0.7 m walked) off a 0.6 m ledge still falls; standing still never snaps
+{ const s = { y: 0, vy: 0, grounded: true }; groundStep(s, -0.6, 0.1, 0.7);
+  check('GS6', !s.grounded && s.y > -0.6, `hitch off a 0.6 m ledge: grounded ${s.grounded}, y ${s.y.toFixed(3)}`);
+  const t = { y: 0, vy: 0, grounded: true }; groundStep(t, -0.05, 1 / 60, 0);
+  check('GS6', !t.grounded, `not walking, floor 5 cm lower: falls (grounded ${t.grounded})`); }
 
 console.log(fail ? `${fail} FAILED` : 'all passed');
 process.exit(fail ? 1 : 0);
