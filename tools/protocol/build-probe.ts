@@ -93,17 +93,28 @@ try {
     let n0 = myActs().length;
     const press = () => evalJson(`import('/lib/core.js').then((m) => (m.canvas.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: ${SX}, clientY: ${SY} })), true))`);
     await press();
+    const aim = await evalJson(`(async () => { const B0 = ${B0}, [{ THREE, canvas, camera }, S, E, U] = await Promise.all([import('/lib/core.js'), import('/shared/structure.js'), import('/shared/structure_edit.js'), import('/lib/structure_ui.js')]);
+      const ent = (await import('/lib/state.js')).state.st.entities['house-b'], r = canvas.getBoundingClientRect(), ndc = new THREE.Vector2(((${SX} - r.left) / r.width) * 2 - 1, -((${SY} - r.top) / r.height) * 2 + 1);
+      camera.updateMatrixWorld(); const ray = new THREE.Raycaster(); ray.setFromCamera(ndc, camera);
+      const y = (ent?.pos?.[1] ?? 0) + (Number.isFinite(B0.levels?.[0]?.y) ? B0.levels[0].y : 0) + (Number.isFinite(B0.slabT) ? B0.slabT : S.GRID_DEFAULTS.slabT), h = new THREE.Vector3();
+      if (!ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -y), h)) return { rect: [r.left, r.top, r.width, r.height], dpr: devicePixelRatio, px: [${SX}, ${SY}], hit: null };
+      const [lx, , lz] = S.localizePoint(ent, h.x, h.y, h.z), e = E.pickEdge(B0, lx, lz), r3 = (v) => Math.round(v * 1000) / 1000;
+      return { rect: [r.left, r.top, r.width, r.height].map(Math.round), dpr: devicePixelRatio, px: [${SX}, ${SY}], target: U.structureSelection(), hit: [h.x, h.y, h.z].map(r3), local: [r3(lx), r3(lz)],
+        cell: E.pickCell(B0, lx, lz), edge: e, occupied: !!e && B0.levels[0].walls.some((w) => w[0] === e.axis && w[1] === e.x && w[2] === e.z) }; })()`).catch((e) => String(e).slice(0, 120));
     const one = await waitDisk(() => myActs().length === n0 + 1);
     const a = myActs().at(-1); const req = a?.e.body?.args;
     check("ST1 a click with the wall tool edits the SELECTED building (house-b), not the world's first: ONE act", one && req?.id === NODE.get("house-b") && req?.component === "structure", { acts: myActs().slice(n0).map((x) => [x.e.verb, x.e.body?.args?.id]), refused: await evalJson(`__refused.map((r) => r.text)`) });
     check("ST2 …with expect on the building as I saw it", JSON.stringify(req?.expect?.[0]?.value) === B0, req?.expect);
     check("ST3 …and house-a is untouched", JSON.stringify(disk().entities[NODE.get("house-a")].c.structure) === A0);
     const B1 = JSON.stringify(disk().entities[NODE.get("house-b")].c.structure);
+    const wk = (st: any) => (st?.levels?.[0]?.walls ?? []).map((w: number[]) => `${w[0]}:${w[1]},${w[2]}`);
+    const b0w = wk(JSON.parse(B0)), rqw = wk(req?.value);
+    const value = { b0: b0w.length, requested: rqw.length, added: rqw.filter((k: string) => !b0w.includes(k)), removed: b0w.filter((k: string) => !rqw.includes(k)) };
     const st4 = B1 !== B0 && disk().entities[NODE.get("house-b")].c.structure.levels[0].walls.length === JSON.parse(B0).levels[0].walls.length + 1;
     // on a red only: did the wall land late, or never (and what followed the act in the log)? no wait on a green
-    const st4ev = st4 ? undefined : { ids, act: a?.seq, wallsBefore: w0, wallsAtCheck: JSON.parse(B1).levels?.[0]?.walls?.length ?? null,
-      landedBy8s: await waitDisk(() => walls() === (w0 ?? -2) + 1), wallsLater: walls(), log: a ? logAfter(a.seq).slice(0, 8) : null,
-      refused: await evalJson(`__refused.map((r) => r.text)`) };
+    const st4ev = st4 ? undefined : { aim, value, act: a?.seq, wallsBefore: w0, wallsAtCheck: JSON.parse(B1).levels?.[0]?.walls?.length ?? null,
+      landedBy8s: await waitDisk(() => walls() === (w0 ?? -2) + 1), wallsLater: walls(), log: a ? logAfter(a.seq).slice(0, 4) : null,
+      refused: await evalJson(`__refused.map((r) => r.text)`), houseB: ids.houseB };
     check("ST4 …a wall was added", st4, st4ev);
     await waitFor(`globalThis.__editWrites().undo.at(-1) === ${a?.seq}`);
     n0 = myActs().length; const nU = entries().length - 1;   // taken before the key, so the log starts at the undo request
