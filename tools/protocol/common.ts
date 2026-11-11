@@ -36,7 +36,11 @@ export function scratch(tag: string) {
 /** `git archive <commit> <files…> | tar -x -C <dir>`, with every value passed as an argument to sh, never pasted into its
  *  script: a Windows path's backslashes are shell escapes, and a space splits a word (scale G3, CI Windows 10-22). */
 export function archiveTo(cwd: string, commit: string, files: string[], dir: string) {
-  return Bun.spawnSync(["sh", "-c", 'c=$1; d=$2; shift 2; git archive "$c" "$@" | tar -x -C "$d"', "sh", commit, dir, ...files], { cwd });
+  try { return Bun.spawnSync(["sh", "-c", 'c=$1; d=$2; shift 2; git archive "$c" "$@" | tar -x -C "$d"', "sh", commit, dir, ...files], { cwd }); }
+  catch (e) {   // a plain Windows PATH has no sh: say which one, rather than a bare ENOENT
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") throw new Error("archiveTo needs `sh` (and `tar`) on PATH to extract a base commit. On Windows they come with Git for Windows: put its usr\\bin on PATH (e.g. C:\\Program Files\\Git\\usr\\bin)");
+    throw e;
+  }
 }
 
 /** Extract lab files at a commit into a scratch dir (the control arm). Null when PROTOCOL_LAB isn't set. */
@@ -60,8 +64,6 @@ export function copyTree(src: string, dst: string) {
   if (fs.existsSync(nm) && !fs.existsSync(path.join(dst, "node_modules"))) fs.symlinkSync(nm, path.join(dst, "node_modules"), "junction");
 }
 
-/** Link the directory `at` to `target` ("junction": no admin rights on Windows; POSIX ignores the type): hygiene raw-symlink. */
-export const linkInto = (target: string, at: string) => fs.symlinkSync(target, at, "junction");
 /** A symlink to a FILE (a junction is a directory link on Windows; a file symlink there needs Developer Mode). */
 export const linkFile = (target: string, at: string) => fs.symlinkSync(target, at, "file");
 /** Whether this process may make file symlinks: Windows without Developer Mode throws EPERM (a junction still works). */
@@ -81,3 +83,25 @@ export function pathList(v: string | undefined): string[] {
 
   return (v ?? "").split(path.delimiter).filter(Boolean);
 }
+
+/** Link `at` to `target` in a scratch tree, on every OS. A directory becomes a junction (Windows links a directory that way
+ *  without admin rights or Developer Mode; POSIX ignores the type and makes an ordinary symlink). A file becomes a file
+ *  symlink, which Windows refuses (EPERM) without one of those, so there the file is COPIED instead, and the first copy in a
+ *  run says so in one line: a copy doesn't follow later edits to its original, and must never be mistaken for a link. */
+let copiedNoted = false;
+export function linkInto(target: string, at: string): "linked" | "copied" {
+  const abs = path.resolve(target);
+  if (fs.statSync(abs).isDirectory()) { fs.symlinkSync(abs, at, "junction"); return "linked"; }
+  try { fs.symlinkSync(abs, at, "file"); return "linked"; }
+  catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "EPERM") throw e;
+    fs.copyFileSync(abs, at);
+    if (!copiedNoted) { copiedNoted = true; console.log(`note: linkInto COPIED files into this run's scratch trees: this host can't make a file symlink (EPERM), so a copy won't follow edits to its original (first: ${path.basename(at)})`); }
+    return "copied";
+  }
+}
+
+/** A mutant's source with CRLF read as LF. A find that spans a line is written with `\n`, so on a checkout whose files
+ *  end lines in CRLF (Windows, core.autocrlf) it would never match. Write the result back only into a scratch copy (it
+ *  lands there as LF); a tree a gate reads is never rewritten. */
+export const readLF = (file: string) => fs.readFileSync(file, "utf8").replace(/\r\n/g, "\n");

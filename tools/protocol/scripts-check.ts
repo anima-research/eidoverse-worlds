@@ -15,7 +15,7 @@
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
-import { ENGINE, scratch, archiveTo } from "./common.ts";
+import { ENGINE, scratch, archiveTo, readLF } from "./common.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
 import { idAliases } from "./idalias.ts";
@@ -149,7 +149,7 @@ if (argv.includes("--mutants")) {
   const only = opt("only")?.split(",") ?? null;
   for (const [name, file, find, repl, cases] of MUTANTS) {
     if (only && !cases.some((c) => only.includes(c)) && !(only.includes("CONTROL") && !cases.length)) continue;
-    ran++; const d = copyShared("mut"); const f = path.join(d, "shared/protocol", file); const src = fs.readFileSync(f, "utf8");
+    ran++; const d = copyShared("mut"); const f = path.join(d, "shared/protocol", file); const src = readLF(f);
     if (src.split(find).length !== 2) { bad++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${file} (the gate moved?)`); continue; }
     fs.writeFileSync(f, src.replace(find, repl));
     const r = await runSelf(d, cases.length ? cases : null);

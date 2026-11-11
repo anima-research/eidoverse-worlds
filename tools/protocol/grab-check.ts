@@ -25,7 +25,7 @@ import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writer
 import fs from "node:fs";
 import { ENGINES } from "../../shared/protocol/simlayer.js";
 import path from "node:path";
-import { ENGINE, scratch, copyTree, archiveTo } from "./common.ts";
+import { ENGINE, scratch, copyTree, archiveTo, linkInto, readLF } from "./common.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
 import { labClock, pinned } from "./clock.ts";
@@ -124,7 +124,7 @@ function mutantTree(tag: string) {
   const d = scratch(tag);
   for (const sub of ["shared", "server", "tools", "defs"]) if (fs.existsSync(path.join(ENGINE, sub))) copyTree(path.join(ENGINE, sub), path.join(d, sub));
   for (const f of ["package.json", "tsconfig.json", "bunfig.toml"]) if (fs.existsSync(path.join(ENGINE, f))) fs.copyFileSync(path.join(ENGINE, f), path.join(d, f));
-  fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
+  linkInto(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
   return d;
 }
 if (argv.includes("--mutants")) {
@@ -132,7 +132,7 @@ if (argv.includes("--mutants")) {
   const only = opt("only")?.split(",") ?? null;
   for (const [name, file, find, repl, cases] of MUTANTS) {
     if (only && !cases.some((c) => only.includes(c)) && !(only.includes("CONTROL") && !cases.length)) continue;
-    ran++; const d = mutantTree("gmut"); const f = path.join(d, "shared", file); const src = fs.readFileSync(f, "utf8");
+    ran++; const d = mutantTree("gmut"); const f = path.join(d, "shared", file); const src = readLF(f);
     if (src.split(find).length !== 2) { bad++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${file} (the gate moved?)`); continue; }
     fs.writeFileSync(f, src.replace(find, repl));
     const r = await runSelf(d, cases.length ? cases : null);

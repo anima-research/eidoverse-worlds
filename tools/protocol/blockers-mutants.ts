@@ -11,7 +11,7 @@
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
-import { ENGINE, scratch } from "./common.ts";
+import { ENGINE, scratch, linkInto, readLF } from "./common.ts";
 
 type Mutant = { id: string; what: string; file: string; find: string; repl: string; suite: string; rows: string[]; expect: number };
 // suite: the gate's name for it (run.ts) → the file to run, relative to the scratch root
@@ -103,10 +103,10 @@ function copyTree(tag: string) {
   const d = scratch(tag);
   for (const k of ["server", "shared", "mcpl", "tools", "spec", "docs", "defs"]) fs.cpSync(path.join(ENGINE, k), path.join(d, k), { recursive: true, filter: (s) => !s.includes(`${path.sep}node_modules`) });
   fs.mkdirSync(path.join(d, "client"), { recursive: true });
-  for (const k of fs.readdirSync(path.join(ENGINE, "client"))) if (k !== "lib") fs.symlinkSync(path.join(ENGINE, "client", k), path.join(d, "client", k));
+  for (const k of fs.readdirSync(path.join(ENGINE, "client"))) if (k !== "lib") linkInto(path.join(ENGINE, "client", k), path.join(d, "client", k));
   fs.cpSync(path.join(ENGINE, "client", "lib"), path.join(d, "client", "lib"), { recursive: true });
   for (const f of ["package.json", "AGENTS.md", "README.md", "bun.lock"]) if (fs.existsSync(path.join(ENGINE, f))) fs.copyFileSync(path.join(ENGINE, f), path.join(d, f));
-  fs.symlinkSync(path.join(ENGINE, "node_modules"), path.join(d, "node_modules"));
+  linkInto(path.join(ENGINE, "node_modules"), path.join(d, "node_modules"));
   return d;
 }
 // the red rows of a run: `FAIL <id> …` (most suites), `FAIL <id>` from settle's console.log("FAIL", name), `✗ <id> …` (the tools/ tests)
@@ -116,10 +116,10 @@ let bad = 0; const table: string[] = [];
 console.log(`[blockers-mutants] ${todo.length} mutant(s): each applied to a scratch copy of the tree, then its one suite run`);
 for (const m of todo) {
   const t0 = performance.now();
-  const src = fs.readFileSync(path.join(ENGINE, m.file), "utf8");
+  const src = readLF(path.join(ENGINE, m.file));   // read only: the count is taken here, the write goes to the copy below
   if (src.split(m.find).length !== 2) { bad++; console.log(`FAIL ${m.id} '${m.what}': its find text occurs ${src.split(m.find).length - 1}× in ${m.file} (must be exactly once: the fix moved?)`); table.push(`| ${m.id} | ${m.file} | (find text not found once) | ${m.suite} | FAIL |`); continue; }
   const d = copyTree(`bm-${m.id.toLowerCase()}`);
-  const f = path.join(d, m.file); fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace(m.find, m.repl)); fs.mkdirSync(path.join(d, ".scratch"), { recursive: true });
+  const f = path.join(d, m.file); fs.writeFileSync(f, readLF(f).replace(m.find, m.repl)); fs.mkdirSync(path.join(d, ".scratch"), { recursive: true });
   const r = Bun.spawnSync(["bun", path.join(d, SUITE_FILE[m.suite])], { cwd: d, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", PROTOCOL_SCRATCH: path.join(d, ".scratch") }, timeout: Math.max(180, m.expect * 6) * 1000 });
   const out = r.stdout.toString() + r.stderr.toString(); const red = redRows(out);
   const good = m.rows.length ? r.exitCode !== 0 && m.rows.every((x) => red.includes(x)) : r.exitCode === 0 && !red.length;
