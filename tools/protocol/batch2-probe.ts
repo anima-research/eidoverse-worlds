@@ -26,7 +26,7 @@ const ME = "b2bot", WORLD = "b2";
 process.env.TRUST_NAMES = "1";
 let worldsDir = "";
 import { pagedEval } from "./idalias.ts";
-import { pageWaiter } from "./wait.ts";
+import { pageWaiter, tryUntil } from "./wait.ts";
 // R 10-17: the page names what it makes with placeholders (tools/protocol/idalias.ts pageIds); quoted names in page code are ids
 const NAMES = ["linkpic", "linkradio", "hostradio", "moon", "radio", "sign", "post", "statue", "kiosk", "telly", ...Array.from({ length: 10 }, (_, i) => `loop${i}`)];
 const { cdp, cws, evalJson: evalRaw, cleanup, die, BASE } = await scratchBench("batch2", {
@@ -128,10 +128,18 @@ try {
   check("SND1 a store sound 40 m away with radius 12 is exactly silent (gain 0), and the limiter is in the graph", far.g === 0 && far.limiter && far.ratio === 20, { far, me });
   await req("set", { id: "radio", component: "transform", value: { pos: [me[0] + 1, 0, me[2]], q: [0, 0, 0, 1], scale: [1, 1, 1] } });
   check("SND2 …moved beside you, it's heard", await waitFor(`import('/lib/sounds.js').then((s) => (s.tickSounds(), s._playing.get('radio').gain.gain.value > 0.1))`), await page(`const s = await import('/lib/sounds.js'); return s._playing.get('radio')?.gain.gain.value;`));
-  for (let i = 0; i < 34; i++) await empty(`loop${i}`, [me[0] + 1 + i * 0.1, 0, me[2] + 1], { sound: { src: "eidoverse/assets/audio/crow_caw_single.wav", radius: 30 } });
-  await waitFor(`import('/lib/sounds.js').then((s) => [...Array(34).keys()].every((i) => s._playing.has('loop' + i)))`);
-  const heard = await page(`const s = await import('/lib/sounds.js'); s.tickSounds(); return [...s._playing.values()].filter((h) => (h.gain ? h.gain.gain.value : h.el.volume) > 0).length;`);
-  check("SND3 thirty-five sounds in reach: 32 are heard (the voice cap)", heard === 32, heard);
+  // every create's reply is read, and a `rate` refusal (the busy meter's "slow down") is honoured: Windows run 43010421959 lost 10 unseen
+  let paced = 0; const refused: any[] = [];
+  for (let i = 0; i < 34; i++) {
+    const r = await tryUntil(`loop${i}'s create gets past the busy meter`, async () => { const r = await empty(`loop${i}`, [me[0] + 1 + i * 0.1, 0, me[2] + 1], { sound: { src: "eidoverse/assets/audio/crow_caw_single.wav", radius: 30 } });
+      if (r?.refused?.code === "rate") { paced++; return null; } return r; }, { ms: 12_000, step: 1000 });
+    if (!r?.ok) refused.push({ i, refused: r?.refused ?? "still rate-refused at the deadline" });
+  }
+  let snd: any; const counted = `const s = await import('/lib/sounds.js'); const w = await import('/lib/world.js'); const ids = ['radio', ...Array.from({ length: 34 }, (_, i) => __id('loop' + i))];
+    const realized = ids.filter((id) => s._playing.has(id) && w.entities.get(id)).length; s.tickSounds();
+    return { realized, heard: [...s._playing.values()].filter((h) => (h.gain ? h.gain.gain.value : h.el.volume) > 0).length };`;
+  await tryUntil("35 sounds realized and 32 heard", async () => { snd = await page(counted); return snd?.realized === 35 && snd.heard === 32; });   // realized and counted, not one tick after the creates
+  check("SND3 thirty-five sounds in reach: 32 are heard (the voice cap)", refused.length === 0 && snd?.realized === 35 && snd.heard === 32, { ...snd, paced, refused });
 
   // ---- TXT: signs ----
   await empty("sign", [3, 1.5, -3], { text: { text: "Welcome · ようこそ · مرحبا", size: 0.2 } });
