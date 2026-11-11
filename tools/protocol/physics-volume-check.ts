@@ -27,7 +27,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["modes are ignored", "zone.js", "if (a.kind !== \"speed\" || (mode && a.modes && !a.modes.includes(mode))) continue;", "if (a.kind !== \"speed\") continue;", ["A6"]],
   ["the walk asks no mode", "mover.js", "env.speedAt(pos, st0?.swimming ? \"swim\" : \"walk\")", "env.speedAt(pos)", ["A6"]],
   ["any modes pass the door", "protocol/authority/checks.js", "if (pa?.modes !== undefined && !(Array.isArray(pa.modes) && pa.modes.length && pa.modes.every((m) => VOLUME_MODES.includes(m)))) return", "if (false) return", ["A7"]],
-  ["the old name gets no pointer", "protocol/authority/checks.js", "if (name === \"physics-area\") refuse(", "if (false) refuse(", ["A10"]],
+  ["the old name gets no pointer", "protocol/authority/checks.js", "name === \"physics-area\" ? [\"physics-volume\"] :", "false ? [] :", ["A10"]],
   ["CONTROL (no-op: must stay green)", "zone.js", "// shared/zone.js — a world's", "//  shared/zone.js — a world's", []],
 ];
 async function runSelf(tree: string, only: string[] | null) {
@@ -177,12 +177,12 @@ await C("A9", "the track reads every mode: a walk-only ×3 volume under a higher
   const r: any = { first: s.call("move", { to: [-6, 0, 0] }, "vic") }; r.twelve = s.call("move", { to: [6, 0, 0] }, "vic", 5000);
   return [r.first.ok && r.twelve.ok, Object.fromEntries(Object.entries(r).map(([k, v]) => [k, show(v)]))]; });
 
-await C("A10", "the old name physics-area is refused, pointing to physics-volume (renamed before deploy, R 11-09; no alias): a create, a set and a batch carrying it are refused schema, naming physics-volume with didYouMean [physics-volume]; no thing holds it and no change is logged", () => {
+await C("A10", "the old name physics-area is refused, pointing to physics-volume (renamed before deploy, R 11-09; no alias): a create, a set and a batch carrying it are refused schema, with did-you-mean physics-volume (didYouMean [physics-volume]); no thing holds it and no change is logged", () => {
   const s = session(), old = { kind: "speed", factor: 2 }, log = path.join(root, "worlds", `a${N}.jsonl`), entries = () => fs.readFileSync(log, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
   s.call("create", { id: "pond", components: { transform: tf([0, 1, 0]), zone: { shape: "box", size: [40, 4, 40] } } }); const before = JSON.stringify(s.st().entities), n0 = entries().length;
   const r: any = { create: s.call("create", { id: "mud", components: { transform: tf([0, 1, 0]), zone: { shape: "box", size: [40, 4, 40] }, "physics-area": old } }),
     set: s.call("set", { id: "pond", component: "physics-area", value: old }), batch: s.call("batch", { requests: [{ verb: "set", args: { id: "pond", component: "physics-area", value: old } }] }) };
-  const named = Object.values(r).every((x: any) => x.refused?.code === "schema" && /renamed.*'physics-volume'|'physics-volume'.*renamed/.test(String(x.refused.reason)) && JSON.stringify(x.refused.didYouMean) === '["physics-volume"]');
+  const named = Object.values(r).every((x: any) => x.refused?.code === "schema" && /did you mean 'physics-volume'/.test(String(x.refused.reason)) && JSON.stringify(x.refused.didYouMean) === '["physics-volume"]');
   const changed = entries().slice(n0).some((e: any) => e.kind === "change");
   return [named && !changed && JSON.stringify(s.st().entities) === before, { ...Object.fromEntries(Object.entries(r).map(([k, v]) => [k, show(v)])), changed, dym: r.set.refused?.didYouMean }]; });
 

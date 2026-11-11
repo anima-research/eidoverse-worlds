@@ -307,7 +307,6 @@ function schemaCheck(at, comp, v, { carry = false } = {}) {
   // the registry later promoting the same word (story) would have reread every old value in the new meaning.
   // `carry`: a fork's copy of what its parent already holds (an old world's bare invention travels as it was).
   if (name === "door") refuse("schema", `${at}: the opening behaviour is called 'openable' (R 10-07: chests, gates, lids and hatches open too)`, "openable {open: false, locked?, angle?, slide?, time?}; schema {component: 'openable'} says the rest", { didYouMean: ["openable"] });
-  if (name === "physics-area") refuse("schema", `${at}: a region's movement effect is called 'physics-volume' (renamed before deploy, R 11-09: a zone is a 3D region)`, `physics-volume: ${COMPONENTS["physics-volume"].help ?? ""}`, { didYouMean: ["physics-volume"] });
   if (name === "placer") refuse("derived", `${at}: who made a thing is a view over the log (§0 rule 2), never stored`, "inspect {id} → derived.madeBy");
   if (!def) { if (isNamespaced(base) || carry) return;   // someone's own: kept, replayed, shown honestly (must-ignore)
     const ver = /^(.*)@[1-9][0-9]*$/.exec(name);
