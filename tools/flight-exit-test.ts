@@ -211,7 +211,8 @@ const walkAloft = async (ag: any, y = 20, timeoutMs?: number) => {
   await tick(ag);
   check('a walk asked of a body falling limp (LEAF) is no instant drop: a tick later it is still high', phase === 'LEAF' && ag.pos.y > y0 - 2 && ag.flight == null, `${phase}; y ${ag.pos.y.toFixed(2)} (was ${y0.toFixed(2)}), flight ${ag.flight?.phase ?? 'none'}`);
   const ys = await fallOut(ag);
-  check('...it falls to the ground where it was', ys.length > 5 && onGround(ag) && dist(ag.pos, from) < 1e-6, `${ys.length - 1} ticks, ${dist(ag.pos, from).toFixed(3)} m off`);
+  check('...it falls to the ground where it was, never below it', ys.length > 5 && onGround(ag) && dist(ag.pos, from) < 1e-6 && Math.min(...ys) >= ag.heightAt(from.x, from.z) - 1e-6,
+    `${ys.length - 1} ticks, ${dist(ag.pos, from).toFixed(3)} m off, lowest ${Math.min(...ys).toFixed(2)}`);
   for (let i = 0; i < 100 && walk.r == null; i++) await tick(ag);
   check('...then walks on from there', walk.r === true && dist(ag.pos, T) < 0.5, `walk ${walk.r}; ${dist(ag.pos, T).toFixed(2)} m from the target`);
 }
@@ -250,9 +251,10 @@ const walkAloft = async (ag: any, y = 20, timeoutMs?: number) => {
   await fallOut(ag, 300); await tick(ag, 5);
   const phase = ag.flight?.phase, from = { x: ag.pos.x, z: ag.pos.z }, T = { x: from.x + 5, z: from.z };
   const walk = answerOf(ag.walkTo(T.x, T.z));
+  const ended = ag.flight == null;   // as the walk is planned, before a tick
   for (let i = 0; i < 100 && walk.r == null; i++) await tick(ag);
-  check('a walk asked of a cut body lying on the ground ends its flight, and walks', phase != null && ag.flight == null && walk.r === true && dist(ag.pos, T) < 0.5,
-    `phase ${phase} -> ${ag.flight?.phase ?? 'none'}; walk ${walk.r}; ${dist(ag.pos, T).toFixed(2)} m from the target`);
+  check('a walk asked of a cut body lying on the ground ends its flight as it is planned, and walks', phase != null && ended && walk.r === true && dist(ag.pos, T) < 0.5,
+    `phase ${phase}, ended at once ${ended}; walk ${walk.r}; ${dist(ag.pos, T).toFixed(2)} m from the target`);
 }
 console.log('\nreview 2026-11-10: every other way out ends the flight');
 {
@@ -342,7 +344,7 @@ console.log('\nreview 2026-11-10: a landing ended another way says how');
   await tick(ag, 10);
   ag.close();
   await tryUntil('the landing answers', () => land.r, { ms: 2000, step: 20 });
-  check('a landing whose glide is ended by close() is refused, saying so', land.r != null && !land.r.ok && /interrupted: the body was closed/.test(land.r.text), land.r?.text ?? 'no answer');
+  check('a landing whose glide is ended by close() is refused, saying so, and claims no landing', land.r != null && !land.r.ok && /interrupted: the body was closed/.test(land.r.text) && !/landed at/.test(land.r.text), land.r?.text ?? 'no answer');
 }
 {
   const ag = bench();
