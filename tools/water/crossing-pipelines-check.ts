@@ -53,26 +53,28 @@ try {
     g.__at(3);
     const by = g.__by = { sheet: 0, background: 0, other: 0 }, be = renderer.backend, f = be.createRenderPipeline.bind(be);
     be.createRenderPipeline = (ro, p) => { const o = ro.object; by[/^water/.test(o?.name ?? '') ? 'sheet' : o?.name === 'Background.mesh' ? 'background' : 'other']++; return f(ro, p); };
+    const { warmStats } = await import('/lib/warmqueue.js'); g.__warm = warmStats;
     g.__frames = 0; const tick = () => { g.__frames++; requestAnimationFrame(tick); }; requestAnimationFrame(tick);
     return { backend: be.isWebGLBackend ? 'webgl' : 'webgpu', sheet: !!core.scene.getObjectByName('water') };`);
   // N real frames, then until nothing new has been made for 30 more (a program links when a draw first needs it)
-  // stepped 10 frames per CDP call, so a loaded machine's slow frames never outlast one call (the budget is frames, not seconds)
+  // stepped 10 frames per CDP call so one call spans 10 frames, not the whole settle (the budget is frames, not seconds);
+  // quiet also needs the warm queue empty: the underside's warm is queued ambient work, not instant
   const settle = async (min: number) => {
     await js(`const g = globalThis; g.__s = { f0: g.__frames, last: g.__made.gl + g.__made.gpu, quiet: g.__frames }; return true;`);
     for (;;) {
       const r = await js(`const g = globalThis, s = g.__s, made = () => g.__made.gl + g.__made.gpu;
-        for (let i = 0; i < 10; i++) { await new Promise((r) => requestAnimationFrame(r)); if (made() !== s.last) { s.last = made(); s.quiet = g.__frames; } }
+        for (let i = 0; i < 10; i++) { await new Promise((r) => requestAnimationFrame(r)); const w = g.__warm(); if (made() !== s.last || w.pending || w.running) { s.last = made(); s.quiet = g.__frames; } }
         const n = g.__frames - s.f0; return n > 3000 ? false : n >= ${min} && g.__frames - s.quiet >= 30 ? n : null;`);
       if (r !== null) return r;
     }
   };
-  await settle(60);
+  const initial = await settle(60);
   const phase = async (name: string, y: number) => {
     const before = await js("const g = globalThis; return { made: { ...g.__made }, by: { ...g.__by }, f: g.__frames };");
     await js(`globalThis.__at(${y}); return true;`);
     const settled = await settle(40);
-    const after = await js("const g = globalThis, w = (await import('/lib/watervolumes.js')).waterDebug(); return { made: { ...g.__made }, by: { ...g.__by }, f: g.__frames, under: w.under, background: w.background };");
-    const r = { name, y, settled, frames: after.f - before.f, under: after.under, background: after.background,
+    const after = await js("const g = globalThis, core = await import('/lib/core.js'), w = (await import('/lib/watervolumes.js')).waterDebug(); return { made: { ...g.__made }, by: { ...g.__by }, f: g.__frames, under: w.under, background: w.background, underside: !!core.scene.getObjectByName('water-underside')?.visible };");
+    const r = { name, y, settled, frames: after.f - before.f, under: after.under, background: after.background, underside: after.underside,
       made: after.made.gl - before.made.gl + after.made.gpu - before.made.gpu,
       by: Object.fromEntries(Object.keys(after.by).map((k) => [k, after.by[k] - before.by[k]])) as Record<string, number> };
     console.log(`  · ${JSON.stringify(r)}`);
@@ -88,7 +90,7 @@ try {
     f.color.setRGB(1, 0, 0); for (const k of HELD) f.color[k] = function () { return this; }; Object.defineProperty(f, 'density', { configurable: true, get: () => 2, set() {} }); globalThis.__at(3, true);
     const cv = (await import('/lib/core.js')).renderer.domElement; for (const el of document.querySelectorAll('body *')) if (!el.contains(cv)) el.style.visibility = 'hidden';   // the panels cover the view
     return true;`);
-  await settle(20);
+  const shotSettled = await settle(20);
   const png = Buffer.from((await cdp.send<any>("Page.captureScreenshot", { format: "png" })).data, "base64"), shot = PNG.sync.read(png);
   if (process.env.SHOT_DIR) (await import("node:fs")).writeFileSync(`${process.env.SHOT_DIR}/fog-red.png`, png);
   const px = (x: number, y: number) => { const i = (shot.width * y + x) << 2; return [shot.data[i], shot.data[i + 1], shot.data[i + 2]]; };
@@ -96,13 +98,15 @@ try {
   await js(`const HELD = ${HELD}, { scene } = await import('/lib/core.js'); delete scene.fog.density; scene.fog.density = 0.018; for (const k of HELD) delete scene.fog.color[k]; return true;`);
 
   check("WP0 the lake is drawn on the backend asked for, and every phase renders frames where it should be", setup.backend === "webgl" && setup.sheet
-    && rounds.flat().every((r) => r.settled && r.frames >= 40 && r.under === r.name.startsWith("under")), JSON.stringify({ setup, phases: rounds.flat().map((r) => [r.name, r.frames, r.under]) }));
+    && initial && rounds.flat().every((r) => r.settled && r.frames >= 40 && r.under === r.name.startsWith("under")
+      && r.underside === !r.name.startsWith("above") && r.background === r.name.startsWith("under")),
+    JSON.stringify({ setup, initial, phases: rounds.flat().map((r) => [r.name, r.frames, r.under, r.underside, r.background]) }));
   check("WP1a the band alone, the first time in: the underside's pipeline is ready before the camera gets there", rounds[0][0].made === 0, JSON.stringify([rounds[0][0].made, rounds[0][0].by]));
   check("WP1 the band alone (level..level+1, the sheet's underside): no new pipeline after the first crossing", sum(band) === 0 && sum(band, "sheet") === 0, JSON.stringify(band.map((r) => [r.name, r.made, r.by])));
   check("WP2 the fog: under the level after the first crossing, nothing but the sheet and the background asks for a pipeline (and they don't either, WP1/WP3)", sum(under, "other") === 0, JSON.stringify(under.map((r) => [r.name, r.by])));
   check("WP3 the background: under the level after the first crossing, the far-water background makes no new pipeline", sum(under, "background") === 0, JSON.stringify(under.map((r) => [r.name, r.by])));
   check("WP4 after the first crossing, the backend links or makes nothing at all: rounds 2 and 3 cost 0", sum(later) === 0, JSON.stringify(later.map((r) => [r.name, r.made])));
-  check("WP5 the sky's fog still reaches above the water (a dense red fog paints the view down red)", centre[0] > 180 && centre[1] < 60 && centre[2] < 60, JSON.stringify(centre));
+  check("WP5 the sky's fog still reaches above the water (a dense red fog paints the view down red)", !!shotSettled && centre[0] > 180 && centre[1] < 60 && centre[2] < 60, JSON.stringify(centre));
   const real = errors.filter((e) => !/popErrorScope|sky finish/.test(e));
   check("WP6 no page errors", real.length === 0, JSON.stringify(real.slice(0, 4)));
 } catch (e) { check("the run threw", false, String((e as any)?.stack ?? e)); }

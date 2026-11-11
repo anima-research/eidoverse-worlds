@@ -228,6 +228,7 @@ export function applyWater(args, heightAt) {
   under.renderOrder = mesh.renderOrder - 0.5;
   under.visible = false;
   under.userData.noWet = true; under.userData.noCloudShadow = true;   // it copies the top's wraps (dressUnderside), never takes its own
+  under.onBeforeRender = mesh.onBeforeRender;   // it draws first, so it sets this frame's wave time too
   mesh.add(under);
   mesh.userData.bodies = A.bodies.map((b) => ({ kind: b.kind, area: Math.round(b.area), width: +b.width.toFixed(1), length: +b.length.toFixed(1) }));
   scene.add(mesh);
@@ -244,7 +245,7 @@ function dressUnderside(c) {
   under.material = m; c.underOf = c.mesh.material.version;
   warm('water underside', async () => {
     await new Promise((r) => requestAnimationFrame(r));   // a frame on, the water's fog is installed (watervolumes.js updateWaterView)
-    if (under.material !== m) return;
+    if (current?.under !== under || under.material !== m) return;   // rebuilt or travelled meanwhile: that water is gone
     const { visible, frustumCulled } = under; let compiled;
     try { under.visible = true; under.frustumCulled = false; compiled = renderer.compileAsync(under, camera, scene); }
     finally { under.visible = visible; under.frustumCulled = frustumCulled; }
