@@ -77,7 +77,11 @@ const FLIGHT_ENDS = {
   closed: "interrupted: the body was closed", link: "interrupted: the link to the world dropped", respawn: "interrupted: you fell out of the world",
 } as const;
 type FlightEnd = keyof typeof FLIGHT_ENDS;
-const isFlightEnd = (got: string) => (Object.values(FLIGHT_ENDS) as string[]).includes(got);
+/** A wait ended by endFlight is answered with its end's code, not its words, so rewording an end changes no control flow. */
+const endCode = (why: FlightEnd) => `ended:${why}`;
+const isFlightEnd = (got: string) => got.startsWith("ended:") && got.slice(6) in FLIGHT_ENDS;
+/** A wait's answer as it is said: an end's words, else the answer itself. */
+const flightWords = (got: string) => isFlightEnd(got) ? FLIGHT_ENDS[got.slice(6) as FlightEnd] : got;
 /** The signed turn from heading a to heading b, in (-π, π]. */
 const turnTo = (a: number, b: number) => { let d = b - a; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; };
 /** A land course flares (noses up) this high above the ground under it. */
@@ -3227,7 +3231,7 @@ export class WorldAgent {
   endFlight(why: FlightEnd) {
     const waits = this.flightWaiters, vy = this.flight?.vel?.y;
     this.flight = null; this.flightWaiters = [];
-    for (const w of waits) w.done(FLIGHT_ENDS[why]);
+    for (const w of waits) w.done(endCode(why));
     this.speed = 0;
     if (this.clip === "fly" || this.clip === "soar") this.clip = "idle";
     if (why !== "landed") {
@@ -3421,7 +3425,7 @@ export class WorldAgent {
     if (arrived === "taken over") return refused(`taken over at ${here} by a later call`);
     // Out of time, the glide stops steering, as a climb does: the body flies on.
     if (arrived === "timed out aloft" && this.flight?.course?.id === id) this.flight.course = null;
-    return refused(`${arrived} at ${here}`);
+    return refused(`${flightWords(arrived)} at ${here}`);
   }
 
   /** climb_to (spec §1). -1 stamina/metre; an empty pool forces a glide down. */
@@ -3481,7 +3485,7 @@ export class WorldAgent {
     }
     // A cut body keeps no course (flightDownNow), so it doesn't resume a climb when it recovers.
     if (got === "cut") return refused(`cut mid-climb at ${y.toFixed(1)}m`);
-    if (isFlightEnd(got)) return refused(`${got} — the climb stopped at ${y.toFixed(1)}m`);
+    if (isFlightEnd(got)) return refused(`${flightWords(got)} — the climb stopped at ${y.toFixed(1)}m`);
     if (got === "touched down") {
       return done(`came down on the ground at ${y.toFixed(1)}m, the height you asked for — move {mode: "fly"} to fly again`);
     }
@@ -3551,7 +3555,7 @@ export class WorldAgent {
       if (flare === "taken over" || (this.flight && this.flight.course?.id !== id)) {
         return refused(`${glide.text} — a later call took over the flight during the flare`);
       }
-      if (isFlightEnd(flare)) return refused(`${glide.text} — ${flare} during the flare`);
+      if (isFlightEnd(flare)) return refused(`${glide.text} — ${flightWords(flare)} during the flare`);
     }
     // Come down (the tick has ended the flight) or not (the flare's own timeout): the body stands where it is.
     if (this.flight) this.endFlight("landed");
