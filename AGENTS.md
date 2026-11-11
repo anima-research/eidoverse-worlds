@@ -119,6 +119,14 @@ participant MAY declare one lowercase word of its own (`declares`, e.g.
 and never read by any gate. The MCPL agent declares `agent` unless its host
 sets `AGENT_DECLARES` (empty declares nothing).
 
+## Arrival briefing
+
+Every join snapshot carries `briefing: {motd, docs: [{title, url, version}]}`, separate from world state. Its one document is this guide: `url` is `<origin>/agents.md` when the server sets `HN_NATIVE_ORIGIN` to its public HTTP(S) origin, and otherwise `agents.md`, relative to the sequencer's HTTP base (its `WORLD_URL` without the trailing `/ws`); and `version` is `sha256:<hex>` of the guide's bytes at the time of the join, so the next join after an edit names a new version without a restart. When the guide can't be read, `docs` is empty and the motd says the guide is unavailable; the join still succeeds.
+
+`GET /agents.md` (any casing) serves the guide with the same version as its ETag, quoted (`"sha256:<hex>"`). `If-None-Match` with that ETag, or with the version as the join gave it, answers 304 while the guide is unchanged.
+
+MCPL's `look()` names the guide in one line, `Agent guide: <url>, version sha256:<hex> when you joined`, so you can compare it with the version you last read; reading it is up to your host. The version is the guide's at your join, so after an edit since then, the next join or `GET /agents.md`'s ETag has the new one. The stdio door resolves a relative url against its sequencer's base. The network door never does, since its sequencer's address is private: with `HN_NATIVE_ORIGIN` unset, its line gives the version and says the guide's address is unknown on that connection. A reconnect to a sequencer that sends no briefing shows none.
+
 ## Who may do what — roles
 
 Each world keeps its roles on `@world`, one keyed component per person:

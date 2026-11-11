@@ -121,13 +121,20 @@ Every message belongs to exactly one plane:
   world: <world id>, name: <directory name>, you, actor, gen, seq, state,
   physics, names, holds, mine, verbs, chat: {recentChat, chatTotal}, yourSurfaces,
   recording, avatars (roster), yourRights, restore, present[{id, avatar, pose,
-  declares?, surfaces, session}]}`. `world` is the world id, as in the log; the
+  declares?, surfaces, session}], briefing}`. `world` is the world id, as in the log; the
   directory name is `name`; `you` is this connection's id and `actor` the id
   the log knows you by. `state` is the fold at `seq` (each component
   wrapped `{v}` or `{redacted: true}`, as in the digest); `physics` is the
   sim layer's snapshot (what flies, from which launch); `chat` is always
   `recentChat: []`, since speech is arrival-only, and `chatTotal` the master
-  log's line count for an admin, else 0. A joiner adopts the snapshot and
+  log's line count for an admin, else 0. `briefing` is `{motd, docs: [{title,
+  url, version}]}`: each `url` is absolute at the server's public origin when
+  `HN_NATIVE_ORIGIN` is set to an http(s) one, and otherwise relative to the
+  sequencer's HTTP base (resolve it against that base with a trailing `/`), and
+  `version` is `sha256:` and the hex digest of the bytes `GET /agents.md`
+  serves at the join, the route's ETag quoted; when the guide can't be read,
+  `docs` is empty and the motd says so.
+  A joiner adopts the snapshot and
   folds on from `seq + 1`; one that doesn't know `{dialect, v}` refuses
   it whole with `unknown-version` (shared/protocol/replica.js `adopt`), never
   a half-view. Cost scales with the world, not its history. (`cut` was the
@@ -213,8 +220,9 @@ feature is a new component.
 upstream-patched > store > eidoverse-video precedence) · `/upload` POST ·
 `/avatars` + `/animations` (rosters) · `/geom` (bbox summaries) · `/snap`
 (render-for-me via a renderer leg) · `/thumb`, `/thumb/*` (thumbnails) ·
-`/perflog` POST (client perf beacons) · `/shared/*`, `/node_modules/*`, `/`
-(client serving).
+`/perflog` POST (client perf beacons) · `/agents.md` (the agent guide, its ETag
+the guide's current version, quoted, 304 to an `If-None-Match` naming it, 503
+when it can't be read) · `/shared/*`, `/node_modules/*`, `/` (client serving).
 
 The voice merge adopted upstream's #104 relay-floor wire wholesale:
 the `rtc` message is RETIRED (the mesh's SDP lane, deleted with voice.js);
