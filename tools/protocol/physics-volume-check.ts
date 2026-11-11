@@ -1,5 +1,6 @@
 // tools/protocol/physics-volume-check.ts — physics-volume {kind: speed, factor} on a zone (R 10-28 item 50; Godot Area3D, Unreal
 // Physics Volume): the door, shared/zone.js's reader, the one mover (walk, wade, swim, the 3D stroke) and the authority's track.
+// The old name physics-area is refused as any unknown name (A10: renamed before deploy, R 11-09; no alias).
 //   bun tools/protocol/physics-volume-check.ts                 every case
 //   bun tools/protocol/physics-volume-check.ts --only A1,A3    just those
 //   bun tools/protocol/physics-volume-check.ts --tree <dir>    against another checkout's shared/ and server/ (a mutant, or the base)
@@ -174,5 +175,14 @@ await C("A9", "the track reads every mode: a walk-only ×3 volume under a higher
   s.call("create", { id: "flypad", components: { ...PVOL(1, { shape: "box", size: [40, 4, 40], priority: 5 }), "physics-volume": { kind: "speed", factor: 1, modes: ["fly"] } } });
   const r: any = { first: s.call("move", { to: [-6, 0, 0] }, "vic") }; r.twelve = s.call("move", { to: [6, 0, 0] }, "vic", 5000);
   return [r.first.ok && r.twelve.ok, Object.fromEntries(Object.entries(r).map(([k, v]) => [k, show(v)]))]; });
+
+await C("A10", "the old name physics-area is refused as an unknown component, naming it (renamed before deploy, R 11-09; no alias): a create, a set and a batch carrying it are refused schema; no thing holds it and no change is logged", () => {
+  const s = session(), old = { kind: "speed", factor: 2 }, log = path.join(root, "worlds", `a${N}.jsonl`), entries = () => fs.readFileSync(log, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
+  s.call("create", { id: "pond", components: { transform: tf([0, 1, 0]), zone: { shape: "box", size: [40, 4, 40] } } }); const before = JSON.stringify(s.st().entities), n0 = entries().length;
+  const r: any = { create: s.call("create", { id: "mud", components: { transform: tf([0, 1, 0]), zone: { shape: "box", size: [40, 4, 40] }, "physics-area": old } }),
+    set: s.call("set", { id: "pond", component: "physics-area", value: old }), batch: s.call("batch", { requests: [{ verb: "set", args: { id: "pond", component: "physics-area", value: old } }] }) };
+  const named = Object.values(r).every((x: any) => x.refused?.code === "schema" && /'physics-area' isn't a registered component/.test(String(x.refused.reason)));
+  const changed = entries().slice(n0).some((e: any) => e.kind === "change");
+  return [named && !changed && JSON.stringify(s.st().entities) === before, { ...Object.fromEntries(Object.entries(r).map(([k, v]) => [k, show(v)])), changed, dym: r.set.refused?.didYouMean }]; });
 
 console.log(`[physics-volume-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
