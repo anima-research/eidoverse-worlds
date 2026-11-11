@@ -138,6 +138,8 @@ try {
   const wp5 = wp5Verdict({ fb: typeof adapter === "object" && adapter ? (adapter as any).fb : null, settled: !!shotSettled, centre, ref: { pts: refPts, mean: refMean } });
   check(wp5 === "n/a" ? "WP5 N/A: fog colour isn't observable here (a fallback adapter renders the reference itself near-black); this row is not a water-correct pass"
     : "WP5 the sky's fog still reaches above the water (a dense red fog paints the view down red)", wp5 !== "fail", JSON.stringify({ verdict: wp5, ...wp5ev }));
+  // a not-observable WP5 passes, so the gate would drop its row: an OPTIONAL line is what the gate's tally and receipt keep
+  if (wp5 === "n/a") console.log(`OPTIONAL wp5-fog: not observable on ${JSON.stringify(wp5ev.adapter)} (fallback; reference near-black): red ${JSON.stringify(redMean)}, ref ${JSON.stringify(refMean)}, settled ${!!shotSettled}`);
   // its negative controls (synthetic evidence, the same function)
   const R = [251, 16, 20], K = [12, 12, 13], SKY = [56, 128, 158];
   check("WP5a control: a NON-fallback adapter with a black reference still fails", wp5Verdict({ fb: false, settled: true, centre: K, ref: { pts: [K, K, K], mean: K } }) === "fail");
