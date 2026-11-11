@@ -2540,7 +2540,7 @@ export class WorldAgent {
     const sp = this.replica?.st ? fallBackOf(this.replica.st) : null; if (!sp) return;
     this.respawning = true;
     try {
-      this.abandonWalk(); if (this.flight) this.endFlight("respawn"); this.endFloat(); this.vy = 0; this.dropping = false;   // the walk's promise ends now, not at its timeout
+      this.abandonWalk(); if (this.flight) this.endFlight("respawn"); this.endFloat(); this.vy = 0; this.grounded = true;   // the walk's promise ends now, not at its timeout
       if (this.clip === "ragdoll" || (this.heldPose && !this.heldPoseAuthored)) {
         ++this.bodyEpoch; this.body?.stop(); this.stopSim(); this.pins.clear();
         if (!this.heldPoseAuthored) this.heldPose = null;
@@ -2786,16 +2786,18 @@ export class WorldAgent {
       else { this.pos.x += moveX; this.pos.z += moveZ; }
       if (feetFree) groundY = terrainG(this.pos.x, this.pos.z);
     }
-    if (this.dropping && !this.falling) { this.dropping = false; this.abandonWalk(); }   // a flight, tumble, drag or nail has the body now
-    if (this.falling && groundY != null) {
-      // Falling (dropFromFlight): stepFeet's gravity, by hand where the colliders aren't loaded; aloft, no stance yet.
-      if (!colliding) {
-        this.vy -= GRAVITY * dt; this.pos.y += this.vy * dt;
-        if (this.pos.y <= groundY) { this.pos.y = groundY; this.vy = 0; this.grounded = true; }
-      }
-      const wl = this.levelHere();
-      if (this.grounded || (wl != null && this.pos.y <= wl)) this.landed(); else groundY = null;
+    if (!colliding && this.aloft()) {
+      // Falling (aloft): stepFeet's gravity, by hand where it doesn't run (no colliders loaded, or a slump with no sim).
+      const lift = this.feetY(this.isSlumped()) - this.pos.y, canned = this.rootCanned();
+      const g = this.feetAt(this.pos.x, this.pos.z, this.pos.y + lift, terrainG), wl = this.levelHere();
+      this.vy -= GRAVITY * dt; this.pos.y += this.vy * dt;
+      if (this.pos.y + lift <= g) this.pos.y = g - lift;
+      if (this.pos.y + lift <= g || (wl != null && this.pos.y + lift <= wl)) { this.vy = 0; this.grounded = true; }
+      if (canned) this.cannedY = this.pos.y;   // a canned slump keeps its root at its feet as it falls
+      if (!this.grounded) groundY = null;   // aloft: no stance yet
     }
+    // A walk waiting out the fall goes on once the feet are down; something else taking the body ends it.
+    if (this.landWaits.length && !this.aloft()) { if (this.grounded) this.landed(); else this.abandonWalk(); }
     if (groundY != null) {
       const wl = this.levelHere();
       if (wl != null) {
@@ -2866,6 +2868,7 @@ export class WorldAgent {
     // lifts or lowers it; a body already down keeps the reading its root has
     if (!this.isSlumped()) this.cannedY = this.pos.y;
     if (this.target) { this.walkDone?.(false); this.walkDone = null; this.target = null; this.legs = []; this.walkHeightAt = null; this.walkGate = null; }
+    if (this.landWaits.length) this.abandonWalk();   // and one waiting out a fall
     this.speed = 0;
     // Down NOW, not when the physics finishes loading. tumble() awaits the
     // skeleton, the height field and the support barrier before it can set
@@ -3012,7 +3015,7 @@ export class WorldAgent {
         this.flight.pos.x = out.p[0]; this.flight.pos.y = out.p[1]; this.flight.pos.z = out.p[2];
         if (this.flight.phase === "LEAF" && out.done) this.flight.phase = "RAGDOLL";
       }
-      if (out.done) this.stopSim();   // captured: the held pose IS the outcome
+      if (out.done) { this.stopSim(); this.grounded = true; this.vy = 0; }   // captured: the held pose IS the outcome, on what holds it
     }, 66);
   }
   private stopSim() {
@@ -3222,16 +3225,21 @@ export class WorldAgent {
 
   /** The one way out of flight (#298, #300): every wait on it is answered with `why`; a landing stands the feet. */
   endFlight(why: FlightEnd) {
-    const waits = this.flightWaiters;
+    const waits = this.flightWaiters, vy = this.flight?.vel?.y;
     this.flight = null; this.flightWaiters = [];
     for (const w of waits) w.done(FLIGHT_ENDS[why]);
     this.speed = 0;
     if (this.clip === "fly" || this.clip === "soar") this.clip = "idle";
-    if (why !== "landed") return;
+    if (why !== "landed") {
+      // Ended in the air, the feet are where the flight left them, keeping its vertical speed: they fall (aloft).
+      this.grounded = !this.feetOffGround();
+      this.vy = !this.grounded && Number.isFinite(vy) ? vy : 0;
+      return;
+    }
     // The floor it comes down on is found from its feet: a body a flight's
     // ragdoll laid down has them RAGDOLL_ROOT_DROP above its root.
     this.pos.y = this.groundAt(this.pos.x, this.pos.z, this.feetY(this.isSlumped()));
-    this.clip = "idle";
+    this.clip = "idle"; this.grounded = true; this.vy = 0;
   }
 
   /** A down (a cut, a withdrawn grant): the flight stays for its recovery, its course goes, and every wait hears now. */
@@ -3257,11 +3265,10 @@ export class WorldAgent {
     // A limp fall can't be launched out of: the body is in the air, and starting a fresh flight from the
     // ground under it would move it there.
     if (this.flight?.phase === "LEAF") return refused(downRefusal(this.flight));
-    // A body already flying is told so in the integrator's words, and flies on as it was (#287).
-    if (this.airborne() && !isDown(this.flight.phase)) {
-      const ev = flightTakeOff(this.flightCfg, this.flight).events.find((e: any) => e.kind === "takeoff.refused");
-      return refused(flightFixInOurTools(ev?.reason ?? "already airborne"));
-    }
+    // A body already flying is told so in the integrator's words (shared/flight.js), and flies on as it was (#287).
+    if (this.airborne() && !isDown(this.flight.phase)) return refused(`already airborne (${this.flight.phase.toLowerCase()})`);
+    // So is one falling, or tumbling in the air, out of a flight: as from a limp fall, no launch from the ground under it.
+    if (!this.flight && !this.grounded && !this.myOccupancy && !this.draggedBy && this.feetOffGround()) return refused("already airborne (falling) — take_off once you are on the ground");
     // The floor it takes off from is found from its feet, read before the
     // slump that puts them RAGDOLL_ROOT_DROP above the root is cleared.
     const feetY = this.feetY(this.isSlumped());
@@ -3839,12 +3846,19 @@ export class WorldAgent {
         return now();
       });
     };
-    // No walking in mid-air (R 11-10): a walk asked aloft ends the flight, falls, and walks on from where it lands.
-    if (this.flight && this.airborne() && !isDown(this.flight.phase)) this.dropFromFlight();
-    if (!this.falling) return ready();
-    const giveUp = setTimeout(() => { if (ticket === this.walkTicket) this.abandonWalk(); }, timeoutMs);
+    // No walking in mid-air (R 11-10): asked with the feet off the ground, the walk takes the body from the flight (or
+    // the tumble) holding it there now, refused later or not; the body falls (aloft), and the walk is planned from where
+    // it lands.
+    if ((this.flight ? this.airborne() : !this.grounded) && this.feetOffGround()) {
+      if (this.flight) this.endFlight("walk");
+      if (this.simTicker) { ++this.bodyEpoch; this.body?.stop(); this.stopSim(); }
+    }
+    if (!this.aloft()) return ready();
+    let timedOut = false;
+    const giveUp = setTimeout(() => { if (ticket === this.walkTicket) { timedOut = true; this.abandonWalk(); } }, timeoutMs);
     return new Promise<void>((res) => this.landWaits.push(res)).then(() => {
       clearTimeout(giveUp);
+      if (timedOut) { this.walkStopReason = "timed out falling: the body hadn't come down within the walk's time"; return false; }
       if (ticket !== this.walkTicket) {
         if (receipt) receipt.refusal = "superseded by a newer walk or a stop";
         return false;
@@ -3853,19 +3867,20 @@ export class WorldAgent {
     });
   }
 
-  /** Feet free in the air after a flight, falling under GRAVITY to the ground under them (tickInWorld); walks wait. */
-  private dropping = false;
+  /** The walks waiting out a fall (aloft), told when it ends. */
   private landWaits: Array<() => void> = [];
-  private get falling() { return this.dropping && !this.flight && !this.draggedBy && this.pins.size === 0 && this.clip !== "ragdoll" && !this.myOccupancy; }
-  /** A walk asked aloft: the flight ends and the feet fall from where it was, keeping its vertical speed. */
-  private dropFromFlight() {
-    const vy = this.flight.vel?.y ?? 0;
-    this.endFlight("walk");
-    this.vy = Number.isFinite(vy) ? vy : 0; this.grounded = false; this.dropping = true;
+  /** Feet off the ground with nothing holding them (no flight, seat, drag, nail or sim): falling under GRAVITY
+   *  (tickInWorld; stepFeet with the colliders loaded). A walk asked waits for the ground; take_off is refused. */
+  private aloft() {
+    return !this.grounded && !this.flight && !this.myOccupancy && !this.draggedBy && this.pins.size === 0 && !this.simTicker && !this.feetSettling;
+  }
+  /** The feet above the ground under them: the colliders' floor where loaded (feetAt), else the storey or terrain. */
+  private feetOffGround() {
+    const feet = this.feetY(this.isSlumped());
+    return feet > this.feetAt(this.pos.x, this.pos.z, feet, this.standingGround()) + 0.02;
   }
   /** The fall is over: the walks waiting on it go on. */
   private landed() {
-    this.dropping = false;
     const waits = this.landWaits; this.landWaits = [];
     for (const w of waits) w();
   }
