@@ -210,6 +210,10 @@ class Session {
     this.home = home ?? auth.world ?? "commons";
     this.recordStart = recordStart;
     this.conn = McplConnection.fromWebSocket(ws as never);
+    // The connection re-emits its socket's error as its own 'error' (with Bun 1.4's ws, a malformed frame), and a
+    // connection with no 'error' listener throws, ending the door and every session with it. This only reports it: a
+    // socket's error closes the connection on its own.
+    this.conn.on("error", (e) => console.error(`[${ts()}] [mcpl:${this.auth.id}] connection error: ${(e as Error).message?.slice(0, 160)}`));
     this.agent = this.createAgent(auth.world ?? "commons");
     this.channelId = `world:${this.agent.world}`;
     // The body's speech ends the dots the relay keeps up; if the turn goes on,
@@ -1420,6 +1424,8 @@ const wire = wireAuthors(new Map<string, string>());
 const authorOf = (id: string) => wire.authorOf(id);
 const sessions = new Map<string, Session>(); // identity → live session (newest wins)
 wss.on("connection", (ws, req) => {
+  // ws (Bun 1.4) throws an 'error' nobody listens for: a malformed frame from anyone would end every session. ws closes the socket itself.
+  ws.on("error", (e) => console.error(`[${ts()}] [mcpl] socket error: ${(e as Error).message?.slice(0, 160)}`));
   const token = new URL(req.url ?? "/", "http://localhost").searchParams.get("token");
   const registry = readTokens();
   wire.refreshIndex(displayNameIndex(registry));
