@@ -6,7 +6,7 @@ import { state, onWorldChange } from './state.js';
 import { MAX_WATER, MAX_AIR, mediumAt } from '../../shared/water.js';
 import { zonesOf, waterVolumes, physicsAreasOf, speedFactorAt, zoneChangeTouches, foldOfView, fogSlots, worldLevelAt, lookOf, lookChangeTouches, waterBox, headingOf } from '../../shared/zone.js';
 import { worldPose } from '../../shared/protocol/simlayer.js';
-import { levelWaterInfo, surfaceHeightAt, waterAt as levelWaterAt } from './water.js';
+import { levelWaterInfo, surfaceHeightAt, waterAt as levelWaterAt, showUnderside } from './water.js';
 // the sky's under-water switch, injected by main.js (setSkyHider): importing sky.js here pulled the whole sky (assets,
 // the boot gate, the baked domes) into everything that imports the controller
 let hideSkyForWater = (_on) => {};
@@ -52,43 +52,54 @@ const rayBox = Fn(([a, b, lo, hi]) => {
 // volumes higher in stable id order take priority instead of double-fogging.
 const SPANS = MAX_AIR + MAX_WATER;
 const fogFn = Fn(([color, a, b]) => {
-  const optical = vec3(0).toVar(), source = vec3(0).toVar(), total = float(0).toVar();
-  const spans = array('vec2', SPANS).toVar();
-  Loop({ start: int(0), end: waterCount, type: 'int', name: 'w' }, ({ w }) => {
-    const wet = rayBox(a, b, mins.element(w).xyz, maxs.element(w).xyz).toVar();
-    If(wet.y.lessThanEqual(wet.x), () => { Continue(); });
-    const count = int(0).toVar();
-    Loop({ start: int(0), end: airCount, type: 'int', name: 'j' }, ({ j }) => {
-      If(clears(dryExtent.element(j).w, w).not(), () => { Continue(); });   // only the bodies this pocket keeps out (the combine law)
-      const m = dryInverse.element(j), e = dryExtent.element(j).xyz;
-      const v = rayBox(m.mul(vec4(a, 1)).xyz, m.mul(vec4(b, 1)).xyz, e.negate(), e);
-      spans.element(count).assign(vec2(max(wet.x, v.x), min(wet.y, v.y))); count.addAssign(1);
-    });
-    Loop({ start: w.add(1), end: waterCount, type: 'int', name: 'j2' }, ({ j2 }) => {
-      const v = rayBox(a, b, mins.element(j2).xyz, maxs.element(j2).xyz);
-      spans.element(count).assign(vec2(max(wet.x, v.x), min(wet.y, v.y))); count.addAssign(1);
-    });
-    // Insertion sort uses only the active slots (15 boxes in the reference scene).
-    Loop({ start: int(1), end: count, type: 'int', name: 's' }, ({ s }) => {
-      const v = spans.element(s).toVar(), k = s.toVar();
-      Loop(k.greaterThan(0), () => {
-        If(spans.element(k.sub(1)).x.lessThanEqual(v.x), () => { Break(); });
-        spans.element(k).assign(spans.element(k.sub(1))); k.subAssign(1);
+  const out = vec4(color).toVar();
+  If(waterCount.greaterThan(0), () => {   // no slot in use: the air's fog alone, at no cost (the node stays installed, #306)
+    const optical = vec3(0).toVar(), source = vec3(0).toVar(), total = float(0).toVar();
+    const spans = array('vec2', SPANS).toVar();
+    Loop({ start: int(0), end: waterCount, type: 'int', name: 'w' }, ({ w }) => {
+      const wet = rayBox(a, b, mins.element(w).xyz, maxs.element(w).xyz).toVar();
+      If(wet.y.lessThanEqual(wet.x), () => { Continue(); });
+      const count = int(0).toVar();
+      Loop({ start: int(0), end: airCount, type: 'int', name: 'j' }, ({ j }) => {
+        If(clears(dryExtent.element(j).w, w).not(), () => { Continue(); });   // only the bodies this pocket keeps out (the combine law)
+        const m = dryInverse.element(j), e = dryExtent.element(j).xyz;
+        const v = rayBox(m.mul(vec4(a, 1)).xyz, m.mul(vec4(b, 1)).xyz, e.negate(), e);
+        spans.element(count).assign(vec2(max(wet.x, v.x), min(wet.y, v.y))); count.addAssign(1);
       });
-      spans.element(k).assign(v);
+      Loop({ start: w.add(1), end: waterCount, type: 'int', name: 'j2' }, ({ j2 }) => {
+        const v = rayBox(a, b, mins.element(j2).xyz, maxs.element(j2).xyz);
+        spans.element(count).assign(vec2(max(wet.x, v.x), min(wet.y, v.y))); count.addAssign(1);
+      });
+      // Insertion sort uses only the active slots (15 boxes in the reference scene).
+      Loop({ start: int(1), end: count, type: 'int', name: 's' }, ({ s }) => {
+        const v = spans.element(s).toVar(), k = s.toVar();
+        Loop(k.greaterThan(0), () => {
+          If(spans.element(k.sub(1)).x.lessThanEqual(v.x), () => { Break(); });
+          spans.element(k).assign(spans.element(k.sub(1))); k.subAssign(1);
+        });
+        spans.element(k).assign(v);
+      });
+      const dry = float(0).toVar(), end = float(wet.x).toVar();
+      Loop({ start: int(0), end: count, type: 'int', name: 'u' }, ({ u }) => {
+        const v = spans.element(u).toVar();
+        If(v.y.greaterThan(v.x), () => { dry.addAssign(max(0, v.y.sub(max(end, v.x)))); end.assign(max(end, v.y)); });
+      });
+      const len = max(0, wet.y.sub(wet.x).sub(dry)).mul(distance(a, b));
+      optical.addAssign(absorption.element(w).xyz.mul(len)); source.addAssign(scatter.element(w).xyz.mul(len)); total.addAssign(len);
     });
-    const dry = float(0).toVar(), end = float(wet.x).toVar();
-    Loop({ start: int(0), end: count, type: 'int', name: 'u' }, ({ u }) => {
-      const v = spans.element(u).toVar();
-      If(v.y.greaterThan(v.x), () => { dry.addAssign(max(0, v.y.sub(max(end, v.x)))); end.assign(max(end, v.y)); });
-    });
-    const len = max(0, wet.y.sub(wet.x).sub(dry)).mul(distance(a, b));
-    optical.addAssign(absorption.element(w).xyz.mul(len)); source.addAssign(scatter.element(w).xyz.mul(len)); total.addAssign(len);
+    const trans = exp(optical.negate());
+    out.assign(vec4(out.rgb.mul(trans).add(source.div(max(total, 0.000001)).mul(vec3(1).sub(trans))), out.a));
   });
-  const trans = exp(optical.negate());
-  return vec4(color.rgb.mul(trans).add(source.div(max(total, 0.000001)).mul(vec3(1).sub(trans))), color.a);
+  return out;
 });
-const fogNode = fogFn(output,cameraPosition,positionWorld);
+// the air's fog, which the water's wraps: the scene's own node, else scene.fog as three builds it (NodeManager.updateFog)
+function airFog() {
+  if (scene.fogNode) return scene.fogNode;
+  const f = scene.fog, ref = (k, t) => TSL.reference(k, t, f).setGroup(TSL.renderGroup);
+  if (f?.isFogExp2) return TSL.fog(ref('color', 'color'), TSL.densityFogFactor(ref('density', 'float')));
+  if (f?.isFog) return TSL.fog(ref('color', 'color'), TSL.rangeFogFactor(ref('near', 'float'), ref('far', 'float')));
+  return output;
+}
 let previousFog = null, installed = false, dirty = true, fold = { entities: {} };
 let skyDome=null, skySaved=null;
 const warned=new Set();
@@ -230,9 +241,9 @@ function cameraDryBox() {
   for (let i = 0; i < airs.length; i++) { if (!(airMasks[i] & 1)) continue; const a = airs[i], q = a.toLocal([_cam.x, _cam.y, _cam.z]); if (Math.abs(q[0]) <= a.size[0] / 2 && Math.abs(q[1]) <= a.size[1] / 2 && Math.abs(q[2]) <= a.size[2] / 2) return i; }
   return -1;
 }   // an unreachable point: a segment never meets it (rayBox misses)
-/** The camera-dependent half of the optics: the level's fog slot, the under-water background and sky, and the
- *  fog's install. main.js runs it AFTER this frame's movement (and XR), so crossing the surface never renders a
- *  frame with the previous position's water. */
+/** The camera-dependent half of the optics: the level's fog slot, the under-water background and sky, the sheet's
+ *  underside, and the fog's install. main.js runs it AFTER this frame's movement (and XR), so crossing the surface
+ *  never renders a frame with the previous position's water. */
 export function updateWaterView() {
   const lvl = levelSlot(); underLevelNow = !!lvl;
   if (lvl) { mins.array[0].set(...lvl.min, 0); maxs.array[0].set(...lvl.max, 0); absorption.array[0].set(...lvl.absorption, 0); scatter.array[0].set(...lvl.scatter, 0); }
@@ -243,9 +254,11 @@ export function updateWaterView() {
   dryIdx.value = lvl ? cameraDryBox() : -1;
   if (lvl) lvlTop.value = lvl.max[1];
   placeUnderBackground(lvl);
-  const on = waters.length > 0 || !!lvl;
-  waterCount.value = on ? 1 + waters.length : 0;
-  if (on && !installed) { previousFog = scene.fogNode; scene.fogNode = fogNode; installed = true; }
+  camera.getWorldPosition(_cam); showUnderside(_cam.y);
+  waterCount.value = waters.length > 0 || lvl ? 1 + waters.length : 0;
+  // installed for the life of the water, never swapped at the surface: a new fog node rebuilds every pipeline (#306)
+  const on = waters.length > 0 || !!levelWaterInfo();
+  if (on && !installed) { previousFog = scene.fogNode; scene.fogNode = fogFn(airFog(), cameraPosition, positionWorld); installed = true; }
   if (!on && installed) { scene.fogNode = previousFog; installed = false; }
 }
 export function updateWater() {

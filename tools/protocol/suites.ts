@@ -42,6 +42,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["water-vectors", "../water-vectors.ts --check", 1], // shared/conformance/water.json still what shared/water.js computes (waterParams, waveHeight, swimStep)
   ["water-import", "../water/import-golden-check.ts", 1], // upstream #248's manifest through tools/water/import.ts --dry: its zone/water/water-exclusion things, taken by a real authority, and mediumOf = main's mediumAt
   ["level-dive", "../water/level-dive-check.ts", 1], // a real browser in the lake: C dives, looking down with W dives (R 10-28), surfacing hands back to the float
+  ["water-cross", "../water/crossing-pipelines-check.ts", 1], // #306: crossing the water level makes no new render pipeline after the first time (band, fog, background), and the sky's fog still reaches above it
   ["toast-group", "toast-group-check.ts", 1],   // load failures of one kind are one toast counting the things; dismissed, that kind stays quiet (R 10-28)
   ["avatar", "../avatar-test.ts", 1], // the avatar rig: clip timing, seat-blend slot, a lowering clip under a limp body (upstream #282/#283)
   ["remotes-limp-edge", "../remotes-limp-edge-test.ts", 1], // a remote going limp or getting up is drawn at the edge sample, not lerped through it (upstream #283)
@@ -81,6 +82,8 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["helm-leave", "../helm-leave-test.ts", 1], // review of PR #260 (vehicles.js:26): getting up from a helm lets its hull go: its relayed moves show, a later seat drives on from where it is
   ["dismount-height", "../dismount-height-test.ts", 1], // review of PR #260 (localbody.js:151): standing up keeps the height I'm let go at (vacated.at, a socket exit, a leave clip's end)
   ["latestread", "../latestread-test.ts", 1], // the panels' paced re-read and the History retry's back-off (latestread.js, backoff.js); it existed, but no lane ran it
+  ["chat-mention-insert", "../chat-mention-insert-test.ts", 1], // #313 review: Mention and a name click put a space before `@name ` after a word, through chat.js itself
+  ["chat-mention", "../chat-mention-test.mjs", 1], // #232: a chat name ends where the door's does (`cairn` is not inside `cairn-bridge`)
   ["csp", "../csp-test.ts", 0.5],          // the page's script-src hashes are the browser's: a CRLF copy of index.html still boots (CI windows 10-23)
   ["build-gate", "../build-gate-test.ts", 1], // build mode is gated at the chokepoint, never trapping a demoted builder (revived D6)
   ["capsule-recovery", "../capsule-recovery-test.mjs", 1], // a remote's capsule fallback: bounded retries, the identity guard across takeovers (revived D6)
@@ -227,6 +230,8 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["custody-save", "../custody-save-test.ts", 1], // a governance key is handed out only once the keys file holds it: a failed save hands out nothing
   ["client-tools", "../run-client.ts --import-only --skip-suites --strict-env", 14], // refactor plan 2 D5: every tools/*-{test,check} loads (a stub missing an export, a moved module); a hung import reads SLOW, not red (run-client-settle pins it); the full run is `bun tools/run-client.ts`
   ["replica-freeze", "../replica-freeze-test.ts", 1],   // C7a: the client's fold is frozen in dev, and still folds every later entry (it sat outside the gate and couldn't start)
+  ["briefing", "../briefing-test.ts", 1],
+  ["door-frame", "../door-frame-test.ts", 1],   // a malformed frame from anyone closes that one socket, never the MCPL door (Bun 1.4's ws throws an 'error' nobody listens for)
 ];
 
 // ---- lanes ----
@@ -237,7 +242,7 @@ export const CORE = ["kernel", "trig", "laws", "engine", "normative", "gov-reser
 // refusedjoin (scratchBench) and client-tools (run-client.ts runs every tools/*-test file, browser tests among them, those one
 // at a time) once
 // sat in the non-browser list: a host without Chromium failed them, and this box ran Chromes it didn't budget for.
-export const BROWSER = ["browser", "comps-parity", "level-dive", "toast-group", "client", "refusedjoin", "client-b2", "build-client", "access-panel", "lock-strength", "swim-lists", "shiplist-probe", "xss-probe", "party-probe", "colour-picker", "client-tools"];
+export const BROWSER = ["browser", "comps-parity", "level-dive", "water-cross", "toast-group", "client", "refusedjoin", "client-b2", "build-client", "access-panel", "lock-strength", "swim-lists", "shiplist-probe", "xss-probe", "party-probe", "colour-picker", "client-tools"];
 export const laneOf = (name: string): Lane => (CORE.includes(name) ? "core" : BROWSER.includes(name) ? "browser" : "main");
 
 /** The local files `f` imports, transitively, itself included (tools/ only; harness.ts is a door, not the suite's code).

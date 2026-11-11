@@ -13,6 +13,7 @@ import { r3 } from "../shared/protocol/round.js";
 import { BodyStateReader, type BodyObservation, type PublicPose } from "./body-state.ts";
 import { mentionRegexFor } from "./mention.ts";
 import { mergePose } from "../shared/humanoid.js";
+import { resolveBriefing, briefingLines } from "../shared/briefing.js";
 import { shapeParams, shapedHeightAt, requestGrid, setGridFetcher, shapeReady, waterParams } from "../shared/terrainshape.js";
 import { flatHeightOf } from "../shared/terrainmath.js";
 import { foldOffset } from "../shared/clockoffset.js";
@@ -811,6 +812,8 @@ export class WorldAgent {
   private lastDayPhase: string | null = null;
   private lastSkyCheck = 0;
   worldInfo: Record<string, unknown> = {};
+  briefing: ReturnType<typeof resolveBriefing> = null;
+  private resolveRelative: boolean;
   private ticker: ReturnType<typeof setInterval> | null = null;
   /** Highest world-log seq this body has seen. This — not a wall-clock time —
    *  is what "where was I up to" means: it survives restarts, it cannot drift,
@@ -842,7 +845,8 @@ export class WorldAgent {
     return !!mentionRegexFor([this.name, this.displayName], { dropQualifiers: this.dropMentionQualifiers })?.test(text);
   }
 
-  constructor(opts: { url?: string; name?: string; displayName?: string; dropMentionQualifiers?: boolean; world?: string; avatar?: string; agentToken?: string; declares?: string | null } = {}) {
+  constructor(opts: { url?: string; name?: string; displayName?: string; dropMentionQualifiers?: boolean; world?: string; avatar?: string; agentToken?: string; declares?: string | null; resolveRelative?: boolean } = {}) {
+    this.resolveRelative = opts.resolveRelative ?? true;
     this.url = opts.url ?? process.env.WORLD_URL ?? "ws://127.0.0.1:8940/ws";
     this.name = opts.name ?? process.env.AGENT_NAME ?? "claude";
     // The token's display name ("Artie (kube)"): a second form the body
@@ -879,6 +883,7 @@ export class WorldAgent {
   close() {
     this.closed = true;
     if (this.flight) this.endFlight("closed");
+    this.briefing = null;
     this.stop();
     this.stopSim();
     if (this.ticker) { clearInterval(this.ticker); this.ticker = null; }
@@ -1014,6 +1019,7 @@ export class WorldAgent {
       ws.onclose = (ev) => {
         this.joined = false;
         if (this.flight) this.endFlight("link");   // nothing ticks it while the link is down (#300)
+        this.briefing = null;
         // 4006 = removed by moderation (kicked or banned). Reconnecting would
         // either hammer a banned door or instantly undo a kick — the body
         // stays down; its host reconnecting later is the deliberate return.
@@ -1162,6 +1168,7 @@ export class WorldAgent {
             if (msg.rights) this.acceptEffectiveRights(msg.rights, "world");
             break;
           case "snapshot":
+            this.briefing = null;
             this.snapshot = msg.state ? { dialect: msg.dialect, v: msg.v, world: msg.world, name: msg.name, seq: msg.seq } : null;
             // Our surface generation, issued by the server on acceptance —
             // every attest must echo it or the receipt is refused (PR #103 B2).
@@ -1210,6 +1217,7 @@ export class WorldAgent {
             if (!(msg as any).state) { this.closed = true; clearTimeout(timeout); reject(new Error("the server sent no world snapshot (an old server?)")); break; }
             this.replica = makeReplica();
             if (!this.replica.adopt(msg)) { this.closed = true; clearTimeout(timeout); reject(new Error(`unknown-version: the world speaks ${msg.dialect} v${msg.v}; this agent reads another (D5)`)); break; }
+            this.briefing = resolveBriefing(msg.briefing, this.resolveRelative ? this.httpBase + "/" : null);
             this.st.recentChat = structuredClone(msg.chat?.recentChat ?? []);
             this.st.chatTotal = msg.chat?.chatTotal ?? 0;
             for (const m of this.st.recentChat) this.hearSay({ seq: m.seq ?? -1, ts: m.ts, actor: m.actor, verb: "say", args: { text: m.text } }, false);
@@ -5578,6 +5586,7 @@ export class WorldAgent {
         description: describeSky(this.skyState, now),
       };
     }
+    L.push(...briefingLines(this.briefing));
     if (Object.keys(this.worldInfo).length) L.push(`World: ${JSON.stringify(this.worldInfo)}`);
 
     const others = [...this.people.values()];

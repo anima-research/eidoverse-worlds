@@ -26,7 +26,7 @@
 import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import path from "node:path";
-import { ENGINE, scratch, copyTree, archiveTo } from "./common.ts";
+import { ENGINE, scratch, copyTree, archiveTo, linkInto, readLF } from "./common.ts";
 
 import { CAPACITY, CAPACITY_CEILING } from "../../shared/protocol/authority.js";
 import { COMPONENTS } from "../../shared/protocol/componentspec.js";
@@ -93,14 +93,14 @@ function mutantTree(tag: string) {
   const d = scratch(tag);
   for (const sub of ["shared", "server", "tools", "defs", "client"]) if (fs.existsSync(path.join(ENGINE, sub))) copyTree(path.join(ENGINE, sub), path.join(d, sub));
   for (const f of ["package.json", "tsconfig.json", "bunfig.toml"]) if (fs.existsSync(path.join(ENGINE, f))) fs.copyFileSync(path.join(ENGINE, f), path.join(d, f));
-  fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
+  linkInto(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
   return d;
 }
 if (argv.includes("--mutants")) {
   let bad = 0, ran = 0; const only = opt("only")?.split(",") ?? null;
   for (const [name, file, find, repl, cases] of MUTANTS) {
     if (only && !cases.some((c) => only.includes(c)) && !(only.includes("CONTROL") && !cases.length)) continue;
-    ran++; const d = mutantTree("smut"); const f = path.join(d, file); let src = fs.readFileSync(f, "utf8");
+    ran++; const d = mutantTree("smut"); const f = path.join(d, file); let src = readLF(f);
     const pairs: [string, string][] = Array.isArray(find) ? find : [[find, repl]];   // a gate in two places is reverted in both
     const missing = pairs.find(([a]) => src.split(a).length !== 2);
     if (missing) { bad++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${file} (the gate moved?)`); continue; }
@@ -478,7 +478,7 @@ if (argv.includes("--control")) {
   // the base commit's tree: every case but the guards (G) must be red there; each case alone, with a time limit
   const d = scratch("sctl"); const r0 = archiveTo(ENGINE, BASE, ["shared", "server", "tools", "defs", "client", "package.json"], d);
   if (r0.exitCode !== 0) { console.log(`FAIL can't extract ${BASE}: ${r0.stderr}`); process.exit(1); }
-  fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
+  linkInto(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
   const ids = cases.map((c) => c.id).filter((id) => !opt("only") || opt("only")!.split(",").includes(id)); let wrong = 0;
   for (const id of ids) {
     const t0 = performance.now(); const r = await runSelf(d, [id], Number(process.env.CONTROL_MS ?? 120000)); const s = ((performance.now() - t0) / 1000).toFixed(1);
@@ -545,7 +545,7 @@ async function realGlbs() {
 const RENAMED_KEYS: Record<string, string> = { teach: "fix", touchI: "intimate", verb: "op" };   // verb → op: a dry run's would ops, minor 1 (D3); the base wrote verb
 async function sameAsBase() {
   const d = scratch("sbase"); const r0 = archiveTo(ENGINE, BASE, ["shared", "server", "package.json"], d);
-  if (r0.exitCode !== 0) return { error: String(r0.stderr) }; fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
+  if (r0.exitCode !== 0) return { error: String(r0.stderr) }; linkInto(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
   const run = (tree: string) => { const r = Bun.spawnSync(["bun", path.join(ENGINE, "tools/protocol/scale-check.ts"), "--tree", tree, "--scenario"], { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
     const t = r.stdout.toString(); try { return JSON.parse(t); } catch { return { bad: (t + r.stderr.toString()).slice(-400) }; } };
   const a = run(TREE), b0 = run(d); if (!Array.isArray(a) || !Array.isArray(b0)) return { a: a?.bad ?? "ok", b: b0?.bad ?? "ok" };
