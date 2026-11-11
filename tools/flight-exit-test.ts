@@ -7,6 +7,7 @@
 // no world server: its tick is called by hand, 0.1 s a tick.
 import { tryUntil } from './protocol/wait.ts';
 const { WorldAgent } = await import('../mcpl/agent.ts');
+const { handleTool } = await import('../mcpl/tools.ts');
 
 let pass = 0, fail = 0;
 function check(name: string, ok: boolean, detail = '') {
@@ -173,6 +174,198 @@ console.log('\n#300 close, or a dropped link, answers a wait under way at once')
   (globalThis as any).WebSocket = RealWS;
   check('a dropped link answers a climb under way at once, as interrupted', climb.r != null && !climb.r.ok && /interrupted/.test(climb.r.text), climb.r?.text ?? 'no answer 2 s after the drop');
   check('...and ends the flight', ag.flight == null, `flight ${ag.flight?.phase ?? 'none'}`);
+}
+
+console.log('\nreview 2026-11-10: the fall is the feet\'s, whatever ended the flight');
+/** Tick until the feet are on the ground under them (or n ticks); the heights on the way. */
+const fallOut = async (ag: any, n = 200) => {
+  const ys: number[] = [ag.pos.y];
+  for (let i = 0; i < n && ag.pos.y > ag.heightAt(ag.pos.x, ag.pos.z) + 1e-6; i++) { await tick(ag); ys.push(ag.pos.y); }
+  return ys;
+};
+const onGround = (ag: any) => Math.abs(ag.pos.y - ag.heightAt(ag.pos.x, ag.pos.z)) < 1e-6;
+const walkAloft = async (ag: any, y = 20, timeoutMs?: number) => {
+  await ag.takeOff(); toAir(ag, y); await tick(ag, 3);
+  const receipt = { refusal: null as string | null };
+  const walk = answerOf(ag.walkTo(ag.pos.x + 5, ag.pos.z, false, timeoutMs, undefined, undefined, {}, receipt));
+  await tick(ag);
+  return { walk, receipt };
+};
+{
+  const ag = bench();
+  await walkAloft(ag);
+  const y0 = ag.pos.y, r = await ag.takeOff();
+  check('take_off during the fall is refused as already airborne', !r.ok && /already airborne/.test(r.text) && ag.flight == null, `${r.text}; flight ${ag.flight?.phase ?? 'none'}`);
+  await tick(ag);
+  check('...and the body falls on from where it was, not from the ground', ag.flight == null && ag.pos.y < y0 && ag.pos.y > y0 - 3, `y ${ag.pos.y.toFixed(2)} (was ${y0.toFixed(2)}), flight ${ag.flight?.phase ?? 'none'}`);
+  const m = await handleTool({ agent: ag } as any, 'move', { mode: 'fly', to: [ag.pos.x + 30, ag.pos.z] });
+  check('move {mode: "fly"} during the fall is refused too', m.isError === true && /already airborne/.test(m.content?.[0]?.text ?? '') && ag.flight == null, `${m.content?.[0]?.text}; flight ${ag.flight?.phase ?? 'none'}`);
+}
+{
+  const ag = bench();
+  await ag.takeOff(); toAir(ag, 20); await tick(ag, 3);
+  ag.flightBodyDown('cut'); await tick(ag, 2);
+  const y0 = ag.pos.y, from = { x: ag.pos.x, z: ag.pos.z }, T = { x: from.x + 5, z: from.z };
+  const phase = ag.flight?.phase;
+  const walk = answerOf(ag.walkTo(T.x, T.z));
+  await tick(ag);
+  check('a walk asked of a body falling limp (LEAF) is no instant drop: a tick later it is still high', phase === 'LEAF' && ag.pos.y > y0 - 2 && ag.flight == null, `${phase}; y ${ag.pos.y.toFixed(2)} (was ${y0.toFixed(2)}), flight ${ag.flight?.phase ?? 'none'}`);
+  const ys = await fallOut(ag);
+  check('...it falls to the ground where it was', ys.length > 5 && onGround(ag) && dist(ag.pos, from) < 1e-6, `${ys.length - 1} ticks, ${dist(ag.pos, from).toFixed(3)} m off`);
+  for (let i = 0; i < 100 && walk.r == null; i++) await tick(ag);
+  check('...then walks on from there', walk.r === true && dist(ag.pos, T) < 0.5, `walk ${walk.r}; ${dist(ag.pos, T).toFixed(2)} m from the target`);
+}
+{
+  const ag = bench();
+  await ag.takeOff(); toAir(ag, 45); await tick(ag, 3);
+  ag.knockDown('shover', null, '(knocked over)');
+  await tick(ag, 2);
+  const sim = !!ag.simTicker;
+  const ys = await fallOut(ag, 300);
+  check('a knockdown in the air with no sim to run comes down to the ground, falling', !sim && onGround(ag) && ys.length > 10 && ag.clip === 'ragdoll', `sim ${sim}; y ${ag.pos.y.toFixed(2)} after ${ys.length - 1} ticks, clip ${ag.clip}`);
+  const r = await ag.takeOff();
+  check('...and once down it can take off again', r.ok, r.text);
+}
+{
+  const ag = bench();
+  const { walk } = await walkAloft(ag);
+  const second = answerOf(ag.walkTo(ag.pos.x - 5, ag.pos.z));
+  await tick(ag, 2);
+  check('a newer walk during the fall answers the one waiting at once', walk.r === false && second.r == null && !onGround(ag), `first ${walk.r}, second ${second.r}, y ${ag.pos.y.toFixed(2)}`);
+}
+{
+  const ag = bench();
+  const { walk, receipt } = await walkAloft(ag, 40, 50);
+  await new Promise((go) => setTimeout(go, 150));
+  await turn();
+  check('a walk whose time runs out during the fall answers false, as timed out falling, not as superseded',
+    walk.r === false && receipt.refusal == null && /timed out falling/.test(ag.walkStopReason ?? ''), `walk ${walk.r}; receipt ${receipt.refusal}; stop ${ag.walkStopReason}`);
+  await fallOut(ag);
+  check('...and the body still comes down', onGround(ag), `y ${ag.pos.y.toFixed(2)}`);
+}
+{
+  const ag = bench();
+  await ag.takeOff(); toAir(ag, 20); await tick(ag, 3);
+  ag.flightBodyDown('cut');
+  await fallOut(ag, 300); await tick(ag, 5);
+  const phase = ag.flight?.phase, from = { x: ag.pos.x, z: ag.pos.z }, T = { x: from.x + 5, z: from.z };
+  const walk = answerOf(ag.walkTo(T.x, T.z));
+  for (let i = 0; i < 100 && walk.r == null; i++) await tick(ag);
+  check('a walk asked of a cut body lying on the ground ends its flight, and walks', phase != null && ag.flight == null && walk.r === true && dist(ag.pos, T) < 0.5,
+    `phase ${phase} -> ${ag.flight?.phase ?? 'none'}; walk ${walk.r}; ${dist(ag.pos, T).toFixed(2)} m from the target`);
+}
+console.log('\nreview 2026-11-10: every other way out ends the flight');
+{
+  const ag = bench();
+  await ag.takeOff(); toAir(ag, 45); ag.flight.stamina = 1e6;
+  const climb = answerOf(ag.climbTo(55));
+  await tick(ag, 10);
+  ag.setOccupant({ to: 'chair/seat' });
+  await turn();
+  check('taking a seat answers a climb under way at once, and ends the flight', climb.r != null && /taking a seat/.test(climb.r.text) && ag.flight == null, `${climb.r?.text ?? 'no answer'}; flight ${ag.flight?.phase ?? 'none'}`);
+}
+{
+  const ag = bench();
+  await ag.takeOff(); toAir(ag, 45); ag.flight.stamina = 1e6;
+  ag.replica = { st: { entities: {} } }; ag.request = async () => ({ ok: true });
+  const climb = answerOf(ag.climbTo(55));
+  await tick(ag, 10);
+  await ag.respawnFell();
+  await turn();
+  check('a respawn answers a climb under way at once, and ends the flight', climb.r != null && /fell out of the world/.test(climb.r.text) && ag.flight == null, `${climb.r?.text ?? 'no answer'}; flight ${ag.flight?.phase ?? 'none'}`);
+}
+{
+  const RealWS = globalThis.WebSocket;
+  class DragWS { readyState = 1; onopen: any; onclose: any; onmessage: any; onerror: any; send() {} close() {} }
+  (globalThis as any).WebSocket = DragWS;
+  const ag = bench('dragged');
+  ag.connect().catch(() => {});
+  ag.joined = true;
+  await ag.takeOff(); toAir(ag, 20); await tick(ag, 3);
+  ag.flightBodyDown('cut'); await tick(ag, 2);
+  const waits = ag.flightWaiters.length, phase = ag.flight?.phase;
+  await ag.ws.onmessage({ data: JSON.stringify({ type: 'bodydrag', grab: 'Hip', by: 'dragger' }) });
+  (globalThis as any).WebSocket = RealWS;
+  check('a hand taking a limp flier ends its flight, and the dragger has it', phase === 'LEAF' && ag.flight == null && ag.draggedBy === 'dragger', `${phase} -> ${ag.flight?.phase ?? 'none'}; dragged by ${ag.draggedBy}; ${waits} waits`);
+}
+{
+  const RealWS = globalThis.WebSocket;
+  class DropWS { readyState = 1; onopen: any; onclose: any; onmessage: any; onerror: any; send() {} close() {} }
+  (globalThis as any).WebSocket = DropWS;
+  const ag = bench('rejoiner');
+  ag.connect().catch(() => {});
+  ag.joined = true;
+  await ag.takeOff(); toAir(ag, 30); await tick(ag, 3);
+  const from = { x: ag.pos.x, z: ag.pos.z };
+  ag.ws.onclose({ code: 1006, reason: '' });
+  (globalThis as any).WebSocket = RealWS;
+  ag.joined = true;   // back: the flight is over (#300), and the body comes down under where it was
+  await tick(ag, 2);
+  const ys = await fallOut(ag, 300);
+  check('after a dropped link the flight is over, and on rejoin the body comes down to stand under where it was',
+    ag.flight == null && onGround(ag) && dist(ag.pos, from) < 1e-6 && ag.bodyModeNow() !== 'fly', `flight ${ag.flight?.phase ?? 'none'}; y ${ag.pos.y.toFixed(2)} after ${ys.length - 1} ticks, ${dist(ag.pos, from).toFixed(3)} m off`);
+}
+console.log('\nreview 2026-11-10: the course');
+{
+  const ag = bench();
+  await ag.takeOff(); toAir(ag, 40);
+  const o = { x: ag.flight.pos.x, z: ag.flight.pos.z };
+  const first = answerOf(ag.glideTo(o.x + 60, o.z));
+  await tick(ag, 3);
+  const second = answerOf(ag.glideTo(o.x, o.z + 60));
+  for (let i = 0; i < 5; i++) await turn();
+  check('a later glide answers the earlier one as taken over in the same step, not on the next tick', first.r != null && /taken over/.test(first.r.text), first.r?.text ?? 'no answer before a tick');
+  void second;
+}
+{
+  const ag = bench();
+  await ag.takeOff(); toAir(ag, 40);
+  const T = { x: ag.flight.pos.x + 30, z: ag.flight.pos.z };
+  const glide = answerOf(ag.glideTo(T.x, T.z));
+  for (let i = 0; i < 2000 && glide.r == null; i++) await tick(ag);
+  check('a glide that arrives holds over its point: its course becomes a hold', glide.r?.ok && ag.flight?.course?.kind === 'hold' && ag.flight.course.x === T.x, `${glide.r?.text}; course ${JSON.stringify(ag.flight?.course)}`);
+}
+{
+  const ag = bench();
+  await ag.takeOff(); toAir(ag, 40);
+  const real = ag.flightAwait;
+  ag.flightAwait = async () => 'timed out aloft';
+  const r = await ag.glideTo(ag.flight.pos.x + 60, ag.flight.pos.z);
+  ag.flightAwait = real;
+  check('a glide whose wait times out stops steering, as a climb does', !r.ok && /timed out/.test(r.text) && ag.flight?.course == null, `${r.text}; course ${JSON.stringify(ag.flight?.course)}`);
+}
+console.log('\nreview 2026-11-10: a landing ended another way says how');
+{
+  const ag = bench();
+  await ag.takeOff(); toAir(ag, 40);
+  const land = answerOf(ag.landAt(ag.flight.pos.x + 80, ag.flight.pos.z));
+  await tick(ag, 10);
+  ag.close();
+  await tryUntil('the landing answers', () => land.r, { ms: 2000, step: 20 });
+  check('a landing whose glide is ended by close() is refused, saying so', land.r != null && !land.r.ok && /interrupted: the body was closed/.test(land.r.text), land.r?.text ?? 'no answer');
+}
+{
+  const ag = bench();
+  await ag.takeOff(); toAir(ag, 6);
+  const land = answerOf(ag.landAt(ag.flight.pos.x + 2, ag.flight.pos.z));
+  for (let i = 0; i < 400 && ag.flight?.course?.kind !== 'land'; i++) await tick(ag);
+  const flaring = ag.flight?.course?.kind === 'land';
+  ag.knockDown('shover', null, '(knocked over)');
+  await tryUntil('the landing answers', () => land.r, { ms: 2000, step: 20 });
+  check('a landing knocked down during its flare is refused as knocked down during the flare', flaring && land.r != null && !land.r.ok && /knocked down during the flare/.test(land.r.text), `flaring ${flaring}; ${land.r?.text ?? 'no answer'}`);
+}
+{
+  // #293's flare: the land course noses up its last FLARE_HEIGHT, through the integrator's input (coursePilot).
+  const ag = bench();
+  await ag.takeOff(); toAir(ag, 20);
+  const land = answerOf(ag.landAt(ag.flight.pos.x + 3, ag.flight.pos.z));
+  let lowSink = 0, low = 0;
+  for (let t = 0; t < 2000 && land.r == null; t++) {
+    await tick(ag);
+    const f = ag.flight;
+    if (f?.course?.kind === 'land' && f.pos.y - ag.heightAt(f.pos.x, f.pos.z) < 2) { low++; lowSink = Math.min(lowSink, f.vel.y); }
+  }
+  check('a flare noses up its last 2 m: the sink there stays under 2 m/s', land.r?.ok && low > 0 && lowSink > -2, `${land.r?.text}; ${low} ticks low, worst sink ${lowSink.toFixed(2)} m/s`);
 }
 
 for (const a of agents) { try { a.close(); } catch {} }
