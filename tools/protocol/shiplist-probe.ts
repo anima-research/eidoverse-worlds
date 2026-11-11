@@ -156,8 +156,10 @@ try {
   // ---- W: a warning, shown ----
   await stage("W", async () => {
   const w0 = await evalJson(`__warned.length`);
-  await page(`const e = await import('/lib/editwrites.js'); return (await e.send({ verb: 'create', args: { id: 'cloud', model: '${CRATE}', components: { label: 'Floating crate', transform: { pos: [${at[0] + 5}, 1.5, ${at[1]}], q: [0, 0, 0, 1], scale: [1, 1, 1] } } } }, { what: 'place a crate' })).ok;`);
-  check("W1 a write the authority warns about shows the warning, by label", await waitFor(`__warned.length > ${w0} && /“Floating crate” floats/.test(__warned.at(-1).text)`, 5000), await evalJson(`__warned.at(-1) ?? null`));
+  // the create's own reply rides on the row: Windows lost W1's advice, and only the reply says whether it came back `unchecked` (WORK_BUDGET)
+  const reply = await page(`const e = await import('/lib/editwrites.js'); const r = await e.send({ verb: 'create', args: { id: 'cloud', model: '${CRATE}', components: { label: 'Floating crate', transform: { pos: [${at[0] + 5}, 1.5, ${at[1]}], q: [0, 0, 0, 1], scale: [1, 1, 1] } } } }, { what: 'place a crate' });
+    return { ok: r?.ok, warnings: r?.warnings ?? null, refused: r?.refused ?? null };`);
+  check("W1 a write the authority warns about shows the warning, by label", await waitFor(`__warned.length > ${w0} && /“Floating crate” floats/.test(__warned.at(-1).text)`, 5000), { reply, warned: await evalJson(`__warned.at(-1) ?? null`) });
   check("W2 …on screen, on the one status bar (a warning about my own edit; DESIGN-status-bar.md)", await waitFor(`/Done, but “Floating crate”/.test(document.getElementById('hintbar').textContent) && !document.getElementById('hintbar').classList.contains('gone')`, 3000));
 
   });
