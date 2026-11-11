@@ -82,8 +82,14 @@ try {
     check("(setup) two buildings: house-a (the world's first) and house-b around the aim point", okA && okB && !!H, H);
     await waitFor(`import('/lib/world.js').then((m) => m.entities.has('house-b'))`);
     const A0 = JSON.stringify(disk().entities[NODE.get("house-a")].c.structure), B0 = JSON.stringify(disk().entities[NODE.get("house-b")].c.structure);
+    // ST4/ST5 evidence: who I am, house-b's id and wall count now, and what the log says happened after a given seq
+    const walls = () => { try { return disk().entities[NODE.get("house-b")].c.structure.levels[0].walls.length; } catch { return null; } };
+    const logAfter = (seq: number) => entries().slice(seq + 1).map((e) => ({ kind: e?.kind, verb: e?.verb ?? e?.body?.verb, id: e?.body?.id ?? e?.body?.args?.id, refused: e?.body?.refused ?? undefined, why: e?.body?.why ?? e?.body?.reason ?? undefined }));
+    const ids = { me: ME, my: MY(), houseA: NODE.get("house-a"), houseB: NODE.get("house-b") };
+    const w0 = walls();
     await page(`(await import('/lib/scenegraph.js')).sceneSelect('house-b'); const s = await import('/lib/structure_ui.js'); s.setStructureMode(true); s.setTool('wall'); return true;`);
-    check("ST0 the wall tool is armed in build mode", await waitFor(`import('/lib/structure_ui.js').then((m) => m.currentTool() === 'wall' && m.isStructureMode())`));
+    check("ST0 the wall tool is armed in build mode", await waitFor(`import('/lib/structure_ui.js').then((m) => m.currentTool() === 'wall' && m.isStructureMode())`),
+      { ids, walls: w0, editor: await evalJson(`Promise.all([import('/lib/structure_ui.js'), import('/lib/scenegraph.js')]).then(([s, g]) => ({ tool: s.currentTool(), mode: s.isStructureMode(), selected: g.sceneSelected?.() ?? null, build: document.body.classList.contains('build-mode') }))`).catch((e) => String(e)) });
     let n0 = myActs().length;
     const press = () => evalJson(`import('/lib/core.js').then((m) => (m.canvas.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: ${SX}, clientY: ${SY} })), true))`);
     await press();
@@ -93,11 +99,18 @@ try {
     check("ST2 …with expect on the building as I saw it", JSON.stringify(req?.expect?.[0]?.value) === B0, req?.expect);
     check("ST3 …and house-a is untouched", JSON.stringify(disk().entities[NODE.get("house-a")].c.structure) === A0);
     const B1 = JSON.stringify(disk().entities[NODE.get("house-b")].c.structure);
-    check("ST4 …a wall was added", B1 !== B0 && disk().entities[NODE.get("house-b")].c.structure.levels[0].walls.length === JSON.parse(B0).levels[0].walls.length + 1);
+    const st4 = B1 !== B0 && disk().entities[NODE.get("house-b")].c.structure.levels[0].walls.length === JSON.parse(B0).levels[0].walls.length + 1;
+    // on a red only: did the wall land late, or never (and what followed the act in the log)? no wait on a green
+    const st4ev = st4 ? undefined : { ids, act: a?.seq, wallsBefore: w0, wallsAtCheck: JSON.parse(B1).levels?.[0]?.walls?.length ?? null,
+      landedBy8s: await waitDisk(() => walls() === (w0 ?? -2) + 1), wallsLater: walls(), log: a ? logAfter(a.seq).slice(0, 8) : null,
+      refused: await evalJson(`__refused.map((r) => r.text)`) };
+    check("ST4 …a wall was added", st4, st4ev);
     await waitFor(`globalThis.__editWrites().undo.at(-1) === ${a?.seq}`);
     n0 = myActs().length;
     await key("KeyZ", { ctrlKey: true });
-    check("ST5 Ctrl+Z (the editor's one undo) takes the wall away: house-b is as it was", await waitDisk(() => JSON.stringify(disk().entities[NODE.get("house-b")].c.structure) === B0 && myActs().at(-1).e.verb === "undo"), myActs().slice(n0).map((x) => x.e.body));
+    const nU = entries().length - 1;
+    check("ST5 Ctrl+Z (the editor's one undo) takes the wall away: house-b is as it was", await waitDisk(() => JSON.stringify(disk().entities[NODE.get("house-b")].c.structure) === B0 && myActs().at(-1).e.verb === "undo"),
+      { wallsBefore: w0, wallsAfterUndo: walls(), acts: myActs().slice(n0).map((x) => x.e.verb), log: logAfter(nU).slice(0, 8), ids, refused: await evalJson(`__refused.map((r) => r.text)`) });
     // someone else changes house-b after my edit: my Ctrl+Z must not write over theirs
     await waitFor(`import('/lib/net.js').then((m) => JSON.stringify(m.replica.st.entities['house-b'].c.structure) === ${JSON.stringify(B0)})`);
     await press();
