@@ -30,6 +30,14 @@ await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: `(() => {
 })();` });
 const js = (body: string) => evalJson(`(async () => { ${body} })()`);
 const LAKE = { x: 0, z: 30 };
+// WP5's policy: a readable reference keeps the red-fog assertion; a FALLBACK adapter whose reference is uniformly
+// near-black can't show fog colour at all, so the row records "not observable" (with the evidence), never "water correct"
+const nearBlack = (p: number[]) => Math.max(...p) < 30;
+export function wp5Verdict(e: { fb: unknown; settled: boolean; centre: number[]; ref: { pts: number[][]; mean: number[] } }): "pass" | "n/a" | "fail" {
+  const refBlack = e.ref.pts.every(nearBlack) && nearBlack(e.ref.mean);
+  if (!refBlack) return e.settled && e.centre[0] > 180 && e.centre[1] < 60 && e.centre[2] < 60 ? "pass" : "fail";
+  return e.fb === true ? "n/a" : "fail";
+}
 try {
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 480, height: 270, deviceScaleFactor: 1, mobile: false });   // SwiftShader draws every pixel on the CPU
   // WebGL 2 except on Windows, where the runner's software flags give a null forced WebGL 2 context (as swim-lists-test.ts).
@@ -126,7 +134,15 @@ try {
   check("WP2 the fog: under the level after the first crossing, nothing but the sheet and the background asks for a pipeline (and they don't either, WP1/WP3)", sum(under, "other") === 0, JSON.stringify(under.map((r) => [r.name, r.by])));
   check("WP3 the background: under the level after the first crossing, the far-water background makes no new pipeline", sum(under, "background") === 0, JSON.stringify(under.map((r) => [r.name, r.by])));
   check("WP4 after the first crossing, the backend links or makes nothing at all: rounds 2 and 3 cost 0", sum(later) === 0, JSON.stringify(later.map((r) => [r.name, r.made])));
-  check("WP5 the sky's fog still reaches above the water (a dense red fog paints the view down red)", !!shotSettled && centre[0] > 180 && centre[1] < 60 && centre[2] < 60, JSON.stringify({ backend: setup.backend, settled: !!shotSettled, centre, adapter, red: { pts: redPts, mean: redMean }, ref: { pts: refPts, mean: refMean, settled: !!refSettled } }));
+  const wp5ev = { backend: setup.backend, settled: !!shotSettled, centre, adapter, red: { pts: redPts, mean: redMean }, ref: { pts: refPts, mean: refMean, settled: !!refSettled } };
+  const wp5 = wp5Verdict({ fb: typeof adapter === "object" && adapter ? (adapter as any).fb : null, settled: !!shotSettled, centre, ref: { pts: refPts, mean: refMean } });
+  check(wp5 === "n/a" ? "WP5 N/A: fog colour isn't observable here (a fallback adapter renders the reference itself near-black); this row is not a water-correct pass"
+    : "WP5 the sky's fog still reaches above the water (a dense red fog paints the view down red)", wp5 !== "fail", JSON.stringify({ verdict: wp5, ...wp5ev }));
+  // its negative controls (synthetic evidence, the same function)
+  const R = [251, 16, 20], K = [12, 12, 13], SKY = [56, 128, 158];
+  check("WP5a control: a NON-fallback adapter with a black reference still fails", wp5Verdict({ fb: false, settled: true, centre: K, ref: { pts: [K, K, K], mean: K } }) === "fail");
+  check("WP5b control: a fallback adapter with a readable reference still runs the red assertion (black fails, red passes)",
+    wp5Verdict({ fb: true, settled: true, centre: K, ref: { pts: [SKY, SKY, SKY], mean: SKY } }) === "fail" && wp5Verdict({ fb: true, settled: true, centre: R, ref: { pts: [SKY, SKY, SKY], mean: SKY } }) === "pass");
   const real = errors.filter((e) => !/popErrorScope|sky finish/.test(e));
   check("WP6 no page errors", real.length === 0, JSON.stringify(real.slice(0, 4)));
 } catch (e) { check("the run threw", false, String((e as any)?.stack ?? e)); }
