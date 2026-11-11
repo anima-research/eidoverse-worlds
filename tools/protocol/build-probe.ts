@@ -84,7 +84,7 @@ try {
     const A0 = JSON.stringify(disk().entities[NODE.get("house-a")].c.structure), B0 = JSON.stringify(disk().entities[NODE.get("house-b")].c.structure);
     // ST4/ST5 evidence: who I am, house-b's id and wall count now, and what the log says happened after a given seq
     const walls = () => { try { return disk().entities[NODE.get("house-b")].c.structure.levels[0].walls.length; } catch { return null; } };
-    const logAfter = (seq: number) => entries().slice(seq + 1).map((e) => ({ kind: e?.kind, verb: e?.verb ?? e?.body?.verb, id: e?.body?.id ?? e?.body?.args?.id, refused: e?.body?.refused ?? undefined, why: e?.body?.why ?? e?.body?.reason ?? undefined }));
+    const logAfter = (seq: number) => entries().slice(seq + 1).map((e) => ({ kind: e?.kind, verb: e?.verb ?? e?.body?.verb, id: e?.body?.id ?? e?.body?.args?.id, refused: e?.body?.refused ?? undefined }));
     const ids = { me: ME, my: MY(), houseA: NODE.get("house-a"), houseB: NODE.get("house-b") };
     const w0 = walls();
     await page(`(await import('/lib/scenegraph.js')).sceneSelect('house-b'); const s = await import('/lib/structure_ui.js'); s.setStructureMode(true); s.setTool('wall'); return true;`);
@@ -106,9 +106,8 @@ try {
       refused: await evalJson(`__refused.map((r) => r.text)`) };
     check("ST4 …a wall was added", st4, st4ev);
     await waitFor(`globalThis.__editWrites().undo.at(-1) === ${a?.seq}`);
-    n0 = myActs().length;
+    n0 = myActs().length; const nU = entries().length - 1;   // taken before the key, so the log starts at the undo request
     await key("KeyZ", { ctrlKey: true });
-    const nU = entries().length - 1;
     check("ST5 Ctrl+Z (the editor's one undo) takes the wall away: house-b is as it was", await waitDisk(() => JSON.stringify(disk().entities[NODE.get("house-b")].c.structure) === B0 && myActs().at(-1).e.verb === "undo"),
       { wallsBefore: w0, wallsAfterUndo: walls(), acts: myActs().slice(n0).map((x) => x.e.verb), log: logAfter(nU).slice(0, 8), ids, refused: await evalJson(`__refused.map((r) => r.text)`) });
     // someone else changes house-b after my edit: my Ctrl+Z must not write over theirs
