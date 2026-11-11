@@ -16,8 +16,8 @@ function check(name: string, ok: boolean, detail = '') {
 }
 const WINGED = ['Hip', 'Spine02', 'Head', 'L_Wing_Upper', 'L_Wing_Upper_1', 'R_Wing_Upper', 'R_Wing_Upper_1', 'L_Wing_Lower', 'R_Wing_Lower'];
 const agents: any[] = [];
-const bench = (name = 'flyer') => {
-  const ag: any = new WorldAgent({ name, world: 'flight-exit-bench' });
+const bench = (name = 'flyer', world = 'flight-exit-bench') => {
+  const ag: any = new WorldAgent({ name, world });
   ag.bodyBoneNames = WINGED; ag.loadBodyBones = async () => WINGED;
   ag.myRights = { role: 'builder', fly: true };
   ag.joined = true;
@@ -359,13 +359,54 @@ console.log('\nreview 2026-11-10: a landing ended another way says how');
   const ag = bench();
   await ag.takeOff(); toAir(ag, 20);
   const land = answerOf(ag.landAt(ag.flight.pos.x + 3, ag.flight.pos.z));
-  let lowSink = 0, low = 0;
+  let low = 0, pitched = 0, enter = NaN, last = NaN;
   for (let t = 0; t < 2000 && land.r == null; t++) {
     await tick(ag);
     const f = ag.flight;
-    if (f?.course?.kind === 'land' && f.pos.y - ag.heightAt(f.pos.x, f.pos.z) < 2) { low++; lowSink = Math.min(lowSink, f.vel.y); }
+    if (f?.course?.kind === 'land' && f.pos.y - ag.heightAt(f.pos.x, f.pos.z) < 2) {
+      low++; if (f.pitch > 0.1) pitched++;
+      if (Number.isNaN(enter)) enter = f.airspeed; last = f.airspeed;
+    }
   }
-  check('a flare noses up its last 2 m: the sink there stays under 2 m/s', land.r?.ok && low > 0 && lowSink > -2, `${land.r?.text}; ${low} ticks low, worst sink ${lowSink.toFixed(2)} m/s`);
+  // (It doesn't lessen the sink: the spoilers stay on through the flare, ~3 m/s to touchdown; for R.)
+  check('a flare noses up its last 2 m through the integrator: the pitch is flown, and the airspeed bleeds',
+    land.r?.ok && low > 2 && pitched >= low - 1 && enter - last > 0.2, `${land.r?.text}; ${low} ticks low, ${pitched} pitched, airspeed ${enter?.toFixed(2)} -> ${last?.toFixed(2)}`);
+}
+
+console.log('\nreview 2026-11-10: with the colliders loaded (last: once loaded they stay loaded for this process)');
+{
+  // A solid platform 3 m high under the flier: the fall ends on it, not on the terrain under it.
+  const { boxMesh } = await import('./two-storey-fixture.ts');
+  const { registerMeshSupport, removeSupport, collidersReady } = await import('../mcpl/physics.ts');
+  const W = 'flight-exit-colliders', TOP = 3;
+  const { pos, idx } = boxMesh([[-8, 0, -8, 8, TOP, 8]]);
+  const fitted = await registerMeshSupport('flight-exit-test', `${W}/deck`, { positions: new Float32Array(pos), indices: new Uint32Array(idx) }, { position: [0, 0, 0], yaw: 0, scale: 1 });
+  check('setup: the platform is a collider, and the colliders are loaded', fitted && collidersReady(), `fitted ${fitted}, ready ${collidersReady()}`);
+  {
+    const ag = bench('deck-leaf', W);
+    ag.pos.y = TOP;
+    await ag.takeOff(); toAir(ag, 20); await tick(ag, 3);
+    ag.flightBodyDown('cut'); await tick(ag, 2);
+    const y0 = ag.pos.y, from = { x: ag.pos.x, z: ag.pos.z };
+    const walk = answerOf(ag.walkTo(from.x + 3, from.z));
+    await tick(ag);
+    check('colliders on: a walk asked falling limp over a platform is no instant drop', ag.flight == null && ag.pos.y > y0 - 2, `y ${ag.pos.y.toFixed(2)} (was ${y0.toFixed(2)}), flight ${ag.flight?.phase ?? 'none'}`);
+    const ys: number[] = [ag.pos.y];
+    for (let i = 0; i < 200 && walk.r == null && ag.pos.y > TOP + 1e-3; i++) { await tick(ag); ys.push(ag.pos.y); }
+    check('...it falls onto the platform, not through it to the terrain', ys.length > 5 && Math.abs(ag.pos.y - TOP) < 0.05 && dist(ag.pos, from) < 0.05,
+      `${ys.length - 1} ticks: y ${ag.pos.y.toFixed(2)}, ${dist(ag.pos, from).toFixed(3)} m off`);
+    for (let i = 0; i < 100 && walk.r == null; i++) await tick(ag);
+    check('...then walks on along its top', walk.r === true && Math.abs(ag.pos.y - TOP) < 0.05, `walk ${walk.r}; y ${ag.pos.y.toFixed(2)}; ${ag.walkRefusal ?? ''}`);
+  }
+  {
+    const ag = bench('deck-knock', W);
+    ag.pos.y = TOP;
+    await ag.takeOff(); toAir(ag, 20); await tick(ag, 3);
+    ag.knockDown('shover', null, '(knocked over)');
+    for (let i = 0; i < 200 && (ag.pos.y > TOP + 1e-3 || ag.simTicker); i++) await tick(ag);
+    check('colliders on: a knockdown in the air with no sim comes to rest on the platform', !ag.simTicker && Math.abs(ag.pos.y - TOP) < 0.05, `y ${ag.pos.y.toFixed(2)}, sim ${!!ag.simTicker}`);
+  }
+  await removeSupport('flight-exit-test', `${W}/deck`);
 }
 
 for (const a of agents) { try { a.close(); } catch {} }
