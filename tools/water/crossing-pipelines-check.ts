@@ -105,7 +105,17 @@ try {
   if (process.env.SHOT_DIR) (await import("node:fs")).writeFileSync(`${process.env.SHOT_DIR}/fog-red.png`, png);
   const px = (x: number, y: number) => { const i = (shot.width * y + x) << 2; return [shot.data[i], shot.data[i + 1], shot.data[i + 2]]; };
   const centre = px(shot.width >> 1, (shot.height >> 1) + (shot.height >> 3));
+  // WP5's evidence: three fixed points and a 32×32 mean at the centre, so "fog not drawn" reads apart from "frame black"
+  const W = shot.width, H = shot.height, at3 = (s: (x: number, y: number) => number[]) => [s(W >> 2, H >> 2), s(W >> 1, H >> 1), s((3 * W) >> 2, (3 * H) >> 2)];
+  const mean = (img: typeof shot) => { const t = [0, 0, 0]; for (let y = (H >> 1) - 16; y < (H >> 1) + 16; y++) for (let x = (W >> 1) - 16; x < (W >> 1) + 16; x++) { const i = (img.width * y + x) << 2; for (let c = 0; c < 3; c++) t[c] += img.data[i + c]; } return t.map((v) => Math.round(v / 1024)); };
+  const redPts = at3(px), redMean = mean(shot);
+  const adapter = await js(`const be = (await import('/lib/core.js')).renderer.backend, i = be.device?.adapterInfo ?? be.adapter?.info ?? null;
+    return i ? { v: i.vendor, a: i.architecture, d: i.device, desc: (i.description || '').slice(0, 48), fb: i.isFallbackAdapter ?? be.adapter?.isFallbackAdapter ?? null } : (be.isWebGLBackend ? 'webgl' : null);`).catch((e: any) => String(e).slice(0, 80));
   await js(`const HELD = ${HELD}, { scene } = await import('/lib/core.js'); delete scene.fog.density; scene.fog.density = 0.018; for (const k of HELD) delete scene.fog.color[k]; return true;`);
+  // the reference: the same pose with the world's own fog, same run (after WP5's shot, so WP5's measurement is unchanged)
+  const refSettled = await settle(20), ref = PNG.sync.read(Buffer.from((await cdp.send<any>("Page.captureScreenshot", { format: "png" })).data, "base64"));
+  const refPx = (x: number, y: number) => { const i = (ref.width * y + x) << 2; return [ref.data[i], ref.data[i + 1], ref.data[i + 2]]; };
+  const refPts = at3(refPx), refMean = mean(ref);
 
   check("WP0 the lake is drawn (on WebGL 2 where it was asked for; on Windows the client picks), and every phase renders frames where it should be", (!backend || setup.backend === "webgl") && setup.sheet
     && initial && rounds.flat().every((r) => r.settled && r.frames >= 40 && r.under === r.name.startsWith("under")
@@ -116,7 +126,7 @@ try {
   check("WP2 the fog: under the level after the first crossing, nothing but the sheet and the background asks for a pipeline (and they don't either, WP1/WP3)", sum(under, "other") === 0, JSON.stringify(under.map((r) => [r.name, r.by])));
   check("WP3 the background: under the level after the first crossing, the far-water background makes no new pipeline", sum(under, "background") === 0, JSON.stringify(under.map((r) => [r.name, r.by])));
   check("WP4 after the first crossing, the backend links or makes nothing at all: rounds 2 and 3 cost 0", sum(later) === 0, JSON.stringify(later.map((r) => [r.name, r.made])));
-  check("WP5 the sky's fog still reaches above the water (a dense red fog paints the view down red)", !!shotSettled && centre[0] > 180 && centre[1] < 60 && centre[2] < 60, JSON.stringify([setup.backend, centre, !!shotSettled]));
+  check("WP5 the sky's fog still reaches above the water (a dense red fog paints the view down red)", !!shotSettled && centre[0] > 180 && centre[1] < 60 && centre[2] < 60, JSON.stringify({ backend: setup.backend, settled: !!shotSettled, centre, adapter, red: { pts: redPts, mean: redMean }, ref: { pts: refPts, mean: refMean, settled: !!refSettled } }));
   const real = errors.filter((e) => !/popErrorScope|sky finish/.test(e));
   check("WP6 no page errors", real.length === 0, JSON.stringify(real.slice(0, 4)));
 } catch (e) { check("the run threw", false, String((e as any)?.stack ?? e)); }
