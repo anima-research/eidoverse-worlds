@@ -37,8 +37,8 @@ try {
   catch (e) {   // say why the page never got to main.js's last line (#314 Windows CI)
     const at = await evalJson(`({ ready: document.readyState, made: globalThis.__made, gl: !!document.createElement('canvas').getContext('webgl2'),
       text: document.body?.innerText?.slice(0, 200), main: performance.getEntriesByType('resource').filter((r) => /\\/(main|lib\\/core)\\.js/.test(r.name)).map((r) => [r.name.split('/').pop(), Math.round(r.duration)]) })`).catch((x) => String(x));
-    console.log("page at the timeout:", JSON.stringify(at), "| page errors:", JSON.stringify(errors.slice(0, 8)));
-    throw e;
+    // in the error itself: the gate keeps a throw's message, not the suite's stdout
+    throw new Error(`${(e as Error).message}; page at the timeout: ${JSON.stringify(at)} | page errors: ${JSON.stringify(errors.slice(0, 8))}`);
   }
   await js(`const { THREE } = await import('/lib/core.js'), tm = await import('/shared/terrainmath.js');
     globalThis.makeTerrain = (args) => {
