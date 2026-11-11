@@ -3230,6 +3230,8 @@ export class WorldAgent {
   /** The one way out of flight (#298, #300): every wait on it is answered with `why`; a landing stands the feet. */
   endFlight(why: FlightEnd) {
     const waits = this.flightWaiters, vy = this.flight?.vel?.y;
+    // A limp flight's slump no sim laid is a canned one: its root is the flight's, at its feet (rootCanned).
+    if (this.clip === "ragdoll" && !this.simTicker && this.heldPose == null) this.cannedY = this.pos.y;
     this.flight = null; this.flightWaiters = [];
     for (const w of waits) w.done(endCode(why));
     this.speed = 0;
@@ -3882,7 +3884,7 @@ export class WorldAgent {
   }
   /** The feet above the ground under them: the colliders' floor where loaded (feetAt), else the storey or terrain. */
   private feetOffGround() {
-    const feet = this.feetY(this.isSlumped());
+    const feet = this.flight && !this.simTicker ? this.pos.y : this.feetY(this.isSlumped());   // a flight's position is its feet
     return feet > this.feetAt(this.pos.x, this.pos.z, feet, this.standingGround()) + 0.02;
   }
   /** The fall is over: the walks waiting on it go on. */
