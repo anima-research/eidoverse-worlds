@@ -42,6 +42,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["water-vectors", "../water-vectors.ts --check", 1], // shared/conformance/water.json still what shared/water.js computes (waterParams, waveHeight, swimStep)
   ["water-import", "../water/import-golden-check.ts", 1], // upstream #248's manifest through tools/water/import.ts --dry: its zone/water/water-exclusion things, taken by a real authority, and mediumOf = main's mediumAt
   ["level-dive", "../water/level-dive-check.ts", 1], // a real browser in the lake: C dives, looking down with W dives (R 10-28), surfacing hands back to the float
+  ["water-cross", "../water/crossing-pipelines-check.ts", 1], // #306: crossing the water level makes no new render pipeline after the first time (band, fog, background), and the sky's fog still reaches above it
   ["toast-group", "toast-group-check.ts", 1],   // load failures of one kind are one toast counting the things; dismissed, that kind stays quiet (R 10-28)
   ["avatar", "../avatar-test.ts", 1], // the avatar rig: clip timing, seat-blend slot, a lowering clip under a limp body (upstream #282/#283)
   ["remotes-limp-edge", "../remotes-limp-edge-test.ts", 1], // a remote going limp or getting up is drawn at the edge sample, not lerped through it (upstream #283)
@@ -239,7 +240,7 @@ export const CORE = ["kernel", "trig", "laws", "engine", "normative", "gov-reser
 // refusedjoin (scratchBench) and client-tools (run-client.ts runs every tools/*-test file, browser tests among them, those one
 // at a time) once
 // sat in the non-browser list: a host without Chromium failed them, and this box ran Chromes it didn't budget for.
-export const BROWSER = ["browser", "comps-parity", "level-dive", "toast-group", "client", "refusedjoin", "client-b2", "build-client", "access-panel", "lock-strength", "swim-lists", "shiplist-probe", "xss-probe", "party-probe", "colour-picker", "client-tools"];
+export const BROWSER = ["browser", "comps-parity", "level-dive", "water-cross", "toast-group", "client", "refusedjoin", "client-b2", "build-client", "access-panel", "lock-strength", "swim-lists", "shiplist-probe", "xss-probe", "party-probe", "colour-picker", "client-tools"];
 export const laneOf = (name: string): Lane => (CORE.includes(name) ? "core" : BROWSER.includes(name) ? "browser" : "main");
 
 /** The local files `f` imports, transitively, itself included (tools/ only; harness.ts is a door, not the suite's code).
