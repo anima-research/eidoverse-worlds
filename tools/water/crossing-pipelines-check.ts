@@ -59,8 +59,9 @@ try {
     g.__at = (y, down) => { const P = new THREE.Vector3(${LAKE.x} + 3, y, ${LAKE.z} + 6), L = down ? new THREE.Vector3(${LAKE.x} + 3, y - 3, ${LAKE.z} + 9) : new THREE.Vector3(${LAKE.x}, y - 0.6, ${LAKE.z});
       g.__pin = { P, Q: new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(P, L, new THREE.Vector3(0, 1, 0))) }; };
     g.__at(3);
-    const by = g.__by = { sheet: 0, background: 0, other: 0 }, be = renderer.backend, f = be.createRenderPipeline.bind(be);
-    be.createRenderPipeline = (ro, p) => { const o = ro.object; by[/^water/.test(o?.name ?? '') ? 'sheet' : o?.name === 'Background.mesh' ? 'background' : 'other']++; return f(ro, p); };
+    const by = g.__by = { sheet: 0, background: 0, other: 0 }, seen = g.__other = [], be = renderer.backend, f = be.createRenderPipeline.bind(be);
+    be.createRenderPipeline = (ro, p) => { const o = ro.object; const k = /^water/.test(o?.name ?? '') ? 'sheet' : o?.name === 'Background.mesh' ? 'background' : 'other'; by[k]++;
+      if (k === 'other') seen.push((o?.name || o?.type || '?') + ':' + (ro.material?.type ?? '?')); return f(ro, p); };
     const { warmStats } = await import('/lib/warmqueue.js'); g.__warm = warmStats;
     g.__frames = 0; const tick = () => { g.__frames++; requestAnimationFrame(tick); }; requestAnimationFrame(tick);
     return { backend: be.isWebGLBackend ? 'webgl' : 'webgpu', sheet: !!core.scene.getObjectByName('water') };`);
@@ -78,13 +79,14 @@ try {
   };
   const initial = await settle(60);
   const phase = async (name: string, y: number) => {
-    const before = await js("const g = globalThis; return { made: { ...g.__made }, by: { ...g.__by }, f: g.__frames };");
+    const before = await js("const g = globalThis; return { made: { ...g.__made }, by: { ...g.__by }, f: g.__frames, o: g.__other.length };");
     await js(`globalThis.__at(${y}); return true;`);
     const settled = await settle(40);
-    const after = await js("const g = globalThis, core = await import('/lib/core.js'), w = (await import('/lib/watervolumes.js')).waterDebug(); return { made: { ...g.__made }, by: { ...g.__by }, f: g.__frames, under: w.under, background: w.background, underside: !!core.scene.getObjectByName('water-underside')?.visible };");
+    const after = await js("const g = globalThis, core = await import('/lib/core.js'), w = (await import('/lib/watervolumes.js')).waterDebug(); return { made: { ...g.__made }, by: { ...g.__by }, f: g.__frames, o: g.__other.slice(), under: w.under, background: w.background, underside: !!core.scene.getObjectByName('water-underside')?.visible };");
     const r = { name, y, settled, frames: after.f - before.f, under: after.under, background: after.background, underside: after.underside,
       made: after.made.gl - before.made.gl + after.made.gpu - before.made.gpu,
-      by: Object.fromEntries(Object.keys(after.by).map((k) => [k, after.by[k] - before.by[k]])) as Record<string, number> };
+      by: Object.fromEntries(Object.keys(after.by).map((k) => [k, after.by[k] - before.by[k]])) as Record<string, number>,
+      other: after.o.slice(before.o) };
     console.log(`  · ${JSON.stringify(r)}`);
     return r;
   };
@@ -109,12 +111,12 @@ try {
     && initial && rounds.flat().every((r) => r.settled && r.frames >= 40 && r.under === r.name.startsWith("under")
       && r.underside === !r.name.startsWith("above") && r.background === r.name.startsWith("under")),
     JSON.stringify({ setup, initial, phases: rounds.flat().map((r) => [r.name, r.frames, r.under, r.underside, r.background]) }));
-  check("WP1a the band alone, the first time in: the underside's pipeline is ready before the camera gets there", rounds[0][0].made === 0, JSON.stringify([rounds[0][0].made, rounds[0][0].by]));
+  check("WP1a the band alone, the first time in: the underside's pipeline is ready before the camera gets there", rounds[0][0].made === 0, JSON.stringify([setup.backend, rounds[0][0].made, rounds[0][0].by, rounds[0][0].other]));
   check("WP1 the band alone (level..level+1, the sheet's underside): no new pipeline after the first crossing", sum(band) === 0 && sum(band, "sheet") === 0, JSON.stringify(band.map((r) => [r.name, r.made, r.by])));
   check("WP2 the fog: under the level after the first crossing, nothing but the sheet and the background asks for a pipeline (and they don't either, WP1/WP3)", sum(under, "other") === 0, JSON.stringify(under.map((r) => [r.name, r.by])));
   check("WP3 the background: under the level after the first crossing, the far-water background makes no new pipeline", sum(under, "background") === 0, JSON.stringify(under.map((r) => [r.name, r.by])));
   check("WP4 after the first crossing, the backend links or makes nothing at all: rounds 2 and 3 cost 0", sum(later) === 0, JSON.stringify(later.map((r) => [r.name, r.made])));
-  check("WP5 the sky's fog still reaches above the water (a dense red fog paints the view down red)", !!shotSettled && centre[0] > 180 && centre[1] < 60 && centre[2] < 60, JSON.stringify(centre));
+  check("WP5 the sky's fog still reaches above the water (a dense red fog paints the view down red)", !!shotSettled && centre[0] > 180 && centre[1] < 60 && centre[2] < 60, JSON.stringify([setup.backend, centre, !!shotSettled]));
   const real = errors.filter((e) => !/popErrorScope|sky finish/.test(e));
   check("WP6 no page errors", real.length === 0, JSON.stringify(real.slice(0, 4)));
 } catch (e) { check("the run threw", false, String((e as any)?.stack ?? e)); }
