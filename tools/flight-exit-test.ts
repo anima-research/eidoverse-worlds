@@ -256,6 +256,36 @@ const walkAloft = async (ag: any, y = 20, timeoutMs?: number) => {
   check('a walk asked of a cut body lying on the ground ends its flight as it is planned, and walks', phase != null && ended && walk.r === true && dist(ag.pos, T) < 0.5,
     `phase ${phase}, ended at once ${ended}; walk ${walk.r}; ${dist(ag.pos, T).toFixed(2)} m from the target`);
 }
+{
+  // AGENTS.md: on the ground, a refused walk leaves the body as it was, a cut flier lying in its flight included.
+  const ag = bench();
+  await ag.takeOff(); toAir(ag, 20); await tick(ag, 3);
+  ag.flightBodyDown('cut');
+  await fallOut(ag, 300); await tick(ag, 5);
+  const phase = ag.flight?.phase;
+  ag.supportPending.add('still-loading'); ag.supportReady = async () => {};
+  const receipt = { refusal: null as string | null };
+  const r = await ag.walkTo(ag.pos.x + 5, ag.pos.z, false, 90_000, undefined, undefined, {}, receipt);
+  ag.supportPending.delete('still-loading');
+  check('a refused walk leaves a cut body lying on the ground in its flight, as it was', r === false && receipt.refusal != null && phase != null && ag.flight?.phase === phase,
+    `walk ${r}, ${receipt.refusal}; phase ${phase} -> ${ag.flight?.phase ?? 'none'}`);
+}
+{
+  const RealWS = globalThis.WebSocket;
+  class DropWS { readyState = 1; onopen: any; onclose: any; onmessage: any; onerror: any; send() {} close() {} }
+  (globalThis as any).WebSocket = DropWS;
+  const ag = bench('limp-rejoiner');
+  ag.connect().catch(() => {});
+  ag.joined = true;
+  await ag.takeOff(); toAir(ag, 20); await tick(ag, 3);
+  ag.flightBodyDown('cut'); await tick(ag, 2);
+  ag.ws.onclose({ code: 1006, reason: '' });
+  (globalThis as any).WebSocket = RealWS;
+  ag.joined = true;
+  const ys = await fallOut(ag, 300); await tick(ag, 5); ys.push(ag.pos.y);
+  check('a limp flier whose link drops comes down on rejoin to lie on the ground, not in it', ag.flight == null && ys.length > 5 && Math.min(...ys) >= -1e-6 && onGround(ag),
+    `flight ${ag.flight?.phase ?? 'none'}; ${ys.length - 1} ticks, lowest ${Math.min(...ys).toFixed(2)}, y ${ag.pos.y.toFixed(2)}`);
+}
 console.log('\nreview 2026-11-10: every other way out ends the flight');
 {
   const ag = bench();
