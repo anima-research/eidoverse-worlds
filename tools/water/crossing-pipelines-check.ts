@@ -33,7 +33,13 @@ const LAKE = { x: 0, z: 30 };
 try {
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 480, height: 270, deviceScaleFactor: 1, mobile: false });   // SwiftShader draws every pixel on the CPU
   await cdp.send("Page.navigate", { url: `${BASE}/?world=${WORLD}&spectate=1&name=cross&webgl=1` });
-  await until("the water debug hook", () => evalJson("!!globalThis.__waterDebug").catch(() => false), { ms: 60000 });
+  try { await until("the water debug hook", () => evalJson("!!globalThis.__waterDebug").catch(() => false), { ms: 60000 }); }
+  catch (e) {   // say why the page never got to main.js's last line (#314 Windows CI)
+    const at = await evalJson(`({ ready: document.readyState, made: globalThis.__made, gl: !!document.createElement('canvas').getContext('webgl2'),
+      text: document.body?.innerText?.slice(0, 200), main: performance.getEntriesByType('resource').filter((r) => /\\/(main|lib\\/core)\\.js/.test(r.name)).map((r) => [r.name.split('/').pop(), Math.round(r.duration)]) })`).catch((x) => String(x));
+    console.log("page at the timeout:", JSON.stringify(at), "| page errors:", JSON.stringify(errors.slice(0, 8)));
+    throw e;
+  }
   await js(`const { THREE } = await import('/lib/core.js'), tm = await import('/shared/terrainmath.js');
     globalThis.makeTerrain = (args) => {
       const p = tm.terrainParams(args), h = tm.makeHeightField(p), geo = new THREE.PlaneGeometry(p.size, p.size, 96, 96).rotateX(-Math.PI / 2);
