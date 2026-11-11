@@ -3419,6 +3419,8 @@ export class WorldAgent {
         + `From ${f.pos.y.toFixed(1)}m best glide reaches ${reach.toFixed(0)}m; you needed ${need.toFixed(0)}m.`);
     }
     if (arrived === "taken over") return refused(`taken over at ${here} by a later call`);
+    // Out of time, the glide stops steering, as a climb does: the body flies on.
+    if (arrived === "timed out aloft" && this.flight?.course?.id === id) this.flight.course = null;
     return refused(`${arrived} at ${here}`);
   }
 
