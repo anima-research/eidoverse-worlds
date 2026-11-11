@@ -8,7 +8,7 @@
 //   C. neither: no env, git unreachable → honest "unknown"s, never fake-clean
 // Plus: cache-control:no-store, and startedAt stable across repeated requests
 // (fresh process ≠ fresh code — the field distinction this PR exists for).
-// Port discipline per the stale-listener incident: verified-free random port
+// Port discipline per the stale-listener incident: the kernel's port-0 pick
 // + a nonce file served from THIS tree before any assertion counts.
 
 import { spawn, type ChildProcess } from "node:child_process";
@@ -16,6 +16,7 @@ import { join } from "node:path";
 import { mkdtempSync, writeFileSync, rmSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { tryUntil, pause } from "./protocol/wait.ts";
+import { kernelPort } from "./harness.ts";
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = "") => {
@@ -40,17 +41,8 @@ async function teardown() {
   children.length = 0; nonces.length = 0;
 }
 
-async function freePort(): Promise<number> {
-  for (let i = 0; i < 20; i++) {
-    const cand = 20000 + Math.floor(Math.random() * 20000);
-    try { await fetch(`http://127.0.0.1:${cand}/`, { signal: AbortSignal.timeout(400) }); }
-    catch { return cand; }
-  }
-  throw new Error("no free port");
-}
-
 async function spawnServer(env: Record<string, string | undefined>): Promise<{ port: number }> {
-  const port = await freePort();
+  const port = kernelPort();
   const nonce = `vr-nonce-${crypto.randomUUID().slice(0, 8)}`;
   const noncePath = join(REPO, "client", `${nonce}.txt`);
   writeFileSync(noncePath, nonce); nonces.push(noncePath);
@@ -66,9 +58,7 @@ async function spawnServer(env: Record<string, string | undefined>): Promise<{ p
   const own = await fetch(`http://127.0.0.1:${port}/${nonce}.txt`).then((r) => r.ok && r.text()).catch(() => false);
   if (own !== nonce) throw new Error(`listener on :${port} is not our child — refusing to test it`);
   return { port };
-  // (freePort's probe can false-positive "free" on a slow listener; the nonce
-  // check above is the backstop that turns that race into a loud abort
-  // rather than a wrong-server receipt — abort over false testimony.)
+  // (the nonce check stays the backstop: kernelPort's release-then-bind is still a window)
 }
 
 const HOME = process.env.HOME; const BUNPATH = process.env.PATH;
