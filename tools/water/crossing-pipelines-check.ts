@@ -129,7 +129,8 @@ try {
     && initial && rounds.flat().every((r) => r.settled && r.frames >= 40 && r.under === r.name.startsWith("under")
       && r.underside === !r.name.startsWith("above") && r.background === r.name.startsWith("under")),
     JSON.stringify({ setup, initial, phases: rounds.flat().map((r) => [r.name, r.frames, r.under, r.underside, r.background]) }));
-  check("WP1a the band alone, the first time in: the underside's pipeline is ready before the camera gets there", rounds[0][0].made === 0, JSON.stringify([setup.backend, rounds[0][0].made, rounds[0][0].by, rounds[0][0].other]));
+  // the sheet's own count, not the total: unrelated scene/sky pipelines can land in this window (Mica, #314 review); they stay in the detail
+  check("WP1a the band alone, the first time in: the underside's pipeline is ready before the camera gets there", rounds[0][0].by.sheet === 0 && rounds[0][0].underside === true, JSON.stringify([setup.backend, rounds[0][0].made, rounds[0][0].by, rounds[0][0].underside, rounds[0][0].other]));
   check("WP1 the band alone (level..level+1, the sheet's underside): no new pipeline after the first crossing", sum(band) === 0 && sum(band, "sheet") === 0, JSON.stringify(band.map((r) => [r.name, r.made, r.by])));
   check("WP2 the fog: under the level after the first crossing, nothing but the sheet and the background asks for a pipeline (and they don't either, WP1/WP3)", sum(under, "other") === 0, JSON.stringify(under.map((r) => [r.name, r.by])));
   check("WP3 the background: under the level after the first crossing, the far-water background makes no new pipeline", sum(under, "background") === 0, JSON.stringify(under.map((r) => [r.name, r.by])));
