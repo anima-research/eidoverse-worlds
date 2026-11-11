@@ -196,6 +196,10 @@ const walkAloft = async (ag: any, y = 20, timeoutMs?: number) => {
   await walkAloft(ag);
   const y0 = ag.pos.y, r = await ag.takeOff();
   check('take_off during the fall is refused as already airborne', !r.ok && /already airborne/.test(r.text) && ag.flight == null, `${r.text}; flight ${ag.flight?.phase ?? 'none'}`);
+  check('...naming a call the agent has, not take_off (bot r1 #14)', !/take_off/.test(r.text) && /move \{mode: "fly"\}/.test(r.text), r.text);
+  const status = ag.flightStatus(), mode = ag.bodyModeNow();
+  check('during the fall body_state says falling, not on the ground (bot r1 #4)', /^falling/.test(status) && !/on the ground/.test(status), status);
+  check('...and the body publishes the fall mode, as the browser does (bot r1 #5)', mode === 'fall', mode);
   await tick(ag);
   check('...and the body falls on from where it was, not from the ground', ag.flight == null && ag.pos.y < y0 && ag.pos.y > y0 - 3, `y ${ag.pos.y.toFixed(2)} (was ${y0.toFixed(2)}), flight ${ag.flight?.phase ?? 'none'}`);
   const m = await handleTool({ agent: ag } as any, 'move', { mode: 'fly', to: [ag.pos.x + 30, ag.pos.z] });
@@ -243,6 +247,51 @@ const walkAloft = async (ag: any, y = 20, timeoutMs?: number) => {
     walk.r === false && receipt.refusal == null && /timed out falling/.test(ag.walkStopReason ?? ''), `walk ${walk.r}; receipt ${receipt.refusal}; stop ${ag.walkStopReason}`);
   await fallOut(ag);
   check('...and the body still comes down', onGround(ag), `y ${ag.pos.y.toFixed(2)}`);
+}
+{
+  // bot r1 #9: a seat taking the body during the fall answers the walk with why, not as superseded by a walk or a stop.
+  const ag = bench();
+  const { walk, receipt } = await walkAloft(ag);
+  ag.setOccupant({ to: 'chair/seat' });
+  await tick(ag, 2);
+  check('a seat taking the body as it falls answers the walk false, saying so', walk.r === false && /as it fell/.test(receipt.refusal ?? '') && !/newer walk/.test(receipt.refusal ?? ''), `walk ${walk.r}; ${receipt.refusal}`);
+}
+{
+  // bot r1 #16: a walk refused once the body has come down says the fall it already caused.
+  const ag = bench();
+  const { walk, receipt } = await walkAloft(ag);
+  ag.supportPending.add('still-loading'); ag.supportReady = async () => {};
+  await fallOut(ag); await tick(ag, 2);
+  for (let i = 0; i < 20 && walk.r == null; i++) await turn();
+  ag.supportPending.delete('still-loading');
+  check('a walk asked aloft and refused once down says the body fell first', walk.r === false && /fell to the ground first/.test(receipt.refusal ?? '') && onGround(ag), `walk ${walk.r}; ${receipt.refusal}`);
+}
+for (const how of ['walk', 'close'] as const) {
+  // bot r1 #2: a limp flight's ragdoll still loading never begins once the flight is over.
+  const ag = bench();
+  await ag.takeOff(); toAir(ag, 20); await tick(ag, 3);
+  let load: (b: any) => void = () => {}, began = false;
+  ag.ensureBody = () => new Promise((go) => { load = go; });
+  ag.flightBodyDown('cut');
+  const walk = how === 'walk' ? answerOf(ag.walkTo(ag.pos.x + 5, ag.pos.z)) : null;
+  if (how === 'close') ag.close();
+  load({ begin() { began = true; }, stop() {}, step() { return null; } });
+  for (let i = 0; i < 10; i++) await turn();
+  const sim = !!ag.simTicker; ag.stopSim();
+  check(`a ${how} during a limp flight's ragdoll loading leaves it unbegun`, !began && !sim && ag.flight == null, `began ${began}, sim ${sim}, walk ${walk?.r}`);
+  if (walk) { const ys = await fallOut(ag); for (let i = 0; i < 100 && walk.r == null; i++) await tick(ag); check('...and the walk falls, then walks', walk.r === true && ys.length > 5, `walk ${walk.r}; ${ys.length - 1} ticks falling`); }
+}
+{
+  // bot r1 #17: a rejoin's settling holds the feet; once it lets go they fall.
+  const ag = bench();
+  await ag.takeOff(); toAir(ag, 20); await tick(ag, 3);
+  ag.endFlight('link'); ag.feetSettling = true;
+  const y0 = ag.pos.y;
+  await tick(ag, 5);
+  const held = Math.abs(ag.pos.y - y0) < 1e-9;
+  ag.feetSettling = false;
+  const ys = await fallOut(ag);
+  check('a rejoin\'s settling holds a body ended aloft where it is; settled, it falls to the ground', held && ys.length > 5 && onGround(ag), `held ${held}; ${ys.length - 1} ticks, y ${ag.pos.y.toFixed(2)}`);
 }
 {
   const ag = bench();
@@ -365,6 +414,31 @@ console.log('\nreview 2026-11-10: the course');
   const r = await ag.glideTo(ag.flight.pos.x + 60, ag.flight.pos.z);
   ag.flightAwait = real;
   check('a glide whose wait times out stops steering, as a climb does', !r.ok && /timed out/.test(r.text) && ag.flight?.course == null, `${r.text}; course ${JSON.stringify(ag.flight?.course)}`);
+  check('...and says so: you fly on (bot r1 #15)', /stops steering/.test(r.text) && /fly on/.test(r.text), r.text);
+}
+{
+  // bot r1 #3: a landing's glide that times out clears its own course; the landing flares on, not "taken over".
+  const ag = bench();
+  await ag.takeOff(); toAir(ag, 20);
+  const real = ag.flightAwait; let calls = 0;
+  ag.flightAwait = function (test: any, ms?: number) { return calls++ === 0 ? Promise.resolve('timed out aloft') : real.call(this, test, ms); };
+  const land = answerOf(ag.landAt(ag.flight.pos.x + 60, ag.flight.pos.z));
+  for (let i = 0; i < 3000 && land.r == null; i++) await tick(ag);
+  ag.flightAwait = real;
+  check('a landing whose glide times out flies its flare and comes down, not "taken over"', land.r != null && !land.r.ok && /^timed out aloft/.test(land.r.text) && /landed at/.test(land.r.text) && !/took over/.test(land.r.text) && ag.flight == null,
+    `${land.r?.text ?? 'no answer'}; flight ${ag.flight?.phase ?? 'none'}`);
+}
+{
+  // bot r1 #21: a glide that arrives at once, while a later glide takes the course before it resumes, says so.
+  const ag = bench();
+  await ag.takeOff(); toAir(ag, 40);
+  const here = { x: ag.flight.pos.x, z: ag.flight.pos.z };
+  const first = answerOf(ag.glideTo(here.x, here.z));
+  const second = answerOf(ag.glideTo(here.x + 60, here.z));
+  for (let i = 0; i < 5; i++) await turn();
+  check('a glide arriving at once whose course a later glide has taken claims no hold', first.r != null && !first.r.ok && /taken over/.test(first.r.text) && ag.flight?.course?.kind === 'glide',
+    `${first.r?.text ?? 'no answer'}; course ${JSON.stringify(ag.flight?.course)}`);
+  void second;
 }
 console.log('\nreview 2026-11-10: a landing ended another way says how');
 {
@@ -391,7 +465,7 @@ console.log('\nreview 2026-11-10: a landing ended another way says how');
   const ag = bench();
   await ag.takeOff(); toAir(ag, 20);
   const land = answerOf(ag.landAt(ag.flight.pos.x + 3, ag.flight.pos.z));
-  let low = 0, pitched = 0, enter = NaN, last = NaN;
+  let low = 0, pitched = 0, enter = NaN, last = NaN, touchVy = NaN;
   for (let t = 0; t < 2000 && land.r == null; t++) {
     await tick(ag);
     const f = ag.flight;
@@ -399,10 +473,12 @@ console.log('\nreview 2026-11-10: a landing ended another way says how');
       low++; if (f.pitch > 0.1) pitched++;
       if (Number.isNaN(enter)) enter = f.airspeed; last = f.airspeed;
     }
+    if (f && f.phase === 'PILOT') touchVy = f.vel.y;
   }
-  // (It doesn't lessen the sink: the spoilers stay on through the flare, ~3 m/s to touchdown; for R.)
   check('a flare noses up its last 2 m through the integrator: the pitch is flown, and the airspeed bleeds',
     land.r?.ok && low > 2 && pitched >= low - 1 && enter - last > 0.2, `${land.r?.text}; ${low} ticks low, ${pitched} pitched, airspeed ${enter?.toFixed(2)} -> ${last?.toFixed(2)}`);
+  // main's flare touches down at the polar's ~0.46 m/s; spoilers through touchdown made it ~3 m/s (bot r1 #10)
+  check('...with the spoilers in: it touches down under 1 m/s, as main\'s flare did, not at the spoilers\' ~3', touchVy > -1, `vy ${touchVy.toFixed(2)} m/s at touchdown`);
 }
 
 console.log('\nreview 2026-11-10: with the colliders loaded (last: once loaded they stay loaded for this process)');
@@ -437,6 +513,20 @@ console.log('\nreview 2026-11-10: with the colliders loaded (last: once loaded t
     ag.knockDown('shover', null, '(knocked over)');
     for (let i = 0; i < 200 && (ag.pos.y > TOP + 1e-3 || ag.simTicker); i++) await tick(ag);
     check('colliders on: a knockdown in the air with no sim comes to rest on the platform', !ag.simTicker && Math.abs(ag.pos.y - TOP) < 0.05, `y ${ag.pos.y.toFixed(2)}, sim ${!!ag.simTicker}`);
+  }
+  {
+    // bot r1 #1: deep water holds the feet up: a walk asked aloft over it falls in and swims on, with the colliders loaded.
+    const ag = bench('lake-flier', W);
+    ag.pos.x = 50; ag.pos.z = 50; ag.water = { level: 6 };
+    await ag.takeOff(); toAir(ag, 20); await tick(ag, 3);
+    const from = { x: ag.pos.x, z: ag.pos.z };
+    const walk = answerOf(ag.walkTo(from.x + 5, from.z));
+    for (let i = 0; i < 300 && walk.r == null; i++) await tick(ag);
+    check('colliders on: a walk asked aloft over deep water falls in, then swims on and arrives', walk.r === true && dist(ag.pos, { x: from.x + 5, z: from.z }) < 0.5 && ag.pos.y < 6,
+      `walk ${walk.r}; ${dist(ag.pos, { x: from.x + 5, z: from.z }).toFixed(2)} m off, y ${ag.pos.y.toFixed(2)}`);
+    const again = answerOf(ag.walkTo(ag.pos.x + 5, ag.pos.z));
+    for (let i = 0; i < 300 && again.r == null; i++) await tick(ag);
+    check('...and a swimmer asked to walk again swims, not waiting for a ground it floats above', again.r === true, `walk ${again.r}; waiting ${ag.landWaits.length}`);
   }
   await removeSupport('flight-exit-test', `${W}/deck`);
 }

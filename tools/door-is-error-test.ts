@@ -392,9 +392,11 @@ const glidesThere = async (_x: number, _z: number, took?: { course?: number }) =
 /** land_at with its glide stood in for; its flare's wait is the real one, and `at` is where the flare comes down. */
 const landing = async (glide: { ok: boolean; text: string; phase?: string }, flare: 'cut' | 'leaf' | 'down', at = { x: 5, z: 5 }) => {
   await relaunch();
-  ag.glideTo = async (_x: number, _z: number, took?: { course?: number }) => {
+  ag.glideTo = async (_x: number, _z: number, took?: { course?: number; got?: string }) => {
     if (took) took.course = ag.setCourse({ kind: 'hold', x: _x, z: _z });
     if (glide.phase) ag.flight.phase = glide.phase;
+    // a glide that times out clears its own course, as the real one does (glideTo)
+    if (/^timed out aloft/.test(glide.text)) { ag.flight.course = null; if (took) took.got = 'timed out aloft'; }
     return { ok: glide.ok, text: glide.text };
   };
   const answer = await midway(ag, call('land_at', { x: 5, z: 5 }), () => {
