@@ -32,7 +32,9 @@ const js = (body: string) => evalJson(`(async () => { ${body} })()`);
 const LAKE = { x: 0, z: 30 };
 try {
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 480, height: 270, deviceScaleFactor: 1, mobile: false });   // SwiftShader draws every pixel on the CPU
-  await cdp.send("Page.navigate", { url: `${BASE}/?world=${WORLD}&spectate=1&name=cross&webgl=1` });
+  // WebGL 2 except on Windows, where the runner's software flags give a null forced WebGL 2 context (as swim-lists-test.ts).
+  const backend = process.platform === "win32" ? "" : "&webgl=1";
+  await cdp.send("Page.navigate", { url: `${BASE}/?world=${WORLD}&spectate=1&name=cross${backend}` });
   try { await until("the water debug hook", () => evalJson("!!globalThis.__waterDebug").catch(() => false), { ms: 60000 }); }
   catch (e) {   // say why the page never got to main.js's last line (#314 Windows CI)
     const at = await evalJson(`({ ready: document.readyState, made: globalThis.__made, gl: !!document.createElement('canvas').getContext('webgl2'),
@@ -103,7 +105,7 @@ try {
   const centre = px(shot.width >> 1, (shot.height >> 1) + (shot.height >> 3));
   await js(`const HELD = ${HELD}, { scene } = await import('/lib/core.js'); delete scene.fog.density; scene.fog.density = 0.018; for (const k of HELD) delete scene.fog.color[k]; return true;`);
 
-  check("WP0 the lake is drawn on the backend asked for, and every phase renders frames where it should be", setup.backend === "webgl" && setup.sheet
+  check("WP0 the lake is drawn on the backend asked for, and every phase renders frames where it should be", setup.backend === (backend ? "webgl" : "webgpu") && setup.sheet
     && initial && rounds.flat().every((r) => r.settled && r.frames >= 40 && r.under === r.name.startsWith("under")
       && r.underside === !r.name.startsWith("above") && r.background === r.name.startsWith("under")),
     JSON.stringify({ setup, initial, phases: rounds.flat().map((r) => [r.name, r.frames, r.under, r.underside, r.background]) }));
