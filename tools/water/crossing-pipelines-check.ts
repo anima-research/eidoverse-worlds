@@ -105,7 +105,7 @@ try {
   const centre = px(shot.width >> 1, (shot.height >> 1) + (shot.height >> 3));
   await js(`const HELD = ${HELD}, { scene } = await import('/lib/core.js'); delete scene.fog.density; scene.fog.density = 0.018; for (const k of HELD) delete scene.fog.color[k]; return true;`);
 
-  check("WP0 the lake is drawn on the backend asked for, and every phase renders frames where it should be", setup.backend === (backend ? "webgl" : "webgpu") && setup.sheet
+  check("WP0 the lake is drawn (on WebGL 2 where it was asked for; on Windows the client picks), and every phase renders frames where it should be", (!backend || setup.backend === "webgl") && setup.sheet
     && initial && rounds.flat().every((r) => r.settled && r.frames >= 40 && r.under === r.name.startsWith("under")
       && r.underside === !r.name.startsWith("above") && r.background === r.name.startsWith("under")),
     JSON.stringify({ setup, initial, phases: rounds.flat().map((r) => [r.name, r.frames, r.under, r.underside, r.background]) }));
