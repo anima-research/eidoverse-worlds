@@ -820,7 +820,7 @@ export function updateMe(dt, me) {
   // first person: the body faces where I look, standing still too (R, 10-10). Others see which way I'm looking, and what I
   // throw or set down "ahead" goes where my eyes are. Not on a seat, not while the edit camera is off on its own.
   if (firstPerson && !moving && !myState.seat && !isFreeCam()) { myState.yaw += angleDelta(myState.yaw, camYaw + Math.PI) * Math.min(1, 12 * dt); myState.yaw = Math.atan2(Math.sin(myState.yaw), Math.cos(myState.yaw)); }
-  let walked = 0;   // metres the stride covered this frame (groundStep's snap reach)
+  const x0 = myState.pos.x, z0 = myState.pos.z;   // where the feet started: the snap reaches by the ground actually covered
   if (moving) {
     _dir.set(strafe, 0, -fwd).normalize().applyAxisAngle(UP, camYaw);
     const targetYaw = Math.atan2(_dir.x, _dir.z);
@@ -836,7 +836,7 @@ export function updateMe(dt, me) {
       // the mover's floor (and so its ledge rule) only where the stride touches water: on dry ground the collider pass
       // owns y as before, so a pond somewhere never changes how a hill walks (review 10-15 #2)
       wl == null ? { speedAt } : { speedAt, floorAt: (x, z, y) => { const g = groundUnder(_wp.set(x, y, z), wcap); return g < wl || groundHere < wl ? g : NaN; }, waterAt: () => wl });
-    myState.pos.x = stride.pos[0]; myState.pos.z = stride.pos[2]; walked = stride.moved;
+    myState.pos.x = stride.pos[0]; myState.pos.z = stride.pos[2];
     keepInBounds();
   }
 
@@ -1001,7 +1001,8 @@ export function updateMe(dt, me) {
       } else {
         // into deep water the fall goes on below the floating depth (the float takes it next frame, still
         // moving down); the bed is the only floor there
-        const s = groundStep({ y: myState.pos.y, vy, grounded }, support, dt, walked, { floor: swimming ? ground : support, snap: !swimming });
+        const walked = Math.hypot(myState.pos.x - x0, myState.pos.z - z0);   // after the bounds clamp and the collider pushes
+        const s = groundStep({ y: myState.pos.y, vy, grounded }, support, dt, walked, { floor: swimming ? ground : support });
         myState.pos.y = s.y; vy = s.vy; grounded = s.grounded;
       }
       if (!swimming) _float.on = false;

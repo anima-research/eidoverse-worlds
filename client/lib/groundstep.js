@@ -8,11 +8,11 @@ export const SNAP_MAX = 0.3;          // m: the most one frame snaps down, whate
 export const SNAP_SLACK = 0.02;       // m: within this a grounded body stays grounded, walking or not (as before the snap)
 
 /** s = {y, vy, grounded}, changed in place; support = the ground under the body now; walked = metres the stride
- *  covered this frame; floor = where a fall stops (the bed, for a swimmer falling into water); snap = false where
- *  there's no floor to keep */
-export function groundStep(s, support, dt, walked, { floor = support, snap = true, slope = SNAP_SLOPE, max = SNAP_MAX } = {}) {
+ *  covered this frame; floor = where a fall stops (the bed, for a swimmer falling into water: more than SNAP_MAX
+ *  below, so it never snaps) */
+export function groundStep(s, support, dt, walked, { floor = support, slope = SNAP_SLOPE, max = SNAP_MAX } = {}) {
   const drop = s.y - support;
-  if (snap && s.grounded && drop > SNAP_SLACK && drop <= Math.min(max, slope * walked)) { s.y = support; s.vy = 0; return s; }
+  if (s.grounded && drop > SNAP_SLACK && drop <= Math.min(max, slope * walked)) { s.y = support; s.vy = 0; return s; }
   if (!s.grounded || drop > SNAP_SLACK) {
     s.grounded = false;
     s.vy -= GRAVITY * dt;
