@@ -83,8 +83,8 @@ report lists each one):
   the host can't measure: at `minY`/`maxY` themselves, the whole hull in the
   band). Another vehicle passes through the band (@29-@31 stopped every one). Each wall is locked
   (builder strength, as every translated lock: a builder may lift it knowingly). Water `speed` is
-  `physics-area {kind: 'speed', factor: speed / 2.4, modes: ['swim']}` (main slowed only the swim) on the water's zone
-  (translate-v1@35; 2.4 m/s is the stroke a volume swims at here), so a
+  `physics-volume {kind: 'speed', factor: speed / 2.4, modes: ['swim']}` (main slowed only the swim) on the water's zone
+  (translate-v1@35, named physics-volume since @51; 2.4 m/s is the stroke a volume swims at here), so a
   swimmer there strokes at main's pace; walking and wading on that floor are
   not slowed (translate-v1@37), as in main. A speed within 5% of 2.4 m/s
   is dropped, and the report says which.
