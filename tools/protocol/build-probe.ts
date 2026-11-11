@@ -92,15 +92,19 @@ try {
       { ids, walls: w0, editor: await evalJson(`Promise.all([import('/lib/structure_ui.js'), import('/lib/scenegraph.js')]).then(([s, g]) => ({ tool: s.currentTool(), mode: s.isStructureMode(), selected: g.sceneSelected?.() ?? null, build: document.body.classList.contains('build-mode') }))`).catch((e) => String(e)) });
     let n0 = myActs().length;
     const press = () => evalJson(`import('/lib/core.js').then((m) => (m.canvas.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: ${SX}, clientY: ${SY} })), true))`);
-    await press();
-    const aim = await evalJson(`(async () => { const B0 = ${B0}, [{ THREE, canvas, camera }, S, E, U] = await Promise.all([import('/lib/core.js'), import('/shared/structure.js'), import('/shared/structure_edit.js'), import('/lib/structure_ui.js')]);
+    // a recompute of the wall tool's aim (its own functions, against B0), sampled just before and just after the click: the
+    // camera may move between them, so a drift shows as drift; the requested value below is what decides
+    const aimAt = () => evalJson(`(async () => { const B0 = ${B0}, [{ THREE, canvas, camera }, S, E] = await Promise.all([import('/lib/core.js'), import('/shared/structure.js'), import('/shared/structure_edit.js')]);
       const ent = (await import('/lib/state.js')).state.st.entities['house-b'], r = canvas.getBoundingClientRect(), ndc = new THREE.Vector2(((${SX} - r.left) / r.width) * 2 - 1, -((${SY} - r.top) / r.height) * 2 + 1);
       camera.updateMatrixWorld(); const ray = new THREE.Raycaster(); ray.setFromCamera(ndc, camera);
-      const y = (ent?.pos?.[1] ?? 0) + (Number.isFinite(B0.levels?.[0]?.y) ? B0.levels[0].y : 0) + (Number.isFinite(B0.slabT) ? B0.slabT : S.GRID_DEFAULTS.slabT), h = new THREE.Vector3();
-      if (!ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -y), h)) return { rect: [r.left, r.top, r.width, r.height], dpr: devicePixelRatio, px: [${SX}, ${SY}], hit: null };
-      const [lx, , lz] = S.localizePoint(ent, h.x, h.y, h.z), e = E.pickEdge(B0, lx, lz), r3 = (v) => Math.round(v * 1000) / 1000;
-      return { rect: [r.left, r.top, r.width, r.height].map(Math.round), dpr: devicePixelRatio, px: [${SX}, ${SY}], target: U.structureSelection(), hit: [h.x, h.y, h.z].map(r3), local: [r3(lx), r3(lz)],
-        cell: E.pickCell(B0, lx, lz), edge: e, occupied: !!e && B0.levels[0].walls.some((w) => w[0] === e.axis && w[1] === e.x && w[2] === e.z) }; })()`).catch((e) => String(e).slice(0, 120));
+      const y = (ent?.pos?.[1] ?? 0) + (Number.isFinite(B0.levels?.[0]?.y) ? B0.levels[0].y : 0) + (Number.isFinite(B0.slabT) ? B0.slabT : S.GRID_DEFAULTS.slabT), h = new THREE.Vector3(), r3 = (v) => Math.round(v * 1000) / 1000;
+      if (!ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -y), h)) return { hit: null };
+      const [lx, , lz] = S.localizePoint(ent, h.x, h.y, h.z), e = E.pickEdge(B0, lx, lz);
+      return { cam: camera.position.toArray().map(r3), local: [r3(lx), r3(lz)], edge: e && \`\${e.axis}:\${e.x},\${e.z}\`, occupied: !!e && B0.levels[0].walls.some((w) => w[0] === e.axis && w[1] === e.x && w[2] === e.z) }; })()`).catch((e) => String(e).slice(0, 120));
+    const view = await evalJson(`(async () => { const { canvas } = await import('/lib/core.js'), r = canvas.getBoundingClientRect(); return { rect: [r.left, r.top, r.width, r.height].map(Math.round), dpr: devicePixelRatio, px: [${SX}, ${SY}], target: (await import('/lib/structure_ui.js')).structureSelection() }; })()`).catch((e) => String(e).slice(0, 80));
+    const aimPre = await aimAt();
+    await press();
+    const aimPost = await aimAt(), aim = { ...(typeof view === "object" ? view : { view }), pre: aimPre, post: aimPost };
     const one = await waitDisk(() => myActs().length === n0 + 1);
     const a = myActs().at(-1); const req = a?.e.body?.args;
     check("ST1 a click with the wall tool edits the SELECTED building (house-b), not the world's first: ONE act", one && req?.id === NODE.get("house-b") && req?.component === "structure", { acts: myActs().slice(n0).map((x) => [x.e.verb, x.e.body?.args?.id]), refused: await evalJson(`__refused.map((r) => r.text)`) });
