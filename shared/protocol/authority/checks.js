@@ -290,8 +290,8 @@ function unknownKeys(at, v, allowed, what) {
 function lev(a, b) { const d = Array.from({ length: b.length + 1 }, (_, j) => j);
   for (let i = 1; i <= a.length; i++) { let prev = d[0]; d[0] = i; for (let j = 1; j <= b.length; j++) { const t = d[j]; d[j] = Math.min(d[j] + 1, d[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = t; } }
   return d[b.length]; }
-// the registered names one letter-slip from an unregistered bare one (round-2 R8): a typo, refused at admit
-const nearMiss = (name) => Object.keys(COMPONENTS).filter((k) => k !== name && Math.abs(k.length - name.length) <= 2 && lev(k, name) <= (k.length > 4 ? 2 : 1));
+// the registered names one letter-slip from an unregistered bare one (round-2 R8): a typo, refused at admit; a renamed one, its new name
+const nearMiss = (name) => name === "physics-area" ? ["physics-volume"] : Object.keys(COMPONENTS).filter((k) => k !== name && Math.abs(k.length - name.length) <= 2 && lev(k, name) <= (k.length > 4 ? 2 : 1));
 /** Why the catalogue would refuse this value (its shape only: no state, no rights), or null. For tools that ask
  *  whether a translated world is one the authority takes as it is (sweep). */
 export function schemaRefusal(comp, v) { try { schemaCheck(comp, comp, v);
@@ -307,6 +307,7 @@ function schemaCheck(at, comp, v, { carry = false } = {}) {
   // the registry later promoting the same word (story) would have reread every old value in the new meaning.
   // `carry`: a fork's copy of what its parent already holds (an old world's bare invention travels as it was).
   if (name === "door") refuse("schema", `${at}: the opening behaviour is called 'openable' (R 10-07: chests, gates, lids and hatches open too)`, "openable {open: false, locked?, angle?, slide?, time?}; schema {component: 'openable'} says the rest", { didYouMean: ["openable"] });
+  if (name === "physics-area") refuse("schema", `${at}: a region's movement effect is called 'physics-volume' (renamed before deploy, R 11-09: a zone is a 3D region)`, `physics-volume: ${COMPONENTS["physics-volume"].help ?? ""}`, { didYouMean: ["physics-volume"] });
   if (name === "placer") refuse("derived", `${at}: who made a thing is a view over the log (§0 rule 2), never stored`, "inspect {id} → derived.madeBy");
   if (!def) { if (isNamespaced(base) || carry) return;   // someone's own: kept, replayed, shown honestly (must-ignore)
     const ver = /^(.*)@[1-9][0-9]*$/.exec(name);

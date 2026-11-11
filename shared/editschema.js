@@ -1042,7 +1042,7 @@ function addOwnOps(ent, id, name, value) {
   }
   if (name === 'Annotation') { const type = String(value ?? '').trim(); if (!type) return { ops: [], errors: ['an annotation needs a type name'] }; if (c[type] != null) return { ops: [], errors: [`${id} already has ${type}`] };
     // PROTOCOL §4: a bare name is the registry's; your own carries a namespace (local/recipe, example.org/recipe)
-    if (!type.split(':')[0].includes('/') && !registered(type.split(':')[0])) return { ops: [], errors: [`'${type}' isn't a registered component: a component of your own carries a namespace, e.g. local/${type}`] };
+    if (!type.split(':')[0].includes('/') && !registered(type.split(':')[0])) return { ops: [], errors: [type === 'physics-area' ? "'physics-area' is called physics-volume (renamed before deploy, R 11-09)" : `'${type}' isn't a registered component: a component of your own carries a namespace, e.g. local/${type}`] };
     return { ops: [OP.set(id, type, {})], errors: [] }; }
   return { ops: [], errors: [`${name}: added by a gesture, not a value (${WIRE_BLOCKED[name]?.(new Set()) ?? 'see its card'})`] };
 }
