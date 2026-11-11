@@ -9,7 +9,7 @@
 //   F50     the report says what becomes of vehicle minY/maxY/probes and water speed; sky audio is carried as sky.audio
 //   F50b    the vehicle walls are pinned at [0, y, 0], spanning every legal x/z: a v1 move re-places nothing
 //   F50c    the vehicle walls are locked (builder strength), and the report says so
-//   F51     @37: main's slow water is physics-area {kind: speed, modes: [swim]} on the water's zone; no drag field anywhere
+//   F51     @37: main's slow water is physics-volume {kind: speed, modes: [swim]} on the water's zone; no drag field anywhere
 //   F51t    the report's `into` for a turned model-less host names the water child the translation writes, not the host
 //   F52-53  @31: main's 78 m stage a bounds box; its inferred lamps light children
 //   F51d, F53c-e  @43: a clamped speed factor said; lamps beside an own light; an unreadable model said; a clamped floor said
@@ -212,7 +212,7 @@ row("F50", () => { const { r } = tr([OWNER, ["olga", "spawn", { id: "boat", lib:
   const v = r.stats.unmapped?.find((x) => x.component === "vehicle"), w = r.stats.unmapped?.find((x) => x.component === "water"), s = r.stats.unmapped?.find((x) => x.component === "sky");
   const json = JSON.stringify(r.out), walls = (json.match(/"blocks":\["hulls"\]/g) ?? []).length;
   ok(JSON.stringify(v?.fields) === '["probes"]' && /retired: the authority's hull sweep/.test(v?.becomes?.probes) && v?.becomes?.minY === undefined && w === undefined && !("vehicle.minY" in TV1.FATES) && !("water.speed" in TV1.FATES)
-    && walls === 2 && (json.match(/"layer":\["band-[0-9a-f]{26}"\]/g) ?? []).length === 2 && (json.match(/"mask":\[1,"band-[0-9a-f]{26}"\]/g) ?? []).length === 1 && /only this vehicle meets/.test(TV1.CARRIED.vehicle.to) && /physics-area \{kind: 'speed', factor: speed \/ 2\.4, modes: \['swim'\]\}[^;]*slows the swim only/.test(TV1.VOLUMES.water.to) && /set off by the hull's measured box/.test(TV1.CARRIED.vehicle.to) && !json.includes("physics-area") && !json.includes('"drag"')
+    && walls === 2 && (json.match(/"layer":\["band-[0-9a-f]{26}"\]/g) ?? []).length === 2 && (json.match(/"mask":\[1,"band-[0-9a-f]{26}"\]/g) ?? []).length === 1 && /only this vehicle meets/.test(TV1.CARRIED.vehicle.to) && /physics-volume \{kind: 'speed', factor: speed \/ 2\.4, modes: \['swim'\]\}[^;]*slows the swim only/.test(TV1.VOLUMES.water.to) && /set off by the hull's measured box/.test(TV1.CARRIED.vehicle.to) && !json.includes("physics-volume") && !json.includes('"drag"')
     && r.stats.mapped?.find((m) => m.component === "water")?.speed?.dropped !== undefined && s === undefined && !("sky.audio" in TV1.FATES),
     "F50 the report says, in words, what becomes of vehicle probes; minY/maxY are two hull-only walls in the vehicle's own layer, which its mask scans (@32); main's 2.4 water speed is today's stroke, so it is dropped and said (@31); sky audio is mapped, not carried (@25)", { v, w, s, walls }); });
 
@@ -230,9 +230,9 @@ row("F50c", () => { const { E } = tr([OWNER, ["olga", "spawn", { id: "boat", lib
 row("F51", () => { const pond = (speed: number) => tr([OWNER, ["olga", "spawn", { id: "pool", lib: "p.glb" }], ["olga", "comp", { id: "pool", type: "water", data: { center: [0, 0, 0], size: [4, 2, 4], speed } }]]);
   const slow = pond(1.2), near = pond(2.45), kid = (o: any) => Object.values<any>(o.E).find((c) => c.water && c.zone), M = (o: any) => o.r.stats.mapped?.find((m) => m.component === "water");
   const json = JSON.stringify([slow.r.out, near.r.out]);
-  ok(JSON.stringify(kid(slow)?.["physics-area"]) === JSON.stringify({ kind: "speed", factor: 0.5, modes: ["swim"] }) && JSON.stringify(M(slow)?.speed?.["physics-area"]) === JSON.stringify({ kind: "speed", factor: 0.5, modes: ["swim"] })
-    && kid(near) && kid(near)["physics-area"] === undefined && /within 5%/.test(M(near)?.speed?.dropped ?? "") && !json.includes('"drag"'),
-    "F51 main's slow water (speed 1.2, half the 2.4 stroke a volume swims at here) is physics-area {kind: speed, factor: 0.5, modes: [swim]} on the water's zone (a swim only, as main: walking on the pond floor is not slowed), said in the report; 2.45 (within 5%) writes nothing and says so; no translated world carries a drag field", { slow: kid(slow), mapped: M(slow), near: M(near) }); });
+  ok(JSON.stringify(kid(slow)?.["physics-volume"]) === JSON.stringify({ kind: "speed", factor: 0.5, modes: ["swim"] }) && JSON.stringify(M(slow)?.speed?.["physics-volume"]) === JSON.stringify({ kind: "speed", factor: 0.5, modes: ["swim"] })
+    && kid(near) && kid(near)["physics-volume"] === undefined && /within 5%/.test(M(near)?.speed?.dropped ?? "") && !json.includes('"drag"'),
+    "F51 main's slow water (speed 1.2, half the 2.4 stroke a volume swims at here) is physics-volume {kind: speed, factor: 0.5, modes: [swim]} on the water's zone (a swim only, as main: walking on the pond floor is not slowed), said in the report; 2.45 (within 5%) writes nothing and says so; no translated world carries a drag field", { slow: kid(slow), mapped: M(slow), near: M(near) }); });
 row("F51t", () => { const { r, E } = tr([OWNER, ["olga", "spawn", { id: "pool", yaw: 1.2 }], ["olga", "comp", { id: "pool", type: "water", data: { center: [0, 0, 0], size: [4, 2, 4] } }]]);
   const kid = Object.entries<any>(E).find(([, c]) => c.water && c.zone && c.parent?.to === "pool")?.[0], m = r.stats.mapped?.find((x) => x.component === "water");
   ok(!!kid && E.pool?.water === undefined && JSON.stringify(m?.into) === JSON.stringify([kid]),
@@ -250,10 +250,10 @@ row("F51b", () => { const Z = require("../../shared/zone.js"), WJ = require("../
   const both = (first: any, second: any) => { const { r, E } = tr([OWNER, ["olga", "spawn", { id: "a", lib: "p.glb" }], ["olga", "comp", { id: "a", type: "water", data: { center: [0, 0, 0], size: [8, 4, 8], ...first } }],
       ["olga", "spawn", { id: "z", lib: "p.glb" }], ["olga", "comp", { id: "z", type: "water", data: { center: [0, 0, 0], size: [8, 4, 8], ...second } }]]);
     const st = { entities: Object.fromEntries(Object.entries<any>(E).map(([k, c]) => [k, { c }])) }, V = Z.waterVolumes(Z.zonesOf(st)), w = WJ.mediumAt(P, V.waters, V.airs);
-    const own = E[w?.id]?.["physics-area"]?.factor ?? 1; return { inSlow: own !== 1, own, swim: Z.speedFactorAt(Z.physicsAreasOf(st), P, "swim"), mapped: r.stats.mapped?.filter((m: any) => m.component === "water").map((m: any) => m.speed ?? null) }; };
+    const own = E[w?.id]?.["physics-volume"]?.factor ?? 1; return { inSlow: own !== 1, own, swim: Z.speedFactorAt(Z.physicsVolumesOf(st), P, "swim"), mapped: r.stats.mapped?.filter((m: any) => m.component === "water").map((m: any) => m.speed ?? null) }; };
   const runs = [both({ speed: 1.2 }, {}), both({}, { speed: 1.2 }), both({ speed: 1.2 }, { speed: 2.45 })], lone = tr([OWNER, ["olga", "spawn", { id: "a", lib: "p.glb" }], ["olga", "comp", { id: "a", type: "water", data: { size: [8, 4, 8] } }]]);
-  ok(runs.every((x) => x.swim === x.own) && runs.some((x) => !x.inSlow) && runs.every((x) => x.mapped?.length === 2 && x.mapped.every(Boolean)) && !JSON.stringify(lone.r.out).includes("physics-area"),
-    "F51b two overlapping waters, one slow (1.2) and one at the stroke here (unset or 2.45): a swimmer's speed factor is the one of the water mediumAt puts them in, either way round (the other gets factor 1, said in the report); a lone default water writes no area", { runs, lone: JSON.stringify(lone.r.out).includes("physics-area") }); });
+  ok(runs.every((x) => x.swim === x.own) && runs.some((x) => !x.inSlow) && runs.every((x) => x.mapped?.length === 2 && x.mapped.every(Boolean)) && !JSON.stringify(lone.r.out).includes("physics-volume"),
+    "F51b two overlapping waters, one slow (1.2) and one at the stroke here (unset or 2.45): a swimmer's speed factor is the one of the water mediumAt puts them in, either way round (the other gets factor 1, said in the report); a lone default water writes no area", { runs, lone: JSON.stringify(lone.r.out).includes("physics-volume") }); });
 // a main size past zone.size's 1e4 is clamped, and the report keeps main's size beside it, as speed's dropped note
 row("F51c", () => { const { r, E } = tr([OWNER, ["olga", "spawn", { id: "sea", lib: "s.glb" }], ["olga", "comp", { id: "sea", type: "water", data: { center: [0, 0, 0], size: [20000, 200, 200] } }],
     ["olga", "spawn", { id: "pond", lib: "p.glb" }], ["olga", "comp", { id: "pond", type: "water", data: { size: [8, 4, 8] } }],
@@ -290,10 +290,10 @@ row("F53b", () => { const { Document } = require("@gltf-transform/core");   // m
 
 // ================= @43 (bot review 440/441/442/445/446): nothing dropped or clamped quietly =================
 row("F51d", () => { const slow = tr([OWNER, ["olga", "spawn", { id: "pool", lib: "p.glb" }], ["olga", "comp", { id: "pool", type: "water", data: { center: [0, 0, 0], size: [4, 2, 4], speed: 0.1 } }]]);
-  const kid = Object.values<any>(slow.E).find((c) => c.water && c.zone), f = kid?.["physics-area"]?.factor;
+  const kid = Object.values<any>(slow.E).find((c) => c.water && c.zone), f = kid?.["physics-volume"]?.factor;
   const sp = slow.r.stats.mapped?.find((m) => m.component === "water")?.speed;
   ok(f === 0.05 && sp?.clamped?.to === 0.05 && Math.abs(sp.clamped.factorWas - 0.0417) < 1e-9 && /0\.05\.\.10/.test(sp.clamped.why),
-    "F51d main's slowest water (0.1 m/s ≈ × 0.042) is the speed area's least factor, 0.05, and the report says so with main's (bot review 445)", { f, sp }); });
+    "F51d main's slowest water (0.1 m/s ≈ × 0.042) is the speed volume's least factor, 0.05, and the report says so with main's (bot review 445)", { f, sp }); });
 row("F53c", () => { const L = [{ at: [0, 0.39, 0], color: 0xffe8c4, intensity: 11.2, range: 12, decay: 1.7 }], lampsOf = (lib: string) => (lib === "glow.glb" ? L : []);
   const r = TV1.translate(log([OWNER, ["olga", "spawn", { id: "lantern", lib: "glow.glb", pos: [3, 0, 4] }], ["olga", "comp", { id: "lantern", type: "light", data: { color: 0xff0000, intensity: 5 } }]]), { lampsOf }), E = r.final.translated;
   const kid = E[TV1.lampChildId("lantern", 0)], m = r.stats.mapped?.find((x) => x.component === "lamp" && x.id === "lantern");
@@ -317,8 +317,8 @@ row("V5", () => { const root = scratch("translate-v5"), W = path.join(root, "wor
   const old = /H ([0-9a-f]{64})/.exec(rep.stdout.toString())?.[1];
   const up = Bun.spawnSync(["bun", "tools/protocol/world.ts", "translate", "--no-founder-key", "--operator-only-no-owner", "--approved", old ?? "x", "--", "den"], { cwd: ENGINE, env });
   const said = up.stdout.toString() + up.stderr.toString();
-  ok(TV1.translatorVersion(TV1.TRANSLATOR) === 50 && TV1.translatorVersion(TV1.TRANSLATOR_SIM) === 50 && old && up.exitCode !== 0 && /is not the one that was approved/.test(said) && /earlier translator than eidoverse\/translate-v1@50/.test(said) && fs.existsSync(path.join(d, "log.jsonl")) && !fs.existsSync(path.join(d, "world.jsonl")),
-    "V5 the translator is @50; a report reviewed under @42 is refused, saying an earlier translator's review never approves this one, and nothing moves", { v: TV1.TRANSLATOR, said: said.slice(-500) }); });
+  ok(TV1.translatorVersion(TV1.TRANSLATOR) === 51 && TV1.translatorVersion(TV1.TRANSLATOR_SIM) === 51 && old && up.exitCode !== 0 && /is not the one that was approved/.test(said) && /earlier translator than eidoverse\/translate-v1@51/.test(said) && fs.existsSync(path.join(d, "log.jsonl")) && !fs.existsSync(path.join(d, "world.jsonl")),
+    "V5 the translator is @51; a report reviewed under @42 is refused, saying an earlier translator's review never approves this one, and nothing moves", { v: TV1.TRANSLATOR, said: said.slice(-500) }); });
 
 row("V6", () => { const root = scratch("translate-v6"), W = path.join(root, "worlds"), d = path.join(W, "den"), opt = path.join(root, "opt"); fs.mkdirSync(d, { recursive: true }); fs.mkdirSync(path.join(opt, "store"), { recursive: true });
   fs.writeFileSync(path.join(d, "log.jsonl"), log([OWNER, ["olga", "spawn", { id: "boat", lib: "store/boat.glb" }]]).map((e) => JSON.stringify(e)).join("\n") + "\n");
