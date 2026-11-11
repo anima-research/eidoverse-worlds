@@ -95,6 +95,47 @@ console.log('\n#298 every way down ends the flight');
   check('a walk asked while flying replaces the flight', ag.flight == null, `flight ${ag.flight?.phase ?? 'none'}; walk ${walk.r}`);
 }
 {
+  // R 11-10: a walk asked in the air ends the flight and the body FALLS, then walks on from where it lands.
+  const ag = bench();
+  await ag.takeOff(); toAir(ag, 20); await tick(ag, 3);
+  const y0 = ag.pos.y, from = { x: ag.pos.x, z: ag.pos.z }, T = { x: from.x + 5, z: from.z };
+  const walk = answerOf(ag.walkTo(T.x, T.z));
+  await tick(ag);
+  check('a walk asked at 20 m is no instant drop: a tick later the body is still high', ag.pos.y > y0 - 2, `y ${ag.pos.y.toFixed(2)} (was ${y0.toFixed(2)})`);
+  check('...with no flight left, nor a flying body mode', ag.flight == null && ag.bodyModeNow() !== 'fly', `flight ${ag.flight?.phase ?? 'none'}, mode ${ag.bodyModeNow()}`);
+  const ys: number[] = [ag.pos.y]; let drift = 0;
+  for (let i = 0; i < 100 && ag.pos.y > ag.heightAt(ag.pos.x, ag.pos.z) + 1e-6; i++) {
+    await tick(ag); ys.push(ag.pos.y); drift = Math.max(drift, dist(ag.pos, from));
+  }
+  const falling = ys.length > 5 && ys.every((y, i) => i === 0 || y < ys[i - 1]);
+  check('...it falls: lower every tick, over more than half a second, down to the ground', falling && Math.abs(ag.pos.y - ag.heightAt(ag.pos.x, ag.pos.z)) < 1e-6,
+    `${ys.length - 1} ticks: ${ys.map((y) => y.toFixed(1)).join(' ')}`);
+  check('...and does not walk in the air: it comes down where it was', ys.length > 5 && drift < 1e-6, `${ys.length - 1} airborne ticks, ${drift.toFixed(3)} m off`);
+  for (let i = 0; i < 100 && walk.r == null; i++) await tick(ag);
+  check('...then the walk goes on from where it landed, and arrives', walk.r === true && dist(ag.pos, T) < 0.05 && Math.abs(ag.pos.y - ag.heightAt(T.x, T.z)) < 1e-6,
+    `walk ${walk.r}; ${dist(ag.pos, T).toFixed(2)} m from the target, y ${ag.pos.y.toFixed(2)}`);
+}
+{
+  const ag = bench();
+  await ag.takeOff(); toAir(ag, 20); await tick(ag, 3);
+  const walk = answerOf(ag.walkTo(ag.pos.x + 5, ag.pos.z));
+  await tick(ag, 3);
+  ag.stop();
+  await tick(ag, 2);
+  check('a stop during the fall answers that walk at once', walk.r === false, `walk ${walk.r}`);
+  for (let i = 0; i < 100; i++) await tick(ag);
+  check('...and the body still comes down to the ground', Math.abs(ag.pos.y - ag.heightAt(ag.pos.x, ag.pos.z)) < 1e-6 && ag.target == null, `y ${ag.pos.y.toFixed(2)}, target ${JSON.stringify(ag.target)}`);
+}
+{
+  const ag = bench();
+  await ag.takeOff(); toAir(ag, 20); await tick(ag, 3);
+  const walk = answerOf(ag.walkTo(ag.pos.x + 5, ag.pos.z));
+  await tick(ag, 3);
+  ag.knockDown('shover', null, '(knocked over)');
+  await tick(ag, 2);
+  check('a knockdown during the fall answers the walk waiting on it at once', walk.r === false, `walk ${walk.r}`);
+}
+{
   const ag = bench();
   await ag.takeOff(); toAir(ag, 45); ag.flight.stamina = 1e6;
   const climb = answerOf(ag.climbTo(55));

@@ -2540,7 +2540,7 @@ export class WorldAgent {
     const sp = this.replica?.st ? fallBackOf(this.replica.st) : null; if (!sp) return;
     this.respawning = true;
     try {
-      this.abandonWalk(); if (this.flight) this.endFlight("respawn"); this.endFloat(); this.vy = 0;   // the walk's promise ends now, not at its timeout
+      this.abandonWalk(); if (this.flight) this.endFlight("respawn"); this.endFloat(); this.vy = 0; this.dropping = false;   // the walk's promise ends now, not at its timeout
       if (this.clip === "ragdoll" || (this.heldPose && !this.heldPoseAuthored)) {
         ++this.bodyEpoch; this.body?.stop(); this.stopSim(); this.pins.clear();
         if (!this.heldPoseAuthored) this.heldPose = null;
@@ -2785,6 +2785,16 @@ export class WorldAgent {
       if (snap && target) { this.pos.x = target.x; this.pos.z = target.z; }
       else { this.pos.x += moveX; this.pos.z += moveZ; }
       if (feetFree) groundY = terrainG(this.pos.x, this.pos.z);
+    }
+    if (this.dropping && !this.falling) { this.dropping = false; this.abandonWalk(); }   // a flight, tumble, drag or nail has the body now
+    if (this.falling && groundY != null) {
+      // Falling (dropFromFlight): stepFeet's gravity, by hand where the colliders aren't loaded; aloft, no stance yet.
+      if (!colliding) {
+        this.vy -= GRAVITY * dt; this.pos.y += this.vy * dt;
+        if (this.pos.y <= groundY) { this.pos.y = groundY; this.vy = 0; this.grounded = true; }
+      }
+      const wl = this.levelHere();
+      if (this.grounded || (wl != null && this.pos.y <= wl)) this.landed(); else groundY = null;
     }
     if (groundY != null) {
       const wl = this.levelHere();
@@ -3800,7 +3810,7 @@ export class WorldAgent {
       return Promise.resolve(false);
     }
     // A new request supersedes the walk under way, whether or not it can be walked.
-    if (this.walkDone || this.target) this.abandonWalk();
+    if (this.walkDone || this.target || this.landWaits.length) this.abandonWalk();
     this.walkRefusal = null;
     this.lastWalkRefusal = null; this.lastWalkNote = null; this.walkStopReason = null;
     const ticket = ++this.walkTicket;
@@ -3814,19 +3824,50 @@ export class WorldAgent {
     // them. The walk waits for them — every sync issued until they're all in,
     // ones that arrive during the wait included — and if they don't land in
     // time it is refused, never walked on the terrain underneath.
-    if (!this.supportPending.size) return now();
-    return this.supportReady(WALK_READY_MS).then(() => {
-      if (ticket !== this.walkTicket) {   // stopped, or another walk asked for, meanwhile
+    const ready = () => {
+      if (!this.supportPending.size) return now();
+      return this.supportReady(WALK_READY_MS).then(() => {
+        if (ticket !== this.walkTicket) {   // stopped, or another walk asked for, meanwhile
+          if (receipt) receipt.refusal = "superseded by a newer walk or a stop";
+          return false;
+        }
+        if (this.supportPending.size) {
+          this.walkRefusal = GEOMETRY_LOADING;
+          if (receipt) receipt.refusal = GEOMETRY_LOADING;
+          return false;
+        }
+        return now();
+      });
+    };
+    // No walking in mid-air (R 11-10): a walk asked aloft ends the flight, falls, and walks on from where it lands.
+    if (this.flight && this.airborne() && !isDown(this.flight.phase)) this.dropFromFlight();
+    if (!this.falling) return ready();
+    const giveUp = setTimeout(() => { if (ticket === this.walkTicket) this.abandonWalk(); }, timeoutMs);
+    return new Promise<void>((res) => this.landWaits.push(res)).then(() => {
+      clearTimeout(giveUp);
+      if (ticket !== this.walkTicket) {
         if (receipt) receipt.refusal = "superseded by a newer walk or a stop";
         return false;
       }
-      if (this.supportPending.size) {
-        this.walkRefusal = GEOMETRY_LOADING;
-        if (receipt) receipt.refusal = GEOMETRY_LOADING;
-        return false;
-      }
-      return now();
+      return ready();
     });
+  }
+
+  /** Feet free in the air after a flight, falling under GRAVITY to the ground under them (tickInWorld); walks wait. */
+  private dropping = false;
+  private landWaits: Array<() => void> = [];
+  private get falling() { return this.dropping && !this.flight && !this.draggedBy && this.pins.size === 0 && this.clip !== "ragdoll" && !this.myOccupancy; }
+  /** A walk asked aloft: the flight ends and the feet fall from where it was, keeping its vertical speed. */
+  private dropFromFlight() {
+    const vy = this.flight.vel?.y ?? 0;
+    this.endFlight("walk");
+    this.vy = Number.isFinite(vy) ? vy : 0; this.grounded = false; this.dropping = true;
+  }
+  /** The fall is over: the walks waiting on it go on. */
+  private landed() {
+    this.dropping = false;
+    const waits = this.landWaits; this.landWaits = [];
+    for (const w of waits) w();
   }
 
   /** Bumped by every walk request and every abandon: a walk waiting for
@@ -4486,6 +4527,8 @@ export class WorldAgent {
     this.walkDone = null; this.target = null; this.legs = []; this.walkHeightAt = null; this.walkGate = null; this.speed = 0;
     if (this.clip === "walk" || this.clip === "run" || this.clip === "swim") this.clip = "idle";   // a swimmer then treads
     done?.(false);
+    const waits = this.landWaits; this.landWaits = [];   // a walk waiting out a fall hears its new ticket
+    for (const w of waits) w();
   }
 
   stop() { this.abandonWalk(); this.clip = "idle"; }
