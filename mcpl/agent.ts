@@ -77,6 +77,7 @@ const legWaitMs = (legS: number) => Math.round((legS * 1.5 + 8) * 1000);
 const FLIGHT_ENDS = {
   landed: "came down", walk: "ended by a walk", knockdown: "knocked down", drag: "taken hold of and dragged", seat: "ended by taking a seat",
   closed: "interrupted: the body was closed", link: "interrupted: the link to the world dropped", respawn: "interrupted: you fell out of the world",
+  avatar: "ended by a change of body",
 } as const;
 type FlightEnd = keyof typeof FLIGHT_ENDS;
 /** A wait ended by endFlight is answered with its end's code, not its words, so rewording an end changes no control flow. */
@@ -3080,8 +3081,8 @@ export class WorldAgent {
   private flightAllowed(): { ok: boolean; why: string } {
     // Bone names come from the VRM this body is actually WEARING, fetched once
     // and re-fetched on an avatar change -- the capability binds to the rig,
-    // not to a hash, so a re-export with the same load-bearing names keeps
-    // flying and a swap to a wingless commons avatar stops it.
+    // not to a hash, so a re-export with the same load-bearing names can
+    // fly and a wingless commons avatar can't. A swap ends any flight under way (setAvatar).
     // Unknown stays unknown: until the worn body's bones have been read, the
     // provider is given no list, which it answers as such, rather than an
     // empty list, which it would read as a body with no hips, spine or head.
@@ -5326,6 +5327,7 @@ export class WorldAgent {
    *  with the new path and every client rebuilds this remote. Position, held
    *  pose, and identity all carry over; only the body changes. */
   setAvatar(path: string) {
+    if (this.flight) this.endFlight("avatar");   // the new body's rig isn't read yet: it falls, and its next flight act checks it
     this.avatar = path;
     // The new body's bones are read before its next flight act or fold.
     this.bodyBoneNames = null;
