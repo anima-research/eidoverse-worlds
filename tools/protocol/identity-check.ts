@@ -284,11 +284,11 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
       && mr?.role === "builder" && mr.permissions?.includes("build") && mr.permissions?.includes("generate") && mr.gen === true && !mr.permissions?.includes("mute"),
       "RS1 your-rights comes from the authority: owner 255 with every permission; moderator 200 with mute; a stranger under default-role {builder, can: {generate}} builds and generates", [or, fr, mr]); }
   // RS2: voice-moderate is the authority's identity-keyed, logged mute; a name nobody present answers to mutes nobody
-  { const k = own.msgs.length;
-    fern.raw({ type: "voice-moderate", id: "Nobody", muted: true }); await sleep(300);
-    const none = fern.msgs.slice(-3).some((m) => m.type === "error" && /nobody here/.test(m.error));
-    fern.raw({ type: "voice-moderate", id: "Moss", muted: true, minutes: 30 }); await sleep(400);
-    const note = own.msgs.slice(k).find((m) => m.type === "voice-moderated");
+  { const k = own.msgs.length, kf = fern.msgs.length;
+    fern.raw({ type: "voice-moderate", id: "Nobody", muted: true });
+    const none = !!(await tryUntil("fern's mute of a name nobody answers to is refused", () => fern.msgs.slice(kf).some((m) => m.type === "error" && /nobody here/.test(m.error)), { ms: 5000 }));
+    fern.raw({ type: "voice-moderate", id: "Moss", muted: true, minutes: 30 });
+    const note = await tryUntil("the owner hears fern's voice-moderated", () => own.msgs.slice(k).find((m) => m.type === "voice-moderated"), { ms: 5000 });   // sent after requestAs resolves (server.ts voice-moderate), so wait on it, not 400 ms
     const log = await fern.req("modlog", { who: you(jm) });
     const diag = await (await fetch(`http://127.0.0.1:${S4.port}/relay-diag?world=heath`)).json();
     ok(none && note?.actorId === you(jm) && note.muted === true && log.ok && log.records?.[0]?.verb === "mute" && log.records[0].who === you(jm) && JSON.stringify(log.records[0].channels) === '["voice"]'

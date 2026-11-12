@@ -584,7 +584,13 @@ srv.proc.kill();
       && boot.includes(`[boot] old-format world "prenamed" (prenamed/world.jsonl) is NOT being served.`) && /\[boot\] 2 world\(s\) need translating — see above/.test(boot) && !/"hollow"/.test(boot),
       "SH0 at boot the operator is told, per old world, that it isn't served and the exact command (this WORLDS_DIR), and how many", boot.split("\n").filter((l) => /old-format|need translating|translate /.test(l))); }
   const t = await client(srvA.port, "garden", "Ann", REPLICA);
-  let said = 0; for (let i = 0; i < lines; i++) { const r = await t.req("say", { text: `line ${i}` }); if (r.ok) said++; else { await pause("the rate window passes", 1100); i--; } }
+  // only the say rate's refusal is retried, and not forever: it retried any refusal, so a server that stopped answering hung the suite
+  let said = 0, stuck: any = null;
+  for (let i = 0; i < lines && !stuck; i++) {
+    const r = await tryUntil(`say "line ${i}" gets past the say rate (20 in 10 s)`, async () => { const r = await t.req("say", { text: `line ${i}` }); return r.ok || r.refused?.code !== "rate" ? r : null; }, { ms: 30_000, step: 1100 });
+    if (r?.ok) said++; else stuck = { line: i, refused: r?.refused ?? "still rate-refused after 30 s" };
+  }
+  ok(!stuck, `SH (setup) the ${lines} lines are said: a rate refusal waits out its window, anything else stops here and is named`, stuck);
   t.close(); srvA.proc.kill(); await sleep(300);
   const srvB = await startServer(ENGINE, W4, OPT, "sh2");   // a restart: only what's on disk
   // speech is arrival-only (R 10-18): the master log keeps every say; an admin (Ann owns garden) pages back through all of

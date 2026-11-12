@@ -152,10 +152,13 @@ try {
 
   // ---- B5: play hints in builder mode ----
   await stage("B5", async () => {
-    await buildMode(false);
+    // the seat is made and realized in builder mode; leaving it re-reads the offer next frame (localbody.js build-mode), not ~5 frames on (#318 Ubuntu: 0.85 fps)
+    await buildMode(true);
     check("(setup) a bench beside me, with its seat child", (await make("bench5", "label: 'Bench',", near(0.9, 0)))?.ok
       && (await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { components: { parent: { to: 'bench5' }, transform: { pos: [0, 0.5, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, socket: { name: 'seat' }, station: { action: 'sit' } } });`))?.ok);
-    check("(control) in look mode the hint bar offers X — sit", await waitFor(`/X\\s*—\\s*sit/.test(${hint}) && !document.getElementById('hintbar').classList.contains('gone')`, 6000), await evalJson(hint));
+    check("(setup) the seat is realized on its bench", await waitFor(`Promise.all([import('/lib/world.js'), import('/lib/core.js')]).then(([w, c]) => [...w.bags()].some(([sid, b]) => b?.socket && b?.station && b?.parent?.to === 'bench5' && !!w.socketWorldPos(sid, new c.THREE.Vector3())))`, 8000));
+    await buildMode(false);
+    check("(control) in look mode the hint bar offers X — sit", await waitFor(`/X\\s*—\\s*sit/.test(${hint}) && !document.getElementById('hintbar').classList.contains('gone')`, 6000), await evalJson(`({ text: ${hint}, gone: document.getElementById('hintbar').classList.contains('gone') })`));
     await buildMode(true); await sleep(4000);   // past the builder-mode welcome, which borrows the bar for 2.6 s
     const shown = await evalJson(`({ text: ${hint}, gone: document.getElementById('hintbar').classList.contains('gone') })`);
     check("B5 in builder mode the hint bar doesn't offer 'X — sit' (X deletes here)", shown.gone || !/—\s*sit|E\s*open/.test(shown.text), shown);
