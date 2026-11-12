@@ -233,6 +233,12 @@ console.log("the door's bodyHeightFor through /library (server/routes.ts route)"
     }
     check("a JSON chunk past 16 MiB isn't measured, as the roster's read refuses it", await door("padded") === null, received);
     check("a header claiming a 2 GB JSON chunk isn't measured", await door("lying") === null, received);
+    // a server that ignores Range answers 200 with the whole file: the same length cap applies
+    const whole = Bun.serve({ port: 0, fetch: () => new Response(readFileSync(join(vdir, "padded.vrm"))) });
+    try {
+      check("a JSON chunk past 16 MiB isn't measured from a whole-file answer either",
+        await bodyHeightFor(`http://localhost:${whole.port}`, `${V}/padded.vrm?v=1`) === null);
+    } finally { whole.stop(true); }
   } finally { globalThis.fetch = realFetch; srv.stop(true); }
 }
 

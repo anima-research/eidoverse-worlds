@@ -38,9 +38,9 @@ async function headerAndJson(url: string): Promise<Uint8Array | null> {
   const head = await upTo(19);
   if (!head.ok) return null;
   const buf = new Uint8Array(await head.arrayBuffer());
-  if (head.status !== 206) return buf;
   const len = new DataView(buf.buffer, buf.byteOffset).getUint32(12, true);
   if (len > GLB_MAX_JSON) return null;
+  if (head.status !== 206) return buf;
   const body = await upTo(19 + len);
   return body.ok ? new Uint8Array(await body.arrayBuffer()) : null;
 }
