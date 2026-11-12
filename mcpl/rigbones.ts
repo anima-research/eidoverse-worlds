@@ -64,7 +64,10 @@ async function headerAndJson(url: string): Promise<Uint8Array | null> {
   if (head.status !== 206) return buf;
   const body = await upTo(19 + len);
   if (!body.ok) throw new Error(`the world server answered ${body.status}`);
-  return new Uint8Array(await body.arrayBuffer());
+  const all = new Uint8Array(await body.arrayBuffer());
+  // a different header or fewer bytes: the file was replaced between the two reads, so read it again later
+  if (all.length < 20 + len || new DataView(all.buffer, all.byteOffset).getUint32(12, true) !== len) throw new Error("the model changed while it was read");
+  return all;
 }
 
 /** Exported for tests: the same reading over a parsed glTF. */

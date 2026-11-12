@@ -272,6 +272,22 @@ console.log("the door's bodyHeightFor through /library (server/routes.ts route)"
     requests = 0;
     for (let i = 0; i < 3; i++) await door("empty");
     check("an empty file is asked about once for its version", requests === 1, { requests });
+    // the file is replaced between the header read and the JSON read: that reading is tried again later
+    for (const [label, during] of [["a short second answer", body(V1).subarray(0, 30)],
+      ["a second answer whose header claims more than the cap", readFileSync(join(vdir, "padded.vrm")).subarray(0, body(V1).length)]] as const) {
+      let swapping = true;
+      const swap = Bun.serve({ port: 0, fetch: (req) => {
+        const end = +(/bytes=0-(\d+)/.exec(req.headers.get("range") ?? "")?.[1] ?? -1);
+        return new Response(end > 19 && swapping ? during : body(V1).subarray(0, end + 1), { status: 206 });
+      } });
+      try {
+        const at = `http://localhost:${swap.port}`, p = `${V}/swap.vrm?v=1`;
+        const first = await bodyHeightFor(at, p);
+        swapping = false;
+        const later = await bodyHeightFor(at, p);
+        check(`${label} isn't kept as the file's reading`, first === null && near(later, 1.5), { first, later });
+      } finally { swap.stop(true); }
+    }
   } finally { globalThis.fetch = realFetch; srv.stop(true); }
 }
 
