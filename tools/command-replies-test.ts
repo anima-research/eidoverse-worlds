@@ -47,9 +47,15 @@ check('(control) /debug with one event prints it', said.length === 1 && /\[deny\
 said = await run('rename');
 check("/rename's hint says reload with ?door, at the door, and never to clear ew-name",
   said.length === 1 && /\?door/.test(said[0]) && /\bdoor\b/.test(said[0].replace(/\?door/g, '')) && !/ew-name/.test(said[0]) && !/authority/.test(said[0]), JSON.stringify(said));
+// bot #6: a Discord sign-in's door shows that account's name, with no field, so ?door alone can't rename them
+modules['base.js'].CONFIG.authed = true;
+said = await run('rename');
+modules['base.js'].CONFIG.authed = false;
+check("/rename, signed in with Discord: says the name is the account's, and that logging out frees it",
+  said.length === 1 && /Discord/.test(said[0]) && /log out/i.test(said[0]), JSON.stringify(said));
 const { COMMANDS } = await import('../client/lib/commands/registry.js');
 const nameHelp = COMMANDS.find((c: any) => c.name === 'name')?.help ?? '';
-check("/name's help says the name is chosen at the door (not 'the authority')", /at the door/.test(nameHelp) && !/authority/.test(nameHelp), nameHelp);
+check("/name's help says the name is chosen at the door (not 'the authority'), a Discord sign-in's being the account's", /at the door/.test(nameHelp) && !/authority/.test(nameHelp) && /Discord/.test(nameHelp), nameHelp);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

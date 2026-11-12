@@ -541,7 +541,9 @@ register('rename', () => {
   // chat.js emitted this command for years with nobody subscribed (§14.1
   // found bug) — a silently dead command. Until mid-session renames exist,
   // say so instead of saying nothing.
-  logChat('*', "renaming mid-session isn't supported yet — reload the page with ?door to choose a new name at the door");
+  logChat('*', CONFIG.authed   // a Discord sign-in's door shows that account's name, with no field to change it (ui.js openDoor)
+    ? "you're signed in with Discord, so the world calls you by that account's name — to arrive under another, log out (the menu's Log out) and choose one at the door"
+    : "renaming mid-session isn't supported yet — reload the page with ?door to choose a new name at the door");
 });
 
 function bearingTo(p) {
