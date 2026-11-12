@@ -1167,6 +1167,15 @@ opaque. An asset reference is stored as written (a library path, an Essential's
 or a preset's name: §9.2), and the bytes ride beside it as a content address,
 `sha256:<64 hex>`, which pins exact bytes; a blob is named by its content address.
 
+Angles are radians unless the name carries its unit (`turn {deg}`,
+`motion.degPerSec`, a `placed` note's `yawDeg`). That holds everywhere on
+the wire: a component's fields (a station's `exit` yaw too), a verb's
+arguments (`create at {yaw}`, `set transform {yaw}`), the authority's notes,
+and presence (`{yaw, pitch}`). So a bare `yaw` is always radians: 1.5708 is
+a quarter turn. Degrees are for people: the Inspector and its agent doors
+(`inspect`, and `edit`'s `pos.yaw` and `rot.x/y/z`) and the rest of the UI
+show and take degrees, and convert at the edge.
+
 ### 9.1 Orientation: `q`
 
 An entity's orientation is `transform.q`, a unit quaternion `[x, y, z, w]`
@@ -1190,7 +1199,7 @@ alpha; a trial component that still differs is moving to the convention, not
 away from it.
 
 - **Units**: metres, kilograms, seconds. Instants are epoch milliseconds.
-  Angles are radians unless the field's name carries its unit (`degPerSec`).
+  Angles are radians, as everywhere on the wire (§9).
   The shape audit moved the last degrees: `look-at`'s yaw, pitch and
   speed (rad, rad/s) and `sky.azimuth` (where the sun stands round the
   horizon: default π, within ±2π; a v1 degree value is converted by the

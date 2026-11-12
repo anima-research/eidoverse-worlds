@@ -21,6 +21,8 @@
 //   AT10 catch_up says speech is arrival-only (decision table row 11)
 //   AT12 /worlds lists agents apart again; the worlds tool counts humans and agents (decision table row 21)
 //   AT11 a timed grant takes main's for: "2h" again through act set (decision table row 14)
+//   AT13 yaw says its unit wherever an agent writes or reads it (#147): create's at in radians, measure in degrees (radians beside), edit's pos.yaw in degrees,
+//        every angle in a tool schema, verb arg or component doc labelled, and PROTOCOL §9's rule covering verbs, notes and presence
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -76,6 +78,29 @@ const { HANDLERS, TOOLS, toolList, handleTool: handleToolDoor } = await import("
   ok(!/default for agent performers/.test(desc.act) && /owner's call \(their move gate/.test(desc.act) && desc.act.includes((await import("../../shared/protocol/physconst.js")).bodyRangeWords()) && !/within 3 m/.test(desc.act) && /shove \{target/.test(desc.act), "AT3 act's shove says the body's owner decides, the same for every body (no agent default)", desc.act.slice(0, 200));
   // AT10 (decision table row 11): speech is arrival-only (server/world.ts sayFloor), so catch_up promises no backlog
   ok(/arrival-only/.test(desc.catch_up) && /since you arrived/.test(desc.catch_up) && !/since a point in the world's history/.test(desc.catch_up), "AT10 catch_up's description says speech is arrival-only: chat since you arrived, no backlog", desc.catch_up);
+  // AT13 (#147): a bare yaw is radians (PROTOCOL §9); the inspector's pos.yaw is a heading in degrees, like Rotate
+  { const create = TOOLS.find((t) => t.name === "create"), { VERBSPEC } = await import("../../shared/protocol/verbspec.js");
+    const agents = fs.readFileSync(path.join(ENGINE, "AGENTS.md"), "utf8");
+    ok(/yaw[^.;]*radians/.test(create.description) && /radians/.test(create.inputSchema.properties.at.description) && /yaw[^.;]*radians/.test(VERBSPEC.create.args.at.doc),
+      "AT13 create's at says its yaw is radians: the tool's description, its at schema, and the authority's create.at", [create.inputSchema.properties.at.description, VERBSPEC.create.args.at.doc]);
+    ok(/pos\.yaw \(heading, degrees\)/.test(desc.inspect) && /`pos\.yaw`\s+\(heading, in degrees\b/.test(agents),
+      "AT13 …and inspect and AGENTS.md say pos.yaw is a heading in degrees (editOps reads it so)", desc.inspect.slice(0, 300));
+    // every angle an agent writes or reads names its unit: a tool's or verb's angle-named argument, and a component field that carries a yaw
+    const { COMPONENTS } = await import("../../shared/protocol/componentspec.js");
+    const ANGLE = /^(yaw|pitch|roll|heading|azimuth|angle)$/i, UNIT = /radian|\brad\b|degree|°/i, bare: string[] = [];
+    const walk = (where, props) => { for (const [k, v] of Object.entries(props ?? {})) {
+      if ((ANGLE.test(k) || /\byaw\b/.test(v?.description ?? "")) && !UNIT.test(v?.description ?? "")) bare.push(`${where}.${k}`);
+      walk(`${where}.${k}`, v?.properties); walk(`${where}.${k}[]`, v?.items?.properties); } };
+    for (const t of TOOLS) walk(t.name, t.inputSchema?.properties);
+    for (const [verb, s] of Object.entries(VERBSPEC)) for (const [a, d] of Object.entries(s.args ?? {})) if ((ANGLE.test(a) || /\byaw\b/.test(d?.doc ?? "")) && !UNIT.test(d?.doc ?? "")) bare.push(`verb ${verb}.${a}`);
+    // a component's pitch may be a playback rate (sound), so only these names; a tuple's yaw is labelled in the doc, the field's unit being its metres
+    for (const [c, def] of Object.entries(COMPONENTS)) for (const [f, doc] of Object.entries(def.docs ?? {}))
+      if (((/^(yaw|heading|azimuth|angle)$/.test(f) && !def.units?.[f]) || /,\s*yaw\b/.test(doc)) && !UNIT.test(doc)) bare.push(`component ${c}.${f}`);
+    if (!/yaw[^.;]*radians/.test(COMPONENTS.transform.help)) bare.push("component transform's help: set {yaw}");
+    ok(!bare.length, "AT13 …and every angle in a tool's schema, a verb's args or a component's docs names its unit", bare);
+    const spec = fs.readFileSync(path.join(ENGINE, "spec/PROTOCOL.md"), "utf8"), conv = spec.slice(spec.indexOf("## 9. Conventions"), spec.indexOf("### 9.1"));
+    ok(/Angles are radians/.test(conv) && /verb's\s+arguments/.test(conv) && /presence/.test(conv) && /`inspect`/.test(conv) && /`edit`/.test(conv) && /degrees/.test(conv),
+      "AT13 …and PROTOCOL §9 (not only §9.2's components) says angles are radians for verb arguments, notes and presence, and inspect/edit and the UI are degrees", conv.slice(0, 400)); }
   // ---- AT6: the surface itself ----
   const names = TOOLS.map((t) => t.name);
   const folded = ["take_off", "climb_to", "glide_to", "land_at", "rehearse_down", "rehearse_recover", "fold_wings", "unfold_wings", "flight_status",
@@ -245,6 +270,8 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   ok(!d2.isError && made2 && made2 !== made && gap > 0 && gap < 2, "AT2b create {from: <handle>} with no at puts the copy beside its source (within 2 m, not on it)", [T(d2), p0, p2, gap]);
   const d3 = await call("create", { from: ID.mug.slice(0, 9), at: { pos: [9, 0, 2] } });   // by a longer prefix of its id
   ok(!d3.isError, "AT2c …and the authority's own {pos, yaw|q} still passes through (a unique id prefix names the source)", T(d3));
+  const m = await call("measure", { id: ag.handle(ID.mug) });
+  ok(!m.isError && / yaw -?\d+(\.\d)?° \(-?\d+\.\d\d rad\)/.test(T(m)), "AT13 measure says where a thing is with its yaw in degrees, and the radians create takes beside it", T(m).slice(0, 300));
   const chosen = await call("create", { id: "my-mug", model: "test/cup.glb" });
   ok(chosen.isError && /mint/.test(T(chosen)) && /\$my-mug/.test(T(chosen)), "AT2e an id the agent chooses is refused, and the words name the placeholder", T(chosen)); }
 
