@@ -183,9 +183,10 @@ console.log("\nterrain lifecycle (the real setGrass/setGrassDensity path)");
 // flora.js's SHIPPED wireDensityDial, source-extracted so the silent-no-op
 // mechanism is demonstrated on both trees, not retyped into the test.
 const floraSrc = await Bun.file(here("../client/lib/flora.js")).text();
+const { mulberry32 } = await import("../shared/rand.js");   // the one import wireDensityDial reads
 const wdMatch = floraSrc.match(/function wireDensityDial\(field\) \{[\s\S]*?\n\}/);
 const wireDial = wdMatch
-  ? new Function("densityCount", `${wdMatch[0]}; return wireDensityDial;`)(densityCount)
+  ? new Function("densityCount", "mulberry32", `${wdMatch[0]}; return wireDensityDial;`)(densityCount, mulberry32)
   : null;
 
 /** A stroke shaped to createFlora's contract: instance total, live mesh

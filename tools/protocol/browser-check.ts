@@ -40,7 +40,7 @@ const work = async (base: string, texts: { cottage: string; mods: string[] }) =>
     putBlob: (v: any) => { const s = M.fold.jcs(v); const h = `sha256:${H(s)}`; if (!blobs.has(h)) blobs.set(h, s); return h; },
     // §2.4 custody, fixed test keys (a browser door holds no key file; the lab's conformance sequencer key)
     // seeded bytes for genesis's nonce and every set's salt: both sides draw the same, so the logs compare byte for byte
-    random: (() => { let k = 0; return (n: number) => Uint8Array.from({ length: n }, () => (k = (k * 1103515245 + 12345) >>> 0) >>> 24); })(),
+    random: (await import(`${base}/shared/rand.js`)).seededBytes(1),
     custody: { sequencer: () => "ed25519:rRoIPhqlc8rDxC1GZlfHOe1IBJYWQ8MDNg9QuZzMsic", operator: () => "ed25519:BP7aKo17f474DD1aBSLG0a3Pb29Qs3yqQ6Ve0wSRVD0", keyOf: () => "ed25519:BP7aKo17f474DD1aBSLG0a3Pb29Qs3yqQ6Ve0wSRVD0" } };
   // the requests below seed known ids (a fixture, both sides alike: a minted id is random, and the two logs are compared byte
   // for byte), through the authority's fixture seam (R 10-17: a writer never chooses an id)
