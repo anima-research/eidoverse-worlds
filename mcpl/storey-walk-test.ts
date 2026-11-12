@@ -731,7 +731,7 @@ console.log("\nthe feet keep the storey when the walk ends, after a tumble and a
   ag.flightBegin();
   check("a flight begun upstairs starts from the upper floor", Math.abs(ag.flight?.pos?.y - upperY) < 1e-9, String(ag.flight?.pos?.y));
   ag.pos.y = upperY + 0.2;
-  ag.flightEnd();
+  ag.endFlight("landed");
   check("a flight that ends just above the upper floor leaves the feet on it", Math.abs(ag.pos.y - upperY) < 1e-9, String(ag.pos.y));
 }
 {
@@ -741,7 +741,7 @@ console.log("\nthe feet keep the storey when the walk ends, after a tumble and a
   // of the deck and stand on it.
   const DECK1 = { levels: [{ y: 0.9, tiles, walls: [], apertures: [] }] };
   const flyer = agentIn(0, { house: DECK1 });
-  flyer.flightEnd();
+  flyer.endFlight("landed");
   check("a standing flyer whose flight ends under a deck a metre up stands on the terrain", flyer.pos.y === 0 && !flyer.isSlumped(), `${flyer.pos.y}`);
 }
 
@@ -1160,7 +1160,7 @@ console.log("\nGreptile's review of October 19: a floor walk's lowest ground, th
   // ragdoll leaves it, puts its feet on the upper floor
   const lander = agentIn(upperY);
   lander.clip = "ragdoll"; lander.heldPose = { hips: [0, 0, 0, 1] }; lander.heldPoseAuthored = false; lander.pos.y = upperY - 0.7;
-  lander.flightEnd();
+  lander.endFlight("landed");
   check("a flight that ends with the body laid down upstairs stands it on the upper floor", Math.abs(lander.pos.y - upperY) < 1e-9, String(lander.pos.y));
 
   const namer = agentIn(upperY);

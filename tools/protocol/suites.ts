@@ -192,6 +192,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["buildcheck", "../buildcheck-test.ts", 1], // #241: the build check against the walking body's rules
   ["buildcheck-queue", "../buildcheck-queue-test.ts", 1], // #241: checks are queued, cached, and answer for the bytes hashed
   ["buildcheck-route", "../buildcheck-route-test.ts", 1], // #241: GET /check and measure {check: true} (check_model)
+  ["flight-exit", "../flight-exit-test.ts", 1], // #287 #290 #293 #298 #300: an agent's flight has one way out (endFlight) and one current course (setCourse)
   ["door-is-error", "../door-is-error-test.ts", 1], // #269 (main, merged into #260 10-20): a door call that didn't do what it asked answers isError; flight acts answer {ok, text}
   ["door-wording", "../door-wording-test.ts", 1],   // #270 (main, merged into #260 10-21): the door's refusals say what wasn't done and why; deleted here once by mistake (3440e655), restored
   ["consent-replay", "../consent-replay-test.ts", 0.1],   // an agent's gates and lists, replayed on arrival, are what it holds when the read returns (house 6340433633; R 10-28)

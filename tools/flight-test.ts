@@ -771,7 +771,7 @@ console.log('\nREVIEW cea3c3c -- blockers 4 and 6');
   check('an unaffordable climb has no direct pos.y assignment',
         !/f\.pos\.y = from \+ afford/.test(ag));
   check('...and goes through the same ticked integrator',
-        /f\.climbTo = reach; f\.climbRate = climbRate/.test(ag));
+        /this\.setCourse\(\{ kind: "climb", alt: reach, rate: climbRate/.test(ag));
 
   // B7: the perch economy is not advertised by anything that cannot perform it.
   check('flight_status does not advertise a perch refill',
