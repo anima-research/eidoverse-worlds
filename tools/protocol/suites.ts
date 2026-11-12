@@ -125,6 +125,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["grab", "grab-check.ts", 1],         // grabbable (research grab 10-06): the gate, release modes, the hold record, use while held
   ["shove", "shove-check.ts", 1],       // body shove at the authority: punt {contact: true}'s own gate (a body against it, at a walk's speed, away from the body, at rest)
   ["shove-walker", "../shove-test.ts", 1], // …the walker's side (shared/shove.js): one punt per contact, bounded, none standing still or for what may not be shoved
+  ["own-names", "../own-names-test.ts", 1], // #297: a bone or contact-point name is an own key; constructor, __proto__, toString never read as one
   ["force", "force-check.ts", 1],
   ["physconst", "../physconst-test.ts", 1], // one binding for reach and hand numbers (the authority's, the client's); R 10-28: the punt's reach is KICK's alone       // R 10-28 item 4: force {at, radius, power} (/boom): bodies through their consent, loose things through the punt
   ["agentshove", "agentshove-check.ts", 1], // …an agent's walk shoves too, through the same punt (a real WorldAgent on a real server)

@@ -51,9 +51,6 @@ export const FINGER_BONES = (() => {
 export const HUMANOID_BONES = [...REQUIRED_BONES, ...OPTIONAL_BONES, ...FINGER_BONES];
 const HUMANOID_SET = new Set(HUMANOID_BONES);
 
-const BY_KEY = new Map();
-for (const b of HUMANOID_BONES) BY_KEY.set(b.toLowerCase(), b);
-
 /** Names people reach for that the spec does not use. Kept deliberately short:
  *  this resolves genuine synonyms from other rig conventions (Mixamo, Blender
  *  Rigify, VRChat docs), not guesses. Anything not here gets a suggestion
@@ -70,12 +67,16 @@ const ALIASES = {
   pelvis: 'hips', root: 'hips', torso: 'chest', spine1: 'chest', spine2: 'upperChest',
 };
 
+/** Folded key → bone: every bone by its lowercase name, then the aliases. A Map, so no inherited name is a key. */
+const BY_KEY = new Map(Object.entries(ALIASES));
+for (const b of HUMANOID_BONES) BY_KEY.set(b.toLowerCase(), b);
+
 /** Fold a written name to its canonical form: case, separators and a few
  *  cross-rig synonyms. Returns null if it is not a humanoid bone at all. */
 export function canonicalBone(name) {
   if (typeof name !== 'string') return null;
   const key = name.trim().toLowerCase().replace(/[\s_.-]/g, '');
-  return BY_KEY.get(key) ?? ALIASES[key] ?? null;
+  return BY_KEY.get(key) ?? null;
 }
 
 /** Levenshtein, bounded — only ever run over 55 short strings. */
@@ -161,9 +162,14 @@ export function poseChannels(v) {
 export function mergePose(base, delta) {
   const out = { ...(base && typeof base === 'object' ? base : {}) };
   for (const [k, v] of Object.entries(delta ?? {})) {
-    if (v == null) delete out[k]; else out[k] = v;
+    if (v == null) delete out[k]; else setOwn(out, k, v);
   }
   return Object.keys(out).length ? out : null;
+}
+
+/** `obj[k] = v` that keeps a bone named `__proto__` a key, never the object's prototype (#297). */
+function setOwn(obj, k, v) {
+  Object.defineProperty(obj, k, { value: v, writable: true, enumerable: true, configurable: true });
 }
 
 /**
@@ -275,8 +281,9 @@ export function validatePose(bones, opts = {}) {
         out.rejected.push({ name: raw, why: 'sits above the hips — the body is placed from hips every frame, so move hips ({t: [x,y,z]}) instead' });
         continue;
       }
-      name = rig.humanoidOf?.[raw] ?? raw;
-      isCustom = !rig.humanoidOf?.[raw];
+      const mapped = Object.hasOwn(rig.humanoidOf ?? {}, raw) ? rig.humanoidOf[raw] : null;
+      name = mapped ?? raw;
+      isCustom = !mapped;
     } else name = canonicalBone(raw);
     if (!name) {
       const suggest = suggestBone(raw);
@@ -289,9 +296,9 @@ export function validatePose(bones, opts = {}) {
       name = raw; isCustom = true; isUnchecked = true;   // no rig to check against
     }
     if (v === null) {                  // release this bone (a merge — shared/humanoid.js mergePose)
-      if (name in out.pose) { out.rejected.push({ name: raw, why: `also names ${name}, already set here — one bone, one value` }); continue; }
+      if (Object.hasOwn(out.pose, name)) { out.rejected.push({ name: raw, why: `also names ${name}, already set here — one bone, one value` }); continue; }
       if (name !== raw) out.renamed.push({ from: raw, to: name });
-      out.pose[name] = null; out.released.push(name);
+      setOwn(out.pose, name, null); out.released.push(name);
       continue;
     }
     const pv = normalizePoseValue(v);
@@ -300,13 +307,13 @@ export function validatePose(bones, opts = {}) {
     // Two written names can fold to one bone ("leftElbow" and "LeftLowerArm").
     // Last-write-wins would drop one of them without a word — the exact silent
     // overwrite this module exists to stop. Keep the first, name the clash.
-    if (name in out.pose) {
+    if (Object.hasOwn(out.pose, name)) {
       out.rejected.push({ name: raw, why: `also names ${name}, already set here — one bone, one value` });
       continue;
     }
     if (name !== raw) out.renamed.push({ from: raw, to: name });
     if (pv.renormalized) out.renormalized.push(name);
-    out.pose[name] = pv.value;
+    setOwn(out.pose, name, pv.value);
     out.accepted.push(name);
     if (isCustom) out.custom.push(name);
     if (isUnchecked) out.unchecked.push(name);
@@ -359,7 +366,7 @@ export function validateTracks(tracks, opts = {}) {
       continue;
     }
     if (known && !known.has(name)) { out.absent.push(name); continue; }
-    if (name in out.tracks) {
+    if (Object.hasOwn(out.tracks, name)) {
       out.rejected.push({ name: raw, why: `also names ${name}, already tracked here — one bone, one track` });
       continue;
     }

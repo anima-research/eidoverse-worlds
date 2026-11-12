@@ -46,17 +46,16 @@ export const REACH_LIMBS = ['leftHand', 'rightHand', 'leftFoot', 'rightFoot'];
  *  touch is, or the same hand touches in one process and hovers in another. */
 export const TOUCH_GAP = 0.05;
 
+const LIMB_BY_KEY = new Map(Object.entries({
+  left: 'leftHand', right: 'rightHand',
+  lefthand: 'leftHand', righthand: 'rightHand',
+  leftfoot: 'leftFoot', rightfoot: 'rightFoot',
+  leftleg: 'leftFoot', rightleg: 'rightFoot',
+}));
 /** Tolerant limb naming: 'right', 'right hand', 'right_hand' → 'rightHand'. */
 export function canonicalLimb(name) {
   if (typeof name !== 'string') return null;
-  const k = name.trim().toLowerCase().replace(/[\s_-]+/g, '');
-  const map = {
-    left: 'leftHand', right: 'rightHand',
-    lefthand: 'leftHand', righthand: 'rightHand',
-    leftfoot: 'leftFoot', rightfoot: 'rightFoot',
-    leftleg: 'leftFoot', rightleg: 'rightFoot',
-  };
-  return map[k] ?? null;
+  return LIMB_BY_KEY.get(name.trim().toLowerCase().replace(/[\s_-]+/g, '')) ?? null;
 }
 
 const fin3 = (p) => Array.isArray(p) && p.length === 3 && p.every(Number.isFinite);
