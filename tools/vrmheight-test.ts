@@ -175,6 +175,50 @@ check("a re-export's stature shows at once", near(height("plain"), 1.63), height
   check("a body only in PATCH_DIR is listed", near(entry("patchonly")?.height, 1.63), entry("patchonly") ?? "not listed");
 }
 
+// ---- 4. the door through the real /library route ------------------------------
+console.log("the door's bodyHeightFor through /library (server/routes.ts route)");
+{
+  const { route } = await import("../server/routes.ts");
+  const { rigBonesFor } = await import("../mcpl/rigbones.ts");
+  const srv = Bun.serve({ port: 0, fetch: (req) => route(req, { upgrade: () => false, requestIP: () => ({ address: "127.0.0.1" }) } as any) });
+  // what the door's own fetches receive, decoded
+  const realFetch = globalThis.fetch;
+  let received = 0;
+  globalThis.fetch = (async (input: any, init?: any) => {
+    const res = await realFetch(input, init);
+    received += (await res.clone().arrayBuffer()).byteLength;
+    return res;
+  }) as typeof fetch;
+  const base = `http://localhost:${srv.port}`, V = "eidoverse/assets/vrms";
+  const door = async (name: string, v = 1_700_000_000_000) => { received = 0; return bodyHeightFor(base, `${V}/${name}.vrm?v=${v}`); };
+  try {
+    put("reexport", body(V1));
+    const first = await door("reexport");
+    put("reexport", body(V1, { headY: 0.6 }), 1_700_000_500_000);
+    const second = await door("reexport", 1_700_000_500_000);
+    check("a re-export at the same path is measured again at its new ?v=", near(first, 1.5) && near(second, 1.63), { first, second });
+    const renamed = (name: string) => glb({ asset: { version: "2.0" }, scenes: [{ nodes: [0] }],
+      nodes: [{ name: "Armature", children: [1] }, { name, translation: [0, 0.9, 0] }],
+      extensions: { VRMC_vrm: { specVersion: "1.0", humanoid: { humanBones: { hips: { node: 1 } } } } } });
+    put("rebones", renamed("Hips_v1"));
+    const bonesBefore = await rigBonesFor(base, `${V}/rebones.vrm?v=1700000000000`);
+    put("rebones", renamed("Hips_v2"), 1_700_000_500_000);
+    const bonesAfter = await rigBonesFor(base, `${V}/rebones.vrm?v=1700000500000`);
+    check("…and so is its rig", bonesBefore?.bones[0] === "Hips_v1" && bonesAfter?.bones[0] === "Hips_v2", { bonesBefore, bonesAfter });
+    {
+      // a real body's shape: a small JSON chunk, then a 2 MB BIN chunk that /library would gzip whole
+      const j = body(V1), bin = new Uint8Array(2 * 1024 * 1024).map((_, i) => (i * 2654435761) >>> 24);
+      const out = new Uint8Array(j.length + 8 + bin.length), dv = new DataView(out.buffer);
+      out.set(j); dv.setUint32(8, out.length, true); dv.setUint32(j.length, bin.length, true); dv.setUint32(j.length + 4, 0x004e4942, true);
+      out.set(bin, j.length + 8);
+      put("big", out);
+      const h = await door("big");
+      check("a 2 MB body is measured from its header, not downloaded", near(h, 1.5) && received <= j.length + 20, { h, received });
+    }
+    check("a JSON chunk past 16 MiB isn't measured, as the roster's read refuses it", await door("padded") === null, received);
+    check("a header claiming a 2 GB JSON chunk isn't measured", await door("lying") === null, received);
+  } finally { globalThis.fetch = realFetch; srv.stop(true); }
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

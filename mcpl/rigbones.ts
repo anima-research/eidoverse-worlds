@@ -4,7 +4,7 @@
 // the rigs that have them, and a pose naming one a rig lacks does nothing on
 // every renderer, silently. So the check needs the rig, and the rig is in the
 // file's JSON chunk — the header bytes, not the multi-megabyte body.
-import { glbJson, humanBones, stature } from "./rig.ts";
+import { glbJson, humanBones, stature, GLB_MAX_JSON } from "./rig.ts";
 
 export type RigBones = {
   /** every skin joint and humanoid bone, by node name */
@@ -15,34 +15,34 @@ export type RigBones = {
   aboveHips: string[];
 };
 
-// per avatar file, immutable — the promise is cached so concurrent calls share one fetch
+// per avatar path and version (its ?v=), immutable — the promise is cached so concurrent calls share one fetch
 const cache = new Map<string, Promise<RigBones | null>>();
 
 export function rigBonesFor(httpBase: string, avatarPath: string): Promise<RigBones | null> {
-  const key = avatarPath.split("?")[0];
-  if (!key) return Promise.resolve(null);
-  let p = cache.get(key);
+  const path = avatarPath.split("?")[0];
+  if (!path) return Promise.resolve(null);
+  let p = cache.get(avatarPath);
   if (!p) {
-    p = readRig(`${httpBase}/library/${key}`).catch(() => null);
-    cache.set(key, p);
-    p.then((r) => { if (!r) cache.delete(key); });   // a failed read may succeed later
+    p = headerAndJson(`${httpBase}/library/${path}`).then((buf) => buf && rigFromGltf(glbJson(buf))).catch(() => null);
+    cache.set(avatarPath, p);
+    p.then((r) => { if (!r) cache.delete(avatarPath); });   // a failed read may succeed later
   }
   return p;
 }
 
-async function readRig(url: string): Promise<RigBones | null> {
-  // Header first: 20 bytes say how long the JSON chunk is. A server that
-  // ignores Range answers 200 with the whole file, which parses the same.
-  const head = await fetch(url, { headers: { Range: "bytes=0-19" } });
+/** A GLB's header and JSON chunk, the bytes server/vrmheight.ts reads from disk: 20 bytes say how long the JSON
+ *  chunk is, past GLB_MAX_JSON refused. Identity-encoded so /library answers ranged instead of gzipping the whole
+ *  file; a server that ignores Range answers 200 with the whole file, which parses the same. */
+async function headerAndJson(url: string): Promise<Uint8Array | null> {
+  const upTo = (end: number) => fetch(url, { headers: { Range: `bytes=0-${end}`, "Accept-Encoding": "identity" } });
+  const head = await upTo(19);
   if (!head.ok) return null;
-  let buf = new Uint8Array(await head.arrayBuffer());
-  if (head.status === 206) {
-    const len = new DataView(buf.buffer, buf.byteOffset).getUint32(12, true);
-    const body = await fetch(url, { headers: { Range: `bytes=0-${19 + len}` } });
-    if (!body.ok) return null;
-    buf = new Uint8Array(await body.arrayBuffer());
-  }
-  return rigFromGltf(glbJson(buf));
+  const buf = new Uint8Array(await head.arrayBuffer());
+  if (head.status !== 206) return buf;
+  const len = new DataView(buf.buffer, buf.byteOffset).getUint32(12, true);
+  if (len > GLB_MAX_JSON) return null;
+  const body = await upTo(19 + len);
+  return body.ok ? new Uint8Array(await body.arrayBuffer()) : null;
 }
 
 /** Exported for tests: the same reading over a parsed glTF. */
@@ -67,28 +67,20 @@ export function rigFromGltf(g: any): RigBones | null {
 }
 
 // ---- stature ------------------------------------------------------------------
+// per avatar path and version, as the roster's own read (server/vrmheight.ts) keeps one per version
 const heights = new Map<string, Promise<number | null>>();
 
 /** A body's standing height in metres, shared/rig.js's stature() over the same header bytes: the
  *  rule the browser's Avatar.bodyHeight and the roster (server/vrmheight.ts) use. What water depth is
  *  measured against (shared/terrainshape.js waterStance). Null when the file has no humanoid head. */
 export function bodyHeightFor(httpBase: string, avatarPath: string): Promise<number | null> {
-  const key = avatarPath.split("?")[0];
-  if (!key) return Promise.resolve(null);
-  let p = heights.get(key);
+  const path = avatarPath.split("?")[0];
+  if (!path) return Promise.resolve(null);
+  let p = heights.get(avatarPath);
   if (!p) {
-    p = (async () => {
-      const head = await fetch(`${httpBase}/library/${key}`, { headers: { Range: "bytes=0-19" } });
-      if (!head.ok) return null;
-      let buf = new Uint8Array(await head.arrayBuffer());
-      if (head.status === 206) {
-        const len = new DataView(buf.buffer, buf.byteOffset).getUint32(12, true);
-        buf = new Uint8Array(await (await fetch(`${httpBase}/library/${key}`, { headers: { Range: `bytes=0-${19 + len}` } })).arrayBuffer());
-      }
-      return stature(glbJson(buf));
-    })().catch(() => null);
-    heights.set(key, p);
-    p.then((h) => { if (h == null) heights.delete(key); });
+    p = headerAndJson(`${httpBase}/library/${path}`).then((buf) => buf && stature(glbJson(buf))).catch(() => null);
+    heights.set(avatarPath, p);
+    p.then((h) => { if (h == null) heights.delete(avatarPath); });
   }
   return p;
 }

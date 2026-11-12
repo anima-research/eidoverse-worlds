@@ -14,14 +14,10 @@
 // stamps it) and nothing is written. Read-only on the VRM.
 import * as THREE from "three";
 import { closeSync, openSync, readSync } from "node:fs";
-import { glbJson, rigMath } from "../shared/rig.js";
+import { glbJson, rigMath, GLB_MAX_JSON as MAX_JSON } from "../shared/rig.js";
 
 const { stature } = rigMath(THREE);
 const memo = new Map<string, { v: string; h: number | null }>();
-/** A VRM's JSON describes its nodes and extensions, well under a megabyte for
- *  any real body; the meshes are in the binary chunk. A header claiming more is
- *  refused before anything is allocated or decoded. */
-const MAX_JSON = 16 * 1024 * 1024;
 
 /** The header and JSON chunk of a GLB on disk. Its first 20 bytes say how long
  *  the JSON chunk is, and a length past MAX_JSON is refused. A short or foreign
