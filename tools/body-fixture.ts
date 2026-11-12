@@ -36,7 +36,12 @@ export function fixture(scale = 1, vrm0 = false, turn: Record<string, number[]> 
   const extensions = vrm0
     ? { VRM: { meta: { title: "fixture" }, humanoid: { humanBones: Object.entries(bones).map(([bone, v]: any) => ({ bone, node: v.node })) } } }
     : { VRMC_vrm: { specVersion: "1.0", meta: { name: "fixture", authors: ["eidoverse"], licenseUrl: "https://vrm.dev/licenses/1.0/" }, humanoid: { humanBones: bones } } };
-  let json = JSON.stringify({ asset: { version: "2.0" }, scene: 0, scenes: [{ nodes: [0] }], nodes, skins: [{ joints: Object.values(bones).map((v: any) => v.node) }], extensionsUsed: [vrm0 ? "VRM" : "VRMC_vrm"], extensions });
+  return glbOf({ asset: { version: "2.0" }, scene: 0, scenes: [{ nodes: [0] }], nodes, skins: [{ joints: Object.values(bones).map((v: any) => v.node) }], extensionsUsed: [vrm0 ? "VRM" : "VRMC_vrm"], extensions });
+}
+
+/** A GLB holding just this glTF JSON; `JSON.parse(glb.subarray(20).toString())` reads it back. */
+export function glbOf(g: unknown) {
+  let json = JSON.stringify(g);
   json += " ".repeat((4 - Buffer.byteLength(json) % 4) % 4);
   const b = Buffer.alloc(20 + Buffer.byteLength(json));
   b.writeUInt32LE(0x46546c67, 0); b.writeUInt32LE(2, 4); b.writeUInt32LE(b.length, 8);

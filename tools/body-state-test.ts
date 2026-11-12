@@ -11,7 +11,7 @@ const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import("node:fs"
 const { tmpdir } = await import("node:os");
 const { join } = await import("node:path");
 const { check, tally } = mkCheck();
-const { fixture, postureFixture } = await import("./body-fixture.ts");
+const { fixture, postureFixture, glbOf } = await import("./body-fixture.ts");
 
 // Includes bones the old reach stand-in collapses: upperChest, shoulders,
 // fingers. Non-unit ancestor scale and a second VRM0 fixture exercise frames.
@@ -237,6 +237,30 @@ try {
     const result = await pending;
     check("posture is rechecked after an asynchronous skeleton load", !result.ok && result.geometry?.reason === "posture_not_evaluated" && !result.contacts);
   } finally { postureServer.stop(true); }
+
+  // Models a reader must handle on its own: `neck` named on the head's node (#272).
+  const fixtureJson = () => JSON.parse(fixture().subarray(20).toString());
+  const sharedNeck = fixtureJson(), humanBones = sharedNeck.extensions.VRMC_vrm.humanoid.humanBones;
+  humanBones.neck.node = humanBones.head.node;
+  const flat = fixtureJson(); delete flat.extensions; delete flat.extensionsUsed;
+  const models = new Map<string, Uint8Array>([["shared-neck.vrm", glbOf(sharedNeck)], ["flat.vrm", glbOf(flat)],
+    ["junk.vrm", new TextEncoder().encode("not a model")]]);
+  const downloads = new Map<string, number>();
+  let unreachable = false;
+  const library = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(req) {
+    const name = decodeURIComponent(new URL(req.url).pathname).replace(/^\/library\//, "");
+    downloads.set(name, (downloads.get(name) ?? 0) + 1);
+    const bytes = !unreachable && models.get(name);
+    return bytes ? new Response(bytes) : new Response("no", { status: unreachable ? 503 : 404 });
+  } });
+  const limp = (who: string, avatar: string, hips = [0, 0, 0, 1]) => ({ who, avatar, generation: 1, self: false, connected: true,
+    receivedAt: Date.now(), source: "unknown" as const, pose: { p: [0, 0, 0], yaw: 0, speed: 0, clip: "ragdoll", pose: { hips } } });
+  try {
+    const reader = new BodyStateReader(`http://127.0.0.1:${library.port}`);
+    const turned: any = await reader.read("shared", "bones", undefined, () => limp("shared", "shared-neck.vrm", [Math.SQRT1_2, 0, 0, Math.SQRT1_2]));
+    check("a bone named on another bone's node follows the pose with it", near(turned.joints?.head?.position, [0, 1, 0.8]) && near(turned.joints?.neck?.position, [0, 1, 0.8]),
+      JSON.stringify({ head: turned.joints?.head?.position, neck: turned.joints?.neck?.position }));
+  } finally { library.stop(true); }
 } catch (e) {
   process.exitCode = 1;
   throw e;

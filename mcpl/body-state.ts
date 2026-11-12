@@ -53,7 +53,7 @@ function parseRig(bytes: Uint8Array): Rig {
   const nodeParent = new Map<number, number>();
   g.nodes.forEach((n: any, i: number) => (n.children ?? []).forEach((j: number) => nodeParent.set(j, i)));
   const humanoid = Object.entries(bones).filter(([, index]) => Number.isInteger(index) && g.nodes[index as number]) as [string, number][];
-  // One name per node for the hierarchy; two bones on one node each keep their position below.
+  // Which humanoid name stands for a node as an ancestor; every name, two on one node too, gets a parent below.
   const names = new Map<number, string>(humanoid.map(([name, index]) => [index, name]));
   // A loop in the nodes above a bone is found before any position is worked out from that
   // chain, which would recurse around it.
@@ -65,7 +65,7 @@ function parseRig(bytes: Uint8Array): Rig {
   const wp = worldPositions(g), wr = worldRotations(g), P: Record<string, any> = {}, restAxes: Record<string, number[]> = {};
   for (const [name, index] of humanoid) { P[name] = wp(index); restAxes[name] = wr(index).toArray(); }
   const parent: Record<string, string | null> = {};
-  for (const [index, name] of names) {
+  for (const [name, index] of humanoid) {
     let p = nodeParent.get(index);
     while (p != null && !names.has(p)) p = nodeParent.get(p);
     parent[name] = p == null ? null : names.get(p)!;
