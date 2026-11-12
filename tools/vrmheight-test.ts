@@ -23,7 +23,7 @@ const near = (got: number | null | undefined, want: number) => got != null && Ma
 const root = mkdtempSync(join(tmpdir(), "vrmheight-"));
 process.on("exit", () => rmSync(root, { recursive: true, force: true }));   // a throw mid-test too
 Object.assign(process.env, { SKIP_OPT_SWEEP: "1", WORLDS_DIR: join(root, "worlds"), OPT_DIR: join(root, "opt"),
-  EIDOVERSE_DIR: join(root, "lib"), DEFS_DIR: join(root, "defs"), JOIN_TOKEN: "t0k", KTX2_TOKTX: "" });
+  EIDOVERSE_DIR: join(root, "lib"), DEFS_DIR: join(root, "defs"), PATCH_DIR: join(root, "patch"), JOIN_TOKEN: "t0k", KTX2_TOKTX: "" });
 
 // ---- synthesized bodies ------------------------------------------------------
 /** A GLB holding just a JSON chunk: stature reads nodes and the humanoid
@@ -160,6 +160,21 @@ check("a posted height is found under the name's safe form (my body → my_body)
 check("with none of them, no height", height("nothing") === null, height("nothing"));
 put("plain", body(V1, { headY: 0.6 }), 1_700_000_500_000);   // a re-export
 check("a re-export's stature shows at once", near(height("plain"), 1.63), height("plain"));
+{
+  // a deliberate fork in PATCH_DIR is what /library serves, so the roster versions and measures it (#286)
+  const pdir = join(root, "patch", "eidoverse/assets/vrms");
+  mkdirSync(pdir, { recursive: true });
+  put("forked", body(V1));
+  for (const name of ["forked", "patchonly"]) {
+    writeFileSync(join(pdir, `${name}.vrm`), body(V1, { headY: 0.6 }));
+    utimesSync(join(pdir, `${name}.vrm`), new Date(1_700_000_900_000), new Date(1_700_000_900_000));
+  }
+  const entry = (name: string) => avatarRoster().find((a) => a.name === name);
+  check("a patched body is listed at its patch's version, with its patch's stature",
+    entry("forked")?.path.endsWith("?v=1700000900000") === true && near(entry("forked")?.height, 1.63), entry("forked"));
+  check("a body only in PATCH_DIR is listed", near(entry("patchonly")?.height, 1.63), entry("patchonly") ?? "not listed");
+}
+
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
