@@ -270,8 +270,11 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   ok(!d2.isError && made2 && made2 !== made && gap > 0 && gap < 2, "AT2b create {from: <handle>} with no at puts the copy beside its source (within 2 m, not on it)", [T(d2), p0, p2, gap]);
   const d3 = await call("create", { from: ID.mug.slice(0, 9), at: { pos: [9, 0, 2] } });   // by a longer prefix of its id
   ok(!d3.isError, "AT2c …and the authority's own {pos, yaw|q} still passes through (a unique id prefix names the source)", T(d3));
-  const m = await call("measure", { id: ag.handle(ID.mug) });
-  ok(!m.isError && / yaw -?\d+(\.\d)?° \(-?\d+\.\d\d rad\)/.test(T(m)), "AT13 measure says where a thing is with its yaw in degrees, and the radians create takes beside it", T(m).slice(0, 300));
+  // a copy turned a quarter (yaw π/2): an identity fixture would read 0° (0.00 rad) whichever slot the radians went in
+  const turned = await call("create", { from: ID.mug.slice(0, 9), at: { pos: [9, 0, 4], yaw: Math.PI / 2 } }), tid = (T(turned).match(/ id ([a-z2-7]{26})/) ?? [])[1];
+  await tryUntil("the turned copy is in the agent's fold", () => tid && ag.foldRecord(tid), { ms: 2000 });
+  const m = tid ? await call("measure", { id: ag.handle(tid) }) : turned;
+  ok(!m.isError && / yaw 90\.0° \(1\.57 rad\)/.test(T(m)), "AT13 measure says where a thing is with its yaw in degrees, and the radians create takes beside it (a quarter turn: 90.0° (1.57 rad))", T(m).slice(0, 300));
   const chosen = await call("create", { id: "my-mug", model: "test/cup.glb" });
   ok(chosen.isError && /mint/.test(T(chosen)) && /\$my-mug/.test(T(chosen)), "AT2e an id the agent chooses is refused, and the words name the placeholder", T(chosen)); }
 
