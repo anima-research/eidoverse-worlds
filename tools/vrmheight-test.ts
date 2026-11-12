@@ -261,6 +261,12 @@ console.log("the door's bodyHeightFor through /library (server/routes.ts route)"
       extensions: { VRMC_vrm: { specVersion: "1.0", humanoid: { humanBones: { hips: { node: 0 }, head: { node: 1 } } } } } }));
     const cyclic = await door("cyclic"), cyclicRig = await rigBonesFor(base, `${V}/cyclic.vrm?v=1700000000000`);
     check("a node that is its own parent doesn't hang the read", near(cyclic, 1.53) && cyclicRig?.bones.includes("Hips") === true, { cyclic, cyclicRig });
+    // two servers serving different bodies at one path and version: each is asked about its own
+    const short = Bun.serve({ port: 0, fetch: () => new Response(body(V1)) }), tall = Bun.serve({ port: 0, fetch: () => new Response(body(V1, { headY: 0.6 })) });
+    try {
+      const a = await bodyHeightFor(`http://localhost:${short.port}`, `${V}/twin.vrm?v=1`), b = await bodyHeightFor(`http://localhost:${tall.port}`, `${V}/twin.vrm?v=1`);
+      check("a reading is kept per server", near(a, 1.5) && near(b, 1.63), { a, b });
+    } finally { short.stop(true); tall.stop(true); }
   } finally { globalThis.fetch = realFetch; srv.stop(true); }
 }
 

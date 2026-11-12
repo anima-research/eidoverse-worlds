@@ -18,27 +18,28 @@ export type RigBones = {
 /** What the door reads from a body's header: its rig and its stature, from one read. */
 type Reading = { rig: RigBones | null; height: number | null };
 const NOTHING: Reading = { rig: null, height: null };
-// per avatar path and version (its ?v=), the promise shared by concurrent calls. A failed download is dropped
+// per server, avatar path and version (its ?v=), the promise shared by concurrent calls. A failed download is dropped
 // so the next call tries again; a file with nothing to read is kept, as server/vrmheight.ts keeps its own.
 const readings = new Map<string, Promise<Reading>>();
 
 function readingOf(httpBase: string, avatarPath: string): Promise<Reading> {
   const path = avatarPath.split("?")[0];
   if (!path) return Promise.resolve(NOTHING);
-  let p = readings.get(avatarPath);
+  const key = `${httpBase}/library/${avatarPath}`;
+  let p = readings.get(key);
   if (!p) {
     const read = headerAndJson(`${httpBase}/library/${path}`).then((buf) => {
       try { const g = buf && glbJson(buf); return g ? { rig: rigFromGltf(g), height: stature(g) } : NOTHING; }
       catch { return NOTHING; }
     });
-    const settled: Promise<Reading> = read.catch(() => { if (readings.get(avatarPath) === settled) readings.delete(avatarPath); return NOTHING; });
-    readings.set(avatarPath, p = settled);
+    const settled: Promise<Reading> = read.catch(() => { if (readings.get(key) === settled) readings.delete(key); return NOTHING; });
+    readings.set(key, p = settled);
   }
   return p;
 }
 
 /** Forget what was read for this avatar path: its bytes changed (avatar-updated) under the same string. */
-export function forgetReading(avatarPath: string) { readings.delete(avatarPath); }
+export function forgetReading(httpBase: string, avatarPath: string) { readings.delete(`${httpBase}/library/${avatarPath}`); }
 
 export function rigBonesFor(httpBase: string, avatarPath: string): Promise<RigBones | null> {
   return readingOf(httpBase, avatarPath).then((r) => r.rig);

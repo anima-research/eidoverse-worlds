@@ -1441,13 +1441,13 @@ export class WorldAgent {
     if (nameFromAvatarPath(this.avatar) === name) {
       this.selfBodyGeneration = ++this.bodyGenerationCounter;
       this.bodyReader?.forget(this.name);
-      forgetReading(this.avatar);
+      forgetReading(this.httpBase, this.avatar);
       if (this.statureFor === this.avatar) this.measureStature();
     }
     for (const p of this.people.values()) if (nameFromAvatarPath(p.avatar) === name) {
       p.bodyGeneration = ++this.bodyGenerationCounter;
       this.bodyReader?.forget(p.id);
-      forgetReading(p.avatar);
+      forgetReading(this.httpBase, p.avatar);
     }
   }
 
