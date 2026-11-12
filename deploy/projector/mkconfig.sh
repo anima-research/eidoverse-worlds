@@ -27,7 +27,7 @@ KEY="${PROJECTOR_PUBLISH_KEY:-}"
 STREAM_PATH="${PROJECTOR_PATH:-screen}"
 case "$STREAM_PATH" in *[!A-Za-z0-9_-]*|"") echo "mkconfig: PROJECTOR_PATH must be [A-Za-z0-9_-]+ (got '$STREAM_PATH')" >&2; exit 2;; esac
 # mediamtx conf.go treats these as aliases of the template's catch-all and refuses a second at load
-case "$STREAM_PATH" in all|all_others) echo "mkconfig: PROJECTOR_PATH may not be '$STREAM_PATH': mediamtx reads 'all', 'all_others' and '~^.*\$' as one catch-all path, and the template already holds it" >&2; exit 2;; esac
+case "$STREAM_PATH" in all|all_others) echo "mkconfig: PROJECTOR_PATH may not be '$STREAM_PATH': mediamtx reads 'all', 'all_others' and '~^.*\$' as one catch-all path, and the template already holds it; unset it (screen) or choose another name" >&2; exit 2;; esac
 # Every value below is spliced into YAML by sed. sed's replacement side
 # reads `&` (the match), `\` (an escape) and the `|` delimiter as syntax, so
 # a key like `p&ss|word` would render silently wrong (the `&` becomes the
@@ -68,7 +68,7 @@ port() { # $1 = name, $2 = value
 }
 inert PROJECTOR_PUBLISH_USER "$USER_" 'A-Za-z0-9_.-'
 # the template already holds this name (mediamtx.template.yml), and mediamtx refuses a second at load
-if [ "$USER_" = any ]; then echo "mkconfig: PROJECTOR_PUBLISH_USER may not be 'any': 'any' is the template's own reader (anyone, no password), and mediamtx refuses a password on it" >&2; exit 2; fi
+if [ "$USER_" = any ]; then echo "mkconfig: PROJECTOR_PUBLISH_USER may not be 'any': 'any' is the template's own reader (anyone, no password), and mediamtx refuses a password on it; unset it (publisher) or choose another name" >&2; exit 2; fi
 inert PROJECTOR_BIND "$BIND" 'A-Za-z0-9.:-'
 # A bind is a host, never host:port: the ports are their own settings. An
 # IPv6 address has at least two colons, so a bind with one is a host:port,

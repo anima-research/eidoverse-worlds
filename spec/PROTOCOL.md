@@ -1174,8 +1174,9 @@ arguments (`create at {yaw}`, `set transform {yaw}`), the authority's notes,
 and presence (`{yaw, pitch}`). So a bare `yaw` is always radians: 1.5708 is
 a quarter turn, and the authority refuses one past ±2π written to a
 transform or a create's `at` (`shape`: degrees typed as radians). Degrees are for people: the Inspector and its agent doors
-(`inspect`, and `edit`'s `pos.yaw` and `rot.x/y/z`) and the rest of the UI
-show and take degrees, and convert at the edge.
+(`inspect`, and `edit`'s `pos.yaw` and `rot.x/y/z`), `screenshot`'s `pitch`
+(a camera tilt, not a protocol field) and the rest of the UI show and take
+degrees, and convert at the edge.
 
 ### 9.1 Orientation: `q`
 

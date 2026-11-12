@@ -165,8 +165,8 @@ if (YAML) {
 }
 
 console.log('— G. the template\'s own names are refused by name (#288) —');
-const catchAll = /mediamtx reads 'all', 'all_others' and '~\^\.\*\$' as one catch-all path, and the template already holds it/;
-for (const [variable, value, why] of [['PROJECTOR_PUBLISH_USER', 'any', /'any' is the template's own reader/], ['PROJECTOR_PATH', 'all_others', catchAll], ['PROJECTOR_PATH', 'all', catchAll], ['PROJECTOR_PATH', '~^.*$', /PROJECTOR_PATH must be \[A-Za-z0-9_-\]\+/]] as const) {
+const catchAll = /mediamtx reads 'all', 'all_others' and '~\^\.\*\$' as one catch-all path, and the template already holds it; unset it \(screen\) or choose another name/;
+for (const [variable, value, why] of [['PROJECTOR_PUBLISH_USER', 'any', /'any' is the template's own reader.*unset it \(publisher\) or choose another name/], ['PROJECTOR_PATH', 'all_others', catchAll], ['PROJECTOR_PATH', 'all', catchAll], ['PROJECTOR_PATH', '~^.*$', /PROJECTOR_PATH must be \[A-Za-z0-9_-\]\+/]] as const) {
   const r = render({ ...base, [variable]: value });
   check(`${variable}=${value} is refused with exit 2, the variable and the reason named, no file`, r.code === 2 && r.stderr.includes(variable) && why.test(r.stderr) && r.yaml === null, `exit=${r.code} ${r.stderr} file=${r.yaml === null ? 'absent' : 'PRESENT'}`);
 }
