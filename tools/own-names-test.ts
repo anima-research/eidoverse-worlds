@@ -5,6 +5,7 @@
 import { canonicalBone, validatePose, validateTracks, mergePose, puppetPose } from "../shared/humanoid.js";
 import { canonicalPoint } from "../shared/contact.js";
 import { canonicalLimb } from "../shared/reachwire.js";
+import { rigFromGltf } from "../mcpl/rigbones.ts";
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail: unknown = "") => { if (ok) pass++; else fail++; console.log(`${ok ? "ok  " : "FAIL"} ${name}${ok ? "" : `  ${JSON.stringify(detail)}`}`); };
@@ -34,6 +35,13 @@ check("validatePose releases __proto__ as an own key, not the pose's prototype",
 const rig = { bones: ["constructor", "Hips_jnt"], humanoidOf: { Hips_jnt: "hips" } };
 const vg = validatePose({ constructor: q, Hips_jnt: q }, { rig });
 check("validatePose with a rig keeps its node named constructor as a custom bone", vg.rejected.length === 0 && Object.hasOwn(vg.pose, "constructor") && Object.hasOwn(vg.pose, "hips") && Object.keys(vg.pose).length === 2, { rejected: vg.rejected, absent: vg.absent?.map(String), keys: Object.keys(vg.pose) });
+// the rig as the agent reads it from a VRM: a hips node literally named __proto__ is an own mapping, so the pose takes the normalized hips path
+const g = { nodes: [{ name: "__proto__", children: [1] }, { name: "Head_jnt" }], skins: [{ joints: [0, 1] }],
+  extensions: { VRMC_vrm: { humanoid: { humanBones: { hips: { node: 0 }, head: { node: 1 } } } } } };
+const rg = rigFromGltf(g);
+check("rigFromGltf maps a node named __proto__ as an own key, not the map's prototype", !!rg && Object.getPrototypeOf(rg.humanoidOf) === Object.prototype && Object.hasOwn(rg.humanoidOf, "__proto__") && rg.humanoidOf.__proto__ === "hips", rg && { keys: Object.keys(rg.humanoidOf) });
+const vh = rg && validatePose(JSON.parse('{"__proto__": {"t": [0, 0.1, 0]}}'), { rig: rg });
+check("…so validatePose reads it as hips", !!vh && Object.hasOwn(vh.pose, "hips") && !vh.custom.length, vh && { keys: Object.keys(vh.pose), custom: vh.custom, rejected: vh.rejected });
 const vp = validatePose(JSON.parse('{"__proto__": [0, 0, 0, 1]}'));
 check("validatePose keeps __proto__ as an own key, not the pose's prototype", Object.getPrototypeOf(vp.pose) === Object.prototype && Object.hasOwn(vp.pose, "__proto__") && vp.accepted[0] === "__proto__", { keys: Object.keys(vp.pose), accepted: vp.accepted });
 const vt = validateTracks({ toString: [{ t: 0, q }], head: [{ t: 0, q }] });

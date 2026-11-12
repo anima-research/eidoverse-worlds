@@ -168,7 +168,7 @@ export function mergePose(base, delta) {
 }
 
 /** `obj[k] = v` that keeps a bone named `__proto__` a key, never the object's prototype (#297). */
-function setOwn(obj, k, v) {
+export function setOwn(obj, k, v) {
   Object.defineProperty(obj, k, { value: v, writable: true, enumerable: true, configurable: true });
 }
 
