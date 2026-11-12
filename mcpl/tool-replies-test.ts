@@ -77,6 +77,21 @@ const creator = (reply: any = { ok: true, after: {} }) => { const sent: any[] = 
   ok(offline.failed === true && r?.isError === true && /seq 5000/.test(textOf(r)) && ctx.cursor.caughtUpTo === 5000,
     "27 an unanswered history read is an error that leaves the cursor where it was", { offline, r: textOf(r), cursor: ctx.cursor }); }
 
+// #296: a flight-recorder read that got no answer (not joined, or nothing within 8 s) is `failed`, and world_debug says so
+{ const ag: any = new WorldAgent({ name: "me", world: "w" });
+  const offline = await ag.worldDebug({ limit: 5 }), r = await handleTool(ctxOf(ag), "world_debug", {});
+  ag.joined = true; ag.ws = { readyState: 1, send() {} };
+  const realSetTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = ((fn: any, ms?: number, ...x: any[]) => realSetTimeout(fn, ms === 8000 ? 0 : ms, ...x)) as any;
+  let late: any, lateTool: any;
+  try { late = await ag.worldDebug({ limit: 5 }); lateTool = await handleTool(ctxOf(ag), "world_debug", {}); } finally { globalThis.setTimeout = realSetTimeout; }
+  ok(offline.failed === true && late?.failed === true, "296 worldDebug with no answer (offline, the 8 s timeout) is failed, not an empty recorder", { offline, late });
+  ok([r, lateTool].every((x) => x?.isError === true && /didn't answer/.test(textOf(x)) && !/empty/.test(textOf(x))),
+    "296 world_debug with no answer is an error that says the world didn't answer", [r, lateTool].map(textOf));
+  ag.worldDebug = async () => ({ events: [] });
+  const empty = await handleTool(ctxOf(ag), "world_debug", {});
+  ok(!empty?.isError && /flight recorder is empty/.test(textOf(empty)), "(control) 296 an answered empty recorder reads empty", textOf(empty)); }
+
 // #105 (bot2): the cursor after an exhausted read is a seq the read covered, not a say that arrived while it ran
 { const ag: any = new WorldAgent({ name: "me", world: "w" }); ag.lastSeq = 10000;
   ag.history = async () => { ag.lastSeq = 11000; return { entries: [{ seq: 2000, ts: 0, actor: "Bea", verb: "say", args: { text: "hi" } }], oldestSeq: 2000, hasMore: false }; };

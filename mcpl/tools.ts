@@ -1439,6 +1439,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         ...(a.script != null ? { script: String(a.script) } : {}),
         ...(a.scripts ? { scripts: true } : {}),
       } as any);
+      if (r.failed) return fail("world_debug: the world didn't answer (this body isn't joined, or nothing came back within 8 s), so the flight recorder wasn't read — call again");
       const status = (r as any).status ? `status: ${(r as any).status}\n` : "";
       if (!r.events.length) return text(status || "flight recorder is empty — nothing has bounced recently");
       const lines = r.events.map((e: any) => {

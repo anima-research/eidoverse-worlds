@@ -5392,13 +5392,14 @@ export class WorldAgent {
    *  shapes, rate limits, and reaction outcomes (fired / skipped / failed).
    *  The log answers "what happened"; this answers "why didn't it". */
   worldDebug(opts: { limit?: number; kinds?: string[]; script?: string; scripts?: boolean } = {}):
-      Promise<{ events: any[]; status?: string }> {
-    if (!this.joined || this.ws?.readyState !== 1) return Promise.resolve({ events: [] });
+      Promise<{ events: any[]; status?: string; failed?: boolean }> {
+    // no answer (offline, a timeout) is `failed`, as history()'s: never an empty recorder
+    if (!this.joined || this.ws?.readyState !== 1) return Promise.resolve({ events: [], failed: true });
     const reqId = `d${++this.histId}`;
     return new Promise((resolve) => {
       const t = setTimeout(() => {
         this.pendingDebug.delete(reqId);
-        resolve({ events: [] });
+        resolve({ events: [], failed: true });
       }, 8000);
       this.pendingDebug.set(reqId, (m) => {
         clearTimeout(t);

@@ -255,12 +255,14 @@ const unbindOps = (id) => { const s = String(id); const i = s.indexOf('/');
 const running = (b) => b.status === 'active' || b.status === 'asleep';
 let shown = false;
 let rosterTimer = 0;
+let behaviorsMiss = null;   // why the last roster read got no answer (behaviors keeps the last answered roster), or null
 async function refreshBehaviors() {
   try {
     const r = await requestDebug({ scripts: true });
     behaviors = (r?.events ?? []).filter((e) => e.kind === 'script');
-    repaintAll();
-  } catch { /* the roster is a refinement, never a gate */ }
+    behaviorsMiss = null;
+  } catch (e) { behaviorsMiss = e.message; }   // the roster is a refinement, never a gate
+  repaintAll();
 }
 
 function badgesFor(id) {
@@ -1004,11 +1006,13 @@ async function refreshWatch() {
   } catch { /* a poll that fails keeps the last good tail */ }
 }
 function consoleFields() {
-  const f = [{ t: 'list', k: 'cwatch', empty: 'no scripts in this world — a script is a script:<name> component on a thing (docs/SCRIPTS.md)',
+  const miss = behaviorsMiss && `the world didn't answer the scripts read (${behaviorsMiss})`;
+  const f = miss && behaviors.length ? [{ t: 'info', label: '', value: `${miss} — these are from the last answer` }] : [];
+  f.push({ t: 'list', k: 'cwatch', empty: miss || 'no scripts in this world — a script is a script:<name> component on a thing (docs/SCRIPTS.md)',
     rows: behaviors.map((b) => ({ id: b.id, label: b.id,   // words, not glyphs: the VR painter has no icon for these (bot #553)
       sub: [running(b) ? 'running' : (b.status ?? 'paused'), b.attach ? `on ${b.attach}` : 'world', b.timers ? `${b.timers} timer${b.timers === 1 ? '' : 's'}` : null].filter(Boolean).join(' · '),
       active: b.id === watching,
-      actions: [...(b.attach ? [{ k: 'cgoto', label: 'select' }] : []), { k: 'unbind', label: 'remove', danger: true }] })) }];
+      actions: [...(b.attach ? [{ k: 'cgoto', label: 'select' }] : []), { k: 'unbind', label: 'remove', danger: true }] })) });
   if (watching) {
     f.push({ t: 'group', k: 'clog', label: `${watching} — ${watchLog?.status ?? '…'}`, open: true });
     f.push({ t: 'log', k: 'clines', lines: watchLog?.lines ?? [], empty: '(console empty — console.log() writes here)' });
