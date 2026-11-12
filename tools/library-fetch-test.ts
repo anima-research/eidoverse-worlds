@@ -2,7 +2,7 @@
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/library-fetch-test.ts
 // The real library handler (mcpl/tools.ts) against a local Bun.serve whose /library-models answers as each case sets,
 // with EIDOVERSE_DIR naming a checkout that holds one model, so the local-scan fallback is in play.
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
@@ -38,7 +38,7 @@ check("query, catalog 503, a local match: the local hit, and beside it that the 
   !r?.isError && /eidoverse\/assets\/models\/chair-oak\.glb/.test(said(r)) && /catalog/.test(said(r)) && /503/.test(said(r)), said(r));
 const closed = Bun.serve({ port: 0, fetch: () => new Response("") }); const deadBase = `http://127.0.0.1:${closed.port}`; closed.stop(true);
 r = await call({ query: "zebra" }, deadBase);
-check("query, nothing listening: an error saying the catalog couldn't be reached, not 'no matches'",
+check("query, nothing listening: an error saying the catalog search failed, not 'no matches'",
   r?.isError === true && /catalog/.test(said(r)) && !/no matches/.test(said(r)), said(r));
 models = () => Response.json([]);
 r = await call({ query: "zebra" });
@@ -66,5 +66,6 @@ r = await call({ kind: "models" });
 check("(control) sheet: a tile whose preview came back is said plainly", !r?.isError && said(r) === "models — page 1/1: fine", said(r));
 
 server.stop(true);
+rmSync(dir, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

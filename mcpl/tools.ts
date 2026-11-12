@@ -211,7 +211,7 @@ async function searchLibrary(httpBase: string, query: string): Promise<{ hits: {
     const r = await fetch(`${httpBase}/library-models?q=${encodeURIComponent(query)}`);
     if (r.ok) return { hits: ((await r.json()) as { path: string; name?: string }[]).slice(0, 24) };
     failed = `it answered ${r.status}`;
-  } catch (e) { failed = `it couldn't be reached: ${(e as Error).message || "the request failed"}`; }
+  } catch (e) { failed = `the request failed: ${(e as Error).message || "no reason given"}`; }
   if (!MODELS_DIR) return { hits: [], failed };
   try {
     const toks = query.toLowerCase().split(/\s+/).filter(Boolean);
@@ -684,12 +684,12 @@ export const HANDLERS: Record<string, ToolHandler> = {
       let items: { name: string; url: string | null; h?: number | null }[];
       if (kind === "avatars") {
         const res = await fetch(`${ag.httpBase}/avatars`);
-        if (!res.ok) return fail(`the world's roster couldn't be read (it answered ${res.status}), so there's no sheet to show; calling again may work`);
+        if (!res.ok) return fail(`the world's roster couldn't be read (it answered ${res.status}), so there's no sheet to show`);
         const roster = (await res.json()) as { name: string; height?: number | null }[];
         items = roster.map((r) => ({ name: r.name, url: `${ag.httpBase}/thumb/${encodeURIComponent(r.name)}.png`, h: r.height ?? null }));
       } else {
         const res = await fetch(`${ag.httpBase}/library-models`);
-        if (!res.ok) return fail(`the world's catalog couldn't be read (it answered ${res.status}), so there's no sheet to show; calling again may work`);
+        if (!res.ok) return fail(`the world's catalog couldn't be read (it answered ${res.status}), so there's no sheet to show`);
         const hits = (await res.json()) as { path: string; name: string; preview: string | null }[];
         items = hits.map((h) => ({
           // library files: the filename IS the spawnable identity; store
