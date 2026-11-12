@@ -46,7 +46,8 @@ a.terrainSrc = "stub";
 (globalThis as any).makeTerrain = () => ({ heightAt: () => -1.6 });
 a.joined = true;
 const WET = { size: 40, water: { level: 0 } };
-const settle = async () => { for (let i = 0; i < 50 && a.bodyH == null; i++) await sleep(10); };
+const until = async (ok: () => boolean) => { for (let i = 0; i < 50 && !ok(); i++) await sleep(10); };
+const settle = () => until(() => a.bodyH != null);
 const tickN = (n: number) => { for (let i = 0; i < n; i++) a.tick(); };
 
 console.log("\nstature follows the body");
@@ -71,11 +72,12 @@ console.log("\nstature follows a re-upload at the same path");
 {
   files["fix/short.vrm"].glb = bodyGlb(TALL);
   a.invalidateBodyAsset("short");   // what avatar-updated does
-  await settle();
+  check("the known height stands while the re-upload is read", a.bodyH === SHORT, `${a.bodyH}`);
+  await until(() => Math.abs(a.bodyH - TALL) < 0.01);
   check(`the re-uploaded body is measured again (${a.bodyH?.toFixed(2)} m)`, Math.abs(a.bodyH - TALL) < 0.01, `${a.bodyH}`);
   files["fix/short.vrm"].glb = bodyGlb(SHORT);
   a.invalidateBodyAsset("short");
-  await settle();
+  await until(() => Math.abs(a.bodyH - SHORT) < 0.01);
   // a peer's body: the rig a pose is checked against is read again too
   const { rigBonesFor } = await import("../mcpl/rigbones.ts");
   const base = `http://127.0.0.1:${srv.port}`;

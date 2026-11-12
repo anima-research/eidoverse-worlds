@@ -2107,10 +2107,12 @@ export class WorldAgent {
    *  ordinary adult's (the measurement is one small read of the avatar's header). */
   stature(): number { return this.bodyH ?? STATURE_FALLBACK; }
   /** Measure the current body's height (rigbones.ts bodyHeightFor), guarded by generation so a slow reply
-   *  for a body since replaced is never applied. Resolves once this measurement is settled. */
+   *  for a body since replaced is never applied; the same body re-read (a re-upload) keeps its known height
+   *  meanwhile. Resolves once this measurement is settled. */
   measureStature(): Promise<void> {
     const gen = ++this.statureGen, avatar = this.avatar;
-    this.statureFor = avatar; this.bodyH = null;
+    if (this.statureFor !== avatar) this.bodyH = null;
+    this.statureFor = avatar;
     return bodyHeightFor(this.httpBase, avatar).catch(() => null).then((h) => {
       if (gen === this.statureGen) this.bodyH = h ?? STATURE_FALLBACK;
     });
