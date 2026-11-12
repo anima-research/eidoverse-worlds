@@ -3846,8 +3846,9 @@ export class WorldAgent {
     this.walkRefusal = null;
     this.lastWalkRefusal = null; this.lastWalkNote = null; this.walkStopReason = null;
     const ticket = ++this.walkTicket;
+    let left = () => timeoutMs;   // the walk's time; asked aloft, the fall spends from it (one deadline, below)
     const now = () => {
-      const p = this.walkNow(x, z, run, timeoutMs, tolerance, y, near);
+      const p = this.walkNow(x, z, run, left(), tolerance, y, near);
       if (receipt) receipt.refusal = this.walkRefusal;   // set synchronously by the plan
       return p;
     };
@@ -3880,6 +3881,7 @@ export class WorldAgent {
     }
     if (!this.aloft()) return ready();
     let timedOut = false;
+    const asked = Date.now(); left = () => timeoutMs - (Date.now() - asked);
     const giveUp = setTimeout(() => { if (ticket === this.walkTicket) { timedOut = true; this.abandonWalk(); } }, timeoutMs);
     return new Promise<string | undefined>((res) => this.landWaits.push(res)).then(async (why) => {
       clearTimeout(giveUp);

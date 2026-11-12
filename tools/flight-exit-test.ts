@@ -249,6 +249,19 @@ const walkAloft = async (ag: any, y = 20, timeoutMs?: number) => {
   check('...and the body still comes down', onGround(ag), `y ${ag.pos.y.toFixed(2)}`);
 }
 {
+  // #316 review: one deadline. A fall that spends most of the walk's time leaves the walk only the rest, not a fresh timeout.
+  const ag = bench();
+  const t0 = Date.now();
+  const { walk } = await walkAloft(ag, 20, 1000);
+  await new Promise((go) => setTimeout(go, 700));
+  await fallOut(ag);
+  const landedAt = Date.now() - t0;
+  await new Promise((go) => setTimeout(go, Math.max(0, 1350 - (Date.now() - t0))));
+  await turn();
+  check('a walk asked aloft with 1 s, landing at 0.7 s, is out of time by 1.35 s, not given 1 s more',
+    landedAt < 1000 && onGround(ag) && walk.r === false, `landed at ${landedAt} ms; walk ${walk.r} at ${Date.now() - t0} ms`);
+}
+{
   // bot r1 #9: a seat taking the body during the fall answers the walk with why, not as superseded by a walk or a stop.
   const ag = bench();
   const { walk, receipt } = await walkAloft(ag);
