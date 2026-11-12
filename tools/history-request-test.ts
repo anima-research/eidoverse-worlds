@@ -92,12 +92,12 @@ console.log("the flight recorder (requestDebug, #291): the same two ways to get 
   const sent: any[] = [];
   net.joined = true;
   net.ws = fakeSocket(sent);
-  const realSetTimeout = globalThis.setTimeout;
-  globalThis.setTimeout = ((fn: (...a: any[]) => void, ms?: number, ...args: any[]) => realSetTimeout(fn, ms === 8000 ? 0 : ms, ...args)) as typeof setTimeout;
+  const realSetTimeout = globalThis.setTimeout, waits: (number | undefined)[] = [];   // the 8 s is pinned (bot #15)
+  globalThis.setTimeout = ((fn: (...a: any[]) => void, ms?: number, ...args: any[]) => (waits.push(ms), realSetTimeout(fn, ms === 8000 ? 0 : ms, ...args))) as typeof setTimeout;
   let t: Settled;
   try { t = await settle(requestDebug({ limit: 5 })); }
   finally { globalThis.setTimeout = realSetTimeout; }
-  check("a debug request the world never answers rejects, as no answer", !t.ok && /no answer within 8 s/.test(reason(t)), JSON.stringify(t));
+  check("a debug request the world never answers rejects after 8 s, as no answer", !t.ok && /no answer within 8 s/.test(reason(t)) && sent.length === 1 && waits.includes(8000), JSON.stringify({ t, sent: sent.length, waits }));
   const p = settle(requestDebug({ limit: 5 }));
   await _dispatch({ type: "debug", reqId: sent.at(-1).reqId, events: [] });
   const e = await p;

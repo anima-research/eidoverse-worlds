@@ -80,15 +80,18 @@ const creator = (reply: any = { ok: true, after: {} }) => { const sent: any[] = 
 // #296: a flight-recorder read that got no answer (not joined, or nothing within 8 s) is `failed`, and world_debug says so
 { const ag: any = new WorldAgent({ name: "me", world: "w" });
   const offline = await ag.worldDebug({ limit: 5 }), r = await handleTool(ctxOf(ag), "world_debug", {});
-  ag.joined = true; ag.ws = { readyState: 1, send() {} };
-  const realSetTimeout = globalThis.setTimeout;
-  globalThis.setTimeout = ((fn: any, ms?: number, ...x: any[]) => realSetTimeout(fn, ms === 8000 ? 0 : ms, ...x)) as any;
+  const sent: any[] = [];
+  ag.joined = true; ag.ws = { readyState: 1, send(x: string) { sent.push(JSON.parse(x)); } };
+  const realSetTimeout = globalThis.setTimeout, waits: (number | undefined)[] = [];   // the 8 s is pinned: the timeout must be asked for at 8000 ms (bot #15)
+  globalThis.setTimeout = ((fn: any, ms?: number, ...x: any[]) => (waits.push(ms), realSetTimeout(fn, ms === 8000 ? 0 : ms, ...x))) as any;
   let late: any, lateTool: any;
   try { late = await ag.worldDebug({ limit: 5 }); lateTool = await handleTool(ctxOf(ag), "world_debug", {}); } finally { globalThis.setTimeout = realSetTimeout; }
-  ok(offline.failed === true && late?.failed === true, "296 worldDebug with no answer (offline, the 8 s timeout) is failed, not an empty recorder", { offline, late });
+  ok(offline.failed === true && late?.failed === true && sent.length === 2 && sent.every((m) => m.type === "debug") && waits.filter((w) => w === 8000).length === 2,
+    "296 worldDebug with no answer (offline, the 8 s timeout after a sent request) is failed, not an empty recorder", { offline, late, sent, waits });
   ok([r, lateTool].every((x) => x?.isError === true && /didn't answer/.test(textOf(x)) && !/empty/.test(textOf(x))),
     "296 world_debug with no answer is an error that says the world didn't answer", [r, lateTool].map(textOf));
-  ag.worldDebug = async () => ({ events: [] });
+  // (control) the real worldDebug, answered on the wire with an empty recorder (bot #14: not a stand-in for worldDebug)
+  ag.ws.send = (x: string) => { const q = JSON.parse(x); queueMicrotask(() => ag.pendingDebug.get(q.reqId)?.({ type: "debug", reqId: q.reqId, events: [] })); };
   const empty = await handleTool(ctxOf(ag), "world_debug", {});
   ok(!empty?.isError && /flight recorder is empty/.test(textOf(empty)), "(control) 296 an answered empty recorder reads empty", textOf(empty)); }
 
