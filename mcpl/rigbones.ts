@@ -76,7 +76,9 @@ export function rigFromGltf(g: any): RigBones | null {
   const parent = new Map<number, number>();
   nodes.forEach((n, i) => (n.children ?? []).forEach((c: number) => parent.set(c, i)));
   const aboveHips: string[] = [];
-  for (let i = parent.get(hb.hips as number); i != null; i = parent.get(i)) {
+  const seen = new Set<number>([hb.hips as number]);   // a malformed file's nodes may loop
+  for (let i = parent.get(hb.hips as number); i != null && !seen.has(i); i = parent.get(i)) {
+    seen.add(i);
     if (nodes[i]?.name) aboveHips.push(nodes[i].name);
   }
   const bones = [...idx].map((i) => nodes[i]?.name).filter((n): n is string => typeof n === "string" && !!n);

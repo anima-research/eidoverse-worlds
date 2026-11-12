@@ -255,6 +255,12 @@ console.log("the door's bodyHeightFor through /library (server/routes.ts route)"
       check("a JSON chunk past 16 MiB isn't measured from a whole-file answer either",
         await bodyHeightFor(`http://localhost:${whole.port}`, `${V}/padded.vrm?v=1`) === null);
     } finally { whole.stop(true); }
+    // hips named on a node that is its own child: the walk above hips ends, and the separate head is measured
+    put("cyclic", glb({ asset: { version: "2.0" }, scenes: [{ nodes: [1] }],
+      nodes: [{ name: "Hips", children: [0] }, { name: "Head", translation: [0, 1.4, 0] }],
+      extensions: { VRMC_vrm: { specVersion: "1.0", humanoid: { humanBones: { hips: { node: 0 }, head: { node: 1 } } } } } }));
+    const cyclic = await door("cyclic"), cyclicRig = await rigBonesFor(base, `${V}/cyclic.vrm?v=1700000000000`);
+    check("a node that is its own parent doesn't hang the read", near(cyclic, 1.53) && cyclicRig?.bones.includes("Hips") === true, { cyclic, cyclicRig });
   } finally { globalThis.fetch = realFetch; srv.stop(true); }
 }
 
