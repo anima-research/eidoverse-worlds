@@ -5,6 +5,7 @@
 import './reach-frame-fixture.ts';   // stands in for the renderer cone handlers.js reaches (avatar.js, reachnet.js)
 import { mock } from 'bun:test';
 import { fileURLToPath } from 'node:url';
+import { until } from './protocol/wait.ts';
 const noop = () => {};
 const messages: string[] = [];
 let debugAnswer: () => Promise<any> = async () => ({ events: [] });
@@ -28,7 +29,7 @@ const { dispatch } = await import('../client/lib/commands/registry.js');
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = '') => { if (ok) pass++; else fail++; console.log(`${ok ? '✓' : '✗'} ${name}${!ok && detail ? `  — ${detail}` : ''}`); };
-const run = async (cmd: string, arg = '') => { messages.length = 0; dispatch(cmd, arg); await new Promise((r) => setTimeout(r, 10)); return [...messages]; };
+const run = async (cmd: string, arg = '') => { messages.length = 0; dispatch(cmd, arg); await until(`/${cmd} says something`, () => messages.length > 0 || null, { ms: 2000 }).catch(() => null); return [...messages]; };
 
 // #291: requestDebug rejects when no answer came (net.js, history-request-test); /debug says so
 debugAnswer = async () => { throw new Error('debug: no answer within 8 s'); };
