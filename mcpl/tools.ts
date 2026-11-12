@@ -682,15 +682,20 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const kind = a.kind === "models" ? "models" : "avatars";
       const page = Math.max(1, Math.floor(Number(a.page) || 1));
       let items: { name: string; url: string | null; h?: number | null }[];
+      // the list a sheet is drawn from: its body, or why it couldn't be read (a status, a failed request, a body that isn't JSON)
+      const listAt = async (path: string): Promise<{ body: any } | { why: string }> => {
+        try { const res = await fetch(`${ag.httpBase}${path}`); return res.ok ? { body: await res.json() } : { why: `it answered ${res.status}` }; }
+        catch (e) { return { why: (e as Error).message || "the request failed" }; }
+      };
       if (kind === "avatars") {
-        const res = await fetch(`${ag.httpBase}/avatars`);
-        if (!res.ok) return fail(`the world's roster couldn't be read (it answered ${res.status}), so there's no sheet to show`);
-        const roster = (await res.json()) as { name: string; height?: number | null }[];
+        const got = await listAt("/avatars");
+        if ("why" in got) return fail(`the world's roster couldn't be read (${got.why}), so there's no sheet to show`);
+        const roster = got.body as { name: string; height?: number | null }[];
         items = roster.map((r) => ({ name: r.name, url: `${ag.httpBase}/thumb/${encodeURIComponent(r.name)}.png`, h: r.height ?? null }));
       } else {
-        const res = await fetch(`${ag.httpBase}/library-models`);
-        if (!res.ok) return fail(`the world's catalog couldn't be read (it answered ${res.status}), so there's no sheet to show`);
-        const hits = (await res.json()) as { path: string; name: string; preview: string | null }[];
+        const got = await listAt("/library-models");
+        if ("why" in got) return fail(`the world's catalog couldn't be read (${got.why}), so there's no sheet to show`);
+        const hits = got.body as { path: string; name: string; preview: string | null }[];
         items = hits.map((h) => ({
           // library files: the filename IS the spawnable identity; store
           // items: the hash filename means nothing — show the given name

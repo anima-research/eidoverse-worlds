@@ -17,9 +17,11 @@ let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = "") => { if (ok) pass++; else fail++; console.log(`${ok ? "✓" : "✗"} ${name}${!ok && detail ? `  — ${detail}` : ""}`); };
 const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWZkAAAAASUVORK5CYII=", "base64");
 let models: () => Response = () => Response.json([]);
+let avatars: () => Response = () => new Response("not found", { status: 404 });
 const server = Bun.serve({ port: 0, fetch(req) {
   const u = new URL(req.url);
   if (u.pathname === "/library-models") return models();
+  if (u.pathname === "/avatars") return avatars();
   if (u.pathname === "/library/broken_preview.jpg") return new Response("boom", { status: 500 });
   if (u.pathname === "/library/fine_preview.jpg") return new Response(PNG_1PX, { headers: { "content-type": "image/png" } });
   return new Response("not found", { status: 404 });
@@ -54,6 +56,12 @@ check("sheet, catalog 503: an error naming the failed fetch and its status, not 
   r?.isError === true && /503/.test(said(r)) && !/no models to show/.test(said(r)), said(r));
 r = await call({ kind: "avatars" });   // this server has no /avatars route: it answers 404
 check("sheet of avatars, roster 404: an error naming the failed fetch, not an empty roster", r?.isError === true && /404/.test(said(r)) && !/no avatars to show/.test(said(r)), said(r));
+avatars = () => new Response("<html>oops</html>", { headers: { "content-type": "text/html" } });
+r = await call({ kind: "avatars" });
+check("sheet of avatars, roster 200 but not JSON: an error saying the roster couldn't be read (bot #5)", r?.isError === true && /roster couldn't be read/.test(said(r)), said(r));
+avatars = () => new Response("not found", { status: 404 });
+r = await call({ kind: "models" }, deadBase);
+check("sheet of models, nothing listening: an error saying the catalog couldn't be read (bot #5)", r?.isError === true && /catalog couldn't be read/.test(said(r)), said(r));
 models = () => Response.json([{ path: "library/broken.glb", name: "broken", preview: "broken_preview.jpg" }]);
 const failed = await call({ kind: "models" });
 models = () => Response.json([{ path: "library/broken.glb", name: "broken", preview: null }]);
