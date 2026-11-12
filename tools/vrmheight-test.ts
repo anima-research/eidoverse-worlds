@@ -9,7 +9,8 @@
 // claude.vrm's crown of tentacles does. Stature is the head joint plus 0.13 m,
 // the browser's portrait rule, so the mesh doesn't count and these bodies read
 // 1.50 m. Temp dirs and a local HTTP server; no sequencer.
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -173,6 +174,21 @@ check("a re-export's stature shows at once", near(height("plain"), 1.63), height
   check("a patched body is listed at its patch's version, with its patch's stature",
     entry("forked")?.path.endsWith("?v=1700000900000") === true && near(entry("forked")?.height, 1.63), entry("forked"));
   check("a body only in PATCH_DIR is listed", near(entry("patchonly")?.height, 1.63), entry("patchonly") ?? "not listed");
+  // the seat store agrees, and judges a profile against the patched bytes /library serves
+  const { seatStore, CLIP_REL } = await import("../server/seats.ts");
+  const sha = (f: string) => createHash("sha256").update(readFileSync(f)).digest("hex");
+  mkdirSync(join(root, "lib", CLIP_REL, ".."), { recursive: true });
+  writeFileSync(join(root, "lib", CLIP_REL), "a sitting clip");
+  const profile = (avatar: string) => ({ avatar, avatarSha256: sha(join(pdir, `${avatar}.vrm`)), pose: "sitchair",
+    clipSha256: sha(join(root, "lib", CLIP_REL)), seatContactY: 0.2055,
+    derivation: { toolVersion: "seatlab-4", method: "skinned-pelvis-contact-v1",
+      winner: { mesh: "Body", vertexIndex: 42, rootLocal: [0, 0.2055, 0] },
+      supportPatch: { count: 31, spreadY: 0.0184, radiusXZ: 0.1 }, runs: 3, deterministic: true },
+    review: { status: "proposed" } });
+  const proposed = seatStore.propose(profile("patchonly"), "test");
+  check("a body only in PATCH_DIR is a roster avatar to the seat store too", proposed.ok, proposed);
+  seatStore.propose(profile("forked"), "test");
+  check("a patched body's seat profile is judged against the patched bytes", entry("forked")?.seat?.status === "proposed", entry("forked")?.seat);
 }
 
 // ---- 4. the door through the real /library route ------------------------------
