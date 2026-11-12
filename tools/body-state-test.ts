@@ -245,7 +245,7 @@ try {
   humanBones.neck.node = humanBones.head.node;
   const flat = fixtureJson(); delete flat.extensions; delete flat.extensionsUsed;
   const models = new Map<string, Uint8Array>([["shared-neck.vrm", glbOf(sharedNeck)], ["flat.vrm", glbOf(flat)],
-    ["junk.vrm", new TextEncoder().encode("not a model")]]);
+    ["junk.vrm", new TextEncoder().encode("not a model")], ["body.vrm", fixture()]]);
   const downloads = new Map<string, number>();
   let unreachable = false;
   const library = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(req) {
@@ -263,10 +263,16 @@ try {
       JSON.stringify({ head: turned.joints?.head?.position, neck: turned.joints?.neck?.position }));
     for (const avatar of ["flat.vrm", "junk.vrm"]) {
       let last: any;
-      for (let i = 0; i < 3; i++) last = await reader.read(avatar, "bones", undefined, () => limp(avatar, avatar));
+      const who = `on-${avatar}`;
+      for (let i = 0; i < 3; i++) last = await reader.read(who, "bones", undefined, () => limp(who, avatar));
       check(`a model the reader can't use is downloaded once for its version (${avatar})`, downloads.get(avatar) === 1 && !last.ok && /calling again won't change that/.test(last.error),
         JSON.stringify({ downloads: downloads.get(avatar), error: last.error }));
     }
+    downloads.clear();
+    const scene = (id: string) => id === "reacher" ? { ...limp("reacher", "body.vrm"), pose: { ...limp("reacher", "body.vrm").pose,
+      reach: { rightHand: { t: { who: "toward", point: "shoulder_l" } } } } } : id === "toward" ? limp("toward", "flat.vrm") : null;
+    for (let i = 0; i < 3; i++) await reader.read("reacher", "all", undefined, scene);
+    check("…and so is one a reach is toward", downloads.get("flat.vrm") === 1 && downloads.get("body.vrm") === 1, JSON.stringify(Object.fromEntries(downloads)));
     unreachable = true;
     const failed: any = await reader.read("retry", "bones", undefined, () => limp("retry", "shared-neck.vrm"));
     unreachable = false;

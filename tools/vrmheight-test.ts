@@ -224,13 +224,14 @@ console.log("the door's bodyHeightFor through /library (server/routes.ts route)"
     check("…and so is its rig", bonesBefore?.bones[0] === "Hips_v1" && bonesAfter?.bones[0] === "Hips_v2", { bonesBefore, bonesAfter });
     {
       // a real body's shape: a small JSON chunk, then a 2 MB BIN chunk that /library would gzip whole
-      const j = body(V1), bin = new Uint8Array(2 * 1024 * 1024).map((_, i) => (i * 2654435761) >>> 24);
+      const j = body(V1), bin = new Uint8Array(2 * 1024 * 1024);
       const out = new Uint8Array(j.length + 8 + bin.length), dv = new DataView(out.buffer);
       out.set(j); dv.setUint32(8, out.length, true); dv.setUint32(j.length, bin.length, true); dv.setUint32(j.length + 4, 0x004e4942, true);
       out.set(bin, j.length + 8);
       put("big", out);
       const h = await door("big");
-      check("a 2 MB body is measured from its header, not downloaded", near(h, 1.5) && received <= j.length + 20, { h, received });
+      // 20 bytes for the header request, then the header and JSON chunk (j) for the second
+      check("a 2 MB body is measured from its header, not downloaded", near(h, 1.5) && received <= 20 + j.length, { h, received });
     }
     check("a JSON chunk past 16 MiB isn't measured, as the roster's read refuses it", await door("padded") === null, received);
     check("a header claiming a 2 GB JSON chunk isn't measured", await door("lying") === null, received);
