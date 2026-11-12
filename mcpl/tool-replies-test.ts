@@ -92,6 +92,14 @@ const creator = (reply: any = { ok: true, after: {} }) => { const sent: any[] = 
   const empty = await handleTool(ctxOf(ag), "world_debug", {});
   ok(!empty?.isError && /flight recorder is empty/.test(textOf(empty)), "(control) 296 an answered empty recorder reads empty", textOf(empty)); }
 
+// #296: missedSince (the door's missed-mention replay) passes an unanswered history read on as failed, not as nothing said
+{ const ag: any = new WorldAgent({ name: "me", world: "w" });
+  const offline = await ag.missedSince(5000);
+  ag.history = async () => ({ entries: [{ seq: 6000, ts: 0, actor: "Bea", verb: "say", args: { text: "hi me" } }], oldestSeq: 6000, hasMore: false });
+  const answered = await ag.missedSince(5000);
+  ok(offline?.failed === true && offline.said?.length === 0 && !answered.failed && answered.said?.[0]?.seq === 6000,
+    "296 missedSince with no answer is failed; with one, the says", { offline, answered }); }
+
 // #105 (bot2): the cursor after an exhausted read is a seq the read covered, not a say that arrived while it ran
 { const ag: any = new WorldAgent({ name: "me", world: "w" }); ag.lastSeq = 10000;
   ag.history = async () => { ag.lastSeq = 11000; return { entries: [{ seq: 2000, ts: 0, actor: "Bea", verb: "say", args: { text: "hi" } }], oldestSeq: 2000, hasMore: false }; };

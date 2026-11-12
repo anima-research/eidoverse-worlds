@@ -901,7 +901,10 @@ class Session {
     if (sinceSeq != null) {
       // Use the live body's matcher: catch-up must honor the same alias policy
       // and degrade safely when no name has a matchable form.
-      const said = await this.agent.missedSince(sinceSeq);
+      const { said, failed } = await this.agent.missedSince(sinceSeq);
+      // no answer is said, not read as nothing missed; the cursor moves on as before (its three writers: review S1, #296)
+      if (failed) this.deliver(`While you were away: the world didn't answer the read of what was said since seq ${sinceSeq}, so no missed mentions were replayed. catch_up {since: ${sinceSeq}} reads them.`,
+        { id: "world", name: this.agent.world }, { tags: catchupHeaderTags() });
       const missedSeq = said.filter((m) => m.who !== this.auth.id && this.agent.mentionsMe(m.text));
       if (missedSeq.length) {
         this.deliver(`While you were away, ${missedSeq.length} message${missedSeq.length === 1 ? "" : "s"} mentioned you:`,
