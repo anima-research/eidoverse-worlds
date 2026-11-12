@@ -203,23 +203,26 @@ const MODELS_DIR = process.env.EIDOVERSE_DIR
   : null;
 /** Search the catalog through the sequencer (one source of truth — includes
  *  the content-addressed store, so conjured/orrery-delivered objects are
- *  findable), falling back to a local dir scan only when a checkout exists. */
-async function searchLibrary(httpBase: string, query: string): Promise<{ path: string; name?: string }[]> {
+ *  findable), falling back to a local dir scan only when a checkout exists.
+ *  `failed` says why the catalog itself couldn't be searched (#292). */
+async function searchLibrary(httpBase: string, query: string): Promise<{ hits: { path: string; name?: string }[]; failed?: string }> {
+  let failed: string;
   try {
     const r = await fetch(`${httpBase}/library-models?q=${encodeURIComponent(query)}`);
-    if (r.ok) return ((await r.json()) as { path: string; name?: string }[]).slice(0, 24);
-  } catch { /* sequencer route unreachable — scan what we can see, if anything */ }
-  if (!MODELS_DIR) return [];
+    if (r.ok) return { hits: ((await r.json()) as { path: string; name?: string }[]).slice(0, 24) };
+    failed = `it answered ${r.status}`;
+  } catch (e) { failed = `it couldn't be reached: ${(e as Error).message || "the request failed"}`; }
+  if (!MODELS_DIR) return { hits: [], failed };
   try {
     const toks = query.toLowerCase().split(/\s+/).filter(Boolean);
-    return readdirSync(MODELS_DIR)
+    return { failed, hits: readdirSync(MODELS_DIR)
       .filter((f) => f.endsWith(".glb"))
       .map((f) => ({ f, score: toks.filter((t) => f.toLowerCase().includes(t)).length }))
       .filter((r) => r.score > 0)
       .sort((a, b) => b.score - a.score)
       .slice(0, 12)
-      .map((r) => ({ path: `eidoverse/assets/models/${r.f}` }));
-  } catch { return []; }
+      .map((r) => ({ path: `eidoverse/assets/models/${r.f}` })) };
+  } catch { return { hits: [], failed }; }
 }
 
 // ---- contact sheets ---------------------------------------------------------
@@ -230,7 +233,7 @@ async function searchLibrary(httpBase: string, query: string): Promise<{ path: s
 
 const SHEET = { tile: 200, label: 26, cols: 4, perPage: 12 };
 
-async function contactSheet(tiles: { name: string; data: ArrayBuffer | null; mime: string; h?: number | null }[]): Promise<Buffer> {
+async function contactSheet(tiles: { name: string; data: ArrayBuffer | null; mime: string; h?: number | null; failed?: string }[]): Promise<Buffer> {
   const { tile, label, cols } = SHEET;
   const rows = Math.ceil(tiles.length / cols);
   const W = cols * tile, H = rows * (tile + label);
@@ -245,7 +248,7 @@ async function contactSheet(tiles: { name: string; data: ArrayBuffer | null; mim
     const side = (tile - 8) * frac;
     const img = t.data
       ? `<image x="${x + (tile - side) / 2}" y="${y + 4 + (tile - 8 - side)}" width="${side}" height="${side}" preserveAspectRatio="xMidYMax meet" xlink:href="data:${t.mime};base64,${Buffer.from(t.data).toString("base64")}"/>`
-      : `<text x="${x + tile / 2}" y="${y + tile / 2}" text-anchor="middle" fill="#667" font-size="15" font-family="DejaVu Sans, sans-serif">no preview yet</text>`;
+      : `<text x="${x + tile / 2}" y="${y + tile / 2}" text-anchor="middle" fill="#667" font-size="15" font-family="DejaVu Sans, sans-serif">${t.failed ? "preview failed" : "no preview yet"}</text>`;
     const tag = t.h ? ` ${t.h.toFixed(1)}m` : "";
     const room = 26 - tag.length;
     const name = t.name.length > room ? `${t.name.slice(0, room - 1)}…` : t.name;
@@ -640,10 +643,11 @@ export const HANDLERS: Record<string, ToolHandler> = {
   library: async (ag, a, ctx, name) => {
       // one catalog tool: query (search), kind + page (a contact sheet), preview (one item)
       if (typeof a.query === "string" && a.query.trim()) {
-        const hits = await searchLibrary(ag.httpBase, String(a.query));
-        return text(hits.length
-          ? hits.map((h) => h.name && !h.path.includes(h.name) ? `${h.path}  — ${h.name}` : h.path).join("\n")
-          : "no matches");
+        const { hits, failed } = await searchLibrary(ag.httpBase, String(a.query));
+        const why = failed && `the world's catalog couldn't be searched (${failed})`;
+        if (!hits.length) return failed ? fail(`${why}, so this says nothing about what's in it; calling again may work`) : text("no matches");
+        return text(hits.map((h) => h.name && !h.path.includes(h.name) ? `${h.path}  — ${h.name}` : h.path).join("\n")
+          + (failed ? `\n(${why}: these are from this door's local checkout only)` : ""));
       }
       if (typeof a.preview === "string" && a.preview.trim()) {
         const want = String(a.preview).trim();
@@ -679,10 +683,14 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const page = Math.max(1, Math.floor(Number(a.page) || 1));
       let items: { name: string; url: string | null; h?: number | null }[];
       if (kind === "avatars") {
-        const roster = (await (await fetch(`${ag.httpBase}/avatars`)).json()) as { name: string; height?: number | null }[];
+        const res = await fetch(`${ag.httpBase}/avatars`);
+        if (!res.ok) return fail(`the world's roster couldn't be read (it answered ${res.status}), so there's no sheet to show; calling again may work`);
+        const roster = (await res.json()) as { name: string; height?: number | null }[];
         items = roster.map((r) => ({ name: r.name, url: `${ag.httpBase}/thumb/${encodeURIComponent(r.name)}.png`, h: r.height ?? null }));
       } else {
-        const hits = (await (await fetch(`${ag.httpBase}/library-models`)).json()) as { path: string; name: string; preview: string | null }[];
+        const res = await fetch(`${ag.httpBase}/library-models`);
+        if (!res.ok) return fail(`the world's catalog couldn't be read (it answered ${res.status}), so there's no sheet to show; calling again may work`);
+        const hits = (await res.json()) as { path: string; name: string; preview: string | null }[];
         items = hits.map((h) => ({
           // library files: the filename IS the spawnable identity; store
           // items: the hash filename means nothing — show the given name
@@ -697,17 +705,21 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (!slice.length) return items.length
         ? fail(`no page ${page}: there are ${items.length} ${kind} on ${pages} page${pages === 1 ? "" : "s"}, so pass a page from 1 to ${pages}`)
         : text(`there are no ${kind} to show yet`);
+      // a preview that exists but couldn't be fetched (`failed`) is drawn and said apart from one there is none of
       const tiles = await Promise.all(slice.map(async (it) => {
         if (!it.url) return { name: it.name, data: null, mime: "", h: it.h };
         try {
           const r = await fetch(it.url);
-          if (!r.ok) return { name: it.name, data: null, mime: "", h: it.h };
+          if (r.status === 404) return { name: it.name, data: null, mime: "", h: it.h };
+          if (!r.ok) return { name: it.name, data: null, mime: "", h: it.h, failed: `answered ${r.status}` };
           return { name: it.name, data: await r.arrayBuffer(), mime: r.headers.get("content-type")?.split(";")[0] ?? "image/png", h: it.h };
-        } catch { return { name: it.name, data: null, mime: "", h: it.h }; }
+        } catch (e) { return { name: it.name, data: null, mime: "", h: it.h, failed: (e as Error).message || "the request failed" }; }
       }));
       const png = await contactSheet(tiles);
+      const missed = tiles.filter((t) => t.failed).map((t) => `${t.name} (${t.failed})`);
       return { content: [
-        { type: "text", text: `${kind} — page ${page}/${pages}: ${slice.map((t) => t.name).join(", ")}${page < pages ? `. More: library {kind:"${kind}", page:${page + 1}}` : ""}` },
+        { type: "text", text: `${kind} — page ${page}/${pages}: ${slice.map((t) => t.name).join(", ")}${page < pages ? `. More: library {kind:"${kind}", page:${page + 1}}` : ""}`
+          + (missed.length ? `. Previews that couldn't be fetched: ${missed.join(", ")}` : "") },
         { type: "image", data: png.toString("base64"), mimeType: "image/png" },
       ] };
 
