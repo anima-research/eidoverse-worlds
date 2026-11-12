@@ -150,8 +150,9 @@ if (m) for (const [q, last, tab] of CASES) {
   check("the early socket joins the remembered world", join?.world === "garden", JSON.stringify(join));
   check("…and stashes it for net.js to compare", (g.__ewEarlySocket as { sent?: { world?: string } })?.sent?.world === "garden");
 }
-// …and viewers never open one: spectators, renderers and the thumbnail minter take net.js's own path
-if (m) for (const q of ["?spectate", "?renderer", "?renderer&roam", "?mintthumbs"]) {
+// …and viewers never open one: spectators, renderers and the thumbnail minter take net.js's own path; nor does a
+// ?door load, whose name the door chooses (main.js firstRun; #289)
+if (m) for (const q of ["?spectate", "?renderer", "?renderer&roam", "?mintthumbs", "?door", "?door=1&world=garden"]) {
   const mem = new Map([["ew-world", "garden"], ["ew-name-set", "1"], ["ew-name", "helen"]]);
   let opened = 0;
   class WS { constructor() { opened++; } send() {} close() {} }
