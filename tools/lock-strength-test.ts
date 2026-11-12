@@ -54,6 +54,16 @@ try {
   await ask('set', `{ id: 'chest', component: 'lock', value: true }`);
   check('(setup) the chest\'s first ask is refused', await waitFor(`window.__refused === 1`) && await waitFor(`${rowOf('chest')}.then((r) => r?.lockLevel === 'Builder and up')`), JSON.stringify(await evalJson(rowOf('chest'))));
   check('LS3 …and is asked again: the row comes to say "owners only"', await word('chest', 'owners only'), JSON.stringify(await evalJson(rowOf('chest'))));
+  // LS4 (#291) the Console frame's scripts list tells a roster read the world never answered from a world with no scripts
+  await evalJson(`import('/lib/build.js').then((b) => { b.setBuildMode(true); return true; })`);   // the panels poll the roster while build mode is on
+  const cwatch = `import('/lib/editpanels.js').then((E) => E.editPanelsDebug().consoleFields().find((f) => f.k === 'cwatch')?.empty ?? null)`;
+  check('(control) LS4 the answered roster of a world with no scripts says so', await waitFor(`${cwatch}.then((e) => /^no scripts in this world/.test(e ?? ''))`), JSON.stringify(await evalJson(cwatch)));
+  await evalJson(`import('/lib/net.js').then((m) => { const real = m.net.ws.send.bind(m.net.ws); window.__dropDebug = true;
+    m.net.ws.send = (x) => (window.__dropDebug && JSON.parse(x).type === 'debug' ? undefined : real(x)); return true; })`);
+  const unanswered = await pageWaiter(evalJson, 30000)(`${cwatch}.then((e) => /didn't answer/.test(e ?? ''))`);
+  check("LS4 …and when the world stops answering it, says the world didn't answer, not that there are no scripts", unanswered, JSON.stringify(await evalJson(cwatch)));
+  await evalJson(`(window.__dropDebug = false, true)`);
+  check('LS4 …and says no scripts again once the world answers', await waitFor(`${cwatch}.then((e) => /^no scripts in this world/.test(e ?? ''))`), JSON.stringify(await evalJson(cwatch)));
   check('no page errors', (await evalJson(`window.__errs`))?.length === 0, JSON.stringify(await evalJson(`window.__errs`)));
 } catch (e: any) { check('the test ran to the end', false, String(e?.stack ?? e).slice(0, 500)); }
 finally {

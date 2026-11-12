@@ -1471,7 +1471,7 @@ export function initEditPanels() {
 
 /** harness window */
 export const editPanelsDebug = () => ({
-  hierarchy: hierarchyFields().length, hierFields: () => hierarchyFields(), inspector: inspectorFields().length, inspFields: () => inspectorFields(),
+  hierarchy: hierarchyFields().length, hierFields: () => hierarchyFields(), consoleFields: () => consoleFields(), inspector: inspectorFields().length, inspFields: () => inspectorFields(),
   inspDo: (a, v) => inspectorDispatch(a, v), hierDo: (a, v) => hierarchyDispatch(a, v),
   build: buildFields().length, buildFields: () => buildFields(), buildVR: buildVRFields().length, buildVRFields: () => buildVRFields(), buildVRDo: (a, v) => buildVRDispatch(a, v), worldSel: worldSel(), selected: sceneSelected(), arming,
   groups: sceneSelected() ? schemaFor(sceneSelected()).groups.map((g) => g.group) : [], behaviors: behaviors.length, rows: visibleRows, selection: selection(),
