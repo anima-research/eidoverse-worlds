@@ -272,6 +272,11 @@ console.log("the door's bodyHeightFor through /library (server/routes.ts route)"
     requests = 0;
     for (let i = 0; i < 3; i++) await door("empty");
     check("an empty file is asked about once for its version", requests === 1, { requests });
+    // a head on a node the file doesn't have: no stature, but the rig is still read
+    put("nohead", glb({ asset: { version: "2.0" }, nodes: [{ name: "Wing" }], skins: [{ joints: [0] }],
+      extensions: { VRMC_vrm: { specVersion: "1.0", humanoid: { humanBones: { head: { node: 99 } } } } } }));
+    const noheadRig = await rigBonesFor(base, `${V}/nohead.vrm?v=1`), noheadH = await bodyHeightFor(base, `${V}/nohead.vrm?v=1`);
+    check("a stature that can't be read doesn't lose the rig", noheadRig?.bones.includes("Wing") === true && noheadH === null, { noheadRig, noheadH });
     // the file is replaced between the header read and the JSON read: that reading is tried again later
     for (const [label, during] of [["a short second answer", body(V1).subarray(0, 30)],
       ["a second answer whose header claims more than the cap", readFileSync(join(vdir, "padded.vrm")).subarray(0, body(V1).length)]] as const) {

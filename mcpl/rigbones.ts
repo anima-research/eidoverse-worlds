@@ -30,8 +30,11 @@ function readingOf(httpBase: string, avatarPath: string): Promise<Reading> {
   let p = readings.get(key);
   if (!p) {
     const read = headerAndJson(`${httpBase}/library/${path}`).then((buf) => {
-      try { const g = buf && glbJson(buf); return g ? { rig: rigFromGltf(g), height: stature(g) } : NOTHING; }
-      catch { return NOTHING; }
+      let g: any = null;
+      try { g = buf && glbJson(buf); } catch { /* not a model */ }
+      if (!g) return NOTHING;
+      const or = <T,>(f: () => T) => { try { return f(); } catch { return null; } };   // one failing doesn't lose the other
+      return { rig: or(() => rigFromGltf(g)), height: or(() => stature(g)) };
     });
     const settled: Promise<Reading> = read.catch(() => { if (readings.get(key) === settled) readings.delete(key); return NOTHING; });
     readings.set(key, p = settled);
