@@ -42,6 +42,17 @@ const rg = rigFromGltf(g);
 check("rigFromGltf maps a node named __proto__ as an own key, not the map's prototype", !!rg && Object.getPrototypeOf(rg.humanoidOf) === Object.prototype && Object.hasOwn(rg.humanoidOf, "__proto__") && rg.humanoidOf.__proto__ === "hips", rg && { keys: Object.keys(rg.humanoidOf) });
 const vh = rg && validatePose(JSON.parse('{"__proto__": {"t": [0, 0.1, 0]}}'), { rig: rg });
 check("…so validatePose reads it as hips", !!vh && Object.hasOwn(vh.pose, "hips") && !vh.custom.length, vh && { keys: Object.keys(vh.pose), custom: vh.custom, rejected: vh.rejected });
+// the agent's bone listing (pose with no bones) over that rig read from a served GLB: a custom bone named constructor is listed
+{ const src = JSON.stringify({ ...g, nodes: [{ name: "__proto__", children: [1, 2] }, { name: "Head_jnt" }, { name: "constructor" }], skins: [{ joints: [0, 1, 2] }] });
+  const json = new TextEncoder().encode(src.padEnd(Math.ceil(src.length / 4) * 4, " "));
+  const glb = new Uint8Array(20 + json.length), dv = new DataView(glb.buffer);
+  dv.setUint32(0, 0x46546c67, true); dv.setUint32(4, 2, true); dv.setUint32(8, glb.length, true); dv.setUint32(12, json.length, true); dv.setUint32(16, 0x4e4f534a, true); glb.set(json, 20);
+  const srv = Bun.serve({ port: 0, fetch: () => new Response(glb) });
+  const { HANDLERS } = await import("../mcpl/tools.ts");
+  const r = await HANDLERS.anim({ httpBase: `http://127.0.0.1:${srv.port}`, avatar: "own-names-rig.vrm", people: new Map() }, {}, {});
+  const said = r?.content?.[0]?.text ?? "";
+  check("the agent's bone listing names a custom bone called constructor", /Other bones \(by their own name\): constructor\b/.test(said), said);
+  srv.stop(true); }
 const vp = validatePose(JSON.parse('{"__proto__": [0, 0, 0, 1]}'));
 check("validatePose keeps __proto__ as an own key, not the pose's prototype", Object.getPrototypeOf(vp.pose) === Object.prototype && Object.hasOwn(vp.pose, "__proto__") && vp.accepted[0] === "__proto__", { keys: Object.keys(vp.pose), accepted: vp.accepted });
 const vt = validateTracks({ toString: [{ t: 0, q }], head: [{ t: 0, q }] });

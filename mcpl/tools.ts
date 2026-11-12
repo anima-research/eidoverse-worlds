@@ -956,7 +956,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (a.bones == null) {
         if (!rig) return fail(`can't read ${target ? `${target}'s` : "your"} rig to list its bones. Humanoid names always work: ${HUMANOID_BONES.join(", ")}.`);
         const humanoid = Object.entries(rig.humanoidOf).map(([raw, vrm]) => vrm === raw ? vrm : `${vrm} (${raw})`);
-        const other = rig.bones.filter((b) => !rig.humanoidOf[b] && !rig.aboveHips.includes(b));
+        const other = rig.bones.filter((b) => !Object.hasOwn(rig.humanoidOf, b) && !rig.aboveHips.includes(b));
         return text(`${target ? `${target}'s` : "your"} rig — humanoid bones (by VRM name): ${humanoid.join(", ")}.`
           + ` Other bones (by their own name): ${other.length ? other.join(", ") : "none"}.`
           + `${rig.aboveHips.length ? ` Not poseable (above the hips; move hips instead): ${rig.aboveHips.join(", ")}.` : ""}`);
