@@ -205,24 +205,24 @@ const MODELS_DIR = process.env.EIDOVERSE_DIR
  *  the content-addressed store, so conjured/orrery-delivered objects are
  *  findable), falling back to a local dir scan only when a checkout exists.
  *  `failed` says why the catalog itself couldn't be searched (#292). */
-async function searchLibrary(httpBase: string, query: string): Promise<{ hits: { path: string; name?: string }[]; failed?: string }> {
-  let failed: string;
+async function searchLibrary(httpBase: string, query: string): Promise<{ hits: { path: string; name?: string }[]; failed?: string; retry?: boolean }> {
+  let failed: string, retry = true;   // calling again may work, as library {preview}'s rule: not after a 4xx other than 408 or 429
   try {
     const r = await fetch(`${httpBase}/library-models?q=${encodeURIComponent(query)}`);
     if (r.ok) return { hits: ((await r.json()) as { path: string; name?: string }[]).slice(0, 24) };
-    failed = `it answered ${r.status}`;
+    failed = `it answered ${r.status}`; retry = r.status >= 500 || r.status === 408 || r.status === 429;
   } catch (e) { failed = `the request failed: ${(e as Error).message || "no reason given"}`; }
-  if (!MODELS_DIR) return { hits: [], failed };
+  if (!MODELS_DIR) return { hits: [], failed, retry };
   try {
     const toks = query.toLowerCase().split(/\s+/).filter(Boolean);
-    return { failed, hits: readdirSync(MODELS_DIR)
+    return { failed, retry, hits: readdirSync(MODELS_DIR)
       .filter((f) => f.endsWith(".glb"))
       .map((f) => ({ f, score: toks.filter((t) => f.toLowerCase().includes(t)).length }))
       .filter((r) => r.score > 0)
       .sort((a, b) => b.score - a.score)
       .slice(0, 12)
       .map((r) => ({ path: `eidoverse/assets/models/${r.f}` })) };
-  } catch { return { hits: [], failed }; }
+  } catch { return { hits: [], failed, retry }; }
 }
 
 // ---- contact sheets ---------------------------------------------------------
@@ -643,9 +643,9 @@ export const HANDLERS: Record<string, ToolHandler> = {
   library: async (ag, a, ctx, name) => {
       // one catalog tool: query (search), kind + page (a contact sheet), preview (one item)
       if (typeof a.query === "string" && a.query.trim()) {
-        const { hits, failed } = await searchLibrary(ag.httpBase, String(a.query));
+        const { hits, failed, retry } = await searchLibrary(ag.httpBase, String(a.query));
         const why = failed && `the world's catalog couldn't be searched (${failed})`;
-        if (!hits.length) return failed ? fail(`${why}, so this says nothing about what's in it; calling again may work`) : text("no matches");
+        if (!hits.length) return failed ? fail(`${why}, so this says nothing about what's in it; ${retry ? "calling again may work" : "calling again won't change that"}`) : text("no matches");
         return text(hits.map((h) => h.name && !h.path.includes(h.name) ? `${h.path}  — ${h.name}` : h.path).join("\n")
           + (failed ? `\n(${why}: these are from this door's local checkout only)` : ""));
       }

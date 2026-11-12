@@ -37,6 +37,11 @@ models = () => new Response("down", { status: 503 });
 let r: any = await call({ query: "zebra" });
 check("query, catalog 503, nothing local: an error naming the failed search and its status, not 'no matches'",
   r?.isError === true && /catalog/.test(said(r)) && /503/.test(said(r)) && !/no matches/.test(said(r)), said(r));
+check("(bot #12) …and, a 503 being passing, says calling again may work", /may work/.test(said(r)), said(r));
+models = () => new Response("gone", { status: 404 });
+r = await call({ query: "zebra" });
+check("query, catalog 404 (bot #12): an error that doesn't promise a retry will work", r?.isError === true && /404/.test(said(r)) && !/may work/.test(said(r)), said(r));
+models = () => new Response("down", { status: 503 });
 r = await call({ query: "chair" });
 check("query, catalog 503, a local match: the local hit, and beside it that the catalog search failed",
   !r?.isError && /eidoverse\/assets\/models\/chair-oak\.glb/.test(said(r)) && /catalog/.test(said(r)) && /503/.test(said(r)), said(r));
