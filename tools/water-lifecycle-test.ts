@@ -89,6 +89,10 @@ console.log("\nstature follows a re-upload at the same path");
   check("a peer's re-uploaded rig is read again", before?.includes("Head") === true && after?.includes("Kopf") === true, JSON.stringify({ before, after }));
   files["fix/tall.vrm"].glb = bodyGlb(TALL);
   a.people.delete("peer");
+  // …and a body nobody present wears, read before its wearer left
+  a.invalidateBodyAsset("tall");
+  const unworn = (await rigBonesFor(base, "fix/tall.vrm"))?.bones;
+  check("a re-uploaded rig nobody wears now is read again", unworn?.includes("Head") === true, JSON.stringify(unworn));
 }
 
 console.log("\nthe float follows the water");

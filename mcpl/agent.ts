@@ -17,7 +17,7 @@ import { resolveBriefing, briefingLines } from "../shared/briefing.js";
 import { shapeParams, shapedHeightAt, requestGrid, setGridFetcher, shapeReady, waterParams } from "../shared/terrainshape.js";
 import { flatHeightOf } from "../shared/terrainmath.js";
 import { foldOffset } from "../shared/clockoffset.js";
-import { bodyHeightFor, forgetReading } from "./rigbones.ts";
+import { bodyHeightFor, forgetReadings } from "./rigbones.ts";
 import { surfaceOffset, waveClock } from "../shared/waves.js";
 import { floatStep, footprintSurface } from "../shared/buoyancy.js";
 import { analyzeWater, compass, waterGridSeg } from "../shared/waterkind.js";
@@ -1438,16 +1438,15 @@ export class WorldAgent {
   }
 
   private invalidateBodyAsset(name: string) {
+    forgetReadings(this.httpBase, name);
     if (nameFromAvatarPath(this.avatar) === name) {
       this.selfBodyGeneration = ++this.bodyGenerationCounter;
       this.bodyReader?.forget(this.name);
-      forgetReading(this.httpBase, this.avatar);
       if (this.statureFor === this.avatar) this.measureStature();
     }
     for (const p of this.people.values()) if (nameFromAvatarPath(p.avatar) === name) {
       p.bodyGeneration = ++this.bodyGenerationCounter;
       this.bodyReader?.forget(p.id);
-      forgetReading(this.httpBase, p.avatar);
     }
   }
 

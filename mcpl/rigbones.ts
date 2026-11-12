@@ -5,6 +5,7 @@
 // every renderer, silently. So the check needs the rig, and the rig is in the
 // file's JSON chunk — the header bytes, not the multi-megabyte body.
 import { glbJson, humanBones, stature, GLB_MAX_JSON } from "./rig.ts";
+import { nameFromAvatarPath } from "../client/lib/seatcore.js";
 
 export type RigBones = {
   /** every skin joint and humanoid bone, by node name */
@@ -38,8 +39,10 @@ function readingOf(httpBase: string, avatarPath: string): Promise<Reading> {
   return p;
 }
 
-/** Forget what was read for this avatar path: its bytes changed (avatar-updated) under the same string. */
-export function forgetReading(httpBase: string, avatarPath: string) { readings.delete(`${httpBase}/library/${avatarPath}`); }
+/** Forget every reading of this server's avatar `name`, worn now or not: its bytes changed (avatar-updated). */
+export function forgetReadings(httpBase: string, name: string) {
+  for (const key of readings.keys()) if (key.startsWith(`${httpBase}/library/`) && nameFromAvatarPath(key) === name) readings.delete(key);
+}
 
 export function rigBonesFor(httpBase: string, avatarPath: string): Promise<RigBones | null> {
   return readingOf(httpBase, avatarPath).then((r) => r.rig);
