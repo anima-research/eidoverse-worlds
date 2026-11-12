@@ -354,7 +354,9 @@ for (const name of order) {
   for (const l of rowSkips.slice(0, 20)) console.log(l);
   // a suite that failed without one FAIL line crashed: its last line is the runtime's banner, so show enough to read the error (CI 10-21: six Windows reds read 'Bun v1.3.14' and nothing else)
   const crashed = status === "fail" && !fails.length && !r.timedOut;
-  for (const l of lines.slice(-(crashed ? Math.max(tail, 30) : tail))) if (!evidence.includes(l) && !rowSkips.includes(l)) console.log(l);
+  // a timed-out suite's last lines are where it stopped: show 40, labelled (CI run 42988218497: server-check at 200 s kept one line)
+  if (r.timedOut) console.log(`[gate] ${name} timed out: its last ${Math.max(tail, 40)} lines of output before the kill:`);
+  for (const l of lines.slice(-(crashed ? Math.max(tail, 30) : r.timedOut ? Math.max(tail, 40) : tail))) if (!evidence.includes(l) && !rowSkips.includes(l)) console.log(l);
   if (lane === "core" && status !== "pass") stopped = `not run: the core lane failed at ${name}`;
 }
 

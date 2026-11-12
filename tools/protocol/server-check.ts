@@ -29,7 +29,9 @@ const IDS = idAliases();
 
 const root = scratch("server");
 let pass = 0, fail = 0;
-const ok = (cond: any, what: string, detail?: any) => { if (cond) pass++; else { fail++; console.log(`  FAIL ${what}${detail !== undefined ? ` — ${JSON.stringify(detail).slice(0, 500)}` : ""}`); } };
+// progress, one line per row and per tool child: a timed-out run's tail (run.ts) then says where it stopped (CI run 42988218497)
+const T0 = performance.now(), at = (s: string) => console.log(`[server-check] ${((performance.now() - T0) / 1000).toFixed(1)} s ${s.slice(0, 100)}`);
+const ok = (cond: any, what: string, detail?: any) => { if (cond) { pass++; at(`ok ${what}`); } else { fail++; console.log(`  FAIL ${what}${detail !== undefined ? ` — ${JSON.stringify(detail).slice(0, 500)}` : ""}`); } };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // ---- a measured model: a 1.2 × 0.75 × 0.8 m box, origin at its base centre, written as a real GLB ----
@@ -99,8 +101,8 @@ const W4 = path.join(root, "w4"), OPT = path.join(root, "opt");
 fs.mkdirSync(W4, { recursive: true });
 await writeBoxGlb(path.join(OPT, "test/table.glb"), [1.2, 0.75, 0.8]);
 await writeBoxGlb(path.join(OPT, "test/cup.glb"), [0.1, 0.12, 0.1]);
-const tool = (args: string[], worlds = W4) => { const r = Bun.spawnSync(["bun", "tools/protocol/world.ts", ...args], { cwd: ENGINE, env: { ...process.env, TRUST_NAMES: "1", WORLDS_DIR: worlds, OPT_DIR: OPT, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
-  return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; };
+const tool = (args: string[], worlds = W4) => { at(`tool ${args.join(" ")}: started`); const t0 = performance.now(), r = Bun.spawnSync(["bun", "tools/protocol/world.ts", ...args], { cwd: ENGINE, env: { ...process.env, TRUST_NAMES: "1", WORLDS_DIR: worlds, OPT_DIR: OPT, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
+  at(`tool ${args[0]}: exit ${r.exitCode ?? r.signalCode} in ${Math.round(performance.now() - t0)} ms`); return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; };
 
 const f = tool(["found", "garden", "--owner", "Ann", "--title", "a test garden"]);
 ok(f.code === 0 && /founded world "garden"/.test(f.out), "S1 tools/protocol/world.ts found makes a world", f.out);
