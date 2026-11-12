@@ -999,13 +999,16 @@ function inspectorDispatch(action, payload, field, opts = {}) {
 // script bound in this world, and one script's live console.log() ring, polled
 // while the frame is open. Agents read the same thing through world_debug.
 let watching = null;           // behavior id whose log is open
-let watchLog = null;           // { status, lines } from the last poll
+let watchLog = null;           // { id, status, lines, unread? } from the last poll
 async function refreshWatch() {
   if (!watching) { watchLog = null; return; }
+  const id = watching;
   try {
-    const d = await requestDebug({ script: watching, limit: 40 });
-    watchLog = { status: d?.status ?? '?', lines: (d?.events ?? []).map((e) => `${new Date(e.ts).toTimeString().slice(0, 8)}  ${e.line}`) };
-  } catch { /* a poll that fails keeps the last good tail */ }
+    const d = await requestDebug({ script: id, limit: 40 });
+    watchLog = { id, status: d?.status ?? '?', lines: (d?.events ?? []).map((e) => `${new Date(e.ts).toTimeString().slice(0, 8)}  ${e.line}`) };
+  } catch (e) {   // a poll that fails keeps this script's last good tail, under a status that says so
+    watchLog = { id, status: `the world didn't answer the log read (${e.message})`, lines: watchLog?.id === id ? watchLog.lines : [], unread: true };
+  }
 }
 function consoleFields() {
   const miss = behaviorsMiss && `the world didn't answer the scripts read (${behaviorsMiss})`;
@@ -1017,7 +1020,7 @@ function consoleFields() {
       actions: [...(b.attach ? [{ k: 'cgoto', label: 'select' }] : []), { k: 'unbind', label: 'remove', danger: true }] })) });
   if (watching) {
     f.push({ t: 'group', k: 'clog', label: `${watching} — ${watchLog?.status ?? '…'}`, open: true });
-    f.push({ t: 'log', k: 'clines', lines: watchLog?.lines ?? [], empty: '(console empty — console.log() writes here)' });
+    f.push({ t: 'log', k: 'clines', lines: watchLog?.lines ?? [], empty: watchLog?.unread ? "(the log wasn't read)" : '(console empty — console.log() writes here)' });
   }
   f.push({ t: 'info', label: '', value: 'click a script to watch its log · /debug = flight recorder' });
   return f;
