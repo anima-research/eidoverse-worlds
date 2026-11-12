@@ -2107,14 +2107,15 @@ export class WorldAgent {
    *  ordinary adult's (the measurement is one small read of the avatar's header). */
   stature(): number { return this.bodyH ?? STATURE_FALLBACK; }
   /** Measure the current body's height (rigbones.ts bodyHeightFor), guarded by generation so a slow reply
-   *  for a body since replaced is never applied; the same body re-read (a re-upload) keeps its known height
-   *  meanwhile. Resolves once this measurement is settled. */
+   *  for a body since replaced is never applied; a known height stands meanwhile (setAvatar clears it). A failed
+   *  download is tried again when the terrain next settles. Resolves once this measurement is settled. */
   measureStature(): Promise<void> {
     const gen = ++this.statureGen, avatar = this.avatar;
-    if (this.statureFor !== avatar) this.bodyH = null;
     this.statureFor = avatar;
-    return bodyHeightFor(this.httpBase, avatar).catch(() => null).then((h) => {
+    return bodyHeightFor(this.httpBase, avatar).then((h) => {
       if (gen === this.statureGen) this.bodyH = h ?? STATURE_FALLBACK;
+    }, () => {
+      if (gen === this.statureGen) { this.bodyH ??= STATURE_FALLBACK; this.statureFor = null; }
     });
   }
   /** Leave the floating column: the next float starts from wherever the body then is. */
@@ -5340,7 +5341,8 @@ export class WorldAgent {
     this.bodyReader?.forget(this.name);
     // a new body has its own height: re-measure (a reply for the old body is dropped), and float afresh
     this.endFloat();
-    if (this.water) void this.measureStature(); else { this.statureFor = null; this.bodyH = null; ++this.statureGen; }
+    this.bodyH = null;
+    if (this.water) void this.measureStature(); else { this.statureFor = null; ++this.statureGen; }
     if (this.joined && this.ws?.readyState === 1) {
       this.ws.send(JSON.stringify(this.joinMsg()));
     }

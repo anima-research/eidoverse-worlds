@@ -26,7 +26,7 @@ function bodyGlb(stature: number) {
   return out;
 }
 const SHORT = 1.0, TALL = 2.6, SLOW = 1.9;
-const files: Record<string, { glb: Uint8Array; delay: number }> = {
+const files: Record<string, { glb: Uint8Array; delay: number; down?: boolean }> = {
   "fix/short.vrm": { glb: bodyGlb(SHORT), delay: 0 },
   "fix/tall.vrm": { glb: bodyGlb(TALL), delay: 0 },
   "fix/slow.vrm": { glb: bodyGlb(SLOW), delay: 400 },   // an old body whose height answers late
@@ -34,6 +34,7 @@ const files: Record<string, { glb: Uint8Array; delay: number }> = {
 const srv = Bun.serve({ port: 0, async fetch(req) {
   const f = files[new URL(req.url).pathname.replace(/^\/library\//, "")];
   if (!f) return new Response("no", { status: 404 });
+  if (f.down) return new Response("busy", { status: 503 });
   await sleep(f.delay);
   const m = /bytes=(\d+)-(\d+)/.exec(req.headers.get("range") ?? "");
   return m ? new Response(f.glb.slice(+m[1], +m[2] + 1), { status: 206 }) : new Response(f.glb);
@@ -95,6 +96,17 @@ console.log("\nstature follows a re-upload at the same path");
   a.invalidateBodyAsset("tall");
   const unworn = (await rigBonesFor(base, "fix/tall.vrm"))?.bones;
   check("a re-uploaded rig nobody wears now is read again", unworn?.includes("Head") === true, JSON.stringify(unworn));
+  // a re-measure that fails to download is tried again when the terrain next settles
+  Object.assign(files["fix/short.vrm"], { glb: bodyGlb(TALL), down: true });
+  a.invalidateBodyAsset("short");
+  await sleep(100);
+  files["fix/short.vrm"].down = false;
+  await a.buildTerrain(WET);
+  await until(() => Math.abs(a.bodyH - TALL) < 0.01);
+  check(`a failed re-measure is tried again (${a.bodyH?.toFixed(2)} m)`, Math.abs(a.bodyH - TALL) < 0.01, `${a.bodyH}`);
+  files["fix/short.vrm"].glb = bodyGlb(SHORT);
+  a.invalidateBodyAsset("short");
+  await until(() => Math.abs(a.bodyH - SHORT) < 0.01);
 }
 
 console.log("\nthe float follows the water");

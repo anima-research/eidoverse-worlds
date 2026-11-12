@@ -36,7 +36,7 @@ function readingOf(httpBase: string, avatarPath: string): Promise<Reading> {
       const or = <T,>(f: () => T) => { try { return f(); } catch { return null; } };   // one failing doesn't lose the other
       return { rig: or(() => rigFromGltf(g)), height: or(() => stature(g)) };
     });
-    const settled: Promise<Reading> = read.catch(() => { if (readings.get(key) === settled) readings.delete(key); return NOTHING; });
+    const settled: Promise<Reading> = read.catch((e) => { if (readings.get(key) === settled) readings.delete(key); throw e; });
     readings.set(key, p = settled);
   }
   return p;
@@ -48,7 +48,7 @@ export function forgetReadings(httpBase: string, name: string) {
 }
 
 export function rigBonesFor(httpBase: string, avatarPath: string): Promise<RigBones | null> {
-  return readingOf(httpBase, avatarPath).then((r) => r.rig);
+  return readingOf(httpBase, avatarPath).then((r) => r.rig, () => null);
 }
 
 /** A GLB's header and JSON chunk, the bytes server/vrmheight.ts reads from disk: 20 bytes say how long the JSON
@@ -99,7 +99,8 @@ export function rigFromGltf(g: any): RigBones | null {
 // ---- stature ------------------------------------------------------------------
 /** A body's standing height in metres, shared/rig.js's stature() over the same header bytes: the
  *  rule the browser's Avatar.bodyHeight and the roster (server/vrmheight.ts) use. What water depth is
- *  measured against (shared/terrainshape.js waterStance). Null when the file has no humanoid head. */
+ *  measured against (shared/terrainshape.js waterStance). Null when the file has no humanoid head; rejects when
+ *  the download fails, which may pass. */
 export function bodyHeightFor(httpBase: string, avatarPath: string): Promise<number | null> {
   return readingOf(httpBase, avatarPath).then((r) => r.height);
 }

@@ -244,10 +244,10 @@ console.log("the door's bodyHeightFor through /library (server/routes.ts route)"
     let down = true;
     const flaky = Bun.serve({ port: 0, fetch: () => down ? new Response("busy", { status: 503 }) : new Response(body(V1)) });
     try {
-      const during = await bodyHeightFor(`http://localhost:${flaky.port}`, `${V}/plain.vrm?v=flaky`);
+      const during = await bodyHeightFor(`http://localhost:${flaky.port}`, `${V}/plain.vrm?v=flaky`).catch(() => "failed");
       down = false;
       const after = await bodyHeightFor(`http://localhost:${flaky.port}`, `${V}/plain.vrm?v=flaky`);
-      check("a failed download isn't remembered: the next call reads", during === null && near(after, 1.5), { during, after });
+      check("a failed download isn't remembered: the next call reads", during === "failed" && near(after, 1.5), { during, after });
     } finally { flaky.stop(true); }
     // a server that ignores Range answers 200 with the whole file: the same length cap applies
     const whole = Bun.serve({ port: 0, fetch: () => new Response(readFileSync(join(vdir, "padded.vrm"))) });
@@ -287,7 +287,7 @@ console.log("the door's bodyHeightFor through /library (server/routes.ts route)"
       } });
       try {
         const at = `http://localhost:${swap.port}`, p = `${V}/swap.vrm?v=1`;
-        const first = await bodyHeightFor(at, p);
+        const first = await bodyHeightFor(at, p).catch(() => null);
         swapping = false;
         const later = await bodyHeightFor(at, p);
         check(`${label} isn't kept as the file's reading`, first === null && near(later, 1.5), { first, later });
