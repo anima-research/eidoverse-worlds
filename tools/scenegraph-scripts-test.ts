@@ -49,5 +49,16 @@ debugAnswer = async () => ({ events: [] });
 await poll!();
 check('(control) an answered empty roster says there are no scripts', /no scripts here/.test(text()) && !/didn't answer/.test(text()), text());
 
+// #3 (bot): the watched script's log read that got no answer is said, not shown as an empty console
+debugAnswer = async (o) => (o.scripts ? { events: [script] } : { status: 'active', events: [] });
+await poll!();
+(body.querySelector('.sg-script') as HTMLElement).click();
+await poll!();
+check('(control) a watched script whose answered log is empty says the console is empty', /active/.test(text()) && /console empty/.test(text()), text());
+debugAnswer = async (o) => { if (o.scripts) return { events: [script] }; throw new Error('debug: no answer within 8 s'); };
+await poll!();
+check("a watched script's log read with no answer says so, not that the console is empty",
+  /didn't answer/.test(text()) && !/console empty/.test(text()), text());
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

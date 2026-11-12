@@ -360,12 +360,12 @@ async function paintScripts() {
 
   let consoleHtml = '';
   if (watching) {
-    const d = await requestDebug({ script: watching, limit: 40 }).catch((e) => ({ status: `the world didn't answer (${e.message})`, events: [] }));
+    const d = await requestDebug({ script: watching, limit: 40 }).catch((e) => ({ status: `the world didn't answer (${e.message})`, events: [], unread: true }));
     const lines = (d.events ?? []).map((e) =>
       `${new Date(e.ts).toTimeString().slice(0, 8)} ${esc(e.line)}`).join('\n');
     consoleHtml = `<div style="border-top:1px solid var(--edge);margin-top:6px;padding-top:6px">
       <div><b>${esc(watching)}</b> — <span style="color:${/^(active|asleep)/.test(String(d.status ?? '')) ? 'var(--ok, #7c9)' : 'var(--warn, #ea5)'}">${esc(d.status ?? '?')}</span></div>
-      <pre style="max-height:150px;overflow:auto;margin:4px 0;font-size:11px;white-space:pre-wrap">${lines || '(console empty — console.log() writes here)'}</pre>
+      <pre style="max-height:150px;overflow:auto;margin:4px 0;font-size:11px;white-space:pre-wrap">${lines || (d.unread ? '(the log wasn\'t read)' : '(console empty — console.log() writes here)')}</pre>
       <div style="display:flex;gap:6px">
         <button data-act="unbind">remove</button>
       </div></div>`;
