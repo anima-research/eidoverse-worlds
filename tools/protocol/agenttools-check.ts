@@ -90,7 +90,7 @@ const { HANDLERS, TOOLS, toolList, handleTool: handleToolDoor } = await import("
     const ANGLE = /^(yaw|pitch|roll|heading|azimuth|angle)$/i, UNIT = /radian|\brad\b|degree|°/i, bare: string[] = [];
     const walk = (where, props) => { for (const [k, v] of Object.entries(props ?? {})) {
       if ((ANGLE.test(k) || /\byaw\b/.test(v?.description ?? "")) && !UNIT.test(v?.description ?? "")) bare.push(`${where}.${k}`);
-      walk(`${where}.${k}`, v?.properties); walk(`${where}.${k}[]`, v?.items?.properties); } };
+      for (const b of [v, ...(v?.anyOf ?? [])]) { walk(`${where}.${k}`, b?.properties); walk(`${where}.${k}[]`, b?.items?.properties); } } };
     for (const t of TOOLS) walk(t.name, t.inputSchema?.properties);
     for (const [verb, s] of Object.entries(VERBSPEC)) for (const [a, d] of Object.entries(s.args ?? {})) if ((ANGLE.test(a) || /\byaw\b/.test(d?.doc ?? "")) && !UNIT.test(d?.doc ?? "")) bare.push(`verb ${verb}.${a}`);
     // a component's pitch may be a playback rate (sound), so only these names; a tuple's yaw is labelled in the doc, the field's unit being its metres
