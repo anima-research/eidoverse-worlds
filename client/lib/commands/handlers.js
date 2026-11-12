@@ -541,7 +541,7 @@ register('rename', () => {
   // chat.js emitted this command for years with nobody subscribed (§14.1
   // found bug) — a silently dead command. Until mid-session renames exist,
   // say so instead of saying nothing.
-  logChat('*', "renaming mid-session isn't supported yet — set your name at the authority (clear ew-name in devtools to re-open it)");
+  logChat('*', "renaming mid-session isn't supported yet — reload the page with ?door to choose a new name at the door");
 });
 
 function bearingTo(p) {

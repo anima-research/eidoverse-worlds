@@ -1,7 +1,7 @@
 // command-replies-test — what a chat command says when its request got no answer, and where its hints point.
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/command-replies-test.ts
 // The real handlers.js and registry.js, with net.js's requestDebug stood in (grant-command-test's harness).
-// #291: /debug tells an unanswered flight-recorder read from an empty recorder.
+// #291: /debug tells an unanswered flight-recorder read from an empty recorder. #285: /rename's hint names what reopens the door.
 import './reach-frame-fixture.ts';   // stands in for the renderer cone handlers.js reaches (avatar.js, reachnet.js)
 import { mock } from 'bun:test';
 import { fileURLToPath } from 'node:url';
@@ -41,6 +41,14 @@ check('(control) /debug with an empty answer says the recorder is empty', said.l
 debugAnswer = async () => ({ events: [{ ts: 0, kind: 'deny', verb: 'spawn' }] });
 said = await run('debug', '5');
 check('(control) /debug with one event prints it', said.length === 1 && /\[deny\] verb=spawn/.test(said[0]), JSON.stringify(said));
+
+// #285: the door opens on ?door (main.js firstRun), not on clearing ew-name, which only turns the name into a guest's
+said = await run('rename');
+check("/rename's hint says reload with ?door, at the door, and never to clear ew-name",
+  said.length === 1 && /\?door/.test(said[0]) && /\bdoor\b/.test(said[0].replace(/\?door/g, '')) && !/ew-name/.test(said[0]) && !/authority/.test(said[0]), JSON.stringify(said));
+const { COMMANDS } = await import('../client/lib/commands/registry.js');
+const nameHelp = COMMANDS.find((c: any) => c.name === 'name')?.help ?? '';
+check("/name's help says the name is chosen at the door (not 'the authority')", /at the door/.test(nameHelp) && !/authority/.test(nameHelp), nameHelp);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
