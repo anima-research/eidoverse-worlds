@@ -37,6 +37,9 @@ function readingOf(httpBase: string, avatarPath: string): Promise<Reading> {
   return p;
 }
 
+/** Forget what was read for this avatar path: its bytes changed (avatar-updated) under the same string. */
+export function forgetReading(avatarPath: string) { readings.delete(avatarPath); }
+
 export function rigBonesFor(httpBase: string, avatarPath: string): Promise<RigBones | null> {
   return readingOf(httpBase, avatarPath).then((r) => r.rig);
 }

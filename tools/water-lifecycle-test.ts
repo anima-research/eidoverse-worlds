@@ -67,6 +67,30 @@ console.log("\nstature follows the body");
   check("a late answer for a replaced body does not overwrite the current one", Math.abs(a.bodyH - SHORT) < 0.01, `${a.bodyH}`);
 }
 
+console.log("\nstature follows a re-upload at the same path");
+{
+  files["fix/short.vrm"].glb = bodyGlb(TALL);
+  a.invalidateBodyAsset("short");   // what avatar-updated does
+  await settle();
+  check(`the re-uploaded body is measured again (${a.bodyH?.toFixed(2)} m)`, Math.abs(a.bodyH - TALL) < 0.01, `${a.bodyH}`);
+  files["fix/short.vrm"].glb = bodyGlb(SHORT);
+  a.invalidateBodyAsset("short");
+  await settle();
+  // a peer's body: the rig a pose is checked against is read again too
+  const { rigBonesFor } = await import("../mcpl/rigbones.ts");
+  const base = `http://127.0.0.1:${srv.port}`;
+  a.people.set("peer", { id: "peer", avatar: "fix/tall.vrm", pose: null, declares: null, observedAt: null, bodyGeneration: 0 });
+  const before = (await rigBonesFor(base, "fix/tall.vrm"))?.bones;
+  const renamed = bodyGlb(TALL), at = new TextDecoder().decode(renamed).indexOf('"Head"');
+  renamed.set(new TextEncoder().encode('"Kopf"'), at);
+  files["fix/tall.vrm"].glb = renamed;
+  a.invalidateBodyAsset("tall");
+  const after = (await rigBonesFor(base, "fix/tall.vrm"))?.bones;
+  check("a peer's re-uploaded rig is read again", before?.includes("Head") === true && after?.includes("Kopf") === true, JSON.stringify({ before, after }));
+  files["fix/tall.vrm"].glb = bodyGlb(TALL);
+  a.people.delete("peer");
+}
+
 console.log("\nthe float follows the water");
 {
   tickN(10);
