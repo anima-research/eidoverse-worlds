@@ -680,9 +680,9 @@ console.log("\n  the boot sweep — a stale size verdict is re-measured, a curre
   if (S.up) {
     // one wait for both: the server writes the variant, then retires the marker (server/upload.ts), so they coexist a moment (#303)
     const variant = ktx2VariantPath(join(STORE, `${hs}.glb`));
-    const retired = await until(() => existsSync(variant) && !existsSync(`${variant}.failed`), 40_000);
+    await until(() => existsSync(variant) && !existsSync(`${variant}.failed`), 40_000);
     check("the stale verdict was re-measured: its variant landed", existsSync(variant));
-    check("…and the old verdict is gone (a landed variant retires it)", retired);
+    check("…and the old verdict is gone (a landed variant retires it)", !existsSync(`${variant}.failed`));
     await sleep(1500);
     check("the current verdict stands: no variant, marker intact", !existsSync(ktx2VariantPath(join(STORE, `${hc}.glb`))) && existsSync(`${ktx2VariantPath(join(STORE, `${hc}.glb`))}.failed`));
     const flagged = await S.get(negotiate(`store/${hs}.glb`, S.key));
