@@ -14,8 +14,8 @@
 # Env (all optional unless stated):
 #   PROJECTOR_BIND           127.0.0.1 (default) | 0.0.0.0 | <address>
 #   PROJECTOR_PUBLISH_KEY    the publisher's password (required off loopback)
-#   PROJECTOR_PUBLISH_USER   publisher (default)
-#   PROJECTOR_PATH           screen (default) — the stream path on every face
+#   PROJECTOR_PUBLISH_USER   publisher (default); never `any`, the template's reader
+#   PROJECTOR_PATH           screen (default) — the stream path on every face; never `all`/`all_others`
 #   PROJECTOR_RTSP_PORT      8554   PROJECTOR_RTMP_PORT  1935
 #   PROJECTOR_HLS_PORT       8888   PROJECTOR_WEBRTC_PORT 8889   PROJECTOR_WEBRTC_UDP_PORT 8189
 set -eu
@@ -26,6 +26,8 @@ USER_="${PROJECTOR_PUBLISH_USER:-publisher}"
 KEY="${PROJECTOR_PUBLISH_KEY:-}"
 STREAM_PATH="${PROJECTOR_PATH:-screen}"
 case "$STREAM_PATH" in *[!A-Za-z0-9_-]*|"") echo "mkconfig: PROJECTOR_PATH must be [A-Za-z0-9_-]+ (got '$STREAM_PATH')" >&2; exit 2;; esac
+# mediamtx conf.go treats these as aliases of the template's catch-all and refuses a second at load
+case "$STREAM_PATH" in all|all_others) echo "mkconfig: PROJECTOR_PATH may not be '$STREAM_PATH': mediamtx reads 'all', 'all_others' and '~^.*\$' as one catch-all path, and the template already holds it" >&2; exit 2;; esac
 # Every value below is spliced into YAML by sed. sed's replacement side
 # reads `&` (the match), `\` (an escape) and the `|` delimiter as syntax, so
 # a key like `p&ss|word` would render silently wrong (the `&` becomes the
@@ -65,6 +67,8 @@ port() { # $1 = name, $2 = value
   if [ "$2" -lt 1 ] || [ "$2" -gt 65535 ]; then echo "mkconfig: $1 must be 1–65535 (got $2)" >&2; exit 2; fi
 }
 inert PROJECTOR_PUBLISH_USER "$USER_" 'A-Za-z0-9_.-'
+# the template already holds this name (mediamtx.template.yml), and mediamtx refuses a second at load
+if [ "$USER_" = any ]; then echo "mkconfig: PROJECTOR_PUBLISH_USER may not be 'any': 'any' is the template's own reader (anyone, no password), and mediamtx refuses a password on it" >&2; exit 2; fi
 inert PROJECTOR_BIND "$BIND" 'A-Za-z0-9.:-'
 # A bind is a host, never host:port: the ports are their own settings. An
 # IPv6 address has at least two colons, so a bind with one is a host:port,

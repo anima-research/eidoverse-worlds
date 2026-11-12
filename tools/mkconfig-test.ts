@@ -24,7 +24,10 @@
 //      booleans mediamtx reads (`on`, `yes`) are written quoted;
 //   F. a host:port bind is refused (the ports are their own settings); an
 //      IPv6 bind is written bracketed beside its port, `::1` still
-//      becomes 127.0.0.1, and an IPv4 bind is left as it is.
+//      becomes 127.0.0.1, and an IPv4 bind is left as it is;
+//   G. a user of `any`, or a path of `all_others` or its aliases `all` and
+//      `~^.*$`, names the template already holds, is refused with exit 2
+//      (mediamtx would refuse the file).
 //
 //   bun tools/mkconfig-test.ts   (E and F parse with Bun.YAML, Bun 1.2.21 or later)
 import { fileURLToPath } from "node:url";
@@ -159,6 +162,17 @@ if (YAML) {
   check('::1 still becomes 127.0.0.1, unbracketed', lo?.rtmpAddress === '127.0.0.1:1935', String(lo?.rtmpAddress));
   const ipFour = parsed(render(base));
   check('an IPv4 bind is left as it is', ipFour?.rtmpAddress === '0.0.0.0:1935', String(ipFour?.rtmpAddress));
+}
+
+console.log('— G. the template\'s own names are refused by name (#288) —');
+const catchAll = /mediamtx reads 'all', 'all_others' and '~\^\.\*\$' as one catch-all path, and the template already holds it/;
+for (const [variable, value, why] of [['PROJECTOR_PUBLISH_USER', 'any', /'any' is the template's own reader/], ['PROJECTOR_PATH', 'all_others', catchAll], ['PROJECTOR_PATH', 'all', catchAll], ['PROJECTOR_PATH', '~^.*$', /PROJECTOR_PATH must be \[A-Za-z0-9_-\]\+/]] as const) {
+  const r = render({ ...base, [variable]: value });
+  check(`${variable}=${value} is refused with exit 2, the variable and the reason named, no file`, r.code === 2 && r.stderr.includes(variable) && why.test(r.stderr) && r.yaml === null, `exit=${r.code} ${r.stderr} file=${r.yaml === null ? 'absent' : 'PRESENT'}`);
+}
+for (const [variable, value] of [['PROJECTOR_PUBLISH_USER', 'anyone'], ['PROJECTOR_PATH', 'all_others2'], ['PROJECTOR_PATH', 'All']] as const) {
+  const r = render({ ...base, [variable]: value });
+  check(`…but ${variable}=${value} renders`, r.code === 0, r.stderr);
 }
 
 rmSync(dir, { recursive: true, force: true });
