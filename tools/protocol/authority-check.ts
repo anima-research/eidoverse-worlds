@@ -536,7 +536,14 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     const codes = bad.map((at, i) => code(call("bob", "create", { id: `at-bad-${i}`, model: "crate", at })));
     ok(codes.every((c) => c === "shape") && bad.every((_, i) => !w.state().entities[`at-bad-${i}`]), "CA4 a malformed at is a shape refusal, and nothing is made", codes);
     ok(code(call("bob", "create", { id: "at-both", model: "crate", at: [1, 1], place: { at: [2, 2] } })) === "shape", "CA5 at and place together is a shape refusal (one way of saying where)");
-    ok(code(call("bob", "create", { from: "tbl", at: [1, 2, 3] })) === "shape", "CA6 with from, at is {pos, yaw|q}: an array is a shape refusal (never spread into the transform)"); }
+    ok(code(call("bob", "create", { from: "tbl", at: [1, 2, 3] })) === "shape", "CA6 with from, at is {pos, yaw|q}: an array is a shape refusal (never spread into the transform)");
+    // #147: a bare yaw is radians, so one past ±2π (30, 90, 180: degrees typed as radians) is refused with the fix, at each door that takes one
+    const wild = [call("bob", "create", { id: "at-deg", model: "crate", at: { pos: [-6, 0, -8], yaw: 30 } }), call("bob", "create", { from: "tbl", at: { pos: [1, 0, 1], yaw: -90 } }),
+      call("bob", "set", { id: "at-yaw", component: "transform", value: { yaw: 180 } })];
+    ok(wild.every((r) => code(r) === "shape" && /radians/.test(r.refused.reason) && /turn \{deg\}/.test(r.refused.fix)) && !w.state().entities["at-deg"] && /0\.5236/.test(wild[0].refused?.fix),
+      "CA7 a bare yaw past ±2π is refused as a shape, saying yaw is radians and naming the radians it meant and turn {deg}: create at, create from at, set transform", wild.map((r) => r.refused));
+    const edge = [call("bob", "create", { id: "at-2pi", model: "crate", at: { pos: [-7, 0, -8], yaw: 2 * Math.PI } }), call("bob", "set", { id: "at-yaw", component: "transform", value: { yaw: -6.2 } })];
+    ok(edge.every((r) => r.ok), "CA7 …and ±2π itself, or just inside it, still turns the thing", edge.map((r) => r.refused)); }
   // redo = undo of my undo (Figma's rule: never back over someone's later work)
   call("ann", "delete", { id: "tbl", component: "lock" });
   const a1 = call("bob", "set", { id: "cup", component: "label", value: "one" });

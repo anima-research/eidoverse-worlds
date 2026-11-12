@@ -25,7 +25,7 @@ import { clearOccupant, occupantOf, vacateAt, vacateWhy } from "./occupants.js";
 import { buildEpoch, refuseForeign } from "./physics.js";
 import { stampHomes, stampResetHomes } from "./manipulate.js";
 import { outsideWorld } from "../../spawn.js";
-import { isLookAt } from "./checks.js";
+import { bareYaw, isLookAt } from "./checks.js";
 import { Admitted, admit, rateCheck } from "./gate.js";
 import { applyResettle, clearRefsTo, lastTouch, planResettle, resettleEntries, stampMedia, stampModelHash, stampShapes, stripDry, touched, warnOrNot, warnings } from "./followups.js";
 import { AXES, POSITIVE_AXES } from "../../axes.js";
@@ -190,7 +190,7 @@ function resolve(ctx, id, comp, value, prev) {
   const def = !comp.includes(":") || comp.startsWith("look-at:") ? defOf(comp) : undefined;   // an alias has its registered name's defaults; a part's look-at the whole one's
   if (comp === "transform") {
     const v = { ...COMPONENTS.transform.defaults, ...(prev ?? {}), ...(value ?? {}) };
-    if (value && "yaw" in value) { v.q = yawQ(value.yaw).map((n) => r3(n)); delete v.yaw; ctx.notes.push({ id, component: "transform", field: "yaw", sent: value.yaw, kept: v.q, why: "yaw (radians) is a convenience; the log stores q" }); }
+    if (value && "yaw" in value) { bareYaw(value.yaw); v.q = yawQ(value.yaw).map((n) => r3(n)); delete v.yaw; ctx.notes.push({ id, component: "transform", field: "yaw", sent: value.yaw, kept: v.q, why: "yaw (radians) is a convenience; the log stores q" }); }
     if (typeof v.scale === "number") v.scale = [v.scale, v.scale, v.scale];
     for (const k of ["pos", "q", "scale"]) if (!Array.isArray(v[k]) || v[k].some((n) => !Number.isFinite(n))) refuse("shape", `transform.${k} must be numbers`, "pos [x,y,z], q [x,y,z,w], scale [x,y,z] or a number");
     v.pos = v.pos.map(r3);

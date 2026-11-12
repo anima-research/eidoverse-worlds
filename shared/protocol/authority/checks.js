@@ -442,4 +442,10 @@ export function colliderRules(s, ids) {
     if (!b.includes("things") && c.physics?.kind === "dynamic") return { code: "shape", reason: `${id}'s collider.blocks leaves out things, and it has physics {kind: 'dynamic'}: the engine would not carry it`, fix: "add 'things' to blocks, or make it kinematic or none" }; }
   return null;
 }
-export { isLookAt, isNum, nearMiss, restCheck, unknownKeys, valueCheck };
+/** A bare yaw is radians (PROTOCOL §9), so one past ±2π (spawn.yaw's range) is degrees typed as radians (#147): refused, with the radians it meant.
+ *  Every door that takes one (set transform, create's at, a copy's at) reaches it through resolve's transform. */
+function bareYaw(yaw) {
+  if (!Number.isFinite(yaw) || Math.abs(yaw) <= 2 * Math.PI) return;
+  refuse("shape", `yaw ${yaw} is past ±2π: a yaw is radians about +Y, not degrees`, `${yaw}° is ${+(yaw * Math.PI / 180).toFixed(4)} radians; or turn {deg} turns it by degrees`);
+}
+export { bareYaw, isLookAt, isNum, nearMiss, restCheck, unknownKeys, valueCheck };
