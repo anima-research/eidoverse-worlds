@@ -279,7 +279,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   `collider {shape, enabled?, blocks?, layer?, mask?}` (mesh, box or sphere; absent, its size decides), `places` (named places to walk to, in the
   thing's own frame; on `@world`, world coordinates),
   `openable`, `physics`, `grabbable`, `particles`, `script:<name>`, `zone`, `water` (a body),
-  `water-exclusion`, `physics-area`,
+  `water-exclusion`, `physics-volume`,
   `physics-joint:<name>` (the constraint between two bodies) and `joint` (a skeleton node), both
   reserved, and on
   `@world`: `about`, `bounds`, `spawn`, `roles:<identity>`, `default-role`,
@@ -338,12 +338,12 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   `[1]` (eidosim carries no layers between things), so a collider whose layer leaves out 1 is met by hulls alone, and
   only by those that scan it; a dynamic thing must keep 1 in its layer. A still collider's mask is unread. Every
   stored world (no layer, no mask) collides as before. `solidOff(c, kind, mask)` is the one reading.
-- **A physics area is `physics-area {kind, factor?}`** on a thing with a box or global `zone` (Godot Area3D's
+- **A physics volume is `physics-volume {kind, factor?}`** on a thing with a box or global `zone` (Godot Area3D's
   overrides, Unreal's Physics Volume): with `kind: speed`, a body inside moves at `factor` × its own speed (walking,
-  running, wading, the stroke, the 3D swim; 0.05..10, absent 1). Where areas overlap the zone's priority decides.
-  The authority's track widens inside a boost and never narrows: a slow area is the honest client's and agent's
+  running, wading, the stroke, the 3D swim; 0.05..10, absent 1). Where volumes overlap the zone's priority decides.
+  The authority's track widens inside a boost and never narrows: a slow volume is the honest client's and agent's
   pace, not a rule the authority holds a modified client to (falls and jumps aren't slowed, so a narrower 3D
-  track would refuse an honest landing in mud). shared/zone.js `physicsAreasOf`/`speedFactorAt`
+  track would refuse an honest landing in mud). shared/zone.js `physicsVolumesOf`/`speedFactorAt`
   is the one reader; shared/mover.js `stepWalk` (env.speedAt) and `stepSwim` (water.factor) apply it. Other kinds
   (direction, point, vortex) are planned, not open.
 - **A climb route is a thing**: `climb {points (2–16, its own frame), reach?,
@@ -442,7 +442,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
 - **A load never writes to a stored value.** A world founded today is written in today's spelling from its first
   entry, so nothing repairs it. One write does happen when a server OPENS a world, and it is not a shape rewrite:
   holds left from before a restart are set down (`return-held`, the system's request; `settleOrphans`), the same
-  request a leave writes. A v1 world comes forward through the translator (`translate-v1@50`, §14), which writes today's spelling
+  request a leave writes. A v1 world comes forward through the translator (`translate-v1@51`, §14), which writes today's spelling
   (the shape audit's rules, `tools/protocol/import-v1/shapes.js`) and lifts v1's `sockets` maps into socket
   children with its own `lift-sockets {id, made, moved}` requests. The door takes a write in a spelling renamed
   before release (`grabbable.pose`/`station.pose` → `anim`, a grip's `fingers` → `grasp`, a motion's old type
@@ -1434,9 +1434,9 @@ this protocol. A translated log is an ordinary log of this protocol, and these h
   'drive', input: {move: 'drive'}, exit}`; `minY` and `maxY` are two hidden walls only that vehicle meets (`collider {blocks:
   ['hulls'], layer: [its own band layer]}`, its thing `collider {mask: [1, that layer]}`: another hull passes) set off by the hull's measured box, so its origin keeps main's band (unmeasured: at `minY`/`maxY`, the
   whole hull in it); `probes` ride `imported:vehicle`, listed under `unmapped` (collision is the hull's own collider). A
-  water volume's `speed` is a `physics-area {kind: 'speed', factor: speed / 2.4, modes: ['swim']}` on its zone (2.4 m/s: the volume
+  water volume's `speed` is a `physics-volume {kind: 'speed', factor: speed / 2.4, modes: ['swim']}` on its zone (2.4 m/s: the volume
   stroke here, shared/water.js; walking and wading there are not slowed, as in main); within 5% of 2.4 none is written, unless another
-  water volume in the world has a speed area: then factor 1 is written, so the areas overlap as the waters do. Driving is not
+  water volume in the world has a speed volume: then factor 1 is written, so the volumes overlap as the waters do. Driving is not
   bit-identical to main's (a collider sweep, not ray probes). The translator's DEFERRED table is empty.
 - **A world that uses a deferred feature is refused**, naming each use (component, entity, actor, seq): a water volume
   or air box on `@world`, which has no frame to hold one (`water` on `@world` without one is the world's water level and

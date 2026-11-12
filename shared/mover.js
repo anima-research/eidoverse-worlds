@@ -146,9 +146,9 @@ export function toleranceOf(t) {
 
 // ---------------------------------------------------------------- the track (the authority's bucket)
 /** The metres a tracked body may cover now: its bucket refilled at the track's speed since its last accepted step,
- *  never over the cap. `prev` is the tokens it had (absent = full); `elapsedMs` since then; `factor` a speed area's × the body's size (× both; the authority's move). */
+ *  never over the cap. `prev` is the tokens it had (absent = full); `elapsedMs` since then; `factor` a speed volume's × the body's size (× both; the authority's move). */
 export function tokensAfter(prev, elapsedMs, factor = 1) {
-  const t = MOVER.track, k = Math.max(1, areaFactor(factor));   // a speed area that boosts widens the track; one that slows doesn't narrow it
+  const t = MOVER.track, k = Math.max(1, volumeFactor(factor));   // a speed volume that boosts widens the track; one that slows doesn't narrow it
   return Math.min(t.cap * k, (typeof prev === "number" ? prev : t.cap) + t.speed * k * Math.max(0, elapsedMs) / 1000);
 }
 /** The points at which a step from `from` to `to` is tested for solids: every `sweep` metres, ending at `to`
@@ -182,17 +182,17 @@ export function waterStance(level, ground, height = MOVER.body.height) {
  *  coming up meets the float exactly (upstream's 3D swim floated its root 1.1 m under for a 100% body; it is this now). */
 export const floatDepth = (height = MOVER.body.height) => MOVER.swim.at * height;
 
-/** A physics-area's speed factor as every mover reads it (componentspec physics-area; zone.js speedFactorAt): a positive number, else 1. */
-export const areaFactor = (f) => (typeof f === "number" && Number.isFinite(f) && f > 0 ? f : 1);
+/** A physics-volume's speed factor as every mover reads it (componentspec physics-volume; zone.js speedFactorAt): a positive number, else 1. */
+export const volumeFactor = (f) => (typeof f === "number" && Number.isFinite(f) && f > 0 ? f : 1);
 /** One step of the THREE-DIMENSIONAL swim (upstream #248 swimStep; diving under a water level, #254). The caller
  *  substeps it for collision. `input`: {direction:[x,y,z] (any length; > 1 is clamped), dive?, rise?, fast?, height? (m,
- *  the body's own stature; absent: MOVER.body.height)}. `water`: {speed (m/s, the stroke here), factor? (× it: a physics-area), surfaceAt(x, z) →
+ *  the body's own stature; absent: MOVER.body.height)}. `water`: {speed (m/s, the stroke here), factor? (× it: a physics-volume), surfaceAt(x, z) →
  *  the surface's y this instant (the level plus its wave)}. Idle swimmers drift up gently; diving releases the surface
  *  latch, and releasing an ascent never jumps the body out. → {pos, velocity, mode: 'swim' | 'surface'}. Pure. */
 export function stepSwim(pos, velocity, input, water, dt) {
   const S = MOVER.swim, fin = (x, d) => (Number.isFinite(x) ? x : d);
   dt = Math.max(0, Math.min(0.1, fin(dt, 0)));
-  const speed = fin(water.speed, S.speed) * areaFactor(water.factor) * (input.fast ? S.fast : 1);
+  const speed = fin(water.speed, S.speed) * volumeFactor(water.factor) * (input.fast ? S.fast : 1);
   const raw = Array.isArray(input.direction) && input.direction.length === 3 && input.direction.every(Number.isFinite) ? input.direction : [0, 0, 0];
   const length = Math.max(1, Math.hypot(raw[0], raw[1], raw[2]));
   const target = raw.map((v) => (v / length) * speed);
@@ -241,7 +241,7 @@ export function floorStep({ y, ground0 = y, level0 = undefined, f, level1 = leve
  *  needs to pick a clip (swim / tread vs walk). Without it (no water law in this world), nothing here changes.
  *  `height` (m) is the body's own stature where the caller has measured it (a short avatar swims sooner); absent, the
  *  mover's body height for its `scale`. It moves only where the water reaches on the body, never the stride.
- *  env.speedAt([x, y, z], mode) → × the stride where the body is (a physics-area {kind: speed}); absent: 1. */
+ *  env.speedAt([x, y, z], mode) → × the stride where the body is (a physics-volume {kind: speed}); absent: 1. */
 export function stepWalk({ pos, dir, dt, run = false, creep = false, scale = 1, gain = 1, cap = Infinity, mode = "walk", height = undefined }, env = {}) {
   const here = [pos[0], pos[1], pos[2]];
   if (mode !== "walk") return { pos: here, moved: 0, blocked: { by: `mode:${mode}` }, stance: null };
@@ -256,7 +256,7 @@ export function stepWalk({ pos, dir, dt, run = false, creep = false, scale = 1, 
   // backwards at the run threshold (review 10-15 #3): below a walk, a fraction of the stroke; walk→run, stroke→hard
   const s = scaleOf(scale), dry = walkSpeed({ run, creep, scale }) * gain;
   const stroke = (q) => (q <= MOVER.walk.speed ? MOVER.swim.speed * (q / MOVER.walk.speed) : MOVER.swim.speed + (MOVER.swim.run - MOVER.swim.speed) * Math.min(1, (q - MOVER.walk.speed) / (MOVER.walk.run - MOVER.walk.speed)));
-  const k = env.speedAt ? areaFactor(env.speedAt(pos, st0?.swimming ? "swim" : "walk")) : 1;   // a physics-area {kind: speed} here (zone.js speedFactorAt)
+  const k = env.speedAt ? volumeFactor(env.speedAt(pos, st0?.swimming ? "swim" : "walk")) : 1;   // a physics-volume {kind: speed} here (zone.js speedFactorAt)
   const d = Math.min(cap, (st0?.swimming ? stroke(dry / s) * s : dry * (st0?.speedFactor ?? 1)) * k * dt);
   if (!(d > 0)) return { pos: here, moved: 0, blocked: null, stance: st0 };
   const nx = pos[0] + (dir[0] / len) * d, nz = pos[2] + (dir[1] / len) * d;

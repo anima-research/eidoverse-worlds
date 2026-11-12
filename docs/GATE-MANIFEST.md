@@ -208,7 +208,7 @@ time.
 | 36 | zone-water | main | `tools/protocol/zone-water-check.ts` | bun | 0.6 s | 180 s |
 | 37 | climb-env | main | `tools/protocol/climb-env-check.ts` | bun | 0.5 s | 180 s |
 | 38 | drive | main | `tools/protocol/drive-check.ts` | bun | 0.6 s | 180 s |
-| 39 | physics-area | main | `tools/protocol/physics-area-check.ts` | bun | 0.5 s | 180 s |
+| 39 | physics-volume | main | `tools/protocol/physics-volume-check.ts` | bun | 0.5 s | 180 s |
 | 40 | water-vectors | main | `tools/water-vectors.ts --check` | bun | 0.2 s | 180 s |
 | 41 | water-import | main | `tools/water/import-golden-check.ts` | bun | ? | 300 s |
 | 42 | avatar | main | `tools/avatar-test.ts` | bun | 1 s | 180 s |

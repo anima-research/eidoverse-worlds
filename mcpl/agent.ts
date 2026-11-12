@@ -132,7 +132,7 @@ import { redialer, REDIAL } from "../shared/redial.js";
 import { createShover, shoveable, footprint, obbOf, aabbOfObb, contactOf, massOf, budges, SHOVE_FEEL } from "../shared/shove.js";
 import { SHOVE } from "../shared/protocol/physconst.js";
 import { worldPose, solidOff } from "../shared/protocol/simlayer.js";
-import { physicsAreasOf, speedFactorAt, foldOfView, zonesOf, waterVolumes, worldLevelAt } from "../shared/zone.js";
+import { physicsVolumesOf, speedFactorAt, foldOfView, zonesOf, waterVolumes, worldLevelAt } from "../shared/zone.js";
 import { fallBackOf, belowWorld, FELL } from "../shared/spawn.js";
 /** A record (components flat, view.js) a body doesn't meet: componentspec collider.enabled or .blocks, the authority's own reading. */
 const solidOffRecord = (e: any) => solidOff(e, "bodies");
@@ -1743,9 +1743,9 @@ export class WorldAgent {
    *  what shared/editschema.js expects. */
   /** Every placed thing's id in the fold (the hierarchy tools walk them). */
   foldedIds(): string[] { return Object.keys(this.st.entities); }
-  /** × my speed at p: a physics-area {kind: speed} (shared/zone.js, the client's and the authority's reading), once per view */
-  private areas: { st: unknown; a: any[] } | null = null;
-  speedAt = (p: number[], mode?: string): number => { if (this.areas?.st !== this.st) this.areas = { st: this.st, a: physicsAreasOf(foldOfView(this.st)) }; return speedFactorAt(this.areas.a, p, mode); };
+  /** × my speed at p: a physics-volume {kind: speed} (shared/zone.js, the client's and the authority's reading), once per view */
+  private physics: { st: unknown; a: any[] } | null = null;
+  speedAt = (p: number[], mode?: string): number => { if (this.physics?.st !== this.st) this.physics = { st: this.st, a: physicsVolumesOf(foldOfView(this.st)) }; return speedFactorAt(this.physics.a, p, mode); };
   /** The world's level where my feet are: none in a dry pocket below it (zone.js worldLevelAt, the client's levelHere) */
   private pockets: { st: unknown; z: any; v: any } | null = null;
   levelHere(): number | null { return this.levelAt(this.pos.x, this.pos.z); }

@@ -72,7 +72,7 @@
   "bare-wait": 2
  },
  "tools/protocol/identity-check.ts": {
-  "bare-wait": 46
+  "bare-wait": 44
  },
  "tools/protocol/inplace-check.ts": {
   "bare-wait": 3
