@@ -244,8 +244,8 @@ console.log("the door's bodyHeightFor through /library (server/routes.ts route)"
     for (let i = 0; i < 3; i++) await door("headless");
     check("a body with nothing to measure is read once for its version", requests === 2, { requests });
     requests = 0;
-    await rigBonesFor(base, `${V}/plain.vrm?v=7`); await bodyHeightFor(base, `${V}/plain.vrm?v=7`);
-    check("its rig and its stature come from one read", requests === 2, { requests });
+    const oneRig = await rigBonesFor(base, `${V}/plain.vrm?v=7`), oneH = await bodyHeightFor(base, `${V}/plain.vrm?v=7`);
+    check("its rig and its stature come from one read", requests === 2 && oneRig?.bones.includes("hips") === true && near(oneH, 1.63), { requests, oneRig, oneH });
     let down = true;
     const flaky = Bun.serve({ port: 0, fetch: () => down ? new Response("busy", { status: 503 }) : new Response(body(V1)) });
     try {
@@ -254,10 +254,10 @@ console.log("the door's bodyHeightFor through /library (server/routes.ts route)"
       const after = await bodyHeightFor(`http://localhost:${flaky.port}`, `${V}/plain.vrm?v=flaky`);
       check("a failed download isn't remembered: the next call reads", during === "failed" && near(after, 1.5), { during, after });
     } finally { flaky.stop(true); }
-    // a server that ignores Range answers 200 with the whole file: the same length cap applies
+    // a server that ignores Range answers 200 with the whole file: downloaded, but the same cap refuses parsing it
     const whole = Bun.serve({ port: 0, fetch: () => new Response(readFileSync(join(vdir, "padded.vrm"))) });
     try {
-      check("a JSON chunk past 16 MiB isn't measured from a whole-file answer either",
+      check("a JSON chunk past 16 MiB isn't parsed from a whole-file answer either",
         await bodyHeightFor(`http://localhost:${whole.port}`, `${V}/padded.vrm?v=1`) === null);
     } finally { whole.stop(true); }
     // hips named on a node that is its own child: the walk above hips ends, and the separate head is measured

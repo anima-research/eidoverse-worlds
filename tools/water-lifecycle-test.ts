@@ -31,11 +31,13 @@ const files: Record<string, { glb: Uint8Array; delay: number; down?: boolean }> 
   "fix/tall.vrm": { glb: bodyGlb(TALL), delay: 0 },
   "fix/slow.vrm": { glb: bodyGlb(SLOW), delay: 400 },   // an old body whose height answers late
 };
+let slowServed = 0;   // answers the slow body has had
 const srv = Bun.serve({ port: 0, async fetch(req) {
   const f = files[new URL(req.url).pathname.replace(/^\/library\//, "")];
   if (!f) return new Response("no", { status: 404 });
   if (f.down) return new Response("busy", { status: 503 });
   await sleep(f.delay);
+  if (f === files["fix/slow.vrm"]) slowServed++;
   const m = /bytes=(\d+)-(\d+)/.exec(req.headers.get("range") ?? "");
   return m ? new Response(f.glb.slice(+m[1], +m[2] + 1), { status: 206 }) : new Response(f.glb);
 } });
@@ -65,8 +67,10 @@ console.log("\nstature follows the body");
   check("...and wades where the short one swam", !a.float.on && /standing/.test(a.waterHere(0, 0, a.pos.y)) && Math.abs(a.pos.y + 1.6) < 1e-6, a.waterHere(0, 0, a.pos.y));
   a.setAvatar("fix/slow.vrm");
   a.setAvatar("fix/short.vrm");
-  await settle(); await sleep(1100);   // long past the slow body's answer (two 400 ms reads)
-  check("a late answer for a replaced body does not overwrite the current one", Math.abs(a.bodyH - SHORT) < 0.01, `${a.bodyH}`);
+  await settle();
+  for (let i = 0; i < 1000 && slowServed < 2; i++) await sleep(10);   // its two 400 ms reads, however long load makes them
+  await sleep(100);   // …and the answer handed back
+  check("a late answer for a replaced body does not overwrite the current one", slowServed === 2 && Math.abs(a.bodyH - SHORT) < 0.01, `${slowServed} answers, ${a.bodyH}`);
 }
 
 console.log("\nstature follows a re-upload at the same path");
