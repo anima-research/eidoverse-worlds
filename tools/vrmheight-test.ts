@@ -267,6 +267,11 @@ console.log("the door's bodyHeightFor through /library (server/routes.ts route)"
       const a = await bodyHeightFor(`http://localhost:${short.port}`, `${V}/twin.vrm?v=1`), b = await bodyHeightFor(`http://localhost:${tall.port}`, `${V}/twin.vrm?v=1`);
       check("a reading is kept per server", near(a, 1.5) && near(b, 1.63), { a, b });
     } finally { short.stop(true); tall.stop(true); }
+    // an empty file has no bytes 0-19 to range over (416): a file with nothing to read, kept like a short one
+    put("empty", new Uint8Array(0));
+    requests = 0;
+    for (let i = 0; i < 3; i++) await door("empty");
+    check("an empty file is asked about once for its version", requests === 1, { requests });
   } finally { globalThis.fetch = realFetch; srv.stop(true); }
 }
 

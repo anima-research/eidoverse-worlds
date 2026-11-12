@@ -55,6 +55,7 @@ export function rigBonesFor(httpBase: string, avatarPath: string): Promise<RigBo
 async function headerAndJson(url: string): Promise<Uint8Array | null> {
   const upTo = (end: number) => fetch(url, { headers: { Range: `bytes=0-${end}`, "Accept-Encoding": "identity" } });
   const head = await upTo(19);
+  if (head.status === 416) return null;   // not even a header's worth of bytes (an empty file)
   if (!head.ok) throw new Error(`the world server answered ${head.status}`);
   const buf = new Uint8Array(await head.arrayBuffer());
   if (buf.length < 20) return null;
