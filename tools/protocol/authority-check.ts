@@ -543,7 +543,12 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     ok(wild.every((r) => code(r) === "shape" && /radians/.test(r.refused.reason) && /turn \{deg\}/.test(r.refused.fix)) && !w.state().entities["at-deg"] && /0\.5236/.test(wild[0].refused?.fix),
       "CA7 a bare yaw past ±2π is refused as a shape, saying yaw is radians and naming the radians it meant and turn {deg}: create at, create from at, set transform", wild.map((r) => r.refused));
     const edge = [call("bob", "create", { id: "at-2pi", model: "crate", at: { pos: [-7, 0, -8], yaw: 2 * Math.PI } }), call("bob", "set", { id: "at-yaw", component: "transform", value: { yaw: -6.2 } })];
-    ok(edge.every((r) => r.ok), "CA7 …and ±2π itself, or just inside it, still turns the thing", edge.map((r) => r.refused)); }
+    ok(edge.every((r) => r.ok), "CA7 …and ±2π itself, or just inside it, still turns the thing", edge.map((r) => r.refused));
+    const q0 = JSON.stringify(w.state().entities["at-yaw"]?.c.transform.q);
+    const typed = [call("bob", "set", { id: "at-yaw", component: "transform", value: { yaw: "30" } }), call("bob", "set", { id: "at-yaw", component: "transform", value: { yaw: null } }),
+      call("bob", "create", { from: "tbl", at: { pos: [1, 0, 1], yaw: "30" } })];
+    ok(typed.every((r) => code(r) === "shape") && JSON.stringify(w.state().entities["at-yaw"]?.c.transform.q) === q0,
+      "CA7 …and a yaw that isn't a number (\"30\", null) is a shape refusal, never coerced into a turn: set transform, create from at", typed.map((r) => r.refused ?? "ok")); }
   // redo = undo of my undo (Figma's rule: never back over someone's later work)
   call("ann", "delete", { id: "tbl", component: "lock" });
   const a1 = call("bob", "set", { id: "cup", component: "label", value: "one" });
