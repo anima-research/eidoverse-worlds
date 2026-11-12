@@ -43,6 +43,8 @@ type Rig = { P: Record<string, any>; parent: Record<string, string | null> };
 
 /** parseRig's own refusals, each written as a failed load's clause; anything else it throws is the parser's. */
 class RigRefusal extends Error {}
+/** A download that failed, which may work next time; every other failed load is the file's, kept for its key. */
+class DownloadFailed extends Error {}
 
 /** Preserve every humanoid bone and its actual nearest humanoid ancestor,
  * including shoulders/fingers/upperChest. A ragdoll's collapsed 19-bone
@@ -174,14 +176,14 @@ export class BodyStateReader {
         const r = await fetch(`${this.httpBase}/library/${o.avatar}`, { cache: "no-store", signal: AbortSignal.timeout(10_000) });
         if (!r.ok) throw new Error(`the world server answered ${r.status} for ${shown(o.avatar)}`);
         return new Uint8Array(await r.arrayBuffer());
-      })().catch((e) => { throw new Error(`the avatar's model couldn't be downloaded (${e instanceof Error ? e.message : String(e)})`); });
+      })().catch((e) => { throw new DownloadFailed(`the avatar's model couldn't be downloaded (${e instanceof Error ? e.message : String(e)})`); });
       try { return parseRig(bytes); } catch (e) {
         if (e instanceof RigRefusal) throw e;
         throw new Error(`the avatar's model file couldn't be read as a model (${e instanceof Error ? e.message : String(e)}), so calling again won't change that`);
       }
     })() };
     this.rigs.set(o.who, entry);
-    entry.load.catch(() => { if (this.rigs.get(o.who) === entry) this.rigs.delete(o.who); });
+    entry.load.catch((e) => { if (e instanceof DownloadFailed && this.rigs.get(o.who) === entry) this.rigs.delete(o.who); });
     return entry.load;
   }
 

@@ -238,7 +238,8 @@ try {
     check("posture is rechecked after an asynchronous skeleton load", !result.ok && result.geometry?.reason === "posture_not_evaluated" && !result.contacts);
   } finally { postureServer.stop(true); }
 
-  // Models a reader must handle on its own: `neck` named on the head's node (#272).
+  // Models a reader must handle on its own: `neck` named on the head's node (#272), no humanoid skeleton
+  // and bytes that aren't a model (#273), each counted per download.
   const fixtureJson = () => JSON.parse(fixture().subarray(20).toString());
   const sharedNeck = fixtureJson(), humanBones = sharedNeck.extensions.VRMC_vrm.humanoid.humanBones;
   humanBones.neck.node = humanBones.head.node;
@@ -260,6 +261,18 @@ try {
     const turned: any = await reader.read("shared", "bones", undefined, () => limp("shared", "shared-neck.vrm", [Math.SQRT1_2, 0, 0, Math.SQRT1_2]));
     check("a bone named on another bone's node follows the pose with it", near(turned.joints?.head?.position, [0, 1, 0.8]) && near(turned.joints?.neck?.position, [0, 1, 0.8]),
       JSON.stringify({ head: turned.joints?.head?.position, neck: turned.joints?.neck?.position }));
+    for (const avatar of ["flat.vrm", "junk.vrm"]) {
+      let last: any;
+      for (let i = 0; i < 3; i++) last = await reader.read(avatar, "bones", undefined, () => limp(avatar, avatar));
+      check(`a model the reader can't use is downloaded once for its version (${avatar})`, downloads.get(avatar) === 1 && !last.ok && /calling again won't change that/.test(last.error),
+        JSON.stringify({ downloads: downloads.get(avatar), error: last.error }));
+    }
+    unreachable = true;
+    const failed: any = await reader.read("retry", "bones", undefined, () => limp("retry", "shared-neck.vrm"));
+    unreachable = false;
+    const after: any = await reader.read("retry", "bones", undefined, () => limp("retry", "shared-neck.vrm"));
+    check("a failed download is tried again on the next reading", !failed.ok && /couldn't be downloaded/.test(failed.error) && after.ok,
+      JSON.stringify({ failed: failed.error, after: after.error }));
   } finally { library.stop(true); }
 } catch (e) {
   process.exitCode = 1;
