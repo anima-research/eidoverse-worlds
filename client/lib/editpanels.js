@@ -256,12 +256,14 @@ const running = (b) => b.status === 'active' || b.status === 'asleep';
 let shown = false;
 let rosterTimer = 0;
 let behaviorsMiss = null;   // why the last roster read got no answer (behaviors keeps the last answered roster), or null
+let rosterAsked = 0, rosterShown = 0;   // polls overlap: a read older than the one shown lands as nothing (bot #9)
 async function refreshBehaviors() {
-  try {
-    const r = await requestDebug({ scripts: true });
-    behaviors = (r?.events ?? []).filter((e) => e.kind === 'script');
-    behaviorsMiss = null;
-  } catch (e) { behaviorsMiss = e.message; }   // the roster is a refinement, never a gate
+  const n = ++rosterAsked;
+  let r = null, miss = null;
+  try { r = await requestDebug({ scripts: true }); } catch (e) { miss = e.message; }   // the roster is a refinement, never a gate
+  if (n < rosterShown) return;
+  rosterShown = n; behaviorsMiss = miss;
+  if (r) behaviors = (r.events ?? []).filter((e) => e.kind === 'script');
   repaintAll();
 }
 

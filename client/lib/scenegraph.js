@@ -340,13 +340,15 @@ let behaviorRows = [];     // last roster — also feeds the 📜 badges in the 
 let watching = null;       // behavior id whose console is open
 let pollTimer = null;
 let rosterMiss = null;     // why the last roster read got no answer (the rows kept are the last answered ones), or null
+let rosterAsked = 0, rosterShown = 0;   // polls overlap: a read older than the one shown lands as nothing (bot #9)
 
 async function refreshRoster() {
-  try {
-    const r = await requestDebug({ scripts: true });
-    behaviorRows = (r.events ?? []).filter((e) => e.kind === 'script');
-    rosterMiss = null;
-  } catch (e) { rosterMiss = e.message; }
+  const n = ++rosterAsked;
+  let r = null, miss = null;
+  try { r = await requestDebug({ scripts: true }); } catch (e) { miss = e.message; }
+  if (n < rosterShown) return;
+  rosterShown = n; rosterMiss = miss;
+  if (r) behaviorRows = (r.events ?? []).filter((e) => e.kind === 'script');
 }
 
 async function paintScripts() {

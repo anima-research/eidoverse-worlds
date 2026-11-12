@@ -49,6 +49,17 @@ debugAnswer = async () => ({ events: [] });
 await poll!();
 check('(control) an answered empty roster says there are no scripts', /no scripts here/.test(text()) && !/didn't answer/.test(text()), text());
 
+// #9 (bot): polls overlap (2.5 s apart, 8 s to time out); an older read's timeout landing after a newer answer changes nothing
+let timeOut: (e: Error) => void = noop;
+debugAnswer = () => new Promise((_, reject) => { timeOut = reject; });
+const older = poll!();
+debugAnswer = async () => ({ events: [script] });
+await poll!();
+timeOut(new Error('debug: no answer within 8 s'));
+await older;
+check("an older poll's timeout, landing after a newer poll's answer, leaves the newer answer standing",
+  /lamp\/blink/.test(text()) && !/didn't answer/.test(text()), text());
+
 // #3 (bot): the watched script's log read that got no answer is said, not shown as an empty console
 debugAnswer = async (o) => (o.scripts ? { events: [script] } : { status: 'active', events: [] });
 await poll!();
