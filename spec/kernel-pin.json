@@ -1,6 +1,6 @@
 {
  "status": "trial-kernel",
- "translator": "eidoverse/translate-v1@50",
+ "translator": "eidoverse/translate-v1@51",
  "companions": {
   "changelog": "2026-11-07: kernel: the first deploy's kernel again, before any deploy (tel0s D2, 11-06, ratified for #260): an entry carrying another world's id is malformed (nulled like ts-decreasing), not a diagnostic; fixture world-mismatch joins first-deploy, and a fixture's verdict now tells a diagnostic (diagnostic:<code>) from a malformed entry. Nothing was deployed, so the ceremony re-ran over the same kernel shape",
   "firstDeploy": {

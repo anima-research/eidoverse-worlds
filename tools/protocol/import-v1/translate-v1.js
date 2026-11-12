@@ -126,7 +126,8 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@50";   // @50: an account's stand-in id is the host's alone (import-v1/world.ts identitySalt), so a dry run reviewed before another world's translation still applies (lead 11-07). Ids of account-bound people differ
+export const TRANSLATOR = "eidoverse/translate-v1@51";   // @51: main's water speed is written physics-volume, the component's new name (R 11-09; the door refuses physics-area as any unknown name). Output differs there
+// @50: an account's stand-in id is the host's alone (import-v1/world.ts identitySalt), so a dry run reviewed before another world's translation still applies (lead 11-07). Ids of account-bound people differ
 // @49: the translator's provenance is genesis.body.provenance (given by the import tool), repeated on `translated`; `from` no longer names the translator (Mica 11-05, S4). Every translated log's bytes differ; a world id differs where provenance is given
 // @48: the genesis carries no minor (Mica 11-04: dialect + v, then requires). Every world id differs
 // @47: an entity id in the reserved person shape u-[a-z2-7]{24} refuses the translation (F19, P3). Output otherwise unchanged
@@ -250,7 +251,7 @@ export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(nam
 // came to rest; but a punt stays its imported act (no v4 launch), each rest is a plain change by `sim` caused by that act
 // (no digest), the world's engine is today's eidosim from the epoch on, and (R 2026-10-08) a thing v1 ever punted is a
 // `dynamic` collider, every other one `static`. Nothing in the new log asks a reader to fly her engine.
-export const TRANSLATOR_SIM = "eidoverse/translate-v1@50";
+export const TRANSLATOR_SIM = "eidoverse/translate-v1@51";
 // @9 (2026-10-07, R's particles ruling): a v1 `particles` bag is today's instance: its preset is the effect, its origin is
 // `at`, its seed stays, and its count, size, opacity, speed, lifetime, area, texture and quality are the params of the
 // same names every Essential declares (shared/particle_effects.js modernize; instanceOf reads it back exactly). A key
@@ -450,7 +451,7 @@ const VOLUME_FIELDS = ["center", "size", "absorption", "scatter", "waves"];
 const ON_WORLD = { water: { feature: "water volume on @world", since: "main #248 (Unreal native client) / #254" }, air: { feature: "air box on @world", since: "main #248" } };
 // main #248's water volume and air boxes as zone + water / water-exclusion things (spec/PROTOCOL.md §14; tools/water/requests.js too)
 export const VOLUMES = {
-  water: { feature: "water volume", to: "zone {shape: 'box', size} + water, on the thing (no model or light, centred) or a child at its centre; main's speed → physics-area {kind: 'speed', factor: speed / 2.4, modes: ['swim']} on that zone (2.4 m/s: the stroke a volume swims at here), which slows the swim only, as main did; a speed within 5% of 2.4 is dropped, and where another water has an area this one gets factor 1 (the water a body is in sets its stroke, as in main)" },
+  water: { feature: "water volume", to: "zone {shape: 'box', size} + water, on the thing (no model or light, centred) or a child at its centre; main's speed → physics-volume {kind: 'speed', factor: speed / 2.4, modes: ['swim']} on that zone (2.4 m/s: the stroke a volume swims at here), which slows the swim only, as main did; a speed within 5% of 2.4 is dropped, and where another water has an area this one gets factor 1 (the water a body is in sets its stroke, as in main)" },
   air:   { feature: "air box (dry interior)", to: "one child per box: zone {shape: 'box', size, priority: 1} + water-exclusion {}, its centre and q its transform; anything else (another key, a box's other keys, an entry that is no box) imported:air, listed" },
 };
 export const AIR_PRIORITY = 1;
@@ -462,31 +463,31 @@ const ID_POSE = (pos, q = [0, 0, 0, 1]) => ({ pos, q, scale: [1, 1, 1] });
 export function waterOfOld(d) {
   const { center, size, absorption, scatter, speed, ...rest } = d;
   const water = { ...rest };
-  // main's stroke in the volume, as × the one a body swims at here (waterParams' default): a physics-area (@35)
-  const raw = speed === undefined ? 1 : waterParams({ speed }).speed / waterParams({}).speed, f = clampN(raw, 0.05, 10, 1);   // physics-area factor's range (componentspec.js)
-  const area = speed !== undefined && Math.abs(f - 1) > SPEED_NEAR ? { kind: "speed", factor: f, modes: ["swim"] } : null;   // main slowed the stroke only (@37)
+  // main's stroke in the volume, as × the one a body swims at here (waterParams' default): a physics-volume (@35)
+  const raw = speed === undefined ? 1 : waterParams({ speed }).speed / waterParams({}).speed, f = clampN(raw, 0.05, 10, 1);   // physics-volume factor's range (componentspec.js)
+  const physics = speed !== undefined && Math.abs(f - 1) > SPEED_NEAR ? { kind: "speed", factor: f, modes: ["swim"] } : null;   // main slowed the stroke only (@37)
   if (Array.isArray(absorption)) { water.attenuationColor = vec3(absorption, [0.16, 0.055, 0.025]).map((x) => Math.exp(-Math.max(0, x))); water.attenuationDistance = 1; }
   if (Array.isArray(scatter)) water.scatterColor = vec3(scatter, [0.015, 0.12, 0.18]).map((x) => Math.max(0, x));
   const sz = vec3(size, [200, 200, 200]), zone = { shape: "box", size: sz.map((x) => Math.max(0.01, Math.min(ZONE_MAX, Math.abs(x)))) };
-  return { center: vec3(center, [0, 0, 0]), zone, water, ...(area ? { area } : {}), ...clampNote(sz, zone.size),
-    ...(speed !== undefined ? { speed: area ? { "physics-area": area, ...(f !== raw ? { clamped: { factorWas: +raw.toFixed(4), to: f, why: "a speed area's factor is 0.05..10 (componentspec.js)" } } : {}) } : { dropped: `× ${f.toFixed(3)} of the stroke here, within ${SPEED_NEAR * 100}%` } } : {}) };   // the clamp said (bot review 445)
+  return { center: vec3(center, [0, 0, 0]), zone, water, ...(physics ? { physics } : {}), ...clampNote(sz, zone.size),
+    ...(speed !== undefined ? { speed: physics ? { "physics-volume": physics, ...(f !== raw ? { clamped: { factorWas: +raw.toFixed(4), to: f, why: "a speed volume's factor is 0.05..10 (componentspec.js)" } } : {}) } : { dropped: `× ${f.toFixed(3)} of the stroke here, within ${SPEED_NEAR * 100}%` } } : {}) };   // the clamp said (bot review 445)
 }
 /** zone.size's bound per axis (componentspec.js zone); a main size past it is clamped and the report says so */
 export const ZONE_MAX = 1e4;
 const clampNote = (was, to) => (was.some((x) => Math.abs(x) > ZONE_MAX) ? { clamped: { size: was, to, why: `a zone is at most ${ZONE_MAX} m along each axis` } } : {});
-/** A main water speed this close (as × the stroke) to the one a body swims at here is dropped, not written as a physics-area. */
+/** A main water speed this close (as × the stroke) to the one a body swims at here is dropped, not written as a physics-volume. */
 export const SPEED_NEAR = 0.05;
-/** @42: the area every other water gets where one water's speed is written, so the speed areas overlap as the waters do (the
+/** @42: the physics volume every other water gets where one water's speed is written, so the speed volumes overlap as the waters do (the
  *  last by priority, then id, wins both: shared/zone.js), and a body in this water strokes at its own pace, as in main. */
 export const speedPin = () => ({ kind: "speed", factor: 1, modes: ["swim"] });
-export const pinsSpeed = (st) => Object.values(st?.entities ?? {}).some((e) => { const w = e?.comp?.water; return !!(w && typeof w === "object" && !Array.isArray(w) && waterOfOld(w).area); });
+export const pinsSpeed = (st) => Object.values(st?.entities ?? {}).some((e) => { const w = e?.comp?.water; return !!(w && typeof w === "object" && !Array.isArray(w) && waterOfOld(w).physics); });
 /** One old thing's water / air as [id, components] parts: `own` is merged into the thing's components, `children` are new
  *  things under it. `c` is the thing's components so far (its model, light). */
 export function volumePartsOf(host, comp, c, { pin = false } = {}) {
   const own = {}, children = [];
   const w = comp?.water;
   if (w && typeof w === "object" && !Array.isArray(w)) {
-    const m = waterOfOld(w), a = m.area ? { "physics-area": m.area } : pin ? { "physics-area": speedPin() } : {};
+    const m = waterOfOld(w), a = m.physics ? { "physics-volume": m.physics } : pin ? { "physics-volume": speedPin() } : {};
     // main kept a water box axis-aligned whatever its host's turn: a turned host's water is a child turned back by it (
     // the host's own q: a host under a turned parent still turns with that parent)
     const hq = Array.isArray(c.transform?.q) ? c.transform.q : [0, 0, 0, 1], turned = Math.abs(hq[0]) + Math.abs(hq[1]) + Math.abs(hq[2]) > 1e-12;
@@ -537,7 +538,7 @@ export function volumeMappings(st) {
     const c = { transform: transformOf(st, e), ...(e.lib !== undefined ? { model: e.lib } : {}), ...(e.kind === "light" ? { light: {} } : {}) };   // the host's turn decides own vs child, as the translation does
     const { own, children } = volumePartsOf(enc(id), { [k]: e.comp[k] }, c);
     const m = k === "water" && e.comp.water && typeof e.comp.water === "object" && !Array.isArray(e.comp.water) ? waterOfOld(e.comp.water) : null;   // @35: what main's speed became
-    const sp = m && !m.area && pin ? { "physics-area": speedPin(), why: "another water here has a speed area: factor 1 keeps this one's own stroke where they overlap (@42)" } : m?.speed;
+    const sp = m && !m.physics && pin ? { "physics-volume": speedPin(), why: "another water here has a speed volume: factor 1 keeps this one's own stroke where they overlap (@42)" } : m?.speed;
     // what main's size was where the zone had to be smaller
     const boxes = k === "air" && Array.isArray(e.comp.air?.boxes) ? e.comp.air.boxes : [];
     const clamped = m ? m.clamped : boxes.flatMap((b, i) => { const ch = children.find(([cid]) => cid === airChildId(enc(id), i)); const n = ch && clampNote(vec3(b.size, [1, 1, 1]), ch[1].zone.size).clamped; return n ? [{ box: i, ...n }] : []; });
