@@ -23,6 +23,8 @@ const server = Bun.serve({ port: 0, fetch(req) {
   if (u.pathname === "/library-models") return models();
   if (u.pathname === "/avatars") return avatars();
   if (u.pathname === "/library/broken_preview.jpg") return new Response("boom", { status: 500 });
+  if (u.pathname === "/library/html_preview.jpg" || u.pathname === "/thumb/htmlbody.png") return new Response("<html>login</html>", { headers: { "content-type": "text/html; charset=utf-8" } });
+  if (u.pathname === "/thumb/fine.png") return new Response(PNG_1PX, { headers: { "content-type": "image/png" } });
   if (u.pathname === "/library/fine_preview.jpg") return new Response(PNG_1PX, { headers: { "content-type": "image/png" } });
   return new Response("not found", { status: 404 });
 } });
@@ -72,6 +74,15 @@ check("sheet: a tile whose preview fetch answered 500 is drawn and said apart fr
 models = () => Response.json([{ path: "library/fine.glb", name: "fine", preview: "fine_preview.jpg" }]);
 r = await call({ kind: "models" });
 check("(control) sheet: a tile whose preview came back is said plainly", !r?.isError && said(r) === "models — page 1/1: fine", said(r));
+
+// a 200 that isn't an image is no preview (bot #13)
+r = await call({ preview: "htmlbody" });
+check("preview, a 200 text/html body: an error naming what came back, not an image", r?.isError === true && !r.content.some((c: any) => c.type === "image") && /text\/html/.test(said(r)), JSON.stringify(r));
+r = await call({ preview: "fine" });
+check("(control) preview, a 200 image/png: the image", !r?.isError && r?.content?.[0]?.type === "image" && r.content[0].mimeType === "image/png", JSON.stringify(r).slice(0, 200));
+models = () => Response.json([{ path: "library/html.glb", name: "html", preview: "html_preview.jpg" }]);
+r = await call({ kind: "models" });
+check("sheet: a tile whose preview answered 200 text/html is said as a preview that couldn't be fetched", !r?.isError && /couldn't be fetched/.test(said(r)) && /text\/html/.test(said(r)), said(r));
 
 server.stop(true);
 rmSync(dir, { recursive: true, force: true });

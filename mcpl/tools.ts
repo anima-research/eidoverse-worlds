@@ -670,10 +670,12 @@ export const HANDLERS: Record<string, ToolHandler> = {
           try { r = await fetch(url); } catch (e) { miss((e as Error).message || "the request failed", true); continue; }
           if (r.status === 404) continue;
           if (!r.ok) { miss(`it answered ${r.status}`, r.status >= 500 || r.status === 408 || r.status === 429); continue; }
+          const type = r.headers.get("content-type")?.split(";")[0].trim();
+          if (type && !type.startsWith("image/")) { miss(`it sent ${type}, not an image`, false); continue; }   // an HTML error page, say (bot #13)
           let data: string;
           try { data = Buffer.from(await r.arrayBuffer()).toString("base64"); }
           catch (e) { miss(`a preview it sent couldn't be read: ${(e as Error).message || "no reason given"}`, true); continue; }
-          return { content: [{ type: "image", data, mimeType: r.headers.get("content-type")?.split(";")[0] ?? "image/jpeg" }] };
+          return { content: [{ type: "image", data, mimeType: type ?? "image/jpeg" }] };
         }
         if (whys.length) return fail(`couldn't get a preview of "${want}" from the world's server (${whys.join("; ")})${retry ? "; calling again may work" : "; calling again won't change that"}`);
         return fail(`no preview for "${want}" — avatar portraits appear once a body has been worn; library models ship _preview.jpg files`);
@@ -717,7 +719,9 @@ export const HANDLERS: Record<string, ToolHandler> = {
           const r = await fetch(it.url);
           if (r.status === 404) return { name: it.name, data: null, mime: "", h: it.h };
           if (!r.ok) return { name: it.name, data: null, mime: "", h: it.h, failed: `answered ${r.status}` };
-          return { name: it.name, data: await r.arrayBuffer(), mime: r.headers.get("content-type")?.split(";")[0] ?? "image/png", h: it.h };
+          const type = r.headers.get("content-type")?.split(";")[0].trim();
+          if (type && !type.startsWith("image/")) return { name: it.name, data: null, mime: "", h: it.h, failed: `sent ${type}, not an image` };
+          return { name: it.name, data: await r.arrayBuffer(), mime: type ?? "image/png", h: it.h };
         } catch (e) { return { name: it.name, data: null, mime: "", h: it.h, failed: (e as Error).message || "the request failed" }; }
       }));
       const png = await contactSheet(tiles);
