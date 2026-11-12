@@ -447,6 +447,7 @@ export function colliderRules(s, ids) {
 function bareYaw(yaw) {
   if (!isNum(yaw)) refuse("shape", `yaw must be a number (radians about +Y): got ${JSON.stringify(yaw)}`, "e.g. yaw: 1.5708 for a quarter turn; or q [x, y, z, w]");
   if (Math.abs(yaw) <= 2 * Math.PI) return;
-  refuse("shape", `yaw ${yaw} is past ±2π: a yaw is radians about +Y, not degrees`, `${yaw}° is ${+(yaw * Math.PI / 180).toFixed(4)} radians; or turn {deg} turns it by degrees`);
+  const within = (r) => +Math.atan2(Math.sin(r), Math.cos(r)).toFixed(4) || 0;   // the same heading, within ±π
+  refuse("shape", `yaw ${yaw} is past ±2π: a yaw is radians about +Y, not degrees`, `as degrees, ${yaw}° is yaw ${within(yaw * Math.PI / 180)}; as radians, the same heading is yaw ${within(yaw)}`);
 }
 export { bareYaw, isLookAt, isNum, nearMiss, restCheck, unknownKeys, valueCheck };

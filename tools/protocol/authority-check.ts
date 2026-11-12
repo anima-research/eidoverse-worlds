@@ -540,8 +540,14 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     // #147: a bare yaw is radians, so one past ±2π (30, 90, 180: degrees typed as radians) is refused with the fix, at each door that takes one
     const wild = [call("bob", "create", { id: "at-deg", model: "crate", at: { pos: [-6, 0, -8], yaw: 30 } }), call("bob", "create", { from: "tbl", at: { pos: [1, 0, 1], yaw: -90 } }),
       call("bob", "set", { id: "at-yaw", component: "transform", value: { yaw: 180 } })];
-    ok(wild.every((r) => code(r) === "shape" && /radians/.test(r.refused.reason) && /turn \{deg\}/.test(r.refused.fix)) && !w.state().entities["at-deg"] && /0\.5236/.test(wild[0].refused?.fix),
-      "CA7 a bare yaw past ±2π is refused as a shape, saying yaw is radians and naming the radians it meant and turn {deg}: create at, create from at, set transform", wild.map((r) => r.refused));
+    ok(wild.every((r) => code(r) === "shape" && /radians/.test(r.refused.reason)) && !w.state().entities["at-deg"] && /0\.5236/.test(wild[0].refused?.fix),
+      "CA7 a bare yaw past ±2π is refused as a shape, saying yaw is radians and naming the radians it meant: create at, create from at, set transform", wild.map((r) => r.refused));
+    // the fix's numbers are absolute yaws within ±π, sent back as they are: 360° is a whole turn, not 6.2832 (refused again); -7 radians wrapped is -0.7168; no relative turn
+    const full = call("bob", "set", { id: "at-yaw", component: "transform", value: { yaw: 360 } }).refused, acc = call("bob", "set", { id: "at-yaw", component: "transform", value: { yaw: -7 } }).refused;
+    const said = (f) => [...(f ?? "").matchAll(/yaw (-?[\d.]+)/g)].map((m) => Number(m[1]));
+    const back = said(full?.fix).map((y) => call("bob", "set", { id: "at-yaw", component: "transform", value: { yaw: y } }));
+    ok(back.length === 2 && back.every((r) => r.ok) && /-0\.7168/.test(acc?.fix) && ![full, acc].some((r) => /turn \{deg\}/.test(r?.fix)),
+      "CA7 …and the fix names yaws that are taken as they are (360° → a whole turn), the same heading for radians past 2π (-7 → -0.7168), and no relative turn", [full, acc, back.map((r) => r.refused ?? "ok")]);
     const edge = [call("bob", "create", { id: "at-2pi", model: "crate", at: { pos: [-7, 0, -8], yaw: 2 * Math.PI } }), call("bob", "set", { id: "at-yaw", component: "transform", value: { yaw: -6.2 } })];
     ok(edge.every((r) => r.ok), "CA7 …and ±2π itself, or just inside it, still turns the thing", edge.map((r) => r.refused));
     const q0 = JSON.stringify(w.state().entities["at-yaw"]?.c.transform.q);
