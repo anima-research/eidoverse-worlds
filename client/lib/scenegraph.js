@@ -362,7 +362,7 @@ async function paintScripts() {
 
   let consoleHtml = '';
   if (watching) {
-    const d = await requestDebug({ script: watching, limit: 40 }).catch((e) => ({ status: `the world didn't answer (${e.message})`, events: [], unread: true }));
+    const d = await requestDebug({ script: watching, limit: 40 }).catch((e) => ({ status: `the log couldn't be read (${e.message})`, events: [], unread: true }));
     const lines = (d.events ?? []).map((e) =>
       `${new Date(e.ts).toTimeString().slice(0, 8)} ${esc(e.line)}`).join('\n');
     consoleHtml = `<div style="border-top:1px solid var(--edge);margin-top:6px;padding-top:6px">
@@ -372,7 +372,7 @@ async function paintScripts() {
         <button data-act="unbind">remove</button>
       </div></div>`;
   }
-  const miss = rosterMiss ? `<div style="color:var(--warn, #ea5)">the world didn't answer the scripts read (${esc(rosterMiss)})${rows.length ? ' — these are from the last answer' : ''}</div>` : '';
+  const miss = rosterMiss ? `<div style="color:var(--warn, #ea5)">the scripts couldn't be read (${esc(rosterMiss)})${rows.length ? ' — these are from the last answer' : ''}</div>` : '';
   scriptsBody.innerHTML = `<div class="stack">${miss}${rows.join('') || (miss ? '' : '<div style="color:var(--dim)">no scripts here — a script is a script:&lt;name&gt; component on a thing (docs/SCRIPTS.md)</div>')}</div>${consoleHtml}
     <div style="color:var(--dim);font-size:11px;margin-top:4px">/debug [n] = flight recorder · agents: world_debug</div>`;
 

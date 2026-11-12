@@ -65,8 +65,8 @@ try {
       setTimeout(() => m._dispatch(q.scripts ? { type: 'debug', reqId: q.reqId, events: [{ ts: 0, kind: 'script', id: 'chest/blink', attach: 'chest', status: 'active' }] }
         : { type: 'debug', reqId: q.reqId, status: 'active', events: [{ ts: Date.now(), kind: 'script-log', line: 'blink says hi' }] }), 0); };
     return m.net.ws; }).then((s) => (window.__debugWs = s, true))`);
-  const unanswered = await pageWaiter(evalJson, 30000)(`${cwatch}.then((e) => /didn't answer/.test(e ?? ''))`);
-  check("LS4 …and when the world stops answering it, says the world didn't answer, not that there are no scripts", unanswered, JSON.stringify(await evalJson(cwatch)));
+  const unanswered = await pageWaiter(evalJson, 30000)(`${cwatch}.then((e) => /couldn't be read/.test(e ?? ''))`);
+  check("LS4 …and when the world stops answering it, says the scripts couldn't be read, not that there are no scripts", unanswered, JSON.stringify(await evalJson(cwatch)));
   check('(setup) LS4 …the reads were dropped, on the socket the page still uses', await evalJson(`import('/lib/net.js').then((m) => window.__dropped > 0 && m.net.ws === window.__debugWs)`), JSON.stringify(await evalJson(`window.__dropped`)));
   await evalJson(`(window.__debugMode = 'pass', true)`);
   check('LS4 …and says no scripts again once the world answers', await waitFor(`${cwatch}.then((e) => /^no scripts in this world/.test(e ?? ''))`), JSON.stringify(await evalJson(cwatch)));
@@ -78,12 +78,12 @@ try {
   await evalJson(`import('/lib/editpanels.js').then((E) => E.watchScript('chest/blink')).then(() => true)`);
   check('(control) LS5 the answered roster lists the script, and its answered log its line', await waitFor(`${consoleNow}.then((c) => c.rows.includes('chest/blink') && /active/.test(c.log ?? '') && c.lines?.some((l) => /blink says hi/.test(l)))`), JSON.stringify(await evalJson(consoleNow)));
   await evalJson(`(window.__debugMode = 'drop', true)`);
-  const kept = await pageWaiter(evalJson, 30000)(`${consoleNow}.then((c) => /didn't answer/.test(c.notes))`);
+  const kept = await pageWaiter(evalJson, 30000)(`${consoleNow}.then((c) => /couldn't be read/.test(c.notes))`);
   let c5 = await evalJson(consoleNow);
   check("LS5 …with no answer, the script is kept and said to be from the last answer", kept && c5.rows.includes('chest/blink') && /from the last answer/.test(c5.notes), JSON.stringify(c5));
-  const logMiss = await pageWaiter(evalJson, 30000)(`${consoleNow}.then((c) => /didn't answer/.test(c.log ?? ''))`);
+  const logMiss = await pageWaiter(evalJson, 30000)(`${consoleNow}.then((c) => /couldn't be read/.test(c.log ?? ''))`);
   c5 = await evalJson(consoleNow);
-  check("LS5 …and the log's line is kept under a status saying the world didn't answer", logMiss && c5.lines?.some((l: string) => /blink says hi/.test(l)) && !/active/.test(c5.log ?? ''), JSON.stringify(c5));
+  check("LS5 …and the log's line is kept under a status saying it couldn't be read", logMiss && c5.lines?.some((l: string) => /blink says hi/.test(l)) && !/active/.test(c5.log ?? ''), JSON.stringify(c5));
   await evalJson(`import('/lib/editpanels.js').then((E) => E.watchScript(null)).then(() => (window.__debugMode = 'pass', true))`);
   check('no page errors', (await evalJson(`window.__errs`))?.length === 0, JSON.stringify(await evalJson(`window.__errs`)));
 } catch (e: any) { check('the test ran to the end', false, String(e?.stack ?? e).slice(0, 500)); }

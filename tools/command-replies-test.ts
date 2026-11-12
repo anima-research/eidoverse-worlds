@@ -34,8 +34,8 @@ const run = async (cmd: string, arg = '') => { messages.length = 0; dispatch(cmd
 // #291: requestDebug rejects when no answer came (net.js, history-request-test); /debug says so
 debugAnswer = async () => { throw new Error('debug: no answer within 8 s'); };
 let said = await run('debug', '5');
-check('/debug with no answer says the world did not answer, not that nothing bounced',
-  said.length === 1 && /didn't answer/.test(said[0]) && /no answer within 8 s/.test(said[0]) && !/empty/.test(said[0]), JSON.stringify(said));
+check("/debug with no answer says the recorder couldn't be read, not that nothing bounced",
+  said.length === 1 && /couldn't be read/.test(said[0]) && /no answer within 8 s/.test(said[0]) && !/empty/.test(said[0]), JSON.stringify(said));
 debugAnswer = async () => ({ events: [] });
 said = await run('debug', '5');
 check('(control) /debug with an empty answer says the recorder is empty', said.length === 1 && /flight recorder is empty/.test(said[0]), JSON.stringify(said));

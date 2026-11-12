@@ -903,7 +903,8 @@ class Session {
       // and degrade safely when no name has a matchable form.
       const { said, failed } = await this.agent.missedSince(sinceSeq);
       // no answer is said, not read as nothing missed; the cursor moves on as before (its three writers: review S1, #296)
-      if (failed) this.deliver(`While you were away: the world didn't answer the read of what was said since seq ${sinceSeq}, so no missed mentions were replayed. catch_up {since: ${sinceSeq}} reads them.`,
+      // catch_up reads every say, not only mentions, and before this arrival only with readChat (bot #1): say both
+      if (failed) this.deliver(`While you were away: the world didn't answer the read of what was said since seq ${sinceSeq}, so missed mentions weren't checked. Says from before this arrival read back only with readChat; with it, catch_up {since: ${sinceSeq}} reads them (every say, not only mentions).`,
         { id: "world", name: this.agent.world }, { tags: catchupHeaderTags() });
       const missedSeq = said.filter((m) => m.who !== this.auth.id && this.agent.mentionsMe(m.text));
       if (missedSeq.length) {

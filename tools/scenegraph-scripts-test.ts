@@ -43,11 +43,11 @@ try { await sections.get('📜 scripts')!(body); } finally { globalThis.setInter
 check('(control) an answered roster lists its script', /lamp\/blink/.test(text()) && !!poll, text());
 debugAnswer = async () => { throw new Error('debug: no answer within 8 s'); };
 await poll!();
-check('a roster read with no answer says the world did not answer, keeping the last answered script, marked',
-  /didn't answer/.test(text()) && /lamp\/blink/.test(text()) && /from the last answer/.test(text()) && !/no scripts here/.test(text()), text());
+check("a roster read with no answer says the scripts couldn't be read, keeping the last answered script, marked",
+  /couldn't be read/.test(text()) && /lamp\/blink/.test(text()) && /from the last answer/.test(text()) && !/no scripts here/.test(text()), text());
 debugAnswer = async () => ({ events: [] });
 await poll!();
-check('(control) an answered empty roster says there are no scripts', /no scripts here/.test(text()) && !/didn't answer/.test(text()), text());
+check('(control) an answered empty roster says there are no scripts', /no scripts here/.test(text()) && !/couldn't be read/.test(text()), text());
 
 // #9 (bot): polls overlap (2.5 s apart, 8 s to time out); an older read's timeout landing after a newer answer changes nothing
 let timeOut: (e: Error) => void = noop;
@@ -58,7 +58,7 @@ await poll!();
 timeOut(new Error('debug: no answer within 8 s'));
 await older;
 check("an older poll's timeout, landing after a newer poll's answer, leaves the newer answer standing",
-  /lamp\/blink/.test(text()) && !/didn't answer/.test(text()), text());
+  /lamp\/blink/.test(text()) && !/couldn't be read/.test(text()), text());
 
 // #3 (bot): the watched script's log read that got no answer is said, not shown as an empty console
 debugAnswer = async (o) => (o.scripts ? { events: [script] } : { status: 'active', events: [] });
@@ -69,7 +69,7 @@ check('(control) a watched script whose answered log is empty says the console i
 debugAnswer = async (o) => { if (o.scripts) return { events: [script] }; throw new Error('debug: no answer within 8 s'); };
 await poll!();
 check("a watched script's log read with no answer says so, not that the console is empty",
-  /didn't answer/.test(text()) && !/console empty/.test(text()), text());
+  /couldn't be read/.test(text()) && !/console empty/.test(text()), text());
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

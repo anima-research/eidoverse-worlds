@@ -480,7 +480,7 @@ register('debug', (arg) => {
       const t = new Date(ts).toTimeString().slice(0, 8);
       logChat('*', `${t} [${kind}] ${Object.entries(rest).map(([k, v]) => `${k}=${typeof v === 'string' ? v : JSON.stringify(v)}`).join(' ')}`);
     }
-  }, (e) => logChat('*', `the world didn't answer, so the flight recorder wasn't read (${e.message}) — /debug again`));
+  }, (e) => logChat('*', `the flight recorder couldn't be read (${e.message}) — /debug again`));
 });
 
 register('mount', (arg) => {

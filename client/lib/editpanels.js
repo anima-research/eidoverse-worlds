@@ -1007,12 +1007,12 @@ async function refreshWatch() {
     const d = await requestDebug({ script: id, limit: 40 });
     watchLog = { id, status: d?.status ?? '?', lines: (d?.events ?? []).map((e) => `${new Date(e.ts).toTimeString().slice(0, 8)}  ${e.line}`) };
   } catch (e) {   // a poll that fails keeps this script's last good tail, under a status that says so
-    watchLog = { id, status: `the world didn't answer the log read (${e.message})`, lines: watchLog?.id === id ? watchLog.lines : [], unread: true };
+    watchLog = { id, status: `the log couldn't be read (${e.message})`, lines: watchLog?.id === id ? watchLog.lines : [], unread: true };
   }
 }
 function consoleFields() {
-  const miss = behaviorsMiss && `the world didn't answer the scripts read (${behaviorsMiss})`;
-  const f = miss && behaviors.length ? [{ t: 'info', label: '', value: `${miss} — these are from the last answer` }] : [];
+  const miss = behaviorsMiss && `the scripts couldn't be read (${behaviorsMiss})`;
+  const f = miss && behaviors.length ? [{ t: 'info', label: '', value: `these are from the last answer — ${miss}` }] : [];   // the note first: the VR painter ellipsizes a long row (bot #10)
   f.push({ t: 'list', k: 'cwatch', empty: miss || 'no scripts in this world — a script is a script:<name> component on a thing (docs/SCRIPTS.md)',
     rows: behaviors.map((b) => ({ id: b.id, label: b.id,   // words, not glyphs: the VR painter has no icon for these (bot #553)
       sub: [running(b) ? 'running' : (b.status ?? 'paused'), b.attach ? `on ${b.attach}` : 'world', b.timers ? `${b.timers} timer${b.timers === 1 ? '' : 's'}` : null].filter(Boolean).join(' · '),
