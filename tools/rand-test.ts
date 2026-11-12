@@ -28,8 +28,8 @@ const walk = (dir: string) => { for (const e of fs.readdirSync(dir, { withFileTy
   if (e.isDirectory()) walk(p);
   else if (/\.(ts|js|mjs|html)$/.test(e.name)) fs.readFileSync(p, "utf8").split("\n").forEach((l, n) => { if (LCG.test(l)) hits.push(`${path.relative(ROOT, p)}:${n + 1}`); });
 } };
-for (const d of ["client", "shared", "server", "mcpl", "tools", "scripting"]) if (fs.existsSync(path.join(ROOT, d))) walk(path.join(ROOT, d));
-check("no product with glibc's multiplier outside Math.imul in the tree (it passes 2^53): use shared/rand.js", hits.length === 0, hits.join(", "));
+walk(ROOT);   // the whole tree but node_modules, dot-dirs and frozen/ (import-v1's pinned closure, kept byte for byte)
+check("no product with glibc's multiplier outside Math.imul in the tree, frozen/ aside (it passes 2^53): use shared/rand.js", hits.length === 0, hits.join(", "));
 check("…and the scan catches the shape either way round and leaves Math.imul alone", LCG.test("seed = (seed * 1103" + "515245 + 12345) & 0x7fffffff") && LCG.test("seed = (1103" + "515245 * seed + 12345) & 0x7fffffff") && !LCG.test("Math.imul(seed, 1103" + "515245)"));
 
 console.log(`${fail ? "FAIL" : "ok"} rand: ${pass} passed, ${fail} failed`);
