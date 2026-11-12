@@ -199,9 +199,10 @@ console.log("the door's bodyHeightFor through /library (server/routes.ts route)"
   const srv = Bun.serve({ port: 0, fetch: (req) => route(req, { upgrade: () => false, requestIP: () => ({ address: "127.0.0.1" }) } as any) });
   // what the door's own fetches receive, decoded
   const realFetch = globalThis.fetch;
-  let received = 0;
+  let received = 0, requests = 0;
   globalThis.fetch = (async (input: any, init?: any) => {
     const res = await realFetch(input, init);
+    requests++;
     received += (await res.clone().arrayBuffer()).byteLength;
     return res;
   }) as typeof fetch;
@@ -233,6 +234,20 @@ console.log("the door's bodyHeightFor through /library (server/routes.ts route)"
     }
     check("a JSON chunk past 16 MiB isn't measured, as the roster's read refuses it", await door("padded") === null, received);
     check("a header claiming a 2 GB JSON chunk isn't measured", await door("lying") === null, received);
+    requests = 0;
+    for (let i = 0; i < 3; i++) await door("headless");
+    check("a body with nothing to measure is read once for its version", requests === 2, { requests });
+    requests = 0;
+    await rigBonesFor(base, `${V}/plain.vrm?v=7`); await bodyHeightFor(base, `${V}/plain.vrm?v=7`);
+    check("its rig and its stature come from one read", requests === 2, { requests });
+    let down = true;
+    const flaky = Bun.serve({ port: 0, fetch: () => down ? new Response("busy", { status: 503 }) : new Response(body(V1)) });
+    try {
+      const during = await bodyHeightFor(`http://localhost:${flaky.port}`, `${V}/plain.vrm?v=flaky`);
+      down = false;
+      const after = await bodyHeightFor(`http://localhost:${flaky.port}`, `${V}/plain.vrm?v=flaky`);
+      check("a failed download isn't remembered: the next call reads", during === null && near(after, 1.5), { during, after });
+    } finally { flaky.stop(true); }
     // a server that ignores Range answers 200 with the whole file: the same length cap applies
     const whole = Bun.serve({ port: 0, fetch: () => new Response(readFileSync(join(vdir, "padded.vrm"))) });
     try {
