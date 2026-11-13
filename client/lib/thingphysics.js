@@ -16,7 +16,7 @@ import { outOfMyView } from './edit/myview.js';
 import { remotes, serverNow } from './remotes.js';
 import { colliders, suspendCollider } from './colliders.js';
 import { pushHostHook } from './autohooks.js';
-import { colliderFor } from './bodyscale.js';
+import { colliderFor } from '../../shared/bodyscale.js';
 import { TRACK } from '../../shared/mover.js';
 const CHUNK = TRACK.cap - 0.5;   // one step of the authority's body toward mine
 import { replica, net, sendRequest as rawSend, identities } from './net.js';

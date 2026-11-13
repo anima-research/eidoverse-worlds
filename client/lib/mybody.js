@@ -11,7 +11,7 @@ import { makeAvatar, contributeThumbnail } from './avatar.js';
 import { setMyAvatarPath, wireAvatarSwitch } from './edit/catalog.js';
 import { toast } from './ui.js';
 import { net } from './net.js';
-import { loadBodyPrefs, saveBodyPrefs } from './bodyscale.js';
+import { loadBodyPrefs, saveBodyPrefs } from '../../shared/bodyscale.js';
 import { applyOwnBodyShadow } from './materials.js';
 import { warmDepth, warmLit } from './warmqueue.js';
 

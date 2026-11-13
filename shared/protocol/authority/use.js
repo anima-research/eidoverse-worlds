@@ -130,7 +130,7 @@ function buildUse(ctx, a) {
     if (mag > 0 && Math.abs(along) < 0.3 * mag) refuse("sideways", `${a.id} swings front-to-back; that push is mostly sideways`, `push along its front ${JSON.stringify(fwd.map(r3))} (or the opposite)`);
     // the first protocol's pendulum impulse: read angle and velocity AT the push instant, add the push,
     // re-express as (amp, phase, t0). No snap at the push; with the motion builds, against it damps. The client's
-    // pendulumTheta (client/lib/motioneval.js) evaluates the result: keep the two in sync.
+    // pendulumTheta (shared/motioneval.js) evaluates the result: keep the two in sync.
     const now = ctx.w.now(), w0 = (2 * Math.PI) / (mo.period ?? 3.5), damp = mo.damp ?? 0;
     const t = mo.t0 != null ? Math.max(0, (now - mo.t0) / 1000) : 0;
     const a0 = (mo.amp ?? 0) * Math.exp(-damp * t), ph = w0 * t + (mo.phase ?? 0);

@@ -723,7 +723,7 @@ visitors yet. docs/guide/MODDING-UI.md covers the UI a mod can build.
 New *kinds* of things — a motion type, a reaction kind, a component with
 client-side meaning — are code. Pull the repo, then:
 
-- **New motion type** → `client/lib/motioneval.js`: a pure
+- **New motion type** → `shared/motioneval.js`: a pure
   `f(params, t) → transform` composed on the entity's base pose, plus its
   `type` in the `motion` component's enum (`shared/protocol/componentspec.js`).
 - **Reaction kinds are fixed** (pinned in the registry: `reactions.handlers`
@@ -748,7 +748,7 @@ House rules, learned the hard way (each one is a past incident):
    must stay a pure function of the log. Views project state; they never
    invent it.
 2. **Mirrored math stays mirrored.** The authority's pendulum push and
-   `pendulumTheta` (client/lib/motioneval.js) implement the same physics —
+   `pendulumTheta` (shared/motioneval.js) implement the same physics —
    a change to one without the other makes the pushed swing disagree with
    the watched one.
 3. **No handler may ever throw out of `Bun.serve`'s ws callbacks.** A

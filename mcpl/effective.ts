@@ -2,12 +2,12 @@
 //
 // The fold keeps a mounted entity's pre-mount `pos` (log-truth; dismount stamps a fresh absolute), so perception
 // must not report it. This walks the mount chain as the browser's scene graph does (parent pose, the parent's motion
-// at `nowMs` via client/lib/motioneval.js, mount offset/yaw, socket frame, recursively) and returns a finite world
+// at `nowMs` via shared/motioneval.js, mount offset/yaw, socket frame, recursively) and returns a finite world
 // transform or a refusal naming the first link it won't vouch for — never a partially composed number.
 //
 // Pure: state comes in through a caller-supplied view, time as an argument. agent.ts wraps it; tests drive it bare.
 
-import { evalWholeMotion, qMul, qApply, qAxisAngle, yawOfQuat } from "../client/lib/motioneval.js";
+import { evalWholeMotion, qMul, qApply, qAxisAngle, yawOfQuat } from "../shared/motioneval.js";
 import { seatGateCore, applySeatCorrection } from "../shared/seatcore.js";
 
 export type EffectiveView = {

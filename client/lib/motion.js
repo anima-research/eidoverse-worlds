@@ -32,7 +32,7 @@ import { serverNow } from './remotes.js';
 // The closed forms (and the generous reader) live in motioneval.js, shared with
 // the agent's text-tier perception; this file applies them to THREE objects and
 // owns the part-frame machinery only a renderer with a loaded model can have.
-import { evalWholeMotion, evalPath, axisOf, ampOf, since, pendulumTheta, rateOf } from './motioneval.js';
+import { evalWholeMotion, evalPath, axisOf, ampOf, since, pendulumTheta, rateOf } from '../../shared/motioneval.js';
 import { motionNode } from '../../shared/protocol/names.js';
 
 const _q = new THREE.Quaternion();

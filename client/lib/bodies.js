@@ -6,7 +6,7 @@ import { net } from './net.js';
 import { renderDOM } from './edit/fieldpanels.js';
 import { switchAvatar } from './edit/catalog.js';
 import { getMyAvatarName, getMe, myBodyPrefs, setMyBodyPref } from './mybody.js';
-import { BODY_SCALE_MIN, BODY_SCALE_MAX, PLATE_Y_MIN, PLATE_Y_MAX } from './bodyscale.js';
+import { BODY_SCALE_MIN, BODY_SCALE_MAX, PLATE_Y_MIN, PLATE_Y_MAX } from '../../shared/bodyscale.js';
 
 // MY avatars = the bodies you have actually worn (the world's wardrobe, World › avatar, is only to try on).
 // Kept per browser (ew-worn) until the server grows a per-person field; the roster only resolves a name to its path.

@@ -8,7 +8,7 @@
 // reads them); tickOpenables applies them.
 import { entities, bags, bagOf, findPart } from '../world.js';
 import { reindexCollider } from '../colliders.js';
-import { qAxisAngle, openFraction, openPose, OPEN_DEFAULTS } from '../motioneval.js';
+import { qAxisAngle, openFraction, openPose, OPEN_DEFAULTS } from '../../../shared/motioneval.js';
 export { openFraction, openPose, OPEN_DEFAULTS };
 
 const tweens = new Map();   // id → {from, to, t0, dur, obj, base, sig, f}

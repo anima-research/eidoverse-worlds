@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import { addSocket } from '../../shared/requests.js';
 import { scratchWorld } from '../harness/scratchworld.ts';
 import { COMPONENTS, statusOf, pinOf, materialize } from '../../shared/protocol/componentspec.js';
-import { evalWholeMotion } from '../../client/lib/motioneval.js';
+import { evalWholeMotion } from '../../shared/motioneval.js';
 import { worldPose, TICK_MS } from '../../shared/protocol/simlayer.js';
 import { GRID_DEFAULTS, APERTURES } from '../../shared/structure.js';
 import { colliderOf } from '../../shared/components.js';

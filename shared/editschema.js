@@ -470,7 +470,7 @@ export function inspectSchema(ent, id, live = {}) {
         case 'pendulum':
           fields.push(M('amp'));
           // def is what a reset writes: the registry's (componentspec.js; test/shared/descriptor-defaults-test.ts). The value's
-          // fallback (the descriptor's `absent`) is how a value written before the authority materialized one is drawn (client/lib/motioneval.js)
+          // fallback (the descriptor's `absent`) is how a value written before the authority materialized one is drawn (shared/motioneval.js)
           fields.push(M('period'), M('phase'), M('damp', { hint: '0 swings forever' }));
           break;
         case 'spin':

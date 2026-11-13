@@ -10,7 +10,7 @@
  * Run: bun run test/client/motioneval-test.ts   (no servers, all time injected)
  */
 
-import { evalWholeMotion, qApply } from "../../client/lib/motioneval.js";
+import { evalWholeMotion, qApply } from "../../shared/motioneval.js";
 
 let failures = 0;
 const check = (label: string, ok: boolean, detail?: string) => {
@@ -60,7 +60,7 @@ console.log("\n━━ foundation: quaternion action ≡ rotation matrix ━━")
     { axis: [1, 1, 0], th: 2.7, v: [0.3, -0.4, 0.5] },
     { axis: [0.2, -0.5, 0.9], th: 3.9, v: [-2, 1, 0.7] },
   ];
-  const { qAxisAngle } = await import("../../client/lib/motioneval.js");
+  const { qAxisAngle } = await import("../../shared/motioneval.js");
   check("qApply agrees with Rodrigues on a mixed grid", cases.every(({ axis, th, v }) =>
     near3(qApply(qAxisAngle(axis, th), v), mApply(rodrigues(axis, th), v))));
 }

@@ -13,8 +13,8 @@
 //
 // NAMEPLATE LIFT: metres above the measured crown (plateanchor.js), at the body's AUTHORED size — applied × the live
 // model→world scale, so it grows with the body and follows sitting/lying exactly as auto does. 0 = auto.
-import { clampBodyScale, clampPlateY, BODY_SCALE_MIN, BODY_SCALE_MAX, PLATE_Y_MIN, PLATE_Y_MAX } from '../../shared/presencewire.js';
-import { capsule, canMantle } from '../../shared/mover.js';
+import { clampBodyScale, clampPlateY, BODY_SCALE_MIN, BODY_SCALE_MAX, PLATE_Y_MIN, PLATE_Y_MAX } from './presencewire.js';
+import { capsule, canMantle } from './mover.js';
 export { clampBodyScale, clampPlateY, BODY_SCALE_MIN, BODY_SCALE_MAX, PLATE_Y_MIN, PLATE_Y_MAX };
 
 /** The VR composition. u = chosen size, k = measured device ratio (avatar eye / your eye; 1 unmeasured).

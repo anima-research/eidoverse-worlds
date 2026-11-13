@@ -70,7 +70,7 @@ const F = await import(TREE + "shared/protocol/fold.js");
 const SL = await import(TREE + "shared/protocol/simlayer.js");
 const CL = await imp("shared/climb.js"), SP = await imp("shared/spawn.js"), Z = await import(TREE + "shared/zone.js");
 const PC = await imp("server/posecheck.ts");
-const ME = await import(ENGINE + "client/lib/motioneval.js");
+const ME = await import(ENGINE + "shared/motioneval.js");
 const ONLY = opt("only")?.split(",") ?? null;
 const root = scratch("climbenv");
 

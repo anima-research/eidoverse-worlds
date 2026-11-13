@@ -32,7 +32,7 @@ export const OLD_LIGHT_DECAY = 1.7;
 /** …and its intensity when a light wrote none (lightrig.js requestLight; not the registry's default). */
 export const OLD_LIGHT_INTENSITY = 16;
 export { AXIS_VECTORS };
-/** The pendulum readings that lived only in the reader (client/lib/motioneval.js, before 10-16). */
+/** The pendulum readings that lived only in the reader (shared/motioneval.js, before 10-16). */
 // maxAmp 1.1: the old server's push cap (its reactions.ts pendulumImpulse), so a translated swing swings as it did (R 10-27)
 export const OLD_READINGS = Object.freeze({ pendulumPeriod: 3.5, pendulumDamp: 0, pendulumMaxAmp: 1.1, wholePendulumPivot: Object.freeze([0, 2, 0]) });
 const isMotionKey = (k) => k === "motion" || k.startsWith("motion:");

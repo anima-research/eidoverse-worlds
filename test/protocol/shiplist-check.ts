@@ -45,8 +45,8 @@ const MUTANTS: [string, string, string | [string, string, string?][], string, st
   ["look shows the openable", "shared/protocol/authority/reads.js", "...(e.c.openable && typeof e.c.openable === \"object\" ? { openable: e.c.openable } : {})", "...({})", ["O4"]],
   ["the importer renames door", "tools/import-v1/translate-v1.js", "c[encName(k === \"door\" && !e.comp.openable ? \"openable\" : k)]", "c[encName(k)]", ["O5"]],
   ["the importer renames a reaction's door", "tools/import-v1/translate-v1.js", "} else if (h && typeof h === \"object\" && h.component === \"door\") out[k] = { ...h, component: \"openable\" };", "}", ["O5"]],
-  ["a turn keeps the hinge", "client/lib/motioneval.js", "const shift = qApply(q0, [pv[0] - rp[0], pv[1] - rp[1], pv[2] - rp[2]]);\n  return { pos: base.pos.map((v, i) => v + shift[i]), q: qMul(q0, q) };", "return { pos: [...base.pos], q: qMul(q0, q) };", ["O6"]],
-  ["the tween eases from where it was", "client/lib/motioneval.js", "return tw.from + (tw.to - tw.from) * u * u * (3 - 2 * u);", "return tw.to;", ["O6"]],
+  ["a turn keeps the hinge", "shared/motioneval.js", "const shift = qApply(q0, [pv[0] - rp[0], pv[1] - rp[1], pv[2] - rp[2]]);\n  return { pos: base.pos.map((v, i) => v + shift[i]), q: qMul(q0, q) };", "return { pos: [...base.pos], q: qMul(q0, q) };", ["O6"]],
+  ["the tween eases from where it was", "shared/motioneval.js", "return tw.from + (tw.to - tw.from) * u * u * (3 - 2 * u);", "return tw.to;", ["O6"]],
   ["Add Openable brings its open action", "shared/editschema.js", "...(rx.open ? [] : [OP.set(id, 'reactions', { ...rx, open: { kind: 'toggle', unless: 'locked' } })])], errors: [] };", "], errors: [] };", ["O7"]],
   ["the hinge button", "shared/editschema.js", "comps.set('pivot', { pos: [round(k === 'hingeL' ? box[0][0] : box[1][0], 4)", "comps.set('pivot', { pos: [round(0 && k === 'hingeL' ? box[0][0] : box[1][0], 4)", ["O7"]],
   ["a handler's effect is checked at write", "shared/protocol/authority/checks.js", "handlerCheck(at, act, h); effectCheck(s, id, act, h); } }", "handlerCheck(at, act, h); } }", ["R2", "R3", "R4"]],
@@ -60,7 +60,7 @@ const MUTANTS: [string, string, string | [string, string, string?][], string, st
   ["motion: one speed", "shared/protocol/authority/checks.js", "if ((v.type === \"spin\" || v.type === \"orbit\") && v.degPerSec !== undefined && v.period !== undefined) refuse(", "if (false) refuse(", ["M2"]],
   ["motion: a path's points", "shared/protocol/authority/checks.js", "if (v.type === \"path\" && !(Array.isArray(v.points)", "if (false && !(Array.isArray(v.points)", ["M2"]],
   ["motion: a part's enums", "shared/protocol/authority/checks.js", "for (const [f, allowed] of Object.entries(COMPONENTS[comp.split(\":\")[0]]?.enums ?? {})) if (obj", "for (const [f, allowed] of Object.entries(COMPONENTS[comp]?.enums ?? {})) if (obj", ["M2"]],
-  ["the orbit's period", "client/lib/motioneval.js", "if (Number.isFinite(m.period) && m.period > 0) return 360 / m.period;", "", ["M3"]],
+  ["the orbit's period", "shared/motioneval.js", "if (Number.isFinite(m.period) && m.period > 0) return 360 / m.period;", "", ["M3"]],
   ["the editor reads the rate as the evaluator does", "shared/descriptors.js", "Number.isFinite(m?.period) && m.period > 0 ? 360 / m.period : ", "", ["M3"]],
   ["the importer: rpm → degPerSec", "tools/import-v1/translate-v1.js", "k === \"motion\" ? newMotion(v) : k === \"particles\"", "k === \"motion\" ? v : k === \"particles\"", ["M4"]],
   ["the editor's rate drops the period", "shared/descriptors.js", "clears: ['rpm', 'period']", "clears: ['rpm']", ["M5"]],
@@ -124,7 +124,7 @@ const only = opt("only")?.split(",") ?? null;
 const imp = async (p: string) => { try { return await import(path.join(T, p)); } catch (e) { return { __err: String(e?.message ?? e) }; } };
 const D = await imp("shared/protocol/authority.js"), CAT = await imp("shared/protocol/componentspec.js"), LAB = await import(ENGINE + "test/harness/labmodels.js"), TS = await imp("shared/protocol/verbspec.js");
 const SD = await imp("test/harness/scratchworld.ts"), TV1 = await imp("tools/import-v1/translate-v1.js"), FOLD = await imp("shared/protocol/fold.js");
-const ME = await imp("client/lib/motioneval.js"), ES = await imp("shared/editschema.js"), RF = await imp("shared/protocol/refusal.js");
+const ME = await imp("shared/motioneval.js"), ES = await imp("shared/editschema.js"), RF = await imp("shared/protocol/refusal.js");
 const S = suite("shiplist", { cap: 500 });
 const ok = (id: string, cond: any, what: string, detail?: any) => { if (S.runs(id)) S.ok(cond, `${id} ${what}`, detail); };
 async function C(id: string, what: string, fn: () => any) {

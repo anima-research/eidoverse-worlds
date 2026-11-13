@@ -20,7 +20,7 @@
 // registry's `ranges` and `units` (one description), and a soft slider end a card wants below or
 // above them is softMin/softMax (never enforced; the door's range is). def: false = the row offers no reset (the inspector never did); absent = what an UNWRITTEN value is
 // drawn as where it differs from the registry's default (a pendulum written before the authority materialized a period
-// swings at the first protocol's 3.5 s: client/lib/motioneval.js); sparse = written only off its default (a light's
+// swings at the first protocol's 3.5 s: shared/motioneval.js); sparse = written only off its default (a light's
 // important/day); clears = the wire's other spellings a write retires (degPerSec retires rpm and period); own = the card's
 // own code writes it (an axis: validated against the letters the authority takes, written as a letter). The prose
 // (labels, hints, option words) stays in shared/editschema.js, which builds every engine card's rows from this table

@@ -588,7 +588,7 @@ const cases: Case[] = [
       return { a: a.refused ?? null, b: b.refused ?? null, c: show(c), drone: s.w().state().entities.drone?.c.motion ?? null }; },
     good: (o) => o.a?.code === "shape" && /got "bob"/.test(o.a.reason) && o.b?.code === "shape" && o.c === "ok" && o.drone?.type === "oscillate" && o.drone?.amp === 0.5 },
   { id: "OS4", what: "…the readers read the type as written (no world of this protocol stored bob; the v1 translation writes oscillate, import-v1/shapes.js motionType): a bob is no motion the closed form or the editor's channels know, and names.js maps nothing", async run() {
-      const ME: any = await import(TREE + "client/lib/motioneval.js"), SS: any = await import(TREE + "client/lib/socksignals.js"), ES: any = await import(TREE + "shared/editschema.js"), NM: any = await import(TREE + "shared/protocol/names.js");
+      const ME: any = await import(TREE + "shared/motioneval.js"), SS: any = await import(TREE + "client/lib/socksignals.js"), ES: any = await import(TREE + "shared/editschema.js"), NM: any = await import(TREE + "shared/protocol/names.js");
       const base = { pos: [1, 2, 3], yaw: 0 }, m = (type: string) => ({ type, axis: [0, 0, 1], amp: 0.5, period: 2, phase: 0.3, t0: 1000 });
       const now = ME.evalWholeMotion(base, m("oscillate"), 1700), old = ME.evalWholeMotion(base, m("bob"), 1700);
       const sch = ES.inspectSchema({ id: "d", model: "book", pos: [0, 0, 0], motion: m("bob") }, "d");
@@ -619,7 +619,7 @@ const cases: Case[] = [
   { id: "OLD", what: "every old spelling S6 stopped reading is ignored by its reader (the value's absence, or the reader's refusal), while today's spelling reads: grip fingers, the packet's pre-release key, terrain.water, the renamed codes, the sky's clock/weatherSeconds/dormantRated/forecast dwellSec+transitionSec, world.log, Light day, motion bob (cutJson: vocab-fixtures F12; provenance body.commit: its reader went with simplify D5)", async run() {
       const imp = (f: string) => import(TREE + f);
       const [G, OA, TS, FC, SB, CM, ME] = await Promise.all(["shared/grab.js", "shared/onceanim.js", "shared/terrainshape.js", "shared/forecast.js", "shared/protocol/sandbox.js",
-        "shared/components.js", "client/lib/motioneval.js"].map(imp)) as any[];
+        "shared/components.js", "shared/motioneval.js"].map(imp)) as any[];
       const T = 1_700_000_000_000; const keys = (src: string) => { const r = SB.runScript({ text: src, self: "k", key: "script:k", event: { on: "load" }, now: 0, seed: "0".repeat(64), st: { entities: { k: { born: 0, c: {} } }, diagnostics: [] } }); return r.ok ? r.ops[0].value : r; };
       // [old key, what the reader gives the old spelling, what it gives today's]: old must be the absent/default reading, today's the value
       const rows: [string, any, any, any, any][] = [

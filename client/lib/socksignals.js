@@ -16,7 +16,7 @@
 //
 // Pure: imports only motioneval.js and names.js motionNode.
 
-import { evalWholeMotion, since, ampOf, rateOf } from './motioneval.js';
+import { evalWholeMotion, since, ampOf, rateOf } from '../../shared/motioneval.js';
 import { motionNode } from '../../shared/protocol/names.js';
 
 const TAU = 2 * Math.PI;

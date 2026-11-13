@@ -39,7 +39,7 @@ const src = (p) => fs.readFileSync(path.join(ENGINE, p), "utf8");
 // ---- D: the drift guard ----
 {
   const agent = src("mcpl/agent.ts"), auth = src("shared/protocol/authority.js"), ctrl = src("client/lib/controller.js"),
-    coll = src("client/lib/colliders.js"), scale = src("client/lib/bodyscale.js"), thing = src("client/lib/thingphysics.js");
+    coll = src("client/lib/colliders.js"), scale = src("shared/bodyscale.js"), thing = src("client/lib/thingphysics.js");
   const own = {
     agent: agent.match(/^const WALK\s*=.*$/m)?.[0] ?? null,
     authority: auth.match(/^const TRACK\s*=.*$/m)?.[0] ?? null,
@@ -50,8 +50,8 @@ const src = (p) => fs.readFileSync(path.join(ENGINE, p), "utf8");
   const stepOf = { agent: own.agent ? "none (terrain only: no floors)" : "mover", authority: auth.match(/step:\s*([\d.]+)/)?.[1] ?? "mover", client: coll.match(/^const STEP\s*=\s*([\d.]+)/m)?.[1] ?? "mover" };
   const same = Object.values(own).every((v) => v === null || (Array.isArray(v) && v.length === 0));
   ok(same, "D1 no walker carries its own locomotion numbers or stride (agent WALK/RUN/ARRIVE, authority TRACK, colliders STEP/TALL, bodyscale COLLIDER_R, controller's speed table and stride)", { own, "is a 0.7 m ledge a floor? step =": stepOf });
-  for (const [f, s] of [["mcpl/agent.ts", agent], ["shared/protocol/authority.js", auth], ["client/lib/controller.js", ctrl], ["client/lib/colliders.js", coll], ["client/lib/bodyscale.js", scale], ["client/lib/thingphysics.js", thing]])
-    ok(/from ["'](\.\.\/)+(shared\/)?mover\.js["']|from ["']\.\.\/mover\.js["']/.test(s), `D2 ${f} reads shared/mover.js`);
+  for (const [f, s] of [["mcpl/agent.ts", agent], ["shared/protocol/authority.js", auth], ["client/lib/controller.js", ctrl], ["client/lib/colliders.js", coll], ["shared/bodyscale.js", scale], ["client/lib/thingphysics.js", thing]])
+    ok(/from ["'](\.\.?\/)+(shared\/)?mover\.js["']|from ["']\.\.\/mover\.js["']/.test(s), `D2 ${f} reads shared/mover.js`);
 }
 
 const M = await import(ENGINE + "shared/mover.js").catch((e) => { ok(false, "shared/mover.js imports", String(e)); return null; });
@@ -149,7 +149,7 @@ if (M) {
     const hop = call("ann", "move", { to: [0, 0, 3.9] }, 100); ok(hop.ok, "A4 3.9 m is within it", hop.refused);
     const again = call("ann", "move", { to: [0, 0, 3.9 + 0.8] }, 100); ok(again.refused?.code === "too-fast" && near(Number(again.refused.reason.match(/cover ([\d.]+)/)?.[1]), tokensAfter(0.1, 100), 1e-3), "A4 …and the metres it says are left (0.8 asked) are the mover's bucket (0.1 + 0.6 = 0.7)", again.refused);
     // the client's body is the mover's
-    const BS = await import(ENGINE + "client/lib/bodyscale.js");
+    const BS = await import(ENGINE + "shared/bodyscale.js");
     const c1 = BS.colliderFor(1), c2 = BS.colliderFor(2), m1 = capsule(1), m2 = capsule(2);
     ok(near(c1.r, m1.r) && near(c1.tall, m1.tall) && near(c2.r, m2.r) && near(c2.tall, m2.tall) && near(c1.r, 0.2) && near(c1.tall, 1.7), "A5 the client's walking capsule is the mover's body (0.2 × 1.7, scaled)", { c1, m1 });
     ok(BS.canMantle === canMantle && canMantle(0.8, 1) === false && canMantle(0.81, 1) === true && canMantle(1.7, 1) === true && canMantle(1.71, 1) === false, "A5 the client's mantle starts where the mover's step ends (0.8 m) and reaches its height (1.7 m)");

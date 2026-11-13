@@ -35,7 +35,7 @@ import { makeDwell } from './dwell.js';
 import { showXRTip, hideXRTip, dropXRTip, tipTextFor } from './xrtip.js';
 import { POINTER_VIS_DEFAULT, pointerVisible, dotVisible, looksAtWorld, interactable, smoothPose, stickStep, angleTo, rayMatrixTo } from './xrpointer.js';   // the laser's policy
 import { dockPins } from './ui.js';
-import { xrScales, toRigLocal } from './bodyscale.js';   // the chosen size composes with the device fit (rig = u, body = u/k)
+import { xrScales, toRigLocal } from '../../shared/bodyscale.js';   // the chosen size composes with the device fit (rig = u, body = u/k)
 import { perf } from './perf.js';
 import { renderCensusTake, renderCensusTick, renderCensusPeek, setXRCurtain, drawStats } from './render.js';
 import { warm, P_AMBIENT } from './warmqueue.js';

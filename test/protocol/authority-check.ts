@@ -896,7 +896,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 
 // ---- HG: a hung thing swings from the underside of what's above it, and everyone reads the same hinge (Rowan) ----
 { const hw = callAt("hinge");
-  const { evalWholeMotion, qApply } = await import("../../client/lib/motioneval.js");
+  const { evalWholeMotion, qApply } = await import("../../shared/motioneval.js");
   hw("ann", "create-world", { title: "hinge" });
   hw("ann", "create", { id: "frame", model: "swing-frame", components: { transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
   const r = hw("ann", "create", { id: "seat", model: "swing-seat", place: { hang: "frame", height: 0.45 } });
@@ -919,7 +919,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 // ---- SW: a push (old-vs-new review 10-06 #5) — the impulse kind, reserved at the shape audit (10-16) and open again since
 // Mica 10-31 (decision row 19): a builder writes it, use swings the seat, and the v1 mapping a translated world carries ----
 { const sw = callAt("swingpush");
-  const { pendulumTheta } = await import("../../client/lib/motioneval.js");
+  const { pendulumTheta } = await import("../../shared/motioneval.js");
   sw("ann", "create-world", { title: "swingpush" });
   sw("ann", "create", { id: "frame", model: "swing-frame", components: { transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
   sw("ann", "create", { id: "seat", model: "swing-seat", place: { hang: "frame", height: 0.45 } });

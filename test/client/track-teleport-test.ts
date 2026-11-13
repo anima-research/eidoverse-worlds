@@ -12,7 +12,7 @@ plugin({
   name: 'track-teleport-stubs',
   setup(b) {
     stubResolve(b, /^(\.\.?\/)+core\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
-    for (const m of ['world', 'remotes', 'colliders', 'autohooks', 'bodyscale', 'net', 'ui', 'chat', 'actions', 'realize/emitters', 'serverclock', 'plainwords', 'markup', 'xrask'])
+    for (const m of ['world', 'remotes', 'colliders', 'autohooks', 'shared/bodyscale', 'net', 'ui', 'chat', 'actions', 'realize/emitters', 'serverclock', 'plainwords', 'markup', 'xrask'])
       stubResolve(b, new RegExp(`^(\\.\\.?/)+${m}\\.js$`), () => ({ path: STUB }));
   },
 });

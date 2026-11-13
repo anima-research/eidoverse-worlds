@@ -9,7 +9,7 @@ import { AXES, POSITIVE_AXES } from "../../shared/axes.js";
 import * as D from "../../shared/descriptors.js";
 import * as ES from "../../shared/editschema.js";
 import * as LA from "../../shared/lookat.js";
-import * as ME from "../../client/lib/motioneval.js";
+import * as ME from "../../shared/motioneval.js";
 import * as SH from "../../tools/import-v1/shapes.js";
 import { scratchWorld } from "../harness/scratchworld.ts";
 

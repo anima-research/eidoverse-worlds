@@ -90,7 +90,7 @@ export const COMPONENTS = {
     absentMeans: { origin: "the centre of its base: it stands on its own origin (every referent centres primitives; ours stands, as a model does)", ignored: "a sphere ignores size[1] and size[2], a cylinder and a capsule size[2], a plane size[1]" },
     units: { size: "m" }, docs: { shape: "box, sphere, cylinder, plane (flat on the ground, drawn on both sides) or capsule; it stands on its own origin", size: "its size [x, y, z] in metres; a sphere reads x as its diameter, a cylinder or capsule x as diameter and y as height, a plane x × z" },
     help: "a parametric body: {shape: box|sphere|cylinder|plane|capsule, size: [x, y, z] (m, each 0.05..200)}. Its origin is the centre of its base (it stands on its own pos, as a model does). A sphere reads size[0] as its diameter; a cylinder and a capsule read size[0] as diameter and size[1] as height (a capsule is at least its diameter tall); a plane is size[0] × size[2] on the ground plane, 0.05 thick (it collides as a thin slab; things rest on it at 0.05), drawn on both sides. It may share a thing with a model, a light or a socket (components compose: each is drawn). Its one material slot is 'surface' (hesperus/material:surface)" },
-  // the closed forms every client and the agent evaluate (client/lib/motioneval.js); the per-type defaults are its
+  // the closed forms every client and the agent evaluate (shared/motioneval.js); the per-type defaults are its
   // readings, written down. A node's motion is motion:<slot> {node} (the node's name is data, never part of a key); an
   // axis is stored as a vector (x|y|z|-x|-y|-z taken at write); `pivot` is a PART motion's hinge only
   motion:    { on: "thing", keyed: "optional", when: [

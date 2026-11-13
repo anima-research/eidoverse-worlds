@@ -25,7 +25,7 @@ import { CONTACT_POINTS, contactSeed } from "../shared/contact.js";
 import { leafForceFor, DEFAULT_LEAF_FORCE } from "../shared/leafforce.js";
 import { bodyFrame, fromBody } from "../shared/joints.js";
 // the walking capsule's dimensions — pure module, the browser controller's own numbers
-import { colliderFor } from "../client/lib/bodyscale.js";
+import { colliderFor } from "../shared/bodyscale.js";
 import { NAV_NUDGE, type NavProbe } from "../shared/navgrid.js";
 
 const HEADLESS_CORE = fileURLToPath(new URL("./headless-core.mjs", import.meta.url));

@@ -16,9 +16,9 @@
 // Part-frame motion (`motion:<slot> {node}` keys, or an old `motion` carrying `part`: shared/protocol/names.js motionNode)
 // does not displace the entity's ROOT transform at all — those stay in
 // motion.js, THREE-side, and this module reports the root as unmoved.
-import { rateOf } from '../../shared/protocol/names.js';
-import { AXES } from '../../shared/axes.js';
-import { qMul, qRotate as qApply, qAxisAngle as qAxisAngleUnit } from '../../shared/rot.js';
+import { rateOf } from './protocol/names.js';
+import { AXES } from './axes.js';
+import { qMul, qRotate as qApply, qAxisAngle as qAxisAngleUnit } from './rot.js';
 
 // ---- quaternions: shared/rot.js's -----------------------------------------
 // [x, y, z, w], same layout THREE uses. Right-handed, Y-up, radians.

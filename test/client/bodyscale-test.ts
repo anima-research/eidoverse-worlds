@@ -1,5 +1,5 @@
 // bodyscale — "this body" (Profile › Avatar, R 2026-09-30): a chosen SIZE and a NAMEPLATE LIFT per body, networked.
-// Drives the real functions: shared/presencewire.js (the wire), client/lib/bodyscale.js (the maths), plateanchor.js's
+// Drives the real functions: shared/presencewire.js (the wire), shared/bodyscale.js (the maths), plateanchor.js's
 // lift, avatar.js's setUserScale/setPuppetScale/setPlateY/_placePlate on a real THREE rig, remotes.js applyRemoteBody,
 // and the server's own pose fence (posecheck.ts sanePose) — in-range fields pass the relay untouched, the rest are clamped.
 //
@@ -81,7 +81,7 @@ console.log('voice on the wire (presencewire voiceWire / applyVoiceWire):');
   check('receipt: null is not a reading either', !('mic' in fresh), J(fresh));
 }
 
-const BS: any = await import('../../client/lib/bodyscale.js').catch((e) => { console.log(`  (bodyscale.js did not load: ${e?.message})`); return {}; });
+const BS: any = await import('../../shared/bodyscale.js').catch((e) => { console.log(`  (bodyscale.js did not load: ${e?.message})`); return {}; });
 console.log('the maths:');
 {
   const xrScales = fn(BS, 'xrScales'), toRigLocal = fn(BS, 'toRigLocal');

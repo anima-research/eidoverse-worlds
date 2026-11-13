@@ -20,7 +20,7 @@ import {
   applySeatCorrection, occupantScalar, seatClaim, makeGenerationGuard, makeVerdictCache,
   SEAT_METHOD, MIN_PATCH_VERTS, MAX_PATCH_SPREAD_Y,
 } from "../../shared/seatcore.js";
-import { qAxisAngle } from "../../client/lib/motioneval.js";
+import { qAxisAngle } from "../../shared/motioneval.js";
 import { pause } from "../gate/wait.ts";
 
 let failures = 0;

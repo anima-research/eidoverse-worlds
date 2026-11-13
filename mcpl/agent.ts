@@ -132,7 +132,7 @@ import { physicsVolumesOf, speedFactorAt, foldOfView, zonesOf, waterVolumes, wor
 import { fallBackOf, belowWorld, FELL } from "../shared/spawn.js";
 /** A record (components flat, view.js) a body doesn't meet: componentspec collider.enabled or .blocks, the authority's own reading. */
 const solidOffRecord = (e: any) => solidOff(e, "bodies");
-import { colliderFor } from "../client/lib/bodyscale.js";
+import { colliderFor } from "../shared/bodyscale.js";
 
 import { recordComponents } from "../shared/protocol/view.js";
 import { modelWord } from "../shared/eido.js";

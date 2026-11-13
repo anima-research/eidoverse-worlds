@@ -29,7 +29,7 @@ import { stroke as strokeIcon } from './icons.js';
 import { plateSize, plateClear, ownClearance, reachAbove, plateBox, CLEAR_MIN, PLATE_W } from './platesize.js';
 import { revealLevel } from './namereveal.js';
 import { crownEstimate, plateGap, plateAnchor, plateOffset, plateViewLift, STAND_SLOTS, DEAD as PLATE_DEAD } from './plateanchor.js';
-import { clampBodyScale, clampPlateY, plateLift, clipRate } from './bodyscale.js';
+import { clampBodyScale, clampPlateY, plateLift, clipRate } from '../../shared/bodyscale.js';
 import { Fn, userData, positionView, cameraNear, cameraFar, min, viewZToPerspectiveDepth, viewZToReversedPerspectiveDepth,
   viewZToOrthographicDepth } from 'three/tsl';
 import { SEAT_CLIP_FILE } from '../../shared/seatcore.js';

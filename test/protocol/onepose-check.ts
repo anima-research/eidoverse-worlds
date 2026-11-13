@@ -7,7 +7,7 @@ import * as rot from "../../shared/rot.js";
 import { worldPose as simPose } from "../../shared/protocol/simlayer.js";
 import { worldPose as treePose } from "../../shared/hierarchy.js";
 import * as particlesim from "../../shared/particlesim.js";
-import * as motioneval from "../../client/lib/motioneval.js";
+import * as motioneval from "../../shared/motioneval.js";
 import * as reach from "../../shared/reach.js";
 import { suite } from "../gate/suite.ts";
 
