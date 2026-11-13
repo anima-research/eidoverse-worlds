@@ -6,14 +6,14 @@
 import { plugin } from "bun";
 import { fileURLToPath } from "node:url";
 import { suite } from "../gate/suite.ts";
+import { stubResolve } from "../harness/stub.ts";
 const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({
   name: "chat-stubs",
   setup(b) {
-    b.onResolve({ filter: /^\.\/core\.js$/ }, () => ({ path: here("../stubs/chat-core-stub.mjs") }));
-    b.onResolve({ filter: /^\.\/base\.js$/ }, () => ({ path: here("../stubs/chat-base-stub.mjs") }));
-    b.onResolve({ filter: /^\.\/(frames|windows)\.js$/ }, () => ({ path: here("../stubs/chat-frames-stub.mjs") }));
-    b.onResolve({ filter: /^\.\/net\.js$/ }, () => ({ path: here("../stubs/chat-history-stub.mjs") }));
+    stubResolve(b, /^(\.\.?\/)+base\.js$/, () => ({ path: here("../stubs/chat-base-stub.mjs") }));
+    stubResolve(b, /^(\.\.?\/)+(frames|windows)\.js$/, () => ({ path: here("../stubs/chat-frames-stub.mjs") }));
+    stubResolve(b, /^(\.\.?\/)+net\.js$/, () => ({ path: here("../stubs/chat-history-stub.mjs") }));
   },
 });
 import { GlobalRegistrator } from "@happy-dom/global-registrator";

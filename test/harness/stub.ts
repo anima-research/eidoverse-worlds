@@ -1,10 +1,11 @@
 // test/harness/stub.ts: a Bun plugin resolver stub that must apply. One that never applied FAILs its suite at exit, naming
 // the filter and where it was registered (nock's scope.done(): a stub whose file moved would otherwise pass vacuously).
-//   stubResolve(b, /^\.\/core\.js$/, () => ({ path: STUB }))     in place of b.onResolve({ filter }, cb), inside plugin({ setup(b) {…} })
+//   stubResolve(b, /^(\.\.?\/)+core\.js$/, () => ({ path: STUB }))     in place of b.onResolve({ filter }, cb), inside plugin({ setup(b) {…} })
 //   stubResolve(b, re, cb, { optional: "why" })                  a stub that may not apply in every run; the why is the one-line reason
 // "Applied" = the resolver returned a result (an importer-conditional resolver that returned undefined did not apply).
 import type { OnResolveArgs, OnResolveResult, PluginBuilder } from "bun";
 import path from "node:path";
+import { appendFileSync } from "node:fs";
 
 type Resolve = (args: OnResolveArgs) => OnResolveResult | undefined | null | Promise<OnResolveResult | undefined | null>;
 const ROOT = path.resolve(import.meta.dir, "../..");
@@ -18,10 +19,18 @@ export function stubResolve(build: PluginBuilder, filter: RegExp, resolve: Resol
   stubs.push(s);
   build.onResolve({ filter }, (args) => {
     const r = resolve(args);
-    if (r instanceof Promise) return r.then((x) => { if (x) s.hits++; return x ?? undefined; });
-    if (r) s.hits++;
+    if (r instanceof Promise) return r.then((x) => { if (x) hit(s, args); return x ?? undefined; });
+    if (r) hit(s, args);
     return r ?? undefined;
   });
+}
+
+// STUB_TRACE=<file>: append one line per application, `where <tab> importer <tab> specifier`, so a run before and after a
+// module move can be diffed: which importer, by basename, still gets which stub
+const TRACE = process.env.STUB_TRACE;
+function hit(s: { hits: number; where: string }, a: OnResolveArgs) {
+  s.hits++;
+  if (TRACE) appendFileSync(TRACE, `${s.where}\t${path.relative(ROOT, a.importer).split(path.sep).join("/")}\t${a.path}\n`);
 }
 
 /** At exit: every non-optional stub that never applied prints a FAIL line and turns a 0 exit into 1. */
