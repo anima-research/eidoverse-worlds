@@ -10,8 +10,11 @@ const padInput = createPadInput();
 let available = () => true;
 let pad = padInput.sample([]);
 export function setInputAvailable(fn) { available = fn; }
+// A MODAL dialog owns the keys (a confirm sheet, the rename box); a non-modal
+// one (the nameplate card, a status chip's popover) sits beside the world, and
+// focus resting in it must not freeze the walk (PR #171 review).
 export const typing = () => Boolean(document.activeElement?.closest(
-  'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="dialog"], dialog'));
+  'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="dialog"][aria-modal="true"], dialog[open]'));
 // NOT memoised, deliberately (PR #171 review, item 5). On the frame loop this
 // is called ONCE — pollInput — plus once more from look() only while a stick
 // is actually deflected; every other caller here is an event handler, where a

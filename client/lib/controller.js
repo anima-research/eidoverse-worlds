@@ -29,6 +29,7 @@ import { waterAt as volumeAt, waterTime, levelAt, speedAt } from './watervolumes
 import { swimStep, waveHeight } from '../../shared/water.js';
 import { keys, touchState, inputBlocked, movementInput, pollInput, noteInput, requestAction } from './input.js';
 import { moving as isMoving } from '../../shared/input.js';
+import { escapeDismisses } from './windows.js';
 export { keys } from './input.js';
 import { register as registerAction } from './actions.js';
 import {
@@ -349,8 +350,19 @@ export function setPointerClaim(fn) { pointerClaimed = fn; }
 
 // ---------------------------------------------------------------- keyboard
 
+// An Escape that closes a menu, a popover or an overlay is THAT closer's press
+// (PR #171 review). Those closers are window/document keydown listeners of
+// their own (ui.js, chat.js, dropdown.js, statuschips.js, panels.js), some of
+// which run before this one and none of which decline the default; once they
+// have run there is nothing left to see. So the question is asked here, in the
+// capture phase, before any of them: one press closes the menu and does
+// nothing else — no deselect, no stand-up.
+const escDismissed = new WeakSet();
+addEventListener('keydown', (e) => { if (e.code === 'Escape' && escapeDismisses()) escDismissed.add(e); }, true);
+
 addEventListener('keydown', (e) => {
   if (inputBlocked()) return;
+  if (escDismissed.has(e)) return;
   noteInput('keyboard');
   if (e.key === 'Enter') { chat.open(); e.preventDefault(); return; }
   if (e.code === 'Space') e.preventDefault();      // space scrolls the page otherwise
@@ -387,11 +399,18 @@ bus.on('input-device', kind => {
   padHintShown = true;
   flashHint('controller — left stick move · right stick look · A / × jump · X / □ use · B / ○ cancel · left stick click run', 6000);
 });
+// `cancel` is a chain, most transient state first, ONE rung per press (PR #171
+// review): photo mode is left before the body moves, so on a seat one Escape
+// (or B / ○) leaves photo mode and the next stands you up. Dropping pointer
+// lock is not a rung — it is the mouse being handed back, never a state the
+// press is "for". The last rung is standing: a ground posture here, and a
+// mounted seat in localbody.js, which hears `cancel-stand` and nothing else.
 bus.on('input-action', action => {
   if (action !== 'cancel') return;
   if (document.pointerLockElement === canvas) document.exitPointerLock();
-  if (photoMode) togglePhotoMode();
+  if (photoMode) { togglePhotoMode(); return; }
   posture = null; myState.seat = null;
+  bus.emit('cancel-stand');
 });
 
 // Polled before every embodiment path, including mounted and downed bodies.

@@ -28,6 +28,7 @@ import { strict as assert } from 'node:assert';
 import { mock } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
+import { until } from './protocol/wait.ts';
 // three by explicit path: tools/ sits outside client/, where the install is
 // (see tools/core-stub.mjs) — a bare specifier only resolves with a root copy.
 import * as THREE from '../client/node_modules/three/build/three.module.js';
@@ -49,7 +50,8 @@ const entities = new Map<string, any>([['lamp', lamp]]);
 const things = new Map<string, any>();   // id → bag, what useprompt reads through bags()
 let ladder = false;                  // a climb route in reach: E boards it
 
-const REAL = new Set(['edit/selection.js', 'base.js', 'input.js', 'controller.js', 'build.js', 'useprompt.js', 'markup.js']);
+// windows.js is real for escapeDismisses(): which open menus an Escape closes is the very thing under test
+const REAL = new Set(['edit/selection.js', 'base.js', 'input.js', 'controller.js', 'build.js', 'useprompt.js', 'markup.js', 'windows.js']);
 const overrides: Record<string, Record<string, unknown>> = {
   'core.js': { THREE, scene, camera, canvas, renderer: null },
   'ui.js': {
@@ -94,13 +96,16 @@ for (const [file, names] of wanted) {
 
 const { bus } = await import('../client/lib/base.js');
 const { noteInput } = await import('../client/lib/input.js');
-const { myState, setPosture, getPosture } = await import('../client/lib/controller.js');
+const { myState, setPosture, getPosture, togglePhotoMode } = await import('../client/lib/controller.js');
+const photo = async () => (await import('../client/lib/controller.js')).photoMode;   // a live binding, read fresh
 const { setBuildMode, isBuilding, select, hasSelection } = await import('../client/lib/build.js');
 const { initUsePrompt } = await import('../client/lib/useprompt.js');
 initUsePrompt({ myPos: () => myState.pos, camera, editing: () => isBuilding(), busy: () => false });
 
 const actions: string[] = [];
 bus.on('input-action', (a: string) => actions.push(a));
+let stands = 0;                      // localbody.js's mounted-seat dismount listens here
+bus.on('cancel-stand', () => { stands++; });
 const escape = () => {
   const e = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, code: 'Escape', key: 'Escape' });
   window.dispatchEvent(e);
@@ -153,6 +158,55 @@ assert.equal(getPosture(), null);
 assert.equal(hasSelection(), true, 'and it leaves the editor alone');
 setBuildMode(false, { quiet: true });
 
+// ---- one press, one rung: photo mode goes before the seat --------------------
+// controller.js's cancel used to leave photo mode AND stand you up (and
+// localbody.js dismounted on the same raw cancel). Now the chain stops at the
+// first rung it takes, for the key and the pad alike.
+// the pad section left its selection live (on purpose); a key Escape would deselect it first, which is the chain working
+escape();
+assert.equal(hasSelection(), false, 'fixture: nothing selected');
+for (const press of [() => { escape(); }, () => bus.emit('input-action', 'cancel')]) {
+  stands = 0; sitOnABench();
+  togglePhotoMode();
+  assert.equal(await photo(), true, 'fixture: photo mode on, seated');
+  press();
+  assert.equal(await photo(), false, 'the first press leaves photo mode');
+  assert.equal(myState.seat, 'bench', 'and only that: still seated');
+  assert.equal(getPosture(), 'sit');
+  assert.equal(stands, 0, 'no mounted-seat dismount either');
+  press();
+  assert.equal(myState.seat, null, 'the second press stands you up');
+  assert.equal(stands, 1);
+}
+
+// ---- an Escape that closes a menu does nothing else -------------------------
+// ui.js / chat.js / dropdown.js close their own pops on a window keydown, and
+// they run before the controller without declining the default. Here a closer
+// registered FIRST stands in for them: by the time the controller hears the
+// press, the menu is already gone.
+const menu = document.createElement('div');
+menu.className = 'dd-pop';
+// (registered after the controller, so on document's capture phase to run first). A real press targets the focused
+// element and passes window → document → body, so these presses do too (escape() above fires at window alone).
+document.addEventListener('keydown', (k) => { if (k.code === 'Escape') menu.remove(); }, true);
+const escapeAtBody = () => document.body.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, code: 'Escape', key: 'Escape' }));
+for (const [what, open] of [['a dropdown', () => document.body.append(menu)],
+                            ['an overlay', () => { menu.className = 'scrim open'; document.body.append(menu); }]] as const) {
+  actions.length = 0; stands = 0; sitOnABench();
+  open();
+  escapeAtBody();
+  assert.equal(menu.isConnected, false, `fixture: the press closed ${what}`);
+  assert.deepEqual(actions, [], `closing ${what} is not also a cancel`);
+  assert.equal(myState.seat, 'bench', `closing ${what} leaves you seated`);
+  assert.equal(stands, 0);
+}
+sitOnABench(); setBuildMode(true, { quiet: true }); select('lamp');
+menu.className = 'dd-pop'; document.body.append(menu);
+escapeAtBody();
+assert.equal(hasSelection(), true, 'closing a menu while building does not also deselect');
+setBuildMode(false, { quiet: true });
+myState.seat = null; setPosture(null);
+
 // ---- item 6: the legend is taught once -------------------------------------
 
 const legends = () => hints.filter(h => h.startsWith('controller —')).length;
@@ -171,21 +225,23 @@ const pressE = () => {
   window.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, code: 'KeyE', key: 'e' }));
   window.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, code: 'KeyE', key: 'e' }));
 };
-const settle = () => new Promise(r => setTimeout(r, 0));
-ladder = true; pressE(); await settle();
-assert.deepEqual(uses, [], 'E at a ladder climbs and does not also use');
-ladder = false; pressE(); await settle();
-assert.deepEqual(uses, ['lamp:toggle'], 'E with no ladder is the contextual use');
+// A use is async (useNearest awaits the authority), so a press that must NOT use is followed by one that must, and
+// the wait is for that one (wait.ts until, no fixed sleep): had the first used, it would have landed first.
+const used = (n: number) => until(`${n} use(s)`, () => uses.length >= n || null, { ms: 2000 });
+ladder = true; pressE();
+ladder = false; pressE(); await used(1);
+assert.deepEqual(uses, ['lamp:toggle'], 'E at a ladder climbs and does not also use; E with no ladder is the contextual use');
 
 // ---- X / □ is the same act as E --------------------------------------------
 
 uses.length = 0;
-bus.emit('input-action', 'use'); await settle();
+bus.emit('input-action', 'use'); await used(1);
 assert.deepEqual(uses, ['lamp:toggle'], 'the pad\'s use button uses what E would');
 setBuildMode(true, { quiet: true });
-bus.emit('input-action', 'use'); await settle();
-assert.deepEqual(uses, ['lamp:toggle'], 'and, like E, does nothing while building');
+bus.emit('input-action', 'use');
 setBuildMode(false, { quiet: true });
+bus.emit('input-action', 'use'); await used(2);
+assert.deepEqual(uses, ['lamp:toggle', 'lamp:toggle'], 'and, like E, does nothing while building');
 
 console.log('Escape priority, E arbitration and pad-hint checks passed');
 process.exit(0);   // the DOM shim keeps timers alive

@@ -110,9 +110,11 @@ input.jump = true;
 updateMountedMe(0.016);
 assert.deepEqual(seatCalls[0], ['me', null], 'jump (A / Space) gets you off the seat');
 
-// B / ○ (and an unclaimed Escape) is the explicit get-up: it stands you up from a seat too.
+// B / ○ (and an unclaimed Escape) is the explicit get-up: it stands you up from a seat too, once controller.js's
+// cancel chain reaches its standing rung (`cancel-stand`; photo mode goes first: escape-priority-test).
 seatCalls.length = 0; neutral(); avatarMounts.set('me', { to: 'swing' });
-for (const h of handlers['input-action'] ?? []) h('cancel');
+assert.equal(handlers['input-action'], undefined, 'localbody no longer reads raw cancel (it would skip the chain)');
+for (const h of handlers['cancel-stand'] ?? []) h();
 assert.deepEqual(seatCalls[0], ['me', null], 'cancel (B / ○ / Escape) gets you off the seat');
 
 console.log('Limp/seat input threshold and neutral-latch checks passed');

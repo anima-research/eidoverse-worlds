@@ -116,9 +116,10 @@ export function occupiedBody() {
 // get-up pressed again within ESCAPE_REPEAT_S of its refusal, or X held for ESCAPE_HOLD_S, always gets you up.
 let escapeArmedAt = -Infinity, escapeHeld = 0, escapeTile = false;
 bus.on('escape-hold', (on) => { escapeTile = !!on; });   // the stand tile pressed and held (actionbar.js), as X held
-// B / ○ and an unclaimed Escape (controller.js 'cancel') stand you up from a seat, as the explicit get-up does: a seat
-// that lets you go only when the world does still answers with its hint (and X held is still the way out)
-bus.on('input-action', (a) => { if (a === 'cancel' && avatarMounts.has(CONFIG.name)) dismountMe('menu'); });
+// B / ○ and an unclaimed Escape stand you up from a seat, as the explicit get-up does: a seat that lets you go only
+// when the world does still answers with its hint (and X held is still the way out). controller.js's 'cancel' chain
+// says when standing is the press's rung (`cancel-stand`): after photo mode, never with it.
+bus.on('cancel-stand', () => { if (avatarMounts.has(CONFIG.name)) dismountMe('menu'); });
 // at: where the authority let me go ([x, y, z], its `vacated.at`: claims r10 O1): I stand there, so my body and its track start together
 export function dismountMe(kind = 'menu', at = null) {
   const m = avatarMounts.get(CONFIG.name);
