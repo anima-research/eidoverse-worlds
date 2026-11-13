@@ -668,8 +668,6 @@ export class WorldAgent {
     }
     return { pulseSec: this.activityPulseMs / 1000, radiusM: this.activityRadiusM };
   }
-  private terrain: { heightAt(x: number, z: number): number } | null = null;
-  private terrainSrc: string | null = null;
   /** The folded sky (same fold as the sequencer's) — worldInfo.sky is
    *  DERIVED from this at look() time, so the described hour/weather is the
    *  one the forecast implies NOW, not the one at the last log entry. */
@@ -1759,6 +1757,34 @@ export class WorldAgent {
     return out;
   }
 
+  /** The standing height the water is measured against: the current body's, once measured; until then an
+   *  ordinary adult's (the measurement is one small read of the avatar's header). */
+  stature(): number { return this.bodyH ?? STATURE_FALLBACK; }
+  /** Measure the current body's height (rigbones.ts bodyHeightFor), guarded by generation so a slow reply
+   *  for a body since replaced is never applied. Resolves once this measurement is settled. */
+  measureStature(): Promise<void> {
+    const gen = ++this.statureGen, avatar = this.avatar;
+    this.statureFor = avatar; this.bodyH = null;
+    return bodyHeightFor(this.httpBase, avatar).catch(() => null).then((h) => {
+      if (gen === this.statureGen) this.bodyH = h ?? STATURE_FALLBACK;
+    });
+  }
+  /** Leave the floating column: the next float starts from wherever the body then is. */
+  private endFloat() { this.float = { on: false, y: 0, vy: 0 }; }
+
+  /** This world's water for the ragdoll sim (physics.ts setWaterField) — asserted before every run, like the
+   *  ground, because the sim module is process state and one process can host agents in several worlds. */
+  private waterFieldNow() {
+    const A = this.waterKinds, level = this.water?.level;
+    if (!A || level == null) return null;
+    if (this.waterFieldMemo?.A !== A || this.waterFieldMemo.f.level !== level)   // read every physics step: build it once
+      this.waterFieldMemo = { A, f: { level, sample: (x: number, z: number) => A.sample(x, z), time: () => waveClock(this.serverNow()) } };
+    return this.waterFieldMemo.f;
+  }
+  private waterFieldMemo: { A: unknown; f: { level: number; sample: (x: number, z: number) => unknown; time: () => number } } | null = null;
+  private terrain: { heightAt(x: number, z: number): number } | null = null;
+  private terrainSrc: string | null = null;
+
   private terrainRev = 0;       // build generation: bumped when a terrain request starts
   private navTerrainRev = 0;    // committed terrain generation: route grids key on this
   /** A heightmap terrain received but not yet buildable — its grid has not arrived. The last ground stands
@@ -1811,32 +1837,6 @@ export class WorldAgent {
     // not one height sampled at the fall site
     void setHeightField((x, z) => this.heightAt(x, z));
   }
-
-  /** The standing height the water is measured against: the current body's, once measured; until then an
-   *  ordinary adult's (the measurement is one small read of the avatar's header). */
-  stature(): number { return this.bodyH ?? STATURE_FALLBACK; }
-  /** Measure the current body's height (rigbones.ts bodyHeightFor), guarded by generation so a slow reply
-   *  for a body since replaced is never applied. Resolves once this measurement is settled. */
-  measureStature(): Promise<void> {
-    const gen = ++this.statureGen, avatar = this.avatar;
-    this.statureFor = avatar; this.bodyH = null;
-    return bodyHeightFor(this.httpBase, avatar).catch(() => null).then((h) => {
-      if (gen === this.statureGen) this.bodyH = h ?? STATURE_FALLBACK;
-    });
-  }
-  /** Leave the floating column: the next float starts from wherever the body then is. */
-  private endFloat() { this.float = { on: false, y: 0, vy: 0 }; }
-
-  /** This world's water for the ragdoll sim (physics.ts setWaterField) — asserted before every run, like the
-   *  ground, because the sim module is process state and one process can host agents in several worlds. */
-  private waterFieldNow() {
-    const A = this.waterKinds, level = this.water?.level;
-    if (!A || level == null) return null;
-    if (this.waterFieldMemo?.A !== A || this.waterFieldMemo.f.level !== level)   // read every physics step: build it once
-      this.waterFieldMemo = { A, f: { level, sample: (x: number, z: number) => A.sample(x, z), time: () => waveClock(this.serverNow()) } };
-    return this.waterFieldMemo.f;
-  }
-  private waterFieldMemo: { A: unknown; f: { level: number; sample: (x: number, z: number) => unknown; time: () => number } } | null = null;
 
   heightAt(x: number, z: number): number {
     return this.terrain ? this.terrain.heightAt(x, z) : 0;
@@ -1975,11 +1975,6 @@ export class WorldAgent {
 
   private geomCache = new Map<string, Promise<any | null>>();
   private supportIds = new Map<string, string[]>();
-  /** A pre-join refusal's words, until its close says whether it is final (onclose). */
-  private joinRefused: string | null = null;
-  /** How long until the next dial after a drop or a full world (shared/redial.js: the browser's rule); reset by a join. */
-  private redial = redialer();
-  private removedUntil: number | null = null;   // a moderation removal's end (a kick's cooldown): reconnect then   // entity id -> registered box ids
   /** This agent's claim token on shared support boxes, per INSTANCE: two agents
    *  can share a name across a reconnect, and must not release each other's floors. */
   private readonly supportHolder = `agent#${++WorldAgent.holderSeq}`;
@@ -2179,6 +2174,11 @@ export class WorldAgent {
     for (const bid of this.supportIds.get(id) ?? []) void removeSupport(this.supportHolder, bid);
     this.supportIds.delete(id);
   }
+  /** A pre-join refusal's words, until its close says whether it is final (onclose). */
+  private joinRefused: string | null = null;
+  /** How long until the next dial after a drop or a full world (shared/redial.js: the browser's rule); reset by a join. */
+  private redial = redialer();
+  private removedUntil: number | null = null;   // a moderation removal's end (a kick's cooldown): reconnect then   // entity id -> registered box ids
 
   /** Every collider query a tick makes is about this agent's own world. */
   private tick() { inWorld(this.world, () => this.tickInWorld()); }
