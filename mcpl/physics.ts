@@ -16,6 +16,7 @@
 
 import { plugin } from "bun";
 import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
 import { poseChannels } from "../shared/humanoid.js";
 import { clampBodyScale } from "../shared/presencewire.js";
 import { isFiniteVec3 } from "../shared/protocol/is.js";
@@ -29,6 +30,7 @@ import { colliderFor } from "../shared/bodyscale.js";
 import { NAV_NUDGE, type NavProbe } from "../shared/navgrid.js";
 
 const HEADLESS_CORE = fileURLToPath(new URL("./headless-core.mjs", import.meta.url));
+const CLIENT_CORE = fileURLToPath(new URL("../client/lib/core.js", import.meta.url));
 
 let simMods: {
   Ragdoll: any;
@@ -52,7 +54,8 @@ function loadSim(): Promise<typeof simMods> {
       plugin({
         name: "headless-body-core",
         setup(build) {
-          build.onResolve({ filter: /^\.\/core\.js$/ }, () => ({ path: HEADLESS_CORE }));
+          // ./core.js as before, and the client's core.js asked for from a client/lib folder (../core.js, ../../core.js)
+          build.onResolve({ filter: /^(\.\.?\/)+core\.js$/ }, (a) => (a.path === "./core.js" || resolve(dirname(a.importer), a.path) === CLIENT_CORE ? { path: HEADLESS_CORE } : undefined));
         },
       });
       const core = await import("./headless-core.mjs");
