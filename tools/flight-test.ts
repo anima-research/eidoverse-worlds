@@ -659,7 +659,8 @@ console.log('\nDEAD WINGS ARE SAID, ONCE (flightbody.js: "says so, loudly")');
   const TAILED = ['Hips', 'Spine', 'Head', 'Swing_Tail', 'Swing_Tail_1', 'Drawing', 'Skirt_Flowing'];
   check('a bone that merely contains "wing" (Swing_Tail, Drawing, Skirt_Flowing) is not a wing',
         inspectBody(TAILED).strays.length === 0 && note(TAILED) === null, `${inspectBody(TAILED).strays}; ${note(TAILED)}`);
-  check('...while LeftWing, WING_L and Wings are', inspectBody(['LeftWing', 'WING_L', 'Wings']).strays.length === 3, String(inspectBody(['LeftWing', 'WING_L', 'Wings']).strays));
+  const WINGY = ['LeftWing', 'WING_L', 'Wings', 'LWing', 'RWing', 'leftwing', 'wing_r'];
+  check('...while LeftWing, WING_L, Wings, LWing, RWing, leftwing and wing_r are', inspectBody(WINGY).strays.length === WINGY.length, String(inspectBody(WINGY).strays));
   check('a body with no wings has no dead wings to mention', note(['Hips', 'Spine', 'Head']) === null, String(note(['Hips', 'Spine', 'Head'])));
   check('a properly rigged one has nothing to say', note(WINGS) === null, String(note(WINGS)));
 }
@@ -695,6 +696,8 @@ console.log('\nDEFAULT-DENY -- a compatible rig is evidence, never permission');
   check('being the world OWNER does not grant flight',
         !resolveFlight(withRights({ role: 'owner', gen: true, fly: false }),
                        { identity: 'm', avatar: av }).enabled);
+  check('only fly === true grants: fly: 1, fly: "true" and fly: {} are no',
+        [1, 'true', {}].every((fly) => !resolveFlight(withRights({ role: 'member', fly }), { identity: 'm' }).enabled));
   check('an explicit world grant DOES -- and only then',
         resolveFlight(withRights({ role: 'member', gen: false, fly: true }),
                       { identity: 'm', avatar: av }).enabled);

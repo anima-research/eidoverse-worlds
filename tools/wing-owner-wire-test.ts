@@ -96,5 +96,26 @@ bus.emit('key',{code:'KeyF',repeat:false});
 const up=controller.flying();
 controller.armFlight([], 'owner');   // a swap mid-flight, to a wingless body
 check('a swap never ends a flight (lead 11-12): the wingless body flies on', up===true && controller.flying()===true, `took off ${up}; flying ${controller.flying()}; ${hints.at(-1)}`);
+bus.emit('key',{code:'KeyF',repeat:false});   // land
+console.log('\nARMING FROM THE BODY ON SCREEN (mybody.js setMe -> controller.armFlightForBody)');
+const WINGS=['L_Wing_Upper','L_Wing_Upper_1','R_Wing_Upper','R_Wing_Upper_1','L_Wing_Lower','R_Wing_Lower'];
+const bodyOf=(bones:string[])=>({ vrm:{ scene:{ traverse:(f:Function)=>bones.forEach((name)=>f({ isBone:true, name })) } } });
+const arm=(av:any)=>controller.armFlightForBody?.(av);
+const firstSay=arm(bodyOf(WINGS));
+check('arming a winged body with the grant says flight is available', /^flight available on this body — press F$/.test(firstSay??''), String(firstSay));
+check('...once: the same body armed again says nothing', arm(bodyOf(WINGS))==='', String(arm(bodyOf(WINGS))));
+pressG();
+check('(setup) the winged body folds', controller.folded()===true);
+arm({ vrm:{ scene:{ traverse(){ throw new Error('unreadable'); } } } });
+check('a body whose skeleton read throws is unknown: the fold is kept', controller.folded()===true);
+arm({});
+check('a body with no vrm scene (a capsule) is unknown: the fold is kept', controller.folded()===true);
+bus.emit('key',{code:'KeyF',repeat:false});
+check("F with a fold held on an unread body doesn't claim wings it hasn't read", /a fold is held/.test(hints.at(-1)??'') && /weren't read/.test(hints.at(-1)??'') && !/wings are folded/.test(hints.at(-1)??''), hints.at(-1));
+const bareSay=arm(bodyOf(['Hips','Spine','Head']));
+check('a read wingless body releases the fold', controller.folded()===false && /posture released — this body has no wings/.test(hints.at(-1)??''), hints.at(-1));
+check('...and, its flight unchanged, says nothing new', bareSay==='', String(bareSay));
+const beeSay=arm(bodyOf(['Hips','Spine','Head','Wings','Wing_Left_High_Base','Wing_Left_High1']));
+check("a mis-named wing rig is told why its wings won't move", /^flight available on this body — press F; its wings won't animate/.test(beeSay??''), String(beeSay));
 console.log(`\n${pass} passed, ${failures} failed`);
 process.exit(failures?1:0);

@@ -177,10 +177,11 @@ const shut: any = new WorldAgent({ name: 'shut', world: 'bone-bench' });
 shut.avatar = 'stalled.vrm'; shut.myRights = { role: 'builder', fly: true }; shut.wingsFolded = true;
 const t0 = Date.now();
 r = await within(shut.takeOff(), 15000);
-check("a folded one answers once the read times out, keeping the fold it can't check", /folded/.test(text(r)) && shut.wingsFolded === true && Date.now() - t0 < 12000, `${Date.now() - t0} ms: ${text(r)}`);
+check("a folded one answers once the read times out, keeping the fold it can't check, and not claiming wings it hasn't read",
+  /a fold is held/.test(text(r)) && /weren't read/.test(text(r)) && !/your wings are folded/.test(text(r)) && shut.wingsFolded === true && Date.now() - t0 < 12000, `${Date.now() - t0} ms: ${text(r)}`);
 before = fetches;
 r = await within(shut.takeOff(), 1000);
-check('...and the timed-out read is kept: the next take_off neither refetches nor waits', fetches === before && /folded/.test(text(r)), `${fetches - before} more: ${text(r)}`);
+check('...and the timed-out read is kept: the next take_off neither refetches nor waits', fetches === before && /a fold is held/.test(text(r)), `${fetches - before} more: ${text(r)}`);
 
 console.log('\nA SWAP RELEASES A FOLD WITHOUT BEING ASKED');
 const kick: any = new WorldAgent({ name: 'kick', world: 'bone-bench' });
@@ -206,6 +207,31 @@ console.log('\nA RESTORED FOLD FITS THE BODY');
   (globalThis as any).WebSocket = RealWS;
   check('a fold remembered from a winged body is not restored onto this wingless one', back.restoredPose === true && back.wingsFolded === false, `restored ${back.restoredPose}, folded ${back.wingsFolded}`);
 }
+
+console.log('\nA FRESH JOIN FITS A RESTORED FOLD');
+{
+  const RealWS = globalThis.WebSocket;
+  class FakeWS { readyState = 1; onopen: any; onclose: any; onmessage: any; onerror: any; send() {} close() {} }
+  (globalThis as any).WebSocket = FakeWS;
+  const fresh: any = new WorldAgent({ name: 'fresh', world: 'bone-bench' });
+  fresh.avatar = 'wingless.vrm';
+  serve = async () => new Response(glb(['Hips', 'Spine', 'Head']));
+  const asked = fetches;
+  fresh.connect().catch(() => {});
+  await fresh.ws.onmessage({ data: JSON.stringify({ type: 'snapshot', present: [], restore: { p: [3, 0, 4], yaw: 0, poses: ['wings-folded'] } }) });
+  (globalThis as any).WebSocket = RealWS;
+  const released = await tryUntil('the restore reads the body and releases the fold', () => fresh.wingsFolded === false, { ms: 2000, step: 5 });
+  check('a fold restored with the bones not yet read (first join) is released once they are, by one read', released && fresh.wingsFolded === false && fetches === asked + 1, `folded ${fresh.wingsFolded}; ${fetches - asked} reads`);
+}
+
+console.log('\nA TAKE-OFF THAT RELEASES A FOLD SAYS SO');
+const said_: any = new WorldAgent({ name: 'said', world: 'bone-bench' });
+said_.avatar = 'wingless.vrm'; said_.myRights = { role: 'builder', fly: true }; said_.wingsFolded = true;
+serve = async () => new Response(glb(['Hips', 'Spine', 'Head']));
+r = await said_.takeOff();
+check('take_off on a wingless body carrying a fold flies, and says the fold was released, as the browser does',
+  /^took off/.test(text(r)) && /folded-wing posture released — this body has no wings/.test(text(r)) && said_.wingsFolded === false, text(r));
+check("flight_status of a wingless flier doesn't report wings it hasn't got", !/\bwings (OPEN|FOLDED|LIMP)\b/.test(said_.flightStatus()), said_.flightStatus());
 
 console.warn = realWarn;
 console.log(`\n${pass} passed, ${fail} failed`);
