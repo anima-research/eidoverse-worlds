@@ -3390,6 +3390,7 @@ export class WorldAgent {
   /** glide_to (spec §1). Free, and lands SHORT honestly if the polar runs out. `took`, when given, is told the course
    *  this glide set and how its wait ended, for land_at to tell whether a later call has taken the flight over. */
   async glideTo(x: number, z: number, took?: { course?: number; got?: string }): Promise<ActResult> {
+    await this.loadBodyBones();
     const cap = this.flightAllowed();
     if (!cap.ok) return refused(`you cannot fly here — ${cap.why}`);
     if (!this.flight || this.flight.phase === "GROUND" || this.flight.phase === "LANDED") {
@@ -3445,6 +3446,7 @@ export class WorldAgent {
 
   /** climb_to (spec §1). -1 stamina/metre; an empty pool forces a glide down. */
   async climbTo(alt: number): Promise<ActResult> {
+    await this.loadBodyBones();
     const cap = this.flightAllowed();
     if (!cap.ok) return refused(`you cannot fly here — ${cap.why}`);
     if (!this.flight || this.flight.phase === "GROUND" || this.flight.phase === "LANDED") {
@@ -3527,6 +3529,7 @@ export class WorldAgent {
 
   /** land_at (x,z). Descend, arrive, and hand the body back to walking. */
   async landAt(x: number, z: number): Promise<ActResult> {
+    await this.loadBodyBones();
     const cap = this.flightAllowed();
     if (!cap.ok) return refused(`you cannot fly here — ${cap.why}`);
     if (!this.flight || this.flight.phase === "GROUND" || this.flight.phase === "LANDED") {
