@@ -17,7 +17,7 @@ plugin({
     stubResolve(b, /^(\.\.?\/)+core\.js$/, () => ({ path: here("../stubs/core-stub.mjs") }));
     stubResolve(b, /^(\.\.?\/)+base\.js$/, () => ({ path: here("../stubs/core-stub.mjs") }));
     stubResolve(b, /^(\.\.?\/)+controller\.js$/, () => ({ path: here("../stubs/armsolve-xr-stub.mjs") }));
-    stubResolve(b, /^(\.\.?\/)+(xr\/)?xr\.js$/, () => ({ path: here("../stubs/armsolve-xr-stub.mjs") }));
+    stubResolve(b, /^(\.\.?\/)+(xr\/)?xr(-scale|-fingercurl)?\.js$/, () => ({ path: here("../stubs/armsolve-xr-stub.mjs") }));
   },
 });
 globalThis.location ??= { search: "" } as any;   // xrbody reads ?torsoplay at import

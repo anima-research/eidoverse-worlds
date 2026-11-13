@@ -37,9 +37,9 @@ const ROWS: Row[] = [
   { name: "the tick hands setClip the selected opts, no fade re-derived at the call site", file: "client/lib/controller.js",
     scope: (s) => s.split("\n").find((l) => /me\.setClip\([^)]*,[^)]*,/.test(l)) ?? "", must: [/\.opts\s*\)/], not: [[/fade:/, "fade: 0.2"]] },
   // finger-curl: the filter's shape (its executed model and constants stay in finger-curl-test)
-  { name: "sampleFingerCurl consults elapsed time, a speed-driven cutoff and a dt clamp", file: "client/lib/xr/xr.js", scope: fnBody("function sampleFingerCurl()"),
+  { name: "sampleFingerCurl consults elapsed time, a speed-driven cutoff and a dt clamp", file: "client/lib/xr/xr-fingercurl.js", scope: fnBody("function sampleFingerCurl()"),
     must: [/performance\.now\(\)/, /oneEuroAlpha\(/, /CURL_MIN_CUTOFF \+ CURL_BETA \* Math\.abs\(st\.dx\)/, /Math\.min\(0\.1,/] },
-  { name: "no hard jump/threshold branch survives in the filter", file: "client/lib/xr/xr.js", scope: fnBody("function sampleFingerCurl()"),
+  { name: "no hard jump/threshold branch survives in the filter", file: "client/lib/xr/xr-fingercurl.js", scope: fnBody("function sampleFingerCurl()"),
     must: [/oneEuroAlpha\(/], not: [[/\? raw :/, "const v = big ? raw : st.x;"], [/CURL_JUMP/, "if (d > CURL_JUMP) st.x = raw;"]] },
   // bodies-wear: the restored wear button is not a no-op
   { name: "switchAvatar's same-path early return exempts the capsule", file: "client/lib/mybody.js", must: [/if \(path === myAvatarPath && !me\?\.isCapsule\) return;/] },

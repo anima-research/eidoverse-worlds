@@ -9,7 +9,9 @@
 import { THREE, renderer } from '../core.js';
 import { CONFIG, tee } from '../base.js';
 import { myState } from '../controller.js';
-import { isPresenting, puppetScale, xrRig, xrHands, xrFingerCurl, syncRigToBody, applyTurnEarly } from './xr.js';
+import { isPresenting, xrRig, xrHands, syncRigToBody, applyTurnEarly } from './xr.js';
+import { puppetScale } from './xr-scale.js';
+import { xrFingerCurl } from './xr-fingercurl.js';
 
 let getSelf = () => null;
 let hooked = null;

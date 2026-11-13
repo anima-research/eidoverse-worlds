@@ -40,6 +40,8 @@ import { perf } from '../perf.js';
 import { renderCensusTake, renderCensusTick, renderCensusPeek, setXRCurtain, drawStats } from '../render.js';
 import { warm, P_AMBIENT } from '../warmqueue.js';
 import { xrPrefs, xrResScale } from './xr-prefs.js';
+import { CURL_PROBE, curlProbeTake, sampleFingerCurl, bindCurlSource } from './xr-fingercurl.js';
+import { scaleState, puppetScale, avatarEyeY, loadSavedScale, sampleDeviceScale, bindScaleHost } from './xr-scale.js';
 
 // ---- self-body in first person: hide your own head and label, keep the body ---------------
 let getSelf = () => null;
@@ -82,47 +84,7 @@ const lastGood = new THREE.Vector3();
 const rig = new THREE.Group();
 export const xrRig = () => rig;   // xrbody.js scales tracked targets about it
 export const xrHands = () => hands;   // { left, right }: { grip, ray, … } — xrbody.js reads grip world poses for arm IK
-// finger curl surrogate: trigger value → index, grip value → the other three
-const fingerCurl = { left: { index: 0, grip: 0 }, right: { index: 0, grip: 0 } };
-export const xrFingerCurl = () => fingerCurl;
-// curls go through a 1€ filter (Casiez, Roussel & Vogel, CHI 2012): the cutoff rises with the finger's speed, so
-// rest is smooth and a squeeze doesn't lag. test/client/finger-curl-test.mjs.
-const CURL_MIN_CUTOFF = 2.0;   // Hz: lower = quieter at rest
-const CURL_BETA = 3.0;         // how hard the cutoff opens with speed: higher = less lag, more noise
-const CURL_D_CUTOFF = 1.0;     // Hz, for the speed estimate itself
-const CURL_PROBE = CONFIG.params.has('curlprobe');
-const curlProbe = { left: { index: { last: null, peak: 0, sum: 0, n: 0 }, grip: { last: null, peak: 0, sum: 0, n: 0 } },
-                    right: { index: { last: null, peak: 0, sum: 0, n: 0 }, grip: { last: null, peak: 0, sum: 0, n: 0 } } };
-function curlProbeTake() { const out = {};
-  for (const h of ['left', 'right']) for (const k of ['index', 'grip']) { const p = curlProbe[h][k];
-    if (p.n) out[`${h[0]}${k[0]}`] = [+p.peak.toFixed(4), +(p.sum / p.n).toFixed(4), p.n];
-    p.peak = 0; p.sum = 0; p.n = 0; }
-  return out; }
-let curlLast = 0;
-const curlState = { left: { index: null, grip: null }, right: { index: null, grip: null } };
-const oneEuroAlpha = (cutoffHz, dt) => { const te = 1 / (2 * Math.PI * cutoffHz); return 1 / (1 + te / dt); };
-function sampleFingerCurl() {
-  const now = performance.now();
-  const dt = curlLast ? Math.min(0.1, (now - curlLast) / 1000) : 0;   // clamp: a stall must not teleport the pose
-  curlLast = now;
-  for (const hand of ['left', 'right']) {
-    const gp = sourceFor(hand)?.gamepad; const b = gp?.buttons;
-    if (!b) continue;
-    for (const [key, i] of [['index', 0], ['grip', 1]]) {
-      const raw = b[i]?.value ?? (b[i]?.pressed ? 1 : 0);
-      if (CURL_PROBE) { const p = curlProbe[hand][key];   // RAW jitter, so tuning is measured not felt
-        if (p.last !== null) { const d = Math.abs(raw - p.last); if (d > 0 && d < 0.12) { p.peak = Math.max(p.peak, d); p.sum += d; p.n++; } }
-        p.last = raw; }
-      let st = curlState[hand][key];
-      if (!st || dt <= 0) { curlState[hand][key] = st || { x: raw, dx: 0 }; fingerCurl[hand][key] = st ? st.x : raw; continue; }
-      const dRaw = (raw - st.x) / dt;                                  // speed, from the FILTERED previous value
-      st.dx += oneEuroAlpha(CURL_D_CUTOFF, dt) * (dRaw - st.dx);       // smooth the speed estimate too
-      st.x += oneEuroAlpha(CURL_MIN_CUTOFF + CURL_BETA * Math.abs(st.dx), dt) * (raw - st.x);
-      fingerCurl[hand][key] = st.x;
-    }
-  }
-
-}
+bindCurlSource(sourceFor);   // the finger curl (xr-fingercurl.js) reads the gamepads through the hands' sourceFor
 rig.name = 'xr-rig';
 let presenting = false;
 // ?vrprobe=1: one tee line per 5 s while presenting. cpu near 1000/fps = CPU-bound; low fps, small cpu = GPU/compositor
@@ -170,56 +132,7 @@ let frameClock = null;   // the owned clock takeover for the live session
 let exitVeil = null;
 let floorSpace = null;              // 'local-floor' | 'bounded-floor' | null (fell back to 'local')
 
-// what the device scale reads of the session and the self body: passed in (xr-scale.js after the split), never read
-const scaleHost = { presenting: () => presenting, self: () => getSelf() };
-// ---- device scale (Basis BasisHeightDriver: the avatar is scaled to the player)
-// k = avatarEyeY / median of the first 120 HMD heights (> 0.5 m), clamped .6–1.6, saved per avatar. The puppet is
-// scaled (vrm.scene.scale = 1/k), never the tracking, so hands sit on the controllers. Restored on session end.
-const SCALE_LS = 'ew-xr-scale';
-let wornName = '';   // the per-body key for a saved scale
-const scaleState = { k: 1, source: 'fallback', samples: [], eyeY: null, locked: false, firstAt: 0 };
-// a body swap while presenting re-measures: the new body must not wear the old body's ratio
-bus.on('avatar-worn', (v) => { wornName = wornNameOf(v); if (!scaleHost.presenting()) return; scaleState.samples.length = 0; scaleState.locked = false; scaleState.firstAt = 0; scaleState.k = 1; scaleState.source = 'fallback'; loadSavedScale(); tee('[xr] body swapped while presenting — device scale re-measured'); });
-const xrScale = () => ({ ...scaleState, samples: scaleState.samples.length });
-/** The multiplier the self puppet wears while presenting (Basis: avatar scaled to the player). 1 when unmeasured. */
-export const puppetScale = () => (scaleHost.presenting() && scaleState.k > 0 ? 1 / scaleState.k : 1);
-// harness hook (?xrsim only): feed HMD heights without waiting on a slow headless frame rate
-export const xrSimSample = (y) => { if (CONFIG.params.has('xrsim')) sampleDeviceScale(y); };
-function avatarEyeY() {
-  const av = scaleHost.self(); const h = av?.vrm?.humanoid;
-  if (!h) return null;
-  const root = av.vrm.scene.getWorldPosition(new THREE.Vector3()).y;
-  const ps = av.vrm.scene.scale.y || 1;   // authored height: undo any puppet scale the body already wears
-  const eye = h.getNormalizedBoneNode?.('leftEye') ?? h.getNormalizedBoneNode?.('rightEye');
-  if (eye) return (eye.getWorldPosition(new THREE.Vector3()).y - root) / ps;
-  const head = h.getNormalizedBoneNode?.('head');
-  return head ? (head.getWorldPosition(new THREE.Vector3()).y - root) / ps + 0.06 : null;   // eyes ≈ 6 cm above the head joint
-}
-function loadSavedScale() {
-  if (!wornName) return;   // no body yet: never a '' key
-  try { const all = JSON.parse(localStorage.getItem(SCALE_LS) || '{}'); const name = wornName;
-    const v = all[name]; if (v && v.k > 0.5 && v.k < 1.7) { scaleState.k = v.k; scaleState.source = 'saved'; scaleState.eyeY = v.eyeY ?? null; } } catch {}
-}
-function saveScale() {
-  if (!wornName) return;
-  try { const all = JSON.parse(localStorage.getItem(SCALE_LS) || '{}'); const name = wornName;
-    all[name] = { k: scaleState.k, eyeY: scaleState.eyeY, t: Date.now() }; localStorage.setItem(SCALE_LS, JSON.stringify(all)); } catch {}
-}
-function sampleDeviceScale(hmdY) {
-  if (scaleState.locked) return;
-  if (hmdY > 0.5) { if (!scaleState.samples.length) scaleState.firstAt = performance.now(); scaleState.samples.push(hmdY); }
-  // lock at 120 samples, or after 3 s with at least 30: a slow frame rate must not postpone it forever
-  const n = scaleState.samples.length;
-  if (n < 120 && !(n >= 30 && performance.now() - scaleState.firstAt >= 3000)) return;
-  const s = [...scaleState.samples].sort((a, b) => a - b); const med = s[s.length >> 1];
-  const eye = avatarEyeY();
-  scaleState.locked = true;
-  if (!eye || med < 0.5) { tee(`[xr] scale not measured (eye=${eye?.toFixed?.(2)} med=${med.toFixed(2)}) — keeping ${scaleState.source} ${scaleState.k.toFixed(2)}`); return; }
-  scaleState.k = Math.min(1.6, Math.max(0.6, eye / med)); scaleState.source = 'measured'; scaleState.eyeY = eye;
-  saveScale();
-  tee(`[xr] scale=${scaleState.k.toFixed(3)} (measured: avatar eye ${eye.toFixed(2)} m / your eye ${med.toFixed(2)} m, ${s.length} samples)`);
-  bus.emit('xr:scale', xrScale());
-}
+bindScaleHost({ presenting: () => presenting, self: () => getSelf() });   // what the device scale (xr-scale.js) reads of the session
 let session = null;
 export const isPresenting = () => presenting;
 
