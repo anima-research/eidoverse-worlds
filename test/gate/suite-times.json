@@ -26,7 +26,7 @@
  "zone-water": 2.1,
  "climb-env": 1.7,
  "drive": 5,
- "physics-area": 0.9,
+ "physics-volume": 0.9,
  "water-vectors": 0.1,
  "water-import": 2.6,
  "level-dive": 36.4,
