@@ -656,6 +656,10 @@ console.log('\nDEAD WINGS ARE SAID, ONCE (flightbody.js: "says so, loudly")');
   check('so is an all-lowercase one', /won't animate/.test(note(WINGS.map((b) => b.toLowerCase())) ?? ''), note(WINGS.map((b) => b.toLowerCase())));
   check('so is one with too few chains, in those words',
         /1 chain/.test(note(['Hip', 'L_Wing_Upper', 'L_Wing_Upper_1', 'L_Wing_Upper_2', 'L_Wing_Upper_3']) ?? ''));
+  const TAILED = ['Hips', 'Spine', 'Head', 'Swing_Tail', 'Swing_Tail_1', 'Drawing', 'Skirt_Flowing'];
+  check('a bone that merely contains "wing" (Swing_Tail, Drawing, Skirt_Flowing) is not a wing',
+        inspectBody(TAILED).strays.length === 0 && note(TAILED) === null, `${inspectBody(TAILED).strays}; ${note(TAILED)}`);
+  check('...while LeftWing, WING_L and Wings are', inspectBody(['LeftWing', 'WING_L', 'Wings']).strays.length === 3, String(inspectBody(['LeftWing', 'WING_L', 'Wings']).strays));
   check('a body with no wings has no dead wings to mention', note(['Hips', 'Spine', 'Head']) === null, String(note(['Hips', 'Spine', 'Head'])));
   check('a properly rigged one has nothing to say', note(WINGS) === null, String(note(WINGS)));
 }

@@ -98,10 +98,7 @@ check('newly loaded and swapped bodies use one fold-aware owner',
   (mybodySrc.match(/setMe\(/g) ?? []).length >= 3);
 check('browser owner path joins controller state to the semantic wire field',
   /wingsFolded = applyOwnedWingFold\(myState, me, fold\)/.test(controllerSrc));
-check('arming a wingless body releases a carried fold (the browser twin of the agent\'s swap)',
-  /if \(wingsFolded && !inspectBody\(flightBones\)\.canAnimateWings\) setFolded\(false\)/.test(controllerSrc));
-check('browser toggle asks the current rig for physical wing evidence',
-  /inspectBody\(flightBones \?\? \[\]\)\.canAnimateWings/.test(controllerSrc));
+// the browser's rig evidence (a wingless swap releases a fold; G then finds nothing): wing-owner-wire-test, by behaviour
 check('settled pose preserves unknown semantic fields for late join',
   // live readings (mic/hear) are dropped by name; everything else rides the rest spread
   /const \{ (?:\w+: _\w+, )*\.\.\.still \} = withoutOnceAnim\(pose/.test(serverSrc));

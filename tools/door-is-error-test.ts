@@ -33,9 +33,11 @@ const ok = (r: any) => r != null && r.rejected == null && !failed(r);
  *  The checks that need a wait to time out stand in for flightAwait instead (the
  *  climb's and the flare's timeouts, and the cut glide's flare), since a real
  *  one would take its whole budget. */
-const midway = async (agent: any, start: Promise<any>, happen: () => void) => {
-  // A waiter left by an earlier call could answer for this one, so none may be waiting yet.
+const midway = async (agent: any, begin: Promise<any> | (() => Promise<any>), happen: () => void) => {
+  // A waiter left by an earlier call could answer for this one, so none may be waiting yet; a door call is passed as a
+  // thunk, since handleTool runs the act synchronously up to its first await, which may register this call's waiter.
   if (agent.flightWaiters.length) return { rejected: 'a flight waiter from an earlier call was still registered' };
+  const start = typeof begin === 'function' ? begin() : begin;
   await tryUntil('the act registers a flight waiter', () => agent.flightWaiters.length, { ms: 2000, step: 5 });
   // An act that never waited on the flight answered from something else, so no check here may pass on it.
   if (!agent.flightWaiters.length) return { rejected: 'the act registered no flight waiter' };
@@ -349,7 +351,7 @@ for (const altitude of [false, true, '', ' ', 'high', [], {}, Infinity, NaN] as 
     failed(r) && said(r) === 'move {mode: "fly"}: altitude is a number of metres' && ag.flight?.course == null, said(r));
 }
 ag.flight.pos.y = 2;
-r = await midway(ag, door('move', { mode: 'fly', altitude: '5' }), () => { ag.flight.pos.y = ag.flight.course.alt; ag.flight.course.reached = true; });
+r = await midway(ag, () => door('move', { mode: 'fly', altitude: '5' }), () => { ag.flight.pos.y = ag.flight.course.alt; ag.flight.course.reached = true; });
 check('move {mode: "fly", altitude: "5"} climbs to 5 m', ok(r) && /^at 5\.0m/.test(said(r)), said(r));
 // A touchdown within the arrival radius is an arrival; farther off, a shortfall.
 /** A glide from a fresh launch whose real wait settles once the body is down at (x, z), or cut (`phase`). */

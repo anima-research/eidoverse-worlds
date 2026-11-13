@@ -73,11 +73,21 @@ packet=JSON.parse(sent.at(-1));
 check('G publishes an explicit unfold (an empty poses list)', owner.wingsFolded===false && Array.isArray(packet?.pose?.poses) && packet.pose.poses.length===0);
 check('no-grant unfold says propulsion remains unavailable', /propulsion is still not granted/.test(hints.at(-1)??''), hints.at(-1));
 pressG();
+controller.armFlight(null, 'owner'); // a body whose bones couldn't be read (or a capsule): unknown, not "no wings"
+check('an unread body keeps a carried fold', controller.folded()===true && owner.wingsFolded===true);
 controller.armFlight([], 'owner'); // swap to a body with no authored wing chains
-pressG();
 netmod.sendPose(300);
 packet=JSON.parse(sent.at(-1));
-check('a wingless swap can release a carried posture', controller.myState.wingsFolded===false && Array.isArray(packet?.pose?.poses) && !packet.pose.poses.includes('wings-folded'));
-check('the wingless release is truthful', /posture released/.test(hints.at(-1)??''), hints.at(-1));
+check('a wingless swap releases a carried posture, on the wire too', controller.myState.wingsFolded===false && Array.isArray(packet?.pose?.poses) && !packet.pose.poses.includes('wings-folded'));
+check('the wingless release is said, in the words G used to say it', hints.at(-1)==='folded-wing posture released — this body has no wings', hints.at(-1));
+let said=hints.length;
+pressG();
+check('G on the wingless body then has nothing to fold or release', hints.length===said && controller.folded()===false, hints.at(-1));
+controller.setFolded(true);   // a fold restored on rejoin (main.js) onto the wingless body
+check('a fold restored onto a known wingless body is released where it is set', controller.folded()===false && owner.wingsFolded===false);
+controller.armFlight(['L_Wing_Upper','L_Wing_Upper_1','R_Wing_Upper','R_Wing_Upper_1','L_Wing_Lower','R_Wing_Lower'],'owner');
+said=hints.length;
+pressG();
+check('G on a winged body folds again', controller.folded()===true && /wings folded/.test(hints.at(-1)??''), hints.at(-1));
 console.log(`\n${pass} passed, ${failures} failed`);
 process.exit(failures?1:0);
