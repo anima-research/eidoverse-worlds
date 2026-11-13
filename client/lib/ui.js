@@ -11,17 +11,6 @@ import { svg, fsvg, hasFill, rsvg, hasLine } from './icons.js';
 import { html, paint, lineKey, escapeHtml } from './markup.js';
 export { html, markup } from './markup.js';
 
-// section-head emoji → Phosphor fill glyph (menu chrome never rides emoji: platform glyph gaps are silent).
-// The entry id wins over the emoji: the same emoji means different things in different places ('🧱' is
-// build's hammer in catalog.js, but the world panel is not a build panel), so no global emoji remap.
-const ID_ICON = { world: 'planet' };
-const EMOJI_ICON = {
-  '💬': 'chat-circle',
-  '👋': 'hand-waving',
-  '🐞': 'bug',
-  '🧱': 'hammer', '🧍': 'person-arms-spread', '🌿': 'plant', '☀': 'sun', '🔒': 'lock',
-  '✨': 'sparkle', '🌳': 'tree', '📜': 'scroll', '🧩': 'puzzle-piece', '🔊': 'speaker-high', '🎨': 'palette', '🖥': 'monitor', '🥽': 'virtual-reality', '🛡': 'shield',
-};
 // The load list is injected (main.js), not imported: ui.js is shared with a client that has no renderer.
 let loadingItems = () => [];
 export function setLoadingItems(fn) { loadingItems = fn; }
@@ -372,14 +361,6 @@ export function worldSettingsFrame() {
   if (!worldSettingsFrameApi) worldSettingsFrameApi = tabbedFrame('world-settings', { title: 'world settings', x: 90, y: 80, w: Math.min(600, innerWidth - 24), h: 440, minW: 260, hidden: true });   // wide enough for the four built-in roles' columns
   return worldSettingsFrameApi;
 }
-/** Add (on) or remove (off) a dock entry after boot: the Moderation entry follows your switches (your-rights). */
-export function setDockEntry(entry, on) {
-  const has = dockEntries.some((e) => e.id === entry.id);
-  // pinOnce: pinned the first time this person sees the entry (as the search entry was), then their unpin is theirs
-  if (on && entry.pinOnce) { try { const k = `ew-dock-${entry.id}-seen`; if (!localStorage.getItem(k)) { localStorage.setItem(k, '1'); pins.add(entry.id); savePins(); } } catch {} }
-  if (on && !has) { const at = dockEntries.findIndex((e) => e.last); dockEntries.splice(at < 0 ? dockEntries.length : at, 0, entry); if (el?.dock) { addDockButton(entry); paintDock(); } }
-  else if (!on && has) { dockEntries = dockEntries.filter((e) => e.id !== entry.id); el?.dock?.querySelector(`button[data-toggles="${entry.id}"]`)?.remove(); getFrame(entry.id)?.hide?.(); paintDock(); }
-}
 const HOSTS = { settings: () => settingsFrame(), moderation: () => moderationFrame(), 'world-settings': () => worldSettingsFrame() };
 export function makeSection(title, onOpen, { id = '', host: hostName = 'world' } = {}) {
   const hostFrame = (HOSTS[hostName] ?? panelFrame)();
@@ -465,6 +446,17 @@ export { escapeHtml };   // markup.js's: the one escaper (kudzu C1)
 // ============================================================ dock
 // A closed frame has to be findable again: an icon rides the rail while its window is open or pinned, otherwise it
 // hides. Pinning and the layout lock live in the ∃ menu; the rail carries only windows.
+// section-head emoji → Phosphor fill glyph (menu chrome never rides emoji: platform glyph gaps are silent).
+// The entry id wins over the emoji: the same emoji means different things in different places ('🧱' is
+// build's hammer in catalog.js, but the world panel is not a build panel), so no global emoji remap.
+const ID_ICON = { world: 'planet' };
+const EMOJI_ICON = {
+  '💬': 'chat-circle',
+  '👋': 'hand-waving',
+  '🐞': 'bug',
+  '🧱': 'hammer', '🧍': 'person-arms-spread', '🌿': 'plant', '☀': 'sun', '🔒': 'lock',
+  '✨': 'sparkle', '🌳': 'tree', '📜': 'scroll', '🧩': 'puzzle-piece', '🔊': 'speaker-high', '🎨': 'palette', '🖥': 'monitor', '🥽': 'virtual-reality', '🛡': 'shield',
+};
 const PINS_LS = 'ew-dock-pins';
 // last seen gate state per action entry — the auto-pin fires on the EDGE, not
 // the level, so a manual unpin is not undone by the next repaint
@@ -655,6 +647,15 @@ export function initDock(entries) {
   setInterval(paintDock, 2000);   // role grants land async; the wrench follows (module-scope timer, as above)
   initEMenu();
 
+}
+
+/** Add (on) or remove (off) a dock entry after boot: the Moderation entry follows your switches (your-rights). */
+export function setDockEntry(entry, on) {
+  const has = dockEntries.some((e) => e.id === entry.id);
+  // pinOnce: pinned the first time this person sees the entry (as the search entry was), then their unpin is theirs
+  if (on && entry.pinOnce) { try { const k = `ew-dock-${entry.id}-seen`; if (!localStorage.getItem(k)) { localStorage.setItem(k, '1'); pins.add(entry.id); savePins(); } } catch {} }
+  if (on && !has) { const at = dockEntries.findIndex((e) => e.last); dockEntries.splice(at < 0 ? dockEntries.length : at, 0, entry); if (el?.dock) { addDockButton(entry); paintDock(); } }
+  else if (!on && has) { dockEntries = dockEntries.filter((e) => e.id !== entry.id); el?.dock?.querySelector(`button[data-toggles="${entry.id}"]`)?.remove(); getFrame(entry.id)?.hide?.(); paintDock(); }
 }
 
 // ---- the rail lives flat on an edge. {edge, along} persisted;
@@ -1085,9 +1086,6 @@ function paintEMenu() {
   if (lock && lock.dataset.lock !== String(isLocked())) { lock.dataset.lock = String(isLocked()); lock.innerHTML = lockHtml; }
   lock?.classList.toggle('open', isLocked());
 }
-/** Every window back where it started, and the lantern's resting line too (it is not a frame, but it moves in
- *  HUD layout mode). The rail's own edge is NOT reset — where you put the rail is your decision (loadDockEdge). */
-function resetHudLayout() { resetLayout(); resetPillPlace(); }
 // THE LANTERN'S RESTING LINE: a group of its own between the voice rows and the windows (not quite a panel, so it
 // can't be docked). The row opens the lantern, and its pin keeps the pill bottom-centre (commandbar.js setPillPinned,
 // its own key ew-lantern-pinned, like the glyphs'). Unpinned, the lantern is still one chord away.
@@ -1204,6 +1202,10 @@ addEventListener('keydown', (e) => {
 for (const s of [el.door, el.help]) {
   s.addEventListener('click', (e) => { if (e.target === s && s.id !== 'door') closeOverlay(s); });
 }
+
+/** Every window back where it started, and the lantern's resting line too (it is not a frame, but it moves in
+ *  HUD layout mode). The rail's own edge is NOT reset — where you put the rail is your decision (loadDockEdge). */
+function resetHudLayout() { resetLayout(); resetPillPlace(); }
 
 // ---- help ------------------------------------------------------------------
 // The overlay's content is a def (defs/ui/_help.json): title, subtitle, the key table, the prose sections, so a world
