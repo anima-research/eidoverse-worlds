@@ -4,15 +4,16 @@
 // avatar.js update() reads for the plate, its mark, the typing pill and the bubble — follows it back out again.
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/firstperson-plate-test.ts
+import { fileURLToPath } from "node:url";
 import { plugin } from 'bun';
-const here = (f: string) => new URL(f, import.meta.url).pathname;
+const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({
   name: 'fp-plate-stubs',
   setup(b) {
     // controller.js gets the posture-tiles world; avatar.js (and what it pulls in) the core stub the plate tests use
-    b.onResolve({ filter: /^\.\/core\.js$/ }, (a) => ({ path: here(a.importer.endsWith('/controller.js') ? './posture-tiles-stub.mjs' : './core-stub.mjs') }));
+    b.onResolve({ filter: /^\.\/core\.js$/ }, (a) => ({ path: here(a.importer.replace(/\\/g, '/').endsWith('/controller.js') ? './posture-tiles-stub.mjs' : './core-stub.mjs') }));
     for (const m of ['base', 'terrain', 'colliders', 'chat', 'ui']) {
-      b.onResolve({ filter: new RegExp(`^\\./${m}\\.js$`) }, (a) => (a.importer.endsWith('/controller.js') ? { path: here('./posture-tiles-stub.mjs') } : undefined));
+      b.onResolve({ filter: new RegExp(`^\\./${m}\\.js$`) }, (a) => (a.importer.replace(/\\/g, '/').endsWith('/controller.js') ? { path: here('./posture-tiles-stub.mjs') } : undefined));
     }
     b.onResolve({ filter: /^\.\/assets\.js$/ }, () => ({ path: here('./assets-stub.mjs') }));
     b.onResolve({ filter: /^\.\/loadwork\.js$/ }, () => ({ path: here('./loadwork-stub.mjs') }));
@@ -20,7 +21,7 @@ plugin({
 });
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 GlobalRegistrator.register();
-globalThis.fetch = (() => new Promise(() => {})) as any;   // avatar.js's emote defs ask the server; there is none here
+globalThis.fetch = (() => new Promise(() => {})) as any;   // avatar.js's gesture defs ask the server; there is none here
 
 const stub: any = await import('./posture-tiles-stub.mjs');
 const ctl: any = await import('../client/lib/controller.js');

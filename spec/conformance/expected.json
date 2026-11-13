@@ -1,0 +1,628 @@
+{
+ "EXAMPLE-01.jsonl": {
+  "status": "ok",
+  "digest": "80a9ef2d5b8ee340e811d6b3068d65b480c6d0e1643e0e1e6b4ab961c317b581",
+  "codes": []
+ },
+ "logs/01-baseline.jsonl": {
+  "status": "ok",
+  "digest": "80a9ef2d5b8ee340e811d6b3068d65b480c6d0e1643e0e1e6b4ab961c317b581",
+  "codes": []
+ },
+ "logs/02-spelling.jsonl": {
+  "status": "ok",
+  "digest": "80a9ef2d5b8ee340e811d6b3068d65b480c6d0e1643e0e1e6b4ab961c317b581",
+  "codes": []
+ },
+ "logs/03-dupkeys.jsonl": {
+  "status": "ok",
+  "digest": "9bdfd10b40e1070ebce6cf23486669988bf5ca5b2213d74eb1c46217db139b89",
+  "codes": [
+   "3:malformed:ijson-dupkey",
+   "4:malformed:ijson-dupkey"
+  ]
+ },
+ "logs/04-numbers.jsonl": {
+  "status": "ok",
+  "digest": "0c960cb01475643ab3d76a75ba7bfdc4725d76837bdbcafb21173bbd7f515a47",
+  "codes": [
+   "3:malformed:ijson-negzero",
+   "4:malformed:ijson-negzero",
+   "5:malformed:ijson-negzero",
+   "6:malformed:ijson-nonfinite",
+   "7:malformed:ijson-nonfinite",
+   "8:malformed:ijson-nonfinite",
+   "9:malformed:ijson-nonfinite",
+   "10:malformed:ijson-negzero",
+   "11:malformed:ijson-nonfinite",
+   "13:malformed:ijson-bigint"
+  ]
+ },
+ "logs/04b-salt.jsonl": {
+  "status": "ok",
+  "digest": "1cabd6e3c6cbea97c38ac6adb6d14f73e608408a059245c29b8eaa4bbc58e9c3",
+  "codes": []
+ },
+ "logs/05-names.jsonl": {
+  "status": "ok",
+  "digest": "3bf1c3b0a227e3a0ee21039d53e4b681ae6119aff1c892e3033d7a120371b68b",
+  "codes": [
+   "2:malformed:entity-id",
+   "5:malformed:entity-id",
+   "6:malformed:entity-id",
+   "7:malformed:comp-name",
+   "9:malformed:entity-id",
+   "10:malformed:entity-id",
+   "11:malformed:comp-name",
+   "12:malformed:comp-name",
+   "13:malformed:entity-id",
+   "14:malformed:entity-id"
+  ]
+ },
+ "logs/06-nested-batch.jsonl": {
+  "status": "ok",
+  "digest": "02e890d89599fdee6c30649d1b73c5959daff5b4849f98076ffe630446eb2e1f",
+  "codes": [
+   "2:malformed:nested-batch"
+  ]
+ },
+ "logs/06b-cascade.jsonl": {
+  "status": "ok",
+  "digest": "06cc035682160325f8d4476f30d3a4d21d6d5a26b0c733cca59a662ffa807028",
+  "codes": []
+ },
+ "logs/06c-cascade-empty.jsonl": {
+  "status": "ok",
+  "digest": "02e890d89599fdee6c30649d1b73c5959daff5b4849f98076ffe630446eb2e1f",
+  "codes": [
+   "2:malformed:batch-cascade"
+  ]
+ },
+ "logs/06d-cascade-desc.jsonl": {
+  "status": "ok",
+  "digest": "02e890d89599fdee6c30649d1b73c5959daff5b4849f98076ffe630446eb2e1f",
+  "codes": [
+   "2:malformed:batch-cascade"
+  ]
+ },
+ "logs/06e-cascade-range.jsonl": {
+  "status": "ok",
+  "digest": "02e890d89599fdee6c30649d1b73c5959daff5b4849f98076ffe630446eb2e1f",
+  "codes": [
+   "2:malformed:batch-cascade"
+  ]
+ },
+ "logs/06f-cascade-frac.jsonl": {
+  "status": "ok",
+  "digest": "02e890d89599fdee6c30649d1b73c5959daff5b4849f98076ffe630446eb2e1f",
+  "codes": [
+   "2:malformed:batch-cascade"
+  ]
+ },
+ "logs/06g-cascade-str.jsonl": {
+  "status": "ok",
+  "digest": "02e890d89599fdee6c30649d1b73c5959daff5b4849f98076ffe630446eb2e1f",
+  "codes": [
+   "2:malformed:batch-cascade"
+  ]
+ },
+ "logs/07a-version-5.jsonl": {
+  "status": "unknown-version",
+  "digest": null,
+  "codes": [
+   "0:unknown-version"
+  ]
+ },
+ "logs/07b-version-str.jsonl": {
+  "status": "unknown-version",
+  "digest": null,
+  "codes": [
+   "0:unknown-version"
+  ]
+ },
+ "logs/07c-version-missing.jsonl": {
+  "status": "unknown-version",
+  "digest": null,
+  "codes": [
+   "0:unknown-version"
+  ]
+ },
+ "logs/07d-version-4.0.jsonl": {
+  "status": "ok",
+  "digest": "02e890d89599fdee6c30649d1b73c5959daff5b4849f98076ffe630446eb2e1f",
+  "codes": []
+ },
+ "logs/07e-dialect-other.jsonl": {
+  "status": "unknown-version",
+  "digest": null,
+  "codes": [
+   "0:unknown-version"
+  ]
+ },
+ "logs/07f-dialect-missing.jsonl": {
+  "status": "unknown-version",
+  "digest": null,
+  "codes": [
+   "0:unknown-version"
+  ]
+ },
+ "logs/08-edges.jsonl": {
+  "status": "ok",
+  "digest": "9bdfd10b40e1070ebce6cf23486669988bf5ca5b2213d74eb1c46217db139b89",
+  "codes": [
+   "2:noop:set-missing-entity",
+   "3:noop:delete-missing-entity",
+   "4:noop:delete-missing-entity",
+   "7:noop:create-live",
+   "8:noop:set-no-value",
+   "12:noop:delete-@world",
+   "13:noop:delete-missing-comp"
+  ]
+ },
+ "logs/09-redaction.jsonl": {
+  "status": "ok",
+  "digest": "713230306f5aa402ddfed407000caf47d28d7ce2999fdd8924db220b0b188fef",
+  "codes": [
+   "8:redaction",
+   "8:redaction",
+   "8:redaction",
+   "8:redaction",
+   "8:redaction",
+   "9:redaction-of-redaction-refused",
+   "9:redaction-target-range",
+   "2:redaction-target-not-a-value"
+  ]
+ },
+ "logs/10a-genesis-late.jsonl": {
+  "status": "no-world",
+  "digest": null,
+  "codes": [
+   "0:no-genesis"
+  ]
+ },
+ "logs/10b-two-genesis.jsonl": {
+  "status": "ok",
+  "digest": "9bdfd10b40e1070ebce6cf23486669988bf5ca5b2213d74eb1c46217db139b89",
+  "codes": [
+   "2:malformed:genesis-not-first"
+  ]
+ },
+ "logs/10c-empty.jsonl": {
+  "status": "no-world",
+  "digest": null,
+  "codes": [
+   "0:no-genesis"
+  ]
+ },
+ "logs/11-envelope.jsonl": {
+  "status": "ok",
+  "digest": "4d6d7379b16a6a8cb3aecc23844ac46d4b1bbc7e9f6ee5f3f6ca6c5ed7dd4844",
+  "codes": [
+   "2:malformed:seq-field",
+   "3:malformed:unknown-field",
+   "4:malformed:cause",
+   "5:malformed:cause",
+   "6:malformed:kind",
+   "7:malformed:unknown-field",
+   "8:malformed:cause",
+   "10:malformed:envelope",
+   "11:malformed:envelope",
+   "12:malformed:envelope"
+  ]
+ },
+ "logs/12a-blank-crlf.jsonl": {
+  "status": "ok",
+  "digest": "9bdfd10b40e1070ebce6cf23486669988bf5ca5b2213d74eb1c46217db139b89",
+  "codes": [
+   "2:malformed:json-syntax"
+  ]
+ },
+ "logs/12b-bom.jsonl": {
+  "status": "no-world",
+  "digest": null,
+  "codes": [
+   "0:malformed:ijson-bom",
+   "0:no-genesis"
+  ]
+ },
+ "logs/12c-strings.jsonl": {
+  "status": "ok",
+  "digest": "9bdfd10b40e1070ebce6cf23486669988bf5ca5b2213d74eb1c46217db139b89",
+  "codes": [
+   "3:malformed:ijson-utf8",
+   "4:malformed:ijson-surrogate",
+   "5:malformed:ijson-noncharacter"
+  ]
+ },
+ "logs/12c-text.jsonl": {
+  "status": "ok",
+  "digest": "9bdfd10b40e1070ebce6cf23486669988bf5ca5b2213d74eb1c46217db139b89",
+  "codes": []
+ },
+ "logs/13-depth.jsonl": {
+  "status": "ok",
+  "digest": "9bdfd10b40e1070ebce6cf23486669988bf5ca5b2213d74eb1c46217db139b89",
+  "codes": [
+   "3:malformed:cap-depth"
+  ]
+ },
+ "logs/14-batch-partial.jsonl": {
+  "status": "ok",
+  "digest": "19a7054ccf4d218ce469609c7d2cd62a21b17ced73233cefb2d78c2ae20d556e",
+  "codes": [
+   "2:malformed:comp-name",
+   "3:noop:set-missing-entity"
+  ]
+ },
+ "logs/16-bool.jsonl": {
+  "status": "ok",
+  "digest": "4c246b76e359aaed79a579b7ced842bd70946ac175ab430b55dc89e8a9e755f1",
+  "codes": []
+ },
+ "logs/17-bigint.jsonl": {
+  "status": "no-world",
+  "digest": null,
+  "codes": [
+   "0:malformed:envelope",
+   "1:malformed:envelope",
+   "2:malformed:envelope",
+   "3:malformed:envelope",
+   "4:malformed:ijson-bigint",
+   "5:malformed:envelope",
+   "6:malformed:envelope",
+   "7:malformed:envelope",
+   "8:malformed:envelope",
+   "0:no-genesis"
+  ]
+ },
+ "logs/18-ts.jsonl": {
+  "status": "ok",
+  "digest": "0fde87307df00ddb232359197c7922b0021ccad898980fd1e6d3e8f402cce107",
+  "codes": [
+   "5:malformed:ts-decreasing",
+   "6:malformed:ts"
+  ]
+ },
+ "logs/18b-ts-missing.jsonl": {
+  "status": "ok",
+  "digest": "9bdfd10b40e1070ebce6cf23486669988bf5ca5b2213d74eb1c46217db139b89",
+  "codes": [
+   "3:malformed:ts"
+  ]
+ },
+ "logs/18c-world-mismatch.jsonl": {
+  "status": "ok",
+  "digest": "1cabd6e3c6cbea97c38ac6adb6d14f73e608408a059245c29b8eaa4bbc58e9c3",
+  "codes": [
+   "3:malformed:world-mismatch"
+  ]
+ },
+ "logs/19a-genesis-no-nonce.jsonl": {
+  "status": "no-world",
+  "digest": null,
+  "codes": [
+   "0:malformed:genesis-nonce"
+  ]
+ },
+ "logs/19b-genesis-short-nonce.jsonl": {
+  "status": "no-world",
+  "digest": null,
+  "codes": [
+   "0:malformed:genesis-nonce"
+  ]
+ },
+ "logs/19c-genesis-nonce-not-b64url.jsonl": {
+  "status": "no-world",
+  "digest": null,
+  "codes": [
+   "0:malformed:genesis-nonce"
+  ]
+ },
+ "logs/19e-genesis-stray-minor.jsonl": {
+  "status": "no-world",
+  "digest": null,
+  "codes": [
+   "0:malformed:genesis-field"
+  ]
+ },
+ "logs/19f-genesis-flat-owners.jsonl": {
+  "status": "no-world",
+  "digest": null,
+  "codes": [
+   "0:malformed:genesis-owners"
+  ]
+ },
+ "logs/19g-genesis-small-order-key.jsonl": {
+  "status": "no-world",
+  "digest": null,
+  "codes": [
+   "0:malformed:genesis-key"
+  ]
+ },
+ "logs/19h-genesis-key-y-ge-p.jsonl": {
+  "status": "no-world",
+  "digest": null,
+  "codes": [
+   "0:malformed:genesis-key"
+  ]
+ },
+ "logs/19i-genesis-no-sequencer.jsonl": {
+  "status": "no-world",
+  "digest": null,
+  "codes": [
+   "0:malformed:genesis-sequencer"
+  ]
+ },
+ "logs/19j-genesis-unknown-field.jsonl": {
+  "status": "no-world",
+  "digest": null,
+  "codes": [
+   "0:malformed:genesis-field"
+  ]
+ },
+ "logs/19k-genesis-key-twice.jsonl": {
+  "status": "no-world",
+  "digest": null,
+  "codes": [
+   "0:malformed:genesis-owners"
+  ]
+ },
+ "logs/19l-genesis-bad-quorum.jsonl": {
+  "status": "no-world",
+  "digest": null,
+  "codes": [
+   "0:malformed:genesis-quorum"
+  ]
+ },
+ "logs/19m-genesis-bad-window.jsonl": {
+  "status": "no-world",
+  "digest": null,
+  "codes": [
+   "0:malformed:genesis-window"
+  ]
+ },
+ "logs/19m2-genesis-old-window.jsonl": {
+  "status": "no-world",
+  "digest": null,
+  "codes": [
+   "0:malformed:genesis-field"
+  ]
+ },
+ "logs/19n-genesis-bad-parent.jsonl": {
+  "status": "no-world",
+  "digest": null,
+  "codes": [
+   "0:malformed:genesis-parent"
+  ]
+ },
+ "logs/19o-genesis-full.jsonl": {
+  "status": "ok",
+  "digest": "9bdfd10b40e1070ebce6cf23486669988bf5ca5b2213d74eb1c46217db139b89",
+  "codes": []
+ },
+ "logs/19q-genesis-bad-requires.jsonl": {
+  "status": "no-world",
+  "digest": null,
+  "codes": [
+   "0:malformed:genesis-requires"
+  ]
+ },
+ "logs/19r-genesis-bad-provenance.jsonl": {
+  "status": "no-world",
+  "digest": null,
+  "codes": [
+   "0:malformed:genesis-provenance"
+  ]
+ },
+ "logs/19s-genesis-unknown-feature.jsonl": {
+  "status": "unsupported-feature",
+  "digest": null,
+  "codes": [
+   "0:unsupported-feature"
+  ]
+ },
+ "logs/19t-genesis-requires-provenance.jsonl": {
+  "status": "ok",
+  "digest": "9bdfd10b40e1070ebce6cf23486669988bf5ca5b2213d74eb1c46217db139b89",
+  "codes": []
+ },
+ "logs/19u-requiresadd-unknown.jsonl": {
+  "status": "unsupported-feature",
+  "digest": null,
+  "codes": [
+   "2:unsupported-feature"
+  ]
+ },
+ "logs/20-redaction-roles.jsonl": {
+  "status": "ok",
+  "digest": "10c81246e8b263d3b7a8e2d74676e4b3036d9fc8ced04a760907bcfa9ccc59c7",
+  "codes": [
+   "4:redaction-target-governance",
+   "4:redaction",
+   "4:redaction-target-governance"
+  ]
+ },
+ "logs/20b-commit-unpurged.jsonl": {
+  "status": "no-world",
+  "digest": null,
+  "codes": [
+   "0:malformed:envelope",
+   "1:malformed:kind",
+   "2:malformed:envelope",
+   "3:malformed:envelope",
+   "4:malformed:envelope",
+   "5:malformed:envelope",
+   "6:malformed:envelope",
+   "7:malformed:envelope",
+   "8:malformed:envelope",
+   "9:malformed:kind",
+   "0:no-genesis"
+  ]
+ },
+ "logs/21-nonstring-kind-op.jsonl": {
+  "status": "ok",
+  "digest": "1cabd6e3c6cbea97c38ac6adb6d14f73e608408a059245c29b8eaa4bbc58e9c3",
+  "codes": [
+   "3:malformed:kind",
+   "4:malformed:op"
+  ]
+ },
+ "logs/22-redaction-index-null.jsonl": {
+  "status": "ok",
+  "digest": "1cabd6e3c6cbea97c38ac6adb6d14f73e608408a059245c29b8eaa4bbc58e9c3",
+  "codes": [
+   "4:redaction-target-bad"
+  ]
+ },
+ "logs/23a-f1-request-admitted.jsonl": {
+  "status": "ok",
+  "digest": "ab569bd597e331c85b5a000e8d33c715118a219caec8b8f0a47c204c2666d9be",
+  "codes": []
+ },
+ "logs/23b-f2-request-refused.jsonl": {
+  "status": "ok",
+  "digest": "02e890d89599fdee6c30649d1b73c5959daff5b4849f98076ffe630446eb2e1f",
+  "codes": []
+ },
+ "logs/23c-f3-say.jsonl": {
+  "status": "ok",
+  "digest": "02e890d89599fdee6c30649d1b73c5959daff5b4849f98076ffe630446eb2e1f",
+  "codes": []
+ },
+ "logs/23d-f8-cascade.jsonl": {
+  "status": "ok",
+  "digest": "b1945da00accb736f6abf114d7fc0b92d7ced24887a9b940dac9c3b6e289c9c3",
+  "codes": [
+   "2:noop:delete-missing-entity"
+  ]
+ },
+ "logs/24a-old-change-verb.jsonl": {
+  "status": "ok",
+  "digest": "9bdfd10b40e1070ebce6cf23486669988bf5ca5b2213d74eb1c46217db139b89",
+  "codes": [
+   "3:malformed:envelope"
+  ]
+ },
+ "logs/24b-old-request-op.jsonl": {
+  "status": "ok",
+  "digest": "9bdfd10b40e1070ebce6cf23486669988bf5ca5b2213d74eb1c46217db139b89",
+  "codes": [
+   "1:malformed:envelope"
+  ]
+ },
+ "logs/24c-old-say-verb.jsonl": {
+  "status": "ok",
+  "digest": "02e890d89599fdee6c30649d1b73c5959daff5b4849f98076ffe630446eb2e1f",
+  "codes": [
+   "2:malformed:envelope"
+  ]
+ },
+ "logs/24d-old-redaction-verb.jsonl": {
+  "status": "ok",
+  "digest": "9bdfd10b40e1070ebce6cf23486669988bf5ca5b2213d74eb1c46217db139b89",
+  "codes": [
+   "3:malformed:envelope"
+  ]
+ },
+ "logs/24e-old-governance-verb.jsonl": {
+  "status": "ok",
+  "digest": "02e890d89599fdee6c30649d1b73c5959daff5b4849f98076ffe630446eb2e1f",
+  "codes": [
+   "2:malformed:envelope"
+  ]
+ },
+ "logs/24f-old-batch-followUps.jsonl": {
+  "status": "ok",
+  "digest": "02e890d89599fdee6c30649d1b73c5959daff5b4849f98076ffe630446eb2e1f",
+  "codes": [
+   "2:malformed:batch-field"
+  ]
+ },
+ "logs/24g-old-batch-item-verb.jsonl": {
+  "status": "ok",
+  "digest": "02e890d89599fdee6c30649d1b73c5959daff5b4849f98076ffe630446eb2e1f",
+  "codes": [
+   "2:malformed:op"
+  ]
+ },
+ "logs/24h-old-set-commit.jsonl": {
+  "status": "ok",
+  "digest": "9bdfd10b40e1070ebce6cf23486669988bf5ca5b2213d74eb1c46217db139b89",
+  "codes": [
+   "3:malformed:op-field"
+  ]
+ },
+ "logs/24i-old-redaction-target-op.jsonl": {
+  "status": "ok",
+  "digest": "1cabd6e3c6cbea97c38ac6adb6d14f73e608408a059245c29b8eaa4bbc58e9c3",
+  "codes": [
+   "4:redaction-target-bad"
+  ]
+ },
+ "logs/24j-old-envelope-for.jsonl": {
+  "status": "ok",
+  "digest": "02e890d89599fdee6c30649d1b73c5959daff5b4849f98076ffe630446eb2e1f",
+  "codes": [
+   "2:malformed:unknown-field"
+  ]
+ },
+ "logs/24k-old-envelope-grant.jsonl": {
+  "status": "ok",
+  "digest": "02e890d89599fdee6c30649d1b73c5959daff5b4849f98076ffe630446eb2e1f",
+  "codes": [
+   "2:malformed:unknown-field"
+  ]
+ },
+ "logs/24l-old-envelope-by.jsonl": {
+  "status": "ok",
+  "digest": "02e890d89599fdee6c30649d1b73c5959daff5b4849f98076ffe630446eb2e1f",
+  "codes": [
+   "2:malformed:unknown-field"
+  ]
+ },
+ "logs/24m-old-kind-act.jsonl": {
+  "status": "ok",
+  "digest": "02e890d89599fdee6c30649d1b73c5959daff5b4849f98076ffe630446eb2e1f",
+  "codes": [
+   "1:malformed:kind"
+  ]
+ },
+ "logs/24n-old-kind-sim.jsonl": {
+  "status": "ok",
+  "digest": "02e890d89599fdee6c30649d1b73c5959daff5b4849f98076ffe630446eb2e1f",
+  "codes": [
+   "2:malformed:kind"
+  ]
+ },
+ "logs/24o-old-kind-purge.jsonl": {
+  "status": "ok",
+  "digest": "02e890d89599fdee6c30649d1b73c5959daff5b4849f98076ffe630446eb2e1f",
+  "codes": [
+   "2:malformed:kind"
+  ]
+ },
+ "logs/24p-old-kind-sequencer.jsonl": {
+  "status": "ok",
+  "digest": "02e890d89599fdee6c30649d1b73c5959daff5b4849f98076ffe630446eb2e1f",
+  "codes": [
+   "2:malformed:kind"
+  ]
+ },
+ "logs/24q-old-genesis-verb.jsonl": {
+  "status": "no-world",
+  "digest": null,
+  "codes": [
+   "0:malformed:envelope",
+   "0:no-genesis"
+  ]
+ },
+ "logs/25-story.jsonl": {
+  "status": "ok",
+  "digest": "02e890d89599fdee6c30649d1b73c5959daff5b4849f98076ffe630446eb2e1f",
+  "codes": [
+   "5:redaction",
+   "3:noop:delete-missing-entity",
+   "3:noop:set-missing-entity"
+  ]
+ }
+}

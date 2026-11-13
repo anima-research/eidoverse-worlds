@@ -32,8 +32,9 @@
 // assets/opt/eidoverse/assets/vrms/ (any sequencer picks it up live) — this
 // tool never touches a box; deploy stays a human/scp step.
 
+import { fileURLToPath } from "node:url";
 import { plugin } from 'bun';
-const STUB = new URL('./core-stub.mjs', import.meta.url).pathname;
+const STUB = fileURLToPath(new URL('./core-stub.mjs', import.meta.url));
 plugin({ name: 'core-stub', setup(b) { b.onResolve({ filter: /^\.\/core\.js$/ }, () => ({ path: STUB })); } });
 
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';

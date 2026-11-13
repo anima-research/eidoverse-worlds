@@ -53,13 +53,13 @@ for (const yaw of [NaN, Infinity, undefined as unknown as number]) {
   const l = lineFor("apricot", ag.look());
   ok(l.includes("apricot: 5.0m") && !l.includes("facing") && !l.includes("NaN"), `yaw ${String(yaw)} omits facing`);
 }
-// riders: the root follows the seat socket, so its yaw is not where they face
+// an occupant (upstream: "riders"): the root follows the seat socket, so its yaw is not where they face
 ag.people.set("apricot", { id: "apricot", avatar: "", agent: false, pose: { p: [3, 0, -4], yaw: Math.PI / 2, speed: 0, clip: "sitchair" } });
 ag.mounts.set("apricot", { to: "bench-1", slot: "seat" });
-const rider = lineFor("apricot", ag.look());
-ok(rider.includes("on bench-1") && !rider.includes("facing"), "a rider's line omits facing");
+const occupant = lineFor("apricot", ag.look());
+ok(occupant.includes("on bench-1") && !occupant.includes("facing"), "an occupant's line omits facing");
 ag.mounts.delete("apricot");
-ok(facingIs(lineFor("apricot", ag.look()), "E"), "dismounted, facing returns");
+ok(facingIs(lineFor("apricot", ag.look()), "E"), "off the seat, facing returns");
 
 console.log(`\n${passed} passed, 0 failed`);
 process.exit(0);   // the agent keeps a timer alive; the checks are done

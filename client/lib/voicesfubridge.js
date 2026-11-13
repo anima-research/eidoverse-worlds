@@ -86,7 +86,7 @@ export function initVoiceSfu(name) {
   // (`applyStandingConsent` re-applies her standing consent to the new leg, so
   // `hears: ['hesperus']` stayed true) and it BROADCASTS `surface-transition`
   // for exactly this reason. Nothing on the SFU client listened: the event fed
-  // only causes.js's hold-then-fallback bookkeeping, never the media path.
+  // only livechat.js's hold-then-fallback bookkeeping, never the media path.
   //
   // Net effect without this: any speaker whose voice leg restarts is silent to
   // everyone already in the room until THEY reload. For an agent whose mouth is

@@ -79,7 +79,7 @@ try {
     const floor = document.querySelector('#sec-audio [data-meter]')?.closest('.sp-row');
     return { checked: cb.checked, opacity: floor ? getComputedStyle(floor).opacity : null };
   }, on);
-  await ev(async () => { const F = await import('./lib/frames.js'); F.getFrame('settings')?.show(); document.getElementById('sec-audio-tab').click();
+  await ev(async () => { const F = await import('./lib/windows.js'); F.getFrame('settings')?.show(); document.getElementById('sec-audio-tab').click();
     document.documentElement.style.setProperty('--panel-a', '1'); });
   await sleep(400);
   const deskDim = {};
@@ -100,7 +100,7 @@ try {
 
   // open both frames on the tabs under test (desktop), and shoot the DOM
   for (const [frame, tab] of [['world', 'sky'], ['settings', 'style']]) {
-    await ev(async ([frame, tab]) => { const F = await import('./lib/frames.js'); F.getFrame(frame)?.show(); document.getElementById(`sec-${tab}-tab`).click(); }, [frame, tab]);
+    await ev(async ([frame, tab]) => { const F = await import('./lib/windows.js'); F.getFrame(frame)?.show(); document.getElementById(`sec-${tab}-tab`).click(); }, [frame, tab]);
   }
   await sleep(800);
   for (const frame of ['world', 'settings']) {

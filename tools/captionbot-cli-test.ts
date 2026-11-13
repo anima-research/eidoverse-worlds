@@ -18,6 +18,7 @@
 //   G. lines dropped for overflow → the summary counts them → exits 1.
 // Mutating the final owner back to an unconditional `process.exit(0)` turns
 // A and B red (Mica, #202 round-three review).
+import { fileURLToPath } from "node:url";
 import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -28,7 +29,7 @@ const check = (name: string, ok: unknown, detail = '') => {
   else { fail++; console.log(`  \x1b[31m✗\x1b[0m ${name}${detail ? ` — ${detail}` : ''}`); }
 };
 
-const CLI = new URL('./captionbot/index.ts', import.meta.url).pathname;
+const CLI = fileURLToPath(new URL('./captionbot/index.ts', import.meta.url));
 const dir = mkdtempSync(join(tmpdir(), 'captionbot-cli-'));
 const transcript = join(dir, 'lines.jsonl');
 writeFileSync(transcript, [

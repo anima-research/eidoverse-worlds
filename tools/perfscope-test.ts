@@ -8,8 +8,9 @@
 //   · texBytes without the mip factor (perfscope.js `(hasMips ? 4 / 3 : 1)`)                → "texture VRAM counts the mip chain"
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/perfscope-test.ts
+import { fileURLToPath } from "node:url";
 import { plugin } from 'bun';
-const here = (f: string) => new URL(f, import.meta.url).pathname;
+const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({ name: 'perfscope-stubs', setup(b) {
   for (const m of ['core', 'base', 'world']) b.onResolve({ filter: new RegExp(`^\\./${m}\\.js$`) }, () => ({ path: here('./perfscope-stub.mjs') }));
   b.onResolve({ filter: /^\.\/loadwork\.js$/ }, () => ({ path: here('./loadwork-stub.mjs') }));
@@ -41,7 +42,7 @@ const redTex = new THREE.DataTexture(null, 2000, 2000, THREE.RedFormat);
 // a compressed texture bills its real mip payloads: 3,000,000 + 600,000 B
 const ktxTex = new THREE.CompressedTexture([{ data: new Uint8Array(3_000_000), width: 2048, height: 2048 }, { data: new Uint8Array(600_000), width: 1024, height: 1024 }], 2048, 2048);
 
-const entity = (id: string, lib: string, ...meshes: any[]) => { const g = new THREE.Group(); g.name = id; g.add(...meshes); scene.add(g); entities.set(id, g); entityMeta.set(id, { lib }); return g; };
+const entity = (id: string, model: string, ...meshes: any[]) => { const g = new THREE.Group(); g.name = id; g.add(...meshes); scene.add(g); entities.set(id, g); entityMeta.set(id, { kind: 'thing', model }); return g; };   // world.js metaOf's shape: {kind, model?}
 const fountainMesh = new THREE.Mesh(box(), new THREE.MeshStandardMaterial({ map: bigTex }));
 const fountain = entity('fountain', 'library/fountain.glb', fountainMesh);
 const ktxMesh = new THREE.Mesh(box(), new THREE.MeshStandardMaterial({ map: ktxTex }));
@@ -124,7 +125,7 @@ let receipt: any = null;
   check('redthing: single-channel bills 1 bpp (4.0 MB)', sub('redthing')?.texMB === 4, String(sub('redthing')?.texMB));
   check('lodthing: the hidden level\'s texture counts (4.0 MB) while its tris do not (12)', sub('lodthing')?.texMB === 4 && sub('lodthing')?.tris === 12 && sub('lodthing')?.meshes === 2, JSON.stringify(sub('lodthing')));
   check('crowd: 50 instances × 12 tris', sub('crowd')?.tris === 600 && sub('crowd')?.instances === 50, JSON.stringify(sub('crowd')));
-  check('the label carries the library basename', sub('fountain')?.label === 'fountain  (fountain.glb)', sub('fountain')?.label);
+  check('the label carries the model\'s word (shared/eido.js modelWord: its file name, no extension)', sub('fountain')?.label === 'fountain  (fountain)', sub('fountain')?.label);
   check('the mode select reflects the live mode', (stack.querySelector('select') as HTMLSelectElement).value === 'tex');
   check('the receipt never carries the page query (join key)', receipt?.page && !String(receipt.page).includes('?'));
 }

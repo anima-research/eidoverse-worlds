@@ -105,6 +105,15 @@ console.log("\nwhere the body is, not just the bed under it");
   a.flight = null;
 }
 
+console.log("\na dry pocket under the level");
+{
+  await a.setAvatar("fix/short.vrm"); await a.buildTerrain(WET); await settle(); a.pos.x = 0; a.pos.z = 0; tickN(10);
+  const wet = a.float.on;
+  a.st = { ...a.st, entities: { ...(a.st?.entities ?? {}), dome: { pos: [0, -1, 0], zone: { shape: "box", size: [10, 4, 10] }, "water-exclusion": {} } } };
+  tickN(30);
+  check("in the sea the short body floats; under a dome that keeps @world's water out it stands on the bed", wet && !a.float.on && a.levelHere?.() === null && Math.abs(a.pos.y + 1.6) < 1e-3, JSON.stringify({ wet, float: a.float, y: a.pos.y }));
+}
+
 srv.stop(true);
 console.log(failures ? `\n\x1b[31m${failures} failed\x1b[0m` : "\n\x1b[32mall passed\x1b[0m");
 process.exit(failures ? 1 : 0);

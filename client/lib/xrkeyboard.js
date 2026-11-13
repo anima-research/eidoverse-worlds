@@ -6,7 +6,7 @@
 // path, one keyboard, no VR-only text plumbing. Desktop never sees it (real keyboards);
 // in VR the quad shows while a text input has focus and hides when the line is sent.
 import { bus } from './base.js';
-import { makeFrame } from './frames.js';
+import { makeFrame } from './windows.js';
 import { isPresenting } from './xr.js';
 import { domQuadShow } from './domquad.js';
 

@@ -9,8 +9,9 @@
 // hand Bullet their own triangles near the fall. Checked on the committed
 // skeleton fixture, in a two-storey box building fitted exactly as a spawn
 // of one is (colliders.fitCollider, collide: "exact").
+import { fileURLToPath } from "node:url";
 import { plugin } from 'bun';
-const STUB = new URL('./core-stub.mjs', import.meta.url).pathname;
+const STUB = fileURLToPath(new URL('./core-stub.mjs', import.meta.url));
 plugin({ name: 'core-stub', setup(b) { b.onResolve({ filter: /^\.\/core\.js$/ }, () => ({ path: STUB })); } });
 
 const { THREE } = await import('./core-stub.mjs');

@@ -20,6 +20,7 @@
 //   --sections anchor,above,fp   (default: all three)
 import { launchBrowser, ownedWorld, checker } from './probe-harness.mjs';
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { helloOf } from '../shared/protocol/hello.js';
 
 const { check, done } = checker();
 const arg = (n, d) => { const i = process.argv.indexOf(n); return i > 0 ? process.argv[i + 1] : d; };
@@ -40,7 +41,7 @@ function peer(id, avatar, pose) {
   const ws = new WebSocket(`${world.origin.replace(/^http/, 'ws')}/ws`);
   const p = { ws, pose, timer: null };
   ws.onopen = () => {
-    ws.send(JSON.stringify({ type: 'join', world: WORLD, id, avatar, token: world.key }));
+    ws.send(JSON.stringify({ type: 'join', hello: helloOf(), world: WORLD, id, avatar, token: world.key }));
     p.timer = setInterval(() => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'pose', pose: p.pose })); }, 66);
   };
   peers.push(p);

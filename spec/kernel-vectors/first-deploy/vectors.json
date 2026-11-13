@@ -1,0 +1,240 @@
+{
+ "what": "The first deployed kernel's synthetic fixtures (Mica 11-05, Q3): hand-written logs and the verdict the deployed reader gives each. No old reader is snapshotted: no kernel before this one was deployed. kernel-check K3 runs them at every gate; a later kernel change brings its own vectors, red on this reader (snapshotted at re-pin) and green on the new.",
+ "vectors": [
+  {
+   "name": "control",
+   "what": "a clean genesis and one request: the deployed reader folds it (the control: a reader that refuses everything fails here)",
+   "entries": [
+    {
+     "kind": "genesis",
+     "actor": "system",
+     "body": {
+      "dialect": "eidoverse-log",
+      "v": 4,
+      "nonce": "j1783lQSA7cL_W-K6NwvNw",
+      "owners": [
+       []
+      ],
+      "sequencer": "ed25519:NP1SCq4fthEWnhu_stdrB1gT8wu06eXvKTemf02lqSw"
+     }
+    },
+    {
+     "world": "sha256:59691a590872503090636b755f939b590275c34939e9e9a528c0dc65ff81f676",
+     "kind": "request",
+     "actor": "olive",
+     "verb": "x",
+     "ts": 1,
+     "body": {
+      "args": {}
+     }
+    }
+   ],
+   "verdict": "ok"
+  },
+  {
+   "name": "stray-minor",
+   "what": "a genesis carrying minor (a predeploy field): no world",
+   "entries": [
+    {
+     "kind": "genesis",
+     "actor": "system",
+     "body": {
+      "dialect": "eidoverse-log",
+      "v": 4,
+      "nonce": "j1783lQSA7cL_W-K6NwvNw",
+      "owners": [
+       []
+      ],
+      "sequencer": "ed25519:NP1SCq4fthEWnhu_stdrB1gT8wu06eXvKTemf02lqSw",
+      "minor": 1
+     }
+    }
+   ],
+   "verdict": "no-world"
+  },
+  {
+   "name": "envelope-field",
+   "what": "an envelope field the kernel doesn't name",
+   "entries": [
+    {
+     "kind": "genesis",
+     "actor": "system",
+     "body": {
+      "dialect": "eidoverse-log",
+      "v": 4,
+      "nonce": "j1783lQSA7cL_W-K6NwvNw",
+      "owners": [
+       []
+      ],
+      "sequencer": "ed25519:NP1SCq4fthEWnhu_stdrB1gT8wu06eXvKTemf02lqSw"
+     }
+    },
+    {
+     "world": "sha256:59691a590872503090636b755f939b590275c34939e9e9a528c0dc65ff81f676",
+     "kind": "request",
+     "actor": "olive",
+     "verb": "x",
+     "ts": 1,
+     "body": {
+      "args": {}
+     },
+     "note": "x"
+    }
+   ],
+   "verdict": "malformed:unknown-field"
+  },
+  {
+   "name": "version-3",
+   "what": "v 3: not this reader's hard break",
+   "entries": [
+    {
+     "kind": "genesis",
+     "actor": "system",
+     "body": {
+      "dialect": "eidoverse-log",
+      "v": 3,
+      "nonce": "j1783lQSA7cL_W-K6NwvNw",
+      "owners": [
+       []
+      ],
+      "sequencer": "ed25519:NP1SCq4fthEWnhu_stdrB1gT8wu06eXvKTemf02lqSw"
+     }
+    }
+   ],
+   "verdict": "unknown-version"
+  },
+  {
+   "name": "version-5",
+   "what": "v 5: a later hard break",
+   "entries": [
+    {
+     "kind": "genesis",
+     "actor": "system",
+     "body": {
+      "dialect": "eidoverse-log",
+      "v": 5,
+      "nonce": "j1783lQSA7cL_W-K6NwvNw",
+      "owners": [
+       []
+      ],
+      "sequencer": "ed25519:NP1SCq4fthEWnhu_stdrB1gT8wu06eXvKTemf02lqSw"
+     }
+    }
+   ],
+   "verdict": "unknown-version"
+  },
+  {
+   "name": "other-dialect",
+   "what": "another dialect's genesis",
+   "entries": [
+    {
+     "kind": "genesis",
+     "actor": "system",
+     "body": {
+      "dialect": "other-log",
+      "v": 4,
+      "nonce": "j1783lQSA7cL_W-K6NwvNw",
+      "owners": [
+       []
+      ],
+      "sequencer": "ed25519:NP1SCq4fthEWnhu_stdrB1gT8wu06eXvKTemf02lqSw"
+     }
+    }
+   ],
+   "verdict": "unknown-version"
+  },
+  {
+   "name": "old-kind-act",
+   "what": "a predeploy entry kind (act)",
+   "entries": [
+    {
+     "kind": "genesis",
+     "actor": "system",
+     "body": {
+      "dialect": "eidoverse-log",
+      "v": 4,
+      "nonce": "j1783lQSA7cL_W-K6NwvNw",
+      "owners": [
+       []
+      ],
+      "sequencer": "ed25519:NP1SCq4fthEWnhu_stdrB1gT8wu06eXvKTemf02lqSw"
+     }
+    },
+    {
+     "world": "sha256:59691a590872503090636b755f939b590275c34939e9e9a528c0dc65ff81f676",
+     "kind": "act",
+     "actor": "olive",
+     "verb": "x",
+     "ts": 1,
+     "body": {
+      "args": {}
+     }
+    }
+   ],
+   "verdict": "malformed:kind"
+  },
+  {
+   "name": "unknown-feature",
+   "what": "a genesis requiring a feature this reader doesn't implement",
+   "entries": [
+    {
+     "kind": "genesis",
+     "actor": "system",
+     "body": {
+      "dialect": "eidoverse-log",
+      "v": 4,
+      "nonce": "j1783lQSA7cL_W-K6NwvNw",
+      "owners": [
+       []
+      ],
+      "sequencer": "ed25519:NP1SCq4fthEWnhu_stdrB1gT8wu06eXvKTemf02lqSw",
+      "requires": [
+       "zz:feature@1"
+      ]
+     }
+    }
+   ],
+   "verdict": "unsupported-feature"
+  },
+  {
+   "name": "world-mismatch",
+   "what": "an entry carrying another world's id: malformed, it shapes nothing (tel0s D2, 11-06; the reader at the first ceremony only noted it)",
+   "entries": [
+    {
+     "kind": "genesis",
+     "actor": "system",
+     "body": {
+      "dialect": "eidoverse-log",
+      "v": 4,
+      "nonce": "j1783lQSA7cL_W-K6NwvNw",
+      "owners": [
+       []
+      ],
+      "sequencer": "ed25519:NP1SCq4fthEWnhu_stdrB1gT8wu06eXvKTemf02lqSw"
+     }
+    },
+    {
+     "world": "sha256:59691a590872503090636b755f939b590275c34939e9e9a528c0dc65ff81f676",
+     "kind": "request",
+     "actor": "olive",
+     "verb": "x",
+     "ts": 1,
+     "body": {
+      "args": {}
+     }
+    },
+    {
+     "world": "sha256:abababababababababababababababababababababababababababababababab",
+     "kind": "request",
+     "actor": "olive",
+     "verb": "x",
+     "ts": 2,
+     "body": {
+      "args": {}
+     }
+    }
+   ],
+   "verdict": "malformed:world-mismatch"
+  }
+ ]
+}

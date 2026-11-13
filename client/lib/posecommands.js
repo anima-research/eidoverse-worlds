@@ -5,7 +5,7 @@
 //
 //   EW.pose({ leftUpperArm: [...] })          only these bones, over what you hold; null releases one
 //   EW.pose({ ... }, { replace: true })       the WHOLE pose: every bone not named goes back to normal
-//   EW.pose({ ... }, { target: 'mythos' })    ask someone else (their client decides)
+//   EW.pose({ ... }, { target: 'mythos' })    ask someone else (their consent decides)
 //   EW.pose({ ... }, 'mythos')                a name alone is the target too
 //   EW.pose(null)  /  EW.clearPose()          release the whole pose; with a target, theirs
 //   EW.pose({}, { replace: true })            a whole pose of no bones, a release too, as is the same with the

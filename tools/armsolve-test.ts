@@ -6,8 +6,9 @@
 // the twist is continuous across the forearm's real range, ~100° pronation to ~190° supination (no forearm flip);
 // and a lost grip holds 0.5 s then relaxes to the clip instead of snapping.
 // Recipe: `bun tools/armsolve-test.ts`
+import { fileURLToPath } from "node:url";
 import { plugin } from "bun";
-const here = (p: string) => new URL(p, import.meta.url).pathname;
+const here = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 plugin({
   name: "armsolve-stubs",
   setup(b) {
@@ -160,7 +161,7 @@ const ident = new THREE.Quaternion();
     {
       const up = (s: ReturnType<typeof setup>) => { s.seed(0); for (let tw = 1; tw <= 200; tw++) s.at(tw); };
       const g = setup(); up(g); const before = g.twist();
-      g.gap(500); g.at(-100);                       // 0.5 s without a solve: an exit/entry, an emote, a short loss
+      g.gap(500); g.at(-100);                       // 0.5 s without a solve: an exit/entry, a gesture, a short loss
       const ref = setup(); ref.seed(-100);          // the same grip, solved from nothing
       ok(Math.abs(before - 200) < 3 && Math.abs(g.twist() + 100) < 3, `${side}: after a 0.5 s gap a pronated grip reseeds on the near branch (twist ${before.toFixed(0)}° → ${g.twist().toFixed(1)}°, want ≈ −100°)`);
       ok(Math.abs(g.roll() - ref.roll()) < 1, `${side}: …and the forearm rolls as a fresh solve does (${g.roll().toFixed(1)}° vs ${ref.roll().toFixed(1)}°)`);

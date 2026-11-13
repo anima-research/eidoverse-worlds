@@ -10,16 +10,15 @@ import { retireField } from './flora_field.js';
 import { makeGrassQuality, GRASS_QUALITY } from './grass_quality.js';
 
 let current = null;
-let environmentFloor = null;
-export function setEnvironmentFloor(y) {
-  environmentFloor = Number.isFinite(y) ? y : null;
-  if (!current) {
-    if (ground) ground.visible = environmentFloor === null;
-    if (grid) grid.visible = environmentFloor === null;
-  }
+// with no terrain mesh the stage floor is the ground: at 0, or at a flat terrain's height (componentspec terrain kind flat)
+let floorY = 0;
+export function setFlatGround(y) {
+  floorY = Number.isFinite(y) ? y : 0;
+  for (const [o, lift] of [[ground, 0], [grid, 0.02], [axisLines, 0.04]]) if (o) o.position.y = floorY + lift;
+  bus.emit('ground-changed');
 }
 
-export const heightAt = (x, z) => (current ? current.heightAt(x, z) : (environmentFloor ?? 0));
+export const heightAt = (x, z) => (current ? current.heightAt(x, z) : floorY);
 // THE WATER, for whatever floats in it (the ragdolls — ammodoll.js). The same seam as the ground and for the
 // same reason: the browser and the agents' headless bodies both load this module, and each hands it its
 // own water — the browser from client/lib/water.js, an agent from mcpl/physics.ts setWaterField.
@@ -96,9 +95,9 @@ export function setTerrain(t) {
     if (grid) grid.visible = false;
     if (axisLines) axisLines.visible = false;
   } else {
-    if (ground) ground.visible = environmentFloor === null;
-    if (grid) grid.visible = environmentFloor === null;
-    if (axisLines) axisLines.visible = environmentFloor === null;
+    if (ground) ground.visible = true;
+    if (grid) grid.visible = true;
+    if (axisLines) axisLines.visible = true;
   }
   // the ground moved: whatever stands on it by height (the rain's splashes, via sky.js) re-reads it
   bus.emit('ground-changed');

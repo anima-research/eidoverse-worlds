@@ -13,17 +13,24 @@ import { AVATAR_NAME_RE } from './avatardefs.js';
 /** Clip names come from .vrma filenames — same permissive rule as avatars. */
 export const ANIM_NAME_RE = AVATAR_NAME_RE;
 
+/** Names no anim may carry (R 10-17 16:27): `live` names every ad-libbed anim (one started with joints or tracks, not a
+ *  name), so `anim {stop: "live"}` stops those and only those. A clip, a def, an action-bar entry, an object's hold anim
+ *  or a world's / an avatar's anim called it would be stopped as an ad-lib and could never be played by name. */
+export const RESERVED_ANIM_NAMES = Object.freeze(['live']);
+export const isReservedAnimName = (n) => typeof n === 'string' && RESERVED_ANIM_NAMES.includes(n);
+
 const isStr = (v) => typeof v === 'string' && v.length > 0;
 
-/** Validate the emote sidecar (defs/animations/_emotes.json): each entry
+/** Validate the action bar's sidecar (defs/animations/_actionbar.json): each entry
  *  {clip (required), icon?, listed?}. Key order is bar order — normative.
- *  @param {unknown} emotes @returns {string[]} */
-export function validateEmotes(emotes) {
-  if (emotes == null || typeof emotes !== 'object' || Array.isArray(emotes)) return ['_emotes must be a JSON object'];
+ *  @param {unknown} bar @returns {string[]} */
+export function validateActionBar(bar) {
+  if (bar == null || typeof bar !== 'object' || Array.isArray(bar)) return ['_actionbar must be a JSON object'];
   const errs = [];
-  for (const [name, e] of Object.entries(emotes)) {
+  for (const [name, e] of Object.entries(bar)) {
     if (name === 'doc') continue;
-    if (!ANIM_NAME_RE.test(name)) { errs.push(`emote name "${name}" fails the name rule`); continue; }
+    if (!ANIM_NAME_RE.test(name)) { errs.push(`action bar name "${name}" fails the name rule`); continue; }
+    if (isReservedAnimName(name)) { errs.push(`"${name}" is reserved (it names ad-libbed anims)`); continue; }
     if (e == null || typeof e !== 'object' || Array.isArray(e)) { errs.push(`${name} must be an object`); continue; }
     if (!isStr(/** @type {any} */ (e).clip)) errs.push(`${name}.clip is required (string)`);
     if (/** @type {any} */ (e).icon != null && !isStr(/** @type {any} */ (e).icon)) errs.push(`${name}.icon must be a string`);
@@ -36,6 +43,7 @@ export function validateEmotes(emotes) {
 export function validateAnimationDef(name, def) {
   const errs = [];
   if (!ANIM_NAME_RE.test(name)) errs.push(`name "${name}" — printable, no slashes, ≤64 chars`);
+  if (isReservedAnimName(name)) errs.push(`name "${name}" is reserved: it names ad-libbed anims (anim {stop: "live"})`);
   if (def == null || typeof def !== 'object' || Array.isArray(def)) return [...errs, 'def must be a JSON object'];
   const d = /** @type {Record<string, unknown>} */ (def);
   if (d.vrma != null) {

@@ -1,10 +1,11 @@
+import { helloOf } from "../shared/protocol/hello.js";
 // One-shot test author, pinned to the isolated native fixture's port/world.
 const ws=new WebSocket("ws://127.0.0.1:19002/ws");
 const action=process.argv[2]??"models";
 let timer:ReturnType<typeof setTimeout>;
 await new Promise<void>((resolve,reject)=>{
  timer=setTimeout(()=>{ws.close();reject(Error("fixture timeout"));},7000);
- ws.onopen=()=>ws.send(JSON.stringify({type:"join",world:"scene-test",id:"test-author",token:"scene-test-door"}));
+ ws.onopen=()=>ws.send(JSON.stringify({type:"join", hello: helloOf(),world:"scene-test",id:"test-author",token:"scene-test-door"}));
  const verb=(verb:string,args:any)=>ws.send(JSON.stringify({type:"verb",verb,args}));
  ws.onmessage=e=>{
   const m=JSON.parse(String(e.data));

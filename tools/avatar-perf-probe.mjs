@@ -59,7 +59,7 @@ try {
   const other = await pg.evaluate(async (wornName) => {
     const list = await (await fetch('/avatars')).json();
     const o = list.find((a) => a.name !== wornName && !/corrupt/.test(a.name));
-    const { switchAvatar } = await import('./lib/palette.js');
+    const { switchAvatar } = await import('./lib/catalog.js');
     const { getMyAvatarPath, getMyAvatarName } = await import('./lib/mybody.js');
     const back = { path: getMyAvatarPath(), name: getMyAvatarName() };
     await switchAvatar(o.path, o.name);
@@ -96,7 +96,7 @@ try {
     const list = await (await fetch('/avatars')).json();
     const t = list.find((a) => !skip.includes(a.name) && !/corrupt/.test(a.name));
     if (!t) return null;
-    const { switchAvatar } = await import('./lib/palette.js');
+    const { switchAvatar } = await import('./lib/catalog.js');
     await switchAvatar(t.path, t.name); return t.name;
   }, [live.name, other.other]);
   await pg.waitForTimeout(6000);

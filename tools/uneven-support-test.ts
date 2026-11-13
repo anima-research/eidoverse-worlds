@@ -28,6 +28,7 @@ import { join } from "node:path";
 import { WorldAgent } from "../mcpl/agent.ts";
 import { supportHolders } from "../mcpl/physics.ts";
 import { summarizeGlb } from "../server/geometry.ts";
+import { helloOf } from "../shared/protocol/hello.js";
 
 const PORT = Number(process.env.PORT ?? 9001);
 const URL_ = `ws://127.0.0.1:${PORT}/ws`;
@@ -80,7 +81,7 @@ await sleep(1500);
 const warden = new WebSocket(URL_);
 const verb = (v: string, args: any) => warden.send(JSON.stringify({ type: "verb", verb: v, args }));
 await new Promise<void>((res, rej) => {
-  warden.onopen = () => { warden.send(JSON.stringify({ type: "join", world: WORLD, id: "warden", avatar: "eidoverse/assets/vrms/claude.vrm" })); res(); };
+  warden.onopen = () => { warden.send(JSON.stringify({ type: "join", hello: helloOf(), world: WORLD, id: "warden", avatar: "eidoverse/assets/vrms/claude.vrm" })); res(); };
   warden.onerror = () => rej(new Error("warden failed to connect"));
 });
 await sleep(400);
@@ -91,12 +92,12 @@ await agent.connect();
 // the blanket: nonzero yaw, non-unit scale, and raised so its below-origin
 // cloth clears the flat terrain (else terrain-at-0 legitimately covers it)
 const B = { pos: [4, 0.5, 4], yaw: 0.9, scale: 1.25 };
-verb("spawn", { id: "blank1", lib: BLANKET_LIB, pos: B.pos, yaw: B.yaw, scale: B.scale });
+verb("spawn", { id: "blank1", model: BLANKET_LIB, pos: B.pos, yaw: B.yaw, scale: B.scale });
 // the rubble pile, scaled INTO the floor-shaped class (h·s ≤ 1.0)
 const R = { pos: [20, 0, 20], yaw: 0.7, scale: 0.88 };
-verb("spawn", { id: "rubble1", lib: RUBBLE_LIB, pos: R.pos, yaw: R.yaw, scale: R.scale });
+verb("spawn", { id: "rubble1", model: RUBBLE_LIB, pos: R.pos, yaw: R.yaw, scale: R.scale });
 // the honest control
-verb("spawn", { id: "crate1", lib: CRATE_LIB, pos: [40, 0, 40], yaw: 0, scale: 1 });
+verb("spawn", { id: "crate1", model: CRATE_LIB, pos: [40, 0, 40], yaw: 0, scale: 1 });
 await (agent as any).supportReady(8000);
 await until(() => Object.keys(supportHolders()).length >= 3, 8000);
 
@@ -275,7 +276,7 @@ console.log("\n━━ a scale that stretches certification: declared abstention 
 {
   // certSpread 0.03 × scale 2 = 0.06 > the 0.05 world bound — the grid must
   // be refused, the seam declared, and the body finds terrain (no box!)
-  verb("spawn", { id: "blank2", lib: BLANKET_LIB, pos: [80, 0.5, 80], yaw: 0, scale: 2 });
+  verb("spawn", { id: "blank2", model: BLANKET_LIB, pos: [80, 0.5, 80], yaw: 0, scale: 2 });
   await sleep(1500);
   await (agent as any).supportReady(8000);
   const held = Object.keys(supportHolders()).some((k) => k.endsWith("/blank2"));

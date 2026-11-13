@@ -14,6 +14,7 @@ import { PNG } from "pngjs";
 import { OPT_DIR } from "./config.ts";
 import { decodeGrid, encodeGrid, setGridLoader, MAX_GRID } from "../shared/terrainshape.js";
 import { terrainParams, makeHeightField } from "../shared/terrainmath.js";
+import { windowLimiter } from "./ratewindow.ts";
 
 const GRID_REF = /^store\/heightmaps\/[0-9a-f]{16}\.json$/;
 setGridLoader((ref: string) => {
@@ -117,10 +118,8 @@ export const EXPORT_MAX = 513;
 export const EXPORT_CACHE = 6;
 export const EXPORT_PER_ADDRESS = 6;
 export const EXPORT_PER_MINUTE = 30;
-const WINDOW_MS = 60_000;
 const exportCache = new Map<string, { png: Uint8Array; meta: HeightmapMeta }>();
-const byAddress = new Map<string, number[]>();   // address -> start times of its granted exports, this window
-let granted: number[] = [];                       // every granted export's start time, this window
+const exportGate = windowLimiter(EXPORT_PER_ADDRESS, EXPORT_PER_MINUTE);   // server/ratewindow.ts, shared with /check
 let exporting = false;
 
 const exportKey = (terrainArgs: Record<string, unknown>, n: number, world?: string) => `${n}|${world ?? ""}|${JSON.stringify(terrainArgs)}`;
@@ -138,14 +137,10 @@ export function serveHeightmapExport(terrainArgs: Record<string, unknown>, res: 
   if (hit) { exportCache.delete(key); exportCache.set(key, hit); return { ok: true, ...hit, cached: true }; }
   // ---- the gate: nothing below it runs unless a slot is granted
   if (exporting) return { ok: false, status: 503, error: "another heightmap export is running — try again in a moment", retryAfter: 1 };
-  granted = granted.filter((t) => now - t < WINDOW_MS);
-  const mine = (byAddress.get(address) ?? []).filter((t) => now - t < WINDOW_MS);
-  if (mine.length >= EXPORT_PER_ADDRESS)
-    return { ok: false, status: 429, error: `heightmap export rate limit (${EXPORT_PER_ADDRESS} new exports a minute)`, retryAfter: Math.ceil((WINDOW_MS - (now - mine[0])) / 1000) };
-  if (granted.length >= EXPORT_PER_MINUTE)
-    return { ok: false, status: 429, error: `the server is busy exporting heightmaps (${EXPORT_PER_MINUTE} a minute in all)`, retryAfter: Math.ceil((WINDOW_MS - (now - granted[0])) / 1000) };
-  mine.push(now); granted.push(now); byAddress.set(address, mine);
-  if (byAddress.size > 1024) for (const [a, ts] of byAddress) if (!ts.some((t) => now - t < WINDOW_MS)) byAddress.delete(a);
+  const g = exportGate.grant(address, now);
+  if (!g.ok) return { ok: false, status: 429, retryAfter: g.retryAfter, error: g.which === "address"
+    ? `heightmap export rate limit (${EXPORT_PER_ADDRESS} new exports a minute)`
+    : `the server is busy exporting heightmaps (${EXPORT_PER_MINUTE} a minute in all)` };
   // ---- the work, under the slot
   exporting = true;
   try {
@@ -158,7 +153,7 @@ export function serveHeightmapExport(terrainArgs: Record<string, unknown>, res: 
 
 /** Tests: whether an export is cached, without touching the cache's order; and a clean slate. */
 export const exportIsCached = (terrainArgs: Record<string, unknown>, res: number, world?: string) => exportCache.has(exportKey(terrainArgs, clampRes(res), world));
-export function resetExportBudget() { exportCache.clear(); byAddress.clear(); granted = []; exporting = false; }
+export function resetExportBudget() { exportCache.clear(); exportGate.reset(); exporting = false; }
 
 /** The ground's height range alone, from a coarse sampling — what the panel's black/white fields want,
  *  without building (or caching) a PNG. */

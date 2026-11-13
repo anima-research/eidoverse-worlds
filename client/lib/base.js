@@ -34,23 +34,88 @@ export const bus = {
 // "who am I" from query params. Both are guarded: headless hosts have neither,
 // and get the defaults.
 
+// Which world: the link's ?world= if it names one; otherwise the world THIS
+// TAB was last in (sessionStorage, so a reload keeps the tab where it was
+// whatever other tabs have joined since); otherwise the world this browser
+// was last IN as a person (localStorage), so a bare link (a bookmark, the
+// login's return to '/') goes back where you were; the commons only for a
+// browser that has been nowhere. Both are written by net.js rememberWorld.
+// Spectators, renderers and the thumbnail minter ignore the memory: a link
+// points them, and a renderer must never inherit a person's last stop.
+// index.html's early-socket script makes this same choice before any module
+// loads and publishes it as __ewWorld, which CONFIG takes when present, so
+// the page has one answer (tools/last-world-test.ts holds the two copies
+// in agreement).
+export const LAST_WORLD_KEY = 'ew-world';      // localStorage: the browser's last world
+export const TAB_WORLD_KEY = 'ew-world-tab';   // sessionStorage: this tab's
+/** A name a world can have — the client's copy of server.ts admitJoin's rule
+ *  (index.html's early-socket script carries its own: it runs before modules). */
+export const isWorldName = (w) => typeof w === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(w);
+export function pickWorld(params, last, tab = null) {
+  const asked = params.get('world');
+  if (asked) return { world: asked, remembered: false };
+  const person = !(params.has('spectate') || params.has('renderer') || params.has('mintthumbs'));
+  if (person && isWorldName(tab)) return { world: tab, remembered: true };
+  if (person && isWorldName(last)) return { world: last, remembered: true };
+  return { world: 'commons', remembered: false };
+}
+/** The two memories as pickWorld takes them; storage that throws reads as none. */
+export function rememberedWorlds() {
+  const read = (s, k) => { try { return s()?.getItem(k) ?? null; } catch { return null; } };   // the property itself may throw (bot #578)
+  return [read(() => globalThis.localStorage, LAST_WORLD_KEY), read(() => globalThis.sessionStorage, TAB_WORLD_KEY)];
+}
+/** What arriving in an empty world says (main.js, on 'hydrated'), by how the page
+ *  got here: the link named it (a non-empty ?world=, as pickWorld reads it); a
+ *  memory chose it (the last world this person was in, found empty now and so
+ *  forgotten: net.js forgetEmptyWorld); or the commons by default. */
+export function emptyWorldNotice({ world, params, worldRemembered }) {
+  if (params.get('world')) return `"${world}" is empty — nothing has ever been built here.`;
+  if (worldRemembered && world !== 'commons') {
+    return `"${world}", the last world you were in, is empty now. Add ?world=<name> to the link to go somewhere else (?world=commons for the commons).`;
+  }
+  return `you are in "${world}", which is empty. Add ?world=<name> to the link to go somewhere else.`;
+}
+
+/** Forget where this person has been (ui.js logOut): the memory is the person's,
+ *  and the browser may be the next person's. */
+export function forgetRememberedWorlds() {
+  try { globalThis.localStorage?.removeItem(LAST_WORLD_KEY); } catch { /* private mode */ }
+  try { globalThis.sessionStorage?.removeItem(TAB_WORLD_KEY); } catch { /* private mode */ }
+}
+
 const params = new URLSearchParams(globalThis.location?.search ?? '');
-const store = globalThis.localStorage ?? null;
+// a sandboxed frame throws on the property, a blocked one on every call: either way the page runs without a memory
+const store = (() => { try { return globalThis.localStorage ?? null; } catch { return null; } })();
+const remembered = (k) => { try { return store?.getItem(k) ?? null; } catch { return null; } };
+const remember = (k, v) => { try { store?.setItem(k, v); } catch { /* no memory here */ } };
+const picked = globalThis.__ewWorld ?? pickWorld(params, ...rememberedWorlds());
 export const CONFIG = {
   params,
-  world: params.get('world') || 'commons',
+  world: picked.world,
+  // true when a memory chose the world, not the link: a refusal at its door
+  // then forgets it and reloads to wherever a bare link leads next — the other
+  // memory, or the commons (net.js forgetRefusedWorld)
+  worldRemembered: picked.remembered,
   spectate: params.has('spectate'),
   renderer: params.has('renderer'),
-  // a roaming renderer: the server may send it to any world a snapshot is asked of (server/snapshots.ts)
+  // a roaming renderer: the server may send it to any world a screenshot is asked of (server/screenshots.ts)
   roam: params.has('renderer') && params.has('roam'),
   follow: params.get('follow'),
   // Door key: ?key=… once, remembered for this origin thereafter.
-  token: params.get('key') || store?.getItem('ew-key') || '',
-  name: params.get('name') || store?.getItem('ew-name') ||
+  token: params.get('key') || remembered('ew-key') || '',
+  name: params.get('name') || remembered('ew-name') ||
     `guest-${Math.random().toString(36).slice(2, 6)}`,
+  // a dev host (the probes, a local server, ?dev): the guards that throw loudly instead of letting drift pass
+  dev: params.has('dev') || /^(localhost|127\.0\.0\.1|\[::1\])$/.test(globalThis.location?.hostname ?? ''),
 };
-if (params.get('key')) store?.setItem('ew-key', CONFIG.token);
-store?.setItem('ew-name', CONFIG.name);
+if (params.get('key')) remember('ew-key', CONFIG.token);
+remember('ew-name', CONFIG.name);
+// the ACCOUNT a private (TRUST_NAMES) server knows you by, kept apart from the name you show (R 10-11: renaming herself
+// "Rab" made her a stranger with no role in her own world). Fixed at the first real name this browser used; ?account=
+// overrides. A server with sign-in ignores it: the session is the account there.
+{ let acct = params.get('account') || store?.getItem('ew-account') || '';
+  if (!acct && !/^guest-/.test(CONFIG.name)) acct = CONFIG.name;
+  CONFIG.account = acct || null; if (acct) store?.setItem('ew-account', acct); }
 
 /** The name a join ack says we have, minus the transport prefix sendJoin put
  *  on the wire id ("renderer-" / "retina-"). Pure, for net.js onSnapshot.
@@ -67,6 +132,9 @@ export function nameFromJoinAck(you, { renderer = false, spectate = false, verif
 export function setName(name) {
   CONFIG.name = name;
   store?.setItem('ew-name', name);
+  // the first real name this browser uses is its account, as at load: a first visit loads as a guest, and the door's name
+  // is that first name (a later rename never moves the account)
+  if (!CONFIG.account && name && !/^guest-/.test(name)) { CONFIG.account = name; store?.setItem('ew-account', name); }
 }
 export function setToken(token) {
   CONFIG.token = token;
@@ -85,22 +153,32 @@ export function setErrorSink(fn) { errorSink = fn; }
 // hundredth actively hides everything else.
 const seenErrors = new Map(); // key -> { n, nextAt }
 // ---- console tee: what a visitor's page says, where the operator can read it.
-// Every report() plus window errors post to /clientlog (key-gated, bounded
-// server-side). Off the hot path (queued, one flush per second), never throws,
-// and never carries the key in the payload or the URL — it rides the Authorization header
-// (Bearer), below. `tee(line)` is for lines worth keeping ([xr] etc).
-let teeQ = [], teeTimer = 0, teeMuted = false;
+// Every report() plus window errors post to /clientlog. Off the hot path (queued, one POST per flush with the lines
+// joined), never throws, and never carries the key in the payload or the URL — it rides the Authorization header
+// (Bearer), below. `tee(line)` is for lines worth keeping ([xr] etc). The server's budget (server/clientlog.ts) is
+// honoured here: a 429 waits its Retry-After (60 s when unsaid) with the lines kept; a batch (60 KB) is under its 256 KB.
+let teeQ = [], teeTimer = 0, teeMuted = false, teePausedUntil = 0;
+// Batched every 10 s; as the page hides one batch goes at once (keepalive's cap) and the rest waits for the timer (Element 30 s, Sentry's buffer the same shape).
+const TEE_LINES = 2000, TEE_BYTES = 60 * 1024, TEE_DEBOUNCE_MS = 10000;   // 60 KB: under keepalive's 64 KB in-flight cap
 function teeFlush() {
   teeTimer = 0;
   if (!teeQ.length || teeMuted) return;
-  const batch = teeQ.splice(0, 20);
+  if (Date.now() < teePausedUntil) { teeTimer = setTimeout(teeFlush, teePausedUntil - Date.now()); return; }
+  const bytes = (s) => new TextEncoder().encode(s).length;   // the cap is in bytes on the wire, not UTF-16 units
+  let body = teeQ[0], i = 1, size = bytes(body);
+  for (; i < teeQ.length && size + 1 + bytes(teeQ[i]) <= TEE_BYTES; i++) { body += `\n${teeQ[i]}`; size += 1 + bytes(teeQ[i]); }
+  const batch = teeQ.splice(0, i);
   const url = `/clientlog?world=${encodeURIComponent(CONFIG.world ?? '')}`;
   const headers = { authorization: `Bearer ${CONFIG.token ?? ''}` };   // the door key never rides in a URL
-  for (const line of batch) {
-    try { fetch(url, { method: 'POST', body: line, headers, keepalive: true }).then((r) => { if (r.status === 401 || r.status === 404) teeMuted = true; }).catch(() => {}); }
-    catch { /* the tee must never break the page */ }
-  }
-  if (teeQ.length) teeTimer = setTimeout(teeFlush, 1000);
+  try {
+    fetch(url, { method: 'POST', body, headers, keepalive: true }).then((r) => {
+      if (r.status === 401 || r.status === 404) teeMuted = true;
+      else if (r.status === 429) { teePausedUntil = Date.now() + 1000 * (Number(r.headers.get('retry-after')) || 60); teeQ.unshift(...batch); }
+      if (teeQ.length > TEE_LINES) teeQ.splice(0, teeQ.length - TEE_LINES);
+      if (teeQ.length && !teeTimer) teeTimer = setTimeout(teeFlush, TEE_DEBOUNCE_MS);
+    }).catch(() => {});
+  } catch { /* the tee must never break the page */ }
+  if (teeQ.length && !teeTimer) teeTimer = setTimeout(teeFlush, TEE_DEBOUNCE_MS);
 }
 const teeSeen = new Map();   // repeats cost one line, then one per 20
 export function tee(line) {
@@ -108,19 +186,24 @@ export function tee(line) {
     const who = CONFIG.name ?? '?';
     const key = String(line).slice(0, 160);
     if (!key.startsWith('[xr:rec]')) {
+      if (teeSeen.size >= 4096) teeSeen.clear();   // bounded: a long session forgets its repeat counts rather than growing
       const n = (teeSeen.get(key) ?? 0) + 1; teeSeen.set(key, n);
       if (n > 1 && n % 20 !== 0) return;
       if (n > 1) line = `${line} ×${n}`;
     }
     teeQ.push(`${who} ${String(line).slice(0, 3000)}`);
-    if (teeQ.length > 200) teeQ.splice(0, teeQ.length - 200);
-    if (!teeTimer) teeTimer = setTimeout(teeFlush, 1000);
+    if (teeQ.length > TEE_LINES) teeQ.splice(0, teeQ.length - TEE_LINES);
+    if (!teeTimer) teeTimer = setTimeout(teeFlush, TEE_DEBOUNCE_MS);
   } catch { /* never */ }
 }
 /** tee, sent NOW: for the line before something that may freeze the page (a GPU-process compile), so it isn't lost
- *  in the 1 s batch. */
+ *  in the batch. A 429's wait still holds. */
 export function teeNow(line) { tee(line); try { clearTimeout(teeTimer); teeFlush(); } catch { /* never */ } }
+/** The page is going away (pagehide, or hidden, which is the last event a mobile tab reliably gets): send what's queued. */
+export function teeOnHide() { try { if (teeQ.length) { clearTimeout(teeTimer); teeFlush(); } } catch { /* never */ } }
 if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide', teeOnHide);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') teeOnHide(); });
   window.addEventListener('error', (e) => tee(`[window.error] ${e.message} @ ${(e.filename ?? '').split('/').pop()}:${e.lineno}`));
   window.addEventListener('unhandledrejection', (e) => tee(`[unhandled] ${e.reason?.message ?? e.reason}`));
   // wake CAUSE, not just the URL (cribbed from agent-framework #141's turn

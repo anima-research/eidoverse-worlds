@@ -65,7 +65,7 @@ function pageLoad(search: string, stored: string, steps: Step[]) {
     const { mock } = await import("bun:test");
     const L = ${JSON.stringify(L)};
     mock.module(L + "presence.js", () => ({ presence: {} }));
-    mock.module(L + "chat.js", () => ({ logChat() {}, logWhisper() {}, noteTyping() {}, noteHistoryContext() {}, resyncChatAfter() {} }));
+    mock.module(L + "chat.js", () => ({ logChat() {}, noteTyping() {}, noteHistoryContext() {}, resyncChatAfter() {} }));
     mock.module(L + "boot.js", () => ({ markPhase() {} }));
     const net = await import(L + "net.js");
     const { CONFIG } = await import(L + "base.js");

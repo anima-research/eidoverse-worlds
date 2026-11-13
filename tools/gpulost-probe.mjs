@@ -10,6 +10,7 @@ try {
   const p = await page(); const errs = [], tees = [];
   // THE SKY GUARD, before any module reads localStorage (sky.js): a cloudy sky in headless has frozen the host
   await p.context().addInitScript(() => { try { localStorage.setItem('ew-cloud-quality', 'off'); } catch {} });
+  await p.context().addInitScript(() => { try { sessionStorage.removeItem('ew-gpu-lost'); } catch {} });   // the harness seeds a stop; this probe wants the first loss to reload
   p.on('pageerror', (e) => errs.push(e.message));
   p.on('console', (m) => { if (/\[gpu\]/.test(m.text())) tees.push(m.text()); });
   const booted = () => p.waitForFunction(() => globalThis.__gpuLost && globalThis.EW?.renderer, null, { timeout: 90000 });

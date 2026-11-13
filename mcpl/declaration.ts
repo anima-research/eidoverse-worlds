@@ -40,13 +40,25 @@ export const CHAT = {
   private: "chat:private",
   group: "chat:group",
   thread: "chat:thread",
+  // Kind facet (RFC-001 rev 3): a notice from the place, not a message anyone
+  // sent — weather, someone arriving or leaving, a visible change to the world.
+  // Hosts don't let a notice decide where the agent's plain speech goes.
+  system: "chat:system",
 } as const;
+
+/** §16.2's sender facet, from the sender's own word. A sender who declares "agent" (PROTOCOL §6a: the word a door body
+ *  declares unless told otherwise) is tagged chat:from-agent, the facet hosts' wake rules read so that an agent doesn't
+ *  wake on another agent's speech; any other word, or none, gets no facet, and every declaration still rides along as
+ *  metadata.declares, verbatim. Nothing is inferred: "ai" is not read as "agent" (review r11 L2). Dropping the tag would
+ *  have changed who wakes whom for every host following the SPEC. */
+export function senderFacet(declares: string | null | undefined): string | null {
+  return declares === "agent" ? CHAT.fromAgent : null;
+}
 
 /** This producer's own namespace (§16.1: it SHOULD match the producer's declared
  *  name). The long tail of what a *world* is lives here — a world has events
  *  chat has no word for. */
 export const EIDO = {
-  whisper: "eidoverse:whisper",
   approach: "eidoverse:approach",
   depart: "eidoverse:depart",
   reach: "eidoverse:reach",
@@ -76,7 +88,9 @@ const CLOSURE: Record<string, string[]> = {
  * §16.3: `chat:addressed` and `chat:ambient` are opposites, and a host that
  * receives both MUST resolve it by dropping `chat:ambient`. Producers SHOULD NOT
  * emit the pair at all — so we resolve it here, identically, rather than shipping
- * a set whose meaning depends on the consumer's rule ordering.
+ * a set whose meaning depends on the consumer's rule ordering. `chat:system`
+ * is another facet (kind, not addressing) and is left alone: nothing this door
+ * sends is both, and elsewhere a notice can be addressed by its place.
  */
 export function tags(...list: (string | false | null | undefined)[]): string[] {
   const out = new Set<string>();
@@ -87,6 +101,15 @@ export function tags(...list: (string | false | null | undefined)[]): string[] {
   }
   if (out.has(CHAT.addressed)) out.delete(CHAT.ambient);
   return [...out];
+}
+
+/** The tags a world's say and act are delivered with (net-server.ts's onEvent): a say is ambient, or addressed when it
+ *  mentions this body; an act is ambient and eidoverse:act; each with the sender's facet (senderFacet). Here so the lists
+ *  themselves are tested, not only the facet (house 6340433633). */
+export function speechTags(kind: "say" | "act", declares: string | null | undefined, mention = false): string[] {
+  const from = senderFacet(declares);
+  if (kind === "act") return tags(CHAT.ambient, EIDO.act, from);
+  return mention ? tags(CHAT.mention, CHAT.addressed, from) : tags(CHAT.ambient, from);
 }
 
 // ---- capability paths (§6.2) -----------------------------------------------
@@ -162,27 +185,19 @@ const TAG_ONTOLOGY = {
   // Descriptions of the reserved core are inherited from §16.2 — listing them
   // here says only "this server emits these", never what they mean (§16.4).
   coreTags: [
-    CHAT.addressed, CHAT.mention, CHAT.dm, CHAT.private, CHAT.ambient,
-    CHAT.fromAgent,
+    // (no chat:dm / chat:private: world chat has no private channel since whisper was removed, R 10-18)
+    CHAT.addressed, CHAT.mention, CHAT.ambient,
+    CHAT.fromAgent, CHAT.system,
   ],
   tags: {
-    [EIDO.whisper]: {
-      desc: "Spoken privately to you alone in-world: no bubble, and never written to the world log, so it is never replayed to anyone later.",
-      facet: "locus",
-      // Advisory only (§16.3): a producer-declared edge into a reserved tag MUST
-      // NOT be applied unless this ontology has been explicitly accepted. The
-      // door emits chat:dm/chat:private/chat:addressed directly, so nothing
-      // depends on this edge being honoured.
-      implies: [CHAT.dm],
-    },
     [EIDO.approach]: {
       desc: "Someone walked up to your body and stopped within arm's reach. Directed at you, but not speech — nothing was said.",
       facet: "addressing",
       implies: [CHAT.addressed],
     },
     [EIDO.depart]: {
-      desc: "Someone who had walked up to you is no longer in your immediate surroundings. The closing bracket of eidoverse:approach — you only ever receive one for a person you were told had arrived. The wire text names who moved when there is evidence ('walked away' only when their own movement carried them out); otherwise it states the relation neutrally ('is no longer nearby' — you may be the one who left).",
-      // AMBIENT, not addressing: a departure is worth knowing and not worth
+      desc: "Someone who had walked up to you is no longer in your immediate surroundings. The closing bracket of eidoverse:approach — you only ever receive one for a person you were told had arrived. The wire text names who moved when there is evidence ('walked away' only when their own movement carried them out); otherwise it states the relation neutrally ('is no longer nearby' — you may be the one who left). Arrives as a chat:system notice (with chat:ambient): nobody said it.",
+      // AMBIENT and chat:system, not addressing: a departure is worth knowing and not worth
       // waking for, and the whole point of this pair is fewer interruptions,
       // not one more. Consumers who do want to wake on it can say so in their
       // own rules — the reverse (unpicking a wake we declared) they cannot.
@@ -199,23 +214,23 @@ const TAG_ONTOLOGY = {
       implies: [CHAT.addressed],
     },
     [EIDO.act]: {
-      desc: "An embodied transition someone else made near you — an emote, a pose struck or released, sitting down, a moderation act.",
+      desc: "An embodied transition someone else made near you — a gesture, a pose struck or released, sitting down, a moderation act.",
       facet: "lifecycle",
     },
     [EIDO.presence]: {
-      desc: "Someone arrived in or left the world. Flap-suppressed producer-side before it is ever sent.",
+      desc: "Someone arrived in or left the world. Flap-suppressed producer-side before it is ever sent. Arrives as a chat:system notice (with chat:ambient): nobody said it.",
       facet: "lifecycle",
     },
     [EIDO.activityDigest]: {
-      desc: "One digest per pulse window summarising what is happening within your activity radius. Emitted ONLY while something is happening — the stream stops by itself when the area goes quiet. Cadence and radius are the agent's own to tune with the `activity` tool.",
+      desc: "One digest per pulse window summarising what is happening within your activity radius. Emitted ONLY while something is happening — the stream stops by itself when the area goes quiet. Cadence and radius are the agent's own to tune with the `activity` tool. Arrives as a chat:system notice (with chat:ambient): the world wrote it, nobody said it.",
       facet: "lifecycle",
     },
     [EIDO.weather]: {
-      desc: "The world's weather or light changed on its own: a forecast segment boundary, a manual override landing or expiring, or the day crossing dawn/day/dusk/night. Derived deterministically from the authored sky policy (never a log entry); the text carries its provenance. At most one line per boundary — dwell is floored at 60s, so typically minutes-to-hours apart.",
+      desc: "The world's weather or light changed on its own: a forecast segment boundary, a manual override landing or expiring, or the day crossing dawn/day/dusk/night. Derived deterministically from the authored sky policy (never a log entry); the text carries its provenance. At most one line per boundary — dwell is floored at 60s, so typically minutes-to-hours apart. Arrives as a chat:system notice (with chat:ambient): nobody said it.",
       facet: "lifecycle",
     },
     [EIDO.worldChange]: {
-      desc: "Someone changed how the world LOOKS near you — a visible authored change to a thing that is here, carrying who did it, to which entity, and whether it began, changed, or ended. Ambient and radius-gated, at most one line per (entity, component) per quiet window, and never replayed: a reconnect reconstructs the resulting state in look() without re-performing the event.",
+      desc: "Someone changed how the world LOOKS near you — a visible authored change to a thing that is here, carrying who did it, to which entity, and whether it began, changed, or ended. Ambient and radius-gated, at most one line per (entity, component) per quiet window, and never replayed: a reconnect reconstructs the resulting state in look() without re-performing the event. Arrives as a chat:system notice (with chat:ambient): nobody said it.",
       facet: "lifecycle",
     },
     [EIDO.particles]: {
@@ -223,7 +238,7 @@ const TAG_ONTOLOGY = {
       facet: "lifecycle",
     },
     [EIDO.catchup]: {
-      desc: "Replayed history, not live traffic: something that happened while you were away. Carries its ORIGINAL addressing tags, so ten missed mentions still look like ten mentions — this tag is how you tell a reconnect from ten people speaking at once.",
+      desc: "Replayed history, not live traffic: something that happened while you were away. Carries its ORIGINAL addressing tags, so ten missed mentions still look like ten mentions — this tag is how you tell a reconnect from ten people speaking at once. The 'While you were away' header before them is a chat:system notice; the replayed messages are not.",
       facet: "lifecycle",
       stability: "stable",
     },
@@ -261,7 +276,7 @@ export interface FeatureSetDecl {
 export const FEATURE_SETS: Record<string, FeatureSetDecl> = {
   "eidoverse.world": {
     description:
-      "Embodied presence in a world. The world's chat is an MCPL channel: speech, whispers, approaches, presence and an ambient activity digest arrive as channels/incoming, and publishing on the world channel IS saying it aloud in-world.",
+      "Embodied presence in a world. The world's chat is an MCPL channel: speech, approaches, presence and an ambient activity digest arrive as channels/incoming, and publishing on the world channel IS saying it aloud in-world.",
     // channels.lifecycle is here because the world an agent is IN can change —
     // see eidoverse.travel, which shares the leaf. Presence and travel are
     // separable feature sets so a host can take the world without the door.
@@ -270,12 +285,12 @@ export const FEATURE_SETS: Record<string, FeatureSetDecl> = {
   },
   "eidoverse.embodiment": {
     description:
-      "The body's hands and senses as tools: look, snapshot, walking, gesture and pose, building, moderation. Survives on its own — this is what a plain-MCP client gets.",
+      "The body's hands and senses as tools: look, screenshot, walking, gesture and pose, building, moderation. Survives on its own — this is what a plain-MCP client gets.",
     uses: [CAP.tools],
   },
   "eidoverse.travel": {
     description:
-      "Walking between the worlds this door fronts, without dropping the connection. Two lanes, one mechanism: the `travel` tool, and `channels/open` naming a sibling world (a generic host that only knows MCPL can travel without knowing our tool names). Authorization is `channels.lifecycle` — a host that declines it keeps a resident who cannot leave, which is exactly today's behavior.",
+      "Walking between the worlds this server fronts, without dropping the connection. Two lanes, one mechanism: the `travel` tool, and `channels/open` naming a sibling world (a generic host that only knows MCPL can travel without knowing our tool names). Authorization is `channels.lifecycle` — a host that declines it keeps a resident who cannot leave, which is exactly today's behavior.",
     uses: [CAP.channelsLifecycle, CAP.tools],
   },
   "eidoverse.typing": {

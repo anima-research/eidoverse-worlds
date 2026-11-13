@@ -1,0 +1,116 @@
+{
+ "status": "trial-kernel",
+ "translator": "eidoverse/translate-v1@51",
+ "companions": {
+  "changelog": "2026-11-07: kernel: the first deploy's kernel again, before any deploy (tel0s D2, 11-06, ratified for #260): an entry carrying another world's id is malformed (nulled like ts-decreasing), not a diagnostic; fixture world-mismatch joins first-deploy, and a fixture's verdict now tells a diagnostic (diagnostic:<code>) from a malformed entry. Nothing was deployed, so the ceremony re-ran over the same kernel shape",
+  "firstDeploy": {
+   "vectors": {
+    "dir": "first-deploy",
+    "names": [
+     "control",
+     "stray-minor",
+     "envelope-field",
+     "version-3",
+     "version-5",
+     "other-dialect",
+     "old-kind-act",
+     "unknown-feature",
+     "world-mismatch"
+    ]
+   }
+  },
+  "translator": null,
+  "vectors": null
+ },
+ "kernel": {
+  "envelope": {
+   "status": "trial-kernel",
+   "fields": [
+    "actor",
+    "body",
+    "cause",
+    "head",
+    "kind",
+    "op",
+    "sig",
+    "ts",
+    "verb",
+    "world"
+   ],
+   "kinds": [
+    "change",
+    "genesis",
+    "governance",
+    "physics",
+    "redaction",
+    "request",
+    "say"
+   ]
+  },
+  "fold": {
+   "status": "trial-kernel",
+   "ops": {
+    "create": [
+     "id"
+    ],
+    "delete": [
+     "id",
+     "comp"
+    ],
+    "set": [
+     "id",
+     "comp",
+     "value",
+     "salt",
+     "commitment"
+    ]
+   },
+   "batch": [
+    "ops",
+    "cascade"
+   ]
+  },
+  "identity": {
+   "status": "trial-kernel",
+   "identity": "[a-z0-9-]{1,64}",
+   "entity": "^(?:[a-z0-9-]{1,64}|@world)$",
+   "component": "^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\\/)?[a-z][a-z0-9-]*(?:@[1-9][0-9]{0,8})?(?::[a-z0-9-]{1,64})?$"
+  },
+  "version": {
+   "status": "trial-kernel",
+   "dialect": "eidoverse-log",
+   "v": 4,
+   "genesis": [
+    "dialect",
+    "nonce",
+    "owners",
+    "parent",
+    "provenance",
+    "quorum",
+    "requires",
+    "rewindWindow",
+    "sequencer",
+    "v"
+   ]
+  },
+  "roles": {
+   "status": "trial-kernel",
+   "fields": {
+    "role": "string",
+    "can": "object",
+    "note": "string",
+    "until": "int"
+   }
+  },
+  "access": {
+   "status": "trial-kernel",
+   "fields": {
+    "join": "string",
+    "watch": "string",
+    "max": "int",
+    "soft": "int",
+    "minAccountDays": "int"
+   }
+  }
+ }
+}

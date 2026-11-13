@@ -14,7 +14,7 @@ const level={y:0,tiles:Array.from({length:8},(_,i)=>[i%4,Math.floor(i/4)]),
 for(let i=0;i<64;i++){
  const levels=[structuredClone(level)];
  const data={get levels(){normalizationReads++;return levels;}};
- a.entities.set("house-"+i,{id:"house-"+i,lib:"",pos:[(i%8)*10,0,20+Math.floor(i/8)*10],yaw:0,scale:1,comp:{structure:data}});
+ a.entities.set("house-"+i,{id:"house-"+i,model:"",pos:[(i%8)*10,0,20+Math.floor(i/8)*10],yaw:0,scale:1,structure:data});
 }
 async function plan(){
  const t=performance.now(), p=a.walkTo(-2,0,false,1000,0);

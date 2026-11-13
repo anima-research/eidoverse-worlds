@@ -39,6 +39,7 @@ import { WorldAgent } from "./agent.ts";
 import { shown } from "../shared/shown.js";
 import { toolList, handleTool, type ToolCtx } from "./tools.ts";
 import { pingDelivery, type WirePing } from "./ping-wire.ts";
+import { eventTags, catchupHeaderTags, catchupReplayTags } from "./event-wire.ts";
 import { TypingRelay } from "./typing-relay.ts";
 import { MANIFEST_WITH_REVISION, ManifestAnnouncer } from "./manifest.ts";
 import { verifyToken, aid1Slug } from "../server/aid1.ts";
@@ -209,6 +210,10 @@ class Session {
     this.home = home ?? auth.world ?? "commons";
     this.recordStart = recordStart;
     this.conn = McplConnection.fromWebSocket(ws as never);
+    // The connection re-emits its socket's error as its own 'error' (with Bun 1.4's ws, a malformed frame), and a
+    // connection with no 'error' listener throws, ending the door and every session with it. This only reports it: a
+    // socket's error closes the connection on its own.
+    this.conn.on("error", (e) => console.error(`[${ts()}] [mcpl:${this.auth.id}] connection error: ${(e as Error).message?.slice(0, 160)}`));
     this.agent = this.createAgent(auth.world ?? "commons");
     this.channelId = `world:${this.agent.world}`;
     // The body's speech ends the dots the relay keeps up; if the turn goes on,
@@ -248,6 +253,7 @@ class Session {
       world,
       avatar: chosenAvatar[this.auth.id] ?? this.auth.avatar,
       url: process.env.WORLD_URL ?? "ws://127.0.0.1:8940/ws",
+      resolveRelative: false,
       // the same bearer that opened THIS door — the sequencer verifies the
       // name against it (agent names are reserved there)
       agentToken: this.agentToken,
@@ -448,9 +454,9 @@ class Session {
         : `"${target}" isn't open to you; its owners decide who comes in` };
     }
     if (this.auth.create === false)
-      return { ok: false, code: -32023, why: `no world named "${target}" exists, and this credential may not found one; worlds lists the worlds that exist` };
+      return { ok: false, code: -32023, why: `no accessible world is named "${target}", and this credential may not found one; worlds lists the worlds you can reach` };
     if (!a.found?.ok)
-      return { ok: false, code: -32023, why: `no world named "${target}" exists, and you can't found it right now: ${a.found?.why ?? "the world server refused"}` };
+      return { ok: false, code: -32023, why: `no accessible world is named "${target}", and you can't found it right now: ${a.found?.why ?? "the world server refused"}` };
     return { ok: true, founding: true };
   }
 
@@ -749,7 +755,7 @@ class Session {
     // world events → channel traffic (this is the push path — no host code).
     //
     // TAGS (§16). Four semantically different things used to be tagged
-    // `["mention"]` — speech, a whisper, a walk-up, and replayed history — which
+    // `["mention"]` — speech, a whisper (removed since, R 10-18), a walk-up, and replayed history — which
     // is a wake flag wearing a description's clothes. Each now says what it IS in
     // the reserved `chat:*` core (§16.2) plus this world's own namespace, and the
     // door decision below is still made from world state (`channelOpen`,
@@ -771,50 +777,46 @@ class Session {
     if (mediaPort > 0) this.startMediaBridge(mediaPort);
 
     this.agent.onEvent = (ev) => {
-      // §16.2 sender facet. The world reports `agent: true` for bodies driven by
-      // a model, so `chat:from-agent` rests on something. There is no
-      // corresponding evidence for humanity — a browser client simply omits the
-      // flag — so `chat:from-human` is NOT emitted from an absence. Claiming it
-      // would put an unmarked bot in the band a resident reserves for people.
-      const from = this.agent.isAgent(ev.who) ? CHAT.fromAgent : null;
+      // §16.2 sender facet: a participant's status is only ever its own
+      // declaration (PROTOCOL §6a rule 3), relayed by the world as sent; it
+      // rides along as metadata.declares, its word verbatim. A sender whose
+      // word is "agent" also carries chat:from-agent, the facet hosts' wake
+      // rules read (declaration.ts senderFacet; event-wire.ts holds each event's tags); no other
+      // word is read as a kind (review r11 L2). chat:from-human never comes
+      // from an absence.
+      const declares = this.agent.declaresOf(ev.who);
+      const md = declares ? { metadata: { declares } } : {};
       if (ev.kind === "say") {
         if (!this.channelOpen && !ev.mention) return; // door closed: chatter stops, knocks get through
         this.deliver(ev.text!, authorOf(ev.who), ev.mention
-          ? { tags: tags(CHAT.mention, CHAT.addressed, from), mentioned: true }
-          : { tags: tags(CHAT.ambient, from) });
-      } else if (ev.kind === "whisper") {
-        // A closed door does not stop a whisper — being addressed privately IS
-        // the knock. Rendered with its privacy stated, because an agent that
-        // can't tell a whisper from a shout will answer one as if it were the
-        // other, in front of everyone.
-        // A whisper is a DM, not a mention: nobody said your name, they came to
-        // you. `chat:dm` ⇒ addressed + private under §16.3's closure, emitted
-        // directly here as §16.3 recommends.
-        this.deliver(`(whispers to you) ${ev.text}`, authorOf(ev.who),
-          { tags: tags(CHAT.dm, CHAT.private, CHAT.addressed, EIDO.whisper, from), mentioned: true });
+          ? { tags: eventTags("say", { declares, mention: true }), mentioned: true, ...md }
+          : { tags: eventTags("say", { declares }), ...md });
       } else if (ev.kind === "act") {
-        // embodied transitions — an emote, a pose struck or released, someone
+        // embodied transitions — a gesture, a pose struck or released, someone
         // sitting down. Ambient by nature: a closed door mutes them.
         if (this.channelOpen) this.deliver(`* ${ev.who} ${ev.text}`, { id: "world", name: this.agent.world },
-          { tags: tags(CHAT.ambient, EIDO.act, from) });
+          { tags: eventTags("act", { declares }), ...md });
       } else if (ev.kind === "activity") {
         // The ambient-activity pulse: at most one per window, and ONLY while
         // something is happening within this body's activity radius. Overheard,
         // never addressed — a host opts in by matching `eidoverse:activity-digest`
         // (or plain `chat:ambient`) in its wake gate, which yields regular wakes
         // exactly as long as there is life nearby, and stops by itself when the
-        // area goes quiet. A closed door mutes it like any ambient signal.
+        // area goes quiet. A closed door mutes it like any ambient signal. The
+        // world wrote it, so it is a `chat:system` notice too (event-wire.ts).
         if (!this.granted(CAP.channelsIncoming)) {
           // No push channel this digest could ride — hold it for the
           // `activity` tool to hand over. deliver() would drop it silently.
           this.heldActivity.push(`[${new Date(ev.ts).toISOString().slice(11, 16)}Z] ${ev.text}`);
           if (this.heldActivity.length > 8) this.heldActivity.shift();
         } else if (this.channelOpen) this.deliver(`* ${ev.text}`, { id: "world", name: this.agent.world },
-          { tags: tags(CHAT.ambient, EIDO.activityDigest), metadata: { activity: true } });
+          { tags: eventTags("activity"), metadata: { activity: true } });
       } else if (ev.kind === "weather") {
         // The sky changed ON ITS OWN — a forecast boundary, an override
         // landing/expiring, or a day-phase crossing. One line per boundary,
-        // provenance in the text, ambient like every world-system signal.
+        // provenance in the text, ambient like every world-system signal, and
+        // `chat:system` (RFC-001 rev 3): a notice, not speech, so a host never
+        // sends the agent's plain speech here because the forecast came last.
         // Pull-only hosts get it from the `activity` tool's held ring, same
         // as activity digests — resting agents shouldn't need a renderer to
         // know it started raining.
@@ -822,7 +824,7 @@ class Session {
           this.heldActivity.push(`[${new Date(ev.ts).toISOString().slice(11, 16)}Z] ${ev.text}`);
           if (this.heldActivity.length > 8) this.heldActivity.shift();
         } else if (this.channelOpen) this.deliver(`* ${ev.text}`, { id: "world", name: this.agent.world },
-          { tags: tags(CHAT.ambient, EIDO.weather), metadata: { weather: true } });
+          { tags: eventTags("weather"), metadata: { weather: true } });
       } else if (ev.kind === "world-change") {
         // Someone changed what the world LOOKS like near this body — today, an
         // emitter beginning/changing/ending. Ambient, coalesced producer-side,
@@ -833,19 +835,19 @@ class Session {
           this.heldActivity.push(`[${new Date(ev.ts).toISOString().slice(11, 16)}Z] ${ev.text}`);
           if (this.heldActivity.length > 8) this.heldActivity.shift();
         } else if (this.channelOpen) this.deliver(`* ${ev.text}`, { id: "world", name: this.agent.world },
-          { tags: tags(CHAT.ambient, EIDO.worldChange, EIDO.particles, from), metadata: { worldChange: true } });
+          { tags: eventTags("world-change"), metadata: { worldChange: true, ...(declares ? { declares } : {}) } });
       } else if (this.channelOpen) {
         this.deliver(`* ${ev.who} ${ev.kind === "arrive" ? "arrived in the world" : "left the world"}`,
-          { id: "world", name: this.agent.world }, { tags: tags(CHAT.ambient, EIDO.presence, from) });
+          { id: "world", name: this.agent.world }, { tags: eventTags(ev.kind), ...md });
       }
     };
     this.agent.onPing = (p) => {
       // The ping→channel mapping (approach addressed+mentioned, depart
-      // ambient, reach/touch worded by the agent) lives in ping-wire.ts,
+      // ambient + chat:system, reach/touch worded by the agent) lives in ping-wire.ts,
       // where a test can hold it to what declaration.ts promises.
-      const d = pingDelivery(p as WirePing, this.agent.isAgent(p.who));
+      const d = pingDelivery(p as WirePing, this.agent.declaresOf(p.who));
       if (d) this.deliver(d.text, { id: "world", name: this.agent.world },
-        { tags: d.tags, ...(d.mentioned ? { mentioned: true } : {}) });
+        { tags: d.tags, ...(d.mentioned ? { mentioned: true } : {}), ...(d.declares ? { metadata: { declares: d.declares } } : {}) });
     };
 
     // §5.3 ORDERING (the discord-mcpl canary's rule: NOTHING runs between
@@ -878,7 +880,10 @@ class Session {
 
     // Missed-mention replay: anything that addressed you while you slept
     // greets you as tagged channel traffic — a wake-worthy summary, not
-    // just scrollback. (Full history stays available via look.)
+    // just scrollback. Speech is arrival-only (R 10-18): the world reads back
+    // says from before this body arrived only to the owner and anyone holding
+    // readChat (a server operator only by a role here), so for everyone else these reads come back empty and nothing
+    // is replayed; the code stays for an admin's door.
     // Every message replayed below is REPLAY, and says so: `eidoverse:catchup`
     // rides alongside each message's ORIGINAL addressing (§16, issue #1). Tagged
     // as bare mentions, a reconnect looked identical to ten people addressing
@@ -900,14 +905,14 @@ class Session {
       const missedSeq = said.filter((m) => m.who !== this.auth.id && this.agent.mentionsMe(m.text));
       if (missedSeq.length) {
         this.deliver(`While you were away, ${missedSeq.length} message${missedSeq.length === 1 ? "" : "s"} mentioned you:`,
-          { id: "world", name: this.agent.world }, { tags: tags(CHAT.ambient, EIDO.catchup) });
+          { id: "world", name: this.agent.world }, { tags: catchupHeaderTags() });
         for (const m of missedSeq.slice(-10)) {
           // replay = ORIGINAL addressing + the catchup marker, exactly as the
           // ontology declares (issue #39: these shipped as bare legacy
           // ["mention"], which no declared rule could match). deliver()
           // renders the author itself — passing "who: text" here doubled it.
           this.deliver(m.text, authorOf(m.who),
-            { tags: tags(CHAT.mention, EIDO.catchup), mentioned: true });
+            { tags: catchupReplayTags(), mentioned: true });
         }
       }
     }
@@ -916,9 +921,9 @@ class Session {
       const missed = this.agent.inbox.filter((m) => m.kind === "say" && m.ts > since && m.who !== this.auth.id && this.agent.mentionsMe(m.text ?? ""));
       if (missed.length) {
         this.deliver(`While you were away, ${missed.length} message${missed.length === 1 ? "" : "s"} mentioned you:`,
-          { id: "world", name: this.agent.world }, { tags: tags(CHAT.ambient, EIDO.catchup) });
+          { id: "world", name: this.agent.world }, { tags: catchupHeaderTags() });
         for (const m of missed.slice(-10)) this.deliver(m.text ?? "", authorOf(m.who),
-          { tags: tags(CHAT.mention, EIDO.catchup), mentioned: true });
+          { tags: catchupReplayTags(), mentioned: true });
       }
     }
     lastSeen[this.auth.id] = Date.now();
@@ -1304,7 +1309,7 @@ class Session {
     // descriptor will arrive to fill the gaps.
     return text(
       `${gate.founding ? "Founded and entered" : "Arrived in"} "${target}" (attachment ${this.epoch}). ` +
-      `Your identity, avatar and attention settings came with you; your held pose and posture did not (they are world-local). Your chat cursor starts fresh here. Use \`look\` to see where you are.`,
+      `Your identity, avatar and attention settings came with you; your anims and body-mode did not (they are world-local). Your chat cursor starts fresh here. Use \`look\` to see where you are.`,
     );
   }
 }
@@ -1382,8 +1387,9 @@ async function accessProbe(name: string, token: string): Promise<AccessAnswer | 
   u.search = `?world=${encodeURIComponent(name)}`;
   try {
     const r = await fetch(u, { signal: AbortSignal.timeout(2_000), headers: { authorization: `Bearer ${token}` } });
+    const a = (await r.json().catch(() => null)) as any;
+    if (r.status === 404 && a?.code === "world-unavailable") return { exists: false, you: "none" };   // missing, or not discoverable by this agent: one answer
     if (!r.ok) return null;
-    const a = (await r.json()) as AccessAnswer;
     return typeof a?.exists === "boolean" && typeof a?.you === "string" ? a : null;
   } catch { return null; }
 }
@@ -1419,6 +1425,8 @@ const wire = wireAuthors(new Map<string, string>());
 const authorOf = (id: string) => wire.authorOf(id);
 const sessions = new Map<string, Session>(); // identity → live session (newest wins)
 wss.on("connection", (ws, req) => {
+  // ws (Bun 1.4) throws an 'error' nobody listens for: a malformed frame from anyone would end every session. ws closes the socket itself.
+  ws.on("error", (e) => console.error(`[${ts()}] [mcpl] socket error: ${(e as Error).message?.slice(0, 160)}`));
   const token = new URL(req.url ?? "/", "http://localhost").searchParams.get("token");
   const registry = readTokens();
   wire.refreshIndex(displayNameIndex(registry));
@@ -1535,7 +1543,7 @@ wss.on("connection", (ws, req) => {
           admit(); return;
         }
         if (!r) recordStart = false;   // keep the memory: the next reconnect tries it again
-        console.log(`[${ts()}] [mcpl] ${auth!.id}: last world "${resume}" ${!r ? "could not be checked (memory kept)" : !r.exists ? "no longer exists" : "isn't open to it now"} — starting at home "${mintedWorld}"`);
+        console.log(`[${ts()}] [mcpl] ${auth!.id}: last world "${resume}" ${!r ? "could not be checked (memory kept)" : !r.exists ? "is no longer accessible" : "isn't open to it now"} — starting at home "${mintedWorld}"`);
       }
       const wname = auth!.world ?? "commons";
       const a = await accessProbe(wname, token ?? "");
@@ -1554,7 +1562,7 @@ wss.on("connection", (ws, req) => {
         if (auth!.create === false || !a.found?.ok) {
           const why = auth!.create === false ? "this credential may not found worlds" : (a.found?.why ?? "the world server refused");
           console.log(`[${ts()}] [audit] founding DENIED: ${auth!.id} → "${wname}" (dial-time: ${why})`);
-          refuse(`world "${wname}" does not exist, and it can't be founded now: ${why}`);
+          refuse(`no accessible world is named "${wname}", and it can't be founded now: ${why}`);
           return;
         }
         console.log(`[${ts()}] [audit] founding GRANTED: ${auth!.id} → "${wname}" (dial-time)`);

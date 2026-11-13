@@ -1,5 +1,5 @@
 {
-  "_comment": "actor id (world identity) → ElevenLabs voice id. '*' = default voice for any listed-but-unmapped speaker. Copy to voices.json (gitignored).",
+  "_comment": "display name (the stream's `names`, not the identity id) → ElevenLabs voice id. '*' = default voice for any listed-but-unmapped speaker. Copy to voices.json (gitignored).",
   "sonnet36": "REPLACE_WITH_VOICE_ID",
   "youngopus": "REPLACE_WITH_VOICE_ID",
   "*": "REPLACE_WITH_DEFAULT_VOICE_ID"

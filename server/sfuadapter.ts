@@ -336,6 +336,11 @@ export function setSfuModeratorMute(world: string, speakerId: string, mutedFlag:
   sfuState(world).sfu.setMuted(speakerId, mutedFlag);
 }
 
+/** Server-held deafness: the listener hears nobody, whatever its own consent says. No caller since ghost was removed (10-20); kept for the relay (sfu-test) and a future spectator role. */
+export function setSfuDeafened(world: string, listenerId: string, deaf: boolean) {
+  sfuState(world).sfu.setDeafened(listenerId, deaf);
+}
+
 /** Retirement funnel — the same one every other surface uses. */
 export function revokeSfuLeg(world: string, id: string) {
   senders.delete(wkey(world, id));
@@ -380,6 +385,7 @@ export function sfuDiag(world: string) {
     // to be observable, and /relay-diag is where an operator looks.
     service: voiceServiceState(),
     moderatorMuted: d.muted,          // one store, read back from the enforcement point
+    deafened: d.deafened,
   };
 }
 
@@ -449,6 +455,9 @@ export async function sfuNegotiate(world: string, legId: string,
     // Stating useinbandfec=1 in the fmtp makes it an agreed parameter rather
     // than a hope, and the client already measures fecPacketsReceived so the
     // claim has an instrument at the other end.
+    // a leg retired while the offer was being made (revokeSfuLeg cleared its resolver before this await returned), or
+    // re-minted under the same id: no offer to a dead leg, no stale offer to its successor, no resolver left behind
+    if (s.sfu.getLeg(legId)?.pc !== pc) throw new Error(`leg ${legId} retired mid-negotiation`);
     send({ type: "sfu-offer", sdp: withOpusFec(pc.localDescription!.sdp) });
     const sdp = await new Promise<string>((resolve, reject) => {
       const k = wkey(world, legId);

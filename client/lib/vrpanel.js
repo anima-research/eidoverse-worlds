@@ -7,6 +7,7 @@ import { makeSection, flashHint } from './ui.js';
 import { checkRow, selectRow, btn, sliderTable } from './rows.js';
 import { currentGrade, setGrade, GRADE_DEFAULT, GRADE_RANGE } from './quadcolour.js';
 import { xrPrefs, setXrPref, recentreXR, isPresenting } from './xr.js';
+import { pointerVisibilityMode } from './xrpointer.js';
 import { xrGlyphAvailable } from './mictoggle.js';
 
 export function initVRPanel() {
@@ -28,6 +29,24 @@ export function initVRPanel() {
       (v) => { setXrPref('turn', v); flashHint(`VR turning: ${v}`); });
     turn.title = 'smooth: continuous, like a desktop mouse — the default. snap: the world pivots 30° per stick flick, a comfort option.';
     body.appendChild(turn);
+
+    // pointer visibility: is the VR laser drawn (owner, 10-02, after comparing with Resonite; the owner named it). A house
+    // dropdown like its neighbours: dropdown.js skins the <select> and opens its list INSIDE the staged frame, so it works
+    // on the VR quad (a native popup is never drawn there). Pointing works in every mode; this only decides whether the
+    // beam is drawn (xrpointer.js).
+    const POINTER_VIS_OPTS = [['always', 'always'], ['never', 'never (still points)'], ['contextual', 'contextual']];
+    const { row: pointerVis, select: pointerVisSel } = selectRow('pointer visibility', POINTER_VIS_OPTS, pointerVisibilityMode(xrPrefs.pointerVisibility),
+      (v) => { setXrPref('pointerVisibility', pointerVisibilityMode(v)); flashHint(`VR pointer visibility: ${pointerVisibilityMode(v)}`); });
+    pointerVisSel.id = 'vr-pointer-visibility';
+    pointerVis.title = 'contextual (the default): the beam shows while it rests on a panel or a name, or while you hold grip or trigger. always: always drawn, faint when it points at nothing. never: no beam, but pointing, clicking and name hover still work (the surface dot has its own setting, below).';
+    body.appendChild(pointerVis);
+    // surface dot visibility: the dot where the laser lands has its own say (owner, 10-02). Contextual: on what the
+    // contextual beam shows for (a panel, a name, something you can use); always: on any surface, a plain wall too.
+    const { row: dotVis, select: dotVisSel } = selectRow('surface dot visibility', POINTER_VIS_OPTS.map(([v, t]) => [v, v === 'never' ? 'never' : t]), pointerVisibilityMode(xrPrefs.dotVisibility),
+      (v) => { setXrPref('dotVisibility', pointerVisibilityMode(v)); flashHint(`VR surface dot visibility: ${pointerVisibilityMode(v)}`); });
+    dotVisSel.id = 'vr-dot-visibility';
+    dotVis.title = 'the small mark where the laser lands, showing what a press would do there. contextual (the default): on panels, names and things you can use. always: on any surface the laser meets. never: no mark.';
+    body.appendChild(dotVis);
 
     // eye resolution: 'auto' is what the headset's runtime asks for; each step is per axis, so pixels go as its square
     const RES_OPTS = [['auto', 'auto (the headset asks)'], ['85', '85% (≈ ¾ the pixels)'], ['70', '70% (≈ ½ the pixels)'], ['50', '50% (¼ the pixels)']];

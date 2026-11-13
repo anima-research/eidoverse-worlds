@@ -62,7 +62,7 @@ export const xrSimActive = () => !!simHead;
 // remote sets its root to it, so a receiver's root frame equals the sender's facing frame by construction:
 // h = qRel (the look-chain input), l/r = grip [px,py,pz,qx,qy,qz,qw] in that frame, c = curls [lI,lG,rI,rG].
 // Receivers RE-SOLVE (reach's pattern: a relation, not bones). Absent when not tracked; a side is absent
-// while an emote owns the arms or the grip is untracked.
+// while a gesture owns the arms or the grip is untracked.
 const wire = { on: false, h: null, l: null, r: null, c: null };
 const r4 = (v) => +v.toFixed(4);
 const facingQ = new THREE.Quaternion(), facingInv = new THREE.Quaternion(), rootP = new THREE.Vector3(), fp = new THREE.Vector3(), fq = new THREE.Quaternion();
@@ -84,7 +84,7 @@ export const xrSimGrip = (side, pos, quat) => { if (CONFIG.params.has('xrsim')) 
 // so full extension never pops. The wrist twist is SPLIT: the forearm rolls (keep ≤15°/15% on the
 // hand, cap 120°) and the hand takes the remainder — the grip orientation still
 // lands exactly. Joint-limit costs (humeral/pronation/wrist) are NOT ported: they need Basis's per-
-// joint limit tables; a later rung. Emotes trump IK. Lost tracking: hold 0.5 s, then relax to the
+// joint limit tables; a later rung. Gestures trump IK. Lost tracking: hold 0.5 s, then relax to the
 // clip at 3 Hz (Basis's tracker-loss rule) instead of snapping in one frame.
 const WRIST_R = new THREE.Quaternion(0.5812875774993174, 0.7123369384133019, 0.08586779365740962, -0.38380664895827776);
 const WRIST_L = new THREE.Quaternion(-WRIST_R.x, WRIST_R.y, WRIST_R.z, -WRIST_R.w).normalize();   // mirror across YZ
@@ -147,7 +147,7 @@ export function solveArm(vrm, side, targetPos, targetQuat, opts = {}) {
   if (!U || !L || !H) return false;
   const st = armState(vrm, side), dt = opts.dt > 0 ? opts.dt : 1 / 60;
   // THE TWIST RESEEDS AFTER ANY GAP (review 10a M1). It unwraps against last frame's value, which is only meaningful if
-  // last frame was just now: across a VR exit/entry, an emote that took the arms, a remote leaving VR, or a tracking
+  // last frame was just now: across a VR exit/entry, a gesture that took the arms, a remote leaving VR, or a tracking
   // loss shorter than the relax, the stale value put a fresh grip on the far 360° branch (palm-up at exit, pronated at
   // entry → a candy-wrapper wrist) and it stuck, since the unwrap only moves continuously. `opts.now` (ms) for tests.
   const now = opts.now ?? performance.now();
@@ -232,7 +232,7 @@ export function solveArm(vrm, side, targetPos, targetQuat, opts = {}) {
     // against last frame, continuous through ±180°; (c) it SATURATES 240° either side of that middle — past it the
     // forearm holds its cap and the hand takes the rest. A twist must change branch once per 360° somewhere; this
     // puts it ~420° from the middle. Reseeded wherever the swivel is (first frame, teleport, tracking lost), and after any
-    // solve gap over ARM.TWIST_GAP (session start, emotes, short tracking losses: review 10a M1).
+    // solve gap over ARM.TWIST_GAP (session start, gestures, short tracking losses: review 10a M1).
     const raw = twistAbout(_qH, _fa), mid = side === 'left' ? -ARM.TWIST_CENTER : ARM.TWIST_CENTER;
     const demand = st.twist == null ? mid + wrapA(raw - mid)
       : THREE.MathUtils.clamp(st.twist + wrapA(raw - st.twist), mid - ARM.TWIST_WINDOW, mid + ARM.TWIST_WINDOW);
@@ -290,6 +290,7 @@ function fingerTick(vrm, curls) {
   const ud = vrm.userData = vrm.userData || {};
   const base = ud._fingerBase || (ud._fingerBase = new Map());
   for (const side of ['left', 'right']) {
+    if (ud._holdFingers?.[side]) continue;   // a hand holding a thing wears the grip's finger preset (thingphysics.js)
     const sgn = side === 'left' ? -1 : 1;
     const cur = curls[side] || {};
     for (const [finger, key] of [['Index', 'index'], ['Middle', 'grip'], ['Ring', 'grip'], ['Little', 'grip']]) {
@@ -309,7 +310,7 @@ function fingerTick(vrm, curls) {
 function applyLookChain(h, qIn, lk, dt) {
   eul.setFromQuaternion(qIn, 'YXZ');
   const pitch = THREE.MathUtils.clamp(eul.x, -0.7, 0.7), roll = THREE.MathUtils.clamp(eul.z, -0.5, 0.5), yaw = sa(eul.y);
-  // dt is 0 after a >2 s hitch (frame.js clamps it) — headless XR runs at ~0.5 fps and
+  // dt is 0 after a >2 s hitch (frameloop.js clamps it) — headless XR runs at ~0.5 fps and
   // every frame is one; a zero step would freeze the chain, so take a half step instead
   const s = dt > 0 ? Math.min(1, dt * 9) : 0.5;
   lk.x += (pitch - lk.x) * s; lk.y += (yaw - lk.y) * s; lk.z += (roll - lk.z) * s;
@@ -323,16 +324,28 @@ function applyLookChain(h, qIn, lk, dt) {
 /** C18 receiver: pose a REMOTE body from its wire sample — same look chain, same arm solve, same curls,
  *  in the remote root's frame (== the sender's facing frame). No latch (the wire yaw already carries it),
  *  no eye anchor (the remote stands on its root). `st` = per-remote state { look: Vector3 }. */
+/** My tracked hand's world position this frame (a simulated grip in a probe), or null when it isn't tracked — what a
+ *  socket's reach vr policy compares against its target (shared/sockbody.js reachWins). */
+const _hw = new THREE.Vector3(), _hwO = new THREE.Vector3();
+export function xrHandWorld(side, out = _hw) {
+  if (!isPresenting() && !simGrip[side]) return null;
+  if (simGrip[side]) return out.fromArray(simGrip[side].pos);
+  const g = xrHands()?.[side]?.grip;
+  if (!g) return null;
+  g.getWorldPosition(out);
+  return out.distanceToSquared(xrRig()?.position ?? _hwO) > 1e-4 ? out : null;   // a controller at the rig origin is untracked
+}
 export function applyRemoteXR(av, xr, st, dt) {
   const vrm = av?.vrm, h = vrm?.humanoid;
   if (!h || !xr || !Array.isArray(xr.h) || xr.h.length !== 4) return;
   qRel.fromArray(xr.h);
   applyLookChain(h, qRel, st.look, dt);
-  if (!av.emote) {
+  if (!av.onceAnim) {
     av.root.getWorldQuaternion(facingQ); av.root.getWorldPosition(rootP);
     const torso = torsoCapsule(vrm, h);
     for (const side of ['left', 'right']) {
       const g = xr[side[0]];
+      if (av._seatArms?.[side]) continue;   // a socket's reach holds this hand (its vr policy: occupybody.js decides, the same on every client)
       if (!Array.isArray(g) || g.length !== 7) { relaxArm(vrm, side, dt); continue; }   // a side absent from the wire = lost there too
       fp.set(g[0], g[1], g[2]).applyQuaternion(facingQ).add(rootP);
       fq.set(g[3], g[4], g[5], g[6]).premultiply(facingQ);
@@ -541,7 +554,7 @@ export function tickXRBody(dt) {
     L.yaw = wrap(L.anchor + wrap(headYaw - L.anchor) * L.follow);
     if (hips) {
       // The base is the MIXER's pose. If the bone still holds what WE wrote last frame (a clip that
-      // doesn't own hips, an emote ending), reuse the stored base — else the latch compounds into a
+      // doesn't own hips, a gesture ending), reuse the stored base — else the latch compounds into a
       // fast spin (owner, 09-05 22:14: 'a strobing tumbleweed… spinning extremely fast' after a wave).
       if (hipsLast.equals(hips.quaternion)) hipsBase.copy(hipsStored); else { hipsBase.copy(hips.quaternion); hipsStored.copy(hipsBase); }
       qHip.setFromEuler(eul.set(0, L.yaw, 0, 'YXZ')); hips.quaternion.copy(qHip).multiply(hipsBase); hipsLast.copy(hips.quaternion); hips.updateWorldMatrix(true, true);
@@ -571,16 +584,16 @@ export function tickXRBody(dt) {
   vrm.scene.updateMatrixWorld(true);
 
   // 2b. feet planted on the floor (C14) — after the anchor moved the hips, before the arms; stays
-  //     tracked through emotes like the head does (porch's rule)
+  //     tracked through gestures like the head does (porch's rule)
   feetTick(vrm, av, dt);
 
-  // 3. arms to the grips (A3) — emotes trump IK (the owner's rule: an emote you chose
+  // 3. arms to the grips (A3) — gestures trump IK (the owner's rule: a gesture you chose
   // always wins); an untracked grip (sitting at the rig origin) leaves the arm
   // to the clip. Targets are DeviceScaled about the rig like the head.
   const live = xrFingerCurl();
   const curls = { left: simCurl.left ?? live.left ?? {}, right: simCurl.right ?? live.right ?? {} };
   wire.c = [curls.left.index, curls.left.grip, curls.right.index, curls.right.grip].map((v) => r4(Math.min(1, Math.max(0, v || 0))));
-  if (av.emote) { dbg.arms.left = dbg.arms.right = false; fingerTick(vrm, curls); return; }
+  if (av.onceAnim) { dbg.arms.left = dbg.arms.right = false; fingerTick(vrm, curls); return; }
   const hands = xrHands();
   facingQ.setFromEuler(eul.set(0, facing, 0, 'YXZ')); facingInv.copy(facingQ).invert(); av.root.getWorldPosition(rootP);
   // 3a. the chest follows the hands (Basis: 0.3× the hands' mean yaw off the facing, ±15°, split 60/40
@@ -598,6 +611,11 @@ export function tickXRBody(dt) {
     const grip = hands[side]?.grip;
     let ok = false;
     const opts = { dt, head: hmdPos, torso: torsoCap };
+    if (av._seatArms?.[side]) {   // a socket's reach holds this hand (occupybody.js): the tracked hand still rides the wire, unsolved
+      const gp = xrHandWorld(side, gripP);
+      if (gp) { fp.copy(gp).sub(rootP).applyQuaternion(facingInv); wire[side[0]] = [...fp.toArray(), 0, 0, 0, 1].map(r4); }
+      dbg.arms[side] = 'seat'; continue;
+    }
     if (simGrip[side]) { gripP.fromArray(simGrip[side].pos); gripQ.fromArray(simGrip[side].quat); ok = solveArm(vrm, side, gripP, gripQ, opts); }
     else if (grip) {
       grip.matrixWorld.decompose(gripP, gripQ, tmpS);

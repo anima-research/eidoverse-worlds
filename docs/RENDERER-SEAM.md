@@ -58,7 +58,7 @@ shape for months:
   headless-tested pure halves.
 - **warmqueue** — every pipeline compile funnels through one serialized
   conductor.
-- **terrain.js `heightAt()`**, **frame.js `registerSystem`** (render is
+- **terrain.js `heightAt()`**, **frameloop.js `registerSystem`** (render is
   just a system named 'render'), and **bodysim ENGINES** — which is the
   MODEL: a Map of named engines behind a tiny selection API, lazily
   loaded, floor engine always present. The renderer seam should look

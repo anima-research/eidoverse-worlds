@@ -3,6 +3,7 @@ import { strict as assert } from "node:assert";
 import { mkdtempSync, readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { helloOf } from "../shared/protocol/hello.js";
 const dir=mkdtempSync(join(tmpdir(),"ew-scene-")), port=Number(process.env.EIDO_SCENE_TEST_PORT??19002), origin=`http://127.0.0.1:${port}`;
 mkdirSync(join(dir,"relay"));
 mkdirSync(join(dir,"library"));mkdirSync(join(dir,"opt"));
@@ -16,7 +17,7 @@ const child=Bun.spawn([process.execPath,"server/server.ts"],{env:{...process.env
 const sockets:WebSocket[]=[];
 async function wait(f:()=>boolean,label:string){for(let i=0;i<200;i++){if(f())return;await Bun.sleep(30);}throw Error(label);}
 async function connect(world:string,id:string){const messages:any[]=[];const ws=new WebSocket(origin.replace("http:","ws:")+"/ws");sockets.push(ws);
- ws.onopen=()=>ws.send(JSON.stringify({type:"join",world,id,token:"scene-test-door"}));ws.onmessage=e=>messages.push(JSON.parse(String(e.data)));
+ ws.onopen=()=>ws.send(JSON.stringify({type:"join", hello: helloOf(),world,id,token:"scene-test-door"}));ws.onmessage=e=>messages.push(JSON.parse(String(e.data)));
  await wait(()=>messages.some(m=>m.type==="snapshot"),"join");return {messages,send:(v:any)=>ws.send(JSON.stringify(v)),ws};}
 try{
  let ready=false;for(let i=0;i<200;i++){if(child.exitCode!==null)throw Error(await new Response(child.stderr).text());try{ready=(await(await fetch(origin+"/health")).json()).nonce===nonce;}catch{}if(ready)break;await Bun.sleep(30);}assert.ok(ready);

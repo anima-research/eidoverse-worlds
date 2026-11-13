@@ -32,7 +32,7 @@ import { busy as loadingBusy } from './framebudget.js';
 import { bootDone } from './boot.js';
 import { setDayness, releaseForeignLights } from './lightrig.js';
 import { warm, P_AMBIENT } from './warmqueue.js';
-import { WEATHERS, effectiveSky, hoursAt } from '../../shared/forecast.js';
+import { WEATHERS, CLOUDS, effectiveSky, hoursAt, skyTicks } from '../../shared/forecast.js';
 // Who owns which per-frame hook. The sky claims by diffing a GLOBAL array
 // around its own async build; anything another subsystem marks as its own is
 // off limits, whenever it appeared.
@@ -68,6 +68,11 @@ let currentWorld = null;
 
 export const skyArgs = () => clock?.args ?? {};
 export const skyImpl = () => impl;
+// the cloud march's tier is THIS viewer's (SWEEP-3 S1: main's sky.quality was world data): balanced, or high; read at the next build
+export const SKY_QUALITY = ['balanced', 'high'];
+let chosenQuality = null;   // this session's choice, kept even where storage refuses (bot #228)
+export const skyQuality = () => { if (chosenQuality) return chosenQuality; try { return localStorage.getItem('ew-sky-quality') === 'high' ? 'high' : 'balanced'; } catch { return 'balanced'; } };
+export function setSkyQuality(q) { chosenQuality = q === 'high' ? 'high' : 'balanced'; try { localStorage.setItem('ew-sky-quality', chosenQuality); } catch { /* this session only */ } }
 /** §22m diag: the sky-owned scene roots, for cost-attribution phases that
  *  hide the sky's DRAW without touching its state. Read-only. */
 export const skyOwnedObjects = () => skyOwned ?? [];
@@ -375,8 +380,7 @@ Object.defineProperty(globalThis, 'makeSkySystem', {
 // The canonical weather list lives in forecast.js (pure, shared with the
 // sequencer fold and the mcpl agent) — re-exported here so existing importers
 // keep their path.
-export { WEATHERS } from '../../shared/forecast.js';
-export const CLOUDS = ['clear', 'cumulus', 'stratus', 'cirrus'];
+export { WEATHERS, CLOUDS } from '../../shared/forecast.js';
 // Only `earth` is offered.
 //
 // ringworld and shieldworld each drag ~20MB of celestial geometry and add a
@@ -560,7 +564,9 @@ async function primeFor(world, wantAudio) {
     if (p.includes('/celestial/')) return world !== 'earth';
     return true;
   });
-  await primeFiles([...MODULES, ...wanted, ...particles.map((f) => f.path)]);
+  const missing = await primeFiles([...MODULES, ...wanted, ...particles.map((f) => f.path)]) ?? [];
+  // the weather sounds are the asset library's (assets/sky/audio/), not the engine's: a server without them plays none
+  return wantAudio && wanted.some((p) => p.includes('/audio/') && !missing.includes(p)) && !missing.includes('eidoverse/weather_audio.js');
 }
 
 // Single-flight. Replaying a log no longer AWAITS each sky verb (waiting for
@@ -963,9 +969,9 @@ async function buildSky(a, world, wantAudio) {
     // thing in the client — it was authored for offline batch renders, where a
     // slow frame costs nothing. A live world needs a frame budget, so we ask
     // for the tier Skye already provides for this (3 cloud passes instead of
-    // the full march) unless a world explicitly asks for the good one.
+    // the full march) unless the viewer's Video setting (skyQuality) picks high.
     const envKnobs = (globalThis.__ewEnv ??= {});
-    envKnobs.TIER = a.quality === 'high' ? undefined : 'balanced';
+    envKnobs.TIER = skyQuality() === 'high' ? undefined : 'balanced';
     // GPU caches OFF by default.
     //
     // sky_system's light cache writes through T3.textureStore, and three's
@@ -983,7 +989,7 @@ async function buildSky(a, world, wantAudio) {
     // cache alone (sky_system.js:1060), so that is the only thing to give up.
     envKnobs.CACHE = undefined;
     envKnobs.DCACHE = undefined;
-    envKnobs.LCACHE = a.quality === 'high' ? undefined : '0';
+    envKnobs.LCACHE = skyQuality() === 'high' ? undefined : '0';
 
     // (An `await whenBooted()` lived here — a bandwidth yield so the sky's
     // assets wouldn't race the body's through one pipe. It had to go: during
@@ -993,7 +999,7 @@ async function buildSky(a, world, wantAudio) {
     // itself provides what the wait was for — the sky is no longer
     // competing with boot-critical work, it IS boot work.)
     phase('teardown');
-    await primeFor(world, wantAudio);
+    const audio = await primeFor(world, wantAudio);
     phase('prime');
     await loadEidoModule('sky_worlds.js');
     phase('module');
@@ -1016,7 +1022,7 @@ async function buildSky(a, world, wantAudio) {
       clouds: cloudQuality === 'off' ? 'clear' : (CLOUDS.includes(a.clouds) ? a.clouds : 'cumulus'),
       weather: WEATHERS.includes(w0) ? w0 : 'clear',
       sun, hemi,
-      audio: wantAudio,
+      audio,
       // the rain's splashes ring out on the ground under them — terrain, water, nothing past the edge —
       // not on the library's default flat y=0 (a library older than this option ignores it)
       groundHeightAt: rainSurfaceAt,
@@ -1395,7 +1401,7 @@ async function renderSkyMesh(a) {
   const day = Math.max(0, Math.sin(((hours - 6) / 12) * Math.PI)); // 0 night → 1 noon
   const elev = -8 + 68 * day;
   const phi = THREE.MathUtils.degToRad(90 - elev);
-  const theta = THREE.MathUtils.degToRad(a.azimuth ?? 180);
+  const theta = a.azimuth ?? Math.PI;   // radians (shape audit 10-16: azimuth was degrees, default 180)
   const sunPos = new THREE.Vector3().setFromSphericalCoords(1, phi, theta);
   skyMesh.sunPosition.value.copy(sunPos);
   // Haze thickens as the sun drops — that's what actually paints a sunset dome;
@@ -1496,7 +1502,7 @@ export function updateSky(nowMs, t) {
   // same heartbeat to notice its segment boundaries. ~1Hz is plenty — even at
   // rate 24 the sun moves 0.1°/s, and the forecast's cursor makes each check
   // O(1) (never a re-walk from the policy epoch).
-  if (((clock?.args.rate ?? 0) !== 0 || clock?.args.clock === 'real' || clock?.args.forecast) && nowMs - lastClockTick > 1000) {
+  if (skyTicks(clock?.args) && nowMs - lastClockTick > 1000) {   // a tz alone is the wall clock too
     lastClockTick = nowMs;
     render().catch((e) => report('sky clock', e));
   }

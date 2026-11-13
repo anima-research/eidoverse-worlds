@@ -27,7 +27,7 @@ const shotDir = (() => { const i = process.argv.indexOf('--shots'); return i > 0
 if (shotDir) mkdirSync(shotDir, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const world = await ownedWorld({ env: { SKIP_OPT_SWEEP: '1' } });
+const world = await ownedWorld({ env: { SKIP_OPT_SWEEP: '1' }, worlds: ['emenu'] });
 const { browser, close } = await launchBrowser();
 
 async function boot(ctxOpts, name) {
@@ -73,7 +73,9 @@ const openPanels = async (pg) => {
   await openMenu(pg);
   const b = await box(pg, '#emenu .mrow[data-item="panels"]');
   await pg.mouse.move(b.cx - 4, b.cy); await pg.mouse.move(b.cx, b.cy); await sleep(300);
-  if (!(await state(pg)).sub) { console.log('  · Panels ▸: the hover did not open it; clicking'); await pg.mouse.click(b.cx, b.cy); await sleep(200); }
+  const hovered = !!(await state(pg)).sub;
+  if (!hovered) { console.log('  · Panels ▸: the hover did not open it; clicking'); await pg.mouse.click(b.cx, b.cy); await sleep(200); }
+  return hovered;
 };
 const away = async (pg) => { await pg.mouse.move(900, 420); await sleep(700); };
 
@@ -99,10 +101,10 @@ try {
   await pg.evaluate(() => document.getElementById('toasts')?.replaceChildren());
 
   // PANELS ▸
-  await openPanels(pg);
+  const hovered = await openPanels(pg);
   const sub = await box(pg, '#emenu-sub'), prow = await box(pg, '#emenu .mrow[data-item="panels"]'), m2 = await box(pg, '#emenu');
   check('hovering Panels opens its flyout beside the menu, level with its row, inside the viewport',
-    sub && Math.abs(sub.l - (m2.r + 2)) <= 1 && Math.abs(sub.t - (prow.t - 6)) <= 1 && sub.b <= 720 && sub.r <= 1280, JSON.stringify({ sub, prow, m2 }));
+    hovered === true && sub && Math.abs(sub.l - (m2.r + 2)) <= 1 && Math.abs(sub.t - (prow.t - 6)) <= 1 && sub.b <= 720 && sub.r <= 1280, JSON.stringify({ sub, prow, m2 }));
   await shot(pg, '03-panels-1280x720.png');
 
   // EVERY PIN, on → off → on, under a real mouse
@@ -124,7 +126,7 @@ try {
     await pg.click(`#emenu-sub .mpin[data-pin="${id}"]`); await sleep(150);
   }
   // the HUD follows: a closed window's rail button, a glyph, the resting line — each shows iff pinned (open windows show anyway)
-  { await pg.evaluate(async () => { const F = await import('/lib/frames.js'); for (const f of F.allFrames()) f.hide(); });
+  { await pg.evaluate(async () => { const F = await import('/lib/windows.js'); for (const f of F.allFrames()) f.hide(); });
     await sleep(300);
     for (const id of ['glyph:mic', 'lantern', 'world', 'search', 'edit']) {
       await pg.click(`#emenu-sub .mpin[data-pin="${id}"]`); await sleep(200);
@@ -158,7 +160,7 @@ try {
   }
 
   // HUD LAYOUT MODE (chat back on screen, so the shot shows a frame wearing its arrange chrome)
-  await pg.evaluate(async () => (await import('/lib/frames.js')).getFrame('chat')?.show());
+  await pg.evaluate(async () => (await import('/lib/windows.js')).getFrame('chat')?.show());
   await openPanels(pg);
   await pg.click('#emenu-sub .mrow[data-layout]'); await sleep(250);
   let s = await state(pg);

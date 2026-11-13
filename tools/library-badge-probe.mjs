@@ -1,5 +1,5 @@
 // bun tools/library-badge-probe.mjs — World › Build library cards show each model's optimization status
-// (palette.js optBadge over /library-models `opt`): refused/deferred/stale → ⚠ chip; a built LOD → 'LOD' chip; the
+// (catalog.js optBadge over /library-models `opt`): refused/deferred/stale → ⚠ chip; a built LOD → 'LOD' chip; the
 // hover (title) lists every pass with its reason. Searches broadly so the page renders the server's real catalog, then
 // checks every card against the JSON the route returned for the same query.
 import { launchBrowser, ownedWorld, checker } from './probe-harness.mjs';
@@ -46,7 +46,7 @@ try {
     for (let i = 0; i < 40 && !document.querySelector('#sec-build input[type=search]'); i++) await new Promise((res) => setTimeout(res, 100));
     const input = document.querySelector('#sec-build input[type=search]');
     // the empty box: the curated starters, carrying the catalog's rank like any search result (Greptile #207)
-    const { starterModels } = await import('./lib/palette.js');
+    const { starterModels } = await import('./lib/catalog.js');
     const stems = starterModels().map((m) => m.path.split('/').pop().replace(/\.glb$/, '').toLowerCase());
     const sj = await (await fetch(`/library-models?q=${encodeURIComponent(stems.join(' '))}`)).json();
     const want = new Map(starterModels().map((m) => [m.name, sj.find((h) => h.path === m.path)?.perf?.rank ?? null]));

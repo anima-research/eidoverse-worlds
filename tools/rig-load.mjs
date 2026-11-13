@@ -45,25 +45,38 @@ export function libraryRigs(dir = process.env.EIDOVERSE_DIR
   const out = [];
   for (const f of names) {
     const name = f.replace('.vrm', '');
-    let g, bones, wp;
-    try { g = glbJson(readFileSync(dir + f)); bones = humanBones(g); wp = worldPositions(g); }
-    catch (e) { out.push({ name, err: e.message }); continue; }
-    if (!bones) { out.push({ name, err: 'no humanoid extension' }); continue; }
-    const P = {};
-    for (const [b, n] of Object.entries(bones)) if (g.nodes[n]) P[b] = wp(n);
-    if (!P.hips) { out.push({ name, err: 'no hips bone' }); continue; }
-    const nodeOf = new Map(Object.entries(bones).map(([b, n]) => [n, b]));
-    const up = new Map();
-    g.nodes.forEach((n, i) => (n.children ?? []).forEach((c) => up.set(c, i)));
-    const realParent = {};
-    for (const [b, n] of Object.entries(bones)) {
-      let a = up.get(n);
-      while (a !== undefined && !nodeOf.has(a)) a = up.get(a);
-      realParent[b] = a === undefined ? null : nodeOf.get(a);
-    }
-    out.push({ name, P, realParent, vrm0: isVrm0(g), boneCount: Object.keys(P).length });
+    let g;
+    try { g = glbJson(readFileSync(dir + f)); } catch (e) { out.push({ name, err: e.message }); continue; }
+    out.push(rigFromGltf(name, g));
   }
   return out;
+}
+
+/** One rig from a glTF JSON (a VRM's JSON chunk, or a skeleton fixture written by tools/rig-fixture.mjs). */
+export function rigFromGltf(name, g) {
+  let bones, wp;
+  try { bones = humanBones(g); wp = worldPositions(g); } catch (e) { return { name, err: e.message }; }
+  if (!bones) return { name, err: 'no humanoid extension' };
+  const P = {};
+  for (const [b, n] of Object.entries(bones)) if (g.nodes[n]) P[b] = wp(n);
+  if (!P.hips) return { name, err: 'no hips bone' };
+  const nodeOf = new Map(Object.entries(bones).map(([b, n]) => [n, b]));
+  const up = new Map();
+  g.nodes.forEach((n, i) => (n.children ?? []).forEach((c) => up.set(c, i)));
+  const realParent = {};
+  for (const [b, n] of Object.entries(bones)) {
+    let a = up.get(n);
+    while (a !== undefined && !nodeOf.has(a)) a = up.get(a);
+    realParent[b] = a === undefined ? null : nodeOf.get(a);
+  }
+  return { name, P, realParent, vrm0: isVrm0(g), boneCount: Object.keys(P).length };
+}
+
+/** A rig's skeleton as the repo carries it (spec/fixtures/<name>-rig.json), for a suite that must run without the
+ *  avatar library on disk. Throws when there is no such fixture: a missing fixture is a broken checkout, not a skip. */
+export function fixtureRig(name) {
+  const g = JSON.parse(readFileSync(fileURLToPath(new URL(`../spec/fixtures/${name}-rig.json`, import.meta.url)), 'utf8'));
+  return { ...rigFromGltf(name, g), fixture: true };
 }
 
 export function rigs() {

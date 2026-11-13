@@ -1,18 +1,21 @@
-// particles-host-test — the ACTUAL browser host (client/lib/emitters.js) with a
-// stand-in GPU builder and real THREE transforms. What it pins:
+// particles-host-test — the ACTUAL browser host (client/lib/emitters.js) with a stand-in GPU half (particlefx.js
+// buildEmitter) and real THREE transforms. Ported from upstream #256's host test to this protocol's shapes (an instance
+// names an effect document; a thing carries one `particles`). What it pins:
 //
-//   1. every authored motion/look knob reaches makeParticles as a preset
-//      override, and nothing the host owns leaks into it;
-//   2. `scale` is the emitter's own frame — set on the emitter mesh, composing
-//      with the entity's scale, leaving the origin an entity-frame offset;
-//   3. several emitters per entity (`particles`, `particles:<name>`) live and
-//      die independently, and an entity's removal / demotion / late arrival
-//      handles all of them, with no hook growth and nothing leaked.
+//   1. `scale` is the emitter's own frame: set on the emitter group, composing with the thing's own scale, leaving `at`
+//      a thing-frame offset (upstream's section 2, as it was);
+//   2. several emitters: a stored document's emitters each build their own, with their own random stream, hung on one
+//      group; an emitter lit and put out on its own is a CHILD thing's `particles` (the translator writes upstream's
+//      particles:<name> that way), and it lives and dies apart from its host's;
+//   3. a thing's removal / demotion / late arrival handles its emitter, with no hook growth and nothing leaked.
+//
+// Not ported (cannot exist here): upstream's section 1 (each preset override reaching makeParticles: a document's modules
+// replace the override bag, and particlefx builds from the resolved document) and its particles:<name> keys (one
+// particles per thing; see 2).
 //
 //   bun tools/particles-host-test.ts
 import { mock } from 'bun:test';
-// three by explicit client path (tools/core-stub.mjs's convention): the SAME
-// module instance the client modules under test resolve.
+// three by explicit client path (tools/core-stub.mjs's convention): the SAME module instance the client modules resolve.
 import * as THREE from '../client/node_modules/three/build/three.module.js';
 
 let passed = 0, failed = 0;
@@ -27,119 +30,105 @@ const emit = (k: string, v: unknown) => handlers.get(k)?.forEach((f) => f(v));
 const entities = new Map<string, THREE.Object3D | null>();
 const scene = new THREE.Scene();
 const base = `${import.meta.dir}/../client/lib/`;
+// a stored document with two emitters (the world's `effect` request answers it)
+const HEX = 'ab'.repeat(32);
+const DOC = { kind: 'particle-effect', v: 1, name: 'hearth', reads: 'a hearth fire and its smoke', emitters: [
+  { spawn: { amount: 40, lifetime: 1 }, size: { base: 0.3 }, render: { blend: 'add' } },
+  { spawn: { amount: 20, lifetime: 3 }, size: { base: 0.6 }, forces: { gravity: [0, 0.5, 0] }, render: { blend: 'alpha' } }] };
+const asked: string[] = [];
 mock.module(`${base}core.js`, () => ({ THREE, scene }));
 mock.module(`${base}base.js`, () => ({ bus }));
 mock.module(`${base}world.js`, () => ({ entities, findPart: () => null }));
-mock.module(`${base}assets.js`, () => ({ loadEidoModule: async () => {}, primeFiles: async () => {} }));
-
-// The upstream builder as it behaves today: adds its mesh to the scene, pushes
-// its billboard update into the global array, hands back no dispose.
-const hooks: Function[] = [];
-(globalThis as any)._autoParticleSystems = hooks;
-const calls: any[] = [];
+mock.module(`${base}assets.js`, () => ({ primeFiles: async () => {} }));
+mock.module(`${base}net.js`, () => ({ sendRequest: async (verb: string, args: any) => { asked.push(`${verb}:${args?.name}`); return verb === 'effect' && args?.name === `sha256:${HEX}` ? { ok: true, effect: DOC } : { ok: false }; } }));
+// the GPU half: one mesh per emitter, counted, with a dispose the host must call
+const built: { name: string; seed: number; em: any; fx?: any }[] = [];
 let disposed = 0;
-(globalThis as any).makeParticles = (opts: any) => {
-  calls.push(opts);
-  const mesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial());
-  mesh.name = opts.name;
-  mesh.geometry.addEventListener('dispose', () => disposed++);
-  const update = () => {};
-  hooks.push(update); (opts.scene ?? scene).add(mesh);
-  return { mesh, update };
-};
+mock.module(`${base}particlefx.js`, () => ({
+  buildEmitter: (em: any, { seed, name }: { seed: number; name: string }) => {
+    const mesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial()); mesh.name = name;
+    let on = true;
+    const fx = { mesh, update() {}, setEmitting(v: boolean) { on = v; }, get emitting() { return on; }, dispose() { disposed++; } };
+    built.push({ name, seed, em, fx });
+    return fx;
+  },
+}));
 
+const hooks: Function[] = ((globalThis as any)._autoParticleSystems ||= []);
 const { _registry: registry, clearEmitters, emitterCount } = await import('../client/lib/emitters.js');
-const settle = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
-const comp = async (id: string, type: string, data: unknown) => { emit('comp', { id, type, data }); await settle(); };
-const meshes = (root: THREE.Object3D) => root.children.filter((c) => c.userData.emitterOf);
-const byKey = (root: THREE.Object3D, key: string) => root.children.find((c) => c.userData.emitterKey === key);
+const settle = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+const comp = async (id: string, data: unknown) => { emit('comp', { id, type: 'particles', data }); await settle(); };
+const groups = (root: THREE.Object3D) => root.children.filter((c) => c.userData.emitterOf);
 
-// ---- 1. overrides reach the builder -----------------------------------------
-console.log('\noverrides — the preset is a starting point\n');
-const hearth = new THREE.Group(); hearth.position.set(5, 0, -2); scene.add(hearth);
-entities.set('hearth', hearth);
-await comp('hearth', 'particles', {
-  preset: 'fire', origin: [0, 0.25, 0], size: 0.4, wobble: 0.05, up: 0.3, spread: 0.1, grow: -0.2,
-  swirl: 0.5, twinkle: 0.3, converge: 0.9, rotate: 0.2, gravity: 0.8, color: '#ffcc88', blending: 'additive',
-});
-const fireOpts = calls.at(-1);
-check('the builder saw the preset and every authored override',
-  fireOpts?.preset === 'fire' && fireOpts.size === 0.4 && fireOpts.wobble === 0.05 && fireOpts.up === 0.3
-  && fireOpts.spread === 0.1 && fireOpts.grow === -0.2 && fireOpts.swirl === 0.5 && fireOpts.twinkle === 0.3
-  && fireOpts.converge === 0.9 && fireOpts.rotate === 0.2 && fireOpts.color === 0xffcc88 && fireOpts.blending === 'additive',
-  JSON.stringify(fireOpts));
-check('a vertical gravity arrives as the [x, y, z] the builder indexes',
-  JSON.stringify(fireOpts?.gravity) === '[0,0.8,0]');
-check('the builder never sees scale, quality or the authored origin (the host owns those)',
-  fireOpts && !('scale' in fireOpts) && !('quality' in fireOpts) && JSON.stringify(fireOpts.origin) === '[0,0,0]');
-await comp('hearth', 'particles', { preset: 'smoke' });
-check('an untouched preset passes no overrides (it IS the preset)',
-  ['size', 'wobble', 'gravity', 'color', 'blending', 'up'].every((k) => !(k in calls.at(-1))));
-
-// ---- 2. scale is the emitter's own frame ------------------------------------
-console.log('\nscale — the emitter\'s frame, composing with the entity\'s\n');
+// ---- 1. scale is the emitter's own frame ------------------------------------
+console.log('\nscale — the emitter\'s frame, composing with the thing\'s\n');
 const candle = new THREE.Group(); candle.position.set(1, 0.98, 2); candle.scale.setScalar(1.1); scene.add(candle);
 entities.set('candle', candle);
-await comp('candle', 'particles', { preset: 'fire', origin: [0, 0.11, 0], scale: 0.025, size: 0.32, area: 0.03 });
-const flame = byKey(candle, 'particles')!;
-check('the emitter mesh carries the authored scale', flame?.scale.x === 0.025 && flame.scale.y === 0.025 && flame.scale.z === 0.025);
-check('...the origin stays an entity-frame offset, unscaled by it', JSON.stringify(flame?.position.toArray()) === '[0,0.11,0]');
+await comp('candle', { effect: 'fire', at: [0, 0.11, 0], scale: 0.025, params: { size: 0.32, area: 0.03 } });
+const flame = groups(candle)[0];
+check('the emitter group carries the authored scale', flame?.scale.x === 0.025 && flame.scale.y === 0.025 && flame.scale.z === 0.025);
+check('...`at` stays a thing-frame offset, unscaled by it', JSON.stringify(flame?.position.toArray()) === '[0,0.11,0]');
 scene.updateMatrixWorld(true);
 const ws = new THREE.Vector3(); flame?.getWorldScale(ws);
-check('...and the entity\'s own scale composes on top (1.1 × 0.025)', Math.abs(ws.x - 0.0275) < 1e-9, String(ws.x));
+check('...and the thing\'s own scale composes on top (1.1 × 0.025)', Math.abs(ws.x - 0.0275) < 1e-9, String(ws.x));
 const wp = new THREE.Vector3(); flame?.getWorldPosition(wp);
 check('...placing it at the wick in world space', wp.distanceTo(new THREE.Vector3(1, 0.98 + 0.11 * 1.1, 2)) < 1e-9);
-await comp('candle', 'particles', { preset: 'fire', origin: [0, 0.11, 0] });
-check('no scale means scale 1 (an existing bag renders exactly as before)', byKey(candle, 'particles')?.scale.x === 1);
+await comp('candle', { effect: 'fire', at: [0, 0.11, 0] });
+check('no scale means scale 1 (an existing value renders exactly as before)', groups(candle)[0]?.scale.x === 1 && groups(candle).length === 1);
 
-// ---- 3. several emitters per entity -----------------------------------------
-console.log('\nseveral emitters — one entity, independent lifecycles\n');
-const hooksBefore = hooks.length;
-await comp('hearth', 'particles', { preset: 'fire', origin: [0, 0.25, 0] });
-await comp('hearth', 'particles:smoke', { preset: 'smoke', origin: [0, 0.8, 0], gravity: 0.6 });
-await comp('hearth', 'particles:sparks', { preset: 'sparks', origin: [0, 0.3, 0], count: 40 });
-check('three emitters hang off one entity', meshes(hearth).length === 3, String(meshes(hearth).length));
-check('each knows its own key', ['particles', 'particles:smoke', 'particles:sparks'].every((k) => byKey(hearth, k)));
-check('named builds are told apart in the scene graph', byKey(hearth, 'particles:smoke')?.name === 'particles_hearth_smoke_smoke');
-check('one per-frame hook per emitter, no more', hooks.length === hooksBefore + 2, `${hooks.length} vs ${hooksBefore}`);
-const fireMesh = byKey(hearth, 'particles');
-await comp('hearth', 'particles:smoke', { preset: 'dust', origin: [0, 0.8, 0] });
-check('replacing one emitter rebuilds only that one', byKey(hearth, 'particles') === fireMesh
-  && calls.at(-1).preset === 'dust' && meshes(hearth).length === 3);
-await comp('hearth', 'particles:sparks', null);
-check('putting out one leaves the others burning', !byKey(hearth, 'particles:sparks') && meshes(hearth).length === 2
-  && byKey(hearth, 'particles') === fireMesh);
-const before = calls.length;
-await comp('hearth', 'particles:two words', { preset: 'fire' });
-check('a malformed emitter key builds nothing', calls.length === before && meshes(hearth).length === 2);
-await comp('hearth', 'particles:smoke', { preset: 'dust', origin: [0, 0.8, 0] });
-check('an identical re-author is idempotent (no rebuild, no extra hook)', calls.length === before);
+// ---- 2. several emitters ----------------------------------------------------
+console.log('\nseveral emitters — one document\'s, and a child thing\'s\n');
+const hearth = new THREE.Group(); hearth.position.set(5, 0, -2); scene.add(hearth);
+entities.set('hearth', hearth);
+const hooksBefore = hooks.length, builtBefore = built.length;
+await comp('hearth', { effect: `sha256:${HEX}`, at: [0, 0.25, 0], seed: 42 });
+check('a stored document is asked for once', asked.filter((a) => a === `effect:sha256:${HEX}`).length === 1, asked.join(', '));
+check('...and when it lands, each of its emitters builds, on one group', built.length === builtBefore + 2 && groups(hearth).length === 1
+  && groups(hearth)[0].children.length === 2, `${built.length - builtBefore} built`);
+const [e0, e1] = built.slice(-2);
+check('...each with its own random stream (two emitters, not one drawn twice)', e0.seed !== e1.seed && e0.seed === 42, `${e0.seed} ${e1.seed}`);
+check('...each its own modules', e0.em.size.base === 0.3 && e1.em.size.base === 0.6);
+check('one per-frame hook for the thing, however many emitters it has', hooks.length === hooksBefore + 1, `${hooks.length} vs ${hooksBefore}`);
+// sparks lit and put out on their own: a child thing (parent: the hearth) with its own particles
+const sparks = new THREE.Group(); hearth.add(sparks); entities.set('hearth-sparks', sparks);
+const hostGroup = groups(hearth)[0];
+await comp('hearth-sparks', { effect: 'sparks', at: [0, 0.3, 0], params: { count: 40 } });
+check('a child thing\'s emitter hangs off the child', groups(sparks).length === 1 && groups(hearth)[0] === hostGroup);
+await comp('hearth-sparks', { effect: 'embers' });
+check('replacing it rebuilds only that one', groups(hearth)[0] === hostGroup && groups(sparks).length === 1);
+await comp('hearth-sparks', null);
+check('putting it out leaves the hearth burning', groups(sparks).length === 0 && groups(hearth)[0] === hostGroup);
+const before = built.length;
+await comp('hearth', { effect: `sha256:${HEX}`, at: [0, 0.25, 0], seed: 42 });
+check('an identical re-author is idempotent (no rebuild, no extra hook)', built.length === before && hooks.length === hooksBefore + 1);
+await comp('hearth', { effect: `sha256:${HEX}`, at: [0, 0.25, 0], seed: 42, playing: false });
+check('playing off stops spawning without a rebuild', built.length === before && groups(hearth)[0] === hostGroup
+  && e0.fx.emitting === false && e1.fx.emitting === false);
 
-// lifecycle of the entity takes ALL its emitters
+// ---- 3. the thing's lifecycle takes its emitter -----------------------------
+console.log('\nlifecycle — removal, demotion, promotion, a late joiner\n');
 emit('entity', { id: 'hearth', kind: 'demote' });
-check('demotion retires every emitter on the entity', meshes(hearth).length === 0 && registry.slotsOf('hearth').length === 0);
+check('demotion retires the emitter', groups(hearth).length === 0 && !registry.has('hearth'));
 const stand = new THREE.Group(); entities.set('hearth', stand);
 emit('entity', { id: 'hearth', kind: 'spawn' });
-await comp('hearth', 'particles', { preset: 'fire' });
-await comp('hearth', 'particles:smoke', { preset: 'smoke' });
-check('promotion re-announces and rebuilds them all on the new subtree', meshes(stand).length === 2);
+await comp('hearth', { effect: 'fire' });
+check('promotion re-announces and rebuilds on the new subtree', groups(stand).length === 1);
 emit('entity', { id: 'hearth', kind: 'remove' });
-check('removal retires them all', meshes(stand).length === 0 && registry.slotsOf('hearth').length === 0);
+check('removal retires it', groups(stand).length === 0 && !registry.has('hearth'));
 
-// a late joiner: comps fold before the GLB lands
+// a late joiner: the component folds before the GLB lands
 entities.set('lantern', null);
-await comp('lantern', 'particles', { preset: 'magic' });
-await comp('lantern', 'particles:glow', { preset: 'stars', area: 0.01 });
-check('emitters wait for their entity instead of burning at the world origin', registry.slotsOf('lantern').length === 0
+await comp('lantern', { effect: 'magic' });
+check('an emitter waits for its thing instead of burning at the world origin', !registry.has('lantern')
   && !scene.children.some((c) => c.userData?.emitterOf === 'lantern'));
 const lantern = new THREE.Group(); entities.set('lantern', lantern);
 emit('entity', { id: 'lantern', kind: 'spawn' }); await settle();
-check('...and all of them attach when it arrives', meshes(lantern).length === 2);
+check('...and attaches when it arrives', groups(lantern).length === 1);
 
 clearEmitters();
 check('world teardown takes every emitter and every hook back', emitterCount() === 0
-  && hooks.length === 0 && meshes(hearth).length + meshes(candle).length + meshes(lantern).length === 0);
-check('...disposing what each built', disposed === calls.length, `${disposed} disposed of ${calls.length} built`);
+  && hooks.length === 0 && groups(hearth).length + groups(candle).length + groups(lantern).length === 0, `${emitterCount()} ${hooks.length}`);
+check('...disposing what each built', disposed === built.length, `${disposed} disposed of ${built.length} built`);
 
 console.log(`\n${passed} passed, ${failed} failed\n`);
-if (failed) process.exit(1);
+process.exit(failed ? 1 : 0);

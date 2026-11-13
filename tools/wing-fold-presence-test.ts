@@ -18,18 +18,19 @@ function check(name: string, ok: boolean, detail = '') {
 }
 
 console.log('\nSEMANTIC FIELD');
-check('fold emits an explicit true', JSON.stringify(wingFoldPresence(true)) === '{"wingsFolded":true}');
-check('unfold emits an explicit false (absence is not release)',
-  JSON.stringify(wingFoldPresence(false)) === '{"wingsFolded":false}');
+check('fold emits the named pose wings-folded (R 10-17: a pose by name, not a boolean)', JSON.stringify(wingFoldPresence(true)) === '{"poses":["wings-folded"]}');
+check('unfold emits an explicit empty list (absence is not release)',
+  JSON.stringify(wingFoldPresence(false)) === '{"poses":[]}');
 const avatar: any = { wingsFolded: false };
-check('remote renderer consumes fold', applyWingFoldPresence(avatar, { wingsFolded: true }) && avatar.wingsFolded);
-check('remote renderer consumes unfold', applyWingFoldPresence(avatar, { wingsFolded: false }) && !avatar.wingsFolded);
+check('remote renderer consumes fold', applyWingFoldPresence(avatar, { poses: ['wings-folded'] }) && avatar.wingsFolded);
+check('remote renderer consumes unfold', applyWingFoldPresence(avatar, { poses: [] }) && !avatar.wingsFolded);
+check('an older sample\'s boolean wingsFolded still reads as the pose', applyWingFoldPresence(avatar, { wingsFolded: true }) && avatar.wingsFolded && applyWingFoldPresence(avatar, { wingsFolded: false }) && !avatar.wingsFolded);
 check('legacy/absent field abstains', !applyWingFoldPresence(avatar, {}) && !avatar.wingsFolded);
 const ownState: any = { wingsFolded: false };
 const ownAvatar: any = { wingsFolded: false };
 applyOwnedWingFold(ownState, ownAvatar, true);
 check('the real owner operation joins local rig state to the wire field',
-  ownAvatar.wingsFolded === true && wingFoldPresence(ownState.wingsFolded).wingsFolded === true);
+  ownAvatar.wingsFolded === true && wingFoldPresence(ownState.wingsFolded).poses.includes('wings-folded'));
 
 console.log('\nBODY AUTONOMY');
 const ag: any = new WorldAgent({ name: 'mythos', world: 'fold-bench' });
@@ -47,7 +48,7 @@ const denied = await ag.takeOff();
 check('takeoff remains separately denied', !denied.ok && /cannot fly|not granted/.test(denied.text), denied.text);
 ag.myRights = { role: 'builder', fly: true };
 const whileFolded = await ag.takeOff();
-check('a granted body still cannot take off while folded', !whileFolded.ok && /wings folded/.test(whileFolded.text), whileFolded.text);
+check('a granted body still cannot take off while folded', !whileFolded.ok && /your wings are folded/.test(whileFolded.text), whileFolded.text);
 const opened = await ag.foldWings(false);
 check('and unfolds without granting propulsion', ag.wingsFolded === false && opened.ok && /wings open/.test(opened.text), opened.text);
 ag.myRights = { role: 'builder', fly: false };
@@ -64,7 +65,7 @@ ag.joined = true;
 ag.ws = { send: (raw: string) => sent.push(JSON.parse(raw)) };
 ag.tick();
 check('the real headless tick puts fold state on the presence wire',
-  sent.some((m) => m.type === 'pose' && m.pose?.wingsFolded === true));
+  sent.some((m) => m.type === 'pose' && m.pose?.poses?.includes('wings-folded') && !('wingsFolded' in m.pose)));
 ag.joined = false;
 const wingless: any = new WorldAgent({ name: 'wingless', world: 'fold-bench' });
 wingless.bodyBoneNames = ['Hip', 'Spine02', 'Head'];
@@ -91,7 +92,7 @@ check('browser presence emits the semantic field',
 check('mounted and unmounted remote paths both consume it through the rig',
   (remoteSrc.match(/applyWingFoldPresence\(r\.avatar, s\)/g) ?? []).length === 2);
 check('own reconnect restores the semantic fold',
-  /setFolded\(r\.wingsFolded === true\)/.test(mainSrc));
+  /setFolded\(foldedIn\(r\) === true\)/.test(mainSrc));
 check('newly loaded and swapped bodies use one fold-aware owner',
   /me\.wingsFolded = folded\(\)/.test(mybodySrc) &&
   (mybodySrc.match(/setMe\(/g) ?? []).length >= 3);
@@ -101,18 +102,18 @@ check('browser toggle asks the current rig for physical wing evidence',
   /inspectBody\(flightBones \?\? \[\]\)\.canAnimateWings/.test(controllerSrc));
 check('settled pose preserves unknown semantic fields for late join',
   // live readings (mic/hear) are dropped by name; everything else rides the rest spread
-  /const \{ emote: _emote(?:, \w+: _\w+)*, \.\.\.still \} = pose/.test(serverSrc));
+  /const \{ (?:\w+: _\w+, )*\.\.\.still \} = withoutOnceAnim\(pose/.test(serverSrc));
 check('headless reconnect restores its own fold state',
-  /this\.wingsFolded = msg\.restore\.wingsFolded === true/.test(agentSrc));
+  /this\.wingsFolded = foldedIn\(msg\.restore\) === true/.test(agentSrc));
 check('text-tier perception reports the public silhouette',
   /wings folded/.test(agentSrc) && /wings-fold/.test(agentSrc));
 const foldActs: string[] = [];
 const watcher: any = new WorldAgent({ name: 'watcher', world: 'fold-bench' });
 watcher.gate = { act: (_id: string, key: string) => foldActs.push(key) };
-watcher.noteActs('mythos', null, { p: [0,0,0], yaw: 0, speed: 0, clip: 'idle', wingsFolded: true });
+watcher.noteActs('mythos', null, { p: [0,0,0], yaw: 0, speed: 0, clip: 'idle', poses: ['wings-folded'] });
 check('first sighting establishes a fold baseline without inventing an act', foldActs.length === 0);
-watcher.noteActs('mythos', { p: [0,0,0], yaw: 0, speed: 0, clip: 'idle', wingsFolded: false },
-  { p: [0,0,0], yaw: 0, speed: 0, clip: 'idle', wingsFolded: true });
+watcher.noteActs('mythos', { p: [0,0,0], yaw: 0, speed: 0, clip: 'idle', poses: [] },
+  { p: [0,0,0], yaw: 0, speed: 0, clip: 'idle', poses: ['wings-folded'] });
 check('an observed explicit edge announces the fold once',
   foldActs.length === 1 && foldActs[0] === 'wings-fold');
 

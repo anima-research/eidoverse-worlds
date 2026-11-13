@@ -15,11 +15,12 @@
 // target leak (xrwarm.js: an in-VR compileAsync built into a context the headset's frames never use).
 //
 // Run: node tools/xr-dual-warm-probe.mjs   (~40 s; run it under a memory guard)
+import { fileURLToPath } from "node:url";
 import { chromium } from 'playwright';
 import { readFileSync, existsSync } from 'node:fs';
 import { join, extname } from 'node:path';
 
-const ROOT = new URL('../client/', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('../client/', import.meta.url));
 const N = 30, M = 20;
 const TYPES = { '.js': 'text/javascript', '.html': 'text/html' };
 const PAGE = `<!doctype html><html><body><script type="importmap">{"imports":{"three":"./node_modules/three/build/three.webgpu.js","three/webgpu":"./node_modules/three/build/three.webgpu.js","three/tsl":"./node_modules/three/build/three.tsl.js"}}</script>

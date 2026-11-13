@@ -1,3 +1,4 @@
+import { helloOf } from "../shared/protocol/hello.js";
 // Show-scale load harness: N synthetic performers + M spectators against a
 // running sequencer. Measures what the audience will actually feel:
 //   - join latency (ws open → snapshot), simultaneous-arrival burst
@@ -9,6 +10,11 @@
 //   PERFORMERS=24 SPECTATORS=176 DURATION_S=60 URL=ws://host:8940/ws TOKEN=… bun tools/loadtest.ts
 //
 // Exit 0 = all gates pass. Gates are printed at the end.
+//
+// The world must exist (a world is founded by its operator: bun tools/protocol/world.ts found loadtest --owner <you>;
+// joining never founds one). Every connection joins with replica (the world speaks the protocol): chat is read from
+// the log stream's `say` entries, and a say is a door request. Speech is arrival-only, so a spectator that joined after
+// the burst (the churn's) isn't counted against it.
 
 const URL = process.env.URL ?? "ws://127.0.0.1:8940/ws";
 const TOKEN = process.env.TOKEN ?? "";
@@ -35,14 +41,12 @@ function connect(id: string, spectate: boolean, n = 0): Promise<Spec> {
     const ws = new WebSocket(URL);
     const s: Spec = { ws, joinMs: -1, frames: 0, gaps: 0, lastSeq: -1, lat: [], says: new Set(), openAt: performance.now(), snapAt: 0 };
     const to = setTimeout(() => reject(new Error(`${id}: join timeout`)), 30_000);
-    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: WORLD, id, avatar: AVATARS[n % AVATARS.length], spectate, token: TOKEN }));
+    ws.onopen = () => ws.send(JSON.stringify({ type: "join", hello: helloOf(), world: WORLD, id, avatar: AVATARS[n % AVATARS.length], spectate, token: TOKEN, replica: true }));
     ws.onmessage = (ev) => {
       const m = JSON.parse(String(ev.data));
       if (m.type === "snapshot") {
         s.snapAt = performance.now();
         s.joinMs = s.snapAt - s.openAt;
-        // history counts: a late joiner gets earlier chat via replay, not live
-        for (const e of m.entries ?? []) if (e.verb === "say") s.says.add(e.args?.text);
         clearTimeout(to);
         resolve(s);
       } else if (m.type === "frame") {
@@ -50,8 +54,11 @@ function connect(id: string, spectate: boolean, n = 0): Promise<Spec> {
         s.lat.push(Date.now() - m.t);
         if (s.lastSeq >= 0 && m.seq > s.lastSeq + 1) s.gaps += m.seq - s.lastSeq - 1;
         s.lastSeq = m.seq;
-      } else if (m.type === "log" && m.entry?.verb === "say") {
-        s.says.add(m.entry.args?.text);
+      } else if (m.type === "log") {
+        for (const e of m.entries ?? []) if (e?.kind === "say") s.says.add(e.body?.text);
+      } else if (m.type === "error") {
+        clearTimeout(to);
+        reject(new Error(`${id}: ${m.error}`));
       }
     };
     ws.onerror = () => { /* close follows */ };
@@ -84,19 +91,22 @@ const tickers = perfs.map((s, i) => setInterval(() => {
 }, 1000 / POSE_HZ));
 
 // chat burst mid-run: 24 messages in one second, all must arrive everywhere
+let burstAt = Infinity;   // when the burst was said: a spectator that joined after it was never sent it
 const burstTexts = Array.from({ length: N_PERF }, (_, i) => `burst-${i}-${Math.floor(t0)}`);
 setTimeout(() => {
-  perfs.forEach((s, i) => { if (s.ws.readyState === 1 && burstTexts[i]) s.ws.send(JSON.stringify({ type: "verb", verb: "say", args: { text: burstTexts[i] } })); });
+  burstAt = performance.now();
+  perfs.forEach((s, i) => { if (s.ws.readyState === 1 && burstTexts[i]) s.ws.send(JSON.stringify({ type: "request", id: `burst-${i}`, verb: "say", args: { text: burstTexts[i] } })); });
 }, DURATION / 2);
 
-// reconnect churn: 10 spectators drop and rejoin mid-run
+// reconnect churn: 10 spectators drop and rejoin mid-run (the dropped ones were present at the burst: kept for the gates)
+const retired: Spec[] = [];
 setTimeout(async () => {
   for (let i = 0; i < Math.min(10, specs.length); i++) {
     const idx = specs.length - 1 - i;
     specs[idx].ws.close();
     try {
       const re = await connect(`spec-re-${i}`, true);
-      specs[idx] = re; // replaces: fresh join must succeed under load
+      retired.push(specs[idx]); specs[idx] = re; // replaces: fresh join must succeed under load
     } catch { specs[idx].joinMs = -2; }
   }
 }, DURATION * 0.6);
@@ -113,7 +123,8 @@ const endAt = performance.now();
 const fpsPer = specs.map((s) => s.frames / Math.max(0.001, (endAt - s.snapAt - 500) / 1000));
 const latAll = specs.flatMap((s) => s.lat);
 const gapsTotal = specs.reduce((a, s) => a + s.gaps, 0);
-const burstMisses = specs.filter((s) => burstTexts.filter((t) => t && !s.says.has(t)).length > 0).length;
+const heard = [...specs, ...retired].filter((s) => s.snapAt > 0 && s.snapAt < burstAt);   // present when the burst was said
+const burstMisses = heard.filter((s) => burstTexts.filter((t) => t && !s.says.has(t)).length > 0).length;
 const reconnFails = specs.filter((s) => s.joinMs === -2).length;
 
 if (failed > 0) fail.push(`${failed} connections failed to join`);
@@ -129,7 +140,7 @@ results
   spectator frame/s   p50 ${pct(fpsPer, 50).toFixed(1)}  min ${Math.min(...fpsPer).toFixed(1)}
   frame latency ms    p50 ${Math.round(pct(latAll, 50))}  p95 ${Math.round(pct(latAll, 95))}  max ${Math.round(Math.max(...latAll, 0))}
   frame seq gaps      ${gapsTotal} total across ${specs.length} spectators (backpressure drops)
-  chat burst          ${specs.length - burstMisses}/${specs.length} spectators got all ${burstTexts.length}
+  chat burst          ${heard.length - burstMisses}/${heard.length} spectators present for it got all ${burstTexts.length}
   reconnect churn     ${10 - reconnFails}/10 ok
 `);
 console.log(fail.length ? `FAIL:\n  ${fail.join("\n  ")}` : "ALL GATES PASS");

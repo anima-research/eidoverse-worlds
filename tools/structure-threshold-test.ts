@@ -122,7 +122,7 @@ function agent() {
   agents.push(a); a.joined = true; return a;
 }
 function entity(data=house, id="house", pos=[0,0,0], yaw=0, scale=1): any {
-  return { id, lib: "", pos, yaw, scale, comp: { structure: data } };
+  return { id, model: "", pos, yaw, scale, structure: data };
 }
 function worldPoint(e: any, p: P): P {
   const c=Math.cos(e.yaw),s=Math.sin(e.yaw);
@@ -172,15 +172,15 @@ try {
   const before=[b.pos.x,b.pos.z]; (b as any).tick();
   check(b.pos.x===before[0]&&b.pos.z===before[1],"refused replacement cannot keep walking toward old target");
   const ctx={agent:b,canPush:()=>false,heldActivity:[],cursor:{caughtUpTo:null}};
-  const reply=await handleTool(ctx,"walk_to",{x:3.5,z:.5});
-  check(reply.content[0].text.includes("no route") && reply.content[0].text.includes("sealed"),"actual walk_to tool explains sealed-building refusal");
+  const reply=await handleTool(ctx,"move",{to:[3.5,.5]});
+  check(reply.content[0].text.includes("no route") && reply.content[0].text.includes("sealed"),"actual move tool explains sealed-building refusal");
 
-  const badArgs=await handleTool(ctx,"walk_to",{x:NaN,z:.5});
+  const badArgs=await handleTool(ctx,"move",{to:[NaN,.5]});
   check(badArgs.isError===true && badArgs.content[0].text===WALK_ARGS_REASON,"the tool and walkTo refuse bad arguments in the same words");
 
   const c=agent(); c.pos={x:-1,y:0,z:.5};
   c.entities.set("sparse",entity(sparse as any,"sparse"));
-  const cap=await handleTool({...ctx,agent:c},"walk_to",{x:1,z:.5});
+  const cap=await handleTool({...ctx,agent:c},"move",{to:[1,.5]});
   check(cap.content[0].text.includes("cells") && !(c as any).target,"actual tool reports budget refusal without movement");
 
   {

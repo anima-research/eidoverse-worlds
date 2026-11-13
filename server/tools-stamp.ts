@@ -41,10 +41,11 @@ export function findKtx2Encoder(): string | null {
   return null;
 }
 
-/** Where gltf-transform's own sharp lives, or null when there is no nested
- *  copy at all (a deduped install — the state this whole fix is chasing).
- *  RESOLUTION ONLY: it must not import, because import failure and absence
- *  are different facts and only one of them makes a bare import safe. */
+/** Where gltf-transform's own sharp lives: ndarray-pixels' nested copy when
+ *  there is one, else the root's (a deduped install, one copy), or null when
+ *  none resolves from there. RESOLUTION ONLY: it must not import, because
+ *  import failure and absence are different facts and only one of them makes
+ *  a bare import safe. */
 export function resolveNestedSharp(): string | null {
   try {
     const fnDir = dirname(Bun.resolveSync("@gltf-transform/functions", import.meta.dir));

@@ -1,4 +1,4 @@
-// lantern-probe — the lantern prompt (client/lib/lantern.js) and the HUD quiet defaults, in the REAL
+// lantern-probe — the lantern prompt (client/lib/commandbar.js) and the HUD quiet defaults, in the REAL
 // client against an owned scratch world (probe-harness). Clouds are forced OFF before boot: a cloudy sky
 // bakes on the CPU in headless Chromium and has frozen the host.
 //
@@ -10,7 +10,7 @@
 //   Enter still opens chat (the prompt is additive);
 //   Ctrl+K opens the prompt; THE KEYS: Enter SAYS what you typed (the say row is always first), Tab
 //   DOES the highlighted action (default: the best match, wearing a Tab badge) — so "sit"+Enter says
-//   "sit" in chat and does NOT sit, "sit"+Tab sits, "wave"+Tab plays the emote (playEmote observed),
+//   "sit" in chat and does NOT sit, "sit"+Tab sits, "wave"+Tab plays the gesture (playOnce observed),
 //   "sky"+Tab opens the world panel on its sky tab; a highlight MOVED with ↑/↓ makes
 //   Enter run that row; "hello there" + Enter goes through chat's own send path (server echo in #chatlog);
 //   the resting line and the open panel keep clear of the chat compose box, and the hint bar and the
@@ -18,8 +18,9 @@
 //   "/who" passes through to the command path; Esc closes; a mouse click on a row runs it;
 //   a typo + Tab does nothing (Tab never says); while open, the hint bar steps off the footer and a
 //   click on the footer keeps the lantern open;
-//   Esc quiet puts the resting line away WITH the panels, and with no panel open too (only the dock stays; still away after the flash; Ctrl+K still opens the lantern,
-//   whose Esc comes first) and brings it back with them; the ∃ menu's lantern row unpins the resting line (gone,
+//   Tab quiet puts the resting line away WITH the panels (Esc never hides or restores the set: it closes only the layered
+//   thing on top), and with no panel open too (only the dock stays; still away after the flash; Ctrl+K still opens the lantern,
+//   whose Esc comes first) and Tab brings it back with them; the ∃ menu's lantern row unpins the resting line (gone,
 //   saved) without taking Ctrl+K away, and pins it back.
 // --shots writes the after/ screenshots (1280x720 and 390x844) as it goes.
 import { launchBrowser, ownedWorld, checker } from './probe-harness.mjs';
@@ -30,7 +31,7 @@ const shotDir = (() => { const i = process.argv.indexOf('--shots'); return i > 0
 if (shotDir) mkdirSync(shotDir, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const world = await ownedWorld({ env: { SKIP_OPT_SWEEP: '1' } });
+const world = await ownedWorld({ worlds: ['lantern'], env: { SKIP_OPT_SWEEP: '1' } });   // the server founds nothing on join (H3)
 const { browser, close } = await launchBrowser();
 
 async function boot(ctxOpts, name) {
@@ -165,13 +166,13 @@ try {
     check('…and back on the left, the chip is first in the row', lf);
   }
 
-  // THE RAIL'S SEARCH ENTRY, between emotes and debug: the house tooltip names it and its chord; a click opens the prompt
+  // THE RAIL'S SEARCH ENTRY, between gestures and debug: the house tooltip names it and its chord; a click opens the prompt
   { const titles = await pg.evaluate(() => Object.fromEntries([...document.querySelectorAll('#dock button[data-toggles]')]
       .map((b) => [b.dataset.toggles, b.getAttribute('title') ?? b._tip])));
     check('every rail tooltip names its key where the registry knows one (real client: main.js merges them)',
       titles.chat === 'Chat · Enter' && titles.debug === 'Debug · F3' && titles.world === 'World' && /^Edit · B/.test(titles.edit ?? ''), JSON.stringify(titles));
     const rail = await pg.evaluate(() => [...document.querySelectorAll('#dock button[data-toggles]')].map((b) => b.dataset.toggles));
-    check('the search entry sits between emotes and debug, pinned (owner, 10-01)', rail.indexOf('search') === rail.indexOf('emotes') + 1
+    check('the search entry sits between gestures and debug, pinned (owner, 10-01)', rail.indexOf('search') === rail.indexOf('actions') + 1
       && rail.indexOf('debug') === rail.indexOf('search') + 1 && !(await pg.evaluate(() => document.querySelector('#dock button[data-toggles="search"]').hidden)), rail.join());
     await pg.hover('#dock button[data-toggles="search"]'); await sleep(700);
     const tipc = await pg.evaluate(() => { const t = document.getElementById('tipchip'); return { show: t.classList.contains('show'), text: t.textContent }; });
@@ -224,14 +225,17 @@ try {
   await sleep(2200);
   check('…and the line comes back when the flash is done', (await rect(pg, '#lantern-pill'))?.shown);
 
-  // ESC QUIET: with nothing else claiming Esc it puts every open panel away and says how to get them back; Esc again
-  // brings back exactly those. The layered closes come first: an open ∃ menu or the chat gear's popover takes Esc
-  // and the panels stay.
+  // TAB QUIET (windows.js: the quiet key is Tab; Esc NEVER hides or restores the set): with nothing claiming the key Tab
+  // puts every open panel away and says how to get them back; Tab again brings back exactly those. Layered things take
+  // the key first: an open ∃ menu or the chat gear's popover claims it, Esc closes only that, and the panels stay.
   { const shown = () => pg.evaluate(() => [...document.querySelectorAll('.frame')].filter((f) => getComputedStyle(f).display !== 'none')
       .map((f) => f.dataset.frame).sort().join());
     await pg.mouse.click(900, 300); await sleep(200);
     const before = await shown();
     await pg.click('#hud'); await sleep(250);
+    await pg.keyboard.press('Tab'); await sleep(200);
+    check('Tab with the ∃ menu open leaves the menu and the panels alone (the pop claims the key)',
+      !(await pg.evaluate(() => document.getElementById('emenu').hidden)) && (await shown()) === before, JSON.stringify({ before, now: await shown() }));
     await pg.keyboard.press('Escape'); await sleep(200);
     check('Esc with the ∃ menu open closes the menu, not the panels',
       await pg.evaluate(() => document.getElementById('emenu').hidden) && (await shown()) === before, JSON.stringify({ before, now: await shown() }));
@@ -241,13 +245,15 @@ try {
       await pg.evaluate(() => document.querySelector('.chat-gearpop').hidden) && (await shown()) === before, JSON.stringify({ before, now: await shown() }));
     await pg.mouse.click(900, 300); await sleep(200);
     await pg.keyboard.press('Escape'); await sleep(300);
+    check('Esc with nothing layered on top never hides the set', (await shown()) === before, JSON.stringify({ before, now: await shown() }));
+    await pg.keyboard.press('Tab'); await sleep(300);
     const hid = { frames: await shown(), hint: await rect(pg, '#hintbar'), hintText: await pg.evaluate(() => document.getElementById('hintbar').textContent),
       pill: await rect(pg, '#lantern-pill') };
-    check('Esc (nothing else claiming it) hides every open panel', before.length > 0 && hid.frames === '', JSON.stringify({ before, ...hid }));
-    check('…and the hint bar says "panels hidden · Esc to bring back" in the resting line’s place', hid.hint?.shown && /^panels hidden · Esc to bring back$/.test(hid.hintText.trim()) && !hid.pill?.shown,
+    check('Tab (nothing claiming it) hides every open panel', before.length > 0 && hid.frames === '', JSON.stringify({ before, ...hid }));
+    check('…and the hint bar says "panels hidden · Tab to bring back" in the resting line’s place', hid.hint?.shown && /^panels hidden · Tab to bring back$/.test(hid.hintText.trim()) && !hid.pill?.shown,
       JSON.stringify(hid));
-    await shot(pg, '15-esc-hidden.png');
-    // the resting line went WITH the panels (owner, 10-01: "have it obey the 'esc to hide' feature") — so it stays away
+    await shot(pg, '15-tab-hidden.png');
+    // the resting line went WITH the panels (owner, 10-01: "have it obey the 'esc to hide' feature"; the key is Tab since 10-15) — so it stays away
     // after the flash is done too, not only while the hint bar borrows its spot
     await sleep(4300);
     const later = { frames: await shown(), hintGone: await pg.evaluate(() => document.getElementById('hintbar').classList.contains('gone')),
@@ -261,22 +267,22 @@ try {
     const kShut = { open: (await lantern(pg)).open, frames: await shown(), pill: await rect(pg, '#lantern-pill') };
     check('panels hidden: Ctrl+K still opens the lantern, and Esc closes the lantern first (panels and pill stay away)',
       kOpen && !kShut.open && kShut.frames === '' && !kShut.pill?.shown, JSON.stringify({ kOpen, ...kShut }));
-    await pg.keyboard.press('Escape'); await sleep(300);
+    await pg.keyboard.press('Tab'); await sleep(300);
     const back = { frames: await shown(), hintGone: await pg.evaluate(() => document.getElementById('hintbar').classList.contains('gone')), pill: await rect(pg, '#lantern-pill') };
-    check('Esc again brings back exactly those panels, and the hint gives the spot back at once', back.frames === before && back.hintGone && back.pill?.shown, JSON.stringify({ before, ...back }));
-    // NO PANEL OPEN (owner, 10-01: "Basically only the dock should be visible"): Esc still puts the resting line away
-    await pg.evaluate(async () => { const F = await import('/lib/frames.js'); for (const f of F.allFrames()) f.hide(); });
+    check('Tab again brings back exactly those panels, and the hint gives the spot back at once', back.frames === before && back.hintGone && back.pill?.shown, JSON.stringify({ before, ...back }));
+    // NO PANEL OPEN (owner, 10-01: "Basically only the dock should be visible"): Tab still puts the resting line away
+    await pg.evaluate(async () => { const F = await import('/lib/windows.js'); for (const f of F.allFrames()) f.hide(); });
     await sleep(200);
-    await pg.keyboard.press('Escape'); await sleep(300);
+    await pg.keyboard.press('Tab'); await sleep(300);
     const bare = { frames: await shown(), pill: await rect(pg, '#lantern-pill'), dock: await rect(pg, '#dock'),
       hintText: await pg.evaluate(() => document.getElementById('hintbar').textContent) };
-    check('no panel open: Esc puts the resting line away, the dock stays, the hint says "hidden · Esc to bring back"',
-      bare.frames === '' && !bare.pill?.shown && bare.dock?.shown && /^hidden · Esc to bring back$/.test(bare.hintText.trim()), JSON.stringify(bare));
-    await shot(pg, '15b-esc-only-the-dock.png');
-    await pg.keyboard.press('Escape'); await sleep(300);
+    check('no panel open: Tab puts the resting line away, the dock stays, the hint says "hidden · Tab to bring back"',
+      bare.frames === '' && !bare.pill?.shown && bare.dock?.shown && /^hidden · Tab to bring back$/.test(bare.hintText.trim()), JSON.stringify(bare));
+    await shot(pg, '15b-tab-only-the-dock.png');
+    await pg.keyboard.press('Tab'); await sleep(300);
     const bareBack = { frames: await shown(), pill: await rect(pg, '#lantern-pill') };
-    check('…and the next Esc brings the resting line back, opening no panel', bareBack.frames === '' && bareBack.pill?.shown, JSON.stringify(bareBack));
-    await pg.evaluate(async (ids) => { const F = await import('/lib/frames.js'); for (const id of ids.split(',').filter(Boolean)) F.getFrame(id)?.show(); }, before);
+    check('…and the next Tab brings the resting line back, opening no panel', bareBack.frames === '' && bareBack.pill?.shown, JSON.stringify(bareBack));
+    await pg.evaluate(async (ids) => { const F = await import('/lib/windows.js'); for (const id of ids.split(',').filter(Boolean)) F.getFrame(id)?.show(); }, before);
     await sleep(200);
   }
 
@@ -317,8 +323,8 @@ try {
       const a = A.get(id); if (!a?.run) continue;
       const orig = a.run; a.run = (...r) => { globalThis.__acts.push(id); return orig(...r); };
     }
-    const me = globalThis.EW.me(); const orig = me.playEmote.bind(me);
-    globalThis.__emoted = []; me.playEmote = (n, ...r) => { globalThis.__emoted.push(n); return orig(n, ...r); };
+    const me = globalThis.EW.me(); const orig = me.playOnce.bind(me);
+    globalThis.__animPlayed = []; me.playOnce = (n, ...r) => { globalThis.__animPlayed.push(n); return orig(n, ...r); };
   });
   const acts = () => pg.evaluate(() => globalThis.__acts.splice(0));
   const posture = () => pg.evaluate(async () => (await import('/lib/controller.js')).getPosture?.() ?? null);
@@ -383,14 +389,14 @@ try {
   await pg.evaluate(() => { document.querySelector('#dock button[data-toggles="world"]')?.click(); });
   await sleep(300);
 
-  // "wave" + Tab — the emote plays
+  // "wave" + Tab — the gesture plays
   await type(pg, 'wave');
   L = await lantern(pg);
-  check('"wave" highlights the wave emote, its number key and Tab shown', L.hl?.title === 'wave' && /^[1-9]$/.test(L.hl?.key ?? '') && L.hl?.do === 'Tab', JSON.stringify(L.hl));
+  check('"wave" highlights the wave gesture, its number key and Tab shown', L.hl?.title === 'wave' && /^[1-9]$/.test(L.hl?.key ?? '') && L.hl?.do === 'Tab', JSON.stringify(L.hl));
   await shot(pg, '03-lantern-wave-1280x720.png');
   await pg.keyboard.press('Tab'); await sleep(400);
-  check('"wave" + Tab plays the emote (playEmote("wave") observed)', (await pg.evaluate(() => globalThis.__emoted)).includes('wave'),
-    JSON.stringify(await pg.evaluate(() => globalThis.__emoted)));
+  check('"wave" + Tab plays the gesture (playOnce("wave") observed)', (await pg.evaluate(() => globalThis.__animPlayed)).includes('wave'),
+    JSON.stringify(await pg.evaluate(() => globalThis.__animPlayed)));
 
   // a typo + Tab: nothing to do, so nothing happens — Tab never says
   { const before = await said(pg, 'zzqx');
@@ -431,7 +437,7 @@ try {
   // MOVE (owner, 10-01: "enable grabbing and moving the lantern … in menu-moving mode"): in HUD layout mode the resting line
   // drags like a frame; the hint bar that borrows its spot follows it, the open panel stays on screen (hanging down from
   // a pill in the top half), the spot survives a reload, and reset layout puts it back
-  { await pg.mouse.click(900, 300); await sleep(300);   // (not Esc: with nothing open to close, Esc puts the resting line away)
+  { await pg.mouse.click(900, 300); await sleep(300);   // (not Tab: with nothing open to close, Tab puts the resting line away)
     const centre = (r) => r && [(r.l + r.r) / 2, (r.t + r.b) / 2];
     const p0 = await rect(pg, '#lantern-pill');
     const c0 = centre(p0);

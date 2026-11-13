@@ -3,7 +3,7 @@
 //
 // The model is fitted exactly as a spawn of it would be (client/lib/colliders.js)
 // and explored with the walking body's own rules (mcpl/navgrid.ts: where a
-// capsule 0.32m × 1.9m can stand, and every move it can make), on a lattice
+// capsule — the mover's body, shared/mover.js MOVER.body — can stand, and every move it can make), on a lattice
 // over its footprint and a margin of ground around it. From that:
 //
 //   - whether it is walk-in at all (a small model is one solid box);
@@ -26,6 +26,7 @@ import { rankOf, TIER_NAMES } from "../shared/perfrank.js";
 import { decideSupportClass } from "../client/lib/supportclass.js";
 import { makeNavGrid, NAV_CELL, NAV_STEP } from "../mcpl/navgrid.ts";
 import { placesFromModel } from "../mcpl/places.ts";
+import { MOVER } from "../shared/mover.js";
 
 export type Warning = { kind: string; message: string; at?: number[] };
 export type CheckReport = {
@@ -45,7 +46,10 @@ export type CheckReport = {
   ms: number;
 };
 
-const BODY_R = 0.32, THIN_R = 0.2, TALL = 1.9, MARGIN = 1.6;
+/** The walking body is the mover's (shared/mover.js MOVER.body: the one the feet, the authority and the planner use —
+ *  the protocol merge; the stack measured a 0.32 m × 1.9 m capsule); a slimmer one (THIN_R) tells "too narrow for a
+ *  body" from "no way in". */
+const BODY_R = MOVER.body.radius, THIN_R = MOVER.body.radius * 0.6, TALL = MOVER.body.height, MARGIN = 1.6;
 /** Smallest unreachable floor area reported — smaller is a pocket behind furniture. */
 const MIN_AREA = 2.5;
 const NUDGE = 0.05;   // navgrid NAV_NUDGE
@@ -57,6 +61,13 @@ const MAX_COLUMNS = 250_000, MAX_SIDE = Math.sqrt(MAX_COLUMNS) * NAV_CELL, MAX_H
 /** A surface a body can't step onto with a floor this close beneath it is
  *  furniture (a table, a counter, a bunk), not a floor of the building. */
 const FURNITURE_MAX = 1.2;
+/** ...and at least this far above it (a seat's height): the mover's step (0.8 m, shared/mover.js) climbs onto a table,
+ *  so "can't be stepped onto" no longer tells a tabletop from a floor (protocol merge; it was NAV_STEP at 0.55 m). Open air
+ *  beneath still does — a solid plinth is a floor at any height. */
+const FURNITURE_MIN = 0.45;
+/** How far under an eave a roof's shadow on the open ground reaches before it is a room's floor (protocol merge: with the
+ *  mover's 0.2 m radius a body stands under a 0.2 m roof overhang, and the overhang's ground read as a third floor). */
+const EAVE_M = 1.0;
 const r2 = (v: number) => Math.round(v * 100) / 100;
 
 /** Check the GLB at `file`. `C` is client/lib/colliders.js, `THREE` its three
@@ -95,7 +106,7 @@ export async function checkModel(file: string, C: any, THREE: any, { scale = 1 }
   }
   if (!roomScale) warnings.push({ kind: "solid", message:
     `${w.toFixed(1)}×${d.toFixed(1)}m and ${h.toFixed(1)}m tall is under the walk-in size (a 16m² footprint and 2.2m height): `
-    + `the world fits it as one solid box, so nobody can go inside. If it is meant to be entered, spawn it with collide: "exact". `
+    + `the world fits it as one solid box, so nobody can go inside. If it is meant to be entered, give it collider {shape: "mesh"}, so bodies walk on its triangles. `
     + `(The rest of this report reads it as if it were.)` });
 
   // ---- fit it as a spawn would (forced exact: we read its inside either way)
@@ -130,7 +141,7 @@ export async function checkModel(file: string, C: any, THREE: any, { scale = 1 }
   // a crawlspace a body can't stand, so it is no floor of a room
   type N = { i: number; j: number; y: number; covered: boolean; roomy: boolean };
   const nodes = new Map<string, N>();
-  const o = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+  const o = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0), dirV = new THREE.Vector3();
   for (let i = lo.i; i <= hi.i; i++) for (let j = lo.j; j <= hi.j; j++) {
     for (const y of body.layers(i, j)) {
       const head = C.raySegment(o.set(body.at(i), y + 0.1, body.at(j)), up, 40);
@@ -169,7 +180,7 @@ export async function checkModel(file: string, C: any, THREE: any, { scale = 1 }
     const hit = bvh.raycastFirst(down, THREE.FrontSide);
     if (!hit) return false;
     const drop = n.y - hit.point.y;
-    if (!(drop > NAV_STEP && drop <= FURNITURE_MAX)) return false;
+    if (!(drop > FURNITURE_MIN && drop <= FURNITURE_MAX)) return false;
     // ...and open air between: looking up from that floor, the first face is
     // the top's underside. A solid block (a stair's tread built down to the
     // floor) shows none — from inside it, its faces are all seen from behind.
@@ -177,7 +188,37 @@ export async function checkModel(file: string, C: any, THREE: any, { scale = 1 }
     const under = bvh.raycastFirst(up_, THREE.FrontSide);
     return !!under && under.point.y < n.y + 0.01;
   };
-  const covered = [...nodes.values()].filter((n) => n.covered && n.roomy && !furniture(n));
+  // the ground under an eave: covered nodes at the ground's height reached from the open ground (walking, so never
+  // through a wall) within EAVE_M — the roof's shadow outside, not a floor inside
+  const eaves = new Set<string>();
+  {
+    const ground = (n: { y: number }) => Math.abs(n.y) < 0.05;
+    const open = [...nodes.values()].filter((n) => ground(n) && !n.covered);
+    const depth = new Map<string, number>(open.map((n) => [key(n.i, n.j, n.y), 0]));
+    const q = open.map((n) => ({ i: n.i, j: n.j, y: n.y }));
+    for (let h = 0; h < q.length; h++) {
+      const n = q[h], d0 = depth.get(key(n.i, n.j, n.y))!;
+      for (const m of body.moves(n.i, n.j, n.y)) {
+        if (!inside(m.i, m.j) || !ground(m)) continue;
+        const k = key(m.i, m.j, m.y), d = d0 + Math.hypot(m.i - n.i, m.j - n.j) * NAV_CELL;
+        if (d > EAVE_M || (depth.get(k) ?? Infinity) <= d) continue;
+        const node = nodes.get(k); if (!node) continue;
+        depth.set(k, d); q.push(m);
+        if (node.covered) eaves.add(k);
+      }
+    }
+  }
+  // furniture is a whole surface: a top over open air ALL of whose standing room is so (a tabletop). A floor that
+  // overhangs something (an upper floor's edge over the top treads, a gallery over a hall) is still the floor it is
+  // part of (protocol merge: with the mover's 0.8 m step it takes a four-tread overhang to cut a floor off, and its overhang
+  // read as a table, so the cut-off floor's edge was nowhere near the stair it overhangs)
+  const roomyCovered = [...nodes.values()].filter((n) => n.covered && n.roomy && !eaves.has(key(n.i, n.j, n.y)));
+  const notFurniture = new Set<string>();
+  for (const comp of components(roomyCovered, body, key, inside, true)) {
+    if (comp.every((n) => furniture(n))) continue;
+    for (const n of comp) notFurniture.add(key(n.i, n.j, n.y));
+  }
+  const covered = roomyCovered.filter((n) => notFurniture.has(key(n.i, n.j, n.y)));
   // A floor is a height a lot of standing room shares; a stair's treads
   // each hold a little. So heights are binned (5cm), the bins holding a
   // square metre or more are floors (with neighbouring dense bins — a
@@ -236,7 +277,7 @@ export async function checkModel(file: string, C: any, THREE: any, { scale = 1 }
       }
       const at = narrow.length ? centroid(narrow, body) : c;
       warnings.push({ kind: "narrow", at, message: `${where} can only be reached through a passage narrower than a body, near (${at[0]}, ${at[2]}) at ${at[1]}m — `
-        + `a body needs more than 0.64m clear (its 0.32m radius each side); 1m is comfortable` });
+        + `a body needs more than ${r2(2 * BODY_R)}m clear (its ${BODY_R}m radius each side); 1m is comfortable` });
       continue;
     }
     // next to reachable floor: a climb that fails, or a rise too high
@@ -250,6 +291,12 @@ export async function checkModel(file: string, C: any, THREE: any, { scale = 1 }
         const adjacent = Math.abs(di) <= 1 && Math.abs(dj) <= 1;
         for (const y of body.layers(n.i + di, n.j + dj)) {
           if (!reach.has(key(n.i + di, n.j + dj, y))) continue;
+          // not through a wall: with the mover's 0.2 m radius, reachable ground outside a 0.2 m wall is three cells from
+          // the floor inside it (protocol merge) — beside it means nothing solid between, at the higher one's knees
+          if (!adjacent) {
+            const hy = Math.max(y, n.y) + 0.3, ax = body.at(n.i), az = body.at(n.j), bx = body.at(n.i + di), bz = body.at(n.j + dj), dl = Math.hypot(bx - ax, bz - az);
+            if (C.raySegment(o.set(ax, hy, az), dirV.set((bx - ax) / dl, 0, (bz - az) / dl), dl) != null) continue;
+          }
           const dy = Math.abs(y - n.y);
           if (adjacent && dy <= NAV_STEP && dy > 0.01 && !blocked) blocked = n;
           else if (dy > NAV_STEP && dy <= 1.2 && !rise) rise = { n, dy };
@@ -263,7 +310,7 @@ export async function checkModel(file: string, C: any, THREE: any, { scale = 1 }
         + `most often the edge of an upper floor overhanging the top treads; start the floor where the last tread ends` });
     } else if (rise) {
       const at = xyz(rise.n);
-      warnings.push({ kind: "rise", at, message: `${where} can't be reached: it sits ${rise.dy.toFixed(2)}m above the floor beside it near (${at[0]}, ${at[2]}), more than a body steps (0.55m) — add a step or a stair (at the top of a stair: start the floor where the last tread ends, rather than over it)` });
+      warnings.push({ kind: "rise", at, message: `${where} can't be reached: it sits ${rise.dy.toFixed(2)}m above the floor beside it near (${at[0]}, ${at[2]}), more than a body steps (${NAV_STEP}m) — add a step or a stair (at the top of a stair: start the floor where the last tread ends, rather than over it)` });
     } else {
       warnings.push({ kind: "sealed", at: c, message: `${where} can't be reached from outside — no opening leads to it` });
     }

@@ -13,7 +13,7 @@
 
 import { spawn } from "node:child_process";
 import { join } from "node:path";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 
 let pass = 0, fail = 0;
@@ -29,9 +29,11 @@ const check = (name: string, ok: boolean, detail = "") => {
 // defenses, both required:
 //   1. pick a port that is verifiably FREE before spawning (random high port,
 //      preflight fetch must FAIL);
-//   2. prove the listener we then talk to is OUR child: a nonce file written
-//      into this checkout's served tree, fetched back. Only a server rooted at
-//      THIS tree can serve it — a squatter from another checkout cannot.
+//   2. prove the listener we then talk to is OUR child: a nonce handed to it in
+//      BENCH_NONCE, read back from /health with its pid (tools/harness.ts's
+//      proof). Our child is this tree's server/server.ts, so it serves THIS
+//      tree (config.ts ROOT). Nothing is written into the checkout: a nonce
+//      file there outlived any kill of this test (CI 42203351965, Windows).
 async function freePort(): Promise<number> {
   for (let i = 0; i < 20; i++) {
     const cand = 20000 + Math.floor(Math.random() * 20000);
@@ -42,20 +44,17 @@ async function freePort(): Promise<number> {
 }
 const PORT = await freePort();
 const NONCE = `route-nonce-${crypto.randomUUID()}`;
-const clientDir = join(import.meta.dir, "..", "client");
-writeFileSync(join(clientDir, `${NONCE}.txt`), NONCE);
 
 // process.execPath, not "bun": the PATH "bun" is an npm .cmd shim on Windows
 // whose pid dies the instant it has launched the real binary, so kill() below
 // reaps nothing and the server outlives the test still holding this port —
 // which is precisely the stale-listener trap described above.
 const server = spawn(process.execPath, [join(import.meta.dir, "..", "server", "server.ts")], {
-  env: { ...process.env, PORT: String(PORT), WORLDS_DIR: mkdtempSync(join(tmpdir(), "deps-route-")) },
+  env: { ...process.env, PORT: String(PORT), WORLDS_DIR: mkdtempSync(join(tmpdir(), "deps-route-")), BENCH_NONCE: NONCE },
   stdio: "ignore",
 });
 const cleanup = () => {
   try { server.kill(); } catch { /* already gone */ }
-  try { rmSync(join(clientDir, `${NONCE}.txt`)); } catch { /* best effort */ }
 };
 // Cleanly stop the child on ANY exit — including assertion failure (r3 B5).
 process.on("exit", cleanup);
@@ -67,13 +66,14 @@ for (let i = 0; i < 40; i++) {
   catch { await new Promise((r) => setTimeout(r, 250)); }
 }
 check("child server came up on a verified-free port", up, `:${PORT}`);
-// ownership: the nonce only exists in the tree WE spawned from
+// ownership: only the child we spawned holds the nonce, and /health answers it with that child's pid
 {
   let owned = false, got = "";
   try {
-    const res = await fetch(`http://127.0.0.1:${PORT}/${NONCE}.txt`);
-    got = res.ok ? (await res.text()).trim() : `status=${res.status}`;
-    owned = got === NONCE;
+    const res = await fetch(`http://127.0.0.1:${PORT}/health`);
+    const j: any = res.ok ? await res.json() : null;
+    got = j ? JSON.stringify({ nonce: j.nonce, pid: j.pid, child: server.pid }) : `status=${res.status}`;
+    owned = j?.nonce === NONCE && j?.pid === server.pid;
   } catch (e) { got = String(e).slice(0, 40); }
   check("listener is OUR child (nonce round-trip), not a squatter", owned, got);
   if (!owned) { console.log("\n  refusing to test an unowned server\n"); process.exit(1); }

@@ -7,12 +7,14 @@
 // probe can't reach cheaply are cheap: a log with no clouds on the detailed sky, a real clock with no tz or a tz that
 // doesn't resolve, and a new log landing on top of your unsaved preview.
 
+import { fileURLToPath } from "node:url";
+import { tryUntil } from "./protocol/wait.ts";
 import { plugin } from "bun";
-const stub = new URL("./skypanel-stub.mjs", import.meta.url).pathname;
+const stub = fileURLToPath(new URL("./skypanel-stub.mjs", import.meta.url));
 plugin({
   name: "skypanel-stubs",
   setup(b) {
-    b.onResolve({ filter: /^\.\/(base|defs|net|ui|sky|terrain|lod_policy|realize\/models)\.js$/ }, () => ({ path: stub }));
+    b.onResolve({ filter: /^\.\/(base|defs|net|ui|sky|terrain|lod_policy|realize\/models|editwrites)\.js$/ }, () => ({ path: stub }));
   },
 });
 
@@ -54,10 +56,10 @@ S.cloudQuality = "medium";
 
 console.log("SKY PANEL — the clock line names what drives the sun");
 logSky({ clock: "real", weather: "clear", clouds: "clear" });
-check("a real clock with no tz names the default it follows", world().startsWith("world: real clock (America/Los_Angeles)"), world());
-logSky({ clock: "real", tz: "Europe/Paris", weather: "clear", clouds: "clear" });
+check("the old spelling clock: 'real' with no tz is read no more (S6): no real clock, the authored hour", !/real clock/.test(world()) && /^world: 12:00/.test(world()), world());
+logSky({ tz: "Europe/Paris", weather: "clear", clouds: "clear" });
 check("a real clock names its tz", world().startsWith("world: real clock (Europe/Paris)"), world());
-logSky({ clock: "real", tz: "Nowhere/Typo", dormantRated: { hours: 9, rate: 0, ts: Date.now() }, weather: "clear", clouds: "clear" });
+logSky({ tz: "Nowhere/Typo", hours: 9, rate: 0, weather: "clear", clouds: "clear" });
 check("an unresolvable tz is not called a real clock", !/real clock/.test(world()), world());
 check("...the parked clock's hour shows, and the tz is named as unrecognised",
   /^world: 09:00 .*Nowhere\/Typo/.test(world()), world());
@@ -77,6 +79,32 @@ logSky({ ...S.sent.at(-1)[1] });   // your own commit comes back as the log
 check("after ✓ your log is the sky: nothing to say", you() === "", you());
 logSky({ hours: 20, rate: 0, weather: "clear", clouds: "clear" });
 check("with nothing unsaved a new log is simply followed", you() === "" && slider.value === "20", `${you()} slider=${slider.value}`);
+
+// R 10-28 (item 13's bonus bug): the "world" select saved nothing (the sky stores no world since the 10-16 shape audit). Every
+// world control in the panel must commit what it shows: each option chosen, then ✓, is in what is sent. Local ones are exempt.
+console.log("SKY PANEL — every shared select commits what it shows");
+{ const local = (sel: Element) => /local/.test(sel.getAttribute("aria-label") ?? "") || /local/.test((sel.closest(".row") as HTMLElement | null)?.title ?? "");
+  // fillClocks fills the clock select from defsRegistry() (async): wait for the stub's clock to land
+  await tryUntil("the clock select filled", () => [...body.querySelectorAll("option")].some((o) => (o as HTMLOptionElement).value === "Europe/Paris"), { ms: 3000 });
+  const dead: string[] = []; const tried: string[] = [];
+  for (const sel of [...body.querySelectorAll("select")] as HTMLSelectElement[]) { if (local(sel)) continue;
+    const name = sel.closest(".row")?.querySelector(".nm")?.textContent ?? "?";
+    for (const o of [...sel.options].map((x) => x.value)) {
+      sel.value = o; sel.dispatchEvent(new Event("change")); (body.querySelector("button.dirty") as HTMLButtonElement | null)?.click();
+      const sent = S.sent.at(-1)?.[1] ?? {}; tried.push(`${name}=${o}`);
+      // the clock's '' is "authored (slider)": the commit carries no clock and no tz (skypanel.js ck.onchange)
+      const ok = o === "" ? sent.clock === undefined && sent.tz === undefined : JSON.stringify(sent).includes(JSON.stringify(o));
+      if (!ok) dead.push(`${name}=${o}`); } }
+  check("(setup) the clock select offers the stub's clock and the authored option, among ≥ 6 options tried", tried.includes("clock=Europe/Paris") && tried.includes("clock=") && tried.length >= 6, tried.join(", "));
+  check("no select whose choice the commit drops (the world select is gone: earth is the only sky world, and it isn't stored)", dead.length === 0, dead.join(", ")); }
+
+// sun and fill are registered sky fields; their sliders commit what they show
+console.log("SKY PANEL — the sun and fill sliders commit");
+{ const got: Record<string, unknown> = {};
+  for (const key of ["sun", "fill"]) { const row = [...body.querySelectorAll(".row")].find((r) => r.querySelector(".nm")?.textContent === key);
+    const inp = row?.querySelector('input[type="range"]') as HTMLInputElement | null; if (!inp) { got[key] = "no slider"; continue; }
+    inp.value = "1.5"; inp.dispatchEvent(new Event("input")); (body.querySelector("button.dirty") as HTMLButtonElement | null)?.click(); got[key] = S.sent.at(-1)?.[1]?.[key]; }
+  check("sun 1.5 and fill 1.5 are in what ✓ sends", got.sun === 1.5 && got.fill === 1.5, JSON.stringify(got)); }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

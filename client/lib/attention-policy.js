@@ -63,11 +63,5 @@ export function createAttentionGate({ me, scope, mentions, now = () => performan
       }
       return admit();
     },
-    whisper(msg) {
-      sync();
-      if (!msg || msg.echo || msg.replay || !msg.from || msg.from === me()
-          || msg.to !== me() || typeof msg.text !== 'string' || !msg.text) return false;
-      return admit();
-    },
   };
 }

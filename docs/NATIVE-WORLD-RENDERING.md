@@ -1,9 +1,13 @@
 # Native world projection (version 1)
 
-Implemented locally, not deployed. Browser flora placement has been extracted
-unchanged into `shared/flora-placement.js`; browser and native projection import it.
+**Not served by this server.** Join snapshots carry no `renderSceneVersion`:
+upstream's `server/render-scene.ts` read the first protocol's fold (it was deleted here, unserved), so this server doesn't offer
+the lane (server/server.ts `buildSnapshot`). The native client reaches this server through
+its bridge. What follows describes upstream #248's projection. Browser flora placement
+has been extracted unchanged into `shared/flora-placement.js`; browser and native
+projection import it.
 
-Join snapshots advertise `renderSceneVersion:1`. A joined world-surface client
+Upstream, join snapshots advertise `renderSceneVersion:1`. A joined world-surface client
 may send `{type:"render-scene",version:1,reset:true}` for a full projection and
 subsequent requests without reset for geometry deltas. World, socket generation
 and membership bind the delta cursor. Requests are limited to once per 250 ms
@@ -30,18 +34,17 @@ the same public library/store, preserving the deliberate patch precedence.
 The default browser request still prefers optimized bytes. Original files that
 already require unsupported codecs can still fail in the native client.
 
-Browser native-login approval optionally accepts `all_worlds:true`, issuing a
-new native session with `nativeWorld:"*"`. This can ONLY be selected through
-same-origin browser approval with a valid join-capable browser session. Start or
-poll requests cannot broaden grants. Existing water-only sessions stay water-only;
-native sessions cannot approve other native sessions. All existing per-world
-rights, bans and identity checks still apply after the destination guard.
+Browser-approved native login issues an ordinary session for every world the
+account may join (docs/NATIVE-LOGIN.md); there is no destination guard any more.
+Approval needs same-origin browser approval with a valid join-capable browser
+session, and native sessions cannot approve other native sessions. All existing
+per-world rights, bans and identity checks apply as for any browser session.
 
 Unreal screenshot capabilities may identify `scene:"world-projection"` as well
 as `underwater-prototype`. Tool output labels the distinction and warns that
 unsupported components may be absent. Screenshot access/consent budgets are unchanged.
 
-Tests: `tools/render-scene-test.ts`, `tools/render-scene-wire-test.ts`, extended
+Tests: `tools/render-scene-wire-test.ts` (`render-scene-test.ts` went with #248's deferred part), extended
 `tools/native-login-wire-test.ts`, existing login/broker/fold suites. Never run
 integration fixtures against inhabited worlds. Deployment requires a separately
 reviewed production-base patch and operator-approved restart; do not deploy the
@@ -88,13 +91,14 @@ hands/feet aimed at world/self/participant coordinates and anatomical bone seeds
 on loaded remote rigs. Native seeds are NOT calibrated skin contacts; the client
 never asserts `reached:true`. First-person local hands, palm alignment, native
 joint/torso constraints and named targets on the local body remain incomplete.
-Wave/cheer/point use the existing one-shot `pose.emote` field. Native gestures
+Wave/cheer/point use the presence plane's one-shot gesture field (this protocol's `pose.anim`; the native client
+still sends the first protocol's key, which servers read for one release — shared/onceanim.js). Native gestures
 are procedural approximations, not downloaded browser animation clips.
 Puppet and bodydrag requests are not accepted automatically; native ragdolls,
 mount/seating, force reactions and full streamed body-pose parity remain future work.
 
-Additional scratch checks: `tools/native-environment-control.ts`,
-`tools/native-interactions-fixture.ts`, and `tools/leasetest.ts`.
+Additional scratch checks: `tools/native-environment-control.ts` and
+`tools/native-interactions-fixture.ts` (`tools/leasetest.ts` went with leases).
 
 ## Component data (water, air, environment, vehicles)
 

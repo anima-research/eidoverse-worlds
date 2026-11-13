@@ -365,10 +365,10 @@ console.log('avatar.js:');
     for (let i = 0; i < 200; i++) call(a, '_placePlate', 1 / 90);
     check('...and lands on the rest crown + gap exactly (no 2 cm short)', near(a.label.position.y, restY, 1e-4), J(a.label.position));
     // a gesture, a held pose or a fall owns the body: those keep the live anchor (a bow, a crouch, a tumble)
-    a.emote = { action: null, until: Infinity }; hp.position.y = 0.95 - 0.4;
+    a.onceAnim = { action: null, until: Infinity }; hp.position.y = 0.95 - 0.4;
     for (let i = 0; i < 200; i++) call(a, '_placePlate', 1 / 90);
-    check('an emote playing: the plate follows the live hips (it came down)', a.label.position.y < restY - 0.3, J(a.label.position));
-    a.emote = null; hp.position.y = 0.95;
+    check('a gesture playing: the plate follows the live hips (it came down)', a.label.position.y < restY - 0.3, J(a.label.position));
+    a.onceAnim = null; hp.position.y = 0.95;
     for (let i = 0; i < 200; i++) call(a, '_placePlate', 1 / 90);
     a._limp = true; hp.position.y = 0.3;
     for (let i = 0; i < 200; i++) call(a, '_placePlate', 1 / 90);

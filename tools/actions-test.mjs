@@ -19,7 +19,7 @@ const noop = () => {};
 const ids = (q) => A.list(q).map((r) => r.action.id);
 
 A.clear();
-A.register({ id: 'emote:wave', title: 'wave', group: 'emotes', key: '4', run: noop });
+A.register({ id: 'bar:wave', title: 'wave', group: 'action bar', key: '4', run: noop });
 A.register({ id: 'section:world:sky', title: 'sky', keywords: ['world', 'weather'], group: 'world', run: noop });
 A.register({ id: 'key:screenshot', title: 'save a screenshot', keywords: ['picture'], group: 'view', key: 'F2', run: noop });
 A.register({ id: 'cmd:who', title: '/who — list everyone present', keywords: ['who'], group: 'commands', run: noop });
@@ -29,7 +29,7 @@ A.register({ id: 'section:settings:audio', title: 'audio', keywords: ['settings'
 A.register({ id: 'body:skydive', title: 'skydive', group: 'body', run: noop });
 
 console.log('ranking tiers');
-check('exact title wins: "wave" → emote:wave first', ids('wave')[0] === 'emote:wave', ids('wave').join());
+check('exact title wins: "wave" → bar:wave first', ids('wave')[0] === 'bar:wave', ids('wave').join());
 check('exact beats a longer prefix: "sky" → sky before skydive', ids('sky')[0] === 'section:world:sky' && ids('sky')[1] === 'body:skydive', ids('sky').join());
 check('prefix: "sk" finds sky first (shorter completion ranks higher)', ids('sk')[0] === 'section:world:sky', ids('sk').join());
 A.register({ id: 'key:micpin', title: 'pin the mic glyph', group: 'voice', run: noop });
@@ -75,14 +75,14 @@ check('multi-word: "list every" → cmd:who via every word starting a word', A.s
 
 console.log('when / merge / run');
 let gate = false, ran = 0;
-A.register({ id: 'panel:edit', title: 'edit mode', group: 'panels', when: () => gate, run: () => ran++ });
+A.register({ id: 'panel:edit', title: 'build mode', group: 'panels', when: () => gate, run: () => ran++ });
 check('when() false hides it from list', !ids('edit').includes('panel:edit'));
 check('when() false: run() refuses', A.run('panel:edit') === false && ran === 0);
 gate = true;
 check('when() true lists it', ids('edit')[0] === 'panel:edit');
 A.register({ id: 'panel:edit', key: 'B', keywords: ['build'] });
 const merged = A.get('panel:edit');
-check('re-register MERGES: key added, title + run kept', merged.key === 'B' && merged.title === 'edit mode' && A.run('panel:edit') && ran === 1);
+check('re-register MERGES: key added, title + run kept', merged.key === 'B' && merged.title === 'build mode' && A.run('panel:edit') && ran === 1);
 check('merged keywords are searchable ("build")', ids('build')[0] === 'panel:edit');
 const off = A.register({ id: 'tmp', title: 'temporary', run: noop });
 off();
@@ -96,10 +96,10 @@ check('a throwing when() hides rather than breaking the list', !ids('boom').incl
 throwingWhen();
 
 console.log('grouping');
-A.register({ id: 'emote:wave2', title: 'wave hello', group: 'emotes', run: noop });
+A.register({ id: 'bar:wave2', title: 'wave hello', group: 'action bar', run: noop });
 A.register({ id: 'cmd:wavefile', title: '/wavefile', group: 'commands', run: noop });
 const g = A.grouped(A.list('wave'));
-check('grouped: the best row stays first (emotes group first, wave first in it)', g[0].group === 'emotes' && g[0].rows[0].action.id === 'emote:wave', JSON.stringify(g.map((x) => [x.group, x.rows.map((r) => r.action.id)])));
+check('grouped: the best row stays first (gestures group first, wave first in it)', g[0].group === 'action bar' && g[0].rows[0].action.id === 'bar:wave', JSON.stringify(g.map((x) => [x.group, x.rows.map((r) => r.action.id)])));
 check('grouped: each group appears once', new Set(g.map((x) => x.group)).size === g.length);
 check('empty query lists everything visible', A.list('').length === A.all().filter((a) => !a.when || a.when()).length);
 

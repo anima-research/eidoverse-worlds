@@ -9,8 +9,8 @@ import { fileURLToPath } from 'node:url';
 const STUB = fileURLToPath(new URL('./full-detail-stub.mjs', import.meta.url));
 plugin({ name: 'full-detail-stub', setup(b) {
   for (const f of ['^\\./core\\.js$', '^\\./warmqueue\\.js$', '^\\./loadwork\\.js$', '^\\./lightrig\\.js$', '^\\./emitters\\.js$',
-    '^\\./terrain\\.js$', '^\\./remotes\\.js$', '^\\./frame\\.js$', '^\\./ui\\.js$', '^\\./statuschips\\.js$',
-    '^\\.\\./core\\.js$', '^\\.\\./assets\\.js$', '^\\.\\./colliders\\.js$', '^\\.\\./lightrig\\.js$', '^\\.\\./lights\\.js$', '^\\.\\./world\\.js$'])
+    '^\\./terrain\\.js$', '^\\./breadcrumbs\\.js$', '^\\./frameloop\\.js$', '^\\./remotes\\.js$', '^\\./frame\\.js$', '^\\./ui\\.js$', '^\\./statuschips\\.js$',
+    '^\\.\\./core\\.js$', '^\\.\\./assets\\.js$', '^\\.\\./colliders\\.js$', '^\\.\\./lightrig\\.js$', '^\\.\\./lights\\.js$', '^\\.\\./world\\.js$', '^\\.\\./materials\\.js$'])
     b.onResolve({ filter: new RegExp(f) }, () => ({ path: STUB }));
 } });
 const mem = new Map<string, string>();

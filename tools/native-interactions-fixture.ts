@@ -1,3 +1,4 @@
+import { helloOf } from '../shared/protocol/hello.js';
 // Requires render-scene-wire-test.ts --native. No production access.
 const origin='http://127.0.0.1:19002';
 const health=await(await fetch(origin+'/health')).json();
@@ -6,7 +7,7 @@ const ws=new WebSocket(origin.replace('http:','ws:')+'/ws');
 let tick:ReturnType<typeof setInterval>,states=0;
 const send=(x:any)=>ws.send(JSON.stringify(x));
 await new Promise<void>((resolve,reject)=>{
- ws.onopen=()=>send({type:'join',world:'scene-test',id:'reach-test',avatar:'store/qa.vrm',token:'scene-test-door'});
+ ws.onopen=()=>send({type:'join', hello: helloOf(),world:'scene-test',id:'reach-test',avatar:'store/qa.vrm',token:'scene-test-door'});
  ws.onmessage=e=>{const m=JSON.parse(String(e.data));
   if(m.type==='snapshot'){
    const verb=(verb:string,args:any)=>send({type:'verb',verb,args});

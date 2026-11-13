@@ -1,6 +1,6 @@
 // Settings panels (rung 3, desktop UI): the style dial, the video rows, the profile's presence and
 // the bodies list — driven through the REAL stylepanel.js / videopanel.js / profile.js / bodies.js /
-// mybody.js / presence.js / ui.js / frames.js / panels.js, with only the renderer-bound edge stubbed
+// mybody.js / presence.js / ui.js / windows.js / panels.js, with only the renderer-bound edge stubbed
 // (tools/settings-panels-stub.mjs). Each block names the product line that must turn it red:
 //   · setPanelAlpha not persisted (stylepanel.js)          → "survives a re-apply from storage"
 //   · renderer select without needsReload (videopanel.js) → "grows the reload button"
@@ -14,10 +14,11 @@
 // (noteWorn accepting `{name}`, or setMe emitting the name); the five BODIES list checks turn green then.
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/settings-panels-test.ts
+import { fileURLToPath } from "node:url";
 import { plugin } from 'bun';
-const here = (f: string) => new URL(f, import.meta.url).pathname;
+const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({ name: 'settings-stubs', setup(b) {
-  for (const m of ['core', 'base', 'governor', 'lightrig', 'xrpanels', 'net', 'palette', 'avatar', 'controller', 'capnotice', 'assets', 'mictoggle'])
+  for (const m of ['core', 'base', 'governor', 'lightrig', 'materials', 'xrpanels', 'net', 'catalog', 'avatar', 'controller', 'capnotice', 'assets', 'mictoggle'])
     b.onResolve({ filter: new RegExp(`^\\./${m}\\.js$`) }, () => ({ path: here('./settings-panels-stub.mjs') }));
 } });
 
@@ -38,7 +39,7 @@ const dockBtn = document.createElement('button'); dockBtn.dataset.toggles = 'pro
 const stub = await import('./settings-panels-stub.mjs');
 const { calls, emitted, xrPanels, net, bus } = stub;
 const ui = await import('../client/lib/ui.js');
-const { getFrame } = await import('../client/lib/frames.js');
+const { getFrame } = await import('../client/lib/windows.js');
 const style = await import('../client/lib/stylepanel.js');
 const video = await import('../client/lib/videopanel.js');
 const profile = await import('../client/lib/profile.js');
@@ -206,7 +207,7 @@ console.log('PROFILE — presence dispatch reaches setPresence; the dock dot rep
   check('the pop closes and the header repaints', !b.querySelector('.pf-pop') && b.querySelector('.pf-state')?.textContent === 'away', b.querySelector('.pf-state')?.textContent ?? '');
   check('the dock dot follows', dockBtn.dataset.presence === 'away');
   // Esc closes the pop and GOES NO FURTHER: profile.js's onKey calls
-  // stopPropagation so the global Esc (frames.js close-all) yields to an open
+  // stopPropagation so the global Esc (windows.js close-all) yields to an open
   // pop, and dismiss() takes the capture listeners down with it.
   portrait.click();
   check('the pop reopens', !!b.querySelector('.pf-pop'));
@@ -273,7 +274,7 @@ console.log('TABS — every registered section is a tab; choosing one shows its 
 { const actions = await import('../client/lib/actions.js');
   const frame = ui.settingsFrame() as any;
   const strip = frame.strip as HTMLElement;
-  const ids = ['style', 'video'];
+  const ids = ['style', 'video', 'safety'];
   check('the settings frame carries a tab strip with one tab per section, in registration order',
     [...strip.querySelectorAll('.pf-tab')].map((b) => b.id).join() === ids.map((i) => `sec-${i}-tab`).join(),
     [...strip.querySelectorAll('.pf-tab')].map((b) => b.id).join());
@@ -295,7 +296,7 @@ console.log('TABS — every registered section is a tab; choosing one shows its 
   ui.collapseAll(); await tick();
   check('collapseAll folds the pane away (placing a ghost wants the view)', !ids.some((i) => document.getElementById(`sec-${i}`)!.classList.contains('open')), state());
   frame.hide(); frame.show(); await tick();
-  check('shown again with nothing chosen, the frame opens its last tab (video)', state() === 'style:-/-/false video:open/on/true', state());
+  check('shown again with nothing chosen, the frame opens its last tab (the last of them)', state() === ids.map((i) => (i === ids.at(-1) ? `${i}:open/on/true` : `${i}:-/-/false`)).join(' '), state());
 
   // a mod's section may share a built-in's label (mods.js passes no id): removing the mod's
   // must not take the built-in's lantern row with it

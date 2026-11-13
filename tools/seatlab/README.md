@@ -10,8 +10,9 @@ a page load. It exists for two jobs:
    "proposed"` — the only status the server door accepts. POST it to
    `/seat-profile?token=…` (named identity required) or hand the JSON to the
    operator for `tools/seat-accept.ts propose`.
-2. **Acceptance measurement** — `measureSeat(riderId)` reads a live seat
-   passively (never mutates a resident) and reports the authored surface,
+2. **Acceptance measurement** — `measureSeat(occupantId)` reads a live seat; on an
+   anchored station it asks the resident's avatar for its anchor (the one write
+   it makes) and reports the authored surface,
    every landmark candidate's signed gap, and what the composition itself
    declared (`profiled` / `approximate: reason`).
 
@@ -19,10 +20,10 @@ Loading into a running client (import specifiers are absolute `/lib/...`, so
 the module works served from anywhere):
 
 ```
-curl -X POST "$SEQ/upload?as=script&token=$BEARER" --data-binary @tools/seatlab/seatlab.js
-# → {"path": "store/scripts/<hash>.js"}
 # browser console:
-const lab = await import('/library/store/scripts/<hash>.js');
+// upload answers src: 'sha256:<64 hex>', a world-script blob the authority runs — not a URL a browser can import
+// to use seatlab from the console, serve this file as a static module (e.g. copy it under client/lib/) and:
+const lab = await import('/lib/seatlab.js');
 ```
 
 The pure math this instrument leans on (seat claim, gates, patch thresholds,

@@ -13,7 +13,7 @@ try{
  const result=await page.evaluate(async()=>{
   const {CONFIG}=await import('/lib/base.js');CONFIG.renderer=true;
   const {camera}=await import('/lib/core.js'),{entities}=await import('/lib/world.js'),w=await import('/lib/watervolumes.js');
-  camera.position.fromArray(w.environmentSettings().spawn);const target=entities.get('water-habitat').position.clone();target.y+=2;camera.lookAt(target);
+  const {replica}=await import('/lib/net.js'),{spawnOf}=await import('/shared/spawn.js');camera.position.fromArray(spawnOf(replica.st).pos);const target=entities.get('water-habitat').position.clone();target.y+=2;camera.lookAt(target);
   return {water:w.waterDebug(),models:entities.size};
  });
  await page.waitForTimeout(1500);

@@ -1,18 +1,14 @@
-// sound-guard-test — the sound editor block reads a guard the way the rest of
-// the house does: authority and label are the immutable creation-time PLACER
-// (meta.placer, by subject), never `meta.actor`, which an owner's later
-// partial update moves while the placer stays (#190 round 2; the sound block
-// had reintroduced the actor shortcut — Mica, #192 review, blocker 2).
+// sound-guard-test — the sound editor block and a stored `guard`. It once read the
+// guard by the creation-time PLACER (#190 round 2; Mica, #192 review, blocker 2);
+// the guard is gone now (one lock, decided at the door), so these rows pin that
+// the editor reads no guard at all: every viewer gets the form, and no line says
+// anyone guards it.
 //
 //   bun tools/sound-guard-test.ts
 //
-// The fixture is the #190 shape: bobbie placed and guarded the radio, the
-// owner (ra) later changed its volume, so meta.actor is 'ra' and meta.placer
-// is bobbie. The stranger gets a read-only line naming bobbie; the placer and
-// the owner get the form; nothing anywhere says the owner guards it; an
-// impostor wearing bobbie's display id under another subject is refused; and
-// bobbie under a new display id keeps the form. Mutating the block back to
-// `meta.actor` turns the placer's own case red.
+// The fixture is still the #190 shape (bobbie placed and guarded the radio, the
+// owner later changed its volume): the stranger, the placer, the owner and
+// someone wearing bobbie's display id all get the same form.
 import { plugin } from 'bun';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -29,7 +25,7 @@ plugin({ name: 'sound-guard-stubs', setup(b) {
   // exactly as the real panels do), and a three-line stub for the audio ones
   for (const m of ['core', 'base', 'world', 'net'])
     b.onResolve({ filter: new RegExp(`^\\./${m}\\.js$`) }, () => ({ path: here('./guard-label-stub.mjs') }));
-  for (const m of ['inspect', 'ui', 'audioctx', 'audiounlock', 'voiceconsent', 'remotes'])
+  for (const m of ['inspect', 'ui', 'audioctx', 'audiounlock', 'voiceconsent', 'serverclock'])
     b.onResolve({ filter: new RegExp(`^\\./${m}\\.js$`) }, () => ({ path: here('./sound-guard-stub.mjs') }));
 } });
 
@@ -49,35 +45,32 @@ stub.entities.set('radio1', radio);
 stub.entityMeta.set('radio1', { actor: 'ra', kind: 'model', ts: 1, placer: { ...PLACER } });   // the owner's partial update moved actor; the placer stays
 stub.comps.set('radio1', { guard: true, sound: { src: 'store/audio/0123456789abcdef.mp3', look: 'rain on the awning', playing: true, volume: 0.6, radius: 12, loop: true } });
 const as = (id: string, sub: string, role: string) => { const n = stub.net; n.myId = id; n.mySub = sub; n.myRights = { role }; };
-const render = () => editor({ id: 'radio1', obj: radio, meta: stub.entityMeta.get('radio1'), bag: stub.comps.get('radio1'), commit() {}, esc: (t: string) => t })?.html ?? '';
+const render = () => editor({ id: 'radio1', obj: radio, meta: stub.entityMeta.get('radio1'), bag: stub.bagOf('radio1'), commit() {}, esc: (t: string) => t })?.html ?? '';
 
+// The guard is gone (one lock for everything, the authority decides at the door; the house's §5): the editor no longer
+// reads a placer or a role, so a block that still carries a stored `guard` offers the same form to everyone, and nothing
+// claims anyone guards it (#260 house I399: these rows expected 'guarded by bobbie', which no client code emits).
 const VIEWERS = [
-  { who: 'the stranger', id: 'carol', sub: SUB_CAROL, role: 'builder', may: false },
-  { who: 'the placer', id: 'bobbie', sub: SUB_BOB, role: 'builder', may: true },
-  { who: 'the owner', id: 'ra', sub: SUB_RA, role: 'owner', may: true },
+  { who: 'the stranger', id: 'carol', sub: SUB_CAROL, role: 'builder' },
+  { who: 'the placer', id: 'bobbie', sub: SUB_BOB, role: 'builder' },
+  { who: 'the owner', id: 'ra', sub: SUB_RA, role: 'owner' },
+  { who: 'someone under the placer\'s display id', id: 'bobbie', sub: SUB_CAROL, role: 'builder' },
 ];
 for (const v of VIEWERS) {
   as(v.id, v.sub, v.role);
   const html = render();
-  if (!v.may) {
-    check(`${v.who}: the block says guarded by bobbie, and offers no form`, /🔊 sound — guarded by bobbie/.test(html) && !/data-se-root/.test(html), html.slice(0, 300));
-    check(`${v.who}: …and still says what is playing`, /playing: rain on the awning/.test(html), html.slice(0, 300));
-  } else {
-    check(`${v.who}: the form is offered (authorized by ${v.role === 'owner' ? 'role' : 'subject'})`, /data-se-root/.test(html) && !/guarded by/.test(html), html.slice(0, 300));
-  }
-  check(`${v.who}: nothing says the owner guards it`, !/guarded by ra\b/.test(html), html.slice(0, 300));
+  check(`${v.who}: the form is offered (a stored guard decides nothing in the editor)`, /data-se-root/.test(html), html.slice(0, 300));
+  check(`${v.who}: …and nothing says anyone guards it`, !/guarded by/.test(html), html.slice(0, 300));
 }
-// the deed follows the SUBJECT
-as('bobbie', SUB_CAROL, 'builder');
-let html = render();
-check('an impostor under the placer\'s display id is refused by subject', /guarded by bobbie/.test(html) && !/data-se-root/.test(html), html.slice(0, 300));
-as('bobbie-renamed', SUB_BOB, 'builder');
-html = render();
-check('the placer under a new display id keeps the form', /data-se-root/.test(html), html.slice(0, 300));
-// no guard at all: everyone gets the form
-stub.comps.set('radio1', { sound: stub.comps.get('radio1').sound });
+// and without the stored guard, the same
+stub.comps.set('radio1', { sound: stub.bagOf('radio1').sound });
 as('carol', SUB_CAROL, 'builder');
-check('unguarded: the stranger gets the form too', /data-se-root/.test(render()));
+check('no stored guard: the stranger gets the form too', /data-se-root/.test(render()));
+
+// R 10-28 (item 18): 32 world sounds heard at once (was 8), and the editor's radius goes to the 200 m cap
+{ const S: any = await import('../client/lib/sounds.js'); const { SOUND_MAX_RADIUS } = await import('../shared/sound.js');
+  check('VOICES: 32 world sounds are heard at once', S.VOICES === 32, String(S.VOICES));
+  check('the editor\'s radius field goes to SOUND_MAX_RADIUS (200 m)', new RegExp(`data-se="radius"[^>]*max="${SOUND_MAX_RADIUS}"`).test(render()) && SOUND_MAX_RADIUS === 200, render().match(/data-se="radius"[^>]*/)?.[0]); }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

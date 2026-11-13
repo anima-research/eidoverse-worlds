@@ -16,12 +16,13 @@
 // a PNG named .glb is a .png in the store), the path is content-addressed and
 // idempotent, the /library route serves it back byte-identical with the right
 // content-type and the store's immutable cache policy, the picture allow-list
-// admits the path it returns, the manifest records who, and the door is
+// admits the path it returns, the manifest records who, an image's pixel size
+// is read from its header and capped at 8192 on a side, and the door is
 // token-gated, capped and rate-limited like the model door.
 import { allowedPictureSrc } from "../shared/picture.js";
 
 import { ownedWorld } from "./probe-harness.mjs";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -38,12 +39,27 @@ function check(name: string, ok: boolean, detail = "") {
   else { failed++; console.log(`  ✗ ${name}${detail ? ` — ${detail}` : ""}`); }
 }
 
-// A real 1×1 PNG (the smallest well-formed one), a JPEG SOI header with
-// padding, and a WebP RIFF header with padding — the sniffer reads magic, the
-// store does not decode, so headers are enough for the door.
+// A real 1×1 PNG (the smallest well-formed one), a JPEG whose header gives its
+// size (1024×512, tools/protocol/fixtures), and a WebP RIFF header with a VP8
+// frame header that gives its size — the sniffer reads magic and the door reads
+// the size (the pixel cap), the store does not decode, so headers are enough.
+// (house 6340433633: the WebP read 0×0, and the door took that as a size; a zero
+// side is now an unknown size, refused 415 like any unreadable one: WEBP0. The
+// JPEG had no SOF, so the size check refused it since that check landed.)
 const PNG = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="), (c) => c.charCodeAt(0));
-const JPG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, ...new Array(64).fill(0), 0xff, 0xd9]);
-const WEBP = new Uint8Array([0x52, 0x49, 0x46, 0x46, 0x24, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50, 0x56, 0x50, 0x38, 0x20, ...new Array(24).fill(0)]);
+const JPG = new Uint8Array(readFileSync(new URL("./protocol/fixtures/dims-1024x512.jpg", import.meta.url)));
+const vp8 = (w: number, h: number) => new Uint8Array([0x52, 0x49, 0x46, 0x46, 0x20, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50, 0x56, 0x50, 0x38, 0x20, 0x14, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x9d, 0x01, 0x2a, w & 0xff, (w >> 8) & 0x3f, h & 0xff, (h >> 8) & 0x3f, ...new Array(10).fill(0)]);
+// the WebP that lands is at the pixel cap, 8192 on each side, so landing pins the cap from below too
+const WEBP = vp8(8192, 8192), WEBP0 = vp8(0, 0);
+// a JPEG whose header gives no size: SOI, JFIF, EOI, and no frame header
+const JPG_NO_SIZE = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xff, 0xd9]);
+// The PNG above with its IHDR saying w×h (and that chunk's CRC recomputed).
+function pngSized(w: number, h: number): Uint8Array {
+  const b = PNG.slice(); const v = new DataView(b.buffer);
+  v.setUint32(16, w); v.setUint32(20, h); v.setUint32(29, Bun.hash.crc32(b.subarray(12, 29)));
+  return b;
+}
 const GLB = new Uint8Array([0x67, 0x6c, 0x54, 0x46, 0x02, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, ...new Array(24).fill(0)]);
 const JUNK = new Uint8Array(40).map((_, i) => (i * 37) & 0xff);
 
@@ -61,21 +77,25 @@ console.log(`\nimage door — ${HTTP}\n`);
 // ---- the door judges by bytes ------------------------------------------------
 // The upload window is 4/min per IP and every POST past the token check
 // spends it (refusals included), so the door is exercised four at a time
-// with a window's rest between.
+// with a window's rest between: three windows, twelve uploads.
 let r = await post(PNG, { as: "image", name: "hearth at dusk.png" });
 check("a PNG lands: 200 with a store path", r.status === 200 && typeof r.json?.path === "string", r.text);
 const pngPath: string = r.json?.path ?? "";
 check("…content-addressed under store/images/, extension from the bytes", /^store\/images\/[a-f0-9]{16}\.png$/.test(pngPath), pngPath);
 check("…and the picture allow-list admits exactly that path", allowedPictureSrc(pngPath) === true, pngPath);
 
-const again = await post(PNG, { as: "image", name: "different name.png" });
-check("re-uploading the same bytes is idempotent (same path, whatever the name)", again.json?.path === pngPath, again.text);
-
+// the same bytes again under another name, and one that says it's a model
 r = await post(PNG, { as: "image", name: "lies.glb" });
+check("re-uploading the same bytes is idempotent (same path, whatever the name)", r.json?.path === pngPath, r.text);
 check("a PNG named .glb is still a .png in the store (the name is not evidence)", r.json?.path === pngPath, r.text);
 
 r = await post(JPG, { as: "image", name: "photo.jpg" });
 check("a JPEG lands as .jpg", r.status === 200 && /\.jpg$/.test(r.json?.path ?? ""), r.text);
+
+r = await post(WEBP, { as: "image", name: "photo.webp" });
+check("a WebP lands as .webp", r.status === 200 && /\.webp$/.test(r.json?.path ?? ""), r.text);
+check("…at 8192 px on each side: the pixel cap is a size that lands", r.status === 200, `${r.status} ${r.text.slice(0, 120)}`);
+const webpPath: string = r.json?.path ?? "store/images/none.webp";
 
 r = await post(PNG, { as: "image" }, null);
 check("no token: 401 (the image door is the same door)", r.status === 401, `${r.status} ${r.text}`);
@@ -86,14 +106,12 @@ const served = new Uint8Array(await g.arrayBuffer());
 check("GET /library/<path> serves it: 200 image/png", g.status === 200 && (g.headers.get("content-type") ?? "").startsWith("image/png"), `${g.status} ${g.headers.get("content-type")}`);
 check("…byte-identical", served.length === PNG.length && served.every((b, i) => b === PNG[i]), `${served.length} vs ${PNG.length}`);
 check("…under the store's immutable cache policy (content-addressed)", /immutable/.test(g.headers.get("cache-control") ?? ""), g.headers.get("cache-control") ?? "none");
+const gw = await fetch(`${HTTP}/library/${webpPath}`);
+check("a served .webp says image/webp", (gw.headers.get("content-type") ?? "").startsWith("image/webp"), gw.headers.get("content-type") ?? "none");
 
+// ---- refused by what the bytes are ---------------------------------------------
 console.log("  (resting out the 4/min upload window…)");
 await new Promise((res) => setTimeout(res, 61_000));
-
-r = await post(WEBP, { as: "image", name: "photo.webp" });
-check("a WebP lands as .webp", r.status === 200 && /\.webp$/.test(r.json?.path ?? ""), r.text);
-const gw = await fetch(`${HTTP}/library/${r.json?.path ?? "store/images/none.webp"}`);
-check("a served .webp says image/webp", (gw.headers.get("content-type") ?? "").startsWith("image/webp"), gw.headers.get("content-type") ?? "none");
 
 r = await post(GLB, { as: "image", name: "model.png" });
 check("a GLB named .png is refused at the image door (415)", r.status === 415 && /not a PNG/.test(r.text), `${r.status} ${r.text}`);
@@ -101,6 +119,9 @@ r = await post(JUNK, { as: "image", name: "x.png" });
 check("junk bytes are refused (415)", r.status === 415, `${r.status} ${r.text}`);
 r = await post(PNG, {});
 check("a PNG at the MODEL door is refused as not-a-GLB (the doors are distinct)", r.status === 415 && /GLB/.test(r.text), `${r.status} ${r.text}`);
+// the pixel cap is read from the header (a tiny file can decode to a huge image), so a header with no size is refused
+r = await post(JPG_NO_SIZE, { as: "image", name: "no size.jpg" });
+check("a JPEG whose header gives no pixel size: 415", r.status === 415 && /pixel size/.test(r.text), `${r.status} ${r.text.slice(0, 120)}`);
 
 // ---- the manifest remembers who ----------------------------------------------
 // owned child: the scratch OPT_DIR above; a live door: only if the caller
@@ -112,12 +133,20 @@ if (MANIFEST_DIR) {
   check("the manifest records the name and who (first upload wins the name)", entry && entry.name === "hearth at dusk" && typeof entry.by === "string", JSON.stringify(entry));
 } else console.log("  (OPT_DIR not set — manifest check skipped)");
 
-// ---- the cap ------------------------------------------------------------------
+// ---- the caps -----------------------------------------------------------------
+// the byte cap; the pixel cap on each side, one past 8192 px refused; and a zero
+// side, which is no size at all
 console.log("  (resting out the 4/min upload window…)");
 await new Promise((res) => setTimeout(res, 61_000));
 const big = new Uint8Array(8 * 1_000_000 + 1); big.set(PNG.subarray(0, 8));
 r = await post(big, { as: "image" });
 check("over the image cap: 413, before any sniffing", r.status === 413 && /cap/.test(r.text), `${r.status} ${r.text.slice(0, 80)}`);
+r = await post(pngSized(1, 8193), { as: "image", name: "tall.png" });
+check("a PNG 8193 px tall: 413", r.status === 413 && /8193/.test(r.text), `${r.status} ${r.text.slice(0, 120)}`);
+r = await post(pngSized(8193, 1), { as: "image", name: "wide.png" });
+check("a PNG 8193 px wide: 413", r.status === 413 && /8193/.test(r.text), `${r.status} ${r.text.slice(0, 120)}`);
+r = await post(WEBP0, { as: "image", name: "blank.webp" });
+check("a WebP whose header says 0×0 is an unknown size: refused 415, not landed", r.status === 415 && /pixel size/.test(r.text), `${r.status} ${r.text.slice(0, 120)}`);
 
 await world.close();
 console.log(`\n${passed} passed, ${failed} failed\n`);

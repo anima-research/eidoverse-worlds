@@ -1,17 +1,23 @@
 // Show voice bot: gives the world's agent performers audible voices.
 //
-//   world WS (spectator "voice") ── say verbs by configured speakers ──▶
+//   world WS (spectator "voice") ── `say` entries (log) by configured speakers ──▶
 //   ElevenLabs streaming TTS ──▶ Discord voice channel (@discordjs/voice)
 //
-// Humans in the channel just talk; this bot only voices the models.
+// Humans in the channel just talk; this bot voices the speakers SPEAKERS names (`*` = everyone who says, humans included).
 // Captions need nothing extra — every say is already in-world chat + log.
+//
+// The world speaks the protocol: the join says `replica: true` (a client that
+// doesn't is refused), and chat arrives as `say` entries in the `log`
+// stream. Their actors are opaque ids; the stream's `names` (and the
+// snapshot's cut.names) say who they are, and SPEAKERS / voices.json name
+// speakers by that display name.
 //
 // Env:
 //   WORLD_URL      ws(s)://host/ws          (default ws://127.0.0.1:8940/ws)
 //   WORLD_TOKEN    door key                  (if the sequencer has one)
 //   WORLD_NAME     world to watch            (default commons)
-//   SPEAKERS       comma list of actor ids to voice, or "*" for all agents
-//   VOICES_FILE    actor→voiceId map         (default ./voices.json)
+//   SPEAKERS       comma list of display names (the stream's `names`, not identity ids) to voice, or "*" for everyone who says
+//   VOICES_FILE    display name→voiceId map  (default ./voices.json)
 //   ELEVEN_KEY     ElevenLabs API key
 //   ELEVEN_MODEL   default eleven_turbo_v2_5
 //   DISCORD_TOKEN  bot token                 (omit with DRY_RUN=1)
@@ -25,6 +31,7 @@
 
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { helloOf } from "../../shared/protocol/hello.js";
 
 const WORLD_URL = process.env.WORLD_URL ?? "ws://127.0.0.1:8940/ws";
 const WORLD_TOKEN = process.env.WORLD_TOKEN ?? "";
@@ -49,7 +56,7 @@ const log = (m: string) => console.log(`[voicebot ${new Date().toISOString().sli
 
 async function synth(actor: string, text: string): Promise<ArrayBuffer | null> {
   const voice = voices[actor] ?? voices["*"];
-  if (!voice || voice.startsWith("REPLACE")) { log(`no voice for "${actor}" — skipped`); return null; }
+  if (!voice || voice.startsWith("REPLACE")) { log(`no voice for "${actor}" — skipped${DRY_RUN ? `: ${text.slice(0, 60)}` : ""}`); return null; }   // DRY_RUN names the line (voicebot-test greps it)
   const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice}?output_format=mp3_44100_128`, {
     method: "POST",
     headers: { "xi-api-key": ELEVEN_KEY, "content-type": "application/json" },
@@ -125,20 +132,34 @@ async function connectDiscord() {
 
 // ---------------------------------------------------------------- world
 
+const names: Record<string, string> = {}; // identity → display name, as the world sends them
+let head = -1;                             // the log's head at join: lines at or before it are history
+
 function connectWorld() {
   const ws = new WebSocket(WORLD_URL);
-  ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: WORLD_NAME, id: "voice", avatar: "", spectate: true, token: WORLD_TOKEN }));
+  ws.onopen = () => ws.send(JSON.stringify({ type: "join", hello: helloOf(), world: WORLD_NAME, id: "voice", avatar: "", spectate: true, token: WORLD_TOKEN, replica: true }));
   ws.onclose = () => { log("world socket closed — reconnecting"); setTimeout(connectWorld, 1500); };
   ws.onmessage = (ev) => {
     const msg = JSON.parse(String(ev.data));
-    if (msg.type === "snapshot") log(`watching world "${WORLD_NAME}" as spectator (${msg.entries?.length ?? 0} log entries skipped — live lines only)`);
-    if (msg.type !== "log" || msg.entry?.verb !== "say") return;
-    const { actor, args } = msg.entry;
-    if (!SPEAKERS.includes("*") && !SPEAKERS.includes(actor)) return;
-    const text = String(args?.text ?? "").trim();
-    if (!text) return;
-    queue.push({ actor, text, at: Date.now() });
-    pump().catch((e) => log(`pump error: ${e.message}`));
+    if (msg.type === "error") { log(`world says: ${msg.error}`); return; }
+    if (msg.type === "snapshot") {
+      Object.assign(names, msg.names ?? {});
+      head = Number.isInteger(msg.seq) ? msg.seq : -1;
+      log(`watching world "${WORLD_NAME}" as spectator (${msg.chat?.recentChat?.length ?? 0} recent lines skipped — live lines only)`);
+      return;
+    }
+    if (msg.type !== "log") return;
+    Object.assign(names, msg.names ?? {});
+    (msg.entries ?? []).forEach((e: any, i: number) => {
+      if (e?.kind !== "say" || msg.from + i <= head) return;
+      head = msg.from + i;
+      const actor = names[e.actor] ?? String(e.actor);
+      if (!SPEAKERS.includes("*") && !SPEAKERS.includes(actor)) return;
+      const text = String(e.body?.text ?? "").trim();
+      if (!text) return;
+      queue.push({ actor, text, at: Date.now() });
+      pump().catch((err) => log(`pump error: ${err.message}`));
+    });
   };
 }
 

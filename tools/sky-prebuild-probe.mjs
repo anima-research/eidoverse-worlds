@@ -5,7 +5,7 @@
 //   bun tools/sky-prebuild-probe.mjs
 import { launchBrowser, ownedWorld, checker } from './probe-harness.mjs';
 const { check, done } = checker();
-const world = await ownedWorld({});
+const world = await ownedWorld({ owner: 'prebuild', env: { TRUST_NAMES: '1' } });   // the page owns staging, so its @world writes are admitted
 const { browser, page } = await launchBrowser(); const pg = await page();
 const errs = []; pg.on('pageerror', (e) => errs.push(String(e)));
 try {
@@ -13,7 +13,7 @@ try {
   await pg.evaluate(() => localStorage.setItem('ew-cloud-quality', 'off'));
   await pg.goto(`${world.origin}/?world=staging&name=prebuild&key=${world.key}&lite=0`, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await pg.waitForFunction(() => globalThis.__ewEngineUp, null, { timeout: 120000 });
-  await pg.evaluate(async () => { const { sendVerb } = await import('./lib/net.js'); sendVerb('sky', { hours: 12, rate: 0, clouds: 'clear', weather: 'clear' }); });
+  await pg.evaluate(async () => { const { sendRequest } = await import('./lib/net.js'); const r = await sendRequest('set', { id: '@world', component: 'sky', value: { hours: 12, rate: 0, clouds: 'clear', weather: 'clear' }, merge: true }); if (!r.ok) throw new Error(`sky refused: ${JSON.stringify(r.refused)}`); });
   for (let i = 0; i < 90 && !(await pg.evaluate(async () => (await import('./lib/sky_baked.js')).bakedActive())); i++) await pg.waitForTimeout(1000);
   const r = await pg.evaluate(async () => {
     const s = await import('./lib/sky.js'); const { sys } = s.skyForProbe();

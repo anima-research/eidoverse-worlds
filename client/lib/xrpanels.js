@@ -4,7 +4,7 @@
 // the SAME dispatcher the desktop frame calls. No DOM crosses the threshold.
 //
 // Any module opts a frame in with registerXRPanel — the dock has no body in
-// VR, so this registry IS the dock's edit-mode: what you can reach, floating
+// VR, so this registry IS the dock's build-mode: what you can reach, floating
 // at desk height. Frames that never register (chat's free text, the debug
 // log) simply have no VR body yet, and say nothing rather than pretend.
 
@@ -12,7 +12,7 @@ import { THREE, renderer } from './core.js';
 import { quadMaterial } from './quadcolour.js';
 import { bus } from './base.js';
 import { renderCanvas, hitRegion } from './panels.js';
-import { domQuadsEnabled, domQuadsEnter, domQuadsExit, domQuadsPick, domQuadsPress, domQuadsDrag, domQuadsRelease, domQuadsSetShown, domQuadsShown, domQuadShow, domQuadOpen, domQuadsGrab, domQuadRelease } from './domquad.js';   // the REAL frames on quads (default); ?canvasquads=1 keeps these canvases
+import { domQuadsEnabled, domQuadsEnter, domQuadsExit, domQuadsPick, domQuadsPress, domQuadsDrag, domQuadsRelease, domQuadsSetShown, domQuadsShown, domQuadShow, domQuadOpen, domQuadsGrab, domQuadRelease, domQuadsAt, domQuadsHideToggle, domQuadsHidden } from './domquad.js';   // the REAL frames on quads (default); ?canvasquads=1 keeps these canvases
 
 const PX_PER_M = 900;              // canvas pixels per world metre of quad
 const W = 0.58;                    // quad width, metres — an arm's-length read
@@ -52,7 +52,7 @@ export function makePanel(def, i, n) {
 }
 
 function repaint(p) {
-  p.regions = renderCanvas(p.canvas, p.def.fields(), { width: Math.round(W * PX_PER_M), title: p.def.title ?? p.def.id });
+  p.regions = renderCanvas(p.canvas, p.def.fields(), { width: Math.round(W * PX_PER_M), title: p.def.title ?? p.def.id, theme: p.def.theme ?? null });
   // quad keeps the canvas's aspect so buttons are where they look like they are
   p.mesh.scale.set(W, W * (p.canvas.height / p.canvas.width), 1);
   p.tex.needsUpdate = true;
@@ -120,6 +120,15 @@ export function showXRPanel(id, on = null) {
   return p.mesh.visible;
 }
 export const xrPanelHas = (id) => registry.some((d) => d.id === id);
+/** The quick hide: every open panel away, then exactly those back (domquad.js). Canvas quads do the same with their own. */
+let canvasStash = null;
+export function xrPanelsHideToggle() {
+  if (domQuadsEnabled()) return domQuadsHideToggle();
+  if (canvasStash) { for (const p of canvasStash) showPanel(p, true); canvasStash = null; shown = (panels ?? []).some((p) => p.mesh.visible); return false; }
+  const open = (panels ?? []).filter((p) => p.mesh.visible); if (!open.length) return false;
+  canvasStash = open; for (const p of open) showPanel(p, false); shown = false; return true;
+}
+export const xrPanelsHidden = () => (domQuadsEnabled() ? domQuadsHidden() : !!canvasStash);
 export const xrPanelsShown = () => (domQuadsEnabled() ? domQuadsShown() : (panels ?? []).some((p) => p.mesh.visible));
 export const xrPanelOpen = (id) => (domQuadsEnabled() ? domQuadOpen(id) : !!panels?.find((q) => q.def.id === id)?.mesh.visible);   // the ring's lit state; read only the canvas quads before, so on the default path every slot read closed
 
@@ -143,6 +152,26 @@ export function xrPanelsPick(handRay, click = false) {
   return hit.distance;
 }
 
+/** What the laser is on: {dist, point, normal, mesh, id, control} or null — `control` is the interactive thing under the
+ *  hit (an element on the DOM quads; a hit region's key on the canvas quads), or null on background. The stickiness
+ *  holds the laser on a control; a grip on one does not grab. */
+export function xrPanelsAt(handRay) {
+  if (domQuadsEnabled()) return domQuadsAt(handRay);
+  if (!panels || !shown) return null;
+  _m.identity().extractRotation(handRay.matrixWorld);
+  _rc.ray.origin.setFromMatrixPosition(handRay.matrixWorld);
+  _rc.ray.direction.set(0, 0, -1).applyMatrix4(_m);
+  _rc.far = 3;
+  const hit = _rc.intersectObjects(panels.filter((p) => p.mesh.visible).map((p) => p.mesh), false)[0];
+  if (!hit) return null;
+  const p = panels.find((q) => q.mesh === hit.object);
+  const r = hit.uv ? hitRegion(p.regions, p.canvas, hit.uv.x, 1 - hit.uv.y) : null;
+  const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(hit.object.getWorldQuaternion(new THREE.Quaternion()));
+  if (normal.dot(_rc.ray.direction) > 0) normal.negate();
+  // a region object is rebuilt on every repaint: its KEY (panel, action, payload) is what stays the same frame to frame
+  return { dist: hit.distance, point: hit.point, normal, mesh: hit.object, id: p.def.id, control: r ? `${p.def.id}:${r.action}:${JSON.stringify(r.payload ?? null)}` : null };
+}
+
 /** Trigger down: {dist, press} or null. On the DOM quads a press on a non-interactive spot becomes drag-to-scroll
  *  (domquad.js); the canvas quads click at once, as before. */
 export function xrPanelsPress(handRay) {
@@ -153,17 +182,13 @@ export function xrPanelsPress(handRay) {
 export const xrPanelsDrag = (handRay, press) => domQuadsDrag(handRay, press);
 export const xrPanelsReleasePress = (press, cancel = false) => domQuadsRelease(press, cancel);
 
-/** C17: the panel under the laser, as a grabbable — {id, mesh} or null. Canvas quads grab too. */
+/** C17: the panel under the laser, as a grabbable — {id, mesh} or null; null over a control (a hit region on the
+ *  canvas quads): only a panel's background or title grabs. Canvas quads grab too. */
 export function xrPanelsGrab(handRay) {
   if (domQuadsEnabled()) return domQuadsGrab(handRay);
-  if (!panels || !shown) return null;
-  _m.identity().extractRotation(handRay.matrixWorld);
-  _rc.ray.origin.setFromMatrixPosition(handRay.matrixWorld);
-  _rc.ray.direction.set(0, 0, -1).applyMatrix4(_m);
-  _rc.far = 3;
-  const hit = _rc.intersectObjects(panels.filter((p) => p.mesh.visible).map((p) => p.mesh), false)[0];
-  if (!hit) return null;
-  const p = panels.find((q) => q.mesh === hit.object);
+  const at = xrPanelsAt(handRay);
+  if (!at || at.control) return null;
+  const p = panels.find((q) => q.mesh === at.mesh);
   return p ? { id: p.def.id, mesh: p.mesh } : null;
 }
 export const xrPanelRelease = (q, rig) => domQuadRelease(q, rig);   // uprighting is the same for either kind

@@ -157,6 +157,28 @@ await sleep(400);
 check("moderator mute silences alice for everyone", bob.heard === atMute, `heard ${atMute}→${bob.heard}`);
 sfu.setMuted("alice", false);
 
+// ── a DEAFENED listener (a ghost, R 10-07: "no for a ghost hearing voice chat") hears nobody, whatever its consent ─
+// consent is the listener's own answer (it can turn it back on); deafness is the server's and overrides it
+sfu.setConsent("bob", "alice", true);
+await sleep(200);
+(sfu as any).setDeafened?.("bob", true);
+const atDeaf = bob.heard;
+await alice.speak(20);
+await sleep(400);
+check("a deafened listener hears nothing, consent ON", bob.heard === atDeaf, `heard ${atDeaf}→${bob.heard}`);
+sfu.setConsent("bob", "alice", true);                  // the listener re-consents: still deaf
+await sleep(200);
+const atDeaf2 = bob.heard;
+await alice.speak(20);
+await sleep(400);
+check("…and re-consenting doesn't undo it", bob.heard === atDeaf2, `heard ${atDeaf2}→${bob.heard}`);
+(sfu as any).setDeafened?.("bob", false);
+await sleep(200);
+const atHear = bob.heard;
+await alice.speak(20);
+await sleep(400);
+check("undeafened: hears again (the control)", bob.heard > atHear, `heard ${atHear}→${bob.heard}`);
+
 // ── revocation is LOCAL and immediate (no webhook, no TTL) ─────────────────
 const t0 = Date.now();
 sfu.closeLeg("alice");

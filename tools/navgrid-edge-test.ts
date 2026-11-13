@@ -4,8 +4,9 @@
 //   - a route round a tight corner keeps the corner (every leg walkable);
 //   - a destination a hand's width inside a box ends where a body can stand;
 //   - a destination 100km away is refused quickly, not planned for seconds.
+import { fileURLToPath } from "node:url";
 import { plugin } from "bun";
-const STUB = new URL("./core-stub.mjs", import.meta.url).pathname;
+const STUB = fileURLToPath(new URL("./core-stub.mjs", import.meta.url));
 plugin({ name: "core-stub", setup(b) { b.onResolve({ filter: /^\.\/core\.js$/ }, () => ({ path: STUB })); } });
 const { THREE } = await import(STUB);
 const { mergeGeometries } = await import("../client/node_modules/three/examples/jsm/utils/BufferGeometryUtils.js");
