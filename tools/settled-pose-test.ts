@@ -18,12 +18,14 @@
 // (tools/ragdoll-test.ts needs the shipped rigs and is the right home for the
 // solver, not for this).
 
+import { withoutOnceAnim, ONCE_KEYS } from "../shared/onceanim.js";
+
 // Mirror of server.ts's settledPose. Kept in sync by the assertions below —
 // if the server's version changes shape, these fail loudly rather than
 // silently testing a stale copy.
 function settledPose(pose: unknown): Record<string, unknown> | null {
   if (!pose) return null;
-  const { emote: _emote, ...still } = pose as Record<string, unknown>;
+  const { mic: _mic, hear: _hear, ...still } = withoutOnceAnim(pose as Record<string, unknown>);
   if (still.clip === "ragdoll") { still.clip = "idle"; delete still.pose; }
   return still;
 }
@@ -54,26 +56,38 @@ const ck = (n: string, got: unknown, want: unknown) => {
 
 // ── semantic body posture survives reconnect and late join ─────────────────
 {
-  const vigil = { clip: "idle", wingsFolded: true, p: [4, 0, 2] };
+  const vigil = { clip: "idle", poses: ["wings-folded"], p: [4, 0, 2] };
   const out = settledPose(vigil)!;
-  ck("folded wings survive settled presence", out.wingsFolded, true);
+  ck("folded wings (the named pose) survive settled presence", JSON.stringify(out.poses), '["wings-folded"]');
   ck("  ...without becoming a bone override", out.pose, undefined);
 }
 
-// ── a one-shot emote is a MOMENT, not a place ──────────────────────────────
+// ── a gesture is a MOMENT, not a place ──────────────────────────────
 {
-  const waving = { clip: "idle", emote: "wave", p: [0, 0, 0] };
+  const waving = { clip: "idle", anim: "wave", p: [0, 0, 0] };
   const out = settledPose(waving)!;
-  ck("an emote does not persist (a wave would become a tic)", out.emote, undefined);
+  ck("a gesture (pose.anim) does not persist (a wave would become a tic)", out.anim, undefined);
+  ck("  ...nor under its pre-release key", ONCE_KEYS[1] in settledPose({ clip: "idle", [ONCE_KEYS[1]]: "wave", p: [0, 0, 0] })!, false);
   ck("  ...the underlying clip does", out.clip, "idle");
 }
 
-// ── a ragdoll mid-emote: both rules apply, neither leaks ───────────────────
+// ── voice state is a LIVE reading, not a place (review 09-30 S2) ──────────
+// Remembered, it came back in `restore`, a client replayed it, and the world heard a microphone state the new
+// session never had. A live sender re-sends it every packet; size and plate lift are the body, and stay.
 {
-  const knockedMidWave = { clip: "ragdoll", emote: "wave", pose: { hips: [0, 0, 0, 1] }, p: [5, 1.2, 5] };
+  const talking = { clip: "idle", mic: true, hear: false, scale: 1.5, plateY: 0.3, p: [0, 0, 0] };
+  const out = settledPose(talking)!;
+  ck("mic does not persist", "mic" in out, false);
+  ck("  ...nor hear", "hear" in out, false);
+  ck("  ...the body's size and plate lift do", [out.scale, out.plateY], [1.5, 0.3]);
+}
+
+// ── a ragdoll mid-gesture: both rules apply, neither leaks ───────────────────
+{
+  const knockedMidWave = { clip: "ragdoll", anim: "wave", pose: { hips: [0, 0, 0, 1] }, p: [5, 1.2, 5] };
   const out = settledPose(knockedMidWave)!;
   ck("knocked over mid-wave: clip settles", out.clip, "idle");
-  ck("  ...emote dropped", out.emote, undefined);
+  ck("  ...gesture dropped", out.anim, undefined);
   ck("  ...tumble bones dropped", out.pose, undefined);
 }
 
@@ -105,6 +119,10 @@ const ck = (n: string, got: unknown, want: unknown) => {
   ck("server still defines settledPose", /function settledPose\(/.test(src), true);
   ck("the ragdoll rule is still in the real function",
      /still\.clip === "ragdoll".*still\.clip = "idle".*delete still\.pose/s.test(src), true);
+  ck("the real function drops mic and hear",
+     /function settledPose\([^]*?const \{[^}]*\bmic: _\w+[^}]*\bhear: _\w+[^}]*\.\.\.still \}/.test(src), true);
+  ck("the real function drops the once anim (pose.anim, either key)",
+     /function settledPose\([^]*?= withoutOnceAnim\(pose/.test(src), true);
   ck("the JOIN SNAPSHOT uses it (this is the fix; reverting it fails here)",
      /pose: settledPose\(o\.lastPose\)/.test(src), true);
   ck("no raw lastPose ships to other clients",

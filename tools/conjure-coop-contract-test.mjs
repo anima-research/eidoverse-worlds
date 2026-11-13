@@ -9,7 +9,7 @@
 // corruption of the REAL extracted text, so a drifted extraction anchor fails
 // loudly instead of passing vacuously.
 import { readFileSync } from 'fs';
-const src = readFileSync(new URL('../client/lib/conjure.js', import.meta.url), 'utf8');
+const src = readFileSync(new URL('../client/lib/generate.js', import.meta.url), 'utf8');
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { c ? (pass++, console.log(`ok   ${n}`)) : (fail++, console.log(`FAIL ${n}`)); };

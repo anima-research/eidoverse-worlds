@@ -13,6 +13,7 @@
 // the server-side convenience tier.
 
 import { statSync } from "node:fs";
+import { solidsFromTriangles } from "./solids.ts";
 // the one classifier both runtimes share (#84) — grid math and constants
 // live there; this file only supplies vertices from gltf-transform accessors
 import { gridAccumulator, SPARSE_MIN_CELLS, TOPGRID_VERSION, TOPGRID_MAX_JSON, LIE_GRID,
@@ -100,18 +101,23 @@ export type GeomSummary = {
   /** mesh nodes present in the FILE but attached to no scene — broken
    *  exports. No renderer draws them; never aim a motion at one. */
   orphans?: string[];
+  /** solid parts as boxes [[lo], [hi]] in the model frame (server/solids.ts): walls, floors and roofs of a building
+   *  with its rooms left open; absent for a small model or one too big to measure (its bbox stands) */
+  solids?: number[][][];
 };
 
-const cache = new Map<string, { mtime: number; sum: GeomSummary }>();
+const cache = new Map<string, { mtime: number; sum: GeomSummary; solids?: boolean }>();
 const CACHE_MAX = 64;
 const SAMPLE_ABOVE_TRIS = 500_000;
+const SOLIDS_MAX_TRIS = 200_000;   // past this the bbox stands as the model's solid (measuring would hold the thread too long)
 
-/** Summarize one GLB file. Returns null when parsing is unavailable/fails. */
-export async function summarizeGlb(absPath: string): Promise<GeomSummary | null> {
+/** Summarize one GLB file. Returns null when parsing is unavailable/fails. `solids`: also measure its solid parts
+ *  (server/solids.ts; only the door's catalogue asks: it costs the thread, so no other caller pays for it). */
+export async function summarizeGlb(absPath: string, opts: { solids?: boolean } = {}): Promise<GeomSummary | null> {
   let mtime = 0;
   try { mtime = statSync(absPath).mtimeMs; } catch { return null; }
   const hit = cache.get(absPath);
-  if (hit && hit.mtime === mtime) return hit.sum;
+  if (hit && hit.mtime === mtime && (hit.solids || !opts.solids)) return hit.sum;
   const io = await getIO();
   if (!io) return null;
   let doc: any;
@@ -155,6 +161,8 @@ export async function summarizeGlb(absPath: string): Promise<GeomSummary | null>
   }
   const stride = tris > SAMPLE_ABOVE_TRIS ? Math.ceil(tris / SAMPLE_ABOVE_TRIS) : 1;
 
+  // the triangles in the model frame, for its solid parts (server/solids.ts), when the mesh is walked whole
+  const soup = opts.solids && tris <= SOLIDS_MAX_TRIS ? new Float32Array(tris * 9) : null; let soupN = 0;
   // Flat zones bucketed by height (2.5cm) — up-facing triangles only.
   const buckets = new Map<number, { area: number; x: [number, number]; z: [number, number]; ySum: number; n: number }>();
   const nodes: GeomSummary["nodes"] = [];
@@ -199,6 +207,7 @@ export async function summarizeGlb(absPath: string): Promise<GeomSummary | null>
             if (out[a] > nMax[a]) nMax[a] = out[a];
           }
         }
+        if (soup && soupN + 9 <= soup.length) { soup.set(va, soupN); soup.set(vb, soupN + 3); soup.set(vc, soupN + 6); soupN += 9; }
         // up-facing? cross(ab, ac).y dominant and positive
         const abx = vb[0] - va[0], aby = vb[1] - va[1], abz = vb[2] - va[2];
         const acx = vc[0] - va[0], acy = vc[1] - va[1], acz = vc[2] - va[2];
@@ -395,6 +404,7 @@ export async function summarizeGlb(absPath: string): Promise<GeomSummary | null>
     }
   }
 
+  const solids = ok && soup ? solidsFromTriangles(soup.subarray(0, soupN), min, max) : null;
   const sum: GeomSummary = {
     tris,
     bbox: ok ? {
@@ -408,8 +418,74 @@ export async function summarizeGlb(absPath: string): Promise<GeomSummary | null>
     ...(lie !== undefined ? { lie } : {}),
     ...(topGrid ? { topGrid } : {}),
     ...(orphans.length ? { orphans } : {}),
+    ...(solids ? { solids } : {}),
   };
-  cache.set(absPath, { mtime, sum });
+  cache.set(absPath, { mtime, sum, solids: !!opts.solids });
   if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value!);
   return sum;
+}
+
+/** A model's triangles as one indexed soup in the model's ROOT frame — every
+ *  scene-reachable mesh node with its world matrix applied, orphans excluded
+ *  (the same "what the world renders" rule summarizeGlb applies). This is the
+ *  geometry a browser's collider is fitted from, handed to a process with no
+ *  renderer: the agent fits client/lib/colliders.js against it, so a body
+ *  standing in an agent's process is held up and held back by exactly the
+ *  surfaces a person's browser uses. Takes BYTES (what GET /library/<lib>
+ *  serves — usually the draco-compressed optimized copy, which this decodes)
+ *  rather than a path, because its caller is a client of that route.
+ *  Triangle-list primitives only: strips, fans, lines and points contribute
+ *  nothing (three's GLTFLoader turns strips/fans into lists; none ship here).
+ *  `building` is the model's own description of itself when a scene node
+ *  carries one in its glTF extras (rooms, portals, seats, arrivals — what
+ *  mcpl/places.ts reads named places from), parsed if it was stored as a
+ *  JSON string, as Blender's exporter stores custom properties.
+ *  null when parsing is unavailable or the bytes are not a readable GLB. */
+export async function collisionTriangles(bytes: Uint8Array): Promise<{ positions: Float32Array; indices: Uint32Array; building?: unknown } | null> {
+  const io = await getIO();
+  if (!io) return null;
+  let doc: any;
+  try { doc = await io.readBinary(bytes); } catch (err) {
+    console.warn("[geometry] collisionTriangles: unreadable GLB:", String(err).slice(0, 200));
+    return null;
+  }
+  // the scene a browser shows: three's GLTFLoader loads the default scene
+  // (else the first), never the others a file may carry
+  const inScene = new Set<any>();
+  const shown = doc.getRoot().getDefaultScene() ?? doc.getRoot().listScenes()[0];
+  shown?.traverse((n: any) => inScene.add(n));
+  const pos: number[] = [], idx: number[] = [];
+  const p = [0, 0, 0];
+  for (const node of doc.getRoot().listNodes()) {
+    if (!inScene.has(node)) continue;
+    const mesh = node.getMesh();
+    if (!mesh) continue;
+    const m = node.getWorldMatrix();
+    for (const prim of mesh.listPrimitives()) {
+      if (prim.getMode() !== 4) continue;                       // TRIANGLES
+      const posAcc = prim.getAttribute("POSITION");
+      if (!posAcc) continue;
+      const base = pos.length / 3;
+      for (let i = 0; i < posAcc.getCount(); i++) {
+        posAcc.getElement(i, p);
+        pos.push(m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12],
+          m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13],
+          m[2] * p[0] + m[6] * p[1] + m[10] * p[2] + m[14]);
+      }
+      const idxAcc = prim.getIndices();
+      const count = idxAcc ? idxAcc.getCount() : posAcc.getCount();
+      for (let t = 0; t + 2 < count; t += 3) {
+        for (let k = 0; k < 3; k++) idx.push(base + (idxAcc ? idxAcc.getScalar(t + k) : t + k));
+      }
+    }
+  }
+  if (!idx.length) return null;
+  let building: unknown;
+  for (const node of inScene) {
+    const b = node.getExtras?.()?.building;
+    if (b == null) continue;
+    try { building = typeof b === "string" ? JSON.parse(b) : b; } catch { /* not ours to repair */ }
+    if (building) break;
+  }
+  return { positions: new Float32Array(pos), indices: new Uint32Array(idx), ...(building ? { building } : {}) };
 }

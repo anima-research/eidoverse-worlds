@@ -10,11 +10,15 @@
 import { makeSection, flashHint } from './ui.js';
 import { RENDER_SCALES, getRenderScale, setRenderScale,
   PARTICLE_TIERS, getParticleTier, setParticleTier,
-  AVATAR_DETAILS, getAvatarDetail, setAvatarDetail } from './governor.js';
-import { shadowsOn, setShadows, shadowRes, setShadowRes, SHADOW_RES } from './lightrig.js';
+  AVATAR_DETAILS, getAvatarDetail, setAvatarDetail, getFullDetail, setFullDetail } from './governor.js';
+import { shadowsOn, setShadows, shadowRes, setShadowRes, SHADOW_RES, CASTER_CHOICES, getCasterCeiling, setCasterCeiling } from './lightrig.js';
 import { backendName, PREF_MSAA, PREF_BACKEND, PREF_HEADSET_SEEN, WEBGPU_XR, WEBGPU_POSSIBLE, headsetSeenRecently } from './core.js';
 import { CONFIG, bus } from './base.js';
+import { FOLIAGE_MODES, getFoliageMode, setFoliageMode } from './foliage.js';
 import { registerXRPanel } from './xrpanels.js';
+import { allowUntrusted, setAllowUntrusted, UNTRUSTED_WORDS } from './mediaprefs.js';
+import { initConsentPanel } from './consentpanel.js';
+import { myShadowPref, setMyShadowPref } from './materials.js';
 
 // same markup contract as the audio section (label right of centre, control
 // left of it — index.html owns .row.wide / .nm / .ctl)
@@ -70,21 +74,31 @@ function videoFields() {
       actions: String(v) === String(cur) ? [] : [{ k, label: 'use' }] })) });
   const msaaOn = (CONFIG.params.get('msaa') ?? lsGet(PREF_MSAA)) !== '0';
   return [
+    { t: 'check', k: 'fulldetail', label: 'keep full detail', value: getFullDetail() },
     pick('scale', RENDER_SCALES, getRenderScale(), 'render scale'),
     { t: 'check', k: 'shadows', label: 'shadows', value: shadowsOn() },
-    ...(shadowsOn() ? [pick('shadowres', SHADOW_RES, shadowRes(), 'shadow resolution')] : []),
+    ...(shadowsOn() ? [pick('shadowres', SHADOW_RES, shadowRes(), 'shadow resolution'), pick('casters', CASTER_CHOICES, getCasterCeiling(), 'shadow casters'),
+      { t: 'check', k: 'myshadow', label: 'my body casts a real shadow', value: myShadowPref() }] : []),
     pick('particles', PARTICLE_TIERS, getParticleTier(), 'particles'),
+    pick('foliage', FOLIAGE_MODES, getFoliageMode(), 'textured transparency'),
     pick('detail', Object.keys(AVATAR_DETAILS), getAvatarDetail(), 'avatar detail'),
     { t: 'check', k: 'msaa', label: 'antialiasing (on reload)', value: msaaOn },
+    // batch 2 (R 10-07): the safety row rides the same VR quad (the desk has its own 🛡 safety section, below)
+    { t: 'check', k: 'untrusted', label: UNTRUSTED_WORDS.label.toLowerCase(), value: allowUntrusted(), hint: UNTRUSTED_WORDS.hint },
   ];
 }
 function videoDispatch(k, v) {
-  if (k === 'scale') setRenderScale(v);
+  if (k === 'fulldetail') setFullDetail(!!v);
+  else if (k === 'scale') setRenderScale(v);
   else if (k === 'shadows') setShadows(!!v);
   else if (k === 'shadowres') setShadowRes(+v);
+  else if (k === 'casters') setCasterCeiling(+v);
+  else if (k === 'myshadow') setMyShadowPref(!!v);
   else if (k === 'particles') setParticleTier(v);
+  else if (k === 'foliage') setFoliageMode(v);
   else if (k === 'detail') setAvatarDetail(v);
   else if (k === 'msaa') lsSet(PREF_MSAA, v ? '1' : '0');
+  else if (k === 'untrusted') setAllowUntrusted(!!v);
   else return;
   bus.emit('xr:repaint');
 }
@@ -132,34 +146,67 @@ export function initVideoPanel() {
     if (!WEBGPU_POSSIBLE) { const o = rrow.querySelector('select option[value=webgpu]'); if (o) { o.disabled = true; o.text = 'force WebGPU (unavailable)'; } }
     body.appendChild(rrow);
 
+    body.appendChild(checkRow('keep full detail',
+      'Never lower quality to keep the frame rate up — no thinned grass, dimmed lights, lost shadows or lower resolution. Ticking it gives back anything already lowered. Your own dials below still apply.',
+      getFullDetail(), (on) => { setFullDetail(on); flashHint(on ? 'keeping full detail' : 'auto quality: may lower detail when the frame rate sags'); }));
+
     body.appendChild(selectRow('render scale',
       'Resolution the world is drawn at, as a share of your screen. The single biggest lever on a pixel-bound machine. auto lets the engine step it down when the frame rate sags and back up when it recovers; a pinned value is yours and the engine leaves it alone.',
       RENDER_SCALES.map((v) => [v, pct(v)]), getRenderScale(),
-      (v) => { setRenderScale(v); flashHint(`render scale: ${pct(v)} (yours only)`); }));
+      (v) => { setRenderScale(v); flashHint(`render scale: ${pct(v)}`); }));
 
     const resRow = selectRow('shadow resolution',
-      'Size of the sun’s shadow map. 2048 is the default; 4096 sharpens edges at four times the memory and fill; 1024 is the cheap tier the engine also drops to under load. Changes live.',
+      'Detail of every cast shadow — the sun’s map (the size shown) and the lamp shadow, which scales with it. 2048 is the default; 4096 sharpens edges at four times the memory and fill; 1024 is the cheap tier the engine also drops to under load. Changes live.',
       SHADOW_RES.map((v) => [v, `${v}²`]), shadowRes(),
-      (v) => { setShadowRes(+v); flashHint(`shadow resolution: ${v}² (yours only)`); });
+      (v) => { setShadowRes(+v); flashHint(`shadow resolution: ${v}²`); });
     resRow.hidden = !shadowsOn();
+    const castRow = selectRow('shadow casters',
+      'About how many things near you cast shadows at once (the nearest win; a few on the edge linger while they fade; your own body and lamp-wearers are extra; the rest still receive them). More looks richer and costs a shadow draw each. Under load the engine sheds some and brings them back after.',
+      CASTER_CHOICES.map((v) => [v, `${v} nearest`]), getCasterCeiling(),
+      (v) => { setCasterCeiling(+v); flashHint(`shadows from the ${v} nearest things`); });
+    castRow.hidden = !shadowsOn();
+    const meRow = checkRow('my body casts a real shadow',
+      'Your own body throws a real shadow from the sun and lamps, instead of only the soft blob under your feet (the blob stays as the contact cue). Only your body — other people keep theirs unless they wear a lamp. Costs a few shadow draws; the first switch-on compiles its lit and depth shaders off the frame, so the shadow appears a moment after the tick.',
+      myShadowPref(), (on) => { setMyShadowPref(on); flashHint(`my shadow: ${on ? 'real' : 'blob only (a lamp keeps its real one)'}`); });
+    meRow.hidden = !shadowsOn();
     body.appendChild(checkRow('shadows',
-      'The sun’s cast shadows. Off is the cheapest single change on a weak GPU; flipping it may recompile materials once.',
-      shadowsOn(), (on) => { setShadows(on); resRow.hidden = !on; flashHint(`shadows ${on ? 'on' : 'off'} (yours only)`); }));
+      'All cast shadows — the sun’s and the lamp shadow. Off is the cheapest single change on a weak GPU; flipping it recompiles nothing.',
+      shadowsOn(), (on) => { setShadows(on); resRow.hidden = !on; castRow.hidden = !on; meRow.hidden = !on; flashHint(`shadows ${on ? 'on' : 'off'}`); }));
     body.appendChild(resRow);
+    body.appendChild(castRow);
+    body.appendChild(meRow);
 
     body.appendChild(selectRow('particles',
       'How many sprites particle effects draw. auto lets the engine thin them under load and restore them after.',
       PARTICLE_TIERS.map((v) => [v, v]), getParticleTier(),
-      (v) => { setParticleTier(v); flashHint(`particles: ${v} (yours only)`); }));
+      (v) => { setParticleTier(v); flashHint(`particles: ${v}`); }));
+
+    body.appendChild(selectRow('textured transparency',
+      'How surfaces that are see-through because of their TEXTURE are drawn — leaves, fronds, fences, lace, decals; anything blended whose texture carries the holes. (Glass and tinted panels, see-through by a single opacity, are not affected.) soft: one blended pass, the smoothest edges. fast: the solid part of each surface is drawn opaque first, so layers hidden behind it are skipped — about half the cost on a dense palm, with a few crisper pixels where many layers stack. auto: fast in a headset, soft on the desktop.',
+      FOLIAGE_MODES.map((v) => [v, v]), getFoliageMode(),
+      (v) => { setFoliageMode(v); flashHint(`textured transparency: ${v}`); }));
 
     body.appendChild(selectRow('avatar detail',
       'How often other people’s bodies update as they get farther away. Lower spends less on a crowded world.',
       Object.keys(AVATAR_DETAILS).map((v) => [v, v]), getAvatarDetail(),
-      (v) => { setAvatarDetail(v); flashHint(`avatar detail: ${v} (yours only)`); }));
+      (v) => { setAvatarDetail(v); flashHint(`avatar detail: ${v}`); }));
 
     const msaaOn = (CONFIG.params.get('msaa') ?? lsGet(PREF_MSAA)) !== '0';
     body.appendChild(checkRow('antialiasing',
       '4× MSAA smooths edges; off measured about +10 fps on a 2× screen (core.js §22n). Set when the renderer is built, so it applies on reload.',
       msaaOn, (on, row) => { lsSet(PREF_MSAA, on ? '1' : '0'); needsReload(row); }));
   }, { id: 'video', host: 'settings' });
+  // 🛡 safety (batch 2, R 10-07): what this browser may fetch from other websites. One row, off by default: VRChat's
+  // "Allow Untrusted URLs" (Comfort & Safety). Its own section so it can't be mistaken for a graphics dial.
+  makeSection('🛡 safety', (body) => {
+    if (body.dataset.init) return;
+    body.dataset.init = '1';
+    body.appendChild(checkRow(UNTRUSTED_WORDS.label, UNTRUSTED_WORDS.hint, allowUntrusted(), (on) => {
+      setAllowUntrusted(on); flashHint(on ? 'links from any site play for you now' : 'only this server\'s files and trusted hosts play for you');   // no emoji outside Chat and the action bar (R)
+    }));
+    // the explanation runs the panel's full width (R 10-10: it was squeezed into the label column, a word a line)
+    const p = document.createElement('div'); p.style.cssText = 'display:block;width:100%;box-sizing:border-box;padding:2px 8px 6px;font-size:11px;color:var(--dim);line-height:1.4';
+    p.textContent = UNTRUSTED_WORDS.hint; body.appendChild(p);
+  }, { id: 'safety', host: 'settings' });
+  initConsentPanel();
 }

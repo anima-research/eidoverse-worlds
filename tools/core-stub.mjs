@@ -114,3 +114,5 @@ export const assignColors = () => {};
 export const setToken = () => {};
 export const setName = () => {};
 export const setErrorSink = () => {};
+export const forgetRememberedWorlds = () => {};
+export const xrPixelRatio = 1;   // core.js: the XR pixel-ratio guard's result; headless, nothing to guard (10-14)

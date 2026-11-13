@@ -13,6 +13,7 @@
 //      spent learning them instead of watching a bar.
 
 import { bus } from './base.js';
+import { escapeHtml } from './markup.js';
 // Injected, not imported: assets.js reaches the engine (GLTFLoader), and this splash
 // is shared with a client that loads no assets and therefore has no bytes to count.
 // The empty defaults are the truth for such a client — its phases finish on their own
@@ -82,12 +83,44 @@ function paintItems() {
   itemsEl.innerHTML = shown.map((it) => `<div class="sp-load"><span class="sp-load-name">${escapeHtml(prettyLabel(it.label))}</span><span class="sp-load-bytes">${it.total > 0 ? `${(it.done / 1048576).toFixed(1)} / ${(it.total / 1048576).toFixed(1)} MB` : it.done > 0 ? `${(it.done / 1048576).toFixed(1)} MB…` : ''}</span></div>`).join('');
 }
 const prettyLabel = (l) => String(l).split('/').pop().replace(/\.(vrm|glb|gltf|png|jpg|ktx2|json|g|gl)(\?.*)?$/i, '').replace(/[_-]+/g, ' ');   // some labels arrive pre-truncated ('desk.g')
-const escapeHtml = (v) => String(v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// THE PEG IS THE PROGRESS (owner, 09-29 23:53): the new mark's peg enters from the sphere's left skin,
+// passes the doorway, and rests at 1 — the logo notes' splash/doorway.html render(p), verbatim in its
+// numbers — except its START. The peg's front is an arc of the same r = 40 circle, so its TIP (on the centre line,
+// y = 50) is at x = 48 + 40 = 88 and the sphere's leftmost point is 8: D must be at least 80 for nothing to show at
+// rest. (The notes' 79.240 measured the arc's ends at y = 44.5 / 55.5, which left a 0.76-unit sliver of peg inside
+// the sphere while the engine woke — the owner, 10-01: "a teeny speck… looks like an error".) +0.5 clears the
+// anti-aliased edge.
+const PEG_D = 88 - 8 + 0.5;
+/** Mostly honest (linear in progress) with a gentle ease-out on the last stretch, so the peg ARRIVES
+ *  rather than stops. ease(0) = 0, ease(1) = 1 exactly, monotone. */
+export function pegEase(p) { const k = 0.35; return (1 - k) * p + k * (1 - Math.pow(1 - p, 3)); }
+/** The peg's x offset at progress p: −D at 0, exactly 0 at 1. */
+export const pegOffset = (p) => -PEG_D * (1 - pegEase(Math.min(1, Math.max(0, p))));
+/** Put the splash's peg where progress p says. At p ≥ 1 the transform and the sphere clip are
+ *  REMOVED, not zeroed — the loaded mark is exactly the still mark (the clip is a geometric no-op
+ *  there, but a second anti-aliasing pass on the skin edge is not). */
+export function paintPeg(p, root = document.getElementById('splash')) {
+  const peg = root?.querySelector('.sp-peg'); if (!peg) return;
+  const world = peg.parentNode;
+  if (p >= 1) {
+    peg.style.transform = '';
+    // the clip goes once the .3s glide has landed: a peg still gliding home, unclipped, would show
+    // outside the sphere for a moment
+    const drop = () => { if (peg.style.transform === '') world.removeAttribute?.('clip-path'); };
+    if (globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches) drop(); else setTimeout(drop, 350);
+  } else {
+    world.setAttribute?.('clip-path', 'url(#sp-sphere)');
+    peg.style.transform = `translateX(${pegOffset(p).toFixed(3)}px)`;
+  }
+}
 
 function paint() {
   if (!el || done) return;
   paintItems();
-  const pct = Math.round(progress() * 100);
+  const p = progress();
+  paintPeg(p, el);
+  const pct = Math.round(p * 100);
   bar.style.width = `${pct}%`;
   phaseEl.textContent = currentLabel();
   const b = bootBytes();
@@ -105,17 +138,17 @@ function paint() {
 // it's the one time the user is looking at the UI and not at the world.
 const TIPS = [
   // audited against the live bindings 09-05 (R: "see if anything needs updating")
-  // Whispers and away-delivery are SERVER policy (EIDO_WHISPERS_ENABLED; each agent's own wake rules), not
-  // promises this client can make — the wording stays descriptive, never a guarantee (review 2026-09-10 #4).
+  // An agent's wake rules are its own, not promises this client can make — the wording stays descriptive, never a
+  // guarantee (review 2026-09-10 #4).
   ['@', 'Type <b>@</b> in chat to mention someone by name. An agent listening for its name may be pinged.'],
-  ['/', '<b>/w name message</b> whispers privately where this world allows it. Whispers are never written to the world log.'],
-  ['B', '<b>B</b> toggles edit mode. Off by default, so looking around never moves anything.'],
-  ['↕', 'In edit mode, click anything placed to select it — drag to move, <b>Q</b>/<b>E</b> to turn, <b>Ctrl+Z</b> to undo.'],
+  ['/', 'Type <b>/</b> in chat for commands. Everything said in a world is public: everyone here hears it.'],
+  ['B', '<b>B</b> toggles builder mode. Off by default, so looking around never moves anything.'],
+  ['↕', 'In builder mode, click anything placed to select it — drag to move, <b>Q</b>/<b>E</b> to turn, <b>Ctrl+Z</b> to undo.'],
   ['∃', 'The <b>∃</b> menu is the drawer: the model library, save and recover, and every panel you have unpinned.'],
   ['X', 'Press <b>X</b> next to a chair and you will sit <i>on</i> it. Nobody had to make it a chair. <b>Z</b> lies down.'],
   ['V', 'Hold <b>V</b> to talk. Your body should wake up silent — the mic is off until you say so.'],
-  ['1', 'Number keys play the emote bar\'s gestures, in its order. The bar shows which is which.'],
-  ['Esc', '<b>Esc</b> closes every open panel. <b>Esc</b> again brings back exactly the set you had.'],
+  ['1', 'Number keys play the bar\'s gestures, in its order (sit/stand/lie are X and Z). The bar shows which is which.'],
+  ['Tab', '<b>Tab</b> hides every open panel and brings back exactly what you had. <b>F11</b> is full screen; <b>Esc</b> leaves it.'],
   ['●', 'Click your portrait in the profile to set present, away or busy. Everyone here sees it beside your name.'],
   ['P', '<b>P</b> is photo mode: free camera, <b>F1</b> hides the UI, <b>F2</b> saves the shot.'],
   ['▦', 'Every panel moves and resizes. Where you put them is remembered.'],
@@ -193,6 +226,7 @@ export function finishBoot(reason = 'ready') {
   clearInterval(itemsTimer);
   if (itemsEl) itemsEl.innerHTML = '';
   bar.style.width = '100%';
+  paintPeg(1, el);   // skipped, timed out, or arrived: the mark comes to rest whatever the count said
   phaseEl.textContent = 'welcome';
   el.classList.add('gone');
   stopRays();
@@ -201,6 +235,43 @@ export function finishBoot(reason = 'ready') {
   console.log(`[boot] ready in ${total}ms (${reason})`, marks);
   bus.emit('booted', { ms: total, reason, marks });
   releaseBoot?.();
+}
+
+/** The world refused the join (net.js: close 4005 and its kin — an old-format world, no such world, a removal): the
+ *  splash stays up, or comes back, and says so in the server's own words. Nothing lifts it — no ceiling, no "go in
+ *  anyway": an empty world behind it looked like a successful join (R 10-16 00:02: an old-format world opened as her
+ *  avatar on an empty grid, the refusal toasted UNDER the splash and gone before it lifted). Coming back is a reload. */
+export function refuseBoot(text) {
+  const root = el ?? document.getElementById('splash');
+  if (!root) return;
+  el = root;
+  done = true;   // finishBoot, the 45 s ceiling and the progress painters all stand down
+  clearInterval(tipTimer);
+  clearInterval(itemsTimer);
+  stopRays();
+  root.classList.remove('gone');
+  root.style.display = '';
+  root.classList.add('refused');
+  const phase = root.querySelector('.sp-phase');
+  if (phase) { phase.textContent = String(text ?? ''); phase.setAttribute('role', 'alert'); }
+  const detail = root.querySelector('.sp-detail');
+  if (detail) detail.textContent = '';
+  const sub = root.querySelector('.sp-sub');
+  if (sub) sub.textContent = "couldn't step in";
+}
+export const bootRefused = () => !!el?.classList.contains('refused');
+
+/** A TRANSIENT refusal (a full world) said on the splash while it waits: the words where the person is looking, but
+ *  nothing is pinned — the splash goes on, and the next join that succeeds finishes it as usual (review r3 F6). */
+export function waitBoot(text) {
+  const root = el ?? document.getElementById('splash');
+  if (!root || done) return false;
+  el = root;
+  const phase = root.querySelector('.sp-phase');
+  if (phase) { phase.textContent = String(text ?? ''); phase.setAttribute('role', 'status'); }
+  const sub = root.querySelector('.sp-sub');
+  if (sub) sub.textContent = 'waiting for room — trying again by itself';
+  return true;
 }
 
 /** Disarm the lite-mode tripwire index.html armed before the first engine byte.
@@ -236,15 +307,17 @@ function disarmTripwire() {
   // surviving in lite and walk back into the crash on the next visit.
   if (globalThis.__ewLite) return;
   const key = globalThis.__ewTripKey?.(new URLSearchParams(location.search)) ?? 'ew-boot-attempt';
-  let cleared = false;
-  const clear = () => {
-    if (cleared) return;
-    cleared = true;
-    removeEventListener('pagehide', clear);
-    try { localStorage.removeItem(key); } catch { /* storage blocked; never armed either */ }
-  };
-  addEventListener('pagehide', clear);
-  setTimeout(clear, DWELL_MS);
+  // Signal 1 (pagehide) is index.html's, listening since the moment it armed the flag, so a
+  // tab closed MID-LOAD is a clean exit too. What's left here is the dwell. It removes the key
+  // unconditionally and marks the disarm final, because a bfcache restore re-arms (index.html)
+  // and a guard like "already cleared once" would then leave that re-armed flag set forever.
+  setTimeout(() => {
+    globalThis.__ewTripDisarmed = true;
+    try {
+      localStorage.removeItem(key);
+      localStorage.removeItem(globalThis.__ewRetryKey?.(new URLSearchParams(location.search)) ?? 'ew-boot-retried');   // the retry worked
+    } catch { /* storage blocked; never armed either */ }
+  }, DWELL_MS);
 }
 
 export const bootDone = () => done;

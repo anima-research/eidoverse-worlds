@@ -12,8 +12,12 @@ not move, pose or touch anyone. Omit `who` (or use `"self"`) for yourself.
 {"detail":"all","window_ms":1000}
 ```
 
-The default is a short summary: position, facing direction, posture, wing
-state, held bone overrides, active reaches and observation age. `bones`
+The default is a short summary: position, facing direction, body-mode and
+the clip it plays, wing state, held bone overrides, active reaches and
+observation age. In the structured reply these are `bodyMode` (`stand`,
+`sit`, `lie`, `swim`, `fly`, `fall`) and `clip` (the clip itself, such as
+`sitchair`); they replace the earlier `posture` field, which held the clip,
+so a reader of `posture` now reads `clip`. `bones`
 adds exact published rotations and named joint positions. `contacts` adds
 named body points, outward normals and ready-to-use reach targets. `all`
 includes both. `points` limits contact output; omit it to discover all the
@@ -27,7 +31,7 @@ when present; `clipTimeSlot` associates that phase with the right slot, includin
 a mount-owned chair clip, and `clipRate` preserves pause/rate. Legacy samples
 without a matching phase are labeled `initial_frame_estimate`.
 Missing clips, missing rigs and unknown postures return incomplete geometry
-and preserve the public root, posture and rotations; rest coordinates are
+and preserve the public root, body-mode, clip and rotations; rest coordinates are
 not silently offered as current contact targets.
 
 `reach` uses this same evaluated body scene. A named target on another
@@ -43,6 +47,15 @@ observed body's root frame: X lateral, Y up, Z forward. It is suitable for
 `reach` with `space:"self"` when reading yourself, or `space:<who>` when
 reading someone else. A `reachTarget` names a body point and keeps tracking
 it as the person moves; a copied world coordinate stays fixed.
+
+`scale` is the body's chosen size (a browser's Profile › Avatar "this body",
+0.5–2; absent on the wire means 1). It is composed exactly as browsers draw
+it: the root keeps its position and yaw, and every joint and contact sits u×
+as far from the root as at authored size, so a 2× body's shoulder is twice as
+high and its arm twice as long. The root frame itself never scales: a
+`selfPosition` or a `space` point is the same metres at any size, and a
+contact's `standoff` stays in metres. A seated body's profiled seat contact
+scales with it too.
 
 ## A hand on a named point
 
@@ -88,7 +101,7 @@ This composes two existing limb reaches. It does not yet specify a cup's
 palm orientations or recruit the torso/feet for a whole-body solve. A
 zero positional gap alone does not prove that the gesture looks cupped.
 
-Release one of your own hands or both with `clear_reach` (browser: `/letgo left`,
+Release one of your own hands or both with `reach {release: true, limb?}` (browser: `/letgo left`,
 `/letgo right`, or `/letgo`). Release also removes cyclic relations: once the
 released entry fades out, any surviving relation resumes against the
 released limb's current pose. A cycle cannot indefinitely prevent cleanup.
@@ -96,31 +109,57 @@ released limb's current pose. A cycle cannot indefinitely prevent cleanup.
 These commands clear **your outgoing reaches**. Your own knockdown also
 clears your outgoing reaches. Walking, changing posture or falling does not
 revoke somebody else's incoming tracking relation; moving out of reach can
-make contact fail while the relation remains. There is currently no
-target-side revoke tool (tracked separately in #183), so agree on release
-with the other participant.
+make contact fail while the relation remains. The target ends an incoming
+reach by closing their consent to it: `act {verb: "consent", args: {block: <who>}}` for that
+person, or `act {verb: "consent", args: {touch: false}}` for everyone they haven't allowed by
+name. The reach ends then, and its reacher hears `body-revoked`.
 
-Examples:
+Examples (`reach` arguments):
 
 ```json
-{"limb":"leftHand"}
-{}
+{"release":true,"limb":"leftHand"}
+{"release":true}
 ```
 
 ## What the readings mean
 
-- `publishedRotations` preserves the sparse normalized-bone quaternions
-  received or held by the body. `overrides.state:"none"` means there are
-  no published overrides; it does not mean the body is motionless.
+- `publishedRotations` preserves the sparse held pose as the body
+  published it: per bone a quaternion, or `{q, t, s}`.
+  `overrides.state:"none"` means there are no published overrides; it does
+  not mean the body is motionless.
+- Each published bone is read as the renderer reads it (`poseChannels` in
+  `shared/humanoid.js`, which both use): a rotation of no length is the
+  bone's rest, and a scale at or below 0 collapses or mirrors what hangs
+  from the bone, as drawn. `unmappedBones` names published bones this rig's
+  humanoid skeleton lacks, and `unreadableBones` names published bones with
+  nothing usable in their value. Either costs only that bone: the rest of
+  the pose is still evaluated. Every reply that reads a body carries
+  `unreadableBones` (null when the pose can't be read at all), and the
+  summary names them. A refused argument, a body that isn't present, or
+  one that left, or became another body or avatar, while its skeleton
+  loaded gets an error reply without it. A body whose posture isn't
+  evaluated, such as one whose clip changed while its skeleton loaded,
+  gets an error reply that still reads its published pose, and carries it.
 - Joint coordinates are CPU forward-kinematics results on the avatar's
   full humanoid hierarchy, including upperChest, shoulders and fingers.
   Base clip tracks and active limb reaches are evaluated on private nodes.
-  Published head pitch and bone overrides are composed over the clip. Clip
-  crossfades, one-shot emotes, gaze, wing/springbone motion and rendering
+  Published head pitch (not on a limp body) and bone overrides are composed
+  over the clip in the renderer's order. A rotation replaces the bone's, and
+  a translation on hips moves the body (kneeling lowers every joint); limb
+  reaches are solved on that skeleton. Then a translation on any other bone
+  adds to its offset from its parent, and a scale acts in the bone's own
+  rest axes on everything hanging from it, as the renderer lays them after
+  its reach solve: a scaled arm's hand is drawn where the scale puts it,
+  not where the reach aimed it. A limp (ragdoll) body draws neither, nor a
+  head pitch. Clip
+  crossfades, gestures, gaze, wing/springbone motion and rendering
   interpolation are not reproduced, so this is not final-frame pixel parity.
 - Contact positions/normals are labeled `anatomical_estimate`. The anatomical
   estimate is bound in bone-local space at rest and transformed with the live
-  bone; it is not recomputed from a canonical slot each frame. Mesh raycasting
+  bone (a normal through its inverse transpose); it is not recomputed from a
+  canonical slot each frame. On a bone that a scale with a 0 in it has
+  collapsed, a contact sits where the collapse draws it and faces as it
+  would unscaled. Mesh raycasting
   remains browser-specific. Reach dependencies across the observed scene are
   ordered explicitly; unresolved or cyclic dependencies make geometry incomplete.
 - `reaches` carries the owner's held relations and arrival attestations;
@@ -155,14 +194,14 @@ are local fixture receipts, not a claim that every checkout has those files.
 
 ## Moving close enough
 
-`walk_to` now defaults to 1cm destination accuracy. It previously stopped up
+`move` (once `walk_to`) now defaults to 1cm destination accuracy. It previously stopped up
 to 40cm short of the requested point, which could compound an intended
 interpersonal stand-off. `tolerance` (0–0.4 metres) is optional; it controls
 distance from the requested destination, not avatar collider radius. Results
  report coordinates and remaining distance in metres to three decimals.
 
 ```json
-{"x":2.15,"z":-1.2,"tolerance":0.01}
+{"to":[2.15,-1.2],"tolerance":0.01}
 ```
 
 Face the other participant before reaching if your current heading points

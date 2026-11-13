@@ -17,9 +17,9 @@ const ag = new WorldAgent({ url: process.env.WORLD_URL ?? 'ws://localhost:8962/w
 await ag.connect();
 await new Promise((r) => setTimeout(r, 900));
 
-const ent: any = [...(ag as any).entities.values()].find((e: any) => e.comp?.structure);
+const ent: any = [...(ag as any).entities.values()].find((e: any) => e?.structure);
 if (!ent) { console.log('no structure in world'); process.exit(1); }
-const plan = planStructure(ent.comp.structure);
+const plan = planStructure(ent.structure);
 const lv = plan.levels[0].level;
 
 let pass = 0, fail = 0;

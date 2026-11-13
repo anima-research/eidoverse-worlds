@@ -13,16 +13,17 @@
 //
 // Imports are stubbed only at the BROWSER boundary (AudioContext, the bus, the
 // net send). The code under test is the shipped code.
+import { fileURLToPath } from "node:url";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { mock } from "bun:test";
 GlobalRegistrator.register({ url: "http://localhost/?world=t&name=p" });
-mock.module(new URL('../client/lib/core.js', import.meta.url).pathname, () => ({
+mock.module(fileURLToPath(new URL('../client/lib/core.js', import.meta.url)), () => ({
   // 🔴 no flashHint here — it does NOT live in core.js, and stubbing it there
   // once codified exactly the wrong import this test then failed to catch.
   report: () => {}, bus: { on(){}, emit(){} },
 }));
-mock.module(new URL('../client/lib/net.js', import.meta.url).pathname, () => ({ sendTyping: () => {} }));
-mock.module(new URL('../client/lib/audioctx.js', import.meta.url).pathname, () => ({
+mock.module(fileURLToPath(new URL('../client/lib/net.js', import.meta.url)), () => ({ sendTyping: () => {} }));
+mock.module(fileURLToPath(new URL('../client/lib/audioctx.js', import.meta.url)), () => ({
   audioContext: () => ({ createAnalyser: () => ({ fftSize: 0, getFloatTimeDomainData(){}, connect(){} }),
     createMediaStreamSource: () => ({ connect(){} }), sampleRate: 48000, state: 'running' }),
 }));

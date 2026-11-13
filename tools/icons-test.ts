@@ -13,7 +13,8 @@
 // downstream playwright rig, where it reports distinct per-icon pixel counts.
 // This repo's suite stays browser-free, so the registry contract lives here.)
 
-import { has, svg } from "../client/lib/icons.js";
+import * as I from "../client/lib/icons.js";
+const { has, svg } = I as any;
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = "") => {
@@ -21,8 +22,8 @@ const check = (name: string, ok: boolean, detail = "") => {
   else { fail++; console.log(`  \x1b[31m✗\x1b[0m ${name}${detail ? ` — ${detail}` : ""}`); }
 };
 
-// the three states the typing relay actually admits
-const SHIPPED = ["ear", "think", "wrench"];
+// the three states the typing relay actually admits, and the hear glyph pair (HUD toggle, nameplate mark, hover card)
+const SHIPPED = ["ear", "think", "wrench", "headphones", "headphonesOff"];
 
 const rendered: Record<string, string> = {};
 for (const name of SHIPPED) {

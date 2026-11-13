@@ -5,10 +5,12 @@
 // this repo passed source-level checks and failed only when run.
 //
 // The observable is micgate's gateOpenness() — the gate's INTENT, the same
-// value the "am I being heard" indicator trusts. If these tests and that
+// value the "am I being heard" indicator trusts — and gateGainNow(), the gain
+// node's value, which says the decision was written. If these tests and that
 // indicator ever disagree, believe neither and go listen.
 //
 // Run: bun tools/mic-ptt-test.mjs
+import { fileURLToPath } from "node:url";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { mock } from "bun:test";
 GlobalRegistrator.register({ url: "http://localhost/?world=t&name=p" });
@@ -18,8 +20,9 @@ GlobalRegistrator.register({ url: "http://localhost/?world=t&name=p" });
 // noop stub would pass a broken subscription silently — the exact class of
 // blindness these files keep writing warnings about.
 let typed = 0;
-mock.module(new URL('../client/lib/net.js', import.meta.url).pathname, () => ({
+mock.module(fileURLToPath(new URL('../client/lib/net.js', import.meta.url)), () => ({
   sendTyping: () => { typed++; },
+  say: () => {}, sendRequest: async () => ({ ok: true }), net: {},   // for mictoggle.js's graph (the stuck-key rows run it)
 }));
 // Full enough for the gate GRAPH to build (micstate-exec-test's stub lacks
 // createGain/createMediaStreamDestination, so its gate is always unavailable
@@ -28,7 +31,7 @@ mock.module(new URL('../client/lib/net.js', import.meta.url).pathname, () => ({
 // The analyser reports a level WE set, so the level side of the machine can
 // be driven: `room` is the RMS the "microphone" hears right now.
 let room = 0;
-mock.module(new URL('../client/lib/audioctx.js', import.meta.url).pathname, () => ({
+mock.module(fileURLToPath(new URL('../client/lib/audioctx.js', import.meta.url)), () => ({
   audioContext: () => ({
     currentTime: 0, sampleRate: 48000, state: 'running',
     createAnalyser: () => ({ fftSize: 0, getFloatTimeDomainData(buf) { buf.fill(room); }, connect() {}, disconnect() {} }),
@@ -50,11 +53,15 @@ const stream = { getTracks: () => [track], getAudioTracks: () => [track] };
 let ok = 0, bad = 0;
 const t = (n, cond) => { cond ? ok++ : bad++; console.log(`${cond ? 'ok  ' : 'FAIL'} ${n}`); };
 
+// the gate's intent AND what reached the gain (#260 house I246): the stub's setTargetAtTime lands at once, so a write that
+// never happened shows here even when the intent says it should have
+const gate = (v) => mg.gateOpenness() === v && mg.gateGainNow() === v;
+
 ms.gateFor(stream);   // lane up, device live — the state every case below assumes
 
 // ── voice activation (the default): the key is NOT the gate ────────────────
 ms.setPttHeld(true);
-t('VA mode: holding the key does not open the gate', mg.gateOpenness() === 0);
+t('VA mode: holding the key does not open the gate', gate(0));
 ms.setPttHeld(false);
 
 // ── PTT: the key IS the gate ───────────────────────────────────────────────
@@ -62,13 +69,13 @@ ms.setPttHeld(false);
 // rate-limit with the onset watcher through _lastOnset, so any earlier press
 // in this file would eat the window and make "did it announce" untestable.
 vc.setPttMode(true);
-t('PTT armed: gate starts closed', mg.gateOpenness() === 0);
+t('PTT armed: gate starts closed', gate(0));
 typed = 0;
 ms.setPttHeld(true);
-t('PTT: press opens', mg.gateOpenness() === 1);
+t('PTT: press opens', gate(1));
 t('press announces the 🎙 gesture', typed === 1);
 ms.setPttHeld(false);
-t('PTT: release closes', mg.gateOpenness() === 0);
+t('PTT: release closes', gate(0));
 ms.setPttHeld(true);   // re-press inside the 1500ms window
 t('rapid re-press does not spam the announce', typed === 1);
 ms.setPttHeld(false);
@@ -76,12 +83,12 @@ ms.setPttHeld(false);
 // ── mute outranks the key, exactly as it outranks speech ───────────────────
 ms.toggleMute(true);
 ms.setPttHeld(true);
-t('PTT: mute is authoritative over a held key', mg.gateOpenness() === 0);
+t('PTT: mute is authoritative over a held key', gate(0));
 // The pill must not lie: held + muted is NOT speaking, whatever the key says.
 t('PTT: held+muted reports speaking:false (agrees with the gate at 0)', ms.micGateInfo().speaking === false);
 ms.toggleMute(false);
 ms.setPttHeld(false); ms.setPttHeld(true);   // re-press now that mute is off
-t('PTT: unmuted re-press opens again', mg.gateOpenness() === 1);
+t('PTT: unmuted re-press opens again', gate(1));
 t('PTT: unmuted+held reports speaking:true', ms.micGateInfo().speaking === true);
 
 // ── the transport's mic OFF outranks the key, exactly as mute does ─────────
@@ -91,18 +98,18 @@ t('PTT: unmuted+held reports speaking:true', ms.micGateInfo().speaking === true)
 // disabled, and the pill said speaking:true (Mica, #148 round 3). Liveness is
 // the third leg of micOn() and the gate's authority must be the same answer.
 ms.setMicLive(false);
-t('PTT: held → mic OFF closes the gate', mg.gateOpenness() === 0);
+t('PTT: held → mic OFF closes the gate', gate(0));
 t('PTT: held → mic OFF reports speaking:false', ms.micGateInfo().speaking === false);
 ms.setPttHeld(false); ms.setPttHeld(true);
-t('PTT: a fresh press while the mic is OFF does not open', mg.gateOpenness() === 0);
+t('PTT: a fresh press while the mic is OFF does not open', gate(0));
 ms.setMicLive(true);
-t('PTT: mic ON while held reopens — the regime is restored on the report, not on the next tick', mg.gateOpenness() === 1);
+t('PTT: mic ON while held reopens — the regime is restored on the report, not on the next tick', gate(1));
 t('PTT: …and reports speaking:true again', ms.micGateInfo().speaking === true);
 
 // ── leaving the mode must not leave a phantom finger on the gate ───────────
 vc.setPttMode(false);
 t('mode exit drops the held key', ms.pttHeld() === false);
-t('mode exit closes the gate', mg.gateOpenness() === 0);
+t('mode exit closes the gate', gate(0));
 
 // ── the level side keeps running under PTT but must drive NOTHING ──────────
 // The onset machine (micgate.js makeOnsetGate) is ONE machine for both
@@ -122,7 +129,7 @@ ms.gateRelease(); room = 0; ms.gateFor(stream);
 vc.setPttMode(true);
 typed = 0;
 await speak();
-t('PTT: speech without the key does not open the gate', mg.gateOpenness() === 0);
+t('PTT: speech without the key does not open the gate', gate(0));
 t('PTT: speech without the key does not fire the 🎙', typed === 0);
 t('PTT: info().speaking agrees with the audio (closed)', ms.micGateInfo().speaking === false);
 await hush();
@@ -132,22 +139,32 @@ await hush();
 vc.setPttMode(false);
 typed = 0;
 await speak();
-t('VA: the same speech opens the gate', mg.gateOpenness() === 1);
+t('VA: the same speech opens the gate', gate(1));
 t('VA: the same speech fires the 🎙 once', typed === 1);
 t('VA: info().speaking agrees with the audio (open)', ms.micGateInfo().speaking === true);
 await hush();
-t('VA: hush closes the gate after hang-time', mg.gateOpenness() === 0);
+t('VA: hush closes the gate after hang-time', gate(0));
 
-// ── the stuck-key class: keyup/blur handling exists in the UI layer ────────
-// Source-level, deliberately: mictoggle self-injects against a real DOM and
-// does not export its handlers, so execution would test happy-dom's event
-// plumbing more than our code. What must be TRUE of the source: a keyup path
-// and a blur path both drop the hold. Alt-tab with the key down is how every
-// PTT implementation ships an open mic that says it is closed.
+// ── the stuck-key class: a key-up and a window blur both drop the hold ─────
+// EXECUTED against the real mictoggle.js (#260 house I247: these were regexes over its source): its window listeners are
+// the shipped ones, driven with real events. Alt-tab with the key down is how every PTT implementation ships an open mic
+// that says it is closed.
 import { readFileSync } from 'fs';
 const mt = readFileSync(new URL('../client/lib/mictoggle.js', import.meta.url), 'utf8');
-t('mictoggle: keyup releases the hold', /keyup[\s\S]{0,200}setPttHeld\(false\)/.test(mt));
-t('mictoggle: window blur releases the hold', /'blur'[\s\S]{0,200}setPttHeld\(false\)/.test(mt));
+// ui.js (reached through mictoggle's graph) takes its HUD elements at load: the page's shell, empty
+for (const id of ['hud', 'loading', 'toasts', 'hintbar', 'door', 'help', 'dock', 'touch']) { const d = document.createElement('div'); d.id = id; document.body.append(d); }
+await import('../client/lib/mictoggle.js');
+vc.setPttMode(true);
+const key = (type) => window.dispatchEvent(new KeyboardEvent(type, { code: 'KeyV', key: 'v', bubbles: true }));
+key('keydown');
+t('mictoggle: V held under PTT holds the key (the setup)', ms.pttHeld() === true && gate(1));
+key('keyup');
+t('mictoggle: keyup releases the hold', ms.pttHeld() === false && gate(0));
+key('keydown');
+const heldAgain = ms.pttHeld() === true;
+window.dispatchEvent(new Event('blur'));
+t('mictoggle: window blur releases the hold', heldAgain && ms.pttHeld() === false && gate(0));
+vc.setPttMode(false);
 t('mictoggle: badge gold is gated on the key under PTT', /!pttMode\(\) \|\| pttHeld\(\)/.test(mt));
 // A focused CHECKBOX is not typing. The panel's push-to-talk box keeps focus
 // after the click, so a guard that skips V for any INPUT eats the first press

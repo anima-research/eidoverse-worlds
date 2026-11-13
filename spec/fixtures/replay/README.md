@@ -15,13 +15,11 @@ boxed epoch, two boxed spawns, punts, a wall moved during flight, and a
 terrain change releasing bodies and rebuilding statics. The order fixture
 adds a final punt so two bodies survive into the settled snapshot.
 
-`bun tools/replaybench.ts` checks these alongside operator worlds.
-`bun tools/replaybench-test.ts` proves the gate rejects changed colliders,
-boxes and insertion order, and compares the 0.5 digest across installed JS
-engines. Operator baselines lacking a sim digest report that gap; committed
-fixtures fail if their sim golden is missing.
+The `sweep` suite (`bun tools/protocol/run.ts sweep`, `tools/protocol/sweep.ts`) replays each fixture here against
+its golden in `.replaybench.json` (`tools/replaybench.ts` and `replaybench-test.ts`, which once held this, are gone);
+committed fixtures fail if their sim golden is missing.
 
-`--write` records explicitly selected baselines and preserves unselected
-ones. A changed digest for an unchanged old-law log requires investigation,
+Nothing rewrites `.replaybench.json`: a golden changes by a deliberate edit
+of that file, one fixture at a time, never a silent refresh. A changed digest for an unchanged old-law log requires investigation,
 not a silent baseline refresh. Physics corrections belong to a new epoch
 version; the 0.3 and 0.4 sim goldens were captured before the 0.5 correction.

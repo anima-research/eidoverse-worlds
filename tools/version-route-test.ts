@@ -8,13 +8,15 @@
 //   C. neither: no env, git unreachable → honest "unknown"s, never fake-clean
 // Plus: cache-control:no-store, and startedAt stable across repeated requests
 // (fresh process ≠ fresh code — the field distinction this PR exists for).
-// Port discipline per the stale-listener incident: verified-free random port
+// Port discipline per the stale-listener incident: the kernel's port-0 pick
 // + a nonce file served from THIS tree before any assertion counts.
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { join } from "node:path";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { tryUntil, pause } from "./protocol/wait.ts";
+import { kernelPort } from "./harness.ts";
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = "") => {
@@ -29,18 +31,18 @@ process.on("exit", () => {
   for (const c of children) { try { c.kill(); } catch { /* gone */ } }
   for (const n of nonces) { try { rmSync(n); } catch { /* ok */ } }
 });
-
-async function freePort(): Promise<number> {
-  for (let i = 0; i < 20; i++) {
-    const cand = 20000 + Math.floor(Math.random() * 20000);
-    try { await fetch(`http://127.0.0.1:${cand}/`, { signal: AbortSignal.timeout(400) }); }
-    catch { return cand; }
-  }
-  throw new Error("no free port");
+// a runner's time limit (tools/run-client.ts) ends it with SIGTERM: leave by the exit path, so the nonces go too
+process.on("SIGTERM", () => process.exit(143));
+// a run killed outright (Windows) skips both handlers: sweep what an earlier run left
+for (const f of readdirSync(join(REPO, "client"))) if (/^vr-nonce-[0-9a-f]{8}\.txt$/.test(f)) rmSync(join(REPO, "client", f), { force: true });
+async function teardown() {
+  for (const c of children) { c.kill(); await new Promise((r) => (c.exitCode !== null || c.signalCode !== null ? r(null) : (c.once("exit", r), setTimeout(r, 5000)))); }
+  for (const n of nonces) rmSync(n, { force: true });
+  children.length = 0; nonces.length = 0;
 }
 
 async function spawnServer(env: Record<string, string | undefined>): Promise<{ port: number }> {
-  const port = await freePort();
+  const port = kernelPort();
   const nonce = `vr-nonce-${crypto.randomUUID().slice(0, 8)}`;
   const noncePath = join(REPO, "client", `${nonce}.txt`);
   writeFileSync(noncePath, nonce); nonces.push(noncePath);
@@ -52,16 +54,11 @@ async function spawnServer(env: Record<string, string | undefined>): Promise<{ p
     stdio: "ignore",
   });
   children.push(child);
-  for (let i = 0; i < 40; i++) {
-    try { await fetch(`http://127.0.0.1:${port}/`); break; }
-    catch { await new Promise((r) => setTimeout(r, 250)); }
-  }
+  await tryUntil(`the server on :${port} answers`, () => fetch(`http://127.0.0.1:${port}/`).then(() => true, () => false), { ms: 10_000, step: 250 });
   const own = await fetch(`http://127.0.0.1:${port}/${nonce}.txt`).then((r) => r.ok && r.text()).catch(() => false);
   if (own !== nonce) throw new Error(`listener on :${port} is not our child — refusing to test it`);
   return { port };
-  // (freePort's probe can false-positive "free" on a slow listener; the nonce
-  // check above is the backstop that turns that race into a loud abort
-  // rather than a wrong-server receipt — abort over false testimony.)
+  // (the nonce check stays the backstop: kernelPort's release-then-bind is still a window)
 }
 
 const HOME = process.env.HOME; const BUNPATH = process.env.PATH;
@@ -80,7 +77,7 @@ console.log("\n— A. env-driven build identity (deploy-image case) —");
   check("cache-control is no-store", res.headers.get("cache-control") === "no-store",
     String(res.headers.get("cache-control")));
   check("startedAt is a valid timestamp", !Number.isNaN(Date.parse(body.startedAt)));
-  await new Promise((r) => setTimeout(r, 1100));
+  await pause("let a second pass so a request-time startedAt would differ", 1100);
   const again = await (await fetch(`http://127.0.0.1:${port}/version`)).json();
   check("startedAt STABLE across requests (process identity, not request time)",
     again.startedAt === body.startedAt, `${body.startedAt} vs ${again.startedAt}`);
@@ -153,8 +150,9 @@ console.log("\n— C. no env, no git: honest unknowns, never fake-clean —");
   // PATH without git: gitLine's spawn fails → catch → "" → "unknown"s.
   const bare = mkdtempSync(join(tmpdir(), "no-git-bin-"));
   const bunReal = Bun.which("bun") ?? "/usr/local/bin/bun";
-  const { symlinkSync } = await import("node:fs");
-  symlinkSync(bunReal, join(bare, "bun"));
+  const { linkSync, copyFileSync } = await import("node:fs");
+  const exe = join(bare, process.platform === "win32" ? "bun.exe" : "bun");
+  try { linkSync(bunReal, exe); } catch { copyFileSync(bunReal, exe); }   // a symlink needs Developer Mode on Windows
   const { port } = await spawnServer({ HOME, PATH: bare });
   const body = await (await fetch(`http://127.0.0.1:${port}/version`)).json();
   check("sha falls back to 'unknown'", body.sha === "unknown", body.sha);
@@ -165,5 +163,6 @@ console.log("\n— C. no env, no git: honest unknowns, never fake-clean —");
     !Number.isNaN(Date.parse(body.startedAt)));
 }
 
+await teardown();
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

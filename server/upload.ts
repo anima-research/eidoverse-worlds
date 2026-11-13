@@ -7,18 +7,22 @@
 // was down. routes.ts delegates the endpoint here; nothing else changes hands.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, readdirSync, statSync, rmSync } from "node:fs";
+import { addressOf } from "./peer.ts";
+import { bearerOf } from "./access.ts";
 import { join, basename, dirname, relative } from "node:path";
 import { JOIN_TOKEN, UPLOAD_CAP, IMAGE_CAP, ROOT, OPT_DIR, STORE_MIN, LIBRARY_DIR, SKIP_OPT_SWEEP, OPT_MEM_BUDGET_MB, OPT_COST_FACTOR } from "./config.ts";
 // merge 2026-09-01 (anima a468cba, geometry LOD): upstream's LOD names ride
 // in; the door stays on R1's aid1JoinIdentity (the HN_*/verifyToken form is
 // what it replaced — the merged body references neither)
-import { isStoreOriginal, ktx2VariantPath, lodVariantPath, storeShadowsMissing, verdictStands, KTX2_RECIPE, LOD_RECIPE } from "./store-variants.ts";
-import { agentTokens, aid1JoinIdentity } from "./auth.ts";
+import { isStoreOriginal, ktx2VariantPath, lodVariantPath, storeShadowsMissing, verdictStands, freshOver, diskIdentity, sourceSidecar, recordedSource, sameIdentity, verdictMarker, readVerdict, KTX2_RECIPE, LOD_RECIPE } from "./store-variants.ts";
+import { agentTokens, aid1JoinIdentity, sessionOfRequest } from "./auth.ts";
 import { worlds } from "./world.ts";
 import { atomicWrite } from "./fsutil.ts";
+import { ingestHeightmap } from "./heightmap.ts";
+import { checkFile } from "./buildcheck-queue.ts";
 
-/** What the handler needs from Bun's server object, structurally (the
- *  VerbWorld precedent): the socket address behind the nginx front. */
+/** What the handler needs from Bun's server object, structurally: the
+ *  socket address behind the nginx front. */
 type UploadSrv = { requestIP(req: Request): { address: string } | null };
 
 const uploadWin = new Map<string, { t: number; n: number }>(); // per-IP upload rate windows
@@ -30,11 +34,25 @@ let tripoImportBusy = false;   // one Tripo import at a time — they cost CPU-s
 // ?ktx2=<key> answer, shared/ktx2.js; the §20a diet), both built by a SUBPROCESS — draco encoding is CPU-seconds of
 // synchronous wasm, and inside this process it would freeze pose relay for
 // every world. One file at a time; the sequencer never waits on it.
-type OptItem = { src: string; dest: string; mode?: "--ktx2" | "--ktx2-vrm" | "--ktx2-img" | "--lod" };
+type OptItem = { src: string; dest: string; mode?: "--ktx2" | "--ktx2-vrm" | "--ktx2-img" | "--lod"; force?: boolean };
 const optQueue: OptItem[] = [];
 let optRunning = false;
 let ktx2Skip = false; // set when a --ktx2 run exits 3 (no encoder) — stop queuing variants this boot
 let lodEncoderWarned = false; // the --lod arm's own once-per-boot note; it never sets ktx2Skip
+/** An older recipe generation's files beside a lod outcome — variant, marker,
+ *  deferral — are dead: their URL is never asked for again (the recipe is in
+ *  both the URL and the name). Pruned on a bake AND on a refusal, so a recipe
+ *  bump (a new floor, a new reducer) leaves one generation on disk. */
+function pruneOldLodGenerations(src: string, dest: string) {
+  const base = basename(src), dir = dirname(dest);
+  const keep = new Set([dest, `${dest}.failed`, `${dest}.deferred`, `${dest}.srcid`]);
+  for (const f of readdirSync(dir)) {
+    const p = join(dir, f);
+    if (f.startsWith(`${base}.lod.`) && /\.glb(\.failed|\.deferred|\.srcid)?$/.test(f) && !keep.has(p))
+      try { rmSync(p); } catch { /* best effort */ }
+  }
+}
+
 // Items this host could not afford (estimate over budget, or the child died
 // under the cap). Informational: the marker never blocks a retry — the next
 // boot re-estimates against whatever budget it has — it exists so /version
@@ -82,6 +100,59 @@ export function queueOptimize(absPath: string) {
   }
   if (pushed) pumpOptimize();
 }
+/** Rebuild one placeable object's KTX2 + LOD variants on request (a Build card's rebuild button, POST /rebuild).
+ *  `rel` is the catalog path: `eidoverse/assets/models/<f>.glb` (source in the library, variants in the OPT mirror —
+ *  the boot sweep's layout) or `store/<hash>.glb`. Its verdict markers (.failed, .deferred) are cleared so a refusal
+ *  is asked again, and the passes are FORCED: a built variant keeps serving until the new one lands over it
+ *  (optimize.ts writes atomically). null = not a rebuildable object. */
+// One model, one forced rebuild per window: the per-address limit on the route caps presses, not the encode time each
+// buys (2 forced passes, ~9 s each), so one caller could still keep the serial pump busy. Read per call (a harness sets
+// REBUILD_COOLDOWN_MS=0; 0 disables).
+const lastRebuild = new Map<string, number>();
+// And the pump takes every upload / sweep item before a forced one (pumpOptimize), with at most REBUILD_WAIT_CAP forced
+// passes waiting across all callers: rotating presses over many models can then only delay other rebuilds, never uploads.
+export function rebuildAsset(rel: string): { queued: string[]; cooldownS?: number; busy?: boolean } | null {
+  if (!/^(eidoverse\/assets\/models\/[^/]+|store\/[^/]+)\.glb$/.test(rel) || rel.includes("..")) return null;
+  const store = rel.startsWith("store/");
+  const src = store ? join(OPT_DIR, rel) : join(LIBRARY_DIR, rel);
+  if (!isStoreOriginal(basename(rel))) return null;   // a variant (…ktx2.glb, …lod.*.glb) is never a source
+  if (!existsSync(src)) return null;
+  const dests = store
+    ? { "--ktx2": ktx2VariantPath(src), "--lod": lodVariantPath(src) }
+    : { "--ktx2": join(OPT_DIR, ktx2VariantPath(rel)), "--lod": join(OPT_DIR, lodVariantPath(rel)) };
+  const cool = Number(process.env.REBUILD_COOLDOWN_MS ?? 600_000), last = lastRebuild.get(src) ?? -Infinity;
+  if (cool > 0 && Date.now() - last < cool) return { queued: [], cooldownS: Math.ceil((cool - (Date.now() - last)) / 1000) };
+  // the cap bounds what WAITS after this ask, so count the forced passes it would add (Greptile #207: checking only the
+  // current count let 3 waiting + 2 new = 5 past a cap of 4). An ask never fits in part; an empty wait always takes one
+  // whole ask, so a cap below 2 can't lock a model's two passes out forever.
+  const cap = Number(process.env.REBUILD_WAIT_CAP ?? 4);
+  const waitingForced = optQueue.filter((q) => q.force).length;
+  const adds = (Object.keys(dests) as NonNullable<OptItem["mode"]>[])
+    .filter((mode) => !(mode === "--ktx2" && ktx2Skip) && !optQueue.some((q) => q.src === src && q.mode === mode && q.force)).length;
+  if (cap > 0 && waitingForced > 0 && waitingForced + adds > cap) return { queued: [], busy: true };
+  const queued: string[] = [];
+  for (const [mode, dest] of Object.entries(dests) as [NonNullable<OptItem["mode"]>, string][]) {
+    if (mode === "--ktx2" && ktx2Skip) continue;   // no encoder this boot — the pass would only exit 3
+    for (const m of [`${dest}.failed`, `${dest}.deferred`]) if (existsSync(m)) try { rmSync(m); } catch { /* best effort */ }
+    optDeferred.delete(dest);
+    const waiting = optQueue.find((q) => q.src === src && q.mode === mode);
+    if (waiting) waiting.force = true; else optQueue.push({ src, dest, mode, force: true });
+    queued.push(mode.slice(2));
+  }
+  if (queued.length) { lastRebuild.set(src, Date.now()); pumpOptimize(); }
+  return { queued };
+}
+// a child's stderr up to EOF, or up to graceMs once asked: a grandchild that inherited the pipe holds EOF off forever
+const STDERR_GRACE_MS = 2000;
+function drain(stream: ReadableStream<Uint8Array>) {
+  const reader = stream.getReader(), dec = new TextDecoder(); let text = "";
+  const eof = (async () => { for (let r; !(r = await reader.read()).done;) text += dec.decode(r.value, { stream: true }); })().catch(() => {});
+  return async (graceMs: number) => {
+    let t: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([eof, new Promise((r) => { t = setTimeout(r, graceMs); })]); clearTimeout(t);
+    reader.cancel().catch(() => {}); return text;
+  };
+}
 let optPump: Promise<void> = Promise.resolve();
 /** Resolves when the pump has drained (a harness awaits this; the server never does). */
 export const optIdle = () => optPump;
@@ -91,18 +162,30 @@ async function pumpOptimize() {
   let done!: () => void; optPump = new Promise<void>((r) => { done = r; });
   try {
     while (optQueue.length) {
-      const { src, dest, mode } = optQueue.shift()!;
+      const next = optQueue.findIndex((q) => !q.force);
+      const { src, dest, mode, force } = optQueue.splice(next < 0 ? 0 : next, 1)[0];
       const base = basename(src);                      // <hash>.glb / <model>.glb
       const failed = `${dest}.failed`;
-      // a size verdict from an older recipe does not stand (store-variants.ts)
+      // the file this pass is ABOUT (store-variants.ts freshOver): null for a content-addressed store original and for
+      // the store-min pass, whose shadows are done forever once they exist; the library/overlay file otherwise
+      const source = !mode || dirname(src) === join(OPT_DIR, "store") ? null : src;
+      // a size verdict from an older recipe does not stand (store-variants.ts);
+      // nor does ANY verdict about a source that has changed since — library
+      // files are mutable, and a re-exported model is a question again (the
+      // route reads the same rule: a stale marker serves provisional, never final)
       const refused = existsSync(failed)
-        && (!mode || verdictStands(readFileSync(failed, "utf8"), mode === "--lod" ? LOD_RECIPE : KTX2_RECIPE));
-      if (!existsSync(src) || refused) continue;
+        && (!mode || verdictStands(readFileSync(failed, "utf8"), mode === "--lod" ? LOD_RECIPE : KTX2_RECIPE))
+        && freshOver(failed, source);
+      // a FORCED item is a re-ask (↻): a verdict it finds was written after the press, by a run already in flight
+      if (!existsSync(src) || (refused && !force)) continue;
       // Store shadows are content-addressed — existing means done forever.
-      // KTX2 variants shadow MUTABLE library files, so a variant older than
-      // its source rebuilds (the sweep filters too, but a file can change
-      // while its item waits behind slow encodes).
-      if (existsSync(dest) && (!mode || statSync(dest).mtimeMs > statSync(src).mtimeMs)) { undefer(dest); continue; }   // done elsewhere: a stale .deferred must not outlive the variant
+      // KTX2 variants shadow MUTABLE library files, so a variant built from
+      // another version of its source rebuilds (the sweep filters too, but a
+      // file can change while its item waits behind slow encodes).
+      if (!force && existsSync(dest) && freshOver(dest, source)) { undefer(dest); continue; }   // done elsewhere: a stale .deferred must not outlive the variant
+      // the identity of what this pass reads, taken BEFORE it runs: a source rewritten mid-pass must not be recorded as
+      // the one the output was built from
+      const srcId = source ? diskIdentity(source) : null;
       // Budget gate: an item this host cannot afford is deferred, not failed,
       // and the rest of the queue keeps going (config.ts OPT_MEM_BUDGET_MB).
       const estMB = Math.ceil(Bun.file(src).size * OPT_COST_FACTOR / 1_000_000);
@@ -119,7 +202,9 @@ async function pumpOptimize() {
       // the budget; 127: exec failed) so they never read as a content verdict.
       const capped = OPT_MEM_BUDGET_MB > 0 && process.platform === "linux";
       // OPT_CMD: a harness may own the child (tools/optimize-pump-test.ts) — the real optimizer otherwise (logged at boot)
-      const cmd = [...(process.env.OPT_CMD ? [process.env.OPT_CMD] : [process.execPath, "run", join(ROOT, "server", "optimize.ts")]), ...(mode ? [mode] : []), src, dest];
+      // a .js/.ts OPT_CMD runs under this bun: a shebang script is no executable on Windows (EFTYPE)
+      const opt = process.env.OPT_CMD, viaBun = !!opt && /\.(m?js|ts)$/.test(opt);
+      const cmd = [...(opt && !viaBun ? [opt] : [process.execPath, "run", opt || join(ROOT, "server", "optimize.ts")]), ...(mode ? [mode] : []), src, dest];
       let proc: ReturnType<typeof Bun.spawn>;
       try {
         // /bin/sh by absolute path: the pump may run under a PATH that has no
@@ -133,8 +218,20 @@ async function pumpOptimize() {
         console.error(`[optimize] cannot spawn the optimizer (${String(e).split("\n")[0]}) — nothing marked; set OPT_MEM_BUDGET_MB=0 if /bin/sh is the problem`);
         optQueue.length = 0; break;
       }
-      const code = await proc.exited;
-      const err = (await new Response(proc.stderr).text()).trim();
+      // never wait forever on a child: one that never answers is killed and deferred (tools/optimize-pump-test.ts 6b)
+      const stderr = drain(proc.stderr as ReadableStream<Uint8Array>), limitMs = Number(process.env.OPT_CHILD_TIMEOUT_MS ?? 1_800_000);
+      let timedOut = false;
+      const killer = limitMs > 0 ? setTimeout(() => { timedOut = true; proc.kill("SIGKILL"); }, limitMs) : null;
+      const code = await proc.exited; if (killer) clearTimeout(killer);
+      if (timedOut) { await stderr(STDERR_GRACE_MS); defer(dest, `no answer in ${Math.round(limitMs / 1000)}s — killed (OPT_CHILD_TIMEOUT_MS)`); continue; }
+      // what a new variant was built FROM (freshOver), recorded the moment the child is gone — before anything else
+      // is awaited: until then the new bytes sit beside the previous build's sidecar and read stale (the safe
+      // direction: provisional, never old bytes answered as fresh). A store original's needs none.
+      if (code === 0 && existsSync(dest)) {
+        if (srcId) try { writeFileSync(sourceSidecar(dest), JSON.stringify(srcId)); } catch { /* best effort: reads stale until rebuilt */ }
+        else if (existsSync(sourceSidecar(dest))) try { rmSync(sourceSidecar(dest)); } catch { /* best effort */ }
+      }
+      const err = (await stderr(STDERR_GRACE_MS)).trim();
       if (capped && (code === 126 || code === 127)) {
         // environmental, like a missing dep: no marker, and no point grinding on
         console.error(`[optimize] cap wrapper failed (exit ${code}: ${err.split("\n").pop() || "sh"}) — set OPT_MEM_BUDGET_MB within this process's hard RLIMIT_DATA, or 0`);
@@ -150,23 +247,39 @@ async function pumpOptimize() {
         undefer(dest);
         // a verdict that was re-measured and answered differently is history
         if (existsSync(failed)) try { rmSync(failed); } catch { /* best effort */ }
-        // …and so is an older recipe generation's file: its URL is never
-        // asked for again (the recipe is in both), so the bytes are dead
-        if (mode === "--lod") {
-          const base = basename(src);
-          for (const f of readdirSync(dirname(dest))) {
-            if (f.startsWith(`${base}.lod.`) && f.endsWith(".glb") && join(dirname(dest), f) !== dest)
-              try { rmSync(join(dirname(dest), f)); } catch { /* best effort */ }
-          }
-        }
+        if (mode === "--lod") pruneOldLodGenerations(src, dest);
         const ratio = (Bun.file(src).size / Math.max(1, Bun.file(dest).size)).toFixed(1);
         console.log(mode ? `[ktx2] ${base} → ${basename(dest)} (${ratio}x)` : `[store] optimized ${base} (${ratio}x)`);
       } else if (code === 2) {
         // not suitable — bigger than source, or (--ktx2-img) non-POT dims /
         // conflicted consumers. Mark with the CLI's reason so the boot sweep
-        // stops re-measuring it; the marker's CONTENT is diagnostic only.
-        writeFileSync(failed, err.slice(0, 2000) || "not-smaller"); undefer(dest);
-        console.log(mode ? `[ktx2] ${base} — no variant (${err.split("\n").pop()?.replace(/^\[optimize\]\s*/, "") || "not smaller"})`
+        // stops re-measuring it. For --lod the marker's content is READ at
+        // serve time too (store-variants.ts lodVerdictFinal: a standing
+        // typed verdict makes the original this tier's final answer).
+        // a RECORD (store-variants.ts verdictMarker): the CLI's typed kind,
+        // its recipe and tools, the source identity this pass read, and the
+        // raw TAIL for diagnosis (per-texture notes before the verdict can
+        // run long; the verdict is last)
+        writeFileSync(failed, verdictMarker(err, 2, srcId)); undefer(dest);
+        // a variant built from OTHER content than this refusal measured (a
+        // re-exported library model): beside a fresh standing verdict the
+        // sweep never revisits it, so it would serve the old model's bytes
+        // (ktx2) and read "stale" forever. A forced re-ask refused on
+        // unchanged content (the same identity) keeps the variant that still
+        // serves (store-variants.ts classifyVariant). A variant with no
+        // recorded identity keeps the old rule: removed only if strictly
+        // older than its source (equal mtimes were ambiguous there).
+        try {
+          if (srcId && existsSync(dest)) {
+            const rec = recordedSource(dest, (p) => readFileSync(p, "utf8"));
+            if (rec ? !sameIdentity(rec, srcId) : statSync(dest).mtimeMs < srcId.mtimeMs) {
+              rmSync(dest); try { rmSync(sourceSidecar(dest)); } catch { /* none */ }
+              console.log(`[${mode ? "ktx2" : "store"}] ${base} — removed ${basename(dest)}: built from another version of its source, and the re-measure refused`);
+            }
+          }
+        } catch { /* best effort (the source may have vanished mid-run) */ }
+        if (mode === "--lod") pruneOldLodGenerations(src, dest);
+        console.log(mode ? `[ktx2] ${base} — no variant (${readVerdict(err).kind}: ${readVerdict(err).reason})`
           : `[store] ${base} already lean — serving original`);
       } else if (code === 4) {
         // Output failed its own container check — the pass corrupted its
@@ -201,7 +314,7 @@ async function pumpOptimize() {
         // file — that would permanently skip every upload made before the
         // first successful `bun install`. Only content failures stick.
         const envFail = /cannot find module|cannot resolve|error: script not found/i.test(err);
-        if (!envFail) { writeFileSync(failed, err.slice(0, 2000) || `exit ${code}`); undefer(dest); }
+        if (!envFail) { writeFileSync(failed, verdictMarker(err, code, srcId)); undefer(dest); }   // kind "failure": never final
         console.error(`[${mode ? "ktx2" : "store"}] optimize ${envFail ? "unavailable (deps?)" : `FAILED ${base}`}: ${err.split("\n")[0] || `exit ${code}`}`);
         if (envFail) { optQueue.length = 0; break; } // no point grinding the rest
       }
@@ -272,10 +385,17 @@ export function sweepLibrary() {
       // a loose image's variant IS the ktx2 (<rel>.ktx2 — routes.ts serves it
       // as image/ktx2)
       const dest = join(OPT_DIR, mode === "--ktx2-img" ? `${rel}.ktx2` : mode === "--lod" ? lodVariantPath(rel) : `${rel}.ktx2${ext}`);
-      if (existsSync(`${dest}.failed`) && verdictStands(readFileSync(`${dest}.failed`, "utf8"), mode === "--lod" ? LOD_RECIPE : KTX2_RECIPE)) continue;
-      // mtime, not mere existence: library files are mutable — an updated
+      // a standing verdict skips — if it is about THIS version of the source
+      // (freshOver: mutable library files: an updated model is re-measured,
+      // exactly as an updated model's variant is rebuilt below)
+      if (existsSync(`${dest}.failed`) && verdictStands(readFileSync(`${dest}.failed`, "utf8"), mode === "--lod" ? LOD_RECIPE : KTX2_RECIPE)
+        && freshOver(`${dest}.failed`, p)) continue;
+      // identity, not mere existence: library files are mutable — an updated
       // model/body/texture rebuilds its variant next boot
-      if (existsSync(dest) && statSync(dest).mtimeMs > statSync(p).mtimeMs) continue;
+      if (existsSync(dest) && freshOver(dest, p)) continue;
+      // already waiting (a ↻ pressed before this sweep, or an earlier sweep): a second copy would run the same encode
+      // again, unforced first then forced, since the pump prefers unforced items (Greptile #207)
+      if (optQueue.some((q) => q.src === p && q.mode === mode)) continue;
       items.push({ src: p, dest, mode });
     }
   };
@@ -306,17 +426,17 @@ setTimeout(sweepLibrary, 15_000).unref?.();
 
 /** POST /upload — live asset ingestion. Two destinations:
  *   - models (default): content-addressed into assets/opt/store/<hash>.glb —
- *     immutable by construction, so spawn verbs can reference the path
+ *     immutable by construction, so a thing's `model` can name the path
  *     forever and clients cache it forever. DESIGN.md's "content-addressed
  *     assets" plane, made real.
  *   - ?as=avatar&name=foo: named into the overlay vrms dir, because the
  *     roster is name-keyed and people re-export their bodies (mtime
  *     versioning handles the cache).
- *  Trust model: the door token, any per-agent bearer from
+ *  Trust model (an Authorization Bearer header, or ?token=): the door token, any per-agent bearer from
  *  mcpl/tokens.json, OR an aid1 credential the home node vouches for
  *  (so Orrery and agents can push generated GLBs here directly — the
  *  store is content-addressed and inert; what enters a WORLD is still
- *  the `asset`/`spawn` verbs, which per-world roles gate), plus per-IP
+ *  a door request, which per-world roles gate), plus per-IP
  *  rate limiting — live generation is the feature, an upload flood is
  *  not. `?by=` is attribution for the console trail. */
 /** Which image container these bytes are, by magic — the three the picture
@@ -333,6 +453,39 @@ export function sniffImage(b: Uint8Array): "png" | "jpg" | "webp" | null {
 
 /** Which audio container these bytes are, by magic — the five the sound
  *  allow-list admits. `null` for anything else: the name is not evidence. */
+/** An image's pixel size from its header (PNG IHDR, JPEG SOFn, WebP VP8/VP8L/VP8X), or null when it can't be read. */
+export const MAX_IMAGE_PX = 8192;
+/** Why an upload's image is refused for its size: past MAX_IMAGE_PX on a side, or a size its header doesn't give: the cap
+ *  holds only if every image's size is known. */
+export function imageSizeRefusal(b: Uint8Array, kind: "png" | "jpg" | "webp"): { status: number; why: string } | null {
+  const dims = imageDims(b, kind);
+  // the remedy is one any uploader can take (house 6340433633: "save it again from an image editor" assumed a person at one)
+  if (!dims) return { status: 415, why: `this ${kind === "jpg" ? "JPEG" : kind.toUpperCase()}'s header doesn't say its pixel size, so it can't be checked against the ${MAX_IMAGE_PX}-px cap; sending these bytes again won't change that. Upload a copy whose header gives its size: any encoder writes one (a PNG always has it), so re-encode it with whatever made it, or a library such as sharp or Pillow` };
+  if (Math.max(dims[0], dims[1]) > MAX_IMAGE_PX) return { status: 413, why: `image is ${dims[0]}×${dims[1]} px; at most ${MAX_IMAGE_PX} on a side (viewers draw it at 2048)` };
+  return null;
+}
+/** …a zero on either side is no size either (house 6340433633, the lead's decision): a 0×0 WebP header, a PNG with width 0
+ *  or a JPEG whose height its SOF defers is an image whose size can't be known, so it's refused as one. */
+export function imageDims(b: Uint8Array, kind: "png" | "jpg" | "webp"): [number, number] | null {
+  const d = headerDims(b, kind);
+  return d && d[0] > 0 && d[1] > 0 ? d : null;
+}
+function headerDims(b: Uint8Array, kind: "png" | "jpg" | "webp"): [number, number] | null {
+  const u16 = (i: number) => (b[i] << 8) | b[i + 1], u32 = (i: number) => ((b[i] << 24) >>> 0) + (b[i + 1] << 16) + (b[i + 2] << 8) + b[i + 3];
+  const le16 = (i: number) => b[i] | (b[i + 1] << 8), le24 = (i: number) => b[i] | (b[i + 1] << 8) | (b[i + 2] << 16);
+  try {
+    if (kind === "png") return b.length >= 24 ? [u32(16), u32(20)] : null;
+    if (kind === "jpg") { let i = 2; while (i + 9 < b.length) { if (b[i] !== 0xff) { i++; continue; } const m = b[i + 1];
+        if (m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc) return [u16(i + 7), u16(i + 5)];
+        if (m === 0xff) { i++; continue; }   // a fill byte (any number may pad a marker): the marker is the byte after the last
+        if (m === 0xd8 || m === 0x01 || (m >= 0xd0 && m <= 0xd7)) { i += 2; continue; } i += 2 + u16(i + 2); } return null; }
+    if (kind === "webp" && b.length >= 30) { const c = String.fromCharCode(b[12], b[13], b[14], b[15]);
+      if (c === "VP8X") return [1 + le24(24), 1 + le24(27)];
+      if (c === "VP8 ") return [le16(26) & 0x3fff, le16(28) & 0x3fff];
+      if (c === "VP8L") { const v = b[21] | (b[22] << 8) | (b[23] << 16) | (b[24] << 24); return [1 + (v & 0x3fff), 1 + ((v >> 14) & 0x3fff)]; } }
+  } catch { /* unreadable */ }
+  return null;
+}
 export function sniffAudio(b: Uint8Array): "mp3" | "ogg" | "wav" | "webm" | "m4a" | null {
   const tag = (off: number, s: string) => b.length >= off + s.length && [...s].every((ch, i) => b[off + i] === ch.charCodeAt(0));
   if (tag(0, "ID3")) return "mp3";
@@ -345,48 +498,49 @@ export function sniffAudio(b: Uint8Array): "mp3" | "ogg" | "wav" | "webm" | "m4a
 }
 
 
+/** The 415 for main's `/upload?as=script`: a script is the world authority's `upload {text}` request now. */
+export const SCRIPT_MOVED = "not stored: /upload?as=script went with the old protocol. Send the source as the world's upload {text} request (an agent: act {verb: \"upload\", args: {text}}); its reply's src goes in set {id, component: \"script:<name>\", value: {src, …}} (docs/SCRIPTS.md)";
+
+// ?token= is deprecated (tokens in URLs land in access logs; RFC 9745 Deprecation header). Removal waits on Orrery moving to the header (Mica, #22)
+const warnedQuery = new Set<string>();
 export async function handleUpload(req: Request, url: URL, srv: UploadSrv): Promise<Response> {
-  const upTok = url.searchParams.get("token") ?? "";
+  const r = await uploadBy(req, url, srv);
+  if (url.searchParams.has("token") && !bearerOf(req)) {
+    const ip = addressOf(req, srv);
+    if (!warnedQuery.has(ip) && warnedQuery.size < 1024) { warnedQuery.add(ip); console.warn(`[upload] ?token= is deprecated; send Authorization: Bearer (from ${ip})`); }
+    try { r.headers.set("Deprecation", "@1793664000"); } catch { /* an immutable response keeps its headers */ }
+  }
+  return r;
+}
+async function uploadBy(req: Request, url: URL, srv: UploadSrv): Promise<Response> {
+  // the key by Authorization: Bearer (RFC 6750, as the read door takes it); ?token= still works for older clients
+  const upTok = bearerOf(req) || (url.searchParams.get("token") ?? "");
   let upAgent = agentTokens().byToken.get(upTok);
   // The aid1 leg the join door has: guests enrolled via archipelago-home
-  // carry no tokens.json entry, but the scripting tier's `behavior` verb
-  // is already reachable to them through world_verb — the bytes it binds
-  // must be landable by the same identity, or the tier is half-open.
+  // carry no tokens.json entry, but may build in a world that lets them —
+  // what they build with must be landable by the same identity.
   // Same audience/scope/slug derivation as the two doors, no jti burn
   // (an aid1 credential is reusable until expiry at every door).
   if (!upAgent) upAgent = aid1JoinIdentity(upTok)?.slug;
-  if (JOIN_TOKEN && upTok !== JOIN_TOKEN && !upAgent)
-    return new Response("token required", { status: 401 });
-  const upBy = (url.searchParams.get("by") ?? upAgent ?? "?").slice(0, 64);
-  // Behind the show's nginx front every socket is 127.0.0.1 — the real
-  // client address rides X-Real-IP. (Spoofable only when directly exposed,
-  // which is the tailnet dev case where rate limits hardly matter.)
-  const ip = req.headers.get("x-real-ip") ?? srv.requestIP(req)?.address ?? "?";
+  // ...and the people who signed in through the home node: they carry a session cookie, not a door key (the
+  // join door takes the same cookie), a native client's too; never from another site's page (auth.ts sessionOfRequest).
+  const session = sessionOfRequest(req);
+  // (embodied access, worlds:join — what the join door asks of a login that is not spectating)
+  const upPerson = session && session.scopes.includes("worlds:join") ? session.name : null;
+  if (JOIN_TOKEN && upTok !== JOIN_TOKEN && !upAgent && !upPerson)
+    return new Response("sign in, or bring the door key (token required)", { status: 401 });
+  // a signed-in person is who the session says, whatever ?by= claims
+  const upBy = (upPerson ?? url.searchParams.get("by") ?? upAgent ?? "?").slice(0, 64);
+  // the client's address: X-Real-IP only from a trusted proxy (server/peer.ts; security review 10-18 H2)
+  const ip = addressOf(req, srv);
   const u = uploadWin.get(ip) ?? { t: 0, n: 0 };
   if (Date.now() - u.t > 60_000) { u.t = Date.now(); u.n = 0; }
   u.n++; uploadWin.set(ip, u);
   if (u.n > 4) return new Response("upload rate limit (4/min)", { status: 429 });
   const body = new Uint8Array(await req.arrayBuffer());
   if (body.length > UPLOAD_CAP) return new Response(`too large (${UPLOAD_CAP / 1e6}MB cap)`, { status: 413 });
-  if (url.searchParams.get("as") === "script") {
-    // Runtime-script ingestion: plain UTF-8 JS, content-addressed like
-    // models, so a `behavior` entry pins exact bytes forever. The store
-    // is inert — what RUNS is still gated by the behavior verb + sandbox.
-    if (body.length > 64 * 1024) return new Response("script too large (64KB cap)", { status: 413 });
-    let text: string;
-    try { text = new TextDecoder("utf-8", { fatal: true }).decode(body); } catch {
-      return new Response("script must be UTF-8 text", { status: 415 });
-    }
-    if (!text.trim()) return new Response("empty script", { status: 415 });
-    const shash = new Bun.CryptoHasher("sha256").update(body).digest("hex").slice(0, 16);
-    const sdir = join(OPT_DIR, "store", "scripts");
-    mkdirSync(sdir, { recursive: true });
-    const srel = `store/scripts/${shash}.js`;
-    if (!existsSync(join(OPT_DIR, srel))) writeFileSync(join(OPT_DIR, srel), body);
-    console.log(`[upload] script ${srel} (${body.length}B) by ${upBy}`);
-    return new Response(JSON.stringify({ path: srel }),
-      { headers: { "content-type": "application/json" } });
-  }
+  // main's script store left with the old protocol: say where a script goes now (decision table row 12)
+  if (url.searchParams.get("as") === "script") return new Response(SCRIPT_MOVED, { status: 415 });
   if (url.searchParams.get("as") === "image") {
     // Picture ingestion: a PNG, JPEG or WebP, content-addressed into
     // store/images/<hash>.<ext> and served by the /library route like any
@@ -394,11 +548,13 @@ export async function handleUpload(req: Request, url: URL, srv: UploadSrv): Prom
     // decoded by the client that hangs it, not re-encoded here). The kind is
     // read from the BYTES, never the name: the store's extension is what the
     // /library route and the picture allow-list key on, so it has to be true.
-    // What enters a WORLD is still the `picture` comp, gated by rank and by
-    // the entity's guard; the store itself stays inert.
+    // What enters a WORLD is still a `picture` component, admitted by the
+    // door; the store itself stays inert.
     if (body.length > IMAGE_CAP) return new Response(`image too large (${IMAGE_CAP / 1e6}MB cap)`, { status: 413 });
     const kind = sniffImage(body);
     if (!kind) return new Response("not a PNG, JPEG or WebP image (judged by content, not by name)", { status: 415 });
+    // batch 2: a decompression bomb (a tiny file that decodes to 16k × 16k) is refused before any viewer decodes it
+    { const no = imageSizeRefusal(body, kind); if (no) return new Response(no.why, { status: no.status }); }
     const ihash = new Bun.CryptoHasher("sha256").update(body).digest("hex").slice(0, 16);
     const idir = join(OPT_DIR, "store", "images");
     mkdirSync(idir, { recursive: true });
@@ -423,13 +579,25 @@ export async function handleUpload(req: Request, url: URL, srv: UploadSrv): Prom
     console.log(`[upload] image ${irel}${iname ? ` ("${iname}")` : ""} (${(body.length / 1e3).toFixed(0)}KB) by ${upBy}`);
     return new Response(JSON.stringify({ path: irel }), { headers: { "content-type": "application/json" } });
   }
+  if (url.searchParams.get("as") === "heightmap") {
+    // Terrain as an image (server/heightmap.ts): a grayscale PNG, decoded HERE once into the integer grid
+    // the client, agents and sim all read. Content-addressed like everything in the store; what changes a
+    // WORLD is still the owner's `terrain` verb naming the grid.
+    if (body.length > IMAGE_CAP) return new Response(`heightmap too large (${IMAGE_CAP / 1e6}MB cap)`, { status: 413 });
+    if (sniffImage(body) !== "png") return new Response("a heightmap must be a PNG (16-bit grayscale is best)", { status: 415 });
+    const hhash = new Bun.CryptoHasher("sha256").update(body).digest("hex").slice(0, 16);
+    const r = ingestHeightmap(body, hhash);
+    if ("error" in r) return new Response(r.error, { status: r.status });
+    console.log(`[upload] heightmap ${r.grid} (${r.w}×${r.h}, ${r.bits}-bit) by ${upBy}`);
+    return new Response(JSON.stringify(r), { headers: { "content-type": "application/json" } });
+  }
   if (url.searchParams.get("as") === "audio") {
     // Sound ingestion: an MP3, Ogg, WAV, WebM or M4A, content-addressed into
     // store/audio/<hash>.<ext>, served by the /library route like any store
     // upload (immutable address). No transcode: the client plays what was
     // given. Kind from the BYTES, never the name — the store's extension is
     // what the sound allow-list keys on. What plays in a WORLD is still the
-    // `sound` comp, gated by rank and the entity's guard; the store is inert.
+    // `sound` component, admitted by the door; the store is inert.
     const kind = sniffAudio(body);
     if (!kind) return new Response("not an MP3, Ogg, WAV, WebM or M4A audio file (judged by content, not by name)", { status: 415 });
     const ahash = new Bun.CryptoHasher("sha256").update(body).digest("hex").slice(0, 16);
@@ -533,5 +701,8 @@ export async function handleUpload(req: Request, url: URL, srv: UploadSrv): Prom
     atomicWrite(mp, JSON.stringify(man));
   }
   console.log(`[upload] model ${rel}${upName ? ` ("${upName}")` : ""} (${(body.length / 1e6).toFixed(1)}MB) by ${upBy}`);
-  return new Response(JSON.stringify({ path: rel }), { headers: { "content-type": "application/json" } });
+  // the build check starts now and never holds the upload up or refuses it:
+  // its report is advice, waiting at `check` (server/buildcheck.ts)
+  void checkFile(join(OPT_DIR, rel), 1, body).catch((err) => console.warn(`[check] ${rel}: ${String(err?.message ?? err)}`));
+  return new Response(JSON.stringify({ path: rel, check: `/check?lib=${encodeURIComponent(rel)}` }), { headers: { "content-type": "application/json" } });
 }

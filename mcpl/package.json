@@ -17,7 +17,7 @@
     "zod": "^4.4.3"
   },
   "optionalDependencies": {
-    "@animalabs/agent-framework": "file:../../agent-framework",
-    "@animalabs/mcpl-core": "file:../../mcpl-core-ts"
+    "@animalabs/agent-framework": "file:../tools/protocol/.siblings/agent-framework",
+    "@animalabs/mcpl-core": "file:../tools/protocol/.siblings/mcpl-core-ts"
   }
 }

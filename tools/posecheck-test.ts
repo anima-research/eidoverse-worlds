@@ -27,4 +27,20 @@ let nest: unknown = 1; for (let i = 0; i < 8; i++) nest = { a: nest };
 ok(sanePose({ ...good, pose: nest }) === null, "a container nested past MAX_DEPTH dropped");
 const wide: Record<string, number> = {}; for (let i = 0; i < 600; i++) wide["k" + i] = 0;
 ok(sanePose({ ...good, pins: wide }) === null, "a container wider than MAX_KEYS dropped");
-console.log("posecheck: 20 ok");
+// the voice and body fields (review 09-30 S3): normalised at the fence, not relayed opaquely — every receiver clamps
+// too, but the server REMEMBERS lastPose for joiners, so garbage would otherwise outlive its sender's next packet
+{
+  const v = sanePose({ ...good, mic: "yes", hear: 1 })!;
+  ok(v && !("mic" in v) && !("hear" in v), "non-boolean mic/hear dropped (the pose itself kept)");
+  const b = sanePose({ ...good, mic: true, hear: false })!;
+  ok(b?.mic === true && b?.hear === false, "boolean mic/hear kept");
+  const c = sanePose({ ...good, scale: 9, plateY: -4 })!;
+  ok(c?.scale === 2 && c?.plateY === -0.3, `scale/plateY clamped to 0.5–2 / −0.3…+0.8 (got ${c?.scale} / ${c?.plateY})`);
+  const d = sanePose({ ...good, scale: 0.01, plateY: 0.5 })!;
+  ok(d?.scale === 0.5 && d?.plateY === 0.5, "scale clamped up to 0.5, an in-range plateY untouched");
+  const e = sanePose({ ...good, scale: "2", plateY: null })!;
+  ok(e && !("scale" in e) && !("plateY" in e), "a non-number scale/plateY is dropped — absence is the default");
+  const f = sanePose({ ...good, scale: 1.5, plateY: 0.3 })!;
+  ok(f?.scale === 1.5 && f?.plateY === 0.3, "in-range scale/plateY relay as sent");
+}
+console.log("posecheck: 26 ok");

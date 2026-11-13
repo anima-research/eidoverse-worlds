@@ -13,7 +13,7 @@ for(const [kind,name] of Object.entries(names)){
  writeFileSync(join(lib,`fixtures/${kind}.vrma`),postureFixture(kind as any));
  writeFileSync(join(lib,`defs/animations/${name}.json`),JSON.stringify({vrma:`fixtures/${kind}.vrma`}));
 }
-const h=await scratchSequencer('live-contact',{portFrom:9450,serverEnv:{EIDOVERSE_DIR:lib,DEFS_DIR:join(lib,'defs'),SKIP_OPT_SWEEP:'1'}});
+const h=await scratchSequencer('live-contact',{worlds:['contact'],portFrom:9450,serverEnv:{EIDOVERSE_DIR:lib,DEFS_DIR:join(lib,'defs'),SKIP_OPT_SWEEP:'1'}});
 const make=(name:string)=>new WorldAgent({url:h.BASE.replace('http','ws')+'/ws',world:'contact',name,avatar:'fixtures/body.vrm'}) as any;
 const a=make('contact-a'),b=make('contact-b');
 const call=(ag:any,name:string,args:any={})=>handleTool({agent:ag,canPush:()=>false,heldActivity:[],cursor:{caughtUpTo:null}},name,args);
@@ -22,7 +22,7 @@ const near=(a:number[],b:number[],e=1e-5)=>a&&b&&Math.hypot(...a.map((v,i)=>v-b[
 async function until(f:()=>boolean){const end=Date.now()+5000;while(!f()){if(Date.now()>end)throw new Error('presence timeout');await h.sleep(20);}}
 try{
  await a.connect();await b.connect();
- await call(a,'walk_to',{x:-.45,z:0});await call(b,'walk_to',{x:.45,z:0});
+ await call(a,'move',{to:[-.45,0,0]});await call(b,'move',{to:[.45,0,0]});
  await call(a,'face',{x:.45,z:0});await call(b,'face',{x:-.45,z:0});a.tick();b.tick();
  await until(()=>Math.abs((a.people.get(b.name)?.pose?.yaw??0)+Math.PI/2)<1e-9);
  check('clip phase survives owner/server/peer presence',Number.isFinite(a.people.get(b.name)?.pose?.clipTime));
@@ -59,8 +59,10 @@ try{
  // Exercise the existing folded mount view at the body read seam. Root pose
  // packets keep pre-mount positions; the socket/motion fold governs rendering.
  b.releaseReach();a.releaseReach();
- const seat={id:'seat',lib:'fixture',pos:[4,1,2],yaw:Math.PI/2,comp:{sockets:{seat:{pos:[0,.5,0],pose:'sitchair'}}}};
- for(const ag of [a,b]){ag.entities.set('seat',seat);ag.mounts.set(b.name,{to:'seat',slot:'seat'});}
+ // the seat is a socket child of its thing (PLAN-sockets-entities): the body rides the socket's id
+ const seat={id:'seat',lib:'fixture',pos:[4,1,2],yaw:Math.PI/2};
+ const sock={id:'seat.s',lib:'',pos:[0,.5,0],yaw:0,comp:{socket:{name:'seat',body:{pose:'sitchair'}}}};
+ for(const ag of [a,b]){ag.entities.set('seat',seat);ag.entities.set('seat.s',sock);ag.mounts.set('seat.s',{to:'seat',offset:[0,.5,0]});ag.mounts.set(b.name,{to:'seat.s'});}
  b.tick();await until(()=>a.people.get(b.name)?.pose?.clipTimeSlot==='sitchair');
  const mounted=await read(a,{who:b.name});
  check('mounted readback uses the live socket frame and posture',mounted.ok&&near(mounted.root.position,[4,1.5,2])&&mounted.posture==='sitchair'&&mounted.frame.source==='mount');

@@ -1,22 +1,23 @@
-// The world client: joins EMBODIED as a visitor holding the caption deed for
-// one screen (grant {id: <actor>, caption: "<screen>"}, owner-granted) and
-// writes one `caption` verb per final line. It reads the stage cue (a
-// `stage` comp on the screen) off the snapshot and the live log, so
-// `speaker` is the operator's word, never the bot's guess.
+// The world client: joins EMBODIED (a visitor is enough) as an identity the
+// screen names in its `captioners {ids}` (whoever may edit the screen sets
+// that), and sends one door `caption` request per final line. It reads the
+// stage cue (a `stage` component on the screen) off its own fold of the
+// world (shared/protocol/replica.js), so `speaker` is the operator's word, never
+// the bot's guess.
 //
 // RECEIPTS (Mica, #187 review B3). A line is not done when it is sent; it is
-// done when its own log echo comes back — verb `caption`, our actor, our
-// screen, our session and n. Until then it is PENDING: kept in memory, kept
-// on disk in the spool, and resent after a disconnect or a silent timeout.
-// The sequencer refuses a duplicate n before append (shared/captions.js
-// captionRefusal), so a resend can never write twice — that refusal is
-// read here as the receipt it is.
+// done when the door answers ok. Until then it is PENDING: kept in memory,
+// kept on disk in the spool, and resent after a disconnect or a silent
+// timeout. The door refuses a duplicate n before anything is written
+// (shared/captions.js captionRefusal), so a resend can never write twice within
+// the session it was sent in (after an end or a takeover the line may land again) —
+// that refusal is read here as the receipt it is.
 //
-// ORDER. One line in flight at a time, FIFO, paced under the door's verb
-// rate (12 per 4 s): a burst of finals queues rather than tripping the
-// limiter. WHO the captioner is, is the sequencer's fact, not ours: it
-// stamps its leg generation on every line and the bag follows the live leg
-// (a same-identity join is a takeover). A restart's old-session tail still
+// ORDER. One line in flight at a time, FIFO, paced under the door's rate
+// (60 entries per 10 s; a caption is two): a burst of finals queues rather
+// than tripping the limiter. WHO the captioner is, is the server's fact, not
+// ours: it stamps this connection's leg generation on every line and the bag
+// follows the live leg (a same-identity join is a takeover). A restart's old-session tail still
 // drains first, FIFO, so the window switches exactly once.
 //
 // BACKPRESSURE. The queue is BOUNDED (`maxPending`, default 600 lines ≈ five
@@ -24,24 +25,51 @@
 // one written to the spool as `overflow` and counted out loud — never a
 // silent drop, never unbounded memory. The spool (`spool` path, JSONL,
 // append-only) is the bot's durable record of what it tried and what the
-// world confirmed; a restart re-queues whatever it never saw confirmed.
+// world confirmed; a restart re-queues each line it never saw confirmed,
+// except one whose overflow or refused row is on disk.
+//
+// THE SPOOL IS A PROMISE, SO IT FAILS CLOSED (Mica, #187 round-two
+// follow-up). A line is queued only once its `queued` row is on disk; if
+// that write fails, the line is REFUSED and intake halts — new captions are
+// counted and refused, out loud, until the operator fixes the disk and
+// restarts (the replay then picks up exactly what was confirmed). What is
+// already queued still drains: it is in memory and on disk. `end` is not a
+// line — a perception clear, idempotent at the door — so it goes through
+// even with the spool down; when its row can't be written that is said and
+// counted (`endMissed`), since a restart before the world confirms it
+// replays the session's lines without the clear. The other rows (acked,
+// refused, overflow) are bookkeeping, so those log and continue: a failed
+// acked or refused row means a restart may resend a line that already
+// landed, which the door's dedupe makes harmless, and a failed overflow row
+// means a restart sends a line this run reported dropped. `spoolBestEffort` (env
+// SPOOL_BEST_EFFORT=1) states the weaker promise instead: a `queued` row
+// that cannot be written is said once (then every 100th, like the refusals)
+// and the line queues anyway — counted in `spoolMissed`, because a restart
+// before it is confirmed loses it.
 //
 // Captions are durable world testimony like `say`; `end` clears current
-// perception, not history. This client keeps nothing the world does not.
+// perception, not history. This client keeps the spool (every line it tried, with its
+// receipt) until it is acknowledged or overflowed.
 import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 import { normalizeCaptionArgs, mintSession } from '../../shared/captions.js';
+import { makeReplica } from '../../shared/protocol/replica.js';
+import { helloOf, refusalWords } from '../../shared/protocol/hello.js';
 import type { Caption } from './captioner.ts';
 
 export interface WorldOptions {
   url: string; token: string; world: string;
   /** The bot's actor id — reserved like an agent's, so the door knows it. */
   actor: string;
+  /** Its agent token (tokens.json), proving that reserved name: its identity is what the screen's captioners list. */
+  agentToken?: string;
   /** The entity that owns the screen. */
   screenId: string;
   /** What is showing, for look(); rides the first line of each session. */
   title?: string;
   /** JSONL spool path; omit for none (tests). */
   spool?: string;
+  /** Spool write failures log and continue instead of halting intake. */
+  spoolBestEffort?: boolean;
   /** Queue bound, in lines (default 600). */
   maxPending?: number;
   /** Minimum ms between sends (default 500: 2/s, under the 12-per-4-s door). */
@@ -55,7 +83,7 @@ export interface WorldOptions {
   session?: string;
   /** Test seam: called with the key just before each send. */
   onSend?: (key: string) => void;
-  /** Join as an agent (default true; tests join as a plain participant). */
+  /** Declare itself an agent at join (PROTOCOL §6a; default true; tests join undeclared). */
   agent?: boolean;
 }
 
@@ -78,9 +106,28 @@ export class WorldClient {
   private lastSentAt = 0;
   private halted: string | null = null;
   private titled = false;
+  private replica = makeReplica();
+  private reqId = 0;
+  private inflightId: string | null = null;
   session: string;
   n = 0;
   sent = 0; acked = 0; refused = 0; overflow = 0;
+  /** this connection's identity (the snapshot's actor): what the screen's captioners must list */
+  you: string | null = null;
+  /** Lines refused because the spool could not take their `queued` row. */
+  spoolRefused = 0;
+  /** Lines queued WITHOUT their `queued` row (spoolBestEffort): a restart
+   *  before the world confirms them loses them. */
+  spoolMissed = 0;
+  /** Ends queued WITHOUT their `queued` row: `end` goes through with the
+   *  spool down, and a restart before the world confirms it replays the
+   *  session's lines without the clear. */
+  endMissed = 0;
+  /** Entries the spool's promise was not kept for, any of these ways. A run
+   *  that ends with this non-zero did not do what the operator was told it does. */
+  get spoolLost(): number { return this.spoolRefused + this.spoolMissed + this.endMissed; }
+  /** The first spool failure that halted intake, or null while writable. */
+  spoolFailed: string | null = null;
   onReceipt: ((args: Args) => void) | null = null;
 
   constructor(private opts: WorldOptions) {
@@ -95,7 +142,7 @@ export class WorldClient {
     const ws = new WebSocket(this.opts.url);
     this.ws = ws;
     ws.onopen = () => {
-      ws.send(JSON.stringify({ type: 'join', world: this.opts.world, id: this.opts.actor, avatar: '', ...(this.opts.agent === false ? {} : { agent: true }), token: this.opts.token }));
+      ws.send(JSON.stringify({ type: 'join', world: this.opts.world, id: this.opts.actor, avatar: '', replica: true, hello: helloOf(), ...(this.opts.agent === false ? {} : { declares: 'agent' }), token: this.opts.token, ...(this.opts.agentToken ? { agentToken: this.opts.agentToken } : {}) }));
     };
     ws.onclose = () => {
       this.open = false;
@@ -109,21 +156,32 @@ export class WorldClient {
       const msg = JSON.parse(String(ev.data));
       if (msg.type === 'snapshot') {
         this.open = true;
-        const ent = msg.state?.entities?.[this.opts.screenId];
-        this.stageSpeaker = ent?.comp?.stage?.speaker;
-        const deed = msg.yourRights?.caption;
-        this.log(`joined "${this.opts.world}" as ${this.opts.actor} (${msg.yourRights?.role ?? '?'}${deed ? `, caption deed for ${deed.id}` : ', NO caption deed — ask the owner: grant {id: "' + this.opts.actor + '", caption: "' + this.opts.screenId + '"}'}); screen ${this.opts.screenId} ${ent ? 'present' : 'NOT PRESENT — spawn it first'}`);
+        if (msg.state) this.replica.adopt(msg);
+        const ent = this.screen();
+        this.stageSpeaker = ent?.stage?.speaker;
+        const me = msg.actor; this.you = me ?? null; const listed = Array.isArray(ent?.captioners?.ids) && ent.captioners.ids.includes(me);
+        this.log(`joined "${this.opts.world}" as ${this.opts.actor} (${me ?? '?'}, ${msg.yourRights?.role ?? '?'}${listed ? `, a captioner of ${this.opts.screenId}` : `, NOT one of ${this.opts.screenId}'s captioners — ask whoever may edit it: set {id: "${this.opts.screenId}", component: "captioners", value: {ids: [${[...(ent?.captioners?.ids ?? []), me].map((x: any) => JSON.stringify(x)).join(', ')}]}}`}); screen ${this.opts.screenId} ${ent ? 'present' : 'NOT PRESENT — place it first'}`);
         this.schedule();
       } else if (msg.type === 'error') {
         this.onError(String(msg.error ?? ''));
-      } else if (msg.type === 'log' && msg.entry?.verb === 'comp' && msg.entry.args?.id === this.opts.screenId && msg.entry.args?.type === 'stage') {
-        this.stageSpeaker = msg.entry.args.data?.speaker;
-        this.log(`stage cue: speaker = ${this.stageSpeaker ?? '(none)'}`);
-      } else if (msg.type === 'log' && msg.entry?.verb === 'caption' && msg.entry.actor === this.opts.actor && msg.entry.args?.id === this.opts.screenId) {
-        this.onEcho(msg.entry.args as Args);
+      } else if (msg.type === 'refused') {
+        this.onError(refusalWords(msg));
+      } else if (msg.type === 'log') {
+        const r = this.replica.ingest(msg.entries ?? [], msg.from ?? -1, msg.names);
+        if (r.resync) { this.ws?.close(); return; }   // a gap: rejoin for a fresh cut (onclose reconnects)
+        const sp = this.screen()?.stage?.speaker;
+        if (sp !== this.stageSpeaker) { this.stageSpeaker = sp; this.log(`stage cue: speaker = ${sp ?? '(none)'}`); }
+      } else if (msg.type === 'reply' && msg.id === this.inflightId) {
+        const p = this.inflight; this.inflightId = null;
+        if (!p) return;
+        if (msg.reply?.ok) this.onEcho(p.args);
+        else this.onError(`${msg.reply?.refused?.code ?? 'refused'}: ${msg.reply?.refused?.reason ?? ''}`);
       }
     };
   }
+
+  /** The screen as this client's fold holds it (the view record), or null. */
+  private screen(): any { return this.replica.active ? (this.replica.view()?.entities?.[this.opts.screenId] ?? null) : null; }
 
   /** The operator's stage cue, if any. */
   speaker(): string | undefined { return this.stageSpeaker; }
@@ -140,7 +198,7 @@ export class WorldClient {
   /** The screen goes quiet for this session (idempotent at the door). */
   end(): void {
     const args: Args = { id: this.opts.screenId, session: this.session, end: true };
-    this.enqueue({ key: keyOf(args), args, tries: 0 });
+    this.enqueue({ key: keyOf(args), args, tries: 0 }, { durable: false });
   }
 
   /** A new time origin (source reconnect, restart): a later session. The old
@@ -151,9 +209,33 @@ export class WorldClient {
     this.log(`session → ${session}`);
   }
 
-  private enqueue(p: Pending): void {
+  private enqueue(p: Pending, { durable = true } = {}): void {
+    // the `queued` row is the promise a restart keeps: on disk BEFORE the
+    // line is in memory, or the line is not taken
+    if (durable && this.spoolFailed && !this.opts.spoolBestEffort) {
+      this.spoolRefused++;
+      // the halt was said once; from here every 100th refusal, not per line
+      if (this.spoolRefused % 100 === 0) this.log(`⛔ refused ${p.key}: spool unwritable (${this.spoolFailed}); ${this.spoolRefused} refused so far`);
+      return;
+    }
+    const wrote = this.spool({ state: 'queued', key: p.key, args: p.args, at: Date.now() });
+    if (durable && !wrote && !this.opts.spoolBestEffort) {
+      this.spoolRefused++;
+      this.log(`⛔ spool write failed (${this.spoolFailed}): intake halted — new captions are refused until the spool is writable and the bot restarts; the ${this.pendingCount} already queued still drain (SPOOL_BEST_EFFORT=1 to log and continue instead)`);
+      return;
+    }
+    if (durable && !wrote) {
+      // the weaker promise, kept out loud: once, then every 100th line
+      this.spoolMissed++;
+      if (this.spoolMissed === 1 || this.spoolMissed % 100 === 0) this.log(`⚠ spool write failed (${this.spoolFailed}): SPOOL_BEST_EFFORT=1, so the line queues anyway — a restart before the world confirms it loses it; ${this.spoolMissed} such line${this.spoolMissed === 1 ? '' : 's'} so far`);
+    }
+    if (!durable && !wrote) {
+      // `end` still goes through, but its row isn't on disk: said every time,
+      // since a session has one
+      this.endMissed++;
+      this.log(`⚠ spool write failed (${this.spoolFailed}): the session's end queues anyway, since a clear goes through with the spool down — a restart before the world confirms it replays this session's lines without it`);
+    }
     this.pending.push(p);
-    this.spool({ state: 'queued', key: p.key, args: p.args, at: Date.now() });
     const max = this.opts.maxPending ?? 600;
     let dropped = 0;
     while (this.pending.length > max) {
@@ -161,7 +243,7 @@ export class WorldClient {
       this.spool({ state: 'overflow', key: old.key, at: Date.now() });
       dropped++;
     }
-    if (dropped) { this.overflow += dropped; this.log(`⚠ overflow: dropped the ${dropped} oldest queued caption${dropped === 1 ? '' : 's'} (queue > ${max}); they are in the spool as overflow`); }
+    if (dropped) { this.overflow += dropped; this.log(`⚠ overflow: dropped the ${dropped} oldest queued caption${dropped === 1 ? '' : 's'} (queue > ${max}); each is written to the spool as overflow, and a restart doesn't resend one whose overflow row is there`); }
     this.schedule();
   }
 
@@ -179,7 +261,8 @@ export class WorldClient {
     this.lastSentAt = Date.now();
     this.sent++;
     this.opts.onSend?.(p.key);
-    this.ws.send(JSON.stringify({ type: 'verb', verb: 'caption', args: p.args }));
+    this.inflightId = `c${++this.reqId}`;
+    this.ws.send(JSON.stringify({ type: 'request', id: this.inflightId, verb: 'caption', args: p.args }));
     // no receipt in time: unconfirmed, so resend — the door dedupes
     this.ackTimer = setTimeout(() => {
       this.ackTimer = null;
@@ -196,7 +279,7 @@ export class WorldClient {
     this.schedule();
   }
 
-  /** Our own entry came back through the log: the world holds it. */
+  /** The door wrote it: the world holds it. */
   private onEcho(args: Args): void {
     const key = keyOf(args);
     const p = this.inflight;
@@ -229,11 +312,11 @@ export class WorldClient {
       this.settle(p, { state: 'refused', key: p.key, why: error, at: Date.now() });
       return;
     }
-    // no deed / wrong deed / screen gone / rank: nothing will land until the
-    // owner acts — hold everything, say so once, and try again later
-    // …and a NEWER leg holding the screen (another captioner joined after
-    // us): ours is superseded until we rejoin; hold, do not drop
-    if (/caption deed|not here|was replaced|needs .* rights|spectators|superseded captioner/.test(error)) {
+    // not a captioner of this screen / screen gone / a spectator: nothing will
+    // land until someone acts — hold everything, say so once, and try again
+    // later …and a NEWER leg holding the screen (another captioner joined
+    // after us): ours is superseded until we rejoin; hold, do not drop
+    if (/^rights:|^not-found:|^no-such:|^spectator:|^banned:|superseded captioner/.test(error)) {
       if (this.ackTimer) { clearTimeout(this.ackTimer); this.ackTimer = null; }
       this.inflight = null; this.pending.unshift(p);
       if (this.halted !== error) { this.halted = error; this.log(`⛔ held (${this.pendingCount} pending): ${error}`); }
@@ -248,9 +331,16 @@ export class WorldClient {
     this.schedule();
   }
 
-  private spool(row: SpoolRow): void {
-    if (!this.opts.spool) return;
-    try { appendFileSync(this.opts.spool, JSON.stringify(row) + '\n'); } catch (e) { this.log(`spool write failed: ${(e as Error).message}`); }
+  /** Append one row. True when it is on disk (or there is no spool). */
+  private spool(row: SpoolRow): boolean {
+    if (!this.opts.spool) return true;
+    try { appendFileSync(this.opts.spool, JSON.stringify(row) + '\n'); return true; }
+    catch (e) {
+      const why = (e as Error).message;
+      if (row.state === 'queued') this.spoolFailed ??= why;
+      else this.log(`spool write failed on ${/^[aeiou]/.test(row.state) ? 'an' : 'a'} ${row.state} row for ${row.key}: ${why} — ${row.state === 'overflow' ? 'a restart may send this line, though this run dropped it' : 'a restart may resend it; the door dedupes'}`);
+      return false;
+    }
   }
 
   /** Re-queue whatever a previous life never saw confirmed. Their sessions

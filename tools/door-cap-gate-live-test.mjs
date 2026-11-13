@@ -11,10 +11,13 @@
 //      and tools/call -32601 (denied ⇒ as if never advertised).
 //   3. nothing leaked: the observer saw NO say from the gated session.
 //   4. granted session: publish delivers AND the say lands in the world log
-//      (observer sees it) — allowed operations still work.
+//      (observer sees it) — allowed operations still work. Before that, a
+//      grant leaving out channels.typing gets a degraded receipt naming
+//      eidoverse.typing, and channels/typing then raises no dots; granted, the
+//      same body's dots rise (observer sees the typing signal).
 //   5. live mention routing: the observer says "@claude …" in-world and the
 //      granted host receives channels/incoming tagged chat:mention with
-//      metadata.mentioned — the mentionRegex path end to end.
+//      metadata.mentioned — the mentionRegexFor path end to end.
 //
 // 🔴 THE HARNESS OWNS ITS PORTS, ITS STATE, AND ITS CHILDREN (#129 re-review:
 // "the owned-scratch harness is neither owned nor scratch-clean"). The first
@@ -29,12 +32,15 @@
 // land, the shared pieces deserve extraction into one harness module.
 //
 // Run: bun tools/door-cap-gate-live-test.mjs
+import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync, existsSync, statSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { foundWorlds } from "./harness.ts";
 import { createServer } from "node:net";
 import { createServer as createHttpServer } from "node:http";
+import { helloOf } from "../shared/protocol/hello.js";
 
 /** A port nothing is listening on RIGHT NOW: bind :0, read what the kernel
  *  gave us, release it. Racy in principle — which is why readiness below
@@ -54,18 +60,20 @@ const JOIN = "cap-gate-test-door";
 const NONCE = `t${process.pid}-${Math.random().toString(36).slice(2, 10)}`;
 const scratch = mkdtempSync(join(tmpdir(), "capgate-"));
 const tokensPath = join(scratch, "tokens.json");
+// the world exists before the run (joining never founds one)
+foundWorlds(scratch, ["commons"]);
 const statePath = join(scratch, "state.json");
 writeFileSync(tokensPath, JSON.stringify({
   "gate-token": { id: "claude", name: "Claude", world: "commons" },
 }));
 // Repository state must be untouched by a run. Snapshot before, compare after.
-const REPO_STATE = new URL("../mcpl/state.json", import.meta.url).pathname;
+const REPO_STATE = fileURLToPath(new URL("../mcpl/state.json", import.meta.url));
 const snapState = () => existsSync(REPO_STATE)
   ? { exists: true, mtimeMs: statSync(REPO_STATE).mtimeMs,
       hash: new Bun.CryptoHasher("sha256").update(readFileSync(REPO_STATE)).digest("hex") }
   : { exists: false, mtimeMs: 0, hash: "" };
 const repoStateBefore = snapState();
-const BUN = process.execPath.includes("bun") ? process.execPath : "/home/claude/.bun/bin/bun";
+const BUN = process.execPath.includes("bun") ? process.execPath : "bun";
 
 let pass = 0, fail = 0;
 const check = (name, ok, extra = "") => {
@@ -205,7 +213,8 @@ console.log(`sequencer :${SEQ_PORT}, door :${DOOR_PORT}, scratch ${scratch}`);
 // cannot pass vacuously, because the tmp is ALWAYS there at boot).
 writeFileSync(`${statePath}.tmp`, "");
 const seq = child(["server/server.ts"],
-  { PORT: String(SEQ_PORT), JOIN_TOKEN: JOIN, WORLDS_DIR: scratch, WORLD_INSTANCE_NONCE: NONCE });
+  { PORT: String(SEQ_PORT), JOIN_TOKEN: JOIN, WORLDS_DIR: scratch, WORLD_INSTANCE_NONCE: NONCE, SKIP_OPT_SWEEP: "1",
+    AGENT_TOKENS_PATH: tokensPath });   // the world honours the same enrolments the MCPL door does
 const door = child(["mcpl/net-server.ts"], {
   MCPL_PORT: String(DOOR_PORT), WORLD_URL: `ws://127.0.0.1:${SEQ_PORT}/ws`, WORLD_TOKEN: JOIN,
   MCPL_TOKENS: tokensPath, MCPL_STATE: statePath, MCPL_INSTANCE_NONCE: NONCE,
@@ -229,17 +238,39 @@ try {
     : "  identity: per-run nonce only (no ss//proc on this platform — OS check skipped)");
   check("stale state tmp from a previous incarnation swept at boot", !existsSync(`${statePath}.tmp`));
 
-  // Ground truth: a raw world-ws observer, embodied, remembering every say.
-  const seen = [];
+  // Ground truth: a raw world-ws observer, embodied, remembering every say,
+  // and when each of the door body's typing signals arrived.
+  const seen = [], names = {};
+  const typings = [];
   obs = new WebSocket(`ws://127.0.0.1:${SEQ_PORT}/ws`);
   const obsJoined = new Promise((resolve) => {
-    obs.onopen = () => obs.send(JSON.stringify({ type: "join", world: "commons", id: "observer", token: JOIN }));
+    obs.onopen = () => obs.send(JSON.stringify({ type: "join", hello: helloOf(), world: "commons", id: "observer", token: JOIN, replica: true }));
     obs.onmessage = (ev) => {
       const m = JSON.parse(String(ev.data));
       if (m.type === "snapshot") resolve(true);
-      if (m.type === "log" && m.entry?.verb === "say") seen.push({ who: m.entry.actor, text: m.entry.args?.text });
+      // chat is the log stream's say entries; their actors are opaque ids, named by the stream
+      if (m.type === "snapshot") Object.assign(names, m.names ?? {});
+      if (m.type === "log") { Object.assign(names, m.names ?? {});
+        for (const e of m.entries ?? []) if (e?.kind === "say") seen.push({ who: names[e.actor] ?? e.actor, text: e.body?.text }); }
+      if (m.type === "typing" && m.id === "claude") typings.push(Date.now());
     };
   });
+  const pause = (ms) => new Promise((s) => setTimeout(s, ms));
+  const waitUntil = async (pred, ms) => {
+    const until = Date.now() + ms;
+    while (Date.now() < until) { if (pred()) return true; await pause(50); }
+    return pred();
+  };
+  // channels/typing for this world, then whether the observer saw a typing
+  // signal from the door's body within the window. The body sends at most one
+  // a second, so the caller waits that out before asking for "none".
+  const typingRaised = async (rpc, ms) => {
+    const before = typings.length;
+    rpc.notify("channels/typing", { channelId: "world:commons", op: "start" });
+    const raised = await waitUntil(() => typings.length > before, ms);
+    rpc.notify("channels/typing", { channelId: "world:commons", op: "stop" });
+    return raised;
+  };
   if (!(await Promise.race([obsJoined, new Promise((r) => setTimeout(() => r(false), 8000))]))) {
     throw new Error("observer could not join the world");
   }
@@ -317,16 +348,23 @@ try {
 
   r = await gated.request("channels/publish", {
     channelId: "world:commons", content: [{ type: "text", text: "LEAK-postpolicy" }] });
-  check("incoming-only: channels/publish -32003", r.error?.code === -32003, JSON.stringify(r).slice(0, 120));
+  check("incoming-only: channels/publish -32003, saying posting again won't help",
+    r.error?.code === -32003 && r.error?.message === "your host hasn't granted this door channels.publish, so nothing was posted, and posting again won't change that; if you need it, ask whoever runs your host",
+    JSON.stringify(r).slice(0, 200));
+  const lifecycleRefusal = "your host hasn't granted this door channels.lifecycle, so no channel was opened or closed, and calling again won't change that; if you need it, ask whoever runs your host";
   r = await gated.request("channels/open", { channelId: "world:commons" });
-  check("incoming-only: channels/open -32003", r.error?.code === -32003, JSON.stringify(r).slice(0, 120));
+  check("incoming-only: channels/open -32003, naming the grant and whom to ask",
+    r.error?.code === -32003 && r.error?.message === lifecycleRefusal, JSON.stringify(r).slice(0, 260));
   r = await gated.request("channels/close", { channelId: "world:commons" });
-  check("incoming-only: channels/close -32003", r.error?.code === -32003, JSON.stringify(r).slice(0, 120));
+  check("incoming-only: channels/close -32003, naming the grant and whom to ask",
+    r.error?.code === -32003 && r.error?.message === lifecycleRefusal, JSON.stringify(r).slice(0, 260));
   r = await gated.request("tools/list", {});
   check("incoming-only: tools/list is EMPTY (denied ⇒ as if never advertised)",
     Array.isArray(r.result?.tools) && r.result.tools.length === 0, JSON.stringify(r).slice(0, 120));
   r = await gated.request("tools/call", { name: "say", arguments: { text: "LEAK-tool" } });
-  check("incoming-only: tools/call -32601", r.error?.code === -32601, JSON.stringify(r).slice(0, 120));
+  check("incoming-only: tools/call -32601, saying who can grant the tools",
+    r.error?.code === -32601 && r.error?.message === "your host hasn't granted this door the tools capability, so the call didn't run, and calling it again won't change that; if you need it, ask whoever runs your host",
+    JSON.stringify(r).slice(0, 200));
   gated.close();
   await new Promise((s) => setTimeout(s, 1500));
   check("nothing leaked: the observer saw NO say from the gated session",
@@ -335,13 +373,56 @@ try {
   // ---- phase 2: a granted host — allowed operations still work -------------
   const full = fullRef = new Rpc(`ws://127.0.0.1:${DOOR_PORT}/mcpl?token=gate-token`);
   await full.init(true);
+  // First, the grant a host gave this door before it used channels.typing:
+  // everything else, the stream included. The typing feature set is then
+  // unavailable for want of channels.typing, so the receipt is degraded and
+  // names it, and channels/typing from that host raises no dots.
   r = await full.request("featureSets/update", {
     effectiveCapabilities: ["tools", "channels.register", "channels.lifecycle",
       "channels.publish", "channels.incoming", "channels.streaming"] });
+  const typingSet = r.result?.unavailableFeatures?.find((u) => u.featureSet === "eidoverse.typing");
+  check("a grant without channels.typing: mode degraded, eidoverse.typing alone unavailable, for want of channels.typing",
+    r.result?.accepted === true && r.result?.mode === "degraded" && r.result?.unavailableFeatures?.length === 1 &&
+      JSON.stringify(typingSet?.missingCapabilities) === JSON.stringify(["channels.typing"]),
+    JSON.stringify(r).slice(0, 240));
+  // the takeover from phase 1's dead session needs a beat to settle the body
+  await pause(1500);
+  check("…and channels/typing from that host raises no dots (dropped at the grant gate)",
+    !(await typingRaised(full, 1500)));
+  // Then the grant a host gives this door now: everything it advertises.
+  r = await full.request("featureSets/update", {
+    effectiveCapabilities: ["tools", "channels.register", "channels.lifecycle",
+      "channels.publish", "channels.incoming", "channels.typing"] });
   check("full grant accepted, mode full", r.result?.accepted === true && r.result?.mode === "full",
     JSON.stringify(r).slice(0, 160));
-  // the takeover from phase 1's dead session needs a beat to settle the body
-  await new Promise((s) => setTimeout(s, 1500));
+  await pause(1200);   // the body's one-a-second typing throttle
+  check("granted: channels/typing raises the dots, from the same host and body",
+    await typingRaised(full, 3000));
+  // A grant that withdraws channels.typing while the dots are up ends them:
+  // after a moment for a signal already in flight, no new one arrives.
+  await pause(1200);
+  let before = typings.length;
+  full.notify("channels/typing", { channelId: "world:commons", op: "start" });
+  check("…and they're up again before the grant changes", await waitUntil(() => typings.length > before, 3000));
+  r = await full.request("featureSets/update", {
+    effectiveCapabilities: ["tools", "channels.register", "channels.lifecycle",
+      "channels.publish", "channels.incoming"] });
+  check("a grant that withdraws channels.typing is accepted, eidoverse.typing unavailable",
+    r.result?.accepted === true && r.result?.unavailableFeatures?.some((u) => u.featureSet === "eidoverse.typing"),
+    JSON.stringify(r).slice(0, 200));
+  await pause(1000);
+  before = typings.length;
+  await pause(5500);
+  check("…and the dots it was keeping up get no new signal", typings.length === before,
+    `typing signals after the grant changed: ${typings.length - before}`);
+  // Granted again for the rest of the run.
+  r = await full.request("featureSets/update", {
+    effectiveCapabilities: ["tools", "channels.register", "channels.lifecycle",
+      "channels.publish", "channels.incoming", "channels.typing"] });
+  check("granted again, mode full", r.result?.accepted === true && r.result?.mode === "full",
+    JSON.stringify(r).slice(0, 160));
+  await pause(1200);   // the body's one-a-second typing throttle
+  check("…and a start under the restored grant raises the dots again", await typingRaised(full, 3000));
   r = await full.request("channels/publish", {
     channelId: "world:commons", content: [{ type: "text", text: "granted-hello-from-the-door" }] });
   check("granted: channels/publish delivers", r.result?.delivered === true, JSON.stringify(r).slice(0, 120));
@@ -359,7 +440,7 @@ try {
   check("granted: channels/open answers with the channel", !!r.result?.channel, JSON.stringify(r).slice(0, 120));
 
   // ---- phase 3: live mention routing (observer → world → door → host) ------
-  obs.send(JSON.stringify({ type: "verb", verb: "say", args: { text: "hey @claude — live mention check" } }));
+  obs.send(JSON.stringify({ type: "request", id: "obs-say", verb: "say", args: { text: "hey @claude — live mention check" } }));
   const mention = await full.waitFor((m) =>
     m.method === "channels/incoming" &&
     JSON.stringify(m.params ?? {}).includes("live mention check"), 8000);

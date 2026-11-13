@@ -54,6 +54,23 @@ export const PARENT = {
 export function rigMath(THREE) {
   /** World rest position of any node, by walking the TRS tree. */
   function worldPositions(g) {
+    const world = worldMatrices(g);
+    return (i) => new THREE.Vector3().setFromMatrixPosition(world(i));
+  }
+
+  /** World rest rotation of any node: the axes a node's own scale acts in,
+   *  which a skinned rig rarely leaves aligned with the model's (the four
+   *  library avatars turn nearly every humanoid bone at rest). */
+  function worldRotations(g) {
+    const world = worldMatrices(g);
+    return (i) => {
+      const q = new THREE.Quaternion();
+      world(i).decompose(new THREE.Vector3(), q, new THREE.Vector3());
+      return q;
+    };
+  }
+
+  function worldMatrices(g) {
     const parent = new Map();
     g.nodes.forEach((n, i) => (n.children ?? []).forEach((c) => parent.set(c, i)));
     const memo = new Map();
@@ -81,7 +98,7 @@ export function rigMath(THREE) {
       memo.set(i, out);
       return out;
     };
-    return (i) => new THREE.Vector3().setFromMatrixPosition(world(i));
+    return world;
   }
 
   /** Build private normalized bone nodes from world rest positions. */
@@ -113,8 +130,12 @@ export function rigMath(THREE) {
     }
     root.updateMatrixWorld(true);
 
+    // `pivot` is this stand-in's vrm.scene: the node a chosen body size lives on
+    // (client/lib/avatar.js _applyBodyScale), between the unscaled root that
+    // carries position/yaw and the bones. Never aliased as vrm.scene — readers
+    // of that (landmarks.js) expect a mesh-bearing scene this has none of.
     const av = {
-      root, nodes, poses: 0, limp: false,
+      root, pivot, nodes, poses: 0, limp: false,
       vrm: { meta: { metaVersion: vrm0 ? "0" : "1" }, humanoid: {
         normalizedRestPose: Object.fromEntries(Object.entries(nodes).map(([k, n]) => [k, { position: n.position.toArray(), rotation: [0, 0, 0, 1] } ])),
         humanBones: Object.fromEntries(Object.keys(nodes).map((k) => [k, {}])),
@@ -137,5 +158,18 @@ export function rigMath(THREE) {
 
     return av;
   }
-  return { worldPositions, makeAvatar };
+
+  /** A body's standing height in metres: its humanoid head joint at rest plus
+   *  a forehead, the rule the browser's Avatar.bodyHeight and portrait pass use
+   *  (client/lib/avatar.js). Meshes don't count, so hair or a crown weighted to
+   *  the head bone doesn't raise it. Null for a file with no humanoid head, or
+   *  a height outside 0.5 to 4 m, which the browser clamps into that range
+   *  instead (avatar.js bodyHeight). */
+  function stature(g) {
+    const hb = humanBones(g);
+    if (!hb || !Number.isInteger(hb.head)) return null;
+    const y = worldPositions(g)(hb.head).y + 0.13;
+    return y > 0.5 && y < 4 ? y : null;
+  }
+  return { worldPositions, worldRotations, makeAvatar, stature };
 }

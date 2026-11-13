@@ -51,7 +51,7 @@
 
 import { THREE, scene, camera, renderer, sun } from './core.js';
 import { CSMShadowNode } from 'three/addons/csm/CSMShadowNode.js';
-import { CONFIG, tee } from './base.js';
+import { CONFIG, tee, bus } from './base.js';
 import { warmDepth } from './warmqueue.js';
 
 // ---- the fixed inventory ----------------------------------------------------
@@ -187,7 +187,7 @@ for (let i = 0; i < N_SLOTS; i++) {
   // runs above that declaration, and the const TDZ made it a boot-time
   // ReferenceError that took the whole client down (caught by
   // tools/shadow-follow-test.mjs).
-  pl.castShadow = i === SHADOW_SLOT && _prefShadows;
+  pl.castShadow = i === SHADOW_SLOT;   // pipeline shape: fixed at birth; the preference is uniform-level (applyShadowPref)
   // The shadow CONFIG is written for the shadow slot whether or not it is
   // casting right now, so a later setShadows(true) flips one boolean onto an
   // already-configured light rather than an unconfigured one.
@@ -284,32 +284,48 @@ export const lampShadowState = () => {
   };
 };
 
+// THE SWITCH IS UNIFORM-LEVEL (owner, 09-27: 'HUGE hang on Video > shadows'). shadowMap.enabled and castShadow are
+// in every lit material's pipeline key (§12.1), so flipping them recompiled the whole scene (a wave of 60 k-char relinks,
+// seconds each on the owner's GPU) and raced three's ShadowNode into 'reading depthTexture of null'. They're now fixed on
+// (below, at boot); 'off' is the shadow's own intensity at 0 with its depth pass stopped (autoUpdate off). The cost: a
+// resident with shadows off still carries the shadow lookup in lit shaders, but no depth pass and no toggle recompile.
+/** Does this light actually draw shadows right now? Shape (castShadow + the map) AND the preference's uniform half. */
+const castsNow = (l) => Boolean(l?.castShadow && renderer.shadowMap.enabled && l.shadow && l.shadow.intensity > 0 && l.shadow.autoUpdate !== false);
+function applyShadowPref(on) {
+  for (const l of [sun, slots[SHADOW_SLOT]]) {
+    if (!l?.shadow) continue;
+    l.shadow.intensity = on ? 1 : 0;
+    l.shadow.autoUpdate = on;
+    if (on) l.shadow.needsUpdate = true;   // the held map is stale: redraw it once now
+  }
+}
+/** Put the shadow preference's uniform half back (after a probe held shadow maps across frames: review 7, L5). */
+export const reassertShadowPref = () => applyShadowPref(_prefShadows);
 export function setShadows(on) {
   localStorage.setItem(SH_KEY, on ? 'on' : 'off');
   _prefShadows = on;
-  renderer.shadowMap.enabled = on;
-  sun.castShadow = on;
-  // THE LAMP FOLLOWS THE SWITCH TOO. This wrote only the sun, which read as
-  // "the body casts nothing on load" with the preference off: the resident's
-  // switch turned shadowMap.enabled off globally, so slot 0 -- born casting,
-  // unconditionally, below -- was a shadow-casting light whose shadows the
-  // renderer never drew. Nothing re-established it on the way back on either,
-  // because the slot is created once at boot and never revisited.
-  //
-  // Guarded on existence: setShadows can be called from the video panel before
-  // the slot loop has run in a harness that stubs core.js.
-  if (slots[SHADOW_SLOT]) slots[SHADOW_SLOT].castShadow = on;
+  applyShadowPref(on);
 }
-renderer.shadowMap.enabled = shadowsOn();
+renderer.shadowMap.enabled = true;   // pipeline shape: always (see setShadows)
 renderer.shadowMap.type = ({ basic: THREE.BasicShadowMap, pcf: THREE.PCFShadowMap, soft: THREE.PCFSoftShadowMap })[CONFIG.params.get('shadowtype')] ?? THREE.PCFSoftShadowMap;   // ?shadowtype=basic|pcf|soft (boot-time: pipeline-shape) — owner 09-07 19:22 diagnostic
-sun.castShadow = shadowsOn();
+sun.castShadow = true;
+applyShadowPref(shadowsOn());
 // shadow map resolution (persisted; the video settings row, owner 09-07 21:32). Uniform-level:
 // three's ShadowNode setSize()s the target every update, so a live change is a realloc, no recompile.
 const RES_KEY = 'ew-shadow-res';
 export const SHADOW_RES = [1024, 2048, 4096];
 export const shadowRes = () => { const v = +stored(RES_KEY); return SHADOW_RES.includes(v) ? v : 2048; };
-export function setShadowRes(n) { localStorage.setItem(RES_KEY, String(n)); sun.shadow.mapSize.set(n, n); }
+// ONE dial for EVERY shadow-casting light (owner, 09-24: 'it should apply to all shadows anywhere'): the sun takes n, the
+// lamp slot scales with it from its hand-tuned SHADOW_MAP — at the default 2048 the lamp stays exactly SHADOW_MAP,
+// so the default look is unchanged. setLampShadow re-derives the lamp's bias from its new size (the look holds).
+const lampMapFor = (n) => Math.round(SHADOW_MAP * (n / 2048));
+export function setShadowRes(n) {
+  localStorage.setItem(RES_KEY, String(n));
+  sun.shadow.mapSize.set(n, n);
+  if (slots[SHADOW_SLOT] && slots[SHADOW_SLOT].shadow.mapSize.x !== lampMapFor(n)) setLampShadow({ map: lampMapFor(n) });
+}
 sun.shadow.mapSize.set(shadowRes(), shadowRes());
+if (lampMapFor(shadowRes()) !== SHADOW_MAP) setLampShadow({ map: lampMapFor(shadowRes()) });
 // ?csm=2|3|4 — cascaded shadow maps (bench probe, owner 09-07 21:32: 'better performance in VR'; Basis ships 4
 // cascades over 150 m, first split at 12%). three's CSMShadowNode fits one ortho camera per cascade around the
 // VIEW frustum every frame, with lightMargin m of room behind the light — the follow-box below is replaced by
@@ -355,7 +371,8 @@ export function requestLight(key, spec) {
     color: 0xffd9a0, intensity: 16, range: 10, decay: 1.7,
     keep: false, authored: false, dayAware: false, owner: null,
     shadows: false,   // wants the casting slot (see SHADOW_SLOT)
-    ...spec, key, slot: -1,
+    spot: null,       // {angle, inner} (glTF half-angles, rad): a spot, lit from the SPOT pool, shining along obj's -Z
+    ...spec, key, slot: -1, sslot: -1,
   });
   assignDirty = true;
 }
@@ -370,7 +387,7 @@ export function requestLight(key, spec) {
  *
  *  Anything that CAN change the ordering still dirties: tier, the object being
  *  followed, or the owner. */
-const ORDERING_KEYS = ['keep', 'authored', 'obj', 'offset', 'pos', 'mirror', 'owner'];
+const ORDERING_KEYS = ['keep', 'authored', 'obj', 'offset', 'pos', 'mirror', 'owner', 'spot'];
 export function updateRequest(key, patch) {
   const r = requests.get(key);
   if (!r) return;
@@ -390,9 +407,10 @@ export function releaseOwner(owner) {
 export const isCasting = (key) => (requests.get(key)?.slot ?? -1) >= 0;
 
 // ---- lamps ------------------------------------------------------------------
-// Models that glow shed light: any spawned object with emissive surfaces gets
-// a lamp REQUEST at each emissive mesh's centre (≤2 per object — a chandelier
-// is one fixture, not ten). No budget, no whenBooted deferral: a request
+// A BODY that glows sheds light: an avatar with emissive surfaces gets a lamp
+// REQUEST at each emissive mesh's centre (≤2 — a chandelier is one fixture, not
+// ten). A placed model infers none: its lights are light components (the
+// translator writes main's inferred ones out: import-v1/lamps.ts). No budget, no whenBooted deferral: a request
 // costs nothing until it wins a slot, and winning one is uniform writes.
 // (This was sky.js attachLocalLights, which owned a hard MAX_LAMPS=2 ceiling
 // and a boot deferral that both existed to ration recompiles.)
@@ -436,13 +454,10 @@ export function attachLamps(root, owner, { shadows = false } = {}) {
       range: 12,                 // tight radius: grass fragments cost
       // SHADOW INTENT IS THE CALLER'S, and it defaults to NO.
       //
-      // This was an unconditional `shadows: true` with a comment about a lamp
-      // inside a body -- but attachLamps is the generic emissive seam, and
-      // realize/models.js calls it for every placed glowing prop. So a lantern
-      // on the ground requested the one casting slot exactly as hard as a body
-      // did, and after the swap landed (4f55321) a closer prop could WIN it:
-      // wanting shadows outranks not wanting them, so a nearer emissive orb
-      // took slot 0 off the body it was standing next to.
+      // attachLamps is the body's seam (avatar.js); placed models get their
+      // lights from the light comp (models.js lightSpec). History: when every
+      // placed glowing prop came through here, a nearer emissive orb could take
+      // slot 0 off the body it stood next to (4f55321).
       //
       // Mica drew the contract: emissive AVATARS may request slot 0 and get
       // body cast/receive; emissive placed models stay ordinary inferred
@@ -583,12 +598,17 @@ const _q = new THREE.Quaternion();
 const _s = new THREE.Vector3();
 const _p = new THREE.Vector3();
 
+// the camera's WORLD position: in XR the camera is a child of the rig and camera.position is only the head's offset in
+// it, so lights near the world origin won the slots and walking never triggered a re-assign (review 10a M4; 41406ed)
+const _eye = new THREE.Vector3();
 function assign(now) {
   lastAssign = now;
-  _lastCam.copy(camera.position);
+  camera.getWorldPosition(_eye);
+  _lastCam.copy(_eye);
   assignDirty = false;
-  const ranked = [...requests.values()].map((r) => {
-    const d = worldPosOf(r, _p).distanceTo(camera.position);
+  assignSpots();
+  const ranked = [...requests.values()].filter((r) => !r.spot).map((r) => {
+    const d = worldPosOf(r, _p).distanceTo(_eye);
     return {
       r,
       tier: r.keep ? 0 : r.authored ? 1 : 2,
@@ -728,36 +748,89 @@ function updateShadow() {
 // blob shadows until measured (§12.5).
 
 const casters = new Map();   // id -> { obj, meshes, casting, warm, released }
-let casterBudget = 12;
+// how many things may cast at most: a Video setting (R 10-11: "Any idea why shadows are limited to the 10~ closest objects?
+// … That should probably be a setting in Settings>Video"); the governor sheds below it under load and climbs back to it
+export const CASTER_CHOICES = [6, 12, 24, 48, 96];
+let casterCeiling = (() => { try { const v = +localStorage.getItem('ew-shadow-casters'); return CASTER_CHOICES.includes(v) ? v : 24; } catch { return 24; } })();
+let casterBudget = casterCeiling;
+export const getCasterCeiling = () => casterCeiling;
+export function setCasterCeiling(k) { if (!CASTER_CHOICES.includes(+k)) return; casterCeiling = +k; casterBudget = casterCeiling; try { localStorage.setItem('ew-shadow-casters', String(k)); } catch { /* private window */ } }
 let lastCasterPass = 0;
 
 /** The models realizer registers every realized model here; retire releases. */
 export function registerCaster(id, obj) {
   const meshes = [];
-  obj.traverse((o) => { if (o.isMesh) meshes.push(o); });
-  casters.set(id, { id, obj, meshes, casting: false, warm: 'none', released: false });
+  // the record starts not casting, so its meshes do too (a realizer may hand them in casting): the budget pass flips only
+  // where want !== casting, and a mesh left casting would draw a shadow no budget counts
+  obj.traverse((o) => { if (o.isMesh) { o.castShadow = false; meshes.push(o); } });
+  casters.set(id, { id, obj, meshes, casting: false, warm: 'none', released: false, fade: 0 });
 }
 export function releaseCaster(id) {
   const c = casters.get(id);
-  if (c) c.released = true;   // a queued warm re-reads this and skips the work
+  if (c) { c.released = true; fading.delete(c); }   // a queued warm re-reads this and skips the work
   casters.delete(id);
 }
+// the realizer's word that a realized object is going (realize/lifecycle.js): the caster slot and the lamps it owned go with it
+bus.on('realized', ({ id, owner }) => { releaseCaster(id); releaseOwner(owner); });
 export const casterCount = () => casters.size;
-export function setCasterBudget(k) { casterBudget = Math.max(0, k); }
+export function setCasterBudget(k) { casterBudget = Math.max(0, Math.min(casterCeiling, k)); }
 export const getCasterBudget = () => casterBudget;
+
+// ---- the fade: a caster dithers in and out over FADE_MS (materials.js FADE_MASK reads mesh.userData.shadowFade
+// per object in the depth pass). castShadow goes true at the START of a fade-in (at amount 0) and false only at the
+// END of a fade-out, so the draw is shed once nothing of it shows. A caster past the edge that comes back mid-fade
+// just reverses. A mesh whose material was never marked (not a node material) hard-flips with the caster's ends.
+export const FADE_MS = 300;
+const fading = new Set();
+let lastFadeTick = 0;
+const canFade = (m) => {
+  const ms = Array.isArray(m.material) ? m.material : m.material ? [m.material] : [];
+  return ms.length > 0 && ms.every((x) => x?.userData?.shadowFade === true);
+};
+function writeFade(c) {
+  for (const m of c.meshes) if (canFade(m)) m.userData.shadowFade = c.fade;
+}
+function beginFade(c) {
+  if (fading.has(c)) return;
+  fading.add(c);
+  // a batched InstancedMesh carries its own userData (amount 1): the source draws itself while it fades
+  for (const m of c.meshes) if (!m.userData.noDrawBatch) { m.userData.noDrawBatch = true; (c.unbatched ??= []).push(m); }
+}
+function endFade(c) {
+  fading.delete(c);
+  for (const m of c.unbatched ?? []) delete m.userData.noDrawBatch;
+  c.unbatched = null;
+  if (c.fade === 0) for (const m of c.meshes) m.castShadow = false;
+}
+function stepFades(now) {
+  const dt = lastFadeTick ? Math.min(100, Math.max(0, now - lastFadeTick)) : 0;
+  lastFadeTick = now;
+  if (!fading.size) return;
+  for (const c of fading) {
+    const target = c.casting ? 1 : 0;
+    c.fade = target > c.fade ? Math.min(1, c.fade + dt / FADE_MS) : Math.max(0, c.fade - dt / FADE_MS);
+    writeFade(c);
+    if (c.fade === target) endFade(c);
+  }
+}
+export const fadingCount = () => fading.size;
 
 function casterPass() {
   const ranked = [...casters.values()]
     .map((c) => ({ c, d: c.obj.getWorldPosition(_p).distanceToSquared(camera.getWorldPosition(_cw)) }))
     .sort((a, b) => a.d - b.d);
   let enables = 0;
+  // hysteresis: something already casting keeps casting until it's well past the edge (1.25× the last caster's distance),
+  // so walking along a row of crates doesn't make shadows blink on and off at the boundary (R: 'instead of popping')
+  // (a budget of 0 keeps nothing: the old `casterBudget > 0 && … : Infinity` kept the first four casting forever)
+  const edge = casterBudget === 0 ? -1 : ranked.length >= casterBudget ? ranked[casterBudget - 1].d * 1.5625 : Infinity;
   for (let i = 0; i < ranked.length; i++) {
-    const { c } = ranked[i];
-    const want = i < casterBudget;
+    const { c, d } = ranked[i];
+    const want = i < casterBudget || (c.casting && d <= edge && i < casterBudget + 4);
     if (want === c.casting) continue;
-    if (!want) {                          // disables are free — flip now
+    if (!want) {                          // the draw is shed when the fade-out ends (castShadow is in no cache key)
       c.casting = false;
-      for (const m of c.meshes) m.castShadow = false;
+      beginFade(c);
       continue;
     }
     // an unwarmed caster never flips: ask the conductor once, flip on a
@@ -770,10 +843,13 @@ function casterPass() {
       continue;
     }
     if (c.warm !== 'done') continue;      // still warming
+    if (c.fade > 0) { c.casting = true; beginFade(c); continue; }   // still fading out: reverse, no flip
     if (enables >= 2) continue;           // ≤2 FLIPS per beat, as before
     enables++;
     c.casting = true;
+    writeFade(c);                         // amount 0 before the first depth draw
     for (const m of c.meshes) m.castShadow = true;
+    beginFade(c);
   }
 }
 
@@ -797,15 +873,62 @@ function trackShadowFar(pl) {
   pl.shadow.camera.updateProjectionMatrix();
 }
 
+// ---- the spot pool -------------------------------------------------------------
+// A spot (kind: 'spot' — glTF KHR_lights_punctual, Godot SpotLight3D) is its own light type in the renderer, so it gets
+// its own small fixed pool, born at boot like the point slots (a pool change is a recompile; a slot's values aren't).
+// Same ranking as the point pool (keep, authored, nearest); no shadows (the one casting slot is a point light).
+const _spotRaw = new URLSearchParams(globalThis.location?.search ?? '').get('spots');   // null when absent: Number(null) is 0
+const _spotParam = _spotRaw == null || _spotRaw === '' ? NaN : Number(_spotRaw);
+const N_SPOT = Number.isFinite(_spotParam) && _spotParam >= 0 ? Math.min(8, Math.round(_spotParam)) : 2;
+const spotSlots = [];
+for (let i = 0; i < N_SPOT; i++) {
+  const sl = new THREE.SpotLight(0xffffff, 0, 10, Math.PI / 4, 0, 1.7);
+  sl.name = `spot${i}`; sl.castShadow = false;
+  rigGroup.add(sl); rigGroup.add(sl.target);
+  spotSlots.push(sl);
+}
+function assignSpots() {
+  const ranked = [...requests.values()].filter((r) => r.spot).map((r) => ({ r, tier: r.keep ? 0 : r.authored ? 1 : 2,
+    d: worldPosOf(r, _p).distanceTo(_eye) * (r.sslot >= 0 ? 0.85 : 1) }))
+    .sort((a, b) => a.tier - b.tier || a.d - b.d || (a.r.key < b.r.key ? -1 : 1));
+  const win = new Set(ranked.slice(0, N_SPOT).map((x) => x.r));
+  for (const r of requests.values()) if (r.sslot >= 0 && (!win.has(r) || !r.spot)) r.sslot = -1;
+  const used = new Set([...win].map((r) => r.sslot).filter((i) => i >= 0));
+  let free = 0;
+  for (const r of win) { if (r.sslot >= 0) continue; while (used.has(free)) free++; if (free >= N_SPOT) break; r.sslot = free; used.add(free); }
+  for (const r of win) if (r.slot >= 0) r.slot = -1;   // a light that became a spot leaves the point pool
+}
+const _sq = new THREE.Quaternion(), _sfwd = new THREE.Vector3();
+function writeSpots() {
+  const lit = new Array(N_SPOT).fill(null);
+  for (const r of requests.values()) if (r.spot && r.sslot >= 0) lit[r.sslot] = r;
+  for (let i = 0; i < N_SPOT; i++) {
+    const sl = spotSlots[i], r = lit[i];
+    if (!r) { sl.intensity = 0; continue; }
+    worldPosOf(r, sl.position);
+    if (r.obj) r.obj.getWorldQuaternion(_sq); else if (r.q) _sq.set(r.q[0], r.q[1], r.q[2], r.q[3]); else _sq.identity();   // r.q: an unrealized host's world q (models.js lightSpec)
+    _sfwd.set(0, 0, -1).applyQuaternion(_sq);   // glTF/Godot: a spot shines down its local -Z
+    sl.target.position.copy(sl.position).add(_sfwd);
+    sl.target.updateMatrixWorld();
+    sl.color.set(r.color);
+    sl.intensity = r.intensity * (r.dayAware ? dayGlow() : 1);
+    sl.distance = r.range; sl.decay = r.decay;
+    sl.angle = r.spot.angle;
+    sl.penumbra = r.spot.angle > 0 ? Math.min(1, Math.max(0, (r.spot.angle - (r.spot.inner ?? 0)) / r.spot.angle)) : 0;   // as three's GLTFLoader maps it
+  }
+}
+
 /** Call once per frame. Reassigns when needed; writes every slot's uniforms. */
 export function updateRig(now) {
   updateShadow();
+  stepFades(now);   // before the pass: a fade begun this frame is drawn at its start amount first
   if (now - lastCasterPass > 300) { lastCasterPass = now; casterPass(); }
-  if (assignDirty || now - lastAssign > 600 || _lastCam.distanceToSquared(camera.position) > 2.25) {
+  if (assignDirty || now - lastAssign > 600 || _lastCam.distanceToSquared(camera.getWorldPosition(_eye)) > 2.25) {
     assign(now);
   }
+  writeSpots();
   const lit = new Array(N_SLOTS).fill(null);
-  for (const r of requests.values()) if (r.slot >= 0) lit[r.slot] = r;
+  for (const r of requests.values()) if (r.slot >= 0 && !r.spot) lit[r.slot] = r;
   for (let i = 0; i < N_SLOTS; i++) {
     const pl = slots[i], r = lit[i];
     if (!r) { pl.intensity = 0; continue; }
@@ -851,6 +974,8 @@ export function restoreALight() {
 }
 
 export const rigDebug = () => ({
+  spots: spotSlots.map((sl) => ({ intensity: +sl.intensity.toFixed(3), angle: +sl.angle.toFixed(4), penumbra: +sl.penumbra.toFixed(4),
+    pos: sl.position.toArray().map((x) => +x.toFixed(3)), dir: sl.target.position.clone().sub(sl.position).toArray().map((x) => +x.toFixed(3)) })),
   slots: N_SLOTS, cap: slotCap, dayness: dayness == null ? null : +dayness.toFixed(3),
   // Whether the next pass will recompute slot assignment. Exposed because the
   // 600ms cadence is a PROPERTY worth testing -- a per-frame patch that dirties
@@ -873,18 +998,18 @@ export const rigDebug = () => ({
     const want = [...requests.values()].filter((r) => r.shadows);
     const held = want.filter((r) => r.slot >= 0);
     return {
-      pref: shadowsOn(), map: renderer.shadowMap.enabled, sun: sun.castShadow,
+      pref: shadowsOn(), map: renderer.shadowMap.enabled, sun: sun.castShadow, sunCasting: castsNow(sun),
       castingSlot: SHADOW_SLOT,
-      slotIsCaster: Boolean(slots[SHADOW_SLOT]?.castShadow),
+      slotIsCaster: castsNow(slots[SHADOW_SLOT]),   // effective: shape + intensity + depth pass (the switch is uniform-level)
       // one row per request that WANTS shadows: which slot it got, and whether
       // that slot is the one that casts. `casting` is the honest answer.
       wantsShadows: want.map((r) => ({
         key: r.key, slot: r.slot,
-        casting: r.slot >= 0 && Boolean(slots[r.slot]?.castShadow),
+        casting: r.slot >= 0 && castsNow(slots[r.slot]),
         intensity: r.slot >= 0 ? +(slots[r.slot]?.intensity ?? 0).toFixed(3) : 0,
       })),
       // the headline: is SOMETHING that wants to cast actually casting?
-      anyCasting: held.some((r) => Boolean(slots[r.slot]?.castShadow)),
+      anyCasting: held.some((r) => castsNow(slots[r.slot])),
       // map size, the derived bias, and the texel it came from -- the numbers
       // you need to retune by eye (setLampShadow)
       lamp: lampShadowState(),
@@ -900,7 +1025,7 @@ export const rigDebug = () => ({
   _slots: slots,
   casters: casters.size, casterBudget,
   casting: [...casters.values()].filter((c) => c.casting).length,
-  casterList: [...casters.values()].map((c) => ({ id: String(c.id).slice(0, 24), casting: c.casting, warm: c.warm, meshes: c.meshes.length })),
+  casterList: [...casters.values()].map((c) => ({ id: String(c.id).slice(0, 24), casting: c.casting, warm: c.warm, fade: +c.fade.toFixed(3), meshes: c.meshes.length })),
   requests: [...requests.values()].map((r) => ({
     key: r.key, slot: r.slot, keep: r.keep, authored: r.authored,
     mirror: Boolean(r.mirror), dayAware: r.dayAware,

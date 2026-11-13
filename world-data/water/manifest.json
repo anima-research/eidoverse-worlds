@@ -1,0 +1,723 @@
+{
+  "version": 1,
+  "source": "/Game/Underwater/SpectralPrototype/L_SpectralOcean_Prototype.L_SpectralOcean_Prototype",
+  "coordinateSystem": "metres / Y-up / right-handed (-UE.Y,UE.Z,UE.X)",
+  "files": [
+    {
+      "file": "models/a1aa362fa7d05c7a62b5beb1a81621e30af85f621d13271d3ece360e13646323.glb",
+      "path": "store/models/a1aa362fa7d05c7a62b5beb1a81621e30af85f621d13271d3ece360e13646323.glb",
+      "sha256": "a1aa362fa7d05c7a62b5beb1a81621e30af85f621d13271d3ece360e13646323",
+      "bytes": 6433820
+    },
+    {
+      "file": "models/14807dee529a0dcdc280c12a283380fb03aff223dbd6e5b1a6130be88bd890eb.glb",
+      "path": "store/models/14807dee529a0dcdc280c12a283380fb03aff223dbd6e5b1a6130be88bd890eb.glb",
+      "sha256": "14807dee529a0dcdc280c12a283380fb03aff223dbd6e5b1a6130be88bd890eb",
+      "bytes": 5603140
+    },
+    {
+      "file": "models/4da3ea217c657e7f9a90577f35ed1de4d2ee10aef8b81ffde940e547154dd714.glb",
+      "path": "store/models/4da3ea217c657e7f9a90577f35ed1de4d2ee10aef8b81ffde940e547154dd714.glb",
+      "sha256": "4da3ea217c657e7f9a90577f35ed1de4d2ee10aef8b81ffde940e547154dd714",
+      "bytes": 3549420
+    },
+    {
+      "file": "models/d45253daedf8c3e9bbd6d1ccb867e101e15afbef707729b9ee8530259da93aa1.glb",
+      "path": "store/models/d45253daedf8c3e9bbd6d1ccb867e101e15afbef707729b9ee8530259da93aa1.glb",
+      "sha256": "d45253daedf8c3e9bbd6d1ccb867e101e15afbef707729b9ee8530259da93aa1",
+      "bytes": 591156
+    },
+    {
+      "file": "models/5ed7a52fc6bf458eeb0d14c631366d979752b34d639fe31c40ab5518f7d4b133.glb",
+      "path": "store/models/5ed7a52fc6bf458eeb0d14c631366d979752b34d639fe31c40ab5518f7d4b133.glb",
+      "sha256": "5ed7a52fc6bf458eeb0d14c631366d979752b34d639fe31c40ab5518f7d4b133",
+      "bytes": 1170640
+    }
+  ],
+  "verbs": [
+    {
+      "verb": "asset",
+      "args": {
+        "name": "Unreal terrain",
+        "path": "store/models/a1aa362fa7d05c7a62b5beb1a81621e30af85f621d13271d3ece360e13646323.glb"
+      }
+    },
+    {
+      "verb": "spawn",
+      "args": {
+        "id": "water-terrain",
+        "lib": "store/models/a1aa362fa7d05c7a62b5beb1a81621e30af85f621d13271d3ece360e13646323.glb",
+        "pos": [
+          0,
+          0,
+          0
+        ],
+        "yaw": 0,
+        "collide": "exact"
+      }
+    },
+    {
+      "verb": "comp",
+      "args": {
+        "id": "water-terrain",
+        "type": "environment",
+        "data": {
+          "floor": -260,
+          "spawn": [
+            -29,
+            -25,
+            89
+          ],
+          "particles": {
+            "count": 1400,
+            "range": 16,
+            "size": 0.018
+          },
+          "sky": {
+            "horizon": "#bedce6",
+            "zenith": "#338ac1",
+            "sunIntensity": 3,
+            "ambient": 1.5
+          },
+          "bounds": {
+            "min": [
+              -800,
+              -250,
+              -800
+            ],
+            "max": [
+              800,
+              100,
+              800
+            ]
+          }
+        }
+      }
+    },
+    {
+      "verb": "comp",
+      "args": {
+        "id": "water-terrain",
+        "type": "water",
+        "data": {
+          "center": [
+            0,
+            -125,
+            0
+          ],
+          "size": [
+            2000,
+            250,
+            2000
+          ],
+          "absorption": [
+            0.1,
+            0.036,
+            0.018
+          ],
+          "scatter": [
+            0.014,
+            0.11,
+            0.17
+          ],
+          "speed": 2.4,
+          "waves": [
+            {
+              "amplitude": 0.38,
+              "wavelength": 24,
+              "direction": [
+                -0.3420201,
+                0.9396926
+              ],
+              "phase": 0
+            },
+            {
+              "amplitude": 0.23,
+              "wavelength": 13.7,
+              "direction": [
+                -0.9063078,
+                0.4226183
+              ],
+              "phase": 1.7
+            },
+            {
+              "amplitude": 0.12,
+              "wavelength": 7.1,
+              "direction": [
+                -0.6156615,
+                -0.7880108
+              ],
+              "phase": 3.2
+            },
+            {
+              "amplitude": 0.06,
+              "wavelength": 3.3,
+              "direction": [
+                0.9781476,
+                0.2079117
+              ],
+              "phase": 0.8
+            }
+          ]
+        }
+      }
+    },
+    {
+      "verb": "asset",
+      "args": {
+        "name": "Unreal habitat",
+        "path": "store/models/14807dee529a0dcdc280c12a283380fb03aff223dbd6e5b1a6130be88bd890eb.glb"
+      }
+    },
+    {
+      "verb": "spawn",
+      "args": {
+        "id": "water-habitat",
+        "lib": "store/models/14807dee529a0dcdc280c12a283380fb03aff223dbd6e5b1a6130be88bd890eb.glb",
+        "pos": [
+          -13,
+          -30,
+          80
+        ],
+        "yaw": 0,
+        "collide": "exact"
+      }
+    },
+    {
+      "verb": "comp",
+      "args": {
+        "id": "water-habitat",
+        "type": "air",
+        "data": {
+          "boxes": [
+            {
+              "center": [
+                0,
+                1.4499999999999993,
+                0
+              ],
+              "size": [
+                4.9,
+                3.1,
+                8.3
+              ],
+              "q": [
+                0,
+                0,
+                0,
+                1
+              ]
+            },
+            {
+              "center": [
+                0,
+                3.3000000000000007,
+                0
+              ],
+              "size": [
+                2.8,
+                0.8,
+                8.3
+              ],
+              "q": [
+                0,
+                0,
+                0,
+                1
+              ]
+            },
+            {
+              "center": [
+                0,
+                3.8000000000000007,
+                0
+              ],
+              "size": [
+                1.4,
+                0.2,
+                8.3
+              ],
+              "q": [
+                0,
+                0,
+                0,
+                1
+              ]
+            },
+            {
+              "center": [
+                0,
+                1.5,
+                0
+              ],
+              "size": [
+                5.9,
+                1.4,
+                8.3
+              ],
+              "q": [
+                0,
+                0,
+                0,
+                1
+              ]
+            },
+            {
+              "center": [
+                0,
+                1.5,
+                -4.700000000000003
+              ],
+              "size": [
+                3.5,
+                1.8,
+                1.1
+              ],
+              "q": [
+                0,
+                0,
+                0,
+                1
+              ]
+            },
+            {
+              "center": [
+                0,
+                1.5,
+                4.700000000000003
+              ],
+              "size": [
+                3.5,
+                1.8,
+                1.1
+              ],
+              "q": [
+                0,
+                0,
+                0,
+                1
+              ]
+            },
+            {
+              "center": [
+                0,
+                1.5,
+                -5.549999999999997
+              ],
+              "size": [
+                1.8,
+                1.5,
+                0.6
+              ],
+              "q": [
+                0,
+                0,
+                0,
+                1
+              ]
+            },
+            {
+              "center": [
+                0,
+                1.5,
+                5.549999999999997
+              ],
+              "size": [
+                1.8,
+                1.5,
+                0.6
+              ],
+              "q": [
+                0,
+                0,
+                0,
+                1
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "verb": "comp",
+      "args": {
+        "id": "water-habitat",
+        "type": "traversal",
+        "data": {
+          "routes": [
+            {
+              "name": "moonpool ladder",
+              "path": [
+                [
+                  0,
+                  -1.45,
+                  -0.2
+                ],
+                [
+                  0,
+                  0.15,
+                  -0.2
+                ],
+                [
+                  0,
+                  0.08,
+                  -1.1
+                ]
+              ],
+              "radius": 1.5,
+              "speed": 1.25
+            }
+          ]
+        }
+      }
+    },
+    {
+      "verb": "asset",
+      "args": {
+        "name": "Unreal submarine",
+        "path": "store/models/4da3ea217c657e7f9a90577f35ed1de4d2ee10aef8b81ffde940e547154dd714.glb"
+      }
+    },
+    {
+      "verb": "spawn",
+      "args": {
+        "id": "water-submarine",
+        "lib": "store/models/4da3ea217c657e7f9a90577f35ed1de4d2ee10aef8b81ffde940e547154dd714.glb",
+        "pos": [
+          26,
+          -18,
+          60
+        ],
+        "yaw": -1.5707963267948966,
+        "collide": "exact"
+      }
+    },
+    {
+      "verb": "comp",
+      "args": {
+        "id": "water-submarine",
+        "type": "air",
+        "data": {
+          "boxes": [
+            {
+              "center": [
+                0,
+                -0.15,
+                -8.7
+              ],
+              "size": [
+                3.6,
+                3.3,
+                16.8
+              ],
+              "q": [
+                0,
+                0,
+                0,
+                1
+              ]
+            },
+            {
+              "center": [
+                0,
+                0,
+                0.35
+              ],
+              "size": [
+                2.6,
+                2.4,
+                1.3
+              ],
+              "q": [
+                0,
+                0,
+                0,
+                1
+              ]
+            },
+            {
+              "center": [
+                0,
+                0,
+                -19.6
+              ],
+              "size": [
+                0.9,
+                1.1,
+                1.3
+              ],
+              "q": [
+                0,
+                0,
+                0,
+                1
+              ]
+            },
+            {
+              "center": [
+                0,
+                0,
+                -18
+              ],
+              "size": [
+                3,
+                2.8,
+                1.8
+              ],
+              "q": [
+                0,
+                0,
+                0,
+                1
+              ]
+            },
+            {
+              "center": [
+                0,
+                0,
+                1.35
+              ],
+              "size": [
+                1.2,
+                1.4,
+                0.7
+              ],
+              "q": [
+                0,
+                0,
+                0,
+                1
+              ]
+            },
+            {
+              "center": [
+                0,
+                1.9,
+                -9.8
+              ],
+              "size": [
+                2.3,
+                0.8,
+                15.2
+              ],
+              "q": [
+                0,
+                0,
+                0,
+                1
+              ]
+            },
+            {
+              "center": [
+                0,
+                0,
+                -9.7
+              ],
+              "size": [
+                4.9,
+                1.9,
+                15.4
+              ],
+              "q": [
+                0,
+                0,
+                0,
+                1
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "verb": "comp",
+      "args": {
+        "id": "water-submarine",
+        "type": "traversal",
+        "data": {
+          "routes": [
+            {
+              "name": "hatch ladder",
+              "path": [
+                [
+                  0,
+                  -3.05,
+                  -15.6
+                ],
+                [
+                  0,
+                  -1.55,
+                  -15.6
+                ],
+                [
+                  0,
+                  -1.68,
+                  -16.8
+                ]
+              ],
+              "radius": 1.6,
+              "speed": 1.25
+            }
+          ]
+        }
+      }
+    },
+    {
+      "verb": "comp",
+      "args": {
+        "id": "water-submarine",
+        "type": "vehicle",
+        "data": {
+          "helm": [
+            0,
+            -1.7,
+            -2.1
+          ],
+          "exit": [
+            0,
+            -1.7,
+            -3.2
+          ],
+          "speed": 4,
+          "turnRate": 0.4,
+          "minY": -230,
+          "maxY": -4,
+          "probes": [
+            [
+              0,
+              0,
+              0
+            ],
+            [
+              2,
+              0,
+              -10
+            ],
+            [
+              -2,
+              0,
+              -10
+            ],
+            [
+              0,
+              -2.7,
+              -10
+            ],
+            [
+              0,
+              3,
+              -10
+            ],
+            [
+              0,
+              0,
+              -23
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "verb": "comp",
+      "args": {
+        "id": "water-submarine",
+        "type": "sockets",
+        "data": {
+          "passenger": {
+            "pos": [
+              -1,
+              -1.8,
+              -5
+            ],
+            "pose": "sitchair"
+          }
+        }
+      }
+    },
+    {
+      "verb": "asset",
+      "args": {
+        "name": "Unreal platform",
+        "path": "store/models/d45253daedf8c3e9bbd6d1ccb867e101e15afbef707729b9ee8530259da93aa1.glb"
+      }
+    },
+    {
+      "verb": "spawn",
+      "args": {
+        "id": "water-platform",
+        "lib": "store/models/d45253daedf8c3e9bbd6d1ccb867e101e15afbef707729b9ee8530259da93aa1.glb",
+        "pos": [
+          -60,
+          0,
+          0
+        ],
+        "yaw": 0,
+        "collide": "exact"
+      }
+    },
+    {
+      "verb": "comp",
+      "args": {
+        "id": "water-platform",
+        "type": "traversal",
+        "data": {
+          "routes": [
+            {
+              "name": "platform ladder",
+              "path": [
+                [
+                  6.05,
+                  -1.2,
+                  0
+                ],
+                [
+                  6.05,
+                  2.6,
+                  0
+                ],
+                [
+                  3.3,
+                  2.42,
+                  0
+                ]
+              ],
+              "radius": 2.2,
+              "speed": 1.25
+            }
+          ]
+        }
+      }
+    },
+    {
+      "verb": "asset",
+      "args": {
+        "name": "Unreal scenery",
+        "path": "store/models/5ed7a52fc6bf458eeb0d14c631366d979752b34d639fe31c40ab5518f7d4b133.glb"
+      }
+    },
+    {
+      "verb": "spawn",
+      "args": {
+        "id": "water-scenery",
+        "lib": "store/models/5ed7a52fc6bf458eeb0d14c631366d979752b34d639fe31c40ab5518f7d4b133.glb",
+        "pos": [
+          0,
+          0,
+          0
+        ],
+        "yaw": 0,
+        "collide": "exact"
+      }
+    },
+    {
+      "verb": "comp",
+      "args": {
+        "id": "water-scenery",
+        "type": "collision",
+        "data": {
+          "enabled": false
+        }
+      }
+    }
+  ]
+}

@@ -1,8 +1,9 @@
 #!/usr/bin/env bun
 // The channel capability gates — do denied capabilities actually refuse?
 //
-// 🔴 WHY. `channels.publish`, `channels.lifecycle` and `channels.streaming` are
-// declared in CAP and were checked NOWHERE (found 2026-08-16). Only
+// 🔴 WHY. `channels.publish`, `channels.lifecycle` and `channels.streaming` were
+// declared in CAP and were checked NOWHERE (found 2026-08-16; the stream is no
+// longer advertised or declared, since nothing reads it). Only
 // `channels.register` and `channels.incoming` had gates. So a host granting
 // `channels.incoming` alone — "receive, do not send" — still had its agent's
 // channels/publish answered: the DOOR SPOKE IN THE WORLD on behalf of an agent
@@ -99,15 +100,54 @@ for (const [caseName, capConst] of [
   ok(`${caseName} is gated on ${capConst}`, r.ok, r.why);
 }
 
-// The streaming path is a NOTIFICATION — no response, so the gate must drop it
-// silently rather than refuse. Assert the drop happens before agent.typing().
+// The typing path is a NOTIFICATION — no response, so the gate must drop it
+// silently rather than refuse. Assert the drop happens before the relay starts.
+// (The generation stream, channels/outgoing/chunk, drives nothing any more, so
+// it has no gate to check.)
 {
-  const at = src.indexOf('CHANNELS_OUTGOING_CHUNK');
-  const body = src.slice(at, at + 900);
-  const gate = body.indexOf('capAllowed(CAP.channelsStreaming)');
-  const typing = body.indexOf('this.agent.typing()');
-  ok('channels/outgoing/chunk is gated on channelsStreaming', gate >= 0);
-  ok('the streaming gate precedes agent.typing()', gate >= 0 && typing >= 0 && gate < typing);
+  const at = src.indexOf('private onTyping(');
+  const body = at >= 0 ? src.slice(at, at + 1400) : '';
+  const gate = body.indexOf('capAllowed(CAP.channelsTyping)');
+  const start = body.indexOf('this.typing.start(');
+  ok('channels/typing is gated on channelsTyping', gate >= 0);
+  ok('the typing gate precedes the relay starting', gate >= 0 && start >= 0 && gate < start);
+  ok('nothing acts on a chunk of the generation stream', !src.includes('method.CHANNELS_OUTGOING_CHUNK'));
+  // The signal is taken as it arrives, from the connection's notification
+  // event, and only there: the serve loop also reads every notification from
+  // its queue, and must not act on the same signal a second time.
+  ok('the typing signal is handled in one place, the notification listener',
+     src.split('method.CHANNELS_TYPING').length === 2 && src.split('this.onTyping(').length === 2 &&
+     /this\.conn\.on\("notification"[\s\S]{0,200}method\.CHANNELS_TYPING[\s\S]{0,200}this\.onTyping\(/.test(src));
+}
+
+// A host sends channels/typing only to a server whose grant has
+// channels.typing, and grants only what the server advertises, so the
+// advertisement and the feature set are what turn the dots on. Nothing reads
+// the generation stream, so the door doesn't ask for it.
+{
+  const { MCPL_ADVERTISEMENT, FEATURE_SETS } = await import('../mcpl/declaration.ts');
+  ok('the door advertises channels.typing', MCPL_ADVERTISEMENT.channels.typing === true);
+  ok('eidoverse.typing uses channels.typing', FEATURE_SETS['eidoverse.typing'].uses.includes(CAP.channelsTyping));
+  ok('the door does not advertise channels.streaming', MCPL_ADVERTISEMENT.channels.streaming === false);
+  ok('no feature set uses channels.streaming',
+     Object.values(FEATURE_SETS).every((fs) => !fs.uses.includes('channels.streaming')));
+}
+
+// The body's speech ends the dots: the session hands each body a hook that
+// stops the relay, and travel hands it on to the next body. (The live test
+// covers the say itself; these pin the wiring for a travelled body, which no
+// test drives.)
+{
+  const ctorAt = src.indexOf('this.channelId = `world:${this.agent.world}`;');
+  const ctor = ctorAt >= 0 ? src.slice(ctorAt, ctorAt + 400) : '';
+  ok('the session gives its first body a say hook that stops the relay',
+     ctor.includes('this.agent.onSaid = () => this.typing.stop();'));
+  const travelAt = src.indexOf('next.onEvent = old.onEvent;');
+  const travel = travelAt >= 0 ? src.slice(travelAt, travelAt + 1600) : '';
+  const handed = travel.indexOf('next.onSaid = old.onSaid;');
+  const taken = travel.indexOf('old.onSaid = null;');
+  ok('travel hands the say hook to the next body before taking it from the old one',
+     handed >= 0 && taken >= 0 && handed < taken);
 }
 
 // tools/list and tools/call were the original offenders — keep them pinned.

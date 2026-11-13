@@ -10,9 +10,12 @@
 // folds into the entity's comp bag, SERVER-WRITTEN (a client's `comp {type:
 // "captions"}` is refused, so the bag has one writer path):
 //
-//   comp.captions = {session, n, title?, mediaTime, window: [
-//     {t0, t1, text, speaker?}, …      // oldest first, the newest MAX_LINES
-//   ]}
+//   captions = {session, n, gen, title?, line: {t0, t1, text, speaker?}}
+//
+// Each write holds ITS line, once (shape audit 10-16, render-media-env §11; WebVTT and TTML store a cue once). Until then
+// the bag carried the newest twenty lines (`window`) and the playhead (`mediaTime`), so every caption change re-logged up to
+// twenty lines: the very cost the caption verb was made to remove. A reader that wants the last lines reads the last
+// captions changes (the log is the transcript); an older stored value's window still reads.
 //
 // Rung 2 of the projector ladder (anima_dev/eidoverse_projector_design.md):
 // the music player — audio in, captions the models can read, no video yet.
@@ -34,7 +37,7 @@
 // retires the older leg), and vCaption stamps that generation onto every
 // caption entry — a client cannot supply it. The bag remembers the
 // generation that wrote it; a caption from a lower generation is refused as
-// a superseded leg, a higher one takes over. So supersession is the door's
+// a superseded leg, a higher one takes over. So supersession is the authority's
 // own fact, never a clock the bot claims: a restart under clock rollback
 // still takes over (its leg is newer), a stale predecessor cannot present a
 // "later" timestamp and win (its leg is older), and two captioners for one
@@ -55,9 +58,14 @@
 // does not change when the source improves, only its accuracy — and the
 // session says which attach a `00:30` belongs to.
 //
-// BOUNDS are in CHARACTERS (String.length), not bytes: a 240-character line
-// of CJK is ~720 UTF-8 bytes and that is fine — the bag is folded state, not
-// a verb payload under the 8 KB comp cap.
+// BOUNDS are in CHARACTERS (String.length, UTF-16 code units), not bytes: a
+// 240-character line of CJK is ~720 UTF-8 bytes and that is fine — the bag is
+// folded state, not a verb payload under the value cap; the authority keeps a
+// value under 64 KiB of UTF-8 (protocol/gate.js), a different unit from these
+// character bounds, and a bag of 20 full lines plus title and speakers stays
+// well inside it in any script.
+
+import { shown } from './shown.js';
 
 export const CAPTIONS_MAX_LINES = 20;
 export const CAPTION_TEXT_MAX = 240;
@@ -66,10 +74,18 @@ export const CAPTIONS_SPEAKER_MAX = 48;
 export const CAPTION_SESSION_MAX = 64;
 /** Sessions are `<ISO attach time>-<nonce>`: ordered by when the bot attached. */
 export const SESSION_RX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z-[A-Za-z0-9]{2,16}$/;
-const KNOWN_KEYS = new Set(['session', 'n', 'gen', 'title', 'mediaTime', 'window']);
+const KNOWN_KEYS = new Set(['session', 'n', 'gen', 'title', 'line', 'mediaTime', 'window']);   // mediaTime and window: an older value's
 
 function cleanText(s, max) {
   return String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+/** A line's parts and what keeps them from being a line: the one statement
+ *  of the rule, for normalizeCaption and for the refusal that names what
+ *  failed. */
+function readLine(c) {
+  const t0 = Number(c.t0), t1 = Number(c.t1), text = cleanText(c.text, CAPTION_TEXT_MAX);
+  return { t0, t1, text, badTimes: !Number.isFinite(t0) || !Number.isFinite(t1) || t0 < 0 || t1 < t0, badText: !text };
 }
 
 /** Mint a session id: attach time first so sessions sort by attach. */
@@ -80,10 +96,8 @@ export function mintSession(now = new Date(), nonce = Math.random().toString(36)
 /** One caption LINE, validated: finite non-negative times in order, non-empty text. */
 export function normalizeCaption(c) {
   if (!c || typeof c !== 'object' || Array.isArray(c)) return null;
-  const t0 = Number(c.t0), t1 = Number(c.t1);
-  if (!Number.isFinite(t0) || !Number.isFinite(t1) || t0 < 0 || t1 < t0) return null;
-  const text = cleanText(c.text, CAPTION_TEXT_MAX);
-  if (!text) return null;
+  const { t0, t1, text, badTimes, badText } = readLine(c);
+  if (badTimes || badText) return null;
   const out = { t0: Math.round(t0 * 100) / 100, t1: Math.round(t1 * 100) / 100, text };
   const speaker = cleanText(c.speaker, CAPTIONS_SPEAKER_MAX);
   if (speaker) out.speaker = speaker;
@@ -91,7 +105,7 @@ export function normalizeCaption(c) {
 }
 
 /** The `caption` verb's args, shape-checked: `ok:false` carries WHY (the
- *  refusal the door sends), `ok:true` the normalized args that become
+ *  refusal the authority sends), `ok:true` the normalized args that become
  *  history. Pure — the sequencer's validator and the bot's own pre-check
  *  are the same function. */
 export function normalizeCaptionArgs(a) {
@@ -100,13 +114,20 @@ export function normalizeCaptionArgs(a) {
   const session = String(a.session ?? '');
   if (!id) return { ok: false, why: 'caption wants an entity id' };
   if (!session || session.length > CAPTION_SESSION_MAX || !SESSION_RX.test(session)) {
-    return { ok: false, why: 'caption wants a session of the form <ISO attach time>Z-<nonce> (shared/captions.js mintSession)' };
+    return { ok: false, why: `caption wants a session like "2026-09-16T20:00:00.000Z-k3f9": the UTC time the captioner attached, a hyphen, then 2–16 letters or digits (got ${shown(a.session)}); mint it once when the captioner attaches and send it with every line` };
   }
   if (a.end === true) return { ok: true, args: { id, session, end: true } };
   const n = Number(a.n);
-  if (!Number.isInteger(n) || n < 1) return { ok: false, why: 'caption wants an integer n ≥ 1, monotonic within the session' };
+  if (!Number.isInteger(n) || n < 1) return { ok: false, why: `caption wants an integer n of 1 or more (got ${shown(a.n)}): number a session's lines in order, each higher than the last` };
   const line = normalizeCaption(a);
-  if (!line) return { ok: false, why: `caption wants finite t0 ≤ t1 ≥ 0 and non-empty text (≤${CAPTION_TEXT_MAX} chars)` };
+  if (!line) {
+    const { badTimes, badText } = readLine(a);
+    const wants = [
+      ...(badTimes ? [`t0 and t1, the line's start and end in seconds of media time, with 0 ≤ t0 ≤ t1 (got t0 ${shown(a.t0)}, t1 ${shown(a.t1)})`] : []),
+      ...(badText ? [`text, the line's words (got ${shown(a.text)})`] : []),
+    ];
+    return { ok: false, why: `caption wants ${wants.join(', and ')}` };
+  }
   const args = { id, session, n, ...line };
   const title = cleanText(a.title, CAPTIONS_TITLE_MAX);
   if (title) args.title = title;
@@ -121,49 +142,45 @@ export function normalizeCaptionArgs(a) {
  *  (vCaption); entries that predate it read as generation 0. */
 export function captionRefusal(bag, args) {
   const cur = bag && typeof bag === 'object' ? bag : null;
-  if (!cur) return args.end ? `"${args.id}" has no captions to end` : null;
+  if (!cur) return args.end ? `"${args.id}" has no captions to end, so it's already quiet` : null;
   const g = Number(args.gen) || 0, cg = Number(cur.gen) || 0;
-  if (g < cg) return `"${args.id}" is captioned by a newer leg (generation ${cg}; yours is ${g}) — a superseded captioner`;
+  if (g < cg) return `"${args.id}" is captioned by a newer leg (generation ${cg}; yours is ${g}) — a superseded captioner: a connection that joined after yours has captioned this screen since, and the newest one to caption it holds it; rejoin, and your next line takes it back`;
   if (args.end) {
-    if (cur.session !== args.session) return `"${args.id}" is captioned under session ${cur.session}, not ${args.session}`;
+    if (cur.session !== args.session) return `"${args.id}" is captioned under session ${cur.session}, not ${args.session}; to end what it shows, end session ${cur.session}`;
     return null;
   }
   if (args.session === cur.session && args.n <= (Number(cur.n) || 0)) {
-    return `caption n=${args.n} is not after the folded high-water n=${cur.n} for session ${cur.session} — duplicate or out of order`;
+    return `caption n=${args.n} is not after the folded high-water n=${cur.n} for session ${cur.session} — duplicate or out of order; this session's next line needs n=${(Number(cur.n) || 0) + 1} or higher`;
   }
   return null;   // the same session continues; a different one starts fresh
 }
 
 /** Fold normalized args into the bag (pure; returns the new bag, or null when
- *  the screen went quiet). A new session starts a fresh window; the same
- *  session appends and keeps the newest MAX_LINES. */
+ *  the screen went quiet): the current line only. The title carries within a
+ *  session; a new session starts fresh. */
 export function foldCaption(bag, args) {
   if (args.end) return null;
   const cur = bag && typeof bag === 'object' && bag.session === args.session ? bag : null;
   const line = { t0: args.t0, t1: args.t1, text: args.text, ...(args.speaker ? { speaker: args.speaker } : {}) };
-  const window = [...(Array.isArray(cur?.window) ? cur.window : []), line].slice(-CAPTIONS_MAX_LINES);
   const title = args.title ?? cur?.title;
-  return {
-    session: args.session, n: args.n, gen: Number(args.gen) || 0,
-    ...(title ? { title } : {}),
-    mediaTime: Math.max(args.t1, Number(cur?.mediaTime) || 0),
-    window,
-  };
+  return { session: args.session, n: args.n, gen: Number(args.gen) || 0, ...(title ? { title } : {}), line };
 }
 
 /** Validate a folded bag as a reader (look(), an overlay). `ok:false` carries
  *  WHY; `ok:true` the normalized captions plus notes for anything coerced. */
 export function normalizeCaptions(data) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
-    return { ok: false, why: 'captions must be an object {session, n, window: [...], title?, mediaTime?}' };
+    return { ok: false, why: 'captions must be an object {session, n, gen, title?, line: {t0, t1, text, speaker?}}' };
   }
-  if (!Array.isArray(data.window)) return { ok: false, why: 'window must be an array of {t0, t1, text, speaker?}' };
+  // today's value holds its current line; an older one its window of lines
+  const lines0 = data.line !== undefined ? [data.line] : data.window;
+  if (!Array.isArray(lines0)) return { ok: false, why: 'line must be {t0, t1, text, speaker?} (an older value: window, an array of them)' };
   const notes = [];
   const unknown = Object.keys(data).filter((k) => !KNOWN_KEYS.has(k) && !k.startsWith('_'));
   if (unknown.length) notes.push(`ignored: ${unknown.join(', ')} (accepted: ${[...KNOWN_KEYS].join(', ')})`);
   let dropped = 0;
   let window = [];
-  for (const c of data.window) {
+  for (const c of lines0) {
     const n = normalizeCaption(c);
     if (n) window.push(n); else dropped++;
   }
@@ -209,11 +226,14 @@ export function describeCaptions(data) {
   return `a screen, ${showing}, ${clock(captions.mediaTime ?? last.t1)}, last line: ${line}`;
 }
 
-/** The `captions` detail level: the rolling window, oldest first, one line
- *  each, at most `lines` of them (default: all of the window). */
-export function captionsDetail(data, lines = CAPTIONS_MAX_LINES) {
+/** The `captions` detail level: the lines, oldest first, one each, at most
+ *  `lines` of them. A value holds its current line (an older one its window);
+ *  `earlier` is the screen's earlier captions values, oldest first (the log's
+ *  captions changes), for a reader that wants the lines before it. */
+export function captionsDetail(data, lines = CAPTIONS_MAX_LINES, earlier = []) {
   const n = normalizeCaptions(data);
   if (!n.ok) return [];
-  const w = n.captions.window.slice(-Math.max(0, lines));
+  const before = (Array.isArray(earlier) ? earlier : []).flatMap((b) => { const m = normalizeCaptions(b); return m.ok && m.captions.session === n.captions.session ? m.captions.window : []; });
+  const k = Math.max(0, lines), all = [...before, ...n.captions.window], w = k ? all.slice(-k) : [];   // slice(-0) is slice(0): zero lines is none (#258)
   return w.map((c) => `[${clock(c.t0)}–${clock(c.t1)}] ${c.speaker ? `${c.speaker}: ` : ''}${c.text}`);
 }

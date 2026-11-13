@@ -1,3 +1,5 @@
+import { routeLevel, prepareWallCheck, routeGeometryFor, terrainCells, ROUTE_STEP_METRES, NON_FINITE_ENDPOINT } from './structure-route.js';
+export { ROUTE_STEP_METRES };
 // structure_field — the griddled-building model's pure half (§11.4 discipline,
 // sibling of models_field.js / flora_field.js / emitter_field.js).
 //
@@ -577,6 +579,70 @@ export function derivePortals(level, rooms) {
 
 // ---- the plan ---------------------------------------------------------------
 
+/** One level's COLLISION boxes, grid-local: the floor tiles, the solid wall
+ *  runs, what's left of an apertured segment, the corner fills and a diagonal's
+ *  stair steps. planStructure's `boxes`, and the door's solids (shared/protocol/authority.js
+ *  reads collisionBoxes) — one derivation, so the browser's colliders and the
+ *  door's walls can't disagree about where a wall is. */
+function levelBoxes(level, g) {
+  const boxes = [];
+  const floorY = level.y + g.slabT;
+  for (const [k, mat] of level.tiles) {
+    const [x, z] = k.split(',').map(Number);
+    boxes.push(tileBox(x, z, mat, g, level.y));
+  }
+  // solid stretches collide as one box per run; apertured segments keep their
+  // own decomposition, because a hole is what makes them a different shape
+  const half = g.wallT / 2;
+  for (const run of wallRuns(level, g)) {
+    const [a0, a1] = runSpan(run, level, g);
+    boxes.push(edgeSpan(run.axis, run.cross * g.tile, a0, a1, -half, half,
+      floorY, floorY + g.wallH, run.mat, 'wall'));
+  }
+  for (const [k, edge] of level.walls) {
+    const ap = level.apertures.get(k);
+    if (!ap) continue;
+    boxes.push(...wallBoxes(edge, ap, g, floorY));
+  }
+  boxes.push(...cornerFills(level, g, floorY, floorY + g.wallH));
+  // DIAGONAL COLLISION is stair-stepped: a run of small overlapping
+  // axis-aligned boxes along the line. The collider entry carries ONE yaw
+  // shared by every box of a building, so a genuinely rotated box would mean
+  // changing that contract; stepping keeps the existing machinery and the
+  // steps are at most 1.2 wallT apart and the boxes 1.6 wallT wide at any
+  // tile (review of #260, #287), so nothing can slip between them; past 64
+  // steps (a tiny wallT) the boxes widen to 1.4 steps instead, so the count
+  // stays bounded and the overlap holds. Visually the wall is a true
+  // mitred diagonal — this approximation is only what the body feels.
+  for (const [k, e] of level.walls) {
+    if (e.axis < 2) continue;
+    const [[sx, sz], [ex, ez]] = segmentEnds(e, g);
+    const open = ['door', 'arch'].includes(level.apertures.get(k));
+    const len = Math.hypot(ex - sx, ez - sz);
+    const N = Math.min(64, Math.max(8, Math.ceil(len / (g.wallT * 1.2))));
+    const r = Math.max(g.wallT * 0.8, (len / N) * 0.7);
+    for (let i = 0; i <= N; i++) {
+      const t = i / N;
+      const cx = sx + (ex - sx) * t, cz = sz + (ez - sz) * t;
+      boxes.push({
+        x0: cx - r, x1: cx + r,
+        y0: open ? floorY + (APERTURES[level.apertures.get(k)]?.top ?? 0) : floorY,
+        y1: floorY + g.wallH,
+        z0: cz - r, z1: cz + r, mat: e.mat, kind: 'wall',
+      });
+    }
+  }
+  return boxes;
+}
+
+/** Every collision box of a structure (all levels), grid-local, without the
+ *  visual derivation (rooms, parts, sweeps): what a headless reader that only
+ *  needs to know where the walls are (the door) asks for. */
+export function collisionBoxes(data) {
+  const g = normalize(data);
+  return g.levels.flatMap((level) => levelBoxes(level, g));
+}
+
 /** The whole derivation for one structure component: what to draw, what to
  *  collide, what the rooms are, what joins them.
  *
@@ -594,53 +660,7 @@ export function planStructure(data) {
     // The walk surface: the top of this level's foundation. Walls rise from it,
     // apertures are measured from it, and a body stands on it.
     const floorY = level.y + g.slabT;
-    for (const [k, mat] of level.tiles) {
-      const [x, z] = k.split(',').map(Number);
-      boxes.push(tileBox(x, z, mat, g, level.y));
-    }
-    // solid stretches collide as one box per run; apertured segments keep their
-    // own decomposition, because a hole is what makes them a different shape
-    const half = g.wallT / 2;
-    for (const run of wallRuns(level, g)) {
-      const [a0, a1] = runSpan(run, level, g);
-      boxes.push(edgeSpan(run.axis, run.cross * g.tile, a0, a1, -half, half,
-        floorY, floorY + g.wallH, run.mat, 'wall'));
-    }
-    for (const [k, edge] of level.walls) {
-      const ap = level.apertures.get(k);
-      if (!ap) continue;
-      boxes.push(...wallBoxes(edge, ap, g, floorY));
-    }
-    boxes.push(...cornerFills(level, g, floorY, floorY + g.wallH));
-    // DIAGONAL COLLISION is stair-stepped: a run of small overlapping
-    // axis-aligned boxes along the line. The collider entry carries ONE yaw
-    // shared by every box of a building, so a genuinely rotated box would mean
-    // changing that contract; stepping keeps the existing machinery and the
-    // steps (~18cm apart, boxes wider than that) are well under a 32cm body
-    // radius, so nothing can slip between them. Visually the wall is a true
-    // mitred diagonal — this approximation is only what the body feels.
-    for (const [k, e] of level.walls) {
-      if (e.axis < 2) continue;
-      const a = [e.x * g.tile, e.z * g.tile];
-      const b = e.axis === 2
-        ? [(e.x + 1) * g.tile, (e.z + 1) * g.tile]
-        : [(e.x + 1) * g.tile, e.z * g.tile];
-      const a2 = e.axis === 2 ? a : [e.x * g.tile, (e.z + 1) * g.tile];
-      const [sx, sz] = e.axis === 2 ? a : b;
-      const [ex, ez] = e.axis === 2 ? b : a2;
-      const open = ['door', 'arch'].includes(level.apertures.get(k));
-      const N = 8, r = g.wallT * 0.8;
-      for (let i = 0; i <= N; i++) {
-        const t = i / N;
-        const cx = sx + (ex - sx) * t, cz = sz + (ez - sz) * t;
-        boxes.push({
-          x0: cx - r, x1: cx + r,
-          y0: open ? floorY + (APERTURES[level.apertures.get(k)]?.top ?? 0) : floorY,
-          y1: floorY + g.wallH,
-          z0: cz - r, z1: cz + r, mat: e.mat, kind: 'wall',
-        });
-      }
-    }
+    boxes.push(...levelBoxes(level, g));
     const rooms = deriveRooms(level, g);
     levels.push({
       y: floorY, base: level.y, rooms, portals: derivePortals(level, rooms),
@@ -953,11 +973,13 @@ export function openingsOf(level, room) {
  *  has its own north, and saying "north" about it while a person reads a world
  *  compass would be a quiet lie. The phrasing says whose north it is. */
 export function describeHere(plan, lx, lz, ly = 0) {
-  const level = plan.levels.find((lv) => lv.rooms.some((r) => r.cells.includes(
-    cellKey(Math.floor(lx / plan.grid.tile), Math.floor(lz / plan.grid.tile)))));
-  if (!level) return null;
-  const room = roomAt(plan, lx, lz, ly);
-  if (!room) return null;
+  // One resolution for both: the level this room belongs to, never a level
+  // re-derived from the cell key alone (cell keys are x,z, so on a stacked
+  // building a key-only lookup always answers with the ground floor and its
+  // doors — ew#140).
+  const here = levelAt(plan, lx, lz, ly);
+  if (!here) return null;
+  const { level, room } = here;
   const w = (room.max[0] - room.min[0]).toFixed(0), d = (room.max[1] - room.min[1]).toFixed(0);
   const name = room.label ? `the ${room.label}` : `an unnamed room (${room.id})`;
   const ways = openingsOf(level, room);
@@ -994,10 +1016,17 @@ export function describeStructure(data) {
  *  point, and the thing that makes "which room am I in" O(1) instead of a
  *  geometric query against triangles. */
 export function roomAt(plan, lx, lz, ly = 0) {
-  const tile = plan.grid.tile;
-  void tile;
-  // Nearest level at or below the point, so a first storey doesn't answer for
-  // someone standing on the second.
+  return levelAt(plan, lx, lz, ly)?.room ?? null;
+}
+
+/** The storey a point stands on AND the room it stands in, resolved once:
+ *  the highest level whose surface is at most half a metre above the point
+ *  (so a first storey doesn't answer for someone standing on the second)
+ *  that has a room at that cell. roomAt
+ *  and the describer both go through here, so the doors described to someone
+ *  upstairs are their own room's; with one level it can only ever return that
+ *  level. Null when the point is in no room on any reachable storey. */
+export function levelAt(plan, lx, lz, ly = 0) {
   let best = null;
   for (const lv of plan.levels) {
     if (lv.y > ly + 0.5) continue;
@@ -1006,7 +1035,7 @@ export function roomAt(plan, lx, lz, ly = 0) {
       if (room) best = { y: lv.y, level: lv, room };
     }
   }
-  return best ? best.room : null;
+  return best ? { level: best.level, room: best.room } : null;
 }
 
 // ---- routing ----------------------------------------------------------------
@@ -1060,33 +1089,78 @@ export function routeCells(level, fromKey, toKey) {
   return null;
 }
 
-/** A route in grid-local metres: the true start, the centre of each cell the
- *  path turns in, and the true destination.
- *
- *  Only TURNS become waypoints. A straight run down a corridor is one leg, so a
- *  body walks it as a straight line instead of stuttering cell to cell — and
- *  the waypoint count stays proportional to the number of decisions rather than
- *  to the distance. */
-export function routeLocal(plan, fromX, fromZ, toX, toZ, y = 0) {
-  const g = plan.grid;
-  const lv = plan.levels.find((L) => L.rooms.length) ?? plan.levels[0];
-  if (!lv) return null;
-  const level = lv.level;
-  const cells = routeCells(level, nodeAtPoint(level, g, fromX, fromZ), nodeAtPoint(level, g, toX, toZ));
-  if (!cells) return null;
-  const centre = (k) => {
-    const [x, z] = k.split(':')[0].split(',').map(Number);
-    return [(x + 0.5) * g.tile, (z + 0.5) * g.tile];
+/** Prepare one immutable structure-plan snapshot against a supplied walking basis. The standing
+ * resolver, not floor ordering or x/z overlap, owns that basis:
+ * terrain {heightAt(localX,localZ), step?, scale?}; floor {height, level?, step?, scale?}.
+ * A floor's level index identifies THIS structure as the support owner;
+ * omit it on other structures, which can constrain walls but offer no support.
+ * step is the feet-to-step obstruction band in local metres, not a grant of
+ * floor ownership. Callers scale ROUTE_STEP_METRES from world metres; scale
+ * (world metres per local metre, 1 when omitted) only puts a refusal's
+ * figures in world metres. A preparation that can't be made (no basis, or
+ * geometry that isn't finite) says why in `failed`, so a caller can tell a
+ * structure it can't read from one that refuses a route; its route() refuses
+ * and its clear() is false. */
+export function prepareRouteLocal(plan, basis) {
+  // Freeze the chosen mode/identity and function reference for this walk.
+  // A caller cannot change a floor into terrain halfway through validation.
+  basis = basis ? { ...basis } : basis;
+  const blocked = reason => ({ kind: 'blocked', reason, points: [], confined: basis?.kind === 'floor' && basis.level != null });
+  const unusable = reason => ({ failed: reason, route: () => blocked(reason), clear: () => false, confined: false });
+  if (!basis || !['terrain','floor'].includes(basis.kind)) return unusable('walking support basis is required');
+  let clear;
+  try { clear = prepareWallCheck(plan,basis); }
+  catch (e) { return unusable(String(e.message)); }
+  const confined = basis.kind === 'floor' && basis.level != null;
+  const scale = Number.isFinite(basis.scale) && basis.scale > 0 ? basis.scale : 1;
+  // The immutable plan's cached local geometry has no support/transform
+  // state. Each new received component revision produces a different plan.
+  return {
+    confined,
+    clear: (ax,az,bx,bz) => clear([ax,az],[bx,bz]),
+    route(fromX,fromZ,toX,toZ) {
+      const from=[fromX,fromZ], to=[toX,toZ];
+      if (![...from,...to].every(Number.isFinite)) return blocked(NON_FINITE_ENDPOINT);
+      if (basis.kind === 'terrain') {
+        if (clear(from,to)) return { kind: 'clear', points: [from,to], confined: false };
+        // The search covers every level's geometry; the diagonals that cut its
+        // cells are the ones this walk's terrain meets (terrainCells).
+        const cells = terrainCells(plan, basis.heightAt, basis.step ?? ROUTE_STEP_METRES);
+        return { ...routeLevel(cells,plan.grid,from,to,true,clear,{ bounds: routeGeometryFor(plan).bounds, scale }), confined: false };
+      }
+      if (!Number.isFinite(basis.height)) return blocked('non-finite floor height');
+      if (!confined) return clear(from,to)
+        ? {kind:'clear',points:[from,to],confined:false}
+        : blocked('another structure obstructs the identified-floor route');
+      const lv=Number.isInteger(basis.level) ? plan.levels[basis.level] : null;
+      if (!lv || Math.abs(lv.y-basis.height)>1e-7)
+        return blocked('identified support floor does not match supplied feet height');
+      return { ...routeLevel(lv.level,plan.grid,from,to,false,clear,{ scale }), confined:true };
+    },
   };
-  const pts = [[fromX, fromZ]];
-  for (let i = 1; i < cells.length - 1; i++) {
-    const [ax, az] = cells[i - 1].split(':')[0].split(',').map(Number);
-    const [bx, bz] = cells[i + 1].split(':')[0].split(',').map(Number);
-    if (ax !== bx && az !== bz) pts.push(centre(cells[i]));   // a turn
-  }
-  pts.push([toX, toZ]);
-  void y;
-  return pts;
+}
+
+/** A route over `plan` on a flat terrain basis, `y` being the terrain's height
+ * everywhere (a walking plane, not evidence of floor support; elevated callers
+ * use prepareRouteLocal explicitly). Walls of every level are checked against
+ * that plane's feet-to-step band, and an outdoor endpoint is routed around the
+ * structure rather than refused. The result is prepareRouteLocal's route():
+ * kind 'clear' for a straight leg that clears every wall, 'routed' with the
+ * waypoints, or 'blocked' with the reason. */
+export function planRouteLocal(plan, fromX, fromZ, toX, toZ, y = 0) {
+  return prepareRouteLocal(plan,{kind:'terrain',heightAt:()=>y,step:ROUTE_STEP_METRES}).route(fromX,fromZ,toX,toZ);
+}
+/** Whether the straight leg clears every wall, on planRouteLocal's flat terrain basis. */
+export function routeSegmentClear(plan, fromX, fromZ, toX, toZ, y = 0) {
+  return prepareRouteLocal(plan,{kind:'terrain',heightAt:()=>y,step:ROUTE_STEP_METRES}).clear(fromX,fromZ,toX,toZ);
+}
+/** planRouteLocal's waypoints in grid-local metres, the true start and the
+ * true destination included, or null when it refuses a route. A straight leg
+ * that clears every wall is just the two endpoints; otherwise the points are
+ * the search's cell centres and edge crossings, with collinear runs merged. */
+export function routeLocal(plan, fromX, fromZ, toX, toZ, y = 0) {
+  const result = planRouteLocal(plan, fromX, fromZ, toX, toZ, y);
+  return result.kind === 'blocked' ? null : result.points;
 }
 
 // ---- swept wall geometry ----------------------------------------------------
@@ -1178,11 +1252,8 @@ export function wallPolylines(level, g) {
   const segs = [];
   for (const [k, e] of level.walls) {
     if (level.apertures.has(k)) continue;
-    const a = cellKey(e.x, e.z);
-    const b = e.axis === 0 ? cellKey(e.x + 1, e.z)
-      : e.axis === 1 ? cellKey(e.x, e.z + 1)
-      : e.axis === 2 ? cellKey(e.x + 1, e.z + 1)     // ↘ diagonal
-      : cellKey(e.x - 1, e.z + 1);                   // ↗ diagonal
+    const [start, end] = segmentEnds(e, { tile: 1 }); // vertex keys, before metre scaling
+    const a = cellKey(...start), b = cellKey(...end);
     segs.push({ a, b, mat: e.mat, used: false });
   }
   const inc = new Map();
@@ -1335,11 +1406,13 @@ export function sweepProfile(path, profile, y0, ends = null) {
 
 /** A wall segment's two endpoints in grid-local metres, for any axis. */
 export function segmentEnds(e, g) {
-  const a = [e.x * g.tile, e.z * g.tile];
+  // Both diagonals cut their OWN cell, as nodeAtPoint/halfTriangle define.
+  // Axis 3 starts at NE and ends at SW; its start is not the NW corner.
+  const a = [(e.x + (e.axis === 3 ? 1 : 0)) * g.tile, e.z * g.tile];
   const b = e.axis === 0 ? [(e.x + 1) * g.tile, e.z * g.tile]
     : e.axis === 1 ? [e.x * g.tile, (e.z + 1) * g.tile]
     : e.axis === 2 ? [(e.x + 1) * g.tile, (e.z + 1) * g.tile]
-    : [(e.x - 1) * g.tile, (e.z + 1) * g.tile];
+    : [e.x * g.tile, (e.z + 1) * g.tile];
   return [a, b];
 }
 
@@ -1406,11 +1479,7 @@ export function levelSweeps(level, g, floorY) {
     const ap = level.apertures.get(k);
     if (!ap) continue;
     const prf = APERTURES[ap];
-    const a = [e.x * g.tile, e.z * g.tile];
-    const b = e.axis === 0 ? [(e.x + 1) * g.tile, e.z * g.tile]
-      : e.axis === 1 ? [e.x * g.tile, (e.z + 1) * g.tile]
-      : e.axis === 2 ? [(e.x + 1) * g.tile, (e.z + 1) * g.tile]
-      : [(e.x - 1) * g.tile, (e.z + 1) * g.tile];
+    const [a, b] = segmentEnds(e, g);
     const top = Math.min(prf.top, g.wallH);
     const nd = neighbourDirs(level, g, k, e);
     for (const [lo, hi] of [[0, prf.bottom], [top, g.wallH]]) {

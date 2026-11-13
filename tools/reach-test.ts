@@ -184,7 +184,7 @@ console.log("\nthe cone and the frontal plane");
 console.log("\nrefusals rather than NaN");
 {
   const a = solveTwoBone({ root: [0, 0, 0], target: [0, 0, 0], L1: 1, L2: 1, pole: [0, -1, 0] }) as any;
-  check("target on the joint is refused, not solved", !a.ok && /on the joint/.test(a.why));
+  check("target on the joint is refused, not solved", !a.ok && /root joint/.test(a.why));
   const b = solveTwoBone({ root: [0, 0, 0], target: [1, 0, 0], L1: 0, L2: 1, pole: [0, -1, 0] }) as any;
   check("a zero-length bone is refused", !b.ok);
   const c = solveTwoBone({ root: [0, 0, 0], target: [1, 0, 0], L1: 1, L2: 1, pole: [1, 0, 0] }) as any;

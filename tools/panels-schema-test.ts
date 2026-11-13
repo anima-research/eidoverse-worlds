@@ -8,11 +8,12 @@
 // Each block names the product line that would silence it:
 //   hitRegion returning the unsnapped slider value   → "slider hit snaps to step" goes red
 //   check region payload no longer !value            → "check region payload is the flipped value" goes red
+import { fileURLToPath } from "node:url";
 import { plugin } from 'bun';
-const here = (f: string) => new URL(f, import.meta.url).pathname;
+const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({
   name: 'panels-stubs',
-  setup(b) { b.onResolve({ filter: /^\.\/frames\.js$/ }, () => ({ path: here('./chat-frames-stub.mjs') })); },
+  setup(b) { b.onResolve({ filter: /^\.\/windows\.js$/ }, () => ({ path: here('./chat-frames-stub.mjs') })); },
 });
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 GlobalRegistrator.register();
@@ -35,7 +36,9 @@ const check = (name: string, ok: boolean, detail = '') => {
 };
 const edits: any[][] = [];
 const edit = (...a: any[]) => { edits.push(a); };
-const last = () => JSON.stringify(edits.at(-1));
+// panels' dispatcher is edit(k, value, field?, opts?) — field = Godot's axis index, opts.live = a preview.
+// Trailing empty args are not part of what a case asserts; a meaningful one (an axis, {live}) still is.
+const last = () => { const a = [...(edits.at(-1) ?? [])]; while (a.length && a.at(-1) == null) a.pop(); return JSON.stringify(a); };
 const FIELDS = [
   { t: 'info', label: 'world', value: 'garden' },
   { t: 'text', k: 'name', label: 'name', value: 'lamp', placeholder: 'a name' },
@@ -63,16 +66,22 @@ check('info shows the value as text', rows[0].querySelector('.sp-info')?.textCon
   plus.onclick!(new Event('click'));
   check('+ steps by step and clamps to max: edit("h", 2)', last() === '["h",2]', last());
   minus.onclick!(new Event('click'));
-  check('− steps down from the typed value: edit("h", 1)', last() === '["h",1]', last());
+  // the stepper shows what it just set (p1 build mode): + then − returns to the start, 1.5 — the old face stayed
+  // at 1.5 after a + and stepped to 1, i.e. two clicks that should cancel moved the value
+  check('− steps down from the SHOWN value (+ then − cancel): edit("h", 1.5)', last() === '["h",1.5]', last());
   num.value = '-4'; num.onchange!(new Event('change'));
-  check('a typed value clamps to min: edit("h", 0)', last() === '["h",0]', last());
+  // refused, never clamped (D4a; review 10-12): the row's min is the slider's; the editor's own check refuses what the door
+  // would and says why, so the stepper hands on what was typed
+  check('a typed value is handed on as typed, not clamped to min: edit("h", -4)', last() === '["h",-4]', last());
   num.value = 'nope'; const n = edits.length; num.onchange!(new Event('change'));
   check('a non-number is ignored', edits.length === n); }
 { const sl = rows[3].querySelector('input.sp-range') as HTMLInputElement, out = rows[3].querySelector('.sp-range-val')!;
   check('slider: type=range with min/max/step and a unit readout', sl?.type === 'range' && sl.min === '0' && sl.max === '1' && sl.step === '0.05' && out.textContent === '0.25×', `${sl?.type} ${sl?.min}..${sl?.max}/${sl?.step} "${out.textContent}"`);
   check('progress fill --p follows the value', sl.style.getPropertyValue('--p') === '25%', sl.style.getPropertyValue('--p'));
   sl.value = '0.6'; sl.oninput!(new Event('input'));
-  check('slider input → edit("vol", 0.6) as a NUMBER, readout repainted', last() === '["vol",0.6]' && out.textContent === '0.60×', `${last()} "${out.textContent}"`); }
+  check('slider drag PREVIEWS: edit("vol", 0.6, null, {live}) as a NUMBER, readout repainted', last() === '["vol",0.6,null,{"live":true}]' && out.textContent === '0.6×', `${last()} "${out.textContent}"`);
+  sl.onchange!(new Event('change'));
+  check('slider release COMMITS once: edit("vol", 0.6)', last() === '["vol",0.6]', last()); }
 { const on = rows[4].querySelector('input[type=checkbox]') as HTMLInputElement, off = rows[5].querySelector('input[type=checkbox]') as HTMLInputElement;
   check('check: checkbox reflects value', on?.checked === true && off?.checked === false);
   on.checked = false; on.onchange!(new Event('change'));
@@ -86,7 +95,7 @@ check('info shows the value as text', rows[0].querySelector('.sp-info')?.textCon
 { const steps = [...rows[7].querySelectorAll('.sp-step')];
   check('vec3: three steppers', steps.length === 3);
   (steps[1].lastElementChild as HTMLButtonElement).onclick!(new Event('click'));
-  check('bumping y → edit("pos", [1,3,3])', last() === '["pos",[1,3,3]]', last()); }
+  check('bumping y → edit("pos", [1,3,3], 1) — the axis rides along for multi-select', last() === '["pos",[1,3,3],1]', last()); }
 { const item = rows[8].querySelector('.sp-item') as HTMLElement;
   check('list: row is active, label + sub', item?.classList.contains('active') && item.querySelector('.sp-item-label')?.textContent === 'bench' && item.querySelector('.sp-item-sub')?.textContent === 'north');
   (item.querySelector('.sp-item-main') as HTMLElement).onclick!(new Event('click'));
@@ -125,6 +134,35 @@ check('list: row region + one region per action, payload = row id', byAction('ro
 const slider = byAction('vol')[0];
 check('range: ONE track region carrying {lo,hi,st}', byAction('vol').length === 1 && JSON.stringify(slider.slider) === '{"lo":0,"hi":1,"st":0.05}', JSON.stringify(slider?.slider));
 check('rows stack: every region lies inside the canvas', regions.every((r: any) => r.x >= 0 && r.y >= 0 && r.x + r.w <= W && r.y + r.h <= cv.height));
+
+// C13: every field type is ONE entry in widgets.js's WIDGETS table, read by the desktop and both quads. Mutation: delete
+// one entry (say `check`) → this goes red for the DOM and the legacy quad; tools/edittheme-test.ts C for the edit quad.
+console.log('PANELS — every field type draws on both surfaces (widgets.js WIDGETS, one table)');
+{
+  (globalThis as any).Option ??= function (text: string, value: string) { const o = document.createElement('option'); o.textContent = text; o.value = value; return o; };
+  const ALL = [
+    { t: 'info', k: 'i', label: 'i', value: 'v' }, { t: 'log', k: 'lg', lines: ['a'] }, { t: 'num', k: 'n', label: 'n', value: 1 },
+    { t: 'range', k: 'rg', label: 'r', value: 0.5 }, { t: 'vec3', k: 'v3', label: 'v', value: [1, 2, 3] },
+    { t: 'enum', k: 'en', label: 'e', value: 'a', options: [{ v: 'a', label: 'a' }, { v: 'b', label: 'b' }] },
+    { t: 'color', k: 'co', label: 'c', value: 0xff0000 }, { t: 'check', k: 'ck', label: 'c', value: true },
+    { t: 'text', k: 'tx', label: 't', value: 'x' }, { t: 'json', k: 'js', label: 'j', value: '{}' }, { t: 'ref', k: 'rf', label: 'r', value: 'id1' },
+    { t: 'btn', k: 'bt', label: 'b' }, { t: 'pop', k: 'pp', label: 'p', items: [] },
+    { t: 'tiles', k: 'tl', value: 'a', options: [{ v: 'a', label: 'a' }] },
+    { t: 'group', k: 'gp', label: 'g', open: true },
+    { t: 'list', k: 'ls', label: 'l', rows: [{ id: 'r1', label: 'r', actions: [{ k: 'la', label: 'a' }] }] },
+    { t: 'tree', k: 'tr', rows: [{ id: 't1', label: 't', depth: 0, kids: 1, locked: false }] },
+  ];
+  const b2 = document.createElement('div'); document.body.append(b2);
+  renderDOM(b2, ALL, edit);
+  const CHROME = new Set(['sp-label', 'sp-ctxbtn', 'sp-revert']);
+  const bare = ALL.filter((f, i) => ![...(b2.children[i]?.children ?? [])].some((c: any) => ![...c.classList].some((x) => CHROME.has(x))));
+  check(`DOM: every one of the ${ALL.length} field types builds a control in its row`, bare.length === 0, bare.map((f) => f.t).join(','));
+  const R = renderCanvas(document.createElement('canvas'), ALL, { width: W, rowH: ROW, pad: PAD });
+  const has = (a: string) => R.some((r: any) => r.action === a);
+  const want: [string, string][] = [['num', 'n'], ['range', 'rg'], ['vec3', 'v3'], ['enum', 'en'], ['color', 'co'], ['check', 'ck'], ['ref', 'rf'], ['btn', 'bt'], ['tiles', 'tl'], ['group', 'fold'], ['list', 'la'], ['tree', 'open'], ['tree', 'lock']];
+  const lost = want.filter(([, a]) => !has(a));
+  check(`legacy quad: every interactive type paints its target (${want.length} actions)`, lost.length === 0, lost.map(([t, a]) => `${t}:${a}`).join(','));
+}
 
 console.log('PANELS — hitRegion: UV → region; a slider hit is its snapped value');
 const uvAt = (r: any, fx = 0.5, fy = 0.5) => [(r.x + r.w * fx) / cv.width, (r.y + r.h * fy) / cv.height];

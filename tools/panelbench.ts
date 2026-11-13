@@ -4,7 +4,7 @@
 //
 // The palette sections (build / avatar / ground / sky) and the debug panel
 // lazy-build their DOM on first open, so a construction error there is
-// invisible to every boot gate — paritybench and lightbench boot the client
+// invisible to every boot gate — lightbench boots the client
 // but never open a panel, which is how these surfaces went their whole lives
 // eyeball-verified only. Born with the R4 split (build.js → palette/
 // groundpanel/skypanel/seatedit + rows.js): the exact change that could
@@ -12,7 +12,7 @@
 
 import { scratchBench, mkCheck, sleep } from './harness.ts';
 
-const { cdp, evalJson, cleanup, die, BASE } = await scratchBench('panelbench');
+const { cdp, evalJson, cleanup, die, BASE } = await scratchBench('panelbench', { worlds: ['panelbench'], serverEnv: { SKIP_OPT_SWEEP: '1' } });   // joining never founds a world
 const { check, tally } = mkCheck();
 
 // console/exception collector, installed before any document loads
@@ -42,20 +42,20 @@ for (const [id, probe, what] of [
   ['ground', `document.querySelectorAll('#sec-ground .body select').length >= 4 && document.querySelectorAll('#sec-ground .body button').length >= 5`, '4 selects + the grow/mow/shape buttons'],
   ['sky', `document.querySelectorAll('#sec-sky .body input[type=range]').length >= 8 && document.querySelectorAll('#sec-sky .body select').length >= 6`, '8 sliders + 6 selects'],
 ] as const) {
-  await evalJson(`document.querySelector('#sec-${id} .head')?.click(), true`);
+  await evalJson(`document.querySelector('#sec-${id}-tab')?.click(), true`);
   await sleep(id === 'avatar' || id === 'build' ? 900 : 400);   // fetches
   const ok = await evalJson(probe);
   check(`${id} section paints (${what})`, !!ok);
 }
 
-console.log('\nedit mode (the gesture core survives the split):');
+console.log('\nbuild mode (the gesture core survives the split):');
 {
   await evalJson(`dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB' })), true`);
   await sleep(200);
-  check('B enters edit mode', !!(await evalJson(`document.body.classList.contains('edit-mode')`)));
+  check('B enters build mode', !!(await evalJson(`document.body.classList.contains('build-mode')`)));
   await evalJson(`dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape' })), true`);
   await sleep(200);
-  check('Esc leaves it', !(await evalJson(`document.body.classList.contains('edit-mode')`)));
+  check('Esc leaves it', !(await evalJson(`document.body.classList.contains('build-mode')`)));
 }
 
 console.log('\nthe help overlay (def-fed prose):');
@@ -90,11 +90,11 @@ console.log('\ndebug panel (rows.js builds every family):');
     };
   })()`);
   // 12 dials + blink 6 + hair 6 + limp 2 + wings 14 + joints ≥4 = 44+;
-  // 2 view rows + 9 switches = 11 checkboxes; the joint picker select;
+  // 2 view rows + 9 permissions = 11 checkboxes; the joint picker select;
   // re-drop/pause/reset + per-family reset/copy pairs
   check('debug panel builds', !!counts, JSON.stringify(counts));
   check('...all slider families present (≥44)', (counts?.sliders ?? 0) >= 44, `${counts?.sliders}`);
-  check('...switches + view toggles (≥11)', (counts?.checks ?? 0) >= 11, `${counts?.checks}`);
+  check('...permissions + view toggles (≥11)', (counts?.checks ?? 0) >= 11, `${counts?.checks}`);
   check('...the joint picker', (counts?.selects ?? 0) >= 1);
   check('...the button rows (≥9)', (counts?.buttons ?? 0) >= 9, `${counts?.buttons}`);
 }

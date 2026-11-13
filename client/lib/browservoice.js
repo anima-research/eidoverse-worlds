@@ -1,6 +1,6 @@
 // browservoice — BRING YOUR OWN VOICE.
 //
-// A synthesized voice for a human, with the server serving nothing. The obvious
+// A synthesized voice for anyone in a browser, with the server serving nothing. The obvious
 // alternative was bundling an in-browser TTS (kokoro-js, ~82MB), and it works —
 // but it charges every visitor 82MB of bandwidth for a generic voice they did
 // not choose, including everyone who only ever wanted a microphone. Wrong cost
@@ -10,9 +10,9 @@
 // stays on your machine, and nobody else pays for it.
 //
 //   ws://  / http://   a synthesizer you are already running — the same
-//                      protocol an agent's harness speaks, so a human and an
-//                      agent point at the same kind of thing through the same
-//                      call. Piper, Coqui, a cloud TTS, a two-line Flask app.
+//                      protocol a headless harness speaks, so a browser and a
+//                      harness point at the same kind of thing through the
+//                      same call. Piper, Coqui, a cloud TTS, a two-line Flask app.
 //
 // Why not the browser's own speechSynthesis: it plays straight to the output
 // device and offers no route to an AudioNode, MediaStream or Blob — on Linux
@@ -24,8 +24,8 @@ import { setTtsSource } from './tts.js';
 import { report } from './base.js';
 
 /** Point the mouth at a synthesizer already running locally — the same ws
- *  protocol an agent's harness uses, so a human and an agent are pointing at
- *  the same kind of thing through the same call. */
+ *  protocol a headless harness uses, so a browser and a harness are pointing
+ *  at the same kind of thing through the same call. */
 export async function setEndpointVoice(url, label) {
   const isWs = /^wss?:/.test(url);
   if (isWs) {

@@ -1,5 +1,12 @@
 # INCIDENTS — the institutional memory of eidoverse-worlds
 
+*A historical ledger. Many entries were earned under the first world
+protocol (its verb log, `comp`/`mount`/`grant`, behaviors, leases), which
+has since been replaced by the current protocol (spec/PROTOCOL.md); the code paths
+they cite are gone. The lessons are kept because they outlive the code that
+taught them. Nothing here describes how the current protocol works — for
+that, read AGENTS.md.*
+
 Harvested 2026-08-08 ahead of the skeleton-first rebuild (TEL0S_NOTES.md §8,
 step 1). This codebase does not carry TODO/FIXME markers — there are zero in
 the tree. Instead, nearly every non-obvious decision carries the incident,
@@ -944,6 +951,10 @@ dropped packet without a visible stall" (`remotes.js:16-18`).
 `clockOffset = clockOffset * 0.92 + sample * 0.08`.
 Lesson: server-to-local offset must be low-passed or the render cursor jitters
 with every frame's network noise.
+(The clock is now `client/lib/serverclock.js`: round trips, the smallest
+winning, slewed rather than stepped on screen; before the first round trip, the
+one-way samples keep the least-delayed one (`shared/clockoffset.js`, from #201),
+so a frame handled late can't drag it seconds early.)
 
 **A stale avatar load finished into the scene as an undisposable ghost**
 `client/lib/remotes.js:34-41`, `:52-57`
@@ -985,9 +996,9 @@ Lesson: sparse pose maps need per-bone fallback to the side that HAS the bone.
 Lesson: allocate at sample rate, not frame rate; this path "runs per bone, per
 remote, per frame — nothing on that path may allocate" (`remotes.js:88-89`).
 
-**lastEmote never resetting meant nobody could wave twice**
+**lastAnim never resetting meant nobody could wave twice**
 `client/lib/remotes.js:147-153`
-"the one-shot has passed — forget it, so the SAME emote can fire again later."
+"the one-shot has passed — forget it, so the SAME gesture can fire again later."
 Lesson: one-shot presence fields need an explicit clear on the frame they are
 absent.
 
@@ -1064,16 +1075,16 @@ the skeleton at its REST pose. That is the T-pose."
 Lesson: `clipAction()` + weight is not enough; an action must be played once to
 be evaluated.
 
-**A LoopOnce emote holds its final frame at full weight, forever**
+**A LoopOnce gesture holds its final frame at full weight, forever**
 `client/lib/avatar.js:316-326`
 "It is a LoopOnce action with clampWhenFinished, so when it ends it holds its
 final frame at full weight — forever. Simply forgetting about it (this.current =
 null) left that frozen pose blended into everything that came after, which is why
 sitting and standing were wrong once you had pointed at something."
-Lesson: cancelling an emote must fade the action out, not just drop the
+Lesson: cancelling a gesture must fade the action out, not just drop the
 reference.
 
-**Moving cancels an emote**
+**Moving cancels a gesture**
 `client/lib/avatar.js:245-249`
 "Standing frozen mid-cheer while walking away is worse than cutting the cheer
 short."
@@ -1179,7 +1190,7 @@ motion.js this frame) composed with the socket. This is what makes a sitter
 visibly ride the swing mid-pendulum — presence samples are ignored while mounted,
 so a stale stream can't fight the seat." But: "The seat owns WHERE the body is
 and its base clip — never its expressiveness. The newest presence sample still
-delivers emotes… and held bone poses (gesturing from the seat)."
+delivers gestures… and held bone poses (gesturing from the seat)."
 Lesson: derivation replaces position, not expression.
 
 **A late joiner with one sample must still apply its held bones**
@@ -1389,7 +1400,7 @@ re-indexed.
 scale still classify by their real-world size."
 Lesson: classify on final size, not authored size.
 
-**Part sockets: without the ride, a rider sat still while the plank swung through them**
+**Part sockets: without the part's motion, an occupant sat still while the plank swung through them**
 `client/lib/world.js:523-538`
 "When the socket names a `part`, the seat point additionally rides that part's
 motion… At rest the displacement is identity, so a part socket sits exactly where
@@ -1407,7 +1418,7 @@ must go through the full matrix so scale is honoured.
 "Ignores the part's motion on purpose: 'how far is the seat' should not oscillate
 with the swing." The editing gizmo is parented in the same rest frame for the
 same reason.
-Lesson: a distance used for an affordance check must be stable; the ride belongs
+Lesson: a distance used for an affordance check must be stable; the part's motion belongs
 only to the render path.
 
 **Part lookups retry once a second rather than caching a miss forever**
@@ -1518,6 +1529,10 @@ serverNow() is smoothed from frame stamps and falls back to local time before th
 first frame arrives."
 Lesson: anything phase-locked to a log timestamp must read the smoothed server
 clock, never `Date.now()`.
+(That clock, `serverNow()`, is now measured by round trips
+(`client/lib/serverclock.js`); before the first, a join that asks for the clock
+message (`clock: true`, #201) takes the server's time from it before any frame,
+and one-way samples keep the least-delayed one (`shared/clockoffset.js`).)
 
 **Colliders re-index at a walk, not at frame rate**
 `client/lib/motion.js:126-129`
@@ -2237,7 +2252,7 @@ strangers.
 snapshot's `restore` (your own body) went through rememberPose and came back
 normalized, while `present` (everyone else's bodies) shipped lastPose raw. So a
 resident mid-ragdoll looked fine to herself and arrived collapsed for every joiner —
-for weeks, with no way to tell from inside her own session." Normalization: emote
+for weeks, with no way to tell from inside her own session." Normalization: gesture
 is dropped ("a one-shot is a moment, not a place. Replaying it at every wake would
 make a wave into a tic"); ragdoll is dropped ("physics in flight, not an enacted
 pose. The get-up path only exists in the session that fell, so anyone receiving it
@@ -2438,7 +2453,7 @@ Lesson: the upgrade is an authentication point; use it and keep tokens out of th
 client.
 
 **The renderer's real failure mode is a HANG, not a crash (measured 6.8 GB RSS)**
-`deploy/render-watchdog.ts:1-19`, `:29-30`
+`deploy/render-watchdog.ts:1-19`, `:31-32`
 "after a day or two the client leaks (measured 6.8 GB RSS), the main thread pegs,
 and Chrome keeps its websocket open (so the server still thinks it has a renderer)
 while answering no snap requests. A crash-only loop never notices, so the box sat
@@ -2449,7 +2464,7 @@ Lesson: liveness is not process existence. Probe the thing the service actually
 provides.
 
 **The watchdog reintroduced the failure it exists to prevent, via its own baseline**
-`deploy/render-watchdog.ts:110-118`
+`deploy/render-watchdog.ts:95-102`
 "The version marker may be unreadable at boot — the sequencer could be mid-restart,
 or (as happened here) running a build that predates the /client-version route and
 answers 500. That used to pin bornVersion at null for the renderer's whole life, and
@@ -2464,6 +2479,26 @@ the first successful reading.
 `server/server.ts:1818-1838`
 "the newest mtime across the client files… Cheap, cached 5s."
 Lesson: give long-lived automated clients a cheap way to notice a deploy.
+
+**A renderer that cannot render still joined as one, and a world without a renderer stopped getting one (2026-10-24)**
+`client/index.html` decideLite rule 0 and its arming, `client/lib/net.js` sendJoin,
+`deploy/render-watchdog.ts:41-51`, `deploy/render-health.ts:32-49`
+Every `/snap` in one resident's world answered 503 "this client has no renderer",
+within half a second. The five roaming renderers had not passed a health check since
+they started a week before. Their watchdog still read fps off `#hud`, where fps no
+longer lives, so it read 0 and killed each healthy roamer every two minutes. A kill
+runs no `pagehide`, so the boot tripwire took each early kill for a device that
+cannot hold the world. One died boot and a died retry later, four of the five booted
+the lite client for good. A lite page still sent `renderer` and `roam` on its join.
+The broker sent one into that world, where it answered every snapshot with lite's
+honest error. Because the world now had a renderer, the broker never summoned a
+working one. Fixed in three layers. A `?renderer` page is never lite and arms no
+tripwire. A page claims the renderer role only when a snapshot renderer is wired.
+The watchdog counts frames, checks that a frame can be captured, and asks for
+`lite=0`.
+Lesson: a role a client claims is a promise the server will route traffic on. Claim
+it only with the capability in hand. A watchdog that kills by design must not feed
+a heuristic that reads each kill as evidence.
 
 **Show-night baselines, recorded**
 `deploy/SHOW_RUNBOOK.md:42-44`, `:63`
@@ -2659,7 +2694,7 @@ Lesson: novelty-gate ambient signals; measure movement as accumulated displaceme
 **Noisiness is a property of an event's CONTEXT, not its type**
 `mcpl/denoise.ts:1-30` (from Fable's field report, 2026-08-02)
 "which ranked the noise from live logs: client arrive/leave flaps (tens of pairs in
-minutes), posture/emote cycles (40+ jump pairs in an evening), self-echo, and 'walked
+minutes), posture/gesture cycles (40+ jump pairs in an evening), self-echo, and 'walked
 up to you' firing six times for someone strolling nearby. The doctrine that fell out
 of it: noisiness is a property of an event's CONTEXT, not its type — the first arrive
 of a new identity is gold; the fifteenth of the same identity in ten minutes is a
@@ -3435,7 +3470,7 @@ Lesson: a stream with no sim behind it still has velocity; measure it.
 no live sim wakes one "so the body sags from what remains and settles honestly."
 Lesson: the body is always its own final authority.
 
-**Emotes were invisible unless you read the help**
+**Gestures were invisible unless you read the help**
 `client/main.js:933-937`
 "On a performance platform the gestures should be somewhere you can see them."
 Lesson: an affordance nobody can discover is indistinguishable from one that does

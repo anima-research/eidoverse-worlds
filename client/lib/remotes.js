@@ -9,12 +9,15 @@
 import { THREE, camera, scene } from './core.js';
 import { report, angleDelta, CONFIG } from './base.js';
 import { makeAvatar, makeCapsuleAvatar } from './avatar.js';
-import { avatarMounts, mountTransform } from './world.js';
-import { declareSeatState, clearSeatState } from './seats.js';
+import { onceAnimOf } from '../../shared/onceanim.js';
+import { avatarMounts, setBodySeat } from './world.js';
+import { driveOccupied, releaseOccupied } from './occupybody.js';
+import { declareOccupyState, clearOccupyState } from './occupants.js';
 import { applyRemoteReach, noteReachEvents } from './reachnet.js';
 import { syncClipPhase } from './poseclips.js';
 import { applyWingFoldPresence } from '../../shared/wingpresence.js';
-import { applyPresenceWire } from '../../shared/presencewire.js';
+import { poseChannels } from '../../shared/humanoid.js';
+import { applyPresenceWire, applyVoiceWire, applyBodyWire, sampleTime } from '../../shared/presencewire.js';
 import { applyRemoteXR, resetFingers } from './xrbody.js';
 
 export const remotes = new Map(); // id -> RemoteBody
@@ -22,19 +25,15 @@ export const remotes = new Map(); // id -> RemoteBody
 const DEFAULT_AVATAR = 'eidoverse/assets/vrms/claude.vrm';
 // ?capsule=1: every remote arrives as the capsule too (owner, 09-19) — the flag is about seeing the floor, not one body
 const loadBody = (id, path) => CONFIG.params.has('capsule') ? Promise.reject(new Error('?capsule=1: body loads refused')) : makeAvatar(id, path);
-/** How far behind the newest sample we render. One frame of slack at 15Hz is
- *  66ms; 110 gives room for one dropped packet without a visible stall. */
-const INTERP_MS = 110;
+// How far behind serverNow() each body is drawn: at least 110 ms, more on a slow link (interpdelay.js; house review I46).
+import { noteLateness, interpDelay } from './interpdelay.js';
 const BUF_MAX = 12;
 
-// Server-to-local clock offset, smoothed. Frames carry the server's `t`.
-let clockOffset = null;
-export function noteServerTime(t) {
-  if (typeof t !== 'number') return;
-  const sample = t - performance.timeOrigin - performance.now();
-  clockOffset = clockOffset === null ? sample : clockOffset * 0.92 + sample * 0.08;
-}
-export const serverNow = () => performance.timeOrigin + performance.now() + (clockOffset ?? 0);
+// Server-to-local clock offset, smoothed: client/lib/serverclock.js (one clock for every realizer). Re-exported here,
+// where net.js and the body code have always found it.
+export { noteServerTime, serverNow } from './serverclock.js';
+import { serverNow } from './serverclock.js';   // a re-export binds no local name: this module's own frame loop needs it too
+import { climbAt } from './climb.js';
 
 /** Per-identity generation counter (#95): every AUTHORITATIVE (re)creation
  *  of an id bumps it, and async continuations validate record identity
@@ -89,7 +88,7 @@ function retryBody(r) {
 export async function ensureRemote(id, avatarPath, meta = {}) {
   const existing = remotes.get(id);
   if (existing) {
-    if (meta.agent !== undefined) existing.agent = meta.agent;
+    if (meta.declares !== undefined) existing.declares = meta.declares;   // the word they declared at the door (§6a), or null
     // same person, new body: rebuild (live avatar switching re-announces via
     // join). A switch that lands while the OLD body is still loading must not
     // be dropped — delete the map entry and let the stale load's own guard
@@ -116,7 +115,7 @@ export async function ensureRemote(id, avatarPath, meta = {}) {
         existing.avatar?.resetTransients?.();
         const fresh = {
           id, avatar: existing.avatar, avatarPath: existing.avatarPath,
-          loading: false, agent: !!(meta.agent ?? existing.agent),
+          loading: false, declares: meta.declares ?? existing.declares ?? null,
           gen: (gens.get(id) ?? 0) + 1,
           buf: [], lastClip: 'idle', lodAcc: 0, lodTick: 0, speakingUntil: 0,
         };
@@ -157,7 +156,7 @@ export async function ensureRemote(id, avatarPath, meta = {}) {
     }
   }
   const r = {
-    id, avatar: null, avatarPath, loading: true, agent: !!meta.agent,
+    id, avatar: null, avatarPath, loading: true, declares: meta.declares ?? null,
     gen: (gens.get(id) ?? 0) + 1,
     buf: [],                 // [{ t, p:[x,y,z], yaw, speed, clip, pitch }]
     lastClip: 'idle',
@@ -190,6 +189,7 @@ export function dropRemote(id, expected) {
   if (expected && r !== expected) return null;   // a successor owns this id now
   remotes.delete(id);
   r.avatar?.dispose();
+  setBodySeat(id, null);   // its seat rode its frames (presence): gone with the body, or a leave sits on forever (I15)
   return r;
 }
 
@@ -197,10 +197,14 @@ export function dropRemote(id, expected) {
 export function pushPose(id, pose, t) {
   const r = remotes.get(id);
   if (!r || !pose) return;
-  const stamp = typeof t === 'number' ? t : serverNow();
+  // its own capture time when the sender stamped one and it's sane against the frame's (shared/presencewire.js sampleTime;
+  // spec/PHYSICS.md §5.1), else the frame's
+  const stamp = sampleTime(pose, typeof t === 'number' ? t : serverNow());
   const last = r.buf[r.buf.length - 1];
   if (last && stamp <= last.t) return;    // out of order — drop
-  r.buf.push({ t: stamp, ...pose });
+  r.late = noteLateness(r.late ?? null, serverNow() - stamp);
+  r.buf.push({ ...pose, t: stamp });
+  setBodySeat(id, pose.seat ?? null);   // a seat rides the frame while it holds (presence; world.js)
   while (r.buf.length > BUF_MAX) r.buf.shift();
   // reach/touch events ride the RAW stream, not the applied one — a touch
   // that begins while this body's avatar is still loading must be heard
@@ -211,11 +215,14 @@ function applyImmediate(r) {
   const s = r.buf[r.buf.length - 1];
   if (!r.avatar || !s) return;
   r.avatar.root.position.set(...s.p);
-  r.avatar.root.rotation.y = s.yaw ?? 0;
+  if (s.q) r.avatar.root.quaternion.fromArray(s.q).normalize();   // a swimmer's whole-body turn (presence q)
+  else r.avatar.root.rotation.set(0, s.yaw ?? 0, 0);
+  r.avatar.locomotion = s.locomotion ?? null;
 }
 
 // Bone blending scratch. This runs per bone, per remote, per frame — nothing
 // on that path may allocate.
+const _up = new THREE.Vector3(0,1,0);
 const _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion(), _qk = new THREE.Quaternion();
 /** Marks "the bones are mid-blend": non-null so a later release still clears,
  *  and never `===` a sample's pose so a held pose always re-applies. */
@@ -242,14 +249,13 @@ function applyPose(r, a, b, k) {
   // and its output arrays outlive every frame of the span.
   if (r.poseA !== pa || r.poseB !== pb) planPoseBlend(r, pa, pb);
   for (const s of r.poseSlots) {
-    _qa.fromArray(s.a); _qb.fromArray(s.b);
-    _qk.slerpQuaternions(_qa, _qb, k).toArray(s.out);
+    if (s.a) { _qa.fromArray(s.a); _qb.fromArray(s.b); _qk.slerpQuaternions(_qa, _qb, k).toArray(s.q); }
+    if (s.ta) for (let i = 0; i < 3; i++) s.t[i] = s.ta[i] + (s.tb[i] - s.ta[i]) * k;
+    if (s.sa) for (let i = 0; i < 3; i++) s.s[i] = s.sa[i] + (s.sb[i] - s.sa[i]) * k;
   }
   r.lastPose = POSE_BLEND;
   r.avatar.setPose(r.poseOut);
 }
-
-const isQuat = (q) => Array.isArray(q) && q.length === 4;
 
 // ---- C18: a tracked (VR) body's head + hands. The sample rides presence as `xr`
 // (see xrbody.js for the frame); here it is blended a→b like the root, handed to
@@ -291,30 +297,47 @@ function applyXRPresence(r, a, b, k) {
 function planPoseBlend(r, pa, pb) {
   r.poseA = pa; r.poseB = pb;
   r.poseSlots = []; r.poseOut = {};
+  // Per channel (shared/humanoid.js poseChannels): rotation slerps, translation
+  // and scale lerp. A channel only one side has is held, not blended from
+  // nothing — the same rule the bare-quaternion form always followed.
   for (const n of new Set([...Object.keys(pa), ...Object.keys(pb)])) {
-    const qa = isQuat(pa[n]) ? pa[n] : pb[n], qb = isQuat(pb[n]) ? pb[n] : pa[n];
-    if (!isQuat(qa) || !isQuat(qb)) continue;
-    const out = [0, 0, 0, 1];
-    r.poseSlots.push({ a: qa, b: qb, out });
-    r.poseOut[n] = out;
+    const ca = poseChannels(pa[n]), cb = poseChannels(pb[n]);
+    if (!ca && !cb) continue;
+    const pick = (ch) => { const x = ca?.[ch] ?? cb?.[ch], y = cb?.[ch] ?? ca?.[ch]; return x ? [x, y] : [null, null]; };
+    const [qa, qb] = pick('q'), [ta, tb] = pick('t'), [sa, sb] = pick('s');
+    const slot = { a: qa, b: qb, q: qa && [0, 0, 0, 1], ta, tb, t: ta && [0, 0, 0], sa, sb, s: sa && [1, 1, 1] };
+    r.poseSlots.push(slot);
+    r.poseOut[n] = !ta && !sa ? slot.q : { ...(qa ? { q: slot.q } : {}), ...(ta ? { t: slot.t } : {}), ...(sa ? { s: slot.s } : {}) };
   }
 }
 
-/** Presence extras that aren't position or bones: emotes and the locomotion
+/** A remote's chosen size and plate lift (shared/presencewire.js bodyWire: clamped, absence = default). Written onto
+ *  the record every sample and onto the Avatar — idempotent, and a body swap (a fresh Avatar at 1) picks it up on the
+ *  very next sample. Exported for tools/bodyscale-test.ts (a stand-in avatar) and tools/bodyscale-probe.mjs (the real one). */
+export function applyRemoteBody(r, s) {
+  applyBodyWire(r, s);
+  r.avatar?.setUserScale?.(r.scale);
+  r.avatar?.setPlateY?.(r.plateY);
+}
+
+/** Presence extras that aren't position or bones: a once anim (pose.anim) and the locomotion
  *  clip. Driven by the NEWER sample of the pair and never blended — these are
  *  discrete events, and half a wave is not a wave. Applied in BOTH the
  *  interpolated and single-sample paths so a late joiner isn't missing them. */
 function applyPresenceExtras(r, s) {
   applyWingFoldPresence(r.avatar, s);
   applyPresenceWire(r, s);            // present / away / busy, for the Who panel
+  applyVoiceWire(r, s);              // mic / hear, for the hover card
+  applyRemoteBody(r, s);             // their chosen size / plate lift (absence = default)
   const clip = s.clip ?? 'idle';
-  if (s.emote && s.emote !== r.lastEmote) {
-    r.lastEmote = s.emote;
-    r.avatar.playEmote(s.emote);
+  const once = onceAnimOf(s);
+  if (once && once !== r.lastAnim) {
+    r.lastAnim = once;
+    r.avatar.playOnce(once);
   } else {
-    // the one-shot has passed — forget it, so the SAME emote can fire again
-    // later (lastEmote never resetting meant nobody could wave twice)
-    if (!s.emote) r.lastEmote = null;
+    // the once anim has passed — forget it, so the SAME one can fire again
+    // later (lastAnim never resetting meant nobody could wave twice)
+    if (!once) r.lastAnim = null;
     if (clip !== r.lastClip) r.lastClip = clip;
     // 'ragdoll' is not a clip and never was: setClip walks CLIP_FALLBACK,
     // finds no entry for it, and hands _setAction undefined — which returns at
@@ -353,32 +376,42 @@ export function setLodBias(v) { lodBias = v; }
 // owns root and bones; springs/expressions still tick.
 export const draggedLocal = new Set();
 
+const _eye = new THREE.Vector3();
 export function updateRemotes(dt, now = performance.now()) {
-  const renderAt = serverNow() - INTERP_MS;
+  const now0 = serverNow();
+  // animation LOD by distance from the camera's WORLD position (in XR camera.position is the head's offset inside the
+  // rig: remotes near the world origin animated at full rate, the ones beside you at a quarter; review 10a M4)
+  const eye = camera.getWorldPosition(_eye);
 
   for (const r of remotes.values()) {
     if (!r.avatar) continue;
     if (draggedLocal.has(r.id)) { r.avatar.update(dt, now); continue; }
     const buf = r.buf;
+    const renderAt = now0 - interpDelay(r.late ?? null);
 
     // A mounted body is DERIVED, not streamed: its transform comes from the
     // parent entity's live transform (already ticked by motion.js this frame)
-    // composed with the socket. This is what makes a sitter visibly ride the
+    // composed with the socket. This is what makes an occupant visibly ride the
     // swing mid-pendulum — presence samples are ignored while mounted, so a
     // stale stream can't fight the seat.
     if (avatarMounts.has(r.id)) {
-      const sw = mountTransform(r.id, _a, { path: r.avatarPath, av: r.avatar });
+      const s0 = buf[buf.length - 1];
+      // the same driver my own seat runs (occupybody.js): socket, anchor, signals, pose, reach, look — so an occupant looks
+      // the same on every screen
+      const seated = driveOccupied(r.avatar, r.id, { dt, nowMs: serverNow(), path: r.avatarPath, xr: s0?.xr ?? null });
+      const sw = seated?.sw;
       if (sw) {
-        r.avatar.root.position.copy(_a);
-        r.avatar.root.rotation.y = sw.yaw;
+        r.avatar.root.position.copy(seated.pos);
+        r.avatar.root.quaternion.copy(seated.q);   // the socket's whole rotation
+        r.avatar.locomotion = null;
         // Declared seat state (#101): the ≈ marker and one console line per
         // transition — an unprofiled seat renders where it always did, but
         // never silently.
         r.avatar.setSeatApprox(sw.seatState === 'approximate');
-        declareSeatState(r.id, sw.to, avatarMounts.get(r.id)?.slot, sw.seatState, sw.seatReason);
+        declareOccupyState(r.id, sw.host ?? sw.to, sw.slot, sw.seatState, sw.seatReason);
         // The seat owns WHERE the body is and its base clip — never its
-        // expressiveness. The newest presence sample still delivers emotes
-        // (one-shots layer over the sit; setClip is emote-aware and won't
+        // expressiveness. The newest presence sample still delivers gestures
+        // (one-shots layer over the sit; setClip is gesture-aware and won't
         // cut a wave short) and held bone poses (gesturing from the seat).
         // `animate` streams arrive on their own channel and never pass here.
         const s = buf[buf.length - 1];
@@ -388,18 +421,19 @@ export function updateRemotes(dt, now = performance.now()) {
           // still visibly folded through the same rig-local renderer path.
           applyWingFoldPresence(r.avatar, s);
           applyPresenceWire(r, s);
-          if (s.emote && s.emote !== r.lastEmote) {
-            r.lastEmote = s.emote;
-            r.avatar.playEmote(s.emote);
-          } else if (!s.emote) r.lastEmote = null;
+          applyVoiceWire(r, s);
+          applyRemoteBody(r, s);
+          const once = onceAnimOf(s);
+          if (once && once !== r.lastAnim) {
+            r.lastAnim = once;
+            r.avatar.playOnce(once);
+          } else if (!once) r.lastAnim = null;
           applyRemoteReach(r, s);   // a seated body still puts a hand out
           applyXRPresence(r, s, s, 1);   // …and still looks around / points
         }
         r.avatar.setLimp(false);
-        if (r.lastClip !== sw.pose) { r.lastClip = sw.pose; }
-        r.avatar.setClip(sw.pose, 0);   // emote-aware: no-ops while a gesture owns the body
-        if ((s?.clipTimeSlot ?? s?.clip) === sw.pose) syncClipPhase(r.avatar, s, r.clipPhaseStamp ??= {});
-        const d = r.avatar.root.position.distanceTo(camera.position);
+        r.lastClip = seated.clip;   // the seat's pose layer owns the base clips (avatar.setSeatBlend); gestures still play over it
+        const d = r.avatar.root.position.distanceTo(eye);
         const every = Math.round((d < LOD_NEAR ? 1 : d < LOD_MID ? 2 : 4) * lodBias);
         r.lodAcc += dt;
         r.lodTick = (r.lodTick + 1) % Math.max(1, every);
@@ -407,10 +441,13 @@ export function updateRemotes(dt, now = performance.now()) {
         continue;
       }
       // parent still downloading — fall through to normal presence meanwhile
-    } else if (r.avatar._seatApprox) {
-      // stood up: the marker comes off and the next sit declares afresh
-      r.avatar.setSeatApprox(false);
-      clearSeatState(r.id);
+    } else {
+      if (r.avatar._seatState) releaseOccupied(r.avatar);   // stood up: the seat lets go of the body
+      if (r.avatar._seatApprox) {
+        // stood up: the marker comes off and the next sit declares afresh
+        r.avatar.setSeatApprox(false);
+        clearOccupyState(r.id);
+      }
     }
 
     if (buf.length >= 2) {
@@ -419,15 +456,24 @@ export function updateRemotes(dt, now = performance.now()) {
       while (i > 0 && buf[i - 1].t > renderAt) i--;
       const b = buf[i], a = buf[i - 1] ?? b;
       const span = b.t - a.t;
-      const k = span > 0 ? THREE.MathUtils.clamp((renderAt - a.t) / span, 0, 1) : 1;
+      const limpEdge = (a.clip === 'ragdoll') !== (b.clip === 'ragdoll');
+      const k = span > 0 && !limpEdge ? THREE.MathUtils.clamp((renderAt - a.t) / span, 0, 1) : 1;
 
       _a.set(...a.p); _b.set(...b.p);
       r.avatar.root.position.copy(_a).lerp(_b, k);
-      r.avatar.root.rotation.y = a.yaw + angleDelta(a.yaw, b.yaw ?? a.yaw) * k;
+      if (a.q || b.q) {   // a swimmer's whole-body turn (presence q): slerped, so a dive tilts as smoothly as a turn
+        if (a.q) _qa.fromArray(a.q).normalize(); else _qa.setFromAxisAngle(_up, a.yaw ?? 0);
+        if (b.q) _qb.fromArray(b.q).normalize(); else _qb.setFromAxisAngle(_up, b.yaw ?? 0);
+        r.avatar.root.quaternion.copy(_qa).slerp(_qb, k);
+      } else r.avatar.root.rotation.set(0, (a.yaw ?? 0) + angleDelta(a.yaw ?? 0, b.yaw ?? a.yaw ?? 0) * k, 0);   // upright (a dismount from a tilted seat)
+      // on a climb route: {host, progress} through the host's live pose, so a moving carrier never leaves its climber (shared/climb.js)
+      if (b.climb) { const c = climbAt(a.climb?.host === b.climb.host ? { host: b.climb.host, progress: a.climb.progress + (b.climb.progress - a.climb.progress) * k } : b.climb);
+        if (c) { r.avatar.root.position.fromArray(c.pos); r.avatar.root.rotation.set(0, c.yaw, 0); } }
+      r.avatar.locomotion = b.locomotion ?? null;
       r.avatar.pitch = (a.pitch ?? 0) + ((b.pitch ?? 0) - (a.pitch ?? 0)) * k;
       // drop samples we've moved past, but always keep one behind renderAt
       while (buf.length > 2 && buf[1].t < renderAt - 400) buf.shift();
-      applyPose(r, a, b, k);
+      applyPose(r, limpEdge ? b : a, b, k);
       applyXRPresence(r, a, b, k);
       applyPresenceExtras(r, b);
     } else if (buf.length === 1) {
@@ -441,7 +487,7 @@ export function updateRemotes(dt, now = performance.now()) {
       applyPresenceExtras(r, buf[0]);
     }
 
-    const d = r.avatar.root.position.distanceTo(camera.position);
+    const d = r.avatar.root.position.distanceTo(eye);
     const every = Math.round((d < LOD_NEAR ? 1 : d < LOD_MID ? 2 : 4) * lodBias);
     r.lodAcc += dt;
     r.lodTick = (r.lodTick + 1) % Math.max(1, every);

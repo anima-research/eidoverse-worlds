@@ -31,7 +31,7 @@
 //
 // Negative controls, each named in its check: the churn of the first field
 // run (an "already light" answer re-asked every cooldown), a held tier swap
-// landing over a rider / cargo / a part motion / an edit hold, a lod ask a
+// landing over an occupant / cargo / a part motion / an edit hold, a lod ask a
 // non-KTX2 browser reports without ever sending, an authored `recipe`
 // extra read as a served lod, a governor lever overriding the resident's
 // "full detail". Dies at import on main (no lod_policy.js).
@@ -50,9 +50,9 @@ plugin({
     // governor's cone (imported from lib/ as ./x.js) — state, scheduler,
     // policy, fold and the bus stay REAL, and so do models.js and governor.js
     for (const f of ['^\\.\\./core\\.js$', '^\\.\\./assets\\.js$', '^\\.\\./colliders\\.js$',
-      '^\\.\\./lightrig\\.js$', '^\\.\\./lights\\.js$', '^\\.\\./world\\.js$',
+      '^\\.\\./lightrig\\.js$', '^\\.\\./lights\\.js$', '^\\.\\./world\\.js$', '^\\.\\./materials\\.js$',
       '^\\./core\\.js$', '^\\./warmqueue\\.js$', '^\\./loadwork\\.js$', '^\\./lightrig\\.js$',
-      '^\\./emitters\\.js$', '^\\./terrain\\.js$', '^\\./remotes\\.js$', '^\\./frame\\.js$', '^\\./ui\\.js$']) {
+      '^\\./emitters\\.js$', '^\\./terrain\\.js$', '^\\./breadcrumbs\\.js$', '^\\./frameloop\\.js$', '^\\./remotes\\.js$', '^\\./frame\\.js$', '^\\./ui\\.js$', '^\\./statuschips\\.js$']) {
       b.onResolve({ filter: new RegExp(f) }, () => ({ path: STUB }));
     }
   },
@@ -68,7 +68,8 @@ const store = new Map<string, string>();
 const stub: any = await import('./lod-client-stub.mjs');
 const M: any = await import('../client/lib/realize/models.js');
 const S: any = await import('../client/lib/state.js');
-const { emptyState } = await import('../shared/fold.js');
+const { scratchWorld } = await import('./protocol/scratchworld.ts');
+const { emptyView } = await import('../shared/protocol/view.js');
 const { bus } = await import('../client/lib/base.js');
 const { makeModelQuality, askFor, tierOf } = await import('../client/lib/lod_policy.js');
 const { keyFromVersion, lodFromVersion, negotiate, withLod } = await import('../shared/ktx2.js');
@@ -96,22 +97,23 @@ const REC = stub.server.recipe as string;
 const enc = encodeURIComponent(REC);
 const lib = (id: string) => `eidoverse/assets/models/${id}.glb`;
 const GEOM = { bbox: { size: [1, 1, 1], center: [0, 0.5, 0] } };   // diag 1.73 → R ≈ 86.9m, auto edge ≈ 39m, halved ≈ 19.5m
-let seq = 1;
-const fold = (verb: string, args: any) => S.foldLive({ seq: seq++, ts: 1_000_000 + seq, actor: 't', verb, args });
+// the world: a scratch authority; the realizer is fed the views a client's own fold reaches after each write
+const W = scratchWorld('lodclient');
+const door = (tool: string, args: any) => { const r = W.call(tool, args); if (!r.ok) throw new Error(`${tool} ${JSON.stringify(args)} refused: ${JSON.stringify(r.refused)}`); S.applyView(structuredClone(W.view())); return r; };
 /** Place an entity on the z axis, `z` metres from the camera at the origin.
  *  Each id has its own lib, so loads and variants attribute per placement. */
 const spawnAt = (id: string, z: number, variant = true) => {
   if (variant) stub.server.variants.add(lib(id));
   bus.emit('lib-geom', { [lib(id)]: GEOM });   // the geom side-channel, landed
-  fold('spawn', { id, lib: lib(id), pos: [0, 0, z] });
+  door('create', { id, model: lib(id), components: { transform: { pos: [0, 0, z] } } });
 };
 const obj = (id: string) => stub.entities.get(id);
-const loadsOf = (id: string) => stub.loads.filter((l: any) => l.lib === lib(id));
+const loadsOf = (id: string) => stub.loads.filter((l: any) => l.model === lib(id));
 const drain = () => { for (let i = 0; i < 50 && M.promoteTailPending() > 0; i++) M.drainPromoteTail(); };
 const res = () => M.residencyDebug();
 
 M.initModelsRealizer();          // geom side-channel + fold wiring (+ a 2Hz beat we ignore: we beat by hand)
-S.hydrate(emptyState(), [], 0);
+S.hydrate(emptyView());
 stub.camera.position.set(0, 0, 0);
 
 // ---- 1. the join: tiers chosen before the fetch, from distance against the entity's own radius
@@ -121,8 +123,8 @@ stub.camera.position.set(0, 0, 0);
   spawnAt('light', 70, false);   // far, but the sequencer has no variant — its "already light" refusal answers the original
   await settle();
   check('three placements realized', res().real === 3, JSON.stringify(res()));
-  check('near (5m) asked FULL — a plain ktx2 fetch', loadsOf('near')[0]?.tier === 'full' && loadsOf('near')[0]?.url === `${lib('near')}?ktx2=3`, loadsOf('near')[0]?.url);
-  check('far (70m) asked LOD — the recipe rides the ktx2 negotiation on the wire', loadsOf('far')[0]?.tier === 'lod' && loadsOf('far')[0]?.url === `${lib('far')}?ktx2=3&lod=${enc}`, loadsOf('far')[0]?.url);
+  check('near (5m) asked FULL — a plain ktx2 fetch', loadsOf('near')[0]?.tier === 'full' && loadsOf('near')[0]?.url === `${lib('near')}?ktx2=4`, loadsOf('near')[0]?.url);
+  check('far (70m) asked LOD — the recipe rides the ktx2 negotiation on the wire', loadsOf('far')[0]?.tier === 'lod' && loadsOf('far')[0]?.url === `${lib('far')}?ktx2=4&lod=${enc}`, loadsOf('far')[0]?.url);
   check('far wears the served lod: asked lod, served lod', obj('far')?.userData.tierAsked === 'lod' && obj('far')?.userData.tier === 'lod');
   check('light asked lod, was answered the original, wears FULL honestly', obj('light')?.userData.tierAsked === 'lod' && obj('light')?.userData.tier === 'full');
   check('EW.residency(): lod 1 (served) / lodAsked 2 (asked) — the gap is the sequencer\'s honest fall-through', res().lod === 1 && res().lodAsked === 2, JSON.stringify(res()));
@@ -186,7 +188,7 @@ stub.camera.position.set(0, 0, 0);
   spawnAt('norecipe', 70);
   await settle();
   const n = loadsOf('norecipe')[0];
-  check('no recipe published: ktx2 negotiates, lod does not — a plain ktx2 fetch, asked full', n?.tier === 'full' && n?.url === `${lib('norecipe')}?ktx2=3`, n?.url);
+  check('no recipe published: ktx2 negotiates, lod does not — a plain ktx2 fetch, asked full', n?.tier === 'full' && n?.url === `${lib('norecipe')}?ktx2=4`, n?.url);
   stub.server.recipe = REC;
 }
 
@@ -201,9 +203,9 @@ async function heldSwap(id: string, dep: null | ((id: string) => void)) {
   const mark = stub.colliderLog.length;
   const refusedBefore = res().retiersRefused, retiersBefore = res().retiers;
   stub.setHold(true);
-  fold('place', { id, pos: [0, 0, 10] });   // walked toward: 10m < the inner edge (29m) → the sweep wants full
+  door('set', { id, component: 'transform', value: { pos: [0, 0, 10] }, merge: true });   // walked toward: 10m < the inner edge (29m) → the sweep wants full
   M.residencySweep(); await settle();
-  const h = stub.held.find((x: any) => x.lib === lib(id));
+  const h = stub.held.find((x: any) => x.model === lib(id));
   // per-placement: other placements may legitimately re-tier in the same beat (a browser that
   // regained KTX2 re-asks its far ones), so count THIS lib's loads, not the global counter
   check(`${id}: the FULL load is in flight, held`, !!h && h.tier === 'full' && loadsOf(id).length === 2 && res().retiers > retiersBefore,
@@ -225,9 +227,9 @@ const sinceMark = (mark: number, id: string) => stub.colliderLog.slice(mark).fil
     && sinceMark(mark, 'ctl').includes('fit'), JSON.stringify(sinceMark(mark, 'ctl')));
 }
 const deps: [string, (id: string) => void][] = [
-  ['a body sits on it (avatarMounts)', (id) => stub.avatarMounts.set(`rider-of-${id}`, { to: id })],
-  ['cargo mounts on it (a `mount` verb folds parent.to)', (id) => { spawnAt(`cargo-${id}`, 10); fold('mount', { id: `cargo-${id}`, to: id }); }],
-  ['a part motion arrives (comp.motion.part)', (id) => fold('motion', { id, type: 'swing', part: 'Door', axis: [0, 1, 0], amp: 0.3, period: 2 })],
+  ['a body sits on it (avatarMounts)', (id) => stub.avatarMounts.set(`occupant-of-${id}`, { to: id })],
+  ['cargo is parented to it (parent.to)', (id) => { spawnAt(`cargo-${id}`, 10); door('set', { id: `cargo-${id}`, component: 'parent', value: { to: id } }); }],
+  ['a part motion arrives (comp.motion.part)', (id) => door('set', { id, component: 'motion', value: { type: 'pendulum', part: 'Door', axis: [0, 1, 0], amp: 0.3, period: 2 } })],   // a swinging door is a pendulum now
   ['an edit hold begins (editHolds)', (id) => stub.editHolds.add(id)],
 ];
 let k = 0;
@@ -254,17 +256,18 @@ console.log('\n  entry points — the governor lever and the dial callback\n');
   const hist = () => G.governorDebug().history as string[];
   let windows = 0;
   while (!hist().some((h) => h.startsWith('− lod')) && windows++ < 4) for (let i = 0; i < 4; i++) G.governPerformance(12);
-  check('slow seconds with nothing else to shed: the ladder reaches "lod" — the session dial sheds, the resident is told once',
-    M.modelQuality.shed === true && hist().some((h) => h.startsWith('− lod')) && stub.toasts.length === toastsBefore + 1,
-    JSON.stringify({ shed: M.modelQuality.shed, hist: hist().slice(-3), toasts: stub.toasts.slice(-1) }));
+  check('slow seconds with nothing else to shed: the ladder reaches "lod" — the session dial sheds, and a status chip says so (no toast)',
+    M.modelQuality.shed === true && hist().some((h) => h.startsWith('− lod')) && stub.chips.has('quality-reduced')
+      && stub.chips.get('quality-reduced').level === 'attn' && stub.toasts.length === toastsBefore,
+    JSON.stringify({ shed: M.modelQuality.shed, hist: hist().slice(-3), chips: [...stub.chips.keys()], toasts: stub.toasts.slice(-1) }));
   M.residencySweep(); await settle(); drain();   // drained: the governor's grace holds while a promote tail is pending
   check('…and it CROSSES into the realizer: gov (25m > the halved 19.5m edge) re-tiers to lod on the next beat',
     obj('gov')?.userData.tierAsked === 'lod' && obj('gov')?.userData.tier === 'lod', JSON.stringify(obj('gov')?.userData));
   windows = 0;
   while (M.modelQuality.shed && windows++ < 4) for (let i = 0; i < 6; i++) G.governPerformance(60);
-  check('smooth seconds: "lod" restores SILENTLY — the dial is off, no toast',
-    !M.modelQuality.shed && hist().some((h) => h.startsWith('+ lod')) && stub.toasts.length === toastsBefore + 1,
-    JSON.stringify({ shed: M.modelQuality.shed, hist: hist().slice(-3) }));
+  check('smooth seconds: "lod" restores SILENTLY — the dial is off, no toast, and the chip goes with it',
+    !M.modelQuality.shed && hist().some((h) => h.startsWith('+ lod')) && stub.toasts.length === toastsBefore && !stub.chips.has('quality-reduced'),
+    JSON.stringify({ shed: M.modelQuality.shed, hist: hist().slice(-3), chips: [...stub.chips.keys()] }));
   M.modelQuality.setQuality('full');
   drain();
   const histLen = hist().length;

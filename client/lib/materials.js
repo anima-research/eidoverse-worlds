@@ -40,15 +40,25 @@
 // the same meadow.
 
 import { THREE, TSL, sun, ground, renderer } from './core.js';
-import { report } from './base.js';
+import { report, CONFIG, bus } from './base.js';
+import { registerFoliage } from './foliage.js';
 import { state } from './state.js';
 import { effectiveSky } from '../../shared/forecast.js';
 
 const {
-  Fn, uniform, texture, float, vec2, vec3, vec4, mix, clamp, smoothstep,
+  Fn, If, uniform, texture, float, vec2, vec3, vec4, mix, clamp, smoothstep,
   fract, floor, dot, length, positionWorld, positionView, normalWorld,
-  materialColor, materialRoughness, materialMetalness,
+  materialColor, materialRoughness, materialMetalness, screenCoordinate, bool,
 } = TSL;
+
+// ---- the caster fade ---------------------------------------------------------
+// A caster entering or leaving the distance budget (lightrig casterPass) dithers its shadow in over ~300 ms instead
+// of popping (R 10-11). Materials are SHARED across clones (draw_batches groups by material.id), so the amount comes
+// from the OBJECT being drawn: one uniform, re-read per object in the shadow pass. One module-level node so every
+// material's depth pass has the SAME WGSL shape; the material is marked so lightrig knows the mesh can fade (a
+// non-node material hard-flips as before). Interleaved-gradient noise, in shadow-map pixels.
+const uShadowFade = uniform(1).onObjectUpdate(({ object }) => object?.userData?.shadowFade ?? 1);
+const FADE_MASK = fract(float(52.9829189).mul(fract(dot(screenCoordinate.xy, vec2(0.06711056, 0.00583715))))).lessThan(uShadowFade);
 
 // ---- the shared uniform state -----------------------------------------------
 // One set for the whole scene, exactly like upstream's: every wrapped
@@ -169,6 +179,16 @@ function cloudShade() {
   return float(1).sub(smoothstep(U.cloudLo, U.cloudHi, n).mul(U.cloudStrength));
 }
 
+// the pre-2026-09-24 puddle noise, unconditional — only for the ?pudgate=0 A/B
+function pnUngated() {
+  const warp = vec2(
+    vnoise2(positionWorld.xz.mul(0.045)),
+    vnoise2(positionWorld.xz.mul(0.045).add(vec2(37.7, 11.3))),
+  ).sub(0.5).mul(2.2);
+  return vnoise2(positionWorld.xz.mul(0.35).add(warp))
+    .add(vnoise2(positionWorld.xz.mul(0.09)).mul(0.6));
+}
+
 function wrapMaterial(mat, receiver, pbr) {
   const upMask = clamp(normalWorld.y, 0, 1).pow(2).mul(U.wet);
   // crossed-card foliage carries upward normals for clump lighting, so
@@ -178,12 +198,26 @@ function wrapMaterial(mat, receiver, pbr) {
   const flat = smoothstep(0.985, 0.998, normalWorld.y);
   // puddle mask: threshold value noise near its MIDDLE (near-max contours
   // grid up), coarse octave warps the fine one so outlines meander
-  const warp = vec2(
-    vnoise2(positionWorld.xz.mul(0.045)),
-    vnoise2(positionWorld.xz.mul(0.045).add(vec2(37.7, 11.3))),
-  ).sub(0.5).mul(2.2);
-  const pn = vnoise2(positionWorld.xz.mul(0.35).add(warp))
-    .add(vnoise2(positionWorld.xz.mul(0.09)).mul(0.6));
+  // COST GATES (2026-09-24, both value-exact): the noise below is 4 value-noise taps (16 hashes) per fragment on every
+  // PBR surface. (1) A material that opted out of puddles (grass, foliage cards) multiplied it by a literal 0 — GLSL
+  // cannot fold x*0 (NaN/inf), so it paid in full for nothing; now it is never built. (2) At runtime the puddle factor
+  // is smoothstep(0.35, 0.9, wet), exactly 0 at wet <= 0.35 (clear/fair/overcast), and pShape only reaches the image
+  // through mix(…, puddle) — so the taps run only above that, in a uniform branch (every fragment takes the same side).
+  const gates = CONFIG.params.get('pudgate') !== '0';   // ?pudgate=0 builds the pre-gate graph (tools/puddle-gate-probe.mjs A/B)
+  const noPud = gates && (!pbr || !!(mat.userData?.noPuddles || receiver?.userData?.noPuddles));
+  const pnNode = noPud ? null : !gates ? pnUngated() : Fn(() => {
+    const pnv = float(0).toVar();
+    If(U.wet.greaterThan(0.35), () => {
+      const warp = vec2(
+        vnoise2(positionWorld.xz.mul(0.045)),
+        vnoise2(positionWorld.xz.mul(0.045).add(vec2(37.7, 11.3))),
+      ).sub(0.5).mul(2.2);
+      const pn = vnoise2(positionWorld.xz.mul(0.35).add(warp))
+        .add(vnoise2(positionWorld.xz.mul(0.09)).mul(0.6));
+      pnv.assign(pn);
+    });
+    return pnv;
+  })();
   // distance-faded: procedural noise has no mips — far wet ground should
   // read as uniform sheen, not aggregated swamp
   // NON-PBR (MToon bodies) NEVER BUILD THE PUDDLE TERM. Its distance fade reads `cameraPosition`, a
@@ -201,8 +235,8 @@ function wrapMaterial(mat, receiver, pbr) {
   const pDist = pbr ? length(positionView) : null;
   // shape × gate, always: sharpening after the wetness multiply would zero
   // all puddles in any state below full wet
-  const pShape = pbr
-    ? smoothstep(0.97, 1.13, pn).mul(flat).mul(U.puddleK).mul(puddleGate).mul(float(1).sub(smoothstep(160, 450, pDist)))
+  const pShape = (pbr && !noPud)
+    ? smoothstep(0.97, 1.13, pnNode).mul(flat).mul(U.puddleK).mul(puddleGate).mul(float(1).sub(smoothstep(160, 450, pDist)))
     : float(0);
   const puddle = pbr ? smoothstep(0.25, 0.6, pShape).mul(smoothstep(0.35, 0.9, U.wet)) : float(0);
   // normalize color roots to RGBA once — alpha must survive for cutout
@@ -340,7 +374,15 @@ export function prepareMaterial(mat, receiver = null) {
   // bodies) get the wetness color term only — exactly what the sweeps did
   const pbr = mat.isMeshStandardNodeMaterial || mat.isMeshPhysicalNodeMaterial
     || (mat.roughness !== undefined && mat.metalness !== undefined);
-  wrapMaterial(mat, receiver, pbr);
+  // a clone of a prepared material (matoverride) copies the wrapped colour/roughness nodes and userData: wrapping it again
+  // would compose wetness and cloud shade twice
+  if (!mat.userData.envWrapped) { wrapMaterial(mat, receiver, pbr); mat.userData.envWrapped = true; }
+  // a clone of a prepared material (matoverride) carries the node AND the flag: never compose the fade with itself
+  if (!mat.userData.shadowFade) {
+    const mask = mat.maskShadowNode ?? mat.maskNode;   // maskShadowNode wins over maskNode in three's depth pass
+    mat.maskShadowNode = mask ? FADE_MASK.and(bool(mask)) : FADE_MASK;
+    mat.userData.shadowFade = true;
+  }
   stats.wrapped++;
   return true;
 }
@@ -377,7 +419,8 @@ export const BODY_NO_CAST = /^(GOLD|wings)/;
 
 // TURN A BODY INTO A SHADOW CASTER, opt-in per body.
 //
-// Called by avatar.js for a body that has a lamp in it, and by nothing else --
+// Called by avatar.js for a body that has a lamp in it, and for the viewer's own
+// body when they opt in (videopanel 'my body casts a real shadow', applyOwnBodyShadow) --
 // so today it is Mythos and anyone else wearing an emissive chest. The rest of
 // the fleet keeps its blob shadow, which is what the world shipped with and
 // what the perf budget was written around.
@@ -387,11 +430,12 @@ export const BODY_NO_CAST = /^(GOLD|wings)/;
 // AFTER assets.js has already prepared the scene. At prepare time nobody knows
 // yet whether this body glows.
 //
-// castShadow/receiveShadow are in NO pipeline cache key (TEL0S_NOTES SS12.1),
-// so flipping them here costs nothing at the graph level. What it DOES cost is
-// a depth pipeline per material on the first shadow render, compiled in-frame,
-// because bodies never go through warmqueue's warmDepth -- that is the measured
-// risk when this widens past one body, and the reason it has not.
+// castShadow is in NO pipeline cache key (TEL0S_NOTES SS12.1) — but receiveShadow
+// IS (three 0.186 RenderObject.js:856/:945: the shadow taps are only generated
+// for an object that receives), so flipping it here costs a LIT pipeline per
+// material plus a depth pipeline per material on the first shadow render, both
+// compiled in-frame unless warmed first (warmqueue warmLit + warmDepth — the
+// own-body pref below does; the lamp gate at load still pays inside loading).
 //
 // GOLD and the wings are excluded: see BODY_NO_CAST.
 export function setBodyShadows(root, on = true) {
@@ -406,7 +450,40 @@ export function setBodyShadows(root, on = true) {
   return n;
 }
 
-export function prepareObject(root, { kind = 'model' } = {}) {
+// MY BODY CASTS A REAL SHADOW — a Video setting, own avatar only (R 10-11 wishlist). The lamp gate above stays
+// the default for everyone; this is the one body the viewer pays for by choice. Remotes never pass through here:
+// mybody.js calls it from setMe (the own-body hook), and a remote's pref value is not this browser's.
+export const PREF_MY_SHADOW = 'ew-my-shadow';
+export function myShadowPref() { try { return localStorage.getItem(PREF_MY_SHADOW) === '1'; } catch { return false; } }
+export function setMyShadowPref(on) {
+  try { localStorage.setItem(PREF_MY_SHADOW, on ? '1' : '0'); } catch { /* private window */ }
+  bus.emit('my-shadow', !!on);
+}
+/** Decide and apply the own body's shadows: the pref OR its lamp. Before a flip ON, `lit(label, getMeshes)` warms
+ *  the lit+shadow pipelines (receiveShadow is in the cache key) and `warm(label, getMeshes)` the depth pass — both
+ *  off the frame, through the conductor; bodies never reach the caster budget's warm. `pref` may be a getter: the
+ *  decision is re-read AFTER the warms (a toggle while a warm was pending ends where the pref is, not where it was);
+ *  `still()` says whether the body is still the one worn. */
+export async function applyOwnBodyShadow(av, { pref = myShadowPref, warm = null, lit = null, still = () => true } = {}) {
+  const root = av?.vrm?.scene;
+  if (!root?.traverse) return false;
+  const read = () => (typeof pref === 'function' ? !!pref() : !!pref) || !!av._lamps?.length;
+  if (read() && !av._bodyWarm && (warm || lit)) {
+    const meshes = [];
+    root.traverse((o) => { if (o.isMesh && !BODY_NO_CAST.test(o.name || '')) meshes.push(o); });
+    let ran = false;
+    const get = () => { if (!still()) return []; ran = true; return meshes; };
+    if (lit) await lit('lit me', get);
+    if (warm) await warm('depth me', get);
+    if (ran) av._bodyWarm = true;
+    if (!still()) return false;
+  }
+  const want = read();
+  setBodyShadows(root, want);
+  return want;
+}
+
+export function prepareObject(root, { kind = 'model', foliage = true } = {}) {
   // A missing root is a no-op, not a crash. The module-init call below passes
   // `ground`, which is null before the terrain exists (and in any harness that
   // stubs core.js) -- and an exception at import time takes the whole client
@@ -420,9 +497,9 @@ export function prepareObject(root, { kind = 'model' } = {}) {
   // in-frame on the first shadow render, and bodies bypass the distance-ranked
   // caster budget entirely. In a crowded room that is N bodies compiling.
   //
-  // So the decision moved to setBodyShadows(), which avatar.js calls only for
-  // a body that actually has a lamp inside it -- the case that motivated any
-  // of this. Janus: "set the change for now to only shadowed body by default
+  // So the decision moved to setBodyShadows(), which avatar.js calls for a lamp
+  // body and applyOwnBodyShadow for the viewer's own opted-in body -- the lamp
+  // case motivated any of this. Janus: "set the change for now to only shadowed body by default
   // if you have the lamp like mythos... we can test the performance of having
   // more on the shared server later."
   //
@@ -471,6 +548,9 @@ export function prepareObject(root, { kind = 'model' } = {}) {
       prepareMaterial(m, o);
     }
   });
+  // blended textured leaves get the two-pass twin in 'fast' foliage mode (foliage.js; Video › foliage)
+  // (a loaded PROTOTYPE passes foliage:false and each placed clone registers itself: assets.js)
+  if (kind === 'model' && foliage) registerFoliage(root);
   return root;
 }
 
@@ -545,6 +625,9 @@ export function updateMaterials(nowMs) {
 }
 
 /** Debug surface (EW.materials). */
+/** Test seam: the shared material uniforms (probes pin wet/cloud for a deterministic render). */
+export const materialUniforms = () => U;
+
 export const materialsDebug = () => ({
   ...stats,
   wet: +U.wet.value.toFixed(3),

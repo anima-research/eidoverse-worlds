@@ -15,8 +15,9 @@
 // most likely to be silently wrong (web_export.py grew axis_roles() for
 // exactly this reason).
 
+import { fileURLToPath } from "node:url";
 import { plugin } from 'bun';
-const STUB = new URL('./core-stub.mjs', import.meta.url).pathname;
+const STUB = fileURLToPath(new URL('./core-stub.mjs', import.meta.url));
 plugin({
   name: 'core-stub',
   setup(build) {

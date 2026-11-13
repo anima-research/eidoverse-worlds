@@ -1,0 +1,39 @@
+--- a/Plugins/UnderwaterOptics/Source/UnderwaterOptics/Public/EidoverseBridge.h
++++ b/Plugins/UnderwaterOptics/Source/UnderwaterOptics/Public/EidoverseBridge.h
+@@ -116,10 +116,10 @@
+     UFUNCTION(BlueprintCallable, Category="Eidoverse") bool Say(const FString& Text);
+     UFUNCTION(BlueprintCallable, Category="Eidoverse") bool Whisper(const FString& To, const FString& Text);
+ 
+-    static FVector ToWirePosition(const FVector& P) { return FVector(P.Y,P.Z,P.X)/100.0; }
+-    static FVector FromWirePosition(const FVector& P) { return FVector(P.Z,P.X,P.Y)*100.0; }
+-    static FQuat ToWireRotation(const FQuat& Q) { return FQuat(Q.Y,Q.Z,Q.X,Q.W); }
+-    static FQuat FromWireRotation(const FQuat& Q) { return FQuat(Q.Z,Q.X,Q.Y,Q.W); }
++    static FVector ToWirePosition(const FVector& P) { return FVector(-P.Y,P.Z,P.X)/100.0; }
++    static FVector FromWirePosition(const FVector& P) { return FVector(P.Z,-P.X,P.Y)*100.0; }
++    static FQuat ToWireRotation(const FQuat& Q) { return FQuat(Q.Y,-Q.Z,-Q.X,Q.W); }
++    static FQuat FromWireRotation(const FQuat& Q) { return FQuat(-Q.Z,Q.X,-Q.Y,Q.W); }
+ private:
+     // Intentionally not reflected, serialized, logged, or placed in URLs.
+     FString ProductionSession;
+--- a/Plugins/UnderwaterOptics/Source/UnderwaterOptics/Private/EidoverseBridge.cpp
++++ b/Plugins/UnderwaterOptics/Source/UnderwaterOptics/Private/EidoverseBridge.cpp
+@@ -209,7 +209,7 @@
+     TArray<double> P;if(!Eido::Vector(Data,TEXT("p"),3,P))return;
+     FEidoverseSample Sample;Sample.Time=Time;Sample.Position=OriginCentimeters+FromWirePosition(FVector(P[0],P[1],P[2]));
+     double Yaw=0;if(Data->HasField(TEXT("yaw"))&&(!Data->TryGetNumberField(TEXT("yaw"),Yaw)||!FMath::IsFinite(Yaw)))return;
+-    Sample.Orientation=FRotator(0,FMath::RadiansToDegrees(Yaw),0).Quaternion();
++    Sample.Orientation=FRotator(0,-FMath::RadiansToDegrees(Yaw),0).Quaternion();
+     TArray<double> Q;if(Data->HasField(TEXT("q")))
+     {if(!Eido::Vector(Data,TEXT("q"),4,Q))return;FQuat Rotation(Q[0],Q[1],Q[2],Q[3]);if(Rotation.SizeSquared()<.0001)return;Sample.Orientation=FromWireRotation(Rotation.GetNormalized());}
+     const TSharedPtr<FJsonObject>* Loc=nullptr;FString Body;
+--- a/Plugins/UnderwaterOptics/Source/UnderwaterOptics/Private/EidoverseTests.cpp
++++ b/Plugins/UnderwaterOptics/Source/UnderwaterOptics/Private/EidoverseTests.cpp
+@@ -6,7 +6,7 @@
+ bool FEidoverseCoordinates::RunTest(const FString&)
+ {
+     const FVector P(7900,-2150,-700),Wire=AEidoverseBridge::ToWirePosition(P);
+-    TestTrue(TEXT("metres, Y-up, +Z forward"),Wire.Equals(FVector(-21.5,-7,79),1e-6));
++    TestTrue(TEXT("metres, Y-up, +Z forward"),Wire.Equals(FVector(21.5,-7,79),1e-6));
+     TestTrue(TEXT("position round trip"),AEidoverseBridge::FromWirePosition(Wire).Equals(P,1e-6));
+     for(FRotator R:{FRotator(0,0,0),FRotator(25,90,13),FRotator(-20,-148,-30),FRotator(89,179,60)})
+     {

@@ -25,14 +25,14 @@ pg.on('pageerror', (e) => console.log('  [pageerror]', String(e).slice(0, 140)))
 await pg.goto(`${ORIGIN}/?world=staging&key=${world.key}&name=panelprobe`, { waitUntil: 'domcontentloaded' });
 // The panel frame is built during boot; clicking a head before it exists is a
 // no-op that looks exactly like a broken selector. Wait for the section first.
-await pg.waitForSelector('#sec-audio .head', { timeout: 20000 }).catch(() => {});
+await pg.waitForSelector('#sec-audio-tab', { timeout: 20000 }).catch(() => {});
 await new Promise((r) => setTimeout(r, 2000));
 
 // Open the 🔊 audio section. The click and the CHECK must be separate calls:
 // makeSection's toggle awaits onOpen(body), so a sleep inside the same
 // evaluate() races the very build it is waiting for.
 await pg.evaluate(() => {
-  const head = [...document.querySelectorAll('.sec .head')].find((h) => /audio/i.test(h.textContent || ''));
+  const head = [...document.querySelectorAll('.sec-tabs .pf-tab')].find((h) => /audio/i.test(h.textContent || ''));
   head?.click();
 });
 // This branch's audiopanel renders settings rows as `.row` with `.nm` labels

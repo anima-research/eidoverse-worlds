@@ -1,0 +1,84 @@
+{
+  "entities": {
+    "pivot": {
+      "pos": [
+        0,
+        1.5,
+        0
+      ],
+      "yaw": 0.25,
+      "actor": "author",
+      "ts": 1786320000002,
+      "born": 2,
+      "comp": {
+        "light": {
+          "keep": true
+        }
+      },
+      "parent": {
+        "to": "lamp",
+        "offset": [
+          0,
+          1.8,
+          0
+        ]
+      }
+    },
+    "lamp": {
+      "lib": "eidoverse/assets/models/lamp.glb",
+      "pos": [
+        2,
+        0,
+        0
+      ],
+      "yaw": 0,
+      "collide": "box",
+      "actor": "author",
+      "ts": 1786320000003,
+      "born": 3,
+      "comp": {
+        "light": {
+          "color": 16755302,
+          "intensity": 24,
+          "range": 9,
+          "day": false
+        },
+        "collider": {
+          "shape": "exact"
+        }
+      }
+    },
+    "swap": {
+      "lib": "eidoverse/assets/models/lamp.glb",
+      "pos": [
+        5,
+        0,
+        5
+      ],
+      "yaw": 0,
+      "actor": "author",
+      "ts": 1786320000011,
+      "born": 11
+    },
+    "porch": {
+      "kind": "light",
+      "pos": [
+        1,
+        2,
+        3
+      ],
+      "color": 16767392,
+      "intensity": 30,
+      "range": 10,
+      "actor": "author",
+      "ts": 1786320000012,
+      "born": 12
+    }
+  },
+  "roles": {
+    "author": {
+      "role": "owner",
+      "gen": true
+    }
+  }
+}

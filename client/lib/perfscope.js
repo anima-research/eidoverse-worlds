@@ -25,16 +25,18 @@
 // granularity questions actually arrive at ("what is heavy?" — "the fountain",
 // not "mesh #217").
 
+import { PERF_THRESHOLDS, TIER_NAMES, TIER_COLORS, rankOf } from '../../shared/perfrank.js';
 import { THREE, scene, camera, renderer, canvas } from './core.js';
 import { positionLocal, normalLocal, positionWorld, cameraPosition, modelScale } from 'three/tsl';
-import { entities, entityMeta } from './world.js';
+import { entities, metaOf } from './world.js';
 import * as icons from './icons.js';
+import { modelWord } from '../../shared/eido.js';
+import { escapeHtml as esc } from './markup.js';
 // the fill icon set is optional: without it the loupe button is its word
 const fsvg = (name, size) => (typeof icons.fsvg === 'function' ? icons.fsvg(name, size) : '');
 
 // HTML-attribute escaper for the tooltip strings below (was used un-imported —
 // a real hover threw ReferenceError; mocked-innerHTML shots never caught it).
-const esc = (v) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 // data colors, not chrome: a perceptual cheap→dear ramp shared by every mode
 // (VRChat's five ranks). Deliberately literal — these mean the same thing in
@@ -44,19 +46,9 @@ const esc = (v) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
 // top three were all one warm tone). Even hue walk + rising chroma:
 // emerald → spring-green → amber → tangerine → hot-red. Each tier is its own
 // hue AND its own lightness, so they separate at a glance and for CVD eyes.
-export const TIERS = ['#2fd08a', '#9be04a', '#ffc23d', '#ff7a2f', '#f23b52'];
-const TIER_NAMES = ['excellent', 'good', 'medium', 'poor', 'very poor'];
+export const TIERS = TIER_COLORS;   // shared/perfrank.js — the server ranks library cards with the same rule
 
-// per-subject thresholds: crossing [i] puts you in tier i+1
-const T = {
-  tris:  [5_000, 20_000, 60_000, 150_000],
-  draws: [2, 5, 12, 25],
-  texMB: [8, 24, 64, 128],
-  bones: [75, 150, 256, 400],
-  mats:  [2, 4, 8, 16],
-  alpha: [1, 3, 6, 12],
-};
-const tierOf = (v, k) => T[k].reduce((t, th) => (v > th ? t + 1 : t), 0);
+const T = PERF_THRESHOLDS;   // thresholds + tierOf live in shared/perfrank.js (one rule, client and server)
 
 // categorical material cost (an honest proxy — real instruction counts are
 // not observable from here): lit-ness ladder + transparency/transmission tax
@@ -125,6 +117,37 @@ function freshRec(key, kind, label) {
     rank: 0, worst: '' };
 }
 
+// ONE mesh's contribution to a subject — shared by the scene census (collect) and statsOf(root), so a library card's
+// rank and the loupe's can never be computed two ways (owner, 09-24: the loupe rank on library cards).
+function accumulate(rec, o, vis) {
+  const g = o.geometry;
+  const inst = o.isInstancedMesh ? o.count : 1;
+  const idx = g?.index ? g.index.count : (g?.attributes?.position?.count ?? 0);
+  const mats = Array.isArray(o.material) ? o.material : [o.material];
+  if (vis) {
+    rec.tris += Math.round(idx / 3) * inst;
+    rec.verts += (g?.attributes?.position?.count ?? 0) * inst;
+    rec.instances += inst > 1 ? inst : 0;
+    rec.draws += Math.max(1, g?.groups?.length || mats.length);
+  }
+  rec.meshes += 1;
+  for (const m of mats) {
+    if (!m) continue;
+    rec.mats.add(m);
+    if (m.transparent) rec.alpha += 1;
+    // exhaustive texture sweep: any own value that IS a texture, plus
+    // shader-style uniforms. Named-key lists missed everything MToon and
+    // node materials carry (unoptimized textures are the real VRAM hit, so
+    // the census must not have blind spots).
+    const seen = (t) => { if (t?.isTexture && !rec.texs.has(t)) { rec.texs.add(t); rec.texBytes += texBytes(t); } };
+    for (const v of Object.values(m)) seen(v);
+    if (m.uniforms) for (const u of Object.values(m.uniforms)) seen(u?.value);
+  }
+  if (g?.attributes) for (const a of Object.values(g.attributes)) rec.attrBytes += a.array?.byteLength ?? 0;
+  if (o.isSkinnedMesh && o.skeleton) rec.bones = Math.max(rec.bones, o.skeleton.bones.length);
+  if (g?.morphAttributes?.position) rec.morphs = Math.max(rec.morphs, g.morphAttributes.position.length);
+}
+
 function collect() {
   // reverse index: entity Object3D -> id  (entities maps id -> node)
   const nodeToId = new Map();
@@ -149,15 +172,10 @@ function collect() {
       if (id !== undefined) {
         rec = subjects.get(`e:${id}`);
         if (!rec) {
-          const meta = entityMeta.get(id);
-          rec = freshRec(`e:${id}`, 'entity', id + (meta?.lib ? `  (${String(meta.lib).split('/').pop()})` : ''));
+          const meta = metaOf(id);
+          rec = freshRec(`e:${id}`, 'entity', id + (meta?.model ? `  (${modelWord(meta.model)})` : ''));
           subjects.set(rec.key, rec);
         }
-        continue;
-      }
-      if (p.userData?.perfscopeSubject) {              // bodies tag themselves (below)
-        rec = subjects.get(`p:${p.userData.perfscopeSubject}`);
-        if (!rec) { rec = freshRec(`p:${p.userData.perfscopeSubject}`, 'person', p.userData.perfscopeSubject); subjects.set(rec.key, rec); }
         continue;
       }
       // avatar roots stamp themselves (avatar.js: userData.who on every body).
@@ -170,49 +188,22 @@ function collect() {
     }
     if (!rec) { rec = worldRec; if (!subjects.has(rec.key)) subjects.set(rec.key, rec); }
 
-    const g = o.geometry;
-    const inst = o.isInstancedMesh ? o.count : 1;
-    const idx = g?.index ? g.index.count : (g?.attributes?.position?.count ?? 0);
-    const mats = Array.isArray(o.material) ? o.material : [o.material];
-    if (vis) {
-      rec.tris += Math.round(idx / 3) * inst;
-      rec.verts += (g?.attributes?.position?.count ?? 0) * inst;
-      rec.instances += inst > 1 ? inst : 0;
-      rec.draws += Math.max(1, g?.groups?.length || mats.length);
-    }
-    rec.meshes += 1;
-    for (const m of mats) {
-      if (!m) continue;
-      rec.mats.add(m);
-      if (m.transparent) rec.alpha += 1;
-      // exhaustive texture sweep: any own value that IS a texture, plus
-      // shader-style uniforms. Named-key lists missed everything MToon and
-      // node materials carry (unoptimized textures are the real VRAM hit, so
-      // the census must not have blind spots).
-      const seen = (t) => { if (t?.isTexture && !rec.texs.has(t)) { rec.texs.add(t); rec.texBytes += texBytes(t); } };
-      for (const v of Object.values(m)) seen(v);
-      if (m.uniforms) for (const u of Object.values(m.uniforms)) seen(u?.value);
-    }
-    if (g?.attributes) for (const a of Object.values(g.attributes)) rec.attrBytes += a.array?.byteLength ?? 0;
-    if (o.isSkinnedMesh && o.skeleton) rec.bones = Math.max(rec.bones, o.skeleton.bones.length);
-    if (g?.morphAttributes?.position) rec.morphs = Math.max(rec.morphs, g.morphAttributes.position.length);
+    accumulate(rec, o, vis);
     rec.meshList.push(o);
     meshOwner.set(o, rec.key);
     if (vis) visibleMeshes.push(o);
   });
 
-  for (const rec of subjects.values()) {
-    const tiers = {
-      tris: tierOf(rec.tris, 'tris'), draws: tierOf(rec.draws, 'draws'),
-      texMB: tierOf(rec.texBytes / 1e6, 'texMB'), bones: tierOf(rec.bones, 'bones'),
-      mats: tierOf(rec.mats.size, 'mats'), alpha: tierOf(rec.alpha, 'alpha'),
-    };
-    rec.tiers = tiers;
-    rec.rank = Math.max(...Object.values(tiers));
-    rec.worst = Object.keys(tiers).find((k) => tiers[k] === rec.rank);
-    rec.matCost = Math.max(0, ...[...rec.mats].map(matCost));
-  }
+  for (const rec of subjects.values()) finalize(rec);
   return subjects;
+}
+
+function finalize(rec) {
+  // the ONE rule (shared/perfrank.js rankOf) — the server's library cards call the same function, so a tie between
+  // categories names the same "worst" on both sides
+  Object.assign(rec, rankOf({ tris: rec.tris, draws: rec.draws, texMB: rec.texBytes / 1e6, bones: rec.bones, mats: rec.mats.size, alpha: rec.alpha }));
+  rec.matCost = Math.max(0, ...[...rec.mats].map(matCost));
+  return rec;
 }
 
 // ---- false-color modes ------------------------------------------------------
@@ -720,6 +711,15 @@ async function copyReceipt() {
   return n;
 }
 
+/** The loupe's numbers for ONE object tree (every mesh counts as visible), outside the scene census. */
+export function statsOf(root, label = 'subject') {
+  const rec = freshRec(`s:${label}`, 'entity', label);
+  root.traverse((o) => { if (o.isMesh || o.isSkinnedMesh) accumulate(rec, o, true); });
+  finalize(rec);
+  return { rank: rec.rank, rankName: TIER_NAMES[rec.rank], worst: rec.worst, tiers: rec.tiers, tris: rec.tris, draws: rec.draws,
+    mats: rec.mats.size, alpha: rec.alpha, bones: rec.bones, texMB: +(rec.texBytes / 1e6).toFixed(2) };
+}
+
 // ---- panel section ----------------------------------------------------------
 
 /** Mounts the perf section into the debug panel's stack. */
@@ -805,7 +805,7 @@ export function perfscopeOff() {
 }
 
 /** Mount the panel into a debug stack. Idempotent per stack: a plain mount
- *  upgrades in place when a collapsible `section(parent, title, build)` is
+ *  upgrades in place when a grouped `section(parent, title, build)` (a debug tab's group) is
  *  offered later; a section mount is never duplicated. */
 export function mountPerfPanel(stack, { toast = console.log, section = null } = {}) {
   const cur = stack.__perfMount;

@@ -13,13 +13,18 @@
 //   world.js     its maps only (entities, mounts, edit holds, findPart)
 //
 // Every side effect the test asserts on is a plain array or Map here.
+import { KTX2_KEY } from '../shared/ktx2.js';   // the stub publishes the REAL generation — a literal here went stale on the 3→4 bump
+import { LOD_RECIPE } from '../server/store-variants.ts';   // …and the REAL recipe: the literal here went stale when #205 derived it
 import * as THREE_ from '../client/node_modules/three/build/three.module.js';
 import { askFor, tierOf } from '../client/lib/lod_policy.js';
+import { state } from '../client/lib/state.js';
+import { recordComponents } from '../shared/protocol/view.js';
+import { bus } from '../client/lib/base.js';
 
 // ---- core.js ----------------------------------------------------------------
 // makePlaceholder wants the node material class from three/webgpu; the
 // stand-in's material is never rendered here
-export const THREE = { ...THREE_, MeshBasicNodeMaterial: THREE_.MeshBasicMaterial };
+export const THREE = { ...THREE_, MeshBasicNodeMaterial: THREE_.MeshBasicMaterial, MeshStandardNodeMaterial: THREE_.MeshStandardMaterial };
 export const scene = new THREE_.Scene();
 export const camera = new THREE_.PerspectiveCamera();
 export const renderer = { info: { memory: { total: 0 } }, domElement: null };
@@ -31,7 +36,7 @@ export const CONFIG = {};
 /** The pretend sequencer + browser: what /version published, whether this
  *  "browser" transcodes KTX2, and which libs have a baked variant. Mutable —
  *  a section flips them and spawns fresh placements. */
-export const server = { key: '3', recipe: 'lod1-r25e01-texel1024', capable: true, variants: new Set() };
+export const server = { key: KTX2_KEY, recipe: LOD_RECIPE, capable: true, variants: new Set() };
 /** Every loadGLB call, in order: { lib, tier (what crossed the wire), url }. */
 export const loads = [];
 /** Loads held open while `hold` is on: { lib, tier, url, release() }. */
@@ -66,6 +71,8 @@ export async function loadGLB(lib, { tier = 'full' } = {}) {
     : { asset: { extras: {} } };
   const g = new THREE_.Group();
   g.add(new THREE_.Mesh(new THREE_.BoxGeometry(1, 1, 1), new THREE_.MeshBasicMaterial()));
+  // a swing (realized-lifecycle's part sockets): a named pivot 2 m up, its plank hanging 1.5 m under it
+  if (/swing/.test(lib)) { const pivot = new THREE_.Group(); pivot.name = 'pivot'; pivot.position.set(0, 2, 0); const plank = new THREE_.Group(); plank.name = 'plank'; plank.position.set(0, -1.5, 0); pivot.add(plank); g.add(pivot); }
   g.userData.glbKey = ask.tier === 'lod' ? `${lib}#lod` : lib;
   g.userData.tierServed = tierOf(json, server.recipe);
   g.userData.tierAsked = ask.tier;
@@ -80,13 +87,26 @@ export const fitCollider = (id, obj, opts) => { colliders.set(id, { obj, opts })
 export const removeCollider = (id) => { colliders.delete(id); colliderLog.push(['remove', id]); };
 export const refitCollider = (id) => { colliderLog.push(['refit', id]); };
 export const reindexCollider = () => {};
+// what the real colliders.js and lightrig.js do on the realizer's word (realize/lifecycle.js release)
+bus.on('realized', ({ id, owner }) => { removeCollider(id); releaseCaster(id); releaseOwner(owner); });
 
 // ---- lightrig.js / lights.js ------------------------------------------------
-export const attachLamps = () => {};
-export const releaseOwner = () => {};
-export const registerCaster = () => {};
-export const releaseCaster = () => {};
+/** inferred lamps (attachLamps) by owner, as the realizer drives them: owner -> times attached; plus the log */
+export const lampOwners = new Map();
+export const lampLog = [];
+export const attachLamps = (_root, owner) => { lampOwners.set(owner, (lampOwners.get(owner) ?? 0) + 1); lampLog.push(['attach', owner]); };
+export const releaseOwner = (owner) => { lampOwners.delete(owner); lampLog.push(['release', owner]); };
+/** the rig's caster registry as the realizer drives it: id -> obj (registered at the promote tail, released at retire/demote) */
+export const casters = new Map();
+export const registerCaster = (id, obj) => { casters.set(id, obj); };
+export const releaseCaster = (id) => { casters.delete(id); };
 export const makeLight = () => new THREE_.Group();
+export const makeLightGizmo = (color) => { const m = new THREE_.Mesh(new THREE_.SphereGeometry(0.13), new THREE_.MeshBasicMaterial({ color })); m.userData.gizmo = true; return m; };
+/** the rig's request table as the realizer drives it (comp.light): key -> spec */
+export const lightRequests = new Map();
+export const requestLight = (key, spec) => { lightRequests.set(key, { ...spec }); };
+export const updateRequest = (key, patch) => { const r = lightRequests.get(key); if (r) Object.assign(r, patch); };
+export const releaseLight = (key) => { lightRequests.delete(key); };
 export const updateLight = () => {};
 export const disposeLight = () => {};
 
@@ -100,8 +120,10 @@ renderer.getPixelRatio = () => 1;
 // warmqueue.js / loadwork.js: never loading — the governor's grace never holds
 export const warmStats = () => ({ pending: 0, running: false });
 export const warm = (label, fn) => Promise.resolve().then(fn);
+export const warmDepth = () => Promise.resolve();
+export const P_GATE = 0, P_MODEL = 1, P_AMBIENT = 2;
 export const laneBusy = () => false;
-// lightrig.js / emitters.js / terrain.js / frame.js / remotes.js: every lever
+// lightrig.js / emitters.js / terrain.js / frameloop.js / remotes.js: every lever
 // BELOW 'lod' in the ladder answers "nothing to shed", so a slow window
 // reaches the lod lever deterministically
 export const setSlotCap = () => {};
@@ -110,7 +132,12 @@ export const maxSlots = () => 0;
 export const litCount = () => 0;
 export const setCasterBudget = () => {};
 export const getCasterBudget = () => 2;
+export const getCasterCeiling = () => 24;
+export const setCasterCeiling = () => {};
+export const CASTER_CHOICES = [6, 12, 24, 48, 96];
 export const casterCount = () => 0;
+export const fadingCount = () => 0;
+export const FADE_MS = 300;
 export const setEmitterQuality = () => false;
 export const emitterQuality = () => 'auto';
 export const emitterCount = () => 0;
@@ -124,11 +151,25 @@ export const getSystemEvery = (k) => every[k] ?? 1;
 // ui.js: toasts recorded
 export const toasts = [];
 export const toast = (msg, kind, ms) => { toasts.push({ msg, kind, ms }); };
+// statuschips.js: the chips on show, by id (the governor's model-detail shed posts one and lifts it)
+export const chips = new Map();
+export const statusChip = (spec) => { chips.set(spec.id, spec); };
+export const clearStatusChip = (id) => { chips.delete(id); };
 
 // ---- world.js (its maps) ----------------------------------------------------
 export const entities = new Map();
 export const entityMeta = new Map();
+/** the suite's driver: a record set here wins; otherwise the record is read from the view state.js holds (the fold's
+ *  record as the realizer reads it — world.js bagOf reads replica.st; this cone has no replica, so the view stands in) */
 export const comps = new Map();
+const recordOfView = (e) => (e ? { transform: {}, ...recordComponents(e) } : null);   // the view's record is flat (view.js): its model, parent and components as the fold spells them
+export const bagOf = (id) => comps.get(id) ?? recordOfView(state.st.entities?.[id]);
+export function* bags() { const seen = new Set(); for (const [id, c] of comps) { seen.add(id); yield [id, c]; } for (const id of Object.keys(state.st.entities ?? {})) if (!seen.has(id) && id !== '@world') yield [id, bagOf(id)]; }
+export const metaOf = (id) => entityMeta.get(id) ?? (state.st.entities?.[id] ? { ...(state.st.entities[id].model ? { model: state.st.entities[id].model } : {}) } : null);
+/** the fold's edge index (world.js childrenOf/parentIdOf/ancestorsOf): this cone has no replica, so the view's records answer */
+export const childrenOf = (id) => Object.keys(state.st.entities ?? {}).filter((k) => state.st.entities[k]?.parent?.to === id).sort();
+export const parentIdOf = (id) => state.st.entities?.[id]?.parent?.to ?? null;
+export const ancestorsOf = (id) => { const out = []; const seen = new Set([id]); for (let p = parentIdOf(id); p && state.st.entities[p] && !seen.has(p); p = parentIdOf(p)) { out.push(p); seen.add(p); } return out; };
 export const avatarMounts = new Map();
 export const editHolds = new Set();
 export function findPart(root, name) {
@@ -137,6 +178,14 @@ export function findPart(root, name) {
   return hit;
 }
 
+// materials.js: the realizer's mesh part (syncParts) hands its one material to the factory; nothing to prepare here
+export const prepareMaterial = () => {};
+
 // governor.js (VR alpha) imports the shadow switch + resolution from lightrig; inert here
 export const shadowsOn = () => true;
 export const shadowRes = () => 2048;
+
+// breadcrumbs.js: frameloop.js (the governor's cone) stamps each system's name; the real module reads `location`
+// and reaches net.js → assets.js → materials.js → core.js's `ground`, none of which this cone has
+export const BC = () => {};
+export const XR_BOOT = false;   // core.js: frameloop.js never arms the XR loop here

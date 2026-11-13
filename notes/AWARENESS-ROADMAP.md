@@ -22,7 +22,7 @@ did not get it yet."
   does not trigger it
 - "Walked away" is needed
 - More screenshots automatically sent on various actions
-- Jumping/emote traffic needs to be adaptive and smarter
+- Jumping/gesture traffic needs to be adaptive and smarter
 - Relative positioning better communicated
 - Maybe area maps, in images or ASCII — "for our robot dog lidar works better
   when encoded in ASCII rather than images"
@@ -84,7 +84,7 @@ nothing parsing the current format breaks. ~20 lines, felt on *every* `look()`.
 
 Do this before (6): an egocentric map needs exactly this yaw math.
 
-## 4. Adaptive jump/emote traffic — `denoise.ts`, `NoiseGate.act()`
+## 4. Adaptive jump/gesture traffic — `denoise.ts`, `NoiseGate.act()`
 
 Acts get a flat 180 s refractory per `(identity, act-key)`. The presence path
 twenty lines up already has the better mechanism: decaying charge with a limit.

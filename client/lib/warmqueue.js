@@ -15,8 +15,9 @@
 // (every warm call site already wrote `.catch(() => {})`), but counted;
 // warmStats() is the debug shape 8e hangs on EW later.
 
-import { renderer, scene, sun, THREE, TSL } from './core.js';
+import { renderer, scene, sun, camera, THREE, TSL } from './core.js';
 import { beginWork, nextFrame } from './loadwork.js';
+import { turn, spent, reportPending } from './framebudget.js';
 
 // ---- the queue --------------------------------------------------------------
 
@@ -49,6 +50,7 @@ export function warm(label, fn, { p = P_MODEL } = {}) {
     while (at > 0 && queue[at - 1].p > p) at--;
     queue.splice(at, 0, item);
     stats.queued++;
+    reportPending('warm', queue.length + (running ? 1 : 0));
     pump();
   });
 }
@@ -57,11 +59,19 @@ async function pump() {
   if (running) return;
   running = true;
   while (queue.length) {
+    const grant = await turn('warm');   // the frame's shared budget (framebudget), not a private pace
     const item = queue.shift();
+    if (!item) continue;
     stats.lastLabel = item.label;
     item.work.phase('warm');
     try {
-      await item.fn();
+      // Charged: the warm's synchronous head only (for compileAsync, projection and render-list building). Its codegen
+      // runs after compileAsync's first yield in three's own yielding slices, and the link on the driver's thread;
+      // neither is measurable per frame from here. For warms the budget gates when an item STARTS.
+      const t0 = performance.now();
+      const p = item.fn();
+      spent('warm', performance.now() - t0, t0, grant);
+      await p;
       stats.done++;
     } catch (e) {
       stats.failed++;               // swallowed, but never silently: counted
@@ -69,9 +79,11 @@ async function pump() {
       item.work.end();
       item.resolve();
     }
+    reportPending('warm', queue.length + 1);
     await nextFrame();              // a REAL frame between items (§16.1a)
   }
   running = false;
+  reportPending('warm', 0);
 }
 
 // `pending` counts queued items only — the item currently being warmed has
@@ -228,6 +240,30 @@ async function compileDepthRound(mesh, material) {
     mesh.frustumCulled = saveCulled;
   }
   await (compiled?.catch(() => {}) ?? Promise.resolve());
+}
+
+/** Warm the LIT pipelines a body needs once it RECEIVES shadows: receiveShadow IS in the render-object cache key
+ *  (three 0.186 RenderObject.js:856/:945; AnalyticLightNode only generates the shadow taps when the object
+ *  receives), so the first lit frame after the flip would build a new program per material in-frame. Same
+ *  save/mutate/restore shape as compileDepthRound: compileAsync captures the render object synchronously, the
+ *  pipeline is cached by its shader code, and the later flip finds it. */
+export function warmLit(label, getMeshes) {
+  if (typeof renderer?.compileAsync !== 'function') return Promise.resolve();
+  return warm(label, async () => {
+    for (const mesh of getMeshes() ?? []) {
+      if (!mesh?.isMesh) continue;
+      const rs = mesh.receiveShadow, fc = mesh.frustumCulled, vis = mesh.visible;
+      let compiled;
+      try {
+        mesh.receiveShadow = true; mesh.frustumCulled = false; mesh.visible = true;
+        compiled = renderer.compileAsync(mesh, camera, scene);
+      } finally {
+        mesh.receiveShadow = rs; mesh.frustumCulled = fc; mesh.visible = vis;
+      }
+      await (compiled?.catch(() => {}) ?? Promise.resolve());
+      await nextFrame();
+    }
+  }, { p: P_AMBIENT });
 }
 
 /** Warm every shadow-depth pipeline a caster will need, through the

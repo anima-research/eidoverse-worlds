@@ -8,14 +8,15 @@
 // Each block names the product line that would silence it:
 //   inline() writing a run through innerHTML     → "an HTML tag in a message is literal text" goes red
 //   the `recent` cap (12) removed                → "recent tail never exceeds 12" goes red
+import { fileURLToPath } from "node:url";
 import { plugin } from 'bun';
-const here = (f: string) => new URL(f, import.meta.url).pathname;
+const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({
   name: 'chat-stubs',
   setup(b) {
     b.onResolve({ filter: /^\.\/core\.js$/ }, () => ({ path: here('./chat-core-stub.mjs') }));
     b.onResolve({ filter: /^\.\/base\.js$/ }, () => ({ path: here('./chat-base-stub.mjs') }));
-    b.onResolve({ filter: /^\.\/frames\.js$/ }, () => ({ path: here('./chat-frames-stub.mjs') }));
+    b.onResolve({ filter: /^\.\/windows\.js$/ }, () => ({ path: here('./chat-frames-stub.mjs') }));
     b.onResolve({ filter: /^\.\/net\.js$/ }, () => ({ path: here('./chat-net-stub.mjs') }));
   },
 });
@@ -41,7 +42,7 @@ const check = (name: string, ok: boolean, detail = '') => {
   if (ok) { pass++; console.log(`  \x1b[32m✓\x1b[0m ${name}`); }
   else { fail++; console.log(`  \x1b[31m✗\x1b[0m ${name}${detail ? ` — ${detail}` : ''}`); }
 };
-let roster: any[] = [{ id: 'keir', agent: true }, { id: 'rab' }];
+let roster: any[] = [{ id: 'keir', declares: 'agent' }, { id: 'rab' }];
 initChat({ send: () => {}, people: () => roster });
 const log = () => document.getElementById('chatlog')!;
 // THE BOOT MOMENT. applyChatPrefs runs as initChatGear's last statement; if the
@@ -151,7 +152,7 @@ console.log('CHAT — People Here swaps sides');
 
   // S1/F4: a mod's markup INSIDE the real .chat-side. My earlier claim that a
   // mod cannot reach here was FALSE — mods.js:88 hands a mod makeFrame and
-  // frames.js returns the LIVE chat frame for a bare id, so a local mod (an
+  // windows.js returns the LIVE chat frame for a bare id, so a local mod (an
   // in-page ES module, mods.js:5-8) can mount into this very body. Planted
   // FIRST so an unbounded lookup finds it before the real head: the captures
   // must address the nodes initChat wrote, not the first match by class.
@@ -176,7 +177,7 @@ console.log('CHAT — People Here swaps sides');
   realSide.prepend(insideMod);
   const innerHead = insideMod.querySelector('.chat-side-head')!;
   const modHead = nestedMod.querySelector('.chat-side-head')!;
-  roster = [{ id: 'keir', agent: true }, { id: 'rab' }, { id: 'zzz' }];
+  roster = [{ id: 'keir', declares: 'agent' }, { id: 'rab' }, { id: 'zzz' }];
   // The pane is OPEN here (the check above read a painted head). paintSide bails
   // at `if (!side || !sideSt.open) return`, so a closed pane would skip the very
   // lines S1/F4 mutate and both mutants would survive — which is exactly what
@@ -213,7 +214,7 @@ console.log('CHAT — People Here swaps sides');
   const detached = realSide;
   const headBefore = detached.querySelector(':scope > .chat-side-head')!.textContent;
   detached.remove();
-  roster = [{ id: 'keir', agent: true }, { id: 'rab' }, { id: 'zzz' }, { id: 'qqq' }];
+  roster = [{ id: 'keir', declares: 'agent' }, { id: 'rab' }, { id: 'zzz' }, { id: 'qqq' }];
   let threw = '';
   try { bus.emit('roster'); } catch (e) { threw = String(e); }
   check('a DETACHED side pane is not painted: the orphan keeps its last text, and no throw',
@@ -230,7 +231,7 @@ console.log('CHAT — People Here swaps sides');
   // existed. The product was right; the test was wrong.)
   (tog as HTMLElement).onclick!(new Event('click'));          // close it
   const frozen = realSide.querySelector(':scope > .chat-side-head')!.textContent;
-  roster = [{ id: 'keir', agent: true }, { id: 'rab' }, { id: 'zzz' }];   // a roster CHANGE while closed
+  roster = [{ id: 'keir', declares: 'agent' }, { id: 'rab' }, { id: 'zzz' }];   // a roster CHANGE while closed
   bus.emit('roster');                                   // the REAL trigger (chat.js:714)
   check('a CLOSED pane is not repainted (roster events must respect the open guard)',
     realSide.classList.contains('closed') && realSide.querySelector(':scope > .chat-side-head')!.textContent === frozen,

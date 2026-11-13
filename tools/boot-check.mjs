@@ -53,6 +53,9 @@ let close = async () => {};
 try {
   ({ page, close } = await launchBrowser());
   const pg = await page();
+  // BOOT_CHECK_CLOUDS_OFF=1: the sky guard, before any module reads localStorage (sky.js) — a cloudy sky bakes on
+  // the CPU in headless Chromium and has frozen a small host; the rest of the boot is checked as ever
+  if (process.env.BOOT_CHECK_CLOUDS_OFF === '1') await pg.addInitScript(() => { try { localStorage.setItem('ew-cloud-quality', 'off'); } catch {} });
   const errs = [], logs = [], bodyErrs = [];
   pg.on('pageerror', e => errs.push(e.message));
   pg.on('console', m => { const t = m.text(); if (/^\[boot\]|^\[body\]|^\[render\]/.test(t)) logs.push(t); if (/^avatar\b/.test(t)) bodyErrs.push(t); });
@@ -72,7 +75,7 @@ try {
       phase: sp?.querySelector('.sp-phase')?.textContent ?? null, raysHandle: !!globalThis.__raysWorker, raysStarted: globalThis.__raysStarted === true,
       raysAck: globalThis.__raysAck === true, raysNoGl: globalThis.__raysNoGl === true,
       backend: globalThis._r?.backend ? (globalThis._r.backend.isWebGLBackend ? 'webgl' : 'webgpu') : null, xrEnabled: !!globalThis._r?.xr?.enabled,
-      tolerance: !!globalThis.__renderListTolerance, xrShadow: globalThis.__xrShadowPatched === true, raysCanvas: !!document.querySelector('#splash .sp-rays'),
+      tolerance: !!globalThis.__renderListTolerance, xrShadow: globalThis.__xrShadowPatched === true, xrPixelRatio: globalThis.__xrPixelRatioGuarded === true, xrPass: globalThis.__xrPassSplit === true, raysCanvas: !!document.querySelector('#splash .sp-rays'),
       hasBody: !!globalThis.EW?.me?.(),
       capsule: !!globalThis.EW?.me?.()?.isCapsule,   // the body of last resort (capsulebody.js) — an avatar error BEFORE it is the expected story
       // REACHABILITY, not scrollWidth: html,body use overflow:hidden, so a frame
@@ -107,9 +110,14 @@ try {
             : null;
           return { id: (t.title || t.getAttribute('aria-label') || t.textContent || '?').trim().slice(0, 18), owner }; })
         .filter((c) => c.owner),
+      // the owner's rule for the capability card (09-27): it may cover anything while its dismiss button is visible
+      // and clickable, i.e. the pixel at the button's centre is the button
+      capDismissable: (() => { const bts = [...document.querySelectorAll('.capnotice .cn-ok')]; if (!bts.length) return null;
+        return bts.every((bt) => { const r = bt.getBoundingClientRect(); if (!r.width || !r.height) return false;
+          const h = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return bt === h || bt.contains(h); }); })(),   // EVERY item's (U4)
       // how many control surfaces were MEASURABLE at all. A check that reports
       // green from an empty collection is worse than no check: at 390x844 the
-      // emote bar is hidden by fitsDefaults, so `.frame .tile` yields nine
+      // action bar is hidden by fitsDefaults, so `.frame .tile` yields nine
       // zero-size nodes, every one filtered out, and the run passed while my
       // standalone probe measured a stolen tile at the same instant.
       tilesSized: [...document.querySelectorAll('.frame .tile')].filter((t) => { const r = t.getBoundingClientRect(); return r.width && r.height; }).length,
@@ -143,6 +151,8 @@ try {
   if (s.xrEnabled !== wantXR) { fail(`xr.enabled=${s.xrEnabled} but query "${QUERY}" ${wantXR ? 'is' : 'is not'} an XR boot`); }
   if (s.tolerance !== wantXR) { fail(`tolerant render list ${s.tolerance ? 'installed' : 'not installed'} at boot; it must install only for an XR boot (query "${QUERY}")`); }
   if (!s.xrShadow) { fail('the ShadowNode XR-off patch was not applied at boot (core.js → xrshadow.js)'); }
+  if (!s.xrPass) { fail('stereo renders were not split into their own pass at boot (core.js → xrpass.js): every VR switch rebuilds'); }
+  if (!s.xrPixelRatio) { fail('the XR pixel-ratio guard (#32 split vision) was not applied at boot (core.js → xrpixelratio.js)'); }
   // REACHABILITY (#185 review). Every visible frame must lie inside the viewport.
   // Not scrollWidth: html,body use overflow:hidden, so a frame past the edge is
   // simply unreachable and the document reports no overflow at all. Run this at a
@@ -151,11 +161,11 @@ try {
   // These two checks used to be inline and therefore ran exactly once, at the boot
   // viewport. The review asked for a real setViewportSize() product test: a page
   // that boots wide and is then narrowed keeps all three defaults open and they
-  // overlap (emotes x world 352x46px at 390x844) — a state no fixed-viewport boot
+  // overlap (actions x world 352x46px at 390x844) — a state no fixed-viewport boot
   // can reach. Same assertions, same failure text, plus the phase that produced it.
   const checkGeometry = (g, where) => {
     // OVERLAP (#185 review req 2): two frames collide only when they overlap on
-    // BOTH axes. chat is bottom-LEFT and the emote bar bottom-CENTRE, so at a wide
+    // BOTH axes. chat is bottom-LEFT and the action bar bottom-CENTRE, so at a wide
     // viewport they miss entirely and at a narrow one the centred bar slides onto
     // chat's composer. Checking one axis alone answers "always" or "never" — both wrong.
     const pairs = [];
@@ -171,20 +181,23 @@ try {
     // over a z-25 bar, or the rail once it reorients along the top edge.
     // EVERY thief counts, including ones outside my selector list — dropping
     // 'other' is how #earbtn's inner <rect> made a real occluder invisible.
-    const stolen = g.controls ?? [];
+    // …except under the capability card while it can be dismissed (owner, 09-27; intentionally reverses #185 B2's
+    // reachability rule for this one dismissible notice). A card whose dismiss button can't be clicked still fails.
+    if (g.capDismissable === false) fail(`the capability card's dismiss button is not clickable at ${g.vw}x${g.vh} (${where})`);
+    const stolen = (g.controls ?? []).filter((c) => !(c.owner === '.capnotice' && g.capDismissable));
     if (stolen.length) {
       fail(`controls unreachable at ${g.vw}x${g.vh} — the pixel at their centre belongs to other chrome (${where}):\n  `
         + stolen.map((c) => `"${c.id}" covered by ${c.owner}`).join('\n  '));
     }
-    // The PRODUCT promises right <= innerWidth - 8 (frames.js clamp, snapPosition,
-    // and the resize rider all use the same 8px margin). Checking only
+    // The PRODUCT promises right <= innerWidth - 8 (windows.js clamp, snapPosition,
+    // and the resize self-sizer all use the same 8px margin). Checking only
     // `right > vw + 1` left a 9px band where a frame violates the clamp and still
     // passes — so this could never catch the most likely way that invariant
     // breaks: someone dropping the -8. Bind the promise, keeping the +1 sub-pixel
     // allowance. (agent review round 3)
     // x and y do NOT share a margin, and that is deliberate in the product:
     // fit()/snapPosition clamp x to 8, but the SOUTH resize clamps to
-    // `innerHeight - s0.y - 4` (frames.js:144) so a resize can reach as low as a
+    // `innerHeight - s0.y - 4` (windows.js:144) so a resize can reach as low as a
     // drag — the comment there records the choice. Asserting 8 on both axes made
     // this probe stricter than the code it guards: a legal resize to the bottom
     // edge produced bottom=840 against a limit of 837 and failed. Match each
@@ -199,7 +212,7 @@ try {
   checkGeometry(s, `boot ${s.vw}x${s.vh}`);
 
   // OPEN THE CONTROLS THE REVIEW IS ABOUT, then look again (antra-tess #185 B2).
-  // At phone widths fitsDefaults() hides the emote bar, so `.frame .tile` yields
+  // At phone widths fitsDefaults() hides the action bar, so `.frame .tile` yields
   // nine ZERO-SIZE nodes and the hit-test above has nothing to measure: the run
   // goes green because the collection is empty, not because the tiles are
   // reachable. Her repro is a user tapping the dock to open the bar — so do that,
@@ -210,21 +223,21 @@ try {
     // the dock button closed it and the guard below then fired on my own action
     // (FAIL at 1280x720, tilesInDom=9 tilesSized=0). Only click when it is hidden.
     const isOpen = () => [...document.querySelectorAll('.frame')]
-      .some((f) => /emote/i.test(f.querySelector('.fr-title')?.textContent || '')
+      .some((f) => /action bar/i.test(f.querySelector('.fr-title')?.textContent || '')
                 && getComputedStyle(f).display !== 'none');
     if (isOpen()) return 'already open';
     const btn = [...document.querySelectorAll('#dock button')]
-      .find((b) => /emote/i.test(b.title || b.getAttribute('aria-label') || ''));
-    if (!btn) return 'no emote dock button';
+      .find((b) => /action bar/i.test(b.title || b.getAttribute('aria-label') || ''));
+    if (!btn) return 'no action bar dock button';
     btn.click();
     await new Promise((r) => setTimeout(r, 900));
     return isOpen() ? 'opened' : 'click did not open it';
   });
   if (opened === 'opened' || opened === 'already open') {
     const s3 = await state();
-    if (!s3.tilesSized) { fail(`the emote bar was opened from the dock but no tile has a size (tilesInDom=${s3.tilesInDom}) — the B2 hit-test would measure nothing`); }
-    checkGeometry(s3, `emote bar open at ${s3.vw}x${s3.vh}`);
-    barOpened = ` · emote bar ${opened}: ${s3.tilesSized} tiles measured, none covered`;
+    if (!s3.tilesSized) { fail(`the action bar was opened from the dock but no tile has a size (tilesInDom=${s3.tilesInDom}) — the B2 hit-test would measure nothing`); }
+    checkGeometry(s3, `action bar open at ${s3.vw}x${s3.vh}`);
+    barOpened = ` · action bar ${opened}: ${s3.tilesSized} tiles measured, none covered`;
   }
   if (/(^|&)webgl=1(&|$)/.test(QUERY) && s.backend !== 'webgl') { fail(`?webgl=1 but backend=${s.backend}`); }
   if (wantXR && s.backend !== 'webgl') { fail(`XR boot without WebGPU-XR must ride WebGL, got backend=${s.backend}`); }
@@ -272,7 +285,7 @@ try {
   // "boot-check.mjs starts at one fixed viewport and never changes it" — so the
   // claim that a wide->narrow shrink keeps every frame inside was asserted and
   // never executed. It was also false: containment is per-frame, arrangement is
-  // global, and each frame clamping itself legally still let emotes x world
+  // global, and each frame clamping itself legally still let gestures x world
   // overlap 352x46px at 390x844. fitsDefaults() now re-fires on viewport change;
   // this is the product path that proves it, at the only moment it can be seen.
   if (RESIZE_TO) {

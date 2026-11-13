@@ -41,8 +41,11 @@ const ctx: ToolCtx = {
 
 const PENDING_PINGS_TOOL = {
   name: "pending_pings",
-  description: "Mentions of your name in chat, whispers, hands reaching for you, and people who walked up to you or walked away since last checked. Returns and clears the queue — the embodied analog of unread pings.",
+  description: "Mentions of your name in chat, hands reaching for you, and people who walked up to you or walked away since last checked. Returns and clears the queue — the embodied analog of unread pings.",
   inputSchema: { type: "object", properties: {} },
+  // not read-only: it clears the queue it returns (see mcpl/tools.ts ANNOTATIONS for what each hint means here)
+  title: "Pending pings",
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
 };
 
 const server = new Server(

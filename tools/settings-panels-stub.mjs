@@ -1,8 +1,8 @@
 // Test stand-in for the renderer-bound edge of the settings panels' import cone — see
 // tools/settings-panels-test.ts. ONE file answers for core.js, base.js, governor.js,
-// lightrig.js, xrpanels.js, net.js, palette.js, avatar.js, controller.js, capnotice.js,
+// lightrig.js, xrpanels.js, net.js, catalog.js, avatar.js, controller.js, capnotice.js,
 // assets.js and mictoggle.js (the names never collide), so the suite drives the REAL
-// ui.js / frames.js / panels.js / presence.js / stylepanel.js / videopanel.js /
+// ui.js / windows.js / panels.js / presence.js / stylepanel.js / videopanel.js /
 // profile.js / bodies.js / mybody.js against a recorder instead of a GPU.
 //
 // core-stub's bus is inert (`on() {}`); these panels are wired THROUGH the bus
@@ -35,6 +35,9 @@ export const AVATAR_DETAILS = { auto: null, full: 1, half: 2, low: 4 };
 let avatarDetail = 'auto';
 export const getAvatarDetail = () => avatarDetail;
 export const setAvatarDetail = (v) => { calls.push(['setAvatarDetail', v]); avatarDetail = v; };
+let fullDetail = false;
+export const getFullDetail = () => fullDetail;
+export const setFullDetail = (on) => { calls.push(['setFullDetail', on]); fullDetail = !!on; };
 
 // ---- lightrig.js
 let shadows = true, res = 2048;
@@ -50,11 +53,10 @@ export const registerXRPanel = (p) => { xrPanels.set(p.id, p); calls.push(['regi
 
 // ---- net.js
 export const net = { joined: false };   // `avatars` arrives on the join snapshot (net.js) — the suite sets it when it simulates one
-export const sendVerb = rec('sendVerb');
 export const sendJoin = rec('sendJoin');
 export const requestHistory = async () => ({ entries: [], hasMore: false });
 
-// ---- palette.js
+// ---- catalog.js
 let onSwitch = null;
 export const wireAvatarSwitch = (fn) => { onSwitch = fn; };
 export const switchAvatar = (path, name) => { calls.push(['switchAvatar', path, name]); return onSwitch?.(path, name); };
@@ -90,3 +92,12 @@ export const flipXr = rec('flipXr');
 
 // base.js's 'avatar-worn' normaliser — profile.js → bodies.js reads it through this stub (VR PR)
 export { wornNameOf } from '../client/lib/base.js';
+// the casters row (b3a63651) and 'my body casts a real shadow' (feat/shadow-fade)
+export const CASTER_CHOICES = [6, 12, 24, 48, 96];
+let ceiling = 24;
+export const getCasterCeiling = () => ceiling;
+export const setCasterCeiling = (k) => { calls.push(['setCasterCeiling', k]); ceiling = +k; };
+let myShadow = false;
+export const myShadowPref = () => myShadow;
+export const setMyShadowPref = (on) => { calls.push(['setMyShadowPref', on]); myShadow = !!on; };
+export const applyOwnBodyShadow = async () => false;

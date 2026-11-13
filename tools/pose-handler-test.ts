@@ -20,5 +20,9 @@ MESSAGES["pose"](ctx, { type: "pose", pose: fine });
 ok(c.lastPose === fine, "finite pose: lastPose updated");
 ok(dirty.get("c1") === fine, "finite pose: staged for the next frame");
 ok(sent.length === 0, "the pose handler answers nothing on the socket");
-console.log("pose-handler: 6 ok");
+// the attest handler (same file): a stale receipt is refused IN WORDS, like every other refusal there
+{ const v: any = { id: "c1", gen: 3, surface: "voice", auxBound: true, world: { name: "w", recentSays: [{ seq: 7, verb: "say", actor: "c1", ts: Date.now() - 24 * 3600_000, args: { text: "old" } }] } };
+  MESSAGES["attest"]({ ...ctx, c: v }, { type: "attest", seq: 7, gen: 3, digest: "0".repeat(64) });
+  ok(sent.length === 1 && /stale/.test(sent[0]), "attest of a say older than ATTEST_FRESH_MS: an error frame saying it is stale, not silence"); }
+console.log("pose-handler: 7 ok");
 import("node:fs").then((fs) => { try { fs.rmSync(process.env.WORLDS_DIR!, { recursive: true, force: true }); } catch {} });

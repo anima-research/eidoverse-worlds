@@ -8,6 +8,6 @@
     "test": "bun ../captionbot-test.ts"
   },
   "dependencies": {
-    "@animalabs/voice-kit": "file:../../../voice-kit"
+    "@animalabs/voice-kit": "file:../protocol/.siblings/voice-kit"
   }
 }
