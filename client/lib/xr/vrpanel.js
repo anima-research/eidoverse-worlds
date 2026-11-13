@@ -4,7 +4,8 @@
 import { makeSection, flashHint } from '../ui.js';
 import { checkRow, selectRow, btn, sliderTable } from '../edit/rows.js';
 import { currentGrade, setGrade, GRADE_DEFAULT, GRADE_RANGE } from './quadcolour.js';
-import { xrPrefs, setXrPref, recentreXR, isPresenting } from './xr.js';
+import { recentreXR, isPresenting } from './xr.js';
+import { xrPrefs, setXrPref } from './xr-prefs.js';
 import { pointerVisibilityMode } from './xrpointer.js';
 import { xrGlyphAvailable } from '../audio/mictoggle.js';
 

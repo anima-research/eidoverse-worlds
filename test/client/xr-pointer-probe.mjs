@@ -49,9 +49,9 @@ try {
 
   // ---- in-page helpers ----------------------------------------------------------------------------------------------
   await ev(pg, async () => {
-    const xr = await import('./lib/xr/xr.js'), pc = await import('./lib/avatar/platecard.js'), dq = await import('./lib/xr/domquad.js'), xp = await import('./lib/xr/xrpointer.js');
+    const xr = await import('./lib/xr/xr.js'), pc = await import('./lib/avatar/platecard.js'), dq = await import('./lib/xr/domquad.js'), xp = await import('./lib/xr/xrpointer.js'), prefs = await import('./lib/xr/xr-prefs.js');
     const T = EW.THREE, dev = window.__iwerDevice;
-    const H = globalThis.__h = { xr, pc, dq, xp, T, R: {}, clicks: 0 };
+    const H = globalThis.__h = { xr, prefs, pc, dq, xp, T, R: {}, clicks: 0 };
     H.frames = (n) => new Promise((res) => { const f0 = globalThis.__perf.frameNo; const t0 = performance.now();
       const iv = setInterval(() => { if (globalThis.__perf.frameNo - f0 >= n || performance.now() - t0 > 20000) { clearInterval(iv); res(globalThis.__perf.frameNo - f0); } }, 15); });
     H.head = () => { const m = EW.renderer.xr.getCamera().matrixWorld; const p = new T.Vector3().setFromMatrixPosition(m);
@@ -135,7 +135,7 @@ try {
     __h.aimAt('right', 'settings', r.cx, r.cy); await __h.frames(8); await __h.pull('right'); await new Promise((r) => setTimeout(r, 400));
     const pop = tex.dom.querySelector('.dd-pop'), opt = pop && [...pop.querySelectorAll('.dd-opt')].find((o) => /^never/.test(o.textContent));
     let chose = null;
-    if (opt) { const o = __h.rectIn('settings', opt); __h.aimAt('right', 'settings', o.cx, o.cy); await __h.frames(8); await __h.pull('right'); await new Promise((r) => setTimeout(r, 300)); chose = __h.xr.xrPrefs.pointerVisibility; }
+    if (opt) { const o = __h.rectIn('settings', opt); __h.aimAt('right', 'settings', o.cx, o.cy); await __h.frames(8); await __h.pull('right'); await new Promise((r) => setTimeout(r, 300)); chose = __h.prefs.xrPrefs.pointerVisibility; }
     let stored = null; try { stored = JSON.parse(localStorage.getItem('ew-xr-prefs') || '{}').pointerVisibility; } catch {}
     return { rowLabel, label, opts: [...sel.options].map((o) => o.value), atIsBtn, at: atTag, nativeHidden, ink: hi - lo, popInQuad: !!pop, chose, stored, after: btn.textContent.trim() };
   });
@@ -151,7 +151,7 @@ try {
     const tex = __h.dq.domQuadTexture('settings'), fr = tex.dom.getBoundingClientRect(); btn.scrollIntoView({ block: 'center' }); await new Promise((r) => setTimeout(r, 300));
     const r = __h.rectIn('settings', btn), at = tex.elementAt(r.cx / fr.width, r.cy / fr.height);
     return { label: sel.closest('.row')?.querySelector('.nm')?.textContent, opts: [...sel.options].map((o) => o.value), value: sel.value, inQuad: !!at && (at === btn || btn.contains(at)),
-      nextToPointer: pv?.closest('.row')?.nextElementSibling === sel.closest('.row'), pref: __h.xr.xrPrefs.dotVisibility };
+      nextToPointer: pv?.closest('.row')?.nextElementSibling === sel.closest('.row'), pref: __h.prefs.xrPrefs.dotVisibility };
   });
   console.log('  · dot row', J(drow));
   check('Settings › VR has a "surface dot visibility" row right after pointer visibility: always / never / contextual, contextual by default, in the VR quad',
@@ -213,7 +213,7 @@ try {
   const modes = await ev(pg, async ({ bg }) => {
     const H = __h, out = {};
     for (const m of ['contextual', 'always', 'never']) {
-      H.xr.setXrPref('pointerVisibility', m);
+      H.prefs.setXrPref('pointerVisibility', m);
       const row = {};
       H.up('right'); await H.frames(6); row.nothing = H.dbg().laser.visible; row.nothingLen = H.dbg().laser.len; row.nothingOp = H.dbg().laser.opacity;
       H.aimAt('right', 'settings', bg.x, bg.y); await H.frames(6); row.panel = H.dbg().laser.visible; row.panelLen = H.dbg().laser.len;
@@ -233,7 +233,7 @@ try {
 
   // never: pointing still works — a trigger on a control clicks it, the laser holds it, and the stick scrolls
   const never = await ev(pg, async () => {
-    const H = __h; H.xr.setXrPref('pointerVisibility', 'never');
+    const H = __h; H.prefs.setXrPref('pointerVisibility', 'never');
     const tab = H.yieldEls?.[0] ?? document.getElementById('sec-vr-tab'); const r = H.rectIn('settings', tab);
     const c0 = H.clicksOn(tab);
     H.aimAt('right', 'settings', r.cx, r.cy); await H.frames(8);
@@ -249,7 +249,7 @@ try {
     const eyeP = () => EW.renderer.xr.getCamera().getWorldPosition(new T.Vector3());
     const read = () => { const d = H.dbg().dot; return { ...d, p: new T.Vector3().fromArray(d.pos), n: new T.Vector3().fromArray(d.normal) }; };
     for (const m of ['contextual', 'never']) {
-      H.xr.setXrPref('pointerVisibility', m);
+      H.prefs.setXrPref('pointerVisibility', m);
       H.aimAt('right', 'settings', bg.x, bg.y); await H.frames(8);
       const d = read(), want = H.worldAt('settings', bg.x, bg.y), mesh = H.meshOf('settings');
       const qn = new T.Vector3(0, 0, 1).applyQuaternion(mesh.getWorldQuaternion(new T.Quaternion())), e = eyeP();
@@ -258,7 +258,7 @@ try {
         along: +off.dot(qn).toFixed(4), across: +off.clone().addScaledVector(qn, -off.dot(qn)).length().toFixed(4),   // lift off the surface; slide along it
         facing: +d.n.dot(qn).toFixed(4), angDiam: +(d.diam / e.distanceTo(d.p)).toFixed(5) };
     }
-    H.xr.setXrPref('pointerVisibility', 'contextual');
+    H.prefs.setXrPref('pointerVisibility', 'contextual');
     H.up('right'); await H.frames(6); out.none = read().visible;
     // world entities: a box registered in the world's entity table for the check (then removed) — PLAIN first (no
     // components: a wall), then INTERACTABLE (a sockets component, as a chair has)
@@ -275,18 +275,18 @@ try {
       H.btn('right', 'squeeze', 1); await H.frames(5);
       out.plainGrip = { dot: read().visible, beam: beam() };
       H.btn('right', 'squeeze', 0); await H.frames(3);
-      H.xr.setXrPref('dotVisibility', 'always'); await H.frames(4);
+      H.prefs.setXrPref('dotVisibility', 'always'); await H.frames(4);
       out.plainAlways = { dot: read().visible, kind: H.dbg().dot.kind };
-      H.xr.setXrPref('dotVisibility', 'contextual');
+      H.prefs.setXrPref('dotVisibility', 'contextual');
       // the record every reader holds is the fold's (world.js bagOf reads replica.st, C7c): the probe's fake entity gets a fake record there
       replica.st.entities['probe-box'] = { born: 0, c: { transform: {}, sockets: { seat: { pose: 'sitchair' } } } }; await H.frames(5);
       const d = read(), fn = from.clone().sub(at).setY(0).normalize();   // the face toward the hand: its plane is 0.3 m out along fn
       const toRay = d.p.clone().sub(from).cross(at.clone().sub(from).normalize()).length();
       out.ent = { visible: d.visible, kind: H.dbg().dot.kind, beam: beam(), want, ent: H.dbg().ent, lift: +(d.p.clone().sub(at).dot(fn) - 0.3).toFixed(4), onRay: +toRay.toFixed(4), facing: +d.n.dot(fn).toFixed(4), angDiam: +(d.diam / eyeP().distanceTo(d.p)).toFixed(5) };
       // pointer visibility 'never' hides only the beam: the dot keeps its own setting; dot 'never' hides the dot
-      H.xr.setXrPref('pointerVisibility', 'never'); await H.frames(3); out.entNeverBeam = { dot: read().visible, beam: H.dbg().laser.visible };
-      H.xr.setXrPref('pointerVisibility', 'contextual'); H.xr.setXrPref('dotVisibility', 'never'); await H.frames(3); out.entNeverDot = { dot: read().visible, beam: H.dbg().laser.visible };
-      H.xr.setXrPref('dotVisibility', 'contextual');
+      H.prefs.setXrPref('pointerVisibility', 'never'); await H.frames(3); out.entNeverBeam = { dot: read().visible, beam: H.dbg().laser.visible };
+      H.prefs.setXrPref('pointerVisibility', 'contextual'); H.prefs.setXrPref('dotVisibility', 'never'); await H.frames(3); out.entNeverDot = { dot: read().visible, beam: H.dbg().laser.visible };
+      H.prefs.setXrPref('dotVisibility', 'contextual');
     } finally { world.entities.delete('probe-box'); delete replica.st.entities['probe-box']; box.removeFromParent(); }
     return out;
   }, { bg: spots.bg }, 60000);
@@ -308,7 +308,7 @@ try {
 
   // ---- 3. smoothing, as wired: the aim is the controller's ray low-passed by the frame's own dt ----------------------
   const sm = await ev(pg, async ({ bg }) => {
-    const H = __h, T = H.T; H.xr.setXrPref('pointerVisibility', 'always');
+    const H = __h, T = H.T; H.prefs.setXrPref('pointerVisibility', 'always');
     H.aimAt('right', 'settings', bg.x, bg.y); await H.frames(10);
     const hand = H.xr.xrHands().right;
     const ang = () => hand.aim.getWorldQuaternion(new T.Quaternion()).angleTo(hand.ray.getWorldQuaternion(new T.Quaternion()));
@@ -371,7 +371,7 @@ try {
   // ---- 5. grab: grip alone, never on a control; no chord ---------------------------------------------------------------
   const grab = await ev(pg, async ({ bg }) => {
     const H = __h, out = {}, ctl = H.stickEl ?? document.getElementById('sec-vr-tab'), r = H.rectIn('settings', ctl);
-    H.xr.setXrPref('pointerVisibility', 'contextual');
+    H.prefs.setXrPref('pointerVisibility', 'contextual');
     // a) grip over a control: nothing
     H.aimAt('right', 'settings', r.cx, r.cy); await H.frames(8);
     H.btn('right', 'squeeze', 1); await H.frames(5); out.onCtl = H.held(); H.btn('right', 'squeeze', 0); await H.frames(4);
@@ -403,7 +403,7 @@ try {
   check('…released with the grip, back on the rig', grab.released === null && grab.backOnRig, J(grab));
 
   // ---- 6. nameplates: hover, stickiness through a drift, let go past the margin --------------------------------------------
-  await ev(pg, async () => { __h.dq.domQuadShow('settings', false); __h.xr.setXrPref('pointerVisibility', 'contextual'); __h.down('right'); await __h.frames(4); });
+  await ev(pg, async () => { __h.dq.domQuadShow('settings', false); __h.prefs.setXrPref('pointerVisibility', 'contextual'); __h.down('right'); await __h.frames(4); });
   const spot = await ev(pg, () => { const h = __h.head(), me = EW.myState.pos; const p = h.p.clone().addScaledVector(h.f, 3); return [p.x, me.y, p.z]; });
   P.pose = { ...P.pose, p: spot };
   await pg.waitForFunction(() => { const r = EW.remotes.get('vrpeer'); return r?.avatar?.label && !r.loading; }, null, { timeout: 90000 });
@@ -440,7 +440,7 @@ try {
   check('…past the stay margin: let go, no hover', plate.far.held === null && plate.far.hover !== 'vrpeer', J(plate.far));
 
   // ---- 7. leave VR; the setting survives a reload --------------------------------------------------------------------
-  await ev(pg, () => { __h.xr.setXrPref('pointerVisibility', 'always'); __h.xr.leaveVR('probe'); });
+  await ev(pg, () => { __h.prefs.setXrPref('pointerVisibility', 'always'); __h.xr.leaveVR('probe'); });
   await pg.waitForFunction(() => !EW.renderer.xr.isPresenting, null, { timeout: 30000, polling: 250 });
   const gone = await ev(pg, () => { const hs = __h.xr.xrHands(); return { beams: ['left', 'right'].map((k) => !!hs[k]?.laser.parent), held: __h.xr.xrDebug().held }; });
   check('leaving VR takes the beams out of the scene', !gone.beams.some(Boolean) && gone.held === null, J(gone));
@@ -450,7 +450,7 @@ try {
   check('no console errors', other.length === 0, other.slice(0, 3).join(' | '));
   await pg.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await pg.waitForFunction(() => !!globalThis.EW?.me?.(), null, { timeout: 120000 });
-  const re = await ev(pg, async () => { const xr = await import('./lib/xr/xr.js'); return { pref: xr.xrPrefs.pointerVisibility, sel: document.getElementById('vr-pointer-visibility')?.value ?? '(row not built until the section opens)' }; });
+  const re = await ev(pg, async () => { const xr = await import('./lib/xr/xr-prefs.js'); return { pref: xr.xrPrefs.pointerVisibility, sel: document.getElementById('vr-pointer-visibility')?.value ?? '(row not built until the section opens)' }; });
   check('the setting persists across a reload (the other VR prefs\' storage)', re.pref === 'always', J(re));
 } catch (e) { check('probe ran', false, e?.stack?.split('\n').slice(0, 3).join(' ') ?? String(e)); }
 finally {

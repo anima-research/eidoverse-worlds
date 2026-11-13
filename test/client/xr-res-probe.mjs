@@ -1,5 +1,5 @@
 // xr-res-probe — Settings › VR › resolution reaches the session layer. Real client + IWER: one session per choice in
-// xr.js XR_RES_SCALES (a fresh page each: the factor is read once as a session starts). Binds what we control: the row
+// xr-prefs.js XR_RES_SCALES (a fresh page each: the factor is read once as a session starts). Binds what we control: the row
 // offers the four choices in order, three is set to the factor, and the layer three creates ASKS the runtime for it.
 // Whether the runtime honours it is the runtime's (IWER sizes its layer from the canvas and ignores it; Chrome clamps to
 // 0.2–1.0) — a headset's "[xr] enter" line prints scale= and target=WxH. Empty world (no sky).
@@ -36,7 +36,7 @@ async function session(res) {
   await pg.waitForFunction(() => !!globalThis.EW.renderer.xr._xrRenderTarget?.width, null, { timeout: 30000 });
   const r = await pg.evaluate(async () => { const xr = globalThis.EW.renderer.xr; const t = xr._xrRenderTarget;
     return { scale: xr.getFramebufferScaleFactor(), asked: window.__layerAsk, w: t?.width ?? null, h: t?.height ?? null, proj: !!xr._glProjLayer,
-      table: { ...(await import('./lib/xr/xr.js')).XR_RES_SCALES } }; });
+      table: { ...(await import('./lib/xr/xr-prefs.js')).XR_RES_SCALES } }; });
   await pg.close();
   return { row, ...r };
 }

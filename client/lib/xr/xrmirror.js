@@ -6,7 +6,8 @@
 // a target the size of both eyes; for this pass only the CanvasTarget gets the canvas's real size back.
 // Never read the XR layer's framebuffer (blitFramebuffer): on Windows it belongs to the SteamVR compositor and froze the GPU.
 import { THREE, renderer, scene, camera } from '../core.js';
-import { isPresenting, xrPrefs, withHeadShown } from './xr.js';
+import { isPresenting, withHeadShown } from './xr.js';
+import { xrPrefs } from './xr-prefs.js';
 import { myState } from '../controller.js';
 import { tee, bus } from '../base.js';
 import { xrCurtainOn, renderWorldFrom } from '../render.js';

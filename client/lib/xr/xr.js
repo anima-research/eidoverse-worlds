@@ -33,12 +33,13 @@ import { markActive } from '../presence.js';
 import { platePick, aimPlate, platePress } from '../avatar/platecard.js';   // a laser resting on a nameplate opens its card
 import { makeDwell } from '../dwell.js';
 import { showXRTip, hideXRTip, dropXRTip, tipTextFor } from './xrtip.js';
-import { POINTER_VIS_DEFAULT, pointerVisible, dotVisible, looksAtWorld, interactable, smoothPose, stickStep, angleTo, rayMatrixTo } from './xrpointer.js';   // the laser's policy
+import { pointerVisible, dotVisible, looksAtWorld, interactable, smoothPose, stickStep, angleTo, rayMatrixTo } from './xrpointer.js';   // the laser's policy
 import { dockPins } from '../ui.js';
 import { xrScales, toRigLocal } from '../../../shared/bodyscale.js';   // the chosen size composes with the device fit (rig = u, body = u/k)
 import { perf } from '../perf.js';
 import { renderCensusTake, renderCensusTick, renderCensusPeek, setXRCurtain, drawStats } from '../render.js';
 import { warm, P_AMBIENT } from '../warmqueue.js';
+import { xrPrefs, xrResScale } from './xr-prefs.js';
 
 // ---- self-body in first person: hide your own head and label, keep the body ---------------
 let getSelf = () => null;
@@ -220,19 +221,6 @@ function sampleDeviceScale(hmdY) {
 let session = null;
 export const isPresenting = () => presenting;
 
-// ---- VR preferences (Settings › VR, vrpanel.js), persisted per browser
-const PREF_XR = 'ew-xr-prefs';
-const XR_PREF_DEFAULTS = { turn: 'smooth', vignette: false, mirror: 'first', seated: false, res: 'auto', pointerVisibility: POINTER_VIS_DEFAULT, dotVisibility: POINTER_VIS_DEFAULT };
-export const xrPrefs = (() => { try { return { ...XR_PREF_DEFAULTS, ...JSON.parse(localStorage.getItem(PREF_XR) || '{}') }; } catch { return { ...XR_PREF_DEFAULTS }; } })();
-{ const m = CONFIG.params.get('mirror'); if (m === 'off' || m === 'first' || m === 'third') xrPrefs.mirror = m; }   // URL override for A/B
-// eye resolution as WebXR framebufferScaleFactor ('auto' = 1.0), read once at session start; ?xrres=0.2..1 overrides
-export const XR_RES_SCALES = { auto: 1, 85: 0.85, 70: 0.7, 50: 0.5 };
-function xrResScale() {
-  const q = +CONFIG.params.get('xrres');
-  if (q >= 0.2 && q <= 1) return q;
-  return XR_RES_SCALES[xrPrefs.res] ?? 1;
-}
-export function setXrPref(k, v) { xrPrefs[k] = v; try { localStorage.setItem(PREF_XR, JSON.stringify(xrPrefs)); } catch {} bus.emit('xr:prefs', xrPrefs); }
 const DEADZONE = 0.18;
 const SNAP_DEG = 30;
 const SMOOTH_TURN_RAD_S = 2.2;   // ~126°/s at full deflection

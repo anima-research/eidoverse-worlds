@@ -1,7 +1,8 @@
 // Comfort vignette: a soft dark ring on the camera that closes in while you move or turn on the stick and opens when
 // you stop. Off by default; Settings › VR.
 import { THREE, camera } from '../core.js';
-import { xrPrefs, isPresenting, turnMagnitude } from './xr.js';
+import { isPresenting, turnMagnitude } from './xr.js';
+import { xrPrefs } from './xr-prefs.js';
 import { xrIntent } from '../controller.js';
 
 let mesh = null, level = 0;
