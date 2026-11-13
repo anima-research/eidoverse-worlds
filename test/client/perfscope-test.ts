@@ -1,4 +1,4 @@
-// perfscope (client/lib/perfscope.js) — the viewer-local cost overlay, driven with REAL three against a
+// perfscope (client/lib/debug/perfscope.js) — the viewer-local cost overlay, driven with REAL three against a
 // small scene fixture (test/stubs/perfscope-stub.mjs): modes on/off, solid vs overlay, hull/veil creation and
 // teardown counts, the texture-bytes estimate (mip factor, bpp, compressed payloads, hidden-LOD textures),
 // the receipt, the loupe's switch, and render.js's measured drawStats feed. Each block names the product
@@ -22,7 +22,7 @@ GlobalRegistrator.register();
 
 const stub = await import('../stubs/perfscope-stub.mjs');
 const { THREE, scene, entities, entityMeta, renders } = stub;
-const ps = await import('../../client/lib/perfscope.js');
+const ps = await import('../../client/lib/debug/perfscope.js');
 const render = await import('../../client/lib/render.js');
 
 const S = suite("perfscope");

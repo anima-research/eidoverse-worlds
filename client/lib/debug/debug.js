@@ -1,21 +1,21 @@
 // debug — draw what the physics thinks the world is: the collider volumes as the solver reads them, and the ragdoll
 // as the solver reads it, not the meshes. Where the two disagree is the whole point.
 
-import { THREE, scene } from './core.js';
-import { bus } from './base.js';
-import { registerXRPanel, xrPanelOpen } from './xr/xrpanels.js';
+import { THREE, scene } from '../core.js';
+import { bus } from '../base.js';
+import { registerXRPanel, xrPanelOpen } from '../xr/xrpanels.js';
 import { gpuLine, shadowPassLine, setGpuTimer, gpuTimerOn, gpuTimerState, measureShadowPass } from './gputime.js';
-import { perf } from './perf.js';
-import { drawStats } from './render.js';
+import { perf } from '../perf.js';
+import { drawStats } from '../render.js';
 import { MODES, setMode, activeMode, setSolid, isSolid } from './perfscope.js';
 import { MeshBVHHelper } from 'three-mesh-bvh';
-import { colliders, frameOf } from './colliders.js';
-import { closestParams, TUNING } from './ragdoll/ragdoll.js';
-import { JOINT_SPECS, HAIR_TUNING, WING_TUNING } from './ragdoll/ammodoll.js';
-import { BLINK, WING_IDLE, LIMP_SPRINGS } from './avatar/avatar.js';
-import { makeFrame } from './windows.js';
-import { sliderTable, checkRow, selectRow, btn, sectionHead } from './edit/rows.js';
-import { toast, paintRangesIn } from './ui.js';
+import { colliders, frameOf } from '../colliders.js';
+import { closestParams, TUNING } from '../ragdoll/ragdoll.js';
+import { JOINT_SPECS, HAIR_TUNING, WING_TUNING } from '../ragdoll/ammodoll.js';
+import { BLINK, WING_IDLE, LIMP_SPRINGS } from '../avatar/avatar.js';
+import { makeFrame } from '../windows.js';
+import { sliderTable, checkRow, selectRow, btn, sectionHead } from '../edit/rows.js';
+import { toast, paintRangesIn } from '../ui.js';
 
 // box    = an OBB, walkable on top, solid on the sides between min.y and max.y
 // pillar = anything over 2.4 m tall, collapsed to a slim centre column so you can walk under a canopy

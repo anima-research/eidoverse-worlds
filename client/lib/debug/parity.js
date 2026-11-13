@@ -4,10 +4,10 @@
 // meshes): those diverge by design while an object is in flight or riding a motion.
 // compDiffs and mountDiffs are always empty (what they compared is gone); kept so the result's shape is stable.
 
-import { state } from './state.js';
-import { entities, childrenOf, ancestorsOf } from './world.js';
-import { realizedAs } from './realize/models.js';
-import { childrenOf as scanChildren, ancestors as scanAncestors } from '../../shared/hierarchy.js';
+import { state } from '../state.js';
+import { entities, childrenOf, ancestorsOf } from '../world.js';
+import { realizedAs } from '../realize/models.js';
+import { childrenOf as scanChildren, ancestors as scanAncestors } from '../../../shared/hierarchy.js';
 
 
 export function foldParity() {

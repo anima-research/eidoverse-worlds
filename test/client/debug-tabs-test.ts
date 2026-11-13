@@ -1,4 +1,4 @@
-// debug tabs (client/lib/debug.js dbgTabs) — a group builds the first time its tab is SEEN, not at boot.
+// debug tabs (client/lib/debug/debug.js dbgTabs) — a group builds the first time its tab is SEEN, not at boot.
 // The remembered tab is chosen at boot while Debug is still closed; before the tabs, every group was a
 // collapsible that built on first open, and the tabs must keep that (an unvisited panel costs nothing).
 //
@@ -30,7 +30,7 @@ localStorage.setItem('ew-tab-debug', 'body');   // the tab remembered from last 
 await import('../../client/lib/windows.js');           // stamps the layout version first, so the save below is not purged
 // last session the viewport auto-hid Debug while it was open; it comes back when the window is wide enough again
 localStorage.setItem('ew-frame-debug', JSON.stringify({ x: 700, y: 200, w: 250, h: 460, hidden: true, autoHidden: true }));
-const { initDebug } = await import('../../client/lib/debug.js');
+const { initDebug } = await import('../../client/lib/debug/debug.js');
 const f = initDebug() as any;
 await tick();   // perfscope's groups arrive by dynamic import
 const built = (tab: string) => [...f.body.querySelectorAll(`.dbg-pane[data-tab="${tab}"] .dbg-group-body`)].filter((b: any) => b.childElementCount > 0).length;

@@ -6,13 +6,13 @@
 // · Survives churn: stats rebuild on a timer; tints diff against the census (originals untouched).
 // Cost is per SUBJECT: a world entity, a person, or the 'world fabric' bucket (terrain, sky, grass).
 
-import { PERF_THRESHOLDS, TIER_NAMES, TIER_COLORS, rankOf } from '../../shared/perfrank.js';
-import { THREE, scene, camera, renderer, canvas } from './core.js';
+import { PERF_THRESHOLDS, TIER_NAMES, TIER_COLORS, rankOf } from '../../../shared/perfrank.js';
+import { THREE, scene, camera, renderer, canvas } from '../core.js';
 import { positionLocal, normalLocal, positionWorld, cameraPosition, modelScale } from 'three/tsl';
-import { entities, metaOf } from './world.js';
-import * as icons from './icons.js';
-import { modelWord } from '../../shared/eido.js';
-import { escapeHtml as esc } from './markup.js';
+import { entities, metaOf } from '../world.js';
+import * as icons from '../icons.js';
+import { modelWord } from '../../../shared/eido.js';
+import { escapeHtml as esc } from '../markup.js';
 // the fill icon set is optional: without it the loupe button is its word
 const fsvg = (name, size) => (typeof icons.fsvg === 'function' ? icons.fsvg(name, size) : '');
 

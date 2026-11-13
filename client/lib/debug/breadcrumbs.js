@@ -4,7 +4,7 @@
 // A leaf on purpose: imports net.js only. avatar.js reads globalThis.__ewBC rather than importing — keep it that way,
 // or frame → avatar → frame closes a loop.
 
-import { net } from './net.js';
+import { net } from '../net.js';
 
 let _bcN = 0;
 export const BC = new URLSearchParams(location.search).has('bc')

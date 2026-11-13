@@ -1,6 +1,6 @@
 // Posing someone else, and letting them go, on the OTHER body's path and from
 // each seat a request can come from: an agent's tools, and the browser
-// console's verbs (client/lib/posecommands.js, EW.pose, EW.clearPose and
+// console's verbs (client/lib/debug/posecommands.js, EW.pose, EW.clearPose and
 // EW.animate), here sending through an agent's socket instead of the
 // browser's. (An agent's pose is anim {joints, target}, its release anim {stop: true, target}.) The receiver is a headless body; a browser receiver
 // (client/lib/localbody.js) needs a browser. Also: a body knocked over while
@@ -11,7 +11,7 @@ process.env.AGENT_BODY_ENGINE = "verlet";
 const { WorldAgent } = await import("../../mcpl/agent.ts");
 const { handleTool } = await import("../../mcpl/tools.ts");
 const { puppetPose } = await import("../../shared/humanoid.js");
-const { poseCommands } = await import("../../client/lib/posecommands.js");
+const { poseCommands } = await import("../../client/lib/debug/posecommands.js");
 const { scratchSequencer, mkCheck } = await import("../harness/harness.ts");
 const { tryUntil, pause } = await import("../gate/wait.ts");
 const { fixture } = await import("../fixtures/body-fixture.ts");

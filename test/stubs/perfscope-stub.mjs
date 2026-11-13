@@ -1,4 +1,4 @@
-// Test stand-in for core.js / base.js / world.js under client/lib/perfscope.js — see
+// Test stand-in for core.js / base.js / world.js under client/lib/debug/perfscope.js — see
 // test/client/perfscope-test.ts. Real three (the same module instance perfscope's 'three/tsl'
 // graph nodes attach to), a REAL Scene and camera the suite fills with a fixture, and a
 // renderer whose render() COUNTS what it is handed into renderer.info the way a GPU

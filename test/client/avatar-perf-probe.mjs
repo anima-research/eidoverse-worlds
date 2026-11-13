@@ -41,7 +41,7 @@ try {
   for (let i = 0; i < 60 && !posts.some((u) => u.includes('perf=')); i++) await pg.waitForTimeout(500);
   const live = await pg.evaluate(async () => {
     const { getMe, getMyAvatarPath, getMyAvatarName } = await import('./lib/mybody.js');
-    const { statsOf } = await import('./lib/perfscope.js');
+    const { statsOf } = await import('./lib/debug/perfscope.js');
     const me = getMe(); const s = me?.vrm?.scene ? statsOf(me.vrm.scene, 'me') : null;
     return { path: getMyAvatarPath(), name: getMyAvatarName(), s };
   });

@@ -19,7 +19,7 @@
 // A value per bone is [x,y,z,w] or {q, t, s} (shared/humanoid.js poseChannels).
 // Each verb throws a TypeError naming what it wants rather than guess at a call it can't read — above all one
 // meant for someone else that would otherwise land on the caller.
-import { mergePose, puppetPose } from '../../shared/humanoid.js';
+import { mergePose, puppetPose } from '../../../shared/humanoid.js';
 
 const name = (t) => typeof t === 'string' && t.length > 0;
 

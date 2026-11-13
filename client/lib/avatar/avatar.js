@@ -2124,7 +2124,7 @@ async function stampAvatarPerf(name, vrm, token, path) {
   if (!v || !vrm?.scene) return;
   const key = `ew-perf1-${name}-${v}`;
   if (localStorage.getItem(key)) return;
-  const { statsOf } = await import('../perfscope.js');
+  const { statsOf } = await import('../debug/perfscope.js');
   const s = statsOf(vrm.scene, name);
   const q = new URLSearchParams({ name, v, perf: JSON.stringify({ tris: s.tris, draws: s.draws, mats: s.mats, alpha: s.alpha, bones: s.bones, texMB: s.texMB }) });
   const r = await fetch(`/thumb?${q}`, { method: 'POST', headers: thumbAuth(token) });

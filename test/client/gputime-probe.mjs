@@ -1,4 +1,4 @@
-// bun test/client/gputime-probe.mjs — Debug › gpu timer (client/lib/gputime.js).
+// bun test/client/gputime-probe.mjs — Debug › gpu timer (client/lib/debug/gputime.js).
 // SwiftShader has no real GPU clock, so this runs the page TWICE:
 //   native   — whatever this headless browser exposes; if the extension is missing the row must say so and refuse
 //   emulated — a fake EXT_disjoint_timer_query_webgl2 (TIME_ELAPSED = performance.now() between begin/end, a
@@ -49,7 +49,7 @@ try {
   {
     const { pg, errs } = await boot(false);
     const r = await pg.evaluate(async () => {
-      const G = await import('./lib/gputime.js');
+      const G = await import('./lib/debug/gputime.js');
       const st = G.setGpuTimer(true);
       return { st, line: G.gpuLine() };
     });
@@ -63,7 +63,7 @@ try {
   {
     const { pg, errs } = await boot(true);
     const r = await pg.evaluate(async () => {
-      const G = await import('./lib/gputime.js');
+      const G = await import('./lib/debug/gputime.js');
       const { renderer } = await import('./lib/core.js');
       const wait = (ms) => new Promise((res) => setTimeout(res, ms));
       const out = {};

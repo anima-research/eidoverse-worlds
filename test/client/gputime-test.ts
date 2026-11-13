@@ -1,4 +1,4 @@
-// gputime's shadow A/B gives the shadow maps back however it ends (client/lib/gputime.js). `bun test/client/gputime-test.ts`
+// gputime's shadow A/B gives the shadow maps back however it ends (client/lib/debug/gputime.js). `bun test/client/gputime-test.ts`
 import { fileURLToPath } from "node:url";
 import { plugin } from 'bun';
 import { stubResolve } from '../harness/stub.ts';
@@ -9,7 +9,7 @@ const RIG = fileURLToPath(new URL('../stubs/gputime-lightrig-stub.mjs', import.m
 plugin({ name: 'gputime-stubs', setup(b) { stubResolve(b, /^(\.\.?\/)+core\.js$/, () => ({ path: STUB })); stubResolve(b, /^(\.\.?\/)+lightrig\.js$/, () => ({ path: RIG })); } });
 const { pref } = await import(RIG);
 const { lights, em } = await import(STUB);
-const G = await import('../../client/lib/gputime.js');
+const G = await import('../../client/lib/debug/gputime.js');
 const S = suite("gputime");
 const ok = (n: string, c: unknown, d?: unknown) => S.check(n, c, d);
 const sun = { isLight: true, castShadow: true, shadow: { autoUpdate: true } };

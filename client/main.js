@@ -18,7 +18,7 @@ import { updateSky, updateAutoSystems, skyArgs, setCloudQuality, hideSkyForWater
 import { setSkyArgsSource, entities, buildsPending, anyBuildsPending, avatarMounts, roleOf, worldHasOwner, bagOf, bags, seatSocket, socketsOn, currentTerrainArgs, terrainEditBase, noteTerrainSent, terrainPending } from './lib/world.js';
 import { presence } from './lib/presence.js';
 import { initWorldQuad } from './lib/xr/worldquad.js';
-import { foldParity } from './lib/parity.js';
+import { foldParity } from './lib/debug/parity.js';
 import { initModelsRealizer, reconcileModels, residencyDebug, setResidencyFocus, drainPromoteTail } from './lib/realize/models.js';
 import { initEnvironmentRealizer } from './lib/realize/environment.js';
 import { initSocialRealizer } from './lib/realize/social.js';
@@ -52,7 +52,7 @@ import {
   replica, net, connect, initIdentity, loginUrl, wireNet, sendRequest, sendPose, sendTyping,
   setPoseOverride, sendPuppet, sendAnim, builtIn,
 } from './lib/net.js';
-import { poseCommands } from './lib/posecommands.js';
+import { poseCommands } from './lib/debug/posecommands.js';
 import { updateBuild, toggleBuildMode, isBuilding, editSurface } from './lib/edit/build.js';
 // may I build here: the build switch (the authority's), else the role (an older server); unknown = no (strict)
 const mayBuildStrict = () => (Array.isArray(net.myRights?.permissions) ? net.myRights.permissions.includes('build') : isOwner(net.myRights));
@@ -81,7 +81,7 @@ import {
   openDoor, togglePeopleHere, initDock, paintPresence, panelFrame, settingsFrame, setLoadingItems, setMenuSources,
 } from './lib/ui.js';
 import { registerXRPanel } from './lib/xr/xrpanels.js';
-import { initDebug, updateDebug, toggleDebug } from './lib/debug.js';
+import { initDebug, updateDebug, toggleDebug } from './lib/debug/debug.js';
 
 // which server build: one console line at boot
 versionReady.then((v) => console.log(v ? `[eidoverse] server build ${v.sha}${v.dirty === true ? ' (DIRTY TREE)' : v.dirty === false ? '' : ' (dirty: unknown)'} (code from ${v.commitTime}), up since ${v.startedAt}` : '[eidoverse] server build unknown (/version unavailable)'));
@@ -94,7 +94,7 @@ import { initMods, tickMods, modsApi } from './lib/mods.js';
 import { initBoot, markPhase, finishBoot, bootDone, setBootAssets } from './lib/boot.js';
 import { protoStats, forgetBytes, loadingItems, bootBytes } from './lib/assets.js';
 import { grassTiles, heightAt, hasTerrain } from './lib/terrain.js';
-import { grassDiag } from './lib/grassdiag.js';
+import { grassDiag } from './lib/debug/grassdiag.js';
 import { warmStats } from './lib/warmqueue.js';
 import { budgetStats } from './lib/framebudget.js';
 import { pending, P, onIdle, laneStats as schedLaneStats } from './lib/scheduler.js';
@@ -134,7 +134,7 @@ import { DEFAULT_BODY } from '../shared/avatardefs.js';
 
 if (CONFIG.params.has('mintthumbs')) {
   // ?mintthumbs — seed the roster's portraits, then stop (lib/portraits.js). The else below is the entire normal boot.
-  await (await import('./lib/portraits.js')).mintThumbnails();
+  await (await import('./lib/debug/portraits.js')).mintThumbnails();
 } else {
 
 const isViewer = CONFIG.spectate || CONFIG.renderer;
@@ -821,7 +821,7 @@ const EW = globalThis.EW = {
   physics: physicsApi, // grab/put/throw/drop/punt as door requests (thingphysics.js): what runtime mods script against
   mods: modsApi,     // list/put/run/stop your local runtime client scripts (🧩); put and run need your click
   bodysim: { engine: bodyEngine, setEngine: setBodyEngine, list: listBodyEngines },  // swappable body physics
-  foldParity,        // fold-vs-scene drift probe (client/lib/parity.js)
+  foldParity,        // fold-vs-scene drift probe (client/lib/debug/parity.js)
   reconcileModels,   // force a full realizer pass (idempotent)
   materials: materialsDebug,   // factory counters + live weather uniforms
   lightrig: rigDebug,          // slot pool + request table
@@ -833,7 +833,7 @@ const EW = globalThis.EW = {
   gpu: () => ({ ...renderer.info.memory, ...protoStats() }),   // bytes + proto/byte tiers
   draws: drawStats,
   foliage: () => import('./lib/vegetation/foliage.js').then((m) => m.foliageDebug()),
-  overdraw: (opts) => import('./lib/overdraw.js').then((m) => m.overdrawCapture(opts)),   // fragments shaded per pixel, by category
+  overdraw: (opts) => import('./lib/debug/overdraw.js').then((m) => m.overdrawCapture(opts)),   // fragments shaded per pixel, by category
   setDrawBatching,
   frame: frameDebug,           // per-system rolling ms + strides
   grass: grassTiles,           // tile-level draw truth

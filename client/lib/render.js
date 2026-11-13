@@ -3,7 +3,7 @@ import { THREE, renderer, scene, camera } from './core.js';
 import { CONFIG, bus, tee } from './base.js';
 import { DrawBatches } from './draw_batches.js';
 import { warm, warmDepth, P_AMBIENT } from './warmqueue.js';
-import { gpuBegin, gpuEnd } from './gputime.js';
+import { gpuBegin, gpuEnd } from './debug/gputime.js';
 import { quadMaterial } from './xr/quadcolour.js';
 
 const batches = new DrawBatches({ warm: async (mesh, live) => {

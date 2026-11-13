@@ -61,13 +61,13 @@ const ROWS: Row[] = [
     forbidden: [/\.replace\(\/\[&<>"'?\]\/g/] },
   // exempt: the boot trip keys read the live URL (a rename's replaceState changes ?name); breadcrumbs and warmqueue are leaves
   { name: "the page's query is CONFIG.params (base.js), read once", owner: ["client/lib/base.js"], scope: walk("client").filter((f) => /\.(js|mjs)$/.test(f)),
-    exempt: ["client/lib/boot.js", "client/lib/litechoice.js", "client/lib/gpulost.js", "client/lib/breadcrumbs.js", "client/lib/warmqueue.js"],
+    exempt: ["client/lib/boot.js", "client/lib/litechoice.js", "client/lib/gpulost.js", "client/lib/debug/breadcrumbs.js", "client/lib/warmqueue.js"],
     forbidden: [/new URLSearchParams\((globalThis\.)?(win\.)?location\??\.search/] },
   { name: "a client event rides the bus (base.js), never a window CustomEvent", owner: ["client/lib/base.js"], scope: walk("client").filter((f) => /\.(js|mjs)$/.test(f)),
     forbidden: [/new CustomEvent\(/] },
   // exempt: breadcrumbs is a boot trace, sent before the join on purpose
   { name: "the world socket is written by net.js's senders (sendJoined), never raw", owner: ["client/lib/net.js"], scope: walk("client").filter((f) => /\.(js|mjs)$/.test(f)),
-    exempt: ["client/lib/breadcrumbs.js"], forbidden: [/\bnet\.ws\??\.send\(/] },
+    exempt: ["client/lib/debug/breadcrumbs.js"], forbidden: [/\bnet\.ws\??\.send\(/] },
   // the world-name grammar: one regex for every server door, the agent door's included (it once lacked the sequencer's /i)
   { name: "the world-name grammar is limits.ts's WORLD_NAME_RE", owner: ["server/limits.ts"], scope: files.filter((f) => /^(server|mcpl)\//.test(f)), forbidden: [(l) => l.includes("[a-z0-9_-]{1,64}")],
     requires: [["mcpl/net-server.ts", /WORLD_NAME_RE\.test\(/], ["server/world.ts", /WORLD_NAME_RE\.test\(/], ["server/routes.ts", /WORLD_NAME_RE\.test\(/]] },

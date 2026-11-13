@@ -2,11 +2,11 @@
 // keeps the roster fresh but cannot seed it; this is the one-time (and after-adding-VRMs) baseline pass.
 // Dynamically imported by main.js, so the normal boot never loads this file.
 
-import { CONFIG } from './base.js';
-import { contributeThumbnail } from './avatar/avatar.js';
+import { CONFIG } from '../base.js';
+import { contributeThumbnail } from '../avatar/avatar.js';
 
 export async function mintThumbnails() {
-  const { loadVRM } = await import('./assets.js');
+  const { loadVRM } = await import('../assets.js');
   const list = await fetch('/avatars').then((r) => r.json());
   const out = [];
   for (const a of list) {

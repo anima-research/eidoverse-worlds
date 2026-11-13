@@ -36,7 +36,7 @@ try {
   for (const { dir, name: m } of models) {
     const client = await Promise.race([pg.evaluate(async (name) => {
       const { makeLoader } = await import('./lib/assets.js');
-      const { statsOf } = await import('./lib/perfscope.js');
+      const { statsOf } = await import('./lib/debug/perfscope.js');
       const gltf = await makeLoader().loadAsync(`/__parity/${encodeURIComponent(name)}`);
       const fmts = new Set(); gltf.scene.traverse((o) => { for (const mt of [].concat(o.material ?? [])) for (const v of Object.values(mt ?? {})) if (v?.isCompressedTexture) fmts.add(v.format); });
       const s = statsOf(gltf.scene, name); s.__fmts = [...fmts];
