@@ -761,6 +761,8 @@ House rules, learned the hard way (each one is a past incident):
    authority in a sandbox), so components stay pure data. Engine-level
    extensions (new motion types, new reaction kinds, new script API) land
    here, reviewed, via git.
+6. **A name is an own key.** `__proto__` and `constructor` are legal names: write
+   with `setOwn` (shared/humanoid.js), read with `Object.hasOwn`, never `obj[name] =` (#297).
 
 ### Dev loop
 
