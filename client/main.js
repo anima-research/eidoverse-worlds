@@ -79,8 +79,11 @@ import { initVRPanel } from './lib/xr/vrpanel.js';
 import { trySitOn as xrTrySitOn, dismountMe as xrDismountMe } from './lib/localbody.js';
 import {
   toast, flashHint, buildHelp, toggleHelp,
-  openDoor, togglePeopleHere, initDock, paintPresence, panelFrame, settingsFrame, setLoadingItems, setMenuSources,
+  togglePeopleHere, panelFrame, settingsFrame, setLoadingItems,
 } from './lib/ui.js';
+import { initDock, paintPresence } from './lib/ui-dock.js';
+import { setMenuSources } from './lib/ui-menu.js';
+import { openDoor } from './lib/ui-door.js';
 import { registerXRPanel } from './lib/xr/xrpanels.js';
 import { initDebug, updateDebug, toggleDebug } from './lib/debug/debug.js';
 

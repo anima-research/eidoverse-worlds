@@ -403,7 +403,7 @@ const cases: Case[] = [
     good: (o) => o.name && o.mode && o.at && o.joints && o.tracks && !o.req },
   // ---------------- U: the action bar ----------------
   { id: "U1", what: "(R 15:18, the UI half) the bar of gestures is the action bar: its frame id, the lite client's ids and classes, its titles and strings say action", run() {
-      const wn = readText("client/lib/windows.js"), eb = readText("client/lib/actionbar.js"), el = readText("client/lib/actionbar_lite.js"), ix = readText("client/index.html"), ui = readText("client/lib/ui.js"), lt = readText("client/lite.js");
+      const wn = readText("client/lib/windows.js"), eb = readText("client/lib/actionbar.js"), el = readText("client/lib/actionbar_lite.js"), ix = readText("client/index.html"), ui = ["ui", "ui-dock", "ui-menu", "ui-door"].map((f) => readText(`client/lib/${f}.js`)).join("\n"), lt = readText("client/lite.js");
       return { layout: /^  actions:  \{ x: 'center'/m.test(wn) && !new RegExp(`^  ${EM}s:`, "m").test(wn), frame: /makeFrame\('actions'/.test(eb) && /title: 'action bar'/.test(eb), lite: /lite-actions/.test(el) && !new RegExp(`lite-${EM}`).test(el + ix + lt),
         title: /actions: 'action bar'/.test(ui) && !new RegExp(`'${EM} bar'`).test(ui), strings: !new RegExp(`chat, ${EM}s`).test(lt + ui) }; },
     good: (o) => o.layout && o.frame && o.lite && o.title && o.strings },
@@ -556,7 +556,7 @@ const cases: Case[] = [
         key: /actionbar: loadSidecar\("animations\/_actionbar\.json", validateActionBar\)/.test(defs), v: typeof AD.validateActionBar === "function" && AD.validateActionBar({ wave: { clip: "raise" } }).length === 0,
         slash: /\{ name: 'anim', help: '\/anim <name>/.test(reg) }; },
     good: (o) => o.now && !o.olds.length && o.key && o.v && o.slash },
-  { id: "E3", what: "…the word appears nowhere but the action bar's old id for carrying saved storage (client/lib/ui.js ACTIONBAR_OLD_ID): every file of the tree (spec/history, the frozen v1 record, aside), file names too; and both of those still work", async run() {
+  { id: "E3", what: "…the word appears nowhere but the action bar's old id for carrying saved storage (client/lib/ui-dock.js ACTIONBAR_OLD_ID): every file of the tree (spec/history, the frozen v1 record, aside), file names too; and both of those still work", async run() {
       const re = new RegExp(`(?<![rd])${EM}`, "i"); const hits: string[] = []; const SKIP = new Set(["node_modules", ".git", "worlds", "store", "history", ".siblings"]);
       const walk = (rel: string) => { let ents: any[] = []; try { ents = fs.readdirSync(TREE + rel, { withFileTypes: true }); } catch { return; }
         for (const e of ents) { const r = rel ? `${rel}/${e.name}` : e.name; if (SKIP.has(e.name)) continue;
@@ -566,7 +566,7 @@ const cases: Case[] = [
           if (st.size > 4e6 || /\.(png|jpe?g|glb|vrm|vrma|wasm|ico|webp|gz|zip|mp3|ogg|wav)$/i.test(e.name)) continue;
           const lines = fs.readFileSync(TREE + r, "utf8").split("\n"); lines.forEach((l: string, i: number) => { if (re.test(l)) hits.push(`${r}:${i + 1}: ${l.trim().slice(0, 120)}`); }); } };
       walk("");
-      const allowed = (h: string) => /^client\/lib\/ui\.js:\d+: export const ACTIONBAR_OLD_ID = '\w+';$/.test(h)
+      const allowed = (h: string) => /^client\/lib\/ui-dock\.js:\d+: export const ACTIONBAR_OLD_ID = '\w+';$/.test(h)
         // the retired chat command's own row (typed, it says what replaced it) and its test (house config I19)
         || /^client\/lib\/commands\/registry\.js:\d+: (\/\/ whisper was removed \(R 10-18\); \/\w+ became \/anim|\{ name: '\w+', listed: false, help: '\/\w+ is \/anim now')/.test(h)
         || /^test\/client\/retired-commands-test\.ts:\d+: /.test(h);   // its args, beside its alias   // a returning person's saved pins/frame carried once (gym 10-17 20:00)

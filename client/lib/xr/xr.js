@@ -34,7 +34,7 @@ import { platePick, aimPlate, platePress } from '../avatar/platecard.js';   // a
 import { makeDwell } from '../dwell.js';
 import { showXRTip, hideXRTip, dropXRTip, tipTextFor } from './xrtip.js';
 import { pointerVisible, dotVisible, looksAtWorld, interactable, smoothPose, stickStep, angleTo, rayMatrixTo } from './xrpointer.js';   // the laser's policy
-import { dockPins } from '../ui.js';
+import { dockPins } from '../ui-dock.js';
 import { xrScales, toRigLocal } from '../../../shared/bodyscale.js';   // the chosen size composes with the device fit (rig = u, body = u/k)
 import { perf } from '../perf.js';
 import { renderCensusTake, renderCensusTick, renderCensusPeek, setXRCurtain, drawStats } from '../render.js';

@@ -3,7 +3,8 @@
 // §9.2). In a headset these are quads: every control is a button or select (no hover, no long-press).
 import { bus, report, CONFIG } from './base.js';
 import { net, sendRequest, replica, identities, personName } from './net.js';
-import { makeSection, moderationFrame, worldSettingsFrame, setDockEntry, toast } from './ui.js';
+import { makeSection, moderationFrame, worldSettingsFrame, toast } from './ui.js';
+import { setDockEntry } from './ui-dock.js';
 import * as R from '../../shared/protocol/roles.js';
 import { refusalText } from '../../shared/protocol/refusal.js';   // a label `what` ("door: invite-only"): the door's words, code and fix
 import { DOORS, doorOf, doorWrites, leftWords, listedIn } from '../../shared/protocol/access.js';

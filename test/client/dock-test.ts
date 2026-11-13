@@ -1,4 +1,4 @@
-// ui.js — the dock rail, the ∃ menu, pins, and the registerPanel mod seam, run headless against the REAL
+// ui-dock.js and ui-menu.js — the dock rail, the ∃ menu, pins, and the registerPanel mod seam, run headless against the REAL
 // module (windows.js, icons.js and dropdown.js real underneath it; see dock-stub.mjs for what is not).
 //
 //   bun test/client/dock-test.ts
@@ -41,16 +41,17 @@ const { bus } = await import("../stubs/dock-stub.mjs");
 const { fsvg } = await import("../../client/lib/icons.js");
 const { makeFrame, getFrame, isLocked } = await import("../../client/lib/windows.js");
 // a returning person's storage from before the action bar's rename (ad90009f, 10-17): pins and frame state under its old
-// id. The old id is ui.js's ACTIONBAR_OLD_ID (the word lives on that one line, names-check E3); a literal copy here would
-// be a second spelling, so it is read the only way that does not import ui.js first: from the source line.
-// Seeded after windows.js has stamped its layout version (so the frame key is not purged) and before ui.js reads pins.
-const OLD = /export const ACTIONBAR_OLD_ID = '(\w+)';/.exec(await Bun.file(here("../../client/lib/ui.js")).text())![1];
+// id. The old id is ui-dock.js's ACTIONBAR_OLD_ID (the word lives on that one line, names-check E3); a literal copy here would
+// be a second spelling, so it is read the only way that does not import ui-dock.js first: from the source line.
+// Seeded after windows.js has stamped its layout version (so the frame key is not purged) and before ui-dock.js reads pins.
+const OLD = /export const ACTIONBAR_OLD_ID = '(\w+)';/.exec(await Bun.file(here("../../client/lib/ui-dock.js")).text())![1];
 const RENAMED_FRAME = JSON.stringify({ x: 336, y: 10, w: 352, h: 32 });
 localStorage.setItem("ew-dock-pins", JSON.stringify(["search", "profile", "world", "chat", OLD, "debug", "settings", "edit"]));
-// the pin list a FRESH install gets (ui.js), read from the source like OLD: the seed above is what a saved install reads instead
-const DEFAULT_PINS: string[] = JSON.parse(/const DEFAULT_PINS = (\[[^\]]*\]);/.exec(await Bun.file(here("../../client/lib/ui.js")).text())![1].replace(/'/g, '"'));
+// the pin list a FRESH install gets (ui-dock.js), read from the source like OLD: the seed above is what a saved install reads instead
+const DEFAULT_PINS: string[] = JSON.parse(/const DEFAULT_PINS = (\[[^\]]*\]);/.exec(await Bun.file(here("../../client/lib/ui-dock.js")).text())![1].replace(/'/g, '"'));
 localStorage.setItem(`ew-frame-${OLD}`, RENAMED_FRAME);
-const ui = await import("../../client/lib/ui.js");
+// the rail, the ∃ menu and the frames are three modules; the menu binds itself to the dock as it loads
+const ui = { ...(await import("../../client/lib/ui.js")), ...(await import("../../client/lib/ui-dock.js")), ...(await import("../../client/lib/ui-menu.js")) };
 const { initDock, registerPanel, dockPins, toggleEMenu, makeSection, settingsFrame, paintPresence } = ui;
 
 const S = suite("dock");
@@ -146,7 +147,7 @@ check("window.eido.ui.registerPanel is the exported seam", (window as any).eido?
 console.log("DOCK — EMOJI_ICON: rail chrome never rides emoji");
 // world is upstream-labelled '🧱' (main.js), but 🧱 means BUILD — catalog.js's
 // build section wears the hammer correctly. The world PANEL is a planet, so the
-// entry id overrides the emoji (ui.js ID_ICON). Live report, #185.
+// entry id overrides the emoji (ui-dock.js ID_ICON). Live report, #185.
 const RAIL: [string, string, string][] = [["chat", "💬", "chat-circle"], ["world", "🧱", "planet"], ["actions", "👋", "hand-waving"], ["debug", "🐞", "bug"]];
 for (const [id, emoji, icon] of RAIL) {
   const b = btn(id)!;
@@ -700,17 +701,17 @@ console.log("DOCK — Tab OPENS the people pane, never closes it (ui.js togglePe
 // ============================================================ the wrench's auto-pin across a RELOAD (from dock-boot-test)
 // the session above cannot see a boot: the edit gate's first rights report is where you START, not a grant/revoke edge
 {
-bus.emit("your-rights");   // settle the session's ui.js instance on its current gate, so its own edge never writes the shared pins key below
+bus.emit("your-rights");   // settle the session's ui-dock.js instance on its current gate, so its own edge never writes the shared pins key below
 const saved = () => JSON.parse(localStorage.getItem("ew-dock-pins") ?? "null");
 const CHROME = `<button id="hud" class="emark">∃</button><div id="dock" class="panel"></div><div id="emenu" class="panel" hidden></div>
   <div id="loading" class="panel"></div><div id="toasts"></div><div id="hintbar" class="panel"></div><div id="touch"></div>
   <div id="door" class="scrim"><div class="sheet panel"></div></div><div id="help" class="scrim"><div class="sheet panel"></div></div>`;
 
-// one "page load": a fresh ui.js instance (the query string makes Bun evaluate it again) over the same localStorage
+// one "page load": a fresh ui-dock.js instance (the query string makes Bun evaluate it again) over the same localStorage
 let boots = 0;
 async function boot(gate: { open: boolean }) {
   document.body.innerHTML = CHROME;
-  const fresh = await import(`../../client/lib/ui.js?boot=${++boots}`);
+  const fresh = await import(`../../client/lib/ui-dock.js?boot=${++boots}`);
   fresh.initDock([{ id: "edit", label: "🔧", icon: "wrench", last: true, action: () => {}, active: () => false, gate: () => gate.open }]);
   await tick();
   const btn = () => document.querySelector('#dock button[data-toggles="edit"]') as HTMLButtonElement;

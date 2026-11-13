@@ -23,7 +23,7 @@ try {
     await sleep(700); await shot(tab, `[data-frame="world-settings"]`); }
   await evalJson(`(async () => { (await import('/lib/windows.js')).getFrame('world-settings')?.hide(); const fr = (await import('/lib/windows.js')).getFrame('settings'); fr?.show(); document.getElementById('sec-safety-tab')?.click(); return true; })()`);
   await sleep(700); await shot("safety", `[data-frame="settings"]`);
-  await evalJson(`(async () => { (await import('/lib/windows.js')).getFrame('settings')?.hide(); (await import('/lib/ui.js')).toggleEMenu(true); return true; })()`); await sleep(500);
+  await evalJson(`(async () => { (await import('/lib/windows.js')).getFrame('settings')?.hide(); (await import('/lib/ui-menu.js')).toggleEMenu(true); return true; })()`); await sleep(500);
   const s = await cdp.send("Page.captureScreenshot", { format: "png", clip: { x: 0, y: 0, width: 300, height: 340, scale: 1 } }); await Bun.write(`${OUT}/emenu.png`, Buffer.from(s.data, "base64"));
   console.log("ok");
 } finally { await cleanup(); }

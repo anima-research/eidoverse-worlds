@@ -421,11 +421,11 @@ console.log("log out");
   [g.localStorage, g.sessionStorage] = was;
   check("forgetRememberedWorlds clears the browser's and the tab's world, and nothing else",
     !lm.has("ew-world") && !sm.has("ew-world-tab") && lm.get("ew-name") === "helen");
-  // ui.js is the DOM shell and does not import headless; read logOut from source instead
-  const ui = readFileSync(join(ROOT, "client/lib/ui.js"), "utf8");
+  // ui-menu.js is DOM shell and does not import headless; read logOut from source instead
+  const ui = readFileSync(join(ROOT, "client/lib/ui-menu.js"), "utf8");
   const logOut = ui.match(/async function logOut\(\) \{[\s\S]*?\n\}/)?.[0] ?? "";
   // a statement of its own at the function's top level (two-space indent, not in a comment or a branch), before the reload
-  check("ui.js logOut forgets the remembered worlds, unconditionally, then goes to the bare path",
+  check("ui-menu.js logOut forgets the remembered worlds, unconditionally, then goes to the bare path",
     /\n  forgetRememberedWorlds\(\);[\s\S]*\n  location\.replace\(location\.pathname\);/.test(logOut), logOut.slice(0, 300));
   // a reload keeps ?world=, which would rejoin the logged-out person's world and remember it again
   check("…not a reload, which would keep ?world= and remember it again", !/location\.reload\(/.test(logOut), logOut.slice(-200));

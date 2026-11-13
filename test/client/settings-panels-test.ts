@@ -36,6 +36,7 @@ const dockBtn = document.createElement('button'); dockBtn.dataset.toggles = 'pro
 const stub = await import('../stubs/settings-panels-stub.mjs');
 const { calls, emitted, xrPanels, net, bus } = stub;
 const ui = await import('../../client/lib/ui.js');
+await import('../../client/lib/ui-menu.js');   // the ∃ menu, as the page loads it (it was part of ui.js)
 const { getFrame } = await import('../../client/lib/windows.js');
 const style = await import('../../client/lib/stylepanel.js');
 const video = await import('../../client/lib/videopanel.js');

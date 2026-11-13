@@ -14,7 +14,7 @@ try {
   await enterVR(pg);
   await drawn(pg, 60);   // the panels' first frames in the headset
   const r = await pg.evaluate(async () => {
-    const xr = await import('./lib/xr/xr.js'); const ui = await import('./lib/ui.js');
+    const xr = await import('./lib/xr/xr.js'); const ui = await import('./lib/ui-dock.js');
     const pins = ui.dockPins().map((p) => ({ id: p.id, icon: p.icon ?? null }));
     const entries = xr.radialEntries(); const ring = xr.makeRadial(entries);
     await Promise.all(ring.slots.map((m) => m.material?.map?.ready ?? null));   // svg glyphs load async
