@@ -235,10 +235,10 @@ function drawTypingDots(sprite, t, state) {
   }
   sprite.material.map.needsUpdate = true;
 }
+const _plateEye = new THREE.Vector3();   // nameplate fade: the camera's world position
 
 // ---------------------------------------------------------------- Avatar
 
-const _plateEye = new THREE.Vector3();   // nameplate fade: the camera's world position
 const _pq = new THREE.Quaternion();
 const _rq = new THREE.Quaternion();
 const _rq2 = new THREE.Quaternion();
@@ -338,10 +338,10 @@ export class Avatar {
       if (f) { this.root.updateMatrixWorld(true); this._footRestY = Math.max(0, this.root.worldToLocal(f.getWorldPosition(new THREE.Vector3())).y); } } catch { this._footRestY = 0; }
     this.setClip('idle');
 
-    this.bubble = null;
-    this.bubbleUntil = 0;
     this.speakUntil = 0;           // drives the fake viseme envelope
     this.voiceLevel = null;        // 0..1 real amplitude when a waveform exists
+    this.bubble = null;
+    this.bubbleUntil = 0;
     this.typing = null;            // lazily-built dots sprite
     this._typingUntil = 0;         // typing signals repeat ~2.5s and expire ~4s
     this._typingDrawAt = 0;
@@ -1283,12 +1283,6 @@ export class Avatar {
     }
   }
 
-  /** Rename the body: the nameplate is redrawn, nothing else is touched. */
-  setName(name) {
-    this.id = name;
-    this._labelName = name;
-    this.repaintLabel();
-  }
   /** This body's chosen size (bodyscale.js). True when it changed. */
   setUserScale(u) {
     const v = clampBodyScale(u);
@@ -1322,6 +1316,31 @@ export class Avatar {
     return true;
   }
 
+  /** Everything transient this body was expressing (pill, bubble, held pose, limpness, gaze) belongs to the
+   *  generation that expressed it, and does not ride along on a takeover. */
+  resetTransients() {
+    this.setTyping(null);
+    this.bubbleUntil = 0;
+    this.speakUntil = 0;
+    this.voiceLevel = null;
+    this.clearPose();
+    for (const l of this._anims ?? []) this._handBack(l);
+    this._anims = null;
+    this.clearReach();      // a transplanted body must not keep reaching at the predecessor's target
+    this.setLimp(false);
+    this.setGazeTarget(null);
+    this.setClip('idle');
+  }
+
+  /** Your own plate is hidden while presenting (xr.js hideLabel) and in desktop first person (controller.js). */
+  get ownPlateHidden() { return !!(this.hideLabel || this.firstPersonView); }
+
+  /** Rename the body: the nameplate is redrawn, nothing else is touched. */
+  setName(name) {
+    this.id = name;
+    this._labelName = name;
+    this.repaintLabel();
+  }
   /** The crown, measured once while the body is at rest (the constructor): plateanchor.js crownEstimate over the
    *  head/hips/eye bones and the skinned mesh top (≤4000 vertices a mesh), in the VRM scene's own frame so a live
    *  resize multiplies in per frame. null = nothing to measure. */
@@ -1419,9 +1438,6 @@ export class Avatar {
     if (d > 0) lab.position.copy(this.root.worldToLocal(_lvP.addScaledVector(_lvU, d)));
   }
 
-  /** Your own plate is hidden while presenting (xr.js hideLabel) and in desktop first person (controller.js). */
-  get ownPlateHidden() { return !!(this.hideLabel || this.firstPersonView); }
-
   /** How far this body reaches from its plate's anchor: the clearance its sprites write (platesize.js ownClearance).
    *  The body is sampled once into the VRM scene's frame; a size or fit change only re-projects the sample. A body
    *  with nothing measurable clears a head (CLEAR_MIN). */
@@ -1485,22 +1501,6 @@ export class Avatar {
   }
 
   // ---- speech
-  /** Everything transient this body was expressing (pill, bubble, held pose, limpness, gaze) belongs to the
-   *  generation that expressed it, and does not ride along on a takeover. */
-  resetTransients() {
-    this.setTyping(null);
-    this.bubbleUntil = 0;
-    this.speakUntil = 0;
-    this.voiceLevel = null;
-    this.clearPose();
-    for (const l of this._anims ?? []) this._handBack(l);
-    this._anims = null;
-    this.clearReach();      // a transplanted body must not keep reaching at the predecessor's target
-    this.setLimp(false);
-    this.setGazeTarget(null);
-    this.setClip('idle');
-  }
-
   setTyping(state) {
     // null means stop (mic went cold, composing ended)
     if (state === null) { this._typingUntil = 0; this._typingState = null; return; }
