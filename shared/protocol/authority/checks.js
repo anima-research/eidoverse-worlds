@@ -444,9 +444,11 @@ export function colliderRules(s, ids) {
 }
 /** A bare yaw is a number of radians (PROTOCOL §9): anything else is refused, never coerced, and one past ±2π (spawn.yaw's range) is degrees typed as radians (#147).
  *  Every door that takes one (set transform, create's at, a copy's at) reaches it through resolve's transform. */
+// a full turn rounded to 4 decimals (6.2832) is 1.5e-5 past 2π; 1e-3 rad (0.06°) takes any such rounding, and the smallest degree slip (7) is far past it
+const YAW_SLACK = 1e-3;
 function bareYaw(yaw) {
   if (!isNum(yaw)) refuse("shape", `yaw must be a number (radians about +Y): got ${JSON.stringify(yaw)}`, "e.g. yaw: 1.5708 for a quarter turn; or q [x, y, z, w]");
-  if (Math.abs(yaw) <= 2 * Math.PI) return;
+  if (Math.abs(yaw) <= 2 * Math.PI + YAW_SLACK) return;
   const within = (r) => +Math.atan2(Math.sin(r), Math.cos(r)).toFixed(4) || 0;   // the same heading, within ±π
   refuse("shape", `yaw ${yaw} is past ±2π: a yaw is radians about +Y, not degrees`, `as degrees, ${yaw}° is yaw ${within(yaw * Math.PI / 180)}; as radians, the same heading is yaw ${within(yaw)}`);
 }
