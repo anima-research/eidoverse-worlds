@@ -1202,6 +1202,7 @@ away from it.
 
 - **Units**: metres, kilograms, seconds. Instants are epoch milliseconds.
   Angles are radians, as everywhere on the wire (§9).
+  One exception: a station's `look` limits (`yaw`, `pitch`) are degrees (shared/sockbody.js).
   The shape audit moved the last degrees: `look-at`'s yaw, pitch and
   speed (rad, rad/s) and `sky.azimuth` (where the sun stands round the
   horizon: default π, within ±2π; a v1 degree value is converted by the
