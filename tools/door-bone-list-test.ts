@@ -9,6 +9,7 @@
 
 import { WorldAgent } from '../mcpl/agent.ts';
 import { devFlightProvider } from '../shared/flightcap.js';
+import { tryUntil } from './protocol/wait.ts';
 
 let pass = 0, fail = 0;
 function check(name: string, ok: boolean, detail = '') {
@@ -188,8 +189,8 @@ serve = async () => new Response(glb(WINGED));
 await kick.loadBodyBones(); await kick.foldWings(true);
 serve = async () => new Response(glb(['Hips', 'Spine', 'Head']));
 kick.setAvatar('wingless.vrm');
-await new Promise((done) => setTimeout(done, 50));
-check("the new body's bones are read on the swap, so its presence stops showing a fold it can't hold", kick.wingsFolded === false);
+const released = await tryUntil('the swap reads the new body and releases the fold', () => kick.wingsFolded === false, { ms: 2000, step: 5 });
+check("the new body's bones are read on the swap, so its presence stops showing a fold it can't hold", released && kick.wingsFolded === false);
 
 console.log('\nA RESTORED FOLD FITS THE BODY');
 {
