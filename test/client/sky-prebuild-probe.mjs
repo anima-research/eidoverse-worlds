@@ -11,7 +11,7 @@ const errs = []; pg.on('pageerror', (e) => errs.push(String(e)));
 try {
   await skyBoot(pg, world, 'prebuild', { sky: { hours: 12, rate: 0, clouds: 'clear', weather: 'clear' }, baked: true });
   const r = await pg.evaluate(async () => {
-    const s = await import('./lib/sky.js'); const { sys } = s.skyForProbe();
+    const s = await import('./lib/sky/sky.js'); const { sys } = s.skyForProbe();
     const T = sys._envTarget, size = `${T?.width}x${T?.height}`, fb = sys._envFbNode?.value;
     let disposedTemp = 0; const tempWidths = []; const RT = T.constructor, origDispose = RT.prototype.dispose;
     RT.prototype.dispose = function () { if (this !== T) { tempWidths.push(this.width); if (this.width === 64) disposedTemp++; } return origDispose.call(this); };
@@ -33,7 +33,7 @@ try {
   check('the temporary target is freed', r.disposedTemp === 1, JSON.stringify(r));
   // a prebuild whose bake throws is NOT a prebuilt program (Greptile #206): it must say so, so the cap isn't marked ready
   const failed = await pg.evaluate(async () => {
-    const s = await import('./lib/sky.js'); const { api } = s.skyForProbe();
+    const s = await import('./lib/sky/sky.js'); const { api } = s.skyForProbe();
     const orig = api.bakeEnv; api.bakeEnv = async () => { throw new Error('probe: forced bake failure'); };
     try { return await s.prebuildBakeProgram(8, { includeClouds: false }); } finally { api.bakeEnv = orig; }
   });

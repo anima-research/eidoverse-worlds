@@ -313,7 +313,7 @@ await tryRow('SK', async () => {
     && fw[0].refused?.didYouMean?.[0] === 'dwell' && fw[1].refused?.didYouMean?.[0] === 'transition' && fw[2].refused?.didYouMean?.[0] === 'dwell'
     && JSON.stringify(W.state().entities['@world'].c.sky) === JSON.stringify(s), fw.map((x) => x.refused ?? x.ok));
   check('SK3 …tz present means the wall clock governs', Math.abs(hoursAt({ tz: 'UTC', hours: 3, rate: 0, ts: 0 }, Date.UTC(2026, 0, 1, 15, 30)) - 15.5) < 1e-9, hoursAt({ tz: 'UTC', hours: 3, rate: 0, ts: 0 }, Date.UTC(2026, 0, 1, 15, 30)));
-  check('SK4 the sky reader turns the sun by azimuth in radians', /a\.azimuth \?\? Math\.PI/.test(read('client/lib/sky.js')) && !/degToRad\(a\.azimuth/.test(read('client/lib/sky.js')), '');
+  check('SK4 the sky reader turns the sun by azimuth in radians', /a\.azimuth \?\? Math\.PI/.test(read('client/lib/sky/sky.js')) && !/degToRad\(a\.azimuth/.test(read('client/lib/sky/sky.js')), '');
   check('SK5 a forecast reads dwell and transition', effectiveSky({ forecast: { seed: 1, states: ['rain', 'clear'], dwell: [600, 600], transition: 20, epoch: 1 } }, 2).seconds === 20, effectiveSky({ forecast: { seed: 1, states: ['rain', 'clear'], dwell: [600, 600], transition: 20, epoch: 1 } }, 2));
   const { repairWorld } = await repairMod();
   const R = repairWorld({ sky: { clock: 'real', tz: 'America/Los_Angeles', dormantRated: { hours: 7, rate: 2, ts: 100 }, ts: 500, azimuth: 90, weatherSeconds: 20, sun: 1.3, fill: 0.7, world: 'earth', forecast: { seed: 2, states: ['rain'], dwellSec: [600, 900], transitionSec: 40, epoch: 9 } } }).c.sky;
@@ -323,7 +323,7 @@ await tryRow('SK', async () => {
   const Wa = scratchWorld('w2r-sky-audio'); const sa = () => Wa.state().entities['@world'].c.sky;
   const a1 = Wa.call('set', { id: '@world', component: 'sky', value: { hours: 9, audio: true } }), a1v = sa()?.audio, a2 = Wa.call('sky', { audio: false }), a3 = Wa.call('set', { id: '@world', component: 'sky', value: { hours: 9, audio: 'yes' } });
   check('SK7 sky.audio (main\'s weather sounds) is a bool: set and the sky act store it, a non-bool is refused, absent means off, and the client reads it', a1.ok && a1v === true && a2.ok && sa()?.audio === false && code(a3) === 'shape'
-    && K.fields.audio === 'bool' && /off/.test(K.absentMeans?.audio ?? '') && !!K.docs?.audio && /Boolean\(a\.audio\)/.test(read('client/lib/sky.js')), [a1.refused, a1v, a2.refused, sa(), a3.refused]);
+    && K.fields.audio === 'bool' && /off/.test(K.absentMeans?.audio ?? '') && !!K.docs?.audio && /Boolean\(a\.audio\)/.test(read('client/lib/sky/sky.js')), [a1.refused, a1v, a2.refused, sa(), a3.refused]);
 });
 
 // ===================================================================== terrain: the sim's defaults, raster reserved, layer colours ints, water split out

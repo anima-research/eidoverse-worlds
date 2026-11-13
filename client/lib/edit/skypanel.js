@@ -8,11 +8,11 @@ import { defsRegistry } from '../defs.js';
 import { flashHint } from '../ui.js';
 import { selectRow } from './rows.js';
 import { previewSky, skyArgs, skyImpl, WEATHERS, CLOUDS, SKY_QUALITY, skyQuality, setSkyQuality,
-  CLOUD_QUALITY, getCloudChoice, setCloudQuality, cloudCap, skyInXR } from '../sky.js';
+  CLOUD_QUALITY, getCloudChoice, setCloudQuality, cloudCap, skyInXR } from '../sky/sky.js';
 import { GRASS_QUALITY, getGrassQuality, setGrassQuality,
   getGrassDensity, getGrassShed, getGrassApplied } from '../terrain.js';
 import { MODEL_QUALITY } from '../lod_policy.js';
-import { loggedSky, skyPreviewing, skyRendering, skyDegraded, getCloudQuality } from '../sky.js';
+import { loggedSky, skyPreviewing, skyRendering, skyDegraded, getCloudQuality } from '../sky/sky.js';
 import { effectiveClock } from '../../../shared/forecast.js';
 import { stateLines } from '../statelines.js';
 import { modelQuality, dialModelQuality } from '../realize/models.js';

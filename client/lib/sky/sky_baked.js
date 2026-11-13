@@ -10,11 +10,11 @@
 // Coupling: this reaches through skyApi._internals for `sys.domes`, `sys._envTarget` and `sys._envBake`
 // {scene, camera}. If the engine moves any of them, attach() returns false and sky.js stays on the live march.
 
-import { THREE, TSL, scene, camera, renderer } from './core.js';
-import { tee, bus, CONFIG } from './base.js';
-import { warm, P_AMBIENT } from './warmqueue.js';
+import { THREE, TSL, scene, camera, renderer } from '../core.js';
+import { tee, bus, CONFIG } from '../base.js';
+import { warm, P_AMBIENT } from '../warmqueue.js';
 import { bandCuts } from './sky_bands.js';
-import { ask, spent, turn } from './framebudget.js';
+import { ask, spent, turn } from '../framebudget.js';
 
 let dome = null;
 let mat = null;

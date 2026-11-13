@@ -125,7 +125,7 @@ if (!CHROME) await missing("browser binary", `none of these is a real Chromium: 
 ok("browser binary", CHROME);
 
 // ---- 2. the two trees ----------------------------------------------------------------------------------------------
-const treeOk = (t: string) => ["server/server.ts", "client/lib/core.js", "client/lib/sky.js", "tools/world.ts"].every((f) => existsSync(join(t, f)));
+const treeOk = (t: string) => ["server/server.ts", "client/lib/core.js", "client/lib/sky/sky.js", "tools/world.ts"].every((f) => existsSync(join(t, f)));
 if (!treeOk(NEW)) await missing("new tree", `${NEW} is not a checkout of this repo (server/server.ts, client/lib/core.js …)`);
 const headOf = (t: string) => Bun.spawnSync(["git", "-C", t, "rev-parse", "--short", "HEAD"]).stdout.toString().trim();
 const describe = (t: string) => Bun.spawnSync(["git", "-C", t, "log", "-1", "--format=%h %s"]).stdout.toString().trim().slice(0, 100);
@@ -295,7 +295,7 @@ async function boot(s: Server, world: string): Promise<string> {
     const n = await import('/lib/net.js'); if (!n.replicaActive()) return 'joined:false';
     const a = await import('/lib/assets.js'); const L = a.loadingItems(); if (L.length) return 'loading:' + L.length + ' ' + JSON.stringify(L.map((x) => x.label + (x.total ? ' ' + x.done + '/' + x.total : '')).slice(0, 8));
     const w = await import('/lib/world.js'); if (w.anyBuildsPending()) return 'builds:' + w.anyBuildsPending();
-    const sk = await import('/lib/sky.js'); if (sk.skyBusy?.() || sk.skyRendering?.()) return 'sky:busy';
+    const sk = await import('/lib/sky/sky.js'); if (sk.skyBusy?.() || sk.skyRendering?.()) return 'sky:busy';
     if (globalThis.__gpuLost?.fired) return 'gpu:lost';
     return 'frames:' + (await globalThis.__spFrames()) + ' vis:' + document.visibilityState + ' focus:' + document.hasFocus() + ' timers:' + (globalThis.__spTicks ?? -1);`);
   /* a timer-driven counter beside the rAF one: if timers advance while frames stand still, rAF is paused (a hidden/occluded

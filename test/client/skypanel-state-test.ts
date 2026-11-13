@@ -13,7 +13,7 @@ const stub = fileURLToPath(new URL("../stubs/skypanel-stub.mjs", import.meta.url
 plugin({
   name: "skypanel-stubs",
   setup(b) {
-    stubResolve(b, /^\.\.?\/(base|defs|net|ui|sky|terrain|lod_policy|realize\/models|writes)\.js$/, () => ({ path: stub }));
+    stubResolve(b, /^\.\.?\/(base|defs|net|ui|(?:sky\/)?sky|terrain|lod_policy|realize\/models|writes)\.js$/, () => ({ path: stub }));
   },
 });
 

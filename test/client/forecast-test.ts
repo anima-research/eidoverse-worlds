@@ -465,7 +465,7 @@ const policyArgs = {
 
 // the stored sky keeps a tz and drops clock: 'real'; the client's ~1 Hz re-render must still run for it
 {
-  const skySrc = await Bun.file(new URL("../../client/lib/sky.js", import.meta.url)).text();   // sky.js isn't loadable here: it asks forecast.js
+  const skySrc = await Bun.file(new URL("../../client/lib/sky/sky.js", import.meta.url)).text();   // sky.js isn't loadable here: it asks forecast.js
   check("sky.js's heartbeat asks skyTicks", /if \(skyTicks\(clock\?\.args\) && nowMs - lastClockTick > 1000\)/.test(skySrc));
   check("skyTicks: a tz alone at rate 0 ticks (the wall clock), as do a rate and a forecast; an old clock: 'real' (read no more) and a still sky don't",
     typeof F.skyTicks === "function" && F.skyTicks({ tz: "Europe/Paris", rate: 0 }) && F.skyTicks({ rate: 2 }) && !F.skyTicks({ clock: "real" }) && F.skyTicks({ forecast: { seed: 1 } }) && !F.skyTicks({ rate: 0, hours: 12 }) && !F.skyTicks(undefined));

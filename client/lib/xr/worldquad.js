@@ -7,7 +7,7 @@ import { bus } from '../base.js';
 import { myState } from '../controller.js';
 import { starterModels } from '../edit/catalog.js';
 import { defsRegistry } from '../defs.js';
-import { previewSky, skyArgs } from '../sky.js';
+import { previewSky, skyArgs } from '../sky/sky.js';
 import { registerXRPanel } from './xrpanels.js';
 
 let presets = {};   // name → sky args; fields() is synchronous, so cache the def

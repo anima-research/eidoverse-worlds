@@ -6,28 +6,28 @@
 //   2. three's SkyMesh, the fallback.
 // Quality tiers and the VR rules: docs/research/sky-quality-and-vr.md.
 
-import { THREE, scene, sun, hemi, renderer, camera } from './core.js';
+import { THREE, scene, sun, hemi, renderer, camera } from '../core.js';
 // ?shadowdebug=1 dims the fill to a fifth so the shadow map's coverage is legible (sun shadows read only ~10% darker)
 const SHADOW_DEBUG_FILL = CONFIG.params.has('shadowdebug') ? 0.2 : 1;
-import { report, bus, tee, teeNow, CONFIG } from './base.js';
-import { serverNow } from './serverclock.js';   // a server stamp is read on the authority's clock
-import { loadEidoModule, primeFiles, listLibrary, fetchBytes } from './assets.js';
-import { markPhase } from './boot.js';
+import { report, bus, tee, teeNow, CONFIG } from '../base.js';
+import { serverNow } from '../serverclock.js';   // a server stamp is read on the authority's clock
+import { loadEidoModule, primeFiles, listLibrary, fetchBytes } from '../assets.js';
+import { markPhase } from '../boot.js';
 import { bandCuts, bandedBakeRender, bakeGeneration } from './sky_baked.js';
 import { bakedDomeObject } from './sky_baked.js';
 import { BAKE_INTERCEPT, attachBakedDome, detachBakedDome, updateBakedDome, bakedActive, requestBake, holdLiveDomes, releaseLiveDomes, liveDomesHeld, takeHeldDomes,
   envTexture, adoptEnvironment, whenBakeReady, bakedRefreshing } from './sky_baked.js';
-import { beginWork } from './loadwork.js';
+import { beginWork } from '../loadwork.js';
 import { makeSwapChain, SHOWN_UNKNOWN } from './sky_swapchain.js';
 import { serializeBakes as serializeBakesWith, BAKE_GUARD, BAKE_AFTER, BAKE_HELD } from './sky_bakelock.js';
 import { showInterimSky, interimSkyObject, updateInterimSky, hideInterimSky, interimSkyShown } from './sky_interim.js';
-import { busy as loadingBusy } from './framebudget.js';
-import { bootDone } from './boot.js';
-import { setDayness, releaseForeignLights } from './lightrig.js';
-import { warm, P_AMBIENT } from './warmqueue.js';
-import { WEATHERS, CLOUDS, effectiveSky, hoursAt, skyTicks } from '../../shared/forecast.js';
-import { claimUnowned, releaseHook } from './autohooks.js';
-import { rainSurfaceAt } from './terrain.js';
+import { busy as loadingBusy } from '../framebudget.js';
+import { bootDone } from '../boot.js';
+import { setDayness, releaseForeignLights } from '../lightrig.js';
+import { warm, P_AMBIENT } from '../warmqueue.js';
+import { WEATHERS, CLOUDS, effectiveSky, hoursAt, skyTicks } from '../../../shared/forecast.js';
+import { claimUnowned, releaseHook } from '../autohooks.js';
+import { rainSurfaceAt } from '../terrain.js';
 
 // the environment exists from the first frame (black) so every material's lighting graph is born with its env branch;
 // flipping null→texture later would recompile every PBR material. Bakes change the content, never the object.
@@ -280,7 +280,7 @@ Object.defineProperty(globalThis, 'makeSkySystem', {
   set(fn) { _realMakeSkySystem = fn; },
 });
 
-export { WEATHERS, CLOUDS } from '../../shared/forecast.js';   // the canonical lists, re-exported for existing importers
+export { WEATHERS, CLOUDS } from '../../../shared/forecast.js';   // the canonical lists, re-exported for existing importers
 // only `earth` is offered: ringworld and shieldworld each drag ~20 MB of celestial geometry plus a second raymarched
 // layer and take the tab down; a log that asks for one is coerced to earth
 export const SKY_WORLDS = ['earth'];

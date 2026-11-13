@@ -1,4 +1,4 @@
-// sky-lifecycle-test — the REAL client/lib/sky.js state machine (the VR cap, the headset holds, the tier queued while
+// sky-lifecycle-test — the REAL client/lib/sky/sky.js state machine (the VR cap, the headset holds, the tier queued while
 // the sky arrives, the failed bake's one retry, the held changes applied at exit), driven headless.
 //
 // Why not a browser probe: headless Chromium can't compile the cloud programs (they exhaust a 7 GB machine), so every
@@ -69,7 +69,7 @@ mock.module(lib('autohooks.js'), () => ({ claimUnowned: () => [], releaseHook() 
 
 // ---- the interim gradient: a flag, announced as sky_interim does ---------------------------------------------------
 let interim = false;
-mock.module(lib('sky_interim.js'), () => ({
+mock.module(lib('sky/sky_interim.js'), () => ({
   showInterimSky() { if (!interim) { interim = true; bus.emit('sky-interim', true); } },
   hideInterimSky() { if (interim) { interim = false; bus.emit('sky-interim', false); } },
   updateInterimSky() {}, interimSkyShown: () => interim, interimSkyObject: () => null,   // read only to hide the sky under water (main #254)
@@ -82,7 +82,7 @@ mock.module(lib('sky_interim.js'), () => ({
 const SB = { held: null, parked: null, baked: null, attachRefuses: false, attaches: [], gen: 1 };
 const putBack = (list) => { for (const [d, p] of list ?? []) if (!d.parent) p.add(d); };
 const takeOut = (api) => { const ds = api?._internals?.sky?.domes ?? []; const l = ds.filter((d) => d.parent).map((d) => [d, d.parent]); for (const [d, p] of l) p.remove(d); return l; };
-mock.module(lib('sky_baked.js'), () => ({
+mock.module(lib('sky/sky_baked.js'), () => ({
   BAKE_INTERCEPT: Symbol('bake-intercept'),
   bakedDomeObject: () => null,   // read only to hide the sky under water (main #254)
   bandCuts: () => [0, 1], bandedBakeRender: async () => 1, bakeGeneration: () => SB.gen,
@@ -135,7 +135,7 @@ mock.module(lib('assets.js'), () => ({
 }));
 
 localStorage.setItem('ew-cloud-quality', 'medium');
-const sky = await import('../../client/lib/sky.js');
+const sky = await import('../../client/lib/sky/sky.js');
 SB.tierAtAttach = () => sky.getCloudQuality();
 
 // ---- the frame sampler: what a person in the headset would SEE ----------------------------------------------------
@@ -382,7 +382,7 @@ try {
   {
     // the stand-in gradient is an ARRIVAL: skyBusy() and the panel's skyRendering() go up at once (only a render waits
     // LOAD_SHOW_MS), and come down with it
-    const si = await import(lib('sky_interim.js'));
+    const si = await import(lib('sky/sky_interim.js'));
     const states = []; const off = bus.on('sky-state', () => states.push(sky.skyRendering()));
     si.showInterimSky(null); const up = { busy: sky.skyBusy(), rendering: sky.skyRendering(), told: states.at(-1) };
     si.hideInterimSky(); const down = { busy: sky.skyBusy(), rendering: sky.skyRendering() }; off();
@@ -395,7 +395,7 @@ try {
 // the baked sky's strips (sky_bands.js bandCuts): every band has width, bands cut on texel rows, cover [0,1] in order,
 // cost about the same
 {
-  const { bandCuts } = await import('../../client/lib/sky_bands.js');
+  const { bandCuts } = await import('../../client/lib/sky/sky_bands.js');
   // the same row weight bandCuts uses (the march's chord estimate), to measure each band's cost
   const weight = (v) => { const lat = (0.5 - v) * Math.PI; return 0.05 + (lat <= 0 ? 0.05 : Math.min(1 / Math.max(Math.sin(lat), 0.03), 30)); };
   for (const [W, H, P, B] of [[4096, 2048, 8, 0.4e6], [2048, 1024, 8, 0.4e6], [1024, 512, 4, 0.4e6], [4096, 2048, 8, 1.5e6], [64, 8, 8, 1]]) {

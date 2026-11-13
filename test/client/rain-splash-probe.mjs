@@ -38,7 +38,7 @@ try {
   await pg.goto(`${world.origin}/?world=rainprobe&name=rainprobe&key=${world.key}`, { waitUntil: 'domcontentloaded', timeout: 90000 });
   await pg.waitForFunction(() => globalThis.__ewEngineUp && document.getElementById('splash')?.classList.contains('gone'), null, { timeout: 180000 });
   const backend = await pg.evaluate(async () => {
-    const sky = await import('./lib/sky.js');
+    const sky = await import('./lib/sky/sky.js');
     // the weather system is registered under lightrig's scene PROXY — reach it through the sky's own handle
     globalThis.__wx = () => sky.skyForProbe().api?._internals?.wx ?? null;
     return globalThis.EW.renderer.backend?.isWebGPUBackend ? 'WebGPU' : 'WebGL2';

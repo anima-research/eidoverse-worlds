@@ -1,6 +1,6 @@
 # Sky quality tiers and the VR rules
 
-Design notes behind `client/lib/sky.js`, `sky_baked.js` and `sky_swapchain.js`. The code comments say what; this says why.
+Design notes behind `client/lib/sky/sky.js`, `sky_baked.js` and `sky_swapchain.js`. The code comments say what; this says why.
 
 ## Tiers
 

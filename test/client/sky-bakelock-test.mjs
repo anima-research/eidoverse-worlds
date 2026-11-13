@@ -1,10 +1,10 @@
-// sky-bakelock-test — the sky's ONE-BAKE-AT-A-TIME wrapper (client/lib/sky_bakelock.js), headless.
+// sky-bakelock-test — the sky's ONE-BAKE-AT-A-TIME wrapper (client/lib/sky/sky_bakelock.js), headless.
 //   node test/client/sky-bakelock-test.mjs      (or bun)
 // A fake engine: bakeEnv awaits a promise the test resolves, and reads/writes _envTarget the way sky_system's does.
 // Review 10b H2: when bake N resolved, a bake queued behind it (the VR prebuild, which swaps a TEMPORARY target in)
 // started BEFORE the awaiting caller's continuation, so the baked dome attached to the temporary. The fix runs the
 // post-bake work inside the lock (BAKE_AFTER); a queued bake re-checks whether it's still wanted at its turn (BAKE_GUARD).
-import { serializeBakes, BAKE_AFTER, BAKE_GUARD, BAKE_HELD, BAKE_INTERCEPT } from '../../client/lib/sky_bakelock.js';
+import { serializeBakes, BAKE_AFTER, BAKE_GUARD, BAKE_HELD, BAKE_INTERCEPT } from '../../client/lib/sky/sky_bakelock.js';
 import { pause } from '../gate/wait.ts';
 import { suite } from "../gate/suite.ts";
 const S = suite("sky-bakelock");

@@ -49,7 +49,7 @@ const UNRELATED = [
   ["server/optimize.ts", /./, "glTF / encoder format versions"],
   ["server/sfu", /./, "SFU / dependency API versions"],
   ["client/lib/vegetation/", /./, "plant generators' UV names (LEAF.v1) and model versions"],
-  ["client/lib/sky_baked.js", /./, "the sky bake's cache format version"],
+  ["client/lib/sky/sky_baked.js", /./, "the sky bake's cache format version"],
   ["shared/rig.js", /./, "the VRM spec's version (VRM 0.x / 1.0)"],
   ["client/lib/xr/xrbody.js", /./, "the WebXR / VRM versions"],
   ["client/lib/audio/tts.js", /./, "a voice model's version"],

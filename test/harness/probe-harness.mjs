@@ -191,7 +191,7 @@ export async function skyBoot(pg, world, name, { sky = null, baked = false, quer
   await pg.goto(`${world.origin}/?world=staging&name=${name}&key=${world.key}${query}`, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await pg.waitForFunction(ready, null, { timeout: 120000 });
   if (sky) await pg.evaluate(async (v) => { const { sendRequest } = await import('./lib/net.js'); const r = await sendRequest('set', { id: '@world', component: 'sky', value: v, merge: true }); if (!r.ok) throw new Error(`sky refused: ${JSON.stringify(r.refused)}`); }, sky);
-  if (baked) await tryUntil('the baked sky is active', () => pg.evaluate(async () => (await import('./lib/sky_baked.js')).bakedActive()), { ms: 90_000, step: 1000 });
+  if (baked) await tryUntil('the baked sky is active', () => pg.evaluate(async () => (await import('./lib/sky/sky_baked.js')).bakedActive()), { ms: 90_000, step: 1000 });
 }
 
 // RAW3: a page of real three + client/lib modules, served from client/ by route (no world server), on SwiftShader

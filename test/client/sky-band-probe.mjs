@@ -27,7 +27,7 @@ try {
   await drawn(pg, 120);   // the boot's first frames
   const r = await Promise.race([pg.evaluate(async (gap) => {
     const { THREE, TSL, renderer } = await import('./lib/core.js');
-    const { bandedBakeRender, bandCuts } = await import('./lib/sky_baked.js');
+    const { bandedBakeRender, bandCuts } = await import('./lib/sky/sky_baked.js');
     const W = 256, H = 128, PASSES = 8, BUDGET = 16000;   // 256*128*8/16000 ≈ 17 strips
     const mat = new THREE.NodeMaterial();
     mat.fragmentNode = TSL.Fn(() => { const u = TSL.uv(); return TSL.vec4(u.x, u.y, TSL.sin(u.x.mul(37.0)).mul(TSL.cos(u.y.mul(23.0))).mul(0.5).add(0.5), 1); })();
@@ -60,7 +60,7 @@ try {
   // the client's two extra shapes (review 2: H2 + the budgeted wait): budget:true, then a renderer reporting a session
   const r2 = GAP ? null : await Promise.race([pg.evaluate(async () => {
     const { THREE, TSL, renderer } = await import('./lib/core.js');
-    const { bandedBakeRender } = await import('./lib/sky_baked.js');
+    const { bandedBakeRender } = await import('./lib/sky/sky_baked.js');
     const W = 256, H = 128, PASSES = 8, BUDGET = 16000;
     const mat = new THREE.NodeMaterial();
     mat.fragmentNode = TSL.Fn(() => { const u = TSL.uv(); return TSL.vec4(u.x, u.y, TSL.sin(u.x.mul(37.0)).mul(TSL.cos(u.y.mul(23.0))).mul(0.5).add(0.5), 1); })();

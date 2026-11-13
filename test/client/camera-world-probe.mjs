@@ -17,7 +17,7 @@ try {
   const r = await pg.evaluate(async () => {
     const { THREE, scene, camera } = await import('./lib/core.js');
     const M = await import('./lib/realize/models.js');
-    const S = await import('./lib/sky_baked.js');
+    const S = await import('./lib/sky/sky_baked.js');
     const saved = { parent: camera.parent, p: camera.position.clone(), q: camera.quaternion.clone() };
     const rig = new THREE.Group(); rig.position.set(200, 0, -300); scene.add(rig);
     rig.add(camera); camera.position.set(0, 1.6, 0); camera.updateMatrixWorld(true); rig.updateMatrixWorld(true);

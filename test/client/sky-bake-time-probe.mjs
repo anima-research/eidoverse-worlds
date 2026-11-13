@@ -12,7 +12,7 @@ const errs = []; pg.on('pageerror', (e) => errs.push(String(e)));
 try {
   await skyBoot(pg, world, 'baketime', { sky: { hours: 9, rate: 60, clouds: 'clear', weather: 'clear' }, baked: true });   // a fast day: the sun moves between strips
   await pg.evaluate(async () => {
-    const { sys } = (await import('./lib/sky.js')).skyForProbe(); const r = globalThis.EW.renderer;
+    const { sys } = (await import('./lib/sky/sky.js')).skyForProbe(); const r = globalThis.EW.renderer;
     const W = sys._envTarget?.width; globalThis.__bt = [];
     // "separate frames" is counted in animation frames, not ms: a fast host draws consecutive strips 16 ms apart (macOS CI)
     globalThis.__frame = 0; const tick = () => { globalThis.__frame++; requestAnimationFrame(tick); }; requestAnimationFrame(tick);

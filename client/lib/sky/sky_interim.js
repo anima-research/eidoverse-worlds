@@ -1,7 +1,7 @@
 // sky_interim — a plain gradient dome shown while the real sky's programs compile (minutes on a cold GPU cache). Its
 // colours are the sky system's own time-of-day horizon/zenith uniforms, so the stand-in matches the hour from the start.
-import { THREE, scene, camera } from './core.js';
-import { bus } from './base.js';
+import { THREE, scene, camera } from '../core.js';
+import { bus } from '../base.js';
 
 const R = 14000;          // inside sky_system's DOME_R, outside everything else
 let mesh = null, uni = null, lastKey = '';

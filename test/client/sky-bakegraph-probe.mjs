@@ -15,7 +15,7 @@ try {
   await skyBoot(pg, world, 'bakegraph', { sky: { hours: 12, rate: 0, clouds: 'clear', weather: 'clear' } });
   await tryUntil('the real sky is up', () => lines.some((l) => /the real sky is up/.test(l)), { ms: 90_000, step: 500 });
   const r = await pg.evaluate(async () => {
-    const { api, sys } = (await import('./lib/sky.js')).skyForProbe();
+    const { api, sys } = (await import('./lib/sky/sky.js')).skyForProbe();
     const ev = []; const seen = new Map(); let n = 0;
     const tag = (b) => { if (!b) return 'null'; if (!seen.has(b)) { const t = `${b.key.split('|')[0]}#${n++}`; seen.set(b, t); b.scene.children[0].material.addEventListener('dispose', () => ev.push(`x${t}`)); } return seen.get(b); };
     const bake = async (w) => { await api.bakeEnv({ width: w, height: w / 2, cloudPasses: 1, includeClouds: false }); ev.push(`=${tag(sys._envBake)}`); };

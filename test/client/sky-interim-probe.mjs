@@ -23,7 +23,7 @@ try {
   for (let i = 0; i < 360 && !up; i++) {
     const st = await pg.evaluate(async () => {
       try {
-        const si = await import('./lib/sky_interim.js'), sb = await import('./lib/sky_baked.js');
+        const si = await import('./lib/sky/sky_interim.js'), sb = await import('./lib/sky/sky_baked.js');
         const m = globalThis.EW?.scene?.getObjectByName?.('interim sky');
         const c = m?.geometry?.attributes?.color; const top = c ? [c.getX(0), c.getY(0), c.getZ(0)].map((v) => +v.toFixed(3)) : null;
         return { interim: si.interimSkyShown(), held: sb.liveDomesHeld(), top, booted: !document.querySelector('#splash:not(.gone)') };
@@ -33,7 +33,7 @@ try {
     up = lines.some((l) => /the real sky is up/.test(l));
     if (!up) await pg.waitForTimeout(500);
   }
-  const after = await pg.evaluate(async () => ({ interim: (await import('./lib/sky_interim.js')).interimSkyShown(), held: (await import('./lib/sky_baked.js')).liveDomesHeld() }));
+  const after = await pg.evaluate(async () => ({ interim: (await import('./lib/sky/sky_interim.js')).interimSkyShown(), held: (await import('./lib/sky/sky_baked.js')).liveDomesHeld() }));
   const order = (re) => lines.findIndex((l) => re.test(l));
   console.log('   ', JSON.stringify({ seen, after, s: ((Date.now() - t1) / 1000).toFixed(1) }));
   console.log(lines.filter((l) => /held out|settled|real sky|build owns|compiled/.test(l)).map((l) => '      ' + l).join('\n'));
@@ -52,7 +52,7 @@ try {
   // M3: the off tier under cloudy weather never pins a cloud branch
   await pg.evaluate(async () => { const { sendRequest } = await import('./lib/net.js'); const r = await sendRequest('set', { id: '@world', component: 'sky', value: { hours: 12, rate: 0, clouds: 'cumulus', weather: 'overcast' }, merge: true }); if (!r.ok) throw new Error(`sky refused: ${JSON.stringify(r.refused)}`); });
   await pg.waitForTimeout(4000);
-  const pinned = await pg.evaluate(async () => (await import('./lib/sky_baked.js')).bakedCloudsPinned());
+  const pinned = await pg.evaluate(async () => (await import('./lib/sky/sky_baked.js')).bakedCloudsPinned());
   check('off tier under overcast: the bake has no cloud branch', pinned === false, String(pinned));
   await pg.evaluate(async () => { const { sendRequest } = await import('./lib/net.js'); const r = await sendRequest('set', { id: '@world', component: 'sky', value: { hours: 12, rate: 0, clouds: 'cumulus', weather: 'clear' }, merge: true }); if (!r.ok) throw new Error(`sky refused: ${JSON.stringify(r.refused)}`); });
   await pg.waitForTimeout(3000);
@@ -60,7 +60,7 @@ try {
   // Sampled per drawn frame through the teardown/module window (3 s), then the page leaves before low's cloud bake (a software
   // 3-pass bake exhausts this machine).
   const gaps = await pg.evaluate(async () => {
-    const s = await import('./lib/sky.js'), si = await import('./lib/sky_interim.js'), sb = await import('./lib/sky_baked.js');
+    const s = await import('./lib/sky/sky.js'), si = await import('./lib/sky/sky_interim.js'), sb = await import('./lib/sky/sky_baked.js');
     s.setCloudQuality('low');
     let gaps = 0, samples = 0, sawInterim = false; const t0 = performance.now();
     while (performance.now() - t0 < 3000) {
