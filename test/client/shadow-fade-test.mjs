@@ -17,9 +17,9 @@ const MUTATE = argOf('--mutate');
 // ---- the child: one shadow-preference boot state, measured ----
 if (CASE) {
   plugin({ name: 'core-stub', setup(build) {
-    stubResolve(build, /^\.\/core\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
-    stubResolve(build, /^\.\/base\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
-    stubResolve(build, /^\.\/loadwork\.js$/, () => ({ path: here('../stubs/loadwork-stub.mjs') }));
+    stubResolve(build, /^(\.\.?\/)+core\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
+    stubResolve(build, /^(\.\.?\/)+base\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
+    stubResolve(build, /^(\.\.?\/)+loadwork\.js$/, () => ({ path: here('../stubs/loadwork-stub.mjs') }));
   } });
 
   // the preference, set BEFORE the import that reads it
@@ -147,10 +147,10 @@ if (CASE) {
 
 // ---- the parent ----
 plugin({ name: 'core-stub', setup(build) {
-  stubResolve(build, /^\.\/core\.js$/, () => ({ path: here('../stubs/shadow-fade-core-stub.mjs') }));
-  stubResolve(build, /^\.\/base\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
-  stubResolve(build, /^\.\/state\.js$/, () => ({ path: here('../stubs/state-stub.mjs') }));
-  stubResolve(build, /^\.\/warmqueue\.js$/, () => ({ path: here('../stubs/lod-client-stub.mjs') }));   // warmDepth resolves at once
+  stubResolve(build, /^(\.\.?\/)+core\.js$/, () => ({ path: here('../stubs/shadow-fade-core-stub.mjs') }));
+  stubResolve(build, /^(\.\.?\/)+base\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
+  stubResolve(build, /^(\.\.?\/)+state\.js$/, () => ({ path: here('../stubs/state-stub.mjs') }));
+  stubResolve(build, /^(\.\.?\/)+warmqueue\.js$/, () => ({ path: here('../stubs/lod-client-stub.mjs') }));   // warmDepth resolves at once
 } });
 const S = suite("shadow-fade");
 const check = (name, ok, note) => S.check(name, ok, note);

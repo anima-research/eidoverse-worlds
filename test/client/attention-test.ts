@@ -88,7 +88,7 @@ check('new utterance immediately eligible after silent notice', silentGate.say(s
 // Execute the actual chat and audio UI; only the renderer/wire are replaced.
 plugin({ name: 'attention-chat-stubs', setup(b) {
   for (const name of ['base', 'net'])
-    stubResolve(b, new RegExp('^\\./' + name + '\\.js$'),
+    stubResolve(b, new RegExp('^(\\.\\.?/)+' + name + '\\.js$'),
       () => ({ path: fileURLToPath(new URL('../stubs/chat-' + name + '-stub.mjs', import.meta.url)) }));
 } });
 const { GlobalRegistrator } = await import('@happy-dom/global-registrator');

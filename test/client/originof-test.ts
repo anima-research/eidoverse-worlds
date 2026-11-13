@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({ name: 'originof-stubs', setup(b) {
   for (const m of ['base', 'icons', 'ui', 'net', 'build', 'chat', 'writes'])
-    stubResolve(b, new RegExp(`^\\.\\.?/${m}\\.js$`), () => ({ path: here('../stubs/originof-stub.mjs') }));
+    stubResolve(b, new RegExp(`^(\\.\\.?/)+${m}\\.js$`), () => ({ path: here('../stubs/originof-stub.mjs') }));
 } });
 const store = new Map<string, string>();
 (globalThis as any).localStorage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, String(v)), removeItem: (k: string) => void store.delete(k) };

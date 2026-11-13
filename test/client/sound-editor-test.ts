@@ -18,9 +18,9 @@ const check = (name: string, ok: unknown, detail = '') => {
 };
 plugin({ name: 'sound-editor-stubs', setup(b) {
   for (const m of ['core', 'base', 'world'])
-    stubResolve(b, new RegExp(`^\\.\\.?/${m}\\.js$`), () => ({ path: here('../stubs/guard-label-stub.mjs') }));
+    stubResolve(b, new RegExp(`^(\\.\\.?/)+${m}\\.js$`), () => ({ path: here('../stubs/guard-label-stub.mjs') }));
   for (const m of ['edit/inspect', 'ui', 'audioctx', 'audiounlock', 'voiceconsent', 'serverclock'])
-    stubResolve(b, new RegExp(`^\\.\\.?/${m}\\.js$`), () => ({ path: here('../stubs/sound-clock-stub.mjs') }));
+    stubResolve(b, new RegExp(`^(\\.\\.?/)+${m}\\.js$`), () => ({ path: here('../stubs/sound-clock-stub.mjs') }));
 } });
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 GlobalRegistrator.register();

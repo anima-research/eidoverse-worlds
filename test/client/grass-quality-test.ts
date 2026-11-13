@@ -36,7 +36,7 @@ const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({
   name: "grass-stubs",
   setup(b) {
-    stubResolve(b, /^\.\/core\.js$/, () => ({ path: here("../stubs/grass-terrain-stub.mjs") }));
+    stubResolve(b, /^(\.\.?\/)+core\.js$/, () => ({ path: here("../stubs/grass-terrain-stub.mjs") }));
   },
 });
 

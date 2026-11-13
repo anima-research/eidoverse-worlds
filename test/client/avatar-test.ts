@@ -23,9 +23,9 @@ const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({
   name: 'client-stubs',
   setup(b) {
-    stubResolve(b, /^\.\/core\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
-    stubResolve(b, /^\.\/assets\.js$/, () => ({ path: here('../stubs/assets-stub.mjs') }));
-    stubResolve(b, /^\.\/loadwork\.js$/, () => ({ path: here('../stubs/loadwork-stub.mjs') }));
+    stubResolve(b, /^(\.\.?\/)+core\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
+    stubResolve(b, /^(\.\.?\/)+assets\.js$/, () => ({ path: here('../stubs/assets-stub.mjs') }));
+    stubResolve(b, /^(\.\.?\/)+loadwork\.js$/, () => ({ path: here('../stubs/loadwork-stub.mjs') }));
   },
 });
 

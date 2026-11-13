@@ -13,7 +13,7 @@ import { stubResolve } from '../harness/stub.ts';
 import { suite } from "../gate/suite.ts";
 const HERE = import.meta.dir; const here = (p) => `${HERE}/${p.replace(/^\.\//, '')}`;
 plugin({ name: 'core-stub', setup(build) {
-  stubResolve(build, /^\.\/base\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
+  stubResolve(build, /^(\.\.?\/)+base\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
 } });
 
 // ---- the world the splash lives in

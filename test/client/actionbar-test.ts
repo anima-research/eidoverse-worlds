@@ -18,7 +18,7 @@ plugin({
   setup(b) {
     for (const m of ['windows', 'animnames', 'controller', 'mybody', 'xrpanels', 'base']) {
       if (RESTORE && m === 'windows') continue;
-      stubResolve(b, new RegExp(`^\\./${m}\\.js$`), () => ({ path: here('../stubs/actionbar-stub.mjs') }));
+      stubResolve(b, new RegExp(`^(\\.\\.?/)+${m}\\.js$`), () => ({ path: here('../stubs/actionbar-stub.mjs') }));
     }
   },
 });

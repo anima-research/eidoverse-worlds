@@ -44,11 +44,11 @@ plugin({
     // shim over parts-stub rather than to parts-stub itself. Two specifiers
     // resolving to one plugin-returned path is the configuration that breaks
     // on macOS Bun 1.3.14 (see colliders-stub.mjs for the evidence).
-    stubResolve(build, /^\.\.?\/core\.js$/, () => ({ path: CORE }));
-    stubResolve(build, /^\.\.?\/world\.js$/, () => ({ path: PARTS }));
-    stubResolve(build, /^\.\.?\/colliders\.js$/, () => ({ path: COLLIDERS }));
+    stubResolve(build, /^(\.\.?\/)+core\.js$/, () => ({ path: CORE }));
+    stubResolve(build, /^(\.\.?\/)+world\.js$/, () => ({ path: PARTS }));
+    stubResolve(build, /^(\.\.?\/)+colliders\.js$/, () => ({ path: COLLIDERS }));
     // motion.js reads one clock from remotes.js, whose own cone is every remote body (avatar.js, the renderer)
-    stubResolve(build, /^\.\/remotes\.js$/, () => ({ path: REMOTES }));
+    stubResolve(build, /^(\.\.?\/)+remotes\.js$/, () => ({ path: REMOTES }));
   },
 });
 

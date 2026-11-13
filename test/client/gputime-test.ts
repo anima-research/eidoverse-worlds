@@ -6,7 +6,7 @@ import { pause } from "../gate/wait.ts";
 import { suite } from "../gate/suite.ts";
 const STUB = fileURLToPath(new URL('../stubs/gputime-core-stub.mjs', import.meta.url));
 const RIG = fileURLToPath(new URL('../stubs/gputime-lightrig-stub.mjs', import.meta.url));
-plugin({ name: 'gputime-stubs', setup(b) { stubResolve(b, /^\.\/core\.js$/, () => ({ path: STUB })); stubResolve(b, /^\.\/lightrig\.js$/, () => ({ path: RIG })); } });
+plugin({ name: 'gputime-stubs', setup(b) { stubResolve(b, /^(\.\.?\/)+core\.js$/, () => ({ path: STUB })); stubResolve(b, /^(\.\.?\/)+lightrig\.js$/, () => ({ path: RIG })); } });
 const { pref } = await import(RIG);
 const { lights, em } = await import(STUB);
 const G = await import('../../client/lib/gputime.js');

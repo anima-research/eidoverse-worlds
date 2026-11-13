@@ -11,9 +11,9 @@ import { tryUntil } from '../gate/wait.ts';
 import { suite } from '../gate/suite.ts';
 const HERE = import.meta.dir; const here = (p) => `${HERE}/${p.replace(/^\.\//, '')}`;
 plugin({ name: 'core-stub', setup(build) {
-  stubResolve(build, /^\.\/core\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
-  stubResolve(build, /^\.\/base\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
-  stubResolve(build, /^\.\/loadwork\.js$/, () => ({ path: here('../stubs/loadwork-stub.mjs') }));
+  stubResolve(build, /^(\.\.?\/)+core\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
+  stubResolve(build, /^(\.\.?\/)+base\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
+  stubResolve(build, /^(\.\.?\/)+loadwork\.js$/, () => ({ path: here('../stubs/loadwork-stub.mjs') }));
 } });
 // a valid glTF with an empty scene: GLTFLoader.parse takes JSON text in an ArrayBuffer when it is not a GLB
 const GLTF = new TextEncoder().encode(JSON.stringify({ asset: { version: '2.0' }, scenes: [{ nodes: [] }], scene: 0 }));

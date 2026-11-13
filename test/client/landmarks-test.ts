@@ -4,7 +4,7 @@ import { stubResolve } from '../harness/stub.ts';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 const STUB = fileURLToPath(new URL('../stubs/core-stub.mjs', import.meta.url));
-plugin({ name: 'landmark-core', setup(b) { stubResolve(b, /^\.\/core\.js$/, () => ({ path: STUB })); } });
+plugin({ name: 'landmark-core', setup(b) { stubResolve(b, /^(\.\.?\/)+core\.js$/, () => ({ path: STUB })); } });
 const { THREE } = await import('../stubs/core-stub.mjs');
 const { deriveLandmarks, derivePalmAnchor, landmarkWorld } = await import('../../client/lib/landmarks.js');
 const { measureChain, solveChain } = await import('../../client/lib/reachbone.js');

@@ -11,11 +11,11 @@ const STUB = here('../stubs/put-settle-stub.mjs');
 plugin({
   name: 'predict-pending-stubs',
   setup(b) {
-    stubResolve(b, /^\.\/core\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
+    stubResolve(b, /^(\.\.?\/)+core\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
     for (const m of ['world', 'remotes', 'colliders', 'autohooks', 'bodyscale', 'net', 'ui', 'chat', 'actions', 'realize/emitters', 'plainwords', 'markup', 'xrask'])
-      stubResolve(b, new RegExp(`^\\./${m}\\.js$`), () => ({ path: STUB }));
+      stubResolve(b, new RegExp(`^(\\.\\.?/)+${m}\\.js$`), () => ({ path: STUB }));
     // a measured round trip: the stub's null would refuse every guess (planRelease)
-    stubResolve(b, /^\.\/serverclock\.js$/, () => ({ path: 'rtt', namespace: 'rtt' }));
+    stubResolve(b, /^(\.\.?\/)+serverclock\.js$/, () => ({ path: 'rtt', namespace: 'rtt' }));
     b.onLoad({ filter: /.*/, namespace: 'rtt' }, () => ({ contents: 'export const clockRtt = () => 100;', loader: 'js' }));
   },
 });

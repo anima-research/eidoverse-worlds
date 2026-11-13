@@ -26,7 +26,7 @@ const check = (name: string, ok: unknown, detail?: unknown) => S.check(name, ok,
 
 plugin({ name: 'picture-note-stubs', setup(b) {
   for (const m of ['core', 'base', 'assets', 'world', 'edit/inspect', 'ui'])
-    stubResolve(b, new RegExp(`^\\.\\.?/${m}\\.js$`), () => ({ path: here('../stubs/guard-label-stub.mjs') }));
+    stubResolve(b, new RegExp(`^(\\.\\.?/)+${m}\\.js$`), () => ({ path: here('../stubs/guard-label-stub.mjs') }));
 } });
 
 import { GlobalRegistrator } from '@happy-dom/global-registrator';

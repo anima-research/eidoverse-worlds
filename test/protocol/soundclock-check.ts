@@ -13,8 +13,8 @@ import { suite } from "../gate/suite.ts";
 const SU = suite("soundclock", { cap: Infinity });
 const ok = (id: string, cond: any, what: string, detail?: any) => { if (SU.runs(id)) SU.ok(cond, `${id} ${what}`, detail); };
 plugin({ name: "soundclock-stubs", setup(b) {   // sound-guard-stub: sounds.js loads with its DOM and audio seams faked
-  for (const m of ["core", "base", "world"]) stubResolve(b, new RegExp(`^\\.\\.?/${m}\\.js$`), () => ({ path: path.join(ENGINE, "test/stubs/guard-label-stub.mjs") }));
-  for (const m of ["edit/inspect", "ui", "audioctx", "audiounlock", "voiceconsent"]) stubResolve(b, new RegExp(`^\\.\\.?/${m}\\.js$`), () => ({ path: path.join(ENGINE, "test/stubs/sound-guard-stub.mjs") }));
+  for (const m of ["core", "base", "world"]) stubResolve(b, new RegExp(`^(\\.\\.?/)+${m}\\.js$`), () => ({ path: path.join(ENGINE, "test/stubs/guard-label-stub.mjs") }));
+  for (const m of ["edit/inspect", "ui", "audioctx", "audiounlock", "voiceconsent"]) stubResolve(b, new RegExp(`^(\\.\\.?/)+${m}\\.js$`), () => ({ path: path.join(ENGINE, "test/stubs/sound-guard-stub.mjs") }));
 } });
 const { GlobalRegistrator } = await import("@happy-dom/global-registrator");
 GlobalRegistrator.register();

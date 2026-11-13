@@ -10,7 +10,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 const STUB = fileURLToPath(new URL("../stubs/core-stub.mjs", import.meta.url));
-plugin({ name: "core-stub", setup(b) { stubResolve(b, /^\.\/core\.js$/, () => ({ path: STUB })); } });
+plugin({ name: "core-stub", setup(b) { stubResolve(b, /^(\.\.?\/)+core\.js$/, () => ({ path: STUB })); } });
 const { THREE } = await import(STUB);
 const C = await import("../../client/lib/colliders.js");
 const { checkModel } = await import("../../server/buildcheck.ts");

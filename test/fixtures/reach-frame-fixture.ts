@@ -3,7 +3,7 @@ import {plugin} from 'bun';
 import { stubResolve } from '../harness/stub.ts';
 import {fileURLToPath} from 'node:url';
 const here=(f:string)=>fileURLToPath(new URL(f,import.meta.url));
-plugin({name:'reach-frame-fixture',setup(b){for(const name of ['core','assets','loadwork'])stubResolve(b, new RegExp('^\\./'+name+'\\.js$'), ()=>({path:here('../stubs/'+name+'-stub.mjs')}));}});
+plugin({name:'reach-frame-fixture',setup(b){for(const name of ['core','assets','loadwork'])stubResolve(b, new RegExp('^(\\.\\.?/)+'+name+'\\.js$'), ()=>({path:here('../stubs/'+name+'-stub.mjs')}));}});
 export const {THREE}=await import('../stubs/core-stub.mjs');
 const {Avatar}=await import('../../client/lib/avatar.js');
 const {makeAvatar,rigs,libraryRigs,fixtureRig,VRM_DIR}=await import('../../tools/assets/rig-load.mjs');

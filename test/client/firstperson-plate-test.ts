@@ -12,12 +12,12 @@ plugin({
   name: 'fp-plate-stubs',
   setup(b) {
     // controller.js gets the posture-tiles world; avatar.js (and what it pulls in) the core stub the plate tests use
-    stubResolve(b, /^\.\.?\/core\.js$/, (a) => ({ path: here(a.importer.replace(/\\/g, '/').endsWith('/controller.js') ? '../stubs/posture-tiles-stub.mjs' : '../stubs/core-stub.mjs') }));
+    stubResolve(b, /^(\.\.?\/)+core\.js$/, (a) => ({ path: here(a.importer.replace(/\\/g, '/').endsWith('/controller.js') ? '../stubs/posture-tiles-stub.mjs' : '../stubs/core-stub.mjs') }));
     for (const m of ['base', 'terrain', 'colliders', 'chat', 'ui']) {
-      stubResolve(b, new RegExp(`^\\./${m}\\.js$`), (a) => (a.importer.replace(/\\/g, '/').endsWith('/controller.js') ? { path: here('../stubs/posture-tiles-stub.mjs') } : undefined));
+      stubResolve(b, new RegExp(`^(\\.\\.?/)+${m}\\.js$`), (a) => (a.importer.replace(/\\/g, '/').endsWith('/controller.js') ? { path: here('../stubs/posture-tiles-stub.mjs') } : undefined));
     }
-    stubResolve(b, /^\.\/assets\.js$/, () => ({ path: here('../stubs/assets-stub.mjs') }));
-    stubResolve(b, /^\.\/loadwork\.js$/, () => ({ path: here('../stubs/loadwork-stub.mjs') }));
+    stubResolve(b, /^(\.\.?\/)+assets\.js$/, () => ({ path: here('../stubs/assets-stub.mjs') }));
+    stubResolve(b, /^(\.\.?\/)+loadwork\.js$/, () => ({ path: here('../stubs/loadwork-stub.mjs') }));
   },
 });
 import { GlobalRegistrator } from '@happy-dom/global-registrator';

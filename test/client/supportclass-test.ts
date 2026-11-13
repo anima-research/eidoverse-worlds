@@ -89,7 +89,7 @@ console.log("\n━━ B2: browser and server verdicts agree at the 0.10 gate ━
   const { fileURLToPath } = await import("node:url");
   const STUB = fileURLToPath(new URL("../stubs/core-stub.mjs", import.meta.url));
   plugin({ name: "core-stub-supportclass", setup(build) {
-    stubResolve(build, /^\.\/core\.js$/, () => ({ path: STUB }));
+    stubResolve(build, /^(\.\.?\/)+core\.js$/, () => ({ path: STUB }));
   } });
   const { THREE } = await import("../stubs/core-stub.mjs");
   const { topLie } = await import("../../client/lib/colliders.js");

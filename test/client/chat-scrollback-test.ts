@@ -32,9 +32,9 @@ const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({
   name: "chat-stubs",
   setup(b) {
-    stubResolve(b, /^\.\/base\.js$/, () => ({ path: here("../stubs/chat-base-stub.mjs") }));
-    stubResolve(b, /^\.\/(frames|windows)\.js$/, () => ({ path: here("../stubs/chat-frames-stub.mjs") }));
-    stubResolve(b, /^\.\/net\.js$/, () => ({ path: here("../stubs/chat-history-stub.mjs") }));
+    stubResolve(b, /^(\.\.?\/)+base\.js$/, () => ({ path: here("../stubs/chat-base-stub.mjs") }));
+    stubResolve(b, /^(\.\.?\/)+(frames|windows)\.js$/, () => ({ path: here("../stubs/chat-frames-stub.mjs") }));
+    stubResolve(b, /^(\.\.?\/)+net\.js$/, () => ({ path: here("../stubs/chat-history-stub.mjs") }));
   },
 });
 

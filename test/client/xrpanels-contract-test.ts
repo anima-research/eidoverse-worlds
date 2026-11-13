@@ -13,12 +13,12 @@ const here = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 plugin({
   name: "xrpanels-stubs",
   setup(b) {
-    stubResolve(b, /^\.\/core\.js$/, () => ({ path: here("../stubs/core-stub.mjs") }));
-    stubResolve(b, /^\.\/base\.js$/, () => ({ path: here("../stubs/core-stub.mjs") }));
+    stubResolve(b, /^(\.\.?\/)+core\.js$/, () => ({ path: here("../stubs/core-stub.mjs") }));
+    stubResolve(b, /^(\.\.?\/)+base\.js$/, () => ({ path: here("../stubs/core-stub.mjs") }));
     // edit/fieldpanels.js stays REAL — renderCanvas/hitRegion are the schema this seam speaks
-    stubResolve(b, /^\.\/domquad\.js$/, () => ({ path: here("../stubs/xrpanels-domquad-stub.mjs") }));
+    stubResolve(b, /^(\.\.?\/)+domquad\.js$/, () => ({ path: here("../stubs/xrpanels-domquad-stub.mjs") }));
     // quadcolour's node material is the WebGPU build's only: an identity here, as test/client/edittheme-test.ts has it
-    stubResolve(b, /^\.\/quadcolour\.js$/, () => ({ path: "quadcolour", namespace: "xrpanels-stub" }));
+    stubResolve(b, /^(\.\.?\/)+quadcolour\.js$/, () => ({ path: "quadcolour", namespace: "xrpanels-stub" }));
     b.onLoad({ filter: /.*/, namespace: "xrpanels-stub" }, () => ({ contents: "export const quadMaterial = () => {};", loader: "js" }));
   },
 });

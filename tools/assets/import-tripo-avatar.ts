@@ -14,7 +14,7 @@
 import { fileURLToPath } from "node:url";
 import { plugin } from 'bun';
 const STUB = fileURLToPath(new URL('../../test/stubs/core-stub.mjs', import.meta.url));
-plugin({ name: 'core-stub', setup(b) { b.onResolve({ filter: /^\.\/core\.js$/ }, () => ({ path: STUB })); } });
+plugin({ name: 'core-stub', setup(b) { b.onResolve({ filter: /^(\.\.?\/)+core\.js$/ }, () => ({ path: STUB })); } });
 
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';

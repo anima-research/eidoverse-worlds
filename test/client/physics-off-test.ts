@@ -11,9 +11,9 @@ const STUB = here('../stubs/put-settle-stub.mjs');
 plugin({
   name: 'physics-off-stubs',
   setup(b) {
-    stubResolve(b, /^\.\/core\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
+    stubResolve(b, /^(\.\.?\/)+core\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
     for (const m of ['world', 'remotes', 'colliders', 'autohooks', 'bodyscale', 'net', 'ui', 'chat', 'actions', 'realize/emitters', 'serverclock', 'plainwords', 'markup', 'xrask'])
-      stubResolve(b, new RegExp(`^\\./${m}\\.js$`), () => ({ path: STUB }));
+      stubResolve(b, new RegExp(`^(\\.\\.?/)+${m}\\.js$`), () => ({ path: STUB }));
   },
 });
 const store = new Map<string, string>();

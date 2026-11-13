@@ -21,7 +21,7 @@ plugin({
     for (const f of ["^\\.\\./core\\.js$", "^\\.\\./assets\\.js$", "^\\.\\./colliders\\.js$", "^\\.\\./lightrig\\.js$", "^\\.\\./lightgizmo\\.js$", "^\\.\\./world\\.js$", "^\\.\\./materials\\.js$"]) {
       stubResolve(b, new RegExp(f), (a) => (a.importer.replace(/\\/g, "/").includes("/client/lib/realize/") ? { path: LOD } : undefined));
     }
-    stubResolve(b, /^\.\/(lightrig|materials)\.js$/, (a) =>
+    stubResolve(b, /^(\.\.?\/)+(lightrig|materials)\.js$/, (a) =>
       (/\/client\/lib\/(lightgizmo|realize\/material_draft)\.js$/.test(a.importer.replace(/\\/g, "/")) ? { path: a.path, namespace: "light-readers" } : undefined));
     b.onLoad({ filter: /.*/, namespace: "light-readers" }, (a) => ({
       loader: "js",

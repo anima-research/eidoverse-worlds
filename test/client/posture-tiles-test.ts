@@ -19,7 +19,7 @@ plugin({
   name: 'posture-tiles-stubs',
   setup(b) {
     for (const m of ['core', 'base', 'terrain', 'colliders', 'chat', 'ui']) {
-      stubResolve(b, new RegExp(`^\\.\\.?/${m}\\.js$`), () => ({ path: here('../stubs/posture-tiles-stub.mjs') }));
+      stubResolve(b, new RegExp(`^(\\.\\.?/)+${m}\\.js$`), () => ({ path: here('../stubs/posture-tiles-stub.mjs') }));
     }
   },
 });

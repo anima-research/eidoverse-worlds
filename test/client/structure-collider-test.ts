@@ -36,7 +36,7 @@ if (process.env.__EIDO_TEST_CACHE_OFF !== '1') {
 const STUB = fileURLToPath(new URL('../stubs/core-stub.mjs', import.meta.url));
 plugin({
   name: 'core-stub',
-  setup(build) { stubResolve(build, /^\.\/core\.js$/, () => ({ path: STUB })); },
+  setup(build) { stubResolve(build, /^(\.\.?\/)+core\.js$/, () => ({ path: STUB })); },
 });
 
 const { THREE } = await import('../stubs/core-stub.mjs');

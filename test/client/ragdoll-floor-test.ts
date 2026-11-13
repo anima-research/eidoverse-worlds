@@ -14,7 +14,7 @@ import { plugin } from 'bun';
 import { stubResolve } from '../harness/stub.ts';
 import { suite } from "../gate/suite.ts";
 const STUB = fileURLToPath(new URL('../stubs/core-stub.mjs', import.meta.url));
-plugin({ name: 'core-stub', setup(b) { stubResolve(b, /^\.\/core\.js$/, () => ({ path: STUB })); } });
+plugin({ name: 'core-stub', setup(b) { stubResolve(b, /^(\.\.?\/)+core\.js$/, () => ({ path: STUB })); } });
 
 const { THREE } = await import('../stubs/core-stub.mjs');
 const { mergeGeometries } = await import('../../client/node_modules/three/examples/jsm/utils/BufferGeometryUtils.js');

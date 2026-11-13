@@ -22,9 +22,9 @@ plugin({
   setup(b) {
     // rimward: CONFIG/bus/report live in base.js (the renderer-free substrate) — stubbed, or the
     // test's CONFIG.name never reaches chat.js and every mention assertion passes vacuously (PR #160 B6)
-    stubResolve(b, /^\.\/base\.js$/, () => ({ path: here("../stubs/chat-base-stub.mjs") }));
-    stubResolve(b, /^\.\/windows\.js$/, () => ({ path: here("../stubs/chat-frames-stub.mjs") }));
-    stubResolve(b, /^\.\/net\.js$/, () => ({ path: here("../stubs/chat-net-stub.mjs") }));
+    stubResolve(b, /^(\.\.?\/)+base\.js$/, () => ({ path: here("../stubs/chat-base-stub.mjs") }));
+    stubResolve(b, /^(\.\.?\/)+windows\.js$/, () => ({ path: here("../stubs/chat-frames-stub.mjs") }));
+    stubResolve(b, /^(\.\.?\/)+net\.js$/, () => ({ path: here("../stubs/chat-net-stub.mjs") }));
   },
 });
 

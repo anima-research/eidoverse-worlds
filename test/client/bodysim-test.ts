@@ -21,7 +21,7 @@ const STUB = fileURLToPath(new URL('../stubs/core-stub.mjs', import.meta.url));
 plugin({
   name: 'core-stub',
   setup(build) {
-    stubResolve(build, /^\.\/core\.js$/, () => ({ path: STUB }));
+    stubResolve(build, /^(\.\.?\/)+core\.js$/, () => ({ path: STUB }));
   },
 });
 
