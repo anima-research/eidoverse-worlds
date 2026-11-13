@@ -32,6 +32,7 @@ plugin({
 const { THREE } = await import('../stubs/core-stub.mjs');
 const { Avatar, BLINK } = await import('../../client/lib/avatar/avatar.js');
 const { Wings } = await import('../../client/lib/avatar/wings.js');
+const { Face } = await import('../../client/lib/avatar/face.js');
 const { DRIVEN_BONES } = await import('../../client/lib/ragdoll/ragdoll.js');
 
 let pass = 0, fail = 0;
@@ -94,6 +95,7 @@ function stand({ constant = false, pivot = false } = {}) {
   };
   self._composed = new Map();
   self.wings = new Wings(self);
+  self.face = new Face(self);
   // setLimp reaches into the eyes and the wings on the way past. Both find
   // NOTHING on this fixture (no vrm.scene to traverse) and say so, which is the
   // behaviour a rig without lids or wings needs anyway — but they have to be
@@ -101,7 +103,7 @@ function stand({ constant = false, pivot = false } = {}) {
   for (const m of ['setLimp', '_park', '_resolveBones', '_humanoidBones', 'setPose',
                    'clearPose', '_applyOverride', '_reachOwned', '_composeBegin', '_composeEnd',
                    '_applyPoseSlot', '_applyAnimSlot', '_handBack', '_rawBegin', '_rawEnd', '_rawRelease', 'playAnimation', '_sampleTrack',
-                   'setEyes', '_findLids', '_releaseHair', '_combHair', 'bakeHipsIntoRoot', '_hipsRest']) {
+                   'setEyes', '_releaseHair', '_combHair', 'bakeHipsIntoRoot', '_hipsRest']) {
     self[m] = (Avatar.prototype as any)[m];
   }
   // the slice of update() that matters here, in its real order
@@ -250,10 +252,9 @@ for (const constant of [false, true]) {
   const lidsOf = (extras: Record<string, unknown>) => {
     const scene = new THREE.Object3D();
     scene.add(lidNode('L_Eyelid_Upper', extras));
-    const av = Object.create(Avatar.prototype) as any;
-    av.vrm = { scene };
-    av._findLids();
-    return av._lids?.[0] ?? null;
+    const face = new Face({ vrm: { scene } });
+    face._findLids();
+    return face._lids?.[0] ?? null;
   };
 
   // source order: an authored pose verbatim (it outranks constraints beside it), else a Limit Rotation as closed MINUS
@@ -345,11 +346,12 @@ function wingStand() {
     },
     cancelOnce() { this.onceAnim = null; },
   };
-  for (const m of ['setLimp', 'setEyes', '_findLids',
+  for (const m of ['setLimp', 'setEyes',
                    '_resolveBones', '_humanoidBones', '_park', '_releaseHair', '_combHair']) {
     self[m] = (Avatar.prototype as any)[m];
   }
   self.wings = new Wings(self);
+  self.face = new Face(self);
   self.wings._findWings();
   self.tick = function (dt = 1 / 60) {
     if (!this._limp) this.wings._flap(dt);
