@@ -355,14 +355,15 @@ export function setPointerClaim(fn) { pointerClaimed = fn; }
 // their own (ui.js, chat.js, dropdown.js, statuschips.js, panels.js), some of
 // which run before this one and none of which decline the default; once they
 // have run there is nothing left to see. So the question is asked here, in the
-// capture phase, before any of them: one press closes the menu and does
-// nothing else — no deselect, no stand-up.
-const escDismissed = new WeakSet();
-addEventListener('keydown', (e) => { if (e.code === 'Escape' && escapeDismisses()) escDismissed.add(e); }, true);
+// capture phase, before any of them, and the press is marked `menuClosed`:
+// it doesn't deselect, leave build mode or stand you up. A gesture still in
+// flight (a drag, the grip editor) is more transient than any menu, so
+// build.js lets those rungs take the press anyway (client-check X1/X2: a
+// status chip that opened itself must not leave a cancelled drag writing).
+addEventListener('keydown', (e) => { if (e.code === 'Escape' && escapeDismisses()) e.menuClosed = true; }, true);
 
 addEventListener('keydown', (e) => {
   if (inputBlocked()) return;
-  if (escDismissed.has(e)) return;
   noteInput('keyboard');
   if (e.key === 'Enter') { chat.open(); e.preventDefault(); return; }
   if (e.code === 'Space') e.preventDefault();      // space scrolls the page otherwise
@@ -380,7 +381,7 @@ addEventListener('keydown', (e) => {
   // straight out of pollInput and never visits the keyboard surface — so
   // cancel-while-editing still works on a controller.
   if (e.code === 'Escape' && !e.repeat && !e.ctrlKey && !e.altKey && !e.metaKey   // keys: none — a bare Escape; build's own chain consumed its presses above
-      && !e.defaultPrevented) requestAction('cancel');
+      && !e.defaultPrevented && !e.menuClosed) requestAction('cancel');
 });
 addEventListener('keyup', (e) => keys.delete(e.code));
 // A held key with the window unfocused stays "down" forever — clear on blur.

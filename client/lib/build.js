@@ -777,6 +777,9 @@ bus.on('key', (e) => {
     // §3a: Esc during a drag cancels it and writes nothing; the thing goes back to where the log has it
     if (dragging?.armed) { const id = dragging.id; dragging = null; Edits.revertPose(id); flashHint('move cancelled — nothing written'); e.preventDefault(); return; }
     if (escapeHook()) { e.preventDefault(); return; }
+    // the same press closed a menu or popover (controller.js `menuClosed`): a live gesture above still took it, but
+    // the editor's standing state below (an armed tool, the selection, build mode) is not this press's to change
+    if (e.menuClosed) return;
     if (structureTool()) setStructureTool(null);   // an armed building tool drops first (the viewport strip says "Esc to drop")
     else if (cancelSocketArm()) { /* an armed placement is the most transient state */ }
     else if (ghost) cancelGhost();

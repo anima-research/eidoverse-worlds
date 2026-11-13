@@ -98,7 +98,7 @@ const { bus } = await import('../client/lib/base.js');
 const { noteInput } = await import('../client/lib/input.js');
 const { myState, setPosture, getPosture, togglePhotoMode } = await import('../client/lib/controller.js');
 const photo = async () => (await import('../client/lib/controller.js')).photoMode;   // a live binding, read fresh
-const { setBuildMode, isBuilding, select, hasSelection } = await import('../client/lib/build.js');
+const { setBuildMode, isBuilding, select, hasSelection, setEscapeHook } = await import('../client/lib/build.js');
 const { initUsePrompt } = await import('../client/lib/useprompt.js');
 initUsePrompt({ myPos: () => myState.pos, camera, editing: () => isBuilding(), busy: () => false });
 
@@ -204,6 +204,18 @@ sitOnABench(); setBuildMode(true, { quiet: true }); select('lamp');
 menu.className = 'dd-pop'; document.body.append(menu);
 escapeAtBody();
 assert.equal(hasSelection(), true, 'closing a menu while building does not also deselect');
+
+// …but a gesture in flight is more transient than any menu: a drag (the gizmo's, through the escape hooks, the rung
+// build.js's own mid-drag cancel shares) still takes the press while a popover is open. client-check X1/X2 went red on
+// CI when a status chip that opened itself swallowed the drag's Esc, and the release then wrote a set.
+let gesture = true, cancelled = 0;
+setEscapeHook(() => { if (!gesture) return false; gesture = false; cancelled++; return true; });
+actions.length = 0;
+menu.className = 'dd-pop'; document.body.append(menu);
+escapeAtBody();
+assert.equal(cancelled, 1, 'an Esc that closes a menu still cancels the drag in flight');
+assert.equal(hasSelection(), true, 'and still leaves the selection');
+assert.deepEqual(actions, [], 'and is no cancel');
 setBuildMode(false, { quiet: true });
 myState.seat = null; setPosture(null);
 
