@@ -56,13 +56,11 @@ const events = [];
 const held = new Set();
 
 // --- the capability gate. Nothing below runs without a grant, and it is re-resolved on EVERY step, not cached.
-const BONES = window.__benchBones ?? null;
-
-function enableFlight({ identity = 'mythos', bones = BONES, config = {}, startY = 20 } = {}) {
+function enableFlight({ identity = 'mythos', config = {}, startY = 20 } = {}) {
   cfg = makeConfig(config);
   const provider = devFlightProvider({ allow: [identity], label: 'bench-dev' });
-  cap = { provider, identity, bones };
-  const r = resolveFlight(provider, { identity, avatar: { boneNames: bones } });
+  cap = { provider, identity };
+  const r = resolveFlight(provider, { identity });
   if (!r.enabled) { document.getElementById('banner').textContent = 'DENIED: ' + r.reason; return r; }
   document.getElementById('banner').textContent = '';
   st = initialState({ phase: 'GLIDE', pos: { x: 0, y: startY, z: 0 },
@@ -76,7 +74,7 @@ function enableFlight({ identity = 'mythos', bones = BONES, config = {}, startY 
 function stepBench(dt) {
   if (!st || !cap) return null;
   // ACTION-TIME capability: resolved per step, so a swap mid-capture stops it.
-  const r = resolveFlight(cap.provider, { identity: cap.identity, avatar: { boneNames: cap.bones } });
+  const r = resolveFlight(cap.provider, { identity: cap.identity });
   if (!r.enabled) { document.getElementById('banner').textContent = 'REVOKED: ' + r.reason; st = null; return null; }
   const input = pilotInput(held, st, dt);
   st = step(cfg, st, dt, { groundY: () => 0, input });

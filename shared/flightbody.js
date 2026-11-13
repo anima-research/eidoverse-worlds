@@ -22,7 +22,7 @@ export const WING_RE = /^([LR])_Wing_(Upper|Lower)(?:_(\d+))?$/;
  * @returns {{
  *   canAnimateWings: boolean, chains: Record<string, string[]>, wingCount: number,
  *   strays: string[], notes: string[]
- * }}  strays: bones that look like wings (/wing/i) but don't match WING_RE
+ * }}  strays: bones named as wings (a word "wing"/"wings") that don't match WING_RE
  */
 export function inspectBody(boneNames) {
   const names = Array.isArray(boneNames) ? boneNames : [];
@@ -30,7 +30,7 @@ export function inspectBody(boneNames) {
   const strays = [];
   for (const n of names) {
     const m = WING_RE.exec(n);
-    if (!m) { if (/wing/i.test(String(n))) strays.push(n); continue; }
+    if (!m) { if (namesAWing(n)) strays.push(n); continue; }
     const key = `${m[1]}_${m[2]}`;                 // L_Upper, R_Lower, ...
     (chains[key] ??= []).push(n);
   }
@@ -58,19 +58,25 @@ export function inspectBody(boneNames) {
   return { canAnimateWings, chains, wingCount, strays, notes };
 }
 
+/** "wing" as a word of the name (LeftWing, WING_L, Wings), never inside one (Swing_Tail, Drawing, Skirt_Flowing). */
+function namesAWing(name) {
+  return String(name).replace(/([a-z0-9])([A-Z])/g, '$1_$2').split(/[^A-Za-z]+/).some((w) => /^wings?$/i.test(w));
+}
+
 function depthOf(name) {
   const m = WING_RE.exec(name);
   return m && m[3] ? Number(m[3]) : 0;
 }
 
-/** For a body that has wings it can't animate, the one sentence that says why; null for animatable wings or none. */
-export function deadWingsNote(report) {
+/** For a body that has wings it can't animate, the one sentence that says why; null for animatable wings or none.
+ *  `whose` is how the sentence names the wings' owner: 'its' (a body) or 'your' (an agent told about itself). */
+export function deadWingsNote(report, whose = 'its') {
   if (report.canAnimateWings || (report.wingCount === 0 && report.strays.length === 0)) return null;
   if (report.wingCount === 0) {
     const shown = report.strays.slice(0, 3).join(', ') + (report.strays.length > 3 ? ', …' : '');
-    return `its wings won't animate: their bones (${shown}) aren't named L_Wing_Upper / L_Wing_Lower / R_Wing_Upper / ` +
+    return `${whose} wings won't animate: their bones (${shown}) aren't named L_Wing_Upper / L_Wing_Lower / R_Wing_Upper / ` +
       'R_Wing_Lower (then _1, _2 outward), which is how flapping finds them';
   }
-  return `its wings won't animate: ${report.wingCount} wing bone(s) in ${Object.keys(report.chains).length} chain(s), ` +
+  return `${whose} wings won't animate: ${report.wingCount} wing bone(s) in ${Object.keys(report.chains).length} chain(s), ` +
     'and flapping needs at least two chains and four bones';
 }

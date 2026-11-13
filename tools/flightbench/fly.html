@@ -17,8 +17,8 @@
   nothing that could reach the commons. The isolation argument stays structural
   -- client/, server/ and mcpl/ still import no flight code.
 
-  FLIGHT IS GATED even here. The dev provider grants Mythos on a compatible
-  rig; everything else is denied, and the capability is re-resolved every frame.
+  FLIGHT IS GATED even here. The dev provider grants Mythos and nobody else,
+  whatever the body, and the capability is re-resolved every frame.
 -->
 <style>
   html,body { margin:0; height:100%; background:#0a0c11; overflow:hidden;
@@ -137,7 +137,7 @@ vrm.scene.traverse(o => {
 function enable() {
   const provider = devFlightProvider({ allow: ['mythos'], label: 'fly-bench-dev' });
   cap = { provider, identity: 'mythos' };
-  const r = resolveFlight(provider, { identity: 'mythos', avatar: { boneNames: bones } });
+  const r = resolveFlight(provider, { identity: 'mythos' });
   if (!r.enabled) { document.getElementById('big').textContent = 'DENIED: ' + r.reason; return; }
   document.getElementById('big').textContent = '';
   reset();
@@ -200,7 +200,7 @@ function frame(now) {
 
   if (st && cap) {
     // ACTION-TIME capability, every frame.
-    const r = resolveFlight(cap.provider, { identity: cap.identity, avatar: { boneNames: bones } });
+    const r = resolveFlight(cap.provider, { identity: cap.identity });
     if (!r.enabled) { document.getElementById('big').textContent = 'REVOKED: ' + r.reason; st = null; }
   }
   if (st) {

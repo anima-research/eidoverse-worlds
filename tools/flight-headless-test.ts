@@ -89,10 +89,10 @@ const boneNames = [...byName.keys()];
 const report = inspectBody(boneNames);
 check('the shipped body animates its wings headless', report.canAnimateWings);
 const dev = devFlightProvider({ allow: ['mythos'], label: 'headless-test' });
-const grant = resolveFlight(dev, { identity: 'mythos', avatar: { boneNames } });
+const grant = resolveFlight(dev, { identity: 'mythos' });
 check('a granted agent is granted, by the bench', grant.enabled === true && grant.source === 'headless-test');
 check('an unlisted agent does not',
-      resolveFlight(dev, { identity: 'someone', avatar: { boneNames } }).enabled === false);
+      resolveFlight(dev, { identity: 'someone' }).enabled === false);
 
 // ---- a whole sortie, no renderer anywhere
 console.log('\nSORTIE -- cut, leaf, ground, recover, fly again (no browser)');

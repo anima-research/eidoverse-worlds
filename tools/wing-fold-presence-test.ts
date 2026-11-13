@@ -97,13 +97,13 @@ check('newly loaded and swapped bodies use one fold-aware owner',
   /me\.wingsFolded = folded\(\)/.test(mybodySrc) &&
   (mybodySrc.match(/setMe\(/g) ?? []).length >= 3);
 check('browser owner path joins controller state to the semantic wire field',
-  /wingsFolded = applyOwnedWingFold\(myState, me, fold\)/.test(controllerSrc));
+  /wingsFolded = applyOwnedWingFold\(myState, me, fold\b/.test(controllerSrc));
 // the browser's rig evidence (a wingless swap releases a fold; G then finds nothing): wing-owner-wire-test, by behaviour
 check('settled pose preserves unknown semantic fields for late join',
   // live readings (mic/hear) are dropped by name; everything else rides the rest spread
   /const \{ (?:\w+: _\w+, )*\.\.\.still \} = withoutOnceAnim\(pose/.test(serverSrc));
 check('headless reconnect restores its own fold state',
-  /this\.wingsFolded = foldedIn\(msg\.restore\) === true/.test(agentSrc));
+  /this\.wingsFolded = this\.foldFits\(foldedIn\(msg\.restore\) === true\)/.test(agentSrc));
 check('text-tier perception reports the public silhouette',
   /wings folded/.test(agentSrc) && /wings-fold/.test(agentSrc));
 const foldActs: string[] = [];

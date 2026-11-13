@@ -139,14 +139,18 @@ export function setMe(av) {
 }
 
 /** Arm human flight for whatever body this is now, on every swap: the grant decides (shared/flightcap.js); the
- *  bones only say which wings flap. A body with no skeleton to read (a capsule) arms with none. */
+ *  bones only say which wings flap. A body whose skeleton isn't read (a capsule, a failed read) arms as unknown. */
+let toldFlight = '';
 function armFlightFor(av) {
-  const bones = [];
-  try { av?.vrm?.scene?.traverse((o) => { if (o.isBone && o.name) bones.push(o.name); }); } catch { /* none read */ }
+  let bones = null;
+  try { if (av?.vrm?.scene) { bones = []; av.vrm.scene.traverse((o) => { if (o.isBone && o.name) bones.push(o.name); }); } }
+  catch { bones = null; }
   const ok = armFlight(bones, 'me');
-  // a mis-named wing rig still flies; it is told once, here, why its wings won't move (flightbody.js)
-  const dead = deadWingsNote(inspectBody(bones));
-  if (ok && av) toast?.(`flight available on this body — press F${dead ? `; ${dead}` : ''}`);
+  // said when it changes, not on every swap: flight becoming available, or a body whose wings won't move (flightbody.js)
+  const dead = bones ? deadWingsNote(inspectBody(bones)) : null;
+  const say = ok && av ? `flight available on this body — press F${dead ? `; ${dead}` : ''}` : '';
+  if (say && say !== toldFlight) toast?.(say);
+  toldFlight = say;
 }
 
 // ---------------------------------------------------------------- avatar swap

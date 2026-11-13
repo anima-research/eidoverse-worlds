@@ -66,12 +66,13 @@ let flightBones = null;
  *  from the server's `yourRights.fly`, which no query string can forge, and a
  *  compatible body with no grant gets a refusal that names the fix. */
 export function armFlight(boneNames, identity = 'me') {
-  flightBones = boneNames ?? [];
-  // a fold carried from a winged body is released by one with no wings to hold it (agent.ts loadBodyBones, the twin)
-  if (wingsFolded && !inspectBody(flightBones).canAnimateWings) setFolded(false);
+  flightBones = boneNames ?? null;   // null: not read (a failed read, a capsule) -- unknown, which keeps a fold
+  // a fold carried from a winged body is released by one known to have no wings (agent.ts foldFits, the twin)
+  if (wingsFolded && knownWingless()) { setFolded(false); flashHint?.('folded-wing posture released — this body has no wings'); }
   flightProv = worldFlightProvider({ rights: myRights, label: 'world-grant' });
-  return resolveFlight(flightProv, { identity, avatar: { boneNames: flightBones } }).enabled;
+  return resolveFlight(flightProv, { identity }).enabled;
 }
+const knownWingless = () => Array.isArray(flightBones) && !inspectBody(flightBones).canAnimateWings;
 
 // The world's grant, read through a hook rather than an import: net.js keeps
 // itself free of this module on purpose ("net can read/write body state
@@ -135,7 +136,7 @@ export function capSpeed(v, ms) { if (Number.isFinite(v) && ms > 0) speedCap = {
 let wingsFolded = false;
 export const folded = () => wingsFolded;
 export function setFolded(fold, me = meRef()) {
-  wingsFolded = applyOwnedWingFold(myState, me, fold);
+  wingsFolded = applyOwnedWingFold(myState, me, fold && !knownWingless());   // a restored fold fits the body, or is released
 }
 
 function toggleFold(me) {
@@ -147,8 +148,8 @@ function toggleFold(me) {
   if (!wingsFolded && !winged) return null;
   setFolded(!wingsFolded, me);
   if (wingsFolded) return 'wings folded — the vigil posture costs the sky (G to unfold)';
-  if (!winged) return 'folded-wing posture released — this body has no wings';
-  const cap = flightProv && resolveFlight(flightProv, { identity: 'me', avatar: { boneNames: flightBones ?? [] } });
+  if (!winged) return flightBones ? 'folded-wing posture released — this body has no wings' : "folded-wing posture released — this body's bones aren't known";
+  const cap = flightProv && resolveFlight(flightProv, { identity: 'me' });
   return cap?.enabled ? 'wings open' : 'wings open — propulsion is still not granted here';
 }
 
@@ -162,11 +163,11 @@ function toggleFold(me) {
  *  diagnostic nobody can find is one nobody uses". */
 export function flightReport() {
   const v = flightProv
-    ? resolveFlight(flightProv, { identity: 'me', avatar: { boneNames: flightBones } })
+    ? resolveFlight(flightProv, { identity: 'me' })
     : { enabled: false, reason: 'flight not armed for this body' };
   const L = [];
   L.push(`rig: ${flightBones?.length ?? 0} bones, ` +
-         (v.enabled ? `granted (${inspectBody(flightBones).wingCount} wing bones)` : `DENIED — ${v.reason}`));
+         (v.enabled ? `granted (${inspectBody(flightBones ?? []).wingCount} wing bones)` : `DENIED — ${v.reason}`));
   if (flight) {
     L.push(`state: ${flight.phase} · t=${flight.t.toFixed(1)}s · ` +
            `y=${flight.pos.y.toFixed(2)} (ground ${flightGround(flight.pos.x, flight.pos.z).toFixed(2)})`);
@@ -196,7 +197,7 @@ if (typeof globalThis !== 'undefined') {
     groundHere: (() => { try { return heightAt(myState.pos.x, myState.pos.z); } catch { return null; } })(),
     lastEnd: lastFlightEnd,
     verdict: flightProv
-      ? resolveFlight(flightProv, { identity: 'me', avatar: { boneNames: flightBones } })
+      ? resolveFlight(flightProv, { identity: 'me' })
       : 'no provider',
   });
 }
@@ -215,7 +216,7 @@ function toggleFlight() {
   // refuse anyway -- this says so before spending the resolve, and names the
   // key that undoes it.
   if (wingsFolded) return 'wings are folded — press G to unfold first';
-  const r = resolveFlight(flightProv, { identity: 'me', avatar: { boneNames: flightBones } });
+  const r = resolveFlight(flightProv, { identity: 'me' });
   if (!r.enabled) return `no: ${r.reason}`;
   flightCfg ??= flightConfig();
   // ARM IT IN A LOCAL, PUBLISH IT ONCE. The first cut assigned the GROUND state
@@ -877,7 +878,7 @@ export function updateMe(dt, me) {
   // would teleport her to the ground. Losing permission to fly is not the same
   // as ceasing to exist.
   if (flight && flight.phase !== 'RAGDOLL') {
-    const still = resolveFlight(flightProv, { identity: 'me', avatar: { boneNames: flightBones } });
+    const still = resolveFlight(flightProv, { identity: 'me' });
     if (!still.enabled) {
       flashHint?.(`flight withdrawn — ${still.reason}`, 6000);
       flight = flightDown(flight, { eventId: 'capability-revoked' });

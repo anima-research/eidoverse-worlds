@@ -89,5 +89,12 @@ controller.armFlight(['L_Wing_Upper','L_Wing_Upper_1','R_Wing_Upper','R_Wing_Upp
 said=hints.length;
 pressG();
 check('G on a winged body folds again', controller.folded()===true && /wings folded/.test(hints.at(-1)??''), hints.at(-1));
+pressG();   // open the winged body's wings again, so F may take off
+controller.setRightsHook(()=>({ role:'member', fly:true }));   // as main.js wires it, before the body is armed
+controller.armFlight(['L_Wing_Upper','L_Wing_Upper_1','R_Wing_Upper','R_Wing_Upper_1','L_Wing_Lower','R_Wing_Lower'],'owner');
+bus.emit('key',{code:'KeyF',repeat:false});
+const up=controller.flying();
+controller.armFlight([], 'owner');   // a swap mid-flight, to a wingless body
+check('a swap never ends a flight (lead 11-12): the wingless body flies on', up===true && controller.flying()===true, `took off ${up}; flying ${controller.flying()}; ${hints.at(-1)}`);
 console.log(`\n${pass} passed, ${failures} failed`);
 process.exit(failures?1:0);

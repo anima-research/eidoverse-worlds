@@ -198,6 +198,9 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["consent-replay", "../consent-replay-test.ts", 0.1],   // an agent's gates and lists, replayed on arrival, are what it holds when the read returns (house 6340433633; R 10-28)
   ["history-request", "../history-request-test.ts", 1], // #267 (main): a history request with no answer rejects, so scrolling up can reach what a long disconnect missed
   ["wing-fold-presence", "../wing-fold-presence-test.ts", 1], // #159: a held posture rides the presence wire (absence is not release; survives late join, reconnect, swap)
+  ["wing-owner-wire", "../wing-owner-wire-test.ts", 1], // the browser's G and a swap reach the real sendPose packet; a wingless swap releases a fold, an unread one keeps it
+  ["flight-test", "../flight-test.ts", 1], // the integrator, the leaf, and the capability: flight is the world's fly right, whatever the body
+  ["door-bone-list", "../door-bone-list-test.ts", 1], // the worn body's bones: unknown until read, bounded, a failed read kept; take-off never waits on them
   ["skystamp", "../skystamp-test.ts", 1], // #260 r3 I286: the sky's seq/by come from the log entry that wrote it (the stored value has none)
   ["grant-command", "../grant-command-test.ts", 1], // #260 house client I6/I42: /grant keeps exceptions and the end date unless it changes them
   ["environment-realizer", "../environment-realizer-test.ts", 1], // #260 house client I8/I55: water on the flat floor; a rejoin clears gone terrain and grass

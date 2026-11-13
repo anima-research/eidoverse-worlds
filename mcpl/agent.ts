@@ -77,7 +77,6 @@ const legWaitMs = (legS: number) => Math.round((legS * 1.5 + 8) * 1000);
 const FLIGHT_ENDS = {
   landed: "came down", walk: "ended by a walk", knockdown: "knocked down", drag: "taken hold of and dragged", seat: "ended by taking a seat",
   closed: "interrupted: the body was closed", link: "interrupted: the link to the world dropped", respawn: "interrupted: you fell out of the world",
-  avatar: "ended by a change of body",
 } as const;
 type FlightEnd = keyof typeof FLIGHT_ENDS;
 /** A wait ended by endFlight is answered with its end's code, not its words, so rewording an end changes no control flow. */
@@ -196,6 +195,8 @@ const modelMeta = new Map<string, unknown>();
  *  its geometry for as long as they stand; this only bounds what is kept for
  *  fits yet to come. Least recently used goes first; downloads in flight stay. */
 const MESH_CACHE_BYTES = 256 * 1024 * 1024, MESH_FETCH_MS = 8000;
+/** A worn body's bone read, bounded like the mesh fetch: a stalled /library must not hold up a take-off or a fold. */
+const BONES_FETCH_MS = 8000;
 /** How long a walk waits for placed geometry still loading before it is
  *  refused (see walkTo). Covers a fetch's own timeout plus some queueing. */
 const WALK_READY_MS = 15_000;
@@ -1206,7 +1207,7 @@ export class WorldAgent {
               // what survives the server's settled memory is an enacted pose —
               // authored by definition (settledPose strips physics frames)
               if (msg.restore.pose && msg.restore.clip !== "ragdoll") { this.heldPose = msg.restore.pose; this.heldPoseAuthored = true; }
-              this.wingsFolded = foldedIn(msg.restore) === true;   // the named pose wings-folded (or an older wingsFolded)
+              this.wingsFolded = this.foldFits(foldedIn(msg.restore) === true);   // the named pose wings-folded (or an older wingsFolded), if this body can hold it
               this.bodyMode = readBodyMode(msg.restore);   // the body-mode survives a rejoin (an older sample: read from its clip); a declaration until the next real transition
             }
             this.restoredPose = true;
@@ -3077,7 +3078,7 @@ export class WorldAgent {
   }
 
   /** Resolve the capability, freshly, every time -- never cached: grants change live. The body isn't asked
-   *  (shared/flightcap.js); a swap ends any flight under way (setAvatar). */
+   *  (shared/flightcap.js), and a swap never ends a flight (setAvatar). */
   private flightAllowed(): { ok: boolean; why: string } {
     // THE WORLD'S GRANT, or an explicitly injected one for a bench. What is
     // gone is the third option -- a self-authorizing dev provider conjured
@@ -3092,18 +3093,26 @@ export class WorldAgent {
    *  while they aren't known: until the worn model has been read, after a
    *  read failed, and from an avatar change until the new body is read. */
   bodyBoneNames: string[] | null = null;
+  private bodyBonesFailedFor: string | null = null;
   private deadWingsToldFor: string | null = null;
+
+  /** A fold this body can hold: released on a body known to have no wings; kept on wings, or on bones not yet known. */
+  private foldFits(fold: boolean): boolean {
+    return fold && !(this.bodyBoneNames && this.bodyBonesFor === this.avatar && !inspectBody(this.bodyBoneNames).canAnimateWings);
+  }
   private bodyBonesFor: string | null = null;
 
   /** Read the worn VRM's bone list, once per avatar. A failed read keeps
-   *  nothing, so the list stays unknown and the next flight act reads again.
+   *  nothing, so the list stays unknown; it is not tried again for this body
+   *  unless `retry` (fold_wings, which says "calling again reads the model again").
    *  A read that lands while another body is worn is dropped: its bones are
    *  that other body's. */
-  async loadBodyBones(): Promise<string[] | null> {
+  async loadBodyBones({ retry = false } = {}): Promise<string[] | null> {
     const avatar = this.avatar;
     if (this.bodyBoneNames && this.bodyBonesFor === avatar) return this.bodyBoneNames;
+    if (!retry && this.bodyBonesFailedFor === avatar) return null;
     try {
-      const res = await fetch(`${this.httpBase}/library/${avatar}`);
+      const res = await fetch(`${this.httpBase}/library/${avatar}`, { signal: AbortSignal.timeout(BONES_FETCH_MS) });
       if (!res.ok) throw new Error(String(res.status));
       const buf = new Uint8Array(await res.arrayBuffer());
       const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
@@ -3113,12 +3122,13 @@ export class WorldAgent {
       if (this.avatar === avatar) {
         this.bodyBoneNames = names;
         this.bodyBonesFor = avatar;
-        // a fold carried from a winged body is released by a body with no wings to hold it (a winged one keeps it)
-        if (this.wingsFolded && !this.flight && !inspectBody(names).canAnimateWings) this.wingsFolded = false;
+        this.bodyBonesFailedFor = null;
+        this.wingsFolded = this.foldFits(this.wingsFolded);
       }
     } catch (e) {
       // Nothing is kept: a list another read stored for this body stands, and
-      // an unknown list stays unknown.
+      // an unknown list stays unknown (and isn't refetched for this body).
+      if (this.avatar === avatar && this.bodyBonesFor !== avatar) this.bodyBonesFailedFor = avatar;
       console.warn(`[door] couldn't read the bones of ${avatar}: ${(e as Error).message}`);
     }
     return this.bodyBoneNames;
@@ -3263,7 +3273,8 @@ export class WorldAgent {
 
   /** take_off (spec §1). Refuses folded wings, a limp body, or no capability. */
   async takeOff(): Promise<ActResult> {
-    await this.loadBodyBones();
+    // only a fold waits on the body's bones (it may not fit); otherwise the read runs alongside, bounded and cached
+    if (this.wingsFolded) await this.loadBodyBones(); else void this.loadBodyBones();
     const cap = this.flightAllowed();
     if (!cap.ok) return refused(`you cannot fly here — ${cap.why}`);
     // Wing posture is carried independently of an active flight state. A body
@@ -3294,7 +3305,7 @@ export class WorldAgent {
     const ev = this.flight.events.find((e: any) => e.kind === "takeoff.refused");
     if (ev) { return refused(`still standing — ${flightFixInOurTools(ev.reason)}`); }
     // dead wings are said once per body (flightbody.js deadWingsNote)
-    const dead = this.bodyBoneNames && this.deadWingsToldFor !== this.avatar ? deadWingsNote(inspectBody(this.bodyBoneNames)) : null;
+    const dead = this.bodyBoneNames && this.deadWingsToldFor !== this.avatar ? deadWingsNote(inspectBody(this.bodyBoneNames), "your") : null;
     if (dead) this.deadWingsToldFor = this.avatar;
     return done(`took off — ${this.flight.pos.y.toFixed(1)}m, stamina ${this.flight.stamina.toFixed(0)}/100${dead ? `; ${dead}` : ""}`);
   }
@@ -3327,7 +3338,7 @@ export class WorldAgent {
    *  lazily makes one rather than demanding take_off first -- a body standing
    *  in the world has wings whether or not it has flown today. */
   async foldWings(fold: boolean): Promise<ActResult> {
-    await this.loadBodyBones();
+    await this.loadBodyBones({ retry: fold });   // a fold reads a failed model again, as its refusal promises
     // Folding is body autonomy, not propulsion authority. A world may deny
     // `fly` while the person still closes or opens wings they visibly wear.
     // The rig check prevents a wingless body from claiming a silhouette it
@@ -3390,7 +3401,6 @@ export class WorldAgent {
   /** glide_to (spec §1). Free, and lands SHORT honestly if the polar runs out. `took`, when given, is told the course
    *  this glide set and how its wait ended, for land_at to tell whether a later call has taken the flight over. */
   async glideTo(x: number, z: number, took?: { course?: number; got?: string }): Promise<ActResult> {
-    await this.loadBodyBones();
     const cap = this.flightAllowed();
     if (!cap.ok) return refused(`you cannot fly here — ${cap.why}`);
     if (!this.flight || this.flight.phase === "GROUND" || this.flight.phase === "LANDED") {
@@ -3446,7 +3456,6 @@ export class WorldAgent {
 
   /** climb_to (spec §1). -1 stamina/metre; an empty pool forces a glide down. */
   async climbTo(alt: number): Promise<ActResult> {
-    await this.loadBodyBones();
     const cap = this.flightAllowed();
     if (!cap.ok) return refused(`you cannot fly here — ${cap.why}`);
     if (!this.flight || this.flight.phase === "GROUND" || this.flight.phase === "LANDED") {
@@ -3529,7 +3538,6 @@ export class WorldAgent {
 
   /** land_at (x,z). Descend, arrive, and hand the body back to walking. */
   async landAt(x: number, z: number): Promise<ActResult> {
-    await this.loadBodyBones();
     const cap = this.flightAllowed();
     if (!cap.ok) return refused(`you cannot fly here — ${cap.why}`);
     if (!this.flight || this.flight.phase === "GROUND" || this.flight.phase === "LANDED") {
@@ -5325,11 +5333,12 @@ export class WorldAgent {
    *  with the new path and every client rebuilds this remote. Position, held
    *  pose, and identity all carry over; only the body changes. */
   setAvatar(path: string) {
-    if (this.flight) this.endFlight("avatar");   // the new body falls, and flies again when it takes off
+    // a swap never ends a flight: flight is the world's grant plus physics, not appearance (lead, 11-12)
     this.avatar = path;
-    // The new body's bones are read before its next take-off or fold, and now if a fold is carried (it may not fit).
+    // The new body's bones are read when a fold needs them, and now if a fold is carried (it may not fit this body).
     this.bodyBoneNames = null;
     this.bodyBonesFor = null;
+    this.bodyBonesFailedFor = null;
     if (this.wingsFolded) void this.loadBodyBones();
     this.selfBodyGeneration = ++this.bodyGenerationCounter;
     this.bodyReader?.forget(this.name);

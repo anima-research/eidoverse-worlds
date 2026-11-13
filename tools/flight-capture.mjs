@@ -84,13 +84,13 @@ async function take(page, { name, seconds, injectRecoverAt }) {
   // than skimming the dirt -- a recovery that completes at 0.2 m is correct and
   // unmeasurable, which is not what the take is for.
   const START_Y = 30;
-  const r = await page.evaluate(({ bones, startY }) => {
+  const r = await page.evaluate(({ startY }) => {
     window.__flightBench.setTop(startY);
     return window.__flightBench.enableFlight({
-      identity: 'mythos', bones, startY,
+      identity: 'mythos', startY,
       config: {},  // the fence is not the subject: no world box is passed, so none fences it
     });
-  }, { bones: FIX.bones, startY: START_Y });
+  }, { startY: START_Y });
   if (!r?.enabled) throw new Error(`bench refused to enable: ${r?.reason}`);
 
   // Cut immediately: the take is about the leaf, not the glide before it.
