@@ -10,7 +10,7 @@
 // every linkage a completed spawn could unblock); distance bands promote
 // what is in front of you.
 
-import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere, modelOf, readMesh, meshKeyOf } from "../client/lib/realize/models_field.js";
+import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere, modelOf, readMesh, meshKeyOf, loadStatus } from "../client/lib/realize/models_field.js";
 import { P } from "../client/lib/scheduler.js";
 
 let passed = 0, failed = 0;
@@ -119,6 +119,14 @@ const light = () => ({ pos: [0, 1, 0], light: { color: 0xffd9a0, intensity: 16, 
   const both = planReconcile({ a: mesh({ shape: "box", size: [1, 1, 1] }, { model: "x.glb" }) }, new Map([["a", { model: "x.glb" }]] as any));
   check("a model with a mesh beside it is planned by its model alone (both are drawn)", both.retire.length === 0 && both.create.length === 0 && modelOf(both.create[0]?.ent ?? { model: "x.glb" }) === "x.glb");
 }
+
+check('ready geometry takes precedence', loadStatus({failedAt: 1}, true, true).state === 'ready');
+check('out of range explains deferred failure', loadStatus({failedAt: 1}, false, false).state === 'deferred');
+check('deferred failures cannot bypass residency', !loadStatus({failedAt: 1}, false, false).retryAvailable);
+check('failed in-range object offers retry', loadStatus({failedAt: 1}, false, true).retryAvailable);
+check('queued retry coalesces clicks', !loadStatus({loading: true, phase: 'queued', failedAt: 1}, false, true).retryAvailable);
+check('running job is loading', loadStatus({loading: true, phase: 'loading'}, false, true).state === 'loading');
+check('failure summary persists while retrying', loadStatus({loading: true, error: 'safe'}, false, true).error === 'safe');
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);
