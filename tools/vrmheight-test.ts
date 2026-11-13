@@ -187,6 +187,14 @@ check("a re-export's stature shows at once", near(height("plain"), 1.63), height
     review: { status: "proposed" } });
   const proposed = seatStore.propose(profile("patchonly"), "test");
   check("a body only in PATCH_DIR is a roster avatar to the seat store too", proposed.ok, proposed);
+  // a def pointing a name at a file the scan never finds (#326): the roster lists it, so the seat store must take it
+  mkdirSync(join(root, "lib", "eidoverse/assets/bodies"), { recursive: true });
+  writeFileSync(join(root, "lib", "eidoverse/assets/bodies", "elsewhere.vrm"), body(V1));
+  writeFileSync(join(root, "defs", "avatars", "repointed.json"), JSON.stringify({ vrm: "eidoverse/assets/bodies/elsewhere.vrm" }));
+  await Bun.sleep(1100);   // the def registry's TTL
+  const repointed = seatStore.propose({ ...profile("patchonly"), avatar: "repointed" }, "test");
+  check("a def-repointed body is listed and is a roster avatar to the seat store (#326)",
+    entry("repointed")?.path.startsWith("eidoverse/assets/bodies/elsewhere.vrm") === true && repointed.ok, { listed: entry("repointed"), repointed });
   seatStore.propose(profile("forked"), "test");
   check("a patched body's seat profile is judged against the patched bytes", entry("forked")?.seat?.status === "proposed", entry("forked")?.seat);
   // …and so does the operator's tool, over the same store

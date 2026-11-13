@@ -48,6 +48,8 @@ import { join } from "node:path";
 import { validateProfile, profileStatus } from "../client/lib/seatcore.js";
 import { OPT_DIR, LIBRARY_DIR, PATCH_DIR } from "./config.ts";
 import { worlds } from "./world.ts";
+import { avatarDefs } from "./defs.ts";
+import { resolveLibFile } from "./libfile.ts";
 
 export const SEAT_POSE = "sitchair";
 export const CLIP_REL = "eidoverse/assets/animations/sitting_normal_chair.vrma";
@@ -391,6 +393,8 @@ export class SeatStore {
   /** This slice profiles bodies the roster can serve — the bytes must exist
    *  to be judged against (#105 review B2). */
   rosterHas(name: string): boolean {
+    const vrm = avatarDefs()[name]?.vrm;   // a def's vrm first, as avatarRoster resolves it (#326)
+    if (vrm && resolveLibFile(vrm)) return true;
     return this.vrmDirs.some((d) => existsSync(join(d, `${name}.vrm`)));
   }
 
