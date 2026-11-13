@@ -155,4 +155,4 @@ SOFTWARE.
 ## Credited, licence not yet recorded
 
 - `client/lib/xr/xrwarm.js` — a shader-warming pattern from BasisVR (MIT, © 2024 Luke B Doolan), cited in its header.
-- `client/lib/ragdoll/ammodoll.js` — ported from socketteer/ragdoll-physics (tables carried verbatim, per commit `9d6abcd69`); licence not yet recorded: the repo isn't public (GitHub 404, 2026-11-08), so its licence and commit can't be checked here.
+- `client/lib/ragdoll/ammodoll.js` (its tables in `client/lib/ragdoll/ammodoll-tuning.js`) — ported from socketteer/ragdoll-physics (tables carried verbatim, per commit `9d6abcd69`); licence not yet recorded: the repo isn't public (GitHub 404, 2026-11-08), so its licence and commit can't be checked here.

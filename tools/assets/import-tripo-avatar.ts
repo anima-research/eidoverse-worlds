@@ -455,7 +455,8 @@ say(`wrote ${outPath} (${(out.length / 1048576).toFixed(1)}MB)`);
 
 // ---- 6: verify with the fleet fixtures + both engines -----------------------
 const { glbJson, humanBones: hb, worldPositions, makeAvatar, toppleLean } = await import('./rig-load.mjs');
-const { AmmoRagdoll, ensureAmmo } = await import('../../client/lib/ragdoll/ammodoll.js');
+const { AmmoRagdoll } = await import('../../client/lib/ragdoll/ammodoll.js');
+const { ensureAmmo } = await import('../../client/lib/ragdoll/ammo-load.js');
 const { Ragdoll } = await import('../../client/lib/ragdoll/ragdoll.js');
 const g2 = glbJson(readFileSync(outPath));
 const bones2 = hb(g2);

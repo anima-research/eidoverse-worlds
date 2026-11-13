@@ -16,8 +16,8 @@ const ENGINES = new Map([
   ['verlet', { load: null, cls: Ragdoll, failed: false }],
   ['ammo', {
     load: async () => {
-      const mod = await import('./ammodoll.js');
-      return (await mod.ensureAmmo()) ? mod.AmmoRagdoll : null;
+      const [mod, load] = await Promise.all([import('./ammodoll.js'), import('./ammo-load.js')]);
+      return (await load.ensureAmmo()) ? mod.AmmoRagdoll : null;
     }, cls: null, failed: false,
   }],
 ]);

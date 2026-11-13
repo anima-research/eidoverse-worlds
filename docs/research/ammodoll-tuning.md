@@ -1,6 +1,6 @@
 # ammodoll tuning notes: hair, wings, leg limits
 
-Measurements and reasoning behind the tables in `client/lib/ragdoll/ammodoll.js` (`HAIR_TUNING`, `WING_TUNING`,
+Measurements and reasoning behind the tables in `client/lib/ragdoll/ammodoll-tuning.js` (`HAIR_TUNING`, `WING_TUNING`,
 `JOINT_SPECS`). The values in the code are current; the tables here are the measurements that led to them.
 
 ## Hair (`HAIR_TUNING`)

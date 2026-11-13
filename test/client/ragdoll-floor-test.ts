@@ -19,7 +19,9 @@ plugin({ name: 'core-stub', setup(b) { stubResolve(b, /^(\.\.?\/)+core\.js$/, ()
 const { THREE } = await import('../stubs/core-stub.mjs');
 const { mergeGeometries } = await import('../../client/node_modules/three/examples/jsm/utils/BufferGeometryUtils.js');
 const C: any = await import('../../client/lib/colliders.js');
-const { AmmoRagdoll, ensureAmmo, interiorTriangles, INTERIOR_MAX_TRIS } = await import('../../client/lib/ragdoll/ammodoll.js');
+const { AmmoRagdoll } = await import('../../client/lib/ragdoll/ammodoll.js');
+const { ensureAmmo } = await import('../../client/lib/ragdoll/ammo-load.js');
+const { interiorTriangles, INTERIOR_MAX_TRIS } = await import('../../client/lib/ragdoll/ammodoll-interior.js');
 const { makeAvatar, toppleLean } = await import('../../tools/assets/rig-load.mjs');
 const { wingRig } = await import('../fixtures/doll-fixture.mjs');
 

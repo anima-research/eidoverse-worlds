@@ -73,7 +73,7 @@ function loadSim(): Promise<typeof simMods> {
       if (want === "ammo") {
         try {
           const ammo = await import("../client/lib/ragdoll/ammodoll.js");
-          if (await ammo.ensureAmmo()) { Body = ammo.AmmoRagdoll; engine = "ammo"; }
+          if (await (await import("../client/lib/ragdoll/ammo-load.js")).ensureAmmo()) { Body = ammo.AmmoRagdoll; engine = "ammo"; }
           else console.warn("[physics] ammo wasm did not open — falling back to verlet");
         } catch (e) {
           console.warn("[physics] ammodoll unavailable — falling back to verlet:", e);

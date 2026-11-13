@@ -28,7 +28,8 @@ plugin({
 });
 
 const { THREE } = await import('../stubs/core-stub.mjs');
-const { AmmoRagdoll, ensureAmmo } = await import('../../client/lib/ragdoll/ammodoll.js');
+const { AmmoRagdoll } = await import('../../client/lib/ragdoll/ammodoll.js');
+const { ensureAmmo } = await import('../../client/lib/ragdoll/ammo-load.js');
 const { rigs, makeAvatar, toppleLean } = await import('../../tools/assets/rig-load.mjs');
 const { dollGltf, wingRig, bareRig } = await import('../fixtures/doll-fixture.mjs');
 

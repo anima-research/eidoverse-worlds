@@ -11,7 +11,7 @@ import { MODES, setMode, activeMode, setSolid, isSolid } from './perfscope.js';
 import { MeshBVHHelper } from 'three-mesh-bvh';
 import { colliders, frameOf } from '../colliders.js';
 import { closestParams, TUNING } from '../ragdoll/ragdoll.js';
-import { JOINT_SPECS, HAIR_TUNING, WING_TUNING } from '../ragdoll/ammodoll.js';
+import { JOINT_SPECS, HAIR_TUNING, WING_TUNING } from '../ragdoll/ammodoll-tuning.js';
 import { BLINK, WING_IDLE, LIMP_SPRINGS } from '../avatar/avatar.js';
 import { makeFrame } from '../windows.js';
 import { sliderTable, checkRow, selectRow, btn, sectionHead } from '../edit/rows.js';
