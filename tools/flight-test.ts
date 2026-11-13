@@ -690,11 +690,11 @@ console.log('\nDEFAULT-DENY -- a compatible rig is evidence, never permission');
   check('an explicit world grant DOES -- and only then',
         resolveFlight(withRights({ role: 'member', gen: false, fly: true }),
                       { identity: 'm', avatar: av }).enabled);
-  // Permission is necessary, not sufficient: a granted identity in a body that
-  // cannot fly is still refused, and for the OTHER reason.
+  // Flight is the world's grant, not the body's shape: a granted wingless body flies, its wings simply not animated.
   const wingless = { boneNames: ['hips', 'spine', 'head'] };
-  check('a grant does not make a wingless body fly',
-        !resolveFlight(withRights({ role: 'owner', fly: true }), { identity: 'm', avatar: wingless }).enabled);
+  const winglessGrant = resolveFlight(withRights({ role: 'owner', fly: true }), { identity: 'm', avatar: wingless });
+  check('a grant makes a wingless body fly (a cloud, a dragon, a psychic)',
+        winglessGrant.enabled === true && winglessGrant.profile?.canAnimateWings === false, winglessGrant.reason);
   // Each denial's reason, by the branch that gives it: who acts, and what the
   // body lacks, in the names a wearer knows.
   const reasonOf = (r: any, avatar: any = av) =>
