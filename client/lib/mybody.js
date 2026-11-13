@@ -7,7 +7,7 @@ import { CONFIG, bus, report, tee } from './base.js';
 import { DEFAULT_BODY } from '../../shared/avatardefs.js';
 import { releaseBodyGate } from './bodygate.js';
 import { armFlight, folded } from './controller.js';
-import { makeAvatar, contributeThumbnail } from './avatar.js';
+import { makeAvatar, contributeThumbnail } from './avatar/avatar.js';
 import { setMyAvatarPath, wireAvatarSwitch } from './edit/catalog.js';
 import { toast } from './ui.js';
 import { net } from './net.js';

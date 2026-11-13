@@ -2,7 +2,7 @@
 //
 // One driver for every seated body — mine (localbody.js) and everyone else's (remotes.js) — so an occupant looks the same
 // on every screen: the same transform (world.js mountTransform: the socket, its part's motion, the anchor), the same
-// signals (client/lib/socksignals.js: closed forms of the thing's motion, the occupant's input from their presence), the
+// signals (client/lib/avatar/socksignals.js: closed forms of the thing's motion, the occupant's input from their presence), the
 // same pose evaluation (shared/sockbody.js evalPose) and the same reach targets. What the socket says is data
 // (shared/sockbody.js); this module only realizes it on an Avatar (avatar.js: setSeatBlend, setSeatHold,
 // setSeatLook, setAnchorWant, setReach).
@@ -11,11 +11,11 @@
 // frame) brings it there first, walking; an `enter` clip then plays with its time locked to the carry, so the clip's
 // own motion lands on the seat (motion warping, Unreal's name for it, done as a time-lock rather than root motion).
 
-import { THREE } from './core.js';
-import { avatarMounts, mountTransform, bagOf, entities, findPart, seatSocket } from './world.js';
-import { bodyOf, evalPose, choosePose, reachWins } from '../../shared/sockbody.js';
+import { THREE } from '../core.js';
+import { avatarMounts, mountTransform, bagOf, entities, findPart, seatSocket } from '../world.js';
+import { bodyOf, evalPose, choosePose, reachWins } from '../../../shared/sockbody.js';
 import { socketSignals } from './socksignals.js';
-import { xrHandWorld } from './xr/xrbody.js';
+import { xrHandWorld } from '../xr/xrbody.js';
 
 const D2R = Math.PI / 180;
 // a neck turns about this far whatever a socket allows (the socket's look narrows it, never widens it)

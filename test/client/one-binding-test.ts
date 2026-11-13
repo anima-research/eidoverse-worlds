@@ -50,7 +50,7 @@ const ROWS: Row[] = [
   { name: "rot.js owns its numerics: no host transcendental", owner: [], scope: ["shared/rot.js"], forbidden: [/Math\.(sin|cos|tan|atan2?|asin|acos|pow|exp|log|hypot)\b/] },
   { name: "the quad shader reads the ACES inverse arrays, no literals of its own", owner: [], scope: ["client/lib/xr/quadcolour.js"], forbidden: [/1\.76474097|0\.64303825/],
     requires: [["client/lib/xr/quadcolour.js", /mat3\(\.\.\.ACES_OUT_INV\)/], ["client/lib/xr/quadcolour.js", /mat3\(\.\.\.ACES_IN_INV\)/]] },
-  { name: "N (names) is bound in namereveal.js alone", owner: ["client/lib/namereveal.js"], scope: walk("client").filter((f) => f.endsWith(".js")),
+  { name: "N (names) is bound in namereveal.js alone", owner: ["client/lib/avatar/namereveal.js"], scope: walk("client").filter((f) => f.endsWith(".js")),
     forbidden: [/['"]KeyN['"]|key === ['"][nN]['"]/], raw: true },
   { name: "no controller button reveals names (xr.js never calls setReveal)", owner: [], scope: ["client/lib/xr/xr.js"], forbidden: [/setReveal\(/] },
   { name: "a retired command's line is said before dispatch", owner: [], scope: [], forbidden: [], requires: [["client/lib/chat.js", /row\?\.retired\)\s*\{\s*logChat\('\*',\s*row\.retired\)/]] },

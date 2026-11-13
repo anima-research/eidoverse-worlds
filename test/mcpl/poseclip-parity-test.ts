@@ -1,5 +1,5 @@
 import {PoseClips} from '../../mcpl/pose-clips.ts';
-import {parsePoseAnimation,retargetPoseAnimation,syncClipPhase} from '../../client/lib/poseclips.js';
+import {parsePoseAnimation,retargetPoseAnimation,syncClipPhase} from '../../client/lib/avatar/poseclips.js';
 import {ReachBody} from '../../mcpl/physics.ts';
 import {glbJson,humanBones,worldPositions} from '../../mcpl/rig.ts';
 import {fixture,postureFixture} from '../fixtures/body-fixture.ts';

@@ -3,13 +3,13 @@
 
 import { THREE, camera, scene } from './core.js';
 import { report, angleDelta, CONFIG } from './base.js';
-import { makeAvatar, makeCapsuleAvatar } from './avatar.js';
+import { makeAvatar, makeCapsuleAvatar } from './avatar/avatar.js';
 import { onceAnimOf } from '../../shared/onceanim.js';
 import { avatarMounts, setBodySeat } from './world.js';
-import { driveOccupied, releaseOccupied } from './occupybody.js';
+import { driveOccupied, releaseOccupied } from './avatar/occupybody.js';
 import { declareOccupyState, clearOccupyState } from './occupants.js';
 import { applyRemoteReach, noteReachEvents } from './reachnet.js';
-import { syncClipPhase } from './poseclips.js';
+import { syncClipPhase } from './avatar/poseclips.js';
 import { applyWingFoldPresence } from '../../shared/wingpresence.js';
 import { poseChannels } from '../../shared/humanoid.js';
 import { applyPresenceWire, applyVoiceWire, applyBodyWire, sampleTime } from '../../shared/presencewire.js';

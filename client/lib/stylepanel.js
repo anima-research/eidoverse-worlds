@@ -6,7 +6,7 @@
 import { makeSection } from './ui.js';
 import { bus } from './base.js';
 import { checkRow } from './edit/rows.js';
-import { alwaysNames, setAlwaysNames } from './namereveal.js';
+import { alwaysNames, setAlwaysNames } from './avatar/namereveal.js';
 
 const LS = 'ew-style-tokens';
 const FIELDS = [

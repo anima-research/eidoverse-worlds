@@ -46,7 +46,7 @@ mock.module(lib("capture.js"), () => ({
   captureFrame: () => "frame",
   captureFrom: (eye: THREE.Vector3, at: THREE.Vector3) => { shots.push({ eye: eye.clone(), at: at.clone() }); return "frame"; },
 }));
-mock.module(lib("fp_view.js"), () => ({
+mock.module(lib("avatar/fp_view.js"), () => ({
   composeFirstPerson: (opts: Record<string, unknown>) => { composed.push(opts); return "frame"; },
 }));
 // (ported 10-17: the renderer leg is net_capture.js here, and its export is capture; it also reads world.js's entities, for `at`)

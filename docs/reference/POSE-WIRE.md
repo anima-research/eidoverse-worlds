@@ -62,7 +62,7 @@ sockets (`mcpl/agent.ts` keeps the raw pose in `people`, and `look` describes it
 - **Absent = unknown.** A client that predates this sends neither field; receivers show "not shared" and never
   assume "can't hear you". The fence (`server/posecheck.ts`) drops a non-boolean field and keeps the rest of the pose.
 - **Display is narrower than the data: hover only** (owner, 2026-10-02). Nothing is drawn beside a nameplate; mic
-  and headphones appear only in the hover card (`client/lib/platecard.js`): "mic on/off", "headphones on/off", and
+  and headphones appear only in the hover card (`client/lib/avatar/platecard.js`): "mic on/off", "headphones on/off", and
   in VR or not. In VR, a laser resting on a plate is the hover. The headphone toggle gates voice only (mic and TTS, not
   world sound), so an always-on mark mattered only to someone speaking aloud. Agents get it in words: `look`
   (mcpl/agent.ts `voiceNote`) says e.g. "headphones off: they won't hear anything spoken aloud, yours included, but

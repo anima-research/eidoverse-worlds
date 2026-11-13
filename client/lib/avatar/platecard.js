@@ -10,13 +10,13 @@
 // panels) and floats beside the plate at its depth, sized to a constant angle. The "mention" button is left out in VR
 // (index.html #platecard[data-xr]). The trigger on the card clicks where it points (platePress).
 import * as THREE from 'three';
-import { claimEscape } from './windows.js';
-import { svg, fsvg } from './icons.js';
-import { HTMLMesh } from '../vendor/three-addons/htmlmesh.js';
-import { prepareQuadMaterial } from './xr/domquad.js';
-import { PLATE_GETON_RAD } from './xr/xrpointer.js';   // the laser's get-on slack around a plate (see below)
-import { makeDwell, DWELL_MS } from './dwell.js';
-import { escapeHtml as esc } from './markup.js';
+import { claimEscape } from '../windows.js';
+import { svg, fsvg } from '../icons.js';
+import { HTMLMesh } from '../../vendor/three-addons/htmlmesh.js';
+import { prepareQuadMaterial } from '../xr/domquad.js';
+import { PLATE_GETON_RAD } from '../xr/xrpointer.js';   // the laser's get-on slack around a plate (see below)
+import { makeDwell, DWELL_MS } from '../dwell.js';
+import { escapeHtml as esc } from '../markup.js';
 
 export const HOVER_MS = DWELL_MS;  // rest this long on a plate before the card opens: the shared dwell (300 ms)
 const LEAVE_MS = 250;              // grace to travel from plate to card

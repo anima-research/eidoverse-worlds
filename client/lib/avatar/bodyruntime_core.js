@@ -2,7 +2,7 @@
 // bodyruntime.js maps the declared kind to reviewed built-in code; this half knows the frame order and runs it, with no
 // DOM and no THREE of its own, so test/client/body-runtime-test.ts drives it headless.
 //
-// kind 'claude-robot-dof' (client/lib/bodyruntimes/claude_robot_dof.js): a hardware-DOF runtime. Retargeted human clips
+// kind 'claude-robot-dof' (client/lib/avatar/bodyruntimes/claude_robot_dof.js): a hardware-DOF runtime. Retargeted human clips
 // ask a machine for poses its joints can't take; the module projects each pose onto the body's real joints and clamps
 // it to their ranges. Its order, and where it lands in Avatar.update:
 //   at load, before anything poses the body   initArmDOF(vrm, hinges), setupHandDOF(vrm, hinges), setupLegDOF(vrm),

@@ -7,7 +7,7 @@
 
 import { bodyOf } from '../../shared/components.js';
 import { mayLeave, vacatedFromMine, vacatedAt, OCCUPY_REACH, ESCAPE_HOLD_S, ESCAPE_REPEAT_S } from '../../shared/sockbody.js';
-import { driveOccupied, releaseOccupied } from './occupybody.js';
+import { driveOccupied, releaseOccupied } from './avatar/occupybody.js';
 import { serverNow } from './remotes.js';
 import { sendRequest, identities } from './net.js';
 import { plain, called, typeable } from './plainwords.js';

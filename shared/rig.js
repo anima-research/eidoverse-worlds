@@ -110,7 +110,7 @@ export function rigMath(THREE) {
     }
     root.updateMatrixWorld(true);
 
-    // `pivot` plays vrm.scene's part (the node a body size lives on: client/lib/avatar.js _applyBodyScale) but is never
+    // `pivot` plays vrm.scene's part (the node a body size lives on: client/lib/avatar/avatar.js _applyBodyScale) but is never
     // aliased as vrm.scene, whose readers (landmarks.js) expect meshes
     const av = {
       root, pivot, nodes, poses: 0, limp: false,
@@ -138,7 +138,7 @@ export function rigMath(THREE) {
   }
 
   /** A body's standing height in metres: its humanoid head joint at rest plus a forehead, the browser's rule
-   *  (client/lib/avatar.js bodyHeight). Meshes don't count. Null without a humanoid head or outside 0.5..4 m. */
+   *  (client/lib/avatar/avatar.js bodyHeight). Meshes don't count. Null without a humanoid head or outside 0.5..4 m. */
   function stature(g) {
     const hb = humanBones(g);
     if (!hb || !Number.isInteger(hb.head)) return null;

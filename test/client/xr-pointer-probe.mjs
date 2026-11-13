@@ -49,7 +49,7 @@ try {
 
   // ---- in-page helpers ----------------------------------------------------------------------------------------------
   await ev(pg, async () => {
-    const xr = await import('./lib/xr/xr.js'), pc = await import('./lib/platecard.js'), dq = await import('./lib/xr/domquad.js'), xp = await import('./lib/xr/xrpointer.js');
+    const xr = await import('./lib/xr/xr.js'), pc = await import('./lib/avatar/platecard.js'), dq = await import('./lib/xr/domquad.js'), xp = await import('./lib/xr/xrpointer.js');
     const T = EW.THREE, dev = window.__iwerDevice;
     const H = globalThis.__h = { xr, pc, dq, xp, T, R: {}, clicks: 0 };
     H.frames = (n) => new Promise((res) => { const f0 = globalThis.__perf.frameNo; const t0 = performance.now();

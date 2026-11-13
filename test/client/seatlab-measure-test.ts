@@ -18,7 +18,7 @@ plugin({ name: "seatlab-lib", setup(b) {
         export const bagOf = (id) => S.bags.get(id) ?? null; export const mountTransform = () => null;
         export const socketWorldPos = (id, out) => out.set(0, 0.5, 0);
         export const seatSocket = (id) => { const c = S.bags.get(id); return c?.socket ? { id, host: c.parent.to, name: c.socket.name, sock: c.socket, station: c.station ?? null } : null; };`,
-      "/lib/avatar.js": "export const makeAvatar = () => null;",
+      "/lib/avatar/avatar.js": "export const makeAvatar = () => null;",
       "/shared/seatcore.js": `export * from ${JSON.stringify(path.join(ROOT, "shared/seatcore.js"))};`,
       "/lib/assets.js": "export const vrmaShaLoaded = () => null;",
     };

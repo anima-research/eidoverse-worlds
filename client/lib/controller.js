@@ -17,7 +17,7 @@ import { surfaceOffset } from '../../shared/waves.js';
 import { floatStep, footprintSurface } from '../../shared/buoyancy.js';
 import { chat } from './chat.js';
 import { isOverlayOpen, flashHint, html } from './ui.js';
-import { selectClip, AIRBORNE_GRACE } from './locomotion_clip.js';
+import { selectClip, AIRBORNE_GRACE } from './avatar/locomotion_clip.js';
 import { bodyModeOf } from '../../shared/bodymode.js';
 // the 3D swim: under a water level, and in authored water volumes
 import { waterAt as volumeAt, waterTime, levelAt, speedAt } from './realize/watervolumes.js';
@@ -25,7 +25,7 @@ import { swimStep, waveHeight } from '../../shared/water.js';
 import { register as registerAction } from './actions.js';
 import {
   resolveFirstPersonAnchor, FP_FORWARD, FP_EYE_LIFT, FP_GAZE_AHEAD, FP_GAZE_DROP,
-} from './fp_view.js';
+} from './avatar/fp_view.js';
 
 // ---------------------------------------------------------------- flight
 // The same integrator an agent flies (shared/flight.js). Off by default: F toggles it, only when the world grants

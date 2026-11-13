@@ -1,13 +1,13 @@
 // bun test/client/body-runtime-test.ts — a body that brings its own runtime (§24 avatar defs: `runtime`): the def contract
-// (shared/avatardefs.js), the frame order the avatar runs it in (client/lib/bodyruntime_core.js), and — when a library
+// (shared/avatardefs.js), the frame order the avatar runs it in (client/lib/avatar/bodyruntime_core.js), and — when a library
 // is at hand (EIDOVERSE_DIR) — that the module claude_robot's def names exports what that order calls.
 // BODY_RUNTIME_TEETH=1 checks the order against a scrambled expectation: it must FAIL, or the order check proves nothing.
 import { readFileSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { validateAvatarDef, validateBodyRuntime } from "../../shared/avatardefs.js";
-import { makeBodyRuntime, writeAll, defForBody } from "../../client/lib/bodyruntime_core.js";
-import { bodyRuntimeFor } from "../../client/lib/bodyruntime.js";
+import { makeBodyRuntime, writeAll, defForBody } from "../../client/lib/avatar/bodyruntime_core.js";
+import { bodyRuntimeFor } from "../../client/lib/avatar/bodyruntime.js";
 import { suite } from "../gate/suite.ts";
 const { check, na, done } = suite("body-runtime");
 const ROOT = join(import.meta.dir, "..", "..");
@@ -111,19 +111,19 @@ check("a body with no def has no runtime", defForBody(avatars, "eidoverse/assets
 // 5. the reviewed built-in loader and exact vendored runtime
 const loaded = await bodyRuntimeFor("eidoverse/assets/vrms/claude_robot.vrm", () => {},
   { name: "claude_robot", def: { runtime: good } });
-const loaderSrc = readFileSync(join(ROOT, "client/lib/bodyruntime.js"), "utf8");
+const loaderSrc = readFileSync(join(ROOT, "client/lib/avatar/bodyruntime.js"), "utf8");
 check("production has no query-string bypass for authored body constraints",
   !loaderSrc.includes("bodyruntime=0") && !loaderSrc.includes("bodyruntime-skip") && !loaderSrc.includes("searchParams.get(\"bodyruntime"));
 check("the closed loader returns the reviewed runtime kind", loaded?.kind === good.kind);
-const m = await import("../../client/lib/bodyruntimes/claude_robot_dof.js");
+const m = await import("../../client/lib/avatar/bodyruntimes/claude_robot_dof.js");
 const missing = WANT.filter((n) => typeof m[n] !== "function");
 check("the built-in Claude runtime exports every step of the order", missing.length === 0, missing);
 check("the built-in Claude runtime exports LEG_JOINTS", Array.isArray(m.LEG_JOINTS) && m.LEG_JOINTS.length > 0);
-const j = await import("../../client/lib/bodyruntimes/claude_robot_joints.js");
+const j = await import("../../client/lib/avatar/bodyruntimes/claude_robot_joints.js");
 check("the built-in joints data has hinges", !!j.default?.hinges);
 
 // 6. product-door ownership: the pure core is not enough if Avatar never calls it.
-const avsrc = readFileSync(join(ROOT, "client/lib/avatar.js"), "utf8");
+const avsrc = readFileSync(join(ROOT, "client/lib/avatar/avatar.js"), "utf8");
 const at = (...needles: string[]) => needles.map((n) => avsrc.indexOf(n));
 const [mix, after, reach, before, vu] = at("this.mixer.update(dt)", "this.bodyRuntime.afterMixer", "BC('av:reach')", "this.bodyRuntime.beforeVrmUpdate", "this.vrm.update(dt)");
 check("Avatar runs the runtime after mixer and after reach, before vrm.update",

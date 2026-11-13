@@ -58,7 +58,7 @@ try {
 
   // in-page helpers: frames, the head, the hands, controller aiming (one calibration per hand: ray world = R · pose)
   await ev(pg, async () => {
-    const xr = await import('./lib/xr/xr.js'), pc = await import('./lib/platecard.js'), dq = await import('./lib/xr/domquad.js');
+    const xr = await import('./lib/xr/xr.js'), pc = await import('./lib/avatar/platecard.js'), dq = await import('./lib/xr/domquad.js');
     const T = EW.THREE, dev = window.__iwerDevice;
     const H = globalThis.__h = { xr, pc, dq, T, R: {} };
     H.frames = (n) => new Promise((res) => { const f0 = globalThis.__perf.frameNo; const t0 = performance.now();

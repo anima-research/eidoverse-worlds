@@ -12,7 +12,7 @@ import { plugin } from 'bun';
 import { stubResolve } from '../harness/stub.ts';
 const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({ name: 'settings-stubs', setup(b) {
-  for (const m of ['core', 'base', 'governor', 'lightrig', 'materials', '(xr/)?xrpanels', 'net', 'edit/catalog', 'avatar', 'controller', '(audio/)?mictoggle'])
+  for (const m of ['core', 'base', 'governor', 'lightrig', 'materials', '(xr/)?xrpanels', 'net', 'edit/catalog', '(avatar/)?avatar', 'controller', '(audio/)?mictoggle'])
     stubResolve(b, new RegExp(`^\\./${m}\\.js$`), () => ({ path: here('../stubs/settings-panels-stub.mjs') }));
   // vegetation/foliage.js asks for core one folder up
   stubResolve(b, /^\.\.\/core\.js$/, (a) => (/\/vegetation\/foliage\.js$/.test(a.importer.replace(/\\/g, '/')) ? { path: here('../stubs/settings-panels-stub.mjs') } : undefined));

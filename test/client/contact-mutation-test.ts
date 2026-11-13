@@ -1,8 +1,8 @@
 import {join} from 'node:path';
 const cases=[
- {name:'browser uses insertion order',file:'client/lib/avatar.js',from:'for (const { limb: key, reach: r } of plan.order)',to:'for (const { limb: key, reach: r } of [...this._reach].map(([limb, reach]) => ({ limb, reach })))',test:'reach-order-test.ts',witness:'follower-first: target is the producer'},
- {name:'cyclic release cannot retire',file:'client/lib/avatar.js',from:'if (r.wantWeight === 0 && r.weight < 0.02) {',to:"if (r.wantWeight === 0 && r.weight < 0.02 && !r.bound.includes('cyclic-reach')) {",test:'reach-order-test.ts',witness:'cycle: release removes private entry and unblocks survivor'},
- {name:'retarget loses previous bone writes',file:'client/lib/avatar.js',from:'_nu: prev?._nu, _nl: prev?._nl, _nh: prev?._nh,',to:'',test:'reach-order-test.ts',witness:'cyclic retarget restores the paused clip base'},
+ {name:'browser uses insertion order',file:'client/lib/avatar/avatar.js',from:'for (const { limb: key, reach: r } of plan.order)',to:'for (const { limb: key, reach: r } of [...this._reach].map(([limb, reach]) => ({ limb, reach })))',test:'reach-order-test.ts',witness:'follower-first: target is the producer'},
+ {name:'cyclic release cannot retire',file:'client/lib/avatar/avatar.js',from:'if (r.wantWeight === 0 && r.weight < 0.02) {',to:"if (r.wantWeight === 0 && r.weight < 0.02 && !r.bound.includes('cyclic-reach')) {",test:'reach-order-test.ts',witness:'cycle: release removes private entry and unblocks survivor'},
+ {name:'retarget loses previous bone writes',file:'client/lib/avatar/avatar.js',from:'_nu: prev?._nu, _nl: prev?._nl, _nh: prev?._nh,',to:'',test:'reach-order-test.ts',witness:'cyclic retarget restores the paused clip base'},
  {name:'elbow loses physical incumbent',file:'shared/reach.js',from:'if (Number.isFinite(o.lastGap) &&',to:'if (false &&',test:'../shared/reach-continuity-test.ts',witness:'lateral bend basis crossing'},
  {name:'palm loses continuity',file:'shared/reach.js',from:'if (Number.isFinite(o.lastTwist)) {',to:'if (false) {',test:'../shared/reach-continuity-test.ts',witness:'palm antipode'},
  {name:'wrist loses rate bound',file:'shared/reach.js',from:'if (o.lastWrist && Number.isFinite(o.dt)) handLocal',to:'if (false) handLocal',test:'../shared/reach-continuity-test.ts',witness:'wrist orientation changes stay bounded'},

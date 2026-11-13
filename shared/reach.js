@@ -1,7 +1,7 @@
 // reach — two-bone inverse kinematics, closed-form (every client solves the same arm), bounded by the ragdoll's joint
 // limits (shared/joints.js). The § references below are to docs/research/two-bone-reach.md.
 //
-// Pure: arrays of numbers in and out; the caller (client/lib/reachbone.js) measures the skeleton and writes the answer
+// Pure: arrays of numbers in and out; the caller (client/lib/avatar/reachbone.js) measures the skeleton and writes the answer
 // back onto bones.
 
 import { qMul as qMulq, qConj, qRotate as qRot, qAxisAngle } from './rot.js';

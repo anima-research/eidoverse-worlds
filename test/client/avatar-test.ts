@@ -30,7 +30,7 @@ plugin({
 });
 
 const { THREE } = await import('../stubs/core-stub.mjs');
-const { Avatar, BLINK } = await import('../../client/lib/avatar.js');
+const { Avatar, BLINK } = await import('../../client/lib/avatar/avatar.js');
 const { DRIVEN_BONES } = await import('../../client/lib/ragdoll/ragdoll.js');
 
 let pass = 0, fail = 0;
@@ -554,7 +554,7 @@ console.log('\nwings:');
 {
   // Sweep a whole cycle and record where each tip goes.
   const { self, tipY, tipPos } = wingStand();
-  const { WING_IDLE } = await import('../../client/lib/avatar.js');
+  const { WING_IDLE } = await import('../../client/lib/avatar/avatar.js');
   const dt = 1 / 120;
   const frames = Math.round(1 / (WING_IDLE.hz * dt));      // one full flap
   const track: Record<string, number[]> = {};
@@ -626,7 +626,7 @@ console.log('\nwings:');
   // Rotating about the forward axis alone confines every tip to the frontal
   // plane — "rotating on the X-Z plane", as Janus put it — and that reads as a
   // hinge. Three things have to hold, and a silent no-op passes none of them.
-  const { WING_IDLE } = await import('../../client/lib/avatar.js');
+  const { WING_IDLE } = await import('../../client/lib/avatar/avatar.js');
   const { self, tipPos } = wingStand();
   const dt = 1 / 120;
   const frames = Math.round(1 / (WING_IDLE.hz * dt));
@@ -667,7 +667,7 @@ console.log('\nwings:');
   // this prevents is a wing that winds slowly around its own axis over an hour
   // and is invisible for the first ten minutes.
   const { self, nodes } = wingStand();
-  const { WING_IDLE } = await import('../../client/lib/avatar.js');
+  const { WING_IDLE } = await import('../../client/lib/avatar/avatar.js');
   // dt chosen so a cycle is a WHOLE number of frames. With a round dt the last
   // frame of each cycle lands short, and 300 cycles of that rounding is a
   // quarter turn of phase — which the first version of this test dutifully
@@ -783,7 +783,7 @@ console.log('\nwings:');
   // toward a rest direction that rotates WITH the body — so on a body lying on
   // its side the hair is pulled sideways and gravity cannot argue.
   {
-    const { LIMP_SPRINGS } = await import('../../client/lib/avatar.js');
+    const { LIMP_SPRINGS } = await import('../../client/lib/avatar/avatar.js');
     const hips = { name: 'Hip' };
     const joint: any = {
       settings: { stiffness: 1.0, gravityPower: 0.02 }, _center: hips,
@@ -913,7 +913,7 @@ console.log('\neased crossfade, interrupted (pre-review B2):');
 
 console.log('\nthe capsule stand-in can be measured and reached (round 2 N1):');
 {
-  const { makeCapsuleVrm } = await import('../../client/lib/capsulebody.js');
+  const { makeCapsuleVrm } = await import('../../client/lib/avatar/capsulebody.js');
   const v: any = makeCapsuleVrm(); v.scene.updateMatrixWorld(true);
   const self: any = { vrm: v, root: v.scene, _reach: new Map(), _limp: false };
   for (const m of ['setReach', '_measureChain', 'clearReach', 'reachStatus', 'restBonePositions', '_humanoidBones', '_resolveBones']) self[m] = (Avatar.prototype as any)[m];

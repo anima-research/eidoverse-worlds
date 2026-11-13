@@ -1,5 +1,5 @@
 import { CLIP_FILES, CLIP_SLOTS, SEAT_CLIP_FILE } from '../shared/clipdefs.js';
-import { parsePoseAnimation, retargetPoseAnimation } from '../client/lib/poseclips.js';
+import { parsePoseAnimation, retargetPoseAnimation } from '../client/lib/avatar/poseclips.js';
 
 export class PoseClips {
   private roster: Promise<Map<string, string>> | null = null;

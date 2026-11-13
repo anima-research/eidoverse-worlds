@@ -27,7 +27,7 @@ globalThis.fetch = (() => new Promise(() => {})) as any;   // avatar.js's gestur
 
 const stub: any = await import('../stubs/posture-tiles-stub.mjs');
 const ctl: any = await import('../../client/lib/controller.js');
-const { Avatar } = await import('../../client/lib/avatar.js');
+const { Avatar } = await import('../../client/lib/avatar/avatar.js');
 const { THREE, canvas } = stub;
 
 const S = suite("firstperson-plate");

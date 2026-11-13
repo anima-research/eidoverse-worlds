@@ -2,40 +2,40 @@
 // the small autonomic behaviours that make a puppet read as present (gaze,
 // blink, head pitch, mouth movement while speaking).
 
-import { renderAside } from './render.js';
-import { THREE, scene, camera, renderer, backendName } from './core.js';
+import { renderAside } from '../render.js';
+import { THREE, scene, camera, renderer, backendName } from '../core.js';
 import { makeCapsuleVrm } from './capsulebody.js';
 import { FADE_PRESS } from './locomotion_clip.js';   // one owner for the jump-press fade (see _setAction)
-import { report, angleDelta, bus, tee } from './base.js';
-import { swimPose } from '../../shared/swimpose.js';
-import { defsRegistry } from './defs.js';
+import { report, angleDelta, bus, tee } from '../base.js';
+import { swimPose } from '../../../shared/swimpose.js';
+import { defsRegistry } from '../defs.js';
 import { bodyRuntimeFor, bodyDefFor, capEmissive } from './bodyruntime.js';
 import { measureChain, solveChain } from './reachbone.js';
-import { REACH_CHAINS } from '../../shared/joints.js';
+import { REACH_CHAINS } from '../../../shared/joints.js';
 // a body that glows also casts: light requests, never lights (lightrig owns the topology)
-import { attachLamps, releaseOwner, updateRequest, glowScale } from './lightrig.js';
-import { setBodyShadows } from './materials.js';
-import { BREATH } from '../../shared/breath.js';
+import { attachLamps, releaseOwner, updateRequest, glowScale } from '../lightrig.js';
+import { setBodyShadows } from '../materials.js';
+import { BREATH } from '../../../shared/breath.js';
 import {
   loadVRM, clipFor, vrmaBytes, loadTrack, loadDone,
   CLIP_SLOTS, CLIP_SPEED, releaseVRM, vrmWarmed, markVrmWarmed,
-} from './assets.js';
-import { beginWork, enqueue, idleYield, nextFrame, loadNote } from './loadwork.js';
-import { warm, P_GATE } from './warmqueue.js';
-import { heightAt } from './terrain.js';
-import { surfaceUnder } from './colliders.js';
-import { DRIVEN_BONES } from './ragdoll/ragdoll.js';
-import { stroke as strokeIcon } from './icons.js';
+} from '../assets.js';
+import { beginWork, enqueue, idleYield, nextFrame, loadNote } from '../loadwork.js';
+import { warm, P_GATE } from '../warmqueue.js';
+import { heightAt } from '../terrain.js';
+import { surfaceUnder } from '../colliders.js';
+import { DRIVEN_BONES } from '../ragdoll/ragdoll.js';
+import { stroke as strokeIcon } from '../icons.js';
 import { plateSize, plateClear, ownClearance, reachAbove, plateBox, CLEAR_MIN, PLATE_W } from './platesize.js';
 import { revealLevel } from './namereveal.js';
 import { crownEstimate, plateGap, plateAnchor, plateOffset, plateViewLift, STAND_SLOTS, DEAD as PLATE_DEAD } from './plateanchor.js';
-import { clampBodyScale, clampPlateY, plateLift, clipRate } from '../../shared/bodyscale.js';
+import { clampBodyScale, clampPlateY, plateLift, clipRate } from '../../../shared/bodyscale.js';
 import { Fn, userData, positionView, cameraNear, cameraFar, min, viewZToPerspectiveDepth, viewZToReversedPerspectiveDepth,
   viewZToOrthographicDepth } from 'three/tsl';
-import { SEAT_CLIP_FILE } from '../../shared/seatcore.js';
-import { planReaches } from '../../shared/reachorder.js';
-import { poseChannels } from '../../shared/humanoid.js';
-import { swimTargets, SWIM_CLIPS } from '../../shared/swimpose.js';
+import { SEAT_CLIP_FILE } from '../../../shared/seatcore.js';
+import { planReaches } from '../../../shared/reachorder.js';
+import { poseChannels } from '../../../shared/humanoid.js';
+import { swimTargets, SWIM_CLIPS } from '../../../shared/swimpose.js';
 
 // Blink and eye dials, for a rig whose lids are bones and exports no limit of its own (_findLids).
 export const BLINK = {
@@ -124,7 +124,7 @@ const CLIP_FALLBACK = {
 };
 
 // the gesture vocabulary (animnames.js), re-exported; imported first because playOnce reads ANIM_CLIPS
-import { ANIM_CLIPS, ANIM_ORDER, ANIM_ICONS, hydrateAnimNames } from './animnames.js';
+import { ANIM_CLIPS, ANIM_ORDER, ANIM_ICONS, hydrateAnimNames } from '../animnames.js';
 export { ANIM_CLIPS, ANIM_ORDER, ANIM_ICONS, hydrateAnimNames };
 // seated postures differ by what you sit on: the ground clip on a chair leaves you cross-legged in mid-air
 const SEAT_CLIPS = { ground: 'sitting_on_ground', chair: SEAT_CLIP_FILE };
@@ -2124,7 +2124,7 @@ async function stampAvatarPerf(name, vrm, token, path) {
   if (!v || !vrm?.scene) return;
   const key = `ew-perf1-${name}-${v}`;
   if (localStorage.getItem(key)) return;
-  const { statsOf } = await import('./perfscope.js');
+  const { statsOf } = await import('../perfscope.js');
   const s = statsOf(vrm.scene, name);
   const q = new URLSearchParams({ name, v, perf: JSON.stringify({ tris: s.tris, draws: s.draws, mats: s.mats, alpha: s.alpha, bones: s.bones, texMB: s.texMB }) });
   const r = await fetch(`/thumb?${q}`, { method: 'POST', headers: thumbAuth(token) });

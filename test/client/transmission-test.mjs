@@ -80,7 +80,7 @@ const { prepareObject } = await import('../../client/lib/materials.js');
 // `./core.js` on a cold module cache without the plugin's substitution --
 // ENOENT on a `file:` path -- so whether the suite ran at all depended on
 // import order. Everything the suite touches is loaded here, once.
-const { Avatar } = await import('../../client/lib/avatar.js');
+const { Avatar } = await import('../../client/lib/avatar/avatar.js');
 const { requestLight, releaseOwner, updateRequest, rigDebug, updateRig }
   = await import('../../client/lib/lightrig.js');
 
@@ -185,7 +185,7 @@ console.log('\nAUTHORED ZERO -- ?? not ||');
   // A lamp material authored at emissiveIntensity 0 (starts dark) must not be
   // "restored" to 1. `|| 1` did exactly that, and the pooled material then
   // came back brighter than it was written.
-  const av = readFileSync(`${HERE}/../../client/lib/avatar.js`, 'utf8');
+  const av = readFileSync(`${HERE}/../../client/lib/avatar/avatar.js`, 'utf8');
   check('the lamp base uses ?? so an authored zero survives',
         /base: m\.emissiveIntensity \?\? 1/.test(av) &&
         !/base: m\.emissiveIntensity \|\| 1/.test(av));

@@ -30,7 +30,7 @@ import { setPttHeld } from '../audio/micstate.js';
 import { pttMode } from '../audio/voiceconsent.js';
 import './xrmicicon.js';   // the mic icon in view while presenting
 import { markActive } from '../presence.js';
-import { platePick, aimPlate, platePress } from '../platecard.js';   // a laser resting on a nameplate opens its card
+import { platePick, aimPlate, platePress } from '../avatar/platecard.js';   // a laser resting on a nameplate opens its card
 import { makeDwell } from '../dwell.js';
 import { showXRTip, hideXRTip, dropXRTip, tipTextFor } from './xrtip.js';
 import { POINTER_VIS_DEFAULT, pointerVisible, dotVisible, looksAtWorld, interactable, smoothPose, stickStep, angleTo, rayMatrixTo } from './xrpointer.js';   // the laser's policy

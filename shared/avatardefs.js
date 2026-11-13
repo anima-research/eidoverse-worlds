@@ -43,7 +43,7 @@ export function validateAvatarDef(name, def) {
   return errs;
 }
 
-/** The kinds of body runtime the client knows how to drive (client/lib/bodyruntime_core.js). */
+/** The kinds of body runtime the client knows how to drive (client/lib/avatar/bodyruntime_core.js). */
 export const BODY_RUNTIME_KINDS = ['claude-robot-dof'];
 
 /** A body may select one reviewed runtime BUILT INTO this Worlds client.

@@ -343,7 +343,7 @@ let skipped = null; const SKIP = Symbol("skip");
     vs = ws; if (!msgs.some((m) => m.type === "snapshot")) console.log("  (debug) Vic join:", JSON.stringify(msgs).slice(0, 400));
     const vicPose = () => ws.send(JSON.stringify({ type: "pose", pose: { p: [0, 0, 0], yaw: 0, speed: 0, clip: "idle" } }));
     vicPose();
-    // the agent pulls client/lib/poseclips.js, whose @pixiv/three-vrm-animation not every checkout's node_modules has: then this
+    // the agent pulls client/lib/avatar/poseclips.js, whose @pixiv/three-vrm-animation not every checkout's node_modules has: then this
     // part says SKIP (counted in the tail line, never as a pass); NODE_PATH=<a node_modules that has it> runs it
     let WorldAgent, HANDLERS;
     try { ({ WorldAgent } = await import("../../mcpl/agent.ts")); ({ HANDLERS } = await import("../../mcpl/tools.ts")); }

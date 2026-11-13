@@ -10,7 +10,7 @@ import { helloOf } from "../../shared/protocol/hello.js";
 //
 // What this pins:
 //   - every receiver in the world gets the sender's mic/hear, at any distance (the browser shows it only in the hover
-//     card, client/lib/platecard.js — a DISPLAY choice, not a scope on the data) — peer, spectator and agent alike;
+//     card, client/lib/avatar/platecard.js — a DISPLAY choice, not a scope on the data) — peer, spectator and agent alike;
 //   - latest wins: a toggle reaches everyone on the next frame;
 //   - a non-boolean is dropped at the fence, field by field, and the rest of the pose still travels;
 //   - a sender that says nothing (an older client) is UNKNOWN to receivers: no key, never a default "false";

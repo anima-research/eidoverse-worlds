@@ -9,7 +9,7 @@ import { localOf, kindHint } from '../../shared/hierarchy.js';
 import { scratchWorld } from '../harness/scratchworld.ts';
 import * as OP from '../../shared/requests.js';
 import { checkStation, evalPose, choosePose, mayLeave, reachWins, describeBody, NEAR_M, resolveSeat, socketsIn } from '../../shared/sockbody.js';
-import { socketSignals, cycleOf, travelOf } from '../../client/lib/socksignals.js';
+import { socketSignals, cycleOf, travelOf } from '../../client/lib/avatar/socksignals.js';
 import { opsOf } from '../../shared/protocol/fold.js';
 import { worldPose } from '../../shared/protocol/simlayer.js';
 

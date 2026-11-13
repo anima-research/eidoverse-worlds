@@ -9,7 +9,7 @@
 // and nothing hid the resident's own mesh — the comment said "their body is
 // never in frame" and the code did not make it true.
 //
-// client/lib/fp_view.js now owns the answer. These checks pin its contract:
+// client/lib/avatar/fp_view.js now owns the answer. These checks pin its contract:
 // live-anchor eye (head bone, bounds fallback), socket-yaw gaze, own-body
 // exclusion scoped strictly to the render (restored even on throw), and a
 // legible failure for rigs offering no anchor.
@@ -20,7 +20,7 @@
 // receipt (in #75's history), where main's mounted first-person cannot
 // see a marker the branch sees. (Sky-contract review N2 case law.)
 
-import * as fp from "../../client/lib/fp_view.js";
+import * as fp from "../../client/lib/avatar/fp_view.js";
 import { suite } from "../gate/suite.ts";
 
 const S = suite("fp-view");

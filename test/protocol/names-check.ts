@@ -63,7 +63,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["no presence migration at load", "shared/protocol/authority/storage.js", "if (migratePresence(w.presence)) w.presenceDirty = true;", "", ["C5"]],
   ["/worlds sorts by kind", "server/routes.ts", "people: present.map((c) => ({ id: c.id, ...(c.declares ? { declares: c.declares } : {}) })),", "people: present.filter((c) => c.declares !== \"agent\").map((c) => c.id), agents: present.filter((c) => c.declares === \"agent\").map((c) => c.id),", ["W1"]],
   ["the tool says (agent)", "mcpl/tools.ts", "p.declares ? `${p.id} (${p.declares})` : p.id", "p.declares === \"agent\" ? `${p.id} (agent)` : p.id", ["W2"]],
-  ["the plate says agent", "client/lib/platecard.js", "const where = [typeof r.declares === 'string' && r.declares ? r.declares : null,", "const where = [r.agent ? 'agent' : null,", ["W3"]],
+  ["the plate says agent", "client/lib/avatar/platecard.js", "const where = [typeof r.declares === 'string' && r.declares ? r.declares : null,", "const where = [r.agent ? 'agent' : null,", ["W3"]],
   ["the description note sets agents against people", "shared/sound.js", "anyone who can\\'t hear it (or reads the world as text)", "agents and people who can\\'t hear it", ["W4"]],
   ["the agent's seat again", "mcpl/agent.ts", "mayVacate(kind: \"move\"", "mayLeaveSeat(kind: \"move\"", ["O1"]],
   ["socketRole says seat", "shared/sockbody.js", "!isRedacted(c.station) ? 'station' :", "!isRedacted(c.station) ? 'seat' :", ["O2"]],
@@ -122,7 +122,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a remote reads only today's key", "client/lib/remotes.js", "  const once = onceAnimOf(s);\n  if (once && once !== r.lastAnim) {", "  const once = s.anim;\n  if (once && once !== r.lastAnim) {", ["E1"]],
   ["the registry keeps the old key", "server/defs.ts", "    actionbar: loadSidecar(", `    ${EM}s: loadSidecar(`, ["E2", "E3"]],
   ["the slash command keeps the old name", "client/lib/commands/registry.js", "{ name: 'anim', help: '/anim <name>", `{ name: '${EM}', help: '/${EM} <name>`, ["E2", "E3"]],
-  ["a comment says the old word", "client/lib/avatar.js", "async playOnce(name) {", `async playOnce(name) {   // an ${EM}`, ["E3"]],
+  ["a comment says the old word", "client/lib/avatar/avatar.js", "async playOnce(name) {", `async playOnce(name) {   // an ${EM}`, ["E3"]],
   ["the spec says the old word", "spec/PROTOCOL.md", "poses, gestures (`pose.anim`), reach descriptors", `poses, ${EM}s, reach descriptors`, ["E3"]],
   ["the registry says bob", "shared/protocol/componentspec.js", "enums: { type: [\"pendulum\", \"spin\", \"orbit\", \"oscillate\", \"path\"]", "enums: { type: [\"pendulum\", \"spin\", \"orbit\", \"bob\", \"path\"]", ["OS1"]],
   ["the card is still Bob", "shared/descriptors.js", "  Oscillate: { type: 'oscillate', show: ['axis', 'amp', 'period', 'phase'],", "  Bob: { type: 'oscillate', show: ['axis', 'amp', 'period', 'phase'],", ["OS1"]],
@@ -318,7 +318,7 @@ const cases: Case[] = [
       const t = readText("mcpl/tools.ts"); return { suffix: /\(agent\)`/.test(t), agentsRead: (t.match(/w\.agents/g) ?? []).length, tag: /p\.declares \? `\$\{p\.id\} \(\$\{p\.declares\}\)` : p\.id/.test(t) }; },
     good: (o) => !o.suffix && o.agentsRead === 2 && o.tag },
   { id: "W3", what: "…the browser keeps the declared word as said (no agent boolean) and its nameplate card and chat line show that word only", run() {
-      const net = readText("client/lib/net.js"), rem = readText("client/lib/remotes.js"), pc = readText("client/lib/platecard.js"), ch = readText("client/lib/chat.js"), ix = readText("client/index.html");
+      const net = readText("client/lib/net.js"), rem = readText("client/lib/remotes.js"), pc = readText("client/lib/avatar/platecard.js"), ch = readText("client/lib/chat.js"), ix = readText("client/index.html");
       return { net: (net.match(/declares: (msg|p)\.declares \?\? null/g) ?? []).length, rem: /declares: meta\.declares \?\? null/.test(rem) && !/agent: !!meta\.agent/.test(rem),
         pc: /r\.declares : null/.test(pc) && !/r\.agent \? 'agent'/.test(pc), ch: /w\.dataset\.declares = declared/.test(ch) && !/\?\.agent\)/.test(ch), css: /\.who\[data-declares\]::after/.test(ix) && !/\.line\.agent/.test(ix) }; },
     good: (o) => o.net === 2 && o.rem && o.pc && o.ch && o.css },
@@ -330,7 +330,7 @@ const cases: Case[] = [
   { id: "O1", what: "(R 14:41) the agent and the client speak the occupy family: no seatOf/seatName/mySeat/mayLeaveSeat/mySeatBody in agent.ts, no setSeatHook/inSitReach anywhere, seats.js/seatedit.js/seatbody.js renamed", run() {
       const ag = readText("mcpl/agent.ts"), tl = readText("mcpl/tools.ts"), ctl = readText("client/lib/controller.js"), sk = readText("shared/sockbody.js"), cu = readText("client/lib/clickuse.js");
       return { ag: /\b(seatOf|seatName|mySeat|mayLeaveSeat|mySeatBody)\b/.test(ag + tl), hooks: /\bsetSeatHook\b/.test(ctl) || /\binSitReach\b/.test(sk) || /\bseatOf\b/.test(cu),
-        files: ["client/lib/seats.js", "client/lib/seatedit.js", "client/lib/seatbody.js"].filter(exists), now: ["client/lib/occupants.js", "client/lib/edit/socketedit.js", "client/lib/occupybody.js"].every(exists) }; },
+        files: ["client/lib/seats.js", "client/lib/seatedit.js", "client/lib/seatbody.js"].filter(exists), now: ["client/lib/occupants.js", "client/lib/edit/socketedit.js", "client/lib/avatar/occupybody.js"].every(exists) }; },
     good: (o) => !o.ag && !o.hooks && !o.files.length && o.now },
   { id: "O2", what: "…a socket with a station is a `station` (socketRole): inspect lists a host's sockets as station | snap | attach", run(s) {
       s.call("olive", "create-world", { title: s.name });
@@ -588,7 +588,7 @@ const cases: Case[] = [
       return { a: a.refused ?? null, b: b.refused ?? null, c: show(c), drone: s.w().state().entities.drone?.c.motion ?? null }; },
     good: (o) => o.a?.code === "shape" && /got "bob"/.test(o.a.reason) && o.b?.code === "shape" && o.c === "ok" && o.drone?.type === "oscillate" && o.drone?.amp === 0.5 },
   { id: "OS4", what: "…the readers read the type as written (no world of this protocol stored bob; the v1 translation writes oscillate, import-v1/shapes.js motionType): a bob is no motion the closed form or the editor's channels know, and names.js maps nothing", async run() {
-      const ME: any = await import(TREE + "shared/motioneval.js"), SS: any = await import(TREE + "client/lib/socksignals.js"), ES: any = await import(TREE + "shared/editschema.js"), NM: any = await import(TREE + "shared/protocol/names.js");
+      const ME: any = await import(TREE + "shared/motioneval.js"), SS: any = await import(TREE + "client/lib/avatar/socksignals.js"), ES: any = await import(TREE + "shared/editschema.js"), NM: any = await import(TREE + "shared/protocol/names.js");
       const base = { pos: [1, 2, 3], yaw: 0 }, m = (type: string) => ({ type, axis: [0, 0, 1], amp: 0.5, period: 2, phase: 0.3, t0: 1000 });
       const now = ME.evalWholeMotion(base, m("oscillate"), 1700), old = ME.evalWholeMotion(base, m("bob"), 1700);
       const sch = ES.inspectSchema({ id: "d", model: "book", pos: [0, 0, 0], motion: m("bob") }, "d");

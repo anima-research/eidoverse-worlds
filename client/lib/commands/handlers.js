@@ -34,7 +34,7 @@ import { punt as puntThing, grab, put, drop, throwHeld } from '../thingphysics.j
 import { logChat } from '../chat.js';
 import { toggleHelp, flashHint } from '../ui.js';
 import { sceneAttach, sceneDetach } from '../scenegraph.js';
-import { ANIM_ORDER, ANIM_CLIPS } from '../avatar.js';
+import { ANIM_ORDER, ANIM_CLIPS } from '../avatar/avatar.js';
 import { setPushable, pushable } from '../consent.js';
 import { trySitOn } from '../localbody.js';
 import { getMe } from '../mybody.js';

@@ -50,7 +50,7 @@ export const WHO = BUILTIN_IDS;
 // a `who` may also name a world's custom role: the shape is roles.js's, existence the authority's (whoRank)
 const isWho = isWhoValue;   // a role id, {permission} or {roles}
 /** The closed set of signals a pose may blend by. Every client computes each one the same way: speed/turn/phase/swing
- *  from the thing's motion component (closed forms, client/lib/socksignals.js), throttle/steer/aimYaw/aimPitch from the
+ *  from the thing's motion component (closed forms, client/lib/avatar/socksignals.js), throttle/steer/aimYaw/aimPitch from the
  *  occupant's input (riding their presence), and param.<name> from the thing's `params` component (scripts write it). */
 export const SIGNALS = ['speed', 'turn', 'phase', 'swing', 'throttle', 'steer', 'aimYaw', 'aimPitch'];
 export const BODY_KEYS = ['action', 'anchor', 'pose', 'poses', 'sync', 'approach', 'enter', 'leave', 'exit', 'reach', 'hold', 'look', 'input', 'leaveBy', 'fromSeat', 'who'];

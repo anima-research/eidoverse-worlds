@@ -1,11 +1,11 @@
 // reachbone — the frame algebra from a world target to two bone rotations. Kept out of avatar.js so it loads
 // headless and tests against the shipped rigs; avatar.js keeps the bookkeeping (weight ramps, bone ownership).
 
-import { THREE } from './core.js';
+import { THREE } from '../core.js';
 import { solveTwoBone, solveTwoBoneClear, penetration, chainLocalQuats, orientPalm,
-         qConj, qMulq, qRot } from '../../shared/reach.js';
+         qConj, qMulq, qRot } from '../../../shared/reach.js';
 import { bodyFrame, limitsFor, coneAxisBody, toBody, fromBody, REACH_CHAINS,
-         torsoRadius, boneRadius, GUARD_SEGMENTS } from '../../shared/joints.js';
+         torsoRadius, boneRadius, GUARD_SEGMENTS } from '../../../shared/joints.js';
 import { torsoHalfDepth, derivePalmAnchor } from './landmarks.js';
 
 const _v = new THREE.Vector3();

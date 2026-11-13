@@ -7,7 +7,7 @@
 // the label, the action bar, the ragdoll, the XR arm solver (hand capsules land on the controllers) and the
 // pose wire without a single consumer learning a new case. Its proportions are the ones test/client/armsolve-test.ts
 // proves the solver on.
-import { THREE } from './core.js';
+import { THREE } from '../core.js';
 
 const BRAND = 0x8fe8c8;   // --brand; the same green as the ∃
 const H = 1.62;           // eye height ≈ 1.52: the puppet is sized like the default body so DeviceScale reads sane

@@ -11,9 +11,9 @@
 //   - measure in the REST pose, never the live one;
 //   - store the answer in the BONE's local space, so it follows the body for free.
 
-import { THREE } from './core.js';
-import { CONTACT_POINTS, contactSeed } from '../../shared/contact.js';
-import { bodyFrame, fromBody } from '../../shared/joints.js';
+import { THREE } from '../core.js';
+import { CONTACT_POINTS, contactSeed } from '../../../shared/contact.js';
+import { bodyFrame, fromBody } from '../../../shared/joints.js';
 
 const _v = new THREE.Vector3();
 const _q = new THREE.Quaternion();

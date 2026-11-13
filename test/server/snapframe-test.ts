@@ -5,7 +5,7 @@
 // Three layers, each of which could break without the others noticing:
 //   1. shared/snapframe.js — what survives normalisation (omitted, zero,
 //      junk, range limits, HTTP strings vs model arguments).
-//   2. client/lib/fp_view.js — composeFirstPerson's pitch: + looks up,
+//   2. client/lib/avatar/fp_view.js — composeFirstPerson's pitch: + looks up,
 //      − looks down, omitted keeps the old gaze exactly.
 //   3. the wire — a scratch sequencer, a plain-door agent calling the
 //      snapshot tool, an HTTP /snap, and ten fake renderer legs recording
@@ -15,7 +15,7 @@
 //      outcome's status and escaped [snap] line.
 
 import { normalizeSnapFrame, SNAP_DIST, SNAP_HEIGHT, SNAP_PITCH } from "../../shared/snapframe.js";
-import * as fp from "../../client/lib/fp_view.js";
+import * as fp from "../../client/lib/avatar/fp_view.js";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

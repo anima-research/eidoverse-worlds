@@ -9,7 +9,7 @@
 //   'release' { who, limb }                they let go
 
 import { bus } from './base.js';
-import { deriveLandmarks, landmarkWorld } from './landmarks.js';
+import { deriveLandmarks, landmarkWorld } from './avatar/landmarks.js';
 import {
   REACH_LIMBS, TOUCH_GAP, normalizeReachBag, normalizeReachTarget, sameReach,
   reachTargetsWho, diffReach,

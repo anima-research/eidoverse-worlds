@@ -1,5 +1,5 @@
 // Only a body with a LAMP in it casts and receives (client/lib/materials.js,
-// client/lib/avatar.js).
+// client/lib/avatar/avatar.js).
 //
 // Bodies briefly got real shadows for every avatar in the world. That is a
 // global rendering default flipped on shared client code, and the costs were

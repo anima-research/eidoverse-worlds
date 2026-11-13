@@ -70,7 +70,7 @@ for (const f of before) {
       if (ua && ub) s = s.replace(new RegExp(`(?<![\\w.-])(\\.?)${esc(ua)}(?![\\w-])`, "g"), (m, dot) => { counts.url++; touched.add(nf); return dot + ub; });
     }
     for (const [a, b] of dirMoves) s = s.replace(new RegExp(`(?<![\\w-])${esc(a)}/`, "g"), (m, i) => {
-      // a directory citation (client/lib/bodyruntimes/); a file under it was already rewritten above
+      // a directory citation (client/lib/avatar/bodyruntimes/); a file under it was already rewritten above
       if (s.startsWith(b + "/", i)) return m; counts.cite++; touched.add(nf); return b + "/";
     });
   }

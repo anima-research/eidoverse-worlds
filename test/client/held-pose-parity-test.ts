@@ -1,7 +1,7 @@
 // A held pose's rotation, translation and scale, read by the headless
 // stand-ins (body_state's reader, the reach solver, the ragdoll's start) and
 // drawn by the renderer, must put every joint in the same place. The renderer
-// side is client/lib/avatar.js transcribed (setPose, the hips step of its
+// side is client/lib/avatar/avatar.js transcribed (setPose, the hips step of its
 // update, vrm.update, _applyRawPose and _rawRest at full weight; the ragdoll's
 // start transcribes bakeHipsIntoRoot's drop), on a VRM loaded by three-vrm
 // exactly as the client loads it (assets.js records boneRest before anything
@@ -22,7 +22,7 @@ import * as THREE from "../../client/node_modules/three/build/three.module.js";
 import { GLTFLoader } from "../../client/node_modules/three/examples/jsm/loaders/GLTFLoader.js";
 import { VRMLoaderPlugin, VRMUtils } from "../../client/node_modules/@pixiv/three-vrm/lib/three-vrm.module.js";
 import { poseChannels } from "../../shared/humanoid.js";
-import { parsePoseAnimation, retargetPoseAnimation } from "../../client/lib/poseclips.js";
+import { parsePoseAnimation, retargetPoseAnimation } from "../../client/lib/avatar/poseclips.js";
 import { BodyStateReader } from "../../mcpl/body-state.ts";
 import { HeadlessBody, ReachBody } from "../../mcpl/physics.ts";
 import { fixture, postureFixture } from "../fixtures/body-fixture.ts";

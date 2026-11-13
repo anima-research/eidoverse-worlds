@@ -137,7 +137,7 @@ console.log('the maths:');
 
 console.log('the lift (plateanchor.js):');
 {
-  const { plateAnchor, crownEstimate } = await import('../../client/lib/plateanchor.js');
+  const { plateAnchor, crownEstimate } = await import('../../client/lib/avatar/plateanchor.js');
   const c: any = crownEstimate({ hips: 0.95, head: 1.5, eye: 1.58 });
   const rest = { ...c, restHeadAboveFeet: 1.42 };
   const stand = { hips: [0, 0.95, 0], head: [0, 1.5, 0], feetY: 0.08, rest, s: 1, gap: 0.08 };
@@ -156,7 +156,7 @@ console.log('the lift (plateanchor.js):');
 console.log('avatar.js:');
 {
   const { THREE } = await import('../stubs/core-stub.mjs');
-  const { Avatar, contributeThumbnail } = await import('../../client/lib/avatar.js');
+  const { Avatar, contributeThumbnail } = await import('../../client/lib/avatar/avatar.js');
   check('contributeThumbnail says when it skipped: false with no name (#225)', await fn({ contributeThumbnail }, 'contributeThumbnail')('', null) === false);
   check('…and false when the mint throws (no body to render)', await fn({ contributeThumbnail }, 'contributeThumbnail')('nobody', null, '', { force: true }) === false);
   const call = (o: any, m: string, ...a: any[]) => (typeof o[m] === 'function' ? o[m](...a) : undefined);
@@ -187,7 +187,7 @@ console.log('avatar.js:');
   call(self, 'setPuppetScale', 1);
   check('...and leaving VR (fit back to 1) keeps the size', near(scene.scale.y, 1.5), `${scene.scale.y}`);
   self._plateOff = null; call(self, '_placePlate', 1 / 60);
-  const { plateGap } = await import('../../client/lib/plateanchor.js');
+  const { plateGap } = await import('../../client/lib/avatar/plateanchor.js');
   check('150%: the plate hangs at crown × 1.5 + gap(height × 1.5)', near(self.label.position.y, crown * 1.5 + plateGap(height * 1.5), 1e-6), `${self.label.position.y} vs ${crown * 1.5 + plateGap(height * 1.5)}`);
   call(self, 'setPlateY', 0.3);
   self._plateOff = null; call(self, '_placePlate', 1 / 60);
@@ -216,7 +216,7 @@ console.log('avatar.js:');
     const atScale: number[] = [];
     for (const u of [1.1, 1.2, 1.3, 1.4, 1.5]) { call(b, 'setUserScale', u); atScale.push(placeAndMeasure()); }
     // the reference, computed here by brute force (every vertex, so it differs from the ≤4000 sample by under 1 mm here): each skinned into the root's frame, around the plate's column
-    const { reachAbove, ownClearance, CLEAR_MIN, CLEAR_MAX } = await import('../../client/lib/platesize.js');
+    const { reachAbove, ownClearance, CLEAR_MIN, CLEAR_MAX } = await import('../../client/lib/avatar/platesize.js');
     const brute = () => {
       const inv = new THREE.Matrix4().copy(b.root.matrixWorld).invert(), v = new THREE.Vector3(), xyz: number[] = [];
       b.vrm.scene.traverse((o: any) => { const pos = o.isMesh ? o.geometry?.attributes?.position : null; if (!pos) return;
@@ -266,7 +266,7 @@ console.log('remotes.js (the receiver):');
   if (!(globalThis as any).document) GlobalRegistrator.register();
   const stubs = await import('../stubs/remotes-stubs.mjs');
   const { mock } = await import('bun:test');
-  for (const m of ['core', 'assets', 'world', 'chat', 'fp_view', 'boot', 'ui', 'avatar', 'xr/xrbody']) mock.module(`${import.meta.dir}/../../client/lib/${m}.js`, () => stubs);
+  for (const m of ['core', 'assets', 'world', 'chat', 'avatar/fp_view', 'boot', 'ui', 'avatar/avatar', 'xr/xrbody']) mock.module(`${import.meta.dir}/../../client/lib/${m}.js`, () => stubs);
   const R: any = await import('../../client/lib/remotes.js');
   const got: any[] = [];
   const av = { setUserScale: (u: number) => got.push(['scale', u]), setPlateY: (y: number) => got.push(['plateY', y]) };

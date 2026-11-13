@@ -64,7 +64,7 @@ function loadSim(): Promise<typeof simMods> {
       const terrain = await import("../client/lib/terrain.js");
       const colliders = await import("../client/lib/colliders.js");
       // the reach solver's frame algebra, same adapter (test/client/reachlive-test.ts proves it runs headless)
-      const reachbone = await import("../client/lib/reachbone.js");
+      const reachbone = await import("../client/lib/avatar/reachbone.js");
       // Bullet (ammo), the browser's default engine (bodysim.js), so a drag release hands over to the same solver;
       // Verlet is the fallback.
       let Body: any = rag.Ragdoll;
@@ -596,7 +596,7 @@ export class HeadlessBody {
 // ---------------------------------------------------------------- reaching
 //
 // The same stand-in skeleton, driven by the reach solver (measureChain/solveChain) for "where is the target" and
-// "does my arm get there". Limitation: no mesh, so contact() uses client/lib/landmarks.js's FALLBACK rule (off the
+// "does my arm get there". Limitation: no mesh, so contact() uses client/lib/avatar/landmarks.js's FALLBACK rule (off the
 // bone along the approach direction), a few centimetres from a browser's raycast.
 
 /** A body the reach solver can pose and interrogate, per VRM. */

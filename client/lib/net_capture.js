@@ -5,7 +5,7 @@
 // result and never sends, so there is no import cycle and one file still owns the wire.
 import { THREE, camera } from './core.js';
 import { remotes } from './remotes.js';
-import { composeFirstPerson } from './fp_view.js';
+import { composeFirstPerson } from './avatar/fp_view.js';
 import { captureFrame, captureFrom } from './capture.js';
 import { entities } from './world.js';
 import { normalizeSnapFrame } from '../../shared/snapframe.js';

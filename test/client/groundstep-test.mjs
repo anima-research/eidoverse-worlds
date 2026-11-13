@@ -15,7 +15,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { groundStep, SNAP_SLACK } from '../../client/lib/groundstep.js';
-import { selectClip } from '../../client/lib/locomotion_clip.js';
+import { selectClip } from '../../client/lib/avatar/locomotion_clip.js';
 
 let fail = 0;
 const check = (id, ok, detail) => { console.log(`${ok ? 'PASS' : 'FAIL'} ${id} ${detail}`); if (!ok) fail++; };

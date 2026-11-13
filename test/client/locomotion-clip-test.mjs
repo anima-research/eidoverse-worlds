@@ -1,5 +1,5 @@
 // locomotion-clip-test: the clip-selection policy the controller ships (#196). Drives the REAL
-// client/lib/locomotion_clip.js (the module controller.js imports; test/client/wiring-check.ts checks that it calls it).
+// client/lib/avatar/locomotion_clip.js (the module controller.js imports; test/client/wiring-check.ts checks that it calls it).
 // Run: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/client/locomotion-clip-test.mjs
 // Each mutation of the PRODUCT must turn a named check red:
 //   selectClip: drop `wantMove &&`              → intent selection (walk→idle on release)
@@ -8,7 +8,7 @@
 //   selectClip: AIRBORNE_GRACE 0.04 → 0         → the stair-step guard
 //   selectClip: RUN_SPEED 2.6 → 99              → walk/run split
 //   controller.js: stop calling selectClip      → test/client/wiring-check.ts (#180: removing the real wiring must go red)
-import { selectClip, AIRBORNE_GRACE, RUN_SPEED, FADE_PRESS, FADE_WALKOFF } from '../../client/lib/locomotion_clip.js';
+import { selectClip, AIRBORNE_GRACE, RUN_SPEED, FADE_PRESS, FADE_WALKOFF } from '../../client/lib/avatar/locomotion_clip.js';
 
 let fail = 0, n = 0;
 const check = (name, cond) => { n++; if (cond) { console.log(`✓ ${name}`); } else { fail++; console.log(`✗ ${name}`); } };

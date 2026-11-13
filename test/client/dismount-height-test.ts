@@ -26,7 +26,7 @@ const STUBS: Record<string, string> = {
     export const mountTransform = (name, out) => { out.set(seatAt.p[0], seatAt.p[1], seatAt.p[2]); return { yaw: seatAt.yaw }; };
     export const socketWorldPos = () => null; export const setBodySeat = () => {}; export const seatSocket = () => socket; export const socketsOn = () => []; export const parentIdOf = () => null;
     globalThis.__dm.world = { avatarMounts, socket, entities };`,
-  occupybody: `export const driveOccupied = () => {}; export const releaseOccupied = () => {};`,
+  'avatar/occupybody': `export const driveOccupied = () => {}; export const releaseOccupied = () => {};`,
   remotes: `export const serverNow = () => Date.now();`,
   net: `export const sendRequest = async () => ({ ok: true }); export const sendAnim = () => {}; export const identities = new Map();`,
   plainwords: `export const plain = (x) => x; export const called = (x) => x; export const typeable = (x) => x;`,

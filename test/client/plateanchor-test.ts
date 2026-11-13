@@ -1,4 +1,4 @@
-// plateanchor — where a nameplate hangs (client/lib/plateanchor.js, the functions avatar.js calls; this drives those very
+// plateanchor — where a nameplate hangs (client/lib/avatar/plateanchor.js, the functions avatar.js calls; this drives those very
 // functions, then avatar.js's own _measurePlateRest/_placePlate/_measureOwnClear against a real THREE rig).
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/client/plateanchor-test.ts
@@ -31,7 +31,7 @@ plugin({
   },
 });
 
-const PA: any = await import('../../client/lib/plateanchor.js');
+const PA: any = await import('../../client/lib/avatar/plateanchor.js');
 const { crownEstimate, plateGap, plateAnchor, lieAmount, smoothY, TAU, DEAD } = PA;
 
 const S = suite("plateanchor");
@@ -207,7 +207,7 @@ console.log('seen from above (owner, 10-01: "offsets away from the avatar when s
 console.log('avatar.js:');
 {
   const { THREE } = await import('../stubs/core-stub.mjs');
-  const { Avatar } = await import('../../client/lib/avatar.js');
+  const { Avatar } = await import('../../client/lib/avatar/avatar.js');
   // a missing method is a no-op, so against the parent (a plate fixed at 1.95, set once) every check below reports
   // its own red instead of the section dying on the first call
   const call = (o: any, m: string, ...a: any[]) => (typeof o[m] === 'function' ? o[m](...a) : undefined);
@@ -380,11 +380,11 @@ console.log('avatar.js:');
 }
 
 // ============================================================ the plate's size, fade and reveal against world distance (from platesize-test)
-// client/lib/platesize.js, the function avatar.js calls every frame: world-sized up close, capitals held at TEXT_DEG, growth
+// client/lib/avatar/platesize.js, the function avatar.js calls every frame: world-sized up close, capitals held at TEXT_DEG, growth
 // capped at MAX_GROW, full to 20 m and gone by 30; held (k = 1) holds TEXT_DEG uncapped to 50/60 m; the own-body clearance.
 console.log('plate size:');
 {
-const PS: any = await import('../../client/lib/platesize.js');
+const PS: any = await import('../../client/lib/avatar/platesize.js');
 const { plateSize, PLATE_CAP_H, PLATE_W, TEXT_DEG, MAX_GROW } = PS as any;
 
 // the angle the name's capitals subtend at distance d, at the width the function chose

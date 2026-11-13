@@ -24,7 +24,7 @@ plugin({ name: 'core-stub', setup(b) { stubResolve(b, /^(\.\.?\/)+core\.js$/, ()
 
 const { THREE } = await import('../stubs/core-stub.mjs');
 const { rigs, libraryRigs, makeAvatar } = await import('../../tools/assets/rig-load.mjs');
-const { measureChain, solveChain } = await import('../../client/lib/reachbone.js');
+const { measureChain, solveChain } = await import('../../client/lib/avatar/reachbone.js');
 const { solveTwoBone, penetration } = await import('../../shared/reach.js');
 
 let failures = 0;

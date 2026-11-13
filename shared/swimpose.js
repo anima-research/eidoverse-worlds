@@ -1,5 +1,5 @@
 // swimpose — the procedural swim stroke and treading pose, one law for every reader: the browser draws it
-// (client/lib/avatar.js _swimLayer, blended in by weight over the idle clip) and the headless body reader
+// (client/lib/avatar/avatar.js _swimLayer, blended in by weight over the idle clip) and the headless body reader
 // evaluates it (mcpl/body-state.ts), so a swimmer's read joints are the drawn ones. No rig ships a swim
 // clip; the clips 'swim' and 'tread' name this pose.
 //

@@ -1,4 +1,4 @@
-// nameplate-card-probe — the hover card (and that nothing else is drawn beside a plate) (client/lib/platecard.js), in the REAL client against
+// nameplate-card-probe — the hover card (and that nothing else is drawn beside a plate) (client/lib/avatar/platecard.js), in the REAL client against
 // an owned scratch world (probe-harness), with fake peers that are plain sockets joined to the same world and
 // streaming pose packets — the wire every body uses, so `mic` / `hear` arrive exactly as a browser's would.
 // Clouds are forced OFF before boot (a cloudy sky bakes on the CPU in headless Chromium and has frozen the host).
@@ -149,7 +149,7 @@ try {
     && await pg.evaluate(() => !EW.remotes.get('nearmute')?.avatar?.ear), JSON.stringify(a));
   // THE SIZE: the plate's width is platesize.js's answer for the world distance this frame (the wiring, not the math)
   const size = await pg.evaluate(async () => {
-    const { plateSize } = await import('/lib/platesize.js');
+    const { plateSize } = await import('/lib/avatar/platesize.js');
     const av = EW.remotes.get('farmute')?.avatar, e = new EW.THREE.Vector3(); EW.camera.getWorldPosition(e);
     const d = av.root.position.distanceTo(e);
     return { d, lw: av.label.scale.x, want: plateSize(d).lw, op: av.label.material.opacity, wantOp: plateSize(d).vis };
@@ -263,7 +263,7 @@ try {
     }, b64);
     return { n, clip };
   };
-  const reveal = () => pg.evaluate(async () => (await import('/lib/namereveal.js')).revealLevel()).catch((e) => `err: ${String(e).slice(0, 80)}`);
+  const reveal = () => pg.evaluate(async () => (await import('/lib/avatar/namereveal.js')).revealLevel()).catch((e) => `err: ${String(e).slice(0, 80)}`);
   await pg.evaluate(() => { for (const id of ['nearhear', 'nearmute']) EW.remotes.get(id).avatar.mixer.timeScale = 0; });
   await sleep(1200);
   const open0 = await namePx('nearhear');
@@ -301,7 +301,7 @@ try {
   await pg.keyboard.down('KeyN');
   const held = await pxUntil('nearhear', (n) => n >= 30);
   const heldSz = await pg.evaluate(async () => {
-    const { plateSize } = await import('/lib/platesize.js'); const { revealLevel } = await import('/lib/namereveal.js');
+    const { plateSize } = await import('/lib/avatar/platesize.js'); const { revealLevel } = await import('/lib/avatar/namereveal.js');
     const av = EW.remotes.get('nearhear').avatar, e = new EW.THREE.Vector3(); EW.camera.getWorldPosition(e);
     const d = av.root.position.distanceTo(e);
     return { k: revealLevel(), lw: av.label.scale.x, want: plateSize(d, 1).lw, clear: av.label.userData.plateClear, d };

@@ -277,7 +277,7 @@ console.log("\n— the browser takes the clock as its server clock —\n");
   GlobalRegistrator.register();
   const stubs = await import("../stubs/remotes-stubs.mjs");
   const { mock } = await import("bun:test");
-  for (const m of ["core", "assets", "world", "chat", "fp_view", "boot", "ui", "avatar", "xr/xrbody"]) {
+  for (const m of ["core", "assets", "world", "chat", "avatar/fp_view", "boot", "ui", "avatar/avatar", "xr/xrbody"]) {
     mock.module(`${import.meta.dir}/../../client/lib/${m}.js`, () => stubs);
   }
   const remotesMod: any = await import("../../client/lib/remotes.js");

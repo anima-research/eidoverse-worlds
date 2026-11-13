@@ -307,14 +307,14 @@ async function browserOwnerPart() {
   mock.module(base + "remotes.js", () => ({ remotes: new Map(), ensureRemote: async () => null, dropRemote: () => null, pushPose() {}, noteServerTime() {}, noteSpeaking() {} }));
   mock.module(base + "reachnet.js", () => ({ myReachBag: () => undefined }));
   mock.module(base + "chat.js", () => ({ chat: {}, logChat() {}, noteTyping() {}, noteHistoryContext() {}, async resyncChatAfter() {}, moderatorHeader: (w) => `From a moderator of world ‹${w}›, not from Eidoverse` }));
-  mock.module(base + "fp_view.js", () => ({ resolveFirstPersonAnchor: () => null, FP_FORWARD: 0, FP_EYE_LIFT: 0, FP_GAZE_AHEAD: 0, FP_GAZE_DROP: 0, composeFirstPerson() {} }));
+  mock.module(base + "avatar/fp_view.js", () => ({ resolveFirstPersonAnchor: () => null, FP_FORWARD: 0, FP_EYE_LIFT: 0, FP_GAZE_AHEAD: 0, FP_GAZE_DROP: 0, composeFirstPerson() {} }));
   mock.module(base + "boot.js", () => ({ markPhase() {}, refuseBoot() {}, waitBoot() {} }));
   const { html } = await import(base + "markup.js");
   mock.module(base + "ui.js", () => ({ isOverlayOpen: () => false, flashHint: (s: any) => hints.push(String(s)), toast() {}, html }));
   const bodies: any[] = [];
   const body = (bones: string[]) => { const scene = new THREE.Group(); for (const n of bones) { const b: any = new THREE.Bone(); b.name = n; scene.add(b); }
     const av: any = { wingsFolded: false, vrm: { scene }, dispose() {}, setUserScale() {}, setPlateY() {} }; bodies.push(av); return av; };
-  mock.module(base + "avatar.js", () => ({ makeAvatar: async () => body(WING_BONES), contributeThumbnail() {} }));
+  mock.module(base + "avatar/avatar.js", () => ({ makeAvatar: async () => body(WING_BONES), contributeThumbnail() {} }));
   mock.module(base + "materials.js", () => ({ applyOwnBodyShadow: async () => {} }));
   let onSwitch: any = null;   // catalog.js's switch seam, as it is: one handler, mybody.js's
   const catalog = { setMyAvatarPath() {}, wireAvatarSwitch(fn: any) { onSwitch = fn; }, switchAvatar: (p: string, n: string) => onSwitch?.(p, n) };
@@ -386,10 +386,10 @@ async function remotePart() {
   const camera = new THREE.PerspectiveCamera();
   const avatar = () => ({ root: new THREE.Object3D(), wingsFolded: false, dispose() {}, resetTransients() {}, setTyping() {}, playAnimation() {},
     setClip() {}, setPose() {}, clearPose() {}, setLimp() {}, playOnce() {}, setGazeTarget() {}, update() {}, setSeatApprox() {} });
-  for (const m of ["assets", "world", "chat", "fp_view", "boot", "ui", "xr/xrbody"]) mock.module(`${lib}${m}.js`, () => stubs);
+  for (const m of ["assets", "world", "chat", "avatar/fp_view", "boot", "ui", "xr/xrbody"]) mock.module(`${lib}${m}.js`, () => stubs);
   mock.module(`${lib}core.js`, () => ({ ...stubs, camera }));
-  mock.module(`${lib}avatar.js`, () => ({ ...stubs, makeAvatar: async () => avatar(), makeCapsuleAvatar: () => avatar() }));
-  mock.module(`${lib}occupybody.js`, () => ({ releaseOccupied() {},
+  mock.module(`${lib}avatar/avatar.js`, () => ({ ...stubs, makeAvatar: async () => avatar(), makeCapsuleAvatar: () => avatar() }));
+  mock.module(`${lib}avatar/occupybody.js`, () => ({ releaseOccupied() {},
     driveOccupied: () => ({ pos: new THREE.Vector3(), q: new THREE.Quaternion(), clip: "sitchair", sw: { seatState: "ok", host: "chair", slot: "seat" } }) }));
   const { remotes, ensureRemote, pushPose, updateRemotes } = await import("../../client/lib/remotes.js") as any;
   let t = 1000;

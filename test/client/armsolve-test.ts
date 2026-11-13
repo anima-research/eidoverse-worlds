@@ -23,7 +23,7 @@ plugin({
 globalThis.location ??= { search: "" } as any;   // xrbody reads ?torsoplay at import
 const { THREE } = await import("../stubs/core-stub.mjs");
 const { solveArm, relaxArm, solveLeg, gaitInit, gaitTick } = await import("../../client/lib/xr/xrbody.js");
-const { makeCapsuleVrm } = await import("../../client/lib/capsulebody.js");
+const { makeCapsuleVrm } = await import("../../client/lib/avatar/capsulebody.js");
 
 const S = suite("armsolve");
 const ok = (m: string, c: unknown) => S.check(m, c);

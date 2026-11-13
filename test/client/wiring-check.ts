@@ -31,7 +31,7 @@ const ROWS: Row[] = [
     not: [[/setItem\(PREF_HEADSET_SEEN, '1'\)/, "setItem(PREF_HEADSET_SEEN, '1')"], [/setItem\('ew-headset-seen', '1'\)/, "setItem('ew-headset-seen', '1')"]] },
   // locomotion-clip: an extracted policy someone calls
   { name: "controller.js imports selectClip from the real policy module and calls it", file: "client/lib/controller.js",
-    must: [/import\s*\{[^}]*\bselectClip\b[^}]*\}\s*from\s*'\.\/locomotion_clip\.js'/, /\bselectClip\s*\(/, /setClip\([^)]*\.opts\s*\)/] },
+    must: [/import\s*\{[^}]*\bselectClip\b[^}]*\}\s*from\s*'\.\/avatar\/locomotion_clip\.js'/, /\bselectClip\s*\(/, /setClip\([^)]*\.opts\s*\)/] },
   { name: "controller.js hands selectClip the body's size", file: "client/lib/controller.js", must: [/selectClip\(\{[^}]*\bscale:\s*me\.userScale/] },
   // scoped to the locomotion setClip call (the one with options): the flight path's me.setClip(clip, speed) takes none
   { name: "the tick hands setClip the selected opts, no fade re-derived at the call site", file: "client/lib/controller.js",

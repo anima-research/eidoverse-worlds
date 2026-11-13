@@ -19,7 +19,7 @@ import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 import { MToonMaterialLoaderPlugin } from '@pixiv/three-vrm-materials-mtoon';
 import { MToonNodeMaterial } from '@pixiv/three-vrm-materials-mtoon/nodes';
-import { parsePoseAnimation, retargetPoseAnimation } from './poseclips.js';
+import { parsePoseAnimation, retargetPoseAnimation } from './avatar/poseclips.js';
 import { CLIP_SLOTS, CLIP_FILES, CLIP_SPEED } from '../../shared/clipdefs.js';
 export { CLIP_SLOTS, CLIP_FILES, CLIP_SPEED } from '../../shared/clipdefs.js';
 import { clone as skeletonClone } from 'three/addons/utils/SkeletonUtils.js';

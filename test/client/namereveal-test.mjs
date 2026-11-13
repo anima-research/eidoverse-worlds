@@ -1,5 +1,5 @@
 import { suite } from "../gate/suite.ts";
-// namereveal — hold-to-reveal's input side (client/lib/namereveal.js), driven directly: the module the client loads.
+// namereveal — hold-to-reveal's input side (client/lib/avatar/namereveal.js), driven directly: the module the client loads.
 //
 //   bun test/client/namereveal-test.mjs
 //
@@ -14,9 +14,9 @@ const check = (name, ok, detail) => S.check(name, ok, detail);
 let active = null;
 globalThis.document = { get activeElement() { return active; } };
 
-const R = await import('../../client/lib/namereveal.js').catch((e) => ({ err: String(e) }));
+const R = await import('../../client/lib/avatar/namereveal.js').catch((e) => ({ err: String(e) }));
 const A = await import('../../client/lib/actions.js');
-const { REVEAL_EASE_MS: E } = await import('../../client/lib/platesize.js');
+const { REVEAL_EASE_MS: E } = await import('../../client/lib/avatar/platesize.js');
 check('namereveal.js loads', !R.err && typeof R.setReveal === 'function', R.err);
 if (!R.err) {
   const key = (code, extra = {}) => ({ code, repeat: false, ctrlKey: false, metaKey: false, altKey: false, ...extra });

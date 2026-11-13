@@ -3,7 +3,7 @@
 // Dynamically imported by main.js, so the normal boot never loads this file.
 
 import { CONFIG } from './base.js';
-import { contributeThumbnail } from './avatar.js';
+import { contributeThumbnail } from './avatar/avatar.js';
 
 export async function mintThumbnails() {
   const { loadVRM } = await import('./assets.js');

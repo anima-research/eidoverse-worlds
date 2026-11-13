@@ -1,6 +1,6 @@
 # Avatar design notes
 
-Rationale behind choices in `client/lib/avatar.js` that the code comments only point at.
+Rationale behind choices in `client/lib/avatar/avatar.js` that the code comments only point at.
 
 ## Own-body clearance for body-attached sprites
 
