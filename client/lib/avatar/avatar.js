@@ -101,6 +101,16 @@ function mixWings(a, b, t) {
   }
   return _wmix;
 }
+const _wq = new THREE.Quaternion();        // wing scratch
+const _wpq = new THREE.Quaternion();
+const _wacc = new THREE.Quaternion();
+const _wfold = new THREE.Quaternion();
+const _wtgt = new THREE.Quaternion();
+const _wr = new THREE.Quaternion();
+const _wax = new THREE.Vector3();
+const _wup = new THREE.Vector3();
+const _wsw = new THREE.Quaternion();
+const DEG = Math.PI / 180;
 
 /** What a limp body's springbones become when no sim of its own is running (_springsLimp). Live: the debug panel
  *  dials these. stiffness is a factor on what the rig declared; gravity is a floor. */
@@ -317,15 +327,6 @@ const _gw = new THREE.Vector3();
 const _gp = new THREE.Vector3();
 const _X = new THREE.Vector3(1, 0, 0);      // scratch — hot paths must not allocate
 const _v2 = new THREE.Vector3();
-const _wq = new THREE.Quaternion();        // wing scratch
-const _wpq = new THREE.Quaternion();
-const _wacc = new THREE.Quaternion();
-const _wfold = new THREE.Quaternion();
-const _wtgt = new THREE.Quaternion();
-const _wr = new THREE.Quaternion();
-const _wax = new THREE.Vector3();
-const _wup = new THREE.Vector3();
-const _wsw = new THREE.Quaternion();
 const _swE = new THREE.Euler(), _swQ = new THREE.Quaternion();   // swim-layer scratch
 const _hq = new THREE.Quaternion();        // raw-pose scratch (_applyRawPose) — per bone, per frame
 const _hv = new THREE.Vector3();
@@ -337,7 +338,6 @@ const _sl1 = new THREE.Quaternion(), _sl2 = new THREE.Quaternion(), _sl3 = new T
 const CLIP_NAME_RE = /^[A-Za-z][A-Za-z0-9_-]{0,47}$/;
 // the clips hydrateClips owns (slot names that are not file names): a socket naming one waits for hydration
 const HYDRATED = new Set([...CORE_CLIPS, ...LATER_CLIPS, 'sitchair']);
-const DEG = Math.PI / 180;
 
 // the lamp's breath (update): floor near-dark but never off; peak below 1 so it reads as breath, not a pulse
 // (tuned with the lamp's shadows on); shape >1 dwells near the floor and softens the flare (1 is a plain sine)
