@@ -12,7 +12,7 @@ import path from "node:path";
 import { KEYHINTS } from "../../client/lib/edit/keyhints.js";
 
 const ROOT = path.resolve(import.meta.dir, "..", "..");
-const FILES = ["edit/build", "edit/gizmo", "edit/fieldpanels", "edit/panels", "edit/layout", "edit/socketedit", "edit/structure_ui", "edit/tabs", "edit/paint", "edit/widgets", "controller"]   // controller: build mode's camera (bot #319)
+const FILES = ["edit/build", "edit/gizmo", "edit/fieldpanels", "edit/panels", "edit/layout", "edit/socketedit", "edit/structure_ui", "edit/tabs", "edit/paint", "edit/widgets", "player/controller"]   // controller: build mode's camera (bot #319)
   .map((f) => `client/lib/${f}.js`);   // every one must exist: a file that moved would leave the scan quietly
 const MOD = /\be\.(shiftKey|ctrlKey|altKey|metaKey)\b|\bkey\s*===\s*['"](Control|Shift|Alt|Meta)['"]/;
 let pass = 0, fail = 0;

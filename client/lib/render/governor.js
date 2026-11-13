@@ -34,7 +34,7 @@ import { setSlotCap, getSlotCap, maxSlots, litCount,
   setCasterBudget, getCasterBudget, getCasterCeiling, casterCount, shadowsOn, shadowRes } from './lightrig.js';
 import { setEmitterQuality, emitterQuality, emitterCount } from '../realize/emitters.js';
 import { setGrassDensity, getGrassDensity, hasGrass } from '../terrain.js';
-import { setLodBias } from '../remotes.js';
+import { setLodBias } from '../player/remotes.js';
 import { setSystemEvery, getSystemEvery } from './frameloop.js';
 import { toast } from '../ui/ui.js';
 import { statusChip, clearStatusChip } from '../ui/statuschips.js';

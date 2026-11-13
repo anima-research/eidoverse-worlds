@@ -4,9 +4,9 @@
 import { CONFIG, bus } from '../base.js';
 import { micOn as meshMicOn, isMuted, micAnalyserLevel as meshMicLevel } from './micstate.js';
 
-import { remotes, noteSpeaking } from '../remotes.js';
+import { remotes, noteSpeaking } from '../player/remotes.js';
 import { sendTyping } from '../net.js';
-import { getMe } from '../mybody.js';
+import { getMe } from '../player/mybody.js';
 
 // ask the SFU bridge's globals first (voicesfubridge.js installs them), then micstate — as mictoggle.js and stt.js do
 const micIsOn = () => {

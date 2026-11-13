@@ -27,18 +27,18 @@ function thingNamed(word) {
 import {
   net, replica, identityOf, sendMod, sendPuppet, sendWorldFork, sendWorldFound, sendWorldReset, requestDebug, sendRequest,
 } from '../../net.js';
-import { remotes } from '../../remotes.js';
+import { remotes } from '../../player/remotes.js';
 import { serverNow, serverUntil } from '../../serverclock.js';   // straight from the clock: through remotes.js this closes an import cycle and the re-export is unbound at load
-import { myState, setPosture, flightReport } from '../../controller.js';
+import { myState, setPosture, flightReport } from '../../player/controller.js';
 import { punt as puntThing, grab, put, drop, throwHeld } from '../../thingphysics.js';
 import { logChat } from '../chat.js';
 import { toggleHelp, flashHint } from '../ui.js';
 import { sceneAttach, sceneDetach } from '../../scenegraph.js';
 import { ANIM_ORDER, ANIM_CLIPS } from '../../avatar/avatar.js';
-import { setPushable, pushable } from '../../consent.js';
-import { trySitOn } from '../../localbody.js';
-import { getMe } from '../../mybody.js';
-import { setMyReach, clearMyReach } from '../../reachnet.js';
+import { setPushable, pushable } from '../../player/consent.js';
+import { trySitOn } from '../../player/localbody.js';
+import { getMe } from '../../player/mybody.js';
+import { setMyReach, clearMyReach } from '../../player/reachnet.js';
 import { SIM_ID } from '../../../../shared/sim.js';
 import { send } from '../../edit/writes.js';   // roles, the door and moderation send record: false: they are not build edits, and Ctrl+Z must never revoke a grant or lift a ban
 import * as OP from '../../../../shared/requests.js';

@@ -114,7 +114,7 @@ const fenceSpeak = async () => { written.length = 0; await tts.speak("fence"); a
 // WebGPU renderer at import; swap the non-audio siblings for the stubs.
 const stubs = await import("../stubs/voice-stubs.mjs");
 const { mock } = await import("bun:test");
-for (const m of ["core", "net", "ui/ui", "controller", "remotes"])
+for (const m of ["core", "net", "ui/ui", "player/controller", "player/remotes"])
   mock.module(`${import.meta.dir}/../../client/lib/${m}.js`, () => stubs);
 
 // ---- modules under test ---------------------------------------------------

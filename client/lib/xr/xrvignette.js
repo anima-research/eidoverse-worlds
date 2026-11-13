@@ -3,7 +3,7 @@
 import { THREE, camera } from '../core.js';
 import { isPresenting, turnMagnitude } from './xr.js';
 import { xrPrefs } from './xr-prefs.js';
-import { xrIntent } from '../controller.js';
+import { xrIntent } from '../player/controller.js';
 
 let mesh = null, level = 0;
 function ensure() {

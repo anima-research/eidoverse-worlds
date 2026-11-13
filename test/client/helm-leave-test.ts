@@ -1,8 +1,8 @@
-// helm-leave-test.ts — getting up from a helm lets its hull go (client/lib/vehicles.js). updateHelm, the only place the
+// helm-leave-test.ts — getting up from a helm lets its hull go (client/lib/player/vehicles.js). updateHelm, the only place the
 // drive state was cleared, runs only while I'm seated or being carried off a seat (main.js me-drive), so after an ordinary dismount the 'drive' handler
 // still took the hull for mine: it dropped every relayed step of it (someone else driving it looked frozen here), and a
 // later seat at its helm drove on from the stale pose.
-// Headless, through the REAL client/lib/vehicles.js: the modules it imports that own the DOM, the network or the scene are
+// Headless, through the REAL client/lib/player/vehicles.js: the modules it imports that own the DOM, the network or the scene are
 // stand-ins served from this file (a bun plugin's virtual namespace, as dismount-height-test does); three and
 // shared/drive.js are real.
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/client/helm-leave-test.ts
@@ -26,7 +26,7 @@ const STUBS: Record<string, string> = {
 plugin({
   name: 'helm-leave-stubs',
   setup(b) {
-    stubResolve(b, new RegExp(`^\\./(${Object.keys(STUBS).join('|')})\\.js$`), (a) => (a.importer.endsWith('vehicles.js') ? { path: a.path.slice(2, -3), namespace: 'hl-stub' } : undefined));
+    stubResolve(b, new RegExp(`^\\.\\.?/(${Object.keys(STUBS).join('|')})\\.js$`), (a) => (a.importer.endsWith('vehicles.js') ? { path: a.path.replace(/^\.\.?\//, '').slice(0, -3), namespace: 'hl-stub' } : undefined));
     b.onLoad({ filter: /.*/, namespace: 'hl-stub' }, (a) => ({ contents: STUBS[a.path], loader: 'js' }));
   },
 });
@@ -34,7 +34,7 @@ const G = globalThis as any; G.__hl = { sent: [] };
 
 const { check, done } = suite("helm-leave-test");
 
-const v: any = await import('../../client/lib/vehicles.js');
+const v: any = await import('../../client/lib/player/vehicles.js');
 const { bus, world, avatarMounts, keys } = G.__hl;
 const { THREE } = world;
 // a hull with drive at x 0, its helm a socket child that drives it

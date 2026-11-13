@@ -1,6 +1,6 @@
 # The server-to-local clock offset (shared/clockoffset.js)
 
-The one rule for a browser (client/lib/remotes.js), a lite page (client/lib/ui/participants_lite.js) and an agent
+The one rule for a browser (client/lib/player/remotes.js), a lite page (client/lib/ui/participants_lite.js) and an agent
 (mcpl/agent.ts).
 
 ## Why the largest sample

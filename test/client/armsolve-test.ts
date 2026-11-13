@@ -16,7 +16,7 @@ plugin({
   setup(b) {
     stubResolve(b, /^(\.\.?\/)+core\.js$/, () => ({ path: here("../stubs/core-stub.mjs") }));
     stubResolve(b, /^(\.\.?\/)+base\.js$/, () => ({ path: here("../stubs/core-stub.mjs") }));
-    stubResolve(b, /^(\.\.?\/)+controller\.js$/, () => ({ path: here("../stubs/armsolve-xr-stub.mjs") }));
+    stubResolve(b, /^(\.\.?\/)+(player\/)?controller\.js$/, () => ({ path: here("../stubs/armsolve-xr-stub.mjs") }));
     stubResolve(b, /^(\.\.?\/)+(xr\/)?xr(-scale|-fingercurl)?\.js$/, () => ({ path: here("../stubs/armsolve-xr-stub.mjs") }));
   },
 });

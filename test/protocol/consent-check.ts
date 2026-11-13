@@ -24,7 +24,7 @@ ok(decide(P, "u-bbbbbbbbbbbbbbbbbbbb", "u-alice", "shove").mode === "deny", "C5 
     const r = setConsent(Q, A, a);
     ok(r.ok === false && JSON.stringify(Q.consent?.[A]) === before, `C8 a refused change (${JSON.stringify(a)}) leaves the table as it was`, { r, table: Q.consent?.[A] }); } }
 // C9 (review F2, R 10-28): a browser client that never chose leaves a migrated block and the world's move:false default alone
-{ const { makeConsentSync } = await import("../../client/lib/consentsync.js"); const { readStored } = await import("../../client/lib/consent.js");
+{ const { makeConsentSync } = await import("../../client/lib/player/consentsync.js"); const { readStored } = await import("../../client/lib/player/consent.js");
   const run = async (kv: Record<string, string>) => { const Q: any = { consent: { me: { over: { "u-bob": { touch: { mode: "deny" } } } } }, consentShape: 3, bodyDefault: { move: false } }; migratePresence(Q);
     const st = readStored((k: string) => kv[k] ?? null), sent: any[] = [];
     await makeConsentSync({ table: () => ({ move: st.move, touch: st.touch, allow: Object.keys(st.allow), block: Object.keys(st.block), unlist: st.unlist }), toast: () => {}, on: () => {}, later: () => {},

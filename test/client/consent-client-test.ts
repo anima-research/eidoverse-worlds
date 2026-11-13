@@ -1,9 +1,9 @@
-// consent-client-test — my body's two gates and two lists (client/lib/consent.js, R 10-28) are what the authority decides
+// consent-client-test — my body's two gates and two lists (client/lib/player/consent.js, R 10-28) are what the authority decides
 // by, an older stored setting is carried into the gates never wider, and a sync that fails is heard, then retried.
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/client/consent-client-test.ts
-// Mutation (must go red): in client/lib/consentsync.js drop the `on('hydrated', …)` line, or the timer retry, or the toast.
+// Mutation (must go red): in client/lib/player/consentsync.js drop the `on('hydrated', …)` line, or the timer retry, or the toast.
 import { setConsent, decide, tableOf, migratePresence, worldGates, DEFAULT_GATES } from '../../shared/protocol/consent.js';
-import { makeConsentSync } from '../../client/lib/consentsync.js';
+import { makeConsentSync } from '../../client/lib/player/consentsync.js';
 
 let pass = 0, fail = 0;
 // the sync's sends are promises with no timer behind them: a few microtask turns settle them (never a wall-clock wait)
@@ -13,7 +13,7 @@ const check = (name: string, ok: boolean, detail = '') => { if (ok) pass++; else
 // consent.js is a browser leaf (localStorage at load): give it one
 const store = new Map<string, string>();
 (globalThis as any).localStorage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => { store.set(k, v); }, removeItem: (k: string) => { store.delete(k); } };
-const C = await import('../../client/lib/consent.js');
+const C = await import('../../client/lib/player/consent.js');
 /** what the authority decides for `from` doing `cls`, once my client's table has landed through the authority's own setConsent */
 const landed = (from: string, cls: string) => { const P: any = {}; const t = C.bodyTable();
   for (const a of [{ move: t.move, touch: t.touch }, ...t.allow.map((id: string) => ({ allow: id })), ...t.block.map((id: string) => ({ block: id }))]) { const r = setConsent(P, 'me', a); if (!r.ok) return `refused ${JSON.stringify(a)}`; }
@@ -81,17 +81,17 @@ check('migration carries no lists from the old keys (the switch kept per-person 
   check('migration: a notice is due only where main\'s posable on was not carried (not for switch refuse, not for posable off, not for nothing stored)', was({ 'ew-posable': '1' }).notice === true && was({ 'ew-body-switch': 'accept', 'ew-posable': '1' }).notice === true
     && !was({ 'ew-body-switch': 'refuse', 'ew-posable': '1' }).notice && !was({ 'ew-posable': '0' }).notice && !was({}).notice && !was({ 'ew-body-switch': 'accept' }).notice);
   const saved = store.get('ew-body-consent'); store.clear(); store.set('ew-posable', '1');
-  const M = await import('../../client/lib/consent.js?fixF=posable');   // a fresh page whose storage holds only main's posable on
+  const M = await import('../../client/lib/player/consent.js?fixF=posable');   // a fresh page whose storage holds only main's posable on
   check('…on that page Allow being posed and touched is off and a stranger may not pose (the authority sees touch:false)', !M.gate('touch') && M.bodyTable().touch === false);
   const first = M.takeNotice?.(), second = M.takeNotice?.();
   check('…the page is told once: the first take is the notice, the second nothing', first === words && second === null, JSON.stringify([first, second]));
-  const M2 = await import('../../client/lib/consent.js?fixF=reload');   // the next page load, same storage
+  const M2 = await import('../../client/lib/player/consent.js?fixF=reload');   // the next page load, same storage
   check('…and not again on the next load (taken is remembered), with Allow being posed and touched still off', M2.takeNotice?.() === null && !M2.gate('touch'), store.get('ew-body-consent'));
-  store.clear(); store.set('ew-posable', '1'); const M3 = await import('../../client/lib/consent.js?fixF=unseen');
-  const M4 = await import('../../client/lib/consent.js?fixF=unseen2');   // a reload before anything took the notice
+  store.clear(); store.set('ew-posable', '1'); const M3 = await import('../../client/lib/player/consent.js?fixF=unseen');
+  const M4 = await import('../../client/lib/player/consent.js?fixF=unseen2');   // a reload before anything took the notice
   check('…a notice not yet taken survives a reload (said once, never zero times)', M4.takeNotice?.() === words && M3 !== M4, store.get('ew-body-consent'));
   store.clear(); if (saved) store.set('ew-body-consent', saved); }
-{ const src = await Bun.file(new URL('../../client/lib/localbody.js', import.meta.url)).text();
+{ const src = await Bun.file(new URL('../../client/lib/player/localbody.js', import.meta.url)).text();
   check('…and the page says it: localbody takes the notice at start and toasts it (not on a renderer)', /if \(!\(CONFIG\.renderer \|\| CONFIG\.spectate\)\) \{ const told = takeNotice\(\); if \(told\) toast\(told,/.test(src)); }
 
 // 2. a refused sync is heard (toast) and retried: on the next hydration, and on a timer before that
@@ -146,7 +146,7 @@ const run = async (reply: (n: number) => any, want = T({ move: false })) => {
 // my lists and gates allowed) is APPLIED to my body: it becomes the puppet message localbody.js applies.
 // Mutation (must go red): in bodyact.js bodyActAsPuppet return null for every kind.
 {
-  const { bodyActAsPuppet, refusedNotice } = await import('../../client/lib/bodyact.js');
+  const { bodyActAsPuppet, refusedNotice } = await import('../../client/lib/player/bodyact.js');
   check('a refused act is said to me in plain words: who, and which of my switches turned it away', refusedNotice?.({ type: 'body-refused', from: 'u-wren', gate: 'move', class: 'shove' }, () => 'Wren') === 'Wren tried to move you — your “Allow being moved” switch is off'
     && refusedNotice({ type: 'body-refused', from: 'u-wren', gate: 'touch', class: 'pose' }, () => 'Wren') === 'Wren tried to touch you — your “Allow being posed and touched” switch is off'
     && refusedNotice({ type: 'body-refused', from: 'u-wren', gate: null, class: 'pose' }, () => 'Wren') === 'Wren tried to touch you — they are on your Never allow list', String(refusedNotice?.({ type: 'body-refused', from: 'u-wren', gate: 'move', class: 'shove' }, () => 'Wren')));
@@ -188,7 +188,7 @@ const run = async (reply: (n: number) => any, want = T({ move: false })) => {
 // Two devices no longer overwrite each other's lists on arrival, and an unlist isn't kept and replayed forever. A block
 // (narrower) follows me into other worlds for BLOCK_FOLLOW_MS; an allow or unlist (wider) lands only in the world I made it
 // in. Mutation: replay the whole local list (the old sync), never drain an unlist, or stop a block following.
-{ const fresh = async (tag: string, kv: Record<string, string> = {}) => { store.clear(); for (const [k, v] of Object.entries(kv)) store.set(k, v); return await import(`../../client/lib/consent.js?dev=${tag}`); };
+{ const fresh = async (tag: string, kv: Record<string, string> = {}) => { store.clear(); for (const [k, v] of Object.entries(kv)) store.set(k, v); return await import(`../../client/lib/player/consent.js?dev=${tag}`); };
   const auth = (P: any = { consent: Object.create(null) }) => { const sent: any[] = []; return { P, sent, send: async (_: string, a: any) => { sent.push(a); return Object.keys(a).length ? setConsent(P, 'me', a) : { ok: true, table: tableOf(P, 'me') }; } }; };
   const syncer = (D: any, A: any) => makeConsentSync({ table: D.bodyTable, send: A.send, toast: () => {}, on: () => {}, later: () => {}, held: D.noteHeld, landed: D.landed, gone: D.forget });
   // device B was told "always allow X" long ago (stored, before queues); device A since blocked X in this world
@@ -222,7 +222,7 @@ const run = async (reply: (n: number) => any, want = T({ move: false })) => {
     && /BLOCK_FOLLOW_WORDS/.test(fs.readFileSync(new URL('../../client/lib/ui/consentpanel.js', import.meta.url), 'utf8')) && /BLOCK_FOLLOW_WORDS/.test(fs.readFileSync(new URL('../../client/lib/ui/people.js', import.meta.url), 'utf8')), w); }
 
 // review 1.3: the switches show the gate in force: mine, else the authority's read (my table's, else the world's body-default), else the built-in
-{ store.clear(); const G = await import('../../client/lib/consent.js?gates=world');
+{ store.clear(); const G = await import('../../client/lib/player/consent.js?gates=world');
   const P: any = { consent: Object.create(null), bodyDefault: { touch: true } };
   const send = async (_: string, a: any) => Object.keys(a).length ? setConsent(P, 'me', a) : { ok: true, table: tableOf(P, 'me'), world: { ...DEFAULT_GATES, ...worldGates(P.bodyDefault) } };   // bodyconsent.js's read
   const s = makeConsentSync({ table: G.bodyTable, send, toast: () => {}, on: () => {}, later: () => {}, held: G.noteHeld, landed: G.landed });
@@ -233,7 +233,7 @@ const run = async (reply: (n: number) => any, want = T({ move: false })) => {
   check('…and turning it off is one change: it shows off, and the authority refuses a stranger\'s pose', !G.gate('touch') && decide(P, 'pal', 'me', 'pose').mode === 'deny', JSON.stringify(tableOf(P, 'me'))); }
 
 // #260 follow-up B: a gate the server's migration closed stays closed until I turn it on in that world; a browser value I chose before doesn't reopen it
-{ const fresh = async (tag: string, kv: Record<string, string> = {}) => { store.clear(); for (const [k, v] of Object.entries(kv)) store.set(k, v); return await import(`../../client/lib/consent.js?reopen=${tag}`); };
+{ const fresh = async (tag: string, kv: Record<string, string> = {}) => { store.clear(); for (const [k, v] of Object.entries(kv)) store.set(k, v); return await import(`../../client/lib/player/consent.js?reopen=${tag}`); };
   const migrated = () => { const P: any = { consent: Object.create(null), consentShape: 3 }; P.consent.me = { preset: 'open', cells: { everyone: { pose: 'allow', shove: 'allow', displace: 'allow', touch: 'allow', intimate: 'allow' }, friends: { displace: 'ask', pose: 'allow', intimate: 'allow' } }, friends: ['pal'] }; P.consent.pal = { friends: ['me'] }; migratePresence(P);
     const sent: any[] = []; return { P, sent, send: async (_: string, a: any) => { sent.push(a); return Object.keys(a).length ? setConsent(P, 'me', a) : { ok: true, table: tableOf(P, 'me') }; } }; };
   const syncer = (D: any, A: any) => makeConsentSync({ table: D.bodyTable, send: A.send, toast: () => {}, on: () => {}, later: () => {}, held: D.noteHeld, landed: D.landed, gone: D.forget });

@@ -15,7 +15,7 @@ import { bus, CONFIG } from '../base.js';
 import { identityOf } from '../net.js';
 import { dec } from '../../../shared/protocol/names.js';
 import { entities, bags, findPart } from '../world.js';
-import { remotes } from '../remotes.js';
+import { remotes } from '../player/remotes.js';
 import { evalLookAt } from '../../../shared/lookat.js';
 
 const live = new Map();   // `${id}\0${key}` → { node, rest: [x,y,z,w], q: [x,y,z,w] }

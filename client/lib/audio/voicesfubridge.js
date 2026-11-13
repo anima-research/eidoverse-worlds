@@ -8,8 +8,8 @@ import { net, sendRelayCredRequest, sendVoiceConsent, sendJoined } from '../net.
 import { sfuConnect, sfuOnOffer, sfuOnIce, sfuMic, sfuPeerLevels, sfuMyLevel,
   sfuDiagClient, sfuClose, sfuActive, sfuSpeakerEntries, sfuInboundStats, sfuMicOn,
   sfuMicWanted, sfuDropSpeaker } from './voicesfu.js';
-import { remotes } from '../remotes.js';
-import { myState } from '../controller.js';
+import { remotes } from '../player/remotes.js';
+import { myState } from '../player/controller.js';
 import { isHushed, volumeFor, receivingVoice, VOICE_FULL_M, VOICE_SILENT_M } from './voiceconsent.js';
 import { setGeneratorRebuildHook, synthProvider } from './voicesource.js';
 

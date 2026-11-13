@@ -28,7 +28,7 @@ function snapCase(readyAt: number | null, wait: number | undefined, far = false)
     const camera = { position: new THREE.Vector3(), lookAt() {}, updateMatrixWorld() {} };
     mock.module(L + "core.js", () => ({ THREE, camera }));
     const root = { position: new THREE.Vector3(...(${far} ? [60, 0, 60] : [0, -2, -3])), rotation: { y: 0 }, visible: true };
-    mock.module(L + "remotes.js", () => ({ remotes: new Map([["agent", { avatar: { root, headWorldPosition: () => null, visualBounds: (b) => b } }]]) }));
+    mock.module(L + "player/remotes.js", () => ({ remotes: new Map([["agent", { avatar: { root, headWorldPosition: () => null, visualBounds: (b) => b } }]]) }));
     mock.module(L + "avatar/fp_view.js", () => ({ composeFirstPerson: () => "data:image/png;base64,FIRST" }));
     mock.module(L + "render/capture.js", () => ({ captureFrame: () => "data:image/png;base64,FRAME", captureFrom: () => "data:image/png;base64,FROM" }));
     mock.module(L + "world.js", () => ({ entities: new Map() }));   // net_capture frames a placed thing (at=) from world.js

@@ -23,7 +23,7 @@ import { structureTools, currentTool as structureTool } from './structure_ui.js'
 import { TABS, openingTab, useTab } from './tabs.js';
 import { placeStatusChips } from '../ui/statuschips.js';
 import { replica } from '../net.js';
-import { setFreeCam, freeCamState } from '../controller.js';
+import { setFreeCam, freeCamState } from '../player/controller.js';
 import { selection, openWorldCard } from './panels.js';
 import { flashHint } from '../ui/ui.js';
 import { LAYERS, LAYER_HINT } from '../../../shared/layers.js';

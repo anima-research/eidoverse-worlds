@@ -64,7 +64,7 @@ try {
   const ONLY = process.env.STAGES ? new Set(process.env.STAGES.split(",")) : null;   // STAGES=HT,HP runs just those (a quick look; the suite runs all)
   const stage = async (id: string, fn: () => Promise<void>) => { if (ONLY && !ONLY.has(id)) return; try { await fn(); } catch (e) { check(`${id} (the stage threw)`, false, String(e?.message ?? e)); } };
   // ---- D: the authority, as a desktop visitor meets it ----
-  const me = await evalJson(`import('/lib/controller.js').then((m) => m.myState.pos.toArray())`);
+  const me = await evalJson(`import('/lib/player/controller.js').then((m) => m.myState.pos.toArray())`);
   const at = [me[0] + 1.2, me[2]];
   await stage("D", async () => {
   const made = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'gate', model: '${CRATE}', components: { label: 'Gate', pivot: { pos: [-0.5, 0, 0] }, openable: { open: false, locked: false, angle: ${Math.PI / 2}, time: 1.2 }, reactions: { open: { kind: 'toggle', unless: 'locked' } }, transform: { pos: [${at[0]}, ${me[1]}, ${at[1]}], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });`);
@@ -119,7 +119,7 @@ try {
   // ---- WB: the world's edge (R, 10-10 23:00: walked 44 m out of a ±20 m world; the authority's track of her stayed at
   // the edge, and every put and throw after was "25 m from you") ----
   await stage("WB", async () => {
-  const me0 = await page(`const c = await import('/lib/controller.js'); return [c.myState.pos.x, c.myState.pos.z, c.myState.yaw];`);
+  const me0 = await page(`const c = await import('/lib/player/controller.js'); return [c.myState.pos.x, c.myState.pos.z, c.myState.yaw];`);
   const edge = +(me0[0] - 1.2).toFixed(2);   // to my -x: stage D leaves a thing 1.2 m to my +x   // close, so nothing an earlier stage left can stand between me and it
   const b = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('set', { id: '@world', component: 'bounds', value: { min: [${edge}, 0, -60], max: [60, 30, 60] } });`);
   check("(setup) this world's edge 1.2 m to my -x", b?.ok, b);
@@ -127,7 +127,7 @@ try {
   await evalJson(`import('/lib/edge.js').then((e) => (e.setWorldEdgeShown(true), true))`);   // off by default (R 10-11 23:04); Viewport ▾ 'world edge' turns it on
   const fenceAll = await evalJson(`import('/lib/edge.js').then((e) => e.worldEdgeShown())`); const fence = fenceAll?.box;
   check("WB0 the edge is drawn: a fence at exactly this world's bounds", Array.isArray(fence) && fence[0]?.[0] === edge && fence[1]?.[0] === 60, fenceAll);
-  const r = await page(`const c = await import('/lib/controller.js'), n = await import('/lib/net.js'), t = await import('/lib/thingphysics.js');
+  const r = await page(`const c = await import('/lib/player/controller.js'), n = await import('/lib/net.js'), t = await import('/lib/thingphysics.js');
     let why = await c.walkTo(${me0[0] - 12}, ${me0[1]}, { ms: 6000 }); if (c.myState.pos.x > ${edge} + 0.6) why = await c.walkTo(${me0[0] - 12}, ${me0[1]}, { ms: 6000 }); /* a slow runner's stall reads as stuck short of the edge (macOS 40956937323): keep walking, as a person keeps the key held */ await new Promise((z) => setTimeout(z, 800));
     const mk = await n.sendRequest('create', { id: 'wbcrate', model: '${CRATE}', components: { label: 'Edge crate', grabbable: { enabled: true }, physics: { kind: 'dynamic', who: 'member' }, transform: { pos: [c.myState.pos.x + 0.6, 0, c.myState.pos.z], scale: 0.25 } } });
     await new Promise((z) => setTimeout(z, 1500)); const g = await t.physicsApi.grab('wbcrate'); await new Promise((z) => setTimeout(z, 800));
@@ -136,8 +136,8 @@ try {
   check("WB1 walking at this world's edge stops me at it (as a wall), so the authority still has me where I am: a grab and a put there work", r && r.x >= edge && r.x < edge + 0.6 && r.grab === true && r.put === true, { edge, ...r });
   await page(`const m = await import('/lib/net.js'); return await m.sendRequest('delete', { id: '@world', component: 'bounds' });`).catch(() => null);
   await page(`const m = await import('/lib/net.js'); return await m.sendRequest('delete', { id: 'wbcrate' });`).catch(() => null);
-  await page(`const c = await import('/lib/controller.js'); await c.walkTo(${me0[0]}, ${me0[1]}, { ms: 6000 }); c.myState.yaw = ${me0[2]}; await new Promise((z) => setTimeout(z, 600)); return true;`);   // and face the way I did: later stages place things where I look
-  const after = await page(`const n = await import('/lib/net.js'); const c = await import('/lib/controller.js'); return { bounds: n.replica.st?.entities?.['@world']?.c?.bounds ?? null, crate: !!n.replica.st?.entities?.['wbcrate'], back: +Math.hypot(c.myState.pos.x - (${me0[0]}), c.myState.pos.z - (${me0[1]})).toFixed(3), yaw: +c.myState.yaw.toFixed(3) };`);
+  await page(`const c = await import('/lib/player/controller.js'); await c.walkTo(${me0[0]}, ${me0[1]}, { ms: 6000 }); c.myState.yaw = ${me0[2]}; await new Promise((z) => setTimeout(z, 600)); return true;`);   // and face the way I did: later stages place things where I look
+  const after = await page(`const n = await import('/lib/net.js'); const c = await import('/lib/player/controller.js'); return { bounds: n.replica.st?.entities?.['@world']?.c?.bounds ?? null, crate: !!n.replica.st?.entities?.['wbcrate'], back: +Math.hypot(c.myState.pos.x - (${me0[0]}), c.myState.pos.z - (${me0[1]})).toFixed(3), yaw: +c.myState.yaw.toFixed(3) };`);
   check("WB2 (cleanup) the test's edge and crate are gone again", !after.bounds && !after.crate, after);
   const fence2 = await evalJson(`import('/lib/edge.js').then((e) => e.worldEdgeShown())`);
   check("WB2b …and so is the fence", fence2 && fence2.box === null, fence2);
@@ -240,24 +240,24 @@ try {
   check("(setup) physics on (the body is tracked only in a physics world)", on?.ok, on);
   check("(setup) my body arrives", await waitFor(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body().arrived)`, 10000), await evalJson(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body())`));
   const n0 = await evalJson(`__phys.length`);
-  await page(`const c = await import('/lib/controller.js'); c.myState.pos.z += 8; const b = await import('/lib/base.js'); b.bus.emit('cut-adopted'); return true;`);
+  await page(`const c = await import('/lib/player/controller.js'); c.myState.pos.z += 8; const b = await import('/lib/base.js'); b.bus.emit('cut-adopted'); return true;`);
   await sleep(3000);
   const b = await evalJson(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body())`), said = (await evalJson(`__phys.length`)) - n0;
   check("VA1 re-arriving 8 m from where the server last had me: the body arrives again (a teleport re-arrival), said at most once", b?.arrived && said <= 1, { said, body: b, events: await evalJson(`__phys.slice(${n0}, ${n0} + 3)`) });
   // VA3 (review round 3): a fresh re-arrival (refused too-fast, then a teleport), and a walk straight after: the refusal's
   // back-off (2 s) must not outlive the arrival, so my body follows within 1.2 s
-  await page(`const c = await import('/lib/controller.js'); c.myState.pos.z += 8; const b = await import('/lib/base.js'); b.bus.emit('cut-adopted'); return true;`);
+  await page(`const c = await import('/lib/player/controller.js'); c.myState.pos.z += 8; const b = await import('/lib/base.js'); b.bus.emit('cut-adopted'); return true;`);
   const re = await waitFor(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body().arrived)`, 5000);   // the re-arrival itself may be slow on a busy host (red five times on 10-10, each time under load); what VA3 times is the walk AFTER it
   const t0 = (await evalJson(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body())`))?.trackedAt;
-  await page(`const c = await import('/lib/controller.js'); c.myState.pos.x += 3; return true;`);
+  await page(`const c = await import('/lib/player/controller.js'); c.myState.pos.x += 3; return true;`);
   const followed = await waitFor(`import('/lib/thingphysics.js').then((m) => { const t = m.physicsApi.body().trackedAt; return !!t && Math.abs(t[0] - ${t0?.[0] ?? 0} - 3) < 0.3; })`, 1200);
   check("VA3 …re-arrived, then walking 3 m at once: the body follows within 1.2 s (no leftover back-off)", re && t0 && followed, { re, t0, now: await evalJson(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body())`) });
   // VA2 (review round 2): an arrival that keeps being refused while the person WALKS (inside a crate: the step and the
   // teleport are both "solid", and the reason names coordinates, so no two texts match): said a couple of times, not 5 a second
   const crate = await evalJson(`import('/lib/world.js').then((m) => { const o = m.entities.get('anchor'); return o ? o.position.toArray() : null; })`);
   const n1 = await evalJson(`__phys.length`);
-  await page(`const c = await import('/lib/controller.js'); c.myState.pos.set(${crate?.[0] ?? 0}, 0, ${crate?.[2] ?? 0}); const b = await import('/lib/base.js'); b.bus.emit('cut-adopted'); return true;`);
-  for (let i = 0; i < 15; i++) { await page(`const c = await import('/lib/controller.js'); c.myState.pos.x = ${crate?.[0] ?? 0} + ${i % 2 ? 0.35 : -0.35}; return true;`); await sleep(200); }
+  await page(`const c = await import('/lib/player/controller.js'); c.myState.pos.set(${crate?.[0] ?? 0}, 0, ${crate?.[2] ?? 0}); const b = await import('/lib/base.js'); b.bus.emit('cut-adopted'); return true;`);
+  for (let i = 0; i < 15; i++) { await page(`const c = await import('/lib/player/controller.js'); c.myState.pos.x = ${crate?.[0] ?? 0} + ${i % 2 ? 0.35 : -0.35}; return true;`); await sleep(200); }
   const said2 = (await evalJson(`__phys.length`)) - n1, b2 = await evalJson(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body())`);
   check("VA2 an arrival refused again and again while I walk (inside a crate) is said at most twice in 3 s, not 5 a second", crate && !b2?.arrived && said2 <= 2, { crate, said2, lastMove: b2?.lastMove, events: await evalJson(`__phys.slice(${n1}, ${n1} + 4)`) });
   });
@@ -265,11 +265,11 @@ try {
   // thing's primary use; right-click is the menu of everything it offers; a drag stays the camera's ----
   await stage("CU", async () => {
   // VA2 left me standing inside a crate with my body refused: step well clear and let it arrive
-  await page(`const c = await import('/lib/controller.js'); c.myState.pos.x += 6; c.myState.pos.z += 6; const b = await import('/lib/base.js'); b.bus.emit('cut-adopted'); return true;`);
+  await page(`const c = await import('/lib/player/controller.js'); c.myState.pos.x += 6; c.myState.pos.z += 6; const b = await import('/lib/base.js'); b.bus.emit('cut-adopted'); return true;`);
   check("(setup) my body arrives clear of the crate", await waitFor(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body().arrived)`, 8000), await evalJson(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body())`));
   await sleep(800);
   // 1 m ahead of me along the camera's heading, so it is in reach AND in view
-  const here = await page(`const c = await import('/lib/controller.js'), k = await import('/lib/core.js'); const d = k.camera.getWorldDirection(new k.THREE.Vector3()); const h = Math.hypot(d.x, d.z) || 1; return [c.myState.pos.x + d.x / h, c.myState.pos.z + d.z / h];`);
+  const here = await page(`const c = await import('/lib/player/controller.js'), k = await import('/lib/core.js'); const d = k.camera.getWorldDirection(new k.THREE.Vector3()); const h = Math.hypot(d.x, d.z) || 1; return [c.myState.pos.x + d.x / h, c.myState.pos.z + d.z / h];`);
   const made = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'cuball', model: '${CRATE}', components: { label: 'Clicker', grabbable: { enabled: true }, physics: { kind: 'dynamic', who: 'member' }, transform: { pos: [${here[0]}, 0, ${here[1]}], scale: 0.3 } } });`);
   check("(setup) a small crate I may pick up, within reach", made?.ok, made);
   await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('cuball'))`, 'cuball');
@@ -279,7 +279,7 @@ try {
     const o = w.entities.get('cuball'); o.updateWorldMatrix(true, true); const b = new T.Box3().setFromObject(o), p = b.getCenter(new T.Vector3()).project(c.camera);
     const r = c.canvas.getBoundingClientRect(); let x = r.left + (p.x + 1) / 2 * r.width, y = r.top + (1 - p.y) / 2 * r.height;
     // the bench has other usable things about (a gate): take a pixel near its centre where IT is what the pointer is on
-    const cu = await import('/lib/clickuse.js'); let found = cu.thingAt(x, y) === 'cuball';
+    const cu = await import('/lib/player/clickuse.js'); let found = cu.thingAt(x, y) === 'cuball';
     for (let k = 1; k <= 12 && !found; k++) for (const [ax, ay] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) { const xx = x + ax * k * 6, yy = y + ay * k * 6; if (cu.thingAt(xx, yy) === 'cuball') { x = xx; y = yy; found = true; break; } }
     const ev = (t, xx) => new MouseEvent(t, { bubbles: true, cancelable: true, button: ${button}, buttons: 0, clientX: xx, clientY: y });
     c.canvas.dispatchEvent(ev('mousedown', x)); c.canvas.dispatchEvent(ev('mouseup', x + ${dx}));
@@ -303,7 +303,7 @@ try {
   const hint = await waitFor(`/holding/.test(document.getElementById('hintbar').textContent) && /set it down/.test(document.getElementById('hintbar').textContent)`, 3000);
   check("CU5 while I hold it the hint bar says so, and how to let go", hint, await evalJson(`document.getElementById('hintbar').textContent`));
   // a click on a bare spot of floor within reach (in third person my own body hides what I hold): it is set down there
-  const bare = await page(`const c = await import('/lib/core.js'), cu = await import('/lib/clickuse.js'), k = await import('/lib/controller.js'); const r = c.canvas.getBoundingClientRect(), me = k.myState.pos; let at = null, spot = null;
+  const bare = await page(`const c = await import('/lib/core.js'), cu = await import('/lib/player/clickuse.js'), k = await import('/lib/player/controller.js'); const r = c.canvas.getBoundingClientRect(), me = k.myState.pos; let at = null, spot = null;
     for (let gy = 1; gy < 24 && !at; gy++) for (let gx = 1; gx < 32 && !at; gx++) { const x = r.left + r.width * gx / 32, y = r.top + r.height * gy / 24; if (cu.thingAt(x, y) !== null) continue; const a = cu.clickUseApi.aimPoint(x, y); if (a && Math.abs(a[1] - me.y) < 0.05 && Math.hypot(a[0] - me.x, a[2] - me.z) < 0.85 && Math.hypot(a[0] - me.x, a[2] - me.z) > 0.5) { at = [x, y]; spot = a; } }
     if (!at) return null;
     const ev = (t) => new MouseEvent(t, { bubbles: true, cancelable: true, button: 0, clientX: at[0], clientY: at[1] });
@@ -333,11 +333,11 @@ try {
   // ---- HP: holding and putting down something big whose origin is its centre (R's gym, 10-10: the wrecking ball
   // was held around her body, sat half in the floor when put down, and putting it down shoved her and the camera) ----
   await stage("HP", async () => {
-  const here = await page(`const c = await import('/lib/controller.js'); return [c.myState.pos.x, c.myState.pos.z, c.myState.yaw];`);
+  const here = await page(`const c = await import('/lib/player/controller.js'); return [c.myState.pos.x, c.myState.pos.z, c.myState.yaw];`);
   const made = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'hpball', model: 'props/ball.glb', components: { label: 'Big ball', grabbable: {}, physics: { kind: 'dynamic' }, collider: { shape: 'sphere' }, transform: { pos: [${here[0]} + Math.sin(${here[2]}) * 1.0, 0.35, ${here[1]} + Math.cos(${here[2]}) * 1.0] } } });`);
   check("(setup) a 0.7 m ball in front of me (its origin is its centre)", made?.ok, made);
   await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('hpball'))`, 'hpball'); await sleep(1200);   // loaded, not just reserved (a model's slot is null until its GLB lands)
-  const r = await page(`const t = await import('/lib/thingphysics.js'), c = await import('/lib/controller.js'), w = await import('/lib/world.js'), T = (await import('/lib/core.js')).THREE; const o = w.entities.get('hpball'), v = new T.Vector3();
+  const r = await page(`const t = await import('/lib/thingphysics.js'), c = await import('/lib/player/controller.js'), w = await import('/lib/world.js'), T = (await import('/lib/core.js')).THREE; const o = w.entities.get('hpball'), v = new T.Vector3();
     const where = () => { o.updateWorldMatrix(true, false); o.getWorldPosition(v); const me = c.myState.pos; return { flat: +Math.hypot(v.x - me.x, v.z - me.z).toFixed(3), y: +v.y.toFixed(3), me: [+me.x.toFixed(3), +me.z.toFixed(3)] }; };
     const g = await t.physicsApi.grab('hpball'); await new Promise((z) => setTimeout(z, 1500)); const held = where();
     const p = await t.physicsApi.put('hpball'); await new Promise((z) => setTimeout(z, 1500)); const down = where();
@@ -348,11 +348,11 @@ try {
   });
   // ---- HT: a held thing turns with me (R, 10-10 evening: "they don't rotate with the avatar, they're always oriented the same direction") ----
   await stage("HT", async () => {
-  const here = await page(`const c = await import('/lib/controller.js'), k = await import('/lib/core.js'); const d = k.camera.getWorldDirection(new k.THREE.Vector3()); const h = Math.hypot(d.x, d.z) || 1; return [c.myState.pos.x + d.x / h * 0.7, c.myState.pos.z + d.z / h * 0.7];`);
+  const here = await page(`const c = await import('/lib/player/controller.js'), k = await import('/lib/core.js'); const d = k.camera.getWorldDirection(new k.THREE.Vector3()); const h = Math.hypot(d.x, d.z) || 1; return [c.myState.pos.x + d.x / h * 0.7, c.myState.pos.z + d.z / h * 0.7];`);
   const htMade = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'htcrate', model: '${CRATE}', components: { label: 'Turn crate', grabbable: { enabled: true }, physics: { kind: 'dynamic', who: 'member' }, transform: { pos: [${here[0]}, 0, ${here[1]}], scale: 0.25 } } });`);
   check("(setup) a crate 0.7 m in front of me", htMade?.ok, htMade);
   await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('htcrate'))`, 'htcrate'); await sleep(1200);
-  const r = await page(`const t = await import('/lib/thingphysics.js'), c = await import('/lib/controller.js'), w = await import('/lib/world.js'), T = (await import('/lib/core.js')).THREE;
+  const r = await page(`const t = await import('/lib/thingphysics.js'), c = await import('/lib/player/controller.js'), w = await import('/lib/world.js'), T = (await import('/lib/core.js')).THREE;
     const yawOf = (o) => { o.updateWorldMatrix(true, false); const f = new T.Vector3(0, 0, 1).applyQuaternion(o.getWorldQuaternion(new T.Quaternion())); return Math.atan2(f.x, f.z); };
     const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a)); const o = w.entities.get('htcrate'), me = t.myAvatar?.()?.root ?? null; if (!o) return { noCrate: true, has: w.entities.has('htcrate') };
     const g = await t.physicsApi.grab('htcrate'); await new Promise((z) => setTimeout(z, 1200));
@@ -364,7 +364,7 @@ try {
   // ---- HD: 'hidden for all' from the Attributes tab (R, 10-10 23:48: "VERY slow at updating ... the sign visible but the
   // checkbox still registering 'hidden'") ----
   await stage("HD", async () => {
-  const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
+  const me = await evalJson(`import('/lib/player/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
   await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'hdsign', components: { label: 'Hide sign', transform: { pos: [${me[0]} + 2, 1.2, ${me[1]} + 2] }, text: { text: 'HIDE ME', size: 0.2, width: 2 } } });`);
   await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('hdsign'))`, 'hdsign'); await sleep(800);
   const r = await page(`const b = await import('/lib/edit/build.js'), sg = await import('/lib/scenegraph.js'), base = await import('/lib/base.js'), w = await import('/lib/world.js');
@@ -386,7 +386,7 @@ try {
   // ---- SB: Shift in the viewport (R, 10-11 00:18: "Can shift-select allow me to select multiple objects in the viewport,
   // and shift-select-drag draw a bounding box around objects to select them?") ----
   await stage("SB", async () => {
-  const at = await page(`const c = await import('/lib/core.js'), co = await import('/lib/controller.js'); const d = c.camera.getWorldDirection(new c.THREE.Vector3()); const h = Math.hypot(d.x, d.z) || 1;
+  const at = await page(`const c = await import('/lib/core.js'), co = await import('/lib/player/controller.js'); const d = c.camera.getWorldDirection(new c.THREE.Vector3()); const h = Math.hypot(d.x, d.z) || 1;
     const f = [d.x / h, d.z / h], r = [-d.z / h, d.x / h], p = co.myState.pos; return { a: [p.x + f[0] * 4 - r[0] * 0.8, p.z + f[1] * 4 - r[1] * 0.8], b: [p.x + f[0] * 4 + r[0] * 0.8, p.z + f[1] * 4 + r[1] * 0.8] };`);
   for (const [id, xz] of [["sba", at.a], ["sbb", at.b]]) await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: '${id}', model: '${CRATE}', components: { label: '${id}', transform: { pos: [${xz[0]}, 0, ${xz[1]}], scale: 0.25 } } });`);
   await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('sba') && !!m.entities.get('sbb'))`, 'sba and sbb'); await sleep(1000);
@@ -402,7 +402,7 @@ try {
   await page(`(await import('/lib/base.js')).bus.emit('key', new KeyboardEvent('keydown', { code: 'Escape' })); return true;`); await sleep(400);
   const x0 = Math.min(A[0], B[0]) - 60, x1 = Math.max(A[0], B[0]) + 60, y0 = Math.min(A[1], B[1]) - 60, y1 = Math.max(A[1], B[1]) + 60;
   // start the box on a pixel with nothing under it (other stages leave things about): each corner, pushed out until bare
-  const start = await page(`const cu = await import('/lib/clickuse.js'); for (let k = 0; k < 8; k++) for (const [x, y] of [[${x0} - k * 30, ${y0} - k * 30], [${x1} + k * 30, ${y1} + k * 30], [${x0} - k * 30, ${y1} + k * 30], [${x1} + k * 30, ${y0} - k * 30]]) if (!cu.thingAt(x, y)) return [x, y]; return null;`);
+  const start = await page(`const cu = await import('/lib/player/clickuse.js'); for (let k = 0; k < 8; k++) for (const [x, y] of [[${x0} - k * 30, ${y0} - k * 30], [${x1} + k * 30, ${y1} + k * 30], [${x0} - k * 30, ${y1} + k * 30], [${x1} + k * 30, ${y0} - k * 30]]) if (!cu.thingAt(x, y)) return [x, y]; return null;`);
   const sx = start?.[0] ?? x0, sy = start?.[1] ?? y0, ex = sx <= x0 ? x1 : x0, ey = sy <= y0 ? y1 : y0;
   await m("mousePressed", sx, sy, 8); for (let k = 1; k <= 6; k++) await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: Math.round(sx + (ex - sx) * k / 6), y: Math.round(sy + (ey - sy) * k / 6), button: "left", buttons: 1, modifiers: 8 });
   await m("mouseReleased", ex, ey, 8); await sleep(600);
@@ -414,7 +414,7 @@ try {
   // ---- SL: selection layers (R, 10-11: "selection layers so people don't select the ground plane all the time") ----
   await stage("SL", async () => {
   await page(`(await import('/lib/edit/build.js')).setBuildMode(true); return true;`); await sleep(4000);   // the edit camera first (it eases in): placed and projected from it
-  const at = await page(`const c = await import('/lib/core.js'), co = await import('/lib/controller.js'); const d = c.camera.getWorldDirection(new c.THREE.Vector3()); const h = Math.hypot(d.x, d.z) || 1;
+  const at = await page(`const c = await import('/lib/core.js'), co = await import('/lib/player/controller.js'); const d = c.camera.getWorldDirection(new c.THREE.Vector3()); const h = Math.hypot(d.x, d.z) || 1;
     const f = [d.x / h, d.z / h], r = [-d.z / h, d.x / h], p = co.myState.pos; return { me: [p.x, p.z], crate: [p.x + f[0] * 4, p.z + f[1] * 4], floorPt: [p.x + f[0] * 4 + r[0] * 2, p.z + f[1] * 4 + r[1] * 2] };`);
   await page(`const m = await import('/lib/net.js'); await m.sendRequest('create', { id: 'slfloor', model: '${CRATE}', components: { label: 'Floor slab', 'hesperus/layer': 'environment', transform: { pos: [${at.floorPt[0]}, -0.09, ${at.floorPt[1]}], scale: [1.2, 0.05, 1.2] } } });   // a 35 m slab lost the bench's GPU context; size defaults are layers-test's
     return await m.sendRequest('create', { id: 'slcrate', model: '${CRATE}', components: { label: 'Layer crate', transform: { pos: [${at.crate[0]}, 0, ${at.crate[1]}], scale: 0.25 } } });`);
@@ -445,7 +445,7 @@ try {
   // ---- SY: one selection (R, 10-11 01:13 "agree with each other in the hierarchy and the viewport"; 00:57 "after undoing a
   // few times ... can't unselect them by clicking away"; 00:41 "the bounding box on moving objects update as they translate") ----
   await stage("SY", async () => {
-  const at = await page(`const c = await import('/lib/core.js'), co = await import('/lib/controller.js'); const d = c.camera.getWorldDirection(new c.THREE.Vector3()); const h = Math.hypot(d.x, d.z) || 1; const p = co.myState.pos; return [p.x + d.x / h * 4, p.z + d.z / h * 4];`);
+  const at = await page(`const c = await import('/lib/core.js'), co = await import('/lib/player/controller.js'); const d = c.camera.getWorldDirection(new c.THREE.Vector3()); const h = Math.hypot(d.x, d.z) || 1; const p = co.myState.pos; return [p.x + d.x / h * 4, p.z + d.z / h * 4];`);
   await page(`const m = await import('/lib/net.js'); await m.sendRequest('create', { id: 'syorb', model: '${CRATE}', components: { label: 'Orbiter', transform: { pos: [${at[0]}, 0, ${at[1]}], scale: 0.2 } } });
     await m.sendRequest('set', { id: 'syorb', component: 'motion', value: { type: 'orbit', radius: 1.2, degPerSec: 120, center: [${at[0]}, 0, ${at[1]}] } });
     return await m.sendRequest('create', { id: 'syb', model: '${CRATE}', components: { label: 'Still box', transform: { pos: [${at[0]} + 2, 0, ${at[1]}], scale: 0.25 } } });`);
@@ -474,25 +474,25 @@ try {
   // ---- ST: X sits only where I could climb (R, 10-11 00:47: "trying to sit with 'x' near the crates results in me levitating
   // 5m in the air": a seat she had put on a sign 3 m up counted as near) ----
   await stage("ST", async () => {
-  const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
+  const me = await evalJson(`import('/lib/player/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
   await page(`const m = await import('/lib/net.js');
     await m.sendRequest('create', { id: 'sthigh', components: { label: 'High sign', transform: { pos: [${me[0]} + 0.8, 3, ${me[1]}] }, text: { text: 'UP HERE', size: 0.2 } } });
     await m.sendRequest('create', { components: { parent: { to: 'sthigh' }, transform: { pos: [0, 0, 0] }, socket: { name: 'seat' }, station: {} } });
     await m.sendRequest('create', { id: 'stlow', model: '${CRATE}', components: { label: 'Low seat', transform: { pos: [${me[0]} - 2.2, 0, ${me[1]}], scale: 0.2 } } });
     return await m.sendRequest('create', { components: { parent: { to: 'stlow' }, transform: { pos: [0, 2.2, 0] }, socket: { name: 'seat' }, station: {} } });`);
   await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('sthigh') && !!m.entities.get('stlow'))`, 'sthigh and stlow'); await sleep(1200);
-  const r = await page(`const lb = await import('/lib/localbody.js'), w = await import('/lib/world.js'); const did = lb.trySitOn(); await new Promise((z) => setTimeout(z, 1500));
+  const r = await page(`const lb = await import('/lib/player/localbody.js'), w = await import('/lib/world.js'); const did = lb.trySitOn(); await new Promise((z) => setTimeout(z, 1500));
     const on = w.avatarMounts?.get?.((await import('/lib/base.js')).CONFIG.name) ?? null;
     const host = on ? (w.parentIdOf?.(on.to) ?? on.to) : null;   // sockets are child entities (10-14): the mount names the seat, the seat's parent is the thing
     return { did, on: host };`);
-  await page(`const lb = await import('/lib/localbody.js'); lb.standUp?.(); (await import('/lib/base.js')).bus.emit('key', new KeyboardEvent('keydown', { code: 'KeyX' })); return true;`).catch(() => null); await sleep(800);
+  await page(`const lb = await import('/lib/player/localbody.js'); lb.standUp?.(); (await import('/lib/base.js')).bus.emit('key', new KeyboardEvent('keydown', { code: 'KeyX' })); return true;`).catch(() => null); await sleep(800);
   await page(`const m = await import('/lib/net.js'); await m.sendRequest('delete', { id: 'sthigh' }); await m.sendRequest('delete', { id: 'stlow' }); return true;`).catch(() => null);
   check("ST1 X with a seat 3 m up beside me and one at the ground 2.2 m away: I sit on the one I could climb onto", r?.on === N("stlow"), r);
   });
   // ---- NL: the Inspector's name line (R, 10-10 23:48: "make the 'name' attribute be like Maya ... The eye and lock and
   // disable icons can be on this line to the right") ----
   await stage("NL", async () => {
-  const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
+  const me = await evalJson(`import('/lib/player/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
   await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'nlbox', model: '${CRATE}', components: { label: 'Name box', transform: { pos: [${me[0]} + 2.5, 0, ${me[1]} - 2], scale: 0.3 } } });`);
   await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('nlbox'))`, 'nlbox'); await sleep(600);
   await page(`(await import('/lib/edit/build.js')).setBuildMode(true); await new Promise((z) => setTimeout(z, 500)); (await import('/lib/scenegraph.js')).sceneSelect('nlbox'); return true;`);
@@ -510,7 +510,7 @@ try {
   });
   // ---- HY: History says what changed (R, 10-10 23:55: "Is there a reason the history isn't more explicit here?") ----
   await stage("HY", async () => {
-  const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
+  const me = await evalJson(`import('/lib/player/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
   await page(`const m = await import('/lib/net.js'); await m.sendRequest('create', { id: 'hysign', components: { label: 'History sign', transform: { pos: [${me[0]} + 2, 1.2, ${me[1]} + 2] }, text: { text: 'HI', size: 0.2, width: 5.076 } } });
     await new Promise((z) => setTimeout(z, 1600)); return await m.sendRequest('set', { id: 'hysign', component: 'text', value: { text: 'HI', size: 0.2, width: 3.912 } });`);
   await sleep(800);
@@ -529,30 +529,30 @@ try {
   await page(`const t = await import('/lib/thingphysics.js'); await t.physicsApi.grab('anchor'); return true;`); const b2 = await bar();
   check("WG1 a grab that is refused says why in the status bar, in the attention colour, and again the very next time (no 5 s hush), with no chat line", b1.attn && !b1.gone && /Anchor/.test(b1.text) && b2.attn && /Anchor/.test(b2.text) && (await evalJson(`document.querySelectorAll('.chat-log .line').length`)) === lines0, { b1, b2 });
   // something to pick up 5 m ahead of me, where the camera looks; a real click on it
-  const far = await page(`const c = await import('/lib/controller.js'), k = await import('/lib/core.js'); const d = k.camera.getWorldDirection(new k.THREE.Vector3()); const h = Math.hypot(d.x, d.z) || 1; return { at: [c.myState.pos.x + d.x / h * 5, c.myState.pos.z + d.z / h * 5], me: [c.myState.pos.x, c.myState.pos.z] };`);
+  const far = await page(`const c = await import('/lib/player/controller.js'), k = await import('/lib/core.js'); const d = k.camera.getWorldDirection(new k.THREE.Vector3()); const h = Math.hypot(d.x, d.z) || 1; return { at: [c.myState.pos.x + d.x / h * 5, c.myState.pos.z + d.z / h * 5], me: [c.myState.pos.x, c.myState.pos.z] };`);
   const made = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'wgcrate', model: '${CRATE}', components: { label: 'Far crate', grabbable: { enabled: true }, physics: { kind: 'dynamic', who: 'member' }, transform: { pos: [${far.at[0]}, 0, ${far.at[1]}], scale: 0.3 } } });`);
   check("(setup) a small crate 5 m ahead, out of reach", made?.ok, made);
   await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('wgcrate'))`, 'wgcrate'); await sleep(800);
-  const cl = await page(`const c = await import('/lib/core.js'), cu = await import('/lib/clickuse.js'), w = await import('/lib/world.js'), T = c.THREE; const o = w.entities.get('wgcrate'); o.updateWorldMatrix(true, true);
+  const cl = await page(`const c = await import('/lib/core.js'), cu = await import('/lib/player/clickuse.js'), w = await import('/lib/world.js'), T = c.THREE; const o = w.entities.get('wgcrate'); o.updateWorldMatrix(true, true);
     const p = new T.Box3().setFromObject(o).getCenter(new T.Vector3()).project(c.camera), r = c.canvas.getBoundingClientRect(); let x = r.left + (p.x + 1) / 2 * r.width, y = r.top + (1 - p.y) / 2 * r.height, found = cu.thingAt(x, y) === 'wgcrate';
     for (let k = 1; k <= 12 && !found; k++) for (const [ax, ay] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) { const xx = x + ax * k * 4, yy = y + ay * k * 4; if (cu.thingAt(xx, yy) === 'wgcrate') { x = xx; y = yy; found = true; break; } }
     const ev = (t) => new MouseEvent(t, { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y }); c.canvas.dispatchEvent(ev('mousedown')); c.canvas.dispatchEvent(ev('mouseup'));
-    return { found, walking: (await import('/lib/controller.js')).isAutoWalking() };`);
+    return { found, walking: (await import('/lib/player/controller.js')).isAutoWalking() };`);
   const got = await waitFor(`import('/lib/thingphysics.js').then((m) => m.physicsApi.mine().includes('wgcrate'))`, 9000);
-  const end = await page(`const c = await import('/lib/controller.js'); return { me: [c.myState.pos.x, c.myState.pos.z], walking: c.isAutoWalking() };`);
+  const end = await page(`const c = await import('/lib/player/controller.js'); return { me: [c.myState.pos.x, c.myState.pos.z], walking: c.isAutoWalking() };`);
   check("WG2 a click on it out of reach walks me over and picks it up", cl?.found && cl.walking && got && Math.hypot(end.me[0] - far.me[0], end.me[1] - far.me[1]) > 2.5 && !end.walking, { cl, got, walked: Math.hypot(end.me[0] - far.me[0], end.me[1] - far.me[1]) });
   await page(`const t = await import('/lib/thingphysics.js'); await t.physicsApi.put('wgcrate'); return true;`); await sleep(600);
   });
   // ---- CT: clicks go through (R 10-11 01:17 queue E8: a per-thing switch; componentspec clickthrough) ----
   await stage("CT", async () => {
-  const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z, c.myState.yaw])`);
+  const me = await evalJson(`import('/lib/player/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z, c.myState.yaw])`);
   // 1.2 m ahead and 0.7 m to the side: the full run leaves WG's crate straight ahead of me, and a click found that instead
   const made = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'ctbox', model: '${CRATE}', components: { label: 'Through', grabbable: { enabled: true }, transform: { pos: [${me[0]} + Math.sin(${me[2]}) * 1.2 + Math.cos(${me[2]}) * 0.7, 0.9, ${me[1]} + Math.cos(${me[2]}) * 1.2 - Math.sin(${me[2]}) * 0.7], scale: 0.3 } } });`);
   check("(setup) a crate in front of me", made?.ok, made);
   const seen = await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('ctbox') && !!m.bagOf('ctbox'))`, 15000); await sleep(600);   // realized, not just listed (the map holds null until the model is in)
   const dbg = await page(`const w = await import('/lib/world.js'); return { has: w.entities.has('ctbox'), comps: w.bagOf('ctbox') ?? null, n: w.entities.size };`);
   check("(setup) the crate is realized in the page", seen && dbg?.has, { seen, dbg });
-  const at = () => page(`const c = await import('/lib/core.js'), cu = await import('/lib/clickuse.js'), w = await import('/lib/world.js'), T = c.THREE; const o = w.entities.get('ctbox'); o.updateWorldMatrix(true, true);
+  const at = () => page(`const c = await import('/lib/core.js'), cu = await import('/lib/player/clickuse.js'), w = await import('/lib/world.js'), T = c.THREE; const o = w.entities.get('ctbox'); o.updateWorldMatrix(true, true);
     const p = new T.Box3().setFromObject(o).getCenter(new T.Vector3()).project(c.camera), r = c.canvas.getBoundingClientRect(); return cu.thingAt(r.left + (p.x + 1) / 2 * r.width, r.top + (1 - p.y) / 2 * r.height);`);
   const pixel = await page(`const c = await import('/lib/core.js'), w = await import('/lib/world.js'), T = c.THREE; const o = w.entities.get('ctbox'); o.updateWorldMatrix(true, true);
     const p = new T.Box3().setFromObject(o).getCenter(new T.Vector3()).project(c.camera), r = c.canvas.getBoundingClientRect(); return [r.left + (p.x + 1) / 2 * r.width, r.top + (1 - p.y) / 2 * r.height];`);
@@ -563,12 +563,12 @@ try {
   // what lies behind it is the earlier stages' business (the full run leaves box1 there): the same pixel with ctbox gone
   await page(`const m = await import('/lib/net.js'); return await m.sendRequest('delete', { id: 'ctbox' });`).catch(() => null);
   await waitFor(`import('/lib/world.js').then((m) => !m.entities.has('ctbox'))`, 8000); await sleep(300);
-  const behind = await page(`const cu = await import('/lib/clickuse.js'); return cu.thingAt(${pixel[0]}, ${pixel[1]});`);
+  const behind = await page(`const cu = await import('/lib/player/clickuse.js'); return cu.thingAt(${pixel[0]}, ${pixel[1]});`);
   check("CT1 with clickthrough set, the same click passes through it to whatever is behind (as if it were gone)", after !== N('ctbox') && after === behind, { after, behind });
   });
   // ---- CL: a live drag by someone else is a claim: an amber box and 'editing: <name>' in the Hierarchy, gone on end ----
   await stage("CL", async () => {
-  const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
+  const me = await evalJson(`import('/lib/player/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
   const made = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'clbox', model: '${CRATE}', components: { label: 'Claimed', transform: { pos: [${me[0]} + 1.5, 0, ${me[1]} + 1], scale: 0.3 } } });`);
   check("(setup) a crate to be dragged by someone else", made?.ok, made);
   await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('clbox') && !!m.bagOf('clbox'))`, 15000); await sleep(400);
@@ -596,16 +596,16 @@ try {
   // ---- AC: aim at the cursor (R, 10-10: a throw "just aims away from your camera view, not at the spot you're aiming with
   // your cursor", and "my character would try to drop it where the cursor is, not right at their feet") ----
   await stage("AC", async () => {
-  await page(`const c = await import('/lib/controller.js'), b = await import('/lib/base.js'); c.myState.pos.x -= 12; c.myState.pos.z += 14; b.bus.emit('cut-adopted'); return true;`);
+  await page(`const c = await import('/lib/player/controller.js'), b = await import('/lib/base.js'); c.myState.pos.x -= 12; c.myState.pos.z += 14; b.bus.emit('cut-adopted'); return true;`);
   await waitFor(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body().arrived)`, 8000); await sleep(1500);
-  const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z, c.myState.yaw])`);
+  const me = await evalJson(`import('/lib/player/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z, c.myState.yaw])`);
   const made = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'acbox', model: '${CRATE}', components: { label: 'Aimed', grabbable: { enabled: true }, physics: { kind: 'dynamic', who: 'member' }, transform: { pos: [${me[0]} + 0.9, 0, ${me[1]}], scale: 0.3 } } });`);
   check("(setup) a small crate beside me", made?.ok, made);
   await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('acbox'))`, 'acbox'); await sleep(800);
   await page(`const t = await import('/lib/thingphysics.js'); await t.physicsApi.grab('acbox'); return true;`); await sleep(1000);
   // the pixel where a ground point shows: project it, then a real click there
   const clickGround = (wx: number, wz: number) => page(`const c = await import('/lib/core.js'), T = c.THREE; const p = new T.Vector3(${wx}, 0, ${wz}).project(c.camera), r = c.canvas.getBoundingClientRect(), x = r.left + (p.x + 1) / 2 * r.width, y = r.top + (1 - p.y) / 2 * r.height;
-    const cu = await import('/lib/clickuse.js'); const aim = cu.clickUseApi.aimPoint(x, y), over = cu.thingAt(x, y);
+    const cu = await import('/lib/player/clickuse.js'); const aim = cu.clickUseApi.aimPoint(x, y), over = cu.thingAt(x, y);
     const ev = (t) => new MouseEvent(t, { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y }); c.canvas.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: x, clientY: y })); c.canvas.dispatchEvent(ev('mousedown')); c.canvas.dispatchEvent(ev('mouseup')); return { aim, over, on: Math.abs(p.x) < 1 && Math.abs(p.y) < 1 };`);
   const where = () => page(`const w = await import('/lib/world.js'), T = (await import('/lib/core.js')).THREE; const o = w.entities.get('acbox'); o.updateWorldMatrix(true, false); const v = o.getWorldPosition(new T.Vector3()); return [v.x, v.y, v.z];`);
   const dir = await page(`const k = await import('/lib/core.js'); const d = k.camera.getWorldDirection(new k.THREE.Vector3()); const h = Math.hypot(d.x, d.z) || 1; return [d.x / h, d.z / h];`);
@@ -616,10 +616,10 @@ try {
   check("AC1 holding it, a click on a spot 3.7 m away walks me over and sets it down THERE (within 0.4 m), not at my feet", cg?.on && !cg.over && down && Math.hypot(at[0] - spot[0], at[2] - spot[1]) < 0.4, { cg, spot, at });
   // Q throws at the spot under the cursor
   await page(`const t = await import('/lib/thingphysics.js'); await t.physicsApi.grab('acbox'); return true;`); await sleep(1000);
-  const me2 = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
+  const me2 = await evalJson(`import('/lib/player/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
   const tgt = [me2[0] + dir[0] * 5 - dir[1] * 2, me2[1] + dir[1] * 5 + dir[0] * 2];
   const mv = await page(`const c = await import('/lib/core.js'), T = c.THREE; const p = new T.Vector3(${tgt[0]}, 0, ${tgt[1]}).project(c.camera), r = c.canvas.getBoundingClientRect(), x = r.left + (p.x + 1) / 2 * r.width, y = r.top + (1 - p.y) / 2 * r.height;
-    c.canvas.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: x, clientY: y })); return (await import('/lib/clickuse.js')).clickUseApi.aimPoint();`);
+    c.canvas.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: x, clientY: y })); return (await import('/lib/player/clickuse.js')).clickUseApi.aimPoint();`);
   await key("KeyQ");
   // where it first comes down: the lowest-y moment near the ground, sampled in the page
   const land = await page(`const w = await import('/lib/world.js'), T = (await import('/lib/core.js')).THREE; const o = w.entities.get('acbox'), v = new T.Vector3(); let up = false, hit = null;
@@ -627,7 +627,7 @@ try {
   check("AC2 Q throws it at the spot under the cursor: it rises, and first comes down within 0.9 m of that spot (5.4 m away, off to one side)", mv && land?.up && land.hit && Math.hypot(land.hit[0] - tgt[0], land.hit[2] - tgt[1]) < 0.9, { aim: mv, tgt, land });
   await sleep(2500);
   // the menu: the name bare, in its own span
-  await page(`const c = await import('/lib/core.js'), cu = await import('/lib/clickuse.js'), w = await import('/lib/world.js'), T = c.THREE; const o = w.entities.get('acbox'); o.updateWorldMatrix(true, true);
+  await page(`const c = await import('/lib/core.js'), cu = await import('/lib/player/clickuse.js'), w = await import('/lib/world.js'), T = c.THREE; const o = w.entities.get('acbox'); o.updateWorldMatrix(true, true);
     const p = new T.Box3().setFromObject(o).getCenter(new T.Vector3()).project(c.camera), r = c.canvas.getBoundingClientRect(); let x = r.left + (p.x + 1) / 2 * r.width, y = r.top + (1 - p.y) / 2 * r.height;
     const ev = (t) => new MouseEvent(t, { bubbles: true, cancelable: true, button: 2, clientX: x, clientY: y }); c.canvas.dispatchEvent(ev('mousedown')); c.canvas.dispatchEvent(ev('mouseup')); return true;`);
   const mi = await evalJson(`(() => { const b = document.querySelector('.sp-ctx-item'); return b ? { text: b.textContent, name: b.querySelector('.sp-ctx-name')?.textContent ?? null } : null; })()`);
@@ -638,10 +638,10 @@ try {
   // The lab knob physicsApi.lag(300) delays the request, as a slow round trip would; the control arm turns prediction off
   // and shows the old shape (the thing waits in the hand for the whole lag), the real arm shows it leave at once. ----
   await stage("PR", async () => {
-  await page(`const c = await import('/lib/controller.js'), b = await import('/lib/base.js'); c.myState.pos.x += 9; c.myState.pos.z -= 9; b.bus.emit('cut-adopted'); return true;`);
+  await page(`const c = await import('/lib/player/controller.js'), b = await import('/lib/base.js'); c.myState.pos.x += 9; c.myState.pos.z -= 9; b.bus.emit('cut-adopted'); return true;`);
   await waitFor(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body().arrived)`, 8000); await sleep(1200);
   await page(`const m = await import('/lib/net.js'); const st = m.replica.st; if (!st?.entities?.['@world']?.c?.['physics-engine']) await m.sendRequest('set', { id: '@world', component: 'physics-engine', value: { engine: 'eidosim@1.0.0' } }); return true;`); await sleep(600);
-  const pm = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
+  const pm = await evalJson(`import('/lib/player/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
   // one crate per arm (a thrown one lands out of reach); a gentle throw straight ahead at 2 m/s
   const mk = async (id: string) => { const made = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: '${id}', model: '${CRATE}', components: { label: 'Predicted', grabbable: { enabled: true }, physics: { kind: 'dynamic', who: 'member' }, transform: { pos: [${pm[0] + 0.7}, 0, ${pm[1] + 0.3}], scale: 0.3 } } });`);
     check(`(setup) a crate for the throw (${id})`, made?.ok, made); await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('${id}'))`, '${id}'); await sleep(800); };
@@ -681,12 +681,12 @@ try {
     return { ok: !!reply?.ok, left, clock: (await import('/lib/serverclock.js')).clockDebug() };`); })();
   check("PR4 after the page's clock steps 1.6 s (as this box's does), a throw with no prediction still leaves the hand within 500 ms", stepped?.ok && stepped.left !== null && stepped.left < 500, stepped);
   // back where this stage found me: later stages move relative to here
-  await page(`const c = await import('/lib/controller.js'), b = await import('/lib/base.js'); c.myState.pos.x -= 9; c.myState.pos.z += 9; b.bus.emit('cut-adopted'); return true;`);
+  await page(`const c = await import('/lib/player/controller.js'), b = await import('/lib/base.js'); c.myState.pos.x -= 9; c.myState.pos.z += 9; b.bus.emit('cut-adopted'); return true;`);
   await waitFor(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body().arrived)`, 8000); await sleep(800);
   });
   // ---- RB: a reset button made from the Edit menu's helpers, used by its left-click offer (R, 10-10) ----
   await stage("RB", async () => {
-  const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
+  const me = await evalJson(`import('/lib/player/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
   const mk = await page(`const m = await import('/lib/net.js'); const a = await m.sendRequest('create', { id: 'rbtgt', model: '${CRATE}', components: { label: 'Reset target', transform: { pos: [${me[0]} + 2, 0, ${me[1]} - 2], scale: 0.3 } } });
     const b = await m.sendRequest('create', { id: 'rbbtn', model: '${CRATE}', components: { label: 'Reset button', transform: { pos: [${me[0]} + 0.8, 0, ${me[1]}], scale: 0.3 } } }); return [a.ok, b.ok];`);
   await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('rbtgt') && !!m.entities.get('rbbtn'))`, 'rbtgt and rbbtn'); await sleep(600);
@@ -694,14 +694,14 @@ try {
   await sleep(800);
   const moved = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('set', { id: 'rbtgt', component: 'transform', value: { pos: [${me[0]} + 5, 0, ${me[1]} + 5], q: [0, 0, 0, 1], scale: [0.3, 0.3, 0.3] } });`);
   await sleep(800);
-  const offer = await page(`const cu = await import('/lib/clickuse.js'); const o = cu.offersOf('rbbtn'); const r = await o[0]?.run(); return { first: o[0]?.label, ok: r?.ok ?? null, why: r?.refused?.reason ?? null };`);
+  const offer = await page(`const cu = await import('/lib/player/clickuse.js'); const o = cu.offersOf('rbbtn'); const r = await o[0]?.run(); return { first: o[0]?.label, ok: r?.ok ?? null, why: r?.refused?.reason ?? null };`);
   await sleep(1200);
   const at = await page(`const st = (await import('/lib/state.js')).state.st; return st.entities['rbtgt']?.pos;`);
   check("RZ1 Edit's 'make reset button' + the button's first offer (its left-click): the moved thing is back where it stood when the button was made", mk.every(Boolean) && made?.ok && moved?.ok && /^reset/.test(offer.first ?? "") && offer.ok && Math.hypot(at[0] - me[0] - 2, at[2] - me[1] + 2) < 0.01, { mk, made: made?.ok ?? made, moved: moved?.ok, offer, at });
   });
   // ---- GE: the grip editor (R, 10-10): add a grip, drag it, mirror it, try it; the palm lands on the grip ----
   await stage("GE", async () => {
-  const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
+  const me = await evalJson(`import('/lib/player/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
   await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'getool', model: '${CRATE}', components: { label: 'Grip tool', grabbable: {}, transform: { pos: [${me[0]} + 0.9, 0, ${me[1]}], scale: 0.25 } } });`);
   await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('getool'))`, 'getool'); await sleep(700);
   const opened = await page(`(await import('/lib/edit/build.js')).setBuildMode(true); await new Promise((z) => setTimeout(z, 400)); (await import('/lib/edit/gripedit.js')).openGripEditor('getool');
@@ -715,7 +715,7 @@ try {
     const gs = (await import('/lib/world.js')).bagOf('getool').grabbable.grips; return gs;`);
   const L = mirrored["grip1-left"], Rg = mirrored.grip1;
   check("GE3 mirror writes the left hand's grip: x negated, the same palm-out (Z) after the reflection", !!L && L.hand === "left" && Math.abs(L.pos[0] + Rg.pos[0]) < 1e-3 && Math.abs(L.pos[1] - Rg.pos[1]) < 1e-3, { L, R: Rg });
-  const tried = await page(`const c = await import('/lib/controller.js'), w = await import('/lib/world.js'), { THREE: T } = await import('/lib/core.js'), tp = await import('/lib/thingphysics.js'), n = await import('/lib/net.js');
+  const tried = await page(`const c = await import('/lib/player/controller.js'), w = await import('/lib/world.js'), { THREE: T } = await import('/lib/core.js'), tp = await import('/lib/thingphysics.js'), n = await import('/lib/net.js');
     const ge = await import('/lib/edit/gripedit.js'); const tc = globalThis.__gripeditTest(); [...tc.panel.querySelectorAll('.gripedit-row')].find((r) => r.textContent.startsWith('grip1') && !r.textContent.includes('left')).click();
     await new Promise((z) => setTimeout(z, 300)); const r = await [...tc.panel.querySelectorAll('button')].find((b) => b.textContent === 'try it').onclick();
     await new Promise((z) => setTimeout(z, 2500)); const o = w.entities.get('getool'); o.updateWorldMatrix(true, false); const g = w.bagOf('getool').grabbable.grips.grip1;
@@ -726,21 +726,21 @@ try {
   });
   // ---- NH: the authority has no body for me while I think I'm here (R, 10-10 after a rename): a grab re-arrives ----
   await stage("NH", async () => {
-  const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
+  const me = await evalJson(`import('/lib/player/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
   await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'nhball', model: '${CRATE}', components: { grabbable: {}, transform: { pos: [${me[0]} + 0.7, 0, ${me[1]}], scale: 0.2 } } });`);
   await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('nhball'))`, 'nhball'); await sleep(500);
   const r = await page(`const n = await import('/lib/net.js'), t = await import('/lib/thingphysics.js'); const gone = await n.sendRequest('leave', {});
-    const cu = await import('/lib/clickuse.js'); const o = cu.offersOf('nhball'); const g = await o[0]?.run(); await new Promise((z) => setTimeout(z, 600));
+    const cu = await import('/lib/player/clickuse.js'); const o = cu.offersOf('nhball'); const g = await o[0]?.run(); await new Promise((z) => setTimeout(z, 600));
     const back = await t.physicsApi.put('nhball'); return { first: o[0]?.label, left: gone?.ok ?? gone?.refused?.code, grab: g?.ok ?? g?.refused?.code, put: back?.ok ?? back?.refused?.code };`);
   check("NH1 my body gone at the authority (leave), a CLICK grab (the left-click offer) still works: the 'not-here' refusal re-arrives and sends it again", r.left === true && r.grab === true, r);
   });
   // ---- PO: holding one thing, right-click another: 'put X on Y' sets it down on top, where the click was (R, 10-10) ----
   await stage("PO", async () => {
-  const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
+  const me = await evalJson(`import('/lib/player/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
   await page(`const m = await import('/lib/net.js'); await m.sendRequest('create', { id: 'pobase', model: '${CRATE}', components: { label: 'Base', grabbable: {}, transform: { pos: [${me[0]} + 0.9, 0, ${me[1]}], scale: 0.4 } } });
     return await m.sendRequest('create', { id: 'potop', model: '${CRATE}', components: { label: 'Small', grabbable: {}, transform: { pos: [${me[0]} - 0.8, 0, ${me[1]}], scale: 0.15 } } });`);
   await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('pobase') && !!m.entities.get('potop'))`, 'pobase and potop'); await sleep(700);
-  const r = await page(`const t = await import('/lib/thingphysics.js'), cu = await import('/lib/clickuse.js'), w = await import('/lib/world.js'), { THREE: T } = await import('/lib/core.js');
+  const r = await page(`const t = await import('/lib/thingphysics.js'), cu = await import('/lib/player/clickuse.js'), w = await import('/lib/world.js'), { THREE: T } = await import('/lib/core.js');
     const g = await t.physicsApi.grab('potop'); await new Promise((z) => setTimeout(z, 800));
     const b = new T.Box3().setFromObject(w.entities.get('pobase')); const side = [b.max.x, (b.min.y + b.max.y) / 2, (b.min.z + b.max.z) / 2];   // a click on its side
     const o = cu.offersOf('pobase', { spot: side }); const put = o.find((x) => x.k === 'puton'); const res = await put?.run(); await new Promise((z) => setTimeout(z, 1500));
@@ -767,7 +767,7 @@ try {
   });
   // ---- AT: the Attributes tab, the Inspector's eye, a card's ✕ (R, 10-10 18:55) ----
   await stage("AT", async () => {
-  const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
+  const me = await evalJson(`import('/lib/player/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
   await page(`const m = await import('/lib/net.js'); await m.sendRequest('create', { id: 'atbox', model: '${CRATE}', components: { label: 'Attr box', transform: { pos: [${me[0]} + 3, 0, ${me[1]} + 3], scale: 0.3 } } });
     return await m.sendRequest('set', { id: 'atbox', component: 'motion', value: { type: 'spin', axis: [0, 1, 0], degPerSec: 30 } });`);
   await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('atbox'))`, 'atbox'); await sleep(600);
@@ -788,7 +788,7 @@ try {
   });
   // ---- MT: the draft hesperus/material, drawn (docs/contributing/COMPONENT-LADDER.md rung 1; R 10-10) ----
   await stage("MT", async () => {
-  const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
+  const me = await evalJson(`import('/lib/player/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
   // ids are the authority's (10-17): a create's id is a placeholder the reply maps to the minted one
   const made = await page(`const m = await import('/lib/net.js'); const out = []; for (const dx of [2, 3.2]) out.push((await m.sendRequest('create', { model: '${CRATE}', components: { transform: { pos: [${me[0]} + dx, 0, ${me[1]} - 3], scale: 0.3 } } })).refs?.[0]?.id ?? null); return out;`);
   const [MTA, MTB] = made ?? []; if (!MTA || !MTB) throw new Error(`setup: the two crates weren't created: ${JSON.stringify(made)}`);
@@ -810,13 +810,13 @@ try {
   await stage("EC", async () => {
   // the earlier stages punted the crate away, walked me off and left things at my feet: step to clear ground and put
   // the crate in the camera's view (ahead of my body along the way the camera looks, once the camera has followed)
-  await page(`const c = await import('/lib/controller.js'), b = await import('/lib/base.js'); c.myState.pos.x += 20; c.myState.pos.z += 20; b.bus.emit('cut-adopted'); return true;`);
+  await page(`const c = await import('/lib/player/controller.js'), b = await import('/lib/base.js'); c.myState.pos.x += 20; c.myState.pos.z += 20; b.bus.emit('cut-adopted'); return true;`);
   await waitFor(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body().arrived)`, 8000); await sleep(1500);
-  const put = await page(`const c = await import('/lib/controller.js'), k = await import('/lib/core.js'), n = await import('/lib/net.js'); const d = k.camera.getWorldDirection(new k.THREE.Vector3()); const h = Math.hypot(d.x, d.z) || 1;
+  const put = await page(`const c = await import('/lib/player/controller.js'), k = await import('/lib/core.js'), n = await import('/lib/net.js'); const d = k.camera.getWorldDirection(new k.THREE.Vector3()); const h = Math.hypot(d.x, d.z) || 1;
     const r = await n.sendRequest('set', { id: 'cuball', component: 'transform', value: { pos: [c.myState.pos.x + d.x / h * 1.5, 0, c.myState.pos.z + d.z / h * 1.5], scale: [0.3, 0.3, 0.3] } }); return { ok: !!r?.ok, code: r?.refused?.code ?? null, dir: [d.x, d.y, d.z] };`); await sleep(2500);
   check("(setup) the crate is back in view, on clear ground", put?.ok, put);
   await evalJson(`import('/lib/edit/build.js').then((m) => (m.setBuildMode(true), true))`);
-  const cam = () => evalJson(`import('/lib/controller.js').then((c) => ({ yaw: c.camYaw, pitch: c.camPitch, dist: c.camDist, pan: c.editPan.toArray() }))`);
+  const cam = () => evalJson(`import('/lib/player/controller.js').then((c) => ({ yaw: c.camYaw, pitch: c.camPitch, dist: c.camDist, pan: c.editPan.toArray() }))`);
   // a drag: press at (x, y), three moves, release. where: 'cuball' = a pixel on that thing, 'bare' = a pixel no thing is under
   const drag = (where: string, button: number, alt: boolean, mx: number, my: number) => page(`const c = await import('/lib/core.js'), w = await import('/lib/world.js'), T = c.THREE;
     const r = c.canvas.getBoundingClientRect(), R = new T.Raycaster(), all = [...w.entities.values()].filter(Boolean);
@@ -848,7 +848,7 @@ try {
   const fb = await page(`const k = await import('/lib/core.js'), w = await import('/lib/world.js'), T = k.THREE; const o = w.entities.get('anchor'); const b = new T.Box3().setFromObject(o); return { inside: b.containsPoint(k.camera.position), dist: +k.camera.position.distanceTo(b.getCenter(new T.Vector3())).toFixed(2), half: +(b.getSize(new T.Vector3()).length() / 2).toFixed(2) };`);
   check("EC6b F on a thing in Body mode frames it from outside: the camera is not inside it, and stands back at least its half-size", fb && !fb.inside && fb.dist > fb.half, fb);
   // F frames something far off; then walking brings the camera home
-  await page(`const c = await import('/lib/controller.js'), k = await import('/lib/core.js'); c.frameOn(new k.THREE.Vector3(c.myState.pos.x + 30, 2, c.myState.pos.z + 30), 4); return true;`);
+  await page(`const c = await import('/lib/player/controller.js'), k = await import('/lib/core.js'); c.frameOn(new k.THREE.Vector3(c.myState.pos.x + 30, 2, c.myState.pos.z + 30), 4); return true;`);
   const far = await cam();
   await evalJson(`(window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW', key: 'w', bubbles: true })), true)`); await sleep(900);
   await evalJson(`(window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW', key: 'w', bubbles: true })), true)`);
@@ -996,14 +996,14 @@ try {
   // B steps back into the body and keeps the spot; Body resets) ----
   await stage("FC", async () => {
   await evalJson(`import('/lib/edit/build.js').then((m) => (m.setBuildMode(true), true))`); await sleep(300);
-  const st = () => evalJson(`Promise.all([import('/lib/controller.js'), import('/lib/core.js')]).then(([c, k]) => ({ free: c.isFreeCam(), focus: c.freeCamState().focus, body: c.myState.pos.toArray(), pose: !!c.myState.pose, cam: k.camera.position.toArray(), sw: [...document.querySelectorAll('.edit-camsw .edit-cam.on')].map((b) => b.dataset.cam) }))`);
+  const st = () => evalJson(`Promise.all([import('/lib/player/controller.js'), import('/lib/core.js')]).then(([c, k]) => ({ free: c.isFreeCam(), focus: c.freeCamState().focus, body: c.myState.pos.toArray(), pose: !!c.myState.pose, cam: k.camera.position.toArray(), sw: [...document.querySelectorAll('.edit-camsw .edit-cam.on')].map((b) => b.dataset.cam) }))`);
   const hold = async (code: string, ms: number) => { await evalJson(`(window.dispatchEvent(new KeyboardEvent('keydown', { code: '${code}', bubbles: true })), true)`); await sleep(ms); await evalJson(`(window.dispatchEvent(new KeyboardEvent('keyup', { code: '${code}', bubbles: true })), true)`); };
   const s0 = await st();
   await evalJson(`(document.querySelector('.edit-camsw .edit-cam[data-cam="free"]').click(), true)`); await sleep(500);
   const s1 = await st();
   if (process.env.SHOT_DIR) { const r = await cdp.send<any>("Page.captureScreenshot", { format: "png" }); fs.writeFileSync(`${process.env.SHOT_DIR}/freecam-pose.png`, Buffer.from(r.data, "base64")); }
   // the pose, measured (the bench has no GPU to look with): both hands in front of the chest, below the shoulders, above the hips
-  const measure = () => page(`const { getMe } = await import('/lib/mybody.js'); const me = getMe(); const T = (await import('/lib/core.js')).THREE; me.root.updateMatrixWorld(true); me.update?.(0);
+  const measure = () => page(`const { getMe } = await import('/lib/player/mybody.js'); const me = getMe(); const T = (await import('/lib/core.js')).THREE; me.root.updateMatrixWorld(true); me.update?.(0);
     const h = me.vrm.humanoid, at = (b) => { const n = h.getNormalizedBoneNode(b); n.updateWorldMatrix(true, false); return n.getWorldPosition(new T.Vector3()); };
     const yaw = me.root.rotation.y, f = new T.Vector3(Math.sin(yaw), 0, Math.cos(yaw)), hips = at('hips');
     const rel = (b) => { const p = at(b).sub(hips); return { fwd: +p.dot(f).toFixed(2), up: +p.y.toFixed(2), side: +p.dot(new T.Vector3(f.z, 0, -f.x)).toFixed(2) }; };

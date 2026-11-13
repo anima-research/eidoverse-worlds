@@ -1,19 +1,19 @@
 // remotes — everyone else's bodies. Presence is lossy and arrives at ~15 Hz; each body is drawn where it was
 // ~100 ms ago, between the two samples that bracket that moment, never snapped to the newest.
 
-import { THREE, camera, scene } from './core.js';
-import { report, angleDelta, CONFIG } from './base.js';
-import { makeAvatar, makeCapsuleAvatar } from './avatar/avatar.js';
-import { onceAnimOf } from '../../shared/onceanim.js';
-import { avatarMounts, setBodySeat } from './world.js';
-import { driveOccupied, releaseOccupied } from './avatar/occupybody.js';
+import { THREE, camera, scene } from '../core.js';
+import { report, angleDelta, CONFIG } from '../base.js';
+import { makeAvatar, makeCapsuleAvatar } from '../avatar/avatar.js';
+import { onceAnimOf } from '../../../shared/onceanim.js';
+import { avatarMounts, setBodySeat } from '../world.js';
+import { driveOccupied, releaseOccupied } from '../avatar/occupybody.js';
 import { declareOccupyState, clearOccupyState } from './occupants.js';
 import { applyRemoteReach, noteReachEvents } from './reachnet.js';
-import { syncClipPhase } from './avatar/poseclips.js';
-import { applyWingFoldPresence } from '../../shared/wingpresence.js';
-import { poseChannels } from '../../shared/humanoid.js';
-import { applyPresenceWire, applyVoiceWire, applyBodyWire, sampleTime } from '../../shared/presencewire.js';
-import { applyRemoteXR, resetFingers } from './xr/xrbody.js';
+import { syncClipPhase } from '../avatar/poseclips.js';
+import { applyWingFoldPresence } from '../../../shared/wingpresence.js';
+import { poseChannels } from '../../../shared/humanoid.js';
+import { applyPresenceWire, applyVoiceWire, applyBodyWire, sampleTime } from '../../../shared/presencewire.js';
+import { applyRemoteXR, resetFingers } from '../xr/xrbody.js';
 
 export const remotes = new Map(); // id -> RemoteBody
 
@@ -24,10 +24,10 @@ import { noteLateness, interpDelay } from './interpdelay.js';
 const BUF_MAX = 12;
 
 // the server clock (serverclock.js), re-exported where net.js and the body code find it
-export { noteServerTime, serverNow } from './serverclock.js';
-import { serverNow } from './serverclock.js';   // a re-export binds no local name
+export { noteServerTime, serverNow } from '../serverclock.js';
+import { serverNow } from '../serverclock.js';   // a re-export binds no local name
 import { climbAt } from './climb.js';
-import { DEFAULT_BODY } from '../../shared/avatardefs.js';
+import { DEFAULT_BODY } from '../../../shared/avatardefs.js';
 
 /** Per-identity generation counter, bumped by every authoritative (re)creation; async continuations compare
  *  record identity before touching the scene, so a departed generation cannot delete or repopulate its successor. */

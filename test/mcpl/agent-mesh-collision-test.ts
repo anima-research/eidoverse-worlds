@@ -6,7 +6,7 @@
 // wall was no obstacle and an upstairs did not exist. Now the agent fits
 // client/lib/colliders.js from each model's own triangles
 // (server/geometry.ts collisionTriangles, decoded from the bytes /library
-// serves) and steps its feet the way client/lib/controller.js steps a
+// serves) and steps its feet the way client/lib/player/controller.js steps a
 // person's. This checks:
 //   1. collisionTriangles: node transforms applied, orphans excluded, and a
 //      draco-compressed copy (what /library usually serves) decodes to the

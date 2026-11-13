@@ -304,8 +304,8 @@ async function browserOwnerPart() {
   mock.module(base + "world.js", () => ({ avatarMounts: new Map() }));
   mock.module(base + "state.js", () => ({ state: { st: { entities: {}, roles: {}, recentChat: [] }, lastSeq: -1, hydrated: false }, hydrate() {}, applyView() {}, reset() {}, onWorldChange: () => () => {} }));
   mock.module(base + "render/scheduler.js", () => ({ pending: new Map(), P: {} }));
-  mock.module(base + "remotes.js", () => ({ remotes: new Map(), ensureRemote: async () => null, dropRemote: () => null, pushPose() {}, noteServerTime() {}, noteSpeaking() {} }));
-  mock.module(base + "reachnet.js", () => ({ myReachBag: () => undefined }));
+  mock.module(base + "player/remotes.js", () => ({ remotes: new Map(), ensureRemote: async () => null, dropRemote: () => null, pushPose() {}, noteServerTime() {}, noteSpeaking() {} }));
+  mock.module(base + "player/reachnet.js", () => ({ myReachBag: () => undefined }));
   mock.module(base + "ui/chat.js", () => ({ chat: {}, logChat() {}, noteTyping() {}, noteHistoryContext() {}, async resyncChatAfter() {}, moderatorHeader: (w) => `From a moderator of world ‹${w}›, not from Eidoverse` }));
   mock.module(base + "avatar/fp_view.js", () => ({ resolveFirstPersonAnchor: () => null, FP_FORWARD: 0, FP_EYE_LIFT: 0, FP_GAZE_AHEAD: 0, FP_GAZE_DROP: 0, composeFirstPerson() {} }));
   mock.module(base + "boot.js", () => ({ markPhase() {}, refuseBoot() {}, waitBoot() {} }));
@@ -321,9 +321,9 @@ async function browserOwnerPart() {
   const catalog = { setMyAvatarPath() {}, wireAvatarSwitch(fn: any) { onSwitch = fn; }, switchAvatar: (p: string, n: string) => onSwitch?.(p, n) };
   mock.module(base + "edit/catalog.js", () => catalog);
 
-  const controller: any = await import("../../client/lib/controller.js");
+  const controller: any = await import("../../client/lib/player/controller.js");
   const netmod: any = await import("../../client/lib/net.js");
-  const mybody: any = await import("../../client/lib/mybody.js");
+  const mybody: any = await import("../../client/lib/player/mybody.js");
   let owner: any = body(WING_BONES);
   controller.setMeHook(() => owner);
   controller.setRightsHook(() => ({ role: "member", can: [] }));
@@ -348,7 +348,7 @@ async function browserOwnerPart() {
     check(`${r.name}: releasing it publishes an explicit empty list`, !r.browser.held() && eq(off?.poses, []), JSON.stringify(off?.poses));
   }
 
-  console.log("\nSWAPPED BODIES (client/lib/mybody.js, every registered name)");
+  console.log("\nSWAPPED BODIES (client/lib/player/mybody.js, every registered name)");
   for (const r of REGISTERED) {
     r.browser.toggle();
     const first = body(WING_BONES); mybody.setMe(first); owner = first;
@@ -392,7 +392,7 @@ async function remotePart() {
   mock.module(`${lib}avatar/avatar.js`, () => ({ ...stubs, makeAvatar: async () => avatar(), makeCapsuleAvatar: () => avatar() }));
   mock.module(`${lib}avatar/occupybody.js`, () => ({ releaseOccupied() {},
     driveOccupied: () => ({ pos: new THREE.Vector3(), q: new THREE.Quaternion(), clip: "sitchair", sw: { seatState: "ok", host: "chair", slot: "seat" } }) }));
-  const { remotes, ensureRemote, pushPose, updateRemotes } = await import("../../client/lib/remotes.js") as any;
+  const { remotes, ensureRemote, pushPose, updateRemotes } = await import("../../client/lib/player/remotes.js") as any;
   let t = 1000;
   const sample = (poses: unknown) => ({ p: [1, 0, 1], yaw: 0, speed: 0, clip: "idle", poses });
   async function show(id: string, poses: unknown) { pushPose(id, sample(poses), t += 50); pushPose(id, sample(poses), t += 50); updateRemotes(1 / 60, t); return remotes.get(id).avatar; }

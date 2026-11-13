@@ -31,7 +31,7 @@ export const intYaw = (y: number) => Math.PI / 2 - y;
 /** A record (components flat, view.js) a body doesn't meet: componentspec collider.enabled or .blocks, the authority's own reading. */
 export const solidOffRecord = (e: any) => solidOff(e, "bodies");
 /** How far below its supporting surface a settled ragdoll's root lies. */
-export const RAGDOLL_ROOT_DROP = 0.7;   // client/lib/controller.js: vy -= 16 * dt
+export const RAGDOLL_ROOT_DROP = 0.7;   // client/lib/player/controller.js: vy -= 16 * dt
 /** A read of the world server (roster, terrain, a grid, geometry, bones) not answered by then has failed, as a host's
  *  tool call would. */
 export const WORLD_READ_MS = 10_000;

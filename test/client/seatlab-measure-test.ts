@@ -13,7 +13,7 @@ plugin({ name: "seatlab-lib", setup(b) {
     const three = JSON.stringify(path.join(ROOT, "client/node_modules/three/build/three.module.js"));
     const src: Record<string, string> = {
       "/lib/core.js": `import * as THREE from ${three}; export { THREE }; export const scene = new THREE.Scene();`,
-      "/lib/remotes.js": "export const remotes = new Map();",
+      "/lib/player/remotes.js": "export const remotes = new Map();",
       "/lib/world.js": `import * as THREE from ${three}; const S = globalThis.__seat; export const entities = S.entities; export const avatarMounts = S.mounts;
         export const bagOf = (id) => S.bags.get(id) ?? null; export const mountTransform = () => null;
         export const socketWorldPos = (id, out) => out.set(0, 0.5, 0);

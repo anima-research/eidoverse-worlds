@@ -23,7 +23,7 @@ import { state } from './state.js';
 import { offIn } from './realize/models_field.js';
 import { makeSection, flashHint, html } from './ui/ui.js';
 import { logChat } from './ui/chat.js';
-import { myState } from './controller.js';
+import { myState } from './player/controller.js';
 import { kindHint } from '../../shared/hierarchy.js';
 import { modelWord } from '../../shared/eido.js';
 import { called } from './ui/plainwords.js';

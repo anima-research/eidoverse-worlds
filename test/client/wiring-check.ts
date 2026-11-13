@@ -30,11 +30,11 @@ const ROWS: Row[] = [
   { name: "a granted session stamps the TIME at exactly two writers, never a flag", file: "client/lib/xr/xr.js", count: [/setItem\(PREF_HEADSET_SEEN, String\(Date\.now\(\)\)\)/g, 2],
     not: [[/setItem\(PREF_HEADSET_SEEN, '1'\)/, "setItem(PREF_HEADSET_SEEN, '1')"], [/setItem\('ew-headset-seen', '1'\)/, "setItem('ew-headset-seen', '1')"]] },
   // locomotion-clip: an extracted policy someone calls
-  { name: "controller.js imports selectClip from the real policy module and calls it", file: "client/lib/controller.js",
-    must: [/import\s*\{[^}]*\bselectClip\b[^}]*\}\s*from\s*'\.\/avatar\/locomotion_clip\.js'/, /\bselectClip\s*\(/, /setClip\([^)]*\.opts\s*\)/] },
-  { name: "controller.js hands selectClip the body's size", file: "client/lib/controller.js", must: [/selectClip\(\{[^}]*\bscale:\s*me\.userScale/] },
+  { name: "controller.js imports selectClip from the real policy module and calls it", file: "client/lib/player/controller.js",
+    must: [/import\s*\{[^}]*\bselectClip\b[^}]*\}\s*from\s*'\.\.\/avatar\/locomotion_clip\.js'/, /\bselectClip\s*\(/, /setClip\([^)]*\.opts\s*\)/] },
+  { name: "controller.js hands selectClip the body's size", file: "client/lib/player/controller.js", must: [/selectClip\(\{[^}]*\bscale:\s*me\.userScale/] },
   // scoped to the locomotion setClip call (the one with options): the flight path's me.setClip(clip, speed) takes none
-  { name: "the tick hands setClip the selected opts, no fade re-derived at the call site", file: "client/lib/controller.js",
+  { name: "the tick hands setClip the selected opts, no fade re-derived at the call site", file: "client/lib/player/controller.js",
     scope: (s) => s.split("\n").find((l) => /me\.setClip\([^)]*,[^)]*,/.test(l)) ?? "", must: [/\.opts\s*\)/], not: [[/fade:/, "fade: 0.2"]] },
   // finger-curl: the filter's shape (its executed model and constants stay in finger-curl-test)
   { name: "sampleFingerCurl consults elapsed time, a speed-driven cutoff and a dt clamp", file: "client/lib/xr/xr-fingercurl.js", scope: fnBody("function sampleFingerCurl()"),
@@ -42,7 +42,7 @@ const ROWS: Row[] = [
   { name: "no hard jump/threshold branch survives in the filter", file: "client/lib/xr/xr-fingercurl.js", scope: fnBody("function sampleFingerCurl()"),
     must: [/oneEuroAlpha\(/], not: [[/\? raw :/, "const v = big ? raw : st.x;"], [/CURL_JUMP/, "if (d > CURL_JUMP) st.x = raw;"]] },
   // bodies-wear: the restored wear button is not a no-op
-  { name: "switchAvatar's same-path early return exempts the capsule", file: "client/lib/mybody.js", must: [/if \(path === myAvatarPath && !me\?\.isCapsule\) return;/] },
+  { name: "switchAvatar's same-path early return exempts the capsule", file: "client/lib/player/mybody.js", must: [/if \(path === myAvatarPath && !me\?\.isCapsule\) return;/] },
   // conjure-coop: under COOP the poll owns login completion, one idempotent teardown
   { name: "login: one shared cleanup latches done, removes the listener, clears the timer", file: "client/lib/edit/generate.js", scope: between("let done = false", "} catch (e) { report('orrery login'"),
     must: [/const cleanup = \(\) => \{[^}]*done = true;[\s\S]*?removeEventListener\('message', onMsg\);[\s\S]*?clearInterval\(poll\);/] },

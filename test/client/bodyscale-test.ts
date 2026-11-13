@@ -118,8 +118,8 @@ console.log('the maths:');
   check('mantle: a 50% body climbs 0.4–0.85 m, a 200% body 1.6–3.4 m', canMantle(1.2, 0.5) === false && canMantle(0.8, 0.5) === true
     && canMantle(3.0, 2) === true && canMantle(0.5, 2) === false);
   check('mantle: the controller asks canMantle with the body\'s size, and steps on by a scaled 0.6 m',
-    /canMantle\(reach, me\.userScale\)/.test(await Bun.file(here('../../client/lib/controller.js')).text())
-    && /addScaledVector\(_facing, mantleStep\(me\.userScale\)\)/.test(await Bun.file(here('../../client/lib/controller.js')).text()));
+    /canMantle\(reach, me\.userScale\)/.test(await Bun.file(here('../../client/lib/player/controller.js')).text())
+    && /addScaledVector\(_facing, mantleStep\(me\.userScale\)\)/.test(await Bun.file(here('../../client/lib/player/controller.js')).text()));
   check('mantle: the step onto the ledge grows with the body (it must clear a capsule of radius 0.32·u)', near(fn(BS, 'mantleStep')(2), 1.2) && near(fn(BS, 'mantleStep')(undefined), 0.6));
   check('plate lift: authored metres × the live model→world scale, clamped', near(fn(BS, 'plateLift')(0.3, 1.5), 0.45, 1e-12) && near(fn(BS, 'plateLift')(3, 1), 0.8));
   // per body, per browser
@@ -272,7 +272,7 @@ console.log('remotes.js (the receiver):');
   const stubs = await import('../stubs/remotes-stubs.mjs');
   const { mock } = await import('bun:test');
   for (const m of ['core', 'assets', 'world', 'ui/chat', 'avatar/fp_view', 'boot', 'ui/ui', 'avatar/avatar', 'xr/xrbody']) mock.module(`${import.meta.dir}/../../client/lib/${m}.js`, () => stubs);
-  const R: any = await import('../../client/lib/remotes.js');
+  const R: any = await import('../../client/lib/player/remotes.js');
   const got: any[] = [];
   const av = { setUserScale: (u: number) => got.push(['scale', u]), setPlateY: (y: number) => got.push(['plateY', y]) };
   const r: any = { avatar: av };
@@ -281,7 +281,7 @@ console.log('remotes.js (the receiver):');
   got.length = 0;
   fn(R, 'applyRemoteBody')(r, { p: [0, 0, 0] });
   check('...and a sample without the fields puts them back to 1 / 0', J(got) === J([['scale', 1], ['plateY', 0]]), J(got));
-  const src = await Bun.file(here('../../client/lib/remotes.js')).text();
+  const src = await Bun.file(here('../../client/lib/player/remotes.js')).text();
   check('both presence paths apply it (the walking one and the seated one)', (src.match(/applyRemoteBody\(r, s\)/g) ?? []).length >= 2);
 }
 

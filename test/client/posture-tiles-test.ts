@@ -1,4 +1,4 @@
-// posture tiles (client/lib/controller.js sitHere / standUp / setMountedHook / getPosture) — the action bar's
+// posture tiles (client/lib/player/controller.js sitHere / standUp / setMountedHook / getPosture) — the action bar's
 // sit·stand·lie tiles share X's seat search, and a declared-seat MOUNT (sockets, localbody.js) is neither a
 // posture nor myState.seat: on a mount the sit tile is a no-op and the stand tile is the dismount. Drives the
 // REAL controller.js against test/stubs/posture-tiles-stub.mjs (flat world, one optional chair pan) with the same
@@ -28,7 +28,7 @@ import { suite } from "../gate/suite.ts";
 GlobalRegistrator.register();
 
 const stub = await import('../stubs/posture-tiles-stub.mjs');
-const ctl = await import('../../client/lib/controller.js');
+const ctl = await import('../../client/lib/player/controller.js');
 const { sitHere, standUp, setPosture, setMountedHook, setOccupyHook, getPosture, myState, updateMe } = ctl;
 const { THREE, world } = stub;
 

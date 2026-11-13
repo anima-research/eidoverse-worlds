@@ -467,7 +467,7 @@ try {
   check("I3 …placed by names who made it (the authority's inspect, as an agent asks it)", await waitFor(`[...${insp}.querySelectorAll('.sp-row')].some((r) => r.querySelector('.sp-label')?.textContent === 'placed by' && r.textContent.includes('bob'))`), await evalJson(`[...${insp}.querySelectorAll('.sp-row')].map((r) => r.textContent).slice(0, 5)`));
   // R 10-17 20:34: no 'world' row; the distance rides the Transform card's title line, dim ("Transform · 12 m away"), and follows you
   { const tf = `[...${insp}.querySelectorAll('.sp-group')].find((b) => b.querySelector('.sp-group-name')?.textContent.startsWith('Transform'))`;
-    const want = await evalJson(`Promise.all([import('/lib/world.js'), import('/lib/controller.js')]).then(([w, c]) => { const o = w.entities.get('pebble'); return Math.round(o.getWorldPosition(new o.position.constructor()).distanceTo(c.myState.pos)); })`);
+    const want = await evalJson(`Promise.all([import('/lib/world.js'), import('/lib/player/controller.js')]).then(([w, c]) => { const o = w.entities.get('pebble'); return Math.round(o.getWorldPosition(new o.position.constructor()).distanceTo(c.myState.pos)); })`);
     const head = await evalJson(`(() => { const b = ${tf}; const s = b?.querySelector('.sp-group-sub'); return b ? { sub: s?.textContent ?? null, op: s ? getComputedStyle(s).opacity : null, tip: s?.title ?? '' } : null; })()`);
     check("I3b no 'world' row; the Transform card's title line carries the distance, dim ('Transform · N m away'), its world coordinates on hover", !labels?.includes("world") && head?.sub === ` · ${want} m away` && Number(head?.op) < 1 && /world at \(/.test(head?.tip), { want, head, labels }); }
   // R 10-17 20:36: "clicks go through" left the Inspector's header for Attributes, beside the selection layer
@@ -555,7 +555,7 @@ try {
   await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('pt'))`, 12000);
   await page(`(await import('/lib/scenegraph.js')).sceneSelect('pt'); (await import('/lib/edit/build.js')).setTool('select'); return true;`);
   await key("KeyP"); await sleep(400);
-  check("PT0 in build mode P is the pivot tool's alone: photo mode stays off (main's P has a guard there, as H and R do)", (await evalJson(`import('/lib/controller.js').then((c) => c.photoMode)`)) === false);
+  check("PT0 in build mode P is the pivot tool's alone: photo mode stays off (main's P has a guard there, as H and R do)", (await evalJson(`import('/lib/player/controller.js').then((c) => c.photoMode)`)) === false);
   check("PT1 P arms the pivot tool: the handles sit at its origin (no pivot yet)", await waitFor(`import('/lib/edit/build.js').then((B) => { const g = __gizmo(); return B.getTool() === 'pivot' && g.attached === 'pt' && g.viaProxy && Math.abs(g.proxyPos[0] - 14) < 1e-6 && Math.abs(g.proxyPos[2] - 10) < 1e-6; })`), await evalJson(`({ g: __gizmo().proxyPos, a: __gizmo().attached })`));
   const ptBefore = JSON.stringify(disk().entities[IDS.of("pt")].c.transform);
   const nPt = myActs().length;
@@ -692,13 +692,13 @@ try {
   // Ctrl+D duplicates (R 10-04: "isn't it usually ctrl+d?"), the held D never strafes, and copy #2 nudges toward blueprints
   await page(`(await import('/lib/scenegraph.js')).sceneSelect('pt'); return true;`); await sleep(300);
   const nD = myActs().length;
-  const me0 = await evalJson(`import('/lib/controller.js').then((m) => [m.myState.pos.x, m.myState.pos.y, m.myState.pos.z])`);
+  const me0 = await evalJson(`import('/lib/player/controller.js').then((m) => [m.myState.pos.x, m.myState.pos.y, m.myState.pos.z])`);
   await evalJson(`(dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyD', key: 'd', ctrlKey: true, bubbles: true, cancelable: true })), true)`);
   await sleep(400);
-  const heldD = await evalJson(`import('/lib/controller.js').then((m) => m.keys.has('KeyD'))`);   // the walk reads this set
+  const heldD = await evalJson(`import('/lib/player/controller.js').then((m) => m.keys.has('KeyD'))`);   // the walk reads this set
   await evalJson(`(dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyD', key: 'd', ctrlKey: true, bubbles: true })), true)`);
   check("CD1 Ctrl+D = create {from: pt}: ONE act", await waitDisk(() => myActs().length === nD + 1 && myActs().at(-1).e.body.args.from === IDS.of("pt")), myActs().slice(nD).map((a) => a.e.body?.args));
-  const me1 = await evalJson(`import('/lib/controller.js').then((m) => [m.myState.pos.x, m.myState.pos.y, m.myState.pos.z])`);
+  const me1 = await evalJson(`import('/lib/player/controller.js').then((m) => [m.myState.pos.x, m.myState.pos.y, m.myState.pos.z])`);
   check("CD2 …and the chord never counts as a held D, so it can't strafe the body (the walk reads the held set)", heldD === false && Math.hypot(me1[0] - me0[0], me1[2] - me0[2]) < 0.05, { heldD, me0, me1 });
   // the copy reselects ITSELF 400 ms after it lands unless the selection changed since (edit/panels.js duplicate: Sel.mark()):
   // re-selecting pt while pt is still selected changes nothing, so clear first; then the late reselect stands down
@@ -852,13 +852,13 @@ try {
       return JSON.stringify([a.ok, b.ok]);`);
     const mine = `Promise.all([import('/lib/world.js'), import('/lib/base.js')]).then(([w, b]) => w.avatarMounts.get(b.CONFIG.name)?.to ?? null)`;
     check("ST setup: the seat socket is on my client before I sit", await waitFor(`import('/lib/world.js').then((w) => !!w.seatSocket('ststool-seat'))`), "");
-    const tried = await page(`return (await import('/lib/localbody.js')).trySitOn('ststool');`);   // false: no seat found
+    const tried = await page(`return (await import('/lib/player/localbody.js')).trySitOn('ststool');`);   // false: no seat found
     const sat = await waitFor(`${mine}.then((t) => t === 'ststool-seat')`);
     // a refused `use` only reaches chat (localbody.js trySitOn), so an unseated row carries the chat's tail
     const said = sat ? null : await evalJson(`document.querySelector('#chatlog')?.innerText.slice(-300) ?? null`);
     // seated, my presence carries the socket's whole rotation (q), the frame the reach gate turns its capsule by
-    const seatedQ = await waitFor(`import('/lib/controller.js').then((m) => Array.isArray(m.myState.q) && m.myState.q.length === 4)`, 3000);
-    check("ST0 seated, my state carries the socket's rotation as q (reachgate.ts turns the capsule by it)", seatedQ, await evalJson(`import('/lib/controller.js').then((m) => m.myState.q ?? null)`));
+    const seatedQ = await waitFor(`import('/lib/player/controller.js').then((m) => Array.isArray(m.myState.q) && m.myState.q.length === 4)`, 3000);
+    check("ST0 seated, my state carries the socket's rotation as q (reachgate.ts turns the capsule by it)", seatedQ, await evalJson(`import('/lib/player/controller.js').then((m) => m.myState.q ?? null)`));
     const off = await page(`return JSON.stringify((await (await import('/lib/net.js')).sendRequest('set', { id: 'ststool-seat', component: 'disabled', value: true })).ok);`);
     const up = await waitFor(`${mine}.then((t) => t === null)`);
     const closed = await evalJson(`import('/lib/world.js').then((w) => w.seatSocket('ststool-seat') === null)`);
@@ -945,22 +945,22 @@ try {
       await evalJson(`(document.activeElement?.blur?.(), true)`);   // CP typed in the chat line: a key there is text
       await evalJson(`import('/lib/edit/build.js').then((m) => (m.setBuildMode(false), true))`);   // build mode's P is the pivot tool
       const footFree = await waitFor(`!document.body.classList.contains('build-mode')`);
-      const photo = `import('/lib/controller.js').then((c) => c.photoMode)`;
+      const photo = `import('/lib/player/controller.js').then((c) => c.photoMode)`;
       await key("KeyP"); const onFoot = await waitFor(photo, 2000); await key("KeyP"); const offAgain = await waitFor(`${photo}.then((p) => !p)`, 2000);
       check("HP0 (control) off the helm, P starts photo mode and P again ends it", made === "[true,true]" && onFoot && offAgain, { made, footFree, onFoot, offAgain, now: await evalJson(photo) });
       await waitFor(`import('/lib/world.js').then((w) => !!w.seatSocket('hphull-helm'))`);
-      await page(`(await import('/lib/localbody.js')).trySitOn('hphull'); return true;`);
-      const atHelm = await waitFor(`import('/lib/vehicles.js').then((v) => v.helmHull() === 'hphull')`);
+      await page(`(await import('/lib/player/localbody.js')).trySitOn('hphull'); return true;`);
+      const atHelm = await waitFor(`import('/lib/player/vehicles.js').then((v) => v.helmHull() === 'hphull')`);
       // read in the same tick as the press: the next frame's guard (HP2) would hide a P that got through
-      const pAtHelm = await page(`const c = await import('/lib/controller.js'); for (const t of ['keydown', 'keyup']) dispatchEvent(new KeyboardEvent(t, { code: 'KeyP', key: 'KeyP', bubbles: true })); return c.photoMode;`);
+      const pAtHelm = await page(`const c = await import('/lib/player/controller.js'); for (const t of ['keydown', 'keyup']) dispatchEvent(new KeyboardEvent(t, { code: 'KeyP', key: 'KeyP', bubbles: true })); return c.photoMode;`);
       check("HP1 at the helm, P doesn't start photo mode (not even for a frame)", atHelm && pAtHelm === false, { atHelm, pAtHelm });
-      const startedOn = await page(`const c = await import('/lib/controller.js'); if (!c.photoMode) c.togglePhotoMode(); return c.photoMode;`);
+      const startedOn = await page(`const c = await import('/lib/player/controller.js'); if (!c.photoMode) c.togglePhotoMode(); return c.photoMode;`);
       check("HP2 …and a photo mode started anyway (not by the key) is ended by the next frame at the helm", atHelm && startedOn === true && await waitFor(`${photo}.then((p) => !p)`, 3000), { startedOn, now: await evalJson(photo) });
-      await page(`(await import('/lib/controller.js')).photoMode && (await import('/lib/controller.js')).togglePhotoMode(); await (await import('/lib/net.js')).sendRequest('delete', { id: 'hphull' }); return true;`);
+      await page(`(await import('/lib/player/controller.js')).photoMode && (await import('/lib/player/controller.js')).togglePhotoMode(); await (await import('/lib/net.js')).sendRequest('delete', { id: 'hphull' }); return true;`);
       await evalJson(`import('/lib/edit/build.js').then((m) => (m.setBuildMode(true), true))`); }
-    // CL: nearbyClimb reads routes from the view; a change to one (disabled, moved) is seen (client/lib/climb.js)
+    // CL: nearbyClimb reads routes from the view; a change to one (disabled, moved) is seen (client/lib/player/climb.js)
     { const ok = await page(`return (await (await import('/lib/net.js')).sendRequest('create', { id: 'clrung', model: '${CRATE}', components: { climb: { points: [[0, 0, 0], [0, 3, 0]] } }, place: { at: [-9, 9] } })).ok ?? 'refused';`);
-      const near = (dx: number) => `Promise.all([import('/lib/world.js'), import('/lib/climb.js'), import('/lib/core.js')]).then(([w, c, k]) => { const o = w.entities.get('clrung'); if (!o) return null; o.updateWorldMatrix(true, false);
+      const near = (dx: number) => `Promise.all([import('/lib/world.js'), import('/lib/player/climb.js'), import('/lib/core.js')]).then(([w, c, k]) => { const o = w.entities.get('clrung'); if (!o) return null; o.updateWorldMatrix(true, false);
         const p = new k.THREE.Vector3(${dx}, 0, 0).applyMatrix4(o.matrixWorld); return c.nearbyClimb(p)?.host ?? null; })`;
       const found = await waitFor(`${near(0)}.then((h) => h === 'clrung')`);
       check("CL1 a climb route is found at its start", ok && found, await evalJson(near(0)));
@@ -1019,7 +1019,7 @@ try {
     // browser body doesn't decide again. Today the client refused a shove the authority had allowed (it read only the
     // everyone row, so a friend's allowed shove never landed). With my pushable switch off locally, an arriving shove
     // still knocks me over; then I get up.
-    { const r = await page(`const C = await import('/lib/consent.js'), L = await import('/lib/localbody.js'), { bus } = await import('/lib/base.js');
+    { const r = await page(`const C = await import('/lib/player/consent.js'), L = await import('/lib/player/localbody.js'), { bus } = await import('/lib/base.js');
         const was = C.pushable(); C.setPushable(false);
         bus.emit('puppet', { by: 'pal', ragdoll: { lean: [2, 0, 0] } });
         await new Promise((ok) => setTimeout(ok, 600)); const down = L.isDowned();

@@ -25,7 +25,7 @@ bench.cws.addEventListener("message", (ev) => {
   }
 });
 await cdp.send("Fetch.enable", { patterns: [{ urlPattern: engine ? "*/library/eidoverse/*.js" : "*/library/eidoverse/terrain.js" }] });
-const C = "(await import('/lib/controller.js'))";
+const C = "(await import('/lib/player/controller.js'))";
 const js = (body: string) => evalJson(`(async () => { ${body} })()`);
 const y = () => js(`return +${C}.myState.pos.y.toFixed(2);`);
 const diving = () => js(`return ${C}.isLevelDiving();`);

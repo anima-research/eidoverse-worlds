@@ -151,7 +151,7 @@ export const vacatedFromMine = (u, mount) => !!(u && mount && typeof u.socket ==
  *  agent both stand there, so the body and the authority's track start together. */
 export const vacatedAt = (u) => (Array.isArray(u?.at) && u.at.length === 3 && u.at.every((n) => typeof n === 'number' && Number.isFinite(n)) ? u.at.slice() : null);
 /** How near a body must be to sit (a sit from afar would be an unlogged teleport): within `r` m on the ground and
- *  `up`/`down` m of the feet (client/lib/localbody.js nearestSeat); the authority allows `lag` more on each, since its
+ *  `up`/`down` m of the feet (client/lib/player/localbody.js nearestSeat); the authority allows `lag` more on each, since its
  *  track trails a walking body by one tracked step (client/lib/thingphysics.js, 5 a second). */
 export const OCCUPY_REACH = Object.freeze({ r: 3.5, up: 1.6, down: 1.0, lag: 1.0 });
 /** Is a seat at `seat` within sitting reach of feet at `feet` ([x, y, z] each)? lag: the authority's allowance (0 for the client). */

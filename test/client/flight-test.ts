@@ -733,7 +733,7 @@ console.log('\nDEFAULT-DENY -- a compatible rig is evidence, never permission');
   // because it is a statement about what the SHIPPED FILES contain, which is
   // precisely what the review found wrong -- a behavioural test of a module
   // that constructs its own grant would have passed happily.
-  for (const f of ['client/lib/controller.js', 'mcpl/agent-flight.ts']) {
+  for (const f of ['client/lib/player/controller.js', 'mcpl/agent-flight.ts']) {
     const src = readFileSync(f, 'utf8');
     const code = src.split('\n').filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
     check(`${f.split('/').pop()} does not construct a dev provider`,
@@ -913,9 +913,9 @@ console.log('\nISOLATION -- nothing in the running world reaches flight yet');
   // the old scan rather than absent from it. It is listed here rather than
   // exempted: it takes no capability decision, it is handed forces by a caller
   // that already resolved one, so the per-importer checks below skip it.
-  const ALLOWED = ['mcpl/agent.ts', 'mcpl/agent-flight.ts', 'client/lib/controller.js', 'mcpl/physics.ts'];
+  const ALLOWED = ['mcpl/agent.ts', 'mcpl/agent-flight.ts', 'client/lib/player/controller.js', 'mcpl/physics.ts'];
   // Only the two ENTRY POINTS must gate; physics.ts is downstream of a gate.
-  const GATEKEEPERS = ['mcpl/agent-flight.ts', 'client/lib/controller.js'];
+  const GATEKEEPERS = ['mcpl/agent-flight.ts', 'client/lib/player/controller.js'];
   check(`only expected modules import flight (${importers.length})`,
         importers.length > 0 && importers.every(f => ALLOWED.includes(f)),
         importers.join(', '));
@@ -935,7 +935,7 @@ console.log('\nISOLATION -- nothing in the running world reaches flight yet');
   // import. Structural assertions are weaker than behavioural ones; they are
   // what is available, and they are stronger than the nothing that was here
   // when both bugs shipped.
-  const ctl = readFileSync('client/lib/controller.js', 'utf8');
+  const ctl = readFileSync('client/lib/player/controller.js', 'utf8');
 
   // 1. "switching into flying mode is working for me but all that happens is
   //    my character seems to jump and lands immediately."  The toggles ran on

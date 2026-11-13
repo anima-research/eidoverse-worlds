@@ -5,7 +5,7 @@ import { bus, wornNameOf } from '../base.js';
 import { net } from '../net.js';
 import { renderDOM } from '../edit/fieldpanels.js';
 import { switchAvatar } from '../edit/catalog.js';
-import { getMyAvatarName, getMe, myBodyPrefs, setMyBodyPref } from '../mybody.js';
+import { getMyAvatarName, getMe, myBodyPrefs, setMyBodyPref } from '../player/mybody.js';
 import { BODY_SCALE_MIN, BODY_SCALE_MAX, PLATE_Y_MIN, PLATE_Y_MAX } from '../../../shared/bodyscale.js';
 
 // MY avatars = the bodies you have actually worn (the world's wardrobe, World › avatar, is only to try on).

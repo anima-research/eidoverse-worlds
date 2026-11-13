@@ -67,7 +67,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the description note sets agents against people", "shared/sound.js", "anyone who can\\'t hear it (or reads the world as text)", "agents and people who can\\'t hear it", ["W4"]],
   ["the agent's seat again", "mcpl/agent.ts", "mayVacate(kind: \"move\"", "mayLeaveSeat(kind: \"move\"", ["O1"]],
   ["socketRole says seat", "shared/sockbody.js", "!isRedacted(c.station) ? 'station' :", "!isRedacted(c.station) ? 'seat' :", ["O2"]],
-  ["the toast says seat", "client/lib/localbody.js", "moved what you were occupying, so you stood up", "moved the seat you were on, so you stood up", ["O3"]],
+  ["the toast says seat", "client/lib/player/localbody.js", "moved what you were occupying, so you stood up", "moved the seat you were on, so you stood up", ["O3"]],
   ["light.noon again", "shared/descriptors.js", "daytime: { k: 'daytime', param: 'burnsAtNoon'", "daytime: { k: 'noon', param: 'burnsAtNoon'", ["S1"]],
   ["sky.clock again", "shared/worldentity.js", "    { t: 'text', k: 'tz', label: 'timezone', value: real ? (s.tz ?? DEFAULT_TZ) : '', ...ro,", "    { t: 'enum', k: 'clock', label: 'clock', value: real ? 'real' : 'authored', def: 'authored', options: [{ v: 'authored', label: 'authored' }, { v: 'real', label: 'real time' }] },\n    { t: 'text', k: 'tz', label: 'timezone', value: real ? (s.tz ?? DEFAULT_TZ) : '', ...ro,", ["S2"]],
   ["measure teaches set sockets", "mcpl/tools.ts", "a socket is a child entity, made with create {components: {parent: {to: id}", "act {verb: 'set', args: {id, component: 'sockets', value: {seat: {pos: [cx, y, cz], body: {pose: 'sitchair'}}}}} — or create {components: {parent: {to: id}", ["S3"]],
@@ -119,7 +119,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the agent's once anim rides the old key", "mcpl/agent.ts", "...(this.pendingAnim ? { anim: this.pendingAnim } : {}),", `...(this.pendingAnim ? { ${EM}: this.pendingAnim } : {}),`, ["E1", "E3"]],
   ["the server remembers the once anim", "shared/onceanim.js", "  for (const k of ONCE_KEYS) delete out[k];\n", "", ["E1"]],
   ["the browser sends the old key", "client/lib/net.js", "if (s.anim) { pose.anim = s.anim; s.anim = null; }", `if (s.anim) { pose.${EM} = s.anim; s.anim = null; }`, ["E1", "E3"]],
-  ["a remote reads only today's key", "client/lib/remotes.js", "  const once = onceAnimOf(s);\n  if (once && once !== r.lastAnim) {", "  const once = s.anim;\n  if (once && once !== r.lastAnim) {", ["E1"]],
+  ["a remote reads only today's key", "client/lib/player/remotes.js", "  const once = onceAnimOf(s);\n  if (once && once !== r.lastAnim) {", "  const once = s.anim;\n  if (once && once !== r.lastAnim) {", ["E1"]],
   ["the registry keeps the old key", "server/defs.ts", "    actionbar: loadSidecar(", `    ${EM}s: loadSidecar(`, ["E2", "E3"]],
   ["the slash command keeps the old name", "client/lib/ui/commands/registry.js", "{ name: 'anim', help: '/anim <name>", `{ name: '${EM}', help: '/${EM} <name>`, ["E2", "E3"]],
   ["a comment says the old word", "client/lib/avatar/avatar.js", "async playOnce(name) {", `async playOnce(name) {   // an ${EM}`, ["E3"]],
@@ -320,7 +320,7 @@ const cases: Case[] = [
       const t = readText("mcpl/tools.ts"); return { suffix: /\(agent\)`/.test(t), agentsRead: (t.match(/w\.agents/g) ?? []).length, tag: /p\.declares \? `\$\{p\.id\} \(\$\{p\.declares\}\)` : p\.id/.test(t) }; },
     good: (o) => !o.suffix && o.agentsRead === 2 && o.tag },
   { id: "W3", what: "…the browser keeps the declared word as said (no agent boolean) and its nameplate card and chat line show that word only", run() {
-      const net = readText("client/lib/net.js"), rem = readText("client/lib/remotes.js"), pc = readText("client/lib/avatar/platecard.js"), ch = readText("client/lib/ui/chat.js"), ix = readText("client/index.html");
+      const net = readText("client/lib/net.js"), rem = readText("client/lib/player/remotes.js"), pc = readText("client/lib/avatar/platecard.js"), ch = readText("client/lib/ui/chat.js"), ix = readText("client/index.html");
       return { net: (net.match(/declares: (msg|p)\.declares \?\? null/g) ?? []).length, rem: /declares: meta\.declares \?\? null/.test(rem) && !/agent: !!meta\.agent/.test(rem),
         pc: /r\.declares : null/.test(pc) && !/r\.agent \? 'agent'/.test(pc), ch: /w\.dataset\.declares = declared/.test(ch) && !/\?\.agent\)/.test(ch), css: /\.who\[data-declares\]::after/.test(ix) && !/\.line\.agent/.test(ix) }; },
     good: (o) => o.net === 2 && o.rem && o.pc && o.ch && o.css },
@@ -330,9 +330,9 @@ const cases: Case[] = [
     good: (o) => !o.bar && !o.desc && !o.rf && !o.alike && !o.bv && !o.same },
   // ---------------- O: the occupy family ----------------
   { id: "O1", what: "(R 14:41) the agent and the client speak the occupy family: no seatOf/seatName/mySeat/mayLeaveSeat/mySeatBody in agent.ts, no setSeatHook/inSitReach anywhere, seats.js/seatedit.js/seatbody.js renamed", run() {
-      const ag = agentText(), tl = readText("mcpl/tools.ts"), ctl = readText("client/lib/controller.js"), sk = readText("shared/sockbody.js"), cu = readText("client/lib/clickuse.js");
+      const ag = agentText(), tl = readText("mcpl/tools.ts"), ctl = readText("client/lib/player/controller.js"), sk = readText("shared/sockbody.js"), cu = readText("client/lib/player/clickuse.js");
       return { ag: /\b(seatOf|seatName|mySeat|mayLeaveSeat|mySeatBody)\b/.test(ag + tl), hooks: /\bsetSeatHook\b/.test(ctl) || /\binSitReach\b/.test(sk) || /\bseatOf\b/.test(cu),
-        files: ["client/lib/seats.js", "client/lib/seatedit.js", "client/lib/seatbody.js"].filter(exists), now: ["client/lib/occupants.js", "client/lib/edit/socketedit.js", "client/lib/avatar/occupybody.js"].every(exists) }; },
+        files: ["client/lib/seats.js", "client/lib/seatedit.js", "client/lib/seatbody.js"].filter(exists), now: ["client/lib/player/occupants.js", "client/lib/edit/socketedit.js", "client/lib/avatar/occupybody.js"].every(exists) }; },
     good: (o) => !o.ag && !o.hooks && !o.files.length && o.now },
   { id: "O2", what: "…a socket with a station is a `station` (socketRole): inspect lists a host's sockets as station | snap | attach", run(s) {
       s.call("olive", "create-world", { title: s.name });
@@ -342,7 +342,7 @@ const cases: Case[] = [
       return { r: show(r), as: (r.sockets ?? []).map((x: any) => x.as) }; },
     good: (o) => o.r === "ok" && JSON.stringify(o.as) === '["station"]' },
   { id: "O3", what: "…the user-visible words: the editor's tool tile reads 'station', the toast says 'moved what you were occupying', '+ socket here'", run() {
-      const ep = readText("client/lib/edit/panels.js"), lb = readText("client/lib/localbody.js"), es = readText("shared/editschema.js");
+      const ep = readText("client/lib/edit/panels.js"), lb = readText("client/lib/player/localbody.js"), es = readText("shared/editschema.js");
       return { tile: /label: 'station', icon: 'armchair'/.test(ep), toast: /moved what you were occupying/.test(lb) && !/moved the seat you were on/.test(lb), add: /'\+ socket here'/.test(es) && !/'\+ seat here'/.test(es) }; },
     good: (o) => o.tile && o.toast && o.add },
   // ---------------- S: stale agent-visible addresses ----------------
@@ -545,7 +545,7 @@ const cases: Case[] = [
       const OA = exists("shared/onceanim.js") ? await import(TREE + "shared/onceanim.js") : null;
       const old = { p: [0, 0, 0], clip: "idle", [EM]: "cheer" };
       const acts: any[] = []; const ag2: any = (await animAgent()).ag; ag2.inbox = []; try { (ag2.senses ?? ag2).noteActs?.("u-x", null, old, 1); (ag2.senses ?? ag2).noteActs?.("u-y", null, { p: [0, 0, 0], clip: "idle", anim: "clap" }, 1); } catch (e) { acts.push(String(e)); }
-      const srv = readText("server/server.ts"), net = readText("client/lib/net.js"), rem = readText("client/lib/remotes.js");
+      const srv = readText("server/server.ts"), net = readText("client/lib/net.js"), rem = readText("client/lib/player/remotes.js");
       return { first: pk[0]?.anim ?? null, firstOld: pk[0] ? EM in pk[0] : null, second: pk[1] ? "anim" in pk[1] : null,
         read: OA ? [OA.onceAnimOf({ anim: "wave" }), OA.onceAnimOf(old), OA.onceAnimOf({})] : null, drop: OA ? JSON.stringify(OA.withoutOnceAnim({ a: 1, anim: "x" })) : null,
         heard: ag2.inbox.map((m: any) => m.text).join(" | ").slice(0, 300), acts,

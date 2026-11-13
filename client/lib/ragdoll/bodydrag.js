@@ -23,7 +23,7 @@
 
 import { THREE, camera, canvas, scene } from '../core.js';
 import { bus } from '../base.js';
-import { remotes, draggedLocal } from '../remotes.js';
+import { remotes, draggedLocal } from '../player/remotes.js';
 import { JOINTS } from './ragdoll.js';
 import { makeRagdoll } from './bodysim.js';
 import { sendBodyDrag } from '../net.js';

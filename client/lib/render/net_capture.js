@@ -4,7 +4,7 @@
 // client that has no scene at all (lite.js). net.js keeps the socket: this returns a
 // result and never sends, so there is no import cycle and one file still owns the wire.
 import { THREE, camera } from '../core.js';
-import { remotes } from '../remotes.js';
+import { remotes } from '../player/remotes.js';
 import { composeFirstPerson } from '../avatar/fp_view.js';
 import { captureFrame, captureFrom } from './capture.js';
 import { entities } from '../world.js';

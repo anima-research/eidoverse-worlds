@@ -8,7 +8,7 @@
 import { THREE, renderer, scene, camera } from '../core.js';
 import { isPresenting, withHeadShown } from './xr.js';
 import { xrPrefs } from './xr-prefs.js';
-import { myState } from '../controller.js';
+import { myState } from '../player/controller.js';
 import { tee, bus } from '../base.js';
 import { xrCurtainOn, renderWorldFrom } from '../render/render.js';
 

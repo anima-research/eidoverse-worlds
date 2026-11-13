@@ -8,7 +8,7 @@
 // DeviceScale (xr.js) scales the puppet to the player; tracking stays 1:1.
 import { THREE, renderer } from '../core.js';
 import { CONFIG, tee } from '../base.js';
-import { myState } from '../controller.js';
+import { myState } from '../player/controller.js';
 import { isPresenting, xrRig, xrHands, syncRigToBody, applyTurnEarly } from './xr.js';
 import { puppetScale } from './xr-scale.js';
 import { xrFingerCurl } from './xr-fingercurl.js';

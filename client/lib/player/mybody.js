@@ -3,18 +3,18 @@
 // replaces it (TEL0S_NOTES §14). One owner; everyone else holds the getter.
 // Nothing here may import main.js.
 
-import { CONFIG, bus, report, tee } from './base.js';
-import { DEFAULT_BODY } from '../../shared/avatardefs.js';
-import { releaseBodyGate } from './render/bodygate.js';
+import { CONFIG, bus, report, tee } from '../base.js';
+import { DEFAULT_BODY } from '../../../shared/avatardefs.js';
+import { releaseBodyGate } from '../render/bodygate.js';
 import { armFlight, folded } from './controller.js';
-import { makeAvatar } from './avatar/avatar.js';
-import { contributeThumbnail } from './avatar/avatar-thumbnail.js';
-import { setMyAvatarPath, wireAvatarSwitch } from './edit/catalog.js';
-import { toast } from './ui/ui.js';
-import { net } from './net.js';
-import { loadBodyPrefs, saveBodyPrefs } from '../../shared/bodyscale.js';
-import { applyOwnBodyShadow } from './render/materials.js';
-import { warmDepth, warmLit } from './render/warmqueue.js';
+import { makeAvatar } from '../avatar/avatar.js';
+import { contributeThumbnail } from '../avatar/avatar-thumbnail.js';
+import { setMyAvatarPath, wireAvatarSwitch } from '../edit/catalog.js';
+import { toast } from '../ui/ui.js';
+import { net } from '../net.js';
+import { loadBodyPrefs, saveBodyPrefs } from '../../../shared/bodyscale.js';
+import { applyOwnBodyShadow } from '../render/materials.js';
+import { warmDepth, warmLit } from '../render/warmqueue.js';
 
 // ---------------------------------------------------------------- identity
 
@@ -165,7 +165,7 @@ wireAvatarSwitch(async (path, name) => {
     contributeThumbnail(name, next.vrm, CONFIG.token, { path });
     if (net.joined) {
       // re-announce: everyone rebuilds my remote with the new body
-      const { sendJoin } = await import('./net.js');
+      const { sendJoin } = await import('../net.js');
       sendJoin();
     }
   } catch (e) { report(`avatar switch ${name}`, e); }

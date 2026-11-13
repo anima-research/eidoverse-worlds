@@ -1,5 +1,5 @@
 import {THREE,frameBody,rigNamed,frame} from '../fixtures/reach-frame-fixture.ts';
-const {initReachNet,setMyReach,clearMyReach,myReachBag,applyRemoteReach,dropRemoteReach}=await import('../../client/lib/reachnet.js');
+const {initReachNet,setMyReach,clearMyReach,myReachBag,applyRemoteReach,dropRemoteReach}=await import('../../client/lib/player/reachnet.js');
 let current:any=null;const messages:string[]=[];
 const dispatch=await(await import('../fixtures/reach-command-fixture.ts')).commandsFor(()=>current,messages);
 let fail=0;function check(n:string,v:boolean){console.log(v?'PASS':'FAIL',n);if(!v)fail++;}

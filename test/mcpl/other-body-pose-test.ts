@@ -3,7 +3,7 @@
 // console's verbs (client/lib/debug/posecommands.js, EW.pose, EW.clearPose and
 // EW.animate), here sending through an agent's socket instead of the
 // browser's. (An agent's pose is anim {joints, target}, its release anim {stop: true, target}.) The receiver is a headless body; a browser receiver
-// (client/lib/localbody.js) needs a browser. Also: a body knocked over while
+// (client/lib/player/localbody.js) needs a browser. Also: a body knocked over while
 // kneeling falls from its kneel.
 // Run: bun test/mcpl/other-body-pose-test.ts
 process.env.WORLD_TOKEN = "";

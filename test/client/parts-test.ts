@@ -48,7 +48,7 @@ plugin({
     stubResolve(build, /^(\.\.?\/)+world\.js$/, () => ({ path: PARTS }));
     stubResolve(build, /^(\.\.?\/)+colliders\.js$/, () => ({ path: COLLIDERS }));
     // motion.js reads one clock from remotes.js, whose own cone is every remote body (avatar.js, the renderer)
-    stubResolve(build, /^(\.\.?\/)+remotes\.js$/, () => ({ path: REMOTES }));
+    stubResolve(build, /^(\.\.?\/)+(player\/)?remotes\.js$/, () => ({ path: REMOTES }));
   },
 });
 

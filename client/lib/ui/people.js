@@ -16,7 +16,7 @@ import { net, identities, guests, sendRequest, replica } from '../net.js';
 import { contextMenu, closeContextMenu } from '../edit/fieldpanels.js';
 import * as R from '../../../shared/protocol/roles.js';
 import { plainRefusal } from '../../../shared/protocol/refusal.js';   // the door's words, its fix and names
-import { listOf, setListed, BLOCK_FOLLOW_WORDS } from '../consent.js';
+import { listOf, setListed, BLOCK_FOLLOW_WORDS } from '../player/consent.js';
 import { moderatorHeader } from './chat.js';
 
 let deps = { mentionPerson: () => {}, presenting: () => false, openModLog: () => {}, toast: () => {} };

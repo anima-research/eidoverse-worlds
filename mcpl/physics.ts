@@ -275,7 +275,7 @@ export function collidersReady(): boolean {
 }
 let standProbe: any = null;
 
-/** Where the feet stand at `pos`, by client/lib/controller.js's rule: resolveColliders with the walking capsule,
+/** Where the feet stand at `pos`, by client/lib/player/controller.js's rule: resolveColliders with the walking capsule,
  *  which also PUSHES pos.x/z out of solids. Ground height, or null while unloaded (keep the terrain clamp).
  *  Synchronous: called every walk substep. */
 export function standOn(pos: { x: number; y: number; z: number }, heightAt: (x: number, z: number) => number): number | null {

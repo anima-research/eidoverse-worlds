@@ -3,7 +3,7 @@
 
 import { CONFIG, bus, colorFor, setName } from '../base.js';
 import { registerXRPanel } from '../xr/xrpanels.js';
-import { getMyAvatarName, getMe } from '../mybody.js';
+import { getMyAvatarName, getMe } from '../player/mybody.js';
 import { bodiesFields, bodiesDispatch, mountBodies } from './bodies.js';
 import { presence, setPresence, STATES } from './presence.js';
 import { renderDOM } from '../edit/fieldpanels.js';

@@ -8,12 +8,12 @@
 //   'touch' { who, limb, point?, entry }   their solve arrived
 //   'release' { who, limb }                they let go
 
-import { bus } from './base.js';
-import { deriveLandmarks, landmarkWorld } from './avatar/landmarks.js';
+import { bus } from '../base.js';
+import { deriveLandmarks, landmarkWorld } from '../avatar/landmarks.js';
 import {
   REACH_LIMBS, TOUCH_GAP, normalizeReachBag, normalizeReachTarget, sameReach,
   reachTargetsWho, diffReach,
-} from '../../shared/reachwire.js';
+} from '../../../shared/reachwire.js';
 
 let hooks = {
   me: () => null,          // my avatar

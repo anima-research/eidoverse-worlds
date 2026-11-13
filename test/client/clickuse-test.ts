@@ -1,6 +1,6 @@
 // clickuse-test.ts — the mouse on things while holding one (R 10-17 20:26, live in the gym): right-clicking the crate she held
 // still offered "pick up" beside "put down", and right-clicking the desk while holding a crate offered nothing to put it on.
-// Headless, through the real client/lib/clickuse.js: every module it reaches that owns a renderer, the DOM or the network is
+// Headless, through the real client/lib/player/clickuse.js: every module it reaches that owns a renderer, the DOM or the network is
 // a stand-in served from this file (a bun plugin's virtual namespace); three and shared/ are real, so thingAt and aimPoint
 // raycast real meshes.
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/client/clickuse-test.ts
@@ -31,7 +31,7 @@ const STUBS: Record<string, string> = {
 plugin({
   name: 'clickuse-stubs',
   setup(b) {
-    stubResolve(b, new RegExp(`^\\./(${Object.keys(STUBS).join('|')})\\.js$`), (a) => (a.importer.endsWith('clickuse.js') ? { path: a.path.slice(2, -3), namespace: 'cu-stub' } : undefined));
+    stubResolve(b, new RegExp(`^\\.\\.?/(${Object.keys(STUBS).join('|')})\\.js$`), (a) => (a.importer.endsWith('clickuse.js') ? { path: a.path.replace(/^\.\.?\//, '').slice(0, -3), namespace: 'cu-stub' } : undefined));
     b.onLoad({ filter: /.*/, namespace: 'cu-stub' }, (a) => ({ contents: STUBS[a.path], loader: 'js' }));
   },
 });
@@ -42,7 +42,7 @@ const winL: Record<string, Function[]> = {}; (globalThis as any).addEventListene
 const S = suite("clickuse");
 const check = (name: string, ok: unknown, detail?: unknown) => S.check(name, ok, detail);
 
-const cu: any = await import('../../client/lib/clickuse.js');
+const cu: any = await import('../../client/lib/player/clickuse.js');
 const { core, world, panels, tp } = (globalThis as any).__cu;
 const { THREE } = core;
 cu.initClickUse({ editing: () => false, busy: () => false, myPos: () => new THREE.Vector3(0, 0, 0) });

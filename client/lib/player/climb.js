@@ -1,10 +1,10 @@
-// client/lib/climb.js — my body on a climb route (componentspec climb; shared/climb.js). The state is {host, progress,
+// client/lib/player/climb.js — my body on a climb route (componentspec climb; shared/climb.js). The state is {host, progress,
 // dir}: presence sends {host, progress}, and every frame resolves it through the host's live object, so a moving
 // carrier carries its climber.
-import { THREE } from './core.js';
-import { bus } from './base.js';
-import { state } from './state.js';
-import { routeOf, climbPose, boardAt, stepClimb } from '../../shared/climb.js';
+import { THREE } from '../core.js';
+import { bus } from '../base.js';
+import { state } from '../state.js';
+import { routeOf, climbPose, boardAt, stepClimb } from '../../../shared/climb.js';
 
 let objects = () => new Map(), active = null;
 export function setClimbObjects(fn) { objects = fn; }

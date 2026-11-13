@@ -19,7 +19,7 @@ import { scaleOf } from '../../../shared/scale3.js';
 import { MESH_DEFAULT, ghostMeshSize } from '../meshdefaults.js';
 import { engage, release } from './keyhints.js';
 import { placeRefusal } from '../../../shared/blueprint.js';
-import { myState, mouse, setPointerClaim, setBuildingProbe } from '../controller.js';
+import { myState, mouse, setPointerClaim, setBuildingProbe } from '../player/controller.js';
 import { flashHint, collapseAll, panelFrame, html, claimStatus, releaseStatus } from '../ui/ui.js';
 import { paint, escapeHtml } from '../ui/markup.js';
 import { pushHostHook } from '../render/autohooks.js';

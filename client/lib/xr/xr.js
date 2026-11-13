@@ -18,7 +18,7 @@ import { resetFingers, xrBodyDebug } from './xrbody.js';
 import { stroke, fillPath } from '../ui/icons.js';
 import { xrPanelsEnter, xrPanelsExit, xrPanelsPick, xrPanelsAt, xrPanelsPress, xrPanelsDrag, xrPanelsReleasePress, showXRPanel, xrPanelHas, xrPanelOpen, xrPanelsGrab, xrPanelRelease, xrPanelsShown, xrPanelsHideToggle, xrPanelsHidden } from './xrpanels.js';
 import { TEXT_SEL, domQuadsScroll, domQuadResizeBegin, domQuadResizeMove, domQuadResizeEnd, domQuadsRevealOnly, domQuadMesh } from './domquad.js';
-import { myState, xrIntent, camYaw, setCamYaw, setXrProbe } from '../controller.js';
+import { myState, xrIntent, camYaw, setCamYaw, setXrProbe } from '../player/controller.js';
 import { ringActionEntries } from '../ui/actionbar.js';
 import { entities, bagOf, socketsOn } from '../world.js';
 import { xrHand as grabHand, bindPresenting as bindGrabPresenting } from '../thingphysics.js';   // the grabbable component's VR hands

@@ -4,16 +4,16 @@
 //   A click is a press and release that didn't travel (a drag is the camera's orbit, either button). Not in edit mode
 // (a click selects there), not in a headset, not over a person (bodydrag's capture listener takes that press first).
 // The cursor is an open hand over what a click would pick up, a pointing finger over any other use.
-import { THREE, camera, canvas } from './core.js';
-import { outOfMyView } from './edit/myview.js';
-import { bagOf, entities, socketsOn } from './world.js';
-import { contextMenu, closeContextMenu } from './edit/fieldpanels.js';
-import { flashHint } from './ui/ui.js';
-import { xrActive } from './xr/xrask.js';
-import { nameOf } from './ui/plainwords.js';
-import { bodyOf } from '../../shared/components.js';
-import { physicsApi } from './thingphysics.js';
-import { actionsOf, useThing } from './ui/useprompt.js';
+import { THREE, camera, canvas } from '../core.js';
+import { outOfMyView } from '../edit/myview.js';
+import { bagOf, entities, socketsOn } from '../world.js';
+import { contextMenu, closeContextMenu } from '../edit/fieldpanels.js';
+import { flashHint } from '../ui/ui.js';
+import { xrActive } from '../xr/xrask.js';
+import { nameOf } from '../ui/plainwords.js';
+import { bodyOf } from '../../../shared/components.js';
+import { physicsApi } from '../thingphysics.js';
+import { actionsOf, useThing } from '../ui/useprompt.js';
 import { trySitOn } from './localbody.js';
 import { walkTo, clampToBounds } from './controller.js';
 

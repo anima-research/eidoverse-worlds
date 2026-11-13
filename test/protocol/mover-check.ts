@@ -38,7 +38,7 @@ const src = (p) => fs.readFileSync(path.join(ENGINE, p), "utf8");
 
 // ---- D: the drift guard ----
 {
-  const agent = src("mcpl/agent.ts"), auth = src("shared/protocol/authority.js"), ctrl = src("client/lib/controller.js"),
+  const agent = src("mcpl/agent.ts"), auth = src("shared/protocol/authority.js"), ctrl = src("client/lib/player/controller.js"),
     coll = src("client/lib/colliders.js"), scale = src("shared/bodyscale.js"), thing = src("client/lib/thingphysics.js");
   const own = {
     agent: fs.readdirSync(path.join(ENGINE, "mcpl")).filter((f) => /^agent(-[a-z]+)?\.ts$/.test(f)).map((f) => src("mcpl/" + f)).join("\n").match(/^const WALK\s*=.*$/m)?.[0] ?? null,   // the agent and its pieces
@@ -50,7 +50,7 @@ const src = (p) => fs.readFileSync(path.join(ENGINE, p), "utf8");
   const stepOf = { agent: own.agent ? "none (terrain only: no floors)" : "mover", authority: auth.match(/step:\s*([\d.]+)/)?.[1] ?? "mover", client: coll.match(/^const STEP\s*=\s*([\d.]+)/m)?.[1] ?? "mover" };
   const same = Object.values(own).every((v) => v === null || (Array.isArray(v) && v.length === 0));
   ok(same, "D1 no walker carries its own locomotion numbers or stride (agent WALK/RUN/ARRIVE, authority TRACK, colliders STEP/TALL, bodyscale COLLIDER_R, controller's speed table and stride)", { own, "is a 0.7 m ledge a floor? step =": stepOf });
-  for (const [f, s] of [["mcpl/agent.ts", agent], ["shared/protocol/authority.js", auth], ["client/lib/controller.js", ctrl], ["client/lib/colliders.js", coll], ["shared/bodyscale.js", scale], ["client/lib/thingphysics.js", thing]])
+  for (const [f, s] of [["mcpl/agent.ts", agent], ["shared/protocol/authority.js", auth], ["client/lib/player/controller.js", ctrl], ["client/lib/colliders.js", coll], ["shared/bodyscale.js", scale], ["client/lib/thingphysics.js", thing]])
     ok(/from ["'](\.\.?\/)+(shared\/)?mover\.js["']|from ["']\.\.\/mover\.js["']/.test(s), `D2 ${f} reads shared/mover.js`);
 }
 
@@ -231,7 +231,7 @@ if (M) {
   ok(near(inside.moved, 1.55) && (inside.stance === undefined || inside.stance === null || (inside.stance.speedFactor === 1 && !inside.stance.swimming)), "W8 no wading in the pocket: a dry walk at full pace", inside);
   ok(outside.moved < 1.55 && outside.stance && !outside.stance.swimming && outside.stance.speedFactor < 1, "W8 beside it, 1.2 m of sea drags the same stride", outside);
   // the level dive and the wading ask the same reader: the controller reads waterLevel() once, inside levelHere
-  const ctrl = src("client/lib/controller.js"), body = (name) => { const i = ctrl.indexOf(`function ${name}(`); return i < 0 ? "" : ctrl.slice(i, ctrl.indexOf("\n}", i)); };
+  const ctrl = src("client/lib/player/controller.js"), body = (name) => { const i = ctrl.indexOf(`function ${name}(`); return i < 0 ? "" : ctrl.slice(i, ctrl.indexOf("\n}", i)); };
   const reads = (ctrl.match(/\bwaterLevel\(\)/g) ?? []).length, here = ctrl.match(/const levelHere = [^\n]*/)?.[0] ?? "";
   ok(reads === 1 && /waterLevel\(\)/.test(here) && /worldLevelAt|levelAt\(/.test(here) && /levelHere\(\)/.test(body("levelDiveWater")) && /const wl = levelHere\(\)/.test(ctrl),
     "W8 no dive there either: the controller's level dive and its wading read the level only through levelHere (mediumOf), never waterLevel() directly", { reads, here, dive: body("levelDiveWater").slice(0, 200) });

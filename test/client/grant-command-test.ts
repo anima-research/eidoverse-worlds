@@ -16,11 +16,11 @@ const modules: any = {
   'world.js': { entities: new Map(), bagOf: () => null, roleOf: noop, worldHasOwner: () => true },
   'net.js': { net: { myId: 'owner' }, identityOf: (n: string) => (n === 'wren' ? 'u-wren' : null), replica: { st: { entities: { '@world': world } }, active: true }, replicaActive: () => true,
     sendRequest: async () => answer, sendMod: noop, sendPuppet: noop, sendWorldFork: noop, sendWorldFound: noop, sendWorldReset: noop, requestDebug: noop, sendAnim: noop, sendDrag: noop },
-  'remotes.js': { remotes: new Map() },
-  'controller.js': { myState: { pos: { x: 0, y: 0, z: 0 } }, setPosture: noop, flightReport: () => '' },
+  'player/remotes.js': { remotes: new Map() },
+  'player/controller.js': { myState: { pos: { x: 0, y: 0, z: 0 } }, setPosture: noop, flightReport: () => '' },
   'thingphysics.js': { punt: noop, grab: noop, put: noop, drop: noop, throwHeld: noop }, 'ui/chat.js': { logChat: (_w: string, t: string) => messages.push(t) },
   'ui/ui.js': { toggleHelp: noop, flashHint: noop, toast: noop }, 'scenegraph.js': { sceneAttach: noop, sceneDetach: noop },
-  'consent.js': { setPushable: noop, pushable: () => false }, 'localbody.js': { trySitOn: noop }, 'mybody.js': { getMe: () => null },
+  'player/consent.js': { setPushable: noop, pushable: () => false }, 'player/localbody.js': { trySitOn: noop }, 'player/mybody.js': { getMe: () => null },
   'edit/writes.js': { send: async (req: any) => { sent.push(req); return { ok: true }; } }, 'ui/stylepanel.js': { panelAlpha: () => 1, setPanelAlpha: noop },
 };
 for (const [name, exports] of Object.entries(modules)) mock.module(fileURLToPath(new URL('../../client/lib/' + name, import.meta.url)), () => exports as any);

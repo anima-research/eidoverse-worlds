@@ -3,7 +3,7 @@
 // consent.js decide; no client-side gate). This module remembers my choice (localStorage, so it survives the session and
 // follows me between worlds) and hands it to consentsync, which sends it on every arrival and every change.
 // A leaf with no lib imports. setPushable/setPosable keep main's /pushable and /posable meanings: the move and touch gates.
-import { GATES, DEFAULT_GATES, CONSENT_SHAPE } from '../../shared/protocol/consent.js';
+import { GATES, DEFAULT_GATES, CONSENT_SHAPE } from '../../../shared/protocol/consent.js';
 export { GATES };
 /** what each gate covers, in plain words (Settings ▸ body shows them as the tooltips) */
 export const GATE_WORDS = {

@@ -7,7 +7,7 @@
 import { updateWater, updateWaterView, setWaterObjects, setWaterClock, setSkyHider, waterDebug, applyEnvLight } from './lib/realize/watervolumes.js';
 
 import { say } from './lib/net.js';
-import { updateHelm, helmHull } from './lib/vehicles.js';
+import { updateHelm, helmHull } from './lib/player/vehicles.js';
 import { chooseClient } from './lib/ui/litechoice.js';
 import { THREE, scene, camera, renderer, canvas } from './lib/core.js';
 import { releaseBodyGate, armBodyGate } from './lib/render/bodygate.js';
@@ -38,17 +38,17 @@ import { tickOpenables } from './lib/realize/openable.js';
 import {
   myState, updateMe, updateSpectator, setCamYaw, setPosture, togglePhotoMode,
   setRightsHook, setMeHook, setFolded, photoMode, setBoundsHook, setRespawnHooks, respawnMe, flying as flyingNow, capSpeed,
-} from './lib/controller.js';
+} from './lib/player/controller.js';
 import { initUsePrompt } from './lib/ui/useprompt.js';
-import { setClimbObjects } from './lib/climb.js';
-import { initClickUse, clickUseApi } from './lib/clickuse.js';
-import { remotes, updateRemotes, updateGaze, serverNow } from './lib/remotes.js';
-import { initOccupants } from './lib/occupants.js';
+import { setClimbObjects } from './lib/player/climb.js';
+import { initClickUse, clickUseApi } from './lib/player/clickuse.js';
+import { remotes, updateRemotes, updateGaze, serverNow } from './lib/player/remotes.js';
+import { initOccupants } from './lib/player/occupants.js';
 // net.js takes the participant registry by injection (lite.js supplies a body-less one); this is the real one
-import * as participants from './lib/remotes.js';
+import * as participants from './lib/player/remotes.js';
 import { capture, setSnapReadiness } from './lib/render/net_capture.js';
 import { setWaveClock } from './lib/water.js';
-import { myReachBag } from './lib/reachnet.js';
+import { myReachBag } from './lib/player/reachnet.js';
 import {
   replica, net, connect, initIdentity, loginUrl, wireNet, sendRequest, sendPose, sendTyping,
   setPoseOverride, sendPuppet, sendAnim, builtIn,
@@ -76,7 +76,7 @@ import { tickXRMirror } from './lib/xr/xrmirror.js';
 import { ensureXRBodyHook, bindXRBodySelf, xrAvatarYaw, xrLookPitch, xrWire, xrSimActive } from './lib/xr/xrbody.js';
 import { tickXRVignette } from './lib/xr/xrvignette.js';
 import { initVRPanel } from './lib/xr/vrpanel.js';
-import { trySitOn as xrTrySitOn, dismountMe as xrDismountMe } from './lib/localbody.js';
+import { trySitOn as xrTrySitOn, dismountMe as xrDismountMe } from './lib/player/localbody.js';
 import {
   toast, flashHint, buildHelp, toggleHelp,
   togglePeopleHere, panelFrame, settingsFrame, setLoadingItems,
@@ -114,12 +114,12 @@ import { updateRig, rigDebug, setLampShadow, lampShadowState } from './lib/rende
 import { startPrefetch } from './lib/prefetch.js';
 import {
   getMe, setMe, getMyAvatarPath, getMyAvatarName, resolveMyAvatarPath,
-  rosterLazy, chooseAvatar, announceWorn } from './lib/mybody.js';
+  rosterLazy, chooseAvatar, announceWorn } from './lib/player/mybody.js';
 import {
   initLocalBody, isDowned, activeRagdoll, goLimp, getUp,
   stepRagdoll, updateMountedMe, updateSeatHint, seatLeaving,
-} from './lib/localbody.js';
-import { posable, pushable, setPosable, setPushable } from './lib/consent.js';
+} from './lib/player/localbody.js';
+import { posable, pushable, setPosable, setPushable } from './lib/player/consent.js';
 import { updateVoiceMouths } from './lib/audio/voicemouths.js';
 import { initActionBar } from './lib/ui/actionbar.js';
 import { initXRKeyboard } from './lib/xr/xrkeyboard.js';
@@ -130,7 +130,7 @@ import { initLantern } from './lib/ui/commandbar.js';
 import { deriveLandmarks, debugMarkers, landmarkWorld } from './lib/avatar/landmarks.js';
 import { measureChain, solveChain } from './lib/avatar/reachbone.js';
 import { canonicalPoint } from '../shared/contact.js';
-import { initReachNet, setMyReach, clearMyReach } from './lib/reachnet.js';
+import { initReachNet, setMyReach, clearMyReach } from './lib/player/reachnet.js';
 import { foldedIn } from '../shared/wingpresence.js';
 import { readBodyMode } from '../shared/bodymode.js';
 import { isOwner } from '../shared/protocol/roles.js';
@@ -500,7 +500,7 @@ registerSystem('materials', (dt, t, now) => updateMaterials(now)); // weather â†
 registerSystem('rig', (dt, t, now) => updateRig(now));          // light slots follow requests
 registerSystem('sounds', () => tickSounds(), { every: 2 });      // panners follow entities, the listener the camera
 setWaterObjects(() => entities);
-setClimbObjects(() => entities);   // climb routes resolve through their hosts' live objects (client/lib/climb.js)
+setClimbObjects(() => entities);   // climb routes resolve through their hosts' live objects (client/lib/player/climb.js)
 setWaterClock(serverNow);
 setSkyHider(hideSkyForWater);
 registerSystem('water', updateWater);

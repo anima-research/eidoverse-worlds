@@ -1,12 +1,12 @@
 // vehicles — driving a hull from its helm: this client steps the hull with shared/drive.js and streams its pose; the
 // authority checks each step (shared/protocol/authority/drive.js).
-import { bus, CONFIG } from './base.js';
-import { entities, bagOf } from './world.js';
+import { bus, CONFIG } from '../base.js';
+import { entities, bagOf } from '../world.js';
 import { avatarMounts } from './mounts.js';
-import { sendDrive } from './net.js';
+import { sendDrive } from '../net.js';
 import { keys } from './controller.js';
-import { reindexCollider } from './colliders.js';
-import { driveOf, isHelmC, stepDrive } from '../../shared/drive.js';
+import { reindexCollider } from '../colliders.js';
+import { driveOf, isHelmC, stepDrive } from '../../../shared/drive.js';
 
 const SEND_MS = 66;   // ~15 Hz
 // `local`: the hull's pose as I drive it; only a refusal (snap) pulls it back, never the log's lagging commits

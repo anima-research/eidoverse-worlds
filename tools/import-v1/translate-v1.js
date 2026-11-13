@@ -512,7 +512,7 @@ export function airLeftOf(a) {
   return fields.length ? { left, fields } : null;
 }
 /** main's empty-world edge: a body walked or swam no further than 78 m from the origin where the world had no bounds (main
- *  client/lib/controller.js constrainMovement, "the legacy stage boundary"), and flew under 60 m. Here @world.bounds is the only
+ *  client/lib/player/controller.js constrainMovement, "the legacy stage boundary"), and flew under 60 m. Here @world.bounds is the only
  *  edge, so a main world with neither bounds nor terrain gets this box (@31); grown past any thing, arrival, water volume or
  *  vehicle band outside it (the authority refuses a move outside bounds; below them is a fall). Else null. */
 export const STAGE = { half: 78, floor: -2, ceiling: 60, margin: 2 };

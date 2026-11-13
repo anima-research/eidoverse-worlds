@@ -24,7 +24,7 @@ import { buildFloraField, warmField, loadFloraModule } from './vegetation/flora.
 import { applySky, whenSkyWarm } from './sky/sky.js';
 import { whenBooted, bootDone } from './boot.js';
 import { warm, P_GATE } from './render/warmqueue.js';
-import { occupyCorrectionFor } from './occupants.js';
+import { occupyCorrectionFor } from './player/occupants.js';
 import { applySeatCorrection } from '../../shared/seatcore.js';
 import { isOwner } from '../../shared/protocol/roles.js';
 
@@ -60,7 +60,7 @@ export function seatSocket(id) {
   return { id: String(id), host: parentIdOf(id), name: c.socket.name, sock: c.socket, station: c.station && typeof c.station === 'object' ? c.station : null };
 }
 // the map is mounts.js's (a leaf, so the lite client's net.js can read it); re-exported for the rest
-import { avatarMounts } from './mounts.js';
+import { avatarMounts } from './player/mounts.js';
 export { avatarMounts };
 /** A body's seat is presence, not logged: its owner's pose frame carries `seat: {to: <socket id>}` while seated, so
  *  every receiver sets it from the frame and clears it when a frame comes without one. An older frame's {to: <host>,

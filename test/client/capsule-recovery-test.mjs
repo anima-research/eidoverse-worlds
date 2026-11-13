@@ -2,7 +2,7 @@
 //
 // The review's required evidence: a product-path test proving fail → capsule → SAME body recovery,
 // including same-path remote reannouncement and authority takeover. Drives the REAL
-// client/lib/remotes.js (renderer-side imports stubbed; the recovery logic itself is the product).
+// client/lib/player/remotes.js (renderer-side imports stubbed; the recovery logic itself is the product).
 //
 // Run: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/client/capsule-recovery-test.mjs
 //
@@ -39,8 +39,8 @@ plugin({
     stubResolve(b, /^(\.\.?\/)+core\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
     stubResolve(b, /^(\.\.?\/)+(avatar\/)?avatar(-thumbnail)?\.js$/, () => ({ path: here('../stubs/recovery-avatar-stub.mjs') }));
     stubResolve(b, /^(\.\.?\/)+world\.js$/, () => ({ path: here('../stubs/recovery-empty-stub.mjs') }));
-    stubResolve(b, /^(\.\.?\/)+occupants\.js$/, () => ({ path: here('../stubs/recovery-empty-stub.mjs') }));
-    stubResolve(b, /^(\.\.?\/)+reachnet\.js$/, () => ({ path: here('../stubs/recovery-empty-stub.mjs') }));
+    stubResolve(b, /^(\.\.?\/)+(player\/)?occupants\.js$/, () => ({ path: here('../stubs/recovery-empty-stub.mjs') }));
+    stubResolve(b, /^(\.\.?\/)+(player\/)?reachnet\.js$/, () => ({ path: here('../stubs/recovery-empty-stub.mjs') }));
     stubResolve(b, /^(\.\.?\/)+(avatar\/)?poseclips\.js$/, () => ({ path: here('../stubs/recovery-empty-stub.mjs') }));
     stubResolve(b, /wingpresence\.js$/, () => ({ path: here('../stubs/recovery-empty-stub.mjs') }));
     stubResolve(b, /^(\.\.?\/)+(xr\/)?xrbody\.js$/, () => ({ path: here('../stubs/recovery-empty-stub.mjs') }));
@@ -49,7 +49,7 @@ plugin({
   },
 });
 
-const R = await import('../../client/lib/remotes.js');
+const R = await import('../../client/lib/player/remotes.js');
 
 let pass = 0, fail = 0;
 const check = (name, ok, detail = '') => {

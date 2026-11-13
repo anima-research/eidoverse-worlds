@@ -280,7 +280,7 @@ console.log("\n— the browser takes the clock as its server clock —\n");
   for (const m of ["core", "assets", "world", "ui/chat", "avatar/fp_view", "boot", "ui/ui", "avatar/avatar", "xr/xrbody"]) {
     mock.module(`${import.meta.dir}/../../client/lib/${m}.js`, () => stubs);
   }
-  const remotesMod: any = await import("../../client/lib/remotes.js");
+  const remotesMod: any = await import("../../client/lib/player/remotes.js");
   // The estimate itself, before serverclock.js slews what the screen shows toward it (clockDebug().best): the
   // arithmetic checks below read this, as machine time plus the best offset.
   const { clockDebug } = await import("../../client/lib/serverclock.js");
@@ -496,7 +496,7 @@ console.log("\n— the browser takes the clock as its server clock —\n");
     // after their capture were all newer than the render point: the body froze at its newest pose, then jumped). The
     // delay follows the observed lateness: up fast, down slowly, never under 110 ms nor over the cap.
     // Mutation (must go red): make interpDelay return INTERP_MS always.
-    const ID: any = await import("../../client/lib/interpdelay.js");
+    const ID: any = await import("../../client/lib/player/interpdelay.js");
     let est: number | null = null;
     check("no samples yet: the floor", ID.interpDelay(est) === ID.INTERP_MS);
     for (let i = 0; i < 20; i++) est = ID.noteLateness(est, 20);

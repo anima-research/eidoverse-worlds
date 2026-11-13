@@ -34,7 +34,7 @@ const { mock } = await import("bun:test");
 for (const m of ["core", "assets", "world", "ui/chat", "avatar/fp_view", "boot", "ui/ui", "avatar/avatar", "xr/xrbody"]) {   // xrbody: remotes.js imports applyRemoteXR/resetFingers (VR PR); its cone reaches xr.js
   mock.module(`${import.meta.dir}/../../client/lib/${m}.js`, () => stubs);
 }
-const remotesMod = await import("../../client/lib/remotes.js");
+const remotesMod = await import("../../client/lib/player/remotes.js");
 const netMod = await import("../../client/lib/net.js");
 const { remotes, dropRemote, ensureRemote, pushPose } = remotesMod as any;
 const { _dispatch, teardownParticipant, stalePresenceCount } = netMod as any;

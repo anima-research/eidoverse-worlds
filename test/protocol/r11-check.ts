@@ -162,7 +162,7 @@ const cases: Case[] = [
       const ag = readText("AGENTS.md"); const row = ag.split("\n").find((l) => l.startsWith("| `move {to")) ?? ""; return { ok: /a thing by id[^|]*, a place's name or label, a thing's label or handle[^|]*, then a person/.test(row) }; },
     good: (o) => o.ok },
   { id: "D3", what: "(claims R4) attach has no `pose` arg (a station's poses menu is reserved: the arg could only be refused); the browser's /seatpose, the same dead menu, is gone with chooseSeatPose", run() {
-      const tl = readText("mcpl/tools.ts"); const row = tl.split("\n").find((l) => l.includes('{ name: "attach"')) ?? ""; const reg = readText("client/lib/ui/commands/registry.js"), h = readText("client/lib/ui/commands/handlers.js"), lb = readText("client/lib/localbody.js");
+      const tl = readText("mcpl/tools.ts"); const row = tl.split("\n").find((l) => l.includes('{ name: "attach"')) ?? ""; const reg = readText("client/lib/ui/commands/registry.js"), h = readText("client/lib/ui/commands/handlers.js"), lb = readText("client/lib/player/localbody.js");
       return { schema: /pose: \{ type/.test(row), handler: /a\.pose != null && body\.poses/.test(tl), seatpose: /seatpose/.test(reg + h), choose: /chooseSeatPose/.test(h + lb) }; },
     good: (o) => !o.schema && !o.handler && !o.seatpose && !o.choose },
   { id: "D4", what: "(docs pass) replies and help in today's words: travel names anims and body-mode (not held pose and posture); ragdoll and live-pose replies name anim; /pushable says everyone (not a stranger); no sockets.<slot>|pose", run() {

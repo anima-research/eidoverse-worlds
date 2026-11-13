@@ -2,7 +2,7 @@
 // persisted, replayed on join) and presence (batched, lossy, never persisted).
 
 import { CONFIG, report, bus, nameFromJoinAck, LAST_WORLD_KEY, TAB_WORLD_KEY, pickWorld, rememberedWorlds, isWorldName } from './base.js';
-import { avatarMounts } from './mounts.js';   // not world.js: that pulls core.js (the renderer) into lite
+import { avatarMounts } from './player/mounts.js';   // not world.js: that pulls core.js (the renderer) into lite
 // every snapshot and live entry folds here, synchronously, through shared/protocol/replica.js (the authority's own
 // fold); state.js hands the realizers the view of it (parity.js foldParity measures drift)
 import { hydrate as shadowHydrate, reset as shadowReset, state as shadowState, applyView } from './state.js';
@@ -785,7 +785,7 @@ async function handle(msg, at) {
       bus.emit('drag', msg);
       break;
     }
-    case 'drive': { bus.emit('drive', msg); break; }   // a hull's live pose, or my refused step's snap (client/lib/vehicles.js)
+    case 'drive': { bus.emit('drive', msg); break; }   // a hull's live pose, or my refused step's snap (client/lib/player/vehicles.js)
 
     case 'history': case 'debug': {
       const p = pendingHistory.get(msg.reqId);

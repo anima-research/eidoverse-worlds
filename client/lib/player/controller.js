@@ -2,30 +2,30 @@
 // drives both. The camera gets collision (never inside a hillside), a shoulder offset (your body doesn't occlude your
 // aim), and a continuous zoom that passes through into first person.
 
-import { THREE, camera, canvas } from './core.js';
-import { CONFIG, angleDelta, bus } from './base.js';
-import { heightAt } from './terrain.js';
-import { resolveColliders, lastBlockedTop, lastContacts, findSeat, raySegment } from './colliders.js';
+import { THREE, camera, canvas } from '../core.js';
+import { CONFIG, angleDelta, bus } from '../base.js';
+import { heightAt } from '../terrain.js';
+import { resolveColliders, lastBlockedTop, lastContacts, findSeat, raySegment } from '../colliders.js';
 import { bumpTick } from './hiddenbump.js';
-import { outOfMyView } from './edit/myview.js';
-import { colliderFor, deskEyeY, canMantle, mantleStep } from '../../shared/bodyscale.js';   // this body's chosen size: capsule, eye, mantle
+import { outOfMyView } from '../edit/myview.js';
+import { colliderFor, deskEyeY, canMantle, mantleStep } from '../../../shared/bodyscale.js';   // this body's chosen size: capsule, eye, mantle
 // one walker (shared/mover.js) for the person, the agent and the authority: stride, speeds, body size and water
 // stance are the mover's; this file keeps the keys, the camera and the collider pass
-import { walkSpeed, stickSpeed, easeSpeed, stepWalk, waterStance, floatDepth, MOVER } from '../../shared/mover.js';
-import { waterLevel, waterAt, waveTime } from './water.js';
-import { surfaceOffset } from '../../shared/waves.js';
-import { floatStep, footprintSurface } from '../../shared/buoyancy.js';
-import { chat } from './ui/chat.js';
-import { isOverlayOpen, flashHint, html } from './ui/ui.js';
-import { selectClip, AIRBORNE_GRACE } from './avatar/locomotion_clip.js';
-import { bodyModeOf } from '../../shared/bodymode.js';
+import { walkSpeed, stickSpeed, easeSpeed, stepWalk, waterStance, floatDepth, MOVER } from '../../../shared/mover.js';
+import { waterLevel, waterAt, waveTime } from '../water.js';
+import { surfaceOffset } from '../../../shared/waves.js';
+import { floatStep, footprintSurface } from '../../../shared/buoyancy.js';
+import { chat } from '../ui/chat.js';
+import { isOverlayOpen, flashHint, html } from '../ui/ui.js';
+import { selectClip, AIRBORNE_GRACE } from '../avatar/locomotion_clip.js';
+import { bodyModeOf } from '../../../shared/bodymode.js';
 // the 3D swim: under a water level, and in authored water volumes
-import { waterAt as volumeAt, waterTime, levelAt, speedAt } from './realize/watervolumes.js';
-import { swimStep, waveHeight } from '../../shared/water.js';
-import { register as registerAction } from './ui/actions.js';
+import { waterAt as volumeAt, waterTime, levelAt, speedAt } from '../realize/watervolumes.js';
+import { swimStep, waveHeight } from '../../../shared/water.js';
+import { register as registerAction } from '../ui/actions.js';
 import {
   resolveFirstPersonAnchor, FP_FORWARD, FP_EYE_LIFT, FP_GAZE_AHEAD, FP_GAZE_DROP,
-} from './avatar/fp_view.js';
+} from '../avatar/fp_view.js';
 
 // ---------------------------------------------------------------- flight
 // The same integrator an agent flies (shared/flight.js). Off by default: F toggles it, only when the world grants
@@ -33,13 +33,13 @@ import {
 import {
   makeConfig as flightConfig, initialState as flightState, step as flightStep,
   takeOff as flightTakeOff, bestGlide, bodyDown as flightDown,
-} from '../../shared/flight.js';
-import { pilotInput } from '../../shared/flightpilot.js';
-import { worldFlightProvider, resolveFlight } from '../../shared/flightcap.js';
-import { inspectBody } from '../../shared/flightbody.js';
-import { applyOwnedWingFold } from '../../shared/wingpresence.js';
+} from '../../../shared/flight.js';
+import { pilotInput } from '../../../shared/flightpilot.js';
+import { worldFlightProvider, resolveFlight } from '../../../shared/flightcap.js';
+import { inspectBody } from '../../../shared/flightbody.js';
+import { applyOwnedWingFold } from '../../../shared/wingpresence.js';
 import { nearbyClimb, startClimb, stepOnClimb, climbing, cancelClimb, climbPresence } from './climb.js';   // climb routes (componentspec climb)
-import { spawnOf, fallBackOf, belowWorld, FELL } from '../../shared/spawn.js';
+import { spawnOf, fallBackOf, belowWorld, FELL } from '../../../shared/spawn.js';
 import { groundStep } from './groundstep.js';   // one frame of height over the ground, with floor snap
 
 let flight = null, flightCfg = null, flightProv = null;

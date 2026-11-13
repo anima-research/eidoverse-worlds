@@ -51,7 +51,7 @@ Consent is presence: never logged, never a grant, never a property of what kind 
 
 Why it went (R 10-28): asking was the wrong shape for most bodies most of the time. "Keep main's shape of binary switches", with per-person lists that carve out around them. A stored switch became gates, never wider: refuse or ask → both off (R 10-28 16:02: ask was no until yes); accept → move on, touch off. A per-person deny became a block, a standing allow an allow; an allow with an end was dropped.
 
-What a browser's stored keys become (client/lib/consent.js readStored; nothing comes out wider than main allowed):
+What a browser's stored keys become (client/lib/player/consent.js readStored; nothing comes out wider than main allowed):
 
 | Stored | Move me | Touch me | Notes |
 |---|---|---|---|

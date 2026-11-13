@@ -1,8 +1,8 @@
-// dismount-height-test.ts — standing up keeps the height I'm let go at (review of PR #260, client/lib/localbody.js:151).
+// dismount-height-test.ts — standing up keeps the height I'm let go at (review of PR #260, client/lib/player/localbody.js:151).
 // dismountMe read the full `vacated.at` (or the socket's exit, in the thing's frame) and then set my height to 0; so did
 // stepLeaving when a leave clip finished. A seat on an upper floor that was moved or switched off dropped its occupant
 // downstairs: the walker can't climb back to a floor more than a step above where it was put.
-// Headless, through the REAL client/lib/localbody.js: every module it imports that owns a renderer, the DOM, the network or
+// Headless, through the REAL client/lib/player/localbody.js: every module it imports that owns a renderer, the DOM, the network or
 // the world's scene is a stand-in served from this file (a bun plugin's virtual namespace, as clickuse-test does); three
 // and shared/ (sockbody's bodyOf, mayLeave) are real.
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/client/dismount-height-test.ts
@@ -45,7 +45,7 @@ const STUBS: Record<string, string> = {
 plugin({
   name: 'dismount-stubs',
   setup(b) {
-    stubResolve(b, new RegExp(`^\\./(${Object.keys(STUBS).join('|')})\\.js$`), (a) => (a.importer.endsWith('localbody.js') ? { path: a.path.slice(2, -3), namespace: 'dm-stub' } : undefined));
+    stubResolve(b, new RegExp(`^\\.\\.?/(${Object.keys(STUBS).join('|')})\\.js$`), (a) => (a.importer.endsWith('localbody.js') ? { path: a.path.replace(/^\.\.?\//, '').slice(0, -3), namespace: 'dm-stub' } : undefined));
     b.onLoad({ filter: /.*/, namespace: 'dm-stub' }, (a) => ({ contents: STUBS[a.path], loader: 'js' }));
   },
 });
@@ -54,7 +54,7 @@ const G = globalThis as any; G.__dm = {};
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = '') => { if (ok) { pass++; console.log(`  \x1b[32m✓\x1b[0m ${name}`); } else { fail++; console.log(`  \x1b[31m✗\x1b[0m ${name}${detail ? ` — ${detail}` : ''}`); } };
 
-const lb: any = await import('../../client/lib/localbody.js');
+const lb: any = await import('../../client/lib/player/localbody.js');
 const { ctl, world, THREE } = G.__dm;
 const seatOn = (station: any) => { world.socket.station = station; world.avatarMounts.set('me', { to: 'balcony-chair:a' }); ctl.myState.pos.set(4, 3.45, -2); };
 

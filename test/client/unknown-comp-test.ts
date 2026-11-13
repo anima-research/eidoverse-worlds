@@ -35,7 +35,7 @@ plugin({
   setup(b) {
     // the realizer's cone (realize/ imports ../x.js) and motion.js's (./x.js)
     for (const f of ['^\\.\\./(core|assets|colliders|(render/)?lightrig|(render/)?lightgizmo|world|(render/)?materials)\\.js$',
-      '^\\./(core|world|colliders|remotes)\\.js$']) {
+      '^\\./(core|world|colliders|player/remotes)\\.js$']) {
       stubResolve(b, new RegExp(f), () => ({ path: STUB }));
     }
     // the realizer's report(), recorded; everyone else gets the real base.js

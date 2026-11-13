@@ -5,29 +5,29 @@
 // logChat arrives through initLocalBody rather than an import: chat.js sits in an import cycle this module must
 // not add another edge to.
 
-import { bodyOf } from '../../shared/components.js';
-import { mayLeave, vacatedFromMine, vacatedAt, OCCUPY_REACH, ESCAPE_HOLD_S, ESCAPE_REPEAT_S } from '../../shared/sockbody.js';
-import { driveOccupied, releaseOccupied } from './avatar/occupybody.js';
+import { bodyOf } from '../../../shared/components.js';
+import { mayLeave, vacatedFromMine, vacatedAt, OCCUPY_REACH, ESCAPE_HOLD_S, ESCAPE_REPEAT_S } from '../../../shared/sockbody.js';
+import { driveOccupied, releaseOccupied } from '../avatar/occupybody.js';
 import { serverNow } from './remotes.js';
-import { sendRequest, identities } from './net.js';
-import { plain, called, typeable } from './ui/plainwords.js';
-import { usePromptHint } from './ui/useprompt.js';
-import { handsHint, physicsApi as _phys } from './thingphysics.js';
+import { sendRequest, identities } from '../net.js';
+import { plain, called, typeable } from '../ui/plainwords.js';
+import { usePromptHint } from '../ui/useprompt.js';
+import { handsHint, physicsApi as _phys } from '../thingphysics.js';
 const myHoldsNow = () => _phys.mine().length > 0;
-import { THREE } from './core.js';
-import { CONFIG, bus } from './base.js';
-import { mergePose } from '../../shared/humanoid.js';
+import { THREE } from '../core.js';
+import { CONFIG, bus } from '../base.js';
+import { mergePose } from '../../../shared/humanoid.js';
 import {
   myState, updateFollowCamera, setPosture, keys, setOccupyHook, setMountedHook, camYaw, camPitch, setCamYaw, xrIntent,
 } from './controller.js';
-import { camera } from './core.js';
-import { avatarMounts, mountTransform, bags, bagOf, socketWorldPos, setBodySeat, entities, seatSocket, socketsOn, parentIdOf } from './world.js';
-import { outOfMyView } from './edit/myview.js';
-import { sendAnim } from './net.js';
-import { makeRagdoll } from './ragdoll/bodysim.js';
-import { jointPositions } from './ragdoll/ragdoll.js';
-import { initBodyDrag, beingDragged, revokeDragged } from './ragdoll/bodydrag.js';
-import { toast, flashHint, setAmbientHint, html } from './ui/ui.js';
+import { camera } from '../core.js';
+import { avatarMounts, mountTransform, bags, bagOf, socketWorldPos, setBodySeat, entities, seatSocket, socketsOn, parentIdOf } from '../world.js';
+import { outOfMyView } from '../edit/myview.js';
+import { sendAnim } from '../net.js';
+import { makeRagdoll } from '../ragdoll/bodysim.js';
+import { jointPositions } from '../ragdoll/ragdoll.js';
+import { initBodyDrag, beingDragged, revokeDragged } from '../ragdoll/bodydrag.js';
+import { toast, flashHint, setAmbientHint, html } from '../ui/ui.js';
 import { pushable, bodyTable, onConsentChange, noteHeld, forget, landed, useWorld, takeNotice } from './consent.js';
 import { makeConsentSync } from './consentsync.js';
 import { bodyActAsPuppet, refusedNotice } from './bodyact.js';

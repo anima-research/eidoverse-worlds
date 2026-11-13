@@ -1,7 +1,7 @@
 // navgrid — routes for a walking body through placed models, found by asking
 // the same collision code that will carry the walk out.
 //
-// The feet (agent.ts stepFeet, client/lib/controller.js) move by colliders.resolveColliders, so the planner asks
+// The feet (agent.ts stepFeet, client/lib/player/controller.js) move by colliders.resolveColliders, so the planner asks
 // that same code, column by column on a fine lattice, and has no walkability opinion of its own:
 //   - standing heights in a column: each up-facing surface (surfaceUnder, repeated downward) where
 //     resolveColliders neither pushes the capsule nor answers a different floor. Storeys = several heights.

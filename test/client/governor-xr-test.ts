@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 const STUB = fileURLToPath(new URL('../stubs/lod-client-stub.mjs', import.meta.url));
 plugin({ name: 'governor-xr-stub', setup(b) {
   // the same cone lod-client-test stubs: governor.js and the REAL realize/models.js it imports stay real
-  for (const f of ['^(\\.\\.?/)+(render/)?lightrig\\.js$', '^\\.\\.?/realize/emitters\\.js$', '^\\.\\.?/terrain\\.js$', '^(\\.\\.?/)+(render/)?frameloop\\.js$', '^\\.\\.?/remotes\\.js$', '^(\\.\\.?/)+(ui/)?ui\\.js$',
+  for (const f of ['^(\\.\\.?/)+(render/)?lightrig\\.js$', '^\\.\\.?/realize/emitters\\.js$', '^\\.\\.?/terrain\\.js$', '^(\\.\\.?/)+(render/)?frameloop\\.js$', '^(\\.\\.?/)+(player/)?remotes\\.js$', '^(\\.\\.?/)+(ui/)?ui\\.js$',
     '^(\\.\\.?/)+(ui/)?statuschips\\.js$', '^\\.\\./core\\.js$', '^\\.\\./assets\\.js$', '^\\.\\./colliders\\.js$', '^(\\.\\.?/)+(render/)?lightgizmo\\.js$', '^\\.\\./world\\.js$',
     '^(\\.\\.?/)+(render/)?materials\\.js$'])
     stubResolve(b, new RegExp(f), () => ({ path: STUB }));

@@ -9,11 +9,11 @@ export async function commandsFor(getMe:()=>any, messages:string[]) {
     'render/capture.js':{captureFrame:noop},
     'world.js':{entities:new Map(),bagOf:()=>null,roleOf:noop,worldHasOwner:()=>false},   // bagOf: handlers.js resolves a thing by its label (R 10-17)
     'net.js':{net:{myId:'owner'},identityOf:()=>null,replica:{st:{entities:{}},active:true},replicaActive:()=>true,sendRequest:async()=>({ok:true}),sendMod:noop,sendPuppet:noop,sendWorldFork:noop,sendWorldFound:noop,sendWorldReset:noop,requestDebug:noop,sendAnim:noop,sendDrag:noop},
-    'remotes.js':{remotes:new Map()},
-    'controller.js':{myState:{pos:{x:0,y:0,z:0}},setPosture:noop,flightReport:()=>''},
+    'player/remotes.js':{remotes:new Map()},
+    'player/controller.js':{myState:{pos:{x:0,y:0,z:0}},setPosture:noop,flightReport:()=>''},
     'thingphysics.js':{punt:noop,grab:noop,put:noop,drop:noop,throwHeld:noop},'ui/chat.js':{logChat:(_who:string,text:string)=>messages.push(text)},
     'ui/ui.js':{toggleHelp:noop,flashHint:noop,toast:noop},'scenegraph.js':{sceneAttach:noop,sceneDetach:noop},
-    'consent.js':{setPushable:noop,pushable:()=>false},'localbody.js':{trySitOn:noop},'mybody.js':{getMe},
+    'player/consent.js':{setPushable:noop,pushable:()=>false},'player/localbody.js':{trySitOn:noop},'player/mybody.js':{getMe},
     // the door (edit/writes.js send) and /panels' stylepanel: handlers.js imports both, and each reaches the whole edit UI
     'edit/writes.js':{send:async()=>({ok:true})},'ui/stylepanel.js':{panelAlpha:()=>1,setPanelAlpha:noop},
   };

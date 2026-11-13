@@ -41,7 +41,7 @@ const remote = {
   },
 };
 mock.module(lib("core.js"), () => ({ THREE, camera: { isStub: true } }));
-mock.module(lib("remotes.js"), () => ({ remotes: new Map([["t", remote]]) }));
+mock.module(lib("player/remotes.js"), () => ({ remotes: new Map([["t", remote]]) }));
 mock.module(lib("render/capture.js"), () => ({
   captureFrame: () => "frame",
   captureFrom: (eye: THREE.Vector3, at: THREE.Vector3) => { shots.push({ eye: eye.clone(), at: at.clone() }); return "frame"; },

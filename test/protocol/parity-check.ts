@@ -48,7 +48,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["§6a gone", "spec/PROTOCOL.md", "## 6a. One kind of participant", "## 6a. Participants", ["X1"]],
   ["§8 agent-shaped again", "docs/guide/SCRIPTS.md", "one minted-shaped (`u-` and 20 lowercase) and one of another valid shape", "one person-shaped (`u-` and 20 lowercase) and one agent-shaped", ["X2"]],
   ["verbspec: arrival on the record", "shared/protocol/verbspec.js", "Arriving is presence (nothing is logged); teleport: true is an act on the record, and can't carry things", "Your first move (arriving) and teleport: true are acts on the record, and can't carry things", ["X3"]],
-  ["the stale consent comment", "client/lib/consent.js", "const KEY = 'ew-body-switch';", "const KEY = 'ew-body-switch';   // agents accept by default", ["X4"]],
+  ["the stale consent comment", "client/lib/player/consent.js", "const KEY = 'ew-body-switch';", "const KEY = 'ew-body-switch';   // agents accept by default", ["X4"]],
   ["WIRE: the agent flag", "docs/reference/WIRE.md", "`{world, id?, token?, avatar?, surface?, spectate?, declares?, renderer?", "`{world, id?, token?, avatar?, surface?, spectate?, agent?, renderer?", ["X5"]],
   ["whois infers a kind", "server/requestwire.ts", "...(said.has(id) ? { declares: said.get(id) } : {}),", "kind: dir.entry(id)?.subs?.some((x) => /^(agent|aid1):/.test(x)) ? \"agent\" : \"person\",", ["W1"]],
   ["whois drops the declaration", "server/requestwire.ts", "...(said.has(id) ? { declares: said.get(id) } : {}),", "", ["W1"]],
@@ -274,7 +274,7 @@ const cases: Case[] = [
       return { occ: show(occ), seat: show(seat), reach: !!SK.OCCUPY_REACH, old: "SIT_REACH" in SK || "SEAT_REACH" in SK, cls: C.KIND_CLASS?.occupy ?? null, oldCls: C.KIND_CLASS?.seat ?? null }; },
     good: (o) => !/^refused shape/.test(o.occ) && /^refused shape/.test(o.seat) && o.reach && !o.old && o.cls === "displace" && o.oldCls === null },
   { id: "O4", what: "…the readers and the words follow: sockbody's vacatedAt/vacatedFromMine read `socket`, the browser and the agent read `vacated`, the spec, AGENTS.md, docs/guide/SCRIPTS.md and docs/reference/WIRE.md say `vacated {socket, …}` and never `unseated`, and the version history records it", async run() {
-      const SK = await import(TREE + "shared/sockbody.js"); const lb = readText("client/lib/localbody.js"), ag = readText("mcpl/agent.ts"), md = readText("spec/PROTOCOL.md"), a = readText("AGENTS.md"), sc = readText("docs/guide/SCRIPTS.md"), wi = readText("docs/reference/WIRE.md");
+      const SK = await import(TREE + "shared/sockbody.js"); const lb = readText("client/lib/player/localbody.js"), ag = readText("mcpl/agent.ts"), md = readText("spec/PROTOCOL.md"), a = readText("AGENTS.md"), sc = readText("docs/guide/SCRIPTS.md"), wi = readText("docs/reference/WIRE.md");
       return { mine: SK.vacatedFromMine?.({ socket: "s1" }, { to: "s1" }) === true && SK.vacatedFromMine?.({ seat: "s1" }, { to: "s1" }) === false, at: JSON.stringify(SK.vacatedAt?.({ at: [1, 2, 3] })),
         lb: /m\?\.type === 'vacated'/.test(lb) && !/'unseated'/.test(lb), ag: /m\.type === "vacated"/.test(ag) && !/"unseated"/.test(ag),
         docs: [md.slice(0, md.indexOf("## Version history")), a, sc, wi].every((t) => !/\bunseat/i.test(t)) && /`vacated \{socket, by,\s+why, at\}`/.test(md) && /`vacated`/.test(a) && /`vacated \{socket, host\?, by, why, at\?\}`/.test(wi), vh: /occupy/.test(md.slice(md.indexOf("## Version history")) + readText("spec/history/PRE-RELEASE-RENAMES.md")) }; },
@@ -362,7 +362,7 @@ const cases: Case[] = [
       const d = String(VS.VERBSPEC?.move?.doc ?? ""); return { d: d.slice(0, 400), presence: /Arriving is presence \(nothing is logged\)/.test(d), old: /first move \(arriving\)[^.]*on the record/.test(d) }; },
     good: (o) => o.presence && !o.old },
   { id: "X4", what: "(research #12) the stale comments are gone: no \"agents accept by default\" (client consent.js) or \"agents accept, as they accept being posed\" (agent.ts); a caption isn't \"agents perceive, humans watch\"", run() {
-      const c = readText("client/lib/consent.js"), a = readText("mcpl/agent.ts"), m = readText("server/messages.ts");
+      const c = readText("client/lib/player/consent.js"), a = readText("mcpl/agent.ts"), m = readText("server/messages.ts");
       return { c: /agents accept by default/.test(c), a: /agents accept, as they/.test(a), m: /Agents perceive a paragraph; humans watch/.test(m) }; },
     good: (o) => !o.c && !o.a && !o.m },
   { id: "X5", what: "§1's say names the spoken trio as any participant's (a person using TTS included), and docs/reference/WIRE.md's join and arrive carry `declares`, not `agent`", run() {

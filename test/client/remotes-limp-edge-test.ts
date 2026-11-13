@@ -12,7 +12,7 @@ const { mock } = await import("bun:test");
 for (const m of ["core", "assets", "world", "ui/chat", "avatar/fp_view", "boot", "ui/ui", "avatar/avatar", "xr/xrbody"]) {
   mock.module(`${import.meta.dir}/../../client/lib/${m}.js`, () => stubs);
 }
-const remotesMod: any = await import("../../client/lib/remotes.js");
+const remotesMod: any = await import("../../client/lib/player/remotes.js");
 const camera: any = stubs.camera;
 camera.getWorldPosition ??= (v: any) => v.copy(camera.position);
 

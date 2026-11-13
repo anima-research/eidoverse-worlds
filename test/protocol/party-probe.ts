@@ -89,11 +89,11 @@ try {
   if (secs < 4) await die(1, "the page never booted");
   await evalJson(`(() => { const s = document.querySelector('#splash'); if (s) s.style.pointerEvents = 'none'; return true; })()`);
   check("boot: a world", await waitFor(`import('/lib/net.js').then((m) => m.replicaActive())`));
-  await waitFor(`import('/lib/mybody.js').then((m) => !!m.getMe())`, 30000);
+  await waitFor(`import('/lib/player/mybody.js').then((m) => !!m.getMe())`, 30000);
   const T0 = Date.now();
   const ONLY = (process.env.PARTY_ONLY ?? '').split(',').filter(Boolean);   // PARTY_ONLY=B5,S4 runs just those (a re-check)
   const stage = async (id: string, fn: () => Promise<void>) => { if (ONLY.length && !ONLY.includes(id)) return; console.log(`  · ${id} at ${((Date.now() - T0) / 1000).toFixed(0)} s`); try { await fn(); } catch (e) { check(`${id} (the stage threw)`, false, String(e?.message ?? e)); } };
-  const me = await evalJson(`import('/lib/controller.js').then((m) => m.myState.pos.toArray())`);
+  const me = await evalJson(`import('/lib/player/controller.js').then((m) => m.myState.pos.toArray())`);
   const near = (dx: number, dz: number): [number, number, number] => [+(me[0] + dx).toFixed(2), +me[1].toFixed(2), +(me[2] + dz).toFixed(2)];
 
   // ---- B1: the status chips and the menu bar ----

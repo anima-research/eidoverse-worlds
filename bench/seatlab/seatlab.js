@@ -12,7 +12,7 @@
 // positive = the landmark floats above the authored seat.
 
 import { THREE, scene } from '/lib/core.js';
-import { remotes } from '/lib/remotes.js';
+import { remotes } from '/lib/player/remotes.js';
 import { entities, bagOf, avatarMounts, socketWorldPos, mountTransform, seatSocket } from '/lib/world.js';
 import { makeAvatar } from '/lib/avatar/avatar.js';
 import { seatClaim, SEAT_METHOD, MIN_PATCH_VERTS, MAX_PATCH_SPREAD_Y, nameFromAvatarPath, SEAT_CLIP_FILE } from '/shared/seatcore.js';

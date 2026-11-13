@@ -41,7 +41,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["lastSetterOf: a restore doesn't step over its delete", "shared/protocol/authority/rights.js", "if (restored) { restored = false; continue; } }", "}", ["H2"]],
   ["creatorAt: a restore doesn't step over its delete", "shared/protocol/scriptaudit.js", "\n  for (let i = upto; i >= 0; i--) { const e = L[i]; if (!isKinded(e) || e.kind !== \"change\") continue; const ops = quiet(e); const fu = cascadeOf(e);", "\n  for (let i = upto; i >= 0; i--) { const e = L[i]; if (!isKinded(e) || e.kind !== \"change\") continue; const ops = quiet(e); const fu0 = cascadeOf(e), fu = { has: (k) => fu0.has(k) && ops[k].op !== \"delete\" };", ["H2"]],
   ["sponsorAt: a restore doesn't step over its delete", "shared/protocol/scriptaudit.js", "scan: for (let i = upto; i >= 0; i--) { const e = L[i]; if (!isKinded(e) || e.kind !== \"change\") continue; const ops = quiet(e); const fu = cascadeOf(e);", "scan: for (let i = upto; i >= 0; i--) { const e = L[i]; if (!isKinded(e) || e.kind !== \"change\") continue; const ops = quiet(e); const fu0 = cascadeOf(e), fu = { has: (k) => fu0.has(k) && ops[k].op !== \"delete\" };", ["H2"]],
-  ["the stand tile held does nothing", "client/lib/localbody.js", "if ((keys.has('KeyX') || escapeTile) && !mayLeave(body, 'menu'))", "if (keys.has('KeyX') && !mayLeave(body, 'menu'))", ["E1"]],
+  ["the stand tile held does nothing", "client/lib/player/localbody.js", "if ((keys.has('KeyX') || escapeTile) && !mayLeave(body, 'menu'))", "if (keys.has('KeyX') && !mayLeave(body, 'menu'))", ["E1"]],
   ["creatorOf merges a new life", "shared/protocol/authority/rights.js", "if (o.verb === \"set\" && o.comp === comp) restored = false;", "", ["H3"]],
   ["the second stand-in is minted-shaped", "shared/protocol/scriptaudit.js", "export const ARRIVAL_STAND_IN_2 = \"zq-stand-in\";", "export const ARRIVAL_STAND_IN_2 = \"u-\" + \"b\".repeat(20);", ["A1", "A2"]],
   ["an arrival mismatch is a forgery", "shared/protocol/scriptaudit.js", ": {}) }); return; }", ": {}) }); }", ["A3"]],
@@ -49,7 +49,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a created child's pose is read from before the write", "shared/protocol/authority/followups.js", "const was = (k) => (before.entities[k] ? worldT(before, k) : null) ?? worldT(after, k);", "const was = (k) => worldT(before, k);", ["F3"]],
   ["the set-down is the deleter's write", "shared/protocol/authority/writes.js", "ops.push(followUp(setOp(id, \"transform\", { ...t, pos: [t.pos[0], r3(t.pos[1] - (b.min[1] - now.y)), t.pos[2]] })));", "ops.push(setOp(id, \"transform\", { ...t, pos: [t.pos[0], r3(t.pos[1] - (b.min[1] - now.y)), t.pos[2]] }));", ["F2"]],
   ["no vacated when a socket goes", "shared/protocol/authority/writes.js", "if (typeof to === \"string\") inboxPush(w.presence, who, { type: \"vacated\"", "if (false) inboxPush(w.presence, who, { type: \"vacated\"", ["U1"]],
-  ["the browser ignores vacated.at", "client/lib/localbody.js", "dismountMe('script', vacatedAt(u))", "dismountMe('script')", ["U2"]],
+  ["the browser ignores vacated.at", "client/lib/player/localbody.js", "dismountMe('script', vacatedAt(u))", "dismountMe('script')", ["U2"]],
   ["the exemption counts follow-ups as edits", "shared/protocol/authority/occupants.js", "(lastTouch(w, from, key, { authored: true })?.seq ?? Infinity) < since", "(lastTouch(w, from, key)?.seq ?? Infinity) < since", ["U3"]],
   ["undo restores references to things gone since", "shared/protocol/authority/undo.js", "const nv = since.size ? withoutRefs(id, comp, old, since) : old;", "const nv = old;", ["L1"]],
   ["a body verb read through the prototype", "mcpl/tools.ts", "if (Object.hasOwn(BODY_VERBS, verb)) return", "if (BODY_VERBS[verb]) return", ["L2"]],
@@ -298,7 +298,7 @@ const cases: Case[] = [
       return { del: show(del), seated: seated(s, "vic"), seat: msg?.socket ?? null, sock, at: msg?.at ?? null, track: s.w().presence.bodies.vic?.at, by: msg?.by ?? null }; },
     good: (o) => o.del === "ok" && !o.seated && o.seat === o.sock && Array.isArray(o.at) && JSON.stringify(o.at) === JSON.stringify(o.track) && Math.abs(o.at[0] - 4) < 0.01 && o.by === "olive" },
   { id: "U2", what: "(claims O1) the browser and the agent stand where the authority let them go: one reader (sockbody vacatedAt) of `vacated.at`; the browser's dismount takes it", run() {
-      const f = SK.vacatedAt; const src = readText("client/lib/localbody.js"); const agent = readText("mcpl/agent.ts");
+      const f = SK.vacatedAt; const src = readText("client/lib/player/localbody.js"); const agent = readText("mcpl/agent.ts");
       return { good: f?.({ at: [1, 2, 3] }), bad: f?.({ at: [1, NaN, 3] }), none: f?.({}), short: f?.({ at: [1, 2] }),
         browser: /dismountMe\('script', vacatedAt\(u\)\)/.test(src) && /if \(at\) off\.set\(at\[0\], at\[1\], at\[2\]\)/.test(src), agent: /vacatedAt\(m\)/.test(agent) }; },
     good: (o) => JSON.stringify(o.good) === "[1,2,3]" && o.bad === null && o.none === null && o.short === null && o.browser && o.agent },
@@ -312,7 +312,7 @@ const cases: Case[] = [
       return { sit: show(sit), d: show(d), cleared: comp(s, "carousel", "reactions")?.sweep === undefined, turn: show(turn), seated: seated(s, "vic") }; },
     good: (o) => o.sit === "ok" && o.d === "ok" && o.cleared && o.turn === "ok" && o.seated },
   { id: "E1", what: "(claims R6) the stand tile pressed and held escapes a script seat, as X held does (touch and phone parity): the tile says so on pointer down and up, and the per-frame escape reads it", run() {
-      const lb = readText("client/lib/localbody.js"), eb = readText("client/lib/ui/actionbar.js");
+      const lb = readText("client/lib/player/localbody.js"), eb = readText("client/lib/ui/actionbar.js");
       return { emits: /k === 'stand'\) \{ b\.onpointerdown = \(\) => bus\.emit\('escape-hold', true\); b\.onpointerup = b\.onpointerleave = b\.onpointercancel = \(\) => bus\.emit\('escape-hold', false\)/.test(eb),
         hears: /bus\.on\('escape-hold', \(on\) => \{ escapeTile = !!on; \}\)/.test(lb), reads: /\(keys\.has\('KeyX'\) \|\| escapeTile\) && !mayLeave\(body, 'menu'\)/.test(lb), hold: SK.ESCAPE_HOLD_S }; },
     good: (o) => o.emits && o.hears && o.reads && o.hold === 1.5 },

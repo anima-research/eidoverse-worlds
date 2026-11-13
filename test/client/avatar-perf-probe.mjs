@@ -40,7 +40,7 @@ try {
   check('the governor reached calm (the real call site is now live)', calm);
   for (let i = 0; i < 60 && !posts.some((u) => u.includes('perf=')); i++) await pg.waitForTimeout(500);
   const live = await pg.evaluate(async () => {
-    const { getMe, getMyAvatarPath, getMyAvatarName } = await import('./lib/mybody.js');
+    const { getMe, getMyAvatarPath, getMyAvatarName } = await import('./lib/player/mybody.js');
     const { statsOf } = await import('./lib/debug/perfscope.js');
     const me = getMe(); const s = me?.vrm?.scene ? statsOf(me.vrm.scene, 'me') : null;
     return { path: getMyAvatarPath(), name: getMyAvatarName(), s };
@@ -60,7 +60,7 @@ try {
     const list = await (await fetch('/avatars')).json();
     const o = list.find((a) => a.name !== wornName && !/corrupt/.test(a.name));
     const { switchAvatar } = await import('./lib/edit/catalog.js');
-    const { getMyAvatarPath, getMyAvatarName } = await import('./lib/mybody.js');
+    const { getMyAvatarPath, getMyAvatarName } = await import('./lib/player/mybody.js');
     const back = { path: getMyAvatarPath(), name: getMyAvatarName() };
     await switchAvatar(o.path, o.name);
     for (let i = 0; i < 120 && getMyAvatarName() !== o.name; i++) await new Promise((r) => setTimeout(r, 250));

@@ -540,7 +540,7 @@ export class WorldAgent {
   }
 
   /** Server-to-local clock offset, the headless serverNow(): the same samples
-   *  and rule as client/lib/remotes.js (shared/clockoffset.js, least-delayed
+   *  and rule as client/lib/player/remotes.js (shared/clockoffset.js, least-delayed
    *  sample wins), on this process's monotonic clock (localNow). Motion is a
    *  function of SEQUENCER time, so a skewed host clock would show a different
    *  pendulum phase than every browser. Fed from the server's pre-snapshot
@@ -1437,7 +1437,7 @@ export class WorldAgent {
     const feetFree = !this.draggedBy && this.pins.size === 0 && this.clip !== "ragdoll" && !this.flight;
     const terrainG = admittedHeight ?? this.standingGround();   // the storey the feet stand on, else the terrain (storeyUnder)
     const target = this.target;
-    // with the collision modules loaded, the feet are the browser controller's (client/lib/controller.js): the mover's
+    // with the collision modules loaded, the feet are the browser controller's (client/lib/player/controller.js): the mover's
     // stride above, then colliders.resolveColliders (standOn) pushes the capsule out of anything solid and answers the
     // ground under it (a stair tread within the mover's step, a floor below, else terrain); the body snaps onto it or
     // falls toward it. Seated, or just joined, the feet keep the floor they last stood on.
@@ -2154,7 +2154,7 @@ export class WorldAgent {
   namePlace(...a: Parameters<AgentPlaces["namePlace"]>) { return this.places.namePlace(...a); }
 
   // ---- feet ----------------------------------------------------------------
-  // The browser walking controller's vertical model (client/lib/controller.js)
+  // The browser walking controller's vertical model (client/lib/player/controller.js)
   // against the same fitted colliders: move, resolveColliders (push the capsule
   // out of anything solid, answer the ground under it), then snap onto that
   // ground or fall toward it under gravity.

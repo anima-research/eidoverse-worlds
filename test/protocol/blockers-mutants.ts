@@ -36,7 +36,7 @@ const M: Mutant[] = [
     find: '  if (!(door || verb === "unban"))\n    return { ok: false, refused: { code: "rights", reason: `an operator\'s repair covers', repl: '  if (false)\n    return { ok: false, refused: { code: "rights", reason: `an operator\'s repair covers', suite: "authority", rows: ["OP4"], expect: 9 },
   { id: "B6", what: "a created child's pose is read from before the write (resettle planned against the wrong state)", file: "shared/protocol/authority/followups.js",
     find: "const was = (k) => (before.entities[k] ? worldT(before, k) : null) ?? worldT(after, k);", repl: "const was = (k) => worldT(before, k);", suite: "r10", rows: ["F3"], expect: 2 },
-  { id: "B7", what: "standing up zeroes Y (a seat upstairs stands me on the ground floor)", file: "client/lib/localbody.js",
+  { id: "B7", what: "standing up zeroes Y (a seat upstairs stands me on the ground floor)", file: "client/lib/player/localbody.js",
     find: "    myState.pos.set(off.x, off.y, off.z); myState.yaw = exitYaw;", repl: "    myState.pos.set(off.x, 0, off.z); myState.yaw = exitYaw;", suite: "dismount-height", rows: ["D1"], expect: 1 },
   { id: "B8", what: "the old log is not rechecked after the last rename (a write that slipped in mid-swap is kept out)", file: "tools/world.ts",
     find: "    { const now = sourceChanged(path.join(D, ORIGINAL.log), r!.source); if (now) throw new Error(stillWriting(path.join(D, ORIGINAL.log), r!.source, now)); }", repl: "    { }", suite: "inplace", rows: ["IP15"], expect: 20 },

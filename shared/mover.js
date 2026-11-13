@@ -1,5 +1,5 @@
 // mover — ONE locomotion integrator for every body, in every runtime: the agent's stride (mcpl/agent.ts), the human
-// client's (client/lib/controller.js) and the authority's plausibility track (shared/protocol/authority.js) all read it,
+// client's (client/lib/player/controller.js) and the authority's plausibility track (shared/protocol/authority.js) all read it,
 // so a step the mover accepts in one is a step the authority accepts in the other. Pure, as shared/flight.js: no THREE,
 // no DOM, no clock; the caller owns every piece of state and the world comes in as `env` callbacks.
 //

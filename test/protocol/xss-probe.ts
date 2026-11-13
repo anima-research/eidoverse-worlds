@@ -53,11 +53,11 @@ try {
   check("boot: a world", await waitFor(`import('/lib/net.js').then((m) => m.replicaActive())`));
   // R 10-20 recut A2: the body accepts by default (it was off, 3b84e149). The exploit under test is the HTML-rendered NAME, which
   // needs the knock to land — so the victim opts in explicitly below anyway; the default itself is asserted first.
-  check("boot: default settings — the body accepts (recut A2, 10-20: permissive default; worlds and people narrow it)", (await evalJson(`import('/lib/consent.js').then((m) => m.pushable())`)));
-  await evalJson(`import('/lib/consent.js').then((m) => (m.setPushable?.(true), true)).catch(() => true)`);
-  check("boot: the victim opted in to being knocked over", await evalJson(`import('/lib/consent.js').then((m) => m.pushable())`));
+  check("boot: default settings — the body accepts (recut A2, 10-20: permissive default; worlds and people narrow it)", (await evalJson(`import('/lib/player/consent.js').then((m) => m.pushable())`)));
+  await evalJson(`import('/lib/player/consent.js').then((m) => (m.setPushable?.(true), true)).catch(() => true)`);
+  check("boot: the victim opted in to being knocked over", await evalJson(`import('/lib/player/consent.js').then((m) => m.pushable())`));
   const me = await evalJson(`import('/lib/base.js').then((m) => m.CONFIG.name)`);
-  check("boot: my body is in (a knock-over needs one)", await waitFor(`import('/lib/mybody.js').then((m) => !!m.getMe())`, 30000));
+  check("boot: my body is in (a knock-over needs one)", await waitFor(`import('/lib/player/mybody.js').then((m) => !!m.getMe())`, 30000));
   check("boot: no CSP violation from the client itself", (await evalJson(`__csp`)).length === 0, await evalJson(`__csp`));
 
   // ---- A: the reviewer's exploit, end to end ----
@@ -84,14 +84,14 @@ try {
   await stage("S", async () => {
     const emit = (ev: string, msg: any) => evalJson(`import('/lib/base.js').then((m) => (m.bus.emit(${JSON.stringify(ev)}, ${JSON.stringify(msg)}), true))`);
     // stand up first (a previous stage may have left us limp)
-    await evalJson(`import('/lib/localbody.js').then((m) => (m.getUp?.(), true)).catch(() => true)`);
+    await evalJson(`import('/lib/player/localbody.js').then((m) => (m.getUp?.(), true)).catch(() => true)`);
     const cases: [string, string, any, string][] = [
       ["S1 knock-over", "puppet", { by: SVG, ragdoll: true }, "knocked you over"],
       ["S2 grab", "bodydrag", { by: SVG, grab: { joint: "hips" } }, "grabs you"],
       ["S3 pose", "puppet", { by: SVG, pose: { head: [0, 0, 0, 1] } }, "posed you"],
       ["S4 release", "puppet", { by: SVG, pose: {} }, "released your pose"],
     ];
-    await evalJson(`import('/lib/consent.js').then((m) => (m.setPosable?.(true), true)).catch(() => true)`);
+    await evalJson(`import('/lib/player/consent.js').then((m) => (m.setPosable?.(true), true)).catch(() => true)`);
     for (const [name, ev, msg, words] of cases) {
       await emit(ev, msg);
       const fired = await waitFor(`${hint}.includes(${JSON.stringify(words)})`, 3000);
@@ -101,12 +101,12 @@ try {
     // Until 10-20 the client refused a drag itself and toasted "<by> tried to drag you"; the authority is now the one decider
     // (#260 recut A1), so with my switch off an arriving grab raises no client refusal at all (S1/S2 already pin the names
     // the remaining hints show as text).
-    await evalJson(`import('/lib/consent.js').then((m) => (m.setPushable?.(false), true)).catch(() => true)`);
+    await evalJson(`import('/lib/player/consent.js').then((m) => (m.setPushable?.(false), true)).catch(() => true)`);
     await emit("bodydrag", { by: SVG, grab: { joint: "hips" } });
     await emit("puppet", { by: SVG, pose: { head: [0, 0, 0, 1] } });   // a later event on the same bus, seen: the drag before it has been handled
     const after = await waitFor(`${hint}.includes("posed you")`, 3000);
     check("S5 no client-side refusal toast: the authority decided before it arrived (a later bus event was handled first)", after && !(await evalJson(`[...document.querySelectorAll('.toast')].some((t) => t.textContent.includes('tried to drag you'))`)) && await evalJson(clean), { after });
-    await evalJson(`import('/lib/consent.js').then((m) => (m.setPushable?.(true), true)).catch(() => true)`);
+    await evalJson(`import('/lib/player/consent.js').then((m) => (m.setPushable?.(true), true)).catch(() => true)`);
     // the chat log (a whisper line too, until whisper was removed, R 10-18)
     await evalJson(`import('/lib/ui/chat.js').then((m) => (m.logChat(${JSON.stringify(SVG)}, 'hello ' + ${JSON.stringify(SVG)}), true))`);
     check("S6 a chat line shows the name and words as text", await waitFor(`(document.getElementById('chatlog')?.textContent ?? '').includes('hello ' + ${JSON.stringify(SVG)})`, 3000)
@@ -175,7 +175,7 @@ try {
     check("(P setup) a second person is here, with an identity", /^u-/.test(wrenActor ?? ""), snap ? Object.keys(snap) : null);
     check("(P setup) …and the page knows it from their arrival", await waitFor(`import('/lib/net.js').then((m) => m.identities.get('Wren') === ${JSON.stringify(wrenActor)})`, 5000));
     // Wren stands beside me and takes poses and drags from strangers (the server checks a body's consent and reach first)
-    const mine = await evalJson(`import('/lib/controller.js').then((m) => m.myState.pos.toArray())`);
+    const mine = await evalJson(`import('/lib/player/controller.js').then((m) => m.myState.pos.toArray())`);
     wren.send({ type: "pose", pose: { p: [mine[0] + 1, mine[1], mine[2]], yaw: 0, speed: 0, clip: "idle" } });
     let rq = 0; const wreq = (verb: string, args: any) => { const id = `w${++rq}`; wren.send({ type: "request", id, verb, args }); };
     wreq("consent", { move: true, touch: true });
@@ -196,10 +196,10 @@ try {
   await stage("K", async () => {
     const tbl = `import('/lib/net.js').then((m) => m.sendRequest('consent', {})).then((r) => r?.table ?? null)`;
     for (const [g, on] of [["move", false], ["touch", true], ["touch", false], ["move", true]] as const) {
-      await evalJson(`import('/lib/consent.js').then((m) => (m.setGate(${JSON.stringify(g)}, ${on}), true))`);
+      await evalJson(`import('/lib/player/consent.js').then((m) => (m.setGate(${JSON.stringify(g)}, ${on}), true))`);
       check(`K1 ${g} ${on ? "on" : "off"} set in the browser lands at the authority`, await waitFor(`${tbl}.then((t) => t && t[${JSON.stringify(g)}] === ${on})`, 5000), await evalJson(tbl));
     }
-    await evalJson(`import('/lib/consent.js').then((m) => (m.setPushable(false), true))`);
+    await evalJson(`import('/lib/player/consent.js').then((m) => (m.setPushable(false), true))`);
     check("K2 /pushable off is the move gate off at the authority", await waitFor(`${tbl}.then((t) => t && t.move === false)`, 5000), await evalJson(tbl));
     check("K3 the choice is persisted under ew-body-consent", await evalJson(`(() => { const v = JSON.parse(localStorage.getItem('ew-body-consent') ?? '{}'); return v.v === 4 && v.move === false && v.touch === false; })()`));
     await evalJson(`(async () => { (await import('/lib/ui/windows.js')).getFrame('settings')?.show(); document.getElementById('sec-body-tab')?.click(); return true; })()`);
@@ -215,11 +215,11 @@ try {
   await stage("L", async () => {
     const tbl = `import('/lib/net.js').then((m) => m.sendRequest('consent', {})).then((r) => r?.table ?? null)`;
     await evalJson(`(async () => { if (document.querySelector('.chat-side')?.classList.contains('closed')) (await import('/lib/ui/ui.js')).togglePeopleHere(); return true; })()`);
-    await evalJson(`import('/lib/consent.js').then((m) => (m.setGate('move', true), m.setGate('touch', false), true))`);
+    await evalJson(`import('/lib/player/consent.js').then((m) => (m.setGate('move', true), m.setGate('touch', false), true))`);
     const wren = guest("Wren"); const { snap } = await wren.join(); const wrenActor = snap?.actor;
     check("(L setup) Wren is here with an identity, and the page knows it", /^u-/.test(wrenActor ?? "") && await waitFor(`import('/lib/net.js').then((m) => m.identities.get('Wren') === ${JSON.stringify(wrenActor)})`, 5000));
     const victim = await evalJson(`import('/lib/net.js').then((m) => m.net.you)`);
-    const mine = await evalJson(`import('/lib/controller.js').then((m) => m.myState.pos.toArray())`);
+    const mine = await evalJson(`import('/lib/player/controller.js').then((m) => m.myState.pos.toArray())`);
     let rq = 0; const wreq = async (verb: string, args: any) => { const id = `l${++rq}`; wren.send({ type: "request", id, verb, args }); const t0 = Date.now(); while (Date.now() - t0 < 5000) { const r = wren.msgs.find((m) => m.type === "reply" && m.id === id); if (r) return r.reply; await sleep(50); } return null; };
     const mv = await wreq("move", { to: [mine[0] + 1, mine[1], mine[2]] });
     const mv2 = await evalJson(`import('/lib/net.js').then((m) => m.sendRequest('move', { to: ${JSON.stringify(mine.map((n: number) => Math.round(n * 1000) / 1000))} }))`);
@@ -236,7 +236,7 @@ try {
     await evalJson(`(async () => { (await import('/lib/edit/fieldpanels.js')).closeContextMenu(); (await import('/lib/ui/windows.js')).getFrame('settings')?.show(); document.getElementById('sec-body-tab')?.click(); return true; })()`);
     check("L3 Settings ▸ body lists Wren under Always allowed, with a remove button", await waitFor(`(() => { const r = document.querySelector('#sec-body [data-list=allow][data-id=${JSON.stringify(wrenActor)}]'); return !!r && /Wren/.test(r.textContent) && !!r.querySelector('button'); })()`, 3000), await evalJson(`document.querySelector('#sec-body [data-lists]')?.outerHTML ?? null`));
     check("L4 Never allow: pressed, Wren moves to my block list (off allow)", await press("Never allow") && await waitFor(`${tbl}.then((t) => t && t.block.includes(${JSON.stringify(wrenActor)}) && !t.allow.includes(${JSON.stringify(wrenActor)}))`, 5000), await evalJson(tbl));
-    await evalJson(`import('/lib/consent.js').then((m) => (m.setGate('move', true), true))`);
+    await evalJson(`import('/lib/player/consent.js').then((m) => (m.setGate('move', true), true))`);
     check("L4b …and Wren's shove is refused though my move gate is on", (await wreq("body", { to: victim, kind: "shove" }))?.refused?.code === "consent");
     check("L4c …and the panel shows Wren under Never allowed", await waitFor(`!!document.querySelector('#sec-body [data-list=block][data-id=${JSON.stringify(wrenActor)}]') && !document.querySelector('#sec-body [data-list=allow]')`, 3000));
     await evalJson(`(() => { document.querySelector('#sec-body [data-list=block][data-id=${JSON.stringify(wrenActor)}] button').click(); return true; })()`);

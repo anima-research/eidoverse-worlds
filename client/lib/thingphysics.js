@@ -13,7 +13,7 @@ import { THREE } from './core.js';
 import { bus } from './base.js';
 import { entities } from './world.js';
 import { outOfMyView } from './edit/myview.js';
-import { remotes, serverNow } from './remotes.js';
+import { remotes, serverNow } from './player/remotes.js';
 import { colliders, suspendCollider } from './colliders.js';
 import { pushHostHook } from './render/autohooks.js';
 import { colliderFor } from '../../shared/bodyscale.js';

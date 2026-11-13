@@ -2,10 +2,10 @@
 // pickable, but it stays SOLID: my body still collides with it. So walking into it is never a mystery: while my body
 // touches one, a hazy outline of its collider fades in with a crossed-out eye over it ("you hid this"), and it fades out
 // after the contact ends. Mine only: nothing here is sent or logged, and its sound is not touched.
-import { THREE, scene } from './core.js';
-import { stroke as strokeIcon } from './ui/icons.js';
-import { frameOf } from './colliders.js';
-import { outOfMyView } from './edit/myview.js';
+import { THREE, scene } from '../core.js';
+import { stroke as strokeIcon } from '../ui/icons.js';
+import { frameOf } from '../colliders.js';
+import { outOfMyView } from '../edit/myview.js';
 
 const FADE_IN = 0.25, HOLD = 0.6, FADE_OUT = 0.8;   // seconds
 const TINT = 0xb08ad8;   // edit/theme.js's `mine`: the colour of "only you"

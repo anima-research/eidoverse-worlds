@@ -51,7 +51,7 @@ plugin({
     // governor's cone (imported from lib/ as ./x.js) — state, scheduler,
     // policy, fold and the bus stay REAL, and so do models.js and governor.js
     for (const f of ['^\\.\\./core\\.js$', '^\\.\\./assets\\.js$', '^\\.\\./colliders\\.js$', '^(\\.\\.?/)+(render/)?lightrig\\.js$', '^(\\.\\.?/)+(render/)?lightgizmo\\.js$', '^\\.\\./world\\.js$',
-      '^(\\.\\.?/)+(render/)?materials\\.js$', '^\\.\\.?/realize/emitters\\.js$', '^\\.\\.?/terrain\\.js$', '^(\\.\\.?/)+(render/)?frameloop\\.js$', '^\\.\\.?/remotes\\.js$', '^(\\.\\.?/)+(ui/)?ui\\.js$',
+      '^(\\.\\.?/)+(render/)?materials\\.js$', '^\\.\\.?/realize/emitters\\.js$', '^\\.\\.?/terrain\\.js$', '^(\\.\\.?/)+(render/)?frameloop\\.js$', '^(\\.\\.?/)+(player/)?remotes\\.js$', '^(\\.\\.?/)+(ui/)?ui\\.js$',
       '^(\\.\\.?/)+(ui/)?statuschips\\.js$']) {
       stubResolve(b, new RegExp(f), () => ({ path: STUB }));
     }

@@ -4,7 +4,7 @@
 import * as OP from '../../../shared/requests.js';
 import { sendOps } from '../edit/writes.js';
 import { bus } from '../base.js';
-import { myState } from '../controller.js';
+import { myState } from '../player/controller.js';
 import { starterModels } from '../edit/catalog.js';
 import { defsRegistry } from '../defs.js';
 import { previewSky, skyArgs } from '../sky/sky.js';
