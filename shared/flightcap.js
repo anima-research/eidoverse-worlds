@@ -65,24 +65,7 @@ export function rigProfile(boneNames) {
       report,
     };
   }
-  // WINGS ARE REQUIRED FOR A CAPABILITY, even though they are not required for
-  // the physics. inspectBody says a wingless body can fly -- true, and useful
-  // for a headless bench that only cares about a trajectory. But a CAPABILITY
-  // is permission to fly in a world with onlookers, and granting it to a
-  // commons avatar is precisely the leak this boundary exists to stop. The two
-  // answers differ because the questions do: "could this body be integrated?"
-  // and "may this body take off?"
-  if (!report.canAnimateWings) {
-    const chains = Object.keys(report.chains).length;
-    return {
-      ok: false,
-      reason: report.wingCount === 0
-        ? 'this body has no wing bones, so it has no wings to fly with; wear a winged body to fly'
-        : `this body's wings have ${report.wingCount} bone(s) in ${chains} chain(s), and flying needs at least ` +
-          'two chains and four bones; wear a body with fully rigged wings to fly',
-      report,
-    };
-  }
+  // Wings don't gate flight: permission is the world's fly right (worldFlightProvider); wings only decide the flap.
   // Both vocabularies, for the same reason inspectBody accepts both -- and the
   // digest is over whichever spellings this body actually uses, so a rig does
   // not change identity merely by being loaded in a different runtime.

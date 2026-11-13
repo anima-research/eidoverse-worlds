@@ -638,14 +638,17 @@ console.log('\nCAPABILITY -- default deny, action-time, semantic rig binding');
   //    the live avatar's, so re-resolving after a swap still said yes -- an
   //    action-time gate resolving against a body that was no longer there.
   const afterSwap = resolveFlight(dev, { identity: 'mythos', avatar: { boneNames: COMMONS } });
-  check('re-resolving after a hot-swap DENIES (no second check needed)',
-        afterSwap.enabled === false, afterSwap.reason);
+  check('re-resolving after a hot-swap reads the LIVE body (its own wingless profile)',
+        afterSwap.enabled === true && afterSwap.profile.digest !== g.profile.digest &&
+        afterSwap.profile.canAnimateWings === false, afterSwap.reason);
+  check('...and a swap into a body with no core bones DENIES at the gate',
+        !resolveFlight(dev, { identity: 'mythos', avatar: { boneNames: ['Head'] } }).enabled);
   const stillOk = resolveFlight(dev, { identity: 'mythos', avatar: { boneNames: MYTHOS } });
   check('...and the same provider still grants on the real rig', stillOk.enabled === true);
   check('revoked() agrees with the gate', revoked(g.profile, COMMONS) === true);
-  check('a commons avatar cannot obtain a profile at all',
-        resolveFlight(devFlightProvider({ allow: ['someone'], bones: COMMONS }),
-                      { identity: 'someone' }).enabled === false);
+  const commons = resolveFlight(devFlightProvider({ allow: ['someone'], bones: COMMONS }), { identity: 'someone' });
+  check('a granted commons avatar flies, its profile saying the wings will not animate',
+        commons.enabled === true && commons.profile.wingCount === 0 && commons.profile.canAnimateWings === false);
 
   // 6. Disabling returns ordinary behaviour: with no grant there is no flight
   //    state to step. The integrator is not reachable without a phase, and a
@@ -707,11 +710,12 @@ console.log('\nDEFAULT-DENY -- a compatible rig is evidence, never permission');
   check('no grant names who gives flight and the roles set that does it',
         /a role's fly permission, which the world's owner/.test(reasonOf({ role: 'owner', fly: false })) &&
         /set \{id: "@world", component: "roles:<your id>", value: \{can: \{fly: true\}\}, merge: true\}/.test(reasonOf({ role: 'owner', fly: false })), reasonOf({ role: 'owner', fly: false }));
-  check('a wingless body is told it has no wing bones', /no wing bones/.test(reasonOf(granted, wingless)), reasonOf(granted, wingless));
+  check('a granted wingless body is not refused for its wings', !/wing/.test(reasonOf(granted, wingless)), reasonOf(granted, wingless));
   const oneChain = { boneNames: ['Hip', 'Spine02', 'Head', 'L_Wing_Upper', 'L_Wing_Upper_1', 'L_Wing_Upper_2', 'L_Wing_Upper_3'] };
-  check('four wing bones in one chain are counted as such, not called too few',
-        /wings have 4 bone\(s\) in 1 chain\(s\)/.test(reasonOf(granted, oneChain)) && !/too few/.test(reasonOf(granted, oneChain)),
-        reasonOf(granted, oneChain));
+  const oneChainGrant = resolveFlight(withRights(granted), { identity: 'm', avatar: oneChain });
+  check('four wing bones in one chain fly, unflapped (two chains are what the flap needs)',
+        oneChainGrant.enabled === true && oneChainGrant.profile.wingCount === 4 && !oneChainGrant.profile.canAnimateWings,
+        oneChainGrant.reason);
   const coreless = { boneNames: ['Head', 'L_Wing_Upper', 'L_Wing_Upper_1', 'R_Wing_Upper', 'R_Wing_Upper_1'] };
   check('missing core bones are named as a wearer knows them (hips, spine)',
         /missing: hips, spine\)/.test(reasonOf(granted, coreless)), reasonOf(granted, coreless));
@@ -1146,23 +1150,19 @@ console.log('\nISOLATION -- nothing in the running world reaches flight yet');
   // case-insensitive (dba4882 onward), and this pins that asymmetry so the
   // decision is explicit rather than accidental.
   //
-  // The gate is NOT weakened -- a commons body and a fake-wing rig are both
-  // refused, probed below. The risk runs the other way: an all-lowercase wing
-  // rig is DENIED, which is precisely the failure the core widening was
-  // written to fix ("Hip absent" on a body with 48 good bones), still live one
-  // line above it. Whether to widen WING_RE is a loosening of an authorization
-  // boundary, so it is Mica's call and not a thing to fix quietly. Until then,
-  // this test says out loud what the boundary currently does.
+  // Wings no longer gate flight (the world's fly right does), so an all-lowercase wing rig flies but does not flap.
   {
     const core = ['Hip', 'Spine02', 'Head'];
     const proper = [...core, 'L_Wing_Upper', 'L_Wing_Upper_1', 'R_Wing_Upper',
                     'R_Wing_Upper_1', 'L_Wing_Lower', 'R_Wing_Lower'];
     check('a properly-cased wing rig is granted',
           rigProfile(proper).ok);
-    check('a commons body is refused (the gate still holds)',
-          !rigProfile(['hips', 'spine', 'head', 'leftHand']).ok);
-    check('KNOWN ASYMMETRY: an all-lowercase wing rig is refused -- Mica to rule',
-          !rigProfile(proper.map(b => b.toLowerCase())).ok);
+    const commons = rigProfile(['hips', 'spine', 'head', 'leftHand']);
+    check('a commons body gets a wingless profile (permission is the world\'s, not the rig\'s)',
+          commons.ok && commons.profile.wingCount === 0 && !commons.profile.canAnimateWings);
+    const lower = rigProfile(proper.map(b => b.toLowerCase()));
+    check('KNOWN ASYMMETRY: an all-lowercase wing rig flies, but its wings are not found to flap',
+          lower.ok && !lower.profile.canAnimateWings);
   }
 
   // 6. And the whole reason this took three rounds: every report was a
