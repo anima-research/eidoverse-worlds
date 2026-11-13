@@ -340,7 +340,7 @@ export function settingsFrame() {
     });
     // the frame registers its own dock entry (its tabs live INSIDE it, so nothing else can open it);
     // a caller that already listed 'settings' wins, and a frame born after initDock still gets its button
-    if (!dockEntries.some((e) => e.id === 'settings')) { const entry = { id: 'settings', icon: 'gear-six' }; dockEntries.push(entry); if (el?.dock) { addDockButton(entry); paintDock(); } }
+    ensureDockEntry({ id: 'settings', icon: 'gear-six' });
   }
   return settingsFrameApi;
 }
@@ -645,10 +645,17 @@ export function initDock(entries) {
     paintDock();
   });
   setInterval(paintDock, 2000);   // role grants land async; the wrench follows (module-scope timer, as above)
-  initEMenu();
+  menuHooks.init();
 
 }
 
+/** Give a frame born after boot its rail button, once; an entry already listed wins (settingsFrame's own). */
+export function ensureDockEntry(entry) {
+  if (!dockEntries.some((e) => e.id === entry.id)) { dockEntries.push(entry); if (el?.dock) { addDockButton(entry); paintDock(); } }
+}
+// the ∃ menu builds and repaints through these hooks, which it fills itself (bindMenu), so the dock never calls into it
+let menuHooks = { init() {}, paint() {} };
+export function bindMenu(hooks) { menuHooks = hooks; }
 /** Add (on) or remove (off) a dock entry after boot: the Moderation entry follows your switches (your-rights). */
 export function setDockEntry(entry, on) {
   const has = dockEntries.some((e) => e.id === entry.id);
@@ -752,7 +759,7 @@ function paintDock() {
     b.classList.toggle('on', open);
     b.hidden = !open && !pins.has(id) && !entry?.always;
   }
-  paintEMenu();
+  menuHooks.paint();
 }
 
 // ---- the ∃ menu: a File-style waterfall -------------------
@@ -1086,6 +1093,7 @@ function paintEMenu() {
   if (lock && lock.dataset.lock !== String(isLocked())) { lock.dataset.lock = String(isLocked()); lock.innerHTML = lockHtml; }
   lock?.classList.toggle('open', isLocked());
 }
+bindMenu({ init: initEMenu, paint: paintEMenu });   // the dock's rail and initDock reach the menu through this
 // THE LANTERN'S RESTING LINE: a group of its own between the voice rows and the windows (not quite a panel, so it
 // can't be docked). The row opens the lantern, and its pin keeps the pill bottom-centre (commandbar.js setPillPinned,
 // its own key ew-lantern-pinned, like the glyphs'). Unpinned, the lantern is still one chord away.
