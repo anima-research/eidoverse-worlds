@@ -1,7 +1,7 @@
-// The one dwell mechanism (client/lib/dwell.js): the nameplate card (desktop and VR), VR tooltips and VR handles all
+// The one dwell mechanism (client/lib/ui/dwell.js): the nameplate card (desktop and VR), VR tooltips and VR handles all
 // ask it whether the pointer has rested on something for a beat.
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/client/dwell-test.mjs
-import { makeDwell, DWELL_MS } from '../../client/lib/dwell.js';
+import { makeDwell, DWELL_MS } from '../../client/lib/ui/dwell.js';
 import { suite } from "../gate/suite.ts";
 const S = suite("dwell");
 const check = (name, ok, note) => S.check(name, ok, note);

@@ -12,7 +12,7 @@
 import { list, grouped } from './actions.js';
 import { svg, has, rsvg, hasLine, fsvg, hasFill } from './icons.js';
 import { escapeHtml as esc } from './markup.js';
-import { bus } from './base.js';
+import { bus } from '../base.js';
 
 const SEEN_LS = 'ew-lantern-seen';
 const isMac = typeof navigator !== 'undefined' && /Mac|iP(hone|ad|od)/.test(navigator.platform || navigator.userAgent || '');

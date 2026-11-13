@@ -63,4 +63,4 @@ export function registerXRPanel(p) { xrPanels.push(p); }
 // The specifier is deliberately '../client/lib/...': actionbar-test's resolver
 // filter is `^\./windows\.js$`, anchored to a leading './', so this is not
 // rewritten back to the stub.
-export { chromeCost } from '../../client/lib/windows.js';
+export { chromeCost } from '../../client/lib/ui/windows.js';

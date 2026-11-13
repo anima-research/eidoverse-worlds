@@ -1,4 +1,4 @@
-// lantern (client/lib/commandbar.js) — the keys' contract, against the REAL module and the real action
+// lantern (client/lib/ui/commandbar.js) — the keys' contract, against the REAL module and the real action
 // registry, in happy-dom. This pins the logic:
 //   Enter SAYS what you typed (unless it starts with "/" or the person moved the highlight)
 //   Tab DOES the highlighted action — and never says, even when nothing matches
@@ -10,8 +10,8 @@ import { pause } from "../gate/wait.ts";
 import { suite } from "../gate/suite.ts";
 GlobalRegistrator.register();
 
-const A = await import('../../client/lib/actions.js');
-const L = await import('../../client/lib/commandbar.js');
+const A = await import('../../client/lib/ui/actions.js');
+const L = await import('../../client/lib/ui/commandbar.js');
 
 const S = suite("lantern");
 const check = (name: string, ok: unknown, detail?: unknown) => S.check(name, ok, detail);
@@ -216,7 +216,7 @@ console.log('LANTERN — the resting line moves in HUD layout mode (owner, 10-01
   // a new page: the saved spot comes back (a fresh module instance over the same localStorage)
   for (const id of ['lantern', 'lantern-pill']) document.getElementById(id)?.remove();
   root.style.removeProperty('--ln-x'); root.style.removeProperty('--ln-b');
-  const L2 = await import('../../client/lib/commandbar.js?reload');
+  const L2 = await import('../../client/lib/ui/commandbar.js?reload');
   L2.initLantern({});
   check('after a reload the pill comes back where it was moved', parseFloat(v('--ln-x')) === innerWidth / 2 - 150 && v('--ln-b') === '64px', `${v('--ln-x')} ${v('--ln-b')}`);
 }

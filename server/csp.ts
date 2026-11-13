@@ -1,5 +1,5 @@
 // csp — the Content-Security-Policy every HTML page this server serves carries: the second wall behind escaping
-// (client/lib/markup.js). Only our own inline scripts run (matched by hash, computed from the page as served).
+// (client/lib/ui/markup.js). Only our own inline scripts run (matched by hash, computed from the page as served).
 // Why each source is here:
 //   script-src  'unsafe-eval'       the eidoverse toolkit modules eval their dependencies (client/lib/assets.js loadEidoModule);
 //                                   a known gap, though it still allows no inline script or handler

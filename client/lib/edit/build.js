@@ -4,7 +4,7 @@
 // This file is the gesture CORE: mode, selection, ghost, drag, undo, and the one pointer/key router. The panels live
 // beside it (catalog.js, groundpanel.js, skypanel.js, panels.js); seat gestures are handed to socketedit.js.
 
-import { svg as iconSvg } from '../icons.js';
+import { svg as iconSvg } from '../ui/icons.js';
 import * as OP from '../../../shared/requests.js';
 import { LIGHT_DEFAULTS } from '../../../shared/components.js';
 import { THREE, scene, camera, canvas } from '../core.js';
@@ -20,13 +20,13 @@ import { MESH_DEFAULT, ghostMeshSize } from '../meshdefaults.js';
 import { engage, release } from './keyhints.js';
 import { placeRefusal } from '../../../shared/blueprint.js';
 import { myState, mouse, setPointerClaim, setBuildingProbe } from '../controller.js';
-import { flashHint, collapseAll, panelFrame, html, claimStatus, releaseStatus } from '../ui.js';
-import { paint, escapeHtml } from '../markup.js';
+import { flashHint, collapseAll, panelFrame, html, claimStatus, releaseStatus } from '../ui/ui.js';
+import { paint, escapeHtml } from '../ui/markup.js';
 import { pushHostHook } from '../autohooks.js';
 import { clickable } from './selectmask.js';
 import { outOfMyView } from './myview.js';
 import * as Sel from './selection.js';
-import { claimEscape } from '../windows.js';
+import { claimEscape } from '../ui/windows.js';
 import { isOwner } from '../../../shared/protocol/roles.js';
 import { currentTool as structureTool, setTool as setStructureTool } from './structure_ui.js';   // an armed building tool is Esc's first rung
 import { state } from '../state.js';   // one rule for who may author (and one name for them), shared with the scene panel

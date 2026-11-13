@@ -277,7 +277,7 @@ console.log("\n— the browser takes the clock as its server clock —\n");
   GlobalRegistrator.register();
   const stubs = await import("../stubs/remotes-stubs.mjs");
   const { mock } = await import("bun:test");
-  for (const m of ["core", "assets", "world", "chat", "avatar/fp_view", "boot", "ui", "avatar/avatar", "xr/xrbody"]) {
+  for (const m of ["core", "assets", "world", "ui/chat", "avatar/fp_view", "boot", "ui/ui", "avatar/avatar", "xr/xrbody"]) {
     mock.module(`${import.meta.dir}/../../client/lib/${m}.js`, () => stubs);
   }
   const remotesMod: any = await import("../../client/lib/remotes.js");
@@ -518,7 +518,7 @@ console.log("\n— the browser takes the clock as its server clock —\n");
 
   // The lite client keeps no clock of its own: net.js hands participants_lite's noteServerTime the one-way samples and reads
   // serverclock.js's serverNow for round trips, so two estimates there would part (audit 10-22 #10).
-  const lite: any = await import("../../client/lib/participants_lite.js");
+  const lite: any = await import("../../client/lib/ui/participants_lite.js");
   const sc: any = await import("../../client/lib/serverclock.js");
   check("the lite client's server clock is serverclock.js's (noteServerTime, serverNow), not a copy that can drift",
     lite.noteServerTime === sc.noteServerTime && lite.serverNow === sc.serverNow);

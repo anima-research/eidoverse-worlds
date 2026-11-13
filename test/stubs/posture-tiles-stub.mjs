@@ -38,7 +38,7 @@ export const chat = { open() {}, isOpen: false };
 export const isOverlayOpen = () => false;
 export const hints = [];
 export function flashHint(t) { hints.push(String(t)); }   // a markup hint reads as its text
-export { html } from '../../client/lib/markup.js';
+export { html } from '../../client/lib/ui/markup.js';
 
 // ---- names the six real modules export that clients import and this stub lacked (scripted diff, 10-14; each the headless
 // truth: no renderer, no socket, no DOM panels — a knob or a recorder, never a behaviour)

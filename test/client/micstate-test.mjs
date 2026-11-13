@@ -27,8 +27,8 @@ mock.module(lib("audio/audioctx.js"), () => ({
 // ui.js takes its HUD elements at load; flashHint is wrapped so the no-relay hint can be heard
 for (const id of ["hud", "loading", "toasts", "hintbar", "door", "help", "dock", "touch"]) { const d = document.createElement("div"); d.id = id; document.body.append(d); }
 const hints = [];
-const realUi = await import("../../client/lib/ui.js");
-mock.module(lib("ui.js"), () => ({ ...realUi, flashHint: (msg) => hints.push(msg) }));
+const realUi = await import("../../client/lib/ui/ui.js");
+mock.module(lib("ui/ui.js"), () => ({ ...realUi, flashHint: (msg) => hints.push(msg) }));
 
 localStorage.clear();
 const vc = await import("../../client/lib/audio/voiceconsent.js");

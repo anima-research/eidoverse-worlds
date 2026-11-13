@@ -1,17 +1,17 @@
 // rolespanels — the Moderation (only while you hold a moderation right) and World Settings (everyone reads, owners
 // edit) dock panels. Writes only the field that changed, never on open (absence = the server's default, PROTOCOL
 // §9.2). In a headset these are quads: every control is a button or select (no hover, no long-press).
-import { bus, report, CONFIG } from './base.js';
-import { net, sendRequest, replica, identities, personName } from './net.js';
+import { bus, report, CONFIG } from '../base.js';
+import { net, sendRequest, replica, identities, personName } from '../net.js';
 import { makeSection, moderationFrame, worldSettingsFrame, toast } from './ui.js';
 import { setDockEntry } from './ui-dock.js';
-import * as R from '../../shared/protocol/roles.js';
-import { refusalText } from '../../shared/protocol/refusal.js';   // a label `what` ("door: invite-only"): the door's words, code and fix
-import { DOORS, doorOf, doorWrites, leftWords, listedIn } from '../../shared/protocol/access.js';
+import * as R from '../../../shared/protocol/roles.js';
+import { refusalText } from '../../../shared/protocol/refusal.js';   // a label `what` ("door: invite-only"): the door's words, code and fix
+import { DOORS, doorOf, doorWrites, leftWords, listedIn } from '../../../shared/protocol/access.js';
 import { paintListed } from './accesspanel.js';
-import { serverNow, serverUntil } from './serverclock.js';   // straight from the clock: via remotes.js this closes an import cycle and the re-export is unbound at load
-import { COMPONENTS, resolveVersioned, rangeWords, outOfRange } from '../../shared/protocol/componentspec.js';
-import { SIM_ID } from '../../shared/sim.js';
+import { serverNow, serverUntil } from '../serverclock.js';   // straight from the clock: via remotes.js this closes an import cycle and the re-export is unbound at load
+import { COMPONENTS, resolveVersioned, rangeWords, outOfRange } from '../../../shared/protocol/componentspec.js';
+import { SIM_ID } from '../../../shared/sim.js';
 import { escapeHtml as esc } from './markup.js';
 
 const wc = () => replica.st?.entities?.['@world']?.c ?? {};

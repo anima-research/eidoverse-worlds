@@ -1,12 +1,12 @@
 // bodies — choose what you wear, declared once as fields and rendered twice: a section of the profile frame
 // (renderDOM) and part of the profile quad (the in-headset way to pick a body), both dispatching into the same
 // switchAvatar the palette's cards call.
-import { bus, wornNameOf } from './base.js';
-import { net } from './net.js';
-import { renderDOM } from './edit/fieldpanels.js';
-import { switchAvatar } from './edit/catalog.js';
-import { getMyAvatarName, getMe, myBodyPrefs, setMyBodyPref } from './mybody.js';
-import { BODY_SCALE_MIN, BODY_SCALE_MAX, PLATE_Y_MIN, PLATE_Y_MAX } from '../../shared/bodyscale.js';
+import { bus, wornNameOf } from '../base.js';
+import { net } from '../net.js';
+import { renderDOM } from '../edit/fieldpanels.js';
+import { switchAvatar } from '../edit/catalog.js';
+import { getMyAvatarName, getMe, myBodyPrefs, setMyBodyPref } from '../mybody.js';
+import { BODY_SCALE_MIN, BODY_SCALE_MAX, PLATE_Y_MIN, PLATE_Y_MAX } from '../../../shared/bodyscale.js';
 
 // MY avatars = the bodies you have actually worn (the world's wardrobe, World › avatar, is only to try on).
 // Kept per browser (ew-worn) until the server grows a per-person field; the roster only resolves a name to its path.

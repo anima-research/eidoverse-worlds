@@ -33,7 +33,7 @@ plugin({
   name: "chat-stubs",
   setup(b) {
     stubResolve(b, /^(\.\.?\/)+base\.js$/, () => ({ path: here("../stubs/chat-base-stub.mjs") }));
-    stubResolve(b, /^(\.\.?\/)+(frames|windows)\.js$/, () => ({ path: here("../stubs/chat-frames-stub.mjs") }));
+    stubResolve(b, /^(\.\.?\/)+(ui\/)?(frames|windows)\.js$/, () => ({ path: here("../stubs/chat-frames-stub.mjs") }));
     stubResolve(b, /^(\.\.?\/)+net\.js$/, () => ({ path: here("../stubs/chat-history-stub.mjs") }));
   },
 });
@@ -54,7 +54,7 @@ const check = (name: string, ok: unknown, detail?: unknown) => S.check(name, ok,
 let n = 0;
 async function freshChat() {
   frameStub.el?.remove();
-  const mod = await import(`../../client/lib/chat.js?scenario=${++n}`);
+  const mod = await import(`../../client/lib/ui/chat.js?scenario=${++n}`);
   mod.initChat({ send: () => {}, whisper: () => {}, people: () => [{ id: "me", me: true }] });
   const logEl = frameStub.body!.querySelector("#chatlog") as HTMLElement;
   return { ...mod, logEl };

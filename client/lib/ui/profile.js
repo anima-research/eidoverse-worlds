@@ -1,15 +1,15 @@
 // profile — the person panel: identity up top (portrait = presence control, header) and four tabs (avatars, satchel,
 // worlds, friends). satchel / worlds / friends have no server surface yet; their panes say so.
 
-import { CONFIG, bus, colorFor, setName } from './base.js';
-import { registerXRPanel } from './xr/xrpanels.js';
-import { getMyAvatarName, getMe } from './mybody.js';
+import { CONFIG, bus, colorFor, setName } from '../base.js';
+import { registerXRPanel } from '../xr/xrpanels.js';
+import { getMyAvatarName, getMe } from '../mybody.js';
 import { bodiesFields, bodiesDispatch, mountBodies } from './bodies.js';
 import { presence, setPresence, STATES } from './presence.js';
-import { renderDOM } from './edit/fieldpanels.js';
+import { renderDOM } from '../edit/fieldpanels.js';
 import { makeFrame, fitTabStrip } from './windows.js';
 import { fsvg } from './icons.js';
-import { net } from './net.js';
+import { net } from '../net.js';
 import { escapeHtml as escape } from './markup.js';
 
 let frame = null;

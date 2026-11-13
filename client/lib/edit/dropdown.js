@@ -1,7 +1,7 @@
 // House dropdowns — every <select> in the chrome becomes a button opening a list in the panel's colours (a native
 // popup's hover is out of CSS's reach). The <select> stays in the DOM, hidden, as the value store: panels keep reading
 // sel.value and listening for 'change'. A MutationObserver skins selects built later.
-import { fsvg } from '../icons.js';
+import { fsvg } from '../ui/icons.js';
 import { bus } from '../base.js';
 
 const SKIP = 'data-native';   // opt out: <select data-native>

@@ -1,6 +1,6 @@
 # Action bar placement: why roomFor() and onShow look the way they do
 
-Design notes for `client/lib/actionbar.js` (`snapTo`, `roomFor`, the `onShow` handler).
+Design notes for `client/lib/ui/actionbar.js` (`snapTo`, `roomFor`, the `onShow` handler).
 
 ## Columns from width, rows by wrapping
 

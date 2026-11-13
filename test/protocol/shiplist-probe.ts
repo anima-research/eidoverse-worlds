@@ -750,7 +750,7 @@ try {
   });
   // ---- EP: each mode keeps its own open HUD panels (R, 10-10; Blender's workspaces) ----
   await stage("EP", async () => {
-  const r = await page(`const W = await import('/lib/windows.js'), B = await import('/lib/edit/build.js'); const wait = (ms) => new Promise((z) => setTimeout(z, ms));
+  const r = await page(`const W = await import('/lib/ui/windows.js'), B = await import('/lib/edit/build.js'); const wait = (ms) => new Promise((z) => setTimeout(z, ms));
     const ids = W.allFrames().map((f) => f.id); const a = ['actions', 'profile', 'keyboard', 'debug'].find((x) => ids.includes(x)), b = ['profile', 'keyboard', 'actions', 'debug'].find((x) => ids.includes(x) && x !== a);
     try { localStorage.removeItem('ew.edit.panels'); } catch {}
     W.getFrame(a).show(); W.getFrame(b).hide(); B.setBuildMode(true); await wait(500);
@@ -762,7 +762,7 @@ try {
   });
   // ---- CH: the chat's "scroll up for earlier" note appears once, however many times I rejoin (R, 10-10) ----
   await stage("CH", async () => {
-  const n = await page(`const c = await import('/lib/chat.js'); for (let i = 0; i < 3; i++) c.noteHistoryContext({ total: null, shown: 40 }); return document.querySelectorAll('.hist-note').length;`);
+  const n = await page(`const c = await import('/lib/ui/chat.js'); for (let i = 0; i < 3; i++) c.noteHistoryContext({ total: null, shown: 40 }); return document.querySelectorAll('.hist-note').length;`);
   check("CH1 three rejoins leave ONE history note in the chat, not three", n === 1, { notes: n });
   });
   // ---- AT: the Attributes tab, the Inspector's eye, a card's ✕ (R, 10-10 18:55) ----

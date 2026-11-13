@@ -2,7 +2,7 @@
 // the engine via world.js) so the renderer-free client can reach it too. Current servers send it empty (speech is
 // arrival-only); the loop stays for older servers.
 import { state, onWorldChange } from '../state.js';
-import { logChat } from '../chat.js';
+import { logChat } from '../ui/chat.js';
 
 /** Put the pre-existing room context on screen. Safe to call more than once: the chat log dedupes by seq, and
  *  every entry here carries its real seq. */

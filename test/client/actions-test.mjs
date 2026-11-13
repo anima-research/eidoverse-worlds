@@ -2,12 +2,12 @@
 //
 //   bun test/client/actions-test.mjs
 //
-// client/lib/actions.js is pure (no imports, no DOM), so this runs with nothing stubbed. What it pins:
+// client/lib/ui/actions.js is pure (no imports, no DOM), so this runs with nothing stubbed. What it pins:
 // the tier order the lantern prompt depends on (exact > prefix > key > word-start > substring >
 // subsequence), that keywords count but a notch under the title, that `when` hides, that a second
 // registration of an id MERGES (the key table adds a key to the dock's entry), and that grouping keeps
 // the best row first.
-import * as A from '../../client/lib/actions.js';
+import * as A from '../../client/lib/ui/actions.js';
 import { suite } from "../gate/suite.ts";
 
 const S = suite("actions");

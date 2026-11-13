@@ -59,7 +59,7 @@ const listeners = new Map();
 const bus = { on(e, f) { (listeners.get(e) ?? listeners.set(e, new Set()).get(e)).add(f); }, emit(e, p) { for (const f of listeners.get(e) ?? []) f(p); } };
 const lib = (p) => fileURLToPath(new URL(`../../client/lib/${p}`, import.meta.url));
 mock.module(lib('base.js'), () => ({ bus, CONFIG: { name: 'p', params: new URLSearchParams() } }));
-mock.module(lib('ui.js'), () => ({ flashHint: (t) => hints.push(t), toast: (t) => toasts.push(t) }));
+mock.module(lib('ui/ui.js'), () => ({ flashHint: (t) => hints.push(t), toast: (t) => toasts.push(t) }));
 mock.module(lib('core.js'), () => ({ THREE: {}, camera: {}, renderer: {} }));
 mock.module(lib('xr/quadcolour.js'), () => ({ quadMaterial: () => null }));
 const mic = { on: false, toggles: 0 }, sfu = { wanted: false };

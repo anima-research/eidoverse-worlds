@@ -4,7 +4,7 @@
  * queue, retried all at once on ANY plausible gesture (mobile often sends no plain
  * `click`), and the block is said in chat, since silence alone looks like "nobody talking".
  */
-import { logChat } from '../chat.js';
+import { logChat } from '../ui/chat.js';
 
 const pending = new Set();
 let armed = false;

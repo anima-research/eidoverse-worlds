@@ -11,7 +11,7 @@ import { plugin } from 'bun';
 import { stubResolve } from '../harness/stub.ts';
 const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({ name: 'debug-stubs', setup(b) {
-  for (const m of ['core', 'base', '(xr/)?xrpanels', 'gputime', 'perf', 'render', 'perfscope', 'colliders', '(ragdoll/)?ragdoll', '(ragdoll/)?ammodoll(-tuning)?', '(avatar/)?avatar', 'ui'])
+  for (const m of ['core', 'base', '(xr/)?xrpanels', 'gputime', 'perf', 'render', 'perfscope', 'colliders', '(ragdoll/)?ragdoll', '(ragdoll/)?ammodoll(-tuning)?', '(avatar/)?avatar', '(ui/)?ui'])
     stubResolve(b, new RegExp(`^(\\.\\.?/)+${m}\\.js$`), () => ({ path: here('../stubs/debug-stub.mjs') }));
 } });
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
@@ -27,7 +27,7 @@ const check = (name: string, ok: boolean, detail = '') => {
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
 localStorage.setItem('ew-tab-debug', 'body');   // the tab remembered from last time
-await import('../../client/lib/windows.js');           // stamps the layout version first, so the save below is not purged
+await import('../../client/lib/ui/windows.js');           // stamps the layout version first, so the save below is not purged
 // last session the viewport auto-hid Debug while it was open; it comes back when the window is wide enough again
 localStorage.setItem('ew-frame-debug', JSON.stringify({ x: 700, y: 200, w: 250, h: 460, hidden: true, autoHidden: true }));
 const { initDebug } = await import('../../client/lib/debug/debug.js');

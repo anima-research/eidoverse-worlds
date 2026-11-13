@@ -108,4 +108,4 @@ export const toast = (t) => { hints.push(String(t)); };
 // claims 'warn' for a refusal. A text claim is a hint the suite reads, as flashHint's are; a node claim (the selection) is not.
 export const claimStatus = (id, { content = null } = {}) => { if (content != null) hints.push(String(content)); };
 export const releaseStatus = () => {};
-export { html } from '../../client/lib/markup.js';
+export { html } from '../../client/lib/ui/markup.js';

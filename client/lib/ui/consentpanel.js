@@ -3,7 +3,7 @@
 // The lists are set from People Here (right-click a person: people.js). The authority decides every act on my body by
 // these (spec/PROTOCOL.md §5); consentsync sends them. Same .row.wide / .nm / .ctl markup as the video and audio sections.
 import { makeSection, flashHint } from './ui.js';
-import { GATES, GATE_WORDS, BLOCK_FOLLOW_WORDS, gate, setGate, listed, setListed, onConsentChange, onHeldChange } from './consent.js';
+import { GATES, GATE_WORDS, BLOCK_FOLLOW_WORDS, gate, setGate, listed, setListed, onConsentChange, onHeldChange } from '../consent.js';
 
 const LISTS = [['allow', 'Always allowed', 'always yes, whatever the switches say'], ['block', 'Never allowed', `always no, whatever the switches say; ${BLOCK_FOLLOW_WORDS}`]];
 

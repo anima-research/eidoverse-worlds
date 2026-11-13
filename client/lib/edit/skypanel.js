@@ -5,7 +5,7 @@ import { sendOps } from './writes.js';
 import { bus, report } from '../base.js';
 import { serverNow } from '../serverclock.js';   // a server stamp is read on the authority's clock
 import { defsRegistry } from '../defs.js';
-import { flashHint } from '../ui.js';
+import { flashHint } from '../ui/ui.js';
 import { selectRow } from './rows.js';
 import { previewSky, skyArgs, skyImpl, WEATHERS, CLOUDS, SKY_QUALITY, skyQuality, setSkyQuality,
   CLOUD_QUALITY, getCloudChoice, setCloudQuality, cloudCap, skyInXR } from '../sky/sky.js';
@@ -14,7 +14,7 @@ import { GRASS_QUALITY, getGrassQuality, setGrassQuality,
 import { MODEL_QUALITY } from '../lod_policy.js';
 import { loggedSky, skyPreviewing, skyRendering, skyDegraded, getCloudQuality } from '../sky/sky.js';
 import { effectiveClock } from '../../../shared/forecast.js';
-import { stateLines } from '../statelines.js';
+import { stateLines } from '../ui/statelines.js';
 import { modelQuality, dialModelQuality } from '../realize/models.js';
 
 const SLIDERS = [

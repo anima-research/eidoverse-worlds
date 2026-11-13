@@ -1,6 +1,6 @@
 [
- "client/lib/actionbar_lite.js",
- "client/lib/attention_policy.js",
+ "client/lib/ui/actionbar_lite.js",
+ "client/lib/ui/attention_policy.js",
  "client/lib/backend_choice.js",
  "client/lib/avatar/bodyruntime_core.js",
  "client/lib/avatar/bodyruntimes/claude_robot_dof.js",
@@ -16,7 +16,7 @@
  "client/lib/avatar/locomotion_clip.js",
  "client/lib/lod_policy.js",
  "client/lib/net_capture.js",
- "client/lib/participants_lite.js",
+ "client/lib/ui/participants_lite.js",
  "client/lib/realize/emitter_field.js",
  "client/lib/realize/material_draft.js",
  "client/lib/realize/models_field.js",

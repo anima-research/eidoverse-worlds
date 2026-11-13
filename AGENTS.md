@@ -1016,9 +1016,9 @@ Routes use the structures known when the walk begins, where they are then. A flo
   owner and anyone currently holding `readChat` read the master log's
   speech from before they came (a server operator only by a role there). The owner grants it to a
   whole role with the Roles panel's `readChat` toggle
-  (client/lib/rolespanels.js; only the owner changes these). A `grantRoles`
+  (client/lib/ui/rolespanels.js; only the owner changes these). A `grantRoles`
   holder grants it to one person at a time in People
-  (client/lib/people.js): a role below their own, or a per-person
+  (client/lib/ui/people.js): a role below their own, or a per-person
   exception, and only with permissions they hold. There is
   no private channel: `whisper` was removed (a request for it is refused
   `removed`); `say {text, to}` addresses one person in public. Direct

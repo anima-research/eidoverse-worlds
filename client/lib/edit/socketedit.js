@@ -13,7 +13,7 @@ import { entities, metaOf, bags, bagOf, parentIdOf, childrenOf, findPart } from 
 import { socketsUnder } from '../../../shared/sockbody.js';
 import { motionNode } from '../../../shared/protocol/names.js';
 import { mouse } from '../controller.js';
-import { flashHint, html } from '../ui.js';
+import { flashHint, html } from '../ui/ui.js';
 import { engage, release } from './keyhints.js';
 import { setBuildMode, isBuilding, deselect,
   setInspectorHtml, hideInspector } from './build.js';

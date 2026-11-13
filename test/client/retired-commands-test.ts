@@ -5,7 +5,7 @@
 // /w (whisper), /emote (now /anim) and /ghost, /unghost (removed) keep unlisted rows with a `retired` line, which chat.js
 // says instead of "unknown command" (and instead of the silence a row with no handler gave /w). The registry is a pure
 // table; chat.js's runCommand reads `retired` before dispatching.
-const { COMMANDS, resolveCommand } = await import("../../client/lib/commands/registry.js");
+const { COMMANDS, resolveCommand } = await import("../../client/lib/ui/commands/registry.js");
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = "") => {
   if (ok) { pass++; console.log(`  \x1b[32m✓\x1b[0m ${name}`); } else { fail++; console.log(`  \x1b[31m✗\x1b[0m ${name}${detail ? ` — ${detail}` : ""}`); }

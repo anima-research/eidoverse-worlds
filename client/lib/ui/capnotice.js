@@ -2,9 +2,9 @@
 // had to simplify) as CHIPS on the status strip (statuschips.js) beside the ∃'s mic/ear glyphs, not a card over the
 // world. A chip stays for the visit; a click opens its full text with "got it" (folds it) and "don't show again"
 // (gone for good). At rest a chip covers nothing, so it needs no auto-dismiss.
-import { backendName } from './core.js';
-import { bus } from './base.js';
-import { takeGpuRecovered, recentGpuLosses } from './gpulost.js';
+import { backendName } from '../core.js';
+import { bus } from '../base.js';
+import { takeGpuRecovered, recentGpuLosses } from '../gpulost.js';
 import { statusChip, clearStatusChip } from './statuschips.js';
 
 const LS = 'ew-capnotice-dismissed';

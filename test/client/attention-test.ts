@@ -1,5 +1,5 @@
 // bun run test/client/attention-test.ts — pure gating plus the real renderer-free chat.
-import { createAttentionGate, ATTENTION_COOLDOWN_MS } from '../../client/lib/attention_policy.js';
+import { createAttentionGate, ATTENTION_COOLDOWN_MS } from '../../client/lib/ui/attention_policy.js';
 import { mkCheck } from '../harness/harness.ts';
 import { plugin } from 'bun';
 import { stubResolve } from '../harness/stub.ts';
@@ -116,8 +116,8 @@ class Audio {
 }
 (window as any).AudioContext = Audio;
 const { bus, CONFIG } = await import('../stubs/chat-base-stub.mjs');
-const { initChat, logChat } = await import('../../client/lib/chat.js');
-const { attentionPrefs, setAttentionPrefs } = await import('../../client/lib/attention.js');
+const { initChat, logChat } = await import('../../client/lib/ui/chat.js');
+const { attentionPrefs, setAttentionPrefs } = await import('../../client/lib/ui/attention.js');
 const { audioPrefs } = await import('../../client/lib/audio/voiceconsent.js');
 const { audioContext } = await import('../../client/lib/audio/audioctx.js');
 const unrelated = JSON.stringify(audioPrefs());

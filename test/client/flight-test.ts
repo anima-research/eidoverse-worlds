@@ -1165,10 +1165,10 @@ console.log('\nISOLATION -- nothing in the running world reaches flight yet');
   // 6. And the whole reason this took three rounds: every report was a
   //    description, because the state was only reachable from a devtools
   //    probe. /flight puts it in the chat log, where the person is.
-  const reg = readFileSync('client/lib/commands/registry.js', 'utf8');
+  const reg = readFileSync('client/lib/ui/commands/registry.js', 'utf8');
   // rimward: chat.js dispatches every registered row through the registry
   // (§14 6c) — the "dispatched" evidence is the handler registration
-  const hnd = readFileSync('client/lib/commands/handlers.js', 'utf8');
+  const hnd = readFileSync('client/lib/ui/commands/handlers.js', 'utf8');
   check("/flight is discoverable, dispatched, and answered",
         /name: 'flight'/.test(reg) &&
         /register\('flight'/.test(hnd) &&

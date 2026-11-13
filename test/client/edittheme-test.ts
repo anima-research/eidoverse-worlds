@@ -197,7 +197,7 @@ console.log("\nE. no pictograph in edit chrome's own sources:");
 
 console.log("\nE2. every glyph edit chrome names exists (a missing icon paints NOTHING, silently):");
 {
-  const icons = await import("../../client/lib/icons.js");
+  const icons = await import("../../client/lib/ui/icons.js");
   const { PICTO_ICON } = await import("../../client/lib/edit/theme.js");
   const src = (p: string) => readFileSync(here(`../../client/lib/${p}`), "utf8");   // a missing file throws: "" would collect no glyphs and pass
   const names = new Set<string>(Object.values(PICTO_ICON) as string[]);

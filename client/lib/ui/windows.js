@@ -1,7 +1,7 @@
 // windows — frames: movable, resizable windows with a remembered layout (the MMO model: drag a frame by its title,
 // drag an edge to resize, lock the layout when you're happy, and have it still be there tomorrow).
 
-import { bus } from './base.js';
+import { bus } from '../base.js';
 
 // TODO(mobile): the key carries the frame id only, so a desktop arrangement is replayed onto a phone; key it by
 // surface class when the mobile work lands.

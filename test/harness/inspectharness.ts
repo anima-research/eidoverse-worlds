@@ -42,7 +42,7 @@ export function inspectHarness(tag = "inspect", { actor = "olive" } = {}) {
       // importers compared with forward slashes: on Windows they arrive with backslashes, and "/realize/" never matched, so the
       // realizer's own modules were handed the stub core.js (no grid)
       const fwd = (p: string) => p.replace(/\\/g, "/"), LIB = fwd(path.join(ROOT, "client/lib/"));
-      stubResolve(b, /^\.\.?\/(?:edit\/|realize\/|xr\/)?(world|state|net|fieldpanels|ui|confirmcenter|xrask|core|emitters|material_draft)\.js$/, (a) =>
+      stubResolve(b, /^\.\.?\/(?:edit\/|realize\/|xr\/|ui\/)?(world|state|net|fieldpanels|ui|confirmcenter|xrask|core|emitters|material_draft)\.js$/, (a) =>
         (fwd(a.importer).startsWith(LIB) && !fwd(a.importer).includes("/realize/") ? { path: a.path, namespace: "inspect-harness" } : undefined));
       // the realizer (three.js, the GPU paths) is not under test: inspect.js asks it only for a model's box
       stubResolve(b, /^\.\.\/realize\/models\.js$/, (a) => (fwd(a.importer).endsWith("/client/lib/edit/inspect.js") ? { path: "realize-models", namespace: "inspect-harness" } : undefined));

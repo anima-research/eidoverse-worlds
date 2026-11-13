@@ -39,7 +39,7 @@ const sock = (world: string, name: string) => new Promise<{ ws: WebSocket; id: s
   ws.onerror = rej; setTimeout(() => rej(new Error(`${name} never joined ${world}`)), 15000);
 });
 const P = `document.querySelector('#__acc .ap-listed')`;
-const mount = () => page(`document.getElementById('__acc')?.remove(); const m = await import('/lib/rolespanels.js'); const b = document.createElement('div'); b.id = '__acc'; document.body.append(b); m._test.paintAccess(b); return true;`);
+const mount = () => page(`document.getElementById('__acc')?.remove(); const m = await import('/lib/ui/rolespanels.js'); const b = document.createElement('div'); b.id = '__acc'; document.body.append(b); m._test.paintAccess(b); return true;`);
 const panelText = () => evalJson(`${P}?.textContent ?? null`);
 const find = (q: string) => evalJson(`(() => { const p = ${P}; const i = p?.querySelector('input.ap-q'); if (!i) return false; i.value = ${JSON.stringify(q)}; p.querySelector('button.ap-find').click(); return true; })()`);
 const pick = (sel: string, v: string) => evalJson(`(() => { const s = ${P}?.querySelector(${JSON.stringify(sel)}); if (!s) return false; s.value = ${JSON.stringify(v)}; s.dispatchEvent(new Event('change')); return true; })()`);
@@ -134,7 +134,7 @@ try {
 
   await owned(`'set', { id: '@world', component: 'spawn', value: { pos: [1, 0, 2], radius: 3, yaw: 1.57 } }`);
   await folded(`c.spawn?.yaw === 1.57`);
-  await page(`document.getElementById('__places')?.remove(); const m = await import('/lib/rolespanels.js'); const b = document.createElement('div'); b.id = '__places'; document.body.append(b); m._test.paintPlaces(b); return true;`);
+  await page(`document.getElementById('__places')?.remove(); const m = await import('/lib/ui/rolespanels.js'); const b = document.createElement('div'); b.id = '__places'; document.body.append(b); m._test.paintPlaces(b); return true;`);
   await evalJson(`(() => { const b = document.getElementById('__places'); b.querySelector('[data-k=spawn][data-i="0"]').value = '4'; b.querySelector('[data-k=radius]').value = ''; b.querySelector('[data-save]').click(); return true; })()`);
   check("AP10 Places' Save writes the spawn's place and radius and keeps the rest of it: an emptied radius goes, and the arrival's facing (yaw) stays", await waitDisk(() => { const s = wc().spawn; return !!s && s.pos?.[0] === 4 && !("radius" in s) && s.yaw === 1.57; }), wc().spawn);
   await owned(`'delete', { id: '@world', component: 'spawn' }`);

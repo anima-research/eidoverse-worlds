@@ -19,7 +19,7 @@ const check = (name: string, ok: unknown, detail?: unknown) => S.check(name, ok,
 // ---- module substitution (same doctrine as tts-test.ts) --------------------
 const stubs = await import("../stubs/voice-stubs.mjs");
 const { mock } = await import("bun:test");
-for (const m of ["core", "net", "ui", "controller", "remotes"])
+for (const m of ["core", "net", "ui/ui", "controller", "remotes"])
   mock.module(`${import.meta.dir}/../../client/lib/${m}.js`, () => stubs);
 
 // fake piper runtime: engine_piper must be testable without ORT/wasm

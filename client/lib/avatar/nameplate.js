@@ -3,7 +3,7 @@
 
 import { THREE, camera } from '../core.js';
 import { bus } from '../base.js';
-import { stroke as strokeIcon } from '../icons.js';
+import { stroke as strokeIcon } from '../ui/icons.js';
 import { plateSize, plateClear, ownClearance, reachAbove, plateBox, CLEAR_MIN, PLATE_W } from './platesize.js';
 import { revealLevel } from './namereveal.js';
 import { crownEstimate, plateGap, plateAnchor, plateOffset, plateViewLift, STAND_SLOTS, DEAD as PLATE_DEAD } from './plateanchor.js';

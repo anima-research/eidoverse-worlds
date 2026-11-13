@@ -19,7 +19,7 @@
 //
 // No imports beyond icons: the governor and capnotice post here, and this must not pull the engine in with it.
 import { rsvg } from './icons.js';
-import { bus } from './base.js';
+import { bus } from '../base.js';
 
 let strip = null, pop = null;
 let openId = null;

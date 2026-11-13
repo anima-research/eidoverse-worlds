@@ -12,7 +12,7 @@
 // options, def) come from the descriptor's `ui` facts (shared/descriptors.js) via editschema; FACTS reads them.
 // test/client/panels-schema-test.ts and test/client/edittheme-test.ts hold every surface to this table.
 
-import { svg as strokeSvg, rsvg, has as hasIcon, fsvg, hasFill, hasLine, stroke as strokeIcon } from '../icons.js';
+import { svg as strokeSvg, rsvg, has as hasIcon, fsvg, hasFill, hasLine, stroke as strokeIcon } from '../ui/icons.js';
 import { EDIT as T, EDIT_VR as V, pictoRuns, hasPicto } from './theme.js';
 import { KEYHINTS, withKeys } from './keyhints.js';
 

@@ -1,6 +1,6 @@
 // ui-dock — the rail: its entries and pins, its edge, its buttons, and registerPanel, the mod seam
 // (eido.ui.registerPanel). The ∃ menu reads it; it never imports the menu (bindMenu) or ui.js.
-import { bus, report } from './base.js';
+import { bus, report } from '../base.js';
 import { makeFrame, getFrame } from './windows.js';
 import { fsvg, hasFill, rsvg, hasLine } from './icons.js';
 import { paint } from './markup.js';
@@ -130,7 +130,7 @@ function initPanels() {
   // dynamic, not static: profile/videopanel reach controller.js through xrpanels/mybody, and a static edge from
   // ui.js closed an import loop that read controller's `pointerClaimed` before initialization (rung-4 boot).
   // The dock entry is pushed now; the frames land a tick later and the dock repaints so the button shows.
-  Promise.all([import('./profile.js'), import('./stylepanel.js'), import('./videopanel.js'), import('./capnotice.js'), import('./edit/dropdown.js')])
+  Promise.all([import('./profile.js'), import('./stylepanel.js'), import('./videopanel.js'), import('./capnotice.js'), import('../edit/dropdown.js')])
     .then(([p, st, v, c, d]) => { p.initProfile(); st.initStylePanel(); v.initVideoPanel(); c.initCapNotice(); d.initDropdowns(); paintDock(); })
     .catch((e) => report('ui panels', e));
   return [{ id: 'profile', icon: 'user-circle' }];

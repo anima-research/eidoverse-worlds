@@ -8,7 +8,7 @@
 // contexts that touch the mic don't drag in ui.js (and THREE).
 import { bus } from '../base.js';
 // tone 'attn': a press that did not turn the mic on is "something you asked for didn't happen, and why" (ui.js flashHint)
-const flashHint = (msg) => import('../ui.js').then((u) => u.flashHint(msg, 4000, 'attn')).catch(() => {});
+const flashHint = (msg) => import('../ui/ui.js').then((u) => u.flashHint(msg, 4000, 'attn')).catch(() => {});
 import { sendTyping } from '../net.js';
 import { gateThreshold, pttMode } from './voiceconsent.js';
 import { gateStream, attachSource, detachSource, driveGate, driveRawTracks, setMonitor, monitoring,

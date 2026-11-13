@@ -4,7 +4,7 @@
 // args: {text, to?, spoken?, utt?, t0?}}). Wired by main.js off the bus, not imported by net (a net → chat → net cycle).
 
 import { bus } from '../base.js';
-import { logChat } from '../chat.js';
+import { logChat } from '../ui/chat.js';
 
 // voiceCapable: actors with a live voice leg (seeded by the snapshot, kept current by surface-transition).
 // pendingSpeech: says held awaiting a `performed` receipt (seq → fallback timer).

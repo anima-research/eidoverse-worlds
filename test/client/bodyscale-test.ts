@@ -271,7 +271,7 @@ console.log('remotes.js (the receiver):');
   if (!(globalThis as any).document) GlobalRegistrator.register();
   const stubs = await import('../stubs/remotes-stubs.mjs');
   const { mock } = await import('bun:test');
-  for (const m of ['core', 'assets', 'world', 'chat', 'avatar/fp_view', 'boot', 'ui', 'avatar/avatar', 'xr/xrbody']) mock.module(`${import.meta.dir}/../../client/lib/${m}.js`, () => stubs);
+  for (const m of ['core', 'assets', 'world', 'ui/chat', 'avatar/fp_view', 'boot', 'ui/ui', 'avatar/avatar', 'xr/xrbody']) mock.module(`${import.meta.dir}/../../client/lib/${m}.js`, () => stubs);
   const R: any = await import('../../client/lib/remotes.js');
   const got: any[] = [];
   const av = { setUserScale: (u: number) => got.push(['scale', u]), setPlateY: (y: number) => got.push(['plateY', y]) };

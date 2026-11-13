@@ -1,11 +1,11 @@
 // plainwords — the authority's refusals and warnings as a HUMAN reads them: what they tried and why, with
 // things named by their labels (or what they are), never hex ids or tool syntax. shared/protocol/refusal.js does the wording;
 // this file knows the world: which words are things here, and what humans call them. Agents keep refusalText.
-import { bagOf, entities } from './world.js';
-import { state } from './state.js';
-import { plainRefusal, warningText } from '../../shared/protocol/refusal.js';
-import { modelWord } from '../../shared/eido.js';
-import { resolveThing, handleOf } from '../../shared/thingref.js';
+import { bagOf, entities } from '../world.js';
+import { state } from '../state.js';
+import { plainRefusal, warningText } from '../../../shared/protocol/refusal.js';
+import { modelWord } from '../../../shared/eido.js';
+import { resolveThing, handleOf } from '../../../shared/thingref.js';
 
 const stem = (lib) => modelWord(lib).replace(/[_-]+/g, ' ').replace(/\s+\d+$/, '').trim();
 /** How a person knows thing `id`: “its label”, else "the <model>", else "that thing"; null when `id` isn't a thing here. */

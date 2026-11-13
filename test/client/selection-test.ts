@@ -12,7 +12,7 @@ import { plugin } from 'bun';
 import { stubResolve } from '../harness/stub.ts';
 const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({ name: 'selection-test-stubs', setup(b) {
-  for (const m of ['core', 'writes', 'ui'])
+  for (const m of ['core', 'writes', '(ui/)?ui'])
     stubResolve(b, new RegExp(`^(\\.\\.?/)+${m}\\.js$`), () => ({ path: here('../stubs/selection-test-stub.mjs') }));
   stubResolve(b, /^\.\.?\/realize\/structure\.js$/, () => ({ path: here('../stubs/selection-test-stub.mjs') }));
 } });

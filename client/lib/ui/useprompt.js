@@ -3,20 +3,20 @@
 // what you face, shows on the hint bar beside the seat hint (localbody.js updateSeatHint asks usePromptHint when there's
 // no seat to offer); E uses it through the door, and a refusal reads in a person's words (edit/writes.js showRefusal). Not in
 // build mode (E rotates there), not while typing (controller.js filters), not in a headset (no hint bar there).
-import { THREE } from './core.js';
-import { bags, bagOf, entities } from './world.js';
-import { outOfMyView } from './edit/myview.js';
-import { bus } from './base.js';
+import { THREE } from '../core.js';
+import { bags, bagOf, entities } from '../world.js';
+import { outOfMyView } from '../edit/myview.js';
+import { bus } from '../base.js';
 import { register as registerAction } from './actions.js';
-import { xrActive } from './xr/xrask.js';
+import { xrActive } from '../xr/xrask.js';
 import { nameOf, plain } from './plainwords.js';
-import { sendRequest } from './net.js';
-import { requestWithBody } from './thingphysics.js';
+import { sendRequest } from '../net.js';
+import { requestWithBody } from '../thingphysics.js';
 import { flashHint } from './ui.js';
 import { html } from './markup.js';
-import * as OP from '../../shared/requests.js';
+import * as OP from '../../../shared/requests.js';
 
-import { USE_REACH } from '../../shared/protocol/physconst.js';
+import { USE_REACH } from '../../../shared/protocol/physconst.js';
 export { USE_REACH };
 let hooks = null;               // { myPos(): {x,y,z}, camera, editing(): bool, busy(): bool (photo mode, limp) }
 export function initUsePrompt(h) { hooks = h; }

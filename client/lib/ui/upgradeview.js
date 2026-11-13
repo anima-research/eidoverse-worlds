@@ -1,6 +1,6 @@
-// client/lib/upgradeview.js — the splash of a world saved in an older format: the server's words, the doc, and (an operator or its owner)
+// client/lib/ui/upgradeview.js — the splash of a world saved in an older format: the server's words, the doc, and (an operator or its owner)
 // Upgrade world… → the dry-run report → Back up and upgrade → where the backup is. The server runs the CLI (server/upgrade.ts).
-import { OLD_FORMAT_DOC, IF_YOU_RUN_IT } from '../../shared/oldformat.js';
+import { OLD_FORMAT_DOC, IF_YOU_RUN_IT } from '../../../shared/oldformat.js';
 
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = String(text); return e; };
 

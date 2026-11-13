@@ -11,7 +11,7 @@ import { suite } from "../gate/suite.ts";
 const STUB = fileURLToPath(new URL('../stubs/full-detail-stub.mjs', import.meta.url));
 plugin({ name: 'full-detail-stub', setup(b) {
   for (const f of ['^\\./core\\.js$', '^\\./lightrig\\.js$', '^\\./realize/emitters\\.js$',
-    '^\\./terrain\\.js$', '^\\./frameloop\\.js$', '^\\./remotes\\.js$', '^\\./ui\\.js$', '^\\./statuschips\\.js$',
+    '^\\./terrain\\.js$', '^\\./frameloop\\.js$', '^\\./remotes\\.js$', '^(\\.\\.?/)+(ui/)?ui\\.js$', '^(\\.\\.?/)+(ui/)?statuschips\\.js$',
     '^\\.\\./core\\.js$', '^\\.\\./assets\\.js$', '^\\.\\./colliders\\.js$', '^\\.\\./lightrig\\.js$', '^\\.\\./lightgizmo\\.js$', '^\\.\\./world\\.js$', '^\\.\\./materials\\.js$'])
     stubResolve(b, new RegExp(f), () => ({ path: STUB }));
 } });

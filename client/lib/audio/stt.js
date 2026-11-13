@@ -7,10 +7,10 @@
 import { say } from '../net.js';
 import { report, bus } from '../base.js';
 import { sttConsented } from './voiceconsent.js';
-import { flashHint } from '../ui.js';
+import { flashHint } from '../ui/ui.js';
 // flashHint is a transient overlay, so failures go to chat too. Lazy import: a static chat.js
 // import drags core.js into every headless test that mocks core.
-const logChat = (who, text) => import('../chat.js').then((m) => m.logChat(who, text)).catch(() => {});
+const logChat = (who, text) => import('../ui/chat.js').then((m) => m.logChat(who, text)).catch(() => {});
 // the mic's real state: this module's capture must never outlive it. SFU first (its bridge
 // installs __sfuMicOn only once that transport initialised), then micstate.
 import { micOn as meshMicOn } from './micstate.js';

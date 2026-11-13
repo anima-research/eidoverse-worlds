@@ -68,7 +68,7 @@ try {
     const floor = document.querySelector('#sec-audio [data-meter]')?.closest('.sp-row');
     return { checked: cb.checked, opacity: floor ? getComputedStyle(floor).opacity : null };
   }, on);
-  await ev(async () => { const F = await import('./lib/windows.js'); F.getFrame('settings')?.show(); document.getElementById('sec-audio-tab').click();
+  await ev(async () => { const F = await import('./lib/ui/windows.js'); F.getFrame('settings')?.show(); document.getElementById('sec-audio-tab').click();
     document.documentElement.style.setProperty('--panel-a', '1'); });
   await sleep(400);
   const deskDim = {};
@@ -89,7 +89,7 @@ try {
 
   // open both frames on the tabs under test (desktop), and shoot the DOM
   for (const [frame, tab] of [['world', 'sky'], ['settings', 'style']]) {
-    await ev(async ([frame, tab]) => { const F = await import('./lib/windows.js'); F.getFrame(frame)?.show(); document.getElementById(`sec-${tab}-tab`).click(); }, [frame, tab]);
+    await ev(async ([frame, tab]) => { const F = await import('./lib/ui/windows.js'); F.getFrame(frame)?.show(); document.getElementById(`sec-${tab}-tab`).click(); }, [frame, tab]);
   }
   await sleep(800);
   for (const frame of ['world', 'settings']) {
@@ -425,7 +425,7 @@ try {
   for (const a of [1, 0.6]) {
     const r = await ev(async (a) => {
       const { THREE, renderer } = await import('./lib/core.js');
-      const D = await import('./lib/xr/domquad.js'); const S = await import('./lib/stylepanel.js');
+      const D = await import('./lib/xr/domquad.js'); const S = await import('./lib/ui/stylepanel.js');
       S.setXrPanelAlpha?.(a);
       const rig = new THREE.Scene(); D.domQuadsEnter(rig); D.domQuadShow('settings', true);
       await new Promise((r) => setTimeout(r, 900));
@@ -482,7 +482,7 @@ try {
     bright[1].panel.every((v, i) => v > panelTok[i] + 20 && v < bright[1].back[i] - 20), `rgb(${bright[1].panel}) between rgb(${panelTok}) and rgb(${bright[1].back})`);
   // reset to defaults brings VR panels back to opaque
   const rs = await ev(async () => {
-    const S = await import('./lib/stylepanel.js'); S.setXrPanelAlpha?.(0.7);
+    const S = await import('./lib/ui/stylepanel.js'); S.setXrPanelAlpha?.(0.7);
     document.getElementById('sec-style-tab')?.click();
     const b = [...document.querySelectorAll('#sec-style button')].find((x) => /reset to defaults/.test(x.textContent));
     b?.click();

@@ -1,4 +1,4 @@
-// action bar (client/lib/actionbar.js) — nine tiles, whole-tile snapping, postures that act on the desktop
+// action bar (client/lib/ui/actionbar.js) — nine tiles, whole-tile snapping, postures that act on the desktop
 // body AND announce themselves to the VR entry, and a fired tile that stays lit after net.js has already
 // cleared myState.anim. Drives the REAL module against test/stubs/actionbar-stub.mjs recorders; the RESTORE rows run
 // the bar against the REAL windows.js in a child sequence (`--restore`: one process can't both stub and load it).
@@ -16,7 +16,7 @@ const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({
   name: 'actionbar-stubs',
   setup(b) {
-    for (const m of ['windows', 'animnames', 'controller', 'mybody', '(xr/)?xrpanels', 'base']) {
+    for (const m of ['(ui/)?windows', '(ui/)?animnames', 'controller', 'mybody', '(xr/)?xrpanels', 'base']) {
       if (RESTORE && m === 'windows') continue;
       stubResolve(b, new RegExp(`^(\\.\\.?/)+${m}\\.js$`), () => ({ path: here('../stubs/actionbar-stub.mjs') }));
     }
@@ -40,10 +40,10 @@ const widthFor = (c: number) => c * TILE + (c - 1) * GAP + PAD * 2 + 2;
 if (RESTORE) {
   // a bar the viewport auto-restores (no show()) is laid out exactly as show() lays it out: without onShow's snapTo
   // the restored bar was two columns wide and ONE row tall until the 180 ms onResize snap caught up
-  await import('../../client/lib/windows.js');   // stamps the layout version first, so the save below is not purged
+  await import('../../client/lib/ui/windows.js');   // stamps the layout version first, so the save below is not purged
   // last session the viewport auto-hid the bar (never placed by hand); it comes back when the window is wide enough
   localStorage.setItem('ew-frame-actions', JSON.stringify({ x: 336, y: 10, w: widthFor(9), h: 32, hidden: true, autoHidden: true }));
-  const { initActionBar } = await import('../../client/lib/actionbar.js');
+  const { initActionBar } = await import('../../client/lib/ui/actionbar.js');
   const f: any = initActionBar();
   // happy-dom measures nothing: the bar reports its real height, and the dock has laid out. A left-anchored glyph
   // spans the bar's band, 900 px of it, leaving 1024 - 8 - 908 = 108.
@@ -74,7 +74,7 @@ let nowMs: number | null = null;
 performance.now = () => nowMs ?? realNow();
 
 const stub = await import('../stubs/actionbar-stub.mjs');
-const { initActionBar, ringActionEntries } = await import('../../client/lib/actionbar.js');
+const { initActionBar, ringActionEntries } = await import('../../client/lib/ui/actionbar.js');
 const { ANIM_ORDER, myState, postureCalls, busLog, played, xrPanels, bus } = stub;
 
 // the same column math the bar uses (a mirror, so the expectations are numbers not calls)
@@ -409,7 +409,7 @@ console.log('ACTIONBAR — a defs push rebuilds the lantern\'s gesture actions, 
 {
   // register() MERGES and skips undefined fields, so re-registering on top of the old
   // entries kept a moved gesture's old number and a removed gesture's row
-  const A = await import('../../client/lib/actions.js');
+  const A = await import('../../client/lib/ui/actions.js');
   const saved = ANIM_ORDER.splice(0);
   ANIM_ORDER.push('clap', 'cheer', 'dance', 'point', 'salute', 'bow', 'shrug', 'nod', 'spin', 'wave');
   bus.emit('animnames-updated');

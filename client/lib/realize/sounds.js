@@ -40,11 +40,11 @@ import { serverNow } from '../serverclock.js';
 import { playWhenAllowed } from '../audio/audiounlock.js';
 import { volumeFor } from '../audio/voiceconsent.js';
 import { registerEditor, registerHandler, commitEdit } from '../edit/inspect.js';
-import { toast, flashHint } from '../ui.js';
+import { toast, flashHint } from '../ui/ui.js';
 import { normalizeSound, gainAt, TAPER_START, SOUND_DESCRIPTION_MAX, SOUND_DESCRIPTION_HINT, SOUND_STORE, SOUND_MAX_RADIUS } from '../../../shared/sound.js';
 import { mediaTier, clientMayFetch, mediaUrl } from '../../../shared/mediasrc.js';
 import { allowUntrusted, isMineMuted, toggleMineMuted, RIGHTS_WARNING } from '../mediaprefs.js';
-import { escapeHtml as esc } from '../markup.js';
+import { escapeHtml as esc } from '../ui/markup.js';
 
 export const VOICES = 32;
 // id → { sound, el, srcNode?, gain?, panner?, plain?, capped, want, done? }

@@ -13,7 +13,7 @@ const _captured = new Set<number>();
 (Element.prototype as any).releasePointerCapture = function (id: number) { _captured.delete(id); (this as any).__cap = undefined; };
 (Element.prototype as any).hasPointerCapture = function (id: number) { return (this as any).__cap === id; };
 
-const { makeFrame } = await import("../../client/lib/windows.js");
+const { makeFrame } = await import("../../client/lib/ui/windows.js");
 
 const S = suite("frames-resize");
 const check = (name: string, ok: unknown, detail?: unknown) => S.check(name, ok, detail);

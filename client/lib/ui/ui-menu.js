@@ -1,9 +1,9 @@
 // ui-menu — the ∃ menu: the File-style waterfall beside the rail, its flyouts, the pins and HUD layout mode.
 import { chooseClient } from './litechoice.js';
-import { confirmCenter } from './edit/confirmcenter.js';
-import { bus, CONFIG, forgetRememberedWorlds } from './base.js';
+import { confirmCenter } from '../edit/confirmcenter.js';
+import { bus, CONFIG, forgetRememberedWorlds } from '../base.js';
 import { resizeZoneAt, getFrame, isLocked, setLocked } from './windows.js';
-import { flipMic, flipEar, micLive, earOn, glyphPinned, setGlyphPinned, micGlyph, earGlyph, xrGlyph, xrGlyphAvailable, flipXr } from './audio/mictoggle.js';
+import { flipMic, flipEar, micLive, earOn, glyphPinned, setGlyphPinned, micGlyph, earGlyph, xrGlyph, xrGlyphAvailable, flipXr } from '../audio/mictoggle.js';
 import { fsvg } from './icons.js';
 import { paint, escapeHtml } from './markup.js';
 import { register as registerAction } from './actions.js';

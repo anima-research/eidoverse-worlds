@@ -49,7 +49,7 @@ localStorage.setItem("ew-ui-locked", "0");
 (document as any).elementFromPoint = () => null;
 
 const { makeFrame, resizeZoneAt, setLocked, isLocked, panelsToggle, escapeIsClaimed, claimEscape, allFrames, chromeCost } =
-  await import("../../client/lib/windows.js");
+  await import("../../client/lib/ui/windows.js");
 
 // happy-dom measures nothing; report each frame's real state so the zone math and the drag clamp can see it
 function measurable(f: any, chromeH = 30) {

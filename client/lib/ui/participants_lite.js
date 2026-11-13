@@ -3,12 +3,12 @@
 // implementation; a participant here is a row (who, avatar NAME, declared word, speaking/typing), not a
 // body. Poses are dropped (~15 Hz per person a phone need not interpolate); the server clock is kept so
 // chat timestamps stay honest.
-import { bus } from './base.js';
+import { bus } from '../base.js';
 
 export const remotes = new Map(); // id -> LiteRow
 
 // the same clock as remotes.js, so net.js's one-way samples feed the one estimate
-export { noteServerTime, serverNow } from './serverclock.js';
+export { noteServerTime, serverNow } from '../serverclock.js';
 
 /** Async to match remotes.js: net.js does `.then(...)` on the arrival path. */
 export async function ensureRemote(id, avatarPath, meta = {}) {

@@ -1,8 +1,8 @@
 // The action bar's vocabulary: names, bar glyphs, and the clip each one plays. Engine-free so a
 // client that renders nothing (lite.js) can draw the bar; avatar.js re-exports every name (one
 // module instance, which the in-place hydration relies on).
-import { bus } from './base.js';
-import { defsRegistry } from './defs.js';
+import { bus } from '../base.js';
+import { defsRegistry } from '../defs.js';
 
 // The vocabulary is data (defs/animations/_actionbar.json), hydrated in place below (object identity preserved) and
 // re-hydrated on the defs-updated push.

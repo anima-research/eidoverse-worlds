@@ -12,7 +12,7 @@ const deny = () => { throw new DOMException('denied', 'SecurityError'); };
 Object.defineProperty(globalThis, 'localStorage', { configurable: true, get: deny });   // as a sandboxed frame: the property itself throws
 check('setup: storage throws', (() => { try { localStorage.getItem('x'); return false; } catch { return true; } })());
 let W: any = null, err = '';
-try { W = await import('../../client/lib/windows.js'); } catch (e: any) { err = e?.message ?? String(e); }
+try { W = await import('../../client/lib/ui/windows.js'); } catch (e: any) { err = e?.message ?? String(e); }
 check('windows.js loads where storage throws (the lock reads as off)', !!W && W.isLocked() === false, err);
 if (W) {
   let threw = ''; try { W.setLocked(true); } catch (e: any) { threw = e?.message ?? String(e); }

@@ -23,7 +23,7 @@ plugin({
     // rimward: CONFIG/bus/report live in base.js (the renderer-free substrate) — stubbed, or the
     // test's CONFIG.name never reaches chat.js and every mention assertion passes vacuously (PR #160 B6)
     stubResolve(b, /^(\.\.?\/)+base\.js$/, () => ({ path: here("../stubs/chat-base-stub.mjs") }));
-    stubResolve(b, /^(\.\.?\/)+windows\.js$/, () => ({ path: here("../stubs/chat-frames-stub.mjs") }));
+    stubResolve(b, /^(\.\.?\/)+(ui\/)?windows\.js$/, () => ({ path: here("../stubs/chat-frames-stub.mjs") }));
     stubResolve(b, /^(\.\.?\/)+net\.js$/, () => ({ path: here("../stubs/chat-net-stub.mjs") }));
   },
 });
@@ -38,7 +38,7 @@ localStorage.setItem("ew-chat-fs", "17");
 const versionAsks: string[] = []; const realFetch = globalThis.fetch;
 globalThis.fetch = ((u: any) => { if (String(u).includes("/version")) versionAsks.push(String(u)); return Promise.resolve(new Response('{"sha":"abcdef1234"}')); }) as any;
 await import("../../client/lib/version.js");
-const { logChat, initChat, chat, recentChat, chatMarkdownOn } = await import("../../client/lib/chat.js");
+const { logChat, initChat, chat, recentChat, chatMarkdownOn } = await import("../../client/lib/ui/chat.js");
 globalThis.fetch = realFetch;
 const { frameStub } = await import("../stubs/chat-frames-stub.mjs");
 
@@ -254,7 +254,7 @@ check("...and `all` shows the room again", visible().some((l: any) => l.textCont
 // ============================================================ commands as lantern actions
 console.log("\nCHAT — a command that acts on whoever is nearest fills the lantern's line; it never runs on a default");
 {
-  const A = await import("../../client/lib/actions.js");
+  const A = await import("../../client/lib/ui/actions.js");
   for (const n of ["push", "touch", "punt"])
     check(`/${n} fills "/${n} " and has no run`, A.get(`cmd:${n}`)?.fill === `/${n} ` && typeof A.get(`cmd:${n}`)?.run !== "function",
       JSON.stringify({ fill: A.get(`cmd:${n}`)?.fill, run: typeof A.get(`cmd:${n}`)?.run }));
@@ -536,7 +536,7 @@ console.log('CHAT — People Here swaps sides');
   decoy.remove(); }
 
 console.log('MODERATOR NOTICE — a warning says where it came from, and its text is never a link (TEACHING-FINDINGS spoofing item 1)');
-{ const { moderatorHeader } = await import('../../client/lib/chat.js') as any;
+{ const { moderatorHeader } = await import('../../client/lib/ui/chat.js') as any;
   check('the header names the world and disowns Eidoverse, fixed words', typeof moderatorHeader === 'function' && moderatorHeader('garden') === 'From a moderator of world ‹garden›, not from Eidoverse', String(moderatorHeader?.('garden')));
   const sysRows = () => [...log().children].filter((c) => c.classList.contains('sys')) as HTMLElement[];
   logChat('*', `${moderatorHeader?.('garden') ?? ''} — mod warned you: sign in again at https://eidoverse.example.evil/login`, '', { seq: seq++, ts: Date.now(), links: false });

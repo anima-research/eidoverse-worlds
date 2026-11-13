@@ -17,8 +17,9 @@ const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({
   name: "dock-stubs",
   setup(b) {
-    for (const m of ["base", "(audio/)?mictoggle", "defs", "profile", "stylepanel", "videopanel", "capnotice"])
-      stubResolve(b, new RegExp(`^\\./${m}\\.js$`), () => ({ path: here("../stubs/dock-stub.mjs") }));
+    const OLD_ROOT = /\/client\/lib\/((ui|render|player)\/)?[^/]+$/;   // the importers these stubs were written for: files of the lib root before tier two
+    for (const m of ["base", "(audio/)?mictoggle", "defs", "(ui/)?profile", "(ui/)?stylepanel", "(ui/)?videopanel", "(ui/)?capnotice"])
+      stubResolve(b, new RegExp(`^(\\.\\.?/)+${m}\\.js$`), (a) => (OLD_ROOT.test(a.importer.replace(/\\/g, "/")) ? { path: here("../stubs/dock-stub.mjs") } : undefined));
   },
 });
 
@@ -38,20 +39,20 @@ document.body.innerHTML = `
   <div id="help" class="scrim"><div class="sheet panel"></div></div>`;
 
 const { bus } = await import("../stubs/dock-stub.mjs");
-const { fsvg } = await import("../../client/lib/icons.js");
-const { makeFrame, getFrame, isLocked } = await import("../../client/lib/windows.js");
+const { fsvg } = await import("../../client/lib/ui/icons.js");
+const { makeFrame, getFrame, isLocked } = await import("../../client/lib/ui/windows.js");
 // a returning person's storage from before the action bar's rename (ad90009f, 10-17): pins and frame state under its old
 // id. The old id is ui-dock.js's ACTIONBAR_OLD_ID (the word lives on that one line, names-check E3); a literal copy here would
 // be a second spelling, so it is read the only way that does not import ui-dock.js first: from the source line.
 // Seeded after windows.js has stamped its layout version (so the frame key is not purged) and before ui-dock.js reads pins.
-const OLD = /export const ACTIONBAR_OLD_ID = '(\w+)';/.exec(await Bun.file(here("../../client/lib/ui-dock.js")).text())![1];
+const OLD = /export const ACTIONBAR_OLD_ID = '(\w+)';/.exec(await Bun.file(here("../../client/lib/ui/ui-dock.js")).text())![1];
 const RENAMED_FRAME = JSON.stringify({ x: 336, y: 10, w: 352, h: 32 });
 localStorage.setItem("ew-dock-pins", JSON.stringify(["search", "profile", "world", "chat", OLD, "debug", "settings", "edit"]));
 // the pin list a FRESH install gets (ui-dock.js), read from the source like OLD: the seed above is what a saved install reads instead
-const DEFAULT_PINS: string[] = JSON.parse(/const DEFAULT_PINS = (\[[^\]]*\]);/.exec(await Bun.file(here("../../client/lib/ui-dock.js")).text())![1].replace(/'/g, '"'));
+const DEFAULT_PINS: string[] = JSON.parse(/const DEFAULT_PINS = (\[[^\]]*\]);/.exec(await Bun.file(here("../../client/lib/ui/ui-dock.js")).text())![1].replace(/'/g, '"'));
 localStorage.setItem(`ew-frame-${OLD}`, RENAMED_FRAME);
 // the rail, the ∃ menu and the frames are three modules; the menu binds itself to the dock as it loads
-const ui = { ...(await import("../../client/lib/ui.js")), ...(await import("../../client/lib/ui-dock.js")), ...(await import("../../client/lib/ui-menu.js")) };
+const ui = { ...(await import("../../client/lib/ui/ui.js")), ...(await import("../../client/lib/ui/ui-dock.js")), ...(await import("../../client/lib/ui/ui-menu.js")) };
 const { initDock, registerPanel, dockPins, toggleEMenu, makeSection, settingsFrame, paintPresence } = ui;
 
 const S = suite("dock");
@@ -110,7 +111,7 @@ check("profile leads the buttons (right under the ∃); the wrench closes the li
 check("dock order follows the entry list, search between actions and debug", order().join() === "profile,chat,world,nofrx,actions,search,debug,edit", order().join());
 check("…and search is pinned (seeded here; in DEFAULT_PINS for a fresh install), shown while the lantern is closed", btn("search")!.hidden === false && savedPins().includes("search") && DEFAULT_PINS.includes("search"));
 { // the search entry: the lantern prompt's way in, wearing the magnifying glass, its chord in the tooltip
-  const { get: getAction, register: registerAction } = await import("../../client/lib/actions.js");
+  const { get: getAction, register: registerAction } = await import("../../client/lib/ui/actions.js");
   const s = btn("search")!;
   check("the search entry wears the magnifying glass (line at rest + fill)", wears(s.innerHTML, "magnifying-glass") && s.querySelectorAll("svg").length === 2, s.innerHTML.slice(0, 80));
   check("…its tooltip is 'Search & commands · Ctrl K' (⌘K on a Mac)", /^Search & commands · (Ctrl K|⌘K)$/.test(s.title), s.title);
@@ -252,7 +253,7 @@ check("every window with a frame has a row; a frameless entry has none", ["chat"
 check("the wrench has a row while gated open", !!row("edit"));
 { // THE LANTERN'S RESTING LINE pins from here too (owner, 10-01: "add it as a pin feature for the reverse-E menu (might
   // need its own logo to differentiate), and have it obey the 'esc to hide' feature")
-  const L = await import("../../client/lib/commandbar.js");
+  const L = await import("../../client/lib/ui/commandbar.js");
   const r = row("lantern"), p = pin("lantern");
   const rows = [...sub().querySelectorAll(".mrow[data-row]")].map((x) => (x as HTMLElement).dataset.row);
   // its own area (owner, 10-01: "It's not *quite* a conventional panel so it can't get docked"): a group of one, after
@@ -402,7 +403,7 @@ check("the wrench has a row while gated open", !!row("edit"));
 { // EVERY PIN, on → off → on with the menu open (owner, 10-01: "make sure they pin/unpin and highlight/unhighlight
   // correctly"): the highlight follows at once, the menu stays open, and the choice is where the next boot reads it
   const { glyphPinned } = await import("../stubs/dock-stub.mjs");
-  const L = await import("../../client/lib/commandbar.js");
+  const L = await import("../../client/lib/ui/commandbar.js");
   const stored = (id: string) => id === "lantern" ? L.pillPinned() && localStorage.getItem("ew-lantern-pinned") !== "0"
     : id.startsWith("glyph:") ? glyphPinned(id.slice(6)) : (savedPins() ?? []).includes(id);
   const ids = [...sub().querySelectorAll(".mpin[data-pin]:not([disabled])")].map((p) => (p as HTMLElement).dataset.pin!);
@@ -552,7 +553,7 @@ console.log("DOCK — HUD layout mode: the old click-∃ arranging, a switch of 
   check("a press on the rail keeps it", arranging());
   pd(document.getElementById("lantern-pill") ?? dock());
   check("a press on the resting line keeps it (it is draggable in this mode)", arranging());
-  const { escapeIsClaimed } = await import("../../client/lib/windows.js");
+  const { escapeIsClaimed } = await import("../../client/lib/ui/windows.js");
   check("Esc belongs to the mode (windows.js yields: escapeIsClaimed says 'layout')", escapeIsClaimed() === "layout", String(escapeIsClaimed()));
   getFrame("chat")!.show();
   window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
@@ -564,7 +565,7 @@ console.log("DOCK — HUD layout mode: the old click-∃ arranging, a switch of 
   (sub().querySelector(".mrow[data-layout]") as HTMLButtonElement).click();
   check("its row turns it off again", !arranging() && !(sub().querySelector(".mrow[data-layout]") as HTMLElement).classList.contains("open"));
   toggleEMenu(false);
-  const A = await import("../../client/lib/actions.js");
+  const A = await import("../../client/lib/ui/actions.js");
   A.run("menu:layout");
   check("the lantern can run it too (action menu:layout)", arranging());
   bar().querySelector("button")!.click();
@@ -711,7 +712,7 @@ const CHROME = `<button id="hud" class="emark">∃</button><div id="dock" class=
 let boots = 0;
 async function boot(gate: { open: boolean }) {
   document.body.innerHTML = CHROME;
-  const fresh = await import(`../../client/lib/ui-dock.js?boot=${++boots}`);
+  const fresh = await import(`../../client/lib/ui/ui-dock.js?boot=${++boots}`);
   fresh.initDock([{ id: "edit", label: "🔧", icon: "wrench", last: true, action: () => {}, active: () => false, gate: () => gate.open }]);
   await tick();
   const btn = () => document.querySelector('#dock button[data-toggles="edit"]') as HTMLButtonElement;

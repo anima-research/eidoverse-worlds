@@ -15,7 +15,7 @@ let active = null;
 globalThis.document = { get activeElement() { return active; } };
 
 const R = await import('../../client/lib/avatar/namereveal.js').catch((e) => ({ err: String(e) }));
-const A = await import('../../client/lib/actions.js');
+const A = await import('../../client/lib/ui/actions.js');
 const { REVEAL_EASE_MS: E } = await import('../../client/lib/avatar/platesize.js');
 check('namereveal.js loads', !R.err && typeof R.setReveal === 'function', R.err);
 if (!R.err) {

@@ -15,26 +15,26 @@ import { installEntryClock } from './xr_frame_clock.js';
 import { CONFIG, report, bus, tee, wornNameOf } from '../base.js';
 import { frameDebug } from '../frameloop.js';
 import { resetFingers, xrBodyDebug } from './xrbody.js';
-import { stroke, fillPath } from '../icons.js';
+import { stroke, fillPath } from '../ui/icons.js';
 import { xrPanelsEnter, xrPanelsExit, xrPanelsPick, xrPanelsAt, xrPanelsPress, xrPanelsDrag, xrPanelsReleasePress, showXRPanel, xrPanelHas, xrPanelOpen, xrPanelsGrab, xrPanelRelease, xrPanelsShown, xrPanelsHideToggle, xrPanelsHidden } from './xrpanels.js';
 import { TEXT_SEL, domQuadsScroll, domQuadResizeBegin, domQuadResizeMove, domQuadResizeEnd, domQuadsRevealOnly, domQuadMesh } from './domquad.js';
 import { myState, xrIntent, camYaw, setCamYaw, setXrProbe } from '../controller.js';
-import { ringActionEntries } from '../actionbar.js';
+import { ringActionEntries } from '../ui/actionbar.js';
 import { entities, bagOf, socketsOn } from '../world.js';
 import { xrHand as grabHand, bindPresenting as bindGrabPresenting } from '../thingphysics.js';   // the grabbable component's VR hands
-import { flashHint, toast } from '../ui.js';
+import { flashHint, toast } from '../ui/ui.js';
 import { vrMicPreflight } from './vrmic.js';
 import { makePointerLine, makeSurfaceDot, placeSurfaceDot, hideSurfaceDot, setSurfaceDotKind } from './pointer.js';
 import { markXrAbsent, registerXrGlyph, micGlyph, earGlyph, xrGlyph, micLive, earOn, flipEar } from '../audio/mictoggle.js';
 import { setPttHeld } from '../audio/micstate.js';
 import { pttMode } from '../audio/voiceconsent.js';
 import './xrmicicon.js';   // the mic icon in view while presenting
-import { markActive } from '../presence.js';
+import { markActive } from '../ui/presence.js';
 import { platePick, aimPlate, platePress } from '../avatar/platecard.js';   // a laser resting on a nameplate opens its card
-import { makeDwell } from '../dwell.js';
+import { makeDwell } from '../ui/dwell.js';
 import { showXRTip, hideXRTip, dropXRTip, tipTextFor } from './xrtip.js';
 import { pointerVisible, dotVisible, looksAtWorld, interactable, smoothPose, stickStep, angleTo, rayMatrixTo } from './xrpointer.js';   // the laser's policy
-import { dockPins } from '../ui-dock.js';
+import { dockPins } from '../ui/ui-dock.js';
 import { xrScales, toRigLocal } from '../../../shared/bodyscale.js';   // the chosen size composes with the device fit (rig = u, body = u/k)
 import { perf } from '../perf.js';
 import { renderCensusTake, renderCensusTick, renderCensusPeek, setXRCurtain, drawStats } from '../render.js';

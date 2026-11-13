@@ -695,7 +695,7 @@ const postAuth = (port, token) => fetch(`http://127.0.0.1:${port}/auth`, { metho
   a2.close(); b.close(); }
 
 // ---- NM: a name with markup in it is refused at the door (security pass 3, H1's belt-and-braces) ----
-// The client shows names as text now (client/lib/markup.js); a name that IS markup is still refused, so no other reader
+// The client shows names as text now (client/lib/ui/markup.js); a name that IS markup is still refused, so no other reader
 // of the presence plane (an agent's page, a bot, a future sink) ever has to be careful with one. < > and " — the three
 // that open a tag or close an attribute; & and ' stay (Tom & Jerry, O'Brien are names, and escape cleanly).
 { for (const bad of [`<img src=x onerror="alert(1)">`, "Ann<b>", "x>y", `Ro"wan`]) {

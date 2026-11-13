@@ -8,7 +8,7 @@
 
 import * as OP from '../../../shared/requests.js';
 import { sendOps } from './writes.js';
-import { flashHint } from '../ui.js';
+import { flashHint } from '../ui/ui.js';
 import { THREE, canvas, camera, scene } from '../core.js';
 import { bus, report } from '../base.js';
 import { state } from '../state.js';

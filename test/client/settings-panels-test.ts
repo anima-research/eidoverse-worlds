@@ -12,8 +12,9 @@ import { plugin } from 'bun';
 import { stubResolve } from '../harness/stub.ts';
 const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({ name: 'settings-stubs', setup(b) {
+  const OLD_ROOT = /\/client\/lib\/((ui|render|player)\/)?[^/]+$/;   // the importers these stubs were written for: files of the lib root before tier two
   for (const m of ['core', 'base', 'governor', 'lightrig', 'materials', '(xr/)?xrpanels', 'net', 'edit/catalog', '(avatar/)?avatar(-thumbnail)?', 'controller', '(audio/)?mictoggle'])
-    stubResolve(b, new RegExp(`^\\./${m}\\.js$`), () => ({ path: here('../stubs/settings-panels-stub.mjs') }));
+    stubResolve(b, new RegExp(`^(\\.\\.?/)+${m}\\.js$`), (a) => (OLD_ROOT.test(a.importer.replace(/\\/g, '/')) ? { path: here('../stubs/settings-panels-stub.mjs') } : undefined));
   // vegetation/foliage.js asks for core one folder up
   stubResolve(b, /^\.\.\/core\.js$/, (a) => (/\/vegetation\/foliage\.js$/.test(a.importer.replace(/\\/g, '/')) ? { path: here('../stubs/settings-panels-stub.mjs') } : undefined));
 } });
@@ -35,20 +36,20 @@ const dockBtn = document.createElement('button'); dockBtn.dataset.toggles = 'pro
 
 const stub = await import('../stubs/settings-panels-stub.mjs');
 const { calls, emitted, xrPanels, net, bus } = stub;
-const ui = await import('../../client/lib/ui.js');
-await import('../../client/lib/ui-menu.js');   // the ∃ menu, as the page loads it (it was part of ui.js)
-const { getFrame } = await import('../../client/lib/windows.js');
-const style = await import('../../client/lib/stylepanel.js');
-const video = await import('../../client/lib/videopanel.js');
-const profile = await import('../../client/lib/profile.js');
+const ui = await import('../../client/lib/ui/ui.js');
+await import('../../client/lib/ui/ui-menu.js');   // the ∃ menu, as the page loads it (it was part of ui.js)
+const { getFrame } = await import('../../client/lib/ui/windows.js');
+const style = await import('../../client/lib/ui/stylepanel.js');
+const video = await import('../../client/lib/ui/videopanel.js');
+const profile = await import('../../client/lib/ui/profile.js');
 const mybody = await import('../../client/lib/mybody.js');
-const presence = await import('../../client/lib/presence.js');
+const presence = await import('../../client/lib/ui/presence.js');
 
 const S = suite("settings-panels");
 const check = (name: string, ok: unknown, detail?: unknown) => S.check(name, ok, detail);
 
 console.log("ESCAPER — ui.js's escapeHtml is markup.js's, the one that escapes ' (a single-quoted attribute)");
-{ const m = await import('../../client/lib/markup.js'); const said = ui.escapeHtml("O'Neil <b>");
+{ const m = await import('../../client/lib/ui/markup.js'); const said = ui.escapeHtml("O'Neil <b>");
   check("ui.escapeHtml escapes ' and < (markup.js's)", said === "O&#39;Neil &lt;b&gt;" && ui.escapeHtml === m.escapeHtml, said); }
 const tick = () => new Promise((r) => setImmediate(r));
 const root = () => document.documentElement.style;
@@ -277,7 +278,7 @@ console.log('BODIES — the list populates on avatar-worn, which setMe emits');
 
 // ============================================================ tabs
 console.log('TABS — every registered section is a tab; choosing one shows its pane alone, and its action opens it');
-{ const actions = await import('../../client/lib/actions.js');
+{ const actions = await import('../../client/lib/ui/actions.js');
   const frame = ui.settingsFrame() as any;
   const strip = frame.strip as HTMLElement;
   // every section the host registered, whoever registered it: the built-ins, the bodies list, a mod's

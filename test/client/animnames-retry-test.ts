@@ -11,7 +11,7 @@ mock.module(`${import.meta.dir}/../../client/lib/defs.js`, () => ({
   defsRegistry: () => (++calls === 1 ? Promise.reject(new Error("GET /defs -> 503")) : Promise.resolve({ actionbar: { wave: { clip: "wave", icon: "hand" } } })),
 }));
 const origWarn = console.warn; console.warn = () => {};
-const A = await import("../../client/lib/animnames.js");
+const A = await import("../../client/lib/ui/animnames.js");
 await new Promise((r) => setTimeout(r, 2300));
 console.warn = origWarn;
 const ok = calls >= 2 && A.ANIM_ORDER.includes("wave");

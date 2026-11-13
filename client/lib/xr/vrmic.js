@@ -11,7 +11,7 @@
 //
 // The decisions are vrmic_policy.js (pure, tested); this file is the effects.
 import { bus, CONFIG } from '../base.js';
-import { flashHint, toast } from '../ui.js';
+import { flashHint, toast } from '../ui/ui.js';
 import { THREE, camera, renderer } from '../core.js';
 import { quadMaterial } from './quadcolour.js';   // the plate's colours as authored, not ACES-washed
 import { preVrStep, inVrMicPlan, inVrAfterTry, afterExitStep, MIC_CHOICE_KEY, MIC_PENDING_KEY } from './vrmic_policy.js';

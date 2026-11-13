@@ -4,7 +4,7 @@
 
 import { state, onWorldChange } from '../state.js';
 import { applyGrantState } from '../world.js';
-import { logChat } from '../chat.js';
+import { logChat } from '../ui/chat.js';
 import { replayRecentChat } from './recentchat.js';   // shared with the renderer-free client
 
 function reconcileSocial() {

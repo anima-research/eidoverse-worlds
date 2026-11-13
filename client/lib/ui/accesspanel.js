@@ -5,13 +5,13 @@
 // what you hold) answers on send.
 // Adding someone: a name is looked up only among the people this world has seen (whois); anyone else is added by their exact
 // identity (u-…, shown to each person on this panel). There is no search of everyone on the server.
-import { bus } from './base.js';
-import { net, sendRequest, replica, identities, presentName, personName } from './net.js';
+import { bus } from '../base.js';
+import { net, sendRequest, replica, identities, presentName, personName } from '../net.js';
 import { toast } from './ui.js';
 import { escapeHtml as esc } from './markup.js';
-import * as R from '../../shared/protocol/roles.js';
-import { listedIn, leftWords } from '../../shared/protocol/access.js';
-import { serverNow, serverUntil } from './serverclock.js';
+import * as R from '../../../shared/protocol/roles.js';
+import { listedIn, leftWords } from '../../../shared/protocol/access.js';
+import { serverNow, serverUntil } from '../serverclock.js';
 
 const ID = /^u-[a-z2-7]{20}(?:[a-z2-7]{4})?$/;
 const SPANS = [['', 'no end'], ['3600000', '1 hour'], ['86400000', '1 day'], ['604800000', '1 week']];

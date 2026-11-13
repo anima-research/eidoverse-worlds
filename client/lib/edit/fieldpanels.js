@@ -59,7 +59,7 @@
 // Ctrl = whole units, Esc mid-drag restores the start. A click without travel focuses the box to type; typed entry
 // takes relative math: `+=2`, `-=.5`, `*=-1`, `/=2`, `+=10%`. Soft limits bound the drag; hard limits bound everything.
 
-import { makeFrame } from '../windows.js';
+import { makeFrame } from '../ui/windows.js';
 import { parseEntry } from '../../../shared/editschema.js';
 import { paintEdit } from './paint.js';
 import { WIDGETS, FACTS, paintFields, el, put, trimNum, R2D } from './widgets.js';

@@ -219,7 +219,7 @@ const run = async (reply: (n: number) => any, want = T({ move: false })) => {
 // review delta-260 L-F: a block's 30 days are said where the lists are (Settings ▸ body, and the toast when I block someone)
 { const fs = await import('node:fs'), w = String((C as any).BLOCK_FOLLOW_WORDS ?? '');
   check('L-F the panel and the toast say a block follows into other worlds for 30 days', /30 days/.test(w) && C.BLOCK_FOLLOW_MS === 30 * 86_400_000
-    && /BLOCK_FOLLOW_WORDS/.test(fs.readFileSync(new URL('../../client/lib/consentpanel.js', import.meta.url), 'utf8')) && /BLOCK_FOLLOW_WORDS/.test(fs.readFileSync(new URL('../../client/lib/people.js', import.meta.url), 'utf8')), w); }
+    && /BLOCK_FOLLOW_WORDS/.test(fs.readFileSync(new URL('../../client/lib/ui/consentpanel.js', import.meta.url), 'utf8')) && /BLOCK_FOLLOW_WORDS/.test(fs.readFileSync(new URL('../../client/lib/ui/people.js', import.meta.url), 'utf8')), w); }
 
 // review 1.3: the switches show the gate in force: mine, else the authority's read (my table's, else the world's body-default), else the built-in
 { store.clear(); const G = await import('../../client/lib/consent.js?gates=world');

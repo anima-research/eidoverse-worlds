@@ -2,13 +2,13 @@
 // The tile this bar fired stays lit ~1.5 s. House .tile/.tiles rules only — no private layout here.
 
 import { makeFrame, chromeCost } from './windows.js';
-import { bus } from './base.js';
+import { bus } from '../base.js';
 import { ANIM_ORDER, ANIM_ICONS } from './animnames.js';
 import { escapeHtml } from './markup.js';   // names + glyphs, no engine
-import { getMe } from './mybody.js';
-import { registerXRPanel } from './xr/xrpanels.js';
+import { getMe } from '../mybody.js';
+import { registerXRPanel } from '../xr/xrpanels.js';
 import { register as registerAction } from './actions.js';
-import { myState, setPosture, sitHere, standUp, getPosture } from './controller.js';
+import { myState, setPosture, sitHere, standUp, getPosture } from '../controller.js';
 const POSTURES = ['sit', 'stand', 'lie'];
 // sit runs the controller's seat search (a nearby seat wins, else sit where you stand); stand leaves seat and posture.
 // The xr:* events let the VR entry (main.js) try a seat first.

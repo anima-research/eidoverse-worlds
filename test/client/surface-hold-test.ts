@@ -22,7 +22,7 @@ plugin({
   setup(build) {
     // livechat.js imports ../chat.js (stubbed); its bus comes from ../base.js, left REAL so it is the same bus the test
     // drives below (#260 house I394/I240: two repairs of this one fault met in a merge; one bus, not both fixes)
-    stubResolve(build, /^\.\.\/chat\.js$/, () => ({ path: STUB }));
+    stubResolve(build, /^(\.\.?\/)+(ui\/)?chat\.js$/, () => ({ path: STUB }));
   },
 });
 

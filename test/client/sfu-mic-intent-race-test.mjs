@@ -18,7 +18,7 @@ import { mock } from "bun:test";
 GlobalRegistrator.register({ url: "http://localhost/?world=t&name=p" });
 const M = (p) => fileURLToPath(new URL(`../../client/lib/${p}`, import.meta.url));
 mock.module(M('net.js'), () => ({ sendTyping: () => {}, requestHistory: () => {} }));
-mock.module(M('chat.js'), () => ({ logChat: () => {} }));
+mock.module(M('ui/chat.js'), () => ({ logChat: () => {} }));
 mock.module(M('audio/audiounlock.js'), () => ({ playWhenAllowed: () => {} }));
 mock.module(M('audio/audioctx.js'), () => ({
   audioContext: () => ({

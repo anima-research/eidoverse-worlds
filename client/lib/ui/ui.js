@@ -2,11 +2,11 @@
 // Toasts, the loading tray, the HUD, the hint bar, the panel frames and the help overlay. The rail is
 // ui-dock.js, the ∃ menu ui-menu.js, the front door ui-door.js; they import this file, it imports only the dock.
 
-import { bus, setErrorSink, report } from './base.js';
+import { bus, setErrorSink, report } from '../base.js';
 import { fitTabStrip, makeFrame, getFrame, resetLayout, escapeHid } from './windows.js';
 import { svg, fsvg, hasFill } from './icons.js';
 import { html, paint, lineKey, escapeHtml } from './markup.js';
-import { defsRegistry } from './defs.js';
+import { defsRegistry } from '../defs.js';
 import { register as registerAction, get as getAction } from './actions.js';
 import { setPillQuiet, resetPillPlace } from './commandbar.js';
 import { EMOJI_ICON, ensureDockEntry } from './ui-dock.js';

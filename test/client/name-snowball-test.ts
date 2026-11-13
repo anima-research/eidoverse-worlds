@@ -59,7 +59,7 @@ console.log("net.js onSnapshot");
 type Step = { ack: string; sub?: string } | "join";
 const exportsOf = (file: string) => [...readFileSync(join(ROOT, "client/lib", file), "utf8")
   .matchAll(/^export\s+(?:async\s+)?(?:function\*?|const|let|var|class)\s+([A-Za-z_$][\w$]*)/gm)].map((m) => m[1]!);
-const STUBBED = Object.fromEntries(["presence.js", "chat.js", "boot.js"].map((f) => [f, exportsOf(f)]));
+const STUBBED = Object.fromEntries(["ui/presence.js", "ui/chat.js", "boot.js"].map((f) => [f, exportsOf(f)]));
 function pageLoad(search: string, stored: string, steps: Step[]) {
   const L = join(ROOT, "client/lib") + "/";
   const code = `

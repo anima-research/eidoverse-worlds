@@ -1,7 +1,7 @@
 // Settings › VR — one section on the video panel's grammar. Prefs live in xr.js
 // (xrPrefs / setXrPref) so the frame loop reads them without a round trip.
 // Visible whether or not a headset is sensed; the first row says which.
-import { makeSection, flashHint } from '../ui.js';
+import { makeSection, flashHint } from '../ui/ui.js';
 import { checkRow, selectRow, btn, sliderTable } from '../edit/rows.js';
 import { currentGrade, setGrade, GRADE_DEFAULT, GRADE_RANGE } from './quadcolour.js';
 import { recentreXR, isPresenting } from './xr.js';

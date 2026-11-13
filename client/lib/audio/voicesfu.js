@@ -6,7 +6,7 @@
 // negotiation, transceiver and acquisition rules below: docs/research/sfu-client-negotiation.md.
 import { bus } from '../base.js';
 import { audioContext } from './audioctx.js';
-import { logChat } from '../chat.js';   // a dead media path must be visible to the person, not only the console
+import { logChat } from '../ui/chat.js';   // a dead media path must be visible to the person, not only the console
 import { playWhenAllowed } from './audiounlock.js';
 import { why } from '../debuglog.js';
 import { rawMicStream, setMicLive } from './micstate.js';

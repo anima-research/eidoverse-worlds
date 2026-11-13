@@ -18,10 +18,10 @@ import { enc, actorName } from '../../../shared/protocol/names.js';
 import { idOut } from '../../../shared/protocol/view.js';
 import * as OP from '../../../shared/requests.js';
 import { refusalText, lockVerb, lockQuestion, lockChoices, lockBody } from '../../../shared/protocol/refusal.js';
-import { plain, warnPlain, nameOf as thingName } from '../plainwords.js';
+import { plain, warnPlain, nameOf as thingName } from '../ui/plainwords.js';
 import { chooseCenter } from './confirmcenter.js';
 import { chooseXR, xrActive } from '../xr/xrask.js';
-import { flashHint, toast, claimStatus } from '../ui.js';
+import { flashHint, toast, claimStatus } from '../ui/ui.js';
 import { isOwner } from '../../../shared/protocol/roles.js';
 
 export { replicaActive };

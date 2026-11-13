@@ -46,7 +46,7 @@ async function runSelf(tree: string, only: string[] | null) {
   const r = Bun.spawnSync(args, { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
   return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() };
 }
-// a mutant tree: shared/, mcpl/ (without node_modules) and client/lib/ + client/lib/commands/ copied; the rest linked back
+// a mutant tree: shared/, mcpl/ (without node_modules) and client/lib/ + client/lib/ui/commands/ copied; the rest linked back
 function mutantTree(tag: string) { const d = scratch(tag);
   fs.cpSync(path.join(ENGINE, "shared"), path.join(d, "shared"), { recursive: true });
   fs.cpSync(path.join(ENGINE, "mcpl"), path.join(d, "mcpl"), { recursive: true, filter: (src) => !src.includes(`${path.sep}node_modules`) });
@@ -162,16 +162,16 @@ const cases: Case[] = [
       const ag = readText("AGENTS.md"); const row = ag.split("\n").find((l) => l.startsWith("| `move {to")) ?? ""; return { ok: /a thing by id[^|]*, a place's name or label, a thing's label or handle[^|]*, then a person/.test(row) }; },
     good: (o) => o.ok },
   { id: "D3", what: "(claims R4) attach has no `pose` arg (a station's poses menu is reserved: the arg could only be refused); the browser's /seatpose, the same dead menu, is gone with chooseSeatPose", run() {
-      const tl = readText("mcpl/tools.ts"); const row = tl.split("\n").find((l) => l.includes('{ name: "attach"')) ?? ""; const reg = readText("client/lib/commands/registry.js"), h = readText("client/lib/commands/handlers.js"), lb = readText("client/lib/localbody.js");
+      const tl = readText("mcpl/tools.ts"); const row = tl.split("\n").find((l) => l.includes('{ name: "attach"')) ?? ""; const reg = readText("client/lib/ui/commands/registry.js"), h = readText("client/lib/ui/commands/handlers.js"), lb = readText("client/lib/localbody.js");
       return { schema: /pose: \{ type/.test(row), handler: /a\.pose != null && body\.poses/.test(tl), seatpose: /seatpose/.test(reg + h), choose: /chooseSeatPose/.test(h + lb) }; },
     good: (o) => !o.schema && !o.handler && !o.seatpose && !o.choose },
   { id: "D4", what: "(docs pass) replies and help in today's words: travel names anims and body-mode (not held pose and posture); ragdoll and live-pose replies name anim; /pushable says everyone (not a stranger); no sockets.<slot>|pose", run() {
-      const net = readText("mcpl/net-server.ts"), tl = readText("mcpl/tools.ts"), reg = readText("client/lib/commands/registry.js"), ag = readText("AGENTS.md");
+      const net = readText("mcpl/net-server.ts"), tl = readText("mcpl/tools.ts"), reg = readText("client/lib/ui/commands/registry.js"), ag = readText("AGENTS.md");
       return { net: !/held pose and posture/.test(net), tl: !/a posture, or walking, stands you back up/.test(tl) && !/`pose \{ragdoll\} refused/.test(tl) && !/pose \{clear: true\} drops it/.test(tl) && !/sockets\.<slot>\|pose/.test(tl),
         reg: !/stranger/.test(reg.split("\n").find((l) => l.includes("'pushable'")) ?? ""), ag: !/sockets\.<slot>\|pose/.test(ag) }; },
     good: (o) => o.net && o.tl && o.reg && o.ag },
   { id: "D5", what: "a removed command answers why, as /w does: /ghost and /unghost resolve to an unlisted row that says ghost was removed, and chat answers it locally (not 'unknown command')", async run() {
-      const reg = await import(TREE + "client/lib/commands/registry.js"); const chat = readText("client/lib/chat.js");
+      const reg = await import(TREE + "client/lib/ui/commands/registry.js"); const chat = readText("client/lib/ui/chat.js");
       const rows = ["ghost", "unghost"].map((c) => reg.resolveCommand?.(c) ?? null);
       return { rows: rows.map((r) => r && { name: r.name, listed: r.listed, help: r.help }), local: /\n  ghost\(\) \{ logChat\('\*', 'ghost was removed/.test(chat) }; },
     good: (o) => o.rows.every((r: any) => r && r.name === "ghost" && r.listed === false && /ghost was removed/.test(r.help)) && o.local },

@@ -74,8 +74,8 @@ console.log("builtIn");
   const r = Bun.spawnSync(["bun", "-e", `
     const { mock } = await import("bun:test");
     const L = ${JSON.stringify(L)};
-    mock.module(L + "presence.js", () => ({ presence: {} }));
-    mock.module(L + "chat.js", () => ({ logChat() {}, noteTyping() {}, noteHistoryContext() {}, resyncChatAfter() {}, moderatorHeader: (w) => "From a moderator of world ‹" + w + "›, not from Eidoverse" }));
+    mock.module(L + "ui/presence.js", () => ({ presence: {} }));
+    mock.module(L + "ui/chat.js", () => ({ logChat() {}, noteTyping() {}, noteHistoryContext() {}, resyncChatAfter() {}, moderatorHeader: (w) => "From a moderator of world ‹" + w + "›, not from Eidoverse" }));
     mock.module(L + "boot.js", () => ({ markPhase() {}, refuseBoot() {}, waitBoot() { return false; } }));
     const { builtIn } = await import(L + "net.js");
     console.log(JSON.stringify([{}, { entities: {} }, { entities: { a: {} } }, { terrain: { seed: 1 } }, { grass: { density: 1 } }, { sky: { hours: 8 } }, { water: { level: 0 } }, null].map(builtIn)));`],
@@ -237,8 +237,8 @@ function pageLoad(search: string, stored: string | null, steps: Step[], tab: str
     globalThis.setTimeout = (fn, ms) => { timers.push(fn); return 0; };
     const { mock } = await import("bun:test");
     const L = ${JSON.stringify(L)};
-    mock.module(L + "presence.js", () => ({ presence: {} }));
-    mock.module(L + "chat.js", () => ({ logChat() {}, noteTyping() {}, noteHistoryContext() {}, resyncChatAfter() {}, moderatorHeader: (w) => "From a moderator of world ‹" + w + "›, not from Eidoverse" }));
+    mock.module(L + "ui/presence.js", () => ({ presence: {} }));
+    mock.module(L + "ui/chat.js", () => ({ logChat() {}, noteTyping() {}, noteHistoryContext() {}, resyncChatAfter() {}, moderatorHeader: (w) => "From a moderator of world ‹" + w + "›, not from Eidoverse" }));
     const toasts = [];
     mock.module(L + "boot.js", () => ({ markPhase() {}, refuseBoot: (m) => toasts.push(m), waitBoot() { return false; } }));
     const net = await import(L + "net.js");
@@ -422,7 +422,7 @@ console.log("log out");
   check("forgetRememberedWorlds clears the browser's and the tab's world, and nothing else",
     !lm.has("ew-world") && !sm.has("ew-world-tab") && lm.get("ew-name") === "helen");
   // ui-menu.js is DOM shell and does not import headless; read logOut from source instead
-  const ui = readFileSync(join(ROOT, "client/lib/ui-menu.js"), "utf8");
+  const ui = readFileSync(join(ROOT, "client/lib/ui/ui-menu.js"), "utf8");
   const logOut = ui.match(/async function logOut\(\) \{[\s\S]*?\n\}/)?.[0] ?? "";
   // a statement of its own at the function's top level (two-space indent, not in a comment or a branch), before the reload
   check("ui-menu.js logOut forgets the remembered worlds, unconditionally, then goes to the bare path",

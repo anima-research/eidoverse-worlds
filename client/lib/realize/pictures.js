@@ -12,11 +12,11 @@ import { entities, bags, bagOf } from '../world.js';
 import { CONFIG } from '../base.js';
 import { registerEditor, registerHandler, commitEdit } from '../edit/inspect.js';
 import { namedParts } from '../parts.js';
-import { toast, flashHint } from '../ui.js';
+import { toast, flashHint } from '../ui/ui.js';
 import { normalizePicture, PICTURE_LIT, PICTURE_DESCRIPTION_MAX, PICTURE_STORE, DESCRIPTION_HINT } from '../../../shared/picture.js';
 import { clientMayFetch } from '../../../shared/mediasrc.js';
 import { allowUntrusted, RIGHTS_WARNING } from '../mediaprefs.js';
-import { escapeHtml as esc } from '../markup.js';
+import { escapeHtml as esc } from '../ui/markup.js';
 
 // The quad: `width` metres wide, its height from the image's aspect, standing on the thing's origin and facing its
 // front (+Z), readable from behind too (a second plane turned π, so the back isn't mirrored). Until the image is

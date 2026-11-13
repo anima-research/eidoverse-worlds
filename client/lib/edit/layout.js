@@ -11,21 +11,21 @@
 // the wrench (the way out) and the tools. Every other window is one HUD Panels ▾ click away.
 
 import { worldEdgeWanted, setWorldEdgeShown } from '../edge.js';
-import { register } from '../actions.js';
+import { register } from '../ui/actions.js';
 import { bus } from '../base.js';
-import { getFrame, allFrames } from '../windows.js';
+import { getFrame, allFrames } from '../ui/windows.js';
 import { setTool, getTool, undo, deselectAll, setBuildMode, removeKeyTargets, SPACES, getSpace, setSpace, holdGhost, holdPicture } from './build.js';
 import { THREE, scene } from '../core.js';
-import { svg as iconSvg } from '../icons.js';
+import { svg as iconSvg } from '../ui/icons.js';
 import { withKeys, KEYHINTS } from './keyhints.js';
 import * as Edits from './writes.js';
 import { structureTools, currentTool as structureTool } from './structure_ui.js';
 import { TABS, openingTab, useTab } from './tabs.js';
-import { placeStatusChips } from '../statuschips.js';
+import { placeStatusChips } from '../ui/statuschips.js';
 import { replica } from '../net.js';
 import { setFreeCam, freeCamState } from '../controller.js';
 import { selection, openWorldCard } from './panels.js';
-import { flashHint } from '../ui.js';
+import { flashHint } from '../ui/ui.js';
 import { LAYERS, LAYER_HINT } from '../../../shared/layers.js';
 import { layerOn, setLayerOn } from './selectmask.js';
 import { isolating, setIsolate } from './myview.js';

@@ -1,6 +1,6 @@
 // bodies-wear-test: the Profile offers a way BACK to a body that failed to load (#196).
 // `getMyAvatarName()` is INTENT and survives a failed load, so gating the row's `wear` on it strands the one body a
-// first-time user owns. Drives the REAL client/lib/bodies.js `fields()`.
+// first-time user owns. Drives the REAL client/lib/ui/bodies.js `fields()`.
 // Run: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/client/bodies-wear-test.mjs
 // Mutations that must turn a named check red:
 //   bodies.js: `const onMe = n === cur && !!getMe() && !getMe()?.isCapsule;` → `n === cur`
@@ -36,7 +36,7 @@ plugin({
   },
 });
 
-const { bodiesFields } = await import('../../client/lib/bodies.js');
+const { bodiesFields } = await import('../../client/lib/ui/bodies.js');
 
 const S = suite("bodies-wear");
 const check = (name, ok, detail) => S.check(name, ok, detail);
@@ -79,7 +79,7 @@ check('with no body, the row is still wearable', hasWear(row));
 // ---------------------------------------------------------------- THIS BODY: size and nameplate
 // the worn body's section: fields (so the VR profile quad renders the same sliders), shown only for a real body, writing
 // through mybody's setMyBodyPref, with a reset only when there is something to reset
-const { bodiesDispatch } = await import('../../client/lib/bodies.js');
+const { bodiesDispatch } = await import('../../client/lib/ui/bodies.js');
 const byK = (f, k) => f.find((x) => x.k === k);
 const body = () => ({ isCapsule: false, userScale: 1, plateY: 0, setUserScale(u) { this.userScale = u; }, setPlateY(y) { this.plateY = y; } });
 state.me = body(); state.prefs = { scale: 1, plateY: 0 }; state.writes = 0;

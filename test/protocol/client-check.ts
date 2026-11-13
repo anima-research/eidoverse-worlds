@@ -99,8 +99,8 @@ try {
   check("B1 the page knows it's in a world (it adopted the cut)", await waitFor(`import('/lib/net.js').then((m) => m.replicaActive())`));
   // ---- K: U opens People Here; Ctrl+U is the browser's (view-source), never this (review r3 F9) ----
   {
-    const people = `import('/lib/windows.js').then((m) => { const f = m.getFrame('chat'); const c = f?.sidePane?.('cols'); return { vis: !!f?.visible, open: !!c && !c.classList.contains('side-closed') }; })`;
-    await page(`const m = await import('/lib/windows.js'); const f = m.getFrame('chat'); const c = f?.sidePane?.('cols');
+    const people = `import('/lib/ui/windows.js').then((m) => { const f = m.getFrame('chat'); const c = f?.sidePane?.('cols'); return { vis: !!f?.visible, open: !!c && !c.classList.contains('side-closed') }; })`;
+    await page(`const m = await import('/lib/ui/windows.js'); const f = m.getFrame('chat'); const c = f?.sidePane?.('cols');
       if (c && !c.classList.contains('side-closed')) f.sidePane('tog')?.click(); f?.hide?.(); return true;`);
     const before = await evalJson(people);
     await key("KeyU", { ctrlKey: true }); await sleep(300);
@@ -508,7 +508,7 @@ try {
   // frame whose saved state says "shown" (saved while docked) must still start hidden; build mode alone opens it.
   const reborn = await page(`localStorage.setItem('ew-frame-zz-edit', JSON.stringify({ x: 60, y: 60, w: 300, h: 12, hidden: false }));
     localStorage.setItem('ew-frame-zz-plain', JSON.stringify({ x: 60, y: 60, w: 300, h: 200, hidden: false }));
-    const F = await import('/lib/windows.js');
+    const F = await import('/lib/ui/windows.js');
     const e = F.makeFrame('zz-edit', { title: 'zz', className: 'edit' }), p = F.makeFrame('zz-plain', { title: 'zz' });
     const r = { edit: e.visible, plain: p.visible }; e.el.remove(); p.el.remove(); return JSON.stringify(r);`);
   check("R1 an edit frame saved 'shown' starts hidden after a reload (a plain frame keeps its saved state)", reborn === JSON.stringify({ edit: false, plain: true }), reborn);
@@ -919,7 +919,7 @@ try {
     // CP8 the help sheet and the command bar describe the protocol (first-in owners, /grant * visitor closing a world, objects flying with /punt)
     { const help = await evalJson(`fetch('/defs').then((r) => r.json()).then((d) => JSON.stringify(d.uiHelp ?? null))`);
       check("CP8 the help sheet has nothing v1-only left", typeof help === "string" && help.length > 100 && !/whoever steps in first|first in owns|Objects fly with|everyone else can still build unless/.test(help) && /grant \* builder/.test(help), String(help).slice(0, 160));
-      const listed = await evalJson(`import('/lib/commands/registry.js').then((m) => m.COMMANDS.filter((c) => c.listed !== false).map((c) => c.name + ' ' + c.help).join('\\n'))`);
+      const listed = await evalJson(`import('/lib/ui/commands/registry.js').then((m) => m.COMMANDS.filter((c) => c.listed !== false).map((c) => c.name + ' ' + c.help).join('\\n'))`);
       check("CP8 the command bar lists /boom (R 10-28: force restored); +gen/+fly are per-person can.generate/.fly (handlers.js /grant)", /^boom /m.test(listed) && /\+gen/.test(listed), listed); }
     // CP9 /grant * builder keeps the world's guest opt-in (a whole-value set wiped it)
     { await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: '@world', component: 'default-role', value: { role: 'member', guests: 'member' } })).ok;`);   // R 10-21: a new world starts at builder, so /grant * builder must change something
@@ -927,7 +927,7 @@ try {
       await type("/grant * builder");
       check("CP9 /grant * builder sets the default role and keeps guests: 'member'", await waitDisk(() => { const d = disk().entities["@world"]?.c["default-role"]; return d?.role === "builder" && d?.guests === "member" && myActs().at(-1)?.e.body?.args?.merge === true; }), disk().entities["@world"]?.c["default-role"]); }
     // CA1 World Settings › Access: the account-age field writes access.minAccountDays, and emptying it removes the key (R 10-07)
-    { await page(`const m = await import('/lib/rolespanels.js'); const b = document.createElement('div'); b.id = '__acc'; document.body.append(b); m._test.paintAccess(b); return true;`);
+    { await page(`const m = await import('/lib/ui/rolespanels.js'); const b = document.createElement('div'); b.id = '__acc'; document.body.append(b); m._test.paintAccess(b); return true;`);
       const field = `document.querySelector('#__acc [data-k=minAccountDays]')`;
       const shown = await evalJson(`!!${field} && ${field}.min === '0' && ${field}.max === '365'`);
       await evalJson(`(() => { const x = ${field}; x.value = '14'; x.onchange(); return true; })()`);
@@ -972,7 +972,7 @@ try {
     // CW World Settings › World (R 10-14 14:13): capacity and physics — owner-gated, and opening it
     // WRITES NOTHING (defaults written on open would put numbers in the log the owner never chose)
     { const W = `document.querySelector('#__w')`;
-      const paint = () => page(`const m = await import('/lib/rolespanels.js'); document.getElementById('__w')?.remove(); const b = document.createElement('div'); b.id = '__w'; document.body.append(b); m._test.paintWorld(b); return true;`);
+      const paint = () => page(`const m = await import('/lib/ui/rolespanels.js'); document.getElementById('__w')?.remove(); const b = document.createElement('div'); b.id = '__w'; document.body.append(b); m._test.paintWorld(b); return true;`);
       // the world has written no capacity: what the panel shows is this server's defaults (schema's, asked once)
       const fresh = !disk().entities["@world"]?.c.capacity;
       // CW1 a visitor sees no dials; the owner sees them with the world's values
@@ -1011,7 +1011,7 @@ try {
       await evalJson(`(document.getElementById('__w')?.remove(), true)`); }
     // WS4 World Settings is four sections (R 10-20): People & roles holds Roles AND Who may come in; World holds the world
     // rows, and the old-world part only when a translation left something (a fresh world carries nothing).
-    { const r = await page(`const m = await import('/lib/rolespanels.js'); const P = document.createElement('div'), W = document.createElement('div'); document.body.append(P, W); m._test.paintPeople(P); m._test.paintWorldAll(W);
+    { const r = await page(`const m = await import('/lib/ui/rolespanels.js'); const P = document.createElement('div'), W = document.createElement('div'); document.body.append(P, W); m._test.paintPeople(P); m._test.paintWorldAll(W);
         const hs = (b) => [...b.querySelectorAll(':scope > .rp-part')].filter((d) => !d.hidden).map((d) => d.querySelector('.rp-h')?.textContent ?? '(untitled)');
         const out = { people: hs(P), worldParts: [...W.querySelectorAll(':scope > .rp-part')].filter((d) => !d.hidden).length, worldTotal: W.querySelectorAll(':scope > .rp-part').length, peopleFilled: [...P.querySelectorAll('.rp-box')].every((b) => b.childElementCount > 0) }; P.remove(); W.remove(); return out;`);
       check("WS4 World Settings: People & roles shows Roles + Who may come in, both filled; World hides 'Carried over' on a fresh world", JSON.stringify(r?.people) === '["Roles","Who may come in"]' && r?.peopleFilled && r?.worldParts === 1 && r?.worldTotal === 2, r); }
@@ -1029,7 +1029,7 @@ try {
     // RK1 (review 10-14 K3): picking a role from the Roles panel keeps the person's exceptions — the set merges when the entry exists
     { const grant = await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: '@world', component: 'roles:${BOB}', value: { role: 'builder', can: { pauseScripts: true } } })).ok;`);
       await waitDisk(() => disk().entities["@world"]?.c[`roles:${BOB}`]?.can?.pauseScripts === true);
-      await page(`const m = await import('/lib/rolespanels.js'); document.getElementById('__rk')?.remove(); const b = document.createElement('div'); b.id = '__rk'; document.body.append(b); m._test.paintRoles(b); return true;`);
+      await page(`const m = await import('/lib/ui/rolespanels.js'); document.getElementById('__rk')?.remove(); const b = document.createElement('div'); b.id = '__rk'; document.body.append(b); m._test.paintRoles(b); return true;`);
       await sleep(800);
       const picked = await evalJson(`(() => { const s = [...document.querySelectorAll('#__rk select.rp-change')].find((x) => x.dataset.who === '${BOB}'); if (!s) return 'no-select'; s.value = 'member'; s.onchange(); return true; })()`);
       const moved = await waitDisk(() => disk().entities["@world"]?.c[`roles:${BOB}`]?.role === "member");
@@ -1037,7 +1037,7 @@ try {
       check("RK1 Roles › picking a role from the panel keeps the person's `can` exceptions (merge when the entry exists)", grant && picked === true && moved && after?.can?.pauseScripts === true, { picked, after });
       await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: '@world', component: 'roles:${BOB}', value: { role: 'builder' } })).ok;`);   // restore for the rows below
       await waitDisk(() => disk().entities["@world"]?.c[`roles:${BOB}`]?.role === "builder"); }
-    { await page(`const m = await import('/lib/rolespanels.js'); const b = document.createElement('div'); b.id = '__pl'; document.body.append(b); m._test.paintPlaces(b); return true;`);
+    { await page(`const m = await import('/lib/ui/rolespanels.js'); const b = document.createElement('div'); b.id = '__pl'; document.body.append(b); m._test.paintPlaces(b); return true;`);
       const before = JSON.stringify(disk().entities["@world"]?.c.bounds ?? null);
       await evalJson(`(() => { const q = (s) => document.querySelectorAll('#__pl ' + s); q('[data-k=min],[data-k=max]').forEach((x) => (x.value = '')); const sp = q('[data-k=spawn]'); [3, 0.5, -2].forEach((v, i) => (sp[i].value = String(v))); q('[data-k=radius]')[0].value = ''; q('[data-save]')[0].click(); return true; })()`);
       const spawned = await waitDisk(() => JSON.stringify(disk().entities["@world"]?.c.spawn?.pos) === "[3,0.5,-2]");
@@ -1050,11 +1050,11 @@ try {
     { await evalJson(`import('/lib/edit/build.js').then((m) => (m.setBuildMode(false), true))`);
       { await waitFor(`!document.body.classList.contains('edit-workspace')`); const inks = await evalJson(micInks);
         check("MIC3 outside build mode the same: live = the brand, hot = the attention gold", !inks?.edit && inks?.on === inks?.brand && inks?.ear === inks?.brand && inks?.hot === inks?.attn && inks?.off !== inks?.brand, inks); }
-      await page(`const w = await import('/lib/windows.js'); const base = await import('/lib/base.js'); globalThis.__quiet = []; base.bus.on('esc-quiet', (d) => __quiet.push(d)); for (const f of w.allFrames()) f.hide(); w.getFrame('chat')?.show(); w.getFrame('settings')?.show(); document.activeElement?.blur?.(); return true;`);
-      const openIds = `import('/lib/windows.js').then((w) => w.allFrames().filter((f) => f.visible).map((f) => f.id).sort().join())`;
+      await page(`const w = await import('/lib/ui/windows.js'); const base = await import('/lib/base.js'); globalThis.__quiet = []; base.bus.on('esc-quiet', (d) => __quiet.push(d)); for (const f of w.allFrames()) f.hide(); w.getFrame('chat')?.show(); w.getFrame('settings')?.show(); document.activeElement?.blur?.(); return true;`);
+      const openIds = `import('/lib/ui/windows.js').then((w) => w.allFrames().filter((f) => f.visible).map((f) => f.id).sort().join())`;
       const press = (k: string) => evalJson(`(() => { const e = new KeyboardEvent('keydown', { key: '${k}', code: '${k}', bubbles: true, cancelable: true }); const t = document.activeElement ?? document.body; const ok = t.dispatchEvent(e); t.dispatchEvent(new KeyboardEvent('keyup', { key: '${k}', code: '${k}', bubbles: true })); return { prevented: !ok }; })()`);   // at the focused element, as a real key is: document listeners (a context menu's) see it too
       const before = await evalJson(openIds);
-      const claimed = await evalJson(`import('/lib/windows.js').then((w) => w.escapeIsClaimed())`);
+      const claimed = await evalJson(`import('/lib/ui/windows.js').then((w) => w.escapeIsClaimed())`);
       await press("Escape"); await sleep(150);
       const afterEsc = await evalJson(openIds);
       check("EK1 with panels open, Esc does NOT hide them (and says nothing on the bus): Esc is the way out of full screen, never the panel toggle", before === "chat,settings" && claimed === null && afterEsc === before && await evalJson(`__quiet.length === 0`), { before, claimed, afterEsc, quiet: await evalJson(`__quiet`) });

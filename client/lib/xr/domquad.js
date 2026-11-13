@@ -4,7 +4,7 @@
 // so negative coordinates are fine) and returns, with its display state, on exit. Fallback: ?canvasquads=1.
 import { THREE, renderer } from '../core.js';
 import { tee, bus, CONFIG } from '../base.js';
-import { allFrames, getFrame, frameResizeInfo } from '../windows.js';
+import { allFrames, getFrame, frameResizeInfo } from '../ui/windows.js';
 import { HTMLMesh } from '../../vendor/three-addons/htmlmesh.js';
 import { quadMaterial } from './quadcolour.js';
 

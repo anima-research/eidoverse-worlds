@@ -20,12 +20,12 @@
 // grabbed globals keeps them until reload. Trusted means trusted.
 
 import { bus, CONFIG, report } from './base.js';
-import { makeSection, toast, flashHint } from './ui.js';
+import { makeSection, toast, flashHint } from './ui/ui.js';
 import { bodyEngine, setBodyEngine, currentBodyEngine, listBodyEngines } from './ragdoll/bodysim.js';
 import { physicsEnabled, setPhysicsEnabled } from './thingphysics.js';
-import { makeFrame } from './windows.js';
-import { logChat } from './chat.js';
-import { escapeHtml as esc } from './markup.js';
+import { makeFrame } from './ui/windows.js';
+import { logChat } from './ui/chat.js';
+import { escapeHtml as esc } from './ui/markup.js';
 
 // ---------------------------------------------------------------- storage
 

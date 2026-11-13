@@ -12,7 +12,7 @@ plugin({
   name: "chat-stubs",
   setup(b) {
     stubResolve(b, /^(\.\.?\/)+base\.js$/, () => ({ path: here("../stubs/chat-base-stub.mjs") }));
-    stubResolve(b, /^(\.\.?\/)+(frames|windows)\.js$/, () => ({ path: here("../stubs/chat-frames-stub.mjs") }));
+    stubResolve(b, /^(\.\.?\/)+(ui\/)?(frames|windows)\.js$/, () => ({ path: here("../stubs/chat-frames-stub.mjs") }));
     stubResolve(b, /^(\.\.?\/)+net\.js$/, () => ({ path: here("../stubs/chat-history-stub.mjs") }));
   },
 });
@@ -20,7 +20,7 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 GlobalRegistrator.register();
 
 const { frameStub } = await import("../stubs/chat-frames-stub.mjs");
-const chat = await import("../../client/lib/chat.js");
+const chat = await import("../../client/lib/ui/chat.js");
 chat.initChat({ send: () => {}, whisper: () => {}, people: () => [{ id: "me", me: true }] });
 const input = frameStub.body!.querySelector("#chatline") as HTMLTextAreaElement;
 const logEl = frameStub.body!.querySelector("#chatlog") as HTMLElement;

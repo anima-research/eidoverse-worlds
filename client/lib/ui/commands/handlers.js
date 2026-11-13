@@ -3,18 +3,18 @@
 // The kick and push disambiguators are each ONE handler: things win the name lookup over people (they were here
 // first), and that order lives inside the handler bodies.
 
-import { CONFIG, bus, report } from '../base.js';
-import { SHOVE_REACH } from '../../../shared/protocol/physconst.js';
-import { CUSTOM_ID, isOwner, effectiveOf } from '../../../shared/protocol/roles.js';
-import { DOORS, doorOf, doorWrites, durationMs, leftWords, notADoor } from '../../../shared/protocol/access.js';
-import { actorName as actorLabel } from '../../../shared/protocol/names.js';
+import { CONFIG, bus, report } from '../../base.js';
+import { SHOVE_REACH } from '../../../../shared/protocol/physconst.js';
+import { CUSTOM_ID, isOwner, effectiveOf } from '../../../../shared/protocol/roles.js';
+import { DOORS, doorOf, doorWrites, durationMs, leftWords, notADoor } from '../../../../shared/protocol/access.js';
+import { actorName as actorLabel } from '../../../../shared/protocol/names.js';
 /** This world's @world components, from this client's own fold (roles, access, the default role). */
 const worldComponents = () => replica.st?.entities?.['@world']?.c ?? {};
-import { captureFrame } from '../capture.js';
+import { captureFrame } from '../../capture.js';
 import { register, dispatch } from './registry.js';
 import { plain } from '../plainwords.js';
-import { entities, worldHasOwner, bagOf } from '../world.js';
-import { resolveThing, handleOf } from '../../../shared/thingref.js';
+import { entities, worldHasOwner, bagOf } from '../../world.js';
+import { resolveThing, handleOf } from '../../../../shared/thingref.js';
 // a thing by what a person types (ids are minted and opaque): its id, its label, or a unique id prefix of 4+.
 // A label two things share is refused with their handles, never resolved by picking one. {id} | {err} | null (nothing)
 function thingNamed(word) {
@@ -26,24 +26,24 @@ function thingNamed(word) {
 }
 import {
   net, replica, identityOf, sendMod, sendPuppet, sendWorldFork, sendWorldFound, sendWorldReset, requestDebug, sendRequest,
-} from '../net.js';
-import { remotes } from '../remotes.js';
-import { serverNow, serverUntil } from '../serverclock.js';   // straight from the clock: through remotes.js this closes an import cycle and the re-export is unbound at load
-import { myState, setPosture, flightReport } from '../controller.js';
-import { punt as puntThing, grab, put, drop, throwHeld } from '../thingphysics.js';
+} from '../../net.js';
+import { remotes } from '../../remotes.js';
+import { serverNow, serverUntil } from '../../serverclock.js';   // straight from the clock: through remotes.js this closes an import cycle and the re-export is unbound at load
+import { myState, setPosture, flightReport } from '../../controller.js';
+import { punt as puntThing, grab, put, drop, throwHeld } from '../../thingphysics.js';
 import { logChat } from '../chat.js';
 import { toggleHelp, flashHint } from '../ui.js';
-import { sceneAttach, sceneDetach } from '../scenegraph.js';
-import { ANIM_ORDER, ANIM_CLIPS } from '../avatar/avatar.js';
-import { setPushable, pushable } from '../consent.js';
-import { trySitOn } from '../localbody.js';
-import { getMe } from '../mybody.js';
-import { setMyReach, clearMyReach } from '../reachnet.js';
-import { SIM_ID } from '../../../shared/sim.js';
-import { send } from '../edit/writes.js';   // roles, the door and moderation send record: false: they are not build edits, and Ctrl+Z must never revoke a grant or lift a ban
-import * as OP from '../../../shared/requests.js';
-import { canonicalPoint, CONTACT_POINTS } from '../../../shared/contact.js';
-import { TOUCH_GAP } from '../../../shared/reachwire.js';
+import { sceneAttach, sceneDetach } from '../../scenegraph.js';
+import { ANIM_ORDER, ANIM_CLIPS } from '../../avatar/avatar.js';
+import { setPushable, pushable } from '../../consent.js';
+import { trySitOn } from '../../localbody.js';
+import { getMe } from '../../mybody.js';
+import { setMyReach, clearMyReach } from '../../reachnet.js';
+import { SIM_ID } from '../../../../shared/sim.js';
+import { send } from '../../edit/writes.js';   // roles, the door and moderation send record: false: they are not build edits, and Ctrl+Z must never revoke a grant or lift a ban
+import * as OP from '../../../../shared/requests.js';
+import { canonicalPoint, CONTACT_POINTS } from '../../../../shared/contact.js';
+import { TOUCH_GAP } from '../../../../shared/reachwire.js';
 import { panelAlpha, setPanelAlpha } from '../stylepanel.js';
 
 register('help', () => toggleHelp());

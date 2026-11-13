@@ -17,12 +17,12 @@ import { enc } from '../../../shared/protocol/names.js';
 import * as OP from '../../../shared/requests.js';
 import { sendOps } from './writes.js';
 import { CONFIG, bus, report } from '../base.js';
-import { fsvg } from '../icons.js';
-import { makeSection, toast, flashHint } from '../ui.js';
+import { fsvg } from '../ui/icons.js';
+import { makeSection, toast, flashHint } from '../ui/ui.js';
 import { net } from '../net.js';
 import { holdGhost } from './build.js';
-import { logChat } from '../chat.js';
-import { escapeHtml as esc } from '../markup.js';
+import { logChat } from '../ui/chat.js';
+import { escapeHtml as esc } from '../ui/markup.js';
 
 // A self-hosted Orrery may be named by ?orrery= (remembered). Only an http(s) BASE is taken — origin plus a path of
 // plain segments, as the URL parser re-serialises them (no query, hash or credentials): the value is interpolated into

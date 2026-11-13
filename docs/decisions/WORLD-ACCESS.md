@@ -183,8 +183,8 @@ ban → world ban → operator → credential narrowing → the ladder.
 
 ## UX
 
-**World Settings › People & roles › Who may come in** (`client/lib/rolespanels.js` paintAccess; its listed part is
-`client/lib/accesspanel.js`). On this protocol the panel reads `@world`'s access, default-role and roles:* from the
+**World Settings › People & roles › Who may come in** (`client/lib/ui/rolespanels.js` paintAccess; its listed part is
+`client/lib/ui/accesspanel.js`). On this protocol the panel reads `@world`'s access, default-role and roles:* from the
 page's own fold and edits them with ordinary `set`/`delete` requests; the authority judges each one (R 10-27):
 
 - **The door:** the four doors (open · public · watch only · invite-only) and the fields under them. Closing while

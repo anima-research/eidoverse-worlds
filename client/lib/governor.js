@@ -36,8 +36,8 @@ import { setEmitterQuality, emitterQuality, emitterCount } from './realize/emitt
 import { setGrassDensity, getGrassDensity, hasGrass } from './terrain.js';
 import { setLodBias } from './remotes.js';
 import { setSystemEvery, getSystemEvery } from './frameloop.js';
-import { toast } from './ui.js';
-import { statusChip, clearStatusChip } from './statuschips.js';
+import { toast } from './ui/ui.js';
+import { statusChip, clearStatusChip } from './ui/statuschips.js';
 
 // the governor's model-detail shed, as a status chip (statuschips.js) for exactly as long as it holds
 export const REDUCED_CHIP = {

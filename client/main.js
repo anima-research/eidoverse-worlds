@@ -8,7 +8,7 @@ import { updateWater, updateWaterView, setWaterObjects, setWaterClock, setSkyHid
 
 import { say } from './lib/net.js';
 import { updateHelm, helmHull } from './lib/vehicles.js';
-import { chooseClient } from './lib/litechoice.js';
+import { chooseClient } from './lib/ui/litechoice.js';
 import { THREE, scene, camera, renderer, canvas } from './lib/core.js';
 import { releaseBodyGate, armBodyGate } from './lib/bodygate.js';
 import { CONFIG, bus, report, tee, colorFor, emptyWorldNotice } from './lib/base.js';
@@ -17,7 +17,7 @@ import { makeAvatar, makeCapsuleAvatar, ANIM_ORDER } from './lib/avatar/avatar.j
 import { contributeThumbnail } from './lib/avatar/avatar-thumbnail.js';
 import { updateSky, updateAutoSystems, skyArgs, setCloudQuality, hideSkyForWater } from './lib/sky/sky.js';
 import { setSkyArgsSource, entities, buildsPending, anyBuildsPending, avatarMounts, roleOf, worldHasOwner, bagOf, bags, seatSocket, socketsOn, currentTerrainArgs, terrainEditBase, noteTerrainSent, terrainPending } from './lib/world.js';
-import { presence } from './lib/presence.js';
+import { presence } from './lib/ui/presence.js';
 import { initWorldQuad } from './lib/xr/worldquad.js';
 import { foldParity } from './lib/debug/parity.js';
 import { initModelsRealizer, reconcileModels, residencyDebug, setResidencyFocus, drainPromoteTail } from './lib/realize/models.js';
@@ -39,7 +39,7 @@ import {
   myState, updateMe, updateSpectator, setCamYaw, setPosture, togglePhotoMode,
   setRightsHook, setMeHook, setFolded, photoMode, setBoundsHook, setRespawnHooks, respawnMe, flying as flyingNow, capSpeed,
 } from './lib/controller.js';
-import { initUsePrompt } from './lib/useprompt.js';
+import { initUsePrompt } from './lib/ui/useprompt.js';
 import { setClimbObjects } from './lib/climb.js';
 import { initClickUse, clickUseApi } from './lib/clickuse.js';
 import { remotes, updateRemotes, updateGaze, serverNow } from './lib/remotes.js';
@@ -70,8 +70,8 @@ import { initGripEdit } from './lib/edit/gripedit.js';
 import { initMaterialOverrides } from './lib/realize/material_draft.js';
 import { initWorldEdge } from './lib/edge.js';
 import { initXR, updateXR, bindXRSelf, isPresenting } from './lib/xr/xr.js';
-import { initPeople, personOf, isPhone, menuAt as personMenuAt, sheetFor as personSheet, stripFor as personStrip, badgeHtml as personBadge } from './lib/people.js';
-import { initRolesPanels, openModeration } from './lib/rolespanels.js';
+import { initPeople, personOf, isPhone, menuAt as personMenuAt, sheetFor as personSheet, stripFor as personStrip, badgeHtml as personBadge } from './lib/ui/people.js';
+import { initRolesPanels, openModeration } from './lib/ui/rolespanels.js';
 import { tickXRMirror } from './lib/xr/xrmirror.js';
 import { ensureXRBodyHook, bindXRBodySelf, xrAvatarYaw, xrLookPitch, xrWire, xrSimActive } from './lib/xr/xrbody.js';
 import { tickXRVignette } from './lib/xr/xrvignette.js';
@@ -80,17 +80,17 @@ import { trySitOn as xrTrySitOn, dismountMe as xrDismountMe } from './lib/localb
 import {
   toast, flashHint, buildHelp, toggleHelp,
   togglePeopleHere, panelFrame, settingsFrame, setLoadingItems,
-} from './lib/ui.js';
-import { initDock, paintPresence } from './lib/ui-dock.js';
-import { setMenuSources } from './lib/ui-menu.js';
-import { openDoor } from './lib/ui-door.js';
+} from './lib/ui/ui.js';
+import { initDock, paintPresence } from './lib/ui/ui-dock.js';
+import { setMenuSources } from './lib/ui/ui-menu.js';
+import { openDoor } from './lib/ui/ui-door.js';
 import { registerXRPanel } from './lib/xr/xrpanels.js';
 import { initDebug, updateDebug, toggleDebug } from './lib/debug/debug.js';
 
 // which server build: one console line at boot
 versionReady.then((v) => console.log(v ? `[eidoverse] server build ${v.sha}${v.dirty === true ? ' (DIRTY TREE)' : v.dirty === false ? '' : ' (dirty: unknown)'} (code from ${v.commitTime}), up since ${v.startedAt}` : '[eidoverse] server build unknown (/version unavailable)'));
 import { dragSim, updateBodyDrag, dragState } from './lib/ragdoll/bodydrag.js';
-import { initChat, logChat, chatXRPanel, mentionPerson } from './lib/chat.js';
+import { initChat, logChat, chatXRPanel, mentionPerson } from './lib/ui/chat.js';
 import { initPlates, updatePlates } from './lib/avatar/platecard.js';
 import { bodyEngine, setBodyEngine, listBodyEngines } from './lib/ragdoll/bodysim.js';
 import { initThingPhysics, physicsApi, simShown, requestWithBody as thingPhysicsRequest } from './lib/thingphysics.js';
@@ -104,7 +104,7 @@ import { budgetStats } from './lib/framebudget.js';
 import { pending, P, onIdle, laneStats as schedLaneStats } from './lib/scheduler.js';
 import { laneStats as loadLaneStats } from './lib/loadwork.js';
 import { colliderCacheStats } from './lib/colliders.js';
-import { statusChip, paintHud } from './lib/statuschips.js';
+import { statusChip, paintHud } from './lib/ui/statuschips.js';
 import { governPerformance, governorDebug, whenCalm, applyPendingPixelRatio } from './lib/governor.js';
 import { registerSystem, startFrame, frameDebug } from './lib/frameloop.js';
 import { perf } from './lib/perf.js';
@@ -121,12 +121,12 @@ import {
 } from './lib/localbody.js';
 import { posable, pushable, setPosable, setPushable } from './lib/consent.js';
 import { updateVoiceMouths } from './lib/audio/voicemouths.js';
-import { initActionBar } from './lib/actionbar.js';
+import { initActionBar } from './lib/ui/actionbar.js';
 import { initXRKeyboard } from './lib/xr/xrkeyboard.js';
 import { initXRAsk } from './lib/xr/xrask.js';
-import { initCommands, saveScreenshot } from './lib/commands/handlers.js';
-import { register as registerAction } from './lib/actions.js';
-import { initLantern } from './lib/commandbar.js';
+import { initCommands, saveScreenshot } from './lib/ui/commands/handlers.js';
+import { register as registerAction } from './lib/ui/actions.js';
+import { initLantern } from './lib/ui/commandbar.js';
 import { deriveLandmarks, debugMarkers, landmarkWorld } from './lib/avatar/landmarks.js';
 import { measureChain, solveChain } from './lib/avatar/reachbone.js';
 import { canonicalPoint } from '../shared/contact.js';

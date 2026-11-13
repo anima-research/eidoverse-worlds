@@ -60,7 +60,7 @@ const CLIP_FALLBACK = {
 };
 
 // the gesture vocabulary (animnames.js), re-exported; imported first because playOnce reads ANIM_CLIPS
-import { ANIM_CLIPS, ANIM_ORDER, ANIM_ICONS, hydrateAnimNames } from '../animnames.js';
+import { ANIM_CLIPS, ANIM_ORDER, ANIM_ICONS, hydrateAnimNames } from '../ui/animnames.js';
 export { ANIM_CLIPS, ANIM_ORDER, ANIM_ICONS, hydrateAnimNames };
 // seated postures differ by what you sit on: the ground clip on a chair leaves you cross-legged in mid-air
 const SEAT_CLIPS = { ground: 'sitting_on_ground', chair: SEAT_CLIP_FILE };

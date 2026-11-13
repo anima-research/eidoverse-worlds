@@ -18,7 +18,7 @@ const check = (name: string, ok: unknown, detail?: unknown) => S.check(name, ok,
 
 const stubs: any = await import("../stubs/remotes-stubs.mjs");
 const { mock } = await import("bun:test");
-for (const m of ["core", "assets", "world", "chat", "avatar/fp_view", "boot", "ui", "avatar/avatar", "xr/xrbody"]) {
+for (const m of ["core", "assets", "world", "ui/chat", "avatar/fp_view", "boot", "ui/ui", "avatar/avatar", "xr/xrbody"]) {
   mock.module(`${import.meta.dir}/../../client/lib/${m}.js`, () => stubs);
 }
 const { _dispatch } = (await import("../../client/lib/net.js")) as any;

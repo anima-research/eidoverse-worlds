@@ -34,7 +34,7 @@
 //   CL2  …everyone else keeps main's ownerless rights (newcomers and guests build, edit others, generate; never fly)
 //   CL3  …and rollback forgets the claimant's identity with the rest (the backup and undo as before)
 //   CL4  --claim on a world that has an owner changes nothing: no claim, its owner stays the only owner
-//   CL7  the splash's words for each claim (client/lib/upgradeview.js claimWords): ownerless, owner by account, owner by name
+//   CL7  the splash's words for each claim (client/lib/ui/upgradeview.js claimWords): ownerless, owner by account, owner by name
 //   CL5  claimed: an ownerless world's locks (a v1 lock and a guard) are lifted by a regular, who is builder (no lockout)
 //   CL8-10 (row 22) …a who: builder gate admits a regular, a regular's lock is lifted by another, moderation stays refused
 //   CL11 the translation writes no imported:ownerless: a builder granted after the claim, once the owner leaves, reads member
@@ -53,7 +53,7 @@ import { openLive } from "../harness/labhost.ts";
 import { ENGINE_CATALOGUE } from "../../server/modelcatalogue.ts";
 import { request, operatorRepair } from "../../shared/protocol/authority.js";
 import { banOf } from "../../shared/protocol/authority/rights.js";
-import * as UV from "../../client/lib/upgradeview.js";
+import * as UV from "../../client/lib/ui/upgradeview.js";
 const { claimWords } = UV;
 import { peopleOf, bansOf } from "../../tools/import-v1/world.ts";
 

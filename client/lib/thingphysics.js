@@ -20,9 +20,9 @@ import { colliderFor } from '../../shared/bodyscale.js';
 import { TRACK } from '../../shared/mover.js';
 const CHUNK = TRACK.cap - 0.5;   // one step of the authority's body toward mine
 import { replica, net, sendRequest as rawSend, identities } from './net.js';
-import { flashHint } from './ui.js';
-import { logChat } from './chat.js';
-import { register as registerAction } from './actions.js';
+import { flashHint } from './ui/ui.js';
+import { logChat } from './ui/chat.js';
+import { register as registerAction } from './ui/actions.js';
 import { setPressFx, pressFxOn } from './realize/emitters.js';
 import { advanceSim, tickOf, ENGINES, engineViewM, worldPose } from '../../shared/protocol/simlayer.js';
 import { createShover, obbOf, aabbOfObb, contactOf, smoother } from '../../shared/shove.js';
@@ -33,8 +33,8 @@ import { REACH, HAND_Y, KICK } from '../../shared/protocol/physconst.js';
 import { r3 } from '../../shared/protocol/round.js';
 import { clockRtt } from './serverclock.js';
 import { onWorldChange } from './state.js';
-import { plain, nameOf, called } from './plainwords.js';
-import { html } from './markup.js';
+import { plain, nameOf, called } from './ui/plainwords.js';
+import { html } from './ui/markup.js';
 import { xrActive } from './xr/xrask.js';
 import { grabOf, holdPoseOf, fingerPose, armPose, bothArms, pickGrip, HAND_REACH, NEAR_GRAB } from '../../shared/grab.js';
 

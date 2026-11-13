@@ -7,7 +7,7 @@
 //   TTS    — synthetic speech specifically, for anyone who wants people but
 //            not narration (or the reverse).
 
-import { makeSection } from '../ui.js';
+import { makeSection } from '../ui/ui.js';
 import { audioPrefs, setVolume, receivingVoice, setReceiveVoice,
   sttConsented, setSttConsent, isHushed, setHush,
   micFloor, setMicFloor, pttMode, setPttMode } from './voiceconsent.js';

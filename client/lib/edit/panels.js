@@ -11,7 +11,7 @@ import { serverNow } from '../serverclock.js';   // a server stamp is read on th
 import { entities, bagOf, avatarMounts } from '../world.js';
 import { compEntries, compKeys } from '../../../shared/protocol/view.js';
 import { requestDebug, sendRequest, replica, net } from '../net.js';
-import { flashHint, html } from '../ui.js';
+import { flashHint, html } from '../ui/ui.js';
 import { openGripEditor } from './gripedit.js';
 import { makeSchemaFrame, resolveDelta, resolveDeltaEach, getScrubFeel, setScrubFeel, SCRUB_SPEEDS } from './fieldpanels.js';
 import { registerXRPanel } from '../xr/xrpanels.js';
@@ -50,7 +50,7 @@ import { agoWords, touchWords } from '../../../shared/protocol/refusal.js';
 import { recordComponents } from '../../../shared/protocol/view.js';
 import { RANK, lockWord } from '../../../shared/protocol/roles.js';
 import { KEYHINTS, withKeys } from './keyhints.js';   // these panels' writes are requests
-import { called } from '../plainwords.js';
+import { called } from '../ui/plainwords.js';
 
 const _wp = new THREE.Vector3();
 const round = (v, dp = 3) => +(+v).toFixed(dp);

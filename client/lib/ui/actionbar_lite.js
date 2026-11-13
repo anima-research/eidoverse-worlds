@@ -1,7 +1,7 @@
 // The action row for a client with no body: actionbar.js's vocabulary (animnames.js) as a wrapping
 // row of buttons. Not a reuse of actionbar.js, whose frame, snapping and XR panel all pull the engine.
 import { ANIM_ORDER, ANIM_ICONS } from './animnames.js';
-import { bus } from './base.js';
+import { bus } from '../base.js';
 
 const GLYPH_FALLBACK = '\u2728';
 

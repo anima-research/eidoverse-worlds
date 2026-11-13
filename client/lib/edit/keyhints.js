@@ -3,7 +3,7 @@
 //   during: on the status line at the bottom while you're engaged (what the keys do RIGHT NOW)
 // test/client/keyhints-check.ts fails when code reads a modifier without a `// keys: <id>` tag naming an entry here, or
 // when an entry is never shown. Imports only markup.js and base.js (no cycles); ui.js listens for 'keyhint' on the bus.
-import { markup } from '../markup.js';
+import { markup } from '../ui/markup.js';
 import { bus } from '../base.js';
 export const KEYHINTS = {
   scrub:         { before: 'drag to change · Shift finer · Ctrl whole numbers · ↑/↓ step (Shift ×10) · click to type', during: '<kbd>Shift</kbd> finer · <kbd>Ctrl</kbd> whole numbers · <kbd>Esc</kbd> puts it back' },

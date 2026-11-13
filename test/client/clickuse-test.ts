@@ -17,14 +17,14 @@ const STUBS: Record<string, string> = {
   'edit/myview': `export const outOfMyView = () => false;`,
   world: `export const entities = new Map(); export const bags = {}; export const bagOf = (id) => bags[id]; export const socketsOn = () => []; globalThis.__cu.world = { entities, bags };`,
   'edit/fieldpanels': `export const menus = []; export function contextMenu(x, y, items) { menus.push(items); } export function closeContextMenu() {} globalThis.__cu.panels = { menus };`,
-  ui: `export const flashHint = () => {};`,
+  'ui/ui': `export const flashHint = () => {};`,
   'xr/xrask': `export const xrActive = () => false;`,
-  plainwords: `export const nameOf = (id) => id;`,
+  'ui/plainwords': `export const nameOf = (id) => id;`,
   thingphysics: `export const held = []; export const calls = [];
     export const physicsApi = { mine: () => held.slice(), grabbable: (id) => (id === 'crate' || id === 'ball' ? { enabled: true } : null), inReach: () => true, whereFromMe: () => null,
       grab: (id) => calls.push(['grab', id]), put: (id, at) => calls.push(['put', id, at]), throw: () => calls.push(['throw']), punt: () => {}, canPunt: () => true, canPutAt: () => true };
     globalThis.__cu.tp = { held, calls };`,
-  useprompt: `export const actionsOf = () => []; export const useThing = () => {};`,
+  'ui/useprompt': `export const actionsOf = () => []; export const useThing = () => {};`,
   localbody: `export const trySitOn = () => {};`,
   controller: `export const walkTo = async () => 'arrived'; export const clampToBounds = (x, z) => [x, z];`,
 };

@@ -235,7 +235,7 @@ const cases: Case[] = [
       return { r: one(r), m: one(m), i: one(i), words: /"(person|agent|human)"/.test(JSON.stringify([r, m, i])), dirKinds: files.some((t) => /"kind":\s*"(agent|human)"/.test(t)), dirs: files.length }; },
     good: (o) => !!o.r && !!o.m && !!o.i && ![o.r, o.m, o.i].some((p: any) => "kind" in p) && !o.words && o.m.declares === "ai" && !("declares" in o.r) && !("declares" in o.i) && o.dirs > 0 && !o.dirKinds },
   { id: "W2", what: "…and nothing user-facing reads a person/agent kind from whois: no KIND_WORD in requestwire, the chat line and the agent's whois tool say a declared word, not \"(an agent)\" or \"(person, agent, guest)\"; the founding gate reads the account, never a directory kind", run() {
-      const rw = readText("server/requestwire.ts"), h = readText("client/lib/commands/handlers.js"), t = readText("mcpl/tools.ts"), d = readText("server/directory.ts");
+      const rw = readText("server/requestwire.ts"), h = readText("client/lib/ui/commands/handlers.js"), t = readText("mcpl/tools.ts"), d = readText("server/directory.ts");
       return { kindWord: /KIND_WORD/.test(rw), dirKind: /\?\.kind === "agent"/.test(rw), chat: /\(an agent\)/.test(h), tool: /person, agent, guest/.test(t) || /\$\{p\.kind\}/.test(t), infer: /kindOfSub|kind: agent \?/.test(d) }; },
     good: (o) => !o.kindWord && !o.dirKind && !o.chat && !o.tool && !o.infer },
   { id: "W3", what: "…a directory file written before keeps no inferred kind: its \"agent\"/\"human\" entries read as \"account\"", async run() {
@@ -312,7 +312,7 @@ const cases: Case[] = [
       return { def: [/#5/.test(def), /#6/.test(def), /#7/.test(def)], ch: [/#6/.test(ch), /#5/.test(ch)], win: [/#5/.test(win), /#7/.test(win), /#9/.test(win)], args: asked.map((x) => [x.after ?? null, x.before ?? null]) }; },
     good: (o) => o.def[0] && !o.def[1] && o.def[2] && o.ch[0] && !o.ch[1] && o.win[0] && o.win[1] && !o.win[2] && JSON.stringify(o.args[2]) === "[4,null]" },
   { id: "P8", what: "decision row 10 (R 10-30): an agent is marked as on main, a small ◈ before its name in the chat log (not a trailing word); no tag on the nameplate or in People Here", async run() {
-      const css = readText("client/index.html"), av = readText("client/lib/avatar/nameplate.js"), ch = readText("client/lib/chat.js");
+      const css = readText("client/index.html"), av = readText("client/lib/avatar/nameplate.js"), ch = readText("client/lib/ui/chat.js");
       return { before: /\.who\[data-declares="agent"\]::before \{ content: '◈ '/.test(css), noWord: /\.who\[data-declares="agent"\]::after \{ content: none; \}/.test(css),
         plate: /· AI/.test(av) || /who-ai/.test(ch) || /who-ai/.test(css) }; },
     good: (o) => o.before && o.noWord && !o.plate },

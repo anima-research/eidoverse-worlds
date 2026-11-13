@@ -98,7 +98,7 @@ try {
 
   // ---- B1: the status chips and the menu bar ----
   await stage("B1", async () => {
-    await page(`const s = await import('/lib/statuschips.js'); const c = await import('/lib/capnotice.js'); s.statusChip({ id: 'webgl', ...c.WEBGL, actions: [{ label: 'got it' }] }); const g = await import('/lib/governor.js'); s.statusChip(g.REDUCED_CHIP); return true;`);
+    await page(`const s = await import('/lib/ui/statuschips.js'); const c = await import('/lib/ui/capnotice.js'); s.statusChip({ id: 'webgl', ...c.WEBGL, actions: [{ label: 'got it' }] }); const g = await import('/lib/governor.js'); s.statusChip(g.REDUCED_CHIP); return true;`);
     await buildMode(true); await sleep(2200);   // the strip re-places on its slow tick too
     const covered = await evalJson(`[...document.querySelectorAll('.edit-top .edit-btn, .edit-top .edit-vbtn')].filter((b) => b.getBoundingClientRect().width).map((b) => { const r = b.getBoundingClientRect(); const e = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return b.contains(e) ? null : (b.textContent.trim() || b.title) + ' ← ' + (e?.closest('.stchip')?.textContent ?? e?.className ?? '?'); }).filter(Boolean)`);
     const chips = await evalJson(`[...document.querySelectorAll('.stchip')].map((c) => c.textContent.trim())`);
@@ -112,7 +112,7 @@ try {
     const acts = await evalJson(`[...document.querySelectorAll('#stpop .st-btns button')].map((b) => b.textContent)`);
     const hide = await clickEl(`[...document.querySelectorAll('#stpop .st-btns button')].find((b) => /hide|don/.test(b.textContent))`);
     check("B1c the reduced-detail chip can be put away", hide && await waitFor(`!document.getElementById('stchip-quality-reduced')`, 2000), acts);
-    await page(`(await import('/lib/statuschips.js')).clearStatusChip('webgl'); return true;`);
+    await page(`(await import('/lib/ui/statuschips.js')).clearStatusChip('webgl'); return true;`);
   });
 
   // ---- B2: Enter in a number field ----
@@ -318,7 +318,7 @@ try {
   await stage("X", async () => {
     await buildMode(false);
     const worldOpen = `(() => { const f = document.querySelector('[data-frame="world"]'); return !!f && getComputedStyle(f).display !== 'none'; })()`;
-    await page(`(await import('/lib/windows.js')).getFrame('world')?.hide(); return true;`); await sleep(300);
+    await page(`(await import('/lib/ui/windows.js')).getFrame('world')?.hide(); return true;`); await sleep(300);
     await buildMode(true); await sleep(600); await buildMode(false); await sleep(600);
     check("X1 leaving builder mode doesn't leave the old build panel open (it wasn't open before)", !(await evalJson(worldOpen)));
     await buildMode(true);

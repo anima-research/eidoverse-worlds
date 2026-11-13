@@ -13,9 +13,9 @@ import { colliders, frameOf } from '../colliders.js';
 import { closestParams, TUNING } from '../ragdoll/ragdoll.js';
 import { JOINT_SPECS, HAIR_TUNING, WING_TUNING } from '../ragdoll/ammodoll-tuning.js';
 import { BLINK, WING_IDLE, LIMP_SPRINGS } from '../avatar/avatar.js';
-import { makeFrame } from '../windows.js';
+import { makeFrame } from '../ui/windows.js';
 import { sliderTable, checkRow, selectRow, btn, sectionHead } from '../edit/rows.js';
-import { toast, paintRangesIn } from '../ui.js';
+import { toast, paintRangesIn } from '../ui/ui.js';
 
 // box    = an OBB, walkable on top, solid on the sides between min.y and max.y
 // pillar = anything over 2.4 m tall, collapsed to a slim centre column so you can walk under a canopy

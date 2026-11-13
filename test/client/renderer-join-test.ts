@@ -36,8 +36,8 @@ function pageLoad(search: string, wire: "none" | "snapshot" | "other-hooks", joi
     console.warn = (...a) => warnings.push(a.join(" "));
     const { mock } = await import("bun:test");
     const L = ${JSON.stringify(L)};
-    mock.module(L + "presence.js", () => ({ presence: {} }));
-    mock.module(L + "chat.js", () => ({ logChat() {}, logWhisper() {}, noteTyping() {}, noteHistoryContext() {}, resyncChatAfter() {}, moderatorHeader: (w) => "From a moderator of world ‹" + w + "›, not from Eidoverse" }));
+    mock.module(L + "ui/presence.js", () => ({ presence: {} }));
+    mock.module(L + "ui/chat.js", () => ({ logChat() {}, logWhisper() {}, noteTyping() {}, noteHistoryContext() {}, resyncChatAfter() {}, moderatorHeader: (w) => "From a moderator of world ‹" + w + "›, not from Eidoverse" }));
     mock.module(L + "boot.js", () => ({ markPhase() {}, refuseBoot() {}, waitBoot: async () => {} }));
     const net = await import(L + "net.js");
     const wire = ${JSON.stringify(wire)};

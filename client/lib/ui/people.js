@@ -11,12 +11,12 @@
 //            rows under it, choices are rows of chips, and kick and ban take a second trigger on a "confirm" row
 // The role ▸ submenu lists the roles you may give (grantableRoles: ranked below yours, with only permissions you hold).
 // The badge: none for a member, "guest" for someone without an account, else the role's name (badgeOf).
-import { CONFIG, bus, report } from './base.js';
-import { net, identities, guests, sendRequest, replica } from './net.js';
-import { contextMenu, closeContextMenu } from './edit/fieldpanels.js';
-import * as R from '../../shared/protocol/roles.js';
-import { plainRefusal } from '../../shared/protocol/refusal.js';   // the door's words, its fix and names
-import { listOf, setListed, BLOCK_FOLLOW_WORDS } from './consent.js';
+import { CONFIG, bus, report } from '../base.js';
+import { net, identities, guests, sendRequest, replica } from '../net.js';
+import { contextMenu, closeContextMenu } from '../edit/fieldpanels.js';
+import * as R from '../../../shared/protocol/roles.js';
+import { plainRefusal } from '../../../shared/protocol/refusal.js';   // the door's words, its fix and names
+import { listOf, setListed, BLOCK_FOLLOW_WORDS } from '../consent.js';
 import { moderatorHeader } from './chat.js';
 
 let deps = { mentionPerson: () => {}, presenting: () => false, openModLog: () => {}, toast: () => {} };
@@ -237,7 +237,7 @@ function openCanForm(display, surface) {
 }
 
 // a warning is a notice you dismiss: the house centred card, or in a headset the XR quad (xrask.js)
-bus.on('warned', (m) => { import('./xr/xrask.js').then(({ xrActive, chooseXR }) => (xrActive()
+bus.on('warned', (m) => { import('../xr/xrask.js').then(({ xrActive, chooseXR }) => (xrActive()
   ? chooseXR({ title: moderatorHeader(CONFIG.world), body: `${m.by} warned you: ${String(m.reason ?? '')}`, choices: [{ v: 'ok', label: 'I understand' }], cancel: 'ok' })
-  : import('./edit/confirmcenter.js').then(({ confirmCenter }) => confirmCenter({ title: moderatorHeader(CONFIG.world), body: `${m.by} warned you: ${String(m.reason ?? '')}`, ok: 'I understand', cancel: 'Close' })))).catch((e) => report('warned', e)); });
+  : import('../edit/confirmcenter.js').then(({ confirmCenter }) => confirmCenter({ title: moderatorHeader(CONFIG.world), body: `${m.by} warned you: ${String(m.reason ?? '')}`, ok: 'I understand', cancel: 'Close' })))).catch((e) => report('warned', e)); });
 export { closeContextMenu };

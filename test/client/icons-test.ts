@@ -13,7 +13,7 @@
 // downstream playwright rig, where it reports distinct per-icon pixel counts.
 // This repo's suite stays browser-free, so the registry contract lives here.)
 
-import * as I from "../../client/lib/icons.js";
+import * as I from "../../client/lib/ui/icons.js";
 import { suite } from "../gate/suite.ts";
 const { has, svg } = I as any;
 

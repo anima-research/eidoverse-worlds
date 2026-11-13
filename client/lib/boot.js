@@ -2,7 +2,7 @@
 // real bytes and phases (never a fake timer), and the controls to learn while it waits.
 
 import { bus, CONFIG } from './base.js';
-import { escapeHtml } from './markup.js';
+import { escapeHtml } from './ui/markup.js';
 // Injected, not imported: assets.js reaches the engine (GLTFLoader), and this splash
 // is shared with a client that loads no assets and therefore has no bytes to count.
 // The empty defaults are the truth for such a client — its phases finish on their own

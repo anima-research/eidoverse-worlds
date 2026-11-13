@@ -15,8 +15,8 @@ import { registerSystem } from '../frameloop.js';
 import { isBuilding, setPointerVeto, setEscapeHook } from './build.js';
 import * as Edits from './writes.js';
 import { sendRequest } from '../net.js';
-import { plain } from '../plainwords.js';
-import { flashHint } from '../ui.js';
+import { plain } from '../ui/plainwords.js';
+import { flashHint } from '../ui/ui.js';
 import { checkGrabbable, HANDS, ROLES, GRASPS } from '../../../shared/grab.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 

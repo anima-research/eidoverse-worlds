@@ -9,7 +9,7 @@
 // release focuses the menu bar in Windows browsers). Ignored while typing and on autorepeat; released on blur, since
 // a keyup never arrives when focus leaves with the key down (mictoggle.js's stuck-key class).
 import { revealRamp, revealEase } from './platesize.js';
-import { register } from '../actions.js';
+import { register } from '../ui/actions.js';
 
 const sources = new Set();
 let held = false, t0 = -1e9, k0 = 0;

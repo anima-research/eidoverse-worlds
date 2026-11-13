@@ -18,14 +18,14 @@ const modules: any = {
     sendRequest: async () => answer, sendMod: noop, sendPuppet: noop, sendWorldFork: noop, sendWorldFound: noop, sendWorldReset: noop, requestDebug: noop, sendAnim: noop, sendDrag: noop },
   'remotes.js': { remotes: new Map() },
   'controller.js': { myState: { pos: { x: 0, y: 0, z: 0 } }, setPosture: noop, flightReport: () => '' },
-  'thingphysics.js': { punt: noop, grab: noop, put: noop, drop: noop, throwHeld: noop }, 'chat.js': { logChat: (_w: string, t: string) => messages.push(t) },
-  'ui.js': { toggleHelp: noop, flashHint: noop, toast: noop }, 'scenegraph.js': { sceneAttach: noop, sceneDetach: noop },
+  'thingphysics.js': { punt: noop, grab: noop, put: noop, drop: noop, throwHeld: noop }, 'ui/chat.js': { logChat: (_w: string, t: string) => messages.push(t) },
+  'ui/ui.js': { toggleHelp: noop, flashHint: noop, toast: noop }, 'scenegraph.js': { sceneAttach: noop, sceneDetach: noop },
   'consent.js': { setPushable: noop, pushable: () => false }, 'localbody.js': { trySitOn: noop }, 'mybody.js': { getMe: () => null },
-  'edit/writes.js': { send: async (req: any) => { sent.push(req); return { ok: true }; } }, 'stylepanel.js': { panelAlpha: () => 1, setPanelAlpha: noop },
+  'edit/writes.js': { send: async (req: any) => { sent.push(req); return { ok: true }; } }, 'ui/stylepanel.js': { panelAlpha: () => 1, setPanelAlpha: noop },
 };
 for (const [name, exports] of Object.entries(modules)) mock.module(fileURLToPath(new URL('../../client/lib/' + name, import.meta.url)), () => exports as any);
-await import('../../client/lib/commands/handlers.js');
-const { dispatch } = await import('../../client/lib/commands/registry.js');
+await import('../../client/lib/ui/commands/handlers.js');
+const { dispatch } = await import('../../client/lib/ui/commands/registry.js');
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = '') => { if (ok) pass++; else fail++; console.log(`${ok ? '✓' : '✗'} ${name}${!ok && detail ? `  — ${detail}` : ''}`); };
@@ -70,7 +70,7 @@ check('a role with exceptions for someone new is one whole grant', r?.args?.valu
 sent.length = 0; dispatch('epoch', ''); await settle();
 check('/epoch still sends the physics-engine set the help teaches', sent.at(-1)?.verb === 'set' && sent.at(-1)?.args?.component === 'physics-engine', JSON.stringify(sent.at(-1)));
 { const fs = await import('node:fs'); const help = fs.readFileSync(fileURLToPath(new URL('../../defs/ui/_help.json', import.meta.url)), 'utf8');
-  const { COMMANDS } = await import('../../client/lib/commands/registry.js'); const g = (COMMANDS as any[]).find((c) => c.name === 'grant')?.help ?? '';
+  const { COMMANDS } = await import('../../client/lib/ui/commands/registry.js'); const g = (COMMANDS as any[]).find((c) => c.name === 'grant')?.help ?? '';
   check('the help sheet teaches no visitor role (it is member)', !/\bvisitors?\b/i.test(help) && /\/grant \* member/.test(help), help.match(/[^.]*visitor[^.]*/i)?.[0]);
   check('…and names +gen, +fly and /epoch', /\+gen/.test(help) && /\+fly/.test(help) && /\/epoch/.test(help) && /\+gen/.test(g) && /\+fly/.test(g), g); }
 
@@ -88,7 +88,7 @@ check('/epoch still sends the physics-engine set the help teaches', sent.at(-1)?
   // R 10-28 (item 4): /boom [power] [radius] and /blast are a force request at my feet
   await cmd('boom', '5 10');
   check('/boom 5 10 sends force {at: my feet, power 5, radius 10}', sent.length === 1 && sent[0].verb === 'force' && JSON.stringify(sent[0].args) === JSON.stringify({ at: [0, 0, 0], power: 5, radius: 10 }), JSON.stringify(sent));
-  const { resolveCommand } = await import('../../client/lib/commands/registry.js');
+  const { resolveCommand } = await import('../../client/lib/ui/commands/registry.js');
   await cmd(resolveCommand('blast')?.name ?? 'blast', '');   // chat.js resolves the typed word, then dispatches
   check('/blast is /boom, with the authority\'s defaults', sent.length === 1 && sent[0].verb === 'force' && JSON.stringify(sent[0].args) === JSON.stringify({ at: [0, 0, 0] }), JSON.stringify(sent)); }
 

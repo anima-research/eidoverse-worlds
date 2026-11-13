@@ -53,7 +53,7 @@ plugin({
     for (const f of ['^\\.\\./core\\.js$', '^\\.\\./assets\\.js$', '^\\.\\./colliders\\.js$',
       '^\\.\\./lightrig\\.js$', '^\\.\\./lightgizmo\\.js$', '^\\.\\./world\\.js$', '^\\.\\./materials\\.js$',
       '^\\./core\\.js$', '^\\./lightrig\\.js$',
-      '^\\./realize/emitters\\.js$', '^\\./terrain\\.js$', '^\\./frameloop\\.js$', '^\\./remotes\\.js$', '^\\./ui\\.js$', '^\\./statuschips\\.js$']) {
+      '^\\./realize/emitters\\.js$', '^\\./terrain\\.js$', '^\\./frameloop\\.js$', '^\\./remotes\\.js$', '^(\\.\\.?/)+(ui/)?ui\\.js$', '^(\\.\\.?/)+(ui/)?statuschips\\.js$']) {
       stubResolve(b, new RegExp(f), () => ({ path: STUB }));
     }
   },

@@ -11,7 +11,7 @@
 // {x, y, w, h, action, payload?, slider?}, as fieldpanels.js's legacy painter does (test/client/edittheme-test.ts).
 
 import { EDIT as T, EDIT_VR as V, pictoRuns } from './theme.js';
-import { stroke as strokeIcon, has as hasIcon, fillPath } from '../icons.js';
+import { stroke as strokeIcon, has as hasIcon, fillPath } from '../ui/icons.js';
 import { paintFields, FACTS, R2D } from './widgets.js';
 
 const FONT = 'system-ui, sans-serif';

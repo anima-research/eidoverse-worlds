@@ -1,13 +1,13 @@
 // chat-mention-test — a name in chat ends where the door's does (#232): `cairn` is not inside `cairn-bridge`, whatever the
 // roster order, and a person's highlight agrees with an agent's ping.
-//   bun test/client/chat-mention-test.mjs          the rows, against client/lib/mention-rx.js
+//   bun test/client/chat-mention-test.mjs          the rows, against client/lib/ui/mention-rx.js
 //   bun test/client/chat-mention-test.mjs --base   the control: the same rows against a2644dc1's patterns; passes only if exactly
 //                                            the rows predicted below fail there
-import { mentionRx, mentionPattern } from '../../client/lib/mention-rx.js';
+import { mentionRx, mentionPattern } from '../../client/lib/ui/mention-rx.js';
 import { mentionRegexFor } from '../../mcpl/mention.ts';
 
 const BASE = process.argv.includes('--base');
-// a2644dc1's client/lib/chat.js mentionRx (:58) and renderBody pattern (:86), verbatim
+// a2644dc1's client/lib/ui/chat.js mentionRx (:58) and renderBody pattern (:86), verbatim
 const escapeRx = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const baseRx = (name) => new RegExp(`(@${escapeRx(name)}\\b|\\b${escapeRx(name)}\\b)`, 'i');
 const basePattern = (names) => new RegExp(`(https?://[^\\s]+)|(@?\\b(?:${names.map(escapeRx).join('|') || '\\u0000'})\\b)`, 'gi');

@@ -3,20 +3,20 @@
 // Humans get what agents already had: typed mentions, a highlight when one arrives, unread state. Mentions use the
 // door's name boundary (mention-rx.js), so a highlight and a ping agree (#232).
 
-import { CONFIG, bus, colorFor, assignColors } from './base.js';
+import { CONFIG, bus, colorFor, assignColors } from '../base.js';
 import { mentionRx, mentionPattern } from './mention-rx.js';
 // Not importing xrpanels.js (it reaches the engine, and chat.js also serves a client with no scene): the VR panel
 // spec is exported (chatXRPanel) and main.js registers it.
-import { lastWhy } from './debuglog.js';
+import { lastWhy } from '../debuglog.js';
 import { initAttention, mountAttentionControls } from './attention.js';
 import { makeFrame } from './windows.js';
 import { fsvg } from './icons.js';
-import { requestHistory } from './net.js';
+import { requestHistory } from '../net.js';
 // only the registry, never handlers.js, or the cycle chat→handlers→net→chat closes; the registry is a pure table
 import { COMMANDS, resolveCommand } from './commands/registry.js';
 import { register as registerAction } from './actions.js';
 import { escapeHtml as esc } from './markup.js';
-import { versionReady } from './version.js';
+import { versionReady } from '../version.js';
 
 const MAX_LINES = 400;
 const HISTORY = 'ew-chat-history';
@@ -30,7 +30,7 @@ const recent = [];   // the log's tail, for the VR quad
 export const recentChat = () => recent.slice();
 let onTyping = () => {};
 let getPeople = () => [];
-// the person menu and badges (client/lib/people.js), injected by main.js: a static import here would close the
+// the person menu and badges (client/lib/ui/people.js), injected by main.js: a static import here would close the
 // chat → people → net → chat cycle. Absent (a page without it), rows are plain and the menu is Message alone.
 let personUi = null;
 

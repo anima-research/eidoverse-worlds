@@ -4,18 +4,18 @@
 // It runs the real net.js, which takes its participant registry, asset ledger and snapshot renderer by injection,
 // so the protocol has exactly one implementation. test/client/lite-graph-test.ts checks that nothing here reaches core.js.
 import { say } from './lib/net.js';
-import { chooseClient } from './lib/litechoice.js';
+import { chooseClient } from './lib/ui/litechoice.js';
 import { CONFIG, bus, report, setToken } from './lib/base.js';
 // not ui.js: the desktop shell reaches the engine through videopanel.js and profile.js
-import { makeFrame } from './lib/windows.js';
-import { initChat, logChat } from './lib/chat.js';
+import { makeFrame } from './lib/ui/windows.js';
+import { initChat, logChat } from './lib/ui/chat.js';
 import {
   net, connect, initIdentity, wireNet, sendTyping, sendPoseExact,
   loginUrl,
 } from './lib/net.js';
 import { initBoot, markPhase, finishBoot } from './lib/boot.js';
-import * as participants from './lib/participants_lite.js';
-import { initLiteActions } from './lib/actionbar_lite.js';
+import * as participants from './lib/ui/participants_lite.js';
+import { initLiteActions } from './lib/ui/actionbar_lite.js';
 // live world entries as chat lines (your own 'say' included), the same narrator the full client uses
 import { initCauses } from './lib/realize/livechat.js';
 import { initRecentChat } from './lib/realize/recentchat.js';

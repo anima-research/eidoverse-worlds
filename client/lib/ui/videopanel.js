@@ -3,15 +3,15 @@
 import { makeSection, flashHint } from './ui.js';
 import { RENDER_SCALES, getRenderScale, setRenderScale,
   PARTICLE_TIERS, getParticleTier, setParticleTier,
-  AVATAR_DETAILS, getAvatarDetail, setAvatarDetail, getFullDetail, setFullDetail } from './governor.js';
-import { shadowsOn, setShadows, shadowRes, setShadowRes, SHADOW_RES, CASTER_CHOICES, getCasterCeiling, setCasterCeiling } from './lightrig.js';
-import { backendName, PREF_MSAA, PREF_BACKEND, PREF_HEADSET_SEEN, WEBGPU_XR, WEBGPU_POSSIBLE, headsetSeenRecently } from './core.js';
-import { CONFIG, bus } from './base.js';
-import { FOLIAGE_MODES, getFoliageMode, setFoliageMode } from './vegetation/foliage.js';
-import { registerXRPanel } from './xr/xrpanels.js';
-import { allowUntrusted, setAllowUntrusted, UNTRUSTED_WORDS } from './mediaprefs.js';
+  AVATAR_DETAILS, getAvatarDetail, setAvatarDetail, getFullDetail, setFullDetail } from '../governor.js';
+import { shadowsOn, setShadows, shadowRes, setShadowRes, SHADOW_RES, CASTER_CHOICES, getCasterCeiling, setCasterCeiling } from '../lightrig.js';
+import { backendName, PREF_MSAA, PREF_BACKEND, PREF_HEADSET_SEEN, WEBGPU_XR, WEBGPU_POSSIBLE, headsetSeenRecently } from '../core.js';
+import { CONFIG, bus } from '../base.js';
+import { FOLIAGE_MODES, getFoliageMode, setFoliageMode } from '../vegetation/foliage.js';
+import { registerXRPanel } from '../xr/xrpanels.js';
+import { allowUntrusted, setAllowUntrusted, UNTRUSTED_WORDS } from '../mediaprefs.js';
 import { initConsentPanel } from './consentpanel.js';
-import { myShadowPref, setMyShadowPref } from './materials.js';
+import { myShadowPref, setMyShadowPref } from '../materials.js';
 
 // same markup contract as the audio section (label right of centre, control
 // left of it — index.html owns .row.wide / .nm / .ctl)

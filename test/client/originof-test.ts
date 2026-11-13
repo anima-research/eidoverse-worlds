@@ -8,7 +8,7 @@ import { stubResolve } from '../harness/stub.ts';
 import { fileURLToPath } from "node:url";
 const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({ name: 'originof-stubs', setup(b) {
-  for (const m of ['base', 'icons', 'ui', 'net', 'build', 'chat', 'writes'])
+  for (const m of ['base', '(ui/)?icons', '(ui/)?ui', 'net', 'build', '(ui/)?chat', 'writes'])
     stubResolve(b, new RegExp(`^(\\.\\.?/)+${m}\\.js$`), () => ({ path: here('../stubs/originof-stub.mjs') }));
 } });
 const store = new Map<string, string>();

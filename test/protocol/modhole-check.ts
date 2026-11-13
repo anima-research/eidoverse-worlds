@@ -75,7 +75,7 @@ ok(types.length === 0, "MH5 the server sends no message that carries a client mo
 
 // ---- MH6 every client HTML escaper covers the five: & < > " and ' (a name in a single-quoted attribute) ----
 const escapers = files.filter((p) => p.endsWith(".js")).flatMap((p) => code(p).filter(({ l }) => /replace\(\/\[&<>/.test(l)).map(({ n, l }) => ({ f: path.relative(CLIENT, p), n, l })));
-ok(escapers.some(({ f }) => f === path.join("lib", "markup.js")), "MH6 (setup) the client's escapers are found by their replace(/[&<>…]/ shape, markup.js's among them", escapers.map(({ f }) => f));
+ok(escapers.some(({ f }) => f === path.join("lib", "ui", "markup.js")), "MH6 (setup) the client's escapers are found by their replace(/[&<>…]/ shape, markup.js's among them", escapers.map(({ f }) => f));
 const short = escapers.filter(({ l }) => !/replace\(\/\[&<>"'\]\//.test(l));
 ok(short.length === 0, "MH6 every client escaper escapes ' as well as & < > \"", short);
 

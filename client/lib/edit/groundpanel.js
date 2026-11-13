@@ -8,11 +8,11 @@ import { bus, report, CONFIG } from '../base.js';
 import { currentTerrainArgs, terrainEditBase, noteTerrainSent } from '../world.js';
 import { defsRegistry } from '../defs.js';
 import { send as sendRequest } from './writes.js';
-import { flashHint } from '../ui.js';
+import { flashHint } from '../ui/ui.js';
 import { selectRow, btn, btnRow } from './rows.js';
 import { paletteDefaults, terrainArgs, grassArgs } from '../../../shared/grounddefs.js';
 import { state, onWorldChange } from '../state.js';
-import { stateLines } from '../statelines.js';
+import { stateLines } from '../ui/statelines.js';
 import { getGrassQuality, getGrassShed, getGrassDensity } from '../terrain.js';
 
 // panel state, outside the paint: a defs push repaints the rows and must keep what the author dialed in

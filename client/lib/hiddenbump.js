@@ -3,7 +3,7 @@
 // touches one, a hazy outline of its collider fades in with a crossed-out eye over it ("you hid this"), and it fades out
 // after the contact ends. Mine only: nothing here is sent or logged, and its sound is not touched.
 import { THREE, scene } from './core.js';
-import { stroke as strokeIcon } from './icons.js';
+import { stroke as strokeIcon } from './ui/icons.js';
 import { frameOf } from './colliders.js';
 import { outOfMyView } from './edit/myview.js';
 

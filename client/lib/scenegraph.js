@@ -21,13 +21,13 @@ import { sendOps, del, revertPose } from './edit/writes.js';
 import * as OP from '../../shared/requests.js';
 import { state } from './state.js';
 import { offIn } from './realize/models_field.js';
-import { makeSection, flashHint, html } from './ui.js';
-import { logChat } from './chat.js';
+import { makeSection, flashHint, html } from './ui/ui.js';
+import { logChat } from './ui/chat.js';
 import { myState } from './controller.js';
 import { kindHint } from '../../shared/hierarchy.js';
 import { modelWord } from '../../shared/eido.js';
-import { called } from './plainwords.js';
-import { escapeHtml as esc } from './markup.js';
+import { called } from './ui/plainwords.js';
+import { escapeHtml as esc } from './ui/markup.js';
 
 
 

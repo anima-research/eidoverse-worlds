@@ -22,11 +22,11 @@ const ROWS: Row[] = [
   // headset-seen: the copy claims only what is known, and the stamp is a time
   { name: "core.js migrates the headset marker on read and writes the stamp back", file: "client/lib/core.js", must: [/migrateHeadsetSeen/, /setItem\(PREF_HEADSET_SEEN, migrated\)/] },
   { name: "the boot backend choice asks the headset predicate", file: "client/lib/core.js", must: [/headsetSeen: headsetSeenRecently\(\)/] },
-  { name: "the Video panel says a headset has been USED here, never that one IS present", file: "client/lib/videopanel.js", must: [/has been used here/i],
+  { name: "the Video panel says a headset has been USED here, never that one IS present", file: "client/lib/ui/videopanel.js", must: [/has been used here/i],
     not: [[/headset is present/i, "a headset is present"], [/Right now: a headset/i, "Right now: a headset"]] },
-  { name: "the no-headset branch is past-tense too", file: "client/lib/videopanel.js", must: [/No headset has been used here recently/i], not: [[/no headset sensed/i, "no headset sensed"]] },
-  { name: "the WebGPU warning is past-tense", file: "client/lib/videopanel.js", must: [/A headset has been used here/], not: [[/⚠ A headset is present/, "⚠ A headset is present"]] },
-  { name: "the panel asks the predicate, not the raw bit", file: "client/lib/videopanel.js", must: [/headsetSeenRecently\(\)/], not: [[/PREF_HEADSET_SEEN\) === '1'/, "getItem(PREF_HEADSET_SEEN) === '1'"]] },
+  { name: "the no-headset branch is past-tense too", file: "client/lib/ui/videopanel.js", must: [/No headset has been used here recently/i], not: [[/no headset sensed/i, "no headset sensed"]] },
+  { name: "the WebGPU warning is past-tense", file: "client/lib/ui/videopanel.js", must: [/A headset has been used here/], not: [[/⚠ A headset is present/, "⚠ A headset is present"]] },
+  { name: "the panel asks the predicate, not the raw bit", file: "client/lib/ui/videopanel.js", must: [/headsetSeenRecently\(\)/], not: [[/PREF_HEADSET_SEEN\) === '1'/, "getItem(PREF_HEADSET_SEEN) === '1'"]] },
   { name: "a granted session stamps the TIME at exactly two writers, never a flag", file: "client/lib/xr/xr.js", count: [/setItem\(PREF_HEADSET_SEEN, String\(Date\.now\(\)\)\)/g, 2],
     not: [[/setItem\(PREF_HEADSET_SEEN, '1'\)/, "setItem(PREF_HEADSET_SEEN, '1')"], [/setItem\('ew-headset-seen', '1'\)/, "setItem('ew-headset-seen', '1')"]] },
   // locomotion-clip: an extracted policy someone calls

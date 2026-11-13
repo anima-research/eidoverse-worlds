@@ -27,7 +27,7 @@ import { remotes, draggedLocal } from '../remotes.js';
 import { JOINTS } from './ragdoll.js';
 import { makeRagdoll } from './bodysim.js';
 import { sendBodyDrag } from '../net.js';
-import { flashHint, toast } from '../ui.js';
+import { flashHint, toast } from '../ui/ui.js';
 import { isBuilding } from '../edit/build.js';
 
 const GRAB_RANGE = 5;        // how far a body may be from ME to grab (m)
