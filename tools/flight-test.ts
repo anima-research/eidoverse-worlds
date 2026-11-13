@@ -37,6 +37,7 @@ import { pilotInput, pilotHelp, DEFAULT_BINDS, DEFAULT_AUTHORITY } from '../shar
 import { inspectBody, describeBody } from '../shared/flightbody.js';
 import { denyAllFlight, devFlightProvider, worldFlightProvider, resolveFlight, rigProfile, revoked }
   from '../shared/flightcap.js';
+import * as FB from '../shared/flightbody.js';
 import { readFileSync } from 'node:fs';
 
 let pass = 0, fail = 0;
@@ -656,6 +657,38 @@ console.log('\nCAPABILITY -- default deny, action-time, semantic rig binding');
   const denied = resolveFlight(denyAllFlight, { identity: 'mythos' });
   check('a denied caller gets no profile to build flight from',
         denied.enabled === false && !('profile' in denied));
+}
+
+// ------------------------------------------------- the grant, and only the grant
+console.log('\nPERMISSION IS THE GRANT -- no body shape gates flight (R 11-12: clouds, dragons, psychics)');
+{
+  const granted = worldFlightProvider({ rights: () => ({ role: 'member', fly: true }) });
+  const ungranted = worldFlightProvider({ rights: () => ({ role: 'owner', fly: false }) });
+  const VROID = ['J_Bip_C_Hips', 'J_Bip_C_Spine', 'J_Bip_C_Chest', 'J_Bip_C_UpperChest', 'J_Bip_C_Neck', 'J_Bip_C_Head'];
+  const CLOUD = ['Cloud_Root', 'Puff_0', 'Puff_1'];
+  const WINGS = ['Hip', 'Spine02', 'Head', 'L_Wing_Upper', 'L_Wing_Upper_1', 'R_Wing_Upper', 'R_Wing_Upper_1', 'L_Wing_Lower', 'R_Wing_Lower'];
+  const bodies: [string, string[] | null][] = [
+    ["a VRoid body (J_Bip_*, aporia's naming)", VROID], ['a cloud: no humanoid bones at all', CLOUD],
+    ['a body read as empty', []], ["a body whose bones aren't known yet", null], ['a winged body', WINGS]];
+  for (const [label, boneNames] of bodies) {
+    const r = resolveFlight(granted, { identity: 'm', avatar: { boneNames } });
+    check(`${label} flies with the grant`, r.enabled === true, r.reason);
+    check(`...and not without it`, !resolveFlight(ungranted, { identity: 'm', avatar: { boneNames } }).enabled);
+  }
+}
+
+console.log('\nDEAD WINGS ARE SAID, ONCE (flightbody.js: "says so, loudly")');
+{
+  const note = (bones: string[]) => (FB as any).deadWingsNote?.(inspectBody(bones)) ?? undefined;
+  const TIGERBEE = ['Hips', 'Spine', 'Head', 'Wings', 'Wing_Left_High_Base', 'Wing_Left_High1', 'Wing_Right_High_Base', 'Wing_Right_High1'];
+  const WINGS = ['Hip', 'Spine02', 'Head', 'L_Wing_Upper', 'L_Wing_Upper_1', 'R_Wing_Upper', 'R_Wing_Upper_1', 'L_Wing_Lower', 'R_Wing_Lower'];
+  check('a mis-named wing rig (tigerbee.vrm) is told its wings will not animate, and why',
+        /won't animate/.test(note(TIGERBEE) ?? '') && /Wing_Left_High_Base/.test(note(TIGERBEE) ?? '') && /L_Wing_Upper/.test(note(TIGERBEE) ?? ''), note(TIGERBEE));
+  check('so is an all-lowercase one', /won't animate/.test(note(WINGS.map((b) => b.toLowerCase())) ?? ''), note(WINGS.map((b) => b.toLowerCase())));
+  check('so is one with too few chains, in those words',
+        /1 chain/.test(note(['Hip', 'L_Wing_Upper', 'L_Wing_Upper_1', 'L_Wing_Upper_2', 'L_Wing_Upper_3']) ?? ''));
+  check('a body with no wings has no dead wings to mention', note(['Hips', 'Spine', 'Head']) === null, String(note(['Hips', 'Spine', 'Head'])));
+  check('a properly rigged one has nothing to say', note(WINGS) === null, String(note(WINGS)));
 }
 
 // ------------------------------------------------- default-deny, for real

@@ -124,6 +124,29 @@ await slow;
 check("a failed read doesn't clear the list another read just stored",
   Array.isArray(two.bodyBoneNames) && two.bodyBoneNames.length === WINGED.length);
 
+console.log('\nA FOLD DOES NOT RIDE INTO A WINGLESS BODY');
+const vig: any = new WorldAgent({ name: 'vig', world: 'bone-bench' });
+vig.avatar = 'mythos-wings.vrm';
+vig.myRights = { role: 'builder', fly: true };
+serve = async () => new Response(glb(WINGED));
+await vig.loadBodyBones();
+r = await vig.foldWings(true);
+check('(setup) the winged body folds', vig.wingsFolded === true, text(r));
+serve = async () => new Response(glb(['Hips', 'Spine', 'Head']));
+vig.setAvatar('wingless.vrm');
+await vig.loadBodyBones();
+check('a swap to a wingless body releases the fold once its bones are read', vig.wingsFolded === false);
+r = await vig.takeOff();
+check("...so take_off isn't refused for wings it doesn't have", /took off/.test(text(r)) && !/folded/.test(text(r)), text(r));
+const keep: any = new WorldAgent({ name: 'keep', world: 'bone-bench' });
+keep.avatar = 'mythos-wings.vrm';
+serve = async () => new Response(glb(WINGED));
+await keep.loadBodyBones();
+await keep.foldWings(true);
+keep.setAvatar('mythos-wings-2.vrm');
+await keep.loadBodyBones();
+check('a swap to another winged body keeps the fold (it is a posture the new wings can hold)', keep.wingsFolded === true);
+
 console.warn = realWarn;
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
