@@ -105,7 +105,7 @@ await tryRow('AD', async () => {
   check('AD1 an address stored before 10-17 still fetches: /library/<model> takes eido:sha256/<hex> (the colon raw or %3A) and libRelOf\'s spelling',
     hx(`eido:sha256/${H}`) === H && hx(`eido%3Asha256/${H}`) === H && hx(E.libRelOf(ADDR)) === H && hx(`eido:sha256/${H}.glb`) === null && hx('props/crate.glb') === null, [hx(`eido:sha256/${H}`), hx(`eido%3Asha256/${H}`)]);
   check('AD1 …and the learned address→path registry and its x-library-path header are gone (they only recovered the path the door threw away)',
-    !('learnModelPath' in E) && !('learnedModelPath' in E) && !/x-library-path/.test(read('server/routes.ts')) && !/x-library-path/.test(read('client/lib/assets.js')) && !/x-library-path|learnModelPath/.test(read('mcpl/agent.ts')), Object.keys(E));
+    !('learnModelPath' in E) && !('learnedModelPath' in E) && !/x-library-path/.test(read('server/routes.ts')) && !/x-library-path/.test(read('client/lib/assets.js')) && !/x-library-path|learnModelPath/.test(fs.readdirSync(ENGINE + 'mcpl').filter((f) => /^agent(-[a-z]+)?\.ts$/.test(f)).map((f) => read('mcpl/' + f)).join('\n')), Object.keys(E));
   check('AD2 one word for a model (shared/eido.js modelWord): a path is its file\'s name, a name given wins, an address nobody names is "thing", never its hex',
     E.modelWord(ADDR) === 'thing' && E.modelWord(ADDR, () => H) === 'thing' && E.modelWord(ADDR, () => ADDR) === 'thing' && E.modelWord(CW) === 'crate_wood' && E.modelWord(CW, () => 'Wooden crate') === 'Wooden crate' && E.modelWord('props/ball.glb') === 'ball', [E.modelWord(ADDR), E.modelWord(CW)]);
   const { kindHint } = await import('../../shared/hierarchy.js');
@@ -133,7 +133,7 @@ await tryRow('AD', async () => {
   check('AD6 the engine\'s catalogue never labels an address by its hex (a cold entry: "thing")', cold && !/[0-9a-f]{16}/.test(cold.label), cold);
   // the client and agent readers can't run headless here: each is held to the shared word (and not to the value's file name)
   const OLD = /model\??\.split\(['"]\/['"]\)|\(meta\?\.model \?\? meta\?\.kind[^)]*\)\.split|libLabels\.get\(one\.model\) \?\? libLabel|String\(lib \?\? ''\)\.split\('\/'\)|String\(ghost\.lib \?\? ''\)\.split|String\(e?\.?model\)\.split\(["']\/["']\)|String\(rec\.model\)\.split|String\(meta\.model\)\.split|String\(a\.model\)\.split|libLabels\.get\(libPath\) \?\? libPath\.split/;
-  const FILES = ['client/lib/edit/build.js', 'client/lib/edit/socketedit.js', 'client/lib/edit/panels.js', 'client/lib/scenegraph.js', 'client/lib/plainwords.js', 'client/lib/debug/perfscope.js', 'client/lib/assets.js', 'mcpl/agent.ts', 'mcpl/tools.ts', 'shared/hierarchy.js', 'shared/editschema.js'];   // worldquad and the authority minted from a word: R 10-17, they mint nothing readable now
+  const FILES = ['client/lib/edit/build.js', 'client/lib/edit/socketedit.js', 'client/lib/edit/panels.js', 'client/lib/scenegraph.js', 'client/lib/plainwords.js', 'client/lib/debug/perfscope.js', 'client/lib/assets.js', 'mcpl/agent.ts', 'mcpl/agent-senses.ts', 'mcpl/tools.ts', 'shared/hierarchy.js', 'shared/editschema.js'];   // worldquad and the authority minted from a word: R 10-17, they mint nothing readable now
   const stale = FILES.filter((f) => OLD.test(read(f)) || !/modelWord|modelName/.test(read(f)));
   check('AD7 every client and agent reader that names a thing by its model goes through the shared word', stale.length === 0, stale);
   // the sim (shiplist FL1, 10-16): an addressed dynamic thing is stamped, punted, and flies in the authority and in a client's fold

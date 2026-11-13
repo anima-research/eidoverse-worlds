@@ -101,13 +101,14 @@ const { HANDLERS, TOOLS, toolList, handleTool: handleToolDoor } = await import("
   { // AT7 (parity sweep 10-14): an agent is a body under the same consent as a person. It sends its table on join (the
     // server's default preset by NAME, never a literal), carries no private "pushable" flag, and can address someone through say.
     const agentSrc = fs.readFileSync(path.join(ENGINE, "mcpl/agent.ts"), "utf8"), toolsSrc = fs.readFileSync(path.join(ENGINE, "mcpl/tools.ts"), "utf8");
-    ok(!/\bpushable\b/.test(agentSrc), "AT7a agent.ts has no `pushable` flag: the authority's consent table is the one answer to a shove");
+    const agentAll = fs.readdirSync(path.join(ENGINE, "mcpl")).filter((f) => /^agent(-[a-z]+)?\.ts$/.test(f)).map((f) => fs.readFileSync(path.join(ENGINE, "mcpl", f), "utf8")).join("\n");   // the agent and its pieces
+    ok(!/\bpushable\b/.test(agentAll), "AT7a agent.ts has no `pushable` flag: the authority's consent table is the one answer to a shove");
     // It pins the default's NAME in the table the agent starts with. Every arrival sends that table as a person's client
     // does: it reads what the authority holds and sets each cell that differs, never a preset, which empties the cells
     // (review of #260). The arrival calls replayConsent() (lifted out for house 6340433633); that method is read here.
     const at = agentSrc.indexOf("async replayConsent()"), end = agentSrc.indexOf("\n  }", at);
     const arrival = at < 0 || end < 0 || !/void this\.replayConsent\(\)/.test(agentSrc) ? "" : agentSrc.slice(at, end);
-    ok(/this\.request\("consent", \{\}\)/.test(arrival) && /this\.request\("consent", gates\)/.test(arrival) && /unlist/.test(arrival) && !/\bpreset\b|\{ set \}|switch/.test(arrival) && !/DEFAULT_PRESET/.test(agentSrc),
+    ok(/this\.request\("consent", \{\}\)/.test(arrival) && /this\.request\("consent", gates\)/.test(arrival) && /unlist/.test(arrival) && !/\bpreset\b|\{ set \}|switch/.test(arrival) && !/DEFAULT_PRESET/.test(agentAll),
       "AT7b (R 10-28) an arrival reads the authority and sends the agent's gates and listed people only where they differ; no preset, no switch", arrival.slice(0, 300));
     const sayTool = toolsSrc.slice(toolsSrc.indexOf('name: "say"'), toolsSrc.indexOf('name: "say"') + 1200);
     ok(/\bto: \{ type: "string"/.test(sayTool) && /say\(text: string, extra\?: \{[^}]*\bto\?: string/.test(agentSrc), "AT7c say takes `to` on both the tool's schema and ag.say (the client sends it; the authority logs it)");

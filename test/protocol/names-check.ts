@@ -189,6 +189,8 @@ const ONLY = opt("only")?.split(",") ?? null;
 const want = (id: string) => !ONLY || ONLY.includes(id);
 const readText = (rel: string) => fs.readFileSync(TREE + rel, "utf8");   // a missing file throws (its row FAILs): "" would pass every "does not contain"
 const exists = (rel: string) => fs.existsSync(TREE + rel);
+/** The agent's code: mcpl/agent.ts and the agent-*.ts pieces it owns (a "does not contain" over agent.ts alone misses them). */
+const agentText = () => fs.readdirSync(TREE + "mcpl").filter((f) => /^agent(-[a-z]+)?\.ts$/.test(f)).map((f) => readText("mcpl/" + f)).join("\n");
 const root = scratch("names");
 const D = await import(TREE + "shared/protocol/authority.js");
 D.fixtureIds?.(true);
@@ -328,7 +330,7 @@ const cases: Case[] = [
     good: (o) => !o.bar && !o.desc && !o.rf && !o.alike && !o.bv && !o.same },
   // ---------------- O: the occupy family ----------------
   { id: "O1", what: "(R 14:41) the agent and the client speak the occupy family: no seatOf/seatName/mySeat/mayLeaveSeat/mySeatBody in agent.ts, no setSeatHook/inSitReach anywhere, seats.js/seatedit.js/seatbody.js renamed", run() {
-      const ag = readText("mcpl/agent.ts"), tl = readText("mcpl/tools.ts"), ctl = readText("client/lib/controller.js"), sk = readText("shared/sockbody.js"), cu = readText("client/lib/clickuse.js");
+      const ag = agentText(), tl = readText("mcpl/tools.ts"), ctl = readText("client/lib/controller.js"), sk = readText("shared/sockbody.js"), cu = readText("client/lib/clickuse.js");
       return { ag: /\b(seatOf|seatName|mySeat|mayLeaveSeat|mySeatBody)\b/.test(ag + tl), hooks: /\bsetSeatHook\b/.test(ctl) || /\binSitReach\b/.test(sk) || /\bseatOf\b/.test(cu),
         files: ["client/lib/seats.js", "client/lib/seatedit.js", "client/lib/seatbody.js"].filter(exists), now: ["client/lib/occupants.js", "client/lib/edit/socketedit.js", "client/lib/avatar/occupybody.js"].every(exists) }; },
     good: (o) => !o.ag && !o.hooks && !o.files.length && o.now },
@@ -613,7 +615,7 @@ const cases: Case[] = [
   { id: "OS7", what: "…the docs say oscillate and never bob as a motion type (AGENTS.md, PROTOCOL.md, PHYSICS.md, DESIGN.md, the agent); the version history and the registry changelog record the rename", run() {
       const files = ["AGENTS.md", "spec/PROTOCOL.md", "spec/PHYSICS.md", "DESIGN.md", "mcpl/agent-ground.ts"]; const md = readText("spec/PROTOCOL.md"); const vh = md.slice(md.indexOf("## Version history")) + readText("spec/history/PRE-RELEASE-RENAMES.md");
       const motionBob = /pendulum[^\n]{0,40}\bbob\b|\bbob\b[^\n]{0,40}\bpath\b|type: ?['"]bob['"]/;
-      return { stale: files.filter((f) => motionBob.test(readText(f))), says: files.filter((f) => /\boscillate\b/.test(readText(f))), vh: /`oscillate`/.test(vh) && /`bob`/.test(vh), cl: /oscillate/.test(readText("spec/REGISTRY-CHANGELOG.md").split("\n").filter((l: string) => /^- 2026-10-1[78]/.test(l)).join("\n")) }; },
+      return { stale: [...files.filter((f) => motionBob.test(readText(f))), ...(motionBob.test(agentText()) ? ["the agent"] : [])], says: files.filter((f) => /\boscillate\b/.test(readText(f))), vh: /`oscillate`/.test(vh) && /`bob`/.test(vh), cl: /oscillate/.test(readText("spec/REGISTRY-CHANGELOG.md").split("\n").filter((l: string) => /^- 2026-10-1[78]/.test(l)).join("\n")) }; },
     good: (o) => !o.stale.length && o.says.length === 5 && o.vh && o.cl },
   // ---------------- OLD: the read-side fallbacks S6 deleted (11-05), one row per old key ----------------
   { id: "OLD", what: "every old spelling S6 stopped reading is ignored by its reader (the value's absence, or the reader's refusal), while today's spelling reads: grip fingers, the packet's pre-release key, terrain.water, the renamed codes, the sky's clock/weatherSeconds/dormantRated/forecast dwellSec+transitionSec, world.log, Light day, motion bob (cutJson: vocab-fixtures F12; provenance body.commit: its reader went with simplify D5)", async run() {

@@ -215,7 +215,7 @@ const cases: Case[] = [
     good: (o) => !o.declares && !o.agent && o.lines > 1 },
   { id: "D8", what: "the agent harness declares (\"agent\" by default, nothing when told \"\"), sends no `agent` key, and keeps others' `declares` as sent (review r11 L2: never compared to a word)", async run() {
       const A = await import(TREE + "mcpl/agent.ts"); const a = new A.WorldAgent({ name: "x", world: "glade", declares: undefined }); const b = new A.WorldAgent({ name: "y", world: "glade", declares: "" });
-      const ja = a.joinMsg(), jb = b.joinMsg(); const src = readText("mcpl/agent.ts");
+      const ja = a.joinMsg(), jb = b.joinMsg(); const src = fs.readdirSync(TREE + "mcpl").filter((f) => /^agent(-[a-z]+)?\.ts$/.test(f)).map((f) => readText("mcpl/" + f)).join("\n");   // the agent and its pieces
       return { ja: { d: ja.declares, agent: "agent" in ja }, jb: { d: jb.declares, agent: "agent" in jb }, reads: (src.match(/rememberBody\((p|msg)\.id, (p|msg)\.avatar, [^,]+, (p|msg)\.declares\)/g) ?? []).length, cmp: /(?<!typeof )\b(\w+\.)?declares === "/.test(src), old: /!!(msg|p)\.agent\b/.test(src) }; },
     good: (o) => o.ja.d === "agent" && !o.ja.agent && o.jb.d === undefined && !o.jb.agent && o.reads === 2 && !o.cmp && !o.old },
   { id: "D9", what: "the browser reads `declares` from arrive and present (net.js) and keeps the word as said (R 10-17 14:41: no agent boolean), never an `agent` flag", run() {
