@@ -510,12 +510,6 @@ export class WorldAgent {
   /** My live reach descriptors, one per limb (shared/reachwire.js), sent on
    *  every presence packet; `reached` is my solver's attestation (reachTick). */
   reaches = new Map<string, { t: any; palm?: false; reached?: true }>();
-  private reachBodies = new Map<string, ReachBody | null>();               // avatar path -> solver body
-  private reachBodyLoads = new Map<string, Promise<ReachBody | null>>();
-  private reachTicks = 0;
-  private reachReading: any = null;
-  private reachReadingEpoch = 0;
-  private reachReadingBusy = false;
   private clipClockName = "";
   private clipClockStarted = 0;
   private bodyClip() {
@@ -527,20 +521,11 @@ export class WorldAgent {
     if (this.clipClockName !== slot) { this.clipClockName = slot; this.clipClockStarted = Date.now(); }
   }
   private clipPhase() { return this.clipClockName === this.bodyClip() ? Math.max(0, (Date.now() - this.clipClockStarted) / 1000) : 0; }
-  private async refreshReachReading() {
-    const epoch = ++this.reachReadingEpoch;
-    const reading = await this.bodyState(this.name, "all");
-    if (epoch === this.reachReadingEpoch) this.reachReading = reading;
-  }
 
   private bodyReader: BodyStateReader | null = null;
   private bodyGenerationCounter = 0;
   private selfBodyGeneration = 0;
   private selfObservedAt: number | null = null;
-
-  /** reach/touch ping refractory, keyed "kind:who:limb" — a hand trembling
-   *  across the touch threshold must not knock twice. */
-  private lastReachPing = new Map<string, number>();
   /** Local-awareness accumulator, reset every pulse: RAW for movement and says
    *  (jump spam is real liveliness) but DENOISED for arrivals/departures (a
    *  reconnect flap is not activity). */
@@ -3569,89 +3554,6 @@ export class WorldAgent {
    *  REACH_NOTE_MS), newest last: what reach() reads to tell the truth about a hand nobody saw. */
   reachRefusals: { to: string; cls: string; why: string; fix?: string; limb?: string; ts: number }[] = [];
   private nameOfActor(actor: string): string | null { for (const [n, a] of this.actorIds) if (a === actor) return n; return null; }
-  /** Stop streaming the limb a refusal names (the relay strips it anyway). Only that one: another limb on the same body may
-   *  be one they consented to (r2 holes F9). A refusal from a server that doesn't name the limb drops the limbs held to that
-   *  body in the refused class. */
-  private dropReachesAt(actor: string, limb?: string, cls?: string): string[] {
-    const name = this.nameOfActor(actor), out: string[] = [];
-    for (const [l, e] of [...this.reaches]) {
-      // a limb's refusal is that reach's only while the relay still holds the reach to the refuser's body (reachHolders: the
-      // body it names, and every body its point lands in), or the reach is a world point, which the relay judges by where it
-      // lands now: a newer reach on the same hand held to nobody who refused stays
-      const held = name ? this.reachHolders(e.t).find((h) => h.name === name) : undefined, atBody = e.t?.who != null || e.t?.space != null;
-      const hit = limb !== undefined ? l === limb && (!!held || !atBody) : !!held && (!cls || held.cls === cls);
-      if (hit) { this.reaches.delete(l); out.push(WorldAgent.LIMB_WORD[l] ?? l); } }
-    return out;
-  }
-  /** The other bodies a world point lands in, each with its class there: server/reachgate.ts's bodiesAt, read from the
-   *  presence this body holds (each body's capsule, scaled to its size). */
-  private bodiesAtPoint(pt: number[]): { name: string; cls: string }[] {
-    const out: { name: string; cls: string }[] = [];
-    for (const [name, person] of this.people) {
-      const at = (person.pose as any)?.p;
-      if (name === this.name || !Array.isArray(at) || at.length !== 3 || !at.every(Number.isFinite)) continue;
-      const sc = clampBodyScale((person.pose as any)?.scale);
-      const cls = pointClass([0, 0, 0], [(pt[0] - at[0]) / sc, (pt[1] - at[1]) / sc, (pt[2] - at[2]) / sc]);
-      if (cls) out.push({ name, cls });
-    }
-    return out;
-  }
-  /** Every other body a reach target is held to, as the relay holds it (server/reachgate.ts touched), each with its class:
-   *  a named point, that one body; a point in the world or this body's frame, every body it lands in; a point in another
-   *  body's frame, that body and every other body it lands in. The relay strips the reach if any of them refuses it. */
-  private reachHolders(t: any): { name: string; cls: string }[] {
-    if (t?.who !== undefined) {
-      const cls = t.who !== this.name ? WorldAgent.reachClass(t, t.who) : null;
-      return cls ? [{ name: t.who, cls }] : [];
-    }
-    if (!Array.isArray(t?.p) || t.p.length !== 3 || !t.p.every(Number.isFinite)) return [];
-    const p = t.p as number[];
-    if (t.space === undefined) return this.bodiesAtPoint(p);
-    if (t.space === "self" || t.space === this.name) {   // this body's root frame, as the pose it sends draws it
-      const world = WorldAgent.poseToWorld({ p: [this.pos.x, this.pos.y, this.pos.z], yaw: this.yaw }, p);
-      return world ? this.bodiesAtPoint(world) : [];
-    }
-    // their own frame: theirs, and wherever it lands in the world, as their pose draws it
-    const own = WorldAgent.reachClass(t, t.space, clampBodyScale((this.people.get(t.space)?.pose as any)?.scale));
-    const world = WorldAgent.poseToWorld(this.people.get(t.space)?.pose, p);
-    return [...(own ? [{ name: t.space as string, cls: own }] : []), ...(world ? this.bodiesAtPoint(world).filter((h) => h.name !== t.space) : [])];
-  }
-  /** As server/reachgate.ts's frameToWorld places it: metres at any size (docs/guide/BODY-STATE.md), turned by the pose's q when it
-   *  carries one (a swimmer's whole-body turn), else by its yaw about +y. Null without a position. */
-  private static poseToWorld(pose: any, local: number[]): number[] | null {
-    const at = pose?.p;
-    if (!Array.isArray(at) || at.length !== 3 || !at.every(Number.isFinite)) return null;
-    const l = local, q = pose.q;
-    if (Array.isArray(q) && q.length === 4 && q.every(Number.isFinite)) {
-      const n = Math.hypot(q[0], q[1], q[2], q[3]) || 1, x = q[0] / n, y = q[1] / n, z = q[2] / n, w = q[3] / n;
-      const cx = y * l[2] - z * l[1], cy = z * l[0] - x * l[2], cz = x * l[1] - y * l[0];   // v' = v + 2w (u × v) + 2 u × (u × v)
-      const dx = y * cz - z * cy, dy = z * cx - x * cz, dz = x * cy - y * cx;
-      return [at[0] + l[0] + 2 * (w * cx + dx), at[1] + l[1] + 2 * (w * cy + dy), at[2] + l[2] + 2 * (w * cz + dz)];
-    }
-    const yaw = Number(pose.yaw) || 0, c = Math.cos(yaw), sn = Math.sin(yaw);
-    return [at[0] + l[0] * c + l[2] * sn, at[1] + l[1], at[2] - l[0] * sn + l[2] * c];
-  }
-  /** The class the relay (server/reachgate.ts) gives a target on `name`'s body: a named point by consent.js's one table, a
-   *  point in their own frame by their capsule; null for a point beside them (the relay relays it) or another kind of target. */
-  static reachClass(t: any, name: string, scale = 1): string | null {
-    if (t?.who === name) return namedPointClass(t.point)?.cls ?? null;
-    // the point is metres in their root frame; their capsule is at their size (bodiesAtPoint)
-    if (t?.space === name && Array.isArray(t.p)) return pointClass([0, 0, 0], t.p.map((v: number) => v / scale));
-    return null;
-  }
-  /** After streaming a reach at other bodies: did the relay refuse it? A fresh refusal from any body it is held to (waits
-   *  a few frames for one), or one said within REACH_NOTE_MS (the relay won't say it again that soon, so silence then is
-   *  not a yes). Each body by its class there: a refusal of another class is another reach's. */
-  private async reachRefusalFor(limb: string, holders: { name: string; actor: string; cls: string }[], since: number) {
-    const holderOf = (x: { to: string; cls: string }) => holders.find((h) => h.actor === x.to && h.cls === x.cls);
-    for (let i = 0; i < 16 && this.joined && !this.closed; i++) {
-      const r = this.reachRefusals.find((x) => x.ts >= since && (x.limb ?? limb) === limb && holderOf(x));
-      if (r) return { r, by: holderOf(r)!.name, fresh: true };
-      await new Promise((res) => setTimeout(res, 50));
-    }
-    const r = [...this.reachRefusals].reverse().find((x) => holderOf(x) && x.ts > Date.now() - REACH_NOTE_MS);   // (target, class) exactly (F9)
-    return r ? { r, by: holderOf(r)!.name, fresh: false } : null;
-  }
   /** A gesture's ops (shared/requests.js) as ONE request, sent after the previous one was answered. Ops planned
    *  before that wait don't see what landed meanwhile, so a caller that planned from the replica pins what it read with
    *  `expect` (componentsOf): a change since is refused, not overwritten. `extra` rides the request (dry, expect,
@@ -3779,6 +3681,104 @@ export class WorldAgent {
   // body needs: resolving the target from presence + stand-in skeletons
   // (physics.ts ReachBody), solving its arm once for the tool reply, and keeping
   // the `reached` attestation honest (its rising edge is the touch event).
+  private reachBodies = new Map<string, ReachBody | null>();               // avatar path -> solver body
+  private reachBodyLoads = new Map<string, Promise<ReachBody | null>>();
+  private reachTicks = 0;
+  private reachReading: any = null;
+  private reachReadingEpoch = 0;
+  private reachReadingBusy = false;
+  private async refreshReachReading() {
+    const epoch = ++this.reachReadingEpoch;
+    const reading = await this.bodyState(this.name, "all");
+    if (epoch === this.reachReadingEpoch) this.reachReading = reading;
+  }
+
+  /** reach/touch ping refractory, keyed "kind:who:limb" — a hand trembling
+   *  across the touch threshold must not knock twice. */
+  private lastReachPing = new Map<string, number>();
+  /** Stop streaming the limb a refusal names (the relay strips it anyway). Only that one: another limb on the same body may
+   *  be one they consented to (r2 holes F9). A refusal from a server that doesn't name the limb drops the limbs held to that
+   *  body in the refused class. */
+  private dropReachesAt(actor: string, limb?: string, cls?: string): string[] {
+    const name = this.nameOfActor(actor), out: string[] = [];
+    for (const [l, e] of [...this.reaches]) {
+      // a limb's refusal is that reach's only while the relay still holds the reach to the refuser's body (reachHolders: the
+      // body it names, and every body its point lands in), or the reach is a world point, which the relay judges by where it
+      // lands now: a newer reach on the same hand held to nobody who refused stays
+      const held = name ? this.reachHolders(e.t).find((h) => h.name === name) : undefined, atBody = e.t?.who != null || e.t?.space != null;
+      const hit = limb !== undefined ? l === limb && (!!held || !atBody) : !!held && (!cls || held.cls === cls);
+      if (hit) { this.reaches.delete(l); out.push(WorldAgent.LIMB_WORD[l] ?? l); } }
+    return out;
+  }
+  /** The other bodies a world point lands in, each with its class there: server/reachgate.ts's bodiesAt, read from the
+   *  presence this body holds (each body's capsule, scaled to its size). */
+  private bodiesAtPoint(pt: number[]): { name: string; cls: string }[] {
+    const out: { name: string; cls: string }[] = [];
+    for (const [name, person] of this.people) {
+      const at = (person.pose as any)?.p;
+      if (name === this.name || !Array.isArray(at) || at.length !== 3 || !at.every(Number.isFinite)) continue;
+      const sc = clampBodyScale((person.pose as any)?.scale);
+      const cls = pointClass([0, 0, 0], [(pt[0] - at[0]) / sc, (pt[1] - at[1]) / sc, (pt[2] - at[2]) / sc]);
+      if (cls) out.push({ name, cls });
+    }
+    return out;
+  }
+  /** Every other body a reach target is held to, as the relay holds it (server/reachgate.ts touched), each with its class:
+   *  a named point, that one body; a point in the world or this body's frame, every body it lands in; a point in another
+   *  body's frame, that body and every other body it lands in. The relay strips the reach if any of them refuses it. */
+  private reachHolders(t: any): { name: string; cls: string }[] {
+    if (t?.who !== undefined) {
+      const cls = t.who !== this.name ? WorldAgent.reachClass(t, t.who) : null;
+      return cls ? [{ name: t.who, cls }] : [];
+    }
+    if (!Array.isArray(t?.p) || t.p.length !== 3 || !t.p.every(Number.isFinite)) return [];
+    const p = t.p as number[];
+    if (t.space === undefined) return this.bodiesAtPoint(p);
+    if (t.space === "self" || t.space === this.name) {   // this body's root frame, as the pose it sends draws it
+      const world = WorldAgent.poseToWorld({ p: [this.pos.x, this.pos.y, this.pos.z], yaw: this.yaw }, p);
+      return world ? this.bodiesAtPoint(world) : [];
+    }
+    // their own frame: theirs, and wherever it lands in the world, as their pose draws it
+    const own = WorldAgent.reachClass(t, t.space, clampBodyScale((this.people.get(t.space)?.pose as any)?.scale));
+    const world = WorldAgent.poseToWorld(this.people.get(t.space)?.pose, p);
+    return [...(own ? [{ name: t.space as string, cls: own }] : []), ...(world ? this.bodiesAtPoint(world).filter((h) => h.name !== t.space) : [])];
+  }
+  /** As server/reachgate.ts's frameToWorld places it: metres at any size (docs/guide/BODY-STATE.md), turned by the pose's q when it
+   *  carries one (a swimmer's whole-body turn), else by its yaw about +y. Null without a position. */
+  private static poseToWorld(pose: any, local: number[]): number[] | null {
+    const at = pose?.p;
+    if (!Array.isArray(at) || at.length !== 3 || !at.every(Number.isFinite)) return null;
+    const l = local, q = pose.q;
+    if (Array.isArray(q) && q.length === 4 && q.every(Number.isFinite)) {
+      const n = Math.hypot(q[0], q[1], q[2], q[3]) || 1, x = q[0] / n, y = q[1] / n, z = q[2] / n, w = q[3] / n;
+      const cx = y * l[2] - z * l[1], cy = z * l[0] - x * l[2], cz = x * l[1] - y * l[0];   // v' = v + 2w (u × v) + 2 u × (u × v)
+      const dx = y * cz - z * cy, dy = z * cx - x * cz, dz = x * cy - y * cx;
+      return [at[0] + l[0] + 2 * (w * cx + dx), at[1] + l[1] + 2 * (w * cy + dy), at[2] + l[2] + 2 * (w * cz + dz)];
+    }
+    const yaw = Number(pose.yaw) || 0, c = Math.cos(yaw), sn = Math.sin(yaw);
+    return [at[0] + l[0] * c + l[2] * sn, at[1] + l[1], at[2] - l[0] * sn + l[2] * c];
+  }
+  /** The class the relay (server/reachgate.ts) gives a target on `name`'s body: a named point by consent.js's one table, a
+   *  point in their own frame by their capsule; null for a point beside them (the relay relays it) or another kind of target. */
+  static reachClass(t: any, name: string, scale = 1): string | null {
+    if (t?.who === name) return namedPointClass(t.point)?.cls ?? null;
+    // the point is metres in their root frame; their capsule is at their size (bodiesAtPoint)
+    if (t?.space === name && Array.isArray(t.p)) return pointClass([0, 0, 0], t.p.map((v: number) => v / scale));
+    return null;
+  }
+  /** After streaming a reach at other bodies: did the relay refuse it? A fresh refusal from any body it is held to (waits
+   *  a few frames for one), or one said within REACH_NOTE_MS (the relay won't say it again that soon, so silence then is
+   *  not a yes). Each body by its class there: a refusal of another class is another reach's. */
+  private async reachRefusalFor(limb: string, holders: { name: string; actor: string; cls: string }[], since: number) {
+    const holderOf = (x: { to: string; cls: string }) => holders.find((h) => h.actor === x.to && h.cls === x.cls);
+    for (let i = 0; i < 16 && this.joined && !this.closed; i++) {
+      const r = this.reachRefusals.find((x) => x.ts >= since && (x.limb ?? limb) === limb && holderOf(x));
+      if (r) return { r, by: holderOf(r)!.name, fresh: true };
+      await new Promise((res) => setTimeout(res, 50));
+    }
+    const r = [...this.reachRefusals].reverse().find((x) => holderOf(x) && x.ts > Date.now() - REACH_NOTE_MS);   // (target, class) exactly (F9)
+    return r ? { r, by: holderOf(r)!.name, fresh: false } : null;
+  }
 
   private static readonly LIMB_WORD: Record<string, string> = {
     leftHand: "left hand", rightHand: "right hand", leftFoot: "left foot", rightFoot: "right foot",
