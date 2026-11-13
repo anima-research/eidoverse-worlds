@@ -18,7 +18,7 @@ const STUBS: Record<string, string> = {
   world: `export const entities = new Map(); export const bags = {}; export const bagOf = (id) => bags[id]; export const socketsOn = () => []; globalThis.__cu.world = { entities, bags };`,
   'edit/fieldpanels': `export const menus = []; export function contextMenu(x, y, items) { menus.push(items); } export function closeContextMenu() {} globalThis.__cu.panels = { menus };`,
   ui: `export const flashHint = () => {};`,
-  xrask: `export const xrActive = () => false;`,
+  'xr/xrask': `export const xrActive = () => false;`,
   plainwords: `export const nameOf = (id) => id;`,
   thingphysics: `export const held = []; export const calls = [];
     export const physicsApi = { mine: () => held.slice(), grabbable: (id) => (id === 'crate' || id === 'ball' ? { enabled: true } : null), inReach: () => true, whereFromMe: () => null,

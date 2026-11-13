@@ -16,7 +16,7 @@ const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({
   name: 'actionbar-stubs',
   setup(b) {
-    for (const m of ['windows', 'animnames', 'controller', 'mybody', 'xrpanels', 'base']) {
+    for (const m of ['windows', 'animnames', 'controller', 'mybody', '(xr/)?xrpanels', 'base']) {
       if (RESTORE && m === 'windows') continue;
       stubResolve(b, new RegExp(`^(\\.\\.?/)+${m}\\.js$`), () => ({ path: here('../stubs/actionbar-stub.mjs') }));
     }

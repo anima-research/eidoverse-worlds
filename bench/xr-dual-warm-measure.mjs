@@ -1,5 +1,5 @@
 // A tool, not a gate test: a compile-cost measurement in real three + Chromium; the module rules are xrpass-test.
-// Content that loads in ONE mode must not compile when you switch to the OTHER (client/lib/xrwarm.js; the pattern
+// Content that loads in ONE mode must not compile when you switch to the OTHER (client/lib/xr/xrwarm.js; the pattern
 // is BasisVR's warm-at-load — see that file's header). REAL three r186, WebGL backend, MSAA on like the client.
 //
 // Presenting is simulated the way three sees it: the output render target is set (XRManager does that), the XR
@@ -23,8 +23,8 @@ const PAGE = `<!doctype html><html><body>${RAW3_IMPORTMAP}
 <script type="module">
 import * as THREE from 'three';
 import { vec3 } from 'three/tsl';
-import { separateXRPass, withXREyes } from './lib/xrpass.js';
-import { installDualWarm } from './lib/xrwarm.js';
+import { separateXRPass, withXREyes } from './lib/xr/xrpass.js';
+import { installDualWarm } from './lib/xr/xrwarm.js';
 const N = ${N}, M = ${M}, W = 64, H = 32;
 async function run(mode) {
   const canvas = document.createElement('canvas'); document.body.appendChild(canvas);

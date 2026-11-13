@@ -49,7 +49,7 @@ try {
 
   // ---- in-page helpers ----------------------------------------------------------------------------------------------
   await ev(pg, async () => {
-    const xr = await import('./lib/xr.js'), pc = await import('./lib/platecard.js'), dq = await import('./lib/domquad.js'), xp = await import('./lib/xrpointer.js');
+    const xr = await import('./lib/xr/xr.js'), pc = await import('./lib/platecard.js'), dq = await import('./lib/xr/domquad.js'), xp = await import('./lib/xr/xrpointer.js');
     const T = EW.THREE, dev = window.__iwerDevice;
     const H = globalThis.__h = { xr, pc, dq, xp, T, R: {}, clicks: 0 };
     H.frames = (n) => new Promise((res) => { const f0 = globalThis.__perf.frameNo; const t0 = performance.now();
@@ -445,12 +445,12 @@ try {
   const gone = await ev(pg, () => { const hs = __h.xr.xrHands(); return { beams: ['left', 'right'].map((k) => !!hs[k]?.laser.parent), held: __h.xr.xrDebug().held }; });
   check('leaving VR takes the beams out of the scene', !gone.beams.some(Boolean) && gone.held === null, J(gone));
   check('no page errors', errs.length === 0, errs.slice(0, 3).join(' | '));
-  // IWER's null eye framebuffer is client/lib/xr_nullfb.js's: its WeakMap error is a regression here, not an artifact
+  // IWER's null eye framebuffer is client/lib/xr/xr_nullfb.js's: its WeakMap error is a regression here, not an artifact
   const other = conErrs.filter((t) => !/401|whoami/.test(t));
   check('no console errors', other.length === 0, other.slice(0, 3).join(' | '));
   await pg.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await pg.waitForFunction(() => !!globalThis.EW?.me?.(), null, { timeout: 120000 });
-  const re = await ev(pg, async () => { const xr = await import('./lib/xr.js'); return { pref: xr.xrPrefs.pointerVisibility, sel: document.getElementById('vr-pointer-visibility')?.value ?? '(row not built until the section opens)' }; });
+  const re = await ev(pg, async () => { const xr = await import('./lib/xr/xr.js'); return { pref: xr.xrPrefs.pointerVisibility, sel: document.getElementById('vr-pointer-visibility')?.value ?? '(row not built until the section opens)' }; });
   check('the setting persists across a reload (the other VR prefs\' storage)', re.pref === 'always', J(re));
 } catch (e) { check('probe ran', false, e?.stack?.split('\n').slice(0, 3).join(' ') ?? String(e)); }
 finally {

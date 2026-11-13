@@ -10,9 +10,9 @@
 //      flat-page moment ask. Nothing here is awaited by the exit.
 //
 // The decisions are vrmic_policy.js (pure, tested); this file is the effects.
-import { bus, CONFIG } from './base.js';
-import { flashHint, toast } from './ui.js';
-import { THREE, camera, renderer } from './core.js';
+import { bus, CONFIG } from '../base.js';
+import { flashHint, toast } from '../ui.js';
+import { THREE, camera, renderer } from '../core.js';
 import { quadMaterial } from './quadcolour.js';   // the plate's colours as authored, not ACES-washed
 import { preVrStep, inVrMicPlan, inVrAfterTry, afterExitStep, MIC_CHOICE_KEY, MIC_PENDING_KEY } from './vrmic_policy.js';
 
@@ -77,7 +77,7 @@ export async function vrMicPreflight(proceed) {
 let trying = false;
 /** main.js routes the ring's 'xr:mic' here. Outside VR, or turning the mic off, it is exactly toggleMic. */
 export async function xrMicPress() {
-  const M = await import('./micstate.js');
+  const M = await import('../micstate.js');
   const turningOn = !M.micOn();
   const plan = turningOn && presenting ? inVrMicPlan({ turningOn, presenting, state: await micPermissionState() }) : 'proceed';
   if (plan === 'proceed') return M.toggleMic(CONFIG.name);
@@ -111,7 +111,7 @@ export async function xrMicPress() {
  *  late device is stopped there, not published. */
 async function retract() {
   try {
-    const S = await import('./voicesfu.js');
+    const S = await import('../voicesfu.js');
     if (S.sfuMicWanted() && !S.sfuMicOn()) { await S.sfuMic(false); bus.emit('audio:mic', false); }
   } catch { /* no transport in this context */ }
 }

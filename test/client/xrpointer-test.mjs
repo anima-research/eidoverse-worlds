@@ -1,8 +1,8 @@
-// The VR pointer's policy (client/lib/xrpointer.js), run without a headset: the "pointer visibility" setting, the ray's
+// The VR pointer's policy (client/lib/xr/xrpointer.js), run without a headset: the "pointer visibility" setting, the ray's
 // low-pass, and the stickiness (hold a target through a small drift; easier to stay on than to get on).
 // test/client/xr-pointer-probe.mjs is the browser half: the real loop under IWER, the setting's row in the VR settings quad.
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/client/xrpointer-test.mjs
-import * as P from '../../client/lib/xrpointer.js';
+import * as P from '../../client/lib/xr/xrpointer.js';
 import * as THREE from '../../client/node_modules/three/build/three.module.js';   // the copy client/lib uses
 import { suite } from "../gate/suite.ts";
 const S = suite("xrpointer");

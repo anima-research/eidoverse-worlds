@@ -100,12 +100,12 @@ try {
   // ── into VR: the real entry stages the frames; show the two quads ──
   await ev(() => document.querySelector('#xrbtn').click());
   await pg.waitForFunction(() => window.__probe.grants >= 1 && globalThis.__domQuads().staged > 0, null, { timeout: 30000 }).catch(() => {});
-  const shown = await ev(async () => { const D = await import('./lib/domquad.js'); return [D.domQuadShow('world', true), D.domQuadShow('settings', true)]; });
+  const shown = await ev(async () => { const D = await import('./lib/xr/domquad.js'); return [D.domQuadShow('world', true), D.domQuadShow('settings', true)]; });
   check('in a session, the world and settings quads show', shown.every(Boolean), JSON.stringify(shown));
   await sleep(1500);   // SVG icons load async and re-raster through the observer
 
   const raster = await ev(async () => {
-    const D = await import('./lib/domquad.js');
+    const D = await import('./lib/xr/domquad.js');
     const out = {};
     for (const id of ['world', 'settings']) {
       const t = D.domQuadTexture(id); const cv = t.image; const ctx = cv.getContext('2d');
@@ -150,7 +150,7 @@ try {
 
   // ── vr-a: Settings › Style › VR panel opacity. Default 1: the quad is opaque, in the opaque pass ──
   const vrA = async (v) => ev(async (v) => {
-    const D = await import('./lib/domquad.js');
+    const D = await import('./lib/xr/domquad.js');
     const row = [...document.querySelectorAll('#sec-style .row')].find((r) => r.querySelector('.nm')?.textContent === 'VR panel opacity');
     const input = row?.querySelector('input[type=range]');
     if (!input) return { found: false, desktopLabel: [...document.querySelectorAll('#sec-style .row .nm')].map((n) => n.textContent) };
@@ -186,7 +186,7 @@ try {
     await ptt(on);
     await sleep(600);   // the observer re-rasters
     vrDim[on ? 'dim' : 'live'] = await ev(async ([fn, tag]) => {
-      const D = await import('./lib/domquad.js');
+      const D = await import('./lib/xr/domquad.js');
       const t = D.domQuadTexture('settings'); t.paused = false; t.update();
       const cv = t.image, er = t.dom.getBoundingClientRect(), s = cv.width / er.width;
       const r = document.querySelector('#sec-audio [data-meter]').closest('.sp-row').getBoundingClientRect();
@@ -212,7 +212,7 @@ try {
   const squares = await ev(async () => {
     // paint census: every fill/stroke rect the rasteriser makes for an element the DOM does not render. The raster is
     // re-run with fill()/stroke() wrapped so each draw is attributed to the element being drawn at that moment.
-    const D = await import('./lib/domquad.js');
+    const D = await import('./lib/xr/domquad.js');
     const t = D.domQuadTexture('world'); const root = t.dom;
         const unpainted = (e) => !e.checkVisibility({ opacityProperty: true, visibilityProperty: true });
     const zeroOrHidden = new Set([...root.querySelectorAll('*')].filter(unpainted));
@@ -234,7 +234,7 @@ try {
   const caps = await ev(async () => {
     document.getElementById('sec-mods-tab').click();
     await new Promise((r) => setTimeout(r, 400));
-    const D = await import('./lib/domquad.js');
+    const D = await import('./lib/xr/domquad.js');
     const t = D.domQuadTexture('world'); const root = t.dom;
     const norm = document.createElement('canvas').getContext('2d');
     const P = CanvasRenderingContext2D.prototype; const os = P.stroke, ot = P.fillText; const seen = new Map();
@@ -329,7 +329,7 @@ try {
   console.log(`  · tokens: ${JSON.stringify(tokens)}`);
   const measure = (exposure = null, path = 'domquad') => ev(async ([tokens, exposureSet, path]) => {
     const { THREE, renderer } = await import('./lib/core.js');
-    const D = await import('./lib/domquad.js');
+    const D = await import('./lib/xr/domquad.js');
     const names = Object.keys(tokens); const cols = names.map((k) => tokens[k]);
     const cv = document.createElement('canvas'); cv.width = 64 * cols.length; cv.height = 64;
     const c2 = cv.getContext('2d'); cols.forEach((c, i) => { c2.fillStyle = c; c2.fillRect(i * 64, 0, 64, 64); });
@@ -340,7 +340,7 @@ try {
     document.body.appendChild(div);
     let mesh = new HTMLMesh(div, { scale: 1 });
     if (path === 'canvasquads') {   // the ?canvasquads=1 fallback's own quad (xrpanels.makePanel), fed the same pixels
-      const X = await import('./lib/xrpanels.js');
+      const X = await import('./lib/xr/xrpanels.js');
       const p = X.makePanel?.({ id: 'probe', fields: () => [], dispatch: () => {} }, 0, 1);
       if (p) { p.canvas.width = mesh.material.map.image.width; p.canvas.height = mesh.material.map.image.height; p.canvas.getContext('2d').drawImage(mesh.material.map.image, 0, 0); p.tex.needsUpdate = true;
         p.mesh.scale.set(cols.length * 0.064, 0.064, 1); p.mesh.position.set(0, 0, 0); p.mesh.rotation.set(0, 0, 0); mesh = p.mesh; mesh.material.map.pause = () => {}; }
@@ -348,7 +348,7 @@ try {
     if (path === 'plate') {   // a head-locked canvas plate as vrmic's note and the XR curtain's splash build it: blended, depth off
       const tex = new THREE.CanvasTexture(mesh.material.map.image); tex.colorSpace = THREE.SRGBColorSpace;
       const plate = new THREE.Mesh(new THREE.PlaneGeometry(cols.length * 0.064, 0.064), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false }));
-      (await import('./lib/quadcolour.js')).quadMaterial?.(plate, renderer);
+      (await import('./lib/xr/quadcolour.js')).quadMaterial?.(plate, renderer);
       mesh.dispose(); mesh = plate; tex.pause = () => {};
     }
     if (path === 'domquad') { mesh.material.transparent = false; mesh.material.alphaTest = 0.5; }
@@ -363,7 +363,7 @@ try {
     for (let k = 0; k < 6; k++) { read(); await new Promise((r) => setTimeout(r, 120)); }   // pipelines compile
     const got = read();
     const fbt = [...(renderer._frameBufferTargets?.values?.() ?? [])].map((t) => ({ type: t.texture.type, samples: t.samples }));
-    const served = await fetch('/lib/quadcolour.js').then((r) => r.text()).then((t) => /div\(toneMappingExposure\);/.test(t) && !/max\(mat3/.test(t)).catch(() => null);
+    const served = await fetch('/lib/xr/quadcolour.js').then((r) => r.text()).then((t) => /div\(toneMappingExposure\);/.test(t) && !/max\(mat3/.test(t)).catch(() => null);
     const gl = renderer.backend?.gl; const cbf = gl ? !!gl.getExtension('EXT_color_buffer_float') : null;
     console.log('[colourprobe] fbt', JSON.stringify(fbt), 'served-unclamped', served, 'EXT_color_buffer_float', cbf);
     const exposure = renderer.toneMappingExposure, toneMapping = renderer.toneMapping;
@@ -373,7 +373,7 @@ try {
     mesh.dispose?.();   // a plate has none (quadMaterial must not assume one)
     return { names, want: cols, got, exposure, toneMapping, url, size: [size.x, size.y, dpr], depth };
   }, [tokens, exposure, path]);
-  const setGrade = (g) => ev(async (g) => (await import('./lib/quadcolour.js').catch(() => null))?.setGrade(g, false) ?? null, g);
+  const setGrade = (g) => ev(async (g) => (await import('./lib/xr/quadcolour.js').catch(() => null))?.setGrade(g, false) ?? null, g);
   const hadGrade = await setGrade({ saturation: 1, contrast: 1 });   // null on a parent without quadcolour.js
   const m = await measure();
   save('quad-output-swatches', m.url);
@@ -401,7 +401,7 @@ try {
   for (const id of ['settings', 'world']) {
     const url = await ev(async (id) => {
       const { THREE, renderer } = await import('./lib/core.js');
-      const D = await import('./lib/domquad.js');
+      const D = await import('./lib/xr/domquad.js');
       const rig = new THREE.Scene(); D.domQuadsEnter(rig); D.domQuadShow(id, true);   // staged again (the session is over) to draw it
       await new Promise((r) => setTimeout(r, 800));
       const mesh = rig.children.find((o) => o.material?.map === D.domQuadTexture(id));
@@ -425,7 +425,7 @@ try {
   for (const a of [1, 0.6]) {
     const r = await ev(async (a) => {
       const { THREE, renderer } = await import('./lib/core.js');
-      const D = await import('./lib/domquad.js'); const S = await import('./lib/stylepanel.js');
+      const D = await import('./lib/xr/domquad.js'); const S = await import('./lib/stylepanel.js');
       S.setXrPanelAlpha?.(a);
       const rig = new THREE.Scene(); D.domQuadsEnter(rig); D.domQuadShow('settings', true);
       await new Promise((r) => setTimeout(r, 900));
@@ -491,7 +491,7 @@ try {
   check('vr-a: "reset to defaults" returns VR panels to 1', rs.clicked && rs.css === '1' && !/xr-panel-a/.test(rs.stored ?? ''), JSON.stringify(rs));
 
   if (hadGrade) {   // the VR grade: default and both extremes, against the pure-math twin (test/client/quadcolour-test.mjs tests the twin)
-    const { gradeSRGB, GRADE_DEFAULT, GRADE_RANGE } = await import('../../client/lib/quadgrade.js').catch(() => ({}));
+    const { gradeSRGB, GRADE_DEFAULT, GRADE_RANGE } = await import('../../client/lib/xr/quadgrade.js').catch(() => ({}));
     for (const [tag, g] of [['default', GRADE_DEFAULT], ['low', { saturation: GRADE_RANGE.saturation[0], contrast: GRADE_RANGE.contrast[0] }], ['high', { saturation: GRADE_RANGE.saturation[1], contrast: GRADE_RANGE.contrast[1] }]]) {
       await setGrade(g);
       const mg = await measure(); save(`quad-output-grade-${tag}`, mg.url);
@@ -508,7 +508,7 @@ try {
       const sat = rows.find((r) => /sat/.test(r.textContent))?.querySelector('input[type=range]');
       if (!sat) return { rows: rows.length };
       sat.value = '1.6'; sat.dispatchEvent(new Event('input'));
-      const Q = await import('./lib/quadcolour.js');
+      const Q = await import('./lib/xr/quadcolour.js');
       const out = { rows: rows.length, grade: Q.currentGrade(), stored: localStorage.getItem('ew-xr-panel-grade') };
       Q.setGrade(Q.GRADE_DEFAULT);
       return out;

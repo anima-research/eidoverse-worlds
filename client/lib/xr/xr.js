@@ -4,41 +4,41 @@
 // the right-hand ray feeds sgSelect, grip alone grabs a panel by its background or title (never by a control),
 // and every radial-menu slot is verb-backed (agent parity). Never navigate mid-session.
 
-import { confirmCenter } from './edit/confirmcenter.js';
-import { outOfMyView } from './edit/myview.js';
-import { installRenderListTolerance, THREE, renderer, camera, scene, XR_BOOT, PREF_HEADSET_SEEN, xrPixelRatio } from './core.js';
+import { confirmCenter } from '../edit/confirmcenter.js';
+import { outOfMyView } from '../edit/myview.js';
+import { installRenderListTolerance, THREE, renderer, camera, scene, XR_BOOT, PREF_HEADSET_SEEN, xrPixelRatio } from '../core.js';
 import { decideEntryFailure } from './xr_entry_policy.js';
 import { withXREyes } from './xrpass.js';
 import { installDualWarm } from './xrwarm.js';
 import { makeEntryEffects, handleEntryFailure } from './xr_entry_effects.js';
 import { installEntryClock } from './xr_frame_clock.js';
-import { CONFIG, report, bus, tee, wornNameOf } from './base.js';
-import { frameDebug } from './frameloop.js';
+import { CONFIG, report, bus, tee, wornNameOf } from '../base.js';
+import { frameDebug } from '../frameloop.js';
 import { resetFingers, xrBodyDebug } from './xrbody.js';
-import { stroke, fillPath } from './icons.js';
+import { stroke, fillPath } from '../icons.js';
 import { xrPanelsEnter, xrPanelsExit, xrPanelsPick, xrPanelsAt, xrPanelsPress, xrPanelsDrag, xrPanelsReleasePress, showXRPanel, xrPanelHas, xrPanelOpen, xrPanelsGrab, xrPanelRelease, xrPanelsShown, xrPanelsHideToggle, xrPanelsHidden } from './xrpanels.js';
 import { TEXT_SEL, domQuadsScroll, domQuadResizeBegin, domQuadResizeMove, domQuadResizeEnd, domQuadsRevealOnly, domQuadMesh } from './domquad.js';
-import { myState, xrIntent, camYaw, setCamYaw, setXrProbe } from './controller.js';
-import { ringActionEntries } from './actionbar.js';
-import { entities, bagOf, socketsOn } from './world.js';
-import { xrHand as grabHand, bindPresenting as bindGrabPresenting } from './thingphysics.js';   // the grabbable component's VR hands
-import { flashHint, toast } from './ui.js';
+import { myState, xrIntent, camYaw, setCamYaw, setXrProbe } from '../controller.js';
+import { ringActionEntries } from '../actionbar.js';
+import { entities, bagOf, socketsOn } from '../world.js';
+import { xrHand as grabHand, bindPresenting as bindGrabPresenting } from '../thingphysics.js';   // the grabbable component's VR hands
+import { flashHint, toast } from '../ui.js';
 import { vrMicPreflight } from './vrmic.js';
 import { makePointerLine, makeSurfaceDot, placeSurfaceDot, hideSurfaceDot, setSurfaceDotKind } from './pointer.js';
-import { markXrAbsent, registerXrGlyph, micGlyph, earGlyph, xrGlyph, micLive, earOn, flipEar } from './mictoggle.js';
-import { setPttHeld } from './micstate.js';
-import { pttMode } from './voiceconsent.js';
+import { markXrAbsent, registerXrGlyph, micGlyph, earGlyph, xrGlyph, micLive, earOn, flipEar } from '../mictoggle.js';
+import { setPttHeld } from '../micstate.js';
+import { pttMode } from '../voiceconsent.js';
 import './xrmicicon.js';   // the mic icon in view while presenting
-import { markActive } from './presence.js';
-import { platePick, aimPlate, platePress } from './platecard.js';   // a laser resting on a nameplate opens its card
-import { makeDwell } from './dwell.js';
+import { markActive } from '../presence.js';
+import { platePick, aimPlate, platePress } from '../platecard.js';   // a laser resting on a nameplate opens its card
+import { makeDwell } from '../dwell.js';
 import { showXRTip, hideXRTip, dropXRTip, tipTextFor } from './xrtip.js';
 import { POINTER_VIS_DEFAULT, pointerVisible, dotVisible, looksAtWorld, interactable, smoothPose, stickStep, angleTo, rayMatrixTo } from './xrpointer.js';   // the laser's policy
-import { dockPins } from './ui.js';
-import { xrScales, toRigLocal } from '../../shared/bodyscale.js';   // the chosen size composes with the device fit (rig = u, body = u/k)
-import { perf } from './perf.js';
-import { renderCensusTake, renderCensusTick, renderCensusPeek, setXRCurtain, drawStats } from './render.js';
-import { warm, P_AMBIENT } from './warmqueue.js';
+import { dockPins } from '../ui.js';
+import { xrScales, toRigLocal } from '../../../shared/bodyscale.js';   // the chosen size composes with the device fit (rig = u, body = u/k)
+import { perf } from '../perf.js';
+import { renderCensusTake, renderCensusTick, renderCensusPeek, setXRCurtain, drawStats } from '../render.js';
+import { warm, P_AMBIENT } from '../warmqueue.js';
 
 // ---- self-body in first person: hide your own head and label, keep the body ---------------
 let getSelf = () => null;

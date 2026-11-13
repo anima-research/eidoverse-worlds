@@ -25,11 +25,11 @@ plugin({
   setup(b) {
     stubResolve(b, /^(\.\.?\/)+core\.js$/, () => ({ path: here("../stubs/core-stub.mjs") }));
     stubResolve(b, /^(\.\.?\/)+base\.js$/, () => ({ path: here("../stubs/core-stub.mjs") }));
-    stubResolve(b, /^(\.\.?\/)+domquad\.js$/, () => ({ path: here("../stubs/xrpanels-domquad-stub.mjs") }));
+    stubResolve(b, /^(\.\.?\/)+(xr\/)?domquad\.js$/, () => ({ path: here("../stubs/xrpanels-domquad-stub.mjs") }));
     // main's makePanel swaps the quad's material through quadcolour.js (a MeshBasicNodeMaterial: three's WebGPU
     // build only, absent from the headless three.module.js). D asks about the texture, which the swap keeps as
     // its map — so the swap is an identity here; its own colour is test/client/xr-quad-colour-probe.mjs's to measure.
-    stubResolve(b, /^(\.\.?\/)+quadcolour\.js$/, () => ({ path: "quadcolour", namespace: "edittheme-stub" }));
+    stubResolve(b, /^(\.\.?\/)+(xr\/)?quadcolour\.js$/, () => ({ path: "quadcolour", namespace: "edittheme-stub" }));
     b.onLoad({ filter: /.*/, namespace: "edittheme-stub" }, () => ({ contents: "export const quadMaterial = () => {};", loader: "js" }));
   },
 });
@@ -161,7 +161,7 @@ console.log("\nC. the same dispatch as the legacy painter:");
 
 console.log("\nD. the quad's texture is sRGB (xrpanels.makePanel, the real module):");
 {
-  const xr = await import("../../client/lib/xrpanels.js");
+  const xr = await import("../../client/lib/xr/xrpanels.js");
   const { THREE } = await import("../stubs/core-stub.mjs");
   xr.registerXRPanel({ id: "insp-t", title: "Inspector", theme: "edit", fields: () => FIELDS, dispatch: () => {} });
   const got: any[] = [];

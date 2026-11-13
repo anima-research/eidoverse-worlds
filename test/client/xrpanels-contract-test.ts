@@ -16,9 +16,9 @@ plugin({
     stubResolve(b, /^(\.\.?\/)+core\.js$/, () => ({ path: here("../stubs/core-stub.mjs") }));
     stubResolve(b, /^(\.\.?\/)+base\.js$/, () => ({ path: here("../stubs/core-stub.mjs") }));
     // edit/fieldpanels.js stays REAL — renderCanvas/hitRegion are the schema this seam speaks
-    stubResolve(b, /^(\.\.?\/)+domquad\.js$/, () => ({ path: here("../stubs/xrpanels-domquad-stub.mjs") }));
+    stubResolve(b, /^(\.\.?\/)+(xr\/)?domquad\.js$/, () => ({ path: here("../stubs/xrpanels-domquad-stub.mjs") }));
     // quadcolour's node material is the WebGPU build's only: an identity here, as test/client/edittheme-test.ts has it
-    stubResolve(b, /^(\.\.?\/)+quadcolour\.js$/, () => ({ path: "quadcolour", namespace: "xrpanels-stub" }));
+    stubResolve(b, /^(\.\.?\/)+(xr\/)?quadcolour\.js$/, () => ({ path: "quadcolour", namespace: "xrpanels-stub" }));
     b.onLoad({ filter: /.*/, namespace: "xrpanels-stub" }, () => ({ contents: "export const quadMaterial = () => {};", loader: "js" }));
   },
 });
@@ -27,7 +27,7 @@ GlobalRegistrator.register();
 (globalThis as any).requestAnimationFrame ??= (f: any) => setTimeout(f, 0);
 // a 2D context that paints nothing (the quads are painted when shown)
 (HTMLCanvasElement.prototype as any).getContext = () => new Proxy({ measureText: (t: string) => ({ width: t.length * 8 }) } as any, { get: (o, k) => (k in o ? o[k] : () => {}), set: () => true });
-const xr = await import("../../client/lib/xrpanels.js");
+const xr = await import("../../client/lib/xr/xrpanels.js");
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = "") => {

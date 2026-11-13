@@ -36,7 +36,7 @@ async function session(res) {
   await pg.waitForFunction(() => !!globalThis.EW.renderer.xr._xrRenderTarget?.width, null, { timeout: 30000 });
   const r = await pg.evaluate(async () => { const xr = globalThis.EW.renderer.xr; const t = xr._xrRenderTarget;
     return { scale: xr.getFramebufferScaleFactor(), asked: window.__layerAsk, w: t?.width ?? null, h: t?.height ?? null, proj: !!xr._glProjLayer,
-      table: { ...(await import('./lib/xr.js')).XR_RES_SCALES } }; });
+      table: { ...(await import('./lib/xr/xr.js')).XR_RES_SCALES } }; });
   await pg.close();
   return { row, ...r };
 }

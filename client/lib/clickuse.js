@@ -9,7 +9,7 @@ import { outOfMyView } from './edit/myview.js';
 import { bagOf, entities, socketsOn } from './world.js';
 import { contextMenu, closeContextMenu } from './edit/fieldpanels.js';
 import { flashHint } from './ui.js';
-import { xrActive } from './xrask.js';
+import { xrActive } from './xr/xrask.js';
 import { nameOf } from './plainwords.js';
 import { bodyOf } from '../../shared/components.js';
 import { physicsApi } from './thingphysics.js';

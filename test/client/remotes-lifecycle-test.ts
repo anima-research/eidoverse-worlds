@@ -31,7 +31,7 @@ const settle = async () => { for (let i = 0; i < 8; i++) await new Promise((r) =
 
 const stubs = await import("../stubs/remotes-stubs.mjs");
 const { mock } = await import("bun:test");
-for (const m of ["core", "assets", "world", "chat", "fp_view", "boot", "ui", "avatar", "xrbody"]) {   // xrbody: remotes.js imports applyRemoteXR/resetFingers (VR PR); its cone reaches xr.js
+for (const m of ["core", "assets", "world", "chat", "fp_view", "boot", "ui", "avatar", "xr/xrbody"]) {   // xrbody: remotes.js imports applyRemoteXR/resetFingers (VR PR); its cone reaches xr.js
   mock.module(`${import.meta.dir}/../../client/lib/${m}.js`, () => stubs);
 }
 const remotesMod = await import("../../client/lib/remotes.js");

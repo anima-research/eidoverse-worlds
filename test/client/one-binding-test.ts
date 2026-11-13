@@ -48,11 +48,11 @@ const ROWS: Row[] = [
   { name: "the rank ladder and the role-id grammar are roles.js's", owner: ["shared/protocol/roles.js"],
     forbidden: [(l) => new Set([...l.matchAll(RUNG)].map((m) => m[1])).size >= 2, (l) => l.includes("[a-z][a-z0-9-]{0,23}"), /['"]guest['"]\s*,\s*['"]everyone['"]\s*,\s*['"]ghost['"]/], raw: true },
   { name: "rot.js owns its numerics: no host transcendental", owner: [], scope: ["shared/rot.js"], forbidden: [/Math\.(sin|cos|tan|atan2?|asin|acos|pow|exp|log|hypot)\b/] },
-  { name: "the quad shader reads the ACES inverse arrays, no literals of its own", owner: [], scope: ["client/lib/quadcolour.js"], forbidden: [/1\.76474097|0\.64303825/],
-    requires: [["client/lib/quadcolour.js", /mat3\(\.\.\.ACES_OUT_INV\)/], ["client/lib/quadcolour.js", /mat3\(\.\.\.ACES_IN_INV\)/]] },
+  { name: "the quad shader reads the ACES inverse arrays, no literals of its own", owner: [], scope: ["client/lib/xr/quadcolour.js"], forbidden: [/1\.76474097|0\.64303825/],
+    requires: [["client/lib/xr/quadcolour.js", /mat3\(\.\.\.ACES_OUT_INV\)/], ["client/lib/xr/quadcolour.js", /mat3\(\.\.\.ACES_IN_INV\)/]] },
   { name: "N (names) is bound in namereveal.js alone", owner: ["client/lib/namereveal.js"], scope: walk("client").filter((f) => f.endsWith(".js")),
     forbidden: [/['"]KeyN['"]|key === ['"][nN]['"]/], raw: true },
-  { name: "no controller button reveals names (xr.js never calls setReveal)", owner: [], scope: ["client/lib/xr.js"], forbidden: [/setReveal\(/] },
+  { name: "no controller button reveals names (xr.js never calls setReveal)", owner: [], scope: ["client/lib/xr/xr.js"], forbidden: [/setReveal\(/] },
   { name: "a retired command's line is said before dispatch", owner: [], scope: [], forbidden: [], requires: [["client/lib/chat.js", /row\?\.retired\)\s*\{\s*logChat\('\*',\s*row\.retired\)/]] },
   // a sky's ts, a role's until, an access list's end are the authority's stamps (test/client/server-clock-readers-test.ts runs inspect.js's)
   { name: "a server stamp is read on serverNow, never this machine's Date.now()", owner: ["client/lib/serverclock.js"],
@@ -81,7 +81,7 @@ for (const row of ROWS) {
 }
 // "every site has X": B/Y (button 5) is read in one place, the quick hide
 {
-  const lines = code("client/lib/xr.js").split("\n").filter((l) => /buttons\[5\]/.test(l));
+  const lines = code("client/lib/xr/xr.js").split("\n").filter((l) => /buttons\[5\]/.test(l));
   check("VR: B/Y (button 5) is read in one place, the quick hide", lines.length === 1 && /xrPanelsHideToggle|menuBtnWas|const by = /.test(lines[0]), lines.join(" | "));
 }
 // every refusal the optimizer CLI exits 2 with names its KIND on a [verdict] line, read from the emitter itself

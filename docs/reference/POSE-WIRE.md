@@ -38,7 +38,7 @@ xr: {
 ```
 
 Receivers **re-solve**, they do not receive bones: the same distributed look-at (spine→head weights),
-the same two-bone arm IK to the grip, the same finger curl (`client/lib/xrbody.js: applyRemoteXR`),
+the same two-bone arm IK to the grip, the same finger curl (`client/lib/xr/xrbody.js: applyRemoteXR`),
 composed at the avatar's pre-`vrm.update` seam. Same law as `reach`: send the relation, let every
 body solve it for its own skeleton. ~25 numbers per sample. Feet are not on the wire (remotes keep
 the mixer's legs; the sender plants its own — C14).

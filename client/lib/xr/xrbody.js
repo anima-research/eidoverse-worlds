@@ -6,9 +6,9 @@
 //      body hangs beneath; after the look chain, before any arm solve;
 //   then feet, arms, chest follow and finger curls, numbered at the call sites below.
 // DeviceScale (xr.js) scales the puppet to the player; tracking stays 1:1.
-import { THREE, renderer } from './core.js';
-import { CONFIG, tee } from './base.js';
-import { myState } from './controller.js';
+import { THREE, renderer } from '../core.js';
+import { CONFIG, tee } from '../base.js';
+import { myState } from '../controller.js';
 import { isPresenting, puppetScale, xrRig, xrHands, xrFingerCurl, syncRigToBody, applyTurnEarly } from './xr.js';
 
 let getSelf = () => null;

@@ -15,7 +15,7 @@ import { THREE } from './core.js';
 import { avatarMounts, mountTransform, bagOf, entities, findPart, seatSocket } from './world.js';
 import { bodyOf, evalPose, choosePose, reachWins } from '../../shared/sockbody.js';
 import { socketSignals } from './socksignals.js';
-import { xrHandWorld } from './xrbody.js';
+import { xrHandWorld } from './xr/xrbody.js';
 
 const D2R = Math.PI / 180;
 // a neck turns about this far whatever a socket allows (the socket's look narrows it, never widens it)

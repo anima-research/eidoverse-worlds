@@ -13,7 +13,7 @@ import { syncClipPhase } from './poseclips.js';
 import { applyWingFoldPresence } from '../../shared/wingpresence.js';
 import { poseChannels } from '../../shared/humanoid.js';
 import { applyPresenceWire, applyVoiceWire, applyBodyWire, sampleTime } from '../../shared/presencewire.js';
-import { applyRemoteXR, resetFingers } from './xrbody.js';
+import { applyRemoteXR, resetFingers } from './xr/xrbody.js';
 
 export const remotes = new Map(); // id -> RemoteBody
 

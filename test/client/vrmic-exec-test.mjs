@@ -1,4 +1,4 @@
-// vrmic-exec-test — the EFFECTS of client/lib/vrmic.js, executed with a fake clock: the flows whose promise is "the
+// vrmic-exec-test — the EFFECTS of client/lib/xr/vrmic.js, executed with a fake clock: the flows whose promise is "the
 // mic ask never blocks entering VR, and a promise made in VR is kept after it". section 0 drives the pure
 // decisions; test/client/vrmic-probe.mjs drives the real client in a browser. This file sits between: the shipped vrmic.js,
 // stubbed only at the browser/transport boundary (permissions, getUserMedia, micstate, voicesfu, the toast layer).
@@ -61,13 +61,13 @@ const lib = (p) => fileURLToPath(new URL(`../../client/lib/${p}`, import.meta.ur
 mock.module(lib('base.js'), () => ({ bus, CONFIG: { name: 'p', params: new URLSearchParams() } }));
 mock.module(lib('ui.js'), () => ({ flashHint: (t) => hints.push(t), toast: (t) => toasts.push(t) }));
 mock.module(lib('core.js'), () => ({ THREE: {}, camera: {}, renderer: {} }));
-mock.module(lib('quadcolour.js'), () => ({ quadMaterial: () => null }));
+mock.module(lib('xr/quadcolour.js'), () => ({ quadMaterial: () => null }));
 const mic = { on: false, toggles: 0 }, sfu = { wanted: false };
 mock.module(lib('micstate.js'), () => ({ micOn: () => mic.on, toggleMic: () => { mic.toggles++; sfu.wanted = true; return new Promise(() => {}); } }));   // the in-VR acquisition hangs
 mock.module(lib('voicesfu.js'), () => ({ sfuMicWanted: () => sfu.wanted, sfuMicOn: () => false, sfuMic: async (v) => { sfu.wanted = v; } }));
 
-const V = await import('../../client/lib/vrmic.js');
-const { MIC_CHOICE_KEY, MIC_PENDING_KEY, preVrStep, inVrMicPlan, inVrAfterTry, afterExitStep } = await import('../../client/lib/vrmic_policy.js');
+const V = await import('../../client/lib/xr/vrmic.js');
+const { MIC_CHOICE_KEY, MIC_PENDING_KEY, preVrStep, inVrMicPlan, inVrAfterTry, afterExitStep } = await import('../../client/lib/xr/vrmic_policy.js');
 const { check, done } = checker();
 const scrims = () => document.querySelectorAll('#vrmic').length;
 const closeCard = () => { dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); };

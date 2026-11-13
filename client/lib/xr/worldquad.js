@@ -1,13 +1,13 @@
 // worldquad — the desk's world frame as a VR quad: spawns starters through the same verb edit/build.js sends and
 // previews sky presets through the same previewSky the desk's buttons call. Committing a sky stays on the desk
 // (edit/skypanel.js gather() owns the clock rules); the quad only previews.
-import * as OP from '../../shared/requests.js';
-import { sendOps } from './edit/writes.js';
-import { bus } from './base.js';
-import { myState } from './controller.js';
-import { starterModels } from './edit/catalog.js';
-import { defsRegistry } from './defs.js';
-import { previewSky, skyArgs } from './sky.js';
+import * as OP from '../../../shared/requests.js';
+import { sendOps } from '../edit/writes.js';
+import { bus } from '../base.js';
+import { myState } from '../controller.js';
+import { starterModels } from '../edit/catalog.js';
+import { defsRegistry } from '../defs.js';
+import { previewSky, skyArgs } from '../sky.js';
 import { registerXRPanel } from './xrpanels.js';
 
 let presets = {};   // name → sky args; fields() is synchronous, so cache the def

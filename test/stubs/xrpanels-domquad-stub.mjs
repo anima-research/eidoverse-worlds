@@ -1,6 +1,6 @@
 // the domquad surface xrpanels.js imports — the REAL quads are part 4's VR
 // runtime; the registration contract under test never reaches them. Recorders,
-// not invented shape: every name here exists in client/lib/domquad.js.
+// not invented shape: every name here exists in client/lib/xr/domquad.js.
 export const calls = [];
 const rec = (n) => (...a) => { calls.push([n, ...a]); };
 export const domQuadsEnabled = () => false;

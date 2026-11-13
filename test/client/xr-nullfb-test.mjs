@@ -1,4 +1,4 @@
-// xr-nullfb-test — client/lib/xr_nullfb.js against a fake renderer: the wrapper installs ONLY for a session whose
+// xr-nullfb-test — client/lib/xr/xr_nullfb.js against a fake renderer: the wrapper installs ONLY for a session whose
 // base layer's framebuffer is null (an emulator), never on hardware (an opaque WebGLFramebuffer) or without a base
 // layer (projection layers), and once however many sessions follow. test/client/xr-render-errors-probe.mjs covers the null
 // branch in a real browser; nothing there can show the hardware branch, which this does.
@@ -10,7 +10,7 @@
 //   `framebuffer !== null` dropped (always install) → "hardware: not installed, drawBuffers untouched"
 //   `handle.installed ||` dropped                 → "two null sessions: wrapped once"
 import { EventDispatcher } from '../../client/node_modules/three/build/three.module.js';   // the copy client/lib uses
-import { tolerateNullXRFramebuffer } from '../../client/lib/xr_nullfb.js';
+import { tolerateNullXRFramebuffer } from '../../client/lib/xr/xr_nullfb.js';
 import { checker } from '../harness/probe-harness.mjs';
 const { check, done } = checker();
 

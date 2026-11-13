@@ -2,10 +2,10 @@
 // session, and an unanswered question holds every later undo (edit/writes.js settled()). In VR the question rides a quad:
 // by default a hidden xr-flagged DOM frame that domquad.js mirrors, or on the canvas path (?canvasquads=1) a schema panel
 // in xrpanels.js; showXRPanel picks whichever is live. Refusals and warnings, toasts on the desk, show here too.
-import { renderer } from './core.js';
-import { bus } from './base.js';
+import { renderer } from '../core.js';
+import { bus } from '../base.js';
 import { registerXRPanel, showXRPanel } from './xrpanels.js';
-import { makeFrame } from './windows.js';
+import { makeFrame } from '../windows.js';
 
 let pending = null;   // {title, body, choices: [{v, label}], cancel, resolve}
 let api = null;       // the DOM frame the default VR path mirrors onto a quad (domquad.js mounts every xr-flagged frame)

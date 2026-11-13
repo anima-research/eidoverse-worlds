@@ -15,7 +15,7 @@ import { join, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 
-// vrMicChoice: the pre-VR mic step (client/lib/vrmic.js) would stop every visor-clicking probe, so contexts start as a
+// vrMicChoice: the pre-VR mic step (client/lib/xr/vrmic.js) would stop every visor-clicking probe, so contexts start as a
 // browser that answered "not now"; test/client/vrmic-probe.mjs passes null to drive it
 /** One Chromium (chrome.ts findChrome). `mic: true` adds the fake-media flags (and mic permission). */
 export async function launchBrowser({ mic = false, vrMicChoice = 'later', args: extra = [] } = {}) {

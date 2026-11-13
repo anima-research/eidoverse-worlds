@@ -6,14 +6,14 @@
 // wiring. The ORDER — capture (save-once) → restore listener BEFORE setSession → shim — was never
 // executed by any test.
 //
-// This drives client/lib/xr_frame_clock.js's installFrameClock(), the same function xr.js calls, over
+// This drives client/lib/xr/xr_frame_clock.js's installFrameClock(), the same function xr.js calls, over
 // the sequence the review named:
 //     requestSession → setSession → session clock owns frames → end latch → desktop clock restored
 //     → second session enters and exits → stale first-session completion cannot affect the second
 //
 // The session objects are IWER's where it can supply them and a minimal fake otherwise; what matters
 // is that the PRODUCT'S install sequence runs. Removing the install turns this red.
-import { installFrameClock, installEntryClock, clockIsRestored } from '../../client/lib/xr_frame_clock.js';
+import { installFrameClock, installEntryClock, clockIsRestored } from '../../client/lib/xr/xr_frame_clock.js';
 import { readFileSync } from 'node:fs';
 import { suite } from "../gate/suite.ts";
 
@@ -228,7 +228,7 @@ console.log('\n— THE INSTALL SEAM, including what `emulated` MEANS —');
 
 console.log('\n— the PRODUCT runs this sequence (the wiring the reviewer broke) —');
 {
-  const xr = readFileSync(new URL('../../client/lib/xr.js', import.meta.url), 'utf8');
+  const xr = readFileSync(new URL('../../client/lib/xr/xr.js', import.meta.url), 'utf8');
   check('xr.js imports the install seam', /import \{ installEntryClock \}/.test(xr));
   check('…and calls it', /frameClock = installEntryClock\(\{/.test(xr));
   check('…without constructing `emulated` at the call site, where no test could reach it',

@@ -5,11 +5,11 @@
 // three's XRManager sizes the CanvasTarget to the XR layer for the whole session, so a canvas pass would draw through
 // a target the size of both eyes; for this pass only the CanvasTarget gets the canvas's real size back.
 // Never read the XR layer's framebuffer (blitFramebuffer): on Windows it belongs to the SteamVR compositor and froze the GPU.
-import { THREE, renderer, scene, camera } from './core.js';
+import { THREE, renderer, scene, camera } from '../core.js';
 import { isPresenting, xrPrefs, withHeadShown } from './xr.js';
-import { myState } from './controller.js';
-import { tee, bus } from './base.js';
-import { xrCurtainOn, renderWorldFrom } from './render.js';
+import { myState } from '../controller.js';
+import { tee, bus } from '../base.js';
+import { xrCurtainOn, renderWorldFrom } from '../render.js';
 
 const deskCam = new THREE.PerspectiveCamera(65, 16 / 9, 0.1, 20000);
 const tmpPos = new THREE.Vector3(), tmpQuat = new THREE.Quaternion(), tmpScl = new THREE.Vector3(), behind = new THREE.Vector3();

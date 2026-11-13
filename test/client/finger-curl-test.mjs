@@ -1,7 +1,7 @@
 // bun test/client/finger-curl-test.mjs: the analog finger-curl filter (xr.js sampleFingerCurl). Raw trigger/grip values put
 // ADC noise and finger tremor on the hand pose and the wire (xrbody.js packs the curls into wire.c).
 // xr.js can't be imported (three, renderer, DOM), so this evaluates the EXACT source text of sampleFingerCurl from
-// client/lib/xr.js with a fake `sourceFor` and clock: an edit to the product function is what runs.
+// client/lib/xr/xr.js with a fake `sourceFor` and clock: an edit to the product function is what runs.
 // Mutations that MUST turn this red:
 //   drop the filter (assign raw straight through)        → the jitter check
 //   make k a fixed per-frame constant (ignore dt)        → the frame-rate independence check
@@ -14,7 +14,7 @@ import { suite } from "../gate/suite.ts";
 const S = suite("finger-curl");
 const check = (name, ok, extra) => S.check(name, ok, extra);
 
-const src = readFileSync(new URL('../../client/lib/xr.js', import.meta.url), 'utf8');
+const src = readFileSync(new URL('../../client/lib/xr/xr.js', import.meta.url), 'utf8');
 
 // ---- extract the real product source, constants and all
 const constRe = /const CURL_MIN_CUTOFF = ([\d.]+);[\s\S]*?const CURL_BETA = ([\d.]+);[\s\S]*?const CURL_D_CUTOFF = ([\d.]+);/;

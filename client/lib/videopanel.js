@@ -8,7 +8,7 @@ import { shadowsOn, setShadows, shadowRes, setShadowRes, SHADOW_RES, CASTER_CHOI
 import { backendName, PREF_MSAA, PREF_BACKEND, PREF_HEADSET_SEEN, WEBGPU_XR, WEBGPU_POSSIBLE, headsetSeenRecently } from './core.js';
 import { CONFIG, bus } from './base.js';
 import { FOLIAGE_MODES, getFoliageMode, setFoliageMode } from './foliage.js';
-import { registerXRPanel } from './xrpanels.js';
+import { registerXRPanel } from './xr/xrpanels.js';
 import { allowUntrusted, setAllowUntrusted, UNTRUSTED_WORDS } from './mediaprefs.js';
 import { initConsentPanel } from './consentpanel.js';
 import { myShadowPref, setMyShadowPref } from './materials.js';

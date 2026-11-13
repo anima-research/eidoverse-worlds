@@ -386,7 +386,7 @@ async function remotePart() {
   const camera = new THREE.PerspectiveCamera();
   const avatar = () => ({ root: new THREE.Object3D(), wingsFolded: false, dispose() {}, resetTransients() {}, setTyping() {}, playAnimation() {},
     setClip() {}, setPose() {}, clearPose() {}, setLimp() {}, playOnce() {}, setGazeTarget() {}, update() {}, setSeatApprox() {} });
-  for (const m of ["assets", "world", "chat", "fp_view", "boot", "ui", "xrbody"]) mock.module(`${lib}${m}.js`, () => stubs);
+  for (const m of ["assets", "world", "chat", "fp_view", "boot", "ui", "xr/xrbody"]) mock.module(`${lib}${m}.js`, () => stubs);
   mock.module(`${lib}core.js`, () => ({ ...stubs, camera }));
   mock.module(`${lib}avatar.js`, () => ({ ...stubs, makeAvatar: async () => avatar(), makeCapsuleAvatar: () => avatar() }));
   mock.module(`${lib}occupybody.js`, () => ({ releaseOccupied() {},

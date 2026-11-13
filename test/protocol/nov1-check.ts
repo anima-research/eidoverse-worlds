@@ -51,7 +51,7 @@ const UNRELATED = [
   ["client/lib/vegetation/", /./, "plant generators' UV names (LEAF.v1) and model versions"],
   ["client/lib/sky_baked.js", /./, "the sky bake's cache format version"],
   ["shared/rig.js", /./, "the VRM spec's version (VRM 0.x / 1.0)"],
-  ["client/lib/xrbody.js", /./, "the WebXR / VRM versions"],
+  ["client/lib/xr/xrbody.js", /./, "the WebXR / VRM versions"],
   ["client/lib/tts.js", /./, "a voice model's version"],
   ["client/lib/stt.js", /./, "a speech model's version"],
   ["client/index.html", /./, "a library version"],

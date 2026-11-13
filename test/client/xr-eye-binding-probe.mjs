@@ -20,8 +20,8 @@ import { suite } from '../gate/suite.ts';
 const PAGE = `<!doctype html><html><body>${RAW3_IMPORTMAP}
 <script type="module">
 import * as THREE from 'three';
-import { separateXRPass, withXREyes } from './lib/xrpass.js';
-import { installDualWarm } from './lib/xrwarm.js';
+import { separateXRPass, withXREyes } from './lib/xr/xrpass.js';
+import { installDualWarm } from './lib/xr/xrwarm.js';
 async function run(mode) {
   const canvas = document.createElement('canvas');
   const renderer = new THREE.WebGPURenderer({ canvas, forceWebGL: true });

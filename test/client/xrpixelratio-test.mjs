@@ -1,7 +1,7 @@
-// The XR pixel-ratio guard (client/lib/xrpixelratio.js, applied by core.js) — #32 split vision.
+// The XR pixel-ratio guard (client/lib/xr/xrpixelratio.js, applied by core.js) — #32 split vision.
 // While presenting, setPixelRatio is DEFERRED (the renderer keeps the XR layer's 1); not presenting, it
 // applies untouched; the deferred value is handed back exactly once.
-import { guardPixelRatioInXR } from '../../client/lib/xrpixelratio.js';
+import { guardPixelRatioInXR } from '../../client/lib/xr/xrpixelratio.js';
 import { suite } from "../gate/suite.ts";
 const S = suite("xrpixelratio");
 const check = (name, ok, note) => S.check(name, ok, note);

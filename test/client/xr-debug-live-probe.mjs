@@ -15,11 +15,11 @@ try {
   await enterVR(pg);
   await drawn(pg, 60);
   const open = await pg.evaluate(async () => {
-    const dq = await import('./lib/domquad.js'), xp = await import('./lib/xrpanels.js');
+    const dq = await import('./lib/xr/domquad.js'), xp = await import('./lib/xr/xrpanels.js');
     dq.domQuadShow('debug', true); for (let i = 0; i < 300 && !xp.xrPanelOpen('debug'); i++) await new Promise((r) => requestAnimationFrame(r));
     return { open: xp.xrPanelOpen('debug'), ids: dq.domQuadIds() };
   });
-  const read = () => pg.evaluate(async () => { const t = (await import('./lib/domquad.js')).domQuadTexture('debug'); return t?.dom?.querySelector('pre.dbg-stats')?.textContent ?? null; });
+  const read = () => pg.evaluate(async () => { const t = (await import('./lib/xr/domquad.js')).domQuadTexture('debug'); return t?.dom?.querySelector('pre.dbg-stats')?.textContent ?? null; });
   // debug.js fills the frame block on its first 200 ms stats tick after the quad opens: on a fast host the read can land
   // before it (a = '' on Cyllene's GPU). The first reading is the first text; the check is that it then changes
   const a = await until('the debug pane prints its frame timing', async () => (await read()) || null, { ms: 30_000 }).catch(() => null);

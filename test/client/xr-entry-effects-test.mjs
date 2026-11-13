@@ -6,10 +6,10 @@
 // and the policy's own test still passed 31/31 — because it drove the pure policy correctly and then
 // checked the WIRING with regexes. Reproduced here before writing a line of this file.
 //
-// This suite imports client/lib/xr_entry_effects.js — the same module xr.js imports — and runs it
+// This suite imports client/lib/xr/xr_entry_effects.js — the same module xr.js imports — and runs it
 // with fake timers. Breaking the scheduling breaks this.
-import { makeEntryEffects, handleEntryFailure } from '../../client/lib/xr_entry_effects.js';
-import { decideEntryFailure, retryIsCurrent, BUSY_RETRY_MS } from '../../client/lib/xr_entry_policy.js';
+import { makeEntryEffects, handleEntryFailure } from '../../client/lib/xr/xr_entry_effects.js';
+import { decideEntryFailure, retryIsCurrent, BUSY_RETRY_MS } from '../../client/lib/xr/xr_entry_policy.js';
 import { readFileSync } from 'node:fs';
 import { suite } from "../gate/suite.ts";
 
@@ -233,7 +233,7 @@ console.log('\n— 5. THE SEAM, executed: decide → act → what the caller mus
 
 console.log('\n— 5. the PRODUCT uses this owner (the wiring the reviewer broke) —');
 {
-  const xr = readFileSync(new URL('../../client/lib/xr.js', import.meta.url), 'utf8');
+  const xr = readFileSync(new URL('../../client/lib/xr/xr.js', import.meta.url), 'utf8');
   check('xr.js imports the effect owner and the seam',
     /import \{ makeEntryEffects, handleEntryFailure \} from '\.\/xr_entry_effects\.js'/.test(xr));
   check('xr.js constructs it with real timers', /makeEntryEffects\(\{[\s\S]*?setTimeout/.test(xr));

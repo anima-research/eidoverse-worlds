@@ -810,7 +810,7 @@ await C("I1", "the authority mints ids with 128+ random bits (26 base32, nothing
   const dup = W.call("create", { from: ids[0] }); const dupId = dup.refs?.[0]?.id;
   return [ids.every((x) => typeof x === "string" && RAND.test(x) && FOLD.isEntityId(x)) && new Set(ids).size === ids.length && RAND.test(dupId ?? ""), [ids.slice(0, 3), dupId]]; });
 await C("I2", "no client mints an id (R 10-17: writers never choose ids): each create sends a $placeholder and reads the reply's ids map; the agent door mints nothing; no 8-hex or coordinate ids remain", () => {
-  const files = ["client/lib/edit/build.js", "client/lib/worldquad.js", "client/lib/edit/structure_ui.js", "client/lib/facemedia.js"];
+  const files = ["client/lib/edit/build.js", "client/lib/xr/worldquad.js", "client/lib/edit/structure_ui.js", "client/lib/facemedia.js"];
   // the agent door mints NOTHING since the 10-14 tools rewrite: create {id omitted} lets the authority mint (mcpl/tools.ts #216
   // note). A client-side mint reappearing there — by any spelling — is the regression this guards.
   const doorMints = /mintId\(|randomUUID\(|randomPart\(|Math\.random\(\)\.toString\(36\)/.test(read("mcpl/tools.ts"));

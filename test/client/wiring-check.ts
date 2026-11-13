@@ -27,7 +27,7 @@ const ROWS: Row[] = [
   { name: "the no-headset branch is past-tense too", file: "client/lib/videopanel.js", must: [/No headset has been used here recently/i], not: [[/no headset sensed/i, "no headset sensed"]] },
   { name: "the WebGPU warning is past-tense", file: "client/lib/videopanel.js", must: [/A headset has been used here/], not: [[/⚠ A headset is present/, "⚠ A headset is present"]] },
   { name: "the panel asks the predicate, not the raw bit", file: "client/lib/videopanel.js", must: [/headsetSeenRecently\(\)/], not: [[/PREF_HEADSET_SEEN\) === '1'/, "getItem(PREF_HEADSET_SEEN) === '1'"]] },
-  { name: "a granted session stamps the TIME at exactly two writers, never a flag", file: "client/lib/xr.js", count: [/setItem\(PREF_HEADSET_SEEN, String\(Date\.now\(\)\)\)/g, 2],
+  { name: "a granted session stamps the TIME at exactly two writers, never a flag", file: "client/lib/xr/xr.js", count: [/setItem\(PREF_HEADSET_SEEN, String\(Date\.now\(\)\)\)/g, 2],
     not: [[/setItem\(PREF_HEADSET_SEEN, '1'\)/, "setItem(PREF_HEADSET_SEEN, '1')"], [/setItem\('ew-headset-seen', '1'\)/, "setItem('ew-headset-seen', '1')"]] },
   // locomotion-clip: an extracted policy someone calls
   { name: "controller.js imports selectClip from the real policy module and calls it", file: "client/lib/controller.js",
@@ -37,9 +37,9 @@ const ROWS: Row[] = [
   { name: "the tick hands setClip the selected opts, no fade re-derived at the call site", file: "client/lib/controller.js",
     scope: (s) => s.split("\n").find((l) => /me\.setClip\([^)]*,[^)]*,/.test(l)) ?? "", must: [/\.opts\s*\)/], not: [[/fade:/, "fade: 0.2"]] },
   // finger-curl: the filter's shape (its executed model and constants stay in finger-curl-test)
-  { name: "sampleFingerCurl consults elapsed time, a speed-driven cutoff and a dt clamp", file: "client/lib/xr.js", scope: fnBody("function sampleFingerCurl()"),
+  { name: "sampleFingerCurl consults elapsed time, a speed-driven cutoff and a dt clamp", file: "client/lib/xr/xr.js", scope: fnBody("function sampleFingerCurl()"),
     must: [/performance\.now\(\)/, /oneEuroAlpha\(/, /CURL_MIN_CUTOFF \+ CURL_BETA \* Math\.abs\(st\.dx\)/, /Math\.min\(0\.1,/] },
-  { name: "no hard jump/threshold branch survives in the filter", file: "client/lib/xr.js", scope: fnBody("function sampleFingerCurl()"),
+  { name: "no hard jump/threshold branch survives in the filter", file: "client/lib/xr/xr.js", scope: fnBody("function sampleFingerCurl()"),
     must: [/oneEuroAlpha\(/], not: [[/\? raw :/, "const v = big ? raw : st.x;"], [/CURL_JUMP/, "if (d > CURL_JUMP) st.x = raw;"]] },
   // bodies-wear: the restored wear button is not a no-op
   { name: "switchAvatar's same-path early return exempts the capsule", file: "client/lib/mybody.js", must: [/if \(path === myAvatarPath && !me\?\.isCapsule\) return;/] },

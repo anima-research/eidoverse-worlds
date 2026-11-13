@@ -17,7 +17,7 @@ import { contributeThumbnail, makeAvatar, makeCapsuleAvatar, ANIM_ORDER } from '
 import { updateSky, updateAutoSystems, skyArgs, setCloudQuality, hideSkyForWater } from './lib/sky.js';
 import { setSkyArgsSource, entities, buildsPending, anyBuildsPending, avatarMounts, roleOf, worldHasOwner, bagOf, bags, seatSocket, socketsOn, currentTerrainArgs, terrainEditBase, noteTerrainSent, terrainPending } from './lib/world.js';
 import { presence } from './lib/presence.js';
-import { initWorldQuad } from './lib/worldquad.js';
+import { initWorldQuad } from './lib/xr/worldquad.js';
 import { foldParity } from './lib/parity.js';
 import { initModelsRealizer, reconcileModels, residencyDebug, setResidencyFocus, drainPromoteTail } from './lib/realize/models.js';
 import { initEnvironmentRealizer } from './lib/realize/environment.js';
@@ -68,19 +68,19 @@ import { initGizmo } from './lib/edit/gizmo.js';
 import { initGripEdit } from './lib/edit/gripedit.js';
 import { initMaterialOverrides } from './lib/realize/material_draft.js';
 import { initWorldEdge } from './lib/edge.js';
-import { initXR, updateXR, bindXRSelf, isPresenting } from './lib/xr.js';
+import { initXR, updateXR, bindXRSelf, isPresenting } from './lib/xr/xr.js';
 import { initPeople, personOf, isPhone, menuAt as personMenuAt, sheetFor as personSheet, stripFor as personStrip, badgeHtml as personBadge } from './lib/people.js';
 import { initRolesPanels, openModeration } from './lib/rolespanels.js';
-import { tickXRMirror } from './lib/xrmirror.js';
-import { ensureXRBodyHook, bindXRBodySelf, xrAvatarYaw, xrLookPitch, xrWire, xrSimActive } from './lib/xrbody.js';
-import { tickXRVignette } from './lib/xrvignette.js';
-import { initVRPanel } from './lib/vrpanel.js';
+import { tickXRMirror } from './lib/xr/xrmirror.js';
+import { ensureXRBodyHook, bindXRBodySelf, xrAvatarYaw, xrLookPitch, xrWire, xrSimActive } from './lib/xr/xrbody.js';
+import { tickXRVignette } from './lib/xr/xrvignette.js';
+import { initVRPanel } from './lib/xr/vrpanel.js';
 import { trySitOn as xrTrySitOn, dismountMe as xrDismountMe } from './lib/localbody.js';
 import {
   toast, flashHint, buildHelp, toggleHelp,
   openDoor, togglePeopleHere, initDock, paintPresence, panelFrame, settingsFrame, setLoadingItems, setMenuSources,
 } from './lib/ui.js';
-import { registerXRPanel } from './lib/xrpanels.js';
+import { registerXRPanel } from './lib/xr/xrpanels.js';
 import { initDebug, updateDebug, toggleDebug } from './lib/debug.js';
 
 // which server build: one console line at boot
@@ -118,8 +118,8 @@ import {
 import { posable, pushable, setPosable, setPushable } from './lib/consent.js';
 import { updateVoiceMouths } from './lib/voicemouths.js';
 import { initActionBar } from './lib/actionbar.js';
-import { initXRKeyboard } from './lib/xrkeyboard.js';
-import { initXRAsk } from './lib/xrask.js';
+import { initXRKeyboard } from './lib/xr/xrkeyboard.js';
+import { initXRAsk } from './lib/xr/xrask.js';
 import { initCommands, saveScreenshot } from './lib/commands/handlers.js';
 import { register as registerAction } from './lib/actions.js';
 import { initLantern } from './lib/commandbar.js';
@@ -544,7 +544,7 @@ registerSystem('xrmirror', () => tickXRMirror());           // desktop view whil
 // radial-menu actions: the ring speaks through the same flows the keyboard does
 bus.on('xr:sit', () => { if (!xrTrySitOn(null)) setPosture('sit'); });
 bus.on('xr:stand', () => xrDismountMe('menu'));
-bus.on('xr:mic', async () => { const { xrMicPress } = await import('./lib/vrmic.js'); await xrMicPress(); });   // a bounded permission try in VR (vrmic.js)
+bus.on('xr:mic', async () => { const { xrMicPress } = await import('./lib/xr/vrmic.js'); await xrMicPress(); });   // a bounded permission try in VR (vrmic.js)
 bus.on('xr:select', (id) => sceneSelect(id));
 globalThis.__waterDebug = waterDebug;
 let _pulseAt = 0;

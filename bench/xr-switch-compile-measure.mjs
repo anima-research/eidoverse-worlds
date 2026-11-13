@@ -4,7 +4,7 @@
 // The XR stereo ArrayCamera changes three's render-object cache key (`cameras.length`), so at the switch every
 // object is rebuilt and the old pipeline's program is released: stock three recompiles every pre-entry material
 // on the first EXIT. This probe renders N distinct materials desktop → XR → desktop → XR → desktop and counts
-// programs/pipelines built per switch: stock; with client/lib/xrpass.js (stereo in its own pass); and xrpass + a
+// programs/pipelines built per switch: stock; with client/lib/xr/xrpass.js (stereo in its own pass); and xrpass + a
 // desktop-side pre-warm through a two-eye stand-in camera (xr.getCamera() has no eyes before a session).
 //
 // Run: node bench/xr-switch-compile-measure.mjs   (~30 s; run it under a memory guard)
@@ -15,7 +15,7 @@ const PAGE = `<!doctype html><html><body>${RAW3_IMPORTMAP}
 <script type="module">
 import * as THREE from 'three';
 import { vec3 } from 'three/tsl';
-import { separateXRPass, withXREyes } from './lib/xrpass.js';
+import { separateXRPass, withXREyes } from './lib/xr/xrpass.js';
 const N = ${N}, W = 64, H = 32;
 async function run(mode) {
   const canvas = document.createElement('canvas'); document.body.appendChild(canvas);

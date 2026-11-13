@@ -12,7 +12,7 @@ plugin({
   name: 'predict-pending-stubs',
   setup(b) {
     stubResolve(b, /^(\.\.?\/)+core\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
-    for (const m of ['world', 'remotes', 'colliders', 'autohooks', 'shared/bodyscale', 'net', 'ui', 'chat', 'actions', 'realize/emitters', 'plainwords', 'markup', 'xrask'])
+    for (const m of ['world', 'remotes', 'colliders', 'autohooks', 'shared/bodyscale', 'net', 'ui', 'chat', 'actions', 'realize/emitters', 'plainwords', 'markup', '(xr/)?xrask'])
       stubResolve(b, new RegExp(`^(\\.\\.?/)+${m}\\.js$`), () => ({ path: STUB }));
     // a measured round trip: the stub's null would refuse every guess (planRelease)
     stubResolve(b, /^(\.\.?\/)+serverclock\.js$/, () => ({ path: 'rtt', namespace: 'rtt' }));

@@ -68,7 +68,7 @@ pg.on('requestfailed', (r) => { pending.delete(r); failed.push(`${r.failure()?.e
 try {
 // pageerror never sees an exception thrown inside a frame callback (frameloop.js catches per system and hands it to
 // report(), which console.error()s; tee() goes to the network, not the console): capture console errors
-// IWER's null XRWebGLLayer.framebuffer is handled by client/lib/xr_nullfb.js: its WeakMap error counts here like any other
+// IWER's null XRWebGLLayer.framebuffer is handled by client/lib/xr/xr_nullfb.js: its WeakMap error counts here like any other
 const reports = [], consoleTail = [];
 pg.on('console', (m) => {
   consoleTail.push(`${m.type()}: ${m.text().replace(/\s+/g, ' ').slice(0, 200)}`); if (consoleTail.length > 40) consoleTail.shift();

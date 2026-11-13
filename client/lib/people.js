@@ -237,7 +237,7 @@ function openCanForm(display, surface) {
 }
 
 // a warning is a notice you dismiss: the house centred card, or in a headset the XR quad (xrask.js)
-bus.on('warned', (m) => { import('./xrask.js').then(({ xrActive, chooseXR }) => (xrActive()
+bus.on('warned', (m) => { import('./xr/xrask.js').then(({ xrActive, chooseXR }) => (xrActive()
   ? chooseXR({ title: moderatorHeader(CONFIG.world), body: `${m.by} warned you: ${String(m.reason ?? '')}`, choices: [{ v: 'ok', label: 'I understand' }], cancel: 'ok' })
   : import('./edit/confirmcenter.js').then(({ confirmCenter }) => confirmCenter({ title: moderatorHeader(CONFIG.world), body: `${m.by} warned you: ${String(m.reason ?? '')}`, ok: 'I understand', cancel: 'Close' })))).catch((e) => report('warned', e)); });
 export { closeContextMenu };

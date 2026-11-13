@@ -144,7 +144,7 @@ console.log('\nBuild — the building tools and the library, docked beside the H
   await evalJson(`[...${create}.querySelectorAll('.sp-tiles-img .sp-tile')].find((t) => t.textContent.trim() === 'crate (red)')?.click(), true`);
   check('a library tile puts the model in your hand (the ghost build.js carries)', await waitFor(`import('/lib/edit/build.js').then((m) => m.hasGhost())`), JSON.stringify(await evalJson(`(window.__errs ?? []).filter((e) => /ghost|glb/i.test(e)).slice(-3)`)));
   await evalJson(`import('/lib/edit/build.js').then((m) => m.cancelGhost()), true`);
-  check('the VR body says the building tools are desktop-only, and offers the library and the World', await evalJson(`import('/lib/xrpanels.js').then((m) => { const f = m.xrPanelsDebug().fields.build ?? []; return f.includes('place') && !f.includes('stool') && !f.includes('ttool') && f.includes('info') && f.includes('wsky'); })`), JSON.stringify(await evalJson(`import('/lib/xrpanels.js').then((m) => m.xrPanelsDebug().fields.build)`)));
+  check('the VR body says the building tools are desktop-only, and offers the library and the World', await evalJson(`import('/lib/xr/xrpanels.js').then((m) => { const f = m.xrPanelsDebug().fields.build ?? []; return f.includes('place') && !f.includes('stool') && !f.includes('ttool') && f.includes('info') && f.includes('wsky'); })`), JSON.stringify(await evalJson(`import('/lib/xr/xrpanels.js').then((m) => m.xrPanelsDebug().fields.build)`)));
   await evalJson(`${tab('hierarchy')}?.click(), true`);
   check('back to the Hierarchy tab', await waitFor(`${shown('hierarchy')} && !(${shown('build')})`));
 }

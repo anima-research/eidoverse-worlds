@@ -1,10 +1,10 @@
 // xrmicicon — the mic state in view while in VR (the desktop has the HUD glyph; a headset had nothing). Head-locked
 // (a child of the camera, like vrmic.js's plate), small, low-left, drawing the HUD's own glyph (mictoggle.js
 // micIndicatorSvg): off = slashed, on = faint and smaller, hot = transmitting, full. Repainted only on a state change.
-import { THREE, camera, renderer } from './core.js';
-import { bus } from './base.js';
+import { THREE, camera, renderer } from '../core.js';
+import { bus } from '../base.js';
 import { quadMaterial } from './quadcolour.js';
-import { micIndicatorState, micIndicatorSvg } from './mictoggle.js';
+import { micIndicatorState, micIndicatorSvg } from '../mictoggle.js';
 
 const MIC_ICON = { x: -0.17, y: -0.15, z: -0.6, size: 0.032 };   // metres in front of the eyes: ≈3° across, ≈16° left, 14° down
 const LOOK = { off: { opacity: 0.9, scale: 1 }, on: { opacity: 0.45, scale: 0.8 }, hot: { opacity: 1, scale: 1 } };

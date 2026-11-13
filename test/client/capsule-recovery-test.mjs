@@ -43,7 +43,7 @@ plugin({
     stubResolve(b, /^(\.\.?\/)+reachnet\.js$/, () => ({ path: here('../stubs/recovery-empty-stub.mjs') }));
     stubResolve(b, /^(\.\.?\/)+poseclips\.js$/, () => ({ path: here('../stubs/recovery-empty-stub.mjs') }));
     stubResolve(b, /wingpresence\.js$/, () => ({ path: here('../stubs/recovery-empty-stub.mjs') }));
-    stubResolve(b, /^(\.\.?\/)+xrbody\.js$/, () => ({ path: here('../stubs/recovery-empty-stub.mjs') }));
+    stubResolve(b, /^(\.\.?\/)+(xr\/)?xrbody\.js$/, () => ({ path: here('../stubs/recovery-empty-stub.mjs') }));
     stubResolve(b, /presencewire\.js$/, () => ({ path: here('../stubs/recovery-empty-stub.mjs') }));
     stubResolve(b, /^(\.\.?\/)+base\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
   },

@@ -2,8 +2,8 @@
 // a trigger on a key is a DOM click on a real <button>. Keys type into the last-focused text input (default: the
 // chat line) and ⏎ is a synthetic Enter keydown on it, so chat's own handler sends. Hidden on the desktop; in VR
 // the quad shows while a text input has focus and hides when the line is sent.
-import { bus } from './base.js';
-import { makeFrame } from './windows.js';
+import { bus } from '../base.js';
+import { makeFrame } from '../windows.js';
 import { isPresenting } from './xr.js';
 import { domQuadShow } from './domquad.js';
 

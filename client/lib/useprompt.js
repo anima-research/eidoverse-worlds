@@ -8,7 +8,7 @@ import { bags, bagOf, entities } from './world.js';
 import { outOfMyView } from './edit/myview.js';
 import { bus } from './base.js';
 import { register as registerAction } from './actions.js';
-import { xrActive } from './xrask.js';
+import { xrActive } from './xr/xrask.js';
 import { nameOf, plain } from './plainwords.js';
 import { sendRequest } from './net.js';
 import { requestWithBody } from './thingphysics.js';

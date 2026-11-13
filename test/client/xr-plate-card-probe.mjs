@@ -58,7 +58,7 @@ try {
 
   // in-page helpers: frames, the head, the hands, controller aiming (one calibration per hand: ray world = R · pose)
   await ev(pg, async () => {
-    const xr = await import('./lib/xr.js'), pc = await import('./lib/platecard.js'), dq = await import('./lib/domquad.js');
+    const xr = await import('./lib/xr/xr.js'), pc = await import('./lib/platecard.js'), dq = await import('./lib/xr/domquad.js');
     const T = EW.THREE, dev = window.__iwerDevice;
     const H = globalThis.__h = { xr, pc, dq, T, R: {} };
     H.frames = (n) => new Promise((res) => { const f0 = globalThis.__perf.frameNo; const t0 = performance.now();
@@ -273,7 +273,7 @@ try {
     JSON.stringify(after));
 
   check('no page errors', errs.length === 0, errs.slice(0, 3).join(' | '));
-  // IWER's null eye framebuffer is client/lib/xr_nullfb.js's: its WeakMap error is a regression here, not an artifact
+  // IWER's null eye framebuffer is client/lib/xr/xr_nullfb.js's: its WeakMap error is a regression here, not an artifact
   const other = conErrs.filter((t) => !/401|whoami/.test(t));
   check('no console errors', other.length === 0, other.slice(0, 3).join(' | '));
 } catch (e) { check('probe ran', false, e?.stack?.split('\n').slice(0, 3).join(' ') ?? String(e)); }

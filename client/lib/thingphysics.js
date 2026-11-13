@@ -35,7 +35,7 @@ import { clockRtt } from './serverclock.js';
 import { onWorldChange } from './state.js';
 import { plain, nameOf, called } from './plainwords.js';
 import { html } from './markup.js';
-import { xrActive } from './xrask.js';
+import { xrActive } from './xr/xrask.js';
 import { grabOf, holdPoseOf, fingerPose, armPose, bothArms, pickGrip, HAND_REACH, NEAR_GRAB } from '../../shared/grab.js';
 
 const TRACK_MS = 200, TRACK_MIN = 0.05;           // the body track: at most 5 moves a second, only when moved

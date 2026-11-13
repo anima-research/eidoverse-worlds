@@ -13,8 +13,8 @@ import * as THREE from 'three';
 import { claimEscape } from './windows.js';
 import { svg, fsvg } from './icons.js';
 import { HTMLMesh } from '../vendor/three-addons/htmlmesh.js';
-import { prepareQuadMaterial } from './domquad.js';
-import { PLATE_GETON_RAD } from './xrpointer.js';   // the laser's get-on slack around a plate (see below)
+import { prepareQuadMaterial } from './xr/domquad.js';
+import { PLATE_GETON_RAD } from './xr/xrpointer.js';   // the laser's get-on slack around a plate (see below)
 import { makeDwell, DWELL_MS } from './dwell.js';
 import { escapeHtml as esc } from './markup.js';
 

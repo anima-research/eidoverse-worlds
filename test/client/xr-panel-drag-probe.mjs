@@ -15,7 +15,7 @@ try {
   await enterVR(pg);
   await pg.waitForTimeout(1500);
   const r = await pg.evaluate(async () => {
-    const dq = await import('./lib/domquad.js'); const THREE = await import('three');
+    const dq = await import('./lib/xr/domquad.js'); const THREE = await import('three');
     dq.domQuadsSetShown(true); await new Promise((res) => setTimeout(res, 1500));
     const meshOf = (id) => { const tex = dq.domQuadTexture(id); let m = null; globalThis.EW.scene.traverse((o) => { if (tex && o.material?.map === tex) m = o; }); return m; };
     // a laser aimed at DOM point (px, py) of quad `id` (CSS px from the frame's top-left)

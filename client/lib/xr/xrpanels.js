@@ -3,10 +3,10 @@
 // FIELDS (edit/fieldpanels.js) rides a canvas-textured quad, the laser is the cursor, and a UV hit resolves to a
 // region that fires the same dispatcher the desktop frame calls. Modules opt in with registerXRPanel.
 
-import { THREE, renderer } from './core.js';
+import { THREE, renderer } from '../core.js';
 import { quadMaterial } from './quadcolour.js';
-import { bus } from './base.js';
-import { renderCanvas, hitRegion } from './edit/fieldpanels.js';
+import { bus } from '../base.js';
+import { renderCanvas, hitRegion } from '../edit/fieldpanels.js';
 import { domQuadsEnabled, domQuadsEnter, domQuadsExit, domQuadsPick, domQuadsPress, domQuadsDrag, domQuadsRelease, domQuadsSetShown, domQuadsShown, domQuadShow, domQuadOpen, domQuadsGrab, domQuadRelease, domQuadsAt, domQuadsHideToggle, domQuadsHidden } from './domquad.js';   // the REAL frames on quads (default); ?canvasquads=1 keeps these canvases
 
 const PX_PER_M = 900;              // canvas pixels per world metre of quad

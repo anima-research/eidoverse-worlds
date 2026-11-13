@@ -11,15 +11,15 @@ await iwerInit(pg, { cloud: 'off' });
 const errs = []; pg.on('pageerror', (e) => errs.push(String(e)));
 const ev = (fn, a) => Promise.race([pg.evaluate(fn, a), new Promise((_, rej) => setTimeout(() => rej(new Error('page main thread pinned for 30 s')), 30000))]);
 const IN_VR = /^In VR/, KILLED = /costing the headset frames/;
-const text = () => ev(async () => (await import('./lib/xrmirror.js')).mirrorBannerText());
+const text = () => ev(async () => (await import('./lib/xr/xrmirror.js')).mirrorBannerText());
 // set the pref, then read: the banner follows xr:prefs synchronously
-const pref = (m) => ev(async (v) => { (await import('./lib/xr.js')).setXrPref('mirror', v); return (await import('./lib/xrmirror.js')).mirrorBannerText(); }, m);
+const pref = (m) => ev(async (v) => { (await import('./lib/xr/xr.js')).setXrPref('mirror', v); return (await import('./lib/xr/xrmirror.js')).mirrorBannerText(); }, m);
 const row = (label, got, want) => check(`${label}: ${want ? `says ${want === KILLED ? 'why the mirror stopped' : "'In VR'"}` : 'no banner'}`, want ? want.test(got ?? '') : got === null, String(got));
 try {
   await pg.goto(`${world.origin}/?world=staging&name=deskbanner&key=${world.key}&xr=1`, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await visorShown(pg);
   await pg.waitForFunction(() => !!globalThis.__xrMirror, null, { timeout: 30000 });
-  check("'mirror my eyes' is the default", (await ev(async () => (await import('./lib/xr.js')).xrPrefs.mirror)) === 'first');
+  check("'mirror my eyes' is the default", (await ev(async () => (await import('./lib/xr/xr.js')).xrPrefs.mirror)) === 'first');
   await ev(() => { globalThis.__xrMirror.holdKill = true; });   // the killswitch waits until the kill rows
   row('before VR', await text(), null);
   await pref('off');

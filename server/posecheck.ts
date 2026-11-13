@@ -28,7 +28,7 @@ export function sanePose(pose: unknown): Record<string, unknown> | null {
     for (const k of ['mode', 'body', 'medium'])
       if (l[k] !== undefined && (typeof l[k] !== 'string' || (l[k] as string).length > 32)) return null;
   }
-  if (p.xr !== undefined) {                       // C18: tracked head/hands (client/lib/xrbody.js)
+  if (p.xr !== undefined) {                       // C18: tracked head/hands (client/lib/xr/xrbody.js)
     const x = p.xr as Record<string, unknown> | null;
     if (!x || typeof x !== "object" || !finArr(x.h, 4)) return null;
     if (x.l !== undefined && !finArr(x.l, 7)) return null;

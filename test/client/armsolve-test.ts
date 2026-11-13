@@ -17,12 +17,12 @@ plugin({
     stubResolve(b, /^(\.\.?\/)+core\.js$/, () => ({ path: here("../stubs/core-stub.mjs") }));
     stubResolve(b, /^(\.\.?\/)+base\.js$/, () => ({ path: here("../stubs/core-stub.mjs") }));
     stubResolve(b, /^(\.\.?\/)+controller\.js$/, () => ({ path: here("../stubs/armsolve-xr-stub.mjs") }));
-    stubResolve(b, /^(\.\.?\/)+xr\.js$/, () => ({ path: here("../stubs/armsolve-xr-stub.mjs") }));
+    stubResolve(b, /^(\.\.?\/)+(xr\/)?xr\.js$/, () => ({ path: here("../stubs/armsolve-xr-stub.mjs") }));
   },
 });
 globalThis.location ??= { search: "" } as any;   // xrbody reads ?torsoplay at import
 const { THREE } = await import("../stubs/core-stub.mjs");
-const { solveArm, relaxArm, solveLeg, gaitInit, gaitTick } = await import("../../client/lib/xrbody.js");
+const { solveArm, relaxArm, solveLeg, gaitInit, gaitTick } = await import("../../client/lib/xr/xrbody.js");
 const { makeCapsuleVrm } = await import("../../client/lib/capsulebody.js");
 
 const S = suite("armsolve");

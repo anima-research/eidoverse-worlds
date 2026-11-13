@@ -78,7 +78,7 @@ try {
   const s1 = await q();
   check("the ring's 'panels' slot SHOWS the quads on the default path", s1.shown === true, JSON.stringify({ shown: s1.shown, built: s1.built }));
   // the ring's lit state reads xrPanelOpen → domQuadOpen on this path (the ring was dark while panels were shown)
-  const lit = await ev(async () => { const { xrPanelOpen } = await import('./lib/xrpanels.js'); const d = globalThis.__domQuads();
+  const lit = await ev(async () => { const { xrPanelOpen } = await import('./lib/xr/xrpanels.js'); const d = globalThis.__domQuads();
     return d.ids.map((id) => xrPanelOpen(id)); });
   check("…and the ring's lit state reads them as open (xrPanelOpen → domQuadOpen)", lit.length > 0 && lit.every(Boolean), JSON.stringify(lit));
   check('…building each exactly once, on that first show', s1.built === s1.staged && s1.builds === s1.staged, `built=${s1.built} builds=${s1.builds} staged=${s1.staged}`);

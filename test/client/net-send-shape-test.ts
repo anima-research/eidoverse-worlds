@@ -12,7 +12,7 @@ import { mkCheck } from "../harness/harness.ts";
 const { check, tally } = mkCheck();
 const stubs: any = await import("../stubs/remotes-stubs.mjs");
 const { mock } = await import("bun:test");
-for (const m of ["core", "assets", "world", "chat", "fp_view", "boot", "ui", "avatar", "xrbody"]) {
+for (const m of ["core", "assets", "world", "chat", "fp_view", "boot", "ui", "avatar", "xr/xrbody"]) {
   mock.module(`${import.meta.dir}/../../client/lib/${m}.js`, () => stubs);
 }
 const { net, identities, say, sendPuppet, sendBodyDrag, sendTyping, sendJoined } = (await import("../../client/lib/net.js")) as any;

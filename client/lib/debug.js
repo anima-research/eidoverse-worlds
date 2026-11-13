@@ -3,7 +3,7 @@
 
 import { THREE, scene } from './core.js';
 import { bus } from './base.js';
-import { registerXRPanel, xrPanelOpen } from './xrpanels.js';
+import { registerXRPanel, xrPanelOpen } from './xr/xrpanels.js';
 import { gpuLine, shadowPassLine, setGpuTimer, gpuTimerOn, gpuTimerState, measureShadowPass } from './gputime.js';
 import { perf } from './perf.js';
 import { drawStats } from './render.js';

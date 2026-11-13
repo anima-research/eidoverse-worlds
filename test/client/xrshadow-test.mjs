@@ -1,7 +1,7 @@
-// The ShadowNode XR-off patch (client/lib/xrshadow.js, applied by core.js): while presenting, the shadow pass
+// The ShadowNode XR-off patch (client/lib/xr/xrshadow.js, applied by core.js): while presenting, the shadow pass
 // runs with xr.enabled=false and it is restored on every exit; not presenting, the original runs untouched.
 // Third independent review 2026-09-10: removing the patch in core.js was green everywhere — nothing imported it.
-import { patchShadowNodeForXR } from '../../client/lib/xrshadow.js';
+import { patchShadowNodeForXR } from '../../client/lib/xr/xrshadow.js';
 import { suite } from "../gate/suite.ts";
 const S = suite("xrshadow");
 const check = (name, ok, note) => S.check(name, ok, note);

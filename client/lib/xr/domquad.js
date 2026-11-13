@@ -2,10 +2,10 @@
 // vendored HTMLMesh (vendor/htmlmesh.js), and a trigger fires the SAME click/input handlers the mouse does.
 // While presenting, the frame moves into an offscreen-but-laid-out stage (HTMLMesh measures with getBoundingClientRect,
 // so negative coordinates are fine) and returns, with its display state, on exit. Fallback: ?canvasquads=1.
-import { THREE, renderer } from './core.js';
-import { tee, bus, CONFIG } from './base.js';
-import { allFrames, getFrame, frameResizeInfo } from './windows.js';
-import { HTMLMesh } from '../vendor/three-addons/htmlmesh.js';
+import { THREE, renderer } from '../core.js';
+import { tee, bus, CONFIG } from '../base.js';
+import { allFrames, getFrame, frameResizeInfo } from '../windows.js';
+import { HTMLMesh } from '../../vendor/three-addons/htmlmesh.js';
 import { quadMaterial } from './quadcolour.js';
 
 const PX_PER_M = 900;      // xrpanels' density

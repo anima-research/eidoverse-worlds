@@ -1,14 +1,14 @@
 // headset-seen-test: the stored headset bit is HISTORY, and says so (#197).
 // Nothing clears `ew-headset-seen` when a headset is unplugged, and isSessionSupported stays optimistic after a headset
 // is switched off, so a re-probe isn't honest either: the value carries WHEN, expires, and the copy claims only that a
-// headset has been USED here. Drives the REAL client/lib/headset_seen.js (no imports, nothing to stub); its wiring (the
+// headset has been USED here. Drives the REAL client/lib/xr/headset_seen.js (no imports, nothing to stub); its wiring (the
 // boot backend choice, the panel copy, the time stamp's writers) is in test/client/wiring-check.ts.
 // Run: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/client/headset-seen-test.mjs
 // Mutations that must turn a named check red:
 //   headset_seen.js: headsetSeenRecently ignores the TTL (always true once seen)
 //   headset_seen.js: an unmigrated legacy '1' reads as recent again (the permanence defect)
 //   (core.js, videopanel.js and xr.js mutations go red in test/client/wiring-check.ts)
-import { headsetSeenAt, migrateHeadsetSeen, headsetSeenRecently, HEADSET_SEEN_TTL_MS } from '../../client/lib/headset_seen.js';
+import { headsetSeenAt, migrateHeadsetSeen, headsetSeenRecently, HEADSET_SEEN_TTL_MS } from '../../client/lib/xr/headset_seen.js';
 import { suite } from "../gate/suite.ts";
 
 

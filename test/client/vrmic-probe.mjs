@@ -1,4 +1,4 @@
-// vrmic-probe — ask for the microphone BEFORE VR, so voice works inside the headset (client/lib/vrmic.js). The real
+// vrmic-probe — ask for the microphone BEFORE VR, so voice works inside the headset (client/lib/xr/vrmic.js). The real
 // client, ?xr=1, an IWER session entered through the REAL visor (#xrbtn) and the real voice transport. Only the browser's
 // permission boundary is driven: navigator.permissions.query answers what the probe says ('granted' / 'denied' /
 // 'prompt'), and getUserMedia is counted (and, for the in-VR case, held open the way an unanswerable prompt holds it).
@@ -134,7 +134,7 @@ try {
   const t0 = Date.now();
   const pressed = await ev(async () => { (await import('./lib/base.js')).bus.emit('xr:mic'); return true; });   // the ring's own action
   check('in VR: the press returns at once (nothing awaits the hanging request)', pressed && Date.now() - t0 < 5000, `${Date.now() - t0} ms`);
-  const TRY_MS = await ev(async () => (await import('./lib/vrmic.js')).TRY_MS);
+  const TRY_MS = await ev(async () => (await import('./lib/xr/vrmic.js')).TRY_MS);
   await pg.waitForFunction(() => !!globalThis.__vrmic?.lastTry, null, { timeout: TRY_MS + 15000, polling: 250 }).catch(() => {});
   await sleep(500);
   { const p = await P(); const m = await mic();
@@ -158,7 +158,7 @@ try {
 
   // ── exit: unaffected, then the flat page asks ──
   { const e = await endSession('after the in-VR fallback'); check('exit: the session ends and the page answers (the fallback does not hold it)', e.ok, `${e.s} s`); }
-  { const shown = await ev(async () => (await import('./lib/vrmic.js')).vrNoteShown()); check('exit: the note is gone', !shown); }
+  { const shown = await ev(async () => (await import('./lib/xr/vrmic.js')).vrNoteShown()); check('exit: the note is gone', !shown); }
   await pg.waitForFunction(() => !!document.getElementById('vrmic'), null, { timeout: 15000, polling: 250 }).catch(() => {});
   { const c = await card(); check('after exit: the flat page asks ("Voice needs permission", Allow / Not now)', c?.title === 'Voice needs permission' && c.btns.join('|') === 'Allow microphone|Not now', JSON.stringify(c)); }
   await sleep(300);

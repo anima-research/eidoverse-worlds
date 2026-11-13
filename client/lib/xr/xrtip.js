@@ -3,7 +3,7 @@
 // when it leaves. No strings of its own: the text is the control's title or its nearest titled ancestor's.
 // One #xr-tip element laid out offscreen, rasterised by the vendored HTMLMesh and hung in the panel's quad, a hair in
 // front of it, under (or above) the control at the panel's own pixel size.
-import { HTMLMesh } from '../vendor/three-addons/htmlmesh.js';
+import { HTMLMesh } from '../../vendor/three-addons/htmlmesh.js';
 import { prepareQuadMaterial } from './domquad.js';
 
 const RASTER = 2.5;     // device px per CSS px, as the nameplate card (crisp at arm's length)

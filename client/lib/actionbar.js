@@ -6,7 +6,7 @@ import { bus } from './base.js';
 import { ANIM_ORDER, ANIM_ICONS } from './animnames.js';
 import { escapeHtml } from './markup.js';   // names + glyphs, no engine
 import { getMe } from './mybody.js';
-import { registerXRPanel } from './xrpanels.js';
+import { registerXRPanel } from './xr/xrpanels.js';
 import { register as registerAction } from './actions.js';
 import { myState, setPosture, sitHere, standUp, getPosture } from './controller.js';
 const POSTURES = ['sit', 'stand', 'lie'];

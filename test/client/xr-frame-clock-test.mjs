@@ -18,7 +18,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { captureNative, shouldShim, makeFrameShim, makeCancelShim, clockIsRestored }
-  from '../../client/lib/xr_frame_clock.js';
+  from '../../client/lib/xr/xr_frame_clock.js';
 
 const dir = dirname(fileURLToPath(import.meta.url));
 let pass = 0, fail = 0;
@@ -184,11 +184,11 @@ console.log('\nunder an emulator:');
 
 console.log('\nthe wiring:');
 {
-  const xr = readFileSync(join(dir, '../../client/lib/xr.js'), 'utf8');
+  const xr = readFileSync(join(dir, '../../client/lib/xr/xr.js'), 'utf8');
   check('xr.js imports the install seam', /import \{ installEntryClock \}/.test(xr));
   check('xr.js installs the shim through them', /frameClock = installEntryClock\(\{/.test(xr));
   check('the emulator case is decided INSIDE the module, not at the call site',
-  !/emulated:/.test(xr) && /const emulated = !!globals\?\.IWER;/.test(readFileSync(join(dir, '../../client/lib/xr_frame_clock.js'), 'utf8')));
+  !/emulated:/.test(xr) && /const emulated = !!globals\?\.IWER;/.test(readFileSync(join(dir, '../../client/lib/xr/xr_frame_clock.js'), 'utf8')));
   // ORDERING: the restore listener must be registered before setSession, so it runs before three's
   // own 'end' listener restarts the desktop loop through window.requestAnimationFrame.
   const restoreAt = xr.indexOf("session.addEventListener('end'");
@@ -198,7 +198,7 @@ console.log('\nthe wiring:');
   // The restore lives in installFrameClock, generation-guarded. xr.js must NOT restore on its own: a
   // second unguarded listener there let a stale session hand the clock back mid-session (agent review).
   check('the OWNER restores both clocks',
-    /win\.requestAnimationFrame = native\.raf; win\.cancelAnimationFrame = native\.caf;/.test(readFileSync(join(dir, '../../client/lib/xr_frame_clock.js'), 'utf8')));
+    /win\.requestAnimationFrame = native\.raf; win\.cancelAnimationFrame = native\.caf;/.test(readFileSync(join(dir, '../../client/lib/xr/xr_frame_clock.js'), 'utf8')));
   check('…and xr.js does not restore behind its back', !/window\.requestAnimationFrame = nativeRAF/.test(xr));
 }
 
