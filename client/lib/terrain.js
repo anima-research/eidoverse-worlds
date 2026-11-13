@@ -4,8 +4,8 @@
 
 import { scene, ground, grid, axisLines } from './core.js';
 import { bus } from './base.js';
-import { retireField } from './flora_field.js';
-import { makeGrassQuality, GRASS_QUALITY } from './grass_quality.js';
+import { retireField } from './vegetation/flora_field.js';
+import { makeGrassQuality, GRASS_QUALITY } from './vegetation/grass_quality.js';
 
 let current = null;
 // with no terrain mesh the stage floor is the ground: at 0, or at a flat terrain's height (terrain {kind: 'flat'})

@@ -65,6 +65,8 @@ plugin({
     for (const f of ['^\\./core\\.js$', '^\\./loadwork\\.js$', '^\\./warmqueue\\.js$', '^\\./materials\\.js$', '^\\./draw_batches\\.js$']) {
       stubResolve(b, new RegExp(f), () => ({ path: STUB }));
     }
+    // vegetation/foliage.js asks for the same two one folder up
+    stubResolve(b, /^\.\.\/(core|warmqueue)\.js$/, (a) => (/\/vegetation\/foliage\.js$/.test(a.importer.replace(/\\/g, '/')) ? { path: STUB } : undefined));
   },
 });
 

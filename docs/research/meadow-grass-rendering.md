@@ -1,6 +1,6 @@
 # Meadow grass rendering: tiling, density and LOD
 
-Rationale behind `client/lib/flora.js`. § numbers are docs/history/TEL0S_NOTES.md sections and progress-log entries (§13.2, §16,
+Rationale behind `client/lib/vegetation/flora.js`. § numbers are docs/history/TEL0S_NOTES.md sections and progress-log entries (§13.2, §16,
 §17, §22*); three.webgpu.js line numbers are the vendored r184 build. The history is in git.
 
 ## Culling (§13.2 G1)

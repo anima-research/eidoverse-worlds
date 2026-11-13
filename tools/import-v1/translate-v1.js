@@ -798,7 +798,7 @@ export function particlesPlan(id, comp) {
 }
 const brief = (x) => { const j = JSON.stringify(x); if (j === undefined || j.length <= 80) return x === undefined ? null : x; return Array.isArray(x) ? `${x.length} items` : typeof x === "string" ? `${[...x].length} characters` : `${j.slice(0, 77)}…`; };
 /** main's grass keys the field doesn't hold but createFlora read (main drew a bag with no preset as one stroke of itself): a
- *  stroke hands its every key to createFlora (client/lib/flora.js), so the bag becomes that one stroke. With a preset, none. */
+ *  stroke hands its every key to createFlora (client/lib/vegetation/flora.js), so the bag becomes that one stroke. With a preset, none. */
 export function grassExtras(g) {
   if (!g || typeof g !== "object" || Array.isArray(g) || g.preset != null || Array.isArray(g.strokes)) return [];
   const m = mapGrassArgs(g); return Object.keys(m).filter((k) => !(k in COMPONENTS.grass.fields));

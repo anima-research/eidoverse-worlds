@@ -20,7 +20,7 @@ import { shapeParams, shapedHeightAt, requestGrid, setGridFetcher, gridRetryIn, 
 import { materialLayerSpecs } from '../../shared/terrainlayers.js';
 setGridFetcher(async (ref) => { const r = await fetch(`/library/${ref}`); if (!r.ok) throw new Error(`${r.status}`); return r.json(); });
 import { applyWater } from './water.js';
-import { buildFloraField, warmField, loadFloraModule } from './flora.js';
+import { buildFloraField, warmField, loadFloraModule } from './vegetation/flora.js';
 import { applySky, whenSkyWarm } from './sky/sky.js';
 import { whenBooted, bootDone } from './boot.js';
 import { warm, P_GATE } from './warmqueue.js';

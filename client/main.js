@@ -832,7 +832,7 @@ const EW = globalThis.EW = {
   residency: residencyDebug,   // real/stand-in/loading counts + sweep stats
   gpu: () => ({ ...renderer.info.memory, ...protoStats() }),   // bytes + proto/byte tiers
   draws: drawStats,
-  foliage: () => import('./lib/foliage.js').then((m) => m.foliageDebug()),
+  foliage: () => import('./lib/vegetation/foliage.js').then((m) => m.foliageDebug()),
   overdraw: (opts) => import('./lib/overdraw.js').then((m) => m.overdrawCapture(opts)),   // fragments shaded per pixel, by category
   setDrawBatching,
   frame: frameDebug,           // per-system rolling ms + strides

@@ -59,10 +59,10 @@ const near = (a: number, b: number, eps = 1e-9) => Math.abs(a - b) < eps;
 // own source (not retyped), so this one assertion is a live A/B: main's
 // inline expression floors at >=1 instance per stroke and keeps 50 of 1000
 // at factor 0; the branch delegates to densityCount and keeps 0.
-const gqMod = await import("../../client/lib/grass_quality.js").then((m) => m, () => null);
+const gqMod = await import("../../client/lib/vegetation/grass_quality.js").then((m) => m, () => null);
 console.log("\nflora's shipped density dial (source-extracted, both trees)");
 {
-  const src = await Bun.file(here("../../client/lib/flora.js")).text();
+  const src = await Bun.file(here("../../client/lib/vegetation/flora.js")).text();
   const dial = src.match(/const keep = ([^;\n]+);/);
   let keep: unknown = "dial expression not found in flora.js";
   if (dial) {
@@ -75,7 +75,7 @@ console.log("\nflora's shipped density dial (source-extracted, both trees)");
 }
 
 if (!gqMod) {
-  console.log(`\n${S.pass} passed, ${S.fail} failed — client/lib/grass_quality.js absent` +
+  console.log(`\n${S.pass} passed, ${S.fail} failed — client/lib/vegetation/grass_quality.js absent` +
     ` (expected on main; that absence is novelty, the dial assertion above is the behavior)`);
   process.exit(1);
 }
@@ -181,7 +181,7 @@ console.log("\nterrain lifecycle (the real setGrass/setGrassDensity path)");
 // ---- applied truth (#74) --------------------------------------------------
 // flora.js's SHIPPED wireDensityDial, source-extracted so the silent-no-op
 // mechanism is demonstrated on both trees, not retyped into the test.
-const floraSrc = await Bun.file(here("../../client/lib/flora.js")).text();
+const floraSrc = await Bun.file(here("../../client/lib/vegetation/flora.js")).text();
 const wdMatch = floraSrc.match(/function wireDensityDial\(field\) \{[\s\S]*?\n\}/);
 const wireDial = wdMatch
   ? new Function("densityCount", `${wdMatch[0]}; return wireDensityDial;`)(densityCount)
@@ -204,7 +204,7 @@ const mkStroke = (n: number, { attrs = true, label = "", stem = false } = {}) =>
   } as any;
 };
 
-const ff = await import("../../client/lib/flora_field.js");
+const ff = await import("../../client/lib/vegetation/flora_field.js");
 
 console.log("\nthe silent no-op seam (flora's shipped wireDensityDial, both trees)");
 {
@@ -323,7 +323,7 @@ console.log("\none report for every surface (source-level)");
 console.log("\nnever a verb (source-level)");
 {
   const src = await Bun.file(here("../../client/lib/terrain.js")).text();
-  const gq = await Bun.file(here("../../client/lib/grass_quality.js")).text();
+  const gq = await Bun.file(here("../../client/lib/vegetation/grass_quality.js")).text();
   check("terrain.js does not import net.js or write to the world (no door requests)",
     !src.includes("net.js") && !src.includes("sendRequest") && !src.includes("sendOps"));
   check("grass_quality.js is dependency-free",

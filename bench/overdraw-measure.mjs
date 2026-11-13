@@ -40,7 +40,7 @@ try {
     const calR = await EW.overdraw({ mode: 'raw', w: W, camera: pc });
     scene.remove(cal);
     // ---- grass: the Commons meadow around the camera, in the live scene
-    const F = await import('./lib/flora.js');
+    const F = await import('./lib/vegetation/flora.js');
     const field = await F.buildFloraField({ species: 'galleta_dry', width: 80, depth: 70, density: 0.5, center: [eye.x, eye.z] }, { scene, heightFn: () => 0 });
     await F.warmField(field, renderer, pc, scene);
     // pin the meadow: no pusher (the visitor walks through it), no tile re-budget from the moving core camera

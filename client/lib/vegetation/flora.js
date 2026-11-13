@@ -8,17 +8,17 @@
 //   flora_field.js — field composition + retirement lifecycle
 //   flora_lod.js   — blade-LOD index subsets for tiled strokes
 // All are covered by test/client/flora-test.ts.
-import { THREE, TSL, camera, renderer } from './core.js';
-import { bus, CONFIG } from './base.js';
-import { primeFiles } from './assets.js';
-import { colliders } from './colliders.js';
-import { myState } from './controller.js';
-import { remotes } from './remotes.js';
-import { mapGrassArgs, presetStrokes } from '../../shared/flora_args.js';
+import { THREE, TSL, camera, renderer } from '../core.js';
+import { bus, CONFIG } from '../base.js';
+import { primeFiles } from '../assets.js';
+import { colliders } from '../colliders.js';
+import { myState } from '../controller.js';
+import { remotes } from '../remotes.js';
+import { mapGrassArgs, presetStrokes } from '../../../shared/flora_args.js';
 import { composeField } from './flora_field.js';
 import { bladeLodIndex, bladeCoarseIndex } from './flora_lod.js';
 import { densityCount } from './grass_quality.js';
-import { pushHostHook } from './autohooks.js';
+import { pushHostHook } from '../autohooks.js';
 
 export { retireField } from './flora_field.js';
 
@@ -29,7 +29,7 @@ let floraMod = null;
  *  the Deno asset shim, both present by the time flora work starts, and its weight stays off the boot path. */
 export async function loadFloraModule() {
   if (!floraMod) {
-    floraMod = import('./vegetation/vegetation.js').then(async (m) => {
+    floraMod = import('./vegetation.js').then(async (m) => {
       // hydrate the species registry from /defs before anyone resolves the module. Optional-chained so a
       // cached pre-defs engine build still loads (its table is baked in).
       await m.ensureFloraDefs?.();

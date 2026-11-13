@@ -24,7 +24,7 @@
 
 import { perf } from './perf.js';
 import { renderer, THREE } from './core.js';
-import { freezePushers, forceBladeLod, setDiagDensityScope, DENSE_BASE } from './flora.js';
+import { freezePushers, forceBladeLod, setDiagDensityScope, DENSE_BASE } from './vegetation/flora.js';
 import { getGrassField, getGrassDensity, getTerrainMesh, grassTiles } from './terrain.js';
 import { skyOwnedObjects } from './sky/sky.js';
 import { governorDebug } from './governor.js';

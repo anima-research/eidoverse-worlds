@@ -26,7 +26,7 @@ import { clone as skeletonClone } from 'three/addons/utils/SkeletonUtils.js';
 import { beginWork, enqueue, nextFrame, loadNote } from './loadwork.js';
 import { warm } from './warmqueue.js';
 import { prepareObject } from './materials.js';
-import { registerFoliage } from './foliage.js';
+import { registerFoliage } from './vegetation/foliage.js';
 import { markDrawBatchSource } from './draw_batches.js';
 import { libRelOf, modelWord } from '../../shared/eido.js';
 

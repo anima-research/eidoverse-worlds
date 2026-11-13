@@ -1,4 +1,4 @@
-// bun test/client/foliage-probe.mjs — Video › foliage (client/lib/foliage.js) through the REAL prepareObject.
+// bun test/client/foliage-probe.mjs — Video › foliage (client/lib/vegetation/foliage.js) through the REAL prepareObject.
 // A synthetic canopy: six stacked leaf planes whose texture has solid leaflets, 50% rims and see-through gaps
 // (transparent + map + opacity 1 → qualifies), and a glass pane (transparent, no map, opacity 0.4 → must not).
 //   qualify   — the leaf meshes register, the glass does not
@@ -24,7 +24,7 @@ try {
   const r = await Promise.race([pg.evaluate(async () => {
     const { THREE, scene, renderer } = await import('./lib/core.js');
     const { prepareObject } = await import('./lib/materials.js');
-    const F = await import('./lib/foliage.js');
+    const F = await import('./lib/vegetation/foliage.js');
     const { renderAside } = await import('./lib/render.js');
     // leaf texture: vertical leaflets — solid (255), a 1-texel 50% rim, see-through gaps (0)
     const N = 64, px = new Uint8Array(N * N * 4);

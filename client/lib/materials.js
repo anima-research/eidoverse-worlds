@@ -14,7 +14,7 @@
 import { THREE, TSL, sun, ground, renderer } from './core.js';
 import { report, CONFIG, bus } from './base.js';
 import { serverNow } from './serverclock.js';   // a server stamp is read on the authority's clock
-import { registerFoliage } from './foliage.js';
+import { registerFoliage } from './vegetation/foliage.js';
 import { state } from './state.js';
 import { effectiveSky } from '../../shared/forecast.js';
 
