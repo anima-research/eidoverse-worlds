@@ -2156,6 +2156,42 @@ export class WorldAgent {
   myRights: any = null;
   /** The vigil posture, mirrored for anything that renders this body. */
   wingsFolded = false;
+
+  /** Bone names of the worn body, for the capability's rig check; null
+   *  while they aren't known: until the worn model has been read, after a
+   *  read failed, and from an avatar change until the new body is read. */
+  bodyBoneNames: string[] | null = null;
+  private bodyBonesFor: string | null = null;
+
+  /** Read the worn VRM's bone list, once per avatar. A failed read keeps
+   *  nothing (still unknown); a read landing after an avatar change is dropped. */
+  async loadBodyBones(): Promise<string[] | null> {
+    const avatar = this.avatar;
+    if (this.bodyBoneNames && this.bodyBonesFor === avatar) return this.bodyBoneNames;
+    try {
+      const res = await fetch(`${this.httpBase}/library/${avatar}`, { signal: AbortSignal.timeout(WORLD_READ_MS) });
+      if (!res.ok) throw new Error(String(res.status));
+      const buf = new Uint8Array(await res.arrayBuffer());
+      const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+      const jlen = dv.getUint32(12, true);
+      const g = JSON.parse(new TextDecoder().decode(buf.subarray(20, 20 + jlen)));
+      const names = (g.nodes ?? []).filter((n: any) => n?.name).map((n: any) => n.name);
+      if (this.avatar === avatar) {
+        this.bodyBoneNames = names;
+        this.bodyBonesFor = avatar;
+      }
+    } catch (e) {
+      // Nothing is kept: a list another read stored for this body stands, and
+      // an unknown list stays unknown.
+      console.warn(`[door] couldn't read the bones of ${avatar}: ${(e as Error).message}`);
+    }
+    return this.bodyBoneNames;
+  }
+
+  /** Seconds since the leaf began -- the phase clock for the flutter torque. */
+  private leafT = 0;
+  /** Air model for the limp fall. Config, like everything else in flight. */
+  leafCfg: any = { ...LEAF_FORCE };
   private flightWaiters: Array<{ done: (r: string) => void; test: (s: any) => string | null }> = [];
   /** Numbers each command put in `flight.course`, the one course the autopilot flies (setCourse; #290). */
   private courseSeq = 0;
@@ -2188,37 +2224,6 @@ export class WorldAgent {
     const prov = this.flightCap ?? worldFlightProvider({ rights: () => this.myRights, label: "world-grant" });
     const r = resolveFlight(prov, { identity: this.name, avatar: { boneNames: bones } });
     return { ok: r.enabled === true, why: r.enabled ? "" : (r.reason ?? "denied") };
-  }
-
-  /** Bone names of the worn body, for the capability's rig check; null
-   *  while they aren't known: until the worn model has been read, after a
-   *  read failed, and from an avatar change until the new body is read. */
-  bodyBoneNames: string[] | null = null;
-  private bodyBonesFor: string | null = null;
-
-  /** Read the worn VRM's bone list, once per avatar. A failed read keeps
-   *  nothing (still unknown); a read landing after an avatar change is dropped. */
-  async loadBodyBones(): Promise<string[] | null> {
-    const avatar = this.avatar;
-    if (this.bodyBoneNames && this.bodyBonesFor === avatar) return this.bodyBoneNames;
-    try {
-      const res = await fetch(`${this.httpBase}/library/${avatar}`, { signal: AbortSignal.timeout(WORLD_READ_MS) });
-      if (!res.ok) throw new Error(String(res.status));
-      const buf = new Uint8Array(await res.arrayBuffer());
-      const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-      const jlen = dv.getUint32(12, true);
-      const g = JSON.parse(new TextDecoder().decode(buf.subarray(20, 20 + jlen)));
-      const names = (g.nodes ?? []).filter((n: any) => n?.name).map((n: any) => n.name);
-      if (this.avatar === avatar) {
-        this.bodyBoneNames = names;
-        this.bodyBonesFor = avatar;
-      }
-    } catch (e) {
-      // Nothing is kept: a list another read stored for this body stands, and
-      // an unknown list stays unknown.
-      console.warn(`[door] couldn't read the bones of ${avatar}: ${(e as Error).message}`);
-    }
-    return this.bodyBoneNames;
   }
 
   private flightBegin(feetY = this.pos.y) {
@@ -2680,11 +2685,6 @@ export class WorldAgent {
     this.leafT = 0;
     this.startSim();
   }
-
-  /** Seconds since the leaf began -- the phase clock for the flutter torque. */
-  private leafT = 0;
-  /** Air model for the limp fall. Config, like everything else in flight. */
-  leafCfg: any = { ...LEAF_FORCE };
   flightBodyRecovered(eventId: string, recoveryGeneration?: string): ActResult {
     if (!this.flight) return refused("not airborne — move {mode: \"fly\"} first");
     // Only a body that is down has anything to recover from; bodyRecovered
