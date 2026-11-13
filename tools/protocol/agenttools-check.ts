@@ -30,7 +30,8 @@ import { helloOf } from "../../shared/protocol/hello.js";
 
 const root = scratch("agenttools");
 let pass = 0, fail = 0;
-const ok = (cond, what, detail?) => { if (cond) pass++; else { fail++; console.log(`  FAIL ${what}${detail !== undefined ? ` — ${JSON.stringify(detail).slice(0, 600)}` : ""}`); } };
+let lastRow = "(start)";   // the row before a request: busyEvidence() names the section that sent it
+const ok = (cond, what, detail?) => { lastRow = String(what).split(" ")[0]; if (cond) pass++; else { fail++; console.log(`  FAIL ${what}${detail !== undefined ? ` — ${JSON.stringify(detail).slice(0, 600)}` : ""}`); } };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const T = (r) => { const t = r?.content?.[0]?.text ?? ""; if (process.env.AT_SHOW) console.log(`    · ${t.slice(0, 400)}`); return t; };
 
@@ -153,6 +154,14 @@ async function sock(name) {
 const ann = await sock("Ann");
 const { WorldAgent } = await import("../../mcpl/agent.ts");
 const ag = new WorldAgent({ url: `ws://127.0.0.1:${port}/ws`, name: "Hep", world: "yard", avatar: "" });
+// AT9's evidence (Windows 11-11: the busy meter refused its creates): ag's requests by the row before them, each round trip (>= its authority ms); the last 10 s at the latest rate refusal
+const sent: { after: string; verb: string; t: number; ms: number }[] = []; let atRate: any = null;
+const last10 = (now = performance.now()) => { const by: Record<string, number[]> = {}; let ms = 0;
+  for (const e of sent) if (now - e.t < 10_000) { const b = (by[`${e.after} ${e.verb}`] ??= [0, 0]); b[0]++; b[1] += Math.round(e.ms); ms += e.ms; }
+  return { rttMs: Math.round(ms), by }; };
+{ const real = ag.request.bind(ag); ag.request = async (verb: string, args: any) => { const t0 = performance.now(), after = lastRow; const r = await real(verb, args); const t = performance.now();
+    sent.push({ after, verb, t, ms: t - t0 }); if (r?.refused?.code === "rate") atRate = { verb, reason: r.refused.reason, ...last10(t) }; return r; }; }
+const busyEvidence = () => atRate ?? { rate: "none on ag's connection", ...last10() };
 await ag.connect(); await tryUntil("the agent has its cut", () => ag.snapshot, { ms: 3000, step: 50 });
 const HEP = ag.replica?.you;
 ok(/^u-/.test(HEP ?? "") && ag.replica?.active, "(setup) the agent joins and folds the world", ag.snapshot);
@@ -353,25 +362,25 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   const sp = await handleTool(ctx as any, "create", oldSpawn({ lib: "test/cup.glb", x: x0 + 3, z: z0 + 3, id: "alias-cup" }));
   const named = (n) => { const t = ag.thingRef(n); return "id" in t ? t.id : null; };   // the old spawn's id is the thing's label now (R 10-17)
   await tryUntil("the agent knows alias-cup", () => named("alias-cup"), { ms: 3000, step: 50 });
-  ok(!sp.isError && !!named("alias-cup") && ag.entities.size === n0 + 1, "AT9 spawn {lib, x, z, id} creates the thing (create {model, at}, the id its label: the authority mints ids)", T(sp).slice(0, 200));
+  ok(!sp.isError && !!named("alias-cup") && ag.entities.size === n0 + 1, "AT9 spawn {lib, x, z, id} creates the thing (create {model, at}, the id its label: the authority mints ids)", [busyEvidence(), T(sp).slice(0, 200)]);
   // M1 (holes review 10-15): with a yaw the alias builds at {pos, yaw}, which buildCreate never read: ok, at the origin.
   // Mutation (must go red): drop the `a.at` branch in authority.js buildCreate.
   const spAt = async (args, id) => { const r = await handleTool(ctx as any, "create", oldSpawn({ lib: "test/cup.glb", ...args, id })); await tryUntil(`the agent knows ${id}`, () => named(id), { ms: 3000, step: 50 }); return { r, rec: ag.foldRecord(named(id)) as any }; };
   const near = (p, x, z) => Array.isArray(p) && Math.abs(p[0] - x) < 0.05 && Math.abs(p[2] - z) < 0.05;
   const xz = await spAt({ x: x0 - 3, z: z0 + 3 }, "alias-cup-xz");
-  ok(!xz.r.isError && near(xz.rec?.pos, x0 - 3, z0 + 3), "AT9 spawn {lib, x, z} lands at x, z (not the origin)", [T(xz.r).slice(0, 200), xz.rec?.pos]);
+  ok(!xz.r.isError && near(xz.rec?.pos, x0 - 3, z0 + 3), "AT9 spawn {lib, x, z} lands at x, z (not the origin)", [busyEvidence(), T(xz.r).slice(0, 200), xz.rec?.pos]);
   const yw = await spAt({ x: x0 - 3, z: z0 - 3, yaw: 1 }, "alias-cup-yaw");
   const qy = [0, Math.sin(0.5), 0, Math.cos(0.5)];
-  ok(!yw.r.isError && near(yw.rec?.pos, x0 - 3, z0 - 3) && Array.isArray(yw.rec?.q) && yw.rec.q.every((n, i) => Math.abs(n - qy[i]) < 1e-3), "AT9 spawn {lib, x, z, yaw} lands at x, z facing yaw (create {at: {pos, yaw}})", [T(yw.r).slice(0, 200), yw.rec?.pos, yw.rec?.q]);
+  ok(!yw.r.isError && near(yw.rec?.pos, x0 - 3, z0 - 3) && Array.isArray(yw.rec?.q) && yw.rec.q.every((n, i) => Math.abs(n - qy[i]) < 1e-3), "AT9 spawn {lib, x, z, yaw} lands at x, z facing yaw (create {at: {pos, yaw}})", [busyEvidence(), T(yw.r).slice(0, 200), yw.rec?.pos, yw.rec?.q]);
   // review r2 F8: with a yaw and no y the alias put the origin at y 0 (create {at: {pos: [x, 0, z], yaw}}): never seated on
   // what's under x, z. Now it is place {at: [x, z], yaw}, the same seat as without a yaw: over the wall (top at 2.4) it lands ON it
   const ywOn = await spAt({ x: 1, z: 3, yaw: 1 }, "alias-cup-yaw-on");
   const noYaw = await spAt({ x: -1, z: 3 }, "alias-cup-on");
   ok(!ywOn.r.isError && near(ywOn.rec?.pos, 1, 3) && Math.abs(ywOn.rec?.pos?.[1] - 2.4) < 0.02 && Math.abs(noYaw.rec?.pos?.[1] - ywOn.rec?.pos?.[1]) < 1e-6
     && Array.isArray(ywOn.rec?.q) && ywOn.rec.q.every((n, i) => Math.abs(n - qy[i]) < 1e-3),
-    "AT9 spawn {lib, x, z, yaw} over the wall sits on its top, like spawn without a yaw, facing yaw (review r2 F8)", [T(ywOn.r).slice(0, 200), ywOn.rec?.pos, ywOn.rec?.q, noYaw.rec?.pos]);
+    "AT9 spawn {lib, x, z, yaw} over the wall sits on its top, like spawn without a yaw, facing yaw (review r2 F8)", [busyEvidence(), T(ywOn.r).slice(0, 200), ywOn.rec?.pos, ywOn.rec?.q, noYaw.rec?.pos]);
   const sq = await handleTool(ctx as any, "spawn", { query: "cup" });
-  ok(sq.isError && T(sq) === `there's no tool named "spawn" on this server, so nothing ran (did you mean say?); your tool list has the ones it serves` && ag.entities.size === n0 + 5, "AT9 spawn is refused as an unknown tool and creates nothing (Mica 11-05)", [T(sq).slice(0, 200), ag.entities.size, n0]);
+  ok(sq.isError && T(sq) === `there's no tool named "spawn" on this server, so nothing ran (did you mean say?); your tool list has the ones it serves` && ag.entities.size === n0 + 5, "AT9 spawn is refused as an unknown tool and creates nothing (Mica 11-05)", [busyEvidence(), T(sq).slice(0, 200), ag.entities.size, n0]);
   const wv = await handleTool(ctx as any, "world_verb", { verb: "say", args: { text: "alias says" } });
   ok(wv.isError && /world_verb was removed/.test(T(wv)) && /act \{verb, args\}/.test(T(wv)), "AT9 world_verb is refused as removed, naming act (R 10-27)", T(wv).slice(0, 160));
   // main's verbs the authority doesn't have are refused as removed with the call that does it now, never a did-you-mean (R 10-27)

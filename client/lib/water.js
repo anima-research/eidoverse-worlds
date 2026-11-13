@@ -15,7 +15,7 @@
 // Foam is made by water moving at the edge: the waterline's speed up the beach, weighted by wave size.
 //
 // Nothing here moves bodies — wading is the controller's (and the agents') rule, from the same level.
-import { THREE, scene } from './core.js';
+import { THREE, scene, renderer, camera } from './core.js';
 import { attribute, mix, smoothstep, vec3, float, positionGeometry, uniform, sin, cos, max, normalize, color, transformNormalToView, faceDirection, positionWorld, cameraPosition } from 'three/tsl';
 import { OCEAN, RIVER, STILL, waveClock, cyc, surfaceOffset } from '../../shared/waves.js';
 import { setWaterField } from './terrain.js';
@@ -23,9 +23,9 @@ import { onWorldChange } from './state.js';
 import { dryAt } from './watervolumes.js';   // the dry boxes' mask (a cycle, used only at build time)
 import { waterParams } from '../../shared/terrainshape.js';
 import { analyzeWater, waterGridSeg } from '../../shared/waterkind.js';
+import { warm, P_AMBIENT } from './warmqueue.js';
 
-let current = null;   // { mesh, level }
-const _eye = new THREE.Vector3();
+let current = null;   // { mesh, under, level }
 
 // THE WAVE CLOCK (shared/waves.js): the surface runs on the world's synced time, wrapped to WAVE_PERIOD, so a
 // swell a swimmer rises on is the swell everyone sees. main.js hands in the synced clock; until it does,
@@ -55,6 +55,7 @@ export function applyWater(args, heightAt) {
       scene.remove(current.mesh);
       current.mesh.geometry.dispose();
       current.mesh.material.dispose();
+      current.under.material.dispose();
     }
     current = null;
   }
@@ -121,7 +122,7 @@ export function applyWater(args, heightAt) {
   geo.setAttribute('wflow', new THREE.BufferAttribute(flow, 3));
   geo.setAttribute('wshore', new THREE.BufferAttribute(shore, 3));
 
-  // a swimmer looks UP at the same sheet: two-sided while a camera is near or under it (onBeforeRender, below)
+  // a swimmer looks UP at the same sheet: its underside is a second mesh, shown while a camera is near or under it (below)
   const mat = new THREE.MeshStandardNodeMaterial({ transparent: true, depthWrite: false, roughness: 0.08, metalness: 0, side: THREE.FrontSide });
   const d = attribute('depth'), K = attribute('wkind'), F = attribute('wflow'), S = attribute('wshore');
   const still = K.x, river = K.y, ocean = K.z;
@@ -220,16 +221,43 @@ export function applyWater(args, heightAt) {
   mesh.name = 'water';
   mesh.position.y = W.level;
   mesh.renderOrder = 2;   // after the ground and the opaque world: it is seen THROUGH
-  // one synced wave time per frame; and the underside only when a camera could see it — a two-sided transparent
-  // sheet draws twice, which above the water would be pure cost (the swell reaches ~0.6 m over the level)
-  mesh.onBeforeRender = (_r, _s, cam) => {
-    waveT.value = waveTime();
-    const side = cam.getWorldPosition(_eye).y < W.level + 1 ? THREE.DoubleSide : THREE.FrontSide;
-    if (mat.side !== side) { mat.side = side; mat.needsUpdate = true; }
-  };
+  mesh.onBeforeRender = () => { waveT.value = waveTime(); };   // one synced wave time per frame
+  // the underside: the sheet's back faces, drawn just before its top; shown by .visible, never a side flip (a new pipeline, #306)
+  const under = new THREE.Mesh(geo);
+  under.name = 'water-underside';
+  under.renderOrder = mesh.renderOrder - 0.5;
+  under.visible = false;
+  under.userData.noWet = true; under.userData.noCloudShadow = true;   // it copies the top's wraps (dressUnderside), never takes its own
+  under.onBeforeRender = mesh.onBeforeRender;   // it draws first, so it sets this frame's wave time too
+  mesh.add(under);
   mesh.userData.bodies = A.bodies.map((b) => ({ kind: b.kind, area: Math.round(b.area), width: +b.width.toFixed(1), length: +b.length.toFixed(1) }));
   scene.add(mesh);
-  current.mesh = mesh;
+  current.mesh = mesh; current.under = under;
+  dressUnderside(current);
+}
+
+// The underside's material: a BackSide copy of the top's, re-copied when the top's changes (the sky's sweeps wrap it
+// after the build), and its pipeline warmed off the frame so the first dive doesn't build it (warmqueue.js)
+function dressUnderside(c) {
+  const { under } = c, m = c.mesh.material.clone();
+  m.side = THREE.BackSide;
+  under.material?.dispose();
+  under.material = m; c.underOf = c.mesh.material.version;
+  warm('water underside', async () => {
+    await new Promise((r) => requestAnimationFrame(r));   // a frame on, the water's fog is installed (watervolumes.js updateWaterView)
+    if (current?.under !== under || under.material !== m) return;   // rebuilt or travelled meanwhile: that water is gone
+    const { visible, frustumCulled } = under; let compiled;
+    try { under.visible = true; under.frustumCulled = false; compiled = renderer.compileAsync(under, camera, scene); }
+    finally { under.visible = visible; under.frustumCulled = frustumCulled; }
+    await compiled.catch(() => {});
+  }, { p: P_AMBIENT });
+}
+
+/** Show the sheet's underside while the eye is within a metre of the level or below it (watervolumes.js, every frame). */
+export function showUnderside(eyeY) {
+  if (!current?.under) return;
+  if (current.underOf !== current.mesh.material.version) dressUnderside(current);
+  current.under.visible = eyeY < current.level + 1;
 }
 
 // Travel resets the world; a destination with no terrain never rebuilds the water, so the old level (its sheet,

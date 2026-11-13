@@ -288,8 +288,8 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
   v1(W, "porch", [["world", "grant", { id: "fable", role: "owner" }], ["fable", "grant", { id: "janus", role: "owner", sub: "human:test:janus" }],
     ["fable", "grant", { id: "Digi_Rat", role: "builder" }], ["fable", "grant", { id: "Twin", role: "builder" }], ["fable", "grant", { id: "twin", role: "builder" }], ["Twin", "say", { text: "hi" }]]);
   const u = upgrade(root, "porch"); const file = directoryFileIn(W);
-  const bind = (...a: string[]) => { const r = Bun.spawnSync(["bun", "tools/operator-repair.ts", "bind", ...a], { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(root, "opt"), BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, timeout: 30_000 });
-    return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; };
+  const bind = (...a: string[]) => { const t0 = Date.now(), r = Bun.spawnSync(["bun", "tools/operator-repair.ts", "bind", ...a], { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(root, "opt"), BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, timeout: 30_000 });
+    return { code: r.exitCode, signal: r.signalCode ?? null, ms: Date.now() - t0, out: r.stdout.toString() + r.stderr.toString() }; };
   const modOf = () => { const f = path.join(W, "porch", "world.mod.jsonl"); return fs.existsSync(f) ? fs.readFileSync(f, "utf8") : ""; };
   const held = directoryAt(file);   // as a running server holds it: read before the bind
   const fableId = u.roles.fable?.[0], digiId = u.roles.Digi_Rat?.[0], twins = [u.roles.Twin?.[0], u.roles.twin?.[0]];
@@ -306,7 +306,7 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
   const r5 = [bind("porch", "twin", "human:test:twin"), bind("porch", "nobody", "human:test:nobody")];
   const still = fs.readFileSync(file, "utf8") === before && modOf() === mod0;
   row("OR2", () => ok(r2.code === 1 && /isn't an imported identity/.test(r2.out) && still, "OR2 bind refuses a target that isn't imported (janus's identity wears an account), nothing changed", r2));
-  row("OR3", () => ok(r3.every((r) => r.code === 1 && /isn't an account/.test(r.out)) && still, "OR3 bind refuses a malformed account (no provider, empty, main's agent:<name>, a space, a shape that isn't one here), nothing changed", r3.map((r) => r.out.slice(0, 120))));
+  row("OR3", () => ok(r3.every((r) => r.code === 1 && /isn't an account/.test(r.out)) && still, "OR3 bind refuses a malformed account (no provider, empty, main's agent:<name>, a space, a shape that isn't one here), nothing changed", { still, r3: r3.map((r) => ({ code: r.code, signal: r.signal, ms: r.ms, out: r.out.slice(0, 60) })) }));
   row("OR4", () => ok(r4.code === 1 && /already wears janus/.test(r4.out) && /alias merge/.test(r4.out) && /portable identity/.test(r4.out) && /operator-repair set\/delete/.test(r4.out) && still,
     "OR4 bind refuses an account that already wears another identity here (it can't be two people), naming the coming path (an alias merge, with portable identity) and today's (set/delete), nothing changed", r4));
   row("OR5", () => ok(r5[0].code === 1 && /2 imported identities/.test(r5[0].out) && twins.every((id) => r5[0].out.includes(id)) && r5[1].code === 1 && /nobody called "nobody"/.test(r5[1].out) && still,

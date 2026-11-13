@@ -56,17 +56,8 @@
  "tools/protocol/agenttools-check.ts": {
   "bare-wait": 5
  },
- "tools/protocol/batch2-check.ts": {
-  "raw-symlink": 2
- },
  "tools/protocol/batch2-probe.ts": {
   "bare-wait": 6
- },
- "tools/protocol/blockers-mutants.ts": {
-  "raw-symlink": 2
- },
- "tools/protocol/build-check.ts": {
-  "raw-symlink": 2
  },
  "tools/protocol/build-probe.ts": {
   "bare-wait": 5
@@ -77,20 +68,11 @@
  "tools/protocol/counter-check.ts": {
   "bare-wait": 1
  },
- "tools/protocol/describe-particles-check.ts": {
-  "raw-symlink": 2
- },
  "tools/protocol/fork-reset-check.ts": {
   "bare-wait": 2
  },
- "tools/protocol/grab-check.ts": {
-  "raw-symlink": 1
- },
  "tools/protocol/identity-check.ts": {
-  "bare-wait": 46
- },
- "tools/protocol/import-v1/snapshot-oracle.ts": {
-  "raw-symlink": 2
+  "bare-wait": 44
  },
  "tools/protocol/inplace-check.ts": {
   "bare-wait": 3
@@ -98,12 +80,8 @@
  "tools/protocol/inspectharness.ts": {
   "bare-wait": 1
  },
- "tools/protocol/names-check.ts": {
-  "raw-symlink": 7
- },
  "tools/protocol/parity-check.ts": {
-  "bare-wait": 5,
-  "raw-symlink": 3
+  "bare-wait": 5
  },
  "tools/protocol/party-probe.ts": {
   "bare-wait": 32
@@ -111,26 +89,11 @@
  "tools/protocol/presence-check.ts": {
   "bare-wait": 10
  },
- "tools/protocol/r10-check.ts": {
-  "raw-symlink": 4
- },
- "tools/protocol/r11-check.ts": {
-  "raw-symlink": 3
- },
- "tools/protocol/r9-check.ts": {
-  "raw-symlink": 2
- },
  "tools/protocol/reachgate-check.ts": {
   "bare-wait": 1
  },
  "tools/protocol/refusedjoin-check.ts": {
   "bare-wait": 11
- },
- "tools/protocol/roles-check.ts": {
-  "raw-symlink": 2
- },
- "tools/protocol/scale-check.ts": {
-  "raw-symlink": 3
  },
  "tools/protocol/scripts-check.ts": {
   "bare-wait": 15
@@ -138,17 +101,8 @@
  "tools/protocol/server-check.ts": {
   "bare-wait": 28
  },
- "tools/protocol/shiplist-check.ts": {
-  "raw-symlink": 2
- },
  "tools/protocol/shiplist-probe.ts": {
   "bare-wait": 105
- },
- "tools/protocol/shove-check.ts": {
-  "raw-symlink": 2
- },
- "tools/protocol/txn-check.ts": {
-  "raw-symlink": 1
  },
  "tools/protocol/xss-probe.ts": {
   "bare-wait": 8

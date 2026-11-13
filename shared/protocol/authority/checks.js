@@ -15,7 +15,7 @@ import { instanceProblem, ESSENTIAL_NAMES, LEGACY_FIELDS } from "../../particle_
 import { LAYER_DEFAULT, scans, worldPose } from "../simlayer.js";
 import { trustRefusal } from "../../drafts.js";
 import { shapeError } from "../shapes.js";
-import { AREA_MODES } from "../../zone.js";
+import { VOLUME_MODES } from "../../zone.js";
 import { CTX, UP } from "./ctx.js";
 import { Refusal, refuse } from "./refuse.js";
 import { modelOf } from "./catalogue.js";
@@ -290,8 +290,8 @@ function unknownKeys(at, v, allowed, what) {
 function lev(a, b) { const d = Array.from({ length: b.length + 1 }, (_, j) => j);
   for (let i = 1; i <= a.length; i++) { let prev = d[0]; d[0] = i; for (let j = 1; j <= b.length; j++) { const t = d[j]; d[j] = Math.min(d[j] + 1, d[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = t; } }
   return d[b.length]; }
-// the registered names one letter-slip from an unregistered bare one (round-2 R8): a typo, refused at admit
-const nearMiss = (name) => Object.keys(COMPONENTS).filter((k) => k !== name && Math.abs(k.length - name.length) <= 2 && lev(k, name) <= (k.length > 4 ? 2 : 1));
+// the registered names one letter-slip from an unregistered bare one (round-2 R8): a typo, refused at admit; a renamed one, its new name
+const nearMiss = (name) => name === "physics-area" ? ["physics-volume"] : Object.keys(COMPONENTS).filter((k) => k !== name && Math.abs(k.length - name.length) <= 2 && lev(k, name) <= (k.length > 4 ? 2 : 1));
 /** Why the catalogue would refuse this value (its shape only: no state, no rights), or null. For tools that ask
  *  whether a translated world is one the authority takes as it is (sweep). */
 export function schemaRefusal(comp, v) { try { schemaCheck(comp, comp, v);
@@ -416,10 +416,10 @@ const globalWater = (id, c) => c.water !== undefined && c.zone?.global === true
   && { code: "shape", reason: `${id} has water on a global zone: world-wide water goes on @world`, fix: "world-wide water goes on @world: set {id:'@world', component:'water', value: {level, …}}" };
 export function zoneRules(s, ids) {
   for (const id of ids) { const c = s.entities[id]?.c; if (!c || id === "@world") continue;
-    // physics-area reads a box zone or a global one (shared/zone.js physicsAreasOf)
-    { const pa = c["physics-area"];
-      if (pa?.modes !== undefined && !(Array.isArray(pa.modes) && pa.modes.length && pa.modes.every((m) => AREA_MODES.includes(m)))) return { code: "shape", reason: `${id}.physics-area.modes: a non-empty list of ${AREA_MODES.join(" | ")}` }; }
-    if (c["physics-area"] !== undefined && !(c.zone?.shape === "box" || c.zone?.global === true)) return { code: c.zone === undefined ? "needs" : "shape", reason: `${id}.physics-area: ${c.zone === undefined ? "a physics-area on a thing needs a sibling zone {shape, size} (its extent)" : `it reads a box zone or a global one (shape '${c.zone.shape}' isn't read yet)`}`, fix: `set {id: '${id}', component: 'zone', value: {shape: 'box', size: [x, y, z]}}` };
+    // physics-volume reads a box zone or a global one (shared/zone.js physicsVolumesOf)
+    { const pa = c["physics-volume"];
+      if (pa?.modes !== undefined && !(Array.isArray(pa.modes) && pa.modes.length && pa.modes.every((m) => VOLUME_MODES.includes(m)))) return { code: "shape", reason: `${id}.physics-volume.modes: a non-empty list of ${VOLUME_MODES.join(" | ")}` }; }
+    if (c["physics-volume"] !== undefined && !(c.zone?.shape === "box" || c.zone?.global === true)) return { code: c.zone === undefined ? "needs" : "shape", reason: `${id}.physics-volume: ${c.zone === undefined ? "a physics-volume on a thing needs a sibling zone {shape, size} (its extent)" : `it reads a box zone or a global one (shape '${c.zone.shape}' isn't read yet)`}`, fix: `set {id: '${id}', component: 'zone', value: {shape: 'box', size: [x, y, z]}}` };
     const has = ZONED.filter((k) => c[k] !== undefined); if (!has.length) continue;
     if (has.length > 1) return { code: "shape", reason: `${id} has both water and water-exclusion: a thing is a water body or a dry pocket, not both`, fix: "put the dry pocket on a child thing with its own zone" };
     if (c.zone === undefined) return { code: "needs", reason: `${id}.${has[0]}: ${has[0]} on a thing needs a sibling zone {shape, size} (its extent)`, fix: `${has[0]} on a thing needs a sibling zone {shape, size}: set {id: '${id}', component: 'zone', value: {shape: 'box', size: [x, y, z]}}` };

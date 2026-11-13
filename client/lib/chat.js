@@ -6,12 +6,10 @@
 // no highlight when one arrived, and no unread state. That asymmetry is the
 // same one build mode fixed, in a different place.
 //
-// The mention pattern here is a simpler one than the agent's (mcpl/mention.ts):
-// @name, or the bare name as a whole word. The agent's rule also handles a
-// qualified display name such as `Artie (kube)` and treats a hyphen as part
-// of a name, so a person's highlight and an agent's ping can differ.
+// Mentions use the door's name boundary (mention-rx.js), so a highlight and a ping agree (#232).
 
 import { CONFIG, bus, colorFor, assignColors } from './base.js';
+import { mentionRx, mentionPattern } from './mention-rx.js';
 // NOT importing xrpanels.js: it reaches the engine through domquad -> htmlmesh, and
 // chat.js is shared with a client that has no scene to hang a VR panel in. The spec is
 // EXPORTED instead and main.js registers it — the dependency inverted rather than made
@@ -52,12 +50,6 @@ let historyIdx = -1;
 
 // ---------------------------------------------------------------- mentions
 
-/** @name, or the bare name as a whole word: simpler than the agent side's
- *  rule (mcpl/mention.ts), which handles qualified names. */
-export function mentionRx(name) {
-  const safe = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`(@${safe}\\b|\\b${safe}\\b)`, 'i');
-}
 export function mentionsMe(text) {
   return mentionRx(CONFIG.name).test(String(text ?? ''));
 }
@@ -83,10 +75,7 @@ function inline(run) {
 }
 function renderBody(text, names) {
   const frag = document.createDocumentFragment();
-  const pattern = new RegExp(
-    `(https?://[^\\s]+)|(@?\\b(?:${names.map(escapeRx).join('|') || '\\u0000'})\\b)`,
-    'gi',
-  );
+  const pattern = mentionPattern(names);
   let i = 0;
   for (const m of String(text).matchAll(pattern)) {
     if (m.index > i) frag.append(inline(text.slice(i, m.index)));
@@ -120,7 +109,6 @@ function renderBody(text, names) {
   if (i < String(text).length) frag.append(inline(String(text).slice(i)));
   return frag;
 }
-const escapeRx = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // ---------------------------------------------------------------- scrollback
 //
@@ -507,7 +495,7 @@ function buildLine(who, text, { kind = '', ts = Date.now(), historical = false }
   if (!sys) w.style.color = colorFor(who);
   // click a name to start a mention of them
   if (!sys && !mine) {
-    w.onclick = () => { open(); insertAtCursor(`@${who} `); };
+    w.onclick = () => { open(); insertMention(who); };
     w.style.cursor = 'pointer';
   }
 
@@ -578,6 +566,12 @@ function paintUnread() {
 
 // ---------------------------------------------------------------- composer
 
+// `@name ` at the caret, after a space when the caret follows a character the mention boundary (mention-rx.js OPEN)
+// excludes: `hello@cairn` isn't read as a mention
+function insertMention(name) {
+  const s = inputEl.selectionStart ?? inputEl.value.length;
+  insertAtCursor(`${s > 0 && /[\w@-]/.test(inputEl.value[s - 1]) ? ' ' : ''}@${name} `);
+}
 function insertAtCursor(str) {
   const s = inputEl.selectionStart ?? inputEl.value.length;
   setInput(inputEl.value.slice(0, s) + str + inputEl.value.slice(inputEl.selectionEnd ?? s));
@@ -1316,7 +1310,7 @@ export function initChat({ send, typing, people, person }) {
 export function mentionPerson(name) {
   if (!name) return;
   chat.open();
-  insertAtCursor(`@${name} `);
+  insertMention(name);
   inputEl.focus();
 }
 
