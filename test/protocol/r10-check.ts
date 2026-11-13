@@ -63,11 +63,15 @@ async function runSelf(tree: string, only: string[] | null) {
 // a mutant tree: shared/ copied, mcpl/ copied without its node_modules (linked back to the real one)
 function copyTree(tag: string) { const d = scratch(tag);
   fs.cpSync(path.join(ENGINE, "shared"), path.join(d, "shared"), { recursive: true });
-  // client/: every entry linked back, except lib/localbody.js, copied (a mutant edits it; U2 reads it as text)
-  fs.mkdirSync(path.join(d, "client", "lib"), { recursive: true });
-  for (const k of fs.readdirSync(path.join(ENGINE, "client"))) if (k !== "lib") linkInto(path.join(ENGINE, "client", k), path.join(d, "client", k));
-  for (const k of fs.readdirSync(path.join(ENGINE, "client", "lib"))) if (k !== "localbody.js") linkInto(path.join(ENGINE, "client", "lib", k), path.join(d, "client", "lib", k));
-  fs.cpSync(path.join(ENGINE, "client", "lib", "localbody.js"), path.join(d, "client", "lib", "localbody.js"));
+  // client/: every entry linked back, except the client files a mutant edits, copied at any folder depth (a link would
+  // let the mutant edit the checkout; U2 reads localbody.js as text)
+  const copied = new Set(MUTANTS.map((m) => m[1]).filter((f) => f.startsWith("client/")));
+  const linkAllBut = (rel: string) => { fs.mkdirSync(path.join(d, rel), { recursive: true });
+    for (const k of fs.readdirSync(path.join(ENGINE, rel))) { const p = `${rel}/${k}`;
+      if (copied.has(p)) fs.cpSync(path.join(ENGINE, p), path.join(d, p));
+      else if ([...copied].some((f) => f.startsWith(p + "/"))) linkAllBut(p);
+      else linkInto(path.join(ENGINE, p), path.join(d, p)); } };
+  linkAllBut("client");
   fs.cpSync(path.join(ENGINE, "mcpl"), path.join(d, "mcpl"), { recursive: true, filter: (src) => !src.includes(`${path.sep}node_modules`) });
   try { linkInto(path.join(ENGINE, "mcpl", "node_modules"), path.join(d, "mcpl", "node_modules")); } catch { /* no node_modules: the import says so */ }
   // everything else the copied files import from the checkout (server/, client/, node_modules…) is the checkout's own
