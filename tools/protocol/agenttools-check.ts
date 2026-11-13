@@ -264,9 +264,9 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   ok(!yes.isError && vic.msgs.slice(k).some((m) => m.type === "puppet" && m.ragdoll), "AT3b once Vic allows it, the shove goes through and reports no error", [T(yes), vic.msgs.slice(k).map((m) => m.type)]);
 
   // ---- AT6: the folded modes, live ----
-  // flight: this body wears no winged rig and holds no fly grant, so the honest answer is the refusal — through the MODE
+  // flight: this body holds no fly grant, so the honest answer is the refusal — through the MODE
   const fly = await call("move", { mode: "fly", altitude: 10 });
-  ok(fly.isError && /cannot fly here/.test(T(fly)), "AT6a move {mode: \"fly\"} dispatches to the flight door (refused here: no grant, no wings — said in the integrator's words)", T(fly));
+  ok(fly.isError && /cannot fly here/.test(T(fly)), "AT6a move {mode: \"fly\"} dispatches to the flight door (refused here: no grant — said in the integrator's words)", T(fly));
   const land = await call("act", { verb: "land", args: { to: [1, 1] } });
   ok(land.isError && /ground|cannot fly/.test(T(land)), "AT6b act land answers from the body (on the ground already), not the authority's 'unknown verb'", T(land));
   const bs = await call("body_state", {});

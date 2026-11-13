@@ -39,8 +39,7 @@ import {
 // A human and an agent in the same sky must be flying the same physics or the
 // bench proves nothing about the world.
 //
-// Default OFF and gated: F toggles it, and only when the capability provider
-// grants this body a rig. A commons avatar with no wings gets nothing.
+// Default OFF and gated: F toggles it, and only with the world's fly right; wings aren't needed, only flapped (flightcap.js).
 import {
   makeConfig as flightConfig, initialState as flightState, step as flightStep,
   takeOff as flightTakeOff, bestGlide, bodyDown as flightDown,

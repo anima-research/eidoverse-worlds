@@ -139,10 +139,7 @@ export function setMe(av) {
 
 /** Arm (or disarm) human flight for whatever body this is now.
  *
- *  Re-run on every swap, never cached: the capability binds to the RIG, so
- *  putting on a winged body grants it and putting on a commons one takes it
- *  away. That is the same action-time rule the agent side follows, and the
- *  reason it is a function rather than a flag set once at boot. */
+ *  Re-run on every swap, never cached: the profile binds to the worn rig (shared/flightcap.js), as on the agent side. */
 function armFlightFor(av) {
   try {
     if (!av?.vrm?.scene) return;

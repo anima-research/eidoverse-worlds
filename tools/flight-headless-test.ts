@@ -168,8 +168,7 @@ console.log('\nLIVE REVOCATION -- through the your-rights path, not around it');
 {
   const { WorldAgent } = await import('../mcpl/agent.ts');
   const ag: any = new WorldAgent({ name: 'mythos', world: 'commons' });
-  // A winged body, so the RIG half of the capability is satisfied and the only
-  // variable under test is the GRANT half.
+  // A flier's core bones, so the only variable under test is the GRANT half.
   ag.bodyBoneNames = ['Hip', 'Spine02', 'Head',
     'L_Wing_Upper', 'L_Wing_Upper_1', 'R_Wing_Upper', 'R_Wing_Upper_1',
     'L_Wing_Lower', 'R_Wing_Lower'];

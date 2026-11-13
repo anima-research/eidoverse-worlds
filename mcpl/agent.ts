@@ -3079,10 +3079,8 @@ export class WorldAgent {
   /** Resolve the capability, freshly, every time -- never cached. An avatar
    *  can hot-swap and a grant must not ride across it. */
   private flightAllowed(): { ok: boolean; why: string } {
-    // Bone names come from the VRM this body is actually WEARING, fetched once
-    // and re-fetched on an avatar change -- the capability binds to the rig,
-    // not to a hash, so a re-export with the same load-bearing names can
-    // fly and a wingless commons avatar can't. A swap ends any flight under way (setAvatar).
+    // Bone names come from the VRM this body is WEARING, re-read on an avatar change; wings aren't needed (shared/flightcap.js).
+    // A swap ends any flight under way (setAvatar).
     // Unknown stays unknown: until the worn body's bones have been read, the
     // provider is given no list, which it answers as such, rather than an
     // empty list, which it would read as a body with no hips, spine or head.
