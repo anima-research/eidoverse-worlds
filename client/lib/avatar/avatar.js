@@ -46,6 +46,14 @@ export const BLINK = {
   eyeMax: 0.42,  // radians an eyeball may turn off the head's forward; eyes that track hard read as staring
   dur: 0.28,     // seconds for a full close-and-open
 };
+const _v = new THREE.Vector3();
+const _gq = new THREE.Quaternion();        // gaze scratch — hot path, no allocs
+const _gd = new THREE.Quaternion();
+const _gi = new THREE.Quaternion();
+const _gpq = new THREE.Quaternion();
+const _gf = new THREE.Vector3();
+const _gw = new THREE.Vector3();
+const _gp = new THREE.Vector3();
 
 // the wing dials and the flap live in wings.js; debug.js and the tests read the dials here
 export { WING_IDLE, WING_POWER } from './wings.js';
@@ -244,7 +252,6 @@ function drawTypingDots(sprite, t, state) {
 
 // ---------------------------------------------------------------- Avatar
 
-const _v = new THREE.Vector3();
 const _plateEye = new THREE.Vector3();   // nameplate fade: the camera's world position
 const _pq = new THREE.Quaternion();
 const _rq = new THREE.Quaternion();
@@ -256,13 +263,6 @@ const _rv3 = new THREE.Vector3();
 const _rv4 = new THREE.Vector3();
 const _Y2 = new THREE.Vector3(0, 1, 0);
 const _Z2 = new THREE.Vector3(0, 0, 1);
-const _gq = new THREE.Quaternion();        // gaze scratch — hot path, no allocs
-const _gd = new THREE.Quaternion();
-const _gi = new THREE.Quaternion();
-const _gpq = new THREE.Quaternion();
-const _gf = new THREE.Vector3();
-const _gw = new THREE.Vector3();
-const _gp = new THREE.Vector3();
 const _X = new THREE.Vector3(1, 0, 0);      // scratch — hot paths must not allocate
 const _v2 = new THREE.Vector3();
 const _swE = new THREE.Euler(), _swQ = new THREE.Quaternion();   // swim-layer scratch
@@ -356,7 +356,6 @@ export class Avatar {
     this.bubbleUntil = 0;
     this.speakUntil = 0;           // drives the fake viseme envelope
     this.voiceLevel = null;        // 0..1 real amplitude when a waveform exists
-    this._mouth = 0;               // smoothed jaw, so the mouth has inertia
     this.typing = null;            // lazily-built dots sprite
     this._typingUntil = 0;         // typing signals repeat ~2.5s and expire ~4s
     this._typingDrawAt = 0;
@@ -371,11 +370,12 @@ export class Avatar {
     this.gaze = new THREE.Object3D();
     this.gaze.userData.isBody = true;
     scene.add(this.gaze);
-    this.gazeGoal = new THREE.Vector3();
     if (vrm.lookAt) vrm.lookAt.target = this.gaze;
 
+    this.gazeGoal = new THREE.Vector3();
     this.blinkAt = performance.now() + 1200 + Math.random() * 3600;
     this.blinkT = -1;
+    this._mouth = 0;               // smoothed jaw, so the mouth has inertia
     this.head = vrm.humanoid?.getNormalizedBoneNode?.('head') ?? null;
     this.pitch = 0;                // radians, applied post-update
     this._limp = false;            // see setLimp: the mixer yields to the sim
@@ -385,19 +385,6 @@ export class Avatar {
     this.root.add(this.shadow);
 
     scene.add(this.root);
-  }
-
-  /** Find hand-rigged eyeball bones (L_Eye / R_Eye) once. A rig whose eyes are VRM-mapped is three-vrm's: this.gaze
-   *  is already its target, and two writers on one bone fight. */
-  _findEyes() {
-    this._eyes = null;
-    if (!this.vrm?.scene) return;
-    if (this.vrm.lookAt && this.vrm.humanoid?.getNormalizedBoneNode?.('leftEye')) return;
-    const found = [];
-    this.vrm.scene.traverse((o) => {
-      if (/^[LR]_Eye$/.test(o.name ?? '')) found.push({ node: o, rest: o.quaternion.clone() });
-    });
-    if (found.length) this._eyes = found;
   }
 
   /** Give the hair back to three-vrm, resuming from where the tumble left it. springBoneManager.reset() would snap
@@ -480,6 +467,19 @@ export class Avatar {
     }
   }
 
+  /** Find hand-rigged eyeball bones (L_Eye / R_Eye) once. A rig whose eyes are VRM-mapped is three-vrm's: this.gaze
+   *  is already its target, and two writers on one bone fight. */
+  _findEyes() {
+    this._eyes = null;
+    if (!this.vrm?.scene) return;
+    if (this.vrm.lookAt && this.vrm.humanoid?.getNormalizedBoneNode?.('leftEye')) return;
+    const found = [];
+    this.vrm.scene.traverse((o) => {
+      if (/^[LR]_Eye$/.test(o.name ?? '')) found.push({ node: o, rest: o.quaternion.clone() });
+    });
+    if (found.length) this._eyes = found;
+  }
+
   /** Hold the eyes shut or let them open (eased in update). False when this body has no eyelid bones. */
   setEyes(shut) {
     if (this._lids === undefined) this._findLids();
@@ -519,6 +519,12 @@ export class Avatar {
       });
     });
     if (found.length) this._lids = found;
+  }
+
+  /** Where this body should be looking. Null = relax to neutral. */
+  setGazeTarget(v3) {
+    if (v3) { this.gazeGoal.copy(v3); this._hasGaze = true; }
+    else this._hasGaze = false;
   }
 
   // ---- first-person anchors (fp_view.js consumes these) -------------------
@@ -1583,12 +1589,6 @@ export class Avatar {
     const ms = THREE.MathUtils.clamp(2500 + text.length * 45, 5000, 22000);
     this.bubbleUntil = performance.now() + ms;
     this.speakUntil = performance.now() + Math.min(ms, 1000 + text.length * 38);
-  }
-
-  /** Where this body should be looking. Null = relax to neutral. */
-  setGazeTarget(v3) {
-    if (v3) { this.gazeGoal.copy(v3); this._hasGaze = true; }
-    else this._hasGaze = false;
   }
 
   update(dt, now = performance.now()) {
