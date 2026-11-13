@@ -875,7 +875,7 @@ console.log("\nwhat is placed on an upper storey is walked round, as it is on th
     const lowY = planStructure(LOW).levels[0].y;
     const on = agentIn(lowY, { house: LOW });
     const NONE = { entity: "none", level: -2 };   // a walk's own floor that isn't here
-    const kind = on.walkSupport().kind, top = on.floorMeant(2.5, 1.5, lowY, {}, NONE)?.entity, groundOf = on.floorMeant(2.5, 1.5, 0, {}, NONE)?.entity;
+    const kind = on.walkSupport().kind, top = on.ground.floorMeant(2.5, 1.5, lowY, {}, NONE)?.entity, groundOf = on.ground.floorMeant(2.5, 1.5, 0, {}, NONE)?.entity;
     const down = await tryWalk(on, 2.5, 1.5, 0);
     const off = agentIn(0, { house: LOW });
     off.pos = { x: -1, y: 0, z: 0.5 };
@@ -888,7 +888,7 @@ console.log("\nwhat is placed on an upper storey is walked round, as it is on th
     if (storey) {
       // nearest, not highest: y 0.1 is the ground's though the deck fits too,
       // and halfway between the two, the tie goes to the walk's own floor
-      const own = on.walkSupport(), near01 = on.floorMeant(2.5, 1.5, 0.1, {}, own)?.entity, tieOn = on.floorMeant(2.5, 1.5, h / 2, {}, own)?.entity, tieNone = on.floorMeant(2.5, 1.5, h / 2, {}, NONE)?.entity;
+      const own = on.walkSupport(), near01 = on.ground.floorMeant(2.5, 1.5, 0.1, {}, own)?.entity, tieOn = on.ground.floorMeant(2.5, 1.5, h / 2, {}, own)?.entity, tieNone = on.ground.floorMeant(2.5, 1.5, h / 2, {}, NONE)?.entity;
       check("…the floor a height means is the nearest that fits, ties going to the walk's own floor, else to the higher",
         near01 === null && tieOn === "house" && tieNone === "house", `y 0.1: ${near01}; halfway, from the deck: ${tieOn}, for no walk's floor: ${tieNone}`);
     }

@@ -81,12 +81,12 @@ console.log("\nmodel downloads, governed:");
   } });
   const g: any = new WorldAgent({ name: "governed", world: "gov", url: `ws://127.0.0.1:${srv.port}/ws` });
   const t0 = performance.now();
-  const meshes = await Promise.all(Array.from({ length: 64 }, (_, i) => g.meshFor(`m${i}.glb`)));
+  const meshes = await Promise.all(Array.from({ length: 64 }, (_, i) => g.ground.meshFor(`m${i}.glb`)));
   check("64 unique models replayed at once download a few at a time, and all decode",
     most <= 3 && meshGovernor.maxActive <= 3 && served === 64 && meshes.every((m: any) => m?.indices?.length > 0),
     `at most ${most} at once (governor ${meshGovernor.maxActive}), ${served} served, ${(performance.now() - t0).toFixed(0)}ms`);
   check("...and nothing is left queued", meshGovernor.active === 0 && meshGovernor.queued === 0, JSON.stringify({ active: meshGovernor.active, queued: meshGovernor.queued }));
-  const big = await g.meshFor("huge.glb");
+  const big = await g.ground.meshFor("huge.glb");
   const why = [...meshGovernor.fallbacks].find(([k]) => k.endsWith("huge.glb"))?.[1];
   check("a model over the size limit is not decoded: its /geom summary stands in, and says why", big === null && /over the 50MB exact-collision limit/.test(why ?? ""), String(why));
   srv.stop(true);
@@ -108,8 +108,8 @@ try {
   // the building sits on the ground under its own origin, wherever that is
   const gy = a.heightAt(0, 0);
   await legacyVerb(a, "spawn", { id: "tower", lib: path, pos: [0, gy, 0], yaw: 0 });
-  await tryUntil("the tower's support is registered", () => a.supportIds?.get(sceneId(a, "tower")), { ms: 5000, step: 50 });
-  await a.supportReady();
+  await tryUntil("the tower's support is registered", () => a.ground.supportIds?.get(sceneId(a, "tower")), { ms: 5000, step: 50 });
+  await a.ground.supportReady();
   await sleep(300);                                     // the fit itself is a detached registration
   // y: which floor at the destination, where it has more than one (navgrid)
   const walk = async (x: number, z: number, y?: number) => a.walkTo(x, z, false, 30_000, 0.01, y);
@@ -142,7 +142,7 @@ try {
   await sleep(500);
   a = new WorldAgent({ name: "walker", world: "meshcollide", url: URL_, tickEveryMs: trackTicks() });
   await a.connect();
-  await a.supportReady();
+  await a.ground.supportReady();
   await sleep(500);
   check("rejoins upstairs, standing on the upper floor it left from",
     near(a.pos.y, gy + UPPER) && Math.hypot(a.pos.x + 0.2, a.pos.z + 2.4) < 0.1, `at (${a.pos.x.toFixed(2)}, ${a.pos.y.toFixed(3)}, ${a.pos.z.toFixed(2)})`);
@@ -226,7 +226,7 @@ try {
       delayed = 0;
       a = new WorldAgent({ name: "walker", world: "meshcollide", url: URL_, tickEveryMs: trackTicks() });
       await a.connect();
-      const pending = a.supportPending.size, from = a.pos.x;
+      const pending = a.ground.supportPending.size, from = a.pos.x;
       const back = await walk(21, 10);
       check("rejoining beside it and walking into it at once: refused too",
         Math.abs(from - 19.3) < 0.7 && !back && a.pos.x < 19.9 && delayed > 0 && /no walkable way|nowhere to stand|still loading/.test(a.walkRefusal ?? "") && !a.lastWalkRefusal,

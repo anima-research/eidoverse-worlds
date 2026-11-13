@@ -42,7 +42,7 @@ const srv = Bun.serve({ port: 0, async fetch(req) {
 const a: any = new WorldAgent({ name: "swimmer", world: "lifecycle", url: `ws://127.0.0.1:${srv.port}/ws`, avatar: "fix/short.vrm" });
 // the terrain toolkit stands in as a flat bed 1.6 m under the water: over a 1.0 m body's head (it swims),
 // under a 2.6 m body's chest (it wades)
-a.terrainSrc = "stub";
+a.ground.terrainSrc = "stub";
 (globalThis as any).makeTerrain = () => ({ heightAt: () => -1.6 });
 a.joined = true;
 const WET = { size: 40, water: { level: 0 } };
@@ -51,7 +51,7 @@ const tickN = (n: number) => { for (let i = 0; i < n; i++) a.tick(); };
 
 console.log("\nstature follows the body");
 {
-  await a.buildTerrain(WET); await settle();
+  await a.ground.buildTerrain(WET); await settle();
   check(`the short body is measured (${a.bodyH?.toFixed(2)} m)`, Math.abs(a.bodyH - SHORT) < 0.01);
   tickN(5);
   check("...and swims in 1.6 m of water", a.float.on && /swimming/.test(a.waterHere(0, 0, a.pos.y)), a.waterHere(0, 0, a.pos.y));
@@ -72,7 +72,7 @@ console.log("\nthe float follows the water");
   tickN(10);
   check("afloat in the water", a.float.on);
   a.float = { on: true, y: -1, vy: 2 };   // a float mid-bob
-  await a.buildTerrain({ size: 40 });     // drained
+  await a.ground.buildTerrain({ size: 40 });     // drained
   check("draining ends the float", !a.float.on && a.water === null);
   a.float = { on: true, y: 0.5, vy: 2 };   // (and even one left set by anything else — a bob far from any real one)
   tickN(1);
@@ -80,17 +80,17 @@ console.log("\nthe float follows the water");
   tickN(30);   // (a body the water held up comes down to the ground — at once, or by falling)
   check("...and the body comes to stand on the ground", Math.abs(a.pos.y + 1.6) < 1e-3, `${a.pos.y}`);
   a.pos.y = -1.2;   // wherever it happens to be when the water comes back
-  await a.buildTerrain(WET); tickN(1);
+  await a.ground.buildTerrain(WET); tickN(1);
   // (from the body as it stands then — its own y, or the resting depth if the feet set that first)
   check("refilled, the float starts from the body, not the old bob", a.float.on && Math.abs(a.float.vy) < 0.5 && a.float.y > -1.3 && a.float.y < -0.7, JSON.stringify(a.float));
   tickN(30);
   a.float.vy = 3;
-  await a.buildTerrain({ size: 40, water: { level: 0.5 } });
+  await a.ground.buildTerrain({ size: 40, water: { level: 0.5 } });
   check("a new level ends the float", !a.float.on);
   tickN(30);
   const y = a.float.y;
   a.float.vy = 3;
-  await a.buildTerrain({ size: 40, water: { level: 0.5 } });
+  await a.ground.buildTerrain({ size: 40, water: { level: 0.5 } });
   check("...but the same water rebuilt keeps it", a.float.on && a.float.y === y);
   a.clip = "ragdoll"; tickN(1); a.clip = "idle";
   check("a ragdoll's turn ends the float (it moved the body)", !a.float.on);
@@ -107,7 +107,7 @@ console.log("\nwhere the body is, not just the bed under it");
 
 console.log("\na dry pocket under the level");
 {
-  await a.setAvatar("fix/short.vrm"); await a.buildTerrain(WET); await settle(); a.pos.x = 0; a.pos.z = 0; tickN(10);
+  await a.setAvatar("fix/short.vrm"); await a.ground.buildTerrain(WET); await settle(); a.pos.x = 0; a.pos.z = 0; tickN(10);
   const wet = a.float.on;
   a.st = { ...a.st, entities: { ...(a.st?.entities ?? {}), dome: { pos: [0, -1, 0], zone: { shape: "box", size: [10, 4, 10] }, "water-exclusion": {} } } };
   tickN(30);

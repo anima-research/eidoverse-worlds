@@ -105,7 +105,7 @@ const R = { pos: [20, 0, 20], yaw: 0.7, scale: 0.88 };
 await make("rubble1", RUBBLE_LIB, R);
 // the honest control
 await make("crate1", CRATE_LIB, { pos: [40, 0, 40], yaw: 0, scale: 1 });
-await (agent as any).supportReady(8000);
+await (agent as any).ground.supportReady(8000);
 await until(() => Object.keys(supportHolders()).length >= 3, 8000);
 
 check("all three register support", Object.keys(supportHolders()).length >= 3, JSON.stringify(supportHolders()));
@@ -285,7 +285,7 @@ console.log("\n━━ a scale that stretches certification: declared abstention 
   // be refused, the seam declared, and the body finds terrain (no box!)
   await make("blank2", BLANKET_LIB, { pos: [80, 0.5, 80], yaw: 0, scale: 2 });
   await sleep(1500);
-  await (agent as any).supportReady(8000);
+  await (agent as any).ground.supportReady(8000);
   const held = Object.keys(supportHolders()).some((k) => k.endsWith(`/${rq.ids.of("blank2")}`));
   check("over-stretched grid registers NOTHING (no box, no grid)", !held, JSON.stringify(Object.keys(supportHolders())));
   check("and the seam is declared, bounded", agent.supportSeams > 0, `seams=${agent.supportSeams}`);

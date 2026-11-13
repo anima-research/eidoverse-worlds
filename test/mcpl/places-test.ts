@@ -86,8 +86,8 @@ try {
   await legacyVerb(a, "spawn", { id: "tower", lib, pos: [0, gy, 0], yaw: 0 });
   // a second, identical tower 30m east, for "the nearest of two"
   await legacyVerb(a, "spawn", { id: "tower2", lib, pos: [30, a.heightAt(30, 0), 0], yaw: 0 });
-  await tryUntil("the towers' supports are registered", () => a.supportIds?.get(sceneId(a, "tower")) && a.supportIds?.get(sceneId(a, "tower2")), { ms: 5000, step: 50 });
-  await a.supportReady(); await sleep(300);
+  await tryUntil("the towers' supports are registered", () => a.ground.supportIds?.get(sceneId(a, "tower")) && a.ground.supportIds?.get(sceneId(a, "tower2")), { ms: 5000, step: 50 });
+  await a.ground.supportReady(); await sleep(300);
 
   await a.walkTo(0, 7, true);
   const seen = await tool("look", {});
@@ -158,8 +158,8 @@ try {
   const stool = await upload("stool", await buildGlb([[-0.25, 0, -0.2, 0.25, 0.32, 0.2]]));
   await legacyVerb(a, "spawn", { id: "stool", lib: stool, pos: [-1.5, gy + FLOOR, 1.0], yaw: 0, collide: "box" });
   await legacyVerb(a, "comp", { id: "tower", type: "places", data: { ...a.entities.get(sceneId(a, "tower")).places, by_stool: { at: [-1.0, FLOOR, 1.0] } } });
-  await tryUntil("the stool's support is registered", () => a.supportIds?.get(sceneId(a, "stool")), { ms: 2000, step: 50 });
-  await a.supportReady(); await sleep(400);
+  await tryUntil("the stool's support is registered", () => a.ground.supportIds?.get(sceneId(a, "stool")), { ms: 2000, step: 50 });
+  await a.ground.supportReady(); await sleep(400);
   await tool("move", walkWords({ to: "tower/entrance", run: true }));
   r = await tool("move", walkWords({ to: "tower/by_stool", run: true }));
   check("a named spot on the floor is reached on the floor, not on the footstool beside it",
@@ -206,7 +206,7 @@ try {
   // moved things take their places with them
   await legacyVerb(a, "place", { id: "tower2", pos: [30, a.heightAt(30, -20), -20], yaw: Math.PI / 2 });
   await tryUntil("tower2 has moved to z = -20", () => a.entities.get(sceneId(a, "tower2"))?.pos?.[2] === -20, { ms: 2000, step: 50 });
-  await a.supportReady(); await sleep(400);
+  await a.ground.supportReady(); await sleep(400);
   r = await tool("move", walkWords({ to: "Belfry/entrance", run: true }));   // tower2 is labelled Belfry since the C1 rows
   // entrance [0,0,5] in the model frame, turned a quarter and moved to (30, -20)
   const want = P.toWorld({ id: "tower2", pos: [30, 0, -20], yaw: Math.PI / 2 }, [0, 0, 5]);
@@ -227,8 +227,8 @@ try {
   const kr = await legacyVerb(a, "comp", { id: "perch", type: "places", data: { seat: { at: [0, 0.32, 0], kind: "seat" } } });
   check("a place's kind is gone: an entry with one is refused (shape audit 10-16: a seat is a station)", kr?.refused?.code === "schema", JSON.stringify(kr?.refused ?? kr));
   await legacyVerb(a, "comp", { id: "perch", type: "places", data: { seat: { at: [0, 0.32, 0] } } });
-  await tryUntil("the rug's and perch's supports are registered", () => a.supportIds?.get(sceneId(a, "rug")) && a.supportIds?.get(sceneId(a, "perch")), { ms: 3000, step: 50 });
-  await a.supportReady(); await sleep(400);
+  await tryUntil("the rug's and perch's supports are registered", () => a.ground.supportIds?.get(sceneId(a, "rug")) && a.ground.supportIds?.get(sceneId(a, "perch")), { ms: 3000, step: 50 });
+  await a.ground.supportReady(); await sleep(400);
   r = await tool("move", walkWords({ to: "the long room", run: true }));
   check("a room whose middle is furnished is reached at its clear floor, toward an end",
     /arrived at rug\/long_room/.test(r) && near(a.pos.y, ry + 0.05) && Math.abs(a.pos.x - 50) > 1.5 && Math.abs(a.pos.x - 50) < 6, `${r} ${at()}`);

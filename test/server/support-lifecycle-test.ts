@@ -527,8 +527,8 @@ try {
     const y = await dropOver(h, ag, "palm-bot", dropAt, canopy.y, "release");
     const { supportShape } = await import("../../mcpl/physics.ts");
     check("the palm's support is fitted from its triangles — an exact collider, no summary decks",
-      JSON.stringify((ag as any).supportIds.get(IDS.of("palm"))) === JSON.stringify([`${W}/${IDS.of("palm")}`]) && supportShape(`${W}/${IDS.of("palm")}`) === "exact",
-      `${JSON.stringify((ag as any).supportIds.get(IDS.of("palm")))} fitted as ${supportShape(`${W}/${IDS.of("palm")}`)}`);
+      JSON.stringify((ag as any).ground.supportIds.get(IDS.of("palm"))) === JSON.stringify([`${W}/${IDS.of("palm")}`]) && supportShape(`${W}/${IDS.of("palm")}`) === "exact",
+      `${JSON.stringify((ag as any).ground.supportIds.get(IDS.of("palm")))} fitted as ${supportShape(`${W}/${IDS.of("palm")}`)}`);
     check("a body released over a palm rests in its real fronds or below them, never on a floor above the model",
       y + hipsOffset <= g.bbox.max[1] + 0.15,
       `root=${y.toFixed(2)} (surface ${(y + hipsOffset).toFixed(2)}) palm top ${g.bbox.max[1]}`);

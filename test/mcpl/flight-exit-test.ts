@@ -270,10 +270,10 @@ const walkAloft = async (ag: any, y = 20, timeoutMs?: number) => {
   // bot r1 #16: a walk refused once the body has come down says the fall it already caused.
   const ag = bench();
   const { walk, receipt } = await walkAloft(ag);
-  ag.supportPending.add('still-loading'); ag.supportReady = async () => {};
+  ag.ground.supportPending.add('still-loading'); ag.ground.supportReady = async () => {};
   await fallOut(ag); await tick(ag, 2);
   for (let i = 0; i < 20 && walk.r == null; i++) await turn();
-  ag.supportPending.delete('still-loading');
+  ag.ground.supportPending.delete('still-loading');
   check('a walk asked aloft and refused once down says the body fell first', walk.r === false && /fell to the ground first/.test(receipt.refusal ?? '') && onGround(ag), `walk ${walk.r}; ${receipt.refusal}`);
 }
 for (const how of ['walk', 'close'] as const) {
@@ -322,10 +322,10 @@ for (const how of ['walk', 'close'] as const) {
   ag.flightBodyDown('cut');
   await fallOut(ag, 300); await tick(ag, 5);
   const phase = ag.flight?.phase;
-  ag.supportPending.add('still-loading'); ag.supportReady = async () => {};
+  ag.ground.supportPending.add('still-loading'); ag.ground.supportReady = async () => {};
   const receipt = { refusal: null as string | null };
   const r = await ag.walkTo(ag.pos.x + 5, ag.pos.z, false, 90_000, undefined, undefined, {}, receipt);
-  ag.supportPending.delete('still-loading');
+  ag.ground.supportPending.delete('still-loading');
   check('a refused walk leaves a cut body lying on the ground in its flight, as it was', r === false && receipt.refusal != null && phase != null && ag.flight?.phase === phase,
     `walk ${r}, ${receipt.refusal}; phase ${phase} -> ${ag.flight?.phase ?? 'none'}`);
 }

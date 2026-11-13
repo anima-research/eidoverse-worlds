@@ -17,27 +17,27 @@ const deck = { bbox: { min: [-1, 0, -1], max: [1, 1, 1], size: [2, 1, 2] }, topS
 
 const ag: any = new WorldAgent({ url: noWorldUrl(), name: "swap-bot", world: "swap" });
 const held: Record<string, (g: any) => void> = {};
-ag.geomFor = (model: string) => new Promise((r) => { held[model] = r; });
-ag.meshFor = async () => null;
+ag.ground.geomFor = (model: string) => new Promise((r) => { held[model] = r; });
+ag.ground.meshFor = async () => null;
 
 console.log("a model swapped while its geometry is in flight:");
 ag.entities.set("t", { id: "t", model: "crate.glb", pos: [10, 0, 0], yaw: 0, actor: "x" });
-const first = ag.syncSupport("t");
+const first = ag.ground.syncSupport("t");
 await new Promise((r) => setTimeout(r, 0));
 check("setup: the crate's fetch is in flight", typeof held["crate.glb"] === "function", JSON.stringify(Object.keys(held)));
 ag.entities.set("t", { id: "t", model: "lamp.glb", pos: [10, 0, 0], yaw: 0, actor: "x" });   // same id, another thing
 held["crate.glb"]?.(deck);
 await first;
 await pause("the old fetch has had its chance to register a support (it must not)", 300);
-check("the old fetch registers no support for the id", !ag.supportIds.has("t") && !supportHolders()["swap/t"], JSON.stringify([...ag.supportIds.keys()]));
+check("the old fetch registers no support for the id", !ag.ground.supportIds.has("t") && !supportHolders()["swap/t"], JSON.stringify([...ag.ground.supportIds.keys()]));
 
 // the positive control: the same fetch, unswapped, does register (so the check above can fail)
 ag.entities.set("u", { id: "u", model: "crate.glb", pos: [30, 0, 0], yaw: 0, actor: "x" });
-const second = ag.syncSupport("u");
+const second = ag.ground.syncSupport("u");
 await new Promise((r) => setTimeout(r, 0));
 held["crate.glb"]?.(deck);
 await second;
-check("unswapped, the same fetch registers the crate's support", ag.supportIds.has("u") && (await registered((ag.supportIds.get("u") ?? [])[0] ?? "swap/u")), JSON.stringify([...ag.supportIds.entries()]));
+check("unswapped, the same fetch registers the crate's support", ag.ground.supportIds.has("u") && (await registered((ag.ground.supportIds.get("u") ?? [])[0] ?? "swap/u")), JSON.stringify([...ag.ground.supportIds.entries()]));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -11,7 +11,7 @@ const check=(ok:unknown,label:string)=>{assert.ok(ok,label);checks++;console.log
 const agents:WorldAgent[]=[];
 const make=(heightAt:(x:number,z:number)=>number=()=>0)=>{
  const a=new WorldAgent({ url: noWorldUrl(), name:"walker",world:"support",avatar:""});
- agents.push(a);a.joined=true;(a as any).terrain={heightAt};return a;
+ agents.push(a);a.joined=true;(a as any).ground.terrain={heightAt};return a;
 };
 const ent=(id:string,structure:any)=>({id,model:"",pos:[0,0,0],yaw:0,scale:1,structure} as any);
 // The walks below are given a minute to time out, so a verdict that comes
@@ -30,7 +30,7 @@ try{
  const slope=(x:number)=>0.1*x;
  const a=make((x)=>slope(x));a.pos={x:0,y:0,z:0};
  let swapped=-1;
- const one=await finish(a,a.walkTo(3,0,true,LONG,0),(i)=>{ if(i===5){(a as any).terrain={heightAt:(x:number)=>2+slope(x)};swapped=i+1;} });
+ const one=await finish(a,a.walkTo(3,0,true,LONG,0),(i)=>{ if(i===5){(a as any).ground.terrain={heightAt:(x:number)=>2+slope(x)};swapped=i+1;} });
  check(one.arrived&&one.points.slice(1,swapped).every(p=>Math.abs(p.y-slope(p.x))<1e-12),"a terrain walk's feet follow the terrain under them each tick");
  check(one.points.slice(swapped).every(p=>Math.abs(p.y-2-slope(p.x))<1e-12)&&one.points.length>swapped+1,"terrain that changes mid-walk is the terrain the next tick stands on");
  check((a as any).walkHeightAt===null,"arrival releases the walk's basis");

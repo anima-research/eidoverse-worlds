@@ -20,8 +20,8 @@ try {
   const GRID = "store/heightmaps/0123456789abcdef.json";
   answer = async (url) => url.endsWith("/library/eidoverse/terrain.js") ? new Response("") : new Response("no", { status: 404 });
   await ag.seatCache.init();
-  await ag.buildTerrain({ heightmap: { grid: GRID, min: 0, max: 1 } }).catch(() => {});
-  await ag.geomFor("store/a.glb");
+  await ag.ground.buildTerrain({ heightmap: { grid: GRID, min: 0, max: 1 } }).catch(() => {});
+  await ag.ground.geomFor("store/a.glb");
   await ag.loadBodyBones();
   for (const [what, part] of [["the seat roster", "/avatars"], ["terrain.js", "/library/eidoverse/terrain.js"],
     ["a heightmap's grid", `/library/${GRID}`], ["a model's geometry", "/geom?lib="], ["the body's bones", `/library/${ag.avatar}`]]) {
@@ -32,12 +32,12 @@ try {
   // a geometry read that timed out is asked again; one the server answered is kept
   seen.length = 0;
   answer = async () => { throw new DOMException("The operation timed out.", "TimeoutError"); };
-  const first = await ag.geomFor("store/slow.glb");
+  const first = await ag.ground.geomFor("store/slow.glb");
   answer = async () => new Response("no", { status: 404 });
-  const second = await ag.geomFor("store/slow.glb");
+  const second = await ag.ground.geomFor("store/slow.glb");
   const asked = seen.filter((s) => s.url.includes("slow.glb")).length;
   check("a geometry read that timed out isn't kept: the next walk asks again", first === null && second === null && asked === 2, `${asked} read(s)`);
-  await ag.geomFor("store/slow.glb");
+  await ag.ground.geomFor("store/slow.glb");
   const kept = seen.filter((s) => s.url.includes("slow.glb")).length;
   check("...and the server's answer is kept: it isn't asked a third time", kept === 2, `${kept} read(s)`);
   ag.close();

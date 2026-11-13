@@ -1,6 +1,6 @@
 # Headless storeys: which griddled floor the feet stand on
 
-`mcpl/agent.ts` `storeyUnder(x, z, yHint)` answers which upper storey of a griddled building a headless body's feet stand
+`mcpl/agent-ground.ts` `storeyUnder(x, z, yHint)` answers which upper storey of a griddled building a headless body's feet stand
 on at (x, z), if any: the structure, the level's index and the floor's world height. Griddled structures are outside the
 headless colliders (their walls are routed by `walkStructures`), so this is how the feet, a walk's support and its routes
 know such a floor is there. `floorsAt`, `floorMeant`, `placedNear` and `groundAt` build on it.

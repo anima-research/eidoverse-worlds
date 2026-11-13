@@ -13,26 +13,26 @@ import { BodyStateReader, type BodyObservation } from "./body-state.ts";
 import { mentionRegexFor } from "./mention.ts";
 import { type ActResult, type Entity, type Pose, done, refused, isDown, downRefusal, worldYaw, intYaw, solidOffRecord, RAGDOLL_ROOT_DROP,
   WORLD_READ_MS, isSocketRec, posePosition } from "./agent-result.ts";
+export { meshGovernor, forgetMeshCache } from "./agent-ground.ts";
+import { AgentGround, floorAtLocal } from "./agent-ground.ts";
 import { AgentPlaces, PLACE_SIGHT_M } from "./agent-places.ts";
 export type { ActResult } from "./agent-result.ts";
 import { mergePose } from "../shared/humanoid.js";
 import { resolveBriefing, briefingLines } from "../shared/briefing.js";
-import { shapeParams, shapedHeightAt, requestGrid, setGridFetcher, shapeReady, waterParams } from "../shared/terrainshape.js";
-import { flatHeightOf } from "../shared/terrainmath.js";
+import { requestGrid, shapeReady } from "../shared/terrainshape.js";
 import { foldOffset } from "../shared/clockoffset.js";
 import { bodyHeightFor } from "./rigbones.ts";
 import { surfaceOffset, waveClock } from "../shared/waves.js";
 import { floatStep, footprintSurface } from "../shared/buoyancy.js";
-import { analyzeWater, compass, waterGridSeg } from "../shared/waterkind.js";
+import { analyzeWater, compass } from "../shared/waterkind.js";
 import * as THREE_W from "three/webgpu";
 import * as TSL from "three/tsl";
 import { NoiseGate, SHORT_STINT_MS, APPROACH_REFRACT_MS, APPROACH_RADIUS, REARM_RADIUS,
   APPROACH_DWELL_MS, APPROACH_STILL_MPS, APPROACH_MAX_WAIT_MS,
   ACTIVITY_RADIUS_M, ACTIVITY_PULSE_MS, ACTIVITY_REFRESH_MS, MOVER_MIN_M } from "./denoise.ts";
-import { HeadlessBody, ReachBody, setHeightField, setWaterField, registerSupport, registerSupportGrid, registerMeshSupport, removeSupport, standOn, collidersReady, navProbe, collidersGeneration, inWorld, withoutColliders } from "./physics.ts";
+import { HeadlessBody, ReachBody, setHeightField, setWaterField, standOn, collidersReady, navProbe, collidersGeneration, inWorld, withoutColliders } from "./physics.ts";
 import { makeNavGrid, NAV_SUBSTEP, NAV_NUDGE, NAV_STEP, type NavProbe, type NavTarget } from "../shared/navgrid.js";
 import { names } from "../shared/places.js";
-import { collisionTriangles } from "../server/geometry.ts";
 import { colliderOf } from "../shared/components.js";
 // FLIGHT: the same deterministic integrator the browser runs (shared/flight.js), one function in every runtime.
 import {
@@ -80,9 +80,6 @@ import { shown } from "../shared/shown.js";
 /** reach and clear_reach refuse a limb in the same words. */
 const unknownLimb = (raw: unknown, done: string) =>
   `there's no limb called ${shown(raw)}, so nothing was ${done}; limb takes leftHand, rightHand, leftFoot or rightFoot`;
-import { decideSupportClass, CERT_MAX_WORLD } from "../shared/supportclass.js";
-import { lyingFrame } from "../shared/rot.js";
-import { isFiniteVec3 } from "../shared/protocol/is.js";
 // the same sky fold + weather derivation the browser and the sequencer run: perception lands on the hour and weather
 // every renderer shows
 import { foldSkyEntry, describeSky, effectiveSky, effectiveClock, dayPhase, hoursAt } from "../shared/forecast.js";
@@ -100,7 +97,7 @@ import { readOut, openAction } from "../shared/a11y.js";
 import { quoted } from "../shared/text.js";
 import { lightOf } from "../shared/components.js";
 import { describeCaptions } from "../shared/captions.js";
-import { cellKey, describeStructure, describeHere, halfFloored, localizePoint, nodeAtPoint, planStructure, prepareRouteLocal, ROUTE_STEP_METRES } from "../shared/structure.js";
+import { describeStructure, describeHere, localizePoint, prepareRouteLocal, ROUTE_STEP_METRES } from "../shared/structure.js";
 import { effectiveWorldTransform, type Effective } from "./effective.ts";
 import { makeVerdictCache, seatGateCore, nameFromAvatarPath } from "../shared/seatcore.js";
 import { redialer, REDIAL } from "../shared/redial.js";
@@ -154,18 +151,6 @@ const flightFixInOurTools = (reason: string) => String(reason)
 const EMITTER_COALESCE_MS = Number(process.env.EW_EMITTER_COALESCE_SEC ?? 4) * 1000;
 
 type Vec2 = { x: number; z: number };
-type CollisionMesh = { positions: Float32Array; indices: Uint32Array; building?: unknown };
-/** Collision triangles per (sequencer, lib), shared by every agent in this
- *  process. A lib's bytes are immutable while we run (content-hashed store;
- *  library changes redeploy), so each model decodes once. */
-const meshCache = new Map<string, Promise<CollisionMesh | null>>();
-/** Each model's own description of itself (its `building` extras), by the same
- *  key, once its bytes have been read — the defaults for its named places. */
-const modelMeta = new Map<string, unknown>();
-/** Decoded bytes the cache may keep. The colliders fitted from a model hold
- *  its geometry for as long as they stand; this only bounds what is kept for
- *  fits yet to come. Least recently used goes first; downloads in flight stay. */
-const MESH_CACHE_BYTES = 256 * 1024 * 1024, MESH_FETCH_MS = 8000;
 /** How long a walk waits for placed geometry still loading before it is refused (see walkTo); covers a fetch's own
  *  timeout plus some queueing. */
 const WALK_READY_MS = 15_000;
@@ -175,44 +160,6 @@ const BODY_CAP = colliderFor(1);
 const GEOMETRY_LOADING = "things placed nearby are still loading their shape, so a walk now could pass through them — try again in a moment";
 /** A walk waiting out a fall whose body something else took (walkTo; tools.ts reads the "superseded by" as no fallback). */
 const FALL_TAKEN = "superseded by something taking the body as it fell (a seat, a hand, a nail or a tumble)";
-const meshBytes = new Map<string, number>();
-/** Fetch-and-decode jobs at once (process-wide): replay fires one per spawn,
- *  and a world of many models must not download and decode them all at once.
- *  The rest queue; each job's own fetch timeout starts when it runs. */
-const MESH_CONCURRENCY = 3;
-/** Larger than this, a model is not decoded here: its /geom summary stands in
- *  (source bytes, checked by Content-Length and again on arrival), as does
- *  one decoding to more triangles than MESH_MAX_TRIS. */
-const MESH_MAX_BYTES = 48 * 1024 * 1024, MESH_MAX_TRIS = 1_000_000;
-/** What the governor is doing, for debugging and tests: jobs running and
- *  queued now, the most ever running at once, and why any model fell back. */
-export const meshGovernor = { active: 0, queued: 0, maxActive: 0, fallbacks: new Map<string, string>() };
-const meshWaiting: (() => void)[] = [];
-/** Tests: forget every decoded model, so the next sync fetches afresh. */
-export function forgetMeshCache() { meshCache.clear(); meshBytes.clear(); }
-async function meshSlot<T>(job: () => Promise<T>): Promise<T> {
-  if (meshGovernor.active >= MESH_CONCURRENCY) {
-    meshGovernor.queued++;
-    await new Promise<void>((r) => meshWaiting.push(r));   // the slot is handed over, not re-contended
-    meshGovernor.queued--;
-  } else meshGovernor.active++;
-  meshGovernor.maxActive = Math.max(meshGovernor.maxActive, meshGovernor.active);
-  try { return await job(); }
-  finally {
-    const next = meshWaiting.shift();
-    if (next) next(); else meshGovernor.active--;
-  }
-}
-function trimMeshCache(key: string, m: CollisionMesh) {
-  meshBytes.set(key, m.positions.byteLength + m.indices.byteLength);
-  let total = 0;
-  for (const b of meshBytes.values()) total += b;
-  for (const k of [...meshCache.keys()]) {
-    if (total <= MESH_CACHE_BYTES) break;
-    if (k === key || !meshBytes.has(k)) continue;
-    total -= meshBytes.get(k)!; meshBytes.delete(k); meshCache.delete(k);
-  }
-}
 type Person = { id: string; avatar: string; pose: Pose | null; declares?: string | null; observedAt?: number | null; bodyGeneration?: number };
 
 // ---- walking through buildings (#218) ----
@@ -238,16 +185,6 @@ export const WALK_ARGS_REASON = "move needs a finite destination and a tolerance
 /** Component revisions a walk has skipped as unplannable, so the operator's
  *  log names each once (walkStructures). */
 const UNPLANNABLE_LOGGED = new Map<string, string>();   // "<agent>\0<id>" → the revision's JSON last logged
-
-/** Whether a structure's level has floor at a point in the structure's own
- *  frame: a tile under the point and, on a cell a diagonal cuts, a floor on
- *  the half the point falls in (the other half is a hole). */
-function floorAtLocal(plan: any, lv: any, lx: number, lz: number): boolean {
-  const cx = Math.floor(lx / plan.grid.tile), cz = Math.floor(lz / plan.grid.tile);
-  if (!lv.level.tiles.has(cellKey(cx, cz))) return false;
-  const node = nodeAtPoint(lv.level, plan.grid, lx, lz);
-  return !node.includes(":") || halfFloored(lv.level, cx, cz, node.split(":")[1]);
-}
 
 /** A floor walk's navgrid probe, standing nowhere lower than the walk's floor.
  *  The walk's feet never go below that floor (walkHeightAt, stepFeet), so a
@@ -298,19 +235,6 @@ function frameToWorld(p: number[], yaw: number, local: number[]): number[] {
   ];
 }
 type InboxItem = { ts: number; kind: "say" | "arrive" | "leave" | "act"; who: string; text?: string; seq?: number | null };
-
-/** Fraction of a `/geom` top-surface band's bounding x/z rectangle that is real
- *  up-facing `area`. The rectangle alone would invent floors in sparse things
- *  (a palm canopy, a rubble pile). */
-const fillOf = (t: { area: number; x: number[]; z: number[] }) => {
-  const rect = (t.x[1] - t.x[0]) * (t.z[1] - t.z[0]);
-  return rect > 1e-6 ? t.area / rect : 0;
-};
-
-/** Minimum fill before a band may be believed as a floor. Set from a library
- *  survey (docs/research/deck-fill-threshold.md); a real-but-open deck (a
- *  catwalk) is abstained on by design and a body falls to terrain instead. */
-const DECK_FILL = 0.45;
 
 // A canned "knocked over" pose, for when the ragdoll sim (physics.ts) is unavailable.
 /** One bone of a held pose: a rotation, or {q, t, s} (shared/humanoid.js poseChannels). */
@@ -364,11 +288,11 @@ export class WorldAgent {
   bodyH: number | null = null;
   /** Which avatar `bodyH` is (being) measured for, and the measurement's generation: a body swap starts a
    *  new one, and a reply for an older body is dropped — the stature always belongs to the CURRENT body. */
-  private statureFor: string | null = null;
+  statureFor: string | null = null;
   private statureGen = 0;
   /** What `water` was when the float state last made sense: a change of water (drained, refilled, a new
    *  level) ends the float, so no position or velocity crosses from one water to the next. */
-  private waterKey: string | null = null;
+  waterKey: string | null = null;
   /** A swimming body's buoyant column (shared/buoyancy.js) — on the same swell everyone's water draws. */
   private float = { on: false, y: 0, vy: 0 };
   /** Why the last walk stopped short, when something stopped it mid-way. */
@@ -376,7 +300,7 @@ export class WorldAgent {
   /** The world's water (shared/terrainshape.js), from the terrain bag; null when it has none. */
   water: { level: number } | null = null;
   /** What kind of water lies where (shared/waterkind.js) — the same reading the renderers draw from. */
-  private waterKinds: ReturnType<typeof analyzeWater> | null = null;
+  waterKinds: ReturnType<typeof analyzeWater> | null = null;
   /** A held custom pose — sparse humanoid-bone quaternions. Presence only:
    *  it rides the pose packet and is never a log verb, because it is a moment,
    *  not a change to the world. `null` clears. */
@@ -759,7 +683,7 @@ export class WorldAgent {
     this.emitterNarration.clear();
     // Take this world's floors out with us: the collider map is process state
     // (physics.ts), so a successor agent elsewhere would otherwise stand on them.
-    for (const id of [...this.supportIds.keys()]) this.dropSupport(id);
+    for (const id of [...this.ground.supportIds.keys()]) this.ground.dropSupport(id);
     this.ws?.close();
   }
 
@@ -805,7 +729,7 @@ export class WorldAgent {
    *  a few times, then stay quiet: a poisoned tail replays on every
    *  reconnect and must not flood the log with the same diagnosis. */
   private malformedSeen = 0;
-  private noteMalformed(verb: string, args: unknown) {
+  noteMalformed(verb: string, args: unknown) {
     if (this.malformedSeen++ >= 5) return;
     console.error(`[agent ${this.name}] malformed ${verb} entry — position kept: ${JSON.stringify(args)?.slice(0, 160)}`);
   }
@@ -843,7 +767,7 @@ export class WorldAgent {
    *  truthfully model. Declared, bounded, and never papered over with the
    *  known-false box top. */
   supportSeams = 0;
-  private noteSupportSeam(id: string, why: string) {
+  noteSupportSeam(id: string, why: string) {
     if (this.supportSeams++ >= 5) return;
     console.error(`[agent ${this.name}] support seam on ${id} — ${why}`);
   }
@@ -876,7 +800,7 @@ export class WorldAgent {
         if ((ev as { code?: number } | undefined)?.code === 4006) {
           const wait = (this.removedUntil ?? 0) - Date.now();
           if (wait > 0 && wait <= 2 * 3600_000 && !this.closed) {
-            for (const id of [...this.supportIds.keys()]) this.dropSupport(id);
+            for (const id of [...this.ground.supportIds.keys()]) this.ground.dropSupport(id);
             this.removedUntil = null;
             setTimeout(() => { if (!this.closed) this.connect().catch(() => {}); }, wait + 1000);
             return;
@@ -1043,7 +967,7 @@ export class WorldAgent {
             // before that, the only ground a body could find is the terrain under the building it is in
             this.feetSettling = true;
             await this.applyView(false, null, null);
-            void this.supportReady(10_000).then(() => { this.feetSettling = false; });
+            void this.ground.supportReady(10_000).then(() => { this.feetSettling = false; });
             if (typeof msg.throughSeq === "number") this.lastSeq = Math.max(this.lastSeq, msg.throughSeq);
             this.joined = true; this.redial.reset();
             this.resumeWalkGate();   // a walk carried across the rejoin
@@ -1542,7 +1466,7 @@ export class WorldAgent {
     }
     for (const id of [...this.entities.keys()]) if (!seen.has(id)) this.entities.delete(id);
     // a structure's cached plan goes with the structure (a re-attached one is planned afresh)
-    for (const id of [...this.plans.keys()]) if (!(this.entities.get(id) as any)?.structure) this.plans.delete(id);
+    for (const id of [...this.ground.plans.keys()]) if (!(this.entities.get(id) as any)?.structure) this.ground.plans.delete(id);
     // both mount species land in one view, as the old fold kept them:
     // entity cargo rides ent.parent, bodies ride st.mounts
     this.mounts.clear();
@@ -1585,7 +1509,7 @@ export class WorldAgent {
     const W = this.st as any;
     try {
       // the world's water is its own component: it rides on the terrain args the ground is built from
-      if ((d.world.includes("terrain") || d.world.includes("water")) && W.terrain) await this.buildTerrain(W.water ? { ...W.terrain, water: W.water } : W.terrain);
+      if ((d.world.includes("terrain") || d.world.includes("water")) && W.terrain) await this.ground.buildTerrain(W.water ? { ...W.terrain, water: W.water } : W.terrain);
       if (d.world.includes("terrain")) { if (W.terrain) this.worldInfo.terrain = { seed: W.terrain.seed, size: W.terrain.size, amplitude: W.terrain.amplitude, flatRadius: W.terrain.flatRadius }; else delete this.worldInfo.terrain; }
       if (d.world.includes("sky")) this.skyState = W.sky as typeof this.skyState;
       if (d.world.includes("grass")) { if (W.grass) this.worldInfo.grass = this.grassInfo(W.grass); else delete this.worldInfo.grass; }
@@ -1602,21 +1526,21 @@ export class WorldAgent {
         // particles:<name>) is lit in that instant, and narrates as lighting it, as a particles set would; otherwise a build
         if (live && now?.particles != null) { const fx = this.eff(id, this.serverNow()); if (fx.ok) this.noteEmitter(actor, id, null, now.particles, fx.pos, ts); else { this.noteEffGap(id, fx.why); this.noteBuild(actor, now?.pos); } }
         else if (live) this.noteBuild(actor, now?.pos);
-        this.trackSupport(this.syncSupport(id));   // a placed thing is a thing bodies can rest on
-        if (this.mounts.has(id)) this.dropSupport(id);   // …unless it rides a parent (it collides as the parent)
+        this.ground.trackSupport(this.ground.syncSupport(id));   // a placed thing is a thing bodies can rest on
+        if (this.mounts.has(id)) this.ground.dropSupport(id);   // …unless it rides a parent (it collides as the parent)
         break;
       case "pose":
         if (live) this.noteBuild(actor, now?.pos);
-        this.trackSupport(this.syncSupport(id));   // support follows the thing it belongs to
+        this.ground.trackSupport(this.ground.syncSupport(id));   // support follows the thing it belongs to
         break;
       case "gone":
         // …and removing a burning thing puts its emitter out
         if (live && was?.particles != null) this.noteEmitter(actor, id, was.particles, null, was?.pos, ts);
         else if (live) this.noteBuild(actor, was?.pos);
-        this.dropSupport(id);
+        this.ground.dropSupport(id);
         break;
       case "parent":
-        if (this.mounts.has(id)) this.dropSupport(id); else this.trackSupport(this.syncSupport(id));
+        if (this.mounts.has(id)) this.ground.dropSupport(id); else this.ground.trackSupport(this.ground.syncSupport(id));
         break;
       case "comp":
         // an emitter beginning, changing or ending is something you SEE happen; gated on where it actually is
@@ -1626,7 +1550,7 @@ export class WorldAgent {
           else this.noteEffGap(id, fx.why);
         }
         // a motion moves its support, and a collider override changes the policy its walking collider was fitted with
-        if (comp === "motion" || comp?.startsWith("motion:") || comp === "collider") this.trackSupport(this.syncSupport(id));
+        if (comp === "motion" || comp?.startsWith("motion:") || comp === "collider") this.ground.trackSupport(this.ground.syncSupport(id));
         break;
     }
   }
@@ -1770,11 +1694,11 @@ export class WorldAgent {
     });
   }
   /** Leave the floating column: the next float starts from wherever the body then is. */
-  private endFloat() { this.float = { on: false, y: 0, vy: 0 }; }
+  endFloat() { this.float = { on: false, y: 0, vy: 0 }; }
 
   /** This world's water for the ragdoll sim (physics.ts setWaterField) — asserted before every run, like the
    *  ground, because the sim module is process state and one process can host agents in several worlds. */
-  private waterFieldNow() {
+  waterFieldNow() {
     const A = this.waterKinds, level = this.water?.level;
     if (!A || level == null) return null;
     if (this.waterFieldMemo?.A !== A || this.waterFieldMemo.f.level !== level)   // read every physics step: build it once
@@ -1782,398 +1706,13 @@ export class WorldAgent {
     return this.waterFieldMemo.f;
   }
   private waterFieldMemo: { A: unknown; f: { level: number; sample: (x: number, z: number) => unknown; time: () => number } } | null = null;
-  private terrain: { heightAt(x: number, z: number): number } | null = null;
-  private terrainSrc: string | null = null;
-
-  private terrainRev = 0;       // build generation: bumped when a terrain request starts
-  private navTerrainRev = 0;    // committed terrain generation: route grids key on this
-  /** A heightmap terrain received but not yet buildable — its grid has not arrived. The last ground stands
-   *  (never noise in its place); tick() retries the grid, and the arrival builds THIS bag, once. */
-  private pendingTerrain: { args: any; rev: number; grid: string } | null = null;
-  private async buildTerrain(args: any) {
-    // Builds can overlap (a grid fetch is slow, a terrain edit is not): only the newest one may commit.
-    const rev = ++this.terrainRev;
-    if (!this.terrainSrc) {
-      const r = await fetch(`${this.httpBase}/library/eidoverse/terrain.js`, { signal: AbortSignal.timeout(WORLD_READ_MS) });
-      this.terrainSrc = await r.text();
-      (0, eval)(this.terrainSrc);
-    }
-    // Placed features and heightmaps (shared/terrainshape.js): the agent stands on the same shaped law the
-    // client's mesh and the sim use. A heightmap's grid is fetched first; until it is here, the last ground
-    // stands (pendingTerrain) — never noise in the heightmap's place.
-    const shape = shapeParams(args);
-    if (shape?.heightmap) {
-      const base = this.httpBase;
-      setGridFetcher(async (ref: string) => {
-        const g = await fetch(`${base}/library/${ref}`, { signal: AbortSignal.timeout(WORLD_READ_MS) });
-        if (!g.ok) throw new Error(`${g.status}`); return g.json();
-      });
-      const g = await requestGrid(shape.heightmap.grid);
-      if (rev !== this.terrainRev) return;   // a newer terrain arrived while this one's grid was in flight
-      if (!g) {
-        // not here (yet): keep the ground we have rather than commit noise as this world's ground
-        this.pendingTerrain = { args, rev, grid: shape.heightmap.grid };
-        return;
-      }
-    }
-    if (rev !== this.terrainRev) return;   // a newer terrain arrived while this one's grid was in flight
-    this.pendingTerrain = null;
-    const flat = flatHeightOf(args);   // a flat terrain is level ground at its height: no mesh to build
-    const t = flat !== null ? { heightAt: () => flat } : (globalThis as any).makeTerrain({ ...args, layers: [] });
-    this.terrain = shape ? { heightAt: shapedHeightAt(t.heightAt, args) } : t;
-    this.navTerrainRev++;       // only committed ground invalidates a route grid
-    this.water = waterParams(args);
-    const waterKey = this.water ? JSON.stringify([this.water.level, args.size, args.water]) : null;
-    if (waterKey !== this.waterKey) { this.waterKey = waterKey; this.endFloat(); }
-    if (this.water && this.statureFor !== this.avatar) this.measureStature();
-    const size = typeof args?.size === "number" ? args.size : 80;
-    this.waterKinds = this.water
-      ? analyzeWater((x, z) => this.heightAt(x, z), size, { level: this.water.level, kind: args.water?.kind, flow: args.water?.flow },
-        waterGridSeg(size))   // the browser's grid, so both read the same water
-      : null;
-    // …and a body that falls in floats on the same water, rising and falling on the same waves
-    void setWaterField(this.waterFieldNow());
-    // the settle sim clamps against the SAME ground the walking clamp reads —
-    // not one height sampled at the fall site
-    void setHeightField((x, z) => this.heightAt(x, z));
-  }
-
-  heightAt(x: number, z: number): number {
-    return this.terrain ? this.terrain.heightAt(x, z) : 0;
-  }
-  /** This world's @world.bounds as written (the edge flight banks at; shared/flight.js boxOf reads it), else null. */
-  worldBox(): unknown { return this.replica?.st?.entities?.["@world"]?.c?.bounds ?? null; }
-
-  /** Each structure's plan per entity id, for the revision it holds now: the same object is a hit; else the same
-   *  content (JSON) is (view.js clones every component every view); else it is planned afresh. Entity transforms and
-   *  each walk's support basis stay outside this cache. */
-  private plans = new Map<string, { data: object; json: string; plan: ReturnType<typeof planStructure> }>();
-  private planFor(id: string, data: unknown): ReturnType<typeof planStructure> {
-    // Opaque primitive components normalize as empty and are planned afresh each time.
-    if (typeof data !== "object" || data === null) return planStructure(data);
-    const had = this.plans.get(id);
-    if (had?.data === data) return had.plan;
-    const json = JSON.stringify(data);
-    if (had && had.json === json) { had.data = data; return had.plan; }
-    const plan = planStructure(data);
-    this.plans.set(id, { data, json, plan });
-    return plan;
-  }
-  /** The plan of whichever known thing holds `data` as its structure (planFor), or an uncached plan. */
-  private planOf(data: unknown): ReturnType<typeof planStructure> {
-    for (const e of this.entities.values()) if ((e as any).structure === data) return this.planFor(e.id, data);
-    return planStructure(data);
-  }
-
-  /** The upper storey of a griddled building the feet stand on at (x, z), if
-   *  any: the structure, the level's index and the floor's world height.
-   *  Griddled structures are outside the headless colliders, so this is how
-   *  the feet, a walk's support and its routes know such a floor is there.
-   *  A floor within NAV_STEP of the terrain, or at/below the base, is the
-   *  terrain's; where storeys' ranges meet the highest wins; `yHint` only picks
-   *  which real floor qualifies, never the height. The full rule:
-   *  docs/research/headless-storeys.md. */
-  private storeyUnder(x: number, z: number, yHint = this.pos.y): { entity: string; level: number; height: number } | null {
-    const terrain = this.heightAt(x, z), nowMs = this.serverNow();
-    let best: { entity: string; level: number; height: number } | null = null;
-    for (const e of this.entities.values()) {
-      const data = recordComponents(e).structure;
-      if (!data) continue;
-      try {
-        const plan = this.planFor(e.id, data);
-        if (!plan.levels.some((lv: any) => lv.base > 0)) continue;
-        const fx = this.eff(e.id, nowMs);
-        if (!fx.ok) continue;
-        const sc = fx.scale > 0 ? fx.scale : 1;
-        const [lx, ly, lz] = localizePoint({ pos: fx.pos, yaw: fx.yaw, scale: sc }, x, yHint, z);
-        for (let i = 0; i < plan.levels.length; i++) {
-          const lv: any = plan.levels[i];
-          if (!(lv.base > 0) || lv.y - ly > ROUTE_STEP_METRES / sc || ly - lv.y >= plan.grid.wallH || !floorAtLocal(plan, lv, lx, lz)) continue;
-          const height = fx.pos[1] + lv.y * sc;
-          if (height - terrain > NAV_STEP && (!best || height > best.height)) best = { entity: e.id, level: i, height };
-        }
-      } catch { /* a malformed house must not cost the body its feet */ }
-    }
-    return best;
-  }
-
-  /** The floors a floor walk tells apart at (x, z): the ground (entity null:
-   *  the terrain and every floor within a step of it, as in storeyUnder) and
-   *  each griddled storey with a floor at the point. Where the walk's own floor
-   *  `own` lies within a step of the terrain (a deck's low end), the ground
-   *  there is that floor. */
-  private floorsAt(x: number, z: number, own: { entity: string; level: number }): { entity: string | null; level: number; height: number }[] {
-    type Floor = { entity: string | null; level: number; height: number };
-    const terrain = this.heightAt(x, z), nowMs = this.serverNow();
-    const floors: Floor[] = [{ entity: null, level: -1, height: terrain }];
-    for (const e of this.entities.values()) {
-      const data = recordComponents(e).structure;
-      if (!data) continue;
-      try {
-        const plan = this.planFor(e.id, data);
-        const fx = this.eff(e.id, nowMs);
-        if (!fx.ok) continue;
-        const sc = fx.scale > 0 ? fx.scale : 1;
-        const [lx, , lz] = localizePoint({ pos: fx.pos, yaw: fx.yaw, scale: sc }, x, 0, z);
-        plan.levels.forEach((lv: any, i: number) => {
-          if (!(lv.base > 0) || !floorAtLocal(plan, lv, lx, lz)) return;
-          const height = fx.pos[1] + lv.y * sc;
-          if (height - terrain > NAV_STEP) floors.push({ entity: e.id, level: i, height });
-          else if (own.entity === e.id && own.level === i && terrain - height <= NAV_STEP) floors[0] = { entity: e.id, level: i, height };
-        });
-      } catch { /* a malformed house costs only itself, as in storeyUnder */ }
-    }
-    return floors;
-  }
-
-  /** Of floorsAt's floors, the one a destination height means, by the navgrid's
-   *  rule (shared/navgrid.js, route): nearest y, at most `above` (NAV_STEP
-   *  default) above it and, with `below`, at most that below; null if none.
-   *  Ties go to the walk's own floor, then the higher. With `body`, y is a
-   *  body's root and the floor is the highest that fits (a body lies up to
-   *  RAGDOLL_ROOT_DROP above its root). Placed surfaces: placedNear. */
-  private floorMeant(x: number, z: number, y: number, near: { above?: number; below?: number },
-    own: { entity: string; level: number }, body = false): { entity: string | null; level: number; height: number } | null {
-    type Floor = { entity: string | null; level: number; height: number };
-    const floors = this.floorsAt(x, z, own);
-    const fits = (h: number) => h <= y + (near.above ?? NAV_STEP) && (near.below == null || h >= y - near.below);
-    const isOwn = (f: Floor) => f.entity === own.entity && f.level === own.level;
-    let best: Floor | null = null;
-    for (const f of floors) {
-      if (!fits(f.height)) continue;
-      const d = body ? -f.height : Math.abs(f.height - y), bd = !best ? Infinity : body ? -best.height : Math.abs(best.height - y);
-      if (!best || d < bd - 1e-6 || (Math.abs(d - bd) <= 1e-6 && (isOwn(f) && !isOwn(best) || isOwn(f) === isOwn(best) && f.height > best.height))) best = f;
-    }
-    return best;
-  }
-
-  /** Whether something placed on a floor walk's own floor stands at about y at
-   *  (x, z): a collider top within `above`/`below` (a step each by default), no
-   *  lower than the floor (as onOrAboveFloor) and under `ceiling`, the next floor up. */
-  private placedNear(x: number, z: number, y: number, near: { above?: number; below?: number }, floor: number, ceiling = Infinity): boolean {
-    const probe = navProbe((px, pz) => this.heightAt(px, pz));
-    if (!probe) return false;
-    const top = inWorld(this.world, () => probe.surfaceUnder(x, z, Math.min(y + (near.above ?? NAV_STEP), ceiling - 0.02)));
-    return top > this.heightAt(x, z) + 1e-6 && top >= y - (near.below ?? NAV_STEP) && top >= floor - 0.02;
-  }
-
-  /** The height the feet belong at: an upper storey's floor under them
-   *  (storeyUnder), else the terrain. Every standing body's ground goes through
-   *  here (a walk's is walkSupport's); a flight under way and a tumble's physics
-   *  read the terrain alone, since griddled floors aren't headless colliders. */
-  groundAt(x: number, z: number, yHint = this.pos.y): number {
-    return this.storeyUnder(x, z, yHint)?.height ?? this.heightAt(x, z);
-  }
-
-  // ---- support surfaces -----------------------------------------------------
-  // Each entity this agent knows contributes support to the sim's collider map:
-  // the browser's own collider fitted from the model's triangles when they can
-  // be fetched (meshFor → registerMeshSupport), so walls, furniture and stairs
-  // are as solid here as in a browser. Fallback, from GET /geom's summary:
-  // small things their whole box, room-scale things their floor DECKS as thin
-  // slabs (floors, not architecture).
-
-  private geomCache = new Map<string, Promise<any | null>>();
-  private supportIds = new Map<string, string[]>();
-  /** This agent's claim token on shared support boxes, per INSTANCE: two agents
-   *  can share a name across a reconnect, and must not release each other's floors. */
-  private readonly supportHolder = `agent#${++WorldAgent.holderSeq}`;
-  private static holderSeq = 0;
-  /** Every support sync in flight (`/geom` is a round trip, so just after a join
-   *  floors exist in the log before the sim). supportReady() is the barrier. */
-  private supportPending = new Set<Promise<void>>();
-
-  /** Resolves once every support sync issued so far has landed. Loops because a
-   *  sync can enqueue while we wait; bounded so a hung fetch can't freeze a body. */
-  private async supportReady(timeoutMs = 3000) {
-    const deadline = Date.now() + timeoutMs;
-    while (this.supportPending.size && Date.now() < deadline) {
-      await Promise.race([
-        Promise.all([...this.supportPending]),
-        new Promise((r) => setTimeout(r, Math.max(0, deadline - Date.now()))),
-      ]);
-    }
-  }
-
-  /** Run a support sync and keep it visible to the barrier for its lifetime. */
-  private trackSupport(p: Promise<void>) {
-    this.supportPending.add(p);
-    void p.finally(() => this.supportPending.delete(p));
-  }
-
-  /** Is anything on this entity animating right now?
-   *
-   *  A motion component is PARAMETERS, not frames: the browser evaluates a
-   *  pendulum/spin/orbit/oscillate/path every frame and its collider rides along.
-   *  A support box from the AUTHORED transform would be a ghost floor, which is
-   *  worse than no floor. ANY motion, a `motion:<part>` included, disqualifies the
-   *  whole entity: /geom measured the model with that part in it, and nothing
-   *  here can tell which deck is the moving piece. */
-  private hasActiveMotion(e: Entity | undefined): boolean {
-    if (!e) return false;
-    for (const [k, v] of Object.entries(recordComponents(e))) {
-      if (k !== "motion" && !k.startsWith("motion:")) continue;
-      if (v && (v as any).type != null) return true;
-    }
-    return false;
-  }
-
-  /** A model's box in its own frame ([[min], [max]]), as the server measures it: the pivot's centre/base snaps. */
-  async modelBox(lib: string): Promise<number[][] | null> {
-    const g = await this.geomFor(lib); const b = g?.bbox;
-    return b && Array.isArray(b.min) && Array.isArray(b.max) ? [b.min, b.max] : null;
-  }
-  /** A model's own description of itself (its `building` extras, modelMeta), once meshFor has read its bytes. */
-  modelMetaOf(lib: string): unknown { return modelMeta.get(`${this.httpBase}|${lib}`); }
-  /** The model's collision triangles, decoded from the bytes /library serves
-   *  (shared by every agent in the process — see meshCache). */
-  private meshFor(lib: string): Promise<CollisionMesh | null> {
-    const key = `${this.httpBase}|${lib}`;
-    let p = meshCache.get(key);
-    if (p) { meshCache.delete(key); meshCache.set(key, p); return p; }   // most recently used last
-    // bounded: a stalled /library must not hold up the /geom fallback, and
-    // a failure is forgotten so a later sync tries again
-    // governed: a few at a time, none too large (meshSlot, MESH_MAX_*)
-    const fallback = (why: string) => { meshGovernor.fallbacks.set(key, why); return null; };
-    p = meshSlot(async () => {
-      const r = await fetch(`${this.httpBase}/library/${lib}`, { signal: AbortSignal.timeout(MESH_FETCH_MS) });
-      if (!r.ok) return fallback(`HTTP ${r.status}`);
-      const len = Number(r.headers.get("content-length"));
-      if (len > MESH_MAX_BYTES) { void r.body?.cancel(); return fallback(`${(len / 1e6).toFixed(0)}MB is over the ${MESH_MAX_BYTES / 1e6 | 0}MB exact-collision limit`); }
-      const b = await r.arrayBuffer();
-      if (b.byteLength > MESH_MAX_BYTES) return fallback(`${(b.byteLength / 1e6).toFixed(0)}MB is over the ${MESH_MAX_BYTES / 1e6 | 0}MB exact-collision limit`);
-      const m = await collisionTriangles(new Uint8Array(b));
-      if (!m) return fallback("not a readable GLB with triangles");
-      if (m.indices.length / 3 > MESH_MAX_TRIS) return fallback(`${m.indices.length / 3} triangles is over the ${MESH_MAX_TRIS} exact-collision limit`);
-      return m;
-    })
-      .then((m) => { if (!m) meshCache.delete(key); else { meshGovernor.fallbacks.delete(key); trimMeshCache(key, m); if (m.building) modelMeta.set(key, m.building); } return m; })
-      .catch((err) => { meshCache.delete(key); fallback(String(err?.name === "TimeoutError" ? "fetch timed out" : err?.message ?? err)); return null; });   // no mesh: the /geom summary path stands in
-    meshCache.set(key, p);
-    return p;
-  }
-
-  private geomFor(lib: string): Promise<any | null> {
-    let p = this.geomCache.get(lib);
-    if (!p) {
-      // no geometry is a soft state, never a crash; a read that failed or timed out isn't kept, so the next one asks again
-      const q: Promise<any | null> = fetch(`${this.httpBase}/geom?lib=${encodeURIComponent(lib)}`,
-        { signal: AbortSignal.timeout(WORLD_READ_MS) })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((g) => (g && !g.error && g.bbox ? g : null))
-        .catch(() => { if (this.geomCache.get(lib) === q) this.geomCache.delete(lib); return null; });
-      this.geomCache.set(lib, p = q);
-    }
-    return p;
-  }
-
-  private async syncSupport(id: string) {
-    const before = this.entities.get(id);
-    if (!before?.model) return;  // only a model carries a collider
-    if (solidOffRecord(before)) { this.dropSupport(id); return; }   // collision off (collider.enabled): nothing to stand on
-    // A moving thing supports nothing here (drop path as well as skip path); so
-    // does mounted cargo, whose parent's transform this code doesn't track.
-    if (this.hasActiveMotion(before) || this.mounts.has(id)) { this.dropSupport(id); return; }
-    const [g, mesh] = await Promise.all([this.geomFor(before.model), this.meshFor(before.model)]);
-    // Re-read and re-CHECK: the id may have been removed and respawned as
-    // something else while its geometry was in flight (hence the lib comparison).
-    const e = this.entities.get(id);
-    if ((!g && !mesh) || !e || e.model !== before.model) return;
-    // started moving, or got mounted, while its geometry was in flight —
-    // replay folds a mount right behind the spawn that triggered this fetch
-    if (this.hasActiveMotion(e) || this.mounts.has(id) || solidOffRecord(e)) { this.dropSupport(id); return; }
-    const s = e.scale ?? 1;
-    // a stretched thing's per-axis scale (scale3), beside the one number decide() reads, as the browser's applyScale
-    const s3 = Array.isArray(e.scale3) && e.scale3.length === 3 && e.scale3.every(Number.isFinite) ? e.scale3 as number[] : [s, s, s];
-    // A transform that can't be a place registers NOTHING, and abstains BEFORE
-    // the drop, leaving whatever support already stands.
-    if (!isFiniteVec3(e.pos) || !Number.isFinite(s) || !Number.isFinite(e.yaw ?? 0)) {
-      // If position is readable, the entity has moved and any box at its old
-      // address is now a ghost floor. Retaining existing support is correct
-      // only when position itself is unreadable and the move did not land.
-      if (isFiniteVec3(e.pos)) this.dropSupport(id);
-      this.noteMalformed("support-sync", { id, pos: e.pos, yaw: e.yaw, scale: e.scale });
-      return;
-    }
-    this.dropSupport(id);
-    const xform = { position: e.pos, yaw: e.yaw ?? 0, scale: s, ...(Array.isArray(e.scale3) ? { scale3: s3 } : {}) };
-    // A thing lying down (a tumbling engine's rest, or a hand's tilt) registers its box turned into its own frame, with
-    // no decks or grid (those are measured upright).
-    // A stretch acts on the model's own axes before its rotation: stretched first, then turned, registered at scale 1.
-    const stretched = Array.isArray(e.scale3) && !(Math.abs(s3[0]) === Math.abs(s3[1]) && Math.abs(s3[1]) === Math.abs(s3[2]));
-    const st = (v: number[]) => stretched ? v.map((x, i) => x * Math.abs(s3[i])) : v;
-    const lying = Array.isArray(e.q) && e.q.length === 4 && g?.bbox?.min ? lyingFrame(e.q, st(g.bbox.min), st(g.bbox.max)) : null;
-    if (lying) {
-      const bid = `${this.world}/${id}`;
-      void registerSupport(this.supportHolder, bid, lying.min, lying.max,
-        stretched ? { position: e.pos, yaw: lying.yaw, scale: 1 } : { ...xform, yaw: lying.yaw });
-      this.supportIds.set(id, [bid]);
-      return;
-    }
-    // The real collider when the triangles are to hand: fitted by the same
-    // decide() a browser runs, walls and furniture included. Everything below
-    // is the summary fallback for a model whose bytes couldn't be read here.
-    if (mesh) {
-      const bid = `${this.world}/${id}`;
-      // awaited, unlike the summary boxes: a joining body's feet wait on the fit
-      // (supportReady). The id is RESERVED first, so a remove/mount/close during
-      // the wait has something to drop, and a fit landing afterwards is taken back out.
-      this.supportIds.set(id, [bid]);
-      const ok = await registerMeshSupport(this.supportHolder, bid, mesh, { ...xform, collide: e.collide, model: e.model });
-      const now = this.entities.get(id);
-      const superseded = !this.supportIds.get(id)?.includes(bid);
-      if (superseded || this.closed || !now || now.model !== e.model || this.mounts.has(id) || this.hasActiveMotion(now)) {
-        if (ok && (superseded || this.closed)) void removeSupport(this.supportHolder, bid);
-        else if (ok) this.dropSupport(id);
-        return;
-      }
-      if (ok) return;
-      this.supportIds.delete(id);
-    }
-    if (!g) return;
-    // its size in the world: a mirrored axis is read as its size, as physics reads it (registerSupport)
-    const a3 = s3.map(Math.abs);
-    const [w, h, d] = [g.bbox.size[0] * a3[0], g.bbox.size[1] * a3[1], g.bbox.size[2] * a3[2]];
-    const ids: string[] = [];
-    const roomScale = w * d >= 16 && h >= 2.2;         // decide()'s own gate, from the bbox alone
-    const decks = roomScale
-      ? (g.topSurfaces ?? [])
-          .filter((t: any) => t.area * a3[0] * a3[2] >= 1 && fillOf(t) >= DECK_FILL)
-          .slice(0, 6)
-      : [];
-    if (roomScale && decks.length) {
-      for (let k = 0; k < decks.length; k++) {
-        const t = decks[k], bid = `${this.world}/${id}#${k}`;
-        void registerSupport(this.supportHolder, bid, [t.x[0], t.y - 0.15, t.z[0]], [t.x[1], t.y, t.z[1]], xform);
-        ids.push(bid);
-      }
-    } else if (!roomScale) {
-      const bid = `${this.world}/${id}`;
-      // Floor-shaped things whose box top is a KNOWN lie (a blanket, a rubble
-      // pile) get heightfield support from the served grid and NEVER the box.
-      // Identified from the summary's `lie` by the browser's own classifier; a
-      // summary without `lie` accuses nothing.
-      const cls = decideSupportClass({ w, d, h, lie: Number.isFinite(g.lie) ? g.lie * a3[1] : 0 });
-      if (cls.uneven) {
-        // the certification is a MODEL-frame bound; this spawn's scale must not stretch it past the world bound
-        // (a grid certified to 3cm serves a ×1.25 spawn but not a ×2)
-        const stretched = Number.isFinite(g.topGrid?.certSpread) && g.topGrid.certSpread * a3[1] > CERT_MAX_WORLD;
-        const fit = !stretched && await registerSupportGrid(this.supportHolder, bid, g.topGrid, xform);
-        if (fit) ids.push(bid);
-        // refused grid: a DECLARED abstention (the body finds terrain), never a floating false floor
-        else this.noteSupportSeam(id, `uneven top (lie ${(g.lie * a3[1]).toFixed(2)}m) without a usable grid${stretched ? ` (certification stretched past ${CERT_MAX_WORLD}m at ×${a3[1]} high)` : ""} — abstaining, no box`);
-      } else {
-        void registerSupport(this.supportHolder, bid, g.bbox.min, g.bbox.max, xform);
-        ids.push(bid);
-      }
-    }                                                   // room-scale with no readable decks: browser-only, declared
-    if (ids.length) this.supportIds.set(id, ids);
-  }
-
-  private dropSupport(id: string) {
-    for (const bid of this.supportIds.get(id) ?? []) void removeSupport(this.supportHolder, bid);
-    this.supportIds.delete(id);
-  }
+  // the ground: terrain, floors, and the collision meshes a body stands on: mcpl/agent-ground.ts
+  readonly ground = new AgentGround(this);
+  heightAt(x: number, z: number) { return this.ground.heightAt(x, z); }
+  worldBox() { return this.ground.worldBox(); }
+  groundAt(...a: Parameters<AgentGround["groundAt"]>) { return this.ground.groundAt(...a); }
+  modelBox(lib: string) { return this.ground.modelBox(lib); }
+  modelMetaOf(lib: string) { return this.ground.modelMetaOf(lib); }
   /** A pre-join refusal's words, until its close says whether it is final (onclose). */
   private joinRefused: string | null = null;
   /** How long until the next dial after a drop or a full world (shared/redial.js: the browser's rule); reset by a join. */
@@ -2304,10 +1843,10 @@ export class WorldAgent {
     // simAt, the state every renderer draws), so look() sees a punted crate where it is. Support rebuilds at rest.
     // a heightmap terrain waiting on its grid: ask again (requestGrid backs off by itself), and build the
     // waiting bag — only if it is still the newest — the moment the grid is here
-    const pend = this.pendingTerrain;
-    if (pend && pend.rev === this.terrainRev) {
+    const pend = this.ground.pendingTerrain;
+    if (pend && pend.rev === this.ground.terrainRev) {
       void requestGrid(pend.grid).then((g) => {
-        if (g && this.pendingTerrain === pend && pend.rev === this.terrainRev) { this.pendingTerrain = null; void this.buildTerrain(pend.args); }
+        if (g && this.ground.pendingTerrain === pend && pend.rev === this.ground.terrainRev) { this.ground.pendingTerrain = null; void this.ground.buildTerrain(pend.args); }
       });
     }
     // a heightmap world's engine waits for its grid (as the browser's does, thingphysics.js): noise ground would diverge
@@ -2324,8 +1863,8 @@ export class WorldAgent {
         if (e && Array.isArray(b.q) && b.q.length === 4) e.q = [b.q[0], b.q[1], b.q[2], b.q[3]];
         if (b.resting && !this.simRested.has(id)) {
           this.simRested.add(id);
-          if (e) this.trackSupport(this.syncSupport(id));
-        } else if (!b.resting && !this.simFlying.has(id)) { this.simFlying.add(id); this.simRested.delete(id); this.dropSupport(id); }   // a flying thing holds nobody up
+          if (e) this.ground.trackSupport(this.ground.syncSupport(id));
+        } else if (!b.resting && !this.simFlying.has(id)) { this.simFlying.add(id); this.simRested.delete(id); this.ground.dropSupport(id); }   // a flying thing holds nobody up
         if (b.resting) this.simFlying.delete(id);
       }
     }
@@ -2553,7 +2092,7 @@ export class WorldAgent {
     // (see physics.ts's declared seam)
     await setHeightField((x, z) => this.heightAt(x, z)); await setWaterField(this.waterFieldNow());
     if (this.bodyEpoch !== epoch) return;
-    await this.supportReady();    // don't fall through a floor still in flight
+    await this.ground.supportReady();    // don't fall through a floor still in flight
     if (this.bodyEpoch !== epoch || this.draggedBy) return;
     body.begin({
       x: this.pos.x, z: this.pos.z,
@@ -2585,7 +2124,7 @@ export class WorldAgent {
     if (this.bodyEpoch !== epoch) return;
     // A release can land while a join's replayed spawns are still fetching
     // geometry: wait, or the body settles through a platform the log knows.
-    await this.supportReady();
+    await this.ground.supportReady();
     if (this.bodyEpoch !== epoch || this.draggedBy) return;
     body.begin({
       x: this.pos.x, z: this.pos.z,
@@ -3156,7 +2695,7 @@ export class WorldAgent {
     if (this.bodyEpoch !== epoch || !body) return;
     await setHeightField((x, z) => this.heightAt(x, z)); await setWaterField(this.waterFieldNow());
     if (this.bodyEpoch !== epoch) return;
-    await this.supportReady();
+    await this.ground.supportReady();
     if (this.bodyEpoch !== epoch) return;
     const f = this.flight;
     body.begin({
@@ -3215,7 +2754,7 @@ export class WorldAgent {
     if (support.kind !== "floor") return (x, z) => this.heightAt(x, z);
     const drop = support.height - 2 * NAV_STEP;
     // The walk's floor, placed as walkSupport found it a moment ago.
-    const e = this.entities.get(support.entity)!, plan = this.planFor(e.id, recordComponents(e).structure), lv: any = plan.levels[support.level];
+    const e = this.entities.get(support.entity)!, plan = this.ground.planFor(e.id, recordComponents(e).structure), lv: any = plan.levels[support.level];
     const fx = this.eff(e.id, this.serverNow());
     if (!fx.ok) return () => drop;   // as storeyUnder passes over a building it can't place
     const sc = fx.scale > 0 ? fx.scale : 1, place = { pos: fx.pos, yaw: fx.yaw, scale: sc };
@@ -3230,7 +2769,7 @@ export class WorldAgent {
    * serves, else the terrain. `yHint` is the feet's height (feetY), which for a
    * body a sim has laid down is RAGDOLL_ROOT_DROP above its root. */
   private walkSupport(yHint = this.pos.y): WalkSupport {
-    const floor = this.storeyUnder(this.pos.x, this.pos.z, yHint);
+    const floor = this.ground.storeyUnder(this.pos.x, this.pos.z, yHint);
     return floor ? { kind: "floor", ...floor } : { kind: "terrain", height: this.heightAt(this.pos.x, this.pos.z) };
   }
 
@@ -3262,7 +2801,7 @@ export class WorldAgent {
       const local = (p: Vec2): [number, number] => { const [lx, , lz] = localizePoint(place, p.x, 0, p.z); return [lx, lz]; };
       let route: ReturnType<typeof prepareRouteLocal>;
       try {
-        const plan = this.planFor(e.id, data);
+        const plan = this.ground.planFor(e.id, data);
         route = prepareRouteLocal(plan, support.kind === "terrain" ? {
           kind: "terrain", step: ROUTE_STEP_METRES / sc, scale: sc,
           // The live terrain, as the walk's ticks read it.
@@ -3383,13 +2922,13 @@ export class WorldAgent {
     // the walk waits for every pending sync (new ones included), and is refused
     // if they don't land in time, never walked on the terrain underneath.
     const ready = () => {
-      if (!this.supportPending.size) return now();
-      return this.supportReady(WALK_READY_MS).then(() => {
+      if (!this.ground.supportPending.size) return now();
+      return this.ground.supportReady(WALK_READY_MS).then(() => {
         if (ticket !== this.walkTicket) {   // stopped, or another walk asked for, meanwhile
           if (receipt) receipt.refusal = "superseded by a newer walk or a stop";
           return false;
         }
-        if (this.supportPending.size) {
+        if (this.ground.supportPending.size) {
           this.walkRefusal = GEOMETRY_LOADING;
           if (receipt) receipt.refusal = GEOMETRY_LOADING;
           return false;
@@ -3466,9 +3005,9 @@ export class WorldAgent {
     // floor is the one their body is on).
     if (support.kind === "floor" && y != null) {
       const at = near.bodyAt ?? { x, z };
-      const meant = this.floorMeant(at.x, at.z, y, near, support, near.bodyAt != null);
-      const ceiling = Math.min(Infinity, ...this.floorsAt(at.x, at.z, support).filter((f) => f.height > support.height + 0.02).map((f) => f.height));
-      if ((!meant || meant.entity !== support.entity || meant.level !== support.level) && !this.placedNear(at.x, at.z, y, near, support.height, ceiling)) {
+      const meant = this.ground.floorMeant(at.x, at.z, y, near, support, near.bodyAt != null);
+      const ceiling = Math.min(Infinity, ...this.ground.floorsAt(at.x, at.z, support).filter((f) => f.height > support.height + 0.02).map((f) => f.height));
+      if ((!meant || meant.entity !== support.entity || meant.level !== support.level) && !this.ground.placedNear(at.x, at.z, y, near, support.height, ceiling)) {
         const whose = meant ? `whose floor is at ${meant.height.toFixed(2)}m` : "";
         const where = !meant ? "on no floor here" : meant.entity === null ? "at ground level"
           : meant.entity === support.entity ? `on another storey of this building, ${whose}` : `on a storey of another building, ${whose}`;
@@ -3498,7 +3037,7 @@ export class WorldAgent {
       // a grid is good until the colliders, the COMMITTED terrain (navTerrainRev, main 5106691c: a pending heightmap
       // keeps the old ground and its grid), or what it may walk into change. A floor walk's grid is its own: the
       // cached one answers for the terrain.
-      const navKey = `${collidersGeneration()}|${this.navTerrainRev}|${passable.join(",")}`;
+      const navKey = `${collidersGeneration()}|${this.ground.navTerrainRev}|${passable.join(",")}`;
       let grid;
       if (support.kind === "floor") grid = makeNavGrid(probe);
       else {
@@ -3864,7 +3403,7 @@ export class WorldAgent {
   private passableColliders(run: boolean): { ids: Set<string>; colliders: string[] } {
     const ids = new Set<string>(), out: string[] = [];
     for (const id of this.misjudged.keys()) if (!this.replica?.st?.entities?.[id]) this.misjudged.delete(id);   // gone: forgotten
-    for (const [id, bids] of this.supportIds) if (this.mayWalkInto(id, run)) { ids.add(id); out.push(...bids); }
+    for (const [id, bids] of this.ground.supportIds) if (this.mayWalkInto(id, run)) { ids.add(id); out.push(...bids); }
     return { ids, colliders: out.sort() };
   }
   /** Body shove: while this body walks, the loose things it walks into are punted along its walk (shared/shove.js decides
@@ -4687,7 +4226,7 @@ export class WorldAgent {
       L.push(`You are "${this.name}" in world "${this.world}", position unknown (${selfEff && !selfEff.ok ? selfEff.why : "seat unresolved"}), facing ${this.bearing(Math.sin(this.yaw), Math.cos(this.yaw))}${seated}. Distances are withheld until your seat resolves — detach gets you up, back to a stamped position (detach {escape: true} if the seat holds you; walking, where the seat allows it).`);
     }
     { const ws = this.waterSummary(); if (ws) L.push(ws); }
-    if (this.pendingTerrain) L.push(`The world's ground is a heightmap that has not loaded yet: heights here are the last ground you had${this.terrain ? "" : " (flat)"}, until it does.`);
+    if (this.ground.pendingTerrain) L.push(`The world's ground is a heightmap that has not loaded yet: heights here are the last ground you had${this.ground.terrain ? "" : " (flat)"}, until it does.`);
     // WHERE YOU ARE, ARCHITECTURALLY: a griddled building knows its rooms, so
     // standing inside one is stated, derived from folded state alone (no scene).
     if (meKnown) {
@@ -4699,7 +4238,7 @@ export class WorldAgent {
         if (!data) continue;
         try {
           const [lx, ly, lz] = localizePoint(e, me.x, feet, me.z);
-          const here = describeHere(this.planFor(e.id, data), lx, lz, ly);
+          const here = describeHere(this.ground.planFor(e.id, data), lx, lz, ly);
           if (here) { L.push(`${here} (inside [${this.handle(e.id)}]; sides are the building's own compass.)`); break; }
         } catch { /* one malformed house must not cost the whole percept */ }
       }

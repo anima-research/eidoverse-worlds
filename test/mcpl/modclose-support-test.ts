@@ -53,8 +53,8 @@ await bystander.connect();
 const built = await wardenReq("create", { id: "deck1", model: CRATE, components: { transform: { pos: [0, 0, 0] } } });
 check("the warden (owner) builds the platform through the door", built?.ok === true, JSON.stringify(built));
 
-const vTok = (victim as any).supportHolder as string;
-const bTok = (bystander as any).supportHolder as string;
+const vTok = (victim as any).ground.supportHolder as string;
+const bTok = (bystander as any).ground.supportHolder as string;
 // wait on the holders themselves: supportReady() resolves at once while the new entity hasn't reached the agent yet
 const okSetup = await came("both residents hold the platform", () => allHolders().has(vTok) && allHolders().has(bTok));
 check("both residents hold support on the shared platform", okSetup, JSON.stringify(supportHolders()));
@@ -79,7 +79,7 @@ console.log("\n━━ successor: same name, own holders, unharmed by its predece
 // tokens exist to survive
 const successor = new WorldAgent({ url: URL_, name: "bystander", world: WORLD });
 await successor.connect();
-const sTok = (successor as any).supportHolder as string;
+const sTok = (successor as any).ground.supportHolder as string;
 check("the successor registers under its OWN token", await came("the successor holds the platform", () => allHolders().has(sTok)), JSON.stringify(supportHolders()));
 check("no stale predecessor token rides along", !allHolders().has(bTok) && !allHolders().has(vTok), JSON.stringify(supportHolders()));
 successor.close();

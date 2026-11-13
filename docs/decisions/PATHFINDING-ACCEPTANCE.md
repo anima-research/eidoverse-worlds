@@ -27,8 +27,8 @@ now meet consent and range at the server, and it doesn't read the error), so it 
 ## The four negative controls
 
 **1. Bypass the support wait** (#235). The agent must not plan or walk before the placed world's colliders exist
-(`mcpl/agent.ts` `supportReady()`, the barrier a walk waits on). Make the walk skip it — in `walkTo` (where the walk
-waits on `supportReady`), replace `if (!this.supportPending.size) return now();` with `return now();` — then run `agent-mesh-collision`:
+(`mcpl/agent-ground.ts` `supportReady()`, the barrier a walk waits on). Make the walk skip it — in `walkTo` (where the walk
+waits on `supportReady`), replace `if (!this.ground.supportPending.size) return now();` with `return now();` — then run `agent-mesh-collision`:
 
 ```
 ✗ a pen spawned just now, its shape still downloading: a walk into it waits for it, then is refused — never passes

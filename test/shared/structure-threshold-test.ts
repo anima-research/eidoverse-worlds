@@ -51,7 +51,7 @@ try {
 const terrain=(height=0)=>({kind:"terrain",heightAt:()=>height,step:.5});
 const base:any={levels:[{y:0,tiles:[[0,0],[1,0]],walls:[[1,1,0]],apertures:[]}],labels:{}};
 const agent=new WorldAgent({ url: noWorldUrl(), name:"cache-test",avatar:"",world:"cache-test"}); agents.push(agent);
-(agent as any).syncSupport=async()=>{}; // the fold/cache, not remote asset support, is under test
+(agent as any).ground.syncSupport=async()=>{}; // the fold/cache, not remote asset support, is under test
 // the agent folds the authority's log itself, so each old hand-written entry is the current write doing the same (spawn →
 // create, comp → set/delete a component, place → set transform) through the real door (test/harness/agent-scratch.ts agentOnDoor)
 const door=agentOnDoor(agent,"route-prep");
@@ -79,7 +79,7 @@ async function receive(verb:string,args:any) {
 /** The same value: the fold hands the agent a copy of what was written, never the writer's object. */
 const same=(x:any,y:any)=>JSON.stringify(x)===JSON.stringify(y);
 const data=()=>agent.entities.get("house")?.structure;
-const cached=(d:any)=>(agent as any).planOf(d);
+const cached=(d:any)=>(agent as any).ground.planOf(d);
 async function planned(target:[number,number]) {
  const promise=agent.walkTo(...target,true,1000,0);
  const result={refusal:agent.walkRefusal,legs:(agent as any).legs.length,target:(agent as any).target};
@@ -140,16 +140,16 @@ const detour=(r:any)=>r.refusal===null&&r.legs>0&&!!r.target;
  check(same(data(),undone)&&cached(data())===undonePlan,"entity translation preserves authored-cache identity");
  check(straight(await planned([1.5,.5]),[1.5,.5]),"new walk uses fresh translation rather than an old transformed checker");
  await receive("place",{id:"house",pos:[10,1,-5],yaw:Math.PI/2,scale:2});
- (agent as any).terrain={heightAt:()=>1};agent.pos={x:11,y:1,z:-6};
+ (agent as any).ground.terrain={heightAt:()=>1};agent.pos={x:11,y:1,z:-6};
  check(cached(data())===undonePlan&&detour(await planned([11,-8])),"same geometry uses fresh rotation, scale and terrain origin");
- (agent as any).terrain={heightAt:()=>8};
+ (agent as any).ground.terrain={heightAt:()=>8};
  check(straight(await planned([11,-8]),[11,-8]),"later walk uses changed terrain height with the same authored plan");
  // walkTo plans each received revision once: a second walk over the same component reads none of its data again
  let reads=0;
  const counted={levels:[{y:0,tiles:[[0,0],[1,0]],walls:[[1,1,0]],apertures:[]}]};
  const watched={get levels(){reads++;return counted.levels;}};
  agent.entities.set("watched",{id:"watched",model:"",pos:[20,0,0],yaw:0,scale:1,structure:watched} as any);
- (agent as any).terrain={heightAt:()=>1};agent.pos={x:20.5,y:1,z:.5};
+ (agent as any).ground.terrain={heightAt:()=>1};agent.pos={x:20.5,y:1,z:.5};
  check(detour(await planned([21.5,.5]))&&reads>0,"a walk past a new revision plans it");
  const readsAfterFirst=reads;
  check(detour(await planned([21.5,.5]))&&reads===readsAfterFirst,"a second walk over the same revision reads none of it again");
@@ -179,7 +179,7 @@ const wall={levels:[{y:0,tiles:[],walls:[[1,1,0]],apertures:[]}]};
 
 function bodyS(entity:any,height:(x:number,z:number)=>number,from:[number,number]) {
  const a=new WorldAgent({ url: noWorldUrl(), name:"walker",avatar:"",world:"support-test"});agents.push(a);a.joined=true;
- a.entities.set(entity.id,entity);(a as any).terrain={heightAt:height};
+ a.entities.set(entity.id,entity);(a as any).ground.terrain={heightAt:height};
  a.pos={x:from[0],y:height(...from),z:from[1]};return a;
 }
 function transformS(e:any,x:number,z:number):[number,number] {

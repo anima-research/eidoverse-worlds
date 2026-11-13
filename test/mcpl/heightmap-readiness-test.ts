@@ -33,7 +33,7 @@ const srv = Bun.serve({ port: 0, async fetch(req) {
 const a: any = new WorldAgent({ name: "walker", world: "hm-ready", url: `ws://127.0.0.1:${srv.port}/ws` });
 // the toolkit's noise stands in as one height per seed, so a false commit is visible as that seed
 let builds = 0;
-a.terrainSrc = "stub";
+a.ground.terrainSrc = "stub";
 (globalThis as any).makeTerrain = (args: any) => { builds++; return { heightAt: () => args.seed }; };
 a.joined = true;
 const hm = (seed: number, grid: string) => ({ seed, size: 40, heightmap: { grid, min: -10, max: 10 } });
@@ -53,15 +53,15 @@ const routeGrid = () => {
 
 console.log("\na grid that fails, then arrives");
 {
-  await a.buildTerrain({ seed: 1, size: 40 });
+  await a.ground.buildTerrain({ seed: 1, size: 40 });
   check("a plain terrain builds", ground() === 1 && builds === 1);
   await until("the sim that setHeightField hands the ground to has loaded", () => collidersReady());   // before caching the baseline route
   const beforePending = routeGrid();
-  await a.buildTerrain(hm(2, ref(0xa1)));
+  await a.ground.buildTerrain(hm(2, ref(0xa1)));
   check("a heightmap whose grid failed is NOT committed: the last ground stands", ground() === 1 && builds === 1, `ground ${ground()}`);
   const whilePending = routeGrid();
   check("pending grid does not invalidate a route grid on the still-standing ground", whilePending === beforePending);
-  check("...it is pending, and the shared readiness law agrees", !!a.pendingTerrain && !shapeReady(shapeParams(hm(2, ref(0xa1)))));
+  check("...it is pending, and the shared readiness law agrees", !!a.ground.pendingTerrain && !shapeReady(shapeParams(hm(2, ref(0xa1)))));
   check("...and look says so", a.look().includes("has not loaded yet"));
   const arrived = await tryUntil("the grid arrives and its terrain commits", ticking(() => ground() === 10), { ms: 6000, step: 50 });
   check("once the grid comes, that terrain is built — on its grid, not noise", arrived && ground() === 10, `ground ${ground()}`);
@@ -69,16 +69,16 @@ console.log("\na grid that fails, then arrives");
   check("the committed grid invalidates the old-ground route grid", afterCommit !== whilePending);
   // a second build would come within a few ticks of the first: ticking for 300 ms with none IS the row
   await tryUntil("a second build of the same terrain (must not come)", ticking(() => builds > 2), { ms: 300, step: 50 });
-  check("...exactly once", builds === 2 && !a.pendingTerrain && !a.look().includes("has not loaded yet"), `builds ${builds}`);
+  check("...exactly once", builds === 2 && !a.ground.pendingTerrain && !a.look().includes("has not loaded yet"), `builds ${builds}`);
 }
 
 console.log("\na waiting heightmap superseded by a newer terrain");
 {
-  await a.buildTerrain(hm(3, ref(0xa2)));
-  check("waiting on its grid", !!a.pendingTerrain && ground() === 10);
+  await a.ground.buildTerrain(hm(3, ref(0xa2)));
+  check("waiting on its grid", !!a.ground.pendingTerrain && ground() === 10);
   await until("a2's retry is in flight", ticking(() => grids[ref(0xa2)].hits >= 2), { ms: 6000, step: 50 });   // its retry is in flight…
-  await a.buildTerrain({ seed: 4, size: 40 });       // …when a newer terrain comes
-  check("a newer plain terrain builds at once", ground() === 4 && !a.pendingTerrain && builds === 3);
+  await a.ground.buildTerrain({ seed: 4, size: 40 });       // …when a newer terrain comes
+  check("a newer plain terrain builds at once", ground() === 4 && !a.ground.pendingTerrain && builds === 3);
   await until("the old grid's retry answers, with the grid", ticking(() => ready(3, ref(0xa2))), { ms: 6000, step: 50 });
   await tryUntil("the superseded heightmap builds (must not)", ticking(() => builds > 3), { ms: 300, step: 50 });
   check("the superseded heightmap never builds, though its grid came", ground() === 4 && builds === 3, `ground ${ground()} builds ${builds}`);
@@ -86,16 +86,16 @@ console.log("\na waiting heightmap superseded by a newer terrain");
 
 console.log("\na slow grid overtaken");
 {
-  const slow = a.buildTerrain(hm(5, ref(0xa3)));
+  const slow = a.ground.buildTerrain(hm(5, ref(0xa3)));
   await until("the slow grid's fetch is out", () => grids[ref(0xa3)].hits >= 1);
-  await a.buildTerrain({ seed: 6, size: 40 });
+  await a.ground.buildTerrain({ seed: 6, size: 40 });
   await slow;
   check("the slow old grid lands after a newer terrain, and does not commit over it", ground() === 6 && builds === 4, `ground ${ground()} builds ${builds}`);
-  const failing = a.buildTerrain(hm(7, ref(0xa4)));
+  const failing = a.ground.buildTerrain(hm(7, ref(0xa4)));
   await until("the slow failing grid's fetch is out", () => grids[ref(0xa4)].hits >= 1);
-  await a.buildTerrain({ seed: 8, size: 40 });
+  await a.ground.buildTerrain({ seed: 8, size: 40 });
   await failing;
-  check("a slow FAILED old grid leaves no false 'not loaded' behind the newer terrain", ground() === 8 && !a.pendingTerrain && !a.look().includes("has not loaded yet"));
+  check("a slow FAILED old grid leaves no false 'not loaded' behind the newer terrain", ground() === 8 && !a.ground.pendingTerrain && !a.look().includes("has not loaded yet"));
 }
 
 srv.stop(true);
