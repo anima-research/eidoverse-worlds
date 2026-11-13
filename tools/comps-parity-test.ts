@@ -22,12 +22,17 @@ const { check, tally } = mkCheck();
 const becomes = async (expr: string, ms = 8000) => !!(await tryUntil(expr.slice(0, 80), () => evalJson(expr), { ms, step: 100 }));
 
 try {
-  await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `window.__errs = []; addEventListener('error', (e) => __errs.push('error: ' + e.message));` });
+  await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `window.__errs = []; addEventListener('error', (e) => __errs.push('error: ' + e.message)); addEventListener('unhandledrejection', (e) => __errs.push('rejection: ' + (e.reason?.message ?? e.reason)));` });
   await cdp.send('Page.navigate', { url: `${BASE}/?name=editbot&world=parity` });
   const count = async () => (await evalJson(`document.querySelectorAll('.sec').length`).catch(() => 0)) ?? 0;
   const secs = (await tryUntil('the client boots', async () => ((await count()) >= 4 ? count() : null), { ms: 60_000, step: 500 })) ?? (await count());
   check('client boots', secs >= 4, `${secs} sections`);
-  if (secs < 4) await die(1, 'the client did not boot');
+  if (secs < 4) {   // what the page was doing when it didn't boot (Weft's #322 read: a red should carry its own evidence)
+    const page = await evalJson(`import('/lib/net.js').then(() => 'imported', (e) => 'failed: ' + e.message).then((net) => ({ href: location.href, ready: document.readyState, net, errs: (window.__errs ?? []).slice(0, 10), body: document.body?.innerText?.slice(0, 300) ?? null }))`).catch((e) => ({ evalFailed: String(e) }));
+    const shot = await cdp.send('Page.captureScreenshot', { format: 'png' }).catch(() => null);
+    if (shot?.data) { const f = `${process.env.RUNNER_TEMP ?? '/tmp'}/comps-parity-boot.png`; await Bun.write(f, Buffer.from(shot.data, 'base64')); console.log(`  screenshot: ${f}`); }
+    await die(1, `the client did not boot: ${JSON.stringify(page)}`);
+  }
   check('the fold is live and frozen (a dev host)', await becomes(`import('/lib/net.js').then((m) => m.replica.active && m.replica.frozen === true)`));
   await evalJson(`dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB' })), true`);
   check('build mode', await becomes(`[...document.querySelectorAll('.frame.edit')].some((f) => getComputedStyle(f).display !== 'none')`));
