@@ -9,11 +9,15 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildGlb } from '../fixtures/two-storey-fixture.ts';
-import { scratchBench, mkCheck, sleep } from '../harness/harness.ts';
+import { scratchBench, mkCheck, sleep, legacyVerb, sceneId } from '../harness/harness.ts';
+import { helloOf } from '../../shared/protocol/hello.js';
 
 const OPT = mkdtempSync(join(tmpdir(), 'getup-opt-'));
+// joining never founds a world: the bench founds it, owned by the driver's typed name (TRUST_NAMES)
+const WORLD = `getup-${crypto.randomUUID().slice(0, 8)}`;
 const { PORT, BASE, cdp, cws: cws0, evalJson, cleanup, die } = await scratchBench('getup', {
-  headed: process.argv.includes('--headed'), portFrom: 9460, serverEnv: { OPT_DIR: OPT, SKIP_OPT_SWEEP: '1' },
+  headed: process.argv.includes('--headed'), portFrom: 9460, worlds: [WORLD], owner: 'builder',
+  serverEnv: { OPT_DIR: OPT, SKIP_OPT_SWEEP: '1', TRUST_NAMES: '1' },
 });
 const { check, tally } = mkCheck();
 const restores: any[] = [];
@@ -36,20 +40,30 @@ const boxes = [
   [-3.8, 3.1, -3.8, -0.5, UPPER, 3.8],
   [0.2, 0, 0.2, 3.8, LANDING, 3.8],
 ];
-const WORLD = `getup-${crypto.randomUUID().slice(0, 8)}`;
 const msgs: any[] = [];
 const dws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
 dws.onmessage = (ev) => msgs.push(JSON.parse(String(ev.data)));
 await new Promise((r, j) => { dws.onopen = r as any; dws.onerror = j as any; });
-dws.send(JSON.stringify({ type: 'join', world: WORLD, id: 'builder', token: '' }));
+dws.send(JSON.stringify({ type: 'join', hello: helloOf(), world: WORLD, id: 'builder', token: '', replica: true }));
 await until(() => msgs.some((m) => m.type === 'snapshot'), 'driver join');
-async function verb(v: string, args: unknown) {
-  const start = msgs.length;
-  dws.send(JSON.stringify({ type: 'verb', verb: v, args }));
-  await until(() => msgs.slice(start).some((m) => (m.entry ?? m).verb === v || m.type === 'error'), `${v} echo`, 10_000);
-  const error = msgs.slice(start).find((m) => m.type === 'error');
-  if (error) await die(1, `${v} refused: ${error.error}`);
-}
+// every world write is a door request, answered by its reply; the scene is authored in the old words
+// through the harness's adapter (legacyVerb), which maps the scene's name for the house to the id the authority mints
+let reqN = 0;
+const driver: any = {
+  async request(v: string, args: unknown) {
+    const id = `getup-${++reqN}`;
+    dws.send(JSON.stringify({ type: 'request', id, verb: v, args }));
+    await until(() => msgs.some((m) => m.type === 'reply' && m.id === id), `${v} reply`, 10_000);
+    const r = msgs.find((m) => m.type === 'reply' && m.id === id);
+    if (!r.ok) await die(1, `${v} refused: ${JSON.stringify(r.reply?.refused ?? r)}`);
+    return r.reply;
+  },
+};
+const verb = (v: string, args: unknown) => v === 'terrain'
+  ? driver.request('set', { id: '@world', component: 'terrain', value: args })
+  : legacyVerb(driver, v, args);
+/** The id the authority minted for the house. */
+const HOUSE = () => sceneId(driver, 'house');
 
 const page = `${BASE}/?name=lier&world=${WORLD}`;
 // what the page tells the server about a lying body: the floor must have gone
@@ -94,14 +108,14 @@ async function floorSent(floor: number) {
 const ready = () => evalJson(`(async () => {
   if (!globalThis.EW) return false;
   const [{ getMe }, C] = await Promise.all([import('/lib/player/mybody.js'), import('/lib/colliders.js')]);
-  return !!getMe() && [...C.nearColliders(0, 0, 8)].some(([id]) => id === 'house');
+  return !!getMe() && [...C.nearColliders(0, 0, 8)].some(([id]) => id === ${JSON.stringify(HOUSE())});
 })()`).catch(() => false);
 /** The reloaded page's body is up and its house isn't fitted yet: only the
  *  new page has a body and no house (the old one had the house). */
 const bodyUp = () => evalJson(`(async () => {
   if (!globalThis.EW) return false;
   const [{ getMe }, C] = await Promise.all([import('/lib/player/mybody.js'), import('/lib/colliders.js')]);
-  return !!getMe() && ![...C.nearColliders(0, 0, 8)].some(([id]) => id === 'house');
+  return !!getMe() && ![...C.nearColliders(0, 0, 8)].some(([id]) => id === ${JSON.stringify(HOUSE())});
 })()`).catch(() => false);
 /** Wait until the page's frame loop has stepped `s` seconds of simulated time:
  *  the dt its systems step by, the controller's gravity among them, however
@@ -110,7 +124,7 @@ async function simWait(s: number) {
   const t0 = await evalJson(`(async () => {
     if (globalThis.__simT == null) {
       globalThis.__simT = 0;
-      (await import('/lib/frame.js')).registerSystem('test-sim-clock', (dt) => { globalThis.__simT += dt; });
+      (await import('/lib/render/frameloop.js')).registerSystem('test-sim-clock', (dt) => { globalThis.__simT += dt; });
     }
     return globalThis.__simT;
   })()`);
@@ -166,7 +180,7 @@ async function lieDown() {
 try {
   const up = await (await fetch(`${BASE}/upload?name=house`, { method: 'POST', body: await buildGlb(boxes as any) })).json() as { path: string };
   await verb('terrain', { seed: 3, size: 80, segments: 32, amplitude: 0.0, flatRadius: 40 });
-  await verb('spawn', { id: 'house', lib: up.path, pos: [0, 0, 0], yaw: 0, collide: 'exact' });
+  await verb('spawn', { id: 'house', lib: up.path, pos: [0, 0, 0], yaw: 0, collide: 'mesh' });   // the protocol's word for the walker's exact (triangle) collider
   await cdp.send('Page.navigate', { url: page });
   await until(ready, 'the page, its body and the house', 300_000);   // a headless page loads its avatar slowly
   slowModels = true;                                     // every reload from here on: the house arrives late
@@ -264,7 +278,7 @@ try {
   const warns: string[] = await evalJson(`globalThis.__warns.filter((w) => w.startsWith('[arrivalhold] gave up'))`);
   check('a hold that runs out of its bound lets go while the house is still on its way, and says so once, naming it',
     inBound.elapsed < 10_000 && Math.abs(inBound.y - UPPER) < 0.06 && gaveUp.y < UPPER - 1
-      && warns.length === 1 && warns[0].includes('after 10s') && warns[0].includes('house'),
+      && warns.length === 1 && warns[0].includes('after 10s') && warns[0].includes(HOUSE()),
     `inside the bound ${JSON.stringify(inBound)}; after it ${JSON.stringify(gaveUp)}; warnings ${JSON.stringify(warns)}`);
   letModelsThrough();
 } catch (e) {
