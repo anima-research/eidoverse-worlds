@@ -175,37 +175,37 @@ console.log('\nLIVE REVOCATION -- through the your-rights path, not around it');
     'L_Wing_Lower', 'R_Wing_Lower'];
   ag.loadBodyBones = async () => {};          // no HTTP in a unit test
   // exactly what the `your-rights` case does with a message's rights
-  const yourRights = (rights: any) => ag.acceptEffectiveRights(rights, 'world');
+  const yourRights = (rights: any) => ag.flying.acceptEffectiveRights(rights, 'world');
 
   ag.myRights = null;
-  check('no rights at all: flight refuses', !ag.flightAllowed().ok);
+  check('no rights at all: flight refuses', !ag.flying.flightAllowed().ok);
 
   yourRights({ role: 'builder', gen: true, fly: false });
   check('rights that never grant fly do not confer it',
-        !ag.flightAllowed().ok, JSON.stringify(ag.myRights));
+        !ag.flying.flightAllowed().ok, JSON.stringify(ag.myRights));
 
   yourRights({ role: 'builder', gen: true, fly: true });
-  check('+fly permits, through the live rights path', ag.flightAllowed().ok);
+  check('+fly permits, through the live rights path', ag.flying.flightAllowed().ok);
 
   yourRights({ role: 'owner', gen: true, fly: true });
-  check('a later role change that keeps fly keeps flight', ag.flightAllowed().ok && ag.myRights.role === 'owner');
+  check('a later role change that keeps fly keeps flight', ag.flying.flightAllowed().ok && ag.myRights.role === 'owner');
 
   // THE BLOCKER ITSELF.
   yourRights({ role: 'owner', gen: true, fly: false });
-  check('-fly makes the very next action refuse', !ag.flightAllowed().ok,
+  check('-fly makes the very next action refuse', !ag.flying.flightAllowed().ok,
         JSON.stringify(ag.myRights));
-  const why = ag.flightAllowed().why ?? '';
+  const why = ag.flying.flightAllowed().why ?? '';
   check('...and says why, in words a pilot can act on', /grant|flight/i.test(why), why);
 
   // The answer is whole: an absent fly is no, never "keep what I had"
   yourRights({ role: 'builder', gen: true, fly: true });
   yourRights({ role: 'builder', gen: true });
-  check('an answer without fly is a withdrawal (absent is not "unchanged")', !ag.flightAllowed().ok, JSON.stringify(ag.myRights));
+  check('an answer without fly is a withdrawal (absent is not "unchanged")', !ag.flying.flightAllowed().ok, JSON.stringify(ag.myRights));
 
   // MUTATION CONTROL, as required: unwire the case and this must go red.
   const src = readFileSync('mcpl/agent.ts', 'utf8');
   check('the your-rights case installs the server\'s answer (mutation control)',
-        /case "your-rights":[\s\S]{0,400}if \(msg\.rights\) this\.acceptEffectiveRights\(msg\.rights, "world"\);/.test(src));
+        /case "your-rights":[\s\S]{0,400}if \(msg\.rights\) this\.flying\.acceptEffectiveRights\(msg\.rights, "world"\);/.test(src));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

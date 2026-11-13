@@ -699,7 +699,7 @@ try {
   const aloft: any = winged(new WorldAgent({ url: noWorldUrl(), name: "aloft", world: "w" }));
   bodies.push(aloft);
   await aloft.takeOff();
-  aloft.acceptEffectiveRights({ role: "builder", fly: false }, "world");
+  aloft.flying.acceptEffectiveRights({ role: "builder", fly: false }, "world");
   const fall = aloft.inbox.at(-1);
   check("a withdrawal while aloft says the body is coming down, and how to fly again",
     `* ${fall?.who} ${fall?.text}` === "* world withdrew your flight while you were aloft, so you're coming down under the falling-leaf reflex; you can fly again once the world's owner grants it",

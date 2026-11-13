@@ -155,6 +155,7 @@ const LOG_RETIRED: [RegExp, string][] = [
 ];
 const LOG_OK: [string, RegExp, string][] = [
   ["mcpl/agent.ts", /kind(: | === )"act"/, "the agent's in-memory inbox event, never a log entry (D6)"],
+  ["mcpl/agent-flight.ts", /kind: "act"/, "the agent's in-memory inbox event (a withdrawn flight said), never a log entry (D6)"],
   ["mcpl/denoise.ts", /kind: "act"/, "the agent's inbox event (D6)"],
   ["mcpl/declaration.ts", /kind === "act"/, "the agent's inbox event's speech facet (D6)"],
   ["mcpl/net-server.ts", /kind === "act"/, "the agent's inbox event relayed to its MCP client (D6)"],

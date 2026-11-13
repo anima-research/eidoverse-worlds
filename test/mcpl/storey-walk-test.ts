@@ -729,7 +729,7 @@ console.log("\nthe feet keep the storey when the walk ends, after a tumble and a
 }
 {
   const ag = agentIn(upperY);
-  ag.flightBegin();
+  ag.flying.flightBegin();
   check("a flight begun upstairs starts from the upper floor", Math.abs(ag.flight?.pos?.y - upperY) < 1e-9, String(ag.flight?.pos?.y));
   ag.pos.y = upperY + 0.2;
   ag.endFlight("landed");

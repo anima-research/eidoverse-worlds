@@ -392,7 +392,7 @@ console.log('\nreview 2026-11-10: every other way out ends the flight');
   ag.joined = true;
   await ag.takeOff(); toAir(ag, 20); await tick(ag, 3);
   ag.flightBodyDown('cut'); await tick(ag, 2);
-  const waits = ag.flightWaiters.length, phase = ag.flight?.phase;
+  const waits = ag.flying.flightWaiters.length, phase = ag.flight?.phase;
   await ag.ws.onmessage({ data: JSON.stringify({ type: 'bodydrag', grab: 'Hip', by: 'dragger' }) });
   (globalThis as any).WebSocket = RealWS;
   check('a hand taking a limp flier ends its flight, and the dragger has it', phase === 'LEAF' && ag.flight == null && ag.draggedBy === 'dragger', `${phase} -> ${ag.flight?.phase ?? 'none'}; dragged by ${ag.draggedBy}; ${waits} waits`);
@@ -437,10 +437,10 @@ console.log('\nreview 2026-11-10: the course');
 {
   const ag = bench();
   await ag.takeOff(); toAir(ag, 40);
-  const real = ag.flightAwait;
-  ag.flightAwait = async () => 'timed out aloft';
+  const real = ag.flying.flightAwait;
+  ag.flying.flightAwait = async () => 'timed out aloft';
   const r = await ag.glideTo(ag.flight.pos.x + 60, ag.flight.pos.z);
-  ag.flightAwait = real;
+  ag.flying.flightAwait = real;
   check('a glide whose wait times out stops steering, as a climb does', !r.ok && /timed out/.test(r.text) && ag.flight?.course == null, `${r.text}; course ${JSON.stringify(ag.flight?.course)}`);
   check('...and says so: you fly on (bot r1 #15)', /stops steering/.test(r.text) && /fly on/.test(r.text), r.text);
 }
@@ -448,11 +448,11 @@ console.log('\nreview 2026-11-10: the course');
   // bot r1 #3: a landing's glide that times out clears its own course; the landing flares on, not "taken over".
   const ag = bench();
   await ag.takeOff(); toAir(ag, 20);
-  const real = ag.flightAwait; let calls = 0;
-  ag.flightAwait = function (test: any, ms?: number) { return calls++ === 0 ? Promise.resolve('timed out aloft') : real.call(this, test, ms); };
+  const real = ag.flying.flightAwait; let calls = 0;
+  ag.flying.flightAwait = function (test: any, ms?: number) { return calls++ === 0 ? Promise.resolve('timed out aloft') : real.call(this, test, ms); };
   const land = answerOf(ag.landAt(ag.flight.pos.x + 60, ag.flight.pos.z));
   for (let i = 0; i < 3000 && land.r == null; i++) await tick(ag);
-  ag.flightAwait = real;
+  ag.flying.flightAwait = real;
   check('a landing whose glide times out flies its flare and comes down, not "taken over"', land.r != null && !land.r.ok && /^timed out aloft/.test(land.r.text) && /landed at/.test(land.r.text) && !/took over/.test(land.r.text) && ag.flight == null,
     `${land.r?.text ?? 'no answer'}; flight ${ag.flight?.phase ?? 'none'}`);
 }

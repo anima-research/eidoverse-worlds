@@ -733,7 +733,7 @@ console.log('\nDEFAULT-DENY -- a compatible rig is evidence, never permission');
   // because it is a statement about what the SHIPPED FILES contain, which is
   // precisely what the review found wrong -- a behavioural test of a module
   // that constructs its own grant would have passed happily.
-  for (const f of ['client/lib/controller.js', 'mcpl/agent.ts']) {
+  for (const f of ['client/lib/controller.js', 'mcpl/agent-flight.ts']) {
     const src = readFileSync(f, 'utf8');
     const code = src.split('\n').filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
     check(`${f.split('/').pop()} does not construct a dev provider`,
@@ -762,7 +762,7 @@ console.log('\nREVIEW cea3c3c -- blockers 4 and 6');
         /rehearse_down: "no tool/.test(ns));
 
   // B5: infrastructure must not speak in the resident's voice.
-  const ag = readFileSync('mcpl/agent.ts', 'utf8');
+  const ag = readFileSync('mcpl/agent-flight.ts', 'utf8');
   check('flight telemetry is not written as resident chat',
         !/verb\("say", \{ text: "\[flight\]/.test(ag));
 
@@ -913,9 +913,9 @@ console.log('\nISOLATION -- nothing in the running world reaches flight yet');
   // the old scan rather than absent from it. It is listed here rather than
   // exempted: it takes no capability decision, it is handed forces by a caller
   // that already resolved one, so the per-importer checks below skip it.
-  const ALLOWED = ['mcpl/agent.ts', 'client/lib/controller.js', 'mcpl/physics.ts'];
+  const ALLOWED = ['mcpl/agent.ts', 'mcpl/agent-flight.ts', 'client/lib/controller.js', 'mcpl/physics.ts'];
   // Only the two ENTRY POINTS must gate; physics.ts is downstream of a gate.
-  const GATEKEEPERS = ['mcpl/agent.ts', 'client/lib/controller.js'];
+  const GATEKEEPERS = ['mcpl/agent-flight.ts', 'client/lib/controller.js'];
   check(`only expected modules import flight (${importers.length})`,
         importers.length > 0 && importers.every(f => ALLOWED.includes(f)),
         importers.join(', '));
@@ -1269,13 +1269,13 @@ console.log('\nFLOWN -- four faults a human found that no assertion had');
     'L_Wing_Lower', 'R_Wing_Lower'];
   ag.myRights = { role: 'builder', gen: false, fly: true };
   ag.flight = initialState({ phase: 'PILOT', pos: { x: 0, y: 11.3, z: 0 }, wings: 'OPEN' }, makeConfig());
-  check('with fly granted, the agent may fly', ag.flightAllowed().ok);
-  ag.acceptEffectiveRights(live.rights, 'world');
-  check('headless consumes effective rights and refuses the next action', !ag.flightAllowed().ok);
+  check('with fly granted, the agent may fly', ag.flying.flightAllowed().ok);
+  ag.flying.acceptEffectiveRights(live.rights, 'world');
+  check('headless consumes effective rights and refuses the next action', !ag.flying.flightAllowed().ok);
   check('midair revocation hands the agent to the leaf', ag.flight.phase === 'LEAF', ag.flight.phase);
   const agSrc = readFileSync('mcpl/agent.ts', 'utf8');
   check("the agent's `your-rights` case installs the server's answer",
-        /case "your-rights":[\s\S]{0,400}this\.acceptEffectiveRights\(msg\.rights/.test(agSrc));
+        /case "your-rights":[\s\S]{0,400}this\.flying\.acceptEffectiveRights\(msg\.rights/.test(agSrc));
   const netSrc = readFileSync('client/lib/net.js', 'utf8');
   check('browser consumes the server-folded effective-rights message',
         /case 'your-rights'/.test(netSrc) && /net\.myRights = msg\.rights/.test(netSrc));
@@ -1290,7 +1290,7 @@ console.log('\nFLOWN -- four faults a human found that no assertion had');
   // every way an agent writes: the door (requests, say included) and its say helper
   ag.door = async () => { authored++; return { ok: true }; };
   ag.say = async () => { authored++; return { ok: true }; };
-  ag.flightEvent({ kind: 'ground.landed', impactV: 0.5 });
+  ag.flying.flightEvent({ kind: 'ground.landed', impactV: 0.5 });
   check('flight telemetry never authors resident say', authored === 0, `authored=${authored}`);
 }
 S.done();
