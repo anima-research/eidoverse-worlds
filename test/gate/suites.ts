@@ -65,6 +65,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["water-import", "water/import-golden-check.ts", 1], // upstream #248's manifest through tools/water/import.ts --dry: its zone/water/water-exclusion things, taken by a real authority, and mediumOf = main's mediumAt
   ["water-preview", "water/preview-check.ts", 1], // preview.ts uploads the manifest's effects before its batch, as import.ts --apply does
   ["level-dive", "water/level-dive-check.ts", 1], // a real browser in the lake: C dives, looking down with W dives, surfacing hands back to the float
+  ["water-cross", "water/crossing-pipelines-check.ts", 1], // #306: crossing the water level makes no new render pipeline after the first time (band, fog, background), and the sky's fog still reaches above it
   ["toast-group", "protocol/toast-group-check.ts", 1],   // load failures of one kind are one toast counting the things; dismissed, that kind stays quiet
   ["avatar", "client/avatar-test.ts", 1], // the avatar rig: clip timing, seat-blend slot, a lowering clip under a limp body (upstream #282/#283)
   ["locomotion-clip", "client/locomotion-clip-test.mjs", 1], // the controller's clip-selection policy (#196), on the real module
@@ -146,6 +147,9 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["helm-leave", "client/helm-leave-test.ts", 1], // review of PR #260 (vehicles.js:26): getting up from a helm lets its hull go: its relayed moves show, a later seat drives on from where it is
   ["dismount-height", "client/dismount-height-test.ts", 1], // review of PR #260 (localbody.js:151): standing up keeps the height I'm let go at (vacated.at, a socket exit, a leave clip's end)
   ["latestread", "client/latestread-test.ts", 1], // the panels' paced re-read and the History retry's back-off (latestread.js, backoff.js); it existed, but no lane ran it
+  ["chat-mention-insert", "client/chat-mention-insert-test.ts", 1], // #313 review: Mention and a name click put a space before `@name ` after a word, through chat.js itself
+  ["chat-mention", "client/chat-mention-test.mjs", 1], // #232: a chat name ends where the door's does (`cairn` is not inside `cairn-bridge`)
+  ["groundstep", "client/groundstep-test.mjs", 1], // #315: walking downhill keeps the feet on the ground (groundstep.js floor snap), and controller.js calls it
   ["csp", "client/csp-test.ts", 0.5],          // the page's script-src hashes are the browser's: a CRLF copy of index.html still boots (CI windows 10-23)
   ["build-gate", "client/build-gate-test.ts", 1], // build mode is gated at the chokepoint, never trapping a demoted builder (revived D6)
   ["capsule-recovery", "client/capsule-recovery-test.mjs", 1], // a remote's capsule fallback: bounded retries, the identity guard across takeovers (revived D6)
@@ -318,6 +322,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["buildcheck", "server/buildcheck-test.ts", 1], // #241: the build check against the walking body's rules
   ["buildcheck-queue", "server/buildcheck-queue-test.ts", 1], // #241: checks are queued, cached, and answer for the bytes hashed
   ["buildcheck-route", "mcpl/buildcheck-route-test.ts", 1], // #241: GET /check and measure {check: true} (check_model)
+  ["flight-exit", "mcpl/flight-exit-test.ts", 1], // #287 #290 #293 #298 #300: an agent's flight has one way out (endFlight) and one current course (setCourse)
   ["door-is-error", "mcpl/door-is-error-test.ts", 1], // #269 (main, merged into #260 10-20): a door call that didn't do what it asked answers isError; flight acts answer {ok, text}
   ["door-wording", "shared/door-wording-test.ts", 1],   // #270 (main, merged into #260 10-21): the door's refusals say what wasn't done and why; deleted here once by mistake (3440e655), restored
   ["stdio-door", "mcpl/stdio-door-test.ts", 1], // the plain-MCP stdio door over its wire: the shared tool table, anim, a lamp made through create, inspect/edit/hierarchy on the folded record
@@ -414,6 +419,8 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["killz-slumped", "server/killz-slumped-test.ts", 1], // a knocked-down agent body is judged by its hips as it falls and lies: on a floor at or above the kill line (KILL_MARGIN under @world.bounds.min.y) it stays; below it, it is sent back once, and arrives standing
   ["consent-scripts-list", "server/consent-scripts-list-test.ts", 1], // consent {allow|block} naming a script or a sponsor's scripts reaches the authority through the server; an allow naming nobody says how to name someone
   ["custody-save", "server/custody-save-test.ts", 1], // a governance key is handed out only once the keys file holds it: a failed save hands out nothing
+  ["briefing", "server/briefing-test.ts", 1], // #214: a join's briefing names the agent guide and its version; /agents.md serves it with an etag
+  ["door-frame", "mcpl/door-frame-test.ts", 1],   // a malformed frame from anyone closes that one socket, never the MCPL door (Bun 1.4's ws throws an 'error' nobody listens for)
   ["client-tools", "harness/run-client.ts --import-only --skip-suites --strict-env", 14], // refactor plan 2 D5: every test/**/*-{test,check} loads (a stub missing an export, a moved module); a hung import reads SLOW, not red (run-client-settle pins it); the full run is `bun test/harness/run-client.ts`
 ];
 
@@ -425,7 +432,7 @@ export const CORE = ["kernel", "trig", "laws", "engine", "normative", "gov-reser
 // refusedjoin (scratchBench) and client-tools (run-client.ts runs every tools/*-test file, browser tests among them, those one
 // at a time) once
 // sat in the non-browser list: a host without Chromium failed them, and this box ran Chromes it didn't budget for.
-export const BROWSER = ["browser", "comps-parity", "level-dive", "toast-group", "client", "refusedjoin", "client-b2", "build-client", "access-panel", "lock-strength", "swim-lists", "shiplist-probe", "xss-probe", "party-probe", "colour-picker", "xr-lifecycle", "xr-res", "xr-debug-live", "xr-eye-binding", "htmlmesh-pick", "vrmic-exec", "xr-nullfb", "xr-desktop-banner", "sky-bake-time", "sky-bakegraph", "xr-quad-softswap", "client-tools", "harness"];
+export const BROWSER = ["browser", "comps-parity", "level-dive", "water-cross", "toast-group", "client", "refusedjoin", "client-b2", "build-client", "access-panel", "lock-strength", "swim-lists", "shiplist-probe", "xss-probe", "party-probe", "colour-picker", "xr-lifecycle", "xr-res", "xr-debug-live", "xr-eye-binding", "htmlmesh-pick", "vrmic-exec", "xr-nullfb", "xr-desktop-banner", "sky-bake-time", "sky-bakegraph", "xr-quad-softswap", "client-tools", "harness"];
 export const laneOf = (name: string): Lane => (CORE.includes(name) ? "core" : BROWSER.includes(name) ? "browser" : "main");
 // the order the gate runs them: core (in CORE's order), then main, then browser
 export const ORDER = [...CORE, ...SUITES.map(([n]) => n).filter((n) => laneOf(n) === "main"), ...SUITES.map(([n]) => n).filter((n) => laneOf(n) === "browser")];

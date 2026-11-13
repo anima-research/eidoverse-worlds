@@ -1,12 +1,12 @@
 // Crossing the world's water level costs no new render pipelines after the first time (#306), in a real browser.
-//   bun tools/water/crossing-pipelines-check.ts   (its own scratch server and world; WebGL, the backend headless CI has)
+//   bun test/water/crossing-pipelines-check.ts   (its own scratch server and world; WebGL, the backend headless CI has)
 // A lake is built (this repo's height law, as level-dive-check); the camera is pinned above it, in the level..level+1
 // band (the sheet's underside), and under it (the level's fog and far-water background), three times round. Every
 // program the backend links is counted, and each render pipeline is put down to what asked for it: the sheet, the
 // background, or anything else (the fog, which every lit material carries).
 import { PNG } from "pngjs";
-import { scratchBench, mkCheck } from "../harness.ts";
-import { until } from "../protocol/wait.ts";
+import { scratchBench, mkCheck } from "../harness/harness.ts";
+import { until } from "../gate/wait.ts";
 
 const WORLD = "water-cross";
 const bench = await scratchBench("water-cross", { worlds: [WORLD] });
@@ -90,7 +90,7 @@ try {
     const before = await js("const g = globalThis; return { made: { ...g.__made }, by: { ...g.__by }, f: g.__frames, o: g.__other.length };");
     await js(`globalThis.__at(${y}); return true;`);
     const settled = await settle(40);
-    const after = await js("const g = globalThis, core = await import('/lib/core.js'), w = (await import('/lib/watervolumes.js')).waterDebug(); return { made: { ...g.__made }, by: { ...g.__by }, f: g.__frames, o: g.__other.slice(), under: w.under, background: w.background, underside: !!core.scene.getObjectByName('water-underside')?.visible };");
+    const after = await js("const g = globalThis, core = await import('/lib/core.js'), w = (await import('/lib/realize/watervolumes.js')).waterDebug(); return { made: { ...g.__made }, by: { ...g.__by }, f: g.__frames, o: g.__other.slice(), under: w.under, background: w.background, underside: !!core.scene.getObjectByName('water-underside')?.visible };");
     const r = { name, y, settled, frames: after.f - before.f, under: after.under, background: after.background, underside: after.underside,
       made: after.made.gl - before.made.gl + after.made.gpu - before.made.gpu,
       by: Object.fromEntries(Object.keys(after.by).map((k) => [k, after.by[k] - before.by[k]])) as Record<string, number>,

@@ -1,5 +1,5 @@
 // mention-rx — where a name in chat begins and ends: the door's boundary (mcpl/mention.ts), so a person's highlight and an
-// agent's ping agree (#232). Pure: no DOM and no config, so it is testable headless (tools/chat-mention-test.mjs).
+// agent's ping agree (#232). Pure: no DOM and no config, so it is testable headless (test/client/chat-mention-test.mjs).
 
 export const escapeRx = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 

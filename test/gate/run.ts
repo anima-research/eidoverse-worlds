@@ -63,7 +63,7 @@ const EXPECT: Record<string, number> = {
   "shiplist-probe": 197, "agenttools": 20, "presence": 10, "modhole": 0.1, "xss-probe": 15, "pretrans": 2.8,
   "soundclock": 0.2, "eidomodel": 0.7, "party-probe": 486, "colour-picker": 8.1, "lock-strength": 10, "swim-lists": 10, "alias": 0.4, "navgrid": 64,
  "places": 130, "storey-walk": 1.5, "shape-attach": 0.7, "shape-physics": 0.7,
-  "shape-import": 0.4, "buildcheck": 18, "buildcheck-queue": 7.4, "buildcheck-route": 22, "client-tools": 202, "door-is-error": 280, "history-request": 0.3, "skystamp": 0.5, "normative": 0.2, "predict-pending": 0.5, "last-world": 0.6, "event-wire": 0.1, "setup": 3, "named-pose": 2.6, "net-send-shape": 1, "navgrid-rows": 6.3, "one-binding": 0.3, "blockers-mutants-a": 110, "blockers-mutants-b": 110, "blockers-mutants-c": 110, "blockers-mutants-d": 110, "screenshots": 9, "snapframe-render": 0.1, "anim-backpressure": 0.3,
+  "shape-import": 0.4, "buildcheck": 18, "buildcheck-queue": 7.4, "buildcheck-route": 22, "client-tools": 202, "door-is-error": 280, "flight-exit": 3, "history-request": 0.3, "skystamp": 0.5, "normative": 0.2, "predict-pending": 0.5, "last-world": 0.6, "event-wire": 0.1, "setup": 3, "named-pose": 2.6, "net-send-shape": 1, "navgrid-rows": 6.3, "one-binding": 0.3, "blockers-mutants-a": 110, "blockers-mutants-b": 110, "blockers-mutants-c": 110, "blockers-mutants-d": 110, "screenshots": 9, "snapframe-render": 0.1, "anim-backpressure": 0.3,
   "remotes-lifecycle": 1,
   "bodygate": 0.5,
   "anim-wire": 6,

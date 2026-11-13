@@ -2,13 +2,13 @@ import { mkdtempSync, writeFileSync, readFileSync, utimesSync, rmSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
-import { readAgentGuide, joinBriefing, agentGuideResponse } from "../server/briefing.ts";
-import { resolveBriefing, briefingLines, AGENT_GUIDE } from "../shared/briefing.js";
-import { helloOf } from "../shared/protocol/hello.js";
-import { scratchSequencer, freePort, mkCheck, ROOT } from "./harness.ts";
-import { until, tryUntil } from "./protocol/wait.ts";
-import { WorldAgent } from "../mcpl/agent.ts";
-import { handleTool } from "../mcpl/tools.ts";
+import { readAgentGuide, joinBriefing, agentGuideResponse } from "../../server/briefing.ts";
+import { resolveBriefing, briefingLines, AGENT_GUIDE } from "../../shared/briefing.js";
+import { helloOf } from "../../shared/protocol/hello.js";
+import { scratchSequencer, freePort, mkCheck, ROOT } from "../harness/harness.ts";
+import { until, tryUntil } from "../gate/wait.ts";
+import { WorldAgent } from "../../mcpl/agent.ts";
+import { handleTool } from "../../mcpl/tools.ts";
 
 process.env.WORLD_TOKEN = "";
 process.env.AGENT_BODY_ENGINE = "verlet";

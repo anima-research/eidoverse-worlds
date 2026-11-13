@@ -1,6 +1,6 @@
 // door-frame-test — a malformed frame from anyone closes that one socket, never the MCPL door.
 //
-//   bun tools/door-frame-test.ts
+//   bun test/mcpl/door-frame-test.ts
 //
 // Bun 1.4's `ws` emits 'error' on a socket that sends an invalid frame, and an 'error' nobody listens for is an
 // uncaught exception that ends mcpl/net-server.ts and every session with it. It reaches the door twice: on the socket
@@ -14,8 +14,9 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { foundWorlds, freePort } from "./harness.ts";
-import { until, pause } from "./protocol/wait.ts";
+import { foundWorlds, freePort } from "../harness/harness.ts";
+import { until, pause } from "../gate/wait.ts";
+import { suite } from "../gate/suite.ts";
 
 const WPORT = freePort(21000), MPORT = freePort(23000), NONCE = randomUUID();
 const worldsDir = mkdtempSync(join(tmpdir(), "eido-door-frame-"));
@@ -23,11 +24,7 @@ foundWorlds(worldsDir, ["commons"]);
 const tokensPath = join(worldsDir, "tokens.json");
 await Bun.write(tokensPath, JSON.stringify({ "doorframe-labtok": { id: "claude", name: "Claude", world: "commons" } }));
 
-let pass = 0, fail = 0;
-const check = (name: string, ok: boolean, extra = "") => {
-  console.log(`  ${ok ? "\x1b[32m✓\x1b[0m" : "\x1b[31m✗\x1b[0m"} ${name}${ok ? "" : "  " + extra}`);
-  ok ? pass++ : fail++;
-};
+const S = suite("door-frame"), { check } = S;
 
 // process.execPath, not "bun": the PATH "bun" is an npm .cmd shim on Windows whose pid dies at once, so kill() would
 // leave the real server on its port.
@@ -104,11 +101,9 @@ try {
   check("a new agent's session is still admitted afterwards", !(fresh instanceof Error), fresh instanceof Error ? fresh.message : "");
   if (!(fresh instanceof Error)) fresh.sock.destroy();
 } catch (e) {
-  fail++;
-  console.log(`\x1b[31mFATAL\x1b[0m ${(e as Error).message}`);
+  check("FATAL the run threw", false, (e as Error).message);
 } finally {
   world.kill(); mcpl.kill();
 }
-if (fail) console.log(`\n  the door's stderr:\n${(await doorLog).split("\n").slice(-12).map((l) => "    " + l).join("\n")}`);
-console.log(`\n${pass} passed, ${fail} failed\n`);
-process.exit(fail ? 1 : 0);
+if (S.fail) console.log(`\n  the door's stderr:\n${(await doorLog).split("\n").slice(-12).map((l) => "    " + l).join("\n")}`);
+S.done();

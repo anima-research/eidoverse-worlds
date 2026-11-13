@@ -1,19 +1,16 @@
 // flight-exit-test — an agent's flight has one way out and one current course (research LOCOMOTION-SHAPE 2026-11-10).
 //
-//   bun tools/flight-exit-test.ts
+//   bun test/mcpl/flight-exit-test.ts
 //
 // One row per issue: #287 take_off aloft, #290 an older glide steering, #293 the flare's pitch, #298 a landed or
 // knocked-down flight still owning the body, #300 close or a dropped link leaving a wait to its timer. A bare agent,
 // no world server: its tick is called by hand, 0.1 s a tick.
-import { tryUntil } from './protocol/wait.ts';
-const { WorldAgent } = await import('../mcpl/agent.ts');
-const { handleTool } = await import('../mcpl/tools.ts');
+import { tryUntil } from '../gate/wait.ts';
+import { suite } from '../gate/suite.ts';
+const { WorldAgent } = await import('../../mcpl/agent.ts');
+const { handleTool } = await import('../../mcpl/tools.ts');
 
-let pass = 0, fail = 0;
-function check(name: string, ok: boolean, detail = '') {
-  if (ok) { pass++; console.log(`  ok    ${name}`); }
-  else { fail++; console.log(`  FAIL  ${name}${detail ? ` -- ${detail}` : ''}`); }
-}
+const { check, done } = suite('flight-exit');
 const WINGED = ['Hip', 'Spine02', 'Head', 'L_Wing_Upper', 'L_Wing_Upper_1', 'R_Wing_Upper', 'R_Wing_Upper_1', 'L_Wing_Lower', 'R_Wing_Lower'];
 const agents: any[] = [];
 const bench = (name = 'flyer', world = 'flight-exit-bench') => {
@@ -515,8 +512,8 @@ console.log('\nreview 2026-11-10: a landing ended another way says how');
 console.log('\nreview 2026-11-10: with the colliders loaded (last: once loaded they stay loaded for this process)');
 {
   // A solid platform 3 m high under the flier: the fall ends on it, not on the terrain under it.
-  const { boxMesh } = await import('./two-storey-fixture.ts');
-  const { registerMeshSupport, removeSupport, collidersReady } = await import('../mcpl/physics.ts');
+  const { boxMesh } = await import('../fixtures/two-storey-fixture.ts');
+  const { registerMeshSupport, removeSupport, collidersReady } = await import('../../mcpl/physics.ts');
   const W = 'flight-exit-colliders', TOP = 3;
   const { pos, idx } = boxMesh([[-8, 0, -8, 8, TOP, 8]]);
   const fitted = await registerMeshSupport('flight-exit-test', `${W}/deck`, { positions: new Float32Array(pos), indices: new Uint32Array(idx) }, { position: [0, 0, 0], yaw: 0, scale: 1 });
@@ -563,5 +560,4 @@ console.log('\nreview 2026-11-10: with the colliders loaded (last: once loaded t
 }
 
 for (const a of agents) { try { a.close(); } catch {} }
-console.log(`\n${pass} passed, ${fail} failed`);
-process.exit(fail ? 1 : 0);
+done();

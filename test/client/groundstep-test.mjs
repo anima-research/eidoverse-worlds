@@ -3,7 +3,7 @@
 // Drives the REAL groundStep and the REAL selectClip down a slope at 30/60/144 fps, the way controller.js does
 // (airborneFor += dt while not grounded), plus a check that controller.js calls groundStep.
 //
-// Run: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/groundstep-test.mjs
+// Run: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/client/groundstep-test.mjs
 //
 // Each of these mutations of the PRODUCT must turn a named check red:
 //   groundStep: SNAP_SLOPE 1 → 0          → GS1 (downhill flickers into the jump clip, the bug)
@@ -14,8 +14,8 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { groundStep, SNAP_SLACK } from '../client/lib/groundstep.js';
-import { selectClip } from '../client/lib/locomotion_clip.js';
+import { groundStep, SNAP_SLACK } from '../../client/lib/groundstep.js';
+import { selectClip } from '../../client/lib/locomotion_clip.js';
 
 let fail = 0;
 const check = (id, ok, detail) => { console.log(`${ok ? 'PASS' : 'FAIL'} ${id} ${detail}`); if (!ok) fail++; };
@@ -51,7 +51,7 @@ for (const slope of [2, 3]) for (const fps of [30, 60, 144]) { if (slope * 1.4 /
   const f = { y: 0, vy: -1, grounded: false }; groundStep(f, -0.05, 1 / 60, 0.1);
   check('GS4', !f.grounded && f.y > -0.05, `falling toward ground 5 cm down: grounded ${f.grounded}, y ${f.y.toFixed(4)}`); }
 // GS5: the controller calls it with the ground actually covered this frame and the swimmer's floor
-{ const here = dirname(fileURLToPath(import.meta.url)); const src = readFileSync(join(here, '../client/lib/controller.js'), 'utf8');
+{ const here = dirname(fileURLToPath(import.meta.url)); const src = readFileSync(join(here, '../../client/lib/controller.js'), 'utf8');
   const call = "groundStep({ y: myState.pos.y, vy, grounded }, support, dt, walked, { floor: swimming ? ground : support })";
   const covered = "const walked = Math.hypot(myState.pos.x - x0, myState.pos.z - z0);";
   check('GS5', src.includes(call) && src.includes(covered) && src.indexOf(covered) < src.indexOf(call) && /import \{ groundStep \} from '\.\/groundstep\.js'/.test(src), 'controller.js passes the ground covered (after bounds and pushes) and the floor'); }
