@@ -314,7 +314,8 @@ async function browserOwnerPart() {
   const bodies: any[] = [];
   const body = (bones: string[]) => { const scene = new THREE.Group(); for (const n of bones) { const b: any = new THREE.Bone(); b.name = n; scene.add(b); }
     const av: any = { wingsFolded: false, vrm: { scene }, dispose() {}, setUserScale() {}, setPlateY() {} }; bodies.push(av); return av; };
-  mock.module(base + "avatar/avatar.js", () => ({ makeAvatar: async () => body(WING_BONES), contributeThumbnail() {} }));
+  mock.module(base + "avatar/avatar.js", () => ({ makeAvatar: async () => body(WING_BONES) }));
+  mock.module(base + "avatar/avatar-thumbnail.js", () => ({ contributeThumbnail() {} }));
   mock.module(base + "materials.js", () => ({ applyOwnBodyShadow: async () => {} }));
   let onSwitch: any = null;   // catalog.js's switch seam, as it is: one handler, mybody.js's
   const catalog = { setMyAvatarPath() {}, wireAvatarSwitch(fn: any) { onSwitch = fn; }, switchAvatar: (p: string, n: string) => onSwitch?.(p, n) };

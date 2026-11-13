@@ -37,7 +37,7 @@ plugin({
   name: 'recovery-stubs',
   setup(b) {
     stubResolve(b, /^(\.\.?\/)+core\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
-    stubResolve(b, /^(\.\.?\/)+(avatar\/)?avatar\.js$/, () => ({ path: here('../stubs/recovery-avatar-stub.mjs') }));
+    stubResolve(b, /^(\.\.?\/)+(avatar\/)?avatar(-thumbnail)?\.js$/, () => ({ path: here('../stubs/recovery-avatar-stub.mjs') }));
     stubResolve(b, /^(\.\.?\/)+world\.js$/, () => ({ path: here('../stubs/recovery-empty-stub.mjs') }));
     stubResolve(b, /^(\.\.?\/)+occupants\.js$/, () => ({ path: here('../stubs/recovery-empty-stub.mjs') }));
     stubResolve(b, /^(\.\.?\/)+reachnet\.js$/, () => ({ path: here('../stubs/recovery-empty-stub.mjs') }));
