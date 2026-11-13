@@ -1,10 +1,10 @@
 // chat — the room's conversation, which in this world is also its history.
 //
-// Humans get what agents already had: typed mentions, a highlight when one arrives, unread state. The mention pattern
-// here (@name, or the bare name as a whole word) is simpler than the agent's (mcpl/mention.ts), which also handles
-// qualified display names like `Artie (kube)` and hyphens, so a person's highlight and an agent's ping can differ.
+// Humans get what agents already had: typed mentions, a highlight when one arrives, unread state. Mentions use the
+// door's name boundary (mention-rx.js), so a highlight and a ping agree (#232).
 
 import { CONFIG, bus, colorFor, assignColors } from './base.js';
+import { mentionRx, mentionPattern } from './mention-rx.js';
 // Not importing xrpanels.js (it reaches the engine, and chat.js also serves a client with no scene): the VR panel
 // spec is exported (chatXRPanel) and main.js registers it.
 import { lastWhy } from './debuglog.js';
@@ -44,12 +44,6 @@ let historyIdx = -1;
 
 // ---------------------------------------------------------------- mentions
 
-/** @name, or the bare name as a whole word: simpler than the agent side's
- *  rule (mcpl/mention.ts), which handles qualified names. */
-function mentionRx(name) {
-  const safe = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`(@${safe}\\b|\\b${safe}\\b)`, 'i');
-}
 export function mentionsMe(text) {
   return mentionRx(CONFIG.name).test(String(text ?? ''));
 }
@@ -76,10 +70,7 @@ export const moderatorHeader = (world) => `From a moderator of world ‹${world}
 /** Render text with mentions marked and links made clickable, without ever putting untrusted text through innerHTML. */
 function renderBody(text, names, { links = true } = {}) {
   const frag = document.createDocumentFragment();
-  const pattern = new RegExp(
-    `(${links ? 'https?://[^\\s]+' : '\\u0000'})|(@?\\b(?:${names.map(escapeRx).join('|') || '\\u0000'})\\b)`,
-    'gi',
-  );
+  const pattern = mentionPattern(names, { links });
   let i = 0;
   for (const m of String(text).matchAll(pattern)) {
     if (m.index > i) frag.append(inline(text.slice(i, m.index)));
@@ -110,7 +101,6 @@ function renderBody(text, names, { links = true } = {}) {
   if (i < String(text).length) frag.append(inline(String(text).slice(i)));
   return frag;
 }
-const escapeRx = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // ---------------------------------------------------------------- scrollback
 // A join carries recent chat, not the archive (that keeps arrival cheap). Reaching the top of the log asks the world
@@ -422,7 +412,7 @@ function buildLine(who, text, { kind = '', ts = Date.now(), historical = false, 
   if (!sys) w.style.color = colorFor(who);
   // click a name to start a mention of them
   if (!sys && !mine) {
-    w.onclick = () => { open(); insertAtCursor(`@${who} `); };
+    w.onclick = () => { open(); insertMention(who); };
     w.style.cursor = 'pointer';
   }
 
@@ -491,6 +481,12 @@ function paintUnread() {
 
 // ---------------------------------------------------------------- composer
 
+// `@name ` at the caret, after a space when the caret follows a character the mention boundary (mention-rx.js OPEN)
+// excludes: `hello@cairn` isn't read as a mention
+function insertMention(name) {
+  const s = inputEl.selectionStart ?? inputEl.value.length;
+  insertAtCursor(`${s > 0 && /[\w@-]/.test(inputEl.value[s - 1]) ? ' ' : ''}@${name} `);
+}
 function insertAtCursor(str) {
   const s = inputEl.selectionStart ?? inputEl.value.length;
   setInput(inputEl.value.slice(0, s) + str + inputEl.value.slice(inputEl.selectionEnd ?? s));
@@ -1129,7 +1125,7 @@ export function initChat({ send, typing, people, person }) {
 export function mentionPerson(name) {
   if (!name) return;
   chat.open();
-  insertAtCursor(`@${name} `);
+  insertMention(name);
   inputEl.focus();
 }
 

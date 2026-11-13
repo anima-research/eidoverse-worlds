@@ -26,7 +26,7 @@
 import "../harness/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import path from "node:path";
-import { ENGINE, scratch, copyTree, archiveTo } from "../gate/common.ts";
+import { ENGINE, scratch, copyTree, archiveTo, linkInto, readLF } from "../gate/common.ts";
 import { suite } from "../gate/suite.ts";
 
 import { CAPACITY, CAPACITY_CEILING } from "../../shared/protocol/authority.js";
@@ -87,7 +87,7 @@ function mutantTree(tag: string) {
   const d = scratch(tag);
   for (const sub of ["shared", "server", "tools", "test", "defs", "client"]) if (fs.existsSync(path.join(ENGINE, sub))) copyTree(path.join(ENGINE, sub), path.join(d, sub));
   for (const f of ["package.json", "tsconfig.json", "bunfig.toml"]) if (fs.existsSync(path.join(ENGINE, f))) fs.copyFileSync(path.join(ENGINE, f), path.join(d, f));
-  fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
+  linkInto(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
   return d;
 }
 if (argv.includes("--mutants")) {
@@ -97,9 +97,9 @@ if (argv.includes("--mutants")) {
     ran++; const d = mutantTree("smut");
     // a gate in two places is reverted in both (each in its own file, the row's by default)
     const edits: [string, string, string][] = (Array.isArray(find) ? find : [[find, repl]]).map(([a, b, g]) => [g ?? file, a, b]);
-    const missing = edits.find(([g, a]) => fs.readFileSync(path.join(d, g), "utf8").split(a).length !== 2);
+    const missing = edits.find(([g, a]) => readLF(path.join(d, g)).split(a).length !== 2);
     if (missing) { bad++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${missing[0]} (the gate moved?)`); continue; }
-    for (const [g, a, b] of edits) { const h = path.join(d, g); fs.writeFileSync(h, fs.readFileSync(h, "utf8").replace(a, () => b)); }
+    for (const [g, a, b] of edits) { const h = path.join(d, g); fs.writeFileSync(h, readLF(h).replace(a, () => b)); }
     // a mutant whose cases can't finish in MUTANT_MS is as red as one that fails them (the bound is 50 ms a request)
     const r = await runSelf(d, cases.length ? cases : null, Number(process.env.MUTANT_MS ?? 240000));
     const redIds = r.timedOut ? cases : [...r.out.matchAll(/^FAIL (\S+)/gm)].map((m) => m[1]);
@@ -505,7 +505,7 @@ if (argv.includes("--control")) {
   // the base commit's tree: every case but the guards (G) must be red there; each case alone, with a time limit
   const d = scratch("sctl"); const r0 = archiveTo(ENGINE, BASE, ["shared", "server", "tools", "defs", "client", "package.json"], d);
   if (r0.exitCode !== 0) { console.log(`FAIL can't extract ${BASE}: ${r0.stderr}`); process.exit(1); }
-  fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
+  linkInto(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
   const ids = cases.map((c) => c.id).filter((id) => !opt("only") || opt("only")!.split(",").includes(id)); let wrong = 0;
   for (const id of ids) {
     const t0 = performance.now(); const r = await runSelf(d, [id], Number(process.env.CONTROL_MS ?? 120000)); const s = ((performance.now() - t0) / 1000).toFixed(1);
@@ -572,7 +572,7 @@ async function realGlbs() {
 const RENAMED_KEYS: Record<string, string> = { teach: "fix", touchI: "intimate", verb: "op" };   // verb → op: a dry run's would ops, minor 1 (D3); the base wrote verb
 async function sameAsBase() {
   const d = scratch("sbase"); const r0 = archiveTo(ENGINE, BASE, ["shared", "server", "package.json"], d);
-  if (r0.exitCode !== 0) return { error: String(r0.stderr) }; fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
+  if (r0.exitCode !== 0) return { error: String(r0.stderr) }; linkInto(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
   const run = (tree: string) => { const r = Bun.spawnSync(["bun", path.join(ENGINE, "test/protocol/scale-check.ts"), "--tree", tree, "--scenario"], { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
     const t = r.stdout.toString(); try { return JSON.parse(t); } catch { return { bad: (t + r.stderr.toString()).slice(-400) }; } };
   const a = run(TREE), b0 = run(d); if (!Array.isArray(a) || !Array.isArray(b0)) return { a: a?.bad ?? "ok", b: b0?.bad ?? "ok" };

@@ -2616,7 +2616,7 @@
   },
   "on": "thing"
  },
- "physics-area": {
+ "physics-volume": {
   "status": "trial",
   "fields": {
    "kind": "string",

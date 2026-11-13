@@ -37,6 +37,7 @@ import { withoutOnceAnim } from "../shared/onceanim.js";
 import { directoryFor, foldName, accountTag } from "./directory.ts";
 // the HTTP surface: one route table (routes.ts; /upload in upload.ts); avatarRoster rides back for the join snapshot
 import { route, avatarRoster } from "./routes.ts";
+import { joinBriefing } from "./briefing.ts";
 import { screenshots } from "./screenshots.ts";
 import { registerSystem, startTick } from "./tick.ts";
 import { MESSAGES } from "./messages.ts";
@@ -623,6 +624,7 @@ function buildSnapshot(w: World, c: Client) {
     // snapshot = the authority's cut of the world (the joiner folds it, then the log stream) + who's present now
     return {
       type: "snapshot",
+      briefing: joinBriefing(),
       you: c.id,
       // when this account may next change its name (and the name it just tried, if that was too soon)
       ...(c.account && !c.tokenVerified ? { renameAfter: (directoryFor(WORLDS_DIR).entry(c.actorId ?? "")?.renamedAt ?? 0) + RENAME_COOLDOWN_MS, renameCooldownDays: RENAME_COOLDOWN_MS / 86400000 } : {}),

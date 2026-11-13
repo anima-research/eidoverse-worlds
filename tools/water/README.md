@@ -15,15 +15,15 @@ is the one reader (`mediumOf` → `{medium, level, flow, body, priority}`).
 | Component | Parameters and behavior |
 | --- | --- |
 | `zone` | `{shape, size, priority?, blend?, weight?, global?}` on a thing, centred on its origin. Water reads a `box` zone for now (a sphere, capsule or cylinder under water or water-exclusion is refused). Where zones overlap the higher `priority` decides; a tie goes to the later id. |
-| `water` | On a thing with a sibling zone: a body filling it (`level` absent = the zone's top; `waves`, `attenuationColor` + `attenuationDistance`, `scatterColor`, `flow` [x, y, z], and `density`, which is reserved: nothing reads it yet; how fast a body moves in it is a sibling `physics-area {kind: speed}`). On `@world`: the world's level (lowest priority of all). A body stays horizontal and axis-aligned; its thing's rotation turns only its centre. |
+| `water` | On a thing with a sibling zone: a body filling it (`level` absent = the zone's top; `waves`, `attenuationColor` + `attenuationDistance`, `scatterColor`, `flow` [x, y, z], and `density`, which is reserved: nothing reads it yet; how fast a body moves in it is a sibling `physics-volume {kind: speed}`). On `@world`: the world's level (lowest priority of all). A body stays horizontal and axis-aligned; its thing's rotation turns only its centre. |
 | `water-exclusion` | `{bodies?}` on a thing with a sibling zone: a dry pocket. It keeps out every body at or below its zone's priority (only `bodies` when named), `@world`'s level included. It follows its thing (and any carrier) through the parent chain, so a moving vessel carries its dry interior. |
 
 Upstream's components map as follows (translate-v1 `VOLUMES`): `water {center, size,
 absorption, scatter, speed?, waves}` → a body (on its own thing when that has no model
 or light, is not turned, and the box is centred on it, else a child at the centre, turned back by a turned host; σ → `attenuationColor`
-e^−σ over 1 m; `speed` → a sibling `physics-area {kind: 'speed', factor: speed / 2.4, modes: ['swim']}`
+e^−σ over 1 m; `speed` → a sibling `physics-volume {kind: 'speed', factor: speed / 2.4, modes: ['swim']}`
 on the zone, the factor clamped to 0.05..10, or nothing within 5% of 2.4 — unless another water in the world has a speed
-area, when factor 1 is written so the areas overlap as the waters do; each listed in the report); `air {boxes}` → one child per box,
+volume, when factor 1 is written so the volumes overlap as the waters do; each listed in the report); `air {boxes}` → one child per box,
 `zone {box, size, priority: 1}` + `water-exclusion {}`, its centre and `q` its transform;
 anything else in `air` rides `imported:air`, listed under `unmapped`.
 Each `traversal` route is a child with `climb {points, reach, speed}` and its name as

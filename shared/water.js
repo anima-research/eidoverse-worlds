@@ -73,7 +73,7 @@ export function waterPath(a, b, water, airs = []) {
 }
 // The 3D swim is the mover's (shared/mover.js stepSwim: one float depth for wading, swimming and diving). This is its
 // adapter for a water VOLUME or the level (`water`: {speed, top, waves}): the surface is the volume's top plus its wave.
-// `input.stature` (1 = a 100% body) is the body's size; the float rides floatDepth of its height. `input.factor`: a speed area's ×.
+// `input.stature` (1 = a 100% body) is the body's size; the float rides floatDepth of its height. `input.factor`: a speed volume's ×.
 export function swimStep(pos, velocity, input, water, dt, time) {
   const stature = Number.isFinite(input.stature) && input.stature > 0 ? input.stature : 1;
   return stepSwim(vector(pos), vector(velocity), { ...input, direction: vector(input.direction), height: MOVER.body.height * stature },

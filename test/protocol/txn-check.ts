@@ -25,7 +25,7 @@
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
-import { scratch, copyTree } from "../gate/common.ts";
+import { scratch, copyTree, readLF, linkInto } from "../gate/common.ts";
 import { tryUntil } from "../gate/wait.ts";
 import { suite } from "../gate/suite.ts";
 // [name, file, find, replace, rows it must turn red]: the mutation each row exists to catch
@@ -65,8 +65,8 @@ if (process.argv.includes("--mutants")) {
     const d = scratch("txnmut");
     for (const dir of ["server", "shared", "client", "mcpl"]) copyTree(path.join(ENGINE, dir), path.join(d, dir));
     for (const f of ["test/gate/common.ts", "test/gate/suite.ts", "test/gate/wait.ts", "test/protocol/txn-check.ts", "test/harness/labhost.ts", "test/harness/labmodels.js"]) { fs.mkdirSync(path.dirname(path.join(d, f)), { recursive: true }); fs.copyFileSync(path.join(ENGINE, f), path.join(d, f)); }
-    fs.copyFileSync(path.join(ENGINE, "package.json"), path.join(d, "package.json")); fs.symlinkSync(path.join(ENGINE, "node_modules"), path.join(d, "node_modules"), "junction");
-    const f = path.join(d, file); const src = fs.readFileSync(f, "utf8");
+    fs.copyFileSync(path.join(ENGINE, "package.json"), path.join(d, "package.json")); linkInto(path.join(ENGINE, "node_modules"), path.join(d, "node_modules"));
+    const f = path.join(d, file); const src = readLF(f);
     if (src.split(find).length !== 2) { bad++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${file} (the fix moved?)`); continue; }
     fs.writeFileSync(f, src.replace(find, repl));
     const r = Bun.spawnSync(["bun", path.join(d, "test/protocol/txn-check.ts")], { cwd: d, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, timeout: 300_000 });

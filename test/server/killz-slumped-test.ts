@@ -74,7 +74,7 @@ try {
   const running = laid.every((a) => !!a.simTicker);
   check("a body knocked down onto its floor isn't sent back while its sim runs", running && laid.every((a) => fellOf.get(a) === 0), `sims running ${running}; ${at(...laid)}`);
   const settled = await tryUntil("their sims stop", () => laid.every((a) => !a.simTicker), { ms: 30_000, step: 50 });
-  posed.flightEnd();
+  posed.endFlight("landed");
   await ticks(lying, 3); await ticks(posed, 3);
   check("once settled, a body the sim laid on its floor, its root below the kill line, isn't sent back and lies where it fell",
     !!settled && [lying, floor].every((a) => fellOf.get(a) === 0 && a.clip === "ragdoll" && a.pos.y < -0.5) && Math.hypot(lying.pos.x - spot.x, lying.pos.z - spot.z) < 3, `settled ${!!settled}; ${at(lying, floor)}`);

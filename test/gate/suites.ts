@@ -59,7 +59,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["buoyancy", "shared/buoyancy-test.ts", 1], // a floating column on the water surface, and the clock the surface runs on
   ["climb-env", "protocol/climb-env-check.ts", 1], // collider.enabled (collision off), climb routes (shared/climb.js), arrivals and KillZ (shared/spawn.js), the sky gradient and the directional sun
   ["drive", "protocol/drive-check.ts", 1], // a hull driven from its helm: drive + station.input at the door, one driver, plausibility, the hull's own collision, the lease's commits and end (shared/drive.js, authority/drive.js)
-  ["physics-area", "protocol/physics-area-check.ts", 1], // physics-area {kind: speed} on a zone: the door, shared/zone.js's reader, the one mover (walk, wade, swim, 3D stroke), the authority's track agreeing with it
+  ["physics-volume", "protocol/physics-volume-check.ts", 1], // physics-volume {kind: speed} on a zone: the door, shared/zone.js's reader, the one mover (walk, wade, swim, 3D stroke), the authority's track agreeing with it
   ["motion-vectors", "../tools/vectors/motion.ts --check", 1], // shared/conformance/motion.json still what client/lib/motioneval.js computes (Unreal copies it)
   ["water-vectors", "../tools/vectors/water.ts --check", 1], // shared/conformance/water.json still what shared/water.js computes (waterParams, waveHeight, swimStep)
   ["water-import", "water/import-golden-check.ts", 1], // upstream #248's manifest through tools/water/import.ts --dry: its zone/water/water-exclusion things, taken by a real authority, and mediumOf = main's mediumAt

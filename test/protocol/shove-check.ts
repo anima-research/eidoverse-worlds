@@ -13,7 +13,7 @@
 import "../harness/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import path from "node:path";
-import { ENGINE, scratch, copyTree, archiveTo } from "../gate/common.ts";
+import { ENGINE, scratch, copyTree, archiveTo, linkInto, readLF } from "../gate/common.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
 import { labClock, pinned } from "../gate/clock.ts";
@@ -60,7 +60,7 @@ async function runSelf(tree: string, only: string[] | null) {
 function mutantTree(tag: string) {
   const d = scratch(tag);
   for (const sub of ["shared", "server"]) copyTree(path.join(ENGINE, sub), path.join(d, sub));
-  fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
+  linkInto(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
   return d;
 }
 if (argv.includes("--mutants")) {
@@ -68,7 +68,7 @@ if (argv.includes("--mutants")) {
   const only = opt("only")?.split(",") ?? null;
   for (const [name, file, find, repl, cases] of MUTANTS) {
     if (only && !cases.some((c) => only.includes(c)) && !(only.includes("CONTROL") && !cases.length)) continue;
-    ran++; const d = mutantTree("smut"); const f = path.join(d, "shared", file); let src = fs.readFileSync(f, "utf8");
+    ran++; const d = mutantTree("smut"); const f = path.join(d, "shared", file); let src = readLF(f);
     const pairs: [string, string][] = Array.isArray(find) ? find : [[find, repl]];   // a gate in two places is reverted in both
     if (pairs.some(([a]) => src.split(a).length !== 2)) { bad++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${file} (the gate moved?)`); continue; }
     for (const [a, b] of pairs) src = src.replace(a, () => b);
@@ -85,7 +85,7 @@ if (argv.includes("--mutants")) {
 if (argv.includes("--control")) {
   const d = scratch("sctl"); const r0 = archiveTo(ENGINE, BASE, ["shared", "server"], d);
   if (r0.exitCode !== 0) { console.log(`FAIL can't extract ${BASE}: ${r0.stderr}`); process.exit(1); }
-  fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
+  linkInto(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
   const r = await runSelf(d, null);
   const lines = r.out.split("\n").filter((l) => /^(ok|FAIL) /.test(l));
   if (!lines.length) { console.log(`FAIL [shove-check --control] no case ran at ${BASE} (exit ${r.code}): ${r.out.slice(-400)}`); process.exit(1); }   // empty output is not "all red"

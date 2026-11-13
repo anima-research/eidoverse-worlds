@@ -83,11 +83,14 @@ report lists each one):
   the host can't measure: at `minY`/`maxY` themselves, the whole hull in the
   band). Another vehicle passes through the band (@29-@31 stopped every one). Each wall is locked
   (builder strength, as every translated lock: a builder may lift it knowingly). Water `speed` is
-  `physics-area {kind: 'speed', factor: speed / 2.4, modes: ['swim']}` (main slowed only the swim) on the water's zone
-  (translate-v1@35; 2.4 m/s is the stroke a volume swims at here), so a
+  `physics-volume {kind: 'speed', factor: speed / 2.4, modes: ['swim']}` (main slowed only the swim) on the water's zone
+  (translate-v1@35, named physics-volume since @51; 2.4 m/s is the stroke a volume swims at here), so a
   swimmer there strokes at main's pace; walking and wading on that floor are
   not slowed (translate-v1@37), as in main. A speed within 5% of 2.4 m/s
-  is dropped, and the report says which.
+  writes no volume of its own, and the report says which; but where another
+  water's speed is written, every water without its own gets
+  `physics-volume {kind: 'speed', factor: 1, modes: ['swim']}`, so where they
+  overlap each keeps its own stroke (translate-v1@42).
 - *The stage edge* (translate-v1@31): where main had neither bounds nor a
   terrain it kept walkers and swimmers within 78 m of the origin and fliers
   under 60 m. Here `@world.bounds` is the only edge, so such a world gets the

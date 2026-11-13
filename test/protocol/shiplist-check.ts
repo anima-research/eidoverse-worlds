@@ -21,7 +21,7 @@
 import "../harness/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import path from "node:path";
-import { ENGINE, scratch, copyTree } from "../gate/common.ts";
+import { ENGINE, scratch, copyTree, linkInto, readLF } from "../gate/common.ts";
 import { recordComponents } from "../../shared/protocol/view.js";
 import { suite } from "../gate/suite.ts";
 
@@ -81,7 +81,7 @@ function mutantTree(tag: string) {
   const d = scratch(tag);
   for (const sub of SUBS) if (fs.existsSync(path.join(ENGINE, sub))) copyTree(path.join(ENGINE, sub), path.join(d, sub));
   for (const f of ["package.json", "tsconfig.json", "bunfig.toml", "AGENTS.md"]) if (fs.existsSync(path.join(ENGINE, f))) fs.copyFileSync(path.join(ENGINE, f), path.join(d, f));
-  fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
+  linkInto(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
   return d;
 }
 if (argv.includes("--mutants")) {
@@ -91,9 +91,9 @@ if (argv.includes("--mutants")) {
     if (only && !cases.some((c) => only.includes(c)) && !(only.includes("CONTROL") && !cases.length)) continue;
     const d = mutantTree("smut");
     const edits: [string, string, string][] = (Array.isArray(find) ? find : [[find, repl]]).map(([a, b, g]) => [g ?? file, a, b]);
-    const miss = edits.find(([g, a]) => fs.readFileSync(path.join(d, g), "utf8").split(a).length !== 2);
+    const miss = edits.find(([g, a]) => readLF(path.join(d, g)).split(a).length !== 2);
     if (miss) { bad++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${miss[0]} (the gate moved?)`); continue; }
-    for (const [g, a, b] of edits) { const f = path.join(d, g); fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace(a, () => b)); }
+    for (const [g, a, b] of edits) { const f = path.join(d, g); fs.writeFileSync(f, readLF(f).replace(a, () => b)); }
     const r = await runSelf(d, cases.length ? cases : null);
     const red = [...r.out.matchAll(/^\s*FAIL (\S+)/gm)].map((m) => m[1]);
     const good = cases.length ? r.code !== 0 && cases.every((c) => red.includes(c)) : r.code === 0;
@@ -107,7 +107,7 @@ if (argv.includes("--control")) {
   const d = scratch("sbase");
   const ar = Bun.spawnSync(["bash", "-c", `git -C ${ENGINE} archive ${BASE} ${SUBS.join(" ")} package.json AGENTS.md | tar -x -C ${d}`]);
   if (ar.exitCode !== 0) { console.log(`FAIL control: git archive ${BASE}: ${ar.stderr}`); process.exit(1); }
-  fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
+  linkInto(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
   // this file and the scratch door it needs, as they are now (the base has no shiplist-check)
   fs.copyFileSync(path.join(ENGINE, "test/protocol/shiplist-check.ts"), path.join(d, "test/protocol/shiplist-check.ts"));
   const r = await runSelf(d, null);

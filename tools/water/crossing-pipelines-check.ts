@@ -1,0 +1,154 @@
+// Crossing the world's water level costs no new render pipelines after the first time (#306), in a real browser.
+//   bun tools/water/crossing-pipelines-check.ts   (its own scratch server and world; WebGL, the backend headless CI has)
+// A lake is built (this repo's height law, as level-dive-check); the camera is pinned above it, in the level..level+1
+// band (the sheet's underside), and under it (the level's fog and far-water background), three times round. Every
+// program the backend links is counted, and each render pipeline is put down to what asked for it: the sheet, the
+// background, or anything else (the fog, which every lit material carries).
+import { PNG } from "pngjs";
+import { scratchBench, mkCheck } from "../harness.ts";
+import { until } from "../protocol/wait.ts";
+
+const WORLD = "water-cross";
+const bench = await scratchBench("water-cross", { worlds: [WORLD] });
+const { cdp, evalJson, BASE } = bench;
+const { check, tally } = mkCheck();
+const errors: string[] = [];
+bench.cws.addEventListener("message", (ev) => {
+  const m = JSON.parse(String(ev.data));
+  if (m.method === "Runtime.exceptionThrown") errors.push(String(m.params?.exceptionDetails?.exception?.description ?? m.params?.exceptionDetails?.text).slice(0, 300));
+  if (m.method === "Runtime.consoleAPICalled" && m.params?.type === "error") errors.push(String(m.params.args?.map((a: any) => a.value ?? a.description).join(" ")).slice(0, 300));
+  if (m.method === "Fetch.requestPaused") cdp.send("Fetch.fulfillRequest", { requestId: m.params.requestId, responseCode: 200,   // the ground: this repo's height law (below)
+    responseHeaders: [{ name: "content-type", value: "text/javascript" }], body: Buffer.from("// stand-in").toString("base64") });
+});
+await cdp.send("Fetch.enable", { patterns: [{ urlPattern: "*/library/eidoverse/terrain.js" }] });
+// what the backend creates, counted from the first line of the page: WebGL links programs, WebGPU makes pipelines
+await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: `(() => {
+  const g = globalThis, n = g.__made = { gl: 0, gpu: 0 };
+  const wrap = (proto, name, key) => { const f = proto && proto[name]; if (f) proto[name] = function (...a) { n[key]++; return f.apply(this, a); }; };
+  wrap(g.WebGL2RenderingContext && WebGL2RenderingContext.prototype, 'linkProgram', 'gl');
+  if (g.GPUDevice) { wrap(GPUDevice.prototype, 'createRenderPipeline', 'gpu'); wrap(GPUDevice.prototype, 'createRenderPipelineAsync', 'gpu'); }
+})();` });
+const js = (body: string) => evalJson(`(async () => { ${body} })()`);
+const LAKE = { x: 0, z: 30 };
+// WP5's policy: a readable reference keeps the red-fog assertion; a FALLBACK adapter whose reference is uniformly
+// near-black can't show fog colour at all, so the row records "not observable" (with the evidence), never "water correct"
+const nearBlack = (p: number[]) => Math.max(...p) < 30;
+export function wp5Verdict(e: { fb: unknown; settled: boolean; centre: number[]; ref: { pts: number[][]; mean: number[] } }): "pass" | "n/a" | "fail" {
+  const refBlack = e.ref.pts.every(nearBlack) && nearBlack(e.ref.mean);
+  if (!refBlack) return e.settled && e.centre[0] > 180 && e.centre[1] < 60 && e.centre[2] < 60 ? "pass" : "fail";
+  return e.fb === true ? "n/a" : "fail";
+}
+try {
+  await cdp.send("Emulation.setDeviceMetricsOverride", { width: 480, height: 270, deviceScaleFactor: 1, mobile: false });   // SwiftShader draws every pixel on the CPU
+  // WebGL 2 except on Windows, where the runner's software flags give a null forced WebGL 2 context (as swim-lists-test.ts).
+  const backend = process.platform === "win32" ? "" : "&webgl=1";
+  await cdp.send("Page.navigate", { url: `${BASE}/?world=${WORLD}&spectate=1&name=cross${backend}` });
+  try { await until("the water debug hook", () => evalJson("!!globalThis.__waterDebug").catch(() => false), { ms: 60000 }); }
+  catch (e) {   // say why the page never got to main.js's last line (#314 Windows CI)
+    const at = await evalJson(`({ ready: document.readyState, made: globalThis.__made, gl: !!document.createElement('canvas').getContext('webgl2'),
+      text: document.body?.innerText?.slice(0, 200), main: performance.getEntriesByType('resource').filter((r) => /\\/(main|lib\\/core)\\.js/.test(r.name)).map((r) => [r.name.split('/').pop(), Math.round(r.duration)]) })`).catch((x) => String(x));
+    // in the error itself: the gate keeps a throw's message, not the suite's stdout
+    throw new Error(`${(e as Error).message}; page at the timeout: ${JSON.stringify(at)} | page errors: ${JSON.stringify(errors.slice(0, 8))}`);
+  }
+  await js(`const { THREE } = await import('/lib/core.js'), tm = await import('/shared/terrainmath.js');
+    globalThis.makeTerrain = (args) => {
+      const p = tm.terrainParams(args), h = tm.makeHeightField(p), geo = new THREE.PlaneGeometry(p.size, p.size, 96, 96).rotateX(-Math.PI / 2);
+      const pos = geo.attributes.position; for (let i = 0; i < pos.count; i++) pos.setY(i, h(pos.getX(i), pos.getZ(i)));
+      geo.computeVertexNormals(); return { mesh: new THREE.Mesh(geo, new THREE.MeshStandardNodeMaterial({ color: 0x7a8a5a })), heightAt: h };
+    }; return true;`);
+  await until("the world hydrated", () => js("return (await import('/lib/state.js')).state.hydrated;"), { ms: 15000 });
+  await js(`(await import('/lib/world.js')).applyTerrainState({ seed: 7, size: 120, amplitude: 0, features: [{ type: 'hill', x: ${LAKE.x}, z: ${LAKE.z}, radius: 18, height: -8 }], water: { level: 0 } }); return true;`);
+  await until("the lake's level is 0", () => js("return (await import('/lib/water.js')).waterLevel() === 0;"), { ms: 15000 });
+  // the camera pinned wherever a phase puts it (the client's own frame keeps running); each pipeline put down to its asker
+  const setup = await js(`const core = await import('/lib/core.js'), { camera, renderer, THREE } = core, g = globalThis;
+    g.__pin = null; const pin = () => { if (g.__pin) { camera.position.copy(g.__pin.P); camera.quaternion.copy(g.__pin.Q); } };
+    const mw = camera.updateMatrixWorld.bind(camera), wm = camera.updateWorldMatrix.bind(camera);
+    camera.updateMatrixWorld = (f) => { pin(); mw(f); }; camera.updateWorldMatrix = (p, c) => { pin(); wm(p, c); };
+    g.__at = (y, down) => { const P = new THREE.Vector3(${LAKE.x} + 3, y, ${LAKE.z} + 6), L = down ? new THREE.Vector3(${LAKE.x} + 3, y - 3, ${LAKE.z} + 9) : new THREE.Vector3(${LAKE.x}, y - 0.6, ${LAKE.z});
+      g.__pin = { P, Q: new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(P, L, new THREE.Vector3(0, 1, 0))) }; };
+    g.__at(3);
+    const by = g.__by = { sheet: 0, background: 0, other: 0 }, seen = g.__other = [], be = renderer.backend, f = be.createRenderPipeline.bind(be);
+    be.createRenderPipeline = (ro, p) => { const o = ro.object; const k = /^water/.test(o?.name ?? '') ? 'sheet' : o?.name === 'Background.mesh' ? 'background' : 'other'; by[k]++;
+      if (k === 'other') seen.push((o?.name || o?.type || '?') + ':' + (ro.material?.type ?? '?')); return f(ro, p); };
+    const { warmStats } = await import('/lib/warmqueue.js'); g.__warm = warmStats;
+    g.__frames = 0; const tick = () => { g.__frames++; requestAnimationFrame(tick); }; requestAnimationFrame(tick);
+    return { backend: be.isWebGLBackend ? 'webgl' : 'webgpu', sheet: !!core.scene.getObjectByName('water') };`);
+  // N real frames, then until nothing new has been made for 30 more (a program links when a draw first needs it)
+  // stepped 10 frames per CDP call so one call spans 10 frames, not the whole settle (the budget is frames, not seconds);
+  // quiet also needs the warm queue empty: the underside's warm is queued ambient work, not instant
+  const settle = async (min: number) => {
+    await js(`const g = globalThis; g.__s = { f0: g.__frames, last: g.__made.gl + g.__made.gpu, quiet: g.__frames }; return true;`);
+    for (;;) {
+      const r = await js(`const g = globalThis, s = g.__s, made = () => g.__made.gl + g.__made.gpu;
+        for (let i = 0; i < 10; i++) { await new Promise((r) => requestAnimationFrame(r)); const w = g.__warm(); if (made() !== s.last || w.pending || w.running) { s.last = made(); s.quiet = g.__frames; } }
+        const n = g.__frames - s.f0; return n > 3000 ? false : n >= ${min} && g.__frames - s.quiet >= 30 ? n : null;`);
+      if (r !== null) return r;
+    }
+  };
+  const initial = await settle(60);
+  const phase = async (name: string, y: number) => {
+    const before = await js("const g = globalThis; return { made: { ...g.__made }, by: { ...g.__by }, f: g.__frames, o: g.__other.length };");
+    await js(`globalThis.__at(${y}); return true;`);
+    const settled = await settle(40);
+    const after = await js("const g = globalThis, core = await import('/lib/core.js'), w = (await import('/lib/watervolumes.js')).waterDebug(); return { made: { ...g.__made }, by: { ...g.__by }, f: g.__frames, o: g.__other.slice(), under: w.under, background: w.background, underside: !!core.scene.getObjectByName('water-underside')?.visible };");
+    const r = { name, y, settled, frames: after.f - before.f, under: after.under, background: after.background, underside: after.underside,
+      made: after.made.gl - before.made.gl + after.made.gpu - before.made.gpu,
+      by: Object.fromEntries(Object.keys(after.by).map((k) => [k, after.by[k] - before.by[k]])) as Record<string, number>,
+      other: after.o.slice(before.o) };
+    console.log(`  · ${JSON.stringify(r)}`);
+    return r;
+  };
+  const rounds: any[][] = [];
+  for (let i = 0; i < 3; i++) rounds.push([await phase(`band-${i + 1}`, 0.5), await phase(`under-${i + 1}`, -1.5), await phase(`above-${i + 1}`, 3)]);
+  const later = rounds.slice(1).flat(), sum = (rs: any[], k?: string) => rs.reduce((t, r) => t + (k ? r.by[k] : r.made), 0);
+  const band = later.filter((r) => r.name.startsWith("band")), under = later.filter((r) => r.name.startsWith("under"));
+  // the sky's fog still reaches above the water: a dense red fog (held there: the sky rewrites it every frame), looking 45° down from 3 m, paints the view red
+  const HELD = "['set', 'setRGB', 'setHex', 'copy', 'lerpColors', 'multiplyScalar']";   // what the sky writes the fog's colour with
+  await js(`const HELD = ${HELD}, { scene } = await import('/lib/core.js'), f = scene.fog;
+    f.color.setRGB(1, 0, 0); for (const k of HELD) f.color[k] = function () { return this; }; Object.defineProperty(f, 'density', { configurable: true, get: () => 2, set() {} }); globalThis.__at(3, true);
+    const cv = (await import('/lib/core.js')).renderer.domElement; for (const el of document.querySelectorAll('body *')) if (!el.contains(cv)) el.style.visibility = 'hidden';   // the panels cover the view
+    return true;`);
+  const shotSettled = await settle(20);
+  const png = Buffer.from((await cdp.send<any>("Page.captureScreenshot", { format: "png" })).data, "base64"), shot = PNG.sync.read(png);
+  if (process.env.SHOT_DIR) (await import("node:fs")).writeFileSync(`${process.env.SHOT_DIR}/fog-red.png`, png);
+  const px = (x: number, y: number) => { const i = (shot.width * y + x) << 2; return [shot.data[i], shot.data[i + 1], shot.data[i + 2]]; };
+  const centre = px(shot.width >> 1, (shot.height >> 1) + (shot.height >> 3));
+  // WP5's evidence: three fixed points and a 32×32 mean at the centre, so "fog not drawn" reads apart from "frame black"
+  const W = shot.width, H = shot.height, at3 = (s: (x: number, y: number) => number[]) => [s(W >> 2, H >> 2), s(W >> 1, H >> 1), s((3 * W) >> 2, (3 * H) >> 2)];
+  const mean = (img: typeof shot) => { const t = [0, 0, 0]; for (let y = (H >> 1) - 16; y < (H >> 1) + 16; y++) for (let x = (W >> 1) - 16; x < (W >> 1) + 16; x++) { const i = (img.width * y + x) << 2; for (let c = 0; c < 3; c++) t[c] += img.data[i + c]; } return t.map((v) => Math.round(v / 1024)); };
+  const redPts = at3(px), redMean = mean(shot);
+  const adapter = await js(`const be = (await import('/lib/core.js')).renderer.backend, i = be.device?.adapterInfo ?? be.adapter?.info ?? null;
+    return i ? { v: i.vendor, a: i.architecture, d: i.device, desc: (i.description || '').slice(0, 48), fb: i.isFallbackAdapter ?? be.adapter?.isFallbackAdapter ?? null } : (be.isWebGLBackend ? 'webgl' : null);`).catch((e: any) => String(e).slice(0, 80));
+  await js(`const HELD = ${HELD}, { scene } = await import('/lib/core.js'); delete scene.fog.density; scene.fog.density = 0.018; for (const k of HELD) delete scene.fog.color[k]; return true;`);
+  // the reference: the same pose with the world's own fog, same run (after WP5's shot, so WP5's measurement is unchanged)
+  const refSettled = await settle(20), ref = PNG.sync.read(Buffer.from((await cdp.send<any>("Page.captureScreenshot", { format: "png" })).data, "base64"));
+  const refPx = (x: number, y: number) => { const i = (ref.width * y + x) << 2; return [ref.data[i], ref.data[i + 1], ref.data[i + 2]]; };
+  const refPts = at3(refPx), refMean = mean(ref);
+
+  check("WP0 the lake is drawn (on WebGL 2 where it was asked for; on Windows the client picks), and every phase renders frames where it should be", (!backend || setup.backend === "webgl") && setup.sheet
+    && initial && rounds.flat().every((r) => r.settled && r.frames >= 40 && r.under === r.name.startsWith("under")
+      && r.underside === !r.name.startsWith("above") && r.background === r.name.startsWith("under")),
+    JSON.stringify({ setup, initial, phases: rounds.flat().map((r) => [r.name, r.frames, r.under, r.underside, r.background]) }));
+  // the sheet's own count, not the total: unrelated scene/sky pipelines can land in this window (Mica, #314 review); they stay in the detail
+  check("WP1a the band alone, the first time in: the underside's pipeline is ready before the camera gets there", rounds[0][0].by.sheet === 0 && rounds[0][0].underside === true, JSON.stringify([setup.backend, rounds[0][0].made, rounds[0][0].by, rounds[0][0].underside, rounds[0][0].other]));
+  check("WP1 the band alone (level..level+1, the sheet's underside): no new pipeline after the first crossing", sum(band) === 0 && sum(band, "sheet") === 0, JSON.stringify(band.map((r) => [r.name, r.made, r.by])));
+  check("WP2 the fog: under the level after the first crossing, nothing but the sheet and the background asks for a pipeline (and they don't either, WP1/WP3)", sum(under, "other") === 0, JSON.stringify(under.map((r) => [r.name, r.by])));
+  check("WP3 the background: under the level after the first crossing, the far-water background makes no new pipeline", sum(under, "background") === 0, JSON.stringify(under.map((r) => [r.name, r.by])));
+  check("WP4 after the first crossing, the backend links or makes nothing at all: rounds 2 and 3 cost 0", sum(later) === 0, JSON.stringify(later.map((r) => [r.name, r.made])));
+  const wp5ev = { backend: setup.backend, settled: !!shotSettled, centre, adapter, red: { pts: redPts, mean: redMean }, ref: { pts: refPts, mean: refMean, settled: !!refSettled } };
+  const wp5 = wp5Verdict({ fb: typeof adapter === "object" && adapter ? (adapter as any).fb : null, settled: !!shotSettled, centre, ref: { pts: refPts, mean: refMean } });
+  check(wp5 === "n/a" ? "WP5 N/A: fog colour isn't observable here (a fallback adapter renders the reference itself near-black); this row is not a water-correct pass"
+    : "WP5 the sky's fog still reaches above the water (a dense red fog paints the view down red)", wp5 !== "fail", JSON.stringify({ verdict: wp5, ...wp5ev }));
+  // a not-observable WP5 passes, so the gate would drop its row: an OPTIONAL line is what the gate's tally and receipt keep
+  if (wp5 === "n/a") console.log(`OPTIONAL wp5-fog: colour observation N/A on ${JSON.stringify(wp5ev.adapter)} (water-cross ran and its other rows are required passes; only WP5 can't see colour here: fallback adapter, reference near-black): red ${JSON.stringify(redMean)}, ref ${JSON.stringify(refMean)}, settled ${!!shotSettled}`);
+  // its negative controls (synthetic evidence, the same function)
+  const R = [251, 16, 20], K = [12, 12, 13], SKY = [56, 128, 158];
+  check("WP5a control: a NON-fallback adapter with a black reference still fails", wp5Verdict({ fb: false, settled: true, centre: K, ref: { pts: [K, K, K], mean: K } }) === "fail");
+  check("WP5b control: a fallback adapter with a readable reference still runs the red assertion (black fails, red passes)",
+    wp5Verdict({ fb: true, settled: true, centre: K, ref: { pts: [SKY, SKY, SKY], mean: SKY } }) === "fail" && wp5Verdict({ fb: true, settled: true, centre: R, ref: { pts: [SKY, SKY, SKY], mean: SKY } }) === "pass");
+  const real = errors.filter((e) => !/popErrorScope|sky finish/.test(e));
+  check("WP6 no page errors", real.length === 0, JSON.stringify(real.slice(0, 4)));
+} catch (e) { check("the run threw", false, String((e as any)?.stack ?? e)); }
+console.log(`[crossing-pipelines-check] ${tally.passed} passed, ${tally.failed} failed${tally.note()}`);
+await bench.cleanup(tally.failed ? 1 : 0);
+process.exit(tally.failed ? 1 : 0);

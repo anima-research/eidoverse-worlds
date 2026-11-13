@@ -13,6 +13,7 @@ import { hexOfLibRel } from "../shared/eido.js";
 import { isReservedAnimName } from "../shared/animdefs.js";
 import { eidoFile, eidoRel } from "./eidoindex.ts";
 import { randomBytes } from "node:crypto";
+import { agentGuideResponse } from "./briefing.ts";
 import { creditsFor } from "../shared/libcredits.js";
 import { libraryCredits } from "./modelcatalogue.ts";
 import { ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, PATCH_DIR, LADDER, JOIN_TOKEN, STORE_MIN } from "./config.ts";
@@ -1096,7 +1097,7 @@ const ROUTES: Route[] = [
     match: (u) => u.pathname.toLowerCase() === "/agents.md",
     handler: ({ req }) =>
       // the closed-verb-set error says "see AGENTS.md", so it is served here, any casing
-      serveFrom(ROOT, "AGENTS.md", false, req),
+      agentGuideResponse(req),
   },
   {
     // the old-format splash links here (shared/oldformat.js OLD_FORMAT_DOC): the doc has to be reachable from the world itself

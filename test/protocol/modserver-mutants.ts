@@ -6,7 +6,7 @@
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
-import { ENGINE, scratch, linkInto } from "../gate/common.ts";
+import { ENGINE, scratch, linkInto, readLF } from "../gate/common.ts";
 
 const M: [string, string, string | string[][], string, string[]][] = [
   ["your-rights from the authority", "server/server.ts", "const e = w.log.rightsOf(c.actorId); const m =", "const e = { role: w.log.roleOf(c.actorId), name: \"\", rank: 0, permissions: [] as string[] }; const m =", ["RS1"]],
@@ -58,7 +58,7 @@ for (const [k, [name, file, find, repl, want]] of M.entries()) {
   linkInto(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
   // a row's find may be a list of [find, repl] pairs, applied in order (one gate with two paths)
   const pairs = Array.isArray(find) ? find : [[find, repl]];
-  const f = path.join(d, file); let src = fs.readFileSync(f, "utf8"), miss = "";
+  const f = path.join(d, file); let src = readLF(f), miss = "";
   for (const [a, b] of pairs) { if (src.split(a).length !== 2) { miss = a; break; } src = src.replace(a, b); }
   if (miss) { bad++; console.log(`FAIL mutant '${name}': text not found exactly once in ${file}: ${miss.slice(0, 60)}`); continue; }
   fs.writeFileSync(f, src);

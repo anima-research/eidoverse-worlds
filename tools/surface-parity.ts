@@ -39,13 +39,14 @@
 // Browser hygiene: teardown in finally and on signals; waits are on conditions, not clocks; evaluate is raced against a
 // clock; frames are proved by a render counter; the sky and GPU-loss guards from test/harness/harness.ts are applied to
 // every page. Run one headless browser at a time: the script checks memory but takes no lock.
-import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, cpSync, copyFileSync, mkdtempSync, rmSync, symlinkSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, cpSync, copyFileSync, mkdtempSync, rmSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, basename, dirname } from "node:path";
 import { PNG } from "pngjs";
 import { cdpOn, freePort, sleep, bold, dim } from "../test/harness/harness.ts";
 import { chromeArgs, chromeCandidates, isBrowser } from "../test/gate/chrome.ts";
 import { helloOf } from "../shared/protocol/hello.js";
+import { linkInto } from "../test/gate/common.ts";
 
 // ---- flags -----------------------------------------------------------------------------------------------------------
 const argv = process.argv.slice(2);
@@ -150,7 +151,7 @@ function linkDeps(tree: string, sub: string) {
   const want = join(tree, sub, "node_modules"); if (existsSync(want)) return;
   const src = depsSources.find((t) => t !== tree && existsSync(join(t, sub, "node_modules")) && existsSync(join(t, sub, "package.json")) && readFileSync(join(t, sub, "package.json"), "utf8") === readFileSync(join(tree, sub, "package.json"), "utf8"));
   if (!src) return missing(`deps: ${basename(tree)}/${sub || "."}`, `${want} is missing and no sibling checkout with an identical ${sub ? sub + "/" : ""}package.json has one to link`, `run: cd ${join(tree, sub)} && bun install`);
-  symlinkSync(resolve(src, sub, "node_modules"), want);
+  linkInto(resolve(src, sub, "node_modules"), want);
   console.log(dim(`  linked ${want} → ${resolve(src, sub, "node_modules")} (manifests identical)`));
 }
 for (const t of [NEW, OLD]) for (const sub of ["", "client"]) await linkDeps(t, sub);
