@@ -12,7 +12,7 @@ let answer: any = { ok: true, people: [] };   // what the door says to a request
 const world: any = { c: {} };
 const modules: any = {
   'base.js': { CONFIG: { name: 'owner' }, bus: { on: noop, emit: noop }, report: noop },
-  'capture.js': { captureFrame: noop },
+  'render/capture.js': { captureFrame: noop },
   'world.js': { entities: new Map(), bagOf: () => null, roleOf: noop, worldHasOwner: () => true },
   'net.js': { net: { myId: 'owner' }, identityOf: (n: string) => (n === 'wren' ? 'u-wren' : null), replica: { st: { entities: { '@world': world } }, active: true }, replicaActive: () => true,
     sendRequest: async () => answer, sendMod: noop, sendPuppet: noop, sendWorldFork: noop, sendWorldFound: noop, sendWorldReset: noop, requestDebug: noop, sendAnim: noop, sendDrag: noop },

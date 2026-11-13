@@ -31,7 +31,7 @@ const STUB = fileURLToPath(new URL('../stubs/collider-off-stub.mjs', import.meta
 plugin({
   name: 'collider-off-stub',
   setup(b) {
-    for (const f of ['^\\.\\./(core|assets|lightrig|lightgizmo|world|materials|defs)\\.js$', '^\\./(core|world|remotes)\\.js$']) {
+    for (const f of ['^\\.\\./(core|assets|(render/)?lightrig|(render/)?lightgizmo|world|(render/)?materials|defs)\\.js$', '^\\./(core|world|remotes)\\.js$']) {
       stubResolve(b, new RegExp(f), () => ({ path: STUB }));
     }
   },

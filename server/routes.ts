@@ -758,7 +758,7 @@ const ROUTES: Route[] = [
   {
     match: (u, req) => u.pathname === "/perflog" && req.method === "POST",
     handler: async ({ req, srv }) => {
-      // Load-performance beacon (client/lib/loadwork.js): append-only capped JSONL of timing lines and a UA.
+      // Load-performance beacon (client/lib/render/loadwork.js): append-only capped JSONL of timing lines and a UA.
       try {
         const body = await readCapped(req, 100_000);
         if (body !== null) {

@@ -13,7 +13,7 @@ import { installDualWarm } from './xrwarm.js';
 import { makeEntryEffects, handleEntryFailure } from './xr_entry_effects.js';
 import { installEntryClock } from './xr_frame_clock.js';
 import { CONFIG, report, bus, tee, wornNameOf } from '../base.js';
-import { frameDebug } from '../frameloop.js';
+import { frameDebug } from '../render/frameloop.js';
 import { resetFingers, xrBodyDebug } from './xrbody.js';
 import { stroke, fillPath } from '../ui/icons.js';
 import { xrPanelsEnter, xrPanelsExit, xrPanelsPick, xrPanelsAt, xrPanelsPress, xrPanelsDrag, xrPanelsReleasePress, showXRPanel, xrPanelHas, xrPanelOpen, xrPanelsGrab, xrPanelRelease, xrPanelsShown, xrPanelsHideToggle, xrPanelsHidden } from './xrpanels.js';
@@ -36,9 +36,9 @@ import { showXRTip, hideXRTip, dropXRTip, tipTextFor } from './xrtip.js';
 import { pointerVisible, dotVisible, looksAtWorld, interactable, smoothPose, stickStep, angleTo, rayMatrixTo } from './xrpointer.js';   // the laser's policy
 import { dockPins } from '../ui/ui-dock.js';
 import { xrScales, toRigLocal } from '../../../shared/bodyscale.js';   // the chosen size composes with the device fit (rig = u, body = u/k)
-import { perf } from '../perf.js';
-import { renderCensusTake, renderCensusTick, renderCensusPeek, setXRCurtain, drawStats } from '../render.js';
-import { warm, P_AMBIENT } from '../warmqueue.js';
+import { perf } from '../render/perf.js';
+import { renderCensusTake, renderCensusTick, renderCensusPeek, setXRCurtain, drawStats } from '../render/render.js';
+import { warm, P_AMBIENT } from '../render/warmqueue.js';
 import { xrPrefs, xrResScale } from './xr-prefs.js';
 import { CURL_PROBE, curlProbeTake, sampleFingerCurl, bindCurlSource } from './xr-fingercurl.js';
 import { scaleState, puppetScale, avatarEyeY, loadSavedScale, sampleDeviceScale, bindScaleHost } from './xr-scale.js';

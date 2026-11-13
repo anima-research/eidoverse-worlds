@@ -10,7 +10,7 @@
 // Who qualifies: world models (prepareObject kind 'model'), not skinned, one material, transparent, textured, opacity
 // ≥ 0.99 — foliage keeps its see-through in the TEXTURE; glass and tinted panels (uniform opacity) are left alone.
 import { THREE, renderer, scene, camera } from '../core.js';
-import { warm, P_AMBIENT } from '../warmqueue.js';
+import { warm, P_AMBIENT } from '../render/warmqueue.js';
 
 export const FOLIAGE_MODES = ['auto', 'soft', 'fast'];
 const KEY = 'ew-foliage';

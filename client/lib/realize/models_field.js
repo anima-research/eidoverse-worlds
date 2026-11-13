@@ -2,7 +2,7 @@
 // what is realized and decide what to create, retire or rebuild. No THREE, no DOM; models.js executes the plan,
 // test/client/models-field-test.ts tests this half (same split as ../flora_field.js / emitter_field.js).
 
-import { P } from '../scheduler.js';
+import { P } from '../render/scheduler.js';
 import { COMPONENTS } from '../../../shared/protocol/componentspec.js';
 import { solidOff } from '../../../shared/protocol/simlayer.js';
 import { isMeshBag } from '../../../shared/components.js';

@@ -257,7 +257,7 @@ export async function scratchBench(name: string, opts: ScratchOptions & { headed
   // frozen Burrow (memory: feedback_headless_sky_oom). Every page this browser loads from here on starts clouds-off.
   await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: "try { localStorage.setItem('ew-cloud-quality', 'off'); } catch {}" });
   // THE GPU GUARD: headless Chrome can't present WebGPU, so it destroys the device ~1 s into every page. The client's
-  // recovery (client/lib/gpulost.js) answers a browser-destroyed device with a reload, which would yank the page out
+  // recovery (client/lib/render/gpulost.js) answers a browser-destroyed device with a reload, which would yank the page out
   // from under a probe mid-check. Seed one recent loss so the rule "a second loss inside 2 min doesn't reload" applies:
   // the renderer stops (no leak), the page stays, and DOM/state probes run as before. Recovery itself is
   // gpulost-test.mjs (pure), which doesn't load this.

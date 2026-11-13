@@ -3,12 +3,12 @@
 // rather than in net.js — lifting it out is what lets net.js carry the protocol for a
 // client that has no scene at all (lite.js). net.js keeps the socket: this returns a
 // result and never sends, so there is no import cycle and one file still owns the wire.
-import { THREE, camera } from './core.js';
-import { remotes } from './remotes.js';
-import { composeFirstPerson } from './avatar/fp_view.js';
+import { THREE, camera } from '../core.js';
+import { remotes } from '../remotes.js';
+import { composeFirstPerson } from '../avatar/fp_view.js';
 import { captureFrame, captureFrom } from './capture.js';
-import { entities } from './world.js';
-import { normalizeSnapFrame } from '../../shared/snapframe.js';
+import { entities } from '../world.js';
+import { normalizeSnapFrame } from '../../../shared/snapframe.js';
 
 const _snapHead = new THREE.Vector3();
 const _snapBox = new THREE.Box3();

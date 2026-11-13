@@ -60,8 +60,8 @@ try {
     && !EW.warm().pending && !EW.warm().running, null, {timeout:120_000});
   console.log('real library clones loaded and instance color/depth pipelines warmed');
   const capture = async (on) => page.evaluate(async (enabled) => {
-    const {renderWorld} = await import('/lib/render.js');
-    const {setSystemEnabled,frameDebug} = await import('/lib/frameloop.js');
+    const {renderWorld} = await import('/lib/render/render.js');
+    const {setSystemEnabled,frameDebug} = await import('/lib/render/frameloop.js');
     for(const system of frameDebug()) setSystemEnabled(system.name,false);
     // Toggle directly without disposing warm pools for the A/B receipt.
     if(enabled) renderWorld();
@@ -101,7 +101,7 @@ try {
   await request('delete',{id:crate[2]});
   await page.waitForFunction(([c0,c1,c2]) => !EW.entities.has(c2) && EW.entities.get(c1)?.userData.mountedTo===c0, [crate[0],crate[1],crate[2]]);
   const lifecycle=await page.evaluate(async()=>{
-    const {renderWorld,setDrawBatching}=await import('/lib/render.js');
+    const {renderWorld,setDrawBatching}=await import('/lib/render/render.js');
     renderWorld();
     const first=EW.foldParity();
     EW.reconcileModels(); renderWorld();

@@ -6,8 +6,8 @@
 //   vrmPool    whole parsed VRMs at rest (a bound rig has no clone, so released bodies are reworn intact)
 
 import { keyFromVersion, negotiate, lodFromVersion } from '../../shared/ktx2.js';
-import { tierOf, askFor } from './lod_policy.js';
-import { awaitBodyGate, bodyGateArmed, bodyGateOpen } from './bodygate.js';
+import { tierOf, askFor } from './render/lod_policy.js';
+import { awaitBodyGate, bodyGateArmed, bodyGateOpen } from './render/bodygate.js';
 // ?bodyfirst=0: world parses stop waiting for the body (A/B measurement, body-less tests)
 const BODY_FIRST = CONFIG.params.get('bodyfirst') !== '0';
 import { THREE, renderer, camera, scene } from './core.js';
@@ -23,11 +23,11 @@ import { parsePoseAnimation, retargetPoseAnimation } from './avatar/poseclips.js
 import { CLIP_SLOTS, CLIP_FILES, CLIP_SPEED } from '../../shared/clipdefs.js';
 export { CLIP_SLOTS, CLIP_FILES, CLIP_SPEED } from '../../shared/clipdefs.js';
 import { clone as skeletonClone } from 'three/addons/utils/SkeletonUtils.js';
-import { beginWork, enqueue, nextFrame, loadNote } from './loadwork.js';
-import { warm } from './warmqueue.js';
-import { prepareObject } from './materials.js';
+import { beginWork, enqueue, nextFrame, loadNote } from './render/loadwork.js';
+import { warm } from './render/warmqueue.js';
+import { prepareObject } from './render/materials.js';
 import { registerFoliage } from './vegetation/foliage.js';
-import { markDrawBatchSource } from './draw_batches.js';
+import { markDrawBatchSource } from './render/draw_batches.js';
 import { libRelOf, modelWord } from '../../shared/eido.js';
 
 // ---- loading tray -----------------------------------------------------------

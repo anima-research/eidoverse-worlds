@@ -65,7 +65,7 @@ plugin({
     // had already been imported and cached -- a harness that sometimes passes
     // is worse than one that fails.
     stubResolve(build, /^(\.\.?\/)+assets\.js$/, () => ({ path: here('../stubs/assets-stub.mjs') }));
-    stubResolve(build, /^(\.\.?\/)+loadwork\.js$/, () => ({ path: here('../stubs/loadwork-stub.mjs') }));
+    stubResolve(build, /^(\.\.?\/)+(render\/)?loadwork\.js$/, () => ({ path: here('../stubs/loadwork-stub.mjs') }));
   },
 });
 
@@ -75,14 +75,14 @@ const { THREE } = await import('../stubs/core-stub.mjs');
 // The stand-in for MeshPhysicalNodeMaterial lives in core-stub.mjs, which owns
 // the THREE namespace it re-exports (a module namespace object is frozen).
 
-const { prepareObject } = await import('../../client/lib/materials.js');
+const { prepareObject } = await import('../../client/lib/render/materials.js');
 // TOP-LEVEL, not inside a block. A dynamic import from inside a test resolved
 // `./core.js` on a cold module cache without the plugin's substitution --
 // ENOENT on a `file:` path -- so whether the suite ran at all depended on
 // import order. Everything the suite touches is loaded here, once.
 const { Avatar } = await import('../../client/lib/avatar/avatar.js');
 const { requestLight, releaseOwner, updateRequest, rigDebug, updateRig }
-  = await import('../../client/lib/lightrig.js');
+  = await import('../../client/lib/render/lightrig.js');
 
 const S = suite("transmission");
 const check = (name, ok, note) => S.check(name, ok, note);

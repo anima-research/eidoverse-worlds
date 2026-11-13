@@ -62,11 +62,11 @@ const STUB = fileURLToPath(new URL('../stubs/lod-loader-stub.mjs', import.meta.u
 plugin({
   name: 'lod-loader-stub',
   setup(b) {
-    for (const f of ['^\\./core\\.js$', '^\\./loadwork\\.js$', '^\\./warmqueue\\.js$', '^\\./materials\\.js$', '^\\./draw_batches\\.js$']) {
+    for (const f of ['^\\./core\\.js$', '^(\\.\\.?/)+(render/)?loadwork\\.js$', '^(\\.\\.?/)+(render/)?warmqueue\\.js$', '^(\\.\\.?/)+(render/)?materials\\.js$', '^(\\.\\.?/)+(render/)?draw_batches\\.js$']) {
       stubResolve(b, new RegExp(f), () => ({ path: STUB }));
     }
     // vegetation/foliage.js asks for the same two one folder up
-    stubResolve(b, /^\.\.\/(core|warmqueue)\.js$/, (a) => (/\/vegetation\/foliage\.js$/.test(a.importer.replace(/\\/g, '/')) ? { path: STUB } : undefined));
+    stubResolve(b, /^\.\.\/(core|render\/warmqueue)\.js$/, (a) => (/\/vegetation\/foliage\.js$/.test(a.importer.replace(/\\/g, '/')) ? { path: STUB } : undefined));
   },
 });
 

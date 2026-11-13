@@ -5,7 +5,7 @@
 // system. Idempotent: the same state twice is a no-op, and a build that finishes after its entity was replaced
 // retires itself.
 
-import { releaseHook } from '../autohooks.js';
+import { releaseHook } from '../render/autohooks.js';
 
 /** Retire one built emitter: unhook its per-frame update, release its GPU resources, detach its mesh. Safe to call
  *  twice. Hooks come off by identity, never by index: the array is shared with grass wind and the sky. */

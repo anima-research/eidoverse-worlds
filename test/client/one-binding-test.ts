@@ -56,12 +56,12 @@ const ROWS: Row[] = [
   { name: "a retired command's line is said before dispatch", owner: [], scope: [], forbidden: [], requires: [["client/lib/ui/chat.js", /row\?\.retired\)\s*\{\s*logChat\('\*',\s*row\.retired\)/]] },
   // a sky's ts, a role's until, an access list's end are the authority's stamps (test/client/server-clock-readers-test.ts runs inspect.js's)
   { name: "a server stamp is read on serverNow, never this machine's Date.now()", owner: ["client/lib/serverclock.js"],
-    scope: ["client/lib/sky/sky.js", "client/lib/edit/skypanel.js", "client/lib/materials.js", "client/lib/ui/rolespanels.js", "client/lib/edit/panels.js", "client/lib/edit/inspect.js"], forbidden: [/\bDate\.now\(\)/] },
+    scope: ["client/lib/sky/sky.js", "client/lib/edit/skypanel.js", "client/lib/render/materials.js", "client/lib/ui/rolespanels.js", "client/lib/edit/panels.js", "client/lib/edit/inspect.js"], forbidden: [/\bDate\.now\(\)/] },
   { name: "an HTML escaper is markup.js's escapeHtml (it escapes ')", owner: ["client/lib/ui/markup.js"], scope: walk("client").filter((f) => /\.(js|mjs)$/.test(f)),
     forbidden: [/\.replace\(\/\[&<>"'?\]\/g/] },
   // exempt: the boot trip keys read the live URL (a rename's replaceState changes ?name); breadcrumbs and warmqueue are leaves
   { name: "the page's query is CONFIG.params (base.js), read once", owner: ["client/lib/base.js"], scope: walk("client").filter((f) => /\.(js|mjs)$/.test(f)),
-    exempt: ["client/lib/boot.js", "client/lib/ui/litechoice.js", "client/lib/gpulost.js", "client/lib/debug/breadcrumbs.js", "client/lib/warmqueue.js"],
+    exempt: ["client/lib/boot.js", "client/lib/ui/litechoice.js", "client/lib/render/gpulost.js", "client/lib/debug/breadcrumbs.js", "client/lib/render/warmqueue.js"],
     forbidden: [/new URLSearchParams\((globalThis\.)?(win\.)?location\??\.search/] },
   { name: "a client event rides the bus (base.js), never a window CustomEvent", owner: ["client/lib/base.js"], scope: walk("client").filter((f) => /\.(js|mjs)$/.test(f)),
     forbidden: [/new CustomEvent\(/] },

@@ -1,6 +1,6 @@
 # Light rig: measurements and decisions
 
-Rationale behind `client/lib/lightrig.js`. TEL0S_NOTES §12.1 is the r184 ground truth it is built on; the history is
+Rationale behind `client/lib/render/lightrig.js`. TEL0S_NOTES §12.1 is the r184 ground truth it is built on; the history is
 in git.
 
 ## Fixed slots

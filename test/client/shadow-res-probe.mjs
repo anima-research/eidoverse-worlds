@@ -12,7 +12,7 @@ try {
   await pg.goto(`${world.origin}/?world=staging&name=shprobe&key=${world.key}`, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await pg.waitForFunction(() => globalThis.__ewEngineUp, null, { timeout: 60000 });
   const r = await pg.evaluate(async () => {
-    const L = await import('./lib/lightrig.js'); const { sun } = await import('./lib/core.js');
+    const L = await import('./lib/render/lightrig.js'); const { sun } = await import('./lib/core.js');
     const at = () => ({ sun: sun.shadow.mapSize.x, lamp: L.lampShadowState()?.map });
     const boot = at();
     L.setShadowRes(1024); const low = at();

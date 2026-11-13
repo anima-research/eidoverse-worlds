@@ -17,7 +17,7 @@ plugin({
       stubResolve(b, new RegExp(`^(\\.\\.?/)+${m}\\.js$`), (a) => (a.importer.replace(/\\/g, '/').endsWith('/controller.js') ? { path: here('../stubs/posture-tiles-stub.mjs') } : undefined));
     }
     stubResolve(b, /^(\.\.?\/)+assets\.js$/, () => ({ path: here('../stubs/assets-stub.mjs') }));
-    stubResolve(b, /^(\.\.?\/)+loadwork\.js$/, () => ({ path: here('../stubs/loadwork-stub.mjs') }));
+    stubResolve(b, /^(\.\.?\/)+(render\/)?loadwork\.js$/, () => ({ path: here('../stubs/loadwork-stub.mjs') }));
   },
 });
 import { GlobalRegistrator } from '@happy-dom/global-registrator';

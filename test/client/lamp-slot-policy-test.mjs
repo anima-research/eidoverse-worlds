@@ -1,4 +1,4 @@
-// WHO MAY CLAIM THE ONE CASTING SLOT (client/lib/lightrig.js attachLamps).
+// WHO MAY CLAIM THE ONE CASTING SLOT (client/lib/render/lightrig.js attachLamps).
 //
 // Mica's contract, from the #193 review:
 //   - emissive AVATARS may request slot 0, and their body gets cast/receive;
@@ -27,10 +27,10 @@ const HERE = import.meta.dir; const here = (p) => `${HERE}/${p.replace(/^\.\//, 
 plugin({ name: 'core-stub', setup(build) {
   stubResolve(build, /^(\.\.?\/)+core\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
   stubResolve(build, /^(\.\.?\/)+base\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
-  stubResolve(build, /^(\.\.?\/)+loadwork\.js$/, () => ({ path: here('../stubs/loadwork-stub.mjs') }));
+  stubResolve(build, /^(\.\.?\/)+(render\/)?loadwork\.js$/, () => ({ path: here('../stubs/loadwork-stub.mjs') }));
 } });
 const { THREE, camera } = await import('../stubs/core-stub.mjs');
-const rig = await import('../../client/lib/lightrig.js');
+const rig = await import('../../client/lib/render/lightrig.js');
 
 const S = suite("lamp-slot-policy");
 const check = (name, ok, note) => S.check(name, ok, note);

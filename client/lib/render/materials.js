@@ -11,12 +11,12 @@
 // Every prepared mesh is marked userData.noWet + noCloudShadow so the toolkit's sweeps skip it; unprepared materials
 // (mods) still get swept. Decisions and measurements: docs/research/material-factory.md.
 
-import { THREE, TSL, sun, ground, renderer } from './core.js';
-import { report, CONFIG, bus } from './base.js';
-import { serverNow } from './serverclock.js';   // a server stamp is read on the authority's clock
-import { registerFoliage } from './vegetation/foliage.js';
-import { state } from './state.js';
-import { effectiveSky } from '../../shared/forecast.js';
+import { THREE, TSL, sun, ground, renderer } from '../core.js';
+import { report, CONFIG, bus } from '../base.js';
+import { serverNow } from '../serverclock.js';   // a server stamp is read on the authority's clock
+import { registerFoliage } from '../vegetation/foliage.js';
+import { state } from '../state.js';
+import { effectiveSky } from '../../../shared/forecast.js';
 
 const {
   Fn, If, uniform, texture, float, vec2, vec3, vec4, mix, clamp, smoothstep,

@@ -4,7 +4,7 @@
 // (gone for good). At rest a chip covers nothing, so it needs no auto-dismiss.
 import { backendName } from '../core.js';
 import { bus } from '../base.js';
-import { takeGpuRecovered, recentGpuLosses } from '../gpulost.js';
+import { takeGpuRecovered, recentGpuLosses } from '../render/gpulost.js';
 import { statusChip, clearStatusChip } from './statuschips.js';
 
 const LS = 'ew-capnotice-dismissed';

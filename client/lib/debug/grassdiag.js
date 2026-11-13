@@ -22,12 +22,12 @@
 // floor (16.7ms), so read RECOVERY — the first phase that reaches the
 // no-grass fps names the dominant cost.
 
-import { perf } from '../perf.js';
+import { perf } from '../render/perf.js';
 import { renderer, THREE } from '../core.js';
 import { freezePushers, forceBladeLod, setDiagDensityScope, DENSE_BASE } from '../vegetation/flora.js';
 import { getGrassField, getGrassDensity, getTerrainMesh, grassTiles } from '../terrain.js';
 import { skyOwnedObjects } from '../sky/sky.js';
-import { governorDebug } from '../governor.js';
+import { governorDebug } from '../render/governor.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

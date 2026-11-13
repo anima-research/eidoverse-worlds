@@ -50,10 +50,9 @@ plugin({
     // the realizer's cone (imported from realize/ as ../x.js) and the
     // governor's cone (imported from lib/ as ./x.js) — state, scheduler,
     // policy, fold and the bus stay REAL, and so do models.js and governor.js
-    for (const f of ['^\\.\\./core\\.js$', '^\\.\\./assets\\.js$', '^\\.\\./colliders\\.js$',
-      '^\\.\\./lightrig\\.js$', '^\\.\\./lightgizmo\\.js$', '^\\.\\./world\\.js$', '^\\.\\./materials\\.js$',
-      '^\\./core\\.js$', '^\\./lightrig\\.js$',
-      '^\\./realize/emitters\\.js$', '^\\./terrain\\.js$', '^\\./frameloop\\.js$', '^\\./remotes\\.js$', '^(\\.\\.?/)+(ui/)?ui\\.js$', '^(\\.\\.?/)+(ui/)?statuschips\\.js$']) {
+    for (const f of ['^\\.\\./core\\.js$', '^\\.\\./assets\\.js$', '^\\.\\./colliders\\.js$', '^(\\.\\.?/)+(render/)?lightrig\\.js$', '^(\\.\\.?/)+(render/)?lightgizmo\\.js$', '^\\.\\./world\\.js$',
+      '^(\\.\\.?/)+(render/)?materials\\.js$', '^\\.\\.?/realize/emitters\\.js$', '^\\.\\.?/terrain\\.js$', '^(\\.\\.?/)+(render/)?frameloop\\.js$', '^\\.\\.?/remotes\\.js$', '^(\\.\\.?/)+(ui/)?ui\\.js$',
+      '^(\\.\\.?/)+(ui/)?statuschips\\.js$']) {
       stubResolve(b, new RegExp(f), () => ({ path: STUB }));
     }
   },
@@ -72,7 +71,7 @@ const S: any = await import('../../client/lib/state.js');
 const { scratchWorld } = await import('../harness/scratchworld.ts');
 const { emptyView } = await import('../../shared/protocol/view.js');
 const { bus } = await import('../../client/lib/base.js');
-const { makeModelQuality, askFor, tierOf } = await import('../../client/lib/lod_policy.js');
+const { makeModelQuality, askFor, tierOf } = await import('../../client/lib/render/lod_policy.js');
 const { keyFromVersion, lodFromVersion, negotiate, withLod } = await import('../../shared/ktx2.js');
 const { LOD_RECIPE } = await import('../../server/store-variants.ts');
 const rig: any = await import('../../tools/assets/rig-load.mjs');
@@ -244,7 +243,7 @@ check('no realizer error was reported through the whole realizer half', stub.rep
 // ---- 5. the other entry points (round three): the REAL governor's lever crosses into the sweep; the dial's callback is gated
 console.log('\n  entry points — the governor lever and the dial callback\n');
 {
-  const G: any = await import('../../client/lib/governor.js');   // real, over the same stub cone: every lever below "lod" answers "nothing to shed"
+  const G: any = await import('../../client/lib/render/governor.js');   // real, over the same stub cone: every lever below "lod" answers "nothing to shed"
   M.modelQuality.setQuality('auto');
   spawnAt('gov', 25); await settle();                          // inside the auto edge (39m) — full
   drain();

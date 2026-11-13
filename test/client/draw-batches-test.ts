@@ -1,7 +1,7 @@
 // bun test/client/draw-batches-test.ts — scene ownership and batching eligibility.
 import { strict as assert } from 'node:assert';
 import * as T from '../../client/node_modules/three/build/three.module.js';
-import { DrawBatches, canInstanceMesh, markDrawBatchSource, instanceTransformSafe } from '../../client/lib/draw_batches.js';
+import { DrawBatches, canInstanceMesh, markDrawBatchSource, instanceTransformSafe } from '../../client/lib/render/draw_batches.js';
 
 const scene = new T.Scene();
 const camera = new T.PerspectiveCamera();

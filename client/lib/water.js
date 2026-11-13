@@ -14,7 +14,7 @@ import { onWorldChange } from './state.js';
 import { dryAt } from './realize/watervolumes.js';   // the dry boxes' mask (a cycle, used only at build time)
 import { waterParams } from '../../shared/terrainshape.js';
 import { analyzeWater, waterGridSeg } from '../../shared/waterkind.js';
-import { warm, P_AMBIENT } from './warmqueue.js';
+import { warm, P_AMBIENT } from './render/warmqueue.js';
 
 let current = null;   // { mesh, under, level }
 

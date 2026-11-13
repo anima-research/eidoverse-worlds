@@ -5,7 +5,7 @@
 
 import { CONFIG, bus, report, tee } from './base.js';
 import { DEFAULT_BODY } from '../../shared/avatardefs.js';
-import { releaseBodyGate } from './bodygate.js';
+import { releaseBodyGate } from './render/bodygate.js';
 import { armFlight, folded } from './controller.js';
 import { makeAvatar } from './avatar/avatar.js';
 import { contributeThumbnail } from './avatar/avatar-thumbnail.js';
@@ -13,8 +13,8 @@ import { setMyAvatarPath, wireAvatarSwitch } from './edit/catalog.js';
 import { toast } from './ui/ui.js';
 import { net } from './net.js';
 import { loadBodyPrefs, saveBodyPrefs } from '../../shared/bodyscale.js';
-import { applyOwnBodyShadow } from './materials.js';
-import { warmDepth, warmLit } from './warmqueue.js';
+import { applyOwnBodyShadow } from './render/materials.js';
+import { warmDepth, warmLit } from './render/warmqueue.js';
 
 // ---------------------------------------------------------------- identity
 

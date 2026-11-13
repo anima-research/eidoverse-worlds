@@ -18,7 +18,7 @@ const SPY = fileURLToPath(new URL("../stubs/unknown-comp-report-spy.mjs", import
 plugin({
   name: "compose-stub",
   setup(b) {
-    for (const f of ["^\\.\\./(core|assets|colliders|lightrig|lightgizmo|world|materials)\\.js$"]) stubResolve(b, new RegExp(f), () => ({ path: STUB }));
+    for (const f of ["^\\.\\./(core|assets|colliders|(render/)?lightrig|(render/)?lightgizmo|world|(render/)?materials)\\.js$"]) stubResolve(b, new RegExp(f), () => ({ path: STUB }));
     stubResolve(b, /^\.\.\/base\.js$/, (args) => (args.importer.replace(/\\/g, "/").endsWith("realize/models.js") ? { path: SPY } : undefined));
   },
 });

@@ -18,18 +18,18 @@ import { isMineHidden, isolatedOut } from '../edit/myview.js';
 import { report, bus } from '../base.js';
 import { loadGLB, retainGLB, releaseGLB, evictIdleProtos, lodRecipeReady, gpuPressure,
   lodNegotiable, negotiationReady } from '../assets.js';
-import { makeModelQuality, chooseTier } from '../lod_policy.js';
+import { makeModelQuality, chooseTier } from '../render/lod_policy.js';
 import { colliders, fitCollider, removeCollider, reindexCollider, refitCollider } from '../colliders.js';
-import { registerCaster, releaseCaster, requestLight, updateRequest, releaseLight } from '../lightrig.js';
-import { makeLightGizmo } from '../lightgizmo.js';
+import { registerCaster, releaseCaster, requestLight, updateRequest, releaseLight } from '../render/lightrig.js';
+import { makeLightGizmo } from '../render/lightgizmo.js';
 import { lightOf, colliderOf } from '../../../shared/components.js';
 import { entities, bagOf, childrenOf, avatarMounts, findPart, editHolds } from '../world.js';
 import { compKeys } from '../../../shared/protocol/view.js';
 import { encName } from '../../../shared/protocol/names.js';
 import { state, onWorldChange } from '../state.js';
-import { schedule, cancelOwner } from '../scheduler.js';
+import { schedule, cancelOwner } from '../render/scheduler.js';
 import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere, modelOf, offIn, readMesh, meshKeyOf } from './models_field.js';
-import { prepareMaterial } from '../materials.js';
+import { prepareMaterial } from '../render/materials.js';
 import { tracked, reserve, regen, untrack, release } from './lifecycle.js';
 
 import { recordComponents } from '../../../shared/protocol/view.js';

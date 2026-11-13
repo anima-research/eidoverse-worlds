@@ -60,12 +60,12 @@ mock.module(lib('core.js'), () => ({ THREE, scene, renderer, camera: new THREE.P
 mock.module(lib('base.js'), () => ({ bus, tee, teeNow: tee, report: (w, e) => reports.push(`${w}: ${e?.message ?? e}`),
   CONFIG: { params: new URLSearchParams('') } }));
 mock.module(lib('boot.js'), () => ({ markPhase() {}, bootDone: () => true }));
-mock.module(lib('loadwork.js'), () => ({ beginWork: () => ({ end() {} }) }));
-mock.module(lib('framebudget.js'), () => ({ busy: () => false }));
-mock.module(lib('lightrig.js'), () => ({ setDayness() {}, releaseForeignLights() {} }));
-mock.module(lib('warmqueue.js'), () => ({ warm: async (_n, fn) => fn(), P_AMBIENT: 0 }));
+mock.module(lib('render/loadwork.js'), () => ({ beginWork: () => ({ end() {} }) }));
+mock.module(lib('render/framebudget.js'), () => ({ busy: () => false }));
+mock.module(lib('render/lightrig.js'), () => ({ setDayness() {}, releaseForeignLights() {} }));
+mock.module(lib('render/warmqueue.js'), () => ({ warm: async (_n, fn) => fn(), P_AMBIENT: 0 }));
 mock.module(lib('terrain.js'), () => ({ rainSurfaceAt: () => null }));   // sky.js reads only the rain surface from terrain (main #254)
-mock.module(lib('autohooks.js'), () => ({ claimUnowned: () => [], releaseHook() {}, autoHooks: [], ownHook: (fn) => fn }));
+mock.module(lib('render/autohooks.js'), () => ({ claimUnowned: () => [], releaseHook() {}, autoHooks: [], ownHook: (fn) => fn }));
 
 // ---- the interim gradient: a flag, announced as sky_interim does ---------------------------------------------------
 let interim = false;

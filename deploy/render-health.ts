@@ -26,7 +26,7 @@ export const PROBES = {
    *  on a roamer, so up to about 0.5% of a renderer's time, and a /snap arriving during one waits that
    *  long. It is the only probe that sees a world pass that throws every frame, so it stays; a
    *  larger CHECK_SEC makes it rarer. */
-  capture: "import('/lib/capture.js').then(m => m.captureFrame().length).catch(e => 'ERR ' + (e?.message ?? e))",
+  capture: "import('/lib/render/capture.js').then(m => m.captureFrame().length).catch(e => 'ERR ' + (e?.message ?? e))",
 } as const;
 
 /** Judge a renderer page by asking it four things, in order. Each one gates the next. */

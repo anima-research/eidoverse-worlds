@@ -70,7 +70,7 @@ try {
     const by = g.__by = { sheet: 0, background: 0, other: 0 }, seen = g.__other = [], be = renderer.backend, f = be.createRenderPipeline.bind(be);
     be.createRenderPipeline = (ro, p) => { const o = ro.object; const k = /^water/.test(o?.name ?? '') ? 'sheet' : o?.name === 'Background.mesh' ? 'background' : 'other'; by[k]++;
       if (k === 'other') seen.push((o?.name || o?.type || '?') + ':' + (ro.material?.type ?? '?')); return f(ro, p); };
-    const { warmStats } = await import('/lib/warmqueue.js'); g.__warm = warmStats;
+    const { warmStats } = await import('/lib/render/warmqueue.js'); g.__warm = warmStats;
     g.__frames = 0; const tick = () => { g.__frames++; requestAnimationFrame(tick); }; requestAnimationFrame(tick);
     return { backend: be.isWebGLBackend ? 'webgl' : 'webgpu', sheet: !!core.scene.getObjectByName('water') };`);
   // N real frames, then until nothing new has been made for 30 more (a program links when a draw first needs it)

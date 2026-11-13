@@ -11,7 +11,7 @@
 // wrap a caller that itself awaits a serialized callee — that is a deadlock,
 // the chain waits on itself.
 
-import { bus } from './base.js';
+import { bus } from '../base.js';
 import { nextFrame as budgetFrame, ask, spent, reportPending } from './framebudget.js';
 
 // ---- yields -----------------------------------------------------------------

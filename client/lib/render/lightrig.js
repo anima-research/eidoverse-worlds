@@ -14,9 +14,9 @@
 //
 // Measurements and the chest lamp's shadow tuning: docs/research/light-rig.md.
 
-import { THREE, scene, camera, renderer, sun } from './core.js';
+import { THREE, scene, camera, renderer, sun } from '../core.js';
 import { CSMShadowNode } from 'three/addons/csm/CSMShadowNode.js';
-import { CONFIG, tee, bus } from './base.js';
+import { CONFIG, tee, bus } from '../base.js';
 import { warmDepth } from './warmqueue.js';
 
 // ---- the fixed inventory ----------------------------------------------------

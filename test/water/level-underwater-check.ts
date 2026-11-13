@@ -65,7 +65,7 @@ try {
         await renderer.compileAsync(scene, camera);
         // WebGL compiles in parallel and skips a draw until its program is ready: settle a few frames, then
         // capture right after our own render (the drawing buffer is only valid until the next composite)
-        const { renderWorld } = await import('/lib/render.js');
+        const { renderWorld } = await import('/lib/render/render.js');
         for (let i = 0; i < 4; i++) { wv.updateWater(); renderWorld(); await new Promise((r) => setTimeout(r, 60)); }
         wv.updateWater(); renderWorld();
         const under = wv.underLevel();

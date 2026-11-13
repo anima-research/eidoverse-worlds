@@ -13,7 +13,7 @@ import { THREE, TSL, scene } from '../core.js';
 import { bus, report } from '../base.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { state, onWorldChange } from '../state.js';
-import { prepareObject } from '../materials.js';
+import { prepareObject } from '../render/materials.js';
 import { fitStructureBoxes, removeStructureBoxes, removeCollider, fitCollider } from '../colliders.js';
 import { entities } from '../world.js';
 import { planStructure, makeShader } from '../../../shared/structure.js';

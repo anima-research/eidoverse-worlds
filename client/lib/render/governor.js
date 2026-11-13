@@ -26,18 +26,18 @@
 // freeze and the streaks reset. whenCalm() is the storm-edge signal deferred extras wait on: 5 smooth seconds with no
 // loading work in flight.
 
-import { renderer, sun, BASE_PIXEL_RATIO } from './core.js';
-import { CONFIG, bus } from './base.js';
+import { renderer, sun, BASE_PIXEL_RATIO } from '../core.js';
+import { CONFIG, bus } from '../base.js';
 import { busy as budgetBusy, setShare, budgetStats } from './framebudget.js';
-import { promoteTailPending, modelQuality } from './realize/models.js';
+import { promoteTailPending, modelQuality } from '../realize/models.js';
 import { setSlotCap, getSlotCap, maxSlots, litCount,
   setCasterBudget, getCasterBudget, getCasterCeiling, casterCount, shadowsOn, shadowRes } from './lightrig.js';
-import { setEmitterQuality, emitterQuality, emitterCount } from './realize/emitters.js';
-import { setGrassDensity, getGrassDensity, hasGrass } from './terrain.js';
-import { setLodBias } from './remotes.js';
+import { setEmitterQuality, emitterQuality, emitterCount } from '../realize/emitters.js';
+import { setGrassDensity, getGrassDensity, hasGrass } from '../terrain.js';
+import { setLodBias } from '../remotes.js';
 import { setSystemEvery, getSystemEvery } from './frameloop.js';
-import { toast } from './ui/ui.js';
-import { statusChip, clearStatusChip } from './ui/statuschips.js';
+import { toast } from '../ui/ui.js';
+import { statusChip, clearStatusChip } from '../ui/statuschips.js';
 
 // the governor's model-detail shed, as a status chip (statuschips.js) for exactly as long as it holds
 export const REDUCED_CHIP = {

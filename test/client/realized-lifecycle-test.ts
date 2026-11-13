@@ -20,7 +20,7 @@ plugin({
   name: 'lod-client-stub',
   setup(b) {
     for (const f of ['^\\.\\./core\\.js$', '^\\.\\./assets\\.js$', '^\\.\\./colliders\\.js$',
-      '^\\.\\./lightrig\\.js$', '^\\.\\./lightgizmo\\.js$', '^\\.\\./world\\.js$', '^\\.\\./materials\\.js$']) {
+      '^(\\.\\.?/)+(render/)?lightrig\\.js$', '^(\\.\\.?/)+(render/)?lightgizmo\\.js$', '^\\.\\./world\\.js$', '^(\\.\\.?/)+(render/)?materials\\.js$']) {
       stubResolve(b, new RegExp(f), () => ({ path: STUB }));
     }
   },

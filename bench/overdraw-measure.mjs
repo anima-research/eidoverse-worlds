@@ -23,7 +23,7 @@ try {
   await pg.waitForTimeout(4000);
   const r = await Promise.race([pg.evaluate(async () => {
     const { THREE, scene, camera, renderer } = await import('./lib/core.js');
-    const { renderAside } = await import('./lib/render.js');
+    const { renderAside } = await import('./lib/render/render.js');
     const W = 240;
     // ---- calib: two view-filling planes in front of the camera
     // a FIXED probe camera: the visitor keeps walking in while captures compile

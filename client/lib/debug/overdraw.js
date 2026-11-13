@@ -10,8 +10,8 @@
 // Limits: unbatched, one mono view, the live frame held during capture (a brief black blink in a headset). Per-category
 // passes sum to the total within ~0.1 %, not exactly; `stable` checks the frame itself.
 import { THREE, TSL, renderer, scene, camera } from '../core.js';
-import { renderAside, setWorldHold } from '../render.js';
-import { reassertShadowPref } from '../lightrig.js';
+import { renderAside, setWorldHold } from '../render/render.js';
+import { reassertShadowPref } from '../render/lightrig.js';
 
 const { vec4 } = TSL;
 

@@ -20,7 +20,7 @@
 // busy() is the loading signal the governor's grace reads: producers report how much LOADING work they hold
 // (reportPending). Steady-state work (the sky's cadence re-bakes) spends from the budget but is not loading.
 
-import { bus } from './base.js';
+import { bus } from '../base.js';
 
 const SPLASH_MS = 14;        // under the splash: big bites (loadwork's pre-boot number)
 const MAX_MS = 6;            // once booted, never more than the old per-record slice, however long the frame

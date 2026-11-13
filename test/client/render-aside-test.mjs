@@ -1,4 +1,4 @@
-// renderAside (client/lib/render.js): an off-eye render — sky bake, thumbnail, snapshot — while presenting
+// renderAside (client/lib/render/render.js): an off-eye render — sky bake, thumbnail, snapshot — while presenting
 // must switch XR OFF around the pass, restore xr.enabled and the render target on EVERY exit including a
 // throw, and rebuild the eyes from the rig afterwards. Review 2026-09-10 #1 removed the XR disable and the
 // suite stayed green; this drives the real function against a recording renderer.
@@ -11,7 +11,7 @@ const HERE = import.meta.dir; const here = (p) => `${HERE}/${p.replace(/^\.\//, 
 plugin({ name: 'core-stub', setup(build) {
   stubResolve(build, /^(\.\.?\/)+core\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
   stubResolve(build, /^(\.\.?\/)+base\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
-  stubResolve(build, /^(\.\.?\/)+loadwork\.js$/, () => ({ path: here('../stubs/loadwork-stub.mjs') }));
+  stubResolve(build, /^(\.\.?\/)+(render\/)?loadwork\.js$/, () => ({ path: here('../stubs/loadwork-stub.mjs') }));
 } });
 
 const { renderer, camera } = await import('../stubs/core-stub.mjs');
@@ -22,7 +22,7 @@ renderer.getRenderTarget = () => target;
 renderer.setRenderTarget = (t) => { target = t; log.push(['target', t?.name ?? null]); };
 renderer.render = (sc, cam) => { log.push(['render', cam?.name ?? null, 'xr=' + renderer.xr.enabled, 'target=' + (target?.name ?? null)]); if (throwNext) { const e = throwNext; throwNext = null; throw e; } return 'rendered'; };
 renderer.xr = { enabled: false, isPresenting: false, updateCamera: (c) => log.push(['updateCamera', c === camera ? 'rig-camera' : 'other']), getCamera: () => null, addEventListener() {}, removeEventListener() {} };
-const { renderAside, renderWorld } = await import('../../client/lib/render.js');
+const { renderAside, renderWorld } = await import('../../client/lib/render/render.js');
 
 const S = suite("render-aside");
 const check = (name, ok, note) => S.check(name, ok, note);

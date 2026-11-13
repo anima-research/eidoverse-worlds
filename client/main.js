@@ -10,7 +10,7 @@ import { say } from './lib/net.js';
 import { updateHelm, helmHull } from './lib/vehicles.js';
 import { chooseClient } from './lib/ui/litechoice.js';
 import { THREE, scene, camera, renderer, canvas } from './lib/core.js';
-import { releaseBodyGate, armBodyGate } from './lib/bodygate.js';
+import { releaseBodyGate, armBodyGate } from './lib/render/bodygate.js';
 import { CONFIG, bus, report, tee, colorFor, emptyWorldNotice } from './lib/base.js';
 import { versionReady } from './lib/version.js';
 import { makeAvatar, makeCapsuleAvatar, ANIM_ORDER } from './lib/avatar/avatar.js';
@@ -46,7 +46,7 @@ import { remotes, updateRemotes, updateGaze, serverNow } from './lib/remotes.js'
 import { initOccupants } from './lib/occupants.js';
 // net.js takes the participant registry by injection (lite.js supplies a body-less one); this is the real one
 import * as participants from './lib/remotes.js';
-import { capture, setSnapReadiness } from './lib/net_capture.js';
+import { capture, setSnapReadiness } from './lib/render/net_capture.js';
 import { setWaveClock } from './lib/water.js';
 import { myReachBag } from './lib/reachnet.js';
 import {
@@ -99,18 +99,18 @@ import { initBoot, markPhase, finishBoot, bootDone, setBootAssets } from './lib/
 import { protoStats, forgetBytes, loadingItems, bootBytes } from './lib/assets.js';
 import { grassTiles, heightAt, hasTerrain } from './lib/terrain.js';
 import { grassDiag } from './lib/debug/grassdiag.js';
-import { warmStats } from './lib/warmqueue.js';
-import { budgetStats } from './lib/framebudget.js';
-import { pending, P, onIdle, laneStats as schedLaneStats } from './lib/scheduler.js';
-import { laneStats as loadLaneStats } from './lib/loadwork.js';
+import { warmStats } from './lib/render/warmqueue.js';
+import { budgetStats } from './lib/render/framebudget.js';
+import { pending, P, onIdle, laneStats as schedLaneStats } from './lib/render/scheduler.js';
+import { laneStats as loadLaneStats } from './lib/render/loadwork.js';
 import { colliderCacheStats } from './lib/colliders.js';
 import { statusChip, paintHud } from './lib/ui/statuschips.js';
-import { governPerformance, governorDebug, whenCalm, applyPendingPixelRatio } from './lib/governor.js';
-import { registerSystem, startFrame, frameDebug } from './lib/frameloop.js';
-import { perf } from './lib/perf.js';
-import { renderWorld, drawStats, setDrawBatching } from './lib/render.js';
-import { updateMaterials, materialsDebug } from './lib/materials.js';
-import { updateRig, rigDebug, setLampShadow, lampShadowState } from './lib/lightrig.js';
+import { governPerformance, governorDebug, whenCalm, applyPendingPixelRatio } from './lib/render/governor.js';
+import { registerSystem, startFrame, frameDebug } from './lib/render/frameloop.js';
+import { perf } from './lib/render/perf.js';
+import { renderWorld, drawStats, setDrawBatching } from './lib/render/render.js';
+import { updateMaterials, materialsDebug } from './lib/render/materials.js';
+import { updateRig, rigDebug, setLampShadow, lampShadowState } from './lib/render/lightrig.js';
 import { startPrefetch } from './lib/prefetch.js';
 import {
   getMe, setMe, getMyAvatarPath, getMyAvatarName, resolveMyAvatarPath,

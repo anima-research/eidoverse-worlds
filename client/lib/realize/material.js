@@ -9,7 +9,7 @@
 
 import { bus } from '../base.js';
 import { entities, findPart, bags } from '../world.js';
-import { prepareMaterial } from '../materials.js';
+import { prepareMaterial } from '../render/materials.js';
 import { normalizeMaterial } from '../../../shared/material.js';
 import { clientMayFetch } from '../../../shared/mediasrc.js';
 import { allowUntrusted } from '../mediaprefs.js';

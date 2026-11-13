@@ -1,4 +1,4 @@
-// Only a body with a LAMP in it casts and receives (client/lib/materials.js,
+// Only a body with a LAMP in it casts and receives (client/lib/render/materials.js,
 // client/lib/avatar/avatar.js).
 //
 // Bodies briefly got real shadows for every avatar in the world. That is a
@@ -26,7 +26,7 @@ plugin({ name: 'core-stub', setup(build) {
   stubResolve(build, /^(\.\.?\/)+state\.js$/, () => ({ path: here('../stubs/state-stub.mjs') }));
 } });
 const { THREE } = await import('../stubs/core-stub.mjs');
-const mats = await import('../../client/lib/materials.js');
+const mats = await import('../../client/lib/render/materials.js');
 
 const S = suite("body-shadow-gate");
 const check = (name, ok, note) => S.check(name, ok, note);

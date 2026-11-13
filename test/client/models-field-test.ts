@@ -11,7 +11,7 @@
 // what is in front of you.
 
 import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere, modelOf, readMesh, meshKeyOf } from "../../client/lib/realize/models_field.js";
-import { P } from "../../client/lib/scheduler.js";
+import { P } from "../../client/lib/render/scheduler.js";
 
 let passed = 0, failed = 0;
 const check = (name: string, ok: boolean, detail = "") => {

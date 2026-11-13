@@ -1,6 +1,6 @@
 # Material factory: decisions behind materials.js
 
-Rationale behind `client/lib/materials.js`. § numbers are docs/history/TEL0S_NOTES.md; the history is in git.
+Rationale behind `client/lib/render/materials.js`. § numbers are docs/history/TEL0S_NOTES.md; the history is in git.
 
 ## Why a factory (§12)
 

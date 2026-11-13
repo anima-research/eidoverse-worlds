@@ -10,9 +10,9 @@ import { fileURLToPath } from 'node:url';
 import { suite } from "../gate/suite.ts";
 const STUB = fileURLToPath(new URL('../stubs/full-detail-stub.mjs', import.meta.url));
 plugin({ name: 'full-detail-stub', setup(b) {
-  for (const f of ['^\\./core\\.js$', '^\\./lightrig\\.js$', '^\\./realize/emitters\\.js$',
-    '^\\./terrain\\.js$', '^\\./frameloop\\.js$', '^\\./remotes\\.js$', '^(\\.\\.?/)+(ui/)?ui\\.js$', '^(\\.\\.?/)+(ui/)?statuschips\\.js$',
-    '^\\.\\./core\\.js$', '^\\.\\./assets\\.js$', '^\\.\\./colliders\\.js$', '^\\.\\./lightrig\\.js$', '^\\.\\./lightgizmo\\.js$', '^\\.\\./world\\.js$', '^\\.\\./materials\\.js$'])
+  for (const f of ['^(\\.\\.?/)+(render/)?lightrig\\.js$', '^\\.\\.?/realize/emitters\\.js$', '^\\.\\.?/terrain\\.js$', '^(\\.\\.?/)+(render/)?frameloop\\.js$', '^\\.\\.?/remotes\\.js$', '^(\\.\\.?/)+(ui/)?ui\\.js$',
+    '^(\\.\\.?/)+(ui/)?statuschips\\.js$', '^\\.\\./core\\.js$', '^\\.\\./assets\\.js$', '^\\.\\./colliders\\.js$', '^(\\.\\.?/)+(render/)?lightgizmo\\.js$', '^\\.\\./world\\.js$',
+    '^(\\.\\.?/)+(render/)?materials\\.js$'])
     stubResolve(b, new RegExp(f), () => ({ path: STUB }));
 } });
 const mem = new Map<string, string>();
@@ -25,7 +25,7 @@ const S = stub.state;
 const ratios: number[] = [];
 stub.renderer.setPixelRatio = (r: number) => { ratios.push(r); };
 stub.renderer.xr = { isPresenting: false };
-const G: any = await import('../../client/lib/governor.js');
+const G: any = await import('../../client/lib/render/governor.js');
 const { modelQuality } = await import('../../client/lib/realize/models.js');
 const { bus } = await import('../../client/lib/base.js');
 const dbg = () => G.governorDebug();

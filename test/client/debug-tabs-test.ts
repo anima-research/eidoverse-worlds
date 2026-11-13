@@ -11,7 +11,7 @@ import { plugin } from 'bun';
 import { stubResolve } from '../harness/stub.ts';
 const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({ name: 'debug-stubs', setup(b) {
-  for (const m of ['core', 'base', '(xr/)?xrpanels', 'gputime', 'perf', 'render', 'perfscope', 'colliders', '(ragdoll/)?ragdoll', '(ragdoll/)?ammodoll(-tuning)?', '(avatar/)?avatar', '(ui/)?ui'])
+  for (const m of ['core', 'base', '(xr/)?xrpanels', 'gputime', '(render/)?perf', '(render/)?render', 'perfscope', 'colliders', '(ragdoll/)?ragdoll', '(ragdoll/)?ammodoll(-tuning)?', '(avatar/)?avatar', '(ui/)?ui'])
     stubResolve(b, new RegExp(`^(\\.\\.?/)+${m}\\.js$`), () => ({ path: here('../stubs/debug-stub.mjs') }));
 } });
 import { GlobalRegistrator } from '@happy-dom/global-registrator';

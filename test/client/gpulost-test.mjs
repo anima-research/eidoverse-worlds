@@ -3,7 +3,7 @@
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { plugin } from 'bun';
 import { stubResolve } from '../harness/stub.ts';
-import { gpuLostAction, recoveryUrl, recentGpuLosses, installGpuLostRecovery, GPU_LOST_KEY, GPU_LOST_WINDOW_MS, GPU_LOST_LONG_MS } from '../../client/lib/gpulost.js';
+import { gpuLostAction, recoveryUrl, recentGpuLosses, installGpuLostRecovery, GPU_LOST_KEY, GPU_LOST_WINDOW_MS, GPU_LOST_LONG_MS } from '../../client/lib/render/gpulost.js';
 import { suite } from "../gate/suite.ts";
 const S = suite("gpulost");
 const ok = (n, c, d) => S.check(n, c, d);
@@ -42,13 +42,13 @@ ok('recovery drops ?xr and ?why, keeps world/name/key', recoveryUrl('https://h:1
   await new Promise((r) => setImmediate(r));
   ok("control: reason 'unknown' still fires", r3.fired === true); }
 
-// ── the lost-GPU gates (client/lib/render.js), driven against a counting renderer: flag down → entered, up → not, down → again
+// ── the lost-GPU gates (client/lib/render/render.js), driven against a counting renderer: flag down → entered, up → not, down → again
 GlobalRegistrator.register();
 const HERE = import.meta.dir; const here = (p) => `${HERE}/${p.replace(/^\.\//, '')}`;
 plugin({ name: 'core-stub', setup(build) {
   stubResolve(build, /^(\.\.?\/)+core\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
   stubResolve(build, /^(\.\.?\/)+base\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
-  stubResolve(build, /^(\.\.?\/)+loadwork\.js$/, () => ({ path: here('../stubs/loadwork-stub.mjs') }));
+  stubResolve(build, /^(\.\.?\/)+(render\/)?loadwork\.js$/, () => ({ path: here('../stubs/loadwork-stub.mjs') }));
 } });
 { const { renderer, scene, camera } = await import('../stubs/core-stub.mjs');
   // installed BEFORE render.js imports: render.js binds renderer.render / compileAsync at module scope
@@ -56,9 +56,9 @@ plugin({ name: 'core-stub', setup(build) {
   const stubRender = () => { n.render++; }, stubCompile = async () => { n.compile++; };
   renderer.render = stubRender; renderer.compileAsync = stubCompile;
   renderer.getRenderTarget = () => { n.target++; return null; };
-  const { renderWorld, renderAside } = await import('../../client/lib/render.js');
+  const { renderWorld, renderAside } = await import('../../client/lib/render/render.js');
   renderer.domElement = { toDataURL: () => { n.read++; return 'data:image/png;base64,' + 'A'.repeat(4000); } };
-  const { captureFrame } = await import('../../client/lib/capture.js');
+  const { captureFrame } = await import('../../client/lib/render/capture.js');
   const zero = () => { for (const k in n) n[k] = 0; };
   // a snapshot after a handled loss refuses (throws) rather than read the stale canvas
   let threw = null;

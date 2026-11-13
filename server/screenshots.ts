@@ -302,7 +302,7 @@ export function createScreenshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, 
     if (typeof msg.error === "string" && msg.error.trim()) {
       const err = msg.error.trim().slice(0, 300);
       log(`[snap] ${msg.id}: renderer ${who(c)} replied without an image: ${quote(err, 200)} — 503`);
-      // retryable only when the renderer says it is still loading (client/lib/net_capture.js); any other refusal would
+      // retryable only when the renderer says it is still loading (client/lib/render/net_capture.js); any other refusal would
       // fail the same way again
       return p.finish({ ok: false, err, status: 503, ...(/still loading/i.test(err) ? { retryAfter: 2 } : {}) });
     }

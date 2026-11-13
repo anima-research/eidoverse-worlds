@@ -15,7 +15,7 @@
 // Not measured: renders outside renderWorld (sky bakes, the desktop mirror). WebGPU backend: unavailable (needs the
 // timestamp-query device feature, requested at boot) — the row says so.
 import { renderer, scene } from '../core.js';
-import { reassertShadowPref } from '../lightrig.js';
+import { reassertShadowPref } from '../render/lightrig.js';
 
 const S = { on: false, supported: null, reason: null, gl: null, ext: null, active: null, pending: [], free: [],
   samples: [], ab: null, abResult: null };

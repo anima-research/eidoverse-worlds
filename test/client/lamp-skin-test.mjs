@@ -1,5 +1,5 @@
 // A lamp inside a SKINNED body is located through the SKELETON, not by
-// rotating its bind-pose centre (client/lib/lightrig.js worldPosOf).
+// rotating its bind-pose centre (client/lib/render/lightrig.js worldPosOf).
 //
 // Janus: "there seems to be a directional bias to the light. if i face in a
 // different direction, it hits mostly my left wing, and in another, mostly
@@ -32,11 +32,11 @@ const HERE = import.meta.dir; const here = (p) => `${HERE}/${p.replace(/^\.\//, 
 plugin({ name: 'core-stub', setup(build) {
   stubResolve(build, /^(\.\.?\/)+core\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
   stubResolve(build, /^(\.\.?\/)+base\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
-  stubResolve(build, /^(\.\.?\/)+loadwork\.js$/, () => ({ path: here('../stubs/loadwork-stub.mjs') }));
+  stubResolve(build, /^(\.\.?\/)+(render\/)?loadwork\.js$/, () => ({ path: here('../stubs/loadwork-stub.mjs') }));
 } });
 // the rig's own THREE, so Skeleton/Bone are the same classes it tests against
 const { THREE } = await import('../stubs/core-stub.mjs');
-const rig = await import('../../client/lib/lightrig.js');
+const rig = await import('../../client/lib/render/lightrig.js');
 
 const S = suite("lamp-skin");
 const check = (name, ok, note) => S.check(name, ok, note);

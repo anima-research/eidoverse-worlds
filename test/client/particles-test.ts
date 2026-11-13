@@ -24,7 +24,7 @@ import {
 } from "../../client/lib/realize/emitter_field.js";
 import {
   autoHooks, ownHook, pushHostHook, releaseHook, isHostOwned, claimUnowned,
-} from "../../client/lib/autohooks.js";
+} from "../../client/lib/render/autohooks.js";
 
 let passed = 0, failed = 0;
 function check(name: string, ok: unknown, detail = "") {

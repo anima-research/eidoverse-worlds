@@ -27,7 +27,7 @@ plugin({
   setup(b) {
     stubResolve(b, /^(\.\.?\/)+core\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
     stubResolve(b, /^(\.\.?\/)+assets\.js$/, () => ({ path: here('../stubs/assets-stub.mjs') }));
-    stubResolve(b, /^(\.\.?\/)+loadwork\.js$/, () => ({ path: here('../stubs/loadwork-stub.mjs') }));
+    stubResolve(b, /^(\.\.?\/)+(render\/)?loadwork\.js$/, () => ({ path: here('../stubs/loadwork-stub.mjs') }));
   },
 });
 

@@ -5,7 +5,7 @@ import { THREE, scene } from './core.js';
 import { replica } from './net.js';
 import { bus } from './base.js';
 import { onWorldChange } from './state.js';
-import { pushHostHook } from './autohooks.js';
+import { pushHostHook } from './render/autohooks.js';
 
 const FENCE_H = 2.5, COLOR = 0x7fb8ff;
 let group = null, key = '', shown = null;

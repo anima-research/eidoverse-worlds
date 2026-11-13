@@ -11,7 +11,7 @@
 import { THREE, scene, camera, canvas } from '../core.js';
 import { bus } from '../base.js';
 import { entities } from '../world.js';
-import { registerSystem } from '../frameloop.js';
+import { registerSystem } from '../render/frameloop.js';
 import { isBuilding, setPointerVeto, setEscapeHook } from './build.js';
 import * as Edits from './writes.js';
 import { sendRequest } from '../net.js';

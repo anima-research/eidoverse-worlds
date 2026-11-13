@@ -1,4 +1,4 @@
-// The LOD distance geometry, in one place. The client decides tiers with it (client/lib/lod_policy.js,
+// The LOD distance geometry, in one place. The client decides tiers with it (client/lib/render/lod_policy.js,
 // client/lib/realize/models.js); the server budgets each LOD against it (server/optimize.ts) — a LOD is built for the
 // closest distance it can be seen from, so the two must never disagree about where that is.
 

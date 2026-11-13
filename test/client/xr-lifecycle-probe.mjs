@@ -78,7 +78,7 @@ pg.on('console', (m) => {
   reports.push(t);
 });
 // ?xr=1 IS THE BOOT MODE: without it a WebGPU host's first click reloads to WebGL and leaves the probe's state; with it
-// the click enters in place on any host (client/lib/backend_choice.js decideBackend)
+// the click enters in place on any host (client/lib/render/backend_choice.js decideBackend)
 await pg.goto(`${world.origin}/?world=staging&name=xrprobe&key=${world.key}&xr=1`, { waitUntil: 'domcontentloaded', timeout: 60000 });
 // wait for the glyph to be VISIBLE: mictoggle shows it only once the product's own isSessionSupported answered and the
 // XR hook is registered; clicking earlier is before the product said it was ready

@@ -6,7 +6,7 @@
 //
 // `keep: true` is top PRIORITY in the rig, not a budget escape.
 
-import { THREE } from './core.js';
+import { THREE } from '../core.js';
 import { isCasting } from './lightrig.js';
 
 /** A bare gizmo mesh — the visible, always-cheap part. Used both for a placed

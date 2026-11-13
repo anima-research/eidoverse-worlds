@@ -100,7 +100,7 @@ irreducible cost centre of any renderer move.
 
 ## The program (four moves, in order of cheapness)
 
-1. **`captureFrame()` — DONE (§24s).** `client/lib/capture.js` is the one
+1. **`captureFrame()` — DONE (§24s).** `client/lib/render/capture.js` is the one
    framebuffer-readback primitive; net.js's snap handler and the
    screenshot command dispatch through it (their private renderer calls
    deleted, their core.js imports narrowed). Two corrections to the

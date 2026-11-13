@@ -11,7 +11,7 @@
 //   realize/models.js (from inspect.js)  boxOf → null (the realizer is three.js and the GPU; not under test)
 //   core.js    three.js without a renderer (inspect.js reads THREE; nothing here draws)
 //   emitters.js, material_draft.js   no stored effect document is loaded; a realized object's materials → none
-// client/lib/loadwork.js (reached through realize/structure.js) starts a frame-gap watch on requestAnimationFrame at import:
+// client/lib/render/loadwork.js (reached through realize/structure.js) starts a frame-gap watch on requestAnimationFrame at import:
 // headless, the clock never answers (a timer-backed shim would re-arm forever and hold the process open).
 // @ts-nocheck
 import { fileURLToPath } from "node:url";

@@ -9,9 +9,9 @@ import { fileURLToPath } from 'node:url';
 const STUB = fileURLToPath(new URL('../stubs/lod-client-stub.mjs', import.meta.url));
 plugin({ name: 'governor-xr-stub', setup(b) {
   // the same cone lod-client-test stubs: governor.js and the REAL realize/models.js it imports stay real
-  for (const f of ['^\\./core\\.js$', '^\\./lightrig\\.js$', '^\\./realize/emitters\\.js$',
-    '^\\./terrain\\.js$', '^\\./frameloop\\.js$', '^\\./remotes\\.js$', '^(\\.\\.?/)+(ui/)?ui\\.js$', '^(\\.\\.?/)+(ui/)?statuschips\\.js$',
-    '^\\.\\./core\\.js$', '^\\.\\./assets\\.js$', '^\\.\\./colliders\\.js$', '^\\.\\./lightrig\\.js$', '^\\.\\./lightgizmo\\.js$', '^\\.\\./world\\.js$', '^\\.\\./materials\\.js$'])
+  for (const f of ['^(\\.\\.?/)+(render/)?lightrig\\.js$', '^\\.\\.?/realize/emitters\\.js$', '^\\.\\.?/terrain\\.js$', '^(\\.\\.?/)+(render/)?frameloop\\.js$', '^\\.\\.?/remotes\\.js$', '^(\\.\\.?/)+(ui/)?ui\\.js$',
+    '^(\\.\\.?/)+(ui/)?statuschips\\.js$', '^\\.\\./core\\.js$', '^\\.\\./assets\\.js$', '^\\.\\./colliders\\.js$', '^(\\.\\.?/)+(render/)?lightgizmo\\.js$', '^\\.\\./world\\.js$',
+    '^(\\.\\.?/)+(render/)?materials\\.js$'])
     stubResolve(b, new RegExp(f), () => ({ path: STUB }));
 } });
 const mem = new Map<string, string>();
@@ -23,7 +23,7 @@ const stub: any = await import(STUB);
 const ratios: number[] = [];
 stub.renderer.setPixelRatio = (r: number) => { ratios.push(r); };
 stub.renderer.xr = { isPresenting: false };
-const G: any = await import('../../client/lib/governor.js');
+const G: any = await import('../../client/lib/render/governor.js');
 const hist = () => (G.governorDebug().history as string[]);
 const pixelMoves = () => hist().filter((h) => /pixels/.test(h)).length;
 // one frame as main.js runs it: the pulse decides, the NEXT frame's 'pixel-ratio' system applies before 'render'
@@ -88,7 +88,7 @@ check('control — desktop, slow: the governor DOES move the pixel ratio', ratio
   G.applyPendingPixelRatio();
   check('…and only once', ratios.length === before + 1, ratios.slice(before)); }
 // review 10a M3: the headset's cap on loading's share holds WHILE loading too (entering VR mid-load, the usual cold entry)
-{ const FB: any = await import('../../client/lib/framebudget.js');
+{ const FB: any = await import('../../client/lib/render/framebudget.js');
   stub.renderer.xr.isPresenting = false;
   for (let i = 0; i < 10; i++) tick(72);                               // smooth desktop: the share is the desktop 0.36
   const desk = FB.budgetStats().share;

@@ -1,4 +1,4 @@
-// client/lib/lod_policy.js — the tier chooser, tested headless.
+// client/lib/render/lod_policy.js — the tier chooser, tested headless.
 //
 //   bun test/client/lod-policy-test.ts
 //
@@ -18,7 +18,7 @@
 // Negative control: on main this file dies at import (no lod_policy.js).
 
 import { MODEL_QUALITY, LOD_FRACTION, LOD_HYST, PRESSURE_EDGE, PRESSURE_AT, LOD_NEAR_MIN,
-  makeModelQuality, chooseTier, tierOf, askFor } from "../../client/lib/lod_policy.js";
+  makeModelQuality, chooseTier, tierOf, askFor } from "../../client/lib/render/lod_policy.js";
 import { residencyRadiusFor, lodNearest } from "../../shared/lod-distance.js";
 import { LOD_RECIPE } from "../../server/store-variants.ts";
 

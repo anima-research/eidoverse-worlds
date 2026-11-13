@@ -10,7 +10,7 @@ import { isPresenting, withHeadShown } from './xr.js';
 import { xrPrefs } from './xr-prefs.js';
 import { myState } from '../controller.js';
 import { tee, bus } from '../base.js';
-import { xrCurtainOn, renderWorldFrom } from '../render.js';
+import { xrCurtainOn, renderWorldFrom } from '../render/render.js';
 
 const deskCam = new THREE.PerspectiveCamera(65, 16 / 9, 0.1, 20000);
 const tmpPos = new THREE.Vector3(), tmpQuat = new THREE.Quaternion(), tmpScl = new THREE.Vector3(), behind = new THREE.Vector3();

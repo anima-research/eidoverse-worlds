@@ -18,7 +18,7 @@ import { mapGrassArgs, presetStrokes } from '../../../shared/flora_args.js';
 import { composeField } from './flora_field.js';
 import { bladeLodIndex, bladeCoarseIndex } from './flora_lod.js';
 import { densityCount } from './grass_quality.js';
-import { pushHostHook } from '../autohooks.js';
+import { pushHostHook } from '../render/autohooks.js';
 
 export { retireField } from './flora_field.js';
 

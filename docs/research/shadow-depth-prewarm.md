@@ -1,4 +1,4 @@
-# Shadow-depth pre-warm (client/lib/warmqueue.js)
+# Shadow-depth pre-warm (client/lib/render/warmqueue.js)
 
 The shadow-depth pass was the one pipeline family nothing warmed: every caster
 the rig enables paid a synchronous `createRenderPipeline` inside the next shadow

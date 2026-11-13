@@ -1,4 +1,4 @@
-// client/lib/scheduler.js — the one loader (TEL0S_NOTES §11.3), tested
+// client/lib/render/scheduler.js — the one loader (TEL0S_NOTES §11.3), tested
 // headless: pumping rides queueMicrotask, so Bun drives it without a
 // renderer.
 //
@@ -10,7 +10,7 @@
 // cancel queued and running work; onIdle observes a band draining and
 // never needs a timeout.
 
-import { schedule, cancelOwner, pending, onIdle, laneStats, P } from "../../client/lib/scheduler.js";
+import { schedule, cancelOwner, pending, onIdle, laneStats, P } from "../../client/lib/render/scheduler.js";
 import { pause, tryUntil } from "../gate/wait.ts";
 import { suite } from "../gate/suite.ts";
 

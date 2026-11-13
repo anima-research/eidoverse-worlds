@@ -2,7 +2,7 @@
 // test/client/flora-test.ts). A "field" is the setGrass-shaped object the
 // grass verb owns: possibly several engine strokes composed under one group.
 
-import { ownHook, releaseHook } from '../autohooks.js';
+import { ownHook, releaseHook } from '../render/autohooks.js';
 import { densityCount } from './grass_quality.js';
 
 // ---- applied truth ----------------------------------------------------------

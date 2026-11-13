@@ -12,15 +12,15 @@ import { bodyRuntimeFor, bodyDefFor, capEmissive } from './bodyruntime.js';
 import { measureChain, solveChain } from './reachbone.js';
 import { REACH_CHAINS } from '../../../shared/joints.js';
 // a body that glows also casts: light requests, never lights (lightrig owns the topology)
-import { attachLamps, releaseOwner, updateRequest, glowScale } from '../lightrig.js';
-import { setBodyShadows } from '../materials.js';
+import { attachLamps, releaseOwner, updateRequest, glowScale } from '../render/lightrig.js';
+import { setBodyShadows } from '../render/materials.js';
 import { BREATH } from '../../../shared/breath.js';
 import {
   loadVRM, clipFor, vrmaBytes, loadTrack, loadDone,
   CLIP_SLOTS, CLIP_SPEED, releaseVRM, vrmWarmed, markVrmWarmed,
 } from '../assets.js';
-import { beginWork, idleYield, nextFrame, loadNote } from '../loadwork.js';
-import { warm, P_GATE } from '../warmqueue.js';
+import { beginWork, idleYield, nextFrame, loadNote } from '../render/loadwork.js';
+import { warm, P_GATE } from '../render/warmqueue.js';
 import { heightAt } from '../terrain.js';
 import { surfaceUnder } from '../colliders.js';
 import { DRIVEN_BONES } from '../ragdoll/ragdoll.js';

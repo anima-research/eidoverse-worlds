@@ -53,7 +53,7 @@ const chip = (pg, id) => pg.evaluate((i) => { const c = document.getElementById(
 const popState = (pg) => pg.evaluate(() => { const p = document.getElementById('stpop'); if (!p) return null; const r = p.getBoundingClientRect();
   return { hidden: p.hidden, text: p.textContent, l: r.left, t: r.top, r: r.right, b: r.bottom, inView: r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight }; });
 // the governor's own input, synchronously so the real 1 Hz pulse can't interleave
-const drive = (pg, fps, n) => pg.evaluate(async ({ fps, n }) => { const G = await import('/lib/governor.js'); for (let i = 0; i < n; i++) G.governPerformance(fps); }, { fps, n });
+const drive = (pg, fps, n) => pg.evaluate(async ({ fps, n }) => { const G = await import('/lib/render/governor.js'); for (let i = 0; i < n; i++) G.governPerformance(fps); }, { fps, n });
 const shedOn = (pg) => pg.evaluate(async () => (await import('/lib/realize/models.js')).modelQuality.shed);
 // a chip overlapping any fixed chrome on the ∃'s line
 const clash = (pg) => pg.evaluate(() => {
@@ -87,7 +87,7 @@ try {
 
   // QUALITY REDUCED: a state, not an event — slow seconds post it, smooth ones lift it. The real 1 Hz pulse is paused
   // while the probe feeds the governor its seconds (headless is slow: it would shed again between them)
-  const pulse = (pg, on) => pg.evaluate(async (on) => (await import('/lib/frameloop.js')).setSystemEnabled('pulse', on), on);
+  const pulse = (pg, on) => pg.evaluate(async (on) => (await import('/lib/render/frameloop.js')).setSystemEnabled('pulse', on), on);
   await pulse(pg, false);
   for (let i = 0; i < 12 && !(await shedOn(pg)); i++) await drive(pg, 10, 4);
   const red = await chip(pg, 'quality-reduced');
@@ -113,7 +113,7 @@ try {
 
   // the lift
   for (let i = 0; i < 30 && (await shedOn(pg)); i++) { await drive(pg, 60, 60); await sleep(500); }   // the governor holds still while loading (grace)
-  check('smooth seconds: the reduction lifts and its chip goes', !(await shedOn(pg)) && !(await chip(pg, 'quality-reduced')), JSON.stringify(await pg.evaluate(async () => { const d = (await import('/lib/governor.js')).governorDebug(); const FB = await import('/lib/framebudget.js'); const M = await import('/lib/realize/models.js'); return { grace: d.grace, goodFor: d.goodFor, busy: FB.busy(), tail: M.promoteTailPending(), shed: M.modelQuality.shed, pr: d.pixelRatio }; })));
+  check('smooth seconds: the reduction lifts and its chip goes', !(await shedOn(pg)) && !(await chip(pg, 'quality-reduced')), JSON.stringify(await pg.evaluate(async () => { const d = (await import('/lib/render/governor.js')).governorDebug(); const FB = await import('/lib/render/framebudget.js'); const M = await import('/lib/realize/models.js'); return { grace: d.grace, goodFor: d.goodFor, busy: FB.busy(), tail: M.promoteTailPending(), shed: M.modelQuality.shed, pr: d.pixelRatio }; })));
 
   await pulse(pg, true);
 

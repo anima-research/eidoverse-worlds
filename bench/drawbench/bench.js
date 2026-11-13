@@ -1,6 +1,6 @@
 import * as T from 'three';
 import { positionWorld, normalWorld, mix, vec3, float, sin } from 'three/tsl';
-import { DrawBatches, markDrawBatchSource } from '/client/lib/draw_batches.js';
+import { DrawBatches, markDrawBatchSource } from '/client/lib/render/draw_batches.js';
 
 const renderer = new T.WebGPURenderer({ antialias: true });
 renderer.setSize(800, 600);

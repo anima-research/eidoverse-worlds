@@ -42,7 +42,7 @@ The audit found these existing reductions:
 * [Buildings](../../client/lib/realize/structure.js) already merge geometry per
   palette material per building. Their shaders use building-local coordinates;
   merging buildings in world space would change the surface patterns.
-* [The lighting rig](../../client/lib/lightrig.js) already limits shadow casters.
+* [The lighting rig](../../client/lib/render/lightrig.js) already limits shadow casters.
   This change retains that policy and batches compatible selected casters.
 * Skinned avatars and translucent surfaces retain their existing rendering.
 
@@ -51,7 +51,7 @@ they shared GPU assets but still submitted one draw per mesh per copy.
 
 ## Implementation and exclusions
 
-[draw_batches.js](../../client/lib/draw_batches.js) temporarily replaces source
+[draw_batches.js](../../client/lib/render/draw_batches.js) temporarily replaces source
 submissions during one synchronous render. Originals remain in their original
 hierarchies. Only their layer masks are suppressed; their children stay visible.
 Masks and temporary batch attachments are restored in `finally`, including if

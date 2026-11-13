@@ -8,14 +8,14 @@
 import * as THREE from 'three';
 import * as TSL from 'three/tsl';
 import { CONFIG, tee, teeNow, bus } from './base.js';
-import { installGpuLostRecovery } from './gpulost.js';
-import { decideBackend } from './backend_choice.js';
+import { installGpuLostRecovery } from './render/gpulost.js';
+import { decideBackend } from './render/backend_choice.js';
 import { headsetSeenRecently as _headsetSeenRecently, migrateHeadsetSeen as _migrateHeadsetSeen } from './xr/headset_seen.js';
 import { guardPixelRatioInXR } from './xr/xrpixelratio.js';
 import { separateXRPass } from './xr/xrpass.js';
 import { tolerateNullXRFramebuffer } from './xr/xr_nullfb.js';
 import { patchShadowNodeForXR } from './xr/xrshadow.js';
-import { installSyncGate } from './syncgate.js';
+import { installSyncGate } from './render/syncgate.js';
 
 export { THREE, TSL };
 

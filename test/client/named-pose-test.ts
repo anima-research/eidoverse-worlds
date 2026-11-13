@@ -303,7 +303,7 @@ async function browserOwnerPart() {
   mock.module(base + "assets.js", () => ({ forgetBytes() {}, primeFiles: async () => {} }));
   mock.module(base + "world.js", () => ({ avatarMounts: new Map() }));
   mock.module(base + "state.js", () => ({ state: { st: { entities: {}, roles: {}, recentChat: [] }, lastSeq: -1, hydrated: false }, hydrate() {}, applyView() {}, reset() {}, onWorldChange: () => () => {} }));
-  mock.module(base + "scheduler.js", () => ({ pending: new Map(), P: {} }));
+  mock.module(base + "render/scheduler.js", () => ({ pending: new Map(), P: {} }));
   mock.module(base + "remotes.js", () => ({ remotes: new Map(), ensureRemote: async () => null, dropRemote: () => null, pushPose() {}, noteServerTime() {}, noteSpeaking() {} }));
   mock.module(base + "reachnet.js", () => ({ myReachBag: () => undefined }));
   mock.module(base + "ui/chat.js", () => ({ chat: {}, logChat() {}, noteTyping() {}, noteHistoryContext() {}, async resyncChatAfter() {}, moderatorHeader: (w) => `From a moderator of world ‹${w}›, not from Eidoverse` }));
@@ -316,7 +316,7 @@ async function browserOwnerPart() {
     const av: any = { wingsFolded: false, vrm: { scene }, dispose() {}, setUserScale() {}, setPlateY() {} }; bodies.push(av); return av; };
   mock.module(base + "avatar/avatar.js", () => ({ makeAvatar: async () => body(WING_BONES) }));
   mock.module(base + "avatar/avatar-thumbnail.js", () => ({ contributeThumbnail() {} }));
-  mock.module(base + "materials.js", () => ({ applyOwnBodyShadow: async () => {} }));
+  mock.module(base + "render/materials.js", () => ({ applyOwnBodyShadow: async () => {} }));
   let onSwitch: any = null;   // catalog.js's switch seam, as it is: one handler, mybody.js's
   const catalog = { setMyAvatarPath() {}, wireAvatarSwitch(fn: any) { onSwitch = fn; }, switchAvatar: (p: string, n: string) => onSwitch?.(p, n) };
   mock.module(base + "edit/catalog.js", () => catalog);

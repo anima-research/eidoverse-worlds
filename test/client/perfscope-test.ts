@@ -14,7 +14,7 @@ import { stubResolve } from '../harness/stub.ts';
 const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({ name: 'perfscope-stubs', setup(b) {
   for (const m of ['core', 'base', 'world']) stubResolve(b, new RegExp(`^(\\.\\.?/)+${m}\\.js$`), () => ({ path: here('../stubs/perfscope-stub.mjs') }));
-  stubResolve(b, /^(\.\.?\/)+loadwork\.js$/, () => ({ path: here('../stubs/loadwork-stub.mjs') }));
+  stubResolve(b, /^(\.\.?\/)+(render\/)?loadwork\.js$/, () => ({ path: here('../stubs/loadwork-stub.mjs') }));
 } });
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { suite } from "../gate/suite.ts";
@@ -23,7 +23,7 @@ GlobalRegistrator.register();
 const stub = await import('../stubs/perfscope-stub.mjs');
 const { THREE, scene, entities, entityMeta, renders } = stub;
 const ps = await import('../../client/lib/debug/perfscope.js');
-const render = await import('../../client/lib/render.js');
+const render = await import('../../client/lib/render/render.js');
 
 const S = suite("perfscope");
 const check = (name: string, ok: unknown, detail?: unknown) => S.check(name, ok, detail);

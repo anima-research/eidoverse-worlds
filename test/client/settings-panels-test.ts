@@ -13,7 +13,7 @@ import { stubResolve } from '../harness/stub.ts';
 const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({ name: 'settings-stubs', setup(b) {
   const OLD_ROOT = /\/client\/lib\/((ui|render|player)\/)?[^/]+$/;   // the importers these stubs were written for: files of the lib root before tier two
-  for (const m of ['core', 'base', 'governor', 'lightrig', 'materials', '(xr/)?xrpanels', 'net', 'edit/catalog', '(avatar/)?avatar(-thumbnail)?', 'controller', '(audio/)?mictoggle'])
+  for (const m of ['core', 'base', '(render/)?governor', '(render/)?lightrig', '(render/)?materials', '(xr/)?xrpanels', 'net', 'edit/catalog', '(avatar/)?avatar(-thumbnail)?', 'controller', '(audio/)?mictoggle'])
     stubResolve(b, new RegExp(`^(\\.\\.?/)+${m}\\.js$`), (a) => (OLD_ROOT.test(a.importer.replace(/\\/g, '/')) ? { path: here('../stubs/settings-panels-stub.mjs') } : undefined));
   // vegetation/foliage.js asks for core one folder up
   stubResolve(b, /^\.\.\/core\.js$/, (a) => (/\/vegetation\/foliage\.js$/.test(a.importer.replace(/\\/g, '/')) ? { path: here('../stubs/settings-panels-stub.mjs') } : undefined));

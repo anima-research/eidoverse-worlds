@@ -13,7 +13,7 @@
 import { THREE } from '../core.js';
 import { bus } from '../base.js';
 import { entities, bagOf } from '../world.js';
-import { prepareMaterial } from '../materials.js';
+import { prepareMaterial } from '../render/materials.js';
 import { registerDraft } from '../../../shared/drafts.js';
 
 export const MAT = 'hesperus/material';

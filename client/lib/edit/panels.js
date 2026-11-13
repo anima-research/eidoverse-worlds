@@ -41,7 +41,7 @@ import { channels, fieldAt, ADD_WORDS, libLabel } from '../../../shared/editsche
 import { askCenter, confirmCenter } from './confirmcenter.js';
 import { xrActive } from '../xr/xrask.js';
 import { frontOf, addOnFace } from '../facemedia.js';
-import { lightCasting } from '../lightgizmo.js';
+import { lightCasting } from '../render/lightgizmo.js';
 import { myState, frameOn } from '../controller.js';
 import { reindexCollider } from '../colliders.js';
 import * as Edits from './writes.js';

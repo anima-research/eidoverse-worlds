@@ -1,4 +1,4 @@
-// bun test/client/syncgate-probe.mjs — NO PIPELINE LINKS ON THE RENDER PATH (client/lib/syncgate.js), in the real client.
+// bun test/client/syncgate-probe.mjs — NO PIPELINE LINKS ON THE RENDER PATH (client/lib/render/syncgate.js), in the real client.
 //
 // The owner's DevTools trace (2026-09-24 00:25): one render-path getProgramParameter held the main thread 54.7 s in the
 // Commons and froze the browser. syncgate hands render-path builds to three's KHR_parallel_shader_compile polling

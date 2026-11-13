@@ -16,7 +16,7 @@
 import { KTX2_KEY } from '../../shared/ktx2.js';   // the stub publishes the REAL generation — a literal here went stale on the 3→4 bump
 import { LOD_RECIPE } from '../../server/store-variants.ts';   // …and the REAL recipe: the literal here went stale when #205 derived it
 import * as THREE_ from '../../client/node_modules/three/build/three.module.js';
-import { askFor, tierOf } from '../../client/lib/lod_policy.js';
+import { askFor, tierOf } from '../../client/lib/render/lod_policy.js';
 import { state } from '../../client/lib/state.js';
 import { recordComponents } from '../../shared/protocol/view.js';
 import { bus } from '../../client/lib/base.js';

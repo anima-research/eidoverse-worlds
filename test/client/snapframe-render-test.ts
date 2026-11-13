@@ -4,7 +4,7 @@
 //
 // snapframe-test.ts checks the normaliser, the first-person pitch and the wire,
 // but its fake renderer places no camera, so it passes whatever
-// client/lib/net_capture.js does with dist / height. This runs the shipped
+// client/lib/render/net_capture.js does with dist / height. This runs the shipped
 // snapshot() with only the browser boundary stubbed (core.js's camera, the
 // remotes map, capture.js, fp_view.js's composer) and checks the eye and the
 // aim for third and selfie, with and without framing, that pitch reaches
@@ -42,7 +42,7 @@ const remote = {
 };
 mock.module(lib("core.js"), () => ({ THREE, camera: { isStub: true } }));
 mock.module(lib("remotes.js"), () => ({ remotes: new Map([["t", remote]]) }));
-mock.module(lib("capture.js"), () => ({
+mock.module(lib("render/capture.js"), () => ({
   captureFrame: () => "frame",
   captureFrom: (eye: THREE.Vector3, at: THREE.Vector3) => { shots.push({ eye: eye.clone(), at: at.clone() }); return "frame"; },
 }));
@@ -51,7 +51,7 @@ mock.module(lib("avatar/fp_view.js"), () => ({
 }));
 // (ported 10-17: the renderer leg is net_capture.js here, and its export is capture; it also reads world.js's entities, for `at`)
 mock.module(lib("world.js"), () => ({ entities: new Map() }));
-const { capture: snapshot } = await import("../../client/lib/net_capture.js");
+const { capture: snapshot } = await import("../../client/lib/render/net_capture.js");
 
 const fwd = V(Math.sin(root.rotation.y), 0, Math.cos(root.rotation.y));
 const at = (up: number, ahead: number) => root.position.clone().add(V(0, up, 0)).addScaledVector(fwd, ahead);

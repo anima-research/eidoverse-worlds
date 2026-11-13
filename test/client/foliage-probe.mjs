@@ -23,9 +23,9 @@ try {
   await drawn(pg, 120);   // the boot's first frames
   const r = await Promise.race([pg.evaluate(async () => {
     const { THREE, scene, renderer } = await import('./lib/core.js');
-    const { prepareObject } = await import('./lib/materials.js');
+    const { prepareObject } = await import('./lib/render/materials.js');
     const F = await import('./lib/vegetation/foliage.js');
-    const { renderAside } = await import('./lib/render.js');
+    const { renderAside } = await import('./lib/render/render.js');
     // leaf texture: vertical leaflets — solid (255), a 1-texel 50% rim, see-through gaps (0)
     const N = 64, px = new Uint8Array(N * N * 4);
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {

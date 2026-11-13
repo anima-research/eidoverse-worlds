@@ -77,7 +77,7 @@ try {
     try {
       // budget: sample every frame whether the bake target is still bound
       // a hog takes each frame's free grant and overruns, so bands really WAIT for their turn (aging lets them in)
-      const fb = await import('./lib/framebudget.js');
+      const fb = await import('./lib/render/framebudget.js');
       const B = mk(); let boundSeen = 0, sampling = true;
       (function samp() { if (!sampling) return; if (renderer.getRenderTarget() === B) boundSeen++; if (fb.ask('probe-hog')) fb.spent('probe-hog', 40); origRAF(samp); })();
       const d0 = fb.budgetStats().lanes.sky?.denied ?? 0;

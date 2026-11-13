@@ -98,7 +98,7 @@ try {
 
   // ---- B1: the status chips and the menu bar ----
   await stage("B1", async () => {
-    await page(`const s = await import('/lib/ui/statuschips.js'); const c = await import('/lib/ui/capnotice.js'); s.statusChip({ id: 'webgl', ...c.WEBGL, actions: [{ label: 'got it' }] }); const g = await import('/lib/governor.js'); s.statusChip(g.REDUCED_CHIP); return true;`);
+    await page(`const s = await import('/lib/ui/statuschips.js'); const c = await import('/lib/ui/capnotice.js'); s.statusChip({ id: 'webgl', ...c.WEBGL, actions: [{ label: 'got it' }] }); const g = await import('/lib/render/governor.js'); s.statusChip(g.REDUCED_CHIP); return true;`);
     await buildMode(true); await sleep(2200);   // the strip re-places on its slow tick too
     const covered = await evalJson(`[...document.querySelectorAll('.edit-top .edit-btn, .edit-top .edit-vbtn')].filter((b) => b.getBoundingClientRect().width).map((b) => { const r = b.getBoundingClientRect(); const e = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return b.contains(e) ? null : (b.textContent.trim() || b.title) + ' ← ' + (e?.closest('.stchip')?.textContent ?? e?.className ?? '?'); }).filter(Boolean)`);
     const chips = await evalJson(`[...document.querySelectorAll('.stchip')].map((c) => c.textContent.trim())`);

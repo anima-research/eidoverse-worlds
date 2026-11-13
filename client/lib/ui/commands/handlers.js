@@ -10,7 +10,7 @@ import { DOORS, doorOf, doorWrites, durationMs, leftWords, notADoor } from '../.
 import { actorName as actorLabel } from '../../../../shared/protocol/names.js';
 /** This world's @world components, from this client's own fold (roles, access, the default role). */
 const worldComponents = () => replica.st?.entities?.['@world']?.c ?? {};
-import { captureFrame } from '../../capture.js';
+import { captureFrame } from '../../render/capture.js';
 import { register, dispatch } from './registry.js';
 import { plain } from '../plainwords.js';
 import { entities, worldHasOwner, bagOf } from '../../world.js';

@@ -22,12 +22,12 @@
 //
 // DOM-free and side-effect-free: unit-tested in test/client/lod-policy-test.ts.
 
-import { negotiate, withLod } from '../../shared/ktx2.js';
+import { negotiate, withLod } from '../../../shared/ktx2.js';
 
 export const MODEL_QUALITY = ['auto', 'full', 'eco'];
 // the distance geometry is shared with the server's LOD budget (shared/lod-distance.js)
-export { LOD_FRACTION, LOD_HYST } from '../../shared/lod-distance.js';
-import { LOD_FRACTION, LOD_HYST } from '../../shared/lod-distance.js';
+export { LOD_FRACTION, LOD_HYST } from '../../../shared/lod-distance.js';
+import { LOD_FRACTION, LOD_HYST } from '../../../shared/lod-distance.js';
 /** Under pressure — and on the 'eco' dial — the edge halves: reduced
  *  tiers come in much closer, but never to arm's length. */
 export const PRESSURE_EDGE = 0.5;

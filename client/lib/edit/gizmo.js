@@ -6,7 +6,7 @@ import { THREE, scene, camera, canvas } from '../core.js';
 import { bus } from '../base.js';
 import { entities, bagOf } from '../world.js';
 import { sendDrag } from '../net.js';
-import { registerSystem } from '../frameloop.js';
+import { registerSystem } from '../render/frameloop.js';
 import { sceneSelected } from '../scenegraph.js';
 import { getTool, getSpace, isBuilding, refreshOutline, setPointerVeto, setEscapeHook } from './build.js';
 import * as Edits from './writes.js';

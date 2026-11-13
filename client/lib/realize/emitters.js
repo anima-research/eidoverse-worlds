@@ -21,7 +21,7 @@ import { entities, findPart } from '../world.js';
 import { resolveParticles, effectBlobName, effectProblem, readableEffect, QUALITY_TIERS } from '../../../shared/particle_effects.js';
 import { buildEmitter } from './particlefx.js';
 import { makeEmitterRegistry, retireEmitter } from './emitter_field.js';
-import { autoHooks as autos, ownHook } from '../autohooks.js';
+import { autoHooks as autos, ownHook } from '../render/autohooks.js';
 import { sendRequest } from '../net.js';
 
 // ---- textures --------------------------------------------------------------

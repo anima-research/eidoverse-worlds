@@ -19,7 +19,7 @@ if (CASE) {
   plugin({ name: 'core-stub', setup(build) {
     stubResolve(build, /^(\.\.?\/)+core\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
     stubResolve(build, /^(\.\.?\/)+base\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
-    stubResolve(build, /^(\.\.?\/)+loadwork\.js$/, () => ({ path: here('../stubs/loadwork-stub.mjs') }));
+    stubResolve(build, /^(\.\.?\/)+(render\/)?loadwork\.js$/, () => ({ path: here('../stubs/loadwork-stub.mjs') }));
   } });
 
   // the preference, set BEFORE the import that reads it
@@ -27,7 +27,7 @@ if (CASE) {
   else localStorage.removeItem('ew-shadows');   // absent = on (the default)
 
   const { renderer, sun } = await import('../stubs/core-stub.mjs');
-  const rig = await import('../../client/lib/lightrig.js');
+  const rig = await import('../../client/lib/render/lightrig.js');
 
   // The mutation controls reproduce the state a reverted source line left
   // behind. #1 cannot be re-run at import (the slot is already born), so it is
@@ -150,13 +150,13 @@ plugin({ name: 'core-stub', setup(build) {
   stubResolve(build, /^(\.\.?\/)+core\.js$/, () => ({ path: here('../stubs/shadow-fade-core-stub.mjs') }));
   stubResolve(build, /^(\.\.?\/)+base\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
   stubResolve(build, /^(\.\.?\/)+state\.js$/, () => ({ path: here('../stubs/state-stub.mjs') }));
-  stubResolve(build, /^(\.\.?\/)+warmqueue\.js$/, () => ({ path: here('../stubs/lod-client-stub.mjs') }));   // warmDepth resolves at once
+  stubResolve(build, /^(\.\.?\/)+(render\/)?warmqueue\.js$/, () => ({ path: here('../stubs/lod-client-stub.mjs') }));   // warmDepth resolves at once
 } });
 const S = suite("shadow-fade");
 const check = (name, ok, note) => S.check(name, ok, note);
 const { THREE, camera, sun } = await import('../stubs/core-stub.mjs');
-const rig = await import('../../client/lib/lightrig.js');
-const mats = await import('../../client/lib/materials.js');
+const rig = await import('../../client/lib/render/lightrig.js');
+const mats = await import('../../client/lib/render/materials.js');
 const { updateRig, registerCaster, setCasterBudget, rigDebug, requestLight, releaseLight, isCasting, setSlotCap } = rig;
 const settle = async () => { for (let i = 0; i < 4; i++) await Promise.resolve(); };
 

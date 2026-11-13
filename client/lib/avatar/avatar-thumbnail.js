@@ -3,8 +3,8 @@
 import { THREE, renderer, backendName } from '../core.js';
 import { bus, tee } from '../base.js';
 import { clipFor } from '../assets.js';
-import { beginWork, enqueue } from '../loadwork.js';
-import { renderAside } from '../render.js';
+import { beginWork, enqueue } from '../render/loadwork.js';
+import { renderAside } from '../render/render.js';
 
 // Contributed roster art: whoever wears a body renders one portrait off the VRM already in memory and posts it
 // back (POST /thumb), once per body. The body's perf numbers as loaded (perfscope.js statsOf) ride the same door,

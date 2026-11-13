@@ -18,11 +18,11 @@ const castingKeys = (globalThis.__castingKeys = new Set());
 plugin({
   name: "light-readers",
   setup(b) {
-    for (const f of ["^\\.\\./core\\.js$", "^\\.\\./assets\\.js$", "^\\.\\./colliders\\.js$", "^\\.\\./lightrig\\.js$", "^\\.\\./lightgizmo\\.js$", "^\\.\\./world\\.js$", "^\\.\\./materials\\.js$"]) {
+    for (const f of ["^\\.\\./core\\.js$", "^\\.\\./assets\\.js$", "^\\.\\./colliders\\.js$", "^(\\.\\.?/)+(render/)?lightrig\\.js$", "^(\\.\\.?/)+(render/)?lightgizmo\\.js$", "^\\.\\./world\\.js$", "^(\\.\\.?/)+(render/)?materials\\.js$"]) {
       stubResolve(b, new RegExp(f), (a) => (a.importer.replace(/\\/g, "/").includes("/client/lib/realize/") ? { path: LOD } : undefined));
     }
-    stubResolve(b, /^(\.\.?\/)+(lightrig|materials)\.js$/, (a) =>
-      (/\/client\/lib\/(lightgizmo|realize\/material_draft)\.js$/.test(a.importer.replace(/\\/g, "/")) ? { path: a.path, namespace: "light-readers" } : undefined));
+    stubResolve(b, /^(\.\.?\/)+(render\/)?(lightrig|materials)\.js$/, (a) =>
+      (/\/client\/lib\/(render\/lightgizmo|realize\/material_draft)\.js$/.test(a.importer.replace(/\\/g, "/")) ? { path: a.path, namespace: "light-readers" } : undefined));
     b.onLoad({ filter: /.*/, namespace: "light-readers" }, (a) => ({
       loader: "js",
       contents: a.path.includes("lightrig")
@@ -32,7 +32,7 @@ plugin({
   },
 });
 
-const { makeLightGizmo, lightCasting } = await import("../../client/lib/lightgizmo.js");
+const { makeLightGizmo, lightCasting } = await import("../../client/lib/render/lightgizmo.js");
 const { materialsOf } = await import("../../client/lib/realize/material_draft.js");
 const { liveFor, setEditHooks } = await import("../../client/lib/edit/inspect.js");
 const lod: any = await import("../stubs/lod-client-stub.mjs");

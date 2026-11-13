@@ -9,7 +9,7 @@ import { hydrate as shadowHydrate, reset as shadowReset, state as shadowState, a
 import { hear } from '../../shared/chatwindow.js';
 import { refusalText } from '../../shared/protocol/refusal.js';
 import { helloOf, refusalWords } from '../../shared/protocol/hello.js';
-import { pending, P } from './scheduler.js';
+import { pending, P } from './render/scheduler.js';
 // chat lines (fold-inert) go over the bus as 'live-entry' (realize/livechat.js listens; emitted, not imported, to
 // stay out of the net → chat → net cycle)
 import { wingFoldPresence } from '../../shared/wingpresence.js';

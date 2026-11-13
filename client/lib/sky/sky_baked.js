@@ -12,9 +12,9 @@
 
 import { THREE, TSL, scene, camera, renderer } from '../core.js';
 import { tee, bus, CONFIG } from '../base.js';
-import { warm, P_AMBIENT } from '../warmqueue.js';
+import { warm, P_AMBIENT } from '../render/warmqueue.js';
 import { bandCuts } from './sky_bands.js';
-import { ask, spent, turn } from '../framebudget.js';
+import { ask, spent, turn } from '../render/framebudget.js';
 
 let dome = null;
 let mat = null;

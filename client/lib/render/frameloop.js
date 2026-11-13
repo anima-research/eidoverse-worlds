@@ -9,9 +9,9 @@
 // before remotes, gaze after remotes, send-pose after every myState writer, render last. main.js registers the list;
 // this module knows nothing about any system. startFrame() is explicit: the loop starts only after identity resolves.
 
-import { report, bus } from './base.js';
-import { renderer, XR_BOOT } from './core.js';
-import { BC } from './debug/breadcrumbs.js';
+import { report, bus } from '../base.js';
+import { renderer, XR_BOOT } from '../core.js';
+import { BC } from '../debug/breadcrumbs.js';
 import { perf } from './perf.js';
 import { tick as budgetTick } from './framebudget.js';
 globalThis.__perf = perf;   // harness: xr-lifecycle-probe reads frameNo to prove the desktop loop ticks after a session ends

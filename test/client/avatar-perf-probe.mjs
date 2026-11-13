@@ -32,7 +32,7 @@ try {
   // is never smooth, so feed the governor its own input — six 60fps seconds, synchronously, between its real 1Hz
   // reads — once loading has settled; nothing else is bypassed.
   const calm = await pg.evaluate(async () => {
-    const G = await import('./lib/governor.js');
+    const G = await import('./lib/render/governor.js');
     let reached = false; G.whenCalm().then(() => { reached = true; });
     for (let i = 0; i < 120 && !reached; i++) { for (let k = 0; k < 6; k++) G.governPerformance(60); await new Promise((r) => setTimeout(r, 500)); }
     return reached;

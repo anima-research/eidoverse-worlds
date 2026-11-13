@@ -1,5 +1,5 @@
 // Optional framing for a world snapshot, one normaliser for its three readers: GET /snap's query (server/routes.ts),
-// the `snap` wire message's `frame` (client/lib/net_capture.js) and the agent `snapshot` tool (mcpl/tools.ts).
+// the `snap` wire message's `frame` (client/lib/render/net_capture.js) and the agent `snapshot` tool (mcpl/tools.ts).
 // An absent field means the default framing.
 //   dist   — third/selfie: metres from camera to body, measured flat (third behind, selfie in front)  [0.5, 30]
 //   height — third/selfie: camera height above the body's feet                                       [0, 30]

@@ -10,7 +10,7 @@
 import { negotiate } from '../../shared/ktx2.js';
 import { bus, CONFIG, report } from './base.js';
 import { whenBooted } from './boot.js';
-import { whenCalm } from './governor.js';
+import { whenCalm } from './render/governor.js';
 import { demandState, listLibrary, ktx2Capable, ktx2KeyReady } from './assets.js';
 
 const QUIET_MS = 1500;      // demand-free time required before (re)taking the wire

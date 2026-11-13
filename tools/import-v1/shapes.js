@@ -27,7 +27,7 @@ import { isSocketC } from "../../shared/protocol/authority/sockets.js";
 import { lifter, isLegacyParent } from "./sockets.js";
 import { emptyState, applyInPlace } from "../../shared/protocol/fold.js";
 import { isObj } from "../../shared/protocol/is.js";
-/** The light rig's falloff before a light said its own (client/lib/lightrig.js, three.js decay). */
+/** The light rig's falloff before a light said its own (client/lib/render/lightrig.js, three.js decay). */
 export const OLD_LIGHT_DECAY = 1.7;
 /** …and its intensity when a light wrote none (lightrig.js requestLight; not the registry's default). */
 export const OLD_LIGHT_INTENSITY = 16;

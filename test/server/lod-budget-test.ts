@@ -25,7 +25,7 @@ import { getBounds } from "@gltf-transform/core";
 import draco3d from "draco3dgltf";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
 import { parseGlb } from "../../server/glbparse.ts";
-import { LOD_NEAR_MIN } from "../../client/lib/lod_policy.js";
+import { LOD_NEAR_MIN } from "../../client/lib/render/lod_policy.js";
 import sharp from "sharp";
 import { lodNearest } from "../../shared/lod-distance.js";
 import { LOD_PX, LOD_PPD, LOD_TEXELS_PER_PX, LOD_TEX_ONLY, KTX2_TEXEL_CAP } from "../../server/store-variants.ts";

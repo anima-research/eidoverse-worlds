@@ -3,7 +3,7 @@
 // Deliberately NOT unified here: avatar.js's portrait pipeline, an offscreen-SUBJECT renderer (own RenderTarget,
 // isolated Scene, async reads, transparent background) rather than a capture of the live frame.
 
-import { THREE, renderer, scene, camera } from './core.js';
+import { THREE, renderer, scene, camera } from '../core.js';
 import { renderWorld } from './render.js';
 
 /** Render the live scene through the live camera and read the frame back

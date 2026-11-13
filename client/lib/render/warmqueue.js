@@ -5,7 +5,7 @@
 // Between items, one real requestAnimationFrame yield (scheduler.yield starves rAF on Chromium). Errors are swallowed
 // but counted in warmStats().
 
-import { renderer, scene, sun, camera, THREE, TSL } from './core.js';
+import { renderer, scene, sun, camera, THREE, TSL } from '../core.js';
 import { beginWork, nextFrame } from './loadwork.js';
 import { turn, spent, reportPending } from './framebudget.js';
 

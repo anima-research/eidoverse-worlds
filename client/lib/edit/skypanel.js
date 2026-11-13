@@ -11,7 +11,7 @@ import { previewSky, skyArgs, skyImpl, WEATHERS, CLOUDS, SKY_QUALITY, skyQuality
   CLOUD_QUALITY, getCloudChoice, setCloudQuality, cloudCap, skyInXR } from '../sky/sky.js';
 import { GRASS_QUALITY, getGrassQuality, setGrassQuality,
   getGrassDensity, getGrassShed, getGrassApplied } from '../terrain.js';
-import { MODEL_QUALITY } from '../lod_policy.js';
+import { MODEL_QUALITY } from '../render/lod_policy.js';
 import { loggedSky, skyPreviewing, skyRendering, skyDegraded, getCloudQuality } from '../sky/sky.js';
 import { effectiveClock } from '../../../shared/forecast.js';
 import { stateLines } from '../ui/statelines.js';

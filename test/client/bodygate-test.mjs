@@ -1,4 +1,4 @@
-// The body-first gate (client/lib/bodygate.js): dormant until armed, released once, a capped wait; and the same gate AT
+// The body-first gate (client/lib/render/bodygate.js): dormant until armed, released once, a capped wait; and the same gate AT
 // ITS LOAD BOUNDARY, the real loadGLB (assets.js) with a scripted network and a recording loadwork stub: armed and
 // closed, a model's bytes arrive but its PARSE waits in the 'body-first' phase until the gate opens (review 2026-09-10 #1).
 // The gate is one-shot module state, so the two halves run as one sequence: unarmed, armed, open.
@@ -13,7 +13,7 @@ const HERE = import.meta.dir; const here = (p) => `${HERE}/${p.replace(/^\.\//, 
 plugin({ name: 'core-stub', setup(build) {
   stubResolve(build, /^(\.\.?\/)+core\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
   stubResolve(build, /^(\.\.?\/)+base\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
-  stubResolve(build, /^(\.\.?\/)+loadwork\.js$/, () => ({ path: here('../stubs/loadwork-stub.mjs') }));
+  stubResolve(build, /^(\.\.?\/)+(render\/)?loadwork\.js$/, () => ({ path: here('../stubs/loadwork-stub.mjs') }));
 } });
 // a valid glTF with an empty scene: GLTFLoader.parse takes JSON text in an ArrayBuffer when it is not a GLB
 const GLTF = new TextEncoder().encode(JSON.stringify({ asset: { version: '2.0' }, scenes: [{ nodes: [] }], scene: 0 }));
@@ -22,7 +22,7 @@ globalThis.fetch = async (path) => /\.glb/.test(path)
   : new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
 
 const { works } = await import('../stubs/loadwork-stub.mjs');
-const { armBodyGate, bodyGateArmed, releaseBodyGate, bodyGateOpen, awaitBodyGate } = await import('../../client/lib/bodygate.js');
+const { armBodyGate, bodyGateArmed, releaseBodyGate, bodyGateOpen, awaitBodyGate } = await import('../../client/lib/render/bodygate.js');
 const { loadGLB } = await import('../../client/lib/assets.js');
 // a wait that never resolves is the failure this file exists to catch: it must go RED, not hang
 setTimeout(() => { console.log('  FAIL  a gate wait or a load hung past 8 s\n\nHUNG'); process.exit(1); }, 8000).unref?.();
