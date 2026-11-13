@@ -756,7 +756,7 @@ console.log("\na spot named by x/z upstairs is on the upper floor\n");
     for (const m of ops) { sent.push(m); if (m.args?.component === "places") { const e = ag.entities.get(m.args.id); e.places = m.args.merge ? { ...(e.places ?? {}), ...m.args.value } : m.args.value; } }
     return { ok: true };
   };
-  const said = await ag.namePlaceNow("window", { at: { x: 1.5, z: 0.5 } });
+  const said = await ag.places.namePlaceNow("window", { at: { x: 1.5, z: 0.5 } });
   const at = sent.find((m) => m.args?.component === "places")?.args?.value?.window?.at;
   check("naming a spot by x/z upstairs puts it on the upper floor", Array.isArray(at) && Math.abs(at[1] - upperY) < 1e-3, `${said} ${JSON.stringify(at)}`);
   ag.joined = false;
@@ -1172,7 +1172,7 @@ console.log("\nGreptile's review of October 19: a floor walk's lowest ground, th
     for (const m of ops) { sent.push(m); if (m.args?.component === "places") { const e = namer.entities.get(m.args.id); e.places = m.args.merge ? { ...(e.places ?? {}), ...m.args.value } : m.args.value; } }
     return { ok: true };
   };
-  const said = await namer.namePlaceNow("sill", { at: { x: 1.5, z: 0.5 } });
+  const said = await namer.places.namePlaceNow("sill", { at: { x: 1.5, z: 0.5 } });
   const at = sent.find((m) => m.args?.component === "places")?.args?.value?.sill?.at;
   check("a body laid down upstairs names a spot by x/z on the upper floor", Array.isArray(at) && Math.abs(at[1] - upperY) < 1e-3, `${said} ${JSON.stringify(at)}`);
   namer.joined = false;

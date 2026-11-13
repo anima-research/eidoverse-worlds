@@ -220,13 +220,13 @@ for (const [status, err] of [["ran", false], ["nothing", false], ["would-run", f
   const out: any = await handleTool({ agent: ag } as any, "act", { verb: "use", args: { id: "bell", action: "ring" } });
   ok(!!out.isError === err && /"status": "/.test(out.content[0].text), `act use whose script ${status}: ${err ? "isError" : "no error"}`, out); }
 // house 6340433633: on a socket that rides a model part, face and beside-thing say a retry won't help and a point near it will
-{ const { effectiveWorldTransform } = await import("../../mcpl/effective.ts"); const { WorldAgent } = await import("../../mcpl/agent.ts");
+{ const { effectiveWorldTransform } = await import("../../mcpl/effective.ts"); const { AgentPlaces } = await import("../../mcpl/agent-places.ts");
   const v: any = { entity: (id: string) => (id === "cup-1" ? { pos: [0, 0, 0], socket: { name: "grip", part: "arm" } } : id === "robot" ? { pos: [0, 0, 0] } : undefined), mount: (id: string) => (id === "cup-1" ? { to: "robot" } : undefined) };
   const r: any = effectiveWorldTransform("cup-1", v, 0);
   const faced: number[][] = [];
   const ag: any = { people: new Map(), thingRef: () => ({ id: "cup-1" }), entities: new Map([["cup-1", { id: "cup-1", pos: [0, 0, 0] }]]), worldPointOf: () => ({ why: r.why }), face: (x: number, z: number) => faced.push([x, z]) };
   const out: any = await handleTool({ agent: ag } as any, "face", { target: "cup" });
-  const b: any = Object.create(WorldAgent.prototype); Object.assign(b, { pos: { x: 5, y: 0, z: 5 }, replica: null, worldPointOf: () => ({ why: r.why }), refName: (id: string) => id });
+  const b: any = Object.create(AgentPlaces.prototype); Object.assign(b, { a: { pos: { x: 5, y: 0, z: 5 }, replica: null, worldPointOf: () => ({ why: r.why }), refName: (id: string) => id } });
   const beside = b.besideThing({ id: "cup-1", pos: [0, 0, 0] });
   const says = (t: string) => /part geometry unavailable here/.test(t) && /asking again won't change that/.test(t) && /face \{x, z\}|move \{to: \[x, z\]\}/.test(t);
   ok(!r.ok && !faced.length && out.isError && says(out.content[0].text) && says(beside.refusal ?? ""), "on a part-riding socket, face and beside say a retry won't help and coordinates near it will", { face: out.content[0].text, beside }); }
