@@ -312,7 +312,7 @@ const cases: Case[] = [
       return { def: [/#5/.test(def), /#6/.test(def), /#7/.test(def)], ch: [/#6/.test(ch), /#5/.test(ch)], win: [/#5/.test(win), /#7/.test(win), /#9/.test(win)], args: asked.map((x) => [x.after ?? null, x.before ?? null]) }; },
     good: (o) => o.def[0] && !o.def[1] && o.def[2] && o.ch[0] && !o.ch[1] && o.win[0] && o.win[1] && !o.win[2] && JSON.stringify(o.args[2]) === "[4,null]" },
   { id: "P8", what: "decision row 10 (R 10-30): an agent is marked as on main, a small ◈ before its name in the chat log (not a trailing word); no tag on the nameplate or in People Here", async run() {
-      const css = readText("client/index.html"), av = readText("client/lib/avatar/avatar.js"), ch = readText("client/lib/chat.js");
+      const css = readText("client/index.html"), av = readText("client/lib/avatar/nameplate.js"), ch = readText("client/lib/chat.js");
       return { before: /\.who\[data-declares="agent"\]::before \{ content: '◈ '/.test(css), noWord: /\.who\[data-declares="agent"\]::after \{ content: none; \}/.test(css),
         plate: /· AI/.test(av) || /who-ai/.test(ch) || /who-ai/.test(css) }; },
     good: (o) => o.before && o.noWord && !o.plate },

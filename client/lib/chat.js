@@ -375,7 +375,7 @@ function account(line, { who, text, merged, newlyPinged, wasAtBottom }) {
   if (newlyPinged) bus.emit('pinged', { who, text });
 }
 
-// The chat-log line for a message; its overhead twin is avatar.js makeBubble.
+// The chat-log line for a message; its overhead twin is avatar/nameplate.js makeBubble.
 function buildLine(who, text, { kind = '', ts = Date.now(), historical = false, links = true } = {}) {
   const sys = who === '*';
   const mine = who === CONFIG.name;

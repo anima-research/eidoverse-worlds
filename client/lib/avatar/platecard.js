@@ -257,7 +257,7 @@ function hitAt(x, y) {
   let best = null, bestDepth = Infinity;
   const box = d.canvas.getBoundingClientRect();
   for (const r of d.remotes.values()) {
-    // a plate a wall hides (its last draw failed the depth test, avatar.js noteOccluded) opens nothing, nor does the head under it
+    // a plate a wall hides (its last draw failed the depth test, nameplate.js noteOccluded) opens nothing, nor does the head under it
     const p = r.avatar?.label?.userData.occluded ? null : plateRect(r.avatar, box);
     if (!p) continue;
     const onPlate = x >= p.l - 3 && x <= p.r + 3 && y >= p.t - 4 && y <= p.b + 4;   // a little slack: the plate is thin

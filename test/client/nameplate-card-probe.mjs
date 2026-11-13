@@ -161,9 +161,9 @@ try {
   // a name of capitals bake to the same height; and the sprite's height follows its canvas (the text keeps its size)
   const plateBake = await pg.evaluate(async () => {
     const av = EW.remotes.get('farmute')?.avatar; if (!av) return null;
-    const keep = av._labelName;
+    const keep = av.plate._labelName;
     const read = (name) => {
-      av._labelName = name; av.repaintLabel();
+      av.plate._labelName = name; av.repaintLabel();
       const cv = av.label.material.map.image, x = cv.getContext('2d'), d = x.getImageData(0, 0, cv.width, cv.height).data;
       const bg = x.getImageData(0, 0, 1, 1).data;   // the canvas corner: outside the pill
       let pT = -1, pB = -1, tT = -1, tB = -1;
@@ -175,7 +175,7 @@ try {
       return { name, h: cv.height, w: cv.width, pill: [pT, pB], ink: [tT, tB], above: tT - pT, below: pB - tB, aspect: av.label.userData.aspect };
     };
     const out = [read('guest-2ggs'), read('HHHH')];
-    av._labelName = keep; av.repaintLabel();
+    av.plate._labelName = keep; av.repaintLabel();
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     // read on a NEAR peer: a far plate past its fade is not re-sized each frame, so its scale says nothing about the bake
     const near = EW.remotes.get('nearhear')?.avatar;
@@ -237,7 +237,7 @@ try {
     const av = EW.remotes.get('nearmute').avatar;
     av.say?.('hello there');
     const m = (s) => s && { node: !!s.material.isSpriteNodeMaterial, dt: s.material.depthTest, dw: s.material.depthWrite, dn: !!s.material.depthNode, clear: s.userData.plateClear };
-    av._typingUntil = performance.now() + 60000; av._typingState = 'mic';   // a live mic stacks ABOVE a bubble (a composing pill would give way to it)
+    av.plate._typingUntil = performance.now() + 60000; av.plate._typingState = 'mic';   // a live mic stacks ABOVE a bubble (a composing pill would give way to it)
     return { label: m(av.label), bubble: av.bubble ? { dt: av.bubble.material.depthTest } : null };
   });
   await sleep(600);
@@ -246,7 +246,7 @@ try {
     mats.label?.node && mats.label.dt === true && mats.label.dw === false && mats.label.dn && mats.label.clear >= 0.3, JSON.stringify(mats));
   check('…the typing pill too (clearance ≥ the plate’s: it sits above it)', typ?.node && typ.dt === true && typ.dn && typ.clear >= mats.label.clear, JSON.stringify(typ));
   check('…speech bubbles stay on top (depthTest off)', mats.bubble?.dt === false, JSON.stringify(mats.bubble));
-  await pg.evaluate(() => { const av = EW.remotes.get('nearmute').avatar; av._typingUntil = 0; });
+  await pg.evaluate(() => { const av = EW.remotes.get('nearmute').avatar; av.plate._typingUntil = 0; });
 
   // name-hued pixels inside a plate's box: THE measurement (#8fe8c8 on the dark pill; the walls here are neutral grey)
   const namePx = async (id) => {
@@ -336,17 +336,17 @@ try {
     const T = EW.THREE, av = EW.remotes.get('nearhear').avatar, l = new T.Vector3(); av.label.getWorldPosition(l);
     const box = new T.Mesh(new T.BoxGeometry(0.5, 0.5, 0.5), new T.MeshBasicNodeMaterial({ color: 0x909090 }));
     box.name = 'probe-own'; av.vrm.scene.add(box); av.vrm.scene.updateMatrixWorld(true);
-    box.position.copy(av.vrm.scene.worldToLocal(l)); av._ownClear = null;   // re-measure with the box as part of the body
+    box.position.copy(av.vrm.scene.worldToLocal(l)); av.plate._ownClear = null;   // re-measure with the box as part of the body
   });
   const own = await pxUntil('nearhear', (n) => n >= 30);
-  const ownClear = await pg.evaluate(() => EW.remotes.get('nearhear').avatar._ownClear);
+  const ownClear = await pg.evaluate(() => EW.remotes.get('nearhear').avatar.plate._ownClear);
   check('occlusion: its OWN body standing through the plate does not cut it (clearance re-measured past the box)',
     own.n >= 30 && ownClear >= 0.43, JSON.stringify({ own, ownClear }));
   await shot(pg, 'occl-c-own-body.png');
-  await pg.evaluate(() => { EW.remotes.get('nearhear').avatar._ownClear = 0; });   // the NAIVE depth test
+  await pg.evaluate(() => { EW.remotes.get('nearhear').avatar.plate._ownClear = 0; });   // the NAIVE depth test
   const naive = await pxUntil('nearhear', (n) => n < 3);
   check('…while the naive depth test (clearance 0) does cut it — the case the clearance exists for', naive.n < 3, JSON.stringify(naive));
-  await pg.evaluate(() => { const av = EW.remotes.get('nearhear').avatar; const b = av.vrm.scene.getObjectByName('probe-own'); b?.removeFromParent(); av._ownClear = null;
+  await pg.evaluate(() => { const av = EW.remotes.get('nearhear').avatar; const b = av.vrm.scene.getObjectByName('probe-own'); b?.removeFromParent(); av.plate._ownClear = null;
     for (const id of ['nearhear', 'nearmute']) EW.remotes.get(id).avatar.mixer.timeScale = 1; });
   await sleep(600);
 

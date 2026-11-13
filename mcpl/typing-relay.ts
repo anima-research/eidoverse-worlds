@@ -3,7 +3,7 @@
  * is working on a turn (MCPL `channels/typing`).
  *
  * The host sends `start` every 7 s during a turn and `stop` at its end; the world shows dots for 4 s per signal
- * (client/lib/avatar/avatar.js setTyping), so the relay re-signals every `reassertMs` until `stop`, or until no `start`
+ * (client/lib/avatar/nameplate.js setTyping), so the relay re-signals every `reassertMs` until `stop`, or until no `start`
  * has come for `overdueMs` (a lost `stop`). It signals through the body the latest `start` named, so dots never
  * follow a traveller into the next world.
  */

@@ -33,6 +33,7 @@ const { THREE } = await import('../stubs/core-stub.mjs');
 const { Avatar, BLINK } = await import('../../client/lib/avatar/avatar.js');
 const { Wings } = await import('../../client/lib/avatar/wings.js');
 const { Face } = await import('../../client/lib/avatar/face.js');
+const { Nameplate } = await import('../../client/lib/avatar/nameplate.js');
 const { DRIVEN_BONES } = await import('../../client/lib/ragdoll/ragdoll.js');
 
 let pass = 0, fail = 0;
@@ -458,6 +459,7 @@ console.log('\npose teardown and legacy animation compatibility:');
   for (let i = 0; i < 60; i++) self.tick(1 / 60, i * 1000 / 60);
   // The mesh survives a same-avatar takeover; only unrelated UI seams are stubbed.
   for (const name of ['setTyping', 'clearReach', 'setGazeTarget', 'setClip']) self[name] = () => {};
+  self.plate = {};   // resetTransients stops the bubble's clock on it (nameplate.js)
   Avatar.prototype.resetTransients.call(self);
   for (let i = 60; i < 300; i++) self.tick(1 / 60, i * 1000 / 60);
   check('a takeover ends the predecessor’s looping animation', !self._anims?.length);
@@ -489,10 +491,14 @@ console.log('\npose teardown and legacy animation compatibility:');
     getNormalizedBoneNode: (n: string) => n === 'head' ? head : null,
     getRawBoneNode: (n: string) => n === 'head' ? head : null,
   } };
-  const wearer = () => Object.assign(Object.create(Avatar.prototype), {
-    vrm, root: scene, gaze: new THREE.Object3D(), label: new THREE.Sprite(),
-    mixer: new THREE.AnimationMixer(scene), _composed: new Map(),
-  });
+  const wearer = () => {
+    const w = Object.assign(Object.create(Avatar.prototype), {
+      vrm, root: scene, gaze: new THREE.Object3D(),
+      mixer: new THREE.AnimationMixer(scene), _composed: new Map(),
+    });
+    w.plate = Object.assign(Object.create(Nameplate.prototype), { a: w, label: new THREE.Sprite() });
+    return w;
+  };
   const first = wearer();
   first.setPose({ head: { s: 2 }, Custom: { q: [0, 0, Math.sin(.3), Math.cos(.3)], t: [.25, 0, 0] } });
   first._override.weight = 1; first._applyRawPose();

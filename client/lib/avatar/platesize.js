@@ -1,5 +1,5 @@
 // platesize — a nameplate's size and visibility as a function of world distance from the eye. Pure (tested in
-// test/client/plateanchor-test.ts); avatar.js and namereveal.js apply it.
+// test/client/plateanchor-test.ts); nameplate.js and namereveal.js apply it.
 //
 // Shape: up close the plate is a world object (s = 1); once its capitals would fall under TEXT_DEG it holds that angle
 // (Microsoft's mixed-reality typography puts comfortable reading at 0.6–0.75°); past MAX_GROW perspective shrinks it
@@ -65,7 +65,7 @@ export const revealEase = (r) => r * r * (3 - 2 * r);
 
 
 // ---- the plate's box ----------------------------------------------------------------------------------------
-// avatar.js bakes the name onto a pill on a 512 px wide canvas. The pill is sized from measured ink
+// nameplate.js bakes the name onto a pill on a 512 px wide canvas. The pill is sized from measured ink
 // (measureText actualBoundingBox*), its height from the font's reference glyphs so "ggg" and "HHH" get the same plate;
 // a name whose ink reaches further (Å, an emoji) grows it. Not fontBoundingBox*: that carries the line gap, so text sits low.
 export const PLATE_TEX_W = 512, PLATE_PAD_Y = 12, PLATE_PAD_X = 24, PLATE_MARGIN = 6;

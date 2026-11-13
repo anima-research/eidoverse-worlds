@@ -1,7 +1,8 @@
 // bodyscale — "this body" (Profile › Avatar, R 2026-09-30): a chosen SIZE and a NAMEPLATE LIFT per body, networked.
 // Drives the real functions: shared/presencewire.js (the wire), shared/bodyscale.js (the maths), plateanchor.js's
-// lift, avatar.js's setUserScale/setPuppetScale/setPlateY/_placePlate on a real THREE rig, remotes.js applyRemoteBody,
-// and the server's own pose fence (posecheck.ts sanePose) — in-range fields pass the relay untouched, the rest are clamped.
+// lift, avatar.js's setUserScale/setPuppetScale/setPlateY and nameplate.js's _placePlate on a real THREE rig,
+// remotes.js applyRemoteBody, and the server's own pose fence (posecheck.ts sanePose) — in-range fields pass the relay
+// untouched, the rest are clamped.
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/client/bodyscale-test.ts
 //
@@ -157,6 +158,7 @@ console.log('avatar.js:');
 {
   const { THREE } = await import('../stubs/core-stub.mjs');
   const { Avatar } = await import('../../client/lib/avatar/avatar.js');
+  const { Nameplate } = await import('../../client/lib/avatar/nameplate.js');
   const { contributeThumbnail } = await import('../../client/lib/avatar/avatar-thumbnail.js');
   check('contributeThumbnail says when it skipped: false with no name (#225)', await fn({ contributeThumbnail }, 'contributeThumbnail')('', null) === false);
   check('…and false when the mint throws (no body to render)', await fn({ contributeThumbnail }, 'contributeThumbnail')('nobody', null, '', { force: true }) === false);
@@ -172,9 +174,10 @@ console.log('avatar.js:');
     const bones: any = { hips, head, leftEye: le, rightEye: re, leftFoot: lf, rightFoot: rf };
     const humanoid = { getRawBoneNode: (n: string) => bones[n] ?? null, getNormalizedBoneNode: () => null };
     const label = new THREE.Sprite(); label.position.y = 1.95;
-    const self: any = Object.assign(Object.create(Avatar.prototype), { vrm: { scene, humanoid }, root, label, _plateOff: null,
+    const self: any = Object.assign(Object.create(Avatar.prototype), { vrm: { scene, humanoid }, root,
       userScale: 1, plateY: 0, _puppet: 1 });
-    self._plateRest = call(self, '_measurePlateRest');
+    self.plate = Object.assign(Object.create(Nameplate.prototype), { a: self, label, _plateOff: null });   // nameplate.js
+    self.plate._plateRest = call(self.plate, '_measurePlateRest');
     return { self, root, scene, hips };
   };
   const { self, root, scene, hips } = rig();
@@ -187,17 +190,17 @@ console.log('avatar.js:');
   check('the VR fit composes under the size: vrm.scene = u / k', near(scene.scale.y, 1.5 / 1.1, 1e-12) && near(call(self, 'bodyScale'), 1.5 / 1.1, 1e-12), `${scene.scale.y}`);
   call(self, 'setPuppetScale', 1);
   check('...and leaving VR (fit back to 1) keeps the size', near(scene.scale.y, 1.5), `${scene.scale.y}`);
-  self._plateOff = null; call(self, '_placePlate', 1 / 60);
+  self.plate._plateOff = null; call(self.plate, '_placePlate', 1 / 60);
   const { plateGap } = await import('../../client/lib/avatar/plateanchor.js');
   check('150%: the plate hangs at crown × 1.5 + gap(height × 1.5)', near(self.label.position.y, crown * 1.5 + plateGap(height * 1.5), 1e-6), `${self.label.position.y} vs ${crown * 1.5 + plateGap(height * 1.5)}`);
   call(self, 'setPlateY', 0.3);
-  self._plateOff = null; call(self, '_placePlate', 1 / 60);
+  self.plate._plateOff = null; call(self.plate, '_placePlate', 1 / 60);
   check('...raised 30 cm (authored) = 45 cm at 150%', near(self.label.position.y, crown * 1.5 + plateGap(height * 1.5) + 0.45, 1e-6), `${self.label.position.y}`);
   check('setPlateY clamps (+0.8 m)', (call(self, 'setPlateY', 5), self.plateY === 0.8), `${self.plateY}`);
   call(self, 'setPlateY', 0.3);
   // lying, still lifted: the whole body flat along +x
   hips.position.set(0, 0.15, 0); hips.rotation.z = -Math.PI / 2;
-  self._plateOff = null; call(self, '_placePlate', 1 / 60);
+  self.plate._plateOff = null; call(self.plate, '_placePlate', 1 / 60);
   const headW = new THREE.Vector3(); self.vrm.humanoid.getRawBoneNode('head').getWorldPosition(headW);
   check('lying at 150%, lifted: over the head at head + span·1.5 + gap + 0.45', near(self.label.position.x, headW.x, 1e-6)
     && near(self.label.position.y, headW.y + self._plateRest.headSpan * 1.5 + plateGap(height * 1.5) + 0.45, 1e-6), `${J(self.label.position)} head ${J(headW)}`);
@@ -210,7 +213,7 @@ console.log('avatar.js:');
     for (let i = 0; i < n; i++) { arr[i * 3] = Math.cos(i) * 0.25; arr[i * 3 + 1] = (i / n) * 0.5; arr[i * 3 + 2] = Math.sin(i) * 0.25; }
     dense.geometry.setAttribute('position', new THREE.BufferAttribute(arr, 3));
     let reads = 0; const gvp = dense.getVertexPosition.bind(dense); dense.getVertexPosition = (i: number, t: any) => { reads++; return gvp(i, t); };
-    const placeAndMeasure = () => { b._plateOff = null; call(b, '_placePlate', 1 / 60); b._ownClear = null; return call(b, '_measureOwnClear'); };
+    const placeAndMeasure = () => { b.plate._plateOff = null; call(b.plate, '_placePlate', 1 / 60); b.plate._ownClear = null; return call(b.plate, '_measureOwnClear'); };
     placeAndMeasure();
     check('the skinned sample is capped at 4000 vertices a mesh (4001 → ≤ 4000 reads)', reads > 0 && reads <= 4000, `${reads}`);
     reads = 0;
@@ -246,7 +249,7 @@ console.log('avatar.js:');
         [s + 'UpperLeg']: V(.1 * x, .9, 0), [s + 'LowerLeg']: V(.1 * x, .5, 0), [s + 'Foot']: V(.1 * x, .1, .1) });
     }
     const stand: any = rigMath(THREE).makeAvatar(P);
-    const body: any = Object.assign(Object.create(Avatar.prototype), { root: stand.root, userScale: 1, _puppet: 1,
+    const body: any = Object.assign(Object.create(Avatar.prototype), { root: stand.root, userScale: 1, _puppet: 1, plate: {},
       vrm: { scene: stand.pivot, humanoid: { ...stand.vrm.humanoid, update() {} } } });
     const arm = () => { const c = call(body, '_measureChain', 'rightHand'); return c ? c.L1 + c.L2 : NaN; };
     const a1 = arm();
@@ -258,7 +261,8 @@ console.log('avatar.js:');
   }
   // a pooled VRM that comes back still wearing its last owner's size is reset by the constructor
   const src = String(Avatar.prototype.constructor);
-  check('the constructor writes a fresh size before measuring (a pooled VRM carries no stale scale)', /vrm\.scene\.scale\.setScalar\(1\)[\s\S]*_measurePlateRest\(\)/.test(src));
+  check('the constructor writes a fresh size before measuring (a pooled VRM carries no stale scale)', /vrm\.scene\.scale\.setScalar\(1\)[\s\S]*new Nameplate\(this\)/.test(src)
+    && /_measurePlateRest\(\)/.test(String(Nameplate.prototype.constructor)));
 }
 
 console.log('remotes.js (the receiver):');

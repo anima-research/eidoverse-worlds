@@ -4,7 +4,7 @@
 //   - Layout: shared/text.js layoutLines, by words, falling back to characters for a word wider than a line (CJK, a URL),
 //     measured with the canvas's own measureText. Each paragraph's direction is its first strong letter's, so Arabic and
 //     Hebrew read right to left (the canvas applies the bidi algorithm to each line).
-//   - One house font: the nameplate's stack (avatar.js), plus the system emoji fonts. A missing glyph paints nothing.
+//   - One house font: the nameplate's stack (avatar/nameplate.js), plus the system emoji fonts. A missing glyph paints nothing.
 //   - A canvas of ~96 px a line (at most 2048 × 2048; the density drops to fit), mipmapped, anisotropy 4: legible at an
 //     angle in a headset. Repainted only when the value changes.
 //   - Flat (billboard off): two planes back to back facing ±Z, so it reads from behind unmirrored. yaw: it turns about

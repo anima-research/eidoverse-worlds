@@ -1,5 +1,5 @@
-// plateanchor — where a nameplate hangs (client/lib/avatar/plateanchor.js, the functions avatar.js calls; this drives those very
-// functions, then avatar.js's own _measurePlateRest/_placePlate/_measureOwnClear against a real THREE rig).
+// plateanchor — where a nameplate hangs (client/lib/avatar/plateanchor.js, the functions nameplate.js calls; this drives those very
+// functions, then nameplate.js's own _measurePlateRest/_placePlate/_measureOwnClear against a real THREE rig).
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/client/plateanchor-test.ts
 //
@@ -208,6 +208,7 @@ console.log('avatar.js:');
 {
   const { THREE } = await import('../stubs/core-stub.mjs');
   const { Avatar } = await import('../../client/lib/avatar/avatar.js');
+  const { Nameplate } = await import('../../client/lib/avatar/nameplate.js');
   // a missing method is a no-op, so against the parent (a plate fixed at 1.95, set once) every check below reports
   // its own red instead of the section dying on the first call
   const call = (o: any, m: string, ...a: any[]) => (typeof o[m] === 'function' ? o[m](...a) : undefined);
@@ -224,10 +225,9 @@ console.log('avatar.js:');
     box.position.y = hair - 0.1; scene.add(box);
     const bones: any = hipsHead ? { hips, head, leftEye: eyes ? le : null, rightEye: eyes ? re : null, leftFoot: lf, rightFoot: rf } : {};
     const humanoid = { getRawBoneNode: (n: string) => bones[n] ?? null, getNormalizedBoneNode: () => null };
-    const self: any = Object.assign(Object.create(Avatar.prototype), {
-      vrm: { scene, humanoid }, root, label: sprite(), _plateOff: null,
-    });
-    self._plateRest = call(self, '_measurePlateRest');
+    const self: any = Object.assign(Object.create(Avatar.prototype), { vrm: { scene, humanoid }, root });
+    self.plate = Object.assign(Object.create(Nameplate.prototype), { a: self, label: sprite(), _plateOff: null });   // nameplate.js
+    self.plate._plateRest = call(self.plate, '_measurePlateRest');
     return { self, root, scene, hips, head, spine };
   };
   const { self, root, hips } = rig();
@@ -235,37 +235,37 @@ console.log('avatar.js:');
   // eyes at 1.58 → eye crown 1.688; hair box top 1.8 ≤ cap 1.8384 → crown 1.8
   check('rest crown from the real rig: the hair top (within the cap)', !!r && near(r.crown, 1.8, 1e-6), J(r));
   check('...rest head above feet = head − feet', !!r && near(r.restHeadAboveFeet, 1.5 - 0.08, 1e-6), J(r));
-  call(self, '_placePlate', 1 / 60);
+  call(self.plate, '_placePlate', 1 / 60);
   const g = plateGap(1.8 - 0.08);
   check('standing: the plate hangs at crown + gap, over the hips', near(self.label.position.y, 1.8 + g, 1e-6) && near(self.label.position.x, 0, 1e-9), J(self.label.position));
   // walk the root away, turn it, scale it ×1.5: the plate stays in the root frame at the same local spot
   root.position.set(5, 2, -3); root.rotation.y = 1.1; root.scale.setScalar(1.5);
-  self._plateOff = null; call(self, '_placePlate', 1 / 60);
+  self.plate._plateOff = null; call(self.plate, '_placePlate', 1 / 60);
   const gw = plateGap((1.8 - 0.08) * 1.5);
   check('root moved, turned, ×1.5: local y = crown + gap/1.5 (the gap is world metres)', near(self.label.position.y, 1.8 + gw / 1.5, 1e-6), J(self.label.position));
   check('...local x/z still over the hips', near(self.label.position.x, 0, 1e-6) && near(self.label.position.z, 0, 1e-6), J(self.label.position));
-  root.position.set(0, 0, 0); root.rotation.y = 0; root.scale.setScalar(1); self._plateOff = null;
+  root.position.set(0, 0, 0); root.rotation.y = 0; root.scale.setScalar(1); self.plate._plateOff = null;
   // sit: hips drop 0.6 and shift forward 0.1; the plate eases there (not a snap), and a root move does NOT ease
-  call(self, '_placePlate', 1 / 60);
+  call(self.plate, '_placePlate', 1 / 60);
   const standY = self.label.position.y;
   hips.position.set(0, 0.35, 0.1);
-  call(self, '_placePlate', 1 / 90);
+  call(self.plate, '_placePlate', 1 / 90);
   check('sit: x/z follow at once, y eases (not a snap)', near(self.label.position.z, 0.1, 1e-6) && self.label.position.y < standY && self.label.position.y > standY - 0.3,
     J(self.label.position));
-  for (let i = 0; i < 120; i++) call(self, '_placePlate', 1 / 90);
+  for (let i = 0; i < 120; i++) call(self.plate, '_placePlate', 1 / 90);
   check('...and settles to hips + hips→crown + gap (within the dead zone)', Math.abs(self.label.position.y - (0.35 + (1.8 - 0.95) + g)) <= DEAD + 1e-4, J(self.label.position));
   const settled = self.label.position.y;
-  root.position.y = 3; call(self, '_placePlate', 1 / 90); root.position.y = 0;
+  root.position.y = 3; call(self.plate, '_placePlate', 1 / 90); root.position.y = 0;
   check('a root move (stairs, a lift) does not make it trail', near(self.label.position.y, settled, 1e-6), `${self.label.position.y} vs ${settled}`);
   // lie: the whole body lies flat along +x, 0.15 above the floor (hips turned −90° about z; legs go to −x)
   hips.position.set(0, 0.15, 0); hips.rotation.z = -Math.PI / 2;
-  for (let i = 0; i < 200; i++) call(self, '_placePlate', 1 / 90);
+  for (let i = 0; i < 200; i++) call(self.plate, '_placePlate', 1 / 90);
   const headW = new THREE.Vector3(); self.vrm.humanoid.getRawBoneNode('head').getWorldPosition(headW);
   check('lying: over the head, at head + head span + gap', near(self.label.position.x, headW.x, 1e-6)
     && Math.abs(self.label.position.y - (headW.y + (1.8 - 1.5) + g)) <= DEAD + 1e-4 && headW.x > 0.5, `${J(self.label.position)} head ${J(headW)}`);
   // the own-body clearance is measured from where the plate hangs — its column, not the root's
-  const clearRoot = (() => { self.label.position.set(0, 1.8 + g, 0); return self._measureOwnClear(); })();
-  const clearOff = (() => { self.label.position.set(0.6, 1.8 + g, 0); return self._measureOwnClear(); })();
+  const clearRoot = (() => { self.label.position.set(0, 1.8 + g, 0); return self.plate._measureOwnClear(); })();
+  const clearOff = (() => { self.label.position.set(0.6, 1.8 + g, 0); return self.plate._measureOwnClear(); })();
   check('own-body clearance is measured from the plate\'s own x/z (moved 0.6 m → the hair is farther)', clearOff > clearRoot + 0.2, `${clearRoot} → ${clearOff}`);
 
   // SEEN FROM ABOVE, on the real rig: _liftPlateForView slides the placed plate along THIS camera's up, in world, and
@@ -274,7 +274,7 @@ console.log('avatar.js:');
     const A = rig(); const a = A.self, rt = A.root;
     rt.position.set(2, 0, -1); rt.rotation.y = 0.7; rt.scale.setScalar(1.2);
     a.label.scale.set(0.9, 0.9 * 76 / 512, 1); a.label.userData.pillH = 64 / 512;
-    call(a, '_placePlate', 1 / 60);
+    call(a.plate, '_placePlate', 1 / 60);
     const placed = a.label.position.clone();
     const cam = new THREE.PerspectiveCamera(55, 16 / 9, 0.05, 500);
     const plateW = () => rt.localToWorld(a.label.position.clone());
@@ -283,9 +283,9 @@ console.log('avatar.js:');
       cam.position.set(P.x + dist * Math.cos(p) * 0.6, P.y + dist * Math.sin(p), P.z + dist * Math.cos(p) * 0.8);
       cam.lookAt(P); cam.updateMatrixWorld(true);
     };
-    aim(0); a.label.position.copy(placed); call(a, '_liftPlateForView', cam);
+    aim(0); a.label.position.copy(placed); call(a.plate, '_liftPlateForView', cam);
     check('eye level: the real plate does not move', a.label.position.distanceTo(placed) < 1e-9, J(a.label.position));
-    aim(80); a.label.position.copy(placed); const before = plateW(); call(a, '_liftPlateForView', cam);
+    aim(80); a.label.position.copy(placed); const before = plateW(); call(a.plate, '_liftPlateForView', cam);
     const moved = plateW().sub(before), camUp = new THREE.Vector3(0, 1, 0).applyQuaternion(cam.quaternion);
     check('from 80° above: moved along the camera\'s up, in WORLD (root turned and ×1.2)', moved.length() > 0.1 && moved.clone().normalize().dot(camUp) > 1 - 1e-9,
       `${J(moved)} · up ${J(camUp)}`);
@@ -313,10 +313,11 @@ console.log('avatar.js:');
   }
 
   const none = rig({ hipsHead: false });
-  call(none.self, '_placePlate', 1 / 60);
+  call(none.self.plate, '_placePlate', 1 / 60);
   check('no hips/head bones: over the rest mesh top + gap', near(none.self.label.position.y, 1.8 + plateGap(1.8), 1e-6), J(none.self.label.position));
-  const bare: any = Object.assign(Object.create(Avatar.prototype), { vrm: { scene: new THREE.Group() }, root: new THREE.Group(), label: sprite() });
-  bare._plateRest = call(bare, '_measurePlateRest'); call(bare, '_placePlate', 1 / 60);
+  const bare: any = Object.assign(Object.create(Avatar.prototype), { vrm: { scene: new THREE.Group() }, root: new THREE.Group() });
+  bare.plate = Object.assign(Object.create(Nameplate.prototype), { a: bare, label: sprite() });
+  bare.plate._plateRest = call(bare.plate, '_measurePlateRest'); call(bare.plate, '_placePlate', 1 / 60);
   check('nothing to measure at all: the old fixed 1.95', near(bare.label.position.y, 1.95), J(bare.label.position));
   const noeye = rig({ eyes: false, hair: 1.0 });
   check('no eye bones, mesh under the head: head + 0.45·(head − hips)', near(noeye.self._plateRest?.crown, 1.5 + 0.45 * 0.55, 1e-6), J(noeye.self._plateRest));
@@ -330,7 +331,7 @@ console.log('avatar.js:');
     const J2 = rig(); const a = J2.self, hp = J2.hips, rt = J2.root;
     a.actions = {};
     const g2 = plateGap(1.8 - 0.08), restY = 1.8 + g2;
-    call(a, 'setClip', 'idle'); call(a, '_placePlate', 1 / 60);
+    call(a, 'setClip', 'idle'); call(a.plate, '_placePlate', 1 / 60);
     check('standing (idle): the plate at the rest crown + gap', near(a.label.position.y, restY, 1e-6), J(a.label.position));
     call(a, 'setClip', 'jump');
     let dev = 0, hipsMin = Infinity;
@@ -340,38 +341,38 @@ console.log('avatar.js:');
       hp.position.z = 0.05 * Math.sin(t * Math.PI);
       rt.position.y = 1.2 * Math.sin(Math.min(1, t / 0.9) * Math.PI);   // the root's own arc
       hipsMin = Math.min(hipsMin, hp.position.y);
-      call(a, '_placePlate', 1 / 90);
+      call(a.plate, '_placePlate', 1 / 90);
       dev = Math.max(dev, Math.abs(a.label.position.y - restY));
     }
     check('jump: the hips drop 0.3 m and rise again, the root arcs — the plate does not move relative to the root',
       dev <= 1e-6 && hipsMin <= 0.651, `max deviation ${dev.toFixed(4)} m (hips min ${hipsMin.toFixed(3)})`);
     for (const slot of ['walk', 'run']) {
-      call(a, 'setClip', slot); hp.position.y = 0.95 - 0.08; call(a, '_placePlate', 1 / 90);
+      call(a, 'setClip', slot); hp.position.y = 0.95 - 0.08; call(a.plate, '_placePlate', 1 / 90);
       check(`${slot}: the stride's hip bob does not move it either`, near(a.label.position.y, restY, 1e-6), J(a.label.position));
     }
     rt.position.set(0, 0, 0);
     // stand → sit: eases down to the live sitting anchor
     call(a, 'setClip', 'sit'); hp.position.set(0, 0.35, 0.1);
-    call(a, '_placePlate', 1 / 90);
+    call(a.plate, '_placePlate', 1 / 90);
     check('stand → sit: y eases (not a snap)', a.label.position.y < restY - 0.01 && a.label.position.y > restY - 0.3, J(a.label.position));
-    for (let i = 0; i < 120; i++) call(a, '_placePlate', 1 / 90);
+    for (let i = 0; i < 120; i++) call(a.plate, '_placePlate', 1 / 90);
     const sitY = 0.35 + (1.8 - 0.95) + g2;
     check('...and settles over the sitting hips (within the dead zone)', Math.abs(a.label.position.y - sitY) <= DEAD + 1e-4, J(a.label.position));
     // sit → stand: eases back up, and lands ON the rest height (no dead-zone residual while standing)
     call(a, 'setClip', 'idle'); hp.position.set(0, 0.95, 0);
-    call(a, '_placePlate', 1 / 90);
+    call(a.plate, '_placePlate', 1 / 90);
     const up1 = a.label.position.y;
     check('sit → stand: y eases back up (not a snap)', up1 > sitY && up1 < restY - 0.05, `${up1}`);
-    for (let i = 0; i < 200; i++) call(a, '_placePlate', 1 / 90);
+    for (let i = 0; i < 200; i++) call(a.plate, '_placePlate', 1 / 90);
     check('...and lands on the rest crown + gap exactly (no 2 cm short)', near(a.label.position.y, restY, 1e-4), J(a.label.position));
     // a gesture, a held pose or a fall owns the body: those keep the live anchor (a bow, a crouch, a tumble)
     a.onceAnim = { action: null, until: Infinity }; hp.position.y = 0.95 - 0.4;
-    for (let i = 0; i < 200; i++) call(a, '_placePlate', 1 / 90);
+    for (let i = 0; i < 200; i++) call(a.plate, '_placePlate', 1 / 90);
     check('a gesture playing: the plate follows the live hips (it came down)', a.label.position.y < restY - 0.3, J(a.label.position));
     a.onceAnim = null; hp.position.y = 0.95;
-    for (let i = 0; i < 200; i++) call(a, '_placePlate', 1 / 90);
+    for (let i = 0; i < 200; i++) call(a.plate, '_placePlate', 1 / 90);
     a._limp = true; hp.position.y = 0.3;
-    for (let i = 0; i < 200; i++) call(a, '_placePlate', 1 / 90);
+    for (let i = 0; i < 200; i++) call(a.plate, '_placePlate', 1 / 90);
     check('limp (a ragdoll fall): the live anchor too', a.label.position.y < restY - 0.3, J(a.label.position));
     a._limp = false;
     call(a, 'setClip', 'lie');

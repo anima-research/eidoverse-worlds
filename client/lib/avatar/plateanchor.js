@@ -1,5 +1,5 @@
 // plateanchor — where a nameplate hangs: anchored to the body, following its posture. Pure (tested in
-// test/client/plateanchor-test.ts); avatar.js measures the body once and calls these every frame.
+// test/client/plateanchor-test.ts); nameplate.js measures the body once and calls these every frame.
 //
 // Shape (BasisVR's BasisNamePlateAnchorMath.cs, plus lying): measure the crown once at rest, then hang the plate over
 // the live hips at the rest hips→crown height, so sitting lowers it for free; the head term only wins when the head
@@ -56,7 +56,7 @@ export function lieAmount(headAboveFeet, restHeadAboveFeet, headOverHips = null,
  *  rest: crownEstimate()'s result plus restHeadAboveFeet (all model units); s: the live model→world scale; gap: m;
  *  lift: the wearer's own offset over the crown (Profile › Avatar, bodyscale.js plateLift — already world m), added to
  *  both the standing and the lying anchor, so it follows posture exactly as auto does. 0 = auto.
- *  → { p: [x,y,z], lie }, written into `out` when given (avatar.js calls this per body, per frame) */
+ *  → { p: [x,y,z], lie }, written into `out` when given (nameplate.js calls this per body, per frame) */
 export function plateAnchor({ hips, head, feetY, rest, s = 1, gap, lift = 0 }, out = { p: [0, 0, 0], lie: 0 }) {
   const up = gap + (fin(lift) ? lift : 0);
   const stand = Math.max(hips[1] + rest.hipsToCrown * s, head[1] + rest.headSpan * s) + up;

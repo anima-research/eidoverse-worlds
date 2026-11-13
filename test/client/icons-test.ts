@@ -42,8 +42,8 @@ for (let i = 0; i < SHIPPED.length; i++)
     check(`${SHIPPED[i]} ≠ ${SHIPPED[j]}`, rendered[SHIPPED[i]] !== rendered[SHIPPED[j]]);
 
 // and nothing shipped may depend on an entry that isn't there: the registry
-// is allowed to carry spares, but ICON_FOR (avatar.js) may only name real ones
-const avatarSrc = await Bun.file(new URL("../../client/lib/avatar/avatar.js", import.meta.url)).text();
+// is allowed to carry spares, but ICON_FOR (nameplate.js) may only name real ones
+const avatarSrc = await Bun.file(new URL("../../client/lib/avatar/nameplate.js", import.meta.url)).text();
 const iconFor = avatarSrc.match(/ICON_FOR = \{([^}]*)\}/)?.[1] ?? "";
 for (const m of iconFor.matchAll(/:\s*'(\w+)'/g))
   check(`ICON_FOR '${m[1]}' resolves in the registry`, has(m[1]));
