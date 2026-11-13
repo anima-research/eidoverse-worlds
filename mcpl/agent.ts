@@ -400,10 +400,6 @@ export class WorldAgent {
   }
   people = new Map<string, Person>();
   inbox: InboxItem[] = [];
-  private inboxCursor = 0;
-  /** Highest world-log seq whose `say` is already in the inbox, so a reconnect's
-   *  replayed snapshot tail isn't appended twice. */
-  private inboxSeen = -Infinity;
   pings: { ts: number; kind: "mention" | "approach" | "depart" | "reach" | "touch"; who: string; text?: string }[] = [];
   onPing: ((p: { ts: number; kind: string; who: string; text?: string }) => void) | null = null;
   /** live world events (say/arrive/leave/activity) — the channel fan-out hook */
@@ -435,25 +431,6 @@ export class WorldAgent {
     this.ws.send(JSON.stringify({ type: "attest", seq, digest, gen: this.surfaceGen }));
     return true;
   }
-  /** Open coalescing windows for world-change narration, keyed by entity id.
-   *  See noteEmitter. */
-  private emitterNarration = new Map<string, { announced: unknown; latest: unknown; actor: string; timer: ReturnType<typeof setTimeout> }>();
-  private lastNear = new Map<string, number>(); // participant -> last approach-ping ts
-  /** approach re-arm: after a walk-up ping, the SAME person must actually go
-   *  away (> REARM_RADIUS) before another boundary crossing can ever count —
-   *  someone pacing at 2–3m otherwise re-triggers on every crossing. */
-  private nearArmed = new Map<string, boolean>();
-  /** An inward crossing that has NOT yet earned its ping (dwell pending): `since`
-   *  = entered arm's reach, `stillSince` = last seen faster than
-   *  APPROACH_STILL_MPS, `at`/`atTs` = previous sample. Cleared when they leave the radius. */
-  private approachPending = new Map<string, { since: number; stillSince: number; at: [number, number]; atTs: number }>();
-  /** Someone whose approach was DELIVERED, so their departure owes a ping (a
-   *  passer-by never earned one). The value is OUR (x,z) when the approach fired:
-   *  past REARM_RADIUS from there, their own movement explains the exit and the
-   *  wire may say "walked away"; otherwise it only says the relation ended. */
-  private approachOpen = new Map<string, [number, number]>();
-  /** participant -> when their current non-locomotion stint began (jump, sit…) */
-  private nonLocoSince = new Map<string, number>();
   /** My live reach descriptors, one per limb (shared/reachwire.js), sent on
    *  every presence packet; `reached` is my solver's attestation (reachTick). */
   reaches = new Map<string, { t: any; palm?: false; reached?: true }>();
@@ -473,14 +450,6 @@ export class WorldAgent {
   private bodyGenerationCounter = 0;
   private selfBodyGeneration = 0;
   private selfObservedAt: number | null = null;
-  /** Local-awareness accumulator, reset every pulse: RAW for movement and says
-   *  (jump spam is real liveliness) but DENOISED for arrivals/departures (a
-   *  reconnect flap is not activity). */
-  private act30 = { says: new Map<string, number>(), moved: new Map<string, number>(), acts: 0, arrivals: 0, departures: 0, builds: 0 };
-  /** The last EMITTED pulse — novelty gate state. `sig` fingerprints the
-   *  ambient scenery (roster + movers + acts); `roster` lets an unchanged
-   *  cast be compacted to a count instead of ten names, every time. */
-  private lastPulse = { sig: "", roster: "", at: 0 };
   // Seat-profile verdicts: the server-judged values /avatars hands the browser,
   // fetched at join and on the two update events, cached by seatcore's
   // makeVerdictCache (the browser's own implementation). effective.ts reads
@@ -504,36 +473,6 @@ export class WorldAgent {
    *  net-server's state file, `rememberActivity`; see its `activity` tool). Instance values start at
    *  the world defaults. */
   activityRadiusM = ACTIVITY_RADIUS_M;
-  private activityPulseMs = ACTIVITY_PULSE_MS;
-  /** The pulse ticks from birth; it only ever SPEAKS when the accumulator has
-   *  something in it, so an empty room costs nothing. */
-  private activityTimer: ReturnType<typeof setInterval> | null =
-    setInterval(() => this.activityPulse(), ACTIVITY_PULSE_MS);
-
-  /** Tune the ambient-activity sense. pulseSec clamps to [10, 3600] — 0 turns
-   *  the sense off entirely; radiusM clamps to [1, 200]. Returns what was
-   *  actually applied. */
-  setActivity(opts: { pulseSec?: number; radiusM?: number }): { pulseSec: number; radiusM: number } {
-    if (opts.radiusM != null && Number.isFinite(opts.radiusM))
-      this.activityRadiusM = Math.min(200, Math.max(1, opts.radiusM));
-    if (opts.pulseSec != null && Number.isFinite(opts.pulseSec)) {
-      const sec = opts.pulseSec <= 0 ? 0 : Math.min(3600, Math.max(10, opts.pulseSec));
-      this.activityPulseMs = sec * 1000;
-      if (this.activityTimer) { clearInterval(this.activityTimer); this.activityTimer = null; }
-      if (sec > 0) this.activityTimer = setInterval(() => this.activityPulse(), this.activityPulseMs);
-    }
-    return { pulseSec: this.activityPulseMs / 1000, radiusM: this.activityRadiusM };
-  }
-  /** The folded sky (same fold as the sequencer's) — worldInfo.sky is
-   *  DERIVED from this at look() time, so the described hour/weather is the
-   *  one the forecast implies NOW, not the one at the last log entry. */
-  private skyState: any = null;
-  // The sky WATCH (look() is the pull half): one ambient percept per meaningful
-  // boundary, deduped by signature, never a synthetic log verb or a clock.
-  private skyCursor: any = null;
-  private lastSkyKey: string | null = null;
-  private lastDayPhase: string | null = null;
-  private lastSkyCheck = 0;
   worldInfo: Record<string, unknown> = {};
   briefing: ReturnType<typeof resolveBriefing> = null;
   private resolveRelative: boolean;
@@ -617,44 +556,6 @@ export class WorldAgent {
     // (physics.ts), so a successor agent elsewhere would otherwise stand on them.
     for (const id of [...this.ground.supportIds.keys()]) this.ground.dropSupport(id);
     this.ws?.close();
-  }
-
-  /** The activity pulse: ONE event per window, only while something happens
-   *  (denoise.ts ACTIVITY_*). Not pushed to the inbox: it is a wake signal.
-   *
-   *  NOVELTY-GATED: discrete events (speech, arrivals, departures, builds)
-   *  always pulse; ambient continuation pulses when it CHANGES (someone new
-   *  moves, someone stops, the roster shifts), otherwise at most every
-   *  ACTIVITY_REFRESH. */
-  private activityPulse() {
-    const a = this.act30;
-    const msgs = [...a.says.values()].reduce((s, n) => s + n, 0);
-    const movers = [...a.moved.entries()].filter(([, d]) => d >= MOVER_MIN_M).map(([id]) => id).sort();
-    this.act30 = { says: new Map(), moved: new Map(), acts: 0, arrivals: 0, departures: 0, builds: 0 };
-    const discrete = msgs || a.arrivals || a.departures || a.builds;
-    if (!(discrete || movers.length || a.acts)) return;
-    const nearby = [...this.people.values()]
-      .filter((p) => p.id !== this.name && p.pose &&
-        Math.hypot(p.pose.p[0] - this.pos.x, p.pose.p[2] - this.pos.z) <= this.activityRadiusM)
-      .map((p) => p.id).sort();
-    const now = Date.now();
-    const sig = `${nearby.join(",")}|${movers.join(",")}|${a.acts > 0}`;
-    if (!discrete && sig === this.lastPulse.sig && now - this.lastPulse.at < ACTIVITY_REFRESH_MS) return;
-    const n = (c: number, w: string) => `${c} ${w}${c === 1 ? "" : "s"}`;
-    const bits: string[] = [];
-    if (msgs) bits.push(`${n(msgs, "message")} (${[...a.says.keys()].join(", ")})`);
-    if (movers.length) bits.push(`${movers.join(", ")} moving about`);
-    if (a.acts) bits.push(n(a.acts, "embodied act"));
-    if (a.arrivals) bits.push(n(a.arrivals, "arrival"));
-    if (a.departures) bits.push(n(a.departures, "departure"));
-    if (a.builds) bits.push(`${n(a.builds, "thing")} changed`);
-    const roster = nearby.join(", ");
-    // an unchanged cast is a count, not a re-introduction — ten names once,
-    // "10 nearby" thereafter
-    const who = nearby.length
-      ? `${roster === this.lastPulse.roster ? `${nearby.length} nearby` : `${roster} nearby`} — ` : "";
-    this.lastPulse = { sig, roster, at: now };
-    this.onEvent?.({ ts: now, kind: "activity", who: "world", text: `${who}${bits.join("; ")}` });
   }
 
   /** A malformed log entry is WORLD data, not this agent's mistake — say so
@@ -1146,184 +1047,6 @@ export class WorldAgent {
     return this.people.get(who)?.declares ?? null;
   }
 
-  /** Track someone's latest pose and run the approach/depart machine
-   *  (stepApproach). An approach is a knock, not a metronome: edge-triggered at
-   *  the radius, re-armed only beyond REARM_RADIUS, a per-person refractory, and
-   *  DWELL (delivered only once they stop: "walked up AND STOPPED within arm's
-   *  reach", declaration.ts). `depart` pings only for a delivered approach.
-   *  `now` is injectable so dwell tests control the clock. */
-  private notePose(id: string, pose: Pose, now = Date.now()) {
-    // A dirty stage frame can flush after the participant's leave event.
-    // Once joined, only the snapshot/arrive roster introduces a body; a late
-    // pose must not resurrect someone who is no longer present.
-    if (this.joined && !this.people.has(id)) return;
-    const p: Person = this.people.get(id) ?? { id, avatar: "", pose: null };
-    const prev = p.pose;
-    p.pose = pose; p.observedAt = now;
-    { const seat = (pose as any)?.seat;   // a seat rides the frame while it holds (presence)
-      const to = seat?.to ? resolveSeat(this.st, { to: String(seat.to), ...(typeof seat.slot === "string" ? { slot: seat.slot } : {}) })?.to : null;
-      if (to) { const st = { to }; this.bodySeats.set(id, st); this.mounts.set(id, st); }
-      else if (this.bodySeats.delete(id)) this.mounts.delete(id); }
-    p.bodyGeneration ??= ++this.bodyGenerationCounter;
-    this.people.set(id, p);
-    // hands aimed at this body — before the spatial gate below, because a
-    // reach descriptor is legible even from a sample with no usable position
-    if (id !== this.name) this.reaching.noteReachEvents(id, prev, pose);
-    const xyz = posePosition(pose);
-    if (!xyz) return; // keep the shell for identity/roster; no spatial inference yet
-    const [x, , z] = xyz;
-    const prevXYZ = posePosition(prev);
-    const dist = Math.hypot(x - this.pos.x, z - this.pos.z);
-    // The first SPATIAL observation is a BASELINE, not a transition: reconnect
-    // replay lands here for every body already in the room. Seed silently; a
-    // body already beside you must leave and come back before it can "walk up".
-    if (!prevXYZ) {
-      this.nearArmed.set(id, dist > REARM_RADIUS);
-      return;
-    }
-    const prevDist = Math.hypot(prevXYZ[0] - this.pos.x, prevXYZ[2] - this.pos.z);
-    if (id !== this.name) {
-      // Approach/depart is about OTHER bodies (guarded like noteActs and
-      // noteReachEvents): a self-echo must never report walking away from ourselves.
-      this.stepApproach(id, x, z, dist, prevDist, now);
-      // The activity pulse counts accumulated DISPLACEMENT, not a speed flag
-      // (idle jitter never qualifies); steps over 8m in one packet are teleports.
-      if (dist <= this.activityRadiusM && prev) {
-        const step = Math.hypot(pose.p[0] - prev.p[0], pose.p[2] - prev.p[2]);
-        if (step > 0.001 && step < 8)
-          this.act30.moved.set(id, (this.act30.moved.get(id) ?? 0) + step);
-      }
-      this.noteActs(id, prev, pose, dist);
-    }
-  }
-
-  /** One spatial sample of someone else, through the approach/depart machine:
-   *
-   *    dist > REARM_RADIUS      gone. Re-arm, and settle any owed departure.
-   *    APPROACH_RADIUS..REARM   nearby. CANCELS a pending approach (pass-through).
-   *    dist < APPROACH_RADIUS   close. Open a pending approach on the inward
-   *                             crossing; deliver it once they hold still.
-   *
-   *  Stillness is measured from positions WE observed, never `pose.speed`.
-   *  Deliberate asymmetry: leaving arm's reach cancels a PENDING approach but
-   *  doesn't close a delivered one; departure is the re-arm edge, so a seated
-   *  body's jitter across 2.5m never fires walked-up/walked-away pairs. */
-  private stepApproach(id: string, x: number, z: number, dist: number, prevDist: number, now: number) {
-    if (dist > REARM_RADIUS) {
-      this.nearArmed.set(id, true);
-      this.approachPending.delete(id);
-      const anchor = this.approachOpen.get(id);
-      if (anchor) {
-        this.approachOpen.delete(id);
-        // Who moved? `dist` is from where WE are now, so measure them against
-        // the anchor (our position when the approach fired): beyond the re-arm
-        // edge from there, they walked; otherwise the separation is at least
-        // partly ours and the ping says it actor-neutrally. Renderers print
-        // `who` + this text verbatim.
-        const walked = Math.hypot(x - anchor[0], z - anchor[1]) > REARM_RADIUS;
-        this.ping({ ts: now, kind: "depart", who: id, text: walked ? "walked away" : "is no longer nearby" });
-      }
-      return;
-    }
-    if (dist >= APPROACH_RADIUS) {
-      this.approachPending.delete(id);
-      return;
-    }
-
-    // --- inside arm's reach ---
-    const pend = this.approachPending.get(id);
-    if (!pend) {
-      // Only the CROSSING opens a pending approach, exactly as before — a body
-      // already inside the radius when we started watching never "walks up".
-      const armed = this.nearArmed.get(id) ?? true;
-      const cooled = now - (this.lastNear.get(id) ?? 0) > APPROACH_REFRACT_MS;
-      if (prevDist >= APPROACH_RADIUS && armed && cooled)
-        this.approachPending.set(id, { since: now, stillSince: now, at: [x, z], atTs: now });
-      return;
-    }
-
-    // Observed speed over the gap since the last sample. A zero/negative gap
-    // (two samples in one millisecond) yields no evidence either way, so it
-    // leaves stillSince alone rather than dividing by zero.
-    const dt = now - pend.atTs;
-    if (dt > 0) {
-      const speed = Math.hypot(x - pend.at[0], z - pend.at[1]) / (dt / 1000);
-      if (speed >= APPROACH_STILL_MPS) pend.stillSince = now;
-      pend.at = [x, z];
-      pend.atTs = now;
-    }
-
-    const held = now - pend.stillSince >= APPROACH_DWELL_MS;
-    const waited = now - pend.since >= APPROACH_MAX_WAIT_MS;
-    if (!held && !waited) return;
-
-    this.approachPending.delete(id);
-    this.lastNear.set(id, now);
-    this.nearArmed.set(id, false);
-    this.approachOpen.set(id, [this.pos.x, this.pos.z]); // the vantage the walk-up was true from
-    this.ping({ ts: now, kind: "approach", who: id });
-  }
-
-  /** A body left the WORLD (the `leave` message; extracted so it's testable
-   *  without a socket). Every per-participant map goes too: otherwise they grow
-   *  for the life of the process, and a returning visitor would inherit stale
-   *  approach arm state. Dropping approachOpen also keeps one exit to one line:
-   *  the presence gate already said "left the world", so no "walked away" too. */
-  private noteLeave(id: string) {
-    this.people.delete(id);
-    if (this.bodySeats.delete(id)) this.mounts.delete(id);   // a departed body rides nothing
-    this.bodyReader?.forget(id);
-    this.lastNear.delete(id);
-    this.nearArmed.delete(id);
-    this.nonLocoSince.delete(id);
-    this.approachPending.delete(id);
-    this.approachOpen.delete(id);
-    for (const k of this.reaching.lastReachPing.keys()) {
-      if (k.endsWith(`:${id}`)) this.reaching.lastReachPing.delete(k);
-    }
-    this.gate.presence(id, "leave");
-  }
-
-  /** Embodied acts as events: TRANSITIONS (a gesture fired, a pose struck or
-   *  released, sitting down or getting up), edge-triggered, never per frame.
-   *  Denoised by the gate's per-(person, act) refractory, and a non-locomotion
-   *  stint shorter than SHORT_STINT_MS earns no "gets up". */
-  private noteActs(id: string, prev: Pose | null, pose: Pose & { anim?: string; pose?: Record<string, unknown> | null }, dist = Infinity) {
-    const acts: { key: string; text: string }[] = [];
-    const once = onceAnimOf(pose);   // pose.anim
-    if (once) acts.push({ key: `anim:${once}`, text: `plays ${once} (once)` });
-    const prevHeld = Boolean((prev as { pose?: unknown } | null)?.pose);
-    const nowHeld = Boolean(pose.pose);
-    if (nowHeld && !prevHeld) acts.push({ key: "pose", text: `strikes a pose (${Object.keys(pose.pose!).length} bones held)` });
-    if (!nowHeld && prevHeld) acts.push({ key: "pose-release", text: "releases their pose" });
-    const was = foldedIn(prev), now = foldedIn(pose);   // the named pose wings-folded (an older sample's wingsFolded reads the same)
-    const hadFold = was !== null, hasFold = now !== null;
-    const prevFold = was === true, nowFold = now === true;
-    // A first sighting is a state, not an act. Announce only an edge observed
-    // between two explicit semantic samples; legacy absence proves neither
-    // folding nor opening.
-    if (hadFold && hasFold && nowFold !== prevFold) acts.push({
-      key: nowFold ? "wings-fold" : "wings-unfold",
-      text: nowFold ? "folds their wings" : "opens their wings",
-    });
-    const LOCO = new Set(["idle", "walk", "run"]);
-    const pc = prev?.clip ?? "idle", nc = pose.clip ?? "idle";
-    if (nc !== pc) {
-      if (!LOCO.has(nc)) {
-        if (LOCO.has(pc)) this.nonLocoSince.set(id, Date.now());
-        acts.push({ key: `clip:${nc}`, text: nc.startsWith("sit") ? "sits down" : nc === "lie" ? "lies down" : `starts "${nc}"` });
-      } else if (!LOCO.has(pc)) {
-        const stint = Date.now() - (this.nonLocoSince.get(id) ?? 0);
-        this.nonLocoSince.delete(id);
-        if (stint >= SHORT_STINT_MS) acts.push({ key: "gets-up", text: "gets up" });
-      }
-    }
-    // RAW act count feeds the pulse — a denoised (repeat) jump still means
-    // someone is alive and doing things next to you
-    if (acts.length && dist <= this.activityRadiusM) this.act30.acts += acts.length;
-    for (const a of acts) this.gate.act(id, a.key, a.text);
-  }
-
   /** Reconcile the derived maps from the folded state — the ONLY writer of
    *  this.entities/this.mounts outside the sim stamp. Fresh objects each
    *  pass: nothing stale survives a spawn-replace or a fold-side cascade. */
@@ -1413,16 +1136,6 @@ export class WorldAgent {
     if (this.myOccupancy) this.mounts.set(this.name, { ...this.myOccupancy });
   }
 
-  /** Remember our OWN says briefly, so a sidecar that airs one can be attested for it (the receipt is sha256 of the
-   *  text the world logged; only the world's copy is authoritative). Small ring: a receipt is valid for 5 minutes. */
-  private noteOwnSay(entry: any) {
-    if (entry?.verb === "say" && entry?.actor === this.name && typeof entry?.args?.text === "string") {
-      this.ownSays.set(entry.seq, String(entry.args.text));
-      if (this.ownSays.size > 32) this.ownSays.delete(this.ownSays.keys().next().value as number);
-      this.onMedia?.({ type: "speak", seq: entry.seq, text: entry.args.text });
-    }
-  }
-
   /** A world: take the next view of this body's own fold, and act on what changed (said in the protocol's terms,
    *  shared/viewdiff.js): percepts when `live`, supports always. The first view is diffed from nothing. */
   private async applyView(live: boolean, actor: string | null, ts: number | null) {
@@ -1485,132 +1198,6 @@ export class WorldAgent {
         if (comp === "motion" || comp?.startsWith("motion:") || comp === "collider") this.ground.trackSupport(this.ground.syncSupport(id));
         break;
     }
-  }
-
-  /** A chat line heard ({seq, ts, actor, args: {text}}): the inbox once, and a live line from someone else
-   *  is an event (and a mention ping when it names this body). The window itself is the caller's (the fold, or hear). */
-  private hearSay(entry: any, live: boolean) {
-    const { args, actor, ts } = entry;
-    // history lands in the inbox ONCE, so a freshly-joined agent has
-    // context — and a reconnect's replayed tail is deduped by seq instead
-    // of piling the same chat in again.
-    const seq = typeof (entry as { seq?: unknown }).seq === "number" ? (entry as { seq: number }).seq : null;
-    // only real log seqs (>= 0) dedupe — synthetic pre-history seqs descend
-    if (seq != null && seq >= 0 && seq <= this.inboxSeen) return;
-    if (seq != null && seq >= 0) this.inboxSeen = seq;
-    this.inbox.push({ ts, kind: "say", who: actor, text: args.text, seq });
-    // mention ping: @name or bare whole-word name, live messages only. The
-    // agent's OWN say (the log's echo) stays in the inbox but is never an event.
-    if (live && actor !== this.name) {
-      // speech near this body feeds the activity pulse (a speaker whose
-      // position is unknown — just arrived — counts as near)
-      const pp = this.people.get(actor)?.pose;
-      if (!pp || Math.hypot(pp.p[0] - this.pos.x, pp.p[2] - this.pos.z) <= this.activityRadiusM)
-        this.act30.says.set(actor, (this.act30.says.get(actor) ?? 0) + 1);
-      // a null regex means this body has no usable name (a malformed tokens entry): it still hears the room
-      const mention = this.mentionsMe(String(args.text)) || this.isMe(args.to);   // the name, the credential's display name (#184), or a say addressed to me
-      if (mention) this.ping({ ts, kind: "mention", who: actor, text: args.text });
-      this.onEvent?.({ ts, kind: "say", who: actor, text: args.text, mention });
-    }
-  }
-
-  /**
-   * A live `particles` attach / replace / remove near this body: ONE ambient
-   * world-change percept per (entity, component). The first change in a quiet
-   * period speaks at once; the rest of the window folds into at most one line
-   * of the NET result (a slider drag is one "retunes"). Radius-gated, and silent
-   * for this body's own authoring (the self-echo rule, see `say`).
-   * `nowMs`/`setTimer` are injectable for tests.
-   */
-  private noteEmitter(actor: string | undefined, id: string, before: unknown, after: unknown,
-                      pos: number[] | undefined, ts: number) {
-    if (!actor || actor === this.name || actor === "world") return;
-    if (pos && Math.hypot(pos[0] - this.pos.x, pos[2] - this.pos.z) > this.activityRadiusM) return;
-    const slot = this.emitterNarration.get(id);
-    if (slot) {                       // inside the quiet window — fold, don't speak
-      slot.latest = after;
-      slot.actor = actor;
-      return;
-    }
-    const line = transitionLine(actor, id, emitterTransition(before, after));
-    if (line) {
-      this.act30.builds++;            // it feeds the activity digest like any build
-      this.onEvent?.({ ts, kind: "world-change", who: actor, text: line });
-    }
-    this.openEmitterWindow(id, actor, after);
-  }
-
-  private openEmitterWindow(id: string, actor: string, announced: unknown) {
-    const close = () => {
-      const slot = this.emitterNarration.get(id);
-      if (!slot) return;
-      this.emitterNarration.delete(id);
-      const t = emitterTransition(slot.announced, slot.latest);
-      if (!t) return;                 // the burst netted out to what we already said
-      const line = transitionLine(slot.actor, id, t);
-      if (line) {
-        this.act30.builds++;
-        this.onEvent?.({ ts: Date.now(), kind: "world-change", who: slot.actor, text: line });
-      }
-      // A continuous burst speaks once per window rather than being silenced
-      // forever by its own persistence — same rule the act refractory uses.
-      this.openEmitterWindow(id, slot.actor, slot.latest);
-    };
-    const timer = setTimeout(close, EMITTER_COALESCE_MS);
-    // never hold the process open for a decoration
-    (timer as unknown as { unref?: () => void }).unref?.();
-    this.emitterNarration.set(id, { announced, latest: announced, actor, timer });
-  }
-
-  /** The push half of sky perception (look() is the pull half), 1Hz off tick().
-   *  The first observation after a join is SILENT; this speaks only on change.
-   *  `nowMs` is injectable for tests. */
-  private skyStamp: { seq: number; by: string } | null = null;
-  checkSky(nowMs = Date.now()) {
-    if (!this.skyState) return;
-    const eff = effectiveSky(this.skyState, nowMs, this.skyCursor);
-    this.skyCursor = eff.cursor;
-    const key = `${eff.source}:${eff.seg?.idx ?? "-"}:${eff.weather ?? "-"}`;
-    // the canonical clock decides whether day phases can move — under a
-    // real clock the folded bag no longer carries rate at all
-    const advancing = effectiveClock(this.skyState, nowMs).mode !== "fixed";
-    const phase = advancing ? dayPhase(hoursAt(this.skyState, nowMs)) : null;
-    if (this.lastSkyKey === null) {
-      this.lastSkyKey = key;
-      this.lastDayPhase = phase;
-      return;
-    }
-    if (key !== this.lastSkyKey) {
-      this.lastSkyKey = key;
-      if (eff.weather) {
-        const why = eff.source === "forecast"
-          ? ` (forecast — policy sky seq ${eff.seq ?? this.skyStamp?.seq ?? "?"} by ${eff.by ?? this.skyStamp?.by ?? "?"})`
-          : eff.source === "manual" ? ` (${eff.by ?? this.skyStamp?.by ?? "someone"} overrode the forecast — holds until the next scheduled change)` : "";
-        this.onEvent?.({ ts: nowMs, kind: "weather", who: "world", text: `world weather: ${eff.weather}${why}` });
-      }
-    }
-    if (phase !== null && phase !== this.lastDayPhase) {
-      this.lastDayPhase = phase;
-      const line = { dawn: "dawn breaks", day: "full daylight", dusk: "dusk settles", night: "night falls" }[phase];
-      this.onEvent?.({ ts: nowMs, kind: "weather", who: "world",
-        text: `${line} (hour ${hoursAt(this.skyState, nowMs).toFixed(1)})` });
-    }
-  }
-
-  /** Recent pings, for a plain-MCP host that polls (takePings) instead of
-   *  subscribing (onPing). A ring, like every buffer in this file. */
-  private static readonly PING_RING = 64;
-
-  ping(p: { ts: number; kind: "mention" | "approach" | "depart" | "reach" | "touch"; who: string; text?: string }) {
-    this.pings.push(p);
-    if (this.pings.length > WorldAgent.PING_RING) this.pings.splice(0, this.pings.length - WorldAgent.PING_RING);
-    this.onPing?.(p);
-  }
-
-  takePings() {
-    const out = this.pings;
-    this.pings = [];
-    return out;
   }
 
   /** The standing height the water is measured against: the current body's, once measured; until then an
@@ -3223,6 +2810,451 @@ export class WorldAgent {
     });
   }
 
+  /** Where a thing ACTUALLY is right now: the mount chain and any whole-entity
+   *  motion, composed by effective.ts with the renderer's closed forms. Every
+   *  numeric spatial claim in perception goes through this, never `e.pos`. */
+  eff(id: string, nowMs: number): Effective {
+    return effectiveWorldTransform(id, {
+      entity: (eid) => this.entities.get(eid),
+      mount: (eid) => this.mounts.get(eid),
+      seatVerdict: (eid) => this.seatVerdictFor(eid),
+      // an occupant's chosen size, from its own presence (absent = 1). An agent's own
+      // body is its authored size: no agent sets `scale`, so its wire carries none.
+      occupantScale: (eid) => eid === this.name ? 1 : clampBodyScale(this.people.get(eid)?.pose?.scale),
+    }, nowMs);
+  }
+
+  /** The served verdict for whatever avatar this body currently wears —
+   *  roster truth (p.avatar) mapped through the same name derivation every
+   *  consumer uses. Undefined = no profile, declared. */
+  private seatVerdictFor(id: string) {
+    const path = id === this.name ? this.avatar : this.people.get(id)?.avatar;
+    const nm = nameFromAvatarPath(path);
+    return nm ? this.seatCache.get(nm) : undefined;
+  }
+
+  /** The declared-approximation suffix for a seated person's line:
+   *  the same reason string the browser consoles and the nameplate ≈ carry —
+   *  one contract, three declarations. Empty when the seat is profiled. */
+  private seatSuffix(id: string, occ: { to: string }): string {
+    const station = this.socketRec(occ.to)?.station;
+    const g = seatGateCore({ sock: station, verdict: this.seatVerdictFor(id), pose: bodyOf(station)?.clip ?? "sitchair" });
+    return g.apply ? "" : ` (seat approximate: ${g.reason})`;
+  }
+  private inboxCursor = 0;
+  /** Highest world-log seq whose `say` is already in the inbox, so a reconnect's
+   *  replayed snapshot tail isn't appended twice. */
+  private inboxSeen = -Infinity;
+  /** Open coalescing windows for world-change narration, keyed by entity id.
+   *  See noteEmitter. */
+  private emitterNarration = new Map<string, { announced: unknown; latest: unknown; actor: string; timer: ReturnType<typeof setTimeout> }>();
+  private lastNear = new Map<string, number>(); // participant -> last approach-ping ts
+  /** approach re-arm: after a walk-up ping, the SAME person must actually go
+   *  away (> REARM_RADIUS) before another boundary crossing can ever count —
+   *  someone pacing at 2–3m otherwise re-triggers on every crossing. */
+  private nearArmed = new Map<string, boolean>();
+  /** An inward crossing that has NOT yet earned its ping (dwell pending): `since`
+   *  = entered arm's reach, `stillSince` = last seen faster than
+   *  APPROACH_STILL_MPS, `at`/`atTs` = previous sample. Cleared when they leave the radius. */
+  private approachPending = new Map<string, { since: number; stillSince: number; at: [number, number]; atTs: number }>();
+  /** Someone whose approach was DELIVERED, so their departure owes a ping (a
+   *  passer-by never earned one). The value is OUR (x,z) when the approach fired:
+   *  past REARM_RADIUS from there, their own movement explains the exit and the
+   *  wire may say "walked away"; otherwise it only says the relation ended. */
+  private approachOpen = new Map<string, [number, number]>();
+  /** participant -> when their current non-locomotion stint began (jump, sit…) */
+  private nonLocoSince = new Map<string, number>();
+  /** Local-awareness accumulator, reset every pulse: RAW for movement and says
+   *  (jump spam is real liveliness) but DENOISED for arrivals/departures (a
+   *  reconnect flap is not activity). */
+  private act30 = { says: new Map<string, number>(), moved: new Map<string, number>(), acts: 0, arrivals: 0, departures: 0, builds: 0 };
+  /** The last EMITTED pulse — novelty gate state. `sig` fingerprints the
+   *  ambient scenery (roster + movers + acts); `roster` lets an unchanged
+   *  cast be compacted to a count instead of ten names, every time. */
+  private lastPulse = { sig: "", roster: "", at: 0 };
+  private activityPulseMs = ACTIVITY_PULSE_MS;
+  /** The pulse ticks from birth; it only ever SPEAKS when the accumulator has
+   *  something in it, so an empty room costs nothing. */
+  private activityTimer: ReturnType<typeof setInterval> | null =
+    setInterval(() => this.activityPulse(), ACTIVITY_PULSE_MS);
+
+  /** Tune the ambient-activity sense. pulseSec clamps to [10, 3600] — 0 turns
+   *  the sense off entirely; radiusM clamps to [1, 200]. Returns what was
+   *  actually applied. */
+  setActivity(opts: { pulseSec?: number; radiusM?: number }): { pulseSec: number; radiusM: number } {
+    if (opts.radiusM != null && Number.isFinite(opts.radiusM))
+      this.activityRadiusM = Math.min(200, Math.max(1, opts.radiusM));
+    if (opts.pulseSec != null && Number.isFinite(opts.pulseSec)) {
+      const sec = opts.pulseSec <= 0 ? 0 : Math.min(3600, Math.max(10, opts.pulseSec));
+      this.activityPulseMs = sec * 1000;
+      if (this.activityTimer) { clearInterval(this.activityTimer); this.activityTimer = null; }
+      if (sec > 0) this.activityTimer = setInterval(() => this.activityPulse(), this.activityPulseMs);
+    }
+    return { pulseSec: this.activityPulseMs / 1000, radiusM: this.activityRadiusM };
+  }
+  /** The folded sky (same fold as the sequencer's) — worldInfo.sky is
+   *  DERIVED from this at look() time, so the described hour/weather is the
+   *  one the forecast implies NOW, not the one at the last log entry. */
+  private skyState: any = null;
+  // The sky WATCH (look() is the pull half): one ambient percept per meaningful
+  // boundary, deduped by signature, never a synthetic log verb or a clock.
+  private skyCursor: any = null;
+  private lastSkyKey: string | null = null;
+  private lastDayPhase: string | null = null;
+  private lastSkyCheck = 0;
+
+  /** The activity pulse: ONE event per window, only while something happens
+   *  (denoise.ts ACTIVITY_*). Not pushed to the inbox: it is a wake signal.
+   *
+   *  NOVELTY-GATED: discrete events (speech, arrivals, departures, builds)
+   *  always pulse; ambient continuation pulses when it CHANGES (someone new
+   *  moves, someone stops, the roster shifts), otherwise at most every
+   *  ACTIVITY_REFRESH. */
+  private activityPulse() {
+    const a = this.act30;
+    const msgs = [...a.says.values()].reduce((s, n) => s + n, 0);
+    const movers = [...a.moved.entries()].filter(([, d]) => d >= MOVER_MIN_M).map(([id]) => id).sort();
+    this.act30 = { says: new Map(), moved: new Map(), acts: 0, arrivals: 0, departures: 0, builds: 0 };
+    const discrete = msgs || a.arrivals || a.departures || a.builds;
+    if (!(discrete || movers.length || a.acts)) return;
+    const nearby = [...this.people.values()]
+      .filter((p) => p.id !== this.name && p.pose &&
+        Math.hypot(p.pose.p[0] - this.pos.x, p.pose.p[2] - this.pos.z) <= this.activityRadiusM)
+      .map((p) => p.id).sort();
+    const now = Date.now();
+    const sig = `${nearby.join(",")}|${movers.join(",")}|${a.acts > 0}`;
+    if (!discrete && sig === this.lastPulse.sig && now - this.lastPulse.at < ACTIVITY_REFRESH_MS) return;
+    const n = (c: number, w: string) => `${c} ${w}${c === 1 ? "" : "s"}`;
+    const bits: string[] = [];
+    if (msgs) bits.push(`${n(msgs, "message")} (${[...a.says.keys()].join(", ")})`);
+    if (movers.length) bits.push(`${movers.join(", ")} moving about`);
+    if (a.acts) bits.push(n(a.acts, "embodied act"));
+    if (a.arrivals) bits.push(n(a.arrivals, "arrival"));
+    if (a.departures) bits.push(n(a.departures, "departure"));
+    if (a.builds) bits.push(`${n(a.builds, "thing")} changed`);
+    const roster = nearby.join(", ");
+    // an unchanged cast is a count, not a re-introduction — ten names once,
+    // "10 nearby" thereafter
+    const who = nearby.length
+      ? `${roster === this.lastPulse.roster ? `${nearby.length} nearby` : `${roster} nearby`} — ` : "";
+    this.lastPulse = { sig, roster, at: now };
+    this.onEvent?.({ ts: now, kind: "activity", who: "world", text: `${who}${bits.join("; ")}` });
+  }
+
+  /** Track someone's latest pose and run the approach/depart machine
+   *  (stepApproach). An approach is a knock, not a metronome: edge-triggered at
+   *  the radius, re-armed only beyond REARM_RADIUS, a per-person refractory, and
+   *  DWELL (delivered only once they stop: "walked up AND STOPPED within arm's
+   *  reach", declaration.ts). `depart` pings only for a delivered approach.
+   *  `now` is injectable so dwell tests control the clock. */
+  private notePose(id: string, pose: Pose, now = Date.now()) {
+    // A dirty stage frame can flush after the participant's leave event.
+    // Once joined, only the snapshot/arrive roster introduces a body; a late
+    // pose must not resurrect someone who is no longer present.
+    if (this.joined && !this.people.has(id)) return;
+    const p: Person = this.people.get(id) ?? { id, avatar: "", pose: null };
+    const prev = p.pose;
+    p.pose = pose; p.observedAt = now;
+    { const seat = (pose as any)?.seat;   // a seat rides the frame while it holds (presence)
+      const to = seat?.to ? resolveSeat(this.st, { to: String(seat.to), ...(typeof seat.slot === "string" ? { slot: seat.slot } : {}) })?.to : null;
+      if (to) { const st = { to }; this.bodySeats.set(id, st); this.mounts.set(id, st); }
+      else if (this.bodySeats.delete(id)) this.mounts.delete(id); }
+    p.bodyGeneration ??= ++this.bodyGenerationCounter;
+    this.people.set(id, p);
+    // hands aimed at this body — before the spatial gate below, because a
+    // reach descriptor is legible even from a sample with no usable position
+    if (id !== this.name) this.reaching.noteReachEvents(id, prev, pose);
+    const xyz = posePosition(pose);
+    if (!xyz) return; // keep the shell for identity/roster; no spatial inference yet
+    const [x, , z] = xyz;
+    const prevXYZ = posePosition(prev);
+    const dist = Math.hypot(x - this.pos.x, z - this.pos.z);
+    // The first SPATIAL observation is a BASELINE, not a transition: reconnect
+    // replay lands here for every body already in the room. Seed silently; a
+    // body already beside you must leave and come back before it can "walk up".
+    if (!prevXYZ) {
+      this.nearArmed.set(id, dist > REARM_RADIUS);
+      return;
+    }
+    const prevDist = Math.hypot(prevXYZ[0] - this.pos.x, prevXYZ[2] - this.pos.z);
+    if (id !== this.name) {
+      // Approach/depart is about OTHER bodies (guarded like noteActs and
+      // noteReachEvents): a self-echo must never report walking away from ourselves.
+      this.stepApproach(id, x, z, dist, prevDist, now);
+      // The activity pulse counts accumulated DISPLACEMENT, not a speed flag
+      // (idle jitter never qualifies); steps over 8m in one packet are teleports.
+      if (dist <= this.activityRadiusM && prev) {
+        const step = Math.hypot(pose.p[0] - prev.p[0], pose.p[2] - prev.p[2]);
+        if (step > 0.001 && step < 8)
+          this.act30.moved.set(id, (this.act30.moved.get(id) ?? 0) + step);
+      }
+      this.noteActs(id, prev, pose, dist);
+    }
+  }
+
+  /** One spatial sample of someone else, through the approach/depart machine:
+   *
+   *    dist > REARM_RADIUS      gone. Re-arm, and settle any owed departure.
+   *    APPROACH_RADIUS..REARM   nearby. CANCELS a pending approach (pass-through).
+   *    dist < APPROACH_RADIUS   close. Open a pending approach on the inward
+   *                             crossing; deliver it once they hold still.
+   *
+   *  Stillness is measured from positions WE observed, never `pose.speed`.
+   *  Deliberate asymmetry: leaving arm's reach cancels a PENDING approach but
+   *  doesn't close a delivered one; departure is the re-arm edge, so a seated
+   *  body's jitter across 2.5m never fires walked-up/walked-away pairs. */
+  private stepApproach(id: string, x: number, z: number, dist: number, prevDist: number, now: number) {
+    if (dist > REARM_RADIUS) {
+      this.nearArmed.set(id, true);
+      this.approachPending.delete(id);
+      const anchor = this.approachOpen.get(id);
+      if (anchor) {
+        this.approachOpen.delete(id);
+        // Who moved? `dist` is from where WE are now, so measure them against
+        // the anchor (our position when the approach fired): beyond the re-arm
+        // edge from there, they walked; otherwise the separation is at least
+        // partly ours and the ping says it actor-neutrally. Renderers print
+        // `who` + this text verbatim.
+        const walked = Math.hypot(x - anchor[0], z - anchor[1]) > REARM_RADIUS;
+        this.ping({ ts: now, kind: "depart", who: id, text: walked ? "walked away" : "is no longer nearby" });
+      }
+      return;
+    }
+    if (dist >= APPROACH_RADIUS) {
+      this.approachPending.delete(id);
+      return;
+    }
+
+    // --- inside arm's reach ---
+    const pend = this.approachPending.get(id);
+    if (!pend) {
+      // Only the CROSSING opens a pending approach, exactly as before — a body
+      // already inside the radius when we started watching never "walks up".
+      const armed = this.nearArmed.get(id) ?? true;
+      const cooled = now - (this.lastNear.get(id) ?? 0) > APPROACH_REFRACT_MS;
+      if (prevDist >= APPROACH_RADIUS && armed && cooled)
+        this.approachPending.set(id, { since: now, stillSince: now, at: [x, z], atTs: now });
+      return;
+    }
+
+    // Observed speed over the gap since the last sample. A zero/negative gap
+    // (two samples in one millisecond) yields no evidence either way, so it
+    // leaves stillSince alone rather than dividing by zero.
+    const dt = now - pend.atTs;
+    if (dt > 0) {
+      const speed = Math.hypot(x - pend.at[0], z - pend.at[1]) / (dt / 1000);
+      if (speed >= APPROACH_STILL_MPS) pend.stillSince = now;
+      pend.at = [x, z];
+      pend.atTs = now;
+    }
+
+    const held = now - pend.stillSince >= APPROACH_DWELL_MS;
+    const waited = now - pend.since >= APPROACH_MAX_WAIT_MS;
+    if (!held && !waited) return;
+
+    this.approachPending.delete(id);
+    this.lastNear.set(id, now);
+    this.nearArmed.set(id, false);
+    this.approachOpen.set(id, [this.pos.x, this.pos.z]); // the vantage the walk-up was true from
+    this.ping({ ts: now, kind: "approach", who: id });
+  }
+
+  /** A body left the WORLD (the `leave` message; extracted so it's testable
+   *  without a socket). Every per-participant map goes too: otherwise they grow
+   *  for the life of the process, and a returning visitor would inherit stale
+   *  approach arm state. Dropping approachOpen also keeps one exit to one line:
+   *  the presence gate already said "left the world", so no "walked away" too. */
+  private noteLeave(id: string) {
+    this.people.delete(id);
+    if (this.bodySeats.delete(id)) this.mounts.delete(id);   // a departed body rides nothing
+    this.bodyReader?.forget(id);
+    this.lastNear.delete(id);
+    this.nearArmed.delete(id);
+    this.nonLocoSince.delete(id);
+    this.approachPending.delete(id);
+    this.approachOpen.delete(id);
+    for (const k of this.reaching.lastReachPing.keys()) {
+      if (k.endsWith(`:${id}`)) this.reaching.lastReachPing.delete(k);
+    }
+    this.gate.presence(id, "leave");
+  }
+
+  /** Embodied acts as events: TRANSITIONS (a gesture fired, a pose struck or
+   *  released, sitting down or getting up), edge-triggered, never per frame.
+   *  Denoised by the gate's per-(person, act) refractory, and a non-locomotion
+   *  stint shorter than SHORT_STINT_MS earns no "gets up". */
+  private noteActs(id: string, prev: Pose | null, pose: Pose & { anim?: string; pose?: Record<string, unknown> | null }, dist = Infinity) {
+    const acts: { key: string; text: string }[] = [];
+    const once = onceAnimOf(pose);   // pose.anim
+    if (once) acts.push({ key: `anim:${once}`, text: `plays ${once} (once)` });
+    const prevHeld = Boolean((prev as { pose?: unknown } | null)?.pose);
+    const nowHeld = Boolean(pose.pose);
+    if (nowHeld && !prevHeld) acts.push({ key: "pose", text: `strikes a pose (${Object.keys(pose.pose!).length} bones held)` });
+    if (!nowHeld && prevHeld) acts.push({ key: "pose-release", text: "releases their pose" });
+    const was = foldedIn(prev), now = foldedIn(pose);   // the named pose wings-folded (an older sample's wingsFolded reads the same)
+    const hadFold = was !== null, hasFold = now !== null;
+    const prevFold = was === true, nowFold = now === true;
+    // A first sighting is a state, not an act. Announce only an edge observed
+    // between two explicit semantic samples; legacy absence proves neither
+    // folding nor opening.
+    if (hadFold && hasFold && nowFold !== prevFold) acts.push({
+      key: nowFold ? "wings-fold" : "wings-unfold",
+      text: nowFold ? "folds their wings" : "opens their wings",
+    });
+    const LOCO = new Set(["idle", "walk", "run"]);
+    const pc = prev?.clip ?? "idle", nc = pose.clip ?? "idle";
+    if (nc !== pc) {
+      if (!LOCO.has(nc)) {
+        if (LOCO.has(pc)) this.nonLocoSince.set(id, Date.now());
+        acts.push({ key: `clip:${nc}`, text: nc.startsWith("sit") ? "sits down" : nc === "lie" ? "lies down" : `starts "${nc}"` });
+      } else if (!LOCO.has(pc)) {
+        const stint = Date.now() - (this.nonLocoSince.get(id) ?? 0);
+        this.nonLocoSince.delete(id);
+        if (stint >= SHORT_STINT_MS) acts.push({ key: "gets-up", text: "gets up" });
+      }
+    }
+    // RAW act count feeds the pulse — a denoised (repeat) jump still means
+    // someone is alive and doing things next to you
+    if (acts.length && dist <= this.activityRadiusM) this.act30.acts += acts.length;
+    for (const a of acts) this.gate.act(id, a.key, a.text);
+  }
+
+  /** Remember our OWN says briefly, so a sidecar that airs one can be attested for it (the receipt is sha256 of the
+   *  text the world logged; only the world's copy is authoritative). Small ring: a receipt is valid for 5 minutes. */
+  private noteOwnSay(entry: any) {
+    if (entry?.verb === "say" && entry?.actor === this.name && typeof entry?.args?.text === "string") {
+      this.ownSays.set(entry.seq, String(entry.args.text));
+      if (this.ownSays.size > 32) this.ownSays.delete(this.ownSays.keys().next().value as number);
+      this.onMedia?.({ type: "speak", seq: entry.seq, text: entry.args.text });
+    }
+  }
+
+  /** A chat line heard ({seq, ts, actor, args: {text}}): the inbox once, and a live line from someone else
+   *  is an event (and a mention ping when it names this body). The window itself is the caller's (the fold, or hear). */
+  private hearSay(entry: any, live: boolean) {
+    const { args, actor, ts } = entry;
+    // history lands in the inbox ONCE, so a freshly-joined agent has
+    // context — and a reconnect's replayed tail is deduped by seq instead
+    // of piling the same chat in again.
+    const seq = typeof (entry as { seq?: unknown }).seq === "number" ? (entry as { seq: number }).seq : null;
+    // only real log seqs (>= 0) dedupe — synthetic pre-history seqs descend
+    if (seq != null && seq >= 0 && seq <= this.inboxSeen) return;
+    if (seq != null && seq >= 0) this.inboxSeen = seq;
+    this.inbox.push({ ts, kind: "say", who: actor, text: args.text, seq });
+    // mention ping: @name or bare whole-word name, live messages only. The
+    // agent's OWN say (the log's echo) stays in the inbox but is never an event.
+    if (live && actor !== this.name) {
+      // speech near this body feeds the activity pulse (a speaker whose
+      // position is unknown — just arrived — counts as near)
+      const pp = this.people.get(actor)?.pose;
+      if (!pp || Math.hypot(pp.p[0] - this.pos.x, pp.p[2] - this.pos.z) <= this.activityRadiusM)
+        this.act30.says.set(actor, (this.act30.says.get(actor) ?? 0) + 1);
+      // a null regex means this body has no usable name (a malformed tokens entry): it still hears the room
+      const mention = this.mentionsMe(String(args.text)) || this.isMe(args.to);   // the name, the credential's display name (#184), or a say addressed to me
+      if (mention) this.ping({ ts, kind: "mention", who: actor, text: args.text });
+      this.onEvent?.({ ts, kind: "say", who: actor, text: args.text, mention });
+    }
+  }
+
+  /**
+   * A live `particles` attach / replace / remove near this body: ONE ambient
+   * world-change percept per (entity, component). The first change in a quiet
+   * period speaks at once; the rest of the window folds into at most one line
+   * of the NET result (a slider drag is one "retunes"). Radius-gated, and silent
+   * for this body's own authoring (the self-echo rule, see `say`).
+   * `nowMs`/`setTimer` are injectable for tests.
+   */
+  private noteEmitter(actor: string | undefined, id: string, before: unknown, after: unknown,
+                      pos: number[] | undefined, ts: number) {
+    if (!actor || actor === this.name || actor === "world") return;
+    if (pos && Math.hypot(pos[0] - this.pos.x, pos[2] - this.pos.z) > this.activityRadiusM) return;
+    const slot = this.emitterNarration.get(id);
+    if (slot) {                       // inside the quiet window — fold, don't speak
+      slot.latest = after;
+      slot.actor = actor;
+      return;
+    }
+    const line = transitionLine(actor, id, emitterTransition(before, after));
+    if (line) {
+      this.act30.builds++;            // it feeds the activity digest like any build
+      this.onEvent?.({ ts, kind: "world-change", who: actor, text: line });
+    }
+    this.openEmitterWindow(id, actor, after);
+  }
+
+  private openEmitterWindow(id: string, actor: string, announced: unknown) {
+    const close = () => {
+      const slot = this.emitterNarration.get(id);
+      if (!slot) return;
+      this.emitterNarration.delete(id);
+      const t = emitterTransition(slot.announced, slot.latest);
+      if (!t) return;                 // the burst netted out to what we already said
+      const line = transitionLine(slot.actor, id, t);
+      if (line) {
+        this.act30.builds++;
+        this.onEvent?.({ ts: Date.now(), kind: "world-change", who: slot.actor, text: line });
+      }
+      // A continuous burst speaks once per window rather than being silenced
+      // forever by its own persistence — same rule the act refractory uses.
+      this.openEmitterWindow(id, slot.actor, slot.latest);
+    };
+    const timer = setTimeout(close, EMITTER_COALESCE_MS);
+    // never hold the process open for a decoration
+    (timer as unknown as { unref?: () => void }).unref?.();
+    this.emitterNarration.set(id, { announced, latest: announced, actor, timer });
+  }
+
+  /** The push half of sky perception (look() is the pull half), 1Hz off tick().
+   *  The first observation after a join is SILENT; this speaks only on change.
+   *  `nowMs` is injectable for tests. */
+  private skyStamp: { seq: number; by: string } | null = null;
+  checkSky(nowMs = Date.now()) {
+    if (!this.skyState) return;
+    const eff = effectiveSky(this.skyState, nowMs, this.skyCursor);
+    this.skyCursor = eff.cursor;
+    const key = `${eff.source}:${eff.seg?.idx ?? "-"}:${eff.weather ?? "-"}`;
+    // the canonical clock decides whether day phases can move — under a
+    // real clock the folded bag no longer carries rate at all
+    const advancing = effectiveClock(this.skyState, nowMs).mode !== "fixed";
+    const phase = advancing ? dayPhase(hoursAt(this.skyState, nowMs)) : null;
+    if (this.lastSkyKey === null) {
+      this.lastSkyKey = key;
+      this.lastDayPhase = phase;
+      return;
+    }
+    if (key !== this.lastSkyKey) {
+      this.lastSkyKey = key;
+      if (eff.weather) {
+        const why = eff.source === "forecast"
+          ? ` (forecast — policy sky seq ${eff.seq ?? this.skyStamp?.seq ?? "?"} by ${eff.by ?? this.skyStamp?.by ?? "?"})`
+          : eff.source === "manual" ? ` (${eff.by ?? this.skyStamp?.by ?? "someone"} overrode the forecast — holds until the next scheduled change)` : "";
+        this.onEvent?.({ ts: nowMs, kind: "weather", who: "world", text: `world weather: ${eff.weather}${why}` });
+      }
+    }
+    if (phase !== null && phase !== this.lastDayPhase) {
+      this.lastDayPhase = phase;
+      const line = { dawn: "dawn breaks", day: "full daylight", dusk: "dusk settles", night: "night falls" }[phase];
+      this.onEvent?.({ ts: nowMs, kind: "weather", who: "world",
+        text: `${line} (hour ${hoursAt(this.skyState, nowMs).toFixed(1)})` });
+    }
+  }
+
+  /** Recent pings, for a plain-MCP host that polls (takePings) instead of
+   *  subscribing (onPing). A ring, like every buffer in this file. */
+  private static readonly PING_RING = 64;
+
+  ping(p: { ts: number; kind: "mention" | "approach" | "depart" | "reach" | "touch"; who: string; text?: string }) {
+    this.pings.push(p);
+    if (this.pings.length > WorldAgent.PING_RING) this.pings.splice(0, this.pings.length - WorldAgent.PING_RING);
+    this.onPing?.(p);
+  }
+
+  takePings() {
+    const out = this.pings;
+    this.pings = [];
+    return out;
+  }
+
   /** Everything said since a given point, oldest first. */
   /** Advance the unread cursor past replayed history at or before `seq` (chat
    *  a previous session already presented; the cursor persists in state.json).
@@ -3258,38 +3290,6 @@ export class WorldAgent {
     const dirs = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]; // N = -z, E = +x
     const a = Math.atan2(dx, -dz);
     return dirs[Math.round(((a + Math.PI * 2) % (Math.PI * 2)) / (Math.PI / 4)) % 8];
-  }
-
-  /** Where a thing ACTUALLY is right now: the mount chain and any whole-entity
-   *  motion, composed by effective.ts with the renderer's closed forms. Every
-   *  numeric spatial claim in perception goes through this, never `e.pos`. */
-  eff(id: string, nowMs: number): Effective {
-    return effectiveWorldTransform(id, {
-      entity: (eid) => this.entities.get(eid),
-      mount: (eid) => this.mounts.get(eid),
-      seatVerdict: (eid) => this.seatVerdictFor(eid),
-      // an occupant's chosen size, from its own presence (absent = 1). An agent's own
-      // body is its authored size: no agent sets `scale`, so its wire carries none.
-      occupantScale: (eid) => eid === this.name ? 1 : clampBodyScale(this.people.get(eid)?.pose?.scale),
-    }, nowMs);
-  }
-
-  /** The served verdict for whatever avatar this body currently wears —
-   *  roster truth (p.avatar) mapped through the same name derivation every
-   *  consumer uses. Undefined = no profile, declared. */
-  private seatVerdictFor(id: string) {
-    const path = id === this.name ? this.avatar : this.people.get(id)?.avatar;
-    const nm = nameFromAvatarPath(path);
-    return nm ? this.seatCache.get(nm) : undefined;
-  }
-
-  /** The declared-approximation suffix for a seated person's line:
-   *  the same reason string the browser consoles and the nameplate ≈ carry —
-   *  one contract, three declarations. Empty when the seat is profiled. */
-  private seatSuffix(id: string, occ: { to: string }): string {
-    const station = this.socketRec(occ.to)?.station;
-    const g = seatGateCore({ sock: station, verdict: this.seatVerdictFor(id), pose: bodyOf(station)?.clip ?? "sitchair" });
-    return g.apply ? "" : ` (seat approximate: ${g.reason})`;
   }
 
 
