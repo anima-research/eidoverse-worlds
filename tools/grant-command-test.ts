@@ -19,7 +19,7 @@ const modules: any = {
   'controller.js': { myState: { pos: { x: 0, y: 0, z: 0 } }, setPosture: noop, flightReport: () => '' },
   'thingphysics.js': { punt: noop, grab: noop, put: noop, drop: noop, throwHeld: noop }, 'chat.js': { logChat: (_w: string, t: string) => messages.push(t) },
   'ui.js': { toggleHelp: noop, flashHint: noop, toast: noop }, 'scenegraph.js': { sceneAttach: noop, sceneDetach: noop },
-  'consent.js': { setPushable: noop, pushable: () => false }, 'localbody.js': { trySitOn: noop }, 'mybody.js': { getMe: () => null },
+  'consent.js': { setPushable: noop, pushable: () => false }, 'localbody.js': { trySitOn: noop, sitOnGround: noop }, 'mybody.js': { getMe: () => null },
   'editwrites.js': { send: async (req: any) => { sent.push(req); return { ok: true }; } }, 'stylepanel.js': { panelAlpha: () => 1, setPanelAlpha: noop },
 };
 for (const [name, exports] of Object.entries(modules)) mock.module(fileURLToPath(new URL('../client/lib/' + name, import.meta.url)), () => exports as any);
