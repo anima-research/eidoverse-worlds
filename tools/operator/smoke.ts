@@ -136,7 +136,7 @@ try {
   {
     const dir = join(import.meta.dir, "..", "..", "client");
     const files = [join(dir, "main.js")];
-    for (const f of readdirSync(join(dir, "lib"))) {
+    for (const f of readdirSync(join(dir, "lib"), { recursive: true }) as string[]) {   // every folder: one bad module in lib/edit/ blanks the page too
       if (f.endsWith(".js")) files.push(join(dir, "lib", f));
     }
     const t = new Bun.Transpiler({ loader: "js" });
