@@ -199,7 +199,7 @@ console.log("\nE2. every glyph edit chrome names exists (a missing icon paints N
 {
   const icons = await import("../../client/lib/icons.js");
   const { PICTO_ICON } = await import("../../client/lib/edit/theme.js");
-  const src = (p: string) => { try { return readFileSync(here(`../../client/lib/${p}`), "utf8"); } catch { return ""; } };
+  const src = (p: string) => readFileSync(here(`../../client/lib/${p}`), "utf8");   // a missing file throws: "" would collect no glyphs and pass
   const names = new Set<string>(Object.values(PICTO_ICON) as string[]);
   for (const p of ["edit/paint.js", "edit/widgets.js"]) {   // C13: the edit widgets' glyphs are named in widgets.js, the surface's in edit/paint.js
     for (const m of src(p).matchAll(/icon\(g, ([^,]+),/g)) for (const q of m[1].matchAll(/'([A-Za-z0-9]+)'/g)) names.add(q[1]);

@@ -187,7 +187,7 @@ if (argv.includes("--control")) {
 const TREE = path.resolve(opt("tree") ?? ENGINE) + "/";
 const ONLY = opt("only")?.split(",") ?? null;
 const want = (id: string) => !ONLY || ONLY.includes(id);
-const readText = (rel: string) => { try { return fs.readFileSync(TREE + rel, "utf8"); } catch { return ""; } };
+const readText = (rel: string) => fs.readFileSync(TREE + rel, "utf8");   // a missing file throws (its row FAILs): "" would pass every "does not contain"
 const exists = (rel: string) => fs.existsSync(TREE + rel);
 const root = scratch("names");
 const D = await import(TREE + "shared/protocol/authority.js");

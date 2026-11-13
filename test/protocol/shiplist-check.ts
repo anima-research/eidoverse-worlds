@@ -351,7 +351,7 @@ await C("P2", "a warning for a person names things by label (an agent's still by
   return [p === "“Desk lamp” floats 0.3 m above “Front door”" && a === "lamp floats 0.3 m above 3485c78e0a1b", { p, a }];
 });
 await C("P3", "the client shows a person the plain words and the authority's warnings (edit sends), and a moderator's warning on the XR quad in a headset", () => {
-  const src = (f: string) => { try { return fs.readFileSync(path.join(T, f), "utf8"); } catch { return ""; } };
+  const src = (f: string) => fs.readFileSync(path.join(T, f), "utf8");   // a missing file throws (the row FAILs, naming it)
   const editSrc = src("client/lib/edit/writes.js"), ppl = src("client/lib/people.js"), xr = src("client/lib/xrask.js");
   return [/toast\(text, 'warn'/.test(editSrc) && /const text = plain\(what, r\)/.test(editSrc) && /showWarnings\(what, r\)/.test(editSrc) && /xrActive\(\)\s*\n?\s*\? chooseXR/.test(ppl) && /bus\.on\('edit-warned'/.test(xr),
     "(the browser stages in test/protocol/shiplist-probe.ts watch these happen)"];
