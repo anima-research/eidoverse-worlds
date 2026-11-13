@@ -3,6 +3,7 @@
 // A citation starts with a top-level directory and ends in a known extension or a slash. It resolves when it is tracked
 // (or a tracked file's directory) from the root or any directory above the citing file, or is gitignored (a runtime
 // file). A Markdown link resolves from its own file. `rev:path`, git's own form, names another tree and is not checked.
+// A served URL in quotes (a browser test's import of '/lib/…' or '/shared/…') resolves to client/lib/… or shared/…, as the server answers it.
 // HISTORY and ALLOW are the only exceptions.
 import fs from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -31,6 +32,7 @@ const ALLOW: [where: string, paths: string[] | null, why: string][] = [
   ["test/client/named-pose-test.ts", ["defs/animations/idle.json"], "a file in the scratch asset library it builds"],
   ["test/mcpl/body-state-test.ts", ["defs/animations/idle.json"], "a file in the scratch asset library it builds"],
   ["test/shared/voice-wire-test.ts", ["defs/animations/idle.json"], "a file in the scratch asset library it builds"],
+  ["bench/seatlab/", ["/lib/seatlab.js"], "the bench is copied under client/lib/ to run (its README)"],
 ];
 const EXT = /\.(md|ts|js|mjs|cjs|json|jsonl|sh|html|css|py|ya?ml|txt|toml|conf|service|template|lock|glb|gltf|vrm|png|jpe?g|svg|wasm|onnx|ktx2|hdr)$/i;
 const SCANNED = /\.(md|ts|js|mjs|json|sh|html)$/;
@@ -51,6 +53,11 @@ function citations(src: string): { path: string; line: number }[] {
     out.push({ path: p, line: src.slice(0, m.index).split("\n").length });
   }
   return out;
+}
+const URL_RE = /(["'`])(\/(?:lib|shared)\/[\w./-]+?\.m?js)(?=[?#"'`])/g;   // '/lib/net.js', `/shared/structure.js?x`
+/** The served URLs `src` names, each with the repo file the server answers it from (server/routes.ts: /lib/ from client/, /shared/ from shared/). */
+function servedUrls(src: string): { url: string; file: string; line: number }[] {
+  return [...src.matchAll(URL_RE)].map((m) => ({ url: m[2], file: m[2].startsWith("/lib/") ? "client" + m[2] : m[2].slice(1), line: src.slice(0, m.index).split("\n").length }));
 }
 const LINK = /\]\(([^()\s#]+)(?:#[^()\s]*)?\)/g;   // [text](target#anchor)
 /** A Markdown file's relative links, repo-relative; null where one climbs out of the repo. */
@@ -75,7 +82,8 @@ const excuse = (f: string, p: string) => f === SELF ? (ALLOW.some(([, ps]) => ps
   : ALLOW.find(([w, ps]) => (w.endsWith("/") ? f.startsWith(w) : f === w) && (!ps || ps.includes(p)))?.[0] ?? null;
 
 const unresolved: { f: string; line: number; path: string }[] = [], used = new Set<string>();
-let cited = 0;
+let cited = 0, urls = 0;
+const unservable: { f: string; line: number; path: string }[] = [];
 for (const f of tracked) {
   if (!SCANNED.test(f) || /(^|\/)(node_modules|vendor)\//.test(f) || HISTORY.some((h) => h.test(f))) continue;
   const src = fs.readFileSync(ENGINE + f, "utf8");
@@ -88,6 +96,11 @@ for (const f of tracked) {
     cited++; if (resolves(f, c.path)) continue;
     const a = excuse(f, c.path); if (a) { used.add(a); continue; }
     unresolved.push({ f, ...c });
+  }
+  for (const u of servedUrls(src)) {
+    urls++; if (have.has(u.file)) continue;
+    const a = excuse(f, u.url); if (a) { used.add(a); continue; }
+    unservable.push({ f, line: u.line, path: u.url });
   }
 }
 const ignored = new Set(git(["check-ignore", "--no-index", "--stdin"], [...new Set(unresolved.map((u) => u.path))].join("\n") + "\n").stdout.split("\n").filter(Boolean));
@@ -103,5 +116,10 @@ check("P1b a Markdown link resolves from its own file; URLs, root-absolute links
   JSON.stringify(lprobe) === JSON.stringify([T("tools", "y.md"), null]), lprobe);
 check("P2 the scan read the tree (more than 1000 citations)", cited > 1000, cited);
 check("P3 every repo path a tracked doc, script or comment cites resolves", !broken.length, broken.map((b) => `${b.f}:${b.line} ${b.path}`).join("; "));
+const uprobe = servedUrls([`import('${"/lib"}/net.js') import("${"/shared"}/protocol/fold.js?v=2") \`${"/lib"}/\${m}.js\``, `'${"/lib"}/eidoverse/a.glb' "/x${"/lib"}/y.js"`].join("\n"));
+check("P5a the URL extractor takes a quoted /lib/ or /shared/ module, query and all, and skips templates, non-modules and longer paths",
+  JSON.stringify(uprobe.map((u) => u.file)) === JSON.stringify(["client/lib/net.js", "shared/protocol/fold.js"]), uprobe);
+check("P5b the scan saw the browser tests' served URLs (more than 500)", urls > 500, urls);
+check("P5c every served URL a tracked file names in quotes (/lib/… or /shared/…) is a file the server can answer", !unservable.length, unservable.map((b) => `${b.f}:${b.line} ${b.path}`).join("; "));
 check("P4 every ALLOW entry still excuses something (a fixed site leaves the list)", ALLOW.every(([w]) => used.has(w)), ALLOW.filter(([w]) => !used.has(w)).map(([w]) => w));
 done();

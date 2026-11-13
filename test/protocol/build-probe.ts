@@ -94,7 +94,7 @@ try {
     const press = () => evalJson(`import('/lib/core.js').then((m) => (m.canvas.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: ${SX}, clientY: ${SY} })), true))`);
     // a recompute of the wall tool's aim (its own functions, against B0), sampled just before and just after the click: the
     // camera may move between them, so a drift shows as drift; the requested value below is what decides
-    const aimAt = () => evalJson(`(async () => { const B0 = ${B0}, [{ THREE, canvas, camera }, S, E] = await Promise.all([import('/lib/core.js'), import('/shared/structure.js'), import('/shared/structure_edit.js')]);
+    const aimAt = () => evalJson(`(async () => { const B0 = ${B0}, [{ THREE, canvas, camera }, S, E] = await Promise.all([import('/lib/core.js'), import('/shared/structure.js'), import('/shared/structure-edit.js')]);
       const ent = (await import('/lib/state.js')).state.st.entities['house-b'], r = canvas.getBoundingClientRect(), ndc = new THREE.Vector2(((${SX} - r.left) / r.width) * 2 - 1, -((${SY} - r.top) / r.height) * 2 + 1);
       camera.updateMatrixWorld(); const ray = new THREE.Raycaster(); ray.setFromCamera(ndc, camera);
       const y = (ent?.pos?.[1] ?? 0) + (Number.isFinite(B0.levels?.[0]?.y) ? B0.levels[0].y : 0) + (Number.isFinite(B0.slabT) ? B0.slabT : S.GRID_DEFAULTS.slabT), h = new THREE.Vector3(), r3 = (v) => Math.round(v * 1000) / 1000;
