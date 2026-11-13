@@ -87,10 +87,10 @@ check('the span is wide and mirrored',
 console.log('\nCAPABILITY -- headless, from the real bone list');
 const boneNames = [...byName.keys()];
 const report = inspectBody(boneNames);
-check('the shipped body is flight-capable headless', report.canFly && report.canAnimateWings);
+check('the shipped body animates its wings headless', report.canAnimateWings);
 const dev = devFlightProvider({ allow: ['mythos'], label: 'headless-test' });
 const grant = resolveFlight(dev, { identity: 'mythos', avatar: { boneNames } });
-check('a granted agent gets a rig profile', grant.enabled === true && !!grant.profile?.digest);
+check('a granted agent is granted, by the bench', grant.enabled === true && grant.source === 'headless-test');
 check('an unlisted agent does not',
       resolveFlight(dev, { identity: 'someone', avatar: { boneNames } }).enabled === false);
 
@@ -168,7 +168,7 @@ console.log('\nLIVE REVOCATION -- through the your-rights path, not around it');
 {
   const { WorldAgent } = await import('../mcpl/agent.ts');
   const ag: any = new WorldAgent({ name: 'mythos', world: 'commons' });
-  // A flier's core bones, so the only variable under test is the GRANT half.
+  // A winged body (the body isn't asked, flightcap.js); the only variable under test is the grant.
   ag.bodyBoneNames = ['Hip', 'Spine02', 'Head',
     'L_Wing_Upper', 'L_Wing_Upper_1', 'R_Wing_Upper', 'R_Wing_Upper_1',
     'L_Wing_Lower', 'R_Wing_Lower'];

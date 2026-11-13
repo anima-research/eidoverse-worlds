@@ -41,7 +41,7 @@ import {
 } from "../shared/flight.js";
 import { MOVER, TRACK, walkToward, toleranceOf, waterStance } from "../shared/mover.js";
 import { resolveFlight, worldFlightProvider } from "../shared/flightcap.js";
-import { inspectBody } from "../shared/flightbody.js";
+import { deadWingsNote, inspectBody } from "../shared/flightbody.js";
 import { foldedIn, wingFoldPresence } from "../shared/wingpresence.js";
 import { onceAnimOf } from "../shared/onceanim.js";
 import { bodyModeTracker, isBodyMode, readBodyMode } from "../shared/bodymode.js";
@@ -3076,28 +3076,23 @@ export class WorldAgent {
     }
   }
 
-  /** Resolve the capability, freshly, every time -- never cached. An avatar
-   *  can hot-swap and a grant must not ride across it. */
+  /** Resolve the capability, freshly, every time -- never cached: grants change live. The body isn't asked
+   *  (shared/flightcap.js); a swap ends any flight under way (setAvatar). */
   private flightAllowed(): { ok: boolean; why: string } {
-    // Bone names come from the VRM this body is WEARING, re-read on an avatar change; wings aren't needed (shared/flightcap.js).
-    // A swap ends any flight under way (setAvatar).
-    // Unknown stays unknown: until the worn body's bones have been read, the
-    // provider is given no list, which it answers as such, rather than an
-    // empty list, which it would read as a body with no hips, spine or head.
-    const bones = this.bodyBoneNames;
     // THE WORLD'S GRANT, or an explicitly injected one for a bench. What is
     // gone is the third option -- a self-authorizing dev provider conjured
     // when neither was present, which was every production path (mica,
     // Blocker 1). A bench sets `agent.flightCap`; nothing else grants.
     const prov = this.flightCap ?? worldFlightProvider({ rights: () => this.myRights, label: "world-grant" });
-    const r = resolveFlight(prov, { identity: this.name, avatar: { boneNames: bones } });
+    const r = resolveFlight(prov, { identity: this.name });
     return { ok: r.enabled === true, why: r.enabled ? "" : (r.reason ?? "denied") };
   }
 
-  /** Bone names of the worn body, for the capability's rig check; null
+  /** Bone names of the worn body, for its wings (fold, flap); null
    *  while they aren't known: until the worn model has been read, after a
    *  read failed, and from an avatar change until the new body is read. */
   bodyBoneNames: string[] | null = null;
+  private deadWingsToldFor: string | null = null;
   private bodyBonesFor: string | null = null;
 
   /** Read the worn VRM's bone list, once per avatar. A failed read keeps
@@ -3118,6 +3113,8 @@ export class WorldAgent {
       if (this.avatar === avatar) {
         this.bodyBoneNames = names;
         this.bodyBonesFor = avatar;
+        // a fold carried from a winged body is released by a body with no wings to hold it (a winged one keeps it)
+        if (this.wingsFolded && !this.flight && !inspectBody(names).canAnimateWings) this.wingsFolded = false;
       }
     } catch (e) {
       // Nothing is kept: a list another read stored for this body stands, and
@@ -3296,7 +3293,10 @@ export class WorldAgent {
       { groundY: this.groundAt(this.pos.x, this.pos.z, feetY) });
     const ev = this.flight.events.find((e: any) => e.kind === "takeoff.refused");
     if (ev) { return refused(`still standing — ${flightFixInOurTools(ev.reason)}`); }
-    return done(`took off — ${this.flight.pos.y.toFixed(1)}m, stamina ${this.flight.stamina.toFixed(0)}/100`);
+    // dead wings are said once per body (flightbody.js deadWingsNote)
+    const dead = this.bodyBoneNames && this.deadWingsToldFor !== this.avatar ? deadWingsNote(inspectBody(this.bodyBoneNames)) : null;
+    if (dead) this.deadWingsToldFor = this.avatar;
+    return done(`took off — ${this.flight.pos.y.toFixed(1)}m, stamina ${this.flight.stamina.toFixed(0)}/100${dead ? `; ${dead}` : ""}`);
   }
 
   // WORLD-FACING FLIGHT TELEMETRY IS ABSENT ON PURPOSE, for now.
@@ -3390,7 +3390,6 @@ export class WorldAgent {
   /** glide_to (spec §1). Free, and lands SHORT honestly if the polar runs out. `took`, when given, is told the course
    *  this glide set and how its wait ended, for land_at to tell whether a later call has taken the flight over. */
   async glideTo(x: number, z: number, took?: { course?: number; got?: string }): Promise<ActResult> {
-    await this.loadBodyBones();
     const cap = this.flightAllowed();
     if (!cap.ok) return refused(`you cannot fly here — ${cap.why}`);
     if (!this.flight || this.flight.phase === "GROUND" || this.flight.phase === "LANDED") {
@@ -3446,7 +3445,6 @@ export class WorldAgent {
 
   /** climb_to (spec §1). -1 stamina/metre; an empty pool forces a glide down. */
   async climbTo(alt: number): Promise<ActResult> {
-    await this.loadBodyBones();
     const cap = this.flightAllowed();
     if (!cap.ok) return refused(`you cannot fly here — ${cap.why}`);
     if (!this.flight || this.flight.phase === "GROUND" || this.flight.phase === "LANDED") {
@@ -3529,7 +3527,6 @@ export class WorldAgent {
 
   /** land_at (x,z). Descend, arrive, and hand the body back to walking. */
   async landAt(x: number, z: number): Promise<ActResult> {
-    await this.loadBodyBones();
     const cap = this.flightAllowed();
     if (!cap.ok) return refused(`you cannot fly here — ${cap.why}`);
     if (!this.flight || this.flight.phase === "GROUND" || this.flight.phase === "LANDED") {
@@ -5325,11 +5322,12 @@ export class WorldAgent {
    *  with the new path and every client rebuilds this remote. Position, held
    *  pose, and identity all carry over; only the body changes. */
   setAvatar(path: string) {
-    if (this.flight) this.endFlight("avatar");   // the new body's rig isn't read yet: it falls, and its next flight act checks it
+    if (this.flight) this.endFlight("avatar");   // the new body falls, and flies again when it takes off
     this.avatar = path;
-    // The new body's bones are read before its next flight act or fold.
+    // The new body's bones are read before its next take-off or fold, and now if a fold is carried (it may not fit).
     this.bodyBoneNames = null;
     this.bodyBonesFor = null;
+    if (this.wingsFolded) void this.loadBodyBones();
     this.selfBodyGeneration = ++this.bodyGenerationCounter;
     this.bodyReader?.forget(this.name);
     // a new body has its own height: re-measure (a reply for the old body is dropped), and float afresh

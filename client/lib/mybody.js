@@ -7,6 +7,7 @@
 import { CONFIG, bus, report, tee } from './base.js';
 import { releaseBodyGate } from './bodygate.js';
 import { armFlight, folded } from './controller.js';
+import { deadWingsNote, inspectBody } from '../../shared/flightbody.js';
 import { makeAvatar, contributeThumbnail } from './avatar.js';
 import { setMyAvatarPath, wireAvatarSwitch } from './catalog.js';
 import { toast } from './ui.js';
@@ -137,17 +138,15 @@ export function setMe(av) {
   armFlightFor(av);
 }
 
-/** Arm (or disarm) human flight for whatever body this is now.
- *
- *  Re-run on every swap, never cached: the profile binds to the worn rig (shared/flightcap.js), as on the agent side. */
+/** Arm human flight for whatever body this is now, on every swap: the grant decides (shared/flightcap.js); the
+ *  bones only say which wings flap. A body with no skeleton to read (a capsule) arms with none. */
 function armFlightFor(av) {
-  try {
-    if (!av?.vrm?.scene) return;
-    const bones = [];
-    av.vrm.scene.traverse((o) => { if (o.isBone && o.name) bones.push(o.name); });
-    const ok = armFlight(bones, 'me');
-    if (ok) toast?.('flight available on this body — press F');
-  } catch { /* a body that cannot be inspected simply cannot fly */ }
+  const bones = [];
+  try { av?.vrm?.scene?.traverse((o) => { if (o.isBone && o.name) bones.push(o.name); }); } catch { /* none read */ }
+  const ok = armFlight(bones, 'me');
+  // a mis-named wing rig still flies; it is told once, here, why its wings won't move (flightbody.js)
+  const dead = deadWingsNote(inspectBody(bones));
+  if (ok && av) toast?.(`flight available on this body — press F${dead ? `; ${dead}` : ''}`);
 }
 
 // ---------------------------------------------------------------- avatar swap

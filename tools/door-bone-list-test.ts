@@ -3,11 +3,9 @@
 //
 //   bun tools/door-bone-list-test.ts
 //
-// An empty list means a body with no bones, so the flight check reads it as
-// a body missing its hips, spine and head. Before this, a failed fetch of the
-// worn model was cached as that empty list until the avatar changed: every
-// flight act was refused for a skeleton the body has, and fold_wings said it
-// had no wings.
+// An empty list means a body with no bones, so fold_wings reads it as a body with no wings. Before this, a failed fetch
+// of the worn model was cached as that empty list until the avatar changed. Flight never waits on the bones (the
+// grant decides, shared/flightcap.js); the fold does, and a fold carried into a wingless body is released.
 
 import { WorldAgent } from '../mcpl/agent.ts';
 import { devFlightProvider } from '../shared/flightcap.js';
@@ -43,9 +41,12 @@ const realWarn = console.warn; const warned: string[] = [];
 console.warn = (...args: unknown[]) => { warned.push(args.map(String).join(' ')); };
 
 console.log('\nA FAILED READ');
-let r = await ag.takeOff();
-check('take_off says the bones aren\'t known, not that the skeleton lacks them',
-  /bones aren't known/.test(text(r)) && !/hip|spine|head/i.test(text(r)), text(r));
+const blind: any = new WorldAgent({ name: 'blind', world: 'bone-bench' });
+blind.avatar = 'mythos-wings.vrm';
+blind.myRights = { role: 'builder', fly: true };
+let r = await blind.takeOff();
+check("take_off doesn't need the bones: an unreadable body takes off with the grant", /took off/.test(text(r)), text(r));
+r = await ag.loadBodyBones();
 check('the failed read is not kept as an empty list', ag.bodyBoneNames === null);
 check('the failure goes to the door\'s log', warned.some((l) => /couldn't read the bones of mythos-wings\.vrm: 503/.test(l)), warned.join(' | '));
 r = await ag.foldWings(true);
@@ -68,8 +69,8 @@ bare.avatar = 'statue.vrm';
 bare.myRights = { role: 'builder', fly: true };
 serve = async () => new Response(glb([]));
 r = await bare.takeOff();
-check('an empty list read from the model is kept, and still refused for its skeleton',
-  Array.isArray(bare.bodyBoneNames) && bare.bodyBoneNames.length === 0 && /hip|spine|head/i.test(text(r)), text(r));
+check('an empty list read from the model is kept, and the body takes off with the grant (no skeleton is asked for)',
+  Array.isArray(bare.bodyBoneNames) && bare.bodyBoneNames.length === 0 && /took off/.test(text(r)), text(r));
 r = await bare.foldWings(true);
 check('fold_wings on a body read as empty says it has no wings', text(r) === 'this body has no animatable wings to fold', text(r));
 
@@ -82,13 +83,12 @@ r = await vigil.foldWings(false);
 check('unfold_wings releases a folded posture while the bones are unknown',
   vigil.wingsFolded === false && /^folded-wing posture released — this body's bones aren't known/.test(text(r)), text(r));
 
-console.log('\nA BENCH RIG ISN\'T THE WORN BODY');
+console.log('\nA BENCH GRANT ASKS NO BODY');
 const bench: any = new WorldAgent({ name: 'mythos', world: 'bone-bench' });
 bench.avatar = 'unread.vrm';
-bench.flightCap = devFlightProvider({ allow: ['mythos'], bones: WINGED });
+bench.flightCap = devFlightProvider({ allow: ['mythos'] });
 r = await bench.takeOff();
-check("a bench provider doesn't fly an unread body on its constructor's rig",
-  !/took off/.test(text(r)) && /bones aren't known/.test(text(r)), text(r));
+check('a bench provider flies its allow-listed pilot whatever the body, read or not', /took off/.test(text(r)), text(r));
 
 console.log('\nAN AVATAR CHANGE');
 const worn: any = new WorldAgent({ name: 'mythos', world: 'bone-bench' });
@@ -99,8 +99,8 @@ await worn.loadBodyBones();
 worn.setAvatar('wingless.vrm');
 serve = DOWN;
 r = await worn.takeOff();
-check("after a swap the old body's bones aren't used: the new body's are unknown until read",
-  worn.bodyBoneNames === null && /bones aren't known/.test(text(r)), text(r));
+check("after a swap the old body's bones aren't used (the new body's are unknown until read), and take-off doesn't wait for them",
+  worn.bodyBoneNames === null && /took off/.test(text(r)), text(r));
 
 // A no-op until the fetch is made, so a read served from a cache fails the check rather than the run.
 let release: () => void = () => {};
@@ -146,6 +146,17 @@ await keep.foldWings(true);
 keep.setAvatar('mythos-wings-2.vrm');
 await keep.loadBodyBones();
 check('a swap to another winged body keeps the fold (it is a posture the new wings can hold)', keep.wingsFolded === true);
+
+console.log('\nDEAD WINGS ARE SAID ONCE');
+const bee: any = new WorldAgent({ name: 'bee', world: 'bone-bench' });
+bee.avatar = 'tigerbee.vrm';
+bee.myRights = { role: 'builder', fly: true };
+serve = async () => new Response(glb(['Hips', 'Spine', 'Head', 'Wings', 'Wing_Left_High_Base', 'Wing_Left_High1', 'Wing_Right_High_Base']));
+r = await bee.takeOff();
+check("a mis-named wing rig takes off, told its wings won't animate and why", /took off/.test(text(r)) && /won't animate/.test(text(r)) && /Wing_Left_High_Base/.test(text(r)), text(r));
+bee.flight = null;
+r = await bee.takeOff();
+check('...once: the next take-off says nothing more', /took off/.test(text(r)) && !/won't animate/.test(text(r)), text(r));
 
 console.warn = realWarn;
 console.log(`\n${pass} passed, ${fail} failed`);

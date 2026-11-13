@@ -67,6 +67,8 @@ let flightBones = null;
  *  compatible body with no grant gets a refusal that names the fix. */
 export function armFlight(boneNames, identity = 'me') {
   flightBones = boneNames ?? [];
+  // a fold carried from a winged body is released by one with no wings to hold it (agent.ts loadBodyBones, the twin)
+  if (wingsFolded && !inspectBody(flightBones).canAnimateWings) setFolded(false);
   flightProv = worldFlightProvider({ rights: myRights, label: 'world-grant' });
   return resolveFlight(flightProv, { identity, avatar: { boneNames: flightBones } }).enabled;
 }
@@ -164,7 +166,7 @@ export function flightReport() {
     : { enabled: false, reason: 'flight not armed for this body' };
   const L = [];
   L.push(`rig: ${flightBones?.length ?? 0} bones, ` +
-         (v.enabled ? `granted (${v.profile.wingCount} wing bones)` : `DENIED — ${v.reason}`));
+         (v.enabled ? `granted (${inspectBody(flightBones).wingCount} wing bones)` : `DENIED — ${v.reason}`));
   if (flight) {
     L.push(`state: ${flight.phase} · t=${flight.t.toFixed(1)}s · ` +
            `y=${flight.pos.y.toFixed(2)} (ground ${flightGround(flight.pos.x, flight.pos.z).toFixed(2)})`);

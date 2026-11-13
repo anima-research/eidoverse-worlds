@@ -122,8 +122,7 @@ vrm = gltf.userData.vrm;
 vrm.scene.traverse(o => { o.frustumCulled = false; });
 scene.add(vrm.scene);
 
-// The rig, read off the body that is actually here -- not a list typed into a
-// file. The capability binds to these names.
+// The rig, read off the body that is actually here -- not a list typed into a file. The wings flap by these names.
 vrm.scene.traverse(o => { if (o.isBone) bones.push(o.name); });
 const report = inspectBody(bones);
 

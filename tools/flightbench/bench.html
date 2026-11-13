@@ -55,13 +55,12 @@ let st = null, cap = null, frame = 0, t0 = null;
 const events = [];
 const held = new Set();
 
-// --- the capability gate. Nothing below runs without a positive profile, and
-// it is re-resolved on EVERY step, not cached -- an avatar can hot-swap.
+// --- the capability gate. Nothing below runs without a grant, and it is re-resolved on EVERY step, not cached.
 const BONES = window.__benchBones ?? null;
 
 function enableFlight({ identity = 'mythos', bones = BONES, config = {}, startY = 20 } = {}) {
   cfg = makeConfig(config);
-  const provider = devFlightProvider({ allow: [identity], bones, label: 'bench-dev' });
+  const provider = devFlightProvider({ allow: [identity], label: 'bench-dev' });
   cap = { provider, identity, bones };
   const r = resolveFlight(provider, { identity, avatar: { boneNames: bones } });
   if (!r.enabled) { document.getElementById('banner').textContent = 'DENIED: ' + r.reason; return r; }
