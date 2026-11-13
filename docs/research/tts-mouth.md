@@ -1,4 +1,4 @@
-# The TTS mouth (client/lib/tts.js): design notes
+# The TTS mouth (client/lib/audio/tts.js): design notes
 
 Rationale behind the browser's synthesized-voice path, kept out of the code comments.
 

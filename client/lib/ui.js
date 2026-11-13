@@ -6,7 +6,7 @@ import { chooseClient } from './litechoice.js';
 import { confirmCenter } from './edit/confirmcenter.js';
 import { bus, CONFIG, setName, setToken, setErrorSink, report, forgetRememberedWorlds } from './base.js';
 import { resizeZoneAt, fitTabStrip } from './windows.js';
-import { flipMic, flipEar, micLive, earOn, glyphPinned, setGlyphPinned, micGlyph, earGlyph, xrGlyph, xrGlyphAvailable, xrLive, flipXr } from './mictoggle.js';
+import { flipMic, flipEar, micLive, earOn, glyphPinned, setGlyphPinned, micGlyph, earGlyph, xrGlyph, xrGlyphAvailable, xrLive, flipXr } from './audio/mictoggle.js';
 import { svg, fsvg, hasFill, rsvg, hasLine } from './icons.js';
 import { html, paint, lineKey, escapeHtml } from './markup.js';
 export { html, markup } from './markup.js';

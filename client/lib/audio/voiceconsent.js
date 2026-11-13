@@ -5,7 +5,7 @@
 // Categories: the 🎧 toggle is a voice control, and agent voice (TTS) counts as a voice. World
 // ambience is taste, set once on a settings slider.
 
-import { bus } from './base.js';
+import { bus } from '../base.js';
 
 const KEY = 'eido.audio.prefs';
 // sttConsent is tri-state: null = never asked, true = accepted, false = refused (a refusal

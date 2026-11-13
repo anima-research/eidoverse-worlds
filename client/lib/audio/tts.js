@@ -4,7 +4,7 @@
 // It registers into voicesource.js as a synth provider (setSynthProvider), handing over a
 // finished MediaStreamTrack. Synthesis is always local. Design notes: docs/research/tts-mouth.md.
 
-import { report, bus } from './base.js';
+import { report, bus } from '../base.js';
 import { setSynthProvider, notifySynthTrackChanged } from './voicesource.js';
 import { volumeFor } from './voiceconsent.js';
 import { audioContext } from './audioctx.js';

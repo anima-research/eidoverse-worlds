@@ -101,7 +101,7 @@ try {
   await A.waitForFunction(() => relayDiag().micPublished === true, null, { timeout: 30000 });
   ok('A publishing a real getUserMedia track');
 
-  await B.evaluate(async () => (await import('./lib/voiceconsent.js')).setReceiveVoice(true));
+  await B.evaluate(async () => (await import('./lib/audio/voiceconsent.js')).setReceiveVoice(true));
   await B.waitForFunction(() => relayDiag().speakers.some((s) => s.hasStream), null, { timeout: 30000 });
   ok('B subscribed to A — server-enforced, POST-consent');
 
@@ -126,7 +126,7 @@ try {
   // into a green row (observed 2026-08-20). A dead instrument fails BOTH rows.
   if (!(level > 0.02)) bad('revocation unmeasurable — envelope instrument was dead before revoke');
   const t0 = Date.now();
-  await B.evaluate(async () => (await import('./lib/voiceconsent.js')).setReceiveVoice(false));
+  await B.evaluate(async () => (await import('./lib/audio/voiceconsent.js')).setReceiveVoice(false));
   const quiet = await B.evaluate(async () => {
     for (let i = 0; i < 30; i++) {
       let peak = 0;

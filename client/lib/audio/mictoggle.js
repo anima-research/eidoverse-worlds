@@ -3,12 +3,12 @@
 
 import { micOn, toggleMic, setPttHeld, pttHeld } from './micstate.js';
 import { setSTT, sttAvailable } from './stt.js';
-import { CONFIG } from './base.js';
+import { CONFIG } from '../base.js';
 import { receivingVoice, setReceiveVoice, ensureSttConsent, sttConsented,
   isHushed, setHush, pttMode } from './voiceconsent.js';
-import { bus } from './base.js';
-import { register as registerAction } from './actions.js';
-import { pathData } from './icons.js';
+import { bus } from '../base.js';
+import { register as registerAction } from '../actions.js';
+import { pathData } from '../icons.js';
 
 // Three states: off = dim + slash · live = brand · hot (your voice registering) = attention gold with a glow.
 // ONE palette for both glyphs: they read as a pair, so any divergence reads as a state difference. The headphone's

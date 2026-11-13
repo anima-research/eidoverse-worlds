@@ -62,7 +62,7 @@ export class Sfu {
   /** listener → speakerIds currently holding an audible slot. */
   private slots = new Map<string, Set<string>>();
 
-  /** Client rolloff is FULL_M=3 → SILENT_M=20 (client/lib/voicesfubridge.js), so beyond SILENT_M the listener hears exactly
+  /** Client rolloff is FULL_M=3 → SILENT_M=20 (client/lib/audio/voicesfubridge.js), so beyond SILENT_M the listener hears exactly
    *  zero. Hysteresis, not a fixed margin: an exit threshold 10% beyond enter, keyed on previous state, or each flap is an audible cut. */
   private static readonly ENTER_M = 20;      // start forwarding within this
   private static readonly HYSTERESIS = 1.10; // …stop only beyond 10% further (Basis's value)
@@ -193,7 +193,7 @@ export class Sfu {
   }
 
   /** Speaker ids this leg has routes for, in insertion order (a Map's): the order werift added the transceivers, hence
-   *  the order the browser's ontrack fires (client/lib/voicesfu.js). */
+   *  the order the browser's ontrack fires (client/lib/audio/voicesfu.js). */
   routesFor(legId: string): string[] {
     return [...(this.legs.get(legId)?.outbound.keys() ?? [])];
   }

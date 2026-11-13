@@ -40,7 +40,7 @@ class FakeAudioCtx {
 
 console.log("\n— model/config pairing: wrong combinations refuse, and say why —");
 {
-  const ve = await import("../../client/lib/voiceengines.js");
+  const ve = await import("../../client/lib/audio/voiceengines.js");
   const onnx = new File([new Uint8Array(64)], "voice.onnx");
   const stray = new File([new Uint8Array(64)], "readme.txt");
   let err = "";
@@ -63,15 +63,15 @@ console.log("\n— OPFS refusal: storage failure is a truthful error, not a read
     value: { getDirectory: async () => { throw new DOMException("Quota exceeded", "QuotaExceededError"); } },
     configurable: true,
   });
-  const ve = await import("../../client/lib/voiceengines.js");
+  const ve = await import("../../client/lib/audio/voiceengines.js");
   const onnx = new File([new Uint8Array(64)], "voice.onnx");
   const cfg = new File([JSON.stringify({ audio: { sample_rate: 22050 } })], "voice.onnx.json");
   let err: unknown = null, result: unknown = null;
   try { result = await ve.loadFromFiles([onnx, cfg], () => {}); } catch (e) { err = e; }
   check("quota failure rejects the load (no silent success)", err !== null && result === null,
     err ? String(err).slice(0, 60) : "resolved?!");
-  const tts = await import("../../client/lib/tts.js");
-  const vsrc = await import("../../client/lib/voicesource.js");
+  const tts = await import("../../client/lib/audio/tts.js");
+  const vsrc = await import("../../client/lib/audio/voicesource.js");
   check("failed load leaves NO engine selected (provider unavailable)",
     !vsrc.synthProvider()?.available?.());
   void tts;
@@ -80,7 +80,7 @@ console.log("\n— OPFS refusal: storage failure is a truthful error, not a read
 
 console.log("\n— remembered voices: every permission state, and forget —");
 {
-  const store = await import("../../client/lib/voicestore.js");
+  const store = await import("../../client/lib/audio/voicestore.js");
   const handle = (q: string, r = q) => ({
     queryPermission: async () => q,
     requestPermission: async () => r,
@@ -130,7 +130,7 @@ console.log("\n— phonemizer worker: death rejects pending; recovery works —"
     terminate() {}
   }
   (globalThis as Record<string, unknown>).Worker = FakeWorker;
-  const phon = await import("../../client/lib/piperphon.js");
+  const phon = await import("../../client/lib/audio/piperphon.js");
   // absolute URLs: happy-dom's location is about:blank, which cannot resolve
   // relative wasm paths — and URL resolution is not what this block tests.
   const wasmPaths = { piperWasm: "http://localhost/vendor/piper/piper_phonemize.wasm",
@@ -177,8 +177,8 @@ console.log("\n— endpoint voice: socket death settles synthesis; queue never w
     close() { this.readyState = 3; this.onclose?.(); }
   }
   (globalThis as Record<string, unknown>).WebSocket = FakeWs;
-  const bv = await import("../../client/lib/browservoice.js");
-  const tts = await import("../../client/lib/tts.js");
+  const bv = await import("../../client/lib/audio/browservoice.js");
+  const tts = await import("../../client/lib/audio/tts.js");
   const ok = await bv.setEndpointVoice("ws://fake:1/synth", "fake-endpoint");
   check("endpoint connects and registers as the engine", ok === true);
   tts.setTtsEnabled(true);
@@ -198,7 +198,7 @@ console.log("\n— endpoint voice: socket death settles synthesis; queue never w
 
 console.log("\n— panel honesty: the row's state matches the provider's —");
 {
-  const row = await import("../../client/lib/ttsrow.js");
+  const row = await import("../../client/lib/audio/ttsrow.js");
   const host = document.createElement("div");
   document.body.appendChild(host);
   try {
@@ -207,7 +207,7 @@ console.log("\n— panel honesty: the row's state matches the provider's —");
     check("panel renders headlessly", host.children.length > 0, `${host.children.length} nodes`);
     // With the endpoint socket dead and no file voice, no row may claim ready:
     // the section must not display a live/ready state for an unavailable provider.
-    const vsrc = await import("../../client/lib/voicesource.js");
+    const vsrc = await import("../../client/lib/audio/voicesource.js");
     const avail = !!vsrc.synthProvider()?.available?.();
     const claimsLive = /\blive\b|\bready\b/i.test(text());
     check("panel does not claim ready while provider unavailable",

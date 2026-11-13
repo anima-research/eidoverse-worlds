@@ -68,7 +68,7 @@ sockets (`mcpl/agent.ts` keeps the raw pose in `people`, and `look` describes it
   (mcpl/agent.ts `voiceNote`) says e.g. "headphones off: they won't hear anything spoken aloud, yours included, but
   they still see chat text", or "mic on: they may be talking aloud", or "in VR"; no claim when the client didn't say. None of this narrows the field itself, which reaches the whole world.
 - **The UI says so.** The HUD mic and headphone tooltips end with "mic and hearing on/off are visible to everyone
-  in this world" (`client/lib/mictoggle.js`).
+  in this world" (`client/lib/audio/mictoggle.js`).
 - **No per-person opt-out yet.** A sharing switch (or server-scoped nearby state) would be a later change; it would
   only need to stop sending, since absence already reads as unknown.
 

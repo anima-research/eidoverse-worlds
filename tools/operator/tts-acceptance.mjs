@@ -5,7 +5,7 @@
 //   VOICE_ONNX=/path/voice.onnx VOICE_CFG=/path/voice.onnx.json bun tools/operator/tts-acceptance.mjs
 // Needs playwright + chromium installed in the repo (static ESM imports resolve from this file).
 // Emits a provenance-bound receipt (JSON) on stdout: model/config sha256, browser+OS, cold and warm load ms, voice
-// identity, the listener's RTP count and level, and each check. The receiving side reads client/lib/voicesfu.js.
+// identity, the listener's RTP count and level, and each check. The receiving side reads client/lib/audio/voicesfu.js.
 
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
@@ -80,10 +80,10 @@ const loadVoice = (page, nonce) => page.evaluate(async (NONCE) => {
     fetch(`/${NONCE}.onnx.json`).then(r => r.arrayBuffer()),
   ]);
   const files = [new File([mB], `${NONCE}.onnx`), new File([cB], `${NONCE}.onnx.json`)];
-  await import('/lib/engine_piper.js');   // registers itself (lazy in prod UI)
-  const ve = await import('/lib/voiceengines.js');
-  const store = await import('/lib/voicestore.js');
-  const tts = await import('/lib/tts.js');
+  await import('/lib/audio/engine_piper.js');   // registers itself (lazy in prod UI)
+  const ve = await import('/lib/audio/voiceengines.js');
+  const store = await import('/lib/audio/voicestore.js');
+  const tts = await import('/lib/audio/tts.js');
   const t0 = performance.now();
   await ve.loadFromFiles(files, () => {});
   const ms = Math.round(performance.now() - t0);
@@ -103,11 +103,11 @@ check('in-browser identity matches disk digests',
 
 console.error('\n— an independent listener, and one real say —');
 const listener = await mk('accept-listener');
-await listener.evaluate(async () => (await import('/lib/voiceconsent.js')).setReceiveVoice(true));
+await listener.evaluate(async () => (await import('/lib/audio/voiceconsent.js')).setReceiveVoice(true));
 await new Promise(r => setTimeout(r, 2000));
 // sample audibility through the whole window, not after the utterance (that read peak 0.000 against 350 packets)
 const levelP = listener.evaluate(async () => {
-  const v = await import('/lib/voicesfu.js');
+  const v = await import('/lib/audio/voicesfu.js');
   let level = 0;
   for (let i = 0; i < 240; i++) {                // 12s of 50ms samples
     for (const [, l] of v.sfuPeerLevels()) level = Math.max(level, l);
@@ -122,11 +122,11 @@ await speaker.evaluate(async () => {
 });
 await new Promise(r => setTimeout(r, 9000));   // synth (first utterance warms phonemizer) + travel
 const sTx = await speaker.evaluate(async () => {
-  const tts = await import('/lib/tts.js');
+  const tts = await import('/lib/audio/tts.js');
   return { mouth: tts.mouthInfo() };
 });
 const lRx = await listener.evaluate(async () => {
-  const v = await import('/lib/voicesfu.js');
+  const v = await import('/lib/audio/voicesfu.js');
   const inbound = (await v.sfuInboundStats()).reduce((n, s) => n + (s.packetsReceived ?? 0), 0);
   return { inbound };
 });

@@ -1,4 +1,4 @@
-# The browser SFU client (client/lib/voicesfu.js): negotiation notes
+# The browser SFU client (client/lib/audio/voicesfu.js): negotiation notes
 
 Why the client half of the in-process SFU is shaped the way it is. The spec is `docs/design/SFU-SPEC.md`; the transceiver
 behaviour below is reproducible in seconds with `test/labs/mini-sfu-repro.mjs`.

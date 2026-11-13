@@ -1,4 +1,4 @@
-# Browser speech recognition (client/lib/stt.js): field notes
+# Browser speech recognition (client/lib/audio/stt.js): field notes
 
 What was learned running captions on the browser's SpeechRecognition. `stt.js` keeps one-line rules; the evidence
 lives here.

@@ -48,7 +48,7 @@ const r = await pg.evaluate(async () => {
   // probe read floor=0 — which makes `floor * 3` also 0 and the OVER case
   // unreachable. A test whose setup silently degrades to a no-op reports the
   // code as broken while proving nothing.
-  const vc = await import('./lib/voiceconsent.js');
+  const vc = await import('./lib/audio/voiceconsent.js');
   let floor = vc.micFloor();
   if (!(floor > 0)) { vc.setMicFloor(0.02); floor = vc.micFloor(); }
 

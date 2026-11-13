@@ -44,7 +44,7 @@ generation this process does not run (a pull mid-window, a buggy client): nothin
 
 ## Cross-origin isolation (`isolate`)
 
-client/lib/engine_piper.js pins ORT to one thread unless `crossOriginIsolated && SharedArrayBuffer`, which need COOP + COEP.
+client/lib/audio/engine_piper.js pins ORT to one thread unless `crossOriginIsolated && SharedArrayBuffer`, which need COOP + COEP.
 COEP is `credentialless`, not `require-corp`: the same isolation, by stripping credentials rather than refusing any
 cross-origin subresource that lacks CORP headers. What the client loads cross-origin, and how each fares:
 

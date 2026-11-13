@@ -7,7 +7,7 @@
 //   TTS    — synthetic speech specifically, for anyone who wants people but
 //            not narration (or the reverse).
 
-import { makeSection } from './ui.js';
+import { makeSection } from '../ui.js';
 import { audioPrefs, setVolume, receivingVoice, setReceiveVoice,
   sttConsented, setSttConsent, isHushed, setHush,
   micFloor, setMicFloor, pttMode, setPttMode } from './voiceconsent.js';
@@ -22,17 +22,17 @@ function micLevelNow() {
 
 import { gateUnavailable, ungatedConsent, allowUngated } from './micgate.js';
 import { selfMonitor, selfMonitoring } from './micstate.js';
-import { why } from './debuglog.js';
+import { why } from '../debuglog.js';
 /** Is a mic actually publishing, whichever transport is live? Guarded: window.relayDiag (voicesfubridge.js) can
  *  throw before its state exists. The one reader every row uses. */
 const micLive = () => {
   try { return window.relayDiag?.().micPublished ?? micOn(); } catch { return micOn(); }
 };
-import { bus } from './base.js';
+import { bus } from '../base.js';
 import { ttsSection } from './ttsrow.js';
 import { micOn, toggleMic } from './micstate.js';
 // CONFIG: the mic row's toggleMic wants the actor NAME.
-import { CONFIG } from './base.js';
+import { CONFIG } from '../base.js';
 
 // The panel's rows use the house sheet's `.row.wide` (index.html): two columns on a shared centre
 // line, labels in --fg, hints and units in --dim, controls in --accent. No private stylesheet.

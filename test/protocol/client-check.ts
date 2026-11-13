@@ -641,7 +641,7 @@ try {
   }
 
   // ---- MIC: the ∃ line's mic and ear glyphs in build mode read the brand when live and the attention gold when hot (R, gym 10-17 20:44) ----
-  const micInks = `(async () => { const M = await import('/lib/mictoggle.js'); const b = document.getElementById('micbtn'); const root = getComputedStyle(document.documentElement);
+  const micInks = `(async () => { const M = await import('/lib/audio/mictoggle.js'); const b = document.getElementById('micbtn'); const root = getComputedStyle(document.documentElement);
       const st = (svg) => (/stroke="([^"]+)"/.exec(svg ?? '') ?? [])[1] ?? null;
       return { brand: root.getPropertyValue('--brand').trim(), attn: root.getPropertyValue('--attn').trim(), btn: !!b, edit: document.body.classList.contains('edit-workspace'),
         on: st(M.micGlyphFor?.(true, false)), hot: st(M.micGlyphFor?.(true, true)), hotSvg: M.micGlyphFor?.(true, true) ?? '', off: st(M.micGlyphFor?.(false, false)), ear: st(M.earGlyphFor?.(true)), earOff: st(M.earGlyphFor?.(false)) }; })()`;

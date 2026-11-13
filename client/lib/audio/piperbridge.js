@@ -4,7 +4,7 @@
 // (two sockets on one identity means endless takeovers).
 
 import { setTtsSource, setTtsEnabled } from './tts.js';
-import { report } from './base.js';
+import { report } from '../base.js';
 
 let ws = null, nextId = 1;
 const pending = new Map();

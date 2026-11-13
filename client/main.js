@@ -59,8 +59,8 @@ const mayBuildStrict = () => (Array.isArray(net.myRights?.permissions) ? net.myR
 import { initPalette } from './lib/edit/catalog.js';
 import { initConjure } from './lib/edit/generate.js';
 import { state as worldState } from './lib/state.js';
-import { micLive, earOn } from './lib/mictoggle.js'; // mic + headphone toggles beside the HUD, both off by default
-import { initAudioPanel } from './lib/audiopanel.js';
+import { micLive, earOn } from './lib/audio/mictoggle.js'; // mic + headphone toggles beside the HUD, both off by default
+import { initAudioPanel } from './lib/audio/audiopanel.js';
 import { initSceneGraph, sceneSelect } from './lib/scenegraph.js';
 import { initEditPanels } from './lib/edit/panels.js';
 import { initEditLayout } from './lib/edit/layout.js';
@@ -116,7 +116,7 @@ import {
   stepRagdoll, updateMountedMe, updateSeatHint, seatLeaving,
 } from './lib/localbody.js';
 import { posable, pushable, setPosable, setPushable } from './lib/consent.js';
-import { updateVoiceMouths } from './lib/voicemouths.js';
+import { updateVoiceMouths } from './lib/audio/voicemouths.js';
 import { initActionBar } from './lib/actionbar.js';
 import { initXRKeyboard } from './lib/xr/xrkeyboard.js';
 import { initXRAsk } from './lib/xr/xrask.js';
@@ -287,12 +287,12 @@ function start() {
   // The SFU is the only voice transport (exactly one playback owner, #104); there is no runtime fallback by design
   // (docs/history/CUTOVER-ROLLBACK.md).
   window.__voiceTransport = 'pending:sfu';
-  import('./lib/voicesfubridge.js').then((m) => { m.initVoiceSfu(CONFIG.name); window.__voiceTransport = 'sfu'; })
+  import('./lib/audio/voicesfubridge.js').then((m) => { m.initVoiceSfu(CONFIG.name); window.__voiceTransport = 'sfu'; })
     .catch((e) => { window.__voiceTransport = 'failed:sfu'; window.__voiceTransportError = String(e); console.error('voice init failed', e); });
   initAudioPanel();   // 🔊 categories: voices / world / TTS + consent rows
   // your own says go through the selected voice (a no-op until a voice exists and the checkbox is on). The identity
   // is the world-log id string: net.myId, what the server settled on, falling back to CONFIG.name before the join.
-  import('./lib/tts.js')
+  import('./lib/audio/tts.js')
     .then((vs) => vs.speakOwnSays(bus, () => net.myId || CONFIG.name))
     .catch((e) => console.warn('[voice] own-say hook not installed:', e));
   initSceneGraph();   // 🌳 the world as a tree + 📜 the scripts that animate it
@@ -570,7 +570,7 @@ startPrefetch().catch((e) => report('prefetch', e));
 // so an agent changes voice without a restart. ?voice= calls it once at boot. Inference runs in this browser.
 async function setVoice(name) {
   if (!name) {                       // go quiet, keep the lane
-    const { setTtsSource, setTtsEnabled } = await import('./lib/tts.js');
+    const { setTtsSource, setTtsEnabled } = await import('./lib/audio/tts.js');
     setTtsSource(null); setTtsEnabled(false);
     return { ok: true, voice: null };
   }
@@ -580,11 +580,11 @@ async function setVoice(name) {
     fetch(`${base}.onnx.json`).then((r) => { if (!r.ok) throw new Error(`${name}.onnx.json: ${r.status}`); return r.blob(); }),
   ]);
   const files = [new File([onnx], `${name}.onnx`), new File([cfg], `${name}.onnx.json`)];
-  const { loadFromFiles } = await import('./lib/voiceengines.js');
-  await import('./lib/engines.js');
+  const { loadFromFiles } = await import('./lib/audio/voiceengines.js');
+  await import('./lib/audio/engines.js');
   const { label } = await loadFromFiles(files, (p) =>
     console.log(`[voice] ${p.text || p.phase || 'loading'}`));
-  const { setTtsEnabled } = await import('./lib/tts.js');
+  const { setTtsEnabled } = await import('./lib/audio/tts.js');
   setTtsEnabled(true);
   console.log(`[voice] speaking with ${label} — loaded from disk, no server`);
   return { ok: true, voice: label };
@@ -600,7 +600,7 @@ if (typeof window !== 'undefined') window.setVoice = setVoice;   // console, har
   const q = CONFIG.params;
   if (q.has('tts')) {
     const port = Number(q.get('tts')) || 8927;
-    import('./lib/piperbridge.js')
+    import('./lib/audio/piperbridge.js')
       .then((m) => m.initPiperVoice({ port }))
       .then(async (ok) => {
         console.log(ok ? `[voice] synthesized voice ready on :${port}`
@@ -610,7 +610,7 @@ if (typeof window !== 'undefined') window.setVoice = setVoice;   // console, har
           try {
             const { speechSynthesis } = window;
             if (!speechSynthesis) { console.warn('[voice] no speechSynthesis — microphone only'); return; }
-            const vs0 = await import('./lib/tts.js');
+            const vs0 = await import('./lib/audio/tts.js');
             // Web Speech renders to the speakers, not to PCM for the mic lane: audible locally, not transmitted
             vs0.setTtsSource(async (text) => {
               try { speechSynthesis.speak(new SpeechSynthesisUtterance(text)); } catch {}
@@ -621,12 +621,12 @@ if (typeof window !== 'undefined') window.setVoice = setVoice;   // console, har
                        + ` Start a synthesizer on :${port} for transmitted voice.`);
           } catch (e) { console.warn('[voice] browser-speech fallback failed:', e); return; }
         }
-        const vs = await import('./lib/tts.js');
+        const vs = await import('./lib/audio/tts.js');
         // (the own-say hook is installed once, in start(); here would speak each line twice.) A body with a voice
         // means to be heard: open the mic lane. The probe seam goes first, before anything that can hang.
         globalThis.__voiceProbe = () => ({ ...vs.mouthInfo(), track: vs.genTrackInfo() });
         globalThis.__voiceSpeak = (t) => vs.speak(t);   // the APP's mouth, for probes
-        const { toggleMic, micOn } = await import('./lib/micstate.js');
+        const { toggleMic, micOn } = await import('./lib/audio/micstate.js');
         // open the lane the transport owns — the SFU bridge's when it is up — so there is one playback owner
         if (typeof window.__sfuMic === 'function') {
           if (!window.__sfuMicOn?.()) await window.__sfuMic();
@@ -656,7 +656,7 @@ globalThis.__bodies = () => [
 // The audio isolation test, from the console. It needs a click first for the context, so it reports the context state.
 globalThis.testAudioLayers = async () => {
   // the shared context: one of its own could exhaust the context budget and report silence it caused
-  const { audioContext } = await import('./lib/audioctx.js');
+  const { audioContext } = await import('./lib/audio/audioctx.js');
   const ctx = audioContext();
   await ctx.resume().catch(() => {});
   const SRC = '/assets/audio_test_beacon.ogg';

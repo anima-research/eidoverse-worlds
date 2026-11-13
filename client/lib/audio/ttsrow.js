@@ -2,10 +2,10 @@
 // have (ttslist.js renders it). Bring your own voice: a Piper model from disk, or a speech server
 // you run. Both transmit; nothing here is local-only.
 import { renderVoiceList } from './ttslist.js';
-import { why } from './debuglog.js';
+import { why } from '../debuglog.js';
 import { ttsAvailable, ttsVoiceName, isTtsEnabled, setTtsEnabled, setTtsSource } from './tts.js';
 import { setEndpointVoice } from './browservoice.js';
-import { report, bus } from './base.js';
+import { report, bus } from '../base.js';
 import { micOn } from './micstate.js';
 let _selected = null;      // the marked voice's id; null when nothing is loaded (a real state)
 let _needVoice = false, _needVoiceTimer = 0;   // transient "add a voice first" note after a tick with nothing loaded

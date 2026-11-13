@@ -1,4 +1,4 @@
-// ttsrow-test: the audio panel's TTS section, executed headlessly (client/lib/ttsrow.js + ttslist.js, tts.js, micstate.js
+// ttsrow-test: the audio panel's TTS section, executed headlessly (client/lib/audio/ttsrow.js + ttslist.js, tts.js, micstate.js
 // shipped). Stubbed: the browser's file pickers, net.js, and the voice store / engine modules behind a dynamic import.
 //   bun test/client/ttsrow-test.mjs
 import { fileURLToPath } from 'node:url';
@@ -17,7 +17,7 @@ let voices = [], gate = null, loadFails = false;
 const opened = [], loaded = [];
 let tts;
 mock.module(M('net.js'), () => ({ sendTyping: () => {}, requestHistory: () => {} }));
-mock.module(M('voicestore.js'), () => ({
+mock.module(M('audio/voicestore.js'), () => ({
   canRemember: () => true,
   listVoices: async () => voices.map((v) => ({ ...v })),
   voiceReadable: async () => 'granted',
@@ -26,7 +26,7 @@ mock.module(M('voicestore.js'), () => ({
   rememberVoice: async (id, name) => { voices.push({ id, name }); },
   forgetVoice: async (id) => { voices = voices.filter((v) => v.id !== id); },
 }));
-mock.module(M('voiceengines.js'), () => ({
+mock.module(M('audio/voiceengines.js'), () => ({
   matchEngine: (files) => files.some((f) => /\.onnx$/.test(f.name)) && files.some((f) => /\.json$/.test(f.name)),
   loadFromFiles: async (files) => {
     loaded.push(files.map((f) => f.name).join('+'));
@@ -35,12 +35,12 @@ mock.module(M('voiceengines.js'), () => ({
     tts.setTtsSource(async () => ({ pcm: new Int16Array(1), sampleRate: 22050 }), files[0].name.replace(/\.onnx$/, ''));
   },
 }));
-mock.module(M('engines.js'), () => ({}));
-mock.module(M('browservoice.js'), () => ({ setEndpointVoice: async () => {} }));
+mock.module(M('audio/engines.js'), () => ({}));
+mock.module(M('audio/browservoice.js'), () => ({ setEndpointVoice: async () => {} }));
 
-tts = await import('../../client/lib/tts.js');
+tts = await import('../../client/lib/audio/tts.js');
 const { bus } = await import('../../client/lib/base.js');
-const { ttsSection } = await import('../../client/lib/ttsrow.js');
+const { ttsSection } = await import('../../client/lib/audio/ttsrow.js');
 const { lastWhy } = await import('../../client/lib/debuglog.js');
 
 let micLive = false;

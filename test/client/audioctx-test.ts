@@ -35,7 +35,7 @@ class FakeAudioContext {
 const S = suite("audioctx");
 const check = (name: string, ok: unknown, detail?: unknown) => S.check(name, ok, detail);
 
-const mod = await import('../../client/lib/audioctx.js');
+const mod = await import('../../client/lib/audio/audioctx.js');
 const audioCtx = mod.audioContext;   // the module's own name, checked against its exports
 
 // ── the contract ──────────────────────────────────────────────────────────────
@@ -65,7 +65,7 @@ check('audioContextState() reports the shared instance', mod.audioContextState()
 // The failure mode is not "audioctx.js breaks" — it is "somebody adds a direct
 // construction somewhere else and this module stops being the only door."
 // Reading the source is the only way to see that from here.
-const src = await Bun.file(new URL('../../client/lib/micstate.js', import.meta.url)).text();
+const src = await Bun.file(new URL('../../client/lib/audio/micstate.js', import.meta.url)).text();
 const direct = [...src.matchAll(/new\s+(?:\(window\.)?(?:webkit)?AudioContext/g)].length;
 check('micstate.js constructs no AudioContext directly', direct === 0,
       `${direct} direct construction(s) — they must go through audioctx.js`);

@@ -118,8 +118,8 @@ for (const m of ["core", "net", "ui", "controller", "remotes"])
   mock.module(`${import.meta.dir}/../../client/lib/${m}.js`, () => stubs);
 
 // ---- modules under test ---------------------------------------------------
-const tts = await import("../../client/lib/tts.js");
-const vsrc = await import("../../client/lib/voicesource.js");
+const tts = await import("../../client/lib/audio/tts.js");
+const vsrc = await import("../../client/lib/audio/voicesource.js");
 
 console.log("\n— provider registration & availability —");
 {
@@ -162,7 +162,7 @@ console.log("\n— speakOwnSays: the bridge, and the mic-live discard policy —
   // window.__sfuMicOn() first (tts.js:659), so the stub installs the same pair
   // the real bridge does (voicesfubridge.js:222/235) — a boolean the hook flips
   // and reports honestly. micstate.toggleMic routes through the hook.
-  const voice = await import("../../client/lib/micstate.js");
+  const voice = await import("../../client/lib/audio/micstate.js");
   let stubMicOn = false;
   (globalThis as unknown as { window: Record<string, unknown> }).window.__sfuMicOn = () => { micAsks++; return stubMicOn; };
   (globalThis as unknown as { window: Record<string, unknown> }).window.__sfuMic = async () => {
@@ -190,7 +190,7 @@ console.log("\n— speakOwnSays: the bridge, and the mic-live discard policy —
 
 console.log("\n— mic priority: both orderings, repeated cycles, no dual producer —");
 {
-  const voice = await import("../../client/lib/micstate.js");
+  const voice = await import("../../client/lib/audio/micstate.js");
   // ordering A: TTS enabled while mic OFF → generator on senders
   // an enable flip decides after a dynamic import (tts.js setTtsEnabled): it is decided once it has asked the transport
   const decided = (from: number, n = 1) => until("the enable flip asked the transport", () => micAsks >= from + n);
@@ -303,7 +303,7 @@ console.log("\n— queue bounds: backpressure does not grow without limit —");
 
 console.log("\n— voicestore: identity is digests; remember/forget round-trip —");
 {
-  const store = await import("../../client/lib/voicestore.js");
+  const store = await import("../../client/lib/audio/voicestore.js");
   const onnx = new File([new Uint8Array(1024).fill(1)], "voice.onnx");
   const cfg = new File([JSON.stringify({ audio: { sample_rate: 22050 }, inference: { noise_scale: 0.667 } })], "voice.onnx.json");
   const idA = await store.voiceIdentity(onnx, cfg);
@@ -329,7 +329,7 @@ console.log("\n— voicestore: identity is digests; remember/forget round-trip �
 
 console.log("\n— sidetone: the tts slider moves only what you hear of yourself, never the wire —");
 {
-  const vc = await import("../../client/lib/voiceconsent.js");
+  const vc = await import("../../client/lib/audio/voiceconsent.js");
   tts.sidetone(true);
   const run = async (v: number) => {
     vc.setVolume("tts", v); written.length = 0; monitored.length = 0;

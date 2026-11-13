@@ -3,13 +3,13 @@
 //
 // It exposes window.relayDiag / window.relayMic, which the browser smokes assert against
 // (historical names; test/server/sfu-browser-smoke.mjs and the mic probes use them).
-import { bus, CONFIG } from './base.js';
-import { net, sendRelayCredRequest, sendVoiceConsent, sendJoined } from './net.js';
+import { bus, CONFIG } from '../base.js';
+import { net, sendRelayCredRequest, sendVoiceConsent, sendJoined } from '../net.js';
 import { sfuConnect, sfuOnOffer, sfuOnIce, sfuMic, sfuPeerLevels, sfuMyLevel,
   sfuDiagClient, sfuClose, sfuActive, sfuSpeakerEntries, sfuInboundStats, sfuMicOn,
   sfuMicWanted, sfuDropSpeaker } from './voicesfu.js';
-import { remotes } from './remotes.js';
-import { myState } from './controller.js';
+import { remotes } from '../remotes.js';
+import { myState } from '../controller.js';
 import { isHushed, volumeFor, receivingVoice, VOICE_FULL_M, VOICE_SILENT_M } from './voiceconsent.js';
 import { setGeneratorRebuildHook, synthProvider } from './voicesource.js';
 

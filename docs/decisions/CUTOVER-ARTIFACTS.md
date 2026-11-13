@@ -15,7 +15,7 @@ side of that contract. Every claim below was verified against the delta on
   behavior and has no subject after the deletion.
 
 **Retained and modified (transport-agnostic, survives cutover):**
-- `client/lib/voicemouths.js` — bubble + mouth pacing for `spoken:true` says;
+- `client/lib/audio/voicemouths.js` — bubble + mouth pacing for `spoken:true` says;
   consumes the say log, never the transport.
 - `client/lib/net.js` — gains the SFU message routes; the mesh's `sendRtc` and
   its `'rtc'` receive case are deleted with the mesh (see §3 for where stale

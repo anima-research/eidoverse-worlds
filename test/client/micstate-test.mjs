@@ -16,7 +16,7 @@ const node = () => ({ connect() {}, disconnect() {}, gain: { value: 0, setTarget
 // "none": no createMediaStreamDestination, so the gate graph cannot build; "full": the graph builds and each destination
 // is a DISTINCT lane stream (else the release rows are vacuous)
 let ctx = "none";
-mock.module(lib("audioctx.js"), () => ({
+mock.module(lib("audio/audioctx.js"), () => ({
   audioContext: () => ({
     currentTime: 0, sampleRate: 48000, state: "running", destination: node(),
     createAnalyser: () => ({ fftSize: 0, getFloatTimeDomainData() {}, connect() {}, disconnect() {} }),
@@ -31,16 +31,16 @@ const realUi = await import("../../client/lib/ui.js");
 mock.module(lib("ui.js"), () => ({ ...realUi, flashHint: (msg) => hints.push(msg) }));
 
 localStorage.clear();
-const vc = await import("../../client/lib/voiceconsent.js");
-const mg = await import("../../client/lib/micgate.js");
-const m = await import("../../client/lib/micstate.js");
+const vc = await import("../../client/lib/audio/voiceconsent.js");
+const mg = await import("../../client/lib/audio/micgate.js");
+const m = await import("../../client/lib/audio/micstate.js");
 const { bus } = await import("../../client/lib/base.js");   // micstate emits on base.js's bus
 const emitted = [];
 bus.on("audio:mic", (v) => emitted.push(["audio:mic", v]));
 const { check, done } = suite("micstate");
 
 // ── the single transport (#132): no hook → an honest hint; the SFU hook IS the transport; no mesh residue ──────────────
-const src = readFileSync(new URL("../../client/lib/micstate.js", import.meta.url), "utf8");
+const src = readFileSync(new URL("../../client/lib/audio/micstate.js", import.meta.url), "utf8");
 check("T1 micstate has NO import of the deleted mesh (voice.js) — code or dynamic",
   !/import\s*\(\s*['"]\.\/voice\.js['"]\s*\)/.test(src) && !/from\s+['"]\.\/voice\.js['"]/.test(src));
 check("T2 precondition: no transport hook installed", typeof window.__sfuMic !== "function");

@@ -6,7 +6,7 @@ import { checkRow, selectRow, btn, sliderTable } from '../edit/rows.js';
 import { currentGrade, setGrade, GRADE_DEFAULT, GRADE_RANGE } from './quadcolour.js';
 import { xrPrefs, setXrPref, recentreXR, isPresenting } from './xr.js';
 import { pointerVisibilityMode } from './xrpointer.js';
-import { xrGlyphAvailable } from '../mictoggle.js';
+import { xrGlyphAvailable } from '../audio/mictoggle.js';
 
 export function initVRPanel() {
   makeSection('🥽 VR', (body) => {

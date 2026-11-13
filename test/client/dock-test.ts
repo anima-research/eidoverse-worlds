@@ -17,7 +17,7 @@ const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({
   name: "dock-stubs",
   setup(b) {
-    for (const m of ["base", "mictoggle", "defs", "profile", "stylepanel", "videopanel", "capnotice"])
+    for (const m of ["base", "(audio/)?mictoggle", "defs", "profile", "stylepanel", "videopanel", "capnotice"])
       stubResolve(b, new RegExp(`^\\./${m}\\.js$`), () => ({ path: here("../stubs/dock-stub.mjs") }));
   },
 });

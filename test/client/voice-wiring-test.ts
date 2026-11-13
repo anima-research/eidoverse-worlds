@@ -27,27 +27,27 @@ const read = (p: string) => readFileSync(new URL(`../../${p}`, import.meta.url),
 // is a stronger place for them: the SFU enforces consent rather than trusting
 // a client to set a direction.
 const main = read("client/main.js");
-const mouths = read("client/lib/voicemouths.js");   // 6c: the mouth/glyph driver moved out of main.js
+const mouths = read("client/lib/audio/voicemouths.js");   // 6c: the mouth/glyph driver moved out of main.js
 // 🔴 voice.js (the mesh) was DELETED in the #104 phase-1 cutover. Its
 // transport-neutral half — the gate, the analyser, mute, device release, and
 // the one micOn() answer — lives in micstate.js, which is what these
 // assertions were really about: that the mic surface is wired, not that a
 // particular transport owns it.
-const voice = read("client/lib/micstate.js");
-const consent = read("client/lib/voiceconsent.js");
-const mictoggle = read("client/lib/mictoggle.js");
+const voice = read("client/lib/audio/micstate.js");
+const consent = read("client/lib/audio/voiceconsent.js");
+const mictoggle = read("client/lib/audio/mictoggle.js");
 const net = read("client/lib/net.js");
 const server = read("server/server.ts");
 
 // --- entry point imports everything it calls (the bug this file was born from)
-// The mouth/amplitude driver lives in lib/voicemouths.js now (§14 6c); the
+// The mouth/amplitude driver lives in lib/audio/voicemouths.js now (§14 6c); the
 // same per-file check follows it there — main.js must still bind what it
 // calls itself (updateVoiceMouths, from the frame-system list).
 for (const [label, src] of [["main.js", main], ["voicemouths.js", mouths]] as const) {
   for (const fn of ["updateVoiceMouths", "micOn", "isMuted", "micAnalyserLevel", "ambientDebug", "audioState"]  /* initVoice + peerLevels were mesh-only (cutover 2026-08-16) */) {
     const called = new RegExp(`\\b${fn}\\s*\\(`).test(src);
     // 🔴 A DESTRUCTURED DYNAMIC IMPORT IS A BINDING TOO (fixed 2026-08-15).
-    // `const { toggleMic, micOn } = await import('./lib/micstate.js')` binds both
+    // `const { toggleMic, micOn } = await import('./lib/audio/micstate.js')` binds both
     // names, but the old regex required `<name> … from` or `import … <name>`
     // ON ONE LINE, so it saw neither — this check had been RED for micOn and
     // toggleMic on main.js since the TTS path moved to a dynamic import, and

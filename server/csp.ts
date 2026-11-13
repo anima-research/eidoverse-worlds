@@ -7,7 +7,7 @@
 //               blob:               a local mod is imported from a blob: URL (client/lib/mods.js runSource)
 //   worker-src  blob:               draco and onnxruntime spawn blob: workers
 //   connect-src                     same origin; blob: data: for three's loaders; Orrery; a local voice bridge on 127.0.0.1/localhost
-//                                   (client/lib/piperbridge.js); CSP_CONNECT_EXTRA. Not https: in general: media links load as
+//                                   (client/lib/audio/piperbridge.js); CSP_CONNECT_EXTRA. Not https: in general: media links load as
 //                                   <img>/<audio>, which keeps fetch and WebSocket to known hosts
 //   img-src / media-src  https:     media links (shared/mediasrc.js); the per-viewer opt-in gate is the client's
 //   style-src   'unsafe-inline'     style attributes and runtime <style> throughout the UI; CSS injection is out of scope

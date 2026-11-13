@@ -1,7 +1,7 @@
 // ttslist — the text-to-speech voices you have, as a visible list (not a dropdown: the user adds
 // and removes them). Two kinds of source: a local .onnx model and a remote speech-server endpoint.
 // ttsrow.js is its pair; voice*.js is the WebRTC transport, not this.
-import { why } from './debuglog.js';
+import { why } from '../debuglog.js';
 
 const ROW = `
 .vl { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }

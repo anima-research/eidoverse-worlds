@@ -13,7 +13,7 @@
 // machine + level meter (makeOnsetGate / makeLevelMeter).
 
 import { audioContext } from './audioctx.js';
-import { report } from './base.js';
+import { report } from '../base.js';
 
 // Envelope time constants (s) for setTargetAtTime: ~95% of target in 3·tau, so attack is ~95% open in 24 ms;
 // worst-case onset is the 20 ms tick + envelope ≈ 44 ms. Attack stays faster than release (a late open loses a

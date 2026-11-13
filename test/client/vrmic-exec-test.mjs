@@ -63,8 +63,8 @@ mock.module(lib('ui.js'), () => ({ flashHint: (t) => hints.push(t), toast: (t) =
 mock.module(lib('core.js'), () => ({ THREE: {}, camera: {}, renderer: {} }));
 mock.module(lib('xr/quadcolour.js'), () => ({ quadMaterial: () => null }));
 const mic = { on: false, toggles: 0 }, sfu = { wanted: false };
-mock.module(lib('micstate.js'), () => ({ micOn: () => mic.on, toggleMic: () => { mic.toggles++; sfu.wanted = true; return new Promise(() => {}); } }));   // the in-VR acquisition hangs
-mock.module(lib('voicesfu.js'), () => ({ sfuMicWanted: () => sfu.wanted, sfuMicOn: () => false, sfuMic: async (v) => { sfu.wanted = v; } }));
+mock.module(lib('audio/micstate.js'), () => ({ micOn: () => mic.on, toggleMic: () => { mic.toggles++; sfu.wanted = true; return new Promise(() => {}); } }));   // the in-VR acquisition hangs
+mock.module(lib('audio/voicesfu.js'), () => ({ sfuMicWanted: () => sfu.wanted, sfuMicOn: () => false, sfuMic: async (v) => { sfu.wanted = v; } }));
 
 const V = await import('../../client/lib/xr/vrmic.js');
 const { MIC_CHOICE_KEY, MIC_PENDING_KEY, preVrStep, inVrMicPlan, inVrAfterTry, afterExitStep } = await import('../../client/lib/xr/vrmic_policy.js');

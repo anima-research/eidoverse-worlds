@@ -35,10 +35,10 @@
 import { THREE, camera } from '../core.js';
 import { bus, CONFIG } from '../base.js';
 import { entities, bags, bagOf } from '../world.js';
-import { audioContext } from '../audioctx.js';
+import { audioContext } from '../audio/audioctx.js';
 import { serverNow } from '../serverclock.js';
-import { playWhenAllowed } from '../audiounlock.js';
-import { volumeFor } from '../voiceconsent.js';
+import { playWhenAllowed } from '../audio/audiounlock.js';
+import { volumeFor } from '../audio/voiceconsent.js';
 import { registerEditor, registerHandler, commitEdit } from '../edit/inspect.js';
 import { toast, flashHint } from '../ui.js';
 import { normalizeSound, gainAt, TAPER_START, SOUND_DESCRIPTION_MAX, SOUND_DESCRIPTION_HINT, SOUND_STORE, SOUND_MAX_RADIUS } from '../../../shared/sound.js';

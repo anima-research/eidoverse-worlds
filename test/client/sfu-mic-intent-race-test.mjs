@@ -19,8 +19,8 @@ GlobalRegistrator.register({ url: "http://localhost/?world=t&name=p" });
 const M = (p) => fileURLToPath(new URL(`../../client/lib/${p}`, import.meta.url));
 mock.module(M('net.js'), () => ({ sendTyping: () => {}, requestHistory: () => {} }));
 mock.module(M('chat.js'), () => ({ logChat: () => {} }));
-mock.module(M('audiounlock.js'), () => ({ playWhenAllowed: () => {} }));
-mock.module(M('audioctx.js'), () => ({
+mock.module(M('audio/audiounlock.js'), () => ({ playWhenAllowed: () => {} }));
+mock.module(M('audio/audioctx.js'), () => ({
   audioContext: () => ({
     currentTime: 0, sampleRate: 48000, state: 'running',
     createAnalyser: () => ({ fftSize: 0, getFloatTimeDomainData() {}, connect() {}, disconnect() {} }),
@@ -31,7 +31,7 @@ mock.module(M('audioctx.js'), () => ({
 // prompt with the test's finger on the button.
 let provider = null;
 const acquisitions = [];
-mock.module(M('voicesource.js'), () => ({
+mock.module(M('audio/voicesource.js'), () => ({
   synthProvider: () => provider,
   voiceSource: ({ micWanted = true } = {}) => new Promise((resolve, reject) => acquisitions.push({ micWanted, resolve, reject })),
 }));
@@ -43,9 +43,9 @@ class FakePC {
 }
 globalThis.RTCPeerConnection = FakePC;
 
-const mg = await import('../../client/lib/micgate.js');
-const ms = await import('../../client/lib/micstate.js');
-const sfu = await import('../../client/lib/voicesfu.js');
+const mg = await import('../../client/lib/audio/micgate.js');
+const ms = await import('../../client/lib/audio/micstate.js');
+const sfu = await import('../../client/lib/audio/voicesfu.js');
 mg.allowUngated(true);
 
 let ok = 0, bad = 0;

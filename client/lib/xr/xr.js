@@ -25,9 +25,9 @@ import { xrHand as grabHand, bindPresenting as bindGrabPresenting } from '../thi
 import { flashHint, toast } from '../ui.js';
 import { vrMicPreflight } from './vrmic.js';
 import { makePointerLine, makeSurfaceDot, placeSurfaceDot, hideSurfaceDot, setSurfaceDotKind } from './pointer.js';
-import { markXrAbsent, registerXrGlyph, micGlyph, earGlyph, xrGlyph, micLive, earOn, flipEar } from '../mictoggle.js';
-import { setPttHeld } from '../micstate.js';
-import { pttMode } from '../voiceconsent.js';
+import { markXrAbsent, registerXrGlyph, micGlyph, earGlyph, xrGlyph, micLive, earOn, flipEar } from '../audio/mictoggle.js';
+import { setPttHeld } from '../audio/micstate.js';
+import { pttMode } from '../audio/voiceconsent.js';
 import './xrmicicon.js';   // the mic icon in view while presenting
 import { markActive } from '../presence.js';
 import { platePick, aimPlate, platePress } from '../platecard.js';   // a laser resting on a nameplate opens its card

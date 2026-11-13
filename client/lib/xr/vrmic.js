@@ -77,7 +77,7 @@ export async function vrMicPreflight(proceed) {
 let trying = false;
 /** main.js routes the ring's 'xr:mic' here. Outside VR, or turning the mic off, it is exactly toggleMic. */
 export async function xrMicPress() {
-  const M = await import('../micstate.js');
+  const M = await import('../audio/micstate.js');
   const turningOn = !M.micOn();
   const plan = turningOn && presenting ? inVrMicPlan({ turningOn, presenting, state: await micPermissionState() }) : 'proceed';
   if (plan === 'proceed') return M.toggleMic(CONFIG.name);
@@ -111,7 +111,7 @@ export async function xrMicPress() {
  *  late device is stopped there, not published. */
 async function retract() {
   try {
-    const S = await import('../voicesfu.js');
+    const S = await import('../audio/voicesfu.js');
     if (S.sfuMicWanted() && !S.sfuMicOn()) { await S.sfuMic(false); bus.emit('audio:mic', false); }
   } catch { /* no transport in this context */ }
 }

@@ -9,7 +9,7 @@
 // MediaStream or Blob (WICG/speech-api#69). A voice that can be SENT must come from a synthesizer that returns bytes.
 
 import { setTtsSource } from './tts.js';
-import { report } from './base.js';
+import { report } from '../base.js';
 
 /** Point the mouth at a synthesizer already running locally (the same ws protocol a headless harness uses). */
 export async function setEndpointVoice(url, label) {

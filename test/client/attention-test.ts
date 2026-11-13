@@ -118,8 +118,8 @@ class Audio {
 const { bus, CONFIG } = await import('../stubs/chat-base-stub.mjs');
 const { initChat, logChat } = await import('../../client/lib/chat.js');
 const { attentionPrefs, setAttentionPrefs } = await import('../../client/lib/attention.js');
-const { audioPrefs } = await import('../../client/lib/voiceconsent.js');
-const { audioContext } = await import('../../client/lib/audioctx.js');
+const { audioPrefs } = await import('../../client/lib/audio/voiceconsent.js');
+const { audioContext } = await import('../../client/lib/audio/audioctx.js');
 const unrelated = JSON.stringify(audioPrefs());
 initChat({ send() {}, people: () => [] });
 document.querySelector<HTMLButtonElement>('.chat-gear')!.click();

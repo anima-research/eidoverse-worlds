@@ -1,12 +1,12 @@
 // voicemouths — live voice as presence: mouths driven by real amplitude, 🎙 glyph while you
 // speak. STT stays on the log plane and lands afterward as an ordinary say.
 
-import { CONFIG, bus } from './base.js';
+import { CONFIG, bus } from '../base.js';
 import { micOn as meshMicOn, isMuted, micAnalyserLevel as meshMicLevel } from './micstate.js';
 
-import { remotes, noteSpeaking } from './remotes.js';
-import { sendTyping } from './net.js';
-import { getMe } from './mybody.js';
+import { remotes, noteSpeaking } from '../remotes.js';
+import { sendTyping } from '../net.js';
+import { getMe } from '../mybody.js';
 
 // ask the SFU bridge's globals first (voicesfubridge.js installs them), then micstate — as mictoggle.js and stt.js do
 const micIsOn = () => {

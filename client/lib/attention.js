@@ -1,7 +1,7 @@
 // Private attention UI. No wire writes, audio receive consent, TTS, world
 // volume, or positional audio. The shared context only supplies the clock and
 // destination; each short tone owns its gain. Missed notices are never queued.
-import { audioContext } from './audioctx.js';
+import { audioContext } from './audio/audioctx.js';
 import { createAttentionGate } from './attention_policy.js';
 
 const KEY = 'ew-attention';

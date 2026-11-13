@@ -1,4 +1,4 @@
-// A REAL test for voiceSource(): it IMPORTS client/lib/voicesource.js and
+// A REAL test for voiceSource(): it IMPORTS client/lib/audio/voicesource.js and
 // exercises the shipped function. Replaces the eye-verified transcription in
 // tts-publishes-mic-off-test.mjs, which imports nothing and cannot fail when
 // the module breaks (audit, 2026-08-16).
@@ -59,7 +59,7 @@ globalThis.AudioContext = class {
   resume() {} get sampleRate() { return 48000; }
 };
 
-const mod = await import('../../client/lib/voicesource.js');
+const mod = await import('../../client/lib/audio/voicesource.js');
 const { voiceSource, setSynthProvider, setGeneratorRebuildHook, notifySynthTrackChanged } = mod;
 if (typeof setSynthProvider !== "function") { console.log("FAIL — setSynthProvider not exported; test would pass vacuously"); process.exit(1); }
 

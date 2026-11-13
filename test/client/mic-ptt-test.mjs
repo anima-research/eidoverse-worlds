@@ -32,7 +32,7 @@ mock.module(fileURLToPath(new URL('../../client/lib/net.js', import.meta.url)), 
 // The analyser reports a level WE set, so the level side of the machine can
 // be driven: `room` is the RMS the "microphone" hears right now.
 let room = 0;
-mock.module(fileURLToPath(new URL('../../client/lib/audioctx.js', import.meta.url)), () => ({
+mock.module(fileURLToPath(new URL('../../client/lib/audio/audioctx.js', import.meta.url)), () => ({
   audioContext: () => ({
     currentTime: 0, sampleRate: 48000, state: 'running',
     createAnalyser: () => ({ fftSize: 0, getFloatTimeDomainData(buf) { buf.fill(room); }, connect() {}, disconnect() {} }),
@@ -44,9 +44,9 @@ mock.module(fileURLToPath(new URL('../../client/lib/audioctx.js', import.meta.ur
 }));
 
 localStorage.clear();
-const vc = await import('../../client/lib/voiceconsent.js');
-const ms = await import('../../client/lib/micstate.js');
-const mg = await import('../../client/lib/micgate.js');
+const vc = await import('../../client/lib/audio/voiceconsent.js');
+const ms = await import('../../client/lib/audio/micstate.js');
+const mg = await import('../../client/lib/audio/micgate.js');
 
 const track = { kind: 'audio', enabled: true, stop() {} };
 const stream = { getTracks: () => [track], getAudioTracks: () => [track] };
@@ -150,10 +150,10 @@ t('VA: hush closes the gate after hang-time', gate(0));
 // the shipped ones, driven with real events. Alt-tab with the key down is how every PTT implementation ships an open mic
 // that says it is closed.
 import { readFileSync } from 'fs';
-const mt = readFileSync(new URL('../../client/lib/mictoggle.js', import.meta.url), 'utf8');
+const mt = readFileSync(new URL('../../client/lib/audio/mictoggle.js', import.meta.url), 'utf8');
 // ui.js (reached through mictoggle's graph) takes its HUD elements at load: the page's shell, empty
 for (const id of ['hud', 'loading', 'toasts', 'hintbar', 'door', 'help', 'dock', 'touch']) { const d = document.createElement('div'); d.id = id; document.body.append(d); }
-await import('../../client/lib/mictoggle.js');
+await import('../../client/lib/audio/mictoggle.js');
 vc.setPttMode(true);
 const key = (type) => window.dispatchEvent(new KeyboardEvent(type, { code: 'KeyV', key: 'v', bubbles: true }));
 key('keydown');
@@ -171,7 +171,7 @@ t('mictoggle: badge gold is gated on the key under PTT', /!pttMode\(\) \|\| pttH
 // of the mode you just enabled (found by ear 2026-09-10). The guard must be
 // type-aware: text-like inputs and editable regions only.
 t('mictoggle: V guard is typing-aware, not any-INPUT', !/\['INPUT', 'TEXTAREA'\]\.includes\(document\.activeElement/.test(mt) && /typingTarget\(\)/.test(mt) && /checkbox|TEXT_INPUT/.test(mt));
-const ap = readFileSync(new URL('../../client/lib/audiopanel.js', import.meta.url), 'utf8');
+const ap = readFileSync(new URL('../../client/lib/audio/audiopanel.js', import.meta.url), 'utf8');
 t('audiopanel: sensitivity row dims under PTT (no control that lies)', /audio:ptt.*dimFloor|dimFloor[\s\S]{0,400}audio:ptt/.test(ap.replace(/\n/g, ' ')) || (/dimFloor/.test(ap) && /bus\.on\('audio:ptt', dimFloor\)/.test(ap)));
 
 console.log(`\n${ok} ok, ${bad} failed`);

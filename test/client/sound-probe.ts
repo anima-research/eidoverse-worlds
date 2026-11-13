@@ -50,7 +50,7 @@ const spawn = async (pg: any) => {
 const sound = (pg: any, data: any) => req(pg, data ? OP.set(ID, 'sound', data) : OP.unset(ID, 'sound'));
 const state = (pg: any) => pg.evaluate(async (id: string) => {
   const { _playing, _worldBus, effectiveGain } = await import('/lib/realize/sounds.js');
-  const { audioContextState } = await import('/lib/audioctx.js');
+  const { audioContextState } = await import('/lib/audio/audioctx.js');
   const { entities } = await import('/lib/world.js');
   const h = _playing.get(id);
   const root = entities.get(id);
@@ -97,7 +97,7 @@ try {
   check('A. (setup) the listener stands inside near (8 m): the distance gain is 1', !!s.listenerPos && Math.hypot(s.listenerPos[0] - s.entityPos[0], s.listenerPos[1] - s.entityPos[1], s.listenerPos[2] - s.entityPos[2]) < 8, JSON.stringify({ listener: s.listenerPos, entity: s.entityPos }));
   check('A. the gain carries the volume', s.gain === 0.5, JSON.stringify(s.gain));
   check('F. …and with the listener\'s world volume at 0 it is heard at 0, the authored 0.5 preserved', s.world === 0 && s.eff === 0 && s.gain === 0.5, JSON.stringify({ gain: s.gain, world: s.world, eff: s.eff }));
-  await pg.evaluate(() => import('/lib/voiceconsent.js').then((v: any) => v.setVolume('world', 1)));
+  await pg.evaluate(() => import('/lib/audio/voiceconsent.js').then((v: any) => v.setVolume('world', 1)));
   s = await until(pg, (x) => x.eff != null && Math.abs(x.eff - 0.5) < 1e-3, 3000);
   check('F. the slider moving to 1 is heard live: 0.5', Math.abs((s.eff ?? 0) - 0.5) < 1e-3 && s.world === 1, JSON.stringify({ world: s.world, eff: s.eff }));
   s = await until(pg, (x) => x.panner && Math.abs(x.panner[0] - x.entityPos[0]) < 0.05 && Math.abs(x.panner[2] - x.entityPos[2]) < 0.05, 8000);
@@ -112,7 +112,7 @@ try {
   s = await until(pg, (x) => Math.abs((x.gain ?? 0) - 0.9) < 1e-3, 5000);   // AudioParam holds float32
   check('C. a same-src replace adjusts in place: volume 0.9, still one graph, still playing', Math.abs(s.gain - 0.9) < 1e-3 && s.graphs === 1 && s.paused === false, JSON.stringify(s));
   // F. a partial preference composes with the authored volume, and follows a same-source update
-  await pg.evaluate(() => import('/lib/voiceconsent.js').then((v: any) => v.setVolume('world', 0.5)));
+  await pg.evaluate(() => import('/lib/audio/voiceconsent.js').then((v: any) => v.setVolume('world', 0.5)));
   s = await until(pg, (x) => x.eff != null && Math.abs(x.eff - 0.45) < 1e-3, 3000);
   check('F. world 0.5 under authored 0.9 is heard at 0.45, authored kept at 0.9', Math.abs((s.eff ?? 0) - 0.45) < 1e-3 && Math.abs(s.gain - 0.9) < 1e-3, JSON.stringify({ gain: s.gain, world: s.world, eff: s.eff }));
   await sound(pg, { src, t0, description: 'a probe tone', volume: 0.6, near: 8, radius: 20 });
@@ -127,7 +127,7 @@ try {
   await sound(pg, { src, t0, description: 'a probe tone', volume: 0.9, near: 8, radius: 20 });
   s = await until(pg, (x) => x.has && x.eff != null && Math.abs(x.eff - 0.45) < 1e-3, 15000);
   check('F. …respawned and re-authored at 0.9, heard at 0.45 under the listener\'s 0.5 that never changed', s.has && Math.abs((s.eff ?? 0) - 0.45) < 1e-3 && s.world === 0.5, JSON.stringify({ gain: s.gain, world: s.world, eff: s.eff }));
-  await pg.evaluate(() => import('/lib/voiceconsent.js').then((v: any) => v.setVolume('world', 1)));
+  await pg.evaluate(() => import('/lib/audio/voiceconsent.js').then((v: any) => v.setVolume('world', 1)));
   // D. pause, then silence
   await sound(pg, { src, description: 'a probe tone', playing: false });
   s = await until(pg, (x) => x.paused === true, 5000);

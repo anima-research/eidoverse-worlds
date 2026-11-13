@@ -4,7 +4,7 @@
 //   humans → getUserMedia (the browser/OS default device)
 //   agents → a synth provider, registered by whatever drives the body (hands over a finished track)
 
-import { report } from './base.js';
+import { report } from '../base.js';
 
 // ── the synth-provider contract ──────────────────────────────────────────────
 // {

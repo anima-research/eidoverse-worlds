@@ -71,7 +71,7 @@ const endSession = async (label) => {
 const card = () => ev(() => { const c = document.getElementById('vrmic'); return c ? { title: c.querySelector('#vrmic-title')?.textContent, text: c.querySelector('.vrmic-body')?.textContent.replace(/\s+/g, ' ').trim(), btns: [...c.querySelectorAll('button')].map((b) => b.textContent.trim()) } : null; });
 const P = () => ev(() => ({ grants: window.__probe.grants, gum: window.__probe.gum, held: window.__probe.held.length,
   choice: localStorage.getItem('ew-vr-mic-choice'), pending: localStorage.getItem('ew-vr-mic-pending'), vrmic: { ...globalThis.__vrmic, noteCanvas: undefined, noteMesh: undefined } }));
-const mic = () => ev(async () => { const M = await import('./lib/micstate.js'); const S = await import('./lib/voicesfu.js'); return { micOn: M.micOn(), wanted: S.sfuMicWanted(), sfuOn: S.sfuMicOn() }; });
+const mic = () => ev(async () => { const M = await import('./lib/audio/micstate.js'); const S = await import('./lib/audio/voicesfu.js'); return { micOn: M.micOn(), wanted: S.sfuMicWanted(), sfuOn: S.sfuMicOn() }; });
 const clickVisor = () => ev(() => document.querySelector('#xrbtn').click());
 
 try {

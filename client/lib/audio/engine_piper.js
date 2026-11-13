@@ -95,7 +95,7 @@ registerEngine({
     const ort = await (async () => {
       if (hasGpu) {
         try {
-          const url = new URL('../node_modules/onnxruntime-web/dist/ort.webgpu.bundle.min.mjs',
+          const url = new URL('../../node_modules/onnxruntime-web/dist/ort.webgpu.bundle.min.mjs',
                               import.meta.url).href;
           return await import(/* @vite-ignore */ url);
         } catch (e) {
@@ -108,8 +108,8 @@ registerEngine({
     const espeakVoice = cfgJson?.espeak?.voice || 'en-us';
     const inf = cfgJson?.inference || {};
     const wasmPaths = {
-      piperData: new URL('../vendor/piper/piper_phonemize.data', import.meta.url).href,
-      piperWasm: new URL('../vendor/piper/piper_phonemize.wasm', import.meta.url).href,
+      piperData: new URL('../../vendor/piper/piper_phonemize.data', import.meta.url).href,
+      piperWasm: new URL('../../vendor/piper/piper_phonemize.wasm', import.meta.url).href,
     };
       // ORT's builds are all threaded and need cross-origin isolation, else it silently runs single-threaded while
       // numThreads still reads 8. Ask explicitly (the default caps at 4), and log what the runtime actually has.
@@ -118,7 +118,7 @@ registerEngine({
       const sab = typeof SharedArrayBuffer !== 'undefined';
       ort.env.wasm.numThreads = isolated && sab ? Math.min(cores, 8) : 1;
       ort.env.wasm.simd = true;
-      ort.env.wasm.wasmPaths = new URL('../node_modules/onnxruntime-web/dist/', import.meta.url).href;
+      ort.env.wasm.wasmPaths = new URL('../../node_modules/onnxruntime-web/dist/', import.meta.url).href;
       console.log(`[voice] ORT: ${cores} cores · crossOriginIsolated=${isolated} · `
         + `SharedArrayBuffer=${sab} · numThreads=${ort.env.wasm.numThreads}`
         + (isolated && sab ? '' : '  ⚠️ SINGLE-THREADED — isolation headers missing'));
