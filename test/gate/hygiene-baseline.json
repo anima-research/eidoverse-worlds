@@ -169,17 +169,8 @@
  "test/protocol/agenttools-check.ts": {
   "bare-wait": 5
  },
- "test/protocol/batch2-check.ts": {
-  "raw-symlink": 2
- },
  "test/protocol/batch2-probe.ts": {
   "bare-wait": 6
- },
- "test/protocol/blockers-mutants.ts": {
-  "raw-symlink": 2
- },
- "test/protocol/build-check.ts": {
-  "raw-symlink": 2
  },
  "test/protocol/build-probe.ts": {
   "bare-wait": 5
@@ -195,9 +186,6 @@
  },
  "test/protocol/counter-check.ts": {
   "bare-wait": 1
- },
- "test/protocol/describe-particles-check.ts": {
-  "raw-symlink": 2
  },
  "test/protocol/drive-check.ts": {
   "own-ok": 1
@@ -217,17 +205,11 @@
  "test/protocol/gates-check.ts": {
   "own-ok": 1
  },
- "test/protocol/grab-check.ts": {
-  "raw-symlink": 1
- },
  "test/protocol/hello-refused-check.ts": {
   "own-ok": 1
  },
  "test/protocol/identity-check.ts": {
-  "bare-wait": 44
- },
- "tools/import-v1/snapshot-oracle.ts": {
-  "raw-symlink": 2
+  "bare-wait": 42
  },
  "test/protocol/inplace-check.ts": {
   "bare-wait": 3
@@ -235,33 +217,20 @@
  "test/harness/inspectharness.ts": {
   "bare-wait": 1
  },
- "test/protocol/names-check.ts": {
-  "raw-symlink": 6
- },
  "test/protocol/owners-check.ts": {
   "own-ok": 1
  },
  "test/protocol/parity-check.ts": {
-  "bare-wait": 5,
-  "raw-symlink": 3
+  "bare-wait": 5
  },
  "test/protocol/party-probe.ts": {
   "bare-wait": 32
  },
- "test/protocol/physics-area-check.ts": {
+ "test/protocol/physics-volume-check.ts": {
   "own-ok": 1
  },
  "test/protocol/presence-check.ts": {
   "bare-wait": 10
- },
- "test/protocol/r10-check.ts": {
-  "raw-symlink": 4
- },
- "test/protocol/r11-check.ts": {
-  "raw-symlink": 3
- },
- "test/protocol/r9-check.ts": {
-  "raw-symlink": 2
  },
  "test/protocol/reachgate-check.ts": {
   "bare-wait": 1
@@ -272,12 +241,6 @@
  "test/protocol/reset-race-check.ts": {
   "own-ok": 1
  },
- "test/protocol/roles-check.ts": {
-  "raw-symlink": 2
- },
- "test/protocol/scale-check.ts": {
-  "raw-symlink": 3
- },
  "test/protocol/scripting-check.ts": {
   "own-ok": 1
  },
@@ -287,14 +250,8 @@
  "test/protocol/server-check.ts": {
   "bare-wait": 28
  },
- "test/protocol/shiplist-check.ts": {
-  "raw-symlink": 2
- },
  "test/protocol/shiplist-probe.ts": {
   "bare-wait": 105
- },
- "test/protocol/shove-check.ts": {
-  "raw-symlink": 2
  },
  "test/protocol/simckpt-check.ts": {
   "own-ok": 1
@@ -307,9 +264,6 @@
  },
  "test/protocol/translate-check.ts": {
   "own-ok": 1
- },
- "test/protocol/txn-check.ts": {
-  "raw-symlink": 1
  },
  "test/protocol/upgrade-check.ts": {
   "own-ok": 1
