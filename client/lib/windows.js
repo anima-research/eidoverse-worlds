@@ -1064,13 +1064,21 @@ export function panelsToggle() {
 }
 /** How many panels the standing Tab-quiet put away (0 = only the resting line; also 0 when not quiet). */
 export const escapeHid = () => panelStash?.length ?? 0;
+/** What an Escape press would close right now: a popover or menu ('pop'), an overlay ('overlay'), HUD layout mode
+ *  ('layout'), else null. Each has its own Escape closer (ui.js, chat.js, dropdown.js, statuschips.js, panels.js), and
+ *  the press that closes one is that closer's whole act: the controller asks this in the capture phase, before any
+ *  closer has run, so the same press doesn't also stand you up or deselect (PR #171 review). */
+export function escapeDismisses() {
+  if (document.querySelector('.pf-pop, .dd-pop, .sp-ctx, .chat-gearpop:not([hidden]), #emenu:not([hidden]), #stpop:not([hidden])')) return 'pop';   // #stpop: a status chip's popover (statuschips.js); .sp-ctx: the scene panel's context menu   // the gear pop lives in the DOM hidden; only a SHOWN one claims Esc
+  if (document.querySelector('.scrim.open')) return 'overlay';
+  if (document.body.classList.contains('arranging')) return 'layout';   // HUD layout mode: Esc ends the mode (ui.js); the panel toggle waits
+  return null;
+}
 export function escapeIsClaimed() {
   for (const fn of escClaims) { const c = fn(); if (c) return c; }
   const a = document.activeElement;
   if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)) return 'field';
-  if (document.querySelector('.pf-pop, .dd-pop, .chat-gearpop:not([hidden]), #emenu:not([hidden]), #stpop:not([hidden])')) return 'pop';   // #stpop: a status chip's popover (statuschips.js)   // the gear pop lives in the DOM hidden; only a SHOWN one claims Esc
-  if (document.querySelector('.scrim.open')) return 'overlay';
-  if (document.body.classList.contains('arranging')) return 'layout';   // HUD layout mode: Esc ends the mode (ui.js); the panel toggle waits
+  const d = escapeDismisses(); if (d) return d;
   if (document.pointerLockElement) return 'pointer-lock';
   return null;
 }
