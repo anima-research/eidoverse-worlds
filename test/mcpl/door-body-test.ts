@@ -46,8 +46,8 @@ const reacher = (cal: number[], ann: Record<string, unknown> = {}) => {
   ag.people.set("Cal", { id: "Cal", avatar: "", pose: pose(cal) });
   ag.actorIds.set("Ann", "a-ann"); ag.actorIds.set("Cal", "a-cal");
   ag.joined = true;
-  ag.refreshReachReading = async () => {};
-  ag.solveReachEntry = () => ({ state: "pending" });
+  ag.reaching.refreshReachReading = async () => {};
+  ag.reaching.solveReachEntry = () => ({ state: "pending" });
   return ag;
 };
 const refusal = (to: string, cls: string, ago = 0) => ({ to, cls, why: "their table says no", limb: "rightHand", ts: Date.now() - ago });
@@ -102,7 +102,7 @@ check("(2 m in front of a body is beside it, not in it)", !pointClass([0, 0, 0],
   // it would land [0, 2.4, -4], in nobody; turned by her yaw alone, [0, 2, 1.2], in nobody.
   const ag = reacher([0, 0, -2], { q: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2], scale: 2 });
   const local = [0, 2, 1.2];
-  check("(that point is beside Ann, not in her)", !ag.reachHolders({ p: local, space: "Ann" }).some((h: any) => h.name === "Ann"));
+  check("(that point is beside Ann, not in her)", !ag.reaching.reachHolders({ p: local, space: "Ann" }).some((h: any) => h.name === "Ann"));
   setTimeout(() => ag.reachRefusals.push(refusal("a-cal", calThere)), 60);
   const r = await ag.reach("rightHand", { p: local, space: "Ann" });
   check("...and in a pitched, scaled body's frame, by her pose's q, the point unscaled by her size", fresh(r, "Cal"), r.text);
@@ -111,7 +111,7 @@ check("(2 m in front of a body is beside it, not in it)", !pointClass([0, 0, 0],
   // a point in a 2x body's own frame is held to her by her capsule at her size: 0.4 m out at 1 m up is in her (0.2 m out at
   // 0.5 m up at authored size), where an authored-size body would have it beside her; 1.5 m out is beside her either way
   const ag = reacher([5, 0, 0], { scale: 2 });
-  const own = (p: number[]) => ag.reachHolders({ p, space: "Ann" }).find((h: any) => h.name === "Ann")?.cls ?? null;
+  const own = (p: number[]) => ag.reaching.reachHolders({ p, space: "Ann" }).find((h: any) => h.name === "Ann")?.cls ?? null;
   check("a point 0.4 m out in a 2x body's frame is in her, by her capsule at her size", own([0.4, 1, 0]) === "touch", String(own([0.4, 1, 0])));
   check("...and one 1.5 m out is outside her capsule, not in her", own([1.5, 1, 0]) === null, String(own([1.5, 1, 0])));
 }
@@ -119,7 +119,7 @@ check("(2 m in front of a body is beside it, not in it)", !pointClass([0, 0, 0],
   // a reach that streamed, and is refused later by a body its point lands in that it doesn't name
   const ag = reacher([2, 0, 0], { q: quarter });
   ag.reaches.set("rightHand", { t: { p: ahead, space: "Ann" } });
-  const dropped = ag.dropReachesAt("a-cal", "rightHand", calThere);
+  const dropped = ag.reaching.dropReachesAt("a-cal", "rightHand", calThere);
   check("a later refusal from a body the reach lands in withdraws it", dropped.length === 1 && !ag.reaches.has("rightHand"), JSON.stringify(dropped));
 }
 {
@@ -130,7 +130,7 @@ check("(2 m in front of a body is beside it, not in it)", !pointClass([0, 0, 0],
   check("(Cal's chest and head are different classes)", !!chestCls && !!headCls && chestCls !== headCls, `${chestCls} ${headCls}`);
   ag.reaches.set("rightHand", { t: { p: chest } });
   ag.reaches.set("leftHand", { t: { p: head } });
-  const dropped = ag.dropReachesAt("a-cal", undefined, chestCls);
+  const dropped = ag.reaching.dropReachesAt("a-cal", undefined, chestCls);
   check("a refusal that names no limb withdraws the reaches held to that body in its class, and keeps another class",
     !ag.reaches.has("rightHand") && ag.reaches.has("leftHand") && dropped.length === 1, JSON.stringify(dropped));
 }

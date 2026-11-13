@@ -30,7 +30,7 @@ const DEFAULT_BODY = "eidoverse/assets/vrms/claude.vrm";
 const mkAgent = async () => {
   const ag: any = new WorldAgent({ name: "me", world: "test", url: noWorldUrl() });
   // pre-seed the solver bodies the way a live join's fetch would
-  ag.reachBodies.set(DEFAULT_BODY, await ReachBody.fromSkeleton(rig.P));
+  ag.reaching.reachBodies.set(DEFAULT_BODY, await ReachBody.fromSkeleton(rig.P));
   return ag as any;
 };
 
@@ -80,16 +80,16 @@ console.log("\na landmark on another body, from streamed presence");
   check("the target is named as theirs", r.text.includes("digi's shoulder_l"), r.text);
   const entry = ag.reaches.get("rightHand");
   check("descriptor carries the canonical point", entry?.t?.point === "shoulder_l");
-  const v = ag.solveReachEntry("rightHand", entry);
+  const v = ag.reaching.solveReachEntry("rightHand", entry);
   check("solve resolves against their stand-in", v.state === "ok", JSON.stringify(v));
   check("gap is a real number", v.state === "ok" && Number.isFinite(v.gap), JSON.stringify(v));
 
   // attestation follows the world: they walk away, reached must drop
   if (v.state === "ok" && v.reached) check("close = reached", entry.reached === true);
   ag.people.set("digi", { id: "digi", avatar: "", pose: { p: [6, 0, 6], yaw: 0, speed: 0, clip: "idle" } });
-  ag.reachTick();
+  ag.reaching.reachTick();
   check("they left arm's reach — attestation drops", ag.reaches.get("rightHand").reached === undefined);
-  const v2 = ag.solveReachEntry("rightHand", ag.reaches.get("rightHand"));
+  const v2 = ag.reaching.solveReachEntry("rightHand", ag.reaches.get("rightHand"));
   check("...and the verdict says the distance", v2.state === "ok" && v2.gap > 1, JSON.stringify(v2));
 }
 
@@ -101,15 +101,15 @@ console.log("\nself-touch and frames");
   check("own head is a legal target", r.ok, r.text);
   check("described as yours", r.text.includes("your head_top"), r.text);
   // self-space: one metre forward should land one metre along +X at yaw π/2
-  const tp = ag.reachTargetPoint({ p: [0, 1, 1], space: "self" });
+  const tp = ag.reaching.reachTargetPoint({ p: [0, 1, 1], space: "self" });
   check("self-frame point rides my yaw", tp && !("err" in tp)
     && Math.abs(tp.pos[0] - 3) < 1e-9 && Math.abs(tp.pos[2] - 3) < 1e-9, JSON.stringify(tp));
   // their-space: same transform, their transform
   ag.people.set("digi", { id: "digi", avatar: "", pose: { p: [10, 0, 0], yaw: 0, speed: 0, clip: "idle" } });
-  const tq = ag.reachTargetPoint({ p: [0, 1, 1], space: "digi" });
+  const tq = ag.reaching.reachTargetPoint({ p: [0, 1, 1], space: "digi" });
   check("avatar-frame point rides their pose", tq && !("err" in tq)
     && Math.abs(tq.pos[0] - 10) < 1e-9 && Math.abs(tq.pos[2] - 1) < 1e-9, JSON.stringify(tq));
-  const tm = ag.reachTargetPoint({ p: [0, 1, 1], space: "ghost" });
+  const tm = ag.reaching.reachTargetPoint({ p: [0, 1, 1], space: "ghost" });
   check("an absent frame is an error, not a guess", tm && "err" in tm, JSON.stringify(tm));
 }
 

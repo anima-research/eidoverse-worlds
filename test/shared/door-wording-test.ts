@@ -622,7 +622,7 @@ try {
   check("a contact point that isn't one is named, with the ones there are",
     /^there's no contact point called "elbow_x", so nothing was reached; the points are hand_l, /.test(elbow), elbow);
   const hand: any = new WorldAgent({ url: noWorldUrl(), name: "hand", world: "w" });
-  hand.reachBodies.set(hand.avatar, null);   // its own model didn't load
+  hand.reaching.reachBodies.set(hand.avatar, null);   // its own model didn't load
   check("an unknown limb is named, with the ones there are",
     (await hand.reach("tentacle", { p: [0, 1, 0] })).text === `there's no limb called "tentacle", so nothing was reached; limb takes leftHand, rightHand, leftFoot or rightFoot`);
   check("...and releasing it says nothing was released",
@@ -637,20 +637,20 @@ try {
   check("...as the reacher, toward a point",
     /— streamed, but unverified: your body couldn't be set up on this door \(its model, or the door's skeleton solver, didn't load\), so it can't check this reach$/.test(towardPoint), towardPoint);
   hand.people.set("bo", { id: "bo", avatar: "bo.vrm", pose: standing({ p: [0, 0, 0.5] }) });
-  hand.reachBodies.set("bo.vrm", null);
+  hand.reaching.reachBodies.set("bo.vrm", null);
   const theirs = (await hand.reach("leftHand", { who: "bo", point: "shoulder_l" })).text;
   check("...or someone else's",
     theirs === "left hand reaching toward bo's shoulder_l — streamed, but unverified: bo's body couldn't be set up on this door (its model, or the door's skeleton solver, didn't load), so it can't check this reach", theirs);
   const looped = { t: { who: "bo", point: "hand_l" } };
   hand.joined = true;
-  hand.reachReading = { reaches: { rightHand: looped }, reachEvaluation: { rightHand: { ok: false, why: "cyclic-reach", reached: false } } };
-  const verdict = hand.solveReachEntry("rightHand", looped);
+  hand.reaching.reachReading = { reaches: { rightHand: looped }, reachEvaluation: { rightHand: { ok: false, why: "cyclic-reach", reached: false } } };
+  const verdict = hand.reaching.solveReachEntry("rightHand", looped);
   check("a loop of reaches is said in words in reach's reply",
     verdict.err === "it depends on a loop of reaches (limbs reaching for limbs that reach back), so it can't be solved until a limb in the loop lets go", JSON.stringify(verdict));
   const elsewhere = { t: { who: "bo", point: "shoulder_l" } };
   const notHere = "bo's body can't be read here now (it isn't present), so this reach can't be checked";
-  hand.reachReading = { reaches: { leftHand: elsewhere }, reachEvaluation: { leftHand: { ok: false, why: notHere, reached: false } } };
-  const passed = hand.solveReachEntry("leftHand", elsewhere);
+  hand.reaching.reachReading = { reaches: { leftHand: elsewhere }, reachEvaluation: { leftHand: { ok: false, why: notHere, reached: false } } };
+  const passed = hand.reaching.solveReachEntry("leftHand", elsewhere);
   check("...and any other reason body_state gives comes through as it is", passed.err === notHere, JSON.stringify(passed));
   hand.joined = false;
   hand.close();

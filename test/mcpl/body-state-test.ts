@@ -336,8 +336,8 @@ try {
     check("1×: hand-computed FK — leftHand at root + yaw·(0.8, 1.5, 0)", close(base.joints?.leftHand?.position, [3, 1.5, 3.2]), show(base.joints?.leftHand?.position));
     await call(peer, "reach", { limb: "leftHand", who: OWNER, point: "hand_r", palm: false });
     await call(peer, "reach", { limb: "rightHand", x: .3, y: 1.2, z: .5, space: OWNER, palm: false });
-    await peer.refreshReachReading();
-    const reach1 = structuredClone(peer.reachReading.reachEvaluation);
+    await peer.reaching.refreshReachReading();
+    const reach1 = structuredClone(peer.reaching.reachReading.reachEvaluation);
     check("1×: the peer's reach aims at the owner's live hand_r, 2 cm off its surface",
       close(reach1.leftHand?.target, add(base.contacts.hand_r.position, mul(base.contacts.hand_r.normal, .02))), show(reach1.leftHand));
     // a point in the owner's ROOT frame, yaw π/2: (x, y, z) → (root.x + z, y, root.z − x)
@@ -357,8 +357,8 @@ try {
       const badC = points.filter(n => !close(r.contacts[n]?.position, add(ROOT, mul(sub(base.contacts[n].position, ROOT), u))));
       check(`${u}×: every contact (${points.length}) scales about the body root`, points.length > 10 && !badC.length, badC.join(", "));
       check(`${u}×: contact normals are unchanged by a uniform size`, points.every(n => close(r.contacts[n].normal, base.contacts[n].normal)));
-      await peer.refreshReachReading();
-      const ev = peer.reachReading.reachEvaluation;
+      await peer.reaching.refreshReachReading();
+      const ev = peer.reaching.reachReading.reachEvaluation;
       const surface = add(ROOT, mul(sub(base.contacts.hand_r.position, ROOT), u));
       check(`${u}×: the peer's reach target is the scaled hand_r + the same 2 cm (absolute) standoff`,
         ev.leftHand?.ok && close(ev.leftHand.target, add(surface, mul(base.contacts.hand_r.normal, .02))), show(ev.leftHand));
@@ -407,13 +407,13 @@ try {
     const big = { id: "big", avatar: AVATAR, pose: { p: [1, 0, 0], yaw: 0, speed: 0, clip: "idle" } as any };
     solo.people.set("big", big);
     await solo.reach("leftHand", { who: "big", point: "hand_r", palm: false });
-    const legacy1 = solo.reachTargetPoint({ who: "big", point: "hand_r" });
+    const legacy1 = solo.reaching.reachTargetPoint({ who: "big", point: "hand_r" });
     big.pose = { ...big.pose, scale: 2 };
-    const legacy2 = solo.reachTargetPoint({ who: "big", point: "hand_r" });
+    const legacy2 = solo.reaching.reachTargetPoint({ who: "big", point: "hand_r" });
     const surf1 = sub(legacy1.pos, mul(legacy1.normal, .02));
     check("unjoined path: a 2× body's contact target scales about its root, standoff absolute",
       close(legacy2?.pos, add(add([1, 0, 0], mul(sub(surf1, [1, 0, 0]), 2)), mul(legacy1.normal, .02))), show({ legacy1, legacy2 }));
-    const shared = solo.reachBodySync(AVATAR);
+    const shared = solo.reaching.reachBodySync(AVATAR);
     shared.poseAt([0, 0, 0], 0, null, 1); const arm1 = shared.armLength("rightHand");
     shared.poseAt([0, 0, 0], 0, null, 2); const arm2 = shared.armLength("rightHand");
     shared.poseAt([0, 0, 0], 0, null);    const arm3 = shared.armLength("rightHand");

@@ -4,7 +4,7 @@
 // (tools.ts screenshot).
 
 import { bodyOf } from "../shared/components.js";
-import { CLASSES, REACH_NOTE_MS, namedPointClass, pointClass } from "../shared/protocol/consent.js";
+import { CLASSES } from "../shared/protocol/consent.js";
 import { helloOf, refusalWords } from "../shared/protocol/hello.js";
 import { describeBody, mayLeave, resolveSeat, socketsUnder, vacatedFromMine, vacatedAt } from "../shared/sockbody.js";
 import { grabOf, describeGrab } from "../shared/grab.js";
@@ -13,6 +13,7 @@ import { BodyStateReader, type BodyObservation } from "./body-state.ts";
 import { mentionRegexFor } from "./mention.ts";
 import { type ActResult, type Entity, type Pose, done, refused, isDown, downRefusal, worldYaw, intYaw, solidOffRecord, RAGDOLL_ROOT_DROP,
   WORLD_READ_MS, isSocketRec, posePosition } from "./agent-result.ts";
+import { AgentReach } from "./agent-reach.ts";
 export { meshGovernor, forgetMeshCache } from "./agent-ground.ts";
 import { AgentGround, floorAtLocal } from "./agent-ground.ts";
 import { AgentPlaces, PLACE_SIGHT_M } from "./agent-places.ts";
@@ -30,7 +31,7 @@ import * as TSL from "three/tsl";
 import { NoiseGate, SHORT_STINT_MS, APPROACH_REFRACT_MS, APPROACH_RADIUS, REARM_RADIUS,
   APPROACH_DWELL_MS, APPROACH_STILL_MPS, APPROACH_MAX_WAIT_MS,
   ACTIVITY_RADIUS_M, ACTIVITY_PULSE_MS, ACTIVITY_REFRESH_MS, MOVER_MIN_M } from "./denoise.ts";
-import { HeadlessBody, ReachBody, setHeightField, setWaterField, standOn, collidersReady, navProbe, collidersGeneration, inWorld, withoutColliders } from "./physics.ts";
+import { HeadlessBody, setHeightField, setWaterField, standOn, collidersReady, navProbe, collidersGeneration, inWorld, withoutColliders } from "./physics.ts";
 import { makeNavGrid, NAV_SUBSTEP, NAV_NUDGE, NAV_STEP, type NavProbe, type NavTarget } from "../shared/navgrid.js";
 import { names } from "../shared/places.js";
 import { colliderOf } from "../shared/components.js";
@@ -74,12 +75,6 @@ const turnTo = (a: number, b: number) => { let d = b - a; while (d > Math.PI) d 
 /** A land course flares (noses up) this high above the ground under it. */
 const FLARE_HEIGHT = 2;
 
-import { canonicalLimb, normalizeReachTarget, normalizeReachBag, describeTarget, diffReach,
-  TOUCH_GAP, sameReach } from "../shared/reachwire.js";
-import { shown } from "../shared/shown.js";
-/** reach and clear_reach refuse a limb in the same words. */
-const unknownLimb = (raw: unknown, done: string) =>
-  `there's no limb called ${shown(raw)}, so nothing was ${done}; limb takes leftHand, rightHand, leftFoot or rightFoot`;
 // the same sky fold + weather derivation the browser and the sequencer run: perception lands on the hour and weather
 // every renderer shows
 import { foldSkyEntry, describeSky, effectiveSky, effectiveClock, dayPhase, hoursAt } from "../shared/forecast.js";
@@ -223,17 +218,6 @@ function stepSides(ok: (Vec2 | null)[]): Vec2[] {
   return sides;
 }
 
-/** A point in a body's root frame → world, matching THREE's rotation.y=yaw
- *  (x' = x·cos + z·sin, z' = −x·sin + z·cos) — the same transform every
- *  browser's localToWorld applies to the same descriptor. */
-function frameToWorld(p: number[], yaw: number, local: number[]): number[] {
-  const c = Math.cos(yaw ?? 0), s = Math.sin(yaw ?? 0);
-  return [
-    p[0] + local[0] * c + local[2] * s,
-    (p[1] ?? 0) + local[1],
-    p[2] - local[0] * s + local[2] * c,
-  ];
-}
 type InboxItem = { ts: number; kind: "say" | "arrive" | "leave" | "act"; who: string; text?: string; seq?: number | null };
 
 // A canned "knocked over" pose, for when the ragdoll sim (physics.ts) is unavailable.
@@ -440,7 +424,7 @@ export class WorldAgent {
         const to = String(m.to ?? ""), who = this.nameOfActor(to) ?? to;
         this.reachRefusals.push({ to, cls: String(m.class ?? "touch"), why: String(m.why ?? "their consent refused it"), ...(m.fix ? { fix: String(m.fix) } : {}), ...(typeof m.limb === "string" ? { limb: m.limb } : {}), ts });
         if (this.reachRefusals.length > 20) this.reachRefusals.shift();
-        const dropped = this.dropReachesAt(to, typeof m.limb === "string" ? m.limb : undefined, String(m.class ?? "touch"));
+        const dropped = this.reaching.dropReachesAt(to, typeof m.limb === "string" ? m.limb : undefined, String(m.class ?? "touch"));
         text = `your hand toward ${who}${m.point ? `'s ${m.point}` : ""} was not shown to anyone (consent class ${m.class}): ${m.why}${m.fix ? ` — ${m.fix}` : ""}${dropped.length ? `. Withdrawn: ${dropped.join(", ")}` : ""}`; }
       if (text) { const who = subj; this.inbox.push({ ts, kind: "act", who, text }); this.onEvent?.({ ts, kind: "act", who, text }); }
     }
@@ -547,7 +531,7 @@ export class WorldAgent {
   /** Stateful denoiser for ambient narration (arrive/leave/acts). Says and
    *  mentions never pass through it — a knock is not chatter.
    *  See denoise.ts for the doctrine. */
-  private gate = new NoiseGate((ev) => {
+  gate = new NoiseGate((ev) => {
     if (ev.kind === "arrive") this.act30.arrivals++;
     else if (ev.kind === "leave") this.act30.departures++;
     this.inbox.push({ ts: ev.ts, kind: ev.kind, who: ev.who, ...(ev.text != null ? { text: ev.text } : {}) });
@@ -1221,7 +1205,7 @@ export class WorldAgent {
     this.people.set(id, p);
     // hands aimed at this body — before the spatial gate below, because a
     // reach descriptor is legible even from a sample with no usable position
-    if (id !== this.name) this.noteReachEvents(id, prev, pose);
+    if (id !== this.name) this.reaching.noteReachEvents(id, prev, pose);
     const xyz = posePosition(pose);
     if (!xyz) return; // keep the shell for identity/roster; no spatial inference yet
     const [x, , z] = xyz;
@@ -1331,8 +1315,8 @@ export class WorldAgent {
     this.nonLocoSince.delete(id);
     this.approachPending.delete(id);
     this.approachOpen.delete(id);
-    for (const k of this.lastReachPing.keys()) {
-      if (k.endsWith(`:${id}`)) this.lastReachPing.delete(k);
+    for (const k of this.reaching.lastReachPing.keys()) {
+      if (k.endsWith(`:${id}`)) this.reaching.lastReachPing.delete(k);
     }
     this.gate.presence(id, "leave");
   }
@@ -1654,7 +1638,7 @@ export class WorldAgent {
    *  subscribing (onPing). A ring, like every buffer in this file. */
   private static readonly PING_RING = 64;
 
-  private ping(p: { ts: number; kind: "mention" | "approach" | "depart" | "reach" | "touch"; who: string; text?: string }) {
+  ping(p: { ts: number; kind: "mention" | "approach" | "depart" | "reach" | "touch"; who: string; text?: string }) {
     this.pings.push(p);
     if (this.pings.length > WorldAgent.PING_RING) this.pings.splice(0, this.pings.length - WorldAgent.PING_RING);
     this.onPing?.(p);
@@ -1992,7 +1976,7 @@ export class WorldAgent {
     // keep the `reached` attestation honest at ~2Hz while reaching: the
     // target moves, this body moves, and the far end's touch event fires on
     // the rising edge of what is re-checked here
-    if (this.reaches.size && ++this.reachTicks % 5 === 0) this.reachTick();
+    if (this.reaches.size && ++this.reaching.reachTicks % 5 === 0) this.reaching.reachTick();
     this.selfObservedAt = Date.now();
     this.noteClipClock();
     this.ws?.send(JSON.stringify({
@@ -3553,7 +3537,7 @@ export class WorldAgent {
   /** Reaches the relay refused to show (server/reachgate.ts; the authority says so once per target and class per
    *  REACH_NOTE_MS), newest last: what reach() reads to tell the truth about a hand nobody saw. */
   reachRefusals: { to: string; cls: string; why: string; fix?: string; limb?: string; ts: number }[] = [];
-  private nameOfActor(actor: string): string | null { for (const [n, a] of this.actorIds) if (a === actor) return n; return null; }
+  nameOfActor(actor: string): string | null { for (const [n, a] of this.actorIds) if (a === actor) return n; return null; }
   /** A gesture's ops (shared/requests.js) as ONE request, sent after the previous one was answered. Ops planned
    *  before that wait don't see what landed meanwhile, so a caller that planned from the replica pins what it read with
    *  `expect` (componentsOf): a change since is refused, not overwritten. `extra` rides the request (dry, expect,
@@ -3674,327 +3658,11 @@ export class WorldAgent {
     }
   }
 
-  // ---- reaching: a relation streamed as a descriptor ----------------------
-  //
-  // The descriptor (shared/reachwire.js) rides the presence packet, and every
-  // browser re-solves the IK against its own scene. HERE is only what a blind
-  // body needs: resolving the target from presence + stand-in skeletons
-  // (physics.ts ReachBody), solving its arm once for the tool reply, and keeping
-  // the `reached` attestation honest (its rising edge is the touch event).
-  private reachBodies = new Map<string, ReachBody | null>();               // avatar path -> solver body
-  private reachBodyLoads = new Map<string, Promise<ReachBody | null>>();
-  private reachTicks = 0;
-  private reachReading: any = null;
-  private reachReadingEpoch = 0;
-  private reachReadingBusy = false;
-  private async refreshReachReading() {
-    const epoch = ++this.reachReadingEpoch;
-    const reading = await this.bodyState(this.name, "all");
-    if (epoch === this.reachReadingEpoch) this.reachReading = reading;
-  }
-
-  /** reach/touch ping refractory, keyed "kind:who:limb" — a hand trembling
-   *  across the touch threshold must not knock twice. */
-  private lastReachPing = new Map<string, number>();
-  /** Stop streaming the limb a refusal names (the relay strips it anyway). Only that one: another limb on the same body may
-   *  be one they consented to (r2 holes F9). A refusal from a server that doesn't name the limb drops the limbs held to that
-   *  body in the refused class. */
-  private dropReachesAt(actor: string, limb?: string, cls?: string): string[] {
-    const name = this.nameOfActor(actor), out: string[] = [];
-    for (const [l, e] of [...this.reaches]) {
-      // a limb's refusal is that reach's only while the relay still holds the reach to the refuser's body (reachHolders: the
-      // body it names, and every body its point lands in), or the reach is a world point, which the relay judges by where it
-      // lands now: a newer reach on the same hand held to nobody who refused stays
-      const held = name ? this.reachHolders(e.t).find((h) => h.name === name) : undefined, atBody = e.t?.who != null || e.t?.space != null;
-      const hit = limb !== undefined ? l === limb && (!!held || !atBody) : !!held && (!cls || held.cls === cls);
-      if (hit) { this.reaches.delete(l); out.push(WorldAgent.LIMB_WORD[l] ?? l); } }
-    return out;
-  }
-  /** The other bodies a world point lands in, each with its class there: server/reachgate.ts's bodiesAt, read from the
-   *  presence this body holds (each body's capsule, scaled to its size). */
-  private bodiesAtPoint(pt: number[]): { name: string; cls: string }[] {
-    const out: { name: string; cls: string }[] = [];
-    for (const [name, person] of this.people) {
-      const at = (person.pose as any)?.p;
-      if (name === this.name || !Array.isArray(at) || at.length !== 3 || !at.every(Number.isFinite)) continue;
-      const sc = clampBodyScale((person.pose as any)?.scale);
-      const cls = pointClass([0, 0, 0], [(pt[0] - at[0]) / sc, (pt[1] - at[1]) / sc, (pt[2] - at[2]) / sc]);
-      if (cls) out.push({ name, cls });
-    }
-    return out;
-  }
-  /** Every other body a reach target is held to, as the relay holds it (server/reachgate.ts touched), each with its class:
-   *  a named point, that one body; a point in the world or this body's frame, every body it lands in; a point in another
-   *  body's frame, that body and every other body it lands in. The relay strips the reach if any of them refuses it. */
-  private reachHolders(t: any): { name: string; cls: string }[] {
-    if (t?.who !== undefined) {
-      const cls = t.who !== this.name ? WorldAgent.reachClass(t, t.who) : null;
-      return cls ? [{ name: t.who, cls }] : [];
-    }
-    if (!Array.isArray(t?.p) || t.p.length !== 3 || !t.p.every(Number.isFinite)) return [];
-    const p = t.p as number[];
-    if (t.space === undefined) return this.bodiesAtPoint(p);
-    if (t.space === "self" || t.space === this.name) {   // this body's root frame, as the pose it sends draws it
-      const world = WorldAgent.poseToWorld({ p: [this.pos.x, this.pos.y, this.pos.z], yaw: this.yaw }, p);
-      return world ? this.bodiesAtPoint(world) : [];
-    }
-    // their own frame: theirs, and wherever it lands in the world, as their pose draws it
-    const own = WorldAgent.reachClass(t, t.space, clampBodyScale((this.people.get(t.space)?.pose as any)?.scale));
-    const world = WorldAgent.poseToWorld(this.people.get(t.space)?.pose, p);
-    return [...(own ? [{ name: t.space as string, cls: own }] : []), ...(world ? this.bodiesAtPoint(world).filter((h) => h.name !== t.space) : [])];
-  }
-  /** As server/reachgate.ts's frameToWorld places it: metres at any size (docs/guide/BODY-STATE.md), turned by the pose's q when it
-   *  carries one (a swimmer's whole-body turn), else by its yaw about +y. Null without a position. */
-  private static poseToWorld(pose: any, local: number[]): number[] | null {
-    const at = pose?.p;
-    if (!Array.isArray(at) || at.length !== 3 || !at.every(Number.isFinite)) return null;
-    const l = local, q = pose.q;
-    if (Array.isArray(q) && q.length === 4 && q.every(Number.isFinite)) {
-      const n = Math.hypot(q[0], q[1], q[2], q[3]) || 1, x = q[0] / n, y = q[1] / n, z = q[2] / n, w = q[3] / n;
-      const cx = y * l[2] - z * l[1], cy = z * l[0] - x * l[2], cz = x * l[1] - y * l[0];   // v' = v + 2w (u × v) + 2 u × (u × v)
-      const dx = y * cz - z * cy, dy = z * cx - x * cz, dz = x * cy - y * cx;
-      return [at[0] + l[0] + 2 * (w * cx + dx), at[1] + l[1] + 2 * (w * cy + dy), at[2] + l[2] + 2 * (w * cz + dz)];
-    }
-    const yaw = Number(pose.yaw) || 0, c = Math.cos(yaw), sn = Math.sin(yaw);
-    return [at[0] + l[0] * c + l[2] * sn, at[1] + l[1], at[2] - l[0] * sn + l[2] * c];
-  }
-  /** The class the relay (server/reachgate.ts) gives a target on `name`'s body: a named point by consent.js's one table, a
-   *  point in their own frame by their capsule; null for a point beside them (the relay relays it) or another kind of target. */
-  static reachClass(t: any, name: string, scale = 1): string | null {
-    if (t?.who === name) return namedPointClass(t.point)?.cls ?? null;
-    // the point is metres in their root frame; their capsule is at their size (bodiesAtPoint)
-    if (t?.space === name && Array.isArray(t.p)) return pointClass([0, 0, 0], t.p.map((v: number) => v / scale));
-    return null;
-  }
-  /** After streaming a reach at other bodies: did the relay refuse it? A fresh refusal from any body it is held to (waits
-   *  a few frames for one), or one said within REACH_NOTE_MS (the relay won't say it again that soon, so silence then is
-   *  not a yes). Each body by its class there: a refusal of another class is another reach's. */
-  private async reachRefusalFor(limb: string, holders: { name: string; actor: string; cls: string }[], since: number) {
-    const holderOf = (x: { to: string; cls: string }) => holders.find((h) => h.actor === x.to && h.cls === x.cls);
-    for (let i = 0; i < 16 && this.joined && !this.closed; i++) {
-      const r = this.reachRefusals.find((x) => x.ts >= since && (x.limb ?? limb) === limb && holderOf(x));
-      if (r) return { r, by: holderOf(r)!.name, fresh: true };
-      await new Promise((res) => setTimeout(res, 50));
-    }
-    const r = [...this.reachRefusals].reverse().find((x) => holderOf(x) && x.ts > Date.now() - REACH_NOTE_MS);   // (target, class) exactly (F9)
-    return r ? { r, by: holderOf(r)!.name, fresh: false } : null;
-  }
-
-  private static readonly LIMB_WORD: Record<string, string> = {
-    leftHand: "left hand", rightHand: "right hand", leftFoot: "left foot", rightFoot: "right foot",
-  };
-
-  private reachBodyFor(path: string): Promise<ReachBody | null> {
-    if (this.reachBodies.has(path)) return Promise.resolve(this.reachBodies.get(path) ?? null);
-    let p = this.reachBodyLoads.get(path);
-    if (!p) {
-      p = ReachBody.create(this.httpBase, path)
-        .catch(() => null)
-        .then((b) => { this.reachBodies.set(path, b); this.reachBodyLoads.delete(path); return b; });
-      this.reachBodyLoads.set(path, p);
-    }
-    return p;
-  }
-  /** undefined = not loaded yet; null = tried and failed. */
-  private reachBodySync(path: string): ReachBody | null | undefined { return this.reachBodies.get(path); }
-
-  /** A normalized target → a world point (+ surface normal for a landmark),
-   *  from streamed presence. Sync; undefined means a needed skeleton is still
-   *  loading (reach() awaits the loads before asking). */
-  private reachTargetPoint(t: { who?: string; point?: string; standoff?: number; p?: number[]; space?: string }):
-    { pos: number[]; normal?: number[] } | { err: string } | undefined {
-    if (t.p) {
-      if (!t.space) return { pos: t.p };
-      if (t.space === "self") return { pos: frameToWorld([this.pos.x, this.pos.y, this.pos.z], this.yaw, t.p) };
-      const person = this.people.get(t.space);
-      const pp = posePosition(person?.pose);
-      if (!person || !pp) return { err: `${t.space} is not here (or has no position yet)` };
-      return { pos: frameToWorld(pp, person.pose?.yaw ?? 0, t.p) };
-    }
-    const self = t.who === this.name;
-    const person = self ? null : this.people.get(t.who!);
-    if (!self && !person) return { err: `nobody called "${t.who}" is present` };
-    const path = self ? this.avatar : (person!.avatar || DEFAULT_BODY);
-    const body = this.reachBodySync(path);
-    if (body === undefined) return undefined;
-    // null: its model, or this door's skeleton solver, didn't load (ReachBody.create)
-    if (!body) return { err: `${self ? "your" : `${t.who}'s`} body couldn't be set up on this door (its model, or the door's skeleton solver, didn't load), so it can't check this reach` };
-    // A limp body draws no raw layer, so its contacts have none either.
-    if (self) body.poseAt([this.pos.x, this.pos.y, this.pos.z], this.yaw, this.heldPose ?? null, 1, this.clip !== "ragdoll");
-    else {
-      const pose = person!.pose;
-      const pp = posePosition(pose);
-      if (!pp) return { err: `${t.who} has no known position yet` };
-      // their chosen size (absent = 1): contacts scale about their root, as in every browser
-      body.poseAt(pp, pose?.yaw ?? 0, (pose as { pose?: Record<string, number[]> | null })?.pose ?? null, pose?.scale, pose?.clip !== "ragdoll");
-    }
-    const c = body.contact(t.point!, t.standoff ?? 0.02);
-    if (!c) return { err: `${t.who}'s rig has no ${t.point}` };
-    return c;
-  }
-
-  /** One full verdict for one limb entry, at this instant. */
-  private solveReachEntry(limb: string, entry: { t: any; palm?: false }):
-    | { state: "pending" } | { state: "err"; err: string }
-    | { state: "ok"; reached: boolean; gap: number; bound: string[]; dist: number | null; arm: number | null; palmResidual: number | null } {
-    if (this.joined) {
-      const reading = this.reachReading;
-      if (!reading || !sameReach(reading.reaches?.[limb], entry)) return { state: "pending" };
-      const solved = reading.reachEvaluation?.[limb];
-      // cyclic-reach is body_state's code for the loop (docs/guide/BODY-STATE.md); the reply says it in words.
-      if (!solved?.ok) return { state: "err", err: solved?.why === "cyclic-reach"
-        ? "it depends on a loop of reaches (limbs reaching for limbs that reach back), so it can't be solved until a limb in the loop lets go"
-        : solved?.why ?? reading.error ?? "body pose could not be evaluated" };
-      const dist = solved.target && solved.shoulder ? Math.hypot(...solved.target.map((v: number, i: number) => v - solved.shoulder[i])) : null;
-      return { state: "ok", reached: solved.reached, gap: solved.gap, bound: solved.bound,
-        dist, arm: reading.body?.armLength(limb) ?? null, palmResidual: solved.palmResidual };
-    }
-    const tp = this.reachTargetPoint(entry.t);
-    if (tp === undefined) return { state: "pending" };
-    if ("err" in tp) return { state: "err", err: tp.err };
-    const own = this.reachBodySync(this.avatar);
-    if (own === undefined) return { state: "pending" };
-    if (!own) return { state: "err", err: "your body couldn't be set up on this door (its model, or the door's skeleton solver, didn't load), so it can't check this reach" };
-    own.poseAt([this.pos.x, this.pos.y, this.pos.z], this.yaw, this.heldPose ?? null);
-    const s = own.solve(limb, tp, { palm: entry.palm !== false });
-    if (!s.ok) return { state: "err", err: s.why };
-    const reached = Number.isFinite(s.gap) && s.gap <= TOUCH_GAP && !s.bound.includes("no-target");
-    const dist = s.shoulder
-      ? Math.hypot(tp.pos[0] - s.shoulder[0], tp.pos[1] - s.shoulder[1], tp.pos[2] - s.shoulder[2]) : null;
-    return { state: "ok", reached, gap: s.gap, bound: s.bound, dist, arm: own.armLength(limb), palmResidual: s.palmResidual };
-  }
-
-  /** Reach a limb toward a target (wire grammar: {who, point, standoff?} or
-   *  {p:[x,y,z], space?: 'world'|'self'|id}). Sets the descriptor streaming
-   *  either way; the reply says what the arm actually achieves. */
-  async reach(limbRaw: string | undefined, targetRaw: unknown, opts: { palm?: boolean } = {}): Promise<ActResult> {
-    const limb = canonicalLimb(limbRaw ?? "rightHand");
-    if (!limb) return { ok: false, text: unknownLimb(limbRaw, "reached") };
-    const t = normalizeReachTarget(targetRaw);
-    if (!t) {
-      return { ok: false, text: "reach couldn't use that target, so nothing was reached: pass {who, point} for a named contact point on a body (who a participant id from look), or {x, y, z} with an optional space ('world' by default, 'self' for your own frame, or a participant id for theirs)" };
-    }
-    // load the skeletons this reach needs BEFORE solving, so the reply is a
-    // real verdict rather than a shrug
-    if (!this.joined) await this.reachBodyFor(this.avatar);
-    if (t.who !== undefined && t.who !== this.name) {
-      const person = this.people.get(t.who);
-      if (!person) {
-        const names = [...this.people.keys()].filter((n) => n !== this.name).slice(0, 12);
-        return { ok: false, text: `nobody called "${t.who}" is here${names.length ? ` (present: ${names.join(", ")})` : ""}` };
-      }
-      if (!this.joined) await this.reachBodyFor(person.avatar || DEFAULT_BODY);
-    }
-    const entry: { t: any; palm?: false; reached?: true } = { t, ...(opts.palm === false ? { palm: false as const } : {}) };
-    const since = Date.now();
-    this.reaches.set(limb, entry);
-    if (this.joined) await this.refreshReachReading();
-    const res = this.solveReachEntry(limb, entry);
-    if (res.state === "ok" && res.reached) entry.reached = true;
-    const limbW = WorldAgent.LIMB_WORD[limb];
-    const what = describeTarget(t, this.name);
-    // a hand on another body is shown only with their consent: the relay strips it otherwise and says why (reachgate.ts)
-    // a point in the world or in this body's own frame is judged by the body it lands in, as the relay judges it
-    // every body the relay holds it to (none: beside them, nothing for the relay to refuse)
-    const holders = this.reachHolders(t).flatMap((h) => { const actor = this.actorIds.get(h.name); return actor ? [{ ...h, actor }] : []; });
-    if (holders.length && this.joined) {
-      const refused = await this.reachRefusalFor(limb, holders, since);
-      if (refused) {
-        if (this.reaches.get(limb) === entry) this.reaches.delete(limb);
-        const { r } = refused, ago = Math.round((Date.now() - r.ts) / 1000);
-        return { ok: false, text: `${limbW} toward ${what}: not shown to anyone — ${refused.by}'s consent refused it (class ${r.cls}): ${String(r.why).replace(String(r.to), refused.by)}${r.fix ? ` — ${r.fix}` : ""}. `
-          + (refused.fresh ? "The reach is withdrawn; nobody saw your hand there."
-            : `That was said ${ago}s ago, and the world says it once per ${REACH_NOTE_MS / 1000}s, so the reach is withdrawn; it may have shown for a moment while this was checked. If they have changed their table since, reach again in ${Math.max(1, Math.ceil((REACH_NOTE_MS - (Date.now() - r.ts)) / 1000))}s.`) };
-      }
-    }
-    if (res.state !== "ok") {
-      const why = res.state === "err" ? res.err : "skeletons still loading; the verdict follows on the next check";
-      return { ok: true, text: `${limbW} reaching toward ${what} — streamed, but unverified: ${why}` };
-    }
-    if (res.reached) {
-      return { ok: true, text: `${limbW} reaching ${what} (endpoint gap ${Math.round(res.gap * 1000)}mm). The target stays tracked until reach {release: true} or knockdown; this is an endpoint measurement, not a stability measurement.` };
-    }
-    const short = Number.isFinite(res.gap) ? `${res.gap.toFixed(2)}m short` : "not arriving";
-    const why = res.bound.length ? ` (limited by: ${res.bound.join(", ")})` : "";
-    const advice = res.bound.includes("reach") && res.dist != null && res.arm != null
-      ? ` — the target is ${res.dist.toFixed(1)}m from your shoulder and your arm is ${res.arm.toFixed(2)}m long; get closer and it will land`
-      : "";
-    return { ok: true, text: `${limbW} reaching toward ${what}: ${short}${why}${advice}. The arm extends that way and keeps tracking; it touches if the distance closes.` };
-  }
-
-  /** Let go with one limb, or all of them. Propagates as absence: the next
-   *  presence packet simply stops carrying the descriptor. */
-  releaseReach(limbRaw?: string | null): ActResult {
-    if (limbRaw == null) {
-      const n = this.reaches.size;
-      this.reaches.clear();
-      return done(n ? "let go — all reaches released" : "you weren't reaching for anything");
-    }
-    const limb = canonicalLimb(limbRaw);
-    if (!limb) return refused(unknownLimb(limbRaw, "released"));
-    // A limb that wasn't reaching is already let go, which is what was asked.
-    return done(this.reaches.delete(limb)
-      ? `${WorldAgent.LIMB_WORD[limb]} released`
-      : `your ${WorldAgent.LIMB_WORD[limb]} wasn't reaching for anything`);
-  }
-
-  /** Re-attest `reached` for every live reach (~2Hz off tick()). While a needed
-   *  skeleton is missing the last attestation HOLDS (a slow load must not fire
-   *  spurious release/touch edges); loads are kicked here so blindness heals. */
-  private reachTick() {
-    if (this.joined) {
-      if (this.reachReadingBusy) return;
-      this.reachReadingBusy = true;
-      void this.refreshReachReading().then(() => {
-        for (const [limb, entry] of this.reaches) {
-          const res = this.solveReachEntry(limb, entry);
-          if (res.state === "ok" && res.reached) entry.reached = true; else delete entry.reached;
-        }
-      }).catch(() => { for (const entry of this.reaches.values()) delete entry.reached; })
-        .finally(() => { this.reachReadingBusy = false; });
-      return;
-    }
-    for (const [limb, entry] of this.reaches) {
-      const t = entry.t;
-      if (t.who !== undefined) {
-        const path = t.who === this.name ? this.avatar : (this.people.get(t.who)?.avatar || DEFAULT_BODY);
-        void this.reachBodyFor(path);
-      }
-      void this.reachBodyFor(this.avatar);
-      const res = this.solveReachEntry(limb, entry);
-      if (res.state !== "ok") continue;
-      if (res.reached) entry.reached = true; else delete entry.reached;
-    }
-  }
-
-  /** Someone's hands, read off their presence stream: reach/touch events for
-   *  hands aimed at THIS body. Ping-grade, edge-triggered by diffReach, with a
-   *  per-(kind,limb,person) refractory so a trembling hand knocks once. */
-  private noteReachEvents(id: string, prev: Pose | null, pose: Pose) {
-    const bag = normalizeReachBag((pose as { reach?: unknown }).reach);
-    const prevBag = prev ? normalizeReachBag((prev as { reach?: unknown }).reach) : null;
-    if (!bag && !prevBag) return;
-    // First observation of this body is a BASELINE, not a transition (rejoin
-    // replay): seed silently; edges count from the next sample.
-    if (!prev) return;
-    const REACH_REFRACT_MS = 15_000;
-    for (const ev of diffReach(prevBag, bag, this.name)) {
-      const limbW = WorldAgent.LIMB_WORD[ev.limb] ?? ev.limb;
-      if (ev.type === "release") {
-        this.gate.act(id, `reach-release:${ev.limb}`, `withdraws their ${limbW}`);
-        continue;
-      }
-      const key = `${ev.type}:${ev.limb}:${id}`;
-      const now = Date.now();
-      if (now - (this.lastReachPing.get(key) ?? 0) < REACH_REFRACT_MS) continue;
-      this.lastReachPing.set(key, now);
-      const what = describeTarget(ev.entry!.t, this.name);
-      this.ping({
-        ts: now, kind: ev.type, who: id,
-        text: ev.type === "touch" ? `touches ${what} (${limbW})` : `reaches toward ${what} (${limbW})`,
-      });
-    }
-  }
+  // reaching: hands and feet reaching, and its consent: mcpl/agent-reach.ts
+  readonly reaching = new AgentReach(this);
+  static reachClass(...a: Parameters<typeof AgentReach.reachClass>) { return AgentReach.reachClass(...a); }
+  reach(...a: Parameters<AgentReach["reach"]>) { return this.reaching.reach(...a); }
+  releaseReach(limbRaw?: string | null) { return this.reaching.releaseReach(limbRaw); }
 
   /** Play a named anim once — pose.anim, a field on the next presence packet,
    *  the same channel the browser's action bar uses. Receivers resolve the

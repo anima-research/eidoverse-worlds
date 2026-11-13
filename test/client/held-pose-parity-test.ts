@@ -228,7 +228,7 @@ try {
   }
 
   // An agent's own reach body is kept and posed again for each solve
-  // (agent.ts reachBodySync): what one held pose scaled or moved goes when
+  // (agent-reach.ts reachBodySync): what one held pose scaled or moved goes when
   // the next pose comes.
   const kept = await ReachBody.create(base, "turned-vrm1.vrm"), fresh = await ReachBody.create(base, "turned-vrm1.vrm");
   if (!kept || !fresh) throw new Error("no reach body");
