@@ -9,7 +9,7 @@
 // claude.vrm's crown of tentacles does. Stature is the head joint plus 0.13 m,
 // the browser's portrait rule, so the mesh doesn't count and these bodies read
 // 1.50 m. Temp dirs and a local HTTP server; no sequencer.
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync, readFileSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -222,6 +222,15 @@ console.log("the door's bodyHeightFor through /library (server/routes.ts route)"
   const base = `http://localhost:${srv.port}`, V = "eidoverse/assets/vrms";
   const door = async (name: string, v = 1_700_000_000_000) => { received = 0; return bodyHeightFor(base, `${V}/${name}.vrm?v=${v}`); };
   try {
+    {
+      // an upload of a name PATCH_DIR holds would be shadowed by the patch /library serves (#325): refused, nothing written
+      const up = (name: string) => realFetch(`${base}/upload?as=avatar&name=${name}`, { method: "POST", body: body(V1), headers: { authorization: "Bearer t0k" } });
+      const optVrm = (name: string) => join(root, "opt", V, `${name}.vrm`);
+      const shadowed = await up("forked"), fresh = await up("unpatched");
+      check("an upload of a patched body's name is refused and not written; another name is taken (#325)",
+        shadowed.status === 409 && !existsSync(optVrm("forked")) && fresh.status === 200 && existsSync(optVrm("unpatched")),
+        { shadowed: [shadowed.status, await shadowed.text()], fresh: fresh.status });
+    }
     put("reexport", body(V1));
     const first = await door("reexport");
     put("reexport", body(V1, { headY: 0.6 }), 1_700_000_500_000);
