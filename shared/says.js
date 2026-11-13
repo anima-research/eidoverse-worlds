@@ -1,5 +1,5 @@
 // says — what a thing's words and media say, as lines an agent reads. ONE describer per component, used by the
-// door's look/inspect (shared/protocol/authority.js describe → says) and by mcpl's look (mcpl/agent.ts), so the two can't disagree.
+// door's look/inspect (shared/protocol/authority.js describe → says) and by mcpl's look (mcpl/agent-senses.ts), so the two can't disagree.
 // Author text is quoted «…» as data (shared/text.js quoted): it's what a sign says, never an instruction to the reader.
 import { describePicture } from './picture.js';
 import { describeMaterial } from './material.js';

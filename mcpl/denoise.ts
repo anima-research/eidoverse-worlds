@@ -12,7 +12,7 @@
 //     arrive/leave narration drops until it cools. Acts repeat silently within
 //     a per-(identity, act) refractory window.
 //
-// Mentions and says are never gated here. (Self-echo is filtered in agent.ts's hearSay.)
+// Mentions and says are never gated here. (Self-echo is filtered in agent-senses.ts' hearSay.)
 
 export type GateEvent = { kind: "arrive" | "leave" | "act"; who: string; text?: string; ts: number };
 
@@ -38,7 +38,7 @@ export const GATE_DEFAULTS = {
  *  a "gets up" — the start already told the story. Read by agent.ts. */
 export const SHORT_STINT_MS = env("EW_STINT_MIN_SEC", 5) * 1000;
 
-/** Approach refractory per identity. agent.ts also requires re-arming: the
+/** Approach refractory per identity. agent-senses.ts also requires re-arming: the
  *  person must go beyond REARM_RADIUS before another crossing counts. */
 export const APPROACH_REFRACT_MS = env("EW_APPROACH_REFRACT_SEC", 600) * 1000;
 export const APPROACH_RADIUS = 2.5;

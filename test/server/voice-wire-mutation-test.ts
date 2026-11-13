@@ -18,7 +18,7 @@ const cases = [
     from: "const { mic: _mic, hear: _hear, t: _t, seq: _seq, ...still } = withoutOnceAnim(",
     to: "const { t: _t, seq: _seq, ...still } = withoutOnceAnim(",
     witness: "without mic or hear (the next live frame brings them)" },
-  { name: "look drops the voice note", file: "mcpl/agent.ts",
+  { name: "look drops the voice note", file: "mcpl/agent-senses.ts",
     from: "${winged}${occupying}${voiceNote(p.pose)}`);", to: "${winged}${occupying}`);",
     witness: "the agent's look says it in words" },
 ];

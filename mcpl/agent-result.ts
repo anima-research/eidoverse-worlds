@@ -56,3 +56,5 @@ export function posePosition(pose: Pose | null | undefined): [number, number, nu
     && typeof y === "number" && Number.isFinite(y)
     && typeof z === "number" && Number.isFinite(z) ? [x, y, z] : null;
 }
+/** How far away look lists the places in sight (agent-places.ts placesInSight; look says the distance). */
+export const PLACE_SIGHT_M = 30;

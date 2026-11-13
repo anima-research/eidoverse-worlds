@@ -54,13 +54,13 @@ console.log("\nstature follows the body");
   await a.ground.buildTerrain(WET); await settle();
   check(`the short body is measured (${a.bodyH?.toFixed(2)} m)`, Math.abs(a.bodyH - SHORT) < 0.01);
   tickN(5);
-  check("...and swims in 1.6 m of water", a.float.on && /swimming/.test(a.waterHere(0, 0, a.pos.y)), a.waterHere(0, 0, a.pos.y));
+  check("...and swims in 1.6 m of water", a.float.on && /swimming/.test(a.senses.waterHere(0, 0, a.pos.y)), a.senses.waterHere(0, 0, a.pos.y));
   a.setAvatar("fix/tall.vrm");
   check("a new body ends the old float at once", !a.float.on);
   check("...and does not keep the old height while the new one is read", a.bodyH === null && a.stature() !== SHORT);
   await settle(); tickN(5);
   check(`the tall body is measured (${a.bodyH?.toFixed(2)} m)`, Math.abs(a.bodyH - TALL) < 0.01);
-  check("...and wades where the short one swam", !a.float.on && /standing/.test(a.waterHere(0, 0, a.pos.y)) && Math.abs(a.pos.y + 1.6) < 1e-6, a.waterHere(0, 0, a.pos.y));
+  check("...and wades where the short one swam", !a.float.on && /standing/.test(a.senses.waterHere(0, 0, a.pos.y)) && Math.abs(a.pos.y + 1.6) < 1e-6, a.senses.waterHere(0, 0, a.pos.y));
   a.setAvatar("fix/slow.vrm");
   a.setAvatar("fix/short.vrm");
   await settle(); await pause("long past the slow body's answer (two 400 ms reads)", 1100);
@@ -99,9 +99,9 @@ console.log("\nthe float follows the water");
 console.log("\nwhere the body is, not just the bed under it");
 {
   a.float = { on: false, y: 0, vy: 0 };
-  check("a body held above the water is not in it", a.waterHere(0, 0, 1.2) === "");
+  check("a body held above the water is not in it", a.senses.waterHere(0, 0, 1.2) === "");
   a.flight = { phase: "PILOT" };
-  check("...nor is one flying over it", a.waterHere(0, 0, -1.6) === "");
+  check("...nor is one flying over it", a.senses.waterHere(0, 0, -1.6) === "");
   a.flight = null;
 }
 

@@ -137,9 +137,9 @@ async function wirePart() {
   const watcher: any = new WorldAgent({ url: noWorldUrl(), name: "watcher", world: "pose-bench" });
   watcher.gate = { act: (_id: string, key: string) => foldActs.push(key) };
   const still = { p: [0, 0, 0], yaw: 0, speed: 0, clip: "idle" };
-  watcher.noteActs("mythos", null, { ...still, poses: [WINGS_FOLDED] });
+  watcher.senses.noteActs("mythos", null, { ...still, poses: [WINGS_FOLDED] });
   check("first sighting establishes a fold baseline without inventing an act", foldActs.length === 0);
-  watcher.noteActs("mythos", { ...still, poses: [SYNTHETIC] }, { ...still, poses: [SYNTHETIC, WINGS_FOLDED] });
+  watcher.senses.noteActs("mythos", { ...still, poses: [SYNTHETIC] }, { ...still, poses: [SYNTHETIC, WINGS_FOLDED] });
   check("an observed explicit edge announces the fold once, beside another pose", eq(foldActs, ["wings-fold"]), JSON.stringify(foldActs));
 
   // ---- through a real sequencer: owner -> server -> peer -> text tier, late join, reconnect ----

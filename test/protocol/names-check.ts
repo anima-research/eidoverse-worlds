@@ -542,7 +542,7 @@ const cases: Case[] = [
       const pk = sent.filter((m: any) => m.type === "pose").map((m: any) => m.pose);
       const OA = exists("shared/onceanim.js") ? await import(TREE + "shared/onceanim.js") : null;
       const old = { p: [0, 0, 0], clip: "idle", [EM]: "cheer" };
-      const acts: any[] = []; const ag2: any = (await animAgent()).ag; ag2.inbox = []; try { ag2.noteActs?.("u-x", null, old, 1); ag2.noteActs?.("u-y", null, { p: [0, 0, 0], clip: "idle", anim: "clap" }, 1); } catch (e) { acts.push(String(e)); }
+      const acts: any[] = []; const ag2: any = (await animAgent()).ag; ag2.inbox = []; try { (ag2.senses ?? ag2).noteActs?.("u-x", null, old, 1); (ag2.senses ?? ag2).noteActs?.("u-y", null, { p: [0, 0, 0], clip: "idle", anim: "clap" }, 1); } catch (e) { acts.push(String(e)); }
       const srv = readText("server/server.ts"), net = readText("client/lib/net.js"), rem = readText("client/lib/remotes.js");
       return { first: pk[0]?.anim ?? null, firstOld: pk[0] ? EM in pk[0] : null, second: pk[1] ? "anim" in pk[1] : null,
         read: OA ? [OA.onceAnimOf({ anim: "wave" }), OA.onceAnimOf(old), OA.onceAnimOf({})] : null, drop: OA ? JSON.stringify(OA.withoutOnceAnim({ a: 1, anim: "x" })) : null,

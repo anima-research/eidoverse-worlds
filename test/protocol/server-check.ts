@@ -221,8 +221,8 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok(JSON.stringify(ag.st.entities[IDS.of("plank")]?.scale3) === "[2,1,0.5]", "S5b …and in its view of the world (the record its look/inspect read)", ag.st.entities[IDS.of("plank")]);
   // the world's own keys and chat reach it from the stream too (a v1 world's agent got them as verbs)
   ok((await ann.req("set", { id: "@world", component: "sky", value: { hours: 7 } })).ok && (await ann.req("say", { text: "hello, agent" })).ok, "S5c (Ann sets the sky, then speaks)");
-  await tryUntil("the agent has the sky at 7 and Ann's hello", () => ag.skyState?.hours === 7 && ag.inbox.some((m) => m.text === "hello, agent"), { ms: 2000, step: 50 });
-  ok(ag.skyState?.hours === 7, "S5c the agent's sky follows a world's sky", ag.skyState);
+  await tryUntil("the agent has the sky at 7 and Ann's hello", () => ag.senses.skyState?.hours === 7 && ag.inbox.some((m) => m.text === "hello, agent"), { ms: 2000, step: 50 });
+  ok(ag.senses.skyState?.hours === 7, "S5c the agent's sky follows a world's sky", ag.senses.skyState);
   ok(ag.inbox.some((m) => m.kind === "say" && m.who === "Ann" && m.text === "hello, agent") && ag.st.recentChat?.some((m) => m.text === "hello, agent"), "S5c …and a chat line lands in its inbox and its chat window", [ag.inbox.slice(-2), ag.st.recentChat?.slice(-1)]);
   // the agent's own voice and its reading of the log, with no v1 verb on the wire (3c: the server refuses them now)
   await HANDLERS.say(ag, { text: "hello, Ann" }, {} as any, "say");

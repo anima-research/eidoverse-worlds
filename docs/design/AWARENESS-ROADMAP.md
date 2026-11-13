@@ -33,7 +33,7 @@ did not get it yet."
 
 ---
 
-## 1. "Walked up" fires on pass-through — `mcpl/agent.ts`, `notePose`
+## 1. "Walked up" fires on pass-through — `mcpl/agent-senses.ts`, `notePose`
 
 **This is a bug, not a feature request**, which is why it goes first.
 
@@ -73,7 +73,7 @@ Touches the ping kind union, a new `eidoverse:depart` tag + descriptor, the
 
 **Status: done — same PR as (1).**
 
-## 3. Relative positioning — `agent.ts`, `bearing()`
+## 3. Relative positioning — `agent-senses.ts`, `bearing()`
 
 The cheapest real win on this list. `bearing()` returns **absolute** compass
 (`N/NE/E/…`). An agent facing south, told "3.2m NE", has to do trig to work out

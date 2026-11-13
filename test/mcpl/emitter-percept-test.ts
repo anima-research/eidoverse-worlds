@@ -9,7 +9,7 @@
 //
 // Run: bun test/mcpl/emitter-percept-test.ts
 
-// agent.ts reads the coalescing window from env at module load, set SHORT (folding is under test, not duration):
+// agent-senses.ts reads the coalescing window from env at module load, set SHORT (folding is under test, not duration):
 // the import must come AFTER this line, which a hoisted static import wouldn't
 import { noWorldUrl } from "../harness/no-world.ts";
 import { suite } from "../gate/suite.ts";
@@ -22,8 +22,8 @@ const S = suite("emitter-percept");
 const check = (name: string, ok: unknown, detail?: unknown) => S.check(name, ok, detail);
 
 const T0 = 1_754_000_000_000;
-// a coalescing window is open while the agent holds a slot for the entity (mcpl/agent.ts openEmitterWindow)
-const closed = (A: any, id: string) => until(`${id}'s coalescing window closes`, () => !A.emitterNarration.has(id), { ms: 5000 });
+// a coalescing window is open while the agent holds a slot for the entity (mcpl/agent-senses.ts openEmitterWindow)
+const closed = (A: any, id: string) => until(`${id}'s coalescing window closes`, () => !A.senses.emitterNarration.has(id), { ms: 5000 });
 const heard = (events: any[], n: number) => tryUntil(`${n} world-change events`, () => events.length >= n, { ms: 5000 });
 
 // The world is a scratch authority (test/harness/agent-scratch.ts), every write a door request at door time T0 (the coalescing
@@ -107,12 +107,12 @@ const SMOKE = { effect: "smoke", at: [0, 0.25, 0] };
   await comp("hearth", FIRE);
   check("the first change speaks at once", events.length === 1);
   for (let i = 0; i < 20; i++) await comp("hearth", { ...FIRE, params: { ...FIRE.params, size: 0.4 + i * 0.01 } });
-  check("twenty tuning entries add NOTHING inside the window", events.length === 1 && A.emitterNarration.has("hearth"), `got ${events.length}`);
+  check("twenty tuning entries add NOTHING inside the window", events.length === 1 && A.senses.emitterNarration.has("hearth"), `got ${events.length}`);
   await heard(events, 2);
   check("the window closes with one summary of the net result", events.length === 2, `got ${events.length}`);
   check("...which is a retune, not a second lighting", events[1]?.text.includes("retunes"));
   // the reopened window closes on no change: the quiet is the outcome, not a guess at a duration
-  const quiet = await tryUntil("the reopened window closes", () => !A.emitterNarration.has("hearth"), { ms: 5000 });
+  const quiet = await tryUntil("the reopened window closes", () => !A.senses.emitterNarration.has("hearth"), { ms: 5000 });
   check("a settled emitter then goes quiet", quiet && events.length === 2, `got ${events.length}`);
 }
 {

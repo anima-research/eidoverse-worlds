@@ -33,14 +33,14 @@ async function rig(args: any, who = "antra") {
 }
 
 // ---------------------------------------------------------------- one rule over every sky source: the first look is
-// silent, a crossing emits exactly one event, re-checks within it add none (agent.ts checkSky, lastSkyKey/lastDayPhase)
+// silent, a crossing emits exactly one event, re-checks within it add none (agent-senses.ts checkSky, lastSkyKey/lastDayPhase)
 
 type Step = [label: string, at: number, adds: number, text?: RegExp];
 const fc = { hours: 12, rate: 0, forecast: policyArgs };
 const LA = { night: Date.UTC(2026, 0, 15, 12, 50, 0), dawn: Date.UTC(2026, 0, 15, 13, 10, 0) };   // LA 4:50 → 5:10
 const SOURCES: { name: string; args: any; steps: (ag: any, door: any) => Promise<Step[]> }[] = [
   { name: "forecast segment", args: fc, steps: async (ag) => {
-    const p = normalizePolicy(ag.skyState.forecast)!, s0 = segmentAt(p, T0);
+    const p = normalizePolicy(ag.senses.skyState.forecast)!, s0 = segmentAt(p, T0);
     const s1 = segmentAt(p, s0.endMs + 1000), s2 = segmentAt(p, s1.endMs + 1000, s1), s3 = segmentAt(p, s2.endMs + 1000, s2);
     // the actor is the one the door logged (agent-scratch acts as olive; the rig's who is display only)
     return [["first look", T0 + 1000, 0], ["mid-segment", (T0 + s0.endMs) / 2, 0],
@@ -54,7 +54,7 @@ const SOURCES: { name: string; args: any; steps: (ag: any, door: any) => Promise
     ["night", T0 + (13.5 / 24) * HOUR, 1, /^night/], ["within night", T0 + (14 / 24) * HOUR, 0]] },
   { name: "manual override lands, then expires", args: fc, steps: async (ag, door) => {
     ag.checkSky(T0 + 1000);
-    const tO = T0 + 20 * MIN, seg = segmentAt(normalizePolicy(ag.skyState.forecast)!, tO);
+    const tO = T0 + 20 * MIN, seg = segmentAt(normalizePolicy(ag.senses.skyState.forecast)!, tO);
     const wr = await door.act("weather", { weather: "storm", weatherK: 1.1 }, { who: "digi", at: tO });
     check("the door takes the weather override", wr.ok, JSON.stringify(wr.refused));
     return [["override lands, with the logged actor", tO + 1000, 1, /storm.*olive/], ["re-check", tO + 2000, 0],
@@ -95,7 +95,7 @@ for (const src of SOURCES) {
   // the live fold's cut, serialized and adopted by a fresh replica: what a joiner gets (never the live object itself)
   ag.replica = makeReplica(); ag.replica.adopt(JSON.parse(JSON.stringify({ dialect: "eidoverse-log", v: 4, state: wireState(live.ag.replica.st), seq: live.ag.replica.seq })));
   await ag.applyView(false, null, T0);
-  check("a late joiner's sky is the live agent's", JSON.stringify(ag.skyState) === JSON.stringify(live.ag.skyState), JSON.stringify([ag.skyState, live.ag.skyState]));
+  check("a late joiner's sky is the live agent's", JSON.stringify(ag.senses.skyState) === JSON.stringify(live.ag.senses.skyState), JSON.stringify([ag.senses.skyState, live.ag.senses.skyState]));
   ag.checkSky(T0 + 5 * MIN);
   check("late join initializes the watch silently", events.length === 0);
 }
@@ -105,7 +105,7 @@ for (const src of SOURCES) {
 {
   const args = { hours: 12, rate: 0, forecast: policyArgs };
   const a = await rig(args), b = await rig(args);
-  const p = normalizePolicy(a.ag.skyState.forecast)!;
+  const p = normalizePolicy(a.ag.senses.skyState.forecast)!;
   const seg0 = segmentAt(p, T0);
   // b joins late — different first observation time, same oracle
   a.ag.checkSky(T0 + 1000);
@@ -114,8 +114,8 @@ for (const src of SOURCES) {
   b.ag.checkSky(seg0.endMs + 1000);
   check("two agents emit at the same boundary", a.events.length === 1 && b.events.length === 1);
   check("two agents derive the same boundary id (signature key match)",
-    a.ag.lastSkyKey === b.ag.lastSkyKey && /forecast:1:/.test(a.ag.lastSkyKey),
-    `${a.ag.lastSkyKey} vs ${b.ag.lastSkyKey}`);
+    a.ag.senses.lastSkyKey === b.ag.senses.lastSkyKey && /forecast:1:/.test(a.ag.senses.lastSkyKey),
+    `${a.ag.senses.lastSkyKey} vs ${b.ag.senses.lastSkyKey}`);
   check("their narrated states agree", a.events[0]?.text === b.events[0]?.text, `${a.events[0]?.text} vs ${b.events[0]?.text}`);
 }
 
@@ -154,7 +154,7 @@ for (const src of SOURCES) {
 {
   // accelerated commons shape, then the owner flips to real time re-issuing the standing bag (the tuner's gather() spread)
   const { ag, events, door } = await rig({ hours: 6.8, rate: 24, clouds: "cumulus", forecast: policyArgs }, "mica");
-  const { ts: _ts, ...standing } = ag.skyState;
+  const { ts: _ts, ...standing } = ag.senses.skyState;
   const flip = await door.act("sky", { ...standing, tz: "America/Los_Angeles" }, { who: "antra", at: T0 + HOUR, live: false });
   check("#65 the door takes the clock flip (the standing bag re-issued)", flip.ok, JSON.stringify(flip.refused));
   ag.look();

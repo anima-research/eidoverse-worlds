@@ -2,7 +2,7 @@
 // Its public members are the body's (one-line delegates in agent.ts), and it calls them there (this.a.x), as before.
 
 import type { WorldAgent } from "./agent.ts";
-import { type ActResult, type Entity, done, refused, RAGDOLL_ROOT_DROP, posePosition } from "./agent-result.ts";
+import { type ActResult, type Entity, done, refused, RAGDOLL_ROOT_DROP, PLACE_SIGHT_M, posePosition } from "./agent-result.ts";
 import { standOn, inWorld, lineOfSight } from "./physics.ts";
 import { placesOf, inRegion, names, destinationOf, toLocal, frameVolume, type Place, type Destination, type PlaceHolder } from "../shared/places.js";
 import { shown } from "../shared/shown.js";
@@ -12,9 +12,9 @@ import { partHint } from "./effective.ts";
 import { footprint } from "../shared/shove.js";
 import { recordComponents } from "../shared/protocol/view.js";
 
-/** The world entity (places that belong to no thing live on it), and how far and how many places look lists (only
+/** The world entity (places that belong to no thing live on it), and how many places look lists (only
  *  what you can see, nearest first; move {to: "?"} lists them all, nearest 200; "?<text>" narrows). */
-export const WORLD_ENTITY = "@world", PLACE_SIGHT_M = 30, PLACE_LOOK_MAX = 12, PLACE_LIST_MAX = 200;
+const WORLD_ENTITY = "@world", PLACE_LOOK_MAX = 12, PLACE_LIST_MAX = 200;
 /** A thing with no entrance is walked up to: stopped this far short of its origin (its footprint unknown) / out from its
  *  footprint's nearest point (metres; the body's own, not the thing's). */
 export const THING_STOP = 0.8, THING_STANDOFF = 0.5;

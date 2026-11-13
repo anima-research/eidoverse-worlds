@@ -360,13 +360,13 @@ console.log("\n━━ agent: disconnect after a delivered approach — one exit,
   at(0, 10, 0); at(100, 1.5, 0);
   for (let i = 0; i <= APPROACH_DWELL_MS + 400; i += 200) at(100 + i, 1.5, 0);
   check("(setup) approach delivered", pings.filter((p) => p.kind === "approach").length === 1);
-  ag.noteLeave("digi");   // the `leave` message path, sans socket
+  ag.senses.noteLeave("digi");   // the `leave` message path, sans socket
   const leaves = () => events.filter((e) => e.kind === "leave" && e.who === "digi").length;
   await tryUntil("digi's leave past the leave hold", leaves);
   check("disconnect yields one presence exit", leaves() === 1, JSON.stringify(events));
   check("...and no synthetic depart — one exit, one line", pings.filter((p) => p.kind === "depart").length === 0, JSON.stringify(pings));
   check("the re-arm state went with them (a return visit starts clean)",
-    !ag.nearArmed.has("digi") && !ag.approachOpen.has("digi") && !ag.approachPending.has("digi"));
+    !ag.senses.nearArmed.has("digi") && !ag.senses.approachOpen.has("digi") && !ag.senses.approachPending.has("digi"));
   ag.close();
 }
 
