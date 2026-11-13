@@ -17,12 +17,12 @@
 // Every Ammo object this instance creates is tracked and destroyed in dispose(); per-frame math reuses module-level
 // temporaries. Tuning measurements: docs/research/ammodoll-tuning.md.
 
-import { THREE } from './core.js';
-import { heightAt, waterField } from './terrain.js';
-import { surfaceOffset } from '../../shared/waves.js';
-import { partWaterForce, waterCurrent, swellRise, WATER_ANG_DRAG } from '../../shared/buoyancy.js';
-import { nearColliders, surfaceUnder } from './colliders.js';
-import { why } from './debuglog.js';
+import { THREE } from '../core.js';
+import { heightAt, waterField } from '../terrain.js';
+import { surfaceOffset } from '../../../shared/waves.js';
+import { partWaterForce, waterCurrent, swellRise, WATER_ANG_DRAG } from '../../../shared/buoyancy.js';
+import { nearColliders, surfaceUnder } from '../colliders.js';
+import { why } from '../debuglog.js';
 import { SEGMENTS, segDistance, rigFrameOf, snapshotPacker, seedJoints } from './rigmeasure.js';
 import { BodyEngineBase } from './bodyengine.js';
 
@@ -138,7 +138,7 @@ export async function ensureAmmo() {
           import('node:module'), import('node:url'),
         ]);
         const req = createRequire(import.meta.url);
-        const dir = fileURLToPath(new URL('../vendor/ammo/', import.meta.url));
+        const dir = fileURLToPath(new URL('../../vendor/ammo/', import.meta.url));
         AMMO = await req(dir + 'ammo.wasm.js')({ locateFile: (f) => dir + f });
       } else {
         // browser: classic Emscripten script, not an ES module — script tag

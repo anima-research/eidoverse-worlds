@@ -3,7 +3,7 @@
 // The browser's ragdoll solver, run in-process on a stand-in skeleton (joint rest positions from the VRM's GLB JSON
 // chunk via shared/rig.js; no meshes), so a pushed agent tumbles and streams the same sparse pose a browser body does.
 //
-// client/lib/ragdoll.js imports './core.js' (a WebGPURenderer); a Bun loader plugin swaps in headless-core.mjs, so
+// client/lib/ragdoll/ragdoll.js imports '../core.js' (a WebGPURenderer); a Bun loader plugin swaps in headless-core.mjs, so
 // everything loads lazily. Sim unavailable (plugin failure, unparseable VRM) is soft: the agent slumps instead.
 //
 // The sim runs in WORLD coordinates: the caller hands over its terrain (setHeightField) and registers colliders for
@@ -59,7 +59,7 @@ function loadSim(): Promise<typeof simMods> {
         },
       });
       const core = await import("./headless-core.mjs");
-      const rag = await import("../client/lib/ragdoll.js");
+      const rag = await import("../client/lib/ragdoll/ragdoll.js");
       const rig = await import("./rig.ts");
       const terrain = await import("../client/lib/terrain.js");
       const colliders = await import("../client/lib/colliders.js");
@@ -72,7 +72,7 @@ function loadSim(): Promise<typeof simMods> {
       const want = process.env.AGENT_BODY_ENGINE ?? "ammo";
       if (want === "ammo") {
         try {
-          const ammo = await import("../client/lib/ammodoll.js");
+          const ammo = await import("../client/lib/ragdoll/ammodoll.js");
           if (await ammo.ensureAmmo()) { Body = ammo.AmmoRagdoll; engine = "ammo"; }
           else console.warn("[physics] ammo wasm did not open — falling back to verlet");
         } catch (e) {

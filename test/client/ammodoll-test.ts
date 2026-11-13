@@ -28,7 +28,7 @@ plugin({
 });
 
 const { THREE } = await import('../stubs/core-stub.mjs');
-const { AmmoRagdoll, ensureAmmo } = await import('../../client/lib/ammodoll.js');
+const { AmmoRagdoll, ensureAmmo } = await import('../../client/lib/ragdoll/ammodoll.js');
 const { rigs, makeAvatar, toppleLean } = await import('../../tools/assets/rig-load.mjs');
 const { dollGltf, wingRig, bareRig } = await import('../fixtures/doll-fixture.mjs');
 
@@ -101,7 +101,7 @@ function run(av: any, lean: any = null, { maxSteps = 900, seedVel = null as any 
   for (const rig of FLEET) {
     // the Verlet is the quality BASELINE: same rig, same lean, same metric
     const vav = makeAvatar(rig.P);
-    const vrd: any = new (await import('../../client/lib/ragdoll.js')).Ragdoll(vav, toppleLean(), vav.restBonePositions());
+    const vrd: any = new (await import('../../client/lib/ragdoll/ragdoll.js')).Ragdoll(vav, toppleLean(), vav.restBonePositions());
     let vsteps = 0;
     while (!vrd.done && vsteps < 900) { vrd.step(1 / 60); vsteps++; }
     const vFold = foldOf({ ...vrd.p, chest: vrd.p.chest ?? vrd.p.spine });
@@ -891,7 +891,7 @@ console.log('\nlifecycle (one rig, every downstream contract):');
 // SHORT bone with LONG geometry on it must get the geometry's box.
 {
   console.log('\nwing boxes (sized by the mesh, not the bone):');
-  const { AmmoRagdoll } = await import('../../client/lib/ammodoll.js');
+  const { AmmoRagdoll } = await import('../../client/lib/ragdoll/ammodoll.js');
   const BONE_LEN = 0.15, MESH_LEN = 0.60, MESH_SPAN = 0.40;
 
   const rigW: any = wingRig;

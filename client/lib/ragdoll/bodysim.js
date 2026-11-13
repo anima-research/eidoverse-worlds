@@ -5,7 +5,7 @@
 // stream — asks this factory and cannot tell which engine answered. A world mod can swap engines through EW.bodysim.
 
 import { Ragdoll } from './ragdoll.js';
-import { report } from './base.js';
+import { report } from '../base.js';
 
 const KEY = 'ew-bodysim';
 

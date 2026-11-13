@@ -47,7 +47,7 @@ plugin({
 });
 
 const { THREE } = await import('../stubs/core-stub.mjs');
-const { Ragdoll, JOINTS } = await import('../../client/lib/ragdoll.js');
+const { Ragdoll, JOINTS } = await import('../../client/lib/ragdoll/ragdoll.js');
 const { setTerrain, heightAt } = await import('../../client/lib/terrain.js');
 const { colliders, fitSupportBox, removeCollider } = await import('../../client/lib/colliders.js');
 const { makeAvatar } = await import('../../tools/assets/rig-load.mjs');

@@ -24,7 +24,7 @@ import { beginWork, enqueue, idleYield, nextFrame, loadNote } from './loadwork.j
 import { warm, P_GATE } from './warmqueue.js';
 import { heightAt } from './terrain.js';
 import { surfaceUnder } from './colliders.js';
-import { DRIVEN_BONES } from './ragdoll.js';
+import { DRIVEN_BONES } from './ragdoll/ragdoll.js';
 import { stroke as strokeIcon } from './icons.js';
 import { plateSize, plateClear, ownClearance, reachAbove, plateBox, CLEAR_MIN, PLATE_W } from './platesize.js';
 import { revealLevel } from './namereveal.js';

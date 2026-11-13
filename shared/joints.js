@@ -1,6 +1,6 @@
 // joints — what a humanoid joint may do, as measured.
 //
-// One table, two consumers: the ragdoll (client/lib/ragdoll.js) clamps to it while tumbling, the IK (shared/reach.js)
+// One table, two consumers: the ragdoll (client/lib/ragdoll/ragdoll.js) clamps to it while tumbling, the IK (shared/reach.js)
 // while reaching, so an arm can't REACH where it could never FALL. Tuned against the shipped rigs
 // (test/client/ragdoll-test.ts). Angles are DEGREES here; consumers convert.
 

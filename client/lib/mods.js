@@ -21,7 +21,7 @@
 
 import { bus, CONFIG, report } from './base.js';
 import { makeSection, toast, flashHint } from './ui.js';
-import { bodyEngine, setBodyEngine, currentBodyEngine, listBodyEngines } from './bodysim.js';
+import { bodyEngine, setBodyEngine, currentBodyEngine, listBodyEngines } from './ragdoll/bodysim.js';
 import { physicsEnabled, setPhysicsEnabled } from './thingphysics.js';
 import { makeFrame } from './windows.js';
 import { logChat } from './chat.js';

@@ -1,7 +1,7 @@
 // bun test/client/ragdoll-floor-test.ts — a body that goes limp inside a building
 // lands on the building's floor.
 //
-// The Bullet ragdoll (client/lib/ammodoll.js) builds its static world from
+// The Bullet ragdoll (client/lib/ragdoll/ammodoll.js) builds its static world from
 // the terrain and the boxes of nearby colliders, and skips room-scale
 // INTERIORS — their box would seal the room into a block. Nothing replaced
 // them, so a body that ragdolled indoors had no floor and fell through to
@@ -19,7 +19,7 @@ plugin({ name: 'core-stub', setup(b) { stubResolve(b, /^(\.\.?\/)+core\.js$/, ()
 const { THREE } = await import('../stubs/core-stub.mjs');
 const { mergeGeometries } = await import('../../client/node_modules/three/examples/jsm/utils/BufferGeometryUtils.js');
 const C: any = await import('../../client/lib/colliders.js');
-const { AmmoRagdoll, ensureAmmo, interiorTriangles, INTERIOR_MAX_TRIS } = await import('../../client/lib/ammodoll.js');
+const { AmmoRagdoll, ensureAmmo, interiorTriangles, INTERIOR_MAX_TRIS } = await import('../../client/lib/ragdoll/ammodoll.js');
 const { makeAvatar, toppleLean } = await import('../../tools/assets/rig-load.mjs');
 const { wingRig } = await import('../fixtures/doll-fixture.mjs');
 

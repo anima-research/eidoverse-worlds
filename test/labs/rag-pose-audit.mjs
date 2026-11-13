@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 const STUB = fileURLToPath(new URL('../stubs/core-stub.mjs', import.meta.url));
 plugin({ name: 'core-stub', setup(b) { stubResolve(b, /^(\.\.?\/)+core\.js$/, () => ({ path: STUB })); } });
 const { THREE } = await import('../stubs/core-stub.mjs');
-const { Ragdoll } = await import('../../client/lib/ragdoll.js');
+const { Ragdoll } = await import('../../client/lib/ragdoll/ragdoll.js');
 const { rigs, makeAvatar, toppleLean } = await import('../../tools/assets/rig-load.mjs');
 
 const DEG = 180 / Math.PI;

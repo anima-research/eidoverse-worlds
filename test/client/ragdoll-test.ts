@@ -31,7 +31,7 @@ plugin({
 });
 
 const { THREE } = await import('../stubs/core-stub.mjs');
-const { Ragdoll, TUNING, DRIVEN_BONES } = await import('../../client/lib/ragdoll.js');
+const { Ragdoll, TUNING, DRIVEN_BONES } = await import('../../client/lib/ragdoll/ragdoll.js');
 const { rigs, makeAvatar, worstOverlap, segDist, toppleLean, footKick } = await import('../../tools/assets/rig-load.mjs');
 
 let pass = 0, fail = 0;

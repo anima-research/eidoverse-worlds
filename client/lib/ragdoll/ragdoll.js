@@ -12,10 +12,10 @@
 //
 // The reasons and numbers behind the rules: docs/research/verlet-ragdoll.md (cited as verlet-ragdoll.md §N).
 
-import { THREE } from './core.js';
-import { BEHIND, CONE, HINGE, TWIST, TWIST_PARENT, RADIUS_FRAC, torsoRadius } from '../../shared/joints.js';
-import { heightAt } from './terrain.js';
-import { resolveColliders } from './colliders.js';
+import { THREE } from '../core.js';
+import { BEHIND, CONE, HINGE, TWIST, TWIST_PARENT, RADIUS_FRAC, torsoRadius } from '../../../shared/joints.js';
+import { heightAt } from '../terrain.js';
+import { resolveColliders } from '../colliders.js';
 import { SEGMENTS, JOINTS, DRIVEN_BONES, closestParams, snapshotPacker, seedJoints } from './rigmeasure.js';
 import { BodyEngineBase } from './bodyengine.js';
 

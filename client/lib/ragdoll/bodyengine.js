@@ -16,7 +16,7 @@
 // the clocks and bookkeeping that MUST agree, never solving. Each engine supplies _topple(lean) (how a velocity
 // lands on its bodies) and its own settle THRESHOLDS — the clock law is shared, the numbers are per engine.
 
-import { THREE } from './core.js';
+import { THREE } from '../core.js';
 
 const _iv = new THREE.Vector3();
 

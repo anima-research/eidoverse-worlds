@@ -1,6 +1,6 @@
 # The Verlet ragdoll — design notes and measurements
 
-`client/lib/ragdoll.js` is a Verlet particle skeleton: one owner simulates and
+`client/lib/ragdoll/ragdoll.js` is a Verlet particle skeleton: one owner simulates and
 streams the result as a held pose. This page keeps the reasons behind its rules
 and the numbers that chose them, so the code can stay short. "The fleet" means
 the shipped avatar rigs (14 at the time of most of these measurements; 44 for

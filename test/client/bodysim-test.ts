@@ -35,10 +35,10 @@ const _ls = new Map<string, string>();
 };
 
 const { THREE } = await import('../stubs/core-stub.mjs');
-const bs = await import('../../client/lib/bodysim.js');
-const { Ragdoll } = await import('../../client/lib/ragdoll.js');
-const { AmmoRagdoll } = await import('../../client/lib/ammodoll.js');
-const { BodyEngineBase } = await import('../../client/lib/bodyengine.js');
+const bs = await import('../../client/lib/ragdoll/bodysim.js');
+const { Ragdoll } = await import('../../client/lib/ragdoll/ragdoll.js');
+const { AmmoRagdoll } = await import('../../client/lib/ragdoll/ammodoll.js');
+const { BodyEngineBase } = await import('../../client/lib/ragdoll/bodyengine.js');
 const { rigs, makeAvatar, toppleLean, fixtureRig, VRM_DIR } = await import('../../tools/assets/rig-load.mjs');
 
 const S = suite("bodysim");

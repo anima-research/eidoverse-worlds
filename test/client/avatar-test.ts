@@ -31,7 +31,7 @@ plugin({
 
 const { THREE } = await import('../stubs/core-stub.mjs');
 const { Avatar, BLINK } = await import('../../client/lib/avatar.js');
-const { DRIVEN_BONES } = await import('../../client/lib/ragdoll.js');
+const { DRIVEN_BONES } = await import('../../client/lib/ragdoll/ragdoll.js');
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = '') => {

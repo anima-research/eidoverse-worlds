@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url';
 const STUB = fileURLToPath(new URL('../stubs/core-stub.mjs', import.meta.url));
 plugin({ name: 'core-stub', setup(b) { stubResolve(b, /^(\.\.?\/)+core\.js$/, () => ({ path: STUB })); } });
 const { THREE } = await import('../stubs/core-stub.mjs');
-const { Ragdoll, TUNING } = await import('../../client/lib/ragdoll.js');
+const { Ragdoll, TUNING } = await import('../../client/lib/ragdoll/ragdoll.js');
 const { rigs, makeAvatar, worstOverlap, toppleLean } = await import('../../tools/assets/rig-load.mjs');
 
 const FLEET = rigs().filter((r) => !r.err);

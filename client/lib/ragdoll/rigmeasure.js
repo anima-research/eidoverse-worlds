@@ -3,7 +3,7 @@
 // and the {j,p,v} handover snapshot (a wire format: pack and parse live here together).
 // Their shared lifecycle (settle clocks, impulse law, root-follow) is bodyengine.js.
 
-import { THREE } from './core.js';
+import { THREE } from '../core.js';
 
 // ---------------------------------------------------------------------------
 // the body cut

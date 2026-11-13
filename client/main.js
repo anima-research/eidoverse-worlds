@@ -85,10 +85,10 @@ import { initDebug, updateDebug, toggleDebug } from './lib/debug.js';
 
 // which server build: one console line at boot
 versionReady.then((v) => console.log(v ? `[eidoverse] server build ${v.sha}${v.dirty === true ? ' (DIRTY TREE)' : v.dirty === false ? '' : ' (dirty: unknown)'} (code from ${v.commitTime}), up since ${v.startedAt}` : '[eidoverse] server build unknown (/version unavailable)'));
-import { dragSim, updateBodyDrag, dragState } from './lib/bodydrag.js';
+import { dragSim, updateBodyDrag, dragState } from './lib/ragdoll/bodydrag.js';
 import { initChat, logChat, chatXRPanel, mentionPerson } from './lib/chat.js';
 import { initPlates, updatePlates } from './lib/platecard.js';
-import { bodyEngine, setBodyEngine, listBodyEngines } from './lib/bodysim.js';
+import { bodyEngine, setBodyEngine, listBodyEngines } from './lib/ragdoll/bodysim.js';
 import { initThingPhysics, physicsApi, simShown, requestWithBody as thingPhysicsRequest } from './lib/thingphysics.js';
 import { initMods, tickMods, modsApi } from './lib/mods.js';
 import { initBoot, markPhase, finishBoot, bootDone, setBootAssets } from './lib/boot.js';
