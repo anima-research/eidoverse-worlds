@@ -9,8 +9,11 @@ import { helloOf, refusalWords } from "../shared/protocol/hello.js";
 import { describeBody, mayLeave, resolveSeat, socketsUnder, vacatedFromMine, vacatedAt } from "../shared/sockbody.js";
 import { grabOf, describeGrab } from "../shared/grab.js";
 import { r3 } from "../shared/protocol/round.js";
-import { BodyStateReader, type BodyObservation, type PublicPose } from "./body-state.ts";
+import { BodyStateReader, type BodyObservation } from "./body-state.ts";
 import { mentionRegexFor } from "./mention.ts";
+import { type ActResult, type Entity, type Pose, done, refused, isDown, downRefusal, worldYaw, intYaw, solidOffRecord, RAGDOLL_ROOT_DROP,
+  WORLD_READ_MS, isSocketRec, posePosition } from "./agent-result.ts";
+export type { ActResult } from "./agent-result.ts";
 import { mergePose } from "../shared/humanoid.js";
 import { resolveBriefing, briefingLines } from "../shared/briefing.js";
 import { shapeParams, shapedHeightAt, requestGrid, setGridFetcher, shapeReady, waterParams } from "../shared/terrainshape.js";
@@ -46,25 +49,6 @@ import { bodyModeTracker, isBodyMode, readBodyMode } from "../shared/bodymode.js
 import { clampBodyScale } from "../shared/presencewire.js";
 import { DEFAULT_LEAF_FORCE as LEAF_FORCE } from "../shared/leafforce.js";
 
-/** An act's answer for its tool. `ok` is false when the call didn't do what it
- *  asked (a refusal, a cut, a climb or glide that fell short, a refused name);
- *  a call that changed nothing because it already held is ok. */
-export interface ActResult { ok: boolean; text: string }
-const done = (text: string): ActResult => ({ ok: true, text });
-const refused = (text: string): ActResult => ({ ok: false, text });
-/** A body down: limp wings, in the air (LEAF), on the ground (RAGDOLL) or sitting up (RECOVER). */
-const isDown = (phase: string) => phase === "LEAF" || phase === "RAGDOLL" || phase === "RECOVER";
-// In the air the limp fall ends when the body reaches the ground (RAGDOLL) or with a recovery
-// (shared/flight.js bodyRecovered, which the door sends only in rehearsal); on the ground, take_off
-// launches afresh from wherever the body lies (takeOff).
-/** Why a body that's down can't fly now, and what gets it flying again. A limp fall whose recovery began
- *  in the air (LEAF with recoverAt set) flies on by itself once it's done, unless it meets the ground
- *  first (shared/flight.js). */
-const downRefusal = (f: { phase: string; recoverAt?: number | null }) => f.phase === "LEAF"
-  ? f.recoverAt != null
-    ? "you're falling limp (leaf) with your recovery under way — you fly again once it's done, unless you reach the ground first"
-    : "you're falling limp (leaf) — once you're down on the ground, move {mode: \"fly\"} launches you again"
-  : `you're down on the ground (${f.phase.toLowerCase()}) — move {mode: "fly"} to fly again`;
 /** How long a flight wait allows for a leg the flight model flies in `legS` seconds of its own time. The tick that
  *  flies it is a timer and runs late under load, so it allows half again, which covers a tick up to 50% late, and
  *  8 s beside for what the leg's rate leaves out, such as a climb's lift easing in. */
@@ -89,12 +73,6 @@ const turnTo = (a: number, b: number) => { let d = b - a; while (d > Math.PI) d 
 /** A land course flares (noses up) this high above the ground under it. */
 const FLARE_HEIGHT = 2;
 
-/** integrator yaw (atan2(dz,dx), forward = (cos,sin)) -> world yaw
- *  (atan2(dx,dz), which every renderer and walkTo already speak). */
-const worldYaw = (y: number) => Math.PI / 2 - y;
-/** ...and back. The map is its own inverse, but naming both directions is
- *  cheaper than working that out at every call site. */
-const intYaw = (y: number) => Math.PI / 2 - y;
 import { canonicalLimb, normalizeReachTarget, normalizeReachBag, describeTarget, diffReach,
   TOUCH_GAP, sameReach } from "../shared/reachwire.js";
 import { shown } from "../shared/shown.js";
@@ -127,11 +105,9 @@ import { makeVerdictCache, seatGateCore, nameFromAvatarPath } from "../shared/se
 import { redialer, REDIAL } from "../shared/redial.js";
 import { createShover, shoveable, footprint, obbOf, aabbOfObb, contactOf, massOf, budges, SHOVE_FEEL } from "../shared/shove.js";
 import { SHOVE } from "../shared/protocol/physconst.js";
-import { worldPose, solidOff } from "../shared/protocol/simlayer.js";
+import { worldPose } from "../shared/protocol/simlayer.js";
 import { physicsVolumesOf, speedFactorAt, foldOfView, zonesOf, waterVolumes, worldLevelAt } from "../shared/zone.js";
 import { fallBackOf, belowWorld, FELL } from "../shared/spawn.js";
-/** A record (components flat, view.js) a body doesn't meet: componentspec collider.enabled or .blocks, the authority's own reading. */
-const solidOffRecord = (e: any) => solidOff(e, "bodies");
 import { colliderFor } from "../shared/bodyscale.js";
 
 import { recordComponents } from "../shared/protocol/view.js";
@@ -163,8 +139,6 @@ const COLLIDE_SUBSTEP = NAV_SUBSTEP;
  *  so, instead of pressing against the wall until the 90s timeout. */
 const STALL_PROGRESS = 0.2, STALL_TICKS = 15;
 const GRAVITY = 16;
-/** How far below its supporting surface a settled ragdoll's root lies. */
-const RAGDOLL_ROOT_DROP = 0.7;   // client/lib/controller.js: vy -= 16 * dt
 /** Why fold_wings can't judge a body whose bones haven't been read. */
 const BONES_NOT_KNOWN = "this body's bones aren't known (its model hasn't loaded, or couldn't be read), so whether it has wings can't be checked";
 /** shared/flight.js's refusals name the fix as an act — "unfold them first", "land first" — and the browser
@@ -191,9 +165,6 @@ const modelMeta = new Map<string, unknown>();
  *  its geometry for as long as they stand; this only bounds what is kept for
  *  fits yet to come. Least recently used goes first; downloads in flight stay. */
 const MESH_CACHE_BYTES = 256 * 1024 * 1024, MESH_FETCH_MS = 8000;
-/** A read of the world server (roster, terrain, a grid, geometry, bones) not answered by then has failed, as a host's
- *  tool call would. */
-const WORLD_READ_MS = 10_000;
 /** How long a walk waits for placed geometry still loading before it is refused (see walkTo); covers a fetch's own
  *  timeout plus some queueing. */
 const WALK_READY_MS = 15_000;
@@ -247,17 +218,6 @@ function trimMeshCache(key: string, m: CollisionMesh) {
     total -= meshBytes.get(k)!; meshBytes.delete(k); meshCache.delete(k);
   }
 }
-type Pose = PublicPose;
-/** A record carrying a socket component (an attachment point, listed under its host); it may carry anything else too. */
-const isSocketRec = (e: any) => !!e?.socket && typeof e.socket === "object" && !Array.isArray(e.socket);
-type Entity = { id: string; model: string; pos: number[]; yaw: number; actor: string; scale?: number;
-  /** a stretched thing's per-axis scale, and a tilted one's whole rotation (the fold keeps both beside scale and yaw) */
-  scale3?: number[]; q?: number[];
-  /** the spawn's collider override ("exact" | "box"); the browser's decide() reads it, and so does ours */
-  collide?: string;
-  /** component bag (sockets, reactions, motion, …) — what a thing can DO;
-   *  this is how affordances reach text-tier perception */
-  comp?: Record<string, any> };
 type Person = { id: string; avatar: string; pose: Pose | null; declares?: string | null; observedAt?: number | null; bodyGeneration?: number };
 
 // ---- walking through buildings (#218) ----
@@ -331,16 +291,6 @@ function stepSides(ok: (Vec2 | null)[]): Vec2[] {
   return sides;
 }
 
-/** A just-joining browser can briefly send a pose with null/non-finite
- * coordinates: treat that as "position unknown", never throw. */
-function posePosition(pose: Pose | null | undefined): [number, number, number] | null {
-  const p = pose?.p;
-  if (!Array.isArray(p) || p.length < 3) return null;
-  const [x, y, z] = p;
-  return typeof x === "number" && Number.isFinite(x)
-    && typeof y === "number" && Number.isFinite(y)
-    && typeof z === "number" && Number.isFinite(z) ? [x, y, z] : null;
-}
 /** A point in a body's root frame → world, matching THREE's rotation.y=yaw
  *  (x' = x·cos + z·sin, z' = −x·sin + z·cos) — the same transform every
  *  browser's localToWorld applies to the same descriptor. */
