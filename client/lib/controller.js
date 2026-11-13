@@ -46,7 +46,7 @@ import {
 } from '../../shared/flight.js';
 import { pilotInput } from '../../shared/flightpilot.js';
 import { worldFlightProvider, resolveFlight } from '../../shared/flightcap.js';
-import { inspectBody } from '../../shared/flightbody.js';
+import { deadWingsNote, inspectBody } from '../../shared/flightbody.js';
 import { applyOwnedWingFold } from '../../shared/wingpresence.js';
 import { nearbyClimb, startClimb, stepOnClimb, climbing, cancelClimb, climbPresence } from './climb.js';   // climb routes (componentspec climb)
 import { spawnOf, fallBackOf, belowWorld, FELL } from '../../shared/spawn.js';
@@ -64,7 +64,7 @@ let flightBones = null;
  *  therefore both the evidence and the permission, which is default-ON dressed
  *  as default-deny (mica, reviewing cea3c3c, Blocker 1). The grant now comes
  *  from the server's `yourRights.fly`, which no query string can forge, and a
- *  compatible body with no grant gets a refusal that names the fix. */
+ *  body with no grant gets a refusal that names the fix. */
 export function armFlight(boneNames, identity = 'me') {
   flightBones = boneNames ?? null;   // null: not read (a failed read, a capsule) -- unknown, which keeps a fold
   // a fold carried from a winged body is released by one known to have no wings (agent.ts foldFits, the twin)
@@ -73,6 +73,20 @@ export function armFlight(boneNames, identity = 'me') {
   return resolveFlight(flightProv, { identity }).enabled;
 }
 const knownWingless = () => Array.isArray(flightBones) && !inspectBody(flightBones).canAnimateWings;
+
+/** Arm flight for the body on screen (mybody.js setMe, every swap): its skeleton, or null (unknown) for a capsule or a
+ *  read that throws. Returns the toast to show, '' when it would repeat the last (flight available; dead wings). */
+let toldFlight = '';
+export function armFlightForBody(av, identity = 'me') {
+  let bones = null;
+  try { if (av?.vrm?.scene) { bones = []; av.vrm.scene.traverse((o) => { if (o.isBone && o.name) bones.push(o.name); }); } }
+  catch { bones = null; }
+  const ok = armFlight(bones, identity);
+  const dead = bones ? deadWingsNote(inspectBody(bones)) : null;
+  const say = ok && av ? `flight available on this body — press F${dead ? `; ${dead}` : ''}` : '';
+  const fresh = say !== toldFlight; toldFlight = say;
+  return fresh ? say : '';
+}
 
 // The world's grant, read through a hook rather than an import: net.js keeps
 // itself free of this module on purpose ("net can read/write body state
@@ -215,7 +229,8 @@ function toggleFlight() {
   // The spec's precondition, enforced where the human meets it. takeOff would
   // refuse anyway -- this says so before spending the resolve, and names the
   // key that undoes it.
-  if (wingsFolded) return 'wings are folded — press G to unfold first';
+  if (wingsFolded) return flightBones ? 'wings are folded — press G to unfold first'
+    : "a fold is held — press G to unfold first (this body's wings weren't read)";
   const r = resolveFlight(flightProv, { identity: 'me' });
   if (!r.enabled) return `no: ${r.reason}`;
   flightCfg ??= flightConfig();

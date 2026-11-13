@@ -58,9 +58,11 @@ export function inspectBody(boneNames) {
   return { canAnimateWings, chains, wingCount, strays, notes };
 }
 
-/** "wing" as a word of the name (LeftWing, WING_L, Wings), never inside one (Swing_Tail, Drawing, Skirt_Flowing). */
+/** "wing" as a word of the name, a side allowed on it (LeftWing, LWing, leftwing, WING_L, Wings), never inside another
+ *  word (Swing_Tail, Drawing, Skirt_Flowing). */
 function namesAWing(name) {
-  return String(name).replace(/([a-z0-9])([A-Z])/g, '$1_$2').split(/[^A-Za-z]+/).some((w) => /^wings?$/i.test(w));
+  return String(name).replace(/([a-z0-9])([A-Z])/g, '$1_$2').replace(/([A-Z])([A-Z][a-z])/g, '$1_$2')
+    .split(/[^A-Za-z]+/).some((w) => /^(left|right|l|r)?wings?(left|right|l|r)?$/i.test(w));
 }
 
 function depthOf(name) {

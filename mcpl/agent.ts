@@ -1208,6 +1208,7 @@ export class WorldAgent {
               // authored by definition (settledPose strips physics frames)
               if (msg.restore.pose && msg.restore.clip !== "ragdoll") { this.heldPose = msg.restore.pose; this.heldPoseAuthored = true; }
               this.wingsFolded = this.foldFits(foldedIn(msg.restore) === true);   // the named pose wings-folded (or an older wingsFolded), if this body can hold it
+              if (this.wingsFolded) void this.loadBodyBones();   // bones unread (a first join): the read fits the fold, as on a swap
               this.bodyMode = readBodyMode(msg.restore);   // the body-mode survives a rejoin (an older sample: read from its clip); a declaration until the next real transition
             }
             this.restoredPose = true;
@@ -3274,13 +3275,17 @@ export class WorldAgent {
   /** take_off (spec §1). Refuses folded wings, a limp body, or no capability. */
   async takeOff(): Promise<ActResult> {
     // only a fold waits on the body's bones (it may not fit); otherwise the read runs alongside, bounded and cached
-    if (this.wingsFolded) await this.loadBodyBones(); else void this.loadBodyBones();
+    const carried = this.wingsFolded;
+    if (carried) await this.loadBodyBones(); else void this.loadBodyBones();
+    const released = carried && !this.wingsFolded;   // the read found a body with no wings to hold the fold
     const cap = this.flightAllowed();
     if (!cap.ok) return refused(`you cannot fly here — ${cap.why}`);
     // Wing posture is carried independently of an active flight state. A body
     // can fold without a propulsion grant, so the sky door checks the public
     // posture before it constructs a fresh integrator.
-    if (this.wingsFolded) return refused(`still standing — your wings are folded; open them first (anim {stop: "wings-folded"})`);   // main #245's words, our tool
+    if (this.wingsFolded) return refused(this.bodyBoneNames   // main #245's words, our tool; unread bones claim no wings
+      ? `still standing — your wings are folded; open them first (anim {stop: "wings-folded"})`
+      : `still standing — a fold is held; unfold to fly (anim {stop: "wings-folded"}; this body's wings weren't read)`);
     // START FROM THE BODY, ALWAYS. A stale flight state -- LANDED after a
     // glide, or RAGDOLL after a cut -- carried the old position and phase into
     // the new launch, so take_off "worked" and the next verb found her back on
@@ -3307,7 +3312,8 @@ export class WorldAgent {
     // dead wings are said once per body (flightbody.js deadWingsNote)
     const dead = this.bodyBoneNames && this.deadWingsToldFor !== this.avatar ? deadWingsNote(inspectBody(this.bodyBoneNames), "your") : null;
     if (dead) this.deadWingsToldFor = this.avatar;
-    return done(`took off — ${this.flight.pos.y.toFixed(1)}m, stamina ${this.flight.stamina.toFixed(0)}/100${dead ? `; ${dead}` : ""}`);
+    return done(`took off — ${this.flight.pos.y.toFixed(1)}m, stamina ${this.flight.stamina.toFixed(0)}/100` +
+      `${released ? "; folded-wing posture released — this body has no wings" : ""}${dead ? `; ${dead}` : ""}`);
   }
 
   // WORLD-FACING FLIGHT TELEMETRY IS ABSENT ON PURPOSE, for now.
@@ -3668,7 +3674,8 @@ export class WorldAgent {
       `${f.phase.toLowerCase()} at ${f.pos.y.toFixed(1)}m, heading ${((f.yaw * 180 / Math.PI + 360) % 360).toFixed(0)}deg, ${f.airspeed.toFixed(1)} m/s`,
       `stamina ${f.stamina.toFixed(0)}/100 (refills on the ground: ${cfg.stamina.refillGroundPerSec}/s; perches are not implemented)`,
       `from here best glide reaches ${glideRange(cfg, f.pos.y).toFixed(0)}m at ${bg.speed.toFixed(1)} m/s`,
-      `wings ${f.wings} - mode ${f.mode}`,
+      // a body known to have no wings isn't told their state
+      `${this.bodyBoneNames && !inspectBody(this.bodyBoneNames).canAnimateWings ? "" : `wings ${f.wings} - `}mode ${f.mode}`,
     ].join("\n");
   }
 

@@ -920,8 +920,7 @@ console.log('\nISOLATION -- nothing in the running world reaches flight yet');
   // the old scan rather than absent from it. It is listed here rather than
   // exempted: it takes no capability decision, it is handed forces by a caller
   // that already resolved one, so the per-importer checks below skip it.
-  // mybody.js reads wing names for the take-off toast (flightbody.js deadWingsNote) and decides nothing, like physics.ts.
-  const ALLOWED = [/mcpl\/agent\.ts$/, /client\/lib\/controller\.js$/, /mcpl\/physics\.ts$/, /client\/lib\/mybody\.js$/];
+  const ALLOWED = [/mcpl\/agent\.ts$/, /client\/lib\/controller\.js$/, /mcpl\/physics\.ts$/];
   // Only the two ENTRY POINTS must gate; physics.ts is downstream of a gate.
   const GATEKEEPERS = [/mcpl\/agent\.ts$/, /client\/lib\/controller\.js$/];
   check(`only expected modules import flight (${importers.length})`,

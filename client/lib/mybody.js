@@ -6,8 +6,7 @@
 
 import { CONFIG, bus, report, tee } from './base.js';
 import { releaseBodyGate } from './bodygate.js';
-import { armFlight, folded } from './controller.js';
-import { deadWingsNote, inspectBody } from '../../shared/flightbody.js';
+import { armFlightForBody, folded } from './controller.js';
 import { makeAvatar, contributeThumbnail } from './avatar.js';
 import { setMyAvatarPath, wireAvatarSwitch } from './catalog.js';
 import { toast } from './ui.js';
@@ -138,19 +137,10 @@ export function setMe(av) {
   armFlightFor(av);
 }
 
-/** Arm human flight for whatever body this is now, on every swap: the grant decides (shared/flightcap.js); the
- *  bones only say which wings flap. A body whose skeleton isn't read (a capsule, a failed read) arms as unknown. */
-let toldFlight = '';
+/** Arm flight for whatever body this is now, on every swap (controller.js armFlightForBody), and say what changed. */
 function armFlightFor(av) {
-  let bones = null;
-  try { if (av?.vrm?.scene) { bones = []; av.vrm.scene.traverse((o) => { if (o.isBone && o.name) bones.push(o.name); }); } }
-  catch { bones = null; }
-  const ok = armFlight(bones, 'me');
-  // said when it changes, not on every swap: flight becoming available, or a body whose wings won't move (flightbody.js)
-  const dead = bones ? deadWingsNote(inspectBody(bones)) : null;
-  const say = ok && av ? `flight available on this body — press F${dead ? `; ${dead}` : ''}` : '';
-  if (say && say !== toldFlight) toast?.(say);
-  toldFlight = say;
+  const say = armFlightForBody(av, 'me');
+  if (say) toast?.(say);
 }
 
 // ---------------------------------------------------------------- avatar swap
