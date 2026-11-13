@@ -68,7 +68,7 @@ export const makeAvatar = async (who, path) => ({ id: who, vrm: { scene: { trave
 export const contributeThumbnail = rec('contributeThumbnail');
 
 // ---- controller.js
-export const armFlight = () => false;
+export const armFlightForBody = () => '';   // mybody.js arms flight through this (it returns the toast to show)
 export const folded = () => false;
 
 // ---- capnotice.js
