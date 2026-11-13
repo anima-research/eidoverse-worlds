@@ -203,23 +203,26 @@ const MODELS_DIR = process.env.EIDOVERSE_DIR
   : null;
 /** Search the catalog through the sequencer (one source of truth — includes
  *  the content-addressed store, so conjured/orrery-delivered objects are
- *  findable), falling back to a local dir scan only when a checkout exists. */
-async function searchLibrary(httpBase: string, query: string): Promise<{ path: string; name?: string }[]> {
+ *  findable), falling back to a local dir scan only when a checkout exists.
+ *  `failed` says why the catalog itself couldn't be searched (#292). */
+async function searchLibrary(httpBase: string, query: string): Promise<{ hits: { path: string; name?: string }[]; failed?: string; retry?: boolean }> {
+  let failed: string, retry = true;   // calling again may work, as library {preview}'s rule: not after a 4xx other than 408 or 429
   try {
     const r = await fetch(`${httpBase}/library-models?q=${encodeURIComponent(query)}`);
-    if (r.ok) return ((await r.json()) as { path: string; name?: string }[]).slice(0, 24);
-  } catch { /* sequencer route unreachable — scan what we can see, if anything */ }
-  if (!MODELS_DIR) return [];
+    if (r.ok) return { hits: ((await r.json()) as { path: string; name?: string }[]).slice(0, 24) };
+    failed = `it answered ${r.status}`; retry = r.status >= 500 || r.status === 408 || r.status === 429;
+  } catch (e) { failed = `the request failed: ${(e as Error).message || "no reason given"}`; }
+  if (!MODELS_DIR) return { hits: [], failed, retry };
   try {
     const toks = query.toLowerCase().split(/\s+/).filter(Boolean);
-    return readdirSync(MODELS_DIR)
+    return { failed, retry, hits: readdirSync(MODELS_DIR)
       .filter((f) => f.endsWith(".glb"))
       .map((f) => ({ f, score: toks.filter((t) => f.toLowerCase().includes(t)).length }))
       .filter((r) => r.score > 0)
       .sort((a, b) => b.score - a.score)
       .slice(0, 12)
-      .map((r) => ({ path: `eidoverse/assets/models/${r.f}` }));
-  } catch { return []; }
+      .map((r) => ({ path: `eidoverse/assets/models/${r.f}` })) };
+  } catch { return { hits: [], failed, retry }; }
 }
 
 // ---- contact sheets ---------------------------------------------------------
@@ -230,7 +233,7 @@ async function searchLibrary(httpBase: string, query: string): Promise<{ path: s
 
 const SHEET = { tile: 200, label: 26, cols: 4, perPage: 12 };
 
-async function contactSheet(tiles: { name: string; data: ArrayBuffer | null; mime: string; h?: number | null }[]): Promise<Buffer> {
+async function contactSheet(tiles: { name: string; data: ArrayBuffer | null; mime: string; h?: number | null; failed?: string }[]): Promise<Buffer> {
   const { tile, label, cols } = SHEET;
   const rows = Math.ceil(tiles.length / cols);
   const W = cols * tile, H = rows * (tile + label);
@@ -245,7 +248,7 @@ async function contactSheet(tiles: { name: string; data: ArrayBuffer | null; mim
     const side = (tile - 8) * frac;
     const img = t.data
       ? `<image x="${x + (tile - side) / 2}" y="${y + 4 + (tile - 8 - side)}" width="${side}" height="${side}" preserveAspectRatio="xMidYMax meet" xlink:href="data:${t.mime};base64,${Buffer.from(t.data).toString("base64")}"/>`
-      : `<text x="${x + tile / 2}" y="${y + tile / 2}" text-anchor="middle" fill="#667" font-size="15" font-family="DejaVu Sans, sans-serif">no preview yet</text>`;
+      : `<text x="${x + tile / 2}" y="${y + tile / 2}" text-anchor="middle" fill="#667" font-size="15" font-family="DejaVu Sans, sans-serif">${t.failed ? "preview failed" : "no preview yet"}</text>`;
     const tag = t.h ? ` ${t.h.toFixed(1)}m` : "";
     const room = 26 - tag.length;
     const name = t.name.length > room ? `${t.name.slice(0, room - 1)}…` : t.name;
@@ -640,10 +643,11 @@ export const HANDLERS: Record<string, ToolHandler> = {
   library: async (ag, a, ctx, name) => {
       // one catalog tool: query (search), kind + page (a contact sheet), preview (one item)
       if (typeof a.query === "string" && a.query.trim()) {
-        const hits = await searchLibrary(ag.httpBase, String(a.query));
-        return text(hits.length
-          ? hits.map((h) => h.name && !h.path.includes(h.name) ? `${h.path}  — ${h.name}` : h.path).join("\n")
-          : "no matches");
+        const { hits, failed, retry } = await searchLibrary(ag.httpBase, String(a.query));
+        const why = failed && `the world's catalog couldn't be searched (${failed})`;
+        if (!hits.length) return failed ? fail(`${why}, so this says nothing about what's in it; ${retry ? "calling again may work" : "calling again won't change that"}`) : text("no matches");
+        return text(hits.map((h) => h.name && !h.path.includes(h.name) ? `${h.path}  — ${h.name}` : h.path).join("\n")
+          + (failed ? `\n(${why}: these are from this door's local checkout only)` : ""));
       }
       if (typeof a.preview === "string" && a.preview.trim()) {
         const want = String(a.preview).trim();
@@ -666,10 +670,12 @@ export const HANDLERS: Record<string, ToolHandler> = {
           try { r = await fetch(url); } catch (e) { miss((e as Error).message || "the request failed", true); continue; }
           if (r.status === 404) continue;
           if (!r.ok) { miss(`it answered ${r.status}`, r.status >= 500 || r.status === 408 || r.status === 429); continue; }
+          const type = r.headers.get("content-type")?.split(";")[0].trim();
+          if (type && !type.startsWith("image/")) { miss(`it sent ${type}, not an image`, false); continue; }   // an HTML error page, say (bot #13)
           let data: string;
           try { data = Buffer.from(await r.arrayBuffer()).toString("base64"); }
           catch (e) { miss(`a preview it sent couldn't be read: ${(e as Error).message || "no reason given"}`, true); continue; }
-          return { content: [{ type: "image", data, mimeType: r.headers.get("content-type")?.split(";")[0] ?? "image/jpeg" }] };
+          return { content: [{ type: "image", data, mimeType: type ?? "image/jpeg" }] };
         }
         if (whys.length) return fail(`couldn't get a preview of "${want}" from the world's server (${whys.join("; ")})${retry ? "; calling again may work" : "; calling again won't change that"}`);
         return fail(`no preview for "${want}" — avatar portraits appear once a body has been worn; library models ship _preview.jpg files`);
@@ -678,11 +684,20 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const kind = a.kind === "models" ? "models" : "avatars";
       const page = Math.max(1, Math.floor(Number(a.page) || 1));
       let items: { name: string; url: string | null; h?: number | null }[];
+      // the list a sheet is drawn from: its body, or why it couldn't be read (a status, a failed request, a body that isn't JSON)
+      const listAt = async (path: string): Promise<{ body: any } | { why: string }> => {
+        try { const res = await fetch(`${ag.httpBase}${path}`); return res.ok ? { body: await res.json() } : { why: `it answered ${res.status}` }; }
+        catch (e) { return { why: (e as Error).message || "the request failed" }; }
+      };
       if (kind === "avatars") {
-        const roster = (await (await fetch(`${ag.httpBase}/avatars`)).json()) as { name: string; height?: number | null }[];
+        const got = await listAt("/avatars");
+        if ("why" in got) return fail(`the world's roster couldn't be read (${got.why}), so there's no sheet to show`);
+        const roster = got.body as { name: string; height?: number | null }[];
         items = roster.map((r) => ({ name: r.name, url: `${ag.httpBase}/thumb/${encodeURIComponent(r.name)}.png`, h: r.height ?? null }));
       } else {
-        const hits = (await (await fetch(`${ag.httpBase}/library-models`)).json()) as { path: string; name: string; preview: string | null }[];
+        const got = await listAt("/library-models");
+        if ("why" in got) return fail(`the world's catalog couldn't be read (${got.why}), so there's no sheet to show`);
+        const hits = got.body as { path: string; name: string; preview: string | null }[];
         items = hits.map((h) => ({
           // library files: the filename IS the spawnable identity; store
           // items: the hash filename means nothing — show the given name
@@ -697,17 +712,23 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (!slice.length) return items.length
         ? fail(`no page ${page}: there are ${items.length} ${kind} on ${pages} page${pages === 1 ? "" : "s"}, so pass a page from 1 to ${pages}`)
         : text(`there are no ${kind} to show yet`);
+      // a preview that exists but couldn't be fetched (`failed`) is drawn and said apart from one there is none of
       const tiles = await Promise.all(slice.map(async (it) => {
         if (!it.url) return { name: it.name, data: null, mime: "", h: it.h };
         try {
           const r = await fetch(it.url);
-          if (!r.ok) return { name: it.name, data: null, mime: "", h: it.h };
-          return { name: it.name, data: await r.arrayBuffer(), mime: r.headers.get("content-type")?.split(";")[0] ?? "image/png", h: it.h };
-        } catch { return { name: it.name, data: null, mime: "", h: it.h }; }
+          if (r.status === 404) return { name: it.name, data: null, mime: "", h: it.h };
+          if (!r.ok) return { name: it.name, data: null, mime: "", h: it.h, failed: `answered ${r.status}` };
+          const type = r.headers.get("content-type")?.split(";")[0].trim();
+          if (type && !type.startsWith("image/")) return { name: it.name, data: null, mime: "", h: it.h, failed: `sent ${type}, not an image` };
+          return { name: it.name, data: await r.arrayBuffer(), mime: type ?? "image/png", h: it.h };
+        } catch (e) { return { name: it.name, data: null, mime: "", h: it.h, failed: (e as Error).message || "the request failed" }; }
       }));
       const png = await contactSheet(tiles);
+      const missed = tiles.filter((t) => t.failed).map((t) => `${t.name} (${t.failed})`);
       return { content: [
-        { type: "text", text: `${kind} — page ${page}/${pages}: ${slice.map((t) => t.name).join(", ")}${page < pages ? `. More: library {kind:"${kind}", page:${page + 1}}` : ""}` },
+        { type: "text", text: `${kind} — page ${page}/${pages}: ${slice.map((t) => t.name).join(", ")}${page < pages ? `. More: library {kind:"${kind}", page:${page + 1}}` : ""}`
+          + (missed.length ? `. Previews that couldn't be fetched: ${missed.join(", ")}` : "") },
         { type: "image", data: png.toString("base64"), mimeType: "image/png" },
       ] };
 
@@ -1439,6 +1460,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         ...(a.script != null ? { script: String(a.script) } : {}),
         ...(a.scripts ? { scripts: true } : {}),
       } as any);
+      if (r.failed) return fail("world_debug: the world didn't answer (this body isn't joined, or nothing came back within 8 s), so the flight recorder wasn't read — call again");
       const status = (r as any).status ? `status: ${(r as any).status}\n` : "";
       if (!r.events.length) return text(status || "flight recorder is empty — nothing has bounced recently");
       const lines = r.events.map((e: any) => {

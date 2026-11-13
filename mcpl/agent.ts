@@ -5392,13 +5392,14 @@ export class WorldAgent {
    *  shapes, rate limits, and reaction outcomes (fired / skipped / failed).
    *  The log answers "what happened"; this answers "why didn't it". */
   worldDebug(opts: { limit?: number; kinds?: string[]; script?: string; scripts?: boolean } = {}):
-      Promise<{ events: any[]; status?: string }> {
-    if (!this.joined || this.ws?.readyState !== 1) return Promise.resolve({ events: [] });
+      Promise<{ events: any[]; status?: string; failed?: boolean }> {
+    // no answer (offline, a timeout) is `failed`, as history()'s: never an empty recorder
+    if (!this.joined || this.ws?.readyState !== 1) return Promise.resolve({ events: [], failed: true });
     const reqId = `d${++this.histId}`;
     return new Promise((resolve) => {
       const t = setTimeout(() => {
         this.pendingDebug.delete(reqId);
-        resolve({ events: [] });
+        resolve({ events: [], failed: true });
       }, 8000);
       this.pendingDebug.set(reqId, (m) => {
         clearTimeout(t);
@@ -5423,9 +5424,9 @@ export class WorldAgent {
     this.inboxCursor = Math.max(this.inboxCursor, i);
   }
 
-  async missedSince(seq: number, limit = 120) {
-    const { entries } = await this.history({ after: seq, limit, verbs: ["say"] });
-    return entries.map((e) => ({ ts: e.ts, who: e.actor, text: e.args?.text ?? "", seq: e.seq }));
+  async missedSince(seq: number, limit = 120): Promise<{ said: { ts: number; who: string; text: string; seq: number }[]; failed?: boolean }> {
+    const { entries, failed } = await this.history({ after: seq, limit, verbs: ["say"] });
+    return { said: entries.map((e) => ({ ts: e.ts, who: e.actor, text: e.args?.text ?? "", seq: e.seq })), ...(failed ? { failed } : {}) };
   }
   /** The OLDEST `limit` says after `seq`, and whether more follow: the log pages newest-first, so page back to `seq`. */
   async firstSaidSince(seq: number, limit: number): Promise<{ said: { ts: number; who: string; text: string; seq: number }[]; more: boolean; failed?: boolean; truncated?: boolean }> {

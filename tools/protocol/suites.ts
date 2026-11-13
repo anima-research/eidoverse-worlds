@@ -197,6 +197,9 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["door-wording", "../door-wording-test.ts", 1],   // #270 (main, merged into #260 10-21): the door's refusals say what wasn't done and why; deleted here once by mistake (3440e655), restored
   ["consent-replay", "../consent-replay-test.ts", 0.1],   // an agent's gates and lists, replayed on arrival, are what it holds when the read returns (house 6340433633; R 10-28)
   ["history-request", "../history-request-test.ts", 1], // #267 (main): a history request with no answer rejects, so scrolling up can reach what a long disconnect missed
+  ["command-replies", "../command-replies-test.ts", 1], // #291 #285: /debug says the recorder couldn't be read, not that nothing bounced; /rename points at ?door
+  ["scenegraph-scripts", "../scenegraph-scripts-test.ts", 1], // #291: the scene graph's scripts section tells no answer from no scripts
+  ["library-fetch", "../library-fetch-test.ts", 1], // #292: the library tool tells a catalog it couldn't read from an empty one
   ["wing-fold-presence", "../wing-fold-presence-test.ts", 1], // #159: a held posture rides the presence wire (absence is not release; survives late join, reconnect, swap)
   ["skystamp", "../skystamp-test.ts", 1], // #260 r3 I286: the sky's seq/by come from the log entry that wrote it (the stored value has none)
   ["grant-command", "../grant-command-test.ts", 1], // #260 house client I6/I42: /grant keeps exceptions and the end date unless it changes them

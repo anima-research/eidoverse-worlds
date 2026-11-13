@@ -20,7 +20,7 @@ export const COMMANDS = [
   { name: 'w', aliases: ['whisper', 'r', 'reply'], listed: false, help: 'whisper was removed — world chat is public', retired: 'whisper was removed — world chat is public' },
   { name: 'emote', listed: false, help: '/emote is /anim now', retired: '/emote is /anim now: /anim <name> plays one of the action bar\'s anims (🎭, or number keys)' },
   { name: 'ghost', aliases: ['unghost'], listed: false, help: 'ghost was removed', retired: 'ghost was removed: there is no hidden presence in a world' },
-  { name: 'name', aliases: ['rename'], help: 'what the world calls you (choose it at the authority: renaming mid-visit isn\'t supported yet)' },
+  { name: 'name', aliases: ['rename'], help: 'what the world calls you: choose it at the door, by reloading with ?door (renaming mid-visit isn\'t supported yet; signed in with Discord, it is that account\'s name)' },
   { name: 'me', help: 'describe an action — "/me waves"' },
   { name: 'anim', help: '/anim <name> — play one of the action bar\'s anims once (🎭, or number keys)' },
   { name: 'sit', help: '/sit [thing] [slot] — sit down, on a seat if one is near (or the one you name)' },

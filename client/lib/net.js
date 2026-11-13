@@ -209,12 +209,13 @@ export function requestHistory(opts = {}) {
 }
 
 /** The world's flight recorder: why things bounced (denials, rejections,
- *  rate limits, reaction outcomes). Same request shape as history. */
+ *  rate limits, reaction outcomes). Same request shape as history, and it
+ *  rejects the same way: no answer is not an empty recorder. */
 export function requestDebug(opts = {}) {
-  if (!net.joined || net.ws?.readyState !== 1) return Promise.resolve({ events: [] });
+  if (!net.joined || net.ws?.readyState !== 1) return Promise.reject(new Error('debug: not connected'));
   const reqId = `d${++histId}`;
-  return new Promise((resolve) => {
-    const t = setTimeout(() => { pendingHistory.delete(reqId); resolve({ events: [] }); }, 8000);
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => { pendingHistory.delete(reqId); reject(new Error('debug: no answer within 8 s')); }, 8000);
     pendingHistory.set(reqId, (m) => { clearTimeout(t); resolve(m); });
     net.ws.send(JSON.stringify({ type: 'debug', reqId, ...opts }));
   });

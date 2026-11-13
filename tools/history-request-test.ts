@@ -1,9 +1,10 @@
-// requestHistory answers with a page, or rejects when it can't get one.
+// requestHistory and requestDebug answer with a page, or reject when they can't get one.
 //
 //   bun tools/history-request-test.ts
 //
 // chat.js reads an empty page as "nothing there": the beginning of the world
-// for the backward walk, the end of what was missed for a re-join's catch-up.
+// for the backward walk, the end of what was missed for a re-join's catch-up;
+// /debug reads an empty flight recorder as "nothing has bounced" (#291).
 // So a request that got no answer, with no socket joined or nothing back
 // within 8 s, must not look like one: it rejects. This runs the real net.js,
 // with tools/remotes-stubs.mjs for its imports, a fake socket, and a
@@ -23,7 +24,7 @@ const { mock } = await import("bun:test");
 for (const m of ["core", "assets", "world", "chat", "fp_view", "boot", "ui", "avatar", "xrbody"]) {
   mock.module(`${import.meta.dir}/../client/lib/${m}.js`, () => stubs);
 }
-const { requestHistory, net, _dispatch } = (await import("../client/lib/net.js")) as any;
+const { requestHistory, requestDebug, net, _dispatch } = (await import("../client/lib/net.js")) as any;
 type Settled = { ok: true; value: any } | { ok: false; error: unknown };
 const settle = (p: Promise<unknown>): Promise<Settled> =>
   p.then((value) => ({ ok: true as const, value }), (error) => ({ ok: false as const, error }));
@@ -80,6 +81,27 @@ console.log("a joined socket that never answers");
   finally { globalThis.setTimeout = realSetTimeout; }
   check("the request waits 8 s for its answer", delays.includes(8000), JSON.stringify(delays));
   check("…then rejects, as no answer", !r.ok && /no answer within 8 s/.test(reason(r)), JSON.stringify(r));
+}
+
+console.log("the flight recorder (requestDebug, #291): the same two ways to get no answer");
+{
+  net.joined = false;
+  net.ws = null;
+  const r = await settle(requestDebug({ limit: 5 }));
+  check("a debug request with no socket joined rejects, as not connected", !r.ok && /not connected/.test(reason(r)), JSON.stringify(r));
+  const sent: any[] = [];
+  net.joined = true;
+  net.ws = fakeSocket(sent);
+  const realSetTimeout = globalThis.setTimeout, waits: (number | undefined)[] = [];   // the 8 s is pinned (bot #15)
+  globalThis.setTimeout = ((fn: (...a: any[]) => void, ms?: number, ...args: any[]) => (waits.push(ms), realSetTimeout(fn, ms === 8000 ? 0 : ms, ...args))) as typeof setTimeout;
+  let t: Settled;
+  try { t = await settle(requestDebug({ limit: 5 })); }
+  finally { globalThis.setTimeout = realSetTimeout; }
+  check("a debug request the world never answers rejects after 8 s, as no answer", !t.ok && /no answer within 8 s/.test(reason(t)) && sent.length === 1 && waits.includes(8000), JSON.stringify({ t, sent: sent.length, waits }));
+  const p = settle(requestDebug({ limit: 5 }));
+  await _dispatch({ type: "debug", reqId: sent.at(-1).reqId, events: [] });
+  const e = await p;
+  check("…and an empty flight recorder that answered resolves, as the answer it is", e.ok && e.value.events.length === 0, JSON.stringify(e));
 }
 
 console.log("an old server's snapshot (no world cut): not joined, not live (#470)");

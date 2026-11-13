@@ -2276,6 +2276,7 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
 
     if (params.get('earlysock') === '0') return;
     if (!person) return;
+    if (params.has('door')) return;   // ?door opens the door, which chooses the name (main.js firstRun)
     const name = params.get('name')
       || (localStorage.getItem('ew-name-set') === '1' ? localStorage.getItem('ew-name') : null);
     if (!name) return;   // the first-run door decides identity — never preempt it
