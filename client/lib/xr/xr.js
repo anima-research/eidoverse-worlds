@@ -170,6 +170,8 @@ let frameClock = null;   // the owned clock takeover for the live session
 let exitVeil = null;
 let floorSpace = null;              // 'local-floor' | 'bounded-floor' | null (fell back to 'local')
 
+// what the device scale reads of the session and the self body: passed in (xr-scale.js after the split), never read
+const scaleHost = { presenting: () => presenting, self: () => getSelf() };
 // ---- device scale (Basis BasisHeightDriver: the avatar is scaled to the player)
 // k = avatarEyeY / median of the first 120 HMD heights (> 0.5 m), clamped .6–1.6, saved per avatar. The puppet is
 // scaled (vrm.scene.scale = 1/k), never the tracking, so hands sit on the controllers. Restored on session end.
@@ -177,14 +179,14 @@ const SCALE_LS = 'ew-xr-scale';
 let wornName = '';   // the per-body key for a saved scale
 const scaleState = { k: 1, source: 'fallback', samples: [], eyeY: null, locked: false, firstAt: 0 };
 // a body swap while presenting re-measures: the new body must not wear the old body's ratio
-bus.on('avatar-worn', (v) => { wornName = wornNameOf(v); if (!presenting) return; scaleState.samples.length = 0; scaleState.locked = false; scaleState.firstAt = 0; scaleState.k = 1; scaleState.source = 'fallback'; loadSavedScale(); tee('[xr] body swapped while presenting — device scale re-measured'); });
+bus.on('avatar-worn', (v) => { wornName = wornNameOf(v); if (!scaleHost.presenting()) return; scaleState.samples.length = 0; scaleState.locked = false; scaleState.firstAt = 0; scaleState.k = 1; scaleState.source = 'fallback'; loadSavedScale(); tee('[xr] body swapped while presenting — device scale re-measured'); });
 const xrScale = () => ({ ...scaleState, samples: scaleState.samples.length });
 /** The multiplier the self puppet wears while presenting (Basis: avatar scaled to the player). 1 when unmeasured. */
-export const puppetScale = () => (presenting && scaleState.k > 0 ? 1 / scaleState.k : 1);
+export const puppetScale = () => (scaleHost.presenting() && scaleState.k > 0 ? 1 / scaleState.k : 1);
 // harness hook (?xrsim only): feed HMD heights without waiting on a slow headless frame rate
 export const xrSimSample = (y) => { if (CONFIG.params.has('xrsim')) sampleDeviceScale(y); };
 function avatarEyeY() {
-  const av = getSelf(); const h = av?.vrm?.humanoid;
+  const av = scaleHost.self(); const h = av?.vrm?.humanoid;
   if (!h) return null;
   const root = av.vrm.scene.getWorldPosition(new THREE.Vector3()).y;
   const ps = av.vrm.scene.scale.y || 1;   // authored height: undo any puppet scale the body already wears
