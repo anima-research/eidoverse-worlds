@@ -369,7 +369,7 @@ console.log('\nreview 2026-11-10: every other way out ends the flight');
   check('a respawn answers a climb under way at once, and ends the flight', climb.r != null && /fell out of the world/.test(climb.r.text) && ag.flight == null, `${climb.r?.text ?? 'no answer'}; flight ${ag.flight?.phase ?? 'none'}`);
 }
 {
-  // #316 review: a swap to a wingless body mid-flight ends the flight (setAvatar); the body falls, and can't take off again.
+  // #316 review: a swap to a wingless body mid-flight ends the flight (setAvatar); the body falls, and, granted, may take off again.
   const ag = bench();
   await ag.takeOff(); toAir(ag, 45); ag.flight.stamina = 1e6;
   const climb = answerOf(ag.climbTo(55));
@@ -383,8 +383,9 @@ console.log('\nreview 2026-11-10: every other way out ends the flight');
     `${climb.r?.text ?? 'no answer'}; flight ${ag.flight?.phase ?? 'none'}`);
   check('...and the body falls from where it was', ag.flight == null && ag.pos.y < y0 && ag.pos.y > 30, `y ${ag.pos.y.toFixed(2)} (was ${y0.toFixed(2)})`);
   await fallOut(ag, 400);
+  const down = onGround(ag);
   const r = await ag.takeOff();
-  check('...and once down the wingless body can\'t take off', onGround(ag) && !r.ok && ag.flight == null, `y ${ag.pos.y.toFixed(2)}; ${r.text}`);
+  check('...and once down the wingless body takes off again (the grant flies, not the wings)', down && r.ok && ag.flight != null, `y ${ag.pos.y.toFixed(2)}; ${r.text}`);
 }
 {
   const RealWS = globalThis.WebSocket;
