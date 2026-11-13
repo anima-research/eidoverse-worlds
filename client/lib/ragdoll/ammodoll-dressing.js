@@ -200,7 +200,7 @@ export function buildHair(doll, avatar, { H, keep, localOf, mkBody, boxFor }) {
 /** The constructor's wing stage, right after the hair's (same kit). */
 export function buildWings(doll, avatar, { H, keep, localOf, mkBody, boxFor }) {
   // ---- Bullet wings: the hair's shape (box chains on a kinematic anchor, one-way, local dressing), not its code,
-  // since every parameter differs. While the body is alive avatar.js drives the wings (WING_IDLE); once it goes
+  // since every parameter differs. While the body is alive avatar/wings.js drives the wings (WING_IDLE); once it goes
   // limp these chains take the same bones over.
   doll._wingSegs = [];
   doll._wingAnchors = [];
@@ -218,7 +218,7 @@ export function buildWings(doll, avatar, { H, keep, localOf, mkBody, boxFor }) {
       wchains.get(m[1]).push({ i: m[2] ? Number(m[2]) : 0, node: nd });
     }
     if (chestSeg && wchains.size) {
-      // the authored pose, captured by avatar.js _findWings before the flap ever ran
+      // the authored pose, captured by avatar/wings.js _findWings before the flap ever ran
       if (!avatar.__wingRest) {
         const rest = new Map();
         for (const [, l0] of wchains) for (const it of l0) rest.set(it.node, it.node.quaternion.clone());

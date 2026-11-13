@@ -845,7 +845,7 @@ console.log('\nT6 -- fold_down grounds the flier, and unfolding is deliberate');
   // action rather than typed, and checked here for the transposition that
   // would otherwise be invisible -- Blender stores [w,x,y,z], three.js wants
   // [x,y,z,w], and a swapped pair still normalises to a unit quaternion.
-  const av = readFileSync('client/lib/avatar/avatar.js', 'utf8');
+  const av = readFileSync('client/lib/avatar/wings.js', 'utf8');
   const table = /const WING_FOLDED = \{([\s\S]*?)\n\};/.exec(av)?.[1] ?? '';
   const rows = [...table.matchAll(/([LR]_Wing_\w+):\s*\[([^\]]+)\]/g)]
     .map(m => ({ bone: m[1], q: m[2].split(',').map(Number) }));
@@ -1014,7 +1014,7 @@ console.log('\nISOLATION -- nothing in the running world reaches flight yet');
   //    the launch envelope's own shape: measured in a browser, effort held 1.0
   //    for the first second and decayed 0.91 -> 0.58 -> 0.33 -> 0.18 over the
   //    next five, which is a burst of hard beats easing into a glide.
-  const av = readFileSync('client/lib/avatar/avatar.js', 'utf8');
+  const av = readFileSync('client/lib/avatar/wings.js', 'utf8');
   // DISTINCT, not "equal to the number I first guessed". This asserted
   // /deg: 4[0-9]/ and broke the moment Janus tuned the stroke to 8 -- a test
   // pinning my own guess rather than the property, which is that the two dial

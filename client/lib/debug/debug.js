@@ -396,8 +396,8 @@ function buildHairPanel(stack) {
 }
 
 // ---- wings ------------------------------------------------------------------
-// Two tables: WING_IDLE is the flap, read fresh every frame by avatar.js, so its sliders bite instantly on a standing
-// body. WING_TUNING is the ragdoll's and needs retuneWings() to reach constraints that exist only while a body is limp.
+// Two tables: WING_IDLE is the flap, read fresh every frame by avatar/wings.js, so its sliders bite instantly on a
+// standing body. WING_TUNING is the ragdoll's and needs retuneWings() to reach constraints that exist only while a body is limp.
 const WING_IDLE_FIELDS = [
   ['deg', 0, 60, 1],        // half-amplitude at the shoulder
   ['hz', 0, 3, 0.02],       // flaps per second

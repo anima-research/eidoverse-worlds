@@ -31,6 +31,7 @@ plugin({
 
 const { THREE } = await import('../stubs/core-stub.mjs');
 const { Avatar, BLINK } = await import('../../client/lib/avatar/avatar.js');
+const { Wings } = await import('../../client/lib/avatar/wings.js');
 const { DRIVEN_BONES } = await import('../../client/lib/ragdoll/ragdoll.js');
 
 let pass = 0, fail = 0;
@@ -92,6 +93,7 @@ function stand({ constant = false, pivot = false } = {}) {
     cancelOnce() { this.onceAnim = null; },
   };
   self._composed = new Map();
+  self.wings = new Wings(self);
   // setLimp reaches into the eyes and the wings on the way past. Both find
   // NOTHING on this fixture (no vrm.scene to traverse) and say so, which is the
   // behaviour a rig without lids or wings needs anyway — but they have to be
@@ -99,7 +101,7 @@ function stand({ constant = false, pivot = false } = {}) {
   for (const m of ['setLimp', '_park', '_resolveBones', '_humanoidBones', 'setPose',
                    'clearPose', '_applyOverride', '_reachOwned', '_composeBegin', '_composeEnd',
                    '_applyPoseSlot', '_applyAnimSlot', '_handBack', '_rawBegin', '_rawEnd', '_rawRelease', 'playAnimation', '_sampleTrack',
-                   'setEyes', '_findLids', '_findWings', '_releaseHair', '_combHair', 'bakeHipsIntoRoot', '_hipsRest']) {
+                   'setEyes', '_findLids', '_releaseHair', '_combHair', 'bakeHipsIntoRoot', '_hipsRest']) {
     self[m] = (Avatar.prototype as any)[m];
   }
   // the slice of update() that matters here, in its real order
@@ -343,13 +345,14 @@ function wingStand() {
     },
     cancelOnce() { this.onceAnim = null; },
   };
-  for (const m of ['_findWings', '_flap', 'setLimp', 'setEyes', '_findLids',
+  for (const m of ['setLimp', 'setEyes', '_findLids',
                    '_resolveBones', '_humanoidBones', '_park', '_releaseHair', '_combHair']) {
     self[m] = (Avatar.prototype as any)[m];
   }
-  self._findWings();
+  self.wings = new Wings(self);
+  self.wings._findWings();
   self.tick = function (dt = 1 / 60) {
-    if (!this._limp) this._flap(dt);
+    if (!this._limp) this.wings._flap(dt);
     root.updateMatrixWorld(true);
   };
   const tipY = (n: string) => {
@@ -507,17 +510,17 @@ console.log('\npose teardown and legacy animation compatibility:');
 console.log('\nwings:');
 {
   const { self, nodes } = wingStand();
-  check('every wing bone is found (4 chains x 3)', self._wings?.length === 12,
-    `${self._wings?.length ?? 0} found`);
+  check('every wing bone is found (4 chains x 3)', self.wings._wings?.length === 12,
+    `${self.wings._wings?.length ?? 0} found`);
   check('...at the depth its NAME says, not a count of underscores',
-    JSON.stringify(self._wings.map((w: any) => w.depth).sort()) === '[0,0,0,0,1,1,1,1,2,2,2,2]',
-    self._wings.map((w: any) => `${w.node.name}=${w.depth}`).join(' '));
+    JSON.stringify(self.wings._wings.map((w: any) => w.depth).sort()) === '[0,0,0,0,1,1,1,1,2,2,2,2]',
+    self.wings._wings.map((w: any) => `${w.node.name}=${w.depth}`).join(' '));
   check('roots are visited before tips',
-    self._wings.every((w: any, i: number) => i === 0
-      || w.depth >= self._wings[i - 1].depth));
+    self.wings._wings.every((w: any, i: number) => i === 0
+      || w.depth >= self.wings._wings[i - 1].depth));
   check('sides are read off the name',
-    self._wings.filter((w: any) => w.side === 1).length === 6
-    && self._wings.filter((w: any) => w.side === -1).length === 6);
+    self.wings._wings.filter((w: any) => w.side === 1).length === 6
+    && self.wings._wings.filter((w: any) => w.side === -1).length === 6);
   // WHEN a client first looks at a body must not change what it thinks rest is.
   // Wings are springbones, so three-vrm has posed them before the first
   // update(); capturing the live pose meant an observer who arrived while the
@@ -526,7 +529,7 @@ console.log('\nwings:');
   {
     const posed = wingStand();
     const authored = new Map();
-    for (const w of posed.self._wings) authored.set(w.node, w.rest.clone());
+    for (const w of posed.self.wings._wings) authored.set(w.node, w.rest.clone());
     // now pretend three-vrm has bent every wing, as it would on a fallen body,
     // and hand the rig a springBoneManager that remembers the authored pose
     const bent = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), 1.2);
@@ -536,9 +539,9 @@ console.log('\nwings:');
       joints.add({ bone: node, _initialLocalRotation: q.clone() });
     }
     posed.self.vrm.springBoneManager = { joints };
-    posed.self._wings = undefined;
-    posed.self._findWings();
-    const worst = Math.max(...posed.self._wings.map((w: any) =>
+    posed.self.wings._wings = undefined;
+    posed.self.wings._findWings();
+    const worst = Math.max(...posed.self.wings._wings.map((w: any) =>
       w.rest.angleTo(authored.get(w.node))));
     check('rest is the AUTHORED pose even when the bones are already bent',
       worst < 1e-6, `${(worst * 180 / Math.PI).toFixed(1)}° off`);
@@ -699,13 +702,13 @@ console.log('\nwings:');
   // method that never ran
   (Avatar.prototype as any).setLimp.call(self, false);
   check('standing up captures where the sim left each wing',
-    self._wings.every((w: any) => w.from) && self._wingBlend === 0);
+    self.wings._wings.every((w: any) => w.from) && self.wings._wingBlend === 0);
   self.tick();
   const moved1 = nodes.L_Wing_Upper.quaternion.angleTo(fallen);
   check('...and the first frame back is a step, not a teleport',
     moved1 > 0 && moved1 < 0.25, `${(moved1 * 180 / Math.PI).toFixed(1)}° in one frame`);
   for (let i = 0; i < 120; i++) self.tick();
-  check('...and the blend completes', self._wingBlend === 1);
+  check('...and the blend completes', self.wings._wingBlend === 1);
 }
 
 // ---- one author per hair bone ----------------------------------------------
@@ -877,9 +880,9 @@ console.log('\nwings:');
   // A rig with no wings must not cost anything or throw.
   const root = new THREE.Object3D();
   const self: any = { _limp: false, root, vrm: { scene: root, humanoid: {} } };
-  self._findWings = (Avatar.prototype as any)._findWings;
-  self._findWings();
-  check('a wingless rig finds nothing and says so', self._wings === null);
+  const wings = new Wings(self);
+  wings._findWings();
+  check('a wingless rig finds nothing and says so', wings._wings === null);
 }
 
 console.log('\neased crossfade, interrupted (pre-review B2):');
