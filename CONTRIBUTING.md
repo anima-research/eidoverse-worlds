@@ -55,6 +55,26 @@ built; `docs/guide/` (using a world), `docs/operator/` (running a server) and `d
 get something done; `docs/design/` argues for what isn't built; `docs/research/` holds the why behind built code; `docs/decisions/` and `docs/history/` are dated and
 frozen: supersede them, don't edit them.
 
+## Inside a directory
+
+Refused in review:
+- a new `index.js` barrel (a folder's main module carries the folder's name: `xr/xr.js`);
+- a `-utils`, `-helpers` or `-common` name (say what the file is);
+- a test not named for its subject: `<source basename>[-aspect]-test` is a deterministic contract, `-probe` is
+  evidence from a real environment, `-check` is a static invariant over the repository;
+- a move not made with `tools/dev/mv-module.ts`, or a move commit that doesn't record the command (open branches re-run
+  it). A move updates imports, dynamic imports, `mock.module` stubs, docs and served URLs; its receipt is a grep for
+  every old path that finds nothing, and what became of each old URL (broken on purpose, redirected, or shown unused).
+
+Questions to ask in review, never thresholds:
+- subject first, qualifier after (`sky-baked`), unless a known term reads better (`consent`, not `thing-policy`);
+- a suffix that says what changes together (`-policy` for pure rules, `-effects`, `-panel`, `-wire`, `-codec`, ...);
+- the import path names the folder (`xr/keyboard.js`); repeat its word only where a name is ambiguous;
+- split on a seam (pure vs DOM, a part most importers don't need, parts that change for different reasons), not a
+  size; a long file you touch gets a section map;
+- in `client/`, a tiny file with one importer usually folds back, since every file is a request without a build step;
+- a folder is a family of files that import each other, not a shared prefix.
+
 ## Style
 
 - A new source file (.ts, .js, .mjs) is named in lowercase words joined by hyphens (`relay-decision.ts`), not run together or with underscores.
