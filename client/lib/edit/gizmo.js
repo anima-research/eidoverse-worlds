@@ -158,10 +158,9 @@ function endDrag() {
   release();
   if (getTool() === 'pivot') { endPivotDrag(); return; }
   const m = multi; multi = null;
-  if (m) MM.end(m);
-  if (cancelled) { cancelled = false; start = null; return; }
+  if (cancelled) { cancelled = false; start = null; MM.end(m); return; }
   const id = attachedId; const obj = id && entities.get(id);
-  if (!obj || !start?.rec) { start = null; MM.revert(m); return; }
+  if (!obj || !start?.rec) { start = null; MM.revert(m); MM.end(m); return; }
   const rec = foldRecord(id) ?? start.rec;
   // only the fields this gesture moved and this thing HAS (shared/editschema.js poseEdits); editOps makes them one transform
   const mode = { translate: 'move', rotate: 'rotate', scale: 'scale' }[controls.mode];
@@ -170,12 +169,12 @@ function endDrag() {
   // about a pivot, a turn or a size ALSO moves the origin (it swings round the pivot): send the position with it
   const set = viaProxy && mode !== 'move' ? { ...poseEdits(rec, id, 'move', pose), ...poseEdits(rec, id, mode, pose) } : poseEdits(rec, id, mode, pose);
   const { ops, errors } = editOps(rec, id, set);   // the authority asks about locks
-  if (errors.length || !ops.length) { start = null; MM.revert(m); return; }
+  if (errors.length || !ops.length) { start = null; MM.revert(m); MM.end(m); return; }
   // the followers' writes ride the same request: each one's own fields (a turn about its pivot moves its origin too)
   const more = MM.ops(m, (fid) => { const fr = foldRecord(fid); if (!fr) return null;
     const o2 = entities.get(fid).quaternion; const fp = { pos: entities.get(fid).position.toArray(), q: [o2.x, o2.y, o2.z, o2.w], scale: entities.get(fid).scale.toArray() };
     return editOps(fr, fid, mode === 'move' ? poseEdits(fr, fid, 'move', fp) : { ...poseEdits(fr, fid, 'move', fp), ...poseEdits(fr, fid, mode, fp) }); });
-  if (more.errors.length) { start = null; MM.revert(m); Edits.revertPose(id); import('../ui/ui.js').then((u) => u.flashHint(more.errors.join(' · '), 5000)); return; }
+  if (more.errors.length) { start = null; MM.revert(m); MM.end(m); Edits.revertPose(id); import('../ui/ui.js').then((u) => u.flashHint(more.errors.join(' · '), 5000)); return; }
   const all = [...ops, ...more.ops];
   // the drag was presence; the release is ONE request (one act, one Ctrl+Z, one lock question for the lot), expecting where the drag started
   const n = 1 + (m?.followers.length ?? 0);
@@ -183,6 +182,7 @@ function endDrag() {
   const base = start.comps || Object.keys(more.base).length ? { ...(start.comps ? { [id]: start.comps } : {}), ...more.base } : null; start = null;
   bus.emit('gizmo-release', { id, ops: all, ids: [id, ...(m?.followers.map((f) => f.id) ?? [])] });
   Edits.sendOps(all, { what, base, revert: () => { Edits.revertPose(id); MM.revert(m); } });
+  MM.end(m);   // after the request, so it never queues behind the followers' last samples
 }
 
 /** Esc mid-drag: cancel the gesture (nothing is written; the thing goes back). */

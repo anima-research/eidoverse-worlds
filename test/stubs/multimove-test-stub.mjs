@@ -1,5 +1,4 @@
-// multimove-test substitutes this for edit/multimove.js's hosted imports (core, world, net, colliders, writes) and
-// selection.js's (core, editwrites, ui).
+// multimove-test substitutes this for edit/multimove.js's hosted imports (core, world, net, colliders, writes).
 import * as THREE_ from 'three';
 export const THREE = THREE_;
 export const entities = new Map();

@@ -47,6 +47,7 @@ export function followersOf(leadId, ok = () => true) {
   return { ids, skipped };
 }
 
+export const RELAY_PER_TICK = 1, END_BUDGET = 8;   // at 15 Hz: lead + pose + 1 follower ≈ 45 msg/s, under server/config.ts MSG_RATE (60)
 const _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _m = new THREE.Matrix4();
 
 /** Take the start: the lead's world turn and local scale, each follower's world matrix and pivot. */
@@ -54,7 +55,7 @@ export function begin(leadId, ids) {
   const lead = entities.get(leadId); if (!lead || !ids.length) return null;
   lead.updateWorldMatrix(true, false);
   lead.matrixWorld.decompose(_p, _q, _s);
-  const st = { leadId, leadPos: _p.clone(), leadQ: _q.clone(), leadScale: lead.scale.clone(), lastSent: 0, followers: [] };
+  const st = { leadId, leadPos: _p.clone(), leadQ: _q.clone(), leadScale: lead.scale.clone(), lastSent: 0, cursor: 0, followers: [] };
   for (const id of ids) {
     const o = entities.get(id); if (!o) continue;
     o.updateWorldMatrix(true, false);
@@ -74,7 +75,11 @@ export function apply(st, mode, space = 'world') {
   const dLocal = st.leadQ.clone().invert().multiply(_q);                    // …in its own axes
   const ratio = new THREE.Vector3(lead.scale.x / (st.leadScale.x || 1), lead.scale.y / (st.leadScale.y || 1), lead.scale.z / (st.leadScale.z || 1));
   const now = performance.now(); const relay = now - st.lastSent >= 66; if (relay) st.lastSent = now;
-  for (const f of st.followers) {
+  // followers share a relay budget: the server allows ~60 messages/s per connection, and a refused release snaps the
+  // whole move back, so a few followers' samples per tick, round-robin (the lead and the pose take the rest)
+  const sendNow = new Set();
+  if (relay) for (let k = 0; k < Math.min(RELAY_PER_TICK, st.followers.length); k++) sendNow.add((st.cursor++) % st.followers.length);
+  for (const [i, f] of st.followers.entries()) {
     const o = entities.get(f.id); if (!o) continue;
     const W = f.world.clone();
     const toPiv = new THREE.Matrix4().makeTranslation(f.pivot.x, f.pivot.y, f.pivot.z), fromPiv = new THREE.Matrix4().makeTranslation(-f.pivot.x, -f.pivot.y, -f.pivot.z);
@@ -90,7 +95,7 @@ export function apply(st, mode, space = 'world') {
     W.decompose(o.position, o.quaternion, o.scale);
     o.updateMatrixWorld(true);
     reindexCollider(f.id);
-    if (relay) { const p = o.position, q = o.quaternion; sendDrag(f.id, [p.x, p.y, p.z], new THREE.Euler().setFromQuaternion(q, 'YXZ').y, [q.x, q.y, q.z, q.w]); }
+    if (sendNow.has(i)) { const p = o.position, q = o.quaternion; sendDrag(f.id, [p.x, p.y, p.z], new THREE.Euler().setFromQuaternion(q, 'YXZ').y, [q.x, q.y, q.z, q.w]); }
   }
 }
 
@@ -109,7 +114,8 @@ export function ops(st, opsFor) {
 
 /** Put every follower back where the log has it (Esc, a refusal, a cancelled lock question). */
 export function revert(st) { for (const f of st?.followers ?? []) Edits.revertPose(f.id); }
-/** The last pose sample, so others drop the claim at once. */
+/** The last pose sample, so others drop the claim at once: for the first END_BUDGET followers (the rest expire on the
+ *  claim timeout). Send it AFTER the release request, so the request never waits behind them. */
 export function end(st) {
-  for (const f of st?.followers ?? []) { const o = entities.get(f.id); if (o) sendDrag(f.id, o.position.toArray(), new THREE.Euler().setFromQuaternion(o.quaternion, 'YXZ').y, o.quaternion.toArray(), { end: true }); }
+  for (const f of (st?.followers ?? []).slice(0, END_BUDGET)) { const o = entities.get(f.id); if (o) sendDrag(f.id, o.position.toArray(), new THREE.Euler().setFromQuaternion(o.quaternion, 'YXZ').y, o.quaternion.toArray(), { end: true }); }
 }
