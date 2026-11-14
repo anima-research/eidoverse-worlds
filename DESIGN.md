@@ -43,8 +43,8 @@ visemes, gaze. High-frequency, ephemeral, lossy-tolerant, never logged (an
 operator can record frames to a side file with `RECORD_FRAMES=1`; clients
 are told at join). Streamed ~15Hz and interpolated.
 
-Because eidoverse animation is *systemic* (locomotion synthesized, creatures
-self-animating, mouths audio-driven), presence streams **intent state**
+Because eidoverse animation is *systemic* (locomotion synthesized, mouths
+audio-driven), presence streams **intent state**
 (locomotion vector, active clip + phase, gesture, viseme envelope) and each
 client's local systems reproduce the motion. Replicate inputs to the animation
 systems, not bone poses.
@@ -81,7 +81,7 @@ word for a pattern of email use without being a type in SMTP.
 | Entity | Notes |
 |---|---|
 | **Avatars** | Embodied participants. VRM + controller + identity. Presence plane only. |
-| **Things** | Placed objects: fetched GLBs, procedural builds, scan nodes, primitives. Transform, parent, creator, scripts. |
+| **Things** | Placed objects: fetched GLBs, procedural builds, primitives. Transform, parent, creator, scripts. |
 | **Inscriptions** | Text/media anchored in space — notes, signs, screens. Substrate for asynchronous interaction. |
 | **World** | Sky, weather, terrain, time. |
 
@@ -142,7 +142,7 @@ clock, and every cause chain ends at a participant. Triggers: `use`, `say`,
 **Layer 0 — intrinsic affordances (authored by nobody).** The controller
 derives affordances from geometry: vaultable, climbable, sittable (`seatOn`
 raycasts real seat pans). Everything is walkable-on / grabbable / placeable by
-virtue of being physical. A scanned stool is sittable the moment it arrives.
+virtue of being physical. A placed stool is sittable the moment it arrives.
 Physicality is the one interface every participant shares.
 
 **Layer 1 — reactions.** An entity's `reactions` component maps a use to
@@ -171,8 +171,8 @@ speak → visemes); explicit triggers are gestures and Layer-1 firings.
 The same requests MCPL sends, reached through embodiment and UI:
 - **Move a chair**: embodied carry (click-hold, walk, drop, auto-reseat), or
   arrange mode where **drag semantics are the placement helpers** — the chair
-  stays seated on surfaces, lands ON the table not beside it, kisses flush via
-  `placeTouching`. Drag is transient presence traffic; release commits one
+  stays seated on surfaces, lands ON the table not beside it, kisses flush (the
+  authority's `place`). Drag is transient presence traffic; release commits one
   clean log entry. Undo = inverse entry.
 - **Spawn**: palette (library + inventory) with ghost preview; **ask for it** (commissioning as a
   first-class path, from someone who builds or from a generator such as
