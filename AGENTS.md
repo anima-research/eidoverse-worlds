@@ -671,7 +671,7 @@ trigger. `grabbable.who` says who may pick it up (default member),
 `physics.who` who may punt it; locks bind as they bind a place.
 
 Flight needs the world to run physics: `set {id: '@world', component:
-'physics-engine', value: {engine: 'eidosim@1.0.0'}}` (owner). Then a launch is a `sim`
+'physics-engine', value: {engine: 'eidosim@1.0.0'}}` (owner). Then a launch is a `physics`
 entry, the engine (eidosim: deterministic rigid bodies that tumble, roll and knock over
 free dynamic things they hit) flies it, and
 the authority LOGS where it came to rest (a change entry caused by the launch);

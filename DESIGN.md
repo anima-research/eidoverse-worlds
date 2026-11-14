@@ -61,17 +61,19 @@ systems, not bone poses.
 
 ## Authority
 
-**The server is a sequencer and archivist, not a simulator.**
+**The server keeps the log and runs the physics; each client moves its own body.**
 - Server: orders/validates/persists the log, fans out presence. CPU-only.
 - Each client owns its own avatar (local controller + physics) and broadcasts
   pose — the VRChat model. Fluent movement is guaranteed because it's local.
+  The server doesn't simulate anyone's body.
 - GPU sims (fluid, cloth, grass, particles, weather rendering) are cosmetic,
   client-local, parameterized by log events. Allowed to diverge.
 - Contested interactions (two hands, one object) are settled by the authority:
-  it tracks who holds what and checks every put, drop and throw. Physics,
-  where a world turns it on, is a deterministic engine every client runs
-  on the same logged launches (spec/PHYSICS.md) — still not a server
-  simulating for everyone.
+  it tracks who holds what and checks every put, drop and throw.
+- Physics, where a world turns it on, is one deterministic engine
+  (spec/PHYSICS.md). The server runs it, computes where thrown things come
+  to rest, and logs that as the truth; every client runs the same engine on
+  the same logged launches and lands them in the same place.
 - Trust/identity: capabilities per world (build rights, entry, visibility),
   Permissions below. An identity belongs to one server.
 
@@ -116,7 +118,7 @@ Building blocks:
   forth along an axis), `path` (along points). Every client — live,
   late-joining, replaying a fork — evaluates the same closed form at its
   own `now`: no integration, no drift, no ongoing traffic.
-  Sequencer-not-simulator, applied to dynamics. New motion types are pure
+  Results, never processes, applied to motion. New motion types are pure
   `f(params, t) → transform` added client-side.
 - **`parent`, `socket` and `station`** — scene-graph attachment in the log.
   A child's transform is local to its parent; cargo rides the parent frame
