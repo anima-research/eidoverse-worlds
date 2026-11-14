@@ -96,6 +96,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["structure-edit", "shared/structure-edit-test.ts", 1], // shared/structure-edit.js: the structure editor's pure half
   ["structure-collider", "client/structure-collider-test.ts", 1], // declared structure colliders (fitStructureBoxes)
   ["collider-off-bodies", "client/collider-off-bodies-test.ts", 1], // collision off for bodies gives the walker nothing to meet, on a mesh's and a building's every realizing path
+  ["anchor-support", "mcpl/anchor-support-test.ts", 1], // a structure's anchor model is no deck for an agent's body (rainroom 11-14: walk_to stood on the crate inside a cabin)
   ["support-swap", "mcpl/support-swap-test.ts", 1], // #260 I81: a model changed while its geometry is in flight registers nothing from the old fetch (syncSupport's re-check)
   ["knockdown", "server/knockdown-test.ts", 1], // #260 I8/I147/I148: a headless body takes a shove from a body beside it, refuses one with its move gate off (the relay answers), hangs from a nail
   ["sockets", "shared/sockets-test.ts", 1], // #260 I454: sockets as entities (resolveSeat, the seat views); ran only as an import before

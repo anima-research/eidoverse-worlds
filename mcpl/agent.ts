@@ -1173,7 +1173,7 @@ export class WorldAgent {
           else this.noteEffGap(id, fx.why);
         }
         // a motion moves its support, and a collider override changes the policy its walking collider was fitted with
-        if (comp === "motion" || comp?.startsWith("motion:") || comp === "collider") this.ground.trackSupport(this.ground.syncSupport(id));
+        if (comp === "motion" || comp?.startsWith("motion:") || comp === "collider" || comp === "structure") this.ground.trackSupport(this.ground.syncSupport(id));
         break;
     }
   }

@@ -14,6 +14,8 @@ import { lyingFrame } from "../shared/rot.js";
 import { isFiniteVec3 } from "../shared/protocol/is.js";
 import { cellKey, halfFloored, localizePoint, nodeAtPoint, planStructure, ROUTE_STEP_METRES } from "../shared/structure.js";
 import { recordComponents } from "../shared/protocol/view.js";
+// a structure's model is only its anchor: the structure planner owns its walls and floors (the browser fits it no collider)
+const collisionElsewhere = (e: any) => solidOffRecord(e) || !!recordComponents(e).structure;
 
 type CollisionMesh = { positions: Float32Array; indices: Uint32Array; building?: unknown };
 /** Collision triangles per (sequencer, lib), shared by every agent in this
@@ -382,7 +384,7 @@ export class AgentGround {
   async syncSupport(id: string) {
     const before = this.a.entities.get(id);
     if (!before?.model) return;  // only a model carries a collider
-    if (solidOffRecord(before)) { this.dropSupport(id); return; }   // collision off (collider.enabled): nothing to stand on
+    if (collisionElsewhere(before)) { this.dropSupport(id); return; }   // collision off (collider.enabled), or a structure's anchor: nothing to stand on
     // A moving thing supports nothing here (drop path as well as skip path); so
     // does mounted cargo, whose parent's transform this code doesn't track.
     if (this.hasActiveMotion(before) || this.a.mounts.has(id)) { this.dropSupport(id); return; }
@@ -394,7 +396,7 @@ export class AgentGround {
     if ((!g && !mesh) || !e || e.model !== before.model || this.a.closed) return;
     // started moving, or got mounted, while its geometry was in flight —
     // replay folds a mount right behind the spawn that triggered this fetch
-    if (this.hasActiveMotion(e) || this.a.mounts.has(id) || solidOffRecord(e)) { this.dropSupport(id); return; }
+    if (this.hasActiveMotion(e) || this.a.mounts.has(id) || collisionElsewhere(e)) { this.dropSupport(id); return; }
     const s = e.scale ?? 1;
     // a stretched thing's per-axis scale (scale3), beside the one number decide() reads, as the browser's applyScale
     const s3 = Array.isArray(e.scale3) && e.scale3.length === 3 && e.scale3.every(Number.isFinite) ? e.scale3 as number[] : [s, s, s];
