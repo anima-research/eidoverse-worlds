@@ -68,6 +68,8 @@ async function spawnServer(env: Record<string, string | undefined>): Promise<{ p
   const take = (b: Buffer) => { const s = out + b.toString(); out = s.length > 4000 ? s.slice(-4000).replace(/^[^\n]*\n?/, "") : s; if (!bound && /sequencer on http:\/\/\S+/.test(out)) bound = at(); };
   child.stdout!.on("data", take); child.stderr!.on("data", take);
   child.on("exit", (code, sig) => { exited = `exited code=${code} signal=${sig} at ${at()}`; });
+  // Bun prints an unheard spawn "error" and runs on (no crash, same 10 s wait): hear it so the FAIL block says ENOENT
+  child.on("error", (e) => { exited ||= `spawn failed: ${e.message.slice(0, 160)} at ${at()}`; });
   let lastRoot = "no probe ran";
   const answered = await tryUntil(`the server on :${port} answers`, () => fetch(`http://127.0.0.1:${port}/`).then(
     async (r) => { lastRoot = await r.text().then((t) => answer(r, t), netErr); return true; },
