@@ -14,6 +14,7 @@ import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { suite } from "../gate/suite.ts";
+import { pause } from "../gate/wait.ts";
 
 const S = suite("vrmheight");
 const check = (name: string, ok: unknown, detail?: unknown) => S.check(name, ok, detail);
@@ -173,7 +174,7 @@ check("a re-export's stature shows at once", near(height("plain"), 1.63), height
     entry("forked")?.path.endsWith("?v=1700000900000") === true && near(entry("forked")?.height, 1.63), entry("forked"));
   check("a body only in PATCH_DIR is listed", near(entry("patchonly")?.height, 1.63), entry("patchonly") ?? "not listed");
   // the seat store agrees, and judges a profile against the patched bytes /library serves
-  const { seatStore, CLIP_REL } = await import("../server/seats.ts");
+  const { seatStore, CLIP_REL } = await import("../../server/seats.ts");
   const sha = (f: string) => createHash("sha256").update(readFileSync(f)).digest("hex");
   mkdirSync(join(root, "lib", CLIP_REL, ".."), { recursive: true });
   writeFileSync(join(root, "lib", CLIP_REL), "a sitting clip");
@@ -189,7 +190,7 @@ check("a re-export's stature shows at once", near(height("plain"), 1.63), height
   mkdirSync(join(root, "lib", "eidoverse/assets/bodies"), { recursive: true });
   writeFileSync(join(root, "lib", "eidoverse/assets/bodies", "elsewhere.vrm"), body(V1));
   writeFileSync(join(root, "defs", "avatars", "repointed.json"), JSON.stringify({ vrm: "eidoverse/assets/bodies/elsewhere.vrm" }));
-  await Bun.sleep(1100);   // the def registry's TTL
+  await pause("the def registry's TTL", 1100);
   const repointed = seatStore.propose({ ...profile("patchonly"), avatar: "repointed" }, "test");
   check("a def-repointed body is listed and is a roster avatar to the seat store (#326)",
     entry("repointed")?.path.startsWith("eidoverse/assets/bodies/elsewhere.vrm") === true && repointed.ok, { listed: entry("repointed"), repointed });
@@ -198,15 +199,15 @@ check("a re-export's stature shows at once", near(height("plain"), 1.63), height
   // …and so does the operator's tool, over the same store
   const derivation = join(root, "patchonly-derivation.json");
   writeFileSync(derivation, JSON.stringify(profile("patchonly")));
-  const tool = Bun.spawnSync(["bun", join(import.meta.dir, "seat-accept.ts"), "propose", derivation, "--operator", "test"], { env: process.env });
+  const tool = Bun.spawnSync(["bun", join(import.meta.dir, "../../tools/operator/seat-accept.ts"), "propose", derivation, "--operator", "test"], { env: process.env });
   check("the operator's seat tool takes a body only in PATCH_DIR too", tool.exitCode === 0, tool.stderr.toString().trim());
 }
 
 // ---- 4. the door through the real /library route ------------------------------
 console.log("the door's bodyHeightFor through /library (server/routes.ts route)");
 {
-  const { route } = await import("../server/routes.ts");
-  const { rigBonesFor } = await import("../mcpl/rigbones.ts");
+  const { route } = await import("../../server/routes.ts");
+  const { rigBonesFor } = await import("../../mcpl/rigbones.ts");
   const srv = Bun.serve({ port: 0, fetch: (req) => route(req, { upgrade: () => false, requestIP: () => ({ address: "127.0.0.1" }) } as any) });
   // what the door's own fetches receive, decoded
   const realFetch = globalThis.fetch;

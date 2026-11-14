@@ -104,7 +104,7 @@ console.log("\nstature follows a re-upload at the same path");
   a.invalidateBodyAsset("short");
   await pause("the re-measure's download fails first", 100);
   files["fix/short.vrm"].down = false;
-  await a.buildTerrain(WET);
+  await a.ground.buildTerrain(WET);
   await tryUntil("the body height settles", () => Math.abs(a.bodyH - TALL) < 0.01, { ms: 500, step: 10 });
   check(`a failed re-measure is tried again (${a.bodyH?.toFixed(2)} m)`, Math.abs(a.bodyH - TALL) < 0.01, `${a.bodyH}`);
   files["fix/short.vrm"].glb = bodyGlb(SHORT);
