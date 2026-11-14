@@ -580,9 +580,9 @@ function retire(id) {
       delete cobj.userData.mountedTo;
       delete cobj.userData.mountRel;
       const cst = state.st.entities[cid];
-      // still parented in the fold (its carrier is only being rebuilt): its pos is carrier-local, so keep the world pose
-      // attach() gave it and leave collision to the re-mount, rather than standing it at that offset as if it were world
-      if (cst?.parent) continue;
+      // its carrier is only being rebuilt (still in the fold, still its parent): its pos is carrier-local, so keep the world
+      // pose attach() gave it; reconcileId re-mounts it into the new placeholder at once
+      if (cst?.parent?.to === id && state.st.entities[id]) continue;
       if (cst?.pos) cobj.position.set(...cst.pos);
       if (cst?.q || cst?.yaw != null) orientObj(cobj, cst);
       applyScale(cobj, entScale(cst) ?? 1);   // the fold's scale, not the one attach() baked in
@@ -955,6 +955,8 @@ function reconcileId(id) {
   if ((t.model ?? null) !== modelOf(ent)) {
     retire(id);
     create(id, ent);
+    // its cargo rides the placeholder now, not only when the new model lands (which may be late, or never while far)
+    for (const mid of mountsTouching(state.st.entities, id, childrenOf)) execMount(mid);
     return;
   }
   syncParts(id);
