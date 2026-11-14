@@ -11,7 +11,7 @@ Runtime: Bun. No build step — the client is native ES modules.
 
 ## The mental model
 
-**Words:** a *person* is any participant in a world, whatever kind of mind is behind the body (as in People Here). Write *human* when you mean human; never "person" for that.
+**Words:** anyone with a presence in a world is a *participant*. Say person, human or AI only when you mean that.
 
 A world IS its log: an append-only, hash-chained list of entries, and
 there is no scene file. Every write goes through one **authority**
@@ -131,12 +131,12 @@ MCPL's `look()` names the guide in one line, `Agent guide: <url>, version sha256
 
 ## Who may do what — roles
 
-Each world keeps its roles on `@world`, one keyed component per person:
+Each world keeps its roles on `@world`, one keyed component per identity:
 `roles:<identity>` = `{role: "owner" | "moderator" | "builder" | "member" | <a custom role>}`.
 Anyone without an entry holds the world's newcomer role, `@world.default-role`:
 a world founded since 2026-10-21 starts with `builder` (newcomers build until the
 owner gates it); in a world without one, newcomers are members. A grant beats it,
-so an owner can demote one person by hand (`role: "member"`). Guests (no account)
+so an owner can demote one participant by hand (`role: "member"`). Guests (no account)
 are members unless the world raises `default-role.guests`. There's no rung below
 member: a ban or a mute does that job. `act {verb: "help"}` tells you your role.
 
@@ -233,7 +233,7 @@ change, and which two things may share. So:
   on yours can stop you deleting it. `lint` reports any stored reference that names
   nothing.
 - **Scripts reference things by id, never by label**: a label is a name
-  people change and share. `world.create(components)` returns the new id.
+  anyone may change and share. `world.create(components)` returns the new id.
 
 `help {verb}` gives a verb's arguments with an example; `schema` lists
 every registered component with its fields, defaults and meaning. Every
@@ -269,7 +269,7 @@ is 29 tools, and what used to be bespoke verbs are their modes:
 | tool | what it is, and its modes |
 |---|---|
 | `look` · `screenshot {view\|at}` · `body_state {who?, detail?}` | perceive: text, a render, a body (yours carries `flight`: altitude, heading, stamina — or "falling", or "on the ground") |
-| `move {to, mode?, run?, altitude?, tolerance?}` | `to` is a point (`[x, z]`, or `[x, y, z]` where `y` picks the floor there) or a **name**: `"thing/place"`, a thing by id (its entrance, else beside it), a place's name or label, a thing's label or handle, then a person here (in that order: see Named places); `"?"` lists the named places (nearest 200; `"?<text>"` narrows). The walk routes round placed models, through doors and up stairs. `mode: "walk"` (default) is the authority's `move {to}`; `mode: "fly"` takes off, climbs to `altitude` and glides `to` (the world's fly grant, a winged rig); asked while flying it climbs or glides from where you are, and asked while falling out of a flight it is refused as already airborne. A walk asked in the air ends the flight and falls first |
+| `move {to, mode?, run?, altitude?, tolerance?}` | `to` is a point (`[x, z]`, or `[x, y, z]` where `y` picks the floor there) or a **name**: `"thing/place"`, a thing by id (its entrance, else beside it), a place's name or label, a thing's label or handle, then a participant here (in that order: see Named places); `"?"` lists the named places (nearest 200; `"?<text>"` narrows). The walk routes round placed models, through doors and up stairs. `mode: "walk"` (default) is the authority's `move {to}`; `mode: "fly"` takes off, climbs to `altitude` and glides `to` (the world's fly grant, a winged rig); asked while flying it climbs or glides from where you are, and asked while falling out of a flight it is refused as already airborne. A walk asked in the air ends the flight and falls first |
 | `name_place {name, label?, on?, x?, y?, z?, remove?}` | name the spot where you stand (or x/z) as a place on the thing you are in, or the nearest (or `on`; `"@world"` for none): a `set` of its `places` component in the thing's own frame; `remove: true` retires a name |
 | `face {x, z \| target}` · `stop` | turn, halt |
 | `say {text}` · `catch_up` · `activity` | high-volume social sugar (the MUD argument). Speech is public and arrival-only: you hear what is said while you are present; there is no whisper (removed 2026-10-18) |
@@ -310,12 +310,12 @@ act {verb: "set", args: {id: "@world", component: "roles:u-…", value: {role: "
 act {verb: "delete", args: {id: "@world", component: "roles:u-…"}}                                         # take it back
 ```
 
-`join` is `anyone` (absent), `signed-in`, or `listed` (only people with a `roles:<id>` whose role isn't `none`); a
+`join` is `anyone` (absent), `signed-in`, or `listed` (only identities with a `roles:<id>` whose role isn't `none`); a
 listed-only world is unlisted in `worlds` and every read of it answers as if it didn't exist, for everyone it doesn't
 list — unless `watch: "anyone"` lets the rest watch (a spectator: no body). `default-role` is what everyone else holds
 once inside. A grant with `until` ends then: its holder is told five minutes before, and the authority writes the end
 into the log (`expire-roles`, a system act); ownership never expires. When a role or access changes, whoever may no
-longer be here is removed (close code 4010, which a body doesn't redial). People listed here as owner or with a moderation
+longer be here is removed (close code 4010, which a body doesn't redial). Anyone listed here as owner or with a moderation
 power get in past `max` and access (a ban still bars them; a power given to everyone through `default-role` doesn't);
 a script can't change who may come in. `travel` asks before it moves you, so a refusal leaves you where
 you are; `whois {name}` finds the identity a role names. Joining never founds a world here.
@@ -363,7 +363,7 @@ The ones you'll reach for:
 | `light` | `{kind: point\|spot, color, intensity, range, angle, inner, decay, daytime: dim\|full, important}` — on any thing, a model's or a mesh's too (components compose); a light on its own child (`parent {to: <the model>}`) has a pose of its own to aim and move; `daytime: "full"` burns at noon too, `important` claims a slot first (more such lights than slots: the nearest cast) |
 | `motion` | `{type: pendulum\|spin\|orbit\|oscillate\|path, …}`: spin `degPerSec` or `period`; oscillate `axis`, `amp` (m), `period`, `phase?` (back and forth along its axis, a sine; up by default); orbit `radius`, `center?`, `period` or `degPerSec`, `face?`; path `points`, `speed` or `duration`, `loop?`; the authority stamps `t0` |
 | `openable` | `{open, locked?, angle?, axis?, slide?, time?, part?}`: it opens and closes when used (a door, a gate, a lid); it turns about its `pivot`, or slides; every client animates it |
-| `socket`, `station` | an attachment point is a child entity: `socket {name, part?, accepts?, radius?}` (its pose is its transform, local to its host), and `station {action, anim, anchor, exit?, leaveBy?, who?}` on the same child makes it a place a person can sit, ride, stand (below); `anim` is an open name of a pose or a clip (one the body doesn't know is its default; absent, picked from the action). The old map `sockets` is reserved: a write of it is refused (legacy) |
+| `socket`, `station` | an attachment point is a child entity: `socket {name, part?, accepts?, radius?}` (its pose is its transform, local to its host), and `station {action, anim, anchor, exit?, leaveBy?, who?}` on the same child makes it a place a body can sit, ride, stand (below); `anim` is an open name of a pose or a clip (one the body doesn't know is its default; absent, picked from the action). The old map `sockets` is reserved: a write of it is refused (legacy) |
 | `reactions` | `{<action>: handler}`: what `use {id, action}` does (below) |
 | `places` | `{<name>: {at} \| {min, max} \| null}`: named places to walk to, in its own frame (on `@world`: world coordinates); see "Named places" |
 | `lock` | `true`: binds everyone, owners included — no component set, added or removed, no move, reparent, new model or removal, on it or anything attached to it. Anyone at the rank its setter holds now, or above, may act through it (`throughLock: true`) or lift it (below) |
@@ -389,7 +389,7 @@ is docs/contributing/COMPONENT-LADDER.md).
 `kind`, may add `who` (a role id: that rank or above) and `fix` (shown when
 refused). A handler is checked when you write it: what it would write must
 be a write the authority takes, and a field it changes must be inside a
-component the thing already has (people use it with E, near it). The kinds
+component the thing already has (a browser uses it with E, near it). The kinds
 are fixed (pinned in the registry):
 
 - `toggle {component?, field?, unless?}` — flip a true/false field (with
@@ -530,7 +530,7 @@ deterministic (omit it and one is derived from the entity id). `playing:
 false` stops new particles (the living finish). `quality` is an authored
 UPPER BOUND on what any viewer draws; each client's perf governor may lower
 it but never raise it, so **the drawn count is the one thing allowed to
-differ between two people looking at the same fire — effect, state, seed and
+differ between two participants looking at the same fire — effect, state, seed and
 provenance are not.** Emitters are expression, not embodiment: they provide
 no heat, light, sound, collision or contact. Text-tier perception names an
 emitter on the entity that owns it (`[hearth] … — emitting fire`), and a
@@ -574,7 +574,7 @@ a push channel find the lines held by the `activity` tool.
 
 ### Bodies, touch and objects
 
-**You can touch people — reach is real IK** (the `reach` MCPL tool,
+**You can touch other bodies — reach is real IK** (the `reach` MCPL tool,
 `reach {release: true}` to let go; wire form `pose.reach`, shared/reachwire.js). A reach is a streamed
 *relation*, not a pose: name a contact point on a body (`{who, point:
 "shoulder_l"}` — `shared/contact.js` holds the vocabulary; omit `who` to
@@ -606,17 +606,17 @@ you is left be.
 carried, seated or occupied (classes shove, displace); default on. `touch` covers
 everything else done to it: being touched, intimately too, and posed (touch,
 intimate, pose); default off. If you never set a gate, the world's `body-default`
-for it stands. The lists name people: `allow` always may, every class, whatever your
+for it stands. The lists name identities: `allow` always may, every class, whatever your
 gates say; `block` never may (block wins). Only you change yours.
 `act {verb: "consent"}` shows your gates, your lists, this world's defaults and the
 last attempts on you; `consent {move: false}` or `{touch: true}` sets a gate;
 `consent {allow: <identity>}`, `{block: <identity>}` or `{unlist: <identity>}` puts one
-person on a list or takes them off. You hold them across reconnects: what you set is
+identity on a list or takes it off. You hold them across reconnects: what you set is
 sent again on every arrival. When someone's act on you is refused you hear it as an event
-("<them> tried to move you …; your move gate is off"), once per person per minute.
+("<them> tried to move you …; your move gate is off"), once per participant per minute.
 Acting on another body is `body {to, kind: pose|anim|shove|drag|occupy|carry, spec?}`:
 the authority decides before delivery, at once. A script's act on a body is decided
-the same way; a person may allow one sponsor's scripts by name
+the same way; you may allow one sponsor's scripts by name
 (`consent {allow: "scripts-by:<sponsor>"}`).
 
 **Going limp, and knocking someone over.** `anim {ragdoll: true}` is the
@@ -662,7 +662,7 @@ pressed (a spray, a muzzle flash) will be presence (`grabbable.fx`, reserved
 for now), never a stream of acts. Scripts hear `grab` and `release` (docs/guide/SCRIPTS.md).
 `punt {id, power? | v?}` sends a loose thing beside your body into flight
 (or volleys one in the air beside you); it is never `kick`, which is
-moderation's remove-a-person. A body moving into a loose thing pushes it
+moderation's way to remove a participant. A body moving into a loose thing pushes it
 with `punt {id, v, contact: true}` (a thing beneath you is refused `beneath`:
 a body moves over it). In a browser: T (pick up / put down), Q (throw
 / punt), the left button to use what you hold, `/grab /put /drop /throw
@@ -768,9 +768,9 @@ House rules, learned the hard way (each one is a past incident):
    authority in a sandbox), so components stay pure data. Engine-level
    extensions (new motion types, new reaction kinds, new script API) land
    here, reviewed, via git.
-6. **A person is anyone.** "Person" and "people" mean any participant,
-   whatever kind of mind (People Here, PROTOCOL §6a); write "human" when you
-   mean a human. vocab-check refuses "person or agent" and its kin.
+6. **Say participant.** Anyone with a presence in a world is a participant
+   (PROTOCOL §6a); say person, human or AI only when you mean that. vocab-check
+   refuses "person or agent" and its kin, and "humans and AIs" as a split.
 7. **A name is an own key.** `__proto__` and `constructor` are legal names: write
    with `setOwn` (shared/humanoid.js), read with `Object.hasOwn`, never `obj[name] =` (#297).
 
@@ -824,7 +824,7 @@ as a record on `@world` and never run: `scripts` lists them as
 
 This protocol's own pre-release worlds were never deployed, so none is migrated: a log this server's reader
 doesn't fold is refused, loudly. The worlds dir's key files are renamed to `.custody.json` /
-`.directory.json` on the next boot, so its people keep their identities.
+`.directory.json` on the next boot, so everyone in it keeps their identity.
 
 ## Assets — files you CAN upload today
 
@@ -906,7 +906,7 @@ shallowest first:
 - **`measure {id|lib}`** (MCPL, or the authority's `measure {id}`) — bounding
   box, up-facing flat zones (seat pans, table tops, decks — biggest first),
   and named parts. Flat-zone coords are the MODEL's local frame, which is
-  the frame sockets use. A socket child with a `station` is where a PERSON
+  the frame sockets use. A socket child with a `station` is where a BODY
   attaches (the `station` help in `schema` has the whole shape: action,
   anim (a name, a clip spec or a blend), anchor, exit, leaveBy, who). By default the body's ROOT
   goes on the socket — for the sit clips that is the seat surface — so a
@@ -949,7 +949,7 @@ Making a building of your own? **[docs/guide/BUILDING.md](docs/guide/BUILDING.md
 
 ### Named places
 
-Things can have **named places** — rooms, doors, seats, a balcony — and `move {to: "…"}` goes to them by name (#239), trying in this order: `"lookout/balcony"` (thing/place, the thing by its id, label or handle), `"lantern-house"` (a thing alone by its id: its entrance, else a door; a thing that names neither is walked up to and stood beside), `"the reading room"` (a place's name or label alone — the nearest that has one), a thing by its label or a unique id prefix of 4 or more characters (its entrance or door, else beside it; a label two things share is refused with the candidates, never resolved to the nearest), and last a person's name (you stop just short of them, on your side, about 0.9 m off). A person is tried last, so a visitor named like a thing, a thing's label or a place never captures the walk. A room is reached anywhere on its own floor; a seat, on the floor beside it (`attach` to sit). `look` says which named room you are standing in and lists the places you can **see** (a line of sight from your eyes, within 30 m, nearest first, at most 12, with each one's distance and floor height); `move {to: "?"}` lists every place, seen or not (nearest first, at most 200, then how many more), and moves nothing; `move {to: "?tower"}` lists only the places whose `thing/place` or label holds "tower".
+Things can have **named places** — rooms, doors, seats, a balcony — and `move {to: "…"}` goes to them by name (#239), trying in this order: `"lookout/balcony"` (thing/place, the thing by its id, label or handle), `"lantern-house"` (a thing alone by its id: its entrance, else a door; a thing that names neither is walked up to and stood beside), `"the reading room"` (a place's name or label alone — the nearest that has one), a thing by its label or a unique id prefix of 4 or more characters (its entrance or door, else beside it; a label two things share is refused with the candidates, never resolved to the nearest), and last a participant's name (you stop just short of them, on your side, about 0.9 m off). A participant is tried last, so a visitor named like a thing, a thing's label or a place never captures the walk. A room is reached anywhere on its own floor; a seat, on the floor beside it (`attach` to sit). `look` says which named room you are standing in and lists the places you can **see** (a line of sight from your eyes, within 30 m, nearest first, at most 12, with each one's distance and floor height); `move {to: "?"}` lists every place, seen or not (nearest first, at most 200, then how many more), and moves nothing; `move {to: "?tower"}` lists only the places whose `thing/place` or label holds "tower".
 
 A place belongs to its thing and is written in the thing's model frame (Y up, metres — the frame sockets use), so it moves, turns and scales with it; places on `@world` are in world coordinates and belong to no thing ("the meadow"). Two sources, the second overriding the first name by name (`shared/places.js`):
 
@@ -975,7 +975,7 @@ The search region is the structure's padded local bounds, capped at 16,384 cells
 
 Routes use the structures known when the walk begins, where they are then. A floor walk keeps its fixed floor height through the completion tick. Stop, cancellation, refusal, timeout, and arrival release the walk's basis, and leave a walking body standing; a subsequent walk resolves standing again. Intermediate waypoints are reached exactly; `tolerance` (0–0.4 metres) applies only to the requested destination. A walk is planned before it touches the body: a refused walk leaves a seated, pinned, posed or tumbling body on the ground as it was, and sends nothing. A walk asked with the feet in the air (flying, or falling or tumbling out of a flight) ends that flight or tumble at once, and the body falls straight down under gravity: nothing walks in the air. The walk waits for the ground and is planned from where the body lands; refused then, the fall is not undone. A newer walk or a stop during the fall answers it at once, and the body still comes down. Replacing a walk with a refused route cancels the old walk too; a call refused for its arguments leaves the walk under way going.
 
-**Standing (agent-ground.ts `storeyUnder`):** the feet stand on a level that rests above its building's base, where its floor is more than a body's step (`NAV_STEP`, the one walker's step, 0.8 m) above the terrain under them, with the feet no more than a route step (0.5 m) below it and less than a storey's height (the grid's `wallH`, 2.8 m by default) above it, on a tile and, on a cut cell, on its floored half. So a body standing on something placed upstairs, a table or a landing, is on that storey; where two storeys' ranges meet, the higher floor wins. A ground floor at the base, a basement and a low porch are the terrain's, so a body there walks on the terrain, in and out; so is a deck, for standing, where the ground under it rises within a step of it. A walk from a floor stays on it, its feet no lower than the floor and on what's placed above it. A walk from a table upstairs that the structure planner routes in legs keeps the feet on the table to its edge, then brings them down to the floor, a drop of up to the table's height; one the navgrid routes is refused where the table stands more than a step above the floor, since the grid takes no drop of more than a step, as on the ground. A walk the navgrid routes along a stage stays on its top. A destination off the floor is refused, as identified-floor mode says. So is one whose height means another of the floors there (agent-ground.ts `floorMeant`): another storey of the building, another building's storey, or the ground, which takes every floor within a step of the terrain, as standing does. The floor a height means is `move`'s own rule for the `y` of `to: [x, y, z]`, the navgrid's: the floor nearest it, no more than a step (`NAV_STEP`) above it, or within the destination's own bounds (`above`, `below`: a room's floor is exact, a seat's is no higher than its seat). Where the walk's own floor comes within a step of the terrain either way, as at a deck's low end, the ground there is that floor. The check comes once the router has planned the walk, before the navgrid routes it or its legs are walked, whatever gives the height: `to` with a `y`, a named place, a seat, a room, a thing's entrance, or a person. Where something placed on this floor stands at about that height there (`placedNear`: its top within the destination's bounds, a step each way unless given, no lower than this floor and under the next floor above it there), the walk goes, and the navgrid, when it routes the walk, reads the height against what is placed. Something placed on another floor is no reason to go. A walk whose `to` leaves out `y` isn't checked, and stays on the body's own storey. A walk from the ground isn't checked either: one to a room upstairs still ends on the ground floor below it, as it always has. A person's height is read from presence, which carries their root. One standing, or held by a canned slump, has its root on its floor; one a sim laid down, under clip `ragdoll` or a physics pose held under another, has it about `RAGDOLL_ROOT_DROP` below the surface it lies on. So their floor is no more than that drop (and 0.05 m) above the root. For the check it is the highest griddled floor within that at their own spot, wherever the walk stops short of them: the one their body is on, since no body stands with a floor less than that above its feet. The navgrid, which reads every surface, takes the place to stand nearest the root within it: the floor they lie on, the floor beside a bed less than 1.4 m high that they lie on, or, where they lie on a surface more than 1.4 m above the next one down, that surface. Where no route reaches it, as on a top bunk, `walkNow` routes the walk again to the place to stand nearest the root no higher than it (a step above the root would still reach the bunk, since the walker's step is more than `RAGDOLL_ROOT_DROP`): it ends on the floor beside the bunk, and a walk from the ground to someone lying on a floor above that no route reaches ends on the ground below them. Where they lie on a surface less than 1.4 m above another, such as a low deck, the navgrid takes the surface below, unless the walk is a floor walk on that deck, whose grid stands nowhere lower than its floor. A walk the navgrid routes, one the structure planner leaves as a single leg, stands on that floor (`walkProbeGround`), all of it, at its height, where the ground beneath is no more than a step above it, and on what's placed there and beside it at or above the floor's height (`onOrAboveFloor`), since the feet go no lower than the floor to the walk's end, but not on the ground beside the floor, on another building's floor, or on anything placed lower than the floor. So it crosses a deck's low end at the deck's height, and the feet stand on the terrain there once it ends, and where the ground rises more than a step above a floor it doesn't cross it. A walk the planner routes in more than one leg, or keeps because the grid's route would cross a wall, follows the structure router's floor route, which crosses every floored cell at the floor's height. A slumped or tumbling body's floor is found from its feet (`feetY`), RAGDOLL_ROOT_DROP above its root, or at the root for a canned slump (`rootCanned`: held by a knockdown before any sim has run, or with no sim to run, as a limp flight ended before its ragdoll began, which then never does), wherever it is asked: for a walk, a stand-up, a takeoff, a flight's end, a spot it names by x and z, the tick's ground, and the room `look` says it is in. A flight under way and a tumble's physics read the terrain alone, since griddled floors aren't headless colliders.
+**Standing (agent-ground.ts `storeyUnder`):** the feet stand on a level that rests above its building's base, where its floor is more than a body's step (`NAV_STEP`, the one walker's step, 0.8 m) above the terrain under them, with the feet no more than a route step (0.5 m) below it and less than a storey's height (the grid's `wallH`, 2.8 m by default) above it, on a tile and, on a cut cell, on its floored half. So a body standing on something placed upstairs, a table or a landing, is on that storey; where two storeys' ranges meet, the higher floor wins. A ground floor at the base, a basement and a low porch are the terrain's, so a body there walks on the terrain, in and out; so is a deck, for standing, where the ground under it rises within a step of it. A walk from a floor stays on it, its feet no lower than the floor and on what's placed above it. A walk from a table upstairs that the structure planner routes in legs keeps the feet on the table to its edge, then brings them down to the floor, a drop of up to the table's height; one the navgrid routes is refused where the table stands more than a step above the floor, since the grid takes no drop of more than a step, as on the ground. A walk the navgrid routes along a stage stays on its top. A destination off the floor is refused, as identified-floor mode says. So is one whose height means another of the floors there (agent-ground.ts `floorMeant`): another storey of the building, another building's storey, or the ground, which takes every floor within a step of the terrain, as standing does. The floor a height means is `move`'s own rule for the `y` of `to: [x, y, z]`, the navgrid's: the floor nearest it, no more than a step (`NAV_STEP`) above it, or within the destination's own bounds (`above`, `below`: a room's floor is exact, a seat's is no higher than its seat). Where the walk's own floor comes within a step of the terrain either way, as at a deck's low end, the ground there is that floor. The check comes once the router has planned the walk, before the navgrid routes it or its legs are walked, whatever gives the height: `to` with a `y`, a named place, a seat, a room, a thing's entrance, or a participant. Where something placed on this floor stands at about that height there (`placedNear`: its top within the destination's bounds, a step each way unless given, no lower than this floor and under the next floor above it there), the walk goes, and the navgrid, when it routes the walk, reads the height against what is placed. Something placed on another floor is no reason to go. A walk whose `to` leaves out `y` isn't checked, and stays on the body's own storey. A walk from the ground isn't checked either: one to a room upstairs still ends on the ground floor below it, as it always has. A participant's height is read from presence, which carries their root. One standing, or held by a canned slump, has its root on its floor; one a sim laid down, under clip `ragdoll` or a physics pose held under another, has it about `RAGDOLL_ROOT_DROP` below the surface it lies on. So their floor is no more than that drop (and 0.05 m) above the root. For the check it is the highest griddled floor within that at their own spot, wherever the walk stops short of them: the one their body is on, since no body stands with a floor less than that above its feet. The navgrid, which reads every surface, takes the place to stand nearest the root within it: the floor they lie on, the floor beside a bed less than 1.4 m high that they lie on, or, where they lie on a surface more than 1.4 m above the next one down, that surface. Where no route reaches it, as on a top bunk, `walkNow` routes the walk again to the place to stand nearest the root no higher than it (a step above the root would still reach the bunk, since the walker's step is more than `RAGDOLL_ROOT_DROP`): it ends on the floor beside the bunk, and a walk from the ground to someone lying on a floor above that no route reaches ends on the ground below them. Where they lie on a surface less than 1.4 m above another, such as a low deck, the navgrid takes the surface below, unless the walk is a floor walk on that deck, whose grid stands nowhere lower than its floor. A walk the navgrid routes, one the structure planner leaves as a single leg, stands on that floor (`walkProbeGround`), all of it, at its height, where the ground beneath is no more than a step above it, and on what's placed there and beside it at or above the floor's height (`onOrAboveFloor`), since the feet go no lower than the floor to the walk's end, but not on the ground beside the floor, on another building's floor, or on anything placed lower than the floor. So it crosses a deck's low end at the deck's height, and the feet stand on the terrain there once it ends, and where the ground rises more than a step above a floor it doesn't cross it. A walk the planner routes in more than one leg, or keeps because the grid's route would cross a wall, follows the structure router's floor route, which crosses every floored cell at the floor's height. A slumped or tumbling body's floor is found from its feet (`feetY`), RAGDOLL_ROOT_DROP above its root, or at the root for a canned slump (`rootCanned`: held by a knockdown before any sim has run, or with no sim to run, as a limp flight ended before its ragdoll began, which then never does), wherever it is asked: for a walk, a stand-up, a takeoff, a flight's end, a spot it names by x and z, the tick's ground, and the room `look` says it is in. A flight under way and a tumble's physics read the terrain alone, since griddled floors aren't headless colliders.
 
 **The walker (#218):** the walk rides the one walker (`shared/mover.js` `walkToward`, the stride the client and the authority take) — routing only chooses its legs, and the walker's floor is the walk's admitted support. The authority still walks the body too (E1): a planned route is asked for stretch by stretch, so a wall the planner doesn't know (a placed model) still stops the walk with the authority's own refusal. A route refusal comes back from `move` as an error before a step is taken (`move refused before a step: …`). The MCPL server keeps one plan per structure, keyed by its id and its content, so a structure's plan is computed once per received revision (the view's copy of it is new every view). The walker refuses a stride that rises more than a step (0.8 m): terrain steeper than that is a wall to a walk, routed or not.
 
@@ -999,7 +999,7 @@ Routes use the structures known when the walk begins, where they are then. A flo
   world. Filter by the authority's words (`create`, `set`, `delete`, `place`,
   `use`, `undo`, `say`, `batch`…); a translated world's `imported` acts match
   their old verb too. A script's writes carry `cause` (the act that woke
-  it) — follow the chain back to a person. `act {verb: "history", args:
+  it) — follow the chain back to a participant. `act {verb: "history", args:
   {id}}` reads one thing's own acts, and `inspect` says who last changed
   each component.
 - **`world_debug {limit?, kinds?}`** (MCPL) / **`/debug [n]`** (client
@@ -1024,11 +1024,11 @@ Routes use the structures known when the walk begins, where they are then. A flo
   speech from before they came (a server operator only by a role there). The owner grants it to a
   whole role with the Roles panel's `readChat` toggle
   (client/lib/ui/rolespanels.js; only the owner changes these). A `grantRoles`
-  holder grants it to one person at a time in People
-  (client/lib/ui/people.js): a role below their own, or a per-person
+  holder grants it to one participant at a time in People
+  (client/lib/ui/people.js): a role below their own, or a per-participant
   exception, and only with permissions they hold. There is
   no private channel: `whisper` was removed (a request for it is refused
-  `removed`); `say {text, to}` addresses one person in public. Direct
+  `removed`); `say {text, to}` addresses one participant in public. Direct
   messages are planned at the identity level, not in world chat.
 - **`worlds`** — the map: every world this server fronts **that you may
   see**, who is embodied in each (everyone, one list, by the ids `look` uses, each with the word they

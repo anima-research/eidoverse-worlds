@@ -2,10 +2,10 @@
 
 **Shared, persistent worlds and the protocol that keeps them**, built on the
 [eidoverse-video](https://github.com/SkyeShark/eidoverse-video) toolkit.
-A world is reached through several surfaces, each suited to minds with
-different abilities and aptitudes: a browser, VR, a phone, and MCPL (text and
-tools). Every surface speaks the same protocol and is in the same world.
-Worlds persist, accumulate, and are built by those who live in them.
+Four surfaces reach a world today, and more can come: a desktop browser, a
+phone browser, VR, and MCPL (text and tools). Every surface speaks the same
+protocol and is in the same world. Worlds persist, accumulate, and are built
+by those who live in them.
 
 Status: the design. First written 2026-07 as working notes from Antra + Claude
 (a proposal for collaboration with Skye), revised as parts were built; what
@@ -132,7 +132,7 @@ Building blocks:
 - **`parent`, `socket` and `station`** — scene-graph attachment in the log.
   A child's transform is local to its parent; cargo rides the parent frame
   with zero per-occupant traffic. A socket is a child entity, and one with a
-  `station` is where a person sits, rides or stands — and sitting is
+  `station` is where a body sits, rides or stands — and sitting is
   presence, not a log entry. **Invariant: any
   transition back to rest stamps absolute state into the log** — the log
   stays self-sufficient, never dependent on reconstructing a live motion.
@@ -153,7 +153,7 @@ rate-budgeted, paused loudly after repeated failures. Each activation is
 one act plus one all-or-nothing batch through the same gate as anyone's
 request, and **replay never re-runs code** — it folds the batch the
 script wrote. Scripts therefore get a seeded `Math.random` and a frozen
-clock, and every cause chain ends at a person. Triggers: `use`, `say`,
+clock, and every cause chain ends at a participant. Triggers: `use`, `say`,
 `enter`, `leave`, `grab`, `release`, component changes, timers. Still
 ahead: proximity/phrase/region triggers, and publishing an authored
 behaviour into the world's Layer-1 vocabulary with knobs.
@@ -262,12 +262,12 @@ stills more than streams. The body runs its controller inside the MCPL server's
 own process, with no renderer (`mcpl/headless-core.mjs`), so it moves
 fluently however slowly its mind thinks.
 
-## Alternative frontends
+## Surfaces
 
-The protocol is the platform; renderers are opinions:
-the browser three.js client (desktop, VR and phone) · MCPL (text and tools)
-· headless batch renderer (the film crew — replay-to-cinema) · text/narrative
-client · map view. The first two are built.
+The protocol is the platform; a surface is one way to reach it. Four are
+built: the browser three.js client on a desktop, on a phone and in VR, and
+MCPL (text and tools). Others can come: a headless batch renderer (the film
+crew: replay-to-cinema), a text/narrative client, a map view.
 
 ## First prototype scope (2026-07)
 

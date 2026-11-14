@@ -158,8 +158,8 @@ const cases: Case[] = [
   { id: "D1", what: "(claims R1) the consent refusal code's words: a body act (touch, pose, shove, displace…) their table refuses; no `move` class, no edit that would move them (an edit vacates since round 8)", run() {
       const w = RC.REFUSAL_CODES?.consent?.when ?? ""; return { w }; },
     good: (o) => /displace/.test(o.w) && !/\bmove\b/.test(o.w) && !/an edit that would/.test(o.w) },
-  { id: "D2", what: "(claims R3) AGENTS.md's move row tries names in the order tools.ts does: a thing by id, a place's name or label, a thing's label or handle, then a person", run() {
-      const ag = readText("AGENTS.md"); const row = ag.split("\n").find((l) => l.startsWith("| `move {to")) ?? ""; return { ok: /a thing by id[^|]*, a place's name or label, a thing's label or handle[^|]*, then a person/.test(row) }; },
+  { id: "D2", what: "(claims R3) AGENTS.md's move row tries names in the order tools.ts does: a thing by id, a place's name or label, a thing's label or handle, then a participant", run() {
+      const ag = readText("AGENTS.md"); const row = ag.split("\n").find((l) => l.startsWith("| `move {to")) ?? ""; return { ok: /a thing by id[^|]*, a place's name or label, a thing's label or handle[^|]*, then a participant/.test(row) }; },
     good: (o) => o.ok },
   { id: "D3", what: "(claims R4) attach has no `pose` arg (a station's poses menu is reserved: the arg could only be refused); the browser's /seatpose, the same dead menu, is gone with chooseSeatPose", run() {
       const tl = readText("mcpl/tools.ts"); const row = tl.split("\n").find((l) => l.includes('{ name: "attach"')) ?? ""; const reg = readText("client/lib/ui/commands/registry.js"), h = readText("client/lib/ui/commands/handlers.js"), lb = readText("client/lib/player/localbody.js");
