@@ -185,7 +185,7 @@ class Session {
   }
 
   /** The loopback media bridge. One sidecar at a time: a second connection replaces the first (two publishers for one
-   *  identity speak twice, #57). */
+   *  identity speak twice). */
   private mediaSock: WebSocket | null = null;
   /** The media listener, held so session teardown releases the port (else the next session can't bind it). */
   private mediaServer: { stop: (closeActiveConnections?: boolean) => void } | null = null;

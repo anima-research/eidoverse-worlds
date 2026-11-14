@@ -80,7 +80,7 @@ export type ToolCtx = {
 // is an alias. So the table holds GENERAL SHAPES (act, create, edit, inspect, move, anim, reach, library…) whose modes
 // carry the old bespoke verbs (flight is move {mode: "fly"} + act land; poses and wings are anim; kick/ban are act);
 // the old names answer by teaching where they went (TOOL_FOLDS). High-volume sugar (look, say, face, stop…) stays.
-// Flight rehearsal hooks are not tools: a bench calls flightBodyDown / flightBodyRecovered (test/client/flight-test.ts).
+// Flight rehearsal hooks are not tools: a bench calls flightBodyDown / flightBodyRecovered (test/mcpl/flight-exit-test.ts).
 
 const TOOL_ROWS = [
   { name: "body_state", description: "Perceive your body or another present participant (who; omitted or 'self' means you). Default summary reports body-mode, the clip playing, the named poses held (wings-folded), position, held poses/reaches and freshness; for yourself it also carries flight: where the sky has left you (altitude, heading, airspeed, stamina, how far your best glide reaches, which layer is flying) — or that you are falling, or on the ground. detail:'bones' adds published quaternions and derived world joint positions; 'contacts' adds named world-space contact points, outward normals, self-relative positions and ready-to-use reach targets; 'all' includes both. Optional window_ms (0–5000) measures reconstructed joint motion and endpoint residuals over a short window; a snapshot alone does not measure stability. Optional points filters contacts, e.g. ['chest_front','hand_l','hand_r']. Geometry evaluates the shared VRMA posture clips, published bone rotations and dependent limb reaches. Missing clips or unresolved/cyclic reach dependencies return incomplete geometry. Contacts are bone-bound anatomical estimates; full renderer blending, gestures and springbones are not reproduced. Reading never moves or touches anyone. Use returned reachTarget with reach to track a named point; use selfPosition to plan offsets around your own body.", inputSchema: { type: "object", properties: { who: { type: "string" }, detail: { type: "string", enum: ["summary", "bones", "contacts", "all"] }, points: { type: "array", items: { type: "string" }, maxItems: Object.keys(CONTACT_POINTS).length }, window_ms: { type: "integer", minimum: 0, maximum: 5000 } } } },
@@ -228,8 +228,7 @@ async function contactSheet(tiles: { name: string; data: ArrayBuffer | null; mim
 }
 
 
-/** The tool list an MCP server should advertise: travel only exists where the host wired the session machinery for it.
- *  (No whisper: removed with world chat's private channel.) */
+/** The tool list an MCP server should advertise: travel only exists where the host wired the session machinery for it. */
 export function toolList({ travel = false }: { travel?: boolean } = {}) {
   return TOOLS.filter((t) => travel || t.name !== "travel");
 }
@@ -286,7 +285,7 @@ async function screenshotOnce(ag: ToolAgent, view: string, at: string | undefine
   try {
     const norm = normalizeSnapFrame(frame);
     const extra = Object.entries(norm).map(([k, v]) => `&${k}=${v}`).join("");
-    // Name any framing field the chosen view does not use, rather than ignoring it silently (#226): pitch is first-only,
+    // Name any framing field the chosen view does not use, rather than ignoring it silently: pitch is first-only,
     // dist/height third/selfie-only; `at` frames the thing itself, so none of them apply
     const posed = view === "third" || view === "selfie";
     const ignored = at ? (Object.keys(norm) as string[]) : posed ? (norm.pitch !== undefined ? ["pitch"] : []) : (["dist", "height"] as const).filter((k) => norm[k] !== undefined);
@@ -409,7 +408,7 @@ function legacyPlace(ag: ToolAgent, name: string): { x: number; z: number; what:
   return pp && pp.every(Number.isFinite) && pp.length >= 2 ? { x: pp[0], z: pp.length === 3 ? pp[2] : pp[1], what: `the place "${name}"` } : null;
 }
 
-/** measure {check: true}: #241's check_model, a mode of measure (it reads a model's geometry as data; check_model is an alias). */
+/** measure {check: true}: the build check (server/buildcheck.ts), a mode of measure since it reads a model's geometry as data. */
 const CHECK_MODEL = async (ag: WorldAgent, a: Record<string, any>) => {
   const e = a.id ? ag.entities.get(String(a.id)) : null;
   if (a.id && !e) return fail(`no thing called "${a.id}" here`);
@@ -450,7 +449,7 @@ async function resolveWho(ag: any, raw: unknown, verb: string): Promise<{ who: s
 
 const BODY_VERBS: Record<string, ToolHandler> = {
   land: async (ag, a) => {
-    const num = (v: unknown) => (typeof v === "number" ? v : NaN);   // Number(null) is 0 (bot #458)
+    const num = (v: unknown) => (typeof v === "number" ? v : NaN);   // Number(null) is 0
     const to = Array.isArray(a.to) ? a.to.map(num) : [num(a.x), num(a.z)];
     const x = to[0], z = to.length === 3 ? to[2] : to[1];
     if (![x, z].every(Number.isFinite)) return { content: [{ type: "text", text: "land needs to: [x, z] (or [x, y, z]) — where to come down" }], isError: true };
@@ -461,7 +460,7 @@ const BODY_VERBS: Record<string, ToolHandler> = {
       if (!a.target) return { content: [{ type: "text", text: "shove needs a `target` — the body that falls simulates it" }], isError: true };
       // directed from where THIS body stands through the target (the browser's /push line); no known position for
       // them = an undirected knock-over
-      const to = String(a.target).trim();   // main's absent(): spaces name nobody; someone not here is refused before anything is sent
+      const to = String(a.target).trim();   // spaces name nobody; someone not here is refused before anything is sent
       if (!to) return fail("the target is only spaces, so nobody was shoved");
       if (ag.joined && to !== ag.name && !ag.people.has(to)) return fail(`${to} isn't here, so nobody was shoved; look lists who is around you`);
       const tp = ag.people.get(to)?.pose?.p;
@@ -661,8 +660,8 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (ag.myOccupancy && !ag.mayVacate("menu")) return { content: [{ type: "text", text: `you're held on ${ag.socketName(ag.myOccupancy.to)}: it lets you go when the world does (detach {escape: true} gets you up anyway)` }], isError: true };
       const mode = a.mode == null ? "walk" : String(a.mode);
       if (mode !== "walk" && mode !== "fly") return { content: [{ type: "text", text: `move: mode is "walk" (default) or "fly"` }], isError: true };
-      // to: [x, y, z] (y picks the floor there, #236) or [x, z] (no y: the walk's own storey, else the lowest floor), or a
-      // NAME: a named place (#239: "thing/place", a place's name or label, a thing's entrance), a thing, a person
+      // to: [x, y, z] (y picks the floor there) or [x, z] (no y: the walk's own storey, else the lowest floor), or a
+      // NAME: a named place ("thing/place", a place's name or label, a thing's entrance), a thing, a person
       let x: number, z: number, y: number | undefined, what = "", label: string | null = null;
       let near: { reach?: number; above?: number; below?: number; inside?: (x: number, z: number) => boolean; bodyAt?: { x: number; z: number } } = {};
       let orBeside: Destination | undefined;   // a thing on another's top: the spot beside what holds it up
@@ -708,7 +707,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         L.push(ag.flightStatus());
         return text(L.join("\n"));
       }
-      // this request's own refusal (receipt): its plan may wait for placed geometry still loading (#235), so walkRefusal,
+      // this request's own refusal (receipt): its plan may wait for placed geometry still loading, so walkRefusal,
       // read straight after the call, could belong to a later walk
       let receipt = { refusal: null as string | null };
       const attempt = async () => {
@@ -737,13 +736,13 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // no route (a sealed room, a structure over the search limit, two that conflict): refused before a step, and why
       if (!arrived && planned) return { content: [{ type: "text", text: `move refused before a step: ${planned}\nyou stand at (${ag.pos.x.toFixed(3)}, ${ag.pos.z.toFixed(3)})${what}` }], isError: true };
       const note = ag.lastWalkNote ? ` (${ag.lastWalkNote})` : "";
-      // E1: the authority walks this body too; a stretch it refused (a wall, out of bounds) stopped it, and says why
+      // the authority walks this body too; a stretch it refused (a wall, out of bounds) stopped it, and says why
       const no = ag.lastWalkRefusal;
       if (!arrived && no) return { content: [{ type: "text", text: `${refusalText("move", { refused: no })}\nyou stopped at (${ag.pos.x.toFixed(3)}, ${ag.pos.z.toFixed(3)}), ${Math.hypot(ag.pos.x - x, ag.pos.z - z).toFixed(3)}m short${note}${what}` }], isError: true };
-      if (!arrived) return fail(ag.walkStopReason ?? ag.walkStall ?? "walk interrupted or timed out");   // main #241: the stride's own stop reason first
-      // which floor it chose, when the y asked for wasn't one (#236)
+      if (!arrived) return fail(ag.walkStopReason ?? ag.walkStall ?? "walk interrupted or timed out");   // the stride's own stop reason first
+      // which floor it chose, when the y asked for wasn't one
       const floorNote = y != null && Math.abs(ag.pos.y - y) > 0.1 ? `; no floor at ${y.toFixed(2)} m there — you're on the floor at ${ag.pos.y.toFixed(2)} m` : "";
-      // which named room you're in now (#239)
+      // which named room you're in now
       const here = ag.placesAt([ag.pos.x, ag.pos.y, ag.pos.z])[0];
       const inRoom = here ? `, in ${here.place.label ?? here.place.name} (${ag.refName(here.entity.id)}/${here.place.name})` : "";
       return text(label
@@ -879,7 +878,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (target) {
         const t0 = Date.now();
         ag.puppet(target, puppetPose(v.pose, replace));
-        const no = await presenceRefusal(ag, t0, target);   // consent class pose and range, at the server (F2)
+        const no = await presenceRefusal(ag, t0, target);   // consent class pose and range, at the server
         if (no) return { content: [{ type: "text", text: `anim refused (consent class: pose): ${no}` }], isError: true };
         return text(`asked ${target} to ${replace ? "hold a pose (replacing theirs)" : "pose"} ${what}`
           + `${note ? ` — ${note}` : ""}. They decide whether to take it.`);
@@ -1013,7 +1012,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const ahead = [ag.pos.x + Math.sin(ag.yaw) * 2, ag.pos.z + Math.cos(ag.yaw) * 2];
       const bodiless = a.model == null && comps?.model == null && comps?.mesh == null;   // a light, an empty: nothing for place to size
       if (a.from == null && bodiless && comps?.light && !a.place && !comps?.transform) {
-        // the old light tool's default: just in front of you, at about eye height (or exactly at)
+        // with nowhere said: just in front of you, at about eye height (or exactly at)
         const pt = Array.isArray(a.at) ? a.at.map(Number) : null;
         if (pt && ((pt.length !== 2 && pt.length !== 3) || !pt.every(Number.isFinite))) return { content: [{ type: "text", text: "create: at is a point [x, z] or [x, y, z], or {pos: [x, y, z], yaw}" }], isError: true };
         const x = pt ? pt[0] : ahead[0], z = pt ? (pt.length === 3 ? pt[2] : pt[1]) : ahead[1];
@@ -1034,7 +1033,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         if (bodiless) args.components = { ...(comps ?? {}), transform: { pos: [ahead[0], ag.heightAt(ahead[0], ahead[1]), ahead[1]] } };
         else args.place = { at: ahead };
       } else if (a.from != null) {
-        // a blueprint by a unique PREFIX of its hash (the old blueprint_place's courtesy)
+        // a blueprint by a unique PREFIX of its hash
         if (/^sha256:/.test(String(a.from))) { const want = String(a.from).slice(7).toLowerCase(); const lib = ag.worldBlueprints();
           const hits = Object.keys(lib).filter((h) => h.startsWith(want));
           if (!hits.length) return { content: [{ type: "text", text: `create: no blueprint here whose hash starts "${want}" (the blueprints tool lists them)` }], isError: true };
@@ -1072,7 +1071,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
   },
   act: async (ag, a, ctx) => {
       const verb = String(a.verb ?? ""), args = (a.args && typeof a.args === "object" ? a.args : {}) as Record<string, any>;
-      { const bad = grantsFor(ag, verb, args); if (bad) return { content: [{ type: "text", text: bad }], isError: true }; }   // main's for: "2h" (decision table row 14)
+      { const bad = grantsFor(ag, verb, args); if (bad) return { content: [{ type: "text", text: bad }], isError: true }; }   // a timed grant's for: "2h"
       if (Object.hasOwn(BODY_VERBS, verb)) return BODY_VERBS[verb](ag, args, ctx, verb);   // answered by this body, or moderation by name
       if (typeof args.who === "string") { const rw = await resolveWho(ag, args.who, verb); if ("err" in rw) return rw.err; args.who = rw.who; }   // warn/mute/…: a name works here too
       // a thing by id, label or prefix. No authority verb takes a thing in to or target: move's to is a point, say's and
@@ -1109,7 +1108,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         const here = w.name === ag.world;
         const who = (w.people ?? []).map((p) => (typeof p === "string" ? p : p.declares ? `${p.id} (${p.declares})` : p.id));   // one list; a declared word, if any, as a tag
         const nA = Array.isArray(w.agents) ? w.agents.length : 0, n = (k: number, one: string) => `${k} ${one}${k === 1 ? "" : "s"}`;
-        const occupancy = who.length ? `${n(who.length - nA, "human")}, ${n(nA, "agent")}: ${who.join(", ")}` : (w.loaded ? "empty" : "empty, not loaded");   // counted apart (decision table row 21)
+        const occupancy = who.length ? `${n(who.length - nA, "human")}, ${n(nA, "agent")}: ${who.join(", ")}` : (w.loaded ? "empty" : "empty, not loaded");   // counted apart
         const door = w.access === "invite-only" ? "invite-only" : w.access === "watch" ? "watch only" : w.access === "signed-in" ? "signed-in only" : w.access === "open" ? "open to guests" : "";
         const may = here ? "you are here"
           : pol && !pol.canJoin(w.name) ? "outside the worlds your credential is limited to"
@@ -1167,7 +1166,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       { const t = namedThings(ag, a, ["id"]); if ("err" in t) return t.err; a = t.args; }
       const id = String(a.id ?? "");
       if (id === WORLD_ID) {
-        // the world entity (design §3): the fold's sky / terrain / grass read as one
+        // the world entity (shared/worldentity.js): the fold's sky / terrain / grass read as one
         // entity's components — the same declaration the browser's World cards render
         const schema = worldSchema(ag.worldFold(), { now: Date.now() });
         if (a.json) return text(JSON.stringify(schema));
@@ -1179,7 +1178,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // the FOLDED record, not the perception view (which thins a light to
       // its position): the schema wants every field the fold keeps
       const rec = ag.foldRecord(id) as any;
-      // a call that did nothing answers failed (as #269 has it)
+      // a call that did nothing answers failed
       if (!rec) return fail(`inspect: no placed thing "${id}" here (ids are in look() and hierarchy)`);
       const world = foldWorld(ag);
       const schema = inspectSchema(rec, id, { world, box: rec.model ? await ag.modelBox(String(rec.model)) : null });
@@ -1202,7 +1201,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const id = String(a.id ?? "");
       const rec = id === WORLD_ID ? null : ag.foldRecord(id) as any;
       if (!rec && id !== WORLD_ID) return fail(`edit: no placed thing "${id}" here, so nothing was sent (ids are in look() and hierarchy)`);
-      // what the plan reads, taken before it awaits the model's box: the write is pinned to it (expect, §3a), so a change
+      // what the plan reads, taken before it awaits the model's box: the write is pinned to it (expect, PROTOCOL §3a), so a change
       // that lands meanwhile is refused as changed, not overwritten (a person's edit pins the same way)
       const wireId = id === WORLD_ID ? id : encId(id);   // the authority's own id, as the ops carry it (requests.js)
       const base = ag.componentsOf(wireId);
@@ -1211,7 +1210,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         : editOps(rec, id, (a.set ?? {}) as Record<string, unknown>, { world: foldWorld(ag), box: rec.model ? await ag.modelBox(String(rec.model)) : null });   // pivot.centre / pivot.base snap to it, as a person's do
       const L: string[] = [];
       for (const e of errors) L.push(`refused: ${e}`);
-      // needs (design §3): a choice to make or a remove-both to confirm sends nothing and says how to answer
+      // a component's needs (shared/editschema.js editOps): a choice to make or a remove-both to confirm sends nothing and says how to answer
       for (const q of (asks ?? []) as any[]) if (q.kind === 'confirm' || q.options.length) L.push(q.kind === 'choice'
         ? `asks: ${q.prompt} — answer with ${q.options.map((o: any) => `"${q.key}": "${o.v}" (${o.label})`).join(' or ')}`
         : `asks: ${q.prompt} — answer with "${q.key}": "both"`);
@@ -1508,12 +1507,10 @@ export const TOOL_FOLDS: Record<string, string> = {
   light: 'create {components: {light: {…}}, at?} (edit {id, set: {"light.intensity": …}} updates one; main\'s keep: true is the light component\'s important: true (create {components: {light: {important: true}}} or edit {id, set: {"light.important": true}}))', remove: 'act {verb: "delete", args: {id}}',
   blueprint_place: 'create {from: "sha256:<hash>", at?}', kick: 'act {verb: "kick", args: {who, reason?}}', ban: 'act {verb: "ban", args: {who, days?, reason?, global?}}',
   unban: 'act {verb: "unban", args: {who, global?}}', list_bans: 'act {verb: "bans", args: {global?}}',
-  // main's world_access left without a pointer
   world_access: 'the world\'s own components on @world: worlds shows each door; owners change it with act {verb: "set", args: {id: "@world", component: "access" | "roles:<id>", value}} (a timed grant: value {role, for: "2h"})',
 };
 /** Tools that left with what they did, and why: refused with a pointer, never "no such tool". */
 export const TOOL_REMOVED: Record<string, string> = {
-  // its verb set was main's: act {verb, args} takes this authority's, and refuses an old one by name
   world_verb: "act {verb, args} sends a verb to the world's authority (help lists them); an old verb is refused with the call that does it now",
   whisper: "world chat has no private channel (the maintainers' speech ruling: speech is logged, whisper stays disabled); say speaks aloud to everyone here",
 };
@@ -1540,7 +1537,7 @@ export const nearestTool = (name: string) => Object.keys(HANDLERS).map((n) => [n
 export async function handleTool(ctx: ToolCtx, name: string, a: Record<string, any>) {
   const r = resolveTool(name);
   if (!r && TOOL_FOLDS[name]) return { content: [{ type: "text", text: `${name} folded into a general tool: ${TOOL_FOLDS[name]} — nothing ran` }], isError: true };
-  // the same words for a tool this server doesn't serve, hidden or never there (#247), with the nearest name when one is close
+  // the same words for a tool this server doesn't serve, hidden or never there, with the nearest name when one is close
   if (!r && TOOL_REMOVED[name]) return { content: [{ type: "text", text: `${name} was removed: ${TOOL_REMOVED[name]} — nothing ran` }], isError: true };
   if (!r) { const near = nearestTool(name); return { content: [{ type: "text", text: `there's no tool named "${name}" on this server, so nothing ran${near && near[1] <= 4 ? ` (did you mean ${near[0]}?)` : ""}; your tool list has the ones it serves` }], isError: true }; }
   // A tool's failure belongs in its result, where the model reads it: a
