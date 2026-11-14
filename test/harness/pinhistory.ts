@@ -4,8 +4,8 @@
 // (refusal-codes.json, readback.json) and the conformance files' version rule (engine-check, trig-check, laws-check).
 //
 // Two earlier versions are judged:
-//   the base's: --base <rev> or PIN_BASE, else where this branch left origin/main (git merge-base), else (a shallow or foreign
-//     checkout with no origin/main) the previous version below. A file new since the base has no base version.
+//   the base's: --base <rev> or PIN_BASE, else where this branch left main (the newest merge-base with origin/anima/upstream
+//     main), else (a shallow or foreign checkout with none of them) the previous version below. A file new since the base has no base version.
 //   the previous version: the file as it was before its newest change (the working tree's, if uncommitted; else the commit
 //     before the newest commit that changed it, along first parents), which is how kernel-check finds its base. This holds
 //     a branch that brought the file new: its latest change is judged even though the base never had it.
@@ -16,11 +16,18 @@ const git = (root: string, args: string[]) => { const r = spawnSync("git", ["-C"
 /** A file at a commit, or null where it didn't exist (or there's no git). */
 export const showAt = (root: string, rev: string, file: string) => git(root, ["show", `${rev}:${file}`]);
 
-/** The base commit (full sha), or null where there's no origin/main and no asked base. */
+/** The base commit (full sha), or null where no main ref (origin, anima, upstream) and no asked base. */
 export function baseOf(root: string, argv: string[] = process.argv.slice(2)) {
   const i = argv.indexOf("--base"); const asked = i >= 0 ? argv[i + 1] : process.env.PIN_BASE;
   if (asked) return git(root, ["rev-parse", "--verify", `${asked}^{commit}`])?.trim() || null;
-  return git(root, ["merge-base", "HEAD", "origin/main"])?.trim() || null;
+  return newestBase(root);
+}
+
+/** The NEWEST merge-base of HEAD with origin/anima/upstream main: a stale remote must not drag the base back (diffcheck shares it). */
+export function newestBase(root: string) {
+  const found = ["origin/main", "anima/main", "upstream/main"].map((ref) => git(root, ["merge-base", "HEAD", ref])?.trim()).filter(Boolean) as string[];
+  const under = (a: string, b: string) => spawnSync("git", ["-C", root, "merge-base", "--is-ancestor", a, b]).status === 0;   // a is in b's history
+  return found.find((c) => found.every((o) => under(o, c))) ?? found[0] ?? null;   // the one the others lead to (timestamps can tie)
 }
 
 /** Where a branch's own history starts: HEAD, except under a CI checkout of a pull request, where HEAD is a merge commit

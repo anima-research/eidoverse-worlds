@@ -2,21 +2,17 @@
 // reports no trailing whitespace and no blank line at end of file. Two files keep their whitespace on purpose and are excluded
 // by .gitattributes (`-whitespace`), and only those two (D3): a conformance vector that tests readers against CRLF and blank
 // lines, and a patch whose context lines end in spaces. Main's own older files outside the range are not this check's business.
-//   bun test/gate/diffcheck.ts            (base: $DIFFCHECK_BASE, else the merge-base with origin/main or anima/main)
+//   bun test/gate/diffcheck.ts            (base: $DIFFCHECK_BASE, else the newest merge-base with origin/anima/upstream main)
 import fs from "node:fs"; import path from "node:path"; import os from "node:os"; import { spawnSync } from "node:child_process";
 import { suite } from "./suite.ts";
+import { newestBase } from "../harness/pinhistory.ts";
 const ENGINE = path.resolve(import.meta.dir, "../.."); const { check, done } = suite("diffcheck", { cap: Infinity });
 const git = (args: string[], cwd = ENGINE) => spawnSync("git", args, { cwd, encoding: "utf8" });
 
 const EXEMPT = ["spec/conformance/logs/12a-blank-crlf.jsonl", "tools/water/native-coordinate-fix.patch"];
 
 function base(): string | null {
-  if (process.env.DIFFCHECK_BASE) return process.env.DIFFCHECK_BASE;
-  // the NEWEST merge-base among the candidates: a stale remote (a checkout whose origin is an old local path) must not
-  // drag the base back and blame this range for main's own later files
-  const found = ["origin/main", "anima/main", "upstream/main"].map((ref) => git(["merge-base", "HEAD", ref]).stdout.trim()).filter(Boolean);
-  const dated = found.map((c) => ({ c, t: Number(git(["log", "-1", "--format=%ct", c]).stdout.trim()) || 0 })).sort((a, b) => b.t - a.t);
-  return dated[0]?.c ?? null;
+  return process.env.DIFFCHECK_BASE || newestBase(ENGINE);   // shared with the pin rows (test/harness/pinhistory.ts)
 }
 
 const b = base();
@@ -48,6 +44,23 @@ if (!b) {
   const attrs = fs.existsSync(path.join(ENGINE, ".gitattributes")) ? fs.readFileSync(path.join(ENGINE, ".gitattributes"), "utf8") : "";
   const exempt = attrs.split("\n").filter((l) => !l.trim().startsWith("#") && /(^|\s)-whitespace(\s|$)/.test(l)).map((l) => l.trim().split(/\s+/)[0]).sort();
   check("D3 .gitattributes exempts exactly the two documented files from whitespace checks", JSON.stringify(exempt) === JSON.stringify([...EXEMPT].sort()), exempt);
+}
+
+// D4 the base is the NEWEST merge-base: a stale origin/main (an old local ref) can't drag it back, even when every commit
+// shares one timestamp. pinhistory's baseOf is the one both this check and the pin rows use.
+{
+  const { baseOf } = await import("../harness/pinhistory.ts");
+  const d = fs.mkdtempSync(path.join(process.env.PROTOCOL_SCRATCH ?? os.tmpdir(), "diffcheck-base-"));
+  const keep = process.env.PIN_BASE; delete process.env.PIN_BASE;
+  try {
+    const env = { ...process.env, GIT_AUTHOR_DATE: "2026-01-01T00:00:00Z", GIT_COMMITTER_DATE: "2026-01-01T00:00:00Z" };
+    const g = (a: string[]) => spawnSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", ...a], { cwd: d, encoding: "utf8", env }).stdout.trim();
+    g(["init", "-q", "-b", "main"]);
+    const sha = (m: string) => { fs.writeFileSync(path.join(d, "f"), m); g(["add", "."]); g(["commit", "-qm", m]); return g(["rev-parse", "HEAD"]); };
+    const old = sha("a"); sha("b"); const now = sha("c"); g(["switch", "-q", "-c", "topic"]); sha("d");
+    g(["update-ref", "refs/remotes/origin/main", old]); g(["update-ref", "refs/remotes/anima/main", now]);
+    check("D4 the base is the newest merge-base: a stale origin/main can't drag it back (same-second commits too)", baseOf(d, []) === now, { got: baseOf(d, []), want: now, stale: old });
+  } finally { if (keep !== undefined) process.env.PIN_BASE = keep; fs.rmSync(d, { recursive: true, force: true }); }
 }
 
 done();
