@@ -413,17 +413,22 @@ const ZONED = ["water", "water-exclusion"];
 // world-wide water is @world's alone (provisional, owner reviewing): this one rule, removable on its own
 const globalWater = (id, c) => c.water !== undefined && c.zone?.global === true
   && { code: "shape", reason: `${id} has water on a global zone: world-wide water goes on @world`, fix: "world-wide water goes on @world: set {id:'@world', component:'water', value: {level, …}}" };
+// a zoned effect's fix: the check judges the state a write leaves, so it names both a create and a set
+const zoneFix = (id, what) => `${what} on a thing needs a sibling zone {shape, size}, a box: a create carries it beside (components: {…, zone: {shape: 'box', size: [x, y, z]}}); on a thing that exists, set {id: '${id}', component: 'zone', value: {shape: 'box', size: [x, y, z]}}`;
 export function zoneRules(s, ids) {
   for (const id of ids) { const c = s.entities[id]?.c; if (!c || id === "@world") continue;
     // physics-volume reads a box zone or a global one (shared/zone.js physicsVolumesOf)
     { const pa = c["physics-volume"];
-      if (pa?.modes !== undefined && !(Array.isArray(pa.modes) && pa.modes.length && pa.modes.every((m) => VOLUME_MODES.includes(m)))) return { code: "shape", reason: `${id}.physics-volume.modes: a non-empty list of ${VOLUME_MODES.join(" | ")}` }; }
-    if (c["physics-volume"] !== undefined && !(c.zone?.shape === "box" || c.zone?.global === true)) return { code: c.zone === undefined ? "needs" : "shape", reason: `${id}.physics-volume: ${c.zone === undefined ? "a physics-volume on a thing needs a sibling zone {shape, size} (its extent)" : `it reads a box zone or a global one (shape '${c.zone.shape}' isn't read yet)`}`, fix: `set {id: '${id}', component: 'zone', value: {shape: 'box', size: [x, y, z]}}` };
+      if (pa?.modes !== undefined && !(Array.isArray(pa.modes) && pa.modes.length && pa.modes.every((m) => VOLUME_MODES.includes(m)))) {
+        const off = Array.isArray(pa.modes) ? pa.modes.filter((m) => !VOLUME_MODES.includes(m)) : [];
+        return { code: "shape", reason: `${id}.physics-volume.modes is ${JSON.stringify(off.length ? off : pa.modes)}${off.length ? ", not a mode" : ""}: a non-empty list of ${VOLUME_MODES.join(" | ")}`,
+          fix: `modes: any of ${VOLUME_MODES.join(", ")}, or leave it out for every mode` }; } }
+    if (c["physics-volume"] !== undefined && !(c.zone?.shape === "box" || c.zone?.global === true)) return { code: c.zone === undefined ? "needs" : "shape", reason: `${id}.physics-volume: ${c.zone === undefined ? "a physics-volume on a thing needs a sibling zone {shape, size} (its extent)" : `it reads a box zone or a global one (shape '${c.zone.shape}' isn't read yet)`}`, fix: zoneFix(id, "a physics-volume") };
     const has = ZONED.filter((k) => c[k] !== undefined); if (!has.length) continue;
     if (has.length > 1) return { code: "shape", reason: `${id} has both water and water-exclusion: a thing is a water body or a dry pocket, not both`, fix: "put the dry pocket on a child thing with its own zone" };
-    if (c.zone === undefined) return { code: "needs", reason: `${id}.${has[0]}: ${has[0]} on a thing needs a sibling zone {shape, size} (its extent)`, fix: `${has[0]} on a thing needs a sibling zone {shape, size}: set {id: '${id}', component: 'zone', value: {shape: 'box', size: [x, y, z]}}` };
+    if (c.zone === undefined) return { code: "needs", reason: `${id}.${has[0]}: ${has[0]} on a thing needs a sibling zone {shape, size} (its extent)`, fix: zoneFix(id, has[0]) };
     const g = globalWater(id, c); if (g) return g;
-    if (c.zone.shape !== "box" && c.zone.global !== true) return { code: "shape", reason: `${id}.${has[0]} reads a box zone (shape '${c.zone.shape}' isn't read by water yet)`, fix: `set {id: '${id}', component: 'zone', value: {shape: 'box', size: [x, y, z]}}` }; }
+    if (c.zone.shape !== "box" && c.zone.global !== true) return { code: "shape", reason: `${id}.${has[0]} reads a box zone (shape '${c.zone.shape}' isn't read by water yet)`, fix: zoneFix(id, has[0]) }; }
   return null;
 }
 // a collision layer (componentspec collider.layer, Godot's 32 numbered layers plus names)

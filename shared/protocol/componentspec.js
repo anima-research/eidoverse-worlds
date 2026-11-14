@@ -480,7 +480,7 @@ export const COMPONENTS = {
                docs: { kind: "what it does to bodies inside its zone: speed (× their own speed); direction, point and vortex are planned, not open",
                  factor: "speed: × a body's own speed inside (walking, running, wading, swimming): < 1 slows (mud, deep snow), > 1 boosts; 0.05..10. The authority's track widens inside a boost, never narrows",
                  modes: "which movement modes it touches: walk | swim | fly | climb (Unreal's per-mode settings); absent: all. Main's slow water translates to ['swim']" },
-               help: "on a thing with a zone {shape: 'box', size} (or global): {kind: 'speed', factor? (× a body's own speed inside, 0.05..10; absent 1)}. Where speed volumes overlap the zone's priority decides" },
+               help: "on a thing with a zone {shape: 'box', size} (or global): {kind: 'speed', factor? (× a body's own speed inside, 0.05..10; absent 1), modes? (walk | swim | fly | climb; absent, every mode)}. Where speed volumes overlap, only those whose modes take the body's current mode count, and the highest zone priority among them decides" },
   "terrain-grid": { status: "reserved", on: "world", help: "reserved: the sculpt grid; no shape is pinned until a world needs one (a sketch: docs/reference/RESERVED-SHAPES.md)" },
   "terrain-tile": { status: "reserved", on: "world", keyed: true, key: "partition", help: "reserved: a sculpted tile, keyed <i>-<j>; no shape is pinned until a world needs one (a sketch: docs/reference/RESERVED-SHAPES.md)" },
   // a behaviour. Keyed, so §5's creator rule decides who may change it and who its SPONSOR is. The install check's lists

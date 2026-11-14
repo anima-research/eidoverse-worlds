@@ -163,6 +163,16 @@ await C("A7", "the door: modes is a non-empty list of walk | swim | fly | climb"
   const r: any = { ok: mk("a", ["swim"]), two: mk("b", ["walk", "swim"]), empty: mk("c", []), bad: mk("d", ["dance"]), str: mk("e", "swim") };
   return [r.ok.ok && r.two.ok && !r.empty.ok && !r.bad.ok && !r.str.ok, Object.fromEntries(Object.entries(r).map(([k, v]) => [k, show(v)]))]; });
 
+await C("A7b", "the door's words: a bad modes refusal names what it got and the modes it takes; a missing zone's fix works for a create (it names the create carrying both), not only a set on a thing the refused create never made", () => {
+  const s = session();
+  const bad: any = s.call("create", { id: "m", components: { ...PVOL(2), "physics-volume": { kind: "speed", factor: 2, modes: ["walk", "dance"] } } });
+  const bare: any = s.call("create", { id: "z", components: { transform: tf([0, 0, 0]), "physics-volume": { kind: "speed", factor: 2 } } });
+  const wet: any = s.call("create", { id: "w", components: { transform: tf([0, 0, 0]), water: { level: 1 } } });
+  const fixOf = (r: any) => String(r?.refused?.fix ?? "");
+  return [/dance/.test(bad?.refused?.reason ?? "") && /walk \| swim \| fly \| climb/.test(bad?.refused?.reason ?? "")
+    && /create/.test(fixOf(bare)) && /zone/.test(fixOf(bare)) && /create/.test(fixOf(wet)),
+    { bad: bad?.refused, bare: bare?.refused, wet: wet?.refused }]; });
+
 await C("A8", "the track grows with the body: a size-2 body's run (the mover's, 8 m/s) at 10 Hz for 3 s is every stride taken; the same strides at size 1 are refused once the track runs dry", () => {
   const strides = (scale?: number) => { const s = session(), sz = scale ? { scale } : {}; s.call("move", { to: [-15, 0, 0], ...sz }, "vic", 2000);
     return Array.from({ length: 30 }, (_, i) => s.call("move", { to: [-15 + (i + 1) * 0.8, 0, 0], ...sz }, "vic", 100)); };

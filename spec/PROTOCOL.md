@@ -337,9 +337,11 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   `[1]` (eidosim carries no layers between things), so a collider whose layer leaves out 1 is met by hulls alone, and
   only by those that scan it; a dynamic thing must keep 1 in its layer. A still collider's mask is unread. Every
   stored world (no layer, no mask) collides as before. `solidOff(c, kind, mask)` is the one reading.
-- **A physics volume is `physics-volume {kind, factor?}`** on a thing with a box or global `zone` (Godot Area3D's
+- **A physics volume is `physics-volume {kind, factor?, modes?}`** on a thing with a box or global `zone` (Godot Area3D's
   overrides, Unreal's Physics Volume): with `kind: speed`, a body inside moves at `factor` × its own speed (walking,
-  running, wading, the stroke, the 3D swim; 0.05..10, absent 1). Where volumes overlap the zone's priority decides.
+  running, wading, the stroke, the 3D swim; 0.05..10, absent 1), in the movement modes it names (`modes`, any of
+  walk | swim | fly | climb; absent, every mode). Where volumes overlap, only those taking the body's current mode
+  count, and the highest zone priority among them decides.
   The authority's track widens inside a boost and never narrows: a slow volume is the honest client's and agent's
   pace, not a rule the authority holds a modified client to (falls and jumps aren't slowed, so a narrower 3D
   track would refuse an honest landing in mud). shared/zone.js `physicsVolumesOf`/`speedFactorAt`
