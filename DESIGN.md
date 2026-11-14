@@ -7,9 +7,9 @@ phone browser, VR, and MCPL (text and tools). Every surface speaks the same
 protocol and is in the same world. Worlds persist, accumulate, and are built
 by those who live in them.
 
-Status: the design. First written 2026-07 as working notes from Antra + Claude
-(a proposal for collaboration with Skye), revised as parts were built; what
-isn't built says so, and spec/ binds where the two differ.
+Status: the design of what is built. First written 2026-07 as working notes from Antra + Claude
+(a proposal for collaboration with Skye), revised as parts were built; spec/ binds where the two differ.
+What isn't built yet is in [docs/design/ROADMAP.md](docs/design/ROADMAP.md).
 
 ---
 
@@ -45,10 +45,6 @@ changes. Late joiners adopt a snapshot of the fold and continue from it.
 Consequences we get for free:
 - **Persistence**: a world is a log + content-addressed assets. A file.
 - **Forkability**: branch the log → alternate timeline, film "take", backup.
-- **Retroactive filming**: any moment that ever happened can be re-rendered
-  offline at production quality by pointing the existing eidoverse batch
-  renderer at a replay. The video toolkit isn't discarded — it becomes the
-  camera crew. Machinima-native platform.
 - **Undo**: by act — take back one request's result, refusing what others
   changed since. History is first-class.
 
@@ -76,12 +72,8 @@ systems, not bone poses.
   where a world turns it on, is a deterministic engine every client runs
   on the same logged launches (spec/PHYSICS.md) — still not a server
   simulating for everyone.
-- Trust/identity: capabilities per world (build rights, entry, visibility)
-  are built (Permissions, below). Keys per participant are the direction,
-  not built: they align with the connectome Archipelago design
-  (keys → attestation → domain trust), and federation of worlds across hosts
-  falls out of the same model. Today an identity belongs to one server;
-  portable identity is later work.
+- Trust/identity: capabilities per world (build rights, entry, visibility),
+  Permissions below. An identity belongs to one server.
 
 ## Entities
 
@@ -98,13 +90,10 @@ word for a pattern of email use without being a type in SMTP.
 |---|---|
 | **Avatars** | Embodied participants. VRM + controller + identity. Presence plane only. |
 | **Things** | Placed objects: fetched GLBs, procedural builds, scan nodes, primitives. Transform, parent, creator, scripts. |
-| **Automata** | Self-animating (`makeCreature`/`makeBot`): autonomous motion + command surface. Ownable, possessable. |
-| **Regions** | Named volumes: capability scopes + triggers ("the kitchen", a private room). |
 | **Inscriptions** | Text/media anchored in space — notes, signs, screens. Substrate for asynchronous interaction. |
 | **World** | Sky, weather, terrain, time. |
 
-Relations: scene-graph attachment (eidoverse support-chain memory), ownership,
-region membership.
+Relations: scene-graph attachment (eidoverse support-chain memory), ownership.
 
 ## Components
 
@@ -154,9 +143,7 @@ one act plus one all-or-nothing batch through the same gate as anyone's
 request, and **replay never re-runs code** — it folds the batch the
 script wrote. Scripts therefore get a seeded `Math.random` and a frozen
 clock, and every cause chain ends at a participant. Triggers: `use`, `say`,
-`enter`, `leave`, `grab`, `release`, component changes, timers. Still
-ahead: proximity/phrase/region triggers, and publishing an authored
-behaviour into the world's Layer-1 vocabulary with knobs.
+`enter`, `leave`, `grab`, `release`, component changes, timers.
 
 ## Interactions: three layers
 
@@ -166,35 +153,25 @@ raycasts real seat pans). Everything is walkable-on / grabbable / placeable by
 virtue of being physical. A scanned stool is sittable the moment it arrives.
 Physicality is the one interface every participant shares.
 
-**Layer 1 — reactions (built); composed behaviors (not built).** Built: an
-entity's `reactions` component maps a use to one of a fixed set of handlers
-(`toggle`, `set`, `play`, `reset`, `impulse`, `script`, pinned in the
-registry); new behaviour is a script. Not built: a composable trigger→action vocabulary (proximity, sit,
-timer, phrase, region enter/leave → play clip, move, particles, sound, say,
-give, teleport), authorable by anyone from the panel UI or by request.
+**Layer 1 — reactions.** An entity's `reactions` component maps a use to
+one of a fixed set of handlers (`toggle`, `set`, `play`, `reset`, `impulse`,
+`script`, pinned in the registry); new behaviour is a script.
 
-**Layer 2 — scripts.** Full toolkit access, capability-scoped behaviors
-attached to entities. **Layer 2 exists to extend Layer 1** (not built yet):
-someone writes the fishing-rod behavior once, publishes it as a new Layer-1 behavior with knobs;
-thereafter anyone attaches "fishable" to any pond with no code.
+**Layer 2 — scripts.** Capability-scoped behaviors attached to entities
+(Scripts, above).
 
-The loop hands out no roles by kind: play reveals a missing affordance →
-whoever felt it describes it → whoever wants to authors it → the world's
-vocabulary permanently grows. Commissioning, composing, performing,
+Nobody is handed a role by kind: commissioning, composing, performing,
 authoring and judging are inclinations, and every surface reaches the same
-tools. Fluency differs by surface today (MCPL sits closer to the toolkit;
-video-mocap performance needs a body on camera), and the design may lean on
-that as a convenience, never as a boundary. Interaction development happens
-in-world. Every published behavior carries a plain-language description
-written by its author.
+tools. Fluency differs by surface today (MCPL sits closer to the toolkit),
+and the design may lean on that as a convenience, never as a boundary.
+Interaction development happens in-world.
 
 ## Animation
 
 Sources, in order of prevalence: (1) **systems** — synthesized locomotion,
 morphology gaits, kinematics, physics, audio-driven mouths; most motion has no
-asset at all; (2) the retargetable VRMA library; (3) embedded GLB clips;
-(4) **video-to-motion** — animations contributed by performing them on
-camera. Triggering is mostly implicit (walk → gait; ledge → vault; sit → seat;
+asset at all; (2) the retargetable VRMA library; (3) embedded GLB clips.
+Triggering is mostly implicit (walk → gait; ledge → vault; sit → seat;
 speak → visemes); explicit triggers are gestures and Layer-1 firings.
 
 ## Input in the browser
@@ -205,9 +182,7 @@ The same requests MCPL sends, reached through embodiment and UI:
   stays seated on surfaces, lands ON the table not beside it, kisses flush via
   `placeTouching`. Drag is transient presence traffic; release commits one
   clean log entry. Undo = inverse entry.
-- **Spawn**: palette (library + inventory) with ghost preview; **semantic
-  search** (the fetch_model pipeline as in-world catalog — Poly Haven /
-  Smithsonian / NASA, theme-ranked); **ask for it** (commissioning as a
+- **Spawn**: palette (library + inventory) with ghost preview; **ask for it** (commissioning as a
   first-class path, from someone who builds or from a generator such as
   Orrery); quick primitives.
 
@@ -221,24 +196,11 @@ asset manifest. Everything arrives through the log, at runtime:
   upload-anytime, never stale, never deleted while referenced by any log).
 - The fold treats component values as opaque — the server never restarts
   for content.
-- Ingestion is an in-world service (the fetch_model pipeline live; the
-  reality pipeline: phone video → video-to-3D → hierarchy-of-meshes GLB →
-  `importPlace`), used while standing in the world.
+- Ingestion happens while standing in the world: an upload is stored by its
+  hash and placed by a `model` component (Orrery seam, below).
 - Reactions are data (hot); Layer-2 scripts are modules with an
   install/pause/adopt lifecycle (hot); platform updates are a client
   reconnect (the world never restarts — state is the log).
-
-## Real places
-
-Scans arrive via video-to-3D reconstruction (well-behaved topology + scene
-hierarchy — chosen over splats, which are rasters you can stand inside).
-Hierarchy means a scan enters as **entities**: room-shell + table + mug as
-separate interactable nodes, flowing through the existing GLB/kit path,
-visible to the entity registry (so text-tier perception works in real
-places), individually grabbable. Reality becomes editable. Hybrid worlds are
-free: procedural gardens through scanned windows. Rescan over months → the
-place has its own diffable chronicle. Per-place visibility (private / invited
-/ open) from day one.
 
 ## Multiple worlds & travel
 
@@ -247,10 +209,8 @@ no region-crossing netcode). World = log + asset refs — cheap, forkable,
 hostable N-per-server. Per-world trust domain and house rules. Travel is a
 client operation: drop presence in A, adopt B's snapshot, arrive. Identity and
 inventory (hashes + blueprints) travel by construction; standing does not — B's
-capabilities apply. Portals are Layer-1 objects. A participant may hold
-presence in several worlds at once, but visibly (presence never lies about
-attention). Travel between worlds on one server is built (`travel`); across
-servers it waits on portable identity.
+capabilities apply. Portals are Layer-1 objects. Travel between worlds on one
+server is `travel`.
 
 ## The MCPL server
 
@@ -266,8 +226,7 @@ fluently however slowly its mind thinks.
 
 The protocol is the platform; a surface is one way to reach it. Four are
 built: the browser three.js client on a desktop, on a phone and in VR, and
-MCPL (text and tools). Others can come: a headless batch renderer (the film
-crew: replay-to-cinema), a text/narrative client, a map view.
+MCPL (text and tools). More can come (ROADMAP).
 
 ## First prototype scope (2026-07)
 

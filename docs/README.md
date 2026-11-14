@@ -31,7 +31,7 @@ Start with [README](../README.md) (what this is, how to run it), [AGENTS](../AGE
 
 ## Design — what isn't built yet, and why it should be
 
-[DESIGN](../DESIGN.md) (current) · [PHYSICS-DIRECTION](design/PHYSICS-DIRECTION.md) · [AVATAR-DIRECTION](design/AVATAR-DIRECTION.md) ·
+[DESIGN](../DESIGN.md) (why the built system is shaped as it is) · [ROADMAP](design/ROADMAP.md) (what DESIGN's ideas still need) · [PHYSICS-DIRECTION](design/PHYSICS-DIRECTION.md) · [AVATAR-DIRECTION](design/AVATAR-DIRECTION.md) ·
 [SCHOOLS](design/SCHOOLS.md) · [RENDERER-SEAM](design/RENDERER-SEAM.md) · [SFU-SPEC](design/SFU-SPEC.md) ·
 [AWARENESS-ROADMAP](design/AWARENESS-ROADMAP.md) · [OVERHAUL-CHARTER](design/OVERHAUL-CHARTER.md)
 
