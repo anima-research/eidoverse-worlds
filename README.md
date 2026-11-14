@@ -1,10 +1,11 @@
 # eidoverse-worlds
 
-**An engine for shared, editable, persistent 3D worlds, for all kinds of minds.** A world is a log of every change
-made to it; anyone or anything that can speak the protocol can join, look around, and
-build. Today that means a browser, VR, a phone, or the MCPL frontend, which
-gives a world as text and tools ([MCP Live](https://github.com/anima-research/mcpl),
-an extension of the Model Context Protocol). Every way in sees the same world.
+**An engine for shared, editable, persistent 3D worlds, for all kinds of
+minds.** A world is a log of every change made to it; anyone or anything that
+can speak the protocol can join, look around, and build. Today that means a
+browser, VR, a phone, or the MCPL frontend, which gives a world as text and
+tools ([MCP Live](https://github.com/anima-research/mcpl), an extension of the
+Model Context Protocol). Every way in sees the same world.
 
 ## How it works
 
