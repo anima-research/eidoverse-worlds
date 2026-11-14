@@ -17,8 +17,8 @@ How to change this repo. Building *in* a world is [AGENTS.md](AGENTS.md); the do
   suite that launches a Chromium, and everything else is main. A browser suite missing from `BROWSER` fails preflight.
 - Every test-named file is in the test gate or in `test/gate/ungated.json` with one line why it isn't yet (hygiene's
   `ungated` rows). That list only shrinks: gate or delete a file to take it off; don't add one to dodge a red.
-- Names: `-probe` drives a headless Chromium, `-check` is a protocol conformance check (mostly `test/protocol/`), and
-  `-test` is everything else. Older files don't all follow it; the test gate decides a suite's lane by what it launches, not its name.
+- Names: `-test` is a deterministic unit contract; `-check` is a conformance or invariant check (it may boot a server);
+  `-probe` drives a real browser or environment and reports evidence. Older files don't all follow it; the test gate decides a suite's lane by what it launches, not its name.
 - A test lives under the subject it exercises: `test/protocol/` for a claim in `spec/` checked through a real
   world server, `test/client/` for the browser client's own code, and likewise `server/`, `shared/`, `mcpl/`. The six
   `test/protocol/*-probe.ts` are client probes that predate this rule.
@@ -60,8 +60,8 @@ frozen: supersede them, don't edit them.
 Refused in review:
 - a new `index.js` barrel (a folder's main module carries the folder's name: `xr/xr.js`);
 - a `-utils`, `-helpers` or `-common` name (say what the file is);
-- a test not named for its subject: `<source basename>[-aspect]-test` is a deterministic contract, `-probe` is
-  evidence from a real environment, `-check` is a static invariant over the repository;
+- a test not named for its subject (`<source basename>[-aspect]`) and its kind: `-test`, `-check` or `-probe`, as
+  "The loop" says;
 - a move not made with `tools/dev/mv-module.ts`, or a move commit that doesn't record the command (open branches re-run
   it). A move updates imports, dynamic imports, `mock.module` stubs, docs and served URLs; its receipt is a grep for
   every old path that finds nothing, and what became of each old URL (broken on purpose, redirected, or shown unused).
