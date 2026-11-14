@@ -7,7 +7,8 @@
 // started inside the solid stair, upstairs under the floor it lay on.
 // Checked with the real Bullet ragdoll on the committed skeleton fixture.
 import { plugin } from 'bun';
-const STUB = new URL('../stubs/core-stub.mjs', import.meta.url).pathname;
+import { fileURLToPath } from 'node:url';
+const STUB = fileURLToPath(new URL('../stubs/core-stub.mjs', import.meta.url));
 plugin({ name: 'core-stub', setup(b) { b.onResolve({ filter: /^(\.\.?\/)+core\.js$/ }, () => ({ path: STUB })); } });
 const { THREE } = await import('../stubs/core-stub.mjs');
 const { mergeGeometries } = await import('../../client/node_modules/three/examples/jsm/utils/BufferGeometryUtils.js');

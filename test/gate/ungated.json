@@ -17,6 +17,7 @@
  "test/client/gputime-probe.mjs": "Chromium probe: 2 fixed waits to turn into conditions",
  "test/client/ground-now-probe.mjs": "Chromium probe: 6 fixed waits to turn into conditions",
  "test/client/heightmap-readiness-browser-test.ts": "Chromium probe: 3 fixed waits to turn into conditions",
+ "test/client/getup-browser-test.ts": "Chromium probe: minutes long (300 s waits on a held-back download); kept out when #274's fast tests were registered",
  "test/client/htmlmesh-wrap-probe.mjs": "Chromium probe: 2 fixed waits to turn into conditions; then MERGE into test/client/htmlmesh-pick-probe.mjs",
  "test/client/image-upload-test.ts": "Chromium probe: 2 fixed waits to turn into conditions",
  "test/server/ktx2-resize-test.ts": "needs a KTX2 encoder (toktx/ktx), which the gate hosts lack: it skips",

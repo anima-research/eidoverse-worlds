@@ -77,7 +77,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["reach", "shared/reach-test.ts", 1], // two-bone IK geometry: no rig, no renderer, no server
   ["posture-tiles", "client/posture-tiles-test.ts", 1], // the action bar's posture tiles drive controller.js sitHere/standUp/getPosture
   ["poseclip-parity", "mcpl/poseclip-parity-test.ts", 1], // headless pose-clip joints equal the browser mixer's on the committed fixture
-  ["pose-handler", "server/pose-handler-test.ts", 1], // the pose fence is the real "pose" handler's: non-finite and oversized poses dropped
+  ["pose-handler", "server/pose-handler-test.ts", 1], // the pose fence is the real "pose" handler's: non-finite and oversized poses dropped; #274: a lying body's `floor` only if finite
   ["plateanchor", "client/plateanchor-test.ts", 1], // where a nameplate hangs (plateanchor.js, as avatar.js calls it)
   ["flight", "client/flight-test.ts", 1], // flight T1–T8's physical portions and the determinism proof
   ["firstperson-plate", "client/firstperson-plate-test.ts", 1], // first person hides your own nameplate
@@ -421,6 +421,8 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["join-rfc005", "mcpl/join-rfc005-test.ts", 1], // the door's travel tool (RFC-005): join policy, founding refused, epoch across transitions, host decline/mute/error, plain-MCP lane, resume after reconnect and door restart
   ["denoise", "mcpl/denoise-test.ts", 1], // presence flaps, act refractory, self-echo, activity pulse; approach dwell, re-arm, depart wording, first-sight seeding, the disconnect rule, the knobs' clamp under a hostile env
   ["killz-slumped", "server/killz-slumped-test.ts", 1], // a knocked-down agent body is judged by its hips as it falls and lies: on a floor at or above the kill line (KILL_MARGIN under @world.bounds.min.y) it stays; below it, it is sent back once, and arrives standing
+  ["getup-floor", "client/getup-floor-test.ts", 1], // #274: a limp body gets up on the floor it lay on (client/lib/getup.js), not at height 0; the real Bullet ragdoll on the skeleton fixture
+  ["arrival-hold", "client/arrival-hold-test.ts", 1], // #274: which placed models a restored body waits for, and which are near it (client/lib/arrivalnear.js); the hold in a real browser is getup-browser-test, outside the gate
   ["consent-scripts-list", "server/consent-scripts-list-test.ts", 1], // consent {allow|block} naming a script or a sponsor's scripts reaches the authority through the server; an allow naming nobody says how to name someone
   ["custody-save", "server/custody-save-test.ts", 1], // a governance key is handed out only once the keys file holds it: a failed save hands out nothing
   ["briefing", "server/briefing-test.ts", 1], // #214: a join's briefing names the agent guide and its version; /agents.md serves it with an etag
