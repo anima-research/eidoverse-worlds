@@ -82,7 +82,7 @@ async function spawnServer(env: Record<string, string | undefined>): Promise<{ p
     // evidence only, failure path only: give our child a bounded moment to bind or exit (EADDRINUSE), so its line says which
     await tryUntil(`our child on :${port} bound or exited (evidence only)`, () => bound || exited, { ms: 3000, step: 50 });
     const [root, nonceNow] = [await probe(`http://127.0.0.1:${port}/`), await probe(ownUrl, nonce)];
-    const tail = out.trim().replace(/token=\S+/g, "token=<redacted>").split(/\r?\n/).slice(-6).join(" | ").slice(0, 900);
+    const tail = out.trim().replace(/token=\S+/g, "token=<redacted>").split(/\r?\n/).slice(-6).join(" | ").slice(-900);
     const ev = [
       `"/" answered: ${answeredAt}, last wait probe: ${lastRoot}; now: ${root}`,
       `nonce ${new URL(ownUrl).pathname} deciding fetch: ${decided}; now: ${nonceNow}`,
