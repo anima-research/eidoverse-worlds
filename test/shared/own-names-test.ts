@@ -6,9 +6,9 @@ import { canonicalBone, validatePose, validateTracks, mergePose, puppetPose } fr
 import { canonicalPoint } from "../../shared/contact.js";
 import { canonicalLimb } from "../../shared/reachwire.js";
 import { rigFromGltf } from "../../mcpl/rigbones.ts";
+import { suite } from "../gate/suite.ts";
 
-let pass = 0, fail = 0;
-const check = (name: string, ok: boolean, detail: unknown = "") => { if (ok) pass++; else fail++; console.log(`${ok ? "ok  " : "FAIL"} ${name}${ok ? "" : `  ${JSON.stringify(detail)}`}`); };
+const { check, done } = suite("own-names");
 const q = [0, 0, 0, 1];
 const INHERITED = ["constructor", "__proto__", "toString", "valueOf", "hasOwnProperty"];
 
@@ -66,5 +66,4 @@ const rep = puppetPose(delta, true);
 check("puppetPose replace with only __proto__ is not a release-all", Object.keys(rep.pose).length === 1, rep);
 check("mergePose still releases a null bone", mergePose({ head: q, neck: q }, { head: null })?.head === undefined);
 
-console.log(`${fail ? "FAIL" : "ok"} own-names: ${pass} passed, ${fail} failed`);
-process.exit(fail ? 1 : 0);
+done();

@@ -4,9 +4,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { mulberry32, seededBytes } from "../../shared/rand.js";
+import { suite } from "../gate/suite.ts";
 
-let pass = 0, fail = 0;
-const check = (name: string, ok: boolean, detail: unknown = "") => { if (ok) pass++; else fail++; console.log(`${ok ? "ok  " : "FAIL"} ${name}${ok ? "" : `  ${typeof detail === "string" ? detail : JSON.stringify(detail)}`}`); };
+const { check, done } = suite("rand");
 const ROOT = path.join(import.meta.dir, "../..");
 
 { const r = mulberry32(12345), seen = new Set<number>(); let low = 0;
@@ -32,5 +32,4 @@ walk(ROOT);   // the whole tree but node_modules, dot-dirs and frozen/ (import-v
 check("no product with glibc's multiplier outside Math.imul in the tree, frozen/ aside (it passes 2^53): use shared/rand.js", hits.length === 0, hits.join(", "));
 check("…and the scan catches the shape either way round and leaves Math.imul alone", LCG.test("seed = (seed * 1103" + "515245 + 12345) & 0x7fffffff") && LCG.test("seed = (1103" + "515245 * seed + 12345) & 0x7fffffff") && !LCG.test("Math.imul(seed, 1103" + "515245)"));
 
-console.log(`${fail ? "FAIL" : "ok"} rand: ${pass} passed, ${fail} failed`);
-process.exit(fail ? 1 : 0);
+done();
