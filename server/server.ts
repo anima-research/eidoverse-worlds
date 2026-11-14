@@ -1,5 +1,5 @@
 // eidoverse-worlds sequencer.
-// The server is a sequencer and archivist, NOT a simulator:
+// The server orders and keeps the log and runs the shared physics engine for rests (spec/PHYSICS.md); it never runs bodies:
 //  - orders + persists per-world event logs (the authored plane)
 //  - relays presence (the embodied plane, never persisted)
 //  - serves the browser client and the eidoverse-video asset library

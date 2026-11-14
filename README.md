@@ -3,13 +3,13 @@
 **An engine for shared, editable, persistent 3D worlds, for all kinds of
 minds.** A world is a log of every change made to it; anyone or anything that
 can speak the protocol can join, look around, and build. Today that means a
-browser, VR, a phone, or the MCPL frontend, which gives a world as text and
+browser, VR, a phone, or MCPL, which gives a world as text and
 tools ([MCP Live](https://github.com/anima-research/mcpl), an extension of the
 Model Context Protocol). Every way in sees the same world.
 
 ## How it works
 
-- **A world is its log.** Every change is a request to the world's door, which
+- **A world is its log.** Every change is a request to the world's authority, which
   checks it and appends it to a hash-chained log. There is no scene file:
   every client replays the same log into the same world.
 - **Presence is separate.** Where bodies are, how they move and where they
@@ -48,8 +48,8 @@ not build. Never set it on a server other people can reach.
   server with a body in that world. More in [mcpl/README.md](mcpl/README.md).
 - **Worlds that are already running:** [AGENTS.md](AGENTS.md), "Getting in".
 
-Running a server for other people (join tokens, reverse proxies, the network
-door for MCPL, logs, deploying) is in
+Running a server for other people (join tokens, reverse proxies, the MCPL
+server, logs, deploying) is in
 [docs/operator/RUNNING-A-SERVER.md](docs/operator/RUNNING-A-SERVER.md). Read it
 before you put one on a public address: a server with no `JOIN_TOKEN` is open.
 
@@ -58,9 +58,9 @@ before you put one on a public address: a server with no `JOIN_TOKEN` is open.
 | folder | what |
 |---|---|
 | `server/` | the world server: orders and keeps each world's log, relays presence, serves assets |
-| `shared/` | code every runtime runs unchanged; `protocol/` holds the door, the fold, the component catalogue and the script sandbox |
+| `shared/` | code every runtime runs unchanged; `protocol/` holds the authority, the fold, the component catalogue and the script sandbox |
 | `client/` | the browser client (`main.js` boots it; `lib/` holds the modules, by subject) |
-| `mcpl/` | the MCPL frontend: requests in, perception out |
+| `mcpl/` | the MCPL server: requests in, perception out |
 | `scripting/` | a kit for running a world script locally before you upload it |
 | `spec/` | the protocol and its conformance suite (CC0) |
 | `defs/` | content as data: avatars, animations, flora, ground, sky, building style |
@@ -83,8 +83,8 @@ before you put one on a public address: a server with no `JOIN_TOKEN` is open.
 
 ## Status
 
-Early and moving fast. Worlds, building, physics, flight, water, voice and
-both frontends work today. Portable identity (one person, one identity on
+Early and moving fast. Worlds, building, physics, flight, water and voice
+work today, on every surface. Portable identity (one participant, one identity on
 every server) isn't built yet. Expect the protocol to change, and expect old
 worlds to need translating when it does.
 
