@@ -88,7 +88,7 @@ entity/component *data* model with an event-sourcing discipline Unity
 doesn't have — and without its logic model: **components carry
 parameters, never code, and nothing writes a component per-frame.**
 
-Building blocks:
+The registry holds about fifty components. The building blocks most behaviour is made of:
 
 - **`motion`** — the log stores *functions of time*, never frames:
   `pendulum` (swings), `spin` (windmills), `orbit`, `oscillate` (back and
@@ -113,22 +113,24 @@ Building blocks:
   the swing does little, pushing with it builds.
 - **`grabbable` / `physics`** — a thing a hand can carry, and a thing that
   falls and flies when the world runs physics.
+- **`climb`, `openable`, `drive`** — a route a body can climb, a thing that opens,
+  a thing you can steer. Each is authored data the client reads; none is code.
 
 **Scripts** are the Layer-2 tier (docs/guide/SCRIPTS.md): a `script:<name>`
 component naming an uploaded source, run by the authority in a QuickJS sandbox
 with its sponsor's rights narrowed to a declared scope, fuel- and
 rate-budgeted, paused loudly after repeated failures. Each activation is
-one act plus one all-or-nothing batch through the same gate as anyone's
+one request entry plus one all-or-nothing change, through the same gate as anyone's
 request, and **replay never re-runs code** — it folds the batch the
 script wrote. Scripts therefore get a seeded `Math.random` and a frozen
 clock, and every cause chain ends at a participant. Triggers: `use`, `say`,
-`enter`, `leave`, `grab`, `release`, component changes, timers.
+`enter`, `leave`, `grab`, `release`, `changed:<component>`, `tick` and `wake`.
 
 ## Interactions: three layers
 
 **Layer 0 — intrinsic affordances (authored by nobody).** The controller
-derives affordances from geometry: vaultable, climbable, sittable (`seatOn`
-raycasts real seat pans). Everything is walkable-on / grabbable / placeable by
+derives affordances from geometry: walkable floors and stairs, and sittable tops
+(`findSeat` in client/lib/colliders.js finds a seat-height surface). Everything is walkable-on / grabbable / placeable by
 virtue of being physical. A placed stool is sittable the moment it arrives.
 Physicality is the one interface every participant shares.
 
