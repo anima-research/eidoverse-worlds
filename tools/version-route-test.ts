@@ -42,12 +42,11 @@ async function teardown() {
 }
 
 // What answered a URL, in one short line: status + a class of the body, or the network error (#171/#324 evidence).
+const answer = (r: Response, t: string, nonce?: string) =>
+  `${r.status} ${nonce && t === nonce ? "our-nonce" : /<title>eidoverse-worlds<\/title>/.test(t) ? "eidoverse-index" : t.length ? `other:${JSON.stringify(t.slice(0, 80))}` : "empty"} (${t.length} B, server=${r.headers.get("server") ?? "-"})`;
+const netErr = (e: unknown) => `network-error ${(e as Error).name}: ${String((e as Error).message).slice(0, 120)}`;
 async function probe(url: string, nonce?: string): Promise<string> {
-  try {
-    const r = await fetch(url, { signal: AbortSignal.timeout(3000) }); const t = await r.text();
-    const cls = nonce && t === nonce ? "our-nonce" : /<title>eidoverse-worlds<\/title>/.test(t) ? "eidoverse-index" : t.length ? `other:${JSON.stringify(t.slice(0, 80))}` : "empty";
-    return `${r.status} ${cls} (${t.length} B, server=${r.headers.get("server") ?? "-"})`;
-  } catch (e) { return `network-error ${(e as Error).name}: ${(e as Error).message.slice(0, 120)}`; }
+  try { const r = await fetch(url, { signal: AbortSignal.timeout(3000) }); return answer(r, await r.text(), nonce); } catch (e) { return netErr(e); }
 }
 
 async function spawnServer(env: Record<string, string | undefined>): Promise<{ port: number }> {
@@ -64,26 +63,31 @@ async function spawnServer(env: Record<string, string | undefined>): Promise<{ p
     stdio: ["ignore", "pipe", "pipe"],   // piped (and always drained) so a failure can say whether OUR child bound
   });
   children.push(child);
-  // evidence for a failed ownership check: the child's own output, its bind line, its exit
-  let out = "", bound = "", exited = "", spawnErr = "";
-  const take = (b: Buffer) => { out = (out + b.toString()).slice(-4000); if (!bound && /sequencer on http:\/\/\S+/.test(out)) bound = at(); };
+  // evidence for a failed ownership check: the child's own output (whole lines only), its bind line, its exit
+  let out = "", bound = "", exited = "";
+  const take = (b: Buffer) => { const s = out + b.toString(); out = s.length > 4000 ? s.slice(-4000).replace(/^[^\n]*\n?/, "") : s; if (!bound && /sequencer on http:\/\/\S+/.test(out)) bound = at(); };
   child.stdout!.on("data", take); child.stderr!.on("data", take);
   child.on("exit", (code, sig) => { exited = `exited code=${code} signal=${sig} at ${at()}`; });
-  child.on("error", (e) => { spawnErr = e.message; });
-  const answered = await tryUntil(`the server on :${port} answers`, () => fetch(`http://127.0.0.1:${port}/`).then(() => true, () => false), { ms: 10_000, step: 250 });
+  let lastRoot = "no probe ran";
+  const answered = await tryUntil(`the server on :${port} answers`, () => fetch(`http://127.0.0.1:${port}/`).then(
+    async (r) => { lastRoot = await r.text().then((t) => answer(r, t), netErr); return true; },
+    (e) => { lastRoot = netErr(e); return false; }), { ms: 10_000, step: 250 });
   const answeredAt = answered ? at() : `never (tryUntil gave up at ${at()})`;
   const ownUrl = `http://127.0.0.1:${port}/${nonce}.txt`;
-  const own = await fetch(ownUrl).then((r) => r.ok && r.text()).catch(() => false);
+  let decided = "";   // what the deciding nonce fetch itself saw
+  const own = await fetch(ownUrl).then(async (r) => { const t = await r.text(); decided = answer(r, t, nonce); return r.ok && t; }).catch((e) => { decided ||= netErr(e); return false; });
   if (own !== nonce) {   // the nonce check stays the backstop: kernelPort's release-then-bind is still a window
-    const [root, nonceSeen] = [await probe(`http://127.0.0.1:${port}/`), await probe(ownUrl, nonce)];
+    // evidence only, failure path only: give our child a bounded moment to bind or exit (EADDRINUSE), so its line says which
+    await tryUntil(`our child on :${port} bound or exited (evidence only)`, () => bound || exited, { ms: 3000, step: 50 });
+    const [root, nonceNow] = [await probe(`http://127.0.0.1:${port}/`), await probe(ownUrl, nonce)];
     const tail = out.trim().replace(/token=\S+/g, "token=<redacted>").split(/\r?\n/).slice(-6).join(" | ").slice(0, 900);
     const ev = [
-      `"/" answered: ${answeredAt}; now: ${root}`,
-      `nonce ${new URL(ownUrl).pathname}: ${nonceSeen}`,
-      `child pid=${child.pid ?? "none"} ${exited || `alive at ${at()}`}${spawnErr ? ` spawn-error=${spawnErr}` : ""}; bound (its "sequencer on" line): ${bound || "NEVER"}; output tail: ${tail || "(none)"}`,
+      `"/" answered: ${answeredAt}, last wait probe: ${lastRoot}; now: ${root}`,
+      `nonce ${new URL(ownUrl).pathname} deciding fetch: ${decided}; now: ${nonceNow}`,
+      `child pid=${child.pid ?? "none"} ${exited || `alive at ${at()}`}; bound (its "sequencer on" line): ${bound || "NEVER"}; output tail: ${tail || "(none)"}`,
     ];
     console.log(`FAIL spawnServer :${port} — listener is not our child`); for (const l of ev) console.log(`    ${l}`);
-    throw new Error(`listener on :${port} is not our child — refusing to test it [${ev.join(" ;; ")}]`);
+    throw new Error(`listener on :${port} is not our child — refusing to test it (evidence: the FAIL block above)`);
   }
   return { port };
 }
