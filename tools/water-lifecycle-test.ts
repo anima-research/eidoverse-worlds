@@ -26,15 +26,18 @@ function bodyGlb(stature: number) {
   return out;
 }
 const SHORT = 1.0, TALL = 2.6, SLOW = 1.9;
-const files: Record<string, { glb: Uint8Array; delay: number }> = {
+const files: Record<string, { glb: Uint8Array; delay: number; down?: boolean }> = {
   "fix/short.vrm": { glb: bodyGlb(SHORT), delay: 0 },
   "fix/tall.vrm": { glb: bodyGlb(TALL), delay: 0 },
   "fix/slow.vrm": { glb: bodyGlb(SLOW), delay: 400 },   // an old body whose height answers late
 };
+let slowServed = 0;   // answers the slow body has had
 const srv = Bun.serve({ port: 0, async fetch(req) {
   const f = files[new URL(req.url).pathname.replace(/^\/library\//, "")];
   if (!f) return new Response("no", { status: 404 });
+  if (f.down) return new Response("busy", { status: 503 });
   await sleep(f.delay);
+  if (f === files["fix/slow.vrm"]) slowServed++;
   const m = /bytes=(\d+)-(\d+)/.exec(req.headers.get("range") ?? "");
   return m ? new Response(f.glb.slice(+m[1], +m[2] + 1), { status: 206 }) : new Response(f.glb);
 } });
@@ -46,7 +49,8 @@ a.terrainSrc = "stub";
 (globalThis as any).makeTerrain = () => ({ heightAt: () => -1.6 });
 a.joined = true;
 const WET = { size: 40, water: { level: 0 } };
-const settle = async () => { for (let i = 0; i < 50 && a.bodyH == null; i++) await sleep(10); };
+const until = async (ok: () => boolean) => { for (let i = 0; i < 50 && !ok(); i++) await sleep(10); };
+const settle = () => until(() => a.bodyH != null);
 const tickN = (n: number) => { for (let i = 0; i < n; i++) a.tick(); };
 
 console.log("\nstature follows the body");
@@ -63,8 +67,50 @@ console.log("\nstature follows the body");
   check("...and wades where the short one swam", !a.float.on && /standing/.test(a.waterHere(0, 0, a.pos.y)) && Math.abs(a.pos.y + 1.6) < 1e-6, a.waterHere(0, 0, a.pos.y));
   a.setAvatar("fix/slow.vrm");
   a.setAvatar("fix/short.vrm");
-  await settle(); await sleep(1100);   // long past the slow body's answer (two 400 ms reads)
-  check("a late answer for a replaced body does not overwrite the current one", Math.abs(a.bodyH - SHORT) < 0.01, `${a.bodyH}`);
+  await settle();
+  for (let i = 0; i < 1000 && slowServed < 2; i++) await sleep(10);   // its two 400 ms reads, however long load makes them
+  await sleep(100);   // …and the answer handed back
+  check("a late answer for a replaced body does not overwrite the current one", slowServed === 2 && Math.abs(a.bodyH - SHORT) < 0.01, `${slowServed} answers, ${a.bodyH}`);
+}
+
+console.log("\nstature follows a re-upload at the same path");
+{
+  files["fix/short.vrm"].glb = bodyGlb(TALL);
+  a.invalidateBodyAsset("short");   // what avatar-updated does
+  check("the known height stands while the re-upload is read", a.bodyH === SHORT, `${a.bodyH}`);
+  await until(() => Math.abs(a.bodyH - TALL) < 0.01);
+  check(`the re-uploaded body is measured again (${a.bodyH?.toFixed(2)} m)`, Math.abs(a.bodyH - TALL) < 0.01, `${a.bodyH}`);
+  files["fix/short.vrm"].glb = bodyGlb(SHORT);
+  a.invalidateBodyAsset("short");
+  await until(() => Math.abs(a.bodyH - SHORT) < 0.01);
+  // a peer's body: the rig a pose is checked against is read again too
+  const { rigBonesFor } = await import("../mcpl/rigbones.ts");
+  const base = `http://127.0.0.1:${srv.port}`;
+  a.people.set("peer", { id: "peer", avatar: "fix/tall.vrm", pose: null, declares: null, observedAt: null, bodyGeneration: 0 });
+  const before = (await rigBonesFor(base, "fix/tall.vrm"))?.bones;
+  const renamed = bodyGlb(TALL), at = new TextDecoder().decode(renamed).indexOf('"Head"');
+  renamed.set(new TextEncoder().encode('"Kopf"'), at);
+  files["fix/tall.vrm"].glb = renamed;
+  a.invalidateBodyAsset("tall");
+  const after = (await rigBonesFor(base, "fix/tall.vrm"))?.bones;
+  check("a peer's re-uploaded rig is read again", before?.includes("Head") === true && after?.includes("Kopf") === true, JSON.stringify({ before, after }));
+  files["fix/tall.vrm"].glb = bodyGlb(TALL);
+  a.people.delete("peer");
+  // …and a body nobody present wears, read before its wearer left
+  a.invalidateBodyAsset("tall");
+  const unworn = (await rigBonesFor(base, "fix/tall.vrm"))?.bones;
+  check("a re-uploaded rig nobody wears now is read again", unworn?.includes("Head") === true, JSON.stringify(unworn));
+  // a re-measure that fails to download is tried again when the terrain next settles
+  Object.assign(files["fix/short.vrm"], { glb: bodyGlb(TALL), down: true });
+  a.invalidateBodyAsset("short");
+  await sleep(100);
+  files["fix/short.vrm"].down = false;
+  await a.buildTerrain(WET);
+  await until(() => Math.abs(a.bodyH - TALL) < 0.01);
+  check(`a failed re-measure is tried again (${a.bodyH?.toFixed(2)} m)`, Math.abs(a.bodyH - TALL) < 0.01, `${a.bodyH}`);
+  files["fix/short.vrm"].glb = bodyGlb(SHORT);
+  a.invalidateBodyAsset("short");
+  await until(() => Math.abs(a.bodyH - SHORT) < 0.01);
 }
 
 console.log("\nthe float follows the water");

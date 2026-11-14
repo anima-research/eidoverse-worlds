@@ -48,6 +48,8 @@ import { join } from "node:path";
 import { validateProfile, profileStatus } from "../client/lib/seatcore.js";
 import { OPT_DIR, LIBRARY_DIR, PATCH_DIR } from "./config.ts";
 import { worlds } from "./world.ts";
+import { avatarDefs } from "./defs.ts";
+import { resolveLibFile } from "./libfile.ts";
 
 export const SEAT_POSE = "sitchair";
 export const CLIP_REL = "eidoverse/assets/animations/sitting_normal_chair.vrma";
@@ -108,7 +110,6 @@ export class SeatStore {
     this.file = join(this.dir, "profiles.json");
     this.logFile = join(this.dir, "profiles.log.jsonl");
     this.lockFile = join(this.dir, ".write-lock");
-    // overlay wins, like the avatar roster scan
     // The clip ladder must match what /library actually SERVES, patched fork
     // first — the same order routes.ts resolves. Hash the library's copy while
     // a fork in upstream-patched/ is the one every client animates from and
@@ -116,7 +117,8 @@ export class SeatStore {
     // "stale (clip bytes changed)" forever, and the reason it gives is a lie.
     // (Live as of 2026-08-19: sitting_normal_chair.vrma IS forked there.)
     this.clipBases = [patchDir, optDir, libraryDir].filter(Boolean).map((d) => join(d!, CLIP_REL));
-    this.vrmDirs = [join(optDir, "eidoverse/assets/vrms"), join(libraryDir, "eidoverse/assets/vrms")];
+    // every body the avatar roster lists, which scans the same three
+    this.vrmDirs = [patchDir, optDir, libraryDir].filter(Boolean).map((d) => join(d!, "eidoverse/assets/vrms"));
     this.fs = { writeFileSync, renameSync, appendFileSync, ...fsOverride };
     this.lockTimeoutMs = lockTimeoutMs;
     this.reload();
@@ -391,6 +393,8 @@ export class SeatStore {
   /** This slice profiles bodies the roster can serve — the bytes must exist
    *  to be judged against (#105 review B2). */
   rosterHas(name: string): boolean {
+    const vrm = avatarDefs()[name]?.vrm;   // a def's vrm first, as avatarRoster resolves it (#326)
+    if (vrm && resolveLibFile(vrm)) return true;
     return this.vrmDirs.some((d) => existsSync(join(d, `${name}.vrm`)));
   }
 
