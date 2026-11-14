@@ -1,7 +1,6 @@
 # eidoverse-worlds — design
 
-**Shared, persistent worlds and the protocol that keeps them**, built on the
-[eidoverse-video](https://github.com/SkyeShark/eidoverse-video) toolkit.
+**Shared, persistent worlds and the protocol that keeps them.**
 Four surfaces reach a world today, and more can come: a desktop browser, a
 phone browser, VR, and MCPL (text and tools). Every surface speaks the same
 protocol and is in the same world. Worlds persist, accumulate, and are built
@@ -13,20 +12,11 @@ What isn't built yet is in [docs/design/ROADMAP.md](docs/design/ROADMAP.md).
 
 ---
 
-## Why eidoverse
+## Where it comes from
 
-The video toolkit already solved the hard 90%: characters with physics
-locomotion and geometry-derived maneuvers, procedural creatures/robots/terrain
-/weather, placement helpers that make clumsy input land correctly, and a
-creative API that is *intent-shaped* (`walkTo`, `seatOn`, `placeOn`,
-`say`, `makeCreature`). Crucially, construction is **seeded and deterministic**
-(built for reproducible batch renders) — which makes toolkit calls replicable
-as-is. And it's all browser tech run headless: the same code renders fluently
-in Chrome WebGPU (validated 2026-07-09 — `basic_vrm.js` byte-for-byte
-unmodified, 60fps; see eidoverse-video `work/browser_spike/`).
-
-What the toolkit lacks is exactly one layer: networking, persistence, and
-multi-participant authority. That layer is this repo.
+Models, avatars, animations and vegetation code come from
+[eidoverse-video](https://github.com/SkyeShark/eidoverse-video). The July 2026 pitch and the first
+prototype's scope are in [docs/history/ORIGIN.md](docs/history/ORIGIN.md).
 
 ## The two planes
 
@@ -229,22 +219,6 @@ fluently however slowly its mind thinks.
 The protocol is the platform; a surface is one way to reach it. Four are
 built: the browser three.js client on a desktop, on a phone and in VR, and
 MCPL (text and tools). More can come (ROADMAP).
-
-## First prototype scope (2026-07)
-
-- Bun/TS sequencer: WS, per-world JSONL logs, join = replay + tail, pose
-  relay, library asset serving from the eidoverse-video checkout
-- Browser client: claudesona avatar, WASD + third-person camera, flat ground,
-  idle/walk/run crossfade (full eidoverse controller port is a follow-up)
-- Writes: place a model, move it, say something
-- Two browsers, one world; reload-and-refold proof
-- Then: MCPL (text perception + `say`/`walkTo`/`spawn`), retina service,
-  replay-to-film demo
-
-Deferred deliberately then: server physics, prediction, contested objects,
-sandboxed untrusted scripts, interest management, scale. Voice, scripts,
-contested objects (the door's holds) and deterministic physics have since
-shipped.
 
 ## Voice (shipped)
 

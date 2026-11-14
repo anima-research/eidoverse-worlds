@@ -47,7 +47,7 @@ Start with [README](../README.md) (what this is, how to run it), [AGENTS](../AGE
 
 ## History — ledgers and retired plans
 
-[INCIDENTS](history/INCIDENTS.md) · [TEL0S_NOTES](history/TEL0S_NOTES.md) · [SCALING_AND_SNAPSHOT_PLAN](history/SCALING_AND_SNAPSHOT_PLAN.md) ·
+[ORIGIN](history/ORIGIN.md) (the July 2026 pitch) · [INCIDENTS](history/INCIDENTS.md) · [TEL0S_NOTES](history/TEL0S_NOTES.md) · [SCALING_AND_SNAPSHOT_PLAN](history/SCALING_AND_SNAPSHOT_PLAN.md) ·
 [PROPOSAL-sensory-channel](history/PROPOSAL-sensory-channel.md) · [NOTE-token-tap](history/NOTE-token-tap.md) ·
 [UPSTREAM-FLAGS](history/UPSTREAM-FLAGS.md) · [UPSTREAM-WRAP-ONCE](history/UPSTREAM-WRAP-ONCE.md) ·
 [FLIGHT-MCP-INTERFACE](history/FLIGHT-MCP-INTERFACE.md) · [NATIVE-WORLD-RENDERING](history/NATIVE-WORLD-RENDERING.md) (upstream's render-scene) · [CUTOVER-ROLLBACK](history/CUTOVER-ROLLBACK.md) (expired)
