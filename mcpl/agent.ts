@@ -1520,8 +1520,8 @@ export class WorldAgent {
         // clip-keyed sanitizer downstream can see it (see heldPoseAuthored).
         ...(this.heldPose && (this.heldPoseAuthored || this.clip === "ragdoll") ? { pose: this.heldPose } : {}),
         ...(this.pins.size ? { pins: [...this.pins].map(([j, at]) => ({ j, at })) } : {}),
-        // knocked down but not yet lowered to a doll's root: it lies where it stood
-        ...(this.clip === "ragdoll" && this.lyingFrom != null && this.pos.y === this.lyingFrom ? { floor: this.pos.y } : {}),
+        // a canned slump's root is at its feet, so it lies on that floor; server.ts settledPose would raise any other root
+        ...(this.clip === "ragdoll" && this.rootCanned() ? { floor: this.pos.y } : {}),
         ...(this.pendingAnim ? { anim: this.pendingAnim } : {}),
         ...(this.reaches.size ? { reach: Object.fromEntries(this.reaches) } : {}),
         ...(this.myOccupancy ? { seat: this.myOccupancy } : {}),
@@ -1552,7 +1552,6 @@ export class WorldAgent {
     // A fall starts from the pose the body is drawn in (a kneel falls from
     // kneeling height): this is what it held when the blow landed.
     const held = this.heldPose;
-    if (this.clip !== "ragdoll") this.lyingFrom = this.pos.y;   // where it stood when it went down
     this.clip = "ragdoll";
     this.heldPose ??= DOWNED_POSE;
     this.reaches.clear();   // a knocked-over body's reach is gone: the arms are the ragdoll's now
@@ -1573,13 +1572,6 @@ export class WorldAgent {
    *  while a knockdown waits on /geom). Every act that takes authority over the
    *  body bumps this; a suspended act that finds it changed abandons itself. */
   bodyEpoch = 0;
-  /** The height this body stood at when it was knocked down. A knockdown
-   *  reports "ragdoll" at once, standing where it was, and only a sim step or
-   *  a dragger's sample moves pos down to a doll's root. While pos is still
-   *  at that height, the pose carries it as `floor`, so the server stands the
-   *  body there rather than raising a root that was never lowered
-   *  (server.ts settledPose). */
-  private lyingFrom: number | null = null;
 
   private async tumble(lean: number[] | null, held: Record<string, PoseValue> | null = null) {
     const epoch = ++this.bodyEpoch;
