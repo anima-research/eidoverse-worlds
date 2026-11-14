@@ -41,6 +41,15 @@ async function teardown() {
   children.length = 0; nonces.length = 0;
 }
 
+// What answered a URL, in one short line: status + a class of the body, or the network error (#171/#324 evidence).
+async function probe(url: string, nonce?: string): Promise<string> {
+  try {
+    const r = await fetch(url, { signal: AbortSignal.timeout(3000) }); const t = await r.text();
+    const cls = nonce && t === nonce ? "our-nonce" : /<title>eidoverse-worlds<\/title>/.test(t) ? "eidoverse-index" : t.length ? `other:${JSON.stringify(t.slice(0, 80))}` : "empty";
+    return `${r.status} ${cls} (${t.length} B, server=${r.headers.get("server") ?? "-"})`;
+  } catch (e) { return `network-error ${(e as Error).name}: ${(e as Error).message.slice(0, 120)}`; }
+}
+
 async function spawnServer(env: Record<string, string | undefined>): Promise<{ port: number }> {
   const port = kernelPort();
   const nonce = `vr-nonce-${crypto.randomUUID().slice(0, 8)}`;
@@ -49,16 +58,34 @@ async function spawnServer(env: Record<string, string | undefined>): Promise<{ p
   // process.execPath, not "bun": the PATH "bun" is an npm .cmd shim on
   // Windows whose pid dies immediately, orphaning the real sequencer on this
   // port where it poisons the next run.
+  const t0 = performance.now(); const at = () => `${Math.round(performance.now() - t0)} ms`;
   const child = spawn(process.execPath, [join(REPO, "server", "server.ts")], {
     env: { PORT: String(port), WORLDS_DIR: mkdtempSync(join(tmpdir(), "vr-")), ...env },
-    stdio: "ignore",
+    stdio: ["ignore", "pipe", "pipe"],   // piped (and always drained) so a failure can say whether OUR child bound
   });
   children.push(child);
-  await tryUntil(`the server on :${port} answers`, () => fetch(`http://127.0.0.1:${port}/`).then(() => true, () => false), { ms: 10_000, step: 250 });
-  const own = await fetch(`http://127.0.0.1:${port}/${nonce}.txt`).then((r) => r.ok && r.text()).catch(() => false);
-  if (own !== nonce) throw new Error(`listener on :${port} is not our child — refusing to test it`);
+  // evidence for a failed ownership check: the child's own output, its bind line, its exit
+  let out = "", bound = "", exited = "", spawnErr = "";
+  const take = (b: Buffer) => { out = (out + b.toString()).slice(-4000); if (!bound && /sequencer on http:\/\/\S+/.test(out)) bound = at(); };
+  child.stdout!.on("data", take); child.stderr!.on("data", take);
+  child.on("exit", (code, sig) => { exited = `exited code=${code} signal=${sig} at ${at()}`; });
+  child.on("error", (e) => { spawnErr = e.message; });
+  const answered = await tryUntil(`the server on :${port} answers`, () => fetch(`http://127.0.0.1:${port}/`).then(() => true, () => false), { ms: 10_000, step: 250 });
+  const answeredAt = answered ? at() : `never (tryUntil gave up at ${at()})`;
+  const ownUrl = `http://127.0.0.1:${port}/${nonce}.txt`;
+  const own = await fetch(ownUrl).then((r) => r.ok && r.text()).catch(() => false);
+  if (own !== nonce) {   // the nonce check stays the backstop: kernelPort's release-then-bind is still a window
+    const [root, nonceSeen] = [await probe(`http://127.0.0.1:${port}/`), await probe(ownUrl, nonce)];
+    const tail = out.trim().replace(/token=\S+/g, "token=<redacted>").split(/\r?\n/).slice(-6).join(" | ").slice(0, 900);
+    const ev = [
+      `"/" answered: ${answeredAt}; now: ${root}`,
+      `nonce ${new URL(ownUrl).pathname}: ${nonceSeen}`,
+      `child pid=${child.pid ?? "none"} ${exited || `alive at ${at()}`}${spawnErr ? ` spawn-error=${spawnErr}` : ""}; bound (its "sequencer on" line): ${bound || "NEVER"}; output tail: ${tail || "(none)"}`,
+    ];
+    console.log(`FAIL spawnServer :${port} — listener is not our child`); for (const l of ev) console.log(`    ${l}`);
+    throw new Error(`listener on :${port} is not our child — refusing to test it [${ev.join(" ;; ")}]`);
+  }
   return { port };
-  // (the nonce check stays the backstop: kernelPort's release-then-bind is still a window)
 }
 
 const HOME = process.env.HOME; const BUNPATH = process.env.PATH;
