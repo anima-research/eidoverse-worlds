@@ -68,5 +68,13 @@ console.log("\nthe sample where a body goes limp or gets up:");
   check("a body that stays up is still drawn between its samples, across a clip change", near(d.y, 0.25) && near(d.yaw, 0.5), `root y ${d.y}, yaw ${d.yaw}; want 0.25, 0.5`);
 }
 
+console.log("\na bone named __proto__, blended between two samples (#297: validation and the wire keep it as a key):");
+{
+  const d = await drawnBetween("protobone", { p: [0, 0, 0], yaw: 0, clip: "idle", pose: JSON.parse('{"__proto__": [0, 0, 0, 1]}') },
+    { p: [0, 0, 0], yaw: 0, clip: "idle", pose: JSON.parse('{"__proto__": [0, 0.3827, 0, 0.9239]}') });
+  check("the blended pose holds __proto__ as its own bone, not as the pose's prototype",
+    !!d.posed && Object.getPrototypeOf(d.posed) === Object.prototype && Object.hasOwn(d.posed, "__proto__"), `keys ${JSON.stringify(Object.keys(d.posed ?? {}))}`);
+}
+
 console.log(`\n${failures ? `${failures} failed` : "all passed"}`);
 process.exit(failures ? 1 : 0);

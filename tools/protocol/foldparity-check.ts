@@ -27,6 +27,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { scratch, ENGINE } from "./common.ts";
 import { pause } from "./wait.ts";
+import { seededBytes } from "../../shared/rand.js";
 
 const root = scratch("foldparity");
 const W = path.join(root, "worlds");
@@ -55,7 +56,7 @@ const opts = (every = 1000, extra = {}) => ({ now: () => T, custodyFile: CUSTODY
   ...(every ? { stateCache: { every } } : {}), simCheckpoint: { every: 200 }, ...extra });
 /** open a world; copies of one world (-with, -without, -ref) open under its own name, so what names it reads alike */
 const nameOf = (dir) => path.basename(dir).replace(/-(with|without|ref|wl-with|wl-without)$/, "");
-const open = (dir, every = 1000, extra = {}) => { const w = openLive(dir, nameOf(dir), opts(every, extra)); let k = 0; w.random = (n) => Uint8Array.from({ length: n }, () => (k = (k * 1103515245 + 12345) >>> 0) & 255); return w; };
+const open = (dir, every = 1000, extra = {}) => { const w = openLive(dir, nameOf(dir), opts(every, extra)); w.random = seededBytes(1); return w; };
 async function said(f) { const lines = [], ow = console.warn, oe = console.error; console.warn = console.error = (...a) => lines.push(a.join(" "));
   try { return { r: await f(), lines }; } finally { console.warn = ow; console.error = oe; } }
 const onDisk = (w) => w.prefixOnDisk?.() ?? 0;   // absent before 10-28: every prefix read whole

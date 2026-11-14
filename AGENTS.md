@@ -322,7 +322,8 @@ inspect   {id, json?}        # every editable field: value, unit, limits, why re
 edit      {id, set, dry?}    # change fields by address; ONE request for the whole edit
 ```
 
-Addresses are `group.field`: `pos.x pos.y pos.z pos.yaw pos.scale` ·
+Addresses are `group.field`: `pos.x pos.y pos.z pos.scale` · `pos.yaw`
+(heading, in degrees, like Rotate; a bare `yaw` in a verb's args is radians) ·
 `rot.x rot.y rot.z` (Rotate, in degrees, read from the stored `q` in the
 thing's rotation order) · `rot.qx rot.qy rot.qz rot.qw` · `rot.order`
 (`XYZ`…`ZYX` or `quat`, Maya's rotateOrder; never moves it) ·
@@ -760,6 +761,8 @@ House rules, learned the hard way (each one is a past incident):
    authority in a sandbox), so components stay pure data. Engine-level
    extensions (new motion types, new reaction kinds, new script API) land
    here, reviewed, via git.
+6. **A name is an own key.** `__proto__` and `constructor` are legal names: write
+   with `setOwn` (shared/humanoid.js), read with `Object.hasOwn`, never `obj[name] =` (#297).
 
 ### Dev loop
 

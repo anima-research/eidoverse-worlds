@@ -26,7 +26,7 @@
 //     sync     'sofa'           sockets sharing a sync group switch same-named poses together (AVsitter SYNC)
 //     approach [x,y,z,yaw]      socket frame: where you're brought to first, then `enter` carries you onto the seat
 //     enter    'stand_to_sit'   one-shot clip while you're carried on;  leave: one-shot clip while carried off
-//     exit     [x,y,z(,yaw)]    where you're set down (the thing's frame)
+//     exit     [x,y,z(,yaw)]    where you're set down (the thing's frame; yaw radians, client/lib/localbody.js)
 //     reach    {leftHand: {at, q?, part?, hint?, vr?}}   IK targets in the thing's frame (or a part's: they move with it)
 //     hold     {spine: [x,y,z,w]}                       sparse bone overrides over the pose (the escape hatch)
 //     look     {yaw: [min,max], pitch: [min,max], up}   head limits in degrees, socket frame; up: world | socket
@@ -278,7 +278,7 @@ function checkBody(b, at) {
   if (b.sync !== undefined && !(typeof b.sync === 'string' && NAME_RE.test(b.sync))) return bad('shape', `${at}.sync names a group (letters, digits, - and _)`);
   if (b.approach !== undefined && !nums(b.approach, 4)) return bad('shape', `${at}.approach is [x, y, z, yaw] in the socket's frame (yaw in radians)`);
   for (const k of ['enter', 'leave']) if (b[k] !== undefined && !(typeof b[k] === 'string' && CLIP_RE.test(b[k]))) return bad('shape', `${at}.${k} names a clip ('stand_to_sit')`);
-  if (b.exit !== undefined && !nums(b.exit, 3) && !nums(b.exit, 4)) return bad('shape', `${at}.exit must be [x, y, z] (or [x, y, z, yaw]) in the thing's own frame`);
+  if (b.exit !== undefined && !nums(b.exit, 3) && !nums(b.exit, 4)) return bad('shape', `${at}.exit must be [x, y, z] (or [x, y, z, yaw], yaw in radians) in the thing's own frame`);
   if (b.reach !== undefined) {
     if (!isObj(b.reach)) return bad('shape', `${at}.reach must be {<limb>: {at, q?, part?, hint?, vr?}}`);
     for (const [limb, t] of Object.entries(b.reach)) {

@@ -7,6 +7,8 @@
 //   S5  an agent's building tools (mcpl/tools.ts HANDLERS) wait for the authority: accepted, and refused with the reason
 //   S6  the importer translates an old world once into a new world: the old log's bytes are untouched, the copy is
 //       visitable, and the old directory itself is not served
+//   SY  a bare yaw through the door (create at, a copy's at, set transform): a number turns the thing; null is a shape
+//       refusal that writes no change (#324)
 //   S8  clients fold the log: the cut, then `log` messages of entries only (never v1 `args`); a client that doesn't fold it is refused (3c)
 //   SP  physics: holds to everyone, a joiner's cut carries holds and the sim, leaving while holding drops it
 //   S7  joining never founds a world (H3)
@@ -184,6 +186,38 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   const t2 = fold(readLog(fs.readFileSync(path.join(W4, "garden", "world.jsonl"))));
   ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4b no resync: no second snapshot to anyone", [ann, bob, vic].map((c) => c.of("snapshot").length));
   for (const c of [ann, bob, vic]) ok(digest(heldBy(c).st) === digest(t2) && heldBy(c).view().sky?.hours === 18, `S4b …and ${c.id} holds it (its fold = the log, sky included)`); }
+
+// ---- SY: a bare yaw through the product door (#324, Mica): a number turns the thing; one that isn't (null) is a shape
+//      refusal that writes no change. CA7 (authority-check.ts) is the pure unit row; this is the wire/authority/log seam ----
+{ ok(tool(["found", "turns", "--owner", "Ann"]).code === 0, "SY (a fresh world for the yaw rows, founded by Ann)");
+  const ya = await client(srv.port, "turns", "Ann", REPLICA);
+  const WL = () => readLog(fs.readFileSync(path.join(W4, "turns", "world.jsonl")));
+  const ents = () => fold(WL()).entities;
+  const turned = (q: any, y: number) => Array.isArray(q) && [0, Math.sin(y / 2), 0, Math.cos(y / 2)].every((n, i) => Math.abs(q[i] - n) < 2e-3);
+  const yawRefusal = (r: any) => r?.ok === false && r.refused?.code === "shape" && /\byaw\b/.test(r.refused?.reason ?? "");
+  // after a refusal, the log gains nothing but the refused act itself (no change entry)
+  const onlyRefused = (since: number) => WL().slice(since).every((e: any) => e.kind === "request" && e.body?.refused?.code === "shape");
+  const mk = await ya.req("create", { id: "yawbox", model: "test/cup.glb", at: { pos: [-4, 0, -4], yaw: 0.5 } });
+  ok(mk.ok && turned(ents()[IDS.of("yawbox")]?.c.transform?.q, 0.5), "SY1 create {at: {yaw: 0.5}} is accepted and the thing stands turned 0.5 rad", [mk.refused, ents()[IDS.of("yawbox")]?.c.transform]);
+  const st = await ya.req("set", { id: "yawbox", component: "transform", value: { yaw: 1.2 } });
+  ok(st.ok && turned(ents()[IDS.of("yawbox")]?.c.transform?.q, 1.2), "SY2 set transform {yaw: 1.2} is accepted and the thing turns to 1.2 rad", [st.refused, ents()[IDS.of("yawbox")]?.c.transform]);
+  { const n0 = WL().length, ids0 = Object.keys(ents()).sort().join();
+    const cn = await ya.req("create", { id: "yawnull", model: "test/cup.glb", at: { pos: [-5, 0, -5], yaw: null } }); await pause("a refused yaw has had its chance to land in the log (it must not)", 150);
+    ok(yawRefusal(cn) && !IDS.map.has("yawnull"), "SY3 create {at: {yaw: null}} is refused as shape, the reason naming yaw (nothing minted)", cn);
+    ok(onlyRefused(n0) && Object.keys(ents()).sort().join() === ids0, "SY3 …and the log gains no change entry: no thing exists that didn't before", WL().slice(n0)); }
+  // a copy's at reaches bareYaw itself (plain create's at has its own number check, writes.js atShape): the door #324 changed
+  const cp = await ya.req("create", { from: "yawbox", at: { pos: [-6, 0, -6], yaw: 0.3 } });
+  const cpId = cp.notes?.find((n: any) => n.copied)?.as;
+  ok(cp.ok && turned(ents()[cpId]?.c.transform?.q, 0.3), "SY4 create {from, at: {yaw: 0.3}} is accepted and the copy stands turned 0.3 rad", [cp.refused ?? cp.notes, ents()[cpId]?.c.transform]);
+  { const n0 = WL().length, ids0 = Object.keys(ents()).sort().join();
+    const cn = await ya.req("create", { from: "yawbox", at: { pos: [-7, 0, -7], yaw: null } }); await pause("a refused yaw has had its chance to land in the log (it must not)", 150);
+    ok(yawRefusal(cn) && /must be a number/.test(cn.refused?.reason ?? ""), "SY5 create {from, at: {yaw: null}} is refused as shape: yaw must be a number (never coerced to 0)", cn);
+    ok(onlyRefused(n0) && Object.keys(ents()).sort().join() === ids0, "SY5 …and the log gains no change entry: no copy exists", WL().slice(n0)); }
+  { const n0 = WL().length, t0 = JSON.stringify(ents()[IDS.of("yawbox")]?.c.transform);
+    const sn = await ya.req("set", { id: "yawbox", component: "transform", value: { yaw: null } }); await pause("a refused yaw has had its chance to land in the log (it must not)", 150);
+    ok(yawRefusal(sn) && /must be a number/.test(sn.refused?.reason ?? ""), "SY6 set transform {yaw: null} is refused as shape: yaw must be a number (never coerced to 0)", sn);
+    ok(onlyRefused(n0) && JSON.stringify(ents()[IDS.of("yawbox")]?.c.transform) === t0 && turned(ents()[IDS.of("yawbox")]?.c.transform?.q, 1.2), "SY6 …and the log gains no change entry: the transform is the one before (still 1.2 rad)", [WL().slice(n0), ents()[IDS.of("yawbox")]?.c.transform]); }
+  ya.close(); }
 
 // ---- S5: an agent's tools (mcpl/tools.ts) over this connection ----
 { const { HANDLERS } = await import("../../mcpl/tools.ts");
