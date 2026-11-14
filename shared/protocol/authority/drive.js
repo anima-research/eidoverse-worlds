@@ -1,4 +1,4 @@
-// shared/protocol/authority/drive.js — the hull's lease (DESIGN.md env-components "Drive"; Roblox network ownership): the helm's
+// shared/protocol/authority/drive.js — the hull's lease (spec/PROTOCOL.md §4 "Drive"; Roblox network ownership): the helm's
 // occupant streams the hull's pose (presence), the authority checks plausibility and the hull's own collision, and commits only
 // the last accepted pose, as the system's act, on exit, every LEASE.commitMs and when the stream stops (shared/drive.js).
 import { driveOf, helmOf, implausible, LEASE, slackAfter, slackNow, turnBetween } from "../../drive.js";

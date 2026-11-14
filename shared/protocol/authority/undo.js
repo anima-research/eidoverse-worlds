@@ -1,5 +1,5 @@
 // shared/protocol/authority/undo.js — the act index (undo and wait without scanning the log) and undo by act, with the
-// sky, weather and sculpt builders that live beside it. The inverse goes through admit like any write; the write path's
+// sky and weather builders that live beside it. The inverse goes through admit like any write; the write path's
 // helpers it borrows (needThing, lastTouch, the reference clears) are above it, reached through UP.
 import { fold, opsOf, isIdentity, jcs, REDACTED, redactionsIn, redactedBodies } from "../fold.js";
 import { materialize, refsOf } from "../componentspec.js";
@@ -21,8 +21,8 @@ const needThing = (...a) => UP.needThing(...a);
 const withoutRefs = (...a) => UP.withoutRefs(...a);
 
 // ---------- the act index: undo and wait without scanning the log ----------
-// A view over the log (L2), built once per world object and advanced per appended entry, so a live world (server,
-// where `w` lives as long as the world is open) pays for each entry once. A purge is retroactive (L1), so a purge entry
+// A view over the log, built once per world object and advanced per appended entry, so a live world (server,
+// where `w` lives as long as the world is open) pays for each entry once. A purge is retroactive (§12), so a purge entry
 // throws the index away and rebuilds it, as livehost.ts refolds the state. What it holds:
 //   actsOf    actor → their act seqs, in order          resultOf  act seq → the first change entry it caused
 //   undone    act seqs some `undo` act names (body.undoes)
@@ -31,7 +31,7 @@ const withoutRefs = (...a) => UP.withoutRefs(...a);
 //   rests     change seqs that are rests (caused by a sim launch); restAfter: `${rest seq}:${body id}` → the authority's
 //             follow-up act for that body (a rest can carry several bodies, each with its own follow-up, as restsOf reads them)
 //   lastAct   the latest act that isn't an undo or the authority's (for "the latest change was X's")
-// A world object over a log that is re-read per request (the suites' disk worlds) rebuilds it per request, as before.
+// A world object over a log that is re-read per request (the suites' disk worlds) rebuilds it per request.
 function freshIndex() {
   return { n: 0, actsOf: new Map(), resultOf: new Map(), undone: new Set(), purged: new Set(), purgedOps: new Map(), changes: [], touch: new Map(),
     rests: [], restAfter: new Map(), lastAct: null };
@@ -64,7 +64,7 @@ export function actIndexOf(w) {
   const fresh = () => { const y = freshIndex(); y.entries = E; y.bad = malformedSeqs(w.state ? w.state() : fold(E)); purgeTargets(E, y); return (w.__actIndex = y); };
   if (!x || x.entries !== E || x.n > E.length) x = fresh();
   for (; x.n < E.length; x.n++) {
-    if (x.n >= x.pt && isE(E[x.n]) && E[x.n].kind === "redaction") { const n = x.n; x = fresh(); for (; x.n < n; x.n++) indexEntry(x, E, x.n); } // retroactive (L1): start over
+    if (x.n >= x.pt && isE(E[x.n]) && E[x.n].kind === "redaction") { const n = x.n; x = fresh(); for (; x.n < n; x.n++) indexEntry(x, E, x.n); } // a purge is retroactive: start over
     indexEntry(x, E, x.n); }
   return x;
 }
@@ -89,7 +89,7 @@ export function entityBefore(w, id, seq, x = actIndexOf(w)) {
   return ent;
 }
 
-// ---------- undo (by act; the inverse goes through admit like any write: rank and locks NOW) ----------
+// ---------- sky and weather: the sky panel's builders (verbs.js BATCH_VERBS) ----------
 function skyValue(prev, verb, args, now) {
   if (!args || typeof args !== "object" || Array.isArray(args)) refuse("shape", `${verb} takes the sky's fields {hours, rate, weather, clouds…}`, "");
   const { dry, ...a } = args;
@@ -101,6 +101,7 @@ function skyValue(prev, verb, args, now) {
 }
 function buildSky(ctx, a, w) { return [setOp("@world", "sky", skyValue(null, "sky", a, w.now()))]; }
 function buildWeather(ctx, a, w) { return [setOp("@world", "sky", skyValue(ctx.st.entities["@world"]?.c.sky ?? null, "weather", a, w.now()))]; }
+// ---------- undo (by act; the inverse goes through admit like any write: rank and locks NOW) ----------
 function buildUndo(ctx, a, w) {
   const X = actIndexOf(w); const E = w.entries;
   const mine = X.actsOf.get(ctx.actor) ?? [];
@@ -112,15 +113,14 @@ function buildUndo(ctx, a, w) {
   const beforeOf = new Map(); const before = (id) => { if (!beforeOf.has(id)) beforeOf.set(id, entityBefore(w, id, target.seq, X)); return beforeOf.get(id); };
   const flat = opsOf(res);
   // what others wrote since: a thing's own later history (touch), and, for the spatial check, every change entry since
-  // the result (bounded by what happened after the act, never the log before it)
-  // later work by anyone but the act's own author stands
+  // the result (never the log before it). Later work by anyone but the act's own author stands
   const others = (i) => E[i].actor !== target.actor;
   const touchedBy = (id, comp) => { const h = X.touch.get(id) ?? []; for (let k = firstAfter(h, res.seq); k < h.length; k++) { const e = E[h[k]]; if (!others(h[k])) continue;
     for (const o of opsQuiet(e)) if (o.id === id && (comp === undefined || o.comp === comp || o.comp === undefined || o.op === "create")) return e.actor; } return null; };
   const later = X.changes.slice(firstAfter(X.changes, res.seq)).filter(others).map((i) => E[i]);
-  // a host's seats are its socket children, and nobody writes its `sockets` key: later work by others on them (a socket made under it, or any write to one of
-  // its socket children, deleted ones included) stops undoing that creation. A socket made under it counts however its two halves were written: a change that sets either one counts when the
-  // thing it leaves (every op of the change applied, a batch's later re-parent included) is a socket under the host
+  // a host's seats are its socket children (nobody writes a `sockets` key): later work by others on one, deleted ones
+  // included, stops undoing the host's creation. A socket made under it counts whichever half (parent, socket) a change
+  // sets, when the thing the whole change leaves is a socket under the host
   const socketWorkBy = (host) => {
     for (const i of X.changes.slice(firstAfter(X.changes, res.seq))) { if (!others(i)) continue; const ops = opsQuiet(E[i]);
       for (const o of ops) {
@@ -158,8 +158,7 @@ function buildUndo(ctx, a, w) {
   for (const [, o] of [...keys].reverse()) {
     const { id, comp } = o; const whole = o.op === "create" || (o.op === "delete" && comp === undefined);
     if (ownerOf.has(o)) continue;
-    // a host's seats are its socket children: work by others on them since stops undoing its creation (it would delete a
-    // socket someone made on it since)
+    // work by others on a host's sockets since stops undoing its creation (socketWorkBy)
     const by = touchedBy(id, whole ? undefined : comp) ?? (o.op === "create" ? socketWorkBy(id) : null);
     if (by) { skipped.push({ id, component: comp, why: `${said(by)} changed it since`, by }); continue; }
     // undoing a create: what others hung on it since is THEIR work. It stays, let go where it is, never
@@ -233,7 +232,7 @@ function buildUndo(ctx, a, w) {
     ctx.actExtra = { rollback: { actor: a.actor, since: from, acts: done } };
     ctx.undid = { kind: "rollback", acts: done.length, of: said(a.actor) };
     return all; }
-  // F2: revert goes along rank, never upward. Someone else's act may be undone by a builder (a builder's or a visitor's)
+  // revert goes along rank, never upward. Someone else's act may be undone by a builder (a builder's or a visitor's)
   // or an owner (anyone's, owners included). Roles as they are NOW.
   const othersAct = (seq) => { const e = E[seq]; if (!(isE(e) && e.kind === "request")) return undefined;
     if (RESERVED.has(e.actor)) refuse("rank", `act ${seq} was the authority's own, not a person's`, "undo takes back people's acts");
@@ -257,8 +256,6 @@ function buildUndo(ctx, a, w) {
   const { groups, skipped } = inverseOf(target, res, ctx.st);
   if (!groups.length) refuse("conflict", "everything that act touched has been changed by someone else since", "their later change stands (undo never writes over it); if you still want yours, make the change again yourself, and history shows who did what", { skipped });
   if (skipped.length) ctx.notes.push({ skipped });
-  // a brake on revert wars (Wikipedia's 3RR): reverting someone else's work on a thing that has already been
-  // reverted across people twice within the hour is refused below owner rank: that's a dispute, and owners settle it
   ctx.actExtra = { undoes: target.seq };
   // undoing my own `use` is admitted under the same reaction capability the use was (a visitor may open
   // a door through its handler, so they may close it again by undo), asked for again NOW: no handler, no undo

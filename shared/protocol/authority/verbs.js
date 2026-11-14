@@ -25,10 +25,9 @@ const FOUNDING_VERBS = {
   "create-world"(w, actor, a) {
     if (w.exists) refuse("exists", `world '${w.name}' exists`, "you're in it already: look shows what's here; help shows your role");
     if (a.dry) return { ok: true, dry: true, would: { found: w.name, you: "owner", title: a.title ?? w.name } };
-    // a fork or a reset names the world it came from; that's provenance in the founding act, so its shape is checked
-    // a FORK names its parent with the seq it was copied at ({world, seq, head}): that's genesis.parent, part of the new
-    // world's id, the merge base a later merge folds from (PROTOCOL §13). A reset names its predecessor
-    // without a seq: provenance in the founding act only (it copies nothing, so it has no merge base)
+    // a fork or a reset names the world it came from, so its shape is checked. A FORK names its parent with the seq it was
+    // copied at ({world, seq, head}): that's genesis.parent, part of the new world's id, the merge base a later merge folds
+    // from (PROTOCOL §13). A reset names its predecessor without a seq: provenance in the founding act only (no merge base)
     if (a.from !== undefined) { const f = a.from, hex = (x) => typeof x === "string" && /^[0-9a-f]{64}$/.test(x);
       if (!f || typeof f !== "object" || !(typeof f.world === "string" && /^sha256:[0-9a-f]{64}$/.test(f.world)) || !hex(f.head) || (f.name !== undefined && typeof f.name !== "string") || (f.seq !== undefined && !(Number.isInteger(f.seq) && f.seq >= 0)) || Object.keys(f).some((k) => !["world", "head", "name", "seq"].includes(k)))
         refuse("shape", "create-world {from} names the world it came from: {world: sha256:<64 hex>, head: <64 hex>, seq? (a fork: the seq it was copied at), name?}", ""); }
@@ -59,12 +58,10 @@ const FOUNDING_VERBS = {
   },
 };
 const SCHEMA_VERBS = {
-  // particles names an effect: its schema also lists the Essentials and each one's params (the knobs an instance sets), so
-  // an agent can write one without a second question; effect {name} returns a whole document
-  // every definition carries its status (trial | reserved | stable); statuses says what each means
-  // and server: this server's policy numbers (PROTOCOL §9.2): the default an absent field means today, and the ceiling an owner may set
-  // one component is read through the registry's resolver (componentspec defOf): a keyed name or an alias answers its
-  // definition, and a name the registry doesn't have is refused, never answered ok with nothing
+  // every definition, with its status (trial | reserved | stable; `statuses` says what each means), and `server`: this
+  // server's policy numbers (PROTOCOL §9.2), the default an absent field means and the ceiling an owner may set.
+  // One component is read through componentspec defOf (a keyed name or an alias answers; an unknown name is refused).
+  // particles also lists the Essentials and each one's params, so an agent can write one without a second question
   schema(w, actor, a) { const one = a.component ? defOf(String(a.component)) : undefined;
     if (a.component && !one) refuse("not-found", `no component called '${a.component}'`, "schema {} lists every component", { didYouMean: UP.guess(String(a.component), Object.keys(COMPONENTS)) });
     return { ok: true, components: a.component ? { [a.component]: one } : COMPONENTS, statuses: STATUSES,
@@ -82,8 +79,8 @@ const WRITE_VERBS = {
 };
 const SAY_VERBS = {
   say(w, actor, a) { if (!a.text) refuse("shape", "say needs text", "");
-    // a chat mute refuses every say: a say with `to` is still a public line in the log. There is no private channel in
-    // world chat (whisper was removed): the refusal says until when, and why when a reason was given
+    // a chat mute refuses every say: a say with `to` is still a public line in the log (world chat has no private
+    // channel). The refusal says until when, and why when a reason was given
     { const m = muteOf(w, actor, "chat"); if (m)
       refuse("muted", `you're muted in this world's chat${m.until !== undefined ? ` until ${new Date(m.until).toISOString()}` : ""}${m.reason ? ` (${m.reason})` : ""}`, "it ends on its own; the moderator who muted you can lift it sooner", { until: m.until ?? null }); }
     if (typeof a.text !== "string" || a.text.length > SAY_MAX) refuse("too-big", `a say is at most ${SAY_MAX} characters (this one is ${String(a.text).length})`, "split it, or put a long text in a blob");
@@ -109,7 +106,7 @@ const SAY_VERBS = {
 const BATCH_VERBS = {
   // the sky panel's two verbs, with the first protocol's meaning (shared/forecast.js foldSkyEntry):
   // `sky` replaces the sky, stamped with the AUTHORITY's clock (hours advance from it); `weather` merges onto the standing
-  // sky. The old fold also echoed who and at which seq into the value: derived (the log says so), so never stored here (R8).
+  // sky. Who wrote it and at which seq are derived from the log, so never stored in the value (undo.js skyValue).
   sky: (w, actor, a) => commit(w, actor, "sky", a, (ctx) => buildSky(ctx, a, w)),
   weather: (w, actor, a) => commit(w, actor, "weather", a, (ctx) => buildWeather(ctx, a, w)),
   batch(w, actor, a) { return commit(w, actor, "batch", a, (ctx) => buildBatch(ctx, a, w)); },

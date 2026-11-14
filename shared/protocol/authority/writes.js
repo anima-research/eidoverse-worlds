@@ -51,7 +51,7 @@ function changeEntry(w, plan, cause) {
   // they stand now: the authority's track of their body starts again there)
   for (const u of plan.vacate) if (w.presence.occupants?.[u.who]?.to === u.socket) { const at = vacateAt(w, pre, u.who, u.socket); clearOccupant(w, u.who);
     inboxPush(w.presence, u.who, { type: "vacated", socket: u.socket, ...(u.host ? { host: u.host } : {}), by: plan.who.actor, why: vacateWhy(u), ...(at ? { at } : {}) }); }
-  (w.changedQ ??= []).push(seq); // `changed:<comp>` events, drained after the request (scripts, below)
+  (w.changedQ ??= []).push(seq); // `changed:<comp>` events, drained after the request (scriptrun.js drainScripts)
   return seq;
 }
 const actEntry = (w, actor, verb, body) => ({ kind: "request", actor, verb, body });
@@ -83,7 +83,7 @@ function dropImportedShadows(ctx, ops, verb) {
 // A write: build ops against the folded state, admit them, then append the act and its one change entry.
 function commit(w, actor, verb, args, build) {
   CTX.mintW = w;
-  const sent = clone(args); // L4: the act is the request AS SENT (builders may annotate their own copy)
+  const sent = clone(args); // the act is the request AS SENT (builders may annotate their own copy)
   const st = w.state();
   const ctx = { st, actor, w, notes: [], refs: new Set() };
   const ops = stampModelHash(ctx, stampMedia(ctx, stampResetHomes(ctx, stampHomes(ctx, stampShapes(ctx, dropImportedShadows(ctx, build(ctx), verb))))));
@@ -170,14 +170,12 @@ function needThing(ctx, id) {
   return e;
 }
 
-// Resolve a component value fully (R7): defaults written out, conveniences converted, stamps applied. Shape and rights
-// are admit's; this only turns what was asked into a plain value.
 // @world.bounds as the readers use it: a malformed one already in a log reads as no bounds, never a crash
 const MOTION_AXES = AXES;   // shared/axes.js: all six letters
 const boundsOf = (st) => { const B = st.entities["@world"]?.c.bounds; const v3 = (a) => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
   return B && v3(B.min) && v3(B.max) ? B : null; };
-// resolve a component value fully (R7): defaults written out, conveniences converted, stamps applied; shape and rights are
-// admit's
+// resolve a component value fully: defaults written out, conveniences converted, stamps applied. Shape and rights are
+// admit's; this only turns what was asked into a plain value
 function resolve(ctx, id, comp, value, prev) {
   const def = !comp.includes(":") || comp.startsWith("look-at:") ? defOf(comp) : undefined;   // an alias has its registered name's defaults; a part's look-at the whole one's
   if (comp === "transform") {
@@ -201,7 +199,7 @@ function resolve(ctx, id, comp, value, prev) {
   if (comp === "sky" && value && typeof value === "object" && !Array.isArray(value) && value.ts === undefined) value = { ...value, ts: Math.floor(ctx.w.now()) };
   // every parameter written down (PROTOCOL §4): the definition's defaults and per-kind rules (componentspec materialize)
   const filled = (v, list) => { if (list.length) ctx.notes.push({ id, component: comp, filled: list, why: "defaults written out so the engine can't change them later" }); return v; };
-  if (isLookAt(comp) && value && typeof value === "object" && !Array.isArray(value)) { const AXV = POSITIVE_AXES;   // the letters the door takes (tools/lookat-forward-check: no negative letter)
+  if (isLookAt(comp) && value && typeof value === "object" && !Array.isArray(value)) { const AXV = POSITIVE_AXES;   // the letters the door takes (test/shared/axes-test.ts AX3: no negative letter)
     for (const f of ["forward", "up"]) if (typeof value[f] === "string" && AXV[value[f]]) value = { ...value, [f]: AXV[value[f]].slice() }; }
   // an axis is a vector (PROTOCOL §9.2): the letters the readers take are stored as their vectors
   if ((comp === "motion" || comp.startsWith("motion:")) && value && typeof value === "object" && !Array.isArray(value) && typeof value.axis === "string" && MOTION_AXES[value.axis.toLowerCase()]) {
@@ -226,7 +224,7 @@ function merge7396(target, patch) {
   for (const [k, v] of Object.entries(patch)) { if (v === null) delete out[k]; else out[k] = merge7396(out[k], v); }
   return out;
 }
-// a fresh id: never one this world has had (§3d H7), nor one already used in this request (`also`)
+// a fresh id: never one this world has had (everIds), nor one already used in this request (`also`)
 // 26 base32 (shared/protocol/ids.js), no slug (two forks must never mint alike; the label is the name)
 function mint(st, also = null) { const ever = CTX.mintW?.everIds() ?? new Set(); let id;
   do id = mintId(); while (st.entities[id] || ever.has(id) || also?.has(id)); return id; }
@@ -261,7 +259,7 @@ function buildCreate(ctx, a) {
   const out = {};
   for (const [k, v] of Object.entries(comps)) out[k] = resolve(ctx, id, k, v);
   if (!out.transform) out.transform = resolve(ctx, id, "transform", {});
-  ctx.refs.add(id); // who made it is the create entry's actor: a view, never a stored `placer` (L2)
+  ctx.refs.add(id); // who made it is the create entry's actor: a view, never a stored `placer`
   const made = createOps(id, out);
   const place = placeAt ? { at: placeAt } : a.place;
   if (!place) return made;
@@ -357,8 +355,8 @@ function buildDelete(ctx, a) {
 
 
 // turn {id, axis, deg, space?, about?}: the gizmo's rotate, for agents. space: 'object' (its own axes, the default) |
-// 'parent' | 'world'. about: 'pivot' (default when it
-// has one: the pivot stays put and the thing swings round it) | 'origin'. The log gets a plain transform.
+// 'parent' | 'world'. about: 'pivot' (the default when it has one: the pivot stays put and the thing swings round it) |
+// 'origin'. The log gets a plain transform.
 function buildTurn(ctx, a) {
   const e = needThing(ctx, a.id); const st = ctx.st;
   const AX = POSITIVE_AXES;
@@ -383,18 +381,17 @@ function buildTurn(ctx, a) {
   return [setOp(a.id, "transform", { pos: pos.map((v) => Math.round(v * 1e4) / 1e4), q: q2.map((v) => Math.round(v * 1e9) / 1e9), scale: t.scale })];
 }
 
-// Relational placement (A1): the authority solves; the log gets a plain transform.
+// Relational placement: the authority solves; the log gets a plain transform.
 function buildPlace(ctx, a) {
   const e = needThing(ctx, a.id);
   const m = geomE(e); if (!m) refuse("shape", modelOf(e.c.model) ? `${a.id}'s model hasn't been measured here, so it has no size to place` : `${a.id} has no model or mesh, so it has no size to place`, "set its transform directly");
-  // the one gate before any solving (so a refused place costs nothing): admit a move of this thing as it stands — rights,
-  // locks, flight and rate, the checks the placed result meets — so a refusal costs nothing. admit runs again on the result.
-  // one place runs admit up to 3× on purpose: this pre-check, commit's on the result, planResettle's on its consequences
+  // the one gate before any solving, so a refused place costs nothing: admit a move of this thing as it stands (rights,
+  // locks, flight and rate). One place runs admit up to 3× on purpose: this, commit's on the result, planResettle's
   if (!a.__made) admit(ctx.w, ctx.st, { actor: ctx.actor }, [setOp(a.id, "transform", COMPONENTS.transform.defaults)]);   // (the value is a stand-in: these checks don't read it)
   const st = ctx.st, cur = worldT(st, a.id), scale = cur.scale;
   const fam = new Set([a.id, ...descendants(st, a.id)]);
   let yaw = a.yaw ?? qYaw(cur.q);
-  // lying: rest on the largest face. The authority owns the tilt and where the origin ends up (W6).
+  // lying: rest on the largest face. The authority owns the tilt and where the origin ends up.
   let tilt = [0, 0, 0, 1];
   if (a.lying) { const d = m.size.map((v, i) => v * scale[i]); const k = d.indexOf(Math.min(...d)); const r = Math.SQRT1_2;
     tilt = k === 2 ? [r, 0, 0, r] : k === 0 ? [0, 0, r, r] : tilt; }
@@ -403,7 +400,7 @@ function buildPlace(ctx, a) {
   const S = [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]], C = [(hi[0] + lo[0]) / 2, 0, (hi[2] + lo[2]) / 2];
   const half = (y) => { const c = Math.abs(Math.cos(y)), s = Math.abs(Math.sin(y)); const hx = S[0] / 2, hz = S[2] / 2; return [c * hx + s * hz, s * hx + c * hz]; };
   // `local`: what meets the whole region a search tests (its key order kept), so each spot filters that instead of asking
-  // a search reuses one box and its oriented twin (the same numbers boxToObb gives), so a spot costs no allocations
+  // the index again; with it, a spot reuses one box and its oriented twin (math.js boxToObb's numbers) and allocates nothing
   const QB = { min: [0, 0, 0], max: [0, 0, 0] }, QO = { c: [0, 0, 0], ax: [[1, 0, 0], [0, 1, 0], [0, 0, 1]], h: [0, 0, 0] };
   const free = (x, y, z, yw, ignore, local = null) => { const [hx, hz] = half(yw);
     const box = local ? QB : { min: [0, 0, 0], max: [0, 0, 0] }; box.min[0] = x - hx; box.min[1] = y; box.min[2] = z - hz; box.max[0] = x + hx; box.max[1] = y + S[1]; box.max[2] = z + hz;

@@ -1,8 +1,8 @@
-// The sim layer (P4–P7): a second fold beside the blind one. It reads the log's change entries (through
+// The sim layer: a second fold beside the blind one. It reads the log's change entries (through
 // fold.js, untouched) and its `sim` entries (intents that start motion), and runs the engine @world.physics-engine names.
 // It never writes the log. Determinism is local: it holds only for a carried engine build, inside one epoch.
 //
-// PROTOCOL L3: a change entry whose `cause` is a sim entry IS a rest, and its value must equal the engine's. There
+// A change entry whose `cause` is a sim entry IS a rest (spec/PHYSICS.md §1), and its value must equal the engine's. There
 // is no annotation to trust: carriers compare the value the fold applies with where the engine has the body.
 // Time: the engine's clock is the envelope's `ts` (§2.1: the authority's admission time, the one clock readers trust),
 // never running backwards: an entry without one happens at the latest time stated before it.
@@ -36,11 +36,11 @@ const newer = (a, b) => { const x = semver(a), y = semver(b); for (let i = 0; i 
 /** the version of `name` this server would stamp today (its newest carried one), or null when it carries none of that name */
 export const stampOf = (name) => Object.keys(ENGINES).filter((k) => engineName(k) === name).reduce((best, k) => (best === null || newer(k, best) ? k : best), null);
 
-// P7: what releases a body (or reseats a collider) is WHICH COMPONENT changed, never which verb carried it.
+// what releases a body (or reseats a collider) is WHICH COMPONENT changed, never which verb carried it.
 const PHYSICAL = new Set(["transform", "parent", "model", "mesh", "physics", "collider", "disabled"]);   // collider: its enabled is solidity (solidOff)
-// the writes that end a hold, as the authority's commit() reads them (writes.js): a transform, a parent or a whole delete of the
-// thing, or switching it off (disabled set true; setting it false ends nothing). Switching off or deleting a thing also ends the
-// holds of whatever hangs under it. Keep these two in step with commit()
+// the writes that end a hold: a transform, a parent or a whole delete of the thing, or switching it off (disabled set true;
+// setting it false ends nothing). Switching off or deleting a thing also ends the holds of whatever hangs under it. One rule
+// for this replay and the authority's write path (authority/writes.js handsLetGo), so the two agree on what is in a hand
 export const ends = (o) => (o.op === "delete" ? o.comp === undefined || o.comp === "transform" || o.comp === "parent" : o.comp === "transform" || o.comp === "parent" || (o.comp === "disabled" && o.value === true));
 export const endsUnder = (o) => (o.op === "delete" && o.comp === undefined) || (o.op === "set" && o.comp === "disabled" && o.value === true);
 
@@ -67,7 +67,7 @@ export const engineBox = (ph) => (isBoxShape(ph?.shape) ? ph.shape : null);
 const meshKey = (ph) => { const b = engineBox(ph); return b ? `mesh:${b[0].join(",")}|${b[1].join(",")}` : undefined; };
 export const libOf = (e) => (typeof e?.c.model === "string" ? e.c.model : e?.c.mesh !== undefined ? meshKey(e.c.physics) : undefined);
 // The engine sees the world through its own entity view: one entry per modelled thing (its "lib" is its model).
-const lockedC = (c) => { const v = c?.lock; return v !== undefined && v !== REDACTED && !!v; };   // as authority.lockedC
+const lockedC = (c) => { const v = c?.lock; return v !== undefined && v !== REDACTED && !!v; };   // as authority/storage.js lockedC
 const sphereShape = (ph) => ph?.shape?.type === "sphere" && !shapeError(ph.shape);
 // what a flying thing may knock (engines that collide moving bodies with resting ones): a dynamic thing that no hand rule
 // holds fixed — not locked, under nothing locked, and holding nothing locked (a hand can't take those either:
@@ -145,7 +145,7 @@ const bodyIn = (entries, purged, seq) => { const e = entries[seq]; if (!isEntry(
 export function simFold(entries, now, opts = {}) {
   const blind = fold(entries); // the strict fold decides which entries count; this layer replays the same ones
   const bad = new Set(blind.diagnostics.filter(([, c]) => c.startsWith("malformed")).map(([q]) => q));
-  const f = simFolder(entries, { ...opts, purged: redactionsIn(entries) });   // a purge is retroactive (L1): the replay writes REDACTED where the fold does
+  const f = simFolder(entries, { ...opts, purged: redactionsIn(entries) });   // a purge is retroactive (§12): the replay writes REDACTED where the fold does
   if (blind.status === "ok") for (let s = 0; s < entries.length; s++) if (isEntry(entries[s]) && !bad.has(s)) f.feed(s);
   return f.view(now);
 }
@@ -212,7 +212,7 @@ export function simFolder(entries, { models = {}, from = null, purged = null } =
       const isRest = isEntry(causeE) && causeE.kind === "physics" && !!bodyIn(entries, purged, e.cause);   // a purged launch's rest can't be checked: unknown
       const wasSpec = JSON.stringify(st.entities["@world"]?.c["physics-engine"] ?? null);
       if (out.sim && unknown()) { /* the engine's world is unknown here: its rests and touches are applied, not judged */ }
-      else if (out.sim && isRest) { // L3: a rest. Its cause must be a launch, the body's CURRENT one, and the value must be the engine's
+      else if (out.sim && isRest) { // a rest. Its cause must be a launch, the body's CURRENT one, and the value must be the engine's
         const ids = [...new Set(ops.map((o) => o.id))];
         const after = applyOps(st, ops, seq, purged, e.op === "batch"), B = boundsIn(st);
         if (causeE.verb !== "launch") disagree({ seq, why: `caused by a ${causeE.verb}, which starts no motion` });
@@ -226,7 +226,7 @@ export function simFolder(entries, { models = {}, from = null, purged = null } =
           else if (after.entities[id]?.c.transform === REDACTED) out.unknownEpoch = true;
           else { const wp = worldPose(after, id), mine = wp?.pos; if (JSON.stringify(mine) !== JSON.stringify(b.p) || (b.q && JSON.stringify(wp?.q) !== JSON.stringify(b.q))) disagree({ seq, id, logged: mine, engine: b.p, ...(b.q ? { loggedQ: wp?.q, engineQ: b.q } : {}) }); else { out.checks.agree++; out.restTicks[seq] = l.restTick ?? out.sim.tick; } }
         }
-      } else if (out.sim) { // a launched body is the engine's until its rest is logged (L6)
+      } else if (out.sim) { // a launched body is the engine's until its rest is logged
         const cut = ops.some((o) => o.id === "@world" && o.comp === "physics-engine"); // an epoch cut may freeze it (P6, force)
         for (const o of ops) { const l = out.launched[o.id]; if (!l) continue; const b = out.sim.bodies[o.id];
           if (b && !b.resting && !cut) disagree({ seq, id: o.id, why: `touches a body in flight (launch ${l.seq}); only its rest may (L6, 33 F1)` });
@@ -234,15 +234,15 @@ export function simFolder(entries, { models = {}, from = null, purged = null } =
       }
       applyInPlace(st, ops, seq, purged, e.op === "batch");
       // a hold ends on the record whatever the engine is doing (physics off included): the hand lets go of the thing, and of
-      // what hangs under a thing switched off or deleted (the authority's commit() lets those go too). Before an epoch's
+      // what hangs under a thing switched off or deleted (the authority's handsLetGo lets those go too). Before an epoch's
       // rebuild below, so a write that starts a new epoch and ends a hold seats the thing in the new engine's world
       for (const o of ops) if (o.id !== "@world") {
         if (out.lifted.has(o.id) && ends(o)) out.lifted.delete(o.id);
         if (endsUnder(o)) for (const k of [...out.lifted]) if (isUnder(st, k, o.id) || !st.entities[k]) out.lifted.delete(k);
       }
       const spec = st.entities["@world"]?.c["physics-engine"] ?? null;
-      if (JSON.stringify(spec) !== wasSpec) { // an epoch boundary. The authority makes it a real cut: nothing in flight (P6).
-        out.spec = spec; out.launched = {}; out.foreign = !!spec && !carried(spec); out.sim = null; out.rev++; out.unknownEpoch = false;   // a cut: nothing in flight   // a lift outlives an epoch (authority orphanLifts says the same); the view keeps it out
+      if (JSON.stringify(spec) !== wasSpec) { // an epoch boundary. The authority makes it a real cut: nothing in flight.
+        out.spec = spec; out.launched = {}; out.foreign = !!spec && !carried(spec); out.sim = null; out.rev++; out.unknownEpoch = false;   // a lift outlives an epoch (authority orphanLifts); the view keeps it out
         if (spec && !out.foreign) {
           out.sim = eidosim.emptySim();
           SE(out.sim, { seq, ts: clock, actor: "system", verb: "epoch", args: { sim: spec.engine, tickMs: spec.tickMs, boxes: boxesFor(st) } }, engineView(st));
@@ -251,7 +251,7 @@ export function simFolder(entries, { models = {}, from = null, purged = null } =
       }
       if (!out.sim) return;
       let relock = false;
-      for (const o of ops) { // P7, keyed by component
+      for (const o of ops) { // keyed by component (PHYSICAL), never by verb
         if (o.id === "@world") { // the ground itself changed: re-ground, release every body, rebuild colliders
           if (o.comp === "terrain") { SE(out.sim, { seq, ts: clock, actor: e.actor, verb: "terrain", args: st.entities["@world"].c.terrain ?? { amplitude: 0 } }, engineView(st)); out.launched = {}; }   // removed: flat y = 0, as at boot, never the toolkit's default hills
           continue; }
@@ -260,7 +260,7 @@ export function simFolder(entries, { models = {}, from = null, purged = null } =
         const whole = o.op === "create" || (o.op === "delete" && o.comp === undefined);
         if (o.comp === "lock" || o.comp === "parent" || whole) relock = true;   // a thing made or deleted changes what's under a lock
         if (!whole && !PHYSICAL.has(o.comp)) continue;
-        // a write that ends a hold (the authority's commit(): transform, parent, disabled, or the whole thing) puts it back in the
+        // a write that ends a hold (ends(): transform, parent, disabled, or the whole thing) puts it back in the
         // world; any other physical write to a held thing (its physics, its model) leaves it in the hand
         if (out.lifted.has(o.id)) continue;   // still in the hand: a hold's end was read above
         const ids = [o.id, ...Object.keys(st.entities).filter((k) => isUnder(st, k, o.id))];
@@ -269,7 +269,7 @@ export function simFolder(entries, { models = {}, from = null, purged = null } =
           // in someone's hand (lifted or caught, not yet put down or thrown): its record still stands where it was taken, under
           // whatever it rested on, and a move of that thing must not put a body back there
           if (id !== o.id && out.lifted.has(id)) continue;
-          // a thing under it that a launch set moving is the engine's until its own rest is LOGGED (L6), flying or come to
+          // a thing under it that a launch set moving is the engine's until its own rest is LOGGED, flying or come to
           // rest unlogged: its parent's rest or a write to its parent doesn't cancel it
           if (id !== o.id && out.launched[id] && out.sim.bodies[id]) continue;
           const gone = !view.entities[id];
@@ -329,11 +329,11 @@ export function simFolder(entries, { models = {}, from = null, purged = null } =
 }
 function isUnder(st, k, id) { let p = st.entities[k]?.c.parent?.to, n = 0; while (p && n++ < 32) { if (p === id) return true; p = st.entities[p]?.c.parent?.to; } return false; }
 
-// A view over the log alone (no engine): every rest, where it put the body, and what the authority did after it.
 // @world.bounds as a reader uses it: malformed = none (the authority's boundsOf, kept apart so this file imports nothing of it)
 const outside = (B, p) => p[0] < B.min[0] || p[0] > B.max[0] || p[2] < B.min[2] || p[2] > B.max[2] || p[1] > B.max[1];   // x, z and the sky; the floor is the terrain's
 const boundsIn = (st) => { const B = st.entities["@world"]?.c.bounds; const v3 = (a) => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
   return B && v3(B.min) && v3(B.max) ? B : null; };
+// A view over the log alone (no engine): every rest, where it put the body, and what the authority did after it.
 export function restsOf(entries) {
   const out = []; const purged = redactionsIn(entries);
   entries.forEach((e, seq) => {

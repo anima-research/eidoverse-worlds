@@ -56,7 +56,7 @@ const ALIASES = {
   pelvis: 'hips', root: 'hips', torso: 'chest', spine1: 'chest', spine2: 'upperChest',
 };
 
-/** Folded key → bone: every bone by its lowercase name, then the aliases. A Map, so no inherited name is a key. */
+/** Folded key → bone: the aliases, then every bone by its lowercase name (a bone wins a clash). A Map, so no inherited name is a key. */
 const BY_KEY = new Map(Object.entries(ALIASES));
 for (const b of HUMANOID_BONES) BY_KEY.set(b.toLowerCase(), b);
 

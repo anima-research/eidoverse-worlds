@@ -17,7 +17,6 @@ export const GATE_OF = Object.freeze({ shove: "move", displace: "move", touch: "
 export const DEFAULT_GATES = Object.freeze({ move: true, touch: false });
 export const KIND_CLASS = { pose: "pose", anim: "pose", shove: "shove", drag: "displace", occupy: "displace", carry: "displace", touch: "touch" };
 // ---- an older stored table's words (cells per tier, presets), read by migratePresence only; never written ----
-/** Older words, read in a stored table; never written. */
 const LEGACY_TIER = Object.freeze({ strangers: "everyone" });
 const LEGACY_MODE = Object.freeze({ everyone: "allow", nobody: "deny" });
 const LEGACY_CLASS = Object.freeze({ move: "displace" });
@@ -52,7 +51,7 @@ export const REFUSAL_FIX = "leave it be: it is theirs to open";
 // a world-space point at a body: inside its capsule (r 0.25 m, feet to 1.8 m) is a touch; the torso/pelvis core is intimate
 export function pointClass(bodyAt, p) {
   const h = Math.hypot(p[0] - bodyAt[0], p[2] - bodyAt[2]), y = p[1] - bodyAt[1];
-  if (h > 0.25 + 0.05 || y < -0.05 || y > 1.85) return null; // TOUCH_GAP 5 cm
+  if (h > 0.25 + 0.05 || y < -0.05 || y > 1.85) return null; // 5 cm: shared/reachwire.js TOUCH_GAP
   return h <= 0.2 && y >= 0.8 && y <= 1.5 ? "intimate" : "touch";
 }
 
@@ -155,7 +154,7 @@ export function migratePresence(P) {
     for (const [who, row] of Object.entries(t.over ?? {})) { if (!isWho(who) || !row || typeof row !== "object") continue;
       const cells = Object.entries(row).filter(([, c]) => c && typeof c === "object"), yes = new Set(cells.filter(([, c]) => c.mode === "allow" && c.until === undefined).map(([k]) => classOf(k)));
       if (cells.some(([, c]) => c.mode === "deny" || c.mode === "ask")) (t.block ??= dict())[who] = true;   // ask was no until yes
-      else if (!t.paused && ENFORCED.every((c) => yes.has(c)) && UNGATED.every((c) => !t.closed?.[c] || yes.has(c))) (t.allow ??= dict())[who] = true; }   // allow grants every class: only a row that already did (F1, R 10-28; a kept-closed ungated one too)
+      else if (!t.paused && ENFORCED.every((c) => yes.has(c)) && UNGATED.every((c) => !t.closed?.[c] || yes.has(c))) (t.allow ??= dict())[who] = true; }   // allow grants every class: only a row that already did (a kept-closed ungated one too)
     for (const k of old) delete t[k]; n++; }
   for (const k of ["asks", "asked", "askSeq", "cool"]) if (Object.hasOwn(P, k)) { delete P[k]; n++; }
   for (const r of P.ring ?? []) if (r && Object.hasOwn(LEGACY_CLASS, r.cls)) r.cls = classOf(r.cls);

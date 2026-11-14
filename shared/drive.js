@@ -24,7 +24,7 @@ export function driveOf(c) {
 /** Is this component bag a helm (a socket's station that drives its host)? */
 export const isHelmC = (c) => isObj(c?.socket) && isObj(c?.station) && c.station.action === "drive" && c.station.input?.move === "drive";
 
-/** The helm of `host`: the id of its socket child whose station drives it, or null (one per host: the door's rule). */
+/** The helm of `host`: the id of its socket child whose station drives it, or null (one per host: shared/protocol/authority/sockets.js enforces it). */
 export function helmOf(st, host) {
   for (const id of Object.keys(st?.entities ?? {}).sort()) { const c = st.entities[id].c; if (c.parent?.to === host && isHelmC(c) && c.disabled !== true) return id; }
   return null;

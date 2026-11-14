@@ -138,12 +138,6 @@ function withAuthority(w, fn) {
   try { return fn(); } finally { exit(); if (w.presenceDirty) { w.savePresence(); w.presenceDirty = false; } }
 }
 /**
- * Timers (authority practice): a due script with nobody present sleeps unless `always`; on its first due tick after someone
- * arrives it gets ONE `wake {slept}`, never a burst. Several missed periods while awake coalesce into one tick. A timer
- * act's cause is the entry that made its sponsor (its latest install). Then the cascades it set off. A host calls this on
- * its own clock (server: once a second); it never runs inside a request.
- */
-/**
  * The engine's heartbeat. Advances the sim toward the authority's clock, at most `maxTicks`
  * engine ticks a pass (a stall catches up over several passes, never by a longer step: the bits stay the law's), and logs
  * what came to rest, returns what is due back. A host calls this at tick cadence; a request still settles
@@ -198,6 +192,12 @@ export function checkpointNow(w, { every = 1 } = {}) {
   if (!w.exists || w.state().status !== "ok" || !holdsCustody(w)) return 0;
   return withAuthority(w, () => { const n0 = w.entries.length; CTX.work = { left: Infinity, until: Infinity, k: 0 }; checkpointSim(w, { every: Math.max(1, every) }); return w.entries.length - n0; });
 }
+/**
+ * Timers: a due script with nobody present sleeps unless `always`; on its first due tick after someone arrives it gets
+ * ONE `wake {slept}`, never a burst. Several missed periods while awake coalesce into one tick. A timer act's cause is the
+ * entry that made its sponsor (its latest install). Then the cascades it set off. A host calls this on its own clock
+ * (server: once a second); it never runs inside a request.
+ */
 export function tick(w) {
   // without the world's key nothing a script writes can be logged (storage's append refuses), so, as settle() and
   // expireRoles() do, the timers don't start what they can't write
@@ -214,7 +214,7 @@ export function tick(w) {
       const sp = sponsorOf(w, id, `script:${name}`);
       ran.push(activate(w, id, name, { on: slept !== null ? "wake" : "tick", ...(slept !== null ? { slept } : {}), ...(sp ? { cause: sp.sponsorAt } : {}) }));
     }
-    drainAll(w);   // what its scripts wrote sets off others, and a move that let go of a held thing tells that thing's
+    drainAll(w);   // what its scripts wrote sets off others, as a request's entries do
     return ran;
   });
 }
@@ -235,13 +235,13 @@ export function expireRoles(w) {
     return ids;
   });
 }
+// Bounded (it runs at world load on the shared thread): at most ORPHANS.holders holders and ORPHANS.lifts lifts a load;
+// the rest wait for the next load ({deferred})
+export const ORPHANS = { holders: 16, lifts: 64 };
 /** A world opened after its host stopped without settling presence (a crash: no leave ran). A persisted hold
  *  (test/harness/filehost.ts) is settled as `leave` settles it. A lost hold (server/livehost.ts) left the thing lifted out
  *  of the engine, a ghost until someone moved it: settled as leave's refusal is, by a return-held act (cause: the lift)
  *  writing where the log last had it, or a return-home. `present` = identities connected now. Returns what it settled. */
-// Bounded (it runs at world load on the shared thread): at most ORPHANS.holders holders and ORPHANS.lifts lifts a load;
-// the rest wait for the next load ({deferred})
-export const ORPHANS = { holders: 16, lifts: 64 };
 export function settleOrphans(w, present = []) {
   if (!w.exists || w.state().status !== "ok") return [];
   const here = new Set(present); const out = [], ended = [];   // ended: holds that end here with no act, heard as a drop
