@@ -585,7 +585,7 @@ function retire(id) {
       applyScale(cobj, entScale(cst) ?? 1);   // the fold's scale, not the one attach() baked in
       cobj.userData.base = restOf(cobj, cst);
       // an Empty owns no collider (its only mesh may be a light gizmo), nor does a thing with collision off for bodies
-      if (!cobj.userData.empty && !collisionOwnedElsewhere(cst)) fitCollider(cid, cobj, { collide: colliderOf(cst), scale: cobj.scale?.x || 1 });
+      if (!cobj.userData.empty && !collisionOwnedElsewhere(cst)) fitCollider(cid, cobj, { collide: colliderOf(cst), scale: cobj.scale?.x || 1, localFrame: true });
     }
     (holder.parent ?? scene).remove(holder);
     if (holder !== obj) standIns.delete(id);
@@ -754,7 +754,7 @@ function execDismount(id, ent) {
     // and so does the fold's scale: attach() baked the carrier's scale into this one, which a joiner never sees
     applyScale(obj, entScale(ent) ?? 1);
     obj.userData.base = restOf(obj, ent);
-    if (!obj.userData.empty && !collisionOwnedElsewhere(ent)) fitCollider(id, obj, { collide: colliderOf(ent), scale: obj.scale?.x || 1 });
+    if (!obj.userData.empty && !collisionOwnedElsewhere(ent)) fitCollider(id, obj, { collide: colliderOf(ent), scale: obj.scale?.x || 1, localFrame: true });
     pruneStandIn(was);
   }
   bus.emit('mount', { id, to: null });
