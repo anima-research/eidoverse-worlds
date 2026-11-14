@@ -17,7 +17,7 @@ import { resolveBriefing, briefingLines } from "../shared/briefing.js";
 import { shapeParams, shapedHeightAt, requestGrid, setGridFetcher, shapeReady, waterParams } from "../shared/terrainshape.js";
 import { flatHeightOf } from "../shared/terrainmath.js";
 import { foldOffset } from "../shared/clockoffset.js";
-import { bodyHeightFor } from "./rigbones.ts";
+import { bodyHeightFor, forgetReadings } from "./rigbones.ts";
 import { surfaceOffset, waveClock } from "../shared/waves.js";
 import { floatStep, footprintSurface } from "../shared/buoyancy.js";
 import { analyzeWater, compass, waterGridSeg } from "../shared/waterkind.js";
@@ -1438,9 +1438,11 @@ export class WorldAgent {
   }
 
   private invalidateBodyAsset(name: string) {
+    forgetReadings(this.httpBase, name);
     if (nameFromAvatarPath(this.avatar) === name) {
       this.selfBodyGeneration = ++this.bodyGenerationCounter;
       this.bodyReader?.forget(this.name);
+      if (this.statureFor === this.avatar) this.measureStature();
     }
     for (const p of this.people.values()) if (nameFromAvatarPath(p.avatar) === name) {
       p.bodyGeneration = ++this.bodyGenerationCounter;
@@ -2105,12 +2107,15 @@ export class WorldAgent {
    *  ordinary adult's (the measurement is one small read of the avatar's header). */
   stature(): number { return this.bodyH ?? STATURE_FALLBACK; }
   /** Measure the current body's height (rigbones.ts bodyHeightFor), guarded by generation so a slow reply
-   *  for a body since replaced is never applied. Resolves once this measurement is settled. */
+   *  for a body since replaced is never applied; a known height stands meanwhile (setAvatar clears it). A failed
+   *  download is tried again when the terrain next settles. Resolves once this measurement is settled. */
   measureStature(): Promise<void> {
     const gen = ++this.statureGen, avatar = this.avatar;
-    this.statureFor = avatar; this.bodyH = null;
-    return bodyHeightFor(this.httpBase, avatar).catch(() => null).then((h) => {
+    this.statureFor = avatar;
+    return bodyHeightFor(this.httpBase, avatar).then((h) => {
       if (gen === this.statureGen) this.bodyH = h ?? STATURE_FALLBACK;
+    }, () => {
+      if (gen === this.statureGen) { this.bodyH ??= STATURE_FALLBACK; this.statureFor = null; }
     });
   }
   /** Leave the floating column: the next float starts from wherever the body then is. */
@@ -5336,7 +5341,8 @@ export class WorldAgent {
     this.bodyReader?.forget(this.name);
     // a new body has its own height: re-measure (a reply for the old body is dropped), and float afresh
     this.endFloat();
-    if (this.water) void this.measureStature(); else { this.statureFor = null; this.bodyH = null; ++this.statureGen; }
+    this.bodyH = null;
+    if (this.water) void this.measureStature(); else { this.statureFor = null; ++this.statureGen; }
     if (this.joined && this.ws?.readyState === 1) {
       this.ws.send(JSON.stringify(this.joinMsg()));
     }

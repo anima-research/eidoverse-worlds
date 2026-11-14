@@ -43,6 +43,8 @@ type Rig = { P: Record<string, any>; parent: Record<string, string | null> };
 
 /** parseRig's own refusals, each written as a failed load's clause; anything else it throws is the parser's. */
 class RigRefusal extends Error {}
+/** A download that failed, which may work next time; every other failed load is the file's, kept for its key. */
+class DownloadFailed extends Error {}
 
 /** Preserve every humanoid bone and its actual nearest humanoid ancestor,
  * including shoulders/fingers/upperChest. A ragdoll's collapsed 19-bone
@@ -53,7 +55,7 @@ function parseRig(bytes: Uint8Array): Rig {
   const nodeParent = new Map<number, number>();
   g.nodes.forEach((n: any, i: number) => (n.children ?? []).forEach((j: number) => nodeParent.set(j, i)));
   const humanoid = Object.entries(bones).filter(([, index]) => Number.isInteger(index) && g.nodes[index as number]) as [string, number][];
-  // One name per node for the hierarchy; two bones on one node each keep their position below.
+  // Which humanoid name stands for a node as an ancestor; every name, two on one node too, gets a parent below.
   const names = new Map<number, string>(humanoid.map(([name, index]) => [index, name]));
   // A loop in the nodes above a bone is found before any position is worked out from that
   // chain, which would recurse around it.
@@ -65,7 +67,7 @@ function parseRig(bytes: Uint8Array): Rig {
   const wp = worldPositions(g), wr = worldRotations(g), P: Record<string, any> = {}, restAxes: Record<string, number[]> = {};
   for (const [name, index] of humanoid) { P[name] = wp(index); restAxes[name] = wr(index).toArray(); }
   const parent: Record<string, string | null> = {};
-  for (const [index, name] of names) {
+  for (const [name, index] of humanoid) {
     let p = nodeParent.get(index);
     while (p != null && !names.has(p)) p = nodeParent.get(p);
     parent[name] = p == null ? null : names.get(p)!;
@@ -174,14 +176,14 @@ export class BodyStateReader {
         const r = await fetch(`${this.httpBase}/library/${o.avatar}`, { cache: "no-store", signal: AbortSignal.timeout(10_000) });
         if (!r.ok) throw new Error(`the world server answered ${r.status} for ${shown(o.avatar)}`);
         return new Uint8Array(await r.arrayBuffer());
-      })().catch((e) => { throw new Error(`the avatar's model couldn't be downloaded (${e instanceof Error ? e.message : String(e)})`); });
+      })().catch((e) => { throw new DownloadFailed(`the avatar's model couldn't be downloaded (${e instanceof Error ? e.message : String(e)})`); });
       try { return parseRig(bytes); } catch (e) {
         if (e instanceof RigRefusal) throw e;
         throw new Error(`the avatar's model file couldn't be read as a model (${e instanceof Error ? e.message : String(e)}), so calling again won't change that`);
       }
     })() };
     this.rigs.set(o.who, entry);
-    entry.load.catch(() => { if (this.rigs.get(o.who) === entry) this.rigs.delete(o.who); });
+    entry.load.catch((e) => { if (e instanceof DownloadFailed && this.rigs.get(o.who) === entry) this.rigs.delete(o.who); });
     return entry.load;
   }
 

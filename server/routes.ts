@@ -101,8 +101,8 @@ export type Srv = {
 
 // ---- static serving ---------------------------------------------------------
 
-/** Roster = Skye's library vrms + our overlay (assets/opt/...) — drop a
- *  .vrm into either and it's an avatar, live, no restart, no manifest.
+/** Roster = Skye's library vrms + our overlay (assets/opt/...) + patched forks — drop a
+ *  .vrm into any and it's an avatar, live, no restart, no manifest.
  *  ?v=mtime makes each path content-versioned: clients cache it forever,
  *  and any re-export mints a new URL. Served by GET /avatars AND carried in
  *  the join snapshot, so a joiner needs no separate round-trip before it
@@ -127,7 +127,7 @@ export function avatarPerfParam(raw: string | null, v: string | null): AvatarPer
 }
 export function avatarRoster(): { name: string; path: string; height: number | null; perf?: AvatarPerf | null; seat?: unknown }[] {
   const seen = new Map<string, { url: string; file: string; v: string }>();
-  for (const base of [LIBRARY_DIR, OPT_DIR]) {
+  for (const base of [...LADDER].reverse()) {   // /library's precedence, lowest first: ?v= and height describe the bytes served
     const dir = join(base, "eidoverse/assets/vrms");
     if (!existsSync(dir)) continue;
     for (const f of readdirSync(dir)) {

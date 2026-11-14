@@ -14,17 +14,13 @@
 // stamps it) and nothing is written. Read-only on the VRM.
 import * as THREE from "three";
 import { closeSync, openSync, readSync } from "node:fs";
-import { glbJson, rigMath } from "../shared/rig.js";
+import { glbJson, rigMath, GLB_MAX_JSON } from "../shared/rig.js";
 
 const { stature } = rigMath(THREE);
 const memo = new Map<string, { v: string; h: number | null }>();
-/** A VRM's JSON describes its nodes and extensions, well under a megabyte for
- *  any real body; the meshes are in the binary chunk. A header claiming more is
- *  refused before anything is allocated or decoded. */
-const MAX_JSON = 16 * 1024 * 1024;
 
 /** The header and JSON chunk of a GLB on disk. Its first 20 bytes say how long
- *  the JSON chunk is, and a length past MAX_JSON is refused. A short or foreign
+ *  the JSON chunk is, and a length past GLB_MAX_JSON is refused. A short or foreign
  *  file reads as zeros past its end, which glbJson then refuses. */
 function headerAndJson(file: string): Uint8Array {
   const fd = openSync(file, "r");
@@ -32,7 +28,7 @@ function headerAndJson(file: string): Uint8Array {
     const head = new Uint8Array(20);
     readSync(fd, head, 0, 20, 0);
     const len = new DataView(head.buffer).getUint32(12, true);
-    if (len > MAX_JSON) throw new Error("JSON chunk past MAX_JSON");
+    if (len > GLB_MAX_JSON) throw new Error("JSON chunk past GLB_MAX_JSON");
     const buf = new Uint8Array(20 + len);
     buf.set(head);
     readSync(fd, buf, 20, len, 20);
