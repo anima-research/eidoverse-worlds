@@ -65,7 +65,7 @@ systems, not bone poses.
   to rest, and logs that as the truth; every client runs the same engine on
   the same logged launches and lands them in the same place.
 - Trust/identity: capabilities per world (build rights, entry, visibility),
-  Permissions below. An identity belongs to one server.
+  Permissions below. An identity belongs to one server, for now (portable identity: docs/design/ROADMAP.md).
 
 ## Entities
 
