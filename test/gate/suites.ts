@@ -177,6 +177,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["unknown-comp", "client/unknown-comp-test.ts", 1], // an unknown component blocks nothing, from the door to the realizer to the inspector (revived D6)
   ["reach-order", "client/reach-order-test.ts", 1], // reach chains solve in dependency order, cycles refuse and release cleanly (revived D6; needs the avatar corpus at assets/opt/eidoverse)
   ["editcommit", "client/editcommit-test.ts", 1], // inspect.js commitEdit against the real authority: a live call previews, the final one sends ONE request (revived by D2)
+  ["multimove", "client/multimove-test.ts", 1], // the rest of the selection follows a gizmo or mesh drag: riders and ancestors left out, one batch on release
   ["hierarchy-commit", "client/hierarchy-commit-test.ts", 1], // a Hierarchy drag is ONE undo step, through commitEdit and the door, and Ctrl+Z takes it back (revived by D2)
   ["hierarchy", "shared/hierarchy-test.ts", 1], // the Hierarchy's tree over 657 door cases: parenting, ordering by name with numbers as numbers, what a drag may do
   ["verbclasses", "protocol/verbclasses-check.ts", 1], // one home for READ_ONLY/GHOST_OK/WIRE_READS/PERSON_ACTS (DEBT 10-12 #10); classes pinned as of 10-12
