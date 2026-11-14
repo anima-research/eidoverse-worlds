@@ -17,6 +17,8 @@
 // callback), so every engine can carry them; when two differ, the later in this list wins (PhysX's and Unity's priority)
 import { RANK, BUILTIN_IDS, PERMISSION_NAMES, CUSTOM_ID, RESERVED_IDS } from "./roles.js";
 import { BODY_RANGE, bodyRangeWords } from "./physconst.js";
+// a yaw's bound: ±2π plus rounding slack, not another turn (6.2832, a full turn to 4 decimals, is 1.5e-5 past 2π; 0.001 rad is 0.06°)
+export const YAW_LIMIT = 2 * Math.PI + 1e-3;
 export const COMBINE = ["average", "min", "multiply", "max"];
 export const COMPONENTS = {
   // glTF's node TRS (shape audit 10-16, physics-motion §1): local matrix = T · R · S, world = parent's world × local, down the
@@ -500,7 +502,7 @@ export const COMPONENTS = {
                help: "on @world: the box the world lives in, {min: [x, y, z], max: [x, y, z]} in world metres, min < max on every axis. Absent (no bounds component), anywhere is in the world" },
   // shape audit 10-16: units, a range, and the absent radius written down (shared/mover.js TRACK.spawnR; tools/shape-attach-test pins they agree)
   // yaw: which way an arrival faces (OMI_spawn_point's facing, on @world's own spawn); more spawns are spawn-point things (shared/spawn.js)
-  spawn:     { on: "world", fields: { pos: "vec3", radius: "number", yaw: "number" }, required: ["pos"], units: { pos: "m", radius: "m", yaw: "rad" }, ranges: { radius: { min: 0, max: 100 }, yaw: { min: -2 * Math.PI, max: 2 * Math.PI } },
+  spawn:     { on: "world", fields: { pos: "vec3", radius: "number", yaw: "number" }, required: ["pos"], units: { pos: "m", radius: "m", yaw: "rad" }, ranges: { radius: { min: 0, max: 100 }, yaw: { min: -YAW_LIMIT, max: YAW_LIMIT } },
                absentMeans: { radius: "2 m", yaw: "0: facing the world's +z" }, docs: { pos: "where visitors arrive, [x, y, z] world metres", radius: "a visitor's arrival must lie within this many metres of pos (the client chooses where inside)", yaw: "which way an arrival faces, radians about +y (0: the world's +z)" },
                help: "on @world: where visitors arrive {pos: [x, y, z], radius? (m, 0..100; absent, 2 m): a visitor's arrival must lie within radius of pos, yaw? (rad: which way they face; absent 0, the world's +z)}. More arrival places are things with spawn-point" },
   // an arrival place on a thing, after OMI_spawn_point {title, team, group}; its facing is the thing's rotation (shared/spawn.js spawnOf)

@@ -6,7 +6,7 @@ import { checkSocket, checkStation } from "../../sockbody.js";
 import { checkGrabbable } from "../../grab.js";
 import { forecastSpellingRefusal } from "../../forecast.js";
 import { isEntityId, isComponent, isIdentity, REDACTED } from "../fold.js";
-import { COMPONENTS, defOf, registered, baseOf, isNamespaced, outOfRange, rangeWords } from "../componentspec.js";
+import { COMPONENTS, defOf, registered, baseOf, isNamespaced, outOfRange, rangeWords, YAW_LIMIT } from "../componentspec.js";
 import { partSlot } from "../names.js";
 import * as R from "../roles.js";
 import { graphemes, cleanText } from "../../text.js";
@@ -442,13 +442,11 @@ export function colliderRules(s, ids) {
     if (!b.includes("things") && c.physics?.kind === "dynamic") return { code: "shape", reason: `${id}'s collider.blocks leaves out things, and it has physics {kind: 'dynamic'}: the engine would not carry it`, fix: "add 'things' to blocks, or make it kinematic or none" }; }
   return null;
 }
-/** A bare yaw is a number of radians (PROTOCOL §9): anything else is refused, never coerced, and one past ±2π (spawn.yaw's range) is degrees typed as radians (#147).
+/** A bare yaw is a number of radians (PROTOCOL §9): anything else is refused, never coerced, and one past ±2π (spawn.yaw's range, YAW_LIMIT) is degrees typed as radians (#147).
  *  Every door that takes one (set transform, create's at, a copy's at) reaches it through resolve's transform. */
-// a full turn rounded to 4 decimals (6.2832) is 1.5e-5 past 2π; 1e-3 rad (0.06°) takes any such rounding, and the smallest degree slip (7) is far past it
-const YAW_SLACK = 1e-3;
 function bareYaw(yaw) {
   if (!isNum(yaw)) refuse("shape", `yaw must be a number (radians about +Y): got ${JSON.stringify(yaw)}`, "e.g. yaw: 1.5708 for a quarter turn; or q [x, y, z, w]");
-  if (Math.abs(yaw) <= 2 * Math.PI + YAW_SLACK) return;
+  if (Math.abs(yaw) <= YAW_LIMIT) return;   // YAW_LIMIT: componentspec, the same bound as spawn.yaw; the smallest degree slip (7) is far past it
   const within = (r) => +Math.atan2(Math.sin(r), Math.cos(r)).toFixed(4) || 0;   // the same heading, within ±π
   refuse("shape", `yaw ${yaw} is past ±2π: a yaw is radians about +Y, not degrees`, `as degrees, ${yaw}° is yaw ${within(yaw * Math.PI / 180)}; as radians, the same heading is yaw ${within(yaw)}`);
 }
