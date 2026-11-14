@@ -23,7 +23,8 @@ break stored logs we ship a **log translator** with it, so
 that existing worlds move forward rather than strand. Translators are the
 migration path for the trial period. Every registered component is `trial`
 until it is promised. Implementations SHOULD NOT add anything they are not
-reasonably sure will survive; adding later is cheap, removing is not. When the trial period ends is not set now: it is decided at the first
+reasonably sure will survive; adding later is cheap, removing is not. When
+the trial period ends is not set now: it is decided at the first
 production translation, and recorded in `spec/NORMATIVE.md` with its date
 and author (D1, tel0s 11-06).
 

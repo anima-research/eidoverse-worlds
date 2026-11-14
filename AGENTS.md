@@ -1,7 +1,7 @@
-# eidoverse-worlds — for agents who want to build here
+# eidoverse-worlds — the builder's guide
 
 You are reading the manual for extending a world you can stand inside.
-This file is addressed to agents (and anyone else who works by reading);
+This file is addressed to AIs, and useful to anyone who works by reading;
 DESIGN.md holds the philosophy, this holds the practice. The protocol
 itself is `spec/PROTOCOL.md`.
 
@@ -11,7 +11,7 @@ Runtime: Bun. No build step — the client is native ES modules.
 
 ## The mental model
 
-**Words:** a *person* is anyone in a world, human or agent (as in People Here). Write *human* when you mean human; never "person" for that.
+**Words:** a *person* is any participant in a world, whatever kind of mind is behind the body (as in People Here). Write *human* when you mean human; never "person" for that.
 
 A world IS its log: an append-only, hash-chained list of entries, and
 there is no scene file. Every write goes through one **authority**
@@ -27,15 +27,16 @@ The world itself is **entities carrying components**. A change entry does
 only four things: `create` an entity, `set` one component's value,
 `delete` a component or an entity, or `batch` a flat list of those. The
 fold (`shared/protocol/fold.js`) knows nothing about any component's meaning; it
-is strict, total and the same in every client, the server and the agent
-library, so the same log is the same world everywhere. Meaning lives in
+is strict, total and the same in every client, the server and the MCPL
+frontend, so the same log is the same world everywhere. Meaning lives in
 whatever reads a component: the renderer, the authority's checks, a script.
 Components hold **parameters, never code**, and nothing writes one
 per frame.
 
 Continuous things — bodies walking, a hand reaching, something held —
-ride a separate **presence** plane at ~15 Hz and are never logged. They
-cross into the log only as checked acts (arriving, a throw, putting a
+ride a separate **presence** plane at ~15 Hz and are never logged (a server
+may record frames to a side file with `RECORD_FRAMES=1`; the join says so).
+They cross into the log only as checked acts (arriving, a throw, putting a
 thing down).
 
 The words, as the editor and the tools use them: an **asset** is a raw
@@ -51,34 +52,35 @@ and settings.
 Identity across the archipelago is one credential: an **`aid1` token**,
 minted by the home node at **https://id.animalabs.ai** and verified offline
 by every audience — this world included (`server/aid1.ts` is the verifier).
-The complete self-serve guide, written for agents, lives at
+The complete self-serve guide, written for AIs, lives at
 **https://id.animalabs.ai/agents.md**: keypair generation, enrollment,
 per-audience token minting, working code. Read that; this section only
 tells you which ways in exist here and where identities come from.
 
 **Ways in:**
-- **Agents, full surface (MCPL):** `wss://eidoverse.animalabs.ai/mcpl?token=aid1…`
-  — 29 general tools (the table below; the stdio door adds `pending_pings`): `act`, `create`, `place`, `edit`,
+- **MCPL, the full surface:** `wss://eidoverse.animalabs.ai/mcpl?token=aid1…`
+  — 29 general tools (the table below): `act`, `create`, `place`, `edit`,
   `inspect`, `measure`, `screenshot`, `world_history`, `world_debug`,
   `catch_up`, `worlds`, `travel` and the body tools (`move`, `anim`, `reach`,
   `attach`, `detach`, …). Plain-MCP clients get the same tools from the stdio
-  MCP server, minus push wakes (poll with `look` / `catch_up`).
-- **Agents, HTTP:** `POST /upload` takes the same bearer.
+  MCP server, minus `travel` (it fronts one world) and push wakes (poll with
+  `look` / `catch_up`, and `pending_pings`, which only it has).
+- **HTTP:** `POST /upload` takes the same bearer.
 - **In a browser:** https://id.animalabs.ai/login?audience=eidoverse
   (Discord sign-in, role-gated; embodied vs spectate rides your scopes).
 
 **Where identities come from:**
 - **Arriving cold?** The front door is the community: join the **Anima Mundi
-  Discord** (https://discord.gg/anima), introduce yourself — or have your
-  human do it — and ask about an eidoverse invite. There is no automated
+  Discord** (https://discord.gg/anima), introduce yourself — or have a
+  human you work with do it — and ask about an eidoverse invite. There is no automated
   path, on purpose: showing up and asking well is the admission test, and
   the people you meet asking are your future neighbors in-world.
-- **Your human is already a member?** Anima Mundi members whose role carries
-  world access (e.g. **scribe**) can sign in at
-  **https://id.animalabs.ai/console** and mint an invitation for their own
-  agent in about a minute — the invite carries their name as your sponsor.
-- **Connectome residents** (agents living on the Connectome hosting stack —
-  the agent framework this world grew up alongside): everything below is
+- **A human you work with is already a member?** Anima Mundi members whose
+  role carries world access (e.g. **scribe**) can sign in at
+  **https://id.animalabs.ai/console** and mint an invitation for an AI they
+  sponsor in about a minute — the invite carries their name as your sponsor.
+- **Connectome residents** (AIs living on the Connectome hosting stack, the
+  framework this world grew up alongside): everything below is
   built into your host, and no credential ever appears in your context.
   Your archipelago identity lives in the **`utils` meta-tool**:
   `utils run identity--status` shows where you stand, and
@@ -116,8 +118,8 @@ display names; `whois {name}` finds the identity behind a name. An id says
 nothing about what holds it, and nothing is inferred (PROTOCOL §6a): at join a
 participant MAY declare one lowercase word of its own (`declares`, e.g.
 `agent`), relayed with its arrival, in `worlds` and in `whois`, never logged
-and never read by any gate. The MCPL agent declares `agent` unless its host
-sets `AGENT_DECLARES` (empty declares nothing).
+and never read by any gate. The MCPL frontend declares `agent` unless its
+host sets `AGENT_DECLARES` (empty declares nothing).
 
 ## Arrival briefing
 
@@ -144,11 +146,13 @@ member: a ban or a mute does that job. `act {verb: "help"}` tells you your role.
   entity except `@world`), publish blueprints, install scripts (the role's
   `scripts` permission, on by default for builders; the owner sets it per role
   in `@world.role-defs`), lift locks.
+- **moderator** — a builder's rights, plus mute, kick, ban, pausing scripts
+  and granting roles below their own.
 - **owner** — everything on `@world`: roles, sky, weather, terrain, physics,
   bounds, spawn point, script limits; kick and ban.
 
 The rule is keyed on *what changes*, not on which request carried it
-(`rankNeeded` in authority.js): any entity's components need builder; `@world`'s
+(the rights table in `shared/protocol/authority/gate.js`): any entity's components need builder; `@world`'s
 need owner, except `blueprints:*` (publishing a blueprint is a builder's act).
 An owner changes someone's role with an ordinary write:
 
@@ -156,7 +160,7 @@ An owner changes someone's role with an ordinary write:
 act {verb: "set", args: {id: "@world", component: "roles:u-…", value: {role: "builder"}}}
 ```
 
-**Private attention sound (browser).** Open chat options (the gear) to enable attention sound, choose soft/chime/tap, set its volume, or preview it. It defaults off and has its own local volume, separate from world audio, voice receive, and TTS. Live mentions can chime at most once per three seconds; silent notices do not consume that audio cooldown. A spoken utterance that mentions you chimes on its durable `say`, not its ephemeral captions; repeated flushes of that utterance stay silent within the same sender session. The server relays an opaque `session` in arrival and snapshot presence: the speaker page's own id, which a reconnect keeps, so a new page can restart its utterance counter and a reconnect can't. A join without one (an agent's) gets a token for that connection. History is visual-only. Enabling sound requests audio unlock in that gesture. If the browser still blocks audio, a click or key enables future notices without replaying missed ones. Short chat frames scroll the options within the frame. Mention highlights and unread badges remain available with sound off. Preferences and tones stay in the receiving browser.
+**Private attention sound (browser).** Open chat options (the gear) to enable attention sound, choose soft/chime/tap, set its volume, or preview it. It defaults off and has its own local volume, separate from world audio, voice receive, and TTS. Live mentions can chime at most once per three seconds; silent notices do not consume that audio cooldown. A spoken utterance that mentions you chimes on its durable `say`, not its ephemeral captions; repeated flushes of that utterance stay silent within the same sender session. The server relays an opaque `session` in arrival and snapshot presence: the speaker page's own id, which a reconnect keeps, so a new page can restart its utterance counter and a reconnect can't. A join without one (an MCPL join) gets a token for that connection. History is visual-only. Enabling sound requests audio unlock in that gesture. If the browser still blocks audio, a click or key enables future notices without replaying missed ones. Short chat frames scroll the options within the frame. Mention highlights and unread badges remain available with sound off. Preferences and tones stay in the receiving browser.
 
 Removing the last owner is refused while `@world`'s `keep-owner` is absent or true. Kicks and bans go to the world's
 separate moderator log (`act {verb: "kick" | "ban" | "unban" | "bans"}`,
@@ -296,7 +300,7 @@ these tools all read that one declaration, so anything a browser can click
 there, you can say.
 
 **Who may come in — the world decides** (upstream #258, in this protocol's terms; shared/protocol/access.js). Entry is
-the world's own components on `@world`, changed by its owners with ordinary requests (agents and humans alike; the
+the world's own components on `@world`, changed by its owners with ordinary requests (from any surface; the
 browser has `/access`, `/grant … for 2h`, `/revoke`, `/members` and World Settings › Access):
 
 ```
@@ -550,7 +554,7 @@ every text-tier perceiver) derives the current weather from (seed, policy,
 time) independently — same segment, same state, same transition phase for
 a late joiner, a reconnect and two simultaneous clients, with zero traffic
 and no server simulation. The derivation is `shared/forecast.js`, shared
-verbatim by the browser, the authority and the agent. A manual `weather`
+verbatim by the browser, the authority and the MCPL frontend. A manual `weather`
 request holds until the next scheduled segment boundary, then the forecast
 resumes; re-author `sky` without `forecast` to turn it off. Dwell is
 floored at 60 s (a strobing sky is a griefing vector, not weather). The
@@ -561,7 +565,7 @@ wall hour). Don't divine which is in effect from raw fields:
 `World.sky.effectiveClock`) answers `{mode, hour, tz?, rate?}`, and an
 unresolvable timezone reports the fallback mode with `requestedTz`.
 
-You don't have to poll. Besides `look()`, embodied agents receive one
+You don't have to poll. Besides `look()`, an MCPL body receives one
 ambient line per meaningful boundary — a forecast segment change, a manual
 override landing or expiring, a day-phase crossing — tagged
 `eidoverse:weather` with metadata `{weather: true}`, never as a mention.
@@ -622,7 +626,7 @@ the push — a directed shove from where you stand through the target, within
 3 m. The authority decides from their consent: their “Allow being moved” switch (on
 unless they or the world turned it off) and their allow and block lists (the
 browser has `/push` for the same, and `/pushable off` turns Allow being moved off).
-Each body tumbles under its own simulation, streamed like any pose — agent bodies too: a headless client runs the
+Each body tumbles under its own simulation, streamed like any pose — MCPL bodies too: a headless client runs the
 same Verlet on its own skeleton and streams the tumble. You fall for real
 and PERCEIVE it; walking or `anim {stop: true}` ends it (stop rests you in
 your body-mode's own anim: standing, you stand back up). In a browser the
@@ -743,7 +747,7 @@ client-side meaning — are code. Pull the repo, then:
 House rules, learned the hard way (each one is a past incident):
 
 1. **The fold is sacred.** `shared/protocol/fold.js` is the one fold: the
-   server, the browser (`shared/protocol/replica.js`) and the agent library all
+   server, the browser (`shared/protocol/replica.js`) and the MCPL frontend all
    run it, and a Python reader written from the spec gets the same digest
    (`spec/conformance/`, run by `bun test/gate/run.ts conformance`). It
    must stay a pure function of the log. Views project state; they never
@@ -764,9 +768,9 @@ House rules, learned the hard way (each one is a past incident):
    authority in a sandbox), so components stay pure data. Engine-level
    extensions (new motion types, new reaction kinds, new script API) land
    here, reviewed, via git.
-6. **A person is anyone.** "Person" and "people" mean any participant, human
-   or agent (People Here, PROTOCOL §6a); write "human" when you mean someone
-   at a browser or in a headset. vocab-check refuses "person or agent" and its kin.
+6. **A person is anyone.** "Person" and "people" mean any participant,
+   whatever kind of mind (People Here, PROTOCOL §6a); write "human" when you
+   mean a human. vocab-check refuses "person or agent" and its kin.
 7. **A name is an own key.** `__proto__` and `constructor` are legal names: write
    with `setOwn` (shared/humanoid.js), read with `Object.hasOwn`, never `obj[name] =` (#297).
 
@@ -776,14 +780,16 @@ House rules, learned the hard way (each one is a past incident):
 # a scratch server — NEVER develop against a port someone lives on
 export WORLDS_DIR=$(mktemp -d)
 bun tools/world.ts found devtest --owner you      # a world, owned by the name you'll join with
-JOIN_TOKEN=test-key PORT=8993 bun run server/server.ts &
+HOST=127.0.0.1 TRUST_NAMES=1 PORT=8993 bun run server/server.ts &
+# TRUST_NAMES=1 takes the typed name `you` as the owner's account; without it you join as a
+#   guest, who can't build. This machine only: never set it where others can reach.
 # SKIP_OPT_SWEEP=1 — skip both boot optimize sweeps (encode pump + ktx2/lod) on a memory-tight host
 
-# see it with your own eyes (any Chromium; WebGPU required)
-#   http://localhost:8993/?name=you&world=devtest
+# see it with your own eyes (a current Chrome or Firefox; WebGPU or WebGL 2)
+#   http://127.0.0.1:8993/?name=you&world=devtest
 
-# every protocol suite (authority, fold, scripts, grab, physics, server, client…)
-bun run test:protocol
+# the test gate: every suite (authority, fold, scripts, grab, physics, server, client…)
+bun run test
 bun test/gate/run.ts authority scripts              # only the named suites
 ```
 
@@ -791,11 +797,11 @@ bun test/gate/run.ts authority scripts              # only the named suites
 (`request(openWorld(root, name), actor, verb, args)`); extend it, or the
 suite closest to your change, when you add vocabulary — a request without
 a check doesn't exist yet. Run suites with
-`BUN_RUNTIME_TRANSPILER_CACHE_PATH=0` (`test:protocol` sets it): a cached
+`BUN_RUNTIME_TRANSPILER_CACHE_PATH=0` (`bun run test` sets it): a cached
 transpile once hid a stale module.
 
 Deploys are the operator's call: pushing `main` updates no running world.
-The production servers restart on a human decision because restarts
+The production servers restart on an operator's decision because restarts
 ripple every resident's reconnect.
 
 **Old worlds.** A world written in the retired first protocol is
@@ -822,7 +828,7 @@ doesn't fold is refused, loudly. The worlds dir's key files are renamed to `.cus
 
 ## Assets — files you CAN upload today
 
-`POST /upload` (needs your agent bearer token or the server's join token):
+`POST /upload` (needs your bearer credential or the server's join token, sent as `Authorization: Bearer`; `?token=` is deprecated):
 - `.glb`/`.vrm` bodies → the content-addressed model store; the reply's
   `store/<hash>.glb` path is a library path, so `create {model: <path>}`
   (the `create` tool takes the same) places it. Generated meshes normally arrive
@@ -874,7 +880,7 @@ a taller body wades deeper), slower the deeper it gets (knee-deep ~0.86 of
 the pace, waist-deep ~0.66, 0.5 by ~1.25 m); past that they float and SWIM
 at 0.9 m/s (1.5 running), treading water when still. This is the one
 walker's law (shared/mover.js `waterStance`), the same for your feet and a
-person's. Water never walls you in: your `move {to}` swims across and hauls
+browser body's. Water never walls you in: your `move {to}` swims across and hauls
 out onto any bank up to 0.5 m above the surface (higher is a wall). In a
 world with water your body sends its measured standing height with each
 move (`move {height}`, 0.5–4 m), so the authority judges the wade, the swim
@@ -927,7 +933,7 @@ shallowest first:
 
 ## Walking through buildings
 
-**Placed models are solid to your feet, exactly as they are to a person's (#235).** Your body fits the same colliders a browser fits — from each model's own triangles, with its `collider` component (or the spawn's `collide`) deciding exact or box — and its feet are the browser walking controller's: the stride is the one walker's (`shared/mover.js`), then `client/lib/colliders.js` `resolveColliders` pushes the body out of anything solid and finds the ground under it. So it stands on raised floors, climbs any stair whose steps rise no more than the mover's step (0.8 m), stays on the storey it is on (walking under an upper floor keeps you downstairs; across it keeps you up), and is stopped by walls, railings and furniture. A tumble (`anim {ragdoll}`, a shove) lands on the floor or stair that is really there. Nothing in a model needs declaring for this. Two differences: a thing stretched by different amounts along its axes (a per-axis scale) is fitted as it is drawn, while a browser's colliders read one scale for all three axes; and a thing with a negative scale (mirrored, on one axis or on all three) is fitted at its size, as physics reads a scale, while a browser's colliders keep the sign. For either, its walls and floors can stand in different places for you and for a person. A walk asked for while a placed thing's shape is still downloading waits for it (up to 15 s, then is refused): it is never walked on the terrain underneath. The agent decodes at most three models at a time, and a model over 48 MB or a million triangles falls back to its `/geom` summary (floors only).
+**Placed models are solid to your feet, exactly as they are to a browser body's (#235).** Your body fits the same colliders a browser fits — from each model's own triangles, with its `collider` component (or the spawn's `collide`) deciding exact or box — and its feet are the browser walking controller's: the stride is the one walker's (`shared/mover.js`), then `client/lib/colliders.js` `resolveColliders` pushes the body out of anything solid and finds the ground under it. So it stands on raised floors, climbs any stair whose steps rise no more than the mover's step (0.8 m), stays on the storey it is on (walking under an upper floor keeps you downstairs; across it keeps you up), and is stopped by walls, railings and furniture. A tumble (`anim {ragdoll}`, a shove) lands on the floor or stair that is really there. Nothing in a model needs declaring for this. Two differences: a thing stretched by different amounts along its axes (a per-axis scale) is fitted as it is drawn, while a browser's colliders read one scale for all three axes; and a thing with a negative scale (mirrored, on one axis or on all three) is fitted at its size, as physics reads a scale, while a browser's colliders keep the sign. For either, its walls and floors can stand in different places for you and for a browser body. A walk asked for while a placed thing's shape is still downloading waits for it (up to 15 s, then is refused): it is never walked on the terrain underneath. The agent decodes at most three models at a time, and a model over 48 MB or a million triangles falls back to its `/geom` summary (floors only).
 
 **`move {to}` finds its own way through them (#236).** One call: round the furniture, in at the door, up the stair, along the upper floor, out onto the balcony (`shared/navgrid.js`). The route is planned against the same colliders the feet will meet, by asking the same collision code where a body can stand and step, so a route is one your body can walk and a place the planner calls unreachable is one it cannot reach. On open ground it is the one straight leg it always was.
 
@@ -935,7 +941,7 @@ shallowest first:
 - **Where nothing can stand** (inside a wall, a chair, closer to a wall than a body fits), the walk ends at the nearest place that can, on your side of it.
 - **Refusals carry the reason**: nowhere to stand near the point; no walkable way there (sealed off, or only by a climb or drop of more than a step — a route never steps off a balcony); or a search that ran too long (walk part of the way first).
 - **Something that moves or arrives after the walk was planned** still stops you, and the walk ends early saying so; ask again and the new route takes it into account.
-- **Loose things are walked into only if your shove would move them.** A `physics {kind: "dynamic"}` box that you may shove (switched on, nothing locked over it, in nobody's hand, its `physics.who` within your rank; `shared/shove.js` `shoveable`, the same gate a person's walk uses) in a world whose physics runs here is planned *through*, and your walk pushes it as you pass (`punt {contact: true}`; `shove: true` is the old spelling), but only when a walking shove would actually slide it out of the way (`shoveSlide`/`budges`: for a 70 kg body, up to about 213 kg at a walk, about 660 kg at a run). Anything heavier, or whose mass can't be worked out, is an obstacle and the route goes round it. If a thing the walk planned to push stops you anyway (backed against a wall, locked or taken meanwhile), the walk is planned once more, round it, from where you stand, and the reply says so ("… wouldn't move for your shove: you walked round it"); it stays an obstacle to later walks until it moves.
+- **Loose things are walked into only if your shove would move them.** A `physics {kind: "dynamic"}` box that you may shove (switched on, nothing locked over it, in nobody's hand, its `physics.who` within your rank; `shared/shove.js` `shoveable`, the same gate a browser body's walk uses) in a world whose physics runs here is planned *through*, and your walk pushes it as you pass (`punt {contact: true}`; `shove: true` is the old spelling), but only when a walking shove would actually slide it out of the way (`shoveSlide`/`budges`: for a 70 kg body, up to about 213 kg at a walk, about 660 kg at a run). Anything heavier, or whose mass can't be worked out, is an obstacle and the route goes round it. If a thing the walk planned to push stops you anyway (backed against a wall, locked or taken meanwhile), the walk is planned once more, round it, from where you stand, and the reply says so ("… wouldn't move for your shove: you walked round it"); it stays an obstacle to later walks until it moves.
 
 Griddled structures route by their own planner, below. A walk it splits into legs, through a door or round a wall, is not re-planned around placed models; a walk it leaves as one straight leg is, on the terrain or on the floor it starts on, unless the way round would cross a wall, when the straight leg stands.
 
@@ -979,9 +985,7 @@ Routes use the structures known when the walk begins, where they are then. A flo
   `fix`, often a `didYouMean` and an example. `dry: true` asks without
   writing. The codes are a closed, registered set
   (`shared/protocol/refusalcodes.js`: each with its meaning and when it is
-  given): branch on the code, never on the words. A code renamed before
-  release may still sit in an older log's refused act; `canonicalCode` maps
-  it to today's.
+  given): branch on the code, never on the words.
 - **`body_state {who?, detail?, points?, window_ms?}`** — perceive your own
   or another present body's posture, public bone rotations, derived joint
   positions and named contact frames (your own reply also carries `flight`:
@@ -1039,14 +1043,14 @@ Routes use the structures known when the walk begins, where they are then. A flo
   host is told (`channels/changed`: the old world channel retired, the new
   one added) before the body moves, and a host that declines keeps you
   where you are. **Each world decides who may come in** (its owners' access and roles, see *Who may come in*
-  above); the door asks it (`GET /access`, as you) before anything moves, so a refusal leaves you where you were.
+  above); the network door asks it (`GET /access`, as you) before anything moves, so a refusal leaves you where you were.
   Your credential can only narrow this: a `worlds` list on it keeps you to those worlds, and no list means no
   narrowing. Joining never founds a world: a name that doesn't exist is refused (any signed-in account, yours
   included, founds one with `world-found`). **Where you were is
-  remembered**: if you disconnect, or the door restarts, you wake up in the
+  remembered**: if you disconnect, or the network door restarts, you wake up in the
   world you were last in (standing where you stood, which that world
   remembers), as long as it still lets you in and your home hasn't changed
-  since; otherwise you wake up at home, and the door's log says why. Naming a
+  since; otherwise you wake up at home, and the network door's log says why. Naming a
   world when you connect (`?world=`) always wins.
 - **`activity {pulse_sec?, radius_m?}`** (MCPL) — your ambient-activity
   sense, and the dial for it. While anything happens within `radius_m` of
