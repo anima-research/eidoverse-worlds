@@ -230,6 +230,10 @@ console.log("the door's bodyHeightFor through /library (server/routes.ts route)"
       check("an upload of a patched body's name is refused and not written; another name is taken (#325)",
         shadowed.status === 409 && !existsSync(optVrm("forked")) && fresh.status === 200 && existsSync(optVrm("unpatched")),
         { shadowed: [shadowed.status, await shadowed.text()], fresh: fresh.status });
+      // a def that claims the name (and resolves) outranks every scanned file on the roster: the same never-served case
+      const claimed = await up("repointed");
+      check("an upload of a name a def claims is refused and not written (#325 meets #326's def layer)",
+        claimed.status === 409 && !existsSync(optVrm("repointed")), { claimed: [claimed.status, await claimed.text()] });
     }
     put("reexport", body(V1));
     const first = await door("reexport");

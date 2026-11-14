@@ -20,6 +20,8 @@ import { worlds } from "./world.ts";
 import { atomicWrite } from "./fsutil.ts";
 import { ingestHeightmap } from "./heightmap.ts";
 import { checkFile } from "./buildcheck-queue.ts";
+import { avatarDefs } from "./defs.ts";
+import { resolveLibFile } from "./libfile.ts";
 
 /** What the handler needs from Bun's server object, structurally: the
  *  socket address behind the nginx front. */
@@ -627,6 +629,10 @@ async function uploadBy(req: Request, url: URL, srv: UploadSrv): Promise<Respons
     // a patch outranks OPT_DIR on /library, so this upload would never be served (#325)
     if (existsSync(join(PATCH_DIR, "eidoverse/assets/vrms", `${name}.vrm`)))
       return new Response(`"${name}" is a patched body: patched/ wins over uploads, so this one would never be served. Upload it under another name.`, { status: 409 });
+    // a def that claims the name (and resolves) outranks every scanned file on the roster: the same never-served case
+    const def = avatarDefs()[name]?.vrm;
+    if (def && resolveLibFile(def))
+      return new Response(`"${name}" is declared by a def (defs/avatars/${name}.json → ${def}), which wins over uploads, so this one would never be served. Upload it under another name.`, { status: 409 });
     const dir = join(OPT_DIR, "eidoverse/assets/vrms");
     mkdirSync(dir, { recursive: true });
     // A RAW TRIPO RIG at the avatar door runs the import pipeline instead of
