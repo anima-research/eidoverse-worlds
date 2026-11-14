@@ -99,8 +99,8 @@ const { HANDLERS, TOOLS, toolList, handleTool: handleToolDoor } = await import("
     if (!/yaw[^.;]*radians/.test(COMPONENTS.transform.help)) bare.push("component transform's help: set {yaw}");
     ok(!bare.length, "AT13 …and every angle in a tool's schema, a verb's args or a component's docs names its unit", bare);
     const spec = fs.readFileSync(path.join(ENGINE, "spec/PROTOCOL.md"), "utf8"), conv = spec.slice(spec.indexOf("## 9. Conventions"), spec.indexOf("### 9.1"));
-    ok(/Angles are radians/.test(conv) && /verb's\s+arguments/.test(conv) && /presence/.test(conv) && /`inspect`/.test(conv) && /`edit`/.test(conv) && /degrees/.test(conv),
-      "AT13 …and PROTOCOL §9 (not only §9.2's components) says angles are radians for verb arguments, notes and presence, and inspect/edit and the UI are degrees", conv.slice(0, 400)); }
+    ok(/Angles are radians/.test(conv) && /verb's\s+arguments/.test(conv) && /presence/.test(conv) && /`inspect`/.test(conv) && /`edit`/.test(conv) && /degrees/.test(conv) && /except\s+station `look` yaw\/pitch limits \(§9\.2\)/.test(conv),
+      "AT13 …and PROTOCOL §9 (not only §9.2's components) says angles are radians for verb arguments, notes and presence, inspect/edit and the UI are degrees, and points at station `look`'s degrees exception (§9.2)", conv.slice(0, 400)); }
   // ---- AT6: the surface itself ----
   const names = TOOLS.map((t) => t.name);
   const folded = ["take_off", "climb_to", "glide_to", "land_at", "rehearse_down", "rehearse_recover", "fold_wings", "unfold_wings", "flight_status",
