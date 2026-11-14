@@ -275,6 +275,12 @@ console.log('\nrealized lifecycle — four registries, one id, every seam\n');
   const o = stub.entities.get('top12');
   check('taken off its carrier it stands in the scene again', !!o && (o.parent === null || o.parent?.isScene || !o.parent?.userData?.entityId), JSON.stringify({ parent: o?.parent?.userData }));
   check('…and its collider is fit root-local again (not its world box read as its own)', fitIsLocal('top12'), JSON.stringify({ opts: stub.colliders.get('top12')?.opts, pos: o?.position.toArray(), scale: o?.scale.toArray() }));
+  // a re-modelled carrier retires and drops its cargo before the new model re-mounts it (models.js retire)
+  door('set', { id: 'top12', component: 'parent', value: { to: 'base12' } }); await settle(); drain();
+  bus.emit('lib-geom', { [lib('crate2')]: GEOM });
+  door('set', { id: 'base12', component: 'model', value: lib('crate2') });
+  check('…and so is the cargo a re-modelled carrier drops', stub.colliders.get('top12')?.opts?.localFrame === true, JSON.stringify(stub.colliders.get('top12')?.opts));
+  await settle(); drain();
   door('delete', { id: 'top12' }); door('delete', { id: 'base12' });
   noErrors('dismount');
 }
