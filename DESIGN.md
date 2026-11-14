@@ -158,17 +158,21 @@ speak → visemes); explicit triggers are gestures and Layer-1 firings.
 
 ## Input in the browser
 
-The same requests MCPL sends, reached through embodiment and UI:
-- **Move a chair**: embodied carry (click-hold, walk, drop, auto-reseat), or
-  arrange mode where **drag semantics are the placement helpers** — the chair
-  stays seated on surfaces, lands ON the table not beside it, kisses flush (the
-  authority's `place`). Drag is transient presence traffic; release commits one
-  clean log entry. Undo = inverse entry.
-- **Spawn**: palette (library + inventory) with ghost preview; **ask for it** (commissioning as a
-  first-class path, from someone who builds or from a generator such as
-  Orrery); quick primitives.
+The same requests MCPL sends, reached through a body and builder mode:
+- **Move a thing**: carry it by hand (grab, walk, release) if it's
+  `grabbable`, or select it in builder mode and drag the gizmo (Ctrl snaps
+  10 cm / 5° / 0.1×). A dragged or placed thing lands on the surface under
+  the pointer, so it sits ON the table, not beside it. Dragging is transient
+  presence traffic; release commits one change entry.
+- **Spawn**: the world panel's palette (model library, avatar roster, lights,
+  drag-in upload) puts a ghost in your hand, turned with Q/E and sized with
+  , and . before you place it; or conjure one from a prompt through Orrery.
+- **Undo** is per person: Ctrl+Z asks the authority to undo *my* last act,
+  and it says what it skipped because someone else changed it since.
 
-One request surface, three modalities: mouse, speech, code.
+Builder mode needs build rights and a desktop or tablet; on a phone you look
+around and play. Commissioning a thing from someone who builds, and a personal
+inventory, are not built yet.
 
 ## Live everything — the no-manifest rule
 
