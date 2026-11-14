@@ -128,18 +128,22 @@ const oscWalk = (dir: string) => {
 };
 for (const d of [...RUNTIME, ...DEPLOYED]) oscWalk(path.join(ROOT, d));
 for (const rel of OSC_DOCS) { const p = path.join(ROOT, rel); if (fs.existsSync(p)) oscScan(rel, fs.readFileSync(p, "utf8"), OSC_DOC); else offences.push(`${rel}: missing (OSC_DOCS lists it)`); }
-// "person"/"people" means anyone, human or agent (AGENTS.md house rule 6): set against "agent" it meant human — say human
+// AGENTS.md house rule 6: "person" set against "agent" meant human (say human); "humans and AIs" splits kinds (say participants)
 const PERSON = /(?<!["'`])\b(?:person|people)\s+(?:\(\s*)?(?:or|and|nor|vs\.?)\s+agents?\b|\bagents?\s+(?:or|and|nor|vs\.?)\s+(?:person|people)\b(?!["'`])/i;
 const PERSON_DOCS = ["AGENTS.md", "DESIGN.md", "README.md", ...fs.readdirSync(path.join(ROOT, "docs")).filter((f) => f.endsWith(".md") && f !== "docs/history/INCIDENTS.md").map((f) => `docs/${f}`), "spec/PROTOCOL.md"];
+const SPLIT = /(?<!["'`])\b(?:people|humans)\s+and\s+AIs\b|\bAIs\s+and\s+(?:people|humans)\b(?!["'`])/i;
 const personScan = (rel: string, text: string) => text.split("\n").forEach((line, i) => {
-  if (PERSON.test(line)) offences.push(`${rel}:${i + 1}: "person" set against "agent" means human: write human (AGENTS.md rule 6) — ${line.trim().slice(0, 100)}`); });
+  if (PERSON.test(line)) offences.push(`${rel}:${i + 1}: "person" set against "agent" means human: write human (AGENTS.md rule 6) — ${line.trim().slice(0, 100)}`);
+  if (SPLIT.test(line)) offences.push(`${rel}:${i + 1}: "humans and AIs" splits kinds: say participants, or "humans, AIs, and whatever else comes" (AGENTS.md rule 6) — ${line.trim().slice(0, 100)}`); });
 const personWalk = (dir: string) => {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) { if (SKIP_DIR.has(e.name)) continue; const p = path.join(dir, e.name);
     if (e.isDirectory()) personWalk(p); else if (EXT.test(e.name)) personScan(path.relative(ROOT, p).split(path.sep).join("/"), fs.readFileSync(p, "utf8")); } };
 for (const d of [...RUNTIME, ...DEPLOYED]) personWalk(path.join(ROOT, d));
-for (const rel of PERSON_DOCS) { const p = path.join(ROOT, rel); if (fs.existsSync(p)) personScan(rel, fs.readFileSync(p, "utf8")); }
+for (const rel of [...PERSON_DOCS, "CONTRIBUTING.md", "mcpl/README.md"]) { const p = path.join(ROOT, rel); if (fs.existsSync(p)) personScan(rel, fs.readFileSync(p, "utf8")); }
 { const bad = ["a person or agent", "people and agents", "agent or person", "person (or agent)"], good = ["People Here", "a person may", "refuses \"person or agent\" and its kin", "a human or agent"];
   const wrong = [...bad.filter((t) => !PERSON.test(t)), ...good.filter((t) => PERSON.test(t))]; if (wrong.length) offences.push(`PERSON self-test misreads: ${wrong.join(" | ")}`); }
+{ const bad = ["for people and AIs", "humans and AIs alike", "AIs and humans"], good = ["humans, AIs, and whatever else comes", "refuses \"humans and AIs\" as a split", "people and their AIs"];
+  const wrong = [...bad.filter((t) => !SPLIT.test(t)), ...good.filter((t) => SPLIT.test(t))]; if (wrong.length) offences.push(`SPLIT self-test misreads: ${wrong.join(" | ")}`); }
 
 // The log's vocabulary is minor 1's (docs/decisions/LOG-VOCABULARY.md D3, 2026-11-04): kinds request/physics/redaction/governance,
 // `op` on a change, `cascade`, `commitment`, `rewindWindow`, the view marker `redacted`, the snapshot blob key `snapshotJson`. A retired
