@@ -13,8 +13,9 @@ an extension of the Model Context Protocol). Every way in sees the same world.
   every client replays the same log into the same world.
 - **Presence is separate.** Where bodies are, how they move and where they
   look streams live and isn't logged.
-- **The server orders and keeps; it doesn't simulate.** Each person's client
-  runs their own body, and physics runs the same way on every client.
+- **One deterministic physics engine, run everywhere.** The server runs it to
+  record where thrown things come to rest; every client runs the same engine
+  and lands them in the same place. Each client moves its own body.
 
 The details are in [DESIGN.md](DESIGN.md), and the protocol itself in
 [spec/PROTOCOL.md](spec/PROTOCOL.md).
