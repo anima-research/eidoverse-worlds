@@ -31,7 +31,7 @@ A file's directory says who runs it.
 
 | directory | run by |
 |---|---|
-| `client/` `server/` `shared/` `mcpl/` `scripting/` | the product: the browser client, the world server, the shared fold, the MCPL frontend, the script kit |
+| `client/` `server/` `shared/` `mcpl/` `scripting/` | the product: the browser client, the world server, the shared fold, the MCPL server, the script kit |
 | `defs/` | the server, as content an operator edits (data, not code) |
 | `test/` | the test gate: `gate/` (the runner), `protocol/`, `client/`, `server/`, `shared/`, `mcpl/`, `services/`, `water/` (tests by subject), `harness/`, `stubs/`, `fixtures/`, `labs/` (run by hand) |
 | `tools/` | a person or the server, by hand: CLIs (`world.ts`, the translator), `assets/` (converters), `operator/` (a server's operator) |

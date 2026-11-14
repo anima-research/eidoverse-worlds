@@ -33,7 +33,7 @@ multi-participant authority. That layer is this repo.
 World state splits into two things with different consistency needs:
 
 **1. The world log (authored plane).** Everything that constructs or mutates
-the world is a request to the world's door (the spec's *authority*),
+the world is a request to the world's authority,
 recorded in an append-only, per-world, hash-chained log as the request (a `request` entry) and its result (a
 `change` entry). Low frequency, high value, persisted forever. The log **is**
 the world format — there is no scene file. The log records **results, never
@@ -71,7 +71,7 @@ systems, not bone poses.
   pose — the VRChat model. Fluent movement is guaranteed because it's local.
 - GPU sims (fluid, cloth, grass, particles, weather rendering) are cosmetic,
   client-local, parameterized by log events. Allowed to diverge.
-- Contested interactions (two hands, one object) are settled by the door:
+- Contested interactions (two hands, one object) are settled by the authority:
   it tracks who holds what and checks every put, drop and throw. Physics,
   where a world turns it on, is a deterministic engine every client runs
   on the same logged launches (spec/PHYSICS.md) — still not a server
@@ -113,7 +113,7 @@ Entities carry **components**: `transform`, `model`, `parent`, `light`,
 `shared/protocol/componentspec.js`). The fold applies them blindly — it never learns
 what a `swing` means; meaning lives in whichever reader consumes a
 component: `motion` in the client's evaluator, `socket` and `station` in
-seating, `reactions` in the door. Unknown components are kept and replayed,
+seating, `reactions` in the authority. Unknown components are kept and replayed,
 forward-compatible: a new kind of component is client code plus a
 registry entry, with no change to the fold. This is the Unity
 entity/component *data* model with an event-sourcing discipline Unity
@@ -147,7 +147,7 @@ Building blocks:
   falls and flies when the world runs physics.
 
 **Scripts** are the Layer-2 tier (docs/guide/SCRIPTS.md): a `script:<name>`
-component naming an uploaded source, run by the door in a QuickJS sandbox
+component naming an uploaded source, run by the authority in a QuickJS sandbox
 with its sponsor's rights narrowed to a declared scope, fuel- and
 rate-budgeted, paused loudly after repeated failures. Each activation is
 one act plus one all-or-nothing batch through the same gate as anyone's
@@ -252,13 +252,13 @@ presence in several worlds at once, but visibly (presence never lies about
 attention). Travel between worlds on one server is built (`travel`); across
 servers it waits on portable identity.
 
-## The MCPL frontend
+## The MCPL server
 
-An MCPL server: door requests in, perception out. Perception is **tiered**:
+Requests to the authority in, perception out. Perception is **tiered**:
 a text-tier scene description from the entity registry (free, no GPU) up to
 rendered stills (`screenshot`, drawn by a renderer client elsewhere:
 docs/operator/REMOTE-SCREENSHOTS.md), since a reader of text needs sets of
-stills more than streams. The body runs its controller inside the frontend's
+stills more than streams. The body runs its controller inside the MCPL server's
 own process, with no renderer (`mcpl/headless-core.mjs`), so it moves
 fluently however slowly its mind thinks.
 
@@ -318,7 +318,7 @@ Per-world roles live in the log like everything else, as components on
 `@world`: `roles:<identity>` = `{role: owner | builder | member}`
 (plus `moderator` on the roles ladder), and `default-role` for everyone
 without an entry. Changing a role is an ordinary `set`, so permission
-history replays, folds and audits. Enforcement is the door's one gate,
+history replays, folds and audits. Enforcement is the authority's one gate,
 `admit`, keyed on *which components a request would change*, never on the
 request's name — so no path (a tool, a `use` handler, an undo, a script)
 can walk around it.
@@ -337,7 +337,7 @@ without an account are members
 unless the world opts them in; a world with no owner left gives nobody
 more than member, and removing the last owner is refused.
 
-Identity: the door stamps who asked from the authenticated connection,
+Identity: the authority stamps who asked from the authenticated connection,
 never from the payload. Every participant is an opaque identity
 (`u-…`, `server/directory.ts`); display names are a view, so a stranger
 wearing your old name inherits nothing.
@@ -346,7 +346,7 @@ wearing your old name inherits nothing.
 
 Two scopes:
 
-**Per-world** — `kick` / `ban` / `unban` are requests to the door by anyone
+**Per-world** — `kick` / `ban` / `unban` are requests to the authority by anyone
 holding the kick/ban permission (owners and the default moderator role),
 keyed on identity (`whois` finds the identity behind a name). They are
 recorded in the world's separate **moderator log**, never in the world log,
@@ -359,9 +359,9 @@ sponsor's scripts are suspended.
 **Server bans** — there is no server-wide log, so server-wide bans are messages
 (`server-ban` / `server-unban` / `server-bans`), server-operator-only (`SERVER_OPERATORS`),
 persisted in `WORLDS_DIR/.bans.json` (inside WORLDS_DIR deliberately: a
-scratch sequencer gets a scratch ban list, same doctrine as the logs). A
+scratch server gets a scratch ban list, same doctrine as the logs). A
 server ban expels from every world at once and refuses every join. Close
-code `4006` is in both the browser client's and the MCPL frontend's
+code `4006` is in both the browser client's and the MCPL server's
 no-retry lists, so a removed client never hammers the server.
 
 ## Orrery (3D prompting) seam
