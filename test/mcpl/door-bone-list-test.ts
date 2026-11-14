@@ -140,7 +140,7 @@ console.log('\nEVERY READER OF A BODY FILE: a failed read is never remembered, a
   const READERS: Record<string, (path: string) => Promise<unknown>> = {
     loadBodyBones: (path) => { let a: any = bodies.get(path); if (!a) bodies.set(path, a = new WorldAgent({ url: noWorldUrl(), name: 'reader', world: 'bone-bench' })); a.avatar = path; return a.loadBodyBones(); },
     rigBonesFor: (path) => rigBonesFor('http://lib', path),
-    bodyHeightFor: (path) => bodyHeightFor('http://lib', path),
+    bodyHeightFor: (path) => bodyHeightFor('http://lib', path).catch(() => null),   // a failed download rejects (#323)
   };
   const good = async () => new Response(humanoid());
   for (const [reader, read] of Object.entries(READERS)) {
