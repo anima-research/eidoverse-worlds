@@ -278,9 +278,14 @@ console.log('\nrealized lifecycle — four registries, one id, every seam\n');
   // a re-modelled carrier retires and drops its cargo before the new model re-mounts it (models.js retire)
   door('set', { id: 'top12', component: 'parent', value: { to: 'base12' } }); await settle(); drain();
   bus.emit('lib-geom', { [lib('crate2')]: GEOM });
+  const w12 = () => { const o = stub.entities.get('top12'); o.updateMatrixWorld(true); return new stub.THREE.Vector3().setFromMatrixPosition(o.matrixWorld).toArray(); };
+  const before12 = w12();
   door('set', { id: 'base12', component: 'model', value: lib('crate2') });
-  check('…and so is the cargo a re-modelled carrier drops', stub.colliders.get('top12')?.opts?.localFrame === true, JSON.stringify(stub.colliders.get('top12')?.opts));
+  const after12 = w12();
+  check('…and the cargo a re-modelled carrier drops stays where it stood in the world (its pos is carrier-local)', after12.every((v: number, i: number) => Math.abs(v - before12[i]) < 1e-6), JSON.stringify({ before12, after12 }));
+  check('…with no collider of its own until the rebuilt carrier re-mounts it', !stub.colliders.has('top12'), JSON.stringify(stub.colliders.get('top12')?.opts));
   await settle(); drain();
+  check('…and the rebuilt carrier does re-mount it', stub.entities.get('top12')?.parent === stub.entities.get('base12'), JSON.stringify(stub.entities.get('top12')?.parent?.userData));
   door('delete', { id: 'top12' }); door('delete', { id: 'base12' });
   noErrors('dismount');
 }

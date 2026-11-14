@@ -580,6 +580,9 @@ function retire(id) {
       delete cobj.userData.mountedTo;
       delete cobj.userData.mountRel;
       const cst = state.st.entities[cid];
+      // still parented in the fold (its carrier is only being rebuilt): its pos is carrier-local, so keep the world pose
+      // attach() gave it and leave collision to the re-mount, rather than standing it at that offset as if it were world
+      if (cst?.parent) continue;
       if (cst?.pos) cobj.position.set(...cst.pos);
       if (cst?.q || cst?.yaw != null) orientObj(cobj, cst);
       applyScale(cobj, entScale(cst) ?? 1);   // the fold's scale, not the one attach() baked in
