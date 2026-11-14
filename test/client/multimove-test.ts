@@ -71,7 +71,8 @@ check("revert puts each follower back where the log has it", stub.reverted.join(
 const many = Array.from({ length: 10 }, (_, i) => thing(`m${i}`, [i, 0, 10]).userData.entityId);
 st = MM.begin("a", many);
 stub.drags.length = 0;
-for (let t = 0; t < 10; t++) { st.lastSent = 0; a.position.x += 0.1; a.updateMatrixWorld(true); MM.apply(st, "move"); }
+for (let t = 0; t < 10; t++) { st.lastSent = -Infinity;   // every apply is a relay tick (performance.now() can be < 66 ms in a fresh process)
+  a.position.x += 0.1; a.updateMatrixWorld(true); MM.apply(st, "move"); }
 const per = stub.drags.length / 10, covered = new Set(stub.drags.map((d: any[]) => d[0]));
 check("relay: ten followers send at most RELAY_PER_TICK samples a tick", per <= MM.RELAY_PER_TICK, `${stub.drags.length} in 10 ticks`);
 check("...round-robin, so every follower is relayed once in ten ticks", covered.size === 10, JSON.stringify([...covered]));
