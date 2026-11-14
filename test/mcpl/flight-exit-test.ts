@@ -316,7 +316,7 @@ for (const how of ['walk', 'close'] as const) {
     `phase ${phase}, ended at once ${ended}; walk ${walk.r}; ${dist(ag.pos, T).toFixed(2)} m from the target`);
 }
 {
-  // AGENTS.md: on the ground, a refused walk leaves the body as it was, a cut flier lying in its flight included.
+  // docs/reference/WALKER.md: on the ground, a refused walk leaves the body as it was, a cut flier lying in its flight included.
   const ag = bench();
   await ag.takeOff(); toAir(ag, 20); await tick(ag, 3);
   ag.flightBodyDown('cut');

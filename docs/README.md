@@ -27,7 +27,7 @@ Start with [README](../README.md) (what this is, how to run it), [AGENTS](../AGE
 ## Reference — what is built, described
 
 [WIRE](reference/WIRE.md) · [POSE-WIRE](reference/POSE-WIRE.md) · [UNDERWATER-PRESENCE](reference/UNDERWATER-PRESENCE.md) · [SEATS](reference/SEATS.md) ·
-[DRAW-CALLS](reference/DRAW-CALLS.md) · [RESERVED-SHAPES](reference/RESERVED-SHAPES.md)
+[DRAW-CALLS](reference/DRAW-CALLS.md) · [RESERVED-SHAPES](reference/RESERVED-SHAPES.md) · [WALKER](reference/WALKER.md)
 
 ## Design — what isn't built yet, and why it should be
 
