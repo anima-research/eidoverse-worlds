@@ -289,7 +289,7 @@ function hierarchyFields() {
     const title = [nameOnly(id) ? `${nameOnly(id)}  (id ${id})` : `id ${id}`, sub].filter(Boolean).join(' — ');
     return { id, label: labelOf(id), ...(hopts.kinds ? { sub } : {}), title, depth: t.depth, active: id === sel, multi: id !== sel && Sel.isSelected(id), badges, locked: !!bag.lock, mine: isMineHidden(id),
       ...(bag.lock ? { lockLevel: lockWord(lockStrengthOf(id), bagOf('@world') ?? {}) } : {}), ...(heldBy && !bag.lock ? { heldBy, heldByLabel: labelOf(heldBy) } : {}),
-      lockable: Edits.mayLift() && (!bag.lock || mayLiftLevel(id)),   // §5: only builders and owners lock and unlock; a lock above your rank isn't yours to lift
+      lockable: Edits.mayLift() && (!bag.lock || mayLiftLevel(id)),   // only someone with `build` locks and unlocks (writes.js mayLift; spec/PROTOCOL.md §7 Locks); a lock above your rank isn't yours to lift
       enabled: !selfOff, ...(off ? { off: true } : {}),
       kids: t.kids, open: t.open, ...(t.dim ? { dim: true } : {}) };   // a filter looks inside folded nodes, so the glyph says open
   });
@@ -354,7 +354,7 @@ function hierarchyDispatch(action, payload, _field, opts = {}) {
       if (armingRef && completeRefPick(payload)) break;   // a row click names a ref target
       if (arming && payload !== arming) { const child = arming; arming = null; reparent(child, payload); sceneSelect(child); break; }
       // Shift selects the RANGE from the last row clicked, in the rows as displayed; Ctrl/Cmd toggles one; a plain click selects.
-      // Older callers send only `extend`.
+      // A caller sending only `extend` toggles.
       if (opts.range && rangeSelect(payload, !!opts.toggle)) return;
       if (opts.toggle || (opts.extend && !opts.range)) { extendSelection(payload); hAnchor = payload; return; }
       sceneSelect(payload); hAnchor = payload;
@@ -1191,7 +1191,7 @@ function attributesFields() {
   const lk = cardRow(schema, id, 'flags.lock'); if (lk) f.push({ ...lk, label: 'locked' });
   const ly = cardRow(schema, id, 'flags.layer'); if (ly) f.push(ly);   // the selection layer (Select ▾ in the viewport bar)
   const ct = cardRow(schema, id, 'flags.clickthrough'); if (ct) f.push(ct);   // clicks go through: beside the layer, which it may merge into
-  // the Transform's advanced rows (were the Inspector's 'Advanced'): rotation order and the quaternion as stored
+  // the Transform's advanced rows: rotation order and the quaternion as stored
   const tsec = schema.sections?.list?.find((x) => x.type === 'Transform');
   const adv = (tsec?.fields ?? []).map((addr) => [addr, cardRow(schema, id, addr)]).filter(([addr, r]) => r && !r.alias && (r.row === 'quat' || addr === 'rot.order')).map(([, r]) => r);
   if (adv.length && !tsec.quatOpen) { f.push({ t: 'group', k: 'a:rot', label: 'Rotation, as stored', open: isOpen(id, 'a:rot'), hint: 'rotation order and the quaternion (four numbers that never gimbal-lock): rarely needed until rigs' }); f.push(...adv); }
@@ -1264,7 +1264,7 @@ export function initEditPanels() {
   setInterval(() => { if (!lastAway || document.hidden || !frames.get('inspector')?.frame?.el?.getClientRects().length) return; const id = sceneSelected(); const o = id === lastAway.id ? entities.get(id) : null;
     if (!o) { lastAway = null; return; } if (Math.round(o.getWorldPosition(_wp).distanceTo(myState.pos)) !== lastAway.m) repaintAll(); }, 500);
   bus.on('selection', () => { const id = sceneSelected(); if (id) revealPath(id); });   // before the paint: a selected child's ancestors unfold
-  for (const ev of ['entity', 'comp', 'mount', 'build-mode', 'selection', 'structure-tool', 'tool', 'your-rights', 'log-applied', 'view-prefs']) bus.on(ev, repaintAll);   // view-prefs: this viewer's rotate order   // log-applied: a world's library lives on @world, which the realizers never touch
+  for (const ev of ['entity', 'comp', 'mount', 'build-mode', 'selection', 'structure-tool', 'tool', 'your-rights', 'log-applied', 'view-prefs']) bus.on(ev, repaintAll);   // view-prefs: this viewer's rotate order; log-applied: a world's library lives on @world, which the realizers never touch
   // the world entity's components are the fold's sky / terrain / grass: repaint when a world verb folds
   // …and the Build panel's saved blueprints when a record is published
   const WORLD_KEYS = new Set(['sky', 'terrain', 'grass', 'blueprints'])

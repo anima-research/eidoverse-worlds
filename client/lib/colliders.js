@@ -118,7 +118,7 @@ function bucketAdd(id, entry) {
   entry.cells = [];
   const x0 = Math.floor((obj.position.x - r) / CELL), x1 = Math.floor((obj.position.x + r) / CELL);
   const z0 = Math.floor((obj.position.z - r) / CELL), z1 = Math.floor((obj.position.z + r) / CELL);
-  // a box whose cell span is absurd (misread scale, corrupt bbox) once OOM-killed the agent process: refuse the box,
+  // a box whose cell span is absurd (misread scale, corrupt bbox) would fill memory with cells: refuse the box,
   // keep the process. Same bucketRemove contract as a normal entry (no cells).
   const spanX = x1 - x0 + 1, spanZ = z1 - z0 + 1;
   if (spanX * spanZ > 4096) {

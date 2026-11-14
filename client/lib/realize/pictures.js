@@ -305,7 +305,7 @@ registerHandler('comp', (id, _obj, k, _v, opts) => {
   uploadThenFace(id); return true;
 });
 // Add Component › Picture on a MODEL hangs it on the model's front face, as its own child (facemedia.js), not on the
-// model's origin inside it. On an empty it is that thing's own quad, as before.
+// model's origin inside it. On an empty it is that thing's own quad.
 async function uploadThenFace(id) {
   const fm = await import('../facemedia.js');
   if (!fm.frontOf(id)) return uploadThenSet(id, 'picture.src');

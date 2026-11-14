@@ -123,7 +123,7 @@ function paintRoles(body) {
     + (edit && r.custom ? `<select class="rp-above" data-r="${esc(r.id)}" title="place it above…">${roles.filter((x) => x.id !== r.id && x.id !== 'owner').map((x) => `<option value="${esc(x.id)}" ${R.rolesOf(wc()).find((y) => y.rank < r.rank)?.id === x.id ? 'selected' : ''}>above ${esc(x.name)}</option>`).join('')}</select><button type="button" class="rp-x" data-del="${esc(r.id)}" title="delete ${esc(r.name)}">×</button>` : '') + '</th>';
   const holders = (r) => { const ids = holdersOf(r.id); if (!ids.length) return '';
     return `<div class="rp-holders"><b>${esc(r.name)}</b>: ${ids.map((id) => `<span class="rp-holder">${esc(personName(id))}${grant && (isOwner() || (rankOfId(id) < me().rank && r.rank < me().rank)) && r.id !== 'owner' ? ` <select class="rp-change" data-who="${esc(id)}"><option value="">change ▸</option>${R.grantableRoles(wc(), { ...me(), permissions: me().permissions }).filter((x) => x.id !== r.id && x.id !== 'owner').map((x) => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('')}<option value="::remove">remove (default role)</option></select>` : ''}${timeOf(id, r, grant)}</span>`).join(' · ')}</div>`; };
-  // a timed grant (upstream #258): picking a time restarts it from now, "no end" makes it permanent; ownership never ends
+  // a timed grant: picking a time restarts it from now, "no end" makes it permanent; ownership never ends
   const timeOf = (id, r, may) => { const u = wc()[`roles:${id}`]?.until; const left = Number.isSafeInteger(u) ? ` <span class="rp-dim">(${esc(leftWords(u, serverNow()))})</span>` : '';
     if (!may || r.id === 'owner' || !(isOwner() || (rankOfId(id) < me().rank && r.rank < me().rank))) return left;
     return `${left} <select class="rp-until" data-who="${esc(id)}"><option value="">ends ▸</option><option value="never">no end</option><option value="3600000">in 1 hour</option><option value="86400000">in 1 day</option><option value="604800000">in 1 week</option></select>`; };
@@ -190,7 +190,7 @@ function deleteRole(rid, body) {
   body.querySelector('.rp-actions').before(box);
   box.querySelector('.pm-cancel').onclick = () => box.remove();
   box.querySelector('.pm-go').onclick = () => { const to = box.querySelector('select').value;
-    const ops = [...ids.map((id) => ({ verb: 'set', args: { id: '@world', component: `roles:${id}`, value: { role: to }, merge: true } })),   // they hold the role, so each entry exists: keep its exceptions (K3)
+    const ops = [...ids.map((id) => ({ verb: 'set', args: { id: '@world', component: `roles:${id}`, value: { role: to }, merge: true } })),   // they hold the role, so each entry exists: keep its exceptions
       ...(wc()['default-role']?.role === rid ? [{ verb: 'set', args: { id: '@world', component: 'default-role', value: { ...wc()['default-role'], role: to } } }] : []),
       { verb: 'set', args: { id: '@world', component: 'role-defs', value: d } }];
     act('batch', { requests: ops, label: `delete role ${rid}` }, `move ${ids.length} to ${to} and delete ${rid}`).then(() => paintRoles(body)); };

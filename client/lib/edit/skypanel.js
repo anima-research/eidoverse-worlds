@@ -54,7 +54,7 @@ export function paintSky(body) {
     }
     const parts = [];
     if (a.system === 'skymesh') parts.push('basic sky');
-    // what actually drives the sun: no tz follows Los Angeles, and a tz that doesn't resolve leaves the parked clock
+    // what actually drives the sun (shared/forecast.js effectiveClock): a tz is the wall clock; one that doesn't resolve leaves the authored hours/rate
     const ec = effectiveClock({ ...a, ts: L.t0 }, serverNow());
     if (ec.mode === 'real') parts.push(`real clock (${ec.tz})`);
     else {
@@ -63,7 +63,7 @@ export function paintSky(body) {
         + `${ec.mode === 'rated' ? ' (running)' : ''}${ec.requestedTz ? ` (tz ${ec.requestedTz} not recognised)` : ''}`);
     }
     if (a.weather) parts.push(a.weather);
-    // the detailed sky builds cumulus for a log with no (or an unknown) clouds value (sky.js makeSky), so say that
+    // the detailed sky builds cumulus for a log with no (or an unknown) clouds value (sky.js buildSky), so say that
     const basic = a.system === 'skymesh';
     const clouds = basic ? a.clouds : (CLOUDS.includes(a.clouds) ? a.clouds : 'cumulus');
     if (clouds) parts.push(`clouds ${clouds}`);

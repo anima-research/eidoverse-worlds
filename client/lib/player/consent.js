@@ -11,14 +11,14 @@ export const GATE_WORDS = {
   touch: { label: 'Allow being posed and touched', tip: 'Whether other people may put their hands on you (anywhere, intimate places included) or pose your body. Off by default.' },
 };
 
-// the keys before it, read by readStored and never written: main's two (ew-pushable, ew-posable), the body switch (ew-body-switch)
+// the keys before it, read by readStored: main's two (ew-pushable, ew-posable; save still mirrors the gates into them) and the body switch (ew-body-switch)
 export const KEY = 'ew-body-consent';
 const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } };
 const lsDel = (k) => { try { localStorage.removeItem(k); } catch { /* private mode */ } };
 const plainList = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).filter(([id, n]) => typeof id === 'string' && typeof n === 'string')) : {});
 
-/** Stored: {move?, touch?, allow: {id: name}, block: {id: name}, queue: [{op, id, name, at, world, acked}]}; a gate absent = never chosen.
+/** Stored: {v, move?, touch?, notice?, opened?: {gate: world}, allow: {id: name}, block: {id: name}, queue: [{op, id, name, at, world, acked}]}; a gate absent = never chosen.
  *  Older keys are carried in by readStored, never wider (Touch me stays off and `notice` is set when main's posable can't carry). */
 /** what a person whose old "allow posing" couldn't carry over is told, once (takeNotice) */
 export const TOUCH_NOTICE = "Your old \u201callow posing\u201d setting couldn't carry over: Allow being posed and touched now covers being touched, intimate places included, as well as being posed, so it is off. To turn it on, open Settings ▸ body and tick Allow being posed and touched.";

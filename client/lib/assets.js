@@ -273,7 +273,7 @@ export async function loadVRM(libPath, { priority = 1 } = {}) {
       const vrm = gltf.userData.vrm;
       // every bone's rest before anything writes it (avatar.js _rawRest): the skeleton pass drops unweighted joints
       vrm.userData ??= {};
-      vrm.userData.boneRest = Object.create(null);   // keyed by node name: constructor or __proto__ is a bone like any other (#297)
+      vrm.userData.boneRest = Object.create(null);   // keyed by node name: a bone named constructor or __proto__ is a bone like any other
       vrm.scene.traverse((o) => {
         if (o.isBone && o.name && !(o.name in vrm.userData.boneRest)) {
           vrm.userData.boneRest[o.name] = { q: o.quaternion.toArray(), p: o.position.toArray(), s: o.scale.toArray() };
