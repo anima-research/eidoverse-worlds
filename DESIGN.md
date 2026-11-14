@@ -111,8 +111,9 @@ The registry holds about fifty components. The building blocks most behaviour is
   `script`). A
   pendulum `impulse` is closed-form and velocity-matched — pushing against
   the swing does little, pushing with it builds.
-- **`grabbable` / `physics`** — a thing a hand can carry, and a thing that
-  falls and flies when the world runs physics.
+- **`collider`, `grabbable` / `physics`** — what a body can stand on or
+  bump into, a thing a hand can carry, and a thing that falls and flies
+  when the world runs physics.
 - **`climb`, `openable`, `drive`** — a route a body can climb, a thing that opens,
   a thing you can steer. Each is authored data the client reads; none is code.
 
