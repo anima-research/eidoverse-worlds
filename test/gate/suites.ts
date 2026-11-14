@@ -16,6 +16,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["gov-reserved", "protocol/gov-reserved-check.ts", 1],
   ["freeze", "protocol/freeze-check.ts", 1],       // docs/decisions/LOG-VOCABULARY.md §F: feature declarations, provenance, the hello order, a key is not admission, custody read-only (F22–F31, P3) // governance is RESERVED; the server refuses to serve a log holding a `sequencer` entry, truthfully
   ["diffcheck", "gate/diffcheck.ts", 1],
+  ["stub-guard", "harness/stub-test.ts", 1], // a test stub that never applied, or applied to an import naming no file (a stale path after a move), fails its run
   ["hygiene", "gate/hygiene-check.ts", 1],       // patterns that broke the gate site by site (Windows paths, sh -c, symlinks, fixed sleeps), refused as a class; debt only goes down        // the range is clean under `git diff --check`; two documented exemptions only
   ["paths", "gate/paths-check.ts", 1],          // every repo path a tracked doc, script or comment cites resolves (CONTRIBUTING "Style")
   ["body-state-bundle", "mcpl/body-state-bundle-test.ts", 1], // the built MCP entry points carry body_state and none of the test rig, corpus scanner or fixture paths
