@@ -9,8 +9,10 @@
 import { noWorldUrl } from "../harness/no-world.ts";
 import { WorldAgent } from "../../mcpl/agent.ts";
 import { supportHolders } from "../../mcpl/physics.ts";
+import { tryUntil, pause } from "../gate/wait.ts";
 import { suite } from "../gate/suite.ts";
-const registered = async (bid: string) => { for (let i = 0; i < 300 && !supportHolders()[bid]; i++) await new Promise((r) => setTimeout(r, 50)); return !!supportHolders()[bid]; };
+// registration is detached and waits for the sim to load (seconds, the first time): wait for the box itself
+const registered = async (bid: string) => !!(await tryUntil(`support ${bid}`, () => supportHolders()[bid], { ms: 15000 }));
 
 const { check, done } = suite("anchor-support");
 
@@ -27,7 +29,7 @@ check("(control) a plain crate registers support", await registered("anchor/crat
 // the same model carrying a structure is only an anchor
 ag.entities.set("cabin", { id: "cabin", model: "crate.glb", pos: [30, 0, 0], yaw: 0, actor: "x", structure: { levels: [{ y: 0, tiles: [[0, 0]] }] } });
 await ag.ground.syncSupport("cabin");
-await new Promise((r) => setTimeout(r, 500));
+await pause("a refused registration has no box to wait for: give a detached one the time it would take", 500);
 check("a structure's anchor registers none", !supportHolders()["anchor/cabin"], JSON.stringify(Object.keys(supportHolders())));
 const on = C.surfaceUnder(30, 0, () => 0);
 check("…so nothing stands 2 m up at the building's origin", on.onto === null && on.y === 0, JSON.stringify(on));
