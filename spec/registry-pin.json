@@ -710,7 +710,7 @@
    "action": "the verb use calls it (sit, lie, ride, stand…): a label; at write it picks the default anim",
    "anim": "what the body holds: a pose or clip by name (an open name: one the body doesn't know is its default); {clip, time?: loop|phase, offset?}; or a blend {by: <signal>, clips: [[key, clip], …], time?, offset?}",
    "anchor": "the body point that lands on the socket: root (where every seat put a body), hips, feet, head, or surface (the body's measured seat contact)",
-   "exit": "where they're set down, [x, y, z] or [x, y, z, yaw] in its host's frame",
+   "exit": "where they're set down, [x, y, z] or [x, y, z, yaw] in its host's frame (yaw in radians about its +y, 0 facing its +z)",
    "leaveBy": "jump | menu | script: how the occupant may leave (script: only when the world lets go; the occupant's escape, a held get-up or a second one, always works)",
    "who": "who may take it: a role id (this rank or above)",
    "input": "{move: 'drive'}: this seat's occupant drives its host (the host's drive); only on a drive station, one per host"
@@ -2153,8 +2153,8 @@
     "max": 100
    },
    "yaw": {
-    "min": -6.283185307179586,
-    "max": 6.283185307179586
+    "min": -6.284185307179587,
+    "max": 6.284185307179587
    }
   },
   "required": [

@@ -44,13 +44,15 @@ humans, an MCPL server for agents, a headless batch renderer as the film crew.
 Requires [Bun](https://bun.sh). Assets (models, VRMs, animations) are **not**
 vendored here — point `EIDOVERSE_DIR` at a checkout of
 [anima-research/eidoverse-video](https://github.com/anima-research/eidoverse-video)
-(our fork of [SkyeShark/eidoverse-video](https://github.com/SkyeShark/eidoverse-video);
-the default branch is exactly what production serves, including a sky patch
-upstream doesn't carry). Pristine upstream `main` at
-[`09ffd28`](https://github.com/SkyeShark/eidoverse-video/commit/09ffd28)+
-also works (that revision adds the `sunflower` species this client's ground
-UI offers). The vegetation engine itself is client code, in
-`client/lib/vegetation/`.
+(our fork of [SkyeShark/eidoverse-video](https://github.com/SkyeShark/eidoverse-video),
+carrying a sky patch upstream doesn't). The fork's default branch,
+`prod-serving`, split from upstream before
+[`d041223`](https://github.com/SkyeShark/eidoverse-video/commit/d041223), so it
+lacks the five `eidoverse/assets/grass/sunflower_*` maps and the ground panel's
+"sunflower field" fails to plant. Copy those five files from upstream `main` into
+`$EIDOVERSE_DIR/eidoverse/assets/grass/`, or use upstream `main` at `d041223` or
+later (which has them, but not the sky patch). The vegetation engine itself is
+client code, in `client/lib/vegetation/`.
 
 ```sh
 bun run setup                                      # installs the root's and the client's dependencies

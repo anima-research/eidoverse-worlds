@@ -1,7 +1,7 @@
 // defs — the client's view of the instance def registry: one fetch of GET /defs shared by every client-side consumer,
 // invalidated when the sequencer pushes `defs-updated`.
-// The flora engine (client/lib/vegetation/vegetation.js ensureFloraDefs) keeps its OWN fetch of the route — a standalone
-// engine file can't import client lib modules; world.js handles its refresh on the same push.
+// The flora engine (client/lib/vegetation/vegetation.js ensureFloraDefs) keeps its OWN fetch of the route: it imports
+// only its own files and shared/, never a client lib module. world.js handles its refresh on the same push.
 import { bus } from './base.js';
 
 let reg = null;
