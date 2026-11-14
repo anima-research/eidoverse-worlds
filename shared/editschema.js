@@ -212,7 +212,7 @@ const HAND = {
       else if (['roughness', 'metalness', 'opacity', 'emissiveStrength'].includes(fk)) {
         const t = String(raw ?? '').trim(); const hi = fk === 'emissiveStrength' ? 20 : 1;
         if (!t) delete next[fk]; else { const n = Number(t); if (!Number.isFinite(n) || n < 0 || n > hi) { errors.push(`material.${fk}: a number from 0 to ${hi}, or blank`); return; } next[fk] = round(n, 3); } }
-      else { errors.push(`${key}: no such field`); return; }
+      else { errors.push(`material.${fk}: no such field`); return; }
       comps.set(ck, next);
     },
   },

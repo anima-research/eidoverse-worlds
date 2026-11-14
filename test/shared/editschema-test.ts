@@ -349,6 +349,8 @@ console.log("\nMaterial, the draft hesperus/material (docs/contributing/COMPONEN
   const gone = { ...plain, "hesperus/material:old-paint": { color: 0xff0000 } };
   const gf = inspectSchema(gone, "m1", two).groups.find((g: any) => g.group === "hmat").fields;
   check("an override for a material the model no longer has says so, and can be removed", gf.some((f: any) => /no such material/.test(f.value ?? "")) && editOps(gone, "m1", { "hmat.slot|old-paint|reset": true }, two).ops.length === 1);
+  let info: any; try { info = editOps(gone, "m1", { "hmat.slot|old-paint|gone": "x" }, two); } catch (e) { info = { threw: String(e) }; }
+  check("a Material row that holds no value (the 'no such material' note) is refused as 'no such field', naming it, not thrown", !info.threw && !info.ops?.length && /material\.gone: no such field/.test(info.errors?.[0] ?? ""), JSON.stringify(info));
   const ms = inspectSchema(ov, "m1", live).sections.list.filter((x: any) => x.title === "Material");
   check("with an override there is ONE Material card (the override's), removable", ms.length === 1 && ms[0].removable && ms[0].key === "hesperus/material");
 }
