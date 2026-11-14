@@ -601,7 +601,8 @@ const postAuth = (port, token) => fetch(`http://127.0.0.1:${port}/auth`, { metho
     "SA2 a directory account outside the shapes is refused (nobody wears it) and named at boot, and kept on disk", { res, out: out.slice(-400) }); }
 { const SF = path.join(root, "sa-sessions.json"), sid = "c".repeat(64), exp = Date.now() + 3600_000;
   fs.writeFileSync(SF, JSON.stringify({ [sid]: { sub: "agent:token:rowan", name: "Notrowan", scopes: ["worlds:join"], exp } }));
-  const S6 = await start({ SESSIONS_PATH: SF }); const log = bootErr(S6);
+  const S6 = await start({ SESSIONS_PATH: SF });
+  const log = (await tryUntil("the boot log names the refused session", () => { const t = bootErr(S6); return /1 session\(s\) refused/.test(t) ? t : null; }, { ms: 5000 })) ?? bootErr(S6);   // the line can land after start() under load
   const s = await sock(S6.port, { cookie: `ew_sess=${sid}` }); const j = await s.join("garden", "Rowan");
   ok(!S6.dead && !j.snapshot && /reserved agent name/.test(j.errors.join(" ")), "SA3 a session whose sub isn't human:… proves nobody (here: not the enrolled Rowan)", [j.snapshot?.you, j.errors]);
   ok(/1 session\(s\) refused/.test(log) && /Notrowan/.test(log) && !!JSON.parse(fs.readFileSync(SF, "utf8"))[sid], "SA3 …it is named at boot and kept on disk", log.slice(-300));
