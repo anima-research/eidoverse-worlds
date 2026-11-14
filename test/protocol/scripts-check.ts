@@ -186,9 +186,9 @@ const TREE = path.resolve(opt("tree") ?? ENGINE) + "/";
 const tryImport = async (p: string) => { try { return await import(p); } catch (e) { if (!argv.includes("--expect-absent")) throw e; return null; } };
 const D = await import(TREE + "shared/protocol/authority.js");
 const SD = await import(TREE + "shared/protocol/authority/scripts.js");   // the duty log and constants (I7 calibrates from them)
-D.fixtureIds?.(true);   // the fixtures below seed the ids they read (R 10-17: a writer never chooses one; ids-check covers the refusal)
+D.fixtureIds?.(true);   // the fixtures below seed the ids they read (a writer never chooses one; ids-check covers the refusal)
 const F = await import(TREE + "shared/protocol/fold.js");
-const STOR = await import(TREE + "shared/protocol/authority/storage.js");   // CHANGE: B25 stores an old spelling as an old log holds it
+const STOR = await import(TREE + "shared/protocol/authority/storage.js");   // B25 stores an old spelling as an old log holds it
 const SB = await tryImport(TREE + "shared/protocol/sandbox.js");
 const AU = await tryImport(TREE + "shared/protocol/scriptaudit.js");
 const ONLY = opt("only")?.split(",") ?? null;
@@ -341,7 +341,7 @@ const cases: Case[] = [
     good: (o) => o.r === "refused scope" && o.a === null && o.b === null && o.scripted === 0 },
   { id: "B5", what: "41 #6 the heart: a 5 s timer re-asserting one light, 2 h simulated, nobody present: 0 entries, asleep; `always` and already lit: still 0 (elided)", run(s) { cast(s);
       if (!D.tick) return { absent: true };
-      const LIT = { kind: "point", color: 16711680, intensity: 1, range: 6, decay: 2 };   // shadows was cut (shape audit 10-16)
+      const LIT = { kind: "point", color: 16711680, intensity: 1, range: 6, decay: 2 };
       s.call("bob", "create", { id: "lamp", components: { label: "lamp", transform: { pos: [0, 0, 0] } } }); s.call("olive", "create", { id: "lamp2", components: { label: "lamp2", light: LIT, transform: { pos: [2, 0, 0] } } });
       const HEART = `world.on("tick", () => world.set("self", "light", ${JSON.stringify(LIT)}));\nworld.on("wake", () => world.set("self", "light", ${JSON.stringify(LIT)}));\n`;
       install(s, "bob", "lamp", "heart", HEART, { scope: { ids: "self", comps: ["light"] }, every: 5 });
@@ -656,7 +656,7 @@ const cases: Case[] = [
       fs.writeFileSync(f, `import { runScript } from ${JSON.stringify(TREE + "shared/protocol/sandbox.js")};
 const r = runScript({ self: "b", key: "script:x", now: 1800000000000, seed: "ab".repeat(32), st: { entities: { b: { born: 1, c: {} } } }, event: { on: "use" },
   text: 'world.on("use", () => { const d = new Date(); world.set("self", "t/t", [d.getHours(), d.getTimezoneOffset(), String(d), Date(), new Date(2020, 0, 1).getTime(), Date.parse("2020-01-01T00:00"), new Date("2020-01-01 12:30").getTime(), d.toLocaleString(), d.toTimeString()]); })' });
-console.log(JSON.stringify(r.ops?.[0]?.value ?? r)); process.exit(0);\n`);   // done: exit (windows-latest held a finished bun child to the suite's 240 s, 10-29)
+console.log(JSON.stringify(r.ops?.[0]?.value ?? r)); process.exit(0);\n`);   // exit explicitly: a finished bun child can otherwise hold the suite open on Windows
       const out = (tz: string) => { const r = Bun.spawnSync(["bun", f], { env: { ...process.env, TZ: tz, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, timeout: 30_000 }); return r.stdout.toString().trim() || `(no output: exit ${r.exitCode} signal ${r.signalCode})`; };
       return { utc: out("UTC"), tokyo: out("Asia/Tokyo") }; },
     good: (o) => o.utc.startsWith("[8,0,") && o.utc === o.tokyo },
@@ -675,7 +675,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r)); process.exit(0);\n`);   // 
       D.setScriptConfig(was);
       return { ear, earWhy, mill }; },
     good: (o) => JSON.stringify(o.ear) === '["nothing","nothing","nothing","nothing","nothing","refused","refused","refused"]' && /ran 5 times/.test(o.earWhy)
-      && /this server's limit/.test(o.earWhy) && !/script-settings/.test(o.earWhy)   // review of #260: runs is the server's, so the refusal names no owner field
+      && /this server's limit/.test(o.earWhy) && !/script-settings/.test(o.earWhy)   // runs is the server's, so the refusal names no owner field
       && cpuCapped(o.mill, 25) && /ann's scripts used \d+ ms of the authority's time in the last minute; at most 25/.test(o.mill.why)
       && /which the world's owner sets in @world\.script-settings\.cpu/.test(o.mill.why) },
   { id: "B23b", what: "a cpu refusal says whose limit it is: this server's when the owner set none, and this server's ceiling over the owner's value when it lowered theirs", run(s) { cast(s);
@@ -803,12 +803,12 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r)); process.exit(0);\n`);   // 
       const put = (ops: any[]) => { const rb = s.call("olive", "batch", { requests: ops }, 11000);
         if (!rb?.ok && rb?.refused?.code === "too-costly" && ops.length > 1) { refusedBatches.push(`split ${ops.length}`); put(ops.slice(0, ops.length >> 1)); put(ops.slice(ops.length >> 1)); }
         else if (!rb?.ok) refusedBatches.push(show(rb)); };
-      for (let b = 0; b < 30; b++) put(Array.from({ length: 100 }, (_, i) => ({ verb: "create", args: { id: `t${b}-${i}`, components: { "t/data": { xs: big } } } }))); // each batch alone in the 10 s byte window: the charge is PRE-paid since C0 (10-15), so 6 s steps held two batches and tripped the cap
+      for (let b = 0; b < 30; b++) put(Array.from({ length: 100 }, (_, i) => ({ verb: "create", args: { id: `t${b}-${i}`, components: { "t/data": { xs: big } } } }))); // each batch alone in the 10 s byte window (the charge is pre-paid, so two batches in one window trip the cap)
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "box", "heavy", HEAVY, { scope: { ids: "self", comps: ["t/n", "t/m"] }, on: ["use"] });
       s.call("bob", "set", { id: "box", component: "reactions", value: { go: { kind: "script", script: "heavy" } } });
       // the same script on an empty world, on this host, now: what the run costs without any world to copy. A whole-world
-      // copy per write (the mutants below) costs ~32 copies of 3000 x 300 numbers, far past the bound (4.1: at 1500 a mutant ran in 213 ms, under the old 400 ms floor)
+      // copy per write (the mutants below) costs ~32 copies of 3000 x 300 numbers, far past the bound
       const s0 = session(); cast(s0); s0.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
       install(s0, "bob", "box", "heavy", HEAVY, { scope: { ids: "self", comps: ["t/n", "t/m"] }, on: ["use"] });
       s0.call("bob", "set", { id: "box", component: "reactions", value: { go: { kind: "script", script: "heavy" } } });
@@ -836,9 +836,9 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r)); process.exit(0);\n`);   // 
       s2.call("olive", "create", { id: "cup", model: "crate", place: { at: [0, 0] } });
       install(s2, "olive", "cup", "go", onUse(`world.set("self", "t/n", 1);`), { scope: { ids: "self", comps: ["t/n"] }, on: ["use"] });
       s2.call("olive", "set", { id: "cup", component: "reactions", value: { go: { kind: "script", script: "go" } } });
-      // calibrated, not guessed (Mica r3 on 0ff8bcad: on a fast host 30 fixed-size activations never filled a world's
-      // share, {"ranA":30,"busyA":0}, so the row couldn't tell fair from unfair). World A's own storm runs once with the
-      // duty wide open; the median activation cost HERE sizes the budget so A's share holds about four, on any host.
+      // calibrated, not guessed (on a fast host a fixed count never fills a world's share, so the row couldn't tell fair
+      // from unfair). World A's own storm runs once with the duty wide open; the median activation cost HERE sizes the
+      // budget so A's share holds about four, on any host.
       D.setScriptDuty({ maxMs: 1e9 }); s.call("vic", "say", { text: "grind" });
       const costs = SD.dutyLog.map((d: any) => d.ms).sort((x: number, y: number) => x - y);
       if (costs.length < 20) return { calibration: `only ${costs.length} of 30 activations measured` };
@@ -1168,9 +1168,9 @@ console.log(JSON.stringify({ platform: process.platform, available: SANDBOX.avai
       const rest = s.entries().slice(n0).find((e: any) => e.kind === "change" && e.actor === "sim");
       return { setup: [show(mv), show(gr), show(th)], beats, wrote, rest: !!rest, landed: comp(s, "mat", "t/landed") }; },
     good: (o) => o.setup.every((x: string) => x === "ok") && o.wrote > 0 && o.rest && o.landed?.id === "ball" && o.landed?.by === "vic" },
-  // ---------------- P: params (the one signal store; shape audit 10-16) ----------------
+  // ---------------- P: params (the one signal store) ----------------
   { id: "P1", what: "world.param(id, name, n) writes params.<name> (merged into what's there; a seat pose reads it as param.<name>); a param.<name> key in any other component is refused like any unknown key", run(s) { cast(s);
-      s.call("bob", "create", { id: "swing", components: { label: "swing", transform: { pos: [0, 0, 0] } } });   // a light is its own thing (one place per thing, 10-11): no model here
+      s.call("bob", "create", { id: "swing", components: { label: "swing", transform: { pos: [0, 0, 0] } } });   // a light is its own thing (one place per thing): no model here
       s.call("bob", "set", { id: "swing", component: "light", value: { kind: "point", intensity: 1 } });
       s.call("bob", "set", { id: "swing", component: "params", value: { tilt: 2 } });
       install(s, "bob", "swing", "pump", onUse(`world.param("self", "lean", 0.25); world.param("self", "push", -1);`), { scope: { ids: "self", comps: ["params"] }, on: ["use"] });
@@ -1230,16 +1230,15 @@ console.log(JSON.stringify({ platform: process.platform, available: SANDBOX.avai
       vals.forEach((x, i) => install(s, "bob", "box", `f${i}`, onUse(`world.set("self", "t/n", ${i + 1}); throw ${x};`), { scope: { ids: "self", comps: ["t/n"] }, on: ["use"] }));
       s.call("bob", "set", { id: "box", component: "reactions", value: Object.fromEntries(vals.map((_, i) => [`f${i}`, { kind: "script", script: `f${i}` }])) });
       const out = vals.map((_, i) => { const r = s.call("vic", "use", { id: "box", action: `f${i}` }); return { st: r.script?.status ?? st(s, r), code: r.script?.code ?? null, n: comp(s, "box", "t/n") ?? null }; });
-      // the control: the same script without the throw runs and its write is kept, so a null above is the rollback (house
-      // 6340433633: "not ran" passed a refusal as well as a throw, so the row never showed each throw ran and was rolled back)
+      // the control: the same script without the throw runs and its write is kept, so a null above is the rollback, not a refusal
       install(s, "bob", "box", "fok", onUse(`world.set("self", "t/n", 9);`), { scope: { ids: "self", comps: ["t/n"] }, on: ["use"] });
       s.call("bob", "set", { id: "box", component: "reactions", value: { fok: { kind: "script", script: "fok" } }, merge: true });
       const c = s.call("vic", "use", { id: "box", action: "fok" });
       return { out, control: { st: c.script?.status ?? st(s, c), n: comp(s, "box", "t/n") ?? null } }; },
     good: (o) => o.out.every((x: any) => x.st === "failed" && x.code === "thrown" && x.n === null) && o.control.st === "ran" && o.control.n === 9 },
-  // house 6340433633: run where a host's zone reaches the script, in this process (the Windows path: an isolated child is
-  // started with TZ=UTC) under UTC+14, so the originals would read 2026 (getYear 126) and set 1999-12-31 local: on a UTC host
-  // the row couldn't tell the replacements from the originals
+  // run where a host's zone reaches the script, in this process (the Windows path: an isolated child is started with TZ=UTC)
+  // under UTC+14, so the originals would read 2026 (getYear 126) and set 1999-12-31 local: on a UTC host the row couldn't
+  // tell the replacements from the originals
   { id: "B20c", what: "getYear and setYear are UTC too, like every other local-time method: an activation reads the same year on any host's time zone (run in-process at UTC+14)",
     opts: { scripts: SB?.SANDBOX ? { ...SB.SANDBOX, run: SB.runScript, isolated: () => false } : null }, run(s) { cast(s);
       if (!SB?.SANDBOX) return { absent: true };
@@ -1256,7 +1255,7 @@ console.log(JSON.stringify({ platform: process.platform, available: SANDBOX.avai
       install(s, "bob", "pad1", "p", onUse(`world.pose(e.by, { clip: "wave" });`), { scope: { ids: "self", comps: [], bodies: ["pose"] }, on: ["use"] });
       s.call("bob", "set", { id: "pad1", component: "reactions", value: { go: { kind: "script", script: "p" } } });
       s.call("vic", "move", { to: [0, 0, 1] }); s.call("vic", "consent", { touch: false }); s.call("vic", "consent", { allow: "scripts-by:bob" });
-      const r = st(s, s.call("vic", "use", { id: "pad1", action: "go" })); const posed = s.w().presence.bodies.vic?.poseBy !== undefined;   // who posed you, never the pose (recut A4)
+      const r = st(s, s.call("vic", "use", { id: "pad1", action: "go" })); const posed = s.w().presence.bodies.vic?.poseBy !== undefined;   // who posed you, never the pose
       s.call("vic", "consent", { move: false });
       return { r, posed, after: s.w().presence.bodies.vic?.poseBy !== undefined }; },
     good: (o) => o.r === "ran" && o.posed && o.after },
@@ -1393,7 +1392,7 @@ console.log(JSON.stringify({ platform: process.platform, available: SANDBOX.avai
       const named = s.call("vic", "use", { id: "gong", action: "chime" }), bare = s.call("vic", "use", { id: "gong" }), plain = s.call("vic", "use", { id: "rock", action: "chime" });
       return { named: code(named), why: named.refused?.reason, fix: named.refused?.fix, bare: code(bare), plain: code(plain) }; },
     good: (o) => o.named === "no-runtime" && /main's behaviour 'chimer'/.test(o.why ?? "") && /re-install it as script:chimer/.test(o.fix ?? "") && o.bare === "no-runtime" && o.plain === "no-action" },
-  // ---------------- Q: a stored rotation is a unit quaternion, whoever writes it (review of #260) ----------------
+  // ---------------- Q: a stored rotation is a unit quaternion, whoever writes it ----------------
   { id: "UQ1", what: "a script's set of a transform with a scaled q stores the unit rotation, and the auditor's re-run agrees with the log", run(s) { cast(s);
       s.call("bob", "create", { id: "vane", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "vane", "turn", onUse(`world.set("self", "transform", { pos: [0, 0, 0], q: [0, 0, 0.5, 0.5], scale: [1, 1, 1] });`), { scope: { ids: "self", comps: ["transform"] }, on: ["use"] });
@@ -1510,7 +1509,7 @@ const serverCases: Case[] = [{ id: "S1", server: true, what: "the server: a worl
     // for the next second and asks again (nothing was written by the refused one, so rung stays exact)
     let ring: any, ringBusy = 0;
     for (;;) { ring = await bob.req("use", { id: "bell1", action: "ring" }); if (ring.script?.code !== "busy" || ringBusy >= 10) break; ringBusy++; await pause("the next second of script duty", 1100); }
-    const B1 = IDS.of("bell1");   // the id the authority minted for the suite's bell1 (R 10-17)
+    const B1 = IDS.of("bell1");   // the id the authority minted for the suite's bell1
     const readWorld = () => { const L = F.readLog(fs.readFileSync(path.join(W4, "chimes", "world.jsonl"))); const st = F.fold(L).entities[B1]?.c ?? {};
       return { L, st0: st, tickActs: L.filter((e: any) => e.kind === "request" && e.actor === `script:${B1}` && e.body?.on === "tick").length }; };
     // two 5 s periods on the server's 1 s clock (the first only arms the timer): at least 11.5 s, then up to 30 s more on a

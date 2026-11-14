@@ -38,7 +38,7 @@ export type Client = {
   auth?: HnSession;    // archipelago-home session bound at WS upgrade (verified human)
   sub?: string;        // durable principal id when authenticated (`human:discord:…`)
   superseded?: boolean; // kicked by identity takeover — don't let its stale pose overwrite the successor's
-  // roles S4: what the sanctions sweep (server.ts sanctionSweep) last applied to this connection
+  // what the sanctions sweep (server.ts sanctionSweep) last applied to this connection
   sfuMuted?: boolean; sanctionKey?: string;
   tokenVerified?: boolean; // this leg presented the identity's own bearer at join
   trustedRenderer?: boolean; // a renderer that presented RENDERER_TOKEN: may watch any world (access.ts)
@@ -115,9 +115,8 @@ export class World {
       c.lastPose = p as Client["lastPose"]; this.dirty.set(c.id, p);   // the next frame carries the pose without the hand
     }
   }
-  /** Speech is arrival-only: the log keeps every say, people receive speech only for the time they were present, and only
-   *  whoever holds readChat (owners always) reads it back (AGENTS.md catch_up). */
-  /** who reads speech back past their own arrival: whoever holds the readChat permission (owners hold every one) */
+  /** Speech is arrival-only (PROTOCOL §5): the log keeps every say, people receive speech only for the time they were
+   *  present, and only whoever holds the readChat permission (owners hold every one) reads it back past their arrival. */
   isAdmin(c: Client): boolean { return !!c.actorId && this.log.may(c.actorId, "readChat"); }
   /** The log seq at or below which this identity may not read a say back: null for an admin (no floor), else the
    *  earliest arrival among its connections here now; nobody here under it = Infinity (every say hidden). */
@@ -216,7 +215,7 @@ export function worldExists(name: string): boolean {
  *  second World over one log is a second authority: a name is served in its own case only. */
 export function worldDirNamed(name: string): boolean {
   if (!existsSync(join(WORLDS_DIR, name))) return false;
-  const now = Date.now();   // the listing is kept 5 s; a miss re-lists, so a new world is known at once (was routes.ts knownWorld)
+  const now = Date.now();   // the listing is kept 5 s; a miss re-lists, so a new world is known at once
   if (now - dirsAt > 5000 || !dirs.has(name)) { try { dirs = new Set(readdirSync(WORLDS_DIR)); } catch { dirs = new Set(); } dirsAt = now; }
   return dirs.has(name);
 }

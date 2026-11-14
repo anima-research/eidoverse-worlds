@@ -1,4 +1,4 @@
-// server/directory.ts — who an identity is (spec/PROTOCOL.md §2.3: the identity → person mapping lives outside the log).
+// server/directory.ts — who an identity is (spec/PROTOCOL.md §3.1: the identity → person mapping lives outside the log).
 // Every actor a log names is an opaque id, `u-` + 20 base32 characters, minted here. The person's display name and accounts
 // live in this file (0600, never logged), so a role is held by an id reached only through its account, forgetting a person
 // is deleting their entries here, and one account has one id server-wide. A world's slice (exportSlice) travels with the world.
@@ -22,15 +22,13 @@ const B32 = "abcdefghijklmnopqrstuvwxyz234567";
 export const idOfBytes = (bytes: Uint8Array) => "u-" + Array.from(bytes.subarray(0, 20), (b) => B32[b & 31]).join("");
 export const mintId = () => idOfBytes(crypto.randomBytes(20));
 export const isMinted = (s: string) => /^u-[a-z2-7]{20}(?:[a-z2-7]{4})?$/.test(s);
-// the ONE shape of an id: an id is a person, never a world, a name or a kind (PROTOCOL §6a rule 2); a portable identity binds to
-// an id (bind; later an alias merge, with portable identity), it does not replace it. Minted here, and by import-v1/world.ts for an old log.
+// the ONE shape of an id: a person, never a world, a name or a kind (PROTOCOL §6a rule 2). Minted here, and by import-v1/world.ts for an old log.
 /** The account prefixes above (only the prefix is checked); a stored account with none of them is refused at boot (named, kept on disk), never worn. */
 export const ACCOUNT_SHAPE = /^(human|agent:token|aid1|local):/;
 /** The tag a display name takes when another account wears it: stable per account, and carries none of it (a hash, not its digits). */
 export const accountTag = (sub: string) => sha256(`eidoverse-name-tag:${sub}`).slice(0, 4);
 
-/** `existingWorlds`: the world ids already in this server, read only on the one-time v1 → v2 upgrade (they keep their
- *  server-wide ids). */
+/** `existingWorlds` is accepted but no longer read: the v1 → v2 upgrade keeps every id server-wide without it. */
 export function directoryAt(file: string, now: () => number = Date.now, existingWorlds: () => string[] = () => []) {
   const read = (): File => (fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : { v: 2, ids: {} });
   const d: File = read();
@@ -53,8 +51,8 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
   // two writers (the CLI tools and a running server) share this file: re-read and merge before every write, so neither
   // drops the other's entries. Ours win on a clash (the same id can only be minted by one of them).
   const tomb = new Set<string>();   // ids this process forgot (forgetPlanned): the merge below must not bring them back from disk
-  // an account another writer bound to an id this process holds (tools/operator/operator-bind.ts, the server running): a bind only
-  // adds, so it is taken, never written over; an account this process already gives another id stays that id's
+  // an account another writer bound to an id this process holds (tools/operator/operator-bind.ts): a bind only adds, so it is
+  // taken, never written over; an account this process already gives another id stays that id's
   const takeBinds = (id: string, e: Entry) => { const mine = d.ids[id]; if (!mine || !Array.isArray(e?.subs)) return;
     // a rename another writer made since (newer renamedAt): its name is taken, not written over
     if ((e.renamedAt ?? 0) > (mine.renamedAt ?? 0)) { mine.name = e.name; mine.renamedAt = e.renamedAt; }
@@ -83,9 +81,8 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
   /** …claimed by an account other than `sub`: an account-holder may not appear under a name another account wears here */
   const claimedByOther = (name: string, sub: string): boolean => { fresh(); const k = foldName(name); for (const e of Object.values(d.ids)) if (e.subs.length && !e.subs.includes(sub) && foldName(e.name) === k) return true; return false; };
   return {
-    /** The id for a connection in a world: its account's id there (minted on first sight; the display name kept
-     *  current), or, with no account, a fresh anonymous id held in memory only. `world` is the world's id (its
-     *  genesis hash); without it the id is server-wide (tools, tests, legacy worlds). */
+    /** The id for a connection: its account's id (minted on first sight; the display name kept current), or, with no
+     *  account, a fresh anonymous id held in memory only. Ids are server-wide: `world` is ignored (keyOf). */
     resolve({ sub, name, world = null }: { sub?: string | null; name: string; world?: string | null }): string {
       if (sub) { let id = byKey.get(keyOf(sub, world)); if (id) { if (d.ids[id].name !== name) { d.ids[id].name = name; save(); } return id; }
         // a miss re-reads, and mints, holding the file's lock: two writers that both missed can't mint two ids for one account
@@ -101,7 +98,7 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
     /** Operator: let an account wear an existing id (e.g. a legacy owner proving who they are) — in that id's world. */
     bind(id: string, sub: string) { locked(() => { refresh(); const e = d.ids[id]; if (!e) throw new Error(`no identity ${id}`);
       const k = e.world ? `${sub}|${e.world}` : sub;
-      // one account, one id: joining two ids into one person is an alias merge, coming with portable identity
+      // one account, one id: joining two ids into one person is an alias merge, not a bind
       const prev = byKey.get(k); if (prev && prev !== id) throw new Error(`${sub} already wears ${prev}${e.world ? " in that world" : ""}: merging two identities into one person is an alias (coming with portable identity), not a bind`);
       if (!e.subs.includes(sub)) e.subs.push(sub); if (e.kind === "imported") e.kind = "account"; byKey.set(k, id); save(); }); },
     /** the id an account already wears in a world, if any (read-only: the translator plans before it writes) */

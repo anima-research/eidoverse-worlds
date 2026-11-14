@@ -46,7 +46,7 @@ function bodyRefusal(c: Client, tc: Client, cls: "shove" | "pose" | "displace"):
     if (!(m <= r)) return `${tc.id} is ${m.toFixed(1)} m away (this world's range is ${r} m) — get closer`;
   }
   const d = consentDecide(live.presence, c.actorId, tc.actorId, cls, liveBodyDefault(live));
-  if (d.mode === "deny") { c.world.log?.noteRefused(c.actorId, tc.actorId, cls); return refusalWords(tc.id, cls); }   // one sentence whatever the cause (a closed gate, a block): the real cause is theirs, not yours; they are told (once per asker per cooldown)
+  if (d.mode === "deny") { c.world.log?.noteRefused(c.actorId, tc.actorId, cls); return refusalWords(tc.id, cls); }   // one sentence whatever the cause: the real cause is the target's; they are told (once per asker per cooldown)
   return null;
 }
 function presenceTarget(w: World, actor: unknown, name: string, embodied = true): { tc: Client | null; byActor: boolean; actor: string | null } {
@@ -134,7 +134,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // (DESIGN.md), so a puppet is a request the target may honour.
     if (!c.world || c.spectator) return;
     const to = String(msg.target ?? "").slice(0, LIMITS.ID_LEN);
-    const { tc } = presenceTarget(c.world, msg.targetActor, to);   // the identity named, or the name (H2)
+    const { tc } = presenceTarget(c.world, msg.targetActor, to);   // the identity named, or the name
     if (!tc) { ws.send(JSON.stringify({ type: "error", error: `${to || "target"} isn't here to ${msg.ragdoll ? "shove" : "pose"}` })); return; }
     // ragdoll rides as `true` (undirected knock-over, the old wire) or
     // {lean:[x,y,z]} m/s — which way the shove sends them. Sanitize to
@@ -145,7 +145,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       const lean = ((msg.ragdoll as { lean: unknown[] }).lean).map(Number);
       if (lean.length === 3 && lean.every(Number.isFinite)) rag = { lean };
     }
-    // consent and range at the server (L6): a knock-over is a shove, a pose or an animation is a pose
+    // consent and range at the server: a knock-over is a shove, a pose or an animation is a pose
     const why = (rag ? bodyRefusal(c, tc, "shove") : null) ?? (msg.pose || msg.anim ? bodyRefusal(c, tc, "pose") : null);
     if (why) { ws.send(JSON.stringify({ type: "error", error: why })); return; }
     // merge: pose only the bones sent, over what the target already holds.
@@ -179,11 +179,11 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     const raw = String(msg.pose ? JSON.stringify(msg.pose) : "");
     if (raw.length > LIMITS.BODYDRAG_POSE_BYTES) return;      // a pose is tiny; anything else is an attack
     const to = String(msg.target ?? "").slice(0, LIMITS.ID_LEN);
-    const { tc } = presenceTarget(c.world, msg.targetActor, to, false);   // the identity named, or the name (H2)
+    const { tc } = presenceTarget(c.world, msg.targetActor, to, false);   // the identity named, or the name
     if (process.env.BD_DEBUG) console.log(`[bd] ${c.id} -> ${to} (${msg.grab ? "grab" : msg.end ? "end" : "sample"}) ${tc ? "relayed" : `NO TARGET among [${[...c.world.clients].map((o) => o.id).join(",")}]`}`);
     if (!tc) return;                       // dragging the departed: silently moot
     const addressed = { type: "bodydrag", by: c.id, ...(c.actorId ? { byActor: c.actorId } : {}) };
-    // a grab takes someone's body (move, L6): their consent and reach, at the server; the owner decides whether to accept it
+    // a grab takes someone's body (displace): their consent and reach, at the server; the owner decides whether to accept it
     if (msg.grab != null) { const why = bodyRefusal(c, tc, "displace"); if (why) { ws.send(JSON.stringify({ type: "error", error: why })); return; } }
     // a non-grab release ends the drag even after move consent closes; its final sample and nails need live displace consent,
     // so a refused release carries only the end
@@ -230,10 +230,10 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
   },
   // no `rtc` handler: SFU signaling lives in server.ts's switch.
   "attest": ({ c, ws, now, expel }, msg) => {
-    // B1: the per-utterance performance receipt, for the leg's own identity's says. Verified, then broadcast as
+    // The per-utterance performance receipt, for the leg's own identity's says. Verified, then broadcast as
     // `performed` (unlogged); listeners holding local TTS for it skip, and a timeout recovers the fallback.
     if (!c.world) return;
-    // B3: only the voice surface, bound to the identity (token bearer OR the primary's login sub — not tokenVerified alone).
+    // only the voice surface, bound to the identity (token bearer OR the primary's login sub — not tokenVerified alone)
     if (c.surface !== "voice" || c.auxBound !== true) {
       ws.send(JSON.stringify({ type: "error", error: "attest is for the identity's bound voice leg" }));
       return;
@@ -241,7 +241,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     const seq = Number(msg.seq);
     const digest = String(msg.digest ?? "").slice(0, 64);
     if (!Number.isSafeInteger(seq) || !digest) return;
-    // B2: attest under the generation the leg holds now, so a retired leg's receipt isn't relabelled as the live one.
+    // attest under the generation the leg holds now, so a retired leg's receipt isn't relabelled as the live one
     if (msg.gen !== c.gen) {
       ws.send(JSON.stringify({ type: "error", error: "attest surface-generation mismatch" }));
       return;
@@ -277,15 +277,14 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     if (!c.world || (c.spectator && !voiceLeg)) return;
     // state: an allow-listed glyph — ear (I hear you), think (composing), tool (working), mic (live voice)
     const st = typeof msg.state === "string" && ["ear", "think", "tool", "mic"].includes(msg.state) ? msg.state : null;
-    // `to` names someone present (presence is about the people here), or nobody
-    // …by identity when the sender names one (toActor, H2), else by name
+    // `to` names someone present, or nobody: by identity when the sender names one (toActor), else by name
     const tt = presenceTarget(c.world, msg.toActor, typeof msg.to === "string" ? msg.to : "", false).tc;
     c.world.broadcast({ type: "typing", id: c.id, to: tt?.id ?? null, ...(tt?.actorId ? { toActor: tt.actorId } : {}), ...(st ? { state: st } : {}) }, c);
   },
   "drag": ({ c, ws, now, expel }, msg) => {
     // Transient build feedback: presence, never persisted; only the release (`place`) commits (DESIGN.md).
     if (!c.world || c.spectator) return;
-    // the live drag needs the same build right (roles S2) the release does
+    // the live drag needs the same build right the release does
     if (!c.world.log!.rightsOf(actorIdOf(c)).can.build) return;   // the person's directory identity, never their name
     // q: the rotate gizmo turns about any axis (design §5); relayed only when
     // it is a usable quaternion (normalized), so a malformed one is never seen
@@ -335,7 +334,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
   "capture-capabilities": ({ c }, msg) => { if (c.world) screenshots.configure(c, msg.capture); },
   "capture-result": ({ c }, msg) => { screenshots.receive(c, msg); },
   "world-bans": ({ c, ws, now, expel }, msg) => {
-    // Who is banned from this world: for people holding a moderation power here (roles §7); ended bans aren't listed.
+    // Who is banned from this world: for people holding a moderation power here (PROTOCOL §7); ended bans aren't listed.
     if (!c.world) return;
     if (c.world.log) { const e = c.actorId ? c.world.log.rightsOf(c.actorId) : null;
       if (!e || !(isOwner(e) || ["mute", "kick", "ban", "pauseScripts"].some((k) => e.permissions.includes(k)))) { ws.send(JSON.stringify({ type: "error", error: "the ban list is for people who hold a moderation power here" })); return; } }

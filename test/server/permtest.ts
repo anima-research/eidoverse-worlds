@@ -4,9 +4,7 @@
 //
 //   bun test/server/permtest.ts
 //
-// (Protocol v1 removed, 2026-10-07: the v1 rights ladder that was most of this file went with it — the first
-// embodied joiner auto-granted owner, builder/visitor ranks over v1 verbs, grants, the ownerless legacy world. The protocol's
-// roles are the door's @world roles:<id> records: test/protocol/server-check.ts S1/S3, identity-check H4/H5/GN.)
+// Roles (the door's @world roles:<id> records) are tested in test/protocol/server-check.ts and test/protocol/identity-check.ts.
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -27,7 +25,7 @@ const srv = Bun.spawn([process.execPath, join(import.meta.dir, "..", "..", "serv
   stdout: "ignore", stderr: "ignore",
 });
 let up = false;
-// up = the door answers at all: with JOIN_TOKEN set, /worlds is behind the door (401) — public reads are gated since 10-14
+// up = the door answers at all: with JOIN_TOKEN set, /worlds is behind the door (401)
 for (let i = 0; i < 80 && !up; i++) { try { up = (await fetch(`${HTTP}/worlds`)).status < 500; } catch {} if (!up) await sleep(150); }
 
 let passed = 0, failed = 0;

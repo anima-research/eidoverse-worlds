@@ -342,7 +342,7 @@ export function sniffImage(b: Uint8Array): "png" | "jpg" | "webp" | null {
   return null;
 }
 
-/** An image's pixel size from its header (PNG IHDR, JPEG SOFn, WebP VP8/VP8L/VP8X), or null when it can't be read. */
+/** The most pixels an uploaded image may have on a side. */
 export const MAX_IMAGE_PX = 8192;
 /** Why an upload's image is refused for its size: past MAX_IMAGE_PX on a side, or a size its header doesn't give: the cap
  *  holds only if every image's size is known. */
@@ -353,8 +353,8 @@ export function imageSizeRefusal(b: Uint8Array, kind: "png" | "jpg" | "webp"): {
   if (Math.max(dims[0], dims[1]) > MAX_IMAGE_PX) return { status: 413, why: `image is ${dims[0]}×${dims[1]} px; at most ${MAX_IMAGE_PX} on a side (viewers draw it at 2048)` };
   return null;
 }
-/** …a zero on either side is no size either: a 0×0 WebP header, a PNG with width 0
- *  or a JPEG whose height its SOF defers is an image whose size can't be known, so it's refused as one. */
+/** An image's pixel size from its header (PNG IHDR, JPEG SOFn, WebP VP8/VP8L/VP8X), or null when it can't be read. A zero
+ *  on either side (a 0×0 WebP, a JPEG whose SOF defers its height) is no size either. */
 export function imageDims(b: Uint8Array, kind: "png" | "jpg" | "webp"): [number, number] | null {
   const d = headerDims(b, kind);
   return d && d[0] > 0 && d[1] > 0 ? d : null;
