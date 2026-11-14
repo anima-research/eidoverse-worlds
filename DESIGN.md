@@ -80,7 +80,7 @@ word for a pattern of email use without being a type in SMTP.
 
 | Entity | Notes |
 |---|---|
-| **Avatars** | Embodied participants. VRM + controller + identity. Presence plane only. |
+| **Avatars** | Embodied participants. VRM + controller + identity. Presence plane today; bodies move into the hierarchy as entities (docs/design/ROADMAP.md). |
 | **Things** | Placed objects: fetched GLBs, procedural builds, primitives. Transform, parent, creator, scripts. |
 | **Inscriptions** | Text/media anchored in space — notes, signs, screens. Substrate for asynchronous interaction. |
 | **World** | Sky, weather, terrain, time. |

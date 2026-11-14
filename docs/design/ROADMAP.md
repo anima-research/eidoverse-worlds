@@ -3,6 +3,14 @@
 DESIGN.md holds only what is built. These are the ideas it carried that aren't, each with its state. A design doc
 of its own, where one exists, is named.
 
+- **Bodies in the hierarchy.** Everything seen or heard in a world is an entity someone can change from inside it,
+  bodies included. The person (identity, the presence stream) is never logged; the body is an entity tree in the world
+  log while present, its id owned by the person (minted in their wardrobe, not by the world), placed on entering and
+  removed on leaving. Undo is per person: my own acts only, so Ctrl-Z never reaches what someone else did. History is
+  per thing, for everyone with rights on it, and reverting from history goes through the rights gate. Revoking consent
+  stops future acts; what landed stays in history.
+  State: designed and settled (2026-10-13 to 10-17); not built. Bodies are presence-only today.
+
 - **Automata.** Self-animating things (`makeCreature`/`makeBot`): autonomous motion plus a command surface, ownable
   and possessable. State: not started; eidoverse-video has the creature code, nothing here runs it.
 - **Regions as capability scopes.** Named volumes ("the kitchen", a private room) that scope rights and fire
