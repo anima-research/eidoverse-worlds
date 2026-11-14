@@ -17,3 +17,14 @@ try {
     console.log(`PASS ${entry}: no test rig module, corpus scanner or fixture path`);
   }
 } finally { rmSync(out, { recursive: true, force: true }); }
+
+// every mcpl module parses as a strict ES module (Bun's runtime forgives a binding imported twice; Bun.Transpiler and
+// other engines don't)
+{ const { readdirSync, readFileSync } = await import("node:fs");
+  const bad: string[] = [];
+  for (const f of readdirSync("mcpl").filter((n) => /\.ts$/.test(n) && !/-test\.ts$/.test(n))) {
+    try { new Bun.Transpiler({ loader: "ts" }).transformSync(readFileSync(join("mcpl", f), "utf8")); } catch (e) { bad.push(`mcpl/${f}: ${String((e as any)?.message ?? e).split("\n")[0]}`); }
+  }
+  if (bad.length) throw new Error(`not a strict module: ${bad.join("; ")}`);
+  console.log("PASS every mcpl module parses as a strict ES module");
+}

@@ -162,7 +162,6 @@ export const TOOLS = TOOL_ROWS.map((t) => {
 });
 for (const n of Object.keys(ANNOTATIONS)) if (!TOOL_ROWS.some((t) => t.name === n)) throw new Error(`[tools] annotations for "${n}", which isn't a tool`);
 
-import { readdirSync } from "node:fs";
 import { recordComponents } from "../shared/protocol/view.js";
 import { modelWord } from "../shared/eido.js";
 import { WINGS_FOLDED } from "../shared/wingpresence.js";
