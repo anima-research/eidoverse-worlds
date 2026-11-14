@@ -41,4 +41,15 @@ ag.entities.get("late").structure = { levels: [{ y: 0, tiles: [[0, 0]] }] };
 await ag.ground.syncSupport("late");
 check("a crate that becomes a structure's anchor drops its support", !supportHolders()["anchor/late"], JSON.stringify(Object.keys(supportHolders())));
 
+// the same, through the comp event the agent folds (not a direct syncSupport): a structure set, then removed
+ag.entities.set("evt", { id: "evt", model: "crate.glb", pos: [70, 0, 0], yaw: 0, actor: "x" });
+await ag.ground.syncSupport("evt"); await registered("anchor/evt");
+ag.entities.get("evt").structure = { levels: [{ y: 0, tiles: [[0, 0]] }] };
+ag.onThingChange({ id: "evt", what: "comp", comp: "structure" }, null, true, "x", Date.now());
+await pause("the comp event's syncSupport runs detached: give it the time a registration takes", 500);
+check("a structure comp event drops the anchor's support", !supportHolders()["anchor/evt"], JSON.stringify(Object.keys(supportHolders())));
+delete ag.entities.get("evt").structure;
+ag.onThingChange({ id: "evt", what: "comp", comp: "structure" }, null, true, "x", Date.now());
+check("...and removing the structure makes it an ordinary crate again", await registered("anchor/evt"), JSON.stringify(Object.keys(supportHolders())));
+
 done();
