@@ -71,7 +71,7 @@ async function loadVrm(bytes: Uint8Array) {
   const gltf: any = await new Promise((res, rej) => loader.parse(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), "", res, rej));
   const vrm = gltf.userData.vrm;
   vrm.userData ??= {};
-  vrm.userData.boneRest = {};
+  vrm.userData.boneRest = Object.create(null);
   vrm.scene.traverse((o: any) => {
     if (o.isBone && o.name && !(o.name in vrm.userData.boneRest)) {
       vrm.userData.boneRest[o.name] = { q: o.quaternion.toArray(), p: o.position.toArray(), s: o.scale.toArray() };

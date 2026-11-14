@@ -101,11 +101,11 @@ export function canonicalPoint(name) {
   if (typeof name !== 'string') return null;
   let k = name.trim().toLowerCase().replace(/[\s-]+/g, '_');
   if (['back_of_the_neck', 'back_of_neck', 'nape', 'back_neck'].includes(k)) return 'neck_back';
-  if (CONTACT_POINTS[k]) return k;
+  if (Object.hasOwn(CONTACT_POINTS, k)) return k;
   // left/right written the long way round, or in front
   k = k.replace(/^left_?/, '').replace(/^right_?/, (m) => '') ;
   const side = /left/.test(name.toLowerCase()) ? '_l' : /right/.test(name.toLowerCase()) ? '_r' : '';
   const base = name.trim().toLowerCase().replace(/[\s-]+/g, '_').replace(/left_?|right_?|_l$|_r$/g, '');
-  for (const cand of [base + side, base, base + '_l']) if (CONTACT_POINTS[cand]) return cand;
+  for (const cand of [base + side, base, base + '_l']) if (Object.hasOwn(CONTACT_POINTS, cand)) return cand;
   return null;
 }

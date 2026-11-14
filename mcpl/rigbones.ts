@@ -5,6 +5,7 @@
 // every renderer, silently. So the check needs the rig, and the rig is in the
 // file's JSON chunk — the header bytes, not the multi-megabyte body.
 import { glbJson, humanBones, stature } from "./rig.ts";
+import { setOwn } from "../shared/humanoid.js";
 
 export type RigBones = {
   /** every skin joint and humanoid bone, by node name */
@@ -54,7 +55,7 @@ export function rigFromGltf(g: any): RigBones | null {
   const humanoidOf: Record<string, string> = {};
   for (const [vrm, i] of Object.entries(hb)) {
     const n = nodes[i as number]?.name;
-    if (typeof n === "string" && n) { humanoidOf[n] = vrm; idx.add(i as number); }
+    if (typeof n === "string" && n) { setOwn(humanoidOf, n, vrm); idx.add(i as number); }
   }
   const parent = new Map<number, number>();
   nodes.forEach((n, i) => (n.children ?? []).forEach((c: number) => parent.set(c, i)));

@@ -25,6 +25,7 @@ const { THREE } = await import('./core-stub.mjs');
 const { rigs, libraryRigs, makeAvatar } = await import('./rig-load.mjs');
 const { measureChain, solveChain } = await import('../client/lib/reachbone.js');
 const { solveTwoBone, penetration } = await import('../shared/reach.js');
+const { mulberry32 } = await import('../shared/rand.js');
 
 let failures = 0;
 const check = (label: string, ok: boolean, detail?: string) => {
@@ -180,8 +181,7 @@ console.log("\nthe limits hold on live bones");
     const chain: any = measureChain(av, "leftHand");
     if (!chain) continue;
     const sh = chain.nodes.upper.getWorldPosition(new THREE.Vector3());
-    let seed = 5;
-    const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+    const rnd = mulberry32(5);
     for (let i = 0; i < 200; i++) {
       const t = [sh.x + (rnd() - 0.5) * 1.5, sh.y + (rnd() - 0.5) * 1.5, sh.z + (rnd() - 0.5) * 1.5];
       const out: any = step(chain, av, t, null);

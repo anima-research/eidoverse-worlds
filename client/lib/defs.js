@@ -3,9 +3,9 @@
 // panel's preset row; whoever comes next), invalidated when the sequencer
 // pushes `defs-updated` so a def edited on disk reaches the next reader.
 //
-// The flora engine (vegetation.js, served off /library) keeps its OWN
-// fetch of the same route — it is a standalone engine file that cannot
-// import client lib modules. Two fetch sites, one per layer, both cheap
+// The flora engine (client/lib/vegetation/vegetation.js) keeps its OWN
+// fetch of the same route — a standalone engine that imports only its own
+// files and shared/, never a client lib module. Two fetch sites, one per layer, both cheap
 // and both invalidated by the same push (world.js handles the engine's
 // refresh + regrow).
 import { bus } from './base.js';

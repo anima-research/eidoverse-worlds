@@ -54,7 +54,7 @@ export const VERBSPEC = {
     doc: "make a new thing; optionally place it in the same step",
     args: { id: { type: "string", doc: "leave it out: the authority mints every id. A placeholder '$name' is accepted: refs to it in the same request (a batch) resolve, and the reply's ids map gives the id it became; any other id is refused" }, model: { type: "string", doc: "a model from find {kind: 'model'}" },
       components: { type: "object", doc: "component values; see schema" }, from: { type: "string", doc: "a blueprint hash (find {kind: 'blueprint'}), or a thing's id to duplicate it with what's attached to it" },
-      at: { type: "any", doc: "where: [x, z] on the ground, [x, y, z] exactly, or {pos, yaw|q}; with from, {pos, yaw|q} only (a duplicate's is local to the source's parent; default 0.5 m along x). Not with place" }, place: { type: "object", doc: "a place request without id", example: { model: "chair", place: { near: "table-1", facing: "table-1" } } }, dry: { type: "bool" } },
+      at: { type: "any", doc: "where: [x, z] on the ground, [x, y, z] exactly, or {pos, yaw|q} (yaw in radians about +Y: 0 faces +Z, 1.5708 a quarter turn); with from, {pos, yaw|q} only (a duplicate's is local to the source's parent; default 0.5 m along x). Not with place" }, place: { type: "object", doc: "a place request without id", example: { model: "chair", place: { near: "table-1", facing: "table-1" } } }, dry: { type: "bool" } },
   },
   set: { doc: "replace a component's value (merge: true patches only the fields you send)", args: { id: ref("the thing"), component: { type: "string" }, value: { type: "any" }, merge: { type: "bool" }, force: { type: "bool", doc: "@world.physics-engine only: cut even with things in flight (they freeze where they are)" }, base: { type: "any", doc: "the version you read, {seq, head} (inspect → versions; never a bare seq); refused if someone changed it since, or if it isn't this world's history" }, dry: { type: "bool" } }, required: ["id", "component"],
     example: { id: "lamp-1", component: "light", value: { range: 8 }, merge: true } },
@@ -165,7 +165,7 @@ export const REMOVED_VERBS = Object.freeze({
 // refused naming today's (unknown-arg's fix)
 function skyWas() { return { clock: "tz (a tz present means the wall clock governs; absent, the rated clock)", weatherSeconds: "transition (seconds)", dormantRated: "hours and rate" }; }
 function skyArgs() {
-  const f = Object.fromEntries(Object.keys(COMPONENTS.sky.fields).map((k) => [k, { type: "any", doc: `the sky's ${k}` }]));
+  const u = COMPONENTS.sky.units ?? {}, f = Object.fromEntries(Object.keys(COMPONENTS.sky.fields).map((k) => [k, { type: "any", doc: `the sky's ${k}${u[k] ? ` (${u[k] === "rad" ? "radians" : u[k]})` : ""}` }]));
   return { ...f, keepSky: { type: "any", doc: "weather: false discards the standing sky" }, dry: { type: "bool" } };
 }
 const isNum = (v) => typeof v === "number" && Number.isFinite(v);
