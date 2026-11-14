@@ -69,23 +69,10 @@ systems, not bone poses.
 
 ## Entities
 
-**These are conventions, not classes.** Since the component model landed
-(next section), the fold knows only `id + transform + component bag`; every
-row below is a *reading* of what an entity carries, not a type it is. An
-"Inscription" is anything with a `text` component; give it a socket child
-with a `station` and it is also seatable — no one decides which category owns the
-combination, and no world ever migrates when a new reading appears. The
-table stays because the words are useful, the way "mailing list" is a useful
-word for a pattern of email use without being a type in SMTP.
-
-| Entity | Notes |
-|---|---|
-| **Avatars** | Embodied participants. VRM + controller + identity. Presence plane today; bodies move into the hierarchy as entities (docs/design/ROADMAP.md). |
-| **Things** | Placed objects: fetched GLBs, procedural builds, primitives. Transform, parent, creator, scripts. |
-| **Inscriptions** | Text/media anchored in space — notes, signs, screens. Substrate for asynchronous interaction. |
-| **World** | Sky, weather, terrain, time. |
-
-Relations: scene-graph attachment (eidoverse support-chain memory), ownership.
+Everything in a world is an entity: an id and a bag of components, placed in one hierarchy. There are no entity
+types. A sign is an entity with a `text` component; give it a seat and it is also a seat, and no world migrates when a
+new combination appears. The world's own settings (sky, terrain, roles, bounds, spawn…) are components on the `@world` entity. Bodies
+are presence-only today and join the hierarchy later (docs/design/ROADMAP.md).
 
 ## Components
 
