@@ -1,6 +1,8 @@
 // rig — CPU rig primitives for body perception and physics: GLB parsing, humanoid bone maps, and (given a THREE) a
 // stand-in avatar built from rest positions. Inputs are GLB bytes or parsed node data; no I/O.
 
+/** A VRM's JSON chunk is well under a megabyte for any real body; a header claiming more is refused unparsed. */
+export const GLB_MAX_JSON = 16 * 1024 * 1024;
 /** The JSON chunk of a .glb / .vrm. */
 export function glbJson(buf) {
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);

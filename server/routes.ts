@@ -93,7 +93,7 @@ export type Srv = {
 
 // ---- static serving ---------------------------------------------------------
 
-/** Roster = the library's vrms + our overlay (assets/opt/...): drop a .vrm into either and it's an avatar, no restart.
+/** Roster = the library's vrms + our overlay (assets/opt/...) + patched forks: drop a .vrm into any and it's an avatar.
  *  ?v=mtime content-versions each path (a re-export mints a new URL). Served by GET /avatars AND carried in the join
  *  snapshot, so a joiner can resolve a body name without a round-trip. */
 export type AvatarPerf = { tris: number; draws: number; mats: number; alpha: number; bones: number; texMB: number;
@@ -115,7 +115,7 @@ export function avatarPerfParam(raw: string | null, v: string | null): AvatarPer
 }
 export function avatarRoster(): { name: string; path: string; height: number | null; perf?: AvatarPerf | null; seat?: unknown }[] {
   const seen = new Map<string, { url: string; file: string; v: string }>();
-  for (const base of [LIBRARY_DIR, OPT_DIR]) {
+  for (const base of [...LADDER].reverse()) {   // /library's precedence, lowest first: ?v= and height describe the bytes served
     const dir = join(base, "eidoverse/assets/vrms");
     if (!existsSync(dir)) continue;
     for (const f of readdirSync(dir)) {

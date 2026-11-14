@@ -12,6 +12,8 @@ import { OPT_DIR, LIBRARY_DIR, PATCH_DIR } from "./config.ts";
 import { worlds } from "./world.ts";
 import { sha256Bytes } from "../shared/protocol/hash.js";
 import { atomicWrite } from "./fsutil.ts";
+import { avatarDefs } from "./defs.ts";
+import { resolveLibFile } from "./libfile.ts";
 
 export const SEAT_POSE = "sitchair";
 export const CLIP_REL = "eidoverse/assets/animations/sitting_normal_chair.vrma";
@@ -75,7 +77,8 @@ export class SeatStore {
     // overlay wins, like the avatar roster scan. The clip ladder matches what /library SERVES, patched fork first (the
     // order routes.ts resolves): hashing a copy nobody plays would read "stale" forever.
     this.clipBases = [patchDir, optDir, libraryDir].filter(Boolean).map((d) => join(d!, CLIP_REL));
-    this.vrmDirs = [join(optDir, "eidoverse/assets/vrms"), join(libraryDir, "eidoverse/assets/vrms")];
+    // every body the avatar roster lists, which scans the same three
+    this.vrmDirs = [patchDir, optDir, libraryDir].filter(Boolean).map((d) => join(d!, "eidoverse/assets/vrms"));
     this.fs = { writeFileSync, renameSync, appendFileSync, ...fsOverride };
     this.lockTimeoutMs = lockTimeoutMs;
     this.reload();
@@ -310,6 +313,8 @@ export class SeatStore {
 
   /** This slice profiles bodies the roster can serve: the bytes must exist to be judged against. */
   rosterHas(name: string): boolean {
+    const vrm = avatarDefs()[name]?.vrm;   // a def's vrm first, as avatarRoster resolves it (#326)
+    if (vrm && resolveLibFile(vrm)) return true;
     return this.vrmDirs.some((d) => existsSync(join(d, `${name}.vrm`)));
   }
 
