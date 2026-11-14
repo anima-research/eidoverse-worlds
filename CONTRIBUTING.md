@@ -41,6 +41,9 @@ A file's directory says who runs it.
 | `spec/` | an implementer somewhere else: the CC0 contract, and only what they need |
 | `docs/` | a reader |
 
+Body code that both the browser and a headless runtime run (ragdoll, colliders, terrain, reach, pose clips) lives in
+`client/lib/`; `mcpl/` and `server/` import it from there, and `client/` never imports them. `shared/` stays dependency-free.
+
 Conformance vectors follow one rule: a vector that binds other implementations lives under `spec/` (CC0, listed in
 `spec/NORMATIVE.md`); a vector that pins one package's output lives beside that package (AGPL). Today:
 - `spec/conformance/`: the log, physics, ed25519, laws and trig vectors, beside the reference reader;
