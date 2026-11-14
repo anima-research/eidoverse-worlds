@@ -127,7 +127,7 @@ beside the new one as `log.original.jsonl`, renamed, never written (the swap
 refuses unless the old log still holds exactly the bytes that were
 translated: nothing an old server wrote meanwhile is dropped); a directory
 whose `world.jsonl` is a world of this protocol is served as one whatever
-else it holds. (`translate <old> <new>` translates into a new name instead.)
+else it holds. (`translate <old> <new>` translates into a new name instead, leaving the old directory as it was.)
 The swap also writes `translation.json`: every file it renamed, every file
 it made (`world.jsonl`, `poses.json`, `world.mod.jsonl` for imported bans,
 `blobs/` for derived particle effects)
@@ -143,6 +143,19 @@ unknowingly. Each old entry appears in the new log as a `request` with verb
 `imported` (`body {verb, args, from}`) or as a `say`, followed by the change it
 produced; fields with no component in this protocol ride along as `imported:<name>`. A
 translated world is an ordinary world from then on.
+
+Links to a translated world keep working, and its `snapshot.json` stays beside it as
+`snapshot.original.json`. A world is translated into a
+temporary directory and checked first (0 divergences, the result opened as the
+server opens it, and agreement with the old server's own `snapshot.json` where
+there is one); on any failure nothing is moved and it says why. Re-running it
+on a translated world refuses. Old runtime scripts are kept
+as a record on `@world` and never run: `scripts` lists them as
+`needs-reinstall` (docs/guide/SCRIPTS.md says how to port one).
+
+This protocol's own pre-release worlds were never deployed, so none is migrated: a log this server's reader
+doesn't fold is refused, loudly. The worlds dir's key files are renamed to `.custody.json` /
+`.directory.json` on the next boot, so everyone in it keeps their identity.
 
 ## Upgrading from the browser
 
