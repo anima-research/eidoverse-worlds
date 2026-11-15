@@ -154,8 +154,14 @@ member: a ban or a mute does that job. `act {verb: "help"}` tells you your role.
   bounds, spawn point, script limits; kick and ban.
 
 The rule is keyed on *what changes*, not on which request carried it
-(the rights table in `shared/protocol/authority/gate.js`): any entity's components need builder; `@world`'s
-need owner, except `blueprints:*` (publishing a blueprint is a builder's act).
+(the rights table in `shared/protocol/authority/gate.js`), and what a write
+needs is a permission, never a rank: a thing needs `build` (or `editOthers`
+if someone else made it); `@world.blueprints:*` needs `build`, `assets:*`
+needs `generate`, the world's look (sky, terrain, grass, water, bounds,
+spawn, about) needs `editWorld`; `roles:*` follows the grant rule (an owner,
+or `grantRoles` below your rank); the rest of `@world` is owner-only.
+Server operators (`SERVER_OPERATORS`) sit outside the roles ladder: they get
+past every world's door (`server/access.ts`) and can ban server-wide.
 An owner changes someone's role with an ordinary write:
 
 ```
