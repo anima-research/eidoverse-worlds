@@ -182,5 +182,5 @@ C("G6", `${n} seeded points around the habitat, the submarine and the waves (t 0
   fs.cpSync(fx, path.join(dir, "water-old"), { recursive: true });
   const o = Bun.spawnSync(["bun", path.join(ENGINE, "tools/import-v1/snapshot-oracle.ts")], { cwd: ENGINE, env: { ...process.env, ORACLE_WORLDS: dir, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
   const out = o.stdout.toString() + o.stderr.toString(), line = out.split("\n").find((l) => /water-old/.test(l) && /(FAIL|agree|OK|ok)/.test(l)) ?? "";
-  C("G7", "main's own saved water world (log + snapshot.json) translates with no unexplained difference from the old engine", /-- water-old\b[^\n]*— (ok|agrees|0 unexplained)/i.test(out) || (o.exitCode === 0 && !/FAIL water-old/.test(out)), { exit: o.exitCode, line, tail: out.split("\n").filter((l) => /DIFF|FAIL/.test(l)).slice(0, 4) }); }
+  C("G7", "main's own saved water world (log + snapshot.json) translates with no unexplained difference from the old engine", /-- water-old\b[^\n]*— (ok|agrees|0 unexplained)/i.test(out), { exit: o.exitCode, line, tail: out.split("\n").filter((l) => /DIFF|FAIL/.test(l)).slice(0, 4) }); }
 console.log(`[import-golden-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

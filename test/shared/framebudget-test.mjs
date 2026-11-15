@@ -81,8 +81,9 @@ ok('…and only ONE: a second cold caller is denied though nothing has been spen
   ok('A\'s own measurement releases A\'s hold: room again', !!fb.ask('shared2'));
   // B's hold belonged to the frame that just rolled; reporting it late must not release anything from THIS frame
   fb.tick((t += 16.67));
+  const D = fb.ask('shared'), held = fb.budgetStats().spentThis;   // a hold of THIS frame for B's late report to wrongly free
   fb.spent('shared', 0, null, B);
-  ok('a grant from an earlier frame releases nothing in this one (no phantom room)', fb.budgetStats().spentThis >= 0, String(fb.budgetStats().spentThis)); }
+  ok('a grant from an earlier frame releases nothing in this one (no phantom room)', D && held > 0 && fb.budgetStats().spentThis === held, `${held} → ${fb.budgetStats().spentThis}`); }
 
 // gpu units (two idle frames first: the aging block left capped debt behind)
 fb.tick(1083.33); fb.tick(1086); fb.tick(1090);

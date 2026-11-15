@@ -91,7 +91,7 @@ console.log('— A. segmentation —');
   // 500 ms tone, 600 ms silence, 700 ms tone, 600 ms silence.
   const { out, provider } = await run((n, emit) => emit({ utteranceId: `u${n}`, text: `segment ${n}`, final: true }), [tone(500), silence(600), tone(700), silence(600)]);
   check('one caption per burst', out.length === 2, JSON.stringify(out));
-  check('one STT session per segment, each committed and closed', provider.sessions.length === 2 && provider.sessions.every((s) => s.committed), JSON.stringify(provider.sessions.map((s) => [s.bytes, s.committed])));
+  check('one STT session per segment, each committed and closed', provider.sessions.length === 2 && provider.sessions.every((s) => s.committed && s.closed), JSON.stringify(provider.sessions.map((s) => [s.bytes, s.committed, s.closed])));
   const near = (a: number, b: number, tol = 0.08) => Math.abs(a - b) <= tol;
   check('first caption sits on its burst (t0≈0.00, t1≈0.50)', out[0] && near(out[0].t0, 0.0) && near(out[0].t1, 0.5), JSON.stringify(out[0]));
   check('second caption sits on its burst (t0≈1.10, t1≈1.80)', out[1] && near(out[1].t0, 1.1) && near(out[1].t1, 1.8), JSON.stringify(out[1]));

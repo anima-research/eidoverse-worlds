@@ -639,7 +639,7 @@ srv.proc.kill();
     while (p.hasMore && guard++ < 20) { p = await page(p.oldestSeq); got.unshift(...p.entries); } return { got, last: p }; };
   const r = await client(srvB.port, "garden", "Ann", REPLICA);
   { const { got, last: p } = await all(r); const texts = got.map((e) => e.args?.text);
-    ok(got.length === N0 + lines && texts.at(-1) === `line ${lines - 1}` && texts.indexOf("line 0") === N0 && !p.hasMore,
+    ok(got.length === N0 + lines && texts.slice(N0).every((x, i) => x === `line ${i}`) && !p.hasMore,
       "SH1 after a restart, an admin (the owner) paging back with history reaches every chat line ever said here, in order, and says when it's done", [got.length, N0 + lines, texts.slice(0, 3), p.hasMore]); }
   ok(r.snapshot?.chat?.chatTotal === N0 + lines && JSON.stringify(r.snapshot?.chat?.recentChat) === "[]", "SH2 the owner's join: no line replayed, and chatTotal counts every line the master log holds (not the ones since load)", [r.snapshot?.chat?.chatTotal, N0 + lines, r.snapshot?.chat?.recentChat?.length]);
   const bob = await client(srvB.port, "garden", "Bob", REPLICA);

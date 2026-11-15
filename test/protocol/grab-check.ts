@@ -72,8 +72,8 @@ const MUTANTS: [string, string, string | [string, string, string?][], string, st
   ["snapping: an occupied socket is passed over", "protocol/authority/manipulate.js", "if (Object.entries(st.entities).some(([k, y]) => k !== id && y.c.parent?.to === x.id)) {", "if (false) {", ["R6"]],
   ["snapping: a locked host is passed over", "protocol/authority/manipulate.js", "if (lk) { out.notes.push({ passedOver: where, why: `${lk} is locked` }); continue; }", "", ["R6"]],
   ["snapping: a drop in a physics world snaps instead of flying", "protocol/authority/bodyverbs.js", "|| (g && w.presence.holds[a.id]?.by === actor && snapTarget(st, a.id, g, a.pos ?? w.presence.holds[a.id].pose.pos).to);", ";", ["R9"]],
-  // a sockets map is checked as the map and again as each socket child it becomes
-  ["socket.accepts/radius are checked", "sockbody.js", [["if ((r = checkAccepts(v, at))) return r;", ""], ["if ((r = checkAccepts(v, at))) return r;", ""]], "", ["R8"]],
+  // the socket child's own component (sockbody.js checkSocket: the one call site)
+  ["socket.accepts/radius are checked", "sockbody.js", "if ((r = checkAccepts(v, at))) return r;", "", ["R8"]],
   ["the hold record keeps hand and grip or offset", "protocol/authority/bodyverbs.js", "...(facing !== null ? { facing } : {}), handled, ...how };", "...(facing !== null ? { facing } : {}), handled };", ["H1", "H4"]],
   ["a named grip must exist", "protocol/authority/manipulate.js", "if (!g.grips[a.grip]) refuse(\"no-grip\", `it has no grip called '${a.grip}'`, `its grips: ${names.join(\", \")}`", "if (false) refuse(\"no-grip\", `it has no grip called '${a.grip}'`, `its grips: ${names.join(\", \")}`", ["H2"]],
   ["a named grip must suit the hand", "protocol/authority/manipulate.js", "if (a.grip !== undefined && !pickGrip(g, hand, { named: a.grip })) refuse(\"wrong-hand\"", "if (false) refuse(\"wrong-hand\"", ["H2"]],
