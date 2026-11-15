@@ -128,7 +128,9 @@ export async function observeAll(): Promise<void> { await Promise.all([...SOURCE
 /** What each world is told: every admitted source's last observation, as an age. */
 export function stateFrame(now = Date.now()) {
   const states = [...SOURCES.keys()].map((id) => { const o = sourceStateOf(id); return o && SOURCE_STATES.includes(o.state) ? { source: id, state: o.state, ageMs: Math.max(0, now - o.at) } : null; }).filter(Boolean);
-  return { type: "video-state", states };
+  // the admitted ids too: a viewer waiting for a source to come back (re-admitted, or no longer ended) restarts on this,
+  // and one with no API to ask is never observed, so its state alone would never say it is back (#332 review 9)
+  return { type: "video-state", states, admitted: [...SOURCES.values()].filter((s) => !s.ended).map((s) => s.id) };
 }
 
 // ---- the sessions ----

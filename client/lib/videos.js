@@ -25,9 +25,15 @@
 //        blocked     this browser won't show it (a fifth screen at once; no WebRTC)
 //      Anything but playing draws a plate with the state in words instead of the video: a frozen frame is never shown
 //      as if it were live. The source's state (what the appliance observed) is look's, not this screen's.
-//   5. A dropped or failed connection reconnects with backoff (1 s doubling to 30 s) while the bag is unchanged; a
-//      session the sequencer closed because the screen changed or the source was revoked is not retried.
-//   6. At most MAX_SCREENS (4) play at once in this browser, as the sequencer allows per viewer; the rest say blocked.
+//   5. What follows a refusal or a close is decided by its code (shared/video.js VIDEO_REFUSALS), never its words: a
+//      dropped or failed connection, an appliance that didn't answer or a source not publishing reconnect with backoff
+//      (1 s doubling to 30 s) while the bag is unchanged; a too-soon offer waits the time it was given; a source the
+//      sequencer doesn't admit, or that ended or was revoked, waits for the sequencer's state frame to say it is back;
+//      a spectator, a changed screen or a malformed offer tries nothing more. Offers leave this browser at most one per
+//      OFFER_GAP_MS, the sequencer's own pace, so screens offering together queue rather than refuse each other.
+//   6. At most MAX_SCREENS (4) hold a connection at once in this browser, as the sequencer allows per viewer: a screen
+//      connecting, playing, or waiting to reconnect holds one; the rest say blocked, and a freed slot goes to the
+//      longest-blocked screen. An answer that arrives after its screen was taken down has its session closed.
 //   7. Autoplay: the video element is muted (video autoplays muted everywhere) and the sound is Web Audio's, so a held
 //      AudioContext is the shared unlock queue's business (audiounlock.js), as every placed sound's is.
 import { THREE, camera } from './core.js';
@@ -39,7 +45,7 @@ import { worldBusNode } from './sounds.js';
 import { isMineMuted, toggleMineMuted } from './mediaprefs.js';
 import { registerHandler, registerLive } from './inspect.js';
 import { flashHint } from './ui.js';
-import { normalizeVideo, videoGain, noteSourceState, SOURCE_STATES } from '../../shared/video.js';
+import { normalizeVideo, videoGain, noteSourceState, SOURCE_STATES, refusalRetry, OFFER_GAP_MS } from '../../shared/video.js';
 
 export const MAX_SCREENS = 4;
 export const STALL_MS = 2_000;
@@ -48,7 +54,8 @@ export const ICE_GATHER_MS = 2_000;
  *  ICE that never connected, must not leave a screen saying connecting forever. */
 export const CONNECT_WATCHDOG_MS = 15_000;
 const BACKOFF = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000];
-const NO_RETRY = /changed|revoked|ended|isn't admitted|has no video|closed by the viewer/;
+// the next moment an offer may leave this browser (OFFER_GAP_MS apart, the sequencer's pace for one viewer)
+let nextOfferAt = 0;
 
 // id → the screen: { video, rev, state, why, pc, el, tex, plate, quad, aspect, session, req, lastFrame, attempt, timer, audio }
 const screens = new Map();
@@ -138,18 +145,43 @@ async function connect(s, rev) {
   const offer = await pc.createOffer(); await pc.setLocalDescription(offer);
   await new Promise((res) => { if (pc.iceGatheringState === 'complete') return res(); const t = setTimeout(res, ICE_GATHER_MS); pc.addEventListener('icegatheringstatechange', () => { if (pc.iceGatheringState === 'complete') { clearTimeout(t); res(); } }); });
   if (!current(s.id, rev) || s.pc !== pc) { try { pc.close(); } catch { /* fine */ } return; }
+  // paced: an offer queued behind this browser's others leaves when the sequencer will take it (#332 review 6)
+  const at = Math.max(performance.now(), nextOfferAt); nextOfferAt = at + OFFER_GAP_MS + 50;
+  if (at > performance.now()) await new Promise((res) => setTimeout(res, at - performance.now()));
+  if (!current(s.id, rev) || s.pc !== pc) { try { pc.close(); } catch { /* fine */ } return; }
   s.req = `v${++reqN}`;
   if (net.ws?.readyState !== 1) { retry(s, rev, 'not connected to the world'); return; }
   net.ws.send(JSON.stringify({ type: 'video-offer', id: s.id, sdp: pc.localDescription.sdp, req: s.req }));
   clearTimeout(s.timer);
   s.timer = setTimeout(() => { if (current(s.id, rev) && s.pc === pc && !s.frames) retry(s, rev, 'no picture arrived'); }, CONNECT_WATCHDOG_MS);
 }
-function retry(s, rev, why) {
+function retry(s, rev, why, after) {
   if (!current(s.id, rev)) return;
   (s.retries ??= []).push({ at: Math.round(performance.now()), why });   // probes: why each reconnect happened
   closeConn(s, { tell: true }); setState(s, 'error', why);
-  const wait = BACKOFF[Math.min(s.attempt, BACKOFF.length - 1)]; s.attempt++;
+  const wait = after ?? BACKOFF[Math.min(s.attempt, BACKOFF.length - 1)]; if (after === undefined) s.attempt++;
   s.timer = setTimeout(() => { if (current(s.id, rev)) void connect(s, rev); }, wait);
+}
+// What a refusal or a close's code asks for (shared/video.js VIDEO_REFUSALS), never its words (#332 review 3)
+function afterRefusal(s, rev, code, why, retryAfterMs) {
+  const kind = refusalRetry(code);
+  if (kind === 'later') return retry(s, rev, why);
+  if (kind === 'after') return retry(s, rev, why, Math.min(Math.max(Number(retryAfterMs) || OFFER_GAP_MS, 0), 30_000));
+  closeConn(s, { tell: false });
+  // a source that isn't there yet, ended or was revoked: wait for the state frame to say it is back (review 9); every
+  // other code tries nothing more. A spectator may not watch at all: blocked, not an error to fix (review 1)
+  if (kind === 'source') { s.waitingSource = true; setState(s, 'error', why); }
+  else { s.terminal = true; setState(s, code === 'spectator' ? 'blocked' : 'error', why); }
+  reconsider();
+}
+/** Whether a screen holds one of this browser's MAX_SCREENS: connecting, playing, or waiting to reconnect (review 7). */
+const holdsSlot = (x) => x.state !== 'blocked' && !x.terminal && !x.waitingSource;
+/** A slot freed: the longest-blocked screen (blocked by the cap, not by this browser) takes it (review 8). */
+function reconsider() {
+  for (const s of screens.values()) {
+    if ([...screens.values()].filter(holdsSlot).length >= MAX_SCREENS) return;
+    if (s.capBlocked && entities.get(s.id)) { s.capBlocked = false; setState(s, 'connecting'); void connect(s, revision.get(s.id)); }
+  }
 }
 function watchFrames(s, el, rev) {
   // a NEW frame is the evidence of playing: requestVideoFrameCallback's mediaTime moving on (or currentTime, where that
@@ -167,25 +199,30 @@ function watchFrames(s, el, rev) {
 }
 
 bus.on('video-answer', async (m) => {
-  for (const s of screens.values()) if (s.req && m.req === s.req && m.id === s.id && s.pc) {
-    const rev = revision.get(s.id); s.session = m.session;
-    try { await s.pc.setRemoteDescription({ type: 'answer', sdp: m.sdp }); } catch (e) { retry(s, rev, 'the answer was not usable'); }
-  }
+  const s = [...screens.values()].find((x) => x.req && m.req === x.req && m.id === x.id && x.pc);
+  // an answer for an offer whose screen was taken down, demoted or re-offered since: its session holds a slot at the
+  // sequencer and an appliance session nobody will use, so it is closed now (#332 review 16)
+  if (!s) { if (typeof m.session === 'string' && net.ws?.readyState === 1) { try { net.ws.send(JSON.stringify({ type: 'video-close', session: m.session })); } catch { /* gone */ } } return; }
+  const rev = revision.get(s.id); s.session = m.session;
+  try { await s.pc.setRemoteDescription({ type: 'answer', sdp: m.sdp }); } catch (e) { retry(s, rev, 'the answer was not usable'); }
 });
 bus.on('video-error', (m) => {
-  for (const s of screens.values()) if (s.req && m.req === s.req) {
-    const rev = revision.get(s.id);
-    if (NO_RETRY.test(m.why ?? '')) { closeConn(s, { tell: false }); setState(s, 'error', m.why); } else retry(s, rev, m.why);
-  }
+  for (const s of screens.values()) if (s.req && m.req === s.req) afterRefusal(s, revision.get(s.id), m.code, m.why, m.retryAfterMs);
 });
 bus.on('video-closed', (m) => {
-  for (const s of screens.values()) if (s.session && m.session === s.session) {
-    const rev = revision.get(s.id); s.session = null;
-    if (NO_RETRY.test(m.why ?? '')) { closeConn(s, { tell: false }); setState(s, 'error', m.why); } else retry(s, rev, m.why);
+  for (const s of screens.values()) if (s.session && m.session === s.session) { s.session = null; afterRefusal(s, revision.get(s.id), m.code, m.why); }
+});
+// what the appliance observed of each source: kept for look's line in this browser (the inspector), as an age. And a
+// screen waiting for its source restarts once the sequencer admits it again and it hasn't ended (review 9)
+bus.on('video-state', (m) => {
+  const now = Date.now(); for (const x of m.states ?? []) if (SOURCE_STATES.includes(x?.state) && Number.isFinite(x?.ageMs)) noteSourceState(x.source, { state: x.state, at: now - x.ageMs });
+  const back = new Set(Array.isArray(m.admitted) ? m.admitted : []);
+  for (const s of screens.values()) if (s.waitingSource && back.has(s.video.source) && entities.get(s.id)) {
+    s.waitingSource = false; s.attempt = 0;
+    if ([...screens.values()].filter(holdsSlot).length >= MAX_SCREENS) { s.capBlocked = true; setState(s, 'blocked', `at most ${MAX_SCREENS} screens at once`); continue; }
+    void connect(s, revision.get(s.id));
   }
 });
-// what the appliance observed of each source: kept for look's line in this browser (the inspector), as an age
-bus.on('video-state', (m) => { const now = Date.now(); for (const x of m.states ?? []) if (SOURCE_STATES.includes(x?.state) && Number.isFinite(x?.ageMs)) noteSourceState(x.source, { state: x.state, at: now - x.ageMs }); });
 
 // ---- the bag ----
 function takeDown(id) {
@@ -193,6 +230,8 @@ function takeDown(id) {
   screens.delete(id); closeConn(s, { tell: true });
   if (s.quad) { s.quad.parent?.remove(s.quad); s.quad.userData.dispose(); }
   s.plate?.dispose?.();
+  // after the caller is done: a screen rebuilt in place (a new bag, a spawn) takes its own slot back before a blocked one
+  queueMicrotask(reconsider);
 }
 function applyFrom(id, data, { fresh = false, why = 'comp' } = {}) {
   const n = data == null ? null : normalizeVideo(data);
@@ -205,9 +244,9 @@ function applyFrom(id, data, { fresh = false, why = 'comp' } = {}) {
   if (n == null) return;
   const s = { id, video: n.ok ? n.video : { width: 4, lit: 'self' }, state: 'connecting', why: null, aspect: 9 / 16, attempt: 0 };
   screens.set(id, s);
-  if (!n.ok) { setState(s, 'error', n.why); return; }
-  const live = [...screens.values()].filter((x) => x !== s && x.state !== 'blocked' && x.state !== 'error').length;
-  if (live >= MAX_SCREENS) { setState(s, 'blocked', `at most ${MAX_SCREENS} screens at once`); return; }
+  if (!n.ok) { s.terminal = true; setState(s, 'error', n.why); return; }   // nothing to connect: it holds no slot
+  const live = [...screens.values()].filter((x) => x !== s && holdsSlot(x)).length;
+  if (live >= MAX_SCREENS) { s.capBlocked = true; setState(s, 'blocked', `at most ${MAX_SCREENS} screens at once`); return; }
   show(s);
   if (entities.get(id)) void connect(s, rev);
 }
