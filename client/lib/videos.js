@@ -45,7 +45,7 @@ import { worldBusNode } from './sounds.js';
 import { isMineMuted, toggleMineMuted } from './mediaprefs.js';
 import { registerHandler, registerLive } from './inspect.js';
 import { flashHint } from './ui.js';
-import { normalizeVideo, videoGain, noteSourceState, SOURCE_STATES, refusalRetry, OFFER_GAP_MS } from '../../shared/video.js';
+import { normalizeVideo, videoGain, applyStateFrame, forgetAllSourceStates, refusalRetry, OFFER_GAP_MS } from '../../shared/video.js';
 
 export const MAX_SCREENS = 4;
 export const STALL_MS = 2_000;
@@ -53,6 +53,9 @@ export const ICE_GATHER_MS = 2_000;
 /** A connection that hasn't shown a frame this long after its offer went out is retried: an answer that never came, or
  *  ICE that never connected, must not leave a screen saying connecting forever. */
 export const CONNECT_WATCHDOG_MS = 15_000;
+/** A screen stalled this long reconnects: a connection that stays up while no frames arrive may not recover by itself
+ *  (#332 review 31). */
+export const STALL_RETRY_MS = 15_000;
 const BACKOFF = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000];
 // the next moment an offer may leave this browser (OFFER_GAP_MS apart, the sequencer's pace for one viewer)
 let nextOfferAt = 0;
@@ -76,7 +79,10 @@ function plateTexture(state, why) {
   const g = cv.getContext('2d'); g.fillStyle = '#0b0d10'; g.fillRect(0, 0, cv.width, cv.height);
   g.fillStyle = state === 'error' || state === 'blocked' ? '#e8a29a' : '#c9d1d9'; g.textAlign = 'center'; g.textBaseline = 'middle';
   g.font = '600 34px system-ui, sans-serif'; g.fillText(WORDS[state] ?? state, cv.width / 2, cv.height / 2 - (why ? 18 : 0));
-  if (why) { g.font = '22px system-ui, sans-serif'; g.fillStyle = '#8b949e'; g.fillText(String(why).slice(0, 48), cv.width / 2, cv.height / 2 + 26); }
+  // the reason in up to two lines (96 characters), broken at a space, so a long one keeps its point (#332 review 21)
+  if (why) { g.font = '22px system-ui, sans-serif'; g.fillStyle = '#8b949e';
+    const w = String(why).slice(0, 96); const cut = w.length > 48 ? (w.lastIndexOf(' ', 48) > 24 ? w.lastIndexOf(' ', 48) : 48) : w.length;
+    g.fillText(w.slice(0, cut).trim(), cv.width / 2, cv.height / 2 + 26); if (cut < w.length) g.fillText(w.slice(cut).trim(), cv.width / 2, cv.height / 2 + 54); }
   const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; return tex;
 }
 function quadOf(video, aspect) {
@@ -142,7 +148,10 @@ async function connect(s, rev) {
     if (!current(s.id, rev) || s.pc !== pc) return;
     if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') retry(s, rev, `the connection ${pc.connectionState === 'failed' ? 'failed' : 'dropped'}`);
   };
-  const offer = await pc.createOffer(); await pc.setLocalDescription(offer);
+  // a failed or hung offer is a failed connection: retried, never left saying connecting (#332 review 32)
+  s.timer = setTimeout(() => { if (current(s.id, rev) && s.pc === pc && !s.req) retry(s, rev, 'the offer could not be made'); }, CONNECT_WATCHDOG_MS);
+  try { const offer = await pc.createOffer(); await pc.setLocalDescription(offer); }
+  catch { if (current(s.id, rev) && s.pc === pc) retry(s, rev, 'the offer could not be made'); return; }
   await new Promise((res) => { if (pc.iceGatheringState === 'complete') return res(); const t = setTimeout(res, ICE_GATHER_MS); pc.addEventListener('icegatheringstatechange', () => { if (pc.iceGatheringState === 'complete') { clearTimeout(t); res(); } }); });
   if (!current(s.id, rev) || s.pc !== pc) { try { pc.close(); } catch { /* fine */ } return; }
   // paced: an offer queued behind this browser's others leaves when the sequencer will take it (#332 review 6)
@@ -157,7 +166,7 @@ async function connect(s, rev) {
 }
 function retry(s, rev, why, after) {
   if (!current(s.id, rev)) return;
-  (s.retries ??= []).push({ at: Math.round(performance.now()), why });   // probes: why each reconnect happened
+  (s.retries ??= []).push({ at: Math.round(performance.now()), why }); if (s.retries.length > 50) s.retries.shift();   // probes: why each reconnect happened (the last 50, #332 review 34)
   closeConn(s, { tell: true }); setState(s, 'error', why);
   const wait = after ?? BACKOFF[Math.min(s.attempt, BACKOFF.length - 1)]; if (after === undefined) s.attempt++;
   s.timer = setTimeout(() => { if (current(s.id, rev)) void connect(s, rev); }, wait);
@@ -195,7 +204,8 @@ function watchFrames(s, el, rev) {
     if (!s.tex) { s.tex = new THREE.VideoTexture(el); s.tex.colorSpace = THREE.SRGBColorSpace; }
     if (s.state !== 'playing') setState(s, 'playing'); else show(s); return true; };
   if (typeof el.requestVideoFrameCallback === 'function') { const f = (_now, meta) => { if (seen(meta?.mediaTime ?? el.currentTime)) el.requestVideoFrameCallback(f); }; el.requestVideoFrameCallback(f); }
-  else { const poll = () => { if (!current(s.id, rev) || s.el !== el) return; seen(el.currentTime); setTimeout(poll, 100); }; poll(); }
+  // without the callback, time moving past 0 is the evidence: a currentTime of 0 is no frame yet (#332 review 33)
+  else { const poll = () => { if (!current(s.id, rev) || s.el !== el) return; if (el.currentTime > 0) seen(el.currentTime); setTimeout(poll, 100); }; poll(); }
 }
 
 bus.on('video-answer', async (m) => {
@@ -215,11 +225,11 @@ bus.on('video-closed', (m) => {
 // what the appliance observed of each source: kept for look's line in this browser (the inspector), as an age. And a
 // screen waiting for its source restarts once the sequencer admits it again and it hasn't ended (review 9)
 bus.on('video-state', (m) => {
-  const now = Date.now(); for (const x of m.states ?? []) if (SOURCE_STATES.includes(x?.state) && Number.isFinite(x?.ageMs)) noteSourceState(x.source, { state: x.state, at: now - x.ageMs });
+  applyStateFrame(m);
   const back = new Set(Array.isArray(m.admitted) ? m.admitted : []);
   for (const s of screens.values()) if (s.waitingSource && back.has(s.video.source) && entities.get(s.id)) {
     s.waitingSource = false; s.attempt = 0;
-    if ([...screens.values()].filter(holdsSlot).length >= MAX_SCREENS) { s.capBlocked = true; setState(s, 'blocked', `at most ${MAX_SCREENS} screens at once`); continue; }
+    if ([...screens.values()].filter((x) => x !== s && holdsSlot(x)).length >= MAX_SCREENS) { s.capBlocked = true; setState(s, 'blocked', `at most ${MAX_SCREENS} screens at once`); continue; }
     void connect(s, revision.get(s.id));
   }
 });
@@ -239,7 +249,7 @@ function applyFrom(id, data, { fresh = false, why = 'comp' } = {}) {
   // a volume, distance or description change: the same stream on the same quad, adjusted in the tick (no new intent, no bump)
   if (!fresh && prev && n?.ok && prev.video.source === n.video.source && prev.video.width === n.video.width && prev.video.lit === n.video.lit && prev.video.spatial === n.video.spatial) { prev.video = n.video; return; }
   const rev = bump(id);
-  _builds.push({ id, why: n == null ? `${why}: down` : why, at: Math.round(performance.now()) });
+  _builds.push({ id, why: n == null ? `${why}: down` : why, at: Math.round(performance.now()) }); if (_builds.length > 200) _builds.shift();
   takeDown(id);
   if (n == null) return;
   const s = { id, video: n.ok ? n.video : { width: 4, lit: 'self' }, state: 'connecting', why: null, aspect: 9 / 16, attempt: 0 };
@@ -259,6 +269,7 @@ export function tickVideos() {
   camera.getWorldPosition(_me); const now = performance.now();
   for (const s of screens.values()) {
     if (s.state === 'playing' && now - s.lastFrame > STALL_MS) setState(s, 'stalled');
+    else if (s.state === 'stalled' && now - s.lastFrame > STALL_RETRY_MS) retry(s, revision.get(s.id), 'no new frames');
     const root = entities.get(s.id);
     if (!s.quad && root) show(s);
     if (!s.audio) continue;
@@ -276,7 +287,7 @@ bus.on('entity', ({ id, kind }) => {
   if (kind === 'remove' || kind === 'demote') { if (screens.has(id)) { bump(id); takeDown(id); } }
   else if (kind === 'spawn') { const c = bagOf(id); if (c?.video) applyFrom(id, c.video, { fresh: true, why: 'spawn' }); }
 });
-bus.on('world-reset', () => clearVideos());
+bus.on('world-reset', () => { clearVideos(); forgetAllSourceStates(); });
 
 // the inspector: this viewer's own playback state (never logged, never anyone else's), and mute-for-me
 registerLive((id) => { const s = screens.get(id); return s ? { videoState: s.why ? `${s.state}: ${s.why}` : s.state } : {}; });

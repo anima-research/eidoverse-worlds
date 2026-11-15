@@ -9,7 +9,7 @@ import { CLASSES, REACH_NOTE_MS, namedPointClass, pointClass } from "../shared/p
 import { helloOf, refusalWords } from "../shared/protocol/hello.js";
 import { describeBody, mayLeave, resolveSeat, socketsUnder, vacatedFromMine, vacatedAt } from "../shared/sockbody.js";
 import { grabOf, describeGrab } from "../shared/grab.js";
-import { noteSourceState } from "../shared/video.js";
+import { applyStateFrame } from "../shared/video.js";
 import { r3 } from "../shared/protocol/round.js";
 import { BodyStateReader, type BodyObservation, type PublicPose } from "./body-state.ts";
 import { mentionRegexFor } from "./mention.ts";
@@ -1412,7 +1412,8 @@ export class WorldAgent {
           case "video-state":
             // what the projector observed of each video source (server/videosources.ts), as an AGE: look's video line
             // (shared/says.js) reads it on this process's own clock, so another machine's clock can't freshen it
-            for (const x of ((msg as { states?: unknown }).states as any[] | undefined) ?? []) if (x && typeof x.source === "string" && Number.isFinite(x.ageMs)) noteSourceState(x.source, { state: x.state, at: Date.now() - x.ageMs });
+            // (shared/video.js applyStateFrame); a source the latest frame doesn't list is forgotten (#332 review 22)
+            applyStateFrame(msg as { states?: unknown[] });
             break;
           case "clock":
             // the server's time, sent just before each snapshot to a join

@@ -251,6 +251,10 @@ const cases: Case[] = [
       V.forgetAllSourceStates?.(); const reset = V.sourceStateOf?.("cinema")?.state ?? null;
       return { first, second, reset }; },
     good: (o) => JSON.stringify(o.first) === '["live","offline"]' && JSON.stringify(o.second) === '[null,"live"]' && o.reset === null },
+  { id: "M10", what: "near's floor is the registry's (above 0): a near the door accepts is the near that plays, and survives the editor's normalize (#332 review 40)", run() {
+      const v = { source: "solstice", volume: 1, near: 0.001, radius: 12 };
+      return { gain: V.videoGain?.(v, 1), kept: V.normalizeVideo?.(v)?.video?.near }; },
+    good: (o) => Math.abs(o.gain - 0.001) < 1e-9 && o.kept === 0.001 },
   { id: "M8", what: "the inspector draws the Video card from the registry (volume 0..1, this viewer's own state, mute, take down); its edits keep the door's rules; Add Video takes a source by value", run() {
       const E = (c: any) => ({ transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, ...c });
       const flat = (ops: any[]) => ops.flatMap((o) => (o.verb === "batch" ? o.args.ops : [o]));

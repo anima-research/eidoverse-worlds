@@ -359,8 +359,8 @@ export const COMPONENTS = {
                 help: "an image on one node of this thing's model (a screen, a canvas, a poster frame): {node (its name, as the model file spells it: measure lists them), texture (store/images/…, eidoverse/assets/…, or an https link: see picture), description? (what it shows, in words: for people who can't see it and for agents), lit?: scene|self (self = a screen, unlit)}. The node's own material comes back when it is removed. A standalone image is a picture" },
   // a live video a thing plays (shared/video.js; projector design revision 2, Mica 10-20, into the trial ladder): a quad of its
   // own, as picture's, whose sound is the thing's, as sound's (the same field names and the same distance law). source is an
-  // id the OPERATOR admitted on this server, never a URL: the endpoint stays out of the log and is handed only to an
-  // admitted viewer. The door refuses an id this server hasn't admitted (mediaCheck). Live only: every viewer plays the live
+  // id the OPERATOR admitted on this server, never a URL: the endpoint stays out of the log and with the sequencer, which
+  // brokers each viewer's session; no viewer receives it. The door refuses an id this server hasn't admitted (mediaCheck). Live only: every viewer plays the live
   // edge, so playing and t0 are absent on purpose (a recorded source adds them, absent = this)
   video:      { on: "thing", fields: { source: "string", volume: "number", near: "number", radius: "number", spatial: "bool", width: "number", lit: "string", description: "string" },
                 defaults: { volume: 0.8, near: 1.5, radius: 12, spatial: true, width: 4, lit: "self" }, required: ["source"], enums: { lit: ["self", "scene"] },

@@ -15,17 +15,19 @@
 // THE SOURCE IS AN ID, NEVER A URL. `source` names a stream the OPERATOR
 // admitted on this server ("solstice", "movie-night"). The endpoint behind it
 // (a WHEP URL on the projector appliance, and any credential) lives in the
-// operator's source registry, outside the world log, and is handed only to an
-// admitted viewer for one playback session. The log is replayed, forked and
+// operator's source registry, outside the world log, and stays with the
+// sequencer: it brokers each admitted viewer's playback session
+// (server/videosources.ts), and no browser ever receives the endpoint or the
+// credential. The log is replayed, forked and
 // read by every resident: a live endpoint in it is topology, and possibly a
 // credential, in the one place everything is copied. This is deliberately
 // stricter than picture and sound, which take https links under
 // shared/mediasrc.js's tiers: a file is content, a live endpoint is plumbing.
 //
 // ADMISSION IS THE AUTHORITY'S. A video naming a source this server hasn't
-// admitted is refused at the door, like any other invalid value. The browser
-// also plays nothing it wasn't handed an endpoint for, but that is defence in
-// depth, not the rule. admitVideoSources() is how the server tells the
+// admitted is refused at the door, like any other invalid value. The sequencer
+// also brokers no session for a source it doesn't admit, but that is defence
+// in depth, not the rule. admitVideoSources() is how the server tells the
 // authority which ids exist; until it does, NO source is admitted (a server
 // that forgot to say has admitted nothing, rather than everything).
 //
@@ -49,8 +51,9 @@
 // mute and caption overlay are theirs and are never written: what they hear
 // is the authored volume times their own media gain.
 //
-// ALT is fallback and perception text: what the author says the screen is
-// for ("the solstice stage"). It is never a claim about the current frame.
+// DESCRIPTION (`description`) is fallback and perception text: what the author
+// says the screen is for ("the solstice stage"). It is never a claim about the
+// current frame.
 
 import { gainAt, SOUND_MAX_RADIUS } from './sound.js';
 import { graphemes, graphemeList, quoted } from './text.js';
@@ -112,6 +115,16 @@ export function noteSourceState(id, obs) { if (typeof id === 'string' && obs && 
 /** Forget a source (revoked by the operator): look reads it as unknown, never observed. */
 export function forgetSourceState(id) { OBSERVED.delete(id); }
 export const sourceStateOf = (id) => OBSERVED.get(id) ?? null;
+/** A reader of the sequencer's video-state frames (a browser, an mcpl agent): the latest frame is the whole story, so a
+ *  source it doesn't list is forgotten (look says unknown), never kept live until it ages out (#332 review 22). Each
+ *  observation's age is restamped on this process's clock. */
+export function applyStateFrame(frame, now = Date.now()) {
+  const seen = new Set();
+  for (const x of frame?.states ?? []) if (x && typeof x.source === 'string' && SOURCE_STATES.includes(x.state) && Number.isFinite(x.ageMs)) { noteSourceState(x.source, { state: x.state, at: now - x.ageMs }); seen.add(x.source); }
+  for (const id of [...OBSERVED.keys()]) if (!seen.has(id)) OBSERVED.delete(id);
+}
+/** A world reset, or a new connection: nothing observed before it holds (#332 review 35). */
+export function forgetAllSourceStates() { OBSERVED.clear(); }
 
 const num = (v, lo, hi, dflt) => {
   const n = Number(v);
@@ -140,7 +153,8 @@ export function normalizeVideo(data) {
   const video = {
     source: data.source,
     volume: num(data.volume, 0, 1, VIDEO_DEFAULTS.volume),
-    near: Math.min(radius, num(data.near, 0.01, VIDEO_MAX_RADIUS, VIDEO_DEFAULTS.near)),
+    // near's floor is the registry's (above 0), so what the door accepts is what plays (#332 review 40)
+    near: Math.min(radius, num(data.near, Number.MIN_VALUE, VIDEO_MAX_RADIUS, VIDEO_DEFAULTS.near)),
     radius,
     spatial: data.spatial !== false,
     width: VIDEO_DEFAULTS.width,
@@ -165,7 +179,7 @@ export function normalizeVideo(data) {
 export function videoGain(video, d, listenerGain = 1) {
   const v = video ?? {};
   const radius = num(v.radius, 1, VIDEO_MAX_RADIUS, VIDEO_DEFAULTS.radius);
-  const near = Math.min(radius, num(v.near, 0.01, VIDEO_MAX_RADIUS, VIDEO_DEFAULTS.near));
+  const near = Math.min(radius, num(v.near, Number.MIN_VALUE, VIDEO_MAX_RADIUS, VIDEO_DEFAULTS.near));
   const lg = Number.isFinite(listenerGain) ? Math.min(1, Math.max(0, listenerGain)) : 1;
   return num(v.volume, 0, 1, VIDEO_DEFAULTS.volume) * (v.spatial === false ? (d >= 0 && d < radius ? 1 : 0) : gainAt(d, near, radius)) * lg;
 }
