@@ -8,6 +8,8 @@ node_modules/
 mcpl/tokens.json
 mcpl/state.json
 services/voicebot/voices.json
+# its pre-reorg home: a box that still has one keeps it out of git
+tools/voicebot/voices.json
 .env
 .env.*
 deploy/IDENTITY.md
@@ -63,6 +65,8 @@ notes/surface-parity/
 
 # the protocol gate's sibling checkouts (run.ts --siblings: mcpl/ and services/captionbot/ take them by file:, deploy-vps.sh too)
 /.siblings/
+# their pre-reorg home, still on an upgraded VPS: ignored so provenance doesn't read the tree as dirty
+tools/protocol/.siblings/
 
 # bench outputs: per-run, and they hold the runner's absolute paths
 bench/*/out/

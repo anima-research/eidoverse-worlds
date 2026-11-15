@@ -13,6 +13,16 @@ BUN="$HOME/.bun/bin/bun"
 
 before=$(git rev-parse --short HEAD)
 git fetch origin main
+# An installed unit whose new version needs an EnvironmentFile the box lacks stops the deploy
+# here, before the reset, so the old unit still finds the code it points at.
+for unit in $(git ls-tree --name-only origin/main deploy/ | grep '\.service$'); do
+  name=$(basename "$unit" .service); dest=/etc/systemd/system/$name.service
+  [ -f "$dest" ] || continue
+  git show "origin/main:$unit" | cmp -s - "$dest" && continue
+  for env in $(git show "origin/main:$unit" | sed -n 's/^EnvironmentFile=//p'); do
+    sudo test -f "$env" || { echo "unit: $name.service needs $env (its header says what goes in it); nothing deployed" >&2; exit 1; }
+  done
+done
 git reset --hard origin/main
 after=$(git rev-parse --short HEAD)
 echo "code: $before -> $after"
@@ -41,16 +51,14 @@ if ! git diff --quiet "$before" "$after" -- services/chatbridge/package.json ser
   (cd services/chatbridge && "$BUN" install)
 fi
 
-# Each deploy/*.service the box has installed is re-installed when it differs (docs/operator/RUNNING-A-SERVER.md)
-units=(eidoverse eidoverse-mcpl); reload=0
+# Each deploy/*.service the box has installed is re-installed when it differs (docs/operator/RUNNING-A-SERVER.md);
+# its env files were checked before the reset. Those optional units are only try-restarted: one the operator stopped stays stopped.
+units=(eidoverse eidoverse-mcpl); optional=(); reload=0
 for unit in deploy/*.service; do
   name=$(basename "$unit" .service); dest=/etc/systemd/system/$name.service
   [ -f "$dest" ] || continue
-  [[ " ${units[*]} " == *" $name "* ]] || units+=("$name")
+  [[ " ${units[*]} " == *" $name "* ]] || { systemctl is-active --quiet "$name" && units+=("$name"); optional+=("$name"); }
   cmp -s "$unit" "$dest" && continue
-  for env in $(sed -n 's/^EnvironmentFile=//p' "$unit"); do
-    sudo test -f "$env" || { echo "unit: $name.service needs $env (its header says what goes in it); not installed" >&2; exit 1; }
-  done
   sudo install -m 644 "$unit" "$dest"; reload=1; echo "unit: re-installed $name.service"
 done
 [ "$reload" = 0 ] || sudo systemctl daemon-reload
@@ -66,7 +74,8 @@ if [ -d node_modules/ndarray-pixels/node_modules/sharp ] \
   sudo systemctl stop eidoverse
   rm -rf node_modules/ndarray-pixels/node_modules/sharp
 fi
-sudo systemctl restart "${units[@]}"
+sudo systemctl restart eidoverse eidoverse-mcpl
+[ "${#optional[@]}" = 0 ] || sudo systemctl try-restart "${optional[@]}"
 sleep 2
 # one unit at a time: `is-active a b` exits 0 when any one of them is up
 for name in "${units[@]}"; do systemctl is-active --quiet "$name" || { echo "deploy: $name is not running after the restart (journalctl -u $name)" >&2; exit 1; }; done
