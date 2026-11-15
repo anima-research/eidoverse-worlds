@@ -102,9 +102,9 @@ remember('ew-name', CONFIG.name);
 // the ACCOUNT a private (TRUST_NAMES) server knows you by, kept apart from the name you show (a rename must not make
 // you a stranger in your own world). Fixed at the first real name this browser used; ?account= overrides. A server with
 // sign-in ignores it: the session is the account there.
-{ let acct = params.get('account') || store?.getItem('ew-account') || '';
+{ let acct = params.get('account') || remembered('ew-account') || '';
   if (!acct && !/^guest-/.test(CONFIG.name)) acct = CONFIG.name;
-  CONFIG.account = acct || null; if (acct) store?.setItem('ew-account', acct); }
+  CONFIG.account = acct || null; if (acct) remember('ew-account', acct); }
 
 /** The name a join ack says we have, minus the transport prefix sendJoin put
  *  on the wire id ("renderer-" / "retina-"). Pure, for net.js onSnapshot.
