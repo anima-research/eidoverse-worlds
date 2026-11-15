@@ -633,7 +633,7 @@ srv.proc.kill();
   const srvB = await startServer(ENGINE, W4, OPT, "sh2");   // a restart: only what's on disk
   // speech is arrival-only (R 10-18): the master log keeps every say; an admin (Ann owns garden) pages back through all of
   // it, anyone else reads back only what was said since they arrived
-  const pager = (r: any) => (before?: number, verbs: string[] | undefined = ["say"]) => new Promise<any>((res) => { const id = `h${Math.random()}`; const on = (ev: any) => { const m = JSON.parse(String(ev.data)); if (m.type === "history" && m.reqId === id) { r.ws.removeEventListener("message", on); res(m); } };
+  const pager = (r: any) => (before?: number, verbs: string[] | null = ["say"]) => new Promise<any>((res) => { const id = `h${Math.random()}`; const on = (ev: any) => { const m = JSON.parse(String(ev.data)); if (m.type === "history" && m.reqId === id) { r.ws.removeEventListener("message", on); res(m); } };
     r.ws.addEventListener("message", on); r.send({ type: "history", reqId: id, limit: 25, ...(verbs ? { verbs } : {}), ...(before !== undefined ? { before } : {}) }); });
   const all = async (r: any) => { const page = pager(r); const got: any[] = []; let p = await page(); got.unshift(...p.entries); let guard = 0;
     while (p.hasMore && guard++ < 20) { p = await page(p.oldestSeq); got.unshift(...p.entries); } return { got, last: p }; };
@@ -644,7 +644,7 @@ srv.proc.kill();
   ok(r.snapshot?.chat?.chatTotal === N0 + lines && JSON.stringify(r.snapshot?.chat?.recentChat) === "[]", "SH2 the owner's join: no line replayed, and chatTotal counts every line the master log holds (not the ones since load)", [r.snapshot?.chat?.chatTotal, N0 + lines, r.snapshot?.chat?.recentChat?.length]);
   const bob = await client(srvB.port, "garden", "Bob", REPLICA);
   ok(JSON.stringify(bob.snapshot?.chat?.recentChat) === "[]" && bob.snapshot?.chat?.chatTotal === 0, "SH3 a non-admin's join carries no say from before it arrived (no backscroll) and no count of them", [bob.snapshot?.chat?.recentChat?.length, bob.snapshot?.chat?.chatTotal]);
-  { const { got } = await all(bob); const unf = await pager(bob)(undefined, undefined);
+  { const { got } = await all(bob); const unf = await pager(bob)(undefined, null);
     ok(got.length === 0 && unf.entries.length === 0, "SH4 a non-admin's history page (filtered by say, or not) holds no line said before it arrived", [got.length, unf.entries.length, got.slice(0, 2)]); }
   { const hb = await bob.req("history", { verbs: ["say"], limit: 200 }); const ha = await r.req("history", { verbs: ["say"], limit: 200 });
     const hbAll = await bob.req("history", { limit: 200 });

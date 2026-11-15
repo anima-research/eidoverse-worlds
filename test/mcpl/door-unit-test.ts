@@ -234,12 +234,12 @@ for (const [status, err] of [["ran", false], ["nothing", false], ["would-run", f
 // a world server that takes the request and never answers: the door's read is bounded (tools.ts HTTP_READ_MS), and the
 // tool answers as a failed call instead of hanging the agent's turn
 { const { HTTP_READ_MS } = await import("../../mcpl/tools.ts"); const { pause } = await import("../gate/wait.ts");
-  const hung = Bun.serve({ port: 0, fetch: () => new Promise<Response>(() => {}) });
+  let hits = 0; const hung = Bun.serve({ port: 0, fetch: () => { hits++; return new Promise<Response>(() => {}); } });
   const ag: any = { httpBase: `http://127.0.0.1:${hung.port}`, readHeaders: {} };
   const t0 = Date.now();
   const call = (name: string, args: any) => Promise.race([handleTool({ agent: ag } as any, name, args), pause(`the hang guard: past the read bound and its slack, ${name} hung`, HTTP_READ_MS + 5_000).then(() => "hung")]);
   const [out, sheet, models]: any[] = await Promise.all([call("set_avatar", { avatar: "x" }), call("library", { kind: "avatars" }), call("library", { kind: "models" })]);
-  ok(Number.isFinite(HTTP_READ_MS) && out !== "hung" && out.isError && Date.now() - t0 < HTTP_READ_MS + 5_000, "a world server that never answers: set_avatar fails within the read bound, it doesn't hang", out);
+  ok(Number.isFinite(HTTP_READ_MS) && out !== "hung" && out.isError && hits >= 1 && Date.now() - t0 >= HTTP_READ_MS - 500 && Date.now() - t0 < HTTP_READ_MS + 5_000, "a world server that never answers: set_avatar asks, waits out the read bound and fails, it doesn't hang", { out, hits, ms: Date.now() - t0 });
   // the timeout is said in words, not as AbortSignal's bare "The operation timed out."
   const said = (o: any) => o !== "hung" && o?.isError && /didn't send .* within \d+ s/.test(o.content?.[0]?.text ?? "") && !/operation timed out/i.test(o.content?.[0]?.text ?? "");
   ok(said(out) && said(sheet) && said(models), "…and set_avatar and the library's sheets say the server didn't answer in time, and that a retry may work", [out, sheet, models].map((o) => o?.content?.[0]?.text ?? o));

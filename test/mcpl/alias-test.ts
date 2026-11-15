@@ -31,6 +31,9 @@ for (const old of [...OLD, "teleport"]) {
 const MAIN_TOOLS = "body_state look snapshot walk_to name_place check_model take_off climb_to glide_to land_at rehearse_down rehearse_recover fold_wings unfold_wings flight_status face stop say catch_up activity pose clear_pose reach clear_reach posture ragdoll animate set_avatar library_sheet library_preview list_library spawn place light remove worlds travel measure world_history world_debug kick ban unban list_bans".split(" ");
 const lost = [...MAIN_TOOLS, "world_verb"].filter((n) => !HANDLERS[n] && !OLD.includes(n) && !TOOL_FOLDS[n] && !TOOL_REMOVED[n]);
 ok(lost.length === 0, "every tool main served is served, folded, refused as removed, or refused as unknown (renamed)", lost);
+// a fold teaches a call: the tool it names is one this server serves ("no tool: …" and "the world's …" teach no call)
+for (const [n, call] of Object.entries(TOOL_FOLDS)) { const first = call.match(/^[a-z_]+/)?.[0] ?? "";
+  ok(first === "no" || first === "the" || !!HANDLERS[first], `${n}'s fold names a served tool (${first})`, call); }
 // the docs teach today's names (review full-260 #8, #9): AGENTS.md's "refused as removed" verbs are REMOVED_VERBS; no doc here calls an old tool name
 { const { REMOVED_VERBS } = await import("../../shared/protocol/verbspec.js"); const fs = await import("node:fs");
   const read = (f: string) => fs.readFileSync(new URL(`../../${f}`, import.meta.url), "utf8");

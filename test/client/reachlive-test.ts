@@ -507,10 +507,12 @@ console.log("\ntouching with the palm, not the back of the hand");
   // head-on), which exercises the same machinery — forearm pronation first,
   // then a clamped wrist.
   let worstOff = 0, worstRig = '', tested = 0, sumBefore = 0, sumAfter = 0;
+  const handed: any[] = [], ranOn = new Set<any>();   // rigs with a measured hand, and the ones a reach ran on (by rig: two may share a name)
   for (const rig of good) {
     const av = makeAvatar(rig.P, { realParent: rig.realParent, vrm0: rig.vrm0 });
     const chain: any = measureChain(av, 'rightHand');
     if (!chain?.restQ?.qH || !chain.palmRest) continue;
+    handed.push(rig);
     const at = (n: string) => av.nodes[n]?.getWorldPosition(new THREE.Vector3());
     const sh = at('rightUpperArm');
     const R = chain.L1 + chain.L2;
@@ -550,7 +552,7 @@ console.log("\ntouching with the palm, not the back of the hand");
       av.root.updateMatrixWorld(true);
       const after = Math.acos(Math.max(-1, Math.min(1, palmNow().dot(want)))) * 180 / Math.PI;
 
-      tested++; sumBefore += before; sumAfter += after;
+      tested++; ranOn.add(rig); sumBefore += before; sumAfter += after;
       if (after > worstOff) { worstOff = after; worstRig = rig.name; }
     }
   }
@@ -558,7 +560,7 @@ console.log("\ntouching with the palm, not the back of the hand");
   console.log(`  ${tested} reaches: palm off-target ${mb.toFixed(0)}° -> ${ma.toFixed(0)}° mean, worst ${worstOff.toFixed(0)}° on ${worstRig}`);
   check(`the palm turns to face what it touches (mean ${mb.toFixed(0)}° -> ${ma.toFixed(0)}°)`, ma < mb / 2);
   check(`no palm is left facing away (worst ${worstOff.toFixed(0)}°)`, worstOff < 90, `on ${worstRig}`);
-  check('...and it ran on every rig', tested >= 14, `${tested}`);
+  check('...and it ran on every rig with a measured hand', handed.length >= 3 && handed.every((r) => ranOn.has(r)), `${ranOn.size} of ${handed.length}; missed ${handed.filter((r) => !ranOn.has(r)).map((r) => r.name).join(', ')}`);
 }
 
 console.log("\nno flicker between two poses");

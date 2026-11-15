@@ -101,6 +101,9 @@ console.log("\nthe Inspector offers only what the door takes; every axis takes t
   { const la = seed({ model: "store/x.glb", pos: [0, 0, 0], yaw: 0, "look-at": { target: "@viewer", forward: [0.6, 0, 0.8] } });
     const plan: any = editOps(D.rec(la), la, { "look-at.forward": "[0.6,0,0.8]" }); const v = plan.ops.flat(9).find((o: any) => o?.args?.component === "look-at")?.args?.value;
     check("a custom forward's current-value option is sent as its vector", same(v?.forward, [0.6, 0, 0.8]), j(v)); }
+  { const sp = seed({ model: "store/x.glb", pos: [0, 0, 0], yaw: 0, motion: { type: "spin" } });
+    const plan: any = editOps(D.rec(sp), sp, { "motion.type": "path" }); const v = plan.ops.flat(9).find((o: any) => o?.args?.component === "motion")?.args?.value;
+    check("switching motion.type spin → path writes a path with its points", v?.type === "path" && Array.isArray(v?.points) && v.points.length > 0, j(v)); }
   { const op = seed({ model: "store/x.glb", pos: [0, 0, 0], yaw: 0, openable: { open: false } }); const r = D.call("set", { id: op, component: "openable", value: { open: false, axis: "-x" } });
     check("openable.axis '-x' is refused: a negative axis is a vector", !r.ok, j(r.ok ? D.rec(op) : r)); }
   check("the Inspector offers a look-at forward row", (fieldAt(inspectSchema(entOf(DESCRIPTORS.LookAt), "x"), "look-at.forward") as any)?.options?.length > 0);

@@ -382,7 +382,7 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
   // RS8: whisper was removed (R 10-18): the ws message is refused in the registry's words (`removed`) and reaches nobody,
   // held for nobody; the authority's request of that name is refused `removed` too, never as an unknown verb
   { const vy = await sock(S4.port); const jv = await vy.join("heath", "Vole", { agentToken: mint({ kind: "agent", name: "Vole", sub: "agent:vole@home.test" }) });
-    const mo = await sock(S4.port); await mo.join("heath", "Fern", { agentToken: "tok-fern" });   // Fern: still a moderator
+    const mo = await sock(S4.port); const jm = await mo.join("heath", "Fern", { agentToken: "tok-fern" });   // Fern: still a moderator
     const k = vy.msgs.length; vy.raw({ type: "whisper", to: "Fern", text: "why was I muted?" }); await sleep(400);
     const vyRef = vy.msgs.slice(k).find((m) => m.type === "error" && m.about === "whisper");
     const rq = await vy.req("whisper", { to: "Fern", text: "psst" });
@@ -411,9 +411,9 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     const nt = await sock(S4.port); const jn = await nt.join("heath", "Newt", { agentToken: mint({ kind: "agent", name: "Newt", sub: "agent:newt@home.test" }) });
     const w2 = await sock(S4.port); const jw2 = await w2.join("heath", "Wren", { agentToken: "tok-wren" });   // a takeover of Wren's leg: a fresh arrival
     const seen10 = { newtWs: await hist2(nt), newtReq: await histReq(nt, { limit: 200 }), newtJoin: heron(jn.snapshot?.state) || jn.snapshot?.chat?.chatTotal !== 0,
-      fernWs: await hist2(mo), fernReq: await histReq(mo, { verbs: ["say"], limit: 200 }),
+      fernWs: await hist2(mo), fernReq: await histReq(mo, { verbs: ["say"], limit: 200 }), fernJoin: heron(jm.snapshot?.state) || jm.snapshot?.chat?.chatTotal !== 0,
       ownerWs: await hist2(w2), ownerReq: await histReq(w2, { verbs: ["say"], limit: 200 }), ownerTotal: jw2.snapshot?.chat?.chatTotal, ownerWindow: jw2.snapshot?.chat?.recentChat?.length };
-    ok(!!jn.snapshot && !!jw2.snapshot && none(seen10.newtWs) && none(seen10.newtReq) && !seen10.newtJoin && none(seen10.fernWs) && none(seen10.fernReq) && some(seen10.ownerWs) && some(seen10.ownerReq) && seen10.ownerTotal > 0 && seen10.ownerWindow === 0,
+    ok(!!jn.snapshot && !!jw2.snapshot && none(seen10.newtWs) && none(seen10.newtReq) && !seen10.newtJoin && none(seen10.fernWs) && none(seen10.fernReq) && !seen10.fernJoin && some(seen10.ownerWs) && some(seen10.ownerReq) && seen10.ownerTotal > 0 && seen10.ownerWindow === 0,
       "RS10 speech is arrival-only: a stranger and a moderator who arrived after a say read none of it back (history, the authority's history, the join); an owner arriving later reads the master log", seen10);
     // RS10b (the house's view, #260 10-20): reading speech back is a permission a role holds (readChat), not a role named in
     // the protocol: Newt, granted readChat alone, reads the master log on a fresh arrival; still nothing for Newt before it

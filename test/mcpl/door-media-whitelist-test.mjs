@@ -29,6 +29,7 @@ for (const forbidden of ['request', 'say', 'spawn', 'place', 'remove', 'kick', '
   check(`outbound REFUSES ${forbidden}`, !guard.includes(`"${forbidden}"`));
 }
 check('outbound refusal is logged, not silent', /refusing to forward non-media frame/.test(guard));
+check('outbound refusal returns before the send', /refusing to forward non-media frame[^\n]*\n\s*return;/.test(guard));
 
 // ---- INBOUND (world → sidecar): dropping is silent, so absence is invisible ----
 const inbound = src.slice(src.indexOf('case "relay-cred":'), src.indexOf('case "snapshot":'));
@@ -40,6 +41,7 @@ for (const fwd of ['relay-cred', 'sfu-offer', 'sfu-ice', 'sfu-route',
                    'voice-service', 'voice-moderated']) {
   check(`inbound forwards ${fwd}`, inbound.includes(`case "${fwd}":`));
 }
+check('inbound hands the frames to the sidecar', /this\.onMedia\?\.\(msg\);\s*break;/.test(inbound));
 
 // ---- negative controls: both matchers must be able to fail ----
 // 🔴 The first version tested string literals against themselves — constants

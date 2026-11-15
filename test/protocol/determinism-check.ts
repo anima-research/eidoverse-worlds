@@ -16,7 +16,7 @@ const CALL = /\b(?:Math\.(?:sin|cos|tan|atan2|exp|log|pow|random)|Date\.now|perf
 // file → a pattern the line must match, and why the call is not a replica's number
 const ALLOWED: [string, RegExp, string][] = [
   ["shared/protocol/simlayer.js", /^const yawOf = \(q\) =>/, "the engine view's yaw: eidosim reads the quaternion (sim.js quatOf) when the view carries one, which worldPose always does"],
-  ["shared/mover.js", /Math\.(exp|atan2)\(/, "the walker: the authority steps it once and writes rounded results into the log (mover-check proves the client agrees); no replica re-walks"],
+  ["shared/mover.js", /^(?!.*(?:Math\.(?:sin|cos|tan|log|pow|random)|Date\.now|performance\.now)\s*\().*Math\.(?:exp|atan2)\(/, "the walker: the authority steps it once and writes rounded results into the log (mover-check proves the client agrees); no replica re-walks"],
   ["shared/terrainshape.js", /Date\.now\(\)/, "a grid fetch's retry timer (cache bookkeeping); the grid's heights are the fold's input, not its arithmetic"],
 ];
 const IMPORT = /(?:(?:import|export)[^'";]*from\s*|import\s*\(?\s*|require\s*\(\s*)['"](\.[^'"]+)['"]/g;   // also export-from and bare `import './x'`
@@ -31,6 +31,9 @@ ROOTS.forEach(walk);
 // the rule on its own samples: a call is caught, a mention in a comment is not
 for (const [line, hit] of [["const k = 1 - Math.exp(-ease * dt);", true], ["// no Math.pow here", false], ["const t = Date.now();", true]])
   if (CALL.test(line.replace(/\/\/.*$/, "")) !== hit) { console.log(`[determinism-check] self-check failed on ${line}`); process.exit(2); }
+// an allowed line covers its own call, never another banned call beside it
+for (const [rel, line, ok] of [["shared/mover.js", "const k = 1 - Math.exp(-ease * dt);", true], ["shared/mover.js", "return Math.exp(x) + Math.random();", false]] as const)
+  if (ALLOWED.some(([f, re]) => rel === f && re.test(line)) !== ok) { console.log(`[determinism-check] allow self-check failed on ${line}`); process.exit(2); }
 const offences: string[] = [];
 for (const rel of files) {
   const src = fs.readFileSync(path.join(ROOT, rel), "utf8").replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));

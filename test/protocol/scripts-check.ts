@@ -720,7 +720,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r)); process.exit(0);\n`);   // 
       for (let i = 0; i < 3; i++) { clock.advance(5000); for (const x of D.tick(w) ?? []) ticks.push(`${x.status}${x.code ? ` ${x.code}` : ""}`); }
       clock.advance(100); const enter = D.presenceEvent(w, "enter", "vic").map((x: any) => `${x.status}${x.code ? ` ${x.code}` : ""}`);
       return { req: ok(req) ? "ok" : code(req), ticks, enter, written: w.entries.slice(n0).map((x: any) => `${x.kind}:${x.verb ?? x.op}:${x.actor}`) }; },
-    good: (o) => o.req === "ok" && o.ticks.length >= 2 && !o.ticks.some((t: string) => /record-altered/.test(t)) && !o.enter.some((t: string) => /record-altered/.test(t)) && o.written.length > 0 },
+    good: (o) => o.req === "ok" && o.ticks.length >= 2 && !o.ticks.some((t: string) => /record-altered/.test(t)) && !o.enter.some((t: string) => /record-altered/.test(t)) && o.enter.length >= 1 && o.enter.every((t: string) => t === "ran") && o.written.length > 0 },
   { id: "B27", what: "knobs' 4 KiB is counted in UTF-8 bytes: 3 000 two-byte characters (about 6 000 bytes) are refused too-big where 3 000 ASCII fit", run(s) { cast(s);
       s.call("olive", "create", { id: "kb", model: "crate", place: { at: [0, 0] } }); const t = `world.on("use", () => {});\n`;
       const wide = install(s, "olive", "kb", "w", t, { scope: { ids: "self", comps: ["t/n"] }, on: ["use"], knobs: { note: "é".repeat(3000) } }).r;

@@ -43,10 +43,10 @@ const ONE = Object.freeze({ get: (n) => (n === "crate" ? { label: "a crate", siz
   const bare = worldOf({ name: "bare", entries: [], getBlob: () => null, putBlob: () => "", now, writeLine: () => {} });
   ok("C4 …and the bare authority (worldOf with no catalogue) holds none: it falls back to NO_CATALOGUE, which names nothing", bare.catalogue === null && NO_CATALOGUE.get("crate") === undefined && NO_CATALOGUE.list("").length === 0, bare.catalogue); }
 
-// C5: the suites' lab table is a fixture: it lives in test/, and no runtime file imports it
-{ const g = Bun.spawnSync(["git", "-C", ENGINE, "grep", "-l", "labmodels", "--", "shared", "server", "mcpl", "client/lib"]);
+// C5: the suites' lab table is a fixture: it lives in test/, and no runtime file (shared/ server/ mcpl/ client/ services/) imports it
+{ const g = Bun.spawnSync(["git", "-C", ENGINE, "grep", "-l", "labmodels", "--", "shared", "server", "mcpl", "client", "services"]);
   const users = String(g.stdout).split("\n").filter(Boolean);
-  ok("C5 the lab table is test/harness/labmodels.js and no runtime file imports it", !fs.existsSync(path.join(ENGINE, "shared/protocol/labmodels.js")) && !users.length && !!LAB_CATALOGUE.get("crate"), users); }
+  ok("C5 the lab table is test/harness/labmodels.js and no runtime file imports it", g.exitCode === 1 && !fs.existsSync(path.join(ENGINE, "shared/protocol/labmodels.js")) && !users.length && !!LAB_CATALOGUE.get("crate"), users); }
 
 console.log(`[catalogue-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

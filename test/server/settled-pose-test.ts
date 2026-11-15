@@ -26,7 +26,7 @@ import { suite } from "../gate/suite.ts";
 // silently testing a stale copy.
 function settledPose(pose: unknown): Record<string, unknown> | null {
   if (!pose) return null;
-  const { mic: _mic, hear: _hear, ...still } = withoutOnceAnim(pose as Record<string, unknown>);
+  const { mic: _mic, hear: _hear, t: _t, seq: _seq, ...still } = withoutOnceAnim(pose as Record<string, unknown>);
   if (still.clip === "ragdoll") { still.clip = "idle"; delete still.pose; }
   return still;
 }
@@ -113,6 +113,8 @@ const ck = (n: string, got: unknown, want: unknown) => ok(JSON.stringify(got) ==
 {
   const src = await Bun.file(new URL("../../server/server.ts", import.meta.url)).text();
   ck("server still defines settledPose", /function settledPose\(/.test(src), true);
+  { const body = (src.match(/function settledPose\([^]*?\n\}\n/)?.[0] ?? "").split("\n").filter((l) => !/^\s*\/\//.test(l)).join(" ").replace(/\s+/g, " ").trim();
+    ck("the real function is this mirror, statement for statement", body, "function settledPose(pose: unknown): Record<string, unknown> | null { if (!pose) return null; const { mic: _mic, hear: _hear, t: _t, seq: _seq, ...still } = withoutOnceAnim(pose as Record<string, unknown>); if (still.clip === \"ragdoll\") { still.clip = \"idle\"; delete still.pose; } return still; }"); }
   ck("the ragdoll rule is still in the real function",
      /still\.clip === "ragdoll".*still\.clip = "idle".*delete still\.pose/s.test(src), true);
   ck("the real function drops mic and hear",

@@ -271,7 +271,7 @@ const cases: Case[] = [
         { verb: "create", args: { id: "crate", components: { mesh: { shape: "box", size: [0.4, 0.4, 0.4] }, physics: { kind: "dynamic" }, parent: { to: "plinth" }, transform: { pos: [0, 0.6, 0] } } } }] });
       const E = s.entries().slice(n0); const rs = E.find((e: any) => e.kind === "request" && e.verb === "resettle"); const ln = E.find((e: any) => e.kind === "physics" && e.verb === "launch" && e.body?.id === "crate");
       return { r: show(r), resettle: rs?.body?.occupants ?? null, launchY: ln?.body?.p?.[1] ?? null, crate: !!comp(s, "crate", "physics") }; },
-    good: (o) => o.r === "ok" && JSON.stringify(o.resettle) === '["crate"]' && typeof o.launchY === "number" && o.crate },
+    good: (o) => o.r === "ok" && JSON.stringify(o.resettle) === '["crate"]' && typeof o.launchY === "number" && Math.abs(o.launchY - 0.6) < 1e-6 && o.crate },
   { id: "F4", what: "(review of PR #260, followups.js:58) a resettle the gate would refuse (the speck freed from its scaled host would stand at world scale 1800, past the stored ±1000) refuses the asker's write whole: nothing is written, the host keeps its scale", run(s) {
       s.call("olive", "create-world", { title: s.name }); s.call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } });
       s.call("olive", "create", { id: "big", components: { mesh: { shape: "box", size: [1, 0.5, 1] }, transform: { pos: [0, 0, 0], scale: [100, 100, 100] } } });

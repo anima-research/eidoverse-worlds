@@ -257,9 +257,9 @@ const cases: Case[] = [
       const r = s.call("olive", "set", { id: "poster", component: "picture", value: { src: IMG, description: "a print of the hearth at dusk" } });
       return { r: show(r), v: comp(s, "poster", "picture"), noted: (r.notes ?? []).some((n: any) => /isn't a component/.test(n.why)) }; },
     good: (o) => o.r === "ok" && o.v?.lit === "scene" && !("flip" in (o.v ?? {})) && o.v?.width === 1 && !o.noted },
-  { id: "P2", what: "picture src: http://, a dot segment, %2e, an IP address, localhost, user:pw@ and a port of its own are refused (shape)", run(s) { cast(s);
+  { id: "P2", what: "picture src: http://, a dot segment, any % escape (%2e, %2f, %41, %25), an IP address, localhost, user:pw@ and a port of its own are refused (shape)", run(s) { cast(s);
       s.call("olive", "create", { id: "poster", components: { transform: { pos: [0, 0, 0] } } });
-      const bad = ["http://x.org/a.png", "store/images/../a.png", "store/images/%2e.png", "https://192.168.1.1/a.png", "https://localhost/a.png", "https://me:pw@cdn.example.org/a.png", "https://cdn.example.org:8443/a.png", "https://printer.local/a.png", "javascript:alert(1)"];
+      const bad = ["http://x.org/a.png", "store/images/../a.png", "store/images/%2e.png", "https://192.168.1.1/a.png", "https://localhost/a.png", "https://me:pw@cdn.example.org/a.png", "https://cdn.example.org:8443/a.png", "https://printer.local/a.png", "javascript:alert(1)", "store/images/a%2fb.png", "store/images/.%2e/a.png", "store/images/%41.png", "store/images/x%25.png"];
       return { codes: bad.map((src) => code(s.call("olive", "set", { id: "poster", component: "picture", value: { src } }))) }; },
     good: (o) => o.codes.every((c: string) => c === "shape") },
   { id: "P3", what: "picture description: 201 characters refused (bounds); 200 ZWJ families admitted (graphemes, not code units)", run(s) { cast(s);

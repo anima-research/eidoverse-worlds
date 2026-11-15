@@ -69,9 +69,10 @@ for (const verb of ["throw", "drop"]) { const W = `ride-${verb}`; call(W, "rowan
 { const W = "shear"; call(W, "rowan", "create-world", { title: W }); call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG }); call(W, "rowan", "set", { id: "@world", component: "access", value: { join: "open", build: "member" } });
   const h = Math.sin(Math.PI / 12), c = Math.cos(Math.PI / 12);   // a wide flat slab turned 30° about up, static
   call(W, "rowan", "create", { id: "slab", model: "crate", components: { physics: { kind: "static" }, transform: { pos: [0, 0, 0], q: [0, h, 0, c], scale: [2, 0.3, 1] } } });
-  box(W, "chip", [0, 1.2, 0], [0.3, 0.3, 0.3]); call(W, "vic", "move", { to: [0, 0, -1.2] }); call(W, "vic", "punt", { id: "chip", v: [0, 0.3, 0] }); clock.t += 6000; call(W, "vic", "look", {});
+  box(W, "chip", [0, 1.2, 0], [0.3, 0.3, 0.3]); call(W, "vic", "move", { to: [0, 0, -1.2] }); const pu = call(W, "vic", "punt", { id: "chip", v: [0, 0.3, 0] }); clock.t += 6000; call(W, "vic", "look", {});
   const chip = st(W).entities.chip.c; const q = chip.transform.q ?? [0, 0, 0, 1];
-  ok(chip.transform.pos[1] > 0.1 && !chip.parent, "SE8 a thing that settles on a turned, non-uniformly scaled slab is NOT its child (it would be sheared); it rests on it all the same", { parent: chip.parent ?? null, pos: chip.transform.pos, q }); }
+  const rested = restsOf(openWorld(root, W).entries).some((x) => x.id === "chip");
+  ok(pu.ok && rested && chip.transform.pos[1] > 0.1 && !chip.parent, "SE8 a thing that settles on a turned, non-uniformly scaled slab is NOT its child (it would be sheared); it rests on it all the same", { punt: pu.ok ?? pu.refused, rested, parent: chip.parent ?? null, pos: chip.transform.pos, q }); }
 // R 10-12 (primitives): a mesh thing is a body to eidosim like a modelled one. A dynamic mesh box dropped from a height
 // falls and rests on the floor; a crate thrown onto a static mesh box rests on it and is parented to it
 { const W = "mesh"; call(W, "rowan", "create-world", { title: W }); call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG }); call(W, "rowan", "set", { id: "@world", component: "access", value: { join: "anyone" } });

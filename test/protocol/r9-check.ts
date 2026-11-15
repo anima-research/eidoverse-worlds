@@ -270,8 +270,8 @@ const cases: Case[] = [
   // ---------------- L: lows ----------------
   { id: "L1", what: "(q5) a verb named after an Object.prototype key is an unknown verb, never a crash", run(s) {
       s.call("olive", "create-world", { title: s.name });
-      const out: any = {}; for (const v of ["constructor", "toString", "__proto__", "hasOwnProperty", "valueOf"]) out[v] = show(s.call("olive", v, { x: 1 })); return out; },
-    good: (o) => Object.values(o).every((x: any) => /^refused unknown-verb/.test(x)) },
+      const out: [string, string][] = []; for (const v of ["constructor", "toString", "__proto__", "hasOwnProperty", "valueOf"]) out.push([v, show(s.call("olive", v, { x: 1 }))]); return out; },
+    good: (o) => o.length === 5 && o.every(([, x]: [string, string]) => /^refused unknown-verb/.test(x)) },
   { id: "L3", what: "(claims O2) an unlogged grab's activation records no identity (no trigger, no event.by; the script still hears `by`)", run(s) {
       const WHO = "u-vicvicvicvicvicvicvi";
       s.call("olive", "create-world", { title: s.name }); roles(s, { [WHO]: "member" });

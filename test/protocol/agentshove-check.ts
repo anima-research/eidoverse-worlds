@@ -240,7 +240,7 @@ try {
     for (let i = 0; i < 40 && !sent.length; i++) await sleep(50); await sleep(500);
     const after = await orig("consent", {});
     ag.request = orig;
-    ok(closed?.ok && ag.joined && sent.length > 0 && after?.table?.move === false,
+    ok(closed?.ok && ag.joined && sent.length > 0 && sent.every((a) => a?.move !== true) && after?.table?.move === false,
       "AS15 (R 10-28) a rejoin keeps the agent's gates: what it closed stays closed", { closed, joined: ag.joined, sent, table: after?.table }); }
   // AS11 (pure: a body that never joins) — a stall blames only a thing the stride presses INTO
   { const stallAgainst = (at) => {

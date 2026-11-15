@@ -14,7 +14,10 @@ let answer: (url: string) => Promise<Response> = async () => new Response("no", 
 const realFetch = globalThis.fetch;
 globalThis.fetch = (async (u: any, init?: any) => { seen.push({ url: String(u), signal: init?.signal }); return answer(String(u)); }) as typeof fetch;
 const readOf = (part: string) => seen.find((s) => s.url.includes(part));
-const bounded = (s: Seen | undefined) => s?.signal instanceof AbortSignal;
+// a deadline is a timeout signal (AbortSignal.timeout), not just any signal
+const timed = new WeakSet<AbortSignal>(); const realTimeout = AbortSignal.timeout.bind(AbortSignal);
+AbortSignal.timeout = ((ms: number) => { const s = realTimeout(ms); timed.add(s); return s; }) as typeof AbortSignal.timeout;
+const bounded = (s: Seen | undefined) => s?.signal instanceof AbortSignal && timed.has(s.signal);
 
 try {
   const ag: any = new WorldAgent({ name: "reader", world: "reads-bench", url: "ws://127.0.0.1:1/ws" });

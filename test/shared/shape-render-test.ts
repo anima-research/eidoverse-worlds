@@ -189,7 +189,8 @@ await tryRow('GR', async () => {
   check('GR1 grass\'s fields are the flora spelling (no bladeHeight, spacing, perCell, colorTip); preset is stored as written; seed, size and strokes registered', ['bladeHeight', 'spacing', 'perCell', 'colorTip'].every((k) => !(k in G.fields)) && G.fields.preset === 'string' && !('preset' in (G.dropped ?? {})) && G.fields.seed === 'int' && G.fields.size === 'number' && G.fields.strokes === 'array', Object.keys(G.fields));
   const FA = await import('../../shared/flora_args.js');
   const P = await import('../../shared/flora-presets.js');
-  check('GR2 the presets the door checks a name against are the defs file\'s (shared/flora-presets.js = defs/flora/_presets.json)', JSON.stringify(P.FLORA_PRESETS.mojave) === JSON.stringify(JSON.parse(read('defs/flora/_presets.json')).mojave), '');
+  { const { doc: _d, ...defs } = JSON.parse(read('defs/flora/_presets.json'));
+    check('GR2 the presets the door checks a name against are the defs file\'s (shared/flora-presets.js = defs/flora/_presets.json)', JSON.stringify(P.FLORA_PRESETS) === JSON.stringify(defs), Object.keys(defs).filter((k) => !(k in P.FLORA_PRESETS))); }
   const W = scratchWorld('w2r-grass');
   let r = W.call('set', { id: '@world', component: 'grass', value: { preset: 'mojave', width: 40, depth: 30, seed: 5 } });
   const g = W.state().entities['@world'].c.grass;

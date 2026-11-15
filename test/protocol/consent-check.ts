@@ -78,13 +78,14 @@ ok(decide(P, "u-bbbbbbbbbbbbbbbbbbbb", "u-alice", "shove").mode === "deny", "C5 
   const A = "u-aaaaaaaaaaaaaaaaaaaa", B = "u-bbbbbbbbbbbbbbbbbbbb"; let now = 1800000000000;
   const w = openLive(dir, "w", { now: () => now, custodyFile: path.join(root, "custody.json"), nameOf: () => null, kindOf: () => "human" });
   now += 1000; request(w, A, "create-world", { title: "w" });
-  const o = { open: fs.openSync, sync: fs.fsyncSync, write: fs.writeSync }; const dirFds = new Set<number>(), tmpFds = new Set<number>(); let dirSynced = 0, shorts = 0;
+  const o = { open: fs.openSync, sync: fs.fsyncSync, write: fs.writeSync, rename: fs.renameSync }; const dirFds = new Set<number>(), tmpFds = new Set<number>(); let dirSynced = 0, shorts = 0, renamed = false;
+  fs.renameSync = function (a: any, b: any) { const r = o.rename.call(fs, a, b); if (/consent\.json$/.test(String(b))) renamed = true; return r; };
   fs.openSync = function (p: any, ...a: any[]) { const fd = o.open.call(fs, p, ...a); if (path.resolve(String(p)) === path.resolve(dir)) dirFds.add(fd);
     if (/consent\.json\..*\.tmp$/.test(String(p))) tmpFds.add(fd); return fd; };
-  fs.fsyncSync = function (fd: number) { if (dirFds.has(fd)) dirSynced++; return o.sync.call(fs, fd); };
+  fs.fsyncSync = function (fd: number) { if (dirFds.has(fd) && renamed) dirSynced++; return o.sync.call(fs, fd); };
   fs.writeSync = function (fd: number, b: any, off?: any, len?: any, ...r: any[]) {   // the consent temp's first write takes all but its last byte
     if (shorts === 0 && tmpFds.has(fd) && typeof b !== "string" && len > 1) { shorts++; return o.write.call(fs, fd, b, off, len - 1, ...r); } return o.write.call(fs, fd, b, off, len, ...r); };
-  let set: any; try { now += 1000; set = request(w, A, "consent", { block: B }); } finally { Object.assign(fs, { openSync: o.open, fsyncSync: o.sync, writeSync: o.write }); }
+  let set: any; try { now += 1000; set = request(w, A, "consent", { block: B }); } finally { Object.assign(fs, { openSync: o.open, fsyncSync: o.sync, writeSync: o.write, renameSync: o.rename }); }
   let saved: any = null; try { saved = JSON.parse(fs.readFileSync(path.join(dir, CONSENT_FILE), "utf8")); } catch { /* torn or absent */ }
   if (process.platform === "win32") na("C12 a block's consent file: its directory is synced after the rename", "Windows can't sync a directory");
   else ok(set?.ok && dirSynced >= 1, "C12 a block's consent file: its directory is synced after the rename", { set: set?.ok, dirSynced });

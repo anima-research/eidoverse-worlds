@@ -180,7 +180,10 @@ check('right edge (in the 6px inset) → hi', hitRegion(regions, cv, (slider.x +
 { const r2 = renderCanvas(cv, [{ t: 'range', k: 'deg', label: 'turn', value: 90, min: -180, max: 180, step: 15 }], {});
   const s = r2[0];
   check('a wide range with a coarse step: frac 0.6 → 36 snaps to 30, never 36', hitRegion(r2, cv, (s.x + 6 + 0.6 * (s.w - 12)) / cv.width, (s.y + s.h / 2) / cv.height)?.payload === 30, String(hitRegion(r2, cv, (s.x + 6 + 0.6 * (s.w - 12)) / cv.width, (s.y + s.h / 2) / cv.height)?.payload));
-  check('value clamps into [min,max] before painting (no region past the track)', s.x + s.w <= cv.width); }
+  check('no region past the track', s.x + s.w <= cv.width);
+  paintLog.length = 0; renderCanvas(cv, [{ t: 'range', k: 'deg', label: 'turn', value: 500, min: -180, max: 180, step: 15 }], {});
+  const txt = paintLog.filter((l) => l.startsWith('fillText('));
+  check('value clamps into [min,max] before painting (500 paints as 180)', txt.some((l) => l.startsWith('fillText("180')) && !txt.some((l) => l.startsWith('fillText("500')), txt); }
 
 
 console.log('PANELS — a region OWNS its outer boundary (the laser lands on those pixels)');

@@ -143,8 +143,8 @@ try {
     // result.isError must see the refusal AS an error, not a successful say.
     check("malformed trio: result.isError === true (not just failure-shaped prose)",
       r?.result?.isError === true, JSON.stringify(r?.result)?.slice(0, 120));
-    check("malformed trio: zero say entries created", !says.some((x) => x.args?.text === "should not land"), JSON.stringify(says));
-    check("partial trio (utt without spoken): refused, zero says", !says.some((x) => x.args?.text === "partial should not land"), JSON.stringify(says));
+    check("malformed trio: zero say entries created", says.length === 0, JSON.stringify(says));
+    check("partial trio (utt without spoken): refused, zero says", says.length === 0, JSON.stringify(says));
     check("partial trio: result.isError === true",
       rp?.result?.isError === true, JSON.stringify(rp?.result)?.slice(0, 120));
     // COERCION vectors (adversarial review): Number(null)===0, Number(true)===1
@@ -172,6 +172,7 @@ try {
         rr?.result?.isError === true && n === 0,
         `says=${n} isError=${rr?.result?.isError} reply=${JSON.stringify(rr?.result)?.slice(0, 80)}`);
     }
+    check("coercion: no say of any text was created", coerced.length === 0, JSON.stringify(coerced));
   }
 
   // 4. Unrelated extra key never reaches the log.

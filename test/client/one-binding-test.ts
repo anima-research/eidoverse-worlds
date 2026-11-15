@@ -33,7 +33,7 @@ const ROWS: Row[] = [
     requires: [["shared/protocol/authority.js", /from "\.\/physconst\.js"/], ["client/lib/thingphysics.js", /from '\.\.\/\.\.\/shared\/protocol\/physconst\.js'/],
       ["client/lib/ui/useprompt.js", /from '\.\.\/\.\.\/\.\.\/shared\/protocol\/physconst\.js'/], ["client/lib/ui/commands/handlers.js", /from '\.\.\/\.\.\/\.\.\/\.\.\/shared\/protocol\/physconst\.js'/],
       ["server/messages.ts", /from "\.\.\/shared\/protocol\/physconst\.js"/], ["shared/grab.js", /from '\.\/protocol\/physconst\.js'/]] },
-  { name: "a 3-place rounding or −0 scrub is round.js's", owner: [ROUND], forbidden: [/\bconst r3\s*=\s*\(/, /\bnoNeg0\s*=\s*\(/, /\bunNegZero\s*=\s*\(/, /\bconst r9\s*=\s*\(/],
+  { name: "a 3-place rounding or −0 scrub is round.js's", owner: [ROUND], forbidden: [/\bconst r3\s*=/, /\bnoNeg0\s*=\s*\(/, /\bunNegZero\s*=\s*\(/, /\bconst r9\s*=/],
     requires: [["shared/protocol/authority.js", /from "\.\/round\.js"/], ["client/lib/thingphysics.js", /from '\.\.\/\.\.\/shared\/protocol\/round\.js'/],
       ["shared/protocol/launchplan.js", /from "\.\/round\.js"/], ["shared/protocol/simlayer.js", /from "\.\/round\.js"/], ["shared/hierarchy.js", /from '\.\/protocol\/round\.js'/],
       ["tools/import-v1/translate-v1.js", /from "\.\.\/\.\.\/shared\/protocol\/round\.js"/], ["mcpl/agent.ts", /from "\.\.\/shared\/protocol\/round\.js"/],
@@ -56,7 +56,7 @@ const ROWS: Row[] = [
   { name: "a retired command's line is said before dispatch", owner: [], scope: [], forbidden: [], requires: [["client/lib/ui/chat.js", /row\?\.retired\)\s*\{\s*logChat\('\*',\s*row\.retired\)/]] },
   // a sky's ts, a role's until, an access list's end are the authority's stamps (test/client/server-clock-readers-test.ts runs inspect.js's)
   { name: "a server stamp is read on serverNow, never this machine's Date.now()", owner: ["client/lib/serverclock.js"],
-    scope: ["client/lib/sky/sky.js", "client/lib/edit/skypanel.js", "client/lib/render/materials.js", "client/lib/ui/rolespanels.js", "client/lib/edit/panels.js", "client/lib/edit/inspect.js"], forbidden: [/\bDate\.now\(\)/] },
+    scope: ["client/lib/sky/sky.js", "client/lib/edit/skypanel.js", "client/lib/render/materials.js", "client/lib/ui/rolespanels.js", "client/lib/edit/panels.js", "client/lib/edit/inspect.js"], forbidden: [/\bDate\.now\(\)/, /\bnew Date\(\s*\)/] },
   { name: "an HTML escaper is markup.js's escapeHtml (it escapes ')", owner: ["client/lib/ui/markup.js"], scope: walk("client").filter((f) => /\.(js|mjs)$/.test(f)),
     forbidden: [/\.replace\(\/\[&<>"'?\]\/g/] },
   // exempt: the boot trip keys read the live URL (a rename's replaceState changes ?name); breadcrumbs and warmqueue are leaves

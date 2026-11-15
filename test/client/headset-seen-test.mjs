@@ -31,8 +31,9 @@ check('a session 31 days ago has EXPIRED — the machine stops claiming a headse
   headsetSeenRecently(NOW, String(NOW - 31 * 864e5)) === false);
 check('the TTL is a month, not a lifetime and not a session',
   HEADSET_SEEN_TTL_MS > 7 * 864e5 && HEADSET_SEEN_TTL_MS <= 90 * 864e5, `${HEADSET_SEEN_TTL_MS / 864e5} days`);
+check('the TTL is exactly 30 days', HEADSET_SEEN_TTL_MS === 30 * 864e5, String(HEADSET_SEEN_TTL_MS));
 check('never seen → not recently', headsetSeenRecently(NOW, null) === false);
-// THE BOUNDARY, not a day either side: `<` → `<=` and a millisecond TTL shift must fail (the other TTL check is a loose 7..90-day range)
+// THE BOUNDARY, not a day either side: `<` → `<=` must fail (both rows read the constant; a shifted TTL fails the exactly-30-days row)
 check('exactly at the TTL is NOT recent (the boundary, not a day either side)',
   headsetSeenRecently(NOW, String(NOW - HEADSET_SEEN_TTL_MS)) === false);
 check('…and one millisecond inside it still is',

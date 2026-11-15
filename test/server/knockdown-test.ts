@@ -78,7 +78,7 @@ const events: string[] = [];
 const ag = new WorldAgent({ url: URL, name: "kd-bot", world: W });
 // as the host reads it: an act is `* who text` (mcpl/net-server.ts), so the shover's name is its who
 (ag as any).onEvent = (e: any) => { if (e?.text) events.push(e.kind === "act" ? `* ${e.who} ${e.text}` : String(e.text)); };
-const floored = () => events.some((t) => /^\* \S*shover\S* knocks you over$/.test(t));   // an act by the shover, never speech
+const floored = (from = 0) => events.slice(from).some((t) => /^\* \S*shover\S* knocks you over$/.test(t));   // an act by the shover, never speech
 await ag.connect();
 await sleep(400);
 const h = await human("shover");
@@ -123,11 +123,12 @@ check("...and the walk reasserts the terrain clamp — offset back to 0.00m",
 // 3. directed shove over the puppet wire: the tumble travels along the lean
 await h.near(ag);
 const b2 = { x: ag.pos.x, z: ag.pos.z };
+const shove3At = events.length;   // this shove's notice, not an earlier one
 h.send({ type: "puppet", target: "kd-bot", ragdoll: { lean: [0, 0, 3] } });
-await tryUntil("the directed shove floors the agent downwind, named", () => ag.clip === "ragdoll" && ag.pos.z > b2.z + 0.3 && floored(), { ms: 2500 });
+await tryUntil("the directed shove floors the agent downwind, named", () => ag.clip === "ragdoll" && ag.pos.z > b2.z + 0.3 && floored(shove3At), { ms: 2500 });
 check("a directed shove floors it downwind", ag.clip === "ragdoll" && ag.pos.z > b2.z + 0.3,
   `clip=${ag.clip} Δz=${(ag.pos.z - b2.z).toFixed(2)}`);
-check("...and named the shover", floored(), events.join(" | "));
+check("...and named the shover", floored(shove3At), events.slice(shove3At).join(" | "));
 
 // 4. consent: the body's move gate off turns every shove away at the relay, completely
 const sw = await (ag as any).request("consent", { move: false });
@@ -189,6 +190,7 @@ h.send({ type: "bodydrag", target: "kd-bot5", grab: { joint: "head" } });
 await sleep(300);
 h.send({ type: "bodydrag", target: "kd-bot5", end: true, pinAt: { joint: "head", at: [ag5.pos.x, 1.9, ag5.pos.z] } });
 await sleep(1500);
+check("(6b setup) the nail is in before the unpin", ag5.pins.size === 1, `pins=${ag5.pins.size}`);
 h.send({ type: "bodydrag", target: "kd-bot5", grab: { joint: "head" } });
 await sleep(300);
 const draggedMid = (ag5 as any).draggedBy;

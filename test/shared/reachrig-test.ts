@@ -53,6 +53,7 @@ console.log(`\n${good.length} rigs loaded${all.length - good.length ? `, ${all.l
 
 let reachedAll = 0, chainsAll = 0, worstGap = 0, worstLen = 0, worstFK = 0;
 const bindingRigs: string[] = [];
+const reachedBy = new Map<any, number>();   // by rig (two rigs may share a name)
 
 for (const rig of good) {
   const P: Record<string, number[]> = {};
@@ -93,7 +94,7 @@ for (const rig of good) {
       worstLen = Math.max(worstLen, Math.abs(len(sub(fk.elbow, P[U])) - L1),
                                     Math.abs(len(sub(fk.hand, fk.elbow)) - L2));
       // 3. and where a reach was unbound, the hand is ON the target
-      if (!r.bound.length) { reachedAll++; worstGap = Math.max(worstGap, len(sub(fk.hand, target))); }
+      if (!r.bound.length) { reachedAll++; reachedBy.set(rig, (reachedBy.get(rig) ?? 0) + 1); worstGap = Math.max(worstGap, len(sub(fk.hand, target))); }
       else if (!bindingRigs.includes(rig.name)) bindingRigs.push(rig.name);
     }
   }
@@ -103,7 +104,7 @@ console.log(`\n${chainsAll} arm chains, ${reachedAll} unbound reaches measured`)
 check("forward kinematics agrees with the solver (<1µm)", worstFK < 1e-6, `worst ${(worstFK * 1e6).toFixed(3)}µm`);
 check("no bone stretches under the produced rotations (<1µm)", worstLen < 1e-6, `worst ${(worstLen * 1e6).toFixed(3)}µm`);
 check("an unbound reach puts the hand ON the target (<0.1mm)", worstGap < 1e-4, `worst ${(worstGap * 1000).toFixed(4)}mm`);
-check("every rig produced reachable targets", reachedAll > 0);
+check("every rig produced reachable targets", good.every((rg: any) => (reachedBy.get(rg) ?? 0) > 0), good.filter((rg: any) => !reachedBy.get(rg)).map((rg: any) => rg.name).join(", "));
 
 console.log("\njoint limits actually bind on real rigs");
 {

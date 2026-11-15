@@ -107,13 +107,14 @@ console.log(`\nscheduler.js — the one loader\n`);
   await tryUntil("the cosmetic straggler drains", () => cosmeticsDone, { ms: 2000 });
 }
 
-// 6. lanes are independent and capped
+// 6. lanes are independent and capped: seven net jobs run six (the cap) and queue one; a cpu job runs beside them
 {
-  const gates = [gate(), gate(), gate()];
-  for (let i = 0; i < 3; i++) schedule({ key: `cap${i}`, lane: "net", priority: P.NEAR, run: () => gates[i].p });
+  const gates = [...Array(8)].map(() => gate());
+  for (let i = 0; i < 7; i++) schedule({ key: `cap${i}`, lane: "net", priority: P.NEAR, run: () => gates[i].p });
+  schedule({ key: "cap-cpu", lane: "cpu", priority: P.NEAR, run: () => gates[7].p });
   await tick();
   const s = laneStats();
-  check("net lane runs up to its cap", s.net.running === 3 && s.net.queued === 0, JSON.stringify(s.net));
+  check("net lane runs up to its cap and queues the rest; the cpu lane isn't held by it", s.net.running === 6 && s.net.queued === 1 && s.cpu.running === 1, JSON.stringify(s));
   gates.forEach((g) => g.open());
   await tick(); await tick();
   check("drained clean", pending() === 0, String(pending()));

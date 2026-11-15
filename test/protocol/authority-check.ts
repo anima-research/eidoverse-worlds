@@ -589,7 +589,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const step = (what, actor, verb, args) => { const from = w.entries.length; const r = call(actor, verb, args);
     const fresh = JSON.parse(JSON.stringify(w.entries.slice(from))); // over the wire: plain JSON
     const before = c.view(); const k = c.ingest(fresh, from); steps++;
-    if (k.resync) return { r, k };
+    if (k.resync) { if (!bad) bad = [what, `resync: ${k.why}`]; return { r, k }; }
     if (!bad && digest(c.st) !== digest(w.state())) bad = [what, "state differs"];
     if (!bad && !same(c.view(), viewState(w.state()))) bad = [what, diffView(c.view(), viewState(w.state()))];
     return { r, k, d: diffView(before, c.view()) }; };

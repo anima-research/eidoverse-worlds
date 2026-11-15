@@ -750,8 +750,8 @@ const HOUSE = {
     const outerFace = Math.hypot(dx, dz) > 0.5;
     return outerFace ? dot <= 0 : dot >= 0;
   });
-  check("a closed room is right-side-out on both faces", wrongWay.length === 0,
-    `${wrongWay.length} wrong`);
+  check("a closed room is right-side-out on both faces", rsw.length > 0 && rsw.some((s2: any) => faceNormals(s2).length > 0) && wrongWay.length === 0,
+    `${rsw.length} sweeps, ${wrongWay.length} wrong`);
 }
 
 // 21. SHADING CONTINUITY AT OPENINGS
