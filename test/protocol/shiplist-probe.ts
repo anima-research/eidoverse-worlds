@@ -225,11 +225,13 @@ try {
   const clicked = await evalJson(cardBtn("/hinge on its right edge/"));
   check("E2 'hinge on its right edge' puts its pivot on the +x edge of its box (one act)", clicked && await waitDisk(() => (disk().entities[N("gate")]?.c.pivot?.pos?.[0] ?? -1) > 0.2), { clicked, pivot: disk().entities[N("gate")]?.c.pivot });
   await page(`(await import('/lib/scenegraph.js')).sceneSelect('box1'); return true;`);
-  await waitFor(`import('/lib/scenegraph.js').then((m) => m.sceneSelected() === 'box1')`); await sleep(400);
+  await waitFor(`import('/lib/scenegraph.js').then((m) => m.sceneSelected() === 'box1')`);
+  await waitFor(`![...${insp}.querySelectorAll('.sp-group')].some((g) => /Openable/.test(g.textContent))`); // the Inspector has left the gate (box1 has no Openable yet)
   await evalJson(`${insp}.querySelector('.sp-pop-btn').click(), true`);
   await waitFor(`!!document.querySelector('.sp-pop-search')`);
   const all = await evalJson(`[...document.querySelectorAll('.sp-pop-item')].map((b) => b.textContent)`);
   await evalJson(`(() => { const i = document.querySelector('.sp-pop-search'); i.value = 'door'; i.dispatchEvent(new Event('input')); return true; })()`);
+  await waitFor(`[...document.querySelectorAll('.sp-pop-item')].some((b) => /Openable/.test(b.textContent))`, 3000);
   const items = await evalJson(`[...document.querySelectorAll('.sp-pop-item')].map((b) => b.textContent)`);
   check("E3 Add Component offers Path and LookAt (what the authority takes: look-at since batch 2), and 'door' finds Openable", all?.some((t: string) => /^Path/.test(t)) && all?.some((t: string) => /^LookAt/.test(t)) && items?.some((t: string) => /Openable/.test(t)), { all, items });
   await evalJson(`[...document.querySelectorAll('.sp-pop-item')].find((b) => /Openable/.test(b.textContent))?.click(), true`);
@@ -399,17 +401,19 @@ try {
   const A = await scr("sba"), B = await scr("sbb");
   const m = (type, x, y, mods = 0) => cdp.send("Input.dispatchMouseEvent", { type, x: Math.round(x), y: Math.round(y), button: "left", buttons: type === "mouseReleased" ? 0 : 1, clickCount: 1, modifiers: mods });
   const sel = () => page(`const sg = await import('/lib/scenegraph.js'); return [...document.querySelectorAll('[data-frame="hierarchy"] .sp-item.active, [data-frame="hierarchy"] .sp-item.multi')].map((x) => x.closest('[data-id]')?.dataset.id).filter((x) => x === 'sba' || x === 'sbb').sort();`);
+  const selWhen = async (n: number) => { let s: any; for (let t = 0; t < 40; t++) { s = await sel(); if ((s?.length ?? 0) >= n) return s; await sleep(100); } return s; }; // up to 4 s for the selection to land
   await m("mousePressed", A[0], A[1]); await m("mouseReleased", A[0], A[1]); await sleep(400);
-  await m("mousePressed", B[0], B[1], 8); await m("mouseReleased", B[0], B[1], 8); await sleep(600);
-  const s1 = await sel();
-  await page(`(await import('/lib/base.js')).bus.emit('key', new KeyboardEvent('keydown', { code: 'Escape' })); return true;`); await sleep(400);
+  await m("mousePressed", B[0], B[1], 8); await m("mouseReleased", B[0], B[1], 8);
+  const s1 = await selWhen(2);
+  await page(`(await import('/lib/base.js')).bus.emit('key', new KeyboardEvent('keydown', { code: 'Escape' })); return true;`);
+  for (let t = 0; t < 40 && ((await sel())?.length ?? 0) > 0; t++) await sleep(100); // cleared, or SB2 would read SB1's pair
   const x0 = Math.min(A[0], B[0]) - 60, x1 = Math.max(A[0], B[0]) + 60, y0 = Math.min(A[1], B[1]) - 60, y1 = Math.max(A[1], B[1]) + 60;
   // start the box on a pixel with nothing under it (other stages leave things about): each corner, pushed out until bare
   const start = await page(`const cu = await import('/lib/player/clickuse.js'); for (let k = 0; k < 8; k++) for (const [x, y] of [[${x0} - k * 30, ${y0} - k * 30], [${x1} + k * 30, ${y1} + k * 30], [${x0} - k * 30, ${y1} + k * 30], [${x1} + k * 30, ${y0} - k * 30]]) if (!cu.thingAt(x, y)) return [x, y]; return null;`);
   const sx = start?.[0] ?? x0, sy = start?.[1] ?? y0, ex = sx <= x0 ? x1 : x0, ey = sy <= y0 ? y1 : y0;
   await m("mousePressed", sx, sy, 8); for (let k = 1; k <= 6; k++) await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: Math.round(sx + (ex - sx) * k / 6), y: Math.round(sy + (ey - sy) * k / 6), button: "left", buttons: 1, modifiers: 8 });
-  await m("mouseReleased", ex, ey, 8); await sleep(600);
-  const s2 = await sel();
+  await m("mouseReleased", ex, ey, 8);
+  const s2 = await selWhen(2);
   check("SB1 Shift-click in the viewport adds a second thing to the selection", JSON.stringify([...(s1 ?? [])].sort()) === JSON.stringify([N("sba"), N("sbb")].sort()), { A, B, s1 });
   check("SB2 Shift-drag on bare space draws a box, and both things inside it are selected", JSON.stringify([...(s2 ?? [])].sort()) === JSON.stringify([N("sba"), N("sbb")].sort()), { box: [sx, sy, ex, ey], start, s2 });
   await page(`(await import('/lib/edit/build.js')).setBuildMode(false); const m = await import('/lib/net.js'); await m.sendRequest('delete', { id: 'sba' }); await m.sendRequest('delete', { id: 'sbb' }); return true;`).catch(() => null);
