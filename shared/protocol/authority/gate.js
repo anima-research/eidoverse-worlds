@@ -60,7 +60,7 @@ const rated = (cap) => !cap || cap.kind === "reaction" || cap.kind === "handle" 
 function rateCheck(w, actor, kind = "act", extra = 0) {
   if (w.leaving === actor) return; // a disconnect's settlement is the authority's duty, not the leaver's request: never rate-refused
   const RATE = w.rate ?? RATE_DEFAULT, r = writeRateOf(w, actor, RATE.ms); const cap = w.kindOf?.(actor) === "anon" ? RATE.anonBytes : RATE.bytes;
-  if (kind === "say" ? r.says >= RATE.says : r.acts >= RATE.n) refuse("rate", `${said(actor)} has made ${kind === "say" ? r.says : r.acts} ${kind === "say" ? "says" : "entries"} in ${RATE.ms / 1000} s`, "slow down; batch {ops} counts as one");
+  if (kind === "say" ? r.says >= RATE.says : r.acts >= RATE.n) refuse("rate", `${said(actor)} has made ${kind === "say" ? r.says : r.acts} ${kind === "say" ? "says" : "entries"} in ${RATE.ms / 1000} s`, "slow down; a batch {requests} counts as one");
   if (r.bytes + extra > cap) refuse("rate", `${said(actor)} has written ${Math.round(r.bytes / 1024)} KiB in ${RATE.ms / 1000} s (at most ${cap / 1024} KiB)`, "slow down; keep values small (a script's source or an effect goes through upload {text|effect})");
 }
 // what this actor put in the log over the window: acts, says (counted apart), and all their bytes (incl. results)
