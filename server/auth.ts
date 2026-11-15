@@ -107,16 +107,18 @@ try {
 const ENROLMENT_ID = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 export const AGENT_TOKENS_PATH = resolve(process.env.AGENT_TOKENS_PATH ?? join(ROOT, "mcpl", "tokens.json"));
 const AGENT_TOKENS_EXAMPLE = resolve(process.env.MCPL_TOKENS_EXAMPLE ?? join(ROOT, "mcpl", "tokens.example.json"));
-let agentTokCache: { mtime: number; byToken: Map<string, string>; names: Set<string>; bySub: Map<string, string> } | null = null;
+let agentTokCache: { mtime: string; byToken: Map<string, string>; names: Set<string>; bySub: Map<string, string> } | null = null;
 export function agentTokens() {
   try {
-    const mtime = existsSync(AGENT_TOKENS_PATH) ? Math.round(Bun.file(AGENT_TOKENS_PATH).lastModified) : 0;
+    // keyed on both files: a key the public example gains is refused without a touch of tokens.json
+    const stamp = (p: string) => existsSync(p) ? Math.round(Bun.file(p).lastModified) : 0;
+    const live = stamp(AGENT_TOKENS_PATH), mtime = `${live}:${stamp(AGENT_TOKENS_EXAMPLE)}`;
     if (!agentTokCache || agentTokCache.mtime !== mtime) {
       const byToken = new Map<string, string>();
       const names = new Set<string>();
       // `subs`: the aid1 subjects that are this agent, for one arriving through the home node
       const bySub = new Map<string, string>();
-      if (mtime) {
+      if (live) {
         // as mcpl/token-registry.ts: a key copied from the public example proves nobody
         const accepted = readTokenRegistry(AGENT_TOKENS_PATH, AGENT_TOKENS_EXAMPLE);
         const raw = JSON.parse(readFileSync(AGENT_TOKENS_PATH, "utf8")) as Record<string, { id?: string; subs?: string[] }>;
@@ -126,10 +128,10 @@ export function agentTokens() {
         const refused: string[] = [];
         for (const [tok, v] of entries) {
           const id = v.id!; names.add(id.toLowerCase());
-          if (!Object.hasOwn(accepted, tok)) continue;
           if (!ENROLMENT_ID.test(id.toLowerCase()) || spellings.get(id.toLowerCase())!.size > 1) { refused.push(id); continue; }
-          byToken.set(tok, id);
+          // the subs are proven by an aid1 signature, not by the key, so an example-key enrolment keeps them (as main mapped every one)
           for (const s of v.subs ?? []) if (typeof s === "string") bySub.set(s, id);
+          if (Object.hasOwn(accepted, tok)) byToken.set(tok, id);
         }
         if (refused.length) console.error(`[perm] mcpl/tokens.json: ${refused.length} enrolment(s) refused (an id must match ${ENROLMENT_ID.source} lowercased, and no other id may differ from it only in case): ${refused.map((i) => JSON.stringify(i)).join(", ")}`);
       }
@@ -137,7 +139,7 @@ export function agentTokens() {
     }
   } catch (e) {
     console.error("[perm] mcpl/tokens.json unreadable:", (e as Error).message);
-    agentTokCache ??= { mtime: 0, byToken: new Map(), names: new Set(), bySub: new Map() };
+    agentTokCache ??= { mtime: "", byToken: new Map(), names: new Set(), bySub: new Map() };
   }
   return agentTokCache;
 }
