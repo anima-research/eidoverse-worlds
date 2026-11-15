@@ -34,6 +34,7 @@ import './lib/emitters.js';
 import './lib/pictures.js';
 import './lib/materialcomp.js';   // the material component: an image on a named node of the model (R 10-27)
 import { tickSounds } from './lib/sounds.js';   // the sound comp: positional audio from an entity
+import { tickVideos } from './lib/videos.js';   // the video comp: a live stream on a quad, its sound positional
 import { tickMotion } from './lib/motion.js';
 import { tickLookAt } from './lib/lookats.js';   // batch 2: look-at, after motion (a bob moves it, then it turns)
 import { tickTexts } from './lib/texts.js';      // batch 2: signs (the text component)
@@ -621,6 +622,7 @@ registerSystem('sky', (dt, t, now) => { updateSky(now, t); applyEnvLight(); }); 
 registerSystem('materials', (dt, t, now) => updateMaterials(now)); // weather → uniforms
 registerSystem('rig', (dt, t, now) => updateRig(now));          // light slots follow requests
 registerSystem('sounds', () => tickSounds(), { every: 2 });      // panners follow entities, the listener the camera
+registerSystem('videos', () => tickVideos(), { every: 2 });      // stall checks, the distance gain, panners follow screens
 setWaterObjects(() => entities);
 setClimbObjects(() => entities);   // climb routes resolve through their hosts' live objects (client/lib/climb.js)
 setWaterClock(serverNow);

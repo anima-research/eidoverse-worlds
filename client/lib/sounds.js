@@ -92,6 +92,8 @@ function worldGain() {
 }
 bus.on('audio:volume', ({ cat, value }) => { if (cat === 'world' && worldBus) worldBus.gain.value = value; });
 /** For probes: the listener-side gain, the limiter, and what a sound is actually heard at. */
+/** The world bus every placed sound ends in (the listener's world volume, then the limiter): video screens join it too. */
+export const worldBusNode = () => worldGain();
 export const _worldBus = () => worldBus;
 export const _limiter = () => limiter;
 export const effectiveGain = (id) => { const h = playing.get(id); if (!h) return null; return (h.plain ? h.el.volume : h.gain.gain.value * (worldBus?.gain.value ?? volumeFor('world'))); };

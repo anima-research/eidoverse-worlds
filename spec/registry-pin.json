@@ -1319,6 +1319,81 @@
   },
   "on": "thing"
  },
+ "video": {
+  "status": "trial",
+  "fields": {
+   "source": "string",
+   "volume": "number",
+   "near": "number",
+   "radius": "number",
+   "spatial": "bool",
+   "width": "number",
+   "lit": "string",
+   "description": "string"
+  },
+  "defaults": {
+   "volume": 0.8,
+   "near": 1.5,
+   "radius": 12,
+   "spatial": true,
+   "width": 4,
+   "lit": "self"
+  },
+  "enums": {
+   "lit": [
+    "self",
+    "scene"
+   ]
+  },
+  "ranges": {
+   "volume": {
+    "min": 0,
+    "max": 1
+   },
+   "near": {
+    "gt": 0,
+    "max": 100
+   },
+   "radius": {
+    "min": 1,
+    "max": 100
+   },
+   "width": {
+    "gt": 0,
+    "max": 20
+   },
+   "description": {
+    "maxLen": 200
+   }
+  },
+  "required": [
+   "source"
+  ],
+  "absentMeans": {
+   "law": "the sound component's distance law, unchanged: gain = min(1, near / distance), then a (1−t)² taper over the last 5% of radius to exactly 0 at radius (shared/sound.js gainAt)",
+   "playback": "a live source: every viewer plays its live edge, with no shared playhead (a recorded source's playing and t0, when they exist, are absent = this)",
+   "listener": "what a viewer hears is volume × their own media gain, which is theirs and never written"
+  },
+  "docs": {
+   "source": "the stream: an id this server's operator admitted (1–40 lowercase letters, digits and hyphens), never a URL",
+   "volume": "authored linear gain, 0 silent to 1 full; each viewer's own volume multiplies it and is never written",
+   "near": "full volume within this many metres",
+   "radius": "silent at and beyond this many metres",
+   "spatial": "positional; off: heard evenly everywhere inside its radius",
+   "width": "the screen's width, metres; its height follows the stream",
+   "lit": "self (a screen, unlit; the default) | scene (takes the scene's light)",
+   "description": "what the screen is for, in words (\"the solstice stage\"): for people who can't see it and for agents; never a claim about the current frame"
+  },
+  "units": {
+   "near": "m",
+   "radius": "m",
+   "width": "m"
+  },
+  "grammar": {
+   "source": "source-id"
+  },
+  "on": "thing"
+ },
  "story": {
   "status": "trial",
   "fields": {
@@ -2816,9 +2891,6 @@
   "status": "reserved"
  },
  "camera": {
-  "status": "reserved"
- },
- "video": {
   "status": "reserved"
  },
  "spring-joint": {

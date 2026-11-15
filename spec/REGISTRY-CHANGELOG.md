@@ -446,3 +446,8 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
 - 2026-11-12: station.exit's yaw is radians about the host's +y (#147): the meaning was always so (client/lib/localbody.js reads it with sin/cos); the doc now says it
   - station.exit: its meaning "where they're set down, [x, y, z] or [x, y, z, yaw] in its host's frame" → "where they're set down, [x, y, z] or [x, y, z, yaw] in its host's frame (yaw in radians about its +y, 0 facing its +z)"
 - 2026-11-13: @world.spawn.yaw range ±2π → ±YAW_LIMIT (2π + 1e-3 rounding slack), the same bound as a bare yaw (Mica #324)
+- 2026-11-15: video promoted from reserved to trial (projector design revision 2, approved by Mica 2026-10-20): a live stream from an operator-admitted source id
+  - video: status reserved → trial
+- 2026-11-15: video: its describing text is description, never alt (R 10-27), as picture's and sound's (hesperus approved #5 on design and rights 11-06). video was trial only on this branch, so no stored value holds alt or lacks description
+  - video.alt: type string → gone
+  - video.description: added after video was first registered, with no meaning of absence (absentMeans.description: what an older value without it means)

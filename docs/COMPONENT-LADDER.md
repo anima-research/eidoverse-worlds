@@ -34,8 +34,10 @@ definition in `shared/protocol/componentspec.js`; `schema` returns it, and the I
   names (code `reserved`; the definition's `instead` says what to use meanwhile). Today: `physics-joint` (the
   constraint between two bodies; renamed from `joint` 10-16, nothing stored it), `joint` (a skeleton node: Maya, glTF,
   VRM; for avatar entity trees), `surface` (with physics' reserved fields), `schemas`, `terrain-grid`, `terrain-tile`, `terrain-paint`; and the names R held for shapes not settled yet (shape audit 10-16; `material` got its shape R 10-27): `anim-pose` (one frame; R 10-17), `anim-clip`,
-  `anim-states`, `camera`, `video`, `spring-joint`, `link`, `tags`; and `body-owner`, `edit-grant`, `avatar-deny`
-  (the avatar guard rails' names, PROTOCOL §7a).
+  `anim-states`, `camera`, `spring-joint`, `link`, `tags`; and `body-owner`, `edit-grant`, `avatar-deny`
+  (the avatar guard rails' names, PROTOCOL §7a). `video` was held here too and was promoted to trial on 2026-10-21
+  (projector design revision 2: a live stream from an operator-admitted source id). The server operator admits
+  *sources*; who may place a screen follows the ordinary component rights.
 - **reserved inside a trial component**: a field or a kind can be held the same way, refused with code `reserved` while
   its name is kept for an addition later (the registry's `reservedFields` / `reservedKinds`, pinned):
   - `station`: `poses`, `sync`, `approach`, `enter`, `leave`, `reach`, `look`, `input`, `fromSeat` (researched in

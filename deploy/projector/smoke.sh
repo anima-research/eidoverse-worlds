@@ -31,18 +31,18 @@ fi
 
 # ---- this run's identity: ports nobody holds, a path nobody serves ----
 set -- $(python3 -c 'import socket
-ss=[socket.socket() for _ in range(5)]
+ss=[socket.socket() for _ in range(6)]
 for s in ss: s.bind(("127.0.0.1",0))
 print(*[s.getsockname()[1] for s in ss])
 for s in ss: s.close()')
-RTSP=$1; RTMP=$2; HLS=$3; WEBRTC=$4; WUDP=$5
+RTSP=$1; RTMP=$2; HLS=$3; WEBRTC=$4; WUDP=$5; API=$6
 NONCE="$(head -c 6 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 STREAM="screen-$NONCE"
 WORK="$(mktemp -d /tmp/projector-XXXXXX)"
 KEY="$(PROJECTOR_PATH=$STREAM PROJECTOR_RTSP_PORT=$RTSP PROJECTOR_RTMP_PORT=$RTMP PROJECTOR_HLS_PORT=$HLS \
-       PROJECTOR_WEBRTC_PORT=$WEBRTC PROJECTOR_WEBRTC_UDP_PORT=$WUDP sh "$DIR/mkconfig.sh" "$WORK/mediamtx.yml" 2>"$WORK/mkconfig.log")" \
+       PROJECTOR_API_PORT=$API PROJECTOR_WEBRTC_PORT=$WEBRTC PROJECTOR_WEBRTC_UDP_PORT=$WUDP sh "$DIR/mkconfig.sh" "$WORK/mediamtx.yml" 2>"$WORK/mkconfig.log")" \
   || { cat "$WORK/mkconfig.log"; rm -rf "$WORK"; exit 2; }
-echo "run: path /$STREAM · rtsp :$RTSP · rtmp :$RTMP · hls :$HLS · webrtc :$WEBRTC · scratch $WORK"
+echo "run: path /$STREAM · rtsp :$RTSP · rtmp :$RTMP · hls :$HLS · webrtc :$WEBRTC · api :$API · scratch $WORK"
 
 # mediamtx writes its auto-generated DTLS certificate (auto.crt/auto.key)
 # into its working directory: run it from scratch space, never the repo.
@@ -62,11 +62,11 @@ echo "— 0. the child owns its ports —"
 i=0
 while [ $i -lt 40 ]; do
   alive || break
-  owns "$RTSP" && owns "$RTMP" && owns "$HLS" && break
+  owns "$RTSP" && owns "$RTMP" && owns "$HLS" && owns "$API" && break
   i=$((i+1)); sleep 0.25
 done
 if ! alive; then bad "mediamtx (pid $MTX) exited before listening: $(tail -3 "$WORK/mediamtx.log" | tr '\n' ' ')"; exit 1; fi
-if owns "$RTSP" && owns "$RTMP" && owns "$HLS"; then ok "pid $MTX listens on :$RTSP :$RTMP :$HLS (proven by pid, not by port)"; else bad "pid $MTX does not own its ports after 10 s"; exit 1; fi
+if owns "$RTSP" && owns "$RTMP" && owns "$HLS" && owns "$API"; then ok "pid $MTX listens on :$RTSP :$RTMP :$HLS :$API (proven by pid, not by port)"; else bad "pid $MTX does not own its ports after 10 s"; exit 1; fi
 
 # A test pattern with a 440 Hz tone that pulses (1 s on / 1 s off) — a
 # rhythm the VAD can see, so the same publisher rehearses the caption bot.
