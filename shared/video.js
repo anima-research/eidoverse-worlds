@@ -81,7 +81,7 @@ export const OFFER_GAP_MS = 2_000;
  *  back (admitted again, or no longer ended) in the sequencer's video-state frames, then tries again (review 9). */
 export const VIDEO_REFUSALS = Object.freeze({
   spectator: 'never', malformed: 'never', 'no-video': 'never', changed: 'never', replaced: 'never', 'viewer-left': 'never', 'closed-by-viewer': 'never',
-  'too-soon': 'after', cap: 'later', unreachable: 'later', 'not-publishing': 'later', refused: 'later',
+  'too-soon': 'after', cap: 'later', unreachable: 'later', 'not-publishing': 'later', refused: 'later', 'source-changed': 'later',
   'not-admitted': 'source', ended: 'source', revoked: 'source',
 });
 /** The retry a code asks for; an unknown or missing code backs off, as a failed connection does. */

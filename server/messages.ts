@@ -425,7 +425,9 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
   // a viewer asks to watch a screen (server/videosources.ts): the offer goes to the projector with the operator's read
   // credential and the answer comes back here, so the endpoint never reaches a client. Async, so its own never-throw
   "video-offer": ({ c, ws }, msg) => {
-    void video.offer(c, msg).then((r) => { try { ws.send(JSON.stringify(r)); } catch { /* gone */ } }, () => { try { ws.send(JSON.stringify({ type: "video-error", req: null, id: null, why: "the offer failed" })); } catch { /* gone */ } });
+    // a throw still answers the offer it was for, by its req, so the viewer's screen hears it (#332 review 19)
+    const req = typeof msg?.req === "string" ? msg.req.slice(0, 64) : null, id = typeof msg?.id === "string" ? msg.id.slice(0, 128) : null;
+    void video.offer(c, msg).then((r) => { try { ws.send(JSON.stringify(r)); } catch { /* gone */ } }, () => { try { ws.send(JSON.stringify({ type: "video-error", req, id, why: "the offer failed", code: "unreachable" })); } catch { /* gone */ } });
   },
   "video-close": ({ c }, msg) => { void video.close(c, msg).catch(() => {}); },
   // a renderer (or an opt-in native donor) says what it can capture, and answers a `capture` request (server/screenshots.ts,

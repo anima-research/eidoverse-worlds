@@ -76,12 +76,20 @@ export function parseRegistry(doc: unknown): { sources: Source[]; dropped: strin
 }
 
 /** Install a registry: admit its ids at the door, forget the revoked ones, close their sessions. Returns what changed. */
+const entryKey = (s: Source) => JSON.stringify([s.whep, s.user ?? null, s.pass ?? null, s.api ?? null, s.path ?? null, s.ended]);
 export function installSources(list: Source[]): { admitted: string[]; revoked: string[] } {
-  const before = new Set(SOURCES.keys());
+  const before = new Map(SOURCES);
   SOURCES.clear(); for (const s of list) SOURCES.set(s.id, s);
   const { admitted } = admitVideoSources([...SOURCES.keys()]);
-  const revoked = [...before].filter((id) => !SOURCES.has(id));
+  const revoked = [...before.keys()].filter((id) => !SOURCES.has(id));
   for (const id of revoked) { forgetSourceState(id); LAST_BYTES.delete(id); for (const s of [...SESSIONS.values()]) if (s.source === id) void closeSession(s, "the operator revoked this source", "revoked"); }
+  // an entry changed under the same id (its endpoint, credential, API or ended): what was observed of the old one, and
+  // the sessions on it, belong to the old one (#332 review 20)
+  for (const [id, old] of before) {
+    const now = SOURCES.get(id); if (!now || entryKey(now) === entryKey(old)) continue;
+    forgetSourceState(id); LAST_BYTES.delete(id);
+    for (const s of [...SESSIONS.values()]) if (s.source === id) void closeSession(s, now.ended ? `the source '${id}' has ended` : "the operator changed this source", now.ended ? "ended" : "source-changed");
+  }
   for (const s of SOURCES.values()) if (s.ended) noteSourceState(s.id, { state: "ended", at: Date.now() });
   return { admitted, revoked };
 }
@@ -109,16 +117,19 @@ async function observe(s: Source): Promise<void> {
   if (!s.api || !s.path) return;   // no API to ask: never observed, so look says unknown
   try {
     const r = await fetch(new URL(`v3/paths/get/${s.path}`, s.api.endsWith("/") ? s.api : s.api + "/"), { headers: basic(s) ? { authorization: basic(s)! } : {}, signal: AbortSignal.timeout(APPLIANCE_TIMEOUT_MS) });
-    if (!SOURCES.has(s.id)) return;   // revoked while asking
+    if (SOURCES.get(s.id) !== s) return;   // revoked, or its entry replaced, while asking (#332 review 20)
     if (r.status === 404) { LAST_BYTES.delete(s.id); noteSourceState(s.id, { state: "offline", at: Date.now() }); return; }
     if (!r.ok) return;
     const j: any = await r.json();
+    if (SOURCES.get(s.id) !== s) return;
     const bytes = Number(j?.bytesReceived); const prev = LAST_BYTES.get(s.id);
     if (Number.isFinite(bytes)) LAST_BYTES.set(s.id, bytes);
-    const flowing = j?.ready === true && Number.isFinite(bytes) && prev !== undefined && bytes > prev;
-    if (j?.ready !== true) noteSourceState(s.id, { state: "offline", at: Date.now() });
-    else if (prev !== undefined) noteSourceState(s.id, { state: flowing ? "live" : "offline", at: Date.now() });
-    // ready on the first read with no baseline: wait one poll for bytes before saying live
+    if (j?.ready !== true) { noteSourceState(s.id, { state: "offline", at: Date.now() }); return; }
+    // ready: live needs bytes flowing, against a baseline. With no counter nothing can be said (review 37); on the first
+    // read with no baseline, an older offline no longer holds, so it is forgotten until the next poll measures (review 36)
+    if (!Number.isFinite(bytes)) return;
+    if (prev === undefined) { forgetSourceState(s.id); return; }
+    noteSourceState(s.id, { state: bytes > prev ? "live" : "offline", at: Date.now() });
   } catch { /* unreachable: leave it to go stale (unknown), never guess */ }
 }
 
@@ -142,7 +153,17 @@ const boundOf = (world: any, entity: string): string | null => { const v = video
 async function closeSession(s: Session, why: string, code: string): Promise<void> {
   if (!SESSIONS.delete(s.id)) return;
   try { s.client?.ws?.send(JSON.stringify({ type: "video-closed", session: s.id, id: s.entity, why, code })); } catch { /* gone */ }
-  if (s.resource) { try { await fetch(s.resource, { method: "DELETE", headers: s.auth ? { authorization: s.auth } : {}, signal: AbortSignal.timeout(APPLIANCE_TIMEOUT_MS) }); } catch { /* the appliance reaps it */ } }
+  // a close the appliance refuses or doesn't answer is said, never retried: the appliance reaps idle sessions (#332 review 29)
+  if (s.resource) {
+    try { const r = await fetch(s.resource, { method: "DELETE", headers: s.auth ? { authorization: s.auth } : {}, signal: AbortSignal.timeout(APPLIANCE_TIMEOUT_MS) }); if (!r.ok && r.status !== 404) console.warn(`[video] the appliance for '${s.source}' refused closing a session (${r.status}); it reaps idle sessions itself`); }
+    catch { console.warn(`[video] the appliance for '${s.source}' didn't answer closing a session; it reaps idle sessions itself`); }
+  }
+}
+
+/** A Location, resolved against the WHEP URL, if it is on that URL's own origin; null otherwise (or if it doesn't parse). */
+function sameOrigin(loc: string | null, whep: string): string | null {
+  if (!loc) return null;
+  try { const u = new URL(loc, whep); return u.origin === new URL(whep).origin ? u.toString() : null; } catch { return null; }
 }
 
 /** A viewer's offer for the screen on `entity`: refusals say why in words, never naming the endpoint. */
@@ -173,18 +194,29 @@ export async function offer(c: any, msg: any, now = Date.now()): Promise<object>
 
 async function connect(c: any, msg: any, src: Source, token: string, inFlight: Map<string, string>, no: (why: string, code: string) => object): Promise<object> {
   const req = typeof msg?.req === "string" ? msg.req.slice(0, 64) : null;
-  const bound = boundOf(c.world, msg.id)!;
+  const world = c.world;
+  const bound = boundOf(world, msg.id)!;
   let r: Response;
   try { r = await fetch(src.whep, { method: "POST", headers: { "content-type": "application/sdp", ...(basic(src) ? { authorization: basic(src)! } : {}) }, body: msg.sdp, signal: AbortSignal.timeout(APPLIANCE_TIMEOUT_MS) }); }
   catch { return no("the projector didn't answer", "unreachable"); }
   const answer = await r.text().catch(() => "");
   if (r.status === 404) return no(`the source '${src.id}' isn't publishing`, "not-publishing");
-  if (r.status !== 201 || !answer) return no(`the projector refused the offer (${r.status})`, "refused");
-  const loc = r.headers.get("location");
-  const resource = loc ? new URL(loc, src.whep).toString() : null;
-  const s: Session = { id: randomUUID(), resource, source: src.id, world: c.world, entity: msg.id, client: c, bound, auth: basic(src) };
-  // the value may have changed, or the viewer gone, while the appliance answered: the sweep would close it, but say so now
-  if (boundOf(c.world, msg.id) !== bound || !c.world.clients?.has?.(c)) { SESSIONS.set(s.id, s); await closeSession(s, "the screen changed while connecting", "changed"); return no("the screen changed while connecting", "changed"); }
+  if (r.status !== 201) return no(`the projector refused the offer (${r.status})`, "refused");
+  // the appliance's session, closable only where its WHEP endpoint is: a Location on another origin would be sent the read
+  // credential's DELETE, and one that doesn't parse can't be closed at all (#332 review 17, 26)
+  const resource = sameOrigin(r.headers.get("location"), src.whep);
+  const s: Session = { id: randomUUID(), resource, source: src.id, world, entity: msg.id, client: c, bound, auth: basic(src) };
+  // a session nobody could close is not taken: the appliance reaps it (review 27). An empty answer is closed (review 26)
+  if (!resource) return no("the projector's answer named no session this server can close", "refused");
+  if (!answer) { SESSIONS.set(s.id, s); await closeSession(s, "the projector sent an empty answer", "refused"); return no("the projector sent an empty answer", "refused"); }
+  // checked again after the appliance answered, against the world the offer was made in (review 28): the viewer may have
+  // left or moved world (it is no longer that world's client), the screen's video
+  // changed, or the operator revoked or replaced the source's entry; the sweep would close it, but say so now
+  if (boundOf(world, msg.id) !== bound || !world.clients?.has?.(c)) { SESSIONS.set(s.id, s); await closeSession(s, "the screen changed while connecting", "changed"); return no("the screen changed while connecting", "changed"); }
+  if (SOURCES.get(src.id) !== src) {
+    const code = SOURCES.has(src.id) ? "source-changed" : "revoked";
+    SESSIONS.set(s.id, s); await closeSession(s, "the operator changed this source while connecting", code); return no("the operator changed this source while connecting", code);
+  }
   // a newer offer for this screen was made while this one was at the appliance: its answer will be the one used
   if (inFlight.get(msg.id) !== token) { SESSIONS.set(s.id, s); await closeSession(s, "replaced by a newer offer", "replaced"); return no("replaced by a newer offer", "replaced"); }
   // one session per viewer per screen: a new one replaces any the viewer still holds there. Recorded before anything is
