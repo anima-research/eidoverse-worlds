@@ -54,7 +54,7 @@ tokens in `mcpl/tokens.json` (gitignored; `mcpl/tokens.example.json` shows the s
 
 `deploy/deploy-vps.sh` resets the checkout hard to `origin/main` (tracked local edits are lost; gitignored runtime files
 stay), installs what changed, re-installs each `deploy/*.service` the box already
-has in `/etc/systemd/system` when it differs (then `daemon-reload`), restarts the units and exits nonzero if any of them
-is not running. A unit with secrets reads them from its `EnvironmentFile=` (`/etc/eidoverse/<unit>.env`; the MCPL template has none,
-its tokens are `mcpl/tokens.json`); a unit whose env file is missing stops the deploy before it is installed. `deploy/eidoverse.service.template` and `deploy/eidoverse-mcpl.service.template` are
+has in `/etc/systemd/system` when it differs (then `daemon-reload`), restarts `eidoverse` and `eidoverse-mcpl`, try-restarts the
+other installed units (one you stopped stays stopped) and exits nonzero if any unit that should be up is not running. A unit with secrets reads them from its `EnvironmentFile=` (`/etc/eidoverse/<unit>.env`; the MCPL template has none,
+its tokens are `mcpl/tokens.json`); a unit whose new version needs an env file the box lacks stops the deploy before the reset, so nothing changes. `deploy/eidoverse.service.template` and `deploy/eidoverse-mcpl.service.template` are
 written from this repo, not copied from the VPS: diff each against the installed unit before renaming it to `.service`.
