@@ -52,7 +52,7 @@ export const COMMANDS = [
   { name: 'fork', aliases: ['copy'], help: '/fork <new-name> — copy this world as it stands into a new one (its chat stays here) (owner)' },
   { name: 'newworld', aliases: ['found'], help: '/newworld <name> [title] — found a new, empty world that you own (signed in)' },
   { name: 'reset', aliases: ['erase'], help: 'erase this world back to zero, archived not destroyed (owner)' },
-  { name: 'goto', help: '/goto <name> — walk to someone' },
+  { name: 'goto', help: '/goto <name> — how far away someone is, and which way' },
   { name: 'clear', help: 'clear your chat log' },
   { name: 'flight', help: 'why flight is (or is not) doing that — rig, capability, phase' },
   { name: 'help', help: 'open the help sheet' },

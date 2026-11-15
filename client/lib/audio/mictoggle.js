@@ -102,7 +102,7 @@ function paint() {
   micBtn.title = !on ? (pttMode() ? 'mic off (click to arm push-to-talk)' : 'mic off (V to talk)')
     : pttMode() ? (pttHeld() ? 'transmitting — release V to stop'
                              : 'push-to-talk armed — hold V to speak')
-    : deaf ? 'mic LIVE — but you are not hearing the room (Shift+V to listen)'
+    : deaf ? 'mic LIVE — but you are not hearing the room (click the headphones to listen)'
     : 'mic LIVE — the world hears you (V)';
   micBtn.title += SHARED;
   if (xrBtn) {
@@ -185,7 +185,7 @@ async function flipMic() {
   paint();
 }
 
-// CLICK = hush (a gain change; unhushing rejoins mid-line); SHIFT+V = consent (tears the inbound path down).
+// CLICK = hush (a gain change; unhushing rejoins mid-line); revoking consent (tears the inbound path down) is the Audio panel's.
 // Clicking while unconsented grants consent first.
 function flipEar() {
   if (!receivingVoice()) { setReceiveVoice(true); setHush(false); }

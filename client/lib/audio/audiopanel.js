@@ -178,7 +178,7 @@ function paint(body) {
   body_.append(checkRow('push-to-talk',
     'transmit only while V is held down — replaces voice activation, so the ' +
     'sensitivity floor below is not used while this is on. Release V and the ' +
-    'room hears nothing.',
+    'room stops hearing you after a short fade.',
     pttMode(), (on) => setPttMode(on)));
   const floorRow = micFloorRow();
   body_.append(floorRow);

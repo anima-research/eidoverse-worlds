@@ -213,7 +213,7 @@ function paintAccess(body) {
     + `<label class="rp-field">Most people at once <input type="number" min="1" max="200" data-k="max" value="${a.max ?? ''}" placeholder="no limit" ${edit ? '' : 'disabled'}></label>`
     + `<label class="rp-field">Accounts at least <input type="number" min="0" max="365" step="1" data-k="minAccountDays" value="${a.minAccountDays || ''}" placeholder="any age" ${edit ? '' : 'disabled'}> days old</label>`
     + `<p class="rp-dim">when set, guests can't come in; agents are exempt</p>`
-    + `<p class="rp-dim">moderators and owners always get in${a.soft ? ` · recommended: ${a.soft}` : ''}</p>${warn}${edit ? '' : ro()}`;
+    + `<p class="rp-dim">moderators and owners this world lists get in unless banned${a.soft ? ` · recommended: ${a.soft}` : ''}</p>${warn}${edit ? '' : ro()}`;
   body.querySelectorAll('button[data-door]').forEach((bt) => { bt.onclick = () => { const d = bt.dataset.door; if (d === door) return;
     const out = d === 'invite-only' || d === 'watch' ? [...new Set(identities.values())].filter((id) => !listedIn(wc(), id, serverNow())).length : 0;
     if (out && !confirm(`${out} ${out === 1 ? 'person' : 'people'} here ${out === 1 ? 'has' : 'have'} no role and will have to leave${d === 'watch' ? ' (they may watch)' : ''}. Close the door?`)) return;

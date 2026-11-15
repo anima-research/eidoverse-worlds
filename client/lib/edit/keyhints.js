@@ -15,7 +15,7 @@ export const KEYHINTS = {
   undo:          { before: 'Ctrl+Z undo · Ctrl+Shift+Z or Ctrl+Y redo', during: null },
   jsonCommit:    { before: 'Ctrl+Enter commits · Esc reverts', during: null },
   toggleEnabled: { before: 'Alt+Shift+A switches the selection on or off, for everyone (Unity\'s toggle active)', during: null },
-  duplicate:     { before: 'Ctrl+D (or Alt+D) duplicates the selection: an independent copy · Save as blueprint for copies that stay in step', during: null },
+  duplicate:     { before: 'Ctrl+D (or Alt+D) duplicates the selection: an independent copy · Save as blueprint for copies a newer version can be offered to (update)', during: null },
   editCamera:    { before: 'camera: drag bare space or Alt+drag to orbit · middle-drag pans · Alt+right-drag or the wheel dollies · F frames the selection', during: null },
   resetTransform: { before: 'Alt+G resets translate · Alt+E rotate · Alt+R scale · Ctrl+G all three (or right-click a channel)', during: null },
   fullscreen:    { before: 'full screen: F11 or this button toggles it; Esc leaves it', during: null },

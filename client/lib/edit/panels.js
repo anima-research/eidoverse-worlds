@@ -412,7 +412,7 @@ function duplicate(id) {
   const rec = foldRecord(id); const obj = entities.get(id);
   if (!rec || !obj) return;
   const n = (dupCount.get(id) ?? 0) + 1; dupCount.set(id, n);
-  const nudge = n === 2 && !rec?.['copy-of'] ? html` · copies are <b>independent</b>: for copies that stay in step, <b>Save as blueprint</b> and place them from Build ▸ Blueprints` : '';
+  const nudge = n === 2 && !rec?.['copy-of'] ? html` · copies are <b>independent</b>: for copies a newer version can be offered to, <b>Save as blueprint</b> and place them from Build ▸ Blueprints` : '';
   const since = Sel.mark();
   Edits.duplicate(id).then((r) => { const nid = r.ok && r.refs?.[0]?.id; if (!nid) return;
     const out = Edits.idOut(nid); flashHint(html`<b>${called(out)}</b> — a copy of ${called(id)}${nudge}`, nudge ? 8000 : 4000); setTimeout(() => { if (entities.has(out) && Sel.mark() === since) sceneSelect(out); }, 400); });

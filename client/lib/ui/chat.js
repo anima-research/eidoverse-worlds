@@ -653,7 +653,7 @@ const CHAT_LOCAL = {
   // ghost was removed: nobody is hidden in a world; moderation quiets or removes
   ghost() { logChat('*', 'ghost was removed: nobody in a world is hidden from it. To quiet someone, /mute them; to remove them, /kick or /ban.'); },
   name(rest, arg) {
-    if (!arg) { logChat('*', `you are ${CONFIG.name} — /name <new name> to change it`); return; }
+    if (!arg) { logChat('*', `you are ${CONFIG.name} — renaming mid-visit isn't supported yet (?door=1 re-opens the front door)`); return; }
     bus.emit('command', { cmd: 'rename', arg });   // the handler owns the (un)support answer
   },
   me(rest, arg) { if (arg) onSend(`* ${CONFIG.name} ${arg}`); },
