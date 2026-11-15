@@ -93,6 +93,18 @@ if [ -n "$READ_KEY" ]; then
   inert PROJECTOR_READ_KEY "$READ_KEY" 'A-Za-z0-9_./=-' secret
 fi
 port PROJECTOR_API_PORT "${PROJECTOR_API_PORT:-9997}"
+# the id this stream is admitted under in VIDEO_SOURCES (shared/video.js VIDEO_SOURCE_ID), checked before anything is
+# written: one set explicitly must be an id; one derived from a path that makes none (a path of digits) leaves the
+# entry unprinted, with a note, and the config renders as it always has
+if [ -n "${PROJECTOR_SOURCE_ID:-}" ]; then
+  case "$PROJECTOR_SOURCE_ID" in [a-z]*) ;; *) echo "mkconfig: PROJECTOR_SOURCE_ID must start with a letter (got '$PROJECTOR_SOURCE_ID')" >&2; exit 2;; esac
+  case "$PROJECTOR_SOURCE_ID" in *[!a-z0-9-]*) echo "mkconfig: PROJECTOR_SOURCE_ID is lowercase letters, digits and hyphens (got '$PROJECTOR_SOURCE_ID')" >&2; exit 2;; esac
+  [ "${#PROJECTOR_SOURCE_ID}" -le 40 ] || { echo "mkconfig: PROJECTOR_SOURCE_ID is at most 40 characters" >&2; exit 2; }
+  SOURCE_ID="$PROJECTOR_SOURCE_ID"
+else
+  SOURCE_ID="$(printf %s "$STREAM_PATH" | tr 'A-Z_' 'a-z-' | cut -c1-40)"
+  case "$SOURCE_ID" in [a-z]*) ;; *) SOURCE_ID="";; esac
+fi
 port PROJECTOR_RTSP_PORT "${PROJECTOR_RTSP_PORT:-8554}"
 port PROJECTOR_RTMP_PORT "${PROJECTOR_RTMP_PORT:-1935}"
 port PROJECTOR_HLS_PORT "${PROJECTOR_HLS_PORT:-8888}"
@@ -146,13 +158,23 @@ sed \
 if grep -v '^[[:space:]]*#' "$OUT" | grep -q '\${'; then echo "mkconfig: unrendered placeholder in $OUT:" >&2; grep -vn '^[[:space:]]*#' "$OUT" | grep '\${' >&2; exit 2; fi
 chmod 600 "$OUT"
 # the sequencer's VIDEO_SOURCES entry for this stream (server/videosources.ts): the operator pastes it into the registry
-# file, and the endpoint and read key stay there. A sequencer on this machine reads over loopback; one elsewhere replaces
-# 127.0.0.1 with this appliance's address (the API stays loopback-only, so a remote sequencer gets no source state)
-SOURCE_ID="${PROJECTOR_SOURCE_ID:-$(printf %s "$STREAM_PATH" | tr 'A-Z_' 'a-z-')}"
-case "$SOURCE_ID" in [a-z]*) ;; *) echo "mkconfig: PROJECTOR_SOURCE_ID must start with a letter (got '$SOURCE_ID')" >&2; exit 2;; esac
-case "$SOURCE_ID" in *[!a-z0-9-]*) echo "mkconfig: PROJECTOR_SOURCE_ID is lowercase letters, digits and hyphens (got '$SOURCE_ID')" >&2; exit 2;; esac
-case "$BIND" in 0.0.0.0|127.0.0.1|"[::]") HOST=127.0.0.1;; *) HOST="$BIND";; esac
-echo "mkconfig: VIDEO_SOURCES entry (paste under \"sources\"; it holds the read key):" >&2
-printf '  "%s": { "whep": "http://%s:%s/%s/whep", "user": "%s", "pass": "%s", "api": "http://127.0.0.1:%s", "path": "%s" }\n' \
-  "$SOURCE_ID" "$HOST" "${PROJECTOR_WEBRTC_PORT:-8889}" "$STREAM_PATH" "$READ_USER" "$READ_KEY" "${PROJECTOR_API_PORT:-9997}" "$STREAM_PATH" >&2
+# file, and the endpoint and read key stay there. The API answers on this machine's loopback only, so only a loopback
+# appliance's entry names it: pasted into a sequencer elsewhere, a loopback API URL would ask that machine's own
+# loopback, whatever answers there. A network appliance's entry has none (its source state reads as unknown), and the
+# operator replaces 127.0.0.1 in "whep" with this appliance's address
+if [ -z "$SOURCE_ID" ]; then
+  echo "mkconfig: PROJECTOR_PATH '$STREAM_PATH' makes no source id (a letter first): set PROJECTOR_SOURCE_ID to print this stream's VIDEO_SOURCES entry" >&2
+else
+  case "$BIND" in 0.0.0.0|127.0.0.1|"[::]") HOST=127.0.0.1;; *) HOST="$BIND";; esac
+  API="http://127.0.0.1:${PROJECTOR_API_PORT:-9997}"
+  echo "mkconfig: VIDEO_SOURCES entry (paste under \"sources\"; it holds the read key):" >&2
+  if [ "$IPS_FROM_IFACES" = false ]; then
+    printf '  "%s": { "whep": "http://%s:%s/%s/whep", "user": "%s", "pass": "%s", "api": "%s", "path": "%s" }\n' \
+      "$SOURCE_ID" "$HOST" "${PROJECTOR_WEBRTC_PORT:-8889}" "$STREAM_PATH" "$READ_USER" "$READ_KEY" "$API" "$STREAM_PATH" >&2
+  else
+    printf '  "%s": { "whep": "http://%s:%s/%s/whep", "user": "%s", "pass": "%s" }\n' \
+      "$SOURCE_ID" "$HOST" "${PROJECTOR_WEBRTC_PORT:-8889}" "$STREAM_PATH" "$READ_USER" "$READ_KEY" >&2
+    echo "mkconfig: a sequencer elsewhere: replace 127.0.0.1 in \"whep\" with this appliance's address. A sequencer on this same machine may add \"api\": \"$API\", \"path\": \"$STREAM_PATH\" to read the source's state" >&2
+  fi
+fi
 echo "$KEY"
