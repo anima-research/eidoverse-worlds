@@ -206,6 +206,9 @@ try {
   const kneeling = await knock();
   check("a body knocked over is told so as the knocker's act, in its inbox",
     kneeler.inbox.some((i: any) => i.kind === "act" && i.who === poser.name && i.text === "knocks you over"), JSON.stringify(kneeler.inbox.slice(-3)));
+  { const n = kneeler.inbox.length; kneeler.bodyInbox([{ type: "body", kind: "shove", from: poser.name, spec: { lean: [1, 0, 0] } }]);
+    const got = kneeler.inbox.slice(n).find((i: any) => i.kind === "act");
+    check("a shove the authority delivers reads as the shover's act once, `* who knocks you over` (not the name twice)", got?.who === poser.name && got?.text === "knocks you over", JSON.stringify(got)); }
   check("a body knocked over while kneeling falls from its kneel", Math.abs(kneeling - standing + 0.3) < 1e-6,
     `rest hips y: standing ${standing}, kneeling ${kneeling}`);
   // What each fall starts from, as begin() is handed it.
