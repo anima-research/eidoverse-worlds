@@ -18,7 +18,9 @@
 import "./fixture-ids.ts";
 import fs from "node:fs";
 import path from "node:path";
-import { ENGINE, scratch, copyTree, archiveTo } from "./common.ts";
+import { ENGINE, scratch, copyTree, archiveTo, linkInto } from "./common.ts";
+import { pin } from "./clock.ts";
+import { pause, until } from "./wait.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
 import { LAB_CATALOGUE, MODELS as LAB_MODELS } from "./labmodels.js";
@@ -67,7 +69,7 @@ function tree(tag: string) {
   const d = scratch(tag);
   for (const sub of ["shared", "server", "tools", "defs", "client/lib"]) if (fs.existsSync(path.join(ENGINE, sub))) copyTree(path.join(ENGINE, sub), path.join(d, sub));
   for (const f of ["package.json", "bunfig.toml"]) if (fs.existsSync(path.join(ENGINE, f))) fs.copyFileSync(path.join(ENGINE, f), path.join(d, f));
-  fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
+  linkInto(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
   return d;
 }
 if (argv.includes("--mutants")) {
@@ -89,7 +91,7 @@ if (argv.includes("--control")) {
   // of video-check, and the engine's node_modules, as batch2-check's control does.
   const d = scratch("vctl"); const r0 = archiveTo(ENGINE, BASE, ["shared", "server", "tools", "client/lib", "defs"], d);
   if (r0.exitCode === 0) {
-    fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
+    linkInto(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
     fs.copyFileSync(path.join(ENGINE, "tools/protocol/video-check.ts"), path.join(d, "tools/protocol/video-check.ts"));
   }
   if (r0.exitCode !== 0) { console.log(`FAIL can't extract ${BASE}: ${r0.stderr}`); process.exit(1); }
@@ -131,7 +133,7 @@ function openWorld(name: string) {
 let T = 1800000000000, N = 0;
 function session() {
   const name = `w${++N}`; let w: any = null; const W = () => (w ??= openWorld(name));
-  const call = (actor: string, verb: string, args: any = {}, step = 100) => { T += step; process.env.PROTOCOL_NOW = String(T);
+  const call = (actor: string, verb: string, args: any = {}, step = 100) => { T += step; pin(T);
     try { return D.request(W(), actor, verb, args); } catch (e) { return { crashed: `${e?.constructor?.name}: ${e?.message}`.slice(0, 200) }; } };
   return { name, call, w: W };
 }
@@ -147,10 +149,10 @@ const FAKE = { log: [] as any[], paths: {} as Record<string, any>, whepStatus: 2
 const fake = Bun.serve({ port: 0, async fetch(req) {
   const u = new URL(req.url); const body = req.method === "POST" ? await req.text() : "";
   FAKE.log.push({ method: req.method, path: u.pathname, auth: req.headers.get("authorization"), body });
-  if (req.method === "POST" && FAKE.delays.length) await new Promise((r) => setTimeout(r, FAKE.delays.shift()));   // a slow appliance, per offer
+  if (req.method === "POST" && FAKE.delays.length) await pause("a slow appliance, per offer", FAKE.delays.shift()!);
   if (u.pathname.startsWith("/v3/paths/get/")) { if (FAKE.apiDown) return new Response("down", { status: 503 }); const p = FAKE.paths[u.pathname.slice(14)]; return p ? Response.json(p) : new Response("not found", { status: 404 }); }
   if (req.method === "POST" && u.pathname.endsWith("/whep")) return FAKE.whepStatus === 201 ? new Response("v=0\r\nanswer-for:" + body.slice(0, 20), { status: 201, headers: { location: `${u.pathname.replace(/whep$/, "")}whep/session-${FAKE.log.length}` } }) : new Response("no", { status: FAKE.whepStatus });
-  if (req.method === "DELETE") { if (FAKE.deleteDelay) await new Promise((r) => setTimeout(r, FAKE.deleteDelay)); return new Response(null, { status: 200 }); }
+  if (req.method === "DELETE") { if (FAKE.deleteDelay) await pause("a slow appliance DELETE", FAKE.deleteDelay); return new Response(null, { status: 200 }); }
   return new Response("?", { status: 400 });
 } });
 const APP = `http://127.0.0.1:${fake.port}`;
@@ -161,7 +163,7 @@ const install = (doc: any) => VS.installSources?.(VS.parseRegistry(doc).sources)
 function viewer(world: any, sent: any[] = []) { const c: any = { world, spectator: false, ws: { send: (s: string) => sent.push(JSON.parse(s)) } }; world.clients.add(c); return { c, sent }; }
 // the sequencer's World.state is the VIEW (viewOf: components on the record, beside pos), so the fake is that shape exactly
 function fakeWorld(video: any, more: string[] = []) { const entities: any = { screen: { pos: [0, 0, 0], yaw: 0, video } }; for (const id of more) entities[id] = { pos: [0, 0, 0], yaw: 0, video: { ...video } }; return { state: { entities }, clients: new Set() }; }
-const tick = () => new Promise((r) => setTimeout(r, 5));
+const tick = () => pause("the broker's fire-and-forget closes reach the fake appliance", 5);
 
 type Case = { id: string; what: string; run: (s: any) => any; good: (o: any) => boolean };
 const cases: Case[] = [
@@ -349,9 +351,9 @@ const cases: Case[] = [
       await VS.offer?.(c, { id: "screen", sdp: "o", req: "s0" }, t);              // the screen's settled session
       FAKE.deleteDelay = 300;                                                       // its DELETE is slow at the appliance
       const a = VS.offer?.(c, { id: "screen", sdp: "o", req: "a" }, t + 3000);     // passes its checks, then replaces s0
-      await new Promise((r) => setTimeout(r, 60));
+      await until("offer a has its answer and its DELETE of the settled session is out", () => FAKE.log.some((x) => x.method === "DELETE"));
       const b = await VS.offer?.(c, { id: "screen", sdp: "o", req: "b" }, t + 6000); // lands while a's DELETE is out
-      const ra = await a; await new Promise((r) => setTimeout(r, 350)); FAKE.deleteDelay = 0;
+      const ra = await a; await until("every DELETE has landed", () => FAKE.log.filter((x) => x.method === "DELETE").length >= 2, { ms: 2000 }).catch(() => {}); FAKE.deleteDelay = 0;
       const held = VS.sessionCount?.(c);
       const closedFor = sent.filter((m) => m.type === "video-closed").map((m) => m.session);
       w.clients.delete(c); await VS.sweep?.();
