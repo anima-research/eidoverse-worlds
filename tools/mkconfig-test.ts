@@ -208,6 +208,12 @@ console.log('— H. the read key, and the VIDEO_SOURCES entry printed for the op
   check('an explicit source id that isn\'t a source id is refused before any file is written', badId.code === 2 && /PROJECTOR_SOURCE_ID/.test(badId.stderr) && badId.yaml === null, `exit=${badId.code} ${badId.stderr} file=${badId.yaml === null ? 'absent' : 'PRESENT'}`);
   const digits = render({ ...base, PROJECTOR_PATH: '123' });
   check('a path that makes no source id still renders, and says to set PROJECTOR_SOURCE_ID', digits.code === 0 && !!digits.yaml && /set PROJECTOR_SOURCE_ID/.test(digits.stderr) && entry(digits) === null, `exit=${digits.code} ${digits.stderr}`);
+  const long = render({ ...base, PROJECTOR_SOURCE_ID: 'a'.repeat(41) });
+  check('a source id longer than the registry reads (40) is refused before any file is written', long.code === 2 && /PROJECTOR_SOURCE_ID/.test(long.stderr) && long.yaml === null, `exit=${long.code} ${long.stderr}`);
+  const longPath = render({ ...base, PROJECTOR_PATH: 'p'.repeat(65) });
+  check('a path longer than the registry reads (64) is refused before any file is written', longPath.code === 2 && /PROJECTOR_PATH is at most 64/.test(longPath.stderr) && longPath.yaml === null, `exit=${longPath.code} ${longPath.stderr}`);
+  const at64 = entry(render({ ...base, PROJECTOR_PATH: 'p'.repeat(64) }));
+  check('…and one of exactly 64 renders, its derived id cut to 40', at64?.['p'.repeat(40)]?.path === undefined && !!at64?.['p'.repeat(40)], JSON.stringify(at64).slice(0, 120));
   const named = entry(render({ ...base, PROJECTOR_PATH: '123', PROJECTOR_SOURCE_ID: 'lobby-feed' }));
   check('…and with one set, the entry is under it', named?.['lobby-feed']?.whep === 'http://127.0.0.1:8889/123/whep', JSON.stringify(named));
 }

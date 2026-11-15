@@ -32,6 +32,8 @@ READ_USER="${PROJECTOR_READ_USER:-reader}"
 READ_KEY="${PROJECTOR_READ_KEY:-}"
 STREAM_PATH="${PROJECTOR_PATH:-screen}"
 case "$STREAM_PATH" in *[!A-Za-z0-9_-]*|"") echo "mkconfig: PROJECTOR_PATH must be [A-Za-z0-9_-]+ (got '$STREAM_PATH')" >&2; exit 2;; esac
+# the sequencer's registry reads a path of at most 64 characters (server/videosources.ts): a longer one would be dropped
+[ "${#STREAM_PATH}" -le 64 ] || { echo "mkconfig: PROJECTOR_PATH is at most 64 characters (the sequencer's registry reads no longer)" >&2; exit 2; }
 # mediamtx conf.go treats these as aliases of the template's catch-all and refuses a second at load
 case "$STREAM_PATH" in all|all_others) echo "mkconfig: PROJECTOR_PATH may not be '$STREAM_PATH': mediamtx reads 'all', 'all_others' and '~^.*\$' as one catch-all path, and the template already holds it; unset it (screen) or choose another name" >&2; exit 2;; esac
 # Every value below is spliced into YAML by sed. sed's replacement side
