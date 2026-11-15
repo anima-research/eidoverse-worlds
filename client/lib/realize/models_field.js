@@ -127,3 +127,13 @@ export function collisionOwnedElsewhere(ent, mounted = false) {
   // collision off for bodies has no box either: collider {enabled: false} or blocks without bodies (simlayer.js solidOff, the authority's reading)
   return !!mounted || !!ent?.structure || solidOff(ent, 'bodies');
 }
+
+/** Derived materialization UI state; error content is a fixed safe summary. */
+export function loadStatus(tracked, realized, inRange) {
+  const state = realized ? 'ready' : tracked.loading ? (tracked.phase ?? 'queued')
+    : !inRange ? 'deferred' : tracked.failedAt ? 'failed' : 'queued';
+  return { state, error: tracked.error ?? null,
+    retryAvailable: state === 'failed',
+    label: ({ready: 'Ready', queued: 'Queued', loading: 'Loading',
+      deferred: 'Loads when nearby', failed: 'Loading failed'})[state] };
+}
