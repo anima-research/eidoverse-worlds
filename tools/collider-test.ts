@@ -328,6 +328,10 @@ console.log('\nthe camera ray, a refit, the spatial index, a fallen post:');
   check('distant walking still finds a landscape floor', Math.abs(at(2000, 0.2, 0).ground - 0.2) < 1e-5);
   check('radius queries include a landscape exactly once', [...C.nearColliders(2000, 0, 30)].filter(([id]) => id === 'island').length === 1);
   check('camera rays still hit a landscape', C.raySegment(new THREE.Vector3(2000, 2, 0), new THREE.Vector3(0, -1, 0), 3) !== null);
+  C.suspendCollider('island', true);   // carried, or set aside by a route plan (withoutColliders)
+  check('a suspended landscape leaves every query', [...C.nearColliders(2000, 0, 30)].length === 0 && at(2000, 0.2, 0).ground < 0.1);
+  C.suspendCollider('island', false);
+  check('resumed, it is back exactly once', [...C.nearColliders(2000, 0, 30)].filter(([id]) => id === 'island').length === 1);
   C.removeCollider('island');
   check('removed landscapes leave no stale candidates', [...C.nearColliders(2000, 0, 30)].length === 0);
 }

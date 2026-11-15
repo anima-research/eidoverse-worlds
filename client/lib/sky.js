@@ -1394,7 +1394,7 @@ async function renderSkyMesh(a) {
     // (updateSky) as visitors explore; its corners (~8.7km) sit inside the
     // camera's 20km far plane. The sky is not IN the weather; exempt it from fog.
     skyMesh.scale.setScalar(10000);
-    skyMesh.position.copy(camera.position);
+    skyMesh.position.copy(camera.getWorldPosition(_skyEye));
     skyMesh.material.fog = false;
     skyMesh.userData.noCamCollide = true;
     scene.add(skyMesh);
@@ -1477,8 +1477,11 @@ function applyTuning(a, day, warmth = Math.pow(1 - day, 1.5), sunPos = null, sky
 
 let lastClockTick = 0;
 let updateFailures = 0;
+// the eye's WORLD position: in XR the camera is a child of the rig, so camera.position is only the head's offset in it
+// (the baked dome reads it the same way, sky_baked.js updateBakedDome)
+const _skyEye = new THREE.Vector3();
 export function updateSky(nowMs, t) {
-  if (skyMesh) skyMesh.position.copy(camera.position);   // the sky rides the camera, so walking never reaches its edge
+  if (skyMesh) skyMesh.position.copy(camera.getWorldPosition(_skyEye));   // the sky rides the eye, so walking never reaches its edge
   // A toolkit sky that throws from its PER-FRAME update is invisible to the
   // try/catch around construction: the object exists, renders nothing, and
   // rejects once per frame forever — a black sky and a console filling at
