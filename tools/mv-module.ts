@@ -1,6 +1,6 @@
-// tools/dev/mv-module.ts — move engine files and rewrite every path that names them: resolved, never substituted blind.
-//   bun tools/dev/mv-module.ts <from> <to> [<from> <to> …]     a file to a file, or a directory to a directory
-//   bun tools/dev/mv-module.ts --check                            only verify: every relative specifier in the tree resolves
+// tools/mv-module.ts — move engine files and rewrite every path that names them: resolved, never substituted blind.
+//   bun tools/mv-module.ts <from> <to> [<from> <to> …]     a file to a file, or a directory to a directory
+//   bun tools/mv-module.ts --check                            only verify: every relative specifier in the tree resolves
 // For each tracked text file (docs/history, spec/history and CHANGELOGs keep the paths of their day):
 //   1. a relative import specifier (from/import/export, import(), new URL(…, import.meta.url), require) is resolved from
 //      the importer's OLD place and rewritten from its NEW place to the target's NEW place: a moved importer and a moved
@@ -13,7 +13,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
-const ROOT = path.resolve(import.meta.dir, "../..");
+const ROOT = path.resolve(import.meta.dir, "..");
 const git = (...a: string[]) => { const r = spawnSync("git", ["-C", ROOT, ...a], { encoding: "utf8", maxBuffer: 1 << 28 }); if (r.status) throw new Error(`git ${a.join(" ")}: ${r.stderr}`); return r.stdout; };
 const tracked = () => git("ls-files", "-z").split("\0").filter(Boolean);
 const HISTORY = [/^docs\/history\//, /^spec\/history\//, /CHANGELOG[^/]*\.md$/];
@@ -88,7 +88,7 @@ for (const f of after) {
   const s = fs.readFileSync(path.join(ROOT, f), "utf8"), lines = s.split("\n");
   lines.forEach((l, i) => {
     if (movedNew.has(f) && CODE.test(f) && /\bimport\s*\(\s*`|new\s+URL\s*\(\s*`|new\s+Worker\s*\(\s*['"`]/.test(l)) notes.push(`template/worker specifier  ${f}:${i + 1}: ${l.trim().slice(0, 140)}`);
-    if (!/^(test|tools|bench)\//.test(f) || f === "tools/dev/mv-module.ts") return;
+    if (!/^(test|tools|bench)\//.test(f) || f === "tools/mv-module.ts") return;
     for (const [a] of move) {
       const base = a.split("/").pop()!;
       if (new RegExp(`['"\`]${esc(base)}['"\`]`).test(l)) notes.push(`bare basename ${base}  ${f}:${i + 1}: ${l.trim().slice(0, 140)}`);

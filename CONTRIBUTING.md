@@ -71,7 +71,7 @@ Refused in review:
 - a `-utils`, `-helpers` or `-common` name (say what the file is);
 - a test not named for its subject (`<source basename>[-aspect]`) and its kind: `-test`, `-check` or `-probe`, as
   "The loop" says;
-- a move not made with `tools/dev/mv-module.ts`, or a move commit that doesn't record the command (open branches re-run
+- a move not made with `tools/mv-module.ts`, or a move commit that doesn't record the command (open branches re-run
   it). A move updates imports, dynamic imports, docs and served URLs, and a `mock.module` path only where it spells the
   full repo path; `stub-guard` catches a stub left stale. Its receipt is a grep for
   every old path that finds nothing, and what became of each old URL (broken on purpose, redirected, or shown unused).
