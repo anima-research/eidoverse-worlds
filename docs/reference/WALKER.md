@@ -1,6 +1,6 @@
 # The walker: how `move {to}` walks griddled structures
 
-Reference: what is built. Moved verbatim from AGENTS.md ("Walking through buildings") on 2026-11-14; AGENTS.md
+Reference: what is built. The full rules behind `move {to}` in buildings; AGENTS.md ("Walking through buildings")
 keeps what a builder needs.
 
 ## Summary
