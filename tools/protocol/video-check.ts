@@ -141,14 +141,14 @@ const sayLines = (s: any, id: string) => (s.call("olive", "look", {}).things ?? 
 const admit = (ids: string[]) => V.admitVideoSources?.(ids);
 
 // ---- a fake appliance: WHEP (POST → 201 + Location; DELETE) and mediamtx's paths API, recording every request ----
-const FAKE = { log: [] as any[], paths: {} as Record<string, any>, whepStatus: 201, apiDown: false, delays: [] as number[] };
+const FAKE = { log: [] as any[], paths: {} as Record<string, any>, whepStatus: 201, apiDown: false, delays: [] as number[], deleteDelay: 0 };
 const fake = Bun.serve({ port: 0, async fetch(req) {
   const u = new URL(req.url); const body = req.method === "POST" ? await req.text() : "";
   FAKE.log.push({ method: req.method, path: u.pathname, auth: req.headers.get("authorization"), body });
   if (req.method === "POST" && FAKE.delays.length) await new Promise((r) => setTimeout(r, FAKE.delays.shift()));   // a slow appliance, per offer
   if (u.pathname.startsWith("/v3/paths/get/")) { if (FAKE.apiDown) return new Response("down", { status: 503 }); const p = FAKE.paths[u.pathname.slice(14)]; return p ? Response.json(p) : new Response("not found", { status: 404 }); }
   if (req.method === "POST" && u.pathname.endsWith("/whep")) return FAKE.whepStatus === 201 ? new Response("v=0\r\nanswer-for:" + body.slice(0, 20), { status: 201, headers: { location: `${u.pathname.replace(/whep$/, "")}whep/session-${FAKE.log.length}` } }) : new Response("no", { status: FAKE.whepStatus });
-  if (req.method === "DELETE") return new Response(null, { status: 200 });
+  if (req.method === "DELETE") { if (FAKE.deleteDelay) await new Promise((r) => setTimeout(r, FAKE.deleteDelay)); return new Response(null, { status: 200 }); }
   return new Response("?", { status: 400 });
 } });
 const APP = `http://127.0.0.1:${fake.port}`;
@@ -341,6 +341,41 @@ const cases: Case[] = [
       return { del: FAKE.log.filter((x) => x.method === "DELETE").length, closed: sent.find((m) => m.type === "video-closed")?.why, obs: V.sourceStateOf?.("solstice"), left: VS.sessionCount?.(c),
         door: code(s.call("olive", "set", { id: "screen", component: "video", value: { source: "solstice" } })) }; },
     good: (o) => o.del === 1 && /revoked/.test(o.closed ?? "") && o.obs === null && o.left === 0 && o.door === "not-found" },
+  { id: "B9", what: "an offer whose answer has passed its checks records its session at once: a newer offer for the screen landing while the older one's DELETE is still at the appliance leaves one session, the newer (#332 review 2)", async run() {
+      install(REG()); FAKE.whepStatus = 201; FAKE.delays = []; FAKE.deleteDelay = 0; FAKE.log = []; const t = 9e9;
+      const w = fakeWorld({ source: "solstice" }); const { c, sent } = viewer(w);
+      await VS.offer?.(c, { id: "screen", sdp: "o", req: "s0" }, t);              // the screen's settled session
+      FAKE.deleteDelay = 300;                                                       // its DELETE is slow at the appliance
+      const a = VS.offer?.(c, { id: "screen", sdp: "o", req: "a" }, t + 3000);     // passes its checks, then replaces s0
+      await new Promise((r) => setTimeout(r, 60));
+      const b = await VS.offer?.(c, { id: "screen", sdp: "o", req: "b" }, t + 6000); // lands while a's DELETE is out
+      const ra = await a; await new Promise((r) => setTimeout(r, 350)); FAKE.deleteDelay = 0;
+      const held = VS.sessionCount?.(c);
+      const closedFor = sent.filter((m) => m.type === "video-closed").map((m) => m.session);
+      w.clients.delete(c); await VS.sweep?.();
+      return { a: ra?.type, b: b?.type, held, newerKept: !closedFor.includes(b?.session) }; },
+    good: (o) => o.b === "video-answer" && o.held === 1 && o.newerKept },
+  { id: "B10", what: "every refusal and every close carries a typed code beside its words, so a viewer decides retrying by the code and never by the wording (a source id holding 'ended' is still a source that isn't publishing) (#332 review 3)", async run() {
+      install(REG({ "extended-cut": { whep: `${APP}/cut/whep` }, gone: { whep: `${APP}/gone/whep`, ended: true } })); FAKE.whepStatus = 201; FAKE.delays = []; FAKE.deleteDelay = 0; const t = 11e9;
+      const w = fakeWorld({ source: "solstice" }, ["s2", "s3", "s4", "s5"]); w.state.entities.cut = { pos: [0, 0, 0], yaw: 0, video: { source: "extended-cut" } };
+      w.state.entities.old = { pos: [0, 0, 0], yaw: 0, video: { source: "gone" } }; w.state.entities.bare = { pos: [0, 0, 0], yaw: 0 };
+      const { c, sent } = viewer(w); const at = (i: number) => t + i * 3000;
+      const spec = await VS.offer?.({ world: w, spectator: true }, { id: "screen", sdp: "o" }, t);
+      await VS.offer?.(c, { id: "screen", sdp: "o" }, at(0)); const soon = await VS.offer?.(c, { id: "s2", sdp: "o" }, at(0) + 500);
+      const novid = await VS.offer?.(c, { id: "bare", sdp: "o" }, at(1));
+      const ended = await VS.offer?.(c, { id: "old", sdp: "o" }, at(2));
+      FAKE.whepStatus = 404; const cut = await VS.offer?.(c, { id: "cut", sdp: "o" }, at(3)); FAKE.whepStatus = 201;
+      for (const [i, id] of ["s2", "s3", "s4"].entries()) await VS.offer?.(c, { id, sdp: "o" }, at(4 + i));
+      const cap = await VS.offer?.(c, { id: "s5", sdp: "o" }, at(8));
+      const w2 = fakeWorld({ source: "elsewhere" }); const { c: c2 } = viewer(w2); const unadm = await VS.offer?.(c2, { id: "screen", sdp: "o" }, t);
+      w.state.entities.s2.video = { source: "extended-cut" }; await VS.sweep?.(); await tick();
+      install(REG({ "extended-cut": { whep: `${APP}/cut/whep` } })); install({ sources: { "extended-cut": { whep: `${APP}/cut/whep` } } }); await tick(); await tick();
+      const closes = sent.filter((m) => m.type === "video-closed").map((m) => m.code);
+      w.clients.delete(c); w2.clients.delete(c2); await VS.sweep?.();
+      const pick = (r: any) => ({ code: r?.code, retryAfterMs: r?.retryAfterMs });
+      return { spec: pick(spec), soon: pick(soon), novid: pick(novid), ended: pick(ended), cut: pick(cut), cap: pick(cap), unadm: pick(unadm), closes }; },
+    good: (o) => o.spec.code === "spectator" && o.soon.code === "too-soon" && o.soon.retryAfterMs > 0 && o.soon.retryAfterMs <= 2000 && o.novid.code === "no-video" && o.ended.code === "ended"
+      && o.cut.code === "not-publishing" && o.cap.code === "cap" && o.unadm.code === "not-admitted" && o.closes.includes("changed") && o.closes.includes("revoked") },
   { id: "B7", what: "what a world is told: each admitted source's state with its AGE (ms), never a timestamp, never an endpoint", run() {
       install(REG()); const now = 7e12; V.noteSourceState?.("solstice", { state: "live", at: now - 2500 });
       const f = VS.stateFrame?.(now); return { f, s: JSON.stringify(f) }; },
