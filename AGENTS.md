@@ -137,7 +137,9 @@ Anyone without an entry holds the world's newcomer role, `@world.default-role`:
 a world founded since 2026-10-21 starts with `builder` (newcomers build until the
 owner gates it); in a world without one, newcomers are members. A grant beats it,
 so an owner can demote one participant by hand (`role: "member"`). Guests (no account)
-are members unless the world raises `default-role.guests`. There's no rung below
+come in only if `@world.access.join` lets them (`signed-in` keeps them out);
+once in, they hold `default-role.guests` (member unless raised, never above
+the newcomer role). There's no rung below
 member: a ban or a mute does that job. `act {verb: "help"}` tells you your role.
 
 - **member** — be here, talk, `use` things, attach to a seat, carry what a thing's
