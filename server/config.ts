@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 import { totalmem } from "node:os";
 import { envNumber } from "./limits.ts";
 
-export const PORT = envNumber("PORT", 8940, (n) => Number.isInteger(n) && n >= 1 && n <= 65535);
+export const PORT = envNumber("PORT", 8940, (n) => Number.isInteger(n) && n >= 0 && n <= 65535);   // 0: an ephemeral port, as main read it
 /** Default every interface; HOST=127.0.0.1 keeps a test world on this machine only. */
 export const HOST = process.env.HOST ?? "0.0.0.0";
 // Door policy. Empty = open (a dev box); set it on a public box (the boot log shouts if not). Checked at join and upload.
@@ -14,9 +14,9 @@ export const JOIN_TOKEN = process.env.JOIN_TOKEN ?? "";
 // The renderers' own credential (docs/decisions/WORLD-ACCESS.md): a renderer presenting it may watch any world, invisibly.
 // Distinct from JOIN_TOKEN: that key rides invite links, and "renderer" is a flag any client can set. Unset = none trusted.
 export const RENDERER_TOKEN = process.env.RENDERER_TOKEN ?? "";
-export const UPLOAD_CAP = envNumber("UPLOAD_CAP_MB", 20, (n) => n > 0) * 1_000_000;
+export const UPLOAD_CAP = envNumber("UPLOAD_CAP_MB", 20, (n) => n >= 0) * 1_000_000;
 // narrower than the model door: a hung image is decoded into GPU memory on every client that sees it
-export const IMAGE_CAP = envNumber("IMAGE_CAP_MB", 8, (n) => n > 0) * 1_000_000;
+export const IMAGE_CAP = envNumber("IMAGE_CAP_MB", 8, (n) => n >= 0) * 1_000_000;
 // RECORD_FRAMES=1: stage frames + roster deltas to worlds/<name>/frames-<bootTs>.jsonl. Clients are told at join.
 export const RECORD = process.env.RECORD_FRAMES === "1";
 // SKIP_OPT_SWEEP=1 skips both boot optimize sweeps (encode pump + ktx2/lod).
@@ -82,7 +82,7 @@ const ANON_RATE_KIB = envNumber("ANON_RATE_KIB", 32, (n) => n > 0);
 export const RATE_POLICY = { n: ACT_RATE, says: SAY_RATE, ms: RATE_WINDOW_SEC * 1000, bytes: RATE_KIB * 1024, anonBytes: ANON_RATE_KIB * 1024 };
 // Founding and copying a world: no limits (a copy is one synchronous call; long copies off the shared thread are wishlisted).
 /** All messages per client per second: 15 Hz of pose plus verbs plus slack; a token bucket with two seconds of burst (server/msgrate.ts). */
-export const MSG_RATE = envNumber("MSG_RATE", 60, (n) => n > 0);
+export const MSG_RATE = envNumber("MSG_RATE", 60, (n) => n >= 0);
 
 export const FRAME_MS = 66;                 // ~15Hz, matches the client's send throttle
 // Bytes of unsent backlog before frames to a client are dropped. Keep tight: proxy and kernel buffers absorb a lot before
