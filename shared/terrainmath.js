@@ -63,7 +63,7 @@ export function terrainParams(a) {
  *  @returns {(x: number, z: number) => number} */
 export function makeHeightField(P) {
   if (typeof P.flat === 'number') { const h = P.flat; return () => h; }
-  // mulberry32 — integer ops only, bit-exact on every engine
+  // mulberry32 — integer ops only, bit-exact on every engine; a copy, not shared/rand.js, on purpose: the sim's import closure is pinned (siminputs-check.ts)
   let s = (P.seed | 0) || 1;
   const rand = () => {
     s |= 0; s = (s + 0x6D2B79F5) | 0;

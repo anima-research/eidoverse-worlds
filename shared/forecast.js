@@ -86,6 +86,7 @@ function hashSeed(seed) {
   return h >>> 0;
 }
 
+// mulberry32 kept here, not imported from shared/rand.js on purpose: forecast.js imports nothing (rand.js says so too).
 function segRng(seed, idx) {
   let h = (seed ^ Math.imul(idx + 1, 0x9e3779b9)) >>> 0;
   return () => {

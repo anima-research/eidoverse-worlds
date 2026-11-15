@@ -10,7 +10,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, readdir
 import { addressOf } from "./peer.ts";
 import { bearerOf } from "./access.ts";
 import { join, basename, dirname, relative } from "node:path";
-import { JOIN_TOKEN, UPLOAD_CAP, IMAGE_CAP, ROOT, OPT_DIR, STORE_MIN, LIBRARY_DIR, SKIP_OPT_SWEEP, OPT_MEM_BUDGET_MB, OPT_COST_FACTOR } from "./config.ts";
+import { JOIN_TOKEN, UPLOAD_CAP, IMAGE_CAP, ROOT, OPT_DIR, PATCH_DIR, STORE_MIN, LIBRARY_DIR, SKIP_OPT_SWEEP, OPT_MEM_BUDGET_MB, OPT_COST_FACTOR } from "./config.ts";
 // merge 2026-09-01 (anima a468cba, geometry LOD): upstream's LOD names ride
 // in; the door stays on R1's aid1JoinIdentity (the HN_*/verifyToken form is
 // what it replaced — the merged body references neither)
@@ -20,6 +20,8 @@ import { worlds } from "./world.ts";
 import { atomicWrite } from "./fsutil.ts";
 import { ingestHeightmap } from "./heightmap.ts";
 import { checkFile } from "./buildcheck-queue.ts";
+import { avatarDefs } from "./defs.ts";
+import { resolveLibFile } from "./libfile.ts";
 
 /** What the handler needs from Bun's server object, structurally: the
  *  socket address behind the nginx front. */
@@ -624,6 +626,13 @@ async function uploadBy(req: Request, url: URL, srv: UploadSrv): Promise<Respons
   if (url.searchParams.get("as") === "avatar") {
     const raw = url.searchParams.get("name") ?? "unnamed";
     const name = raw.replace(/\.vrm$/i, "").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 48) || "unnamed";
+    // a patch outranks OPT_DIR on /library, so this upload would never be served (#325)
+    if (existsSync(join(PATCH_DIR, "eidoverse/assets/vrms", `${name}.vrm`)))
+      return new Response(`"${name}" is a patched body: patched/ wins over uploads, so this one would never be served. Upload it under another name.`, { status: 409 });
+    // a def that claims the name (and resolves) outranks every scanned file on the roster: the same never-served case
+    const def = avatarDefs()[name]?.vrm;
+    if (def && resolveLibFile(def))
+      return new Response(`"${name}" is declared by a def (defs/avatars/${name}.json → ${def}), which wins over uploads, so this one would never be served. Upload it under another name.`, { status: 409 });
     const dir = join(OPT_DIR, "eidoverse/assets/vrms");
     mkdirSync(dir, { recursive: true });
     // A RAW TRIPO RIG at the avatar door runs the import pipeline instead of

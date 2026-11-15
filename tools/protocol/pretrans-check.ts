@@ -702,6 +702,13 @@ await C("D8", "a definition's meaning is pinned: a changed default, type or enum
   const am0 = CAT.COMPONENTS.light.absentMeans;   // light has its own absentMeans since the shape audit (10-16): put them back after the probe
   CAT.COMPONENTS.light.fields.extra = "number"; CAT.COMPONENTS.light.absentMeans = { ...(am0 ?? {}), extra: "no extra" }; const added = CAT.pinBreaks?.(pin, CAT.pinOf()) ?? ["x"]; delete CAT.COMPONENTS.light.fields.extra; if (am0) CAT.COMPONENTS.light.absentMeans = am0; else delete CAT.COMPONENTS.light.absentMeans;
   return [!g.length && moved.some((x: string) => /light\.intensity/.test(x)) && !added.length, { now: g.slice(0, 4), moved, added }]; });
+await C("D8b", "the committed pin is exactly what the source pins now: a relaxed range drifts too, not only a break (run --pin)", () => {
+  const pin = JSON.parse(read("spec/registry-pin.json")); const now = CAT.pinOf();
+  const drift = Object.keys({ ...pin, ...now }).filter((k) => JSON.stringify(pin[k]) !== JSON.stringify(now[k]));
+  return [!drift.length, drift.slice(0, 8)]; });
+await C("D8c", "@world.spawn.yaw's pinned range is ±YAW_LIMIT, the bound the authority takes for a bare yaw (Mica #324)", () => {
+  const r = JSON.parse(read("spec/registry-pin.json")).spawn?.ranges?.yaw;
+  return [r?.min === -CAT.YAW_LIMIT && r?.max === CAT.YAW_LIMIT, { pinned: r, YAW_LIMIT: CAT.YAW_LIMIT }]; });
 await C("D12", "every field of an open component has a written meaning, every meaning is pinned (spec/registry-pin.json docs: the normative home of what a field means, the house's view #260 10-20), and a changed meaning is a break (this row checks meanings, not units)", () => {
   const pin = JSON.parse(read("spec/registry-pin.json")); const now = CAT.pinOf();
   const bare = Object.entries(now).filter(([, p]: any) => p.status !== "reserved" && p.status !== "retired").flatMap(([n, p]: any) => Object.keys(p.fields ?? {}).filter((f) => !(typeof p.docs?.[f] === "string" && p.docs[f].trim())).map((f) => `${n}.${f}`));

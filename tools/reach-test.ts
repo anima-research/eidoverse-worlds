@@ -21,6 +21,7 @@
  */
 
 import { solveTwoBone, clampToCone, clampBehind, rotateAbout } from "../shared/reach.js";
+import { mulberry32 } from "../shared/rand.js";
 
 let failures = 0;
 const check = (label: string, ok: boolean, detail?: string) => {
@@ -157,8 +158,7 @@ console.log("\nthe cone and the frontal plane");
   // `bound` is genuinely on its boundary, and every limit NOT named is
   // genuinely satisfied with room to spare
   let lies = 0, coneHits = 0, behindHits = 0;
-  let seed = 4242;
-  const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+  const rnd = mulberry32(4242);
   for (let i = 0; i < 5000; i++) {
     const t = [(rnd() - 0.5) * 5, (rnd() - 0.5) * 5, (rnd() - 0.5) * 5];
     const r = solveTwoBone({
@@ -195,8 +195,7 @@ console.log("\nrefusals rather than NaN");
 console.log("\nevery result is finite (fuzz)");
 {
   let bad = 0, solved = 0;
-  let seed = 12345;
-  const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+  const rnd = mulberry32(12345);
   for (let i = 0; i < 20000; i++) {
     const t = [(rnd() - 0.5) * 6, (rnd() - 0.5) * 6, (rnd() - 0.5) * 6];
     const p = [(rnd() - 0.5) * 2, (rnd() - 0.5) * 2, (rnd() - 0.5) * 2];

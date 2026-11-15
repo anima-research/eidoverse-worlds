@@ -16,7 +16,7 @@ import { declareOccupyState, clearOccupyState } from './occupants.js';
 import { applyRemoteReach, noteReachEvents } from './reachnet.js';
 import { syncClipPhase } from './poseclips.js';
 import { applyWingFoldPresence } from '../../shared/wingpresence.js';
-import { poseChannels } from '../../shared/humanoid.js';
+import { poseChannels, setOwn } from '../../shared/humanoid.js';
 import { applyPresenceWire, applyVoiceWire, applyBodyWire, sampleTime } from '../../shared/presencewire.js';
 import { applyRemoteXR, resetFingers } from './xrbody.js';
 
@@ -307,7 +307,7 @@ function planPoseBlend(r, pa, pb) {
     const [qa, qb] = pick('q'), [ta, tb] = pick('t'), [sa, sb] = pick('s');
     const slot = { a: qa, b: qb, q: qa && [0, 0, 0, 1], ta, tb, t: ta && [0, 0, 0], sa, sb, s: sa && [1, 1, 1] };
     r.poseSlots.push(slot);
-    r.poseOut[n] = !ta && !sa ? slot.q : { ...(qa ? { q: slot.q } : {}), ...(ta ? { t: slot.t } : {}), ...(sa ? { s: slot.s } : {}) };
+    setOwn(r.poseOut, n, !ta && !sa ? slot.q : { ...(qa ? { q: slot.q } : {}), ...(ta ? { t: slot.t } : {}), ...(sa ? { s: slot.s } : {}) });
   }
 }
 

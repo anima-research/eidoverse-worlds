@@ -21,6 +21,7 @@ import { composeField } from './flora_field.js';
 import { bladeLodIndex, bladeCoarseIndex } from './flora_lod.js';
 import { densityCount } from './grass_quality.js';
 import { pushHostHook } from './autohooks.js';
+import { mulberry32 } from '../../shared/rand.js';
 
 export { mapGrassArgs, presetStrokes } from './flora_args.js';
 export { retireField } from './flora_field.js';
@@ -150,8 +151,7 @@ function wireDensityDial(field) {
   const n = field.count;
   if (!n || !attrs.length) return;
   const order = Array.from({ length: n }, (_, i) => i);
-  let seed = 0x6d2b79f5;
-  const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x80000000);
+  const rnd = mulberry32(0x6d2b79f5);
   for (let i = n - 1; i > 0; i--) {
     const j = (rnd() * (i + 1)) | 0;
     const t = order[i]; order[i] = order[j]; order[j] = t;
