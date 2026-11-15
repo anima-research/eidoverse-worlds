@@ -242,6 +242,15 @@ const cases: Case[] = [
       return { at1: V.videoGain?.(v, 1), mine: V.videoGain?.(v, 1, 0.5), edge: V.videoGain?.(v, 10), mid: V.videoGain?.(v, 4), sound: (await_sound()).gainAt(4, 2, 10) }; },
     good: (o) => o.at1 === 0.5 && o.mine === 0.25 && o.edge === 0 && Math.abs(o.mid - 0.5 * o.sound) < 1e-12 },
 
+  { id: "M9", what: "a reader of the sequencer's state frames (a browser, an mcpl agent) keeps only what the latest frame says: a source the frame no longer lists is forgotten (unknown), never kept live until it ages out; a reset forgets them all (#332 review 22, 35)", run() {
+      const now = 9e12; V.forgetSourceState?.("solstice"); V.forgetSourceState?.("cinema");
+      V.applyStateFrame?.({ states: [{ source: "solstice", state: "live", ageMs: 1000 }, { source: "cinema", state: "offline", ageMs: 500 }] }, now);
+      const first = [V.sourceStateOf?.("solstice")?.state ?? null, V.sourceStateOf?.("cinema")?.state ?? null];
+      V.applyStateFrame?.({ states: [{ source: "cinema", state: "live", ageMs: 0 }] }, now + 5000);
+      const second = [V.sourceStateOf?.("solstice")?.state ?? null, V.sourceStateOf?.("cinema")?.state ?? null];
+      V.forgetAllSourceStates?.(); const reset = V.sourceStateOf?.("cinema")?.state ?? null;
+      return { first, second, reset }; },
+    good: (o) => JSON.stringify(o.first) === '["live","offline"]' && JSON.stringify(o.second) === '[null,"live"]' && o.reset === null },
   { id: "M8", what: "the inspector draws the Video card from the registry (volume 0..1, this viewer's own state, mute, take down); its edits keep the door's rules; Add Video takes a source by value", run() {
       const E = (c: any) => ({ transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, ...c });
       const flat = (ops: any[]) => ops.flatMap((o) => (o.verb === "batch" ? o.args.ops : [o]));
