@@ -56,7 +56,7 @@ lines.push(`# LOD floor census`, ``, `Library: ${files.length} models. Reducer: 
   `the measured LOD, an approximation); the rest read as light. ` +
   `Texture MB is glbperf's GPU-size estimate: raw images at full size, KTX2 at its compressed size. The KTX2 variant ` +
   `is what a viewer is served up close, so it is the fair baseline for what a LOD saves on textures. ` +
-  `Animated, skinned and morph-target models are refused before counting (structural) at every floor and aren't in the rows.`, ``);
+  `Animated, skinned and morph-target models are refused (structural) at every floor: counted in that column and listed below, never reduced.`, ``);
 lines.push(`| Floor | Enter | Built | (permissive) | (texture-only) | Refused: light | ineffective | preservation | structural | gpu | size | other/error | Verts in → out | Tris in → out | Bytes in → out | Tex MB: raw / KTX2 variant → LOD |`);
 lines.push(`|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|`);
 // a model under floor F: geometry untouched; a texture-only LOD if its measured LOD textures qualify, else light

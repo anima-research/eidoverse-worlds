@@ -47,7 +47,7 @@ check(`every record has a distinct 64-hex hash (${hashes.length} records)`, hash
     && tweak(S, (x) => { x.seat.pose = 'lie'; }) !== S.hash);
   check('a parameter that is NAMED hint or note still counts', tweak(P, (x) => { x.params.note = { t: 'text', default: 'a' }; }) !== tweak(P, (x) => { x.params.note = { t: 'text', default: 'b' }; }));
 }
-check('Pendulum is not addable twice on a part-less basis but motion types repeat', addable([{ type: 'Transform' }, { type: 'Pendulum' }]).some((a) => a.name === 'Pendulum'));
+check('Pendulum is offered again with one present: motion types repeat', addable([{ type: 'Transform' }, { type: 'Pendulum' }]).some((a) => a.name === 'Pendulum'));
 check('a tilted entity keeps q through the view', (() => { const e = { model: 'x.glb', pos: [0, 1, 0], q: [0.2588, 0, 0, 0.9659], yaw: 0, lock: true }; return canon(entityOf(componentsOf(e))) === canon(e); })());
 // batch 2 (R 10-07): no part = a picture of its own, so Picture is offered on any thing, a model or not
 check('Picture is offered on any thing (batch 2: quad mode)', addable([{ type: 'Transform' }, { type: 'Light' }]).some((a) => a.name === 'Picture') && addable([{ type: 'Transform' }, { type: 'Model' }]).some((a) => a.name === 'Picture'));

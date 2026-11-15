@@ -353,16 +353,16 @@ const bootOnChecks = (r, c = check) => {
 const bootOffChecks = (r, c = check) => {
   c('preference OFF is read at boot', r.boot.pref === false);
   c('pref off at boot: the sun draws no shadow (uniform-level; the map stays in the pipeline shape)', r.boot.sun === false && r.boot.shapeOn === true);
-  // THE DEFECT: a casting lamp with the map off. Agreement is the invariant,
-  // not "off" -- a lamp that casts into a disabled map is a lamp pretending.
+  // THE DEFECT: a casting lamp with shadows off. Agreement is the invariant,
+  // not "off" -- a lamp that casts while the switch is off is a lamp pretending.
   c('the lamp slot does NOT cast when the preference is off', r.boot.lamp === false,
-    'slot 0 born casting with shadowMap.enabled=false — boot disagrees with the switch');
+    'slot 0 born casting with shadows off — boot disagrees with the switch');
 };
 const flipChecks = (r, c = check) => {
   c('setShadows(false) keeps the pipeline shape (no scene recompile)', r.off.shapeOn === true);
   c('setShadows(false) stops the sun casting', r.off.sun === false);
   c('setShadows(false) stops the LAMP casting', r.off.lamp === false,
-    'the lamp kept casting into a disabled shadow map');
+    'the lamp kept casting with shadows off');
   c('setShadows(false) is reported by shadowsOn()', r.off.pref === false);
   c('setShadows(true) re-enables the map', r.on.map === true);
   c('setShadows(true) restores the sun', r.on.sun === true);

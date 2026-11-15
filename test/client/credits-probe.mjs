@@ -14,7 +14,7 @@ try {
     await pg.goto(world.origin + '/credits.html', { waitUntil: 'load' });
     const m = await pg.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth, items: document.querySelectorAll('.item').length,
       dead: [...document.querySelectorAll('a[href]')].filter((a) => !a.getAttribute('href')).length }));
-    check(`credits @${w}: no horizontal scroll, every item there`, m.sw <= m.cw && m.items >= 15 && !m.dead, m);
+    check(`credits @${w}: no horizontal scroll, at least 15 items, no empty href`, m.sw <= m.cw && m.items >= 15 && !m.dead, m);
     await pg.screenshot({ path: `${out}/credits-${w}.png`, fullPage: false });
   }
   // the About flyout carries the link (the client's own menu code, in the page)

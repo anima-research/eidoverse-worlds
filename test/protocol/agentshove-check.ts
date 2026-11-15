@@ -200,7 +200,7 @@ try {
     const w = call("move", { to: [-18, 5] });
     for (let i = 0; i < 100 && !ag.target; i++) await sleep(10);
     const planned = !!ag.target && Math.abs(ag.target.x + 18) < 1e-6;
-    ok(planned, "AS9 a crate once found solid, then unlocked where it stood, is walked into again (planned straight through it)", { target: ag.target });
+    ok(planned, "AS9 a crate once found solid, then unlocked where it stood, is planned through again (the walk's target straight through it)", { target: ag.target });
     await call("stop", {}); await w; }
   // AS10
   { const r = await crate("jam", "test/longcrate.glb", [12, 0, -6], {}, 30); ok(r.ok, "(AS10 setup) a light long crate", r);

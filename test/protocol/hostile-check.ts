@@ -236,5 +236,5 @@ for (const p of probes) {
 }
 if (!process.env.PROTOCOL_KEEP) fs.rmSync(root, { recursive: true, force: true }); // PROTOCOL_KEEP=1 keeps the scratch (common.ts scratch)
 console.log(controlNote());
-console.log(`${probes.length} probes (${probes.filter((p) => p.held).length} a regression guard where the baseline already held): ${probes.length - bad} pass, ${bad} fail`);
+console.log(`${probes.length} probes (${probes.filter((p) => p.held).length} regression guards, not judged on the baseline): ${probes.length - bad} pass, ${bad} fail`);
 process.exit(bad ? 1 : 0);

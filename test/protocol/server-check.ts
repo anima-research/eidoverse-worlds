@@ -461,7 +461,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok(tr.code === 0 && /0 divergences/.test(tr.out) && /mtime unchanged: true/.test(tr.out) && /approved by the operator/.test(tr.out), "S6 translate, approved, writes a new world and reports 0 divergences", tr.out);
   ok(Buffer.compare(before, fs.readFileSync(v1log)) === 0, "S6 the v1 log's bytes are unchanged (R9)");
   const [g, t1] = fs.readFileSync(path.join(W4, "oldtown-new", "world.jsonl"), "utf8").split("\n").slice(0, 2).map((l) => JSON.parse(l));
-  ok(!("minor" in g.body) && typeof g.body.nonce === "string" && /^ed25519:/.test(g.body.sequencer) && !("translatedFrom" in g.body), "S6 genesis is §2.4's (minor, nonce, sequencer; no translatedFrom)", g.body);
+  ok(!("minor" in g.body) && typeof g.body.nonce === "string" && /^ed25519:/.test(g.body.sequencer) && !("translatedFrom" in g.body), "S6 genesis is §2.4's (nonce, sequencer; no minor, no translatedFrom)", g.body);
   ok(g.body.provenance?.writer?.name === "eidoverse-translate-v1" && /^\d+\.0\.0$/.test(g.body.provenance.writer.version) && t1.verb === "translated" && JSON.stringify(t1.body.provenance) === JSON.stringify(g.body.provenance) && !("translator" in (t1.body.from ?? {})) && /^[0-9a-f]{16}$/.test(t1.body.from?.fold),
     "S6 genesis carries the import tool's provenance (writer eidoverse-translate-v1), the act after it repeats it, and its from names the parent and the v1 fold build, no translator", { g: g.body.provenance, t1: t1.body });
   ok(tool(["translate", "oldtown", "oldtown-new"]).code !== 0, "S6 translating onto an existing world is refused");

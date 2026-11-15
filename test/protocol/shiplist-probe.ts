@@ -1049,7 +1049,7 @@ try {
     const probe = document.createElement('div'); const had = document.getElementById('xr-stage'); if (!had) probe.id = 'xr-stage'; (had ?? document.body).appendChild(probe);
     const c = document.createElement('button'); c.className = 'sp-ctxbtn'; probe.appendChild(c); const staged = getComputedStyle(c).display; probe.remove();
     return { field: !!b, fieldShown: b ? getComputedStyle(b).display : null, tree: !!hb, treeShown: hb ? getComputedStyle(hb).display : null, staged }; })()`);
-  check("RB1 every row with a menu carries a menu button; on the desktop it isn't drawn; on a headset-staged frame it is", r?.field && r.tree && r.fieldShown === "none" && r.treeShown === "none" && r.staged === "inline-flex", r);
+  check("RB1 a field row and a tree row carry a menu button; on the desktop it isn't drawn; a button staged under #xr-stage is", r?.field && r.tree && r.fieldShown === "none" && r.treeShown === "none" && r.staged === "inline-flex", r);
   await evalJson(`(() => { const I = document.querySelector('[data-frame="inspector"]'); [...I.querySelectorAll('.sp-row.sp-f-num')].find((x) => /^scale x/.test(x.querySelector('.sp-label')?.textContent ?? ''))?.querySelector('.sp-ctxbtn')?.click(); return true; })()`);
   const fm = await evalJson(`[...document.querySelectorAll('.sp-ctx-item')].map((b) => b.textContent)`);
   await evalJson(`(document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true)`);

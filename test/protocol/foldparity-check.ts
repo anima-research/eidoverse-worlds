@@ -181,7 +181,7 @@ async function equivalent(label, dir, { writes = true, wantTail = true, mustWrit
     const { r: w } = await said(() => open(dir)); if (w.state().status !== "ok") continue;
     grow(w, 60, "fx"); w.saveCache(); grow(w, 5, "fx");
     const carried = fs.existsSync(cacheP(dir)) && !!cacheOf(dir).views; await equivalent(`fixture ${path.basename(f)}`, dir, { wantTail: carried, mustWrite: false }); n++; }
-  ok(n >= 2, "FP2 (setup) the repo's conformance logs that fold cleanly and hold no governance entry were each re-signed, grown and compared (at least two)", { n, seen }); }
+  ok(n >= 2, "FP2 (setup) the conformance logs at spec/conformance/ and its logs/ (not physics/) that fold cleanly and hold no governance entry were each re-signed, grown and compared (at least two)", { n, seen }); }
 { const src = path.join(W, "noopc-src"); fs.mkdirSync(src, { recursive: true }); const w = open(src); grow(w, 120, "nc");   // a hand-made line: a create of a thing already live (noop:create-live), by ash
   const E = w.entries.map((e) => JSON.parse(JSON.stringify(e))), id = Object.keys(w.state().entities).find((k) => k !== "@world" && creatorOf(w, k)?.by === "rowan");   // rowan made it; the no-op create is ash's
   const ashAct = E.findLastIndex((e) => e.kind === "request" && e.actor === "ash"); T += 700;

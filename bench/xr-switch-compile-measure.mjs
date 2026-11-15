@@ -88,7 +88,7 @@ try {
     check('stock REPRODUCES: the first exit rebuilds the discarded desktop variant (≥ N pipelines)', S['exit 1'].pipelines >= N, JSON.stringify(S['exit 1']));
     check('split: the first entry builds the XR variants (nothing warmed them)', X['enter 1'].pipelines >= N, JSON.stringify(X['enter 1']));
     check('split: exit 1, enter 2, exit 2 build NOTHING — both variants live side by side', ['exit 1', 'enter 2', 'exit 2'].every((l) => none(X[l])), JSON.stringify(res.split.steps));
-    check('prewarmed: the stand-in warm built the XR variants (≥ N pipelines) — a zero-eye camera would build none', P['prewarm (async)'].pipelines >= N, JSON.stringify(P['prewarm (async)']));
+    check('prewarmed: the withXREyes warm built the XR variants (≥ N pipelines) — a zero-eye camera would build none', P['prewarm (async)'].pipelines >= N, JSON.stringify(P['prewarm (async)']));
     check('prewarmed: …and the desktop frame after it rebuilt nothing (the warm did not evict desktop)', none(P['desktop again']), JSON.stringify(P['desktop again']));
     check('prewarmed: EVERY switch builds nothing, the first entry included', ['enter 1', 'exit 1', 'enter 2', 'exit 2'].every((l) => none(P[l])), JSON.stringify(res.prewarmed.steps));
   }

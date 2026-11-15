@@ -344,7 +344,7 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   // walking by name (socketteer's walk-by-place-name, as move {to: <name>}): a thing's id walks you up to it
   const mp = ag.foldRecord(ID.mug)?.pos;
   const byName = await call("move", { to: ag.handle(ID.mug) });   // its handle ("mug" names its copies too since AT2)   // walking: a run this long rides the authority's token bucket at its edge (walkTo pacing, not this tool's)
-  ok(!byName.isError && /arrived/.test(T(byName)) && Math.hypot(ag.pos.x - mp[0], ag.pos.z - mp[2]) < 1.2 && Math.hypot(ag.pos.x - mp[0], ag.pos.z - mp[2]) > 0.3, "AT6k move {to: \"mug\"} walks up to the thing and stops beside it", [T(byName), ag.pos, mp]);
+  ok(!byName.isError && /arrived/.test(T(byName)) && Math.hypot(ag.pos.x - mp[0], ag.pos.z - mp[2]) < 1.2 && Math.hypot(ag.pos.x - mp[0], ag.pos.z - mp[2]) > 0.3, "AT6k move {to: <the mug's handle>} walks up to the thing and stops beside it", [T(byName), ag.pos, mp]);
   const noName = await call("move", { to: "no-such-thing" });
   ok(noName.isError && /no-such-thing/.test(T(noName)), "AT6k …and an unknown name is an error naming it", T(noName));
   // moderation through act: the agent becomes an owner, kicks Vic by NAME (resolved to an identity), reads what's in force, unbans

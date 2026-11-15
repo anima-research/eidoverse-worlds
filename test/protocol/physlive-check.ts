@@ -85,7 +85,7 @@ function playground(clock = "pinned") {
   y.call("rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic" } }, place: { at: [0, 0] } });
   y.call("rowan", "set", { id: "@world", component: "physics-engine", value: ENG });
   const st = y.w.state().entities;
-  ok(st["crate-1"].c.physics?.kind === "static" && st["crate-1"].c.physics.shape && st.ball.c.physics.shape, "S10 turning physics on stamps every standing thing (statics static)", [st["crate-1"].c.physics, st.ball.c.physics]);
+  ok(st["crate-1"].c.physics?.kind === "static" && st["crate-1"].c.physics.shape && st.ball.c.physics.shape, "S10 turning physics on stamps every standing modelled thing (statics static)", [st["crate-1"].c.physics, st.ball.c.physics]);
   // a static is a collider: thrown at the wall, the ball bounces back (doesn't pass through to the far side)
   y.call("rowan", "move", { to: [0, 0, -0.5] }); y.call("rowan", "grab", { id: "ball" });
   y.call("rowan", "throw", { id: "ball", v: [0, 0.5, 8] }); y.call("rowan", "wait", {}, 8000);

@@ -240,7 +240,7 @@ let HV = '';   // the record's hash, "sha256:<hex>"
   const at = { pos: [3, 0, 4], q: qFromYaw(0.5) };
   const c1 = W.call('create', { id: 'lamp-1', from: HV, at }, 'bld');
   const E = () => W.view().entities;
-  check('create {id, from: hash, at}: one act, the copy\'s parts named from its id', c1.ok && !!E()['lamp-1'] && !!E()[partOf(E(), 'lamp-1', 'bulb')], J([c1.refused, Object.keys(E())]));
+  check('create {id, from: hash, at}: one act, the copy\'s parts minted under it (found by their copy-of key)', c1.ok && !!E()['lamp-1'] && !!E()[partOf(E(), 'lamp-1', 'bulb')], J([c1.refused, Object.keys(E())]));
   const root = E()['lamp-1'], bulb = E()[partOf(E(), 'lamp-1', 'bulb')];
   check('…the root at `at` (pos and turn) with its model and label; the bulb an Empty with its light',
     root.model === LAMP && near(root.pos, [3, 0, 4], 0) && Math.abs(root.yaw - 0.5) < 1e-6 && root?.light === undefined && root?.label === 'a lamp'

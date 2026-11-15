@@ -62,7 +62,7 @@ console.log("the server's budget");
   const zero = snapCase(null, 0);
   check("a wait of 0 refuses at once if the world is not ready", !!zero.r?.error && zero.ms < 600, `${zero.ms} ms`);
   const ready = snapCase(0, 0);
-  check("…and a world already ready is captured at once, whatever the wait", ready.r?.dataUrl === "data:image/png;base64,FROM" && ready.ms < 600, JSON.stringify(ready));
+  check("…and a world already ready, the camera already on the body, is captured at once, whatever the wait", ready.r?.dataUrl === "data:image/png;base64,FROM" && ready.ms < 600, JSON.stringify(ready));
 }
 
 console.log("aim first");

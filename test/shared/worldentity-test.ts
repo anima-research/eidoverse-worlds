@@ -143,7 +143,7 @@ console.log('\n2. picking a sky replaces the Sky; the Weather stays:');
   const P = { lit: { hours: 6, clouds: 'stratus', exposure: 0.8, fog: 0.4 }, bare: { hours: 12 } };
   W.sendAll(worldPick(st(), 'sky', 'lit', { presets: P, now: now() }).ops);
   W.sendAll(worldPick(st(), 'sky', 'bare', { presets: P, now: now() }).ops);
-  check('picking "bare" after "lit" leaves exactly {hours: 12} — the old clouds, exposure and fog are replaced, not merged', canon(sky()?.params) === canon({ ...SKY_DEFAULTS, hours: 12 }), canon(sky()?.params));   /* + the registry's defaults, written (shape audit 10-16) */
+  check('picking "bare" after "lit" leaves {hours: 12} over the registry\'s defaults — the old clouds, exposure and fog are replaced, not merged', canon(sky()?.params) === canon({ ...SKY_DEFAULTS, hours: 12 }), canon(sky()?.params));   /* + the registry's defaults, written (shape audit 10-16) */
   check('…and the weather is still the storm', st().sky.weather === 'storm');
   check('a preset that names weather itself wins over the carried one', pickSky(st().sky, { hours: 3, weather: 'clear' }).weather === 'clear');
   check('an unknown preset is refused by name, nothing sent', worldPick(st(), 'sky', 'nope', { presets: P }).ops.length === 0 && /nope/.test(worldPick(st(), 'sky', 'nope', { presets: P }).errors[0]));

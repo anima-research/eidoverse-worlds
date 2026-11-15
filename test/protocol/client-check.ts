@@ -872,7 +872,7 @@ try {
   // a UI verb path (the chat box sends through net.js say() → sendRequest('say')), driven for real so B5 has a subject
   await evalJson(`(() => { const t = document.getElementById('chatline'); t.focus(); t.value = 'hello from the page (3c)'; t.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true })); return true; })()`);
   check("B5a the chat box's line (a UI verb) reaches the log, as the person's say", await waitDisk(() => entries().some((e) => e?.kind === "say" && e.actor === MY() && e.body?.text === "hello from the page (3c)")), entries().filter((e) => e?.kind === "say").slice(-2));
-  check("B5 the page sent no v1 verb to the world, all run long: every UI verb was spelled as a request at the page (3c)", await evalJson(`window.__v1sent.length === 0`), await evalJson(`window.__v1sent.slice(0, 10)`));
+  check("B5 the page sent no v1 verb to the world up to here (the chat line included): every UI verb was spelled as a request at the page (3c)", await evalJson(`window.__v1sent.length === 0`), await evalJson(`window.__v1sent.slice(0, 10)`));
   // ---- CP: the Commons parity audit (old world → new) (10-06): what a person who isn't in the editor sees ----
   { const lines = () => evalJson(`[...document.querySelectorAll('#chatlog .line')].map((l) => l.textContent)`);
     const type = (text: string) => evalJson(`(() => { const t = document.getElementById('chatline'); t.focus(); t.value = ${JSON.stringify(text)}; t.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true })); return true; })()`);

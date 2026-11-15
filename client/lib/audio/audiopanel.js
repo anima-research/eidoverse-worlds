@@ -237,9 +237,9 @@ function paint(body) {
     sttConsented(), (on) => setSttConsent(on)));
   // last: hush is a gain, this is the connection. Unticking negotiates no inbound media at all.
   const connectRow = checkRow('connect to other people’s audio',
-    'on: your machine holds a live connection to each speaker nearby. ' +
+    'on: your machine holds one live connection to the server, which forwards each speaker nearby. ' +
     'Off: nothing is sent to you at all — saves bandwidth and CPU in busy ' +
-    'rooms, and strangers cannot see your IP address. Muting only turns the ' +
+    'rooms. Muting only turns the ' +
     'volume down; this unplugs the wire.',
     receivingVoice(), (on) => { setReceiveVoice(on); if (on) setHush(false); });
   _sync.connect = connectRow.querySelector('input');

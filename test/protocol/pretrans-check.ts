@@ -53,7 +53,7 @@ if (argv.includes("--pin")) {   // regenerate the registry pin: an addition re-p
   const v = CAT.pinVerdict(old, CAT.pinOf(), opt("ack") ?? null);
   if (!v.ok) { console.log("refusing to re-pin: " + v.why); process.exit(1); }
   if (v.changelog) { const f = path.join(T, "spec/REGISTRY-CHANGELOG.md");
-    if (!fs.existsSync(f)) fs.writeFileSync(f, "# Registry changelog\n\nEvery re-pin of spec/registry-pin.json that changed, removed or narrowed a trial or reserved component (PROTOCOL §4 Status;\ndocs/COMPONENT-LADDER.md). Written by `bun test/protocol/pretrans-check.ts --pin --ack \"<why>\"`, newest last.\n\n");
+    if (!fs.existsSync(f)) fs.writeFileSync(f, "# Registry changelog\n\nEvery re-pin of spec/registry-pin.json that changed, removed or narrowed a trial or reserved component (PROTOCOL §4 Status;\ndocs/contributing/COMPONENT-LADDER.md). Written by `bun test/protocol/pretrans-check.ts --pin --ack \"<why>\"`, newest last.\n\n");
     fs.appendFileSync(f, v.changelog); console.log(`spec/REGISTRY-CHANGELOG.md: ${v.breaks.length} acknowledged`); }
   fs.writeFileSync(path.join(T, "spec/registry-pin.json"), JSON.stringify(CAT.pinOf(), null, 1) + "\n"); console.log("spec/registry-pin.json written"); process.exit(0); }
 

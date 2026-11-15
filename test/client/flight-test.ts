@@ -869,7 +869,7 @@ console.log('\nT6 -- fold_down grounds the flier, and unfolding is deliberate');
 }
 
 // ---------------------------------------------------------------- isolation
-console.log('\nISOLATION -- nothing in the running world reaches flight yet');
+console.log('\nISOLATION -- only the gated entry points (and physics.ts below them) reach flight');
 {
   // only the deliberate importers below may reach the flight core, each resolving a capability first, so a commons
   // avatar's behaviour can't differ

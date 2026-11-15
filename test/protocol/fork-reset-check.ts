@@ -93,7 +93,7 @@ ok(fk?.type === "world-forked" && fk.to === "copy", "FK3 the owner copies it", f
   ok(f?.body?.args?.from?.world === fold(logOf("src")).worldId && f.body.args.from.name === "src" && /^[0-9a-f]{64}$/.test(f.body.args.from.head), "FK4 its founding act names where it came from {world, name, head}", f?.body);
   const a = thingsOf(src), b = thingsOf(cp); delete a["@world"].about; delete b["@world"].about;
   ok(JSON.stringify(Object.keys(a).sort()) === JSON.stringify(Object.keys(b).sort()) && ["table1", "lamp1", "chair1", "chair1-seat"].map((n) => IDS.of(n)).every((id) => a[id] !== undefined && canon(a[id]) === canon(b[id])),
-    "FK5 every thing is copied component for component (the parent, the locked child, the spot light, the chair's socket child)", [Object.keys(b)]);
+    "FK5 every thing is copied (the same ids), and these component for component: the parent, the locked child, the spot light, the chair's socket child", [Object.keys(b)]);
   ok(b["@world"][`roles:${bobId}`]?.role === "builder" && b["@world"]["default-role"]?.role === "member", "FK5 roles and the default role travel", b["@world"]);
   ok(Number.isFinite(b["@world"].sky?.ts) && canon(a["@world"].sky) === canon(b["@world"].sky), "FK5b a sky an act stamped travels as it stands, its stamped ts with it", [a["@world"].sky, b["@world"].sky]);
   // FK12 (training consent's per-person keys staying out of a fork) went with training-consent itself (R 10-16 14:16)

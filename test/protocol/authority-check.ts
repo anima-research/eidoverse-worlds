@@ -75,7 +75,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     { seq: 3, ts: 4, actor: "Marigold", verb: "comp", args: { id: "lamp_1", type: "n0abc", data: 2 } }];
   const r = translate(old, { foldBuild: v1FoldBuild() });
   ok(r.out[1].verb === "translated" && !("translator" in r.out[1].body.from) && r.out[1].body.from.fold === v1FoldBuild() && r.out[1].body.from.roles?.Marigold?.role === "owner" && !("minor" in r.out[0].body) && !("provenance" in r.out[0].body) && !("provenance" in r.out[1].body),
-    "T2 the act after genesis names its parent (the old genesis) and the v1 fold build, never the translator; a pure translation (no provenance given) writes none (S4: provenance is genesis's alone)", r.out[1].body);
+    "T2 the act after genesis names its parent (the old genesis) and the v1 fold build, never the translator; a pure translation (no provenance given) writes none (S4: given one, genesis carries it and `translated` repeats it, T2b)", r.out[1].body);
   { const P = { registry: { id: "registry-pin", sha256: "a".repeat(64) }, writer: { name: "eidoverse-translate-v1", version: "49.0.0", sourceRevision: "git:sha1:" + "b".repeat(40), sourceTreeSha256: "c".repeat(64), dirty: false } };
     const rp = translate(old, { foldBuild: v1FoldBuild(), provenance: P }); let bad: any = null; try { translate(old, { provenance: { ...P, writer: { ...P.writer, sourceTreeSha256: undefined } } }); } catch (e) { bad = String(e); }
     ok(JSON.stringify(rp.out[0].body.provenance) === JSON.stringify(P) && JSON.stringify(rp.out[1].body.provenance) === JSON.stringify(P) && !!rp.out[1].world && rp.out[1].world !== r.out[1].world && /provenance-writer/.test(bad ?? ""),
@@ -296,7 +296,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     ok(r.stats.guards === 2 && r.stats.guardsLive === 1, "P40 the translator counts guards that became locks (2 ever, 1 still on), so the owners can be told", r.stats);
     fs.writeFileSync(root + "worlds/tr-locks.jsonl", r.out.map((e) => JSON.stringify(e)).join("\n") + "\n");
     const tc = (actor, verb, args) => { clock.advance(100); return request(openWorld(root, "tr-locks"), actor, verb, args); };
-    ok(code(tc("ann", "set", { id: "sign", component: "transform", value: { pos: [0, 0, 0] } })) === "locked", "P41 in the translated world the old guard binds even its placer (by design, §5)"); }
+    ok(code(tc("ann", "set", { id: "sign", component: "transform", value: { pos: [0, 0, 0] } })) === "locked", "P41 in the translated world the old guard binds even its placer (by design, §7)"); }
 }
 
 // ---- NR: people's names in refusals (polish for R's first test, research 44 #3) ----
@@ -1151,7 +1151,7 @@ const w0 = () => openWorld(root, "tier0");
   ok(S("hearth", "particles", { effect: "fire", params: { count: 1e9 } }) === "bounds", "T0c a billion particles is refused (600 is the renderer's ceiling)");
   ok(S("hearth", "particles", { effect: "fire", params: { size: -3 } }) === "bounds" && S("hearth", "particles", { effect: "fire", params: { opacity: 7 } }) === "bounds", "T0c negative size, opacity past 1: refused");
   ok(R("set", { id: "hearth", component: "particles", value: { effect: "fire", params: { count: 150, size: 0.3, opacity: 0.8, lifetime: 1.2 } } }).ok, "T0c …an ordinary fire is still taken");
-  ok(S("@world", "bounds", {}) === "shape" && S("@world", "bounds", { min: [5, 0, 5], max: [-5, 10, -5] }) === "shape", "T0d bounds needs min and max, with min ≤ max on every axis");
+  ok(S("@world", "bounds", {}) === "shape" && S("@world", "bounds", { min: [5, 0, 5], max: [-5, 10, -5] }) === "shape", "T0d bounds needs min and max, with min < max on every axis");
   ok(R("create", { id: "c-after", model: "crate" }).ok, "T0d …and creating still answers (an empty bounds used to commit the create, then crash its reply)");
   ok(S("hearth", "transform", { pos: [0, 0, 0], q: [0, 0, 0, 0], scale: [1, 1, 1] }) === "shape", "T0e a zero quaternion is refused (it isn't a rotation)");
   ok(S("hearth", "transform", { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [0, 1, 1] }) === "shape", "T0e a zero scale is refused (its children's transforms divide by it)");

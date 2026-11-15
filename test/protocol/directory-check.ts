@@ -655,6 +655,6 @@ fs.rmSync(tmp, { recursive: true, force: true });
   ok(standIns.length > 0 && standIns.every((f) => STAND_IN.includes(f)) && mints.length > 0 && mints.every((f) => MINT.includes(f)),
     "D40 a stand-in (kind \"imported\") is made only by the directory, the old-world translator and the legacy migration; mintId is called only by the directory, the legacy migration (and the entity minter): the translator derives its ids, so the dry run and the apply agree", { standIns: [...new Set(standIns)], mints: [...new Set(mints)] });
   ok(isMinted("u-" + "a".repeat(20)) && !isMinted("w-" + "a".repeat(20)) && !isMinted("u-imported-" + "a".repeat(11)) && !isMinted("u-" + "a".repeat(21)),
-    "D40b one id shape, u- and 20 base32 characters: nothing in it says a world, a name or a kind"); }
+    "D40b one id shape, u- and 20 (or 24) base32 characters: nothing in it says a world, a name or a kind"); }
 
 done();

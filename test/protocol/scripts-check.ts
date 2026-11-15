@@ -740,7 +740,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r)); process.exit(0);\n`);   // 
   // ---------------- R: runaway work ----------------
   ...[["R1", "while (true) {}", "fuel"], ["R2", "function f() { return f(); } f();", "stack"], ["R3", `let s = "x"; for (;;) s += s;`, "memory"],
       ["R4", `for (let i = 0; i < 1000; i++) world.get("self");`, "calls"], ["R5", `for (let i = 0; i < 40; i++) world.set("self", "t/n", i);`, "too-big"], ["R6", "this is not javascript", "syntax"]].map(([id, body, want]) => ({
-    id, what: `41 #9 runaway: ${body.slice(0, 40)} → ${want}; it writes nothing and the next activation still runs`, run(s: any) { cast(s);
+    id, what: `41 #9 runaway: ${body.slice(0, 40)} → ${want}; ${want === "syntax" ? "refused when installed" : "it writes nothing and the next activation still runs"}`, run(s: any) { cast(s);
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
       const src = s.w().putBlob({ lang: "js", api: 1, text: `world.on("use", (e) => { if (e.args?.ok) { world.set("self", "t/n", 1); return; } ${body} });\n` });
       const inst = s.call("bob", "set", { id: "box", component: "script:x", value: { src, scope: { ids: "self", comps: ["t/n"] }, on: ["use"] } });

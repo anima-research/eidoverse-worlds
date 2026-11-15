@@ -508,7 +508,7 @@ const whichFile = (b: Uint8Array) => { try { return String(glbJson(b).nodes?.[0]
 console.log("\n  the real sequencer — an upload becomes a served variant:");
 {
   const S = await startServer({ KTX2_TOKTX: FAKE_TOKTX, FAKE_TOKTX_MODE: "ok" });
-  check("child server came up on a verified-free port", S.up, `:${S.PORT}`);
+  check("child server came up on its probed port", S.up, `:${S.PORT}`);
   if (S.up) {
     const glb = await fixtureGlb("uploaded", 2);
     const hash = hashOf(glb); mine.add(hash);

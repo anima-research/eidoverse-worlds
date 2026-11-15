@@ -274,7 +274,7 @@ const cases: Case[] = [
     good: (o) => o.a === "ok" && o.by === "ann" && o.taken },
 
   // ---------------- G: the gate ----------------
-  { id: "G1", what: "grabbable is a component the authority knows: its own entry in schema, its shape checked", run(s) { cast(s);
+  { id: "G1", what: "grabbable is a component the authority knows: its own entry in schema (its shape is G9's)", run(s) { cast(s);
       const sch = s.call("olive", "schema", { component: "grabbable" }).components?.grabbable;
       return { help: sch?.help ?? null, on: sch?.on }; },
     good: (o) => /carryable/.test(o.help ?? "") && o.on === "thing" },
