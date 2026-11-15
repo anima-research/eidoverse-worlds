@@ -27,6 +27,8 @@ import { LAB_CATALOGUE, MODELS as LAB_MODELS } from "../harness/labmodels.js";
 import { helloOf } from "../../shared/protocol/hello.js";
 
 const argv = process.argv.slice(2);
+// an act as text for "never names who": without its salts and seal, whose random base64 can spell a name
+const actText = (acts: any[]) => JSON.stringify(acts, (k, v) => (["salt", "sig", "head", "commitment"].includes(k) ? undefined : v));
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
 const BASE = "bbc9ac22";
 
@@ -633,7 +635,7 @@ const cases: Case[] = [
       const L0 = s.entries(), get = s.w().getBlob, run = SB.runScript; const A = AU.auditScripts(L0, get, { run });
       const copy = () => F.readLog(Buffer.from(L0.map((e: any) => JSON.stringify(e)).join("\n") + "\n"));
       const forged = copy(); const k = forged.findLastIndex((e: any) => isScriptActor(e.actor) && e.kind === "request"); forged[k].body.reads.near[0].r = 9;
-      return { r1: st(s, r1), r2: st(s, r2), reads: acts.map((e: any) => e.body.reads), actText: JSON.stringify(acts), seen: s.w().state().entities.sign.c["t/seen"],
+      return { r1: st(s, r1), r2: st(s, r2), reads: acts.map((e: any) => e.body.reads), actText: actText(acts), seen: s.w().state().entities.sign.c["t/seen"],
         reran: A.reran, skipped: A.skipped?.map((x: any) => x.why) ?? null, flags: A.flags.map((x: any) => x.check), forged: AU.auditScripts(forged, get, { run }).flags.map((x: any) => x.check) }; },
     opts: { nameOf: (id: string) => NAMES[id] ?? null },
     good: (o) => o.r1 === "ran" && o.r2 === "ran" && JSON.stringify(o.reads) === JSON.stringify([{ near: [{ r: 3, n: 1 }], names: 1 }, { near: [{ r: 3, n: 1 }] }])
@@ -1090,7 +1092,7 @@ console.log(JSON.stringify({ platform: process.platform, available: SANDBOX.avai
       const r1 = useSteady(s, "olive", { id: "dial", action: "look" }), r2 = useSteady(s, "olive", { id: "dial", action: "count" });
       const L = s.entries(), acts = L.filter((e: any) => e.actor === "script:dial" && e.verb === "script");
       const A = AU ? AU.auditScripts(L, s.w().getBlob, { run: SB.runScript }) : null;
-      return { r1: st(s, r1), r2: st(s, r2), me, near: comp(s, "dial", "t/near"), count: comp(s, "dial", "t/count"), reads: acts.map((e: any) => e.body.reads), actText: JSON.stringify(acts),
+      return { r1: st(s, r1), r2: st(s, r2), me, near: comp(s, "dial", "t/near"), count: comp(s, "dial", "t/count"), reads: acts.map((e: any) => e.body.reads), actText: actText(acts),
         audit: A ? `${A.reran}/${A.acts} ${A.flags.map((f: any) => f.check).join(",")}` : null, skipped: A?.skipped?.length ?? null }; },
     good: (o) => { const d = (z: number) => Math.round(Math.hypot(o.me[0], o.me[1], z - o.me[2]) * 1000) / 1000;
       return o.r1 === "ran" && o.r2 === "ran" && JSON.stringify(o.near?.by) === JSON.stringify([{ id: "vic", d: d(1.23456) }, { id: "ann", d: d(2.5) }]) && JSON.stringify(o.near?.ids) === '["ann","vic"]'
