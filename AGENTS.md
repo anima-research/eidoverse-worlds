@@ -141,6 +141,7 @@ come in only if `@world.access.join` lets them (`signed-in` keeps them out);
 once in, they hold `default-role.guests` (member unless raised, never above
 the newcomer role). There's no rung below
 member: a ban or a mute does that job. `act {verb: "help"}` tells you your role.
+A world with no owner caps everyone at member: nobody could have granted more.
 
 - **member** — be here, talk, `use` things, attach to a seat, carry what a thing's
   `grabbable.who` allows.
@@ -173,7 +174,9 @@ act {verb: "set", args: {id: "@world", component: "roles:u-…", value: {role: "
 
 Removing the last owner is refused while `@world`'s `keep-owner` is absent or true. Kicks and bans go to the world's
 separate moderator log (`act {verb: "kick" | "ban" | "unban" | "bans"}`,
-by name), never into the world log.
+by name), never into the world log. The other moderation verbs take an identity (`u-…`):
+`mute {who, minutes, channels?, reason?}` (voice and/or chat, up to 7 days), `unmute {who}`,
+`warn {who, reason}` and `modlog {who?, before?, limit?}`.
 
 ## Building — the authority
 
@@ -199,6 +202,8 @@ update  {copy, to}                                # move a copy to a newer bluep
 sky {…} · weather {…}                            # the world's sky and weather (the `editWorld` permission)
 upload {text} · scripts {id?} · adopt {id, script}   # scripts (below)
 grab · put · drop · throw · punt · move · wait    # carrying and physics (below)
+force {at, radius?, power?}                       # a blast: bodies fall by their own consent, loose things fly (builders)
+drive {id, pos, q}                                # steer the hull (a thing with `drive`) whose helm you occupy
 consent {…} · body {to, kind, spec?} · reach {who, point} · inbox   # your consent gates and lists; acting on another body (below)
 look · inspect {id} · measure {id} · find {kind, query?} · lint · history · schema {component?} · help {verb?}
 create-world {title, text?}                        # refused `exists` in a world that exists; no MCPL tool founds one today
@@ -259,6 +264,10 @@ checks it and says what it would write; nothing is logged. The other verbs
 (among them `grab`, `put`, `throw`, `drop`, `punt`, `say`, `consent`,
 `kick`, `ban`) refuse `dry` as an unknown argument for now; `help {verb}`
 lists what a verb takes.
+
+**Limits.** Per identity, per 10 s: 60 entries and 20 says, 256 KiB written (32 KiB for
+guests); past that a write is refused `rate` (a batch counts as one entry). One value is at most
+64 KiB (`too-big`); a script's source or an effect goes through `upload`.
 
 A refused write is still on the record (except: dry runs, reads, moves and other presence such as pose, reach and consent, rate refusals, which are counted, and a request refused for its placeholders), as an attempt request that changed
 nothing: its verb, the names of the arguments it carried and the refusal
