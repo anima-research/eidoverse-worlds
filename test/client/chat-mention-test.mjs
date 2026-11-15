@@ -49,6 +49,12 @@ for (const [id, roster, text, want, pinged] of ROWS) {
   const text = 'see https://eidoverse.animalabs.ai/?who=cairn now';
   check('R9 link only', links(text, ['helen', 'cairn']) === 1 && chips(text, ['helen', 'cairn']).length === 0);
 }
+// R13/R14: links:false matches no link, not even a NUL; an empty roster chips nothing (today's pattern only)
+if (!BASE) {
+  const groups = (text, names, o) => [...text.matchAll(mentionPattern(names, o))].map((m) => [m[1] ?? null, m[2] ?? null]);
+  check('R13 links:false: a URL or a NUL is no link', !groups('see https://x.example/ and a\u0000b', ['helen'], { links: false }).some(([l]) => l != null));
+  check('R14 an empty roster chips nothing, a NUL included', groups('a \u0000 b', []).length === 0);
+}
 
 // Parity: for a plain name, the client and the door hear the same lines
 const TEXTS = [...ROWS.map((r) => r[2]), 'see https://eidoverse.animalabs.ai/?who=cairn now'];

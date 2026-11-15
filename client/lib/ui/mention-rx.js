@@ -18,7 +18,7 @@ export function mentionRx(name) {
  *  matches a link (a moderator's words, spoofing item 1). */
 export function mentionPattern(names, { links = true } = {}) {
   return new RegExp(
-    `(${links ? 'https?://[^\\s]+' : '\\u0000'})|(${OPEN}@?(?:${[...names].sort((a, b) => b.length - a.length).map(escapeRx).join('|') || '\\u0000'})${CLOSE})`,
+    `(${links ? 'https?://[^\\s]+' : '(?!)'})|(${OPEN}@?(?:${[...names].sort((a, b) => b.length - a.length).map(escapeRx).join('|') || '(?!)'})${CLOSE})`,
     'gi',
   );
 }
