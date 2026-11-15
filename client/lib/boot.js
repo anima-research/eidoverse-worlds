@@ -94,7 +94,7 @@ function paint() {
   paintItems();
   const p = progress();
   paintPeg(p, el);
-  const pct = Math.round(p * 100);
+  const pct = Math.floor(p * 100);
   bar.style.width = `${pct}%`;
   phaseEl.textContent = currentLabel();
   const b = bootBytes();
