@@ -68,5 +68,5 @@ for (const [w, h, want, name] of [[2048, 2048, [1024, 1024], "capped: 2048² →
 }
 { const child = Bun.spawnSync(["bun", import.meta.path], { env: { ...process.env, KTX2_NO_SHARP: "1" } });
   const line = new TextDecoder().decode(child.stdout).split("\n").find((l) => l.startsWith("NO_SHARP")) ?? "(no answer)";
-  check("no sharp on a ktx-create host: a 2048² texture is never shipped over the cap (Greptile #207)", /^NO_SHARP OK/.test(line), line); }
+  check("no sharp: a 2048² texture is never shipped over the cap, with this host's encoder (Greptile #207)", /^NO_SHARP OK/.test(line), line); }
 S.done();

@@ -141,5 +141,5 @@ try {
   console.log(JSON.stringify({ afterRestart: { status: afterRestart.status, ms: afterRestart.ms, backMs } }));
   assert.equal(afterRestart.status, 200, `the first screenshot after the roamer's restart is served: ${afterRestart.err}`);
   assert.ok(afterRestart.ms < 3000, `…at once, from the roamer already there (${afterRestart.ms} ms)`);
-  console.log(`PASS: an agent arriving alone brought a roaming renderer (${prewarmMs} ms); every model loaded (${where.real}) before capture; screenshots ${first.ms} ms then ${second.ms} ms; the watchdog judged it healthy (${verdict.reason}) and a page with no client not joined; after a restart the roamer was swept back in ${backMs} ms and the next screenshot took ${afterRestart.ms} ms`);
+  console.log(`PASS: an agent arriving alone brought a roaming renderer (${prewarmMs} ms); every model loaded (${where.real}) when checked after capture; screenshots ${first.ms} ms then ${second.ms} ms; the watchdog judged it healthy (${verdict.reason}) and a page with no client not joined; after a restart the roamer was swept back in ${backMs} ms and the next screenshot took ${afterRestart.ms} ms`);
 } finally { clearInterval(keepPose); ws?.close(); await browser.close(); rmSync(profile, { recursive: true, force: true }); rmSync(tokDir, { recursive: true, force: true }); await owned.close(); }

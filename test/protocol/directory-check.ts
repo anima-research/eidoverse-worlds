@@ -430,7 +430,7 @@ ok(foldName("Marígold") === foldName("marigold") && foldName("JOSÉ") === foldN
   for (const name of fs.readdirSync(FIX).filter((d) => fs.existsSync(path.join(FIX, d, "log.jsonl"))).sort()) {
     const L = parseLog(path.join(FIX, name, "log.jsonl")); const lib = fixtureLib();
     const t = importer(name, L, { lib });
-    report("EP1", `${name}: a physics-epoch log translates through the importer, and every body rests where her sim rests (tier 0 empty, identities, model paths and their hashes, physics.shape; the authority's sim layer re-checks every rest)`, facts(t, L, { addresses: addrOf(lib), launches: L.filter((e: any) => e.verb === "punt").length }));
+    report("EP1", `${name}: a physics-epoch log translates through the importer, and every body rests where her sim rests (tier 0 empty, identities, model paths and their hashes, physics.shape; no physics entries, so the sim layer reads it without a disagreement)`, facts(t, L, { addresses: addrOf(lib), launches: L.filter((e: any) => e.verb === "punt").length }));
   }
 
   // EP2: LEAVING the epoch (PROTOCOL_v2 §3): the sequencer releases every live body with result-shaped `place` entries

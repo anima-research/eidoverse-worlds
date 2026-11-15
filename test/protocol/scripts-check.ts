@@ -341,7 +341,7 @@ const cases: Case[] = [
       const r = s.call("vic", "use", { id: "box", action: "go" }); const c = s.w().state().entities.box.c;
       return { r: st(s, r), a: c.a ?? null, b: c.b ?? null, scripted: s.entries().slice(n0).filter((e: any) => isScriptActor(e.actor)).length }; },
     good: (o) => o.r === "refused scope" && o.a === null && o.b === null && o.scripted === 0 },
-  { id: "B5", what: "41 #6 the heart: a 5 s timer re-asserting one light, 2 h simulated, nobody present: 0 entries, asleep; `always` and already lit: still 0 (elided)", run(s) { cast(s);
+  { id: "B5", what: "41 #6 the heart: a 5 s timer re-asserting one light, 2 h simulated, nobody present: 0 entries, asleep; `always` and already lit: still 0 (each activation elided, or deferred as too busy)", run(s) { cast(s);
       if (!D.tick) return { absent: true };
       const LIT = { kind: "point", color: 16711680, intensity: 1, range: 6, decay: 2 };
       s.call("bob", "create", { id: "lamp", components: { label: "lamp", transform: { pos: [0, 0, 0] } } }); s.call("olive", "create", { id: "lamp2", components: { label: "lamp2", light: LIT, transform: { pos: [2, 0, 0] } } });
@@ -1314,7 +1314,7 @@ console.log(JSON.stringify({ platform: process.platform, available: SANDBOX.avai
       const again = install(s, "bob", "qa", "p", onUse(`world.say("a2");`), { scope: { ids: "self", comps: [] }, on: ["use"] }).r;
       return { first: st(s, first), other: st(s, other), again: again?.ok ? "ok" : again?.refused?.code }; },
     good: (o) => o.other === "ok" && o.again === "too-many" },
-  { id: "Q2", what: "a script whose value stands but whose install act was purged says why it doesn't run in the status view (its activation gives the same why)", run(s) { cast(s);
+  { id: "Q2", what: "a script whose value stands but whose install act was purged says why it doesn't run in the status view", run(s) { cast(s);
       s.call("bob", "create", { id: "qc", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "qc", "p", onUse(`world.say("c");`), { scope: { ids: "self", comps: [] }, on: ["use"] });
       const act = s.entries().findLastIndex((e: any) => e?.kind === "request" && e.verb === "set" && JSON.stringify(e.body ?? {}).includes('"script:p"'));

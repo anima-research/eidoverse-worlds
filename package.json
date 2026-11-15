@@ -2,7 +2,7 @@
   "name": "eidoverse-worlds",
   "private": true,
   "license": "AGPL-3.0-only",
-  "description": "Root deps serve server/optimize.ts (the store's GLB diet) and shared/protocol/sandbox.js (quickjs-emscripten, the runtime-script sandbox — lazily imported; the sequencer boots without it, scripting just reports itself unavailable). The sequencer core itself stays dependency-free. Client and mcpl keep their own manifests.",
+  "description": "Root deps serve server/optimize.ts (the store's GLB diet) and shared/protocol/sandbox.js (quickjs-emscripten, the runtime-script sandbox — lazily imported; the sequencer boots without it, scripting just reports itself unavailable). The in-process SFU (server/sfu.ts) imports werift statically, so the sequencer needs root deps installed to boot. Client and mcpl keep their own manifests.",
   "engines": {
     "bun": "1.4.4",
     "python3": "3.12 (with cryptography; the conformance suite)",

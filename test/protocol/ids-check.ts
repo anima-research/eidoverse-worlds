@@ -80,7 +80,7 @@ await C("P1", "create {id: '$potion'} mints an opaque id; the reply's ids map na
   const W = world(); const r = W.call("create", { id: "$potion", model: "crate" });
   const id = r.ids?.$potion;
   return [r.ok && OPAQUE.test(id ?? "") && W.state().entities[id] && made(r).includes(id) && !logText(W).includes("$potion"), [why(r), r.ids]]; });
-await C("P2", "one batch: refs to placeholders resolve (parent.to, place on, a set's id, a look-at target), in any op order", () => {
+await C("P2", "one batch: refs to placeholders resolve (parent.to, place on, a set's id, a look-at target), each after its create", () => {
   const W = world();
   const r = W.call("batch", { requests: [
     { verb: "create", args: { id: "$table", model: "table" } },

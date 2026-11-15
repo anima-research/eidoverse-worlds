@@ -30,7 +30,7 @@ if (want) for (const k of ["sin", "cos", "atan2"] as const) {
   const off = (want[k] as string[][]).filter((row, i) => JSON.stringify(row) !== JSON.stringify(now[k][i]));
   check(`TR ${k}: the reference reproduces every pinned output bit for bit (${want[k].length} rows)`, want[k].length === now[k].length && !off.length, off.slice(0, 3));
 }
-check(`TRC the file says what a second reader must do: the kernel it pins (${SIMMATH_ID}) and its contract (the reference kernel's bits, not libm's; sin(pi/6) not 0.5 by design; port the kernel or ship the table), as the kernel states them now`,
+check(`TRC the file says what a second reader must do: the kernel it pins (${SIMMATH_ID}) and its contract (the reference kernel's bits, not libm's; sin(pi/6) not 0.5 by design; port the kernel; the table only checks a port), as the kernel states them now`,
   want?.kernel === SIMMATH_ID && want?.contract === CONTRACT && bits(sinT(Math.PI / 6)) !== bits(0.5) && (want?.sin ?? []).some((r: string[]) => r[0] === bits(Math.PI / 6) && r[1] !== bits(0.5)), { kernel: want?.kernel, contract: want?.contract === CONTRACT || want?.contract });
 check(`TRV the file names its law's version (${LAW}), and an earlier trig.json under the same version (the base's, the previous) pinned the same outputs: a change in pinned output is a new version`, (() => {
   const ROOT = fileURLToPath(new URL("../../", import.meta.url)); const F = "spec/conformance/trig.json";

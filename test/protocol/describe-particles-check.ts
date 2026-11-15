@@ -266,7 +266,7 @@ const cases: Case[] = [
   { id: "G4", what: "damping takes speed to zero and never past it (Godot: v -= damp·dt, clamped)", run() { const s = run(em({ velocity: { direction: [1, 0, 0], spread: 0, speed: [5, 5] }, forces: { gravity: [0, 0, 0], damping: [100, 100] }, spawn: { amount: 8, lifetime: 2 } }), 0.6);
       return { v: alive(s).map((i) => Math.hypot(s.vel[i * 3], s.vel[i * 3 + 1], s.vel[i * 3 + 2])) }; },
     good: (o) => o.v.length > 0 && o.v.every((x: number) => x === 0) },
-  { id: "G5", what: "gravity integrates (a dropped particle falls about ½gt²), and a cone's spread (radians) holds its directions within the angle and reaches it", run() {
+  { id: "G5", what: "gravity integrates (a dropped particle falls about ½gt²), and a cone's spread (radians) holds its directions within the two offsets' corner (about 1.41× the angle) and reaches it", run() {
       const s = run(em({ spawn: { amount: 1, lifetime: 5 }, forces: { gravity: [0, -9.8, 0] } }), 1);
       const c = run(em({ spawn: { amount: 200, lifetime: 5, explosiveness: 1 }, velocity: { direction: [0, 1, 0], spread: 10 * Math.PI / 180, speed: [1, 1] }, forces: { gravity: [0, 0, 0] } }), 0.05);
       const off = alive(c).map((i) => Math.acos(Math.min(1, c.vel[i * 3 + 1] / Math.hypot(c.vel[i * 3], c.vel[i * 3 + 1], c.vel[i * 3 + 2]))) * 180 / Math.PI);

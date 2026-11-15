@@ -261,5 +261,5 @@ for (const a of [...attacks, ...oracles]) {
 if (!process.env.PROTOCOL_KEEP) { fs.rmSync(root, { recursive: true, force: true }); if (B) fs.rmSync(B, { recursive: true, force: true }); } // PROTOCOL_KEEP=1 keeps the scratch (common.ts scratch)
 console.log(controlNote());
 const G = [...attacks, ...oracles].filter((a) => a.guard).length;
-console.log(`${attacks.length + oracles.length + 5} attacks (${G} of them guards that must still work): ${bad ? `${bad} FAILED` : (B ? "every attack worked on the baseline (P1a: already caught there) and is refused or caught now; every guard works" : "every attack is refused or caught now (baseline not run); every guard works")}`);
+console.log(`${attacks.length + oracles.length + 5} attacks (${G} of them guards that must still work): ${bad ? `${bad} FAILED` : (B ? "every attack asserted on the baseline worked there (L7a, L7b and P1a are not asserted on it) and is refused or caught now; every guard works" : "every attack is refused or caught now (baseline not run); every guard works")}`);
 process.exit(bad ? 1 : 0);

@@ -262,8 +262,8 @@ const withLab = (extra: any) => { const lab = LAB_CATALOGUE; return { get: (n: s
 type Case = { id: string; what: string; run: (s: any) => any; good: (o: any) => boolean; o?: any };
 const cases: Case[] = [
   { id: "S1", what: `at 72 things (the Commons' size) each of the ten timed requests takes under ${BOUND_MS} ms (best of 5)`, run: scaleCase(72), good: scaleGood },
-  { id: "S2", what: `at 500 things every request costs at most ${GROWS}× what it does at 72 (check {} aside)`, run: scaleGrows(500), good: scaleGood },
-  { id: "S3", what: `at 2 000 things every request costs at most ${GROWS}× what it does at 72 (check {} aside)`, run: scaleGrows(2000), good: scaleGood },
+  { id: "S2", what: `at 500 things every request costs at most ${GROWS}× what it does at 72 (delete, create, set, grab ${GROWS_OP.delete}×; check {} aside)`, run: scaleGrows(500), good: scaleGood },
+  { id: "S3", what: `at 2 000 things every request costs at most ${GROWS}× what it does at 72 (delete, create, set, grab ${GROWS_OP.delete}×; check {} aside)`, run: scaleGrows(2000), good: scaleGood },
 
   // ---------------- Q: the gates in front of the work ----------------
   { id: "Q1", what: "a visitor's place onto a table scaled 1000× is refused (rights) before any search, and still recorded as an attempt", run(s) { cast(s);
@@ -415,7 +415,7 @@ const cases: Case[] = [
   { id: "I4", what: "real library GLBs through the engine's catalogue: the watchtower's open interior can be arrived in but not walked out of through its wall; the shipping container is solid", async: true, run: null as any, good: (o) => (o.skipped === true && !argv.includes("--tree")) || (o.inTower === "ok" && o.outWall === "solid" && o.container === "solid" && o.solids > 1) },
 
   // ---------------- R: re-entrancy ----------------
-  { id: "R1", what: "a request nested in another (a host callback re-entering the authority with a leave, whose drops are requests too) leaves the outer call's queued events alone: the outer put's changed: event is still queued after it, and its release event too", run(s) { cast(s);
+  { id: "R1", what: "a request nested in another (a host callback re-entering the authority with a leave, whose drops are requests too) leaves the outer call's queued events alone: the outer put's changed: event is still queued after it (changedQ only; the release queue isn't read)", run(s) { cast(s);
       s.call("olive", "set", { id: "@world", component: "roles:ann", value: { role: "member" } });
       s.call("olive", "create", { id: "mug", model: "book", components: { transform: T0([0, 0, 0]), grabbable: { who: "member" } } });
       s.call("olive", "create", { id: "ball", model: "book", components: { transform: T0([3, 0, 0]), grabbable: { who: "member" } } });
@@ -442,7 +442,7 @@ const cases: Case[] = [
     good: (o) => o.nested === "ok" && JSON.stringify(o.dropped) === "[true,true]" && o.held.length === 0 },
 
   // ---------------- G: guards ----------------
-  { id: "S5", what: `rotated furniture at 1 500 things (300 desks turned 30°, four books on each): check {}, look, and placing a book on a turned desk with a box in its middle each cost at most ${GROWS}× what they do with 20 desks`, run(s) {
+  { id: "S5", what: `rotated furniture at 1 500 things (300 desks turned 30°, four books on each): look, and placing a book on a turned desk with a box in its middle, each cost at most ${GROWS}× what they do with 20 desks; check {} is held only to the backstop`, run(s) {
       const at = (s: any, desks: number) => { cast(s);
       const yq = (deg: number) => [0, Math.sin(deg * Math.PI / 360), 0, Math.cos(deg * Math.PI / 360)];
       for (let d = 0; d < desks;) { const ops = []; for (let k = 0; k < 10; k++, d++) { const x = (d % 20) * 3 - 30, z = Math.floor(d / 20) * 3 - 22;

@@ -332,7 +332,7 @@ try {
     for (let i = 0; i < 20; i++) { o.updateWorldMatrix(true, false); o.getWorldPosition(v); out.push({ tick: t.simShown()?.tick ?? null, p: [+v.x.toFixed(2), +v.y.toFixed(2), +v.z.toFixed(2)].join() }); await new Promise((z) => setTimeout(z, 50)); }
     return { ok: !!r?.ok, code: r?.refused?.code ?? null, out };`);
   const ticks = (seen?.out?.at(-1)?.tick ?? 0) - (seen?.out?.[0]?.tick ?? 0), places = new Set(seen?.out?.map((x: any) => x.p)).size;
-  check("FL1 a punted thing moves on every frame: the displayed sim's clock runs (about 30 ticks a second) and it is seen in many places on the way", seen?.ok && ticks >= 20 && places >= 6, { ok: seen?.ok, code: seen?.code, ticks, places, path: seen?.out?.map((x: any) => x.p).filter((p: string, i: number, a: string[]) => p !== a[i - 1]).slice(0, 8) });
+  check("FL1 a punted thing moves on the page's own frames: over 20 looks 50 ms apart the displayed sim's clock runs (about 30 ticks a second) and it is seen in at least six places", seen?.ok && ticks >= 20 && places >= 6, { ok: seen?.ok, code: seen?.code, ticks, places, path: seen?.out?.map((x: any) => x.p).filter((p: string, i: number, a: string[]) => p !== a[i - 1]).slice(0, 8) });
   await sleep(2500);
   });
   // ---- HP: holding and putting down something big whose origin is its centre (R's gym, 10-10: the wrecking ball
@@ -770,7 +770,7 @@ try {
   // ---- CH: the chat's "scroll up for earlier" note appears once, however many times I rejoin (R, 10-10) ----
   await stage("CH", async () => {
   const n = await page(`const c = await import('/lib/ui/chat.js'); for (let i = 0; i < 3; i++) c.noteHistoryContext({ total: null, shown: 40 }); return document.querySelectorAll('.hist-note').length;`);
-  check("CH1 three rejoins leave ONE history note in the chat, not three", n === 1, { notes: n });
+  check("CH1 three rejoins' history notes (noteHistoryContext called three times) leave ONE in the chat, not three", n === 1, { notes: n });
   });
   // ---- AT: the Attributes tab, the Inspector's eye, a card's ✕ (R, 10-10 18:55) ----
   await stage("AT", async () => {
@@ -1029,10 +1029,10 @@ try {
   check("FC2 W flies the camera's centre; my body stays where it stood", d(s2.focus, s1.focus) > 1 && d(s2.body, s1.body) < 1e-6 && s2.pose, { moved: d(s2.focus, s1.focus), body: d(s2.body, s1.body) });
   await evalJson(`import('/lib/edit/build.js').then((m) => (m.setBuildMode(false), true))`); await sleep(600);
   const s3 = await st();
-  check("FC3 B (leaving build mode) puts the view back on my body at once, and the pose ends", !s3.free && !s3.pose && d(s3.cam, s3.body) < 17, s3);
+  check("FC3 leaving build mode (setBuildMode(false); the B key isn't pressed) puts the view back on my body at once, and the pose ends", !s3.free && !s3.pose && d(s3.cam, s3.body) < 17, s3);
   await evalJson(`import('/lib/edit/build.js').then((m) => (m.setBuildMode(true), true))`); await sleep(600);
   const s4 = await st();
-  check("FC4 B again returns to where I left the camera, pose and all", s4.free && s4.pose && d(s4.focus, s2.focus) < 1e-6, { s4: s4.focus, s2: s2.focus });
+  check("FC4 entering it again (setBuildMode(true)) returns to where I left the camera, pose and all", s4.free && s4.pose && d(s4.focus, s2.focus) < 1e-6, { s4: s4.focus, s2: s2.focus });
   await evalJson(`(document.querySelector('.edit-camsw .edit-cam[data-cam="body"]').click(), true)`); await sleep(400);
   const s5 = await st();
   check("FC5 the Body switch is the reset: the camera is my body's again, the pose ends", !s5.free && !s5.pose && s5.sw.join() === "body", s5);

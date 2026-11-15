@@ -143,7 +143,7 @@ const cases: Case[] = [
       const desc = TL.TOOLS.find((t: any) => t.name === "anim")?.description ?? "";
       return { txt: txt.slice(0, 400), detached, desc: /on a seat, detach/.test(desc) && !/to stand up, declare bodyMode stand, or walk\)/.test(desc) }; },
     good: (o) => /still (attached|on) /.test(o.txt) && /detach/.test(o.txt) && !o.detached && o.desc },
-  { id: "B2", what: "(stern L2, §6a rule 3) the agent reads no kind from another's declaration: a ping or a say from someone who declares `ai` carries `declares: \"ai\"` as sent, nobody gets chat:from-agent, and agent.ts compares no declaration to a word", async run() {
+  { id: "B2", what: "(stern L2, §6a rule 3) the agent reads no kind from another's declaration: a ping from someone who declares `ai` carries `declares: \"ai\"` as sent, nobody gets chat:from-agent, and the agent's files hold no `declares === \"agent\"`", async run() {
       const PW = await import(TREE + "mcpl/ping-wire.ts"); const P = (kind: string) => ({ ts: 1, kind, who: "digi", text: "touches your head_top (left hand)" });
       const a = PW.pingDelivery(P("touch"), "ai"), b = PW.pingDelivery(P("touch"), null);
       const src = fs.readdirSync(fs.existsSync(TREE + "mcpl") ? TREE + "mcpl" : ENGINE + "mcpl").filter((f) => /^agent(-[a-z]+)?\.ts$/.test(f)).map((f) => readText("mcpl/" + f)).join("\n"), net = readText("mcpl/net-server.ts");   // the agent and its pieces

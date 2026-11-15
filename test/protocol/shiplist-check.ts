@@ -213,7 +213,7 @@ await C("O8", "a body walks through an open door, not a shut one (the authority'
 });
 
 // ---- R: reactions ----
-await C("R1", "every entry Add Component offers (a modelled thing; a swinging one; a part) is one the authority takes", () => {
+await C("R1", "every entry Add Component offers (a modelled thing; a swinging one) and plans without a choice or an error is one the authority takes", () => {
   const out: any[] = [];
   for (const [label, ent, value] of [["plain", { model: "crate", pos: [0, 0, 0] }, undefined], ["swing", { model: "crate", pos: [0, 0, 0], motion: { type: "pendulum", amp: 0, period: 3.5 } }, undefined]] as any) {
     const sc = ES.inspectSchema(ent, "thing", { box: [[-0.3, 0, -0.3], [0.3, 0.6, 0.3]], parts: ["lid"] });

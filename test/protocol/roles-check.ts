@@ -541,7 +541,7 @@ const cases: Case[] = [
   { id: "V9", what: "a custom role's rank is range-checked when read: a rank written around the authority (300) never reads above the owner", run() {
       return { r: RL.roleDef ? RL.roleDef({ "role-defs": { boss: { name: "Boss", rank: 300 } } }, "boss") : "no roles.js" }; },
     good: (o) => o.r === null },
-  { id: "V10", what: "a junior owner's script can't write a senior owner's role (seniority binds a capability by its holder)", run(s) { cast(s);
+  { id: "V10", what: "a junior owner's `coup` reaction can't write a senior owner's role (seniority binds a capability by its holder; this lab has no script sandbox, so the installed script never runs)", run(s) { cast(s);
       role(s, "jun", { role: "owner" });
       const up = s.call("jun", "upload", { text: "export default (world, e) => { world.set('@world', 'roles:olive', { role: 'member' }); }" });
       const ins = s.call("jun", "set", { id: "@world", component: "script:coup", value: { src: up.src, scope: { ids: ["@world"], comps: ["roles:*"] }, on: ["use"] } });

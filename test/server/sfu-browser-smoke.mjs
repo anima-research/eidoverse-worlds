@@ -29,7 +29,7 @@ if (LOCAL) {
   console.log('  \x1b[33m⚠ LOCALHOST RUN — inner-loop only, NOT evidence the SFU works.\x1b[0m');
   console.log('    Real check: BASE=https://<tunnel host> bun test/server/sfu-browser-smoke.mjs');
 } else {
-  console.log(`  \x1b[36mreal-network run via ${BASE}\x1b[0m`);
+  console.log(`  \x1b[36mnon-localhost BASE ${BASE} (media may still go local if Chromium shares the server's machine)\x1b[0m`);
 }
 const KEY = process.env.KEY ?? (world ? world.key : 'dev');
 const browser = await chromium.launch({

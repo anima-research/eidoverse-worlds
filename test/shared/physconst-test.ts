@@ -80,7 +80,7 @@ const ENG = "eidosim@1.0.0";
   ok(!!tray && !!cup && cup.cause === tray.cause, "A3 the occupant flies under the same act", L.map((e) => [e.body.id, e.cause]));
   const tb = { id: tray.body.id, p: tray.body.p, q: tray.body.q, v: tray.body.v, w: tray.body.w }; const pr = predicted("tray", pos, v, q, w, g(W, "tray"), ENG);
   ok(bytes(tb) === bytes({ id: pr.id, p: pr.p, q: pr.q, v: pr.v, w: pr.w }), "A3 the tray's entry is the prediction", { predicted: bytes(pr), logged: bytes(tb) });
-  ok(bytes(cup.body.v) === bytes(wire(cup.body.v)) && bytes(cup.body.p) === bytes(wire(cup.body.p)), "A3 the occupant's p and v are the bits a reader of the log folds (no −0, 3 dp)", { v: bytes(cup.body.v), p: bytes(cup.body.p) });
+  ok(bytes(cup.body.v) === bytes(wire(cup.body.v)) && bytes(cup.body.p) === bytes(wire(cup.body.p)), "A3 the occupant's p and v are the bits a reader of the log folds (a JSON round trip changes nothing: no −0)", { v: bytes(cup.body.v), p: bytes(cup.body.p) });
 }
 
 // ---------------- B: one binding ----------------

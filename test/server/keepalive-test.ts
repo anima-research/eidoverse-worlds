@@ -117,7 +117,7 @@ try {
   await tryUntil("the deaf peer is reaped", () => quiet.closedAt !== 0, { ms: PING_SEC * 1000 * (MISSES + 3) });
   const lived = (quiet.closedAt - quiet.openedAt) / 1000;
   check("a genuinely unresponsive peer is still terminated", quiet.closedAt !== 0, "never closed");
-  check(`reaped only after the full grace window (~${MISSES * PING_SEC}s, lived ${lived.toFixed(1)}s)`,
+  check(`reaped only near the end of the grace window (at least 70% of ${MISSES * PING_SEC}s, lived ${lived.toFixed(1)}s)`,
     quiet.closedAt !== 0 && lived >= MISSES * PING_SEC * 0.7,
     `lived ${lived.toFixed(1)}s`);
   quiet.sock.destroy();
