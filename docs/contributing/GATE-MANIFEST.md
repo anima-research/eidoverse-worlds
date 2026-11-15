@@ -161,7 +161,7 @@ with the OS's own separator. The script sandbox tells a starved process from a s
 Linux and, where there is no `/proc`, by whether the process ever took the job (scripts-check I8 and I8n).
 
 `.github/workflows/protocol-gate.yml` runs the whole gate on all three OSes on every PR and on pushes to `main` and
-`protocol-v4`, and each run uploads a receipt (`--receipt <file>`): the head (on a pull_request run, GitHub's merge of the PR
+the protocol PR's own branch, and each run uploads a receipt (`--receipt <file>`): the head (on a pull_request run, GitHub's merge of the PR
 into its base), whether the tree was dirty, OS, runtimes, the asset library's head, every suite's result and a hash of its
 output, and one hash over all of them. The PR's own head (`prHead`) and the merge's parents (`mergeOf`) are only in the
 per-shard receipts (`gate-shard-receipt-*`), not in the merged `gate-receipt-<os>.json`. That receipt, not a sentence in a PR
