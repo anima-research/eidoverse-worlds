@@ -27,6 +27,8 @@ import { camera } from './core.js';
 import { avatarMounts, mountTransform, bags, bagOf, socketWorldPos, setBodySeat, entities, seatSocket, socketsOn, parentIdOf } from './world.js';
 import { outOfMyView } from './myview.js';
 import { sendAnim } from './net.js';
+import { movementInput } from './input.js';
+import { moving, neutralLatch } from '../../shared/input.js';
 import { makeRagdoll } from './bodysim.js';
 import { jointPositions } from './ragdoll.js';
 import { initBodyDrag, beingDragged, revokeDragged } from './bodydrag.js';
@@ -66,6 +68,7 @@ export function goLimp(lean = null) {
   const me = getMe();
   if (!me || downed) return;
   downed = true;
+  getUpLatch.disarm();      // the key you were already holding is not a decision to stand
   // Park the undriven bones and stop the clip BEFORE constructing the sim.
   // Both of the sim's reference skeletons are read in here — the neutral rest
   // it measures its limits against, and the live pose the tumble starts from —
@@ -99,6 +102,7 @@ export function getUp() {
 // get-up (X, the stand tile, the radial menu), or only a script. Getting off
 // emits no verb — my next frame simply carries no seat — and stamps where I land.
 const _seatP = new THREE.Vector3();
+const _seatMove = {}, _getUpMove = {};   // per-reader movement scratches
 let leaving = null;            // {from, to, yaw, clip, t0, dur}: carried off the seat while a leave clip plays
 export const seatLeaving = () => !!leaving;
 /** My seat's socket body (shared/sockbody.js bodyOf), or null when I'm not seated. */
@@ -112,6 +116,10 @@ export function occupiedBody() {
 // get-up pressed again within ESCAPE_REPEAT_S of its refusal, or X held for ESCAPE_HOLD_S, always gets you up.
 let escapeArmedAt = -Infinity, escapeHeld = 0, escapeTile = false;
 bus.on('escape-hold', (on) => { escapeTile = !!on; });   // the stand tile pressed and held (actionbar.js), as X held
+// B / ○ and an unclaimed Escape stand you up from a seat, as the explicit get-up does: a seat that lets you go only
+// when the world does still answers with its hint (and X held is still the way out). controller.js's 'cancel' chain
+// says when standing is the press's rung (`cancel-stand`): after photo mode, never with it.
+bus.on('cancel-stand', () => { if (avatarMounts.has(CONFIG.name)) dismountMe('menu'); });
 // at: where the authority let me go ([x, y, z], its `vacated.at`: claims r10 O1): I stand there, so my body and its track start together
 export function dismountMe(kind = 'menu', at = null) {
   const m = avatarMounts.get(CONFIG.name);
@@ -232,12 +240,28 @@ export function updateMountedMe(dt) {
     camera.up.copy(_camUp.set(0, 1, 0).applyQuaternion(tilt));
     camera.lookAt(_camO.copy(camera.position).add(_camD.applyQuaternion(tilt)));
   } else camera.up.set(0, 1, 0);
-  // getting off, as the socket allows: movement keys (only when the seat doesn't take them), jump
-  if (['KeyW', 'KeyA', 'KeyS', 'KeyD'].some((k) => keys.has(k)) && body.input.move === 'none') { if (mayLeave(body, 'move')) { camera.up.set(0, 1, 0); dismountMe('move'); } }
-  else if (keys.has('Space') || (xrIntent.active && xrIntent.jump)) { if (mayLeave(body, 'jump')) { camera.up.set(0, 1, 0); dismountMe('jump'); } }
+  // getting off, as the socket allows: movement (keys, stick or touch; only when the seat doesn't take it), jump
+  const seatInput = movementInput(_seatMove);
+  if (moving(seatInput) && body.input.move === 'none') { if (mayLeave(body, 'move')) { camera.up.set(0, 1, 0); dismountMe('move'); } }
+  else if (seatInput.jump || (xrIntent.active && xrIntent.jump)) { if (mayLeave(body, 'jump')) { camera.up.set(0, 1, 0); dismountMe('jump'); } }
   // the escape: X (or the stand tile) held, on a seat that otherwise lets you go only when the world does
   if ((keys.has('KeyX') || escapeTile) && !mayLeave(body, 'menu')) { escapeHeld += dt; if (escapeHeld >= ESCAPE_HOLD_S) { camera.up.set(0, 1, 0); dismountMe('escape'); } }
   else escapeHeld = 0;
+}
+
+// Movement stands a limp body up — but only movement that BEGAN after you
+// went down. Read level, "W is held" is true on the very next frame after a
+// shove, so the ragdoll lasted one frame for anyone who was walking and a
+// grab was revoked before the hand closed. The latch (shared/input.js) wants
+// a neutral frame first, exactly as the pad sampler does on discovery.
+// One scratch per frame-loop reader, never shared between them: both of these
+// run in the same frame when you are shoved off a seat, and a buffer handed to
+// two live readers is the bug the out-parameter exists to avoid.
+const getUpLatch = neutralLatch();
+export function updateGetUp() {
+  if (!downed) return;
+  const input = movementInput(_getUpMove);
+  if (getUpLatch.edge(moving(input) || input.jump)) getUp();
 }
 
 /** Nearest declared seat: distance to the SOCKET's world point, not the
@@ -376,6 +400,7 @@ function beginDraggedMode(by) {
   if (!me) return;
   ragdoll?.dispose?.(); ragdoll = null;   // the dragger's sim owns the tumble now
   downed = true;
+  getUpLatch.disarm();                    // "move to break free" means a NEW press
   me.setLimp(true, { bake: true });
   myState.clip = 'ragdoll';
   flashHint(`${by} grabs you — move to break free`);

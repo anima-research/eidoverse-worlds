@@ -765,15 +765,29 @@ const escapeHook = () => escapeHooks.some((f) => f());
 export function setEscapeHook(fn) { escapeHooks.unshift(fn); }
 bus.on('key', (e) => {
   if (e.code === 'Escape') {
+    // A held Escape auto-repeats keydowns: one press dismisses one state.
+    if (e.repeat) return;
+    // ONE PRESS, ONE ACTION. This chain runs first — the most transient state
+    // wins the press — and the controller's `cancel` (stand up, leave photo
+    // mode, drop pointer lock) sits BELOW it as the last resort. Escape used
+    // to fire both, so deselecting while sitting also stood you up. Declining
+    // the default is how this layer says "consumed": controller.js dispatches
+    // `cancel` after this bus hop and skips a press that was. With nothing
+    // here to dismiss nothing is declined, and the press falls through.
     // §3a: Esc during a drag cancels it and writes nothing; the thing goes back to where the log has it
-    if (dragging?.armed) { const id = dragging.id; dragging = null; Edits.revertPose(id); flashHint('move cancelled — nothing written'); return; }
-    if (escapeHook()) return;
+    if (dragging?.armed) { const id = dragging.id; dragging = null; Edits.revertPose(id); flashHint('move cancelled — nothing written'); e.preventDefault(); return; }
+    if (escapeHook()) { e.preventDefault(); return; }
+    // the same press closed a menu or popover (controller.js `menuClosed`): a live gesture above still took it, but
+    // the editor's standing state below (an armed tool, the selection, build mode) is not this press's to change
+    if (e.menuClosed) return;
     if (structureTool()) setStructureTool(null);   // an armed building tool drops first (the viewport strip says "Esc to drop")
     else if (cancelSocketArm()) { /* an armed placement is the most transient state */ }
     else if (ghost) cancelGhost();
     else if (socketSelected()) deselectSocket();
     else if (primaryThing()) deselectAll();
     else if (buildMode) setBuildMode(false);
+    else return;
+    e.preventDefault();
     return;
   }
   // Undo stays available outside build mode — you may only notice the mistake
