@@ -22,8 +22,8 @@ try {
 // other engines don't)
 { const { readdirSync, readFileSync } = await import("node:fs");
   const bad: string[] = [];
-  for (const f of readdirSync("mcpl").filter((n) => /\.ts$/.test(n) && !/-test\.ts$/.test(n))) {
-    try { new Bun.Transpiler({ loader: "ts" }).transformSync(readFileSync(join("mcpl", f), "utf8")); } catch (e) { bad.push(`mcpl/${f}: ${String((e as any)?.message ?? e).split("\n")[0]}`); }
+  for (const f of readdirSync("mcpl").filter((n) => /\.(ts|m?js)$/.test(n) && !/-test\./.test(n))) {
+    try { new Bun.Transpiler({ loader: f.endsWith(".ts") ? "ts" : "js" }).transformSync(readFileSync(join("mcpl", f), "utf8")); } catch (e) { bad.push(`mcpl/${f}: ${String((e as any)?.message ?? e).split("\n")[0]}`); }
   }
   if (bad.length) throw new Error(`not a strict module: ${bad.join("; ")}`);
   console.log("PASS every mcpl module parses as a strict ES module");

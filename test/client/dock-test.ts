@@ -343,17 +343,7 @@ check("the wrench has a row while gated open", !!row("edit"));
   editGate = true; bus.emit("your-rights");            // THE GRANT
   check("a rights grant auto-pins the wrench", isPinned(), JSON.stringify(savedPins()));
 
-  // NOT ASSERTED HERE, and the reason is worth recording: the product now saves
-  // on every edge rather than only when the set changes, because `pins`
-  // hydrates from DEFAULT_PINS (ui.js:313) — which contains 'edit' — so a FIRST
-  // grant found the id already present, skipped savePins(), and wrote nothing.
-  // A browser probe measured it: LS stayed null across boot and first grant.
-  // This suite CANNOT bind it. Any setup that reaches a first grant from this
-  // block must pass through a revoke, and the revoke itself stamps the key —
-  // instrumented: `now=false pins.has=true` deletes and saves, so by the grant
-  // `pins.has=false` and even the OLD guard writes. Recreating the precondition
-  // needs `pins` seeded without a save, and `pins` is module-private.
-  // Disclosed rather than asserted vacuously. (round 6)
+  // a FIRST grant with nothing saved (pins hydrate from DEFAULT_PINS, which has 'edit') is bound below, in DOCK BOOT
 
   // R asked for BOTH verbs: "gray out AND UNPIN ... and it activates and pins
   // automatically when you do get it". Shipping only the pin left a demoted
@@ -742,6 +732,15 @@ console.log("DOCK BOOT — a visitor's first report is a level too");
   gate.open = true; bus.emit("your-rights");
   gate.open = false; bus.emit("your-rights");
   check("…a real revoke later still unpins it", !saved().includes("edit") && btn().hidden === true, JSON.stringify(saved()));
+}
+console.log("DOCK BOOT — a first grant with nothing saved is written");
+{
+  localStorage.removeItem("ew-dock-pins");   // pins hydrate from DEFAULT_PINS, which already holds 'edit'
+  const gate = { open: false };
+  await boot(gate);
+  bus.emit("your-rights");                   // the arrival: a level, no save
+  gate.open = true; bus.emit("your-rights"); // the first grant
+  check("a first grant saves the pins though the set already held the wrench", saved()?.includes("edit") === true, JSON.stringify(saved()));
 }
 
 }

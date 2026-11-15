@@ -61,7 +61,8 @@ try {
   check("F24 a schema-valid provenance passes, and the builder round-trips through the validator", checkProvenance(P) === null && P.registry.id === "registry-pin" && P.writer.name === "eidoverse-server");
   check("F24 dirty: true without sourceTreeSha256 is invalid (and so is dirty: false without it: the tree hash is always written)",
     checkProvenance({ ...P, writer: { ...P.writer, dirty: true, sourceTreeSha256: undefined } })?.code === "provenance-writer-tree" && (() => { const w = { ...P.writer, dirty: true }; delete w.sourceTreeSha256; return checkProvenance({ ...P, writer: w })?.code === "provenance-writer"; })()
-    && checkProvenance({ ...P, writer: { ...P.writer, dirty: true, sourceTreeSha256: "nope" } })?.code === "provenance-writer-tree");
+    && checkProvenance({ ...P, writer: { ...P.writer, dirty: true, sourceTreeSha256: "nope" } })?.code === "provenance-writer-tree"
+    && checkProvenance({ ...P, writer: { ...P.writer, dirty: false, sourceTreeSha256: undefined } })?.code === "provenance-writer-tree");
   check("F24 the writer name grammar, semver, and git:sha1 | git:sha256 revisions are checked",
     checkProvenance({ ...P, writer: { ...P.writer, name: "Server" } })?.code === "provenance-writer-name" && checkProvenance({ ...P, writer: { ...P.writer, name: "a".repeat(49) } })?.code === "provenance-writer-name"
     && checkProvenance({ ...P, writer: { ...P.writer, version: "4" } })?.code === "provenance-writer-version"
@@ -77,7 +78,7 @@ try {
     const W0 = path.join(S, "w0"); fs.mkdirSync(W0); const d0 = found(W0, "stamped"); const g0 = readLog(fs.readFileSync(path.join(d0, "world.jsonl")))[0];
     const rev = sourceRevisionOf(ENGINE);
     check("F24 a world the server founds carries genesis.body.provenance: schema-valid, writer eidoverse-server at this tree's revision and tree hash; the fold reads the world",
-      checkProvenance(g0.body.provenance) === null && g0.body.provenance.writer.name === "eidoverse-server" && g0.body.provenance.writer.sourceRevision === rev.sourceRevision && /^[0-9a-f]{64}$/.test(g0.body.provenance.writer.sourceTreeSha256)
+      checkProvenance(g0.body.provenance) === null && g0.body.provenance.writer.name === "eidoverse-server" && g0.body.provenance.writer.sourceRevision === rev.sourceRevision && g0.body.provenance.writer.sourceTreeSha256 === sourceTreeSha256(ENGINE)
       && fold(readLog(fs.readFileSync(path.join(d0, "world.jsonl")))).status === "ok", g0.body); }
   { // the tree hash of a real tree, and a revision from git
     const R = path.join(S, "tree"); fs.mkdirSync(R); const git = (...a: string[]) => spawnSync("git", ["-C", R, ...a], { encoding: "utf8" });

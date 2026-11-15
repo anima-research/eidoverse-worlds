@@ -25,6 +25,8 @@ C("G0", "import.ts --dry prints its requests (exit 0)", run.exitCode === 0 && dr
 if (!dry) { console.log(`[import-golden-check] ${pass} passed, ${fail} failed`); process.exit(1); }
 
 const ops = dry.requests[0].args.requests, creates = ops.filter((o) => o.verb === "create").map((o) => o.args);
+{ const sets = ops.filter((o) => o.verb === "set" && o.args?.id === "@world").length;   // tools/water/README.md's count
+  C("G0b", "thirty creates and nine @world sets, and nothing else", creates.length === 30 && sets === 9 && ops.length === 39, { creates: creates.length, sets, all: ops.length }); }
 const bodies = creates.filter((a) => a.components.water), pockets = creates.filter((a) => a.components["water-exclusion"]);
 const by = (host) => pockets.filter((a) => a.components.parent?.to === `$${host}`);
 const b = bodies[0]?.components;

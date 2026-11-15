@@ -51,6 +51,8 @@ check('inbound hands the frames to the sidecar', /this\.onMedia\?\.\(msg\);\s*br
 // also fails if the extraction anchors ever drift off the source.
 check('control: both extraction anchors were actually found',
   src.indexOf('const t = String(frame?.type ?? "")') >= 0 && src.indexOf('case "relay-cred":') >= 0
+  && src.indexOf('this.ws.send(JSON.stringify(frame));') > src.indexOf('const t = String(frame?.type ?? "")')
+  && src.indexOf('case "snapshot":') > src.indexOf('case "relay-cred":')
   && guard.length > 40 && inbound.length > 40);
 check('control: the forbidden-matcher detects "say" injected into the real guard',
   guard.replace('"sfu-answer"', '"sfu-answer" || t === "say"').includes('"say"'));

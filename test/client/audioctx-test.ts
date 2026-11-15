@@ -1,3 +1,5 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { suite } from "../gate/suite.ts";
 /** audioctx: one AudioContext for the page, proven rather than asserted.
  *
@@ -65,10 +67,16 @@ check('audioContextState() reports the shared instance', mod.audioContextState()
 // The failure mode is not "audioctx.js breaks" — it is "somebody adds a direct
 // construction somewhere else and this module stops being the only door."
 // Reading the source is the only way to see that from here.
-const src = await Bun.file(new URL('../../client/lib/audio/micstate.js', import.meta.url)).text();
-const direct = [...src.matchAll(/new\s+(?:\(window\.)?(?:webkit)?AudioContext/g)].length;
-check('micstate.js constructs no AudioContext directly', direct === 0,
-      `${direct} direct construction(s) — they must go through audioctx.js`);
+const clientDir = fileURLToPath(new URL('../../client/', import.meta.url));
+const direct: string[] = [];
+for (const f of new Bun.Glob('**/*.js').scanSync(clientDir)) {
+  const rel = f.replaceAll('\\', '/');
+  if (/^(vendor|node_modules)\//.test(rel) || rel === 'lib/audio/audioctx.js') continue;
+  const n = [...(await Bun.file(path.join(clientDir, f)).text()).matchAll(/new\s+(?:\(window\.)?(?:webkit)?AudioContext/g)].length;
+  if (n) direct.push(`${rel} ×${n}`);
+}
+check('no client module but audioctx.js constructs an AudioContext directly', direct.length === 0,
+      `${direct.join(', ')}: they must go through audioctx.js`);
 
 console.log(`\n  ${S.pass} passed, ${S.fail} failed`);
 if (S.fail) process.exit(1);

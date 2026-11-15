@@ -20,8 +20,8 @@ const { has, svg } = I as any;
 const S = suite("icons");
 const check = (name: string, ok: unknown, detail?: unknown) => S.check(name, ok, detail);
 
-// the three states the typing relay actually admits, and the hear glyph pair (HUD toggle, nameplate mark, hover card)
-const SHIPPED = ["ear", "think", "wrench", "headphones", "headphonesOff"];
+// the four states the typing relay admits (server/messages.ts: ear, think, tool → wrench, mic), and the hear glyph pair (HUD toggle, nameplate mark, hover card)
+const SHIPPED = ["ear", "think", "wrench", "mic", "headphones", "headphonesOff"];
 
 const rendered: Record<string, string> = {};
 for (const name of SHIPPED) {

@@ -41,7 +41,7 @@ const src = (p) => fs.readFileSync(path.join(ENGINE, p), "utf8");
   const agent = src("mcpl/agent.ts"), auth = src("shared/protocol/authority.js"), ctrl = src("client/lib/player/controller.js"),
     coll = src("client/lib/colliders.js"), scale = src("shared/bodyscale.js"), thing = src("client/lib/thingphysics.js");
   const own = {
-    agent: fs.readdirSync(path.join(ENGINE, "mcpl")).filter((f) => /^agent(-[a-z]+)?\.ts$/.test(f)).map((f) => src("mcpl/" + f)).join("\n").match(/^const WALK\s*=.*$/m)?.[0] ?? null,   // the agent and its pieces
+    agent: fs.readdirSync(path.join(ENGINE, "mcpl")).filter((f) => /^agent(-[a-z]+)?\.ts$/.test(f)).map((f) => src("mcpl/" + f)).join("\n").match(/^const (WALK|RUN|ARRIVE)\b\s*=.*$/m)?.[0] ?? null,   // the agent and its pieces
     authority: auth.match(/^const TRACK\s*=.*$/m)?.[0] ?? null,
     colliders: [coll.match(/^const STEP\s*=.*$/m)?.[0], coll.match(/^const TALL\s*=.*$/m)?.[0]].filter(Boolean),
     bodyscale: scale.match(/COLLIDER_R\s*=\s*[\d.]+/)?.[0] ?? null,

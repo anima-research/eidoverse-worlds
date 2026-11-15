@@ -116,7 +116,7 @@ console.log("\nexport → edit → import (server/heightmap.ts)");
   check("the export imports as-is, its range read back from the PNG", !up.error && near(up.meta.min, meta.min) && near(up.meta.max, meta.max), JSON.stringify(up).slice(0, 120));
   const back = makeHeightField(terrainParams({ size: 120, heightmap: { grid: up.grid, min: up.meta.min, max: up.meta.max } }));
   let worst = 0;
-  for (let i = 0; i < 257; i += 16) for (let j = 0; j < 257; j += 16) {
+  for (let i = 0; i < 257; i++) for (let j = 0; j < 257; j++) {
     const x = (i / 256 - 0.5) * 120, z = (j / 256 - 0.5) * 120;
     worst = Math.max(worst, Math.abs(back(x, z) - truth(x, z)));
   }

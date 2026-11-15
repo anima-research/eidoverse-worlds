@@ -94,6 +94,8 @@ r = ran(() => m.toggleMute(false)); check("E7 toggleMute(false) runs", !r && m.i
 r = ran(() => m.selfMonitoring()); check("E8 selfMonitoring() runs", !r, r);
 r = ran(() => m.gateRelease()); check("E9 gateRelease() runs", !r, r);
 r = ran(() => m.releaseMicrophone()); check("E10 releaseMicrophone() runs", !r, r);
+r = ran(() => m.selfMonitor(false)); check("E11 selfMonitor(false) runs", !r, r);
+r = ran(() => { m.pttHeld(); m.ungatedAllowed(); m.rawMicStream(); m.micDeviceLive(); }); check("E12 pttHeld / ungatedAllowed / rawMicStream / micDeviceLive run", !r, r);
 
 // ── the UNGATED lane (#148): the graph cannot build and raw was consented, so PTT drives the raw track's `enabled` ──────
 const track = mkTrack("ungated");

@@ -190,7 +190,7 @@ await C("O7", "the editor: Add Component offers Openable; it writes the openable
   const offered = (sc.sections?.add ?? []).some((a: any) => a.name === "Openable" && !a.blocked);
   const add = ES.addOps(ent, "gate", "Openable");
   const W = world(); W.call("create", { id: "gate", model: "door", place: { at: [0, 0] } });
-  const sent = W.sendAll(add.ops); const used = W.call("use", { id: "gate" }, "vic");
+  const sent = W.sendAll(add.ops); const action = W.state().entities.gate.c.reactions?.open; const used = W.call("use", { id: "gate" }, "vic");
   const opened = W.state().entities.gate.c.openable?.open === true;
   const rec = { model: "door", pos: [0, 0, 0], openable: W.state().entities.gate.c.openable, reactions: W.state().entities.gate.c.reactions };
   const box = [[-0.45, 0, -0.03], [0.45, 2.1, 0.03]];
@@ -200,8 +200,8 @@ await C("O7", "the editor: Add Component offers Openable; it writes the openable
   const hs = W.sendAll(hinge.ops);
   const rm = ES.editOps(rec, "gate", { "remove.openable": 1 }); const rs = W.sendAll(rm.ops);
   const after = W.state().entities.gate.c;
-  return [offered && !add.errors.length && sent.ok && used.ok && opened && ["open", "locked", "by", "angle", "axis", "time", "hingeL"].every((k) => keys.includes(k)) && pv?.[0] === -0.45 && hs.ok && rs.ok && !after.openable && !after.reactions?.open,
-    { offered, add: add.errors, sent: why(sent), used: why(used), keys, pv, hs: why(hs), rs: why(rs), after: Object.keys(after) }];
+  return [offered && !add.errors.length && sent.ok && action?.kind === "toggle" && used.ok && opened && ["open", "locked", "by", "angle", "axis", "time", "hingeL"].every((k) => keys.includes(k)) && pv?.[0] === -0.45 && hs.ok && rs.ok && !after.openable && !after.reactions?.open,
+    { offered, add: add.errors, sent: why(sent), action, used: why(used), keys, pv, hs: why(hs), rs: why(rs), after: Object.keys(after) }];
 });
 
 await C("O8", "a body walks through an open door, not a shut one (the authority's own body track, as an agent walks)", () => {

@@ -495,8 +495,9 @@ const cases: Case[] = [
   { id: "K4", what: "kept: seniority is the start of an owner's unbroken run: an owner demoted and made owner again is junior from then", run(s) { cast(s);
       role(s, "a1", { role: "owner" }); role(s, "a2", { role: "owner" });   // a1 senior to a2
       set(s, "olive", "roles:a1", { role: "builder" }); set(s, "olive", "roles:a1", { role: "owner" });   // a1's run restarts: now junior to a2
-      return { a2demotesA1: show(set(s, "a2", "roles:a1", { role: "builder" })), a1demotesA2: code(set(s, "a1", "roles:a2", { role: "builder" })) }; },
-    good: (o) => o.a2demotesA1 === "ok" || o.a1demotesA2 === "rights" },
+      const a1demotesA2 = code(set(s, "a1", "roles:a2", { role: "builder" }));   // first: a1 is still an owner when it tries
+      return { a1demotesA2, a2demotesA1: show(set(s, "a2", "roles:a1", { role: "builder" })) }; },
+    good: (o) => o.a2demotesA1 === "ok" && o.a1demotesA2 === "rights" },
   { id: "F4", what: "an owner in a fresh world generates (the world's assets) and flies; fly can be granted per person (review: gen/fly came from v1 by name)", run(s) { cast(s);
       return { pal: show(set(s, "olive", "assets:a", { name: "a", path: "store/a.glb" })), fly: eff(s, "olive")?.permissions.includes("fly"), give: show(role(s, "vic", { role: "member", can: { fly: true } })), vic: eff(s, "vic")?.permissions }; },
     good: (o) => o.pal === "ok" && o.fly === true && o.give === "ok" && o.vic?.includes("fly") },
@@ -532,8 +533,10 @@ const cases: Case[] = [
     good: (o) => o.self === "rank" && o.still },
   { id: "K5", what: "kept: a kicked or banned person's leave still settles (the server's departure sends it): their body is gone from presence", run(s) { cast(s);
       s.call("vic", "move", { to: [0, 0, 1] }); s.call("mo", "kick", { who: "vic" });
-      const l = s.call("vic", "leave"); return { l: show(l), body: !!s.w().presence.bodies.vic }; },
-    good: (o) => o.l === "ok" && !o.body },
+      const l = s.call("vic", "leave");
+      s.call("ann", "move", { to: [0, 0, 2] }); s.call("mo", "ban", { who: "ann" });
+      const l2 = s.call("ann", "leave"); return { l: show(l), body: !!s.w().presence.bodies.vic, l2: show(l2), body2: !!s.w().presence.bodies.ann }; },
+    good: (o) => o.l === "ok" && !o.body && o.l2 === "ok" && !o.body2 },
   { id: "V7", what: "a muted person's refused say isn't written to the public log (it would carry the text)", run(s) { cast(s);
       s.call("mo", "mute", { who: "vic", minutes: 5, channels: ["chat"] }); const n0 = s.entries().length; s.call("vic", "say", { text: "secret words" });
       return { leaked: JSON.stringify(s.entries().slice(n0)).includes("secret words"), logged: s.entries().length - n0 }; },
