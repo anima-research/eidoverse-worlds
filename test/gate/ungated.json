@@ -99,5 +99,7 @@
  "test/client/xr-quad-softswap-probe.mjs": "red on windows-latest in #333's CI; green on Linux and macOS. Gate it again once a Windows lane is green.",
  "test/client/sky-bakegraph-probe.mjs": "red on windows-latest in #333's CI; green on Linux and macOS. Gate it again once a Windows lane is green.",
  "test/client/xr-desktop-banner-probe.mjs": "red on windows-latest in #333's CI; green on Linux and macOS. Gate it again once a Windows lane is green.",
- "test/client/sky-bake-time-probe.mjs": "red on windows-latest in #333's CI; green on Linux and macOS. Gate it again once a Windows lane is green."
+ "test/client/sky-bake-time-probe.mjs": "red on windows-latest in #333's CI; green on Linux and macOS. Gate it again once a Windows lane is green.",
+ "test/client/xr-debug-live-probe.mjs": "red on windows-latest in #333's CI (no WebGL context through launchBrowser); green on Linux and macOS. Gate it again once a Windows lane is green.",
+ "test/client/htmlmesh-pick-probe.mjs": "red on windows-latest in #333's CI (no WebGL context through launchBrowser); green on Linux and macOS. Gate it again once a Windows lane is green."
 }

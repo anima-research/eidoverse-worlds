@@ -583,11 +583,9 @@ time.
 | 403 | xss-probe | browser | `test/protocol/xss-probe.ts` | Chromium | 15 s | 180 s |
 | 404 | party-probe | browser | `test/protocol/party-probe.ts` | Chromium | 486 s | 2430 s |
 | 405 | colour-picker | browser | `test/client/colour-picker-bench.ts` | Chromium | 8.1 s | 180 s |
-| 406 | xr-debug-live | browser | `test/client/xr-debug-live-probe.mjs` | Chromium | 60 s | 300 s |
-| 407 | htmlmesh-pick | browser | `test/client/htmlmesh-pick-probe.mjs` | Chromium | 6 s | 180 s |
-| 408 | vrmic-exec | browser | `test/client/vrmic-exec-test.mjs` | Chromium | 0.5 s | 180 s |
-| 409 | xr-nullfb | browser | `test/client/xr-nullfb-test.mjs` | Chromium | 0.3 s | 180 s |
-| 410 | client-tools | browser | `test/harness/run-client.ts --import-only --skip-suites --strict-env` | Chromium | 202 s | 1010 s |
+| 406 | vrmic-exec | browser | `test/client/vrmic-exec-test.mjs` | Chromium | 0.5 s | 180 s |
+| 407 | xr-nullfb | browser | `test/client/xr-nullfb-test.mjs` | Chromium | 0.3 s | 180 s |
+| 408 | client-tools | browser | `test/harness/run-client.ts --import-only --skip-suites --strict-env` | Chromium | 202 s | 1010 s |
 
-Lanes: core 18 suites (~79 s), main 370 (~2097 s), browser 22 (~1294 s); 410 suites in all.
+Lanes: core 18 suites (~79 s), main 370 (~2097 s), browser 20 (~1228 s); 408 suites in all.
 <!-- END GENERATED -->

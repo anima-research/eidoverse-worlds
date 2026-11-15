@@ -277,8 +277,6 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["eidomodel", "protocol/eidomodel-check.ts", 1], // review 10-07 H3: a translated world's models are eido:sha256 addresses; the index, /eido/, /library/eido/, the client's mapping
   ["party-probe", "protocol/party-probe.ts", 1], // the editor's party blockers (review 10-07 B1–B5, S1/S4/S5/S7, lock levels, moderation commands) with real mouse and keys
   ["colour-picker", "client/colour-picker-bench.ts", 1], // the Inspector's colour field is a picker of solid cells a headset quad can click, in headless Chromium (one browser, guarded)
-  ["xr-debug-live", "client/xr-debug-live-probe.mjs", 1], // the Debug pane opened in VR keeps its numbers live
-  ["htmlmesh-pick", "client/htmlmesh-pick-probe.mjs", 1], // a VR panel click picks what a browser's hit test would (vendor/htmlmesh.js), in the real client
   ["vrmic-exec", "client/vrmic-exec-test.mjs", 1], // vrmic.js's effects on a fake clock: the mic ask never blocks entering VR; a promise made in VR is kept after it
   ["xr-nullfb", "client/xr-nullfb-test.mjs", 1], // xr_nullfb.js on a fake renderer: installs only for a null-framebuffer (emulated) session, once, never on hardware
   ["alias", "mcpl/alias-test.ts", 1], // an old tool name is an old tool: exactly the unknown-tool (Mica 11-05); folded/removed tools name what does it now
@@ -428,7 +426,7 @@ export const CORE = ["kernel", "trig", "laws", "engine", "normative", "gov-reser
 // refusedjoin (scratchBench) and client-tools (run-client.ts runs every tools/*-test file, browser tests among them, those one
 // at a time) once
 // sat in the non-browser list: a host without Chromium failed them, and this box ran Chromes it didn't budget for.
-export const BROWSER = ["browser", "comps-parity", "level-dive", "water-cross", "toast-group", "client", "refusedjoin", "client-b2", "build-client", "access-panel", "lock-strength", "swim-lists", "shiplist-probe", "xss-probe", "party-probe", "colour-picker", "xr-debug-live", "htmlmesh-pick", "vrmic-exec", "xr-nullfb", "client-tools", "harness"];
+export const BROWSER = ["browser", "comps-parity", "level-dive", "water-cross", "toast-group", "client", "refusedjoin", "client-b2", "build-client", "access-panel", "lock-strength", "swim-lists", "shiplist-probe", "xss-probe", "party-probe", "colour-picker", "vrmic-exec", "xr-nullfb", "client-tools", "harness"];
 export const laneOf = (name: string): Lane => (CORE.includes(name) ? "core" : BROWSER.includes(name) ? "browser" : "main");
 // the order the gate runs them: core (in CORE's order), then main, then browser
 export const ORDER = [...CORE, ...SUITES.map(([n]) => n).filter((n) => laneOf(n) === "main"), ...SUITES.map(([n]) => n).filter((n) => laneOf(n) === "browser")];
