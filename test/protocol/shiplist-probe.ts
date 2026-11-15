@@ -29,6 +29,9 @@ const NODE = new Map<string, string>(); const N = (n: string) => NODE.get(n) ?? 
 const { cdp, evalJson: evalRaw, cleanup, die, BASE, SCRATCH } = await scratchBench("shiplist", {
   prepare: (scratch) => {
     worldsDir = path.join(scratch, "worlds"); fs.mkdirSync(worldsDir, { recursive: true });
+    // standalone, the store is the checkout's assets/opt, which lacks the prop fixtures (HP's props/ball.glb): seed a scratch
+    // one from test/fixtures/props, as the gate does for every suite (test/gate/run.ts OPT_TRACKED)
+    if (!process.env.OPT_DIR) { const opt = path.join(scratch, "opt"); fs.cpSync(path.join(ENGINE, "test/fixtures/props"), path.join(opt, "props"), { recursive: true }); process.env.OPT_DIR = opt; }
     const r = Bun.spawnSync(["bun", "tools/world.ts", "found", WORLD, "--owner", ME, "--title", "ship list probe"], { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: worldsDir, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
     if (r.exitCode !== 0) throw new Error("founding failed: " + r.stderr.toString());
   },
