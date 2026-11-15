@@ -82,8 +82,10 @@ Questions to ask in review, never thresholds:
 
 - A new source file (.ts, .js, .mjs) is named in lowercase words joined by hyphens (`relay-decision.ts`), not run together or with underscores.
   The underscore names already in the tree are listed in `test/gate/underscore-names.json`; that list only shrinks.
-- Comments: one line, plus a pointer (a doc section, a suite, an issue) when there is more. The story goes in the
-  commit message.
+- Comments: short by default, one line plus a pointer (a doc section, a suite, an issue) when there is more. A file
+  header, or a comment on a complex class or function, may run longer when it explains what the thing is and how
+  it fits. Anything else over about three lines is a candidate to cut. The story (what broke, what was tried)
+  goes in the commit message.
 - New docs are UPPER-CASE.md and live in `docs/`, except the root five (README, AGENTS, CONTRIBUTING, DESIGN,
   THIRD-PARTY), a directory's own README, and docs/research/ notes (lower-case, named by subject).
 - Every relative link and every repo path in a doc or a comment resolves (`test/gate/paths-check.ts`). A moved file
