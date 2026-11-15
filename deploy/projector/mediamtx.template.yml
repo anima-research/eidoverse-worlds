@@ -12,8 +12,8 @@
 # One binary, one ingest, three faces:
 #   in   WHIP  http://host:${WEBRTC_PORT}/${STREAM_PATH}/whip   (OBS ≥ 30: Settings → Stream → WHIP)
 #   in   RTMP  rtmp://host:${RTMP_PORT}/${STREAM_PATH}          (OBS "Custom", any older encoder)
-#   out  HLS   http://host:${HLS_PORT}/${STREAM_PATH}/index.m3u8   (movie night: ~3-6 s behind; the client plays a URL)
-#   out  WHEP  http://host:${WEBRTC_PORT}/${STREAM_PATH}/whep      (sub-second; phase 3 with the presentation delay)
+#   out  HLS   http://host:${HLS_PORT}/${STREAM_PATH}/index.m3u8   (~3-6 s behind; the read key, or loopback)
+#   out  WHEP  http://host:${WEBRTC_PORT}/${STREAM_PATH}/whep      (sub-second; the sequencer, with the read key)
 #   out  RTSP  rtsp://127.0.0.1:${RTSP_PORT}/${STREAM_PATH}       (the caption bot's audio tap — loopback ALWAYS)
 #
 # Publishing needs the publish key. Reading from another machine needs the READ
