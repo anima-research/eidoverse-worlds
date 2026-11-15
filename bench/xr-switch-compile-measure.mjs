@@ -7,7 +7,7 @@
 // programs/pipelines built per switch: stock; with client/lib/xr/xrpass.js (stereo in its own pass); and xrpass + a
 // desktop-side pre-warm through a two-eye stand-in camera (xr.getCamera() has no eyes before a session).
 //
-// Run: node bench/xr-switch-compile-measure.mjs   (~30 s; run it under a memory guard)
+// Run: bun bench/xr-switch-compile-measure.mjs   (~30 s; run it under a memory guard)
 import { raw3Page, RAW3_IMPORTMAP } from '../test/harness/probe-harness.mjs';
 
 const N = Number(process.env.N ?? 60);

@@ -88,7 +88,7 @@ on loaded remote rigs. Native seeds are NOT calibrated skin contacts; the client
 never asserts `reached:true`. First-person local hands, palm alignment, native
 joint/torso constraints and named targets on the local body remain incomplete.
 Wave/cheer/point use the presence plane's one-shot gesture field (this protocol's `pose.anim`; the native client
-still sends the first protocol's key, which servers read for one release — shared/onceanim.js). Native gestures
+still sends the first protocol's key, which nothing reads now: shared/onceanim.js reads only `anim`). Native gestures
 are procedural approximations, not downloaded browser animation clips.
 Puppet and bodydrag requests are not accepted automatically; native ragdolls,
 mount/seating, force reactions and full streamed body-pose parity remain future work.
@@ -119,14 +119,14 @@ Transforms remain the sampled truth, but may also carry what a renderer needs to
 animate at frame rate without polling:
 
 - `motion: {base:{pos,yaw}, m}` for unmounted, non-simulated entities
-  with whole-entity motion. Evaluate `client/lib/motioneval.js` `evalWholeMotion`
+  with whole-entity motion. Evaluate `shared/motioneval.js` `evalWholeMotion`
   at the server clock (`render-scene.time` + elapsed). `m.t0` is always present:
   a missing authored t0 is resolved to the server's anchor.
 - `mount: {to, offset, yaw, scale}` for mounted entities: world = parent ∘
   (offset × parent scale, then yaw about Y); scale = parent scale × own scale.
 
 Ports must reproduce `shared/conformance/motion.json` (regenerate with
-`bun tools/assets/motion-vectors.ts`; `--check` fails when stale).
+`bun tools/vectors/motion.ts`; `--check` fails when stale).
 
 ## Inspecting an entity's components
 

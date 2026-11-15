@@ -15,7 +15,7 @@
 // Render-object births are counted per pass / camera / render context, which is what exposed three's post-frame
 // target leak (xrwarm.js: an in-VR compileAsync built into a context the headset's frames never use).
 //
-// Run: node bench/xr-dual-warm-measure.mjs   (~40 s; run it under a memory guard)
+// Run: bun bench/xr-dual-warm-measure.mjs   (~40 s; run it under a memory guard)
 import { raw3Page, RAW3_IMPORTMAP } from '../test/harness/probe-harness.mjs';
 
 const N = 30, M = 20;

@@ -1,5 +1,5 @@
 // sky-swapchain-test — the tier-swap bookkeeping (client/lib/sky/sky_swapchain.js, used by sky.js swapTier), headless.
-//   node test/client/sky-swapchain-test.mjs      (or bun)
+//   bun test/client/sky-swapchain-test.mjs
 // The screen work (swapTierInner) is a scripted fake here: each call waits for the test to answer it with what the real
 // one would return. What's bound is the SHOWN bookkeeping — which tier the next run swaps FROM, and whether it acts.
 import { makeSwapChain, SHOWN_UNKNOWN } from '../../client/lib/sky/sky_swapchain.js';

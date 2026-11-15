@@ -2,7 +2,7 @@
  * Self-pose test — the `pose`/`animate` authoring surface and the one rule
  * that decides whether a pose survives walking.
  *
- * Run: cd mcpl && bun run selfpose-test.ts
+ * Run: bun test/mcpl/selfpose-test.ts
  *
  * No servers needed: shared/humanoid.js is pure, and WorldAgent's constructor
  * does not connect, so the walk-shed can be exercised on a bare body.

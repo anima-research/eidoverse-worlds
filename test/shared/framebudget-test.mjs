@@ -1,6 +1,6 @@
 // framebudget's rules, headless: one shared budget per frame, first grant may overrun and is carried as debt, a
 // starved lane is granted anyway, one gpu unit per frame, busy() from reported loading, the loop is the clock (with a
-// fallback that still rolls the books). `node test/shared/framebudget-test.mjs`
+// fallback that still rolls the books). `bun test/shared/framebudget-test.mjs`
 import * as fb from '../../client/lib/render/framebudget.js';
 import { pause } from "../gate/wait.ts";
 import { suite } from "../gate/suite.ts";

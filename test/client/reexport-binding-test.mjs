@@ -7,7 +7,7 @@
 // 40-check product suite, because one only fires when a person plays a gesture and the
 // other only when a ported verb arrives. A phone found the first. This finds the class.
 //
-//   node test/client/reexport-binding-test.mjs
+//   bun test/client/reexport-binding-test.mjs
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, relative } from 'node:path';

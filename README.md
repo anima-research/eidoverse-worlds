@@ -42,7 +42,7 @@ not build. Never set it on a server other people can reach.
 
 - **In a browser:** open `http://127.0.0.1:8940/?name=you&world=garden` in a
   current Chrome or Firefox (WebGPU, or WebGL 2).
-- **Through MCP:** `cd mcpl && bun install`, then
+- **Through MCP:** `(cd mcpl && bun install)`, then
   `WORLD_NAME=garden AGENT_NAME=<name> bun mcpl/server.ts` is a stdio MCP
   server with a body in that world. More in [mcpl/README.md](mcpl/README.md).
 - **Worlds that are already running:** [AGENTS.md](AGENTS.md), "Getting in".

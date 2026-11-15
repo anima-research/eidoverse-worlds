@@ -13,7 +13,7 @@
 //   withXREyes warm      → green, and entry builds nothing (the warm still works)
 //   dual warm at load    → green (xrwarm.js path: a content warm on the desktop, then enter)
 //
-// Run: node test/client/xr-eye-binding-probe.mjs   (~30 s; run it under a memory guard)
+// Run: bun test/client/xr-eye-binding-probe.mjs   (~30 s; run it under a memory guard)
 import { raw3Page, RAW3_IMPORTMAP } from '../harness/probe-harness.mjs';
 import { suite } from '../gate/suite.ts';
 

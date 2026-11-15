@@ -11,7 +11,7 @@
 // BELOW-after-ABOVE inside the release band (must stay gold) and below it
 // (must drop).
 //
-//   node test/labs/mic-meter-states.mjs [origin]
+//   bun test/labs/mic-meter-states.mjs [origin]
 import { launchBrowser, ownedWorld } from '../harness/probe-harness.mjs';
 
 const world = await ownedWorld({ live: process.argv[2] || null });

@@ -2,7 +2,8 @@
 // regressions are test/client/tts-test.ts and tts-fault-test.ts (fake engine). This is the one-time dev/staging acceptance: Piper +
 // worker + ORT + a local voice producing audible media through the production path (say → speech bus → speakOwnSays
 // → engine → generator → sender), received by an independent listener. Own spawned server, throwaway world dir.
-//   VOICE_ONNX=/path/voice.onnx VOICE_CFG=/path/voice.onnx.json bun tools/operator/tts-acceptance.mjs
+//   VOICE_TRANSPORT=sfu VOICE_ONNX=/path/voice.onnx VOICE_CFG=/path/voice.onnx.json bun tools/operator/tts-acceptance.mjs
+//   (the spawned server inherits this env; voice is off without VOICE_TRANSPORT=sfu)
 // Needs playwright + chromium installed in the repo (static ESM imports resolve from this file).
 // Emits a provenance-bound receipt (JSON) on stdout: model/config sha256, browser+OS, cold and warm load ms, voice
 // identity, the listener's RTP count and level, and each check. The receiving side reads client/lib/audio/voicesfu.js.

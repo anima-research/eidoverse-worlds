@@ -88,7 +88,7 @@ const D = await import(TREE + "shared/protocol/authority.js");
 D.fixtureIds?.(true);
 const L = await import(TREE + "server/livehost.ts");
 const SB = await import(TREE + "shared/protocol/sandbox.js");
-const NS = await import(TREE + "client/lib/edit/scriptplan.js").catch(() => null);   // absent at the base commit: the editor had no planner
+const NS = await import(TREE + "client/lib/edit/scriptplan.js").catch(() => import(TREE + "client/lib/newscript.js")).catch(() => null);   // newscript.js before the reorg; absent at the base commit: the editor had no planner
 const SE = await import(ENGINE + "shared/structure-edit.js");   // the editor's own planner makes the buildings (pure; this checkout's)
 const root = scratch("build");
 const clock = labClock(); let N = 0;

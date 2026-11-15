@@ -1,5 +1,5 @@
 // sky-bakelock-test — the sky's ONE-BAKE-AT-A-TIME wrapper (client/lib/sky/sky_bakelock.js), headless.
-//   node test/client/sky-bakelock-test.mjs      (or bun)
+//   bun test/client/sky-bakelock-test.mjs
 // A fake engine: bakeEnv awaits a promise the test resolves, and reads/writes _envTarget the way sky_system's does.
 // Review 10b H2: when bake N resolved, a bake queued behind it (the VR prebuild, which swaps a TEMPORARY target in)
 // started BEFORE the awaiting caller's continuation, so the baked dome attached to the temporary. The fix runs the

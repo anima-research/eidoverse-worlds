@@ -2,7 +2,7 @@
  * Effective-transform test (#82): where a thing ACTUALLY is, composed from its fold record and its mount chain, or a
  * refusal naming the first link that can't be vouched for. Pure module, no servers; time is an argument.
  *
- * Run: cd mcpl && bun effective-test.ts
+ * Run: bun test/mcpl/effective-mcpl-test.ts
  *
  * Expected values are worked by hand from the composition rules (three.js's rotation convention: +90° about Y takes
  * +X to -Z, +90° about X takes +Y to +Z), never read back from the code under test.

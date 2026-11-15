@@ -13,7 +13,7 @@
 // It also watches the meter's rAF chain: micFloorRow's beat() loop ends itself
 // on !row.isConnected, so a teardown silently restarts the animation.
 //
-//   node test/client/panel-teardown-probe.mjs [origin]
+//   bun test/client/panel-teardown-probe.mjs [origin]
 import { launchBrowser, ownedWorld } from '../harness/probe-harness.mjs';
 
 const world = await ownedWorld({ live: process.argv[2] || null });

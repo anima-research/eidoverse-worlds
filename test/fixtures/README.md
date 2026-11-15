@@ -17,4 +17,6 @@ Inputs the gate's suites read. `v1-worlds/` are old-protocol worlds (its README 
   and verify its measured geometry fits this fixture. Its source and KTX2
   variants both have 6,040 triangles and the same millimetre-rounded bounds
   and visual-center offset.
-- `claude_suit-rig.json`, `mythos-wings-rig.json`: the same extraction for those avatars (`bun test/fixtures/rig-fixture.mjs <name>.vrm`, `bun test/fixtures/flight-fixture.ts`).
+- `claude_suit-rig.json`: the same extraction for that avatar (`bun test/fixtures/rig-fixture.mjs claude_suit.vrm`).
+- `mythos-wings-rig.json`: a different shape (hash, size, bone names), read by `test/client/flight-test.ts`; only
+  `bun test/fixtures/flight-fixture.ts` writes it.

@@ -2,7 +2,7 @@
  * §17.2 digest conformance for the eidoverse door, against the frozen
  * 25-vector corpus (vendored byte-for-byte from mcpl main).
  *
- * Run: cd mcpl && bun run manifest-test.ts
+ * Run: bun test/mcpl/manifest-test.ts
  */
 import { canonicalManifestJson, manifestRevision, ManifestDigestError, MANIFEST_WITH_REVISION } from "../../mcpl/manifest.ts";
 import vectors from "../../mcpl/vectors/manifest-digest-vectors.json";

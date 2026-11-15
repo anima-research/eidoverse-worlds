@@ -12,8 +12,8 @@ is the checklist that follows from them. R and Hesperus, 2026-10-10.
 5. `shared/components.js`: the Add Component catalogue line
 6. `shared/editschema.js`: the Inspector card
 7. `client/lib/realize/<name>s.js`: the browser host (e.g. `client/lib/realize/pictures.js`)
-8. `client/main.js`: a side-effect `import './lib/<name>s.js'`, or the host never loads
-9. `mcpl/agent.ts`: the `spoken` list, if agents should read it
+8. `client/main.js`: a side-effect `import './lib/realize/<name>s.js'`, or the host never loads
+9. `mcpl/agent-senses.ts`: if agents should read it, describe it in `look`, then add it to `spoken` (which keeps it out of the raw `components:` list)
 10. `spec/PROTOCOL.md` §4 (only if a reader should meet it first), and tests: `test/shared/editschema-test.ts` plus a browser probe
 
 The rungs below say why each one is needed.
