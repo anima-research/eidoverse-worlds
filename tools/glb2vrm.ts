@@ -5,11 +5,11 @@
 //  2. Scale: a uniform scale baked on the Armature (an ancestor of every skin joint).
 //  3. Facing: VRM avatars face +Z; forward is measured from foot→toe and a yaw baked on the Armature if needed.
 // Usage:
-//   bun tools/assets/glb2vrm.ts input.glb --name cosplay [--height 1.65] [--head-pitch -20] [--out path]
-//   bun tools/assets/glb2vrm.ts anything.{glb,vrm} --measure   # just report pose/facing
+//   bun tools/glb2vrm.ts input.glb --name cosplay [--height 1.65] [--head-pitch -20] [--out path]
+//   bun tools/glb2vrm.ts anything.{glb,vrm} --measure   # just report pose/facing
 // Bone names are Tripo's (Hip/Pelvis/Spine01/L_Upperarm/...). Extend TRIPO_MAP for other generators.
 
-import * as THREE from "../../client/node_modules/three/src/Three.js";
+import * as THREE from "../client/node_modules/three/src/Three.js";
 import { resolve, join, basename } from "node:path";
 
 // ------------------------------------------------------------------ GLB I/O
@@ -217,7 +217,7 @@ const TRIPO_DIGITS: Record<string, string> = (() => {
 const argv = Bun.argv.slice(2);
 const input = argv.find((a) => !a.startsWith("--"));
 if (!input) {
-  console.error("usage: bun tools/assets/glb2vrm.ts input.glb --name <name> [--height 1.65] [--head-pitch degrees] [--out path] [--measure]");
+  console.error("usage: bun tools/glb2vrm.ts input.glb --name <name> [--height 1.65] [--head-pitch degrees] [--out path] [--measure]");
   process.exit(1);
 }
 const flag = (n: string) => {
@@ -269,7 +269,7 @@ if (has("measure")) {
 
 const name = flag("name") ?? basename(input).replace(/\.(glb|vrm)$/, "");
 const targetHeight = Number(flag("height") ?? 1.65);
-const out = flag("out") ?? join(import.meta.dir, "..", "..", "assets", "opt", "eidoverse", "assets", "vrms", `${name}.vrm`);
+const out = flag("out") ?? join(import.meta.dir, "..", "assets", "opt", "eidoverse", "assets", "vrms", `${name}.vrm`);
 
 // Facing is measured once, before any pose surgery, and shared by the T-pose step (its side axes are facing-relative)
 // and the final yaw bake.

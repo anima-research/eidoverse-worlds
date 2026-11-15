@@ -56,7 +56,7 @@ const write = (name: string, bones: string[]) => {
 };
 
 async function run(file: string, ...args: string[]) {
-  const proc = Bun.spawn(["bun", join(import.meta.dir, "../../tools/assets/glb2vrm.ts"), file, ...args], {
+  const proc = Bun.spawn(["bun", join(import.meta.dir, "../../tools/glb2vrm.ts"), file, ...args], {
     stdout: "pipe", stderr: "pipe",
   });
   const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);

@@ -2,13 +2,13 @@
 // slim-vrm — resize a VRM/GLB's embedded textures to web-sane dimensions (Tripo ships 8192²; 2048² is the VRM norm).
 // Container surgery only: images are swapped in the BIN chunk and bufferViews repacked; meshes, skins and extensions
 // pass through untouched. Resizing uses sharp (portable; the tool runs on Linux hosts).
-// Usage: bun tools/assets/slim-vrm.ts file.vrm [--max 2048] [--quality 82] [--out path]   (default: in place)
+// Usage: bun tools/slim-vrm.ts file.vrm [--max 2048] [--quality 82] [--out path]   (default: in place)
 
 import { basename } from "node:path";
 
 const argv = Bun.argv.slice(2);
 const input = argv.find((a) => !a.startsWith("--"));
-if (!input) { console.error("usage: bun tools/assets/slim-vrm.ts file.vrm [--max 2048] [--quality 82] [--out path]"); process.exit(1); }
+if (!input) { console.error("usage: bun tools/slim-vrm.ts file.vrm [--max 2048] [--quality 82] [--out path]"); process.exit(1); }
 const flag = (n: string) => { const i = argv.indexOf(`--${n}`); return i >= 0 ? argv[i + 1] : undefined; };
 const MAX = Number(flag("max") ?? 2048);
 const QUALITY = Number(flag("quality") ?? 82);
