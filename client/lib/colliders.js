@@ -135,6 +135,15 @@ function localBox(obj) {
 // world-space cell and only the 3×3 neighbourhood around the query is tested.
 const CELL = 8; // metres
 const buckets = new Map();
+// A landscape mesh can span kilometres. Index it once, not in millions of cells; the exact BVH still answers the
+// narrow-phase walking/camera query. A query yields them with its first cell, so each one
+// is tested once per query.
+const oversized = new Set();
+function* cellIds(x, z, includeOversized) {
+  if (includeOversized) yield* oversized;
+  const ids = buckets.get(`${x},${z}`);
+  if (ids) yield* ids;
+}
 const cellKey = (x, z) => `${Math.floor(x / CELL)},${Math.floor(z / CELL)}`;
 
 function bucketAdd(id, entry) {
@@ -153,11 +162,17 @@ function bucketAdd(id, entry) {
   // RangeErrors deep in this loop before KeepAlive masked them. The abstain
   // doctrine from the seam probes applies here too: refuse the box, keep
   // the process. Same bucketRemove contract as a normal entry (no cells).
+  // Only a footprint that isn't finite is refused as corrupt now. A finite one
+  // over 4,096 cells (about 512 m a side) is a landscape: it never enters the
+  // loop below, so it can't OOM the process; it is filed once in `oversized`
+  // (one Set entry, no cells). Refusing it left a kilometre-wide island with
+  // no collider at all: walked through, fallen through.
   const spanX = x1 - x0 + 1, spanZ = z1 - z0 + 1;
-  if (spanX * spanZ > 4096) {
-    console.error(`[colliders] bucketAdd ${id} abstained — footprint ${spanX}x${spanZ} cells (r=${r.toFixed(1)}m s=${s})`);
+  if (!Number.isFinite(spanX) || !Number.isFinite(spanZ)) {
+    console.error(`[colliders] bucketAdd ${id} abstained — footprint not finite (r=${r}m s=${s})`);
     return false;
   }
+  if (spanX * spanZ > 4096) { oversized.add(id); return true; }
   for (let cx = x0; cx <= x1; cx++) {
     for (let cz = z0; cz <= z1; cz++) {
       const k = `${cx},${cz}`;
@@ -169,6 +184,7 @@ function bucketAdd(id, entry) {
   return true;
 }
 function bucketRemove(id, entry) {
+  oversized.delete(id);
   for (const k of entry?.cells ?? []) {
     const s = buckets.get(k);
     if (s) { s.delete(id); if (!s.size) buckets.delete(k); }
@@ -594,8 +610,7 @@ function* near(x, z) {
   const cx = Math.floor(x / CELL), cz = Math.floor(z / CELL);
   for (let i = -1; i <= 1; i++) {
     for (let j = -1; j <= 1; j++) {
-      const s = buckets.get(`${cx + i},${cz + j}`);
-      if (!s) continue;
+      const s = cellIds(cx + i, cz + j, i === -1 && j === -1);
       for (const id of s) {
         const e = colliders.get(id);
         if (e && inScope(e)) yield e;
@@ -617,8 +632,7 @@ export function* nearColliders(x, z, r = CELL) {
   _seen.clear();
   for (let cx = x0; cx <= x1; cx++) {
     for (let cz = z0; cz <= z1; cz++) {
-      const s = buckets.get(`${cx},${cz}`);
-      if (!s) continue;
+      const s = cellIds(cx, cz, cx === x0 && cz === z0);
       for (const id of s) {
         if (_seen.has(id)) continue;
         _seen.add(id);
@@ -676,8 +690,7 @@ export function raySegment(origin, dir, far, ignoreId = null) {
   _rsSeen.clear();
   for (let cx = x0; cx <= x1; cx++) {
     for (let cz = z0; cz <= z1; cz++) {
-      const set = buckets.get(`${cx},${cz}`);
-      if (!set) continue;
+      const set = cellIds(cx, cz, cx === x0 && cz === z0);
       for (const id of set) {
         if (id === ignoreId || _rsSeen.has(id)) continue;
         _rsSeen.add(id);
@@ -990,5 +1003,6 @@ export function surfaceUnder(x, z, terrainAt, maxY = Infinity, skipId = null) {
 export function clearColliders() {
   colliders.clear();
   buckets.clear();
+  oversized.clear();
   libCache.clear();
 }
