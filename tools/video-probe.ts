@@ -13,7 +13,8 @@
 //   E. the audio: after a gesture, the screen is heard near it; its gain follows the authored volume (halved, it halves)
 //      and is silent past its radius; mute-for-me silences it for this viewer only. (The listener's world volume is the
 //      world bus's, after this gain, so it isn't read here.)
-//   F. the publisher stops: both screens say `stalled` (never `playing` over a frozen frame) and look says offline;
+//   F. the publisher stops: both screens stop saying `playing` (stalled, or reconnecting: never `playing` over a frozen
+//      frame) and look says offline;
 //   G. the publisher restarts: both screens come back to `playing` on their own (reconnect with backoff);
 //   J. five screens at once (#332 review 6, 7, 8): each browser's offers are paced to the sequencer's gap, so none is
 //      refused as too soon; four play and the fifth says blocked; one taken down, the blocked one plays in its place;
@@ -21,7 +22,8 @@
 //      gone, then come back to playing on their own once the sequencer's state frame says it is back;
 //   L. a spectating browser's screen says blocked, with the reason, and offers nothing more (review 1);
 //   H. the screen comes down: every appliance WebRTC session this probe opened is closed, and the quads are gone;
-//   I. teardown: every pid this probe started is gone.
+//   I. teardown: every process this probe spawned itself (the appliance, the publisher) is gone; the browsers and the
+//      sequencer are closed by their harness, whose own checks hold them.
 // @ts-nocheck
 import { launchBrowser, ownedWorld, checker } from './probe-harness.mjs';
 import { spawn, spawnSync } from 'node:child_process';
@@ -34,7 +36,8 @@ import { randomBytes } from 'node:crypto';
 const { check, done } = checker();
 // the system Chrome, as the protocol gate's browser lane uses: Playwright's bundled headless shell renders in software, and
 // there creating any thing loses the page's WebGL context (reproduced at #260's head with no video), which reloads it
-process.env.SFU_TEST_CHROME ??= process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+// on macOS only: elsewhere the harness finds the platform's browser itself (#332 review 24)
+if (process.platform === 'darwin') process.env.SFU_TEST_CHROME ??= process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const ROOT = new URL('..', import.meta.url).pathname;
 const SCR = mkdtempSync(join(tmpdir(), 'videoprobe-'));
 const NONCE = randomBytes(4).toString('hex');
@@ -96,7 +99,8 @@ async function join_(br: any, name: string) {
   pg.on('pageerror', (e: any) => errs.push(`${name}: ${e.message}`));
   pg.on('console', (m: any) => { const x = m.text(); if (/\[gpu\]|\[renderer\]|context lost|reloading/i.test(x)) console.log(`   ${name} console: ${x.slice(0, 200)}`); });
   pg.on('framenavigated', (f: any) => { if (f === pg.mainFrame()) console.log(`   ${name} navigated: ${f.url().slice(0, 120)}`); });
-  pg.on('websocket', (ws: any) => ws.on('framereceived', (f: any) => { if (typeof f.payload === 'string' && f.payload.includes('video')) wsIn.push(f.payload); }));
+  // every frame, not only those that mention video: a leak would be in any of them (#332 review 25)
+  pg.on('websocket', (ws: any) => ws.on('framereceived', (f: any) => { if (typeof f.payload === 'string') wsIn.push(f.payload); }));
   pg.on('dialog', (d: any) => d.dismiss().catch(() => {}));
   await pg.goto(`${world.origin}/?world=vprobe&key=${world.key}&name=${name}`, { waitUntil: 'domcontentloaded' });
   // Joined, not just open: sendRequest refuses until the snapshot has landed (net.joined). Polled with evaluate, which
@@ -113,7 +117,8 @@ const pa = await join_(A, 'owner');
 const req = (pg: any, verb: string, args: any) => pg.evaluate(({ verb, args }) => import('/lib/net.js').then((n: any) => n.sendRequest(verb, args)), { verb, args });
 const st = (pg: any, id: string) => pg.evaluate((id) => import('/lib/videos.js').then((v: any) => { const s = v._screens.get(id); return s ? { state: s.state, why: s.why ?? null, w: s.el?.videoWidth ?? 0, t: s.el?.currentTime ?? 0, frames: s.frames ?? 0, retries: (s.retries ?? []).map((r: any) => r.why), gain: s.audio?.gain?.gain?.value ?? null, quad: !!s.quad } : null; }), id);
 const until = async (pg: any, id: string, pred: (s: any) => boolean, ms = 30000) => { const t0 = Date.now(); let s; while (Date.now() - t0 < ms) { s = await st(pg, id); if (s && pred(s)) return s; await sleep(250); } return s; };
-const sessions = async () => ((await api('/v3/webrtcsessions/list'))?.items ?? []).filter((x: any) => x.path === PATH_ && x.state !== 'closed').length;
+// null when the API can't be read: an unreadable count is never zero sessions (#332 review 43)
+const sessions = async () => { const r = await api('/v3/webrtcsessions/list'); return Array.isArray(r?.items) ? r.items.filter((x: any) => x.path === PATH_ && x.state !== 'closed').length : null; };
 
 try {
   // A. the door
@@ -143,10 +148,11 @@ try {
   check('B. the appliance holds one WebRTC session per viewer', (await sessions()) === 2, String(await sessions()));
 
   // C. look
-  await sleep(11000);   // two appliance polls: a baseline, then bytes flowing
-  const look = await req(pa, 'look', {});
-  const says = (look?.things ?? []).find((t: any) => t.id === SCREEN)?.says ?? [];
-  const line = says.find((l: string) => /video/.test(l)) ?? '';
+  // look's video line once the appliance has been polled twice (a baseline, then bytes flowing), not after a fixed sleep (#332 review 42)
+  const lookLine = async () => ((await req(pa, 'look', {}))?.things ?? []).find((t: any) => t.id === SCREEN)?.says?.find((l: string) => /video/.test(l)) ?? '';
+  const lineUntil = async (re: RegExp, ms: number) => { const t0 = Date.now(); let l = ''; while (Date.now() - t0 < ms) { l = await lookLine(); if (re.test(l)) return l; await sleep(500); } return l; };
+  const line = await lineUntil(/its source is live/, 30000);
+  const look = { line };
   check('C. look says what the appliance observed: live, with its age', /^a video screen: «the probe stage»; its source is live \(as of \d+ s ago\)$/.test(line), line || JSON.stringify(look).slice(0, 300));
 
   // D. no endpoint, port or key reached a browser
@@ -177,8 +183,7 @@ try {
   ff.kill('SIGKILL'); await sleep(500);
   const fa = await until(pa, SCREEN, (s) => s.state !== 'playing', 15000), fb = await until(pb, SCREEN, (s) => s.state !== 'playing', 15000);
   check('F. both screens stop saying playing when frames stop (stalled, or reconnecting)', ['stalled', 'error', 'connecting', 'buffering'].includes(fa?.state) && ['stalled', 'error', 'connecting', 'buffering'].includes(fb?.state), JSON.stringify({ fa, fb }));
-  await sleep(12000);
-  const off = ((await req(pa, 'look', {}))?.things ?? []).find((t: any) => t.id === SCREEN)?.says?.find((l: string) => /video/.test(l)) ?? '';
+  const off = await lineUntil(/its source is offline/, 30000);
   check('F. look says the source is offline', /its source is offline \(as of \d+ s ago\)/.test(off), off);
 
   // G. the publisher restarts
@@ -220,7 +225,8 @@ try {
   check('K. …and offer nothing while it is gone (no reconnect attempts)', waiting.every((x, i) => (x?.retries?.length ?? 0) === (before[i]?.retries?.length ?? 0) && x?.state === 'error'), JSON.stringify(waiting.map((x, i) => [x?.state, (x?.retries?.length ?? 0) - (before[i]?.retries?.length ?? 0)])));
   writeFileSync(join(SCR, 'sources.json'), JSON.stringify({ sources: entry }, null, 2));
   const back = await Promise.all(live.map((id) => until(pa, id, (x) => x.state === 'playing', 60000)));
-  check('K. admitted again, they come back to playing on their own', back.every((x) => x?.state === 'playing'), JSON.stringify(back.map((x) => x?.state)));
+  const kBuilds = await pa.evaluate((ids) => import('/lib/videos.js').then((v: any) => v._builds.filter((b: any) => ids.includes(b.id)).slice(-12).map((b: any) => `${b.id.slice(0, 4)}:${b.why}@${b.at}`)), live);
+  check('K. admitted again, they come back to playing on their own', back.every((x) => x?.state === 'playing'), JSON.stringify({ back: back.map((x, i) => `${live[i].slice(0, 4)} ${x?.state}: ${x?.why} r${x?.retries?.length}`), builds: kBuilds }));
 
   // L. a spectator (review 1)
   const C = await launchBrowser(); let pcs: any;
@@ -239,9 +245,9 @@ try {
 
   // H. the screen comes down
   const down = await req(pa, 'delete', { id: SCREEN, component: 'video' });
-  await sleep(3000);
+  const t0h = Date.now(); let left: number | null = null; while (Date.now() - t0h < 15000) { left = await sessions(); if (left === 0) break; await sleep(250); }
   const ha = await st(pa, SCREEN), hb = await st(pb, SCREEN);
-  check('H. taking the video down closes every appliance session this probe opened', down?.ok && (await sessions()) === 0, `${JSON.stringify(down?.refused ?? 'ok')} sessions=${await sessions()}`);
+  check('H. taking the video down closes every appliance session this probe opened', down?.ok && left === 0, `${JSON.stringify(down?.refused ?? 'ok')} sessions=${left}`);
   check('H. …and both browsers dropped the screen', ha === null && hb === null, JSON.stringify({ ha, hb }));
   check('no page errors', !errs.some((e) => !e.startsWith('ffmpeg')), errs.join(' | ').slice(0, 400));
 } finally {
