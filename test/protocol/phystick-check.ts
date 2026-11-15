@@ -147,15 +147,15 @@ function world(name, N) {
     const { w, call, beat } = world(name, 0);
     call("rowan", "set", { id: "@world", component: "bounds", value: { min: [-6, -1, -6], max: [6, 20, 6] } });
     call("rowan", "set", { id: "ball", component: "home", value: { pos: [0, 0, 2], q: [0, 0, 0, 1] } });
-    ok(call("rowan", "throw", { id: "ball", v }).ok, `${name} throw`);
+    ok(call("rowan", "throw", { id: "ball", v }).ok, `T8 ${name} throw`);
     let k = 0; for (; k < 60; k++) { beat(TICK); if (w.entries.some((e) => e.kind === "request" && e.verb === "return-lost")) break; }
     const lost = w.entries.find((e) => e.kind === "request" && e.verb === "return-lost"); const at = w.state().entities.ball.c.transform.pos;
     const b = w.simPeek().sim?.bodies?.ball;
-    ok(!!lost && lost.body.home === true && k < 60, `${name} crossing the edge sends it home within 2 s (${k} ticks)`, { lost: lost?.body, k });
-    ok(Math.hypot(at[0], at[1], at[2] - 2) < 1e-6 && (!b || b.resting), `${name} it is at home and the engine no longer flies it`, { at, flying: b && !b.resting });
+    ok(!!lost && lost.body.home === true && k < 60, `T8 ${name} crossing the edge sends it home within 2 s (${k} ticks)`, { lost: lost?.body, k });
+    ok(Math.hypot(at[0], at[1], at[2] - 2) < 1e-6 && (!b || b.resting), `T8 ${name} it is at home and the engine no longer flies it`, { at, flying: b && !b.resting });
     // a carrier re-folding the log agrees with the rest the authority wrote where the ball crossed the edge, still flying
     const fold = simFold(w.entries, 1e15, { models: {} });   // the catalogue openLive gave this world's engine (none)
-    ok(!fold.checks.disagree.length && fold.checks.agree >= 1, `${name} a carrier re-folding the log agrees with the lost ball's rest`, fold.checks);
+    ok(!fold.checks.disagree.length && fold.checks.agree >= 1, `T8 ${name} a carrier re-folding the log agrees with the lost ball's rest`, fold.checks);
   }
 }
 

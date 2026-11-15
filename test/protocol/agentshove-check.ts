@@ -130,7 +130,7 @@ try {
   // AS4
   { const m0 = await call("move", { to: [18, 0] }); ok(!m0.isError, "(AS4 setup) the agent stands south of the locked crate", T(m0));
     const w = await call("move", { to: [18, 4] }); await sleep(800);
-    ok(anyPunt("locked").length === 0, "AS4 a locked crate in the path: no punt (not even a refused one)", anyPunt("locked").map((e) => e.body)); }
+    ok(anyPunt("locked").length === 0, "AS4 a locked crate in the path: no punt in the log (a refused contact punt is counted, not written)", anyPunt("locked").map((e) => e.body)); }
   // AS5
   { const r = await mk("fixed", { model: "test/tallcrate.glb", components: { transform: { pos: [-6, 0, 2], q: [0, 0, 0, 1], scale: [1, 1, 1] }, physics: { kind: "static" } } });
     ok(r.ok, "(AS5 setup) a static tall crate", r);

@@ -402,7 +402,7 @@ console.log('\nanatomy under yaw (limits, axes, mass — swept N/E/S/W):');
   check('flex axes turn with the body (yaw-equivariant)', none('flex'), few(bad.flex));
   check('flex axes are perpendicular to their bone', none('perp'), few(bad.perp));
   check('the trunk carries a trunk\'s share of the mass', none('mass'), few(bad.mass));
-  check('no joint limit is ever HELD in violation (>20° for >0.5s)', none('over'), few(bad.over));
+  check('no joint limit is ever HELD in violation (>34° for >1s)', none('over'), few(bad.over));
   check('...and that limit gate is not vacuous', overSamples > 10000, `${overSamples} samples`);
 }
 

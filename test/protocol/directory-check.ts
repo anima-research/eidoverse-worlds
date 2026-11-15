@@ -653,7 +653,7 @@ fs.rmSync(tmp, { recursive: true, force: true });
   // shared/protocol's mintId is the entity-id minter (ids.js), another function with the same name
   const MINT = ["server/directory.ts", "shared/protocol/ids.js", "shared/protocol/authority.js", "shared/protocol/authority/writes.js", "tools/migrate-identities.ts"];
   ok(standIns.length > 0 && standIns.every((f) => STAND_IN.includes(f)) && mints.length > 0 && mints.every((f) => MINT.includes(f)),
-    "D40 a stand-in (kind \"imported\") is made only by the directory, the old-world translator and the legacy migration; mintId is called only by the directory (and the entity minter): the translator derives its ids, so the dry run and the apply agree", { standIns: [...new Set(standIns)], mints: [...new Set(mints)] });
+    "D40 a stand-in (kind \"imported\") is made only by the directory, the old-world translator and the legacy migration; mintId is called only by the directory, the legacy migration (and the entity minter): the translator derives its ids, so the dry run and the apply agree", { standIns: [...new Set(standIns)], mints: [...new Set(mints)] });
   ok(isMinted("u-" + "a".repeat(20)) && !isMinted("w-" + "a".repeat(20)) && !isMinted("u-imported-" + "a".repeat(11)) && !isMinted("u-" + "a".repeat(21)),
     "D40b one id shape, u- and 20 base32 characters: nothing in it says a world, a name or a kind"); }
 

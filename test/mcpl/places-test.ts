@@ -98,7 +98,7 @@ try {
     /tower\/entrance \(\d+\.\d m, floor -?\d+\.\d\d m\)/.test(sightLine), sightLine);
   check("...but not a room behind walls (the upper room is out of sight from the front lawn)", !/tower\/upstairs/.test(sightLine), sightLine);
   const all = await tool("move", { to: "?" });
-  check("move {to: \"?\"} lists every named place, seen or not, and moves nothing",
+  check("move {to: \"?\"} lists the named places, seen or not (up to 200), and moves nothing",
     /tower\/upstairs "the upper room"/.test(all) && /tower\/hall "the hall"/.test(all) && /tower\/front_door/.test(all) && near(a.pos.z, 7, 0.05), all);
   check("...move's to: \"?\" too (walk_to's words)", /tower\/upstairs/.test(await tool("move", walkWords({ to: "?" }))));
 

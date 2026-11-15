@@ -74,7 +74,7 @@ console.log('\nT8 (partial) -- the leaf period; render periods not yet measurabl
 }
 
 // ---------------------------------------------------------------- polar / T2
-console.log('\nT2 (partial) -- the polar is honest; no glide_to verb yet');
+console.log('\nT2 (partial) -- the polar is honest; glide_to is not driven here');
 {
   const cfg = makeConfig();
   const p = cfg.polar;
@@ -221,7 +221,7 @@ console.log('\nRECOVERY -- the beat is finished, not cut off');
 }
 
 // ---------------------------------------------------------------- T3: stamina
-console.log('\nT3 (partial) -- stamina rates; no climb_to or winded glide yet');
+console.log('\nT3 (partial) -- stamina rates; climb_to and the winded glide are not driven here');
 {
   const cfg = makeConfig();
   check('climb costs 1/m', cfg.stamina.climbPerMetre === 1);

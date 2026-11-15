@@ -112,7 +112,7 @@ await tryRow('MO', async () => {
     { seq: 4, ts: 5, actor: 'ann', verb: 'comp', args: { id: 'mill', type: 'motion', data: { type: 'spin', part: 'sails', degPerSec: 20 } } },
     { seq: 5, ts: 6, actor: 'ann', verb: 'comp', args: { id: 'mill', type: 'collider', data: { shape: 'exact' } } }];
   const t = translate(old); const f = t.final.translated;
-  check('MO10 translate-v1@12 repairs as the maintenance repair does: amp, vector axis, the readings, the pivot', JSON.stringify(f.bell?.motion) === '{"type":"pendulum","axis":[0,0,1],"amp":0.2,"period":3.5,"damp":0,"maxAmp":1.1}' && JSON.stringify(f.bell?.pivot) === '{"pos":[0,2,0]}', f.bell);
+  check('MO10 translate-v1@12 repairs an old motion: amp, vector axis, the readings, the pivot', JSON.stringify(f.bell?.motion) === '{"type":"pendulum","axis":[0,0,1],"amp":0.2,"period":3.5,"damp":0,"maxAmp":1.1}' && JSON.stringify(f.bell?.pivot) === '{"pos":[0,2,0]}', f.bell);
   check('MO10 …a part\'s motion under its key, collider mesh; 0 divergences', JSON.stringify(f.mill?.['motion:sails']) === '{"type":"spin","degPerSec":20,"node":"sails"}' && !f.mill?.motion && f.mill?.collider?.shape === 'mesh' && !t.stats.divergences, [f.mill, t.stats.divergences]);
 });
 

@@ -286,7 +286,7 @@ const cases: Case[] = [
       return { u1: show(u1), mem: show(mem), stub: show(stub), after1, readback: D.readback ? [D.readback(s.w(), uSeq), D.readback(w, uSeq)] : "absent" }; },
     good: (o) => o.u1 === "ok" && !/CRASH/.test(o.mem) && !/CRASH/.test(o.stub) && Array.isArray(o.readback) && o.readback[0] === null && o.readback[1] === null },
   // ---------------- G: refusal codes ----------------
-  { id: "G1", what: "every code the authority refuses with is registered (REFUSAL_CODES: code, meaning, when), every registered code is used, and no request in this suite met an unregistered one", run: () => ({}), good: () => false },
+  { id: "G1", what: "every code the authority refuses with is registered (REFUSAL_CODES: code, meaning, when), every registered code not marked reserved is used, and no request in this suite met an unregistered one", run: () => ({}), good: () => false },
   // ---------------- V: verbs ----------------
   { id: "V1", what: "every verb the authority answers has a VERBSPEC row (names and types; help is generated from it)", run() {
       const names = D.VERB_NAMES ?? []; const V = (globalThis as any).__VS?.VERBSPEC ?? {};

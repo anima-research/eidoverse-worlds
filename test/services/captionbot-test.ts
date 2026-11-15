@@ -156,7 +156,7 @@ console.log('— E. the framer —');
   tap.attach({ onPcm: (f) => { frames++; bytes += f.length; } });
   const f = framer(tap);
   f.write(Buffer.alloc(1000)); f.write(Buffer.alloc(1000)); f.end();
-  check('2000 bytes → 3 frames of 640 (the tail padded, never dropped)', frames === 4 && bytes === 4 * 640, `${frames} frames, ${bytes} bytes`);
+  check('2000 bytes → 4 frames of 640 (3 full, the tail padded, never dropped)', frames === 4 && bytes === 4 * 640, `${frames} frames, ${bytes} bytes`);
   check('media time counts the samples fed', Math.abs(tap.mediaTime - 4 * 0.02) < 1e-9, String(tap.mediaTime));
 }
 

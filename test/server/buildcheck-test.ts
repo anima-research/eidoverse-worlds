@@ -76,7 +76,7 @@ try {
   check("a 2.8m hut: under the walk-in size — a solid box unless it's given collider {shape: \"mesh\"}",
     kinds(hut).includes("solid") && /collider \{shape: "mesh"\}/.test(say(hut)) && hut.walkIn.roomScale === false, say(hut));
 
-  check("...and its raised floor, a solid plinth 0.8m up, is a floor — not furniture", rise.levels.some((l: any) => Math.abs(l.y - RAISED) < 0.1), JSON.stringify(rise.levels));
+  check(`...and its raised floor, a solid plinth ${RAISED}m up, is a floor — not furniture`, rise.levels.some((l: any) => Math.abs(l.y - RAISED) < 0.1), JSON.stringify(rise.levels));
 
   console.log("\nwhat is not a floor, and what is:");
   // a 2×2m table 0.75m up in the hall, room above it: furniture, no floor

@@ -45,7 +45,7 @@ function fold(entries: LogEntry[]) {
   return { st, sim };
 }
 
-console.log("\nthe sim fold (shared/sim.js) — " + SIM_ID);
+console.log("\nthe sim fold (tools/import-v1/eidosim-v1.js) — " + SIM_ID);
 
 { // quantization
   const { sim } = fold(SCRIPT.slice(0, 2));

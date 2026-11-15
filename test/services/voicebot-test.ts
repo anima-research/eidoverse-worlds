@@ -50,7 +50,7 @@ await tryUntil("alice's line reaches the synth step", () => /no voice for "alice
 await pause("a window for bob's line to (wrongly) reach it too", 400);
 
 console.log("\nvoicebot — hearing a world (DRY_RUN)\n");
-check("the bot joins as a spectator that folds the log", /watching world "commons" as spectator/.test(out), out.slice(-300));
+check("the bot joins as a replica spectator", /watching world "commons" as spectator/.test(out), out.slice(-300));
 check("a configured speaker's live line reaches the synth step, by display name", (out.match(/no voice for "alice"/g) ?? []).length === 1, out.slice(-400));
 // the skip line names the text under DRY_RUN, so a pre-join line reaching synth WOULD print "(history)" — alice's live text proves the detector
 check("the snapshot carries no recent lines (speech is arrival-only)", /\(0 recent lines skipped/.test(out), out.slice(-300));
