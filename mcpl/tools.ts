@@ -26,6 +26,10 @@ import { rigBonesFor } from "./rigbones.ts";
 /** How long the door waits on one world-server read before the tool answers as failed (a hung server never holds a turn). */
 export const HTTP_READ_MS = 10_000;
 const READ = () => ({ signal: AbortSignal.timeout(HTTP_READ_MS) });
+/** A failed world-server read in words: AbortSignal.timeout's own message is a bare "The operation timed out." */
+const readWhy = (e: unknown, what: string) => (e as Error)?.name === "TimeoutError"
+  ? `the world's server didn't send ${what} within ${HTTP_READ_MS / 1000} s; calling again may work`
+  : `couldn't read ${what} from the world's server (${(e as Error)?.message || "no reason given"}); calling again may work`;
 import { CONTACT_POINTS, canonicalPoint } from "../shared/contact.js";
 import { inspectSchema, editOps, describeSchema } from "../shared/editschema.js";
 import * as OP from "../shared/requests.js";
@@ -538,7 +542,9 @@ export const HANDLERS: Record<string, ToolHandler> = {
     return await screenshotTool(ag, typeof a.view === "string" ? a.view : "first", at,
     typeof a.renderer === "string" ? a.renderer : "auto", { dist: a.dist, height: a.height, pitch: a.pitch }); },
   set_avatar: async (ag, a, ctx, name) => {
-      const roster = (await (await fetch(`${ag.httpBase}/avatars`, READ())).json()) as { name: string; path: string }[];
+      let roster: { name: string; path: string }[];
+      try { roster = await (await fetch(`${ag.httpBase}/avatars`, READ())).json(); }
+      catch (e) { return fail(`set_avatar: ${readWhy(e, "the avatar roster")}. You're still wearing your current body.`); }
       const want = String(a.avatar ?? "").trim();
       if (!want) return text(`bodies on the roster: ${roster.map((r) => r.name).join(", ")}`);
       const path = want.includes("/") ? want : roster.find((r) => r.name === want)?.path;
@@ -619,7 +625,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const kind = a.kind === "models" ? "models" : "avatars";
       const page = Math.max(1, Math.floor(Number(a.page) || 1));
       let items: { name: string; url: string | null; h?: number | null }[];
-      if (kind === "avatars") {
+      try { if (kind === "avatars") {
         const roster = (await (await fetch(`${ag.httpBase}/avatars`, READ())).json()) as { name: string; height?: number | null }[];
         items = roster.map((r) => ({ name: r.name, url: `${ag.httpBase}/thumb/${encodeURIComponent(r.name)}.png`, h: r.height ?? null }));
       } else {
@@ -630,7 +636,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
           name: h.path.startsWith("store/") ? h.name : h.path.split("/").pop()!.replace(/\.glb$/i, ""),
           url: h.preview ? `${ag.httpBase}/library/${h.preview}` : null,
         }));
-      }
+      } } catch (e) { return fail(`library: ${readWhy(e, kind === "avatars" ? "the avatar roster" : "the model list")}`); }
       const pages = Math.max(1, Math.ceil(items.length / SHEET.perPage));
       const slice = items.slice((page - 1) * SHEET.perPage, page * SHEET.perPage);
       // A page past the end asked for something that isn't there. An empty

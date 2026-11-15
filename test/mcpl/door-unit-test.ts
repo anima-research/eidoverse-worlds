@@ -237,8 +237,12 @@ for (const [status, err] of [["ran", false], ["nothing", false], ["would-run", f
   const hung = Bun.serve({ port: 0, fetch: () => new Promise<Response>(() => {}) });
   const ag: any = { httpBase: `http://127.0.0.1:${hung.port}`, readHeaders: {} };
   const t0 = Date.now();
-  const out: any = await Promise.race([handleTool({ agent: ag } as any, "set_avatar", { avatar: "x" }), pause("the hang guard: past the read bound and its slack, the tool hung", HTTP_READ_MS + 5_000).then(() => "hung")]);
+  const call = (name: string, args: any) => Promise.race([handleTool({ agent: ag } as any, name, args), pause(`the hang guard: past the read bound and its slack, ${name} hung`, HTTP_READ_MS + 5_000).then(() => "hung")]);
+  const [out, sheet, models]: any[] = await Promise.all([call("set_avatar", { avatar: "x" }), call("library", { kind: "avatars" }), call("library", { kind: "models" })]);
   ok(Number.isFinite(HTTP_READ_MS) && out !== "hung" && out.isError && Date.now() - t0 < HTTP_READ_MS + 5_000, "a world server that never answers: set_avatar fails within the read bound, it doesn't hang", out);
+  // the timeout is said in words, not as AbortSignal's bare "The operation timed out."
+  const said = (o: any) => o !== "hung" && o?.isError && /didn't send .* within \d+ s/.test(o.content?.[0]?.text ?? "") && !/operation timed out/i.test(o.content?.[0]?.text ?? "");
+  ok(said(out) && said(sheet) && said(models), "…and set_avatar and the library's sheets say the server didn't answer in time, and that a retry may work", [out, sheet, models].map((o) => o?.content?.[0]?.text ?? o));
   hung.stop(true); }
 
 console.log(`door-unit-test: ${fails ? `${fails} failed` : "all ok"}`); process.exit(fails ? 1 : 0);
