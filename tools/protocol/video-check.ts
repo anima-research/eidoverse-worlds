@@ -25,7 +25,7 @@ import { LAB_CATALOGUE, MODELS as LAB_MODELS } from "./labmodels.js";
 
 const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
-const BASE = "f3cc7ca6";   // main with #260 merged (11-07), where video is still reserved; restacked from 9d60447f
+const BASE = "f91058158";   // main (#323, 11-14), the base this branch is rebased on, where video is still reserved; restacked from f3cc7ca6
 
 // [name, file, find, replace, cases that must turn red]
 const MUTANTS: [string, string, string, string, string[]][] = [
