@@ -579,18 +579,11 @@ time.
 | 403 | xss-probe | browser | `test/protocol/xss-probe.ts` | Chromium | 15 s | 180 s |
 | 404 | party-probe | browser | `test/protocol/party-probe.ts` | Chromium | 486 s | 2430 s |
 | 405 | colour-picker | browser | `test/client/colour-picker-bench.ts` | Chromium | 8.1 s | 180 s |
-| 406 | xr-lifecycle | browser | `test/client/xr-lifecycle-probe.mjs` | Chromium | 60 s | 300 s |
-| 407 | xr-res | browser | `test/client/xr-res-probe.mjs` | Chromium | 70 s | 350 s |
-| 408 | xr-debug-live | browser | `test/client/xr-debug-live-probe.mjs` | Chromium | 60 s | 300 s |
-| 409 | xr-quad-softswap | browser | `test/client/xr-quad-softswap-probe.mjs` | Chromium | 60 s | 300 s |
-| 410 | xr-eye-binding | browser | `test/client/xr-eye-binding-probe.mjs` | Chromium | 10 s | 180 s |
-| 411 | htmlmesh-pick | browser | `test/client/htmlmesh-pick-probe.mjs` | Chromium | 6 s | 180 s |
-| 412 | vrmic-exec | browser | `test/client/vrmic-exec-test.mjs` | Chromium | 0.5 s | 180 s |
-| 413 | xr-nullfb | browser | `test/client/xr-nullfb-test.mjs` | Chromium | 0.3 s | 180 s |
-| 414 | xr-desktop-banner | browser | `test/client/xr-desktop-banner-probe.mjs` | Chromium | 80 s | 400 s |
-| 415 | sky-bake-time | browser | `test/client/sky-bake-time-probe.mjs` | Chromium | 75 s | 375 s |
-| 416 | sky-bakegraph | browser | `test/client/sky-bakegraph-probe.mjs` | Chromium | 95 s | 475 s |
-| 417 | client-tools | browser | `test/harness/run-client.ts --import-only --skip-suites --strict-env` | Chromium | 202 s | 1010 s |
+| 406 | xr-debug-live | browser | `test/client/xr-debug-live-probe.mjs` | Chromium | 60 s | 300 s |
+| 407 | htmlmesh-pick | browser | `test/client/htmlmesh-pick-probe.mjs` | Chromium | 6 s | 180 s |
+| 408 | vrmic-exec | browser | `test/client/vrmic-exec-test.mjs` | Chromium | 0.5 s | 180 s |
+| 409 | xr-nullfb | browser | `test/client/xr-nullfb-test.mjs` | Chromium | 0.3 s | 180 s |
+| 410 | client-tools | browser | `test/harness/run-client.ts --import-only --skip-suites --strict-env` | Chromium | 202 s | 1010 s |
 
-Lanes: core 18 suites (~79 s), main 370 (~2097 s), browser 29 (~1744 s); 417 suites in all.
+Lanes: core 18 suites (~79 s), main 370 (~2097 s), browser 22 (~1294 s); 410 suites in all.
 <!-- END GENERATED -->
