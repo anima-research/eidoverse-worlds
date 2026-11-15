@@ -93,7 +93,7 @@ console.log("NATIVE LOGIN — over a real server's HTTP + WS");
     HOST: "127.0.0.1", PORT: String(port), JOIN_TOKEN: "native-test-door", WORLDS_DIR: join(scratch, "worlds"),
     OPT_DIR: join(scratch, "opt"), RELAY_STATE_DIR: join(scratch, "opt"), SKIP_OPT_SWEEP: "1", RECORD_FRAMES: "0",
     HN_SESSIONS_FILE: join(scratch, "sessions.json"), AGENT_TOKENS_PATH: join(scratch, "tokens.json"),
-    HN_ISSUER_KEY: issuer, HN_ISS: "id.test", HN_AUD: "eidoverse", HN_NATIVE_ORIGIN: "", HN_REQUIRE_LOGIN: "0",   // unset, as a self-hoster runs it: the pairing page is the request's own origin
+    HN_ISSUER_KEY: issuer, HN_ISS: "id.test", HN_AUD: "eidoverse", HN_NATIVE_ORIGIN: origin, HN_REQUIRE_LOGIN: "0",   // a local server sets its exact origin (docs/operator/NATIVE-LOGIN.md)
   }, stdout: "ignore", stderr: "pipe" });
   const sockets: WebSocket[] = [];
   const post = (path: string, body: object, headers: Record<string, string> = {}) =>
@@ -123,7 +123,7 @@ console.log("NATIVE LOGIN — over a real server's HTTP + WS");
     const p = await (await post("/native/start", {})).json();
     check("W3a a poll before approval is pending (202)", (await post("/native/poll", { device_code: p.device_code })).status === 202);
     const foreign = await post("/native/approve", { user_code: p.user_code }, { cookie: browser, origin: "https://evil.test" });
-    check("W3b approval from a foreign Origin is refused on the real route (HN_NATIVE_ORIGIN unset)", foreign.status === 403, foreign.status);
+    check("W3b approval from a foreign Origin is refused on the real route ", foreign.status === 403, foreign.status);
     const approved = await post("/native/approve", { user_code: p.user_code }, { cookie: browser, origin });
     check("W3 approval through auth.ts's real session store: 200, and it sets no cookie on the browser", approved.status === 200 && approved.headers.get("set-cookie") === null, approved.status);
     await pause("the poll interval: a poll inside 2 s of the last is a 429", 2100);

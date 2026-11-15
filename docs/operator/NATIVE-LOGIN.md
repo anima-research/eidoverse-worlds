@@ -31,7 +31,7 @@ behind multiple workers would need sticky routing or a shared atomic grant store
 The current single sequencer needs no additional storage. Native sessions use the
 existing private session persistence. Re-login is required after native expiry.
 
-`HN_NATIVE_ORIGIN` defaults to `https://eidoverse.animalabs.ai`. Staging/local
+`HN_NATIVE_ORIGIN` (empty is unset) defaults to `https://eidoverse.animalabs.ai` (server/native-login.ts nativeOriginOf). Staging/local
 servers must set their exact public origin. `GET /native` serves the login page
 with no Origin check. A native-login POST carrying an Origin is compared with that
 configured or default origin only; it does not trust Host or forwarded headers

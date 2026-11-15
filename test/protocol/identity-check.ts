@@ -120,7 +120,10 @@ for (const v of ["SERVER_OPERATORS", "WORLD_ADMIN"]) { const s = await start({ [
 { const { ownOrigin } = await import("../../server/auth.ts"), was = process.env.HN_NATIVE_ORIGIN, req = new Request("http://self.test:8940/native/approve", { headers: { host: "self.test:8940" } });
   process.env.HN_NATIVE_ORIGIN = ""; const unset = ownOrigin(req); process.env.HN_NATIVE_ORIGIN = "https://x.test"; const set = ownOrigin(req);
   if (was === undefined) delete process.env.HN_NATIVE_ORIGIN; else process.env.HN_NATIVE_ORIGIN = was;
-  ok(unset === "http://self.test:8940" && set === "https://x.test", "C3n an empty HN_NATIVE_ORIGIN means the request's own origin (one reader: auth.ts ownOrigin)", { unset, set }); }
+  ok(unset === "http://self.test:8940" && set === "https://x.test", "C3n an empty HN_NATIVE_ORIGIN means the request's own origin for the socket guard (auth.ts ownOrigin)", { unset, set });
+  const { nativeOriginOf } = await import("../../server/native-login.ts"), routes = fs.readFileSync(new URL("../../server/routes.ts", import.meta.url), "utf8");
+  ok(nativeOriginOf("") === "https://eidoverse.animalabs.ai" && nativeOriginOf(undefined) === nativeOriginOf("") && nativeOriginOf("http://x.test") === "http://x.test" && /origin: nativeOriginOf\(\),/.test(routes),
+    "C3n the native pairing page defaults to the public show's origin, unset or empty, as main did (routes pass nativeOriginOf())", nativeOriginOf("")); }
 // C3m (R 10-27): SERVER_OPERATORS is the variable; WORLD_ADMIN is still read for one release, merged in, with one deprecation line
 { const ops = (e) => { const r = Bun.spawnSync(["bun", "-e", `const m = await import("./server/operators.ts"); console.log(JSON.stringify([...m.OPERATORS].sort()))`],
     { cwd: ENGINE, env: env(e) }); return { set: r.stdout.toString().trim().split("\n").pop(), err: r.stderr.toString() + r.stdout.toString() }; };

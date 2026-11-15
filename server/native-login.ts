@@ -4,10 +4,12 @@ import type { HnSession } from "./auth.ts";
 import { readCapped } from "./request-body.ts";
 
 // A session issued to a native client: `native`, or `nativeWorld` on an older pairing (auth.ts). It may not approve another pairing. Kept here, so loading the handler runs nothing of auth.ts.
+/** The pairing page's one origin: HN_NATIVE_ORIGIN (empty is unset, as auth.ts reads it), else the public show's. */
+export const nativeOriginOf = (v: string | undefined = process.env.HN_NATIVE_ORIGIN) => v || "https://eidoverse.animalabs.ai";
 export const isNativeSession = (s: HnSession) => s.native === true || s.nativeWorld !== undefined;
 
 type Options = {
-  /** This server's public origin for a request (routes pass auth.ts ownOrigin, so both doors agree). */
+  /** This server's public origin, or a reader of it per request (routes pass nativeOriginOf()). */
   origin: string | ((req: Request) => string); login: string; enabled: boolean;
   session(cookie: string | null): HnSession | null;
   issue(session: HnSession): string;
