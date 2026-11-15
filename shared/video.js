@@ -73,6 +73,19 @@ const KNOWN_KEYS = new Set(['source', 'volume', 'near', 'radius', 'spatial', 'wi
 export const SOURCE_STATES = Object.freeze(['offline', 'live', 'ended', 'unknown']);
 /** What a viewer's own player can say (the PLAYBACK state), from local evidence only. */
 export const PLAYBACK_STATES = Object.freeze(['connecting', 'buffering', 'playing', 'stalled', 'error', 'blocked']);
+/** One offer per viewer per this long, at the sequencer (server/videosources.ts); the browser paces its offers to it. */
+export const OFFER_GAP_MS = 2_000;
+/** What a viewer does after the sequencer refuses its offer or closes its session, by the refusal's code, never by its
+ *  words (#332 review 3): `never` retries nothing (the screen's own state changed, or this viewer may not watch);
+ *  `after` waits the retryAfterMs it was given; `later` backs off and tries again; `source` waits for the source to come
+ *  back (admitted again, or no longer ended) in the sequencer's video-state frames, then tries again (review 9). */
+export const VIDEO_REFUSALS = Object.freeze({
+  spectator: 'never', malformed: 'never', 'no-video': 'never', changed: 'never', replaced: 'never', 'viewer-left': 'never', 'closed-by-viewer': 'never',
+  'too-soon': 'after', cap: 'later', unreachable: 'later', 'not-publishing': 'later', refused: 'later',
+  'not-admitted': 'source', ended: 'source', revoked: 'source',
+});
+/** The retry a code asks for; an unknown or missing code backs off, as a failed connection does. */
+export const refusalRetry = (code) => (typeof code === 'string' && Object.hasOwn(VIDEO_REFUSALS, code) ? VIDEO_REFUSALS[code] : 'later');
 /** An observation older than this is no longer an observation: look says "unknown" and how stale it was. */
 export const SOURCE_STATE_FRESH_MS = 30_000;
 

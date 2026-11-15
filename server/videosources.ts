@@ -33,10 +33,10 @@
 
 import { readFileSync, statSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { admitVideoSources, noteSourceState, forgetSourceState, sourceStateOf, VIDEO_SOURCE_ID, SOURCE_STATES } from "../shared/video.js";
+import { admitVideoSources, noteSourceState, forgetSourceState, sourceStateOf, VIDEO_SOURCE_ID, SOURCE_STATES, OFFER_GAP_MS } from "../shared/video.js";
 
 export const VIEWER_SESSION_CAP = 4;
-export const OFFER_GAP_MS = 2_000;
+export { OFFER_GAP_MS };
 export const POLL_MS = 5_000;
 export const SWEEP_MS = 1_000;
 export const APPLIANCE_TIMEOUT_MS = 5_000;
@@ -81,7 +81,7 @@ export function installSources(list: Source[]): { admitted: string[]; revoked: s
   SOURCES.clear(); for (const s of list) SOURCES.set(s.id, s);
   const { admitted } = admitVideoSources([...SOURCES.keys()]);
   const revoked = [...before].filter((id) => !SOURCES.has(id));
-  for (const id of revoked) { forgetSourceState(id); LAST_BYTES.delete(id); for (const s of [...SESSIONS.values()]) if (s.source === id) void closeSession(s, "the operator revoked this source"); }
+  for (const id of revoked) { forgetSourceState(id); LAST_BYTES.delete(id); for (const s of [...SESSIONS.values()]) if (s.source === id) void closeSession(s, "the operator revoked this source", "revoked"); }
   for (const s of SOURCES.values()) if (s.ended) noteSourceState(s.id, { state: "ended", at: Date.now() });
   return { admitted, revoked };
 }
@@ -137,55 +137,58 @@ export function stateFrame(now = Date.now()) {
 const videoOf = (world: any, entity: string): any => world?.state?.entities?.[entity]?.video;
 const boundOf = (world: any, entity: string): string | null => { const v = videoOf(world, entity); return v && typeof v === "object" && typeof v.source === "string" ? JSON.stringify([v.source]) : null; };
 
-async function closeSession(s: Session, why: string): Promise<void> {
+async function closeSession(s: Session, why: string, code: string): Promise<void> {
   if (!SESSIONS.delete(s.id)) return;
-  try { s.client?.ws?.send(JSON.stringify({ type: "video-closed", session: s.id, id: s.entity, why })); } catch { /* gone */ }
+  try { s.client?.ws?.send(JSON.stringify({ type: "video-closed", session: s.id, id: s.entity, why, code })); } catch { /* gone */ }
   if (s.resource) { try { await fetch(s.resource, { method: "DELETE", headers: s.auth ? { authorization: s.auth } : {}, signal: AbortSignal.timeout(APPLIANCE_TIMEOUT_MS) }); } catch { /* the appliance reaps it */ } }
 }
 
 /** A viewer's offer for the screen on `entity`: refusals say why in words, never naming the endpoint. */
 export async function offer(c: any, msg: any, now = Date.now()): Promise<object> {
   const req = typeof msg?.req === "string" ? msg.req.slice(0, 64) : null;
-  const no = (why: string) => ({ type: "video-error", req, id: typeof msg?.id === "string" ? msg.id.slice(0, 128) : null, why });
-  if (!c?.world || c.spectator) return no("only someone in this world can watch its screens");
+  // a refusal's code is what a viewer decides retrying by (shared/video.js VIDEO_REFUSALS); its words are for people
+  const no = (why: string, code: string, extra: object = {}) => ({ type: "video-error", req, id: typeof msg?.id === "string" ? msg.id.slice(0, 128) : null, why, code, ...extra });
+  if (!c?.world || c.spectator) return no("only someone in this world can watch its screens", "spectator");
   const last = LAST_OFFER.get(c) ?? -Infinity;
-  if (now - last < OFFER_GAP_MS) return no(`too soon: one offer every ${OFFER_GAP_MS / 1000} s`);
+  if (now - last < OFFER_GAP_MS) return no(`too soon: one offer every ${OFFER_GAP_MS / 1000} s`, "too-soon", { retryAfterMs: Math.ceil(OFFER_GAP_MS - (now - last)) });
   LAST_OFFER.set(c, now);
-  if (typeof msg.id !== "string" || typeof msg.sdp !== "string" || !msg.sdp || msg.sdp.length > SDP_MAX) return no("video-offer is {id, sdp, req?}: the screen's thing and an SDP offer");
+  if (typeof msg.id !== "string" || typeof msg.sdp !== "string" || !msg.sdp || msg.sdp.length > SDP_MAX) return no("video-offer is {id, sdp, req?}: the screen's thing and an SDP offer", "malformed");
   const v = videoOf(c.world, msg.id);
-  if (!v || typeof v !== "object") return no(`${msg.id} has no video`);
+  if (!v || typeof v !== "object") return no(`${msg.id} has no video`, "no-video");
   const src = SOURCES.get(v.source);
-  if (!src) return no(`the source '${String(v.source).slice(0, 40)}' isn't admitted on this server`);
-  if (src.ended) return no(`the source '${src.id}' has ended`);
+  if (!src) return no(`the source '${String(v.source).slice(0, 40)}' isn't admitted on this server`, "not-admitted");
+  if (src.ended) return no(`the source '${src.id}' has ended`, "ended");
   let inFlight = IN_FLIGHT.get(c); if (!inFlight) IN_FLIGHT.set(c, inFlight = new Map());
   // screens this viewer holds or is connecting, the one offered aside (a new offer replaces its own screen's session)
   const screens = new Set([...SESSIONS.values()].filter((s) => s.client === c).map((s) => s.entity));
   for (const e of inFlight.keys()) screens.add(e);
   screens.delete(msg.id);
-  if (screens.size >= VIEWER_SESSION_CAP) return no(`at most ${VIEWER_SESSION_CAP} screens at once`);
+  if (screens.size >= VIEWER_SESSION_CAP) return no(`at most ${VIEWER_SESSION_CAP} screens at once`, "cap");
   const token = randomUUID(); inFlight.set(msg.id, token);
   try { return await connect(c, msg, src, token, inFlight, no); }
   finally { if (inFlight.get(msg.id) === token) inFlight.delete(msg.id); }
 }
 
-async function connect(c: any, msg: any, src: Source, token: string, inFlight: Map<string, string>, no: (why: string) => object): Promise<object> {
+async function connect(c: any, msg: any, src: Source, token: string, inFlight: Map<string, string>, no: (why: string, code: string) => object): Promise<object> {
   const req = typeof msg?.req === "string" ? msg.req.slice(0, 64) : null;
   const bound = boundOf(c.world, msg.id)!;
   let r: Response;
   try { r = await fetch(src.whep, { method: "POST", headers: { "content-type": "application/sdp", ...(basic(src) ? { authorization: basic(src)! } : {}) }, body: msg.sdp, signal: AbortSignal.timeout(APPLIANCE_TIMEOUT_MS) }); }
-  catch { return no("the projector didn't answer"); }
+  catch { return no("the projector didn't answer", "unreachable"); }
   const answer = await r.text().catch(() => "");
-  if (r.status === 404) return no(`the source '${src.id}' isn't publishing`);
-  if (r.status !== 201 || !answer) return no(`the projector refused the offer (${r.status})`);
+  if (r.status === 404) return no(`the source '${src.id}' isn't publishing`, "not-publishing");
+  if (r.status !== 201 || !answer) return no(`the projector refused the offer (${r.status})`, "refused");
   const loc = r.headers.get("location");
   const resource = loc ? new URL(loc, src.whep).toString() : null;
   const s: Session = { id: randomUUID(), resource, source: src.id, world: c.world, entity: msg.id, client: c, bound, auth: basic(src) };
   // the value may have changed, or the viewer gone, while the appliance answered: the sweep would close it, but say so now
-  if (boundOf(c.world, msg.id) !== bound || !c.world.clients?.has?.(c)) { SESSIONS.set(s.id, s); await closeSession(s, "the screen changed while connecting"); return no("the screen changed while connecting"); }
+  if (boundOf(c.world, msg.id) !== bound || !c.world.clients?.has?.(c)) { SESSIONS.set(s.id, s); await closeSession(s, "the screen changed while connecting", "changed"); return no("the screen changed while connecting", "changed"); }
   // a newer offer for this screen was made while this one was at the appliance: its answer will be the one used
-  if (inFlight.get(msg.id) !== token) { SESSIONS.set(s.id, s); await closeSession(s, "replaced by a newer offer"); return no("replaced by a newer offer"); }
-  // one session per viewer per screen: a new one replaces any the viewer still holds there
-  for (const old of [...SESSIONS.values()]) if (old.client === c && old.entity === msg.id) await closeSession(old, "replaced by a newer offer");
+  if (inFlight.get(msg.id) !== token) { SESSIONS.set(s.id, s); await closeSession(s, "replaced by a newer offer", "replaced"); return no("replaced by a newer offer", "replaced"); }
+  // one session per viewer per screen: a new one replaces any the viewer still holds there. Recorded before anything is
+  // awaited: closeSession takes the old one out of SESSIONS at once and only then DELETEs it at the appliance, and a
+  // newer offer that lands during that DELETE must find this session to replace, not record beside it (#332 review 2)
+  for (const old of [...SESSIONS.values()]) if (old.client === c && old.entity === msg.id) void closeSession(old, "replaced by a newer offer", "replaced");
   SESSIONS.set(s.id, s);
   return { type: "video-answer", req, id: msg.id, session: s.id, sdp: answer };
 }
@@ -193,15 +196,15 @@ async function connect(c: any, msg: any, src: Source, token: string, inFlight: M
 /** A viewer closes its own session. */
 export async function close(c: any, msg: any): Promise<void> {
   const s = typeof msg?.session === "string" ? SESSIONS.get(msg.session) : undefined;
-  if (s && s.client === c) await closeSession(s, "closed by the viewer");
+  if (s && s.client === c) await closeSession(s, "closed by the viewer", "closed-by-viewer");
 }
 
 /** Close every session whose binding no longer holds: its viewer left, or its screen's video changed or came down. */
 export async function sweep(): Promise<void> {
   for (const s of [...SESSIONS.values()]) {
-    if (!s.world?.clients?.has?.(s.client) || s.client.world !== s.world) await closeSession(s, "the viewer left");
-    else if (boundOf(s.world, s.entity) !== s.bound) await closeSession(s, "the screen's video changed");
-    else if (!SOURCES.has(s.source)) await closeSession(s, "the operator revoked this source");
+    if (!s.world?.clients?.has?.(s.client) || s.client.world !== s.world) await closeSession(s, "the viewer left", "viewer-left");
+    else if (boundOf(s.world, s.entity) !== s.bound) await closeSession(s, "the screen's video changed", "changed");
+    else if (!SOURCES.has(s.source)) await closeSession(s, "the operator revoked this source", "revoked");
   }
 }
 export const sessionCount = (c?: any) => (c ? [...SESSIONS.values()].filter((s) => s.client === c).length : SESSIONS.size);
