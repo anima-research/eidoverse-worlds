@@ -11,7 +11,7 @@
 // DESCRIPTION: the author's ≤200-char `description` is what look() carries for text-tier readers. Nothing about pixels is claimed.
 
 import { mediaTier } from './mediasrc.js';
-import { graphemes, quoted } from './text.js';
+import { graphemes, graphemeList, quoted } from './text.js';
 
 export const PICTURE_DIR = 'eidoverse/assets/';
 export const PICTURE_STORE = 'store/images/';
@@ -41,8 +41,9 @@ export function allowedPictureSrc(src) {
   return true;
 }
 
-/** Validate an authored bag: {ok: false, why} or {ok: true, picture, tier, notes} (notes for anything coerced). */
-export function normalizePicture(data) {
+/** Validate an authored bag: {ok: false, why} or {ok: true, picture, tier, notes} (notes for anything coerced).
+ *  `clip`: a stored bag being read, so an over-long description is clipped with a note, as main did; a write refuses it. */
+export function normalizePicture(data, { clip = false } = {}) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
     return { ok: false, why: 'picture data must be an object {src, width?, description?, lit?}' };
   }
@@ -55,7 +56,9 @@ export function normalizePicture(data) {
   if (data.width !== undefined) { const w = Number(data.width); if (Number.isFinite(w) && w > 0) picture.width = Math.min(PICTURE_MAX_WIDTH, w); else notes.push('width is a number of metres above 0 — using 1'); }
   if (data.description != null) {
     const d = String(data.description).replace(/\s+/g, ' ').trim();
-    if (graphemes(d) > PICTURE_DESCRIPTION_MAX) return { ok: false, why: `description is ${graphemes(d).toLocaleString('en')} characters (at most ${PICTURE_DESCRIPTION_MAX})` };    if (d) picture.description = d;
+    if (graphemes(d) > PICTURE_DESCRIPTION_MAX && !clip) return { ok: false, why: `description is ${graphemes(d).toLocaleString('en')} characters (at most ${PICTURE_DESCRIPTION_MAX})` };
+    if (graphemes(d) > PICTURE_DESCRIPTION_MAX) { notes.push(`description clipped to ${PICTURE_DESCRIPTION_MAX} characters`); picture.description = graphemeList(d).slice(0, PICTURE_DESCRIPTION_MAX).join(''); }
+    else if (d) picture.description = d;
   }
   if (!picture.description) notes.push('no description — anyone who can\'t see it (or reads the world as text) gets only the file name; say what it shows');
   if (data.lit != null) {

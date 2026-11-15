@@ -112,7 +112,7 @@ async function hang(id, picture, rev) {
 function applyFrom(id, data) {
   const rev = bump(id);
   if (data == null) { pending.delete(id); takeDown(id); return; }
-  const norm = normalizePicture(data);
+  const norm = normalizePicture(data, { clip: true });   // stored: an over-long description is clipped, not torn down
   if (!norm.ok) {
     console.warn(`[pictures] ${id}: ${norm.why}`);
     pending.delete(id); takeDown(id);

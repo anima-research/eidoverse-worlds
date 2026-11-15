@@ -233,6 +233,12 @@ await tryRow('DS', async () => {
   const r1 = W.call('set', { id: 'frame', component: 'picture', value: { src: 'store/images/0123456789abcdef.png', description: 'a print' } });
   const r2 = W.call('set', { id: 'radio', component: 'sound', value: { src: 'store/audio/0123456789abcdef.ogg', alt: 'rain' } });
   check('DS4 the door takes description and refuses alt', r1.ok && W.state().entities.frame.c.picture.description === 'a print' && code(r2) === 'schema', [r1.refused, r2.refused]);
+  { // an over-long stored description is clipped on read, as main did (a world written before the cap still shows); a write refuses it
+    const long = 'é'.repeat(250), lp = { src: 'store/images/0123456789abcdef.png', description: long }, ls = { src: 'store/audio/0123456789abcdef.ogg', description: long, t0: 1 };
+    const wp = Pi.normalizePicture(lp), ws = So.normalizeSound(ls), rp = Pi.normalizePicture(lp, { clip: true }), rs = So.normalizeSound(ls, { clip: true });
+    check('DS7 an over-long description: a write refuses it, a read clips it to the cap with a note', !wp.ok && !ws.ok && rp.ok && rp.picture.description === 'é'.repeat(Pi.PICTURE_DESCRIPTION_MAX) && rs.ok && rs.sound.description === 'é'.repeat(So.SOUND_DESCRIPTION_MAX) && rp.notes.some((n) => /clipped/.test(n)) && rs.notes.some((n) => /clipped/.test(n)), [wp, rp.ok && rp.notes, rs.ok && rs.notes]);
+    const src = (f) => read(`client/lib/realize/${f}`);
+    check('DS7 …the realizers read a stored bag that way, so it isn\'t torn down', /function applyFrom[\s\S]{0,200}normalizePicture\(data, \{ clip: true \}\)/.test(src('pictures.js')) && /function applyFrom[\s\S]{0,200}normalizeSound\(data, \{ clip: true \}\)/.test(src('sounds.js'))); }
   const { renameFields } = await import('../../tools/import-v1/shapes.js');
   const rp = renameFields('picture', { src: 'store/images/a.png', alt: 'a print' }), rs = renameFields('sound', { src: 'store/audio/a.ogg', alt: 'rain', description: 'kept' }), rl = renameFields('picture', { src: 'store/images/a.png', look: 'older' });
   check('DS5 repair: a stored alt (or the look before it) is description (one time); description already there wins', rp.value.description === 'a print' && !('alt' in rp.value) && rs.value.description === 'kept' && !('alt' in rs.value) && rl.value.description === 'older' && !('look' in rl.value), [rp, rs, rl]);

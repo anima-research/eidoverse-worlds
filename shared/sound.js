@@ -17,7 +17,7 @@
 // DESCRIPTION: a text-tier resident cannot hear; `description` (≤200 chars) is what look() carries, with playing/paused.
 
 import { mediaTier } from './mediasrc.js';
-import { graphemes, quoted } from './text.js';
+import { graphemes, graphemeList, quoted } from './text.js';
 
 export const SOUND_DIR = 'eidoverse/assets/';
 export const SOUND_STORE = 'store/audio/';
@@ -67,8 +67,8 @@ export function gainAt(d, near = SOUND_DEFAULTS.near, radius = SOUND_DEFAULTS.ra
 }
 
 /** Validate an authored bag. `ok:false` carries WHY; `ok:true` the normalized sound, notes for anything coerced, and
- *  `tier` (shared/mediasrc.js: who may fetch an https src). */
-export function normalizeSound(data) {
+ *  `tier` (shared/mediasrc.js: who may fetch an https src). `clip`: as normalizePicture's. */
+export function normalizeSound(data, { clip = false } = {}) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
     return { ok: false, why: 'sound data must be an object {src, playing?, loop?, volume?, pitch?, near?, radius?, spatial?, t0?, description?}' };
   }
@@ -95,8 +95,9 @@ export function normalizeSound(data) {
   } else if (sound.playing) notes.push('no t0 — the authority stamps one when it starts; without it each client starts from the top');
   if (data.description != null) {
     const d = String(data.description).replace(/\s+/g, ' ').trim();
-    if (graphemes(d) > SOUND_DESCRIPTION_MAX) return { ok: false, why: `description is ${graphemes(d).toLocaleString('en')} characters (at most ${SOUND_DESCRIPTION_MAX})` };
-    if (d) sound.description = d;
+    if (graphemes(d) > SOUND_DESCRIPTION_MAX && !clip) return { ok: false, why: `description is ${graphemes(d).toLocaleString('en')} characters (at most ${SOUND_DESCRIPTION_MAX})` };
+    if (graphemes(d) > SOUND_DESCRIPTION_MAX) { notes.push(`description clipped to ${SOUND_DESCRIPTION_MAX} characters`); sound.description = graphemeList(d).slice(0, SOUND_DESCRIPTION_MAX).join(''); }
+    else if (d) sound.description = d;
   }
   if (!sound.description) notes.push('no description — anyone who can\'t hear it (or reads the world as text) gets only the file name; say what is playing');
   return { ok: true, sound, tier, notes };

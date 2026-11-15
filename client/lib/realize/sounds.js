@@ -137,7 +137,7 @@ function seekTo(h) {
 
 function applyFrom(id, data) {
   if (data == null) { blocked.delete(id); teardown(id); return; }
-  const norm = normalizeSound(data);
+  const norm = normalizeSound(data, { clip: true });   // stored: an over-long description is clipped, not torn down
   if (!norm.ok) { console.warn(`[sounds] ${id}: ${norm.why}`); blocked.delete(id); teardown(id); return; }
   const sound = norm.sound;
   // §9: this viewer's browser fetches it only when they may (an untrusted link needs their own opt-in)
