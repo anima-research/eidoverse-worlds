@@ -238,28 +238,35 @@ always wins. Spoken words reach text readers as `say` entries marked
 
 ## Permissions
 
-Per-world roles live in the log like everything else, as components on
-`@world`: `roles:<identity>` = `{role: owner | builder | member}`
-(plus `moderator` on the roles ladder), and `default-role` for everyone
-without an entry. Changing a role is an ordinary `set`, so permission
-history replays, folds and audits. Enforcement is the authority's one gate,
-`admit`, keyed on *which components a request would change*, never on the
-request's name — so no path (a tool, a `use` handler, an undo, a script)
-can walk around it.
+Roles live in the log as components on `@world`, so permission history
+replays, folds and audits like anything else. `roles:<identity>` gives one
+person a role (plus optional per-person exceptions, a note, an end time);
+`default-role` is what everyone without their own entry holds, and what
+guests get. Enforcement is the authority's one gate, `admit`, keyed on which
+components a request would change, never on the request's name, so no path
+(a tool, a `use` handler, an undo, a script) can walk round it.
 
-- **member** — present, talk, gesture, `use` things, sit, carry what a
+A role is a rank plus a set of permissions from one closed list (build,
+editOthers, editWorld, generate, fly, scripts, pauseScripts, mute, kick, ban,
+grantRoles, readChat; `shared/protocol/roles.js`). The built-ins:
+
+- **member** (rank 0): be here, talk, gesture, use things, sit, carry what a
   thing's `grabbable.who` allows.
-- **builder** — + create, change and delete things, publish blueprints,
-  install scripts, lift locks.
-- **owner** — + everything on `@world`: roles, sky, weather, ground,
-  physics, bounds, script limits; kick and ban.
+- **builder** (100): + build, edit others' things, scripts.
+- **moderator** (200): + pause scripts, mute, kick, ban, give roles below
+  their own.
+- **owner** (255): everything, including the world's settings.
 
-Defaults, chosen so casual worlds stay frictionless but never open by
-accident: a world's founder is its owner; anyone without a role gets
-`default-role` (a new world starts it at builder; absent = member); guests
-without an account are members
-unless the world opts them in; a world with no owner left gives nobody
-more than member, and removing the last owner is refused.
+An owner can define custom roles at any free rank in between. Giving a
+role only ever hands out ranks below your own and permissions you hold.
+Banned, muted and kicked are states outside the ladder, not ranks.
+
+**Guests** (no account) are a separate axis: they hold `default-role.guests`
+(member unless the world says otherwise), never above the newcomer role.
+
+**Defaults:** a world's founder is its owner; a new world's newcomer role is
+builder; a world with no owner left gives nobody more than member, and
+removing the last owner is refused.
 
 Identity: the authority stamps who asked from the authenticated connection,
 never from the payload. Every participant is an opaque identity
