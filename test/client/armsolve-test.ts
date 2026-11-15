@@ -26,7 +26,7 @@ const { solveArm, relaxArm, solveLeg, gaitInit, gaitTick } = await import("../..
 const { makeCapsuleVrm } = await import("../../client/lib/avatar/capsulebody.js");
 
 const S = suite("armsolve");
-const ok = (m: string, c: unknown) => S.check(m, c);
+const ok = (c: unknown, m: string) => S.check(m, c);
 
 // a VRM-shaped humanoid: hips→spine→chest→upperChest→neck→head; shoulders off upperChest; arms along ±X
 function humanoid(scale = 1) {
