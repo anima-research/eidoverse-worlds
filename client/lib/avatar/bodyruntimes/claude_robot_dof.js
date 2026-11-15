@@ -16,7 +16,7 @@
 //   the hips' stages (below): setupLegDOF(vrm) once at load, before anything poses it; applyHardwareDOF then sets them
 //   the arms (below): initArmDOF(vrm, hinges) once at load, before anything poses it (hinges: the exporter's joints
 //   file's 'hinges', parsed first; its leftLowerArm record sets the elbow); then each frame, dt its real time step:
-//   restoreArmPose(vrm), the clip's mixer.update(dt), keepArmPose(vrm) (THE CLIP'S POSE FOR THE ARM PASS, below); then
+//   the clip's mixer.update(dt), keepArmPose(vrm) (THE CLIP'S POSE FOR THE ARM PASS, below); then
 //   rehomeBody(vrm), applyHardwareDOF(vrm, LEG_JOINTS), applyLegClearance(vrm, stats, dt) (THE LEGS' CLEARANCE, below),
 //   applyArmDOF(vrm, stats, dt), vrm.update(dt)
 
@@ -1066,7 +1066,7 @@ function wristDevRange(bDeg) {
 //  of one. An input that moved more than ARM.wristLimit.jump takes the natural branch at once (a cut). An input equal to
 //  the last OUTPUT (a second call in the same frame) returns the last solution and changes nothing; the last INPUT
 //  again is not returned early, so a step under way goes on while a clip holds its pose. That
-//  needs the frame loop to feed the clip's pose (keepArmPose / restoreArmPose, VERIFY3 part B1c): three's mixer does not
+//  needs the frame loop to feed the clip's pose (keepArmPose, VERIFY3 part B1c): three's mixer does not
 //  write a held key, and the pass would otherwise read its own output there, return early and freeze the step)
 const qAngle = (p, q) => 2 * Math.acos(Math.min(1, Math.abs(p.dot(q))));
 function wristSolve(q, W) {
@@ -1119,12 +1119,9 @@ function wristSolve(q, W) {
 // step under way froze, a held hand took its forearm's twist again every frame (climbLedge's left: 87 deg over the clip)
 // and a held forearm lost its twist (ask_me's right at 24 fps: a 93 deg pop). keepArmPose(vrm), right after
 // mixer.update, keeps the clip's pose of the bones the arm pass reads (the clavicles, which rehomeBody folds into the upper
-// arms, the upper arms, the forearms, the hands); restoreArmPose(vrm), first in the next frame (after any
-// resetNormalizedPose, before any clip switch and before mixer.update), puts it back, so a bone the mixer leaves holds the
-// clip's value, not the pass's. A frame where the mixer writes every bone is the same with them or without:
-//   restoreArmPose(vrm); mixer.update(dt); keepArmPose(vrm); rehomeBody(...); ...; applyArmDOF(...); ...
-// (a clip switched to after the restore takes the clip's pose as its start, as the mixer reads it; KNOWN: a clip without a
-//  track for one of these bones leaves it at the pose kept last)
+// arms, the upper arms, the forearms, the hands); the frame loop has the mixer write every bound value first
+// (bodyruntime_core.js), so what it keeps is the clip's, not the pass's:
+//   mixer.update(dt); keepArmPose(vrm); rehomeBody(...); ...; applyArmDOF(...); ...
 const ARM_POSE_BONES = ['Shoulder', 'UpperArm', 'LowerArm', 'Hand'].flatMap((b) => ['left' + b, 'right' + b]);
 const _armPose = new WeakMap();
 export function keepArmPose(vrm) {
@@ -1134,20 +1131,6 @@ export function keepArmPose(vrm) {
         _armPose.set(vrm, (k = { nodes, qs: nodes.map((o) => o.quaternion.clone()) }));
     }
     k.nodes.forEach((o, i) => k.qs[i].copy(o.quaternion));
-}
-function restoreArmPose(vrm) {
-    const k = _armPose.get(vrm);
-    if (k) k.nodes.forEach((o, i) => o.quaternion.copy(k.qs[i]));
-}
-
-// resetArmDOF(vrm[, side]): the next applyArmDOF solves that VRM's wrists (or the one hand, 'left' or 'right') as a fresh
-// load does: their turn limit's memo is cleared (VERIFY3 part B1c). For a cut or a seek (a new shot, a jump in the clip's
-// time), and for a tool that poses unrelated draws in turn on one VRM (each draw its own solve). Other VRMs, the other
-// hand, the shoulder's pitch stage (it turns at its rate, by dt) and the kept clip pose (keepArmPose) are left as they are
-function resetArmDOF(vrm, side) {
-    const st = _arms.get(vrm);
-    if (!st) return;
-    for (const s of side ? [side] : ['left', 'right']) if (st[s]?.wrist) delete st[s].wrist.memo;
 }
 
 // clearance: applyArmClearance's turn-out (deg), applied first; it is part of the contract, not the caller's choice

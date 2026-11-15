@@ -62,8 +62,7 @@ export const FLORA_SPECIES = {};
 // reference on globalThis).
 let defsLoading = null;
 
-/** Fold a def registry into GRASS_COLORS + FLORA_SPECIES. Exported so
- *  tests and non-sequencer contexts hydrate by hand instead of fetching.
+/** Fold a def registry into GRASS_COLORS + FLORA_SPECIES (ensureFloraDefs and refreshFloraDefs call it with GET /defs).
  *  Accepts the whole /defs registry ({flora, floraColors}) or a bare
  *  species map. Colors land FIRST — `leafRecolor` may name a palette
  *  entry, resolved here so the defs stay declarative. */
@@ -87,13 +86,13 @@ function hydrateFloraDefs(reg) {
 
 /** Hydrate from the sequencer (GET /defs), once. Memoized and safe to
  *  race; a FAILED fetch clears the memo so the next build may retry. A
- *  registry someone already hand-hydrated is respected untouched. */
+ *  registry already hydrated is respected untouched. */
 export async function ensureFloraDefs() {
     if (Object.keys(FLORA_SPECIES).length) return FLORA_SPECIES;
     if (!defsLoading) {
         defsLoading = (async () => {
             const r = await fetch('/defs');
-            if (!r.ok) throw new Error(`[grass2] GET /defs -> ${r.status} — species defs unavailable (serve defs/, or hydrateFloraDefs() by hand)`);
+            if (!r.ok) throw new Error(`[grass2] GET /defs -> ${r.status} — species defs unavailable (serve defs/)`);
             const reg = await r.json();
             hydrateFloraDefs(reg);
             console.log(`[grass2] flora defs hydrated: ${Object.keys(FLORA_SPECIES).length} species`);
