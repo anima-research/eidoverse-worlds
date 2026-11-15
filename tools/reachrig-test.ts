@@ -22,6 +22,7 @@
 
 import { rigs, libraryRigs } from "./rig-load.mjs";
 import { solveTwoBone, chainLocalQuats, qMulq, qRot } from "../shared/reach.js";
+import { mulberry32 } from "../shared/rand.js";
 import { bodyFrame, limitsFor, coneAxisBody, fromBody, toBody, D2R } from "../shared/joints.js";
 
 let failures = 0;
@@ -146,8 +147,7 @@ console.log("\njoint limits actually bind on real rigs");
     const lim = limitsFor(U);
     const dRestU = nrm(sub(P[M], P[U]));
     const coneAxisW = nrm(fromBody(coneAxisBody(toBody(dRestU, F), lim.coneTilt ?? 0), F));
-    let seed = 99;
-    const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+    const rnd = mulberry32(99);
     for (let i = 0; i < 400; i++) {
       const t = add(P[U], [(rnd() - 0.5) * 2, (rnd() - 0.5) * 2, (rnd() - 0.5) * 2]);
       const r: any = solveTwoBone({
@@ -172,8 +172,7 @@ console.log("\nwith the torso turned (the walking case)");
   // body turns — so drive the parent with real rotations and demand the hand
   // still lands on target, rebuilt by FK through parent ∘ local.
   let worstGap2 = 0, worstLen2 = 0, worstFrame = 0, n = 0;
-  let seed = 7;
-  const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+  const rnd = mulberry32(7);
   const randQuat = () => {
     const u1 = rnd(), u2 = rnd(), u3 = rnd();
     const a = Math.sqrt(1 - u1), b = Math.sqrt(u1);

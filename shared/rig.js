@@ -2,6 +2,8 @@
 // Inputs are GLB bytes or parsed node data; no I/O, fixture paths, corpus
 // enumeration, renderer initialization or test dependencies live here.
 
+/** A VRM's JSON chunk is well under a megabyte for any real body; a header claiming more is refused unparsed. */
+export const GLB_MAX_JSON = 16 * 1024 * 1024;
 /** The JSON chunk of a .glb / .vrm. */
 export function glbJson(buf) {
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
