@@ -61,9 +61,9 @@ try {
         check('browser console, runtime and evaluate errors survive', ['retained-console-sentinel','retained-runtime-sentinel','retained-eval-sentinel'].every(s => events.includes(s)));
         check('evaluate exceptions are thrown to the caller', out.includes('✓') && out.includes('evalJson surfaces exceptionDetails'));
       }
-    } finally { rmSync(dir, { recursive: true, force: true }); }
+    } finally { try { rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }); } catch { /* best effort: a Windows browser may still hold a log (EBUSY) */ } }
   }
-} finally { rmSync(scratch, { recursive: true, force: true }); }
+} finally { try { rmSync(scratch, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }); } catch { /* best effort, as harness.ts */ } }
 { // cdp-pw (the probes' driver) gives a console message what playwright's does: type, text, location
   const { launchCdp } = await import('../harness/cdp-pw.mjs');
   const b = await launchCdp(); const msgs: any[] = [];
