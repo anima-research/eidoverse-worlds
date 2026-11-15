@@ -11,7 +11,7 @@
 // its identity when it joins) — and nothing more: it joins as a visitor.
 //
 // Env:
-//   STREAM_URL     rtsp://127.0.0.1:8554/screen   (deploy/projector; or FILE=path.wav to rehearse,
+//   STREAM_URL     rtsp://127.0.0.1:8554/screen   (deploy/projector; or FILE=path.wav, 16 kHz mono PCM16, to rehearse,
 //                  or FILE=path.jsonl to replay a saved TRANSCRIPT's lines with no audio and no STT)
 //   WORLD_URL      ws(s)://host/ws               (default ws://127.0.0.1:8940/ws)
 //   WORLD_TOKEN    the door's join key, if it has one
@@ -26,7 +26,8 @@
 //   VAD_DB         voiced threshold dBFS           (default -45; raise for noisy feeds)
 //   SPOOL          JSONL path of every line tried and every receipt (default
 //                  ./captionbot.spool.jsonl; SPOOL= empty for none). A restart
-//                  re-queues what the world never confirmed. Append-only:
+//                  re-queues what the world never confirmed, except lines it
+//                  dropped as overflow or refused. Append-only:
 //                  rotate it between events. Fails closed: an unwritable row
 //                  refuses the line and halts intake until a restart (see world.ts).
 //   SPOOL_BEST_EFFORT=1  queue the line anyway on a spool failure (a restart may miss it)

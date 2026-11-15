@@ -63,14 +63,14 @@ for (let tick = 0; tick < ticks; tick++) {
   }
   await sleep(PTIME_MS);
 }
-// Two windows, reported separately: rates are computed over the ACTIVE send
-// window; the drain (in-flight packets landing) only counts toward delivery.
+// Two windows: rates divide by the ACTIVE send window's length, but CPU and
+// forwarded are read after the drain, so work done in it lands in those rates.
 const activeSec = (Date.now() - t0) / 1000;
 await sleep(1000);
 
 const elapsed = (Date.now() - t0) / 1000;
 const cpu = process.cpuUsage(cpu0);
-const cpuPct = ((cpu.user + cpu.system) / 1000 / (activeSec * 1000)) * 100;  // over the active send window — the drain is idle time
+const cpuPct = ((cpu.user + cpu.system) / 1000 / (activeSec * 1000)) * 100;  // per active second; includes any drain work
 const memMB = (process.memoryUsage().rss - mem0) / 1048576;
 const d = sfu.diag();
 const heard = peers.reduce((n, p) => n + p.heard, 0);

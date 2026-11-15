@@ -54,7 +54,8 @@ can tell a knock from someone walking past you on their way to the door.
 
 **Fix:** dwell confirmation. The inward crossing opens a *pending* approach; it
 is only delivered once that person has actually been still, within arm's reach,
-for a dwell window. Leaving the radius first cancels it. Measure stillness from
+for a dwell window, or has stayed inside it for the max wait (`APPROACH_MAX_WAIT_MS`, pacing
+counts). Leaving the radius first cancels it. Measure stillness from
 **observed displacement**, never the pose's `speed` field — the activity pulse
 already sets that precedent in this same file ("displacement, not a speed flag,
 so idle jitter and a body parked mid-walk-cycle never qualify").

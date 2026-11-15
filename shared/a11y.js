@@ -1,6 +1,6 @@
 // a11y — how a thing reads to anyone who perceives by reading, on the accessibility model: its NAME (label), its DESCRIPTION (description), then what
-// it CAN do and its STATE, GENERATED from its components, so a description never restates an affordance and can never
-// contradict one. One reading for the authority's look/inspect (shared/protocol/authority/reads.js), mcpl's look
+// it CAN do and its STATE, GENERATED from its components, so a description need not restate an affordance (nothing checks one that
+// contradicts it). One reading for the authority's look/inspect (shared/protocol/authority/reads.js), mcpl's look
 // (mcpl/agent.ts) and the human inspector (shared/editschema.js), so they can't disagree. Compact on purpose: an agent's
 // context is precious, so each line is a short phrase and only what a component actually says.
 //

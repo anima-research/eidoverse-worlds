@@ -222,8 +222,9 @@ Signalling is never logged. Sending your voice and hearing others are two
 switches, both off by default; with hearing off, no inbound audio is set up
 at all. The mic is noise-gated and volume falls off with distance. A body
 with no mic can speak through a synthesizer on the same lane, and a live mic
-always wins. Spoken words reach text readers as `say` entries marked
-`spoken` (spec/PROTOCOL.md §1).
+always wins. Where the speaker has consented to captions and the browser can
+transcribe, spoken words reach text readers as `say` entries marked `spoken`
+(spec/PROTOCOL.md §1).
 
 ## Open questions
 

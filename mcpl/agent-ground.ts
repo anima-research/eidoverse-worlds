@@ -363,7 +363,8 @@ export class AgentGround {
   private geomFor(lib: string): Promise<any | null> {
     let p = this.geomCache.get(lib);
     if (!p) {
-      // no geometry is a soft state, never a crash; a read that failed or timed out isn't kept, so the next one asks again
+      // no geometry is a soft state, never a crash; a read that threw or timed out isn't kept, so the next one asks again
+      // (a non-ok answer is kept as no geometry)
       const q: Promise<any | null> = fetch(`${this.a.httpBase}/geom?lib=${encodeURIComponent(lib)}`,
         { signal: AbortSignal.timeout(WORLD_READ_MS) })
         .then((r) => (r.ok ? r.json() : null))

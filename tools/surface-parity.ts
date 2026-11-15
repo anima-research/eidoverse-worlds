@@ -277,7 +277,7 @@ await cdp.send("Emulation.setDeviceMetricsOverride", { ...VIEW, deviceScaleFacto
 // the sky guard and the GPU-loss guard every bench applies (test/harness/harness.ts)
 await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: "try { localStorage.setItem('ew-cloud-quality', 'off'); } catch {}" });
 await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: "try { if (!sessionStorage.getItem('ew-gpu-lost')) sessionStorage.setItem('ew-gpu-lost', JSON.stringify([Date.now()])); } catch {}" });
-// the clock pin (probe hook): the sun and the forecast read Date.now() (sky.js, :416)
+// the clock pin (probe hook): Date.now() only; sky.js reads serverNow(), which this doesn't reach (SURFACE-PARITY.md)
 if (PIN) await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: `(() => { const p0 = performance.now(); Date.now = () => ${PIN_MS} + (performance.now() - p0); })();` });
 const version = await fetch(`http://127.0.0.1:${DEBUG_PORT}/json/version`).then((r) => r.json()).catch(() => ({})) as any;
 ok("browser page target", `${version.Browser ?? "browser"} on :${DEBUG_PORT}${PIN ? `, Date.now pinned to ${new Date(PIN_MS).toISOString()}` : ""}`);

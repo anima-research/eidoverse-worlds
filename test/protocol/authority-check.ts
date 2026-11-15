@@ -474,7 +474,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const u5 = step("bob", "undo", {});
   ok(code(u5) === "conflict" && /purged/.test(u5.refused.skipped?.[0]?.why) && w.state().entities.crate.c.label === "public", "U5 undoing the later label won't restore the purged one", [u5.refused, w.state().entities.crate.c.label]);
   // purge an act's whole body: its label can't be read, so undo {label} can't find it
-  const b1 = step("bob", "batch", { label: "tidy", requests: [{ verb: "set", args: { id: "crate", component: "description", value: "a tidy crate" } }] });   // (a light on a model is refused since 10-11: one place per thing)
+  const b1 = step("bob", "batch", { label: "tidy", requests: [{ verb: "set", args: { id: "crate", component: "description", value: "a tidy crate" } }] });
   purge([{ seq: b1.act }]);
   ok(code(step("bob", "undo", { label: "tidy" })) === "nothing", "U6 a purged act's label can't be matched any more", b1.refused);
   // entityBefore = the fold at every seq, for every thing (purged values included)
@@ -1037,7 +1037,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 // LT: the light every engine shares — a spot's cone (half-angles, rad), and bounds the authority holds for any component
 { clock.advance(100); const L = (a) => request(openWorld(root, "lights"), "ann", "set", { id: "lamp", component: "light", value: a });
   request(openWorld(root, "lights"), "ann", "create-world", { title: "lights" });
-  request(openWorld(root, "lights"), "ann", "create", { id: "lamp", components: { label: "lamp" } });   // a light is its own thing (one place per thing, 10-11)
+  request(openWorld(root, "lights"), "ann", "create", { id: "lamp", components: { label: "lamp" } });
   ok(L({ kind: "spot", angle: 0.5, inner: 0.3, range: 8, intensity: 20 }).ok, "LT1 a spot light with its cone (glTF/Godot half-angles) is taken");
   ok(L({ kind: "point", intensity: -1 }).refused?.code === "bounds", "LT2 a negative intensity is refused (bounds)");
   ok(L({ kind: "point", range: 0 }).refused?.code === "bounds", "LT2 a range of 0 is refused");

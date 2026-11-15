@@ -3,7 +3,7 @@
 // With no part, a text or picture draws at its thing's origin (inside a crate, half under the floor). So the sign is its
 // OWN thing, a child of the model, stood just past its front (+Z) face, centred and sized to it: one create, one undo,
 // and it moves with the model. The parent's scale is undone on the child so a stretched crate doesn't stretch the sign.
-// Agents do the same with create {place: {against: <id>}}; this is the person's one-click version.
+// Agents' nearest is create {place: {against: <id>}}: a side at floor level, attached only with `height` (writes.js).
 import { THREE } from './core.js';
 import { entities } from './world.js';
 import { bus } from './base.js';

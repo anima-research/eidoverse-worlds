@@ -27,7 +27,7 @@ while (off < src.length) {
 }
 if (!bin) throw new Error("no BIN chunk");
 
-// resize each image via sharp; always JPEG out (VRM textures don't rely on alpha: MToon transparency is a material property)
+// resize each image via sharp; always JPEG out, which drops alpha (a texture's alpha cutouts are lost)
 const sharp = (await import("sharp")).default;
 const replaced = new Map<number, Uint8Array>();
 for (const [i, img] of (json.images ?? []).entries()) {

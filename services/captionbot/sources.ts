@@ -75,8 +75,8 @@ export function ffmpegSource(url: string, tap: AudioTap, log: (m: string) => voi
   return handle;
 }
 
-/** A raw PCM16LE mono file at the tap's rate (a .wav is fine — the 44-byte
- *  header is noise the VAD ignores). Paced to real time unless `fast`. */
+/** A raw PCM16LE mono file at the tap's rate (a .wav only if it is already 16-bit mono at that rate: its 44-byte
+ *  header is noise the VAD ignores; nothing is resampled). Paced to real time unless `fast`. */
 export function fileSource(path: string, tap: AudioTap, opts: { fast?: boolean } = {}): Promise<void> {
   const f = framer(tap);
   return new Promise((resolve, reject) => {

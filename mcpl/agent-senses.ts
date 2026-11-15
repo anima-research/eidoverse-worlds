@@ -151,8 +151,8 @@ export class AgentSenses {
   /** Track someone's latest pose and run the approach/depart machine
    *  (stepApproach). An approach is a knock, not a metronome: edge-triggered at
    *  the radius, re-armed only beyond REARM_RADIUS, a per-person refractory, and
-   *  DWELL (delivered only once they stop: "walked up AND STOPPED within arm's
-   *  reach", declaration.ts). `depart` pings only for a delivered approach.
+   *  DWELL (delivered once they stop, or once they've stayed inside for
+   *  APPROACH_MAX_WAIT_MS, denoise.ts). `depart` pings only for a delivered approach.
    *  `now` is injectable so dwell tests control the clock. */
   notePose(id: string, pose: Pose, now = Date.now()) {
     // A dirty stage frame can flush after the participant's leave event.

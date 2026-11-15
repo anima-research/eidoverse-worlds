@@ -37,8 +37,8 @@ export function offIn(stEntities, id) { for (let k = id, n = 0; k && n < 33; k =
 /** Diff folded entities against the realized view.
  *  - in state but not realized → create; realized but gone from state → retire
  *  - realized as one kind, folded as another (the id namespace is flat) → rebuild
- *  - a model whose `lib` (or a mesh whose geometry key) changed → rebuild: the fold
- *    OVERWRITES a same-id spawn and the planner projects the fold (fixture 04-overwrite)
+ *  - a model whose `lib` (or a mesh whose geometry key) changed → rebuild: the planner projects
+ *    whatever the fold holds (a `set` of the component; a create of a live id is a fold no-op)
  *  - anything else (transform, params, comps) is the hosted half's in-place refresh
  *
  *  @param {Record<string, any>} stEntities  state.st.entities

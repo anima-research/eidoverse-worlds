@@ -1,6 +1,6 @@
 // @ts-nocheck
 // test/protocol/eidosim-live-check.ts — eidosim at the authority: who may be knocked, knocked children, and spheres on the
-// live host (no lab catalogue). Review of 8377ec52 #1 #3 #4 #5 #6. Run: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/protocol/eidosim-live-check.ts
+// live host (openLive, over the lab catalogue: test/harness/labhost.ts). Review of 8377ec52 #1 #3 #4 #5 #6. Run: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/protocol/eidosim-live-check.ts
 import "../harness/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import { request } from "../../shared/protocol/authority.js";
@@ -51,7 +51,7 @@ function shoot(W, who = "vic", v = [0, -1, 6]) {   // a visitor throws crate-1 a
   const rt = R.find((r) => r.id === "top"), rg = R.find((r) => r.id === "tgt");
   ok(s && !!rt && !!rg && rt.cause === rg.cause && v.checks.agree >= 3 && !v.checks.disagree.length && J(wpos(W, "top")) !== J(t0),
     "K4 a knocked thing carrying a knocked thing: each rests on the record under the throw, and a carrier agrees", { s, rests: R.map((r) => [r.id, r.cause]), checks: v.checks, top: [t0, wpos(W, "top")] }); }
-{ // K5 the live host (no lab catalogue): a sphere exists for the engine, flies and rests
+{ // K5 the live host (labhost's openLive: the lab catalogue): a sphere exists for the engine, flies and rests
   const dir = root + "live/"; fs.mkdirSync(dir, { recursive: true }); let now = 1800000000000;
   const w = openLive(dir, "lv", { now: () => now, custodyFile: root + "custody.json", nameOf: () => null, kindOf: () => "human" });
   const c = (a, v, args = {}, step = 100) => { now += step; return request(w, a, v, args); };

@@ -6,8 +6,8 @@
 //                                        gate (this file)    the track WebRTC sends
 //
 // The analyser reads the SOURCE side: measuring after the gate is a feedback loop
-// that latches shut. voiceSource() is the one seam for humans and agents, so both
-// go through the same gate.
+// that latches shut. voiceSource() is the one seam for humans and agents; a
+// synthetic source bypasses the gate (micstate.js gateFor).
 //
 // Also here: the ungated-lane fallback, the self-monitor tap, and the shared onset
 // machine + level meter (makeOnsetGate / makeLevelMeter).

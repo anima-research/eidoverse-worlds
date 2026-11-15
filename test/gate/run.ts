@@ -419,7 +419,7 @@ if (receiptAt) {
     library: LIBRARY ? { head: LIBRARY_HEAD, pinned: LIBRARY_PIN } : null, scratch: { dir: SCRATCH_ROOT, kept: !!process.env.PROTOCOL_KEEP }, seconds: Math.round((performance.now() - t0) / 1000),
     tally: Object.fromEntries((["core", "main", "browser"] as Lane[]).map((l) => [l, { pass: count(l, "pass"), fail: count(l, "fail"), skip: count(l, "skip") }])),
     notSelected: notRun, suites, optional: Object.fromEntries(optional),
-    // one hash over every suite's kept output (its tail and every verdict line, outputKeeper), in run order: the log this verdict rests on
+    // one hash over every suite's kept tail (outputKeeper's out; the verdict lines its cut dropped aren't hashed), in run order
     logSha256: createHash("sha256").update(suites.map((x) => `${x.name}\t${x.outSha256 ?? ""}`).join("\n")).digest("hex"),
     ...(shard ? { shard: { index: shard.index, of: shard.of, hash: partitionHash(bins), assigned } } : {}),
   };

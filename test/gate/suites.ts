@@ -171,7 +171,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["quadcolour", "client/quadcolour-test.mjs", 1], // the VR panel grade (quadgrade.js) as numbers: the JS twin of the shader
   ["headset-seen", "client/headset-seen-test.mjs", 1], // the stored headset bit is history, and says so (#197)
   ["full-detail", "client/full-detail-test.ts", 1], // "keep full detail" (governor.js setFullDetail) pins every placement full
-  ["finger-curl", "client/finger-curl-test.mjs", 1], // the analog finger-curl filter (xr.js sampleFingerCurl)
+  ["finger-curl", "client/finger-curl-test.mjs", 1], // the analog finger-curl filter (xr-fingercurl.js sampleFingerCurl)
   ["backend-choice", "client/backend-choice-test.mjs", 1], // the renderer choice (backend_choice.js) as a pure matrix; ?xr=0 is not an XR boot
   ["unknown-comp", "client/unknown-comp-test.ts", 1], // an unknown component blocks nothing, from the door to the realizer to the inspector (revived D6)
   ["reach-order", "client/reach-order-test.ts", 1], // reach chains solve in dependency order, cycles refuse and release cleanly (revived D6; needs the avatar corpus at assets/opt/eidoverse)
@@ -240,7 +240,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["confirmcenter", "client/confirmcenter-test.ts", 1], // bot #213: an interrupting ask answers the open centre card with ITS cancel (false / null / its own)
   ["windows-guard", "client/windows-guard-test.ts", 1], // bot #578/#579: windows.js loads where storage throws; the painted min-width yields to a narrow viewport
   ["history-rows", "protocol/history-rows-check.ts", 1],   // the editor History never shows a refused attempt as done (Commons parity audit)
-  ["scale", "protocol/scale-check.ts", 1],       // the authority at scale: ten requests timed (best of up to 5 tries) under 50 ms at 72/500/2 000 things; gates before work; capacity; indoors (review 10-06)
+  ["scale", "protocol/scale-check.ts", 1],       // the authority at scale: ten requests timed (best of up to 5 tries): growth 72 → 500/2 000 things, a 500 ms hang backstop; gates before work; capacity; indoors (review 10-06)
   ["roles", "protocol/roles-check.ts", 1],       // roles + moderation (research roles 10-06): ranks, permissions, the grant rule, sanctions
   ["access", "protocol/access-check.ts", 1],     // who may come in (upstream #258/#259 in our terms): @world.access join/watch, per-caller /worlds and /access, the settle (4010), timed grants (expire-roles), reset keeps the door
   ["batch2", "protocol/batch2-check.ts", 1],

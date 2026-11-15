@@ -7,9 +7,6 @@
 //   fold       the four operations and their fields; the batch body (§3)
 //   identity   the grammar of an identity, an entity id and a component name (§3.1)
 //   version    {dialect, v} and the minors this reader knows (§13; genesis's fields)
-//   transform  the one placement component (§9.3: glTF's rule)
-//   parent     the one attachment component (§9.3)
-//   model      what a thing shows (its library path; §9.3)
 //   roles      who may do what (§7): the component's shape. Its VOCABULARY (ranks, built-in ids, permissions, the custom-id
 //              pattern, reserved ids) is the registry's (componentspec roles.vocab), not the kernel's (the kernel holds
 //              what the fold reads; the ladder is read by the authority, and a registry break still needs --ack)

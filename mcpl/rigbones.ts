@@ -52,7 +52,7 @@ export function rigBonesFor(httpBase: string, avatarPath: string): Promise<RigBo
  *  chunk is, past GLB_MAX_JSON refused. Identity-encoded so /library answers ranged instead of gzipping the whole
  *  file; a server that ignores Range answers 200 with the whole file, already downloaded when the cap is checked,
  *  so there the cap only refuses parsing it. Throws when the download fails, which may pass; null for a file this
- *  won't read. */
+ *  won't read. No deadline yet: a server that never finishes holds every caller of this key. */
 async function headerAndJson(url: string): Promise<Uint8Array | null> {
   const upTo = (end: number) => fetch(url, { headers: { Range: `bytes=0-${end}`, "Accept-Encoding": "identity" } });
   const head = await upTo(19);

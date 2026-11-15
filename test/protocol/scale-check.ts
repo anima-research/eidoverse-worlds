@@ -10,7 +10,7 @@
 //   bun test/protocol/scale-check.ts --mutants       remove each new gate in turn (a copy of the tree): its cases must go red;
 //                                               a no-op control mutation must stay green
 // Cases (worlds open as the server opens them: server/livehost.ts):
-//   S   scale: ten requests timed, each the best of up to 5 tries, under BOUND_MS at 72 (the Commons' size), 500 and 2 000 things: delete (with what rested on
+//   S   scale: ten requests timed, each the best of up to 5 tries, at 72 (the Commons' size), then their growth at 500 and 2 000: delete (with what rested on
 //       it set down), a 3.5 m step of a tracked body, check {}, place on a table scaled 20× (a builder; a visitor is
 //       refused), look, create, set, a batch of 50 creates, grab (with what rests on it set down)
 //   Q   the gates in front of the work: a visitor's place on a 1000× table is refused at once; a search that can't end
@@ -100,7 +100,7 @@ if (argv.includes("--mutants")) {
     const missing = edits.find(([g, a]) => readLF(path.join(d, g)).split(a).length !== 2);
     if (missing) { bad++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${missing[0]} (the gate moved?)`); continue; }
     for (const [g, a, b] of edits) { const h = path.join(d, g); fs.writeFileSync(h, readLF(h).replace(a, () => b)); }
-    // a mutant whose cases can't finish in MUTANT_MS is as red as one that fails them (the bound is 50 ms a request)
+    // a mutant whose cases can't finish in MUTANT_MS is as red as one that fails them
     const r = await runSelf(d, cases.length ? cases : null, Number(process.env.MUTANT_MS ?? 240000));
     const redIds = r.timedOut ? cases : [...r.out.matchAll(/^FAIL (\S+)/gm)].map((m) => m[1]);
     const good = cases.length ? (r.timedOut || r.code !== 0) && cases.every((c) => redIds.includes(c)) : r.code === 0 && !r.timedOut;
@@ -261,7 +261,7 @@ const withLab = (extra: any) => { const lab = LAB_CATALOGUE; return { get: (n: s
 
 type Case = { id: string; what: string; run: (s: any) => any; good: (o: any) => boolean; o?: any };
 const cases: Case[] = [
-  { id: "S1", what: `at 72 things (the Commons' size) each of the ten timed requests takes under ${BOUND_MS} ms × this host's load factor (best of 5)`, run: scaleCase(72), good: scaleGood },
+  { id: "S1", what: `at 72 things (the Commons' size) each of the ten timed requests takes under ${BOUND_MS} ms (best of 5)`, run: scaleCase(72), good: scaleGood },
   { id: "S2", what: `at 500 things every request costs at most ${GROWS}× what it does at 72 (check {} aside)`, run: scaleGrows(500), good: scaleGood },
   { id: "S3", what: `at 2 000 things every request costs at most ${GROWS}× what it does at 72 (check {} aside)`, run: scaleGrows(2000), good: scaleGood },
 

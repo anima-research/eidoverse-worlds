@@ -17,6 +17,7 @@ const _snapBox = new THREE.Box3();
 // shows half a build. So before a capture the renderer moves its camera to the followed body (residency loads what
 // is near the camera) and waits until the world is REALIZED there — body in the scene, builds done, no model loading
 // or standing in — steady for a second. Not ready in time → an explicit error with the counts, never a partial image.
+// A model still queued (residencyDebug's `waiting`, no load in flight yet) isn't counted, so it doesn't hold a capture.
 //
 // "In time" is the server's to say: each snap carries `wait`, how long the asker will still wait less a margin
 // (server/screenshots.ts dispatch). SETTLE_MS is only for a server that sends no `wait`.

@@ -1,11 +1,10 @@
 // surface-matrix-owned.ts — B3 (#57 review): owns the server that
 // surface-test.py inspects. The python matrix assumed an externally prepared
 // server at SURF_URL, so its checked-in results could not prove WHICH server
-// they described. This wrapper is the ownership layer: free port (pid-derived,
-// verified by nonce below), scratch worlds dir, per-run join token, child
-// diagnostics preserved, and a process-identity check — the served /version
-// startedAt must postdate this harness's own start, so a stale server on the
-// port fails loudly instead of lending its answers.
+// they described. This wrapper is the ownership layer: a pid-derived port, scratch
+// worlds dir, per-run join token, child diagnostics preserved. Ownership is only
+// "a join with our token is taken": an open server (no JOIN_TOKEN) with an
+// `ownprobe` world on the port would pass it (no /version startedAt check yet).
 //
 //   bun test/labs/surface-matrix-owned.ts
 import { mkdtempSync, writeFileSync } from "node:fs";

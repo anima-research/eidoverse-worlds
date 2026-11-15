@@ -36,9 +36,9 @@ version it found of each runtime next to the declared one.
 | runtime | declared | rule | where the gate finds it |
 |---|---|---|---|
 | bun | 1.4.4 | same major (any 1.x); a different minor or patch is printed as a note | the bun running the gate (`process.execPath`). Every nested `bun` a suite spawns is that same binary: its directory goes first on the children's PATH |
-| python3 | 3.12, with `cryptography` | same major; the `cryptography` module must import | `PYTHON`, else `python3` on PATH. Only the `conformance` suite needs it |
+| python3 | 3.12, with `cryptography` | same major; the `cryptography` module must import | `PYTHON`, else `python3` on PATH. `conformance` and `simckpt` need `cryptography`; `freeze`, `pretrans` and `migrate-identities` need python3 (`NEEDS` in `test/gate/run.ts`) |
 | chromium | 151 | this major or newer (playwright 1.62 ships 151; this box tests with Chrome for Testing 153) | `CHROME`, else playwright's own build, else `/usr/bin/google-chrome`, `/usr/bin/chromium`, `/usr/bin/chromium-browser` |
-| node | not used | the gate and its suites run on bun | none |
+| node or deno | any | the gate runs on bun; `simmath` runs its digest under a second engine and fails with neither | `node` and `deno` on PATH (each one found is run) |
 
 When the browser lane is selected and no Chromium is found, the gate fails before running anything. The message is:
 
@@ -70,6 +70,9 @@ Every lane is required. They run in this order:
 2. **main** is every other suite that needs no browser.
 3. **browser** is every suite that drives a headless Chromium. They run one at a time. Inside `client-tools`, the
    test files that launch a browser also run one at a time, so the gate never has two Chromiums open.
+
+A sharded run (`--shard`, as CI runs it) keeps this order and these rules inside each shard only: shards run at once, and
+a core failure stops only its own shard.
 
 ## Isolation, timeouts, cleanup
 
@@ -156,10 +159,11 @@ OS (`server/procgroup.ts`: `/proc` on Linux, `ps` on macOS, the process tree on 
 with the OS's own separator. The script sandbox tells a starved process from a stuck script with `/proc` CPU time on
 Linux and, where there is no `/proc`, by whether the process ever took the job (scripts-check I8 and I8n).
 
-`.github/workflows/protocol-gate.yml` runs the whole gate on all three OSes on every PR and push, and each run
-uploads a receipt (`--receipt <file>`): the head (on a pull_request run, GitHub's merge of the PR into its base, with the
-PR's own head as `prHead` and the merge's parents as `mergeOf`), whether the tree was dirty, OS, runtimes, the asset library's head,
-every suite's result and a hash of its output, and one hash over all of them. That receipt, not a sentence in a PR
+`.github/workflows/protocol-gate.yml` runs the whole gate on all three OSes on every PR and on pushes to `main` and
+`protocol-v4`, and each run uploads a receipt (`--receipt <file>`): the head (on a pull_request run, GitHub's merge of the PR
+into its base), whether the tree was dirty, OS, runtimes, the asset library's head, every suite's result and a hash of its
+output, and one hash over all of them. The PR's own head (`prHead`) and the merge's parents (`mergeOf`) are only in the
+per-shard receipts (`gate-shard-receipt-*`), not in the merged `gate-receipt-<os>.json`. That receipt, not a sentence in a PR
 comment, is the evidence of a pass.
 
 The macOS and Windows paths were first written on Linux (the macOS process path against `ps`, the Windows tree walk on

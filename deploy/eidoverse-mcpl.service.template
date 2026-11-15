@@ -16,6 +16,7 @@ RestartSec=5
 Environment=MCPL_PORT=8941
 Environment=WORLD_URL=ws://127.0.0.1:8940/ws
 # agents' tokens: mcpl/tokens.json (gitignored; mcpl/tokens.example.json shows the shape), or MCPL_TOKENS=<file>
+# (the world server reads AGENT_TOKENS_PATH, default mcpl/tokens.json: point both at the same file)
 
 [Install]
 WantedBy=multi-user.target

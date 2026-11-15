@@ -3,7 +3,7 @@
 // red before its change. usage: bun test/protocol/physseeds-check.ts [--only SH1,CK2]
 //   SH  physics.shape has a grammar: a bare [[min],[max]] is a box forever; every other shape is a tagged object
 //       ({type: sphere|capsule|cylinder|box|convex|mesh|compound}); convex, mesh and compound name a content address.
-//       The authority refuses anything else; the sim layer gives eidosim only boxes
+//       The authority refuses anything else; the sim layer gives eidosim boxes (and stamped spheres, as ent.shape)
 //   PH  physical properties are registered with units and a stated meaning of absence (mass, density, surface,
 //       friction, restitution, damping, centre of mass, combine modes; ccd, layers, mask cut), a world's surfaces, kinematic, and a
 //       reserved physics-joint:<name> the authority refuses until an engine carries joints

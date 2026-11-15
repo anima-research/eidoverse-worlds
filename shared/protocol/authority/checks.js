@@ -36,10 +36,7 @@ function valueCheck(s, { id, comp, value: v }, { carry = false, now = null } = {
   if (on === "world" && id !== "@world") refuse("world-only", `${comp.split(":")[0]} is a world setting: it goes on @world, not on ${id}`, `set {id: '@world', component: '${comp}', value: …}`);
   if (on === "thing" && id === "@world") refuse("thing-only", `${comp} belongs to a thing; @world is the world itself`, "make a thing (create) and put it there");
   if (comp === "parent" && v?.to === "@world") refuse("thing-only", `@world isn't a thing to be inside: a thing with no parent already sits in the world`, `delete {id: '${id}', component: 'parent'}`);
-  // one place per thing (anything that needs its own place goes on a child): a light and a model never share an entity,
-  // so the editor's gizmo moves one thing. The fold never refuses; the importer splits them; a carried value passes.
-  // a mesh is a body of its own, as a model is: never beside a model or a light on one thing. The words are shared with the
-  // Inspector (components.js ONE_PLACE), so a refusal reads the same from either
+  // components compose: a light, model, mesh and socket may share one thing (REGISTRY-CHANGELOG 2026-11-05)
   if (id === "@world" && comp.startsWith("roles:") && (!isIdentity(comp.slice(6)) || !CTX.knownId(comp.slice(6))))
     refuse("shape", !isIdentity(comp.slice(6)) ? `roles:${comp.slice(6)} names no one: a role is given to an identity (u-…), not a typed name` : `roles:${comp.slice(6)} is an identity this server doesn't know`,
       !isIdentity(comp.slice(6)) ? "whois {name} finds a person's identity; then set roles:<identity>" : "whois {name} finds the identity behind a person's name; a person whose identity this server doesn't know has to join or sign in on this server first, and until then this set is refused again", { didYouMean: guess(comp.slice(6), Object.keys(s.entities["@world"]?.c ?? {}).filter((k) => k.startsWith("roles:")).map((k) => k.slice(6))) });

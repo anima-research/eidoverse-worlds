@@ -2,7 +2,7 @@
 // wall-clock pacer and queue, the sidetone monitor, the own-say bridge, and the benches.
 //
 // It registers into voicesource.js as a synth provider (setSynthProvider), handing over a
-// finished MediaStreamTrack. Synthesis is always local. Design notes: docs/research/tts-mouth.md.
+// finished MediaStreamTrack. Synthesis is in the browser or at an endpoint the user names (browservoice.js). Design notes: docs/research/tts-mouth.md.
 
 import { report, bus } from '../base.js';
 import { setSynthProvider, notifySynthTrackChanged } from './voicesource.js';
@@ -220,7 +220,8 @@ function monitor(pcm, sampleRate) {
 }
 
 /** Resample to OUT_RATE with an OfflineAudioContext (WebAudio's own good resampler), so WebRTC
- *  never uses a cheap one. localStorage.eidoTtsResample = 'off' hands WebRTC the native rate, to A/B by ear. */
+ *  never uses a cheap one. localStorage.eidoTtsResample = 'off' skips it: the samples still go out labelled OUT_RATE,
+ *  so a voice at another rate plays at the wrong speed. */
 async function toOutRate(pcm, inRate) {
   try {
     if (localStorage.getItem('eidoTtsResample') === 'off') {

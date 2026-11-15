@@ -1,9 +1,9 @@
 // shared/protocol/shapes.js — the grammar of a collision shape (spec/PHYSICS.md §3.1). physics.shape is stamped by the
-// authority into the log, so its grammar is frozen the moment the first engine writes one: it's fixed here, before any
-// non-box shape exists.
+// authority into the log, so its grammar is frozen the moment the first engine writes one: it was fixed here while every
+// stamp was a box.
 //
-//   [[minX, minY, minZ], [maxX, maxY, maxZ]]   a box: the authority's measured box, in the thing's own frame. Every
-//                                             shape stamped so far is one, so a bare 2-array is a box FOREVER.
+//   [[minX, minY, minZ], [maxX, maxY, maxZ]]   a box: the authority's measured box, in the thing's own frame. The first
+//                                             stamps were all boxes, so a bare 2-array is a box FOREVER.
 //   {type, …, pos?, q?}                        any other shape: a tagged object, in the thing's own frame, in metres.
 //                                             pos (offset) and q (unit quaternion) place it in that frame.
 //     box       {half: [x, y, z]}             half-extents about pos (a rotated box in a compound)
@@ -16,7 +16,7 @@
 //   blob: a content address, "sha256:<64 lowercase hex>" (what putBlob mints), resolvable from the world's blob store.
 //
 // A new type is an addition to this grammar (and to PHYSICS.md), never a change to an old one. Nothing else is a shape.
-// Shared by the authority (it refuses anything else), the sim layer (eidosim is handed boxes only) and any reader.
+// Shared by the authority (it refuses anything else), the sim layer (eidosim is handed boxes and spheres) and any reader.
 
 export const SHAPE_TYPES = ["box", "sphere", "capsule", "cylinder", "convex", "mesh", "compound"];
 const KEYS = { box: ["half"], sphere: ["radius"], capsule: ["radius", "halfHeight"], cylinder: ["radius", "halfHeight"], convex: ["blob"], mesh: ["blob"], compound: ["blob"] };

@@ -9,7 +9,7 @@
 //     angle in a headset. Repainted only when the value changes.
 //   - Flat (billboard off): two planes back to back facing ±Z, so it reads from behind unmirrored. yaw: it turns about
 //     world up toward the viewer. full: it faces the viewer with world up kept (roll-locked: a VR head tilt never tilts it).
-//   - Centred on the thing's origin (Godot Label3D). Its world extent is held to 30 m whatever the transform's scale.
+//   - Centred on the thing's origin (Godot Label3D). Its world extent is held to 30 m at the scale it is built at (a later rescale isn't re-held).
 import { THREE, camera } from '../core.js';
 import { bus } from '../base.js';
 import { entities, bagOf } from '../world.js';

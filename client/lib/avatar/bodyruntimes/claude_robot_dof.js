@@ -10,7 +10,7 @@
 // Ranges are DESIGN values until the clash sweeps measure first contact (05.31: limits 2-4 deg inside contact); the
 // right side mirrors the left (roll and yaw signs flip, pitch stays). Idempotent: projecting a projected pose is a no-op.
 //
-//   const DOF = await import(new URL('claude_robot_dof.js', EIDOVERSE_DIR).href);  ...  DOF.applyHardwareDOF(vrm, DOF.LEG_JOINTS);
+//   const DOF = await import('./bodyruntimes/claude_robot_dof.js');  ...  DOF.applyHardwareDOF(vrm, DOF.LEG_JOINTS);   (bodyruntime.js LOADERS)
 //   (the body is eidoverse/assets/vrms/claude_robot.vrm, its joints file claude_robot.joints.json beside it; the whole
 //   frame order in one scene: eidoverse/examples/claude_robot.js)
 //   the hips' stages (below): setupLegDOF(vrm) once at load, before anything poses it; applyHardwareDOF then sets them

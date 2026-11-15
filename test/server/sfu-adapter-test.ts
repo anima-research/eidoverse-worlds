@@ -37,7 +37,7 @@ for (const [name, co, lo, reason] of REFUSALS) {
 const good = claims();
 check("   (a valid credential IS admitted)", admitSfuLeg(W, good, live()).admit === true);
 check("6 removed participant cannot reuse its token", admitSfuLeg(W, good, live()).reason === "credential replay");
-// 7 expiry: enforced at TokenVerifier(tolerance=0) upstream; the nonce is single-use and the leg dies with the websocket
+// 7 expiry: there is no bearer token to expire; the nonce is single-use and the leg dies with the websocket
 check("7 expiry: no bearer token exists to replay (nonce is single-use)", s.usedNonces.has(good.nonce));
 
 // amendment 3: three independent states
@@ -91,7 +91,8 @@ check("retirement clears the leg", (sfuDiag(W) as any).moderatorMuted.length ===
 
 // ── RECONNECT MUST NOT RESURRECT CONSENT ──────
 // 🔴 these call revokeSfuLeg themselves, so they pin that retirement CLEARS everything, not that server.ts
-// retireRelayLeg REACHES it (test/server/sfu-browser-smoke.mjs does). A new per-listener map: add it here AND check the live path
+// retireRelayLeg REACHES it (nothing gated does: the browser smoke never reconnects; a live probe's job). A new per-listener map:
+// add it here AND check the live path
 {
   const W = "reconnect";
   const st = sfuState(W);

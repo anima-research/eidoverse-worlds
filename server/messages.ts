@@ -37,7 +37,7 @@ function bodyRefusal(c: Client, tc: Client, cls: "shove" | "pose" | "displace"):
   const live = c.world?.log?.live;
   if (!live || !c.actorId || !tc.actorId) return `${tc.id}'s body isn't taking ${cls} right now`;
   // a range only where the world sets one (@world.body-default.range): m between the two bodies' last frames.
-  // Range before consent, so someone out of reach can't learn the target's gates (the door does the same)
+  // Range before consent, so someone out of reach can't learn the target's gates here (not yet in reachgate.ts or a non-grab bodydrag)
   const r = bodyRangeOf(live.state?.()?.entities?.["@world"]?.c?.["body-default"]);
   if (r != null) {
     const a = c.lastPose?.p, b = tc.lastPose?.p;
@@ -73,8 +73,8 @@ export function relayLossy(w: Pick<World, "clients">, msg: unknown, except?: Cli
 }
 export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
   "history": ({ c, ws, now, expel }, msg) => {
-    // Speech is arrival-only: a page holds only lines said since this connection arrived, unless it's an admin's
-    // (world.ts sayFloorFor).
+    // Speech is arrival-only: a page holds only lines said since its identity's earliest connection here arrived,
+    // unless it's an admin's (world.ts sayFloorFor).
     if (!c.world) return;
     const r = c.world.readHistory({
       before: typeof msg.before === "number" ? msg.before : Infinity,

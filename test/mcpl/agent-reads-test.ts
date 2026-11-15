@@ -1,5 +1,6 @@
-// agent-reads-test: every read the agent makes of the world server has a deadline (AbortSignal), and a geometry read
-// that failed or timed out isn't cached, so the next walk near that model asks again; an answer is kept.
+// agent-reads-test: the agent's roster, terrain, heightmap, geometry and body-bone reads have a deadline (AbortSignal; not
+// yet rigbones.ts or physics.ts skeletonFor), and a geometry read that threw or timed out isn't cached, so the next walk
+// near that model asks again; an answer is kept, a non-ok one too.
 //   bun test/mcpl/agent-reads-test.ts
 process.env.WORLD_TOKEN = "";
 import { suite } from "../gate/suite.ts";

@@ -5,7 +5,8 @@
 import type { WorldAgent } from "../../mcpl/agent.ts";
 export type P = [number, number];
 
-/** Whether a→b crosses a solid authored wall of `level` (doors and arches are open; a window is a wall). */
+/** Whether a→b crosses a solid authored wall of `level` (doors and arches are open; a window is a wall). A leg running
+ *  along a wall's line is not counted as crossing it. */
 export function crossesLevel(level: any, tile: number, a: P, b: P) {
   return level.walls.some(([axis, x, z]: number[]) => {
     if (level.apertures?.some(([k, i, j, kind]: any[]) => k === axis && i === x && j === z && (kind === "door" || kind === "arch"))) return false;

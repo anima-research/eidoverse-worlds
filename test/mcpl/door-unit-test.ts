@@ -131,7 +131,7 @@ for (const kind of ["track", "clip"]) {
   ok(["approach", "depart", "touch", "reach"].every((k) => pingDelivery(P(k), "agent")!.tags.includes("chat:from-agent")), "a declared agent's pings carry chat:from-agent");
   ok(!JSON.stringify([pingDelivery(P("touch"), "ai"), pingDelivery(P("touch"), null)]).includes("from-agent") && pingDelivery(P("touch"), "ai")!.declares === "ai", "\"ai\" or no word: no facet, the word as sent");
   ok(senderFacet("agent") === "chat:from-agent" && senderFacet("Agent") === null && senderFacet(null) === null, "senderFacet reads the word \"agent\" itself, nothing near it");
-  // house 6340433633: the tag lists say and act are sent with (net-server.ts's onEvent builds them here), not the helper alone
+  // house 6340433633: the tag lists say and act are sent with (net-server.ts's onEvent reaches these through event-wire.ts eventTags)
   const { speechTags } = await import("../../mcpl/declaration.ts") as any; const has = (l: string[] | undefined, t: string) => !!l?.includes(t);
   const say = speechTags?.("say", "agent", false), knock = speechTags?.("say", "agent", true), act = speechTags?.("act", "agent"), plain = [speechTags?.("say", "ai", false), speechTags?.("act", null)];
   ok(has(say, "chat:from-agent") && has(say, "chat:ambient") && has(knock, "chat:from-agent") && has(knock, "chat:mention") && has(knock, "chat:addressed") && !has(knock, "chat:ambient")

@@ -1,6 +1,7 @@
-// Voice service health: a participant leg dying is not the relay dying. When the in-process SFU can't do its job, text and
-// world service stay live, voice is visibly degraded, and clients make one clean fresh join. A restart already stales every
-// credential (transport.ts incarnation); this module owes the degraded state visible while the process lives.
+// Voice service health: a participant leg dying is not the relay dying. When the in-process SFU is broken but alive, text and
+// world service stay live, voice is visibly degraded, and clients make one clean fresh join. An unknown transport error exits
+// the whole process instead (sfuguard.ts reportFatal); the restart stales every credential (transport.ts incarnation). This
+// module owes the degraded state visible while the process lives.
 
 import { currentIncarnation } from "./transport.ts";
 

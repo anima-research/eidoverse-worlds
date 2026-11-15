@@ -83,7 +83,8 @@ at all, which is always safe. Bump the key when a flagged answer has been
 served with the wrong caching — the old key's cache entries are simply never
 asked for again (a purge cannot reach browsers). The fall-through answer under
 the current key is served `no-cache` until a variant exists, then the variant
-is served immutable.
+is served short-lived with a validator (`VARIANT_CC` in `server/routes.ts`),
+since a variant can be rebuilt in place.
 
 `KTX2_TOKTX` may point at either `toktx` or the newer `ktx` binary — the
 probe (`findKtx2Encoder`) detects which by name. Without the env it also

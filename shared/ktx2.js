@@ -2,10 +2,12 @@
 // ever used by a client that got it from there.
 //
 // A KTX2-capable client asks for an asset with ?ktx2=<key> and the server answers with the GPU-native variant when one
-// exists (server/routes.ts). The key is a GENERATION, not a boolean: answers are served immutable, so rotating the key is
-// the only way to leave a poisoned cache behind. Retired generations: docs/research/ktx2-key-generations.md.
+// exists (server/routes.ts). The key is a GENERATION, not a boolean: a variant is served short-lived (VARIANT_CC), but an
+// answer once served immutable never revalidates, so rotating the key is the only way to leave a poisoned cache behind.
+// Retired generations: docs/research/ktx2-key-generations.md.
 //
-// Only the server imports this file; a browser reads the key off /version, and no key means no negotiation.
+// The client imports its helpers (assets.js, prefetch.js) but never KTX2_KEY: a browser reads the key off /version, and no
+// key means no negotiation.
 export const KTX2_KEY = '4';
 export const KTX2_QUERY = `ktx2=${KTX2_KEY}`;
 

@@ -15,13 +15,15 @@
 //             with stand-ins matched the log (not proof the result is the same whoever was there); (3) when they differ and the act read who was near or what someone
 //             is called, the act is `skipped` with that reason, never flagged and never counted verified. An act with no
 //             such reads that differs is still flagged `rerun`. Soundness: everything but the identities is still checked
-//             (sponsor, depth, seed, src, the read shape), and an identity-independent result is checked in full.
+//             (sponsor, depth, seed, src, the read shape); but an act that read who was near and differs is skipped even
+//             when its result didn't depend on them (a forged constant write after near() is not flagged).
 //   arrivals — an `enter` / `leave` activation records no identity: the script heard `by` live, the act keeps
 //             neither a trigger actor nor event.by. A re-run gets a stand-in identity; a result that doesn't depend on who
 //             came is verified. One that differs from the log is re-run again with a SECOND stand-in of another shape (a
-//             minted-shaped one, then one of another valid shape): if the two re-runs differ from each other it is
-//             `skipped`; if they agree, the mismatch is flagged `rerun-anon` (never `rerun`: two inputs can't prove a result is
-//             the same for every identity, so it is a mismatch to look at, not proof of a forgery).
+//             minted-shaped one, then one of another valid shape), and each part that differs from the log (writes, says,
+//             world.use calls, body effects) is judged on its own: a part the two re-runs agree on is flagged `rerun-anon`
+//             (never `rerun`: two inputs can't prove a result is the same for every identity, so it is a mismatch to look at,
+//             not proof of a forgery); the act is `skipped` only when no differing part is agreed on.
 // Replay of the WORLD never runs code (PROTOCOL §8); this re-run is an optional audit view.
 import { fold, opsOf, cascadeOf, jcs, redactedBodies } from "./fold.js";
 import { elide, seedOf, stampMotions } from "./scriptrules.js";

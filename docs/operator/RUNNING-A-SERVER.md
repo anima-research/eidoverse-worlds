@@ -52,8 +52,9 @@ tokens in `mcpl/tokens.json` (gitignored; `mcpl/tokens.example.json` shows the s
 
 ## On the VPS
 
-`deploy/deploy-vps.sh` pulls `origin/main`, installs what changed, re-installs each `deploy/*.service` the box already
+`deploy/deploy-vps.sh` resets the checkout hard to `origin/main` (tracked local edits are lost; gitignored runtime files
+stay), installs what changed, re-installs each `deploy/*.service` the box already
 has in `/etc/systemd/system` when it differs (then `daemon-reload`), restarts the units and exits nonzero if any of them
-is not running. Units read their secrets from `/etc/eidoverse/<unit>.env`; a unit whose env file is missing stops the
-deploy before it is installed. `deploy/eidoverse.service.template` and `deploy/eidoverse-mcpl.service.template` are
+is not running. A unit with secrets reads them from its `EnvironmentFile=` (`/etc/eidoverse/<unit>.env`; the MCPL template has none,
+its tokens are `mcpl/tokens.json`); a unit whose env file is missing stops the deploy before it is installed. `deploy/eidoverse.service.template` and `deploy/eidoverse-mcpl.service.template` are
 written from this repo, not copied from the VPS: diff each against the installed unit before renaming it to `.service`.

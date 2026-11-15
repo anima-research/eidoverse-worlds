@@ -162,7 +162,7 @@ check('add.Spin with a whole motion present → refused, says why', v({ 'add.Spi
   check('remove.motion → delete motion; through the door it no longer moves', JSON.stringify(m.r.ops) === JSON.stringify([{ verb: 'delete', args: { id: 'c1', component: 'motion' } }]) && m.res.ok && m.after?.motion === undefined, JSON.stringify([m.r.ops, m.res.refused]));
   const l = through({ 'remove.lock': null });
   check('remove.lock → delete lock; through the door it is unlocked (any builder may unlock)', JSON.stringify(l.r.ops) === JSON.stringify([{ verb: 'delete', args: { id: 'c1', component: 'lock' } }]) && l.res.ok && l.after?.lock === undefined, JSON.stringify([l.r.ops, l.res.refused]));
-  // step 2 (design §6, revised 10-11: one place per thing): a lamp is a Model with a Light CHILD, a metre up
+  // step 2 (design §6): add.Light on a model makes a Light CHILD, a metre up
   const L = through({ 'add.Light': null }, open);
   { const o: any = L.r.ops[0]; const cc = o?.args?.components ?? {};
     check('add.Light on a model → ONE create: a child light a metre up, under c1, with its fields spelled out (write-new-on-edit)', L.r.ops.length === 1 && o.verb === 'create' && o.args.id === '$light' && cc.parent?.to === 'c1' && JSON.stringify(cc.transform?.pos) === '[0,1,0]' && JSON.stringify(cc.light) === JSON.stringify((({ color, intensity, range }) => ({ color, intensity, range }))(COMPONENTS.light.defaults)), JSON.stringify(L.r.ops)); }

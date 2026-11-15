@@ -394,10 +394,9 @@ export const derivedEffect = (name, over = {}) => (Object.hasOwn(BUILDER, name) 
 export const ESSENTIAL_NAMES = Object.freeze(Object.keys(ESSENTIALS));
 /** An Essential's content address: the same document stored in a world has this name. */
 export const effectAddress = (doc) => `sha256:${sha256(jcs(doc))}`;
-// The address each Essential is STORED as: the door takes a name and writes this, so a stored fire names one frozen
-// document, never whatever ESSENTIALS.fire says in a later build. Pinned as literals; test/shared/shape-render-test.ts
-// PT2 holds each to its document's hash. To change one, keep the old document (and this address) readable beside the
-// new, and give the new its own address.
+// Each Essential's content address. The door stores the NAME (an address stored before still reads, essentialNameOf), so
+// retuning ESSENTIALS.fire changes what a stored fire draws. Pinned as literals; test/shared/shape-render-test.ts PT2
+// holds each to its document's hash, so a retune turns that row red.
 export const ESSENTIAL_ADDRESSES = Object.freeze({
   sparks: 'eido:sha256/2263d1577683b9ed64f47b56a0e0e6ba12881bef0012f61ce25fae0099d7fab0',
   embers: 'eido:sha256/090b6f0f78e100c34db71a35168772297daa518960b36ef0bc6726ab1ca065ec',
@@ -409,8 +408,8 @@ export const ESSENTIAL_ADDRESSES = Object.freeze({
   muzzle: 'eido:sha256/aa2a6de4ec06157679bb1dd85219680f05bf661101297efbdf2f0a9ac5f90b84',
   fire: 'eido:sha256/f7c0ed62fd9e23b4c179dbbf3e75103d26601bce2b47277a1bd0bee0ac5b8a94',   // its angles became radians
 });
-// An Essential's address from before a retune, still read as that Essential (a stored reference is read forever,
-// PROTOCOL §4): fire's degree-scale document, stored briefly before angles became radians.
+// An Essential's address from before a retune, read as that Essential's name (today's document, not the old one):
+// fire's degree-scale document, stored briefly before angles became radians.
 export const ESSENTIAL_FORMER_ADDRESSES = Object.freeze({
   fire: 'eido:sha256/1ca045801dca39db0ff6da4b5d7270836fecbd8578a25692a3d180829013132c',
 });

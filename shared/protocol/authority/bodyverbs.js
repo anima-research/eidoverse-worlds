@@ -55,7 +55,7 @@ function returnHeld(w, actor, id, why, how, seq) {
 }
 
 // hand acts (grab, put, drop, throw, punt) record the request about the THING (and who handled it), never
-// the body's position or hand: the put's change carries where the thing went, a launch's sim entry where it left from
+// the body's position (a `hand` the request names stays in its logged args): the put's change carries where the thing went, a launch's sim entry where it left from
 // and how fast (what the engine needs, PHYSICS §4). The gate's view of the body stays presence.
 const EMBODIED_VERBS = {
   move(w, actor, a) {
@@ -354,8 +354,8 @@ const EMBODIED_VERBS = {
     const seq = w.append({ kind: "physics", actor, cause: act, verb: "launch", body: { id: a.id, p: here.map(noNeg0), yaw: flying && !b.q ? noNeg0(b.yaw) : qYaw(flying ? b.q : t.q), ...(ENGINES[sf.spec.engine]?.rotates ? { q: (flying ? b.q : t.q).slice(), ...(flying ? { w: b.w.slice() } : {}) } : {}), v: v.map(noNeg0), handled: [actor] } });
     return { ok: true, seq, act, flying: a.id, from: here.map(r3), v: v.map(r3), ...(flying ? { volley: true } : {}), ...(notes.length ? { notes } : {}), next: "wait (or any request) logs where it comes to rest" };
   },
-  // a blast (/boom): each body in radius is shoved through its own consent (bodyGate, as the body verb), each loose
-  // thing gets the punt's radial launch from the centre (its own gates); one act. Builders and up. Falloff: shared/blast.js
+  // a blast (/boom): each body whose falloff reaches BLAST.min is shoved through its own consent (bodyGate, as the body
+  // verb); the nearest BLAST.things loose things above it get the punt's radial launch from the centre (its own gates); one act. Builders and up. Falloff: shared/blast.js
   // No reach from the caster to `at`, on purpose: consent decides
   force(w, actor, a) {
     if (!Array.isArray(a.at) || a.at.length !== 3 || a.at.some((n) => !Number.isFinite(n))) refuse("shape", "force needs at: [x, y, z]", `force {at: [x, y, z], radius?: ${BLAST.radius.min}–${BLAST.radius.max} m (${BLAST.radius.dflt}), power?: ${BLAST.power.min}–${BLAST.power.max} m/s (${BLAST.power.dflt})}`);

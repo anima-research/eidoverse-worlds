@@ -407,7 +407,7 @@ function headDimmed() {
       `${headNote()}</span>` +
       `</span>`;
     head.querySelector('input').onchange = async (e) => {
-      _wantSpeech = e.target.checked;   // the last click wins; a load's completion consults this
+      _wantSpeech = e.target.checked;   // the last click wins for this tick's own load (below); finishImport enables regardless
       if (!e.target.checked) {
         _needVoice = false; setTtsEnabled(false);
         if (!syncHead()) repaint(); else onPaint();

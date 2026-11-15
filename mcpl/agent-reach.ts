@@ -66,7 +66,7 @@ export class AgentReach {
     return out;
   }
   /** The other bodies a world point lands in, each with its class there: server/reachgate.ts's bodiesAt, read from the
-   *  presence this body holds (each body's capsule, scaled to its size). */
+   *  presence this body holds (each body's capsule, scaled to its size). Unlike the relay's, the capsule is not turned by `q`. */
   private bodiesAtPoint(pt: number[]): { name: string; cls: string }[] {
     const out: { name: string; cls: string }[] = [];
     for (const [name, person] of this.a.people) {

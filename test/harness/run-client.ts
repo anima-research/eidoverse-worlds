@@ -1,4 +1,4 @@
-// test/harness/run-client.ts — every *-{test,check} under test/ (and any left at tools/ root), one command (refactor plan 2, D5).
+// test/harness/run-client.ts — every *-{test,check} under test/ but the NOT_TESTS dirs (and any left at tools/ root), one command (refactor plan 2, D5).
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/harness/run-client.ts --import-only    each file loads: no SyntaxError, no
 //                                                                                 "Export named … not found", no missing module

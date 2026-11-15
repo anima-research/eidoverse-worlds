@@ -1,5 +1,6 @@
 // shared/protocol/authority/bodyconsent.js — body consent: every act on another body is gated here, before delivery, and
-// the BODY_VERBS (consent, body, reach, inbox) answer for it. Presence only: nothing here is ever appended. The body's
+// the BODY_VERBS (consent, body, reach, inbox) answer for it. Presence only: nothing here goes in the world log (an
+// auto-cooldown goes in the moderator log, noteRefusal). The body's
 // own track (body, dist, gripPoint) lives in the physics section above it, reached through UP.
 import * as C from "../consent.js";
 import { REACH, BODY_REACH } from "../physconst.js";
@@ -12,7 +13,7 @@ const body = (...a) => UP.body(...a);
 const dist = (...a) => UP.dist(...a);
 const gripPoint = (...a) => UP.gripPoint(...a);
 
-// ---------- body consent (PROTOCOL §5: two gates and two lists). Presence only: none of this is ever appended. ----------
+// ---------- body consent (PROTOCOL §5: two gates and two lists). Presence only, but for noteRefusal's moderator-log line. ----------
 // The authority keeps every body's table (consent.js) beside `bodies` and `holds`, refuses BEFORE delivery, and keeps an
 // unlogged attempt ring. Delivery is the target's `inbox` (the server forwards it to their socket).
 const ringPush = (P, r) => { (P.ring ??= []).push(r); if (P.ring.length > 200) P.ring.shift(); };

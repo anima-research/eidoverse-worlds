@@ -25,7 +25,7 @@
 //              tile's own face) — how a row looks, never how it matches
 //     detail   optional: a dim second phrase ("open the sky section"; a command's
 //              help line) — display only, never matched
-//   list(query, { limit }) → [{ action, score }] best first; '' lists everything
+//   list(query, { limit = 50 }) → [{ action, score }] best first; '' lists every visible one, up to limit
 //   score(query, action)   → number, 0 = no match. Exported for the tests.
 
 const actions = new Map();   // insertion order is the tie-break of last resort

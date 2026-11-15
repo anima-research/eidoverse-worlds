@@ -59,7 +59,7 @@ export function rigProfile(boneNames) {
     };
   }
   // Same vocabularies as inspectBody, matched the same way; the digest records the spellings THIS body uses, so a
-  // rig keeps its identity across runtimes that rename it.
+  // renamed rig digests as a different rig.
   const CORE_ANY = new Set(['hip', 'hips', 'spine', 'spine01', 'spine02',
                             'chest', 'upperchest', 'head', 'neck', 'necktwist01']);
   const core = boneNames.filter(b => CORE_ANY.has(String(b).toLowerCase()));
@@ -112,10 +112,10 @@ export function devFlightProvider({ allow = [], bones = null, label = 'local-dev
  *  this world. Two questions, and BOTH must say yes:
  *
  *    rights.fly   may this identity fly in this world -- server-authoritative,
- *                 per-world, event-sourced through the `grant` verb, keyed to
- *                 a durable sub, default-off even in an open world and even
- *                 for its owner. A URL cannot forge it; the client only
- *                 reports what the server sent.
+ *                 per-world: a role's fly permission (server rightsFor; set
+ *                 through the world's roles:<id>), on for the owner by
+ *                 default (roles.js OWNERS_FLY). A URL cannot forge it; the
+ *                 client only reports what the server sent.
  *    rigProfile   is this body physically a flier -- evidence, never consent.
  *
  *  `rights` is read through a THUNK, not captured: grants change live.

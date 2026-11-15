@@ -1,5 +1,5 @@
 // browservoice — BRING YOUR OWN VOICE: a synthesized voice for anyone in a browser, with the server serving nothing.
-// You point at a synthesizer you already run; it stays on your machine and nobody else pays for it (bundling an
+// You point at a synthesizer you choose (local or remote: each utterance's text goes to it); nobody else pays for it (bundling an
 // in-browser TTS would charge every visitor ~82 MB for a voice they didn't choose).
 //
 //   ws://  / http://   a synthesizer you are already running — the same protocol a headless harness speaks.
@@ -11,7 +11,7 @@
 import { setTtsSource } from './tts.js';
 import { report } from '../base.js';
 
-/** Point the mouth at a synthesizer already running locally (the same ws protocol a headless harness uses). */
+/** Point the mouth at a ws:// or http:// synthesizer (the same ws protocol a headless harness uses). */
 export async function setEndpointVoice(url, label) {
   const isWs = /^wss?:/.test(url);
   if (isWs) {

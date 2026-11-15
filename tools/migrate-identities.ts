@@ -2,7 +2,7 @@
 // ids, and seal it. A fresh translation does this itself. Run with the world's server STOPPED.
 //   - ONE map from each legacy identity to one id, applied everywhere a person is named: actors, roles:/imported-bans:
 //     keys, a say's `to`, an act's capability.author and sponsor, and the moderator log. A role value's `sub` binds that
-//     name to its account; a reserved agent name → agent:token:<slug>; with --trust-names a bare name → local:<name>;
+//     name to its account; a reserved agent name → agent:token:<slug>; with --trust-names (for a TRUST_NAMES=1 private server only: elsewhere no join reaches local:) a bare name → local:<name>;
 //     otherwise a legacy identity an operator binds later. The authority's own actors, script:<entity>, minted ids and
 //     guest addresses are left alone.
 //   - then the whole log is sealed with this server's keys: a salt on every set and act/say/sim body, {head, sig} on

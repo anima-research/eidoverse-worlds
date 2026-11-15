@@ -11,7 +11,8 @@ export type AtomicFs = {
   renameSync: typeof renameSync;
 };
 
-/** Write-then-rename: readers never see a half-written file; a crash leaves at most an orphan .tmp, overwritten next time. */
+/** Write-then-rename: readers never see a half-written file; a crash leaves at most an orphan .tmp, overwritten next time.
+ *  No fsync, so a power loss can still lose or empty the file: for that, durable.ts replaceDurable. */
 export function atomicWrite(
   path: string,
   data: string | Uint8Array,

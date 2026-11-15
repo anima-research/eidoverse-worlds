@@ -3,10 +3,11 @@
 // Stages, each detect-and-repair (a clean export passes through untouched):
 //   1. STRIP: the BODY_PROXY collision hull some exports carry.
 //   2. MATERIALS: tripo_* materials that lost their textures get a known-good donor's set (same mesh, UVs hold);
-//      PORCELAIN/RAVEN/GOLD get factor materials. Anything that arrives with textures or its own factors keeps them.
+//      PORCELAIN/RAVEN/GOLD get factor materials; one with its own colour factor or extensions keeps it (a texture
+//      alone doesn't count: PORCELAIN drops it).
 //   3. DIET: weld + meshopt-simplify toward --max-verts; skipped when under budget.
 //   4. VRMIFY: a VRMC_vrm 1.0 humanoid map (Tripo→VRM; twist bones and finger metacarpals stay unmapped), hair and
-//      wing chains as VRMC_springBone.
+//      wing chains as VRMC_springBone (wing springs are written only when hair springs are).
 //   5. SCALE: a uniform bake to --height into translations, positions and inverse-bind rows (no scale nodes).
 //   6. VERIFY: a fall under both the ammo and verlet engines with the fleet suite's fixtures.
 // Output: <out>/<name>.vrm + a report. Install is a copy into the opt store's vrms/; this tool never touches a box.
@@ -166,7 +167,7 @@ const need = (n: string) => {
 const MAP: Record<string, string> = {
   hips: 'Hip', spine: 'Waist', chest: 'Spine01', upperChest: 'Spine02',
   neck: 'NeckTwist01', head: 'Head',
-  // eye bones give three-vrm gaze for free; eyelids have no VRM slot and FK-follow the head; absent bones skip
+  // eye bones give three-vrm gaze for free; eyelids have no VRM slot and FK-follow the head; every bone here is required (need)
   leftEye: 'L_Eye', rightEye: 'R_Eye',
   leftShoulder: 'L_Clavicle', leftUpperArm: 'L_Upperarm', leftLowerArm: 'L_Forearm', leftHand: 'L_Hand',
   rightShoulder: 'R_Clavicle', rightUpperArm: 'R_Upperarm', rightLowerArm: 'R_Forearm', rightHand: 'R_Hand',
@@ -187,7 +188,7 @@ for (const side of ['left', 'right']) {
 const humanBones: Record<string, { node: unknown }> = {};
 for (const [vrm, tri] of Object.entries(MAP)) {
   const ni = need(tri);
-  if (ni != null) humanBones[vrm] = { node: ni };   // optional bones (eyes) skip when absent
+  if (ni != null) humanBones[vrm] = { node: ni };
 }
 g.extensionsUsed = [...new Set([...(g.extensionsUsed ?? []), 'VRMC_vrm'])];
 g.extensions = g.extensions ?? {};

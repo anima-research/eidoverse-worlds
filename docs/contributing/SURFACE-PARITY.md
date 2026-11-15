@@ -18,6 +18,9 @@ this protocol is on `main`, `--old-ref main` (the default) cannot open a current
 opens: ‹world› on old". The comparisons that work today are between two commits of this branch: name one with
 `--old-ref` (the 10-14 gym run used `pre-repoint-20261014`, 3b84e149).
 
+**Both trees must also have the post-reorg layout** (`client/lib/sky/sky.js`, `tools/world.ts`): a ref from before
+the move, 3b84e149 among them, stops at "old tree".
+
 The old tree is a detached worktree of `--old-ref <ref>` (default `main`, env `SURFACE_OLD_REF`), created in the temp
 directory if missing; `--old <tree>` points at a checkout you already have instead. Run one headless browser at a time.
 
@@ -54,9 +57,9 @@ prerequisite is missing (nothing was compared) · **3** over the threshold but i
 - **DOM chrome hidden.** `body > *:not(canvas)` is hidden (as `test/labs/particles-shots.ts` does): panels carry names and
   clocks, and a panel regression is a UI diff, not a surface one. `--keep-ui` puts it back.
 - **Clock pinned.** `Date.now()` inside the page is pinned to the old tree's commit time at page start and advances
-  from there (load-time differences are seconds, well under the sun's motion per tolerance; override with `--pin-clock <ms>`). `sky.js` derives the sun's hour and the forecast's weather from `Date.now()`, so two runs
-  minutes apart would light the world differently — a false red. `serverclock.js` reads `performance.timeOrigin`, so
-  motion phases and clock sync are untouched. `--no-pin-clock` turns it off.
+  from there (override with `--pin-clock <ms>`; `--no-pin-clock` turns it off). It holds only what reads `Date.now()`:
+  `sky.js` now takes the sun's hour and the forecast from `serverNow()` (`serverclock.js`, `performance.timeOrigin`
+  plus the server's offset), which the pin doesn't reach, so a time-dependent sky can still differ between two runs.
 - **Fixed cameras**, two per world by default (`wide` at 0,7,14 → 0,1,0; `eye` at 6,1.6,6 → 0,1.2,−2). Add more with
   `--camera gym:stage=3,2,8/0,1,0`. The camera is placed by `Runtime.evaluate` on `core.js`'s exported `camera`
   (`test/labs/particles-shots.ts` does the same). **This is a probe hook, not a feature** — there is no URL parameter for a
@@ -84,8 +87,8 @@ Three things can turn a camera red, and the frames tell them apart:
    (below) — if `noise.png` shows the same region red, the red there may be noise: compare `old.png`/`new.png` in that
    region by eye before deciding either way.
 2. **Lighting / time nondeterminism.** The whole frame is lightly speckled or a broad gradient differs (sky, shadows,
-   fog). With the clock pinned this should not happen; if it does, `--no-pin-clock` was passed, or the world has a
-   motion/particle/grass system animating on `serverNow()`. Look at `max |Δ|` — a lighting drift is many pixels at a
+   fog). The pin doesn't reach `serverNow()`, so the sky, the forecast and any motion/particle/grass system animating
+   on it can still move between runs. Look at `max |Δ|` — a lighting drift is many pixels at a
    small delta; a regression is fewer pixels at a large one.
 3. **Draw-order / dither nondeterminism.** Scattered single red pixels along edges and alpha boundaries: SwiftShader's
    rasteriser is not bit-stable across runs. The `--tolerance 16` absorbs most of it.

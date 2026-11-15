@@ -65,7 +65,7 @@ mkdirSync(WORLDS_DIR, { recursive: true });
 
 /** The fold cache (server/statecache.ts) is rewritten every this many entries; 0 = off. */
 export const STATE_CACHE_EVERY = envNumber("STATE_CACHE_EVERY", 1000, (n) => n >= 0);
-/** A sim checkpoint once this many entries follow the last (authority checkpointSim): a boot replays at most this many; 0 = only after launches (cost: simckpt-check PC9). */
+/** A sim checkpoint once this many entries follow the last (authority checkpointSim, which waits for the sim to rest): a boot replays about this many; 0 = only after launches (cost: simckpt-check PC9). */
 export const SIM_CHECKPOINT_EVERY = envNumber("SIM_CHECKPOINT_EVERY", 1000, (n) => n >= 0);
 // ---- server policy: every limit a server runner may set, in one place ----
 /** One person's acts per window, logged entries (Matrix rc_message's shape; shared/protocol/authority/gate.js rateCheck). */

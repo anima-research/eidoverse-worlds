@@ -223,7 +223,7 @@ const GRASS_NEAR = 15;             // full density inside this
 const GRASS_FAR = 90;              // invisible beyond this
 const GRASS_FALL_EXP = 2.5;        // the curve's bite, shared with the shader's dither: budget and visible density
                                    // are the same law
-const BLADE_LOD_KEEP = 0.4;        // far tiles keep ceil(0.4 × perBunch) blades per tuft
+const BLADE_LOD_KEEP = 0.4;        // the count-subset fallback (bladeLodIndex) keeps ceil(0.4 × perBunch) blades per tuft
 // Blade LOD: the far twin is a COARSE index (every blade, 2 segments). Measured inert, so OFF by default;
 // ?grassvlod=on opts in, and forceBladeLod('far') uses it as a diag lever.
 // Shaped resident density: DENSE_BASE thins at every distance through the rank dither, widens survivors by

@@ -32,7 +32,8 @@ import { helloOf } from "../../shared/protocol/hello.js";
 //   BRIDGE_ID      in-world identity           (default "discord")
 //   DISCORD_TOKEN  bot token                   (omit with DRY_RUN=1)
 //   CHANNEL_ID     the mirrored text channel
-//   ALLOW_BOTS=1   relay other bots' Discord messages too (default: humans only)
+//   ALLOW_BOTS=1   relay other bots' Discord messages too (default: humans only); with no
+//                  webhook this relays the bridge's own posts back too (an echo loop)
 //   DRY_RUN=1      no Discord: world lines print to stdout, stdin lines of the
 //                  form "Name: text" play the part of Discord messages — lets
 //                  the world half be rehearsed before bot credentials exist
@@ -267,7 +268,7 @@ async function connectDiscord() {
 
   client.on("messageCreate", (m: any) => {
     if (m.channelId !== CHANNEL_ID) return;
-    if (m.webhookId && m.webhookId === (postHook as any)?.id) return; // our own mirror, always
+    if (m.webhookId && m.webhookId === (postHook as any)?.id) return; // our own webhook mirror, always (posted as the bot, only the bot gate below skips it)
     if ((m.author?.bot || m.webhookId) && !ALLOW_BOTS) return; // loop gate + bot hygiene
     let text = String(m.content ?? "").replace(/[\u0000-\u0009\u000b-\u001f\u007f]/g, "").trim();
     const files = [...(m.attachments?.values?.() ?? [])].map((a: any) => a.url).filter(Boolean);

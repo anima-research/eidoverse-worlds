@@ -9,7 +9,7 @@
 //
 //   bun test/client/image-upload-test.ts
 //
-// To point it at a door you run yourself instead (identity unchecked):
+// To point it at a door you run yourself instead (identity unchecked; it must have JOIN_TOKEN set, or the 401 row fails):
 //   WORLD_URL=ws://host:port/ws JOIN_TOKEN=… [OPT_DIR=…] bun test/client/image-upload-test.ts
 //
 // What must hold: the kind is judged by BYTES (a GLB named .png is refused,

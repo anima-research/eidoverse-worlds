@@ -394,23 +394,23 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   const sp = await handleTool(ctx as any, "create", oldSpawn({ lib: "test/cup.glb", x: x0 + 3, z: z0 + 3, id: "alias-cup" }));
   const named = (n) => { const t = ag.thingRef(n); return "id" in t ? t.id : null; };   // the old spawn's id is the thing's label now (R 10-17)
   await tryUntil("the agent knows alias-cup", () => named("alias-cup"), { ms: 3000, step: 50 });
-  ok(!sp.isError && !!named("alias-cup") && ag.entities.size === n0 + 1, "AT9 spawn {lib, x, z, id} creates the thing (create {model, at}, the id its label: the authority mints ids)", [busyEvidence(), T(sp).slice(0, 200)]);
+  ok(!sp.isError && !!named("alias-cup") && ag.entities.size === n0 + 1, "AT9 create from the old spawn shape {lib, x, z, id} creates the thing (create {model, at}, the id its label: the authority mints ids)", [busyEvidence(), T(sp).slice(0, 200)]);
   // M1 (holes review 10-15): with a yaw the alias builds at {pos, yaw}, which buildCreate never read: ok, at the origin.
   // Mutation (must go red): drop the `a.at` branch in authority.js buildCreate.
   const spAt = async (args, id) => { const r = await handleTool(ctx as any, "create", oldSpawn({ lib: "test/cup.glb", ...args, id })); await tryUntil(`the agent knows ${id}`, () => named(id), { ms: 3000, step: 50 }); return { r, rec: ag.foldRecord(named(id)) as any }; };
   const near = (p, x, z) => Array.isArray(p) && Math.abs(p[0] - x) < 0.05 && Math.abs(p[2] - z) < 0.05;
   const xz = await spAt({ x: x0 - 3, z: z0 + 3 }, "alias-cup-xz");
-  ok(!xz.r.isError && near(xz.rec?.pos, x0 - 3, z0 + 3), "AT9 spawn {lib, x, z} lands at x, z (not the origin)", [busyEvidence(), T(xz.r).slice(0, 200), xz.rec?.pos]);
+  ok(!xz.r.isError && near(xz.rec?.pos, x0 - 3, z0 + 3), "AT9 create from the old spawn shape {lib, x, z} lands at x, z (not the origin)", [busyEvidence(), T(xz.r).slice(0, 200), xz.rec?.pos]);
   const yw = await spAt({ x: x0 - 3, z: z0 - 3, yaw: 1 }, "alias-cup-yaw");
   const qy = [0, Math.sin(0.5), 0, Math.cos(0.5)];
-  ok(!yw.r.isError && near(yw.rec?.pos, x0 - 3, z0 - 3) && Array.isArray(yw.rec?.q) && yw.rec.q.every((n, i) => Math.abs(n - qy[i]) < 1e-3), "AT9 spawn {lib, x, z, yaw} lands at x, z facing yaw (create {at: {pos, yaw}})", [busyEvidence(), T(yw.r).slice(0, 200), yw.rec?.pos, yw.rec?.q]);
+  ok(!yw.r.isError && near(yw.rec?.pos, x0 - 3, z0 - 3) && Array.isArray(yw.rec?.q) && yw.rec.q.every((n, i) => Math.abs(n - qy[i]) < 1e-3), "AT9 create from the old spawn shape {lib, x, z, yaw} lands at x, z facing yaw (create {at: {pos, yaw}})", [busyEvidence(), T(yw.r).slice(0, 200), yw.rec?.pos, yw.rec?.q]);
   // review r2 F8: with a yaw and no y the alias put the origin at y 0 (create {at: {pos: [x, 0, z], yaw}}): never seated on
   // what's under x, z. Now it is place {at: [x, z], yaw}, the same seat as without a yaw: over the wall (top at 2.4) it lands ON it
   const ywOn = await spAt({ x: 1, z: 3, yaw: 1 }, "alias-cup-yaw-on");
   const noYaw = await spAt({ x: -1, z: 3 }, "alias-cup-on");
   ok(!ywOn.r.isError && near(ywOn.rec?.pos, 1, 3) && Math.abs(ywOn.rec?.pos?.[1] - 2.4) < 0.02 && Math.abs(noYaw.rec?.pos?.[1] - ywOn.rec?.pos?.[1]) < 1e-6
     && Array.isArray(ywOn.rec?.q) && ywOn.rec.q.every((n, i) => Math.abs(n - qy[i]) < 1e-3),
-    "AT9 spawn {lib, x, z, yaw} over the wall sits on its top, like spawn without a yaw, facing yaw (review r2 F8)", [busyEvidence(), T(ywOn.r).slice(0, 200), ywOn.rec?.pos, ywOn.rec?.q, noYaw.rec?.pos]);
+    "AT9 create from the old spawn shape {lib, x, z, yaw} over the wall sits on its top, like spawn without a yaw, facing yaw (review r2 F8)", [busyEvidence(), T(ywOn.r).slice(0, 200), ywOn.rec?.pos, ywOn.rec?.q, noYaw.rec?.pos]);
   const sq = await handleTool(ctx as any, "spawn", { query: "cup" });
   ok(sq.isError && T(sq) === `there's no tool named "spawn" on this server, so nothing ran (did you mean say?); your tool list has the ones it serves` && ag.entities.size === n0 + 5, "AT9 spawn is refused as an unknown tool and creates nothing (Mica 11-05)", [busyEvidence(), T(sq).slice(0, 200), ag.entities.size, n0]);
   const wv = await handleTool(ctx as any, "world_verb", { verb: "say", args: { text: "alias says" } });

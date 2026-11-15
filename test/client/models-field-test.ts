@@ -52,9 +52,8 @@ const light = () => ({ pos: [0, 1, 0], light: { color: 0xffd9a0, intensity: 16, 
   check("a model leaving rebuilds", plan.retire.join() === "a" && plan.create.length === 1 && plan.create[0].id === "a");
 }
 
-// 5. lib change under a same-id spawn → rebuild (follows the fold's
-//    overwrite semantics; PROTOCOL.md's "no-op" text is the flagged
-//    contradiction, and the planner projects whatever the fold folded)
+// 5. lib change on a live id → rebuild (the planner projects whatever the fold
+//    holds; a create of a live id is a fold no-op, PROTOCOL.md §3)
 {
   const st = { a: model("y.glb") };
   const plan = planReconcile(st, new Map([["a", { kind: "model", model: "x.glb" }]] as any));

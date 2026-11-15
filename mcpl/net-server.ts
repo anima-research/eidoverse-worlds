@@ -962,7 +962,7 @@ wss.on("connection", (ws, req) => {
         avatar: typeof p.claims?.avatar === "string" ? (p.claims.avatar as string) : undefined,
         worlds: Array.isArray(p.claims?.worlds) && (p.claims.worlds as unknown[]).every((w) => typeof w === "string")
           ? (p.claims.worlds as string[]) : undefined,
-        // founding is every member's (a few a day, the sequencer's cap); an explicit `create: false` narrows it away
+        // an explicit `create: false` narrows founding away (the sequencer's cap decides the rest; a join itself never founds)
         create: p.claims?.create === false ? false : undefined,
       };
       console.log(`[${ts()}] aid1 agent: ${p.sub} ("${p.name}") exp ${new Date(p.exp * 1000).toISOString()}`);
@@ -997,8 +997,8 @@ wss.on("connection", (ws, req) => {
   // ── RFC-005 §3.2.7: FOUNDING ──
   // The sequencer enforces the founding cap (server/access.ts); this door asks first (accessProbe) to refuse with
   // guidance, and `create: false` narrows founding away. It gates only destinations the AGENT CHOSE: a world other
-  // than its minted one. Its own home, dialled explicitly or not, is where the operator put it, and must found (a
-  // fresh deployment's "commons" doesn't exist until someone arrives).
+  // than its minted one. Its own home, dialled explicitly or not, is where the operator put it and isn't gated here; the
+  // sequencer never founds on a join, so a home that doesn't exist yet is refused there (founding: tools/world.ts found).
   const chosen = dialWorld !== null && dialWorld !== mintedWorld;
   // THE WORLD DECIDES every attachment, asked before the body exists. RESUME: with no world asked for, the agent wakes
   // where it last was, unless the memory's home differs, the credential narrows it out, or the world refuses / is

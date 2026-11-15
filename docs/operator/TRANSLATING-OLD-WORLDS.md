@@ -274,8 +274,9 @@ server in a browser and open `https://<your server>/whoami`: the `"sub"` it
 shows is the id to write. An enrolled agent's account is
 `agent:token:<its id in tokens.json, lowercased>`. For one release the server
 still reads `WORLD_ADMIN` too (merged with `SERVER_OPERATORS`) and logs one
-line at boot asking you to rename it; an entry without a `:` in either
-refuses to boot, saying so, so a typo can't quietly leave you out.
+line at boot asking you to rename it. An entry without a `:` in either is
+refused loudly in the boot log and operates nothing; the server still boots
+with the good entries (and, with none left, prints a setup link).
 
 **2. Upgrade the world; its owners come with their accounts where main
 knew them.** A main-era world mostly records its owners by display name.
@@ -328,7 +329,8 @@ also wear the imported one. Give them the world from the inside instead. Ask
 them to open the world (they arrive as a newcomer), and, while they're there,
 look them up and give them the world with operator-repair. Put your browser's
 `ew_sess` cookie for the server in place of `<cookie>` (or set
-`EIDO_AGENT_TOKEN` to an operator agent's token instead), your server's
+`EIDO_AGENT_TOKEN` to an operator agent's token instead, plus `EIDO_KEY=<door
+key>` when the server sets `JOIN_TOKEN`), your server's
 address for `https://your.server`, and the world's name for `<world>`:
 
     EIDO_SESSION=<cookie> bun tools/operator/operator-repair.ts https://your.server <world> whois '{"name":"Ann"}'
@@ -369,10 +371,10 @@ you don't need.
 To restore one by hand (stop the server first): check it with
 `(cd <backup> && sha256sum -c SHA256SUMS)`, move the world's directory
 aside, then copy the backup back under the world's name without its
-`SHA256SUMS`:
+`SHA256SUMS` and `CUSTODY.json`:
 
     mv worlds/<world> worlds-aside-<world>
-    cp -a backups/<world>-<stamp> worlds/<world> && rm worlds/<world>/SHA256SUMS
+    cp -a backups/<world>-<stamp> worlds/<world> && rm worlds/<world>/SHA256SUMS worlds/<world>/CUSTODY.json
 
 `rollback <world>` is still the first way back (it undoes the swap byte for
 byte); the backup is for when that can't run.

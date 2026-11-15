@@ -23,7 +23,7 @@ export interface LiveLegState {
 
 export type Admission = { admit: true } | { admit: false; reason: string };
 
-/** Eight refusal branches (expiry is checked upstream). Identity is the websocket's; every generation check is decided here. */
+/** Eight refusal branches (no expiry: there is no bearer token, the nonce is single-use). Identity is the websocket's; every generation check is decided here. */
 export function admitParticipant(claims: RelayClaims, live: LiveLegState): Admission {
   if (claims.world !== live.world) return { admit: false, reason: "wrong world" };
   if (!claims.id) return { admit: false, reason: "no identity" };

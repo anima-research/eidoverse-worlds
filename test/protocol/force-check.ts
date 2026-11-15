@@ -1,5 +1,5 @@
 // test/protocol/force-check.ts — a blast at the authority (R 10-28, item 4: /boom restored): force {at, radius, power} shoves
-// each body in radius through its own consent (bodyGate) and punts each loose thing outward through the punt's gates.
+// each body the falloff reaches (≥ BLAST.min) through its own consent (bodyGate) and punts the nearest loose things outward.
 //   bun test/protocol/force-check.ts                 every case
 //   bun test/protocol/force-check.ts --only F1,F3    just those
 //   bun test/protocol/force-check.ts --tree <dir>    against another checkout's shared/ (a mutant, a base)

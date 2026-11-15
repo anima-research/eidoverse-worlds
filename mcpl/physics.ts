@@ -355,7 +355,7 @@ async function skeletonFor(httpBase: string, avatarPath: string) {
   const m = await loadSim();
   if (!m) return null;
   try {
-    const res = await fetch(`${httpBase}/library/${key}`);
+    const res = await fetch(`${httpBase}/library/${key}`);   // no deadline yet (the agent's own reads time out at WORLD_READ_MS, agent-result.ts)
     if (!res.ok) throw new Error(`fetch ${key}: ${res.status}`);
     const buf = new Uint8Array(await res.arrayBuffer());
     const g = m.rig.glbJson(buf);

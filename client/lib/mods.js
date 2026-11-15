@@ -16,7 +16,7 @@
 // Contract: a mod is an ES module. Its default export (if any) is called
 // with a context: { name, world, EW, ui, onTick, onDispose }. Ticks are
 // wrapped; five consecutive throws pause the mod loudly. Disabling runs your onDispose handlers and removes your
-// panels — but a module, once imported, cannot be UNLOADED; a mod that
+// ui.section/ui.frame panels (a registerPanel one stays until reload) — but a module, once imported, cannot be UNLOADED; a mod that
 // grabbed globals keeps them until reload. Trusted means trusted.
 
 import { bus, CONFIG, report } from './base.js';

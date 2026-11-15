@@ -453,8 +453,8 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
         name: c.spectator && c.account ? dir.spectatorName(c.id, c.account, LIMITS.ID_LEN) : c.id }); }
     if (c.renamed && c.actorId) directoryFor(WORLDS_DIR).markRenamed(c.actorId);
     // ENTRY, once identity is SETTLED, before the body enters: one decision (server/access.ts entryFor), the same every
-    // other door asks. Bans first (watching counts), then @world.access, account age, capacity for a body. Operators,
-    // owners and moderation powers always get in (an operator is the unban path of last resort).
+    // other door asks. Bans first (watching counts), then @world.access, account age, capacity for a body. Operators
+    // always get in (the unban path of last resort); listed owners and moderators pass every check but a ban (access.ts bypassOf).
     {
       const here = [...w.clients].filter((o) => !o.spectator && (o.surface ?? "world") === "world" && o.actorId !== c.actorId).length;
       const r = entryFor(doorOfWorld(w), whoOf(c), c.spectator ? "watch" : "embody", { here });

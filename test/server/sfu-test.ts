@@ -367,8 +367,9 @@ check("…and the old PC was closed", bLeg.pc.connectionState === "closed" || bL
 //
 // HONEST NOTE on the others: M1 (source-closed), M5 (route check) and M7
 // (self-echo) STILL survive, and that is defensible rather than a hole —
-// each is redundant with a guard that runs first. A closed leg's routes are
-// deleted by closeLeg, so M1 cannot leak; self-consent never builds a route,
+// each is redundant with a guard that runs first. A closed speaker's routes
+// survive closeLeg, but its consent is wiped there and an unconsented route is
+// starved, so M1 cannot leak; self-consent never builds a route,
 // so M7 cannot either; and `route?.track` is semantically identical to the
 // early-continue. The assertions below pin the BEHAVIOUR either way, which is
 // what a reader cares about, but they are not discriminating tests and this

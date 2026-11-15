@@ -2,11 +2,12 @@
 //
 // The claims under test (issue #29, review fences):
 //   - derivation is deterministic: same policy + epoch + now → same segment,
-//     from a cold walk, a resumed cursor, or another process entirely
-//   - the three planes agree: live incremental folding (browser client /
-//     mcpl agent), the sequencer's fold, and a late joiner replaying the
-//     folded snapshot through stateToEntries' synthetic entries — including
-//     across a manual override and the next scheduled boundary
+//     from a cold walk or a resumed cursor (one process; no second one is run)
+//   - the three planes agree, as shared/forecast.js folds them: an incremental
+//     foldSkyEntry run, the same run again, and a late join replaying the folded
+//     sky as one synthetic entry (the client's and server's own folds and
+//     stateToEntries aren't run here) — across a manual override and the next
+//     scheduled boundary
 //   - a weather verb under a rated sky REBASES hours (no day-snap)
 //   - provenance is server-stamped, never authored (spoof-proof), yet
 //     synthetic pre-history replay preserves the real stamps

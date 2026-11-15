@@ -482,7 +482,7 @@ console.log('\nBODY -- flight binds to bone NAMES, not to an avatar hash');
   // The bone list is DERIVED from the shipped artifact, not typed by hand --
   // an array in a test file cannot go stale against an asset, which is exactly
   // why it must not be called "the shipped body". Regenerate with
-  // `bun test/fixtures/flight-fixture.ts` when the body changes.
+  // `bun test/fixtures/flight-fixture.ts` when the body changes, and update the byte count checked below.
   const fx = JSON.parse(readFileSync('test/fixtures/mythos-wings-rig.json', 'utf8'));
   const real: string[] = fx.bones;
   check(`fixture is the shipped asset (${fx.bytes} B, sha256 ${fx.sha256.slice(0, 12)}...)`,

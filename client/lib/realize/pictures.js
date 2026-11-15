@@ -24,15 +24,15 @@ import { escapeHtml as esc } from '../ui/markup.js';
 // (alphaTest 0.5: no sorting, fine in VR). Its world extent is held to 50 m.
 // The bytes (shared/mediasrc.js): a store file always; a trusted host's link always; any other link only if this
 // viewer turned on "allow untrusted links", else nothing is fetched (the quad shows its empty plate). A link is
-// fetched without credentials or a referrer, and decoded at most 2048 px on its long side.
+// fetched without a referrer or cross-origin credentials; it decodes at full size, and its texture is drawn at most 2048 px on its long side.
 const QUAD_MAX_EXTENT = 50;
 const MAX_TEXTURE_PX = 2048;
 const blocked = new Map();   // id → why this browser didn't fetch it (probes)
 export const _blocked = blocked;
 export const _quadOf = (...a) => quadOf(...a);   // picture-note-test: the quad's dispose owns a link's texture
 // A link is loaded as an image, not fetched: the page's CSP lets images come from any https host (img-src) but keeps
-// connect-src to this server and its known services (server/csp.ts). crossOrigin 'anonymous' sends no credentials
-// and needs the host's CORS answer (a texture must be clean).
+// connect-src to this server and its known services (server/csp.ts). crossOrigin 'anonymous' sends credentials only to
+// this origin and needs the host's CORS answer (a texture must be clean).
 async function linkTexture(url) {
   const img = new Image();
   img.crossOrigin = 'anonymous'; img.referrerPolicy = 'no-referrer'; img.decoding = 'async';

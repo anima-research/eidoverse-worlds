@@ -342,7 +342,8 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   overrides, Unreal's Physics Volume): with `kind: speed`, a body inside moves at `factor` × its own speed (walking,
   running, wading, the stroke, the 3D swim; 0.05..10, absent 1), in the movement modes it names (`modes`, any of
   walk | swim | fly | climb; absent, every mode). Where volumes overlap, only those taking the body's current mode
-  count, and the highest zone priority among them decides.
+  count, and the highest zone priority among them decides. Today's readers (shared/mover.js, the browser's swim) ask
+  only for walk and swim: fly and climb are accepted names that nothing slows yet.
   The authority's track widens inside a boost and never narrows: a slow volume is the honest client's and agent's
   pace, not a rule the authority holds a modified client to (falls and jumps aren't slowed, so a narrower 3D
   track would refuse an honest landing in mud). shared/zone.js `physicsVolumesOf`/`speedFactorAt`

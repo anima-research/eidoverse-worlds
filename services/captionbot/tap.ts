@@ -38,6 +38,7 @@ export class AudioTap {
 
   /** A new time origin: the source reattached, so "seconds since attach"
    *  starts over. Callers flush (end) first and rotate the caption session
-   *  after, so no line straddles two clocks. */
+   *  after; a final still settling then lands in the new session with the
+   *  old clock's times (the rotate doesn't wait for it). */
   reset(): void { this.samples = 0; }
 }

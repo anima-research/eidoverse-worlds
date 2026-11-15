@@ -41,8 +41,9 @@ headless clients**. It defaults off, is not saved in the level, and consent is
 scoped to the configured server/world. Reconnects to that same destination retain
 consent within this running session. New destinations require another opt-in.
 Only scene rendering is captured: no desktop, Slate chat, login UI, or HUD.
-The server's existing `/snap` endpoint remains public: anyone who can reach it
-can request a present participant's view. Enabling sharing consents to that
+The server's existing `/snap` endpoint sits behind the world's door (on a server
+with a `JOIN_TOKEN`, a caller the door takes; server/routes.ts mayRead): anyone
+it admits can request a present participant's view. Enabling sharing consents to that
 existing access model; this is not a private agent-to-agent screenshot channel.
 
 One in-flight request per renderer, at least two seconds between dispatches,

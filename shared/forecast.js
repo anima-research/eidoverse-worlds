@@ -48,9 +48,8 @@ function tzFormatter(tz) {
  *  keeps a weather verb from snapping the day (see foldSkyEntry). No ambient
  *  Date.now() even in clock mode: the wall hour is derived from the caller's
  *  tMs, so tests can freeze time and every plane derives identically. */
-// A tz present is the wall clock (clock and dormantRated are gone from the stored sky; hours, rate and ts
-// stay put as the rated fallback). An older value said so with clock: 'real' (tz absent = Los Angeles), and parked its
-// rated clock under dormantRated: both still read.
+// A tz present is the wall clock (hours, rate and ts stay put as the rated fallback). An older value's clock: 'real' and
+// dormantRated are not read: without a tz the rated clock governs.
 export const isRealClock = (sky) => !!sky && typeof sky.tz === 'string';
 /** Whether a sky moves by itself (a rate, the wall clock, a forecast): the client re-renders it ~1 Hz (sky.js updateSky). */
 export const skyTicks = (sky) => !!sky && ((sky.rate ?? 0) !== 0 || isRealClock(sky) || !!sky.forecast);
@@ -131,7 +130,7 @@ export function normalizePolicy(f) {
     if (WEATHERS.includes(name) && weight > 0) states.push({ state: name, weight });
   }
   if (!states.length) return null;
-  // dwell and transition (no unit in a name); an older policy's dwellSec / transitionSec read too
+  // dwell and transition (no unit in a name); an older policy's dwellSec / transitionSec are refused at the door (FORECAST_WAS)
   const d = Array.isArray(f.dwell) ? f.dwell : [600, 1800];
   const dwellMin = clamp(d[0], DWELL_FLOOR_S, DWELL_CAP_S);
   const dwellMax = clamp(d[1] ?? dwellMin, dwellMin, DWELL_CAP_S);

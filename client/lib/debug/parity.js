@@ -1,7 +1,7 @@
 // parity — the scene against the view (EW.foldParity() in the console): does what this page DRAWS agree with the view
 // of its own fold (state.js)? Run it in any live world, after any suspect sequence of edits. It compares the fold's
-// OWN outputs (entity ids, what each is, parents) and deliberately not realization (transforms mid-motion, loaded
-// meshes): those diverge by design while an object is in flight or riding a motion.
+// OWN outputs (entity ids, what each is, parents) and mostly not realization (loaded meshes, transforms mid-motion);
+// the one transform read is a mounted child's position against its offset (mountPoseDiffs: its own motion reads as drift).
 // compDiffs and mountDiffs are always empty (what they compared is gone); kept so the result's shape is stable.
 
 import { state } from '../state.js';

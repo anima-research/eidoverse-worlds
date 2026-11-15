@@ -344,10 +344,10 @@ function settledEntries(ok, worldId, d) {
     lastTs = t; }
   return ok;
 }
-// §12: a set written as {commit} with no value is a purge's work. One no purge names (none does, or the purge naming it is
-// one the fold refuses, as any aimed at a roles: value) was changed outside the one rule that changes the record. It folds
-// as absent(purged), unknown as every reader takes a purged value (§1), never as the value before it, and the diagnostic
-// says so (commit-unpurged: the line still shapes, so not malformed:). Said, not enforced: writes go on.
+// §12: a set written as {commitment} with no value is a redaction's work. One no redaction names (none does, or the one naming it
+// is one the fold refuses, as any aimed at a roles: value) was changed outside the one rule that changes the record. It folds
+// as absent(redacted), unknown as every reader takes a redacted value (§1), never as the value before it, and the diagnostic
+// says so (commitment-unredacted: the line still shapes, so not malformed:). Said, not enforced: writes go on.
 function unnamedStubs(ok, redacted, d) {
   ok.forEach((e, seq) => { if (!e || e.kind !== "change") return;
     let ops; try { ops = opsOf(e); } catch (x) { if (x instanceof Malformed) return; throw x; }
@@ -374,7 +374,7 @@ function redactionsOf(ok, d) {
   });
   return out;
 }
-// PURGED is kept as itself: wireState and the digest tell a purged value from a value by identity
+// REDACTED is kept as itself: wireState and the digest tell a redacted value from a value by identity
 const clone = (v) => (v === null || typeof v !== "object" || v === REDACTED ? v : JSON.parse(JSON.stringify(v)));
 function applyOp(st, seq, op, redactedBy, d) {
   const w = st.entities, { op: verb, id, comp } = op;

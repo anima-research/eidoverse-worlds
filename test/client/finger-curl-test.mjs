@@ -1,13 +1,10 @@
 // bun test/client/finger-curl-test.mjs: the analog finger-curl filter (xr-fingercurl.js sampleFingerCurl). Raw trigger/grip values put
 // ADC noise and finger tremor on the hand pose and the wire (xrbody.js packs the curls into wire.c).
-// it is read as text, as when it lived in xr.js (three, renderer, DOM): this evaluates the EXACT source text of sampleFingerCurl from
-// client/lib/xr/xr-fingercurl.js with a fake `sourceFor` and clock: an edit to the product function is what runs.
-// Mutations that MUST turn this red:
-//   drop the filter (assign raw straight through)        → the jitter check
-//   make k a fixed per-frame constant (ignore dt)        → the frame-rate independence check
-//   drop the JUMP passthrough                           → the deliberate-squeeze check
-//   drop the dt clamp                                    → the stall check
-//   widen CURL_TAU_S past ~0.12                          → the responsiveness check
+// The product file is read as text: its constants and its two filter lines are pinned by regex, and a runnable MODEL of
+// sampleFingerCurl (below) is what the behaviour rows drive, with a fake `sourceFor` and clock. The function's shape (elapsed
+// time, no jump branch, the dt clamp) is test/client/wiring-check.ts's. Product mutations that turn this red:
+//   drop the filter, or the low-passed speed (either pinned line)  → the model-matches rows
+//   change a 1€ constant                                           → the constant rows, or the behaviour rows (the model reads them)
 import { readFileSync } from 'node:fs';
 import { suite } from "../gate/suite.ts";
 
@@ -19,7 +16,7 @@ const src = readFileSync(new URL('../../client/lib/xr/xr-fingercurl.js', import.
 // ---- extract the real product source, constants and all
 const constRe = /const CURL_MIN_CUTOFF = ([\d.]+);[\s\S]*?const CURL_BETA = ([\d.]+);[\s\S]*?const CURL_D_CUTOFF = ([\d.]+);/;
 const cm = src.match(constRe);
-check('the 1€ constants are declared in xr.js', !!cm);
+check('the 1€ constants are declared in xr-fingercurl.js', !!cm);
 const MINCUT = cm ? Number(cm[1]) : NaN, BETA = cm ? Number(cm[2]) : NaN, DCUT = cm ? Number(cm[3]) : NaN;
 check('the minimum cutoff is a real, sane frequency (0 < minCutoff <= 6 Hz)', MINCUT > 0 && MINCUT <= 6, `minCutoff=${MINCUT}`);
 check('beta is positive — the cutoff must OPEN with speed, or this is a plain low-pass', BETA > 0, `beta=${BETA}`);
@@ -27,7 +24,7 @@ check('the derivative cutoff is low enough to not chase its own noise (<= 2 Hz)'
 
 const fnStart = src.indexOf('function sampleFingerCurl()');
 const fnEnd = src.indexOf('\n}', fnStart) + 2;
-check('sampleFingerCurl is found in xr.js', fnStart > 0 && fnEnd > fnStart);
+check('sampleFingerCurl is found in xr-fingercurl.js', fnStart > 0 && fnEnd > fnStart);
 const fnSrc = src.slice(fnStart, fnEnd);
 // the filter's shape (elapsed time, speed-driven cutoff, no jump branch, dt clamp): test/client/wiring-check.ts
 

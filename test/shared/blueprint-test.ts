@@ -205,11 +205,8 @@ const lampWorld = () => {
   const W = scratchWorld('blueprint');
   W.call('set', { id: '@world', component: 'roles:bld', value: { role: 'builder' } });
   W.call('set', { id: '@world', component: 'roles:vis', value: { role: 'member' } });
-  // a lamp: a model with a label, and a bulb child (an Empty with its own light) 1.2 m up. One place per thing
-  // (authority.js:1213, R 10-11): a model and a light never share an entity, so the LIGHT lives on the bulb —
-  // which is the shape the rule prescribes, and what the door will accept. The record FORMAT can still express
-  // model+light (old blueprints must keep expanding), which is why lampV1 above is left alone and the pure
-  // expand() tests still assert the root's light.
+  // a lamp: a model with a label, and a bulb child (an Empty with its own light) 1.2 m up: the LIGHT lives on the bulb.
+  // The record FORMAT also expresses model+light on one thing (lampV1 above; the pure expand() tests assert the root's light).
   W.seed({
     lamp: { model: LAMP, pos: [7, 0, 7], yaw: 1, label: 'a lamp' },
     bulb: { pos: [0, 0, 0], parent: { to: 'lamp', offset: [0, 1.2, 0], yaw: 0 }, light: { color: 0xffffff, intensity: 4, range: 3 } },

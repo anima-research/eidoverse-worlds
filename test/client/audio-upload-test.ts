@@ -8,7 +8,7 @@
 //
 //   bun test/client/audio-upload-test.ts
 //
-// To point it at a door you run yourself instead (identity unchecked):
+// To point it at a door you run yourself instead (identity unchecked; it must have JOIN_TOKEN set, or the 401 row fails):
 //   WORLD_URL=ws://host:port/ws JOIN_TOKEN=… [OPT_DIR=…] bun test/client/audio-upload-test.ts
 //
 // Kind by BYTES (a PNG named .mp3 is refused; a WAV named .glb is a .wav),

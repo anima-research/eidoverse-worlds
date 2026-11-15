@@ -1,5 +1,6 @@
-// server/operators.ts — who operates this server (SERVER_OPERATORS), by account only: an operator holds an owner's powers in
-// every world, so the list names proven accounts (human:discord:<id>, agent:token:<id>, aid1:<iss>:<sub>), never a typed display name.
+// server/operators.ts — who operates this server (SERVER_OPERATORS), by account only: an operator passes every world's door and
+// may repair its access and roles (gate.js operatorRepairs; other requests carry only their role), so the list names proven
+// accounts (human:discord:<id>, agent:token:<id>, aid1:<iss>:<sub>), never a typed display name.
 // A non-account entry is refused loudly at boot; the server still boots with the good ones. WORLD_ADMIN is the legacy name,
 // read with a warning. With no operator at all, a one-use setup link is minted and its claimant is stored in OPERATORS_FILE
 // (docs/operator/TRANSLATING-OLD-WORLDS.md, "Becoming the operator").

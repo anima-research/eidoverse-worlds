@@ -233,7 +233,7 @@ export function toolList({ travel = false }: { travel?: boolean } = {}) {
 }
 
 /** Total time for one snapshot call, retries included: SNAP_CALL_BUDGET_MS, default 57 s (under a 60 s host per-call
- *  deadline, over the world server's 55 s); 0 asks once. Each ask sends what's left (?budget=), so the server's
+ *  deadline, over the world server's 55 s); 0 asks once, with no deadline on that fetch. Each ask sends what's left (?budget=), so the server's
  *  SNAP_TIMEOUT_SEC fits inside it. A bad value is said once and ignored. */
 let warnedSnapBudget = false;
 export const snapCallBudgetMs = () => {

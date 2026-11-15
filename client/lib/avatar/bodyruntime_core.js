@@ -12,7 +12,7 @@
 //                                             from the frame before), then keepArmPose(vrm): the clip's arm pose
 //   last before vrm.update (after every       rehomeBody, applyHardwareDOF(LEG_JOINTS), applyLegClearance, applyArmDOF,
 //   other bone writer: reach, one-shot anims, XR)     applyHandDOF, applyHeadExpression, applyCrown. The body's own limits
-//                                             get the final word over every pose, whoever drives it
+//                                             get the final word over every pose but a held pose's raw bones (Avatar._applyRawPose, after)
 // Every step is optional (a module exports what it has). None can break a frame: a step that throws is reported once
 // and skipped from then on, and the body plays on unclamped rather than not at all.
 

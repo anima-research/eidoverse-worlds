@@ -27,7 +27,8 @@ let menuSrc = { buildRights: () => false, loginUrl: () => null };
 export function setMenuSources(src) { menuSrc = { ...menuSrc, ...src }; if (!emenuEl()?.hidden) paintEMenu(); }
 
 // Save and load are honest stubs: the server has no save points to make or restore (a world IS its append-only log,
-// so every change is already kept; /fork copies a whole world under a new name, owner-only).
+// so every change is already kept; /fork copies a world's current things under a new name, owner-only: not its chat, and
+// of its about only the title, server/worldlog.ts forkWorld).
 const NEEDS_RIGHTS = 'needs build rights in this world';
 const SAVE_WHY = 'not yet — this world already keeps every change as it happens (its log); save points need server support. /fork <name> copies the whole world today (owner)';
 const LOAD_WHY = 'not yet — restoring a saved world needs server support; a copy made with /fork is its own world (?world=<name>)';

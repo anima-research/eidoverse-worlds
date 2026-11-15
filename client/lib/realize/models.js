@@ -9,8 +9,8 @@
 // record, world.js bagOf) and emits the bus events they subscribe to ('entity', 'comp', 'mount'). Loads go through
 // the scheduler: keyed, owned, prioritized by live camera distance at dequeue, cancelled on remove.
 //
-// Fold-faithfulness: a removed carrier's cargo lands at the pose the fold stamped, and a same-id spawn replaces
-// wholesale (spec/PROTOCOL.md §3).
+// Fold-faithfulness: a removed carrier's cargo lands at the pose the fold stamped, and an entity is whatever the fold
+// holds for its id (a create of a live id is a no-op, spec/PROTOCOL.md §3).
 
 import { THREE, scene, camera } from '../core.js';
 import { applyScale, entScale } from '../../../shared/scale3.js';

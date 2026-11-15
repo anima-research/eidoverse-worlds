@@ -547,7 +547,8 @@ const ROUTES: Route[] = [
     handler: ({ req, url, srv }) => handleUpload(req, url, srv),
   },
   {
-    // POST /seat-profile — the live proposal door. A named actor only (tokens.json bearer or aid1 identity); the anonymous
+    // POST /seat-profile — the live proposal door. A named actor only (?token= a tokens.json key or aid1 identity; an
+    // Authorization header isn't read); the anonymous
     // door token may not write, since a seat profile moves every wearer. Writes proposals only; acceptance has no HTTP path
     // (tools/operator/seat-accept.ts).
     match: (u, req) => u.pathname === "/seat-profile" && req.method === "POST",
@@ -666,7 +667,7 @@ const ROUTES: Route[] = [
   },
   {
     // "May I go there?" — asked BEFORE moving, so a refused trip never strands a body. Signed-in callers only (else 401).
-    // A world the caller not discover answers `you: "none"`, `exists: true` (a taken name can't be hidden), missing more.
+    // A world the caller may not discover answers the same 404 as a missing one (access.ts toldOf: no existence oracle).
     //   { world, exists: true, you: "enter"|"watch"|"none", why? } | 404 {code: "world-unavailable", message}
     match: (u) => u.pathname === "/access",
     // An interrupted conversion or an old-format world is said only to the operator or its recognised owner (access.ts toldOf):

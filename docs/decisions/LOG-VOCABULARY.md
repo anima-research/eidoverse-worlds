@@ -296,7 +296,7 @@ Fixtures F22–F31 in §5, except F25 (deferred, §5).
      missing → {type:"refused", code:"unsupported-feature", need:[ids]}
   5. else the snapshot, repeating the authoritative {dialect, v, requires}
   ```
-  `update-required` may precede world authorization; the world-specific `unsupported-feature` never may. Caveat: whoever may create a world can learn that a name is taken; the collision refusal stays generic (`"X" isn't available`), never whose or what kind. The hello is always required: there is no legacy default. Every client says a hello refusal in words (`shared/protocol/hello.js refusalWords`); an agent's join rejects with them instead of timing out. The same contract holds for browser, native, MCPL and agent joins.
+  `update-required` may precede world authorization; the world-specific `unsupported-feature` never may. Caveat: whoever may create a world can learn that a name is taken; the collision refusal stays generic (`"X" isn't available`), never whose or what kind. The hello is always required: there is no legacy default. Every client says a hello refusal in words (`shared/protocol/hello.js refusalWords`; not yet the chat bridge or the voice bot, which redial); an agent's join rejects with them instead of timing out. The same contract holds for browser, native, MCPL and agent joins.
 - **F-4 Self-minted identity.** A key-only identity may be an owner, including tier 0. Identity is not admission: quota, rate and create-standing attach to a host-issued admission capability, never to the cheap key or id. A key proves continuity and authorship, not entitlement to resources.
 - **F-5 Custody.** Invariant:
   ```text

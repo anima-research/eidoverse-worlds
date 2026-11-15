@@ -282,7 +282,8 @@ export function checkSyntax(text) {
 // script's world.* calls itself (makeHost). So an activation stays one synchronous step of the authority (L7: one act + one
 // batch, admitted at the head it read), and the authority holds the process's handle: at `wallMs + GRACE` after the job was
 // sent it SIGKILLs the process (certain: a signal, not a request) and returns "time"; a warm spare takes the next job.
-// Nothing a script does, a native builtin included, can hold the authority's thread past that deadline.
+// Nothing a script does, a native builtin included, can hold the authority's thread past that deadline, give or take one
+// host answer: a world.* call is answered on this thread and runs to its end.
 // (Not a Worker: worker.terminate() doesn't stop a thread inside WASM under Bun 1.3.)
 export const GRACE = 200;        // ms over the script's own wall-clock backstop: the pipes, a loaded host, and the kill
 const MAX = 2 << 20;             // bytes of one message (a job, a host call, an answer)
@@ -293,7 +294,8 @@ const env = () => globalThis.process?.env ?? {};
 let fsm = null, osm = null, pathm = null; // node:fs etc., loaded only where isolation runs (never in a browser)
 try { if (globalThis.process?.versions) { fsm = await import("node:fs"); osm = await import("node:os"); pathm = await import("node:path"); } } catch { /* no isolation here */ }
 const canIsolate = () => !!(Q && fsm && typeof Bun !== "undefined" && !env().EIDO_SANDBOX_CHILD && env().EIDO_SANDBOX !== "inprocess" && fifoOk());
-// Windows: never. Git for Windows' `mkfifo` makes an MSYS emulation the OS can't open. There scripts run in-process: fuel
+// Windows: never. Git for Windows' `mkfifo` makes an MSYS emulation the OS can't open. There scripts run in-process, and only
+// with EIDO_SANDBOX=inprocess (else none runs: winRefuses): fuel
 // and the wall clock still bind script code, but a native builtin can hold the thread (needs Windows named pipes).
 let FIFO = null; const fifoOk = () => (FIFO ??= globalThis.process?.platform !== "win32" && (() => { try { return Bun.spawnSync(["mkfifo", "--help"]).exitCode !== null; } catch { return false; } })());
 const pool = []; let kills = 0, spawned = 0;

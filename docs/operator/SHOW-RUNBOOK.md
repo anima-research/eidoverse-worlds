@@ -38,9 +38,11 @@ Verify with devtools: `X-Cache: HIT` on `/library/store/…` after first load.
 ## Load test (run against the REAL box before doors)
 
 ```sh
-URL=wss://<host>/ws TOKEN=<door-key> PERFORMERS=24 SPECTATORS=176 DURATION_S=60 \
+URL=wss://<host>/ws TOKEN=<door-key> WORLD=<show-world> PERFORMERS=24 SPECTATORS=176 DURATION_S=60 \
   bun bench/loadtest.ts
 ```
+
+`WORLD` defaults to `loadtest`, which must already be founded; set it to the show world.
 
 Gates: 200/200 join, join p95 < 3s, spectator frames ≥ 12/s median, frame
 latency p95 < 250ms, chat burst complete, reconnect churn survives.
@@ -83,6 +85,6 @@ One instance per world (PORT=9224 etc. for a second). Keep the Mac awake
 ## After
 
 - Archive: the world's directory `worlds/<world>/` (its signed log `world.jsonl`, the moderator log `world.mod.jsonl`,
-  `frames-<ts>.jsonl`) + the server's custody key (it signs the log) + `assets/opt/store/` = the complete record on this box (poses, never audio); the spoken performance lives in the Discord voice channel, so record the stage separately. Copy all three off-box same night.
+  `frames-<ts>.jsonl`) + the server's custody key `worlds/.custody.json` (it signs the log) + its identity directory `worlds/.directory.json` (who each actor id is) + `assets/opt/store/` = the complete record on this box (poses, never audio); the spoken performance lives in the Discord voice channel, so record the stage separately. Copy all four off-box same night.
 - Replay/machinima: frames file is `{roster|frame}` JSONL at ~15Hz — feed to
   the eidoverse batch renderer (retroactive filming, DESIGN.md).

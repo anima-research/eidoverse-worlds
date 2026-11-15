@@ -1,6 +1,6 @@
 import { suite } from "../gate/suite.ts";
-// bus-events-test: the dock's move, the lantern's open/close and a gesture's key hint ride the module bus (base.js), so a
-// mod or probe listening there hears them; no window CustomEvent carries them (one-binding-test's row holds the class).
+// bus-events-test: a gesture's key hint rides the module bus (base.js), so a mod or probe listening there hears it; no
+// window CustomEvent carries a client event (one-binding-test's row). The dock's move and the lantern's emits aren't driven here.
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/client/bus-events-test.ts
 const { bus } = await import("../../client/lib/base.js");
 const kh = await import("../../client/lib/edit/keyhints.js");

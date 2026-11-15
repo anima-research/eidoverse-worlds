@@ -28,7 +28,8 @@ let pumping = false;
 const prioOf = (job) => (typeof job.priority === 'function' ? Number(job.priority()) || 0 : job.priority ?? 0);
 
 /** Schedule work. Returns {cancel(), done}. Re-scheduling a queued key keeps
- *  ONE job at the higher of the two priorities, with the newer run; a key
+ *  ONE job at the higher of the two priorities (a number from then: a function
+ *  priority is no longer re-read), with the newer run; a key
  *  currently running finishes, and the new job queues behind it. */
 export function schedule({ key, owner = null, lane = 'cpu', priority = P.VISIBLE, run }) {
   if (!LANES[lane]) throw new Error(`[scheduler] unknown lane "${lane}"`);

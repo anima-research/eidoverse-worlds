@@ -49,7 +49,8 @@ behind a home NAT, no port forwarding):
 
 - **`/relay-diag`** (server): per-leg `state` / `rxPackets` / `hears` /
   `publishing`, plus consent, mutes and forwarded counts. `rxPackets: 0` on a
-  `connected` leg = signaling fine, media path dead → read the NAT paragraph.
+  `connected` leg that is `publishing` and not muted = signaling fine, media path dead → read the NAT
+  paragraph (a listener-only or muted leg counts nothing).
 - **`/audio`** (typed in the client): the phone-holder's report — starts with
   the served build sha (stale page vs broken probe are indistinguishable
   without it), then live ICE state, candidate types, gate and TTS state.

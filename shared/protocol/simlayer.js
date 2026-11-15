@@ -59,8 +59,8 @@ export function worldPose(st, id) {
   }
   return composePose(chain);
 }
-// eidosim carries boxes only (PHYSICS.md §3.1): a stamped physics.shape is its collider when it's a bare box; any other
-// shape is no body to it (rather than a tagged object misread as [[min], [max]]). An engine that carries spheres reads them.
+// a stamped physics.shape is eidosim's box when it's a bare box (PHYSICS.md §3.1); a tagged shape is never misread as
+// [[min], [max]]: it rides as ent.shape (below); shared/sim.js collider reads a sphere, any other type gets the model's box.
 export const engineBox = (ph) => (isBoxShape(ph?.shape) ? ph.shape : null);
 // eidosim keys its boxes by model name (sim.boxes[lib]); a model-less thing with a stamped box (a `mesh`) is keyed by the
 // box itself, so two meshes of one size share an entry and a resize is a new key. A tagged cylinder has no box here: no body

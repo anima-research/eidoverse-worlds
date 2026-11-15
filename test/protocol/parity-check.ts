@@ -3,7 +3,8 @@
 // row held by a mutation below, except D7 (no mutant) and the P rows (they pin main's words).
 //   bun test/protocol/parity-check.ts                 every row
 //   bun test/protocol/parity-check.ts --only D1,M1    just those
-//   bun test/protocol/parity-check.ts --tree <dir>    against another checkout (a mutant, or the base)
+//   bun test/protocol/parity-check.ts --tree <dir>    against another checkout in this layout (a mutant); one from before the
+//                                                     test/ and docs/ reorg (#333) has other paths and doesn't run
 //   bun test/protocol/parity-check.ts --mutants       remove each fix in turn (a copy of shared/, server/, mcpl/, client/lib,
 //                                                     spec/, docs/): its rows must go red; a no-op control must stay green
 // Rows:
