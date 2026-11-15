@@ -301,6 +301,7 @@ pass through them. The result arrives through the content-addressed store:
 `POST /upload?by=<requester>` with `Authorization: Bearer` (`?token=` still
 works, deprecated). The store holds inert bytes, and uploading grants nothing
 in a world. Bringing it into a world is a `@world` `assets:<path>` write,
-gated on the `generate` permission, and then a `model` naming
+gated on the `generate` permission (it needs `build`; owners hold it by
+default, since it spends the world's generation credit), and then a `model` naming
 `store/<hash>.glb`. Generation allowances live in Orrery, per person.
 
