@@ -304,4 +304,3 @@ in a world. Bringing it into a world is a `@world` `assets:<path>` write,
 gated on the `generate` permission (it needs `build`; owners hold it by
 default, since it spends the world's generation credit), and then a `model` naming
 `store/<hash>.glb`. Generation allowances live in Orrery, per person.
-
