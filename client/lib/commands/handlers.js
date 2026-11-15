@@ -40,7 +40,7 @@ import { toggleHelp, flashHint } from '../ui.js';
 import { sceneAttach, sceneDetach } from '../scenegraph.js';
 import { ANIM_ORDER, ANIM_CLIPS } from '../avatar.js';
 import { setPushable, pushable } from '../consent.js';
-import { trySitOn } from '../localbody.js';
+import { trySitOn, sitOnGround } from '../localbody.js';
 import { getMe } from '../mybody.js';
 import { setMyReach, clearMyReach } from '../reachnet.js';
 import { SIM_ID } from '../../../shared/sim.js';
@@ -515,6 +515,8 @@ register('use', (arg) => {
 register('sit', (arg) => {
   // /sit [thing] [slot] — a declared seat nearby wins; otherwise sit on the ground
   const [word, slot] = (arg || '').trim().split(/\s+/);
+  // /sit ground (or here) asks for no seat: decided before thing resolution, so it never resolves as a thing (PR #165)
+  if (/^(ground|here)$/i.test(word)) { sitOnGround(); return; }
   const t = thingNamed(word); if (t?.err) return logChat('*', t.err);   // by id, label or handle (R 10-17)
   if (!trySitOn(t?.id ?? (word || null), slot || null)) setPosture('sit');
 });

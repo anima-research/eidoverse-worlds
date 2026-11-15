@@ -23,7 +23,7 @@ export const COMMANDS = [
   { name: 'name', aliases: ['rename'], help: 'what the world calls you (choose it at the authority: renaming mid-visit isn\'t supported yet)' },
   { name: 'me', help: 'describe an action — "/me waves"' },
   { name: 'anim', help: '/anim <name> — play one of the action bar\'s anims once (🎭, or number keys)' },
-  { name: 'sit', help: '/sit [thing] [slot] — sit down, on a seat if one is near (or the one you name)' },
+  { name: 'sit', help: '/sit [thing] [slot] — sit down, on a seat if one is near (or the one you name, within reach); /sit ground (or /sit here) sits where you stand' },
   { name: 'push', aliases: ['shove'], help: '/push [name] [power] — shove someone within reach (their consent decides); /push <thing> works the thing' },
   { name: 'touch', help: '/touch [name] [point] [left|right] — reach out and rest a hand on someone (nearest person, their shoulder, your right hand by default); the hand tracks them until /letgo' },
   { name: 'letgo', aliases: ['release'], help: 'let go — lower your reaching hand (or just one: /letgo left|right)' },
