@@ -58,7 +58,7 @@ const tick = async (on) => { const b = box(); b.checked = on; b.dispatchEvent(ne
 const reset = async ({ list = [], source = false, enabled = false, mic = false } = {}) => {
   voices = list.map((id) => ({ id, name: id })); micLive = mic; gate = null; loadFails = false;
   opened.length = 0; loaded.length = 0;
-  tts.setTtsSource(source ? async () => ({ pcm: new Int16Array(1), sampleRate: 22050 }) : null, 'hesperus-clockwork');
+  tts.setTtsSource(source ? async () => ({ pcm: new Int16Array(1), sampleRate: 22050 }) : null, 'test-voice');
   tts.setTtsEnabled(enabled);
   await repaint();
 };
@@ -71,7 +71,7 @@ t('first paint of an empty list draws the pane and the add-verbs', !!host.queryS
 for (const [name, st, wantNote, wantDim] of [
   ['fresh, no voice', {}, '', true],
   ['voice loaded, tts off', { source: true }, 'ready', true],
-  ['tts on, mic off', { source: true, enabled: true }, 'hesperus-clockwork', false],
+  ['tts on, mic off', { source: true, enabled: true }, 'test-voice', false],
   ['tts on, MIC ON', { source: true, enabled: true, mic: true }, 'not available while your mic is on', true],
 ]) {
   await reset(st);

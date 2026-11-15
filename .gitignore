@@ -46,11 +46,8 @@ assets/
 .mcp.json
 .memsearch/
 
-# Piper voice models: ~60MB each, fetched by the client at runtime
-# (user's disk or HuggingFace+OPFS) and never served by us. The .onnx.json
-# IS committed — 5,036 bytes as of 2026-08-11 (measured; LF) — it is what
-# says what the model is.
-client/voices/*.onnx
+# Piper voices are yours, not the engine's: drop a model and its .onnx.json here for ?voice=.
+client/voices/
 client/accept-*.onnx*
 
 # a SYMLINK named node_modules dodges the dir-only pattern above — the
@@ -67,5 +64,5 @@ notes/surface-parity/
 # the protocol gate's sibling checkouts (run.ts --siblings: mcpl/ and services/captionbot/ take them by file:, deploy-vps.sh too)
 /.siblings/
 
-# bench outputs (bench/flight-capture.mjs --out default): per-run, and they hold the runner's absolute paths
+# bench outputs: per-run, and they hold the runner's absolute paths
 bench/*/out/

@@ -42,7 +42,7 @@ function connect(port) {
 }
 
 /** Register Piper as this body's voice. Returns false when no synthesizer is listening. */
-export async function initPiperVoice({ port = 8927, name = 'piper: clockwork' } = {}) {
+export async function initPiperVoice({ port = 8927, name = 'piper' } = {}) {
   if (!(await connect(port))) return false;
   setTtsSource((text) => new Promise((resolve) => {
     if (!ws || ws.readyState !== 1) return resolve({ pcm: new Int16Array(0), sampleRate: 22050 });
