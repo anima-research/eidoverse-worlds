@@ -383,7 +383,7 @@ export async function loadVRM(libPath, { priority = 1 } = {}) {
       // skeleton pass below drops every joint that weights no vertex, and
       // that includes humanoid bones (L_Calf, on mythos-alpha).
       vrm.userData ??= {};
-      vrm.userData.boneRest = {};
+      vrm.userData.boneRest = Object.create(null);   // keyed by node name: constructor or __proto__ is a bone like any other (#297)
       vrm.scene.traverse((o) => {
         if (o.isBone && o.name && !(o.name in vrm.userData.boneRest)) {
           vrm.userData.boneRest[o.name] = { q: o.quaternion.toArray(), p: o.position.toArray(), s: o.scale.toArray() };

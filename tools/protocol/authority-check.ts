@@ -536,7 +536,33 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     const codes = bad.map((at, i) => code(call("bob", "create", { id: `at-bad-${i}`, model: "crate", at })));
     ok(codes.every((c) => c === "shape") && bad.every((_, i) => !w.state().entities[`at-bad-${i}`]), "CA4 a malformed at is a shape refusal, and nothing is made", codes);
     ok(code(call("bob", "create", { id: "at-both", model: "crate", at: [1, 1], place: { at: [2, 2] } })) === "shape", "CA5 at and place together is a shape refusal (one way of saying where)");
-    ok(code(call("bob", "create", { from: "tbl", at: [1, 2, 3] })) === "shape", "CA6 with from, at is {pos, yaw|q}: an array is a shape refusal (never spread into the transform)"); }
+    ok(code(call("bob", "create", { from: "tbl", at: [1, 2, 3] })) === "shape", "CA6 with from, at is {pos, yaw|q}: an array is a shape refusal (never spread into the transform)");
+    // #147: a bare yaw is radians, so one past ±2π (30, 90, 180: degrees typed as radians) is refused with the fix, at each door that takes one
+    const wild = [call("bob", "create", { id: "at-deg", model: "crate", at: { pos: [-6, 0, -8], yaw: 30 } }), call("bob", "create", { from: "tbl", at: { pos: [1, 0, 1], yaw: -90 } }),
+      call("bob", "set", { id: "at-yaw", component: "transform", value: { yaw: 180 } })];
+    ok(wild.every((r) => code(r) === "shape" && /radians/.test(r.refused.reason)) && !w.state().entities["at-deg"] && /0\.5236/.test(wild[0].refused?.fix),
+      "CA7 a bare yaw past ±2π is refused as a shape, saying yaw is radians and naming the radians it meant: create at, create from at, set transform", wild.map((r) => r.refused));
+    // the fix's numbers are absolute yaws within ±π, sent back as they are: 360° is a whole turn (0), not 6.2832; -7 radians wrapped is -0.7168; no relative turn
+    const full = call("bob", "set", { id: "at-yaw", component: "transform", value: { yaw: 360 } }).refused, acc = call("bob", "set", { id: "at-yaw", component: "transform", value: { yaw: -7 } }).refused;
+    const said = (f) => [...(f ?? "").matchAll(/yaw (-?[\d.]+)/g)].map((m) => Number(m[1]));
+    const back = said(full?.fix).map((y) => call("bob", "set", { id: "at-yaw", component: "transform", value: { yaw: y } }));
+    ok(back.length === 2 && back.every((r) => r.ok) && /-0\.7168/.test(acc?.fix) && ![full, acc].some((r) => /turn \{deg\}/.test(r?.fix)),
+      "CA7 …and the fix names yaws that are taken as they are (360° → a whole turn), the same heading for radians past 2π (-7 → -0.7168), and no relative turn", [full, acc, back.map((r) => r.refused ?? "ok")]);
+    const edge = [call("bob", "create", { id: "at-2pi", model: "crate", at: { pos: [-7, 0, -8], yaw: 2 * Math.PI } }), call("bob", "set", { id: "at-yaw", component: "transform", value: { yaw: -6.2 } })];
+    ok(edge.every((r) => r.ok), "CA7 …and ±2π itself, or just inside it, still turns the thing", edge.map((r) => r.refused));
+    // Mica #324: a full turn written to four decimals (6.2832) is 1.5e-5 past 2π; YAW_LIMIT (componentspec) takes it
+    const four = [call("bob", "create", { id: "at-2pi4", model: "crate", at: { pos: [-7, 0, -9], yaw: 6.2832 } }), call("bob", "set", { id: "at-yaw", component: "transform", value: { yaw: -6.2832 } })];
+    ok(four.every((r) => r.ok), "CA7 …and a full turn to four decimals (±6.2832, just past ±2π) still turns the thing", four.map((r) => r.refused));
+    // …and @world.spawn.yaw takes the same value; one past the slack is still out of range (one YAW_LIMIT, componentspec)
+    const sp = [6.2832, -6.2832].map((yaw) => call("ann", "set", { id: "@world", component: "spawn", value: { pos: [0, 0, 0], yaw } }));
+    const spPast = [6.3, -6.3].map((yaw) => call("ann", "set", { id: "@world", component: "spawn", value: { pos: [0, 0, 0], yaw } }));
+    ok(sp.every((r) => r.ok) && spPast.every((r) => r.refused) && w.state().entities["@world"]?.c.spawn?.yaw === -6.2832,
+      "CA7 …and @world.spawn.yaw takes ±6.2832 too, while ±6.3 (past the rounding slack) is still refused", [sp.map((r) => r.refused ?? "ok"), spPast.map((r) => r.refused ?? "ok")]);
+    const q0 = JSON.stringify(w.state().entities["at-yaw"]?.c.transform.q);
+    const typed = [call("bob", "set", { id: "at-yaw", component: "transform", value: { yaw: "30" } }), call("bob", "set", { id: "at-yaw", component: "transform", value: { yaw: null } }),
+      call("bob", "create", { from: "tbl", at: { pos: [1, 0, 1], yaw: "30" } })];
+    ok(typed.every((r) => code(r) === "shape") && JSON.stringify(w.state().entities["at-yaw"]?.c.transform.q) === q0,
+      "CA7 …and a yaw that isn't a number (\"30\", null) is a shape refusal, never coerced into a turn: set transform, create from at", typed.map((r) => r.refused ?? "ok")); }
   // redo = undo of my undo (Figma's rule: never back over someone's later work)
   call("ann", "delete", { id: "tbl", component: "lock" });
   const a1 = call("bob", "set", { id: "cup", component: "label", value: "one" });

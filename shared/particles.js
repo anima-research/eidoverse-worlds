@@ -16,17 +16,7 @@ export { hashSeed, QUALITY_TIERS };
 export const PARTICLE_PRESETS = Object.freeze(Object.fromEntries(ESSENTIAL_NAMES.map((k) => [k, { count: ESSENTIALS[k].emitters[0].spawn.amount, reads: ESSENTIALS[k].reads }])));
 export const PARTICLE_MAX_COUNT = 4000;   // EFFECT_LIMITS.amount: main's motes (3,000) fit
 
-/** mulberry32 — small, fast, and the same sequence everywhere. */
-export function mulberry32(seed) {
-  let a = seed >>> 0;
-  return function rnd() {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+export { mulberry32 } from './rand.js';
 /** The emitter's seed: the authored one if there is one, otherwise derived from the entity id and the effect (persistent:
  *  the id is; every client and every replay computes the same number without a round trip). */
 export function emitterSeed(entityId, data) {

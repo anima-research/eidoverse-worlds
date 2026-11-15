@@ -3,6 +3,7 @@
 // S1 (Covenant IV): any advance schedule reaching tick T gives the same bits: one jump, tick by tick, split, and
 //    with a JSON clone between ticks. Review 49d4fb0d #1: a body resting mid-call stayed dynamic in the live world.
 import * as S from "../../shared/sim.js";
+import { mulberry32 } from "../../shared/rand.js";
 import { restsOf, ENGINES } from "../../shared/protocol/simlayer.js";
 import { makeReplica } from "../../shared/protocol/replica.js";
 let pass = 0, fail = 0;
@@ -29,7 +30,7 @@ const schedules = (mkf: () => any, T: number) => {
     ok(j === t && t === c && c === s, `S1 one rests while another flies: every schedule agrees at tick ${T}`, { jumpEqTicks: j === t, cloneEqTicks: c === t, splitEqTicks: s === t }); }
 }
 { // a seeded fuzz of mixed flights over noisy ground
-  let seed = 5; const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+  const rnd = mulberry32(5);
   let bad = 0, runs = 0, empty = 0;
   for (let n = 0; n < 40; n++) {
     const k = 2 + Math.floor(rnd() * 3), ents: any = {}, L: any[] = [];
@@ -64,8 +65,8 @@ const schedules = (mkf: () => any, T: number) => {
   const mk2 = (ents: any, L: any[], terrain: any) => { const sim: any = S.emptySim(), view = { entities: ents, terrain };
     S.simEntry(sim, { seq: 0, ts: 0, verb: "epoch", args: { sim: S.SIM_ID, tickMs: 33, boxes: { crate: BOX, plank: PLANK, slab: SLAB } } }, view);
     L.forEach((l, i) => S.simEntry(sim, { seq: 1 + i, ts: 0, verb: "launch", args: l }, view)); return sim; };
-  let seed = 11; const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
-  const run = (opt: any) => { let bad = 0; seed = 11;
+  let rnd = mulberry32(11);
+  const run = (opt: any) => { let bad = 0; rnd = mulberry32(11);
     for (let n = 0; n < 12; n++) { const ents: any = {}, L: any[] = [], ns = 20 + Math.floor(rnd() * 150), R = 2 + rnd() * 10;
       for (let i = 0; i < ns; i++) ents["s" + i] = { pos: [rnd() * 2 * R - R, rnd() < 0.2 ? rnd() * 1.5 : 0, rnd() * 2 * R - R], yaw: rnd() * 6.28, model: ["crate", "crate", "plank", "slab"][Math.floor(rnd() * 4)], scale: 1 };
       const k = 1 + Math.floor(rnd() * 4);
@@ -140,7 +141,7 @@ const schedules = (mkf: () => any, T: number) => {
   { const { s2, woke } = run("dynamic"); const a = s2.bodies.a;
     ok(!!woke && woke.seq === 1 && a?.resting && Math.hypot(a.c[0] - 2, a.c[2]) > 0.1, "S8 a thrown crate knocks a dynamic crate: it moves and rests, under the throw's launch", { woke, at: a?.c }); }
   { const { s2 } = run(undefined); ok(!s2.bodies.a && J(s2.statics.a.c) === J([2, 0.25, 0]), "S8 …a thing that isn't dynamic is a collider: it doesn't move", { c: s2.statics.a?.c }); }
-  let seed = 3; const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+  const rnd = mulberry32(3);
   let bad = 0, sched = 0, knocked = 0;
   for (let n = 0; n < 8; n++) { const ents: any = {}, Ls: any[] = [], ns = 10 + Math.floor(rnd() * 50), R = 2 + rnd() * 4;
     for (let i = 0; i < ns; i++) ents["s" + i] = { pos: [rnd() * 2 * R - R, 0, rnd() * 2 * R - R], yaw: rnd() * 6.28, model: "crate", scale: 1, ...(rnd() < 0.7 ? { kind: "dynamic" } : {}) };
