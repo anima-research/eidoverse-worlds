@@ -23,12 +23,12 @@ void main(){
   // THE GRADIENT, BREATHING (R, 15:11: "the plain gradient but pulsing slowly —
   // surely there's not much lighter than that"). A few instructions per pixel:
   // brand light at the ground fading out by ~0.45 of the frame, its strength
-  // breathing on a ~7 s cycle between 0.55 and 1. Still in the worker, so it
+  // breathing on a ~7 s cycle between 0.05 and 1. Still in the worker, so it
   // animates through any main-thread stall and stops only on a hard freeze;
   // still dithered, so the dark ramp has no bands.
   float tt = t * calm;
   // the breath IS the not-frozen indicator (R, 15:29): at whisper brightness a
-  // ±13 % swing is invisible, so it breathes deep — down to 15 % at the trough
+  // ±13 % swing is invisible, so it breathes deep
   float breath = 0.525 + 0.475 * sin(tt * 0.9);      // trough 5 %: fades nearly out (R, 15:42)
   float fall = exp(-uv.y * 7.0);                          // exponential fall-off (R): bright only at the ground, ~1/16 by 0.4
   vec3 brand = vec3(0.561, 0.910, 0.784);

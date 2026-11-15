@@ -37,7 +37,7 @@ function snapCase(readyAt: number | null, wait: number | undefined, far = false)
     let firstAt = null;
     snap.setSnapReadiness(async () => {
       firstAt ??= camera.position.toArray();
-      // far: the view near the body is ready only once the camera has been there readyAt ms (residency's new ground)
+      // ready readyAt ms after the start, wherever the camera is (firstAt records where it was when first asked)
       const ready = readyAt !== null && performance.now() - t0 >= readyAt;
       return { ready, body: true, builds: false, models: ready ? 1 : 0, loading: ready ? 0 : 1, compiling: 0 };
     });

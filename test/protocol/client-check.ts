@@ -392,7 +392,7 @@ try {
         const hs = rc.intersectObjects([...w.entities.values()].filter(Boolean), true);
         const h = hs.find((h) => !inside(h.object, peb)); const top = h && h.face && h.face.normal.clone().transformDirection(h.object.matrixWorld).y > 0.6 && inside(h.object, pl);
         return { P: P.toArray(), A: top ? h.point.toArray() : null, onPebble: !!hs[0] && inside(hs[0].object, peb) }; };
-      // every whole pixel (a MouseEvent's clientX is one) over the pebble's drawn box that qualifies as a press point;
+      // every other whole pixel (a MouseEvent's clientX is one; a 2 px grid) over the pebble's drawn box that qualifies as a press point;
       // the one nearest their middle, away from the edges where a sub-pixel would flip the hit
       globalThis.__pressF = () => { const peb = w.entities.get('pebble'); const b = new T.Box3().setFromObject(peb); const xs = [], ys = [];
         for (const cx of [b.min.x, b.max.x]) for (const cy of [b.min.y, b.max.y]) for (const cz of [b.min.z, b.max.z]) { const s = new T.Vector3(cx, cy, cz).project(c.camera); xs.push((s.x + 1) / 2 * innerWidth); ys.push((1 - s.y) / 2 * innerHeight); }
@@ -513,7 +513,7 @@ try {
     const r = { edit: e.visible, plain: p.visible }; e.el.remove(); p.el.remove(); return JSON.stringify(r);`);
   check("R1 an edit frame saved 'shown' starts hidden after a reload (a plain frame keeps its saved state)", reborn === JSON.stringify({ edit: false, plain: true }), reborn);
 
-  // the World row: its name big (the protocol keeps it on @world.about), @world small (R 10-04: "World and (@world)?")
+  // the World row: 'World' then its name (the protocol keeps it on @world.about), no '@world' text (W1, below)
   const wrow = await evalJson(`document.querySelector('[data-frame="hierarchy"] .sp-item')?.textContent ?? null`);
   check("W1 the Hierarchy's World row reads WORLD then its name (one line, 38b82c6a), not '(@world)'", /^World\s*client check/.test(wrow ?? "") && !wrow.includes("@world"), wrow);
 
