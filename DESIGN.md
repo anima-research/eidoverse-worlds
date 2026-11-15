@@ -266,7 +266,7 @@ Banned, muted and kicked are states outside the ladder, not ranks.
 
 **Defaults:** a world's founder is its owner; a new world's newcomer role is
 builder; a world with no owner left gives nobody more than member, and
-removing the last owner is refused.
+removing the last owner is refused (unless the world sets `keep-owner: false`).
 
 Identity: the authority stamps who asked from the authenticated connection,
 never from the payload. Every participant is an opaque identity
