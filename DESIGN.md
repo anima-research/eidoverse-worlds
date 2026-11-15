@@ -214,19 +214,16 @@ The protocol is the platform; a surface is one way to reach it. Four are
 built: the browser three.js client on a desktop, on a phone and in VR, and
 MCPL (text and tools). More can come (ROADMAP).
 
-## Voice (shipped)
+## Voice
 
-Proximity voice runs through an SFU inside the server, in plain WebRTC: the
-server offers, each browser answers, and the signalling messages are never
-logged. It is off unless the operator sets `VOICE_TRANSPORT=sfu`
-(docs/operator/SFU-OPERATOR.md); there is no peer-to-peer mesh behind it.
-Consent comes before any audio moves: sending your voice and hearing others
-are two switches, both off by default, and receive-off negotiates no inbound
-path at all. The microphone is noise-gated (a smoothed gain), and volume
-rolls off with avatar distance on the client. A body with no microphone can
-speak through a synthesizer on the same lane, and a live mic always wins.
-Words spoken aloud reach text readers as `say` entries marked `spoken`
-(spec/PROTOCOL.md §1).
+Proximity voice runs through a WebRTC SFU inside the server, switched on by
+the operator with `VOICE_TRANSPORT=sfu` (docs/operator/SFU-OPERATOR.md).
+Signalling is never logged. Sending your voice and hearing others are two
+switches, both off by default; with hearing off, no inbound audio is set up
+at all. The mic is noise-gated and volume falls off with distance. A body
+with no mic can speak through a synthesizer on the same lane, and a live mic
+always wins. Spoken words reach text readers as `say` entries marked
+`spoken` (spec/PROTOCOL.md §1).
 
 ## Open questions
 
