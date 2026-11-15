@@ -5,17 +5,18 @@
 // client/main.js, so every unit suite passes and only the browser lane, which needs Chromium and the asset library,
 // sees it. tools/smoke.ts parses client/main.js and client/lib/*.js, but it isn't in the gate and it skips the
 // subdirectories (lib/realize/, lib/commands/, lib/edit/…). This parses every .js/.mjs under client/ and shared/ (the
-// browser loads shared/ as /shared/) with Bun's own parser, outside node_modules and vendored code.
+// browser loads shared/ as /shared/) with Bun's own parser, outside node_modules. Vendored code is parsed too: the page
+// imports client/lib/vendor/htmlmesh.js statically (through xr.js), and it carries patches of ours.
 //   C1  the parser refuses a duplicate top-level binding (so this check can't pass vacuously)
 //   C2  the walk reaches the entry points and the subdirectories
-//   C3  every module parses
+//   C3  every module parses: one FAIL row per file that doesn't (the gate keeps the rows, not a long detail)
 // usage: bun tools/protocol/client-parse-check.ts
 import fs from "node:fs";
 import path from "node:path";
 
 const ROOT = path.resolve(import.meta.dir, "../..");
 const DIRS = ["client", "shared"];
-const SKIP_DIR = new Set(["node_modules", "vendor", ".git"]);
+const SKIP_DIR = new Set(["node_modules", ".git"]);
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = "") => {
   if (ok) pass++; else fail++;
@@ -40,16 +41,17 @@ check("C1 the parser refuses a duplicate import binding", !!dup && /already been
 
 const files = DIRS.flatMap((d) => walk(path.join(ROOT, d)));
 const rel = files.map((f) => path.relative(ROOT, f).split(path.sep).join("/"));
-check("C2 the walk reaches client/main.js, client/lite.js and the subdirectories",
-  rel.includes("client/main.js") && rel.includes("client/lite.js") && rel.some((f) => /^client\/lib\/[^/]+\//.test(f)) && rel.some((f) => f.startsWith("shared/protocol/")),
+check("C2 the walk reaches client/main.js, client/lite.js, the subdirectories and the vendored htmlmesh",
+  rel.includes("client/main.js") && rel.includes("client/lite.js") && rel.includes("client/lib/vendor/htmlmesh.js") && rel.some((f) => /^client\/lib\/[^/]+\//.test(f)) && rel.some((f) => f.startsWith("shared/protocol/")),
   `${rel.length} files`);
 
-const bad: string[] = [];
+let bad = 0;
 for (let i = 0; i < files.length; i++) {
   const err = parseError(fs.readFileSync(files[i], "utf8"));
-  if (err) bad.push(`${rel[i]}: ${err}`);
+  if (err) { bad++; check(`C3 ${rel[i]} parses`, false, err); }
 }
-check(`C3 all ${files.length} client and shared modules parse`, bad.length === 0, bad.join("\n         "));
+if (!bad) check(`C3 all ${files.length} client and shared modules parse`, true);
+else console.log(`  ${bad} of ${files.length} modules don't parse`);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
