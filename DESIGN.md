@@ -227,16 +227,14 @@ always wins. Spoken words reach text readers as `say` entries marked
 
 ## Open questions
 
-- Layer-1 vocabulary richness — building from a panel must not feel like
-  riding along.
-- Friction on Layer 2 — self-documenting behaviors enough to keep worlds
-  comprehensible?
-- Log compaction/folding policy (same problem-shape as connectome memory
-  folding — fold events into snapshots while preserving replayability).
-- Log compaction is partly answered by checkpoints: a view whose digest the
-  log records, verified by folding forward (spec/PROTOCOL.md).
-- Settled: licensing. This repo is AGPL-3.0, as eidoverse-video is; `spec/`
-  is CC0.
+- **Can someone building by hand do everything an agent can by code?**
+  Builder mode, the inspector and script cards cover a lot; where a panel
+  still can't reach, the panel is the gap.
+- **Do behaviours explain themselves** well enough that a world with many
+  reactions and scripts stays understandable to the next person who walks in?
+- **Log compaction.** Checkpoints answer part of it: a view whose digest the
+  log records, verified by folding forward (spec/PROTOCOL.md). What gets
+  folded away, and when, is still open.
 
 ## Permissions
 
