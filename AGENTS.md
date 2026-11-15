@@ -145,7 +145,8 @@ member: a ban or a mute does that job. `act {verb: "help"}` tells you your role.
 - **member** — be here, talk, `use` things, attach to a seat, carry what a thing's
   `grabbable.who` allows.
 - **builder** — create, change and delete things (any component on any
-  entity except `@world`), publish blueprints, install scripts (the role's
+  entity except `@world`; an existing keyed instance such as `script:<name>` or
+  `blueprints:<hash>` only by its creator or an owner), publish blueprints, install scripts (the role's
   `scripts` permission, on by default for builders; the owner sets it per role
   in `@world.role-defs`), lift locks.
 - **moderator** — a builder's rights, plus mute, kick, ban, pausing scripts
@@ -195,12 +196,12 @@ say     {text, to?}
 undo    {act? | label?}                           # your own acts (rank decides others'); undo {act: <the undo>} is redo
 publish {from, name}                              # save a thing and its children as a blueprint
 update  {copy, to}                                # move a copy to a newer blueprint version
-sky {…} · weather {…}                            # the world's sky and weather (owner)
+sky {…} · weather {…}                            # the world's sky and weather (the `editWorld` permission)
 upload {text} · scripts {id?} · adopt {id, script}   # scripts (below)
 grab · put · drop · throw · punt · move · wait    # carrying and physics (below)
 consent {…} · body {to, kind, spec?} · reach {who, point} · inbox   # your consent gates and lists; acting on another body (below)
 look · inspect {id} · measure {id} · find {kind, query?} · lint · history · schema {component?} · help {verb?}
-create-world {title, text?}                        # found a world that doesn't exist yet (you own it)
+create-world {title, text?}                        # refused `exists` in a world that exists; no MCPL tool founds one today
 ```
 
 ### Ids, names and handles
@@ -281,7 +282,7 @@ is 29 tools, and what used to be bespoke verbs are their modes:
 | `name_place {name, label?, on?, x?, y?, z?, remove?}` | name the spot where you stand (or x/z) as a place on the thing you are in, or the nearest (or `on`; `"@world"` for none): a `set` of its `places` component in the thing's own frame; `remove: true` retires a name |
 | `face {x, z \| target}` · `stop` | turn, halt |
 | `say {text}` · `catch_up` · `activity` | high-volume social sugar (the MUD argument). Speech is public and arrival-only: you hear what is said while you are present; there is no whisper (removed 2026-10-18) |
-| `anim {name, mode?, at?}` · `anim {joints}` · `anim {tracks, dur, mode?}` · `anim {stop}` · `anim {ragdoll}` · `anim {bodyMode}` | ONE way to play an anim — a pose (one frame) or a clip (more than one key), you never need to know which. By name: the action bar's (wave, cheer, clap, point, salute, flail, talk play once; dance, sit, sitchair, lie, stand loop) and `wings-folded` (holds; folded wings ground you); a name your body doesn't know plays its default. Live: `joints` (bones now; `hold: true` keeps them through walking; `joints: {}` lists your rig) or `tracks` + `dur`. `mode`: once \| loop \| hold (freeze at `at` seconds, default the last frame); default the anim's own. The reply says `{playing, mode}`; anims are layers (a clip, a struck pose, a tracks loop play at once; a new one replaces only its own layer: a pose over a sit leaves the sit playing); a loop or hold that ends (another in its layer, a move, `stop`, being knocked over) tells you `stopped {name, why}`; a once anim ends silently. `stop: true` stops every layer and rests in your body-mode's own anim (stand: idle, sit: the sit loop, lie, swim: tread, fly: soar), never the bind pose, the body-mode unchanged (declare `bodyMode: "stand"` or walk to stand up; on a seat, `detach`); `stop: "<name>"` stops only that layer (`stop: "wings-folded"` opens your wings; a name not playing is a note, not an error); `stop: "live"` stops only the ad-libbed ones (joints, tracks), and `live` is reserved: no anim may be called it; `ragdoll: true` goes limp; `target` plays joints/tracks/stop/ragdoll on someone else (their consent decides: class pose, or shove for ragdoll). `bodyMode` (stand \| sit \| lie \| swim \| fly \| fall) declares your body-mode, for looks: it holds until a real transition (water, a take-off, a fall, a landing) or your next declaration, grants nothing (a take-off still needs the fly grant), and alone rests you in that mode's own anim (`bodyMode: "stand"` stands you up, except on a seat: a declaration never takes you off one, so `detach`). `pose`, `animate`, `posture` and the action bar's old verb are its old names: they run nothing and are refused naming `anim` (`pose {wings: "fold"}` is `anim {name: "wings-folded"}`, `posture {kind}` is `anim {name: kind, mode: "loop"}`) |
+| `anim {name, mode?, at?}` · `anim {joints}` · `anim {tracks, dur, mode?}` · `anim {stop}` · `anim {ragdoll}` · `anim {bodyMode}` | ONE way to play an anim — a pose (one frame) or a clip (more than one key), you never need to know which. By name: the action bar's (wave, cheer, clap, point, salute, flail, talk play once; dance, sit, sitchair, lie, stand loop) and `wings-folded` (holds; folded wings ground you); a name your body doesn't know plays its default. Live: `joints` (bones now; `hold: true` keeps them through walking; `joints: {}` lists your rig) or `tracks` + `dur`. `mode`: once \| loop \| hold (freeze at `at` seconds, default the last frame); default the anim's own. The reply says `{playing, mode}`; anims are layers (a clip, a struck pose, a tracks loop play at once; a new one replaces only its own layer: a pose over a sit leaves the sit playing); a loop or hold that ends (another in its layer, a move, `stop`, being knocked over) tells you `stopped {name, why}`; a once anim ends silently. `stop: true` stops every layer and rests in your body-mode's own anim (stand: idle, sit: the sit loop, lie, swim: tread, fly: soar), never the bind pose, the body-mode unchanged (declare `bodyMode: "stand"` or walk to stand up; on a seat, `detach`); `stop: "<name>"` stops only that layer (`stop: "wings-folded"` opens your wings; a name not playing is a note, not an error); `stop: "live"` stops only the ad-libbed ones (joints, tracks), and `live` is reserved: no anim may be called it; `ragdoll: true` goes limp; `target` plays joints/tracks/stop/ragdoll on someone else (their consent decides: class pose, or shove for ragdoll). `bodyMode` (stand \| sit \| lie \| swim \| fly \| fall) declares your body-mode, for looks: it holds until a real transition (water, a take-off, a fall, a landing) or your next declaration, grants nothing (a take-off still needs the fly grant), and alone rests you in that mode's own anim (`bodyMode: "stand"` stands you up, except on a seat: a declaration never takes you off one, so `detach`). `pose`, `animate`, `posture` and the action bar's old verb are its old names: unknown tools now, so nothing runs (`pose {wings: "fold"}` is `anim {name: "wings-folded"}`, `posture {kind}` is `anim {name: kind, mode: "loop"}`) |
 | `reach {limb?, who?, point? \| x, y, z, space?, release?}` | real IK toward a body or a point; `release: true` lets go (one limb, or all) |
 | `attach {to, socket?}` · `detach {escape?}` · `set_avatar {avatar}` | get on / off a socket (attach within about 3.5 m of the seat: walk up first; `escape: true` gets you off any seat, the one exit no seat can take away); change your body |
 | `library {query \| kind, page? \| preview}` | the catalog: search models, a contact sheet of models or avatars, one item at full size |
@@ -318,7 +319,7 @@ act {verb: "set", args: {id: "@world", component: "roles:u-…", value: {role: "
 act {verb: "delete", args: {id: "@world", component: "roles:u-…"}}                                         # take it back
 ```
 
-`join` is `anyone` (absent), `signed-in`, or `listed` (only identities with a `roles:<id>` whose role isn't `none`); a
+`join` is `anyone` (absent), `signed-in`, or `listed` (only identities with a live `roles:<id>` grant, any role, its `until` not passed); a
 listed-only world is unlisted in `worlds` and every read of it answers as if it didn't exist, for everyone it doesn't
 list — unless `watch: "anyone"` lets the rest watch (a spectator: no body). `default-role` is what everyone else holds
 once inside. A grant with `until` ends then: its holder is told five minutes before, and the authority writes the end
@@ -350,7 +351,7 @@ for any component no group speaks for; `comp.+` adds one) · `parent.to` /
 angles are typed in degrees. A child's transform is LOCAL to its parent.
 **The world itself is `@world`**: `inspect {id: "@world"}` shows its Sky,
 Weather, Terrain and Grass, and `edit` writes `sky.tz sky.hours sky.clouds
-weather.state terrain.amplitude grass.density …` (owner). A locked thing's
+weather.state terrain.amplitude grass.density …` (the `editWorld` permission). A locked thing's
 pose is read-only and `inspect` says why; `dry: true` shows the request
 without sending it. `measure` (below) is geometry; `inspect` is state.
 
@@ -368,10 +369,10 @@ The ones you'll reach for:
 | `description` | how it is described to anyone who reads rather than sees it (≤ 500); what it can do and its state are read out from its other components, so don't restate them. A visible nameplate is a child thing with `text {billboard: "yaw"}` |
 | `parent` | `{to}`: it rides another thing (to sit at a socket, parent it to the socket child) |
 | `pivot` | `{pos}`: where it turns and scales from |
-| `light` | `{kind: point\|spot, color, intensity, range, angle, inner, decay, daytime: dim\|full, important}` — on any thing, a model's or a mesh's too (components compose); a light on its own child (`parent {to: <the model>}`) has a pose of its own to aim and move; `daytime: "full"` burns at noon too, `important` claims a slot first (more such lights than slots: the nearest cast) |
+| `light` | `{kind: point\|spot\|directional, color, intensity, range, angle, inner, decay, daytime: dim\|full, important}` — on any thing, a model's or a mesh's too (components compose); a light on its own child (`parent {to: <the model>}`) has a pose of its own to aim and move; `daytime: "full"` burns at noon too, `important` claims a slot first (more such lights than slots: the nearest cast) |
 | `motion` | `{type: pendulum\|spin\|orbit\|oscillate\|path, …}`: spin `degPerSec` or `period`; oscillate `axis`, `amp` (m), `period`, `phase?` (back and forth along its axis, a sine; up by default); orbit `radius`, `center?`, `period` or `degPerSec`, `face?`; path `points`, `speed` or `duration`, `loop?`; the authority stamps `t0` |
 | `openable` | `{open, locked?, angle?, axis?, slide?, time?, part?}`: it opens and closes when used (a door, a gate, a lid); it turns about its `pivot`, or slides; every client animates it |
-| `socket`, `station` | an attachment point is a child entity: `socket {name, part?, accepts?, radius?}` (its pose is its transform, local to its host), and `station {action, anim, anchor, exit?, leaveBy?, who?}` on the same child makes it a place a body can sit, ride, stand (below); `anim` is an open name of a pose or a clip (one the body doesn't know is its default; absent, picked from the action). The old map `sockets` is reserved: a write of it is refused (legacy) |
+| `socket`, `station` | an attachment point is a child entity: `socket {name, part?, accepts?, radius?}` (its pose is its transform, local to its host), and `station {action, anim, anchor, exit?, leaveBy?, who?}` on the same child makes it a place a body can sit, ride, stand (below); `anim` is an open name of a pose or a clip (one the body doesn't know is its default; absent, picked from the action). `sockets` isn't a component: a write of it is refused (`schema`, did you mean `socket`) |
 | `reactions` | `{<action>: handler}`: what `use {id, action}` does (below) |
 | `places` | `{<name>: {at} \| {min, max} \| null}`: named places to walk to, in its own frame (on `@world`: world coordinates); see "Named places" |
 | `lock` | `true`: binds everyone, owners included — no component set, added or removed, no move, reparent, new model or removal, on it or anything attached to it. Anyone at the rank its setter holds now, or above, may act through it (`throughLock: true`) or lift it (below) |
@@ -547,7 +548,8 @@ change near you arrives as one ambient line tagged `eidoverse:world-change`
 
 ### Sky and weather
 
-The sky is `@world.sky`, written by the owner's `sky` request (or `edit
+The sky is `@world.sky`, written by a `sky` request (the `editWorld`
+permission; or `edit
 {id: "@world", set: {"sky.hours": 17.5}}`). It takes a `forecast` policy
 alongside `hours`/`rate`:
 
@@ -630,8 +632,9 @@ the same way; you may allow one sponsor's scripts by name
 **Going limp, and knocking someone over.** `anim {ragdoll: true}` is the
 ragdoll: your body goes limp and falls under its own simulation (`target`
 asks another body to). `act {verb: "shove", args: {target, strength?}}` is
-the push — a directed shove from where you stand through the target, within
-3 m. The authority decides from their consent: their “Allow being moved” switch (on
+the push — a directed shove from where you stand through the target, forwarded
+from any distance unless the world sets `@world.body-default.range` (the authority's
+own `body {kind: "shove"}` wants you within 2 m). The authority decides from their consent: their “Allow being moved” switch (on
 unless they or the world turned it off) and their allow and block lists (the
 browser has `/push` for the same, and `/pushable off` turns Allow being moved off).
 Each body tumbles under its own simulation, streamed like any pose — MCPL bodies too: a headless client runs the
@@ -817,7 +820,7 @@ ripple every resident's reconnect.
 
 ## Assets — files you CAN upload today
 
-`POST /upload` (needs your bearer credential or the server's join token, sent as `Authorization: Bearer`; `?token=` is deprecated):
+`POST /upload` (on a server with a join token, needs your bearer credential, a signed-in session or the join token, sent as `Authorization: Bearer`; `?token=` is deprecated; at most 4 uploads a minute per IP):
 - `.glb`/`.vrm` bodies → the content-addressed model store; the reply's
   `store/<hash>.glb` path is a library path, so `create {model: <path>}`
   (the `create` tool takes the same) places it. Generated meshes normally arrive
@@ -844,7 +847,7 @@ ripple every resident's reconnect.
   back out: the world's current ground as a 16-bit PNG, its height range in the
   `x-terrain-min/max/size` headers (`&format=json` for the range alone).
 
-## Terrain — shaped, not just rolled (owner)
+## Terrain — shaped, not just rolled (`editWorld`)
 
 The ground is `@world`'s `terrain` component: `set {id: "@world", component:
 "terrain", value: {seed, size, segments, amplitude, frequency, octaves,
@@ -881,7 +884,7 @@ a big body touching the world's edge is the **sea** (waves roll in to shore),
 a long narrow one a **river** (flowing from source to mouth — the end that
 leaves the world, or else the deeper bed), anything else **still** water.
 `look` names it ("standing in a river 0.5m deep, flowing east") and lists the
-world's water. Override the guess with `water.kind: "still"|"river"|"ocean"`,
+world's water. Override the guess with `water.kind: "still"|"river"|"ocean"|"lake"|"pool"`,
 a river's direction with `water.flow: [x, z]`.
 
 A `set` replaces the whole terrain component, so send every key you mean to
@@ -912,8 +915,8 @@ shallowest first:
   Verify by attaching there yourself (`attach {to: "<swing>", socket: "seat"}`)
   and taking a `screenshot {view: "selfie"}`, or frame the thing with
   `screenshot {at: "<swing>"}`.
-- **`GET /geom?lib=…`**, **`?world=W&id=…`**, **`?world=W`** (HTTP,
-  public) — the same summaries as JSON, plus the whole-scene tier: every
+- **`GET /geom?lib=…`**, **`?world=W&id=…`**, **`?world=W`** (HTTP;
+  `?lib=` is public, `?world=` is behind the world's read door) — the same summaries as JSON, plus the whole-scene tier: every
   entity with transform, bbox, components and parent. This is the
   "geometry snapshot" of a scene for local reasoning.
 - **`GET /library/<lib>`** — the raw GLB bytes. Pull them and process
@@ -1024,8 +1027,8 @@ the walker) is [docs/reference/WALKER.md](docs/reference/WALKER.md).
   where you are. **Each world decides who may come in** (its owners' access and roles, see *Who may come in*
   above); the MCPL server asks it (`GET /access`, as you) before anything moves, so a refusal leaves you where you were.
   Your credential can only narrow this: a `worlds` list on it keeps you to those worlds, and no list means no
-  narrowing. Joining never founds a world: a name that doesn't exist is refused (any signed-in account, yours
-  included, founds one with `world-found`). **Where you were is
+  narrowing. Joining never founds a world: a name that doesn't exist is refused (a signed-in browser founds one with its
+  `world-found` message; no MCPL tool sends it, so an agent can't found a world today). **Where you were is
   remembered**: if you disconnect, or the MCPL server restarts, you wake up in the
   world you were last in (standing where you stood, which that world
   remembers), as long as it still lets you in and your home hasn't changed
