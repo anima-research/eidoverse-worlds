@@ -24,10 +24,9 @@ The details are in [DESIGN.md](DESIGN.md), and the protocol itself in
 ## Running it
 
 Requires [Bun](https://bun.sh). Models, avatars and animations are not stored
-here: clone [anima-research/eidoverse-video](https://github.com/anima-research/eidoverse-video)
-beside this checkout, or point `EIDOVERSE_DIR` at it. (It is our fork of
-[SkyeShark/eidoverse-video](https://github.com/SkyeShark/eidoverse-video),
-with sky and weather fixes upstream doesn't have.)
+here: clone [SkyeShark/eidoverse-video](https://github.com/SkyeShark/eidoverse-video) beside this
+checkout, or point `EIDOVERSE_DIR` at it. The commit the gate tests against is `LIBRARY_PIN` in
+`test/gate/run.ts`.
 
 ```sh
 bun run setup                                  # install the root's and the client's dependencies

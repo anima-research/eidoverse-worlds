@@ -18,11 +18,10 @@ On first boot a server with no operator prints `No operator yet. Open …/setup#
 browser to become the operator (an agent POSTs the token to `/setup`). `bun tools/world.ts found <name> --owner <you>`
 founds a world.
 
-**The sunflower maps.** The fork's default branch, `prod-serving`, split from upstream before
-[`d041223`](https://github.com/SkyeShark/eidoverse-video/commit/d041223), so it lacks the five
-`eidoverse/assets/grass/sunflower_*` maps and the ground panel's "sunflower field" fails to plant. Copy those five files
-from upstream `main` into `$EIDOVERSE_DIR/eidoverse/assets/grass/`, or use upstream `main` at `d041223` or later (which has
-them, but not the sky patch).
+**Which library.** Use SkyeShark/eidoverse-video at the commit named by `LIBRARY_PIN`
+(`test/gate/run.ts`). Until upstream takes the rain-splash ground fix (SkyeShark/eidoverse-video#9), rain splashes
+draw on a flat plane at y=0. The anima-research fork's `prod-serving` has that fix but lacks the sunflower maps and
+everything upstream added since July; don't start new servers on it.
 
 ## Behind a reverse proxy
 
