@@ -46,7 +46,7 @@ import { defsFingerprint } from "./defs.ts";
 // seat profiles: routes.ts owns the HTTP half, seats.ts the one store and the update push; the poll is here
 import { seatStore } from "./seats.ts";
 import { announceProfileUpdate } from "./seats.ts";
-import { OPT_DIR, PATCH_DIR } from "./config.ts";
+import { PATCH_DIR } from "./config.ts";
 // relay-floor: transport selection + durable voice-service identity
 import { relayEnabled, bootIncarnation, currentIncarnation, voiceTransport } from "./transport.ts";
 import { installSfuTransportGuard } from "./sfuguard.ts";
