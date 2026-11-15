@@ -10,10 +10,16 @@
 //   B. both browsers play it: each screen's own playback state reaches `playing`, and frames advance;
 //   C. look says what the APPLIANCE observed (live), with its age;
 //   D. no websocket frame either browser receives names the WHEP endpoint, its HTTP port or the read key;
-//   E. the audio: after a gesture, the screen is heard near it (authored volume × distance × the listener's world volume),
-//      silent past its radius, and mute-for-me silences it for this viewer only;
+//   E. the audio: after a gesture, the screen is heard near it; its gain follows the authored volume (halved, it halves)
+//      and is silent past its radius; mute-for-me silences it for this viewer only. (The listener's world volume is the
+//      world bus's, after this gain, so it isn't read here.)
 //   F. the publisher stops: both screens say `stalled` (never `playing` over a frozen frame) and look says offline;
 //   G. the publisher restarts: both screens come back to `playing` on their own (reconnect with backoff);
+//   J. five screens at once (#332 review 6, 7, 8): each browser's offers are paced to the sequencer's gap, so none is
+//      refused as too soon; four play and the fifth says blocked; one taken down, the blocked one plays in its place;
+//   K. the operator revokes the source and admits it again (review 9): the screens say why and offer nothing while it is
+//      gone, then come back to playing on their own once the sequencer's state frame says it is back;
+//   L. a spectating browser's screen says blocked, with the reason, and offers nothing more (review 1);
 //   H. the screen comes down: every appliance WebRTC session this probe opened is closed, and the quads are gone;
 //   I. teardown: every pid this probe started is gone.
 // @ts-nocheck
@@ -156,6 +162,16 @@ try {
   const muted = await until(pa, SCREEN, (s) => s.gain === 0, 5000); const other = await st(pb, SCREEN);
   check('E. mute-for-me silences it for this viewer only', muted?.gain === 0 && (other?.gain ?? 0) > 0, JSON.stringify({ muted, other }));
   await pa.evaluate((id) => import('/lib/mediaprefs.js').then((m: any) => m.toggleMineMuted(id)), SCREEN);
+  // the law beyond near and mute (#332 review 5): the authored volume scales it, and past the radius it is silent
+  const base_ = (await until(pa, SCREEN, (x) => (x.gain ?? 0) > 0, 5000))?.gain ?? 0;
+  await req(pa, 'set', { id: SCREEN, component: 'video', value: { source: 'solstice', description: 'the probe stage', width: 3, radius: 15, volume: 0.4 } });
+  const half = await until(pa, SCREEN, (x) => (x.gain ?? 0) > 0 && Math.abs(x.gain / base_ - 0.5) < 0.05, 5000);
+  check('E. the authored volume scales the gain (0.8 to 0.4 halves it)', base_ > 0 && Math.abs((half?.gain ?? 0) / base_ - 0.5) < 0.05, JSON.stringify({ base: base_, half: half?.gain }));
+  await req(pa, 'set', { id: SCREEN, component: 'transform', value: { pos: [0, 1, -60], q: [0, 0, 0, 1], scale: [1, 1, 1] } });
+  const far = await until(pa, SCREEN, (x) => x.gain === 0, 5000);
+  check('E. past its radius (15 m) the screen is silent', far?.gain === 0, JSON.stringify(far));
+  await req(pa, 'set', { id: SCREEN, component: 'transform', value: { pos: [0, 1, -4], q: [0, 0, 0, 1], scale: [1, 1, 1] } });
+  await req(pa, 'set', { id: SCREEN, component: 'video', value: { source: 'solstice', description: 'the probe stage', width: 3, radius: 15 } });
 
   // F. the publisher stops
   ff.kill('SIGKILL'); await sleep(500);
@@ -169,6 +185,57 @@ try {
   publish();
   const ga = await until(pa, SCREEN, (s) => s.state === 'playing', 90000), gb = await until(pb, SCREEN, (s) => s.state === 'playing', 90000);
   check('G. both screens come back to playing on their own', ga?.state === 'playing' && gb?.state === 'playing', JSON.stringify({ ga, gb }));
+
+  // J. five screens at once: paced, capped, and a freed slot taken (#332 review 6, 7, 8)
+  const extra: string[] = [];
+  for (let i = 0; i < 4; i++) {
+    const m = await req(pa, 'create', { id: `$x${i}`, components: { transform: { pos: [i * 3 - 4, 1, -8], q: [0, 0, 0, 1], scale: [1, 1, 1] }, model: 'eidoverse/assets/models/crate_large_red.glb', label: `screen ${i}`, video: { source: 'solstice', width: 2 } } });
+    extra.push(m?.ids?.[`$x${i}`]);
+  }
+  check('J. four more screens are placed', extra.every((x) => typeof x === 'string'), JSON.stringify(extra));
+  const all5 = [SCREEN, ...extra];
+  const settle = async (pg: any) => { const t0 = Date.now(); let ss: any[] = []; while (Date.now() - t0 < 45000) { ss = await Promise.all(all5.map((id) => st(pg, id))); if (ss.filter((x) => x?.state === 'playing').length === 4 && ss.filter((x) => x?.state === 'blocked').length === 1) break; await sleep(500); } return ss; };
+  for (const [n, pg] of [['1', pa], ['2', pb]] as const) {
+    const ss = await settle(pg);
+    const soon = ss.flatMap((x) => (x?.retries ?? []).filter((w: string) => /too soon/.test(w ?? '')));
+    check(`J. browser ${n}: four of five screens play and the fifth says blocked`, ss.filter((x) => x?.state === 'playing').length === 4 && ss.filter((x) => x?.state === 'blocked').length === 1, JSON.stringify(ss.map((x) => x?.state)));
+    check(`J. browser ${n}: no offer was refused as too soon (the offers were paced)`, soon.length === 0, soon.join(' | '));
+  }
+  // take down one that plays in browser 1; its blocked one takes the slot
+  const ss1 = await Promise.all(all5.map((id) => st(pa, id)));
+  const blockedId = all5[ss1.findIndex((x) => x?.state === 'blocked')];
+  const playingExtra = extra.find((id, i) => ss1[i + 1]?.state === 'playing');
+  await req(pa, 'delete', { id: playingExtra, component: 'video' });
+  const freed = await until(pa, blockedId, (x) => x.state === 'playing', 30000);
+  check('J. a freed slot goes to the blocked screen, which plays', freed?.state === 'playing', JSON.stringify({ blockedId, freed }));
+
+  // K. the source is revoked, then admitted again (review 9)
+  const live = all5.filter((id) => id !== playingExtra);
+  const before = await Promise.all(live.map((id) => st(pa, id)));
+  writeFileSync(join(SCR, 'sources.json'), JSON.stringify({ sources: {} }, null, 2));
+  const gone = await Promise.all(live.map((id) => until(pa, id, (x) => x.state === 'error' && /revoked/.test(x.why ?? ''), 20000)));
+  check('K. a revoked source\'s screens say why (revoked)', gone.every((x) => x?.state === 'error' && /revoked/.test(x?.why ?? '')), JSON.stringify(gone.map((x) => `${x?.state}: ${x?.why}`)));
+  await sleep(8000);
+  const waiting = await Promise.all(live.map((id) => st(pa, id)));
+  check('K. …and offer nothing while it is gone (no reconnect attempts)', waiting.every((x, i) => (x?.retries?.length ?? 0) === (before[i]?.retries?.length ?? 0) && x?.state === 'error'), JSON.stringify(waiting.map((x, i) => [x?.state, (x?.retries?.length ?? 0) - (before[i]?.retries?.length ?? 0)])));
+  writeFileSync(join(SCR, 'sources.json'), JSON.stringify({ sources: entry }, null, 2));
+  const back = await Promise.all(live.map((id) => until(pa, id, (x) => x.state === 'playing', 60000)));
+  check('K. admitted again, they come back to playing on their own', back.every((x) => x?.state === 'playing'), JSON.stringify(back.map((x) => x?.state)));
+
+  // L. a spectator (review 1)
+  const C = await launchBrowser(); let pcs: any;
+  try {
+    pcs = await C.page();
+    await pcs.goto(`${world.origin}/?world=vprobe&key=${world.key}&name=watcher&spectate`, { waitUntil: 'domcontentloaded' });
+    const sp = await until(pcs, SCREEN, (x) => x.state === 'blocked', 40000);
+    await sleep(8000); const sp2 = await st(pcs, SCREEN);
+    check('L. a spectator\'s screen says blocked, with the reason', sp?.state === 'blocked' && /only someone in this world/.test(sp?.why ?? ''), JSON.stringify(sp));
+    check('L. …and offers nothing more', sp2?.state === 'blocked' && (sp2?.retries?.length ?? 0) === 0, JSON.stringify(sp2));
+  } finally { await C.close().catch(() => {}); }
+
+  // the extra screens come down before H, which counts this probe's sessions to zero
+  for (const id of extra) if (id !== playingExtra) await req(pa, 'delete', { id, component: 'video' });
+  await sleep(2000);
 
   // H. the screen comes down
   const down = await req(pa, 'delete', { id: SCREEN, component: 'video' });
