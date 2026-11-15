@@ -234,6 +234,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["replica-freeze", "../replica-freeze-test.ts", 1],   // C7a: the client's fold is frozen in dev, and still folds every later entry (it sat outside the gate and couldn't start)
   ["briefing", "../briefing-test.ts", 1],
   ["door-frame", "../door-frame-test.ts", 1],   // a malformed frame from anyone closes that one socket, never the MCPL door (Bun 1.4's ws throws an 'error' nobody listens for)
+  ["client-parse", "client-parse-check.ts", 2], // every module under client/ and shared/ parses (a merge that imports a name twice blanks the page, and nothing in tools/ imports main.js)
 ];
 
 // ---- lanes ----
