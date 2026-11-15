@@ -61,7 +61,7 @@ const MUTANTS: [string, string, string | [string, string][], string, string[]][]
   ["undo along rank", "protocol/authority/undo.js", "if (!eo || me < them) refuse(\"rank\"", "if (!eo) refuse(\"rank\"", ["S5"]],
   ["generate gates the world's assets", "protocol/authority/gate.js", "  if (base === \"assets\") return \"generate\";", "  if (base === \"assets\") return \"build\";", ["S6"]],
   ["default-role can opens generate to strangers", "protocol/roles.js", "if (!entry && !opts.anon && isObj(dr?.can)) Object.assign(can, pickPermissions(dr.can));", "", ["S6"]],
-  ["a lock is lifted only by who may edit it", "protocol/authority/gate.js", "const mayUnlock = !who.cap && !lacks(w, st, who.actor, { verb: \"delete\", id: k, comp: \"lock\" }) && !below;", "const mayUnlock = !who.cap && !below;", ["S7"]],
+  ["a lock is lifted only by who may edit it", "protocol/authority/gate.js", "const mayUnlock = !who.cap && !lacks(w, st, who.actor, { op: \"delete\", id: k, comp: \"lock\" }) && !below;", "const mayUnlock = !who.cap && !below;", ["S7"]],
   // S3
   ["person acts need their permission", "protocol/authority/moderation.js", "if (!powers.some((k) => me.can[k])) refuse(\"rights\"", "if (false) refuse(\"rights\"", ["M1", "M4", "M5", "M9"]],
   ["person acts only below you", "protocol/authority/moderation.js", "if (tr >= me.rank) refuse(\"rank\"", "if (false) refuse(\"rank\"", ["M1"]],
@@ -73,7 +73,7 @@ const MUTANTS: [string, string, string | [string, string][], string, string[]][]
   ["a lift needs rights over every record", "protocol/authority/moderation.js", "for (const rec of inForce) {", "for (const rec of inForce.slice(-1)) {", ["V2"]],
   ["nobody lifts their own", "protocol/authority/moderation.js", "if (a.who === actor) refuse(\"rank\", `you can't lift a ${verb} on yourself`", "if (false) refuse(\"rank\", `you can't lift a ${verb} on yourself`", ["V5"]],
   // a refused act's record never carries its values either (scars L1), so V7 sees the text only with both removed
-  ["a muted refusal isn't logged", "protocol/authority.js", [["\"banned\", \"muted\"]);", "\"banned\"]);"], ["const body = { args: names.known, refused: { code } };", "const body = { args: names.known, request: args, refused: { code } };"]], "", ["V7"]],
+  ["a muted refusal isn't logged", "protocol/authority.js", [["\"banned\", \"muted\"]);", "\"banned\"]);"], ["const body = { argNames: names.known, refused: { code } };", "const body = { argNames: names.known, request: args, refused: { code } };"]], "", ["V7"]],
   ["custom ranks are range-checked on read", "protocol/roles.js", "|| d.rank < 1 || d.rank > 254) return null;", ") return null;", ["V9"]],
   ["seniority binds a capability's holder", "protocol/authority/gate.js", "const cap = who.cap; if (cap && cap.kind !== \"reaction\" && cap.kind !== \"script\") return;", "const cap = who.cap; if (cap) return;", ["V10"]],
   ["a banned person is refused", "protocol/authority.js", "if (w.exists && verb !== \"help\" && verb !== \"leave\" && CTX.operator !== actor && isBanned(w, actor)) refuse(\"banned\"", "if (false) refuse(\"banned\"", ["M2"]],
@@ -97,16 +97,16 @@ const MUTANTS: [string, string, string | [string, string][], string, string[]][]
   ["modlog is for moderation powers", "protocol/authority/moderation.js", "modlog: (w, actor, a) => { const st = w.state(); if (!modHolder(st, actor) && roleOf(st, actor) !== \"owner\") refuse(", "modlog: (w, actor, a) => { const st = w.state(); if (false) refuse(", ["M9"]],
   ["guests rank by their guest role", "protocol/roles.js", "let r = isObj(wc[`roles:${id}`]) ? wc[`roles:${id}`].role : anon ? guestRoleOf(wc) : base;", "let r = isObj(wc[`roles:${id}`]) ? wc[`roles:${id}`].role : anon ? \"visitor\" : base;", ["M10", "R6"]],
   // S5, S6
-  ["translation: v1 fly/gen → can.fly/can.generate", "../tools/import-v1/translate-v1.js", "return Object.keys(can).length ? { ...rest, can } : rest; };", "return v; };", ["T1"]],
+  ["translation: v1 fly/gen → can.fly/can.generate", "../tools/import-v1/translate-v1.js", "return Object.keys(can).length ? { ...rest, can } : rest; };\n  // upstream #258", "return v; };\n  // upstream #258", ["T1"]],
   ["the menu: only below you", "protocol/roles.js", "const below = them.rank < me.rank;", "const below = them.rank <= me.rank;", ["P3"]],
   ["the menu: acts follow permissions", "protocol/roles.js", "if (has(\"ban\")) out.push({ id: \"ban\", label: \"Ban…\" });", "out.push({ id: \"ban\", label: \"Ban…\" });", ["P1"]],
   ["the menu: unmute when muted", "protocol/roles.js", "out.push(state.muted ? { id: \"unmute\", label: \"Unmute\" } : { id: \"mute\", label: \"Mute…\" });", "out.push({ id: \"mute\", label: \"Mute…\" });", ["P2"]],
   ["badges: guests are guests", "protocol/roles.js", "if (p.anon) return { text: \"guest\", tone: \"guest\" };", "", ["P4"]],
   // the review's findings
-  ["seniority: the start of the unbroken run", "protocol/authority/gate.js", "if (o.verb === \"set\" && o.comp === comp && R.isOwner(o.value)) since = i; else return since; } }", "if (o.verb === \"set\" && o.comp === comp && R.isOwner(o.value)) return i; else return since; } }", ["F5"]],
+  ["seniority: the start of the unbroken run", "protocol/authority/gate.js", "if (o.op === \"set\" && o.comp === comp && R.isOwner(o.value)) since = i; else return since; } }", "if (o.op === \"set\" && o.comp === comp && R.isOwner(o.value)) return i; else return since; } }", ["F5"]],
   ["seniority: no re-affirm of a senior owner", "protocol/authority/gate.js", "  if (ownerSince(w, st, target) <= ownerSince(w, st, holder))", "  if (op.value?.role === \"owner\") return;\n  if (ownerSince(w, st, target) <= ownerSince(w, st, holder))", ["F1"]],
   // "none holds no voice and no hands" RETIRED with F3: the none role is gone
-  ["CONTROL (no-op: must stay green)", "protocol/roles.js", "// ---------------- the other caps (research §5) ----------------", "// ---------------- the other caps (research §5)  ----------------", []],
+  ["CONTROL (no-op: must stay green)", "protocol/roles.js", "// ---------------- the other caps ----------------", "// ---------------- the other caps  ----------------", []],
 ];
 
 async function runSelf(tree: string, only: string[] | null, extra: string[] = []) {
@@ -536,8 +536,8 @@ const cases: Case[] = [
     good: (o) => o.l === "ok" && !o.body },
   { id: "V7", what: "a muted person's refused say isn't written to the public log (it would carry the text)", run(s) { cast(s);
       s.call("mo", "mute", { who: "vic", minutes: 5, channels: ["chat"] }); const n0 = s.entries().length; s.call("vic", "say", { text: "secret words" });
-      return { leaked: JSON.stringify(s.entries().slice(n0)).includes("secret words") }; },
-    good: (o) => o.leaked === false },
+      return { leaked: JSON.stringify(s.entries().slice(n0)).includes("secret words"), logged: s.entries().length - n0 }; },
+    good: (o) => o.leaked === false && o.logged === 0 },
   { id: "V9", what: "a custom role's rank is range-checked when read: a rank written around the authority (300) never reads above the owner", run() {
       return { r: RL.roleDef ? RL.roleDef({ "role-defs": { boss: { name: "Boss", rank: 300 } } }, "boss") : "no roles.js" }; },
     good: (o) => o.r === null },

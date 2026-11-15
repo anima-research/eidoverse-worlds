@@ -31,15 +31,15 @@ const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? a
 
 // [name, file under shared/, find, replace, rows]
 const MUTANTS: [string, string, string, string, string[]][] = [
-  ["a refused request logs its values again", "protocol/authority.js", "const body = { args: names.known, refused: { code } };", "const body = { args: names.known, request: args, refused: { code } };", ["L1"]],
-  ["argument names not filtered to the verb's own", "protocol/authority.js", "const known = spec ? keys.filter((k) => k in spec.args || UNIVERSAL_ARGS.has(k)) : [];", "const known = keys;", ["L2"]],
+  ["a refused request logs its values again", "protocol/authority.js", "const body = { argNames: names.known, refused: { code } };", "const body = { argNames: names.known, request: args, refused: { code } };", ["L1"]],
+  ["argument names not filtered to the verb's own", "protocol/authority.js", "const known = spec ? keys.filter((k) => ownArg(spec.args, k) || UNIVERSAL_ARGS.has(k)) : [];", "const known = keys;", ["L2"]],
   ["an invented verb's name is logged", "protocol/authority.js", "const asVerb = Object.hasOwn(VERBS, verb) || Object.hasOwn(RESERVED_VERBS, verb) || Object.hasOwn(REMOVED_VERBS, verb) ? verb : \"unknown-verb\";", "const asVerb = verb;", ["L4"]],
   ["presence verbs' refusals are logged", "protocol/authority.js", "    if (PRESENCE_VERBS.has(verb)) return;", "", ["L5"]],
   ["a refused grab of a body is logged", "protocol/authority.js", "    if (verb === \"grab\" && String(args?.id ?? \"\").startsWith(\"body:\")) return;", "", ["L5b"]],
   ["the refusal ring", "protocol/authority.js", "  ring.push(rec); if (ring.length > REFUSAL_RING) ring.splice(0, ring.length - REFUSAL_RING);", "", ["L3"]],
   ["look shows everyone's table", "protocol/authority/reads.js", "...(id === actor ? { shield: shieldOf(P, id) } : {}),", "shield: shieldOf(P, id),", ["K1"]],
   ["look shows who touches whom", "protocol/authority/reads.js", ".filter(([k, r]) => r.to === id && (id === actor || k === actor)).map(([k]) => k) }));", ".filter(([k, r]) => r.to === id).map(([k]) => k) }));", ["K2"]],
-  ["edits unseat no one", "protocol/authority/gate.js", "const vacate = CTX.forking || who.lifting ? [] : vacatesFor(w, st, who, norm);", "const vacate = [];", ["O1", "O2", "O7", "O8"]],
+  ["edits unseat no one", "protocol/authority/gate.js", "const vacate = CTX.forking ? [] : vacatesFor(w, st, who, norm);", "const vacate = [];", ["O1", "O2", "O7", "O8"]],
   ["only the first occupant is let go", "protocol/authority/occupants.js", "for (const r of occupants) { if (out.has(r)) continue;", "for (const r of occupants) { if (out.size) break;", ["O7"]],
   ["the seat's own motion unseats", "protocol/authority/occupants.js", "      if (own && rootOf(s.to) === own && unchangedSinceSat(s.since)) continue;", "", ["O3"]],
   ["moving your own seat unseats you", "protocol/authority/occupants.js", "const occupants = Object.keys(w.presence.occupants ?? {}).filter((k) => k !== who.actor);", "const occupants = Object.keys(w.presence.occupants ?? {});", ["O4"]],

@@ -90,7 +90,7 @@ const MUTANTS: [string, string, string | [string, string, string?][], string, st
   ["changed:<comp> cascades", "authority/scriptrun.js", "if (hit) activate(w, id, name, { on: `changed:${hit.comp}`", "if (false) activate(w, id, name, { on: `changed:${hit.comp}`", ["E3", "B8"]],
   ["say events", "authority/scriptrun.js", "activate(w, id, name, { on: \"say\", by: e.actor", "void (w, id, name, { on: \"say\", by: e.actor", ["E1"]],
   ["a script never hears its own say", "authority/scriptrun.js", "if (!(Array.isArray(v.on) && v.on.includes(\"say\")) || e.actor === `script:${id}`) continue;", "if (!(Array.isArray(v.on) && v.on.includes(\"say\"))) continue;", ["E1"]],
-  ["use of an imported binding says re-install", "authority/use.js", "if (old || (isE(ce) && ce.kind === \"act\" && ce.verb === \"imported\"))", "if (false)", ["V1"]],
+  ["use of an imported binding says re-install", "authority/use.js", "if (old || (isE(ce) && ce.kind === \"request\" && ce.verb === \"imported\"))", "if (false)", ["V1"]],
   ["imported behaviours are listed", "authority/scriptrun.js", "...(id && id !== \"@world\" ? {} : { imported: importedBehaviours(w, st) })", "...{}", ["V1"]],
   ["UTC inside the sandbox", "sandbox.js", "P.getTimezoneOffset = function getTimezoneOffset() { return 0; };", "", ["D3"]],
   ["local-time methods are UTC", "sandbox.js", "P[\"get\" + k] = P[\"getUTC\" + k];", "", ["D3"]],
@@ -134,10 +134,10 @@ const MUTANTS: [string, string, string | [string, string, string?][], string, st
   ["the arrival's stand-ins compare their uses", "scriptaudit.js", "[!sameU, \"world.use calls\", jcs(r2.uses ?? []) === jcs(res.uses ?? [])]", "[!sameU, \"world.use calls\", true]", ["W1c", "W1d"]],
   ["an arrival's parts are judged each on its own", "scriptaudit.js", "if (!parts.length) { skipped.push(", "if (parts.length < [!sameW, !sameS, !sameU].filter(Boolean).length) { skipped.push(", ["W1d"]],
   ["an arrival's stand-ins must read alike", "scriptaudit.js", "const parts = !r2.ok || jcs(readShape(r2.reads)) !== jcs(readShape(res.reads)) ? [] :", "const parts = !r2.ok ? [] :", ["W1e"]],
-  ["a world.use act is a link, not a depth level", "authority/scripts.js", "if (e.kind === \"act\" && e.verb === \"script\") n++; e = w.entries[e.cause]; } return n; }", "if (e.kind === \"act\") n++; e = w.entries[e.cause]; } return n; }", ["W4"]],
+  ["a world.use act is a link, not a depth level", "authority/scripts.js", "if (e.kind === \"request\" && e.verb === \"script\") n++; e = w.entries[e.cause]; } return n; }", "if (e.kind === \"request\") n++; e = w.entries[e.cause]; } return n; }", ["W4"]],
   ["a script on @world hears every use (world-level)", "authority/use.js", "out.push(activate(w, \"@world\", name,", "out.push(void (w, \"@world\", name,", ["WL1"]],
   ["a script on @world is the owner's to install", "authority/gate.js", "if (base === \"roles\") return \"grant\";\n  return \"owner\";", "if (base === \"roles\") return \"grant\";\n  return base === \"script\" ? \"thing\" : \"owner\";", ["WL2"]],
-  ["CONTROL (no-op: must stay green)", "authority/scripts.js", "// ---------- behaviours (L4, L7 as revised;", "// ---------- behaviours (L4, L7  as revised;", []],
+  ["CONTROL (no-op: must stay green)", "authority/scripts.js", "// ---------- behaviours (L4, L7) ----------", "// ---------- behaviours (L4, L7)  ----------", []],
 ];
 async function runSelf(tree: string, only: string[] | null, extra: string[] = []) {
   const args = ["bun", path.join(ENGINE, "test/protocol/scripts-check.ts"), "--tree", tree, "--no-server", ...(only ? ["--only", only.join(",")] : []), ...extra];
@@ -1170,7 +1170,7 @@ console.log(JSON.stringify({ platform: process.platform, available: SANDBOX.avai
     good: (o) => o.setup.every((x: string) => x === "ok") && o.wrote > 0 && o.rest && o.landed?.id === "ball" && o.landed?.by === "vic" },
   // ---------------- P: params (the one signal store) ----------------
   { id: "P1", what: "world.param(id, name, n) writes params.<name> (merged into what's there; a seat pose reads it as param.<name>); a param.<name> key in any other component is refused like any unknown key", run(s) { cast(s);
-      s.call("bob", "create", { id: "swing", components: { label: "swing", transform: { pos: [0, 0, 0] } } });   // a light is its own thing (one place per thing): no model here
+      s.call("bob", "create", { id: "swing", components: { label: "swing", transform: { pos: [0, 0, 0] } } });   // no model here
       s.call("bob", "set", { id: "swing", component: "light", value: { kind: "point", intensity: 1 } });
       s.call("bob", "set", { id: "swing", component: "params", value: { tilt: 2 } });
       install(s, "bob", "swing", "pump", onUse(`world.param("self", "lean", 0.25); world.param("self", "push", -1);`), { scope: { ids: "self", comps: ["params"] }, on: ["use"] });
@@ -1606,7 +1606,7 @@ const SUITE = suite("scripts-check", { cap: 700 }); let na = 0;
 // they print OPTIONAL with the reason (the gate receipt shows them). I0 keeps that from hiding a regression: isolation must be on everywhere else.
 const { SANDBOX: SBX } = await import("../../shared/protocol/sandbox.js");
 const isolating = !!SBX.isolated(), mustIsolate = process.platform !== "win32" && process.env.EIDO_SANDBOX !== "inprocess";
-SUITE.ok(isolating || !mustIsolate, `I0   isolation is on on every host but Windows (here: ${process.platform}, isolated ${isolating})`);
+SUITE.ok(isolating || !mustIsolate, `(I0) isolation is on on every host but Windows (here: ${process.platform}, isolated ${isolating})`);
 const all = [...cases, ...(argv.includes("--no-server") ? [] : serverCases)];
 for (const c of all) {
   if (ONLY && !ONLY.includes(c.id)) continue;
