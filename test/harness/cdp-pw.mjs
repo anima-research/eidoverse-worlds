@@ -25,6 +25,9 @@ function keyDef(k) {
     const code = /[a-z]/i.test(k) ? `Key${up}` : /\d/.test(k) ? `Digit${k}` : '';
     return { key: k, code, vk: /[a-z\d]/i.test(k) ? up.charCodeAt(0) : k.charCodeAt(0), text: k };
   }
+  // playwright's code names: KeyA-KeyZ and Digit0-Digit9 type their character, as a press of 'a' or '7' does
+  const named = /^Key([A-Z])$/.exec(k) ?? /^Digit(\d)$/.exec(k);
+  if (named) return { key: named[1].toLowerCase(), code: k, vk: named[1].charCodeAt(0), text: named[1].toLowerCase() };
   return { key: k, code: k, vk: 0 };
 }
 const fnSource = (fn, arg) => typeof fn === 'function' ? `(${fn})(${arg === undefined ? '' : JSON.stringify(arg)})` : String(fn);
@@ -67,27 +70,27 @@ export async function launchCdp({ args = [] } = {}) {
     await until('Chrome exits', () => child.exitCode !== null || child.signalCode !== null, { ms: 5000 }).catch(() => {});
     killChild(child); try { fs.rmSync(profile, { recursive: true, force: true }); } catch { /* locked: goes with the scratch dir */ }
   };
-  const page = async ({ initScripts = [], permissions = [], viewport = null, touch = false } = {}) => {
+  const page = async ({ initScripts = [], permissions = [], viewport = null, touch = false, mobile = false, deviceScaleFactor = 1 } = {}) => {
     const { browserContextId } = await C.send('Target.createBrowserContext', { disposeOnDetach: true });
     const { targetId } = await C.send('Target.createTarget', { url: 'about:blank', browserContextId });
     const { sessionId } = await C.send('Target.attachToTarget', { targetId, flatten: true });
-    const pg = makePage(C, sessionId, { targetId, browserContextId, viewport });
+    const pg = makePage(C, sessionId, { targetId, browserContextId, metrics: { mobile, deviceScaleFactor } });
     await pg._init({ initScripts, permissions, viewport, touch });
     return pg;
   };
   // playwright's context: init scripts collected, then applied to each page it opens
-  const newContext = async ({ viewport = null, permissions = [], hasTouch = false } = {}) => {
+  const newContext = async ({ viewport = null, permissions = [], hasTouch = false, isMobile = false, deviceScaleFactor = 1 } = {}) => {
     const inits = [], pages = [];
     return {
       addInitScript: async (fn, arg) => { inits.push([fn, arg]); },
-      newPage: async () => { const p = await page({ viewport, permissions, touch: hasTouch, initScripts: inits }); pages.push(p); return p; },
+      newPage: async () => { const p = await page({ viewport, permissions, touch: hasTouch, mobile: isMobile, deviceScaleFactor, initScripts: inits }); pages.push(p); return p; },
       close: async () => { for (const p of pages) await p.close(); },
     };
   };
   return { page, newContext, newPage: () => page(), close, port };
 }
 
-function makePage(C, S, { targetId, browserContextId }) {
+function makePage(C, S, { targetId, browserContextId, metrics }) {
   const send = (m, p) => C.send(m, p, S);
   const handlers = { console: new Set(), pageerror: new Set(), dialog: new Set(), request: new Set(), requestfinished: new Set(), requestfailed: new Set(), framenavigated: new Set() };
   const routes = [];
@@ -168,7 +171,7 @@ function makePage(C, S, { targetId, browserContextId }) {
     _init: async ({ initScripts, permissions, viewport, touch }) => {
       await send('Runtime.enable'); await send('Page.enable'); await send('Network.enable');
       if (permissions.length) await C.send('Browser.grantPermissions', { permissions: permissions.map((p) => p === 'microphone' ? 'audioCapture' : p), browserContextId });
-      if (viewport) await pg.setViewportSize(viewport); else await send('Emulation.setDeviceMetricsOverride', { width: size.width, height: size.height, deviceScaleFactor: 1, mobile: false });
+      await pg.setViewportSize(viewport ?? size);
       if (touch) await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
       for (const [fn, arg] of initScripts) await pg.addInitScript(fn, arg);
     },
@@ -221,9 +224,9 @@ function makePage(C, S, { targetId, browserContextId }) {
     isVisible: async (sel) => evaluate((s) => { const e = document.querySelector(s); return !!e && e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden' && getComputedStyle(e).display !== 'none'; }, sel),
     $: async (sel) => (await evaluate((s) => !!document.querySelector(s), sel)) ? { click: () => pg.click(sel), getAttribute: (n) => pg.getAttribute(sel, n), isVisible: () => pg.isVisible(sel), textContent: () => evaluate((s) => document.querySelector(s)?.textContent ?? null, sel), boundingBox: () => evaluate((s) => { const r = document.querySelector(s).getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; }, sel) } : null,
     locator: (sel) => ({ click: (o) => pg.click(sel, o), hover: () => pg.hover(sel), isVisible: () => pg.isVisible(sel), fill: (v) => pg.fill(sel, v), press: (k) => pg.press(sel, k), getAttribute: (n) => pg.getAttribute(sel, n), count: () => evaluate((s) => document.querySelectorAll(s).length, sel), textContent: () => evaluate((s) => document.querySelector(s)?.textContent ?? null, sel), waitFor: (o) => pg.waitForSelector(sel, o) }),
-    setViewportSize: async ({ width, height }) => { size = { width, height }; await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false }); },
+    setViewportSize: async ({ width, height }) => { size = { width, height }; await send('Emulation.setDeviceMetricsOverride', { width, height, ...metrics }); },
     viewportSize: () => size,
-    screenshot: async ({ path: out, fullPage = false } = {}) => { const { data } = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: fullPage }); const b = Buffer.from(data, 'base64'); if (out) fs.writeFileSync(out, b); return b; },
+    screenshot: async ({ path: out, fullPage = false, clip } = {}) => { const { data } = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: fullPage, ...(clip ? { clip: { scale: 1, ...clip } } : {}) }); const b = Buffer.from(data, 'base64'); if (out) fs.writeFileSync(out, b); return b; },
     mouse, keyboard, touchscreen,
     cdp: send,
     context: () => ({ newCDPSession: async () => ({ send }) }),
