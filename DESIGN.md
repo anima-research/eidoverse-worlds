@@ -275,36 +275,32 @@ wearing your old name inherits nothing.
 
 ## Moderation
 
-Two scopes:
+**In a world**, moderation acts are requests to the authority, keyed on
+identity (`whois` finds the identity behind a name), and each needs its
+permission: **warn**, **mute** (voice or chat, up to 7 days), **kick**
+(optionally for some minutes) and **ban** (for some days, or until lifted),
+plus unmute and unban. Owners can't be kicked or banned. Acts go in the
+world's separate moderator log, never the world log, so a ban never becomes
+world state every reader folds. Kicks and bans land at once on every matching
+connected body (close 4006), and a ban also refuses joins, spectating
+included. A banned sponsor's scripts are suspended. MCPL goes through the
+same gate (its `kick`, `ban`, `unban` tools).
 
-**Per-world** — `kick` / `ban` / `unban` are requests to the authority by anyone
-holding the kick/ban permission (owners and the default moderator role),
-keyed on identity (`whois` finds the identity behind a name). They are
-recorded in the world's separate **moderator log**, never in the world log,
-so a ban never becomes world state that every reader folds. Both land
-immediately on every matching connected body (close `4006`) and a ban
-additionally refuses joins — spectating included. MCPL moderates through
-the identical gate (`act {verb: "kick" | "ban" | "unban" | "bans"}`). A banned
-sponsor's scripts are suspended.
-
-**Server bans** — there is no server-wide log, so server-wide bans are messages
-(`server-ban` / `server-unban` / `server-bans`), server-operator-only (`SERVER_OPERATORS`),
-persisted in `WORLDS_DIR/.bans.json` (inside WORLDS_DIR deliberately: a
-scratch server gets a scratch ban list, same doctrine as the logs). A
-server ban expels from every world at once and refuses every join. Close
-code `4006` is in both the browser client's and the MCPL server's
-no-retry lists, so a removed client never hammers the server.
+**Server-wide**, there's no server log, so bans are messages (`server-ban`,
+`server-unban`, `server-bans`) only a server operator (`SERVER_OPERATORS`)
+may send, kept in `WORLDS_DIR/.bans.json` (a scratch server gets a scratch
+list). A server ban expels from every world and refuses every join. Close
+code 4006 is on both clients' no-retry lists, so a removed client doesn't
+hammer the server.
 
 ## Orrery (3D prompting) seam
 
-Orrery is a separate service; its requesters drive its multistage flow
-(prompt → image candidates → requester approval → 3D generation) against its
-own API directly — large files never pass through the requester. Its output
-lands here through the existing content-addressed store:
+Orrery is a separate service. Whoever asks drives its flow (prompt → image
+candidates → they pick one → 3D) against its own API; the heavy files never
+pass through them. The result arrives through the content-addressed store:
+`POST /upload?by=<requester>` with `Authorization: Bearer` (`?token=` still
+works, deprecated). The store holds inert bytes, and uploading grants nothing
+in a world. Bringing it into a world is a `@world` `assets:<path>` write,
+gated on the `generate` permission, and then a `model` naming
+`store/<hash>.glb`. Generation allowances live in Orrery, per person.
 
-- `POST /upload?by=<requester>` with `Authorization: Bearer <your credential
-  or the join token>` (`?token=` still works and is deprecated) — the
-  store is inert bytes; accepting an upload grants nothing world-visible.
-- What enters a WORLD is a `model` component naming the stored path
-  (`store/<hash>.glb`), which builder rank gates. Metering/allowances live
-  in Orrery keyed by principal (home-node §6).
