@@ -43,8 +43,8 @@ const ONE = Object.freeze({ get: (n) => (n === "crate" ? { label: "a crate", siz
   const bare = worldOf({ name: "bare", entries: [], getBlob: () => null, putBlob: () => "", now, writeLine: () => {} });
   ok("C4 …and the bare authority (worldOf with no catalogue) holds none: it falls back to NO_CATALOGUE, which names nothing", bare.catalogue === null && NO_CATALOGUE.get("crate") === undefined && NO_CATALOGUE.list("").length === 0, bare.catalogue); }
 
-// C5: the suites' lab table is a fixture: it lives in test/, and no runtime file (shared/ server/ mcpl/ client/ services/) imports it
-{ const g = Bun.spawnSync(["git", "-C", ENGINE, "grep", "-l", "labmodels", "--", "shared", "server", "mcpl", "client", "services"]);
+// C5: the suites' lab table is a fixture: it lives in test/, and no runtime file (shared/ server/ mcpl/ client/ services/) imports it (a comment may point at it)
+{ const g = Bun.spawnSync(["git", "-C", ENGINE, "grep", "-lE", "(from|import\\() *[\"'][^\"']*labmodels", "--", "shared", "server", "mcpl", "client", "services"]);
   const users = String(g.stdout).split("\n").filter(Boolean);
   ok("C5 the lab table is test/harness/labmodels.js and no runtime file imports it", g.exitCode === 1 && !fs.existsSync(path.join(ENGINE, "shared/protocol/labmodels.js")) && !users.length && !!LAB_CATALOGUE.get("crate"), users); }
 
