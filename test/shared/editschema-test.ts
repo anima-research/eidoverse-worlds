@@ -333,6 +333,9 @@ console.log("\nMaterial, the draft hesperus/material (docs/contributing/COMPONEN
     check("a spin about y marks only rotate y as driven (not translate, not scale, not the other rotations)", JSON.stringify(drv) === JSON.stringify(["rotate y"]), JSON.stringify(drv));
     const ax = g.flatMap((x: any) => x.fields).find((f: any) => f.t === "enum" && /axis/.test(f.label ?? ""));
     check("the motion axis menu offers x, y, z (a negative rate turns it the other way)", JSON.stringify(ax?.options?.map((o: any) => o.v)) === JSON.stringify(["x", "y", "z"]), JSON.stringify(ax?.options));
+    { const box = { id: "b", model: "box.glb", pos: [5, 0, 7], yaw: 0, motion: { type: "spin", degPerSec: 10 }, "motion:lid": { type: "spin", node: "Lid", degPerSec: 10 } };
+      const whole = editOps(box, "b", { "motion.type": "path" }).ops[0]?.args?.value, part = editOps(box, "b", { "motion.lid|type": "path" }).ops[0]?.args?.value;
+      check("a whole motion turned to path is seeded where it stands; a node's motion isn't (its points are in the node's frame, which the editor doesn't know)", JSON.stringify(whole?.points) === "[[5,0,7],[5,0,9]]" && part?.type === "path" && part?.node === "Lid" && !("points" in (part ?? {})), JSON.stringify({ whole, part })); }
     const hinge = (axis: number[]) => inspectSchema({ id: "d1", model: "door.glb", pos: [0, 0, 0], yaw: 0, openable: { open: false, angle: 1, axis } }, "d1", {}).groups.flatMap((x: any) => x.fields).find((f: any) => f.label === "hinge axis");
     const up = hinge([0, 1, 0]), down = hinge([0, -1, 0]);
     check("the hinge axis menu offers x, y, z; a stored [0,-1,0] shows as -y, its own option (main listed all six)", JSON.stringify(up?.options?.map((o: any) => o.v)) === JSON.stringify(["x", "y", "z"]) && down?.value === "-y" && JSON.stringify(down?.options?.map((o: any) => o.v)) === JSON.stringify(["x", "y", "z", "-y"]), JSON.stringify({ up: up?.options, down }));

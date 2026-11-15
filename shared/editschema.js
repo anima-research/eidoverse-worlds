@@ -1296,7 +1296,8 @@ export function editOps(ent, id, edits, live = {}) {
           // so the change is not also a phase jump
           for (const p of Object.keys(next)) if (!['type', 'axis', 'pivot', 'phase', 't0', 'part', 'node'].includes(p)) delete next[p];
           next.type = raw;
-          if (raw === 'path' && !Array.isArray(next.points)) next.points = pathPoints(ent);   // the door requires a path's points (Add Path's seed)
+          // the door requires a path's points (Add Path's seed); a node's motion is in the node's frame, so it gets none (as main)
+          if (raw === 'path' && !Array.isArray(next.points) && next.node == null) next.points = pathPoints(ent);
         }
         else if (!writeField(MOTION_CARD[prev?.type] ?? 'Spin', param, key, f, raw, next)) { errors.push(`${key}: no such field`); break; }
         motions.set(mkey, next);
