@@ -90,10 +90,10 @@ export function speak(text, speaker) {
   return chain(speaker, () => speakChunked(text));
 }
 
-// Length is latency: piper's RTF is ~1.1 and inference runs on the main thread, so tts_chunk.js
+// Length is latency: piper's RTF is ~1.1 and inference runs on the main thread, so tts-chunk.js
 // splits the utterance, with an aggressive opening clause for time-to-first-word.
 async function speakChunked(text) {
-  const { ttsChunks } = await import('./tts_chunk.js');
+  const { ttsChunks } = await import('./tts-chunk.js');
   const chunks = ttsChunks(text);
   if (!chunks.length) return false;          // emoji-only: in the log, not the air
   if (chunks.length === 1) return speakOne(chunks[0]);

@@ -29,7 +29,7 @@ Start with [README](../README.md) (what this is, how to run it), [AGENTS](../AGE
 [WIRE](reference/WIRE.md) · [POSE-WIRE](reference/POSE-WIRE.md) · [UNDERWATER-PRESENCE](reference/UNDERWATER-PRESENCE.md) · [SEATS](reference/SEATS.md) ·
 [DRAW-CALLS](reference/DRAW-CALLS.md) · [RESERVED-SHAPES](reference/RESERVED-SHAPES.md) · [WALKER](reference/WALKER.md)
 
-## Design — what isn't built yet, and why it should be
+## Design — direction, and the arguments behind it
 
 [DESIGN](../DESIGN.md) (why the built system is shaped as it is) · [ROADMAP](design/ROADMAP.md) (what DESIGN's ideas still need) · [PHYSICS-DIRECTION](design/PHYSICS-DIRECTION.md) · [AVATAR-DIRECTION](design/AVATAR-DIRECTION.md) ·
 [SCHOOLS](design/SCHOOLS.md) · [RENDERER-SEAM](design/RENDERER-SEAM.md) · [SFU-SPEC](design/SFU-SPEC.md) ·
@@ -56,4 +56,5 @@ Start with [README](../README.md) (what this is, how to run it), [AGENTS](../AGE
 
 [shared](../shared/README.md) · [defs](../defs/README.md) · [patched](../patched/README.md) ·
 [import-v1](../tools/import-v1/README.md) · [water](../tools/water/README.md) · [seatlab](../bench/seatlab/README.md) ·
-[projector](../deploy/projector/README.md) · [v1-worlds fixtures](../test/fixtures/v1-worlds/README.md)
+[projector](../deploy/projector/README.md) · [client](../client/README.md) · [mcpl](../mcpl/README.md) · [test](../test/README.md) ·
+[test fixtures](../test/fixtures/README.md) · [v1-worlds fixtures](../test/fixtures/v1-worlds/README.md) · [replay fixtures](../spec/fixtures/replay/README.md)

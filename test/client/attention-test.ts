@@ -1,5 +1,5 @@
 // bun run test/client/attention-test.ts — pure gating plus the real renderer-free chat.
-import { createAttentionGate, ATTENTION_COOLDOWN_MS } from '../../client/lib/ui/attention_policy.js';
+import { createAttentionGate, ATTENTION_COOLDOWN_MS } from '../../client/lib/ui/attention-policy.js';
 import { mkCheck } from '../harness/harness.ts';
 import { plugin } from 'bun';
 import { stubResolve } from '../harness/stub.ts';

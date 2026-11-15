@@ -84,7 +84,7 @@ check("a truncated file is unreadable (null), not a partial rank", glbPerfOfFile
   const before = glbPerfOfFile(f), st0 = statSync(f);
   const small = png.slice(); new DataView(small.buffer).setUint32(16, 256);
   // the replacement comes after the file system's change clock has ticked: NTFS keeps ctime at ~1 ms, so a rewrite in
-  // the same tick can't be told apart by any stat field (Cyllene: 42 of 50 such rewrites kept size, mtime, ino, ctime)
+  // the same tick can't be told apart by any stat field (on one Linux laptop: 42 of 50 such rewrites kept size, mtime, ino, ctime)
   const tick = join(dir, "tick"); await until("the change clock passes the original's ctime", () => { writeFileSync(tick, "x"); return statSync(tick).ctimeMs > st0.ctimeMs; }, { ms: 5000 });
   writeFileSync(f, glb(small, "image/png", 1000)); utimesSync(f, T, T);
   const st1 = statSync(f), after = glbPerfOfFile(f), fresh = glbPerf(new Uint8Array(readFileSync(f)));

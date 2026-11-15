@@ -22,7 +22,7 @@ const { mock } = await import("bun:test");
 for (const m of ["core", "net", "ui/ui", "player/controller", "player/remotes"])
   mock.module(`${import.meta.dir}/../../client/lib/${m}.js`, () => stubs);
 
-// fake piper runtime: engine_piper must be testable without ORT/wasm
+// fake piper runtime: engine-piper must be testable without ORT/wasm
 mock.module("@mintplex-labs/piper-tts-web", () => ({
   TtsSession: class { constructor() { /* never reached in fault tests */ } },
   PATH_MAP: {} as Record<string, string>,

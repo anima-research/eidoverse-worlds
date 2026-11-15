@@ -1,5 +1,5 @@
 /**
- * tts_chunk — the spoken form of an utterance, in synthesis-sized pieces.
+ * tts-chunk — the spoken form of an utterance, in synthesis-sized pieces.
  *
  * Batch port of the token-router's LiveSay aggregation. The constants are measured: a
  * 152-char sentence is ≈ 5s of unbroken speech, so clauses past 90 chars get a soft split.

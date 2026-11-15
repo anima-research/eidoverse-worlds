@@ -38,7 +38,7 @@ A file's directory says who runs it.
 | `client/` `server/` `shared/` `mcpl/` `scripting/` | the product: the browser client, the world server, the shared fold, the MCPL server, the script kit |
 | `defs/` | the server, as content an operator edits (data, not code) |
 | `test/` | the test gate: `gate/` (the runner), `protocol/`, `client/`, `server/`, `shared/`, `mcpl/`, `services/`, `water/` (tests by subject), `harness/`, `stubs/`, `fixtures/` (what suites use), `labs/` (run by hand) |
-| `tools/` | someone or the server, by hand: CLIs (`world.ts`, the translator), `assets/` (converters), `operator/` (a server's operator), `dev/` (the move tool), `import-v1/` (the v1 importer) |
+| `tools/` | someone or the server, by hand: CLIs (`world.ts`, the translator), `assets/` (converters), `operator/` (a server's operator), `import-v1/` (the v1 importer), `vectors/` (conformance vector generators), `water/` (water data and previews), `mv-module.ts` (moves a file and fixes its importers) |
 | `services/` | a server, always on: the show bots (`captionbot/`, `voicebot/`, `chatbridge/`), each with its own `package.json` |
 | `bench/` | someone measuring: benches and one-off measurements, never the test gate |
 | `deploy/` | the VPS: install and ops scripts |
@@ -46,7 +46,7 @@ A file's directory says who runs it.
 | `docs/` | a reader |
 
 Body code that both the browser and a headless runtime run (ragdoll, colliders, terrain, reach, pose clips) lives in
-`client/lib/`; `mcpl/` and `server/` import it from there, and `client/` never imports them. `shared/` takes no package dependencies (`node:` builtins only).
+`client/lib/`; `mcpl/` and `server/` import it from there, and `client/` never imports them. `shared/` takes no package dependencies (`node:` builtins only), so a module that imports only `shared/` and is used outside `client/` goes in `shared/`.
 
 Conformance vectors follow one rule: a vector that binds other implementations lives under `spec/` (CC0, listed in
 `spec/NORMATIVE.md`); a vector that pins one package's output lives beside that package (AGPL). Today
@@ -61,7 +61,7 @@ Conformance vectors follow one rule: a vector that binds other implementations l
 
 A doc's directory says who it is for and whether it binds: `spec/` binds; `docs/reference/` describes what is
 built; `docs/guide/` (using a world), `docs/operator/` (running a server) and `docs/contributing/` (changing this repo)
-get something done; `docs/design/` argues for what isn't built; `docs/research/` holds the why behind built code; `docs/decisions/` and `docs/history/` are dated and
+get something done; `docs/design/` holds direction and the arguments for it (some of it since built); `docs/research/` holds the why behind built code; `docs/decisions/` and `docs/history/` are dated and
 frozen: supersede them, don't edit them.
 
 ## Inside a directory

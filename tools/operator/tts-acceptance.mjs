@@ -80,7 +80,7 @@ const loadVoice = (page, nonce) => page.evaluate(async (NONCE) => {
     fetch(`/${NONCE}.onnx.json`).then(r => r.arrayBuffer()),
   ]);
   const files = [new File([mB], `${NONCE}.onnx`), new File([cB], `${NONCE}.onnx.json`)];
-  await import('/lib/audio/engine_piper.js');   // registers itself (lazy in prod UI)
+  await import('/lib/audio/engine-piper.js');   // registers itself (lazy in prod UI)
   const ve = await import('/lib/audio/voiceengines.js');
   const store = await import('/lib/audio/voicestore.js');
   const tts = await import('/lib/audio/tts.js');

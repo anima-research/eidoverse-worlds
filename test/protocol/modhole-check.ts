@@ -40,7 +40,7 @@ const ALLOWED: [string, RegExp, string][] = [
   ["lib/mods.js", /createObjectURL\(new Blob\(\[source\]/, "runSource: YOUR local mod's source, from your own IndexedDB (🧩 panel, autorun, EW.mods.run — by hand)"],
   ["lib/mods.js", /await import\(\/\* @vite-ignore \*\/ url\)/, "…the same local mod, imported from that blob"],
   ["lib/audio/engines.js", /await import\(p\)/, "voice engines: the literal './engine-*.js' list in this file"],
-  ["lib/audio/engine_piper.js", /await import\(\/\* @vite-ignore \*\/ url\)/, "onnxruntime's webgpu bundle: a fixed new URL('../node_modules/…') beside it"],
+  ["lib/audio/engine-piper.js", /await import\(\/\* @vite-ignore \*\/ url\)/, "onnxruntime's webgpu bundle: a fixed new URL('../node_modules/…') beside it"],
   ["lib/audio/phon.worker.js", /await import\(wasmPaths\.js\)/, "the phonemizer's own module: piperphon.js builds wasmPaths from fixed /vendor/piper URLs"],
 ];
 const found: string[] = [];

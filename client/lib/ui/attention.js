@@ -2,7 +2,7 @@
 // volume, or positional audio. The shared context only supplies the clock and
 // destination; each short tone owns its gain. Missed notices are never queued.
 import { audioContext } from '../audio/audioctx.js';
-import { createAttentionGate } from './attention_policy.js';
+import { createAttentionGate } from './attention-policy.js';
 
 const KEY = 'ew-attention';
 const SOUNDS = Object.freeze({ soft: 'soft', chime: 'chime', tap: 'tap' });
@@ -93,7 +93,7 @@ export function initAttention({ bus, me, scope, mentions }) {
   bus.on('participant-sessions', gate.roster);
   // A departure keeps the sender's utterance memory: a reconnect of the same
   // page leaves, then arrives with the same session. A changed session, at an
-  // arrival or in a snapshot, clears it (attention_policy.js participant()).
+  // arrival or in a snapshot, clears it (attention-policy.js participant()).
   bus.on('live-entry', gate.say);
   for (const event of ['pointerdown', 'keydown', 'touchend']) addEventListener(event, unlock, { passive: true });
 }

@@ -88,7 +88,7 @@
  "test/client/xr-mirror-probe.mjs": "Chromium probe: red on the CDP harness: exit TIMEOUT",
  "test/client/xr-panel-drag-probe.mjs": "Chromium probe: 10 fixed waits to turn into conditions",
  "test/client/xr-plate-card-probe.mjs": "Chromium probe: 8 fixed waits to turn into conditions; red on the CDP harness: FAIL probe ran — Error: never became true within 90000 ms: page condition () => { const r = EW.remotes.get(\"vrmute\"); return r?.avatar?.label && r",
- "test/client/xr-pointer-probe.mjs": "Chromium probe: 12 fixed waits to turn into conditions; red on the CDP harness: FAIL probe ran — Error: evaluate timed out after 30000 ms at <anonymous> (/home/claude/eido/wt-13v2-tests/tools/xr-pointer-probe.mjs:20:52)",
+ "test/client/xr-pointer-probe.mjs": "Chromium probe: 12 fixed waits to turn into conditions; red on the CDP harness: FAIL probe ran — Error: evaluate timed out after 30000 ms",
  "test/client/xr-quad-colour-probe.mjs": "Chromium probe: 19 fixed waits to turn into conditions; red on the CDP harness: FAIL probe ran — TypeError: el.evaluateHandle is not a function. (In 'el.evaluateHandle((e) => e.closest(\".sp-row\"))', 'el.evaluateHandle' is undefine",
  "test/client/xr-render-errors-probe.mjs": "Chromium probe: green on the CDP harness, hygiene-clean; MERGE into test/client/xr-lifecycle-probe.mjs (a duplicate of its rows: merge rather than gate)",
  "test/client/xr-ring-probe.mjs": "Chromium probe: waits converted; red last run when the client reloaded itself mid-evaluate (cdp-pw now re-runs such an evaluation, as playwright does): rerun, then gate",

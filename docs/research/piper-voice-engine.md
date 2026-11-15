@@ -1,6 +1,6 @@
 # Piper voice engine: measurements and decisions
 
-Rationale behind `client/lib/audio/engine_piper.js`. The code comments point here; the history is in git.
+Rationale behind `client/lib/audio/engine-piper.js`. The code comments point here; the history is in git.
 
 ## Latency
 

@@ -4,6 +4,6 @@
 const load = async (p) => { try { await import(p); } catch (e) { console.warn(`[voice] engine ${p} unavailable:`, e?.message || e); } };
 
 await Promise.all([
-  load('./engine_piper.js'),
+  load('./engine-piper.js'),
   // Add engines here; each file calls registerEngine() and owns its file types, matching and text → {pcm, sampleRate}.
 ]);

@@ -36,7 +36,7 @@ to be missing terminal punctuation (rhasspy/piper#252).
 ## Length is latency: chunking
 
 Piper's real-time factor is about 1.1, so synthesis costs about as long as the audio. One long `ort.run()` on the main
-thread freezes the page for that long. `tts_chunk.js` splits utterances the way the sidecar does, with an aggressive
+thread freezes the page for that long. `tts-chunk.js` splits utterances the way the sidecar does, with an aggressive
 opening clause, since time-to-first-word is synth(chunk 1). Chunks still run on the main thread; moving inference into
 a Worker is the real cure and remains open.
 

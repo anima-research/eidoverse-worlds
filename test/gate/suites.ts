@@ -374,7 +374,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["chat-resync-wire", "client/chat-resync-wire-test.ts", 1], // a re-join asks chat for what it missed, through the real net.js
   ["chat-log", "client/chat-log-test.ts", 1], // the chat log: the spoken-utterance merge and unread accounting
   ["chat-scrollback", "client/chat-scrollback-test.ts", 1], // scrolling up through chat history: pages in world order, every line once, a re-join's hole caught up, the 1,000-line cap
-  ["attention", "client/attention-test.ts", 1], // the attention gate (attention_policy.js) and the real chat.js attention prefs
+  ["attention", "client/attention-test.ts", 1], // the attention gate (attention-policy.js) and the real chat.js attention prefs
   ["surface-hold", "client/surface-hold-test.ts", 1], // a voice-relay leg holds an actor's lines
   ["sfu-adapter", "server/sfu-adapter-test.ts", 1], // admitParticipant's refusal branches through the decision layer and the in-process SFU adapter, one table; legs keyed per world
   ["relay-decision", "server/relay-decision-test.ts", 1], // relay incarnation and consent rules (#104 amendments 2, 3)
@@ -387,7 +387,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["captions", "shared/captions-test.ts", 1], // shared/captions.js: the caption bag a reader sees and the request's rules
   ["voicebot", "services/voicebot-test.ts", 1], // the show voice bot hears a world in DRY_RUN: joins as a spectator that folds the log, voices only configured speakers by display name
   ["tts-fault", "client/tts-fault-test.ts", 1], // TTS failure paths executed: a hung or dead phonemizer worker and an orphaned synthesis fail loudly, never hang (#91 r3 B3)
-  ["spoken-form", "client/spoken-form-test.mjs", 1], // what the TTS speaks (tts_chunk.js spokenForm, ttsChunks), as a table: fenced code never spoken, how text is chunked
+  ["spoken-form", "client/spoken-form-test.mjs", 1], // what the TTS speaks (tts-chunk.js spokenForm, ttsChunks), as a table: fenced code never spoken, how text is chunked
   ["ttsrow", "client/ttsrow-test.mjs", 1], // the audio panel's TTS section executed (ttsrow.js, ttslist.js): file and folder picks, the voice list in place
   ["particles", "client/particles-test.ts", 1], // a play/stop change updates the registry key, no rebuild
   ["particles-host", "client/particles-host-test.ts", 1], // the browser particle host (emitters.js) over a stand-in GPU half

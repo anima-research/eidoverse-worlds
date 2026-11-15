@@ -21,7 +21,7 @@ try {
   });
   const read = () => pg.evaluate(async () => { const t = (await import('./lib/xr/domquad.js')).domQuadTexture('debug'); return t?.dom?.querySelector('pre.dbg-stats')?.textContent ?? null; });
   // debug.js fills the frame block on its first 200 ms stats tick after the quad opens: on a fast host the read can land
-  // before it (a = '' on Cyllene's GPU). The first reading is the first text; the check is that it then changes
+  // before it (a = '' on one NVIDIA laptop GPU). The first reading is the first text; the check is that it then changes
   const a = await until('the debug pane prints its frame timing', async () => (await read()) || null, { ms: 30_000 }).catch(() => null);
   await pause('4 s of live frame timing', 4000); const b = await read();
   console.log('   ', JSON.stringify({ open, a: a?.slice(0, 80), b: b?.slice(0, 80) }));
