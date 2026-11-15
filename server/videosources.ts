@@ -212,9 +212,12 @@ async function connect(c: any, msg: any, src: Source, token: string, inFlight: M
   // checked again after the appliance answered, against the world the offer was made in (review 28): the viewer may have
   // left or moved world (it is no longer that world's client), the screen's video
   // changed, or the operator revoked or replaced the source's entry; the sweep would close it, but say so now
-  if (boundOf(world, msg.id) !== bound || !world.clients?.has?.(c)) { SESSIONS.set(s.id, s); await closeSession(s, "the screen changed while connecting", "changed"); return no("the screen changed while connecting", "changed"); }
-  if (SOURCES.get(src.id) !== src) {
-    const code = SOURCES.has(src.id) ? "source-changed" : "revoked";
+  if (c.world !== world || c.spectator || boundOf(world, msg.id) !== bound || !world.clients?.has?.(c)) { SESSIONS.set(s.id, s); await closeSession(s, "the screen changed while connecting", "changed"); return no("the screen changed while connecting", "changed"); }
+  // by content, as installSources compares: a reload re-reads every entry, and one that left this source as it was
+  // changes nothing for an offer at its appliance
+  const nowSrc = SOURCES.get(src.id);
+  if (!nowSrc || entryKey(nowSrc) !== entryKey(src)) {
+    const code = nowSrc ? "source-changed" : "revoked";
     SESSIONS.set(s.id, s); await closeSession(s, "the operator changed this source while connecting", code); return no("the operator changed this source while connecting", code);
   }
   // a newer offer for this screen was made while this one was at the appliance: its answer will be the one used

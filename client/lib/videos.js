@@ -154,10 +154,15 @@ async function connect(s, rev) {
   catch { if (current(s.id, rev) && s.pc === pc) retry(s, rev, 'the offer could not be made'); return; }
   await new Promise((res) => { if (pc.iceGatheringState === 'complete') return res(); const t = setTimeout(res, ICE_GATHER_MS); pc.addEventListener('icegatheringstatechange', () => { if (pc.iceGatheringState === 'complete') { clearTimeout(t); res(); } }); });
   if (!current(s.id, rev) || s.pc !== pc) { try { pc.close(); } catch { /* fine */ } return; }
-  // paced: an offer queued behind this browser's others leaves when the sequencer will take it (#332 review 6)
-  const at = Math.max(performance.now(), nextOfferAt); nextOfferAt = at + OFFER_GAP_MS + 50;
-  if (at > performance.now()) await new Promise((res) => setTimeout(res, at - performance.now()));
-  if (!current(s.id, rev) || s.pc !== pc) { try { pc.close(); } catch { /* fine */ } return; }
+  // the offer is made: the watchdog above was for making it, not for waiting a turn to send it
+  clearTimeout(s.timer); s.timer = null;
+  // paced: an offer queued behind this browser's others leaves when the sequencer will take it, its turn claimed only as
+  // it leaves, so a screen that gives up waiting reserves nothing (#332 review 6)
+  while (performance.now() < nextOfferAt) {
+    await new Promise((res) => setTimeout(res, nextOfferAt - performance.now()));
+    if (!current(s.id, rev) || s.pc !== pc) { try { pc.close(); } catch { /* fine */ } return; }
+  }
+  nextOfferAt = performance.now() + OFFER_GAP_MS + 50;
   s.req = `v${++reqN}`;
   if (net.ws?.readyState !== 1) { retry(s, rev, 'not connected to the world'); return; }
   net.ws.send(JSON.stringify({ type: 'video-offer', id: s.id, sdp: pc.localDescription.sdp, req: s.req }));
@@ -184,10 +189,10 @@ function afterRefusal(s, rev, code, why, retryAfterMs) {
   reconsider();
 }
 /** Whether a screen holds one of this browser's MAX_SCREENS: connecting, playing, or waiting to reconnect (review 7). */
-const holdsSlot = (x) => x.state !== 'blocked' && !x.terminal && !x.waitingSource;
+const holdsSlot = (x) => x.state !== 'blocked' && !x.terminal && !x.waitingSource && !x.unplaced;
 /** A slot freed: the longest-blocked screen (blocked by the cap, not by this browser) takes it (review 8). */
 function reconsider() {
-  for (const s of screens.values()) {
+  for (const s of [...screens.values()].filter((x) => x.capBlocked).sort((a, b) => a.blockedAt - b.blockedAt)) {
     if ([...screens.values()].filter(holdsSlot).length >= MAX_SCREENS) return;
     if (s.capBlocked && entities.get(s.id)) { s.capBlocked = false; setState(s, 'connecting'); void connect(s, revision.get(s.id)); }
   }
@@ -229,7 +234,7 @@ bus.on('video-state', (m) => {
   const back = new Set(Array.isArray(m.admitted) ? m.admitted : []);
   for (const s of screens.values()) if (s.waitingSource && back.has(s.video.source) && entities.get(s.id)) {
     s.waitingSource = false; s.attempt = 0;
-    if ([...screens.values()].filter((x) => x !== s && holdsSlot(x)).length >= MAX_SCREENS) { s.capBlocked = true; setState(s, 'blocked', `at most ${MAX_SCREENS} screens at once`); continue; }
+    if ([...screens.values()].filter((x) => x !== s && holdsSlot(x)).length >= MAX_SCREENS) { s.capBlocked = true; s.blockedAt = performance.now(); setState(s, 'blocked', `at most ${MAX_SCREENS} screens at once`); continue; }
     void connect(s, revision.get(s.id));
   }
 });
@@ -256,9 +261,10 @@ function applyFrom(id, data, { fresh = false, why = 'comp' } = {}) {
   screens.set(id, s);
   if (!n.ok) { s.terminal = true; setState(s, 'error', n.why); return; }   // nothing to connect: it holds no slot
   const live = [...screens.values()].filter((x) => x !== s && holdsSlot(x)).length;
-  if (live >= MAX_SCREENS) { s.capBlocked = true; setState(s, 'blocked', `at most ${MAX_SCREENS} screens at once`); return; }
+  if (live >= MAX_SCREENS) { s.capBlocked = true; s.blockedAt = performance.now(); setState(s, 'blocked', `at most ${MAX_SCREENS} screens at once`); return; }
   show(s);
-  if (entities.get(id)) void connect(s, rev);
+  // a thing not yet in the scene (a comp before its spawn) holds no slot: its spawn plays the bag afresh
+  if (entities.get(id)) void connect(s, rev); else s.unplaced = true;
 }
 export function clearVideos() { for (const id of [...screens.keys()]) { bump(id); takeDown(id); } }
 
