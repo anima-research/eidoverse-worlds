@@ -164,7 +164,7 @@ const US_LIST = path.join(ENGINE, "test/gate/underscore-names.json");
 /** A tracked source file whose name has an underscore (vendored code and node_modules aside; Python keeps its own convention). */
 export const underscoreName = (f: string): boolean => /\.(?:js|mjs|ts)$/.test(f) && !/(?:^|\/)(?:vendor|node_modules)\//.test(f) && path.posix.basename(f).includes("_");
 export function underscoreNames(): string[] {
-  const r = Bun.spawnSync(["git", "ls-files", "-z", "--", "client", "server", "shared", "mcpl", "tools", "test", "services", "bench", "deploy"], { cwd: ENGINE });
+  const r = Bun.spawnSync(["git", "ls-files", "-z", "--", "client", "server", "shared", "mcpl", "tools", "test", "services", "bench", "deploy", "scripting"], { cwd: ENGINE });
   return r.stdout.toString().split("\0").filter((f) => f && underscoreName(f)).sort();
 }
 export function ungatedTests(): string[] {
