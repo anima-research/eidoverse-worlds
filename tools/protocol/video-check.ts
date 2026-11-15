@@ -145,17 +145,25 @@ const sayLines = (s: any, id: string) => (s.call("olive", "look", {}).things ?? 
 const admit = (ids: string[]) => V.admitVideoSources?.(ids);
 
 // ---- a fake appliance: WHEP (POST → 201 + Location; DELETE) and mediamtx's paths API, recording every request ----
-const FAKE = { log: [] as any[], paths: {} as Record<string, any>, whepStatus: 201, apiDown: false, delays: [] as number[], deleteDelay: 0 };
+const FAKE = { log: [] as any[], paths: {} as Record<string, any>, whepStatus: 201, apiDown: false, delays: [] as number[], deleteDelay: 0, answer: null as null | { location?: string | null; body?: string } };
 const fake = Bun.serve({ port: 0, async fetch(req) {
   const u = new URL(req.url); const body = req.method === "POST" ? await req.text() : "";
   FAKE.log.push({ method: req.method, path: u.pathname, auth: req.headers.get("authorization"), body });
   if (req.method === "POST" && FAKE.delays.length) await pause("a slow appliance, per offer", FAKE.delays.shift()!);
   if (u.pathname.startsWith("/v3/paths/get/")) { if (FAKE.apiDown) return new Response("down", { status: 503 }); const p = FAKE.paths[u.pathname.slice(14)]; return p ? Response.json(p) : new Response("not found", { status: 404 }); }
-  if (req.method === "POST" && u.pathname.endsWith("/whep")) return FAKE.whepStatus === 201 ? new Response("v=0\r\nanswer-for:" + body.slice(0, 20), { status: 201, headers: { location: `${u.pathname.replace(/whep$/, "")}whep/session-${FAKE.log.length}` } }) : new Response("no", { status: FAKE.whepStatus });
+  if (req.method === "POST" && u.pathname.endsWith("/whep")) {
+    if (FAKE.whepStatus !== 201) return new Response("no", { status: FAKE.whepStatus });
+    // FAKE.answer: a Location of its own (or null: none) and a body of its own, for an appliance that answers oddly
+    const location = FAKE.answer && "location" in FAKE.answer ? FAKE.answer.location : `${u.pathname.replace(/whep$/, "")}whep/session-${FAKE.log.length}`;
+    return new Response(FAKE.answer?.body ?? "v=0\r\nanswer-for:" + body.slice(0, 20), { status: 201, headers: location == null ? {} : { location } });
+  }
   if (req.method === "DELETE") { if (FAKE.deleteDelay) await pause("a slow appliance DELETE", FAKE.deleteDelay); return new Response(null, { status: 200 }); }
   return new Response("?", { status: 400 });
 } });
 const APP = `http://127.0.0.1:${fake.port}`;
+// another origin, as a compromised appliance's Location might name: anything it receives is a leak
+const FOREIGN = { log: [] as any[] };
+const foreignServer = Bun.serve({ port: 0, fetch(req) { FOREIGN.log.push({ method: req.method, auth: req.headers.get("authorization") }); return new Response(null, { status: 200 }); } });
 const SECRET = "reader:s3cret-read-key";
 const REG = (extra = {}) => ({ sources: { solstice: { whep: `${APP}/screen/whep`, user: "reader", pass: "s3cret-read-key", api: APP, path: "screen" }, ...extra } });
 const install = (doc: any) => VS.installSources?.(VS.parseRegistry(doc).sources);
@@ -289,9 +297,10 @@ const cases: Case[] = [
       return { missing, first, stuck, live, down, ended }; },
     good: (o) => o.missing === "offline" && o.first === null && o.stuck === "offline" && o.live === "live" && o.down === null && o.ended === "ended" },
   { id: "B3", what: "an offer reaches the appliance with the operator's read credential and the viewer's SDP; the answer comes back; nothing the viewer receives names the endpoint or the credential", async run() {
-      install(REG()); FAKE.log = []; FAKE.whepStatus = 201; const w = fakeWorld({ source: "solstice" }); const { c } = viewer(w);
-      const r = await VS.offer?.(c, { id: "screen", sdp: "v=0 the-offer", req: "r1" }, 1e9);
-      const post = FAKE.log.find((x) => x.method === "POST"); const said = JSON.stringify(r);
+      install(REG()); FAKE.log = []; FAKE.whepStatus = 201; const w = fakeWorld({ source: "solstice" }); const { c, sent } = viewer(w);
+      const r = await VS.offer?.(c, { id: "screen", sdp: "v=0 the-offer", req: "r1" }, 1e9); await tick();
+      // what the offer returns AND everything the broker sent the viewer meanwhile (#332 review 47)
+      const post = FAKE.log.find((x) => x.method === "POST"); const said = JSON.stringify([r, ...sent]);
       return { type: r?.type, sdp: r?.sdp, auth: post?.auth, body: post?.body, leak: [APP, String(fake.port), "s3cret", "whep", "Basic"].filter((x) => said.includes(x)) }; },
     good: (o) => o.type === "video-answer" && /answer-for:v=0 the-offer/.test(o.sdp ?? "") && o.auth === "Basic " + Buffer.from(SECRET).toString("base64") && o.body === "v=0 the-offer" && o.leak.length === 0 },
   { id: "B4", what: "a viewer offers at most once every 2 s and holds at most 4 screens (a new offer for a screen it holds replaces that one); a spectator, an unadmitted source (before anything reaches an appliance) and a missing video are refused in words", async run() {
@@ -340,7 +349,7 @@ const cases: Case[] = [
   { id: "B6", what: "the operator revokes a source: its sessions are closed and DELETEd, its observation forgotten, and the door refuses it", async run(s) {
       install({ sources: {} }); await tick(); install(REG()); FAKE.log = []; FAKE.whepStatus = 201; const w = fakeWorld({ source: "solstice" }); const { c, sent } = viewer(w);
       await VS.offer?.(c, { id: "screen", sdp: "o" }, 5e9); V.noteSourceState?.("solstice", { state: "live", at: Date.now() });
-      install({ sources: {} }); await tick(); await tick();
+      install({ sources: {} }); await until("the revoke's DELETE reaches the appliance", () => FAKE.log.some((x) => x.method === "DELETE"), { ms: 5000 }).catch(() => {});
       cast(s); s.call("olive", "create", { id: "screen", model: "crate", place: { at: [0, 0] } });
       return { del: FAKE.log.filter((x) => x.method === "DELETE").length, closed: sent.find((m) => m.type === "video-closed")?.why, obs: V.sourceStateOf?.("solstice"), left: VS.sessionCount?.(c),
         door: code(s.call("olive", "set", { id: "screen", component: "video", value: { source: "solstice" } })) }; },
@@ -380,6 +389,52 @@ const cases: Case[] = [
       return { spec: pick(spec), soon: pick(soon), novid: pick(novid), ended: pick(ended), cut: pick(cut), cap: pick(cap), unadm: pick(unadm), closes }; },
     good: (o) => o.spec.code === "spectator" && o.soon.code === "too-soon" && o.soon.retryAfterMs > 0 && o.soon.retryAfterMs <= 2000 && o.novid.code === "no-video" && o.ended.code === "ended"
       && o.cut.code === "not-publishing" && o.cap.code === "cap" && o.unadm.code === "not-admitted" && o.closes.includes("changed") && o.closes.includes("revoked") },
+  { id: "B11", what: "what the appliance answers is checked before it is used: a Location on another origin is never DELETEd with the read credential, a 201 with no Location (a session nobody could close) is refused, and a 201 with an empty answer is DELETEd and refused (#332 review 17, 26, 27)", async run() {
+      install(REG()); FAKE.whepStatus = 201; FAKE.delays = []; FAKE.deleteDelay = 0; const t = 13e9;
+      const one = async (answer: any, i: number) => { FAKE.log = []; FAKE.answer = answer; const w = fakeWorld({ source: "solstice" }); const { c } = viewer(w);
+        const r = await VS.offer?.(c, { id: "screen", sdp: "o" }, t + i * 3000); FAKE.answer = null; const held = VS.sessionCount?.(c);
+        w.clients.delete(c); await VS.sweep?.(); await tick(); await tick();
+        return { r: r?.type === "video-answer" ? "answer" : r?.code, held, dels: FAKE.log.filter((x) => x.method === "DELETE").map((x) => x.path) }; };
+      FOREIGN.log = []; const foreign = { ...(await one({ location: `http://127.0.0.1:${foreignServer.port}/collect` }, 0)), got: FOREIGN.log.length };
+      const none = await one({ location: null }, 1);
+      const empty = await one({ body: "" }, 2);
+      return { foreign, none, empty }; },
+    good: (o) => o.foreign.got === 0 && o.foreign.r === "refused" && o.foreign.held === 0 && o.none.r === "refused" && o.none.held === 0 && o.empty.r === "refused" && o.empty.dels.length === 1 && o.empty.held === 0 },
+  { id: "B12", what: "an offer is checked again after the appliance answers: a source revoked meanwhile, or a viewer moved to another world, gets no session, and the appliance's is DELETEd (#332 review 28)", async run() {
+      install(REG()); FAKE.whepStatus = 201; FAKE.answer = null; FAKE.deleteDelay = 0; const t = 15e9;
+      FAKE.log = []; FAKE.delays = [200]; const w = fakeWorld({ source: "solstice" }); const { c } = viewer(w);
+      const p1 = VS.offer?.(c, { id: "screen", sdp: "o" }, t); await pause("the offer is at the appliance", 60);
+      install({ sources: {} }); install(REG({ solstice: { whep: `${APP}/screen/whep`, user: "reader", pass: "other-key-now", api: APP, path: "screen" } }));
+      const r1 = await p1; await tick(); await tick(); const held1 = VS.sessionCount?.(c); const dels1 = FAKE.log.filter((x) => x.method === "DELETE").length;
+      w.clients.delete(c); await VS.sweep?.();
+      FAKE.log = []; FAKE.delays = [200]; const wa = fakeWorld({ source: "solstice" }), wb = fakeWorld({ source: "solstice" }); const { c: c2 } = viewer(wa);
+      const p2 = VS.offer?.(c2, { id: "screen", sdp: "o" }, t + 3000); await pause("the offer is at the appliance", 60);
+      wa.clients.delete(c2); c2.world = wb; wb.clients.add(c2);
+      const r2 = await p2; await tick(); await tick(); const held2 = VS.sessionCount?.(c2); const dels2 = FAKE.log.filter((x) => x.method === "DELETE").length;
+      wb.clients.delete(c2); await VS.sweep?.();
+      return { r1: r1?.code ?? r1?.type, held1, dels1, r2: r2?.code ?? r2?.type, held2, dels2 }; },
+    good: (o) => o.r1 !== "video-answer" && o.held1 === 0 && o.dels1 === 1 && o.r2 !== "video-answer" && o.held2 === 0 && o.dels2 === 1 },
+  { id: "B13", what: "a registry reload that changes an entry under the same id closes that source's sessions and forgets what was observed of it; one that marks it ended says so by its code (#332 review 20)", async run() {
+      install(REG()); FAKE.whepStatus = 201; FAKE.answer = null; FAKE.delays = []; FAKE.deleteDelay = 0; const t = 17e9;
+      const run1 = async (next: any, i: number) => { FAKE.log = []; const w = fakeWorld({ source: "solstice" }); const { c, sent } = viewer(w);
+        await VS.offer?.(c, { id: "screen", sdp: "o" }, t + i * 3000); V.noteSourceState?.("solstice", { state: "live", at: Date.now() });
+        install(next); await tick(); await tick();
+        const out = { closed: sent.filter((m) => m.type === "video-closed").map((m) => m.code), held: VS.sessionCount?.(c), obs: V.sourceStateOf?.("solstice")?.state ?? null, dels: FAKE.log.filter((x) => x.method === "DELETE").length };
+        w.clients.delete(c); await VS.sweep?.(); install(REG()); return out; };
+      const moved = await run1(REG({ solstice: { whep: `${APP}/elsewhere/whep`, user: "reader", pass: "s3cret-read-key", api: APP, path: "elsewhere" } }), 0);
+      const ended = await run1(REG({ solstice: { whep: `${APP}/screen/whep`, user: "reader", pass: "s3cret-read-key", api: APP, path: "screen", ended: true } }), 1);
+      const same = await run1(REG(), 2);
+      return { moved, ended, same }; },
+    good: (o) => o.moved.closed.length === 1 && o.moved.held === 0 && o.moved.obs === null && o.moved.dels === 1 && o.ended.closed[0] === "ended" && o.ended.held === 0 && o.ended.obs === "ended"
+      && o.same.closed.length === 0 && o.same.held === 1 && o.same.obs === "live" },
+  { id: "B14", what: "the source state never asserts what it can't see: a source that comes back ready after an offline read forgets the offline until bytes are measured; a ready path with no byte counter asserts nothing (#332 review 36, 37)", async run() {
+      install(REG()); const st = () => V.sourceStateOf?.("solstice")?.state ?? null; FAKE.apiDown = false;
+      V.forgetSourceState?.("solstice"); FAKE.paths = {}; await VS.observeAll?.(); const missing = st();
+      FAKE.paths.screen = { ready: true, bytesReceived: 100 }; await VS.observeAll?.(); const backFirst = st();
+      FAKE.paths.screen = { ready: true, bytesReceived: 200 }; await VS.observeAll?.(); const live = st();
+      FAKE.paths.screen = { ready: true }; await VS.observeAll?.(); const noCounter = st();
+      FAKE.paths = {}; return { missing, backFirst, live, noCounter }; },
+    good: (o) => o.missing === "offline" && o.backFirst === null && o.live === "live" && o.noCounter === "live" },
   { id: "B7", what: "what a world is told: each admitted source's state with its AGE (ms), never a timestamp, never an endpoint", run() {
       install(REG()); const now = 7e12; V.noteSourceState?.("solstice", { state: "live", at: now - 2500 });
       const f = VS.stateFrame?.(now); return { f, s: JSON.stringify(f) }; },
@@ -396,6 +451,6 @@ for (const c of cases) {
   ok ? pass++ : fail++;
   console.log(`${ok ? "ok  " : "FAIL"} ${c.id} ${c.what}${ok ? "" : `\n     ${JSON.stringify(o).slice(0, 600)}`}`);
 }
-fake.stop(true);
+fake.stop(true); foreignServer.stop(true);
 console.log(`[video-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
