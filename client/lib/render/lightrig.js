@@ -5,8 +5,8 @@
 // writes.
 //
 // Assignment is deterministic in (requests, camera): keep/adopted → authored → inferred lamps, then camera distance
-// with an incumbent bonus, then key. `keep` is top priority, not a budget escape: more keeps than slots and the
-// farthest glow without casting.
+// with an incumbent bonus, then key. `keep` is top priority and escapes the governor's cap, not the pool: more keeps than
+// slots and the farthest glow without casting.
 //
 // The weather factory scene.add()s its own lightning PointLight, and a foreign light in the scene is a recompile
 // storm, so makeWeatherSystem is handed a Proxy of the scene whose add/remove ADOPT lights into requests (bottom of

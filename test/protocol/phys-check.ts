@@ -401,11 +401,11 @@ function playground(name) {
   ok(JSON.stringify(seen) === "[9,9,9]" && JSON.stringify(folded) === "[9,9,9]", "N P4 is gone: the rest view and the fold read the same one value (so a forgery shows in both, and carriers flag it)", { seen, folded });
 }
 
-// R — a deploy changes the engine's build (REVIEW-design-2026-10-15 "Deploying switches physics off"). A world the old
-// server stamped names the old build, so the new server holds it foreign and nothing flies. The authority restamps it
-// itself, as system, once: when the engine is one it carries, the build was stamped by an authority (not named by the
+// R — a deploy changes the engine's version (REVIEW-design-2026-10-15 "Deploying switches physics off"; a build is no
+// longer a field, EV4). A world the old server stamped names the old version, so the new server holds it foreign and nothing
+// flies. The authority restamps it itself, as system, once: when the engine is one it carries, the version was stamped by an authority (not named by the
 // owner); bodies at rest are restamped free (P6), and a launch with no rest on record is ended by the cut (R2). A "deploy"
-// here is ENGINES' build swapped under the world.
+// here is ENGINES' carried version swapped under the world.
 {
   // a deploy is the carried set changing: the old server carried eidosim@0.9.0, this one carries eidosim@1.0.0
   const OLD = "eidosim@0.9.0", NEW = "eidosim@1.0.0", E = ENGINES[NEW];

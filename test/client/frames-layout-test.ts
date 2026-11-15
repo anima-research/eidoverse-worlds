@@ -3,7 +3,7 @@
 //   bun test/client/frames-layout-test.ts
 //
 // frames-resize-test covers the resize drag's finish path. This suite covers what the rest of windows.js
-// promises: a frame can never leave the viewport (the -8 margins, on drag AND on resize), the edge/corner
+// promises: a frame can never leave the viewport (8 px margins on drag and resize; a south resize stops 4 px up), the edge/corner
 // hit-tester tells edges from corners and reaches 6px outside a frame (resizeZoneAt is ui.js's arrange-exit
 // guard), a frame resting on an edge rides that edge through a window resize, z-indexes stay inside the
 // [10..25] band under the dock, a LAYOUT_VERSION bump purges every stale ew-frame-* save ONCE, and Tab

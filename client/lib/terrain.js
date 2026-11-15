@@ -25,7 +25,7 @@ export function setWaterField(f) { water = f ?? null; bus.emit('ground-changed')
 export const hasTerrain = () => current !== null;
 
 /** Where the rain lands (sky.js groundHeightAt): the terrain or the water over it, whichever is higher; null past
- *  the terrain's edge (no splash). Baked into a heightfield on 'ground-changed', not called per frame. */
+ *  the terrain's edge (no splash); with no terrain, whatever floor heightAt stands on. Baked into a heightfield on 'ground-changed', not called per frame. */
 export function rainSurfaceAt(x, z) {
   if (!current) return heightAt(x, z);
   const box = extentOf(current);

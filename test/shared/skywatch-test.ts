@@ -148,7 +148,7 @@ for (const src of SOURCES) {
 }
 
 // ---------------------------------------------------------------- F: clock contract in look() (#65)
-// look() serializes the normalized bag plus the canonical effectiveClock (no stale hours/rate beside clock:'real'), and
+// look() serializes the normalized bag plus the canonical effectiveClock (hours/rate stay beside it as the rated fallback), and
 // ambient day-phase perception works with no top-level rate
 
 {

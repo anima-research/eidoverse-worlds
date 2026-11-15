@@ -14,10 +14,10 @@
 //   T1  take_off              -- PARTIAL: takeOff's launch speeds, boost and
 //                               refusals are proven; the render is not.
 //   T2  glide range/polar     -- PARTIAL: the curve and the range prediction
-//                               are proven; there is no glide_to target
-//                               contract to land short OF.
+//                               are proven; glide_to's land-short contract
+//                               (mcpl/agent-flight.ts glideTo) isn't driven here.
 //   T3  stamina rates         -- PARTIAL: the rates are proven; climb_to and
-//                               the winded forced-best-glide are not built.
+//                               its winded glide (agent-flight.ts climbTo) aren't driven here.
 //   T4  R2 leaf + no autoland -- COVERED physically (the clip carries the eye).
 //   T5  consent gate          -- PARTIAL: the injected stub allows/denies/
 //                               revokes; land_at(person) descent and the

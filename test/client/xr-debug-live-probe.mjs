@@ -1,5 +1,5 @@
 // xr-debug-live-probe — the Debug pane opened in VR keeps its numbers live (owner, 09-27 20:42: 'the perf numbers are
-// locked and never change'). Real client + IWER: opens the debug quad from the ring and reads its frame-timing text
+// locked and never change'). Real client + IWER: opens the debug quad directly (domQuadShow, not the ring) and reads its frame-timing text
 // twice, a few seconds apart.
 //   bun test/client/xr-debug-live-probe.mjs
 import { launchBrowser, ownedWorld, checker, iwerInit, visorShown, enterVR, drawn } from '../harness/probe-harness.mjs';

@@ -111,7 +111,7 @@ export function authorityAsyncHits(root = ENGINE): string[] {
   const dir = path.join(root, "shared/protocol"); const files = [path.join(dir, "authority.js"), ...walk(path.join(dir, "authority"), [])].filter((p) => fs.existsSync(p));
   return files.flatMap((p) => fs.readFileSync(p, "utf8").split("\n").flatMap((l, n) => (authorityAsync(l) ? [`${relTo(root, p)}:${n + 1}`] : [])));
 }
-/** An import or path into test/ from production code (`../test/` or `/test/stubs` in an import, URL or join). */
+/** An import or path into test/ from production code: a quoted relative `../…/test/` (an absolute `/test/…` URL isn't matched). */
 export const prodImportsTest = (text: string) => [...text.matchAll(/["'`](?:\.\.\/)+test\//g)].length;
 export function prodImportsTestHits(root = ENGINE): string[] {
   return ["server", "shared", "mcpl", "client"].flatMap((d) => walk(path.join(root, d), [])).filter((p) => /\.(?:[cm]?[jt]s)$/.test(p))

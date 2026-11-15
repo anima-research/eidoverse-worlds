@@ -62,7 +62,7 @@ words, and nothing had tested it. `spawn {query}` is the other case: no one-step
 refuses and names the two calls (`library {query}` then `create {model}`).
 
 (The pathfinding stack, merged 10-15, gave walk_to a named `to` and a floor-picking `y`. Since 10-28 `walk_to` is
-refused with the new call and runs nothing (`test/mcpl/alias-test.ts`, AT9); `move {to: [x, z], tolerance}` is covered by
+refused as an unknown tool (it doesn't name `move`) and runs nothing (`test/mcpl/alias-test.ts`, AT9); `move {to: [x, z], tolerance}` is covered by
 AT9, places-test and mover-check. Its `check_model` became `measure {check: true}` the same way: an alias whose
 translation adds the mode.)
 

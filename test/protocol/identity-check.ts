@@ -5,7 +5,8 @@
 //       C2f (10-18 L11) a reserved name is matched folded ("Wre n", "wren." are Wren) and refused without the enrolment's proof
 //   C3  SERVER_OPERATORS (or legacy WORLD_ADMIN) naming a bare display name is refused loudly, the server boots with the setup link
 //       (C3b: good entries still operate; an unreadable operators file is refused, not fatal); C3m the legacy var merges, warned once
-//   H1  typing someone's name doesn't kick them, take over their session, or show as them; a guest is named a guest
+//   H1  typing someone's name doesn't kick them, take over their session, or show as them (on TRUST_NAMES a name is the
+//       account: its folded twin is a takeover); a guest is named a guest
 //   GN  guests typing one name back to back are each their own identity; a guest can't set @world (from the retired security-check)
 //   H3  a world name nobody founded is refused, and nothing appears on disk
 //   H4  a guest is never given the world's default role unless the owner opts guests in (H4g: `guests`, never above the

@@ -4,14 +4,15 @@
 //   bun test/protocol/pretrans-check.ts --only J1,N2  just those
 // Cases:
 //   J   I-JSON: an integer the reader would refuse is refused by the authority's own check, with a fix (L2)
-//   S   the spec says what the readers do: `by` is in the envelope table; the governance body is written down (L3, H4)
+//   S   the spec says what the readers do: `by` is no envelope field (S1); the governance body is written down (L3, H4)
 //   C   a refusal or help text cites a section PROTOCOL.md has, under the name it has there (M5)
 //   A   the agent's words match the log's: translated acts are `imported` (M5)
 //   G   governance: a lower tier can never add keys above itself (H4); gov.py runs here
 //   K   the Commons' translation carries its owners; its tier 0 is EMPTY (#260 rereview blocker 1: no key can be bound to the
 //       v1 owner); a world FOUNDED new takes its founder's own key (H4)
 //   N   names: bare names belong to the registry; anyone else's carry a namespace; a registered alias works (H1, M7)
-//   D   defaults: every parameter is written into the stored value at create/add time (H2); meanings are pinned
+//   D   defaults: a component's parameters are written into the stored value at create/add time (H2), @world settings
+//       store only what was written (D5); meanings are pinned
 //   I   ids: minted ids are ≥ 128 random bits, everywhere (H5)
 //   R   references: typed ref/refs/person fields; duplicate and publish rebind them (H5)
 //   P   privacy: arrivals and grabs log what correctness needs, not where people stood or what they are (M3)

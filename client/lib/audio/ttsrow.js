@@ -63,7 +63,8 @@ const saveEndpoints = (list) => {
  *  the panel repaint sibling rows whose state we just changed. */
 export function ttsSection(host, onPaint = () => {}) {
   const repaint = () => { build(); onPaint(); };
-    /** Every load goes through here (the checkbox path too): one entry point, one busy guard, one loading row.
+    /** Every pick of a listed voice goes through here (the checkbox path too): one busy guard, one loading row. An import
+     *  (addFile, resumePending → finishImport) loads on its own path.
      *  Returns false on refusal or failure, so the tick handler can undo itself. */
     async function pick(id) {
       if (id === '__pending') return resumePending();
@@ -215,7 +216,8 @@ export function ttsSection(host, onPaint = () => {}) {
     try {
       dir = await window.showDirectoryPicker({ mode: 'read', id: 'piper-voices' });
     } catch { return null; }
-    // NotFoundError is the ordinary wrong-folder case; the original must be here too, so the pair is from one copy
+    // NotFoundError is the ordinary wrong-folder case; the original's NAME must be here too (a same-named file in
+    // another folder still passes: a name check, not identity)
     try {
       const mate = await dir.getFileHandle(target);
       await dir.getFileHandle(have);
@@ -358,7 +360,7 @@ function headDimmed() {
     box.style.opacity = wantChecked && !isTtsEnabled() ? '.45' : '';
     note.textContent = headNote();
 
-    // the list does its own in-place update (ttslist.js), so this is not a teardown
+    // the list updates in place on a selection change; a voice added or removed rebuilds it (ttslist.js renderVoiceList)
     collectVoices().then((items) => {
       if (!_selected && items.length) {
         const last = (() => { try { return localStorage.getItem('eido.tts.lastVoice'); } catch { return null; } })();
@@ -383,7 +385,7 @@ function headDimmed() {
     return true;
   }
 
-  /** Build the section, or update it in place when it is already built (nothing loses focus or scroll). */
+  /** Build the section, or update it in place when it is already built (the voice list rebuilds when its voices change). */
   function build() {
     if (host.firstChild) {
       if (syncInPlace()) { why('tts-section', 'in place'); return; }

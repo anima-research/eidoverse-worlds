@@ -2,7 +2,7 @@
 //
 // A flat sheet at `level` over the terrain square. Every vertex carries the depth under it, its body's kind
 // (shared/waterkind.js: still, river, ocean), a river's flow and the sea's way to shore, baked once at build; the
-// material reads them for colour, waves, and foam. Triangles wholly over dry ground are dropped, so the sheet costs
+// material reads them for colour, waves, and foam. Triangles wholly over dry ground, past each kind's run-up (RUNUP), are dropped, so the sheet costs
 // what the lakes cost. Foam is made by water moving at the edge: the waterline's speed up the beach, by wave size.
 //
 // Nothing here moves bodies: wading is the controller's (and the agents') rule, from the same level.

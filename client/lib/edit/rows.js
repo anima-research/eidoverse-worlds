@@ -21,7 +21,7 @@ export const SELECT_CSS = 'font:11px var(--font); background:rgba(4,14,20,.9); '
  *    fmt(k, v) — readout text (default String(v))
  *    label(k)  — row name (default the key itself)
  *    onSet(k)  — called after every write (live retune hooks)
- *    nmW / vW  — the two fixed column widths
+ *    vW        — the value column's width (nmW is accepted but unused: the label width is CSS's)
  *  Returns { el, repaint } — repaint re-reads the table into fresh rows, which
  *  is the whole reset story: write the defaults, call repaint. */
 export function sliderTable(fields, obj, {

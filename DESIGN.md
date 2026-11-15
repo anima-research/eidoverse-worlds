@@ -47,7 +47,8 @@ Because eidoverse animation is *systemic* (locomotion synthesized, mouths
 audio-driven), presence streams **intent state**
 (locomotion vector, active clip + phase, gesture, viseme envelope) and each
 client's local systems reproduce the motion. Replicate inputs to the animation
-systems, not bone poses.
+systems, not bone poses (the exception: a held pose and a ragdoll, which the owner streams as bones,
+client/lib/player/localbody.js).
 
 ## Authority
 

@@ -9,7 +9,7 @@ import { cascadeOf, isE, opsQuiet, readback } from "./storage.js";
 const RANK = R.RANK;
 const wcOf = (st) => st.entities?.["@world"]?.c;
 const ownersOf = (st) => { const c = st.entities?.["@world"]?.c ?? {}; return Object.keys(c).filter((k) => k.startsWith("roles:") && R.isOwner(c[k])); };
-// §2.3: an empty owner list means NOBODY above member. A world may declare a default role for strangers
+// §7: an empty owner list means NOBODY above member. A world may declare a default role for strangers
 // (`default-role`, what an imported world's `roles['*']` becomes); absence means member (a new world writes builder at founding).
 // a guest (no account) is never given the world's default role: it's for people who proved who they are. An owner
 // may still grant a guest a role by its id
@@ -139,7 +139,7 @@ export function lastSetterOf(w, id, comp) {
   return null;
 }
 /** A lock's strength: the rank its setter holds NOW; a lock nobody set by hand (translated, or its setter
- *  unknown) is builder-strength. A world with no owner caps it at member, the rank everyone holds there (§2.3: no lockout). */
+ *  unknown) is builder-strength. A world with no owner caps it at member, the rank everyone holds there (§7: no lockout). */
 export function lockStrength(w, st, id) { const by = lastSetterOf(w, id, "lock"); const s = by && !by.deleted && by.rights ? Math.max(R.RANK.builder, rankOf(st, by.rights)) : R.RANK.builder;
   return ownersOf(st).length ? s : R.RANK.member; }
 // Who made a thing: the view inspect shows (no stored `placer`).

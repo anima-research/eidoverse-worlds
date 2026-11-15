@@ -8,9 +8,9 @@
 // the camera. The meaning of the bag lives in shared/sound.js; this file only renders it.
 //
 // Rules:
-//   1. One AudioContext (../audioctx.js): a fresh context per sound would hit Chrome's cap in a room with six radios.
+//   1. One AudioContext (../audio/audioctx.js): a fresh context per sound would hit Chrome's cap in a room with six radios.
 //   2. Autoplay: the browser may refuse play() until a gesture. Every sound rides the shared unlock queue
-//      (../audiounlock.js), which retries all held elements on the first gesture and says so in chat.
+//      (../audio/audiounlock.js), which retries all held elements on the first gesture and says so in chat.
 //   3. The clock is the server's: with `t0` every client seeks to the same playhead ((serverNow - t0) mod duration
 //      when looping), so a late joiner hears the same bar as everyone else. Without it, the top of the track.
 //      serverNow() is this client's estimate of the authority's clock (../serverclock.js).

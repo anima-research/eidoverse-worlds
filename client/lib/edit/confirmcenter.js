@@ -94,7 +94,7 @@ export function askCenter({ title, body = '', value = '', placeholder = '', ok =
 
 /** The same centre card with more than two answers (the lock question: ✓ Move anyway / ✕ Cancel / 🔓 Unlock).
  *  choices: [{v, label, danger?}], in the order shown (danger: styled as destructive); `cancel` is the v that Esc and the backdrop answer (and Enter on it).
- *  The first choice has focus (the house yes); Tab walks the buttons. Resolves with the chosen v. Same one-at-a-time
+ *  The first choice has focus (the house yes) unless `focus` names another v; Tab walks the buttons. Resolves with the chosen v. Same one-at-a-time
  *  rule: asking again answers the open one with its cancel. */
 export function chooseCenter({ title, body = '', choices = [], cancel = null, focus = null } = {}) {
   if (typeof document === 'undefined' || !choices.length) return Promise.resolve(cancel);

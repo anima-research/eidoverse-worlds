@@ -11,7 +11,8 @@ moving a mirrored pair into this directory is how a mirror is retired.
 Constraints, on purpose:
 
 - **Pure and dependency-free.** No three, no DOM, no Bun APIs, no
-  `Date.now()` of its own — callers pass `now`. If it can't run in all three
+  `Date.now()` of its own — callers pass `now` (known exceptions: terrainshape.js's retry timing,
+  bodyscale.js saveBodyPrefs' stamp, refusal.js's `now` defaults). If it can't run in all three
   runtimes untouched, it doesn't belong here. One exception: the script
   sandbox's isolation (`protocol/sandbox.js` :30 and :293–306, and
   `protocol/sandbox-child.js`, the process it spawns) uses node/Bun, loaded

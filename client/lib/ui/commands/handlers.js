@@ -1,6 +1,6 @@
 // The behavior behind /commands, registered into the pure registry (§14 6c). Each handler imports its own deps;
 // chat.js never imports THIS file (only registry.js), or the cycle chat→handlers→net→chat closes.
-// The kick and push disambiguators are each ONE handler: things win the name lookup over people (they were here
+// The punt and push disambiguators are each ONE handler: things win the name lookup over people (they were here
 // first), and that order lives inside the handler bodies.
 
 import { CONFIG, bus, report } from '../../base.js';
@@ -307,7 +307,7 @@ register('push', (arg) => {
   const named = parts.find((p) => !/^[\d.]+$/.test(p));
   // one word, two acts: /push swing1 is the swing's use-reaction (the old
   // alias, kept working), /push bob is a shove. Things win the name lookup
-  // because they were here first; /shove is always the person verb.
+  // because they were here first; /shove is this verb's alias (registry.js), so the same.
   { const t = thingNamed(named); if (t?.err) return logChat('*', t.err); if (t) { send(OP.use(t.id, 'push'), { what: `push ${named}` }); return; } }
   const pow = Math.min(4, Math.max(0.5, parseFloat(parts.find((p) => /^[\d.]+$/.test(p))) || 2.2));
   let target = named ?? null;

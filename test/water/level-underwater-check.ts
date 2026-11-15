@@ -1,5 +1,5 @@
 // Underwater under the world's water LEVEL (lakes, rivers, the sea), in a real browser, on both backends.
-//   WATER_PREVIEW_URL=http://127.0.0.1:<port>/?world=<fresh>&spectate=1&name=lvl bun test/water/level-underwater-check.ts
+//   WATER_PREVIEW_URL='http://127.0.0.1:<port>/?world=<fresh>&spectate=1&name=lvl' bun test/water/level-underwater-check.ts
 // A terrain with a level is applied locally (the real terrain + water build), the camera is driven (renderer
 // mode) above the deepest wet spot, under its surface looking level, and under it looking up. Checks: the
 // underwater state turns on only under the surface; the image under it is fogged (calmer, toward the water's

@@ -1,3 +1,4 @@
+// FROZEN: shared/captions.js as it stood at 6dab22f5, read only by ../fold.js; the runtime words below are history.
 // captions — what the `caption` verb MEANS, and the bag it folds into. Shared
 // verbatim between the sequencer (validator + fold), the caption bot that
 // writes it (tools/captionbot), the mcpl agent that reads it (text-tier

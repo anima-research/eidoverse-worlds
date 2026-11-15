@@ -5,7 +5,7 @@
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/shared/component-needs-test.ts
 //
-// The needs today's records carry: Collider and Seats need a Model (placed from the Library — never in place, so it can
+// The needs today's records carry: Collider, Sockets and Grabbable need a Model (placed from the Library — never in place, so it can
 // only be explained). Reactions needed the whole entity's Pendulum while its default was a push (the impulse handler);
 // that kind is reserved since the shape audit (10-16), so Reactions is added empty and needs nothing, and the rows that
 // rode on it (a need with a default, a need that asks) are retired with it: no record carries such a need now.

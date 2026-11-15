@@ -1,7 +1,7 @@
 // shared/protocol/scriptaudit.js — a READER's view of behaviour results. It needs only the
 // log, the fold, the source blobs and the sandbox: never the authority. For every `script:<id>` act (verb `script`) it checks
 //   sponsor — the act's `sponsor` / `sponsorAt` equal the sponsor view of `script:<name>` at that point (PROTOCOL §8:
-//             whose rights admitted the LATEST write to the key in its current life). An authority that names someone else is caught.
+//             whose rights admitted the LATEST write to the key in its current life, a pause-only one aside). An authority that names someone else is caught.
 //   depth   — the number of behaviour acts in its cause chain, recomputed here, and the limit (8 by default).
 //   seed    — seed = H(world ‖ act seq ‖ entity/script key).
 //   re-run  — fold to `head`, load `src`, re-run with the recorded event, ts (the frozen clock), seed and presence reads,

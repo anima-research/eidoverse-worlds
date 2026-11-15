@@ -46,7 +46,7 @@ A file's directory says who runs it.
 | `docs/` | a reader |
 
 Body code that both the browser and a headless runtime run (ragdoll, colliders, terrain, reach, pose clips) lives in
-`client/lib/`; `mcpl/` and `server/` import it from there, and `client/` never imports them. `shared/` takes no package dependencies (`node:` builtins only), so a module that imports only `shared/` and is used outside `client/` goes in `shared/`.
+`client/lib/`; `mcpl/` and `server/` import it from there, and `client/` never imports them. `shared/` takes no package dependencies (`node:` builtins only; the one exception is the script sandbox's quickjs-emscripten, without which no script runs: shared/protocol/sandbox.js), so a module that imports only `shared/` and is used outside `client/` goes in `shared/`.
 
 Conformance vectors follow one rule: a vector that binds other implementations lives under `spec/` (CC0, listed in
 `spec/NORMATIVE.md`); a vector that pins one package's output lives beside that package (AGPL). Today

@@ -104,8 +104,8 @@ export async function summarizeGlb(absPath: string, opts: { solids?: boolean } =
     return null;
   }
 
-  // ONLY scene-reachable nodes exist for the world (three.js renders the default scene); orphan nodes are
-  // listed separately as the file defect they are, so no motion aims at one.
+  // ONLY scene-reachable nodes exist for the world: a node in ANY scene counts (three.js renders only the default one);
+  // orphan nodes are listed separately as the file defect they are, so no motion aims at one.
   const inScene = new Set<any>();
   for (const scene of doc.getRoot().listScenes()) {
     scene.traverse((n: any) => inScene.add(n));

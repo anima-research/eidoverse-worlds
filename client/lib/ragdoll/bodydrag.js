@@ -18,8 +18,8 @@
 //   * On release the owner runs its OWN settle sim from wherever it was left, so the body lands and rests under the
 //     authority that owns it. The takeover is only ever the moving part.
 //
-// This is also why dragging works on agent bodies: a headless client runs no sim of its own, but under takeover it
-// only has to accept-and-rebroadcast, as it already does for puppet poses.
+// This is also why dragging works on agent bodies: under takeover a headless client runs no sim, it only has to
+// accept-and-rebroadcast, as it already does for puppet poses (on release it settles with its own: agent.ts settleFromDrag).
 
 import { THREE, camera, canvas, scene } from '../core.js';
 import { bus } from '../base.js';

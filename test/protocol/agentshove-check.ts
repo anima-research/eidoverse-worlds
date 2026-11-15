@@ -268,7 +268,7 @@ try {
     ok(/^arrived at \[cup\]/.test(t), "AS12 move {to: a cup on a table} is accepted and arrives", t);
     ok(Math.abs(ag.pos.y) < 0.05 && ag.pos.x > -15 && ag.pos.x < -14 && Math.abs(ag.pos.z + 14) < 1.1, "AS12 …beside the table, on the floor", ag.pos); }
   // AS13 (review r6 L2) — a child thing with no physics shape, on an offset parent: aimed at where it IS (its world position),
-  // and of two things with one label the nearest is judged by where they are, not by a child's parent-relative offset
+  // and a label two things share is refused naming both (R 10-17), never resolved to the nearest
   { const me = { x: ag.pos.x, z: ag.pos.z }, L = [me.x + 1.5, 1.2, me.z + 1.5], P = [16, 0, 16], W = [P[0] + L[0], P[2] + L[2]];
     const pl = await mk("plinth", { model: "test/post.glb", components: { transform: { pos: P, q: [0, 0, 0, 1], scale: [1, 1, 1] }, physics: { kind: "static" } } });
     const lp = await mk("lamp", { components: { transform: { pos: L, q: [0, 0, 0, 1], scale: [1, 1, 1] }, parent: { to: N("plinth") }, label: "beacon" } });

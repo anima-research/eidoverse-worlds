@@ -1,5 +1,5 @@
 // stylepanel — live token editing.
-// Three swatches drive the token sheet directly: if any hex is hiding
+// Four swatches drive the token sheet directly: if any hex is hiding
 // outside :root, the picker exposes it by NOT restyling that element.
 // Persisted per-browser; "reset" returns to the sheet's own values.
 

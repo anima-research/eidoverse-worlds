@@ -99,7 +99,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(call("bob", "create", { id: "bell", model: "ball", place: { on: "cup" } }).ok, "P0 a ball on the crate (two levels down)");
   const w0 = W().state(); ok(w0.entities.cup.c.parent?.to === "tbl" && w0.entities.bell.c.parent?.to === "cup", "P0 the chain is tbl ← cup ← bell", [w0.entities.cup.c.parent, w0.entities.bell.c.parent]);
   ok(call("bea", "set", { id: "tbl", component: "lock", value: true }).ok, "P1 bea (a builder) locks the table (an ordinary set of `lock`)");
-  // v1's refusal matrix, for the LOCKER (who is also the owner): place, remove, cargo-mount, replace
+  // v1's refusal matrix (v1 asked it of the locker; here bea locked and olive, the owner, asks): place, remove, cargo-mount, replace
   ok(code(call("olive", "set", { id: "tbl", component: "transform", value: { pos: [9, 0, 9] } })) === "locked", "P2 the owner can't move it either (v1: 'even for the locker'; a lock binds everyone)");
   ok(code(call("olive", "delete", { id: "tbl" })) === "locked", "P3 …nor remove it (and she is an owner: a lock binds owners too)");
   ok(code(call("olive", "set", { id: "tbl", component: "parent", value: { to: "cup" } })) !== undefined && code(call("olive", "place", { id: "tbl", at: [5, 5] })) === "locked", "P4 …nor place it, nor mount it on something (cargo-mount)");
@@ -607,7 +607,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(!said.k.changed && said.k.says.length === 1 && said.k.says[0].text === "hi" && said.k.says[0].actor === "ann", "K7 a say comes back as a chat line, and changes no state", said.k);
   const re = c.ingest(JSON.parse(JSON.stringify(w.entries.slice(-1))), w.entries.length - 1);
   ok(!re.changed && !re.says.length && !re.resync, "K3 a re-delivered entry is ignored", re);
-  // its own thing: cup left with tbl (deleting takes children, and undoing a delete is refused since lab F3)
+  // its own thing: cup left with tbl (deleting takes children; undoing it brings both back: H7c)
   call("ann", "create", { id: "gap-1", model: "crate", place: { at: [3, 3] } }); c.ingest(JSON.parse(JSON.stringify(w.entries.slice(c.head + 1))), c.head + 1);
   call("ann", "set", { id: "gap-1", component: "label", value: "x" }); const from = w.entries.length; ok(call("ann", "set", { id: "gap-1", component: "label", value: "y" }).ok, "K4 (precondition) the edit after the missed one is written");
   ok(c.ingest(JSON.parse(JSON.stringify(w.entries.slice(from))), from).resync, "K4 a gap (a missed entry) asks for a fresh snapshot, never folds past it");

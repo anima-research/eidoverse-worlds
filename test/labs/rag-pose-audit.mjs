@@ -1,7 +1,7 @@
 // What SHAPE does a settled body actually take? — the anatomy audit.
 //
 //   bun test/labs/rag-pose-audit.mjs            # the fleet, at settle
-//   bun test/labs/rag-pose-audit.mjs --peak     # worst reached at ANY point
+//   bun test/labs/rag-pose-audit.mjs --peak     # worst reached after the first half-second (step 31 on)
 //
 // rag-tune.mjs answers "is the solver stable"; this answers "is the pose a
 // body could hold". They are different questions and the second one is not

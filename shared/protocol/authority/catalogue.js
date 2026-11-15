@@ -1,13 +1,13 @@
 // shared/protocol/authority/catalogue.js — the model catalogue and a thing's geometry. A leaf: math and the spatial
-// index read a thing's box through geomE; nothing here reaches the gate. The load-time `CTX.cat = LAB_CATALOGUE` lets an
-// out-of-call reader (a test reading the index) find the lab's catalogue in force.
+// index read a thing's box through geomE; nothing here reaches the gate. Out of a call CTX.cat is NO_CATALOGUE: a test
+// reading the index injects its own (test/harness/labmodels.js LAB_CATALOGUE).
 import { REDACTED } from "../fold.js";
 import { COMPONENTS } from "../componentspec.js";
 import { collisionBoxes } from "../../structure.js";
 import { CTX } from "./ctx.js";
 import { isNum } from "../is.js";
 // ---------- the model catalogue ----------
-// The engine's models are library paths measured from their GLBs (server/modelcatalogue.ts; else LAB_CATALOGUE),
+// The engine's models are library paths measured from their GLBs (server/modelcatalogue.ts; the lab hosts inject LAB_CATALOGUE),
 // so the catalogue is injected: io.catalogue = { get(name) → entry | undefined,
 // list(query) → [name, entry][] }. An entry is { label, size?, box?, surfaces, solids?, sockets? }:
 //   box      [[x,y,z], [x,y,z]] in the model's frame (a GLB's origin is wherever its author put it); absent → the lab's

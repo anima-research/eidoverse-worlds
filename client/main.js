@@ -1,9 +1,9 @@
-// eidoverse browser client: the boot sequence, the frame-system list (lib/frameloop.js) and the EW console surface.
+// eidoverse browser client: the boot sequence, the frame-system list (lib/render/frameloop.js) and the EW console surface.
 //
 // Two planes: the world log (verbs, ordered, replayed on join) and presence (intent state at ~15 Hz, interpolated).
 // The client owns its own avatar; the server sequences and relays. Every system lives in lib/: identity and the `me`
 // handle in mybody.js, my body's physics in localbody.js, consent in consent.js, voice mouths in voicemouths.js,
-// /commands in lib/commands/. lite.js is the renderer-free sibling.
+// /commands in lib/ui/commands/. lite.js is the renderer-free sibling.
 import { updateWater, updateWaterView, setWaterObjects, setWaterClock, setSkyHider, waterDebug, applyEnvLight } from './lib/realize/watervolumes.js';
 
 import { say } from './lib/net.js';
@@ -137,7 +137,7 @@ import { isOwner } from '../shared/protocol/roles.js';
 import { DEFAULT_BODY } from '../shared/avatardefs.js';
 
 if (CONFIG.params.has('mintthumbs')) {
-  // ?mintthumbs — seed the roster's portraits, then stop (lib/portraits.js). The else below is the entire normal boot.
+  // ?mintthumbs — seed the roster's portraits, then stop (lib/debug/portraits.js). The else below is the entire normal boot.
   await (await import('./lib/debug/portraits.js')).mintThumbnails();
 } else {
 
@@ -178,7 +178,7 @@ const chatApi = initChat({
 });
 initPeople({ mentionPerson, presenting: () => isPresenting(), toast, openModLog: (who) => openModeration({ tab: 'log', who }) });
 initRolesPanels();
-// the lantern prompt (Ctrl/Cmd+K): actions from lib/actions.js, speech and /commands through chat's own submit
+// the lantern prompt (Ctrl/Cmd+K): actions from lib/ui/actions.js, speech and /commands through chat's own submit
 initLantern({ submit: chatApi.submit });
 initActionBar();
 initXRKeyboard();   // types into the last-focused text input; a quad in VR
@@ -391,12 +391,12 @@ initReachNet({
 });
 initMods();   // 🧩 runtime client scripts: your local trusted mods (a world offers none: its code is its server-side scripts)
 initLocalBody({ logChat });
-initCommands();   // the /command surface (lib/commands/) + its bus subscriptions
+initCommands();   // the /command surface (lib/ui/commands/) + its bus subscriptions
 
 // ---------------------------------------------------------------- keys
 
 // The main keys as data: the handler below dispatches from this table and the lantern prompt lists it
-// (lib/actions.js). `id` names an existing action to merge into or a new one; `guard` gates the key only (build mode
+// (lib/ui/actions.js). `id` names an existing action to merge into or a new one; `guard` gates the key only (build mode
 // rebinds H and R); `plain` keys answer only with no Ctrl/Alt/Meta held (a browser's own chord stays the browser's).
 const MAIN_KEYS = [
   { code: 'KeyH', key: 'H', id: 'key:help', title: 'help — keys and controls', keywords: ['?', 'keys', 'controls', 'how'], group: 'view',
@@ -485,7 +485,7 @@ const readyPoll = setInterval(() => {
 }, 400);
 
 // ---------------------------------------------------------------- frame loop
-// The loop lives in lib/frameloop.js; this is the list, and registration order is execution order: motion before
+// The loop lives in lib/render/frameloop.js; this is the list, and registration order is execution order: motion before
 // remotes, sky → materials → rig, voice mouths before the avatar update, bodydrag before remotes, gaze after,
 // send-pose after every myState writer, render last. Each system is timed (EW.frame() prints the bill) and the
 // governor may stride cosmetic ones. The governor + HUD ride the 1 Hz pulse, registered last.

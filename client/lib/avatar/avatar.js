@@ -1349,7 +1349,7 @@ function makeBlobShadow() {
 // ---------------------------------------------------------------- factory
 
 /** The body of last resort (capsulebody.js): a real Avatar over a capsule puppet — labels, gestures, the XR arm
- *  solver and the wire all work on it. Never throws; never touches the network. */
+ *  solver and the wire all work on it. Never throws; never waits on the network (its clips are fetched best-effort). */
 export function makeCapsuleAvatar(id) {
   const av = new Avatar(id, makeCapsuleVrm(), {});
   av.isCapsule = true;

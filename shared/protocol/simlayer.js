@@ -308,8 +308,8 @@ export function simFolder(entries, { models = {}, from = null, purged = null } =
     if (now !== undefined) { if (now > clock) clock = now; advance(clock); }
     out.clock = clock;
     out.rested = [];
-    // a flying body that has crossed the world's edge is lost THERE: it rests on the record where it is now, and the
-    // authority sends it home (never simulated out there, untouchable)
+    // a flying body that has crossed the world's edge is lost: it rests on the record where it is when the view is read
+    // (a long advance may carry it further first), and the authority sends it home (untouchable)
     const B = boundsIn(st);
     if (out.sim) for (const [id, l] of Object.entries(out.launched)) {
       const b = out.sim.bodies[id]; if (!b) continue;

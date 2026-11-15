@@ -323,8 +323,8 @@ export function drainPromoteTail() {
 }
 
 /** An Empty: a transform with nothing to draw (pivot, group parent, target). A bare Group, so every entities-map
- *  consumer treats it as an entity; no collider, lamps, caster or load. Announces as 'spawn' (what comp evaluators
- *  rebuild on); a light component brings its gizmo. */
+ *  consumer treats it as an entity; no collider, caster or load. Announces as 'spawn' (what comp evaluators
+ *  rebuild on); a light component brings its light (syncCompLight) and gizmo. */
 function createHost(id, ent) {
   reserve(id, { kind: 'host' });
   const g = new THREE.Group();

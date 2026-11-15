@@ -48,7 +48,7 @@ export function makeCapsuleVrm() {
     alongX(bones[side + 'UpperArm'], 0.28, 0.045, BRAND, s, 0.9);
     alongX(bones[side + 'LowerArm'], 0.26, 0.04, BRAND, s, 0.9);
     alongX(bones[side + 'Hand'], 0.16, 0.045, BRAND, s, 0.95);   // the hand capsule — what the controller drives
-    bones[side + 'UpperArm'].rotation.z = -s * 1.35;   // rest = arms at the sides, not a T-pose: there are no clips to lower them
+    bones[side + 'UpperArm'].rotation.z = -s * 1.35;   // rest = arms at the sides, not a T-pose, until a clip loads (makeCapsuleAvatar tries CORE_CLIPS)
     bones[side + 'UpperLeg'] = mk(side + 'UpperLeg', s * 0.09, -0.02, 0, bones.hips);
     bones[side + 'LowerLeg'] = mk(side + 'LowerLeg', 0, -0.42, 0, bones[side + 'UpperLeg']);
     bones[side + 'Foot'] = mk(side + 'Foot', 0, -0.42, 0, bones[side + 'LowerLeg']);

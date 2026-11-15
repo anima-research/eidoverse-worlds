@@ -237,8 +237,8 @@ export function makeLevelMeter(getMeasured) {
  *
  *  Invariants:
  *  - drive the gate before any early return;
- *  - learn before judging (~1 s settle window, or a loud room fires the 🎙 at itself);
- *  - the floor is min-of-block-minima (6 × 0.4 s), so speech can never raise it;
+ *  - learn before judging (~160 ms settle window: 8 ticks; or a loud room fires the 🎙 at itself);
+ *  - the floor is min-of-block-minima (6 × 0.4 s), so speech shorter than that 2.4 s window can't raise it;
  *  - announce only after the gate has been open 60 ms, max once per 1.5 s, so the pill and the audio agree;
  *  - `speaking` reports threshold plus hang-time, or the bar flickers through pauses;
  *  - 20 ms tick: the interval is the worst-case clip on a word's attack. */

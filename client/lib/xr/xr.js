@@ -2,7 +2,7 @@
 //
 // Owns the session and rig, and the hands: stick locomotion only fills xrIntent (the controller does the moving),
 // the right-hand ray feeds sgSelect, grip alone grabs a panel by its background or title (never by a control),
-// and every radial-menu slot is verb-backed (agent parity). Never navigate mid-session.
+// and the radial menu opens panels and local acts (recentre, ears, mic, leave). Never navigate mid-session.
 
 import { confirmCenter } from '../edit/confirmcenter.js';
 import { outOfMyView } from '../edit/myview.js';
@@ -660,7 +660,7 @@ async function enterVR({ retryOf = null } = {}) {
       const f0 = perf.frameNo ?? 0;
       const tExit = performance.now(); const c0 = { ...buildTotals };
       const probe = (tag, due) => {
-        // the veil drops only when desktop frames flow, never on a timer; a loop still dead at +3 s is re-armed once
+        // the veil drops when desktop frames flow; a loop still dead at +3 s is re-armed once, and at +6 s it drops anyway (logged 'STILL dead')
         const flowing = ((perf.frameNo ?? 0) - f0) > 0;
         if (flowing) exitVeilShow(false);
         else if (tag === '+3s') { tee('[xr] after-exit: loop DEAD (frames+0 at +3 s) — re-arming'); bus.emit('xr:rearm'); setTimeout(() => probe('+6s', 6000), 3000); }
@@ -1197,7 +1197,7 @@ export const xrDebug = () => {
 
 
 // The veil, both ways: the splash's mark and a phase line, from the visor click until the session's first frame, and
-// from the leave click until desktop frames flow again.
+// from the leave click until desktop frames flow again (or the +6 s exit probe gives up).
 function xrVeilShow(on, phase = 'leaving VR') {
   if (!exitVeil) {
     exitVeil = document.createElement('div'); exitVeil.className = 'xr-veil'; exitVeil.setAttribute('aria-live', 'polite');

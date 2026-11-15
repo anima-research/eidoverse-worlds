@@ -477,13 +477,8 @@ async function shut(h: { ws: WebSocket }) {
     wouldFound.result?.isError === true && /^travel refused, so you're still in "commons": no accessible world is named "brand-new-place", and this credential may not found one/.test(txt(wouldFound)), txt(wouldFound));
   // (act forwarding an unknown verb to the authority: door-wording-test "act passes a verb…", directory-check B5)
   // …and prove it wasn't created as a side effect anyway (review F)
-  // 🔴 PAIRED WITH ITS POSITIVE CONTROL (adversarial review, 2026-08-17).
-  // `!existsSync(...)` alone passes for a build where founding writes NOTHING
-  // anywhere — or where worlds land at a different path entirely — which makes
-  // it indistinguishable from `!existsSync("/tmp/definitely-not-a-path")`. The
-  // second assertion is what gives the first its meaning: a world that WAS
-  // founded appears at exactly this path, so a world that was refused being
-  // absent from it is now evidence rather than a tautology.
+  // 🔴 PAIRED WITH ITS POSITIVE CONTROL (below: annex's log grows at this path), so a server writing worlds elsewhere
+  // can't pass these absence checks.
   check("refused founding left NOTHING on disk", !existsSync(join(worldsDir, "brand-new-place")));
   nofound.ws.close();
   const founder = await connectHost("roamer-token");
@@ -493,17 +488,8 @@ async function shut(h: { ws: WebSocket }) {
   check("create:true doesn't found by travelling either: the reply says no accessible world has that name",
     founded.result?.isError === true && /no accessible world is named "founded-place"/.test(txt(founded)), txt(founded));
   check("…and that refusal left nothing on disk", !existsSync(join(worldsDir, "founded-place")));
-  // 🔴 THE POSITIVE CONTROL FOR THE on-disk CHECK ABOVE (adversarial review,
-  // 2026-08-17). `!existsSync(brand-new-place)` alone also passes for a build
-  // where founding writes nothing anywhere, or writes somewhere else entirely
-  // — indistinguishable from !existsSync("/tmp/not-a-real-path"). Pairing it
-  // with a world that WAS founded, at the SAME parent path, is what turns the
-  // negative into evidence.
-  //
-  // It has to run HERE, after the founding it controls for — my first attempt
-  // put it beside the negative check twenty lines earlier and asserted the
-  // directory existed before anything had created it. The control was itself
-  // wrong in the direction that would have looked like a product bug.
+  // 🔴 THE POSITIVE CONTROL FOR THE on-disk CHECKS ABOVE (adversarial review 2026-08-17): nothing founds here, so it
+  // shows the server writes worlds at THIS path instead.
   // The control reads something the SERVER wrote (bot #320): `existsSync(annex)` was true before the server ran (the
   // harness founds it), so a line said in annex must land in THIS path's log — a server writing worlds elsewhere fails it.
   const annexLog = join(worldsDir, "annex", "world.jsonl");

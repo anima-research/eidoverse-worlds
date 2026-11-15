@@ -1,6 +1,6 @@
 // bun test/client/body-runtime-test.ts — a body that brings its own runtime (§24 avatar defs: `runtime`): the def contract
-// (shared/avatardefs.js), the frame order the avatar runs it in (client/lib/avatar/bodyruntime_core.js), and — when a library
-// is at hand (EIDOVERSE_DIR) — that the module claude_robot's def names exports what that order calls.
+// (shared/avatardefs.js), the frame order the avatar runs it in (client/lib/avatar/bodyruntime_core.js), that the built-in
+// claude_robot runtime exports what that order calls, and (EIDOVERSE_DIR set) the library's body hashes and CC BY metadata.
 // BODY_RUNTIME_TEETH=1 checks the order against a scrambled expectation: it must FAIL, or the order check proves nothing.
 import { readFileSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";

@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 // The channel capability gates: do denied capabilities refuse the REQUEST, not just the gate function?
-// Absence is denial (declaration.ts §5.4); a peer with no declaration at all keeps everything.
+// Absence is denial (declaration.ts §5.4); with no grant, a pre-0.5 MCPL host keeps everything, a 0.5+ host nothing, a plain-MCP host no channel verbs.
 
 import { capabilityMatches, CAP } from '../../mcpl/declaration.ts';
 import { suite } from "../gate/suite.ts";

@@ -1,7 +1,8 @@
 // bun tools/assets/ktx2-tf-purge.ts <OPT_DIR> [--apply] — list (with --apply, delete) KTX2 variants built before the
 // transfer fix: linear data maps (normal/roughness/occlusion) that `ktx create` wrote with the sRGB curve baked in.
 // Variants whose images carry optimize.ts KTX2_TF_MARK are current and skipped; a loose <img>.ktx2 has no mark, so every
-// linear one is listed (run once, after deploying the fix). sRGB images were never affected.
+// linear one is listed (run once, after deploying the fix). sRGB images were never affected. It also lists a variant whose
+// unmarked images exceed KTX2_TEXEL_CAP² (built before the cap), and each purged variant's .failed/.deferred markers.
 // After --apply, restart: the boot sweep (upload.ts) rebuilds what is missing, and VARIANT_CC (routes.ts) lets caches
 // pick the new bytes up within about a minute. No key bump needed.
 import { parseGlb } from "../../server/glbparse.ts";

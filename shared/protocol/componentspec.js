@@ -70,7 +70,7 @@ export const COMPONENTS = {
     docs: { to: "the thing it rides: its transform becomes local to this parent", socket: "the old spelling of a socket attachment: parent to the socket child instead" }, help: "{to: id}; its transform becomes local to the parent. To attach at a socket, parent to the socket (a child entity of its host). socket: the old spelling, read in old logs and lifted at the door" },
   // the punctual light every engine shares (glTF KHR_lights_punctual): a spot's cone is HALF-angles in radians, shining
   // along the thing's local -Z. decay is part of the value (2 = inverse square, so intensity is candela); a light stored
-  // before decay existed fell off as 1.7, which the maintenance repair writes on it so it keeps its look.
+  // before decay existed fell off as 1.7, which a translation writes on it (tools/import-v1) so it keeps its look.
   // intensity 25.93 = the old rig's 16 cd at decay 1.7, matched at 5 m: 16 × 5^0.3 (tools/import-v1/translate-v1.js parityIntensity)
   light:     { on: "thing", fields: { kind: "string", color: "int", intensity: "number", range: "number", angle: "number", inner: "number", decay: "number", important: "bool", daytime: "string" },
     defaults: { kind: "point", color: 0xffd9a0, intensity: 25.93, range: 10, decay: 2, important: false, daytime: "dim" }, enums: { kind: ["point", "spot", "directional"], daytime: ["dim", "full"] },

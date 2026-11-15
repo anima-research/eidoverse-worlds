@@ -38,8 +38,9 @@ are two hidden walls in the submarine's own collision layer, which only its coll
 `imported:vehicle`, listed under `unmapped`. Nothing is deferred.
 
 The renderer supports four water bodies, sixteen pockets, and eight waves per body.
-Excess bodies and pockets produce a diagnostic and are inactive (the highest-priority
-bodies are kept). The fog reads each pocket's mask of the bodies it clears
+Excess bodies and pockets produce a diagnostic and aren't drawn: an excess body still
+swims, and an excess pocket still keeps water out but is fogged as wet (the highest-priority
+ones are drawn). The fog reads each pocket's mask of the bodies it clears
 (zone.js `fogSlots`), so the GPU keeps the same law as `mediumOf`; one corner differs:
 a pocket naming only a higher body also stops the fog of a lower one there.
 
@@ -160,7 +161,7 @@ presence; importing these entities does not add native fold/vehicle replication.
 Run from the repo root with Bun. In the gate: `zone-water-check`, `water-vectors`,
 `water-import` (this manifest through `import.ts --dry`, a real authority, and `mediumOf`
 against main's `mediumAt`). `fog-mask-check.ts` runs the fog in headless Chromium on
-WebGL. The rest require Chrome with WebGPU and a preview (`WATER_PREVIEW_URL`):
+WebGL. `gpu-test.ts` requires Chrome with WebGPU and a preview (`WATER_PREVIEW_URL`); the rest run headless:
 
 ```sh
 bun test/protocol/zone-water-check.ts

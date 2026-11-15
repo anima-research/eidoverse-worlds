@@ -215,8 +215,8 @@ function mediaCheck(s, id, comp, v, at, obj) {
       refuse("conflict", `${node ? `${id}'s ${node}` : id} already turns by ${isLookAt(k) ? k : `${x.type} (${k})`}; one thing turns a node at a time`, `remove ${k} first, or put ${comp.split(":")[0]} on another part`); }
 }
 // L7: values are checked against their schema at admit. A KNOWN name with an unknown key is refused with a "did you
-// mean" (terrain {amp: 0} vs the engine's `amplitude`). Unknown NAMES are still kept (L5): this binds only names the
-// catalogue defines.
+// mean" (terrain {amp: 0} vs the engine's `amplitude`). Unknown namespaced names are kept (L5); an unregistered bare one
+// is refused (schemaCheck, PROTOCOL §4).
 const TYPES = { number: isNum, int: Number.isInteger, string: (x) => typeof x === "string", bool: (x) => typeof x === "boolean", any: () => true,
   sha256: (x) => typeof x === "string" && /^sha256:[0-9a-f]{64}$/.test(x),   // a content hash (model-hash; the one spelling, as copy-of.from's)
   vec3: (x) => Array.isArray(x) && x.length === 3 && x.every(isNum),

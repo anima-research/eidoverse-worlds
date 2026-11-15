@@ -339,7 +339,7 @@ export class WorldLog {
   }
 
   // ---- what the World and server.ts read ----
-  /** A page of chat history, newest first by `before` (the whole log is in memory: every line ever said here). `floor`:
+  /** A page of chat history, paged back from `before`, each page oldest first (the whole log is in memory: every line ever said here). `floor`:
    *  speech is arrival-only, so a say at or below this log seq isn't read back (null = an admin: every say). */
   readHistory({ before = Infinity, after = -Infinity, limit = 50, verbs = null as Set<string> | null, floor = Infinity as number | null }) {
     // the whole log is in memory (live.entries): page back through every chat line ever said, not the ones heard since load

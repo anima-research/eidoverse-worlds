@@ -1,6 +1,6 @@
 // xrpanels — the registration contract docs/guide/MODDING-UI.md advertises.
-// The VR RUNTIME (entry, quads, grab) is part 4 and inert at this rung; what
-// ships here is the seam a mod calls: registerXRPanel(def) validates its def
+// The VR runtime (xrPanelsEnter, xrPanelsPick) is covered only by the laser rows
+// below; the rest is the seam a mod calls: registerXRPanel(def) validates its def
 // and an id registers once. Every other suite STUBS xrpanels, so this one
 // drives the real module — a stub would only assert its own shim.
 // RED when: the validation guard goes (a def with no dispatch registers), or

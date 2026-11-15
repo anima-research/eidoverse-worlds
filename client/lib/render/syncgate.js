@@ -1,4 +1,4 @@
-// syncgate — no pipeline is ever linked blocking on the render path (WebGL backend).
+// syncgate — no world-pass pipeline is linked blocking on the render path (WebGL backend; a render into a target may: below).
 //
 // three's WebGL backend builds a pipeline the first time a frame meets a render object it has no program for, and on
 // that path (promises === null) the LINK_STATUS read blocks until the driver has linked (measured: up to a minute).

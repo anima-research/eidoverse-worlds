@@ -157,7 +157,7 @@ protocol); the reason it fails holds unchanged for scripts
 
 Janus asked whether agents can already script multiple actions, and suggested
 reusing the existing sandbox before inventing a flight-specific tool. I did.
-The experiment is `bench/flightbench/scripts/flightplan.js` — a plan as a list
+The experiment is `tools/flightbench/scripts/flightplan.js` (as of f91058158; deleted since) — a plan as a list
 of legs, walked on a timer, cancellable by a live request, resuming from saved
 state.
 

@@ -1,5 +1,5 @@
 // join-canary — does the server admit a good key and refuse a bad one? Joins over /ws directly, no client code.
-//   bun tools/operator/join-canary.mjs <http(s)-url> <world> <good-key>
+//   bun tools/operator/join-canary.mjs <http(s)-url, no trailing slash> <world> <good-key>
 // Exits 0 only when the good key gets a snapshot AND a made-up key is closed 4003 (the half that catches auth wired open).
 // (The browser paints the world name before the server answers, so a browser check can't tell. Trust this one.)
 import { helloOf } from '../../shared/protocol/hello.js';

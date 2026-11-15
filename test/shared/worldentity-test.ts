@@ -120,7 +120,7 @@ console.log('1. the alias both ways, through the real door:');
 console.log('\n2. picking a sky replaces the Sky; the Weather stays:');
 {
   const W = scratchWorld('worldentity');
-  // the storm is authored with the sky (not a weather override under the forecast: see the KNOWN BUG in section 1)
+  // the storm is authored with the sky (section 1 :77 covers a weather override under the forecast)
   const s0 = W.call('sky', { hours: 8, rate: 24, clouds: 'stratus', exposure: 0.7, fog: 2, azimuth: Math.PI / 2, weather: 'storm', forecast: { seed: 7, states: ['clear', 'rain'], dwell: [600, 1800], transition: 45 } });
   check('(setup) a sky with a storm and a forecast', s0.ok && W.view().sky.weather === 'storm' && !!W.view().sky.forecast, JSON.stringify(s0.refused));
   const st = () => W.view();
@@ -281,8 +281,7 @@ console.log('\n5. the text tier (mcpl/tools.ts): inspect, edit and hierarchy spe
 
 // ------------------------------------------------------------ house review of #260, client/lib I95
 // Removing Weather (the Hierarchy row's ✕, edit/panels.js removeEnv) wrote `weather.state: clear`: under a forecast that is
-// a manual override the next segment undoes (and the door refuses a weather pick under a forecast: section 1's KNOWN BUG),
-// so the Weather never went. `weather.remove` takes the weather off: the forecast stops too (a sky request that keeps
+// a manual override the next segment undoes, so the Weather never went. `weather.remove` takes the weather off: the forecast stops too (a sky request that keeps
 // every sky field but the weather's), and Ctrl+Z (the door's undo) brings the forecast back. With no forecast it is the
 // clear weather it always was.
 // Mutation (must go red): in shared/worldentity.js make weather.remove send weatherOp('clear') under a forecast too.

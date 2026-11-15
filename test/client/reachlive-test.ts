@@ -6,7 +6,8 @@
  *
  * EIDOVERSE_DIR is not optional in a worktree: without it the library rigs
  * (claude, claude_suit, aletheia, aporia — claude is the DEFAULT body) do not
- * load and the suite silently drops to the 14 optimized ones.
+ * load and the suite silently drops to the 14 optimized ones (the host's store, assets/opt/eidoverse/assets/vrms:
+ * without it the rig listing throws ENOENT before any rig loads).
  *
  * test/shared/reach-test.ts checks the geometry and test/shared/reachrig-test.ts checks
  * the conversion against rig data. Neither writes a bone. This one does: it
@@ -124,7 +125,7 @@ console.log("\nand it KEEPS going where it is sent (the moving target)");
   // frame far outside the run of its neighbours. So compare the worst step to
   // the 99th percentile, which is what an absolute threshold would have hidden
   // (and would have been measuring my choice of orbit speed, not the solver).
-  // ⚠ RATCHET. Was 1.11x before the elbow-side constraint went in; it is now
+  // ⚠ KNOWN RED: the check below is strict (spike <= 6). Was 1.11x before the elbow-side constraint went in; it was last
   // ~66x, a real ~380mm snap during ORDINARY moving-target tracking. That is
   // the measured cost of making the side constraint hard, and it is the honest
   // trade on the table:
@@ -416,7 +417,7 @@ console.log("\nelbows bend the way elbows bend (where that is knowable)");
       }
     }
   }
-  // ⚠ A RATCHET, NOT A PASS. 440 of 1296 elbows currently bend backwards where
+  // ⚠ KNOWN RED: the check below is strict (0 inversions). At the last run 440 of 1296 elbows bent backwards where
   // the rule is measurable, and that is almost certainly the artefact antra
   // reported ("the elbow slowly inverts into an unnatural position"). It is
   // not fixed: every fix tried costs more than it buys.

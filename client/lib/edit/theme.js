@@ -29,7 +29,7 @@ export const EDIT = Object.freeze({
 /** The CSS custom property a token is written to: accentBg → --e-accent-bg. */
 export const cssVar = (k) => `--e-${k.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase())}`;
 
-/** The VR painter's floor (DESIGN-SPEC "VR affordances"): canvas px at 900 px/m. */
+/** The VR painter's floor: canvas px at 900 px/m. */
 export const EDIT_VR = Object.freeze({
   rowH: 46,       // a painted row; every hit target inside it is >= minHit
   minHit: 34,     // ≈ 3.8 cm — a laser you can land

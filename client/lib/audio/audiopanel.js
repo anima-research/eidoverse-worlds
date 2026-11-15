@@ -4,15 +4,14 @@
 // Categories:
 //   voices — other people's speech, and agent TTS. A resident is a resident.
 //   world  — place sound. Not touched by the 🎧 toggle, on purpose.
-//   TTS    — synthetic speech specifically, for anyone who wants people but
-//            not narration (or the reverse).
+//   TTS    — your own synthesized voice as you hear it (others' TTS rides voices: ROWS below).
 
 import { makeSection } from '../ui/ui.js';
 import { audioPrefs, setVolume, receivingVoice, setReceiveVoice,
   sttConsented, setSttConsent, isHushed, setHush,
   micFloor, setMicFloor, pttMode, setPttMode } from './voiceconsent.js';
 import { micAnalyserLevel as meshMicLevel } from './micstate.js';
-// ask the live transport: the mesh's micStream is null on an SFU client, so the mesh level alone would read 0 there
+// ask the live transport first (the SFU's own reader); micstate's meter, fed by gateFor, is the fallback
 function micLevelNow() {
   try {
     if (typeof window.__sfuMyLevel === 'function') return window.__sfuMyLevel();
@@ -31,7 +30,7 @@ const micLive = () => {
 import { bus } from '../base.js';
 import { ttsSection } from './ttsrow.js';
 import { micOn, toggleMic } from './micstate.js';
-// CONFIG: the mic row's toggleMic wants the actor NAME.
+// CONFIG: the mic row passes CONFIG.name, which toggleMic (micstate.js) ignores: it takes no argument.
 import { CONFIG } from '../base.js';
 
 // The panel's rows use the house sheet's `.row.wide` (index.html): two columns on a shared centre

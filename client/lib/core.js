@@ -2,7 +2,8 @@
 // eidoverse module-host contract. The renderer-free substrate (bus, CONFIG, report, colours, helpers) lives in
 // base.js (docs/design/RENDERER-SEAM.md), so modules that never touch the GPU import THAT.
 //
-// Import rule: core imports nothing from the client except base.js (which imports nothing at all). The module graph
+// Import rule: from the client, core imports base.js (which imports nothing at all) and the render/ and xr/ boot helpers
+// it installs (gpulost, backend_choice, syncgate, xr/*), none of which imports core. The module graph
 // stays acyclic at load time even where the runtime call graph is circular.
 
 import * as THREE from 'three';
@@ -197,7 +198,7 @@ export const grid = new THREE.GridHelper(160, 80, 0x242c36, 0x242c36);   // a sh
 export const axisLines = new THREE.LineSegments(
   new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-80, 0, 0), new THREE.Vector3(80, 0, 0), new THREE.Vector3(0, 0, -80), new THREE.Vector3(0, 0, 80)]),
   new THREE.LineBasicMaterial({ color: 0x6a7078 }));
-// Floor lines do not WRITE depth, and sit clear of the ground: on the WebGL backend (every VR session, no reversed-Z)
+// Floor lines do not WRITE depth, and sit clear of the ground: on the WebGL backend (most VR sessions: WebGPU-XR needs XRGPUBinding; no reversed-Z)
 // 3 mm between grid and axes is inside the depth error a few metres out. Tested against the ground only, at 2 cm /
 // 4 cm, it is stable on both backends.
 axisLines.material.depthWrite = false;

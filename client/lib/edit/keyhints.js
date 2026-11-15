@@ -1,7 +1,7 @@
 // keyhints — every modifier key and hidden gesture in build mode, said where the hand is. Two tiers:
 //   before: in the control's tooltip (what you COULD do, on hover)
 //   during: on the status line at the bottom while you're engaged (what the keys do RIGHT NOW)
-// test/client/keyhints-check.ts fails when code reads a modifier without a `// keys: <id>` tag naming an entry here, or
+// test/client/keyhints-check.ts fails when a file it lists reads a modifier (as `e.shiftKey`…) without a `// keys: <id>` tag naming an entry here, or
 // when an entry is never shown. Imports only markup.js and base.js (no cycles); ui.js listens for 'keyhint' on the bus.
 import { markup } from '../ui/markup.js';
 import { bus } from '../base.js';

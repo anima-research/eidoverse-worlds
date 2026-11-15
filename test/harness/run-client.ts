@@ -4,6 +4,7 @@
 //                                                                                 "Export named … not found", no missing module
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/harness/run-client.ts                  every file run to the end, sorted pass / red /
 //                                                                                 dead at import / timed out / env / skipped
+//                                                                                 (a bun:test file, test()/describe, runs only under `bun test`, not here)
 //   … --jobs 4  --timeout 90  --slow (run the SLOW table too)  --unreached (list only)  <name-fragment> … (only those)
 //
 // A test whose stub or import graph broke dies before its first check and says nothing a person reads (six "stub missing

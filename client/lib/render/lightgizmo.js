@@ -4,7 +4,7 @@
 // the rig owns a fixed pool of point-light slots born at boot and assigns them by priority: `keep` first, authored lights
 // next, inferred lamps last, ties by camera distance. Winning a slot is uniform writes, never a recompile.
 //
-// `keep: true` is top PRIORITY in the rig, not a budget escape.
+// `keep: true` is top PRIORITY in the rig and escapes the governor's cap, not the slot pool.
 
 import { THREE } from '../core.js';
 import { isCasting } from './lightrig.js';

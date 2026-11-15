@@ -235,8 +235,8 @@ export async function parallelMap(items, fn, limit = 6) {
 }
 
 // ---- per-participant colour --------------------------------------------------
-// Each participant gets a stable colour derived from their name alone — the SAME colour in
-// every client, with no server state. A curated palette (legible on the dark panel, mutually
+// Each participant gets a colour negotiated from the names present (a hashed preference, below) — the SAME colour in
+// every client, with no server state; a newcomer can move someone else's. A curated palette (legible on the dark panel, mutually
 // distinct) rather than a hue wheel; amber and mint are absent because the UI uses them for
 // "you were mentioned" and "link/accent".
 const NAME_COLORS = [

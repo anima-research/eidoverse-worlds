@@ -58,8 +58,8 @@ function bodyGate(w, from, to, kind, extra = {}) { syncDefault(w);
 }
 // The relay's question about a reach DESCRIPTOR (shared/reachwire.js): may `from`'s hand rest on `to` as `cls` (touch |
 // intimate) right now? Asked per presence packet, so nothing is appended and the cool-down counter is NOT fed (a stream
-// is one attempt). Decided again at every packet, so a gate closing or a block ends it. A refusal is said to both sides
-// once per (from, to, cls) per C.REACH_NOTE_MS; `noted` / `told` say whether it was now.
+// is one attempt). Decided again at every packet, so a gate closing or a block ends it. The asker is told once per
+// (from, to, cls) per C.REACH_NOTE_MS (`noted`); the target once per (from, to) per C.TRIED_NOTE_MS (tellTarget, `told`).
 export function reachAdmits(w, from, to, cls, { point = null, limb = null, quiet = false } = {}) { syncDefault(w);
   const P = w.presence, now = w.now();
   if (from === to) return { ok: true, consent: "self" };

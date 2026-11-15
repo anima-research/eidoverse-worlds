@@ -218,20 +218,20 @@ const DEFAULT_LAYOUT = {
   actions:  { x: 'center', y: 10, h: 32, hidden: false },  // one bar across the TOP (hint bar and toasts live at the bottom); it sizes its WIDTH itself (actionbar.js snapTo), and h is one row so fitsDefaults doesn't count it as zero-height
 };
 // Can this viewport hold the hand-arranged default at all? Derived from DEFAULT_LAYOUT rather than a hardcoded
-// breakpoint, so it stays true if the defaults change. A phone fails on width, a 1280x720 desktop on height — this is
-// NOT a mobile special case. CHROME is the title bar a body height does not include.
+// breakpoint, so it stays true if the defaults change. A phone fails on width (with World closed by default, 1280x720
+// fits) — this is NOT a mobile special case. CHROME is the title bar a body height does not include.
 const ACTION_BAR_W = 352;   // widthFor(9) in actionbar.js — the bar sizes itself, so DEFAULT_LAYOUT carries no w for it
 const CHROME = 26;
-// The open defaults are EDGE-ANCHORED ON OPPOSITE CORNERS — world x:-8 y:8 (top-right), chat x:10 y:-10
-// (bottom-left) — so they never share a column, and summing their heights would model an arrangement that does not
+// Open by default: chat and the bar (World starts closed). Opened, world x:-8 y:8 (top-right) and chat x:10 y:-10
+// (bottom-left) are EDGE-ANCHORED ON OPPOSITE CORNERS, so they never share a column, and summing their heights would model an arrangement that does not
 // exist. What has to fit: the row of side-by-side panels across, and the TALLEST open panel plus the bar down (the
 // bar shares a column with every panel). Width alone is wrong: at 844x390 a 363px world plus the bar cannot coexist.
 function fitsDefaults() {
   const open = Object.values(DEFAULT_LAYOUT).filter((d) => d.hidden === false);
   const box = (d) => (d.h ?? 0) + CHROME;
   const bar = DEFAULT_LAYOUT.actions.hidden === false ? box(DEFAULT_LAYOUT.actions) : 0;
-  // WIDTH IS A ROW, NOT A FRAME: chat is anchored LEFT and world RIGHT, so they sit side by side and the arrangement
-  // needs the SUM of their widths (at 800px the widest frame fits while 545+407 does not).
+  // WIDTH IS A ROW, NOT A FRAME: with World open, chat is anchored LEFT and world RIGHT, so they sit side by side and the
+  // arrangement needs the SUM of their widths (at 800px the widest frame fits while 545+407 does not).
   const sideBySide = open
     .filter((d) => d !== DEFAULT_LAYOUT.actions && typeof d.x === 'number')
     .reduce((sum, d) => sum + (d.w ?? 0), 0);

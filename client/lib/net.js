@@ -416,8 +416,8 @@ let everJoined = false;   // has this page been let in at all (a snapshot arrive
 let worldSaved = false;   // has this join remembered its world yet (rememberWorld)
 let browserSaved = false;   // has this PAGE written the browser's last world (once: see rememberWorld)
 
-/** Has anyone made anything here. A join to an unused name founds that world (server.ts admitJoin), so a mistyped
- *  ?world= is let into an empty one; an empty world is not remembered, so a bare link stops leading to a typo. */
+/** Has anyone made anything here. An empty world is not remembered, so a bare link doesn't lead back to a world nobody
+ *  built in (a join never founds one: a mistyped ?world= is refused, server.ts admitJoin). */
 export const builtIn = (st) => {
   if (!st) return false;
   for (const _ in st.entities ?? {}) return true;   // one is enough: no key list built over a big world
@@ -711,7 +711,6 @@ export function teardownParticipant(id, expected) {
   if (expected && remotes.get(id) !== expected) return null;   // a predecessor's stale cleanup is a no-op
   bus.emit('participant-teardown', id);   // bodydrag releases custody before the bones vanish
   const dropped = dropRemote(id, expected);
-  // the voice peer rides the 'roster' sweep every caller emits right after (voice.js imports net: a cycle)
   return dropped;
 }
 

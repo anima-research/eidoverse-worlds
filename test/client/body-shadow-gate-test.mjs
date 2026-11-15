@@ -1,5 +1,5 @@
-// Only a body with a LAMP in it casts and receives (client/lib/render/materials.js,
-// client/lib/avatar/avatar.js).
+// By default only a body with a LAMP in it casts and receives (client/lib/render/materials.js,
+// client/lib/avatar/avatar.js); the own-body pref opts your own body in (applyOwnBodyShadow, below).
 //
 // Bodies briefly got real shadows for every avatar in the world. That is a
 // global rendering default flipped on shared client code, and the costs were

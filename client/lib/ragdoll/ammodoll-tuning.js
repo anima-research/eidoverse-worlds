@@ -16,7 +16,7 @@ export const MASS_FRAC = {
 export const TRUNK_DEPTH = 0.88;
 export const REAL_H = 1.70;            // rigdef.py: reference height for the mass budget
 export const BODY_KG = 62.0;           // at REAL_H, scaled by (H/1.70)³
-export const FINGER_MASS_FRAC = 0.0016; // per phalanx body (~20 g at 62 kg); thumb ×1.4
+export const FINGER_MASS_FRAC = 0.0016; // per phalanx body (~100 g at 62 kg); thumb ×1.4
 
 export const FINGER_STIFFNESS = 12.0;  // rigdef.py, measured sag plateau
 export const FINGER_DAMPING = 0.9;
@@ -31,7 +31,7 @@ export const DISABLE_DEACTIVATION = 4;    // never sleep — a kinematic anchor 
 
 export const LIN_DAMP = 0.12;          // source setDamping(0.12, —)
 export const ANG_DAMP = 0.7;           // 0.7, not the source's 0.45: at 0.45 hands and head ring indefinitely and never sleep
-export const ANG_DAMP_FINGER = 0.95;   // spring-driven 20 g boxes: dissipate hard
+export const ANG_DAMP_FINGER = 0.95;   // spring-driven ~100 g boxes: dissipate hard
 export const LIN_DAMP_FINGER = 0.3;
 export const FRICTION = 0.85;
 export const RESTITUTION = 0.03;

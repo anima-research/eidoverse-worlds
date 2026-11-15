@@ -4,7 +4,8 @@
  *   EIDOVERSE_DIR=~/connectome-local/eidoverse-video bun test/shared/reachrig-test.ts
  *
  * EIDOVERSE_DIR is not optional in a worktree: without it the library rigs
- * resolve to <worktree>/../eidoverse-video and silently do not load, and the
+ * resolve to <worktree>/../eidoverse-video and silently do not load (the optimized ones need assets/opt/eidoverse/assets/vrms,
+ * else the rig listing throws ENOENT), and the
  * suite quietly drops to the 14 optimized ones. Check the rig count it prints.
  *
  * test/client/ragdoll-test.ts learned this lesson the expensive way: a synthetic

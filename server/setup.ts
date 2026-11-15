@@ -39,7 +39,8 @@ export function setupPage(): Response {
   return new Response(PAGE, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "referrer-policy": "no-referrer", "content-security-policy": PAGE_CSP } });
 }
 
-/** POST /setup {token}. Refused: another site's page, too many tries, no proven account (a guest), a wrong or used token — no hint which. */
+/** POST /setup {token}. Refused: another site's page, too many tries, no proven account (a guest), a wrong token — no hint which. A used token never gets here: once an operator exists
+ *  /setup is a missing page (routes.ts setupOpen). */
 export async function setupClaim(req: Request, srv: { requestIP?(req: Request): { address: string } | null }): Promise<Response> {
   const site = req.headers.get("sec-fetch-site");
   if (site !== null && site !== "same-origin") return json({ error: "refused" }, 403);   // CSRF: only this server's own page, or a native caller

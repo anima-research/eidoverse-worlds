@@ -222,7 +222,7 @@ export function updateMountedMe(dt) {
 }
 
 const _sitV = new THREE.Vector3();
-// a plain X offers only a seat you could climb onto (height counts); naming one (/sit <name>) still reaches any.
+// a plain X offers only a seat you could climb onto (height counts); naming one (/sit <name>) finds it anywhere, but the authority still refuses one out of reach.
 // One source with the authority's sit check: shared/sockbody.js OCCUPY_REACH.
 const SEAT_RISE = { up: OCCUPY_REACH.up, down: OCCUPY_REACH.down };
 /** Nearest declared seat: distance to the socket's world point, not the entity's origin (a ferry's helm can be a
@@ -253,7 +253,7 @@ function nearestSeat(arg, reach) {
   return best;
 }
 
-/** Sit on something: the nearest socket within arm's reach (or a named entity from anywhere). When nothing is in
+/** Sit on something: the nearest socket within arm's reach (or a named entity, found anywhere; the authority checks reach). When nothing is in
  *  reach but a seat exists further out, say so. The authority is asked first (`use {id, action}`): it checks who
  *  may and answers with what the body does. Already seated, I may move straight to a socket that allows it (fromSeat). */
 let sitTicket = 0;   // the latest sit ask; getting up (or asking again) makes every earlier answer stale

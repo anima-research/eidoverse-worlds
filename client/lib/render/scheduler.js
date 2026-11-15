@@ -84,7 +84,7 @@ export function pending(minPriority = -Infinity) {
   return n;
 }
 
-/** Resolves (once) when everything at or above the band has drained; immediately if already idle. */
+/** Calls fn once when everything at or above the band has drained (on a microtask if already idle); returns nothing. */
 export function onIdle(fn, minPriority = -Infinity) {
   if (pending(minPriority) === 0) { queueMicrotask(fn); return; }
   idleWaiters.push({ fn, minPriority });

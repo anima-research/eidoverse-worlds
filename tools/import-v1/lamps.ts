@@ -46,7 +46,8 @@ export function lampsOfDoc(doc: any): Lamp[] {
     return { at: at.map((x) => +x.toPrecision(9)), color: sat > 0.25 ? hex(e) : 0xffd9a0, intensity: Math.min(40, 6 + 2.6 * glow), range: 12, decay: 1.7 };
   });
 }
-/** Measure each library path's lamps once (await before translating): a model this host can't find or read has none, as main drew none. */
+/** Measure each library path's lamps once (await before translating): a model this host can't find has none (even if the old
+ *  server served it); one it finds but can't read is {unmeasured}. */
 export async function warmLamps(libs: Iterable<unknown>) {
   for (const lib of new Set([...libs].filter((x): x is string => typeof x === "string"))) {
     if (Array.isArray(cache.get(lib))) continue;

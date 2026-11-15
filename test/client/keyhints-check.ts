@@ -1,6 +1,7 @@
 // test/client/keyhints-check.ts — no hidden keys in build mode (R 10-04: "SOOOO much hidden knowledge… needs to be tooltipped
 // somewhere for it to matter"). Fails when:
-//   1. build-mode code reads a modifier (e.shiftKey / ctrlKey / altKey / metaKey, key === 'Control'…) on a line without a
+//   1. a file in FILES below reads a modifier spelled e.shiftKey / ctrlKey / altKey / metaKey or key === 'Control'… (MOD:
+//      another spelling, e.g. event.shiftKey, or an unlisted file isn't scanned) on a line without a
 //      `// keys: <id>` tag naming an entry in client/lib/edit/keyhints.js (a read that is NOT build mode's, in a file that mixes
 //      the two, says so: `// keys: none — <why>`);
 //   2. an entry has no words to show (`before` empty);

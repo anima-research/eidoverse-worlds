@@ -15,7 +15,7 @@
 //   U   an agent hears `vacated` (its seat cleared, standing where the authority let it go); only for the seat it is on
 //   T   leaving a seat restarts the authority's track of the body at the seat (no too-fast after being carried)
 //   L   lows: a prototype key as a verb, an unlogged grab records no
-//       identity, the translator's name is @13
+//       identity
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";

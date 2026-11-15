@@ -12,7 +12,7 @@ import { emptySim, simEntry, advanceSim, tickOf, simPose, simSnapshot, SIM_ID } 
 import { suite } from "../../gate/suite.ts";
 
 // The engine reads an "instant fold" beside its entries: st.entities[id].{lib, pos, yaw, scale} and st.terrain (the
-// shape shared/protocol/simlayer.js's v1View hands it). This is that view, for exactly the dialect-3 verbs these scripts
+// v1 instant fold's shape). This is that view, for exactly the dialect-3 verbs these scripts
 // use: spawn makes a thing, place moves it, remove/light end it as a modelled thing (a light reusing the id has no
 // lib), terrain is the world's ground. It is not a fold of any log format; it is the engine's input, kept by hand.
 type LogEntry = { seq: number; ts: number; actor: string; verb: string; args: Record<string, any> };

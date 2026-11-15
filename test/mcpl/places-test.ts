@@ -92,7 +92,7 @@ try {
   await a.walkTo(0, 7, true);
   const seen = await tool("look", {});
   // protocol merge (owner 22:40/22:43): look lists the places this body can SEE (line of sight, ≤ 30 m, nearest 12, with
-  // distance and floor), each from the model's own description; move {to: "?"} lists every one, seen or not
+  // distance and floor), each from the model's own description; move {to: "?"} lists them, seen or not (nearest 200: below)
   const sightLine = seen.split("\n").find((l) => l.startsWith("Places you can see")) ?? "(no places line)";
   check("look lists the places in sight, from the model's own description, with distance and floor",
     /tower\/entrance \(\d+\.\d m, floor -?\d+\.\d\d m\)/.test(sightLine), sightLine);

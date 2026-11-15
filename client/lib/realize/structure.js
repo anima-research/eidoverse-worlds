@@ -6,8 +6,9 @@
 //   cannot drift from the fold.
 // - Merged, not instanced: one draw call per material per building. Instancing pays off with dozens of buildings
 //   sharing a kit (flora.js is the precedent); nothing outside this file addresses a wall as an Object3D.
-// - Topology is born at init: the palette is created once at module load and style is an index and a uniform, never
-//   a new node graph (three's WebGPU renderer keys its pipeline cache on graph identity; a fresh graph hitches).
+// - Topology is born at init: the palette is created once at module load and style is an index and a uniform, not
+//   a new node graph (three's WebGPU renderer keys its pipeline cache on graph identity; a fresh graph hitches), except
+//   a palette restyle: applyPaletteStyle builds a new colorNode through its finish and recompiles.
 
 import { THREE, TSL, scene } from '../core.js';
 import { bus, report } from '../base.js';
@@ -27,7 +28,7 @@ import { worldPose, ancestors } from '../../../shared/hierarchy.js';
 import { scale3 } from '../../../shared/scale3.js';
 
 // Procedural, not textured: surface detail comes from grid-local position in the shader (zero texture bytes, tiling
-// that never visibly repeats). Every graph is built once, here; the palette is a fixed set of slots.
+// that never visibly repeats). Every graph is built here (a restyle rebuilds a colorNode); the palette is a fixed set of slots.
 const {
   positionLocal, attribute, vec3, float, floor: tslFloor, fract, abs: tslAbs,
   smoothstep, mx_noise_float, mx_fractal_noise_float,

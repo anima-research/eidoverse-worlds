@@ -13,7 +13,7 @@
 //       your own seat is yours; a standing body never blocks an edit
 //   Q   purge safety: an act body the authority reads back (READBACK) read through one accessor; a purged one is unknown,
 //       and unknown never restamps an owner-chosen build, never flips a creator's rights, never crashes undo
-//   G   the refusal-code registry: every code the authority can refuse with is registered (and every registered one used)
+//   G   the refusal-code registry: every code the authority can refuse with is registered (and every registered one not marked reserved is used)
 //   V   every verb has a VERBSPEC row
 //   X   the spec pins: checkpoint reserved, the readback paragraph, §7a pre-avatar MUSTs, the names reserved, the ladder rule
 // @ts-nocheck

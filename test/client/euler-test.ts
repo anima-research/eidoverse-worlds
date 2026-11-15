@@ -37,7 +37,7 @@ for (const order of ROT_ORDERS) {
   const [ia, ib, ic] = [...order].map((c) => AX[c]);
   for (let n = 0; n < 300; n++) {
     // ---- 1. the order convention, two independent ways
-    const e = [ang(), ang() / 2, ang()];   // middle within ±90° keeps the canonical branch for the identity check below
+    const e = [ang(), ang() / 2, ang()];   // any angles: section 1 only composes e (section 2 decomposes rq)
     const q = qFromEuler(e, order);
     const ref = axisAngle(ic, e[ic]).multiply(axisAngle(ib, e[ib])).multiply(axisAngle(ia, e[ia]));   // C·B·A: A applied first
     ok(`${order} #${n}: qFromEuler = axis-angle product C·B·A`, sameRotation(q, [ref.x, ref.y, ref.z, ref.w], 1e-12));

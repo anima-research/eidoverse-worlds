@@ -80,7 +80,7 @@ console.log("which room a body is in first");
   // a: 10 m on a side (1000 m³) at ×0.1, so 1 m³; b: 2 m on a side (8 m³), unscaled
   const shrunk = order({ scale: 0.1, box: 10 }, { scale: 1, box: 2 });
   check("...and a scaled one by its scale cubed: 1000 m³ at ×0.1 comes before 8", shrunk === "a,b", shrunk);
-  // a: mirrored, its places framed at 1 (places.js frames only positive axes), so 1000 m³; b: 8 m³
+  // a: mirrored, its places framed at 1 (places.js frames a negative scalar scale at 1; a negative scale3 axis is framed mirrored), so 1000 m³; b: 8 m³
   const mirrored = order({ scale: -2, box: 10 }, { scale: 1, box: 2 });
   check("...and a mirrored one as its places are framed, never by a negative volume", mirrored === "b,a", mirrored);
 }

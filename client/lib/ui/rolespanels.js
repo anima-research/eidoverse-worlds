@@ -1,6 +1,6 @@
 // rolespanels — the Moderation (only while you hold a moderation right) and World Settings (everyone reads, owners
 // edit) dock panels. Writes only the field that changed, never on open (absence = the server's default, PROTOCOL
-// §9.2). In a headset these are quads: every control is a button or select (no hover, no long-press).
+// §9.2). In a headset these are quads: buttons, selects, checkboxes and text fields (no hover, no long-press).
 import { bus, report, CONFIG } from '../base.js';
 import { net, sendRequest, replica, identities, personName } from '../net.js';
 import { makeSection, moderationFrame, worldSettingsFrame, toast } from './ui.js';

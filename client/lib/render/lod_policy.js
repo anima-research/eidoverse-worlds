@@ -10,7 +10,7 @@
 //                           cathedral goes reduced later than a mug.
 //   DEVICE PRESSURE         GPU memory against the proto budget (assets.js
 //                           gpuPressure) and the frame governor's shed — a
-//                           6GB card and a 24GB card should not fetch alike.
+//                           fixed 1.5 GB budget, not the card's own capacity.
 //
 // The answer is 'full' or 'lod'. 'lod' asks for the recipe the running sequencer PUBLISHED on /version
 // (shared/ktx2.js lodFromVersion); none published, no tier asked. The server answers with the variant or the original
@@ -74,8 +74,8 @@ export function makeModelQuality(store) {
  *  it); anything that isn't a positive finite number is 1. */
 export function chooseTier({ dist, radius, quality = 'auto', recipe = null, pressure = 0, shed = false, current = null, scale = 1 }) {
   if (!recipe || quality === 'full') return 'full';
-  // 'eco' is the pressured band, always: the edge halves. It never reduces what you stand beside (near stays full on
-  // every dial); only 'full' ignores distance (in the other direction).
+  // 'eco' is the pressured band, always: the edge halves. Near the model's origin stays full on every dial (dist is to
+  // the origin, so a long model's far end can be reduced at arm's length); only 'full' ignores distance (in the other direction).
   const squeezed = quality === 'eco' || pressure >= PRESSURE_AT || shed;
   const n = Number(scale), s = Number.isFinite(n) && n > 0 ? n : 1;
   const edge = Math.max((radius > 0 ? radius : 80) * LOD_FRACTION * (squeezed ? PRESSURE_EDGE : 1) * s,

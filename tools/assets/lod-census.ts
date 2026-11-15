@@ -1,6 +1,7 @@
 // bun tools/assets/lod-census.ts <libDir> [outDir] — what each candidate vertex FLOOR would do to a library under the
 // current LOD reducer (#207). The floor only decides which objects enter reduction, so each model runs once at the
-// lowest floor and every floor's census is a filter on vertex count. Writes census.json and census.md to outDir.
+// lowest floor and every floor's census is derived from that run (atFloor: under the floor, a texture-only LOD if its
+// textures qualify, else light). Writes census.json and census.md to outDir.
 //   FLOORS=12000,1000,500,250 bun tools/assets/lod-census.ts /path/to/models notes-dir
 import { readdirSync, readFileSync, statSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, relative } from "node:path";

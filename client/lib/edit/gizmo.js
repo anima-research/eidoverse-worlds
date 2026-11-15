@@ -60,8 +60,8 @@ function ensure() {
 }
 
 const MODE = { move: 'translate', rotate: 'rotate', scale: 'scale', pivot: 'translate' };
-/** Can this thing take THIS gesture? The schema decides: a mounted or locked
- *  thing's transform is read-only; a light has no orientation or scale to drag. */
+/** Can this thing take THIS gesture? A thing riding a part socket can't be dragged (a lock doesn't stop the drag:
+ *  the release asks); a light has no orientation or scale to drag. */
 function editable(id, mode) {
   const rec = foldRecord(id); const obj = entities.get(id);
   // a lock doesn't stop the drag: the release asks the authority, which asks a person who may lift it.

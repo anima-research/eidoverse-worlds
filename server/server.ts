@@ -484,7 +484,7 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     c.world = w;
     // ADMISSION BEFORE TAKEOVER: every check that can refuse this join runs before the takeover kick, so only a join
     // that WILL be accepted may retire anyone (else an unauthenticated join kills the genuine leg it duels). The aux cap
-    // alone comes after the kick: the predecessor it removes must not count against its successor.
+    // is checked here too, leaving out a same-surface predecessor (the kick replaces it, it doesn't stack).
     if (c.surface !== "world") {
       // An aux leg without a living primary is an orphan mic: refuse it.
       const primary = [...w.clients].find(t => t !== c && t.id === c.id && (t.surface ?? "world") === "world" && !t.spectator);

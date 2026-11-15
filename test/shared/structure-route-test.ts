@@ -4,8 +4,8 @@
 // with the router's one reason.
 //   1. the route table   2. caps and the worst case   3. support bases
 // The agent walks over these routes keep their own processes (structure-oracle.ts says why): structure-threshold-test
-// (walkTo and the move tool), structure-route-support-test (transformed frames), route-preparation-test (the authored-plan
-// cache), walk-support-lifecycle-test (how a walk ends).
+// (walkTo, the move tool, transformed frames' support and the authored-plan cache, merged) and walk-support-lifecycle-test
+// (how a walk ends).
 import { strict as assert } from "node:assert";
 import { planStructure, prepareRouteLocal } from "../../shared/structure.js";
 import { NON_FINITE_ENDPOINT, ROUTE_MAX_CELLS } from "../../shared/structure-route.js";

@@ -1,8 +1,8 @@
 // vrmic — ask for the microphone BEFORE the headset goes on, since a browser's permission prompt cannot be relied
 // on to show during an immersive session. Two halves:
 //
-//   1. PRE-VR. The visor press reads the permission without prompting. Only when it is open ('prompt') and this
-//      browser has never chosen does a 2D step ask "Voice in VR?" — Allow runs getUserMedia on the flat page and
+//   1. PRE-VR. The visor press reads the permission without prompting. Only when it is open ('prompt', or 'unknown'
+//      with no usable Permissions API) and this browser has never chosen (or VR promised to ask) does a 2D step ask "Voice in VR?" — Allow runs getUserMedia on the flat page and
 //      stops the tracks at once (permission is not consent to speak; the mic stays off), then an "Enter VR" button,
 //      because requestSession needs a fresh user gesture.
 //   2. IN VR. The ring's mic press with the permission still open makes one bounded attempt (micstate.toggleMic).

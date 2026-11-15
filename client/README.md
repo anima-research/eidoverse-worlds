@@ -11,7 +11,7 @@ The browser client. The sequencer serves this directory as static files; nothing
   - `avatar/` draws a person (with `avatar/bodyruntimes/`); `ragdoll/` is a body falling; `xr/` is the headset; `audio/` is the mic, speech in and out, voice and the page's AudioContext (placed world sound is `client/lib/realize/sounds.js`); `sky/`; `vegetation/`;
   - `realize/` turns stored components into scene objects and owns their lifetime (`client/lib/realize/lifecycle.js`'s `release` is the one word every registry listens for);
   - `edit/` is build mode's panels and tools;
-  - `debug/` is what a normal visit never opens, with one exception: `client/lib/avatar/avatar-thumbnail.js` loads `client/lib/debug/perfscope.js` for `statsOf`, to stamp a body's perf numbers once per version.
+  - `debug/` is the debug panes and probes. A normal visit loads `debug.js`, `breadcrumbs.js` and `gputime.js` (main.js, render/frameloop.js, render/render.js) with no pane open, and `client/lib/avatar/avatar-thumbnail.js` loads `client/lib/debug/perfscope.js` for `statsOf`, to stamp a body's perf numbers once per version.
 - **The trap:** `client/lib/core.js` is not what tests and agents run. Many tests stub it with a Bun resolver, and the agent runtime swaps in `mcpl/headless-core.mjs`. A change to `core.js`'s exports needs both checked.
 - **Not browser-only:** `mcpl/` imports some modules from `lib/` to run bodies headless, so a `lib/` module can't assume a DOM unless only the browser imports it.
 - `client/vendor/` holds third-party code served as-is (`three-addons`, `ammo`, `piper`); `THIRD-PARTY.md` at the root records where each came from.

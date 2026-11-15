@@ -8,7 +8,7 @@
 // re-armed on every restore, and survived every explicit `posture stand`
 // (which only changed the label). These tests pin the invariant that closes
 // that loop: a physics pose may only ever leave the process labelled
-// "ragdoll", and any decision to move sheds the held pose entirely.
+// "ragdoll", and any decision to move sheds the held pose (unless pinned with `hold`: selfpose-test).
 //
 // Deliberately no sockets, no sim, no VRM: WorldAgent is constructed cold and
 // driven through its public methods; wire-level behavior is asserted against

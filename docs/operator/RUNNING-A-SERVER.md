@@ -1,6 +1,7 @@
 # Running a server
 
-The world server is `bun server/server.ts` (`bun run start`). Every variable it reads is in `server/config.ts`; the ones
+The world server is `bun server/server.ts` (`bun run start`). Most variables it reads are in `server/config.ts` (a few
+live where they're used: `server/clientlog.ts`, `server/server.ts` RENAME_COOLDOWN_DAYS, `server/limits.ts` EW_*); the ones
 an operator usually sets are below.
 
 ## The server

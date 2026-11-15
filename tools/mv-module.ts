@@ -1,6 +1,6 @@
 // tools/mv-module.ts — move engine files and rewrite every path that names them: resolved, never substituted blind.
 //   bun tools/mv-module.ts <from> <to> [<from> <to> …]     a file to a file, or a directory to a directory
-//   bun tools/mv-module.ts --check                            only verify: every relative specifier in the tree resolves
+//   bun tools/mv-module.ts --check                            only verify: every quoted relative specifier resolves (templates aren't read)
 // For each tracked text file (docs/history, spec/history and CHANGELOGs keep the paths of their day):
 //   1. a relative import specifier (from/import/export, import(), new URL(…, import.meta.url), require) is resolved from
 //      the importer's OLD place and rewritten from its NEW place to the target's NEW place: a moved importer and a moved
@@ -101,7 +101,7 @@ console.log(`moved ${move.size} files; rewrote ${counts.spec} specifiers, ${coun
 for (const n of [...new Set(notes)]) console.log("READ  " + n);
 process.exit(check() ? 0 : 1);
 
-/** Every relative specifier in every tracked code file names a file that exists (or an untracked one beside node_modules). */
+/** Every quoted (not template) relative specifier in every tracked code file names a file that exists (or an untracked one beside node_modules). */
 function check(): boolean {
   const bad: string[] = [];
   for (const f of tracked()) {

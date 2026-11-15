@@ -28,7 +28,7 @@ export const WING_POWER = {
   lag: 0.09,     // a loaded wing drives as more of one surface
   sync: true,
   recover: 0.55,
-  sweep: 17,     // nearly double the idle's: the ellipse is what reads as moving air
+  sweep: 17,     // about the idle's (18), at a faster beat: the ellipse is what reads as moving air
   sweepPhase: 0.25,
 };
 
@@ -49,7 +49,7 @@ const WING_FOLDED = {
   R_Wing_Upper_1: [+0.00000, -0.00000, +0.17326, +0.98488],
 };
 
-/** Blend two wing dial sets: numbers interpolate; `sync` and `recover` take the idle's value. */
+/** Blend two wing dial sets: numbers interpolate (`recover` included); non-numbers (`sync`) take the idle's value. */
 const _wmix = {};
 function mixWings(a, b, t) {
   for (const k of Object.keys(a)) {

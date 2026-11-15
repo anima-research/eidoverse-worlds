@@ -1,7 +1,7 @@
 // shared/protocol/roles.js — who may do what in a world.
 // Pure data and pure functions: the authority (shared/protocol/authority.js) reads them to admit writes, the server reads them through
 // the authority to tell a client its rights, and the client reads them to draw badges, menus and the roles grid. No state
-// of its own, no clock, no imports: a browser and bun import the same file.
+// of its own, no clock, no imports but ./is.js (pure too): a browser and bun import the same file.
 //
 // THE SANCTIONED SOCIETY. A world's people stand on one ranked ladder, and the ladder is MEMBERSHIP only:
 //   member 0 · builder 100 · moderator 200 · owner 255, and an owner's custom roles at any free rank in between.
@@ -148,7 +148,7 @@ export function brokenNeed(can) {
 
 /** The role a person holds in a world, by id: the roles:<id> entry, else (a guest) the guests role, else the default
  *  role, else member. A role the world doesn't define reads as member. A world with no owner caps everyone at member:
- *  nobody could have granted more (§2.3). `anon` = a guest (no account). Mirrors the authority's roleOf exactly; the authority calls this. */
+ *  nobody could have granted more (§7). `anon` = a guest (no account). Mirrors the authority's roleOf exactly; the authority calls this. */
 export function roleIdOf(wc, id, { anon = false, owners = null } = {}) {
   if (!wc) return "member";
   const dr = isObj(wc["default-role"]) ? wc["default-role"] : null;
@@ -169,7 +169,7 @@ export function guestRoleOf(wc) {
 }
 
 /** A person's effective rights: {role, name, rank, can: {<permission>: bool}, permissions: [names on]}.
- *  Layered: the role's permissions, then default-role.can (for holders of the default role), then the per-person `can`
+ *  Layered: the role's permissions, then default-role.can (for those holding it by default: no roles:<id>, not a guest), then the per-person `can`
  *  (last, like Discord's member overwrites), then closed over dependencies. Owners hold every permission; `can.fly: true`
  *  may still give an owner flight when OWNERS_FLY is off. */
 export function effectiveOf(wc, id, opts = {}) {

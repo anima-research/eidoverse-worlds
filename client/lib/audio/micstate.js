@@ -14,8 +14,7 @@ import { gateThreshold, pttMode } from './voiceconsent.js';
 import { gateStream, attachSource, detachSource, driveGate, driveRawTracks, setMonitor, monitoring,
          gateUnavailable, ungatedConsent,
          makeOnsetGate, makeLevelMeter } from './micgate.js';
-// The analyser hangs off the shared context; without this import the meter
-// silently reads 0 inside its own catch.
+// Unused here: the meter (micgate.js makeLevelMeter) takes micgate's own audioContext import.
 import { audioContext } from './audioctx.js';
 
 // Mute and the lane are microphone facts, not transport facts, so they live here.

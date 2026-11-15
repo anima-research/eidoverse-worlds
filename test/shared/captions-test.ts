@@ -9,7 +9,7 @@
 //      the captioner wrote and nothing about pixels or sound, the detail level.
 //   1c. THE VERB — args shape; the refusals that happen BEFORE append (dup /
 //      old n, a superseded leg, an end for the wrong session); the fold
-//      (append, the window bound, a newer leg or a new session starts fresh,
+//      (the bag holds the current line only, a newer leg or a new session starts fresh,
 //      end clears). `gen` is the sequencer's stamp: the live leg.
 // What's tested: shared/captions.js's pure functions (describeCaptions is what the agent's look() calls).
 import { normalizeCaptions, describeCaptions, captionsDetail, clock, normalizeCaptionArgs, captionRefusal, foldCaption, mintSession, CAPTIONS_MAX_LINES, CAPTION_TEXT_MAX } from "../../shared/captions.js";

@@ -1,6 +1,6 @@
 # Deck fill threshold (`DECK_FILL = 0.45`)
 
-`mcpl/agent.ts` registers a `/geom` top-surface band as a headless floor only when its **fill** (real up-facing `area`
+`mcpl/agent-ground.ts` registers a `/geom` top-surface band as a headless floor only when its **fill** (real up-facing `area`
 divided by the band's bounding x/z rectangle, `fillOf`) is at least `DECK_FILL`. The rectangle alone overclaims badly
 for sparse geometry: a palm's fronds bound a wide rectangle around almost nothing, and treating that as a floor rests
 bodies in the canopy.

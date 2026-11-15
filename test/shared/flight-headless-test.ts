@@ -155,7 +155,8 @@ check('and a flutter torque, not just drag', Math.abs(f.torque.y) > 1e-6);
 // The pure capability test passed throughout, and that is the lesson worth
 // keeping: it called resolveFlight with a rights object it changed by hand.
 // It never crossed the path where the rights object stopped changing. So this
-// one drives the agent's REAL rights path and asks the REAL flightAllowed() --
+// one hands rights to acceptEffectiveRights as the `your-rights` case does (a source regex below pins that wiring;
+// no message crosses a socket) and asks the REAL flightAllowed() --
 // the function every flight verb actually calls.
 //
 // The protocol: the live path is the server's `your-rights` message, re-sent to

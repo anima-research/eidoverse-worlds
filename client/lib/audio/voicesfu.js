@@ -70,7 +70,7 @@ export async function sfuConnect(credential, send) {
     if (id) attach(id, e.track);
   };
 
-  // host-only candidates = no STUN reflexive address, so nothing off this machine can reach us; recorded for the stall diagnosis
+  // host-only candidates = no STUN reflexive address: only this machine, the LAN or a routable host can reach us; recorded for the stall diagnosis
   let _sawNonHostCandidate = false;
   pc.onicecandidate = (e) => {
     if (!e.candidate) return;

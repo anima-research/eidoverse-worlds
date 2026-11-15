@@ -642,8 +642,8 @@ const t0 = Date.now(); const id = directoryAt(${JSON.stringify(f)}, slow).resolv
 
 fs.rmSync(tmp, { recursive: true, force: true });
 // D40 (bot #369; R 11-03: an id is a person, never a world, a name or a kind): the ONE id shape, and the places that may make one.
-// A stand-in for an imported name is a directory row with kind "imported", made by directory.imported and the old-world translator
-// only; mintId (random) belongs to the directory, the translator derives its ids (identityMapper stable). Any other site is red.
+// A stand-in for an imported name is a directory row with kind "imported", made by directory.imported, the old-world translator
+// and the legacy migration; mintId (random) is the directory's and that migration's, the translator derives its ids. Any other site is red.
 { const ROOT = path.resolve(import.meta.dir, "../.."), SKIP = new Set(["node_modules", "vendor", "dist", ".git"]), EXT = /\.(m?js|cjs|ts|mts)$/;
   const files: string[] = []; const walk = (d: string) => { for (const f of fs.readdirSync(d, { withFileTypes: true })) { if (SKIP.has(f.name)) continue; const p = path.join(d, f.name); if (f.isDirectory()) walk(p); else if (EXT.test(f.name) && !/[-.](check|test|probe|mutants)\.[mc]?[jt]s$/.test(f.name)) files.push(p); } };
   walk(ROOT);

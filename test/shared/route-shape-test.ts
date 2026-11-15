@@ -8,7 +8,7 @@
 //      measured as `scale 2` with nothing saying which axis)
 //   B. every field of viewOf(c) — computed here from the client's own fold of the log stream — is in the body, equal:
 //      the route is the view, not a sixth shape of the entity
-//   C. the whole-scene body (/geom?world) carries the same record per entity, plus `kind`
+//   C. the whole-scene body (/geom?world) carries the same record per entity, and no `kind`
 // harness.scratchSequencer: a scratch WORLDS_DIR, the child proven ours by its nonce before any assertion counts.
 import { mkCheck, scratchSequencer } from "../harness/harness.ts";
 import { makeReplica } from "../../shared/protocol/replica.js";

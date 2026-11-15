@@ -53,7 +53,8 @@ function personLift(w, actor, a, verb, recs, { strict, power = verb }) {
 }
 const MOD_VERBS = {
   // moderation (§2.1): a separate log, enforced by the authority; never a world entry. Every act on a person needs its
-  // permission and a target ranked strictly below you (never yourself, never your equal, never an owner);
+  // permission and a target ranked strictly below you (never yourself, never your equal, never an owner; a lift, unmute or
+  // unban, is ranked against whoever made the record: personLift);
   // its duration is capped below owner; its record names identities. Expiry is the authority's clock (sanction views above).
   warn: (w, actor, a) => { const t = personAct(w, actor, a, "warn", R.WARN_POWERS);
     if (typeof a.reason !== "string" || !a.reason.trim()) refuse("shape", "warn {who, reason}: a warning says why", "e.g. warn {who, reason: 'please keep it friendly'}");

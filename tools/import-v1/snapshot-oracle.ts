@@ -2,7 +2,7 @@
 //
 // The translator's own checks (translate-v1's per-entry projection equality, the sweep's inverse) prove it agrees with
 // ITSELF: its copy of the old fold (./fold.js), its projection, its v4 fold. This proves it agrees with the old server.
-// Every first-protocol world directory holds, beside its log.jsonl, a snapshot.json = the old server's own folded state
+// A first-protocol world directory usually holds, beside its log.jsonl, a snapshot.json (one without is SKIPPED) = the old server's own folded state
 // ({v: 1, seq, bytes, ts, state: {entities, terrain, grass, sky, assets, roles, bans, …}}). When snapshot.seq is the log's
 // last seq AND snapshot.bytes is log.jsonl's size, the snapshot is the old engine's answer to "what does this whole log
 // mean". A snapshot that isn't complete is SKIPPED (with its reason), never compared; so is a physics-era (epoch) log, said.

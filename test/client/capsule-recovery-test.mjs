@@ -13,7 +13,8 @@
 //   remotes.js: takeover drops `fresh.capsuleFor`            → takeover makes the substitution permanent
 //   remotes.js: drop the POST-load `remotes.get(id) !== r`   → a mid-flight body lands on a superseded record
 //
-// Two mutants SURVIVE this suite and are declared, not hidden:
+// One mutant SURVIVES this suite and is declared, not hidden (RETRY_MAX → 9999, once listed here, is caught by the
+// short-backoff cap section below):
 //   • dropping the PRE-load guard (top of the timer) — EQUIV here: every scenario that supersedes
 //     during the backoff is caught one line later by the post-load guard, which this suite does bind.
 //     It is belt-and-braces against a supersede between timer fire and the first await.

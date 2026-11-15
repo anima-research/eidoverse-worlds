@@ -3,14 +3,14 @@
 // rigmeasure.js's.
 //
 // The source's joint tables, finger springs, tendons and grab tuning were derived in Blender, whose rigid-body
-// engine is Bullet, so the numbers transfer unchanged. The rig does not: it is measured from the live VRM skeleton
+// engine is Bullet, so the numbers transfer, re-tuned where ammodoll-tuning.js says (its knee flexes 123°, the source's 145°). The rig does not: it is measured from the live VRM skeleton
 // at construction (box sizes from bone lengths or mesh extents, masses from Dempster fractions), and every joint
 // frame is built on an anatomical basis (Y along the bone = twist, X the flexion axis from the rig's own
 // forward/up; never VRM node axes, which sit near-identity at rest).
 //
 // Structure: a three-body trunk (pelvis, spine, chest); rest-aligned bodies (identity at rest, so limits mean
 // "from rest", with joint origins mapped through the live transforms); every joint widened to contain the pose it
-// was born in, or the solver annihilates the difference on frame one. Fingers are spring bodies (proximal and
+// was born in (a seeded handover only BUILD_WIDEN past the table), or the solver annihilates the difference on frame one. Fingers are spring bodies (proximal and
 // intermediate only) with weak tendon springs between neighbours; the grab is a point constraint with a hard
 // impulse clamp. This ammo build binds no rotational motors, so limpness is damping and limit ERP.
 //
@@ -320,7 +320,7 @@ export class AmmoRagdoll extends BodyEngineBase {
       addStaticShape(keep(new AMMO.btBvhTriangleMeshShape(mesh, true, true)), { x: 0, y: 0, z: 0 }, null, 0.8);
     }
 
-    // ---- torso: one rigid body, rest-aligned -------------------------------
+    // ---- torso: three trunk bodies (below); one rigid body only if none builds
     const upperOf = (m) => m.chest ?? m.neck ?? m.spine ?? m.head;
     const restUpper = upperOf(restP), liveUpper = upperOf(live);
     if (!restUpper || !liveUpper || !restP.hips || !live.hips) {

@@ -1,13 +1,14 @@
 // v1/v2 → v4 translator (lab). Runs the REAL v1 fold (anima/main shared/fold.js, extracted to legacy/) one entry at a
 // time, projects its state into v4 entity/component form, and emits, per old entry:
-//   - the old entry as sent: an `act` (verb "imported", body {verb, args, from: old seq}, ts: old ts), or a `say`, and
+//   - the old entry nearly as sent (account subs mapped or dropped, noAcct; a backwards ts clamped): a `request` (verb
+//     "imported", body {verb, args, from: old seq}, ts: old ts), or a `say`, and
 //   - at most one change entry with the plain results that bring v4 to the same place (cause = that act).
 // The output is in the PROTOCOL-v4 §2.4 wire format, and every name and id follows §2.3: an old id or name the
 // grammar refuses is mapped by `enc`, here names.js's encRaw (deterministic and injective: a name in the hashed form is
 // escaped like any other, and a log holding a lone surrogate, the one pair it maps alike, is refused by translate itself: loneSurrogateIn). After
 // every entry it folds the v4 entry with the v4 fold and checks the projections agree. The original log is never written (R9); the output is a regenerable cache.
 // Ported from the v4 lab (code/v4-lab/translate-v1.js @ 11db981). Engine changes: the v1 fold is the engine's own
-// ../fold.js (the lab carried an older anima/main copy in legacy/), hashing and hex come from ./hash.js (no node:
+// ./fold.js (the lab carried an older anima/main copy in legacy/), hashing and hex come from shared/protocol/hash.js (no node:
 // imports; the browser may import this file), and the lab's CLI is test/protocol/sweep.ts.
 import { emptyState as v1Empty, foldEntry } from "./fold.js";
 import { emptyState as v4Empty, applyInPlace, opsOf, worldIdOf, DIALECT, VERSION } from "../../shared/protocol/fold.js";
@@ -325,7 +326,7 @@ export const DROPPED = {
 };
 // DEFERRED (review of PR #260, Mica, item 7): features main's merges gave v1 worlds that THIS protocol does not carry yet.
 // Each is a component the old renderer read (tools/water/README.md, upstream server/render-scene.ts PASS_THROUGH). The translator
-// never carries one of these quietly: a log that uses one is REFUSED at `translate`, naming the feature and where it was
+// never carries one of these quietly: a log that uses one is REFUSED by world.ts translateV1World (not translate()), naming the feature and where it was
 // used (deferredFeatures below), and the dry-run report lists them, so the owner decides with the loss in front of them.
 // Main's water volume and air boxes are carried (VOLUMES below), except on @world, which has no frame of its own to hold them.
 // Empty since step 3b (the vehicle is carried: CARRIED below); a volume on @world (ON_WORLD) is the one use still refused.

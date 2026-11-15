@@ -7,8 +7,9 @@
 //      ulp over the sim's working domain (the kernel must be a real math
 //      library, not a deterministic wrong answer);
 //   2. IDENTITY ACROSS ENGINES — a fixed 48k-point sweep digests to the
-//      same sha256 under Bun (JSC), node (V8) and deno (V8, different
-//      embedding). This is the whole covenant: the kernel is built from
+//      same sha256 under Bun (JSC) and whichever of node (V8) and deno (V8,
+//      different embedding) is installed (at least one).
+//      This is the whole covenant: the kernel is built from
 //      IEEE-exact ops only, so engines cannot disagree;
 //   3. IDENTITY ACROSS TIME — the sweep digest equals the committed GOLDEN
 //      constant. The coefficients ARE the version (Covenant II): an edit

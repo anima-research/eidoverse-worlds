@@ -27,7 +27,7 @@ export function readMesh(m) {
   if (m.shape === 'capsule') size[1] = Math.max(size[0], size[1]);
   return { shape: m.shape, size };
 }
-/** One string per distinct geometry: a changed shape or size is a rebuild (planReconcile), as a changed lib is. */
+/** One string per distinct geometry: a changed shape or size is reshaped in place by models.js (setMeshShape), not a planReconcile rebuild. */
 export const meshKeyOf = (ent) => { const m = readMesh(ent?.mesh); return m ? `${m.shape}|${m.size.join(',')}` : null; };
 
 /** Switched off (componentspec `disabled`), itself or anything it hangs under: not loaded, not drawn, no collider — present
@@ -37,7 +37,7 @@ export function offIn(stEntities, id) { for (let k = id, n = 0; k && n < 33; k =
 /** Diff folded entities against the realized view.
  *  - in state but not realized → create; realized but gone from state → retire
  *  - realized as one kind, folded as another (the id namespace is flat) → rebuild
- *  - a model whose `lib` (or a mesh whose geometry key) changed → rebuild: the planner projects
+ *  - a model whose `lib` changed → rebuild (a mesh's geometry key is the hosted half's): the planner projects
  *    whatever the fold holds (a `set` of the component; a create of a live id is a fold no-op)
  *  - anything else (transform, params, comps) is the hosted half's in-place refresh
  *

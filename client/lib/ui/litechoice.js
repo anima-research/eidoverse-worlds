@@ -7,8 +7,8 @@
 // does the URL carry the choice, because then nothing else can.
 //
 // Choosing 3D also clears this world's tripwire: the person has just asked to try again, and a stale flag would
-// bounce them straight back to lite. If the world kills the device again, the boot re-arms it and the next plain
-// visit lands in lite: one crash, not a loop. No imports: lite.js (an entry point with no engine) uses this too.
+// bounce them straight back to lite. If the world kills the device again, the boot re-arms it: a phone's next plain
+// visit lands in lite, a desktop's retries full once more and lands in lite after a second death (index.html decideLite). No imports: lite.js (an entry point with no engine) uses this too.
 
 export function chooseClient(lite) {
   const u = new URL(location.href);

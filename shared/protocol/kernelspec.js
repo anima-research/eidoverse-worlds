@@ -1,5 +1,6 @@
 // shared/protocol/kernelspec.js — the KERNEL's shapes, pinned: a kernel change is impossible without a same-commit
-// translator, changelog line and failing old-reader/new-reader vectors.
+// translator, changelog line and failing old-reader/new-reader vectors (a scope-only change, a component entering or
+// leaving with the registry's pinned shape, needs only the changelog line: the verdict below).
 //
 // The registry (componentspec.js) pins what each COMPONENT means, with statuses trial / reserved / stable. Below those sits
 // the kernel: what every reader of every log agrees on before a single component is read. PROTOCOL §1–§3, §9.3, §13:

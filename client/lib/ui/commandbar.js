@@ -2,7 +2,7 @@
 // matching ACTIONS, with their keys shown so the keys teach themselves.
 //
 // Ctrl/Cmd+K or the resting line bottom-centre opens it; Enter-to-chat is untouched. It owns no knowledge of what can
-// be done (lib/actions.js, filled at each definition site) and no send path: plain text and /commands go through the
+// be done (actions.js, filled at each definition site) and no send path: plain text and /commands go through the
 // chat compose box's own submit (chat.submit), so there is one path.
 //
 // THE KEYS: Enter SAYS what you typed — always; the say row is first. Tab DOES the highlighted action (default: the

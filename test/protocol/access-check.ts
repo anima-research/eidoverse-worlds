@@ -324,11 +324,11 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
     ok(!map.some((x) => x.name === "keep") && acc.body?.you === "none" && g1 === 404 && g2 === 404 && hm.status === 404 && /no such world/.test(hmText) && still?.loaded === false,
       `A8 after a restart, the world unloaded: the ${who} (still listed) is refused by /worlds, /access, /geom (404, twice) and /heightmap, and the refusal loads nothing`,
       { map: map.map((x) => x.name), access: acc.body, geom: [g1, g2], heightmap: [hm.status, hmText.slice(0, 60)], loaded: still?.loaded }); }
-  // A14, the join: the first join loads the world; the door reads Fen's ended grant as absent BEFORE any sweep (4010)
+  // A14, the join: the door reads Fen's ended grant as absent BEFORE any sweep and refuses before loading (4005)
   { const logHas = !fs.readFileSync(path.join(W, "keep", "world.jsonl"), "utf8").includes("expire-roles");
     const f = await sock(s2.port); const jf = await f.join("keep", "Fen", { agentToken: "tok-fen" });
     ok(logHas && !jf.snapshot && f.closed === 4005 && jf.errors.join(" ") === "No accessible world named keep.", "A14 …and the join is refused at the door (world-unavailable) without loading the world, the grant unswept", { logHas, join: jf.errors, closed: f.closed }); f.close(); }
-  { // A10 (after A14's join, which must be the one that loads keep) (main #255, Mica 10-17: one sign-in, every world): a native session paired before that, which still carries
+  { // A10 (after A14's refused join, which loads nothing) (main #255, Mica 10-17: one sign-in, every world): a native session paired before that, which still carries
     // nativeWorld "water", is the account at every world's door, exactly as the same account's ordinary session
     const cookieGet = (sid, u) => fetch(`http://127.0.0.1:${s2.port}${u}`, { headers: { cookie: `ew_sess=${sid}` } });
     const gN = (await cookieGet(SID_NATIVE, "/geom?world=keep")).status, gF = (await cookieGet(SID_FULL, "/geom?world=keep")).status;

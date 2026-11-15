@@ -87,7 +87,7 @@ function freshRec(key, kind, label) {
     rank: 0, worst: '' };
 }
 
-// ONE mesh's contribution, shared by collect and statsOf(root), so a library card's rank and the loupe's never differ
+// ONE mesh's contribution, shared by collect and statsOf(root); statsOf counts every mesh visible, so card and loupe agree when nothing is hidden
 function accumulate(rec, o, vis) {
   const g = o.geometry;
   const inst = o.isInstancedMesh ? o.count : 1;
@@ -126,7 +126,7 @@ function collect() {
     if (!o.isMesh && !o.isSkinnedMesh) return;
     if (o.userData?.perfscopeIgnore) return;          // our own helpers
 
-    // entity, named body, else fabric; hidden LOD levels/outfits keep VRAM but draw nothing, so only textures bill them
+    // entity, named body, else fabric; hidden LOD levels/outfits keep VRAM but draw nothing: no tris/verts/draws, but materials, alpha and textures still bill
     let rec = null, vis = true;
     for (let p = o; p; p = p.parent) {
       if (!p.visible) vis = false;

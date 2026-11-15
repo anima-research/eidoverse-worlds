@@ -460,7 +460,7 @@ function tickXRBody(dt) {
   const rig = xrRig();
   if (!simHead) { applyTurnEarly(dt); syncRigToBody(); }   // THIS frame's turn, then the rig (and the stereo camera) follow THIS frame's root — before anything here reads them
 
-  // the HMD in world, then scaled about the rig (DeviceScale: tracked targets, not the view)
+  // the HMD in world, 1:1 (DeviceScale resizes the puppet below, never the targets)
   if (simHead) { hmdPos.fromArray(simHead.pos); hmdQ.fromArray(simHead.quat); }
   else renderer.xr.getCamera().matrixWorld.decompose(hmdPos, hmdQ, tmpS);
   // DeviceScale, Basis's way: the puppet wears the scale (vrm.scene.scale = userScale / k; the chosen size composes on

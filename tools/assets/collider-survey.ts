@@ -34,8 +34,8 @@ async function getIO() {
   return ioP;
 }
 
-/** World-space triangle soup for the scene-reachable meshes, same slice of the
- *  file colliders.js buildExact would take. */
+/** World-space triangle soup for the scene-reachable meshes; unlike colliders.js
+ *  buildExact, it keeps parts marked extras.collision === false. */
 async function loadTris(path: string): Promise<Float32Array | null> {
   const io = await getIO();
   let doc: any;
@@ -118,7 +118,7 @@ function measure(v: Float32Array) {
   }
   const lieRay = rayTops.length >= MIN_HITS ? max[1] - median(rayTops) : NaN;
 
-  // what decide() picks today
+  // decide()'s size gates only: its floor-shaped lie exception (also exact) isn't modelled here
   const foot = w * d;
   const kind = foot >= 16 && h >= 2.2 ? 'exact' : h > 2.4 ? 'pillar' : 'box';
 

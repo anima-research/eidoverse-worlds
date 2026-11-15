@@ -93,7 +93,8 @@ export class World {
   lastRoster = "";               // last written roster line — deltas only
 
   /** The log position this world was opened at, and the legs admitted since. A leg's GENERATION is
-   *  `openSeq × 1e6 + count`: strictly increasing, and never lower than a previous opening's (each advanced the log).
+   *  `openSeq × 1e6 + count`: strictly increasing within an opening, and above any a previous opening logged (a leg's
+   *  write advances the log); a leg that wrote nothing can see its number issued again.
    *  Past a million admissions per opening, legs are refused a generation rather than issued an ambiguous one. */
   readonly openSeq: number;
   private legCount = 0;
@@ -206,7 +207,8 @@ export class World {
 export const worlds = new Map<string, World>();
 
 // a function declaration on purpose: module-scope callers rely on hoisting
-/** Does this world exist (in memory or on disk) without creating it? getWorld() founds on miss. The same test forkWorld uses. */
+/** Does this world exist (in memory, or on disk in exact case: worldDirNamed)? getWorld() opens, and throws on a miss.
+ *  forkWorld refuses an occupied name in any case (fs.existsSync). */
 export function worldExists(name: string): boolean {
   if (!WORLD_NAME_RE.test(name)) return false;
   return worlds.has(name) || worldDirNamed(name);

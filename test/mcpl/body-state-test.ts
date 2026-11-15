@@ -247,7 +247,7 @@ try {
   } finally { postureServer.stop(true); }
 
   // ---- one pipe, every field: a sender -> the server -> a peer -> body_state ----
-  // The browser-shaped sender is a raw WS join plus the exact packet client/lib/net.js sendPose builds (body fields via
+  // The browser-shaped sender is a raw WS join plus a hand copy of client/lib/net.js sendPose's packet, no seq/t (body fields via
   // the real bodyWire); the headless sender is a real WorldAgent's tick.
   {
     const WS = h.BASE.replace("http", "ws") + "/ws", AVATAR = "fixtures/test-body.vrm", OWNER = "scale-owner";
@@ -274,7 +274,7 @@ try {
     ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "reply" && m.id === "touch-on") touchOn = m; prev?.call(ws, ev); };
     ws.send(JSON.stringify({ type: "request", id: "touch-on", verb: "consent", args: { touch: true } }));
     check("(setup) the owner opens its touch gate", (await tryUntil("the consent reply", () => touchOn, { ms: 5000 }))?.ok === true, show(touchOn));
-    /** client/lib/net.js sendPose's packet, field for field; body fields ONLY through the real bodyWire, unless `raw`. */
+    /** A hand copy of client/lib/net.js sendPose's packet (no seq/t: sendPose itself isn't run); body fields ONLY through the real bodyWire, unless `raw`. */
     function ownerPacket(scale: unknown, extra: Record<string, unknown> = {}, raw = false) {
       const pose: Record<string, unknown> = { p: ROOT, yaw: YAW, speed: 0, clip: "idle", pitch: 0 };
       Object.assign(pose, raw ? { scale } : bodyWire({ scale, plateY: 0 }));

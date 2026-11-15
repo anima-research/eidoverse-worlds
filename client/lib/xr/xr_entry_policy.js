@@ -4,7 +4,7 @@
 //   busy (another page holds the session) — retry once after BUSY_RETRY_MS; a second busy failure on the
 //     same entry intent gives up until the visor is clicked again.
 //   no device / not supported — mark the headset absent, do not retry.
-//   webgpu refused on a WebGPU backend — reload onto WebGL, where three's classic path runs.
+//   any other failure on a WebGPU backend — reload onto WebGL, where three's classic path runs (the error isn't read).
 //   anything else — surface it; retrying an unknown error is guessing.
 export const BUSY_RETRY_MS = 1500;
 
@@ -14,7 +14,7 @@ const isAbsent = (e) => e?.name === 'NotSupportedError' || e?.name === 'NotFound
 
 /** @param err the rejection from requestSession
  *  @param isRetry true when this attempt IS the automatic retry (so its failure is the second one)
- *  @param gpu true on a WebGPU backend, where a refused 'webgpu' feature means reload-to-WebGL */
+ *  @param gpu true on a WebGPU backend, where any non-busy failure means reload-to-WebGL */
 export function decideEntryFailure(err, { isRetry = false, gpu = false } = {}) {
   if (isBusy(err)) {
     return isRetry

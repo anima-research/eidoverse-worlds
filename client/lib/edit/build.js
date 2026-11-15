@@ -229,8 +229,8 @@ function meshGhost(shape, [x, y, z]) {
   obj.castShadow = false; obj.userData.noCamCollide = true;
   return obj;
 }
-// Create ▸ Picture: pick a file (it goes to the store), then a 1 m plate is in hand; its height follows the image once
-// it loads. Q/E turn it, ,/. size its width. The lib is '@picture:<src>'.
+// Create ▸ Picture: pick a file (it goes to the store), then a 1 m square plate is in hand (it doesn't follow the
+// image). Q/E turn it, ,/. size its width. The lib is '@picture:<src>'.
 const pictureOf = (lib) => (typeof lib === 'string' && lib.startsWith('@picture:') ? lib.slice(9) : null);
 export async function holdPicture() {
   const { pickPicture } = await import('../realize/pictures.js');
@@ -303,7 +303,7 @@ export async function holdBlueprint(hash, record) {
     if (token !== holdBlueprint.n) return false;   // another pick came first
     obj.userData.noCamCollide = true;
     obj.traverse((o) => { o.userData.noCamCollide = true; });
-    // the ghost's own scale is the R-drag; the record's root scale rides inside
+    // the ghost's own scale is , and . (ghostKey); the record's root scale rides inside
     const holder = new THREE.Group();
     holder.add(obj);
     holder.userData.noCamCollide = true;

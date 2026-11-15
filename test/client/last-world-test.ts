@@ -6,10 +6,10 @@
 // whatever world you had been in. Now base.js pickWorld chooses ?world=, else the
 // world this TAB was last in (so a reload stays put whatever other tabs joined),
 // else the world this browser was last IN as a person, else the commons; net.js
-// writes that memory at the door's yes (not for a world nobody has built in: a typo
-// founds one); and a door that refuses a remembered world forgets it, and (when the
-// memory, not the link, brought the page there and it never got in) takes the person
-// to the commons. Pinned here: the choice itself; that index.html's early-socket copy
+// writes that memory at the door's yes (not for a world nobody has built in); and a door that refuses a remembered world forgets it (not when a signed-in
+// browser's identity failed to load: then both are kept), and (when the memory, not the
+// link, brought the page there and it never got in) takes the person where a bare link
+// now leads (the browser's world, else the commons). Pinned here: the choice itself; that index.html's early-socket copy
 // of it agrees, and that its boot tripwire keys on the world chosen, both extracted
 // from the served HTML rather than copied; and the real net.js writing and
 // forgetting, a fresh process per page load with only the DOM-touching UI modules
@@ -209,7 +209,7 @@ if (m && lite) {
 // ---- net.js: written at the door's yes, forgotten at its no -----------------------------
 console.log("net.js");
 // "snapshot": the door's yes into a world with something built in it; "fresh": into one
-// nobody has built in (what a mistyped name founds); "spawn": someone builds, live.
+// nobody has built in; "spawn": someone builds, live.
 // {early: w}: the inline boot script's socket, which already sent a join to world w, for connect() to adopt
 // only if that is byte-for-byte the join net.js would send (it carries the account: helen's own name here). {set: [k, v]}: another tab writes localStorage.
 // "ground": the door's yes into a world with ground and nothing placed. "authed": this page entered signed in.
@@ -293,7 +293,7 @@ function pageLoad(search: string, stored: string | null, steps: Step[], tab: str
   const rend = pageLoad("?renderer&world=lab", "garden", ["snapshot"]);
   check("a renderer in lab leaves the memory at garden", rend.stored === "garden", JSON.stringify(rend));
 
-  // a mistyped ?world= founds an empty world and is let in; it must not become home
+  // a ?world= into an empty world is let in; it must not become home
   const typo = pageLoad("?world=gardn", "garden", ["fresh"]);
   check("let into an empty world (?world=gardn): the memory stays at garden", typo.stored === "garden", JSON.stringify(typo));
   const typoFirst = pageLoad("?world=gardn", null, ["fresh"]);

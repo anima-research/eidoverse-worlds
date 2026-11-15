@@ -1,5 +1,5 @@
 // Which clip the body plays, and how it blends in, as a pure function. controller.js calls it once per tick
-// with the real motion state; test/client/locomotion-clip-test.mjs calls it with every combination. No imports on purpose.
+// with the real motion state; test/client/locomotion-clip-test.mjs calls it per rule and per precedence pair (not every combination). No imports on purpose.
 //
 // The policy:
 //   climb   — a mantle owns the body outright.

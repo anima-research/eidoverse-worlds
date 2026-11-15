@@ -2024,7 +2024,7 @@ body.edit-workspace:has(.edit-menu-pop:not([hidden])) #dock { z-index: 45; }
 .frame.docked .fr-btn { display: none; }        /* a docked frame is closed from the View menu, not with ✕ */
 body.edit-workspace .frame.docked { --panel-a: 1; }
 /* the WHOLE dock stays in builder mode (R 10-04: "keep the full dock in build mode"): ∃ (its mic / ear / goggles stay
-   beside it in the bar, R 10-04), the panel buttons, the wrench, then the tools. What doesn't fit folds under ⋯ (edit/layout.js fitDock), never a tool. */
+   beside it in the bar, R 10-04), the panel buttons, the wrench, then the tools. What doesn't fit is hidden (edit/layout.js fitDock: ⋯ folds the panel buttons, HUD Panels ▾ lists the hidden ones), never a tool. */
 body.edit-workspace #dock { flex-direction: column !important; }
 body.edit-workspace #dock button.edit-overflow { display: none !important; }
 /* the viewport bar: floats on the view's top-left corner, the edit chrome's own tokens */
@@ -2314,7 +2314,7 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
      three.webgpu.js) unless declared here: modulepreload starts the fetch
      +parse the moment the HTML lands, in parallel with main.js and the GPU
      init. Only the STATIC graph belongs in this list — the ragdoll engine is a dynamic
-     import behind a user action and preloading it would tax the very
+     import (bodysim.js warms it after boot unless the saved engine is verlet), and preloading it would tax the very
      window this exists to shorten.
 
      INJECTED rather than static, because lite mode (phones: chat, gestures and

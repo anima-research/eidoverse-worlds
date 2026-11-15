@@ -26,8 +26,8 @@
 //                  lets the TTS half be rehearsed before bot credentials exist
 //
 // Queue policy: lines play sequentially; if the backlog exceeds MAX_BACKLOG
-// the oldest unplayed lines are dropped with a log — the show must never run
-// minutes behind the stage. A hard per-line cap guards runaway synthesis.
+// the oldest unplayed lines are dropped with a log. The cap is a count, not an
+// age: with slow synthesis a queued line can still be minutes old. A hard per-line cap guards runaway synthesis.
 
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";

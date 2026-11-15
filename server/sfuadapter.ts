@@ -223,7 +223,7 @@ export async function sfuNegotiate(world: string, legId: string,
     leg.pc.addTransceiver("audio", { direction: "recvonly" });
   }
   await s.sfu.negotiate(legId, async (pc) => {
-    // speaker per track BEFORE the offer lands, so ontrack pairs them in arrival order (voicesfu.js)
+    // speaker per track BEFORE the offer lands: the client pairs by msid and falls back to this arrival order (voicesfu.js)
     for (const speakerId of s.sfu.routesFor(legId)) send({ type: "sfu-route", speaker: speakerId });
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);

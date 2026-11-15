@@ -40,7 +40,7 @@ walked outside the founded world's bounds, and the authority's own solids stoppe
 row was changed to require that the walk's **plan** refuses it, not the authority (`211c8b67`).
 
 **2. Remove the mesh governor** (#235). At most `MESH_CONCURRENCY` (3) models decode at once
-(`mcpl/agent.ts`, `const MESH_CONCURRENCY = 3`). Raise it past the burst (`= 64`), then run `agent-mesh-collision`:
+(`mcpl/agent-ground.ts`, `const MESH_CONCURRENCY = 3`). Raise it past the burst (`= 64`), then run `agent-mesh-collision`:
 
 ```
 ✗ 64 unique models replayed at once download a few at a time, and all decode  at most 64 at once (governor 64)

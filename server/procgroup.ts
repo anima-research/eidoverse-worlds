@@ -89,7 +89,8 @@ export async function suiteMembersAsync(root: number, platform: NodeJS.Platform 
 /** killSuite, without blocking: POSIX signals the group (a signal never blocks); Windows kills what winKillPlan finds,
  *  children first, each by its own id; only when the table doesn't answer, the still-running root's tree with taskkill /T. */
 /** Which Windows processes to kill for a suite started as `root`, deepest first, each by its own id (never `/T`). Windows
- *  reuses process ids: once the suite has `exited`, its id in the table belongs to someone else, so only its orphans are killed. */
+ *  reuses process ids: once the suite has `exited`, an id back in the table belongs to someone else, so nothing is killed; if
+ *  the id is free, only its orphans are. */
 export function winKillPlan(root: number, table: Row[], exited: boolean, self: number = process.pid): number[] {
   if (exited && table.some((r) => r.pid === root)) return [];
   // never ourselves or an ancestor: once the dead root's id is reused, a stale ParentProcessId can make the gate itself look like its orphan

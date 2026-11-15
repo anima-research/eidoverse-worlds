@@ -194,7 +194,7 @@ export class Sfu {
   }
 
   /** Speaker ids this leg has routes for, in insertion order (a Map's): the order werift added the transceivers, hence
-   *  the order the browser's ontrack fires (client/lib/audio/voicesfu.js). */
+   *  the order the browser's ontrack fires (client/lib/audio/voicesfu.js pairs by msid first, this order as the fallback). */
   routesFor(legId: string): string[] {
     return [...(this.legs.get(legId)?.outbound.keys() ?? [])];
   }

@@ -83,7 +83,7 @@ export type ToolCtx = {
 // THE SURFACE: a tool's name must be intuitive to anyone who'd use the action AND the action generally useful, else it
 // is an alias. So the table holds GENERAL SHAPES (act, create, edit, inspect, move, anim, reach, library…) whose modes
 // carry the old bespoke verbs (flight is move {mode: "fly"} + act land; poses and wings are anim; kick/ban are act);
-// the old names answer by teaching where they went (TOOL_FOLDS). High-volume sugar (look, say, face, stop…) stays.
+// the old names in TOOL_FOLDS answer by teaching where they went (pose and animate aren't among them). High-volume sugar (look, say, face, stop…) stays.
 // Flight rehearsal hooks are not tools: a bench calls flightBodyDown / flightBodyRecovered (test/mcpl/flight-exit-test.ts).
 
 const TOOL_ROWS = [

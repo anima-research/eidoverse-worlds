@@ -49,7 +49,7 @@ const many = Array.from({ length: 2500 }, (_, i) => `line${i}`).join("\n");
 ok(await st(post("world=known", many)) === 200 && logs("known").includes('"line0"') && logs("known").includes('"line2499"') && logs("known").includes("…[501 lines cut]") && !logs("known").includes('"line1250"'), "S6 2500 lines keep the head and the tail with the cut marked");
 ok(boundLines("a\nb").cut === 0, "S7 lines within the limits are not cut");
 
-// ---- rate: per address (IPv6 by /64) before the body is read; per sender, 3 in a row
+// ---- rate: per address (IPv6 by /64) before the body is read; per sender, 10 in a row
 ip = "10.0.2.1";
 let last = 200; for (let i = 0; i < 30; i++) last = await st(post(`world=known`, "z", session()));
 ok(last === 200, "R1 30 posts in 10 min from one address (30 accounts) are taken");

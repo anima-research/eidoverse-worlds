@@ -4,7 +4,7 @@
 // `pose` field (the channel a held pose already uses, so remotes need no new receiver code), and when it settles,
 // captures the final bones as a held pose, never a replay. A late joiner's snapshot has them dropped (server.ts
 // settledPose turns a `ragdoll` clip to idle); the owner's next presence packet brings them back. The server
-// never simulates and never sees a bone.
+// never simulates and never sees a bone: it checks and relays the pose, keeping the last (server/messages.ts "pose").
 //
 // The simulator is a Verlet particle skeleton with MASS (constraints split by inverse mass), VOLUME (bones are
 // capsules), HANDEDNESS (knees and elbows bend one way, from a body frame the particles supply: _frame) and a FIXED
@@ -511,8 +511,6 @@ export class Ragdoll extends BodyEngineBase {
       this._terrain();
       this._limits();
     }
-    // ...and again at the end: the constraints have had their say, and a nail
-    // is a nail. Position only, so it invents no velocity.
 
   }
 
@@ -617,8 +615,8 @@ export class Ragdoll extends BodyEngineBase {
     }
   }
 
-  /** Move the distal particle so its bone points at `dir`, carrying the move into `prev` so it reads as no velocity.
-   *  Distal-only: the tables run proximal->distal, so no clamp disturbs a triple already solved this pass. */
+  /** Point the bone at `dir`, splitting the move by inverse mass (wc/ws distal, wb/ws proximal) and carrying it into
+   *  `prev` so it reads as no velocity. Only a pinned (zero-weight) proximal stays put; else a solved triple can move. */
   _swing(b, c, dir, lb) {
     const pb = this.p[b], pc = this.p[c];
     const wb = this.iw[b], wc = this.iw[c], ws = wb + wc;

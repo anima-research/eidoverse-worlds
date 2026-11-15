@@ -108,7 +108,7 @@ export function repairSky(sky) {
       const d = out.dormantRated; if (isObj(d)) { if (Number.isFinite(d.hours)) out.hours = d.hours; if (Number.isFinite(d.rate)) out.rate = d.rate; if (Number.isFinite(d.ts)) out.ts = d.ts; } }
     else delete out.tz;   // a clock other than real: the rated clock governs
     delete out.clock; delete out.dormantRated; }
-  // a tz with no clock is today's spelling (it governs): kept
+  // a tz with neither clock nor dormantRated is today's spelling (it governs): kept (with dormantRated alone it is dropped, above)
   // degrees → radians, once (a translation reads each stored sky once). A turn more than a full one is the same bearing
   // (400° is 40°), so it lands inside the registry's ±2π instead of refusing the world's whole repair
   if (typeof out.azimuth === "number" && Number.isFinite(out.azimuth)) { edit(); out.azimuth = (out.azimuth % 360) * Math.PI / 180; }

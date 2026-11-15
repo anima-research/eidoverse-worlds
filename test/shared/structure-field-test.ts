@@ -207,8 +207,8 @@ const HOUSE = {
 
   // THE Z-FIGHT REGRESSION. A level-0 floor whose top sits at y=0 is exactly
   // coplanar with terrain of height 0, and the whole floor shimmers. The slab
-  // must rest ON its level's base and put its top ABOVE it — then no floor, at
-  // any level, on any terrain, can ever be coplanar with the ground it sits on.
+  // must rest ON its level's base and put its top ABOVE it — then no floor is
+  // coplanar with ground at its own base (terrain as high as the slab's top still is).
   check("the foundation rests on the level base, top above it",
     slab.y0 === 0 && slab.y1 === g.slabT, `${slab.y0}..${slab.y1}`);
   check("the walk surface is the slab's top, never the ground plane",

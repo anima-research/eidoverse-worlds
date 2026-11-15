@@ -4,7 +4,8 @@
  *
  * Digest rules follow the frozen mcpl conformance corpus (its conformance/README): revision = "sha256:" +
  * base64url_unpadded(SHA-256(JCS(manifest minus root revision))); set semantics only for all-string arrays at the
- * three set paths, everything else hashed verbatim; the sole refusal is identifier_charset.
+ * three set paths, everything else hashed verbatim; the corpus's sole refusal is identifier_charset (a value JCS can't hold
+ * also throws: non_finite_number, unserializable).
  *
  * The declared surface is static, so the door never sends mcpl/manifestChanged (§17.3).
  */

@@ -1,7 +1,7 @@
 // Fold a world from its log using ONLY shared/protocol/fold.js: no door, no catalogue, no blob store (L1: the fold reads
 // only entries). Ported from the protocol lab's replay-check.js @ 11db981, which printed; this one asserts. The fixture is
-// the lab's cottage world, built through the lab authority; its digest there (node:crypto) is pinned here, so it also
-// checks the engine's hash shim against the lab's hash.
+// the lab's cottage world, built through the lab authority; its digest is pinned (the Python reference reader's since the
+// 10-07 names pass, not the lab's: below), so it also checks the engine's hash shim against an independent hash.
 // usage: bun test/protocol/replay-check.ts
 import fs from "node:fs";
 import { readLog, fold, digest } from "../../shared/protocol/fold.js";

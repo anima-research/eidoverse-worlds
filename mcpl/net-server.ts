@@ -305,7 +305,8 @@ class Session {
 
   /** RFC-005 §3.2 in-session join: atomically reattach this body to another world. The old body dies before the new
    *  one dials, so this identity is never in two worlds; the event/ping closures over `this.agent` re-route with one
-   *  assignment. Throws on failure; the caller MUST then close the connection (§3.2.5). */
+   *  assignment. Throws on failure: a JoinDeclined (PREPARE refused, nothing moved) keeps the connection; anything else and
+   *  the caller MUST close it (§3.2.5; classifyJoinFailure). */
   private async joinWorld(w: string, founding = false): Promise<void> {
     // ── PREPARE (RFC-005 §3.2.3a-c) ────────────────────────────────────────
     // For a host granted channels.register, its acceptance is PART of the transition: no answer, or no inbound Request

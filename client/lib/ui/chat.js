@@ -104,7 +104,7 @@ function renderBody(text, names, { links = true } = {}) {
 
 // ---------------------------------------------------------------- scrollback
 // A join carries recent chat, not the archive (that keeps arrival cheap). Reaching the top of the log asks the world
-// for the page before it, so nothing said is out of reach.
+// for the page before it, back to what you may read (speech is arrival-only without readChat: server/worldlog.ts floor).
 
 // The arrival window is NOT a contiguous slice: trimRecentChat (shared/chatwindow.js) drops the loudest speaker's
 // oldest lines, so paging from the oldest line SHOWN would jump the gap. The cursor comes only from what paging has
@@ -1200,7 +1200,7 @@ function paintTabs() {
 }
 
 // ---------------------------------------------------------------- typing
-// Pure presence — who is composing right now, gone a second later.
+// Pure presence — who is composing right now, gone ~4 s after their last keystroke.
 
 const typers = new Map();           // id -> expiry
 let lastTypingSent = 0;

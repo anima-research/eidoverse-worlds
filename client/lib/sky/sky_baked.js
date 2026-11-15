@@ -54,11 +54,12 @@ let bandMeshes = null;
 let bandGeos = null;
 let bakeCam = null;
 let pinnedCloudsOn = null;   // whether the pinned bake graph has a cloud branch
-/** sky.js's fence consults this: 'clear' is respelled as an empty cumulus only once a cloud-carrying graph is pinned,
- *  so a session pays the giant cloud-graph compile at most once. */
+/** Whether the pinned bake graph has a cloud branch (nothing in client/ reads it; sky.js's fence respells 'clear'
+ *  eagerly on cloud-capable tiers, so the cloud graph pins at the boot bake). */
 export const bakedCloudsPinned = () => pinnedCloudsOn === true;
 
-// arrival gates on the first bake's band pipeline being warm (world.js applySkyFolded); single-shot
+// sky.js waits on this before lifting the arrival gate, except at a fresh boot with the live domes held (the interim
+// sky lifts it first); single-shot
 let _bakeReadyResolve = null;
 const _bakeReady = new Promise((r) => { _bakeReadyResolve = r; });
 export const whenBakeReady = () => _bakeReady;

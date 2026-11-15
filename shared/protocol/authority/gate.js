@@ -276,7 +276,7 @@ function rights(w, st, s, who, role, op, at, made, pause) {
 }
 // §5 / L7: an existing KEYED component (`<name>:<key>`) may be changed or deleted only by its creator (creatorOf: whose
 // rights first made this life of the key) or an owner. Making a new key needs only the component's ordinary rank. A
-// whole-entity delete is NOT gated here.
+// whole-entity delete is gated per key at the call site (§3d H7).
 const isKeyed = (comp) => typeof comp === "string" && comp.includes(":");
 // §5: INSTANCE keys (script:, blueprints:, roles:) carry the creator rule; PARTITION keys (terrain-tile:, terrain-paint:)
 // are pieces of one shared surface, ordinary rank rules only. No schema: instance, the safe side.

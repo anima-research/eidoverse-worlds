@@ -95,7 +95,7 @@ function dropLease(w, st, host, free = true) {
 /** End the lease: commit, then free the helm (its driver let go); passengers keep their seats. */
 function endLease(w, st, host, why, free = true) {
   const L = leases(w)[host]; if (!L) return;
-  commitLease(w, st, host, why, free);   // a throw keeps the lease and the helm: the pose is retried, never dropped for the log's
+  commitLease(w, st, host, why, free);   // a throw keeps the lease and the helm and the pose is retried; after COMMIT_TRIES failures commitLease drops the lease itself, for the log's
   dropLease(w, st, host, free);
 }
 /** `who` stood up or left: a driver's lease ends and commits; a passenger's hull commits (why alight), so their step off is

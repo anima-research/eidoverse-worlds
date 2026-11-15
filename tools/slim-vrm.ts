@@ -1,7 +1,8 @@
 // Used outside this repo: Orrery's avatar push runs this file by path; move it only together with Orrery.
 // slim-vrm — resize a VRM/GLB's embedded textures to web-sane dimensions (Tripo ships 8192²; 2048² is the VRM norm).
 // Container surgery only: images are swapped in the BIN chunk and bufferViews repacked; meshes, skins and extensions
-// pass through untouched. Resizing uses sharp (portable; the tool runs on Linux hosts).
+// pass through untouched (one that addresses BIN by its own offsets, e.g. EXT_meshopt_compression, isn't re-pointed:
+// not supported). Resizing uses sharp (portable; the tool runs on Linux hosts).
 // Usage: bun tools/slim-vrm.ts file.vrm [--max 2048] [--quality 82] [--out path]   (default: in place)
 
 import { basename } from "node:path";

@@ -47,7 +47,8 @@
 //   than gluing (no teleport off a crate edge). A body that comes to rest
 //   becomes a static again. Scope honestly stated: flying bodies do not
 //   collide with each other; a resting body is not woken by being hit; a
-//   thing that mounts, rides a motion, or has no box is not a collider.
+//   thing that mounts, rides a motion, or has no box is not a collider (but an epoch start seeds every boxed thing
+//   as a static at its stored position, mounted or moving).
 //
 // eidosim@0.4.0 — the same world, SWEPT. 0.3 tested collisions at the end of
 //   each tick only, so a fast body crossed a thin wall between two endpoints

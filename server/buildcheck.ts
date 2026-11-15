@@ -42,7 +42,7 @@ const GROW = 3;
 const AREA = NAV_CELL * NAV_CELL;
 /** The most lattice columns (footprint plus margin) a check walks: ~100m square. */
 const MAX_COLUMNS = 250_000, MAX_SIDE = Math.sqrt(MAX_COLUMNS) * NAV_CELL, MAX_HEIGHT = 120;
-/** A surface a body can't step onto with a floor this close beneath it is
+/** A surface with open air and then a floor this close beneath it is
  *  furniture (a table, a counter, a bunk), not a floor of the building. */
 const FURNITURE_MAX = 1.2;
 /** ...and at least this far above it (a seat's height): the mover's 0.8 m step climbs onto a table, so "can't be
@@ -151,7 +151,7 @@ export async function checkModel(file: string, C: any, THREE: any, { scale = 1 }
   const reach = bfs(body, rim, () => true);
 
   // ---- floors: the covered heights with room to stand
-  // a tabletop has open air and then a floor beneath it; a body can't step onto it. Looked for with front faces only: from
+  // a tabletop has open air and then a floor beneath it (a body can step onto it: FURNITURE_MIN). Looked for with front faces only: from
   // inside a solid plinth the first face down is its own underside, seen from behind.
   const bvh = [...C.nearColliders((mn[0] + mx[0]) / 2, (mn[2] + mx[2]) / 2, Math.max(w, d))].find(([id]: any) => id === "model")?.[1]?.exact?.bvh;
   const down = new THREE.Ray(new THREE.Vector3(), new THREE.Vector3(0, -1, 0)), up_ = new THREE.Ray(new THREE.Vector3(), new THREE.Vector3(0, 1, 0));

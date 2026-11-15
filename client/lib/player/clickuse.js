@@ -1,5 +1,5 @@
 // clickuse — the mouse on things. LEFT-CLICK is the thing's primary use (grab a ball, open a door, sit on a seat);
-// RIGHT-CLICK opens a menu of everything it offers. The keys stay (T, C, E, X): the mouse sends the same requests
+// RIGHT-CLICK opens a menu of everything it offers. The keys stay (T, Q, E, X): the mouse sends the same requests
 // they do, so the authority's refusals read the same.
 //   A click is a press and release that didn't travel (a drag is the camera's orbit, either button). Not in edit mode
 // (a click selects there), not in a headset, not over a person (bodydrag's capture listener takes that press first).

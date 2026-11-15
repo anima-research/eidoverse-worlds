@@ -6,8 +6,8 @@
 // graph changes shape, and the toolkit's weather/sky systems rewrap already-compiled materials. So the wraps are
 // client-owned, applied before the first compile, and driven by folded state (effectiveSky):
 //   wetness     — a shape-identical port of the toolkit's weather_system.js wrapMaterial, driving the same uniforms
-//   cloud shade — our own cheap field (two taps of a seeded, wind-scrolled noise texture, sun-projected), so every
-//                 client watches the same shadow cross the same meadow
+//   cloud shade — our own cheap field (two taps of a seeded, wind-scrolled noise texture, sun-projected); the
+//                 texture is seeded alike everywhere, but the scroll accumulates per client from load
 // Every prepared mesh is marked userData.noWet + noCloudShadow so the toolkit's sweeps skip it; unprepared materials
 // (mods) still get swept. Decisions and measurements: docs/research/material-factory.md.
 

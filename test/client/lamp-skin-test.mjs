@@ -15,9 +15,9 @@
 // correct for a rigid object with a small local offset. But a SkinnedMesh's
 // node sits at the body root while its vertices are in BIND-POSE coordinates,
 // so that centre is an ABSOLUTE (0, 1.47, 0.0155) -- the full height off the
-// floor. Rotating a 1.47m vector by body yaw rides the light around an arc.
-// Yaw hid the worst of it (the offset is nearly vertical); a pitched body
-// would throw the light clear of the body entirely.
+// floor. Under a whole-body yaw or pitch that vector and the bones turn
+// together, so the old math agrees within the bulb's own offset; it diverges
+// when bones move relative to the body (a pose: the posed-chest control below).
 //
 // Uses a REAL THREE.Skeleton, not a stub: the defect is in the interaction
 // between bind-space geometry and bone matrices, and a stub skeleton would
@@ -112,7 +112,8 @@ check('height is constant under yaw', Math.max(...ys) - Math.min(...ys) < 1e-6,
 check('the bulb stays at chest height', Math.abs(ys[0] - BULB.y) < 1e-6, `y=${ys[0]} want ${BULB.y.toFixed(4)}`);
 
 console.log('LAMP IN A SKINNED BODY — pitch (limp, ragdolling, flying)');
-// This is the case yaw was hiding: rotating a 1.47m vector by a 90-degree
+// The bone path under a 90-degree pitch (the old math agrees here too; the posed control below is where it fails):
+// rotating a 1.47m vector by a 90-degree
 // pitch puts the light a metre from the body.
 const p90 = at(Math.PI / 2, 0, 9000);
 const bone = chest.getWorldPosition(new THREE.Vector3());

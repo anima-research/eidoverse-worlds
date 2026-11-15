@@ -332,13 +332,11 @@ const VERBS = {
 export const VERB_NAMES = Object.freeze(Object.keys(VERBS));
 export function forkCopy(w, actor, args) { CTX.forking = true; try { return request(w, actor, "fork-copy", args); } finally { CTX.forking = false; } }
 /** A server operator's recorded repair. NARROW: set / delete of @world's door components (roles:<id>, access,
- *  default-role, role-defs), unban, and the shape repair; everything else is refused before the authority is entered.
+ *  default-role, role-defs) and unban; everything else is refused before the authority is entered.
  *  RECORDED: the act is the operator's own, its body carries `operator: true`. Not god mode: shape, value, roles and
  *  last-owner checks still apply. Only the server reaches it (operator-repair message); no request word does. */
 export function operatorRepair(w, actor, verb, args = {}) {
   const door = (verb === "set" || verb === "delete") && args && args.id === "@world" && REPAIR_COMP(args.component);
-  // the shape repair is a maintenance command, never the load's; an operator runs it here, recorded
-  // with the operator's id (the act's `by`, operator: true). Not a request word: it has no verb at the door
   if (!(door || verb === "unban"))
     return { ok: false, refused: { code: "rights", reason: `an operator's repair covers @world's roles, access, default-role and role-defs (set, delete), and lifting a ban or kick (unban); not ${String(verb).slice(0, 32)}${args?.component !== undefined ? ` ${String(args.component).slice(0, 64)}` : ""}`,
       fix: "anything else goes through the world's own roles: repair a role (set {id: '@world', component: 'roles:<id>', value: {role: 'owner'}}), then act as that person" } };

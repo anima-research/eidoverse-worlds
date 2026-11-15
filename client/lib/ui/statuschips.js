@@ -17,7 +17,7 @@
 // column on a horizontal one. It depends only on the ∃ and its glyphs, never on frames or the action bar, so no
 // placement cycle can form; those count it as chrome (actionbar.js roomFor, windows.js CHROME_ANCHOR '#hudstatus').
 //
-// No imports beyond icons: the governor and capnotice post here, and this must not pull the engine in with it.
+// Imports only icons and base.js (the bus): the governor and capnotice post here, and this must not pull the engine in with it.
 import { rsvg } from './icons.js';
 import { bus } from '../base.js';
 
@@ -36,7 +36,7 @@ function ensure() {
   document.body.append(strip, pop);
   addEventListener('resize', place);
   bus.on('dock-moved', place);
-  // Esc folds an open popover and goes no further (preventDefault: nothing after it acts on this Esc)
+  // Esc folds an open popover and goes no further (preventDefault: listeners that check defaultPrevented go no further)
   addEventListener('keydown', (e) => { if (e.key === 'Escape' && openId) { e.preventDefault(); collapse(); } });
   // a click anywhere but the popover or its chip folds it
   document.addEventListener('pointerdown', (e) => {

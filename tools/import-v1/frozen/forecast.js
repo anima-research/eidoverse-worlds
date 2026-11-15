@@ -1,3 +1,4 @@
+// FROZEN: shared/forecast.js as it stood at 6dab22f5, read only by ../fold.js; the runtime words below are history.
 // forecast — the deterministic ambient-weather oracle, and the one sky fold
 // every plane shares.
 //

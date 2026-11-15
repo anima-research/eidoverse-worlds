@@ -9,7 +9,7 @@
 //   slow seconds → a 'reduced detail' chip; smooth seconds → it goes (the reduction lifted);
 //   a click opens the full text under the chip, inside the viewport, with "got it" / "don’t show again";
 //   Esc folds the popover and nothing else (the panels stay); "got it" folds it and the chip stays;
-//   the ∃ menu opens clear of the strip (its tab too);
+//   the ∃ menu opens over the strip, on top wherever they meet;
 //   "don’t show again" removes the chip and remembers it (same key as the card) across a reload.
 // Phone 390x844 (touch): the strip is on screen and clear of the rail and glyphs — on the default rail and on a
 // rail welded to the top edge (the strip then runs down the ∃'s column).
@@ -117,7 +117,7 @@ try {
 
   await pulse(pg, true);
 
-  // the ∃ menu opens clear of the strip, tab included — with the panels put away (Esc), so its default spot beside the
+  // the ∃ menu opens over the strip — with the panels put away (Esc), so its default spot beside the
   // rail is free and no frame-dodge moves it anyway
   await pg.mouse.click(900, 300); await pg.keyboard.press('Escape'); await sleep(200);
   await pg.click('#hud'); await sleep(300);

@@ -8,7 +8,7 @@
 //                                                     spec/, docs/, AGENTS.md): its rows must go red; a no-op control stays green
 //   bun test/protocol/names-check.ts --control       every non-guard row must be red at BASE
 // Rows:
-//   N   refusal codes: hold-limit, beneath, not-pushable (were hands-full, underfoot, no-body); the old words map, never given
+//   N   refusal codes: hold-limit, beneath, not-pushable (were hands-full, underfoot, no-body); the old words are never given nor mapped (N3)
 //   P   punt keeps its name; its flag is contact: true (shove: true refused, naming contact); docs say no kick/feet
 //   T   @world trusted-components (was trusted): the registry, the door, the load's rename (every load, idempotent), drafts.js
 //   C   consent: the old words a stored table is READ in (C1) and the authority's load of one as two narrowed gates (C5);
@@ -18,7 +18,7 @@
 //   O   leftover seat words → the occupy family (agent, client modules, socketRole, user-visible strings)
 //   S   stale agent-visible addresses: light.daytime, sky.tz, the measure tool's socket child
 //   A   grabbable.anim / station.anim (an open name of a pose or a clip; unknown → the body's default), grasp, anim-pose
-//       reserved; old spellings taken at the door and renamed at load; wings-folded is a named pose; pose/animate by name
+//       reserved; old spellings refused at the door as unknown keys (A2); wings-folded is a named pose; pose/animate by name
 //   U   the action bar (UI ids and strings; was the bar of the old name)
 //   L   layering (once overlays, a loop or hold replaces), where a name resolves (from), one form (name OR live keys)
 //   B   body-mode: its own presence field (stand | sit | lie chosen; swim | fly | fall reported); a description that grants nothing
@@ -26,9 +26,9 @@
 //       {playing, mode}; stopped {name, why} when a loop or hold ends; the four old body tools are refused, taught as anim (M5)
 //   K   anim {stop} (R 10-17 16:26/16:27): true stops every layer and rests in the CURRENT body-mode's own anim (never the
 //       bind pose; the body-mode unchanged); a name stops that layer; "live" stops the ad-libbed ones, a reserved name
-//   E   the old name of a gesture is gone (R 10-17 16:26): presence pose.anim (the old key read for one release), the
-//       action bar's modules and defs, every identifier, comment and string; it is spelled in exactly two places: the
-//       hidden tool alias's entry and the old key's read (EM below builds the word, so this file never spells it)
+//   E   the old name of a gesture is gone (R 10-17 16:26): presence pose.anim (the old key isn't read), the
+//       action bar's modules and defs, every identifier, comment and string; it is spelled only in the action bar's
+//       old saved-storage id and the retired slash command's row and test (E3; EM below builds the word, so this file never spells it)
 //   OS  a motion's back-and-forth along an axis is oscillate (R 10-17 21:40; was bob): the registry, the door (bob refused),
 //       the readers (the type as written), the editor's card, the translator (@14, import-v1/shapes.js motionType), the docs
 //   X   the version history records it

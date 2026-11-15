@@ -457,7 +457,8 @@ sequenced AFTER the gates. I built them first because they were interesting.
 Noting it plainly rather than quietly reordering the story.
 
 **The good news: the gates are already proven, and they carry over.**
-`server/relaydecision.ts` + `test/server/relay-decision-test.ts` (23 tests) are
+`server/relaydecision.ts` + its tests (`test/server/relay-decision-test.ts`: identity, incarnation, consent;
+`test/server/sfu-adapter-test.ts`: the admission refusals) are
 transport-agnostic — they decide admission from claims vs live state and never
 mention LiveKit. All seven refusals are pinned:
 wrong world · wrong identity · retired primary gen · retired media gen · prior

@@ -1,6 +1,6 @@
 // test/harness/inspectharness.ts — the client's edit path (client/lib/edit/inspect.js → edit/writes.js) headless, against the REAL
-// door on a scratch world (test/harness/scratchworld.ts). Import this BEFORE importing client/lib/edit/inspect.js: it
-// registers the Bun plugin that stubs the page around them. What is real: inspect.js, edit/writes.js (send, expect, the
+// door on a scratch world (test/harness/scratchworld.ts). Call inspectHarness() BEFORE importing client/lib/edit/inspect.js:
+// the call registers the Bun plugin that stubs the page around them (importing this file alone doesn't). What is real: inspect.js, edit/writes.js (send, expect, the
 // lock dialog's three answers, undo/redo by act), the shared planners, the authority. What is stubbed, from client/lib:
 //   net.js     sendRequest → the scratch world, as the signed-in person `actor`; replica.st = the authority's state (kept in
 //              sync after every request, as the live client's fold is); replicaActive → true; sendDrag records

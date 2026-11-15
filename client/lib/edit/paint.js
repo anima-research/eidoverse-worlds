@@ -2,7 +2,8 @@
 // build mode's look (theme.js), under the VR floor (EDIT_VR):
 //
 //   - every hit target >= minHit px tall; no line thinner than minLine; text >= minText px;
-//   - no pictograph reaches fillText (a glyph the viewer's fonts lack paints NOTHING): they become icons.js paths;
+//   - no MAPPED pictograph (theme.js PICTO_ICON) reaches fillText (a glyph the viewer's fonts lack paints NOTHING): they
+//     become icons.js paths; an unmapped one (a user's label) still goes to fillText;
 //   - nothing hover-only: a headset has no hover;
 //   - the SAME shapes the CSS draws.
 //

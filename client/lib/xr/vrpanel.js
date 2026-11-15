@@ -1,4 +1,4 @@
-// Settings › VR — one section on the video panel's grammar. Prefs live in xr.js
+// Settings › VR — one section on the video panel's grammar. Prefs live in xr-prefs.js
 // (xrPrefs / setXrPref) so the frame loop reads them without a round trip.
 // Visible whether or not a headset is sensed; the first row says which.
 import { makeSection, flashHint } from '../ui/ui.js';

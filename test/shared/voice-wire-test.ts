@@ -2,7 +2,7 @@ import { helloOf } from "../../shared/protocol/hello.js";
 // Voice state on the pose wire (`mic`, `hear` — shared/presencewire.js voiceWire) under the owner's recorded privacy
 // decision (docs/reference/POSE-WIRE.md "Voice state — who sees it", 2026-10-02): it is shared with EVERYONE in the world, like
 // a mute/deafen indicator, and it is live-only. End to end through a scratch sequencer:
-//   a browser-shaped owner (raw WS join + the exact packet client/lib/net.js sendPose builds, voice via the real
+//   a browser-shaped owner (raw WS join + a hand copy of client/lib/net.js sendPose's packet, no seq/t, voice via the real
 //   voiceWire) → the posecheck fence → the stage frame → a browser-shaped peer, a spectator, and a real WorldAgent.
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/shared/voice-wire-test.ts
@@ -62,7 +62,7 @@ const spectator = await join_("voice-spectator", { spectate: true });
 const agent = new WorldAgent({ name: "voice-agent", avatar: AVATAR, world: WORLD, url: WS }) as any;
 await agent.connect();
 
-/** client/lib/net.js sendPose's packet shape; voice ONLY through the real voiceWire unless `raw` (a garbled sender). */
+/** A hand copy of client/lib/net.js sendPose's packet (no seq/t: sendPose itself isn't run); voice ONLY through the real voiceWire unless `raw`. */
 let n = 0;
 function ownerSends(voice: Record<string, unknown> | null, raw = false) {
   const p = [1000 + n++ * 0.01, 0, 1000];   // a kilometre from everyone: far past VOICE_SILENT_M

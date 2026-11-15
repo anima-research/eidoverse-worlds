@@ -28,8 +28,8 @@ registerEngine({
     const want = `${onnx.name.toLowerCase()}.json`;
     const paired = files.some((f) => f.name.toLowerCase() === want);
     if (paired) return 3;
-    // A .json that looks like a piper config (phoneme_id_map) is also decisive,
-    // even if its name does not follow the convention.
+    // Any other .json scores 2: its contents aren't read (a piper config is the
+    // likely one, even if its name does not follow the convention).
     return files.some((f) => f.name.toLowerCase().endsWith('.json')) ? 2 : 1;
   },
 

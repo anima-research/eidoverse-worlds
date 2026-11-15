@@ -8,7 +8,7 @@
 //   OS3 a timer or a listening socket of its own open at exit → refused, never forgiven: ownersOf reads no owners; the review
 //       fails; the apply is "interrupted" (its outcome isn't trusted)
 //   OS4 a partial frame (stdout's missing), a frame with another nonce, a frame whose exit isn't its exit, no frame → refused
-//       (ownersOf and the upgrade); OS4h a partial frame and then alive: never accepted at the grace, only refused at its guard
+//       (ownersOf; the upgrade for partial and nonce only); OS4h a partial frame and then alive: never accepted at the grace, only refused at its guard
 //   OS5 a descendant still running at its end → refused (ownersOf and the review), and killed; OS5h at a forced cleanup → refused
 //   OS6 a clean exit → accepted with no forced-cleanup label (no receipt, nothing logged by oneshot)
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/protocol/oneshot-check.ts

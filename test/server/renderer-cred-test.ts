@@ -1,7 +1,7 @@
 // The renderers' credential and a private world's HTTP reads (#260 house I143, I144): the cases access-test.ts held
 // before it was retired, against a scratch server.
 //   - every join shape × credential: only the renderer flag with the renderers' credential watches an invite-only world;
-//     the door key alone is world-unavailable (4011, as for no world), the renderers' credential without the flag (a lite ?renderer page included) is 4003;
+//     the door key alone is world-unavailable (a watcher 4011, as for no world; a person 4005), the renderers' credential without the flag (a lite ?renderer page included) is 4003;
 //   - a later closing doesn't remove the admitted renderer;
 //   - a stranger (the door key, no membership) gets 404 from /snap and /heightmap of an invite-only world, where the
 //     same reads of the world while open answer (the control).

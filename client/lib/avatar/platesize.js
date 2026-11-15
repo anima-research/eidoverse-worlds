@@ -37,7 +37,7 @@ export function plateSize(d, k = 0) {
 // ---- own-body clearance ------------------------------------------------------------------------------------------
 // Only body points above (anchor − CLEAR_BAND) count: those stand between an eye and a plate at the head. MARGIN covers
 // spring hair swinging past where it was measured. Clamped to [a head, a stride]: an unmeasured body still clears its
-// skull, and a plate never shows through a wall you stand beside.
+// skull, and a wall nearer the plate than its clearance (at most a stride) can show it through.
 export const CLEAR_BAND = 0.5, CLEAR_MARGIN = 0.12, CLEAR_MIN = 0.35, CLEAR_MAX = 1.2;
 /** reach = the farthest (m) any counted own-body point lies from the plate's anchor → the clearance to write. */
 export const ownClearance = (reach) => Math.min(CLEAR_MAX, Math.max(CLEAR_MIN, (Number.isFinite(reach) ? reach : 0) + CLEAR_MARGIN));

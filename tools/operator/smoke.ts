@@ -3,7 +3,7 @@
 //   URL=ws://host:8940/ws WORLD=<name> bun tools/operator/smoke.ts     # against a running one (see below)
 // Covers the wire, not the renderer: join and the cut, door requests and their order, presence batching, the non-logged
 // channels (drag, typing), identity takeover, and speech's rule: the log keeps every say, people receive speech only
-// while present (no backscroll on join), and only the owner and holders of readChat read the log back. Whisper is
+// while present (no backscroll on join), and only the owner and holders of readChat read back past their arrival. Whisper is
 // refused as `removed`.
 // The world speaks the protocol (shared/protocol/authority.js): a join says `replica: true`, the snapshot carries the
 // cut, every write is a request {type: "request", id, verb, args} answered by `reply`, and the door's writes reach every

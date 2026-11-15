@@ -2,7 +2,7 @@
 // for one synchronous call through enter(), which saves the whole object and restores it on exit, so a nested call
 // (leave → request(drop), a host callback) never resets the outer call's state. Nothing in the authority awaits, so
 // calls can't interleave. A leaf on purpose: it imports nothing, so every layer can read the call's state.
-//   cat      the world's model catalogue ({get, list}); authority.js sets the lab's at load, request() the world's
+//   cat      the world's model catalogue ({get, list}); NO_CATALOGUE at load (catalogue.js), request() the world's
 //   through  the request's throughLock flag
 //   isAnon   is this identity a guest (the directory's kind "anon")? from w.kindOf
 //   knownId  the directory knows this identity (a world without a directory, as in the lab, knows everyone)

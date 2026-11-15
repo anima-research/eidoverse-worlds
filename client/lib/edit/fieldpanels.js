@@ -54,10 +54,11 @@
 // component. `opts.live` is true while a drag is in progress: PREVIEW locally, no log traffic; a call without it is
 // the gesture ending: commit ONE request.
 //
-// num entry (desktop): drag the number to scrub (Godot's EditorSpinSlider shape): the value is ALWAYS start + step ×
-// travel(px) (scrubTravel), never accumulated, so a drag that wanders comes back to where it began. Shift = 0.1×,
+// num entry (desktop): drag the number to scrub (Godot's EditorSpinSlider shape): the value is start + perPx × travel
+// (perPx: the field's `drag`, else step × 0.2); travel sums each move, Shift weighting it 0.1×, so a drag that wanders comes
+// back to where it began only with the same modifiers. Shift = 0.1×,
 // Ctrl = whole units, Esc mid-drag restores the start. A click without travel focuses the box to type; typed entry
-// takes relative math: `+=2`, `-=.5`, `*=-1`, `/=2`, `+=10%`. Soft limits bound the drag; hard limits bound everything.
+// takes relative math: `+=2`, `-=.5`, `*=-1`, `/=2`, `+=10%`. Soft limits bound the drag; hard limits bound the drag and the stepper (typed values go as typed: editOps refuses).
 
 import { makeFrame } from '../ui/windows.js';
 import { parseEntry } from '../../../shared/editschema.js';

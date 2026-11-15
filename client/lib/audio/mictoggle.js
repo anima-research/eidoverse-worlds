@@ -138,7 +138,7 @@ function micLevelNow() {
 setInterval(() => {
   if (!micIsOn()) { if (micHot) { micHot = false; paint(); } return; }
   const lvl = micLevelNow();
-  // the analyser reads the RAW side, so under PTT the glow also needs the key: gold means "the room is getting this"
+  // the analyser reads the RAW side, so under PTT the glow also needs the key: gold means the mic is on and loud (under voice activation the gate may still be shut)
   const hot = lvl > 0.02 && (!pttMode() || pttHeld());
   if (hot !== micHot) { micHot = hot; paint(); }
 }, 125);
@@ -167,7 +167,7 @@ registerAction({ id: 'voice:mic', title: 'microphone on / off', group: 'voice', 
 registerAction({ id: 'voice:ear', title: 'hear voices on / off', group: 'voice', icon: 'headphones',
   keywords: ['ear', 'hush', 'deafen', 'headphones', 'listen', 'voice'], run: () => flipEar() });
 export const xrGlyph = (size = 16) => XR_SVG(xrLive()).replace('width="26" height="26"', `width="${size}" height="${size}"`);
-/** For the in-VR indicator (xrmicicon.js): hot = transmitting (under PTT only while the key or left A/X is held). */
+/** For the in-VR indicator (xrmicicon.js): hot = on and loud (raw level; under PTT only while the key or left A/X is held). */
 export const micIndicatorState = () => (!micIsOn() ? 'off' : micHot ? 'hot' : 'on');
 export const micIndicatorSvg = (size = 64) => MIC_SVG(micIsOn(), micHot).replace('width="26" height="26"', `width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg"`);
 export const micGlyph = (size = 16) => MIC_SVG(micIsOn(), false).replace('width="26" height="26"', `width="${size}" height="${size}"`);

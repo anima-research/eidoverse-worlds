@@ -1,6 +1,6 @@
 // lite-banner-probe — on a PHONE a died boot demotes to lite and says so in a pinned card (under the gesture
 // row, above the chat: its one button is `got it`) and the ∃ in the top bar enters the 3D world; someone who asked for lite gets
-// the card too (a way back, never "type ?lite=0"); a DESKTOP whose boot died is not demoted at all, and gets
+// the card too (a way back, never "type ?lite=0"); a DESKTOP whose boot died is not demoted the first time (a second death in a row is), and gets
 // a status-strip pill offering the light version instead (owner, 10-01: lite is default only on mobile).
 //   bun test/client/lite-banner-probe.mjs [origin]   (no origin: an owned scratch world, probe-harness)
 // Mutation witnessed red: drop the liteBanner(WHY) call in lite.js.

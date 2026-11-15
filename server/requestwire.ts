@@ -71,7 +71,7 @@ function modLine(w: World, by: string, verb: string, who: string) {
   return verb === "ban" ? `${by} banned ${name} from this world` : verb === "kick" ? `${by} removed ${name} from this world` : verb === "mute" ? `${by} muted ${name}`
     : verb === "unmute" ? `${by} unmuted ${name}` : verb === "warn" ? `${by} warned ${name}` : `${by} lifted the ban on ${name}`;
 }
-/** The presence messages a muted person doesn't send (a caption is a speech bubble). Applied by server.ts before any handler. */
+/** The presence types a mute may gag; only `caption` is gagged today (a speech bubble), the rest pass (gagged). Applied by server.ts before any handler. */
 const QUIET = new Set(["typing", "anim", "puppet", "bodydrag", "drag", "caption"]);
 export function gagged(c: Client, type: string): boolean {
   const w = c.world; if (!w?.log || !c.actorId || !QUIET.has(type)) return false;

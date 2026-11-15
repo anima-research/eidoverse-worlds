@@ -32,7 +32,7 @@ checked:
 
 | step | what it proves | where the fact comes from |
 |---|---|---|
-| browser binary | a real Chromium exists at `CHROME` or one of the paths the other probes use (and is not a shell stub: on some distros `/usr/bin/chromium-browser` is a 2 KB snap stub that *exists*) | `test/harness/harness.ts` `findChrome`, `test/harness/probe-harness.mjs` (Playwright's build) |
+| browser binary | a file exists at `CHROME` or one of the paths the other probes use and is not a `#!` launcher script (on some distros `/usr/bin/chromium-browser` is a 2 KB snap stub that *exists*); it is first launched at the frames step, after `--check` stops | `test/harness/harness.ts` `findChrome`, `test/harness/probe-harness.mjs` (Playwright's build) |
 | old tree / new tree | both are checkouts; the old one is made as a detached worktree of `--old-ref` if missing; their HEADs are different commits (an uncommitted change on the old tree's commit is refused: commit it first); each has `node_modules` and `client/node_modules` (linked from a sibling checkout only when the manifests are byte-identical) | the server warns "browsers will hang at the splash" without `client/node_modules` |
 | clock pin | the old tree's commit time is readable (the default pin) | `git log -1 --format=%ct` in the old tree |
 | world copy: ‹world› | a directory was given, and it holds `world.jsonl` whose line 0 is a `{dialect:"eidoverse-log", v}` genesis with the current protocol's `v` | `server/livehost.ts` `isWorldDir`; `server/server.ts` refuses anything else at the door, naming `server/oldworlds.ts` |

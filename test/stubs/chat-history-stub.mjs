@@ -1,7 +1,8 @@
 // chat-scrollback-test substitutes this for net.js: requestHistory pages a
-// fake world log with the server's readHistory semantics (server/world.ts) —
+// fake world log like the server's readHistory (server/worldlog.ts) —
 // the NEWEST `limit` matching entries strictly between after and before,
-// handed back oldest-first.
+// handed back oldest-first; but hasMore is looser (true while the oldest seq
+// is > 0; the server's only when the limit cut the page).
 // holdNext(skip) keeps an answer in flight until release(), so a scenario can
 // land a live line while a page is on its way; failNext(skip) makes a request
 // reject, as net.js's does when no socket is joined or no answer comes. Each
