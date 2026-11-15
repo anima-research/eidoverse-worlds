@@ -114,7 +114,8 @@ if (argv.includes("--control")) {
   const wrong = lines.filter((l) => (isKept(l) ? l.startsWith("FAIL") : l.startsWith("ok ")));
   console.log(lines.map((l) => `${(isKept(l) ? l.startsWith("ok ") : l.startsWith("FAIL")) ? (isKept(l) ? "kept at base:  " : "red at base:   ") : "WRONG AT BASE: "}${l.slice(0, 140)}`).join("\n"));
   console.log(`[batch2-check --control] at ${BASE}: ${lines.length} cases, ${wrong.length} wrong (new cases must be red there, K cases green)`);
-  process.exit(wrong.length ? 1 : 0);
+  if (!lines.length) console.log(`FAIL --control ran no cases at ${BASE} (the tree did not load?):\n${r.out.split("\n").slice(-8).join("\n")}`);
+  process.exit(wrong.length || !lines.length ? 1 : 0);
 }
 
 // ---------------- the code, from a tree (this checkout unless --tree) ----------------
@@ -282,8 +283,8 @@ const cases: Case[] = [
       const UP = await import(TREE + "server/upload.ts").catch(none); if (!UP.imageDims) return { none: true };
       const png = new Uint8Array(32); png.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0); new DataView(png.buffer).setUint32(16, 9000); new DataView(png.buffer).setUint32(20, 10);
       const moon = new Uint8Array(fs.readFileSync(path.resolve(ENGINE, "test/fixtures/dims-1024x512.jpg")).buffer.slice(0));
-      return { png: UP.imageDims(png, "png"), moon: UP.imageDims(moon, "jpg"), cap: UP.MAX_IMAGE_PX }; },
-    good: (o) => !o.none && JSON.stringify(o.png) === "[9000,10]" && JSON.stringify(o.moon) === "[1024,512]" && o.cap === 8192 },
+      return { png: UP.imageDims(png, "png"), moon: UP.imageDims(moon, "jpg"), cap: UP.MAX_IMAGE_PX, refused: UP.imageSizeRefusal?.(png, "png")?.status ?? null }; },
+    good: (o) => !o.none && JSON.stringify(o.png) === "[9000,10]" && JSON.stringify(o.moon) === "[1024,512]" && o.cap === 8192 && o.refused === 413 },
   { id: "P6b", what: "upload (review of #260): a JPEG padded with fill bytes before its size is still measured, and an image whose size can't be read is refused", async run() {
       const UP = await import(TREE + "server/upload.ts").catch(none); if (!UP.imageSizeRefusal) return { none: true };
       const moon = new Uint8Array(fs.readFileSync(path.resolve(ENGINE, "test/fixtures/dims-1024x512.jpg")).buffer.slice(0));

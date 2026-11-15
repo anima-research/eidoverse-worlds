@@ -121,15 +121,22 @@ console.log("NATIVE LOGIN — over a real server's HTTP + WS");
     const landing = await (await fetch(origin + "/auth")).text();
     check("W2 the /auth landing offers the native pair code", landing.includes("ew-native-pair-code") && landing.includes("/native#code="));
     const p = await (await post("/native/start", {})).json();
+    check("W3a a poll before approval is pending (202)", (await post("/native/poll", { device_code: p.device_code })).status === 202);
+    const foreign = await post("/native/approve", { user_code: p.user_code }, { cookie: browser, origin: "https://evil.test" });
+    check("W3b approval from a foreign Origin is refused on the real route (HN_NATIVE_ORIGIN unset)", foreign.status === 403, foreign.status);
     const approved = await post("/native/approve", { user_code: p.user_code }, { cookie: browser, origin });
     check("W3 approval through auth.ts's real session store: 200, and it sets no cookie on the browser", approved.status === 200 && approved.headers.get("set-cookie") === null, approved.status);
     await pause("the poll interval: a poll inside 2 s of the last is a 429", 2100);
     const grant = await post("/native/poll", { device_code: p.device_code }); const native = cookie(grant);
     check("W4 the grant is a session independent of the browser's", grant.status === 200 && !!native && native !== browser, grant.status);
+    const replay = await post("/native/poll", { device_code: p.device_code });
+    check("W4a a replayed poll is refused (410), the grant is single-use", replay.status === 410, replay.status);
+    const relay = await (await post("/native/start", {})).json(), redel = await post("/native/approve", { user_code: relay.user_code }, { cookie: native, origin });
+    check("W4b the native session never approves another pairing (403)", redel.status === 403, redel.status);
     // an ordinary sign-in: any world the account may join, as the browser's session would
     for (const w of ["water", "commons", "native-elsewhere"]) {
       const c = await connect(w, native); const snap = c.messages.find((m) => m.type === "snapshot");
-      check(`W5 the native session joins ${w} (the snapshot names it by its id) under the account's name, not the client's`, /^sha256:/.test(String(snap?.world)) && snap?.you === "Native Fixture", snap ? { world: snap.world, you: snap.you } : "no snapshot");
+      check(`W5 the native session joins ${w} (the snapshot names it by its id) under the account's name, not the client's`, /^sha256:/.test(String(snap?.world)) && snap?.name === w && snap?.you === "Native Fixture", snap ? { world: snap.world, name: snap.name, you: snap.you } : "no snapshot");
       c.ws.close();
     }
     // the session paired before native sessions became ordinary ones joins another world, and the HTTP door answers it as the browser's

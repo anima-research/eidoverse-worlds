@@ -29,10 +29,10 @@ identities.set("pip", "u-pip");
   sent.length = 0; offline(); }
 
 // every sender that names a person, every typing state
-const SENDERS: { name: string; type: string; key: string; send: (to: string | null) => void }[] = [
+const SENDERS: { name: string; type: string; key: string; state?: string | null; send: (to: string | null) => void }[] = [
   { name: "puppet", type: "puppet", key: "targetActor", send: (to) => sendPuppet(to, { anim: "wave" }) },
   { name: "bodydrag", type: "bodydrag", key: "targetActor", send: (to) => sendBodyDrag(to, { phase: "grab" }) },
-  ...["chat", "mic", null, undefined].map((st) => ({ name: `typing ${st}`, type: "typing", key: "toActor", send: (to: string | null) => sendTyping(to, st) })),
+  ...["chat", "mic", null, undefined].map((st) => ({ name: `typing ${st}`, type: "typing", key: "toActor", state: st, send: (to: string | null) => sendTyping(to, st) })),
 ];
 const run = (s: (typeof SENDERS)[number], to: string | null) => { sent.length = 0; s.send(to); return sent.splice(0); };
 for (const s of SENDERS) {
@@ -42,7 +42,7 @@ for (const s of SENDERS) {
   out = run(s, "pip");
   check(`${s.name}: with one → it carries ${s.key}`, out.length === 1 && out[0].type === s.type && out[0][s.key] === "u-pip", JSON.stringify(out));
   out = run(s, null);
-  if (s.type === "typing") check(`${s.name}: a broadcast (no one named) still goes, naming no one`, out.length === 1 && out[0].type === "typing" && !("toActor" in out[0]), JSON.stringify(out));
+  if (s.type === "typing") check(`${s.name}: a broadcast (no one named) still goes, naming no one`, out.length === 1 && out[0].type === "typing" && !("toActor" in out[0]) && (s.state ? out[0].state === s.state : !("state" in out[0])), JSON.stringify(out));
   else check(`${s.name}: no one named → nothing`, out.length === 0, JSON.stringify(out));
   offline();
   out = run(s, "pip");

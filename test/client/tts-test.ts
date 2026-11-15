@@ -182,7 +182,7 @@ console.log("\n— speakOwnSays: the bridge, and the mic-live discard policy —
   await voice.toggleMic();                // mic off again; the next say is the fence a queued one would have played before
   bus.emit("speech", { actor: "me", text: "after the mic dropped" });
   await tryUntil("the say after the mic dropped reached the engine", () => synthCalls.includes("after the mic dropped"));
-  check("typed say while mic live is DISCARDED, not queued", !synthCalls.includes("typed while talking"), JSON.stringify(synthCalls));
+  check("typed say while mic live is DISCARDED, not queued (and the fence after it arrived)", synthCalls.includes("after the mic dropped") && !synthCalls.includes("typed while talking"), JSON.stringify(synthCalls));
 }
 
 // one producer on the wire across mic/TTS handoffs: also test/client/voicesource-real-test.mjs, sfu-mic-intent-race-test.mjs

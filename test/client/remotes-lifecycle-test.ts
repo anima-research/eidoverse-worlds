@@ -224,7 +224,8 @@ console.log("\n━━ reconnect roster seed: the snapshot prunes through the fun
   await _dispatch({ type: "arrive", id: "ghost", avatar: "vrms/ghost.vrm" });
   await settle();
   const torn: string[] = [];
-  bus.on("participant-teardown", (id: string) => torn.push(id));
+  let disposedAtTeardown = -1;
+  bus.on("participant-teardown", (id: string) => { torn.push(id); if (id === "ghost") disposedAtTeardown = stubs.disposeCount; });
   const disposedBefore = stubs.disposeCount;
   await _dispatch({ type: "snapshot", you: "tester", yourRights: { role: "member" },
     present: [{ id: "stays", avatar: "vrms/stays.vrm" }], state: {}, dialect: DIALECT, v: VERSION, entries: [], throughSeq: 0 });
@@ -232,7 +233,8 @@ console.log("\n━━ reconnect roster seed: the snapshot prunes through the fun
   check("the absent id is torn down THROUGH the funnel", torn.includes("ghost"),
     `teardown events: ${JSON.stringify(torn)} (on main: raw dropRemote, no event)`);
   check("custody released BEFORE the body was disposed (ordering contract)",
-    torn.includes("ghost") && stubs.disposeCount > disposedBefore, "the bodydrag listener depends on this order");
+    torn.includes("ghost") && disposedAtTeardown === disposedBefore && stubs.disposeCount > disposedBefore,
+    `disposed at teardown ${disposedAtTeardown}, before ${disposedBefore}: the bodydrag listener depends on this order`);
   check("the present id survives, generation fresh", remotes.has("stays") && !remotes.has("ghost"));
   await _dispatch({ type: "leave", id: "stays" });
 }

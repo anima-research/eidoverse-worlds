@@ -19,7 +19,7 @@ const ALLOWED: [string, RegExp, string][] = [
   ["shared/mover.js", /Math\.(exp|atan2)\(/, "the walker: the authority steps it once and writes rounded results into the log (mover-check proves the client agrees); no replica re-walks"],
   ["shared/terrainshape.js", /Date\.now\(\)/, "a grid fetch's retry timer (cache bookkeeping); the grid's heights are the fold's input, not its arithmetic"],
 ];
-const IMPORT = /(?:import[^'"]*from\s*|import\s*\(\s*|require\s*\(\s*)['"](\.[^'"]+)['"]/g;
+const IMPORT = /(?:(?:import|export)[^'";]*from\s*|import\s*\(?\s*|require\s*\(\s*)['"](\.[^'"]+)['"]/g;   // also export-from and bare `import './x'`
 const files: string[] = [];
 const walk = (rel: string) => {
   if (files.includes(rel)) return;

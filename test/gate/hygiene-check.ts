@@ -1,7 +1,8 @@
 // test/gate/hygiene-check.ts — patterns that broke the gate one site at a time, refused as a class.
 //
 // Each rule names a shape that failed somewhere real (CI on Windows or a slow runner, 10-19..22). The checked tree is the
-// gate's own code: every suite run.ts runs, with the local files it imports, plus server/, shared/ and mcpl/. Counts are
+// gate's own code: every suite run.ts runs, with the local files it imports (not a runner's file argument, as bun-test.ts
+// x-test.ts: that file gets only the all-files rules), plus server/, shared/ and mcpl/. Counts are
 // per file and per rule, against test/gate/hygiene-baseline.json, which may only go DOWN: a file over its count fails,
 // a file under it fails too until the baseline is lowered (`--write`, which refuses to raise anything). A file not in the
 // baseline is allowed 0. So existing debt is visible and shrinking, and new debt can't land.
@@ -35,7 +36,7 @@
 //                 which reports the row not applicable on Windows (CI 42190828916: native-login W10, mkconfig).
 //   ungated       a test-named file (-test, -check, -probe, .test, -bench, -mutants under tools/, test/ (all of it but harness/stubs/fixtures/labs), tools/water/,
 //                 mcpl/) that no SUITES row runs or imports: every test is in the gate or gone (R 10-29). The ones still out
-//                 are listed in test/gate/ungated.json with one line why; that list only shrinks.
+//                 are listed in test/gate/ungated.json with one line why; that list is meant to shrink (review's to hold: nothing here diffs it against the base).
 //   redaction-parse  a redaction's targets read by hand (`.body.values`) outside fold.js: four parsers drifted apart when
 //                 {seq, op} became {seq, index}, and undo wrote a redacted value back (review 11-05 B1). Use fold.js
 //                 redactionsIn / redactedBodies.
@@ -125,7 +126,7 @@ export function wholeBodyHits(root = ENGINE): string[] {
  *  every test, so a top-level spawn runs). True when the text spawns net-server.ts without naming MCPL_STATE. */
 export const spawnsMcplStateless = (text: string) => /spawn\([^)]*mcpl\/net-server\.ts/.test(text) && !/MCPL_STATE/.test(text);
 export function mcplStatelessHits(): string[] {
-  return ["tools", "bench"].flatMap((d) => walk(path.join(ENGINE, d), [])).filter((p) => spawnsMcplStateless(fs.readFileSync(p, "utf8"))).map(rel);
+  return ["tools", "bench", "test"].flatMap((d) => walk(path.join(ENGINE, d), [])).filter((p) => spawnsMcplStateless(fs.readFileSync(p, "utf8"))).map(rel);
 }
 function walk(dir: string, acc: string[]) {
   if (!fs.existsSync(dir)) return acc;
@@ -266,7 +267,7 @@ if (import.meta.main) {
   const bodyHits = wholeBodyHits();
   check(`H${i++} whole-body: server/ reads no request body whole (${bodyHits.length ? "found" : "none"})`, bodyHits.length === 0 && fs.existsSync(path.join(ENGINE, "server/request-body.ts")), bodyHits.join("\n      "));
 
-  // then the gate's code against the baseline (may only go down)
+  // then the gate's code against the baseline (may only go down: --write refuses a raise; a hand-edited raise is review's to catch)
   const now = measure();
   const base = fs.existsSync(BASE) ? JSON.parse(fs.readFileSync(BASE, "utf8")) : {};
   if (process.argv.includes("--write")) {

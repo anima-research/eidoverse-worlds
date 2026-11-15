@@ -170,7 +170,7 @@ await C("A7b", "the door's words: a bad modes refusal names what it got and the 
   const wet: any = s.call("create", { id: "w", components: { transform: tf([0, 0, 0]), water: { level: 1 } } });
   const fixOf = (r: any) => String(r?.refused?.fix ?? "");
   return [/dance/.test(bad?.refused?.reason ?? "") && /walk \| swim \| fly \| climb/.test(bad?.refused?.reason ?? "")
-    && /create/.test(fixOf(bare)) && /zone/.test(fixOf(bare)) && /create/.test(fixOf(wet)),
+    && /a create carries it beside \(components: \{…, zone:/.test(fixOf(bare)) && /a create carries it beside/.test(fixOf(wet)),
     { bad: bad?.refused, bare: bare?.refused, wet: wet?.refused }]; });
 
 await C("A8", "the track grows with the body: a size-2 body's run (the mover's, 8 m/s) at 10 Hz for 3 s is every stride taken; the same strides at size 1 are refused once the track runs dry", () => {

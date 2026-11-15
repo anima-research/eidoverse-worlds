@@ -60,7 +60,7 @@ const SOURCES: { name: string; args: any; steps: (ag: any, door: any) => Promise
     return [["override lands, with the logged actor", tO + 1000, 1, /storm.*olive/], ["re-check", tO + 2000, 0],
       ["expiry resumes the forecast", seg.endMs + 1000, 1, /forecast/], ["re-check", seg.endMs + 2000, 0]];
   } },
-  { name: "real-clock day phase (no rate field)", args: { hours: 6.8, rate: 24, tz: "America/Los_Angeles" }, steps: async () => [
+  { name: "real-clock day phase (no rate field)", args: { hours: 6.8, tz: "America/Los_Angeles" }, steps: async () => [
     ["first look (night)", LA.night, 0], ["dawn", LA.dawn, 1, /^dawn/],
     ["a minute later", LA.dawn + MIN, 0], ["ten minutes later", LA.dawn + 10 * MIN, 0]] },
 ];

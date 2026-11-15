@@ -355,7 +355,7 @@ function wingStand() {
   self.face = new Face(self);
   self.wings._findWings();
   self.tick = function (dt = 1 / 60) {
-    if (!this._limp) this.wings._flap(dt);
+    this.wings.update(dt);   // the real per-frame entry: its own limp guard
     root.updateMatrixWorld(true);
   };
   const tipY = (n: string) => {

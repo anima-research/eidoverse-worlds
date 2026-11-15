@@ -50,6 +50,8 @@ const ROWS: Row[] = [
     must: [/tries > 45\) \{ abandon\(/], not: [[/tries > 45\) \{ clearInterval/, "if (++tries > 45) { clearInterval(poll); return; }"]] },
   { name: "login: abandon restores a retryable state, and messages are checked against the Orrery's origin", file: "client/lib/edit/generate.js", scope: between("let done = false", "} catch (e) { report('orrery login'"),
     must: [/const abandon[\s\S]*?connected = false/, /ev\.origin !== new URL\(ORRERY\)\.origin/] },
+  { name: "the Orrery candidate <img> sends credentials (without, a cross-origin thumbnail 401s and the picker is blank)", file: "client/lib/edit/generate.js",
+    must: [/<img crossorigin="use-credentials"\s+src="\$\{esc\(ORRERY\)\}\/api\/assets\//] },
   // channel-cap-gate: typing is a notification, gated before the relay starts, handled in one place
   { name: "channels/typing is gated on channelsTyping before the relay starts", file: "mcpl/net-server.ts", scope: after("private onTyping(", 1400), before: ["capAllowed(CAP.channelsTyping)", "this.typing.start("] },
   { name: "the typing signal is handled once, in the notification listener; nothing acts on a stream chunk", file: "mcpl/net-server.ts", count: [/method\.CHANNELS_TYPING/g, 1],

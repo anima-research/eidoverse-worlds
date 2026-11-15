@@ -94,7 +94,8 @@ check('default (micWanted omitted) still takes the mic', s.kind === 'microphone'
 //     (Mutation M4: start() returning null left the old version green, because
 //     `new MediaStream([null])` is tolerated by the stub while a real browser
 //     throws. Assert the track exists rather than trusting the wrapper.)
-const tracks = typeof s.getTracks === 'function' ? s.getTracks() : [];
+const synth = await voiceSource({ micWanted: false });   // the synthetic path's own stream, not the mic's above
+const tracks = synth?.synthetic === true && typeof synth.getTracks === 'function' ? synth.getTracks() : [];
 check('synthetic stream carries a real track', tracks.length === 1 && tracks[0] != null);
 
 // A provider whose start() yields nothing must FAIL LOUDLY, not publish silence.

@@ -166,7 +166,7 @@ try {
       if (e.isDirectory()) { if (!["node_modules", ".git", "worlds", "spec", ".siblings"].includes(e.name)) walk(r); continue; }
       if (!/\.(ts|js|mjs|html)$/.test(e.name) || own.has(r)) continue; const t = fs.readFileSync(path.join(ENGINE, r), "utf8");
       if (/type\s*:\s*['"]join['"]/.test(t) && !/\bhelloOf\b/.test(t)) bad.push(r); } };
-    for (const d of ["client", "server", "mcpl", "tools", "shared"]) walk(d);
+    for (const d of ["client", "server", "mcpl", "services", "tools", "shared", "test", "bench"]) walk(d);
     check("F22 every in-repo file that builds a join sends helloOf() (shared/protocol/hello.js): one helper, no hand-spelled or missing hello", !bad.length, bad.slice(0, 10)); }
   { const html = fs.readFileSync(path.join(ENGINE, "client/index.html"), "utf8"); const m = /hello: (\{ dialect: 'eidoverse-log'[^}]*\})/.exec(html);
     const inline = m ? Function(`return (${m[1]});`)() : null;

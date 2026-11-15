@@ -67,7 +67,7 @@ plugin({ name: 'core-stub', setup(build) {
     'renderer.compileAsync': async () => { await renderer.compileAsync(scene, camera, scene); return n.compile; },
     'renderWorld()': async () => { renderWorld(); return n.render + n.target; },
     'renderAside()': async () => { renderAside(scene, camera); return n.render; },
-    'captureFrame()': async () => { threw = null; let url = null; try { url = captureFrame(); } catch (e) { threw = e; } return typeof url === 'string' ? n.read + n.render : 0; },
+    'captureFrame()': async () => { threw = null; let url = null; try { url = captureFrame(); } catch (e) { threw = e; } return typeof url === 'string' && n.read === 1 && n.render > 0 ? 1 : 0; },
   };
   ok('render.js wrapped both methods (the test drives the shipping wrappers)', renderer.render !== stubRender && renderer.compileAsync !== stubCompile);
   for (const [name, leg] of Object.entries(legs)) {

@@ -38,8 +38,12 @@ for (const bad of ["client/lib/core.js", "client/lib/world.js"]) {
   const f = path.join(ROOT, bad);
   check(`lite never imports ${bad}`, !parent.has(f), parent.has(f) ? chain(f) : "");
 }
-const engine = bare.filter((b) => /^three(\/|$)|three-vrm|three-mesh-bvh/.test(b));
+const engine = bare.filter((b) => /^three(\/|\s|$)|three-vrm|three-mesh-bvh/.test(b));   // bare holds "spec (from file)"
 check("lite imports no three / three-vrm module", engine.length === 0, engine.join(", "));
+// index.html's boot: a lite page returns before the modulepreload loop, so it never fetches the renderer's bytes
+const html = fs.readFileSync(path.join(ROOT, "client/index.html"), "utf8");
+const ret = html.indexOf("if (lite) return;"), pre = html.indexOf("l.rel = 'modulepreload'");
+check("index.html returns for lite before it preloads a single engine module", ret > 0 && pre > ret, `return at ${ret}, preload at ${pre}`);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

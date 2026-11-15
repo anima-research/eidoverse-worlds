@@ -61,12 +61,13 @@ const run = (limiter: (now: number) => string, handledAt: number[]) => { const t
   try {
     const flood = await join("flooder"), calm = await join("calm");
     for (let i = 0; i < 2 * WIRE_RATE + 25; i++) flood.ws.send(JSON.stringify({ type: "request", id: `f${i}`, verb: "help", args: {} }));
-    await h.sleep(1500);
+    await h.sleep(1500);   // a quiet period: the refusal count below is over the whole flood
     const rate = flood.msgs.filter((m) => m.type === "reply" && m.reply?.refused?.code === "rate");
     check("W1 a flood past MSG_RATE on one connection is refused with code rate, from this connection", rate.length > 0 && rate.every((m) => /from this connection/.test(m.reply.refused.reason)), rate[0] ?? flood.msgs.length);
     check("W1 ...at most MSG_RATE refusals answered in that second (a flood can't buy replies)", rate.length <= WIRE_RATE, rate.length);
-    const before = calm.msgs.length; calm.ws.send(JSON.stringify({ type: "request", id: "c1", verb: "help", args: {} })); await h.sleep(500);
-    const mine = calm.msgs.slice(before).find((m) => m.type === "reply" && m.id === "c1");
+    const before = calm.msgs.length; calm.ws.send(JSON.stringify({ type: "request", id: "c1", verb: "help", args: {} }));
+    const { tryUntil } = await import("../gate/wait.ts");
+    const mine = await tryUntil("calm's reply", () => calm.msgs.slice(before).find((m) => m.type === "reply" && m.id === "c1"), { ms: 5000 });
     check("W1 another connection's request still runs", mine?.ok === true, mine);
     flood.ws.close(); calm.ws.close();
   } finally { await h.cleanup(fail ? 1 : 0); }

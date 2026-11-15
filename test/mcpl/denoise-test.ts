@@ -327,6 +327,7 @@ console.log("\n━━ agent: reconnect replay seeds, never narrates ━━");
     check("shuffling in place near you still pings nothing", pings().length === 0);
     ag.notePose("digi", pose(9, 0), T0);   // leave properly, come back and STAY: a real walk-up
     ag.notePose("digi", pose(1.5, 0), T0 + 100);
+    check("the crossing alone is not yet an approach", pings().length === 0);
     ag.notePose("digi", pose(1.5, 0), T0 + 100 + APPROACH_DWELL_MS + 50);
     check("leave-and-return and STAY is a REAL approach and pings once", pings().length === 1);
     ag.close(); }
@@ -336,6 +337,7 @@ console.log("\n━━ agent: reconnect replay seeds, never narrates ━━");
     check("first observation far away pings nothing", pings().length === 0);
     ag.notePose("member", pose(2.0, 0, "walk"), T0 + 200);
     ag.notePose("member", pose(2.0, 0, "walk"), T0 + 200 + APPROACH_DWELL_MS + 50);
+    check("a live walk-up still pings approach", pings().length === 1);
     const before = acts.length;
     ag.notePose("member", pose(2.0, 0, "sitchair"), T0 + 400 + APPROACH_DWELL_MS);
     check("a live posture TRANSITION still narrates", acts.length === before + 1 && /sits down/.test(acts.at(-1)?.text), JSON.stringify(acts.at(-1)));

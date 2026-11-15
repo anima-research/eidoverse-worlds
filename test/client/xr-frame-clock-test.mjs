@@ -191,10 +191,9 @@ console.log('\nthe wiring:');
   !/emulated:/.test(xr) && /const emulated = !!globals\?\.IWER;/.test(readFileSync(join(dir, '../../client/lib/xr/xr_frame_clock.js'), 'utf8')));
   // ORDERING: the restore listener must be registered before setSession, so it runs before three's
   // own 'end' listener restarts the desktop loop through window.requestAnimationFrame.
-  const restoreAt = xr.indexOf("session.addEventListener('end'");
-  const setSessionAt = xr.indexOf('renderer.xr.setSession(session)');
+  const installAt = xr.indexOf('frameClock = installEntryClock({'), setSessionAt = xr.indexOf('await renderer.xr.setSession(');
   check('the install — which registers the restore listener — runs BEFORE setSession',
-  xr.indexOf('installFrameClock({') < xr.indexOf('await renderer.xr.setSession('));
+  installAt >= 0 && setSessionAt >= 0 && installAt < setSessionAt, JSON.stringify({ installAt, setSessionAt }));
   // The restore lives in installFrameClock, generation-guarded. xr.js must NOT restore on its own: a
   // second unguarded listener there let a stale session hand the clock back mid-session (agent review).
   check('the OWNER restores both clocks',

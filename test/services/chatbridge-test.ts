@@ -58,7 +58,7 @@ check('the bridge joins (replica) embodied, as "discord"', /joined "commons" as 
 check("a world say reaches Discord, attributed to its speaker's display name (not the opaque id)", /→ discord \[alice\]: hello from the world/.test(out), out.slice(-300));
 check("history from before the join is not mirrored", !/before the bridge/.test(out));
 check("a Discord line enters the world as the bridge's door say, attributed inside the text", saysIn(alice.msgs).some((x) => x.actor === "discord" && x.text === "Ann: hi from discord"), JSON.stringify(saysIn(alice.msgs)));
-check("the bridge's own say is not echoed back to Discord", !/→ discord \[discord\]/.test(out) && !/hi from discord\n.*→ discord/.test(out));
+check("the bridge's own say is not echoed back to Discord (and the fence after it was mirrored)", /→ discord \[alice\]: fence after the discord line/.test(out) && !/→ discord \[discord\]/.test(out) && !/hi from discord\n.*→ discord/.test(out));
 check("nothing was refused", !/refused/.test(out), out.slice(-300));
 
 // a burst faster than the say limit (20 per 10 s per actor, authority/gate.js): the bridge paces itself under it (SEND_GAP_MS) and every line lands, in order (#260 house I1)

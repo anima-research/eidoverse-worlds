@@ -178,12 +178,14 @@ console.log('\n— 4. the other three verdicts are ACTED ON, not just decided �
     e2.apply(onBusy(false), { intent: 103 });
     e2.cancel('leave');                          // cancel clears the timer AND the intent
     check('…and a cancel leaves nothing pending', e2.hasPending === false && e2.pendingFor === null); }
-  { // the distinguishing case: pendingFor set, timer already gone
+  { // the distinguishing case: pendingFor set, timer gone (a superseded intent's callback, run late, clears `timer` only)
     const { eff: e3, timers } = rig();
     e3.apply(onBusy(false), { intent: 101 });
-    [...timers.values()][0].fn();                // the timer fires by hand; it clears `timer` only
+    const stale = [...timers.values()][0].fn;
+    e3.apply(onBusy(false), { intent: 102 });   // supersedes 101
+    stale();                                    // 101's callback: timer = null, pendingFor stays 102
     check('hasPending tracks the TIMER, so a fired retry reports nothing pending',
-      e3.hasPending === false, `hasPending=${e3.hasPending} pendingFor=${e3.pendingFor}`); }
+      e3.hasPending === false && e3.pendingFor === 102, `hasPending=${e3.hasPending} pendingFor=${e3.pendingFor}`); }
 }
 
 console.log('\n— 5. THE SEAM, executed: decide → act → what the caller must do —');
@@ -252,7 +254,10 @@ console.log('\n— 5. the PRODUCT uses this owner (the wiring the reviewer broke
   check('…but still owns the navigation, which needs `location`',
     /searchParams\.set\('webgl', '1'\)/.test(xr) && /location\.href = u/.test(xr));
   check('leaveVR cancels through the owner before its no-session return',
-    xr.indexOf('entryEffects.hasPending') < xr.indexOf("if (!session) { tee(`[xr] leave"));
+    /if \(entryEffects\.hasPending\) \{ cancelBusyRetry\(/.test(xr)
+      && xr.indexOf('entryEffects.hasPending') < xr.indexOf("if (!session) { tee(`[xr] leave"));
+  check('a new entry intent cancels the previous intent’s pending retry',
+    /if \(retryOf === null\) cancelBusyRetry\(/.test(xr));
 }
 
 S.done();

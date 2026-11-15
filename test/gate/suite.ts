@@ -1,14 +1,15 @@
 // test/gate/suite.ts: the one scaffold a protocol suite counts its rows with: `ok   `/`FAIL ` lines, --only, the
 // `[tag] N passed, M failed` summary run.ts reads, exit 1 on any fail. Usage: const { ok, check, done } = suite("x-check").
-//   --only A1,B2   a row whose first word is a row id (A1, SH2, D6b) runs only if named; a row with no id always runs
+//   --only A1,B2   a row whose first word is a row id (A1, SH2, D6b) is printed and counted only if named (its case still
+//                  executes unless the suite skips it with runs(id)); a row with no id always counts
 //   --verbose      a passing row prints its detail too
 //   RED=C5         red("C5") is true: a suite's documented self-mutation of one row
 import fs from "node:fs";
 const argv = process.argv.slice(2);
 const at = argv.indexOf("--only");
 export const only: string[] | null = at >= 0 ? (argv[at + 1] ?? "").split(",").filter(Boolean) : null;
-// a row id is a capital, then capitals/digits with at least one digit, then an optional suffix: N1, SH2, D6b, H2-P1a
-const ID = /^[A-Z][A-Z0-9]*\d[A-Za-z0-9-]*$/;
+// a row id is a capital, then capitals/digits (dash-joined groups allowed) with at least one digit, then an optional suffix: N1, SH2, D6b, H2-P1a, IM-I1
+const ID = /^[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*\d[A-Za-z0-9-]*$/;
 export const rowId = (what: string) => { const t = String(what).trimStart().split(/\s/)[0]?.replace(/[:,]$/, "") ?? ""; return ID.test(t) ? t : null; };
 export const runs = (id: string) => !only || only.includes(id);
 const verbose = argv.includes("--verbose");

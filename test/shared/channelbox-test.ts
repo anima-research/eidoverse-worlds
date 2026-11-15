@@ -101,14 +101,14 @@ console.log('one Rotate edit on a thing with q, each order × axis, through the 
   // one off-axis start clear of gimbal lock; test/client/euler-test.ts sweeps the decomposition itself (300 samples an order)
   const e0 = [40 * D, -30 * D, 125 * D];
   let n = 0;
-  for (const order of ROT_ORDERS) for (const ax of [0, 1, 2]) {
-    const typed = ax === 'XYZ'.indexOf(order[1]) ? 55.5 : -140.25;
+  for (const order of ROT_ORDERS) for (const ax of [0, 1, 2]) for (const sign of [1, -1]) {
+    const typed = sign * (ax === 'XYZ'.indexOf(order[1]) ? 55.5 : 140.25);
     const q0 = qFromEuler(e0, order);
     const ent = { model: LIB, pos: [0, 0, 0], q: q0, yaw: qHeading(q0), actor: 'o', ts: 1 };
     const before = rotOf(ent, view(order));   // a fresh viewer's reading, in this order
     const id = seedOne(ent);
     const r = editOps(ent, id, { [`rot.${'xyz'[ax]}`]: typed }, view(order));
-    const p = tfOf(r), tag = `${order} ${'XYZ'[ax]}`;
+    const p = tfOf(r), tag = `${order} ${'XYZ'[ax]} ${typed}`;
     if (!p?.q) { check(`${tag}: writes q`, false, JSON.stringify(r)); continue; }
     const res = W.send(r.ops[0]);
     const after = W.rec(id);
@@ -122,7 +122,7 @@ console.log('one Rotate edit on a thing with q, each order × axis, through the 
     check(`${tag}: three reads the stored q as the same triple`, close(t3.x, fresh[0], 1e-8) && close(t3.y, fresh[1], 1e-8) && close(t3.z, fresh[2], 1e-8));
     check(`${tag}: the transform carries pos and scale unchanged`, JSON.stringify(p.pos) === '[0,0,0]' && JSON.stringify(p.scale) === '[1,1,1]' && JSON.stringify(after.pos) === '[0,0,0]' && after.scale === 1);
   }
-  check(`(${n} edits: every order × axis)`, n === ROT_ORDERS.length * 3);
+  check(`(${n} edits: every order × axis × sign)`, n === ROT_ORDERS.length * 6);
 }
 
 console.log('the Quaternion row');

@@ -17,7 +17,7 @@ plugin({
   name: 'actionbar-stubs',
   setup(b) {
     for (const m of ['(ui/)?windows', '(ui/)?animnames', '(player/)?controller', '(player/)?mybody', '(xr/)?xrpanels', 'base']) {
-      if (RESTORE && m === 'windows') continue;
+      if (RESTORE && m === '(ui/)?windows') continue;
       stubResolve(b, new RegExp(`^(\\.\\.?/)+${m}\\.js$`), () => ({ path: here('../stubs/actionbar-stub.mjs') }));
     }
   },

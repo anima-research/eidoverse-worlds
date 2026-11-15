@@ -78,6 +78,7 @@ const events: string[] = [];
 const ag = new WorldAgent({ url: URL, name: "kd-bot", world: W });
 // as the host reads it: an act is `* who text` (mcpl/net-server.ts), so the shover's name is its who
 (ag as any).onEvent = (e: any) => { if (e?.text) events.push(e.kind === "act" ? `* ${e.who} ${e.text}` : String(e.text)); };
+const floored = () => events.some((t) => /^\* \S*shover\S* knocks you over$/.test(t));   // an act by the shover, never speech
 await ag.connect();
 await sleep(400);
 const h = await human("shover");
@@ -88,14 +89,14 @@ await sleep(400);
 await h.near(ag);
 const before = { x: ag.pos.x, z: ag.pos.z };
 h.send({ type: "puppet", target: "kd-bot", ragdoll: { lean: [3, 0, 0] } });
-await tryUntil("the shove floors the agent, displaced along the lean, and it perceives it", () => ag.clip === "ragdoll" && ag.heldPose != null && ag.heldPose !== (ag as any).DOWNED_POSE && Object.keys(ag.heldPose).length >= 10 && ag.pos.x > before.x + 0.2 && ag.pos.y < -0.2 && events.some((t) => t.includes("knocks you over")), { ms: 2500 });
+await tryUntil("the shove floors the agent, displaced along the lean, and it perceives it", () => ag.clip === "ragdoll" && ag.heldPose != null && ag.heldPose !== (ag as any).DOWNED_POSE && Object.keys(ag.heldPose).length >= 10 && ag.pos.x > before.x + 0.2 && ag.pos.y < -0.2 && floored(), { ms: 2500 });
 check("a shove knocks the agent down", ag.clip === "ragdoll" && ag.heldPose != null, `clip=${ag.clip}`);
 check("...with a SIMULATED pose, not the canned slump",
   ag.heldPose != null && Object.keys(ag.heldPose).length >= 10 && ag.heldPose !== (ag as any).DOWNED_POSE,
   `bones=${ag.heldPose ? Object.keys(ag.heldPose).length : 0}`);
 check("...displaced along the lean", ag.pos.x > before.x + 0.2, `Δx=${(ag.pos.x - before.x).toFixed(2)}`);
 check("...lying, not standing (root followed the hips down)", ag.pos.y < -0.2, `y=${ag.pos.y.toFixed(2)}`);
-check("...and the agent PERCEIVED it", events.some((t) => t.includes("knocks you over")), events.join(" | "));
+check("...and the agent PERCEIVED it, as the shover's act", floored(), events.join(" | "));
 
 // 2. walking stands it up clean — no zombie-walk slump
 const downedOffset = ag.pos.y - ag.heightAt(ag.pos.x, ag.pos.z);
@@ -123,10 +124,10 @@ check("...and the walk reasserts the terrain clamp — offset back to 0.00m",
 await h.near(ag);
 const b2 = { x: ag.pos.x, z: ag.pos.z };
 h.send({ type: "puppet", target: "kd-bot", ragdoll: { lean: [0, 0, 3] } });
-await tryUntil("the directed shove floors the agent downwind, named", () => ag.clip === "ragdoll" && ag.pos.z > b2.z + 0.3 && events.some((t) => t.includes("shover") && t.includes("knocks you over")), { ms: 2500 });
+await tryUntil("the directed shove floors the agent downwind, named", () => ag.clip === "ragdoll" && ag.pos.z > b2.z + 0.3 && floored(), { ms: 2500 });
 check("a directed shove floors it downwind", ag.clip === "ragdoll" && ag.pos.z > b2.z + 0.3,
   `clip=${ag.clip} Δz=${(ag.pos.z - b2.z).toFixed(2)}`);
-check("...and named the shover", events.some((t) => t.includes("shover") && t.includes("knocks you over")), events.join(" | "));
+check("...and named the shover", floored(), events.join(" | "));
 
 // 4. consent: the body's move gate off turns every shove away at the relay, completely
 const sw = await (ag as any).request("consent", { move: false });
@@ -152,6 +153,7 @@ await sleep(200);
 // not a held pose pretending, a live Verlet with the pin enforced
 const ag3 = new WorldAgent({ url: URL, name: "kd-bot3", world: W });
 await ag3.connect();
+const ev3: string[] = []; (ag3 as any).onEvent = (e: any) => { if (e?.kind === "act") ev3.push(`${e.who}: ${e.text}`); };
 await sleep(400);
 await h.near(ag3);
 h.send({ type: "puppet", target: "kd-bot3", ragdoll: { lean: [2, 0, 0] } });
@@ -164,6 +166,8 @@ h.send({ type: "bodydrag", target: "kd-bot3", end: true, pinAt: { joint: "head",
 await pause("the nailed body has had its time to fall, were the nail not holding it", 2500);
 check("released with a nail: the agent's sim HANGS the body",
   ag3.pins.size === 1 && ag3.pos.y > -0.3, `pins=${ag3.pins.size} y=${ag3.pos.y.toFixed(2)}`);
+check("...and told, as the dragger's acts: taken hold of, then nailed",
+  ev3.some((t) => /^\S*shover\S*: takes hold of your limp body/.test(t)) && ev3.some((t) => /^\S*shover\S*: nails part of you in place/.test(t)), ev3.join(" | "));
 h.send({ type: "bodydrag", target: "kd-bot3", unpin: { joint: "head" } });
 await tryUntil("the unpinned body comes down off the nail", () => ag3.pins.size === 0 && ag3.pos.y < 0.7, { ms: 2500 });
 // A body released dead-still from a vertical head-hang drops feet-first and

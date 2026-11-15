@@ -142,7 +142,10 @@ console.log("FRAMES — every edge and corner: a resize moves only its own sides
     const ownMoved = (Object.keys(own) as (keyof typeof own)[]).every((k) => !own[k] || moved[k]);
     const inside = s1.l >= 8 && s1.t >= 8 && s1.r <= innerWidth - 8 && s1.b <= innerHeight - (dy > 0 ? 4 : 8);
     const floor = g.state.w >= 100 && g.state.h >= 80;
-    check(`${z} ${how}: only its own sides move, inside the margins, above the floor`, planted && ownMoved && inside && floor,
+    // an unclamped drag moves each own side by exactly the pointer's travel, in the pointer's direction
+    const followed = how !== "by 20" || ((["l", "r"] as const).every((k) => !own[k] || s1[k] === s0[k] + dx * by)
+      && (["t", "b"] as const).every((k) => !own[k] || s1[k] === s0[k] + dy * by));
+    check(`${z} ${how}: only its own sides move, inside the margins, above the floor`, planted && ownMoved && inside && floor && followed,
       JSON.stringify({ s0, s1, w: g.state.w, h: g.state.h }));
   }
   g.hide();

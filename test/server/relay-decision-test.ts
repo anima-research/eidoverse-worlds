@@ -20,7 +20,7 @@ t("parse refuses genless", parseRelayIdentity("hesperus"), null);
 t("first incarnation", nextIncarnation(null, "abc"), "i1-abc");
 t("advance past prev", nextIncarnation("i7-old", "new"), "i8-new");
 t("lost-file restart cannot equal prev (entropy differs)",
-  nextIncarnation(null, "x9") !== "i1-abc" || "i1-x9" !== "i1-abc", true);
+  nextIncarnation(null, "x9") !== nextIncarnation(null, "abc"), true);
 
 // ── audibility: three independent states (amendment 3) ──────────────────────
 t("no consent → inactive (fail closed)",
