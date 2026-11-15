@@ -19,7 +19,6 @@ const ENGINE = path.resolve(import.meta.dir, "../..");
 const ME = "fxbot", WORLD = "fx";
 const MODE = process.env.MODE ?? "after", OUT = process.env.SHOTS ?? path.join(ENGINE, "notes", "particle-shots", MODE);
 const PRESETS = (process.env.ONLY ?? "fire,sparks,embers,smoke,dust,snow,magic,stars,muzzle").split(",");
-const WARM = process.env.WARM !== "0";   // a first, unphotographed effect: the night sky settles while it burns
 fs.mkdirSync(OUT, { recursive: true });
 process.env.TRUST_NAMES = "1";
 let worldsDir = "";
