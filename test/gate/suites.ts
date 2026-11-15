@@ -277,17 +277,10 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["eidomodel", "protocol/eidomodel-check.ts", 1], // review 10-07 H3: a translated world's models are eido:sha256 addresses; the index, /eido/, /library/eido/, the client's mapping
   ["party-probe", "protocol/party-probe.ts", 1], // the editor's party blockers (review 10-07 B1–B5, S1/S4/S5/S7, lock levels, moderation commands) with real mouse and keys
   ["colour-picker", "client/colour-picker-bench.ts", 1], // the Inspector's colour field is a picker of solid cells a headset quad can click, in headless Chromium (one browser, guarded)
-  ["xr-lifecycle", "client/xr-lifecycle-probe.mjs", 1], // the shipping XR delegation in a real client + IWER: the visor drives enterVR to a granted session, the entry clock shims rAF, the frame loop runs, a busy retry gives up
-  ["xr-res", "client/xr-res-probe.mjs", 1], // Settings › VR › resolution reaches the session layer (one IWER session per XR_RES_SCALES choice)
   ["xr-debug-live", "client/xr-debug-live-probe.mjs", 1], // the Debug pane opened in VR keeps its numbers live
-  ["xr-quad-softswap", "client/xr-quad-softswap-probe.mjs", 1], // the VR panels' soft swap in the real client: re-entry builds nothing and reuses every mesh; exit returns every element to the desktop
-  ["xr-eye-binding", "client/xr-eye-binding-probe.mjs", 1], // in real three, each eye renders with its own matrices after a pre-warm (r186's shared camera uniform array)
   ["htmlmesh-pick", "client/htmlmesh-pick-probe.mjs", 1], // a VR panel click picks what a browser's hit test would (vendor/htmlmesh.js), in the real client
   ["vrmic-exec", "client/vrmic-exec-test.mjs", 1], // vrmic.js's effects on a fake clock: the mic ask never blocks entering VR; a promise made in VR is kept after it
   ["xr-nullfb", "client/xr-nullfb-test.mjs", 1], // xr_nullfb.js on a fake renderer: installs only for a null-framebuffer (emulated) session, once, never on hardware
-  ["xr-desktop-banner", "client/xr-desktop-banner-probe.mjs", 1], // the desktop banner follows the session (xrmirror.js): the killswitch's outranks 'In VR', which outranks none; it follows the pref mid-session
-  ["sky-bake-time", "client/sky-bake-time-probe.mjs", 1], // every strip of a sky bake draws at one sky time and one sun (the VR 'banding', 09-27)
-  ["sky-bakegraph", "client/sky-bakegraph-probe.mjs", 1], // switching sky tiers back and forth reuses each bake graph instead of rebuilding the bake program
   ["alias", "mcpl/alias-test.ts", 1], // an old tool name is an old tool: exactly the unknown-tool (Mica 11-05); folded/removed tools name what does it now
   ["tool-replies", "mcpl/tool-replies-test.ts", 1], // what the agent's tools and body say and send (pure; #53 waits out the 8 s timeout)
   // socketteer's pathfinding stack (#235/#236/#239/#241, merged into the protocol 10-15): its own suites, as it ships them

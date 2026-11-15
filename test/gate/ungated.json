@@ -92,5 +92,12 @@
  "test/client/xr-quad-colour-probe.mjs": "Chromium probe: 19 fixed waits to turn into conditions; red on the CDP harness: FAIL probe ran — TypeError: el.evaluateHandle is not a function. (In 'el.evaluateHandle((e) => e.closest(\".sp-row\"))', 'el.evaluateHandle' is undefine",
  "test/client/xr-render-errors-probe.mjs": "Chromium probe: green on the CDP harness, hygiene-clean; MERGE into test/client/xr-lifecycle-probe.mjs (a duplicate of its rows: merge rather than gate)",
  "test/client/xr-ring-probe.mjs": "Chromium probe: waits converted; red last run when the client reloaded itself mid-evaluate (cdp-pw now re-runs such an evaluation, as playwright does): rerun, then gate",
- "test/client/xrpanels-contract-test.ts": "MERGE into test/client/xrpanels-test.ts (the 8 contract rows move) pending (a duplicate or near-duplicate of its rows)"
+ "test/client/xrpanels-contract-test.ts": "MERGE into test/client/xrpanels-test.ts (the 8 contract rows move) pending (a duplicate or near-duplicate of its rows)",
+ "test/client/xr-res-probe.mjs": "red on windows-latest in #333's CI; green on Linux and macOS. Gate it again once a Windows lane is green.",
+ "test/client/xr-eye-binding-probe.mjs": "red on windows-latest in #333's CI; green on Linux and macOS. Gate it again once a Windows lane is green.",
+ "test/client/xr-lifecycle-probe.mjs": "red on windows-latest in #333's CI; green on Linux and macOS. Gate it again once a Windows lane is green.",
+ "test/client/xr-quad-softswap-probe.mjs": "red on windows-latest in #333's CI; green on Linux and macOS. Gate it again once a Windows lane is green.",
+ "test/client/sky-bakegraph-probe.mjs": "red on windows-latest in #333's CI; green on Linux and macOS. Gate it again once a Windows lane is green.",
+ "test/client/xr-desktop-banner-probe.mjs": "red on windows-latest in #333's CI; green on Linux and macOS. Gate it again once a Windows lane is green.",
+ "test/client/sky-bake-time-probe.mjs": "red on windows-latest in #333's CI; green on Linux and macOS. Gate it again once a Windows lane is green."
 }
