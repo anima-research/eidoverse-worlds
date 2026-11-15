@@ -508,7 +508,9 @@ export function inspectSchema(ent, id, live = {}) {
     if (slides) ['x', 'y', 'z'].forEach((a, i) => fields.push({ t: 'num', k: `slide|${i}`, label: `slide ${a}`, value: +o.slide[i] || 0, def: 0, step: 0.05, dp: 2, ...limitsOf('openable', 'slide'), hint: SPEC.openable.docs.slide }));
     else {
       fields.push(O('angle', { label: 'turns', value: Number.isFinite(o.angle) ? o.angle : Math.PI / 2, hint: 'how far it turns when open; negative turns the other way' }));
-      fields.push(O('axis', { label: 'hinge axis', value: axisName(o, 'y'), options: ['x', 'y', 'z'].map((v) => ({ v, label: v })), hint: 'y: an upright hinge (a door); x: a lid or a hatch' }));
+      // x, y, z only (a negative turn is a negative angle); a stored signed axis still shows as itself
+      const hx = axisName(o, 'y'), hopts = ['x', 'y', 'z'].map((v) => ({ v, label: v }));
+      fields.push(O('axis', { label: 'hinge axis', value: hx, options: AXES[hx] && !hopts.some((p) => p.v === hx) ? [...hopts, { v: hx, label: hx }] : hopts, hint: 'y: an upright hinge (a door); x: a lid or a hatch' }));
       if (Array.isArray(box) && !o.part) {
         fields.push({ t: 'btn', k: 'hingeL', label: 'hinge on its left edge', hint: 'puts its pivot on the -x edge of its box (it turns about the pivot)' });
         fields.push({ t: 'btn', k: 'hingeR', label: 'hinge on its right edge', hint: 'puts its pivot on the +x edge of its box' });

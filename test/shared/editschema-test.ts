@@ -333,6 +333,9 @@ console.log("\nMaterial, the draft hesperus/material (docs/contributing/COMPONEN
     check("a spin about y marks only rotate y as driven (not translate, not scale, not the other rotations)", JSON.stringify(drv) === JSON.stringify(["rotate y"]), JSON.stringify(drv));
     const ax = g.flatMap((x: any) => x.fields).find((f: any) => f.t === "enum" && /axis/.test(f.label ?? ""));
     check("the motion axis menu offers x, y, z (a negative rate turns it the other way)", JSON.stringify(ax?.options?.map((o: any) => o.v)) === JSON.stringify(["x", "y", "z"]), JSON.stringify(ax?.options));
+    const hinge = (axis: number[]) => inspectSchema({ id: "d1", model: "door.glb", pos: [0, 0, 0], yaw: 0, openable: { open: false, angle: 1, axis } }, "d1", {}).groups.flatMap((x: any) => x.fields).find((f: any) => f.label === "hinge axis");
+    const up = hinge([0, 1, 0]), down = hinge([0, -1, 0]);
+    check("the hinge axis menu offers x, y, z; a stored [0,-1,0] shows as -y, its own option (main listed all six)", JSON.stringify(up?.options?.map((o: any) => o.v)) === JSON.stringify(["x", "y", "z"]) && down?.value === "-y" && JSON.stringify(down?.options?.map((o: any) => o.v)) === JSON.stringify(["x", "y", "z", "-y"]), JSON.stringify({ up: up?.options, down }));
     const bob = { ...sp, ...sp.comp, motion: { type: "oscillate", amplitude: 0.3 } };
     const bd = inspectSchema(bob, "s1", {}).groups.flatMap((x: any) => x.fields).filter((f: any) => f.t === "num" && f.driven).map((f: any) => f.label).sort();
     check("a bob marks only translate y", JSON.stringify(bd) === JSON.stringify(["translate y"]), JSON.stringify(bd)); }
