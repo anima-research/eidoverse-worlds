@@ -89,6 +89,7 @@ function syncSelection(host, { items, selected, busy, loading }) {
   const no = (reason) => { why('tts-list', `rebuilt: ${reason}`); return false; };
   // an empty list is a steady state: no data-id rows, only the two add-verbs
   if (!rows.length && !items.length) {
+    if (!!host.querySelector('.vl-loading') !== !!loading) return no(`loading row vs ${!!loading} (empty list)`);
     if (loading) {
       const note = host.querySelector('.vl-loading .vl-note');
       if (note) note.textContent = busy || loading.status || 'loading…';
