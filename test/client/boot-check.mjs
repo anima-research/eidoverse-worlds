@@ -152,7 +152,7 @@ try {
   checkGeometry(s, `boot ${s.vw}x${s.vh}`);
 
   // at phone widths fitsDefaults() hides the bar, so tap the dock as a user would; tilesSized rides the ok line so an
-  // empty measurement can't pass
+  // empty measurement can't pass (a bar the dock can't open skips the measurement, silently)
   const opened = await pg.evaluate(async () => {
     // TOGGLE, not open: at a wide viewport the bar is ALREADY open, so only click when it's hidden
     const isOpen = () => [...document.querySelectorAll('.frame')]

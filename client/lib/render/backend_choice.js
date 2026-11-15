@@ -1,5 +1,6 @@
 // The renderer decision, as a pure function. core.js calls it once at import with the real URL params and
-// persisted preferences; test/client/backend-choice-test.mjs calls it with every combination. No imports on purpose.
+// persisted preferences; test/client/backend-choice-test.mjs calls it with the combinations that matter (not ?webgl=1
+// and ?webgpu=1 together). No imports on purpose.
 //
 // ONE renderer control. backendPref: unset/'auto' | 'webgpu' | 'webgl'.
 //   auto  — pick the backend that needs NO VR-entry reload. Headset seen here + WebGPU-XR flags (XRGPUBinding)

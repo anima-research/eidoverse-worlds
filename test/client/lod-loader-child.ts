@@ -10,8 +10,8 @@
 //   LODC_HEAVY     a library rel the child has baked a LOD variant for
 //   LODC_AUTHORED  a light library rel whose SOURCE carries a `recipe` extra
 //
-// Only two things sit below the module: a renderer that never draws and
-// frame conductors that run at once (test/stubs/lod-loader-stub.mjs), and a fetch
+// Below the module sit a renderer that never draws, frame conductors that run at once and
+// no-op material prep and draw batching (test/stubs/lod-loader-stub.mjs), and a fetch
 // shim that resolves the loader's relative URLs against the child and
 // records every URL that crossed. Review of #170, round three: a mutation at
 // the loader's decision seam — `tier = req.tier` → `tier = 'full'`, the url,

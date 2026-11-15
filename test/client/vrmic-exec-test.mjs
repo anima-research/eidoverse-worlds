@@ -224,7 +224,7 @@ console.log('\n— 5. a browser with no permissions.query —');
   await advance(5000);
   if (scrims()) closeCard();
 }
-// ── 6. vrmic.js does what the policy decides: every pre-VR, in-VR and after-exit row, executed through its effects ──
+// ── 6. vrmic.js does what the policy decides: every pre-VR row, the in-VR turn-on per state and every after-exit row, executed through its effects ──
 const asState = (s) => s === 'unknown' ? 'not-a-state' : s;   // micPermissionState maps any other answer to 'unknown'
 console.log('\n— 6. the policy table, executed —');
 {

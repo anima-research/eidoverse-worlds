@@ -40,7 +40,7 @@ import { ENGINES, DEFAULT_ENGINE } from "../../shared/protocol/simlayer.js";
 // v1's only kindless handler, {impulse: x}, added x straight to a pendulum's turn rate (rad/s): that's an angular
 // impulse, v4's {kind: "impulse", angular: x} exactly.
 // v1 took any key in any component; v4's catalogue components are closed (the authority refuses an unknown key, L7). A
-// v1 key the v4 component doesn't define (a lamp's `flicker`) goes to imported:<component> {key: value} beside it: carried,
+// v1 key the v4 component doesn't define (a lamp's `flicker`) goes to imported:<component> {key: value} beside it (if that slot is taken, the component stays whole): carried,
 // never dropped (R10), and the component itself is one the v4 door and every editor take as it is.
 // v1 took a CSS hex colour where three.js does ("#fff"); v4's colours are 0xRRGGBB integers. Lossless.
 export const hexColor = (x) => { if (typeof x !== "string") return x; const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(x.trim());

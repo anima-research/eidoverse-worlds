@@ -487,7 +487,7 @@ const readyPoll = setInterval(() => {
 // ---------------------------------------------------------------- frame loop
 // The loop lives in lib/render/frameloop.js; this is the list, and registration order is execution order: motion before
 // remotes, sky → materials → rig, voice mouths before the avatar update, bodydrag before remotes, gaze after,
-// send-pose after every myState writer, render last. Each system is timed (EW.frame() prints the bill) and the
+// send-pose after every myState writer but the XR tick (updateXR's NaN restore runs after it), render last. Each system is timed (EW.frame() prints the bill) and the
 // governor may stride cosmetic ones. The governor + HUD ride the 1 Hz pulse, registered last.
 
 registerSystem('autos', (dt, t) => updateAutoSystems(t));       // grass wind, particles
@@ -599,7 +599,8 @@ if (typeof window !== 'undefined') window.setVoice = setVoice;   // console, har
   if (want) setVoice(want).catch((e) => console.warn('[voice] ?voice failed:', e));
 }
 
-// Opt-in synthesized voice: ?tts or ?tts=<port>. Absent, nothing connects and the microphone stays the only source.
+// Opt-in synthesized voice endpoint: ?tts or ?tts=<port>. Absent, no endpoint connects (a voice chosen in the audio
+// panel, ttsrow.js, is still a source).
 {
   const q = CONFIG.params;
   if (q.has('tts')) {
@@ -652,7 +653,8 @@ globalThis.__bodies = () => [
   who,
   limp: !!av._limp,
   clip: av.currentSlot ?? null,
-  // exactly one of these is true of a limp body: the local sim owns the hair and wings, or three-vrm does
+  // at most one of these is true of a limp body: the local sim owns the hair and wings, or three-vrm does (a body with
+  // no spring bones, e.g. the capsule, has neither)
   simOwnsDressing: !!av.__simHair,
   springbonesRunning: !av.__simHair && !!av.vrm?.springBoneManager,
   avatar: av,

@@ -136,8 +136,8 @@ console.log("\njoint limits actually bind on real rigs");
   check(`reaching straight out the back is limited on every rig (${bound}/${total})`, bound === total && total > 0);
 }
 {
-  // and the frontal-plane stop is REAL: no solved hand may sit further behind
-  // the body than 65°, on any rig, for any target
+  // and the frontal-plane stop is REAL: no solved UPPER BONE may point further behind
+  // the body than 65°, on any rig, for any target (the forearm aims at the target, so the hand can go further)
   let worstFwd = 1, worstCone = 1;
   for (const rig of good) {
     const P: Record<string, number[]> = {};

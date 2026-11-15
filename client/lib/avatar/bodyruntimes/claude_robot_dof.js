@@ -1474,7 +1474,8 @@ const PETAL_REST = 35;
 // mm per deg into the rubber: the MECH-D1 skeptic), so no state, look or clip may take a petal past it
 const PETAL_FOLD = [[-6, 100], [-6, 100], [-6, 100], [-6, 100], [10, 100], [30, 100],
                            [30, 100], [10, 100], [-6, 100], [-6, 100], [-6, 100], [-6, 100]];
-// SPEC's stem interlock: a stem folds back to 70 or more while the head rolls 4 deg or more toward it. With the stems on
+// SPEC's stem interlock: a stem folds back to 70 or more (at the 240 deg/s rate, so over a few frames) while the head
+// rolls 4 deg or more toward it. With the stems on
 // their built +30 it is no longer needed for clearance (above); it stays as SPEC's behaviour
 const STEM_LOCK = { roll: 4, fold: 70 };
 // phi per rank, the top pair first; every value inside both petals' built stops (ranks 4 and 5: 04 / 07 from +10, the

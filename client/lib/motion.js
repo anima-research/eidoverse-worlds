@@ -110,7 +110,7 @@ const _seenParts = new Set();
 
 /** Called once per frame from the main loop. Iterates only entities that have
  *  a motion component — the map is tiny compared to the scene.
- *  Epoch clock, NOT the rAF timestamp: t0s are sequencer Date.now() stamps,
+ *  Epoch clock, NOT the rAF timestamp: t0s are the authority clock's stamps (wall ms, never backwards: livehost.ts now()),
  *  and agreeing with other clients matters more than agreeing with vsync. */
 // the camera's WORLD position: in XR camera.position is rig-local
 const _eye = new THREE.Vector3();

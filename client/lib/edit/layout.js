@@ -159,7 +159,8 @@ function build() {
   const undoBtn = el('button', 'edit-btn'); undoBtn.innerHTML = `${iconSvg('undo2', 14)}<span>undo</span>`; undoBtn.title = 'Ctrl+Z'; undoBtn.onclick = undo;
   // viewport buttons: what the render does, not what the world is
   const view = el('div', 'edit-viewbtns');
-  // VIEWPORT menu: what MY render shows; nothing in the world changes, all of it off on exit.
+  // VIEWPORT menu: what MY render shows; nothing in the world changes. Shading and isolate reset on exit; the world
+  // edge is a remembered preference (edge.js).
   const tick = (on) => (on ? '✓ ' : '   ');   // a plain check mark: ☑ draws as a colour emoji on some systems
   const vmenu = menu('Viewport', () => [
     { label: `${tick(isolating())}isolate selected`, title: 'show only what is selected (with what it rides and what rides it), in your view only', run: () => toggleIsolate() },

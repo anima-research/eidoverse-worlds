@@ -544,7 +544,8 @@ class Session {
         { tags: d.tags, ...(d.mentioned ? { mentioned: true } : {}), ...(d.declares ? { metadata: { declares: d.declares } } : {}) });
     };
 
-    // §5.3 ORDERING: nothing runs between initialize and the read loop. A 0.5 host's first frame is the policy
+    // §5.3 ORDERING: after the world join above (awaited: a slow join delays the answer), nothing runs between
+    // initialize and the read loop. A 0.5 host's first frame is the policy
     // Request, which only the loop can answer, so everything grant-dependent runs CONCURRENTLY behind the policy
     // gate (inline would deadlock). Pre-0.5 and plain-MCP peers proceed at once; the 20 s race bounds a silent host.
     const hostMajor = Number(this.hostMcplVersion?.split(".")[0] ?? 0);

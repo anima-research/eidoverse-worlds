@@ -235,8 +235,9 @@ export function expireRoles(w) {
     return ids;
   });
 }
-// Bounded (it runs at world load on the shared thread): at most ORPHANS.holders holders and ORPHANS.lifts lifts a load;
-// the rest wait for the next load ({deferred})
+// Bounded (it runs at world load on the shared thread): at most ORPHANS.holders holders leave a load (the rest's holds
+// just end, {deferred}, and their lifts settle with the others) and ORPHANS.lifts lifts; the lifts past that wait for the
+// next load
 export const ORPHANS = { holders: 16, lifts: 64 };
 /** A world opened after its host stopped without settling presence (a crash: no leave ran). A persisted hold
  *  (test/harness/filehost.ts) is settled as `leave` settles it. A lost hold (server/livehost.ts) left the thing lifted out

@@ -43,7 +43,8 @@ async function loadEngine(name) {
 if (engine !== 'verlet') loadEngine(engine);   // warm the wasm before the first fall
 
 /** Status string, not a bare id: while a wasm engine loads (or after it fails)
- *  the string says which engine actually answers the next fall. */
+ *  the string says which engine answers the next fall (a loaded engine whose constructor throws still falls back to
+ *  verlet in makeRagdoll, and this still names it). */
 export const bodyEngine = () => {
   if (engine === 'verlet') return 'verlet';
   const e = ENGINES.get(engine);
@@ -65,7 +66,8 @@ export function setBodyEngine(name) {
   if (e?.load && !e.cls) loadEngine(engine);
 }
 
-/** The one door every fall goes through. Same signature as `new Ragdoll`.
+/** The one door every browser fall goes through (an agent's body picks its class in mcpl/physics.ts). Same signature
+ *  as `new Ragdoll`.
  *  seedVel is LOAD-BEARING: main.js passes the drag-release handover as the 4th argument (`msg?.sim ?? dragVel`);
  *  drop it and every release restarts the body at zero velocity. The parity suites construct engines directly and
  *  would not notice. */

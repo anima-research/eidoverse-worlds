@@ -129,7 +129,7 @@ export function setMe(av) {
 
 /** Arm (or disarm) human flight for whatever body this is now.
  *  Re-run on every swap, never cached: the capability binds to the RIG, so a
- *  winged body grants it and a commons one takes it away. */
+ *  winged body makes it possible (the world's rights.fly still decides: shared/flightcap.js) and a commons one takes it away. */
 function armFlightFor(av) {
   try {
     if (!av?.vrm?.scene) return;

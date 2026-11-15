@@ -71,5 +71,4 @@ export async function setEndpointVoice(url, label) {
   return true;
 }
 
-// NOT OFFERED YET: a raw .onnx voice model from disk. Piper's graph takes PHONEME IDS, so it needs the espeak-ng
-// phonemizer (a second wasm blob) first; a field that accepts a model and never speaks is worse than none.
+// A raw .onnx voice model from disk is the Piper engine plugin's (engine-piper.js, with its phonemizer piperphon.js), not this file's.

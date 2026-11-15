@@ -1,6 +1,7 @@
 // mover — ONE locomotion integrator for every body, in every runtime: the agent's stride (mcpl/agent.ts), the human
 // client's (client/lib/player/controller.js) and the authority's plausibility track (shared/protocol/authority.js) all read it,
-// so a step the mover accepts in one is a step the authority accepts in the other. Pure, as shared/flight.js: no THREE,
+// so they agree on a stride; the authority's track still caps how far one step may go (authority/bodyverbs.js "too-fast"),
+// so a step from an oversized dt can be refused. Pure, as shared/flight.js: no THREE,
 // no DOM, no clock; the caller owns every piece of state and the world comes in as `env` callbacks.
 //
 // MODES: `walk` is implemented here; `fly` is shared/flight.js's integrator; `swim` and `drive` are reserved names.
@@ -68,7 +69,7 @@ export const TRACK = Object.freeze({
 // ---------------------------------------------------------------- the body
 /** A size multiplier's clamp, the same as shared/presencewire.js's (0.5–2; a non-number is 1); restated so this file stays leaf-level. */
 const clampScale = (u) => (typeof u === "number" && Number.isFinite(u) ? Math.min(2, Math.max(0.5, u)) : 1);
-/** A body's size as every caller reads it (0.5–2, the size slider's range; anything else is 1). */
+/** A body's size as every caller reads it (clamped to 0.5–2, the size slider's range; a non-number is 1). */
 export const bodyScale = clampScale;
 
 /** Walking speed for the flags a caller holds: run outranks creep; the stride grows with the body. */
@@ -206,7 +207,7 @@ export function floorStep({ y, ground0 = y, level0 = undefined, f, level1 = leve
 
 /** One stride of a walk. `dir` is a ground-plane direction [dx, dz] (any length; zero = stand); `gain` scales the stride
  *  (a client's eased speed as a fraction of the mover's); `cap` is the most this step may cover; `height` (m) is the
- *  body's measured stature (absent: the mover's for its `scale`; it moves only where water reaches, never the stride).
+ *  body's measured stature (absent: the mover's for its `scale`; it moves only where water reaches, and so a wading stride, never a dry one).
  *  env.floorAt(x, z, y) → the floor under the new spot (absent: y is kept; more than a step up is a wall);
  *  env.blocked(box, step) → truthy when the body's box at the new spot is inside a solid;
  *  env.waterAt(x, z) → the water surface's y, or null (with it a step wades or swims; `stance` picks the renderer's clip);

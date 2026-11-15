@@ -1,6 +1,7 @@
 // ui — everything that isn't the 3D scene and isn't the chat window.
 // Toasts, the loading tray, the HUD, the hint bar, the panel frames and the help overlay. The rail is
-// ui-dock.js, the ∃ menu ui-menu.js, the front door ui-door.js; they import this file, it imports only the dock.
+// ui-dock.js, the ∃ menu ui-menu.js, the front door ui-door.js. The menu and the door import this file; it imports only
+// the dock, which imports neither.
 
 import { bus, setErrorSink, report } from '../base.js';
 import { fitTabStrip, makeFrame, getFrame, resetLayout, escapeHid } from './windows.js';

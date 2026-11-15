@@ -400,7 +400,8 @@ function buildPlace(ctx, a) {
   const S = [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]], C = [(hi[0] + lo[0]) / 2, 0, (hi[2] + lo[2]) / 2];
   const half = (y) => { const c = Math.abs(Math.cos(y)), s = Math.abs(Math.sin(y)); const hx = S[0] / 2, hz = S[2] / 2; return [c * hx + s * hz, s * hx + c * hz]; };
   // `local`: what meets the whole region a search tests (its key order kept), so each spot filters that instead of asking
-  // the index again; with it, a spot reuses one box and its oriented twin (math.js boxToObb's numbers) and allocates nothing
+  // the index again; with it, a spot reuses one box and its oriented twin (math.js boxToObb's numbers); half()'s pair is
+  // its one allocation
   const QB = { min: [0, 0, 0], max: [0, 0, 0] }, QO = { c: [0, 0, 0], ax: [[1, 0, 0], [0, 1, 0], [0, 0, 1]], h: [0, 0, 0] };
   const free = (x, y, z, yw, ignore, local = null) => { const [hx, hz] = half(yw);
     const box = local ? QB : { min: [0, 0, 0], max: [0, 0, 0] }; box.min[0] = x - hx; box.min[1] = y; box.min[2] = z - hz; box.max[0] = x + hx; box.max[1] = y + S[1]; box.max[2] = z + hz;

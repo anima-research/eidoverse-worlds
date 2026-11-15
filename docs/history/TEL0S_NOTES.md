@@ -3443,8 +3443,8 @@ alpha-tested meadow. (4) prepareObject(kind:'grass') clears
 castShadow on shrub stems (blob-shadow philosophy; kills 5 unwarmed
 depth pipelines). (5) The discarded original InstancedMesh (64B/inst
 + n identity setMatrixAt, pure garbage at 109k instances) — upstream
-ask for Skye (a build-without-mesh entry point), recorded in
-docs/history/UPSTREAM-WRAP-ONCE.md; not worth an adapter hack.
+ask for Skye (a build-without-mesh entry point), meant for
+docs/history/UPSTREAM-WRAP-ONCE.md but not in it; not worth an adapter hack.
 
 **C. The join gate + promote budget (models.js/colliders.js).**
 (1) The residency gate works from POSITION with a conservative default

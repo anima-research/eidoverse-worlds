@@ -1,6 +1,7 @@
 // presencewire — the small fields on the pose packet beyond the pose itself: presence (present / away / busy), voice
 // state, body size, sample time, and the reserved state-sync sample (refused for now: below). The rest is relayed as sent (server/posecheck.ts
-// normalises the voice and body fields) and remembered for late joiners with the settled pose. Shared by client and server.
+// normalises the voice and body fields) and remembered for late joiners with the settled pose, except the voice state
+// (server.ts settledPose drops mic/hear). Shared by client and server.
 export const PRESENCE_STATES = ['present', 'away', 'busy'];
 
 export function presenceWire(state) {

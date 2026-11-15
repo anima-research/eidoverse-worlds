@@ -5,8 +5,8 @@
 // slim centre pillar, so you can walk under what they carry. Anything room-sized collides against its real triangles,
 // so you can walk into it. Why the rules are what they are: docs/research/collider-heuristics.md.
 //
-// This is also where Layer-0 affordances come from: a surface that is walkable is, by the same data, sittable and
-// placeable-on. Nobody authors that.
+// This is also where Layer-0 affordances come from: a fitted box's walkable top is, by the same data, sittable (findSeat;
+// exact and heightfield surfaces aren't) and placeable-on. Nobody authors that.
 
 import { THREE } from './core.js';
 import { MOVER } from '../../shared/mover.js';
@@ -102,7 +102,8 @@ function localBox(obj) {
 }
 
 // ---- spatial hash -----------------------------------------------------------
-// Objects are bucketed by world-space cell; a query tests only the 3×3 neighbourhood around it.
+// Objects are bucketed by world-space cell; a point query tests the 3×3 neighbourhood around it, nearColliders and
+// raySegment every cell their radius or segment spans.
 const CELL = 8; // metres
 const buckets = new Map();
 const cellKey = (x, z) => `${Math.floor(x / CELL)},${Math.floor(z / CELL)}`;
@@ -725,7 +726,7 @@ export function resolveColliders(pos, terrainAt, r = MOVER.body.radius, tall = M
 
 // ---- Layer-0 affordances ----------------------------------------------------
 
-/** Nearest sittable surface to a point: a horizontal top at chair-ish height within `range`. DESIGN.md's `seatOn`:
+/** Nearest sittable surface to a point: a horizontal top at chair-ish height within `range`. DESIGN.md's geometry affordances:
  *  no authoring, the geometry is the affordance. Returns {y, x, z, yaw, id} or null. */
 export function findSeat(pos, range = 1.2, skip = null) {   // skip(entry): a surface the caller won't offer
   let best = null;

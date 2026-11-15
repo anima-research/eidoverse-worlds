@@ -1,7 +1,8 @@
 // loadwork — where load-time CPU goes, measured and spread.
 //
 //   MEASURE — every heavy materialization (a body, a spawned model) runs as a labelled work record with phases;
-//   the browser's long-task entries are attributed to whatever work was active, so a freeze names its culprit.
+//   the browser's long-task entries are attributed to whatever work is active when the observer runs (a record that
+//   already ended reads "(unattributed)").
 //
 //   SPREAD + SERIALIZE — heavy main-thread work yields to the frame loop on a per-frame budget, and materializations
 //   queue in lanes (the queue wait is its own phase, not masquerading as parse time).

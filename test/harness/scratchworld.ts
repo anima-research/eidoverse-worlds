@@ -94,7 +94,7 @@ export function socketChild(st, host, name) {
 export const worldObject = (W) => W.world();
 
 /** A VIEW-form record ({model?, pos, …components flat}) as the fold holds it (`c`: {model?, transform, parent?, …components}, names encoded) — what seed()
- *  writes, read back without the authority: the suites run their fixtures through the editor as fold records (C7b). */
+ *  writes (but a socket parent stays {to, socket}; seed resolves it to the socket's child), read back without the authority: the suites run their fixtures through the editor as fold records (C7b). */
 export function foldRecordOf(r, recs = null) {
   const L = r.parent ? localOf(r, recs) : null;   // a child's transform is LOCAL to its parent (as seed writes it)
   const pos = L?.mounted ? L.pos : r.pos ?? [0, 0, 0];

@@ -48,7 +48,8 @@ export function quoted(s, max = 200) {
   return `«${body}${g.length > max ? '…' : ''}»`;
 }
 
-// the first strong character decides a paragraph's base direction (the bidi algorithm's P2–P3, which a canvas then applies)
+// the first character in an RTL or LTR block decides a paragraph's base direction (near the bidi algorithm's P2–P3, which
+// a canvas then applies; the RTL block includes Arabic-Indic digits, which P2 skips)
 const RTL = /[֐-ࣿיִ-﷿ﹰ-﻿]/u, LTR = /[A-Za-zÀ-ɏͰ-ϿЀ-ӿ぀-ヿ一-鿿가-힯]/u;
 export function directionOf(p) { for (const ch of p) { if (RTL.test(ch)) return 'rtl'; if (LTR.test(ch)) return 'ltr'; } return 'ltr'; }
 

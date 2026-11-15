@@ -867,7 +867,8 @@ export function residencySweep() {
         scheduleLoad(id, ent, regen(id), want);
       }
     // both stand-in shapes promote by distance (bare reservations too, or a `place` moving one near before geom
-    // arrives would never load). Within its radius an entity eventually loads; beyond it, never a byte.
+    // arrives would never load). Within its radius an entity eventually loads; beyond it, it isn't promoted (a load
+    // already queued still runs).
     } else if ((obj === null || isPlaceholder(obj)) && d < R && !t.loading
       && (!t.failedAt || now - t.failedAt > 30000)) {
       resStats.promotes++;

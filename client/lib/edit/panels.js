@@ -185,7 +185,8 @@ export function selection() {
   *  but is still in the Hierarchy, and must still be removable. */
 const removable = () => { const s = Sel.selection(); return s.kind === 'things' ? s.ids.filter((id) => state.st.entities?.[id]) : []; };
 /** Shift-click: every displayed row from the anchor (last row clicked, else the active thing) to `id` replaces the
-  *  selection (Ctrl+Shift adds). The anchor stays put for re-ranging; false when it isn't displayed (caller selects `id`). */
+  *  selection (Ctrl+Shift adds). The anchor stays put for re-ranging; with no anchor displayed it selects `id` and anchors
+  *  there. Always true. */
 let hAnchor = null;
 function rangeSelect(id, add) {
   const rows = visibleRows.filter((r) => entities.get(r));
@@ -1118,8 +1119,9 @@ function buildVRDispatch(action, payload) {
 // Credits are view modes (historyrows.js historyView), this viewer's only, never logged.
 const hist = { key: null, entries: [], next: null, loading: false, id: null, mode: 'time', who: null, gen: 0, paged: false, failed: null };
 const histRetry = backoff(2000, 30000);
-// A thing's history re-reads whenever it changes (components in the key), showing the newest page; a refresh never
-// undoes Older… pages already read (historyrows.js mergeHistory), and one answered after a newer refresh is dropped.
+// A thing's history re-reads whenever it changes (components in the key), showing the newest page; a refresh keeps
+// Older… pages already read when its page meets them, else starts over (historyrows.js mergeHistory), and one
+// answered after a newer refresh is dropped.
 function histLoad(id, more = false) {
   // a re-read queued for a thing the panel has left must not run: its newer generation drops the selected thing's answer
   if (id !== hist.id) return Promise.resolve();

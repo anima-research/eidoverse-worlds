@@ -667,8 +667,8 @@ const gonePid = await exitedPid();
     "A16 a revoke touches only its own record: a role under a bare name is refused and its delete finds nothing; deleting Wren's role leaves co-owner Fen an owner, and the door stays closed",
     { byName: byName.refused, delName: delName.refused, delWren: delWren.refused, fen: [jf.errors, jf.snapshot?.yourRights?.role], wren: wren.body, stranger: stranger.body, anonMap });
   f.close();
-  // A17: a revoke takes effect: Rowan is present; deleting roles:<Rowan> is accepted, removes him now (4010), /access says
-  // none, his rejoin is refused, and the log holds the delete
+  // A17: a revoke takes effect: Rowan is present; deleting roles:<Rowan> is accepted, removes him now (4010), /access answers
+  // world-unavailable, his rejoin is refused, and the log holds the delete
   const r = await sock(s4.port); const jr = await r.join("door", "Rowan", { agentToken: "tok-rowan" });
   const del = await ann.req("delete", { id: "@world", component: `roles:${who.Rowan}` });
   const out = !!(await tryUntil("Rowan is removed by the revoke", () => r.closed != null, { ms: 4000, step: 50 }));

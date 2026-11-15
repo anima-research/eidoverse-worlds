@@ -58,7 +58,7 @@
  "test/shared/reachrig-test.ts": "needs the host's optimized avatar store (assets/opt/…/vrms); MERGE into reachlive pending",
  "test/client/roaming-renderer-check.ts": "imports playwright itself (the gate refuses it) and has 7 fixed waits; move it onto probe-harness's CDP pages",
  "test/server/screenshots-wire-test.ts": "MERGE into test/server/snapframe-test.ts pending (a duplicate or near-duplicate of its rows)",
- "test/server/seat-lifecycle-test.ts": "needs the library's claude.vrm, moves the repo's seats dir aside, and has 5 fixed pauses; dismount row predates vacated.at",
+ "test/server/seat-lifecycle-test.ts": "needs the library's claude.vrm (EIDOVERSE_DIR); its writes are in a scratch dir and its waits are conditions now",
  "test/server/sfu-test.ts": "passes; before it can be a row: 48 fixed waits onto wait.ts / suite.ts",
  "test/server/sfu-verb-gate-test.mjs": "MERGE into test/server/sfu-adapter-test.ts pending (a duplicate or near-duplicate of its rows)",
  "test/client/shadow-res-probe.mjs": "Chromium probe: green on the CDP harness, hygiene-clean; MERGE into test/client/shadow-fade-test.mjs (a duplicate of its rows: merge rather than gate)",

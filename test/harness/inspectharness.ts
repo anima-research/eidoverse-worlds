@@ -44,12 +44,12 @@ export function inspectHarness(tag = "inspect", { actor = "olive" } = {}) {
       const fwd = (p: string) => p.replace(/\\/g, "/"), LIB = fwd(path.join(ROOT, "client/lib/"));
       stubResolve(b, /^\.\.?\/(?:edit\/|realize\/|xr\/|ui\/)?(world|state|net|fieldpanels|ui|confirmcenter|xrask|core|emitters|material_draft)\.js$/, (a) =>
         (fwd(a.importer).startsWith(LIB) && !fwd(a.importer).includes("/realize/") ? { path: a.path, namespace: "inspect-harness" } : undefined));
-      // the realizer (three.js, the GPU paths) is not under test: inspect.js asks it only for a model's box
+      // the realizer (three.js, the GPU paths) is not under test: inspect.js asks it for a model's box and the live mesh / light previews
       stubResolve(b, /^\.\.\/realize\/models\.js$/, (a) => (fwd(a.importer).endsWith("/client/lib/edit/inspect.js") ? { path: "realize-models", namespace: "inspect-harness" } : undefined));
       b.onLoad({ filter: /.*/, namespace: "inspect-harness" }, (a) => {
         if (a.path === "realize-models") return { contents: "export const boxOf = () => null; export const previewMesh = () => false; export const previewLight = (...a) => globalThis.__previewLight?.(...a) ?? false;", loader: "js" };
         const m = a.path.match(/(world|state|net|panels|ui|confirmcenter|xrask|core|emitters|material_draft)/)[1];
-        // every name client/lib imports from these modules exists (no-ops where the edit path never calls them)
+        // the names the edit path's modules import from these exist (no-ops where it never calls them); not all of client/lib's (vehicles.js's sendDrive isn't here)
         const noop = (names) => names.map((n) => `export const ${n} = () => {};`).join(" ");
         const src = {
           world: `const H = globalThis.__ih; export const entities = H.entities; export const bagOf = (id) => H.replica.st?.entities?.[id]?.c ?? null; export function* bags() { for (const [k, e] of Object.entries(H.replica.st?.entities ?? {})) if (k !== '@world') yield [k, e.c]; } export const metaOf = () => null; export const avatarMounts = new Map(); export const editHolds = new Map(); export const behaviors = new Map();

@@ -10,7 +10,7 @@
 // look behind. Correct VR sees GREEN in both eyes.
 //   no warm              → green (control)
 //   look-alike warm      → RED   (reproduces the bug)
-//   withXREyes warm      → green, and entry builds nothing (the warm still works)
+//   withXREyes warm      → green, and entry builds no scene pipeline, only the output quad (the warm still works)
 //   dual warm at load    → green (xrwarm.js path: a content warm on the desktop, then enter)
 //
 // Run: bun test/client/xr-eye-binding-probe.mjs   (~30 s; run it under a memory guard)

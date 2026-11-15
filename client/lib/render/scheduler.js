@@ -76,7 +76,7 @@ export function cancelOwner(owner) {
 }
 
 /** Outstanding jobs at or above a band (queued + running). The curtain
- *  asks pending(P.BODY) === 0; the loading tray reads the rest. */
+ *  asks pending(P.FAR) === 0 (main.js checkReady); the loading tray reads the rest. */
 export function pending(minPriority = -Infinity) {
   let n = 0;
   for (const j of queued.values()) if (prioOf(j) >= minPriority) n++;

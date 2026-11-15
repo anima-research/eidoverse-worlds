@@ -4,7 +4,8 @@
 //   set {id, component: "sound", value: {src, playing?, loop?, volume?, pitch?, near?, radius?, spatial?, t0?, description?}}
 //   delete {id, component: "sound"}               # silence it
 //
-// A sound is an audio file playing FROM an entity, positional, louder the closer you stand. A captions component on the
+// A sound is an audio file playing FROM an entity, positional, louder the closer you stand (spatial: false: no panning, and
+// one level inside its radius but for the edge taper). A captions component on the
 // same entity carries the words.
 //
 // SOURCE: a library-relative path under `eidoverse/assets/` (operator-placed) or `store/audio/` (POST /upload?as=audio,

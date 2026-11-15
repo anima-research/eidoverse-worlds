@@ -5,7 +5,8 @@
 // object is rebuilt and the old pipeline's program is released: stock three recompiles every pre-entry material
 // on the first EXIT. This probe renders N distinct materials desktop → XR → desktop → XR → desktop and counts
 // programs/pipelines built per switch: stock; with client/lib/xr/xrpass.js (stereo in its own pass); and xrpass + a
-// desktop-side pre-warm through a two-eye stand-in camera (xr.getCamera() has no eyes before a session).
+// desktop-side pre-warm through three's own XR camera with two eyes pushed for the warm (withXREyes: xr.getCamera() has none
+// before a session, and a separate stand-in camera froze head tracking).
 //
 // Run: bun bench/xr-switch-compile-measure.mjs   (~30 s; run it under a memory guard)
 import { raw3Page, RAW3_IMPORTMAP } from '../test/harness/probe-harness.mjs';

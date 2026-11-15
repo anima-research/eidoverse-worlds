@@ -21,7 +21,8 @@ import { escapeHtml as esc } from '../ui/markup.js';
 // The quad: `width` metres wide, its height from the image's aspect, standing on the thing's origin and facing its
 // front (+Z), readable from behind too (a second plane turned π, so the back isn't mirrored). Until the image is
 // decoded, a 1:1 plate at 30% stands in, so the editor's gizmo has something to grab. Cutout transparency
-// (alphaTest 0.5: no sorting, fine in VR). Its world extent is held to 50 m.
+// (alphaTest 0.5: no sorting, fine in VR). Its world extent is held to 50 m at the scale it is built at (a later
+// rescale isn't re-held).
 // The bytes (shared/mediasrc.js): a store file always; a trusted host's link always; any other link only if this
 // viewer turned on "allow untrusted links", else nothing is fetched (the quad shows its empty plate). A link is
 // fetched without a referrer or cross-origin credentials; it decodes at full size, and its texture is drawn at most 2048 px on its long side.

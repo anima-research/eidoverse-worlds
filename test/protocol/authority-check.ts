@@ -2,7 +2,7 @@
 // server-check.ts). usage: bun test/protocol/authority-check.ts
 //   N   names.js: one encoding for actors, ids and components; the lab's `0abc` / `n0abc` collision is gone
 //   T   the engine translator's own name, and the v1 fold build it stamps
-//   P   locks (PROTOCOL §5): every component, ancestors, throughLock, the gameplay lock inside
+//   P   locks (PROTOCOL §7): every component, ancestors, throughLock, the gameplay lock inside
 //       its own component, and v1 lock/guard through the translator
 //   U   the act index (undo, wait): equals a fresh build after every request; entityBefore equals the fold at every
 //       seq; a later write, a purge and a new act each change undo's answer the way a full scan would
@@ -85,7 +85,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(JSON.stringify(r.out[0].body.owners) === JSON.stringify([[], [r.out[0].body.sequencer]]) && r.out[1].body.from.roles?.Marigold?.role === "owner" && !r.final.translated["@world"]?.[`roles:${enc("Marigold")}`], "T4 genesis is custodial (tier 0 empty, the authority's key in tier 1); v1 genesis roles, which v1 never folds, are kept verbatim in the translated act and grant nothing", [r.out[0].body.owners, r.out[1].body.from])
   ok(v1FoldFiles().includes("tools/import-v1/fold.js") && v1FoldFiles().length >= 5 && /^[0-9a-f]{16}$/.test(v1FoldBuild()), "T5 the fold build covers the importer's v1 fold and its imports", v1FoldFiles()); }
 
-// ---- P: locks (PROTOCOL §5): a lock refuses every write to the thing and what's attached, for everyone, its locker
+// ---- P: locks (PROTOCOL §7): a lock refuses every write to the thing and what's attached, for everyone, its locker
 // included; use stays open; throughLock: true lets whoever may remove it act through it ----
 { const name = "locks";
   const call = callAt(name);
@@ -1199,7 +1199,7 @@ const w0 = () => openWorld(root, "tier0");
   ok(R("ann", "history", { verbs: "say" }).refused?.code === "shape" && R("ann", "history", { id: "rock", verbs: ["set"] }).refused?.code === "shape", "CP5 a malformed verbs, or verbs on one thing's history, is refused, not ignored");
   const ref = R("ann", "history", { verbs: ["create"], limit: 10 }).entries.find((e) => e.actor === "vic");
   ok(ref?.body?.refused?.code === "rights", "CP6 a refused attempt reads as refused in history (its body says so)", ref);
-  // a translated world: a v1 entry is an act `legacy` naming its v1 verb; verbs: ['comp'] finds it
+  // a translated world: a v1 entry is a request `imported` naming its v1 verb (body.verb); verbs: ['comp'] finds it
   { const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log", roles: { ann: { role: "owner" } } } },
       { seq: 1, ts: 2, actor: "ann", verb: "spawn", args: { id: "lamp_1", lib: "crate", pos: [1, 0, 1] } },
       { seq: 2, ts: 3, actor: "ann", verb: "comp", args: { id: "lamp_1", type: "label", data: "old" } },
@@ -1250,7 +1250,7 @@ const w0 = () => openWorld(root, "tier0");
   ok(end.ok && bag() === undefined, "CA9 end clears the screen (the history keeps every line)", [end.refused, bag()]);
   ok(cw("bob", "set", { id: "screen", component: "captioners", value: { ids: [] } }).ok && code(cw("vic", "caption", line(1, { session: "2026-10-07T00:00:01.000Z-def456" }))) === "rights", "CA10 taken off the list, they can't caption it any more"); }
 
-// ---- IM: an imported world's records are carried, never written by hand (review 10-07 M1: a request could plant a guard,
+// ---- IM: an imported world's records are carried, written by hand by an owner only (review 10-07 M1: a request could plant a guard,
 // imported-bans:<id>, imported-behavior:<name> or imported:* and wake readers that no longer mean anything) ----
 { const iw = callAt("imported");
   iw("ann", "create-world", { title: "imported" }); iw("ann", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });

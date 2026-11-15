@@ -1,6 +1,6 @@
 // ONE AudioContext for the whole page. Chrome caps a document at roughly six and a refused
-// context never throws, it just never sounds; one shared context is also what lets distance,
-// the category sliders and the ambient bed compose as one gain graph.
+// context never throws, it just never sounds. Remote voices aren't in its graph: voicesfubridge.js
+// sets each speaker's <audio> volume.
 let ctx = null;
 
 /** The page's AudioContext. Created on first use, resumed opportunistically. */

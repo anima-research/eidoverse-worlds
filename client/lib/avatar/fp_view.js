@@ -71,7 +71,7 @@ export function resolveFirstPersonAnchor({ head, bounds, name = "this body" } = 
  *                 through. A Promise/thenable is rejected explicitly: async
  *                 rendering needs a separately designed re-entrant exclusion.
  *
- *  The body is hidden strictly around synchronous render() and restored in finally — an
+ *  The body is hidden strictly around synchronous render() and set visible again in finally (not its earlier state) — an
  *  exclusion that survived a throw would leave the body invisible to every
  *  OTHER viewer of this renderer's scene. */
 export function composeFirstPerson({ camera, yaw, pitch, head, bounds, name, setOwnVisible, render }) {

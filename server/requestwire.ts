@@ -178,7 +178,8 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
       const lifted = verb.startsWith("un");
       if (unsaved && r && typeof r === "object") r.warning = notPersisted(unsaved, lifted);
       reply(r);
-      // the flight recorder (/debug) hears every refusal; bounded, since a reason can echo what was sent and anyone here
+      // the flight recorder (/debug) hears the authority's refusals (the early replies above, e.g. spectator or a consent
+      // naming someone gone, aren't recorded); bounded, since a reason can echo what was sent and anyone here
       // reads the ring: lines capped, at most 20 per connection per 10 s
       if (r && !r.ok && r.refused && recordRefusal(c)) { const cap = (x: unknown, n: number) => { const t = String(x ?? ""); return t.length > n ? `${t.slice(0, n - 1)}…` : t; };
         const id = typeof args.id === "string" ? cap(args.id, 64) : null;

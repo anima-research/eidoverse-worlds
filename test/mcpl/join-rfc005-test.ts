@@ -599,7 +599,7 @@ async function shut(h: { ws: WebSocket }) {
   check("travel tool arrives", /Arrived in "annex"/.test(movedText), movedText);
   const whereNow = await tv.request("channels/list", {});
   check("travel tool actually moved the body", whereNow.result?.channels?.[0]?.id === "world:annex", JSON.stringify(whereNow.result));
-  // it must ALSO tell the host, exactly like the channels/open lane
+  // it must ALSO tell the host (channels/changed); channels/open never moves the body (-32023, net-server.ts)
   check("travel tool emitted channels/changed to the host",
     tv.inbound.some((m) => m.method === "channels/changed"), "host never told");
 

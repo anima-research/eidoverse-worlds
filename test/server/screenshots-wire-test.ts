@@ -1,7 +1,7 @@
 // Real HTTP + WS integration; --native holds an isolated sequencer for the UE probe.
 // (ported 10-17: worlds are founded first — joining never founds one — joins fold the log (replica: true), and the
 // broker speaks capture / capture-result here (main: snap / snap-result))
-// Then outcomes(): every snap outcome over the door, one status and one escaped [snap] line per cause, on scratch
+// Then outcomes(): every snap outcome over the door, one status each and one escaped [snap] line per failure cause, on scratch
 // sequencers of their own (SNAP_TIMEOUT_SEC=2, =20, and each invalid value).
 import { foundWorlds, scratchSequencer, readSequencerLog } from "../harness/harness.ts";
 import { strict as assert } from "node:assert";

@@ -6,7 +6,7 @@
 // Joshua tree's foliage went dull. Two synthetic models, so the test needs no library files:
 //   - a FACETED jagged heightfield: every triangle carries its own normal, neighbours tens of degrees apart, so every vertex is on a seam and the regular pass can't
 //     reduce; the permissive retry runs. Position-only, it smears the facet normals across neighbours. Whatever is served
-//     must shade like the surface it covers (area with a vertex normal > 60° off its face ≤ 5%); refusing is fine.
+//     must shade like the surface it covers (area-weighted share of corners whose normal is > 60° off the face ≤ 5%); refusing is fine.
 //   - a SMOOTH UV sphere with a UV seam: the reducer must still reduce it (≤ 40% of its vertices), so a reducer that
 //     refuses everything can't pass.
 // Mutation witnessed red: normals and UVs weighted 0 in simplifyAttributes (= the old position-only behaviour).

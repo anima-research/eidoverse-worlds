@@ -791,7 +791,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (typeof a.text !== "string" || a.text.length === 0) {
         return { content: [{ type: "text", text: `say refused: \`text\` is required and must be a non-empty string, so nothing was said; you sent ${shown(a.text)}` }], isError: true };
       }
-      // "wants spoken": spoken:true or utt/t0 present. spoken:false is an ordinary say, never an error.
+      // "wants spoken": spoken:true or utt/t0 present. spoken:false alone is an ordinary say; with utt or t0 it is refused.
       const wantsSpoken = a.spoken === true || a.utt !== undefined || a.t0 !== undefined;
       // TYPE-EXACT, not coerced (Number(null)===0 would forward a fabricated utt): utt integer >= 0, t0 a finite number
       const uttOk = typeof a.utt === "number" && Number.isSafeInteger(a.utt) && a.utt >= 0;

@@ -5,7 +5,7 @@
 //
 // One table over every such source grep. A row's `forbidden` patterns are scanned in every file of the four roots
 // (shared/, server/, client/lib/, mcpl/) except the owner and its `exempt`, or only in `scope` when it names files;
-// `requires` pins the import each named importer must carry. Comments are stripped before a scan. The executed halves
+// `requires` pins the import each named importer must carry. Comments are stripped before a scan, except in a `raw` row. The executed halves
 // (the values, the corpus loops) stay in their own suites (physconst, role-grammar, rot, quadcolour, namereveal).
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";

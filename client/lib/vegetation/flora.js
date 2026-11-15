@@ -474,7 +474,7 @@ function tileField(f, bladeLod = false, globalRank = false) {
 // remote presences. Per-frame and cheap (a uniform write).
 function wirePushers(field) {
   const R = 1.1;
-  // reused across frames: no per-frame allocation or full sort
+  // the two arrays are reused across frames (each pusher is still a new object, and more than 3 remotes sort every frame)
   const list = [];
   const cand = [];
   const hook = () => {

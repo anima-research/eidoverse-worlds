@@ -79,7 +79,7 @@ export async function ownedWorld({ live = null, key = process.env.JOIN_KEY || 'd
   });
   const origin = `http://127.0.0.1:${PORT}`;
   // identity is the nonce echo ONLY (/version echoes EIDO_BOOT_NONCE): a responder without it fails at once. Every live
-  // child dies with us on any signal, even mid-poll (one handler over a module-level set).
+  // child dies with us on SIGINT, SIGTERM or an uncaught throw, even mid-poll (one handler over a module-level set).
   LIVE_CHILDREN.add(srv); scratchOf.set(srv, scratch); armSignals();
   const verdict = await proveOwned(origin, NONCE, { alive: () => (srv.exitCode === null ? true : `exited ${srv.exitCode}`) });
   const ours = verdict.ours, reason = verdict.reason;

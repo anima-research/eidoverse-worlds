@@ -88,7 +88,7 @@ function retireRelayLeg(w: World, id: string) {
 /** A pose as it should be handed to someone else: the settled result rather than whatever frame the body was in. One rule
  *  for the join snapshot's `restore` (via rememberPose) and `present`. A once-anim is a moment, not a place (replayed at every
  *  wake, a wave becomes a tic); a ragdoll is physics in flight whose get-up path exists only in the session that fell, so
- *  the body sleeps standing. Held bones (pose.pose) survive both. */
+ *  the body sleeps standing. Held bones (pose.pose) survive a once-anim; a ragdoll's are dropped. */
 function settledPose(pose: unknown): Record<string, unknown> | null {
   if (!pose) return null;
   // mic/hear are a live reading re-sent every packet; remembered, a client would replay a voice state its new session
@@ -404,8 +404,9 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
       ws.send(JSON.stringify({ type: "error", code: u.code, error: u.message })); c.ws.close?.(unavailableClose(!!(msg.spectate || msg.renderer)), u.code); return null; };
     // What this joiner may be told (access.ts toldOf): a world discoverable to them opens; an interrupted conversion or an
     // old-format world is diagnosed only to the operator and (an old one) its recognised owner (server/upgrade.ts;
-    // docs/reference/WIRE.md 4005); to anyone else it is world-unavailable. Asked of the door on disk, before loading: a refused
-    // join never loads the world, and joining never founds one.
+    // docs/reference/WIRE.md 4005); to anyone else it is world-unavailable. Asked of the door on disk, before loading: a join
+    // the door refuses never loads the world (a later refusal, e.g. an aux leg with no primary, comes after getWorld), and
+    // joining never founds one.
     { const dir = directoryFor(WORLDS_DIR);   // read-only: an undiscoverable world records nothing about who asked
       const answer = (t: Told) => {
         if (t.kind === "interrupted") { ws.send(JSON.stringify({ type: "error", error: interruptedVisitorText(wname) })); c.ws.close?.(4005, "interrupted conversion"); }

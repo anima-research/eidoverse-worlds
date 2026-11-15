@@ -11,7 +11,7 @@
 //                                              go red, which proves they test what the fallback keeps.
 // Cases:
 //   G   the gate (slice 1): grabOf with the migration fallback; enabled, who, steal, range; a throw with no sim is a drop
-//   M   migration: what a dynamic thing with no grabbable did before, unchanged
+//   M   migration: what a grab or put did before, unchanged (M1-M3 a dynamic thing with no grabbable; M4 a grabbable's put)
 //   R   release modes (slice 2): the throw multiplier, stay, return home (now, and after returnAfter), snapping into a
 //       socket that accepts it
 //   H   the hold record (slice 3): hand, grip or offset, a second hand; what every client is told

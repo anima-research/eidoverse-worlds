@@ -1,6 +1,6 @@
 // collider-off-bodies-test — a thing whose collision is off for bodies (collider {enabled: false}, or blocks without
-// "bodies": simlayer.js solidOff, the authority's reading) gives the walker nothing to meet, on every path the client
-// realizes it by (review of PR #260).
+// "bodies": simlayer.js solidOff, the authority's reading) gives the walker nothing to meet, on the realize paths below
+// (not a retiring carrier's step-off: see the dismount case) (review of PR #260).
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/client/collider-off-bodies-test.ts
 //

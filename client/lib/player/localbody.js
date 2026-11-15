@@ -75,7 +75,7 @@ export function getUp() {
   myState.pose = null; me?.clearPose();
   me?.setLimp(false);
   myState.clip = 'idle';
-  // resume from where the body ended up
+  // resume from where the body ended up, in x/z: y goes to 0 (a body resting up on something drops to ground level)
   myState.pos.copy(me.root.position);
   myState.pos.y = 0;
 }

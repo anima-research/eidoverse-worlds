@@ -2,14 +2,16 @@
 //
 // Every parameter is written down (PROTOCOL §4). The authority writes a component's defaults into the stored value when
 // it's created or set (materialize, below): `defaults` always, and each `when` rule ({if, absent, set}) that holds. So a
-// renderer never supplies a number the log doesn't hold, and changing a default here never changes an old world. A default
+// renderer supplies no number the log doesn't hold for a value written today (an older value's missing field is read as its
+// `absentMeans` says), and changing a default here never changes an old world. A default
 // that lives only in help text or a renderer is a bug (pretrans-check D7); a changed default, type or enum is a changed
 // meaning (spec/registry-pin.json, D8).
 //
 // ONE description, derived readers: a field's type (`fields`), default (`defaults`/`when`), limits (`ranges`), unit
 // (`units`) and one-line doc (`docs`) live HERE and nowhere else. shared/descriptors.js derives the inspector's rows,
 // shared/components.js its records' params, shared/editschema.js and shared/worldentity.js read limits, and the agent's
-// `schema` request returns this table; test/shared/schema-layers-test.ts holds every reader to it. `units` and `docs` are
+// `schema` request returns this table; test/shared/schema-layers-test.ts holds the derived readers to it (for the agent, only
+// that every carded field has a doc; the `schema` reply itself isn't exercised there). `units` and `docs` are
 // pinned with the field: a reworded doc is a meaning break to acknowledge (--ack).
 
 import { RANK, BUILTIN_IDS, PERMISSION_NAMES, CUSTOM_ID, RESERVED_IDS } from "./roles.js";
@@ -205,7 +207,8 @@ export const COMPONENTS = {
       centerOfMass: "[x, y, z] m in its own frame before scale; absent, the centroid of its stamped shape" },
     help: "how it takes part in physics: {kind (required): dynamic (it flies when thrown, dropped or punted; with no grabbable it can also be picked up) | static (a collider; what anything with a model becomes when the world runs physics) | kinematic (a collider moved only by edits and motion, never by the engine; it is never launched; what a thing with motion or openable is stamped) | none (not simulated: the engine never moves it; still solid: collision off is collider {enabled: false}), who: who may punt it (and pick it up, when it has no grabbable; default member), shape: stamped by the authority (its measured box; you never send it)}. mass (kg; absent: density × its box's volume) and density (kg/m³; absent 1000), which a body's shove reads. Reserved until an engine reads them (refused now): surface (a surface:<name> on @world), friction, restitution (0..1), frictionCombine, restitutionCombine (average|min|multiply|max), linearDamping, angularDamping (1/s), centerOfMass [x,y,z]. Grabbable makes a thing carryable; physics makes it fall. With eidosim (gravity [0, −9.81, 0] m/s²): a thrown thing flies, tumbles, rolls if it's a sphere, and comes to rest; it knocks over dynamic things it hits unless a lock holds them (their own, or one on what they're under or what they hold)" },
   // what a hand may do with it (shared/grab.js holds the check). Apart from dynamics: a lantern can be carried in a world
-  // with no physics. test/protocol/grab-check.ts pins that these defaults equal grab.js's own
+  // with no physics. grab.js's DEFAULTS are these (materialize); test/protocol/grab-check.ts I1 pins the Inspector's
+  // Add Component value to them
   grabbable: { on: "thing", fields: { enabled: "bool", who: "any", steal: "bool", range: "number", priority: "int", hold: "string", anim: "string", grips: "object", twoHanded: "bool", carries: "bool",
                  throw: "number", release: "string", returnAfter: "number", fits: "array", use: "any", prompt: "string" },
     enums: { hold: ["auto", "press", "toggle"], release: ["drop", "stay", "return"] },

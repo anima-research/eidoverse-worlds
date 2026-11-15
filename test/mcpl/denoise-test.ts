@@ -28,7 +28,7 @@ const { suite } = await import("../gate/suite.ts");
 const { tryUntil, pause } = await import("../gate/wait.ts");
 const { spawnSync } = await import("node:child_process");
 
-// ---- 5 (child). one hostile env, the slowest straight pass-through that never counts as still ----------------
+// ---- 5 (child). one hostile env, a straight pass-through at 1.5× the stillness threshold (never still) ----------------
 if (process.argv[2] === "clamp") {
   const S = suite("denoise-clamp");
   S.check("the wait can never sit below the safe bound", APPROACH_MAX_WAIT_MS >= APPROACH_SAFE_WAIT_MS,

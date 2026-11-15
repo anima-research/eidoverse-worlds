@@ -5,7 +5,7 @@
 // Contact: the thing's oriented box within the body's radius + `slack` of the feet, neither under the feet nor over the
 // head. Push: the body's WALKING INTENT (not its motion, which the collider already stopped), the part along the contact
 // normal, only when heading into it (within 60°). Strength: an elastic collision with a BODY_MASS body,
-// 2·BODY_MASS/(BODY_MASS + m) · u under SHOVE.maxV; the walker keeps (BODY_MASS − m)/(BODY_MASS + m) · u. Never a shove
+// 2·BODY_MASS/(BODY_MASS + m) · u under SHOVE.maxV; the walker keeps max(0, (BODY_MASS − m)/(BODY_MASS + m)) · u (keptOf). Never a shove
 // that would move a body (seated, standing on it, or in its slide).
 //
 // One punt per contact: again only after the thing has moved (`moved`) and `againMs` has passed. At most `perSec` a

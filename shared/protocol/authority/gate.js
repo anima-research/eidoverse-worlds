@@ -274,11 +274,11 @@ function rights(w, st, s, who, role, op, at, made, pause) {
   if (cap.kind === "founding") { const g = w.entries[0], k = w.custody()?.operator?.();
     if (!k || !g.body.owners?.some((t) => t.includes(k)) || w.entries.some((e) => isE(e) && e.kind === "change")) refuse("rights", "founding writes happen once, in a world this server founded", ""); }
 }
-// §5 / L7: an existing KEYED component (`<name>:<key>`) may be changed or deleted only by its creator (creatorOf: whose
-// rights first made this life of the key) or an owner. Making a new key needs only the component's ordinary rank. A
+// §5 / L7: an existing KEYED instance component (`<name>:<key>`) may be changed or deleted only by its creator (creatorOf:
+// whose rights first made this life of the key) or an owner; roles:<id> follows the grant rule instead (keyRights). Making a new key needs only the component's ordinary rank. A
 // whole-entity delete is gated per key at the call site (§3d H7).
 const isKeyed = (comp) => typeof comp === "string" && comp.includes(":");
-// §5: INSTANCE keys (script:, blueprints:, roles:) carry the creator rule; PARTITION keys (terrain-tile:, terrain-paint:)
+// §5: INSTANCE keys (script:, blueprints:; roles: is one, but under the grant rule) carry the creator rule; PARTITION keys (terrain-tile:, terrain-paint:)
 // are pieces of one shared surface, ordinary rank rules only. No schema: instance, the safe side.
 export const keyKind = (comp) => COMPONENTS[comp.slice(0, comp.indexOf(":"))]?.key ?? "instance";
 // Owners are protected from each other by SENIORITY (as Matrix room v12 protects creators): an owner can't change the role

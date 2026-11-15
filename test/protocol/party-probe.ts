@@ -1,6 +1,6 @@
 // test/protocol/party-probe.ts — the editor's party blockers (review 2026-10-07 edit surface vs platforms, B1–B5 and
 // the SHOULD list; audit 10-07 human side) in one headless Chromium against a scratch sequencer, driven with real mouse
-// and keyboard events (CDP Input) wherever a person would use them. test:protocol runs it under the house guards.
+// and keyboard events (CDP Input) for what each row checks; setup (select, builder mode) goes through the modules. test:protocol runs it under the house guards.
 //   B1  the status chips ("WebGL 2", "reduced detail") never cover the builder's menu bar; the reduced-detail chip can
 //       be put away; a real click on Edit ▾ opens the Edit menu
 //   B2  Enter in an inspector number field writes once (act + change), with no refused second write

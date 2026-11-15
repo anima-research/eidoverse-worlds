@@ -4,7 +4,8 @@
 //   SU2 refused, and the token still works after: a guest, another site's page (Sec-Fetch-Site), a wrong token (a plain "refused"; a used one is a missing page: SU4)
 //   SU3 a signed-in person claims it: "You're this server's operator.", stored 0600, operator at once (an old world's join says operator)
 //   SU4 then the link is used up: a second claim and GET /setup are a missing page, the token itself is gone; a restart prints no link and keeps the operator
-//   SU5 with SERVER_OPERATORS set, or an operators file, no link is printed and /setup is a missing page
+//   SU5 with SERVER_OPERATORS naming an account, no link is printed and /setup is a missing page; a bare name there or in
+//       the operators file is refused loudly, and the link is printed
 //   SU6 an agent claims with its Bearer (aid1 and enrolled): the stored account is the one its ws join proves (that join says operator)
 //   SU10 a Bearer and a cookie both sent: the Bearer is the claimant; an invalid Bearer refuses (never the cookie's account)
 //   SU7 more than five tries a minute from one address are refused (429)

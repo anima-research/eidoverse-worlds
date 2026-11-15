@@ -270,7 +270,8 @@ export function makeGenerationGuard() {
  *   2. an update immediately demotes the HELD verdict to `pending` ("profile
  *      update pending"), so the old value stops moving bodies at once;
  *   3. a fresh response under the new generation restores service;
- *   4. names are independent: one avatar's update never invalidates another's. */
+ *   4. names are independent by epoch: one avatar's update never discards another's slice; a newer announced
+ *      revision (floorRev) does refuse an older response for every name. */
 export function makeVerdictCache(fetchRoster) {
   const verdicts = new Map();  // name → served verdict (or {status:"pending"})
   const guard = makeGenerationGuard();

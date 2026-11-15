@@ -4,7 +4,7 @@
 //   commitEdit(id, key, value, {live})
 //     live   → PREVIEW: the group's handler moves the realized object; no log traffic;
 //     final  → COMMIT: editOps() plans the ops, sent as ONE request (writes.js sendOps): one act, one undo; `expect`
-//              carries the values as the gesture began.
+//              carries the values as the gesture began (a world field sends `expect: false`).
 //
 //   registerHandler(group, fn(id, obj, k, value, opts) → handled?)
 //     realize modules install previews and viewport gestures here. Returning true means "done, don't commit": a live

@@ -13,7 +13,7 @@
 //   · the texel budget (1024², capTexels → toktx --resize); a size verdict carries its recipe (verdictStands)
 //   · a flagged fetch answered by the webp shadow is PROVISIONAL: no-cache, never immutable
 // A FAKE toktx (FAKE_TOKTX_MODE) covers the seams; the real encoder runs once if present. Sections 4-7 spawn the real
-// sequencer (verified-free port, fixture-as-nonce ownership).
+// sequencer (a probed port: nothing answered HTTP there within 400 ms; fixture-as-nonce ownership).
 
 import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync, rmdirSync, chmodSync } from "node:fs";
 import { spawn, type ChildProcess } from "node:child_process";

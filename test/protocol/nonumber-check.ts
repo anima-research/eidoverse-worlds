@@ -1,8 +1,8 @@
 // test/protocol/nonumber-check.ts — the protocol's number is data, never a name (R 2026-10-07: "a version number isn't a
-// name"). It lives in exactly one place: the log's genesis, `{dialect: "eidoverse-log", v: N}` (spec/PROTOCOL.md §2.4).
+// name"). As data it rides the log's genesis, `{dialect: "eidoverse-log", v: N}` (spec/PROTOCOL.md §2.4), and the hello and version line that repeat it (shared/protocol/hello.js).
 // Every file the repo tracks (code, tests, docs, fixtures, file names) is scanned, and the gate fails on the current
 // protocol's number used as a name: `v` + the number as a word or a word's start (`vN`, `vN-log`, `vNid`), or as a
-// camelCase part (`makeVNClient`, `asVN`), in a path or on any line.
+// camelCase part (`makeVNClient`, `asVN`), in a path or on any line; an unbroken run of 40+ letters and digits reads as a hash and isn't.
 // Not scanned, each with why:
 //   - tools/import-v1/: the old-world importer, whose job is to say which protocol it translates FROM and TO;
 //   - spec/history/: upstream's earlier protocol texts, kept verbatim as history;

@@ -83,7 +83,7 @@ export function paintEdit(canvas, fields, { width = 522, title = '' } = {}) {
   }
 }
 
-/** Enum pills laid out in lines that fit `avail` — every option reachable, none clipped away. */
+/** Enum pills laid out in lines that fit `avail`; a single option wider than `avail` gets a line of its own and overruns it. */
 function enumLines(g, f, avail) {
   const lines = [[]]; let x = 0;
   for (const o of f.options ?? []) {

@@ -10,10 +10,10 @@
 // Rows:
 //   N   refusal codes: hold-limit, beneath, not-pushable (were hands-full, underfoot, no-body); the old words are never given nor mapped (N3)
 //   P   punt keeps its name; its flag is contact: true (shove: true refused, naming contact); docs say no kick/feet
-//   T   @world trusted-components (was trusted): the registry, the door, the load's rename (every load, idempotent), drafts.js
+//   T   @world trusted-components (was trusted): the registry, the door, drafts.js reading the old key too (no load renames it)
 //   C   consent: the old words a stored table is READ in (C1) and the authority's load of one as two narrowed gates (C5);
 //       C2/C4/C6/C7 retired with recut A2 (tiers, cells, the client table and delegates are gone)
-//   W   people: /worlds is one list with a declared word as a tag; no "(agent)"; the browser shows the declared word only;
+//   W   people: /worlds is one people list with a declared word as a tag (main's agents list beside it); no "(agent)"; the browser shows the declared word only;
 //       no text sets humans against agents
 //   O   leftover seat words → the occupy family (agent, client modules, socketRole, user-visible strings)
 //   S   stale agent-visible addresses: light.daytime, sky.tz, the measure tool's socket child
@@ -23,7 +23,7 @@
 //   L   layering (once overlays, a loop or hold replaces), where a name resolves (from), one form (name OR live keys)
 //   B   body-mode: its own presence field (stand | sit | lie chosen; swim | fly | fall reported); a description that grants nothing
 //   M   ONE agent tool anim (R 10-17 15:31/15:32): by name or live; mode once | loop | hold (at); each anim's own default;
-//       {playing, mode}; stopped {name, why} when a loop or hold ends; the four old body tools are refused, taught as anim (M5)
+//       {playing, mode}; stopped {name, why} when a loop or hold ends; the four old body tools are refused as unknown tools (M5)
 //   K   anim {stop} (R 10-17 16:26/16:27): true stops every layer and rests in the CURRENT body-mode's own anim (never the
 //       bind pose; the body-mode unchanged); a name stops that layer; "live" stops the ad-libbed ones, a reserved name
 //   E   the old name of a gesture is gone (R 10-17 16:26): presence pose.anim (the old key isn't read), the

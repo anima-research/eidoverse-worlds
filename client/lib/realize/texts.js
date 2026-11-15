@@ -26,7 +26,7 @@ export const _signs = signs;  // probes
 const lumaOf = (c) => { const r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255; return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255; };
 const css = (c) => `#${(c >>> 0).toString(16).padStart(6, '0')}`;
 
-/** Paint a sign's canvas: {canvas, w, h} in metres. Pure of the scene (a probe can call it). */
+/** Paint a sign's canvas: {canvas, w, h} in metres. Pure of the scene. */
 function paintSign(v) {
   const size = v.size ?? D.size, width = v.width ?? D.width;
   const fontPx = Math.round(LINE_PX * 0.8);

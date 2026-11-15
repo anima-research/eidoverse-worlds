@@ -1,5 +1,5 @@
 /**
- * A stretched thing holds a body up where it is drawn.
+ * A stretched thing holds a body up where it is drawn (a mirrored axis: where its size puts it, below).
  *
  * Run: bun test/mcpl/stretched-support-test.ts
  *

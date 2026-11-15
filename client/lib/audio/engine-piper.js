@@ -16,7 +16,7 @@ registerEngine({
   label: 'Piper',
   accept: ['.onnx', '.json'],
 
-  // OPFS is not optional: local files reach the runtime only through its cache.
+  // OPFS is required only because load() still seeds the runtime's cache (below); the session reads the File's bytes.
   supported: () => typeof WebAssembly === 'object' && !!navigator.storage?.getDirectory,
 
   // Score, not boolean. A lone .onnx might belong to another ONNX engine, so
@@ -56,8 +56,8 @@ registerEngine({
     // The name a person sees; `base` (with digests) stays the cache key.
     const humanName = onnx.name.replace(/\.onnx$/i, '');
 
-    // The runtime has no seam for local bytes, but getBlob() reads its OPFS cache (by basename) before fetching
-    // HuggingFace: seed the cache under the names it will look for. We move the bytes, so the copy reports a percentage.
+    // Seed the runtime's OPFS cache (getBlob() reads it by basename before fetching HuggingFace). Our own session below
+    // takes onnx.arrayBuffer() and cfg.text() directly, so nothing here reads the seeded copy. The copy reports a percentage.
     const root = await navigator.storage.getDirectory();
     const dir = await root.getDirectoryHandle('piper', { create: true });
     const totalMb = Math.round(onnx.size / 1e6);

@@ -1,7 +1,7 @@
 // xr — the door into the headset, and everything your hands do inside it.
 //
 // Owns the session and rig, and the hands: stick locomotion only fills xrIntent (the controller does the moving),
-// the right-hand ray feeds sgSelect, grip alone grabs a panel by its background or title (never by a control),
+// the right-hand ray feeds sceneSelect (the xr:select event, main.js), grip alone grabs a panel by its background or title (never by a control),
 // and the radial menu opens panels and local acts (recentre, ears, mic, leave). Never navigate mid-session.
 
 import { confirmCenter } from '../edit/confirmcenter.js';
@@ -1038,7 +1038,8 @@ export function updateXR(dtSec = 1 / 72) {
   if (fpVrm !== getSelf()?.vrm) selfFirstPerson(true);   // avatar swapped mid-session → chop the new head
   hookSelfDraws(); selfDrawnLast = selfDrawn; selfDrawn = 0;
 
-  // the rig is stick-only: nothing reads the head and writes the rig or the body root (xrbody.js chases the head)
+  // the rig is stick-only: per frame nothing reads the head and writes the rig or the body root (xrbody.js chases the
+  // head); recentre (recentreXR, at entry or asked) is the one head reading folded into the rig
   syncRigToBody();   // (again, after a snap/smooth turn above changed rig.rotation)
   // — three's XRManager builds cameraXR from camera.parent.matrixWorld
   turnTraceTick();
@@ -1196,7 +1197,8 @@ export const xrDebug = () => {
 };
 
 
-// The veil, both ways: the splash's mark and a phase line, from the visor click until the session's first frame, and
+// The veil, both ways: the splash's mark and a phase line, from the visor click until the session is set up
+// (presenting = true, which can come before its first frame), and
 // from the leave click until desktop frames flow again (or the +6 s exit probe gives up).
 function xrVeilShow(on, phase = 'leaving VR') {
   if (!exitVeil) {

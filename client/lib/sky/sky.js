@@ -95,8 +95,9 @@ let cloudQuality = localStorage.getItem('ew-cloud-quality') ?? 'medium';
 const BAND_BUDGET = 0.4e6;   // texels × passes per boot-bake band (sky_baked.js's cadence budget)
 export const getCloudQuality = () => cloudQuality;
 
-// VR cap: in a headset on the WebGL backend, clouds never run 'high' (the live march per eye is far too slow, and each
-// eye marches its own noise); 'medium' runs instead and the saved choice comes back on exit. Revisit with WebGPU-XR.
+// VR cap: in a headset on the WebGL backend, 'high' clouds swap to 'medium' once the entry curtain is up (or after 4 s;
+// the live march per eye is far too slow, and each eye marches its own noise), and the saved choice comes back on exit.
+// Until the swap lands the live march still shows. Revisit with WebGPU-XR.
 let xrPresenting = false;
 let xrCappedFrom = null;          // the level the cap replaced, restored on exit
 const CAP_FROM = 'high', CAP_TO = 'medium';

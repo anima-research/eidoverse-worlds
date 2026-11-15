@@ -5,7 +5,7 @@
 // the derived result; movement input means "I want out". Dragging is that,
 // with a sim attached:
 //
-//   * The DRAGGER runs the Verlet on its own remote copy of the target's rig
+//   * The DRAGGER runs the body sim (makeRagdoll: Bullet by default, bodysim.js) on its own remote copy of the target's rig
 //     (same Avatar class — the sim does not care whose body it is), with the
 //     grabbed joint pinned to the cursor ray. Zero latency where the hand is.
 //   * The dragger streams the resulting pose + root to the body's OWNER

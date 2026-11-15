@@ -100,7 +100,7 @@ const LAMP_DAY_FLOOR = 0.18;   // the surface's share of the sky's dimming curve
 
 
 /** A jump clip's take-off: the hips dip (anticipation), then come back up through their rest height — that is the
- *  frame the feet leave the floor. A clip with no hips track, or one that starts by rising, gives 0. */
+ *  frame the feet leave the floor. A clip with no hips track, or no dip (>1 cm below frame 0) in its first half, gives 0. */
 function clipTakeoff(clip) {
   if (clip.userData.takeoff != null) return clip.userData.takeoff;
   const tr = clip.tracks.find((t) => /hips\.position$/i.test(t.name) || /Hips\.position$/.test(t.name));
@@ -992,7 +992,8 @@ export class Avatar {
 
   _humanoidBones() { return Object.keys(this.vrm.humanoid?.humanBones ?? {}); }
 
-  /** World positions of the humanoid bones in the neutral rest pose (every rotation identity), without disturbing
+  /** World positions of the humanoid bones in the neutral rest pose (every rotation identity; translations, e.g. a
+   *  posed hips, are left as they are), without disturbing
    *  the pose on screen. The ragdoll measures against this, never the live skeleton. */
   restBonePositions(names = null) {
     const h = this.vrm.humanoid;

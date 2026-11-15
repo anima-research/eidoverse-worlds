@@ -2,7 +2,7 @@
 // `body` block of `socket` is still read as the same shape), as data. One shape for every way a body attaches to a
 // thing: a chair, a saddle, a driver's seat, a bunk, a lectern.
 //
-// Only the core keys are registered (shared/protocol/componentspec.js station: action, pose, anchor, exit, leaveBy,
+// Only the core keys are registered (shared/protocol/componentspec.js station: action, anim (an older `pose`), anchor, exit, leaveBy,
 // who, and input for the helm). The rest of the shape below is RESERVED: the door refuses it (STATION_RESERVED), its
 // names are held, and this reader still reads it so it can come back as an addition. `hold` is cut.
 //
@@ -145,7 +145,8 @@ export function choosePose(body, choices = []) {
  *  of a refusal, or an agent's detach {escape: true}. A seat may make leaving deliberate, never impossible. */
 export const ESCAPE_HOLD_S = 1.5, ESCAPE_REPEAT_S = 2;
 /** Does the authority's `vacated` inbox message name the socket I occupy now (`mount` = {to: <socket id>}, mine or null)? A
- *  late message (after a reconnect) never stands anyone up from a seat taken since (client and agent). */
+ *  late message (after a reconnect) never stands anyone up from a different seat taken since; one naming the same socket,
+ *  retaken, still matches (client and agent). */
 export const vacatedFromMine = (u, mount) => !!(u && mount && typeof u.socket === 'string' && u.socket === mount.to);
 /** Where the authority let me go (`vacated {at}`, its track of my body restarts there): [x, y, z] or null. The browser and the
  *  agent both stand there, so the body and the authority's track start together. */

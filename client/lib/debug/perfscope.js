@@ -104,7 +104,8 @@ function accumulate(rec, o, vis) {
     if (!m) continue;
     rec.mats.add(m);
     if (m.transparent) rec.alpha += 1;
-    // exhaustive (own texture values plus shader uniforms): named-key lists miss MToon and node materials
+    // own texture values plus shader uniforms (named-key lists miss MToon); a texture only inside a node graph, e.g.
+    // flora's texNode(maps.albedo), isn't counted
     const seen = (t) => { if (t?.isTexture && !rec.texs.has(t)) { rec.texs.add(t); rec.texBytes += texBytes(t); } };
     for (const v of Object.values(m)) seen(v);
     if (m.uniforms) for (const u of Object.values(m.uniforms)) seen(u?.value);

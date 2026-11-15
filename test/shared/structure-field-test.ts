@@ -6,11 +6,11 @@
 //  - walls on EDGES cannot be double-counted: one wall between two rooms;
 //  - rooms are DERIVED by flood fill, and a wall stops the fill;
 //  - a DOOR DOES NOT MERGE two rooms (Sims semantics) — only an absent wall does;
-//  - an aperture is a hole made of ABSENT boxes, so it is walkable with no
-//    change to the movement solver, and the surrounding boxes never overlap;
+//  - an aperture is a hole made of ABSENT boxes (a door's or arch's walkable, a window's above its sill; a
+//    diagonal wall opens for a door or arch only) with no change to the movement solver, and the surrounding boxes never overlap;
 //  - portals resolve to the two rooms they join, null meaning outdoors;
-//  - the planner is pure, deterministic and TOTAL — malformed data yields an
-//    empty plan rather than a throw (house rule 3, one layer down).
+//  - the planner is pure, deterministic and TOTAL — malformed data yields the plan
+//    of what is valid in it (junk dimensions fall back), never a throw (house rule 3, one layer down).
 
 import {
   planStructure, normalize, wallBoxes, deriveRooms, derivePortals, roomAt, levelAt,
@@ -273,7 +273,7 @@ const HOUSE = {
   check("room ids don't depend on author order", a === c);
 }
 
-// 11. totality — a broken house is an empty house, never a thrown fold
+// 11. totality — a broken house plans what is valid in it, never a thrown fold
 {
   const bad: any[] = [
     null, undefined, 42, "house", [],

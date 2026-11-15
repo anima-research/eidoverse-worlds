@@ -14,8 +14,8 @@ export { openFraction, openPose, OPEN_DEFAULTS };
 const tweens = new Map();   // id → {from, to, t0, dur, obj, base, sig, f}
 const isBag = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
 
-/** Once a frame (main.js). Only things with an openable are visited; a shut one nobody has opened is never touched, so
- *  build-mode gestures on it stay the gizmo's. */
+/** Once a frame (main.js). Only things with an openable are visited; a shut one nobody has opened is set to its base
+ *  pose once, when first seen (a part not even that), then left alone, so build-mode gestures on it stay the gizmo's. */
 export function tickOpenables(now = performance.now()) {
   for (const [id, bag] of bags()) {
     const o = bag.openable; if (!isBag(o)) continue;

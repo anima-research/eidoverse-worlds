@@ -6,7 +6,8 @@
 //   * the governor never touches the cloud tier (the resident's ⚙ choice; a sky rebuild is the most expensive
 //     operation the client has).
 //
-// The ladder (LEVERS), in shed order; recovery unwinds it back-to-front, so pixels return first and content last:
+// The ladder (LEVERS), in shed order; recovery unwinds it back-to-front, so detail returns first, then pixels, and
+// content last:
 //
 //   casters    the shadow-caster budget halves toward 2 (castShadow is in no pipeline key: a free toggle, §12.1)
 //   lights     the light-slot cap drops by one (idle slots are uniform zeros)

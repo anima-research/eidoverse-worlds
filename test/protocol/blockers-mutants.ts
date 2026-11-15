@@ -1,5 +1,5 @@
 // test/protocol/blockers-mutants.ts — the RED side of every blocker's row, run (review of PR #260, 2026-10-18: "red mutations").
-// For each of the reviewer's blockers (B1–B10 but B3, whose per-world fence main's #255 removed: 7d3050686), the architecture note's items that have code (M1–M9) and review r14's four
+// For each of the reviewer's blockers (B1–B10 but B3, whose per-world fence main's #255 removed: 7d3050686), the architecture note's items that have code (M1–M8) and review r14's four
 // (H1, M1–M3), ONE mutation of the fix's code — a text find/replace applied to a scratch copy of the tree, the mechanism
 // txn-check --mutants and r10/r11-check MUTANTS use — and the ONE suite whose named row(s) it must turn red. Plus a no-op control
 // that must stay green. Each find text must occur exactly once at HEAD (a fix that moved is a FAIL here, not a silent skip).
@@ -44,7 +44,7 @@ const M: Mutant[] = [
     find: "{ name, deferIdentities: true, approval, claim: CLAIM });", repl: "{ name, deferIdentities: false, approval, claim: CLAIM });", suite: "inplace", rows: ["IP17"], expect: 20 },
   { id: "B10", what: "deleting a support skips what is parented elsewhere but rested on it too", file: "shared/protocol/authority/writes.js",
     find: "      if (tops.some((s) => hitsIx(ctx.st, { min: [s.min[0], s.y - 0.01, s.min[1]], max: [s.max[0], s.y + 0.03, s.max[1]] }, k, 0))) wake.push(k); }", repl: "      if (false) wake.push(k); }", suite: "settle", rows: ["SE18"], expect: 6 },
-  // ---- M1–M9: the architecture note's items (M10, the gate itself, has no code to mutate: --check-manifest is its row) ----
+  // ---- M1–M8: the architecture note's items (M9 has no mutant here; M10, the gate itself, has no code to mutate: --check-manifest is its row) ----
   { id: "M1", what: "a throw from a durable write reported rolled-back (no ambiguous outcome)", file: "shared/protocol/authority/storage.js",
     find: '  if (newLog || newMod) return { outcome: "ambiguous"', repl: '  if (false) return { outcome: "ambiguous"', suite: "txn", rows: ["T2"], expect: 1 },
   { id: "M2", what: "the identity is read after the await (the capability not rechecked at the commit seam)", file: "server/request-capability.ts",

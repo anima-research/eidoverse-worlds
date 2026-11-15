@@ -10,7 +10,7 @@
 //
 // So this one CALLS prepareObject() on a real mesh with a real
 // MeshPhysicalMaterial and asserts on the material that comes back. No regex
-// over source, no path outside this repo.
+// over source but the AUTHORED ZERO row's (a pin on avatar.js), no path outside this repo.
 //
 // The failure it guards is silent and looks like missing geometry: a plain
 // MeshPhysicalMaterial with transmission > 0 arrives with every value correct

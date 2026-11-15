@@ -211,7 +211,7 @@ if (M) {
   ok(mono && near(prev, 1.5), "W7 a VR stick ramp 0→1 swims monotonically up to 1.5 m/s (the controller's own run/gain mapping)", dip ?? { last: prev });
   ok(near(stepWalk({ pos: [0, 0, 0], dir: [1, 0], dt: 1, gain: 0.5 }, deep).moved, 0.45), "W7 half a walk asked for is half a stroke", null);
   const same = stepWalk({ pos: [0, 0, 0.95], dir: [0, 1], dt: 0.1 }, { floorAt: (x, z) => (z > 1 ? 0.9 : 0) }); ok(same.blocked?.by === "ledge", "W4 without waterAt, the ledge rule is exactly what it was", same);
-  // a caller's measured stature (REPOINT-2, 10-15: main's per-avatar statureFor / bodyHeight) moves where the water reaches, never the stride
+  // a caller's measured stature (REPOINT-2, 10-15: main's per-avatar statureFor / bodyHeight) moves where the water reaches (and so a wading stride), never a dry stride
   const tall = stepWalk({ pos: [0, 0, 0], dir: [1, 0], dt: 1 }, pool(1.0)), short = stepWalk({ pos: [0, 0, 0], dir: [1, 0], dt: 1, height: 1.2 }, pool(1.0));
   const dryShort = stepWalk({ pos: [0, 0, 0], dir: [1, 0], dt: 1, height: 1.2 }, pool(null));
   ok(!tall.stance.swimming && short.stance.swimming && near(short.pos[1], 1.0 - 0.75 * 1.2) && near(short.moved, 0.9) && near(dryShort.moved, 1.55), "W5 height: a 1.2 m body swims in 1 m of water a 1.7 m one wades; dry, its stride is the mover's", { tall: tall.stance, short: short.stance, dryShort: dryShort.moved });

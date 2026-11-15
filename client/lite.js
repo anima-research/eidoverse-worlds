@@ -2,7 +2,8 @@
 // scene, camera, renderer or bodies. A separate entry point rather than a flag because main.js's static imports and
 // index.html's modulepreloads are fetched before any of our code runs; index.html's decideLite chooses between them.
 // It runs the real net.js, which takes its participant registry, asset ledger and snapshot renderer by injection,
-// so the protocol has exactly one implementation. test/client/lite-graph-test.ts checks that nothing here reaches core.js.
+// so the protocol has exactly one implementation. test/client/lite-graph-test.ts checks that no static import from here
+// reaches core.js (a dynamic import() isn't walked).
 import { say } from './lib/net.js';
 import { chooseClient } from './lib/ui/litechoice.js';
 import { CONFIG, bus, report, setToken } from './lib/base.js';

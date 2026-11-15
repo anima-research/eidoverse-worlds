@@ -30,7 +30,8 @@ export type Client = {
   id: string;          // participant's display name in this world (their identity is actorId, from the authority directory)
   ws: { send(data: string): void; close?(code?: number, reason?: string): void; getBufferedAmount?(): number; readyState?: number };
   world: World | null;
-  /** latest pose, forwarded to late joiners. Only `.p` is dereferenced (world.near, held-thing reach); the rest rides opaque. */
+  /** latest pose, forwarded to late joiners. `.p` (world.near, held-thing reach), and `.q`, scale and `.reach`
+   *  (reachgate.ts) are read; the rest rides opaque. */
   lastPose: ({ p?: [number, number, number] } & Record<string, unknown>) | null | undefined;
   avatar: string;      // VRM library path chosen at join
   spectator: boolean;  // retina/observer connections: receive everything, appear as nothing

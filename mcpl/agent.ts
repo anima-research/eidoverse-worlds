@@ -601,8 +601,9 @@ export class WorldAgent {
         // 4006 = removed by moderation (kicked or banned): the body stays down,
         // and goes THROUGH close() so it also drops the floors it holds up in
         // the process-global physics state.
-        // …unless the removal said when they may come back (a kick's cooldown): the body still lets go of what it holds
-        // up now, and the host dials again once the cooldown has passed. Bans and anything over two hours stay down.
+        // …unless the removal said when they may come back (a timed ban's until): the body still lets go of what it holds
+        // up now, and the host dials again once it has passed. A kick (no until), an untimed ban and anything over two
+        // hours stay down.
         if ((ev as { code?: number } | undefined)?.code === 4006) {
           const wait = (this.removedUntil ?? 0) - Date.now();
           if (wait > 0 && wait <= 2 * 3600_000 && !this.closed) {
@@ -648,7 +649,7 @@ export class WorldAgent {
         const msg = JSON.parse(String(ev.data));
         switch (msg.type) {
           case "error":
-            if (typeof msg.until === "number") this.removedUntil = msg.until;   // when a kick lets us back (onclose 4006)
+            if (typeof msg.until === "number") this.removedUntil = msg.until;   // when a timed ban lets us back (onclose 4006)
             // A pre-join refusal is final: surface the sequencer's reason
             // instead of retrying the identical join.
             if (!this.joined) {
@@ -1215,7 +1216,7 @@ export class WorldAgent {
   private joinRefused: string | null = null;
   /** How long until the next dial after a drop or a full world (shared/redial.js: the browser's rule); reset by a join. */
   private redial = redialer();
-  private removedUntil: number | null = null;   // a moderation removal's end (a kick's cooldown): reconnect then   // entity id -> registered box ids
+  private removedUntil: number | null = null;   // a moderation removal's end (a timed ban's until): reconnect then
 
   /** Every collider query a tick makes is about this agent's own world. */
   private tick() { inWorld(this.world, () => this.tickInWorld()); }
@@ -1373,7 +1374,8 @@ export class WorldAgent {
       this.checkSky();
     }
     // Being dragged: the dragger's stream owns pos/pose/yaw (no walking, no
-    // terrain clamp). A silent dragger loses the body, which holds its last pose.
+    // terrain clamp). A silent dragger loses the body, which my own sim settles from its last pose (settleFromDrag;
+    // with no sim it holds that pose).
     if (this.draggedBy && Date.now() - this.dragAt > 1200) {
       this.draggedBy = null;                 // a silent dragger loses the body
       void this.settleFromDrag(null);        // — and my own sim settles it
@@ -1979,7 +1981,8 @@ export class WorldAgent {
   private walkNow(x: number, z: number, run: boolean, timeoutMs: number, tolerance: number, y: number | undefined,
     near: Pick<NavTarget, "reach" | "above" | "below" | "inside"> & { bodyAt?: { x: number; z: number } }, replanned = false): Promise<boolean> {
     // Plan before touching the body, from the ground under it (as setPosture's
-    // feetGround): a refused walk leaves the body exactly as it was and sends nothing.
+    // feetGround): a walk refused here leaves the body as it was and sends nothing (walkTo has already taken a
+    // mid-air body out of its flight; a refusal from the first track comes after the flight, drag and nails are let go).
     const slumped = this.isSlumped();
     const feetY = this.feetY(slumped);
     const support = this.walkSupport(feetY);
@@ -2559,7 +2562,8 @@ export class WorldAgent {
    *  REACH_NOTE_MS), newest last: what reach() reads to tell the truth about a hand nobody saw. */
   reachRefusals: { to: string; cls: string; why: string; fix?: string; limb?: string; ts: number }[] = [];
   nameOfActor(actor: string): string | null { for (const [n, a] of this.actorIds) if (a === actor) return n; return null; }
-  /** A gesture's ops (shared/requests.js) as ONE request, sent after the previous one was answered. Ops planned
+  /** A gesture's ops (shared/requests.js) as ONE request, sent after the previous one was answered or timed out (8 s;
+   *  it may still land). Ops planned
    *  before that wait don't see what landed meanwhile, so a caller that planned from the replica pins what it read with
    *  `expect` (componentsOf): a change since is refused, not overwritten. `extra` rides the request (dry, expect,
    *  throughLock). The same requests a person's edit sends. */
@@ -2619,8 +2623,9 @@ export class WorldAgent {
   }
 
   /** Wait briefly for the world's answer to a moderation act issued at t0: a
-   *  `mod` confirmation (or the log echo of our own ban/kick), or an `error`
-   *  refusal. Verbs are fire-and-forget; moderation deserves a real answer. */
+   *  `mod` confirmation or an `error` refusal (a log echo isn't read; a world
+   *  ban answers on its request's reply, tools.ts). Verbs are fire-and-forget;
+   *  moderation deserves a real answer. */
   async modOutcome(t0: number, ms = 1500): Promise<string | null> {
     const deadline = Date.now() + ms;
     while (Date.now() < deadline) {

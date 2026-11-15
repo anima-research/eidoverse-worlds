@@ -22,8 +22,8 @@ Rationale behind `client/lib/audio/engine-piper.js`. The code comments point her
   warm the phonemizer (~27 s) during load rather than in front of the first utterance.
 - `TtsSession` is a singleton that ignores `voiceId` and `wasmPaths` after the first construction; the instance is
   dropped before each load or a second voice keeps speaking in the first.
-- Local bytes reach the runtime only through its OPFS cache (`getBlob()` reads it before fetching HuggingFace), so the
-  load seeds the cache under the names it will look for. The cache name carries both the model and config digests:
+- The load still seeds the runtime's OPFS cache (`getBlob()` reads it before fetching HuggingFace), but the session we
+  build reads the File's own bytes, so the seeded copy isn't what speaks. The cache name carries both the model and config digests:
   two voices sharing a filename, or one model with two configs, must never serve each other's bytes.
 
 ## ORT settings (measured natively, 45-token sequence)

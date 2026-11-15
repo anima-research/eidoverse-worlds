@@ -6,8 +6,8 @@
 // Only the BROWSER SURFACE is stubbed — navigator.mediaDevices and the minimum
 // WebAudio the synth path touches. The decision logic under test is the real
 // one, so reverting the micWanted fix in voicesource.js makes this go red.
-// voicesource.js imports core.js, which builds a canvas at module scope — so a
-// real import needs a real DOM. happy-dom is already the repo's pattern for
+// voicesource.js takes `report` from base.js (once from core.js, which builds a canvas at module scope; the core.js
+// mock below is left from then) — a real import still wants a real DOM. happy-dom is already the repo's pattern for
 // this (test/client/tts-fault-test.ts, test/client/chat-log-test.ts).
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { mock } from "bun:test";

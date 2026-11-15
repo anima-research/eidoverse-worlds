@@ -5,7 +5,7 @@
 //
 // What must hold, in order:
 //   A. a sound comp on a placed entity builds ONE graph on the page's shared
-//      AudioContext: <audio> → gain → panner → destination, panner following
+//      AudioContext: <audio> → gain → panner → the world bus (listener volume) → limiter → destination, panner following
 //      the entity's world position;
 //   B. it PLAYS after the first gesture (the shared unlock queue), and with a
 //      t0 in the past it seeks to the shared playhead, not the top;

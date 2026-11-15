@@ -76,7 +76,7 @@ async def main():
     await asyncio.sleep(0.5)
     check("T3 orphan aux refused 4008", c4() is not None and c4()[0] == 4008, str(c4()))
 
-    # T4: rtc — voice leg can send; delivery reaches primary AND voice leg of target
+    # T4: rtc — voice leg can send; unaddressed delivery reaches the target's primary only, a named leg (toSurface) that leg
     h1, e5, c5, _ = await join("human1")
     await asyncio.sleep(0.3)
     await v2.send(json.dumps({"type": "rtc", "to": "human1", "payload": {"x": 1}}))

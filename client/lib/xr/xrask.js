@@ -1,7 +1,8 @@
 // xrask — the centre card's questions (edit/confirmcenter.js), inside a headset. A DOM card isn't drawn in an immersive
 // session, and an unanswered question holds every later undo (edit/writes.js settled()). In VR the question rides a quad:
 // by default a hidden xr-flagged DOM frame that domquad.js mirrors, or on the canvas path (?canvasquads=1) a schema panel
-// in xrpanels.js; showXRPanel picks whichever is live. Refusals and warnings, toasts on the desk, show here too.
+// in xrpanels.js; showXRPanel picks whichever is live. Refusals (toasts on the desk) and warnings (the desk's status bar)
+// show here too.
 import { renderer } from '../core.js';
 import { bus } from '../base.js';
 import { registerXRPanel, showXRPanel } from './xrpanels.js';
@@ -74,7 +75,7 @@ bus.on('thingphysics-refused', ({ text, refused: x }) => {
   const mine = pending; setTimeout(() => { if (pending === mine) settle('ok'); }, PLAY_CARD_MS);
 });
 
-// a warning on a write that went through, likewise (the desk shows it as a toast)
+// a warning on a write that went through, likewise (the desk shows it on the status bar: writes.js showWarnings)
 bus.on('edit-warned', ({ text }) => {
   if (!xrActive() || pending) return;
   chooseXR({ title: 'done — with a warning', body: text, choices: [{ v: 'ok', label: 'OK' }], cancel: 'ok' });

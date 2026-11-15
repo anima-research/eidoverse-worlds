@@ -5,7 +5,8 @@
 // page runs on at 60 fps into a black canvas.
 //
 // Rebuilding in place would mean re-creating every GPU object the realizers own, so recovery is a reload into the
-// same world: the server remembers the pose, the HTTP cache is warm, and a VR session is gone either way. The ?xr=1
+// same world: the server remembers a signed-in person's pose (not a guest's: server.ts rememberPose), the HTTP cache is
+// warm, and a VR session is gone either way. The ?xr=1
 // boot flag is dropped so a crash out of VR lands on the desktop.
 //
 // Loop guards (gpuLostAction): a second loss inside GPU_LOST_WINDOW_MS does not reload again (a device that resets

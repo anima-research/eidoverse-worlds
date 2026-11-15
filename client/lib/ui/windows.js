@@ -37,7 +37,7 @@ export function frameResizeInfo(root) {
   const f = _resizables.find((r) => r.root === root);
   return f ? { minW: f.minW, minH: f.minH } : null;
 }
-/** Would the edge-resize hit-tester claim this point? (for ui.js's
+/** Would the edge-resize hit-tester claim this point? (for ui-menu.js's
  *  arrange-exit guard — the grab band extends _REACH px OUTSIDE frames) */
 export function resizeZoneAt(x, y) {
   const fake = { clientX: x, clientY: y };
@@ -634,7 +634,7 @@ export function makeFrame(id, opts = {}) {
 // Which side of the viewport a piece of fixed chrome is welded to. Data, not an inference: getComputedStyle resolves
 // both `left` and `right` to pixels, so the authored side is gone. LTR only.
 const CHROME_ANCHOR = {
-  '#dock':      (el) => el?.dataset.edge || 'left',    // dynamic: ui.js applyDockEdge
+  '#dock':      (el) => el?.dataset.edge || 'left',    // dynamic: ui-dock.js applyDockEdge
   '#micbtn':    (el) => el?.dataset.edge || 'left',    // hangs off the rail, follows its edge
   '#earbtn':    (el) => el?.dataset.edge || 'left',
   '.capnotice': (el) => el?.dataset.anchor || 'right', // the lite banner (lite.js)
@@ -781,7 +781,7 @@ export function escapeIsClaimed() {
   if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)) return 'field';
   if (document.querySelector('.pf-pop, .dd-pop, .chat-gearpop:not([hidden]), #emenu:not([hidden]), #stpop:not([hidden])')) return 'pop';   // #stpop: a status chip's popover (statuschips.js)   // the gear pop lives in the DOM hidden; only a SHOWN one claims Esc
   if (document.querySelector('.scrim.open')) return 'overlay';
-  if (document.body.classList.contains('arranging')) return 'layout';   // HUD layout mode: Esc ends the mode (ui.js); the panel toggle waits
+  if (document.body.classList.contains('arranging')) return 'layout';   // HUD layout mode: Esc ends the mode (ui-menu.js); the panel toggle waits
   if (document.pointerLockElement) return 'pointer-lock';
   return null;
 }

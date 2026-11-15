@@ -733,7 +733,7 @@ console.log("FRAMES — a shrink is not a decision: grow the window back and eve
 
   // HIDDEN THROUGH THE RESIZE (review C1): a display:none frame measures 0 tall in a
   // browser, so edge-docking and fit() both went blind, and show() fitted only once.
-  // Esc (hide all) → resize → Esc is the everyday path. This fixture measures a hidden
+  // Tab (hide all) → resize → Tab is the everyday path. This fixture measures a hidden
   // frame as 0, which the shared measurable() does not.
   const hid: any = makeFrame("rt-hidden", { title: "hid", x: 40, y: 40, w: 200, h: 150 });
   (hid.el as any).getBoundingClientRect = () => ({ left: hid.state.x, top: hid.state.y, width: hid.state.w,

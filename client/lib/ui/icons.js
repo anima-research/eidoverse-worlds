@@ -12,7 +12,7 @@
 //   has(name)                → registry probe
 //
 // Adding an icon: curl raw.githubusercontent.com/lucide-icons/lucide/main/icons/<name>.svg and paste its path `d`
-// strings here. Do NOT hand-draw replacements: they read as blobs at 26px.
+// strings here (a <rect> goes in RECT below, as mic's does). Do NOT hand-draw replacements: they read as blobs at 26px.
 
 const P = {
   // the world, for the Hierarchy's World row (a filled planet is a blot at 13 px): a circle, its equator, one meridian

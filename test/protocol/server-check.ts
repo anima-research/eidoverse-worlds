@@ -582,7 +582,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
 for (const c of [ann, bob, vic, spec]) c.close();
 await sleep(200);
 // ================= CB: the captioner bot (services/captionbot/world.ts) through a real server: the authority's caption tool, the
-// screen's captioners list, the server-stamped leg generation, the duplicate refusal read as a receipt =================
+// screen's captioners list, the server-stamped leg generation (a duplicate read as a receipt isn't driven here) =================
 { const { WorldClient } = await import("../../services/captionbot/world.ts");
   const own = await client(srv.port, "garden", "Ann", REPLICA);
   ok((await own.req("create", { id: "screen1", model: "test/table.glb", place: { at: [6, 6] } })).ok, "CB (setup) a screen");

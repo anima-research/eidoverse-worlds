@@ -5,7 +5,8 @@
 // (test/client/xr-quad-colour-probe.mjs). The cure: the quad's output node applies the exact inverse of three's
 // acesFilmicToneMapping at the live exposure, so the output pass lands on the authored value.
 // On top, a VR-only saturation/contrast grade in sRGB space, quads only (never the design tokens or the desktop);
-// quadgrade.js holds its JS twin and test/client/quadcolour-test.mjs holds both to the same numbers.
+// quadgrade.js holds its JS twin: test/client/quadcolour-test.mjs tests the twin, test/client/xr-quad-colour-probe.mjs
+// holds the GPU's output to it.
 import * as THREE from 'three';
 import { GRADE_DEFAULT, GRADE_RANGE, LUMA, loadGrade, clampTo, storeGrade, ACES_IN_INV, ACES_OUT_INV, ACES_FIT } from './quadgrade.js';
 import { Fn, vec3, vec4, mat3, texture, uniform, toneMappingExposure, sRGBTransferOETF, sRGBTransferEOTF, dot, mix, clamp, sqrt, max } from 'three/tsl';

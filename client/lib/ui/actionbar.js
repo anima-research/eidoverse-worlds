@@ -115,7 +115,7 @@ export function initActionBar() {
       unregs.push(registerAction({ id: `bar:${name}`, title: name, group: 'action bar', keywords: ['action', 'gesture'],
         icon: emojiRenders(em) ? em : undefined, key: i < 9 ? String(i + 1) : undefined, run: b.onclick }));
     });
-    // sit and lie have keys (X, Z: controller.js registers those); standing up has only this tile
+    // sit and lie have keys (X, Z: controller.js registers those, and pressing either again stands); this is stand's tile
     unregs.push(registerAction({ id: 'posture:stand', title: 'stand up', group: 'body', keywords: ['posture', 'get up'], icon: 'personStanding',
       run: () => { posture('stand'); paint(); } }));
     if (f._state) snapTo(f._state.w);

@@ -209,7 +209,7 @@ export const terrainPending = () => terrainRetry !== null && lastTerrainArgs !==
 export function currentTerrainArgs() { return lastTerrainArgs ? JSON.parse(lastTerrainArgs) : null; }
 
 // edits sent but not yet echoed: two quick patches must compose, so a sent bag is the base until the world echoes
-// something or PENDING_MS passes (the edit was refused)
+// that same bag or PENDING_MS passes (the edit was refused)
 let pendingTerrain = null;   // { args, at }
 const PENDING_MS = 5000;
 /** The bag a new terrain edit should build on: the newest sent-but-unechoed edit, else the built one. */

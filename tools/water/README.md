@@ -71,8 +71,8 @@ dive (watervolumes `levelAt`).
 Source: Unreal `/Game/Underwater/SpectralPrototype/L_SpectralOcean_Prototype` in
 `Test1`. Five content-addressed GLBs contain terrain, habitat, submarine, platform,
 and scenery. `tools/water/data/manifest.json` (upstream's) has twenty records and
-fifteen dry volumes; they become twenty-nine `create`s (five models, one water body,
-fifteen pockets, three climb routes, the submarine's helm, its two vehicle-band walls, a
+fifteen dry volumes; they become thirty `create`s (five models, one water body,
+fifteen pockets, three climb routes, the submarine's helm and passenger seat, its two vehicle-band walls, a
 sun and a dust effect) and nine `@world` sets (five asset entries, spawn, bounds, terrain,
 sky) — `import-golden-check.ts` counts them. `prepare.ts` writes a bundle whose
 manifest already carries those requests. Repeated ecology meshes use GPU instancing.

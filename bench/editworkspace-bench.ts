@@ -4,7 +4,7 @@
 //
 //   the corner   the ∃ in the top-left cell, the mic / ear (/ goggles) folded to its right exactly as
 //                the HUD folds them, the menus after them, the glyphs in the editor's greys;
-//   the wrench   the way out: amber on purpose, titled "leave build mode (B)", the only amber on the rail;
+//   the wrench   the way out: amber on purpose, titled "leave builder mode (B)", the only amber on the rail;
 //   Build        Build | Hierarchy tabs in the left column (the World section is worldentity-test's); the six
 //                building tools as tiles (structure_ui's TOOLS), "new building", "undo building edit"; the
 //                armed tool's strip across the top of the viewport and Esc to drop it; the Library (add light,

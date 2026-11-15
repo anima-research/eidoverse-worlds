@@ -92,7 +92,7 @@ function world(name, N) {
   ok(!!lost && lost.body.home === true && Math.hypot(at[0], at[1], at[2] - 2) < 1e-6, "T5 it rested outside and was sent home, not back to the hand", { lost: lost?.body, at });
 }
 // T6: a checkpoint. After a knock has rested and 20 s of quiet, the beat writes sim:checkpoint naming a blob with the cut;
-// opening the same world again starts the sim from it (feeding only later entries), in bounded time (the from-genesis cost is reported, not compared), and lands on the same bits.
+// opening the same world again starts the sim from it (feeding only later entries), in bounded time (a second open's cost is reported, not compared), and lands on the same bits.
 {
   const { w, call, beat, now } = world("t6", 30);
   ok(call("rowan", "throw", { id: "ball", v: [0, 1, 12] }).ok, "T6 throw");

@@ -1,7 +1,7 @@
 // xrpanels — the registration contract docs/guide/MODDING-UI.md advertises.
 // The VR runtime (xrPanelsEnter, xrPanelsPick) is covered only by the laser rows
 // below; the rest is the seam a mod calls: registerXRPanel(def) validates its def
-// and an id registers once. Every other suite STUBS xrpanels, so this one
+// and an id registers once. Most other suites STUB xrpanels (edittheme-test's D section is one that doesn't), so this one
 // drives the real module — a stub would only assert its own shim.
 // RED when: the validation guard goes (a def with no dispatch registers), or
 // the findIndex/replace becomes a push (re-registering an id duplicates it).

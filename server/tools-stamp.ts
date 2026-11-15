@@ -17,7 +17,7 @@ export function findKtx2Encoder(): string | null {
   if (env && existsSync(env)) return env;
   const which = Bun.which("toktx") ?? Bun.which("ktx");
   if (which) return which;
-  // where the docs/operator/KTX2-ENCODER.md recipe installs it
+  // a ~/.local/ktx install (docs/operator/KTX2-ENCODER.md's recipes use KTX2_TOKTX or PATH instead)
   const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
   for (const p of [`${home}/.local/ktx/bin/toktx`, `${home}/.local/ktx/bin/ktx`])
     if (home && existsSync(p)) return p;

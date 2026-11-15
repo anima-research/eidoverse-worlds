@@ -7,7 +7,7 @@
 // choosing a backend for a headset it may no longer have.
 export const HEADSET_SEEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;   // 30 days
 
-/** When a headset was last actually used here, or null if never.
+/** When a VR session was last granted here (a switched-off headset can still be granted one), or null if never.
  *  The legacy marker '1' reads as 0 — "seen, TIME UNKNOWN". It is not a timestamp and must not be
  *  treated as one; see migrateHeadsetSeen for how it stops being permanent. */
 export function headsetSeenAt(raw) {

@@ -141,8 +141,8 @@ export const LEAF_PRESETS = {
   heavy: { terminalV: 12.0, period: 1.5,    lateralAmplitudeM: 1.4, bankAmplitudeDeg: 45, spinUpTime: 0.7 },
 };
 
-/** Deep-merge a partial config over the defaults, REJECTING anything it does not consume: unknown keys, non-finite and
- *  out-of-range values throw here, so a config editor never reports an edit the physics ignores. */
+/** Deep-merge a partial config over the defaults, REJECTING unknown keys and non-finite or out-of-range values (they
+ *  throw here). A known key with no consumer (stamina.refillPerchPerSec, SPEC ONLY above) is still accepted. */
 export function makeConfig(over = {}) {
   const out = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
   const bad = [];
@@ -674,8 +674,8 @@ export function unfold(cfg, state) {
   return s;
 }
 
-/** take_off (spec §1): ground -> air. Refuses on FOLDED wings (unfolding is explicit) and LIMP ones. Costs the climb it
- *  grants from the stamina pool. The boost is a jump-launch (cfg.pilot.launchBoost, shaped in stepPilot). */
+/** take_off (spec §1): ground -> air. Refuses on FOLDED wings (unfolding is explicit) and LIMP ones. Costs boost ×
+ *  climbPerMetre from the stamina pool up front, whatever height the launch then gains. The boost is a jump-launch (cfg.pilot.launchBoost, shaped in stepPilot). */
 export function takeOff(cfg, state, { launchSpeed = null, boost = null, groundY = null } = {}) {
   const s = { ...state, pos: { ...state.pos }, vel: { ...state.vel }, events: [] };
   // The config's boost unless a caller overrides it, so `cfg.pilot.launchBoost`

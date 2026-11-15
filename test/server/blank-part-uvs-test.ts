@@ -9,7 +9,7 @@
 // reads none. The frame prop's `picture` quad came back from the store-min
 // pass with POSITION+NORMAL only; a hung picture sampled one texel. The pass
 // now prunes with keepAttributes, and this pins it: the blank part's UVs
-// survive, the textured neighbour is untouched, and the pass still prunes
+// survive, the textured neighbour keeps its UVs, and the pass still prunes
 // what it should (an unreferenced material is gone).
 import { Document, NodeIO } from "@gltf-transform/core";
 import { PNG } from "pngjs";

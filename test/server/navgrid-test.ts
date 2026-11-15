@@ -5,8 +5,8 @@
 // isolated sequencer, is given ONE walk_to per destination and has to find
 // its own way: in through the door, up the stair, along the upper floor, down
 // again, out and round the building; to stay on its own storey unless told
-// otherwise; to be refused — with a reason — where there is no way or nowhere
-// to stand; and to keep the single straight leg it always had on open ground.
+// otherwise; to be refused — with a reason — where there is no way (a sealed
+// room); and to keep the single straight leg it always had on open ground.
 process.env.AGENT_BODY_ENGINE = "verlet";
 process.env.WORLD_TOKEN = "";
 const { MOVER } = await import("../../shared/mover.js");

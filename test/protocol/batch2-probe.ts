@@ -4,7 +4,7 @@
 //
 //   PRIV  an untrusted link (a picture's and a sound's) is NEVER requested by a viewer who hasn't opted in: every https
 //         request the page makes is caught at the network layer (CDP Fetch: paused, recorded, failed: nothing leaves the
-//         machine) and none names the untrusted host; no audio element exists for it. The same detector sees the request
+//         machine; MAT's own host is answered with a pixel, unrecorded) and none names the untrusted host; no audio element exists for it. The same detector sees the request
 //         for a trusted host's link (so it would have seen one), and for the untrusted link once the viewer opts in
 //         (Settings › 🛡 safety): that's the gate's own mutant, run live.
 //   MAT   a material's link worn while the viewer allowed untrusted links comes off when they turn it off (material.js)
@@ -44,7 +44,7 @@ const waitFor = pageWaiter(evalJson);
 const page = (js: string) => evalJson(`(async () => { ${js} })()`);
 const req = (verb: string, args: any) => page(`const m = await import('/lib/net.js'); return await m.sendRequest('${verb}', ${JSON.stringify(args)});`);
 
-// every https request the page makes: caught before it leaves (CDP Fetch), recorded, failed
+// every https request the page makes: caught before it leaves (CDP Fetch), recorded, failed (MATHOST's: answered, not recorded)
 const MATHOST = "untrusted-b2mat.example.net", PNG1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 const outside: string[] = [], sentWith: { u: string; r: string | null; origin: string | null }[] = [];   // each outside request, with the Referer and Origin it carried (null: none)
 cws.addEventListener("message", (ev) => { const m = JSON.parse(String(ev.data));

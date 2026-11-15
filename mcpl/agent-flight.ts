@@ -18,7 +18,8 @@ import { inspectBody } from "../shared/flightbody.js";
  *  flies it is a timer and runs late under load, so it allows half again, which covers a tick up to 50% late, and
  *  8 s beside for what the leg's rate leaves out, such as a climb's lift easing in. */
 const legWaitMs = (legS: number) => Math.round((legS * 1.5 + 8) * 1000);
-/** A glide arrives, in the air or touching down, within this many metres of its target (glideTo). */
+/** A glide arrives, in the air or touching down, within this many metres of its target, or at its closest approach
+ *  once that came inside 12 m (glideTo). */
 export const GLIDE_ARRIVE_M = 2.0;
 /** Every way out of flight to the feet (endFlight; #298, #300), and its words (flightWords). A take-off from a down
  *  flight replaces it with a fresh one, flight to flight, with no wait left on it (flightDownNow answered them). */

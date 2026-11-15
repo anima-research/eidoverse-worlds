@@ -26,7 +26,7 @@ mock.module(fileURLToPath(new URL('../../client/lib/net.js', import.meta.url)), 
   say: () => {}, sendRequest: async () => ({ ok: true }), net: {},   // for mictoggle.js's graph (the stuck-key rows run it)
 }));
 // Full enough for the gate GRAPH to build (micstate-test.mjs's "none" context lacks
-// createGain/createMediaStreamDestination, so its gate is always unavailable
+// createGain/createMediaStreamDestination, so its gate is unavailable outside its R rows' built one
 // — fine for its questions, blinding for these: an unbuilt gate reports
 // openness 0 forever and every assertion below would vacuously pass).
 // The analyser reports a level WE set, so the level side of the machine can

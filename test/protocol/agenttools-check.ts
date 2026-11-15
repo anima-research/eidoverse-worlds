@@ -5,7 +5,7 @@
 //        a wall the authority calls solid stops it, and the hand verbs find it where it stands (grab/put after a walk)
 //   AT2  create {from: <a thing's id>} duplicates from the tool (at as a point; with no at, beside its source), and its
 //        description carries an example
-//   AT3  ragdoll reports the server's refusal as an error naming the consent class (shove), and its description no longer
+//   AT3  act shove reports the server's refusal as an error naming the consent class (shove), and its description no longer
 //        says agents are performers by default (every body is Normal)
 //   AT4  every advertised tool carries a title and honest MCP annotations (readOnly / destructive / idempotent / openWorld)
 //   AT5  look points at a real tool where one exists (lock and hidden are edit fields), not at the act hatch
@@ -124,11 +124,11 @@ const { HANDLERS, TOOLS, toolList, handleTool: handleToolDoor } = await import("
   const gone2 = await handleTool({ agent: null } as any, "kick", {});
   ok(gone2.isError && /act \{verb: "kick"/.test(gone2.content[0].text), "AT6 …kick too", gone2.content[0].text);
   { // AT7 (parity sweep 10-14): an agent is a body under the same consent as a person. It sends its table on join (the
-    // server's default preset by NAME, never a literal), carries no private "pushable" flag, and can address someone through say.
+    // gates it chose and nothing else: a fresh agent sends nothing, the world's default stands), carries no private "pushable" flag, and can address someone through say.
     const agentSrc = fs.readFileSync(path.join(ENGINE, "mcpl/agent.ts"), "utf8"), toolsSrc = fs.readFileSync(path.join(ENGINE, "mcpl/tools.ts"), "utf8");
     const agentAll = fs.readdirSync(path.join(ENGINE, "mcpl")).filter((f) => /^agent(-[a-z]+)?\.ts$/.test(f)).map((f) => fs.readFileSync(path.join(ENGINE, "mcpl", f), "utf8")).join("\n");   // the agent and its pieces
     ok(!/\bpushable\b/.test(agentAll), "AT7a agent.ts has no `pushable` flag: the authority's consent table is the one answer to a shove");
-    // It pins the default's NAME in the table the agent starts with. Every arrival sends that table as a person's client
+    // Every arrival sends what it chose as a person's client
     // does: it reads what the authority holds and sets each cell that differs, never a preset, which empties the cells
     // (review of #260). The arrival calls replayConsent() (lifted out for house 6340433633); that method is read here.
     const at = agentSrc.indexOf("async replayConsent()"), end = agentSrc.indexOf("\n  }", at);
@@ -286,7 +286,7 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   const line = T(await call("worlds")).split("\n").find((l) => l.startsWith("- yard")) ?? "";
   ok(JSON.stringify(yard?.agents) === JSON.stringify([ag.name]) && yard.people?.length === 2 && /1 human, 1 agent: /.test(line), "AT12 /worlds' agents lists the declared agent; people is everyone; the worlds tool says 1 human, 1 agent", [yard, line]); }
 { const vic = await sock("Vic"); await sleep(200);
-  vic.at(ag.pos.x + 1, ag.pos.z); await sleep(300);   // in reach (shove: 3 m)
+  vic.at(ag.pos.x + 1, ag.pos.z); await sleep(300);   // beside the agent (act shove is forwarded at any distance unless the world sets one: physconst.js BODY_RANGE)
   const sw = await vic.req("consent", { move: false }); ok(sw?.ok, "(AT3 setup) Vic turns her move gate off (its default is on)", sw);
   const no = await call("act", { verb: "shove", args: { target: "Vic" } });
   ok(no.isError && /shove/.test(T(no)) && /consent|nobody/.test(T(no)), "AT3a Vic's body refuses: act shove is refused, and the tool says so as an error naming the class", T(no));

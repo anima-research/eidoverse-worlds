@@ -77,10 +77,10 @@ try {
   const q0 = await evalJson(`import('/lib/world.js').then((m) => m.entities.get('gate').quaternion.toArray())`);
   const uses0 = entries().filter((e: any) => e.kind === "request" && e.verb === "use").length;
   // an in-page sampler (CDP round trips are too slow to time a 1.2 s swing): how open the tween says, and the angle the
-  // gate is DRAWN at, once per animation frame for 4 s from just before E. Per frame, not per 40 ms: the gate is only drawn
+  // gate is DRAWN at, once per animation frame for 5 s from just before E. Per frame, not per 40 ms: the gate is only drawn
   // on frames (tickOpenables), and a starved CI runner once drew none for ~3 s while a timer kept sampling the shut gate
   // (anima 40067204678, ubuntu) — that is "no frames", not "drawn wrong", and D3 now says which. A page that draws no frame at
-  // all still ends at 4.5 s (the timer races each frame), so D3 fails with a reason ("the tween never started" when no frame came at all, "starved" when too few did) rather than the stage timing out.
+  // all still ends by 5.5 s (the timer races each frame), so D3 fails with a reason ("the tween never started" when no frame came at all, "starved" when too few did) rather than the stage timing out.
   // A runner that draws no frames for the whole swing is INCONCLUSIVE, not a failure ("starved", below): the swing is closed
   // and tried again, up to 3 times, each retry printed. Any other reason fails at once, so a gate drawn wrong (frames, but
   // never part-way) or never moved still goes red the first time. Diagnosis of the one CI failure: anima 40067204678 — timers

@@ -20,7 +20,7 @@
 //      answer — the page connects fresh and joins (review r3 F6: "the early socket is never an authority")
 //   W7 a FULL world (access max) is a transient refusal: the words are shown but the splash isn't pinned, and the page
 //      gets in by itself once there is room (review r3 F6)
-//   W8 while it stays full, the redials back off (each wait longer than the last), not every 5 s in step (review r4 F5)
+//   W8 while it stays full, the redials back off (a doubling jittered window: with the jitter pinned, each wait longer), not every 5 s in step (review r4 F5)
 //   W9 an agent (mcpl/agent.ts) dialling a full world waits and dials again too, and gets in when a seat frees (r4 C2)
 //   W10 a guest at an old-format world gets nope's answer (world-unavailable) and no old-format splash; W10b the doc's setup-link words
 //   W11 the operator's splash: Upgrade world… → the report → Back up and upgrade → the backup and the rollback command

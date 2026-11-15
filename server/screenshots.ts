@@ -11,7 +11,7 @@ export function captureCapability(value: unknown): CaptureCapability | undefined
     ? { version: 1, engine: "unreal", scene: v.scene } : undefined;
 }
 // `retryAfter` (seconds) marks a failure that asking again soon can fix: the renderer still loading, busy, slow,
-// or gone mid-shot. GET /snap sends it as Retry-After, and the MCPL `snapshot` tool asks again only when it is there,
+// or gone mid-shot. GET /snap sends it as Retry-After, and the MCPL `snapshot` tool asks again only when it is there (or once, for a proxy's HTML 502),
 // so a refusal that will not change in seconds (no renderer and no roamer to send, invite-only) is answered at once.
 type Result = { ok: true; png: Uint8Array; engine: string; scene: string }
   | { ok: false; err: string; status: number; retryAfter?: number };
@@ -127,8 +127,8 @@ export function createScreenshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, 
     const target = [...world.clients].find(c => c.id === follow && !c.spectator && active(c, world));
     if (!target) return fail(`"${follow}" is not present in "${world.name}"`, 404);
     asked.set(world.name, now());
-    // The request's one deadline: never shorter than the operator's frame window (SNAP_TIMEOUT_SEC), and never longer
-    // than a caller's stated budget (GET /snap ?budget=), so a retry never outlasts the call that made it.
+    // The request's one deadline: at least the operator's frame window (SNAP_TIMEOUT_SEC), unless a caller's stated budget
+    // (GET /snap ?budget=) is shorter, which wins, so a retry never outlasts the call that made it.
     const ownDeadline = now() + Math.min(maxWait(), Math.max(budgetMs, timeoutMs + 2 * settleMarginMs));
     const deadline = typeof callerBudgetMs === "number" && Number.isFinite(callerBudgetMs) && callerBudgetMs > 0
       ? Math.min(ownDeadline, now() + callerBudgetMs - 500) : ownDeadline;   // answered half a second inside it

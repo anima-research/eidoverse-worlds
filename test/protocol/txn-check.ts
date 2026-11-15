@@ -384,7 +384,7 @@ for (const row of WAITED) {
 
 // ---------------- T10 ----------------
 { const X = world("t10"); const guest = directoryFor(W).resolve({ sub: null, name: "guest" }); const t = tab(X, guest, { account: undefined }); t.c.anonymous = true;
-  // reads and writes alike (a guest may say 20 in 10 s: 15 says, 85 reads), each through both recheck seams
+  // reads and writes alike (a guest may say 20 in 10 s: 14 says, 86 reads), each through both recheck seams
   for (let i = 0; i < 100; i++) if (i % 7 === 6 && i < 105) send(t, "say", { text: `n${i}` }); else send(t, "inspect", { id: "@world" });
   await tryUntil('the reply to "operator-repair visitor"', () => t.replies.length === 100, { ms: 3000, step: 10 });
   const bad = t.replies.filter((m) => !(m.ok === true && m.txn === "committed"));
@@ -403,7 +403,7 @@ for (const row of WAITED) {
 
 ok(!publishedNotOnDisk.length, "T3d every line any client was sent was on disk when it was sent, as the bytes sent (the wire's view of the line on disk)", publishedNotOnDisk);
 // ---------------- T11 (review r14 M1, 10-18) ----------------
-// every write a socket sends goes through requestwire (one capability, the queue, the meters, both recheck seams): server.ts
+// every request a socket sends goes through requestwire (one capability, the queue, the meters, both recheck seams; a drive frame's periodic lease commit is the exception, messages.ts requestSync): server.ts
 // itself calls w.log.request nowhere; voice-moderate goes through requestAs. A static row: the wire has no other door to a write.
 { const srv = fs.readFileSync(path.join(ENGINE, "server/server.ts"), "utf8"); const rw = fs.readFileSync(path.join(ENGINE, "server/requestwire.ts"), "utf8");
   const direct = srv.split("\n").map((l, i) => [i + 1, l] as const).filter(([, l]) => /\.log\.request\(/.test(l) && !/^\s*\/\//.test(l)).map(([n, l]) => `${n}: ${l.trim().slice(0, 100)}`);

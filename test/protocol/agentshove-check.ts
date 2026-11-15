@@ -15,7 +15,7 @@
 //        solid, and the walk re-plans once with it as an obstacle and arrives round it (review r4 F1b)
 //   AS8  AS7's re-planned walk superseded by a new move, which is then stopped: neither walk reports the first walk's
 //        crate (the re-plan's answer is written only while it is still the walk under way; review r5 F1)
-//   AS9  AS7's crate, unlocked where it stands: walked into again (a misjudged mark holds only while its lock, physics and
+//   AS9  AS7's crate, unlocked where it stands: the walk plans through it again (a misjudged mark holds only while its lock, physics and
 //        mass do; review r5 F5)
 //   AS10 a light long crate backed against two locked posts: the walk presses it, it doesn't budge, the walk stalls, re-plans
 //        round it and arrives (the stall branch's row; review r5 F5)

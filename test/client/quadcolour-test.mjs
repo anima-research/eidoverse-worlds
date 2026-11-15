@@ -3,7 +3,7 @@
 // holds the twin to what the grade must mean. Also the persisted choice: garbage and out-of-range come back sane.
 // Then the inverse ACES: acesFilmicInverseJS reads the SAME constant arrays the shader does, and is round-tripped
 // through three's OWN forward (its constants read out of the three the client serves), so a typo'd constant, a
-// swapped matrix or a three bump that changes the curve turns this red.
+// swapped matrix or a three bump that changes the matrices or fit constants turns this red (the exposure /0.6 and the formula's shape are copied by hand).
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/client/quadcolour-test.mjs
 import { gradeSRGB, GRADE_DEFAULT, GRADE_RANGE, loadGrade, LUMA, acesFilmicInverseJS } from '../../client/lib/xr/quadgrade.js';
 import { readFileSync } from 'node:fs';

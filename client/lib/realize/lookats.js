@@ -5,8 +5,8 @@
 //
 //   a thing's id   its world position (+ offset in its frame), as every client sees it: everyone agrees
 //   @viewer        THIS viewer's eyes: everyone sees it face themselves (Resonite's LookAtUser)
-//   @nearest       the nearest body within range (yours included), its head
-//   u-…            that person's head, within range
+//   @nearest       the nearest body within range: your eyes, or a remote's root + 1.5 m
+//   u-…            that person, within range (their root + 1.5 m; your eyes if it's you)
 // Range applies to @nearest and u-… only (@viewer and a thing are followed at any distance); out of range, or with
 // no target, it eases back to rest. It runs after motion (main.js registers it later), so an
 // oscillate or an orbit moves it and then it turns; a rotating motion on the same node is refused at the authority

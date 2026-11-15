@@ -18,7 +18,8 @@ import { sliderTable, checkRow, selectRow, btn, sectionHead } from '../edit/rows
 import { toast, paintRangesIn } from '../ui/ui.js';
 
 // box    = an OBB, walkable on top, solid on the sides between min.y and max.y
-// pillar = anything over 2.4 m tall, collapsed to a slim centre column so you can walk under a canopy
+// pillar = a fitted box over 2.4 m tall (not exact, not a declared structure box: colliders.js), collapsed to a slim
+//          centre column so you can walk under a canopy
 // exact  = collides against its actual triangles, so the BVH is drawn
 const KIND_COLOR = { box: 0x4fd8ff, pillar: 0xffb347, exact: 0x8fe8c8 };
 const RAG_COLOR = { joint: 0xff8fb0, bone: 0xffd166, hit: 0xff3b3b };

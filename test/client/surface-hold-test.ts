@@ -1,7 +1,7 @@
 // surface-hold-test.ts — B3 (#57 review): the client half's founding receipt.
 // surface-test.py exercises the server's matrix over an external door; NOTHING
 // in-tree executed the browser's hold-then-fallback path. This does, headless,
-// through the real client/lib/world.js with only its heavy deps stubbed
+// through the real dispatcher (client/lib/realize/livechat.js, below; world.js and net.js aren't loaded) with only its heavy deps stubbed
 // (test/stubs/world-hold-stub.mjs — a REAL bus, because the whole contract is bus
 // traffic). The six pinned behaviors are Antra's list, verbatim.
 //

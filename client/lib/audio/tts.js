@@ -71,7 +71,8 @@ export function ensureGenerator() {
 }
 
 // One speaker talks one utterance at a time: synthesis is chained per speaker so consecutive
-// says cannot overlap or reorder. A rejection never poisons the chain.
+// says cannot overlap. The resample after it (enqueue) is async and unchained, so two can still
+// reach the queue out of order. A rejection never poisons the chain.
 const _speakChains = new Map();   // speaker -> Promise
 function chain(speaker, job) {
   const key = speaker || 'self';

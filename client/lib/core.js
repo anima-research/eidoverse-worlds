@@ -80,7 +80,8 @@ const _forceWebGL = _choice.forceWebGL;
 // one, blinking the whole frame in the headset. Skip holes, render the rest, log the first few with a stack. Patched
 // on the CLASS PROTOTYPE before construction (some path holds a constructor-time binding) and REIMPLEMENTED, not
 // wrapped (the list mutates DURING iteration). Installed at boot under ?xr=1, else by enterVR() right before the
-// session request (xr.js), so a desktop session never runs the replacement loop.
+// session request (xr.js), so a desktop page runs the replacement loop only from its first VR request on (it stays
+// installed after the session ends or is refused).
 let renderListToleranceInstalled = false;
 export function installRenderListTolerance() {
   if (renderListToleranceInstalled) return; renderListToleranceInstalled = true;

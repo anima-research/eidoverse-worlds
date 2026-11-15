@@ -88,7 +88,8 @@ export function setSTT(on) {
     }
     else if (wanted) { wanted = false; rec = null; mark('stopped: mic is off'); report('stt', 'stopped: mic is off'); }
   };
-  // a caption engine that never starts must say so in chat (report() is console-only)
+  // a caption engine that starts but hears nothing must say so in chat (report() is console-only); a start() that
+  // throws (below) only reports
   let sawAudio = false;
   rec.onaudiostart = () => { sawAudio = true; mark('audio reached the recognizer', 'audiostart'); };
   rec.onstart = () => {

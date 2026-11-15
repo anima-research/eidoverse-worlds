@@ -1,4 +1,4 @@
-// blueprint-test — design §3 "Blueprints", §7 step 6a: the record, its hash,
+// blueprint-test — blueprints (spec/PROTOCOL.md §4.1): the record, its hash,
 // the copy link as pure functions, and blueprints through the authority.
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/shared/blueprint-test.ts

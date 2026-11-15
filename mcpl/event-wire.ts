@@ -3,7 +3,8 @@
 //
 // Kind facet (RFC-001 rev 3): notices nobody sent (weather, world change, arrive/leave, activity digest, catch-up
 // header) carry `chat:system` beside `chat:ambient`, so a host routing by the latest message doesn't follow a notice
-// into the world. Speech and acts stay plain `chat:ambient`.
+// into the world. Acts and unaddressed speech stay plain `chat:ambient`; a say that mentions this agent is
+// `chat:mention` + `chat:addressed` instead (declaration.ts speechTags).
 
 import { CHAT, EIDO, tags, speechTags } from "./declaration.ts";
 

@@ -7,8 +7,8 @@
 // is PINNED; otherwise it hides. Pinning lives in the ∃ menu, and so does the layout lock. A mod that calls
 // registerPanel() gets the same door as a built-in — a frame, a rail button, a menu row, a pin — and a
 // duplicate id is refused, not doubled. And rail chrome never rides emoji: the four upstream rail labels
-// (💬 🧱 👋 🐞) must resolve through EMOJI_ICON to Phosphor FILL glyphs — never the raw emoji, never the
-// puzzle-piece fallback that means "unknown icon".
+// (💬 🧱 👋 🐞) must resolve to Phosphor FILL glyphs (EMOJI_ICON, or the entry id's ID_ICON first, as world's 🧱 does) —
+// never the raw emoji, never the puzzle-piece fallback that means "unknown icon".
 
 import { fileURLToPath } from "node:url";
 import { plugin } from "bun";
@@ -598,7 +598,8 @@ console.log("DOCK — Tab OPENS the people pane, never closes it (ui.js togglePe
   //           unbounded-depth lookup from the body, which is what registerPanel
   //           actually enables: mount(body, frame) puts a mod's markup in here).
   // chat.js writes .chat-cols as a DIRECT child of the body and the toggler as
-  // its child, so only a `:scope >` pair addresses the real pane.
+  // its child; a mod can prepend a direct-child twin (`pre`, below), so only the
+  // nodes chat.js captured (sidePane) address the real pane.
   const outer = document.createElement("div");
   outer.innerHTML = `<div class="chat-cols side-closed"><button class="chat-side-tog"></button></div>`;
   document.body.prepend(outer);
@@ -641,7 +642,7 @@ console.log("DOCK — Tab OPENS the people pane, never closes it (ui.js togglePe
   // and the markup above is hand-mirrored — so this stand-in can bind WHICH
   // node togglePeopleHere addresses (ownership/order) but NOT the lifetime guard
   // on chat.js's own read path: a ?.isConnected here would only test this
-  // closure against itself. Lifetime is bound in chat-markdown, which drives
+  // closure against itself. Lifetime is bound in test/client/chat-log-test.ts, which drives
   // real initChat / sideEl / paintSide.
   (f as any).sidePane = (k: string) => (k === "cols" ? real
     : k === "tog" ? real.querySelector(":scope > .chat-side-tog") : null);

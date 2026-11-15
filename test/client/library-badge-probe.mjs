@@ -12,7 +12,7 @@ try {
   // THE SKY GUARD, before any module reads localStorage: a cloudy sky bakes on the CPU in headless Chromium
   await pg.addInitScript(() => { try { localStorage.setItem('ew-cloud-quality', 'off'); } catch {} });
   // the real catalog has no stale/deferred entries today — without these the ⚠ rule for them would pass on an
-  // EMPTY measurement. Append synthetic entries (every state the server can emit) to the real response.
+  // EMPTY measurement. Append synthetic entries (stale, deferred, pending, built, refused; not not-needed or unsupported) to the real response.
   const SYN = [
     { path: 'store/syn-stale.glb', name: 'zz synthetic stale', preview: null, opt: { min: { state: 'built', reason: null }, ktx2: { state: 'built', reason: null }, lod: { state: 'stale', reason: 'not smaller (1 -> 2)' } } },
     { path: 'store/syn-deferred.glb', name: 'zz synthetic deferred', preview: null, opt: { min: { state: 'built', reason: null }, ktx2: { state: 'deferred', reason: 'no ktx encoder on this host' }, lod: { state: 'pending', reason: null } } },

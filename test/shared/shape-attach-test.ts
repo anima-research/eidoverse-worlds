@@ -1,5 +1,5 @@
-// shape-attach-test — the shape audit's wave 2, attach-interact family (notes/eidoverse/shape-audit/attach-interact.md;
-// PLAN.md "Wave 2" + R's calls). Each row is a behaviour the audit changes, through the real door (a scratch world) or the
+// shape-attach-test — the shape audit's wave 2, attach-interact family (the owner's audit notes and plan, not in this
+// repo; R's calls). Each row is a behaviour the audit changes, through the real door (a scratch world) or the
 // pure reader that carries it. Written red first, against the tree before the change.
 //   usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/shared/shape-attach-test.ts
 // @ts-nocheck

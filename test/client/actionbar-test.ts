@@ -104,7 +104,7 @@ console.log('ACTIONBAR — B2: a clamp that cannot help stands down (antra-tess 
   // has its own >=1-column floor downstream.
   //
   // roomFor() is a closure; its only consumer is f.show() ->
-  //   snapTo(_placed ? w : Math.min(w, room)), room = roomFor()
+  //   snapTo(_placed ? w : room), room = roomFor()   (re-derived, never min'd with the stored width)
   // so this drives that path. The stub's getBoundingClientRect returns zeros, so the
   // geometry is SUPPLIED. THREE rects are measured live in Chromium at 1280x720
   // on 2026-09-12:  #dock [0..42]  #micbtn [44..70]  #earbtn [76..102]

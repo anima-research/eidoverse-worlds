@@ -53,7 +53,7 @@ check('a tilted entity keeps q through the view', (() => { const e = { model: 'x
 check('Picture is offered on any thing (batch 2: quad mode)', addable([{ type: 'Transform' }, { type: 'Light' }]).some((a) => a.name === 'Picture') && addable([{ type: 'Transform' }, { type: 'Model' }]).some((a) => a.name === 'Picture'));
 
 // ------------------------------------------------------------ the step-2 spellings (design §6)
-// No world in the corpus carries these yet, so the round trip is proven here
+// The corpus carries few of these (lab-cottage's lamp-1, a light on a model), so the round trip is proven here
 // on synthetic records — and each case also says WHAT it must read as: a round
 // trip alone would pass if every new spelling fell through to an Annotation.
 console.log('\nthe step-2 spellings (synthetic):');

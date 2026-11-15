@@ -1,4 +1,4 @@
-// mictoggle — the mic badge beside the ∃ (self-injecting, deletable with this file): mic off by default, since a body
+// mictoggle — the mic badge beside the ∃ (self-injecting; main.js, ui-menu.js and the XR modules import its state): mic off by default, since a body
 // wakes up silent. A headphone glyph beside it gates INCOMING voice separately; V toggles the mic.
 
 import { micOn, toggleMic, setPttHeld, pttHeld } from './micstate.js';

@@ -863,10 +863,6 @@ console.log('\nlifecycle (one rig, every downstream contract):');
       check('a doll with Bullet hair claims those bones from three-vrm',
         hav.__simHair === true, `hair segments: ${hrd._hairSegs?.length ?? 0}`);
       hrd.dispose();
-      // A SETTLED BODY KEEPS THE HAIR THE FALL GAVE IT. dispose() used to hand
-      // the hair back and reset the springs, and since dispose fires the moment
-      // a body settles, the hair snapped to combed a few seconds into every
-      // fall while she was still lying there. Release belongs to getting up.
       // dispose hands the hair back ADOPTING the fallen pose — live again, so a
       // body let go mid-drag keeps falling with its hair instead of freezing
       check('...and hands them back on dispose, adopting the fallen pose',

@@ -11,8 +11,8 @@
 // session. princess lived with it for ~23 days believing it was something she
 // had done.
 //
-// The invariant, stated once: A POSE HANDED TO SOMEONE ELSE IS THE SETTLED
-// RESULT, NEVER A FRAME OF PHYSICS IN FLIGHT. Both paths now call settledPose.
+// The invariant, stated once: A POSE IN THE JOIN SNAPSHOT IS THE SETTLED
+// RESULT, NEVER A FRAME OF PHYSICS IN FLIGHT (live frames still carry the flight). Both paths now call settledPose.
 //
 // Pure logic, no VRM assets, no renderer — deliberately, so it runs anywhere
 // (test/client/ragdoll-test.ts needs the shipped rigs and is the right home for the

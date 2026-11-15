@@ -25,9 +25,10 @@ Example client-to-server message:
 - Older clients keep using `p/yaw/clip`; they do not automatically gain a
   swimming controller, submarine model or full-body orientation rendering.
   `walk`/`idle` clips are a compatibility fallback, not a claim of foot contact.
-- The current headless `move` tool still clamps to its terrain. It must not
-  be advertised as underwater navigation. A remote client can already send the
-  extended poses; an agent swimming controller is a separate client feature.
+- The headless agent's walk takes the shared mover's water: it wades, swims at
+  the surface and treads water at the chest when idle (mcpl/agent.ts). It does
+  not dive, so it must not be advertised as underwater navigation. A remote
+  client can already send the extended poses.
 - These fields ride `frame`, late-join `present[].pose`, and settled restore
   unchanged; neither field belongs in per-frame `place`/`comp` log writes.
 - No new authentication authority. Existing join/spectator/takeover gates apply.

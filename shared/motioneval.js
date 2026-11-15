@@ -13,9 +13,9 @@
 // such things at rest: a renderer that draws stillness is visibly guessing,
 // but a printed coordinate claims to be truth.
 //
-// Part-frame motion (`motion:<slot> {node}` keys, or an old `motion` carrying `part`: shared/protocol/names.js motionNode)
-// does not displace the entity's ROOT transform at all — those stay in
-// motion.js, THREE-side, and this module reports the root as unmoved.
+// Part-frame motion does not displace the entity's ROOT transform at all — those stay in motion.js, THREE-side. An
+// old `motion` carrying `part` reports the root unmoved here; a `motion:<slot>` key's node comes from its KEY
+// (shared/protocol/names.js motionNode), which this module never sees, so a caller keeps those away from it.
 import { rateOf } from './protocol/names.js';
 import { AXES } from './axes.js';
 import { qMul, qRotate as qApply, qAxisAngle as qAxisAngleUnit } from './rot.js';

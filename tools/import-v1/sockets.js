@@ -1,6 +1,6 @@
 // tools/import-v1/sockets.js — v1's attachment points (a stored `sockets` map, a parent {to, socket}, a home naming
 // a slot, a socket's body block) as today's socket children (PLAN-sockets-entities). The translation's tail lift-sockets
-// acts are its one user (./shapes.js liftHostOps); the write door refuses these spellings (authority/checks.js "legacy").
+// acts are its main user (./shapes.js liftHostOps; tools/water/requests.js reads stationOfBody); the write door refuses these spellings (authority/checks.js "legacy").
 import { socketQ } from "../../shared/components.js";
 import { COMPONENTS, materialize } from "../../shared/protocol/componentspec.js";
 import { REDACTED, cowState, applyCow } from "../../shared/protocol/fold.js";

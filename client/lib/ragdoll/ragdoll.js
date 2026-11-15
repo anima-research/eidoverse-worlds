@@ -1,4 +1,5 @@
-// ragdoll — a body going limp, simulated by ONE machine (the body's owner) and streamed.
+// ragdoll — a body going limp, simulated by ONE machine (the body's owner; while someone drags it, the dragger:
+// bodydrag.js) and streamed.
 //
 // Single authority, not determinism: the owner streams the resulting sparse bone rotations through the presence
 // `pose` field (the channel a held pose already uses, so remotes need no new receiver code), and when it settles,
@@ -96,8 +97,8 @@ export const TUNING = {
   // The settle test takes the fastest joint in the body; hysteresis means it
   // takes real motion to restart the clock, not a flicker.
   SETTLE_RESET: 3,         // multiple of SETTLE_V that cancels a settle
-  // Force the capture after this long: a tumble always ENDS as a held pose,
-  // never streaming presence forever.
+  // Force the capture after this long: an unpinned tumble always ENDS as a held pose, never streaming presence forever
+  // (a pinned body doesn't deadline: bodyengine.js _settleTick).
   DEADLINE: 8,
 };
 

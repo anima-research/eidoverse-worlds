@@ -1,6 +1,6 @@
 // served-routes-test: a route per family the client needs (a sample, not every import), really served, and every response isolated. `bun test/server/served-routes-test.ts`
 // One table over a real server: status, a byte floor, COOP same-origin + COEP credentialless per row (server/routes.ts
-// isolate()); without COEP on any subresource crossOriginIsolated goes false and wasm silently loses its threads. The
+// isolate()); without COEP on the document (or a worker's script) crossOriginIsolated goes false and wasm silently loses its threads. The
 // hashed piper chunk name (piper-o91UDS6e.js) is pinned on purpose: this is what notices a dep bump renaming it.
 
 import { spawn } from "node:child_process";

@@ -140,7 +140,8 @@ export function setErrorSink(fn) { errorSink = fn; }
 // and re-reported on a decaying schedule instead of flooding the console and the toasts.
 const seenErrors = new Map(); // key -> { n, nextAt }
 // ---- console tee: what a visitor's page says, where the operator can read it (server/clientlog.ts).
-// Every report() plus window errors post to /clientlog: queued, one POST per flush, never throws; the key rides the
+// report() and window errors post to /clientlog (a repeated line once, then every 20th with its count, tee): queued,
+// one POST per flush, never throws; the key rides the
 // Authorization header, never the URL. A 429 waits its Retry-After (60 s when unsaid) with the lines kept.
 let teeQ = [], teeTimer = 0, teeMuted = false, teePausedUntil = 0;
 // batched every 10 s; as the page hides one batch goes at once (keepalive's cap) and the rest waits for the timer

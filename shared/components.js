@@ -504,8 +504,7 @@ export function colliderOf(ent) {
 /** A `mesh` component a reader may draw: a bag whose shape the registry names (a malformed mesh is absent, never a throw). */
 export const isMeshBag = (m) => isBag(m) && COMPONENTS.mesh.enums.shape.includes(m.shape);
 
-/** One place per thing: the refusal's words, the same from the authority and the Inspector. `has` is what the thing
- *  already is (model | light | mesh), `wants` what was asked for. */
+/** The mesh component's shape names (the registry's enum). */
 export const MESH_SHAPES = COMPONENTS.mesh.enums.shape;
 /** Why a comp of type mesh/light/collider would be refused, or null; the inspector and blueprints ask here, so a
  *  refusal reads the same. `data: null` (removal) is always fine; keys a record does not name are allowed. */

@@ -3,8 +3,8 @@
  *
  * Batch port of the token-router's LiveSay aggregation. The constants are measured: a
  * 152-char sentence is ≈ 5s of unbroken speech, so clauses past 90 chars get a soft split.
- * Sanitization lives here too: markdown marks and emoji are dropped for the voice only
- * (piper reads emoji by name); the say keeps its glyphs.
+ * Sanitization lives here too: markdown marks and pictographic emoji are dropped for the voice only
+ * (piper reads emoji by name; a flag's regional-indicator letters survive); the say keeps its glyphs.
  */
 
 const ABBREVS = new Set([
@@ -19,7 +19,7 @@ const MIN_LEN = 20;
 const SOFT_LEN = 90;
 const SOFT_MIN = 35;
 
-/** Text → what the larynx gets. Fenced code is dropped entirely; URLs become "link" (espeak spells
+/** Text → what the larynx gets. ``` fenced code is dropped entirely (a ~~~ fence isn't); URLs become "link" (espeak spells
  *  them out) and [label](url) keeps its label; symbols espeak would name aloud become the pause
  *  they meant. Times (6:04) keep their colon. */
 export function spokenForm(text) {
@@ -98,7 +98,7 @@ function shapeContinuation(chunk) {
   return /[,;:—–.!?…]$/.test(chunk) ? chunk : chunk + ',';
 }
 
-/** A complete utterance → synthesis-sized spoken chunks (none for an emoji-only utterance). */
+/** A complete utterance → synthesis-sized spoken chunks (none for a pictographic-emoji-only utterance). */
 export function ttsChunks(text) {
   const spoken = spokenForm(text);
   if (!spoken) return [];

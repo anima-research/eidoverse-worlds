@@ -3,7 +3,7 @@
 // compiles one thing at a time while frames keep presenting (a 2-wide lane let compiles fight each other).
 //
 // Between items, one real requestAnimationFrame yield (scheduler.yield starves rAF on Chromium). Errors are swallowed
-// but counted in warmStats().
+// but counted in warmStats(); warmDepth and warmLit catch their own compile rejections, so those count as done.
 
 import { renderer, scene, sun, camera, THREE, TSL } from '../core.js';
 import { beginWork, nextFrame } from './loadwork.js';

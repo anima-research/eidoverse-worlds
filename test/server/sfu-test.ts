@@ -54,8 +54,8 @@ class FakePeer {
  *  So this helper exercises a direction production never uses. It is fine for
  *  the POLICY assertions it serves (consent, caps, leaks — none of which depend
  *  on who offered), and the tests that care about direction drive
- *  `room.negotiate(...)` themselves. But it means a green run here says NOTHING
- *  about SDP direction handling, and the stale comment was itself evidence that
+ *  `room.negotiate(...)` themselves. But it means this helper's rows say nothing
+ *  about SDP direction handling (the consent-on row drives the SFU's own offer), and the stale comment was itself evidence that
  *  production flipped without anyone revisiting this file.
  *
  *  Found by a second-agent audit, 2026-08-16. Left in place rather than

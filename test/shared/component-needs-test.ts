@@ -7,7 +7,7 @@
 //
 // The needs today's records carry: Collider, Sockets and Grabbable need a Model (placed from the Library — never in place, so it can
 // only be explained). Reactions needed the whole entity's Pendulum while its default was a push (the impulse handler);
-// that kind is reserved since the shape audit (10-16), so Reactions is added empty and needs nothing, and the rows that
+// Reactions is added empty since the shape audit (10-16; an impulse handler is still a kind, written by hand), so it needs nothing, and the rows that
 // rode on it (a need with a default, a need that asks) are retired with it: no record carries such a need now.
 //
 // the protocol port (2026-10-06): ops are door requests; "folded" means "sent to the door and read back". v1's
@@ -68,7 +68,7 @@ console.log('a need that cannot be met in place is explained (a Model comes from
 
 console.log('removing something another component needs names the dependant and offers remove-both');
 {
-  // a model with a collider (Collider needs a Model): was a swing's pendulum under its push reaction (impulse, reserved since 10-16)
+  // a model with a collider (Collider needs a Model): was a swing's pendulum under its push reaction (impulse; Reactions is added empty since 10-16)
   const lamp = { model: LIB, pos: [0, 0, 0], yaw: 0, collider: { shape: 'box' }, actor: 'o', ts: 1 };
   const r = removeOps(lamp, 's', 'model');
   check('remove.model under a Collider: nothing sent, a confirm naming Collider', r.ops.length === 0 && r.errors.length === 0 && r.confirm?.dependants?.[0]?.type === 'Collider' && /Collider needs this/.test(r.confirm.prompt) && /remove both\?/.test(r.confirm.prompt), J(r));

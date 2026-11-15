@@ -10,5 +10,5 @@ export const audioContext = () => { throw new Error('this stub builds no graph')
 export const audioContextState = () => 'none';
 export const playWhenAllowed = () => {};
 export const volumeFor = () => 1;
-// client/lib/serverclock.js's estimated server clock (sound-editor-test turns it as a dial)
+// client/lib/serverclock.js's estimated server clock: soundclock-check renders the editor block only, so it is never read
 export const serverNow = () => 0;

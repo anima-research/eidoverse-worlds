@@ -630,7 +630,7 @@ const ROUTES: Route[] = [
   {
     // Discovery for travel: loaded + on-disk worlds and who is embodied where; never creates one. Behind the join door
     // (mayRead). Spectators and renderers are absent, as in-world. ONE list of people, each {id, declares?} (the word
-    // they declared at the door, PROTOCOL §6a) — never a second list sorted by kind.
+    // they declared at the door, PROTOCOL §6a); `agents` repeats the declared agents' ids for main's readers.
     match: (u) => u.pathname === "/worlds",
     handler: ({ req, srv }) => {
       if (!mayRead(req)) return unauthorized();

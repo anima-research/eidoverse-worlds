@@ -8,11 +8,11 @@
 //   B. The VR painter (edit/fieldpanels.js renderCanvas, theme 'edit' → edit/paint.js) keeps the VR floor:
 //      every hit target >= 34 canvas px tall; no line < 2 px (stroke width after the transform, and
 //      no hairline fillRect); every glyph >= 17 px; no pictograph ever handed to fillText.
-//   C. It dispatches what the legacy painter dispatches (same actions and payloads), and a disabled
-//      field still takes no hits.
+//   C. It dispatches what the legacy painter dispatches (same actions and payloads; but no lock on an occupant row, and
+//      the enum options legacy clipped), and a disabled field still takes no hits.
 //   D. The quad's texture is sRGB (xrpanels makePanel) — measured on the real module, not grepped.
 //   E. No pictograph in edit chrome's own sources (tool rail, build bar, tree toggles).
-//   F. Text colours on their surfaces meet 4.5:1.
+//   F. Text colours on their surfaces meet 4.5:1 (faint, the placeholder colour, isn't held: it doesn't meet it).
 import { fileURLToPath } from "node:url";
 import { plugin } from "bun";
 import { stubResolve } from "../harness/stub.ts";

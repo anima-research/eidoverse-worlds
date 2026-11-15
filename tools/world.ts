@@ -20,7 +20,7 @@
 // importer's checks, the result opened as the server opens it, the snapshot oracle where a snapshot.json exists), then
 // swapped in under the original name with the old files renamed beside it (log.original.jsonl, snapshot.original.json).
 // Any failure puts the originals back and says why (what can't be put back is listed to move by hand, still marked). If the process dies mid-swap, the next `translate <world>` finishes
-// the swap; until then translation.lock marks it and the server won't serve it. docs/operator/TRANSLATING-OLD-WORLDS.md.
+// the swap (died before the first rename: it clears the mark, nothing had moved, translate again); until then translation.lock marks it and the server won't serve it. docs/operator/TRANSLATING-OLD-WORLDS.md.
 import fs from "node:fs";
 import crypto from "node:crypto";
 import path from "node:path";

@@ -10,7 +10,7 @@
 // (re-grow) and arrives before the first field loads. None of it is ever a
 // world verb.
 //
-// Negative control: this suite FAILS on the branch base. Most failures are
+// Negative control, as written for the branch that added it: this suite FAILED on that branch's base (history now). Most failures are
 // necessarily novelty because main has no applied-truth report; the behavioral
 // anchor is the source-extracted shipped dial below, which demonstrates the
 // silent no-op live (request 0.35 while an incompatible stroke draws 800/800)

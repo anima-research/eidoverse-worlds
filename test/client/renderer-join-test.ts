@@ -9,7 +9,7 @@
 // renderer, no working one was ever sent (2026-10-24). net.js sendJoin now claims the role only when a
 // snapshot renderer is wired (main.js wires net_capture.js; lite.js wires none). A page that claims neither
 // flag still asks to be invisible (spectate). A door key admits it as a spectator; the renderers'
-// credential admits renderers only and refuses it (4003 "insufficient scope", server.ts; a row of test/server/renderer-cred-test.ts). Either way,
+// credential admits renderers only: with a door key set it refuses it (4003 "bad token", server.ts join; a row of test/server/renderer-cred-test.ts). Either way,
 // the broker never routes a snapshot to it.
 //
 // Real net.js + base.js, fresh process per page load, as test/client/name-snowball-test.ts does it; only the

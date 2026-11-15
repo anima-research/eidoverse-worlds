@@ -293,9 +293,10 @@ export class AgentReach {
       : `your ${AgentReach.LIMB_WORD[limb]} wasn't reaching for anything`);
   }
 
-  /** Re-attest `reached` for every live reach (~2Hz off tick()). While a needed
-   *  skeleton is missing the last attestation HOLDS (a slow load must not fire
-   *  spurious release/touch edges); loads are kicked here so blindness heals. */
+  /** Re-attest `reached` for every live reach (~2Hz off tick()). Unjoined, while a
+   *  needed skeleton is missing the last attestation HOLDS (a slow load must not fire
+   *  spurious release/touch edges); loads are kicked here so blindness heals. Joined,
+   *  the authority's reading decides, and a reach it doesn't answer is cleared. */
   reachTick() {
     if (this.a.joined) {
       if (this.reachReadingBusy) return;

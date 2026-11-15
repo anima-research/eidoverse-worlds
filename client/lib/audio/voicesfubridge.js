@@ -16,7 +16,8 @@ import { setGeneratorRebuildHook, synthProvider } from './voicesource.js';
 const send = (o) => { sendJoined(o); };
 
 // A synth track arriving while no mic is published becomes the lane, via sfuMic(false) → sfuPublish
-// (a replaceTrack alone only repairs senders that exist). A live mic wins outright, as in voicesource.js.
+// (a replaceTrack alone only repairs senders that exist). A live mic wins outright, as in voicesource.js; so does a
+// synth that voiceSource fell back to under a wanted mic (sfuMicOn() counts it), whose rebuilt track isn't republished.
 setGeneratorRebuildHook(() => {
   if (sfuMicOn()) return;
   if (!synthProvider()?.available?.()) return;

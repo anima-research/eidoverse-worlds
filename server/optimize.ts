@@ -565,7 +565,7 @@ export async function optimizeGlbLod(bytes: Uint8Array, encoder: string | null, 
   const srcHash = sha256Bytes(bytes);
   let meshoptVer = "unknown";
   try { meshoptVer = JSON.parse(await Bun.file(Bun.resolveSync("meshoptimizer/package.json", import.meta.dir)).text()).version; } catch { /* stays unknown */ }
-  // the source's extras survive; ours ride alongside
+  // the source's extras survive, except the keys we write (lodOf, recipe, tools, simplify, lodBasis)
   const asset = doc.getRoot().getAsset();
   asset.extras = { ...(asset.extras ?? {}), lodOf: srcHash, recipe: LOD_RECIPE, ...(permissive ? { simplify: "permissive" } : {}), ...(texOnly ? { lodBasis: "textures" } : {}),
     tools: { meshoptimizer: meshoptVer, encoder: encoder ? basename(encoder) : "none" } };

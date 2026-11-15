@@ -1,4 +1,4 @@
-// snap-at-probe — `screenshot {at: <thing>}` frames a placed thing from where the asker stands.
+// snap-at-probe — `screenshot {at: <thing>}` frames a placed thing from the asker's side (fitted to its size, not from their spot).
 //
 //   bun test/client/snap-at-probe.mjs          (owns its scratch sequencer; one headless renderer)
 //

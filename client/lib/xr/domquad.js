@@ -1,5 +1,5 @@
 // domquad — VR quads ARE the desktop frames: each XR-registered frame's live DOM is rasterised onto a quad by the
-// vendored HTMLMesh (vendor/htmlmesh.js), and a trigger fires the SAME click/input handlers the mouse does.
+// vendored HTMLMesh (client/vendor/three-addons/htmlmesh.js), and a trigger fires the SAME click/input handlers the mouse does.
 // While presenting, the frame moves into an offscreen-but-laid-out stage (HTMLMesh measures with getBoundingClientRect,
 // so negative coordinates are fine) and returns, with its display state, on exit. Fallback: ?canvasquads=1.
 import { THREE, renderer } from '../core.js';

@@ -79,7 +79,7 @@ export async function capture(msg) {
     const frame = normalizeSnapFrame(msg.frame);
     let dataUrl;
     if (msg.at) {
-      // a placed thing, seen from where the asker stands, fitted to its bounds: an agent checks what it built
+      // a placed thing, seen from the asker's side, fitted to its bounds: an agent checks what it built
       // without walking over
       const obj = entities.get(msg.at);
       // a picture of the grey stand-in would be a confident lie about what was built: say it is loading instead

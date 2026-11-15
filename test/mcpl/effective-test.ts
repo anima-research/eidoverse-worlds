@@ -1,7 +1,7 @@
 /**
  * Effective-transform test — #82: agent perception must report mounted cargo
  * (and moving things) where they ACTUALLY are, or refuse to give a number.
- * No servers needed; time is injected everywhere.
+ * No servers needed; time is injected, except B1's skew, which reads the host clock (Date.now).
  *
  * Run: bun test/mcpl/effective-test.ts
  *

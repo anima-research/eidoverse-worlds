@@ -14,8 +14,8 @@
 //
 // The answer is 'full' or 'lod'. 'lod' asks for the recipe the running sequencer PUBLISHED on /version
 // (shared/ktx2.js lodFromVersion); none published, no tier asked. The server answers with the variant or the original
-// (the loader records which: userData.tierServed), and colliders/support/raycast never read the reduced mesh
-// (models.js: a lod-tier placement owns no collider until it upgrades on approach).
+// (the loader records which: userData.tierServed), and colliders/support never read the reduced mesh (models.js: a
+// lod-tier placement owns no collider until it upgrades on approach); the build pointer's raycast (build.js aimPoint) can.
 //
 // Hysteresis: a placement at the band edge must not flip tiers every sweep.
 // The upgrade edge sits inside the downgrade edge by LOD_HYST on each side.

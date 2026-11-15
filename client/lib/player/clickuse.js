@@ -31,8 +31,8 @@ const canGrab = (id) => !!physicsApi.grabbable(id)?.enabled;
 export function offersOf(id, { spot = null } = {}) {
   // its name as its builder wrote it, no quotes: the menu draws it in the accent colour
   const L = bagOf(id)?.label, name = typeof L === 'string' && L.trim() ? L.trim().slice(0, 40) : (nameOf(id) ?? id), held = physicsApi.mine().includes(id);
-  // every offer that needs me near it carries `reach`: the click walks me there first; without one the offer runs
-  // where I stand
+  // an offer that needs me near it carries `reach`: the click walks me there first; without one the offer runs
+  // where I stand, or walks on its own (puton: putAtSpot)
   const near = () => physicsApi.inReach(id), out = [], add = (k, pre, post, run, reach = null) => out.push({ k, label: `${pre}${name}${post}`, parts: [pre, name, post], run, ...(reach ? { reach } : {}) });
   // from the menu a put or a throw is the plain one: at my feet, the way I face (the cursor's spot is the click and the Q key)
   if (held) { add('put', 'put ', ' down', () => physicsApi.put(id)); add('throw', 'throw ', '', () => physicsApi.throw()); }

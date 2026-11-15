@@ -225,8 +225,8 @@ register('kick', (arg) => moderate('kick', arg));
 register('punt', (arg) => {
   const parts = (arg || '').trim().split(/\s+/).filter(Boolean);
   const named = parts.find((x) => !/^[\d.]+$/.test(x));
-  // things win the name lookup (they were here first); a person's name is
-  // the shove. No name at all = the object kick's nearest-thing search.
+  // a thing's id wins the name lookup (a label doesn't: entities is keyed by id); a
+  // person's name is the shove. No name at all = the object kick's nearest-thing search.
   if (named && !entities.has(named) && remotes.has(named)) {
     const pow = Math.min(4, Math.max(0.5, parseFloat(parts.find((x) => /^[\d.]+$/.test(x))) || 2.6));
     shovePerson(named, pow, 'punt');
@@ -300,8 +300,8 @@ register('boom', async (arg) => {
 });
 
 register('push', (arg) => {
-  // /push [name] [power] — a REQUEST to the target's client, which owns the body and decides (pushable). Range-gated
-  // here out of honesty, not security (the receiver caps magnitude). No name = the nearest person within reach.
+  // /push [name] [power] — a REQUEST to the target's client, which owns the body; the server refuses it first on consent
+  // and range (server/messages.ts bodyRefusal), the receiver caps magnitude. No name = the nearest person within reach.
   const REACH = SHOVE_REACH;
   const parts = (arg || '').trim().split(/\s+/).filter(Boolean);
   const named = parts.find((p) => !/^[\d.]+$/.test(p));
@@ -324,8 +324,8 @@ register('push', (arg) => {
 });
 
 /** The person-shove, shared by /push and /punt: a REQUEST to the target's
- *  client, which owns the body and decides (pushable). Range-gated here out
- *  of honesty, not security — the receiver caps magnitude anyway. */
+ *  client, which owns the body. Range-gated here for the message; the server
+ *  refuses on consent and range (messages.ts bodyRefusal), the receiver caps magnitude. */
 function shovePerson(target, pow, word) {
   const REACH = SHOVE_REACH;
   const r = remotes.get(target);

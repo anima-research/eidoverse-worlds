@@ -3,7 +3,7 @@
 //
 //   confirmCenter({ title, body, ok = 'OK', cancel = 'Cancel' }) → Promise<boolean>
 //
-// Enter / OK says yes; Esc, Cancel or the backdrop says no. One at a time: a new ask answers the open one with its
+// OK, or Enter (unless Cancel has focus), says yes; Esc, Cancel or the backdrop says no. One at a time: a new ask answers the open one with its
 // cancel. No imports: the lite client and the boot path use this too.
 
 let open = null;   // { root, settle, cancel }

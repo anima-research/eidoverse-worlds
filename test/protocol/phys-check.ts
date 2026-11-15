@@ -404,7 +404,7 @@ function playground(name) {
 // R — a deploy changes the engine's version (REVIEW-design-2026-10-15 "Deploying switches physics off"; a build is no
 // longer a field, EV4). A world the old server stamped names the old version, so the new server holds it foreign and nothing
 // flies. The authority restamps it itself, as system, once: when the engine is one it carries, the version was stamped by an authority (not named by the
-// owner); bodies at rest are restamped free (P6), and a launch with no rest on record is ended by the cut (R2). A "deploy"
+// owner); bodies at rest are restamped free (P6), a launch with no rest on record is ended by the cut (R2), and a thing held holds it off (R2b). A "deploy"
 // here is ENGINES' carried version swapped under the world.
 {
   // a deploy is the carried set changing: the old server carried eidosim@0.9.0, this one carries eidosim@1.0.0

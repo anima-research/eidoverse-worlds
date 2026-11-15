@@ -1,6 +1,6 @@
 // Used outside this repo: Orrery's avatar push runs this file by path; move it only together with Orrery.
 // glb2vrm — turn a rigged humanoid GLB (Tripo-style skeleton) into a VRM 1.0 avatar the client can wear.
-// VRM 1.0 is glTF + a VRMC_vrm extension, so this edits the JSON chunk in place. Three transformations:
+// VRM 1.0 is glTF + a VRMC_vrm extension, so this edits the JSON chunk in place (normalizing rewrites the BIN's inverse bind matrices). Three transformations:
 //  1. T-pose: Tripo exports A-pose; rest joints are rotated while inverse bind matrices are kept, so the mesh follows.
 //  2. Scale: a uniform scale baked on the Armature (an ancestor of every skin joint).
 //  3. Facing: VRM avatars face +Z; forward is measured from foot→toe and a yaw baked on the Armature if needed.

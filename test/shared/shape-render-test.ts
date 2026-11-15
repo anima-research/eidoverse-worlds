@@ -1,5 +1,5 @@
-// shape-render-test — the shape audit's wave 2, render-media-env family (notes/eidoverse/shape-audit/render-media-env.md;
-// PLAN.md "Wave 2" + LOCKED). Each row is a behaviour the audit changes, through the real door (a scratch world), the pure
+// shape-render-test — the shape audit's wave 2, render-media-env family (the owner's audit notes and plan, not in this
+// repo). Each row is a behaviour the audit changes, through the real door (a scratch world), the pure
 // reader that carries it, or the v1 importer's rules (tools/import-v1/shapes.js). Written red first, against the tree before
 // the change (wt/w2-physics, ec535895).
 //   usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/shared/shape-render-test.ts

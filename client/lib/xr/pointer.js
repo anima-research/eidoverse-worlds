@@ -21,7 +21,7 @@ export function makePointerLine({ segments = 24, tint = 0x8fb0d6, opacity = 0.85
 }
 
 // The surface dot: a small mark lying on whatever the laser hits (panel, nameplate, entity), facing out, constant in
-// angular size. Drawn whenever there is a target, whatever the pointer visibility setting says. xr.js is its only caller.
+// angular size. Shown by its own setting (xrpointer.js dotVisible), whatever the laser's says. xr.js is its only caller.
 // The dot becomes an icon for what a press would do there (click, type, scroll, move, resize; DOT_KINDS) and stays a
 // plain dot where nothing is actionable. Icons are icons.js glyphs on a dark disc, drawn once per kind.
 import { stroke, fillPath } from '../ui/icons.js';

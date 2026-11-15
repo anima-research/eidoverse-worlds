@@ -444,8 +444,8 @@ console.log("\nthe forearm, crossing the body");
   // of the eighteen rigs are VRM0 and sit a half-turn from the root.
   //
   // Reaching the opposite hip drags the forearm across the torso. The upper
-  // bone is pushed clear (that works); nothing acts on the FOREARM, whose
-  // path is fixed once the elbow is placed, so it crosses through the body.
+  // bone is pushed clear (that works); the swivel search scores the forearm too (penetration, shared/reach.js),
+  // but its path is fixed once the elbow is placed, so it still crosses through the body.
   // Measured against the browser before this test existed: orion forearm 57mm
   // from the spine column where 162mm is required — and the headless numbers
   // now agree (48/55/123 vs the browser's 4/57/147).
@@ -490,7 +490,7 @@ console.log("\nthe forearm, crossing the body");
   }
   console.log(`  ${tested} rigs, worst forearm shortfall ${worstDeficitMM.toFixed(0)}mm on ${worstRig || '-'}`);
   // ⚠ RATCHET at the measured value. This is the open bug, not a pass: the
-  // forearm crosses through the torso because nothing acts on it once the
+  // forearm crosses through the torso because its path is fixed once the
   // elbow is placed. Lower this number when that is fixed; it exists so the
   // number cannot quietly grow while the fix is pending.
   check(`forearm-through-torso does not worsen (${worstDeficitMM.toFixed(0)}mm)`, worstDeficitMM <= 45);

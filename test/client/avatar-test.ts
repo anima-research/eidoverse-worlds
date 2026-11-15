@@ -13,8 +13,8 @@
 // The Avatar constructor needs a canvas (nameplates, blob shadows), which Bun
 // has no business providing, so these drive the real METHODS against a real
 // THREE.AnimationMixer bound to a real skeleton. That is where the contract
-// lives: actions are play()ed exactly once at load and cross-faded by WEIGHT
-// ever after, so anything that deactivates them is unrecoverable.
+// lives: actions are play()ed at load and cross-faded by WEIGHT ever after (an
+// eased switch resets and replays the incoming one), so anything that deactivates them is unrecoverable.
 
 import { plugin } from 'bun';
 import { stubResolve } from '../harness/stub.ts';

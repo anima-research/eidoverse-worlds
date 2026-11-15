@@ -31,7 +31,7 @@ export const cssVar = (k) => `--e-${k.replace(/[A-Z]/g, (c) => '-' + c.toLowerCa
 
 /** The VR painter's floor: canvas px at 900 px/m. */
 export const EDIT_VR = Object.freeze({
-  rowH: 46,       // a painted row; every hit target inside it is >= minHit
+  rowH: 46,       // a painted row; its hit targets are >= minHit tall (the tree's disclosure and ☑ are narrower: widgets.js)
   minHit: 34,     // ≈ 3.8 cm — a laser you can land
   minLine: 2,     // a 1-px line shimmers on a resampled quad
   minText: 17,    // ≈ 1.9 cm, ~1.3° at arm's length

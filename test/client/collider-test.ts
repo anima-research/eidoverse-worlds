@@ -56,8 +56,8 @@ function prop(id: string, { w = 1, h = 1, d = 1, y0 = 0, at = [0, 0, 0], collide
 }
 
 /** A forced-exact (BVH) entity: a floor slab with a 0.4m ledge on one side.
- *  Exact colliders are the only ones with a step-up allowance, so this is what
- *  exercises STEP. */
+ *  Exact colliders, declared structure floors and heightfield cells take the
+ *  step-up allowance (fitted boxes don't); this exercises STEP on the exact one. */
 function twoLevel(id: string) {
   const floor = new THREE.BoxGeometry(8, 0.1, 8); floor.translate(0, -0.05, 0);
   const ledge = new THREE.BoxGeometry(3, 0.4, 8); ledge.translate(2.5, 0.2, 0);
@@ -123,8 +123,8 @@ console.log('\nbeing UNDERNEATH things:');
 
 console.log('\nthe vertical numbers follow the body:');
 {
-  // STEP is an EXACT-collider allowance (boxes have no step-up; the mantle
-  // system handles those). An avatar walking at the foot of a 0.4m interior
+  // STEP applies to exact colliders, structure floors and heightfield cells
+  // (fitted boxes have no step-up; the mantle system handles those). An avatar walking at the foot of a 0.4m interior
   // ledge is lifted onto it; a ragdoll joint lying at the same spot must not
   // be — a 55cm step-up applied to a wrist teleports it onto the furniture.
   C.clearColliders(); twoLevel('room');
