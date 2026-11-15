@@ -33,9 +33,11 @@ const IWER = `globalThis.__iwerNativeRAF = globalThis.requestAnimationFrame.bind
 const world = await ownedWorld({ live: process.argv[2] ?? null });
 const { browser, page } = await launchBrowser();
 const pg = await page();
+// the first show rasterises every panel on the main thread; on a loaded host that alone outlasts 20 s
+const PINNED_S = 60;
 const ev = (fn, arg) => Promise.race([
   pg.evaluate(fn, arg),
-  new Promise((_, rej) => setTimeout(() => rej(new Error('page main thread pinned for 20 s')), 20000)),
+  new Promise((_, rej) => setTimeout(() => rej(new Error(`page main thread pinned for ${PINNED_S} s`)), PINNED_S * 1000)),
 ]);
 await pg.addInitScript(IWER);
 await pg.addInitScript(() => {
