@@ -106,7 +106,8 @@ async function captureOnce({ mode = 'actual', w = 480, perTag = true, heat = fal
   scene.traverse((o) => { if (o.isLight && o.shadow) shadowLights.push([o, o.shadow.autoUpdate]); });
   const saved = { bg: scene.background, cc: renderer.getClearColor(new THREE.Color()), ca: renderer.getClearAlpha() };
   const tags = [...new Set(tag.values())];
-  // '*' is rendered FIRST and LAST: equal totals prove nothing moved between passes (the self-check behind 'stable')
+  // '*' is rendered FIRST and LAST: unequal totals show something moved between passes (equal ones don't rule it out:
+  // a render callback such as water's wave time can move fragments and keep the total). The self-check behind 'stable'
   const passes = [['*', () => 'count'], ...(perTag ? tags.map((t) => [t, (o) => (tag.get(o) === t ? 'count' : 'depth')]) : []), ['*2', () => 'count']];
   const out = { mode, size: `${w}x${h}`, objects: draw.length, materials: new Set([...orig.values()].flat()).size };
   const rts = [];

@@ -8,7 +8,7 @@ disagree, so the table can't drift.
 ## Running it
 
 ```sh
-bun install --frozen-lockfile                 # in the checkout root, in client/, and in mcpl/
+bun install --frozen-lockfile                 # in the checkout root and in client/ (mcpl/ needs .siblings/: --siblings installs it)
 bun test/gate/run.ts --siblings          # clones/pins agent-framework, mcpl-core-ts and voice-kit in .siblings/ (gitignored; never a working copy beside the checkout), builds them, and installs mcpl/ and services/captionbot/, whose file: deps point there (the preflight refuses a copy that isn't the pin's build)
 CHROME=/path/to/chrome EIDOVERSE_DIR=/path/to/eidoverse-video bun test/gate/run.ts    # or: bun run test:protocol
 ```
@@ -16,7 +16,8 @@ CHROME=/path/to/chrome EIDOVERSE_DIR=/path/to/eidoverse-video bun test/gate/run.
 `.siblings/` is named by `mcpl/package.json` and `mcpl/bun.lock`, `services/captionbot/package.json` and its
 `bun.lock`, `test/gate/run.ts` and `deploy/deploy-vps.sh`; moving it means changing all of them and re-locking in one step.
 
-Exit 0 means the gate passed. Exit 1 means a suite failed, a suite or a check was skipped, or the preflight found a
+Exit 0 from the full run means the gate passed; from a run of named suites, a `--lane` or one `--shard` it means only that part passed
+(the last line says PARTIAL PASS or SHARD). Exit 1 means a suite failed, a suite or a check was skipped, or the preflight found a
 problem (it lists each one). Exit 2 means a bad argument.
 
 Other forms, none of which is the gate:

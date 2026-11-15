@@ -213,7 +213,7 @@ const cases: Case[] = [
     good: (o) => !o.snap && /reserved/.test(o.errors.join(" ")) },
   { id: "D7", what: "(§6a rule 3) the world's log holds no declaration: after every join above, world.jsonl names neither `declares` nor an `agent` flag", async run() {
       await server(); const t = fs.readFileSync(path.join(W, "glade", "world.jsonl"), "utf8"); return { declares: /"declares"/.test(t), agent: /"agent":\s*(true|false)/.test(t), lines: t.split("\n").length }; },
-    good: (o) => !o.declares && !o.agent && o.lines > 1 },
+    good: (o) => !o.declares && !o.agent && o.lines > 1 },   // reads the joins D1-D6 made: under --only D7 nobody has joined
   { id: "D8", what: "the agent harness declares (\"agent\" by default, nothing when told \"\"), sends no `agent` key, and keeps others' `declares` as sent (review r11 L2: never compared to a word)", async run() {
       const A = await import(TREE + "mcpl/agent.ts"); const a = new A.WorldAgent({ name: "x", world: "glade", declares: undefined }); const b = new A.WorldAgent({ name: "y", world: "glade", declares: "" });
       const ja = a.joinMsg(), jb = b.joinMsg(); const src = fs.readdirSync(TREE + "mcpl").filter((f) => /^agent(-[a-z]+)?\.ts$/.test(f)).map((f) => readText("mcpl/" + f)).join("\n");   // the agent and its pieces

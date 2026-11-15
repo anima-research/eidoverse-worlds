@@ -201,10 +201,11 @@ console.log("\n— mic priority: both orderings, repeated cycles, no dual produc
   // ordering B: mic ON — the mic wins. (The pacer-stop on a LIVE mic takeover
   // is the TRANSPORT's move — voicesfu's source swap calls the provider's
   // stop() — so asserting it here against the stub hook would test the stub.
-  // The in-browser suites own that half: voicesource-real-test and
-  // tts-publishes-mic-off-test. What THIS suite can honestly pin is tts.js's
+  // No suite pins that half today: voicesource-real-test checks voiceSource()'s
+  // choice under a stubbed DOM, and tts-publishes-mic-off-test was deleted
+  // (e12a7874e). What THIS suite can honestly pin is tts.js's
   // own enable-path gate: enabling TTS while the mic is live must NOT start
-  // the pacer — mic beats TTS at the enable door, tts.js:110's !micLive.)
+  // the pacer — mic beats TTS at the enable door, tts.js setTtsEnabled's !micLive.)
   await voice.toggleMic();
   check("mic ON while TTS enabled: mic wins (micOn true)", voice.micOn() === true);
   a = micAsks; tts.setTtsEnabled(false); await decided(a);   // pacer stilled by disable
@@ -350,8 +351,9 @@ console.log("\n— sidetone: the tts slider moves only what you hear of yourself
 console.log("\n— negative control: a disconnected feature must FAIL this suite —");
 {
   // If tts.js stopped registering its provider, or speak() stopped writing to
-  // the generator, the checks above go red. Prove the harness sees the wire:
-  // break it on purpose and confirm detection.
+  // the generator, the checks above go red. This proves the harness sees the
+  // wire and that the provider can be unset; it does not rerun any check with it
+  // unset, so it doesn't show the suite going red.
   written.length = 0;
   const before = written.length;
   await tts.speak("control");

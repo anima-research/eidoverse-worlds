@@ -308,7 +308,8 @@ class Session {
    *  assignment. Throws on failure; the caller MUST then close the connection (§3.2.5). */
   private async joinWorld(w: string, founding = false): Promise<void> {
     // ── PREPARE (RFC-005 §3.2.3a-c) ────────────────────────────────────────
-    // The host's acceptance is PART of the transition: no answer, or no inbound Request form, is DECLINING (§5.3).
+    // For a host granted channels.register, its acceptance is PART of the transition: no answer, or no inbound Request
+    // form, is DECLINING (§5.3). A host without that grant (plain MCP, or lifecycle only) gets no prepare and travels.
     // `leaving` is captured before anything can reassign this.agent.
     const leaving = `world:${this.agent.world}`;
     if (this.granted(CAP.channelsRegister)) {

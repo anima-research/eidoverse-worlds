@@ -416,7 +416,7 @@ ok(foldName("Marígold") === foldName("marigold") && foldName("JOSÉ") === foldN
     const punted = (id: string) => lives.has(`${id}#${lt.of(id)}`);
     const wrongKind = shapes.filter(([id]) => E[TV1.enc(id)]?.c.physics?.kind !== (punted(id) ? "dynamic" : "static")).map(([id]) => id);
     out.kinds = [!sim.boxes || !wrongKind.length, wrongKind.slice(0, 5)];
-    // the live host opens it (the code the cutover runs) and its own sim layer agrees with every logged rest
+    // the live host opens it (the code the cutover runs) and its sim layer reports no disagreement (no physics entries: no rest to re-check)
     const live: any = openLive(t.at, "new", { now: () => endOf(t.lines) + 1000, custodyFile: path.join(path.dirname(t.at), CUSTODY_FILE) });
     const ls = live.sim(); out.live = [!ls.checks.disagree.length && JSON.stringify(live.state().entities) === JSON.stringify(t.back.entities), ls.checks];
     return out;

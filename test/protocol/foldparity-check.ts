@@ -7,7 +7,7 @@
 //       logs, two copies booted with and without the cache answer every reader alike (state, chain heads, every view, the act
 //       index, creators, history and modlog pages, chat pages, client cuts, sanctions, maintenance, the sim), then take the same
 //       writes (a set, a create, an undo of an old act, a say) to the same bytes, and answer alike again (the conformance
-//       fixtures' writes are compared but not required to land: mustWrite false)
+//       fixtures' writes are compared but not required to land: mustWrite false; a log with a governance entry is skipped)
 //   FP3 the next write's head comes from the seeded chain: no prefix line read, the head a full chain gives
 //   FP4 the byte offsets are checked: a prefix that grew a byte, or a cache whose offset is off by one, boots the whole log (the
 //       state cache still used), equal to the fold

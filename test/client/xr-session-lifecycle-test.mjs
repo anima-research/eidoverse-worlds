@@ -11,8 +11,8 @@
 //     requestSession → setSession → session clock owns frames → end latch → desktop clock restored
 //     → second session enters and exits → stale first-session completion cannot affect the second
 //
-// The session objects are IWER's where it can supply them and a minimal fake otherwise; what matters
-// is that the PRODUCT'S install sequence runs. Removing the install turns this red.
+// The sessions are minimal fakes (IWER is only a `globals` flag here; requestSession/setSession are not
+// called): the install function runs for real, and xr.js's call order is source-checked at the end.
 import { installFrameClock, installEntryClock, clockIsRestored } from '../../client/lib/xr/xr_frame_clock.js';
 import { readFileSync } from 'node:fs';
 import { suite } from "../gate/suite.ts";

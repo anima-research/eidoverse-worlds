@@ -11,8 +11,9 @@
 //      embedding). This is the whole covenant: the kernel is built from
 //      IEEE-exact ops only, so engines cannot disagree;
 //   3. IDENTITY ACROSS TIME — the sweep digest equals the committed GOLDEN
-//      constant. The coefficients ARE the version (Covenant II): any edit
-//      that moves a bit anywhere in the kernel trips this first, and the
+//      constant. The coefficients ARE the version (Covenant II): an edit
+//      that moves a bit for a sampled input trips this first (expT is swept
+//      over ±700 only: its overflow/underflow cutoffs are not), and the
 //      correct response is an epoch bump, never a quiet re-record.
 
 import { join } from "node:path";

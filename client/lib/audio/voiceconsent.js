@@ -1,6 +1,7 @@
 // voiceconsent — audio preferences, and the two things a person can say NO to before any audio
 // moves: "don't send my voice anywhere" and "don't play other people's voices at me". Both
-// default to off. Receive-off means no inbound audio path is negotiated at all, not muted playback.
+// default to off. Receive-off means the server forwards no voice to you (no route is built; one already negotiated is
+// starved, server/sfu.ts setConsent), not muted playback.
 //
 // Categories: the 🎧 toggle is a voice control, and agent voice (TTS) counts as a voice. World
 // ambience is taste, set once on a settings slider.
@@ -43,7 +44,7 @@ export function setReceiveVoice(on) {
 }
 
 /** Momentary silence without revoking consent: the stream keeps arriving, only playback volume
- *  drops. setReceiveVoice(false) is the privacy act that tears the path down. */
+ *  drops. setReceiveVoice(false) is the privacy act: the server stops forwarding (the negotiated track stays, starved). */
 let hushed = false;
 export const isHushed = () => hushed;
 export function setHush(on) {

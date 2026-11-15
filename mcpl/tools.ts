@@ -186,7 +186,7 @@ async function searchLibrary(httpBase: string, query: string): Promise<{ path: s
   try {
     const r = await fetch(`${httpBase}/library-models?q=${encodeURIComponent(query)}`, READ());
     if (r.ok) return ((await r.json()) as { path: string; name?: string }[]).slice(0, 24);
-  } catch { /* sequencer route unreachable — scan what we can see, if anything */ }
+  } catch { /* sequencer route unreachable or timed out — scan what we can see, if anything (with no checkout: [], said as "no matches") */ }
   if (!MODELS_DIR) return [];
   try {
     const toks = query.toLowerCase().split(/\s+/).filter(Boolean);
@@ -1137,7 +1137,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         : a.lib ? `lib=${encodeURIComponent(String(a.lib))}` : null;
       if (!q) return fail("measure wants {id} (a placed thing) or {lib} (a library model)");
       // What the world server did, as far as the door can see it: no answer,
-      // an answer that isn't geometry, or its own error.
+      // an answer that isn't geometry (a body that times out after the headers lands here too), or its own error.
       // as this identity (readHeaders): an invite-only world's geometry answers only the people it lists. One request
       let d: any;
       let status = 0;

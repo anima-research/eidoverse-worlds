@@ -4,7 +4,8 @@
 // the authority's answer: an act number to undo by, or a refusal in the same words an agent gets (shared/protocol/refusal.js).
 //
 //   send(req, opts)        one request; on a `locked` refusal, someone who may lift the lock is asked and may re-send
-//                          the SAME request with throughLock: true (the lock stays on). A refusal reverts the local preview.
+//                          the SAME request with throughLock: true (the lock stays on). A refusal runs the caller's
+//                          `revert`, when it passed one (the sky panel passes none).
 //   sendOps(ops, opts)     an edit's ops (shared/requests.js) as ONE request (a tool, or a batch): one act, one Ctrl+Z.
 //   expectOf(ids, comps)   the values a gesture started from, as `expect`: the release is refused `changed` if anyone
 //                          wrote those since.

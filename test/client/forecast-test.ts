@@ -20,7 +20,8 @@
 // doesn't have dies at LINK time, so not one assertion runs there and the
 // suite can't serve as a negative control. This way the shared checks and the
 // both-tree behavioral controls run on any tree; only the canonical-clock
-// checks gate on the export existing (labeled as novelty when absent).
+// checks gate on the export existing (labeled as novelty when absent). Not yet
+// true: the #65 CONTROL rows call effectiveClock unguarded, so a tree without it throws there.
 import * as F from "../../shared/forecast.js";
 import { suite } from "../gate/suite.ts";
 const { WEATHERS, normalizePolicy, segmentAt, effectiveSky, foldSkyEntry, hoursAt, describeSky } = F as any;

@@ -131,8 +131,9 @@ clock, and every cause chain ends at a participant. Triggers: `use`, `say`,
 
 **Layer 0 — intrinsic affordances (authored by nobody).** The controller
 derives affordances from geometry: walkable floors and stairs, and sittable tops
-(`findSeat` in client/lib/colliders.js finds a seat-height surface). Everything is walkable-on / grabbable / placeable by
-virtue of being physical. A placed stool is sittable the moment it arrives.
+(`findSeat` in client/lib/colliders.js finds a seat-height surface). Everything is walkable-on / placeable by virtue of
+being physical; a hand picks up only a thing with `grabbable` or a dynamic `physics`
+body (shared/grab.js `grabOf`). A placed stool is sittable the moment it arrives.
 Physicality is the one interface every participant shares.
 
 **Layer 1 — reactions.** An entity's `reactions` component maps a use to
@@ -178,8 +179,9 @@ inventory, are not built yet.
 
 **Nothing about a world is declared at startup.** No world config file, no
 asset manifest. Everything arrives through the log, at runtime:
-- Assets are content-addressed (hash = identity = cache key, immutable,
-  upload-anytime, never stale, never deleted while referenced by any log).
+- Uploads are content-addressed (`store/<hash>`: hash = identity = cache key, immutable,
+  upload-anytime, never stale, never deleted while referenced by any log). A library model is
+  referenced by its path, with its bytes' hash beside it as `model-hash` (componentspec.js `model`).
 - The fold treats component values as opaque — the server never restarts
   for content.
 - Ingestion happens while standing in the world: an upload is stored by its

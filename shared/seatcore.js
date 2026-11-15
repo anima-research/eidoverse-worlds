@@ -12,9 +12,11 @@
 // no THREE, no DOM, no clock, no fetch. Callers pass state in.
 //
 // Contract highlights:
-//  - a profile applies ONLY behind the full gate (authored surface socket ∧
-//    countersigned profile ∧ the action that ACTUALLY ran ∧ exact clip
-//    bytes); everything else is a DECLARED approximation, never silence;
+//  - in the renderer a profile applies ONLY behind the full gate (seatGate:
+//    authored surface socket ∧ countersigned profile ∧ the action that
+//    ACTUALLY ran ∧ exact clip bytes); the agent has no mixer and applies the
+//    contract half alone (seatGateCore, mcpl/effective.ts); everything else
+//    is a DECLARED approximation, never silence;
 //  - the correction subtracts along the body's actual up (world +Y), since
 //    mounted bodies render upright;
 //  - no minimum vertex is promoted to truth without its support patch (a

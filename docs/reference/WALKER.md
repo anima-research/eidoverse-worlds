@@ -27,7 +27,8 @@ keeps what a builder needs.
 - A body standing in a wall (a door edited to a window under its feet) first steps out to the nearest clear point
   within half a metre, on the side that reaches the destination. It is routed from there.
 - Routes use the structures known when the walk begins, where they are then.
-- Intermediate waypoints are reached exactly.
+- A structure route's intermediate waypoints are reached exactly; a navgrid-routed walk's count within `NAV_NUDGE`
+  (5 cm, shared/navgrid.js), and so does its destination (mcpl/agent.ts walkTo, `legTolerance`).
 - `tolerance` (0–0.4 metres) applies only to the requested destination.
 
 ### Caching and each walk's context

@@ -646,7 +646,7 @@ const enabledBox = (id) => { const on = state.st.entities[id]?.disabled !== true
 let lastAway = null;   // { id, m }: the distance the Inspector's Transform title last showed (its ticker repaints on a change)
 /** the thing's short handle (shared/thingref.js handleOf over every id but the world's, exactly as the Hierarchy's twins) */
 const idHandle = (id) => handleOf(id, Object.keys(state.st.entities ?? {}).filter((k) => k !== WORLD_ID));
-/** the name line's dim #handle: the id agents and the log use; clicking copies the full id */
+/** the name line's dim #handle: the shortest unique prefix of the id, so it can grow as ids are added; clicking copies the full id */
 const idHandleRow = (id) => ({ t: 'btn', k: 'copyid', label: `#${idHandle(id)}`, bar: true, deskOnly: true, cls: 'sp-iconbtn sp-handle',
   hint: `#${idHandle(id)} is its id (${id}), the one agents and the log use. It is permanent, minted by the world, and can't be renamed: the name is its label. Click to copy the full id.` });
 function inspectorFields() {

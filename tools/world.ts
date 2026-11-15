@@ -123,7 +123,7 @@ function sayPeople(people: any[] = []) {
   for (const p of people) console.log(p.account ? `${p.role} ${p.name}: bound to their account (${p.account}:…, from ${p.from})`
     : `${p.role} ${p.name} has no account yet (${p.why}): bind with ${p.bind}`);
 }
-/** `--dry-run`: the report and its hash, printed; nothing written. Exit 1 when the translation would be refused. */
+/** `--dry-run`: the report and its hash, printed; nothing written but the custody key on first use (identitySalt). Exit 1 when the translation would be refused. */
 function dryRun(D: string, name: string, words = name) {   // words: the command's own world name(s), `old new` in the two-name form
   const { report, hash } = reportNow(D, name);
   console.log(`dry-run report of "${name}" (nothing written to the world; this host's custody key is minted on first use, and a key file still under its pre-2026-10-07 name is renamed once):`); console.log(JSON.stringify(report, null, 1));

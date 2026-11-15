@@ -464,8 +464,8 @@ export function foundOwnedWorld(name: string, actor: string, account: string, ti
     const r = authorityRequest(w, actor, "create-world", { title: String(title || name).slice(0, 80) });
     if (!r.ok) throw new Error(`the authority refused the founding: ${r.refused?.reason}`);
     if (fs.existsSync(dest)) throw new Error(`"${name}" isn't available — pick another name`);   // taken while this one was built
-    // answered only once durable. The ledger row first: a crash between leaves a row for no world, which a retry overwrites,
-    // never a world with no row
+    // the ledger row is durable first (a crash between leaves a row for no world, which a retry overwrites, never a world
+    // with no row); the name is synced after the rename, and a sync that fails is logged, not refused
     replaceDurable(foundersPath(), JSON.stringify({ ...L, [name]: { account, actor, ts: now } }, null, 1)); rowWritten = true;
     fs.renameSync(tmp, dest); renamed = true;
     // the world is there; its name not yet synced is said, not a failed founding

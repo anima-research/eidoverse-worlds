@@ -1,7 +1,8 @@
 // Support surfaces through the SHIPPED DOOR (#17, review of #53).
 //
 //   bun test/server/support-lifecycle-test.ts        # spawns its own scratch server
-//   URL=ws://host:8940/ws bun tools/...        # or against a running one
+//   URL=ws://host:8940/ws bun test/server/support-lifecycle-test.ts   # against a running one: broken today, its sup-<time>
+//                                              # worlds are named at run time and only founded locally (hand)
 //
 // test/client/support-test.ts drives the physics and collider modules directly: it
 // proves the solver rests a body on a box. It cannot prove that a real

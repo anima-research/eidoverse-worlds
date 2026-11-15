@@ -192,7 +192,7 @@ export class WorldAgent {
   yaw = 0; speed = 0; clip = "idle";
   private target: (Vec2 & { run: boolean; tolerance?: number; y?: number }) | null = null;
   /** Remaining validated centerline waypoints (walkTo). Only the destination uses
-   * the caller's tolerance; intermediate waypoints are reached exactly. */
+   * the caller's tolerance; intermediate waypoints are reached exactly, or within NAV_NUDGE on a navgrid route. */
   /** …each with the floor height the route stands on there, when the navgrid planned it (the authority is asked for
    *  stretches at that height: up a stair, the stretch's end is on the stair, not the floor beneath it) */
   private legs: (Vec2 & { y?: number })[] = [];
@@ -381,8 +381,9 @@ export class WorldAgent {
    *  between the world and a local voice sidecar. The door never synthesizes,
    *  encodes or holds a peer connection; it stays a text-tier participant.
    *
-   *  Frames out (server→sidecar): relay-cred · sfu-offer · sfu-ice · sfu-route
-   *  Frames in  (sidecar→server): sfu-answer · sfu-ice · sfu-want-negotiate
+   *  Frames out (server→sidecar): relay-cred · sfu-offer · sfu-ice · sfu-route · voice-consent ·
+   *    surface-transition · voice-service · voice-moderated
+   *  Frames in  (sidecar→server): sfu-answer · sfu-ice · sfu-want-negotiate · sfu-pos · voice-consent
    *  Nothing else is forwarded: a whitelist, not a pipe, so server-side
    *  validation stays the one authority (test/mcpl/door-media-whitelist-test.mjs). */
   onMedia: ((frame: Record<string, unknown>) => void) | null = null;
@@ -652,8 +653,9 @@ export class WorldAgent {
             // instead of retrying the identical join.
             if (!this.joined) {
               // a cooldown isn't final: onclose 4006 dials again after it. Any other refusal's close says whether it is
-              // final (4005 "full" is not: onclose dials again); onclose answers this connect() with these words. The
-              // world's own words, as the cause inside whatever sentence carries this (travel's, for one)
+              // final (4005 "full" is not: onclose dials again); onclose answers this connect() with these words (after a 4006
+              // close only the 8 s timer does). The world's own words, as the cause inside whatever sentence carries this
+              // (travel's, for one)
               const said = String(msg.error ?? "").trim().replace(/\.+$/, "");
               const base = said ? `the world refused the join: ${said}` : "the world refused the join without giving a reason";
               // an old-format world: who may upgrade it, and the doc, in words (shared/oldformat.js; docs/reference/WIRE.md 4005)

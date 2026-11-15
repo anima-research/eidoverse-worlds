@@ -495,7 +495,7 @@ function drawFlights(wall, now) {
   swapFrom.clear();
 }
 
-// "object physics off" (main's ew-phys): this browser stops folding and drawing flights, predicting its own
+// "object physics off" (main's ew-phys): this browser stops drawing flights (the replica still folds), predicting its own
 // releases and shoving what it walks into; things stand at their committed poses (the log's). Local only: nobody else is touched.
 let physOn = (() => { try { return localStorage.getItem('ew-phys') !== '0'; } catch { return true; } })();
 export const physicsEnabled = () => physOn;

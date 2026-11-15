@@ -68,8 +68,9 @@ export class Sfu {
   private static readonly HYSTERESIS = 1.10; // …stop only beyond 10% further (Basis's value)
   private static readonly POS_STALE_MS = 5000;
 
-  /** Hard cap on simultaneous speakers per listener (Basis's BasisAudioCapJob): forty people in one plaza all pass the
-   *  distance gate, so without it the worst case is N². 0 disables it (the default: dropping a speaker is policy). */
+  /** Cap on simultaneous speakers per listener (Basis's BasisAudioCapJob): forty people in one plaza all pass the
+   *  distance gate, so without it the worst case is N². Not hard: a speaker with no position can't be ranked and is
+   *  admitted past it (withinCap). 0 disables it (the default: dropping a speaker is policy). */
   maxAudiblePerListener = 0;
   /** An incumbent's squared distance is multiplied by this when competing for a slot, so a newcomer must be
    *  MEANINGFULLY closer (else two near-equal speakers swap the last slot every tick). Basis's StickinessBonus. */

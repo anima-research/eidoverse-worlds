@@ -6,9 +6,9 @@
 // dependency-free; colliders.js and server/geometry.ts are adapters that
 // gather vertices their own way and feed the same math.
 //
-// Within the floor-shaped population the gates admit, the 24×24 max-y grid
-// tracks a raycast ground truth to 1.8cm worst case (tools/assets/collider-survey.ts),
-// which is why the same grid doubles as the headless HEIGHTFIELD for this class.
+// Over the survey's floor-shaped meshes (h ≤ 0.8 m, tighter than decide()'s 1.0 m), the 24×24 max-y grid's MEDIAN
+// top tracks the raycast median to 1.8cm worst case (tools/assets/collider-survey.ts): a per-mesh figure, not a
+// per-cell bound. The same grid doubles as the headless HEIGHTFIELD; per-cell trust is CERT_* below.
 
 export const TOPGRID_VERSION = 1;
 export const LIE_GRID = 24;              // cells per side
@@ -20,7 +20,8 @@ const FLOOR_MAX_H = 1.0;          // m (scaled) — decide()'s one movable line
 export const UNEVEN_MIN_LIE = 0.10;      // m (scaled) — below this a box is honest enough
 export const TOPGRID_MAX_JSON = 8192;    // hard cap on the serialized payload
 /** Per-cell certification: a cell is OFFERED as support only when a within-cell
- *  ray subsample proves its surface varies by no more than this (model metres);
+ *  ray subsample (4×4, 8×8 for a rough cell: server/geometry.ts) finds its surface varies by no more than this
+ *  (model metres; a gap between the rays goes unseen);
  *  uncertified cells serve as null. 0.03 keeps the world bound (0.05m) up to
  *  scale ~1.66; consumers must refuse grids their scale stretches. */
 export const CERT_SPREAD = 0.03;         // m, model frame — max within-cell surface spread

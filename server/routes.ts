@@ -427,7 +427,7 @@ const ROUTES: Route[] = [
     handler: async ({ req, url }) => {
       if (!HN_ISSUER_KEY) return new Response(JSON.stringify({ error: "identity door not configured" }), { status: 503, headers: { "content-type": "application/json" } });
       let tok = "";
-      try { tok = String((JSON.parse((await readCapped(req, 64 * 1024)) ?? "") as { token?: string }).token ?? ""); } catch { /* fall through */ }   // an id token is ~1 KB
+      try { tok = String((JSON.parse((await readCapped(req, 64 * 1024)) ?? "") as { token?: string }).token ?? ""); } catch { /* fall through */ }   // an id token is ~1 KB; a body over the cap reads as no token (403, not 413)
       const v = verifyToken(tok, { issuerId: HN_ISSUER_KEY, iss: HN_ISS, aud: HN_AUD });
       if (!v.ok) {
         console.log(`[auth] login token rejected: ${v.reason}`);
@@ -785,7 +785,7 @@ const ROUTES: Route[] = [
     handler: ({ req, url, srv }) => {
       // Who may ask: the sign-ins /upload accepts (the authority key, an agent token, an aid1 credential) plus a signed-in
       // session cookie — a person who came in through the home node carries no door key and got 401 here. The key rides
-      // `Authorization: Bearer`, never the URL (base.js: it would land in access logs). A key in ?token= is refused.
+      // `Authorization: Bearer`, never the URL (base.js: it would land in access logs). A ?token= is never read (not refused: it counts for nothing).
       if (JOIN_TOKEN) {
         const key = bearerOf(req);
         const ok = (key && (key === JOIN_TOKEN || agentTokens().byToken.has(key) || !!aid1JoinIdentity(key)))

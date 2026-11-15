@@ -1,6 +1,7 @@
 // components-inspector-test — the inspector's component cards (schema.sections) over the real corpus.
 //
-// For every entity in spec/fixtures' log.jsonl worlds and COMPONENTS_CORPUS: one card per component,
+// For every entity in the log.jsonl (old-format) worlds under test/fixtures/v1-worlds, spec/fixtures and COMPONENTS_CORPUS
+// (a current <world>/world.jsonl isn't read: components-corpus-test reads those): one card per component,
 // every address a card names resolves to a real schema field, no field is owned by
 // two cards, and every editable field of the old groups is reachable from some card
 // (a field nobody can reach is a field only a model can edit). Then add/remove

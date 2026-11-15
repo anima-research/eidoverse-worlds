@@ -17,7 +17,7 @@ try {
     const xr = await import('./lib/xr/xr.js'); const ui = await import('./lib/ui/ui-dock.js');
     const pins = ui.dockPins().map((p) => ({ id: p.id, icon: p.icon ?? null }));
     const entries = xr.radialEntries(); const ring = xr.makeRadial(entries);
-    await Promise.all(ring.slots.map((m) => m.material?.map?.ready ?? null));   // svg glyphs load async
+    await Promise.all(ring.slots.map((m) => m.material?.map?.ready ?? null));   // svg glyphs load async; no map has .ready (xr.js:390 img.onload), so only the 60 frames below wait
     for (let i = 0; i < 60; i++) await new Promise((r) => requestAnimationFrame(r));
     // a slot "draws its glyph" when its canvas has ink INSIDE the disc beyond the plain panel fill: count pixels that
     // differ from the disc colour in the central 60x60 (the glyph box)

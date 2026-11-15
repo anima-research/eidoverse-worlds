@@ -2,7 +2,9 @@
 
 The §20 texture pipeline needs KTX-Software's `toktx` (or `ktx`) CLI to
 build compressed variants. It is strictly optional: without it the server
-boots, logs one line, skips the sweep, and serves originals — see
+boots, logs one line, skips the sweep, and builds nothing new: it serves what
+is already in `assets/opt/` (an earlier variant, a store-min shadow), else the
+original — see
 `server/optimize.ts` (exit 3) and `server/upload.ts`.
 
 Homebrew does **not** carry it (we said `brew install ktx` in a few places
@@ -64,9 +66,9 @@ layout is load-bearing here too — the tools find `libktx` by rpath).
 Under systemd the sequencer's PATH is not your shell's (the same reason
 upload.ts spawns `process.execPath` and not `bun`): put
 `Environment=KTX2_TOKTX=/usr/bin/toktx` in the unit, or the boot sweep logs
-`no encoder` and every `?ktx2=1` answer stays webp. That is the show box's
+`no encoder` and every `?ktx2=<key>` answer (the key `/version` publishes) stays webp. That is the show box's
 state as of 2026-08-24 — verified from outside: every library and store
-model fetched with `?ktx2=1` came back `EXT_texture_webp`, none
+model fetched with `?ktx2=1` (that day's key) came back `EXT_texture_webp`, none
 `KHR_texture_basisu`. The §20 arc is built and dormant there until this
 lands.
 

@@ -475,7 +475,7 @@ test("…an asked screenshot still takes a backed-off roamer when it is the only
   const { broker, worldOf, join } = roamSetup({ now: () => time, sweepAfterMs: 0, travelMs: 400, pollMs: 10, timeoutMs: 200 });
   const lobby = worldOf("lobby"), w = worldOf("w"), v = worldOf("v");
   const roamer = join(lobby, "roam", { renderer: true, roam: true, spectator: true }); join(w, "agent", { tokenVerified: true });
-  // a roamer travels by re-joining on the same connection: the same client, moved to another world
+  // a roamer travels by rejoining on a new connection (client/lib/net.js rejoin); here one Client is moved between worlds instead
   const travel = (to: World) => { roamer.c.world?.clients.delete(roamer.c); roamer.c.world = to; to.clients.add(roamer.c); };
   broker.sweep(); time = 500; await Bun.sleep(40);                  // a failed journey to w: backed off
   join(v, "agentV", { tokenVerified: true });

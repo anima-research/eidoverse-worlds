@@ -39,7 +39,7 @@ export function unexplained(oldT: string, newT: string, map: (number | null)[], 
       for (const b of [was, now]) for (const o of b.body?.ops ?? []) if (o.op === "set" && o.id === "@world" && o.comp === "bounds") o.value = "~";
     const d: string[] = []; diffs(JSON.parse(sorted(was)), JSON.parse(sorted(now)), "", d);
     for (const x of d) out.push(`old #${i} → new #${map[i]} ${x}`); });
-  // class 3 (ruling 3): the only insertion is one admitted bounds set (its place before the epoch: the bounds there, below)
+  // class 3 (ruling 3): every insertion must be a bounds set (their count isn't limited; the epoch's bounds are checked below)
   N.forEach((e, j) => { if (kept.includes(j)) return;
     if (!isBoundsSet(e)) out.push(`new #${j} inserted, and it is not a bounds set`);
     else if (e.kind === "change" && !(N[e.cause]?.kind === "request" && !kept.includes(e.cause))) out.push(`new #${j}: a bounds change whose request isn't the inserted one`); });

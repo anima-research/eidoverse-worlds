@@ -18,7 +18,7 @@ Ask them in order. A "no" to any one ends the climb at that rung.
    `move {mode: "fly"}` is. Moderation is not a tool each; it is `act {verb: kick|ban|unban|bans}`.
 
 Passes all three → an **engine tool**: a row in `TOOL_ROWS` and a handler.
-Fails 2 or 3 but the action exists → a **mode** of a general tool (`pose {wings}`, `reach {release}`, `create {from}`),
+Fails 2 or 3 but the action exists → a **mode** of a general tool (`anim {name: "wings-folded"}`, `reach {release}`, `create {from}`),
 and if it had a name before, that name goes in `TOOL_FOLDS` so the old call answers with the call that does it now.
 A rename of something that stays → the old name is an **unknown tool**: it is refused with the same words as any name
 the server never served, and runs nothing (Mica 11-05: no dated education table). Add it to `OLD` in
@@ -40,7 +40,8 @@ runs. (Until 2026-10-28 renames were aliases with argument translations; the wor
 - [ ] **Its words in AGENTS.md**: the tools table (`### The tools — general shapes, with modes`), in the protocol's words.
       *No suite checks this line yet: the reviewer does.*
 - [ ] **If it replaces a name**: `OLD` in `test/mcpl/alias-test.ts` (a rename: refused as unknown) or `TOOL_FOLDS` (became a
-      mode); `test/mcpl/alias-test.ts` drives every entry. Never delete a name without one of the two.
+      mode); `test/mcpl/alias-test.ts` drives every `OLD` entry and checks every tool main served is in one of the
+      two (a fold's pointer text is not checked). Never delete a name without one of the two.
 - [ ] **Not a tool at all**: a bench or rehearsal hook (`flightBodyDown`) is called on the agent directly by its test.
 
 ## Worked example — `walk_to` (2026-10-15; history: walk_to is an unknown tool now and runs nothing)

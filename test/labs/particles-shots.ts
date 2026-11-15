@@ -1,6 +1,6 @@
 // test/labs/particles-shots.ts — every Essentials particle effect, photographed in a real browser, one at a time,
 // against a night sky, so a change to the particle system can be A/B'd by eye (R 10-07: "keep existing worlds looking the
-// same"). Not a pass/fail suite: it writes PNGs and says which effects drew nothing (a blank frame is a FAIL line).
+// same"). Not a pass/fail suite: it writes PNGs and says which effects allocated no instances (a FAIL line; the PNG itself is not read).
 //
 //   SHOTS=<dir> MODE=before|after bun test/labs/particles-shots.ts      (under the house guards: flock + perf-guard)
 //
@@ -63,7 +63,7 @@ try {
     const st = await page(`const process = { env: { DBG: ${JSON.stringify(process.env.DBG ?? '')} } }; const m = await import('/lib/realize/emitters.js'), w = await import('/lib/world.js'); const h = m._registry.get('${IDS.of(`fx-${p}`)}');
       return { live: m.emitterCount(), comp: JSON.stringify(w.bagOf('${IDS.of(`fx-${p}`)}')?.particles ?? null), drawn: h ? h.parts.map((x) => x.mesh.count) : null, alive: h ? h.parts.map((x) => x.sim.liveCount()) : null, vis: h ? h.parts.map((x) => x.mesh.visible) : null, dbg: process.env.DBG ? (() => { const m = h.parts[0].mesh; const g = m.geometry; return { pos: [...g.attributes.iPos.array.slice(0, 6)], col: [...g.attributes.iCol.array.slice(0, 8)], sa: [...g.attributes.iSa.array.slice(0, 6)], mw: [...m.matrixWorld.elements.slice(12, 15)], parent: m.parent?.name, gp: m.parent?.parent?.type, inScene: (() => { let o = m; while (o.parent) o = o.parent; return o.type; })(), layers: m.layers.mask, ro: m.renderOrder }; })() : null };`).catch((e) => String(e));
     console.log(`  ${p}: ${JSON.stringify(st)}`);
-    check(`${p}: instances allocated (mesh.count > 0; not a pixel check)`, Array.isArray(st?.drawn) && st.drawn.some((n: number) => n > 0), st);   // a blank frame is a FAIL
+    check(`${p}: instances allocated (mesh.count > 0; not a pixel check)`, Array.isArray(st?.drawn) && st.drawn.some((n: number) => n > 0), st);   // a blank PNG with instances still passes
     console.log(`  ${p}: ${f} (${fs.statSync(f).size} bytes)`);
     await req("delete", { id: `fx-${p}` });
     await sleep(600);

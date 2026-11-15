@@ -4,7 +4,7 @@
 // everything after that is the product's own frame (xr.js's per-hand loop). A fake peer joins as a plain socket for
 // the nameplate checks (the xr-plate-card probe's peer).
 //
-//   bash code/scripts/eido-probe.sh -C <worktree> -t 900 test/client/xr-pointer-probe.mjs      (one Chrome at a time)
+//   bun test/client/xr-pointer-probe.mjs      (one Chrome at a time)
 //
 // xrpointer-test.mjs is the policy half (the numbers); this is the wiring, in a browser, through real buttons.
 import { launchBrowser, ownedWorld, checker, iwerInit } from '../harness/probe-harness.mjs';

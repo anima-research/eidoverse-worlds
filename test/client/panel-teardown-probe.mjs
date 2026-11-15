@@ -10,8 +10,9 @@
 // settled), and neither can a syntax check — so this probe tags every row,
 // clicks, and looks for its own tags afterwards. A rebuilt panel loses them.
 //
-// It also watches the meter's rAF chain: micFloorRow's beat() loop ends itself
-// on !row.isConnected, so a teardown silently restarts the animation.
+// It also checks the meter NODE survives: micFloorRow's beat() loop ends itself
+// on !row.isConnected, so a teardown silently restarts the animation. The rAF
+// loop itself is not sampled (a stopped loop on a kept node passes).
 //
 //   bun test/client/panel-teardown-probe.mjs [origin]
 import { launchBrowser, ownedWorld } from '../harness/probe-harness.mjs';

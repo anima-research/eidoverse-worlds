@@ -2,7 +2,8 @@
 //
 // Single authority, not determinism: the owner streams the resulting sparse bone rotations through the presence
 // `pose` field (the channel a held pose already uses, so remotes need no new receiver code), and when it settles,
-// captures the final bones as a held pose, so a late joiner gets the settled result, never a replay. The server
+// captures the final bones as a held pose, never a replay. A late joiner's snapshot has them dropped (server.ts
+// settledPose turns a `ragdoll` clip to idle); the owner's next presence packet brings them back. The server
 // never simulates and never sees a bone.
 //
 // The simulator is a Verlet particle skeleton with MASS (constraints split by inverse mass), VOLUME (bones are

@@ -3,7 +3,8 @@
 // file and a temp state file, then covers: join policy (denied / granted /
 // listed-but-outside), founding vs joining, dial-time ?world=, epoch across
 // transitions, host prepare/commit refusal, per-world door state, the
-// plain-MCP lane, and attach failure.
+// plain-MCP lane, and travel while the world server is down (refused before
+// detaching; a failure after detach is not staged).
 //
 // 🔴 THE HARNESS OWNS ITS PORTS, ITS STATE, AND ITS CHILDREN (2026-08-16).
 // It previously hardcoded 8957/8958, waited by sleep, and never proved the
@@ -901,7 +902,7 @@ async function shut(h: { ws: WebSocket }) {
     shutter.ws.close();
   }
 
-  // ── 5. attach failure → -32024 and the connection surfaces CLOSED ─────────
+  // ── 5. world server down → travel refused before detaching; connection kept ─
   // (last: it kills the sequencer)
   const victim = await connectHost("roamer-token");
   world.kill();                        // the sequencer goes away mid-session
@@ -913,8 +914,8 @@ async function shut(h: { ws: WebSocket }) {
   // is still what the channels/open lane returns; both end in the same close.
   // The travel gate now ASKS the world (/access) before detaching, so a dead
   // sequencer is caught there: nothing moves, and the agent is told to retry.
-  // (The post-detach failure path below stays for a join that fails AFTER the
-  // gate — a race this harness cannot stage deterministically.)
+  // (The post-detach failure path, a join that fails AFTER the gate, is a race
+  // this harness cannot stage deterministically, so it is not covered.)
   check("an unreachable world server refuses travel before anything moves",
     failed.result?.isError === true
     && /didn't say whether you may go to "annex", so nothing moved/.test(txt(failed)), txt(failed));

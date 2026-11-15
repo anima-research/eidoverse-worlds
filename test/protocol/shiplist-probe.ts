@@ -63,7 +63,7 @@ try {
   check("boot: a world", await waitFor(`import('/lib/net.js').then((m) => m.replicaActive())`));
 
   // each stage's verdict stands alone: a stage that throws is a FAIL of that stage, and the next still runs (the base: every stage red);
-// later stages read what D (gate) and F (box1) made, so a STAGES= subset includes D,F
+// later stages read what earlier ones made (D's gate, F's box1, CU's cuball for FL); a STAGES= subset must list them itself
   const ONLY = process.env.STAGES ? new Set(process.env.STAGES.split(",")) : null;   // STAGES=HT,HP runs just those (a quick look; the suite runs all)
   const stage = async (id: string, fn: () => Promise<void>) => { if (ONLY && !ONLY.has(id)) return; try { await fn(); } catch (e) { check(`${id} (the stage threw)`, false, String(e?.message ?? e)); } };
   // ---- D: the authority, as a desktop visitor meets it ----

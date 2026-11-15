@@ -6,8 +6,8 @@
 //
 // Token minting here is a deliberate re-implementation of archipelago-home's
 // mintToken (10 lines) so this repo tests its OWN verifier copy against
-// independently-produced bytes — format drift between the repos shows up as
-// failures here, not in production.
+// independently-produced bytes. It catches the verifier drifting from this copy, not
+// archipelago-home changing its format: that change has to be copied here by hand.
 import { generateKeyPairSync, createPublicKey, sign as cryptoSign } from "node:crypto";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";

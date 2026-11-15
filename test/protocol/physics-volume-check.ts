@@ -3,7 +3,8 @@
 // The old name physics-area is refused, pointing to physics-volume (A10: renamed before deploy, R 11-09; no alias).
 //   bun test/protocol/physics-volume-check.ts                 every case
 //   bun test/protocol/physics-volume-check.ts --only A1,A3    just those
-//   bun test/protocol/physics-volume-check.ts --tree <dir>    against another checkout's shared/ and server/ (a mutant, or the base)
+//   bun test/protocol/physics-volume-check.ts --tree <dir>    against another checkout's shared/ (a mutant, or the base); server/
+//                                                            durable.ts and custody.ts stay this checkout's
 //   bun test/protocol/physics-volume-check.ts --mutants       remove each rule in turn (a copy of the tree): its cases must go red
 // @ts-nocheck
 import "../harness/fixture-ids.ts";

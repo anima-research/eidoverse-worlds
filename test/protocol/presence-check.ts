@@ -10,7 +10,8 @@
 //       none by default) BEFORE they're forwarded; the
 //       authority's body inbox (acts delivered, revocations) is pushed to its person's socket
 //   PR  puppet / bodydrag / typing reach the IDENTITY the sender named (targetActor / toActor, the opaque u-… id every
-//       arrive carries), not whoever wears a name: the actor wins over the name; an actor who isn't here is refused; a
+//       arrive carries), not whoever wears a name: the actor wins over the name; an actor who isn't here is refused (typing
+//       isn't: it goes out with to: null); a
 //       sender with no actor id still reaches by name. (whisper did too until it was removed, R 10-18: now it reaches nobody)
 // @ts-nocheck
 import fs from "node:fs";

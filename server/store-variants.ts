@@ -112,7 +112,8 @@ export function lodVerdictFinal(content: string, recipe = LOD_RECIPE): boolean {
 
 // ---- source identity: freshness by equality, never by mtime order ------------------------------------------------------
 // A variant or verdict records its source's identity (size + mtimeMs + sha256) as it stood when the pass started, and is
-// fresh iff that equals the source's identity now. No record: the legacy strictly-newer rule. `source` null = content-addressed.
+// fresh iff that equals the source's identity now. A record with no sha (a legacy `source=size:mtime` token) compares on size +
+// mtime alone. No record: the legacy strictly-newer rule. `source` null = content-addressed.
 // Why: docs/research/store-variants-design.md#source-identity-freshness-by-equality-never-mtime-order
 export type SourceIdentity = { size: number; mtimeMs: number; sha?: string };
 export type StatFn = (p: string) => SourceIdentity | null;

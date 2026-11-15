@@ -4,7 +4,8 @@
 // For each tracked text file (docs/history, spec/history and CHANGELOGs keep the paths of their day):
 //   1. a relative import specifier (from/import/export, import(), new URL(…, import.meta.url), require) is resolved from
 //      the importer's OLD place and rewritten from its NEW place to the target's NEW place: a moved importer and a moved
-//      target are the same case, and an untracked target (../node_modules/…) keeps pointing at the same file;
+//      target are the same case, and an untracked target (../node_modules/…) keeps pointing at the same file; an
+//      extensionless specifier (./foo for foo.ts) is not rewritten, and only the closing --check reports it;
 //   2. a repo citation (client/lib/… at any prefix: ../../client/lib/…, engine/client/lib/…) becomes the new path;
 //   3. a served URL (/lib/x.js, /shared/x.js, a page-relative ./lib/x.js) becomes the new URL.
 // Then it prints what it could not rewrite: template specifiers in moved files, and quoted bare basenames and lib/-relative

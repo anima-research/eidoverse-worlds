@@ -1,8 +1,10 @@
 // Sub-object motion — headless checks for client/lib/motion.js's part tier.
 //
 // Orrery's segmented exports name their parts (tripo_part_N); a component
-// keyed `motion:<part>` (or a motion carrying `part`) animates that node
-// alone. These checks pin the contract: the root never moves for a part
+// `motion:<slot>` with the node in `value.node` animates that node alone. The
+// fixtures use the OLDER stored forms the reader still takes (shared/protocol/
+// names.js motionNode): the key as the node, and `motion.part`; the authority
+// refuses both in a new write. These checks pin the contract: the root never moves for a part
 // motion, the pivot point is a real hinge (fixed in the parent frame),
 // several parts move independently, a vanished part-motion restores the rest
 // pose, and whole-entity motion is untouched by any of it.
@@ -116,7 +118,7 @@ console.log('\n━━ verb sugar + safety ━━');
 {
   const { root, seat } = makeSwing();
   entities.set('swing3', root);
-  // the `motion` verb's shape: part rides IN the data
+  // the old `motion` verb's shape (part IN the data): refused at the door now, still read from a stored world
   comps.set('swing3', { motion: { type: 'spin', part: 'tripo_part_3', axis: [0, 1, 0], degPerSec: 90, phase: 1, t0: Date.now() } });
   tickMotion();
   check('motion {part} targets the part', 2 * Math.acos(Math.min(1, Math.abs(seat.quaternion.w))) > 0.1);

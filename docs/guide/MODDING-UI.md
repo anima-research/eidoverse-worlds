@@ -7,11 +7,12 @@ and restyle. Ours is the humble web cousin of both.)
 
 ## 1. The token sheet — restyle everything, touch nothing
 
-Every color in the client resolves through the `:root` token block at the top
+Most colors in the client resolve through the `:root` token block at the top
 of `client/index.html` (roles documented inline there: brand = identity &
 liveness, attn = needs-your-attention, ink ladder = content, surfaces,
-interaction whites). JS-drawn chrome (mic/ear glyphs, nameplates) reads the
-same tokens at draw time.
+interaction whites). Not all: some editor chrome (e.g. `.edit-tool.on`,
+`.edit-vbtn.on`) still hard-codes its colors. JS-drawn chrome (mic/ear glyphs,
+nameplates) reads the same tokens at draw time.
 
 Live-override from anywhere:
 

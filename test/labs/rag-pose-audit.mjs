@@ -59,7 +59,7 @@ function measure(rd) {
     if (key.endsWith('.R')) a.side = -a.side;
     out[key] = { sag: sagittal(a), lat: lateral(a) };
   }
-  // knees + elbows: how far folded, and how far out of the hinge plane
+  // knees + elbows: how far folded (unsigned acos: a backward bend reads as flexion, so HYPEREXTENDS never fires), and how far out of the hinge plane
   for (const H of rd.hinge) {
     const u = rd.p[H.b].clone().sub(rd.p[H.a]).normalize();
     const v = rd.p[H.c].clone().sub(rd.p[H.b]).normalize();

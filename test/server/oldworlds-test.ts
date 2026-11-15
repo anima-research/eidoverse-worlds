@@ -100,7 +100,8 @@ ok(oldWorldAt(W, "garden") === null && oldWorldAt(W, "oldtown-2") === null && ol
   ok(oldWorldAt(W, "oldtown")?.visitor === v1 && oldWorldAt(W, "prenamed")?.visitor === v2, "O7 oldWorldAt carries the visitor text the join sends"); }
 
 // ---- O5: the printed command, run ----
-/** a printed command as a shell runs it: its leading NAME=value words are the environment (<your-account> filled in) */
+/** a printed command, roughly as a shell runs it: split on spaces (a quoted word holding a space isn't kept whole), its
+ *  leading NAME=value words are the environment (<your-account> filled in) */
 const asRun = (cmd: string, account = "human:test:op") => { const argv = cmd.replaceAll("<your-account>", account).split(" "), env: Record<string, string> = {};
   while (/^[A-Z_]+=/.test(argv[0] ?? "")) { const [k, ...v] = argv.shift()!.split("="); env[k] = unq(v.join("=")); }   // a shell would unquote a Windows WORLDS_DIR; so does this
   return { argv, env }; };

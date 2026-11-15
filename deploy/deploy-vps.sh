@@ -19,6 +19,7 @@ for unit in $(git ls-tree --name-only origin/main deploy/ | grep '\.service$'); 
   name=$(basename "$unit" .service); dest=/etc/systemd/system/$name.service
   [ -f "$dest" ] || continue
   git show "origin/main:$unit" | cmp -s - "$dest" && continue
+  # plain EnvironmentFile=<path> lines only: a "-" prefix, quotes or several paths on one line are not parsed
   for env in $(git show "origin/main:$unit" | sed -n 's/^EnvironmentFile=//p'); do
     sudo test -f "$env" || { echo "unit: $name.service needs $env (its header says what goes in it); nothing deployed" >&2; exit 1; }
   done

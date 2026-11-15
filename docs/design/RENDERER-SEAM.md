@@ -28,9 +28,10 @@ vector/quaternion/matrix math. The renderer-coupled remainder — 30 modules,
 
 ## The two channels
 
-1. **The import chokepoint (good).** Only five files import a `three`
-   specifier directly: `core.js` (three + tsl, re-exported as the whole
-   namespace), `assets.js` (loaders), `colliders.js` + `debug.js`
+1. **The import chokepoint (good).** At the inventory, only five files imported a
+   `three` specifier directly (by 2026-11 eighteen under client/lib do, e.g.
+   `render/draw_batches.js`, `avatar/platecard.js`, `water.js`, `xr/pointer.js`):
+   `core.js` (three + tsl, re-exported as the whole namespace), `assets.js` (loaders), `colliders.js` + `debug.js`
    (three-mesh-bvh), `realize/structure.js` (BufferGeometryUtils).
    Everything else reaches three through `core.js` — a WIDE seam, but a
    singular one. The swap surface is "what core.js hands out", and today

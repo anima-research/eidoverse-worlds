@@ -133,7 +133,8 @@ check("PG5 a zombie in the group is not counted as left running", suiteMembers(7
   check("PG16 a Windows sweep reads whether its suite has exited once the process table has answered, and each caller hands it a reading of its own child (killChild, the gate's three sweeps, run-client's two)",
     readAfter === true && Object.values(live).every(Boolean), { readAfter, live }); }
 
-// PG13: the gate keeps what a failed check SAW, not only its name (scripts I2 failed twice in gate logs with no values, 10-22)
+// PG13: the gate keeps what a failed check SAW, not only its name (scripts I2 failed twice in gate logs with no values, 10-22);
+// a verdict the output cut dropped keeps only its own line (outputKeeper, PG19)
 { const { failLines } = await import("../gate/suites.ts");
   const out = ["ok   A1 fine", "FAIL I2   a whole request", '       {"said":true,"ms":1400}', "ok   I3 next", "  \u2717 HIS1 history", "    History\u2715 reading the log", "[x] 1 passed, 2 failed"];
   const kept = failLines(out);

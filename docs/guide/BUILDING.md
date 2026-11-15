@@ -25,7 +25,8 @@ so, and the slope shows the plinth rather than a gap.
 **Make it walk-in.** The world collides against a model's real triangles only
 when it is room-scale: **footprint ≥ 16 m² and height ≥ 2.2 m**. Anything
 smaller is one solid box — a hut you cannot enter — unless it carries
-`collider {shape: "mesh"}`.
+`collider {shape: "mesh"}`, or it is floor-shaped and uneven (footprint ≥ 2 m², height ≤ 1 m, its box top
+more than 10 cm above its typical surface): then its real top surface is walked (`shared/supportclass.js`).
 
 **Dimensions the body needs.**
 

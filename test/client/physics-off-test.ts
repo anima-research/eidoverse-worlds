@@ -1,5 +1,5 @@
 // physics-off-test.ts — the per-client "object physics off" switch (R 10-28, item 33; main's ew-phys): off, this browser
-// folds and draws no flights (things stand at their committed poses, colliders kept) and remembers the choice; on again,
+// draws no flights (the replica still folds; things stand at their committed poses, colliders kept) and remembers the choice; on again,
 // flights are drawn. Headless, through the real client/lib/thingphysics.js over put-settle-test's stubs, with a stand-in
 // presentation copy (one body in the air) for the replica's sim.
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/client/physics-off-test.ts

@@ -25,8 +25,8 @@
 //
 // SESSION is the bot's media-clock label, minted at attach (ISO time plus a nonce): it says which attach a `00:30`
 // belongs to. Within a session `n` is the bot's monotonic counter; the bag folds the high-water mark and refuses a
-// caption at or below it BEFORE it becomes history, so a resend after a lost receipt is safe. A different session
-// from the live leg's starts a fresh window.
+// caption at or below it BEFORE it becomes history, so a resend after a lost receipt is safe while the bag stands (an `end`
+// clears it, and a resend after that is accepted again). A different session from the live leg's starts a fresh window.
 //
 // TIMES: t0/t1 are MEDIA TIME in seconds (today: since the bot attached to the stream).
 //

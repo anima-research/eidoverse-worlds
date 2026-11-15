@@ -168,7 +168,7 @@ export function describeWorld(st, now = 0, { presets = null, clock = true } = {}
  *  and fieldAt all read it unchanged. Addresses: sky.* weather.state terrain.*
  *  grass.* (grass.mow mows).
  *  @param live { now?: number, mayShape?: boolean } — mayShape false = this viewer
- *  is known not to hold owner rank (sky/terrain/grass/weather are owner verbs);
+ *  is known not to hold editWorld (an owner's always; an owner may grant it to a role: client/lib/edit/inspect.js mayShape);
  *  undefined = unknown: nothing is disabled on its account and the authority decides. */
 export function worldSchema(st, live = {}) {
   const { sky, terrain, grass } = worldState(st);

@@ -2,7 +2,8 @@
 // (shared/spawn.js arrivals and KillZ, @world.sky.gradient, the directional sun): the door, the shared readers, the authority.
 //   bun test/protocol/climb-env-check.ts                 every case
 //   bun test/protocol/climb-env-check.ts --only K1,K3    just those
-//   bun test/protocol/climb-env-check.ts --tree <dir>    against another checkout's shared/ and server/ (a mutant, or the base)
+//   bun test/protocol/climb-env-check.ts --tree <dir>    against another checkout's shared/ and server/posecheck.ts (a mutant, or the base);
+//                                                        motioneval.js, durable.ts and custody.ts stay this checkout's
 //   bun test/protocol/climb-env-check.ts --mutants       remove each rule in turn (a copy of the tree): its cases must go red
 // @ts-nocheck
 import "../harness/fixture-ids.ts";

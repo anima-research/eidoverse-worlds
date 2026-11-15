@@ -9,8 +9,8 @@
 // main.js briefly called updateVoiceMouths() while its imports were missing.
 // Server smoke cannot see any of it; it is all client wiring.
 //
-// So: every emit has a listener, every consent gate is actually consulted,
-// and the entry point imports what it calls. Source-level, no browser.
+// So: main.js and voicemouths.js bind what they call (the emit and consent
+// checks went with the mesh, see below). Source-level, no browser.
 
 import { readFileSync } from "node:fs";
 import { suite } from "../gate/suite.ts";

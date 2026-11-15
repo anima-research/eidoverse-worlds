@@ -38,7 +38,8 @@ let logChat = () => {};
 
 // Ragdoll: owner-simulated, presence-streamed, captured to a held pose. Only this client simulates its own body; the
 // result rides the pose field like any other pose, so remotes need no ragdoll code. On settle the final bones stay
-// as a held pose, so a late joiner gets the settled result, not a replay of the flop.
+// as a held pose, not a replay of the flop; a late joiner gets them from the next presence packet (server.ts
+// settledPose drops a `ragdoll` clip's bones from the snapshot).
 let ragdoll = null;
 let downed = false;
 

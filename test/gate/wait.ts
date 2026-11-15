@@ -4,7 +4,8 @@
 // would have been true a moment later (RS3, buildcheck-route, AS9, party M2, client GR1 on 10-21/22). So:
 //   until(what, probe)     — poll `probe` until it returns something truthy, and return that; past the deadline, throw
 //                            naming `what` and the last thing the probe said. The deadline stretches with the gate's
-//                            PROTOCOL_TIMEOUT_SCALE, which run.ts passes to every suite.
+//                            PROTOCOL_TIMEOUT_SCALE, which run.ts passes to every suite. The deadline is checked between
+//                            polls, so a probe that never settles hangs: give a network/browser probe its own timeout.
 //   tryUntil(what, probe)  — the same, but resolves `undefined` instead of throwing, for a row that checks the outcome.
 //   pause(why, ms)         — the one sanctioned fixed wait, for when the passing of time IS the thing under test (a
 //                            refractory window, "nothing arrives within 1 s"). `why` is required, so a reader can tell it

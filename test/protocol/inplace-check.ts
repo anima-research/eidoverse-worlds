@@ -66,7 +66,7 @@
 //   IP45 every world.ts run (server/oneshot.ts runOneShot) is accepted: framed, no handle of its own open, nothing of its group left;
 //        exited, or killed 5 s after its complete answer as "semantic result complete / forced process cleanup"; world-children.json is the receipt
 //   IP32 the in-place swap is durably ordered: translated files fsynced before the first rename, the directory synced after the marker, the last rename, the marker's removal
-//   IP32b the two-name form too: every translated file (the identities file included) fsynced before the move into the new name
+//   IP32b the two-name form too: world.jsonl and .identities.json fsynced before the move into the new name (not every file)
 //   IP31b `world.ts found` stopped after genesis leaves no world under the name (built aside, renamed into place); a rerun founds it
 //   IP24c a fold cache the server left (server/statecache.ts: derived) neither blocks a rollback nor is left behind
 //   IP24b rollback keeps an identity another world's log names (the second world reused the first one's id)
@@ -681,7 +681,7 @@ fs.rmSync = (p, x) => { log("rm " + p); return rm(p, x); };\n`);
   ok(r.code === 0 && first > 0 && into.length >= 2 && synced && marked >= 0 && marked < first && dirSync(marked, first) && cleared > last && dirSync(last, cleared) && dirSync(cleared, L.length),
     "IP32 the in-place swap's durable order: every translated file fsynced before the first rename; the world's directory synced after the marker lands, after the last rename, and after the marker is removed",
     { code: r.code, out: r.out.slice(-300), first, last, marked, cleared, synced, renamedIn: into.length, dSyncs: L.map((l, i) => (l === `fsync ${d}` ? i : -1)).filter((i) => i >= 0) }); }
-// IP32b the two-name form: the translated files (and .identities.json, which the next run reads if this one stops) are on disk before the move into the new name
+// IP32b the two-name form: world.jsonl and .identities.json (which the next run reads if this one stops) are on disk before the move into the new name
 { const src = "durable2", dest = "durable2-new"; oldWorld(src); const trace = path.join(root, "fsync-trace2.log"), spy = path.join(root, "fsync-spy.ts");
   const h = await dryHash([src, dest]); fs.rmSync(trace, { force: true });
   const r = await runWorld(["--preload", spy], ["translate", src, dest, "--no-founder-key", "--operator-only-no-owner", "--approved", h], { FSYNC_TRACE: trace });

@@ -118,8 +118,8 @@ export function admitSfuLeg(world: string, claims: RelayClaims, live: LiveLegSta
   // burn on FIRST admission: the nonce closes the removed-participant replay hole
   if (verdict.admit) {
     s.usedNonces.add(claims.nonce);
-    // BOUNDED: evicting the oldest nonce is safe, a credential 4096 mints old has retired gens admitParticipant refuses
-    // first (a Set iterates in insertion order)
+    // BOUNDED: evict the oldest (a Set iterates in insertion order). Not airtight: a leg whose gens stay live through 4096
+    // other admissions here can replay its credential once its nonce is evicted (no expiry backs it up)
     if (s.usedNonces.size > 4096) {
       const oldest = s.usedNonces.values().next().value;
       if (oldest !== undefined) s.usedNonces.delete(oldest);

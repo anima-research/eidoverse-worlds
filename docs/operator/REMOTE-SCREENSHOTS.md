@@ -50,7 +50,7 @@ One in-flight request per renderer, at least two seconds between dispatches,
 sixteen pending globally, and a frame deadline that `SNAP_TIMEOUT_SEC` sets
 (twelve seconds by default). Every request has one deadline, 55 seconds by
 default (under a Connectome host's 60-second deadline for a tool call), or the
-caller's own if it sends a shorter one (`&budget=` in milliseconds); the
+caller's own if it sends a shorter one (`&budget=` in milliseconds, 1000 to 600000; outside that it is ignored); the
 journey, any wait and the frame all come out of it. A roaming renderer summoned
 for the request first travels (up to 25 seconds) and then has the longer of 40
 seconds and the frame deadline for its first frame, cut to what is left of the

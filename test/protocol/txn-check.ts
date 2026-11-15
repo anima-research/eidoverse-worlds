@@ -271,8 +271,9 @@ for (const row of WAITED) {
     "T8c a first write into directories just made syncs each new directory's name in its parent, up to the parent of the first one made, a founded world's directory too (none on win32)", { missing: missing.map((d) => path.relative(root, d)), synced: synced.map((d) => path.relative(root, d)) }); }
 
 // ---------------- T8f (house 6344940039) ----------------
-// a person's founding, a fork and a reset each move new names into place: each is answered only once those names are durable
-// (the directory they land in synced AFTER the rename; a fork's copied blobs synced before its directory moves). None on
+// a person's founding, a fork and a reset each move new names into place: each syncs them before it answers
+// (the directory they land in synced AFTER the rename, a sync that throws logged, not refused; a fork's copied blobs synced
+// before its directory moves). None on
 // win32, where the server can't sync a directory
 { const WL = await import("../../server/worldlog.ts"); const { putBlobFile } = await import("../../server/durable.ts");
   const o = { openSync: nodefs.openSync, fsyncSync: nodefs.fsyncSync, renameSync: nodefs.renameSync, linkSync: nodefs.linkSync }; let fdPath = new Map(), ev = [];

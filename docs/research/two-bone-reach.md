@@ -117,7 +117,9 @@ pieces remain.
 
 ## §12 Unreachable: the nearest pose the body allows
 
-When no swivel clears, the solver neither gives up nor drives the arm through the body. The nearest allowed pose is NOT on
+When no swivel clears, the solver neither gives up nor drives the arm through the body, unless no retreat clears either: then
+it returns the original pose with `penetration` > 0 and `retreat: 1` (`shared/reach.js` solveTwoBoneClear), which a caller
+must check. The nearest allowed pose is NOT on
 the line to the target: reaching the far hip, every point on that line penetrates (floor ~65 mm), folded against the chest
 near the shoulder and through the torso further out. The clear poses are OFF the line, lower or further round. So it
 samples directions in a cone about the target and distances along each, scores each by where the HAND actually lands

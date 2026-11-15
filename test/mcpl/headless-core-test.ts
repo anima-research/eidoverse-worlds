@@ -1,5 +1,6 @@
 // bun test/mcpl/headless-core-test.ts — headless-core.mjs stands in for client/lib/core.js: every name both export is a
-// function in one exactly when it is in the other (a caller written against core.js calls it the same way here)
+// function in one exactly when it is in the other (a caller written against core.js calls it the same way here);
+// only declared exports are compared: names in an `export { … }` list (THREE, TSL) aren't scanned
 import { readFileSync } from "node:fs";
 import * as headless from "../../mcpl/headless-core.mjs";
 let fails = 0;

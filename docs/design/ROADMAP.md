@@ -90,7 +90,8 @@ not a schedule. A feature that breaks an intention is probably the wrong feature
 
 - **Sky, terrain and water as ordinary entities.** Today they are one-off components on `@world`. The direction is
   that `@world` holds only settings, and a sky or a body of water is an entity like any other, with water split into a
-  surface plus generic volumes. It changes stored logs, so it needs a translation step. State: not started.
+  surface plus generic volumes. It changes stored logs, so it needs a translation step. State: water is partly there
+  (an entity with `zone` and `water` is already a body of its own, shared/zone.js zonesOf); sky and terrain not started.
 - **The rest of the component set.** Held names waiting for a settled shape: camera, video, link, tags, joints,
   surfaces, sculpted terrain. State: reserved
   ([docs/contributing/COMPONENT-LADDER.md](../contributing/COMPONENT-LADDER.md)).

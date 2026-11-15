@@ -35,7 +35,8 @@ export function capEmissive(vrm, max) {
 
 /** The runtime for the body at libPath, or null when its def declares none.
  * A declared runtime that cannot load FAILS the body load instead of silently
- * presenting the same named body without its defining joint limits.
+ * presenting the same named body without its defining joint limits. A failed /defs fetch is not that: no def is
+ * found, so the body loads without its runtime (bodyDefFor).
  * @param {string} libPath @param {(msg:string,err?:unknown)=>void} report
  * @param {{name:string,def:any}|null} [hit] */
 export async function bodyRuntimeFor(libPath, report, hit) {

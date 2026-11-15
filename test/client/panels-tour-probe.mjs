@@ -9,7 +9,8 @@
 //   the tab opens its OWN pane and no other (the pane .open, the tab .on/aria-selected, every other pane
 //   closed) — for World/Settings through the tab AND through its lantern action (section:<host>:<name>);
 //   the frame is on screen; the chosen tab is inside the strip's visible width; nothing in the pane is
-//   wider than the pane (no sideways scroll, no clipped controls).
+//   wider than the pane (no sideways scroll, no clipped controls). Profile tabs check less: the tab is .on, the frame is
+//   on screen, and no overflow-x:auto element scrolls sideways (which pane is open isn't checked).
 import { launchBrowser, ownedWorld, checker } from '../harness/probe-harness.mjs';
 import { mkdirSync } from 'node:fs';
 

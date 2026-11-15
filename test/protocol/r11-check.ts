@@ -1,5 +1,5 @@
 // test/protocol/r11-check.ts — review round 11 (REVIEW-stern-r11, REVIEW-claims-r11 repo items, 2026-10-17): the
-// fixes, each row red first (against 00a5e276) and held by a mutation below.
+// fixes, each row red first (against 00a5e276); all but R1, D4 and D5 are held by a mutation below.
 //   bun test/protocol/r11-check.ts                 every row
 //   bun test/protocol/r11-check.ts --only C4,X1    just those
 //   bun test/protocol/r11-check.ts --tree <dir>    against another checkout's shared/ + mcpl/ + client/ (a mutant)

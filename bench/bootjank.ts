@@ -12,7 +12,7 @@
 // bootbench asks "when is the first frame"; this asks "how bad are the next
 // two thousand". A document-start hook wraps the WebGPU device/queue entry
 // points and a rAF loop records every frame's duration with the GPU work that
-// landed inside it, plus longtask spans and 1Hz samples of EW.frame()'s
+// landed inside it, plus longtask spans and every-60th-frame samples of EW.frame()'s
 // per-system bill. The report is a timeline of the worst frames, each
 // attributed: compile, upload, or CPU.
 //

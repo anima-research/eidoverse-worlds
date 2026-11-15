@@ -11,12 +11,12 @@
 //   AT5  look points at a real tool where one exists (lock and hidden are edit fields), not at the act hatch
 //   AT6  the surface after the fold (REPOINT-PLAN 10-14 §4; R's standard 09:47: a name intuitive to everyone AND useful in
 //        general situations, or it is an alias): ~30 tools; the flight nine are move {mode: "fly"} + act land; the body
-//        sugar is anim {name|joints|ragdoll|stop} (pose is refused, teaching anim) / reach {release} / act shove; three library tools are one; moderation is
+//        sugar is anim {name|joints|ragdoll|stop} (pose is an unknown tool) / reach {release} / act shove; three library tools are one; moderation is
 //        act {kick|ban|unban|bans}; light/remove/blueprint_place are create / act delete / create {from}; a folded name
-//        still answers, teaching where it went
+//        is an unknown tool (Mica 11-05)
 //   AT8  a dropped agent dials again on shared/redial.js's schedule (reset by the join), not a fixed 1.5 s (review r5 F4)
 //   AT7  an agent is a body under the same consent as a person (its table on join; no `pushable`; say takes `to`)
-//   AT9  an old name runs nothing and teaches the new tool (walk_to, spawn, snapshot); world_verb and main's old verbs
+//   AT9  an old name runs nothing and is refused as an unknown tool (walk_to, spawn, snapshot); world_verb and main's old verbs
 //        are refused as removed, naming the call that does it now (R 10-27); renumbered from a second AT7 (claims r10 O4)
 //   AT10 catch_up says speech is arrival-only (decision table row 11)
 //   AT12 /worlds lists agents apart again; the worlds tool counts humans and agents (decision table row 21)
@@ -313,7 +313,7 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   const posed = await call("anim", { joints: { head: [0, 0.2, 0, 0.98] }, hold: true });
   const cleared = await call("anim", { stop: true });
   ok(!posed.isError && /"playing":"live","mode":"hold"/.test(T(posed)) && !cleared.isError && ag.heldPose == null, "AT6e anim {joints} holds a live frame; anim {stop: true} releases it (clear_pose folded)", [T(posed).slice(0, 120), T(cleared), ag.heldPose]);
-  // ragdoll = a body going limp: pose {ragdoll: true} (R 10-14: one vocabulary with the browser;: shoving is moving someone else; going limp is a body state)
+  // ragdoll = a body going limp: anim {ragdoll: true} (R 10-14: one vocabulary with the browser;: shoving is moving someone else; going limp is a body state)
   const limp = await call("anim", { ragdoll: true });
   ok(!limp.isError && /limp|down/.test(T(limp)) && ag.clip === "ragdoll", "AT6p anim {ragdoll: true} drops your own body limp (clip ragdoll)", [T(limp), ag.clip]);
   const up = await call("anim", { name: "stand" });

@@ -423,7 +423,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
 export const CORE = ["kernel", "trig", "laws", "engine", "normative", "gov-reserved", "diffcheck", "hygiene", "procgroup", "nov1", "vocab", "authority", "access", "identity", "scars", "reset-race", "txn", "txn-mutants"];
 // every suite that launches a Chromium (directly, through playwright, or through test/harness/harness.ts scratchBench). The
 // gate checks this list against the files themselves (browserMarkers), so a new browser suite can't hide in MAIN.
-// refusedjoin (scratchBench) and client-tools (run-client.ts runs every tools/*-test file, browser tests among them, those one
+// refusedjoin (scratchBench) and client-tools (run-client.ts runs every test/**/*-test file, browser tests among them, those one
 // at a time) once
 // sat in the non-browser list: a host without Chromium failed them, and this box ran Chromes it didn't budget for.
 export const BROWSER = ["browser", "comps-parity", "level-dive", "water-cross", "toast-group", "client", "refusedjoin", "client-b2", "build-client", "access-panel", "lock-strength", "swim-lists", "shiplist-probe", "xss-probe", "party-probe", "colour-picker", "vrmic-exec", "xr-nullfb", "client-tools", "harness"];
@@ -470,11 +470,8 @@ export function setAside(root: string, files: string[], base: string, prefix: st
   return { dir, moved, failed };
 }
 
-/** The lines the gate keeps from a failed suite's output: every FAIL / ✗ line, plus the indented lines right under it
- *  (where checks print what they saw), at most `per` each. The evidence used to be dropped: a FAIL said WHICH row failed
- *  and never WHAT it saw (scripts I2, 10-22: two gate failures, no values to compare with a passing run). */
 /** The gate's record of a suite's output: the last `keep` chars once it passes `limit`, plus every verdict line (FAIL, SKIP,
- *  OPTIONAL, ✗) the cut dropped, so an early red can't fall off the tail. */
+ *  OPTIONAL, ✗) the cut dropped, so an early red can't fall off the tail (the evidence lines under it are not kept). */
 export function outputKeeper(limit = 4e6, keep = 2e6) {
   let out = ""; const dropped: string[] = []; const MARK = /^\s*(FAIL|SKIP|OPTIONAL)\b|✗/;
   return {
@@ -486,6 +483,9 @@ export function outputKeeper(limit = 4e6, keep = 2e6) {
     lines() { return [...dropped, ...out.trimEnd().split("\n")]; },
   };
 }
+/** The lines the gate keeps from a failed suite's output: every FAIL / ✗ line, plus the indented lines right under it
+ *  (where checks print what they saw), at most `per` each. The evidence used to be dropped: a FAIL said WHICH row failed
+ *  and never WHAT it saw (scripts I2, 10-22: two gate failures, no values to compare with a passing run). */
 export function failLines(lines: string[], per = 3): string[] {
   const out: string[] = [];
   for (let i = 0; i < lines.length; i++) {

@@ -11,9 +11,9 @@
 //     normalised (yaw ↔ q, scalar scale ↔ vector, light spelling) and only translate-v1's DROPPED list may differ.
 //     (Kept from the phase-1 test, b05715f9: the lab sweep had no such check. Without it a translator that silently
 //     dropped grass passed.)
-// Plus: her four dialect-3 fixtures through translate-d3 (her goldens reproduce; 0 world/flight divergences; every
-// launch rests where hers rests, re-checked by a carrier; deterministic; strict read-back clean); the sim build pin;
-// the hash shim (native = portable = the reference vectors).
+// Plus: her dialect-3 fixtures through translate-d3 (her goldens reproduce; 0 world divergences; as many rests as
+// launches; every body's final position is hers; deterministic; strict read-back clean); the hash shim (native =
+// portable = the reference vectors). The sim build has no pin here (engine-check.ts holds the version).
 import { schemaRefusal } from "../../shared/protocol/authority.js";
 import { hexColor } from "../../tools/import-v1/translate-v1.js";
 import fs from "node:fs";

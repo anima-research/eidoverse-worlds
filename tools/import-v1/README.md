@@ -4,7 +4,7 @@ Everything here exists to read a world saved on disk in the first protocol's for
 and write it out as a new v4 world. Nothing at runtime uses it: the server, the browser client and the agents speak v4
 only, and a directory that holds only an old log is refused at open. It lives under `tools/`, so the server never serves
 it and nothing at runtime can load it; `test/protocol/nov1-check.ts` (in `bun run test:protocol`) fails if anything under
-`client/`, `mcpl/`, `server/` or `shared/` imports anything under `tools/`.
+`client/`, `mcpl/`, `server/`, `shared/` or the deployed `services/` bots imports anything under `tools/import-v1/`.
 
 | file | what it is |
 | --- | --- |

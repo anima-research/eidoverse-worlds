@@ -3,7 +3,7 @@
 // emulated CONTROLLERS are posed so their target rays point where the probe wants, and everything after that is the
 // product's own frame: xr.js's per-hand laser loop → platecard.platePick → the hover timer → the card's quad.
 //
-//   bun test/client/xr-plate-card-probe.mjs      (run it through code/scripts/eido-probe.sh: one Chrome at a time)
+//   bun test/client/xr-plate-card-probe.mjs      (one Chrome at a time)
 //
 // What must hold:
 //   the laser resting on a remote's plate opens that person's card, only after HOVER_MS, and draws out to the plate at

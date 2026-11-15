@@ -91,7 +91,7 @@ try {
   check("boot: a world", await waitFor(`import('/lib/net.js').then((m) => m.replicaActive())`));
   await waitFor(`import('/lib/player/mybody.js').then((m) => !!m.getMe())`, 30000);
   const T0 = Date.now();
-  const ONLY = (process.env.PARTY_ONLY ?? '').split(',').filter(Boolean);   // PARTY_ONLY=B5,S4 runs just those (a re-check)
+  const ONLY = (process.env.PARTY_ONLY ?? '').split(',').filter(Boolean);   // PARTY_ONLY=B5,S4 runs just those (a re-check); a stage may need an earlier one's thing (B4 selects B2's box2)
   const stage = async (id: string, fn: () => Promise<void>) => { if (ONLY.length && !ONLY.includes(id)) return; console.log(`  · ${id} at ${((Date.now() - T0) / 1000).toFixed(0)} s`); try { await fn(); } catch (e) { check(`${id} (the stage threw)`, false, String(e?.message ?? e)); } };
   const me = await evalJson(`import('/lib/player/controller.js').then((m) => m.myState.pos.toArray())`);
   const near = (dx: number, dz: number): [number, number, number] => [+(me[0] + dx).toFixed(2), +me[1].toFixed(2), +(me[2] + dz).toFixed(2)];

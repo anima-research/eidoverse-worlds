@@ -16,7 +16,8 @@ import { chromium } from 'playwright';
 // must complete. Run it through a public tunnel to the server (e.g. cloudflared):
 //     BASE=https://<tunnel host> bun test/server/sfu-browser-smoke.mjs
 // It still ACCEPTS a localhost BASE — for a fast inner-loop check — but it says
-// loudly that such a run is not evidence for the PR.
+// loudly that such a run is not evidence for the PR. With Chromium on the server's
+// machine, a tunnel run's media can still take a local ICE candidate: run Chromium elsewhere.
 // No BASE ⇒ own a scratch child (VOICE_TRANSPORT=sfu, nonce identity) rather
 // than trusting whatever answers an ambient port — the review's standing
 // objection to probes whose subject is unverified.

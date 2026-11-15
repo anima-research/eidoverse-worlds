@@ -42,12 +42,16 @@ precondition re-check, provenance append, snapshot rename, in-memory swap, relea
   process, so the lock is simply waited on, and the nonce keeps a release from touching a lock it did not mint.
 - **Breaking a dead lock is a rename-steal, not an unlink.** Rename is the atomic claim, so two breakers cannot both
   succeed; the tomb's nonce is checked against the record judged dead, and if the rename caught a newer (live) lock it is
-  put back and the breaker retries.
-- **Acquisition is a bounded spin.** Timing out is an answer (the caller refuses with no state touched), not a hang.
+  put back and the breaker retries. The put-back is not atomic: on POSIX it can replace a lock another writer minted in
+  the gap (server/seats.ts acquireLock), so exclusion rests on the commit gates below, not on the break alone.
+- **Acquisition is a bounded spin** while the holder is live: timing out is an answer (the caller refuses with no state
+  touched), not a hang. The dead-holder branch retries without reading the deadline, so a dead lock that can't be
+  renamed spins forever (server/seats.ts acquireLock).
 - **The lock rides the real fs** even under fault injection: injected faults are the transaction's to survive, not the
   lock's.
 - **Commit gates.** Immediately before each irreversible step (the log append, the snapshot rename) the writer checks the
   on-disk lock is still the one it minted. A liveness-verified lock cannot be stolen from a live holder, but if any path
-  ever takes it anyway the transaction aborts: an exclusion breach becomes a refused write, never a forked history. Lost
+  ever takes it anyway the transaction aborts. The check and the step are separate calls, so this narrows a breach to
+  that gap rather than closing it. Lost
   after the append, the receipt stands and the snapshot is withheld; recovery folds it forward, or quarantines if a
   successor also appended.

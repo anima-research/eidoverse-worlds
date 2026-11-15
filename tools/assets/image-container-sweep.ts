@@ -4,7 +4,7 @@
 //   bun run tools/assets/image-container-sweep.ts              # OPT_DIR + LIBRARY_DIR
 //   bun run tools/assets/image-container-sweep.ts <dir|file>…  # explicit roots
 //   bun run tools/assets/image-container-sweep.ts --host https://…  # a live server: /library-list, each entry fetched with ?ktx2=1
-// Exit 0 clean, 1 if anything lies about its own bytes.
+// Exit 1 if anything lies about its own bytes, else 0 (an unreadable file is printed and counted, not failed).
 
 import { readdirSync, statSync, existsSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";

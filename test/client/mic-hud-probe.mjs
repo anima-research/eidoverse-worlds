@@ -59,6 +59,7 @@ try {
   // hud-mic-truth, as an assertion: while the transport says publishing, the
   // glyph must not claim silence. (Publishing may legitimately lag the click
   // on a slow negotiation — the forbidden state is publishing WITH a slash.)
+  // Sampled ONCE, here after ON: a publish still live after OFF isn't seen.
   check('never "publishing but slashed" — the glyph cannot claim silence while live',
     await pg.evaluate(() => !(window.relayDiag?.()?.micPublished === true
       && document.getElementById('micbtn')?.innerHTML.includes('x2="25"'))));

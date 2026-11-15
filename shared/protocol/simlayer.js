@@ -1,8 +1,8 @@
 // The sim layer: a second fold beside the blind one. It reads the log's change entries (through
-// fold.js, untouched) and its `sim` entries (intents that start motion), and runs the engine @world.physics-engine names.
+// fold.js, untouched) and its `physics` entries (launches, lifts, catches), and runs the engine @world.physics-engine names.
 // It never writes the log. Determinism is local: it holds only for a carried engine build, inside one epoch.
 //
-// A change entry whose `cause` is a sim entry IS a rest (spec/PHYSICS.md §1), and its value must equal the engine's. There
+// A change entry whose `cause` is a launch IS a rest (spec/PHYSICS.md §1), and its value must equal the engine's. There
 // is no annotation to trust: carriers compare the value the fold applies with where the engine has the body.
 // Time: the engine's clock is the envelope's `ts` (§2.1: the authority's admission time, the one clock readers trust),
 // never running backwards: an entry without one happens at the latest time stated before it.

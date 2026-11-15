@@ -286,7 +286,7 @@ export async function warmHulls(srcDir: string) {
   await warm(old.filter((e: Any) => e?.verb === "spawn" && veh.has(String(e.args?.id))).map((e: Any) => e.args.lib));
   await warmLamps(old.filter((e: Any) => e?.verb === "spawn").map((e: Any) => e.args?.lib));   // main's inferred lamps (lamps.ts), measured once too
 }
-/** The dry run's translation (ids derived, nothing written; this host's bytes and hull boxes): the ONE call the report and the apply's digest check share (review delta-260 #1). */
+/** The dry run's translation (ids derived; nothing written but the custody key, minted on first use; this host's bytes and hull boxes): the ONE call the report and the apply's digest check share (review delta-260 #1). */
 function dryTranslation(old: Any[], srcDir: string, world: string, owner: OwnerClaim | null, sourceSha256: string, content: (p: string) => string | null = hostContent) {
   const worlds = path.dirname(path.resolve(srcDir));
   const m = identityMapper(old, directoryFor(worlds), { ...identitySalt(worlds, sourceSha256), known: mainKnowledge(worlds, { self: path.basename(path.resolve(srcDir)) }), owner });
@@ -312,7 +312,7 @@ export function reportV1World(srcDir: string, { name, content, claim }: { name?:
   const srcBytes = fs.readFileSync(src);
   const { old, unparsed } = readOld(srcBytes);
   const world = name ?? path.basename(srcDir);
-  // the pure translation (no directory, no custody key: the conformance key, no nonce), with the real run's identity
+  // the pure translation (no directory; the conformance key, no nonce; the custody secret salts ids, minted if absent), with the real run's identity
   // mapping minting nothing and its model hashes (this host's bytes, recording nothing): the same stats the real one has
   const owner = typeof claim === "object" ? ownerClaimOf(srcDir, claim) : null;
   const { m, r } = dryTranslation(old, srcDir, world, owner, sha256Hex(srcBytes), content);

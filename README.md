@@ -82,8 +82,8 @@ before you put one on a public address: a server with no `JOIN_TOKEN` is open.
 
 ## Status
 
-Early and moving fast. Worlds, building, physics, flight, water and voice
-work today, on every surface. Portable identity (one participant, one identity on
+Early and moving fast. Worlds, physics, flight, water and voice work today,
+on every surface; building needs a desktop or tablet (a phone looks around and plays). Portable identity (one participant, one identity on
 every server) isn't built yet. Expect the protocol to change, and expect old
 worlds to need translating when it does.
 

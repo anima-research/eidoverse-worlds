@@ -2,7 +2,8 @@
 // real door, the real importer, the shared evaluators and the editor's own planners:
 //   bun test/protocol/shiplist-check.ts                 every case
 //   bun test/protocol/shiplist-check.ts --only O3,R2    just those
-//   bun test/protocol/shiplist-check.ts --tree <dir>    the cases against another checkout (a mutant, the base)
+//   bun test/protocol/shiplist-check.ts --tree <dir>    the cases against another checkout (a mutant, the base); the lab
+//                                                  models (O0's) stay this checkout's test/harness/labmodels.js
 //   bun test/protocol/shiplist-check.ts --control       the base (staging 7f1f1934): every case must be red there except the
 //                                                  KEEP cases (today's behaviour, kept), which must be green
 //   bun test/protocol/shiplist-check.ts --mutants       remove each gate in turn (a copy of the tree): its cases must go red;

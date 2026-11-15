@@ -42,7 +42,8 @@ function overlapsSquare(v, at, reach) {
 
 /** An interior collider's triangles within `reach` of `at` (horizontally), in world space, flat [x,y,z, …]. The
  *  geometry is root-local (colliders.js buildExact); scale, rotation and position place it as colliders.js does.
- *  Asked of the collider's BVH, stopping at `max`: a dense interior costs its budget, never its size. */
+ *  Asked of the collider's BVH, stopping at `max` kept triangles: the output is bounded, but every triangle in the
+ *  query box (the reach·√2 circle's square) is still visited and tested. */
 export function interiorTriangles(c, at, reach, max = INTERIOR_MAX_TRIS) {
   const o = c.obj, s = o.scale?.x || 1, q = o.quaternion, p = o.position;
   // the reach square in the thing's own frame (a circle of reach·√2 holds it however the thing is turned about Y)

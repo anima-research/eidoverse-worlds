@@ -4,7 +4,8 @@
 //     lets the translator list them);
 //   - a library model's address is its original's (LIBRARY_DIR), never the optimized mirror's; the translator records it in
 //     OPT_DIR/eido-index.json, and the catalogue notes each one it hashes for this process (noteEido).
-// Nothing a world needs to load depends on this index: it resolves addresses stored by older translations and /eido/sha256/<hex>.
+// A model stored as its library path doesn't need this index; an address stored by translate-v1 @8–@11 does (a library model's
+// address is found only here), and so does /eido/sha256/<hex>. Not disposable.
 import fs from "node:fs";
 import path from "node:path";
 import { OPT_DIR, LIBRARY_DIR } from "./config.ts";

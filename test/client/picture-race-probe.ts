@@ -10,13 +10,14 @@
 //      exact sequence; on 6d3a107: {"hung":true,"count":1,"hasMap":true});
 //   B. replace under a held load — older A finishing after newer B leaves B;
 //   C. entity removed under a held load — nothing installs, no clone kept;
-//   D. entity re-realized (remove + spawn) under a held load — the stale
-//      load does not land on the new subtree;
+//   D. entity removed and a new one spawned (its own minted id: a same-id
+//      re-realize is unreachable) under a held load — nothing lands on it;
 //   E. world reset under a held load — nothing installs;
 //   F. the unheld happy path still hangs (the gate refuses only STALE loads);
 //   G. LOD demote + promote under a held load with the entity PRESENT — the
-//      stale load is refused and the still-authored picture rehangs from
-//      pending (Mica, round 2: {part:true, hung:false, mapSrc:null}).
+//      still-authored picture rehangs from pending (Mica, round 2: {part:true,
+//      hung:false, mapSrc:null}). Both loads carry the same image, so G can't
+//      tell whether the stale one was refused or installed first.
 //
 // Ported to the request path (#260 house I397/I401): writes go through net.sendRequest with ops built by
 // shared/requests.js; the authority mints ids, so the console's id is read from each create's reply. A picture

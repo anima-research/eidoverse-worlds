@@ -79,8 +79,9 @@ Projection never mutates the canonical sim or writes placements.
 This is canonical root-pose parity, not the browser's cosmetic tumble/slope tilt.
 
 Unreal sends ordinary `use`/`punt` requests (including explicit kick direction) and
-consumes the projected physics poses; it never runs a competing simulation (the first
-protocol's lease contract is gone; history: spec/history/). No new server authority or log verbs were added.
+consumes the projected physics poses. In epoch worlds it never runs a competing simulation; in pre-epoch worlds it
+simulated only after a physics lease grant, under the first protocol's lease contract (streams, takeover, release,
+disconnect), with a native swept-volume plugin. That contract is gone here (history: spec/history/). No new server authority or log verbs were added.
 
 Avatar reaches use existing `pose.reach` relations; native two-bone IK renders
 hands/feet aimed at world/self/participant coordinates and anatomical bone seeds

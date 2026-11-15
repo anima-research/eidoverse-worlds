@@ -37,9 +37,11 @@ client); a page from another build isn't a supported pair.
   logged; absent is undeclared, and no word is assumed), `renderer` (invisible
   volunteer that answers `capture` requests), `clock` (send the server's time
   just before the snapshot; see `clock` in §4). Aux surfaces imply spectator.
-- Rate caps: **60 msgs/s** per connection (`MSG_RATE`): past it, a
+- Rate caps: a token bucket per connection, **60 msgs/s** sustained with
+  two seconds' burst (`MSG_RATE`; `server/msgrate.ts`): once it is empty, a
   `request` is answered refused `rate` (never run) and anything else is
-  dropped; past twice the cap, requests are dropped too. The authority's
+  dropped; past `MSG_RATE` over-limit messages in a second, requests are
+  dropped too. The authority's
   own rate per identity over everything it makes the log hold (requests and says: entries and bytes per window: server policy,
   `server/config.ts` ACT_RATE, SAY_RATE, RATE_WINDOW_SEC, RATE_KIB, ANON_RATE_KIB; defaults 60, 20, 10 s, 256, 32), refused with code `rate`.
 - No message may kill the process: handler errors answer
@@ -67,7 +69,7 @@ Any other drop (an outage, a server restart) is redialled on the same `shared/re
 Every message belongs to exactly one plane:
 
 - **Authored** — becomes a log entry, folds, replays, is public forever:
-  only the `request` message (one request to the world's authority) writes here, counting the two server-side wrappers that become one (`voice-moderate` → mute/unmute, `operator-repair`). The requester gets
+  only the `request` message (one request to the world's authority) writes here, counting the two server-side wrappers that become one (`voice-moderate` → mute/unmute, `operator-repair`); the authority also appends on its own (its settle/drive tick, scripts answering an enter or leave), broadcast the same way. The requester gets
   `reply`; every client gets the raw entries the authority appended as
   `{type:"log", from, entries}` and folds them itself with
   `shared/protocol/fold.js`. The stream is authoritative; clients must not

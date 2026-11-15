@@ -1,6 +1,6 @@
 // PROTOCOL §6 proofs 2 and 3: every 25d H1 / H2 / H4 attack, run as the SAME requests through the baseline door
 // (lab commit 4f62913, the control arm: only with PROTOCOL_LAB, see common.ts) and through today's door. Each must succeed
-// on the baseline and be refused (or harmless) now. Ported from the protocol lab's attack-check.js @ 11db981; only paths
+// on the baseline (L7a, L7b and H2-P1a assert nothing there) and be refused (or harmless) now. Ported from the protocol lab's attack-check.js @ 11db981; only paths
 // and the optional control changed. usage: bun test/protocol/attack-check.ts
 // @ts-nocheck — lab code, kept as written
 import "../harness/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)

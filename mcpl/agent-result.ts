@@ -33,7 +33,7 @@ export const solidOffRecord = (e: any) => solidOff(e, "bodies");
 /** How far below its supporting surface a settled ragdoll's root lies. */
 export const RAGDOLL_ROOT_DROP = 0.7;   // client/lib/player/controller.js: vy -= 16 * dt
 /** A read of the world server (roster, terrain, a grid, geometry, bones) not answered by then has failed, as a host's
- *  tool call would. */
+ *  tool call would. A read made during the join is cut sooner, by connect()'s 8 s join deadline (agent.ts). */
 export const WORLD_READ_MS = 10_000;
 export type Pose = PublicPose;
 /** A record carrying a socket component (an attachment point, listed under its host); it may carry anything else too. */

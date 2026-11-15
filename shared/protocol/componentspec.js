@@ -636,7 +636,8 @@ export function mapRefs(comp, v, f) {
 
 // ---- every parameter written down (PROTOCOL §4) ----
 const copy = (x) => (x && typeof x === "object" ? JSON.parse(JSON.stringify(x)) : x);
-// A transform's q is stored as a unit quaternion whoever writes it (every write path goes through materialize, below): the
+// A transform's q is stored as a unit quaternion whoever writes it (each write path calls this itself: writes.js's set,
+// use.js, manipulate.js, bodyverbs.js, and materialize below; materialize alone doesn't cover them): the
 // authority's maths reads q as a rotation, so a scaled one would skew every inverse. A zero or malformed q stays as sent,
 // for the gate to refuse
 export function unitTransform(v) {

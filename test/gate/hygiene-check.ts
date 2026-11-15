@@ -4,7 +4,7 @@
 // gate's own code: every suite run.ts runs, with the local files it imports (not a runner's file argument, as bun-test.ts
 // x-test.ts: that file gets only the all-files rules), plus server/, shared/ and mcpl/. Counts are
 // per file and per rule, against test/gate/hygiene-baseline.json, which may only go DOWN: a file over its count fails,
-// a file under it fails too until the baseline is lowered (`--write`, which refuses to raise anything). A file not in the
+// a file under it fails too until the baseline is lowered (`--write`, which refuses to raise anything while a baseline file exists). A file not in the
 // baseline is allowed 0. So existing debt is visible and shrinking, and new debt can't land.
 //
 //   bare-wait     a fixed sleep (setTimeout-in-a-Promise, Bun.sleep, sleep()/delay(), waitForTimeout) in a suite. Wait on
@@ -34,8 +34,9 @@
 //   posix-mode    a file's mode asserted equal to an octal literal (`=== 0o600`) on a line that doesn't say what Windows does:
 //                 NTFS has no POSIX modes (stat says 666), so the row fails there or passes vacuously. Use suite.ts `mode()`,
 //                 which reports the row not applicable on Windows (CI 42190828916: native-login W10, mkconfig).
-//   ungated       a test-named file (-test, -check, -probe, .test, -bench, -mutants under tools/, test/ (all of it but harness/stubs/fixtures/labs), tools/water/,
-//                 mcpl/) that no SUITES row runs or imports: every test is in the gate or gone (R 10-29). The ones still out
+//   ungated       a test-named file (-test, -check, -probe, .test, -bench, -mutants) directly in tools/, tools/water/, bench/ or mcpl/ (not their
+//                 subfolders), or anywhere in test/ but harness/stubs/fixtures/labs, that no SUITES row runs or imports: every
+//                 test is in the gate or gone (R 10-29). The ones still out
 //                 are listed in test/gate/ungated.json with one line why; that list is meant to shrink (review's to hold: nothing here diffs it against the base).
 //   redaction-parse  a redaction's targets read by hand (`.body.values`) outside fold.js: four parsers drifted apart when
 //                 {seq, op} became {seq, index}, and undo wrote a redacted value back (review 11-05 B1). Use fold.js

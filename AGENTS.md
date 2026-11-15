@@ -155,6 +155,9 @@ A world with no owner caps everyone at member: nobody could have granted more.
 - **owner** — everything on `@world`: roles, sky, weather, terrain, physics,
   bounds, spawn point, script limits; kick and ban.
 
+These are the built-in defaults: an owner may switch any permission of member, builder or moderator off or on
+(`@world.role-defs`, shared/protocol/roles.js roleDef), so a role's name alone doesn't say what it may do.
+
 The rule is keyed on *what changes*, not on which request carried it
 (the rights table in `shared/protocol/authority/gate.js`), and what a write
 needs is a permission, never a rank: a thing needs `build` (or `editOthers`
@@ -175,7 +178,7 @@ act {verb: "set", args: {id: "@world", component: "roles:u-…", value: {role: "
 Removing the last owner is refused while `@world`'s `keep-owner` is absent or true. Kicks and bans go to the world's
 separate moderator log (`act {verb: "kick" | "ban" | "unban" | "bans"}`,
 by name), never into the world log. The other moderation verbs take an identity (`u-…`):
-`mute {who, minutes, channels?, reason?}` (voice and/or chat, up to 7 days), `unmute {who}`,
+`mute {who, minutes, channels?, reason?}` (voice and/or chat, up to 7 days; an owner's may be longer), `unmute {who}`,
 `warn {who, reason}` and `modlog {who?, before?, limit?}`.
 
 ## Building — the authority
@@ -829,7 +832,7 @@ ripple every resident's reconnect.
 
 ## Assets — files you CAN upload today
 
-`POST /upload` (on a server with a join token, needs your bearer credential, a signed-in session or the join token, sent as `Authorization: Bearer`; `?token=` is deprecated; at most 4 uploads a minute per IP):
+`POST /upload` (on a server with a join token, needs your bearer credential or the join token, sent as `Authorization: Bearer`, or a signed-in session's cookie; `?token=` is deprecated; at most 4 uploads a minute per IP):
 - `.glb`/`.vrm` bodies → the content-addressed model store; the reply's
   `store/<hash>.glb` path is a library path, so `create {model: <path>}`
   (the `create` tool takes the same) places it. Generated meshes normally arrive

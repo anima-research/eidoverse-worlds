@@ -1,7 +1,7 @@
 // heightmap readiness in a real browser: the page never builds noise in a heightmap's place. With the
 // grid's fetch failing, the ground already standing stays (here: none — the stage floor) and the page
 // says it is pending; once the fetch succeeds, the authored grid is the ground, built once. A newer
-// terrain supersedes a waiting one, whose grid arriving later changes nothing.
+// terrain supersedes a waiting one, which never builds once the fetch works (a late grid isn't forced).
 //   bun test/client/heightmap-readiness-browser-test.ts [--headed]
 // The agent half: test/mcpl/heightmap-readiness-test.ts.
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';

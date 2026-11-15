@@ -32,7 +32,7 @@ let ws: WebSocket | null = null, keepPose: ReturnType<typeof setInterval> | unde
 // picks it (port 0) and writes it to DevToolsActivePort in its profile, so no other process can take it between the
 // choosing and the binding; that is why this is a persistent context, in a profile this check owns.
 const profile = mkdtempSync(join(tmpdir(), 'roam-check-'));
-const exe = process.env.SFU_TEST_CHROME;   // probe-harness's override; else the installed Chrome
+const exe = process.env.SFU_TEST_CHROME;   // this check's override (probe-harness reads CHROME now); else the installed Chrome
 const browser = await chromium.launchPersistentContext(profile, { headless: true, ...(exe ? { executablePath: exe } : { channel: 'chrome' }), viewport: { width: 960, height: 540 },
   args: playwrightArgs({ extra: ['--enable-unsafe-webgpu', ...(process.platform === 'darwin' ? ['--use-angle=metal'] : [])] }) });
 let dbg = 0;
@@ -104,7 +104,7 @@ try {
   const first = await snap();
   console.log(JSON.stringify({ first: { status: first.status, ms: first.ms, err: first.err.slice(0, 160) } }));
   assert.equal(first.status, 200, `the roamer came and served the screenshot: ${first.err}`);
-  // the frame was taken only once the world was realized: every crate a real model, nothing loading
+  // read after the reply: every crate a real model, nothing loading (a load ending mid-reply would still pass)
   const where = await page.evaluate(async () => { const { CONFIG } = await import('/lib/base.js'); const m = await import('/lib/realize/models.js');
     const r = m.residencyDebug(); return { world: CONFIG.world, real: r.real, loading: r.loading, standins: r.standins }; });
   console.log(JSON.stringify({ renderer: where }));

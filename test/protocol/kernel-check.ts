@@ -167,6 +167,7 @@ async function companionsHold(pin: any, log: string) {
   return [line && tr && vec && scope && trim && (changed || !!c.scope || !!c.trim), { line, tr, vec, scope: c.scope ?? null, trim: c.trim ?? null, vectors: r.ran ?? r.why }];
 }
 await C("K3", "the pin's recorded companions hold: the first deployed kernel's (Mica 11-05: its changelog line is in REGISTRY-CHANGELOG.md, and its synthetic fixtures still give the deployed reader's verdicts, a clean control among them), or a later change's (its changelog line, the translator moved, the vectors red on the old reader and green on the new). A pin with no companions is red", () => companionsHold(pin, read(CHANGELOG)));
+// K3b tampers the first-deploy pin only: after a change's re-pin (companions, no firstDeploy) it is red until it learns that shape
 await C("K3b", "…and K3 is red when the pin is absent or tampered: no pin, its companions dropped, its changelog line gone, a fixture's recorded verdict changed, a fixture named that isn't there, or the fixtures dir renamed", async () => {
   const log = read(CHANGELOG); const fd = pin?.companions?.firstDeploy; if (!fd) return [false, "the pin isn't the first-deploy ceremony's"];
   const t = (f: (p: any) => void) => { const p = JSON.parse(JSON.stringify(pin)); f(p); return p; };

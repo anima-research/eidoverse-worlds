@@ -1,5 +1,5 @@
-// test/client/credits-probe.mjs — E ▸ About links to the credits page; the page and its vendor links are served; no
-// horizontal scroll at phone width. usage: bun test/client/credits-probe.mjs [outdir]
+// test/client/credits-probe.mjs — E ▸ About links to the credits page; the page and two fixed vendor files are served (the
+// page's own links are checked only for a non-empty href); no horizontal scroll at phone width. usage: bun test/client/credits-probe.mjs [outdir]
 import { launchBrowser, ownedWorld } from '../harness/probe-harness.mjs';
 const out = process.argv[2] ?? '.';
 let world = null, b = null, failed = 0;

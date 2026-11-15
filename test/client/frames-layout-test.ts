@@ -354,7 +354,7 @@ console.log("FRAMES — a hand-placed frame is never re-anchored");
   const centred = bar.state.x;
   check("an x:'center' frame opens centred", centred > 100, JSON.stringify(bar.state));
 
-  // a REAL drag: the pointer handler writes state and saves on pointerup
+  // a real pointer sequence (a nw-corner resize, as it lands: see BINDS below); the handler writes state and saves on pointerup
   // Drag to a MIDDLE x, not the left edge: `state.x = clamp(state.x, 8, …)` pins a
   // left-dragged frame to 8 whether or not the latch ran, so the left edge cannot
   // distinguish latched from unlatched — deleting markMoved() from the drag left
@@ -373,16 +373,13 @@ console.log("FRAMES — a hand-placed frame is never re-anchored");
   // unlatched path would produce, and asserting against it passed either way
   // (round 2: deleting markMoved left this green).
   const wouldCentre = Math.round((innerWidth - bar.state.w) / 2);
-  // BINDS windows.js:181 ONLY — the RESIZE-finish latch, not the drag's own.
-  // Measured (round 5, correcting the round-2 note that stood here): deleting
-  // the drag-end markMoved() alone leaves this GREEN at 61/0; deleting the
-  // resize-finish one alone turns it RED at 60/1. The reason is the capture
-  // phase — the resize handler registers
-  // `document.addEventListener('pointerup', finish, true)`, so a title-bar
-  // drag's pointerup reaches finish() (and its f.markMoved?.()) BEFORE the
-  // drag's own up() runs. So the drag-end call at windows.js:454 is the line
-  // nothing binds. Left in place: it is correct, and removing a guard because
-  // no test reaches it is the wrong direction.
+  // BINDS the RESIZE-finish latch ONLY (windows.js:167 f.markMoved). Measured
+  // (round 5): deleting the drag-end markMoved('xy') (windows.js:512) leaves
+  // this GREEN at 61/0; deleting the resize-finish one turns it RED at 60/1.
+  // The reason: the press above, at (x+10, y+5), is inside the 15 px nw corner
+  // (_CORNER), so the capture-phase resize handler takes it and stops
+  // propagation. This "drag" is a resize; a title-bar drag outside the zones
+  // is not exercised here.
   check("...and fit() does NOT re-centre it — the hand beats the anchor (binds the RESIZE latch, windows.js:181)",
     bar.state.x === placed && bar.state.x !== wouldCentre,
     `placed ${placed} -> ${bar.state.x}; anchor would give ${wouldCentre}`);

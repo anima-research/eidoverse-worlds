@@ -25,7 +25,8 @@
 // restart (what is already queued still drains). `end` is a perception
 // clear, idempotent at the door, so it goes through with the spool down
 // (counted in `endMissed`). The bookkeeping rows (acked, refused, overflow)
-// log and continue: a lost one means at worst a resend the door dedupes, or
+// log and continue: a lost one means at worst a resend the door dedupes (not
+// once an `end` has cleared the bag: then it is history twice), or
 // a resend of a line this run reported dropped. `spoolBestEffort`
 // (SPOOL_BEST_EFFORT=1) queues a line whose row failed anyway, counted in
 // `spoolMissed`: a restart before confirmation loses it.

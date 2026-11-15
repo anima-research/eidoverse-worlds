@@ -6,8 +6,9 @@
 //      stops the tracks at once (permission is not consent to speak; the mic stays off), then an "Enter VR" button,
 //      because requestSession needs a fresh user gesture.
 //   2. IN VR. The ring's mic press with the permission still open makes one bounded attempt (micstate.toggleMic).
-//      If no mic is live by TRY_MS the intent is retracted, a head-locked note says why, and a flag makes the next
-//      flat-page moment ask. Nothing here is awaited by the exit.
+//      If no mic is live by TRY_MS and the permission is still not granted, the intent is retracted, a head-locked
+//      note says why, and a flag makes the next flat-page moment ask; once granted, a mic not yet live keeps the
+//      intent (vrmic_policy.js inVrAfterTry). Nothing here is awaited by the exit.
 //
 // The decisions are vrmic_policy.js (pure, tested); this file is the effects.
 import { bus, CONFIG } from '../base.js';
