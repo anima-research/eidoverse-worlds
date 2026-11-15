@@ -94,11 +94,14 @@ const world = await ownedWorld({ worlds: ['vprobe'], owner: 'owner', env: { VIDE
 // ---- two browser processes ----
 const A = await launchBrowser(), B = await launchBrowser();
 const wsIn: string[] = [];
+const offersSent = new Map<string, number>();
 async function join_(br: any, name: string) {
   const pg = await br.page();
   pg.on('pageerror', (e: any) => errs.push(`${name}: ${e.message}`));
   pg.on('console', (m: any) => { const x = m.text(); if (/\[gpu\]|\[renderer\]|context lost|reloading/i.test(x)) console.log(`   ${name} console: ${x.slice(0, 200)}`); });
   pg.on('framenavigated', (f: any) => { if (f === pg.mainFrame()) console.log(`   ${name} navigated: ${f.url().slice(0, 120)}`); });
+  // what this page sends: its video offers, counted (K: a waiting screen offers nothing, by any path)
+  pg.on('websocket', (ws: any) => ws.on('framesent', (f: any) => { if (typeof f.payload === 'string' && f.payload.includes('"type":"video-offer"')) offersSent.set(name, (offersSent.get(name) ?? 0) + 1); }));
   // every frame, not only those that mention video: a leak would be in any of them (#332 review 25)
   pg.on('websocket', (ws: any) => ws.on('framereceived', (f: any) => { if (typeof f.payload === 'string') wsIn.push(f.payload); }));
   pg.on('dialog', (d: any) => d.dismiss().catch(() => {}));
@@ -220,9 +223,10 @@ try {
   writeFileSync(join(SCR, 'sources.json'), JSON.stringify({ sources: {} }, null, 2));
   const gone = await Promise.all(live.map((id) => until(pa, id, (x) => x.state === 'error' && /revoked/.test(x.why ?? ''), 20000)));
   check('K. a revoked source\'s screens say why (revoked)', gone.every((x) => x?.state === 'error' && /revoked/.test(x?.why ?? '')), JSON.stringify(gone.map((x) => `${x?.state}: ${x?.why}`)));
+  const sentBefore = offersSent.get('owner') ?? 0;
   await sleep(8000);
-  const waiting = await Promise.all(live.map((id) => st(pa, id)));
-  check('K. …and offer nothing while it is gone (no reconnect attempts)', waiting.every((x, i) => (x?.retries?.length ?? 0) === (before[i]?.retries?.length ?? 0) && x?.state === 'error'), JSON.stringify(waiting.map((x, i) => [x?.state, (x?.retries?.length ?? 0) - (before[i]?.retries?.length ?? 0)])));
+  const waiting = await Promise.all(live.map((id) => st(pa, id))); const sentWhileGone = (offersSent.get('owner') ?? 0) - sentBefore;
+  check('K. …and offer nothing while it is gone (no video-offer leaves the page)', sentWhileGone === 0 && waiting.every((x) => x?.state === 'error'), JSON.stringify({ sentWhileGone, states: waiting.map((x) => x?.state) }));
   writeFileSync(join(SCR, 'sources.json'), JSON.stringify({ sources: entry }, null, 2));
   const back = await Promise.all(live.map((id) => until(pa, id, (x) => x.state === 'playing', 60000)));
   const kBuilds = await pa.evaluate((ids) => import('/lib/videos.js').then((v: any) => v._builds.filter((b: any) => ids.includes(b.id)).slice(-12).map((b: any) => `${b.id.slice(0, 4)}:${b.why}@${b.at}`)), live);

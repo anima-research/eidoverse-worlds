@@ -61,6 +61,8 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a same-id change of an entry closes its sessions and forgets its state (#332 review 20)", "server/videosources.ts", "if (!now || entryKey(now) === entryKey(old)) continue;", "continue;", ["B13"]],
   ["a source back ready with no baseline forgets an older offline (#332 review 36)", "server/videosources.ts", "if (prev === undefined) { forgetSourceState(s.id); return; }", "if (prev === undefined) return;", ["B14"]],
   ["a ready path with no byte counter asserts nothing (#332 review 37)", "server/videosources.ts", "    if (!Number.isFinite(bytes)) return;\n", "", ["B14"]],
+  ["a reader forgets what the latest frame doesn't list (#332 review 22)", "shared/video.js", "  for (const id of [...OBSERVED.keys()]) if (!seen.has(id)) OBSERVED.delete(id);\n", "", ["M9"]],
+  ["an in-flight offer is checked against its source's entry by content, so an unrelated reload keeps it", "server/videosources.ts", "if (!nowSrc || entryKey(nowSrc) !== entryKey(src)) {", "if (nowSrc !== src) {", ["B12"]],
   ["a session ends when its screen's video changes", "server/videosources.ts", "else if (boundOf(s.world, s.entity) !== s.bound) await closeSession(s, \"the screen's video changed\", \"changed\");", "", ["B5"]],
   ["a session ends when its viewer leaves", "server/videosources.ts", "if (!s.world?.clients?.has?.(s.client) || s.client.world !== s.world) await closeSession(s, \"the viewer left\", \"viewer-left\");\n    else ", "", ["B5"]],
   ["a revoke closes the source's sessions", "server/videosources.ts", "for (const s of [...SESSIONS.values()]) if (s.source === id) void closeSession(s, \"the operator revoked this source\", \"revoked\");", "", ["B6"]],
@@ -153,11 +155,12 @@ const sayLines = (s: any, id: string) => (s.call("olive", "look", {}).things ?? 
 const admit = (ids: string[]) => V.admitVideoSources?.(ids);
 
 // ---- a fake appliance: WHEP (POST → 201 + Location; DELETE) and mediamtx's paths API, recording every request ----
-const FAKE = { log: [] as any[], paths: {} as Record<string, any>, whepStatus: 201, apiDown: false, delays: [] as number[], deleteDelay: 0, answer: null as null | { location?: string | null; body?: string } };
+const FAKE = { log: [] as any[], paths: {} as Record<string, any>, whepStatus: 201, apiDown: false, delays: [] as number[], deleteDelay: 0, answer: null as null | { location?: string | null; body?: string }, deleteHold: null as null | Promise<void>, postHold: null as null | Promise<void> };
 const fake = Bun.serve({ port: 0, async fetch(req) {
   const u = new URL(req.url); const body = req.method === "POST" ? await req.text() : "";
   FAKE.log.push({ method: req.method, path: u.pathname, auth: req.headers.get("authorization"), body });
   if (req.method === "POST" && FAKE.delays.length) await pause("a slow appliance, per offer", FAKE.delays.shift()!);
+  if (req.method === "POST" && FAKE.postHold) await FAKE.postHold;   // held until the case lets it answer: an order, not a timing
   if (u.pathname.startsWith("/v3/paths/get/")) { if (FAKE.apiDown) return new Response("down", { status: 503 }); const p = FAKE.paths[u.pathname.slice(14)]; return p ? Response.json(p) : new Response("not found", { status: 404 }); }
   if (req.method === "POST" && u.pathname.endsWith("/whep")) {
     if (FAKE.whepStatus !== 201) return new Response("no", { status: FAKE.whepStatus });
@@ -165,7 +168,7 @@ const fake = Bun.serve({ port: 0, async fetch(req) {
     const location = FAKE.answer && "location" in FAKE.answer ? FAKE.answer.location : `${u.pathname.replace(/whep$/, "")}whep/session-${FAKE.log.length}`;
     return new Response(FAKE.answer?.body ?? "v=0\r\nanswer-for:" + body.slice(0, 20), { status: 201, headers: location == null ? {} : { location } });
   }
-  if (req.method === "DELETE") { if (FAKE.deleteDelay) await pause("a slow appliance DELETE", FAKE.deleteDelay); return new Response(null, { status: 200 }); }
+  if (req.method === "DELETE") { if (FAKE.deleteHold) await FAKE.deleteHold; if (FAKE.deleteDelay) await pause("a slow appliance DELETE", FAKE.deleteDelay); return new Response(null, { status: 200 }); }
   return new Response("?", { status: 400 });
 } });
 const APP = `http://127.0.0.1:${fake.port}`;
@@ -379,11 +382,12 @@ const cases: Case[] = [
       install(REG()); FAKE.whepStatus = 201; FAKE.delays = []; FAKE.deleteDelay = 0; FAKE.log = []; const t = 9e9;
       const w = fakeWorld({ source: "solstice" }); const { c, sent } = viewer(w);
       await VS.offer?.(c, { id: "screen", sdp: "o", req: "s0" }, t);              // the screen's settled session
-      FAKE.deleteDelay = 300;                                                       // its DELETE is slow at the appliance
+      let release!: () => void; FAKE.deleteHold = new Promise<void>((r) => { release = r; });   // its DELETE is held at the appliance
       const a = VS.offer?.(c, { id: "screen", sdp: "o", req: "a" }, t + 3000);     // passes its checks, then replaces s0
       await until("offer a has its answer and its DELETE of the settled session is out", () => FAKE.log.some((x) => x.method === "DELETE"));
-      const b = await VS.offer?.(c, { id: "screen", sdp: "o", req: "b" }, t + 6000); // lands while a's DELETE is out
-      const ra = await a; await until("every DELETE has landed", () => FAKE.log.filter((x) => x.method === "DELETE").length >= 2, { ms: 2000 }).catch(() => {}); FAKE.deleteDelay = 0;
+      const b = await VS.offer?.(c, { id: "screen", sdp: "o", req: "b" }, t + 6000); // lands while a's DELETE is held
+      release(); FAKE.deleteHold = null; const ra = await a;
+      await until("every DELETE has landed", () => FAKE.log.filter((x) => x.method === "DELETE").length >= 2, { ms: 5000 }).catch(() => {});
       const held = VS.sessionCount?.(c);
       const closedFor = sent.filter((m) => m.type === "video-closed").map((m) => m.session);
       w.clients.delete(c); await VS.sweep?.();
@@ -423,28 +427,37 @@ const cases: Case[] = [
     good: (o) => o.foreign.got === 0 && o.foreign.r === "refused" && o.foreign.held === 0 && o.none.r === "refused" && o.none.held === 0 && o.empty.r === "refused" && o.empty.dels.length === 1 && o.empty.held === 0 },
   { id: "B12", what: "an offer is checked again after the appliance answers: a source revoked meanwhile, or a viewer moved to another world, gets no session, and the appliance's is DELETEd (#332 review 28)", async run() {
       install(REG()); FAKE.whepStatus = 201; FAKE.answer = null; FAKE.deleteDelay = 0; const t = 15e9;
-      FAKE.log = []; FAKE.delays = [200]; const w = fakeWorld({ source: "solstice" }); const { c } = viewer(w);
-      const p1 = VS.offer?.(c, { id: "screen", sdp: "o" }, t); await pause("the offer is at the appliance", 60);
+      const hold = () => { let r!: () => void; FAKE.postHold = new Promise<void>((x) => { r = x; }); return () => { FAKE.postHold = null; r(); }; };
+      const atAppliance = (n: number) => until("the offer is at the appliance", () => FAKE.log.filter((x) => x.method === "POST").length >= n);
+      const dels = (n: number) => until("the session's DELETE reaches the appliance", () => FAKE.log.filter((x) => x.method === "DELETE").length >= n, { ms: 5000 }).catch(() => {});
+      FAKE.log = []; FAKE.delays = []; let go = hold(); const w = fakeWorld({ source: "solstice" }); const { c } = viewer(w);
+      const p1 = VS.offer?.(c, { id: "screen", sdp: "o" }, t); await atAppliance(1);
       install({ sources: {} }); install(REG({ solstice: { whep: `${APP}/screen/whep`, user: "reader", pass: "other-key-now", api: APP, path: "screen" } }));
-      const r1 = await p1; await tick(); await tick(); const held1 = VS.sessionCount?.(c); const dels1 = FAKE.log.filter((x) => x.method === "DELETE").length;
+      go(); const r1 = await p1; await dels(1); const held1 = VS.sessionCount?.(c); const dels1 = FAKE.log.filter((x) => x.method === "DELETE").length;
       w.clients.delete(c); await VS.sweep?.();
-      FAKE.log = []; FAKE.delays = [200]; const wa = fakeWorld({ source: "solstice" }), wb = fakeWorld({ source: "solstice" }); const { c: c2 } = viewer(wa);
-      const p2 = VS.offer?.(c2, { id: "screen", sdp: "o" }, t + 3000); await pause("the offer is at the appliance", 60);
+      FAKE.log = []; go = hold(); const wa = fakeWorld({ source: "solstice" }), wb = fakeWorld({ source: "solstice" }); const { c: c2 } = viewer(wa);
+      const p2 = VS.offer?.(c2, { id: "screen", sdp: "o" }, t + 3000); await atAppliance(1);
       wa.clients.delete(c2); c2.world = wb; wb.clients.add(c2);
-      const r2 = await p2; await tick(); await tick(); const held2 = VS.sessionCount?.(c2); const dels2 = FAKE.log.filter((x) => x.method === "DELETE").length;
+      go(); const r2 = await p2; await dels(1); const held2 = VS.sessionCount?.(c2); const dels2 = FAKE.log.filter((x) => x.method === "DELETE").length;
       wb.clients.delete(c2); await VS.sweep?.();
-      return { r1: r1?.code ?? r1?.type, held1, dels1, r2: r2?.code ?? r2?.type, held2, dels2 }; },
-    good: (o) => o.r1 !== "video-answer" && o.held1 === 0 && o.dels1 === 1 && o.r2 !== "video-answer" && o.held2 === 0 && o.dels2 === 1 },
+      // an unrelated reload (the same entry, read again) while an offer is at the appliance changes nothing for it
+      install(REG()); FAKE.log = []; go = hold(); const w3 = fakeWorld({ source: "solstice" }); const { c: c3 } = viewer(w3);
+      const p3 = VS.offer?.(c3, { id: "screen", sdp: "o" }, t + 6000); await atAppliance(1);
+      install(REG({ other: { whep: `${APP}/other/whep` } }));
+      go(); const r3 = await p3; const held3 = VS.sessionCount?.(c3);
+      w3.clients.delete(c3); await VS.sweep?.(); install(REG());
+      return { r1: r1?.code ?? r1?.type, held1, dels1, r2: r2?.code ?? r2?.type, held2, dels2, r3: r3?.type, held3 }; },
+    good: (o) => o.r1 !== "video-answer" && o.held1 === 0 && o.dels1 === 1 && o.r2 !== "video-answer" && o.held2 === 0 && o.dels2 === 1 && o.r3 === "video-answer" && o.held3 === 1 },
   { id: "B13", what: "a registry reload that changes an entry under the same id closes that source's sessions and forgets what was observed of it; one that marks it ended says so by its code (#332 review 20)", async run() {
       install(REG()); FAKE.whepStatus = 201; FAKE.answer = null; FAKE.delays = []; FAKE.deleteDelay = 0; const t = 17e9;
-      const run1 = async (next: any, i: number) => { FAKE.log = []; const w = fakeWorld({ source: "solstice" }); const { c, sent } = viewer(w);
+      const run1 = async (next: any, i: number, wantDel: boolean) => { FAKE.log = []; const w = fakeWorld({ source: "solstice" }); const { c, sent } = viewer(w);
         await VS.offer?.(c, { id: "screen", sdp: "o" }, t + i * 3000); V.noteSourceState?.("solstice", { state: "live", at: Date.now() });
-        install(next); await tick(); await tick();
+        install(next); if (wantDel) await until("the change's DELETE reaches the appliance", () => FAKE.log.some((x) => x.method === "DELETE"), { ms: 5000 }).catch(() => {}); else await tick();
         const out = { closed: sent.filter((m) => m.type === "video-closed").map((m) => m.code), held: VS.sessionCount?.(c), obs: V.sourceStateOf?.("solstice")?.state ?? null, dels: FAKE.log.filter((x) => x.method === "DELETE").length };
         w.clients.delete(c); await VS.sweep?.(); install(REG()); return out; };
-      const moved = await run1(REG({ solstice: { whep: `${APP}/elsewhere/whep`, user: "reader", pass: "s3cret-read-key", api: APP, path: "elsewhere" } }), 0);
-      const ended = await run1(REG({ solstice: { whep: `${APP}/screen/whep`, user: "reader", pass: "s3cret-read-key", api: APP, path: "screen", ended: true } }), 1);
-      const same = await run1(REG(), 2);
+      const moved = await run1(REG({ solstice: { whep: `${APP}/elsewhere/whep`, user: "reader", pass: "s3cret-read-key", api: APP, path: "elsewhere" } }), 0, true);
+      const ended = await run1(REG({ solstice: { whep: `${APP}/screen/whep`, user: "reader", pass: "s3cret-read-key", api: APP, path: "screen", ended: true } }), 1, true);
+      const same = await run1(REG(), 2, false);
       return { moved, ended, same }; },
     good: (o) => o.moved.closed.length === 1 && o.moved.held === 0 && o.moved.obs === null && o.moved.dels === 1 && o.ended.closed[0] === "ended" && o.ended.held === 0 && o.ended.obs === "ended"
       && o.same.closed.length === 0 && o.same.held === 1 && o.same.obs === "live" },
