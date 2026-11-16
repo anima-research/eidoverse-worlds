@@ -366,16 +366,16 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   ok(badFor.isError && /not sent/.test(T(badFor)) && /"30m", "2h", "1d" or "1w"/.test(T(badFor)) && roleOf()?.until === until0 && roleOf()?.role === "builder", "AT11 a malformed for is refused before anything is sent, with the durations it takes", [T(badFor), roleOf()]);
   vic.close(); }
 
-// ---- AT5: look points at the real tool ----
+// ---- AT14: look points at the real tool ----
 { ok((await make("post", { model: "test/cup.glb", components: { transform: { pos: [12, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, lock: true, hidden: true } })).ok, "(AT5 setup) a locked, hidden post");
   await tryUntil("the agent holds the post", () => ag.entities.has(ID.post), { ms: 3000, step: 50 });
   const h = ag.handle(ID.post);
   const line = T(await call("look")).split("\n").find((l) => l.includes(`[${h}]`)) ?? "";
-  ok(h.length >= 4 && h.length < 26 && ID.post.startsWith(h) && /"post"/.test(line) && !line.includes(ID.post), "AT5a look reads a thing by its label, what it is and a short handle (a unique prefix of its id, never the whole 26)", [h, line]);
-  ok(/locked/.test(line) && line.includes(`edit {id: "${h}", set: {"flags.lock": false}}`) && line.includes(`edit {id: "${h}", set: {"flags.hidden": false}}`) && !/act \{verb: "delete"/.test(line), "AT5 look teaches edit flags.lock / flags.hidden, not act delete", line);
+  ok(h.length >= 4 && h.length < 26 && ID.post.startsWith(h) && /"post"/.test(line) && !line.includes(ID.post), "AT14a look reads a thing by its label, what it is and a short handle (a unique prefix of its id, never the whole 26)", [h, line]);
+  ok(/locked/.test(line) && line.includes(`edit {id: "${h}", set: {"flags.lock": false}}`) && line.includes(`edit {id: "${h}", set: {"flags.hidden": false}}`) && !/act \{verb: "delete"/.test(line), "AT14 look teaches edit flags.lock / flags.hidden, not act delete", line);
   const un = await call("edit", { id: "post", set: { "flags.lock": false, "flags.hidden": false } });   // by its label
   await tryUntil("the post is unlocked and shown in the agent's fold", () => !ag.foldRecord(ID.post)?.lock && !ag.foldRecord(ID.post)?.hidden, { ms: 2000 });
-  ok(!un.isError && !ag.foldRecord(ID.post)?.lock && !ag.foldRecord(ID.post)?.hidden, "AT5 …and what it teaches works (by its label too)", T(un)); }
+  ok(!un.isError && !ag.foldRecord(ID.post)?.lock && !ag.foldRecord(ID.post)?.hidden, "AT14 …and what it teaches works (by its label too)", T(un)); }
 
 // ---- AT9: the old names are unknown tools and run nothing (Mica 11-05); create's at / place shapes the old spawn used still land ----
 { const { handleTool } = await import("../../mcpl/tools.ts");
@@ -402,7 +402,7 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   ok(!xz.r.isError && near(xz.rec?.pos, x0 - 3, z0 + 3), "AT9 create from the old spawn shape {lib, x, z} lands at x, z (not the origin)", [busyEvidence(), T(xz.r).slice(0, 200), xz.rec?.pos]);
   const yw = await spAt({ x: x0 - 3, z: z0 - 3, yaw: 1 }, "alias-cup-yaw");
   const qy = [0, Math.sin(0.5), 0, Math.cos(0.5)];
-  ok(!yw.r.isError && near(yw.rec?.pos, x0 - 3, z0 - 3) && Array.isArray(yw.rec?.q) && yw.rec.q.every((n, i) => Math.abs(n - qy[i]) < 1e-3), "AT9 create from the old spawn shape {lib, x, z, yaw} lands at x, z facing yaw (create {at: {pos, yaw}})", [busyEvidence(), T(yw.r).slice(0, 200), yw.rec?.pos, yw.rec?.q]);
+  ok(!yw.r.isError && near(yw.rec?.pos, x0 - 3, z0 - 3) && Array.isArray(yw.rec?.q) && yw.rec.q.every((n, i) => Math.abs(n - qy[i]) < 1e-3), "AT9 create from the old spawn shape {lib, x, z, yaw} lands at x, z facing yaw (create {place: {at, facing}}: no y)", [busyEvidence(), T(yw.r).slice(0, 200), yw.rec?.pos, yw.rec?.q]);
   // review r2 F8: with a yaw and no y the shape is place {at: [x, z], facing} (oldSpawn above), the same seat as without a
   // yaw, never create {at: {pos: [x, 0, z], yaw}} (the origin at y 0): over the wall (top at 2.4) it lands ON it
   const ywOn = await spAt({ x: 1, z: 3, yaw: 1 }, "alias-cup-yaw-on");
@@ -426,7 +426,7 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   const sn = await handleTool(ctx as any, "snapshot", { view: "third" });
   ok(sn.isError && T(sn) === `there's no tool named "snapshot" on this server, so nothing ran; your tool list has the ones it serves`, "AT9 snapshot is refused as an unknown tool (Mica 11-05)", T(sn).slice(0, 160)); }
 
-// ---- AT8 (review r5 F4): a dropped agent dials again on the browser's schedule (shared/redial.js), not a fixed 1.5 s ----
+// ---- AT15 (review r5 F4): a dropped agent dials again on the browser's schedule (shared/redial.js), not a fixed 1.5 s ----
 { const rid = new WorldAgent({ url: `ws://127.0.0.1:${port}/ws`, name: "Rid", world: "yard", avatar: "" });
   await rid.connect(); await tryUntil("Rid has joined", () => rid.joined, { ms: 3000, step: 50 });
   const t0 = rid.redial?.tries;
@@ -435,9 +435,9 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   // the try is counted when the close is handled, which a loaded runner may take a while to get to: watch for it, not a
   // fixed pause. The redial waits ≥ a connect, so a 5 ms poll sees 1 before the rejoin resets it
   await tryUntil("the drop counted one try", () => rid.redial?.tries === 1, { ms: 1500, step: 5 });
-  ok(t0 === 0 && rid.redial?.tries === 1, "AT8 a dropped agent's next dial is the shared backoff's (one try counted)", { t0, tries: rid.redial?.tries });
+  ok(t0 === 0 && rid.redial?.tries === 1, "AT15 a dropped agent's next dial is the shared backoff's (one try counted)", { t0, tries: rid.redial?.tries });
   await tryUntil("Rid gets back in by itself", () => rid.joined, { ms: 4000, step: 50 });
-  ok(rid.joined && rid.redial?.tries === 0, "AT8 …it gets back in by itself, and the join resets the backoff", { joined: rid.joined, tries: rid.redial?.tries });
+  ok(rid.joined && rid.redial?.tries === 0, "AT15 …it gets back in by itself, and the join resets the backoff", { joined: rid.joined, tries: rid.redial?.tries });
   rid.close(); }
 
 ag.close(); ann.close();
