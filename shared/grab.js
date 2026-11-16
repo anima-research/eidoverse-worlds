@@ -9,7 +9,7 @@
 //
 //   grabbable: {
 //     enabled     true          can it be picked up now (false: a dynamic ball you can only kick)
-//     who         'builder'     member | builder | owner: who may pick it up
+//     who         'member'      member | builder | owner: who may pick it up
 //     steal       true          may someone take it from a holder's hand (owners always may)
 //     range       1.5           m from the hand; past 1.5 it flies to the hand (0.1..10)
 //     priority    0             -10..10: wins over lower when several things are in reach (the key, not the table)

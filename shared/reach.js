@@ -6,7 +6,7 @@
 
 import { qMul as qMulq, qConj, qRotate as qRot, qAxisAngle } from './rot.js';
 
-// ---- the four vector ops this needs ---------------------------------------
+// ---- the vector ops this needs --------------------------------------------
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 const mul = (a, s) => [a[0] * s, a[1] * s, a[2] * s];
@@ -33,7 +33,7 @@ export function rotateAbout(v, axis, ang) {
 }
 
 /** Turn `v` toward `axis` until it sits inside a cone of half-angle `half`
- *  (radians) about it. Returns v unchanged when it is already inside. */
+ *  (radians) about it. Returns {v, clamped}: v unchanged when it is already inside. */
 export function clampToCone(v, axis, half) {
   const c = dot(v, axis);
   const cosHalf = Math.cos(half);
@@ -48,7 +48,7 @@ export function clampToCone(v, axis, half) {
 }
 
 /** Hold `v` in front of the body's frontal plane: its forward component may
- *  not fall below `minFwd`. Projects onto the plane and renormalizes. */
+ *  not fall below `minFwd`. Projects onto the plane and renormalizes. Returns {v, clamped}. */
 export function clampBehind(v, fwd, minFwd) {
   const f = dot(v, fwd);
   if (f >= minFwd) return { v, clamped: false };

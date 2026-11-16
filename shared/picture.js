@@ -42,7 +42,7 @@ export function allowedPictureSrc(src) {
 }
 
 /** Validate an authored bag: {ok: false, why} or {ok: true, picture, tier, notes} (notes for anything coerced).
- *  `clip`: a stored bag being read, so an over-long description is clipped with a note, as main did; a write refuses it. */
+ *  `clip`: a stored bag being read, so an over-long description is clipped with a note; a write refuses it. */
 export function normalizePicture(data, { clip = false } = {}) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
     return { ok: false, why: 'picture data must be an object {src, width?, description?, lit?}' };

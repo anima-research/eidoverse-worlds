@@ -105,7 +105,7 @@ export function evalPath(m, t, base) {
   if (!Array.isArray(pts) || pts.length < 2) return { ok: false, why: "path needs ≥ 2 points" };
   let len = pathLen.get(m);
   if (!len) {
-    // a malformed point is a refusal, not a TypeError (bot #333 253); checked once per points, with the lengths
+    // a malformed point is a refusal, not a TypeError; checked once per points, with the lengths
     if (!pts.every((p) => Array.isArray(p) && p.length >= 3 && Number.isFinite(p[0]) && Number.isFinite(p[1]) && Number.isFinite(p[2])))
       return { ok: false, why: "a path point must be [x, y, z], three finite numbers" };
     len = [0];

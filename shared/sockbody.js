@@ -139,10 +139,7 @@ export function choosePose(body, choices = []) {
   return best ? { name: best.name, spec: body.poses[best.name] } : { name: null, spec: body.pose };
 }
 
-/** Is a leave request of this kind allowed by the socket? kind: 'move' (a movement key), 'jump', 'menu' (the explicit
- *  get-up), 'script', 'escape'. A seat whose input takes the movement keys (drive, walk) never treats them as "get off".
- *  'escape' is the exit no seat can take away: holding the get-up for ESCAPE_HOLD_S, repeating it within ESCAPE_REPEAT_S
- *  of a refusal, or an agent's detach {escape: true}. A seat may make leaving deliberate, never impossible. */
+/** The escape's timings, seconds (mayLeave's 'escape'): how long the get-up is held, and how soon after a refusal a repeat counts. */
 export const ESCAPE_HOLD_S = 1.5, ESCAPE_REPEAT_S = 2;
 /** Does the authority's `vacated` inbox message name the socket I occupy now (`mount` = {to: <socket id>}, mine or null)? A
  *  late message (after a reconnect) never stands anyone up from a different seat taken since; one naming the same socket,
@@ -160,6 +157,10 @@ export function inOccupyReach(feet, seat, lag = 0) {
   const dh = Math.hypot(seat[0] - feet[0], seat[2] - feet[2]), dy = seat[1] - feet[1];
   return dh <= OCCUPY_REACH.r + lag && dy <= OCCUPY_REACH.up + lag && -dy <= OCCUPY_REACH.down + lag;
 }
+/** Is a leave request of this kind allowed by the socket? kind: 'move' (a movement key), 'jump', 'menu' (the explicit
+ *  get-up), 'script', 'escape'. A seat whose input takes the movement keys (drive, walk) never treats them as "get off".
+ *  'escape' is the exit no seat can take away: holding the get-up for ESCAPE_HOLD_S, repeating it within ESCAPE_REPEAT_S
+ *  of a refusal, or an agent's detach {escape: true}. A seat may make leaving deliberate, never impossible. */
 export function mayLeave(body, kind) {
   if (!body) return true;
   if (kind === 'script' || kind === 'escape') return true;

@@ -2,8 +2,8 @@
 // every plane shares.
 //
 // PURE and dependency-free ON PURPOSE: three species of runtime import this
-// file — the browser client (sky.js / world.js), the sequencer's fold
-// (server/server.ts), and embodied agents (mcpl/agent.ts). Shared facts (time
+// file — the browser client (client/lib/sky/sky.js), the authority
+// (shared/protocol/authority/), and embodied agents (mcpl/agent.ts). Shared facts (time
 // of day, weather state, transition phase) must be DERIVED identically
 // everywhere, so the derivation lives in exactly one place. No three, no DOM,
 // and no Date.now() of its own — callers pass `now`, tests pass whatever they
@@ -43,11 +43,6 @@ function tzFormatter(tz) {
   return f;
 }
 
-/** The hour of day a sky's authored epoch implies at time `tMs`. This is THE
- *  formula — sky.js's sun and the fold's rebase both call it, which is what
- *  keeps a weather verb from snapping the day (see foldSkyEntry). No ambient
- *  Date.now() even in clock mode: the wall hour is derived from the caller's
- *  tMs, so tests can freeze time and every plane derives identically. */
 // A tz present is the wall clock (hours, rate and ts stay put as the rated fallback). An older value's clock: 'real' and
 // dormantRated are not read: without a tz the rated clock governs.
 export const isRealClock = (sky) => !!sky && typeof sky.tz === 'string';
@@ -58,6 +53,12 @@ export function ratedHoursAt(sky, tMs) {
   if (!sky) return 12;
   return ((sky.hours ?? 12) + (sky.rate ?? 0) * (tMs - (sky.ts ?? tMs)) / 3600e3 + 24000) % 24;
 }
+/** The hour of day a sky's authored epoch implies at time `tMs`. This is THE
+ *  formula — sky.js's sun calls it, and the fold's rebase calls its rated half
+ *  (ratedHoursAt), which is what keeps a weather verb from snapping the day (see
+ *  foldSkyEntry). No ambient Date.now() even in clock mode: the wall hour is
+ *  derived from the caller's tMs, so tests can freeze time and every plane
+ *  derives identically. */
 export function hoursAt(sky, tMs) {
   if (!sky) return 12;
   if (isRealClock(sky)) {
@@ -109,9 +110,6 @@ const DWELL_FLOOR_S = 60;
 const DWELL_CAP_S = 6 * 3600;
 const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, Number.isFinite(x) ? x : lo));
 
-/** Validate + normalize an authored policy bag. Returns null when the bag
- *  doesn't amount to a usable policy (no valid states, not an object) —
- *  callers treat null as "forecast off". */
 /** A forecast policy's old field names → today's: the door refuses them, naming today's (the sky act and a set of the sky). */
 export const FORECAST_WAS = Object.freeze({ dwellSec: 'dwell', transitionSec: 'transition' });
 /** The door's refusal for a forecast that says an old field name, or null. @param {any} f @param {string} at */
@@ -121,6 +119,9 @@ export function forecastSpellingRefusal(f, at) {
     return { code: 'schema', reason: `${at}.forecast: '${old}' is the old spelling of '${now}'`, fix: `forecast {…, ${now}: …}`, didYouMean: [now] };
   return null;
 }
+/** Validate + normalize an authored policy bag. Returns null when the bag
+ *  doesn't amount to a usable policy (no valid states, not an object) —
+ *  callers treat null as "forecast off". */
 export function normalizePolicy(f) {
   if (!f || typeof f !== 'object') return null;
   const states = [];

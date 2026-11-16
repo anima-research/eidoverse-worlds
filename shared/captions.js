@@ -7,26 +7,27 @@
 //   caption {id, session, n, t0, t1, text, speaker?, title?}   # one line, once
 //   caption {id, session, end: true}                            # the screen goes quiet
 //
-// folds into the entity's comp bag, SERVER-WRITTEN (a client's `comp {type:
-// "captions"}` is refused, so the bag has one writer path):
+// folds into the entity's `captions` component, written by the caption request only (a hand `set` of it is refused
+// to all but the owner: shared/protocol/authority/gate.js "caption-only"):
 //
 //   captions = {session, n, gen, title?, line: {t0, t1, text, speaker?}}
 //
 // Each write holds ITS line, once (as WebVTT and TTML store a cue once). A reader that wants earlier lines reads the
 // earlier captions changes (the log is the transcript); an older stored value's `window` still reads.
 //
-// Writing one screen's captions takes the `caption` deed (a per-entity grant), not builder standing over the world.
+// Who may caption a screen: the ids in its `captioners` component, and anyone who may edit the screen.
 // Captions are durable world testimony like `say`; `end` clears current perception, not history.
 //
 // WHO IS THE CAPTIONER: the LIVE LEG. The sequencer stamps every caption entry with the writer's join generation
 // (server/world.ts legGen: monotonic across restarts; a same-identity join is a takeover); a client cannot supply it.
 // The bag remembers the generation that wrote it: a lower one is refused as a superseded leg, a higher one takes over.
-// Supersession is thus the authority's fact, never a clock the bot claims. The owner's recovery is `end` or `caption: null`.
+// Supersession is thus the authority's fact, never a clock the bot claims. The owner's recovery is `end`, or setting
+// `captions` by hand.
 //
 // SESSION is the bot's media-clock label, minted at attach (ISO time plus a nonce): it says which attach a `00:30`
 // belongs to. Within a session `n` is the bot's monotonic counter; the bag folds the high-water mark and refuses a
 // caption at or below it BEFORE it becomes history, so a resend after a lost receipt is safe while the bag stands (an `end`
-// clears it, and a resend after that is accepted again). A different session from the live leg's starts a fresh window.
+// clears it, and a resend after that is accepted again). A different session from the live leg's starts fresh.
 //
 // TIMES: t0/t1 are MEDIA TIME in seconds (today: since the bot attached to the stream).
 //
@@ -107,7 +108,7 @@ export function normalizeCaptionArgs(a) {
  *  history: a superseded leg (a lower generation than the one that wrote
  *  the bag), a duplicate or old `n` in the bag's session, or an `end` for a
  *  session that is not the current one. `gen` is the sequencer's stamp
- *  (vCaption); entries that predate it read as generation 0. */
+ *  (server/requestwire.ts); entries that predate it read as generation 0. */
 export function captionRefusal(bag, args) {
   const cur = bag && typeof bag === 'object' ? bag : null;
   if (!cur) return args.end ? `"${args.id}" has no captions to end, so it's already quiet` : null;

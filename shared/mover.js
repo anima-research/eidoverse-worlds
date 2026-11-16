@@ -41,7 +41,7 @@ export const MOVER = Object.freeze({
     tolerance: 0.01,   // m: this close to the target is arrived (short positioning moves are honoured)
     max: 0.4,          // m: the widest tolerance a caller may ask for
   }),
-  // WATER: wading drags (knee-deep ~0.86 of the pace, waist-deep ~0.5); deeper than `at` of the body's height, the body
+  // WATER: wading drags (knee-deep ~0.86 of the pace, chest-deep ~0.5); deeper than `at` of the body's height, the body
   // floats at the chest and swims. Swimming is never refused a step (a ledge under water isn't a ledge).
   swim: Object.freeze({
     speed: 0.9,    // m/s, a steady stroke
@@ -144,7 +144,7 @@ export function sweep(from, to, spacing = MOVER.track.sweep) {
 // ---------------------------------------------------------------- stepping
 const sm01 = (t) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
 /** Where a body stands in water of surface `level` over ground `ground`: {y, depth, swimming, speedFactor}. speedFactor
- *  is the wading drag (1 dry, ~0.5 waist-deep); null when swimming (the stroke has its own speeds). `level` null = dry. */
+ *  is the wading drag (1 dry, ~0.5 chest-deep); null when swimming (the stroke has its own speeds). `level` null = dry. */
 export function waterStance(level, ground, height = MOVER.body.height) {
   if (level == null || !Number.isFinite(level)) return { y: ground, depth: 0, swimming: false, speedFactor: 1 };
   const depth = level - ground, floatY = level - floatDepth(height);

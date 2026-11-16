@@ -8,8 +8,8 @@
 //
 // Shared verbatim by three runtimes (the browser's mountTransform, the
 // sequencer's /avatars judgment, the mcpl agent's effective-transform seat
-// branch), so it stays dependency-free beyond motioneval's quaternion lines:
-// no THREE, no DOM, no clock, no fetch. Callers pass state in.
+// branch), so it stays dependency-free beyond rot.js's qRotate and clipdefs.js's
+// clip name: no THREE, no DOM, no clock, no fetch. Callers pass state in.
 //
 // Contract highlights:
 //  - in the renderer a profile applies ONLY behind the full gate (seatGate:
@@ -130,8 +130,8 @@ export function profileStatus(profile, currentAvatarSha256, currentClipSha256) {
 /** Legacy sockets were authored under root-at-socket and may encode either a
  *  physical plane or a root target; nothing infers which. Only `anchor:
  *  'surface'` (D14: one enum, shared/sockbody.js ANCHORS) consumes a profile;
- *  everything else is legacy by construction. `sock` is the socket component
- *  ({name, body, …}: PLAN-sockets-entities). */
+ *  everything else is legacy by construction. `sock` is the seat's station, or
+ *  an older socket value (below). */
 export function socketAnchor(sock) {
   // the seat's station (its anchor is top-level), or the older spelling a fixture or a lifted log may still hand in: a
   // socket value with a body block

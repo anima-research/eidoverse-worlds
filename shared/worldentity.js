@@ -6,7 +6,7 @@
 // door's `sky` and `weather` tools (they stamp the clock), and set/delete of @world's `terrain` and `grass`:
 //
 //   worldComponents(st)       → { id: '@world', components, stamps }
-//   worldOf(view)             → { sky, terrain, grass }   (the inverse)
+//   worldOf({components, stamps}) → { sky, terrain, grass }   (the inverse)
 //   worldSchema(st, live)     → the inspector's schema (shared/editschema.js shape),
 //                               so the desktop cards, the VR quad and an agent's
 //                               `inspect @world` read one declaration
@@ -86,15 +86,13 @@ export function worldOf({ components = [], stamps = {} } = {}) {
 
 // ---------------------------------------------------------------- re-issuing the existing verbs
 
-/** sky-verb args that re-author `sky` with `patch` applied (undefined in the
- *  patch deletes a key). The sky verb folds WHOLESALE, so everything standing
- *  rides along — the Weather component included — minus what the fold stamps
- *  itself (ts/seq/by, the override, a forecast's epoch/seq/by). A rated clock is
- *  re-anchored at `now` (unless the patch sets hours) so the day doesn't snap
- *  back to the hour it was last authored at — the weather fold's own rule. */
 // a tz present is the wall clock; an older value said so with clock: 'real'
 const realClock = (sky) => isBag(sky) && typeof sky.tz === 'string';
 const DEG = 180 / Math.PI;
+/** sky-verb args that re-author `sky` with `patch` applied (undefined in the patch deletes a key). The sky verb folds
+ *  WHOLESALE, so everything standing rides along (the Weather component included), minus what the fold stamps itself
+ *  (ts/seq/by, the override, a forecast's epoch/seq/by). A rated clock is re-anchored at `now` (unless the patch sets
+ *  hours), so the day doesn't snap back to the hour it was last authored at: the weather fold's own rule. */
 export function skyReissue(sky, patch = {}, now = 0) {
   const base = isBag(sky) ? omit(sky, [...SKY_STAMPS, 'override']) : {};
   if (isBag(base.forecast)) base.forecast = omit(base.forecast, ['epoch', 'seq', 'by']);
@@ -337,7 +335,7 @@ export function worldEditOps(st, edits, live = {}) {
  *    kind 'weather' v = one of WEATHERS                                          → weather
  *    kind 'shape' | 'tint'  v = a ground-palette name (ctx.pal)                  → terrain (only that dial changes)
  *    kind 'plant'   v = a planting name                                           → grass (height/density/tint kept)
- *    kind 'mow'                                                                   → grass {clear:true}
+ *    kind 'mow'                                                                   → delete @world's grass
  *  ctx: { pal, presets, now, mayShape } */
 export function worldPick(st, kind, v, ctx = {}) {
   const { sky, terrain, grass } = worldState(st);

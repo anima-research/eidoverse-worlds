@@ -1,5 +1,5 @@
 // requests — the authority requests an edit plans, in the protocol's terms.
-// Every planner (editschema, hierarchy, blueprint, the client's gestures, the agent's tools) builds these, and every
+// Every planner (editschema, hierarchy, the client's gestures, the agent's tools) builds these, and every
 // sender sends them as they are: {verb, args}, one per change, or one `batch` for one gesture (= one act = one undo).
 // Ids and component names arrive as the VIEW shows them (shared/protocol/view.js decodes the translator's x-- escapes)
 // and are encoded here, once. A transform is always written whole ({pos, q, scale}); for a child it is LOCAL to its

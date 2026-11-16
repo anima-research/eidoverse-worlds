@@ -2,7 +2,7 @@
 // renderer's realizers and the agent's caches react to these.
 //   diffView(prev, next) → { things: [{id, what, comp?}], world: [key], ids: {<map key>: [changed entry]} }
 //     what: 'gone'   the thing left the world
-//           'born'   it's new, or became a different thing (another model, kind, or a field only a rebuild can show)
+//           'born'   it's new, or became a different thing (another model: the one field only a rebuild can show)
 //           'pose'   its own transform (pos / q / scale / scale3) moved
 //           'parent' what it hangs from changed (attached, detached, or another parent / slot / offset)
 //           'comp'   one component (`comp`) was set, changed or removed
