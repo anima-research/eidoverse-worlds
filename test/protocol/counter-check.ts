@@ -104,7 +104,7 @@ let H = "";
   const W2 = scratchLive();
   const there = (red("C2") ? W : W2).call("create", { id: "copy-x", from: H, at: { pos: [5, 0, 5] } });
   const blobThere = fs.existsSync(path.join(W2.dir, "blobs", `${H.replace(/[^a-z0-9]/g, "-")}.json`));
-  check("C2 create {from: hash} succeeds in the publishing world; a second world that never received it refuses it not-found (blobs are per world dir: livehost.ts:52)",
+  check("C2 create {from: hash} succeeds in the publishing world; a second world that never received it refuses it not-found (blobs are per world dir: server/livehost.ts blobDir)",
     here.ok && !!W.c("copy-a") && there.ok === false && there.refused?.code === "not-found" && !blobThere, J({ here: code(here), there: code(there), why: there.refused?.reason, blobThere }));
 }
 
@@ -204,7 +204,7 @@ let H = "";
   // the record's BYTES remain in the dir's blob store (a blob is purged by deleting its file, §12); what makes a hash usable here
   // is @world.blueprints:<hash> (isPublished, authority/blueprints.js), so the refusal reads `not-published` — the registry entry is gone
   check("C11 the blueprint record deleted from @world and the world reopened: it opens, the copy stands with its text, a new create {from} of that hash is refused (not-published: the registry has no such key), history intact",
-    del.ok && st.status === "ok" && !(key in st.entities["@world"].c) && !!W.c("copy-a") && textOf(W, "copy-a") === "2" && mk.ok === false && ["not-found", "not-published"].includes(mk.refused?.code)
+    del.ok && st.status === "ok" && !(key in st.entities["@world"].c) && !!W.c("copy-a") && textOf(W, "copy-a") === "2" && mk.ok === false && mk.refused?.code === "not-published"
     && (hist.entries ?? []).some((h: any) => h.by === "script:copy-a") && insp.ok && W.entries().length === n0 + (del.skipped ? 0 : 2) + 1,   // the delete: its act + its change; the refused create: its act (§7: a refusal is an act carrying it)
     J({ del: code(del), status: st.status, keyGone: !(key in st.entities["@world"].c), text: textOf(W, "copy-a"), mk: code(mk), why: mk.refused?.reason, entries: [n0, W.entries().length] }));
 }
