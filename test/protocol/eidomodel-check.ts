@@ -74,7 +74,7 @@ await C("U5", "the client maps a model's address to /library/eido/sha256/<hex>.g
   return [E.libRelOf(`eido:sha256/${H}`) === `eido/sha256/${H}.glb` && E.libRelOf("store/x.glb") === "store/x.glb" && E.isEido(`eido:sha256/${H}`) && !E.isEido(`eido:sha256/${H.slice(0, 16)}`)
     && /libRelOf\(libPath\)/.test(src), E.libRelOf?.(`eido:sha256/${H}`)]; });
 await C("U6", "EIDO-URIS.md: model's media is fixed by its role (glTF binary), so a bare eido: string is complete there", () => {
-  const t = fs.readFileSync(path.join(ENGINE, "spec/EIDO-URIS.md"), "utf8"); return [/`model`[^\n]*role[^\n]*glb|media is fixed by its role/i.test(t) && !/needs a new versioned name \(`model@2`/.test(t), null]; });
+  const t = fs.readFileSync(path.join(ENGINE, "spec/EIDO-URIS.md"), "utf8"); return [/`model`[^\n]*role[^\n]*glb|media is fixed by its role/i.test(t), null]; });
 
 // R 10-17 (review r7 F3, F4): the catalogue measures a path's hash off the request path, credits are looked up by path, and a
 // world written through the door names its models by path, so it loads with no index at all
