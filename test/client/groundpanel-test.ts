@@ -3,12 +3,14 @@
 // Mutations (must go red): in client/lib/edit/groundpanel.js drop grassHeight/grassDensity from the palette guard; send
 // ground('grass', grassArgs(...)) without checking it for null.
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { suite } from "../gate/suite.ts";
+import { pause } from "../gate/wait.ts";
 GlobalRegistrator.register({ width: 800, height: 600 });
 (globalThis as any).Option ??= function (text = "", value?: string, defSel = false, sel = false) {   // happy-dom has no Option constructor (rows.js selectRow)
   const o = document.createElement("option"); o.text = text; o.value = value ?? text; o.defaultSelected = defSel; o.selected = sel; return o; };
 import { mock } from "bun:test";
-let pass = 0, fail = 0;
-const check = (name: string, ok: boolean, detail = "") => { if (ok) pass++; else fail++; console.log(`${ok ? "✓" : "✗"} ${name}${!ok && detail ? `  — ${detail}` : ""}`); };
+const S = suite("groundpanel");
+const check = (name: string, ok: unknown, detail?: unknown) => S.check(name, ok, detail);
 const L = "../../client/lib/";
 const sent: any[] = [], hints: string[] = [], reports: any[] = [];
 let reg: any = {};
@@ -21,7 +23,7 @@ mock.module(L + "state.js", () => ({ state: { st: { entities: {} } }, onWorldCha
 mock.module(L + "terrain.js", () => ({ getGrassQuality: () => "high", getGrassShed: () => 0, getGrassDensity: () => 1 }));
 (globalThis as any).fetch = async () => new Response("null", { status: 404 });
 const { paintGround } = await import(L + "edit/groundpanel.js");
-const settle = async () => { for (let i = 0; i < 30; i++) await Promise.resolve(); await new Promise((r) => setTimeout(r, 0)); };
+const settle = async () => { for (let i = 0; i < 30; i++) await Promise.resolve(); await pause("one macrotask: the defs promise and the paint behind it", 0); };
 const mount = async (pal: any) => { reg = { groundPalette: pal }; reports.length = 0; const b = document.createElement("div"); document.body.append(b); paintGround(b); await settle(); return b; };
 const PAL = { tints: { meadow: { layer: "#557744" } }, shapes: { hills: 4 }, grassHeight: { meadow: 0.4 }, grassDensity: { normal: 1 }, plantings: { meadow: { args: { kind: "blades" }, blade: true } } };
 
@@ -48,4 +50,4 @@ for (const drop of ["grassHeight", "grassDensity"]) {
   check("control: grow with a planting sends set @world grass", sent.length === 1 && sent[0].verb === "set" && sent[0].args.component === "grass", JSON.stringify(sent));
   b.remove();
 }
-console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
+S.done();

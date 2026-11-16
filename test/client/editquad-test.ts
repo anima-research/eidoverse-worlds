@@ -4,6 +4,7 @@
 // Mutations (must go red): in client/lib/edit/widgets.js's edit painters, push the 'lock' region regardless of r.lockable;
 // face a range with v.toFixed(dp).
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { suite } from "../gate/suite.ts";
 GlobalRegistrator.register();
 (globalThis as any).Path2D ??= class Path2D { constructor(public d?: string) {} };
 const painted: string[] = [];
@@ -11,8 +12,8 @@ HTMLCanvasElement.prototype.getContext = function () {
   return new Proxy({}, { get: (_t, k) => (k === "measureText" ? () => ({ width: 10 }) : k === "fillText" ? (s: string) => { painted.push(String(s)); } : () => {}), set: () => true }) as any;
 };
 const { renderCanvas } = await import("../../client/lib/edit/fieldpanels.js");
-let pass = 0, fail = 0;
-const check = (name: string, ok: boolean, detail = "") => { if (ok) pass++; else fail++; console.log(`${ok ? "✓" : "✗"} ${name}${!ok && detail ? `  — ${detail}` : ""}`); };
+const S = suite("editquad");
+const check = (name: string, ok: unknown, detail?: unknown) => S.check(name, ok, detail);
 const rows = [{ id: "high", label: "high", locked: true, lockable: false }, { id: "mine", label: "mine", locked: true }, { id: "free", label: "free", locked: false }];
 for (const theme of ["edit", null]) {
   const regions: any[] = renderCanvas(document.createElement("canvas"), [{ t: "tree", k: "sel", rows }], { theme }) ?? [];
@@ -25,4 +26,4 @@ for (const theme of ["edit", null]) {
   renderCanvas(document.createElement("canvas"), [{ t: "range", k: "mix", label: "mix", value: 0.3, unit: "×" }], { theme });
   check(`${theme ?? "legacy"} quad: a range's value is faced trimmed (0.3×, as the desktop row shows it), not 0.30×`, painted.includes("0.3×") && !painted.includes("0.30×"), JSON.stringify(painted));
 }
-console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
+S.done();

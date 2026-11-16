@@ -2,10 +2,11 @@
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/client/rolespanels-access-test.ts
 // Mutations (must go red): in client/lib/ui/rolespanels.js paintAccess, send the door batch as `{ ops }`; read `dr.gen` in the warning.
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { suite } from "../gate/suite.ts";
 GlobalRegistrator.register({ width: 800, height: 600 });
 import { mock } from "bun:test";
-let pass = 0, fail = 0;
-const check = (name: string, ok: boolean, detail = "") => { if (ok) pass++; else fail++; console.log(`${ok ? "✓" : "✗"} ${name}${!ok && detail ? `  — ${detail}` : ""}`); };
+const S = suite("rolespanels-access");
+const check = (name: string, ok: unknown, detail?: unknown) => S.check(name, ok, detail);
 const L = "../../client/lib/";
 const sent: any[] = [];
 const replica: any = { st: { entities: { "@world": { c: {} } } } };
@@ -37,4 +38,4 @@ for (const door of ["open", "public"]) {
   check("a2 a default-role with can.generate warns that arrivals spend the world's generation credit", /generation credit/.test(w), JSON.stringify(w));
   b.remove();
 }
-console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
+S.done();
