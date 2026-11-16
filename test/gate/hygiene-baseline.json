@@ -274,7 +274,7 @@
   "bare-wait": 6
  },
  "test/server/knockdown-test.ts": {
-  "bare-wait": 20,
+  "bare-wait": 9,
   "own-ok": 1
  },
  "test/server/msgrate-test.ts": {

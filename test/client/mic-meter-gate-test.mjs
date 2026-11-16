@@ -5,6 +5,7 @@
 import { fileURLToPath } from "node:url";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { mock } from "bun:test";
+import { pause } from "../gate/wait.ts";
 GlobalRegistrator.register({ url: "http://localhost/?world=t&name=p" });
 
 const at = (p) => fileURLToPath(new URL(p, import.meta.url));
@@ -28,7 +29,7 @@ const t = (n, cond, d = '') => { cond ? ok++ : bad++; console.log(`${cond ? 'ok 
 const lvl = document.querySelector('#sec-audio [data-lvl]');
 const thr = document.querySelector('#sec-audio [data-thr]');
 t('setup: the meter is mounted', !!lvl && !!thr);
-const frames = () => new Promise((r) => setTimeout(r, 120));
+const frames = () => pause("the meter repaints on its rAF beat", 120);
 const pct = (s) => parseFloat(/([\d.]+)%/.exec(s)?.[1] ?? 'NaN');
 const GOLD = /255, 214, 107|#ffd66b/i;
 
