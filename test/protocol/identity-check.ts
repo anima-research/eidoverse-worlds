@@ -287,7 +287,7 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     await tryUntil("the owner's voice-moderated", () => owners().length > 0, { ms: 5000 });   // the owner's reply, not a fixed pause
     const all = owners();
     ok(jf.snapshot?.yourRights?.role === "builder" && jv.snapshot?.yourRights?.role === "member" && byOthers.length === 0 && all.length === 1,
-      "voice-moderate (mute for everyone) is the owner's alone: a stranger (a builder, meadow's newcomer role) and a member are refused, the owner isn't", [jf.snapshot?.yourRights?.role, jv.snapshot?.yourRights?.role, all]);
+      "voice-moderate (mute for everyone) needs the mute permission (an owner has it): a stranger (a builder, meadow's newcomer role) and a member are refused, the owner isn't", [jf.snapshot?.yourRights?.role, jv.snapshot?.yourRights?.role, all]);
     await own.req("set", { id: "@world", component: "default-role", value: { role: "builder" } });
     fern.close(); vis.close(); }
   const elsewhere = await sock(S3.port); const je = await elsewhere.join("garden", "someone-new");
@@ -671,7 +671,7 @@ const postAuth = (port, token) => fetch(`http://127.0.0.1:${port}/auth`, { metho
   ok(["has space", "dup", "-lead", "ok-1"].every((n) => res.reserved?.includes(n)), "TV2 …a refused id's name stays reserved (nobody else may wear it)", res.reserved);
   ok(/5 enrolment\(s\) refused/.test(out) && /has space/.test(out) && /Dup/.test(out) && /\^\[a-z0-9\]/.test(out), "TV3 …and the load says how many, which ids, and the rule", out.slice(-400)); }
 
-// ---- CS: a name another account wears gets a tag that says nothing about the account (it was its last four characters:
+// ---- NT: a name another account wears gets a tag that says nothing about the account (it was its last four characters:
 // a Discord id's digits), the same tag each time (accounts review 10-28) ----
 { const login = async (sub) => { const r = await fetch(`http://127.0.0.1:${srv.port}/auth`, { method: "POST", body: JSON.stringify({ token: mint({ kind: "human", sub, name: "Juniper", scopes: ["worlds:join", "worlds:spectate"] }) }) });
     return /ew_sess=[a-f0-9]{64}/.exec(r.headers.get("set-cookie") ?? "")?.[0]; };
@@ -681,7 +681,7 @@ const postAuth = (port, token) => fetch(`http://127.0.0.1:${port}/auth`, { metho
   for (let i = 0; i < 2; i++) { const b = await sock(srv.port, { cookie: second }); const jb = await b.join("garden", "x"); shown.push(jb.snapshot?.you); b.close(); }
   const leaks = (n) => !n || /4321|7654|9876/.test(n);
   ok(ja.snapshot?.you === "Juniper" && shown.every((n) => n && n !== "Juniper" && n.startsWith("Juniper-") && !leaks(n)) && shown[0] === shown[1],
-    "CS1 a second account asking for a worn name is shown with a tag that carries none of its account, the same tag on each join", { first: ja.snapshot?.you, shown, errs: ja.errors });
+    "NT1 a second account asking for a worn name is shown with a tag that carries none of its account, the same tag on each join", { first: ja.snapshot?.you, shown, errs: ja.errors });
     // the spectator path (directory spectatorName) is directory-check D12
   }
 
