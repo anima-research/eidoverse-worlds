@@ -16,6 +16,7 @@ try {
   // a world whose log already has a cloudy sky, so boot builds it
   await skyBoot(pg, world, 'interim', { sky: { hours: 17, rate: 22.5, clouds: 'cumulus' } });
   await pg.waitForTimeout(1500);
+  lines.length = 0;   // what follows is the reload's build only: the first boot's lines would answer the checks below
   await pg.reload({ waitUntil: 'domcontentloaded' });
   const t1 = Date.now();
   // sample the state until the real sky is up
@@ -34,7 +35,8 @@ try {
     if (!up) await pg.waitForTimeout(500);
   }
   const after = await pg.evaluate(async () => ({ interim: (await import('./lib/sky/sky_interim.js')).interimSkyShown(), held: (await import('./lib/sky/sky_baked.js')).liveDomesHeld() }));
-  const order = (re) => lines.findIndex((l) => re.test(l));
+  // a position in the log's text, not an entry's index: the page batches several [sky] lines into one console message
+  const log = lines.join('\n'), order = (re) => log.search(re);
   console.log('   ', JSON.stringify({ seen, after, s: ((Date.now() - t1) / 1000).toFixed(1) }));
   console.log(lines.filter((l) => /held out|settled|real sky|build owns|compiled/.test(l)).map((l) => '      ' + l).join('\n'));
   check('a fresh build holds the domes out and shows the interim gradient', seen.interim && seen.interimWithDomesOut, JSON.stringify(seen));
@@ -42,7 +44,9 @@ try {
   // held AT BIRTH (the makeSkySystem wrapper), before the build's first await lets a frame draw them
   const heldAt = order(/held out from birth/), ownsAt = order(/build owns/);
   check('the domes are held at birth, before the build lets any frame run', heldAt >= 0 && heldAt < ownsAt, `held@${heldAt} owns@${ownsAt}`);
-  check('the sky compiles only after the world settled', order(/world settled/) >= 0 && order(/world settled/) < order(/the real sky is up/), '');
+  // "world settled after N s" is logged at the 60 s cap too: N < 59.5 is a settle, not the give-up
+  const settledS = Number(/world settled after ([\d.]+) ?s/.exec(log)?.[1] ?? NaN);
+  check('the sky compiles only after the world settled (not the 60 s cap)', order(/world settled/) >= 0 && order(/world settled/) < order(/the real sky is up/) && settledS < 59.5, `settled after ${settledS} s`);
   const owns = lines.find((l) => /build owns/.test(l)) ?? '';
   const later = owns.match(/\w+=later/g) ?? [];
   check('exactly the two big domes (spheres) skip the warm conductor, for later', later.length === 2 && later.every((x) => /^SphereGeometry/.test(x)), owns.match(/\w+=later/g)?.join(' ') ?? owns.slice(0, 200));

@@ -21,14 +21,13 @@ try {
     const saved = { parent: camera.parent, p: camera.position.clone(), q: camera.quaternion.clone() };
     const rig = new THREE.Group(); rig.position.set(200, 0, -300); scene.add(rig);
     rig.add(camera); camera.position.set(0, 1.6, 0); camera.updateMatrixWorld(true); rig.updateMatrixWorld(true);
-    // in VR the body stands where the rig is — point the avatar focus there (it is min()'d in; the headless visitor
-    // stands at the origin and would mask the camera read). The page is thrown away after, so no restore needed.
-    M.setResidencyFocus(() => ({ x: 200, y: 0, z: -300 }));
+    // no avatar focus (entDist skips a null one): it is min()'d in, so a focus at the rig (or the headless visitor at
+    // the origin) would supply both distances and mask the camera read. The page is thrown away after, so no restore.
+    M.setResidencyFocus(() => null);
     const out = {
       origin: +M.residencyDistance({ pos: [0, 0, 0] }).toFixed(1),
       nearRig: +M.residencyDistance({ pos: [203, 0, -300] }).toFixed(1),
     };
-    // the avatar-position focus must not mask the test: it is min()'d in — report whether one is set
     if (S.bakedActive()) {
       S.updateBakedDome();
       let dome = null; scene.traverse((o) => { if (o.userData?.odTag === 'sky') dome = o; });
