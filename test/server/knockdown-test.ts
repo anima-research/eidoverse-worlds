@@ -71,6 +71,10 @@ function human(name: string): Promise<Human> {
 }
 // a positive shove's wait, and a refused one's: as long, ending early only on the relay's refusal
 const settleOrRefused = async (h: Human, n0: number, ms = 2500) => { await tryUntil("the relay refuses the shove", () => h.errors.length !== n0, { ms, step: 50 }); };
+// observed phases, not fixed sleeps (bot #333 217): a grab is re-sent until the body is limp and has taken it
+const grabbed = (h: Human, ag: any, name: string) => tryUntil(`${name} is limp and held`, () => {
+  if (ag.draggedBy) return true; h.send({ type: "bodydrag", target: name, grab: { joint: "head" } }); return false;
+}, { ms: 6000, step: 250 });
 
 console.log("knockdown (headless bodies are pushable):\n");
 
@@ -158,11 +162,9 @@ const ev3: string[] = []; (ag3 as any).onEvent = (e: any) => { if (e?.kind === "
 await sleep(400);
 await h.near(ag3);
 h.send({ type: "puppet", target: "kd-bot3", ragdoll: { lean: [2, 0, 0] } });
-await sleep(2000);
-h.send({ type: "bodydrag", target: "kd-bot3", grab: { joint: "head" } });
-await sleep(300);
+await grabbed(h, ag3, "kd-bot3");
 h.send({ type: "bodydrag", target: "kd-bot3", pose: {}, p: [ag3.pos.x, 1.2, ag3.pos.z], yaw: 0 });
-await sleep(300);
+await tryUntil("the drag sample lifts the body", () => Math.abs(ag3.pos.y - 1.2) < 1e-6, { ms: 3000 });
 h.send({ type: "bodydrag", target: "kd-bot3", end: true, pinAt: { joint: "head", at: [ag3.pos.x, 1.9, ag3.pos.z] } });
 await pause("the nailed body has had its time to fall, were the nail not holding it", 2500);
 check("released with a nail: the agent's sim HANGS the body",
@@ -185,14 +187,11 @@ await ag5.connect();
 await sleep(400);
 await h.near(ag5);
 h.send({ type: "puppet", target: "kd-bot5", ragdoll: { lean: [2, 0, 0] } });
-await sleep(2000);
-h.send({ type: "bodydrag", target: "kd-bot5", grab: { joint: "head" } });
-await sleep(300);
+await grabbed(h, ag5, "kd-bot5");
 h.send({ type: "bodydrag", target: "kd-bot5", end: true, pinAt: { joint: "head", at: [ag5.pos.x, 1.9, ag5.pos.z] } });
-await sleep(1500);
+await tryUntil("the nail is in", () => ag5.pins.size === 1 && (ag5 as any).draggedBy == null, { ms: 3000 });
 check("(6b setup) the nail is in before the unpin", ag5.pins.size === 1, `pins=${ag5.pins.size}`);
-h.send({ type: "bodydrag", target: "kd-bot5", grab: { joint: "head" } });
-await sleep(300);
+await grabbed(h, ag5, "kd-bot5");
 const draggedMid = (ag5 as any).draggedBy;
 h.send({ type: "bodydrag", target: "kd-bot5", end: true, unpin: { joint: "head" } });
 await tryUntil("the nail comes out and the drag ends", () => ag5.pins.size === 0 && (ag5 as any).draggedBy == null, { ms: 800 });
@@ -209,20 +208,18 @@ await ag4.connect();
 await sleep(400);
 await h.near(ag4);
 h.send({ type: "puppet", target: "kd-bot4", ragdoll: { lean: [2, 0, 0] } });
-await sleep(1800);
-h.send({ type: "bodydrag", target: "kd-bot4", grab: { joint: "head" } });
-await sleep(200);
+await grabbed(h, ag4, "kd-bot4");
 const held = { head: [0, 0, 0, 1] };
 const first = [ag4.pos.x, -0.31, ag4.pos.z];
 h.send({ type: "bodydrag", target: "kd-bot4", pose: held, p: first, yaw: 0 });
-await sleep(150);
+await tryUntil("the drag sample lands", () => JSON.stringify(ag4.heldPose) === JSON.stringify(held), { ms: 3000 });
 let releaseStart: number[] | null = null;
 (ag4 as any).settleFromDrag = async () => { releaseStart = [ag4.pos.x, ag4.pos.y, ag4.pos.z]; };
 // A downed avatar root is legitimately below terrain by its hips offset; the
 // release must preserve that world-space root rather than clamp or reinterpret it.
 const final = [first[0] + 3.0, -0.48, first[2] - 2.0];
 h.send({ type: "bodydrag", target: "kd-bot4", end: true, pose: {}, p: final, yaw: 0.7 });
-await sleep(150);
+await tryUntil("the release lands", () => releaseStart !== null, { ms: 3000 });
 check("explicit release applies the final authoritative root before settlement",
   !!releaseStart && releaseStart.every((v, i) => Math.abs(v - final[i]) < 1e-6),
   `started=${JSON.stringify(releaseStart)} final=${JSON.stringify(final)}`);
