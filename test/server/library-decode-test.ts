@@ -27,6 +27,10 @@ writeFileSync(join(lib, "boxB.glb"), "B");
 // A literal "%43" name only the opt rung holds is served as itself; decoded,
 // it would name boxC.glb, which no rung has.
 writeFileSync(join(root, "opt", "box%43.glb"), "opt-literal");
+// A deliberate fork in PATCH_DIR wins on ?native=1 too (on Windows the inside-test once compared against "/", never true)
+mkdirSync(join(root, "patched", "eidoverse/assets/models"), { recursive: true });
+writeFileSync(join(models, "forked.glb"), "library-original");
+writeFileSync(join(root, "patched", "eidoverse/assets/models/forked.glb"), "patched-fork");
 
 const run = await scratchSequencer("library-decode", {
   portFrom: 9780,
@@ -56,6 +60,8 @@ try {
   // On Linux, without the split on backslashes, this would be a 404 for a file
   // whose name holds them; the 403 shows the guard that matters on Windows.
   await expect("x%5c..%5c..%5clibrary-backup%5csecret.json", 403);
+  await expect("eidoverse/assets/models/forked.glb", 200, "patched-fork");
+  await expect("eidoverse/assets/models/forked.glb?native=1", 200, "patched-fork");
 } finally {
   await run.cleanup(tally.failed ? 1 : 0);
   rmSync(root, { recursive: true, force: true });

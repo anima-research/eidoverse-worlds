@@ -983,7 +983,7 @@ const ROUTES: Route[] = [
       // ?native=1: provenance bytes, never the optimized shadow (native importers may lack Draco/WebP decoders)
       if (url.searchParams.get("native") === "1" && /\.(glb|vrm)$/i.test(rel)) {
         const patched = normalize(join(PATCH_DIR, rel));
-        if (patched.startsWith(PATCH_DIR + "/") && existsSync(patched)) return serveFrom(PATCH_DIR, rel, true, req, versioned);
+        if (patched.startsWith(PATCH_DIR + sep) && existsSync(patched)) return serveFrom(PATCH_DIR, rel, true, req, versioned);
         if (rel.startsWith("store/")) return serveFrom(OPT_DIR, rel, true, req, true);
         return serveFrom(LIBRARY_DIR, rel, true, req, versioned);
       }
