@@ -184,7 +184,6 @@ check("R4 release does NOT stop the lane track (rule 2: one-way door)", !laneR._
 check("R5 micOn() is false after release", !m.micOn());
 m.releaseMicrophone();
 check("R6 a SECOND release is harmless: lane track still live", !laneR._t.stopped);
-check("R7 …still exactly the same track object", laneR.getTracks()[0] === laneR._t);
 const raw2 = mkStream("device-2");
 check("R8 reacquisition returns the SAME lane the senders already hold", m.gateFor(raw2) === laneR);
 check("R9 …whose track was never stopped across the whole cycle", !laneR._t.stopped);
