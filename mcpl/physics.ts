@@ -242,7 +242,7 @@ const PLAN_R = WALKING.r * Math.SQRT2 + NAV_NUDGE;
  *  what a route planner learned about the world is good until it moves. */
 let generation = 0;
 export const collidersGeneration = () => generation;
-/** Support ids are `<world>/<entity>…` (agent.ts): the entry belongs to that
+/** Support ids are `<world>/<entity>…` (agent-ground.ts): the entry belongs to that
  *  world, and queries made inside another world (inWorld) don't see it. */
 function scopeEntry(m: NonNullable<typeof simMods>, id: string) {
   const e = m.colliders.colliders?.get(id), slash = id.indexOf("/");

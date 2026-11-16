@@ -38,7 +38,7 @@ const flightWords = (got: string) => isFlightEnd(got) ? FLIGHT_ENDS[got.slice(6)
 const turnTo = (a: number, b: number) => { let d = b - a; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; };
 /** A land course flares (noses up) this high above the ground under it. */
 const FLARE_HEIGHT = 2;
-/** Why fold_wings can't judge a body whose bones haven't been read. */
+/** Why foldWings can't judge a body whose bones haven't been read. */
 const BONES_NOT_KNOWN = "this body's bones aren't known (its model hasn't loaded, or couldn't be read), so whether it has wings can't be checked";
 /** shared/flight.js's refusals name the fix as an act — "unfold them first", "land first" — and the browser
  *  has those acts by those names; here they are other tools' presets, so the reply names the call that does it. */
@@ -291,7 +291,7 @@ export class AgentFlight {
       const ref = this.a.flight.events.find((e: any) => /refused$/.test(e.kind));
       // Wings already folded, or already open, are what the call asked for.
       // The reason says why the wings didn't change (shared/flight.js); many reasons name the wings' state too, and
-      // flight_status always gives it, so the sentence around the reason doesn't add the state
+      // flightStatus always gives it, so the sentence around the reason doesn't add the state
       if (ref) {
         const text = `wings stay as they are — ${flightFixInOurTools(ref.reason)}`;
         if (before !== (fold ? "FOLDED" : "OPEN")) return refused(text);
@@ -371,7 +371,8 @@ export class AgentFlight {
     return refused(`${flightWords(arrived)} at ${here}`);
   }
 
-  /** climb_to (spec §1). -1 stamina/metre; an empty pool forces a glide down. */
+  /** climb_to (spec §1). cfg.stamina.climbPerMetre stamina a metre; a climb the pool can't afford flies the part it
+   *  can and ends there, refused as winded. */
   async climbTo(alt: number): Promise<ActResult> {
     await this.a.loadBodyBones();
     const cap = this.flightAllowed();
@@ -502,7 +503,7 @@ export class AgentFlight {
     return glide.ok ? done(where) : refused(where);
   }
 
-  /** The trusted-event seam, unchanged: the body cannot cry wolf, so these are
+  /** The trusted-event seam: the body cannot cry wolf, so these are
    *  NOT verbs the pilot may call. Reachable only from a rehearsal control or,
    *  later, the Connectome adapter. */
   flightBodyDown(eventId: string): ActResult {

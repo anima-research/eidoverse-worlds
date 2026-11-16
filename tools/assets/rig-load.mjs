@@ -13,9 +13,6 @@ export { worldPositions };
 
 export const VRM_DIR = fileURLToPath(new URL('../../assets/opt/eidoverse/assets/vrms/', import.meta.url));
 
-/** Every shipped rig, as { name, P } where P maps humanoid bone -> world rest
- *  position. Rigs without a humanoid extension or without hips are skipped
- *  loudly rather than silently. */
 /** The rigs the world offers that assets/opt does not hold: served straight from the library, and claude is the DEFAULT
  *  body. Opt-in, so the ragdoll's measured baseline is not silently re-based; the reach suites take it. [] when the
  *  library is not on disk. */
@@ -62,6 +59,9 @@ export function fixtureRig(name) {
   return { ...rigFromGltf(name, g), fixture: true };
 }
 
+/** Every shipped rig, as { name, P } where P maps humanoid bone -> world rest
+ *  position. A rig without a humanoid extension or without hips is returned
+ *  as { name, err }, never dropped silently. */
 export function rigs() {
   const out = [];
   for (const f of readdirSync(VRM_DIR).filter((n) => n.endsWith('.vrm') && !n.endsWith('.ktx2.vrm')).sort()) {

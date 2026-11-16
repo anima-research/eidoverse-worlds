@@ -35,7 +35,7 @@ export const GATE_DEFAULTS = {
 };
 
 /** A non-locomotion stint shorter than this (a jump, a stumble) does not earn
- *  a "gets up" — the start already told the story. Read by agent.ts. */
+ *  a "gets up" — the start already told the story. Read by agent-senses.ts. */
 export const SHORT_STINT_MS = env("EW_STINT_MIN_SEC", 5) * 1000;
 
 /** Approach refractory per identity. agent-senses.ts also requires re-arming: the

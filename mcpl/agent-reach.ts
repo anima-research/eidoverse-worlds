@@ -11,7 +11,7 @@ import { canonicalLimb, normalizeReachTarget, normalizeReachBag, describeTarget,
 import { shown } from "../shared/shown.js";
 import { DEFAULT_BODY } from "../shared/avatardefs.js";
 
-/** reach and clear_reach refuse a limb in the same words. */
+/** reach and reach {release} refuse a limb in the same words. */
 const unknownLimb = (raw: unknown, done: string) =>
   `there's no limb called ${shown(raw)}, so nothing was ${done}; limb takes leftHand, rightHand, leftFoot or rightFoot`;
 /** A point in a body's root frame → world, matching THREE's rotation.y=yaw
@@ -48,7 +48,7 @@ export class AgentReach {
     if (epoch === this.reachReadingEpoch) this.reachReading = reading;
   }
 
-  /** reach/touch ping refractory, keyed "kind:who:limb" — a hand trembling
+  /** reach/touch ping refractory, keyed "kind:limb:who" — a hand trembling
    *  across the touch threshold must not knock twice. */
   lastReachPing = new Map<string, number>();
   /** Stop streaming the limb a refusal names (the relay strips it anyway). Only that one: another limb on the same body may
@@ -296,7 +296,7 @@ export class AgentReach {
   /** Re-attest `reached` for every live reach (~2Hz off tick()). Unjoined, while a
    *  needed skeleton is missing the last attestation HOLDS (a slow load must not fire
    *  spurious release/touch edges); loads are kicked here so blindness heals. Joined,
-   *  the authority's reading decides, and a reach it doesn't answer is cleared. */
+   *  this door's body_state reading decides, and a reach it can't verify loses its attestation. */
   reachTick() {
     if (this.a.joined) {
       if (this.reachReadingBusy) return;

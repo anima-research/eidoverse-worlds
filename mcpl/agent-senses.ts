@@ -369,7 +369,6 @@ export class AgentSenses {
    * period speaks at once; the rest of the window folds into at most one line
    * of the NET result (a slider drag is one "retunes"). Radius-gated, and silent
    * for this body's own authoring (the self-echo rule, see `say`).
-   * `nowMs`/`setTimer` are injectable for tests.
    */
   noteEmitter(actor: string | undefined, id: string, before: unknown, after: unknown,
                       pos: number[] | undefined, ts: number) {
@@ -411,10 +410,10 @@ export class AgentSenses {
     this.emitterNarration.set(id, { announced, latest: announced, actor, timer });
   }
 
+  skyStamp: { seq: number; by: string } | null = null;
   /** The push half of sky perception (look() is the pull half), 1Hz off tick().
    *  The first observation after a join is SILENT; this speaks only on change.
    *  `nowMs` is injectable for tests. */
-  skyStamp: { seq: number; by: string } | null = null;
   checkSky(nowMs = Date.now()) {
     if (!this.skyState) return;
     const eff = effectiveSky(this.skyState, nowMs, this.skyCursor);
@@ -462,7 +461,6 @@ export class AgentSenses {
     return out;
   }
 
-  /** Everything said since a given point, oldest first. */
   /** Advance the unread cursor past replayed history at or before `seq` (chat
    *  a previous session already presented; the cursor persists in state.json).
    *  Entries without a real seq are never presumed seen. */
@@ -475,6 +473,7 @@ export class AgentSenses {
     this.inboxCursor = Math.max(this.inboxCursor, i);
   }
 
+  /** What was said after `seq`, oldest first: the newest `limit` of it (the log pages newest-first). */
   async missedSince(seq: number, limit = 120) {
     const { entries } = await this.a.history({ after: seq, limit, verbs: ["say"] });
     return entries.map((e) => ({ ts: e.ts, who: e.actor, text: e.args?.text ?? "", seq: e.seq }));
@@ -650,9 +649,8 @@ export class AgentSenses {
       if (typeof c.description === "string" && c.description.trim()) aff.push(quoted(c.description, 200));
       if (c.openable && typeof c.openable === "object") { const ax = readOut({ openable: c.openable, reactions: c.reactions });
         const open = openAction(c); aff.push(`${ax.can[0]}: ${ax.state[0]}${open ? ` — act {verb: "use", args: {id: "${this.a.handle(e.id)}", action: "${open}"}}` : ""}`); }
-      // A light, by either spelling (the light verb's entity, or a light
-      // component), says what it casts, read off the FOLDED record (the view
-      // thins a light's fields) through the one shared reading.
+      // A light (a light component) says what it casts, read off the FOLDED record
+      // (the view thins a light's fields) through the one shared reading.
       const lit = lightOf((this.a.st.entities as Record<string, any>)[e.id]);
       if (lit) aff.push(`light: #${lit.color.toString(16).padStart(6, "0")}, brightness ${+lit.intensity.toFixed(2)}, reaches ${+lit.range.toFixed(2)}m${lit.important ? ", important (always casts)" : ""}${lit.daytime === "full" ? ", burns at noon" : ""}`);
       // a declared collider (the collider component)
@@ -683,7 +681,6 @@ export class AgentSenses {
       // A screen with captions is named by what the captioner wrote down, never
       // pixels or sound; the rolling window is the opt-in `captions` detail level.
       if (c.captions) aff.push(describeCaptions(c.captions));
-      // A sound is named by what its author SAID is playing, never by the audio.
       // locked = nailed down: the authority refuses every move/replace/remove on
       // it. Saying so here saves an agent a refused round-trip, and names
       // the real tool where there is one

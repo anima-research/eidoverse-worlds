@@ -12,7 +12,7 @@ export const refused = (text: string): ActResult => ({ ok: false, text });
 /** A body down: limp wings, in the air (LEAF), on the ground (RAGDOLL) or sitting up (RECOVER). */
 export const isDown = (phase: string) => phase === "LEAF" || phase === "RAGDOLL" || phase === "RECOVER";
 // In the air the limp fall ends when the body reaches the ground (RAGDOLL) or with a recovery
-// (shared/flight.js bodyRecovered, which the door sends only in rehearsal); on the ground, take_off
+// (shared/flight.js bodyRecovered, which the door sends only in rehearsal); on the ground, a take-off
 // launches afresh from wherever the body lies (takeOff).
 /** Why a body that's down can't fly now, and what gets it flying again. A limp fall whose recovery began
  *  in the air (LEAF with recoverAt set) flies on by itself once it's done, unless it meets the ground
@@ -31,7 +31,7 @@ export const intYaw = (y: number) => Math.PI / 2 - y;
 /** A record (components flat, view.js) a body doesn't meet: componentspec collider.enabled or .blocks, the authority's own reading. */
 export const solidOffRecord = (e: any) => solidOff(e, "bodies");
 /** How far below its supporting surface a settled ragdoll's root lies. */
-export const RAGDOLL_ROOT_DROP = 0.7;   // client/lib/player/controller.js: vy -= 16 * dt
+export const RAGDOLL_ROOT_DROP = 0.7;
 /** A read of the world server (roster, terrain, a grid, geometry, bones) not answered by then has failed, as a host's
  *  tool call would. A read made during the join is cut sooner, by connect()'s 8 s join deadline (agent.ts). */
 export const WORLD_READ_MS = 10_000;

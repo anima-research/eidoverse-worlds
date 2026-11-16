@@ -387,7 +387,7 @@ class Session {
     if (sessions.get(this.auth.id) === this) rememberWorld(this.auth.id, w, this.home);   // a reconnect resumes here (current sessions only)
     // §3.4 audit: a join is an authorization event, and a founding join is TWO; logged as one (§13.2)
     console.log(`[${ts()}] [audit] join granted: ${this.auth.id} → world:${w}${founding ? " (created)" : ""} epoch=${this.epoch}`);
-    // no second channels/changed: PREPARE announced the roster change and the host accepted it (§3.2.3a)
+    // no second `added`: PREPARE announced the new channel and the host accepted it (§3.2.3a)
   }
 
   /** §5.4 for the CHANNEL verbs: gates `channels.publish` and `channels.lifecycle` at their verbs and `channels.typing`
@@ -485,8 +485,6 @@ class Session {
     // is still its CURRENT session (a superseded one finishing late must not overwrite)
     if (this.recordStart && sessions.get(this.auth.id) === this) rememberWorld(this.auth.id, this.agent.world, this.home);
 
-    // world events → channel traffic (the push path). Tags (§16) say what each thing IS (event-wire.ts); the door
-    // decision is made from world state (`channelOpen`, `ev.mention`), never a tag: tags describe, never authorize.
     // ── MEDIA BRIDGE ─────────────────────────────────────────────────────
     // The SFU lets only the embodied primary (this door) publish, but the audio is a local synthesizer's. With
     // EIDO_MEDIA_PORT set, the door relays media-signalling frames on LOOPBACK only (it carries the authority to
@@ -494,6 +492,8 @@ class Session {
     const mediaPort = Number(process.env.EIDO_MEDIA_PORT ?? 0);
     if (mediaPort > 0) this.startMediaBridge(mediaPort);
 
+    // world events → channel traffic (the push path). Tags (§16) say what each thing IS (event-wire.ts); the door
+    // decision is made from world state (`channelOpen`, `ev.mention`), never a tag: tags describe, never authorize.
     this.agent.onEvent = (ev) => {
       // §16.2 sender facet: a status is only its own declaration (PROTOCOL §6a rule 3), carried verbatim as
       // metadata.declares; only "agent" maps to a tag (chat:from-agent, declaration.ts senderFacet), and
@@ -814,7 +814,6 @@ class Session {
     return { delivered: true };
   }
 
-  // vision is the world's own API: the sequencer routes /snap to whatever renderer serves that world
   /** The session's half of the shared tool table (tools.ts): per-identity persistence, the push/hold truth for
    *  ambient activity, the catch_up cursor, and the travel machinery only a channel session has. */
   private toolCtx(): ToolCtx {

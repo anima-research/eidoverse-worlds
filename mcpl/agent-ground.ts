@@ -125,7 +125,7 @@ export class AgentGround {
         return;
       }
     }
-    if (rev !== this.terrainRev) return;   // a newer terrain arrived while this one's grid was in flight
+    if (rev !== this.terrainRev) return;   // a newer terrain started while this one loaded
     this.pendingTerrain = null;
     const flat = flatHeightOf(args);   // a flat terrain is level ground at its height: no mesh to build
     const t = flat !== null ? { heightAt: () => flat } : (globalThis as any).makeTerrain({ ...args, layers: [] });
@@ -386,7 +386,7 @@ export class AgentGround {
     if (this.hasActiveMotion(before) || this.a.mounts.has(id)) { this.dropSupport(id); return; }
     const [g, mesh] = await Promise.all([this.geomFor(before.model), this.meshFor(before.model)]);
     // Re-read and re-CHECK: the id may have been removed and respawned as
-    // something else while its geometry was in flight (hence the lib comparison).
+    // something else while its geometry was in flight (hence the model comparison).
     const e = this.a.entities.get(id);
     if ((!g && !mesh) || !e || e.model !== before.model) return;
     // started moving, or got mounted, while its geometry was in flight —

@@ -1,6 +1,5 @@
-// A tool, not a gate test: the CLI that measures a model before its hash joins test/fixtures/sim-ground-assets.json.
-// Re-measure a candidate ground-smoke response before adding its hash to the
-// fixture manifest. bun tools/assets/ground-asset-measure.ts path/to/model.glb
+// A tool, not a gate test: re-measures a candidate ground model before its hash joins test/fixtures/sim-ground-assets.json.
+//   bun tools/assets/ground-asset-measure.ts path/to/model.glb
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { summarizeGlb } from '../../server/geometry.ts';

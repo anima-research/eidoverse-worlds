@@ -169,10 +169,10 @@ function stepSides(ok: (Vec2 | null)[]): Vec2[] {
 
 type InboxItem = { ts: number; kind: "say" | "arrive" | "leave" | "act"; who: string; text?: string; seq?: number | null };
 
-// A canned "knocked over" pose, for when the ragdoll sim (physics.ts) is unavailable.
 /** One bone of a held pose: a rotation, or {q, t, s} (shared/humanoid.js poseChannels). */
 type PoseValue = number[] | { q?: number[]; t?: number[]; s?: number[] | number };
 
+// A canned "knocked over" pose, for when the ragdoll sim (physics.ts) is unavailable.
 const DOWNED_POSE: Record<string, number[]> = {
   spine: [0.6, 0, 0, 0.8], chest: [0.5, 0, 0, 0.87], neck: [0.3, 0, 0, 0.95],
   leftUpperArm: [0, 0, -0.9, 0.44], rightUpperArm: [0, 0, 0.9, 0.44],
@@ -191,17 +191,17 @@ export class WorldAgent {
   pos = { x: 0, y: 0, z: 0 };
   yaw = 0; speed = 0; clip = "idle";
   private target: (Vec2 & { run: boolean; tolerance?: number; y?: number }) | null = null;
-  /** Remaining validated centerline waypoints (walkTo). Only the destination uses
-   * the caller's tolerance; intermediate waypoints are reached exactly, or within NAV_NUDGE on a navgrid route. */
-  /** …each with the floor height the route stands on there, when the navgrid planned it (the authority is asked for
-   *  stretches at that height: up a stair, the stretch's end is on the stair, not the floor beneath it) */
+  /** Remaining validated centerline waypoints (walkTo). Only the destination uses the caller's tolerance; intermediate
+   *  waypoints are reached exactly, or within NAV_NUDGE on a navgrid route. Each carries the floor height the route stands
+   *  on there, when the navgrid planned it (the authority is asked for stretches at that height: up a stair, the stretch's
+   *  end is on the stair, not the floor beneath it). */
   private legs: (Vec2 & { y?: number })[] = [];
   private walkTolerance: number = MOVER.arrive.tolerance;
   /** The height the walk under way stands at, wherever it is: the live terrain for a terrain walk, the admitted floor
    *  for a floor walk. Null when no walk is under way. */
   private walkHeightAt: ((x: number, z: number) => number) | null = null;
-  /** Why the last walkTo() call was refused (its arguments, or no route), or
-   * null when accepted. Planning is synchronous, so read it right after walkTo(). */
+  /** Why the last walk planned was refused (its arguments, or no route), or null when accepted. A plan can wait for
+   *  placed geometry (walkTo), so a caller that needs its own request's refusal passes walkTo a `receipt`. */
   walkRefusal: string | null = null;
   /** This body's standing height (rigbones.ts bodyHeightFor) — what water depth is measured against. */
   bodyH: number | null = null;
@@ -224,7 +224,7 @@ export class WorldAgent {
    *  it rides the pose packet and is never a log verb, because it is a moment,
    *  not a change to the world. `null` clears. */
   heldPose: Record<string, PoseValue> | null = null;
-  /** Where heldPose came from. An AUTHORED pose (the pose tool, a puppet, the
+  /** Where heldPose came from. An AUTHORED pose (the anim tool, a puppet, the
    *  server's settled memory) is a place: it survives walking, posture changes
    *  and sleep. A PHYSICS pose (sim frame, drag stream, knockdown slump) is a
    *  moment: it only ever leaves this process under the "ragdoll" clip, and any
@@ -277,10 +277,8 @@ export class WorldAgent {
   /** a shove gave a thing this body's momentum: for a moment it walks at most what it kept (shared/shove.js keptOf) */
   private walkCap: { v: number; until: number } | null = null;
   entities = new Map<string, Entity>();
-  /** who/what occupies what: mount verbs, keyed by the occupant (body or thing) */
-  /** Every mount's full wire shape — offset/yaw OVERRIDE socket defaults in
-   *  the world transform (#82), so dropping them here made the composed
-   *  position disagree with every renderer. */
+  /** Who or what occupies what, keyed by the occupant (a body or a thing), in the mount's full wire shape: its
+   *  offset/yaw/q OVERRIDE the socket's defaults in the world transform (#82), as every renderer composes it. */
   mounts = new Map<string, { to: string; offset?: number[]; yaw?: number; q?: number[] }>();
   /** Bodies' seats are PRESENCE (bodies aren't entities, nothing is logged): a body's pose frame carries
    *  `seat: {to: <socket id>}` while it sits (an older client's {to: host, slot} is read as that host's socket of that
@@ -374,7 +372,7 @@ export class WorldAgent {
   inbox: InboxItem[] = [];
   pings: { ts: number; kind: "mention" | "approach" | "depart" | "reach" | "touch"; who: string; text?: string }[] = [];
   onPing: ((p: { ts: number; kind: string; who: string; text?: string }) => void) | null = null;
-  /** live world events (say/arrive/leave/activity) — the channel fan-out hook */
+  /** live world events (say, act, arrive, leave, activity, weather, world-change) — the channel fan-out hook */
   onEvent: ((ev: { ts: number; kind: "say" | "arrive" | "leave" | "act" | "activity" | "weather" | "world-change"; who: string; text?: string; mention?: boolean }) => void) | null = null;
   /** MEDIA seam. The SFU's publish path is gated to the embodied primary, which
    *  for an agent is this server, so the door relays the media-signalling frames
@@ -578,7 +576,7 @@ export class WorldAgent {
     console.error(`[agent ${this.name}] support seam on ${id} — ${why}`);
   }
 
-  /** A build act (create/place/light/remove) near this body counts as activity. */
+  /** A build act (a thing made, moved or removed) near this body counts as activity. */
   private noteBuild(actor: string | undefined, pos: number[] | undefined | null) {
     if (!actor || actor === this.name || actor === "world") return;
     if (pos && Math.hypot(pos[0] - this.pos.x, pos[2] - this.pos.z) > this.activityRadiusM) return;
@@ -664,9 +662,9 @@ export class WorldAgent {
               if (typeof msg.until === "number") { clearTimeout(timeout); reject(new Error(words)); }
               else this.joinRefused = words;
             } else {
-              // A mid-life refusal. Verbs are fire-and-forget, so this is the only
-              // place the answer lands: kept for a tool call (modOutcome) and in
-              // the inbox for a later look().
+              // A mid-life refusal of a message with no reply of its own (a puppet, a moderation message; a request
+              // answers on its reply): the only place the answer lands, kept for a tool call (tools.ts
+              // presenceRefusal, modOutcome) and in the inbox for a later look().
               this.lastRefusal = { ts: Date.now(), text: String(msg.error ?? "refused") };
               this.inbox.push({ ts: Date.now(), kind: "act", who: "world", text: `refused: ${msg.error}` });
             }
@@ -1025,9 +1023,6 @@ export class WorldAgent {
     return this.people.get(who)?.declares ?? null;
   }
 
-  /** Reconcile the derived maps from the folded state — the ONLY writer of
-   *  this.entities/this.mounts outside the sim stamp. Fresh objects each
-   *  pass: nothing stale survives a spawn-replace or a fold-side cascade. */
   /** Every placed thing's id in the fold (the hierarchy tools walk them). */
   foldedIds(): string[] { return Object.keys(this.st.entities); }
   /** × my speed at p: a physics-volume {kind: speed} (shared/zone.js, the client's and the authority's reading), once per view */
@@ -1080,6 +1075,9 @@ export class WorldAgent {
     return c ? Object.fromEntries(Object.entries(c).map(([k, v]) => [k, v === REDACTED ? REDACTED : structuredClone(v)])) : null;
   }
 
+  /** Reconcile the derived maps from the folded state — the ONLY writer of
+   *  this.entities/this.mounts outside the sim stamp. Fresh objects each
+   *  pass: nothing stale survives a spawn-replace or a fold-side cascade. */
   private reconcileFromFold() {
     const seen = new Set<string>();
     for (const [id, e] of Object.entries(this.st.entities)) {
@@ -1100,8 +1098,8 @@ export class WorldAgent {
     for (const id of [...this.entities.keys()]) if (!seen.has(id)) this.entities.delete(id);
     // a structure's cached plan goes with the structure (a re-attached one is planned afresh)
     for (const id of [...this.ground.plans.keys()]) if (!(this.entities.get(id) as any)?.structure) this.ground.plans.delete(id);
-    // both mount species land in one view, as the old fold kept them:
-    // entity cargo rides ent.parent, bodies ride st.mounts
+    // both mount species land in one view: entity cargo rides ent.parent (the fold),
+    // bodies ride their seats (bodySeats: presence)
     this.mounts.clear();
     for (const [id, e] of Object.entries(this.st.entities)) {
       const p = (e as any).parent;
@@ -1315,7 +1313,7 @@ export class WorldAgent {
     return hit.map((a) => a.name);
   }
   /** Every tick: an anim that lasts ends when what holds it is gone (a walk took the clip, a ragdoll, a clear, the wings
-   *  opened), with why: moved, knocked over, cleared, replaced. */
+   *  opened), with why: moved, knocked over, cleared, replaced, stopped. */
   private watchAnim() {
     for (const a of [...this.anims]) {
       const end = (why: string) => this.animEnded(why, (b) => b === a);
@@ -1339,8 +1337,6 @@ export class WorldAgent {
     this.watchAnim();
     if (!this.joined) return;
     const dt = TICK_MS / 1000;
-    // The world's physics (@world.physics-engine): stamp where each flying thing IS into the entity view (replica.js
-    // simAt, the state every renderer draws), so look() sees a punted crate where it is. Support rebuilds at rest.
     // a heightmap terrain waiting on its grid: ask again (requestGrid backs off by itself), and build the
     // waiting bag — only if it is still the newest — the moment the grid is here
     const pend = this.ground.pendingTerrain;
@@ -1353,6 +1349,8 @@ export class WorldAgent {
     const simShape = this.replica?.sim?.sim?.terrain?.shape;
     const simReady = shapeReady(simShape);
     if (!simReady) void requestGrid(simShape.heightmap.grid);
+    // The world's physics (@world.physics-engine): stamp where each flying thing IS into the entity view (replica.js
+    // simAt, the state every renderer draws), so look() sees a punted crate where it is. Support rebuilds at rest.
     const sim = simReady ? this.replica?.simAt?.(this.serverNow()) : null;
     if (sim?.bodies) {
       for (const sid in sim.bodies) {
@@ -1532,7 +1530,8 @@ export class WorldAgent {
   private bodyNotice(who: string, text: string) {
     const ts = Date.now(); this.inbox.push({ ts, kind: "act", who, text }); this.onEvent?.({ ts, kind: "act", who, text });
   }
-  /** Consent first, then the real tumble (physics.ts HeadlessBody), the canned slump only when the sim can't serve. */
+  /** The real tumble (physics.ts HeadlessBody), the canned slump only when the sim can't serve. Consent was judged before
+   *  this is called: by the authority, or the server's relay. */
   knockDown(by: string, lean: number[] | null, notice: string) {
     if (this.draggedBy) return;   // consent is the authority's: a shove my table refuses never reaches me (it sends the table on join)
     if (this.flight) this.endFlight("knockdown");   // the tumble owns the body from here, aloft or not (#298)
@@ -1677,7 +1676,7 @@ export class WorldAgent {
   // A flying body owns its own position, as a walking one does: the integrator
   // runs HERE, at the tick rate (the spec's authority model: one deterministic
   // function, the server's verb-receipt timestamps as tie-breaker). A sortie is
-  // just take_off, climb_to, glide_to called in turn.
+  // just takeOff, climbTo, glideTo called in turn.
 
   /** null when not flying. Holds the integrator's state between ticks. */
   flight: any = null;
@@ -1960,7 +1959,7 @@ export class WorldAgent {
     return !!this.flight || !!this.myOccupancy || !!this.draggedBy || this.pins.size > 0 || !!this.simTicker || this.feetSettling;
   }
   /** Feet off the ground with nothing holding them: falling under GRAVITY (tickInWorld; stepFeet with the colliders
-   *  loaded). A walk asked waits for the ground; take_off is refused. */
+   *  loaded). A walk asked waits for the ground; a take-off is refused. */
   aloft() { return !this.grounded && !this.held() && this.feetOffGround(); }
   /** The feet above what holds them up: the colliders' floor where loaded (feetAt), else the storey or terrain, or the
    *  water's surface, where a body floats. */
@@ -2171,8 +2170,8 @@ export class WorldAgent {
   // ground or fall toward it under gravity.
   vy = 0;
   grounded = true;
-  /** What the route planner has learned about this world's columns, good
-   *  until the colliders change (physics.ts collidersGeneration). */
+  /** What the route planner has learned about this world's columns, good until its key changes (walkNow's navKey: the
+   *  colliders, the committed terrain, what the walk may walk into). */
   private navGrid: { gen: string; grid: ReturnType<typeof makeNavGrid> } | null = null;
   /** How close counts as reaching an intermediate waypoint of the walk under way. */
   private legTolerance = 0;
@@ -2519,10 +2518,10 @@ export class WorldAgent {
       : "this body is reconnecting to the world, so nothing was sent; it rejoins on its own once the world answers, so try again shortly");
   }
 
-  /** One request to the world's authority, answered by it: {ok: true, …} or {ok: false, refused: {code, reason,
-   *  fix}}. */
   /** How long request() waits for the authority's answer (as net.js); a test shortens it (tool-replies-test #53). */
   requestTimeoutMs = 8000;
+  /** One request to the world's authority, answered by it: {ok: true, …} or {ok: false, refused: {code, reason,
+   *  fix}}. */
   request(verb: string, args: Record<string, unknown> = {}): Promise<any> {
     if (!this.joined || this.ws?.readyState !== 1) return Promise.resolve({ ok: false, refused: { code: "not-joined", reason: "not in a world" } });
     // speech ends composing, by whichever route it's sent (say(), or act {verb: "say"}): the throttle clears, and whoever
@@ -2579,7 +2578,7 @@ export class WorldAgent {
   }
 
   // ---- moderation ----
-  // Per-world kick/ban/unban are requests (door()); this is the server's own
+  // Per-world kick/ban/unban are requests (request()); this is the server's own
   // moderation messages and a way to hear the world's answer.
 
   /** The world's most recent mid-life refusal / moderation reply. */
@@ -2615,7 +2614,7 @@ export class WorldAgent {
     // primary, so an agent that wants to HEAR sends it through here. It's a
     // boolean about our own ears.
     // `voice-moderate` is DELIBERATELY NOT HERE: muting someone for everyone is
-    // a moderation act (kick/ban tools, with their rights check), and a sidecar
+    // a moderation act (the moderation verbs, with their rights check), and a sidecar
     // is a process, not an identity.
     if (t !== "sfu-answer" && t !== "sfu-ice" && t !== "sfu-want-negotiate"
         && t !== "sfu-pos" && t !== "voice-consent") {
@@ -2627,8 +2626,8 @@ export class WorldAgent {
 
   /** Wait briefly for the world's answer to a moderation act issued at t0: a
    *  `mod` confirmation or an `error` refusal (a log echo isn't read; a world
-   *  ban answers on its request's reply, tools.ts). Verbs are fire-and-forget;
-   *  moderation deserves a real answer. */
+   *  ban answers on its request's reply, tools.ts). These messages have no reply
+   *  of their own, so this is how a tool hears the answer. */
   async modOutcome(t0: number, ms = 1500): Promise<string | null> {
     const deadline = Date.now() + ms;
     while (Date.now() < deadline) {
@@ -2639,7 +2638,7 @@ export class WorldAgent {
     return null;
   }
 
-  // extra carries ONLY the spoken-say protocol trio, guarded with the same
+  // extra carries only `to` and the spoken-say trio, the trio guarded with the same
   // shapes the server enforces. A malformed trio → plain say.
   say(text: string, extra?: { spoken?: boolean; utt?: number; t0?: number; to?: string }): Promise<any> {
     // (speech ends composing: request() clears the typing throttle and calls onSaid for every say)
@@ -2736,7 +2735,7 @@ export class WorldAgent {
     }
   }
 
-  /** Play a one-off animation on yourself — relayed once, never logged.
+  /** Play live tracks on yourself, once or looping (`loop`) — relayed, never logged.
    *  Over your held pose and other animations; `replace` ends them first. */
   animate(data: { dur: number; loop?: boolean; replace?: boolean; tracks: Record<string, { t: number; q: number[] }[]> }) {
     // Sent or refused, as puppet() is: an animation that never left must not read as playing.
@@ -2750,7 +2749,7 @@ export class WorldAgent {
    *  `ragdoll: true` asks it to go limp; `{lean:[x,y,z]}` (m/s) says which
    *  way the shove sends it — the receiver simulates and caps for itself. */
   puppet(target: string, spec: { pose?: Record<string, PoseValue | null>; merge?: boolean; anim?: unknown; ragdoll?: boolean | { lean: number[] } }) {
-    // Sent or refused, as verb() is: a request that never left must not read as made.
+    // Sent or refused, as sendMod() is: a request that never left must not read as made.
     if (!this.joined || this.ws?.readyState !== 1) throw this.notJoined();
     this.ws.send(JSON.stringify({ type: "puppet", target,
       pose: spec.pose ?? null, ...(spec.merge ? { merge: true } : {}), anim: spec.anim ?? null, ragdoll: spec.ragdoll ?? null }));
@@ -2778,8 +2777,8 @@ export class WorldAgent {
     });
   }
 
-  /** The world's flight recorder: why things bounced — denied verbs, rejected
-   *  shapes, rate limits, and reaction outcomes (fired / skipped / failed).
+  /** The world's flight recorder: why things bounced — every request the authority refused (rights, locks,
+   *  shapes, rate limits, bans), and with `script` / `scripts`, what the world's scripts did.
    *  The log answers "what happened"; this answers "why didn't it". */
   worldDebug(opts: { limit?: number; kinds?: string[]; script?: string; scripts?: boolean } = {}):
       Promise<{ events: any[]; status?: string }> {
