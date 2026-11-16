@@ -26,7 +26,6 @@ const ALLOW: [where: string, paths: string[] | null, why: string][] = [
   ["test/protocol/catalogue-check.ts", ["shared/protocol/labmodels.js"], "checks that it is gone"],
   ["test/shared/shape-import-test.ts", ["shared/protocol/shaperepair.js"], "checks that it is gone"],
   ["test/protocol/build-check.ts", ["client/lib/newscript.js"], "its fallback imports the planner by its pre-reorg name, for an older tree"],
-  ["test/protocol/names-check.ts", ["client/lib/seats.js", "client/lib/seatedit.js", "client/lib/seatbody.js"], "the old names it checks are gone"],
   ["test/protocol/roles-check.ts", ["tools/protocol/import-v1/translate-v1.js", "shared/protocol/translate-v1.js"], "the translator's homes in an older --tree"],
   ["shared/oldformat.js", ["docs/TRANSLATING-OLD-WORLDS.md"], "the URL server/routes.ts serves that doc at"],
   ["test/protocol/upgrade-check.ts", ["docs/TRANSLATING-OLD-WORLDS.md"], "the URL server/routes.ts serves that doc at"],

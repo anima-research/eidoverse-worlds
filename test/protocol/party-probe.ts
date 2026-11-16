@@ -28,7 +28,7 @@ process.env.TRUST_NAMES = "1";
 const CRATE = "eidoverse/assets/models/crate_large_blue.glb";
 let worldsDir = "";
 import { inPage } from "../harness/idalias.ts";
-import { until, tryUntil, pageWaiter } from "../gate/wait.ts";
+import { until, tryUntil, pageWaiter, pause } from "../gate/wait.ts";
 import { helloOf } from "../../shared/protocol/hello.js";
 // R 10-17: the page names what it makes with placeholders (test/harness/idalias.ts pageIds); NODE holds the minted ids
 const NODE = new Map<string, string>(); const NAMES = ["box2", "bench5", "lockd", "signbox", "bpbox", "child1"];
@@ -329,7 +329,8 @@ try {
     check("X2 the World inspector's Terrain card offers the ground shapes when there's no terrain yet", card && card.some((r: any) => r.tiles >= 2), card);
     const t0 = !!disk().entities["@world"]?.c.terrain; const nX = entries().length;
     const picked = await clickEl(`(() => { const h = [...${insp}.querySelectorAll('.sp-group')].find((g) => /Terrain/.test(g.textContent)); for (let n = h?.parentElement.nextElementSibling; n && !n.classList.contains('sp-f-group'); n = n.nextElementSibling) { const b = n.querySelector('button'); if (b) return b; } return null; })()`);
-    const wrote = picked && !t0 && await waitDisk(() => !!disk().entities["@world"]?.c.terrain, 5000); await sleep(800);
+    const wrote = picked && !t0 && await waitDisk(() => !!disk().entities["@world"]?.c.terrain, 5000);
+    await pause("a second write, if the pick made one, has time to land", 800);
     const acts = entries().slice(nX).filter((e: any) => e.kind === "request").map((e: any) => e.verb);
     check("X3 …and a pick there writes the terrain (one act)", wrote && acts.length === 1, { picked, t0, acts });
     await shot("X-terrain-card");
