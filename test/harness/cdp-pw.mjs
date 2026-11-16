@@ -153,7 +153,9 @@ function makePage(C, S, { targetId, browserContextId, metrics }) {
     click: async (x, y, { button = 'left' } = {}) => { await mouse.move(x, y); await mouse.down({ button }); await mouse.up({ button }); },
     wheel: async (dx, dy) => { await send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: mx, y: my, deltaX: dx, deltaY: dy, modifiers: mods }); },
   };
-  const keyEvent = async (type, d) => send('Input.dispatchKeyEvent', { type, key: d.key, code: d.code, windowsVirtualKeyCode: d.vk, nativeVirtualKeyCode: d.vk, modifiers: mods, ...(type === 'keyDown' && d.text && !(mods & ~MOD.Shift) ? { text: d.text } : {}) });
+  // Shift held turns a letter's key and text upper case, as playwright's keyboard does
+  const shifted = (d) => (mods & MOD.Shift) && /^[a-z]$/.test(d.key) ? { ...d, key: d.key.toUpperCase(), text: d.text && d.text.toUpperCase() } : d;
+  const keyEvent = async (type, d0) => { const d = shifted(d0); return send('Input.dispatchKeyEvent', { type, key: d.key, code: d.code, windowsVirtualKeyCode: d.vk, nativeVirtualKeyCode: d.vk, modifiers: mods, ...(type === 'keyDown' && d.text && !(mods & ~MOD.Shift) ? { text: d.text } : {}) }); };
   const keyboard = {
     down: async (k) => { if (MOD[k]) mods |= MOD[k]; await keyEvent('keyDown', keyDef(k)); },
     up: async (k) => { await keyEvent('keyUp', keyDef(k)); if (MOD[k]) mods &= ~MOD[k]; },

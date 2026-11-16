@@ -831,7 +831,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
           if (no) return { content: [{ type: "text", text: `anim {ragdoll} refused (consent class: shove): ${no}` }], isError: true };
           return text(`asked ${to} to go limp (the server passed it on; their body has the last word)`);
         }
-        ag.knockDown(ag.name, null, "(you go limp)");
+        ag.knockDown(ag.name, null, "goes limp");
         return text("you go limp and fall — walking, or anim {stop: true}, stands you back up");
       }
       if (a.posture != null) {

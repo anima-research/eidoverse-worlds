@@ -314,8 +314,10 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   const cleared = await call("anim", { stop: true });
   ok(!posed.isError && /"playing":"live","mode":"hold"/.test(T(posed)) && !cleared.isError && ag.heldPose == null, "AT6e anim {joints} holds a live frame; anim {stop: true} releases it (clear_pose folded)", [T(posed).slice(0, 120), T(cleared), ag.heldPose]);
   // ragdoll = a body going limp: anim {ragdoll: true} (R 10-14: one vocabulary with the browser;: shoving is moving someone else; going limp is a body state)
-  const limp = await call("anim", { ragdoll: true });
+  const nIn = ag.inbox.length; const limp = await call("anim", { ragdoll: true });
   ok(!limp.isError && /limp|down/.test(T(limp)) && ag.clip === "ragdoll", "AT6p anim {ragdoll: true} drops your own body limp (clip ragdoll)", [T(limp), ag.clip]);
+  const limpAct = ag.inbox.slice(nIn).find((i: any) => i.kind === "act");
+  ok(limpAct?.who === ag.name && limpAct?.text === "goes limp", "AT6p …and your inbox reads it as your own act, `* <name> goes limp` (not a bracketed aside)", [limpAct]);
   const up = await call("anim", { name: "stand" });
   ok(!up.isError && ag.clip !== "ragdoll", "AT6p …and standing picks it back up", [T(up), ag.clip]);
   const k2 = vic.msgs.length; const theirs = await call("anim", { ragdoll: true, target: "Vic" });
