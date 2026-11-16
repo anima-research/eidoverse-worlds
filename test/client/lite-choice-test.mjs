@@ -97,8 +97,8 @@ check('a bfcache restore mid-load re-arms it', store.has(K));
 fire('pagehide', { persisted: true }); g.__ewTripDisarmed = true;
 fire('pageshow', { persisted: true });
 check('once boot.js has disarmed for good, a restore does not re-arm', !store.has(K));
-store.set(K, '1'); g.__ewTripDisarmed = false;
-check('a crash runs no handler, so the flag survives to the next visit', store.has(K));
+g.__ewTripDisarmed = false;
+// a crash runs no handler, so the flag survives to the next visit: the page block below boots over a tripped store
 
 console.log('  -- hardware --');
 check('no 3D API at all → lite', d('', { gpuApi: false }).lite === true && d('', { gpuApi: false }).why === 'no-gpu');

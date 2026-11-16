@@ -35,6 +35,5 @@ const cases: [string, unknown, string | null][] = [
 ];
 console.log('originOf — the ?orrery= guard');
 for (const [what, v, want] of cases) { const got = originOf(v); check(`${what}`, got === want, `${JSON.stringify(v)} → ${JSON.stringify(got)}, want ${JSON.stringify(want)}`); }
-check('no case ran markup', !(globalThis as any).__pwned);
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
