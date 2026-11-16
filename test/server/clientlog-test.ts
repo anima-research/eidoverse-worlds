@@ -101,8 +101,9 @@ ok(!existsSync(join(sd, "w", "a.log")) && existsSync(join(sd, "w", "b.log")) && 
 store.append("w", "b", "more\n", t0 + 3000);
 ok(readFileSync(join(sd, "w", "b.log"), "utf8").endsWith("more\n"), "D4 …and keeps taking lines (never 'full')");
 const old = join(sd, "x", "c.log"); utimesSync(old, new Date(t0), new Date(t0));
+const younger = new Date(t0 + 2 * 86_400_000); utimesSync(join(sd, "w", "b.log"), younger, younger);   // on the same clock as the retire
 const store2 = new ClientLogStore(sd, store.caps); store2.retire(t0 + 15 * 86_400_000);
-ok(!existsSync(old) && existsSync(join(sd, "w", "b.log")), "D5 a file 15 days old is retired; a 3-second-old one stays (a fresh store scans what is on disk)");
+ok(!existsSync(old) && existsSync(join(sd, "w", "b.log")), "D5 a file 15 days old is retired; a 13-day-old one stays (a fresh store scans what is on disk)");
 // ---- the rails are settings (0 = off), and the 14 days hold on the clock, not only on a post
 { utimesSync(join(sd, "w", "b.log"), new Date(t0), new Date(t0)); const k2 = new ClientLogStore(sd, { ...store.caps, keepMs: 0 }); k2.retire(t0 + 400 * 86_400_000);
   ok(existsSync(join(sd, "w", "b.log")), "D6 CLIENTLOG_KEEP_DAYS=0: a file a year old stays (the size caps alone evict)"); }
