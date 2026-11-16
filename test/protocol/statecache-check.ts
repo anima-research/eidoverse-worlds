@@ -19,6 +19,7 @@
 import "../harness/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { scratch } from "../gate/common.ts";
 
 const root = scratch("statecache");
@@ -106,7 +107,7 @@ async function said(f) { const lines = [], ow = console.warn, oe = console.error
     "SC3b an unreadable fold source: the cache is refused with why (no throw), and the failure is memoised (one read)", { exit: p.exitCode, o, err: p.stderr.toString().slice(0, 300) }); }
 
 // ---- SC3c: a change to fold.js or to any module it imports, transitively, moves the foldKey (so the cache is refused) ----
-{ const repo = path.resolve(new URL("../..", import.meta.url).pathname), seen = new Set(), todo = ["shared/protocol/fold.js"];
+{ const repo = fileURLToPath(new URL("../..", import.meta.url)), seen = new Set(), todo = ["shared/protocol/fold.js"];
   while (todo.length) { const f = todo.pop(); if (seen.has(f)) continue; seen.add(f);
     const src = fs.readFileSync(path.join(repo, f), "utf8");
     for (const m of src.matchAll(/(?:^|\n)\s*(?:import|export)\b[^;]*?\bfrom\s*["'](\.{1,2}\/[^"']+)["']/g)) todo.push(path.relative(repo, path.resolve(path.dirname(path.join(repo, f)), m[1])).split(path.sep).join("/")); }
