@@ -131,12 +131,15 @@ for (const d of [...RUNTIME, ...DEPLOYED]) oscWalk(path.join(ROOT, d));
 for (const rel of OSC_DOCS) { const p = path.join(ROOT, rel); if (fs.existsSync(p)) oscScan(rel, fs.readFileSync(p, "utf8"), OSC_DOC); else offences.push(`${rel}: missing (OSC_DOCS lists it)`); }
 // AGENTS.md house rule 6: "person" set against "agent" meant human (say human); "humans and AIs" splits kinds (say participants)
 const PERSON = /(?<!["'`])\b(?:person|people)\s+(?:\(\s*)?(?:or|and|nor|vs\.?)\s+agents?\b|\bagents?\s+(?:or|and|nor|vs\.?)\s+(?:person|people)\b(?!["'`])/i;
-const PERSON_DOCS = ["AGENTS.md", "DESIGN.md", "README.md", ...fs.readdirSync(path.join(ROOT, "docs")).filter((f) => f.endsWith(".md") && f !== "docs/history/INCIDENTS.md").map((f) => `docs/${f}`), "spec/PROTOCOL.md"];
+const PERSON_DOCS = ["AGENTS.md", "DESIGN.md", "README.md", ...(fs.readdirSync(path.join(ROOT, "docs"), { recursive: true }) as string[]).map((f) => `docs/${f.split(path.sep).join("/")}`).filter((f) => f.endsWith(".md") && f !== "docs/history/INCIDENTS.md").sort(), "spec/PROTOCOL.md"];
+// each allowed line, with why
+const PERSON_OK: [string, RegExp, string][] = [["docs/design/ROADMAP.md", /makes no split between humans and AIs/, "names the split in order to deny it"]];
 const SPLIT = /(?<!["'`])\b(?:people|humans)\s+and\s+AIs\b|\bAIs\s+and\s+(?:people|humans)\b(?!["'`])/i;
 // Markdown wraps a sentence across lines, so a .md file is also read two lines at a time (reported at the second line)
 const personScan = (rel: string, text: string, out: string[] = offences) => { const lines = text.split("\n"); lines.forEach((line, i) => {
   const next = rel.endsWith(".md") && i + 1 < lines.length ? lines[i + 1] : null;
   const hit = (re: RegExp): [number, string] | null => re.test(line) ? [i + 1, line] : next !== null && !re.test(next) && re.test(`${line} ${next}`) ? [i + 2, `${line.trim()} ${next.trim()}`] : null;
+  if (PERSON_OK.some(([f, re]) => rel === f && re.test(line))) return;
   const p = hit(PERSON), q = hit(SPLIT);
   if (p) out.push(`${rel}:${p[0]}: "person" set against "agent" means human: write human (AGENTS.md rule 6) — ${p[1].trim().slice(0, 100)}`);
   if (q) out.push(`${rel}:${q[0]}: "humans and AIs" splits kinds: say participants, or "humans, AIs, and whatever else comes" (AGENTS.md rule 6) — ${q[1].trim().slice(0, 100)}`); }); };
