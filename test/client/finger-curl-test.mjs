@@ -61,9 +61,11 @@ check('the runnable model matches the product’s filter expression',
 check('…and the SPEED estimate is low-passed too, not taken raw',
   /st\.dx \+= oneEuroAlpha\(CURL_D_CUTOFF, dt\) \* \(dRaw - st\.dx\)/.test(fnSrc));
 
+let lo = Infinity, hi = -Infinity;   // every filtered value any row below produced
 const step = (ms, vIndex, vGrip = 0) => { clock += ms;
   for (const h of ['left', 'right']) buttons[h] = [{ value: vIndex }, { value: vGrip }];
-  sample(); };
+  sample();
+  for (const h of ['left', 'right']) for (const k of ['index', 'grip']) { lo = Math.min(lo, fingerCurl[h][k]); hi = Math.max(hi, fingerCurl[h][k]); } };
 
 // ---- 1. a resting finger's noise is suppressed
 // a STRONGER noise case (#197): ±2% passes an unsmoothed speed estimate; this much opens the cutoff unless the D_CUTOFF
@@ -119,6 +121,6 @@ step(13.9, 0, 0); for (let i = 0; i < 40; i++) step(13.9, 0.05, 0);
 check('index and grip are filtered independently', fingerCurl.left.grip === 0 && fingerCurl.left.index > 0.04);
 
 // ---- 6. the value the WIRE sees stays in range
-check('the filtered value never leaves 0..1', fingerCurl.left.index >= 0 && fingerCurl.left.index <= 1);
+check('the filtered value never leaves 0..1 (every step of every ramp above)', lo >= 0 && hi <= 1, `min ${lo} max ${hi}`);
 
 S.done();
