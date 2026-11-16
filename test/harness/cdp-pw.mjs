@@ -108,10 +108,10 @@ function makePage(C, S, { targetId, browserContextId, metrics }) {
       const dialog = { message: () => p.message, type: () => p.type, accept: (t) => send('Page.handleJavaScriptDialog', { accept: true, ...(t !== undefined ? { promptText: t } : {}) }), dismiss: () => send('Page.handleJavaScriptDialog', { accept: false }) };
       if (handlers.dialog.size) for (const f of handlers.dialog) f(dialog); else void dialog.dismiss();
     }
-    else if (m.method === 'Network.requestWillBeSent') { const r = { url: () => p.request.url, method: () => p.request.method, postData: () => p.request.postData ?? null, headers: () => Object.fromEntries(Object.entries(p.request.headers ?? {}).map(([k, v]) => [k.toLowerCase(), v])), resourceType: () => String(p.type ?? 'other').toLowerCase(), failure: () => null }; reqs.set(p.requestId, r); for (const f of handlers.request) f(r); }
+    else if (m.method === 'Network.requestWillBeSent') { const r = { url: () => p.request.url, method: () => p.request.method, postData: () => p.request.postData ?? null, headers: () => Object.fromEntries(Object.entries(p.request.headers ?? {}).map(([k, v]) => [k.toLowerCase(), v])), resourceType: () => String(p.type ?? 'other').toLowerCase(), failure: () => null }; const prev = p.redirectResponse ? reqs.get(p.requestId) : null; if (prev) for (const f of handlers.requestfinished) f(prev); reqs.set(p.requestId, r); for (const f of handlers.request) f(r); }   // a redirect finishes its hop (playwright's shape)
     // the same request object the 'request' handlers saw (playwright's identity: a probe's Map/Set of requests matches it)
-    else if (m.method === 'Network.loadingFinished') { const r = reqs.get(p.requestId) ?? { url: () => '' }; reqs.delete(p.requestId); for (const f of handlers.requestfinished) f(r); }
-    else if (m.method === 'Network.loadingFailed') { const r = reqs.get(p.requestId) ?? { url: () => '' }; reqs.delete(p.requestId); r.failure = () => ({ errorText: p.errorText }); for (const f of handlers.requestfailed) f(r); }
+    else if (m.method === 'Network.loadingFinished') { const r = reqs.get(p.requestId) ?? { url: () => '', resourceType: () => 'other', failure: () => null }; reqs.delete(p.requestId); for (const f of handlers.requestfinished) f(r); }
+    else if (m.method === 'Network.loadingFailed') { const r = reqs.get(p.requestId) ?? { url: () => '', resourceType: () => 'other', failure: () => null }; reqs.delete(p.requestId); r.failure = () => ({ errorText: p.errorText }); for (const f of handlers.requestfailed) f(r); }
     else if (m.method === 'Page.frameNavigated' && !p.frame.parentId) { for (const f of handlers.framenavigated) f({ url: () => p.frame.url }); }
     else if (m.method === 'Fetch.requestPaused') {
       const url = p.request.url, done = { v: false };
@@ -232,7 +232,10 @@ function makePage(C, S, { targetId, browserContextId, metrics }) {
     screenshot: async ({ path: out, fullPage = false, clip } = {}) => { const { data } = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: fullPage, ...(clip ? { clip: { scale: 1, ...clip } } : {}) }); const b = Buffer.from(data, 'base64'); if (out) fs.writeFileSync(out, b); return b; },
     mouse, keyboard, touchscreen,
     cdp: send,
-    context: () => ({ newCDPSession: async () => ({ send }) }),
+    // the page's own session: send, and playwright's on/once for its events (a probe written for a CDPSession listens)
+    context: () => ({ newCDPSession: async () => {
+      const listen = (ev, fn, one) => { const off = C.listen((m) => { if (m.sessionId === S && m.method === ev) { if (one) off(); fn(m.params); } }); return off; };
+      return { send, on: (ev, fn) => { listen(ev, fn, false); }, once: (ev, fn) => { listen(ev, fn, true); } }; } }),
     bringToFront: () => send('Page.bringToFront'),
     close: async () => { try { await C.send('Target.closeTarget', { targetId }); } catch { /* gone */ } },
   };

@@ -48,9 +48,11 @@ try {
   check('…and every choice it offers is a row of XR_RES_SCALES', !!a.row && a.row.opts.every((o) => typeof a.table[o] === 'number') && a.row.opts.length === Object.keys(a.table).length, JSON.stringify(a.table));
   // what the RUNTIME is asked for, at the layer three actually creates. Whether it honours the factor is the runtime's
   // job (Chrome clamps to 0.2–1.0; IWER sizes its layer from the canvas and ignores it, so sizes can't be compared here)
+  const WANT = { auto: 1, 85: 0.85, 70: 0.7, 50: 0.5 };
+  check('XR_RES_SCALES is auto 1, 85 0.85, 70 0.7, 50 0.5', JSON.stringify(a.table) === JSON.stringify(WANT), JSON.stringify(a.table));
   const sizes = new Set();
   for (const res of a.row?.opts ?? []) {
-    const s = res === 'auto' ? a : await session(res), want = a.table[res];
+    const s = res === 'auto' ? a : await session(res), want = WANT[res];   // the spec's factors, not the table under test
     if (res !== 'auto') console.log(`  · ${res.padEnd(4)}`, JSON.stringify(s));
     sizes.add(`${s.w}x${s.h}`);
     check(`${res}: the row shows the stored pref`, s.row?.value === res, String(s.row?.value));
