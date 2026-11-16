@@ -102,8 +102,9 @@ try {
       check(`W3 ${tag}: the client is refused (status 'rejected'), never joined`, st.status === "rejected" && st.joined === false, st);
       check(`W4 ${tag}: no redial (one join sent)`, st.joins === 1, st);
       if (world === "old-x" && early) {   // the splash's 45 s ceiling and its "go in anyway" never lift it onto an empty world
-        const skip = await evalJson(`(() => { const b = document.querySelector('.sp-skip'); return !!b && getComputedStyle(b).display !== 'none' && getComputedStyle(b).pointerEvents !== 'none'; })()`).catch(() => null);
         while (Date.now() - t0 < 48000) await sleep(1000);
+        // read after the ceiling: the skip is offered AT 45 s, so a read before it can't see it
+        const skip = await evalJson(`(() => { const b = document.querySelector('.sp-skip'); return !!b && getComputedStyle(b).display !== 'none' && getComputedStyle(b).pointerEvents !== 'none'; })()`).catch(() => null);
         const late = !!(await evalJson(visible).catch(() => false));
         check(`W5 ${tag}: still on screen past the splash's 45 s ceiling, with no "go in anyway"`, late && skip === false, { late, skipOffered: skip });
       }

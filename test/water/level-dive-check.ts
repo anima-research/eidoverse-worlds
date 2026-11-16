@@ -103,7 +103,7 @@ try {
   check("LD5 looking down with W held dives, no key (R 10-28)", lookDive.diving === true && lookDive.y < floating.y - 1, JSON.stringify({ floating, lookDive }));
   check("LD6 the floating clip holds steady, idle and swimming (at most one change in 1.5 s)", idleClips.flips <= 1 && swimClips.flips <= 1 && idleClips.frames > 10, JSON.stringify({ idleClips, swimClips }));
   check("LD9 holding a thing afloat, holding C sinks me and keeps it in my hand (C is down, never throw)", made?.ok && heldAfloat === true && afterC.held === true && afterC.y < y0 - 0.3, JSON.stringify({ made: made?.ok ? true : made, crate, heldAfloat, afterC }));
-  check("LD10 …and Q throws it (the throw/punt key)", afterC.held === true && afterQ.held === false, JSON.stringify({ afterC, afterQ }));
+  check("LD10 …and Q throws it (the throw/punt key; the direct throw API never had to)", afterC.held === true && afterQ.held === false && afterQ.direct === null, JSON.stringify({ afterC, afterQ }));
   check("LD11 a world with no bounds has no edge: walking 84 m from the origin stays out there (no 78 m stage island)", unboundOk && far.bounds === null && far.r > 80, JSON.stringify({ unbound: unboundOk || unbound, far }));
   check("LD8 afloat on a lake, before any dive, the swim keys are said (look down to dive) (R 10-28)", hintAfloat === true, "");
   // headless Chrome has no working GPU: WebGPU's error scopes complain on every boot (colour-picker-bench, same filter)

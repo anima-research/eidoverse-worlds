@@ -159,8 +159,11 @@ export async function iwerInit(pg, { cloud = null } = {}) {
   });
 }
 
-/** Wait until the page has drawn `n` more animation frames: a wait on the render loop's progress, not on the clock. */
-export const drawn = (pg, n) => pg.evaluate((k) => new Promise((res) => { let i = 0; const f = () => (++i >= k ? res(true) : requestAnimationFrame(f)); requestAnimationFrame(f); }), n);
+/** Wait until the page has drawn `n` more animation frames: a wait on the render loop's progress, not on the clock.
+ *  A loop that stops (a hidden page, a lost device) rejects after 30 s instead of hanging the probe. */
+export const drawn = (pg, n) => pg.evaluate((k) => new Promise((res, rej) => {
+  const dead = setTimeout(() => rej(new Error(`drawn: ${k} animation frames not drawn in 30 s (the render loop stopped)`)), 30000);
+  let i = 0; const f = () => (++i >= k ? (clearTimeout(dead), res(true)) : requestAnimationFrame(f)); requestAnimationFrame(f); }), n);
 
 /** The visor the product shows (#xrbtn displayed). `me`: also wait for a joined avatar. */
 export async function visorShown(pg, { timeout = 90000, me = false } = {}) {

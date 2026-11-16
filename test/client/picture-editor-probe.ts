@@ -119,16 +119,20 @@ try {
 
   // D. an http link typed into src is refused in the block, and no comp goes out
   const seqBefore = await pg.evaluate((id: string) => import('/lib/world.js').then((m: any) => JSON.stringify(m.bagOf(id)?.picture)), ID);
+  // every frame the page sends from here, so "nothing was sent" is read off the wire, not only the bag
+  await pg.evaluate(() => { const g = globalThis as any; if (!g.__sentWrapped) { g.__sentWrapped = true; const send = WebSocket.prototype.send; WebSocket.prototype.send = function (d: any) { g.__sent?.push(String(d)); return send.call(this, d); }; } g.__sent = []; });
   await pg.fill('[data-pe="src"]', 'http://example.com/trollface.png');
   await pg.click('[data-pe="hang"]');
   s = await until(pg, (x) => /only https/.test(x.msg ?? ''), 5000);
   const seqAfter = await pg.evaluate((id: string) => import('/lib/world.js').then((m: any) => JSON.stringify(m.bagOf(id)?.picture)), ID);
-  check('D. an http source is refused in the block, naming the rule, and nothing was sent', /only https/.test(s.msg ?? '') && seqBefore === seqAfter && s.hung, JSON.stringify({ msg: s.msg, same: seqBefore === seqAfter }));
+  const sent = await pg.evaluate(() => ((globalThis as any).__sent as string[]).filter((d) => /trollface/.test(d)).length);
+  check('D. an http source is refused in the block, naming the rule, and nothing was sent', /only https/.test(s.msg ?? '') && seqBefore === seqAfter && sent === 0 && s.hung, JSON.stringify({ msg: s.msg, same: seqBefore === seqAfter, sent }));
   // D2. force the repaint a late echo would cause (any comp event queues one)
   // and require the refusal AND the control to survive it. Without the
   // editor-local note this reads a blank message on a fresh block.
+  await pg.evaluate(() => { (document.querySelector('[data-pe-root]') as any).__old = true; });   // the block before the repaint
   await pg.evaluate((id: string) => import('/lib/base.js').then((m: any) => m.bus.emit('comp', { id, type: 'probe-repaint', data: true })), ID);
-  await new Promise((r) => setTimeout(r, 600));   // the repaint is queued 300ms out; this is a deliberate over-wait, not a sync
+  await pg.waitForFunction(() => { const b = document.querySelector('[data-pe-root]') as any; return !!b && !b.__old; }, null, { timeout: 5000 });   // a new block: the repaint ran
   s = await state(pg);
   check('D. …and the refusal outlives a scene-panel repaint, with take down still offered', /only https/.test(s.msg ?? '') && s.down && s.hung, JSON.stringify({ msg: s.msg, down: s.down }));
 
