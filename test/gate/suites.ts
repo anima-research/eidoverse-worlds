@@ -266,6 +266,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["pretrans", "protocol/pretrans-check.ts", 1], // review 10-07 "protocol shape": the edges the Commons translation makes permanent (names, defaults, ids, refs, governance, models, privacy)
   ["soundclock", "protocol/soundclock-check.ts", 1], // a sound's shared playhead is on the server's clock (serverNow), never Date.now
   ["sound", "shared/sound-test.ts", 1],     // the sound component's meaning and look() line; 200 m, still silent at radius
+  ["picture-look", "shared/picture-look-test.ts", 1], // the agent's look() line for a picture (agent-senses saysOf): named, replaced, removed
   ["audioctx", "client/audioctx-test.ts", 1], // one AudioContext per page
   ["sound-editor", "client/sound-editor-test.ts", 1], // the sound editor block (its clock, t0, no guard); 32 world sounds at once, the radius field to 200 m
   ["skypanel", "client/skypanel-state-test.ts", 1], // the sky panel's state lines; R 10-28: every shared select commits what it shows (the world select saved nothing)
