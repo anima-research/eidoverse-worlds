@@ -217,7 +217,7 @@ registerEditor(({ id, obj, bag, commit }) => {
         <input data-pe="file" type="file" accept="${PICTURE_ACCEPT}" style="display:none">
         <button data-pe="pick" title="upload a PNG, JPEG or WebP into the store and use it">upload…</button></label>
       <label style="display:flex;flex-direction:column;gap:2px" title="${esc(DESCRIPTION_HINT)}">description <span style="color:var(--dim);font-size:11px">(what it shows, in words; ≤${PICTURE_DESCRIPTION_MAX})</span>
-        <textarea data-pe="description" maxlength="${PICTURE_DESCRIPTION_MAX}" rows="2" style="font-size:11px;font-family:inherit">${esc(cur?.description ?? '')}</textarea></label>
+        <textarea data-pe="description" rows="2" style="font-size:11px;font-family:inherit">${esc(cur?.description ?? '')}</textarea></label>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <label style="display:flex;gap:4px;align-items:center">lit
           <select data-pe="lit">${Object.entries(PICTURE_LIT).map(([k, v]) => `<option value="${k}"${k === lit ? ' selected' : ''}>${esc(v)}</option>`).join('')}</select></label>

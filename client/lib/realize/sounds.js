@@ -231,7 +231,7 @@ registerEditor(({ id, obj, bag, commit }) => {
         <input data-se="file" type="file" accept="${SOUND_ACCEPT}" style="display:none">
         <button data-se="pick" title="upload an MP3, Ogg, WAV, WebM or M4A into the store and use it">upload…</button></label>
       <label style="display:flex;flex-direction:column;gap:2px" title="${esc(SOUND_DESCRIPTION_HINT)}">description <span style="color:var(--dim);font-size:11px">(what is playing, in words; ≤${SOUND_DESCRIPTION_MAX})</span>
-        <textarea data-se="description" maxlength="${SOUND_DESCRIPTION_MAX}" rows="2" style="font-size:11px;font-family:inherit">${esc(cur?.description ?? '')}</textarea></label>
+        <textarea data-se="description" rows="2" style="font-size:11px;font-family:inherit">${esc(cur?.description ?? '')}</textarea></label>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <label style="display:flex;gap:4px;align-items:center">volume <input data-se="volume" type="range" min="0" max="1" step="0.05" value="${vol}"></label>
         <label style="display:flex;gap:4px;align-items:center">radius <input data-se="radius" type="number" min="1" max="${SOUND_MAX_RADIUS}" step="1" value="${rad}" style="width:4em"> m (silent beyond)</label>

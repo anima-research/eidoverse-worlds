@@ -99,6 +99,14 @@ q('description').value = 'four metres wide, still'; q('hang').click();
 const kept = committed.at(-1)?.[1];
 check('updating a hung picture keeps its stored width', (kept?.data ?? kept)?.width === 4, JSON.stringify(committed));
 
+console.log('\n6b. the description\'s cap is normalizePicture\'s, in graphemes, never the browser\'s (bot #333 111)');
+paint(); committed.length = 0;
+check('the description field carries no maxlength (a browser would cut a paste in UTF-16 units)', !q('description').hasAttribute('maxlength'), q('description').outerHTML.slice(0, 80));
+q('src').value = 'store/images/0123456789abcdef.png'; q('description').value = '🖼'.repeat(150); q('hang').click();
+check('150 emoji (within 200 graphemes) hang whole', committed.length === 1 && [...new Intl.Segmenter().segment(committed[0][1]?.description ?? '')].length === 150, JSON.stringify(committed[0]?.[1]?.description?.length));
+committed.length = 0; q('description').value = 'x'.repeat(201); q('hang').click();
+check('201 characters are refused, not cut', committed.length === 0 && /200/.test(q('msg').textContent), q('msg').textContent);
+
 console.log('\n7. a quad frees a link\'s texture, never a store file\'s (#565)');
 {
   Object.assign(stub.THREE, { PlaneGeometry: class { translate() {} dispose() {} }, MeshStandardMaterial: class { dispose() {} } });
