@@ -280,6 +280,13 @@ const cases: Case[] = [
       const dry = best(5, () => s.call("bob", "place", { id: "mug", on: "big", dry: true })); const real = best(5, () => s.call("bob", "place", { id: "mug", on: "big" }));
       return { dry: code(dry.r), dryMs: r1(dry.ms), dryUnits: dry.units, real: code(real.r), realMs: r1(real.ms), realUnits: real.units, budget: BUDGET, bound: r1(bound()), why: real.r?.refused?.reason }; },
     good: (o) => o.dry === "too-costly" && o.real === "too-costly" && o.dryUnits >= o.budget && o.realUnits >= o.budget && o.dryUnits <= o.budget + 1000 && o.dryMs <= o.bound && o.realMs <= o.bound && /shared by every world/.test(o.why ?? "") },
+  { id: "Q2b", what: "a place onto a top past the 2.5 cm grid's reach (10 000×) is refused too-costly at once, and the work meter stays a count after it (spend(Infinity))", run(s) { cast(s);
+      s.call("olive", "create", { id: "plinth", model: "crate", components: { transform: T0([0, 0, 0], [1000, 1, 1000]) } });
+      const mk = s.call("olive", "create", { id: "vast", model: "table", components: { transform: T0([0, 1, 0], [10, 1, 10]), parent: { to: "plinth" } } });   // a scale's bound is 1000: 10× on a 1000× parent
+      s.call("olive", "create", { id: "mug", model: "crate", components: { transform: T0([2, 0, 6000]) } });
+      const x = timed(() => s.call("bob", "place", { id: "mug", on: "vast" })); const after = timed(() => s.call("vic", "lint", { id: "mug" }));
+      return { made: show(mk), code: code(x.r), why: x.r?.refused?.reason, after: after.units, meter: METER?.units }; },
+    good: (o) => o.made === "ok" && o.code === "too-costly" && /^finding room for mug on vast/.test(o.why ?? "") && Number.isFinite(o.after) && Number.isFinite(o.meter) },
   { id: "Q3", what: "check {} on a heap of 700 things in one spot is refused too-costly inside the budget, saying what it was checking; a batch of 120 creates into the heap still lands, its warnings saying what went unchecked", run(s) { cast(s);
       fill(s, 700, () => [0, 0, 0]);
       const c = best(5, () => s.call("vic", "lint", {})); const one = best(5, () => s.call("vic", "lint", { id: "c-3" }));

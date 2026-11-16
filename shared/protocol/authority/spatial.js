@@ -27,7 +27,7 @@ const clockMs = () => globalThis.performance?.now?.() ?? Date.now();
 // every unit spent since start, on any world: tests bound a request by this count, which is the same on every machine
 export const WORK_METER = { units: 0 };
 const spend = (n, what = CTX.work.what ?? "this", fix = "ask about less at once: lint {id} checks one thing; place onto a smaller surface, or at a spot (at: [x, z])") => {
-  WORK_METER.units += n;
+  if (Number.isFinite(n)) WORK_METER.units += n;   // spend(Infinity) refuses outright: the meter stays a count
   if ((CTX.work.left -= n) < 0 || ((CTX.work.k += n) >= 64 && ((CTX.work.k = 0), clockMs() > CTX.work.until))) { CTX.work.left = -1; CTX.work.until = -Infinity;
     refuse("too-costly", `${what} would take more of the authority's time than one request may have (it's shared by every world on this server)`, fix); } };
 const GEO = new WeakMap(); const SPATIAL = new WeakMap(); const CELL = 4, BIG = 64;
