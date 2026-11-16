@@ -296,8 +296,9 @@ console.log("\n  the CLI — bodies and animation refused, objects reduced, iden
     check("a dense textured object → exit 0, variant written at the recipe-named path", r.code === 0 && r.wrote, `exit ${r.code}: ${r.err.split("\n").pop()}`);
     if (r.wrote) {
       const j = glbJson(new Uint8Array(readFileSync(dest)));
-      check("…really reduced (the CLI names the counts)", /\d+ -> \d+ verts/.test(r.out), r.out);
-      check("…textures at the budget, KTX2, required", (j.extensionsRequired ?? []).includes("KHR_texture_basisu"));
+      const vc = r.out.match(/(\d+) -> (\d+) verts/);
+      check("…really reduced (the CLI names the counts)", !!vc && Number(vc[2]) < Number(vc[1]), r.out);
+      check("…textures as KTX2, required", (j.extensionsRequired ?? []).includes("KHR_texture_basisu"), r.out);
       const ex = j.asset?.extras ?? {};
       const fullHash = new Bun.CryptoHasher("sha256").update(heroBytes).digest("hex");
       check("identity: extras.lodOf is the source sha256", ex.lodOf === fullHash, String(ex.lodOf).slice(0, 16));
