@@ -371,7 +371,7 @@ const flipChecks = (r, c = check) => {
   c('setShadows(false) stops the LAMP casting', r.off.lamp === false,
     'the lamp kept casting with shadows off');
   c('setShadows(false) is reported by shadowsOn()', r.off.pref === false);
-  c('setShadows(true) re-enables the map', r.on.map === true);
+  c('setShadows(true) leaves the map enabled (fixed on at boot)', r.on.map === true);
   c('setShadows(true) restores the sun', r.on.sun === true);
   c('setShadows(true) RESTORES the lamp', r.on.lamp === true,
     'the lamp never came back — the slot is built once at boot and was never revisited');
