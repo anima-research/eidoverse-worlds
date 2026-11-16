@@ -92,6 +92,8 @@ if (argv.includes("--mutants")) {
   console.log(`[describe-particles-check --mutants] ${MUTANTS.length} mutations, ${wrongs} wrong`); process.exit(wrongs ? 1 : 0);
 }
 const TREE = path.resolve(opt("tree") ?? ENGINE) + "/";
+// a client file at its path in the tree under test: a pre-reorg --tree keeps client/lib flat
+const inTree = (...ps: string[]) => TREE + (ps.find((p) => fs.existsSync(TREE + p)) ?? ps[0]);
 const none = () => ({});
 const D = await import(TREE + "shared/protocol/authority.js");
 // fixture-ids.ts opened the fixture seam on ENGINE's authority; a --tree run (mutants, control) imports another instance
@@ -102,7 +104,7 @@ const PE = await import(TREE + "shared/particle_effects.js").catch(none);   // a
 const PD = await import(TREE + "shared/particles.js").catch(none);
 const PS = await import(TREE + "shared/particlesim.js").catch(none);
 const AX = await import(TREE + "shared/a11y.js").catch(none);
-const TV1 = await import(TREE + "tools/import-v1/translate-v1.js");
+const TV1 = await import(inTree("tools/import-v1/translate-v1.js", "tools/protocol/import-v1/translate-v1.js"));
 const root = scratch("dp");
 
 function openWorld(name: string) {
@@ -321,14 +323,14 @@ const cases: Case[] = [
       return { lg, back: lg && rot(q, lg), world, tang: Math.max(...speeds) }; },
     good: (o) => Array.isArray(o.lg) && Math.abs(o.back[0]) < 1e-9 && Math.abs(o.back[1] + 9.8) < 1e-9 && Math.abs(o.back[2]) < 1e-9 && Math.abs(o.world[0]) < 0.05 && o.world[1] < -4.2 && o.world[1] > -5.6 && o.tang > 1 },
   { id: "P5", what: "the renderer hands each emitter's sim its gravity in the emitter's frame before it steps (source order in particlefx.js: setGravity precedes step)", run() {
-      const src = fs.readFileSync(TREE + "client/lib/realize/particlefx.js", "utf8"); const i = src.indexOf("sim.setGravity(localGravity("), j = src.indexOf("sim.step(dt)");
+      const src = fs.readFileSync(inTree("client/lib/realize/particlefx.js", "client/lib/particlefx.js"), "utf8"); const i = src.indexOf("sim.setGravity(localGravity("), j = src.indexOf("sim.step(dt)");
       return { i, j }; },
     good: (o) => o.i > 0 && o.j > o.i },
   { id: "P6", what: "unknown-field policy: a document with an unknown optional field, module and param path draws its known parts on the client reader (and the client's fetch keeps it), and the authority's upload validator refuses it", run(s) { cast(s);
       const e0 = doc().emitters[0];
       const future = doc({ emitters: [{ ...e0, noise: { strength: 1 }, render: { ...e0.render, glow: 2 } }], params: { ...doc().params, wobble: { type: "number", to: [{ path: "emitters.0.noise.strength" }] } }, author: "someone later" });
       const h = `sha256:${"c".repeat(64)}`; const r = PE.resolveParticles({ effect: h, params: { glow: 0.5 } }, { entityId: "x", lookup: (b: string) => (b === h ? future : null) });
-      const em0 = r.emitters?.[0]; const fetchSrc = fs.readFileSync(TREE + "client/lib/realize/emitters.js", "utf8");
+      const em0 = r.emitters?.[0]; const fetchSrc = fs.readFileSync(inTree("client/lib/realize/emitters.js", "client/lib/emitters.js"), "utf8");
       return { ok: r.ok, why: r.why, amount: em0?.spawn?.amount, blend: em0?.render?.blend, alpha: em0?.color?.alpha, noise: em0 && "noise" in em0, fetch: /readableEffect\(r\.effect\)/.test(fetchSrc), up: show(s.call("bob", "upload", { effect: future })) }; },
     good: (o) => o.ok === true && o.amount === 40 && o.blend === "add" && o.alpha === 0.5 && !o.noise && o.fetch && /^refused shape/.test(o.up) },
   { id: "P7", what: "reserved names (space, render.mode, render.trail, collision, sub, spawn.rate, spawn.bursts; instance t0) are refused at upload / write with \"reserved: not built yet\"", run(s) { cast(s); thing(s, "torch");
