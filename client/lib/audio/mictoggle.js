@@ -185,7 +185,7 @@ async function flipMic() {
   paint();
 }
 
-// CLICK = hush (a gain change; unhushing rejoins mid-line); revoking consent (tears the inbound path down) is the Audio panel's.
+// CLICK = hush (a gain change; unhushing rejoins mid-line); revoking consent (the server stops forwarding voice) is the Audio panel's.
 // Clicking while unconsented grants consent first.
 function flipEar() {
   if (!receivingVoice()) { setReceiveVoice(true); setHush(false); }

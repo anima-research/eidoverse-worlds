@@ -236,7 +236,7 @@ function paint(body) {
   body_.append(checkRow('speech-to-text',
     'sends your mic audio to your browser vendor’s cloud to transcribe',
     sttConsented(), (on) => setSttConsent(on)));
-  // last: hush is a gain, this is the connection. Unticking negotiates no inbound media at all.
+  // last: hush is a gain, this is consent. Unticked, the server forwards you no voice (voiceconsent.js).
   const connectRow = checkRow('connect to other people’s audio',
     'on: your machine holds one live connection to the server, which forwards each speaker nearby. ' +
     'Off: nothing is sent to you at all — saves bandwidth and CPU in busy ' +
