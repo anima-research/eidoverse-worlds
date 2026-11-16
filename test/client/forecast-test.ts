@@ -167,7 +167,7 @@ const policyArgs = {
   // plane B — the same calls again (one shared function: this row can only catch nondeterminism)
   let server: any = null;
   for (const e of entries) server = foldSkyEntry(e.verb === "sky" ? null : server, e);
-  check("live and server folds are identical", JSON.stringify(live) === JSON.stringify(server));
+  check("two folds of the same entries are identical (determinism)", JSON.stringify(live) === JSON.stringify(server));
 
   // plane C — late join: server's folded sky replayed as a synthetic entry
   const late = foldSkyEntry(null, { verb: "sky", args: server, ts: Date.now(), seq: -1, actor: "world" });
@@ -264,7 +264,7 @@ const policyArgs = {
   const asClient = foldSkyEntry(standing, e);
   check("keepSky:false discards the standing sky in the helper",
     asServer.clouds === undefined && asServer.forecast === undefined && asServer.weather === "rain");
-  check("keepSky parity: identical through server and client calls",
+  check("keepSky: the helper is deterministic (two calls, one result)",
     JSON.stringify(asServer) === JSON.stringify(asClient));
   check("keepSky is an instruction, not a sky property", !("keepSky" in asServer));
   const kept = foldSkyEntry(standing, { verb: "weather", args: { weather: "rain" }, ts: T0 + HOUR, seq: 3, actor: "digi" });
@@ -388,7 +388,7 @@ const policyArgs = {
   // cleared makes the rated clock the governing one again
   const back = foldSkyEntry(null,
     { verb: "sky", args: { ...wetTypo, clock: undefined, tz: undefined, hours: 6.8, rate: 24 }, ts: T0 + 5 * HOUR, seq: 5100, actor: "antra" });
-  check("#65 back to rated: hours/rate active again, dormant dropped",
+  check("#65 back to rated: hours/rate active again, no dormantRated",
     back.hours === 6.8 && back.rate === 24 && back.dormantRated === undefined,
     JSON.stringify({ hours: back.hours, rate: back.rate, dormant: back.dormantRated }));
   check("#65 back to rated: new provenance", back.seq === 5100 && back.by === "antra");
@@ -425,7 +425,7 @@ const policyArgs = {
   check("#65 a bag replays to itself on late join (its tz the wall clock; hours/rate the fallback)",
     healed.hours === 6.8 && healed.rate === 24 && healed.tz === "America/Los_Angeles" && healed.clock === undefined
       && healed.dormantRated === undefined, JSON.stringify(healed));
-  check("#65 healing never restamps provenance",
+  check("#65 synthetic replay never restamps provenance",
     healed.forecast.epoch === T0 && healed.forecast.seq === 4777 && healed.forecast.by === "antra"
       && healed.ts === T1);
 
@@ -445,7 +445,7 @@ const policyArgs = {
         && ckReal.seq === 4777 && Math.abs(ckReal.hour - 12.5) < 1e-9,
       JSON.stringify(ckReal));
     const ckTypo = effectiveClock(typo, T1 + 30 * MIN);
-    check("#65 effectiveClock: bad-tz fallback reads the PARKED clock honestly",
+    check("#65 effectiveClock: bad-tz fallback reads the rated fallback clock honestly",
       ckTypo.mode === "rated" && ckTypo.rate === 24 && ckTypo.requestedTz === "America/Nowhere"
         && Math.abs(ckTypo.hour - 18.8) < 1e-9 && ckTypo.seq === 4800,
       JSON.stringify(ckTypo));
