@@ -353,7 +353,7 @@ export const COMPONENTS = {
     absentMeans: { slabT: "0.10 m (structure.js GRID_DEFAULTS; never written by the editor)" },
     nested: { levels: "[{y (m), tiles: [[x int, z int, mat?, half?: A|B]], walls: [[axis 0..3, x int, z int, mat?]], apertures: [[axis 0..3, x int, z int, kind]]}]", labels: "{<cellKey>: string}" },
     nestedEnums: { "levels[].apertures[][3]": ["door", "window", "arch"], "levels[].walls[][0]": [0, 1, 2, 3], "levels[].apertures[][0]": [0, 1, 2, 3], "levels[].tiles[][3]": ["A", "B"] },
-    docs: { tile: "metres a cell", wallH: "wall height, floor to floor, metres", wallT: "wall thickness, metres", slabT: "floor slab thickness, metres (its top at the level's y)", labels: "room names by cell", levels: "the storeys: tiles, walls on cell edges, apertures (door, window, arch) in walls" },
+    docs: { tile: "metres a cell", wallH: "wall height, floor to floor, metres", wallT: "wall thickness, metres", slabT: "floor slab thickness, metres (it sits on the level's y; the walk surface is its top)", labels: "room names by cell", levels: "the storeys: tiles, walls on cell edges, apertures (door, window, arch) in walls" },
     help: "a built structure's plan (The Sims' grid: walls on cell edges) {tile (m, default 1), wallH (m, default 2.8), wallT (m, default 0.15), slabT? (m; absent 0.10), levels: [{y, tiles: [[x, z, mat?, half?]], walls: [[axis 0..3, x, z, mat?]], apertures: [[axis, x, z, door|window|arch]]}], labels: {<cell>: name}}" },
   // the instance names an effect document (shared/particle_effects.js): an Essential's NAME or a stored document's content
   // address, with the document's own params. An Essential's old address (ESSENTIAL_ADDRESSES) still reads as that Essential

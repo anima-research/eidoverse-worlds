@@ -1824,7 +1824,7 @@
    "tile": "metres a cell",
    "wallH": "wall height, floor to floor, metres",
    "wallT": "wall thickness, metres",
-   "slabT": "floor slab thickness, metres (its top at the level's y)",
+   "slabT": "floor slab thickness, metres (it sits on the level's y; the walk surface is its top)",
    "labels": "room names by cell",
    "levels": "the storeys: tiles, walls on cell edges, apertures (door, window, arch) in walls"
   },

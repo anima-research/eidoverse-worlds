@@ -453,3 +453,5 @@ docs/contributing/COMPONENT-LADDER.md). Written by `bun test/protocol/pretrans-c
 - 2026-11-12: station.exit's yaw is radians about the host's +y (#147): the meaning was always so (client/lib/player/localbody.js reads it with sin/cos); the doc now says it
   - station.exit: its meaning "where they're set down, [x, y, z] or [x, y, z, yaw] in its host's frame" → "where they're set down, [x, y, z] or [x, y, z, yaw] in its host's frame (yaw in radians about its +y, 0 facing its +z)"
 - 2026-11-13: @world.spawn.yaw range ±2π → ±YAW_LIMIT (2π + 1e-3 rounding slack), the same bound as a bare yaw (Mica #324)
+- 2026-11-16: structure.slabT's doc said the slab's top is at the level's y; the slab sits ON y and its top is the walk surface (structure.js tileBox, GRID_DEFAULTS): the meaning was always so, the doc now says it
+  - structure.slabT: its meaning "floor slab thickness, metres (its top at the level's y)" → "floor slab thickness, metres (it sits on the level's y; the walk surface is its top)"
