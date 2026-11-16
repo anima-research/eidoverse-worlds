@@ -264,9 +264,8 @@ check("…and the old PC was closed", bLeg.pc.connectionState === "closed" || bL
   await pump;
   await pause("the dead listeners' ICMP refusals surface asynchronously: the row is that none crashes us", 300);
   check("a listener dying mid-fanout does not crash the process",
-    room.getLeg("spk") !== undefined, "process reached this line");
-  check("…and the benign transport errors were contained, not ignored globally",
-    transportErrorsSwallowed() >= before, `swallowed ${transportErrorsSwallowed() - before}`);
+    room.getLeg("spk") !== undefined, `process reached this line; swallowed ${transportErrorsSwallowed() - before}`);
+  // contained, not ignored globally: the guard rows below (a non-werift socket still dies; an owned one is counted)
   room.closeAll();
 }
 
