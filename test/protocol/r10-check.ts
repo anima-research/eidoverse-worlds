@@ -224,7 +224,7 @@ const cases: Case[] = [
           const W2: any = { entries: [{ kind: "genesis", body: {} }, { kind: "request", actor: "bob", verb: "set", body: {} }, { ...mk([{ op: "set", id: "l", comp: "reactions", value: 1 }], "bob"), cause: 1 },
             { kind: "request", actor: "olive", verb: "delete", body: {} }, { ...mk([{ op: "delete", id: "x" }, { op: "delete", id: "l", comp: "reactions" }], "olive", [1]), cause: 3 },
             { kind: "request", actor: "wes", verb: "set", body: {} }, { ...mk([{ op: "set", id: "l", comp: "reactions", value: 2 }], "wes"), cause: 5 },
-            { kind: "request", actor: "olive", verb: "undo", body: {} }, { ...mk([{ verb: "set", id: "l", comp: "reactions", value: 2 }], "olive", [0]), cause: 7 }], presence: {} };
+            { kind: "request", actor: "olive", verb: "undo", body: {} }, { ...mk([{ op: "set", id: "l", comp: "reactions", value: 2 }], "olive", [0]), cause: 7 }], presence: {} };
           return { creator: RT.creatorOf(W2, "l", "reactions")?.by ?? null, at: AU.creatorAt(W2.entries, "l", "reactions", W2.entries.length - 1)?.rights ?? null }; })() }; },
     good: (o) => o.nw === "ok" && o.creator === "wes" && o.at === "wes" && o.hand.creator === "wes" && o.hand.at === "wes" },
   // ---------------- A: the auditor's stand-ins ----------------
