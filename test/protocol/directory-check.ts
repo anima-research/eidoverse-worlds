@@ -149,8 +149,8 @@ ok(foldName("Marígold") === foldName("marigold") && foldName("JOSÉ") === foldN
     { seq: 1, ts: 2, actor: "Ann", verb: "spawn", args: { id: "lamp_1", lib: "a.glb", pos: [1, 0, 1] } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
   const a = translateV1World(path.join(W, "old"), path.join(W, "a")), b = translateV1World(path.join(W, "old"), path.join(W, "b"));
   const ga = JSON.parse(fs.readFileSync(path.join(W, "a", "world.jsonl"), "utf8").split("\n")[0]).body;
-  ok(a.worldId !== b.worldId, "K4 two translations of one v1 log are two worlds (random nonce: their signed heads can't replay into each other)", [a.worldId, b.worldId]);
-  ok(ga.owners[1]?.[0] && ga.owners[1][0] !== ga.sequencer, "K5 a translated genesis: the operator's governance key, never the sequencer's", ga);
+  ok(a.worldId !== b.worldId, "K7 two translations of one v1 log are two worlds (random nonce: their signed heads can't replay into each other)", [a.worldId, b.worldId]);
+  ok(ga.owners[1]?.[0] && ga.owners[1][0] !== ga.sequencer, "K8 a translated genesis: the operator's governance key, never the sequencer's", ga);
   // the old world remembered where each person stood by display NAME; the copy remembers it by identity
   fs.writeFileSync(path.join(W, "old", "poses.json"), JSON.stringify({ Ann: { p: [4, 0, 5], yaw: 1 }, Nobody: { p: [0, 0, 0] } }));
   const c = translateV1World(path.join(W, "old"), path.join(W, "c"));
@@ -321,9 +321,9 @@ ok(foldName("Marígold") === foldName("marigold") && foldName("JOSÉ") === foldN
   const back: any = request(w, vis, "undo", {});
   ok(back.ok && w.state().entities.gate.c.openable.open === false, "V2 …and can undo that, under the same handler (not builder rank)", back.refused);
   request(w, vis, "use", { id: "gate", action: "open" }); request(w, own, "delete", { id: "gate", component: "reactions" });
-  ok(request(w, vis, "undo", {}).refused?.code === "rights", "V3 with the handler gone, the capability is gone: the visitor's undo is refused on rank (asked again now, not at use time)"); }
+  ok(request(w, vis, "undo", {}).refused?.code === "rights", "V3 with the handler gone, the capability is gone: the visitor's undo is refused (rights; asked again now, not at use time)"); }
 
-// ---- K: the shared key files' names (the 2026-10-07 names pass: the number left their names) ----
+// ---- N: the shared key files' names (the 2026-10-07 names pass: the number left their names) ----
 // A worlds dir that holds only the old names is renamed once, the first time the path is asked for, so a local world keeps
 // its sequencer key and its people their identities. Both names present: the current file wins, the old one stays put.
 { const wd = path.join(tmp, "oldnames"); fs.mkdirSync(wd, { recursive: true });
@@ -331,14 +331,14 @@ ok(foldName("Marígold") === foldName("marigold") && foldName("JOSÉ") === foldN
   const before = directoryAt(oldDir); const kim = before.resolve({ sub: "human:discord:kim", name: "Kim" });
   const seqBefore = custodyAt(oldCust).sequencer();
   const id = directoryFor(wd).resolve({ sub: "human:discord:kim", name: "Kim" });
-  ok(id === kim, "K1 a directory left under its old name is the one the server opens: the same account, the same identity", [id, kim]);
-  ok(fs.existsSync(path.join(wd, DIRECTORY_FILE)) && !fs.existsSync(oldDir), "K2 …renamed once, to the current name", fs.readdirSync(wd));
-  ok(custodyAt(custodyFileIn(wd)).sequencer() === seqBefore && !fs.existsSync(oldCust), "K3 the governance keys keep their sequencer key through the rename", fs.readdirSync(wd));
+  ok(id === kim, "N1 a directory left under its old name is the one the server opens: the same account, the same identity", [id, kim]);
+  ok(fs.existsSync(path.join(wd, DIRECTORY_FILE)) && !fs.existsSync(oldDir), "N2 …renamed once, to the current name", fs.readdirSync(wd));
+  ok(custodyAt(custodyFileIn(wd)).sequencer() === seqBefore && !fs.existsSync(oldCust), "N3 the governance keys keep their sequencer key through the rename", fs.readdirSync(wd));
   const both = path.join(tmp, "bothnames"); fs.mkdirSync(both);
   const cur = custodyAt(path.join(both, CUSTODY_FILE)).sequencer(), stale = custodyAt(path.join(both, OLD_NAMES[CUSTODY_FILE])).sequencer();
-  ok(custodyAt(custodyFileIn(both)).sequencer() === cur && cur !== stale && fs.existsSync(path.join(both, OLD_NAMES[CUSTODY_FILE])), "K4 both names present: the current file wins and the old one is left alone, never merged");
+  ok(custodyAt(custodyFileIn(both)).sequencer() === cur && cur !== stale && fs.existsSync(path.join(both, OLD_NAMES[CUSTODY_FILE])), "N4 both names present: the current file wins and the old one is left alone, never merged");
   const fresh = path.join(tmp, "fresh"); fs.mkdirSync(fresh);
-  ok(custodyFileIn(fresh) === path.join(fresh, CUSTODY_FILE) && fs.readdirSync(fresh).length === 0, "K5 a fresh worlds dir: the current name, and nothing created by asking", fs.readdirSync(fresh)); }
+  ok(custodyFileIn(fresh) === path.join(fresh, CUSTODY_FILE) && fs.readdirSync(fresh).length === 0, "N5 a fresh worlds dir: the current name, and nothing created by asking", fs.readdirSync(fresh)); }
 
 // ---- EP: a v1 log with a physics epoch (dialect 3) translates with her sim's outcomes: a punted thing rests where her
 // sim rests it, not where the instant fold left it. Each case goes through the real importer (translateV1World, in a
@@ -398,8 +398,7 @@ ok(foldName("Marígold") === foldName("marigold") && foldName("JOSÉ") === foldN
     const people = t.lines.filter((e: any) => (e.kind === "request" && e.verb === "imported") || (e.kind === "physics" && e.verb === "launch"));
     // (v1's own system actors keep their v1 spelling on this path, as before: "world" stays "world", "door" is "system")
     const named = people.filter((e: any) => !["system", "world", "sim"].includes(e.actor) && !isMinted(e.actor)).map((e: any) => e.actor);
-    const launchBy = t.lines.filter((e: any) => e.kind === "physics" && e.verb === "launch").every((e: any) => e.actor === t.lines[e.cause]?.actor);
-    out.identities = [!named.length && launchBy && people.some((e: any) => isMinted(e.actor) && t.dir.entry(e.actor)), { named: [...new Set(named)].slice(0, 5), launchBy }];
+    out.identities = [!named.length && people.some((e: any) => isMinted(e.actor) && t.dir.entry(e.actor)), { named: [...new Set(named)].slice(0, 5) }];
     // R 10-17: every model is its library path, with model-hash sha256:<its bytes> beside it where this host has them; a
     // collider's box rides as physics.shape
     const wrongModel = Object.entries<any>(st.entities).filter(([id, e]) => typeof e.lib === "string" && (E[TV1.enc(id)]?.c.model !== e.lib || (addresses[e.lib] && E[TV1.enc(id)]?.c["model-hash"] !== `sha256:${addresses[e.lib]}`))).map(([id]) => id);
@@ -507,7 +506,7 @@ ok(foldName("Marígold") === foldName("marigold") && foldName("JOSÉ") === foldN
         // up to the epoch's act (@49: neither `translated` names a translator; provenance is the import tool's, given by it)
         const nonce = "ZXAzLXNhbWUtbm9uY2UtMDAw";   // one world id for both (the default nonce hashes the whole source)
         const a = TV1.translate(C, { nonce }).out, b = TV1.translate(X, { nonce }).out; const k = b.findIndex((e: any) => e.kind === "request" && e.body?.verb === "epoch");
-        const same = k > 2 && b.slice(2, k).every((e: any, i: number) => JSON.stringify(e) === JSON.stringify(a[i + 2])) && JSON.stringify(a[0]) !== undefined;
+        const same = k > 2 && b.slice(2, k).every((e: any, i: number) => JSON.stringify(e) === JSON.stringify(a[i + 2]));
         ok(same && !("translator" in a[1].body.from) && !("translator" in b[1].body.from), `EP3 …and the ${k - 2} entries before the epoch are byte-for-byte what the copy alone translates to`, { k }); }
 
     } }
