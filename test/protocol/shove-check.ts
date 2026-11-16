@@ -90,8 +90,8 @@ if (argv.includes("--control")) {
   const r = await runSelf(d, null);
   const lines = r.out.split("\n").filter((l) => /^(ok|FAIL) /.test(l));
   if (!lines.length) { console.log(`FAIL [shove-check --control] no case ran at ${BASE} (exit ${r.code}): ${r.out.slice(-400)}`); process.exit(1); }   // empty output is not "all red"
-  const wrong = lines.filter((l) => l.startsWith("ok ") && !/^ok\s+S0\b/.test(l));
-  console.log(lines.map((l) => `${l.startsWith("FAIL") || /^ok\s+S0\b/.test(l) ? "as expected at base: " : "WRONG AT BASE:       "}${l.slice(0, 140)}`).join("\n"));
+  const kick = (l: string) => /^(ok|FAIL)\s+S0\b/.test(l), wrong = lines.filter((l) => (kick(l) ? l.startsWith("FAIL") : l.startsWith("ok ")));
+  console.log(lines.map((l) => `${wrong.includes(l) ? "WRONG AT BASE:       " : "as expected at base: "}${l.slice(0, 140)}`).join("\n"));
   console.log(`[shove-check --control] at ${BASE}: ${lines.length} cases, ${wrong.length} wrong (S0 is the kick, kept; every shove case must be red there)`);
   process.exit(wrong.length ? 1 : 0);
 }
